@@ -195,63 +195,57 @@
 
 ## 6. Work Items
 
-> Cada *Work Item* (WI) é **atômico** (não decomponível sem perder rastreabilidade), tem dono claro, e mapeia para CAP/INV/NFR.
+> **REGRA INVIOLÁVEL:** Cada *Work Item* (WI) é um **contrato próprio** com rigor SOTA. WI **NÃO DEVE** ser escrito inline no sprint contract exceto em forma-sumário; **DEVE** existir como arquivo separado seguindo o template canônico `_templates/work_item.md` (22 seções obrigatórias incluindo Completeness Criteria, DoD, Invariants, Quality Standards).
+>
+> Sub-tasks seguem o template `_templates/subtask.md` (14 seções), com rigor proporcional ao escopo atômico.
 
-### Estrutura padrão por WI
+### 6.1 Relação hierárquica
 
-```markdown
-### WI-SXX-NNN: {{Título conciso}}
-
-| Field | Value |
-|---|---|
-| **Tipo** | feature \| infra \| docs \| refactor \| security \| perf \| ops \| test |
-| **Trace upstream** | CAP-XXX, INV-XXX, NFR-XXX |
-| **Trace downstream** | desbloqueia WI-SXX-MMM |
-| **Estimativa** | XS (≤2h) \| S (≤1d) \| M (≤3d) \| L (≤5d) \| XL (>5d, decompor) |
-| **Assignee** | {{Nome ou TBD}} |
-| **Status** | TODO \| DOING \| REVIEW \| DONE \| BLOCKED |
-| **PR** | {{URL quando aberto}} |
-
-#### Descrição
-{{O que precisa ser feito, em prosa precisa.}}
-
-#### Acceptance Criteria
-- [ ] **Given** {{contexto/estado inicial}}, **When** {{ação}}, **Then** {{resultado observável e verificável}}.
-- [ ] {{próximo critério}}
-
-#### Sub-tasks
-- [ ] Design revisado (em comentário do PR ou doc separado)
-- [ ] Implementação completa
-- [ ] Unit tests escritos e verdes
-- [ ] Integration tests escritos e verdes (se aplicável)
-- [ ] Property-based tests para invariantes (se aplicável)
-- [ ] Documentação atualizada (Rustdoc, README, ADR se nova decisão)
-- [ ] Métricas/logs/traces emitidos conforme §14
-- [ ] PR aberto, revisado por ≥1 outro engenheiro, mergeado para branch do sprint
-
-#### Definition of Done específica
-- [ ] Todos sub-tasks ✅
-- [ ] CI verde no PR
-- [ ] Cobertura de teste do código novo ≥ {{N%}}
-- [ ] Sem `TODO`/`FIXME` órfãos (qualquer remanescente tem issue link)
-- [ ] Sem `unwrap()`/`panic!()` reachable em produção
-- [ ] Linters (clippy --all-targets --all-features -- -D warnings, rustfmt) clean
-
-#### Notes / Discussion
-*(opcional; decisões locais, links para discussões)*
+```
+Sprint (S-XX)
+  └── Work Item (WI-SXX-NNN)               ← template: work_item.md
+        ├── Sub-task (ST-001)              ← template: subtask.md
+        ├── Sub-task (ST-002)
+        └── Sub-task (ST-003)
 ```
 
-### Lista de Work Items deste sprint
+Cada nível tem contrato próprio. Cada ST é verificável independentemente.
 
-> *(adicionar todos os WIs com a estrutura acima)*
+### 6.2 Localização dos arquivos
 
-#### WI-SXX-001: {{primeiro item}}
+Para este sprint:
+- WIs em: `04_sprints/SXX/work_items/WI-SXX-NNN.md`
+- Sub-tasks em: `04_sprints/SXX/work_items/WI-SXX-NNN/subtasks/ST-MMM.md`
+  *(ou instanciados inline dentro do arquivo do WI se sub-tasks ≤ 5)*
 
-*(preencher conforme template acima)*
+### 6.3 Tabela-sumário dos WIs deste sprint
 
-#### WI-SXX-002: {{segundo item}}
+Preencher como índice. Detalhes vivem nos arquivos individuais.
 
-*(preencher conforme template acima)*
+| WI-ID | Título | Tipo | Assignee | Tamanho | Status | Trace (CAP/INV) | Link |
+|---|---|---|---|---|---|---|---|
+| WI-SXX-001 | {{título}} | feature | {{Nome}} | M | TODO | CAP-XXX | [→](work_items/WI-SXX-001.md) |
+| WI-SXX-002 | {{título}} | infra | {{Nome}} | S | TODO | CAP-YYY, INV-ZZZ | [→](work_items/WI-SXX-002.md) |
+
+### 6.4 Regras de decomposição
+
+- **REG-WI-001**: WI de tamanho XL **DEVE** ser decomposto em sub-tasks ou sub-WIs.
+- **REG-WI-002**: Sub-task atômica é unidade que **pode ser trabalhada em paralelo** com outra sub-task do mesmo WI e tem *acceptance* independente. Se é sequencial-indivisível, é *step*, não sub-task.
+- **REG-WI-003**: Todo WI **DEVE** ter ao menos 1 sub-task, exceto WIs XS (≤ 2h) que podem ser trabalhados como unidade única.
+- **REG-WI-004**: Nenhum WI **PODE** transicionar para `DONE` enquanto qualquer sub-task não estiver `DONE`.
+- **REG-WI-005**: Todo WI e toda ST **DEVEM** ter DoD, Completeness Criteria, Invariants (operacionais + os que preserva), Quality Standards — conforme templates canônicos.
+
+### 6.5 Progresso agregado
+
+| Métrica | Valor |
+|---|---|
+| Total WIs | {{N}} |
+| WIs `DONE` | {{N}} |
+| WIs `DOING` | {{N}} |
+| WIs `BLOCKED` | {{N}} |
+| Total sub-tasks agregadas | {{N}} |
+| Sub-tasks `DONE` | {{N}} |
+| % sprint completo (pelas caixas ✅) | {{N}}% |
 
 ---
 

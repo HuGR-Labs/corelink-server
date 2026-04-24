@@ -1669,13 +1669,94 @@ And {resultado adicional}
 
 ### 34.1 Sprint Contract
 
-Ver `_templates/sprint_contract.md` — template canônico com 22 seções obrigatórias.
+Ver `_templates/sprint_contract.md` — template canônico com 22 seções obrigatórias governando um sprint inteiro. §6 do sprint contract **NÃO** inlina WIs; apenas indexa e referencia os arquivos individuais de WI.
 
 ### 34.2 ADR / PDR / ODR
 
 Ver `_templates/adr.md` — template com 15 seções, aplicável aos 3 tipos com adaptações mínimas.
 
-### 34.3 Capability (esqueleto inline)
+### 34.3 Work Item
+
+Ver `_templates/work_item.md` — template canônico com **22 seções obrigatórias** governando cada WI individualmente. Estrutura hierárquica:
+
+```
+Sprint (S-XX)
+  └── Work Item (WI-SXX-NNN)               ← template work_item.md
+        ├── Sub-task (ST-001)              ← template subtask.md
+        ├── Sub-task (ST-002)
+        └── Sub-task (ST-003)
+```
+
+Seções principais:
+
+| Seção | Propósito |
+|---|---|
+| 0. Identificação | metadata, parent sprint/WI, assignee, reviewers |
+| 1. Intent | uma frase declarativa |
+| 2. Capability Mapping / Trace | CAP/INV/NFR/ADR rastreados |
+| 3. Tipo e Classificação | feature/infra/docs/... + prioridade + blast radius + reversibilidade |
+| 4–5. Escopo / Anti-scope | explícitos |
+| 6. Acceptance Criteria | Gherkin obrigatório, mapeado a testes |
+| 7. Design Decisions | locais + triggers pra ADRs |
+| 8. Artifacts Produced | código, testes, docs, infra, observability |
+| 9. **Completeness Criteria (SOTA)** | 10 subáreas binárias |
+| 10. Definition of Done | snapshot de §9 |
+| 11. **Invariants** | safety + liveness + do produto + novos |
+| 12. **Quality Standards (SOTA)** | test, code, perf, security, observability, docs, a11y/i18n, reproducibility |
+| 13. Sub-tasks | referência a template subtask.md |
+| 14. Dependencies | upstream/downstream/cross-sprint |
+| 15. Effort Estimate | XS–XL + rationale + O/R/P |
+| 16. Observability Plan | métricas/logs/traces/dashboards/alertas |
+| 17. Rollback / Recovery | strategy + procedure + reversibilidade de migrations |
+| 18. Security & Privacy | STRIDE mini + LINDDUN mini + controles |
+| 19. Risk Register | P×I + mitigação + contingência |
+| 20. Review Checkpoints | design / code / pre-merge |
+| 21. Sign-off | WI owner, code reviewer, security, ops, sprint owner |
+| 22. Change Log | versionado |
+
+### 34.4 Sub-task
+
+Ver `_templates/subtask.md` — template canônico com **14 seções obrigatórias** para unidades atômicas de trabalho.
+
+Princípio de decomposição:
+
+> **REG-WI-002**: Algo é sub-task (não *step*) IFF pode ser trabalhada em paralelo com outra sub-task **e** tem *acceptance* verificável independentemente. Sequencial-indivisível = *step* dentro de sub-task, não sub-task separada.
+
+Seções da sub-task:
+
+| Seção | Propósito |
+|---|---|
+| 0. Identificação | ST-ID, WI pai, sprint, assignee |
+| 1. Intent | uma frase |
+| 2. Trace | WI/CAP/INV/NFR referenciados |
+| 3. Acceptance Criteria (Gherkin) | obrigatório |
+| 4. Escopo / Anti-scope | explícitos |
+| 5. Artifacts Produced | código, testes, docs |
+| 6. **Completeness Criteria** | 6 subáreas: código, testes, docs, observability, security, processo |
+| 7. Definition of Done | snapshot de §6 + PR mergeado |
+| 8. **Invariants** | preserva + operacionais + novos |
+| 9. **Quality Standards** | test coverage, code quality, perf, security, observability |
+| 10. Dependencies | upstream/downstream |
+| 11. Effort Estimate | XS–XL (XL → decompor mais ou virar WI próprio) |
+| 12. Observability | métricas/logs/traces |
+| 13. Sign-off | assignee, code reviewer, WI owner |
+| 14. Change Log | versionado |
+
+### 34.5 Regras invioláveis de decomposição
+
+| Regra | Enunciado |
+|---|---|
+| **REG-DECOMP-001** | Todo WI **DEVE** usar template `work_item.md` (22 seções preenchidas) |
+| **REG-DECOMP-002** | Toda ST **DEVE** usar template `subtask.md` (14 seções preenchidas) |
+| **REG-DECOMP-003** | WI de tamanho XL **DEVE** ser decomposto em sub-tasks ou sub-WIs |
+| **REG-DECOMP-004** | Nenhum WI transiciona para `DONE` enquanto qualquer sub-task não for `DONE` |
+| **REG-DECOMP-005** | Todo WI e toda ST **DEVEM** ter Completeness Criteria, DoD, Invariants, Quality Standards — sem exceção |
+| **REG-DECOMP-006** | Se durante execução de ST descobre-se necessidade de decomposição adicional, **DEVE** parar, decompor, atualizar ST pai, só então continuar |
+| **REG-DECOMP-007** | Renomeação / movimentação de WI/ST **DEVE** preservar ID (PRINC-006) |
+
+### 34.6 Capability (esqueleto inline — será movido para `_templates/capability.md` no Nível 2)
+
+### 34.7 Capability (esqueleto inline — será movido para `_templates/capability.md` no Nível 2)
 
 ```markdown
 ## CAP-XXX: {Título}
@@ -1730,7 +1811,7 @@ Then {resultado}
 - CC-SRE: {SLI/SLO linkado}
 ```
 
-### 34.4 Invariant (esqueleto inline)
+### 34.8 Invariant (esqueleto inline — será movido para `_templates/invariant.md` no Nível 2)
 
 ```markdown
 ## INV-XXX: {Nome}
@@ -1761,7 +1842,7 @@ Then {resultado}
 - Mitigação manual: {procedimento}
 ```
 
-### 34.5 Runbook (esqueleto inline)
+### 34.9 Runbook (esqueleto inline — será movido para `_templates/runbook.md` no Nível 5)
 
 ```markdown
 # Runbook RB-XXX: {Nome}
