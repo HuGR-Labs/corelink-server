@@ -91,6 +91,14 @@ DEFINITION_ANCHORS = [
     re.compile(r"^\*\*([A-Z]+(?:-[A-Z0-9_]+)+)\*\*\s*$"),  # **SLO-AVAIL-CP** standalone (no colon)
 ]
 
+# Alias expiry tracking (Lote 7.3 endereça M-01):
+# Aliases legacy CamelCase expiram em 2026-10-24 conforme invariant_registry §5.
+# Após essa data, validator deve FALHAR em vez de whitelistar silenciosamente.
+import datetime as _dt
+_TODAY = _dt.date.today()
+_ALIAS_EXPIRY_DATE = _dt.date(2026, 10, 24)
+_LEGACY_INV_ALIASES_EXPIRED = _TODAY > _ALIAS_EXPIRY_DATE
+
 # IDs whitelisted (canonical IDs of canonical-source docs themselves; not "uses").
 WHITELIST_IDS = {
     "FRAMEWORK-00",
@@ -122,12 +130,19 @@ WHITELIST_IDS = {
     "INV-DATA-MONOTONIC-TS",
     "INV-DATA-BILLING-RECONCILE",
     "INV-DATA-ERASURE-COMPLETE",
-    "INV-TenantIsolation",
-    "INV-AuditLogImmutability",
-    "INV-CASIdempotency",
-    "INV-QuotaEnforcement",
-    "INV-DigestVerification",
-    "INV-DataResidency",
+    # Legacy CamelCase aliases — EXPIRAM EM 2026-10-24 (invariant_registry §5).
+    # Após essa data, _LEGACY_INV_ALIASES_EXPIRED = True e estes IDs NÃO
+    # estarão mais na whitelist (validator falhará em uses).
+    # Pre-expiry: todos na whitelist.
+    # Post-expiry: só mantém os que são de dependências externas imóveis.
+    *([] if _LEGACY_INV_ALIASES_EXPIRED else [
+        "INV-TenantIsolation",
+        "INV-AuditLogImmutability",
+        "INV-CASIdempotency",
+        "INV-QuotaEnforcement",
+        "INV-DigestVerification",
+        "INV-DataResidency",
+    ]),
     # Template placeholders
     "INV-AAA",
     "INV-BBB",

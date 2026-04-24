@@ -71,10 +71,10 @@ Atualizar `00_framework.md §35.7 EVT-010`:
 - [x] Atualizar `00_framework.md §35.7 EVT-010` com formato dual aceito.
 - [x] Bump framework v0.5.0.
 - [x] Confirmar `security_model.md §8.2` e `§6.4 CTRL-SUPPLY-003` consistentes (já estavam em CycloneDX).
-- [ ] Pipeline CI: gerar CycloneDX 1.5 com `cargo-cyclonedx` em todo build de release.
-- [ ] Pipeline CI: opcional gerar SPDX (se vendor exigir).
-- [ ] Assinar SBOM com cosign (CTRL-SUPPLY-003).
-- [ ] Publicar como release asset + enviar pra Dependency-Track.
+- [ ] Pipeline CI: gerar CycloneDX 1.5 com `cargo-cyclonedx` em todo build de release. **Status Lote 7.3**: pipeline CI ainda não implementado (código não existe); item fica aberto até Sprint de implementação — tracked em `compliance_matrix.md §9 GAP-07` (evidence collection automation).
+- [ ] Pipeline CI: opcional gerar SPDX (se vendor exigir). **Status**: idem acima; dependência de pipeline existir.
+- [ ] Assinar SBOM com cosign (CTRL-SUPPLY-003). **Status**: idem; dependência de release pipeline.
+- [ ] Publicar como release asset + enviar pra Dependency-Track. **Status**: idem; dependência de infra de Dependency-Track self-hosted (não deployada).
 
 ## 5. Evidence
 

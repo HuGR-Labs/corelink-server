@@ -438,7 +438,7 @@ Qualquer dos seguintes é considerado breach:
 | Erasure end-to-end (fake user lifecycle)           | CI every PR   | EVT-002            |
 | Residency integration test (upload em EU → verificar que R2 key é EU) | Nightly | EVT-002 |
 | DSR SLO report                                     | Mensal        | EVT-013                |
-| Sub-processor register diff check                  | Semanal       | EVT-001                            |
+| Sub-processor register diff check                  | Semanal       | EVT-040 (VENDOR_REVIEW) + EVT-001 (CI log do diff)  |
 | LIA review                                         | Anual         | EVT-044                      |
 | Breach drill (tabletop exercise)                   | Semestral     | EVT-019 (exercise)    |
 | DPIA (Data Protection Impact Assessment) novo feature grande | Por WI HIGH_RISK | EVT-045                         |

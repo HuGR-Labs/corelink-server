@@ -186,7 +186,7 @@ Cada FM tem scores 1–5 em:
 
 | ID     | Descrição                                                | S | O | D | RPN | Classe | CTRLs / Patterns              |
 |--------|----------------------------------------------------------|---|---|---|-----|---------|--------------------------------|
-| FM-300 | GC deleta blob ainda referenciado (refcount bug)         | 5 | 2 | 4 | 40  | P1                  | INV-GC-001 TLA+ + PAT-SOFT-DELETE-001 |
+| FM-300 | GC deleta blob ainda referenciado (refcount bug)         | 5 | 2 | 4 | 40  | P1 (FF-HR-011 aplicável — ADR-0012) | INV-GC-001 TLA+ + PAT-SOFT-DELETE-001 + RB-FM-300 |
 | FM-301 | Migration doble-apply (idempotency bug)                  | 4 | 2 | 3 | 24  | P2      | PAT-MIGRATION-IDEM-001         |
 | FM-302 | Billing counter não incrementa (silent revenue leak)     | 3 | 2 | 5 | 30  | P1                  | Reconciliation diária           |
 | FM-303 | AC entry aponta pra blob de outro tenant (bug)           | 5 | 2 | 4 | 40  | P1 (S=5 → upgrade; O 1→2 em S-19) | INV-TenantIsolation + test integração + RB-FM-303 |
@@ -209,7 +209,7 @@ Cada FM tem scores 1–5 em:
 | FM-401 | Thundering herd em cache miss                             | 3 | 3 | 2 | 18  | P2      | PAT-SINGLEFLIGHT-001           |
 | FM-402 | Feedback loop: alert dispara action que dispara alert      | 4 | 1 | 4 | 16  | P2 (S=4) | Dampening + runbook check     |
 | FM-403 | Latent leak em long-running Container                      | 3 | 3 | 4 | 36  | P1       | PAT-RESTART-JIT-001           |
-| FM-404 | GC sweep conflita com write (refcount racy)                | 5 | 1 | 4 | 20  | P1 (S=5 → upgrade)   | INV-GC-001 TLA+ linearizability |
+| FM-404 | GC sweep conflita com write (refcount racy)                | 5 | 1 | 4 | 20  | P1 (S=5 → upgrade; FF-HR-011 aplicável — ADR-0012) | INV-GC-001 + INV-GC-004 TLA+ linearizability + RB-FM-404 |
 
 ---
 

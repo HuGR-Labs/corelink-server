@@ -69,8 +69,8 @@ Os 3 entram em §35.5.1 com status `Nível 3`.
 - [x] Atualizar `specs/00_framework.md §35.5.1` com 3 novas linhas.
 - [x] Bump framework v0.5.0.
 - [x] Mudar `remote_cache_product_profile.md` para `doc_status: REVIEW` (caminho para FROZEN após este ADR).
-- [ ] Criar `specs/03_architecture/invariant_registry.md` (Lote 5.4).
-- [ ] Criar `specs/03_architecture/key_management.md` (Lote 5.10).
+- [x] Criar `specs/03_architecture/invariant_registry.md` (feito Lote 5.4).
+- [x] Criar `specs/03_architecture/key_management.md` (feito Lote 5.4).
 
 ## 5. Evidence
 

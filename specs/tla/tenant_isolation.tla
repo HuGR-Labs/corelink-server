@@ -59,7 +59,22 @@ DerivePrefix(t) == hmac_prefix[t]
 R2Key(t, b) == <<DerivePrefix(t), b>>
 
 \* Invariante auxiliar: prefixos distintos para tenants distintos.
-\* No modelo real: HMAC collision tem probabilidade 2^-128, tratada como 0.
+\* No modelo real: HMAC-SHA256 collision tem probabilidade 2^-128, tratada
+\* como 0.
+\*
+\* NOTA DE ABSTRAÇÃO (M-02 audit Lote 6): o modelo usa espaço de prefixos
+\* `1..Cardinality(Tenants)` — o mesmo tamanho de Tenants. Isso é um
+\* surrogate SIMPLIFICADO, não uma abstração fiel de HMAC real. Na prática:
+\*   - Production: HMAC-SHA256 output ∈ {0,1}^{256} — collision prob ≈ 0
+\*   - Neste model: |PrefixSpace| = |Tenants| — collision por pigeonhole
+\*     se atacante brute-force *guessing*
+\* O PrefixInjective aqui enforce injetividade explicitamente. Para uma
+\* verificação SOTA de HMAC collision-resistance, usar:
+\*   (a) Apalache com unbounded prefix space, OU
+\*   (b) Modelo com `PrefixSpace` constante grande (ex: 2^32) + CHOOSE
+\*   (c) Assumir collision-resistance como axioma separado
+\* TLA+ em CoreLink verifica LÓGICA de isolation assumindo HMAC é injetivo.
+\* Collision-resistance é garantida pela escolha do algoritmo (BLAKE3/SHA-256).
 PrefixInjective ==
     \A t1, t2 \in Tenants:
         t1 # t2 => hmac_prefix[t1] # hmac_prefix[t2]

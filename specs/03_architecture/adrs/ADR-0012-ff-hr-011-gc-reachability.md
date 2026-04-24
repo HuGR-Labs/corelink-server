@@ -61,7 +61,7 @@ Adicionar `FF-HR-011` ao framework `§33.5.3`:
 - [x] Adicionar `FF-HR-011` em `specs/00_framework.md §33.5.3`.
 - [x] Bump versão framework v0.5.0.
 - [x] Atualizar `remote_cache_product_profile.md §15` para citar FF-HR-011 sem disclaimer "(novo, proposto)".
-- [ ] Atualizar `failure_modes.md §3.7` (FM-300, FM-303, FM-404) com referência ao novo forcing factor.
+- [x] Atualizar `failure_modes.md §3.7` (FM-300, FM-404) com referência ao novo forcing factor (Lote 7.3).
 
 ## 5. Evidence
 

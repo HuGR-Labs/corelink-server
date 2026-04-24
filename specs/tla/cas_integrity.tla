@@ -37,6 +37,18 @@ VARIABLES
 vars == <<hash_fn, r2_storage, write_log, read_log, corruption_flags, op_count>>
 
 \* Hash concreto: usa variável hash_fn (fixa no Init, UNCHANGED depois).
+\*
+\* NOTA DE ABSTRAÇÃO (M-03 audit Lote 6): hash_fn é VARIABLE (não CONSTANT)
+\* por razão de modelagem: inicializada com `[Bodies -> Digests] injetiva`
+\* em Init, UNCHANGED em todas actions. Isso infla state space em |Hash|
+\* vezes (TLC explora todas Hash possíveis no Init). Para evitar:
+\*   (a) Converter a CONSTANT requer literal no cfg, que TLC não aceita
+\*       para funções (tentado em Lote 5.13).
+\*   (b) Simplificar para Hash == CHOOSE injective fn não é determinístico
+\*       em TLC e produz false positives.
+\*   (c) Atual (VARIABLE UNCHANGED) é simples, determinístico, correto;
+\*       custo é state-space cost aceitável (3k states small model).
+\* Mantido VARIABLE-UNCHANGED como tradeoff pragmático.
 Hash(b) == hash_fn[b]
 
 (*-- Init --------------------------------------------------------------------*)
