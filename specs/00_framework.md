@@ -2373,6 +2373,91 @@ Para quem: {papel}
 
 ---
 
+## 35.5 Control Inheritance — Canonical Source per Domain
+
+> **Problema:** Observability, Security, Rollback, Cost, Compliance e outros controles cross-cutting aparecem repetidos em Sprint, WI, ST e PRR. Cada autor descreve diferente. Drift garantido. Manutenção dobrada.
+>
+> **Solução:** cada domínio tem **uma fonte canônica** em Nível 3 (arquitetura). Artefatos downstream **herdam** via referência, não duplicam. Local deltas são permitidos mas **explícitos e enumerados**.
+
+### 35.5.1 Catálogo de fontes canônicas
+
+| Domínio (cross-cutting concern) | Fonte canônica | Status planejado |
+|---|---|---|
+| Observability Model | `specs/03_architecture/observability_model.md` | Nível 3 |
+| Security Model | `specs/03_architecture/security_model.md` | Nível 3 |
+| Privacy Model | `specs/03_architecture/privacy_model.md` | Nível 3 |
+| Threat Model (STRIDE+LINDDUN) | incluído em `security_model.md` + `privacy_model.md` | Nível 3 |
+| SLO Catalog | `specs/03_architecture/slo_catalog.md` | Nível 3 |
+| Failure Modes (FMEA) | `specs/03_architecture/failure_modes.md` | Nível 3 |
+| Resilience Patterns | `specs/03_architecture/resilience_patterns.md` | Nível 3 |
+| Data Model | `specs/03_architecture/data_model.md` | Nível 3 |
+| Storage Semantics Matrix | `specs/03_architecture/storage_semantics_matrix.md` | Nível 3 (Lote 4) |
+| Auth Model | `specs/03_architecture/auth_model.md` | Nível 3 (Lote 4) |
+| Compliance Matrix | `specs/03_architecture/compliance_matrix.md` | Nível 3 |
+| Incident Response Process | `specs/05_quality/incident_response.md` | Nível 5 |
+| Runbook Library | `specs/05_quality/runbooks/` | Nível 5 |
+| Test Strategy | `specs/05_quality/test_strategy.md` | Nível 5 |
+| Quality Gates | `specs/05_quality/quality_gates.md` | Nível 5 |
+
+### 35.5.2 Semântica de herança
+
+- **REG-INHERIT-001**: Artefatos de Nível 4 (Sprint, WI, ST, PRR) **DEVEM** declarar em YAML front matter a lista `inherits_from: [<ID1>, <ID2>, ...]` listando fontes canônicas aplicáveis.
+- **REG-INHERIT-002**: Ao herdar de uma fonte canônica, o artefato assume **todos** os controles, métricas, SLOs, alertas e runbooks definidos nela, sem precisar reenumerar.
+- **REG-INHERIT-003**: Violação de controle herdado é violação de contrato — tratada como incidente de severidade proporcional à criticalidade da fonte.
+- **REG-INHERIT-004**: Atualização em fonte canônica propaga imediatamente para todos os downstream que a herdam (sem necessidade de *thaw* individual), **desde que a atualização seja `minor` ou `patch`** (§41.2). Bump `major` da fonte canônica **DEVE** thaw todos os downstream com `audit_status: AUDIT_PENDING` até auditoria.
+
+### 35.5.3 Local deltas (overrides / extensões)
+
+Quando um artefato downstream precisa **diferir** do controle herdado (override) ou **adicionar** algo não coberto (extensão), declara em:
+
+- Campo YAML `local_deltas: [<descrição curta>, ...]`
+- Seção textual dedicada no corpo do artefato (ex: WI §21.7 "Local Observability Deltas")
+
+Regras:
+
+- **REG-INHERIT-010**: Todo `local_delta` **DEVE** ter `rationale` textual explicando por que o controle canônico é insuficiente ou inaplicável.
+- **REG-INHERIT-011**: Override (weaker) requer aprovação do owner da fonte canônica + compensating control. Trata-se como waiver (ver §35.6 quando existir — Lote 2.4).
+- **REG-INHERIT-012**: Extensão (stronger ou paralelo) é permitida unilateralmente, mas registrada.
+- **REG-INHERIT-013**: Se um `local_delta` aparece repetidamente em múltiplos artefatos downstream do mesmo domínio, é sinal de que a fonte canônica está incompleta → propor update.
+
+### 35.5.4 Validação CI
+
+Script `scripts/validate_specs.py` **DEVE** (em Lote 2.4+) validar:
+
+- [ ] Todo `inherits_from` aponta para ID existente com `doc_status: FROZEN`.
+- [ ] Fonte canônica listada em §35.5.1 existe (pelo menos como esqueleto DRAFT).
+- [ ] `local_deltas` não contém lista vazia nem strings vazias.
+- [ ] Para cada `local_delta`, há seção correspondente no corpo do artefato com rationale.
+
+### 35.5.5 Impacto nos templates
+
+Templates são **indicações** de estrutura. Seções duplicadas entre Sprint/WI/ST/PRR que agora são **herdáveis** devem:
+
+- Marcar topo da seção com: `> **Herdado de:** <ID fonte canônica>. Ver §35.5 do framework.`
+- Listar apenas `local_deltas` específicos deste artefato.
+- Não duplicar tabela completa da fonte canônica.
+
+Exemplos concretos (a serem aplicados em Lote 3 — over-engineering reduction):
+
+- WI §21 Observability Plan → herda de `observability_model.md`, declara apenas novas métricas/logs/traces/dashboards criados **por este WI**.
+- WI §25 Rollback / Recovery → herda de `failure_modes.md` + `resilience_patterns.md`, declara apenas local rollback procedure específico.
+- WI §26 Security & Privacy → herda de `security_model.md` + `privacy_model.md`, declara apenas new trust boundaries ou data flows.
+- Sprint §14 Observability Plan → herda de `observability_model.md`, sumariza mudanças agregadas do sprint.
+- PRR §4 SLO / SLI / Error Budget → herda de `slo_catalog.md`, confirma apenas SLOs relevantes.
+
+### 35.5.6 Pre-condição: fontes canônicas precisam existir
+
+Nível 4 (sprints, WIs, STs, PRRs) só escala herança quando Nível 3 existe. Enquanto Nível 3 não é escrito (atualmente zero docs em `03_architecture/`), seções dos templates **continuam preenchidas inline** com nota:
+
+```
+> **Herdado de:** `specs/03_architecture/observability_model.md` (PENDENTE — escrever no Lote 4).
+> Enquanto fonte canônica não existe, preencher inline.
+```
+
+Após fonte canônica criada e `doc_status: FROZEN`, downstream migra para herança real.
+
+---
+
 ## 36. Processo de Revisão e Sign-off
 
 ### 36.1 Papéis
