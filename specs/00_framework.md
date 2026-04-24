@@ -3,7 +3,7 @@ id: "FRAMEWORK-00"
 type: "framework"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "0.5.0"
+version: "1.0.0-rc1"
 created: "2026-04-23"
 updated: "2026-04-24"
 owner: "Gustavo Schneiter"
@@ -16,8 +16,8 @@ tags: ["meta", "process", "framework"]
 
 # 00 — Specification Framework
 
-> **doc_status:** DRAFT
-> **Versão:** 0.5.0
+> **doc_status:** DRAFT (FROZEN staffing-blocked — promoção bloqueada até ≥ 2 reviewers nomeados)
+> **Versão:** 1.0.0-rc1
 > **Última atualização:** 2026-04-24
 > **Owner:** Gustavo Schneiter
 > **Aprovador Final:** Gustavo Schneiter

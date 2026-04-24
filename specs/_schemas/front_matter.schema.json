@@ -62,8 +62,8 @@
     },
     "version": {
       "type": "string",
-      "pattern": "^\\d+\\.\\d+\\.\\d+$",
-      "description": "Semver X.Y.Z"
+      "pattern": "^\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z]+(\\.[0-9A-Za-z]+)*)?$",
+      "description": "Semver X.Y.Z com optional pre-release suffix (ex: 1.0.0-rc1, 1.0.0-beta.2). Conforme semver.org."
     },
     "created": {
       "type": "string",
