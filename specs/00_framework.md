@@ -1,39 +1,91 @@
 # 00 — Specification Framework
 
 > **Status:** DRAFT
-> **Versão:** 0.1.0
+> **Versão:** 0.2.0
 > **Última atualização:** 2026-04-24
 > **Owner:** Gustavo Schneiter
-> **Aprovador final:** Gustavo Schneiter
+> **Aprovador Final:** Gustavo Schneiter
 > **Revisores:** *(a definir)*
 >
-> Este é o **meta-documento** do sistema de especificação do **HuGR CoreLink**. Define *como* especificamos o produto — regras, hierarquia, vocabulário, templates, disciplina. Nenhum outro documento de spec pode existir sem antes este estar *frozen*.
+> Este é o **meta-documento** do sistema de especificação do **HuGR CoreLink**. Define *como* especificamos o produto — princípios, hierarquia, vocabulário, processos, automações. Nenhum outro documento de spec pode existir sem este estar *frozen*.
+>
+> Este framework aplica a si próprio: é versionado, revisado, auditado, frozen, como qualquer outro artefato.
 
 ---
 
 ## Sumário
 
+### Parte I — Fundações
+
 0. [Meta](#0-meta)
 1. [Propósito](#1-propósito)
-2. [Princípios Fundamentais (Invariantes da Spec)](#2-princípios-fundamentais-invariantes-da-spec)
-3. [Working Backwards — A Disciplina](#3-working-backwards--a-disciplina)
+2. [Princípios Fundamentais](#2-princípios-fundamentais)
+3. [Working Backwards](#3-working-backwards)
+
+### Parte II — Estrutura
+
 4. [Hierarquia dos 5 Níveis](#4-hierarquia-dos-5-níveis)
-5. [Rastreabilidade (Traceability)](#5-rastreabilidade-traceability)
+5. [Rastreabilidade Bidirecional](#5-rastreabilidade-bidirecional)
 6. [Numeração e Identificadores Estáveis](#6-numeração-e-identificadores-estáveis)
-7. [Frozen Flag System — Ciclo de Vida de Documentos](#7-frozen-flag-system--ciclo-de-vida-de-documentos)
-8. [RFC 2119 — Vocabulário Normativo](#8-rfc-2119--vocabulário-normativo)
-9. [Política de Linguagem (pt-BR + EN)](#9-política-de-linguagem-pt-br--en)
-10. [Templates](#10-templates)
-11. [Diagramas](#11-diagramas)
-12. [Processo de Revisão e Sign-off](#12-processo-de-revisão-e-sign-off)
-13. [Tooling e CI](#13-tooling-e-ci)
-14. [Anti-padrões](#14-anti-padrões)
-15. [Glossário](#15-glossário)
-16. [Meta-regras (Evolução deste Framework)](#16-meta-regras-evolução-deste-framework)
-17. [Change Log](#17-change-log)
-18. [Revisão](#18-revisão)
+7. [Frozen Flag System — Ciclo de Vida](#7-frozen-flag-system--ciclo-de-vida)
+8. [Relações Entre Artefatos](#8-relações-entre-artefatos)
+
+### Parte III — Linguagem e Vocabulário
+
+9. [RFC 2119 — Vocabulário Normativo](#9-rfc-2119--vocabulário-normativo)
+10. [Política de Linguagem](#10-política-de-linguagem)
+11. [Writing Style Guide](#11-writing-style-guide)
+12. [Ubiquitous Language (DDD)](#12-ubiquitous-language-ddd)
+
+### Parte IV — Rigor Formal
+
+13. [Formal Methods e TLA+](#13-formal-methods-e-tla)
+14. [Quality Standards ISO/IEC 25010](#14-quality-standards-isoiec-25010)
+15. [Types of Decision Records](#15-types-of-decision-records)
+
+### Parte V — Preocupações Transversais (Cross-Cutting)
+
+16. [Cross-Cutting Concerns — Visão Geral](#16-cross-cutting-concerns--visão-geral)
+17. [Segurança (Secure by Default, Zero Trust)](#17-segurança)
+18. [Privacidade (Privacy by Design)](#18-privacidade)
+19. [Threat Modeling (STRIDE + LINDDUN)](#19-threat-modeling)
+20. [Compliance e Regulatório](#20-compliance-e-regulatório)
+21. [Data Governance](#21-data-governance)
+22. [Service Level Methodology — SRE](#22-service-level-methodology--sre)
+23. [Reliability & Resilience Patterns](#23-reliability--resilience-patterns)
+24. [Performance e Capacity Planning](#24-performance-e-capacity-planning)
+25. [Accessibility e Internationalization](#25-accessibility-e-internationalization)
+26. [Supply Chain Security](#26-supply-chain-security)
+27. [AI/LLM Governance](#27-aillm-governance)
+
+### Parte VI — Engenharia e Entrega
+
+28. [Feature Lifecycle](#28-feature-lifecycle)
+29. [Progressive Delivery](#29-progressive-delivery)
+30. [Test Strategy Philosophy](#30-test-strategy-philosophy)
+31. [Incident Response e Post-Mortem](#31-incident-response-e-post-mortem)
+32. [Architecture Fitness Functions](#32-architecture-fitness-functions)
+33. [Technical Debt Management](#33-technical-debt-management)
+
+### Parte VII — Processo
+
+34. [Templates](#34-templates)
+35. [Diagramas](#35-diagramas)
+36. [Processo de Revisão e Sign-off](#36-processo-de-revisão-e-sign-off)
+37. [Tooling e CI](#37-tooling-e-ci)
+38. [Red Team e Adversarial Review](#38-red-team-e-adversarial-review)
+
+### Parte VIII — Referência
+
+39. [Anti-padrões](#39-anti-padrões)
+40. [Glossário](#40-glossário)
+41. [Meta-regras (Evolução deste Framework)](#41-meta-regras-evolução-deste-framework)
+42. [Change Log](#42-change-log)
+43. [Revisão](#43-revisão)
 
 ---
+
+# Parte I — Fundações
 
 ## 0. Meta
 
@@ -41,182 +93,337 @@
 
 Este framework existe para garantir que **todo artefato de especificação do CoreLink** tenha:
 
-- **Rigor formal** — zero ambiguidade, toda afirmação verificável.
-- **Rastreabilidade total** — cada linha de código pode ser rastreada até uma *capability*, uma *invariant*, um *sprint contract*.
-- **Qualidade SOTA** — *state-of-the-art* em cada dimensão: clareza, completude, testabilidade, auditabilidade.
-- **Disciplina de processo** — *working backwards*, hierarquia inviolável, *frozen flags*, revisões explícitas.
+- **Rigor formal** — zero ambiguidade, toda afirmação verificável, invariantes formalizáveis (quando justificável via TLA+).
+- **Rastreabilidade total bidirecional** — cada linha de código rastreável até uma *capability*, uma *invariant*, um *sprint contract*, e vice-versa.
+- **Qualidade SOTA** — alinhado com standards internacionais (RFC 2119, ISO/IEC 25010, SRE Google, STRIDE, OWASP) e frameworks industriais modernos (Amazon Working Backwards, Basecamp Shape Up, Bezos one-way/two-way).
+- **Disciplina de processo** — hierarquia inviolável, *frozen flags*, revisões explícitas, automações obrigatórias.
+- **Resiliência a mudança** — o próprio framework é evolvível sob regras explícitas.
 
 ### 0.2 Público-alvo
 
 | Audiência | Uso primário |
 |---|---|
-| Fundador / Product Owner | Definir visão, aprovar *freezes*, resolver trade-offs |
+| Fundador / Product Owner | Definir visão, aprovar *freezes*, resolver trade-offs, escalação de dissent |
 | Engenheiros | Implementar sprints sob contrato inviolável |
-| Revisores de segurança | Auditar invariants, *threat models*, ADRs |
-| Revisores de operações | Validar *observability*, *runbooks*, SLOs |
-| Stakeholders externos | Compreender decisões arquiteturais e roadmap |
-| Claude (eu) | Produzir specs consistentes entre sessões |
+| Revisores de Segurança | Auditar *threat models*, invariants, controles, compliance |
+| Revisores de Privacidade | Auditar Privacy by Design, data handling, direitos do titular |
+| Revisores de Operações | Validar *observability*, SLOs, runbooks, incident response |
+| Revisores de Compliance | Validar SOC 2, ISO 27001, GDPR, LGPD, HIPAA aplicáveis |
+| Stakeholders externos | Compreender decisões arquiteturais e *roadmap* |
+| Agentes de IA (Claude, etc.) | Produzir specs consistentes entre sessões, com contexto persistente |
 
-### 0.3 O que este documento **não** cobre
+### 0.3 O que este documento **NÃO** cobre
 
-- O produto em si (coberto pelos Níveis 1–5).
-- Implementação de código (coberto pelos sprints).
-- Marketing / GTM (coberto por documentos fora do escopo de specs técnicas).
+- **O produto em si** — coberto pelos Níveis 1–5.
+- **Implementação concreta de código** — coberto pelos sprints.
+- **Marketing / GTM / vendas** — coberto por documentos fora do escopo de specs técnicas.
+- **Estratégia de negócio / financiamento** — coberto por documentos confidenciais separados.
+
+### 0.4 Relação com outros frameworks existentes
+
+Este framework é **compatível com** e **toma emprestado de**:
+
+| Framework / Standard | Relação |
+|---|---|
+| **Amazon Working Backwards** | Metodologia base de §3 |
+| **RFC 2119** | Vocabulário normativo (§9) |
+| **ISO/IEC 25010** | Taxonomia de qualidade de software (§14) |
+| **Google SRE Book** | SLI/SLO/Error Budget (§22) |
+| **STRIDE (Microsoft)** | Threat modeling (§19) |
+| **LINDDUN** | Privacy threat modeling (§19) |
+| **OWASP ASVS, OWASP Top 10** | Controles de segurança (§17) |
+| **Cavoukian 7 Principles** | Privacy by Design (§18) |
+| **NIST Cybersecurity Framework** | Controles e maturidade (§17) |
+| **SLSA (Supply chain)** | Supply chain security (§26) |
+| **Michael Nygard ADR** | Template de ADR (§15) |
+| **Domain-Driven Design (Evans)** | Ubiquitous Language (§12) |
+| **C4 Model (Simon Brown)** | Diagramas arquiteturais (§35) |
+| **TLA+ (Lamport)** | Specification formal de invariants críticos (§13) |
+| **Gherkin / BDD** | Acceptance criteria em Given-When-Then (§30) |
+| **Bezos one-way/two-way door** | Reversibility (§15 ADR template) |
+| **Basecamp Shape Up** | Inspiração para pitch-style specs (não adotado integralmente) |
+
+### 0.5 Convenções internas deste framework
+
+- Todo princípio identificado como **PRINC-XXX**.
+- Toda regra de processo como **REG-XXX** (ex: REG-WB-001, REG-LANG-002).
+- Todo anti-padrão como **AP-XXX**.
+- Termos em **maiúsculas negritas** (DEVE, NÃO DEVE, etc.) seguem RFC 2119 (§9).
+- Termos em *itálico* são termos-da-arte em inglês (em contexto pt-BR).
+- Blocos `código formatado` indicam identificadores, comandos, caminhos, ou código.
 
 ---
 
 ## 1. Propósito
 
-O CoreLink é um produto de alta complexidade técnica e alta aposta operacional: serve artefatos de múltiplos *tenants*, precisa de latência baixa, *tenant isolation* inviolável, e opera em um espaço competitivo SOTA (NativeLink, BuildBuddy, JFrog Artifactory, Sonatype Nexus).
+O CoreLink é um produto de **alta complexidade técnica**, **alta aposta operacional** e **alta exposição de segurança/privacidade**:
 
-Um produto dessa natureza **não pode ser construído com spec solta**. Cada decisão precisa ser:
+- Serve artefatos de múltiplos *tenants* com isolamento inviolável.
+- Opera em espaço competitivo SOTA (NativeLink, BuildBuddy, JFrog Artifactory, Sonatype Nexus, Depot.dev).
+- Processa dados que podem incluir código proprietário, credenciais acidentalmente cacheadas, artefatos sujeitos a regulação (HIPAA, GDPR, LGPD).
+- Precisa de latência baixa previsível sob carga alta.
+- Tem padrão de uso multi-região, multi-fuso, multi-idioma.
+
+Um produto dessa natureza **NÃO PODE** ser construído com spec solta. Cada decisão **DEVE** ser:
 
 1. **Explícita** — está escrita, não no *head canon* de alguém.
-2. **Justificada** — tem *rationale* rastreável.
-3. **Auditável** — qualquer pessoa qualificada pode validar.
-4. **Reversível ou consciente de sua irreversibilidade** — *one-way doors* vs *two-way doors* são identificados.
+2. **Justificada** — tem *rationale* rastreável e registrado.
+3. **Auditável** — qualquer revisor qualificado pode validar.
+4. **Reversível ou consciente de sua irreversibilidade** — *one-way doors* vs *two-way doors* identificados.
+5. **Verificável** — método de verificação declarado na própria spec.
+6. **Observável** — métricas, logs, traces pertencentes à spec, não adicionados depois.
 
 Este framework é a **infraestrutura de rigor** que permite isso.
 
 ---
 
-## 2. Princípios Fundamentais (Invariantes da Spec)
+## 2. Princípios Fundamentais
 
-As regras a seguir são **invariantes** do processo de especificação. Violação de qualquer uma delas invalida o documento em questão.
+> Invariantes do processo de especificação. Violação de qualquer princípio invalida o artefato em questão.
+>
+> Agrupados em 4 categorias: **Processo Nuclear**, **Rigor de Engenharia**, **Segurança e Privacidade**, **Entrega e Operação**.
 
-### PRINC-001 — Specs descrevem produto completo, não MVP
+### 2.1 Processo Nuclear (PRINC-001 a PRINC-010)
+
+#### PRINC-001 — Specs descrevem produto completo, não MVP
 
 > **DEVE** todo artefato de spec descrever o produto em sua **forma final completa**.
-> **NÃO DEVE** nenhum artefato conter formulações do tipo "no MVP" ou "inicialmente".
-> MVP não é conceito de spec; é conceito de *sprint*.
+> **NÃO DEVE** nenhum artefato conter formulações como "no MVP" ou "inicialmente fazemos X, depois expandimos".
+> MVP **NÃO É** conceito de spec; é conceito de *sprint* (Nível 4).
 
-O **destino** (produto completo) é descrito nas specs e é **imutável** exceto por evolução explícita.
-O **caminho** (ordem de entrega) vive nos sprints (Nível 4) e é faseado.
+O **destino** (produto completo) é descrito nas specs e é **imutável** exceto por evolução explícita via *thaw*. O **caminho** (ordem de entrega) vive nos sprints e é incremental.
 
-### PRINC-002 — Working backwards é inviolável
+#### PRINC-002 — Working backwards é inviolável
 
 > **DEVE** toda spec ser produzida na ordem: Nível 1 → 2 → 3 → 4 → 5.
-> **NÃO DEVE** um documento de nível N referenciar artefatos ainda não *frozen* de nível N ou inferior.
+> **NÃO DEVE** um documento de nível N referenciar artefatos ainda não *frozen* de nível ≤ N.
+> **NÃO DEVE** Nível 4 (sprints) ser iniciado enquanto Níveis 1–3 relevantes não estão *frozen*.
 
-Corolário: não escrevemos sprint (Nível 4) enquanto *capabilities* (Nível 2) estão em *draft*.
+#### PRINC-003 — Zero ambiguidade (RFC 2119)
 
-### PRINC-003 — Zero ambiguidade (RFC 2119)
-
-> **DEVE** toda afirmação normativa usar o vocabulário de RFC 2119 (§8).
+> **DEVE** toda afirmação normativa usar o vocabulário de RFC 2119 (§9).
 > **NÃO DEVE** haver palavras ambíguas como "provavelmente", "deveria ser rápido", "idealmente".
 
-Se não pode ser afirmado com RFC 2119, não é spec — é *wishful thinking*.
+#### PRINC-004 — Toda afirmação é verificável
 
-### PRINC-004 — Toda afirmação é verificável
+> **DEVE** toda afirmação normativa ter **método de verificação declarado** no próprio artefato (teste, métrica, revisão humana explícita, automação).
+> **NÃO DEVE** existir afirmação que não possa ser validada objetivamente.
 
-> **DEVE** toda afirmação normativa ter um método de verificação associado (teste, métrica, revisão humana explícita).
-> **NÃO DEVE** existir afirmação que não possa ser validada.
-
-Exemplos:
-
-- ❌ "O sistema deve ser rápido." (não verificável)
-- ✅ "O sistema **DEVE** servir P99 de `CAS::FindMissingBlobs` em ≤ 50 ms para requests com ≤ 1000 digests." (verificável via métrica `corelink_cas_find_missing_duration_seconds`)
-
-### PRINC-005 — Rastreabilidade bidirecional
+#### PRINC-005 — Rastreabilidade bidirecional total
 
 > **DEVE** todo artefato de nível N referenciar os artefatos de nível N-1 que o originam.
-> **DEVE** existir, a qualquer momento, capacidade de navegar:
+> **DEVE** existir a qualquer momento capacidade de navegar:
+> - **Top-down**: Visão → JTBD → CAP → { INV, NFR } → ADR → C4 Componente → Sprint WI → Código → Testes → Observability.
+> - **Bottom-up**: uma linha de código ↔ trace reverso até uma *capability* ou uma *invariant*.
 >
-> - **Top-down**: visão → *capabilities* → invariants/NFRs → ADRs → sprints → *work items* → código → testes.
-> - **Bottom-up**: uma linha de código ↔ trace reverso até uma *capability*.
+> Um artefato que quebra rastreabilidade **NÃO PODE** ser *frozen*.
 
-Um documento que quebra rastreabilidade **NÃO PODE** ser *frozen*.
+#### PRINC-006 — Numeração estável
 
-### PRINC-006 — Numeração estável
+> **NÃO DEVE** nenhum identificador estável (CAP-XXX, INV-XXX, ADR-XXXX, NFR-XXX, JTBD-XXX, PERSONA-XX, S-XX, WI-SXX-NNN, AP-XXX, PRINC-XXX, REG-XXX, FM-XXX, METRIC-XXX) ser **renumerado** após criação.
+> Artefato descontinuado vira `DEPRECATED` ou `SUPERSEDED_BY`, mas o identificador permanece reservado para sempre.
 
-> **NÃO DEVE** nenhum identificador (CAP-XXX, INV-XXX, ADR-XXXX, S-XX, NFR-XXX, WI-SXX-XXX, JTBD-XXX, PERSONA-XXX) ser **renumerado** após criação.
-> Quando um artefato é descontinuado, seu status vira `DEPRECATED` ou `SUPERSEDED`, mas o identificador permanece reservado para sempre.
-
-### PRINC-007 — Frozen é serio
+#### PRINC-007 — Frozen é sério
 
 > **DEVE** um documento *frozen* permanecer imutável exceto por processo de *thaw* explícito (§7).
-> **DEVE** qualquer *thaw* disparar auditoria de downstream dependentes.
+> **DEVE** qualquer *thaw* disparar auditoria obrigatória dos artefatos downstream dependentes.
+> **NÃO DEVE** mudança "silenciosa" existir em documento não-`DRAFT`.
 
-### PRINC-008 — Diff é explicação
+#### PRINC-008 — Diff é explicação
 
-> **DEVE** toda mudança em documento não-*draft* ser acompanhada de entrada em *Change Log* com: data, autor, mudança, razão.
-> **NÃO DEVE** haver mudança "silenciosa" em documentos *frozen* ou *accepted*.
+> **DEVE** toda mudança em documento não-`DRAFT` ser acompanhada de entrada em *Change Log* com: versão, data, autor, mudança resumida, razão/trigger.
+> **DEVE** PRs em specs terem descrição prosa explicando o *porquê*, não apenas o *quê*.
 
-### PRINC-009 — Quality gates são binários
+#### PRINC-009 — Quality gates são binários
 
 > **DEVE** todo *gate* de qualidade ter resultado binário (✅ / ❌).
 > **NÃO DEVE** existir "parcialmente atendido" em *exit criteria*.
->
-> Se um *gate* parece exigir granularidade de "70% atendido", ele foi mal desenhado e deve ser **decomposto** em múltiplos *gates* binários.
+> Se um *gate* parece exigir "70% atendido", **DEVE** ser decomposto em múltiplos *gates* binários.
 
-### PRINC-010 — Anti-scope é tão importante quanto scope
+#### PRINC-010 — Anti-scope é tão importante quanto scope
 
-> **DEVE** todo artefato relevante explicitar o que ele **NÃO** cobre.
-> Ambiguidade sobre anti-scope é causa raiz de *scope creep* e de *sprints* que nunca terminam.
+> **DEVE** todo artefato relevante explicitar o que **NÃO** cobre.
+> **DEVE** todo item de anti-scope rastrear para: onde será coberto (futuro), ou por que foi rejeitado (ADR), ou qual constraint impede.
+> Ambiguidade sobre anti-scope é a causa raiz de *scope creep* e *sprints* que não terminam.
 
-### PRINC-011 — Alternativas consideradas são registradas
+### 2.2 Rigor de Engenharia (PRINC-011 a PRINC-018)
 
-> **DEVE** todo ADR registrar as alternativas consideradas, com pró/con e razão de rejeição.
-> **DEVE** haver pelo menos **duas alternativas** (mesmo que uma seja "status quo / não fazer nada").
+#### PRINC-011 — Alternativas consideradas são registradas
 
-O exercício de alternativas é o que separa **decisão** de **default inconsciente**.
+> **DEVE** todo ADR registrar pelo menos **2 alternativas consideradas**, incluindo *status quo* quando aplicável.
+> **DEVE** cada alternativa ter: descrição, pros, cons, razão de rejeição, evidência consultada, condições de reconsideração.
 
-### PRINC-012 — Reversibilidade é dimensão obrigatória
+O exercício de alternativas separa **decisão** de **default inconsciente**.
 
-> **DEVE** todo ADR classificar a decisão como *two-way door*, *one-way door*, ou *hybrid*, e quantificar custo de reversão.
+#### PRINC-012 — Reversibilidade é dimensão obrigatória
 
-Decisões *one-way* merecem escrutínio proporcionalmente maior.
+> **DEVE** todo ADR classificar a decisão como *two-way door*, *one-way door* ou *hybrid*, e quantificar custo de reversão (engineer-weeks, $, customer impact, opportunity cost).
+> **DEVE** decisões *one-way* merecer escrutínio proporcionalmente maior (mais revisores, mais alternativas, análise de sensibilidade).
 
-### PRINC-013 — Observabilidade é parte da spec, não *afterthought*
+#### PRINC-013 — Observability é parte da spec, não *afterthought*
 
-> **DEVE** toda *capability* especificar suas métricas, logs, traces e alertas.
-> **NÃO DEVE** uma *capability* ser marcada como implementada se não tem observability compatível.
+> **DEVE** toda *capability* especificar: métricas emitidas, logs estruturados, traces, alertas, runbooks relacionados, dashboards.
+> **NÃO DEVE** uma *capability* ser marcada como implementada se não tem *observability* compatível em produção.
 
-### PRINC-014 — Segurança e compliance são parte da spec, não *afterthought*
+#### PRINC-014 — Segurança e compliance são parte da spec, não *afterthought*
 
-> **DEVE** toda *capability* que toca dados de *tenant* especificar: classificação de dados, controles de acesso, audit logging, *retention*, implicações de GDPR/LGPD.
+> **DEVE** toda *capability* que toca dados de *tenant* especificar: classificação de dados (público/interno/confidencial/restrito), controles de acesso, *audit logging*, *retention*, implicações de regulações aplicáveis (GDPR/LGPD/HIPAA).
 
-### PRINC-015 — Specs são produto
+#### PRINC-015 — Specs são produto
 
-> **DEVE** toda spec ser escrita com o mesmo rigor de código de produção: revisada, versionada, testada (via CI *lint* e *link checker*), distribuída com disciplina de *release*.
+> **DEVE** toda spec ser escrita com o mesmo rigor de código de produção: revisada, versionada, testada (via CI *lint*, *link checker*, *trace checker*), distribuída com disciplina de *release*.
 > Specs **NÃO SÃO** rascunhos — são artefatos de produção.
+
+#### PRINC-016 — Formal methods para invariants críticos
+
+> **DEVERIA** todo invariante classificado como CRITICAL (§17.2) ter especificação formal via TLA+ ou equivalente, verificável por *model checker*.
+> **PODE** invariants de severidade menor ser especificados em prosa RFC 2119, desde que método de verificação seja declarado.
+
+Invariants são a proteção do produto. Invariants críticos em prosa são sinal de risco de *silent violation*.
+
+#### PRINC-017 — Domain language é consistente (Ubiquitous Language)
+
+> **DEVE** todo termo de domínio (ex: *tenant*, *digest*, *CAS*, *action*) ter definição única em `§40 Glossário`.
+> **NÃO DEVE** o mesmo conceito receber nomes diferentes em áreas diferentes do código ou spec.
+> **NÃO DEVE** o mesmo nome referir conceitos diferentes.
+
+Ubiquitous Language (DDD) é propriedade do produto, não apenas das specs.
+
+#### PRINC-018 — API-first e contract-first
+
+> **DEVE** toda integração entre componentes ter contrato explícito (protobuf, OpenAPI, schema) versionado, **antes** da implementação.
+> **DEVE** toda API pública ter política de *deprecation* documentada (§28 Feature Lifecycle).
+> **DEVE** toda API pública ter testes de contrato (*consumer-driven contract tests* quando aplicável).
+
+### 2.3 Segurança e Privacidade (PRINC-019 a PRINC-024)
+
+#### PRINC-019 — Secure by Default
+
+> **DEVE** toda configuração padrão ser a configuração **mais segura possível**.
+> **NÃO DEVE** o usuário precisar ativar segurança manualmente; ativar features menos seguras requer ação explícita.
+
+Exemplos: TLS obrigatório, auth obrigatória, *rate limiting* ativo por padrão, *audit log* ativo por padrão.
+
+#### PRINC-020 — Least Privilege
+
+> **DEVE** todo *principal* (user, service, token, process) ter o **menor conjunto de privilégios** necessários para sua função.
+> **NÃO DEVE** privilégio amplo ser concedido por conveniência.
+> **DEVE** expansão de privilégio ter *audit trail*.
+
+#### PRINC-021 — Zero Trust
+
+> **NÃO DEVE** existir "perímetro confiável" onde autenticação/autorização é pulada.
+> **DEVE** toda chamada entre componentes, mesmo internos, autenticar e autorizar.
+> **DEVE** todo dado em trânsito ser criptografado (TLS 1.3+ ou equivalente).
+> **DEVE** todo dado em repouso em storage persistente ser criptografado.
+
+#### PRINC-022 — Privacy by Design
+
+> **DEVE** toda *capability* que processa dados pessoais seguir os 7 princípios de Cavoukian (§18):
+> 1. Proativo, não reativo
+> 2. Privacidade como *default*
+> 3. Privacidade embutida no *design*
+> 4. Funcionalidade total — positive-sum
+> 5. Segurança *end-to-end*
+> 6. Transparência
+> 7. Respeito ao usuário
+
+#### PRINC-023 — Data minimization
+
+> **DEVE** o produto coletar, armazenar e processar **apenas os dados estritamente necessários** para a função declarada.
+> **NÃO DEVE** dado pessoal ser armazenado "caso a gente precise depois".
+> **DEVE** *retention policy* existir para toda categoria de dado, com exclusão automatizada.
+
+#### PRINC-024 — Fail safe, not fail open
+
+> **DEVE** todo componente, ao encontrar estado inválido ou falha não recuperável, transicionar para **estado seguro** (deny-by-default) e não para **estado permissivo**.
+> Exemplos: *auth* indisponível → **nega** (não permite bypass); *quota service* indisponível → **aplica quota pessimista** (não permite uso ilimitado).
+
+### 2.4 Entrega e Operação (PRINC-025 a PRINC-030)
+
+#### PRINC-025 — Idempotência por padrão
+
+> **DEVE** toda operação de mutação (POST/PUT/DELETE em HTTP, RPC mutativos) ser idempotente ou explicitamente marcada como *non-idempotent* em sua spec.
+> **DEVE** *retries* ser seguros.
+> **DEVE** *idempotency keys* ser suportadas em operações críticas de negócio (ex: billing).
+
+#### PRINC-026 — Automation over documentation
+
+> **DEVE**, sempre que possível, uma regra ser **automatizada** (CI check, *lint*, *fitness function*) em vez de apenas **documentada**.
+> Documentação sem automação é frágil a drift.
+> Se não pode ser automatizado, **DEVE** haver *review checklist* explícito que trate o item.
+
+#### PRINC-027 — Progressive delivery obrigatório
+
+> **DEVE** toda mudança que afeta usuários em produção ser entregue via estratégia progressiva: *canary*, *blue-green*, ou *rolling* com *auto-rollback* em degradação.
+> **NÃO DEVE** haver *big-bang deploy* de mudança com impacto em produção.
+
+#### PRINC-028 — Cultura *blameless*
+
+> **DEVE** todo post-mortem focar em falhas de **sistema, processo e automação**, não em pessoas.
+> **NÃO DEVE** ação corretiva de post-mortem responsabilizar indivíduo por erro não-malicioso.
+
+#### PRINC-029 — Medir antes de otimizar
+
+> **NÃO DEVE** haver otimização de performance sem *baseline* mensurado + hipótese + métrica de sucesso.
+> **DEVE** toda otimização ser validada por *benchmark before/after* reproduzível.
+
+#### PRINC-030 — Consumer-first API design
+
+> **DEVE** toda API pública ser projetada do ponto de vista do *consumer*, com *user journey* de integração documentada.
+> **DEVE** a primeira validação de uma API nova ser "um consumidor ficcional consegue completar o *journey* sem bater em *paper cut*?".
 
 ---
 
-## 3. Working Backwards — A Disciplina
+## 3. Working Backwards
 
 ### 3.1 Origem
 
-Metodologia pioneira na Amazon: antes de construir, **escreve-se o press release do produto lançado** como se ele já existisse. A partir daí, deriva-se o FAQ interno/externo, e só então começa-se a pensar em arquitetura e execução.
+Metodologia originada na Amazon (Jeff Bezos): antes de construir, escreve-se o *press release* do produto lançado como se ele já existisse. A partir daí, deriva-se o FAQ interno/externo, personas, JTBDs, e só então pensa-se em arquitetura e execução.
 
 ### 3.2 Por que aplicamos
 
-1. **Força clareza do outcome** — se o press release é confuso, o produto é confuso.
+1. **Força clareza do outcome** — se o *press release* é confuso, o produto é confuso.
 2. **Descobre gaps de valor cedo** — se o FAQ não responde por que alguém pagaria, o produto não tem caso de uso.
-3. **Alinha stakeholders** — todo mundo lê o mesmo documento canônico.
+3. **Alinha stakeholders** — todos leem o mesmo documento canônico.
 4. **Previne sobre-engenharia** — especificamos o que entrega valor, não o que é tecnicamente interessante.
+5. **Antecipa objeções chatas** — FAQ inclui "perguntas desconfortáveis" (custo, *lock-in*, falha de concorrente).
 
 ### 3.3 Como aplicamos
 
-| Ordem | Artefato | Resposta que ele dá |
+| Ordem | Artefato | Responde |
 |---|---|---|
-| 1 | PR/FAQ (Nível 1) | "Que produto é este? Por que existe? Quem usa?" |
-| 2 | Personas, JTBD (Nível 1) | "Quem especificamente? Que *job* ele contrata o produto pra fazer?" |
-| 3 | Success Metrics (Nível 1) | "Como sabemos que funcionou?" |
-| 4 | Capabilities (Nível 2) | "O que exatamente o produto faz?" |
-| 5 | Quality Attributes + Invariants (Nível 2) | "Sob quais restrições?" |
-| 6 | Arquitetura + ADRs (Nível 3) | "Como é construído?" |
-| 7 | Sprint Contracts (Nível 4) | "Em que ordem entregamos?" |
-| 8 | Quality Framework (Nível 5) | "Como garantimos o rigor durante a construção?" |
+| 1 | PR/FAQ (Nível 1) | O que é o produto? Por que existe? Para quem? |
+| 2 | Personas (Nível 1) | Quem especificamente? Que características? |
+| 3 | JTBDs (Nível 1) | Que *job* a persona contrata o produto para fazer? |
+| 4 | Success Metrics (Nível 1) | Como sabemos que funcionou? |
+| 5 | Capabilities (Nível 2) | O que exatamente o produto faz? |
+| 6 | Invariants + NFRs + Constraints (Nível 2) | Sob quais restrições? Com quais garantias? |
+| 7 | User Journeys (Nível 2) | Como persona e produto interagem passo a passo? |
+| 8 | Arquitetura + ADRs (Nível 3) | Como é construído? Quais foram as decisões? |
+| 9 | Protocols + Data Model + Failure Modes (Nível 3) | Quais protocolos? Qual modelo de dados? Como falha? |
+| 10 | Security Model (Nível 3) | Quais ameaças? Quais controles? |
+| 11 | Sprint Contracts (Nível 4) | Em que ordem construímos? Sob que contrato? |
+| 12 | Quality Framework (Nível 5) | Como garantimos rigor durante a construção? |
 
-### 3.4 Regras operacionais da disciplina
+### 3.4 Regras operacionais
 
 - **REG-WB-001**: PR/FAQ **DEVE** ser o primeiro artefato de conteúdo produzido (após este framework).
 - **REG-WB-002**: PR/FAQ **DEVE** assumir produto lançado em sua forma completa (não MVP).
-- **REG-WB-003**: Nenhum artefato de Nível N **PODE** ser iniciado antes de Nível N-1 estar *frozen*.
-- **REG-WB-004**: Se ao escrever Nível N percebemos gap em Nível N-1, **DEVEMOS** *thaw* N-1, corrigir, re-*freeze*, e então continuar N.
+- **REG-WB-003**: Nenhum artefato de nível N **PODE** ser iniciado antes de nível N-1 relevante estar *frozen*.
+- **REG-WB-004**: Se durante escrita de nível N percebe-se *gap* em nível < N, **DEVE** *thaw* do nível com *gap*, correção, re-*freeze*, e só então continuar.
+- **REG-WB-005**: Se PR/FAQ revela que produto está mal-formulado, **DEVE** parar e reconsiderar visão antes de seguir.
+
+### 3.5 Checklist de qualidade do PR/FAQ
+
+- [ ] Um *outsider* consegue entender o produto lendo apenas o *press release* (3 parágrafos).
+- [ ] O FAQ antecipa e responde **no mínimo 30 perguntas** cobrindo: valor, diferenciação, concorrentes, preço, *lock-in*, privacidade, segurança, *uptime*, *support*, *deprecation*.
+- [ ] FAQ inclui pelo menos **5 perguntas "chatas" de stakeholders críticos** (CFO, Security, Legal, Ops, Customer Success).
+- [ ] Zero uso de "TBD", "talvez", "provavelmente" no documento.
 
 ---
+
+# Parte II — Estrutura
 
 ## 4. Hierarquia dos 5 Níveis
 
@@ -225,389 +432,1262 @@ Metodologia pioneira na Amazon: antes de construir, **escreve-se o press release
 ```
 ┌──────────────────────────────────────────────┐
 │  Nível 1 — Visão (Produto)                   │
-│  • PR/FAQ  • Personas  • JTBD  • Metrics     │
+│  • PR/FAQ  • Personas  • JTBDs  • Metrics    │
 └─────────────────┬────────────────────────────┘
-                  │ deriva
+                  │ derives
                   ▼
 ┌──────────────────────────────────────────────┐
 │  Nível 2 — Especificação Funcional            │
-│  • Capabilities  • Quality Attrs (NFRs)      │
-│  • Invariants    • Constraints               │
+│  • Capabilities  • Quality Attrs (NFRs)       │
+│  • Invariants    • Constraints                │
 │  • User Journeys                              │
 └─────────────────┬────────────────────────────┘
-                  │ deriva
+                  │ derives
                   ▼
 ┌──────────────────────────────────────────────┐
 │  Nível 3 — Arquitetura                        │
-│  • ADRs  • C4 (Context/Container/Component)  │
-│  • Data Model  • Protocols  • Failure Modes  │
+│  • ADRs  • PDRs  • ODRs                       │
+│  • C4 (Context/Container/Component/Code)      │
+│  • Data Model  • Protocols  • Failure Modes   │
+│  • Security Model  • Privacy Model            │
+│  • Observability Model  • SLO Catalog         │
 └─────────────────┬────────────────────────────┘
-                  │ deriva
+                  │ derives
                   ▼
 ┌──────────────────────────────────────────────┐
-│  Nível 4 — Sprint Contracts (inviolável)     │
+│  Nível 4 — Sprint Contracts (invioláveis)     │
 │  • S-00, S-01, ..., S-NN                      │
-│  cada um: intent, DoR, WI, DoD, gates,       │
-│  invariants, anti-scope, sign-off            │
+│  cada um: intent, DoR, WI, DoD, gates,        │
+│  invariants, anti-scope, sign-off             │
 └─────────────────┬────────────────────────────┘
-                  │ informa
+                  │ informs ∧ is informed by
                   ▼
 ┌──────────────────────────────────────────────┐
 │  Nível 5 — Framework de Qualidade             │
-│  • DoR padrão  • DoD padrão  • Quality Gates │
-│  • Test Strategy  • Completeness Criteria    │
+│  • DoR padrão  • DoD padrão                   │
+│  • Quality Gates  • Completeness Criteria     │
+│  • Test Strategy  • Fitness Functions         │
+│  • Runbooks templates                         │
 └──────────────────────────────────────────────┘
 ```
 
-Nível 5 é transversal: **informa** Níveis 2, 3 e 4, mas é escrito por último (após Nível 3 *frozen*) para refletir a realidade do produto.
+Nível 5 é **transversal**: informa Níveis 2, 3, 4, mas é escrito por último (após Nível 3 *frozen*) para refletir a realidade do produto.
 
 ### 4.2 Nível 1 — Visão (Produto)
-
-#### Artefatos
 
 | Arquivo | Conteúdo | Tamanho esperado |
 |---|---|---|
 | `01_vision/prfaq.md` | Press Release + Internal FAQ + External FAQ | 2.000–4.000 linhas |
-| `01_vision/personas.md` | Tipos de usuários do produto completo, em formato formal | 500–1.200 linhas |
-| `01_vision/jobs_to_be_done.md` | Matriz JTBD por persona, com prioridade e frequência | 600–1.500 linhas |
+| `01_vision/personas.md` | Tipos formais de usuários (estilo Lamport) do produto completo | 500–1.200 linhas |
+| `01_vision/jobs_to_be_done.md` | Matriz JTBD por persona, com prioridade, frequência, circumstance | 600–1.500 linhas |
 | `01_vision/success_metrics.md` | North Star + *guardrail metrics* + *counter metrics* | 400–800 linhas |
 
-#### Propósito agregado
+**Critérios de *freeze*:**
 
-Responde: **O que é o produto, para quem, por que, como medimos sucesso.**
-
-#### Critérios de *freeze*
-
-- [ ] PR/FAQ cobre **produto completo** (todos os protocolos, tiers, interfaces).
-- [ ] Cada persona tem pelo menos 3 *Jobs To Be Done* mapeados.
-- [ ] Toda métrica de sucesso tem: definição operacional, *baseline*, alvo, janela de medição.
-- [ ] FAQ inclui perguntas "chatas" de stakeholders críticos (security, finance, ops, legal).
-- [ ] Nenhuma seção contém "TBD", "provavelmente", "considerando".
+- [ ] PR/FAQ descreve **produto completo** (todos protocolos, tiers, interfaces, compliance).
+- [ ] Cada persona com pelo menos **3 JTBDs** mapeados.
+- [ ] Toda métrica de sucesso com: definição operacional, *baseline*, alvo, janela, *guardrail* inverso.
+- [ ] FAQ inclui perguntas "chatas" de ≥ 5 stakeholder types.
+- [ ] Zero `TBD`, `provavelmente`, `talvez`.
 
 ### 4.3 Nível 2 — Especificação Funcional
 
-#### Artefatos
-
 | Arquivo | Conteúdo |
 |---|---|
-| `02_product/capabilities.md` | Capacidades numeradas CAP-001…CAP-N, cada uma com: intent, entradas, saídas, precondições, poscondições, acceptance, verificação |
-| `02_product/quality_attributes.md` | NFRs (SLOs, limites, *budgets*) numerados NFR-001…NFR-N |
-| `02_product/invariants.md` | Propriedades *safety* + *liveness* numeradas INV-001…INV-N |
-| `02_product/constraints.md` | Anti-scope explícito (o que **NÃO** fazemos, e por quê) |
+| `02_product/capabilities.md` | Capacidades CAP-001…CAP-N (intent, inputs, outputs, pre/poscondições, acceptance, verificação, observability) |
+| `02_product/quality_attributes.md` | NFRs numerados (taxonomia ISO/IEC 25010 §14) |
+| `02_product/invariants.md` | Safety + Liveness INV-001…INV-N (com enunciado formal quando crítico) |
+| `02_product/constraints.md` | Anti-scope explícito com *rationale* |
 | `02_product/user_journeys/` | Uma jornada por arquivo; máquinas de estado formais |
 
-#### Propósito agregado
+**Critérios de *freeze*:**
 
-Responde: **O que exatamente o produto faz, sob quais restrições, com quais garantias.**
-
-#### Critérios de *freeze*
-
-- [ ] Toda *capability* mapeada para pelo menos uma persona em Nível 1.
-- [ ] Toda NFR tem: métrica, *baseline*, alvo, janela, consequência de violação.
-- [ ] Todo invariante tem: formalização, método de verificação, *blast radius* se violado.
-- [ ] *Constraints* contém anti-scope explícito com *rationale* pra cada item.
-- [ ] *User journeys* incluem: *happy path*, *error paths* principais, estados terminais.
+- [ ] Toda CAP mapeada para ≥ 1 persona e ≥ 1 JTBD de Nível 1.
+- [ ] Toda NFR com: categoria ISO 25010, métrica, *baseline*, alvo, janela, consequência de violação.
+- [ ] Todo invariante com: enunciado formal (prosa precisa ou TLA+ se CRITICAL), método de verificação, *blast radius*.
+- [ ] *Constraints* com *rationale* e rastreamento (ADR / futuro sprint / constraint externa).
+- [ ] *User journeys* incluem *happy path*, *error paths* principais, estados terminais.
 
 ### 4.4 Nível 3 — Arquitetura
 
-#### Artefatos
-
 | Arquivo | Conteúdo |
 |---|---|
-| `03_architecture/adrs/ADR-XXXX-*.md` | Uma decisão arquitetural por arquivo |
-| `03_architecture/c4_context.md` | C4 nível 1: sistema e atores externos |
-| `03_architecture/c4_containers.md` | C4 nível 2: Workers, Containers, R2, DB, KV, DO |
+| `03_architecture/adrs/ADR-XXXX-*.md` | Uma decisão arquitetural técnica por arquivo |
+| `03_architecture/pdrs/PDR-XXXX-*.md` | Product Decision Records (§15) |
+| `03_architecture/odrs/ODR-XXXX-*.md` | Operational Decision Records (§15) |
+| `03_architecture/c4_context.md` | C4 nível 1: sistema + atores externos |
+| `03_architecture/c4_containers.md` | C4 nível 2: containers (Workers, Containers Rust, R2, DB, KV, DO) |
 | `03_architecture/c4_components.md` | C4 nível 3: módulos internos por container |
-| `03_architecture/data_model.md` | Schemas + invariantes de dados |
-| `03_architecture/protocols/*.md` | Uma spec por protocolo (REAPI, npm, PyPI, Cargo, OCI…) |
-| `03_architecture/failure_modes.md` | FMEA (Failure Mode and Effects Analysis) |
-| `03_architecture/security_model.md` | Threat model, *trust boundaries*, controles |
+| `03_architecture/data_model.md` | Schemas + invariants de dados + classificação (§21) |
+| `03_architecture/protocols/*.md` | Uma spec por protocolo (REAPI, npm, PyPI, Cargo, OCI, HF, etc.) |
+| `03_architecture/failure_modes.md` | FMEA cobrindo (componente, modo) → impacto, detecção, mitigação |
+| `03_architecture/security_model.md` | Threat model STRIDE, *trust boundaries*, controles (§19) |
+| `03_architecture/privacy_model.md` | LINDDUN threats, data flows, controles (§18) |
+| `03_architecture/observability_model.md` | Métricas, logs, traces, events, dashboards, alertas |
+| `03_architecture/slo_catalog.md` | SLIs + SLOs + error budgets + burn rate alerts (§22) |
+| `03_architecture/resilience_patterns.md` | Catálogo de patterns aplicados (§23) |
 
-#### Propósito agregado
+**Critérios de *freeze*:**
 
-Responde: **Como o produto é construído — decisões, estrutura, protocolos, modos de falha, segurança.**
+- [ ] Toda CAP mapeada para ≥ 1 componente em `c4_components.md`.
+- [ ] Toda decisão "não-óbvia" tem ADR/PDR/ODR dedicado.
+- [ ] Todo ADR com ≥ 2 alternativas, reversibilidade classificada, decision matrix quantitativa.
+- [ ] `failure_modes.md` cobre cada par (componente, modo) relevante.
+- [ ] `security_model.md` inclui STRIDE completo para cada *trust boundary*.
+- [ ] `privacy_model.md` inclui LINDDUN para cada fluxo de dado pessoal.
+- [ ] `slo_catalog.md` define SLI/SLO/error budget para cada CAP *user-facing*.
 
-#### Critérios de *freeze*
-
-- [ ] Todo CAP de Nível 2 mapeia para pelo menos um componente de `c4_components.md`.
-- [ ] Toda decisão "não óbvia" tem ADR dedicado.
-- [ ] Todo ADR registra pelo menos 2 alternativas consideradas.
-- [ ] Todo ADR classifica reversibilidade (*one-way*, *two-way*, *hybrid*).
-- [ ] `failure_modes.md` cobre cada par (componente, modo) com mitigação e detecção.
-- [ ] `security_model.md` inclui *threat model* STRIDE completo.
-
-### 4.5 Nível 4 — Sprint Contracts (invioláveis)
-
-#### Artefatos
+### 4.5 Nível 4 — Sprint Contracts
 
 | Arquivo | Conteúdo |
 |---|---|
-| `04_sprints/_template.md` | Template canônico (versão frozen) |
-| `04_sprints/S00_{nome}.md` | Sprint 0: *foundation* |
+| `04_sprints/_template.md` | Template canônico (versão *frozen*) |
+| `04_sprints/S00_{nome}.md` | Sprint 0: foundation |
 | `04_sprints/S01_{nome}.md` | Sprint 1 |
-| `04_sprints/...` | ... |
+| `...` | ... |
 
-#### Propósito agregado
+**Critérios de *freeze* (por sprint):**
 
-Responde: **Em que ordem entregamos o produto completo, sob que contrato rigoroso.**
-
-#### Critérios de *freeze* (por sprint)
-
-Definidos formalmente no template (§10.1). Resumo:
-
-- [ ] Todas 20 seções obrigatórias preenchidas.
-- [ ] *Entry Criteria* binários e verificáveis.
-- [ ] *Exit Criteria* cobrem: funcional, qualidade, performance, segurança, observability, docs, ops, compliance.
-- [ ] *Anti-scope* explícito.
-- [ ] *Traceability matrix* completa.
-- [ ] Todos *sign-offs* atribuídos.
+Ver template em `_templates/sprint_contract.md`. Resumo: 22 seções obrigatórias, DoR/DoD binários, invariants operacionais, traceability matrix completa.
 
 ### 4.6 Nível 5 — Framework de Qualidade
 
-#### Artefatos
-
 | Arquivo | Conteúdo |
 |---|---|
-| `05_quality/definition_of_ready.md` | DoR padrão reusável |
-| `05_quality/definition_of_done.md` | DoD padrão reusável |
+| `05_quality/definition_of_ready.md` | DoR padrão reusável por sprints |
+| `05_quality/definition_of_done.md` | DoD padrão reusável por sprints |
 | `05_quality/completeness_criteria.md` | Critérios por tipo de artefato |
-| `05_quality/quality_gates.md` | *Gates* por categoria |
-| `05_quality/test_strategy.md` | Camadas de teste, *coverage targets*, *mutation* |
-
-#### Propósito agregado
-
-Responde: **O que significa "feito" e "de qualidade" no CoreLink.**
+| `05_quality/quality_gates.md` | *Gates* por categoria (perf, security, observability, docs, compliance) |
+| `05_quality/test_strategy.md` | Taxonomia de testes, *coverage targets*, *mutation*, chaos |
+| `05_quality/fitness_functions.md` | Fitness functions automatizadas (§32) |
+| `05_quality/runbook_template.md` | Template canônico de runbook |
+| `05_quality/incident_response.md` | Processo de incident response + post-mortem (§31) |
 
 ---
 
-## 5. Rastreabilidade (Traceability)
+## 5. Rastreabilidade Bidirecional
 
-### 5.1 Cadeia de derivação
+### 5.1 Cadeia de derivação canônica
 
 ```
-Persona ──► JTBD ──► CAP ──► { NFR, INV } ──► ADR ──► Componente C4
-                                                            │
-                                                            ▼
-                                         Sprint WI ──► Código + Testes
-                                                            │
-                                                            ▼
-                                              Observability (métrica, log, trace)
+Persona ──► JTBD ──► CAP ──► { NFR, INV, Constraint } ──► ADR ──► C4 Componente
+                                                                       │
+                                                                       ▼
+                                                     Sprint WI ──► Código + Testes
+                                                                       │
+                                                                       ▼
+                                        Observability (métrica, log, trace, alert, dashboard)
 ```
 
-### 5.2 Matriz de rastreabilidade (obrigatória por sprint)
+### 5.2 Matriz de rastreabilidade obrigatória
 
-Cada sprint mantém tabela:
+Cada sprint mantém matriz:
 
-| CAP | INV | NFR | ADR | WI | Código | Testes | Métricas/Alertas |
-|---|---|---|---|---|---|---|---|
+| CAP | JTBD | INV | NFR | ADR | Componente C4 | WI | Código | Testes | Métricas | Alertas | Runbook |
+|---|---|---|---|---|---|---|---|---|---|---|---|
 
-### 5.3 Ferramenta de validação (CI)
+### 5.3 Tooling de validação (CI)
 
-O repositório **DEVE** incluir *script* que valida:
+Repositório **DEVE** incluir script que valida:
 
-- Todo CAP referenciado em algum sprint.
-- Toda INV referenciada em pelo menos um teste.
-- Todo ADR *accepted* referenciado em pelo menos uma spec ou componente.
-- Toda *code path* com anotação `// trace: CAP-XXX`.
+- [ ] Toda CAP referenciada em ≥ 1 sprint.
+- [ ] Toda INV verificada em ≥ 1 teste (unit, property, integration, ou chaos).
+- [ ] Toda NFR verificada em ≥ 1 benchmark ou test de carga.
+- [ ] Todo ADR `ACCEPTED` referenciado em ≥ 1 spec ou componente C4.
+- [ ] Toda *trace annotation* em código (`// trace: CAP-XXX`) aponta para artefato existente.
+- [ ] Todo referência `ADR-XXXX`, `CAP-XXX`, `INV-XXX` em qualquer doc aponta para ID existente.
+
+Script: `scripts/trace_check.py` ou `scripts/trace_check.rs` (a ser implementado no Sprint S-00).
 
 ---
 
 ## 6. Numeração e Identificadores Estáveis
 
-### 6.1 Formatos
+### 6.1 Formatos canônicos
 
-| Tipo | Formato | Regras |
-|---|---|---|
-| Persona | `PERSONA-XX` | 2 dígitos, começa em 01 |
-| Job To Be Done | `JTBD-XXX` | 3 dígitos |
-| Capability | `CAP-XXX` | 3 dígitos, agrupado por subsistema via prefixo opcional (ex: `CAP-CAS-001`) |
-| Non-Functional Req | `NFR-XXX` | 3 dígitos |
-| Invariant | `INV-XXX` | 3 dígitos |
-| ADR | `ADR-XXXX` | 4 dígitos, zero-padded |
-| Sprint | `S-XX` | 2 dígitos |
-| Work Item (in sprint) | `WI-SXX-NNN` | inclui sprint parent |
-| Risk | `R-XXX` | 3 dígitos (no sprint) |
-| Failure Mode | `FM-XXX` | 3 dígitos |
-| Success Metric | `METRIC-XXX` | 3 dígitos |
+| Tipo de artefato | Formato | Zero-pad | Agrupamento opcional |
+|---|---|---|---|
+| Persona | `PERSONA-XX` | 2 dígitos | — |
+| Job To Be Done | `JTBD-XXX` | 3 dígitos | — |
+| Capability | `CAP-XXX` | 3 dígitos | `CAP-{SUBSISTEMA}-XXX` permitido |
+| Non-Functional Req | `NFR-XXX` | 3 dígitos | — |
+| Invariant | `INV-XXX` | 3 dígitos | — |
+| Constraint | `CNS-XXX` | 3 dígitos | — |
+| Architecture Decision | `ADR-XXXX` | 4 dígitos | — |
+| Product Decision | `PDR-XXXX` | 4 dígitos | — |
+| Operational Decision | `ODR-XXXX` | 4 dígitos | — |
+| Sprint | `S-XX` | 2 dígitos | — |
+| Work Item | `WI-SXX-NNN` | sprint parent + 3 dígitos | — |
+| Risk (sprint-local) | `R-XXX` | 3 dígitos | — |
+| Failure Mode | `FM-XXX` | 3 dígitos | — |
+| Success Metric | `METRIC-XXX` | 3 dígitos | — |
+| Principle (framework) | `PRINC-XXX` | 3 dígitos | — |
+| Anti-pattern | `AP-XXX` | 3 dígitos | — |
+| Process Rule | `REG-XXX-XXX` | agrupado + 3 | ex: `REG-WB-001` |
+| Sprint Invariant | `SPRINT-INV-XXX` | 3 dígitos | — |
+| SLI/SLO | `SLI-XXX`, `SLO-XXX` | 3 dígitos | — |
+| Runbook | `RB-XXX` | 3 dígitos | — |
+| Incident | `INC-YYYYMMDD-NNN` | data + seq | — |
+| Fitness Function | `FF-XXX` | 3 dígitos | — |
 
 ### 6.2 Regras absolutas
 
-- **NUNCA** renumerar.
-- **NUNCA** reusar ID descontinuado.
-- Atribuição sequencial. Novo ID é sempre `max + 1`.
-- *Placeholders* (`CAP-TBD-temperature`) são **proibidos** em documento não-*draft*.
+- **REG-NUM-001**: **NUNCA** renumerar.
+- **REG-NUM-002**: **NUNCA** reusar ID descontinuado.
+- **REG-NUM-003**: Atribuição é sequencial. Novo ID = `max + 1` dentro do namespace.
+- **REG-NUM-004**: Reservar ID antes de escrever (evita colisão em trabalho paralelo) via `docs/next_ids.md` com *append-only* list.
+- **REG-NUM-005**: Placeholders (`CAP-TBD-xxx`, `ADR-????-xxx`) são **proibidos** em documento não-`DRAFT`.
 
-### 6.3 Ciclo de status por artefato identificado
+### 6.3 Ciclo de status por ID
 
 ```
-PROPOSED ──► ACCEPTED ──► (DEPRECATED) ──► (SUPERSEDED_BY another ID)
+PROPOSED ──► ACCEPTED ──► (DEPRECATED) ──► (SUPERSEDED_BY ADR/CAP/etc-YYYY)
 ```
+
+### 6.4 Resolução de conflitos em numeração paralela
+
+Quando múltiplos autores podem reservar ID simultaneamente:
+
+1. Cada autor cria *draft* com ID reservado via PR.
+2. CI valida ausência de colisão; em colisão, último PR recebe `max + 1` automaticamente.
+3. Reserva expira se *draft* não avançar em 14 dias.
 
 ---
 
-## 7. Frozen Flag System — Ciclo de Vida de Documentos
+## 7. Frozen Flag System — Ciclo de Vida
 
 ### 7.1 Estados válidos
 
-| Estado | Semântica | Pode ser referenciado por downstream? |
-|---|---|---|
-| `DRAFT` | Em escrita ativa | ❌ |
-| `REVIEW` | Submetido a revisão | ❌ |
-| `FROZEN` | Aprovado e imutável | ✅ |
-| `THAWED` | Frozen anterior reaberto para mudança; downstream auditado | ❌ (enquanto nesse estado) |
-| `SUPERSEDED` | Substituído por versão nova | ❌ (referencie o superseder) |
+| Estado | Semântica | Pode ser referenciado por downstream? | Imutável? |
+|---|---|---|---|
+| `DRAFT` | Em escrita ativa | ❌ | ❌ |
+| `REVIEW` | Submetido a revisão formal | ❌ | ❌ (só autor + revisores mudam) |
+| `FROZEN` | Aprovado e imutável | ✅ | ✅ |
+| `THAWED` | Reaberto temporariamente; downstream em auditoria | ❌ | ❌ |
+| `SUPERSEDED` | Substituído por versão nova | ❌ (referencie o *superseder*) | ✅ (histórico) |
+| `DEPRECATED` | Obsoleto, não substituído | ⚠️ com aviso | ✅ |
 
 ### 7.2 Transições
 
 ```
-DRAFT ──► REVIEW ──► FROZEN
-             │
-             └──► DRAFT (se rejeitado)
-
-FROZEN ──► THAWED ──► REVIEW ──► FROZEN (novo versão)
-FROZEN ──► SUPERSEDED (quando substituído)
+     ┌──────────────────────────────┐
+     ▼                              │
+DRAFT ──► REVIEW ──► FROZEN ──► THAWED ──► REVIEW ──► FROZEN (nova versão)
+              │                 │
+              │                 └──► SUPERSEDED (quando substituído)
+              │                 │
+              │                 └──► DEPRECATED (obsoleto sem substituto)
+              │
+              └──► DRAFT (se rejeitado)
 ```
 
-### 7.3 Quem pode executar transições
+### 7.3 Autorização de transições
 
 | Transição | Autorizado |
 |---|---|
-| `DRAFT → REVIEW` | Autor do documento |
-| `REVIEW → FROZEN` | Aprovador final (Gustavo) + revisores requeridos |
-| `REVIEW → DRAFT` | Qualquer revisor com *dissent* |
-| `FROZEN → THAWED` | Aprovador final (após justificativa escrita) |
-| `THAWED → REVIEW` | Autor do documento |
-| `FROZEN → SUPERSEDED` | Aprovador final (ao aprovar o superseder) |
+| `DRAFT → REVIEW` | Autor |
+| `REVIEW → FROZEN` | Aprovador Final + ≥ N revisores requeridos ✅ (N definido por tipo de doc) |
+| `REVIEW → DRAFT` | Qualquer revisor com *dissent* `MUST_FIX` |
+| `FROZEN → THAWED` | Aprovador Final, após justificativa escrita |
+| `THAWED → REVIEW` | Autor |
+| `FROZEN → SUPERSEDED` | Aprovador Final (ao aprovar *superseder*) |
+| `FROZEN → DEPRECATED` | Aprovador Final, após ADR/PDR justificando |
 
 ### 7.4 Obrigações de *thaw*
 
-Ao executar `FROZEN → THAWED`, obrigatoriamente:
+Ao executar `FROZEN → THAWED`, **obrigatoriamente**:
 
-1. Criar issue/ticket documentando razão.
-2. Listar todos os downstream dependentes.
-3. Marcar todos os downstream *frozen* como "audit-pending".
-4. Re-validar consistência antes de re-*freeze*.
+1. **Criar issue/ticket** documentando: razão, escopo de mudança, *rollback plan* se mudança quebrar algo.
+2. **Listar downstream dependentes** (ferramenta: *trace checker*).
+3. **Marcar todos downstream *frozen*** como `AUDIT_PENDING`.
+4. **Re-validar consistência** antes de re-*freeze*.
+5. **Comunicar stakeholders impactados** via canal definido (ex: issue + notification).
+6. **Incrementar versão** apropriadamente (major se semântica mudou).
 
-### 7.5 Marcação no documento
+### 7.5 Marcação obrigatória em documento
 
 Todo documento **DEVE** começar com bloco:
 
 ```markdown
-> **Status:** DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED
+> **Status:** DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
 > **Versão:** X.Y.Z
 > **Última atualização:** YYYY-MM-DD
 > **Owner:** Nome
-> **Aprovador final:** Nome
+> **Aprovador Final:** Nome
 > **Revisores:** Nome1, Nome2
+> **Supersedes:** <ID> (se aplicável)
+> **Superseded By:** <ID> (se aplicável)
 ```
+
+### 7.6 SLA de auditoria pós-*thaw*
+
+| Tipo de mudança | SLA para re-*freeze* downstream auditado |
+|---|---|
+| Patch (tipográfico) | ≤ 24h |
+| Minor (adição não-breaking) | ≤ 7 dias |
+| Major (breaking, semântica muda) | ≤ 30 dias; sprints dependentes pausam até conclusão |
 
 ---
 
-## 8. RFC 2119 — Vocabulário Normativo
+## 8. Relações Entre Artefatos
 
-### 8.1 Palavras canônicas (EN + pt-BR equivalente)
+### 8.1 Taxonomia de relações
 
-Sempre em **MAIÚSCULAS** quando com significado normativo.
+| Relação | Semântica | Exemplo |
+|---|---|---|
+| `derives_from` | B é derivado conceitualmente de A | CAP derives_from JTBD |
+| `refines` | B é versão mais específica de A | c4_components refines c4_containers |
+| `implements` | B é implementação de A | Código implements CAP |
+| `verifies` | B prova/testa A | Teste verifies INV |
+| `constrains` | B restringe escolha em A | NFR constrains ADR |
+| `supersedes` | B substitui A (A vira `SUPERSEDED`) | ADR-0007 supersedes ADR-0002 |
+| `depends_on` | B não funciona sem A | Sprint depends_on ADR |
+| `impacts` | Mudança em A afeta B | ADR impacts Sprint |
+| `mentions` | Referência informativa sem dependência | Doc mentions ADR |
+
+### 8.2 Regras de navegação
+
+- **REG-REL-001**: Toda relação **DEVE** ser bidirecional (A relaciona com B ↔ B referencia A de volta).
+- **REG-REL-002**: *Trace checker* **DEVE** validar bidirecionalidade.
+- **REG-REL-003**: Remover relação requer *thaw* de ambos os documentos.
+
+### 8.3 Visualização
+
+Grafo de relações **DEVE** ser gerável automaticamente via script. Formato: Mermaid `graph` ou GraphViz.
+
+---
+
+# Parte III — Linguagem e Vocabulário
+
+## 9. RFC 2119 — Vocabulário Normativo
+
+### 9.1 Palavras canônicas
+
+Usadas em **MAIÚSCULAS** quando em contexto normativo.
 
 | EN | pt-BR | Semântica |
 |---|---|---|
 | MUST | **DEVE** | Obrigatório absoluto |
 | MUST NOT | **NÃO DEVE** | Proibido absoluto |
 | REQUIRED | **OBRIGATÓRIO** | Sinônimo de MUST |
-| SHALL | **SERÁ** | Sinônimo de MUST (jurídico/especificação formal) |
-| SHOULD | **DEVERIA** | Fortemente recomendado; exceções requerem justificativa |
+| SHALL | **SERÁ** | Sinônimo de MUST (formal) |
+| SHOULD | **DEVERIA** | Fortemente recomendado; exceções requerem justificativa registrada |
 | SHOULD NOT | **NÃO DEVERIA** | Fortemente desencorajado |
 | RECOMMENDED | **RECOMENDADO** | Sinônimo de SHOULD |
 | MAY | **PODE** | Opcional; implementadores escolhem |
 | OPTIONAL | **OPCIONAL** | Sinônimo de MAY |
 
-### 8.2 Exemplos aplicados
+### 9.2 Exemplos
 
-- ✅ "O servidor **DEVE** rejeitar requests com tokens expirados retornando HTTP 401."
-- ✅ "O cliente **PODE** implementar *retry* com *exponential backoff*."
-- ❌ "O servidor pode retornar erro 500 em casos de falha." — "pode" aqui é ambíguo (RFC 2119 ou permissão casual?). Reescreva.
+✅ "O servidor **DEVE** rejeitar *requests* com tokens expirados retornando HTTP 401 com *body* JSON contendo `{ \"code\": \"token_expired\" }`."
 
-### 8.3 Palavras proibidas em spec
+✅ "O cliente **PODE** implementar *retry* com *exponential backoff* com *jitter* conforme RFC 7234 §5.6."
 
-| Palavra/Expressão | Motivo | Substituir por |
+✅ "O servidor **DEVERIA** comprimir *responses* com `Content-Length` ≥ 1 KiB usando *zstd* ou *gzip*, respeitando o header `Accept-Encoding` do cliente."
+
+❌ "O servidor pode retornar erro 500 em casos de falha." — "pode" ambíguo (permissão? capacidade? RFC 2119 MAY?). Reescrever.
+
+### 9.3 Palavras proibidas em spec
+
+| Expressão | Motivo | Substituir por |
 |---|---|---|
-| "deveria ser rápido" | não mensurável | "DEVE servir P99 ≤ 50 ms" |
-| "idealmente" | *wishful* | "DEVE" ou "DEVERIA" (escolher) |
+| "deveria ser rápido" | não mensurável | "**DEVE** servir P99 ≤ 50 ms sob carga ≤ NFR-XXX" |
+| "idealmente" | *wishful* | "**DEVE**" ou "**DEVERIA**" (escolher) |
 | "talvez" | ambíguo | remover; tomar decisão |
 | "provavelmente" | ambíguo | remover; quantificar |
 | "etc." | incompleto | enumerar exaustivamente |
 | "e outros" | incompleto | enumerar exaustivamente |
-| "TBD" | placeholder | decidir ou mover para issue com ID |
+| "TBD" | *placeholder* | decidir ou mover para issue com ID |
 | "basicamente" | *filler* | remover |
 | "simplesmente" | *filler* | remover |
+| "óbvio/obviamente" | presunção | explicar |
+| "trivialmente" | presunção | explicar ou remover |
+| "algumas" (ex: "algumas vezes falha") | quantidade inexata | quantificar |
+| "muitos" | quantidade inexata | quantificar |
+| "geralmente" | condição ambígua | condicionar explicitamente |
 
 ---
 
-## 9. Política de Linguagem (pt-BR + EN)
+## 10. Política de Linguagem
 
-### 9.1 Regras
+### 10.1 Regras
 
 - **REG-LANG-001**: Prosa corrida, seções, explicações conceituais: **pt-BR**.
-- **REG-LANG-002**: Termos-da-arte da indústria: **EN** sem tradução. Exemplos: *hash*, *digest*, *idempotent*, *throughput*, *observability*, *tenant*, *content-addressable*, REAPI, gRPC.
-- **REG-LANG-003**: Nomes de componentes, classes, serviços: **EN** (code tokens).
-- **REG-LANG-004**: Mensagens de erro e logs emitidos pelo sistema: **EN** (padrão de indústria para infra).
-- **REG-LANG-005**: Palavras RFC 2119 em MAIÚSCULAS em seu equivalente pt-BR ou EN, consistente **dentro do mesmo documento**.
+- **REG-LANG-002**: Termos-da-arte da indústria: **EN** sem tradução. Exemplos: *hash*, *digest*, *idempotent*, *throughput*, *observability*, *tenant*, *content-addressable*, REAPI, gRPC, *blast radius*, *one-way door*.
+- **REG-LANG-003**: Nomes de componentes, classes, serviços, variáveis, funções: **EN** (code tokens).
+- **REG-LANG-004**: Mensagens de erro e logs emitidos pelo sistema: **EN** (padrão de indústria para infra; clientes são devs globais).
+- **REG-LANG-005**: Palavras RFC 2119 em **MAIÚSCULAS** em seu equivalente pt-BR ou EN, consistente **dentro do mesmo documento**.
+- **REG-LANG-006**: Nomes próprios e marcas preservam capitalização oficial (Cloudflare, Rust, Bazel, gRPC).
+- **REG-LANG-007**: Expressões idiomáticas em EN preservadas quando não têm equivalente conciso em pt-BR (*blast radius*, *rabbit hole*, *foot gun*).
 
-### 9.2 Exemplos
+### 10.2 Exemplos
 
 ✅ "O *tenant* isolamento é invariante **INV-042**. O servidor **DEVE** validar o *bearer token* e extrair `tenant_id` da *claim* `org_id` antes de acessar qualquer *blob* no R2."
 
-❌ "O inquilino isolamento é invariante INV-042. O servidor deveria validar o token e pegar o id do inquilino da declaração `org_id`." — traduzir "tenant" e "token" empobrece; "deveria" é ambíguo.
+❌ "O inquilino isolamento é invariante INV-042. O servidor deveria validar o token e pegar o id do inquilino da declaração `org_id`." — traduzir "tenant", "token", "claim" empobrece; "deveria" ambíguo.
 
 ---
 
-## 10. Templates
+## 11. Writing Style Guide
 
-### 10.1 Sprint Contract — ver `_templates/sprint_contract.md`
+### 11.1 Regras de estrutura
 
-Template canônico com **20 seções obrigatórias** que definem o contrato inviolável. Nenhum sprint pode ser aceito sem preenchimento completo.
+- **REG-STYLE-001**: Todo documento **DEVE** ter sumário se >300 linhas.
+- **REG-STYLE-002**: Seções **DEVEM** ter numeração hierárquica.
+- **REG-STYLE-003**: Cabeçalhos **DEVEM** ser declarativos (ex: "Tratamento de falhas", não "Como tratar falhas?").
+- **REG-STYLE-004**: Parágrafos **DEVEM** ter ≤ 5 frases.
+- **REG-STYLE-005**: Frases **DEVEM** ter ≤ 30 palavras em média (aceitável ≤ 40 em casos específicos).
+- **REG-STYLE-006**: Usar *bullet lists* quando há ≥ 3 itens paralelos.
+- **REG-STYLE-007**: Usar tabelas quando há comparação ou enumeração com atributos múltiplos.
+- **REG-STYLE-008**: Código inline em `backticks`. Blocos ≥ 3 linhas em code fences com linguagem especificada.
 
-Resumo das seções:
+### 11.2 Voz e tom
 
-1. Metadata
-2. Executive Summary
-3. Intent
-4. Capability Mapping
-5. Entry Criteria (DoR)
-6. Work Items (decomposição atômica)
-7. Exit Criteria (DoD) — multidimensional
-8. Invariants (safety + liveness)
-9. Test Strategy
-10. Risk Register
-11. Artifacts Produced
-12. Anti-Scope
-13. Dependencies
-14. Observability Plan
-15. Rollback Plan
-16. Completeness Checklist (SOTA)
-17. Traceability Matrix
-18. Review Checkpoints
-19. Sign-off
-20. Retrospective + Change Log
+- **REG-STYLE-009**: Voz **ativa**, não passiva. ✅ "O servidor valida." ❌ "A validação é feita."
+- **REG-STYLE-010**: Tempo **presente do indicativo** para descrever comportamento do sistema. ✅ "O servidor retorna 401." ❌ "O servidor retornará 401."
+- **REG-STYLE-011**: **Segunda pessoa** ("você") aceitável em docs de uso/runbook. **Terceira pessoa** para specs arquiteturais.
+- **REG-STYLE-012**: Sem humor, sem *snark*, sem emojis (exceto ✅/❌/⚠️/🟢/🟡/🔴 em checklists, status, severidade).
 
-### 10.2 Architecture Decision Record — ver `_templates/adr.md`
+### 11.3 Clareza e precisão
 
-Template canônico com **15 seções** cobrindo: contexto, decisão, alternativas (com matriz quantitativa), consequências, reversibilidade, implementação, validação, compliance, custo, dependências, referências, glossário, change log.
+- **REG-STYLE-013**: Primeira menção a termo técnico: **definir ou linkar glossário**.
+- **REG-STYLE-014**: Acrônimos: expandir na primeira ocorrência (CAS = *Content-Addressable Storage*).
+- **REG-STYLE-015**: Magic numbers: sempre justificar (ex: "chunks de 2 MiB — escolha via ADR-0015").
+- **REG-STYLE-016**: Unidades: usar notação SI (`KiB`, `MiB`, `GiB` para base 2; `KB`, `MB`, `GB` para base 10 — seguir RFC 3092/IEC 80000).
+- **REG-STYLE-017**: Datas: ISO 8601 (`2026-04-24`).
+- **REG-STYLE-018**: Percentuais: sempre com base explícita ("p99 ≤ 50 ms" não "p99 é rápido").
 
-### 10.3 Capability — a ser detalhado no Nível 2 *freeze*
+### 11.4 Diagramas na prosa
 
-Esqueleto mínimo:
+- **REG-STYLE-019**: Todo diagrama **DEVE** ter: título, legenda, descrição textual equivalente.
+- **REG-STYLE-020**: Diagramas **DEVEM** ser fonte-texto (Mermaid, PlantUML) para *diff*-ability.
+
+### 11.5 Linter (vale)
+
+- Lista de termos proibidos (§9.3) aplicada via *vale*.
+- Lista de termos-que-precisam-de-capitalização (Rust, Cloudflare, gRPC) aplicada via *vale*.
+- Regras de estilo de prosa em `.vale.ini`.
+
+---
+
+## 12. Ubiquitous Language (DDD)
+
+### 12.1 Princípio
+
+Seguimos *Domain-Driven Design* (Evans): **todo termo de domínio tem uma e apenas uma definição**, usada de forma consistente em specs, código, UI, logs, métricas, conversas.
+
+### 12.2 Regras
+
+- **REG-DDD-001**: Todo termo de domínio **DEVE** aparecer no Glossário (§40).
+- **REG-DDD-002**: O mesmo conceito **NÃO DEVE** ter nomes diferentes em áreas diferentes.
+  - ❌ "organization" em código, "tenant" em doc, "workspace" em UI.
+  - ✅ Escolher **um**: *tenant*. Usar em todo lugar.
+- **REG-DDD-003**: O mesmo nome **NÃO DEVE** referir conceitos diferentes.
+  - ❌ "blob" referindo tanto ao *content-addressable object* quanto ao *raw byte stream*.
+- **REG-DDD-004**: Quando evoluímos vocabulário, fazemos *rename* **completo** (código, docs, UI, logs) via ADR explícito.
+- **REG-DDD-005**: *Bounded contexts* diferentes **PODEM** usar o mesmo termo com significados diferentes, **DESDE QUE** o *bounded context* esteja explícito no contexto da frase.
+
+### 12.3 Exemplos canônicos do CoreLink
+
+| Conceito | Termo canônico | Termos proibidos |
+|---|---|---|
+| Entidade isolada (usuário ou org) | **tenant** | organization, account, workspace, customer (exceto em billing) |
+| Hash identificador de *blob* | **digest** | hash, checksum, id |
+| Bloco de conteúdo em CAS | **blob** | object, file, chunk (chunk tem significado distinto) |
+| Subdivisão Merkle de blob grande | **chunk** | piece, segment, part |
+| Árvore Merkle representando blob | **manifest** | tree, index |
+| Função de hash | **digest function** | hash function, checksum algorithm |
+
+---
+
+# Parte IV — Rigor Formal
+
+## 13. Formal Methods e TLA+
+
+### 13.1 Quando usar formal methods
+
+**PRINC-016** estabelece: invariants CRITICAL **DEVERIAM** ter spec formal.
+
+Exemplos típicos no CoreLink:
+
+- **INV-TenantIsolation**: "Em todo estado do sistema, nenhum *blob* de tenant A é acessível por principal de tenant B."
+- **INV-CASIdempotency**: "Upload do mesmo *blob* N vezes resulta em uma única representação em storage."
+- **INV-AuditLogImmutability**: "Registros de *audit log*, uma vez escritos, não podem ser alterados."
+- **INV-QuotaEnforcement**: "Em nenhum estado, tenant consome mais que sua *quota* configurada."
+
+### 13.2 Ferramenta canônica: TLA+
+
+Leslie Lamport's TLA+ para *model checking* de invariants e *liveness properties*.
+
+- Arquivos: `.tla` (specs) + `.cfg` (model config).
+- Localização: `specs/03_architecture/formal/INV-XXX-name.tla`.
+- *Model checker*: TLC (incluso com TLA Toolbox).
+- Execução: integrada em CI para invariants CRITICAL.
+
+### 13.3 Template mínimo TLA+
+
+```tla
+---- MODULE INV_TenantIsolation ----
+EXTENDS Naturals, FiniteSets, Sequences
+
+CONSTANTS Tenants, Blobs
+
+VARIABLES ownership, access_attempts
+
+TypeOK ==
+  /\ ownership \in [Blobs -> Tenants]
+  /\ access_attempts \subseteq [principal: Tenants, blob: Blobs, granted: BOOLEAN]
+
+TenantIsolation ==
+  \A att \in access_attempts:
+    att.granted => (att.principal = ownership[att.blob])
+
+Init == ...
+Next == ...
+Spec == Init /\ [][Next]_<<ownership, access_attempts>>
+
+INVARIANT TypeOK
+INVARIANT TenantIsolation
+====
+```
+
+### 13.4 Quando NÃO usar formal methods
+
+- Invariants SEVERITY = MEDIUM/LOW: prosa RFC 2119 + property test é suficiente.
+- Invariants que mudam frequentemente: custo de manter spec formal > benefício.
+- Invariants testáveis exaustivamente: *property-based testing* pode ser suficiente.
+
+### 13.5 Integração com testes
+
+Toda TLA+ spec **DEVE** ter:
+
+- Property test correspondente em Rust (`proptest`) para validação em runtime.
+- Referência cruzada no invariant declaration: `§13-file: INV_TenantIsolation.tla`.
+
+---
+
+## 14. Quality Standards ISO/IEC 25010
+
+### 14.1 Taxonomia oficial
+
+NFRs **DEVEM** ser categorizados conforme ISO/IEC 25010 (Product Quality Model):
+
+| Characteristic | Sub-characteristics |
+|---|---|
+| **Functional Suitability** | Completeness, Correctness, Appropriateness |
+| **Performance Efficiency** | Time behaviour, Resource utilization, Capacity |
+| **Compatibility** | Co-existence, Interoperability |
+| **Usability** | Appropriateness recognizability, Learnability, Operability, User error protection, User interface aesthetics, Accessibility |
+| **Reliability** | Maturity, Availability, Fault tolerance, Recoverability |
+| **Security** | Confidentiality, Integrity, Non-repudiation, Accountability, Authenticity |
+| **Maintainability** | Modularity, Reusability, Analysability, Modifiability, Testability |
+| **Portability** | Adaptability, Installability, Replaceability |
+
+### 14.2 Template de NFR
+
+```markdown
+## NFR-XXX: {nome}
+
+- **ISO 25010 category:** {characteristic} / {sub-characteristic}
+- **Status:** PROPOSED | ACCEPTED | DEPRECATED
+- **Capabilities afetadas:** CAP-XXX, CAP-YYY
+- **Invariants relacionados:** INV-XXX
+- **SLI relacionado (se aplicável):** SLI-XXX
+
+### Enunciado normativo
+O sistema **DEVE/DEVERIA** {comportamento mensurável}.
+
+### Métrica
+{definição operacional da métrica}
+
+### Baseline atual
+{valor medido atualmente, ou "N/A (greenfield)"}
+
+### Alvo
+{valor alvo com janela temporal}
+
+### Janela de medição
+{ex: rolling 30 dias}
+
+### Consequência de violação
+- Severidade: CRITICAL | HIGH | MEDIUM | LOW
+- Ação automática se violado: {ex: paginar on-call}
+
+### Método de verificação
+- Benchmark: {arquivo/função}
+- Load test: {arquivo/função}
+- Observação em produção: {dashboard, alerta}
+```
+
+---
+
+## 15. Types of Decision Records
+
+### 15.1 Taxonomia
+
+Não toda decisão é arquitetural. Diferenciamos:
+
+| Tipo | Prefixo | Escopo | Exemplo |
+|---|---|---|---|
+| **Architecture Decision Record** | `ADR-XXXX` | Técnica / arquitetural | Escolha de Rust, R2 como storage, REAPI como protocolo |
+| **Product Decision Record** | `PDR-XXXX` | Produto / estratégia | Pricing, tiers, o que entra em qual tier, política de *deprecation* |
+| **Operational Decision Record** | `ODR-XXXX` | Operações / processo | SLO target, janela de manutenção, política de *on-call* |
+
+### 15.2 Quando criar um DR
+
+> **DEVE** ser registrado como DR (ADR/PDR/ODR) qualquer decisão que:
+>
+> - Afeta invariants, NFRs ou trade-offs importantes.
+> - Introduz *lock-in* significativo.
+> - Tem *blast radius* além de um módulo.
+> - Custaria >1 semana de engenheiro para reverter.
+> - Afeta experiência de cliente visivelmente.
+> - Tem implicação legal/regulatória.
+
+### 15.3 Quando NÃO criar DR
+
+- Escolhas locais de implementação (nome de variável, refactor interno).
+- Decisões que o código torna óbvias e que qualquer engenheiro tomaria igual.
+
+### 15.4 Template
+
+Ver `_templates/adr.md` (serve para ADR, PDR, ODR com adaptações mínimas).
+
+---
+
+# Parte V — Preocupações Transversais (Cross-Cutting)
+
+## 16. Cross-Cutting Concerns — Visão Geral
+
+### 16.1 Conceito
+
+Certas preocupações atravessam **múltiplos componentes e múltiplas capabilities**. São ortogonais ao mapeamento funcional. Tratá-las como *afterthought* ou como capability comum leva a inconsistências e *gaps* de cobertura.
+
+### 16.2 Lista canônica de cross-cutting concerns do CoreLink
+
+| ID | Concern | Seção |
+|---|---|---|
+| CC-SEC | Segurança | §17 |
+| CC-PRIV | Privacidade | §18 |
+| CC-THREAT | Threat Modeling | §19 |
+| CC-COMP | Compliance | §20 |
+| CC-DATA | Data Governance | §21 |
+| CC-SRE | Service Level Methodology | §22 |
+| CC-RESIL | Reliability & Resilience | §23 |
+| CC-PERF | Performance | §24 |
+| CC-A11Y | Accessibility & i18n | §25 |
+| CC-SUPPLY | Supply Chain Security | §26 |
+| CC-AI | AI/LLM Governance | §27 |
+
+### 16.3 Regra de aplicação
+
+- **REG-CC-001**: Toda capability **DEVE** ser avaliada contra cada CC relevante.
+- **REG-CC-002**: Ausência de impacto em CC **DEVE** ser explicitamente registrada ("CC-PRIV: not applicable — no PII handled"), não omitida.
+
+---
+
+## 17. Segurança
+
+### 17.1 Princípios de segurança (adicionais a PRINC-019–021)
+
+- **Defense in Depth**: múltiplas camadas de controle independentes.
+- **Fail Secure**: falhas levam a negação, não a permissão (PRINC-024).
+- **Separation of Duties**: operações críticas requerem múltiplos principals.
+- **Explicit Trust**: todo trust boundary é documentado e auditado.
+- **Secure Defaults**: configuração padrão = mais segura (PRINC-019).
+- **Least Functionality**: habilitar apenas o necessário.
+
+### 17.2 Frameworks de referência adotados
+
+- **OWASP ASVS 4.0** — *Application Security Verification Standard*.
+- **OWASP Top 10** — cobertura obrigatória.
+- **NIST Cybersecurity Framework** — maturidade em *Identify/Protect/Detect/Respond/Recover*.
+- **CIS Benchmarks** — configurações seguras para componentes (Rust, Linux, Postgres, Docker).
+- **SLSA** — *Supply-chain Levels for Software Artifacts* (§26).
+
+### 17.3 Controles mínimos obrigatórios
+
+| Controle | Escopo | Verificação |
+|---|---|---|
+| TLS 1.3+ em todo *endpoint* | exposto externamente | SAST + DAST |
+| AuthN em todo *endpoint* | interno ou externo | integration test |
+| AuthZ baseada em *tenant* | toda operação que toca dados | property test INV-TenantIsolation |
+| *Rate limiting* por *tenant* | todo *endpoint* custoso | load test |
+| *Audit log* imutável | operações sensíveis | integration test + test de imutabilidade |
+| *Input validation* | toda fronteira externa | fuzz test |
+| *Secrets* em *secrets manager* | todo credencial | `git-secrets` + `trufflehog` CI |
+| Dependências com vuln scan | todo crate/lib | `cargo audit` CI |
+| Containers com *base image* scaneada | Dockerfile | `trivy` CI |
+
+### 17.4 Classificação de dados (ver §21)
+
+Toda *capability* que processa dados **DEVE** classificar:
+
+- **Público**: exposto livremente.
+- **Interno**: uso interno HuGR, sem *PII*.
+- **Confidencial**: *tenant data*, sem *PII* específico.
+- **Restrito**: *PII*, credenciais, dados regulados (HIPAA/GDPR/LGPD sensitive categories).
+
+### 17.5 Referência ao Security Model
+
+Detalhes de *trust boundaries*, controles específicos, *threat model* vivem em `03_architecture/security_model.md`, frozen em Nível 3.
+
+---
+
+## 18. Privacidade
+
+### 18.1 Os 7 Princípios de Cavoukian (Privacy by Design)
+
+**PRINC-022** reforça:
+
+1. **Proativo, não reativo**: antecipar privacy issues, não reagir a violações.
+2. **Privacidade como *default***: máximo de privacidade sem ação do usuário.
+3. **Privacidade embutida no *design***: não *bolt-on*.
+4. **Funcionalidade total — positive-sum**: privacidade + utilidade; não trade-off.
+5. **Segurança *end-to-end***: ciclo de vida completo do dado.
+6. **Transparência**: usuário sabe o que é coletado, onde vai, quem acessa.
+7. **Respeito ao usuário**: *user-centric*, direitos respeitados (acesso, retificação, exclusão, portabilidade).
+
+### 18.2 Direitos do titular de dados (GDPR / LGPD)
+
+| Direito | Implementação obrigatória |
+|---|---|
+| Acesso | API que retorna todos dados do *tenant* estruturados |
+| Retificação | UI/API para corrigir dados próprios |
+| Exclusão ("direito ao esquecimento") | API + processo automatizado, com SLA declarado (ex: ≤ 30 dias) |
+| Portabilidade | Export em formato aberto (JSON, CSV) |
+| Oposição | Opt-out de processamentos específicos |
+| Revogação de consentimento | Interface e API |
+
+### 18.3 Data Processing Agreement (DPA)
+
+- **DEVE** existir DPA padrão com clientes (GDPR Art. 28).
+- **DEVE** existir lista de *sub-processors* pública e atualizada.
+
+### 18.4 Referência ao Privacy Model
+
+Detalhes de *data flows*, classificação, LINDDUN threats, controles: `03_architecture/privacy_model.md`, frozen em Nível 3.
+
+---
+
+## 19. Threat Modeling
+
+### 19.1 Metodologias adotadas
+
+| Metodologia | Aplicação |
+|---|---|
+| **STRIDE** (Microsoft) | Security threats em cada componente e *trust boundary* |
+| **LINDDUN** | Privacy threats em cada *data flow* com dado pessoal |
+| **Attack Trees** | Ameaças complexas multi-passo |
+| **PASTA** | Análise de risco quando *blast radius* justificar |
+
+### 19.2 STRIDE — categorias
+
+| Letra | Categoria | Violação do princípio |
+|---|---|---|
+| S | Spoofing | Authenticity |
+| T | Tampering | Integrity |
+| R | Repudiation | Non-repudiation |
+| I | Information Disclosure | Confidentiality |
+| D | Denial of Service | Availability |
+| E | Elevation of Privilege | Authorization |
+
+**REG-TM-001**: Todo componente em `c4_components.md` **DEVE** ter análise STRIDE (6 categorias × componente), com mitigação declarada para cada ameaça identificada (ou aceitação de risco registrada).
+
+### 19.3 LINDDUN — categorias (privacy)
+
+| Letra | Categoria |
+|---|---|
+| L | Linkability |
+| I | Identifiability |
+| N | Non-repudiation (privacy sense) |
+| D | Detectability |
+| D | Disclosure of information |
+| U | Unawareness |
+| N | Non-compliance |
+
+**REG-TM-002**: Todo *data flow* com PII **DEVE** ter análise LINDDUN.
+
+### 19.4 Cadência
+
+- Threat model atualizado a cada *freeze* de `c4_components.md` ou quando capability nova afeta *trust boundary*.
+- Red team review (§38) semestral do threat model.
+
+---
+
+## 20. Compliance e Regulatório
+
+### 20.1 Regulações e certificações relevantes
+
+| Framework | Aplicável? | Gate para |
+|---|---|---|
+| **GDPR** (EU) | Sim (usuários EU) | Launch em EU |
+| **LGPD** (BR) | Sim (mercado-alvo) | Launch em BR |
+| **CCPA** (Califórnia) | Sim | Launch em US |
+| **HIPAA** (US Health) | Condicional | Tier que aceita BAA |
+| **SOC 2 Type II** | Planejado | Enterprise tier |
+| **ISO 27001** | Planejado | Enterprise tier |
+| **PCI-DSS** | Indireto (Stripe PCI) | Scope limitado via SAQ-A |
+
+### 20.2 Matriz de controles
+
+- **DEVE** existir `03_architecture/compliance_matrix.md` mapeando cada controle requerido × implementação × evidência.
+- **DEVE** ser atualizada em toda nova *capability* que afeta compliance.
+
+### 20.3 Audit trail
+
+- **DEVE** toda operação sensível emitir *audit event* imutável.
+- **DEVE** *audit log* ser retido pelo prazo regulatório mínimo aplicável (ex: 7 anos para certos registros HIPAA).
+
+---
+
+## 21. Data Governance
+
+### 21.1 Classificação de dados
+
+| Classe | Exemplos | Controles mínimos |
+|---|---|---|
+| **Público** | Documentação pública, press releases | Nenhum |
+| **Interno** | Métricas agregadas não-identificadas | Acesso interno HuGR |
+| **Confidencial** | Tenant data (builds, pacotes, metadata) | AuthN/Z + encryption at rest + audit |
+| **Restrito** | PII, credenciais, dados regulados | Confidencial + MFA + dedicated retention + separation of duties |
+
+### 21.2 Data lifecycle
+
+```
+Collect ──► Process ──► Store ──► (optionally) Share ──► Retain ──► Delete
+```
+
+Cada estágio **DEVE** ter controle de classe.
+
+### 21.3 Data contracts
+
+- **DEVE** existir contrato explícito entre produtor e consumidor de dados (schema + semântica + SLA de frescor).
+- **DEVE** mudanças em data contracts seguir *semver* + *expand-contract migration*.
+
+### 21.4 Schema evolution
+
+- **DEVE** toda migration ser *additive-first* (adicionar antes de remover).
+- **DEVE** existir janela de compatibilidade declarada para cada mudança breaking (mínimo 90 dias para clientes externos).
+
+### 21.5 Data retention matrix
+
+Exemplo parcial:
+
+| Categoria | Retention | Deleção automática |
+|---|---|---|
+| CAS blob *tenant* ativo | Indefinida (enquanto *tenant* ativo) | N |
+| CAS blob após cancelamento | 30 dias | S |
+| Audit log | 2 anos | S |
+| Access logs (HTTP) | 90 dias | S |
+| Traces | 14 dias | S |
+| Usage events (billing) | 7 anos | S (após export fiscal) |
+
+---
+
+## 22. Service Level Methodology — SRE
+
+### 22.1 Conceitos (Google SRE Book)
+
+| Conceito | Definição |
+|---|---|
+| **SLI** (Service Level Indicator) | Métrica quantitativa de aspecto do serviço |
+| **SLO** (Service Level Objective) | Alvo ou range de SLI, com janela temporal |
+| **SLA** (Service Level Agreement) | SLO contratual com cliente, com penalidade |
+| **Error Budget** | `1 - SLO` — quanto de "falha" é aceitável no período |
+
+### 22.2 Os Four Golden Signals (Google SRE)
+
+Métricas mínimas obrigatórias para todo serviço:
+
+1. **Latency** — tempo de processamento de *requests* bem-sucedidas.
+2. **Traffic** — demanda no sistema (req/s, B/s).
+3. **Errors** — taxa de falhas.
+4. **Saturation** — quão cheio o sistema está (CPU, memory, queue depth).
+
+**REG-SLO-001**: Todo serviço **DEVE** expor métricas dos *four golden signals*.
+
+### 22.3 SLO Catalog
+
+`03_architecture/slo_catalog.md` contém:
+
+| SLI-ID | Definition | SLO | Window | Error Budget | Burn Rate Alerts |
+|---|---|---|---|---|---|
+| SLI-001 | `rate(req_success) / rate(req_total)` | ≥ 99.9% | rolling 30d | 43.2m/mês | 2% in 1h, 5% in 6h |
+
+### 22.4 Error Budget Policy
+
+**REG-SLO-002**: Quando *error budget* se esgota, **DEVE** haver *feature freeze* até reestabelecer baseline. Política operacional, não sugestão.
+
+### 22.5 Four Golden Signals aplicados ao CoreLink
+
+| Signal | SLI principal |
+|---|---|
+| Latency | P99 de `CAS::BatchReadBlobs` |
+| Traffic | GB/s de bandwidth servido |
+| Errors | Taxa de 5xx + falha de autenticação legítima |
+| Saturation | Utilização CPU do Container + fila de requests pendentes |
+
+---
+
+## 23. Reliability & Resilience Patterns
+
+### 23.1 Patterns obrigatórios
+
+| Pattern | Quando aplicar | Referência |
+|---|---|---|
+| **Timeout** | Toda chamada externa | Release It! (Nygard) |
+| **Retry with exponential backoff + jitter** | Retries idempotentes | AWS Architecture Blog |
+| **Circuit Breaker** | Chamadas a deps externos instáveis | Nygard |
+| **Bulkhead** | Isolar recursos entre classes de trabalho | Nygard |
+| **Rate limiting** | Toda API pública | PRINC-019 |
+| **Graceful degradation** | Features não-críticas podem cair sem derrubar sistema | — |
+| **Back-pressure** | Quando consumer é mais lento que producer | Reactive Streams |
+| **Load shedding** | Sob saturação, rejeitar antes de colapso | SRE Book |
+
+### 23.2 Patterns proibidos
+
+| Anti-pattern | Por que |
+|---|---|
+| **Infinite retry** | Amplifica falhas transitórias em catastrófico |
+| **Unbounded queues** | Mascara falha até explodir |
+| **Shared mutable state sem lock** | Race conditions |
+| **Silent failures** | Deve sempre emitir métrica/log |
+
+### 23.3 Chaos Engineering
+
+- **DEVE** sprint que introduz nova failure mode incluir chaos test.
+- **DEVE** chaos tests rodar em staging com frequência mínima mensal.
+- Ferramentas: `chaos-mesh`, toolkit próprio, fault injection via `tower::layer`.
+
+---
+
+## 24. Performance e Capacity Planning
+
+### 24.1 Metodologia
+
+- **Baseline** medido antes de otimização (PRINC-029).
+- **Load profile** declarado: RPS esperado, distribuição de request size, padrão temporal (steady, diurnal, burst).
+- **Stress test** até 3× o pico esperado.
+- **Soak test** ≥ 24h para detectar leaks.
+
+### 24.2 Capacity planning
+
+- **DEVE** existir modelo de capacidade por tier (Free/Solo/Team/Business/Enterprise).
+- **DEVE** alertas ativos antes de 70% capacidade planejada.
+
+### 24.3 Performance budgets
+
+| Tipo de endpoint | Budget de latência | Budget de memória |
+|---|---|---|
+| Metadata lookup (KV) | P99 ≤ 10ms | N/A |
+| CAS FindMissingBlobs | P99 ≤ 50ms | ≤ 16MiB per request |
+| CAS BatchReadBlobs (small) | P99 ≤ 100ms | ≤ 64MiB per request |
+| ByteStream Read (large) | Throughput ≥ 100 MiB/s | streaming, bounded |
+
+---
+
+## 25. Accessibility e Internationalization
+
+### 25.1 Accessibility (a11y)
+
+- Aplicável a Dashboard, docs, landing page.
+- **DEVE** seguir WCAG 2.1 AA no mínimo, AAA onde viável.
+- **DEVE** testes automatizados (axe-core) em CI do frontend.
+- **DEVE** inclusive testes manuais com leitor de tela em releases menores.
+
+### 25.2 Internationalization (i18n)
+
+- **DEVE** Dashboard suportar pt-BR, EN desde day 1.
+- **DEVE** mensagens de erro HTTP/gRPC serem em EN (padrão de indústria).
+- **PODE** CLI localizar mensagens por `LANG`.
+- **DEVE** datas em ISO 8601; números em formato local via biblioteca.
+
+### 25.3 Localization (l10n)
+
+- Tradução gerenciada via ferramenta (ex: Crowdin, Lokalise).
+- *Context* fornecido a tradutores.
+- Re-translation obrigatória a cada UI change.
+
+---
+
+## 26. Supply Chain Security
+
+### 26.1 Framework: SLSA
+
+Adotamos **SLSA** (*Supply-chain Levels for Software Artifacts*). Alvo: SLSA Level 3 para builds de produção até GA.
+
+### 26.2 Controles obrigatórios
+
+| Controle | Implementação |
+|---|---|
+| **SBOM** para cada release | Ferramenta: `cargo sbom` ou equivalente; formato SPDX |
+| **Signed artifacts** | `cosign` assina binários e images |
+| **Reproducible builds** | Build isolado, sem dependências mutáveis |
+| **Pinned dependencies** | `Cargo.lock` comitado; versões exatas |
+| **Dep vulnerability scan** | `cargo audit` + `cargo deny` em CI |
+| **License compliance** | `cargo deny` com lista permitida de licenças |
+| **No direct untrusted deps** | PR que adiciona dep passa por revisão explícita |
+| **Provenance** | Build attestations via GitHub OIDC + Sigstore |
+
+### 26.3 Incident de supply chain
+
+- Runbook específico para dependência comprometida.
+- Capacidade de *rollback* + rebuild limpo em ≤ 4h.
+
+---
+
+## 27. AI/LLM Governance
+
+### 27.1 Motivação
+
+HuGR opera produtos com IA (Donna, Forge). CoreLink **pode** integrar com ferramentas IA (ex: análise de dependências sugerida por LLM, detecção de vulnerabilidade assistida). Governança desde day 1.
+
+### 27.2 Princípios
+
+- **PRINC-031 (futuro, candidato)** — AI features são explicáveis ou marcadas como *black box* com *fallback*.
+- **PRINC-032 (futuro, candidato)** — AI não toma decisões irreversíveis sobre *tenant data*.
+- **PRINC-033 (futuro, candidato)** — Modelos e prompts são versionados como código.
+
+### 27.3 Políticas
+
+- **Prompt injection defense**: inputs controlados, output sanitizado.
+- **PII handling**: dados de *tenant* **NÃO DEVEM** ser enviados a LLMs externos sem *opt-in* explícito.
+- **Model versioning**: toda AI feature declara versão exata do modelo e prompt usado.
+- **Eval harness**: AI features têm *eval suite* rodando em CI.
+
+---
+
+# Parte VI — Engenharia e Entrega
+
+## 28. Feature Lifecycle
+
+### 28.1 Estados de uma feature
+
+```
+PROPOSED ──► ALPHA ──► BETA ──► GA ──► DEPRECATED ──► REMOVED
+                 │       │
+                 └───┴──► (pode voltar a PROPOSED se kill)
+```
+
+| Estado | Semântica | SLA | Visibilidade |
+|---|---|---|---|
+| **PROPOSED** | Em spec, não implementada | N/A | interna |
+| **ALPHA** | Implementada, quebra tolerada | no SLA | opt-in (flag) |
+| **BETA** | Estável o suficiente para testar externamente | SLO reduzido | opt-in público |
+| **GA** | Production-ready, SLA completo | SLO full | default-available |
+| **DEPRECATED** | Ainda funciona, mas sem evolução; fim anunciado | SLO mantido até end-of-life | aviso ativo |
+| **REMOVED** | Desligada | N/A | 404 / erro |
+
+### 28.2 Política de *deprecation*
+
+- **DEVE** *deprecation* ser anunciada com ≥ 12 meses de antecedência para features GA.
+- **DEVE** existir migration path documentado.
+- **DEVE** telemetria ativa de uso residual durante período de *deprecation*.
+
+### 28.3 Breaking changes
+
+- **NÃO DEVE** breaking changes em APIs GA sem bump de versão major + período de coexistência.
+- **DEVE** haver política de *semver* para APIs públicas.
+
+---
+
+## 29. Progressive Delivery
+
+### 29.1 Estratégias (PRINC-027)
+
+| Estratégia | Quando usar |
+|---|---|
+| **Canary** | Rollout incremental, % progressiva (1% → 10% → 50% → 100%) com *auto-rollback* |
+| **Blue-green** | Swap de versão inteira; rollback instantâneo via DNS |
+| **Rolling** | Gradual replacement de instâncias |
+| **Feature flags** | Decouple deploy de release; ativar por *tenant*, *region*, % |
+| **Shadow traffic** | Novo sistema recebe tráfego paralelo sem afetar resposta; compara outputs |
+
+### 29.2 Regras
+
+- **REG-PD-001**: Toda mudança em API de produção **DEVE** usar *canary* ou *blue-green*.
+- **REG-PD-002**: Toda mudança de schema **DEVE** seguir *expand-contract* (§21.4).
+- **REG-PD-003**: Feature flags **DEVEM** ter owner, *kill date*, e ser removidas após *kill date*.
+
+### 29.3 Taxonomia de feature flags
+
+| Tipo | Propósito | Vida típica |
+|---|---|---|
+| **Release flag** | Decouple deploy/release | dias-semanas |
+| **Experiment flag** | A/B test | semanas |
+| **Permission flag** | Liberar para subset de clientes | longa |
+| **Ops flag** | Kill switch, tuning | indefinida |
+
+---
+
+## 30. Test Strategy Philosophy
+
+### 30.1 Taxonomia de testes
+
+```
+         ▲ rare/slow/expensive
+         │
+         │   ┌───────────────┐
+         │   │  Chaos / DR   │
+         │   ├───────────────┤
+         │   │  E2E          │
+         │   ├───────────────┤
+         │   │  Integration  │
+         │   ├───────────────┤
+         │   │  Contract     │
+         │   ├───────────────┤
+         │   │  Property     │
+         │   ├───────────────┤
+         │   │  Unit         │
+         │   └───────────────┘
+         │
+         ▼ frequent/fast/cheap
+```
+
+### 30.2 Formato de shape: Trophy Testing
+
+Adotamos **Testing Trophy** (Kent C. Dodds, adaptado para backend):
+
+- **Base sólida de Unit + Property** para lógica.
+- **Grande centro de Integration + Contract** para confiança em boundaries.
+- **E2E + Chaos** mais raros mas essenciais para *critical user journeys*.
+
+### 30.3 Acceptance criteria em Gherkin
+
+**REG-TEST-001**: *Acceptance criteria* em Work Items **DEVEM** usar sintaxe Given-When-Then:
+
+```gherkin
+Given {contexto/estado inicial}
+When {ação}
+Then {resultado observável}
+And {resultado adicional}
+```
+
+### 30.4 Mutation testing
+
+- Obrigatório para paths críticos (auth, tenant isolation, billing).
+- Target: kill rate ≥ 75%.
+- Ferramenta: `cargo-mutants`.
+
+### 30.5 Property-based testing
+
+- Obrigatório para todo invariant declarado.
+- Iterations ≥ 1000 por teste.
+- Ferramenta: `proptest`.
+
+### 30.6 Contract testing
+
+- Obrigatório para toda integração com spec formal (REAPI, OCI, npm).
+- Ferramenta: test suites oficiais dos protocolos.
+
+---
+
+## 31. Incident Response e Post-Mortem
+
+### 31.1 Severidade
+
+| Severidade | Impacto |
+|---|---|
+| **SEV-1** | Outage total, data loss, security breach confirmado |
+| **SEV-2** | Degradação grave, features críticas indisponíveis |
+| **SEV-3** | Degradação parcial, SLO em risco mas não violado |
+| **SEV-4** | Issue menor, sem impacto imediato em clientes |
+
+### 31.2 Response
+
+- **DEVE** SEV-1/2 ter *Incident Commander* dedicado.
+- **DEVE** comunicação pública (status page) para SEV-1/2 em ≤ 30 min.
+- **DEVE** MTTA (Mean Time To Acknowledge), MTTD (Detect), MTTR (Resolve) medidos e trackados.
+
+### 31.3 Post-Mortem
+
+- **DEVE** post-mortem obrigatório para SEV-1/2; opcional SEV-3.
+- **DEVE** post-mortem *blameless* (PRINC-028).
+- **DEVE** conter: *timeline*, *impact*, *root cause*, *contributing factors*, *action items* com owner e prazo.
+- **DEVE** *action items* entrarem em backlog priorizado.
+
+### 31.4 Runbooks
+
+- **DEVE** cada *alert* ter *runbook* linkado.
+- **DEVE** *runbook* ser testável via *dry-run* (simulação).
+- **DEVE** *runbooks* serem revisados trimestralmente.
+
+---
+
+## 32. Architecture Fitness Functions
+
+### 32.1 Conceito
+
+*Fitness functions* (Neal Ford et al.) são **checks automatizados** que validam propriedades arquiteturais continuamente.
+
+### 32.2 Exemplos para CoreLink
+
+| FF-ID | Propriedade | Verificação |
+|---|---|---|
+| FF-001 | Tenant isolation | Property test com 2 tenants fictícios, 10k iterations |
+| FF-002 | Módulos respeitam camadas (UI → App → Domain → Infra) | `cargo-modules` + custom check |
+| FF-003 | Nenhuma dep proibida (ex: `openssl` direto, usar `rustls`) | `cargo deny` |
+| FF-004 | Binary size ≤ X MB | CI check pós-build |
+| FF-005 | Cold start ≤ Y ms | Benchmark em CI |
+| FF-006 | Nenhuma função >100 linhas | Linter |
+| FF-007 | Nenhum arquivo >1000 linhas | Linter |
+
+### 32.3 Cadência
+
+- **DEVEM** fitness functions rodar em CI em cada PR.
+- **DEVEM** quebras bloquear merge.
+
+---
+
+## 33. Technical Debt Management
+
+### 33.1 Registro
+
+- **DEVE** toda dívida técnica consciente ser registrada em `specs/technical_debt.md`.
+- **DEVE** cada item ter: contexto, custo de pagamento estimado, custo de carregar, prazo proposto.
+
+### 33.2 Classificação
+
+| Tipo | Exemplo |
+|---|---|
+| **Deliberate, prudent** | "Fizemos X rápido para lançar; sabemos que precisa Y depois" |
+| **Deliberate, reckless** | "Não temos tempo para design" — evitar |
+| **Inadvertent, prudent** | "Agora sabemos como deveríamos ter feito" |
+| **Inadvertent, reckless** | "Nem sabíamos" — evitar via educação |
+
+### 33.3 Sprint budget para dívida
+
+- **DEVE** sprint alocar ≥ 10% de capacidade para dívida técnica prioritária.
+- **NÃO DEVE** dívida ser ignorada por >3 sprints consecutivos.
+
+---
+
+# Parte VII — Processo
+
+## 34. Templates
+
+### 34.1 Sprint Contract
+
+Ver `_templates/sprint_contract.md` — template canônico com 22 seções obrigatórias.
+
+### 34.2 ADR / PDR / ODR
+
+Ver `_templates/adr.md` — template com 15 seções, aplicável aos 3 tipos com adaptações mínimas.
+
+### 34.3 Capability (esqueleto inline)
 
 ```markdown
 ## CAP-XXX: {Título}
 
 - **Status:** PROPOSED | ACCEPTED | DEPRECATED
-- **Introduzido em:** versão X
-- **Depende de:** CAP-YYY, CAP-ZZZ
-- **Personas:** PERSONA-XX, PERSONA-YY
+- **Introduzida em:** versão X
+- **Depende de:** CAP-YYY
+- **Personas:** PERSONA-XX
 - **JTBDs atendidos:** JTBD-XXX
 - **NFRs aplicáveis:** NFR-XXX
 - **Invariantes relacionados:** INV-XXX
+- **Cross-cutting concerns aplicáveis:** CC-SEC, CC-PRIV, CC-SRE (ver §16)
 
 ### Intent
 {uma frase}
@@ -616,303 +1696,525 @@ Esqueleto mínimo:
 {parágrafo}
 
 ### Entradas
-{especificação tipada}
+{tipo estruturado}
 
 ### Saídas
-{especificação tipada}
+{tipo estruturado}
 
-### Precondições
+### Precondições / Poscondições
 {lista}
 
-### Poscondições
-{lista}
+### Acceptance Criteria (Gherkin)
+Given {contexto}
+When {ação}
+Then {resultado}
 
-### Critérios de Aceite
-- Given ... When ... Then ...
-
-### Método de Verificação
-{teste, métrica, revisão humana}
+### Método de verificação
+- Teste principal: {arquivo}
+- Property test: {arquivo}
+- Load test: {arquivo}
 
 ### Observabilidade
 - Métricas: {lista}
 - Logs: {lista}
 - Traces: {lista}
+- Alertas: {lista}
+- Runbooks: {lista}
+
+### Lifecycle
+{PROPOSED | ALPHA | BETA | GA | DEPRECATED | REMOVED} — ver §28
+
+### Cross-cutting concerns
+- CC-SEC: {impacto + controles}
+- CC-PRIV: {impacto + controles} ou "N/A"
+- CC-SRE: {SLI/SLO linkado}
 ```
 
-### 10.4 Invariant — a ser detalhado no Nível 2 *freeze*
+### 34.4 Invariant (esqueleto inline)
 
 ```markdown
 ## INV-XXX: {Nome}
 
 - **Tipo:** Safety | Liveness
+- **Severidade:** CRITICAL | HIGH | MEDIUM | LOW
 - **Status:** ACTIVE | DEPRECATED
 
 ### Enunciado formal
-{∀ x . P(x) → Q(x) ou equivalente linguagem-natural precisa}
+{∀ x . P(x) → Q(x) ou TLA+ referenciado se CRITICAL}
 
 ### Enunciado em prosa
-{1-2 sentenças claras}
+{1-2 sentenças precisas}
 
 ### Escopo
-{onde o invariante deve valer: componentes, fluxos, janelas temporais}
+{onde deve valer: componentes, fluxos, janelas temporais}
 
 ### Método de verificação
-- Property-based test: {arquivo, função}
-- Integration test: {arquivo, função}
-- Runtime assertion: {se aplicável}
+- TLA+: {arquivo.tla} (se CRITICAL)
+- Property test: {arquivo}
+- Integration test: {arquivo}
+- Runtime assertion: {local, se aplicável}
 
 ### Consequência de violação
 - Severidade: CRITICAL | HIGH | MEDIUM | LOW
 - Blast radius: {escopo}
-- Mitigação: {procedimento}
+- Ação automática se detectado: {ex: feature freeze + page on-call}
+- Mitigação manual: {procedimento}
+```
+
+### 34.5 Runbook (esqueleto inline)
+
+```markdown
+# Runbook RB-XXX: {Nome}
+
+- **Versão:** X.Y.Z
+- **Última atualização:** YYYY-MM-DD
+- **Owner:** Nome
+- **Alert(s) disparador(es):** Alert-XXX
+- **Severity esperada:** SEV-1 | 2 | 3 | 4
+
+## Sintomas
+{o que on-call vê}
+
+## Impacto
+{impacto no cliente}
+
+## Primeira resposta (Triage ≤ 5 min)
+1. {passo}
+2. {passo}
+
+## Diagnóstico
+{queries, dashboards, comandos}
+
+## Mitigação
+{passos reversíveis}
+
+## Escalation
+Quando escalar: {condições}
+Para quem: {papel}
+
+## Pós-incident
+- [ ] Métricas confirmadas em baseline
+- [ ] Post-mortem agendado (se SEV-1/2)
+- [ ] Lições entram em backlog
+
+## Links
+- Dashboard: {url}
+- Runbooks relacionados: {lista}
 ```
 
 ---
 
-## 11. Diagramas
+## 35. Diagramas
 
-### 11.1 Notação obrigatória
+### 35.1 Notação obrigatória
 
-| Tipo de diagrama | Notação |
+| Tipo | Notação |
 |---|---|
-| Arquitetura (níveis C4) | **C4 Model** (Simon Brown) em Mermaid ou Structurizr |
-| Sequência / fluxo de request | **Mermaid `sequenceDiagram`** |
-| Máquina de estado | **Mermaid `stateDiagram-v2`** |
-| Modelo de dados | **Mermaid `erDiagram`** |
-| Grafo de dependências | **Mermaid `graph`** |
-| Threat model | **DFD** (Data Flow Diagram) ou STRIDE table |
+| Arquitetura C4 | Simon Brown C4 Model em Mermaid ou Structurizr |
+| Sequence | Mermaid `sequenceDiagram` |
+| State machine | Mermaid `stateDiagram-v2` |
+| ER (data model) | Mermaid `erDiagram` |
+| Grafo de dependências | Mermaid `graph` |
+| Threat model | DFD (Data Flow Diagram) com *trust boundaries* |
+| Attack tree | Mermaid `graph` top-down |
 
-### 11.2 Regras
+### 35.2 Regras
 
-- **REG-DIAG-001**: Diagramas **DEVEM** ser texto-fonte (não imagens binárias) para versionamento e diff.
-- **REG-DIAG-002**: Diagrama **DEVE** ser acompanhado de legenda textual equivalente para acessibilidade.
-- **REG-DIAG-003**: Diagrama **NÃO DEVE** introduzir informação que não esteja também em prosa estruturada no mesmo documento.
+- **REG-DIAG-001**: Diagramas **DEVEM** ser texto-fonte (Mermaid, PlantUML, DOT), não imagens binárias.
+- **REG-DIAG-002**: Diagrama **DEVE** ter descrição textual equivalente para acessibilidade.
+- **REG-DIAG-003**: Diagrama **NÃO DEVE** introduzir informação ausente em prosa estruturada.
+- **REG-DIAG-004**: Diagrama **DEVE** ter título e legenda.
 
 ---
 
-## 12. Processo de Revisão e Sign-off
+## 36. Processo de Revisão e Sign-off
 
-### 12.1 Papéis de revisão
+### 36.1 Papéis
 
 | Papel | Responsabilidade |
 |---|---|
-| **Autor** | Escreve o documento; responde a comentários |
-| **Revisor Técnico** | Valida rigor técnico, rastreabilidade, testabilidade |
-| **Revisor de Produto** | Valida alinhamento com visão, JTBDs, personas |
-| **Revisor de Segurança** | Valida *threat model*, controles, compliance |
-| **Revisor de Operações** | Valida observability, runbooks, reversibilidade |
+| **Autor** | Escreve, responde a comentários, itera |
+| **Revisor Técnico** | Rigor técnico, rastreabilidade, testabilidade |
+| **Revisor de Produto** | Alinhamento com visão, JTBDs, personas |
+| **Revisor de Segurança** | Threat model, controles, compliance |
+| **Revisor de Privacidade** | Privacy by Design, LINDDUN, direitos do titular |
+| **Revisor de Operações** | Observability, SLOs, runbooks, reversibilidade |
+| **Revisor de Compliance** | GDPR/LGPD/HIPAA/SOC 2 aplicáveis |
 | **Aprovador Final** | Autoriza `REVIEW → FROZEN` |
 
-### 12.2 SLAs de revisão
+### 36.2 SLAs de revisão
 
 | Tipo de documento | SLA padrão |
 |---|---|
-| ADR | 48 horas |
-| Capability | 72 horas |
-| Sprint Contract | 96 horas |
+| ADR/PDR/ODR | 48h |
+| Capability | 72h |
+| Sprint Contract | 96h |
 | PR/FAQ | 1 semana |
 | Quality Framework (Nível 5) | 2 semanas |
+| Framework 00 (este doc) | 2 semanas |
 
-### 12.3 Critério de aprovação
+### 36.3 Critério de aprovação
 
-Um documento **PODE** ser *frozen* se:
+Documento **PODE** ser *frozen* se:
 
 - [ ] Todos revisores requeridos deram ✅.
 - [ ] Todos comentários `MUST_FIX` resolvidos.
-- [ ] Aprovador final assinou explicitamente.
-- [ ] Critérios de *freeze* específicos do nível foram satisfeitos.
+- [ ] Aprovador Final assinou.
+- [ ] Critérios de *freeze* específicos do nível satisfeitos.
+- [ ] CI verde (lint, trace check, link check).
 
-Comentários classificados em:
+### 36.4 Classificação de comentários
 
-- `MUST_FIX` — bloqueia *freeze*.
-- `SHOULD_FIX` — não bloqueia mas registra dívida.
-- `NIT` — melhoria estilística opcional.
-- `QUESTION` — pede esclarecimento.
-- `PRAISE` — reconhece ponto forte (não bloqueia).
+| Tipo | Impacto |
+|---|---|
+| `MUST_FIX` | Bloqueia *freeze* |
+| `SHOULD_FIX` | Não bloqueia; registra dívida |
+| `NIT` | Melhoria estilística opcional |
+| `QUESTION` | Pede esclarecimento |
+| `PRAISE` | Reconhece ponto forte |
 
-### 12.4 Dissent protocol
+### 36.5 Dissent protocol
 
-Se revisor emite *dissent* irreconciliável:
+Em caso de *dissent* irreconciliável:
 
-1. Discussão escrita de no mínimo 24h no documento.
+1. Discussão escrita ≥ 24h no documento.
 2. Se não resolvido, escalação ao Aprovador Final.
-3. Aprovador Final decide, com justificativa escrita no *change log*.
-4. *Dissent* minoritário é preservado como seção no próprio documento (`### Apêndice: Dissent`).
+3. Aprovador decide com justificativa registrada no *change log*.
+4. *Dissent* minoritário preservado em apêndice `## Apêndice: Dissents`.
 
 ---
 
-## 13. Tooling e CI
+## 37. Tooling e CI
 
-### 13.1 Linters obrigatórios
+### 37.1 Linters obrigatórios
 
 | Ferramenta | Propósito |
 |---|---|
-| `markdownlint` | Sintaxe markdown consistente |
-| `vale` | *Prose linting* (estilo, banned words) |
-| `lychee` ou `markdown-link-check` | Verificação de links quebrados |
-| Custom trace checker (Python/Rust) | Valida rastreabilidade CAP↔WI↔teste↔código |
+| `markdownlint` | Sintaxe Markdown |
+| `vale` | *Prose linting*: banned words, style, termos capitalizados |
+| `lychee` ou `markdown-link-check` | Links válidos |
+| `trace-check` (custom) | Rastreabilidade CAP↔WI↔teste↔código |
+| `frozen-check` (custom) | Docs FROZEN não mudaram sem *thaw* |
+| `id-check` (custom) | Numeração consistente, sem duplicatas |
+| `diagram-check` (custom) | Mermaid parseia sem erro |
 
-### 13.2 CI mandatório (GitHub Actions)
+### 37.2 CI obrigatório em PRs de specs
 
-Sobre cada PR em `specs/`:
+- [ ] markdownlint: zero erros
+- [ ] vale: zero `error` (warnings aceitos)
+- [ ] link checker: 100% válidos
+- [ ] trace-check: toda referência aponta para ID existente
+- [ ] frozen-check: docs FROZEN imutáveis sem label `thaw`
+- [ ] id-check: nenhum ID duplicado
+- [ ] diagram-check: Mermaid válido
 
-- [ ] Markdownlint: zero erros.
-- [ ] Vale: zero `error` (warnings permitidos).
-- [ ] Link checker: 100% links válidos.
-- [ ] Trace checker: toda referência a CAP-XXX, INV-XXX, ADR-XXXX, S-XX existe.
-- [ ] Frozen-check: documentos `FROZEN` não mudaram sem *thaw* registrado.
-- [ ] Status-check: todo documento tem bloco de metadata válido.
+### 37.3 PR discipline
 
-### 13.3 PR discipline
-
-- **REG-PR-001**: PR que altera doc `FROZEN` **DEVE** ter label `thaw` e link para justificativa.
-- **REG-PR-002**: PR que cria doc novo **DEVE** incluir: IDs atribuídos, pai (upstream), status inicial (`DRAFT`).
-- **REG-PR-003**: PR que altera numeração **DEVE** ser rejeitado (violação de PRINC-006).
+- **REG-PR-001**: PR que altera doc FROZEN **DEVE** ter label `thaw` + link justificativa.
+- **REG-PR-002**: PR que cria doc novo **DEVE** declarar IDs atribuídos, parent upstream, status inicial (`DRAFT`).
+- **REG-PR-003**: PR que altera numeração **DEVE** ser rejeitado (PRINC-006 violado).
+- **REG-PR-004**: PR descrição **DEVE** explicar *por que*, não apenas *o quê*.
 
 ---
 
-## 14. Anti-padrões
+## 38. Red Team e Adversarial Review
+
+### 38.1 Propósito
+
+Specs podem estar **bem escritas mas erradas**. Adversarial review simula:
+
+- Ataque de segurança (red team).
+- Questionamento de produto (contrarian review).
+- Simulação de suporte (customer frustration).
+- Simulação de engenheiro novo (onboarding).
+
+### 38.2 Cadência
+
+| Tipo | Frequência |
+|---|---|
+| Security red team | Trimestral |
+| Product contrarian review | Antes de launch major |
+| Customer frustration review | Antes de *freeze* de PR/FAQ |
+| New engineer onboarding review | Trimestral |
+
+### 38.3 Output
+
+- Red team produz relatório com *findings* classificados por severidade.
+- *Findings* viram ADRs/PDRs se requerem decisão estratégica.
+- Specs atualizadas conforme necessário (com *thaw* formal).
+
+---
+
+# Parte VIII — Referência
+
+## 39. Anti-padrões
 
 ### AP-001 — Spec como "whiteboard ao vivo"
 
-❌ Specs que mudam toda semana sem versionamento, sem *freeze*, sem *change log*.
+❌ Specs mudando toda semana sem versionamento, sem *freeze*, sem *change log*.
+✅ Specs versionadas, com *freeze*, auditoria de mudança.
 
-✅ Specs versionadas, com *freeze*, com auditoria de mudança.
-
-### AP-002 — "Vamos decidir isso durante a implementação"
+### AP-002 — "Decidimos durante a implementação"
 
 ❌ Deixar decisões arquiteturais para o sprint.
-
-✅ Decidir em ADR (Nível 3) **antes** do sprint começar.
+✅ Decidir em ADR (Nível 3) **antes** do sprint.
 
 ### AP-003 — Capability vaga
 
 ❌ "O sistema deve permitir o usuário gerenciar cache."
-
-✅ "CAP-042: O sistema **DEVE** expor `DELETE /v1/tenants/{id}/cache` que deleta todos *blobs* do *tenant* de forma idempotente, retornando 204 em ≤ 30s p99, e emitindo evento `tenant.cache.purged` para o event bus."
+✅ "CAP-042: O sistema **DEVE** expor `DELETE /v1/tenants/{id}/cache` que deleta *blobs* do *tenant* de forma idempotente, retornando 204 em ≤ 30s p99, emitindo `tenant.cache.purged`."
 
 ### AP-004 — Teste como documentação
 
-❌ Afirmar que o teste de integração "é" a spec.
-
-✅ Spec é documento prosa + RFC 2119 + invariantes. Testes **verificam** a spec mas não a substituem.
+❌ "O teste de integração é a spec."
+✅ Spec é documento prosa + RFC 2119 + invariants. Testes verificam spec mas não a substituem.
 
 ### AP-005 — "Isso é detalhe de implementação"
 
-❌ Esconder decisões arquiteturais importantes sob o rótulo de "detalhe".
-
-✅ Se altera invariantes, NFRs ou trade-offs relevantes, é **decisão arquitetural** e merece ADR.
+❌ Esconder decisões importantes sob "detalhe".
+✅ Se altera invariants, NFRs ou trade-offs: **decisão arquitetural**, merece ADR.
 
 ### AP-006 — Sprint que nunca termina
 
-❌ Sprint com "últimos 5% pendentes" que se estende indefinidamente.
-
-✅ Sprint tem *exit criteria* binários. Não cumpriu? Sprint **não passa**. Decomponha ou assuma falha e aprenda.
+❌ Sprint com "últimos 5% pendentes" que se estende.
+✅ Sprint tem *exit criteria* binários. Não cumpriu? Sprint **não passa**. Decomponha ou declare falha.
 
 ### AP-007 — Cerimônia sem rigor
 
 ❌ Muito documento com pouco conteúdo verificável.
+✅ Cada seção com propósito. Se não afeta decisão, teste ou comportamento, não pertence.
 
-✅ Cada seção tem propósito. Se a seção não afeta alguma decisão, teste ou comportamento, ela não pertence ao documento.
-
-### AP-008 — Premature optimization da spec
+### AP-008 — Premature spec optimization
 
 ❌ Detalhar *ad nauseam* áreas que não serão construídas em 6+ meses.
-
-✅ Granularidade proporcional à proximidade de execução, **mas** com conjunto completo garantindo que nada essencial fique fora.
+✅ Granularidade proporcional à proximidade de execução, mas conjunto completo garantindo nada essencial fique fora.
 
 ### AP-009 — Falta de anti-scope
 
-❌ Documento lista o que faz mas não o que **não** faz.
-
+❌ Documento lista o que faz, não o que **não** faz.
 ✅ Anti-scope explícito previne *scope creep* e *feature bloat*.
+
+### AP-010 — "Security depois"
+
+❌ "Vamos lançar, depois endurecemos."
+✅ Segurança é fundação (PRINC-014, PRINC-019). *Retrofit* de segurança custa 10–100× mais.
+
+### AP-011 — "Observability no próximo sprint"
+
+❌ Código em produção sem métricas/logs/traces.
+✅ PRINC-013: observability é parte da spec de capability.
+
+### AP-012 — ADR sem alternativas
+
+❌ ADR que declara decisão mas não enumera alternativas.
+✅ PRINC-011: ≥ 2 alternativas registradas, com pros/cons/razão de rejeição.
+
+### AP-013 — One-way door sem consciência
+
+❌ Tomar decisão irreversível sem reconhecer que é irreversível.
+✅ PRINC-012: toda decisão classifica reversibilidade explicitamente.
+
+### AP-014 — Métrica de vaidade
+
+❌ "Temos 10.000 usuários" sem contexto (ativos? pagantes? DAU?).
+✅ Métricas de sucesso têm definição operacional clara + *guardrail metric* inverso.
+
+### AP-015 — Feature flag eterna
+
+❌ Feature flag implementada, nunca removida, acumulando débito.
+✅ REG-PD-003: toda flag tem *kill date* e owner.
+
+### AP-016 — Runbook não-testado
+
+❌ Runbook escrito mas nunca executado.
+✅ Runbooks testados em *dry-run* trimestralmente; chaos testing dispara cenários.
+
+### AP-017 — Silent failure
+
+❌ Exception engolida com `_ = result` ou `catch { }`.
+✅ Toda falha emite métrica/log/trace. Silêncio é bug.
+
+### AP-018 — Premature abstraction
+
+❌ Criar trait/interface genérica para 1 implementação "porque vai crescer".
+✅ YAGNI. Abstração aparece quando 3ª implementação motiva.
+
+### AP-019 — Shared mutable state escondido
+
+❌ `static mut`, `lazy_static` com `Mutex`, `Arc<Mutex<Arc<Mutex<...>>>>`.
+✅ Estado explícito, owned, preferir *actor model* ou *message passing*.
+
+### AP-020 — God doc
+
+❌ Um doc de 10.000 linhas que "cobre tudo".
+✅ Documentos focados, linkados, com escopo definido. Este framework é limite (e justificado por ser *meta*).
 
 ---
 
-## 15. Glossário
+## 40. Glossário
 
-Termos canônicos do CoreLink. Uso consistente em todas as specs.
+> Termos canônicos do CoreLink. Uso **consistente** em specs, código, logs, UI, docs (Ubiquitous Language — PRINC-017).
+
+### 40.1 Produto
 
 | Termo | Definição |
 |---|---|
-| **CoreLink** | Nome do produto: shared content-addressable cache for developers. |
+| **CoreLink** | Nome do produto: *shared content-addressable cache for developers*. |
 | **Tenant** | Entidade isolada (usuário individual ou organização) que consome CoreLink. |
-| **CAS** | *Content-Addressable Storage*: armazenamento indexado por hash do conteúdo. |
-| **AC** | *Action Cache*: mapeamento de hash de ação → hash de resultado (REAPI). |
-| **Digest** | Hash criptográfico identificador de um *blob* (tipicamente SHA-256 ou BLAKE3). |
-| **Manifest** | *Blob* especial contendo metadata de um *blob* decomposto em chunks Merkle. |
-| **Chunk** | Bloco de tamanho fixo (ex: 2 MiB) resultante da decomposição de *blob* grande. |
-| **Dedup** | *Deduplication*: reaproveitamento de *blob/chunk* idêntico entre múltiplas referências. |
-| **REAPI** | *Remote Execution API* v2, spec do Bazel: [github.com/bazelbuild/remote-apis](https://github.com/bazelbuild/remote-apis). |
-| **Sprint Contract** | Documento formal e inviolável de Nível 4 que governa um sprint. |
+| **Principal** | Entidade autenticada agindo em nome de um *tenant* (user, service, token). |
+| **Workspace** | Sinônimo proibido de *tenant*. Não usar. |
+| **Organization** | Sinônimo proibido de *tenant* em contexto CoreLink. |
+
+### 40.2 Storage / CAS
+
+| Termo | Definição |
+|---|---|
+| **CAS** | *Content-Addressable Storage*: armazenamento indexado por *digest* do conteúdo. |
+| **AC** | *Action Cache*: mapeamento de *action digest* → *result digest* (REAPI). |
+| **Digest** | Hash criptográfico identificador de um *blob* (tipicamente BLAKE3 ou SHA-256). |
+| **Digest function** | Função de hash: BLAKE3, SHA-256. |
+| **Blob** | Objeto armazenado em CAS, identificado por *digest*. |
+| **Manifest** | *Blob* especial contendo metadata de *blob* decomposto em *chunks* Merkle. |
+| **Chunk** | Bloco de tamanho fixo (ex: 2 MiB) resultante de decomposição de *blob* grande. |
+| **Dedup** | *Deduplication*: reaproveitamento de *blob/chunk* idêntico entre referências. |
+
+### 40.3 Protocolos
+
+| Termo | Definição |
+|---|---|
+| **REAPI** | *Remote Execution API* v2, spec Bazel. |
+| **Bazel HTTP cache** | Protocolo HTTP alternativo do Bazel. |
+| **sccache** | Cache de compilador Mozilla. |
+| **Turborepo Remote Cache** | Cache HTTP Vercel para Turborepo. |
+| **OCI Distribution** | Spec Docker/container image distribution. |
+| **GOPROXY** | Protocolo Go modules proxy. |
+
+### 40.4 Processo de spec
+
+| Termo | Definição |
+|---|---|
+| **Sprint Contract** | Documento formal inviolável de Nível 4. |
 | **DoR** | *Definition of Ready*: critérios de entrada de sprint. |
 | **DoD** | *Definition of Done*: critérios de saída de sprint. |
-| **Invariant (Safety)** | Propriedade "nada ruim acontece": ∀ estado, P(estado) é verdade. |
-| **Invariant (Liveness)** | Propriedade "algo bom eventualmente acontece": ∃ momento futuro em que P(estado) será verdade. |
+| **Frozen** | Estado imutável de documento. |
+| **Thaw** | Reabertura controlada de documento *frozen*. |
+| **Supersedes** | Relação de substituição (ADR-B supersedes ADR-A). |
+
+### 40.5 Invariants
+
+| Termo | Definição |
+|---|---|
+| **Safety invariant** | "Nada ruim acontece": ∀ estado alcançável, P(estado) é verdade. |
+| **Liveness invariant** | "Algo bom eventualmente acontece": ∃ momento futuro em que P será verdade. |
+| **Blast radius** | Escopo de impacto de violação de invariante ou falha. |
+
+### 40.6 Reversibility / Decision
+
+| Termo | Definição |
+|---|---|
 | **One-way door** | Decisão custosa ou impossível de reverter (Bezos framework). |
 | **Two-way door** | Decisão facilmente reversível. |
-| **FMEA** | *Failure Mode and Effects Analysis*. |
-| **SLO** | *Service Level Objective*. |
-| **SLI** | *Service Level Indicator*. |
-| **Trace** | (1) *Distributed trace* em observability; (2) referência bidirecional entre artefatos de spec. |
-| **Freeze** | Transição de documento para estado imutável `FROZEN`. |
-| **Thaw** | Reabertura de documento `FROZEN` para edição (processo controlado). |
+| **Hybrid door** | Reversível dentro de janela T; após T, one-way. |
+| **ADR / PDR / ODR** | Architecture / Product / Operational Decision Record. |
+
+### 40.7 SRE / Observability
+
+| Termo | Definição |
+|---|---|
+| **SLI** | Service Level Indicator (métrica). |
+| **SLO** | Service Level Objective (alvo). |
+| **SLA** | Service Level Agreement (contratual). |
+| **Error Budget** | `1 - SLO` tolerável em janela. |
+| **Four Golden Signals** | Latency, Traffic, Errors, Saturation. |
+| **MTTA** | Mean Time To Acknowledge. |
+| **MTTD** | Mean Time To Detect. |
+| **MTTR** | Mean Time To Resolve. |
+| **MTBF** | Mean Time Between Failures. |
+
+### 40.8 Segurança
+
+| Termo | Definição |
+|---|---|
+| **Trust boundary** | Linha onde nível de confiança muda (ex: internet ↔ datacenter). |
+| **STRIDE** | Framework threat modeling (Microsoft). |
+| **LINDDUN** | Framework privacy threat modeling. |
+| **SLSA** | *Supply-chain Levels for Software Artifacts*. |
+| **SBOM** | *Software Bill of Materials*. |
+| **PII** | *Personally Identifiable Information*. |
+
+### 40.9 Misc
+
+| Termo | Definição |
+|---|---|
+| **Idempotent** | Operação que, executada N vezes, tem mesmo efeito que 1 vez. |
+| **Ubiquitous Language** | Vocabulário único e consistente (DDD, Evans). |
+| **Fitness function** | Check automatizado de propriedade arquitetural (Neal Ford). |
+| **Blameless post-mortem** | Análise pós-incident focada em sistema, não pessoas. |
 
 ---
 
-## 16. Meta-regras (Evolução deste Framework)
+## 41. Meta-regras (Evolução deste Framework)
 
-### 16.1 Como este framework evolui
+### 41.1 Como este framework evolui
 
-Este próprio documento segue as regras que define:
+Este documento segue as regras que define:
 
-- Tem *status*, *versão*, *change log*, *sign-off*.
+- Tem *status*, versão, *change log*, *sign-off*.
 - Mudanças passam por `DRAFT → REVIEW → FROZEN`.
-- Bumping de **versão maior** (X.Y.Z, X) requer auditoria de todos os documentos downstream.
-- Bumping de **versão menor** (X.Y) permitida sem auditoria obrigatória, mas com *change log*.
-- **Patch** (X.Y.Z) para correções tipográficas e esclarecimentos que **NÃO** mudam semântica.
+- *Bump* de **major** requer auditoria de todos documentos downstream.
+- *Bump* de **minor** sem auditoria obrigatória, mas com *change log*.
+- *Patch* para correções tipográficas e esclarecimentos que **não** mudam semântica.
 
-### 16.2 Semver para specs
+### 41.2 Semver para specs
 
 | Bump | Critério |
 |---|---|
-| Major (X.0.0) | Mudança em princípio fundamental, regra inviolável ou template obrigatório |
-| Minor (X.Y.0) | Adição de regra, template, seção, ou refinamento sem quebrar downstream |
-| Patch (X.Y.Z) | Correção tipográfica, clarificação que não muda semântica |
+| Major (X.0.0) | Mudança em princípio fundamental, regra inviolável, template obrigatório, ou remoção de capacidade |
+| Minor (X.Y.0) | Adição de princípio, regra, seção, template ou refinamento não-quebrador |
+| Patch (X.Y.Z) | Correção tipográfica, clarificação sem mudança semântica |
 
-### 16.3 Exceções
+### 41.3 Exceções
 
-Em casos excepcionais em que regra deste framework impede resolução de problema real, o processo é:
+Em casos em que regra deste framework impede resolução de problema real:
 
-1. Proposição formal de mudança (PR com label `framework-change`).
+1. Proposição formal (PR com label `framework-change`).
 2. Revisão obrigatória pelo Aprovador Final.
 3. Aceitação **apenas se** alternativas foram exauridas.
-4. Documentação em `### 16.4 Exceções Históricas` abaixo.
+4. Documentação em `## 41.4 Exceções Históricas`.
 
-### 16.4 Exceções Históricas
+### 41.4 Exceções Históricas
 
 *Nenhuma no momento.*
 
+### 41.5 Revisão periódica
+
+- **Trimestral**: revisão leve por Aprovador Final + 1 engenheiro — caça drift, desatualizações.
+- **Anual**: revisão profunda com adversarial review (§38).
+
 ---
 
-## 17. Change Log
+## 42. Change Log
 
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
-| 0.1.0 | 2026-04-24 | Gustavo Schneiter (via Claude Opus 4.7) | Versão inicial do framework |
+| 0.1.0 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | Versão inicial (15 princípios, estrutura básica) |
+| 0.2.0 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | **Revisão SOTA**: expandiu 15→30 princípios; adicionou Partes III (linguagem), IV (rigor formal), V (cross-cutting concerns), VI (engenharia e entrega); 24 seções novas; formalizou TLA+, ISO/IEC 25010, SRE, STRIDE, LINDDUN, SLSA, Cavoukian, DDD Ubiquitous Language, Feature Lifecycle, Progressive Delivery, Resilience Patterns, Fitness Functions, Technical Debt, AI Governance; 11 anti-padrões adicionais (9→20) |
 
 ---
 
-## 18. Revisão
+## 43. Revisão
 
-### Revisores requeridos para *freeze* deste documento
+### 43.1 Revisores requeridos para *freeze*
 
 - [ ] **Gustavo Schneiter** (Aprovador Final) — ____________ YYYY-MM-DD
+- [ ] **Revisor Técnico** *(a nomear)* — ____________ YYYY-MM-DD
+- [ ] **Revisor de Segurança** *(a nomear)* — ____________ YYYY-MM-DD
+- [ ] **Revisor de Produto** *(a nomear)* — ____________ YYYY-MM-DD
 
-### Comentários de revisão
+### 43.2 Comentários de revisão
 
-*(a ser preenchido durante revisão)*
+*(a preencher durante revisão)*
 
 ---
 
-**Fim do Framework 00.**
+**Fim do Framework 00 — Spec de como especificamos o CoreLink.**
