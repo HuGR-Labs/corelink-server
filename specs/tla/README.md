@@ -27,6 +27,7 @@ tags: ["tla", "formal-verification", "evidence"]
 | `tenant_isolation.tla` + `.cfg` | InvTenantIsolationRead + Write + Enum + InvPrefixInjective + InvNamespaceConsistency. Adversarial: Write, List com content, PathGuess, TryWriteCrossTenant. | ~390k states | ✅ verde |
 | `gc_correctness.tla` + `.cfg` | InvGCReRefProtected + InvMarkingConsistent. Multi-pass Mark com interleaving UpdateActionResult (INV-GC-004 real). | ~170k states | ✅ verde |
 | `cas_integrity.tla` + `.cfg` | InvCASIntegrityUncorrupted + InvClientVerifyIsSound + InvCASImmutability + InvPoisoningRejected. Adversarial: BitRot muta r2_storage body real (não flag). | ~3k states | ✅ verde |
+| `audit_immutability.tla` + `.cfg` | InvAuditAppendOnly + InvAuditChainIntact + InvAuditOrderPreserved + InvAuditRejectTamper. Adversarial: TryDelete, TryReplace, TryReorder (adjacent). Criado Lote 6.2 endereçando T-02 do re-audit. | ~5k states | ✅ verde |
 
 ## Como rodar
 

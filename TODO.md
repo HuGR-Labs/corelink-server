@@ -20,7 +20,8 @@
 - [ ] Criar `src/auth/clerk.rs` — JWKS fetch + JWT validate
 - [ ] Criar `src/auth/tenant.rs` — extrai tenant_id do claim `org_id`
 - [ ] Middleware tower pra interceptar gRPC, validar token, injetar tenant
-- [ ] Namespacing de R2 key por tenant: `cas/{tenant_id}/{digest}`
+- [ ] Namespacing de R2 key por tenant: `cas-<region>/<HMAC(tenant_key, tenant_id)[:16]>/<digest_fn>/<hex[0:2]>/<hex[2:4]>/<hex>` (ver `specs/03_architecture/remote_cache_product_profile.md §7.1` + `data_model.md §5.1`; HMAC obrigatório, plaintext `tenant_id` em key é **proibido** — viola CTRL-AUTH-004 + CTRL-ISO-001 e quebra INV-TENANT-ISOLATION. Corrige T-01 do audit Lote 5.)
+- [ ] Lib central `tenant_path::derive_prefix(tenant_id)` — única função que deriva prefix; property test garantindo 2 tenants distintos → 2 prefixes distintos.
 - [ ] Teste: 2 tenants diferentes não veem blobs um do outro
 
 ## Semana 3 — CAS Decomposition (SOTA)
