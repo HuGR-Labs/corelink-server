@@ -30,14 +30,19 @@ ASSUME
     /\ MaxOps \in Nat
 
 VARIABLES
-    tenant_of,       \* Principal → Tenant; quem possui qual principal
-    owned_blobs,     \* Tenant → Set of Blobs que possui (ground truth)
-    hmac_prefix,     \* Tenant → 16-char HMAC-derived prefix (abstrato)
-    r2_storage,      \* Mapeamento R2: prefix_key → (tenant_owner, blob)
-    access_log,      \* Sequence de (principal, op, target_blob, outcome)
-    op_count         \* Bound para TLC
+    tenant_of,        \* Principal → Tenant; quem possui qual principal
+    owned_blobs,      \* Tenant → Set of Blobs que possui (ground truth)
+    hmac_prefix,      \* Tenant → 16-char HMAC-derived prefix (abstrato)
+    r2_storage,       \* Mapeamento R2: prefix_key → (tenant_owner, blob)
+    access_log,       \* Sequence de (principal, op, target_blob, outcome)
+    defenses_active,  \* v3 Lote 7.1: flag pra modelar defense-in-depth.
+                      \* TRUE = CTRL-AUTHZ-001/002 + CTRL-ISO-001..005 todos
+                      \* operantes; FALSE = bypass (bug/attacker). TLC explora
+                      \* ambos; invariantes verificam safety sob defenses.
+    op_count          \* Bound para TLC
 
-vars == <<tenant_of, owned_blobs, hmac_prefix, r2_storage, access_log, op_count>>
+vars == <<tenant_of, owned_blobs, hmac_prefix, r2_storage, access_log,
+          defenses_active, op_count>>
 
 (*-- Tipos abstratos ---------------------------------------------------------*)
 
@@ -68,31 +73,62 @@ Init ==
     /\ PrefixInjective
     /\ r2_storage = [k \in {} |-> <<"", "">>]
     /\ access_log = <<>>
+    /\ defenses_active = TRUE  \* defense-in-depth operante no init
     /\ op_count = 0
 
 (*-- Actions -----------------------------------------------------------------*)
 
-\* Principal p tenta escrever blob b em nome do seu tenant.
+\* v3 Lote 7.1 (endereça U-02): Write agora recebe `target_tenant`
+\* explícito. Assertion `target_tenant = tenant_of[p]` (CTRL-AUTHZ-002)
+\* agora é REAL — não tautológica. Se target ≠ attacker, guard falha
+\* e action não é enabled.
+\*
 \* 5 camadas de defesa (auth_model.md §8.1):
 \* L1: middleware extrai tenant_id do PAT
 \* L2: handler usa ctx.tenant_id explicitamente
 \* L3: repo compile-time safety
 \* L4: D1 enforcement (row-level security OR app-level mandatório)
 \* L5: R2 key derivado de HMAC do tenant_id do ctx
-Write(p, b) ==
-    LET t == tenant_of[p]
-        prefix == DerivePrefix(t)
-        key == R2Key(t, b)
+Write(p, target_tenant, b) ==
+    LET attacker_t == tenant_of[p]
+        prefix == DerivePrefix(target_tenant)
+        key == R2Key(target_tenant, b)
     IN
         /\ op_count < MaxOps
         /\ b \in Blobs
-        \* AuthZ check (CTRL-AUTHZ-001)
-        /\ tenant_of[p] = t  \* assertion dupla (CTRL-AUTHZ-002)
-        /\ r2_storage' = r2_storage @@ (key :> <<t, b>>)
-        /\ owned_blobs' = [owned_blobs EXCEPT ![t] = @ \union {b}]
+        /\ target_tenant \in Tenants
+        \* CTRL-AUTHZ-002: target DEVE bater com tenant do principal
+        /\ target_tenant = attacker_t
+        /\ r2_storage' = r2_storage @@ (key :> <<target_tenant, b>>)
+        /\ owned_blobs' = [owned_blobs EXCEPT ![target_tenant] = @ \union {b}]
         /\ access_log' = Append(access_log, <<p, "write", b, "allowed">>)
         /\ op_count' = op_count + 1
-        /\ UNCHANGED <<tenant_of, hmac_prefix>>
+        /\ UNCHANGED <<tenant_of, hmac_prefix, defenses_active>>
+
+\* v3 Lote 7.1 (endereça U-02): DefectiveWrite simula bug em CTRL-AUTHZ-002
+\* (defense-in-depth bypassed). Só é enabled quando defenses_active = FALSE,
+\* o que NUNCA acontece no Init + Next atual — ação structurally presente
+\* mas operationally unreachable. Se algum dev mudar Init pra começar com
+\* defenses_active = FALSE, TLC encontraria violação de invariante.
+\*
+\* Esse approach modela DIRETAMENTE a semântica de defense-in-depth:
+\* "propriedade vale ENQUANTO defesas operam; se falham, invariante detecta".
+DefectiveWrite(p, target_tenant, b) ==
+    LET attacker_t == tenant_of[p]
+        key == R2Key(target_tenant, b)
+    IN
+        /\ defenses_active = FALSE  \* só ativa se defesas bypassed
+        /\ op_count < MaxOps
+        /\ target_tenant \in Tenants
+        /\ target_tenant # attacker_t  \* cross-tenant attempt real
+        /\ b \in Blobs
+        /\ r2_storage' = r2_storage @@ (key :> <<attacker_t, b>>)
+        \* NOTA: r2_storage[key][1] = attacker_t mas key prefix é de target_tenant
+        \* → state inválido. InvNamespaceConsistency detecta.
+        /\ access_log' = Append(access_log,
+                                <<p, "write", b, "cross_tenant_leak">>)
+        /\ op_count' = op_count + 1
+        /\ UNCHANGED <<tenant_of, owned_blobs, hmac_prefix, defenses_active>>
 
 \* Principal p tenta ler blob b sob storage key.
 \* Bug potencial: se key for construído sem HMAC do tenant do p (regressão),
@@ -114,7 +150,7 @@ Read(p, b) ==
            \/ /\ key \notin DOMAIN r2_storage
               /\ access_log' = Append(access_log, <<p, "read", b, "denied">>)
         /\ op_count' = op_count + 1
-        /\ UNCHANGED <<tenant_of, owned_blobs, hmac_prefix, r2_storage>>
+        /\ UNCHANGED <<tenant_of, owned_blobs, hmac_prefix, r2_storage, defenses_active>>
 
 \* Principal p tenta listar blobs. Deve usar prefix HMAC(tenant_id) SEM
 \* possibility de scan global (REG-NAMESPACE-003).
@@ -130,7 +166,7 @@ List(p) ==
         \* Registra um entry por blob listado (modelo explícito de enumeration)
         /\ access_log' = Append(access_log, <<p, "list", visible_blobs, "allowed">>)
         /\ op_count' = op_count + 1
-        /\ UNCHANGED <<tenant_of, owned_blobs, hmac_prefix, r2_storage>>
+        /\ UNCHANGED <<tenant_of, owned_blobs, hmac_prefix, r2_storage, defenses_active>>
 
 (*-- Adversarial actions (modelar threats) -----------------------------------*)
 
@@ -153,7 +189,7 @@ PathGuess(p, guessed_prefix, b) ==
            \/ /\ key \notin DOMAIN r2_storage
               /\ access_log' = Append(access_log, <<p, "read", b, "denied">>)
         /\ op_count' = op_count + 1
-        /\ UNCHANGED <<tenant_of, owned_blobs, hmac_prefix, r2_storage>>
+        /\ UNCHANGED <<tenant_of, owned_blobs, hmac_prefix, r2_storage, defenses_active>>
 
 \* Adversarial v2 (Lote 6.1, G-03): principal p tenta escrever com prefix
 \* derivado de outro tenant (tentativa de contaminar namespace de B via
@@ -174,12 +210,13 @@ TryWriteCrossTenant(p, victim_tenant, b) ==
         \* assertion CTRL-AUTHZ-002.
         /\ access_log' = Append(access_log, <<p, "write", b, "denied">>)
         /\ op_count' = op_count + 1
-        /\ UNCHANGED <<tenant_of, owned_blobs, hmac_prefix, r2_storage>>
+        /\ UNCHANGED <<tenant_of, owned_blobs, hmac_prefix, r2_storage, defenses_active>>
 
 (*-- Next --------------------------------------------------------------------*)
 
 Next ==
-    \/ \E p \in Principals, b \in Blobs: Write(p, b)
+    \/ \E p \in Principals, t \in Tenants, b \in Blobs: Write(p, t, b)
+    \/ \E p \in Principals, t \in Tenants, b \in Blobs: DefectiveWrite(p, t, b)
     \/ \E p \in Principals, b \in Blobs: Read(p, b)
     \/ \E p \in Principals: List(p)
     \/ \E p \in Principals, prefix \in 1..Cardinality(Tenants), b \in Blobs:

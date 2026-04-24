@@ -186,34 +186,27 @@ Spec == Init /\ [][Next]_vars
 
 (*-- Invariantes CRITICAL ----------------------------------------------------*)
 
-\* INV-GC-001: blob reachable no momento do sweep nunca é physicamente
-\* deletado. Formalização: se blob está em physically_deleted, então ele
-\* NÃO é atualmente reachable.
-\* NOTA: INV-GC-001 é sobre o momento do sweep — se blob foi sweepado sem
-\* estar reachable, depois re-uploadeado e re-referenciado, é OK estar
-\* reachable agora. O modelo v2 não tem resurrection path, mas podemos
-\* verificar: nenhum blob em physically_deleted é REFERENCIADO por AC entry
-\* criada ANTES do sweep.
+\* INV-GC-001 (reformulada Lote 7.1 endereçando C-01/U-01):
+\* Nenhum blob physically_deleted é atualmente referenciado por alguma
+\* AC entry ativa. Formalização direta: após sweep, blob deletado não
+\* tem nenhuma referência ativa no state atual.
+\* Se post-condição falhar, sweep deletou um blob que estava reachable
+\* — bug direto em INV-GC-001 (violação de CTRL-GC-001).
 InvGCReachableNeverDeleted ==
     \A b \in physically_deleted:
-        \A e \in DOMAIN ac_entries:
-            (b \in ac_entries[e].blob_refs /\
-             ac_entries[e].created_at <= blob_meta[b].deleted_at) =>
-                \* Se AC criada antes do delete, deveria ter sido observada
-                \* no mark_set OU criada antes do mark_started_at e invalidated
-                FALSE
+        ~(\E e \in DOMAIN ac_entries: b \in ac_entries[e].blob_refs)
 
-\* INV-GC-004: blob re-referenciado via UpdateActionResult depois de
-\* mark_started_at é preservado mesmo durante sweep in-flight.
-\* Modelo: nenhum blob em physically_deleted tem AC entry com
-\* created_at >= mark_started_at referenciando ele.
+\* INV-GC-004 (reformulada Lote 7.1): blob re-referenciado via
+\* UpdateActionResult com created_at >= mark_started_at é preservado.
+\* Formalização sem constant mágico (`- 10` removido): nenhum blob em
+\* physically_deleted tem AC entry com created_at >= mark_started_at.
+\* Semântica: AC criada durante sweep ativo protege blob mesmo que
+\* Mark phase não o tenha visto.
 InvGCReRefProtected ==
     \A b \in physically_deleted:
         ~(\E e \in DOMAIN ac_entries:
            /\ b \in ac_entries[e].blob_refs
-           /\ ac_entries[e].created_at >= blob_meta[b].deleted_at - 10)
-           \* Approximation: se AC created_at ≥ delete_at, re-ref aconteceu
-           \* durante ou depois do sweep — violou INV-GC-004.
+           /\ ac_entries[e].created_at >= mark_started_at)
 
 \* Invariante derivado: durante "marking", se blob é reachable, então
 \* eventualmente é adicionado a mark_set OU é protegido por INV-GC-004.
