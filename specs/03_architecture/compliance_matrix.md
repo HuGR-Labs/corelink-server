@@ -3,14 +3,15 @@ id: "COMPLIANCE-MATRIX"
 type: "compliance_matrix"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "0.1.0"
+version: "0.2.0"
 created: "2026-04-23"
-updated: "2026-04-23"
+updated: "2026-04-24"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
 supersedes: null
 superseded_by: null
+inherits_from: ["SECURITY-MODEL", "PRIVACY-MODEL", "OBSERVABILITY-MODEL", "AUTH-MODEL", "KEY-MANAGEMENT"]
 tags: ["architecture", "compliance", "soc2", "iso27001", "lgpd", "gdpr"]
 ---
 

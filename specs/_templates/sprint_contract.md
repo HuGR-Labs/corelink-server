@@ -590,8 +590,8 @@ Preencher como índice. Detalhes vivem nos arquivos individuais.
 
 ## 14. Observability Plan
 
-> **🔗 Herdado de:** `specs/03_architecture/observability_model.md` (fonte canônica — PENDENTE Lote 4). Esta §14 **agrega** as novas métricas/logs/traces/dashboards/alertas criados por WIs deste sprint. Cada WI individual mantém detalhamento em seu próprio §21. Sprint §14 é rollup, não re-enumeração.
-> **Inheritance field:** adicionar `inherits_from: ["OBSERVABILITY-MODEL"]` ao YAML quando canonical source existir.
+> **🔗 Herdado de:** `specs/03_architecture/observability_model.md` (fonte canônica). Esta §14 **agrega** as novas métricas/logs/traces/dashboards/alertas criados por WIs deste sprint. Cada WI individual mantém detalhamento em seu próprio §21. Sprint §14 é rollup, não re-enumeração.
+> **Inheritance field:** adicionar `inherits_from: ["OBSERVABILITY-MODEL"]` ao YAML do sprint.
 
 ### 14.1 Métricas
 
@@ -629,7 +629,7 @@ Preencher como índice. Detalhes vivem nos arquivos individuais.
 
 ## 15. Rollback / Recovery Plan
 
-> **🔗 Herdado de:** `specs/03_architecture/failure_modes.md` + `specs/03_architecture/resilience_patterns.md` (PENDENTES Lote 4). Esta §15 cobre cenários **específicos do sprint** não cobertos pelas fontes canônicas. Cada WI individual cobre rollback próprio em seu §25.
+> **🔗 Herdado de:** `specs/03_architecture/failure_modes.md` + `specs/03_architecture/resilience_patterns.md` (fontes canônicas disponíveis desde Lote 4). Esta §15 cobre cenários **específicos do sprint** não cobertos pelas fontes canônicas. Cada WI individual cobre rollback próprio em seu §25.
 
 ### 15.1 Cenários de rollback
 
@@ -672,7 +672,7 @@ Preencher como índice. Detalhes vivem nos arquivos individuais.
 
 ## 16. Security & Compliance Plan
 
-> **🔗 Herdado de:** `specs/03_architecture/security_model.md` + `specs/03_architecture/privacy_model.md` + `specs/03_architecture/compliance_matrix.md` (PENDENTES Lote 4). Esta §16 documenta **delta do sprint** — novos trust boundaries, novos assets, impactos em compliance. Cada WI mantém §26 próprio.
+> **🔗 Herdado de:** `specs/03_architecture/security_model.md` + `specs/03_architecture/privacy_model.md` + `specs/03_architecture/compliance_matrix.md` (fontes canônicas disponíveis desde Lote 4). Esta §16 documenta **delta do sprint** — novos trust boundaries, novos assets, impactos em compliance. Cada WI mantém §26 próprio.
 
 ### 16.1 Threat Model do Sprint
 
@@ -865,17 +865,28 @@ Preencher como índice. Detalhes vivem nos arquivos individuais.
 
 ## 20. Sign-off
 
-> **REGRA INVIOLÁVEL:** Todas as assinaturas abaixo são necessárias para `COMPLETE → SEALED`. Faltando uma, sprint **NÃO** está sealed.
+> **REGRA INVIOLÁVEL:** Sign-offs **DEPENDEM DA LANE** do sprint (campo `lane` no YAML, alinhado com framework §33.5.4.3).
+>
+> - `LOW_RISK` → mínimo **3** sign-offs: Sprint Owner + Tech Lead + Aprovador Final.
+> - `STANDARD` → mínimo **5** sign-offs: + Security Reviewer + QA Reviewer (Ops e Product opcionais conforme escopo).
+> - `HIGH_RISK` → **TODOS os 7** sign-offs obrigatórios + Adversarial Reviewer (linha extra).
+>
+> Forcing factors `lane_forcing_factors` (FF-HR-XXX) **DEVEM** estar listados no YAML do sprint quando `lane: HIGH_RISK`.
 
-| Papel | Nome | Critério de aprovação | Assinatura | Data |
-|---|---|---|---|---|
-| **Sprint Owner** | {{Nome}} | Sprint executado conforme contrato; gaps documentados | _________________ | YYYY-MM-DD |
-| **Tech Lead** | {{Nome}} | §17.1 (Code), §17.2 (Test), §17.6 (Performance) ✅ | _________________ | YYYY-MM-DD |
-| **Security Reviewer** | {{Nome}} | §16 (Security plan) executado, §17.5 ✅ | _________________ | YYYY-MM-DD |
-| **Ops Reviewer** | {{Nome}} | §14 (Observability), §15 (Rollback), §17.4 ✅ | _________________ | YYYY-MM-DD |
-| **QA Reviewer** | {{Nome}} | §9 (Test Strategy) executado, §17.2 ✅ | _________________ | YYYY-MM-DD |
-| **Product Reviewer** | {{Nome}} | CAPs em §3 entregues conforme escopo | _________________ | YYYY-MM-DD |
-| **Aprovador Final** | {{Nome}} | Sprint atende ao contrato integralmente | _________________ | YYYY-MM-DD |
+### 20.1 Tabela de sign-offs
+
+| Papel | Nome | Critério de aprovação | LOW | STD | HIGH | Assinatura | Data |
+|---|---|---|---|---|---|---|---|
+| **Sprint Owner** | {{Nome}} | Sprint executado conforme contrato; gaps documentados | ✅ | ✅ | ✅ | _________________ | YYYY-MM-DD |
+| **Tech Lead** | {{Nome}} | §17.1 (Code), §17.2 (Test), §17.6 (Performance) ✅ | ✅ | ✅ | ✅ | _________________ | YYYY-MM-DD |
+| **Security Reviewer** | {{Nome}} | §16 (Security plan) executado, §17.5 ✅ | 🟡 (se toca security) | ✅ | ✅ | _________________ | YYYY-MM-DD |
+| **Ops Reviewer** | {{Nome}} | §14 (Observability), §15 (Rollback), §17.4 ✅ | 🟡 (se toca prod) | ✅ | ✅ | _________________ | YYYY-MM-DD |
+| **QA Reviewer** | {{Nome}} | §9 (Test Strategy) executado, §17.2 ✅ | 🟡 (se ≥ 1 WI STANDARD) | ✅ | ✅ | _________________ | YYYY-MM-DD |
+| **Product Reviewer** | {{Nome}} | CAPs em §3 entregues conforme escopo | ⛔ N/A | 🟡 (se customer-facing) | ✅ | _________________ | YYYY-MM-DD |
+| **Adversarial Reviewer** | {{Nome}} | Hostil challenge nos invariantes; documentar findings rebatidos | ⛔ N/A | ⛔ N/A | ✅ | _________________ | YYYY-MM-DD |
+| **Aprovador Final** | {{Nome}} | Sprint atende ao contrato integralmente | ✅ | ✅ | ✅ | _________________ | YYYY-MM-DD |
+
+**Legenda:** ✅ obrigatório · 🟡 condicional (critério ao lado) · ⛔ N/A.
 
 ### Apêndice: Dissents (se houver)
 

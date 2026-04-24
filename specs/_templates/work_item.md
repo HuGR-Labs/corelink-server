@@ -828,7 +828,8 @@ Aplicável se toca PII ou dados regulados (§5.6).
 ## 15. Chaos Experiments
 
 > **Lane applicability:** LOW_RISK: ⛔ N/A. STANDARD: 🟡 obrigatório **se** toca I/O ou coordenação distribuída. HIGH_RISK: ✅ obrigatório. Ver framework §33.5.4.1.
-> **🔗 Inheritance:** failure modes abordados aqui **DEVEM** estar catalogados em `specs/03_architecture/failure_modes.md` (PENDENTE Lote 4). Até lá, catalogar inline.
+> **🔗 Inheritance:** failure modes abordados aqui **DEVEM** existir em `specs/03_architecture/failure_modes.md` (canonical) com ID `FM-XXX`. WIs adicionam deltas específicos; FMs novos sobem ao catálogo via PR.
+> **Inheritance field:** adicionar `inherits_from: ["FAILURE-MODES"]` ao YAML do WI.
 > Chaos engineering é **primeira classe**, não afterthought — em lanes que o exigem.
 
 ### 15.1 Failure modes endereçados por este WI
@@ -1067,9 +1068,9 @@ graph TD
 
 ## 21. Observability Plan
 
-> **🔗 Herdado de:** `specs/03_architecture/observability_model.md` (fonte canônica — PENDENTE, Lote 4). Enquanto fonte não existir, preencher inline. Após criada, esta seção registra APENAS local deltas (métricas/logs/traces/dashboards/alertas **novos** criados por este WI).
+> **🔗 Herdado de:** `specs/03_architecture/observability_model.md` (canonical). Esta seção registra APENAS deltas locais (métricas/logs/traces/dashboards/alertas **novos** criados por este WI). Naming, retention, cardinality budget vêm da fonte.
 > **Lane applicability:** LOW_RISK: 🟡 só se emite nova telemetria. STANDARD/HIGH_RISK: ✅ obrigatória.
-> **Inheritance field:** adicionar `inherits_from: ["OBSERVABILITY-MODEL"]` ao YAML quando canonical source existir.
+> **Inheritance field:** adicionar `inherits_from: ["OBSERVABILITY-MODEL"]` ao YAML do WI.
 
 ### 21.1 Métricas novas
 
@@ -1243,7 +1244,7 @@ Se um post-mortem identificar este WI como contributing cause:
 ## 25. Rollback / Recovery
 
 > **Lane applicability:** LOW_RISK: 🟡 mínimo — declarar reversibilidade em §5.4. STANDARD: ✅ obrigatória. HIGH_RISK: ✅ obrigatória + teste de rollback executado. Ver framework §33.5.4.1.
-> **🔗 Inheritance:** `specs/03_architecture/failure_modes.md` + `specs/03_architecture/resilience_patterns.md` (PENDENTES Lote 4) são fontes canônicas. Esta §25 registra rollback **específico** deste WI; estratégias gerais vêm da herança.
+> **🔗 Inheritance:** `specs/03_architecture/failure_modes.md` + `specs/03_architecture/resilience_patterns.md` (fontes canônicas disponíveis desde Lote 4) são fontes canônicas. Esta §25 registra rollback **específico** deste WI; estratégias gerais vêm da herança.
 
 ### 25.1 Strategy
 
@@ -1287,7 +1288,7 @@ Este WI é (conforme §5.4):
 ## 26. Security & Privacy Considerations
 
 > **Lane applicability:** LOW_RISK: ⛔ N/A (marcar). STANDARD: 🟡 STRIDE mini se toca boundary. HIGH_RISK: ✅ STRIDE + LINDDUN completos obrigatórios. Ver framework §33.5.4.1.
-> **🔗 Inheritance:** `specs/03_architecture/security_model.md` + `specs/03_architecture/privacy_model.md` (PENDENTES Lote 4) são fontes canônicas (threat models, trust boundaries, controles). Esta §26 registra **novos** trust boundaries introduzidos por este WI + mini-análise específica.
+> **🔗 Inheritance:** `specs/03_architecture/security_model.md` + `specs/03_architecture/privacy_model.md` (fontes canônicas disponíveis desde Lote 4) são fontes canônicas (threat models, trust boundaries, controles). Esta §26 registra **novos** trust boundaries introduzidos por este WI + mini-análise específica.
 
 ### 26.1 Novo trust boundary introduzido?
 

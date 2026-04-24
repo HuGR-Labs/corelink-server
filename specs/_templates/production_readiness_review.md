@@ -7,6 +7,8 @@ audit_status: "ACTIVE"                   # enum: ACTIVE | AUDIT_PENDING | AUDITE
 version: "1.0.0"
 created: "YYYY-MM-DD"
 updated: "YYYY-MM-DD"
+lane: "STANDARD"                         # enum: LOW_RISK | STANDARD | HIGH_RISK (framework §33.5; PRR herda lane do feature WI; pode escalar mas nunca rebaixar)
+lane_forcing_factors: []                  # obrigatório se lane=HIGH_RISK; ex: ["FF-HR-002", "FF-HR-005", "FF-HR-011"]
 owner: "TEMPLATE_PRR_OWNER"
 final_approver: "TEMPLATE_FINAL_APPROVER"
 reviewers:
@@ -192,7 +194,7 @@ tags: []
 
 ## 4. SLO / SLI / Error Budget
 
-> **🔗 Herdado de:** `specs/03_architecture/slo_catalog.md` (fonte canônica — PENDENTE Lote 4). Esta §4 **confirma** quais SLOs do catálogo aplicam a esta PRR e valida seus thresholds. Não re-define SLOs.
+> **🔗 Herdado de:** `specs/03_architecture/slo_catalog.md` (fonte canônica). Esta §4 **confirma** quais SLOs do catálogo aplicam a esta PRR e valida seus thresholds. Não re-define SLOs.
 
 ### 4.1 SLIs aplicáveis
 
@@ -359,7 +361,7 @@ tags: []
 
 ## 9. Observability Readiness
 
-> **🔗 Herdado de:** `specs/03_architecture/observability_model.md` (PENDENTE Lote 4). Esta §9 **verifica** que a feature em PRR tem métricas/logs/traces/dashboards/alertas **emitindo em produção** conforme observability_model canônica. Não duplica definições.
+> **🔗 Herdado de:** `specs/03_architecture/observability_model.md` (fonte canônica disponível desde Lote 4). Esta §9 **verifica** que a feature em PRR tem métricas/logs/traces/dashboards/alertas **emitindo em produção** conforme observability_model canônica. Não duplica definições.
 
 ### 9.1 Métricas — Four Golden Signals
 
@@ -442,7 +444,7 @@ tags: []
 
 ## 11. Security & Compliance Readiness
 
-> **🔗 Herdado de:** `specs/03_architecture/security_model.md` + `specs/03_architecture/compliance_matrix.md` (PENDENTES Lote 4). Esta §11 **verifica** controles em produção, não re-define threat model.
+> **🔗 Herdado de:** `specs/03_architecture/security_model.md` + `specs/03_architecture/compliance_matrix.md` (fontes canônicas disponíveis desde Lote 4). Esta §11 **verifica** controles em produção, não re-define threat model.
 
 ### 11.1 Threat model atualizado
 
@@ -487,7 +489,7 @@ tags: []
 
 ## 12. Privacy Readiness
 
-> **🔗 Herdado de:** `specs/03_architecture/privacy_model.md` (PENDENTE Lote 4). Esta §12 verifica implementação dos controles LINDDUN canônicos + direitos do titular operacionais.
+> **🔗 Herdado de:** `specs/03_architecture/privacy_model.md` (fonte canônica disponível desde Lote 4). Esta §12 verifica implementação dos controles LINDDUN canônicos + direitos do titular operacionais.
 
 Aplicável se processa PII / dados regulados.
 
@@ -716,17 +718,30 @@ Aplicável se muda contratos, DPA, ou introduz sub-processor.
 
 ## 21. Sign-off
 
-| Papel | Nome | Critério | Assinatura | Data |
-|---|---|---|---|---|
-| 📊 **SRE Lead** | {{Nome}} | §4 + §5 + §6 + §7 + §8 + §9 + §10 + §14 + §15 ✅ | _____________ | YYYY-MM-DD |
-| 🔒 **Security Lead** | {{Nome}} | §11 + §13 ✅ | _____________ | YYYY-MM-DD |
-| 🔏 **Privacy Lead** | {{Nome}} | §12 ✅ (se aplicável) | _____________ | YYYY-MM-DD |
-| 🎨 **Product Lead** | {{Nome}} | §3 + §16 + §17 ✅ | _____________ | YYYY-MM-DD |
-| 🏛 **Architect** | {{Nome}} | arquitetura coerente com ADRs | _____________ | YYYY-MM-DD |
-| 💰 **Finance** | {{Nome}} | §18 ✅ | _____________ | YYYY-MM-DD |
-| 📜 **Legal** (se aplicável) | {{Nome}} | §19 ✅ | _____________ | YYYY-MM-DD |
-| **PRR Owner** | {{Nome}} | PRR completa e documentada | _____________ | YYYY-MM-DD |
-| **Aprovador Final** | {{Nome}} | **pode ir a produção** | _____________ | YYYY-MM-DD |
+> **REGRA INVIOLÁVEL:** Sign-offs **DEPENDEM DA LANE** do PRR (campo `lane` no YAML; herda do feature WI; pode escalar nunca rebaixar).
+>
+> - `LOW_RISK` → mínimo **3** sign-offs: PRR Owner + SRE Lead + Aprovador Final.
+> - `STANDARD` → mínimo **6** sign-offs: + Security Lead + Product Lead + Architect.
+> - `HIGH_RISK` → **TODOS os 9** sign-offs obrigatórios + linha extra de Adversarial Reviewer (sem dissent não-resolvido).
+>
+> Forcing factors `lane_forcing_factors` (FF-HR-XXX) **DEVEM** estar listados no YAML quando `lane: HIGH_RISK`.
+
+### 21.1 Tabela de sign-offs (por lane)
+
+| Papel | Nome | Critério | LOW | STD | HIGH | Assinatura | Data |
+|---|---|---|---|---|---|---|---|
+| 📊 **SRE Lead** | {{Nome}} | §4 + §5 + §6 + §7 + §8 + §9 + §10 + §14 + §15 ✅ | ✅ | ✅ | ✅ | _____________ | YYYY-MM-DD |
+| 🔒 **Security Lead** | {{Nome}} | §11 + §13 ✅ | 🟡 (se toca security) | ✅ | ✅ | _____________ | YYYY-MM-DD |
+| 🔏 **Privacy Lead** | {{Nome}} | §12 ✅ (se aplicável) | 🟡 (se toca PII) | 🟡 (se toca PII) | ✅ | _____________ | YYYY-MM-DD |
+| 🎨 **Product Lead** | {{Nome}} | §3 + §16 + §17 ✅ | ⛔ N/A | ✅ | ✅ | _____________ | YYYY-MM-DD |
+| 🏛 **Architect** | {{Nome}} | arquitetura coerente com ADRs | 🟡 (se ADR novo) | ✅ | ✅ | _____________ | YYYY-MM-DD |
+| 💰 **Finance** | {{Nome}} | §18 ✅ | ⛔ N/A | 🟡 (se TCO > $5k/mês) | ✅ | _____________ | YYYY-MM-DD |
+| 📜 **Legal** (se aplicável) | {{Nome}} | §19 ✅ | ⛔ N/A | 🟡 | ✅ | _____________ | YYYY-MM-DD |
+| 🛡 **Adversarial Reviewer** | {{Nome}} | challenge formal aos invariantes; findings rebatidos | ⛔ N/A | ⛔ N/A | ✅ | _____________ | YYYY-MM-DD |
+| **PRR Owner** | {{Nome}} | PRR completa e documentada | ✅ | ✅ | ✅ | _____________ | YYYY-MM-DD |
+| **Aprovador Final** | {{Nome}} | **pode ir a produção** | ✅ | ✅ | ✅ | _____________ | YYYY-MM-DD |
+
+**Legenda:** ✅ obrigatório · 🟡 condicional (critério ao lado) · ⛔ N/A.
 
 ### Decisão final
 
