@@ -90,7 +90,22 @@
         "required": ["role", "name"],
         "additionalProperties": false,
         "properties": {
-          "role": { "type": "string", "minLength": 1 },
+          "role": {
+            "type": "string",
+            "enum": [
+              "eng", "tech_lead", "architect", "code_reviewer",
+              "security", "security_lead", "privacy", "privacy_lead",
+              "sre", "sre_lead", "ops",
+              "qa",
+              "product", "product_lead",
+              "finance", "cost_owner",
+              "legal",
+              "gate_owner",
+              "sprint_owner",
+              "compliance"
+            ],
+            "description": "Papel canônico. Enum fechado pra evitar drift (ex: 'security' vs 'Security' vs 'sec')."
+          },
           "name": { "type": "string", "minLength": 1 }
         }
       }
@@ -158,7 +173,16 @@
     "lane": {
       "type": "string",
       "enum": ["LOW_RISK", "STANDARD", "HIGH_RISK"],
-      "description": "Classificação de risco (aplicável a sprint, work_item, sub_task). Ver framework §35."
+      "description": "Classificação de risco. OBRIGATÓRIO em sprint, work_item, sub_task (REG-LANE-001). Para sub_task, apenas LOW_RISK|STANDARD (REG-LANE-004). Ver framework §33.5."
+    },
+    "lane_forcing_factors": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^FF-HR-\\d{3}$"
+      },
+      "minItems": 1,
+      "description": "Lista de IDs FF-HR-* forçando HIGH_RISK. OBRIGATÓRIO se lane=HIGH_RISK (REG-LANE-003). Ver framework §33.5.3."
     },
     "predecessor_sprints": {
       "type": "array",
@@ -215,6 +239,36 @@
       },
       "then": {
         "required": ["work_status"]
+      }
+    },
+    {
+      "comment": "REG-LANE-001: sprint/work_item/sub_task DEVEM ter lane",
+      "if": {
+        "properties": { "type": { "enum": ["sprint", "work_item", "sub_task"] } }
+      },
+      "then": {
+        "required": ["lane"]
+      }
+    },
+    {
+      "comment": "REG-LANE-004: sub_task NÃO pode ser HIGH_RISK",
+      "if": {
+        "properties": { "type": { "const": "sub_task" } }
+      },
+      "then": {
+        "properties": {
+          "lane": { "enum": ["LOW_RISK", "STANDARD"] }
+        }
+      }
+    },
+    {
+      "comment": "REG-LANE-003: HIGH_RISK DEVE ter lane_forcing_factors (≥1)",
+      "if": {
+        "properties": { "lane": { "const": "HIGH_RISK" } },
+        "required": ["lane"]
+      },
+      "then": {
+        "required": ["lane_forcing_factors"]
       }
     },
     {

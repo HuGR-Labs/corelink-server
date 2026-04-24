@@ -3,7 +3,7 @@ id: "FRAMEWORK-00"
 type: "framework"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "0.4.0"
+version: "0.4.1"
 created: "2026-04-23"
 updated: "2026-04-24"
 owner: "Gustavo Schneiter"
@@ -17,7 +17,7 @@ tags: ["meta", "process", "framework"]
 # 00 — Specification Framework
 
 > **doc_status:** DRAFT
-> **Versão:** 0.4.0
+> **Versão:** 0.4.1
 > **Última atualização:** 2026-04-24
 > **Owner:** Gustavo Schneiter
 > **Aprovador Final:** Gustavo Schneiter
@@ -84,11 +84,15 @@ tags: ["meta", "process", "framework"]
 31. [Incident Response e Post-Mortem](#31-incident-response-e-post-mortem)
 32. [Architecture Fitness Functions](#32-architecture-fitness-functions)
 33. [Technical Debt Management](#33-technical-debt-management)
+33.5. [Risk Lanes — Classificação de Trabalho por Risco](#335-risk-lanes--classificação-de-trabalho-por-risco)
 
 ### Parte VII — Processo
 
 34. [Templates](#34-templates)
 35. [Diagramas](#35-diagramas)
+35.5. [Control Inheritance — Canonical Source per Domain](#355-control-inheritance--canonical-source-per-domain)
+35.6. [Waivers — Exceções Formais com Expiração Obrigatória](#356-waivers--exceções-formais-com-expiração-obrigatória)
+35.7. [Evidence Taxonomy — Tipos Formais de Prova para Gates](#357-evidence-taxonomy--tipos-formais-de-prova-para-gates)
 36. [Processo de Revisão e Sign-off](#36-processo-de-revisão-e-sign-off)
 37. [Tooling e CI](#37-tooling-e-ci)
 38. [Red Team e Adversarial Review](#38-red-team-e-adversarial-review)
@@ -422,6 +426,38 @@ Exemplos: TLS obrigatório, auth obrigatória, *rate limiting* ativo por padrão
 > **DEVE** todo WI/ST ter protocolo de escalação explícito quando estoura estimate.
 > **NÃO DEVE** time "empurrar" silenciosamente — escalação formal em estouro > 50% de estimate.
 
+### 2.5 Proporcionalidade, Herança e Evidence (PRINC-035 a PRINC-038)
+
+Adicionados no Lote 2 (v0.4.0) para elevar a princípios fundamentais as regras de risk lanes, control inheritance, waivers e evidence taxonomy.
+
+#### PRINC-035 — Trabalho classificado por risco; cerimônia é proporcional à lane
+
+> **DEVE** todo Sprint, Work Item e Sub-task ser classificado em lane `LOW_RISK | STANDARD | HIGH_RISK` (§33.5).
+> **DEVE** o conjunto de seções obrigatórias, sign-offs requeridos, gates de qualidade e processos de review ser **proporcional à lane**, conforme matriz §33.5.4.
+> **NÃO DEVE** trabalho `LOW_RISK` carregar cerimônia de `HIGH_RISK` ("cerimônia sem rigor" — AP-007); **NÃO DEVE** trabalho `HIGH_RISK` ser rebaixado a `LOW_RISK` pra evitar sign-offs (má-fé).
+> **DEVE** forcing factors (§33.5.3) serem enumerados via `lane_forcing_factors` sempre que aplicáveis, forçando `HIGH_RISK`.
+
+#### PRINC-036 — Controles cross-cutting têm fonte canônica; duplicação é drift
+
+> **DEVE** toda *cross-cutting concern* (observability, security, privacy, SLO, failure modes, resilience, data, auth, compliance) ter **uma fonte canônica** declarada em §35.5.1.
+> **DEVE** todo artefato de trabalho (Sprint/WI/ST/PRR) que toca essas áreas **referenciar** a fonte canônica via `inherits_from`, **não duplicar**.
+> **DEVE** `local_deltas` ser usados apenas quando o artefato legitimamente diverge/estende a fonte — com `rationale` escrito.
+> **NÃO DEVE** o mesmo controle ser descrito em prosa independente em múltiplos artefatos downstream; isso garante drift.
+
+#### PRINC-037 — Exceção formal requer expiração + compensating control obrigatórios
+
+> **DEVE** toda exceção formal a um gate do framework seguir o processo de **waiver** (§35.6), via documento `specs/_waivers/WAIVER-YYYYMMDD-NNN-*.md`.
+> **DEVE** todo waiver ter: `expires_at` (data ISO), `compensating_control`, `rationale` ≥ 10 chars, `revalidation_trigger`, `gates_waived` (lista explícita de IDs).
+> **NÃO DEVE** existir "aceitar risco sem proteção por N meses" disfarçado de waiver — isso é ADR de risk acceptance (caminho diferente, §15).
+> **NÃO DEVE** waiver ser renovado ≥ 2 vezes sem escalação ao Aprovador Final pra decisão binária: consertar causa raiz ou promover a constraint permanente via ADR.
+
+#### PRINC-038 — Evidence é tipada; "dashboard URL" sozinho não é evidence
+
+> **DEVE** toda caixa binária de Completeness/DoD/Quality marcada como ✅ ter referência a **pelo menos 1 evidence artifact** tipado conforme §35.7.1 (EVT-001 a EVT-024).
+> **DEVE** evidence ser **imutável** por pelo menos UMA das: assinatura criptográfica, hash-addressed, plataforma imutável (git, CI run), ou timestamp RFC 3161.
+> **NÃO DEVE** `EVT-014 DASHBOARD_URL` isolado ser aceito como evidence — precisa acompanhar `EVT-013 DASHBOARD_SNAPSHOT` pra auditabilidade temporal.
+> **NÃO DEVE** a mesma evidence ser reusada pra múltiplos gates não-relacionados ("um CI log vale pra 10 gates distintos" é AP-EVID-007).
+
 ---
 
 ## 3. Working Backwards
@@ -612,6 +648,20 @@ Ver template em `_templates/sprint_contract.md`. Resumo: 23 seções totais (§0
 | `05_quality/runbook_template.md` | Template canônico de runbook |
 | `05_quality/incident_response.md` | Processo de incident response + post-mortem (§31) |
 
+### 4.7 Artefatos transversais (fora dos 5 níveis)
+
+Além dos 5 níveis hierárquicos, `specs/` contém 5 diretórios transversais que suportam a infraestrutura do framework:
+
+| Diretório | Propósito | Incluído em CI validation? |
+|---|---|---|
+| `specs/_schemas/` | JSON Schemas canônicos (ex: `front_matter.schema.json`) usados pra validar YAML dos outros docs. Ver §7.11.6. | ❌ (é o validador, não o validado) |
+| `specs/_templates/` | Templates canônicos (sprint, WI, ST, ADR, PRR, waiver) com placeholders. Instâncias reais vão pros níveis 3/4/5 conforme `type`. | 🟡 valida YAML parseability, não schema completo (§7.11.6) |
+| `specs/_waivers/` | Waivers ativos e históricos (§35.6). Formato `WAIVER-YYYYMMDD-NNN-slug.md`. | ✅ valida contra schema com `type: waiver` |
+| `specs/_audits/` | Relatórios de auditoria gerados por revisores externos (GPT, humanos). Sem front matter obrigatório. | ❌ (não é spec normativo) |
+| `specs/_archive/` | Specs históricas preservadas para rastreamento mas não mais canônicas. | ❌ |
+
+**Regra:** os 5 níveis hierárquicos são **prescritivos** (descrevem o produto); os 5 diretórios transversais são **operacionais** (suportam o processo). Ambos coexistem em `specs/`, mas servem papéis diferentes.
+
 ---
 
 ## 5. Rastreabilidade Bidirecional
@@ -678,6 +728,10 @@ Script: `scripts/trace_check.py` ou `scripts/trace_check.rs` (a ser implementado
 | Runbook | `RB-XXX` | 3 dígitos | — |
 | Incident | `INC-YYYYMMDD-NNN` | data + seq | — |
 | Fitness Function | `FF-XXX` | 3 dígitos | — |
+| Evidence Type | `EVT-XXX` | 3 dígitos | ver §35.7 — enum fechado definido no framework |
+| Waiver | `WAIVER-YYYYMMDD-NNN` | data + seq | ver §35.6 — formato `WAIVER-<created YYYYMMDD>-<seq do dia>` |
+| Risk Lane Forcing Factor | `FF-HR-NNN` | 3 dígitos | ver §33.5.3 — enum fechado no framework |
+| Risk Lane | `LOW_RISK \| STANDARD \| HIGH_RISK` | enum literal | ver §33.5 — não é ID sequencial mas sim enum |
 
 ### 6.2 Regras absolutas
 
@@ -898,6 +952,8 @@ Ao executar `doc_status: FROZEN → THAWED`, **obrigatoriamente**:
 | `supersedes` | string, lista de strings, ou null | ✅ | ID(s) do(s) doc(s) substituído(s). Lista para consolidação N→1 (ex: WI split reverso). |
 | `superseded_by` | string, lista de strings, ou null | ✅ | ID(s) do(s) doc(s) que substitui(em) este. Lista para split 1→N (ex: REG-WI-SPLIT-001). |
 | `tags` | lista de strings | ✅ | Pode ser `[]` |
+| `inherits_from` | lista de strings | opcional; ✅ quando aplicável (ver §35.5) | IDs de fontes canônicas das quais este doc herda controles (ex: `["OBSERVABILITY-MODEL", "SLO-CATALOG"]`). Ver §35.5 Control Inheritance. |
+| `local_deltas` | lista de strings | opcional | Descrições curtas de onde este doc diverge/estende as fontes herdadas. Ver §35.5.3. |
 
 #### 7.11.2 Campos adicionais para artefatos de TRABALHO (Nível 4)
 
@@ -906,6 +962,8 @@ Docs com `type ∈ {sprint, work_item, sub_task, prr}` **DEVEM** adicionar:
 | Campo | Tipo | Obrigatório | Valores |
 |---|---|---|---|
 | `work_status` | enum | ✅ em todos os tipos de trabalho | Específico por tipo — ver §7.2 |
+| `lane` | enum | ✅ em `sprint`, `work_item`, `sub_task`; **N/A** em `prr` | `LOW_RISK | STANDARD | HIGH_RISK`. Para `sub_task`, apenas `LOW_RISK | STANDARD` (REG-LANE-004). Ver §33.5. |
+| `lane_forcing_factors` | lista de `FF-HR-NNN` | ✅ se `lane=HIGH_RISK`; **proibido** se outra lane | Ex: `["FF-HR-002", "FF-HR-005"]`. Ver §33.5.3 para enum. |
 | `parent` | string | ✅ para `work_item` (→ sprint) e `sub_task` (→ WI); **N/A** para `sprint` e `prr` | ID do parent hierárquico. PRR usa `feature_wi` em vez de `parent` (relação lateral, não hierárquica). |
 | `feature_wi` | string | ✅ apenas para `prr`; **proibido** nos demais | ID do WI que a PRR certifica pra produção. |
 | `capabilities` | lista de strings | ✅ apenas para `prr`; **proibido** nos demais | Lista de IDs de capabilities certificadas por esta PRR (ex: `["CAP-XXX", "CAP-YYY"]`). |
@@ -2456,6 +2514,15 @@ Nível 4 (sprints, WIs, STs, PRRs) só escala herança quando Nível 3 existe. E
 
 Após fonte canônica criada e `doc_status: FROZEN`, downstream migra para herança real.
 
+### 35.5.7 Precedência entre herança e waiver
+
+Quando um artefato `inherits_from` uma fonte canônica que declara controle C1, e ao mesmo tempo existe um waiver `W1` cobrindo C1 pra este artefato:
+
+- **REG-INHERIT-020**: Waiver tem **precedência explícita** sobre herança pro controle dispensado. Ou seja, C1 fica suspenso conforme `W1` enquanto `W1` estiver `doc_status: FROZEN` + `expires_at` futuro.
+- **REG-INHERIT-021**: Quando `W1` expira ou é revogado, C1 volta imediatamente a valer via herança — sem necessidade de *thaw* do artefato downstream (a herança é viva).
+- **REG-INHERIT-022**: Ao criar um waiver cobrindo controle herdado, é **obrigatório** listar o ID da fonte canônica no `rationale` do waiver, demonstrando que o controle é herdado (não inventado localmente).
+- **REG-INHERIT-023**: Local delta sobre um controle herdado **não** é equivalente a waiver. Delta é divergência documentada; waiver é dispensa temporária. Ambos podem coexistir.
+
 ---
 
 ## 35.6 Waivers — Exceções Formais com Expiração Obrigatória
@@ -2999,6 +3066,24 @@ Specs podem estar **bem escritas mas erradas**. Adversarial review simula:
 | **PWI** (Partial Work Item) | WI re-escopado durante escalação (§20 do work_item template) para entregar um subconjunto viável do escopo original. Features retiradas movem para WI(s) novo(s) com IDs próprios. Ver REG-WI-SPLIT-001. |
 | **audit_status** | Metadata adicional de qualquer doc/artefato com estados `ACTIVE`, `AUDIT_PENDING`, `AUDITED`. Setado `AUDIT_PENDING` quando um upstream `FROZEN` é *thawed* e afeta este doc (§7.10). Voltando a `ACTIVE` após auditoria. |
 
+### 40.10 Vocabulário do Lote 2 (Risk Lanes / Inheritance / Waivers / Evidence)
+
+| Termo | Definição |
+|---|---|
+| **Lane** (`LOW_RISK`, `STANDARD`, `HIGH_RISK`) | Classificação de risco de uma unidade de trabalho (Sprint/WI/ST) que determina proporção de cerimônia, sign-offs e gates obrigatórios. Ver §33.5. |
+| **Forcing factor** (`FF-HR-NNN`) | Gatilho que força classificação `HIGH_RISK` independente de scoring (§33.5.3). Ex: FF-HR-002 = toca tenant isolation. |
+| **Control inheritance** | Mecanismo pelo qual artefato downstream (Sprint/WI/ST/PRR) herda controles de uma fonte canônica via campo `inherits_from`, sem duplicar (§35.5). |
+| **Canonical source** | Documento autoritativo único para uma *cross-cutting concern* (ex: `observability_model.md` para observability). Vive em Nível 3 (arquitetura) ou Nível 5 (qualidade). Ver §35.5.1. |
+| **inherits_from** | Campo YAML listando IDs de fontes canônicas das quais o documento herda controles. |
+| **local_deltas** | Campo YAML listando seções onde o documento legitimamente diverge ou estende os controles herdados, com rationale obrigatório. |
+| **Waiver** (`WAIVER-YYYYMMDD-NNN`) | Exceção formal e temporária a um ou mais gates do framework. Exige `expires_at`, `compensating_control`, `rationale`, `revalidation_trigger`. Ver §35.6. |
+| **Compensating control** | Proteção alternativa vigente durante o período de um waiver, substituindo (parcial ou totalmente) o controle dispensado. |
+| **Revalidation trigger** | Evento/condição que força re-review de um waiver antes de `expires_at`. Ex: "vendor lança feature X", "audit finding Y". |
+| **Gates_waived** | Lista de IDs de gates do framework (formato `REG-XXX-NNN`) dispensados por um waiver específico. Não aceita prosa genérica. |
+| **Evidence taxonomy** | Conjunto de 24 tipos formais (`EVT-001` a `EVT-024`) que classificam evidências aceitas para gates. Cada tipo tem regras de formato, armazenamento, imutabilidade e retenção. Ver §35.7. |
+| **Evidence type** (`EVT-XXX`) | ID canônico de um tipo de evidência. Exemplos: `EVT-001 CI_LOG`, `EVT-013 DASHBOARD_SNAPSHOT`, `EVT-022 TLA_MODEL_CHECK`. |
+| **Immutable evidence** | Evidência que atende ≥ 1 critério: assinatura criptográfica, hash-addressed, plataforma imutável (git/CI run), timestamp RFC 3161. `DASHBOARD_URL` isolado **não é** immutable. |
+
 ---
 
 ## 41. Meta-regras (Evolução deste Framework)
@@ -3052,6 +3137,8 @@ Em casos em que regra deste framework impede resolução de problema real:
 | 0.3.2 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | **Lote 1-ter — cleanup final pós second GPT pass**: (a) CI script escope corrigido — exclui `_audits/` e `_archive/`, previne falso negativo em arquivos de review. (b) Schema `supersedes`/`superseded_by` agora aceita `string | lista de strings | null` — permite split 1→N e consolidação N→1 (REG-WI-SPLIT-001). (c) Schema §7.11.2 reconciliado: PRR usa `feature_wi` em vez de `parent` (relação lateral, não hierárquica); `feature_wi` adicionado como campo obrigatório apenas pra `type=prr`. (d) Coluna `Status` genérica renomeada pra `Estado requerido` em tabelas de trace (WI §4, ST §2, ADR §12.1, WI §18.1, sprint §5.1) e pra `Atendido?` em tabelas de checklist (sprint §5.x). (e) Drift `14 seções` → `19 seções §0–§18` em WI §17. (f) Framework cleanup: 5 ocorrências residuais de `ACCEPTED`/`PROPOSED` fora dos templates corrigidas (§5.3, §6.3, §14.2 template NFR, §34.6 template CAP, §34.8 template INV). (g) Duplicata §34.6/§34.7 removida. Validação YAML re-confirmada em 6 docs. |
 | 0.3.3 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | **Lote 1-quater — propagação parcial dos fixes de §7.11**: (a) §7.11.3 snippet canônico agora mostra `supersedes`/`superseded_by` aceitando escalar OU lista (match tabela §7.11.1, não §7.11.2 como o registro anterior dizia). (b) §7.11.4 Level 4 template agora inclui `feature_wi`, `capabilities`, `prod_target_date` apenas pra `type: prr` (template real de PRR). **ATENÇÃO:** schema table §7.11.2 **ainda não** declarava `capabilities` e `prod_target_date` neste ponto — corrigido em v0.3.4. (c) 3 resíduos finais de `\| Status \|` corrigidos: sprint §13.1 dependencies → `Atendida?`; ST §11.1 dependencies → `Atendida?`; WI §4 JTBD row valor `FROZEN` cru → `doc_status: FROZEN`. Backlog parcialmente zerado; drift schema↔snippet resolvido em v0.3.4. |
 | 0.3.4 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | **Lote 1-quinquies — fechamento schema §7.11.2 + correção retroativa de auditabilidade**: (a) Schema §7.11.2 adiciona `capabilities` (lista de strings, obrigatório apenas pra `type: prr`) e `prod_target_date` (ISO date, obrigatório apenas pra `prr`). (b) `work_status` e `assignee` ganharam aplicabilidade explícita por type. (c) Entrada v0.3.3 do change log **corrigida retroativamente**: trocada "tabela §7.11.2" por "tabela §7.11.1" (localização correta dos campos `supersedes`/`superseded_by`); marcada a propagação schema↔snippet como parcial em v0.3.3, completa em v0.3.4. Honestidade de auditabilidade preservada. Backlog de Lote 1 **finalmente zerado** (exceto os 2 itens reservados explicitamente pra Lotes 5 e 6). |
+| **0.4.1** | **2026-04-24** | **Gustavo (via Claude Opus 4.7)** | **Lote 2-bis — integração pós self-audit.** Fecha os 4 findings CRITICAL + 6 HIGH do self-audit `2026-04-24-self-audit-lote2.md` (commit 59844d6). **(F-01)** TOC atualizado com §33.5, §35.5, §35.6, §35.7 (4 seções órfãs integradas à navegação; duplicata §35 removida). **(F-02)** Schema declara `lane_forcing_factors` com `pattern: ^FF-HR-\\d{3}$` + regra cross-field `if lane=HIGH_RISK then required: [lane_forcing_factors]`. **(F-03)** `lane` agora obrigatório no schema pra `type ∈ {sprint, work_item, sub_task}`; sub_task restrito a `[LOW_RISK, STANDARD]` (REG-LANE-004). **(F-04)** §6.1 Formatos canônicos adiciona `EVT-XXX`, `WAIVER-YYYYMMDD-NNN`, `FF-HR-NNN` + linha enum `Risk Lane`. **(F-05)** §40.10 novo subsection "Vocabulário do Lote 2" com 13 termos (lane, forcing factor, control inheritance, canonical source, inherits_from, local_deltas, waiver, compensating control, revalidation trigger, gates_waived, evidence taxonomy, EVT type, immutable evidence). **(F-06)** §7.11.1 adiciona `inherits_from` e `local_deltas`; §7.11.2 adiciona `lane` e `lane_forcing_factors`. **(F-07)** 4 novos princípios fundamentais em §2.5 (PRINC-035 a PRINC-038) elevando risk lanes, inheritance, waivers e evidence taxonomy a invioláveis. **(F-08)** §4.7 novo "Artefatos transversais" documentando `_schemas/`, `_templates/`, `_waivers/`, `_audits/`, `_archive/`. **(F-09)** Sign-off matrix do template WI §30 alinhada com framework §33.5.4.3 (coluna Aplicabilidade por lane + totais mínimos). **(F-14)** §35.5.7 nova "Precedência herança vs waiver" (REG-INHERIT-020 a 023) — waiver tem precedência explícita sobre controle herdado enquanto ativo; volta automático ao expirar. **(F-15)** Schema `reviewers[].role` agora tem enum fechado de 21 papéis canônicos (previne drift "security" vs "Security" vs "sec"). Bump patch 0.4.0 → 0.4.1. |
+
 | **0.4.0** | **2026-04-24** | **Gustavo (via Claude Opus 4.7)** | **Lote 2 — Framework SOTA com machine-readable real, risk lanes, control inheritance, waivers, evidence taxonomy.** 5 sub-lotes commitados incrementalmente: **(2.1)** JSON Schema real em `specs/_schemas/front_matter.schema.json` (draft 2020-12), enums validados, cross-field rules via `allOf`+`if`/`then`, schema para 35 types; script `scripts/validate_specs.py` com 2 camadas (YAML parseability em tudo; JSON Schema exceto templates). **(2.2)** Risk lanes: §33.5 novo com 3 lanes (LOW_RISK/STANDARD/HIGH_RISK), scoring de 5 dimensões, 10 forcing factors (FF-HR-*), matriz de gates por lane pra WI (33 seções categorizadas ✅/🟡/⛔), matriz de sign-offs (3/5-8/10-12 roles), 4 regras REG-LANE + auditoria trimestral. Reduz cerimônia sem reduzir rigor. **(2.3)** Control inheritance: §35.5 com catálogo de 15 fontes canônicas (observability_model, security_model, privacy_model, slo_catalog, failure_modes, etc em Nível 3), campo YAML `inherits_from`+`local_deltas`, 8 regras REG-INHERIT, mata duplicação em WI/Sprint/ST/PRR. **(2.4)** Waivers: §35.6 + `_templates/waiver.md` (11 seções: rationale, compensating_control, expires_at obrigatório, revalidation_trigger, review checkpoints T+25/50/75/90%, plano de resolução), 7 regras REG-WAIVER, enforcement automático via expiração, 5 anti-patterns catalogados (AP-WAIVER-*). Diretório `specs/_waivers/` criado. **(2.5)** Evidence taxonomy: §35.7 com **24 tipos formais de evidence** (EVT-001 a EVT-024: CI_LOG, TEST_OUTPUT, COVERAGE_REPORT, BENCH_REPORT, SAST/DAST_SCAN, FUZZ_REPORT, MUTATION_REPORT, SBOM, BINARY_SIGNATURE, SCREENSHOT, DASHBOARD_SNAPSHOT/URL, PR_APPROVAL, HUMAN_SIGNOFF, RUNBOOK_EXECUTION, MIGRATION_APPLIED, INCIDENT_LINK, EXTERNAL_VENDOR_CONFIRMATION, AUDIT_REPORT, TLA_MODEL_CHECK, CHAOS_EXPERIMENT_REPORT, LOAD_TEST_REPORT), cada um com formato/armazenamento/imutabilidade/retenção. Regra crítica: EVT-014 DASHBOARD_URL sozinho não é evidence válida (precisa EVT-013 SNAPSHOT). Mapping gate→tipos apropriados. Estrutura de bucket R2 `corelink-specs-evidence/`. 7 anti-patterns (AP-EVID-*). Preparação pra `scripts/validate_evidence.py`. **Resolve audit v1 Gaps 3, 4, 5 + reduz redundâncias (§6 do audit).** |
 
 ---

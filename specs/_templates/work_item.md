@@ -1404,20 +1404,30 @@ Este WI é (conforme §5.4):
 
 ## 30. Sign-off
 
-| Papel | Nome | Critério de aprovação | Assinatura | Data |
-|---|---|---|---|---|
-| 🔧 **WI Owner** (assignee) | {{Nome}} | WI executado conforme contrato integral | _________________ | YYYY-MM-DD |
-| 🔧 **Code Reviewer** | {{Nome}} | §10.1 + §10.2 + §14.1 + §14.2 ✅ | _________________ | YYYY-MM-DD |
-| 🔒 **Security Reviewer** (se §5.6) | {{Nome}} | §10.5 + §26 ✅ | _________________ | YYYY-MM-DD |
-| 🔏 **Privacy Reviewer** (se §5.6) | {{Nome}} | §10.6 + §26.4 ✅ | _________________ | YYYY-MM-DD |
-| 📊 **SRE Reviewer** | {{Nome}} | §10.4 + §10.8 + §14.5 + §21 + §25 + §16 ✅ | _________________ | YYYY-MM-DD |
-| ✓ **QA Reviewer** | {{Nome}} | §10.2 + §14.1 ✅ | _________________ | YYYY-MM-DD |
-| 🎨 **Product Reviewer** | {{Nome}} | §3 + §8 + §23 ✅ | _________________ | YYYY-MM-DD |
-| 🏛 **Architect** | {{Nome}} | §4 + §9 + §10.3 + §26 ✅ | _________________ | YYYY-MM-DD |
-| 💰 **Cost Owner** (se >R$500/mês) | {{Nome}} | §22 aprovado | _________________ | YYYY-MM-DD |
-| 📜 **Legal** (se §5.6 indicou) | {{Nome}} | compliance aprovado | _________________ | YYYY-MM-DD |
-| **Sprint Owner** | {{Nome}} | WI fecha dentro de S-XX | _________________ | YYYY-MM-DD |
-| **Aprovador Final** | {{Nome}} | WI pode `DONE → integrar` | _________________ | YYYY-MM-DD |
+> **Aplicabilidade por lane (fonte canônica: framework §33.5.4.3):**
+>
+> - `LOW_RISK`: apenas papéis marcados ✅ obrigatório em todas as lanes (3 roles mínimo).
+> - `STANDARD`: papéis ✅ + SRE + QA + Product + Security/Privacy condicionais conforme §5.6 (5–8 roles).
+> - `HIGH_RISK`: **todos** os papéis desta tabela (10–12 roles); condicionais 🟡 tornam-se obrigatórios quando forcing factor relacionado está ativo.
+>
+> **Regra:** a coluna "Aplicabilidade" abaixo indica o mínimo; lane mais alta pode forçar mais roles.
+
+| Papel | Nome | Critério de aprovação | Aplicabilidade por lane | Assinatura | Data |
+|---|---|---|---|---|---|
+| 🔧 **WI Owner** (assignee) | {{Nome}} | WI executado conforme contrato integral | ✅ todas as lanes | _________________ | YYYY-MM-DD |
+| 🔧 **Code Reviewer** | {{Nome}} | §10.1 + §10.2 + §14.1 + §14.2 ✅ | ✅ todas as lanes | _________________ | YYYY-MM-DD |
+| 📊 **SRE Reviewer** | {{Nome}} | §10.4 + §10.8 + §14.5 + §21 + §25 + §16 ✅ | 🟡 STANDARD+; obrigatório se toca I/O ou observability | _________________ | YYYY-MM-DD |
+| ✓ **QA Reviewer** | {{Nome}} | §10.2 + §14.1 ✅ | 🟡 STANDARD+ (LOW_RISK: CI valida sozinho) | _________________ | YYYY-MM-DD |
+| 🎨 **Product Reviewer** | {{Nome}} | §3 + §8 + §23 ✅ | 🟡 STANDARD+ (se customer-facing) | _________________ | YYYY-MM-DD |
+| 🔒 **Security Reviewer** | {{Nome}} | §10.5 + §26 ✅ | 🟡 condicional se §5.6 compliance trigger; ✅ HIGH_RISK | _________________ | YYYY-MM-DD |
+| 🔏 **Privacy Reviewer** | {{Nome}} | §10.6 + §26.4 ✅ | 🟡 condicional se PII/PHI; ✅ HIGH_RISK com PII | _________________ | YYYY-MM-DD |
+| 🏛 **Architect** | {{Nome}} | §4 + §9 + §10.3 + §26 ✅ | 🟡 STANDARD+ se toca C4 component; ✅ HIGH_RISK | _________________ | YYYY-MM-DD |
+| 💰 **Cost Owner** | {{Nome}} | §22 aprovado | 🟡 STANDARD+ se custo > R$500/mês; ✅ HIGH_RISK | _________________ | YYYY-MM-DD |
+| 📜 **Legal** | {{Nome}} | compliance aprovado | 🟡 HIGH_RISK se §5.6 muda contrato/DPA | _________________ | YYYY-MM-DD |
+| **Sprint Owner** | {{Nome}} | WI fecha dentro de S-XX | ✅ todas as lanes | _________________ | YYYY-MM-DD |
+| **Aprovador Final** | {{Nome}} | WI pode `DONE → integrar` | ✅ todas as lanes | _________________ | YYYY-MM-DD |
+
+**Total mínimo por lane:** LOW_RISK = 3 | STANDARD = 5–8 | HIGH_RISK = 10–12.
 
 ### Apêndice: Dissents
 
