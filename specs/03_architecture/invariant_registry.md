@@ -151,14 +151,14 @@ CRITICAL invariantes **DEVEM** ter TLA+ spec + model check verde no CI (CTRL-FOR
 
 | Invariante | TLA+ spec | Status |
 |---|---|---|
-| INV-TENANT-ISOLATION | `specs/tla/tenant_isolation.tla` | ⚠️ A criar (blocker para GA) |
-| INV-CAS-INTEGRITY | `specs/tla/cas_integrity.tla` | ⚠️ A criar (property test cobre interim) |
-| INV-CAS-IDEMPOTENCY | N/A (propriedade algorítmica do BLAKE3/SHA-256) | ✅ coberto por algoritmo + test |
-| INV-CAS-IMMUTABILITY | Simples — cobertura por test | ✅ |
+| INV-TENANT-ISOLATION | `specs/tla/tenant_isolation.tla` + `.cfg` | ✅ criado (Lote 5.13) — spec com 5 camadas de defesa + adversarial path-guess action |
+| INV-CAS-INTEGRITY | `specs/tla/cas_integrity.tla` + `.cfg` | ✅ criado (Lote 5.13) — modelo write-path reject + bit rot adversarial |
+| INV-CAS-IDEMPOTENCY | Coberto por `cas_integrity.tla` via Hash determinístico | ✅ propriedade algorítmica verificada |
+| INV-CAS-IMMUTABILITY | Coberto por `cas_integrity.tla` (InvCASImmutability) | ✅ |
 | INV-AC-TENANT-SCOPED | Deriva de INV-TENANT-ISOLATION | ✅ via TLA+ de isolation |
-| INV-GC-001 | `specs/tla/gc_correctness.tla` | ⚠️ A criar (blocker; endereça race S-12) |
-| INV-GC-004 | Coberto por gc_correctness.tla | ⚠️ |
-| INV-AUDIT-APPEND-ONLY | Cobertura D1 schema + daily verify | ✅ |
+| INV-GC-001 | `specs/tla/gc_correctness.tla` + `.cfg` | ✅ criado (Lote 5.13) — mark+sweep+grace+mark_started_at-aware |
+| INV-GC-004 | Coberto por `gc_correctness.tla` (InvGCReRefProtected) | ✅ |
+| INV-AUDIT-APPEND-ONLY | Cobertura D1 schema + daily verify | ✅ (sem TLA+ necessário — enforcement storage layer) |
 
 ---
 
