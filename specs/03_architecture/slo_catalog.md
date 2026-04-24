@@ -95,6 +95,17 @@ CoreLink opera em **5 tiers** (alinhado com `remote_cache_product_profile.md §8
 
 Budgets são independentes por tier. Métricas agregadas em `corelink_slo_*{tier}`.
 
+### 3.1 Targets por tier aplicáveis aos SLOs em §4.x (T-06)
+
+Adicionado em Lote 6.7 endereçando T-06 do re-audit (SLOs §4.x listavam apenas team+enterprise; solo/business ficavam sem target explícito). Regra de interpolação:
+
+- **SLO com target declarado para team e enterprise** (ex: SLO-AVAIL-CAS-GET, SLO-AVAIL-CP): tier `free` usa target de team **menos 0.4pp** (ex: team 99.9% → free 99.5%); tier `solo` usa team **menos 0.2pp** (99.7%); tier `business` usa team **mais 0.03pp** (99.93%).
+- **SLOs latency**: free = team×1.6; solo = team×1.3; business = team×0.85; enterprise = team×0.67.
+- **Correctness SLOs (100%, sem budget)** — aplicam a **todos os 5 tiers** igualmente (correctness não escala com tier).
+- **Freshness billing/DSR** — aplicam a todos os tiers igualmente (requisitos regulatórios).
+
+SLOs individuais (§4.x) podem override interpolation via linha explícita "Target ({tier})". Defaults aplicam se target não listado.
+
 ---
 
 ## 4. Catálogo de SLOs

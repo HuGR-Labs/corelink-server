@@ -109,10 +109,10 @@ Cada FM tem scores 1–5 em:
 | FM-001 | Worker CPU timeout (isolate killed by CF runtime)       | 3 | 3 | 2 | 18  | P2      | PAT-TIMEOUT-001, PAT-BUDGET-001|
 | FM-002 | Worker OOM (memória > 128 MB limite CF)                 | 3 | 3 | 2 | 18  | P2      | PAT-MEMORY-001                 |
 | FM-003 | Container exit non-zero em execute-action               | 2 | 4 | 1 | 8   | P2      | PAT-RETRY-001 (idempotent only)|
-| FM-004 | Container deadline hit (> 60min)                        | 2 | 3 | 1 | 6   | P2      | PAT-TIMEOUT-002, user notification |
+| FM-004 | Container deadline hit (> 60min)                        | 2 | 3 | 1 | 6   | P2      | PAT-TIMEOUT-002 + CTRL-EXEC-001, user notification |
 | FM-005 | DO actor rebalance causa spike de latência              | 3 | 2 | 3 | 18  | P2      | PAT-DEGRADE-001                |
 | FM-006 | Panic em Rust não capturado (Worker)                    | 4 | 2 | 2 | 16  | P2      | PAT-ERROR-ISOLATE-001, std sanitizer |
-| FM-007 | Deserialization RCE (dep corrupted or bad serde config) | 5 | 1 | 5 | 25  | P1 (S=5 → upgrade)         | PAT-INPUT-HARDEN-001, CTRL-INPUT-003 |
+| FM-007 | Deserialization RCE (dep corrupted or bad serde config) | 5 | 1 | 5 | 25  | P1 (S=5 → upgrade)         | PAT-INPUT-HARDEN-001 + CTRL-INPUT-003 + CTRL-INPUT-004 + CTRL-EXEC-002..003 + RB-FM-007 |
 
 ### 3.2 Storage
 
@@ -136,7 +136,7 @@ Cada FM tem scores 1–5 em:
 
 | ID     | Descrição                                                | S | O | D | RPN | Classe | CTRLs / Patterns              |
 |--------|----------------------------------------------------------|---|---|---|-----|---------|--------------------------------|
-| FM-100 | DNS outage (registrar / CF DNS)                          | 5 | 1 | 2 | 10  | P1 (S=5 → upgrade) | PAT-DNS-TTL-001 + runbook       |
+| FM-100 | DNS outage (registrar / CF DNS)                          | 5 | 1 | 2 | 10  | P1 (S=5 → upgrade) | PAT-DNS-TTL-001 + CTRL-NET-001 + CTRL-NET-002 + RB-FM-100 |
 | FM-101 | CF edge outage (região ou global)                        | 5 | 1 | 1 | 5   | P1 (S=5 → upgrade) | Status page + comms plan       |
 | FM-102 | BGP leak afeta CF IPs                                    | 4 | 1 | 3 | 12  | P2      | CF Magic; mitigation ops        |
 | FM-103 | TLS cert expiry / revoked                                | 4 | 1 | 2 | 8   | P2      | Auto-renew + canary check       |
@@ -164,7 +164,7 @@ Cada FM tem scores 1–5 em:
 | FM-201 | Config change causa rate-limit drop                     | 3 | 3 | 2 | 18  | P2      | PAT-DUAL-APPROVAL-001 + auto-rollback |
 | FM-202 | Runbook desatualizado em incident                        | 3 | 4 | 3 | 36  | P1       | PAT-RUNBOOK-DRILL-001 (mensal)    |
 | FM-203 | Oncall sobrecarregado (fadiga → missed alert)            | 4 | 2 | 3 | 24  | P2      | Pager discipline (§9 obs)     |
-| FM-204 | Secret rotation quebra serviço                            | 4 | 2 | 2 | 16  | P2      | PAT-ROLL-FORWARD-001 (overlap period) |
+| FM-204 | Secret rotation quebra serviço                            | 4 | 2 | 2 | 16  | P2      | PAT-ROLL-FORWARD-001 (overlap period) + CTRL-KEY-005 + CTRL-KEY-006 + CTRL-CRED-003 |
 | FM-205 | Manual intervention apaga dado (admin mistake)           | 5 | 2 | 3 | 30  | P1       | PAT-DUAL-APPROVAL-001 + soft-delete |
 | FM-206 | Terraform drift (estado real ≠ definido)                  | 3 | 3 | 4 | 36  | P1       | PAT-DRIFT-DETECTION-001       |
 
@@ -175,12 +175,12 @@ Cada FM tem scores 1–5 em:
 | FM-250 | DDoS volumetric no edge                                  | 3 | 3 | 1 | 9   | P2      | CF DDoS managed; CTRL-RATE-001 |
 | FM-251 | Credential stuffing / brute force                         | 3 | 4 | 1 | 12  | P2      | CF WAF + lockout policy        |
 | FM-252 | PAT leaked em repo público                                | 3 | 3 | 3 | 27  | P2       | Secret scanning + auto-revoke  |
-| FM-253 | Cross-tenant read (security bug)                         | 5 | 2 | 4 | 40  | P1 (S=5 → upgrade; O 1→2 em S-19 audit Lote 3+4) | TLA+ INV-TENANT-ISOLATION + RB-FM-253 |
+| FM-253 | Cross-tenant read (security bug)                         | 5 | 2 | 4 | 40  | P1 (S=5 → upgrade; O 1→2 em S-19 audit Lote 3+4) | TLA+ INV-TENANT-ISOLATION + RB-FM-253 + CTRL-ISO-001..005 + CTRL-AUTHZ-001..002 |
 | FM-254 | Cache poisoning (TA-3 inserir blob com hash forjado)     | 5 | 2 | 5 | 50  | P1 (S=5 → upgrade; O 1→2 em S-19) | CTRL-CAS-001 + client verify  |
 | FM-255 | Tenant-pago abusa execute-action para criptominer        | 3 | 3 | 2 | 18  | P2      | PAT-ABUSE-DETECT-001 + quota    |
 | FM-256 | Compression bomb em CAS write                             | 3 | 2 | 2 | 12  | P2      | CTRL-COMP-001                  |
 | FM-257 | Replay attack com token válido capturado                  | 3 | 2 | 3 | 18  | P2      | CTRL-AUTH-007 nonce window      |
-| FM-258 | Insider data exfil via support tool                       | 5 | 1 | 5 | 25  | P1 (S=5 → upgrade) | CTRL-PRIV-016 consent + MFA + audit |
+| FM-258 | Insider data exfil via support tool                       | 5 | 1 | 5 | 25  | P1 (S=5 → upgrade) | CTRL-PRIV-014 + CTRL-PRIV-016 + CTRL-AUTH-010 + CTRL-AUDIT-003 + RB-FM-258 |
 
 ### 3.7 Data Integrity
 
