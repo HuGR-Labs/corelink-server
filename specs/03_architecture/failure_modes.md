@@ -76,6 +76,12 @@ Cada FM tem scores 1–5 em:
 - `S = 5` força minimum **P1** independente de RPN. Justificativa: severity 5 implica blast radius cross-tenant ou data loss; mesmo com O baixo, o impacto demanda runbook + test obrigatório.
 - Override **DEVE** ser anotado na coluna Classe como "P1 (S=5 → upgrade)" para auditabilidade.
 
+**Score O sob mitigação ausente (regra FMEA original, S-19 do audit Lote 3+4):**
+
+- O reflete frequência **com mitigações ausentes** (FMEA original SAE J1739 §B.2.4), não com mitigações presentes.
+- Razão: subscoring de O com mitigações leva a falsa sensação de segurança; quando mitigação falhar (deploy regressou, CTRL não foi implantado), O efetivo é o "raw" — esse é o número que importa em RPN.
+- FMs adversariais (FM-253, FM-254, FM-303) têm O **mínimo 2** mesmo sem evidência observada, porque "esperado em pen-test não-trivial".
+
 ---
 
 ## 2. Taxonomia de falhas
@@ -169,8 +175,8 @@ Cada FM tem scores 1–5 em:
 | FM-250 | DDoS volumetric no edge                                  | 3 | 3 | 1 | 9   | P2      | CF DDoS managed; CTRL-RATE-001 |
 | FM-251 | Credential stuffing / brute force                         | 3 | 4 | 1 | 12  | P2      | CF WAF + lockout policy        |
 | FM-252 | PAT leaked em repo público                                | 3 | 3 | 3 | 27  | P2       | Secret scanning + auto-revoke  |
-| FM-253 | Cross-tenant read (security bug)                         | 5 | 1 | 4 | 20  | P1 (S=5 → upgrade)   | TLA+ INV-TenantIsolation obrig. |
-| FM-254 | Cache poisoning (TA-3 inserir blob com hash forjado)     | 5 | 1 | 5 | 25  | P1 (S=5 → upgrade)   | CTRL-CAS-001 + client verify   |
+| FM-253 | Cross-tenant read (security bug)                         | 5 | 2 | 4 | 40  | P1 (S=5 → upgrade; O 1→2 em S-19 audit Lote 3+4) | TLA+ INV-TenantIsolation + RB-FM-303 |
+| FM-254 | Cache poisoning (TA-3 inserir blob com hash forjado)     | 5 | 2 | 5 | 50  | P1 (S=5 → upgrade; O 1→2 em S-19) | CTRL-CAS-001 + client verify  |
 | FM-255 | Tenant-pago abusa execute-action para criptominer        | 3 | 3 | 2 | 18  | P2      | PAT-ABUSE-DETECT-001 + quota    |
 | FM-256 | Compression bomb em CAS write                             | 3 | 2 | 2 | 12  | P2      | CTRL-COMP-001                  |
 | FM-257 | Replay attack com token válido capturado                  | 3 | 2 | 3 | 18  | P2      | CTRL-AUTH-007 nonce window      |
@@ -183,7 +189,7 @@ Cada FM tem scores 1–5 em:
 | FM-300 | GC deleta blob ainda referenciado (refcount bug)         | 5 | 2 | 4 | 40  | P1                  | INV-GC-001 TLA+ + PAT-SOFT-DELETE-001 |
 | FM-301 | Migration doble-apply (idempotency bug)                  | 4 | 2 | 3 | 24  | P2      | PAT-MIGRATION-IDEM-001         |
 | FM-302 | Billing counter não incrementa (silent revenue leak)     | 3 | 2 | 5 | 30  | P1                  | Reconciliation diária           |
-| FM-303 | AC entry aponta pra blob de outro tenant (bug)           | 5 | 1 | 4 | 20  | P1 (S=5 → upgrade)   | INV-TenantIsolation + test integração |
+| FM-303 | AC entry aponta pra blob de outro tenant (bug)           | 5 | 2 | 4 | 40  | P1 (S=5 → upgrade; O 1→2 em S-19) | INV-TenantIsolation + test integração + RB-FM-303 |
 | FM-304 | Corrupção em audit chain (hash chain broken)             | 4 | 1 | 4 | 16  | P2 (S=4) | PAT-AUDIT-VERIFY-001 diário     |
 | FM-305 | Tombstone lost (GC não roda; storage infla)              | 3 | 3 | 3 | 27  | P2       | PAT-GC-HEALTHCHECK-001          |
 

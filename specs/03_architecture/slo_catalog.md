@@ -74,13 +74,17 @@ Cada SLI é uma razão `good_events / valid_events` sobre uma janela. 4 tipos pr
 
 ## 3. SLO tier strategy
 
-CoreLink opera em 3 tiers (clientes definem em contrato):
+CoreLink opera em **5 tiers** (alinhado com `remote_cache_product_profile.md §8.2`; corrigido S-13 do audit Lote 3+4).
 
-| Tier           | Audiência                    | Availability alvo | Latency alvo p99 | Suporte             |
-|----------------|------------------------------|--------------------|-------------------|----------------------|
-| `free`         | OSS / trial                  | 99.5% (3.6h/mo)    | 500ms (CAS GET)   | Community / best-effort |
-| `team`         | Mid-size eng org             | 99.9% (43m/mo)     | 300ms             | Email, 1 business day |
-| `enterprise`   | Grandes corps                 | 99.95% (21m/mo)    | 200ms             | Pager 24/7, credits  |
+| Tier           | Audiência                    | Availability alvo | Latency alvo p99 (CAS GET) | Suporte             |
+|----------------|------------------------------|--------------------|------------------------------|----------------------|
+| `free`         | OSS / trial                  | 99.5% (3.6h/mo)    | 500ms                        | Community / best-effort |
+| `solo`         | Dev individual / pequeno time | 99.7% (2.2h/mo)    | 400ms                        | Email, 5 business days |
+| `team`         | Mid-size eng org             | 99.9% (43m/mo)     | 300ms                        | Email, 1 business day |
+| `business`     | Grande org sem contrato custom | 99.93% (30m/mo)    | 250ms                        | Pager business hours, credits |
+| `enterprise`   | Grandes corps c/ contrato custom | 99.95% (21m/mo)    | 200ms                        | Pager 24/7, credits, BYOK opcional |
+
+> Mais fortes (99.99%) requerem contrato bespoke + ADR + baseline ≥ 30 dias (§1.3).
 
 Budgets são independentes por tier. Métricas agregadas em `corelink_slo_*{tier}`.
 
