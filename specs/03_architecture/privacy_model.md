@@ -251,13 +251,13 @@ Esta seção **estende** o control catalog de `security_model.md §6` com contro
 
 | Direito (LGPD / GDPR)                 | Suporte    | SLA         | Evidência                       | Owner             |
 |---------------------------------------|-----------|--------------|----------------------------------|-------------------|
-| Confirmação de tratamento (LGPD 18 I / GDPR 15) | Self-service | 5 dias úteis (SLO 95%) | EVT-AUDIT_LOG (DSR) | Privacy Officer  |
-| Acesso (LGPD 18 II / GDPR 15)                  | Self-service | 15 dias úteis          | EVT-AUDIT_LOG (DSR) | Privacy Officer  |
-| Correção (LGPD 18 III / GDPR 16)               | Self-service | 5 dias úteis           | EVT-AUDIT_LOG (DSR) | Privacy Officer  |
-| Anonimização/bloqueio/eliminação (LGPD 18 IV / GDPR 17) | Self-service | 30 dias             | EVT-RUNBOOK_VALIDATION | Privacy Officer  |
-| Portabilidade (LGPD 18 V / GDPR 20)            | Self-service | 15 dias úteis          | EVT-AUDIT_LOG       | Privacy Officer  |
-| Revogação de consentimento (LGPD 18 VI / GDPR 7) | Self-service | Imediato             | EVT-AUDIT_LOG       | Privacy Officer  |
-| Oposição (GDPR 21)                              | Manual (email) | 15 dias úteis       | EVT-AUDIT_LOG       | Privacy Officer  |
+| Confirmação de tratamento (LGPD 18 I / GDPR 15) | Self-service | 5 dias úteis (SLO 95%) | EVT-001 (DSR) | Privacy Officer  |
+| Acesso (LGPD 18 II / GDPR 15)                  | Self-service | 15 dias úteis          | EVT-001 (DSR) | Privacy Officer  |
+| Correção (LGPD 18 III / GDPR 16)               | Self-service | 5 dias úteis           | EVT-001 (DSR) | Privacy Officer  |
+| Anonimização/bloqueio/eliminação (LGPD 18 IV / GDPR 17) | Self-service | 30 dias             | EVT-017 | Privacy Officer  |
+| Portabilidade (LGPD 18 V / GDPR 20)            | Self-service | 15 dias úteis          | EVT-001       | Privacy Officer  |
+| Revogação de consentimento (LGPD 18 VI / GDPR 7) | Self-service | Imediato             | EVT-001       | Privacy Officer  |
+| Oposição (GDPR 21)                              | Manual (email) | 15 dias úteis       | EVT-001       | Privacy Officer  |
 
 ### 6.2 Pipeline de DSR (erasure exemplo)
 
@@ -412,14 +412,14 @@ Qualquer dos seguintes é considerado breach:
 
 | Teste                                             | Frequência     | Evidence                              |
 |---------------------------------------------------|----------------|---------------------------------------|
-| Redaction test (inject PII → verificar que não vaza em logs/metrics/traces) | CI every PR | EVT-UNIT_TEST_PASS      |
-| Erasure end-to-end (fake user lifecycle)           | CI every PR   | EVT-INTEGRATION_TEST_PASS            |
-| Residency integration test (upload em EU → verificar que R2 key é EU) | Nightly | EVT-INTEGRATION_TEST_PASS |
-| DSR SLO report                                     | Mensal        | EVT-DASHBOARD_SNAPSHOT                |
-| Sub-processor register diff check                  | Semanal       | EVT-CI_LOG                            |
-| LIA review                                         | Anual         | EVT-LEGAL_REVIEW                      |
-| Breach drill (tabletop exercise)                   | Semestral     | EVT-INCIDENT_POSTMORTEM (exercise)    |
-| DPIA (Data Protection Impact Assessment) novo feature grande | Por WI HIGH_RISK | EVT-DPIA                         |
+| Redaction test (inject PII → verificar que não vaza em logs/metrics/traces) | CI every PR | EVT-002      |
+| Erasure end-to-end (fake user lifecycle)           | CI every PR   | EVT-002            |
+| Residency integration test (upload em EU → verificar que R2 key é EU) | Nightly | EVT-002 |
+| DSR SLO report                                     | Mensal        | EVT-013                |
+| Sub-processor register diff check                  | Semanal       | EVT-001                            |
+| LIA review                                         | Anual         | EVT-044                      |
+| Breach drill (tabletop exercise)                   | Semestral     | EVT-019 (exercise)    |
+| DPIA (Data Protection Impact Assessment) novo feature grande | Por WI HIGH_RISK | EVT-045                         |
 
 ---
 

@@ -421,14 +421,14 @@ Alerta se cardinality > 2× budget esperado → investigar cardinality explosion
 
 | Teste                                       | Frequência  | Evidence                    |
 |---------------------------------------------|-------------|------------------------------|
-| Smoke test de emissão (métrica/log/trace)   | CI every PR | EVT-INTEGRATION_TEST_PASS   |
-| Schema validation de logs (unit)            | CI every PR | EVT-SCHEMA_VALIDATION       |
-| Alert rule syntax (`promtool test rules`)   | CI every PR | EVT-CI_LOG                  |
-| Dashboard-as-code lint (grafonnet/jsonnet)  | CI every PR | EVT-CI_LOG                  |
-| Cardinality budget check                     | Nightly     | EVT-DASHBOARD_SNAPSHOT      |
-| Synthetic uptime canary                      | Contínuo    | EVT-MONITORING_REPORT        |
-| Runbook drill (oncall simulation)            | Mensal      | EVT-RUNBOOK_VALIDATION      |
-| Chaos test: inject latency e verificar SLO alert disparou em X | Mensal (staging) | EVT-CHAOS_REPORT |
+| Smoke test de emissão (métrica/log/trace)   | CI every PR | EVT-002   |
+| Schema validation de logs (unit)            | CI every PR | EVT-026       |
+| Alert rule syntax (`promtool test rules`)   | CI every PR | EVT-001                  |
+| Dashboard-as-code lint (grafonnet/jsonnet)  | CI every PR | EVT-001                  |
+| Cardinality budget check                     | Nightly     | EVT-013      |
+| Synthetic uptime canary                      | Contínuo    | EVT-031        |
+| Runbook drill (oncall simulation)            | Mensal      | EVT-017      |
+| Chaos test: inject latency e verificar SLO alert disparou em X | Mensal (staging) | EVT-023 |
 
 ---
 

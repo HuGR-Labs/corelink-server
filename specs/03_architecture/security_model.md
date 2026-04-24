@@ -176,7 +176,7 @@ Cada célula abaixo é uma **ameaça específica** com ID `THR-<STRIDE>-<NNN>`. 
 | THR-T-004  | Audit log adulterado retroativamente                                                | AST-AUDIT    | TB-5     | CTRL-AUDIT-001 (R2 Object Lock + hash chain) |
 | THR-T-005  | Billing counter manipulado (fraude)                                                  | AST-BILLING  | TB-2     | CTRL-BILLING-001 (append-only events + reconciliation) |
 | THR-T-006  | Código CoreLink modificado no pipeline (supply chain)                              | AST-CODE     | TB-1     | CTRL-SUPPLY-001 (SLSA L3), CTRL-SUPPLY-002 (signed release) |
-| THR-T-007  | TLA+ model checked ≠ model deployed                                                 | AST-TLA-MODEL| TB-1     | CTRL-FORMAL-001 (CI mandatório + evidence EVT-TLA_MODEL_CHECK) |
+| THR-T-007  | TLA+ model checked ≠ model deployed                                                 | AST-TLA-MODEL| TB-1     | CTRL-FORMAL-001 (CI mandatório + evidence EVT-022) |
 
 ### 5.3 Repudiation (R)
 
@@ -229,94 +229,94 @@ Cada CTRL **DEVE** ter: descrição, implementação, owner (time), evidência o
 
 | ID           | Controle                             | Implementação                                             | Evidence     | Revalidação |
 |--------------|--------------------------------------|-----------------------------------------------------------|--------------|-------------|
-| CTRL-AUTH-001 | PAT assinado (HMAC-SHA256)          | Token = `b64(prefix.payload.sig)`; sig = HMAC(secret, payload) | EVT-UNIT_TEST_PASS | Anual |
-| CTRL-AUTH-004 | Path HMAC por tenant                | Prefix = `b64(HMAC(tenant_key, tenant_id))[:16]`          | EVT-TEST_OUTPUT | Semestral (key rotation) |
-| CTRL-AUTH-007 | Nonce + replay window               | Requests assinados válidos por ±60s; nonce em DO          | EVT-INTEGRATION_TEST_PASS | Anual |
-| CTRL-AUTH-010 | MFA + session binding para admin    | WebAuthn; session bound a UA+IP+PKCE                      | EVT-PENTEST_REPORT | Anual |
-| CTRL-AUTHZ-001| Scope check by verb                 | Middleware valida scope antes de atingir handler          | EVT-UNIT_TEST_PASS | Contínuo |
-| CTRL-AUTHZ-002| Explicit tenant_id + assertion      | Todo handler recebe `tenant_id` param; assertion dupla no storage | EVT-TLA_MODEL_CHECK | Por mudança |
+| CTRL-AUTH-001 | PAT assinado (HMAC-SHA256)          | Token = `b64(prefix.payload.sig)`; sig = HMAC(secret, payload) | EVT-002 | Anual |
+| CTRL-AUTH-004 | Path HMAC por tenant                | Prefix = `b64(HMAC(tenant_key, tenant_id))[:16]`          | EVT-002 | Semestral (key rotation) |
+| CTRL-AUTH-007 | Nonce + replay window               | Requests assinados válidos por ±60s; nonce em DO          | EVT-002 | Anual |
+| CTRL-AUTH-010 | MFA + session binding para admin    | WebAuthn; session bound a UA+IP+PKCE                      | EVT-025 | Anual |
+| CTRL-AUTHZ-001| Scope check by verb                 | Middleware valida scope antes de atingir handler          | EVT-002 | Contínuo |
+| CTRL-AUTHZ-002| Explicit tenant_id + assertion      | Todo handler recebe `tenant_id` param; assertion dupla no storage | EVT-022 | Por mudança |
 
 ### 6.2 Criptografia & Integridade
 
 | ID           | Controle                            | Implementação                                              | Evidence     | Revalidação |
 |--------------|-------------------------------------|------------------------------------------------------------|--------------|-------------|
-| CTRL-CAS-001 | Content-addressable naming          | Path = `<algo>/<hash>`; escrita rejeita se `hash(body) ≠ <hash>` | EVT-UNIT_TEST_PASS | Contínuo |
-| CTRL-CAS-002 | BLAKE3 verify on read               | Client lib opt-out via header `X-Trust-Server: never` (default) | EVT-CLIENT_CONFORMANCE_TEST | Por release |
-| CTRL-AC-001  | Merkle verify                       | AC entry carrega digest de raiz; client valida             | EVT-INTEGRATION_TEST_PASS | Por release |
-| CTRL-AC-002  | AC digest signing                   | AC digest assinado com tenant_key; verify no client        | EVT-BENCH_REPORT (overhead) | Por release |
-| CTRL-CRYPTO-001 | TLS 1.3 only                     | CF edge config; HSTS preload; CAA pin                      | EVT-SCAN_REPORT (SSL Labs A+) | Trimestral |
-| CTRL-CRYPTO-002 | AES-256-GCM at rest              | R2 SSE-S3 default + envelope per-tenant (HKDF)             | EVT-DASHBOARD_SNAPSHOT | Trimestral |
-| CTRL-CRYPTO-003 | Key rotation annual              | Automation via CF API; re-wrap envelope                    | EVT-CI_LOG | Anual |
+| CTRL-CAS-001 | Content-addressable naming          | Path = `<algo>/<hash>`; escrita rejeita se `hash(body) ≠ <hash>` | EVT-002 | Contínuo |
+| CTRL-CAS-002 | BLAKE3 verify on read               | Client lib opt-out via header `X-Trust-Server: never` (default) | EVT-027 | Por release |
+| CTRL-AC-001  | Merkle verify                       | AC entry carrega digest de raiz; client valida             | EVT-002 | Por release |
+| CTRL-AC-002  | AC digest signing                   | AC digest assinado com tenant_key; verify no client        | EVT-004 (overhead) | Por release |
+| CTRL-CRYPTO-001 | TLS 1.3 only                     | CF edge config; HSTS preload; CAA pin                      | EVT-037 (SSL Labs A+) | Trimestral |
+| CTRL-CRYPTO-002 | AES-256-GCM at rest              | R2 SSE-S3 default + envelope per-tenant (HKDF)             | EVT-013 | Trimestral |
+| CTRL-CRYPTO-003 | Key rotation annual              | Automation via CF API; re-wrap envelope                    | EVT-001 | Anual |
 
 ### 6.3 Isolamento
 
 | ID           | Controle                            | Implementação                                              | Evidence     | Revalidação |
 |--------------|-------------------------------------|------------------------------------------------------------|--------------|-------------|
 | CTRL-ISO-001 | HMAC tenant prefix                  | Ver CTRL-AUTH-004                                          | — | — |
-| CTRL-ISO-002 | AuthZ check on storage call         | Worker valida tenant_id == prefix HMAC(tenant_key, caller) | EVT-TLA_MODEL_CHECK | Contínuo |
-| CTRL-ISO-003 | R2 bucket policy enforcement        | IAM policy + pre-signed URL com path fixo                  | EVT-SAST_SCAN | Trimestral |
-| CTRL-ISO-004 | Constant-time 404 vs 403            | Middleware uniformiza latência e body                      | EVT-PENTEST_REPORT | Anual |
-| CTRL-ISO-005 | Dedup tenant-local default          | Cross-tenant dedup apenas via ADR com BYOE                 | EVT-ADR_DECISION | Por mudança |
+| CTRL-ISO-002 | AuthZ check on storage call         | Worker valida tenant_id == prefix HMAC(tenant_key, caller) | EVT-022 | Contínuo |
+| CTRL-ISO-003 | R2 bucket policy enforcement        | IAM policy + pre-signed URL com path fixo                  | EVT-005 | Trimestral |
+| CTRL-ISO-004 | Constant-time 404 vs 403            | Middleware uniformiza latência e body                      | EVT-025 | Anual |
+| CTRL-ISO-005 | Dedup tenant-local default          | Cross-tenant dedup apenas via ADR com BYOE                 | EVT-029 | Por mudança |
 
 ### 6.4 Supply Chain
 
 | ID           | Controle                            | Implementação                                              | Evidence     | Revalidação |
 |--------------|-------------------------------------|------------------------------------------------------------|--------------|-------------|
-| CTRL-SUPPLY-001 | SLSA Level 3                      | GitHub Actions + provenance attestation via sigstore        | EVT-SLSA_PROVENANCE | Por release |
-| CTRL-SUPPLY-002 | Signed release + verified deploy  | Cosign sign; CF deploy verifica assinatura                 | EVT-CI_LOG | Por release |
-| CTRL-SUPPLY-003 | SBOM mandatório                    | CycloneDX gerado em build; publicado em release            | EVT-SBOM | Por release |
-| CTRL-SUPPLY-004 | Dependency pinning + audit         | `Cargo.lock` committed; `cargo-audit` CI; deny unmaintained | EVT-CI_LOG | Diário (CI) |
-| CTRL-SUPPLY-005 | No dynamic loading                 | Sem WASM carregada em runtime; sem `dlopen`                | EVT-SAST_SCAN | Por release |
+| CTRL-SUPPLY-001 | SLSA Level 3                      | GitHub Actions + provenance attestation via sigstore        | EVT-011 | Por release |
+| CTRL-SUPPLY-002 | Signed release + verified deploy  | Cosign sign; CF deploy verifica assinatura                 | EVT-001 | Por release |
+| CTRL-SUPPLY-003 | SBOM mandatório                    | CycloneDX gerado em build; publicado em release            | EVT-010 | Por release |
+| CTRL-SUPPLY-004 | Dependency pinning + audit         | `Cargo.lock` committed; `cargo-audit` CI; deny unmaintained | EVT-001 | Diário (CI) |
+| CTRL-SUPPLY-005 | No dynamic loading                 | Sem WASM carregada em runtime; sem `dlopen`                | EVT-005 | Por release |
 
 ### 6.5 Input Handling
 
 | ID           | Controle                            | Implementação                                              | Evidence     | Revalidação |
 |--------------|-------------------------------------|------------------------------------------------------------|--------------|-------------|
-| CTRL-INPUT-001 | Path canonicalization             | Rejeita `..`, `\0`, UTF-8 inválido, empty, `>4KiB`         | EVT-UNIT_TEST_PASS | Contínuo |
-| CTRL-INPUT-002 | Parameterized queries              | `sqlx::query!` macros apenas; deny raw strings              | EVT-SAST_SCAN | Contínuo |
-| CTRL-INPUT-003 | Explicit deserialization           | `serde_with::deserialize_as` + `#[serde(deny_unknown_fields)]` | EVT-UNIT_TEST_PASS | Contínuo |
-| CTRL-INPUT-004 | Content-Length cap                 | Max 5GiB por blob single-put; multipart > 5GiB             | EVT-UNIT_TEST_PASS | Contínuo |
+| CTRL-INPUT-001 | Path canonicalization             | Rejeita `..`, `\0`, UTF-8 inválido, empty, `>4KiB`         | EVT-002 | Contínuo |
+| CTRL-INPUT-002 | Parameterized queries              | `sqlx::query!` macros apenas; deny raw strings              | EVT-005 | Contínuo |
+| CTRL-INPUT-003 | Explicit deserialization           | `serde_with::deserialize_as` + `#[serde(deny_unknown_fields)]` | EVT-002 | Contínuo |
+| CTRL-INPUT-004 | Content-Length cap                 | Max 5GiB por blob single-put; multipart > 5GiB             | EVT-002 | Contínuo |
 
 ### 6.6 Runtime Hardening
 
 | ID           | Controle                            | Implementação                                              | Evidence     | Revalidação |
 |--------------|-------------------------------------|------------------------------------------------------------|--------------|-------------|
-| CTRL-EXEC-001 | Deadline hard em execute-action    | Container mata processo após deadline API-set (max 60min) | EVT-INTEGRATION_TEST_PASS | Contínuo |
-| CTRL-EXEC-002 | gVisor/Firecracker                 | Cloudflare Containers já provê; verificar em runbook       | EVT-RUNBOOK_VALIDATION | Trimestral |
-| CTRL-EXEC-003 | seccomp strict                     | Allowlist curta de syscalls; deny all default              | EVT-SAST_SCAN | Por release |
-| CTRL-NET-005 | Egress allowlist no Container       | Apenas `*.r2.cloudflarestorage.com` + `registries allowlist` | EVT-CONFIG_SNAPSHOT | Trimestral |
+| CTRL-EXEC-001 | Deadline hard em execute-action    | Container mata processo após deadline API-set (max 60min) | EVT-002 | Contínuo |
+| CTRL-EXEC-002 | gVisor/Firecracker                 | Cloudflare Containers já provê; verificar em runbook       | EVT-017 | Trimestral |
+| CTRL-EXEC-003 | seccomp strict                     | Allowlist curta de syscalls; deny all default              | EVT-005 | Por release |
+| CTRL-NET-005 | Egress allowlist no Container       | Apenas `*.r2.cloudflarestorage.com` + `registries allowlist` | EVT-028 | Trimestral |
 
 ### 6.7 Rate Limiting & Quotas
 
 | ID           | Controle                            | Implementação                                              | Evidence     | Revalidação |
 |--------------|-------------------------------------|------------------------------------------------------------|--------------|-------------|
-| CTRL-RATE-001 | Per-tenant token bucket            | DO `rate-limiter-<tenant>`; refill rate = plano            | EVT-LOAD_TEST | Mensal |
-| CTRL-QUOTA-001| Storage quota per-tenant           | D1 tabela `tenant_quota`; enforcement na write path        | EVT-INTEGRATION_TEST_PASS | Mensal |
-| CTRL-COMP-001 | Max decompression ratio             | Zstd param `max_window_size`; aborta se ratio > 100×       | EVT-UNIT_TEST_PASS | Contínuo |
-| CTRL-BACKOFF-001 | Exponential backoff com jitter   | Lib interna `backoff::jittered`; tests de convergência     | EVT-UNIT_TEST_PASS | Contínuo |
+| CTRL-RATE-001 | Per-tenant token bucket            | DO `rate-limiter-<tenant>`; refill rate = plano            | EVT-024 | Mensal |
+| CTRL-QUOTA-001| Storage quota per-tenant           | D1 tabela `tenant_quota`; enforcement na write path        | EVT-002 | Mensal |
+| CTRL-COMP-001 | Max decompression ratio             | Zstd param `max_window_size`; aborta se ratio > 100×       | EVT-002 | Contínuo |
+| CTRL-BACKOFF-001 | Exponential backoff com jitter   | Lib interna `backoff::jittered`; tests de convergência     | EVT-002 | Contínuo |
 
 ### 6.8 Auditoria & Forensics
 
 | ID           | Controle                            | Implementação                                              | Evidence     | Revalidação |
 |--------------|-------------------------------------|------------------------------------------------------------|--------------|-------------|
-| CTRL-AUDIT-001 | R2 Object Lock + hash chain      | Audit log appended com hash do evento anterior; bucket em Governance Mode | EVT-CI_LOG | Trimestral |
-| CTRL-AUDIT-002 | Write events ricos               | `{actor, tenant_id, token_hash, op, path_hash, timestamp, request_id, outcome}` | EVT-SCHEMA_VALIDATION | Contínuo |
-| CTRL-AUDIT-003 | MFA attestation para admin ops   | WebAuthn signature embedded in audit record                | EVT-PENTEST_REPORT | Anual |
-| CTRL-AUDIT-004 | Reconciliation com CF analytics  | Diária; alert se drift > 0.1%                              | EVT-DASHBOARD_SNAPSHOT | Diário |
-| CTRL-AUDIT-005 | Retention 7 anos (SOC 2)         | Lifecycle rule R2; test de recovery trimestral             | EVT-RUNBOOK_VALIDATION | Trimestral |
+| CTRL-AUDIT-001 | R2 Object Lock + hash chain      | Audit log appended com hash do evento anterior; bucket em Governance Mode | EVT-001 | Trimestral |
+| CTRL-AUDIT-002 | Write events ricos               | `{actor, tenant_id, token_hash, op, path_hash, timestamp, request_id, outcome}` | EVT-026 | Contínuo |
+| CTRL-AUDIT-003 | MFA attestation para admin ops   | WebAuthn signature embedded in audit record                | EVT-025 | Anual |
+| CTRL-AUDIT-004 | Reconciliation com CF analytics  | Diária; alert se drift > 0.1%                              | EVT-013 | Diário |
+| CTRL-AUDIT-005 | Retention 7 anos (SOC 2)         | Lifecycle rule R2; test de recovery trimestral             | EVT-017 | Trimestral |
 
 ### 6.9 Formal Verification
 
 | ID           | Controle                            | Implementação                                              | Evidence     | Revalidação |
 |--------------|-------------------------------------|------------------------------------------------------------|--------------|-------------|
-| CTRL-FORMAL-001 | TLA+ obrigatório para INV CRITICAL | CI falha se invariante CRITICAL não tem model check verde | EVT-TLA_MODEL_CHECK | Por mudança |
-| CTRL-FORMAL-002 | Proof artifacts versionados      | `.tla` + `.cfg` em repo; CI roda TLC; evidence anexada à PR | EVT-CI_LOG | Por PR |
+| CTRL-FORMAL-001 | TLA+ obrigatório para INV CRITICAL | CI falha se invariante CRITICAL não tem model check verde | EVT-022 | Por mudança |
+| CTRL-FORMAL-002 | Proof artifacts versionados      | `.tla` + `.cfg` em repo; CI roda TLC; evidence anexada à PR | EVT-001 | Por PR |
 
 ### 6.10 Privacy (coordenação — ver `privacy_model.md`)
 
 | ID           | Controle                            | Implementação                                              | Evidence     | Revalidação |
 |--------------|-------------------------------------|------------------------------------------------------------|--------------|-------------|
-| CTRL-PRIV-001 | Log redaction + allowlist schema  | Lib `log-schema`; deny unknown fields; structured JSON     | EVT-SAST_SCAN | Contínuo |
+| CTRL-PRIV-001 | Log redaction + allowlist schema  | Lib `log-schema`; deny unknown fields; structured JSON     | EVT-005 | Contínuo |
 
 ---
 
@@ -426,15 +426,15 @@ Root KMS (Cloudflare Workers Secrets, HSM-backed)
 
 | Tipo                   | Gatilho                  | Evidence                      | Ownership           |
 |------------------------|--------------------------|-------------------------------|---------------------|
-| SAST (semgrep + clippy -D warnings) | Todo PR     | EVT-SAST_SCAN                 | Dev (self)          |
-| Dependency audit       | Daily CI + PR            | EVT-CI_LOG                    | Security Lead       |
-| Secret scanning        | Todo PR (gitleaks)       | EVT-CI_LOG                    | Security Lead       |
-| Fuzz testing (parsers) | Nightly; 1h per target   | EVT-FUZZ_REPORT               | Dev do componente   |
-| Integration tests with TLA+ link | PR que toca INV CRITICAL | EVT-TLA_MODEL_CHECK | Architect           |
-| Pentest externo        | Anual + pós mudança arq. | EVT-PENTEST_REPORT            | Security Lead + 3P  |
-| Red team exercise      | Anual                    | EVT-INCIDENT_POSTMORTEM (exercise) | Security Lead + 3P |
-| Chaos engineering      | Semanal em staging       | EVT-CHAOS_REPORT              | SRE                 |
-| Bug bounty             | Contínuo (HackerOne)     | EVT-BUG_BOUNTY_REPORT         | Security Lead       |
+| SAST (semgrep + clippy -D warnings) | Todo PR     | EVT-005                 | Dev (self)          |
+| Dependency audit       | Daily CI + PR            | EVT-001                    | Security Lead       |
+| Secret scanning        | Todo PR (gitleaks)       | EVT-001                    | Security Lead       |
+| Fuzz testing (parsers) | Nightly; 1h per target   | EVT-008               | Dev do componente   |
+| Integration tests with TLA+ link | PR que toca INV CRITICAL | EVT-022 | Architect           |
+| Pentest externo        | Anual + pós mudança arq. | EVT-025            | Security Lead + 3P  |
+| Red team exercise      | Anual                    | EVT-019 (exercise) | Security Lead + 3P |
+| Chaos engineering      | Semanal em staging       | EVT-023              | SRE                 |
+| Bug bounty             | Contínuo (HackerOne)     | EVT-030         | Security Lead       |
 
 > **Threshold para freeze:** qualquer finding HIGH/CRITICAL bloqueia release até fix + post-mortem.
 
@@ -446,12 +446,12 @@ Matriz compacta (completa em `_audits/matrix-stride-ctrl.csv`):
 
 | Category | THR count | CTRLs primários                                               | Evidência "must-have" em PRR |
 |----------|-----------|---------------------------------------------------------------|-------------------------------|
-| S        | 5         | CTRL-AUTH-001, -004, -007, -010; CTRL-NET-001, -002, -003     | EVT-PENTEST_REPORT            |
-| T        | 7         | CTRL-CAS-001, -002; CTRL-AC-001, -002; CTRL-AUDIT-001; CTRL-SUPPLY-001 | EVT-TLA_MODEL_CHECK + EVT-SLSA_PROVENANCE |
-| R        | 3         | CTRL-AUDIT-002, -003, -004                                    | EVT-SCHEMA_VALIDATION         |
-| I        | 7         | CTRL-ISO-001..005; CTRL-PRIV-001; CTRL-NET-004                | EVT-TLA_MODEL_CHECK (INV-TenantIsolation) + EVT-PENTEST_REPORT |
-| D        | 5         | CTRL-RATE-001; CTRL-QUOTA-001; CTRL-COMP-001; CTRL-BACKOFF-001; CTRL-EXEC-001 | EVT-LOAD_TEST + EVT-CHAOS_REPORT |
-| E        | 6         | CTRL-AUTHZ-001, -002; CTRL-EXEC-002, -003; CTRL-INPUT-001..004 | EVT-PENTEST_REPORT + EVT-SAST_SCAN |
+| S        | 5         | CTRL-AUTH-001, -004, -007, -010; CTRL-NET-001, -002, -003     | EVT-025            |
+| T        | 7         | CTRL-CAS-001, -002; CTRL-AC-001, -002; CTRL-AUDIT-001; CTRL-SUPPLY-001 | EVT-022 + EVT-011 |
+| R        | 3         | CTRL-AUDIT-002, -003, -004                                    | EVT-026         |
+| I        | 7         | CTRL-ISO-001..005; CTRL-PRIV-001; CTRL-NET-004                | EVT-022 (INV-TenantIsolation) + EVT-025 |
+| D        | 5         | CTRL-RATE-001; CTRL-QUOTA-001; CTRL-COMP-001; CTRL-BACKOFF-001; CTRL-EXEC-001 | EVT-024 + EVT-023 |
+| E        | 6         | CTRL-AUTHZ-001, -002; CTRL-EXEC-002, -003; CTRL-INPUT-001..004 | EVT-025 + EVT-005 |
 
 **Rule of thumb:** se um WI toca asset X e não aplica o CTRL listado em X na §6, requer **waiver com compensating control** (ver `waiver.md` template).
 

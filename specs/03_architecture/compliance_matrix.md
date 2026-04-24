@@ -75,48 +75,48 @@ Planejamento: **Security + Availability + Confidentiality + Privacy + Processing
 
 | TSC Criterion | Requisito resumido                                | CTRLs internos                                | Evidence                              |
 |---------------|---------------------------------------------------|-----------------------------------------------|----------------------------------------|
-| CC1.1         | Demonstrar comprometimento com integridade/ética   | Code of Conduct, HR onboarding                | EVT-POLICY_SIGN                        |
-| CC1.2..1.5    | Governança, autoridade, competência                | Org chart, RACI, training                     | EVT-TRAINING_RECORD                    |
-| CC2.1..2.3    | Informação + comunicação (policies, ethics)         | Public policies; incident disclosure          | EVT-DASHBOARD_SNAPSHOT (status)        |
-| CC3.1..3.4    | Risk assessment                                     | `failure_modes.md`; annual risk review         | EVT-AUDIT_PLAN                         |
-| CC4.1..4.2    | Monitoring activities                                | Observability stack (§observability_model)     | EVT-DASHBOARD_SNAPSHOT                 |
+| CC1.1         | Demonstrar comprometimento com integridade/ética   | Code of Conduct, HR onboarding                | EVT-032                        |
+| CC1.2..1.5    | Governança, autoridade, competência                | Org chart, RACI, training                     | EVT-033                    |
+| CC2.1..2.3    | Informação + comunicação (policies, ethics)         | Public policies; incident disclosure          | EVT-013 (status)        |
+| CC3.1..3.4    | Risk assessment                                     | `failure_modes.md`; annual risk review         | EVT-034                         |
+| CC4.1..4.2    | Monitoring activities                                | Observability stack (§observability_model)     | EVT-013                 |
 | CC5.1..5.3    | Control activities                                  | All CTRL-* catalogs                           | CTRL-AUDIT-001..005                     |
-| CC6.1         | Logical access / authentication                     | CTRL-AUTH-001, -004, -007, -010               | EVT-PENTEST_REPORT                    |
-| CC6.2         | Authorization                                        | CTRL-AUTHZ-001, -002                          | EVT-TLA_MODEL_CHECK                   |
-| CC6.3         | Access provisioning                                  | `auth_model.md §5`; quarterly review           | EVT-ACCESS_REVIEW                     |
-| CC6.6         | Logical/physical boundaries                           | Trust boundaries §3 security_model            | EVT-NETWORK_DIAGRAM                   |
-| CC6.7         | Transmission / in-flight                             | CTRL-CRYPTO-001                                | EVT-SCAN_REPORT (SSL Labs)            |
-| CC6.8         | Malicious code / unauthorized software               | CTRL-SUPPLY-001..005                           | EVT-SLSA_PROVENANCE                   |
-| CC7.1..7.5    | Detection + incident response                        | Observability + runbooks + incident template   | EVT-INCIDENT_POSTMORTEM               |
-| CC8.1         | Change management                                    | PR review, progressive rollout, dual-approval  | EVT-CI_LOG + EVT-DEPLOY_LOG           |
-| CC9.1         | Risk mitigation                                      | Compensating controls via `waiver.md`          | EVT-WAIVER_ACTIVE                     |
-| CC9.2         | Vendor management                                    | `§7 sub-processors`                            | EVT-VENDOR_REVIEW                     |
+| CC6.1         | Logical access / authentication                     | CTRL-AUTH-001, -004, -007, -010               | EVT-025                    |
+| CC6.2         | Authorization                                        | CTRL-AUTHZ-001, -002                          | EVT-022                   |
+| CC6.3         | Access provisioning                                  | `auth_model.md §5`; quarterly review           | EVT-035                     |
+| CC6.6         | Logical/physical boundaries                           | Trust boundaries §3 security_model            | EVT-036                   |
+| CC6.7         | Transmission / in-flight                             | CTRL-CRYPTO-001                                | EVT-037 (SSL Labs)            |
+| CC6.8         | Malicious code / unauthorized software               | CTRL-SUPPLY-001..005                           | EVT-011                   |
+| CC7.1..7.5    | Detection + incident response                        | Observability + runbooks + incident template   | EVT-019               |
+| CC8.1         | Change management                                    | PR review, progressive rollout, dual-approval  | EVT-001 + EVT-038           |
+| CC9.1         | Risk mitigation                                      | Compensating controls via `waiver.md`          | EVT-039                     |
+| CC9.2         | Vendor management                                    | `§7 sub-processors`                            | EVT-040                     |
 
 ### 2.3 Mapping — Availability (A series)
 
-| A1.1         | Identify/monitor availability                        | SLOs `slo_catalog.md` + alerts                | EVT-DASHBOARD_SNAPSHOT                |
-| A1.2         | Recovery + contingency                               | Runbooks + chaos tests                         | EVT-CHAOS_REPORT + EVT-RUNBOOK_VALIDATION |
-| A1.3         | Recovery infrastructure testing                      | DR drill semestral                             | EVT-DR_DRILL                          |
+| A1.1         | Identify/monitor availability                        | SLOs `slo_catalog.md` + alerts                | EVT-013                |
+| A1.2         | Recovery + contingency                               | Runbooks + chaos tests                         | EVT-023 + EVT-017 |
+| A1.3         | Recovery infrastructure testing                      | DR drill semestral                             | EVT-041                          |
 
 ### 2.4 Mapping — Confidentiality (C series)
 
-| C1.1         | Identify + classify confidential                      | `privacy_model.md §2`                          | EVT-DATA_CLASSIFICATION_DOC           |
-| C1.2         | Protection controls                                   | CTRL-CRYPTO-002, CTRL-ISO-001..005             | EVT-SAST_SCAN                         |
+| C1.1         | Identify + classify confidential                      | `privacy_model.md §2`                          | EVT-043           |
+| C1.2         | Protection controls                                   | CTRL-CRYPTO-002, CTRL-ISO-001..005             | EVT-005                         |
 
 ### 2.5 Mapping — Processing Integrity (PI series)
 
-| PI1.1..1.5   | Inputs/processing/outputs correctness                 | CTRL-CAS-001, -002; CTRL-AC-001, -002; input validation CTRL-INPUT-001..004; reconciliation PAT-RECONCILE-001 | EVT-TLA_MODEL_CHECK + EVT-UNIT_TEST_PASS |
+| PI1.1..1.5   | Inputs/processing/outputs correctness                 | CTRL-CAS-001, -002; CTRL-AC-001, -002; input validation CTRL-INPUT-001..004; reconciliation PAT-RECONCILE-001 | EVT-022 + EVT-002 |
 
 ### 2.6 Mapping — Privacy (P series)
 
-| P1.1         | Privacy notice                                        | `/privacy` page; versioned                     | EVT-LEGAL_REVIEW                       |
-| P2.1         | Consent                                               | CTRL-PRIV-015 + opt-in UI                      | EVT-AUDIT_LOG                         |
-| P3.1..3.2    | Collection limited to purpose                         | CTRL-PRIV-003                                  | EVT-SCHEMA_VALIDATION                 |
-| P4.1..4.3    | Use, retention, disposal                              | `privacy_model.md §8`                          | EVT-ERASURE_TEST                      |
-| P5.1..5.2    | Access + correction                                   | CTRL-PRIV-022 DSR self-service                 | EVT-AUDIT_LOG (DSR)                   |
-| P6.1..6.7    | Disclosure + notification                             | DPA + breach runbook                           | EVT-RUNBOOK_VALIDATION                |
-| P7.1         | Data quality                                          | Reconciliation                                 | EVT-INTEGRATION_TEST_PASS              |
-| P8.1         | Monitoring + enforcement                              | Privacy Officer role + quarterly review        | EVT-AUDIT_PLAN                        |
+| P1.1         | Privacy notice                                        | `/privacy` page; versioned                     | EVT-044                       |
+| P2.1         | Consent                                               | CTRL-PRIV-015 + opt-in UI                      | EVT-001                         |
+| P3.1..3.2    | Collection limited to purpose                         | CTRL-PRIV-003                                  | EVT-026                 |
+| P4.1..4.3    | Use, retention, disposal                              | `privacy_model.md §8`                          | EVT-042                      |
+| P5.1..5.2    | Access + correction                                   | CTRL-PRIV-022 DSR self-service                 | EVT-001 (DSR)                   |
+| P6.1..6.7    | Disclosure + notification                             | DPA + breach runbook                           | EVT-017                |
+| P7.1         | Data quality                                          | Reconciliation                                 | EVT-002              |
+| P8.1         | Monitoring + enforcement                              | Privacy Officer role + quarterly review        | EVT-034                        |
 
 ---
 
@@ -141,8 +141,8 @@ Statement of Applicability (SoA) cobre os 93 controles Anexo A:2022. Mapping com
 | A.8.9 (Config mgmt)       | Terraform + drift detection        | PAT-DRIFT-DETECTION-001 |
 | A.8.24 (Cryptography)     | Algoritmos e key mgmt              | §7 security_model |
 | A.8.25 (Secure dev)       | Code review + SAST                 | CTRL-INPUT-002, CTRL-SUPPLY-005 |
-| A.8.28 (Secure coding)    | Rust + lints + fuzz                | EVT-FUZZ_REPORT   |
-| A.8.29 (Security testing) | Pentest anual                       | EVT-PENTEST_REPORT |
+| A.8.28 (Secure coding)    | Rust + lints + fuzz                | EVT-008   |
+| A.8.29 (Security testing) | Pentest anual                       | EVT-025 |
 | A.8.30 (Outsourced dev)   | N/A (in-house)                      | — |
 
 ---
@@ -153,17 +153,17 @@ Statement of Applicability (SoA) cobre os 93 controles Anexo A:2022. Mapping com
 
 | Art.   | Requisito                                             | Como atendemos                            | Evidence                         |
 |--------|-------------------------------------------------------|--------------------------------------------|----------------------------------|
-| Art. 6 | Finalidade, adequação, necessidade                    | CTRL-PRIV-003 (purpose_tag)                | EVT-SCHEMA_VALIDATION            |
-| Art. 7 | Base legal                                             | `privacy_model.md §9`                      | EVT-LEGAL_REVIEW                 |
-| Art. 11 | Dado sensível — não coletamos default                | §2 privacy_model                            | EVT-SCHEMA_VALIDATION            |
-| Art. 15 | Término do tratamento                                  | §8 privacy_model (retention)                | EVT-ERASURE_TEST                 |
-| Art. 17 | Titular tem direito                                    | §6 privacy_model (DSRs)                     | EVT-AUDIT_LOG                    |
-| Art. 18 I–IX | Direitos específicos                              | §6 privacy_model                            | EVT-AUDIT_LOG                    |
-| Art. 33 | Transferência internacional                           | §7 privacy_model (SCC, residency)          | EVT-LEGAL_REVIEW                 |
-| Art. 37 | Registro de operações                                  | Audit events CloudEvents                    | EVT-AUDIT_LOG                    |
-| Art. 38 | Relatório de impacto à proteção de dados (RIPD)       | DPIA por WI HIGH_RISK                       | EVT-DPIA                         |
-| Art. 41 | Encarregado (DPO)                                      | Privacy Officer nomeado (Gustavo interim)   | EVT-POLICY_SIGN                  |
-| Art. 48 | Comunicação de incidente à ANPD                        | `RB-BREACH-NOTIF`                           | EVT-RUNBOOK_VALIDATION           |
+| Art. 6 | Finalidade, adequação, necessidade                    | CTRL-PRIV-003 (purpose_tag)                | EVT-026            |
+| Art. 7 | Base legal                                             | `privacy_model.md §9`                      | EVT-044                 |
+| Art. 11 | Dado sensível — não coletamos default                | §2 privacy_model                            | EVT-026            |
+| Art. 15 | Término do tratamento                                  | §8 privacy_model (retention)                | EVT-042                 |
+| Art. 17 | Titular tem direito                                    | §6 privacy_model (DSRs)                     | EVT-001                    |
+| Art. 18 I–IX | Direitos específicos                              | §6 privacy_model                            | EVT-001                    |
+| Art. 33 | Transferência internacional                           | §7 privacy_model (SCC, residency)          | EVT-044                 |
+| Art. 37 | Registro de operações                                  | Audit events CloudEvents                    | EVT-001                    |
+| Art. 38 | Relatório de impacto à proteção de dados (RIPD)       | DPIA por WI HIGH_RISK                       | EVT-045                         |
+| Art. 41 | Encarregado (DPO)                                      | Privacy Officer nomeado (Gustavo interim)   | EVT-032                  |
+| Art. 48 | Comunicação de incidente à ANPD                        | `RB-BREACH-NOTIF`                           | EVT-017           |
 
 ### 4.2 Ponto crítico: tenants que usam CoreLink para dados pessoais
 
@@ -247,15 +247,15 @@ Report público derivado de SOC 2 Type II. Distribuível livremente (marketing).
 
 | EVT category        | Frequência automática  | Retention           |
 |---------------------|-------------------------|---------------------|
-| EVT-CI_LOG          | Cada PR                | 7y (audit-relevant) |
-| EVT-SAST_SCAN       | Cada PR                | 7y                  |
-| EVT-SBOM            | Cada release            | 7y                  |
-| EVT-SLSA_PROVENANCE | Cada release            | 7y                  |
-| EVT-PENTEST_REPORT  | Anual + ad-hoc          | 7y                  |
-| EVT-TLA_MODEL_CHECK | PR que toca INV CRITICAL | 7y                  |
-| EVT-INCIDENT_POSTMORTEM | Pós incident SEV-1/2 | 7y                  |
-| EVT-DASHBOARD_SNAPSHOT | Mensal (auto)       | 7y                  |
-| EVT-AUDIT_LOG       | Contínuo                | 7y (Object Lock)    |
+| EVT-001          | Cada PR                | 7y (audit-relevant) |
+| EVT-005       | Cada PR                | 7y                  |
+| EVT-010            | Cada release            | 7y                  |
+| EVT-011 | Cada release            | 7y                  |
+| EVT-025  | Anual + ad-hoc          | 7y                  |
+| EVT-022 | PR que toca INV CRITICAL | 7y                  |
+| EVT-019 | Pós incident SEV-1/2 | 7y                  |
+| EVT-013 | Mensal (auto)       | 7y                  |
+| EVT-001       | Contínuo                | 7y (Object Lock)    |
 
 ### 8.3 Audit log schema (CloudEvents)
 

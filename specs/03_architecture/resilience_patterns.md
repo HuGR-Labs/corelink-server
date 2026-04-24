@@ -87,7 +87,7 @@ tags: ["architecture", "reliability", "patterns", "retry", "circuit-breaker"]
   - Neon query: **3s**
   - KV get: **200ms**
   - Container execute-action: configurável pelo cliente (cap **3600s**)
-- **Evidence:** EVT-LOAD_TEST (distributions) + EVT-UNIT_TEST_PASS (enforcement)
+- **Evidence:** EVT-024 (distributions) + EVT-002 (enforcement)
 - **FMs mitigados:** FM-001, FM-004, FM-055, FM-057
 
 #### PAT-BUDGET-001 — CPU budget per-request
@@ -298,15 +298,15 @@ Cada pattern **DEVE** ter test suite dedicada:
 
 | Pattern class      | Teste                                              | Evidence                         |
 |--------------------|----------------------------------------------------|----------------------------------|
-| Timeout            | Slow-mock injection; assert kill < cap            | EVT-UNIT_TEST_PASS              |
-| Retry              | Flaky-mock; assert max_attempts respected          | EVT-UNIT_TEST_PASS              |
-| Circuit breaker    | Error-rate injection; assert state transitions     | EVT-UNIT_TEST_PASS              |
-| Bulkhead           | Saturation injection; assert isolation             | EVT-LOAD_TEST                   |
-| Rate limit         | Load test > limit; assert shaping                  | EVT-LOAD_TEST                   |
-| Graceful degrade   | Chaos test; assert 503s with Retry-After           | EVT-CHAOS_REPORT                |
-| Soft-delete        | Delete + undelete in grace window                   | EVT-INTEGRATION_TEST_PASS       |
-| Reconciliation     | Drift injection; assert job catches                | EVT-INTEGRATION_TEST_PASS       |
-| Progressive rollout | Error budget burn simulation; assert rollback     | EVT-LOAD_TEST                   |
+| Timeout            | Slow-mock injection; assert kill < cap            | EVT-002              |
+| Retry              | Flaky-mock; assert max_attempts respected          | EVT-002              |
+| Circuit breaker    | Error-rate injection; assert state transitions     | EVT-002              |
+| Bulkhead           | Saturation injection; assert isolation             | EVT-024                   |
+| Rate limit         | Load test > limit; assert shaping                  | EVT-024                   |
+| Graceful degrade   | Chaos test; assert 503s with Retry-After           | EVT-023                |
+| Soft-delete        | Delete + undelete in grace window                   | EVT-002       |
+| Reconciliation     | Drift injection; assert job catches                | EVT-002       |
+| Progressive rollout | Error budget burn simulation; assert rollback     | EVT-024                   |
 
 Chaos engineering: runs semanais em staging (FM-400..404 como cenários).
 
