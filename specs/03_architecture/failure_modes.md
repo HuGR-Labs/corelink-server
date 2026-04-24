@@ -175,7 +175,7 @@ Cada FM tem scores 1–5 em:
 | FM-250 | DDoS volumetric no edge                                  | 3 | 3 | 1 | 9   | P2      | CF DDoS managed; CTRL-RATE-001 |
 | FM-251 | Credential stuffing / brute force                         | 3 | 4 | 1 | 12  | P2      | CF WAF + lockout policy        |
 | FM-252 | PAT leaked em repo público                                | 3 | 3 | 3 | 27  | P2       | Secret scanning + auto-revoke  |
-| FM-253 | Cross-tenant read (security bug)                         | 5 | 2 | 4 | 40  | P1 (S=5 → upgrade; O 1→2 em S-19 audit Lote 3+4) | TLA+ INV-TenantIsolation + RB-FM-303 |
+| FM-253 | Cross-tenant read (security bug)                         | 5 | 2 | 4 | 40  | P1 (S=5 → upgrade; O 1→2 em S-19 audit Lote 3+4) | TLA+ INV-TENANT-ISOLATION + RB-FM-253 |
 | FM-254 | Cache poisoning (TA-3 inserir blob com hash forjado)     | 5 | 2 | 5 | 50  | P1 (S=5 → upgrade; O 1→2 em S-19) | CTRL-CAS-001 + client verify  |
 | FM-255 | Tenant-pago abusa execute-action para criptominer        | 3 | 3 | 2 | 18  | P2      | PAT-ABUSE-DETECT-001 + quota    |
 | FM-256 | Compression bomb em CAS write                             | 3 | 2 | 2 | 12  | P2      | CTRL-COMP-001                  |
@@ -252,14 +252,39 @@ Cada FM P0/P1 **DEVE** ter runbook em `specs/05_quality/runbooks/RB-<FM-ID>.md` 
 5. Root cause: queries pra investigar, snapshots de estado.
 6. Post-mortem: trigger para criação (`incident.md`).
 
-Runbooks catalogados inicialmente:
+### 6.1 Runbooks catalogados (todos os 26; atualizado Lote 6.4)
 
+**FM-level runbooks:**
+
+- `RB-FM-007` (deserialization RCE) → trimestral; fuzz corpus review.
+- `RB-FM-051` (R2 bit rot) → trimestral; scrub verification.
+- `RB-FM-054` (KV stale > 60s) → anual.
+- `RB-FM-057` (Neon failover) → semestral.
+- `RB-FM-062` (hash collision) → anual (probability ~2^-128; tabletop).
+- `RB-FM-100` (DNS outage) → semestral.
+- `RB-FM-101` (CF edge outage) → semestral; comms drill.
+- `RB-FM-156` (dep maintainer malicioso) → semestral.
+- `RB-FM-202` (runbook stale) → mensal (meta drill).
+- `RB-FM-205` (admin mistake) → anual (tabletop).
+- `RB-FM-206` (terraform drift) → mensal.
 - `RB-FM-253` (cross-tenant read) → **HIGHEST priority**; dry-run trimestral.
 - `RB-FM-254` (cache poisoning) → trimestral.
-- `RB-FM-300` (GC refcount bug) → semestral (destructive, requer staging).
+- `RB-FM-258` (insider exfil) → anual (tabletop with HR/Legal).
+- `RB-FM-300` (GC refcount bug) → semestral (destructive; staging only).
 - `RB-FM-302` (billing leak) → mensal (reconciliation checks).
-- `RB-FM-057` (Neon failover) → semestral.
-- `RB-FM-205` (admin mistake) → anual (tabletop).
+- `RB-FM-303` (AC entry cross-tenant) → trimestral; TLA+ replay.
+- `RB-FM-400` (retry storm) → trimestral; chaos test mensal.
+- `RB-FM-403` (container memory leak) → trimestral.
+- `RB-FM-404` (GC sweep + write race) → semestral; TLA+ regression test.
+
+**Non-FM runbooks (cross-cutting):**
+
+- `RB-BREACH-NOTIF` (data breach notification) → semestral tabletop.
+- `RB-KEY-COMPROMISE` (key compromise) → semestral dry-run.
+- `RB-HSM-UNAVAILABLE` (HSM outage) → semestral.
+- `RB-BYOK-REVOKE` (customer kill switch) → semestral dry-run.
+- `RB-GDPR-ERASURE-HOLD` (legal hold vs DSR) → anual.
+- `RB-SLO-AVAIL-CP` (SLO availability burn) → contínuo (alert-driven).
 
 ---
 
