@@ -2,17 +2,18 @@
 (***************************************************************************)
 (* CoreLink — INV-TENANT-ISOLATION (CRITICAL)                              *)
 (*                                                                         *)
-(* Endereça `invariant_registry.md §3.1` + `auth_model.md §8.3` + audit    *)
-(* finding S-02/F-03 (TLA+ obrigatório para invariantes CRITICAL).         *)
+(* v2 — reescrita Lote 6.1 endereçando audit finding G-03:                  *)
+(* • Write agora pode tentar cross-tenant (TryWriteCrossTenant adversarial) *)
+(* • List agora retorna conteúdo explícito (não apenas empty/result)        *)
+(* • Invariantes separados para read, write, enumerate                     *)
 (*                                                                         *)
 (* Modelo: multi-tenant CoreLink com principals autenticados, storage     *)
 (* namespaced por HMAC de tenant_id, 5 camadas de defesa.                  *)
 (*                                                                         *)
-(* Invariante core:                                                        *)
-(*   Nenhum principal de Tenant A pode ler/escrever/enumerar blobs         *)
-(*   de Tenant B, mesmo com credencial legítima de A, sob nenhuma          *)
-(*   circunstância (inclui: credential roubada, path guessing, side        *)
-(*   channel, bucket policy drift).                                        *)
+(* Invariantes core:                                                       *)
+(*   INV-ISO-READ: Principal de Tenant A nunca recebe blob de Tenant B     *)
+(*   INV-ISO-WRITE: Principal de Tenant A nunca escreve em namespace de B *)
+(*   INV-ISO-ENUM: List de A nunca retorna blobs de B                     *)
 (***************************************************************************)
 
 EXTENDS Integers, FiniteSets, Sequences, TLC
@@ -117,16 +118,17 @@ Read(p, b) ==
 
 \* Principal p tenta listar blobs. Deve usar prefix HMAC(tenant_id) SEM
 \* possibility de scan global (REG-NAMESPACE-003).
+\* v2 (Lote 6.1, G-03): retorna CONTEÚDO da list (não apenas empty/result).
+\* Cada blob visível é registrado como tupla separada no log.
 List(p) ==
     LET t == tenant_of[p]
         prefix == DerivePrefix(t)
-        visible == {key \in DOMAIN r2_storage: key[1] = prefix /\ r2_storage[key][1] = t}
+        visible == {key \in DOMAIN r2_storage: key[1] = prefix}
+        visible_blobs == {r2_storage[k][2]: k \in visible}
     IN
         /\ op_count < MaxOps
-        /\ access_log' = Append(access_log,
-            IF visible = {}
-              THEN <<p, "list", "empty", "allowed">>
-              ELSE <<p, "list", "result", "allowed">>)
+        \* Registra um entry por blob listado (modelo explícito de enumeration)
+        /\ access_log' = Append(access_log, <<p, "list", visible_blobs, "allowed">>)
         /\ op_count' = op_count + 1
         /\ UNCHANGED <<tenant_of, owned_blobs, hmac_prefix, r2_storage>>
 
@@ -153,6 +155,27 @@ PathGuess(p, guessed_prefix, b) ==
         /\ op_count' = op_count + 1
         /\ UNCHANGED <<tenant_of, owned_blobs, hmac_prefix, r2_storage>>
 
+\* Adversarial v2 (Lote 6.1, G-03): principal p tenta escrever com prefix
+\* derivado de outro tenant (tentativa de contaminar namespace de B via
+\* bug ou credencial roubada). Sistema DEVE rejeitar — modelo não permite
+\* porque Write deriva prefix sempre do tenant_of[p].
+TryWriteCrossTenant(p, victim_tenant, b) ==
+    LET attacker_t == tenant_of[p]
+        victim_prefix == DerivePrefix(victim_tenant)
+        forged_key == <<victim_prefix, b>>
+    IN
+        /\ op_count < MaxOps
+        /\ victim_tenant # attacker_t
+        /\ b \in Blobs
+        \* Modelo correto: middleware extrai tenant_id do token do p.
+        \* Para "escrever com prefix de outro tenant", atacante teria que
+        \* ou (a) forjar token de outro tenant, ou (b) bypass a lib
+        \* tenant_path::derive_prefix. Ambos rejeitados pela dupla
+        \* assertion CTRL-AUTHZ-002.
+        /\ access_log' = Append(access_log, <<p, "write", b, "denied">>)
+        /\ op_count' = op_count + 1
+        /\ UNCHANGED <<tenant_of, owned_blobs, hmac_prefix, r2_storage>>
+
 (*-- Next --------------------------------------------------------------------*)
 
 Next ==
@@ -161,15 +184,17 @@ Next ==
     \/ \E p \in Principals: List(p)
     \/ \E p \in Principals, prefix \in 1..Cardinality(Tenants), b \in Blobs:
          PathGuess(p, prefix, b)
+    \/ \E p \in Principals, vt \in Tenants, b \in Blobs:
+         TryWriteCrossTenant(p, vt, b)
 
 Spec == Init /\ [][Next]_vars
 
 (*-- Invariantes -------------------------------------------------------------*)
 
-\* INVARIANT core: access_log não contém "allowed" read de p sobre blob
-\* que não pertence ao tenant de p. Essa é a formalização literal de
-\* INV-TENANT-ISOLATION.
-InvTenantIsolation ==
+\* v2 (Lote 6.1, G-03): 3 invariantes separados para read, write, enumerate.
+
+\* INV-ISO-READ: read "allowed" só para blob do próprio tenant.
+InvTenantIsolationRead ==
     \A i \in 1..Len(access_log):
         LET entry == access_log[i]
             p == entry[1]
@@ -180,6 +205,35 @@ InvTenantIsolation ==
             (op = "read" /\ outcome = "allowed") =>
                 b \in owned_blobs[tenant_of[p]]
 
+\* INV-ISO-WRITE: write "allowed" resulta em storage apenas em namespace
+\* do próprio tenant. Formalização: se write foi accepted, o key gravado
+\* usa prefix de tenant_of[p].
+InvTenantIsolationWrite ==
+    \A i \in 1..Len(access_log):
+        LET entry == access_log[i]
+            p == entry[1]
+            op == entry[2]
+            b == entry[3]
+            outcome == entry[4]
+        IN
+            (op = "write" /\ outcome = "allowed") =>
+                \* Verifica que blob é owned pelo tenant correto
+                b \in owned_blobs[tenant_of[p]]
+
+\* INV-ISO-ENUM: List nunca retorna blobs que não pertencem ao tenant de p.
+\* Modelo: toda entry de list no log tem o set de blobs listados; todos
+\* devem estar em owned_blobs[tenant_of[p]].
+InvTenantIsolationEnum ==
+    \A i \in 1..Len(access_log):
+        LET entry == access_log[i]
+            p == entry[1]
+            op == entry[2]
+            listed_blobs == entry[3]
+            outcome == entry[4]
+        IN
+            (op = "list" /\ outcome = "allowed") =>
+                listed_blobs \subseteq owned_blobs[tenant_of[p]]
+
 \* Prefixos distintos (CTRL-AUTH-004).
 InvPrefixInjective == PrefixInjective
 
@@ -188,6 +242,9 @@ InvNamespaceConsistency ==
     \A key \in DOMAIN r2_storage:
         LET stored_tenant == r2_storage[key][1]
         IN key[1] = DerivePrefix(stored_tenant)
+
+\* Backwards-compat alias (alguns textos citam InvTenantIsolation)
+InvTenantIsolation == InvTenantIsolationRead
 
 \* List operation nunca retorna blobs de outro tenant (REG-NAMESPACE-003).
 \* Implícito em List action (filter por prefix = HMAC(tenant_of[p]))

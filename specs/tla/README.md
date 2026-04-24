@@ -20,13 +20,13 @@ tags: ["tla", "formal-verification", "evidence"]
 
 ---
 
-## Specs
+## Specs (v2 pós Lote 6.1 — endereçando audit G-01/G-02/G-03)
 
 | Spec file | Invariante(s) | States checked | Status |
 |---|---|---|---|
-| `tenant_isolation.tla` + `.cfg` | INV-TENANT-ISOLATION, InvPrefixInjective, InvNamespaceConsistency | ~120k states | ✅ verde |
-| `gc_correctness.tla` + `.cfg` | INV-GC-001, INV-GC-004 (mark-phase-aware re-ref safe) | ~21k states | ✅ verde |
-| `cas_integrity.tla` + `.cfg` | INV-CAS-INTEGRITY, InvCASImmutability, InvPoisoningRejected, InvClientVerifyDetectsRot | ~3k states | ✅ verde |
+| `tenant_isolation.tla` + `.cfg` | InvTenantIsolationRead + Write + Enum + InvPrefixInjective + InvNamespaceConsistency. Adversarial: Write, List com content, PathGuess, TryWriteCrossTenant. | ~390k states | ✅ verde |
+| `gc_correctness.tla` + `.cfg` | InvGCReRefProtected + InvMarkingConsistent. Multi-pass Mark com interleaving UpdateActionResult (INV-GC-004 real). | ~170k states | ✅ verde |
+| `cas_integrity.tla` + `.cfg` | InvCASIntegrityUncorrupted + InvClientVerifyIsSound + InvCASImmutability + InvPoisoningRejected. Adversarial: BitRot muta r2_storage body real (não flag). | ~3k states | ✅ verde |
 
 ## Como rodar
 

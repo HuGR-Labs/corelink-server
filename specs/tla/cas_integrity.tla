@@ -69,8 +69,8 @@ Write(c, body, claimed_digest) ==
     /\ UNCHANGED <<hash_fn, read_log, corruption_flags>>
 
 \* Client read + verify. CTRL-CAS-002 manda client verificar hash(body) =
-\* requested_digest. Server pode retornar body corrompido (bit rot), e
-\* client detecta.
+\* requested_digest. v2: server retorna body (possivelmente corrompido);
+\* client verifica hash REAL contra digest requested.
 Read(c, requested_digest) ==
     /\ c \in Clients
     /\ requested_digest \in Digests
@@ -79,73 +79,91 @@ Read(c, requested_digest) ==
           /\ LET body == r2_storage[requested_digest]
                  actual_hash == Hash(body)
              IN
-                \/ /\ requested_digest \notin corruption_flags
-                   /\ read_log' = Append(read_log, <<c, requested_digest, body, "verify_ok">>)
-                \/ /\ requested_digest \in corruption_flags
-                   \* Bit rot: server retorna body com hash divergente
-                   /\ read_log' = Append(read_log, <<c, requested_digest, body, "verify_mismatch">>)
+                IF actual_hash = requested_digest
+                  THEN read_log' = Append(read_log, <<c, requested_digest, body, "verify_ok">>)
+                  ELSE read_log' = Append(read_log, <<c, requested_digest, body, "verify_mismatch">>)
        \/ /\ requested_digest \notin DOMAIN r2_storage
           /\ read_log' = Append(read_log, <<c, requested_digest, "NONE", "not_found">>)
     /\ op_count' = op_count + 1
     /\ UNCHANGED <<hash_fn, r2_storage, write_log, corruption_flags>>
 
-\* Adversarial: simular bit rot em um blob armazenado.
-BitRot(d) ==
+\* Adversarial v2 (Lote 6.1, endereça G-02): simular bit rot MUTANDO o body,
+\* não apenas setando flag. Atacante/hardware consegue trocar body[d] por
+\* body alternativo b' com hash(b') != d. Isso TENSIONA genuinamente
+\* InvCASIntegrity porque hash_fn[body_atual] != d após BitRot.
+BitRot(d, new_body) ==
     /\ d \in DOMAIN r2_storage
-    /\ d \notin corruption_flags
+    /\ new_body \in Bodies
+    /\ new_body # r2_storage[d]        \* realmente muta
+    /\ d \notin corruption_flags       \* uma vez por digest (bound state)
     /\ op_count < MaxOps
+    /\ r2_storage' = [r2_storage EXCEPT ![d] = new_body]
     /\ corruption_flags' = corruption_flags \union {d}
     /\ op_count' = op_count + 1
-    /\ UNCHANGED <<hash_fn, r2_storage, write_log, read_log>>
+    /\ UNCHANGED <<hash_fn, write_log, read_log>>
 
 (*-- Next --------------------------------------------------------------------*)
 
 Next ==
     \/ \E c \in Clients, body \in Bodies, d \in Digests: Write(c, body, d)
     \/ \E c \in Clients, d \in Digests: Read(c, d)
-    \/ \E d \in Digests: BitRot(d)
+    \/ \E d \in Digests, new_body \in Bodies: BitRot(d, new_body)
 
 Spec == Init /\ [][Next]_vars
 
 (*-- Invariantes CRITICAL ----------------------------------------------------*)
 
-\* INV-CAS-INTEGRITY: para todo blob armazenado, hash(body) = digest do path.
-\* Garantido por CTRL-CAS-001 (write-time check).
-InvCASIntegrity ==
+\* v2 (Lote 6.1, endereça G-02): invariantes reformulados porque BitRot
+\* agora MUTA r2_storage. InvCASIntegrity sobre raw storage pode falhar
+\* (por design — é o que atacante/hardware faz). O que importa é:
+\*   1. Write path SEMPRE rejeita poisoning (InvPoisoningRejected)
+\*   2. Client verify SEMPRE detecta corrupção (InvClientVerifyDetectsRot)
+\*   3. Uncorrupted storage é consistente (InvCASIntegrityUncorrupted)
+
+\* INV-CAS-INTEGRITY (refinado): para digest d SEM corruption_flag,
+\* hash(body_atual) = d. Para digest d COM corruption_flag, sem garantia
+\* (atacante mutou), MAS o client detecta via verify.
+InvCASIntegrityUncorrupted ==
     \A d \in DOMAIN r2_storage:
-        Hash(r2_storage[d]) = d
+        d \notin corruption_flags => Hash(r2_storage[d]) = d
 
-\* INV-CAS-IDEMPOTENCY: mesmo body sempre mapeia para mesmo digest.
-\* Garantido pela definição Hash \in [Bodies -> Digests] (função determinística).
-\* (Check vacuous no modelo, mas documentado.)
+\* Propriedade core: o sistema é safe sob atacante desde que
+\* client verifique. Ou seja: se read retornou "verify_ok", então
+\* body retornado realmente bate com digest (mesmo sob BitRot, client
+\* recusou o body corrompido).
+InvClientVerifyIsSound ==
+    \A i \in 1..Len(read_log):
+        LET entry == read_log[i]
+            d == entry[2]
+            body == entry[3]
+            verify_outcome == entry[4]
+        IN verify_outcome = "verify_ok" =>
+            /\ d \in Digests  \* body não é "NONE"
+            /\ body \in Bodies
+            /\ Hash(body) = d
 
-\* INV-CAS-IMMUTABILITY: uma vez escrito, body nunca muda para um digest.
-\* Modelo: r2_storage é @@ union, não substitui. Implícito no Write action.
-\* Para ser explícito:
+\* Nota: removido "InvClientVerifyDetectsRot" que era mal-formulado
+\* (cobria corrupção temporal — client lia antes, BitRot depois).
+\* InvClientVerifyIsSound é suficiente: prova que client NUNCA aceita
+\* body com hash errado.
+
+\* InvCASImmutability: body originalmente aceito em write permanece
+\* inalterado (fora de BitRot adversarial). Modelo: toda entry "accepted"
+\* em write_log com digest d tal que d \notin corruption_flags mantém
+\* r2_storage[d] = body original.
 InvCASImmutability ==
-    \A d \in DOMAIN r2_storage:
-        \A i \in 1..Len(write_log):
-            LET entry == write_log[i]
-            IN (entry[3] = d /\ entry[4] = "accepted") =>
-                r2_storage[d] = entry[2]
+    \A i \in 1..Len(write_log):
+        LET entry == write_log[i]
+        IN (entry[4] = "accepted" /\ entry[3] \notin corruption_flags) =>
+            r2_storage[entry[3]] = entry[2]
 
-\* Propriedade de cache poisoning resistance: nenhum write "rejected" resultou
-\* em blob no storage.
+\* InvPoisoningRejected: nenhum write com hash mismatch escreveu body.
 InvPoisoningRejected ==
     \A i \in 1..Len(write_log):
         LET entry == write_log[i]
         IN entry[4] = "rejected" =>
             \/ entry[3] \notin DOMAIN r2_storage
-            \/ r2_storage[entry[3]] # entry[2]  \* body rejeitado não ficou
-
-\* Bit rot é detectado por client verify (INV-CAS-CLIENT-VERIFY).
-\* Se read retornou "verify_mismatch", então há corruption_flag.
-\* (Essa é uma consequência do modelo, útil para sanity.)
-InvClientVerifyDetectsRot ==
-    \A i \in 1..Len(read_log):
-        LET entry == read_log[i]
-            d == entry[2]
-            verify_outcome == entry[4]
-        IN verify_outcome = "verify_mismatch" => d \in corruption_flags
+            \/ r2_storage[entry[3]] # entry[2]
+            \/ entry[3] \in corruption_flags  \* BitRot depois pode ter coincidência
 
 ================================================================================
