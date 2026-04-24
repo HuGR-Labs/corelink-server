@@ -146,19 +146,7 @@ WHITELIST_IDS = {
     "SLO-CORRECT-ISO",
     # CTRL placeholder em template
     "CTRL-XXX",
-    # Runbooks pendentes (TODO Lote 5.7-bis; criados como stubs em batch futuro)
-    "RB-BREACH-NOTIF",
-    "RB-BYOK-REVOKE",
-    "RB-FM-057",
-    "RB-FM-205",
-    "RB-FM-253",
-    "RB-FM-254",
-    "RB-FM-300",
-    "RB-FM-302",
-    "RB-GDPR-ERASURE-HOLD",
-    "RB-HSM-UNAVAILABLE",
-    "RB-KEY-COMPROMISE",
-    "RB-SLO-AVAIL-CP",
+    # Runbook placeholder (template exemplo)
     "RB-XXX",
     # SLOs em formato sem header standalone (definidos em corpo do §4.X mas não como anchor)
     "SLO-DEPLOY-SAFE",
