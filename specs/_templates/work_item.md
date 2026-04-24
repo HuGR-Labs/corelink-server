@@ -255,7 +255,7 @@ Rastreabilidade ascendente obrigatória. *Trace checker* valida no CI.
 | **NFR-CCC**: {{nome}} | `doc_status: FROZEN` | must meet threshold | benchmark em §14.3 |
 | **ADR-XXXX**: {{decisão}} | `doc_status: FROZEN` | implements | — |
 | **User Journey UJ-YYY** | `doc_status: FROZEN` | step 3 implementation | §3.3 |
-| **JTBD-ZZZ** | FROZEN | enables | §3 |
+| **JTBD-ZZZ** | `doc_status: FROZEN` | enables | §3 |
 
 ---
 

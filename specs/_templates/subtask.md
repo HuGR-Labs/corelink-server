@@ -425,10 +425,10 @@ Esta ST está `DONE` quando **TODAS** as subseções aplicáveis de §7 estão 1
 
 ### 11.1 Upstream (bloqueia esta ST)
 
-| Dependência | Status | Hard blocker? |
+| Dependência | Atendida? | Hard blocker? |
 |---|---|---|
-| ST-MMM `DONE` | ❌ | sim |
-| {{dep externa}} | ✅ | sim |
+| ST-MMM com `work_status: DONE` + `doc_status: FROZEN` | ❌ | sim |
+| {{dep externa disponível}} | ✅ | sim |
 
 ### 11.2 Downstream (esta ST libera)
 

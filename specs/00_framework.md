@@ -3,7 +3,7 @@ id: "FRAMEWORK-00"
 type: "framework"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "0.3.2"
+version: "0.3.3"
 created: "2026-04-23"
 updated: "2026-04-24"
 owner: "Gustavo Schneiter"
@@ -17,7 +17,7 @@ tags: ["meta", "process", "framework"]
 # 00 — Specification Framework
 
 > **doc_status:** DRAFT
-> **Versão:** 0.3.2
+> **Versão:** 0.3.3
 > **Última atualização:** 2026-04-24
 > **Owner:** Gustavo Schneiter
 > **Aprovador Final:** Gustavo Schneiter
@@ -926,8 +926,8 @@ final_approver: "<nome>"
 reviewers:
   - role: "<role>"
     name: "<nome>"
-supersedes: null                 # ou "ID" se substituir outro
-superseded_by: null              # ou "ID" se foi substituído
+supersedes: null                 # "<ID>" (escalar) | ["<ID1>","<ID2>"] (lista N→1) | null
+superseded_by: null              # "<ID>" (escalar) | ["<ID1>","<ID2>"] (lista 1→N, ex: WI split) | null
 tags: []
 ---
 ```
@@ -935,10 +935,21 @@ tags: []
 #### 7.11.4 Template adicional para Nível 4
 
 ```yaml
-# adicionar aos campos §7.11.3:
-work_status: "<estado>"         # ver §7.2
-parent: "<ID>"                   # sprint → para WI; WI → para ST
-assignee: "<nome>"              # apenas WI/ST
+# adicionar aos campos §7.11.3, conforme o type:
+
+work_status: "<estado>"          # OBRIGATÓRIO em sprint/work_item/sub_task/prr — ver §7.2
+
+# Apenas work_item (parent=sprint) e sub_task (parent=WI):
+parent: "<ID>"
+
+# Apenas work_item e sub_task:
+assignee: "<nome>"
+
+# Apenas prr (relação lateral, não hierárquica — substitui `parent`):
+feature_wi: "<WI-SXX-NNN>"
+capabilities:
+  - "<CAP-XXX>"
+prod_target_date: "YYYY-MM-DD"
 ```
 
 #### 7.11.5 Bloco humano-legível (após H1)
@@ -2581,6 +2592,7 @@ Em casos em que regra deste framework impede resolução de problema real:
 | 0.3.0 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | **Lote 1 — audit remediation (GPT)**: (a) separou formalmente `doc_status` de `work_status` (§7 reescrita: §7.1 doc_status, §7.2 work_status por tipo, §7.3 mapping matrix, §7.4 ADR terminology reconciliation, §7.7 INV-LIFECYCLE-001, §7.11 YAML front matter obrigatório). (b) Corrigiu drift de section counts (WI 33 seções §0–§32, ST 19 §0–§18, Sprint 23 §0–§22, PRR 23 §0–§22, ADR 16 §0–§15). (c) Corrigiu refs quebradas ao glossário (§15 → §40). (d) Corrigiu WI split ID violation — REG-WI-SPLIT-001 força IDs sequenciais novos, proíbe sufixos `.a/.b`. (e) Alinhou SLSA gate: framework L3 até GA, PRR agora exige L2 para canary ≤ 10%, L3 para rollout ≥ 50%. (f) Sprint contract: adicionou `FAILED` state ao header. (g) Todos templates (sprint, WI, ST, ADR, PRR) agora têm YAML front matter + human-readable block com `doc_status` + `work_status` separados. (h) PRR gate desambiguado: `CONDITIONALLY_APPROVED` permite apenas canary ≤ 10%; caveats obrigam `expires_at`; expiração força auto-revert para `IN_REVIEW`. |
 | 0.3.1 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | **Lote 1-bis — correção pós-review GPT**: (a) YAML front matter real no topo absoluto dos 6 docs (sem code fence, parseável por `yaml.safe_load`), valida em CI. (b) Campos schema expandidos: `audit_status` (ACTIVE/AUDIT_PENDING/AUDITED), `type` com enum completo, `reviewers` como lista de `{role,name}`. (c) Eliminadas 10+ referências residuais a `Status`/`ACCEPTED`/`SEALED` no corpo dos 5 templates — agora todos usam `doc_status`/`work_status` consistentemente. (d) §34 count drift residual corrigido (32→33 totais, 18→19 totais). (e) Regra WI split unificada: original usa `superseded_by`, sucessores usam `supersedes`; referência corrigida §22→§31. (f) PWI formalmente definido no glossário §40.9. (g) PRR hook em WI §16 agora lista todos 5 work_status incluindo `REJECTED`; adiciona regra inviolável bloqueando WI DONE sem PRR OK. (h) §7.11 totalmente reescrita com tabelas de campos obrigatórios, templates canônicos e script de validação CI. |
 | 0.3.2 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | **Lote 1-ter — cleanup final pós second GPT pass**: (a) CI script escope corrigido — exclui `_audits/` e `_archive/`, previne falso negativo em arquivos de review. (b) Schema `supersedes`/`superseded_by` agora aceita `string | lista de strings | null` — permite split 1→N e consolidação N→1 (REG-WI-SPLIT-001). (c) Schema §7.11.2 reconciliado: PRR usa `feature_wi` em vez de `parent` (relação lateral, não hierárquica); `feature_wi` adicionado como campo obrigatório apenas pra `type=prr`. (d) Coluna `Status` genérica renomeada pra `Estado requerido` em tabelas de trace (WI §4, ST §2, ADR §12.1, WI §18.1, sprint §5.1) e pra `Atendido?` em tabelas de checklist (sprint §5.x). (e) Drift `14 seções` → `19 seções §0–§18` em WI §17. (f) Framework cleanup: 5 ocorrências residuais de `ACCEPTED`/`PROPOSED` fora dos templates corrigidas (§5.3, §6.3, §14.2 template NFR, §34.6 template CAP, §34.8 template INV). (g) Duplicata §34.6/§34.7 removida. Validação YAML re-confirmada em 6 docs. |
+| 0.3.3 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | **Lote 1-quater — propagação completa dos fixes de §7.11**: (a) §7.11.3 snippet canônico agora mostra `supersedes`/`superseded_by` aceitando escalar OU lista (match tabela §7.11.2). (b) §7.11.4 Level 4 template agora inclui `feature_wi`, `capabilities`, `prod_target_date` como campos obrigatórios apenas pra `type: prr` (match schema e template real de PRR). (c) 3 resíduos finais de `| Status |` corrigidos: sprint §13.1 dependencies → `Atendida?`; ST §11.1 dependencies → `Atendida?`; WI §4 JTBD row valor `FROZEN` cru → `doc_status: FROZEN`. Backlog de Lote 1 totalmente zerado. |
 
 ---
 

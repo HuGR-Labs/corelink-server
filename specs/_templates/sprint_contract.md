@@ -564,11 +564,11 @@ Preencher como índice. Detalhes vivem nos arquivos individuais.
 
 ### 13.1 Upstream (este sprint depende de)
 
-| Dependência | Tipo | Status | Bloqueia? |
+| Dependência | Tipo | Atendida? | Bloqueia? |
 |---|---|---|---|
 | Sprint S-XX com `work_status: SEALED` + `doc_status: FROZEN` | sprint | ❌ | sim |
-| ADR-XXXX `doc_status: FROZEN` | adr | ❌ | sim |
-| Spec `02_product/capabilities.md` `doc_status: FROZEN` | spec | ❌ | sim |
+| ADR-XXXX com `doc_status: FROZEN` | adr | ❌ | sim |
+| Spec `02_product/capabilities.md` com `doc_status: FROZEN` | spec | ❌ | sim |
 
 ### 13.2 Downstream (este sprint desbloqueia)
 
