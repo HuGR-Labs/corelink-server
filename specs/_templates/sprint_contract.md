@@ -868,8 +868,8 @@ Preencher como índice. Detalhes vivem nos arquivos individuais.
 > **REGRA INVIOLÁVEL:** Sign-offs **DEPENDEM DA LANE** do sprint (campo `lane` no YAML, alinhado com framework §33.5.4.3).
 >
 > - `LOW_RISK` → mínimo **3** sign-offs: Sprint Owner + Tech Lead + Aprovador Final.
-> - `STANDARD` → mínimo **5** sign-offs: + Security Reviewer + QA Reviewer (Ops e Product opcionais conforme escopo).
-> - `HIGH_RISK` → **TODOS os 7** sign-offs obrigatórios + Adversarial Reviewer (linha extra).
+> - `STANDARD` → mínimo **5–8** sign-offs: + Security Reviewer + QA Reviewer (Ops, Product opcionais conforme escopo).
+> - `HIGH_RISK` → **10–12** sign-offs obrigatórios (alinha com framework §33.5.4.3). Inclui todos os 8 acima + Architect + Privacy Reviewer + Compliance Reviewer + Adversarial Reviewer.
 >
 > Forcing factors `lane_forcing_factors` (FF-HR-XXX) **DEVEM** estar listados no YAML do sprint quando `lane: HIGH_RISK`.
 
@@ -883,10 +883,16 @@ Preencher como índice. Detalhes vivem nos arquivos individuais.
 | **Ops Reviewer** | {{Nome}} | §14 (Observability), §15 (Rollback), §17.4 ✅ | 🟡 (se toca prod) | ✅ | ✅ | _________________ | YYYY-MM-DD |
 | **QA Reviewer** | {{Nome}} | §9 (Test Strategy) executado, §17.2 ✅ | 🟡 (se ≥ 1 WI STANDARD) | ✅ | ✅ | _________________ | YYYY-MM-DD |
 | **Product Reviewer** | {{Nome}} | CAPs em §3 entregues conforme escopo | ⛔ N/A | 🟡 (se customer-facing) | ✅ | _________________ | YYYY-MM-DD |
+| **Architect** | {{Nome}} | Arquitetura coerente com ADRs; TLA+/INV impactos revisados | ⛔ N/A | 🟡 (se toca INV/ADR) | ✅ | _________________ | YYYY-MM-DD |
+| **Privacy Reviewer** | {{Nome}} | §16 delta privacy; DSR/consent impact; LGPD/GDPR trilha | ⛔ N/A | 🟡 (se toca PII) | ✅ | _________________ | YYYY-MM-DD |
+| **Compliance Reviewer** | {{Nome}} | §16 compliance delta; SOC 2/ISO 27001 mappings; waivers | ⛔ N/A | 🟡 (se compliance-critical) | ✅ | _________________ | YYYY-MM-DD |
 | **Adversarial Reviewer** | {{Nome}} | Hostil challenge nos invariantes; documentar findings rebatidos | ⛔ N/A | ⛔ N/A | ✅ | _________________ | YYYY-MM-DD |
+| **External Reviewer** | {{Nome}} (opcional, sub-processor/partner) | Revisão independente de escopo específico (FedRAMP, BAA HIPAA) | ⛔ N/A | ⛔ N/A | 🟡 (se contrato exige) | _________________ | YYYY-MM-DD |
 | **Aprovador Final** | {{Nome}} | Sprint atende ao contrato integralmente | ✅ | ✅ | ✅ | _________________ | YYYY-MM-DD |
 
 **Legenda:** ✅ obrigatório · 🟡 condicional (critério ao lado) · ⛔ N/A.
+
+**Contagem por lane:** LOW_RISK = 3 mínimo; STANDARD = 5–8 (com condicionais); HIGH_RISK = 10–12 (11 default, +1 External se contratualmente exigido). Alinha com framework §33.5.4.3.
 
 ### Apêndice: Dissents (se houver)
 

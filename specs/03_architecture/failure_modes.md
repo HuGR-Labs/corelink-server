@@ -243,7 +243,7 @@ Referências a IDs `PAT-XXX` serão formalizadas em `resilience_patterns.md`. Su
 
 ## 6. Runbook stubs por FM
 
-Cada FM P0/P1 **DEVE** ter runbook em `specs/05_quality/runbooks/RB-<FM-ID>.md` (a criar conforme WIs avançam). Template mínimo:
+Cada FM P0/P1 **DEVE** ter runbook em `specs/05_quality/runbooks/RB-<FM-ID>.md` (criados Lote 5.7+5.12+6.4; 26 RBs catalogados em §6.1). Template mínimo:
 
 1. Detecção: qual alert disparou? Quais métricas checar?
 2. Comunicação: quem notificar? Status page?

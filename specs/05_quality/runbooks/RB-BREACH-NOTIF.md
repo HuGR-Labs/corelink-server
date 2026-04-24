@@ -96,7 +96,9 @@ Semestral (privacy_model §12). Simular breach + notificação, validar template
 ## Contatos chave (atualizar)
 
 - **Privacy Officer (DPO interim):** Gustavo Schneiter (gustavo@humangr.com)
-- **Legal (TBD — outsource):** placeholder@law-firm.com
-- **ANPD:** comunicacao@anpd.gov.br
-- **Irish DPC:** commissioners@dataprotection.ie
-- **Cloudflare security contact:** breach@cloudflare.com
+- **Legal (TBD — pré-GA backlog):** contratação de firma externa tracked em `compliance_matrix.md §9 GAP-01`; até lá Privacy Officer + CEO acumulam responsabilidade. Placeholder `legal@humangr.com` route interno.
+- **ANPD (Brasil):** comunicacao@anpd.gov.br (fonte oficial ANPD)
+- **Irish DPC (UE lead supervisory):** commissioners@dataprotection.ie (fonte oficial dataprotection.ie)
+- **Cloudflare security contact:** cloudflare-cna@cloudflare.com (fonte: https://www.cloudflare.com/trust-hub/)
+
+> **Nota:** todos os templates `legal/breach-notification-*.md` estão em backlog legal pré-GA (tracked em `compliance_matrix.md §9 gap analysis`). Até existirem, DPO + Legal usam templates padrão IAPP / ANPD quando necessário, com review em <1h do incident declaration.

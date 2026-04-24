@@ -199,7 +199,7 @@ Alerting via multi-window multi-burn-rate (Google SRE Workbook §5).
 }
 ```
 
-Campos **obrigatórios**: `ts, level, service, env, request_id`. Validação em CI via schema `specs/_schemas/log_event.schema.json` (a criar — dep futura).
+Campos **obrigatórios**: `ts, level, service, env, request_id`. Validação em CI via schema `specs/_schemas/log_event.schema.json` (dep futura tracked em roadmap observability).
 
 ### 5.2 Levels
 

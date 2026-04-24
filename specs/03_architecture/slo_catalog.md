@@ -112,7 +112,7 @@ Budgets são independentes por tier. Métricas agregadas em `corelink_slo_*{tier
 | Alert windows      | 5m/1h/6h/24h (multi-burn-rate)                               |
 | Owner              | SRE                                                           |
 | FMs cobertos       | FM-101, FM-106, FM-152                                        |
-| Runbook            | `RB-SLO-AVAIL-CP` (stub)                                     |
+| Runbook            | [`RB-SLO-AVAIL-CP`](../../05_quality/runbooks/RB-SLO-AVAIL-CP.md) |
 
 ### 4.2 Availability — CAS GET
 

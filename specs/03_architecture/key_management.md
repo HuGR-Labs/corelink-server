@@ -169,7 +169,7 @@ Customer cifra blobs **client-side** antes de enviar para CoreLink. CoreLink arm
 
 ### 5.4 CTRLs
 
-CTRL-KEY-020..022 (placeholders; definir em ADR futura quando Fase 2 começar).
+CTRL-KEY-030..032 (placeholders Fase 2 BYOE; renumerados em Lote 6.6 endereçando G-09 do re-audit — CTRL-KEY-020..022 são audit/dual-approval ATIVOS em §8.5, não placeholders).
 
 ---
 
@@ -205,9 +205,9 @@ Endereça F-13 (SOTA gap vs concorrentes). Evidence: EVT-045 (DPIA-like) + EVT-0
 
 ### 7.2 Runbooks
 
-- `RB-KEY-COMPROMISE` (a criar em Lote 5.7).
-- `RB-HSM-UNAVAILABLE` (a criar em Lote 5.7).
-- `RB-BYOK-REVOKE` (a criar em Lote 5.7).
+- `RB-KEY-COMPROMISE` (criado Lote 5.12).
+- `RB-HSM-UNAVAILABLE` (criado Lote 5.12).
+- `RB-BYOK-REVOKE` (criado Lote 5.12).
 
 ---
 

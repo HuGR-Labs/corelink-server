@@ -399,7 +399,7 @@ Todo legitimate interest requer LIA em `_audits/`:
 
 ### 10.2 DPA padrão
 
-- Template em `legal/dpa/v1.md` (a criar — dep futura).
+- Template em `legal/dpa/v1.md` — **a criar pré-GA** (tracked em roadmap legal; backlog externo ao spec framework, ver §3 compliance_matrix).
 - Pontos cobertos: sub-processadores, breach notification 48h, DSR support, auditoria.
 
 ---
@@ -426,7 +426,7 @@ Qualquer dos seguintes é considerado breach:
 
 ### 11.3 Runbook
 
-- `RB-BREACH-NOTIF` (a criar): contatos ANPD/DPA, templates de notificação, checklist legal/PR/eng.
+- `RB-BREACH-NOTIF` (criado Lote 5.12): contatos ANPD/DPA, templates de notificação, checklist legal/PR/eng.
 
 ---
 

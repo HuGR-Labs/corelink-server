@@ -173,7 +173,7 @@ Todo lookup/update **DEVE** scope-by `tenant_id`, com prefix **HMAC-derivado** (
 - DO ID: derivado de HMAC(tenant_key, tenant_id), não de `tenant_id` plaintext
 - Container: não persiste per-tenant (stateless)
 
-**Invariant:** INV-TenantIsolation (CRITICAL). Verificado via property test **E** TLA+ **obrigatório** (CTRL-FORMAL-001 em `security_model.md §6.9`; invariantes CRITICAL não têm escape de TLA+). Spec em `specs/tla/tenant_isolation.tla` (a criar). Corrigido S-02/F-03 do audit Lote 3+4.
+**Invariant:** INV-TenantIsolation (CRITICAL). Verificado via property test **E** TLA+ **obrigatório** (CTRL-FORMAL-001 em `security_model.md §6.9`; invariantes CRITICAL não têm escape de TLA+). Spec em `specs/tla/tenant_isolation.tla` (criado Lote 5.13; v2 Lote 6.1). Corrigido S-02/F-03 do audit Lote 3+4.
 
 ---
 

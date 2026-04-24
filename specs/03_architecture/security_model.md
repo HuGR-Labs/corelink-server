@@ -406,7 +406,7 @@ Root KMS (Cloudflare Workers Secrets, HSM-backed)
 
 ### 7.3 Break-glass & incident
 
-- **Key compromise confirmado:** inicia runbook `RB-KEY-COMPROMISE` (será registrado em §9 de `runbooks/`); rotaciona imediatamente; invalida tokens emitidos com a chave vazada; audit log marcado com `integrity_hold=true`.
+- **Key compromise confirmado:** inicia runbook `RB-KEY-COMPROMISE` (`specs/05_quality/runbooks/RB-KEY-COMPROMISE.md`); rotaciona imediatamente; invalida tokens emitidos com a chave vazada; audit log marcado com `integrity_hold=true`.
 - **HSM unavailable:** modo read-only automático; writes retornam 503; alerta PagerDuty P0.
 
 ---
