@@ -373,6 +373,37 @@ Exemplos: TLS obrigatório, auth obrigatória, *rate limiting* ativo por padrão
 > **DEVE** toda API pública ser projetada do ponto de vista do *consumer*, com *user journey* de integração documentada.
 > **DEVE** a primeira validação de uma API nova ser "um consumidor ficcional consegue completar o *journey* sem bater em *paper cut*?".
 
+#### PRINC-031 — Evidence-driven gates
+
+> **DEVE** toda caixa binária de *Completeness Criteria*, *Definition of Done* e *Quality Standards* ter **evidence artifact** registrado (link para log, screenshot, relatório, test output, dashboard, PR diff).
+> **NÃO DEVE** uma caixa ser marcada `✅` com base em "confiança" ou "intuição". Checkbox sem *evidence* é **teatro**, não rigor.
+>
+> Evidence pode ser: URL pra CI log, arquivo gerado, extrato de log/métrica, gravação de dry-run, ata de revisão humana com nome e data.
+
+#### PRINC-032 — Role + Automation tagging
+
+> **DEVE** toda caixa de gate ter:
+>
+> - **Role tag** (🔧 ENG, 🔒 SEC, 🔏 PRIV, 📊 SRE, 🎨 PROD, ✓ QA, 🏛 ARCH, 💰 FIN, 📜 LEGAL) identificando quem valida.
+> - **Automation tag** (🤖 automatizado, 👤 manual, 🤖👤 híbrido) identificando modo de validação.
+>
+> Taxonomia explícita previne: (a) ambiguidade sobre responsabilidade, (b) gates fantasma (ninguém valida), (c) over-engineering (tudo manual quando poderia ser CI).
+
+#### PRINC-033 — Production Readiness Review separado de DoD
+
+> **DEVE** toda feature/WI com impacto em produção (customer-facing) passar por **PRR (Production Readiness Review)** separado do DoD do WI.
+> **NÃO DEVE** feature atingir GA (100% traffic) sem PRR `APPROVED`.
+>
+> DoD confirma: "WI está implementado corretamente."
+> PRR confirma: "WI está pronto para enfrentar customers em produção" — cobrindo SLO, capacity, load, chaos, DR, observability, runbooks, security, privacy, supply chain, rollback, deployment strategy, support, communication, cost, legal.
+>
+> São **gates distintos**.
+
+#### PRINC-034 — Time-boxing e escalação obrigatória
+
+> **DEVE** todo WI/ST ter protocolo de escalação explícito quando estoura estimate.
+> **NÃO DEVE** time "empurrar" silenciosamente — escalação formal em estouro > 50% de estimate.
+
 ---
 
 ## 3. Working Backwards
@@ -1675,9 +1706,9 @@ Ver `_templates/sprint_contract.md` — template canônico com 22 seções obrig
 
 Ver `_templates/adr.md` — template com 15 seções, aplicável aos 3 tipos com adaptações mínimas.
 
-### 34.3 Work Item
+### 34.3 Work Item (template v2.0)
 
-Ver `_templates/work_item.md` — template canônico com **22 seções obrigatórias** governando cada WI individualmente. Estrutura hierárquica:
+Ver `_templates/work_item.md` — template canônico com **32 seções obrigatórias** governando cada WI individualmente, incluindo evidence-driven gates (PRINC-031), role + automation tagging (PRINC-032), PRR hook (PRINC-033) e escalation protocol (PRINC-034). Estrutura hierárquica:
 
 ```
 Sprint (S-XX)
@@ -1687,67 +1718,92 @@ Sprint (S-XX)
         └── Sub-task (ST-003)
 ```
 
-Seções principais:
+Seções principais (32 totais):
 
 | Seção | Propósito |
 |---|---|
-| 0. Identificação | metadata, parent sprint/WI, assignee, reviewers |
-| 1. Intent | uma frase declarativa |
-| 2. Capability Mapping / Trace | CAP/INV/NFR/ADR rastreados |
-| 3. Tipo e Classificação | feature/infra/docs/... + prioridade + blast radius + reversibilidade |
-| 4–5. Escopo / Anti-scope | explícitos |
-| 6. Acceptance Criteria | Gherkin obrigatório, mapeado a testes |
-| 7. Design Decisions | locais + triggers pra ADRs |
-| 8. Artifacts Produced | código, testes, docs, infra, observability |
-| 9. **Completeness Criteria (SOTA)** | 10 subáreas binárias |
-| 10. Definition of Done | snapshot de §9 |
-| 11. **Invariants** | safety + liveness + do produto + novos |
-| 12. **Quality Standards (SOTA)** | test, code, perf, security, observability, docs, a11y/i18n, reproducibility |
-| 13. Sub-tasks | referência a template subtask.md |
-| 14. Dependencies | upstream/downstream/cross-sprint |
-| 15. Effort Estimate | XS–XL + rationale + O/R/P |
-| 16. Observability Plan | métricas/logs/traces/dashboards/alertas |
-| 17. Rollback / Recovery | strategy + procedure + reversibilidade de migrations |
-| 18. Security & Privacy | STRIDE mini + LINDDUN mini + controles |
-| 19. Risk Register | P×I + mitigação + contingência |
-| 20. Review Checkpoints | design / code / pre-merge |
-| 21. Sign-off | WI owner, code reviewer, security, ops, sprint owner |
-| 22. Change Log | versionado |
+| 0. Identificação | metadata, parent, assignee, reviewers, PR, branch, tier/região |
+| 1. Intent | uma frase declarativa testável |
+| 2. **Narrative** | prosa 300–500 palavras (inspiração Amazon 6-pager) |
+| 3. **Customer Impact & Journey** | personas, touchpoints, métricas customer-visible, comms |
+| 4. Capability Mapping / Trace | CAP/INV/NFR/ADR rastreados com evidence |
+| 5. Tipo e Classificação | tipo + prioridade + blast radius + reversibilidade + experiment flag + compliance triggers |
+| 6–7. Escopo / Anti-scope | detalhado + componentes C4 + arquivos |
+| 8. Acceptance Criteria | Gherkin + AC Coverage Matrix (happy/error/boundary/property) |
+| 9. Design Decisions | locais + ADR triggers + trade-offs |
+| 10. **Completeness Criteria (evidence-driven)** | **11 subáreas binárias com evidence/role/automation** |
+| 11. Definition of Done | snapshot + gates terminais |
+| 12. Invariants | safety + liveness + produto + novos |
+| 13. Artifacts Produced | código, testes, docs, infra, observability, ADRs, runbooks, KB |
+| 14. **Quality Standards (SOTA)** | test, code, perf, security, observability, docs, reproducibility, a11y/i18n, sustainability |
+| 15. **Chaos Experiments** | FMs endereçados + experimentos planejados + cadência |
+| 16. **Production Readiness Review (PRR)** | hook pro PRR doc separado |
+| 17. Sub-tasks | tabela-sumário + progresso agregado + DAG |
+| 18. Dependencies | upstream/downstream/cross-sprint/external |
+| 19. Effort Estimate | XS–XL + rationale + PERT + histórico |
+| 20. **Time-boxing & Escalation Protocol** | burndown + triggers + decisões + log |
+| 21. Observability Plan | métricas/logs/traces/dashboards/alertas/runbooks |
+| 22. **Cost Analysis** | infra delta + ops delta + dev delta + TCO 12m |
+| 23. **API / Contract Impact** | breaking classification + versioning + migration + SDK + notification |
+| 24. **Post-mortem Hooks** | incidents relacionados + lições + preventive measures |
+| 25. Rollback / Recovery | strategy + procedure + migration reversibility + feature flags |
+| 26. Security & Privacy | STRIDE + LINDDUN + controles + data classification |
+| 27. **Knowledge Transfer & Handoff** | audience + assets + onboarding test + ownership |
+| 28. Risk Register | P×I + mitigação + contingência |
+| 29. Review Checkpoints | design / mid / code / pre-merge / PRR |
+| 30. Sign-off | 12 papéis (ENG, SEC, PRIV, SRE, QA, PROD, ARCH, FIN, LEGAL, sprint owner, approver) |
+| 31. Change Log | versionado |
+| 32. Apêndice: Anti-patterns | APs evitados neste WI (cross-ref ao catálogo §39) |
 
-### 34.4 Sub-task
+### 34.4 Sub-task (template v2.0)
 
-Ver `_templates/subtask.md` — template canônico com **14 seções obrigatórias** para unidades atômicas de trabalho.
+Ver `_templates/subtask.md` — template canônico com **18 seções obrigatórias** para unidades atômicas de trabalho, com mesmo rigor evidence-driven + role/automation tagging do WI, proporcional ao escopo atômico.
 
 Princípio de decomposição:
 
 > **REG-WI-002**: Algo é sub-task (não *step*) IFF pode ser trabalhada em paralelo com outra sub-task **e** tem *acceptance* verificável independentemente. Sequencial-indivisível = *step* dentro de sub-task, não sub-task separada.
 
-Seções da sub-task:
+Seções da sub-task (18 totais):
 
 | Seção | Propósito |
 |---|---|
-| 0. Identificação | ST-ID, WI pai, sprint, assignee |
-| 1. Intent | uma frase |
-| 2. Trace | WI/CAP/INV/NFR referenciados |
-| 3. Acceptance Criteria (Gherkin) | obrigatório |
-| 4. Escopo / Anti-scope | explícitos |
-| 5. Artifacts Produced | código, testes, docs |
-| 6. **Completeness Criteria** | 6 subáreas: código, testes, docs, observability, security, processo |
-| 7. Definition of Done | snapshot de §6 + PR mergeado |
-| 8. **Invariants** | preserva + operacionais + novos |
-| 9. **Quality Standards** | test coverage, code quality, perf, security, observability |
-| 10. Dependencies | upstream/downstream |
-| 11. Effort Estimate | XS–XL (XL → decompor mais ou virar WI próprio) |
-| 12. Observability | métricas/logs/traces |
-| 13. Sign-off | assignee, code reviewer, WI owner |
-| 14. Change Log | versionado |
+| 0. Identificação | ST-ID, WI pai, sprint, assignee, reviewers, branch, PR |
+| 1. Intent | uma frase testável |
+| 2. Trace | WI/CAP/INV/NFR/ADR referenciados com evidence |
+| 3. Acceptance Criteria (Gherkin) + coverage matrix | obrigatório |
+| 4. Escopo / Anti-scope | explícitos + componentes tocados |
+| 5. **Design Notes** | abordagem + decisões locais + trigger pra ADR |
+| 6. Artifacts Produced | código, testes, docs, observability |
+| 7. **Completeness Criteria (evidence-driven)** | **7 subáreas: código, testes, docs, observability, security, performance, processo — com evidence/role/automation** |
+| 8. Definition of Done | snapshot §7 + PR mergeado + gates terminais |
+| 9. Invariants | preserva + operacionais + novos propostos |
+| 10. **Quality Standards (SOTA)** | test, code, performance, security, observability, reproducibility |
+| 11. Dependencies | upstream/downstream |
+| 12. **Effort Estimate & Time-boxing** | XS–XL + burndown + triggers de escalação |
+| 13. Observability Contributed | métricas/logs/traces |
+| 14. **Security Notes** | fronteira? STRIDE mini se aplicável |
+| 15. Rollback / Recovery | strategy + procedure |
+| 16. Risk Register | P×I |
+| 17. Sign-off | assignee, code reviewer, security/SRE/QA se aplicável, WI owner |
+| 18. Change Log | versionado |
+
+### 34.4.1 Production Readiness Review (PRR)
+
+Ver `_templates/production_readiness_review.md` — template canônico para o gate **"pronto pra produção"** (PRINC-033), separado do DoD de WI.
+
+Cobre 22 seções: SLO/SLI/Error Budget, Capacity Planning, Load Testing, Chaos Engineering, Disaster Recovery, Observability, Runbooks, Security, Privacy, Supply Chain, Rollback, Deployment Strategy, Customer Support, Communication Plan, Cost/Finance, Legal/Contract.
+
+Status possíveis: `NOT_STARTED | IN_REVIEW | CONDITIONALLY_APPROVED | APPROVED | REJECTED`.
 
 ### 34.5 Regras invioláveis de decomposição
 
 | Regra | Enunciado |
 |---|---|
-| **REG-DECOMP-001** | Todo WI **DEVE** usar template `work_item.md` (22 seções preenchidas) |
-| **REG-DECOMP-002** | Toda ST **DEVE** usar template `subtask.md` (14 seções preenchidas) |
+| **REG-DECOMP-001** | Todo WI **DEVE** usar template `work_item.md` v2.0 (32 seções preenchidas) |
+| **REG-DECOMP-002** | Toda ST **DEVE** usar template `subtask.md` v2.0 (18 seções preenchidas) |
+| **REG-DECOMP-002b** | Toda feature com impacto em produção **DEVE** passar por PRR (`production_readiness_review.md`) antes de GA |
+| **REG-DECOMP-002c** | Toda caixa binária em WI/ST/PRR **DEVE** ter evidence artifact (PRINC-031) |
+| **REG-DECOMP-002d** | Toda caixa em WI/ST/PRR **DEVE** ter role + automation tag (PRINC-032) |
 | **REG-DECOMP-003** | WI de tamanho XL **DEVE** ser decomposto em sub-tasks ou sub-WIs |
 | **REG-DECOMP-004** | Nenhum WI transiciona para `DONE` enquanto qualquer sub-task não for `DONE` |
 | **REG-DECOMP-005** | Todo WI e toda ST **DEVEM** ter Completeness Criteria, DoD, Invariants, Quality Standards — sem exceção |
