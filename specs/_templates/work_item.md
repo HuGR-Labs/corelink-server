@@ -195,7 +195,8 @@ Sem *evidence*, check é inválido.
 
 ## 3. Customer Impact & Journey
 
-> Toda WI tem impacto — positivo, neutro, ou negativo — em customers. Ignorar isso é erro de produto.
+> **Lane applicability:** LOW_RISK: ⛔ N/A (marcar "N/A: LOW_RISK lane"). STANDARD/HIGH_RISK: ✅ obrigatória. Ver framework §33.5.4.1.
+> Toda WI com impacto em customer — positivo, neutro, ou negativo — é erro de produto ignorar.
 
 ### 3.1 Personas afetadas
 
@@ -826,7 +827,9 @@ Aplicável se toca PII ou dados regulados (§5.6).
 
 ## 15. Chaos Experiments
 
-> Chaos engineering é **primeira classe**, não afterthought. Cada WI que toca I/O ou coordenação distribuída **DEVE** ter pelo menos 1 experimento.
+> **Lane applicability:** LOW_RISK: ⛔ N/A. STANDARD: 🟡 obrigatório **se** toca I/O ou coordenação distribuída. HIGH_RISK: ✅ obrigatório. Ver framework §33.5.4.1.
+> **🔗 Inheritance:** failure modes abordados aqui **DEVEM** estar catalogados em `specs/03_architecture/failure_modes.md` (PENDENTE Lote 4). Até lá, catalogar inline.
+> Chaos engineering é **primeira classe**, não afterthought — em lanes que o exigem.
 
 ### 15.1 Failure modes endereçados por este WI
 
@@ -874,6 +877,7 @@ Aplicável se toca PII ou dados regulados (§5.6).
 
 ## 16. Production Readiness Review (PRR)
 
+> **Lane applicability:** LOW_RISK: ⛔ N/A. STANDARD: 🟡 obrigatório **se** customer-facing. HIGH_RISK: ✅ obrigatório sempre. Ver framework §33.5.4.1 + §33.6 (PRINC-033).
 > DoD (§11) confirma que WI está **implementado corretamente**.
 > PRR confirma que WI está **pronto pra enfrentar customers em produção**.
 > São gates **distintos**.
@@ -1063,6 +1067,10 @@ graph TD
 
 ## 21. Observability Plan
 
+> **🔗 Herdado de:** `specs/03_architecture/observability_model.md` (fonte canônica — PENDENTE, Lote 4). Enquanto fonte não existir, preencher inline. Após criada, esta seção registra APENAS local deltas (métricas/logs/traces/dashboards/alertas **novos** criados por este WI).
+> **Lane applicability:** LOW_RISK: 🟡 só se emite nova telemetria. STANDARD/HIGH_RISK: ✅ obrigatória.
+> **Inheritance field:** adicionar `inherits_from: ["OBSERVABILITY-MODEL"]` ao YAML quando canonical source existir.
+
 ### 21.1 Métricas novas
 
 | Nome | Tipo | Unidade | Labels | Cardinality budget | Alerta |
@@ -1107,6 +1115,9 @@ graph TD
 
 ## 22. Cost Analysis
 
+> **Lane applicability:** LOW_RISK: ⛔ N/A. STANDARD: ✅ obrigatória. HIGH_RISK: ✅ obrigatória com TCO 12m. Ver framework §33.5.4.1.
+> **🔗 Inheritance:** ADR vinculado (via `related_adrs` no YAML) é fonte canônica de decisão de custo. Esta §22 documenta **delta de implementação** do WI específico, não a decisão estratégica.
+
 ### 22.1 Delta de custo de infraestrutura
 
 | Componente | Delta mensal | Base de cálculo |
@@ -1145,6 +1156,9 @@ graph TD
 ---
 
 ## 23. API / Contract Impact
+
+> **Lane applicability:** LOW_RISK: ⛔ N/A. STANDARD: 🟡 obrigatória **se** toca API. HIGH_RISK: ✅ obrigatória + migration plan completo. Ver framework §33.5.4.1.
+> **🔗 Inheritance:** ADR/PDR sobre versioning canônico (via `related_adrs`) determina política. Este seção registra delta deste WI.
 
 ### 23.1 Este WI muda API pública?
 
@@ -1228,6 +1242,9 @@ Se um post-mortem identificar este WI como contributing cause:
 
 ## 25. Rollback / Recovery
 
+> **Lane applicability:** LOW_RISK: 🟡 mínimo — declarar reversibilidade em §5.4. STANDARD: ✅ obrigatória. HIGH_RISK: ✅ obrigatória + teste de rollback executado. Ver framework §33.5.4.1.
+> **🔗 Inheritance:** `specs/03_architecture/failure_modes.md` + `specs/03_architecture/resilience_patterns.md` (PENDENTES Lote 4) são fontes canônicas. Esta §25 registra rollback **específico** deste WI; estratégias gerais vêm da herança.
+
 ### 25.1 Strategy
 
 Este WI é (conforme §5.4):
@@ -1268,6 +1285,9 @@ Este WI é (conforme §5.4):
 ---
 
 ## 26. Security & Privacy Considerations
+
+> **Lane applicability:** LOW_RISK: ⛔ N/A (marcar). STANDARD: 🟡 STRIDE mini se toca boundary. HIGH_RISK: ✅ STRIDE + LINDDUN completos obrigatórios. Ver framework §33.5.4.1.
+> **🔗 Inheritance:** `specs/03_architecture/security_model.md` + `specs/03_architecture/privacy_model.md` (PENDENTES Lote 4) são fontes canônicas (threat models, trust boundaries, controles). Esta §26 registra **novos** trust boundaries introduzidos por este WI + mini-análise específica.
 
 ### 26.1 Novo trust boundary introduzido?
 
@@ -1319,6 +1339,8 @@ Este WI é (conforme §5.4):
 ---
 
 ## 27. Knowledge Transfer & Handoff
+
+> **Lane applicability:** LOW_RISK: ⛔ N/A. STANDARD: ✅ obrigatória. HIGH_RISK: ✅ obrigatória + onboarding test. Ver framework §33.5.4.1.
 
 ### 27.1 Para quem este WI transfere conhecimento
 

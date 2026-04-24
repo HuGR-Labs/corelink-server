@@ -192,6 +192,8 @@ tags: []
 
 ## 4. SLO / SLI / Error Budget
 
+> **🔗 Herdado de:** `specs/03_architecture/slo_catalog.md` (fonte canônica — PENDENTE Lote 4). Esta §4 **confirma** quais SLOs do catálogo aplicam a esta PRR e valida seus thresholds. Não re-define SLOs.
+
 ### 4.1 SLIs aplicáveis
 
 | SLI-ID | Definition | Measurement source |
@@ -357,6 +359,8 @@ tags: []
 
 ## 9. Observability Readiness
 
+> **🔗 Herdado de:** `specs/03_architecture/observability_model.md` (PENDENTE Lote 4). Esta §9 **verifica** que a feature em PRR tem métricas/logs/traces/dashboards/alertas **emitindo em produção** conforme observability_model canônica. Não duplica definições.
+
 ### 9.1 Métricas — Four Golden Signals
 
 | Signal | Métrica | Dashboard | Alerta |
@@ -438,6 +442,8 @@ tags: []
 
 ## 11. Security & Compliance Readiness
 
+> **🔗 Herdado de:** `specs/03_architecture/security_model.md` + `specs/03_architecture/compliance_matrix.md` (PENDENTES Lote 4). Esta §11 **verifica** controles em produção, não re-define threat model.
+
 ### 11.1 Threat model atualizado
 
 - [ ] `security_model.md` reflete mudanças
@@ -480,6 +486,8 @@ tags: []
 ---
 
 ## 12. Privacy Readiness
+
+> **🔗 Herdado de:** `specs/03_architecture/privacy_model.md` (PENDENTE Lote 4). Esta §12 verifica implementação dos controles LINDDUN canônicos + direitos do titular operacionais.
 
 Aplicável se processa PII / dados regulados.
 

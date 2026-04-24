@@ -590,6 +590,9 @@ Preencher como índice. Detalhes vivem nos arquivos individuais.
 
 ## 14. Observability Plan
 
+> **🔗 Herdado de:** `specs/03_architecture/observability_model.md` (fonte canônica — PENDENTE Lote 4). Esta §14 **agrega** as novas métricas/logs/traces/dashboards/alertas criados por WIs deste sprint. Cada WI individual mantém detalhamento em seu próprio §21. Sprint §14 é rollup, não re-enumeração.
+> **Inheritance field:** adicionar `inherits_from: ["OBSERVABILITY-MODEL"]` ao YAML quando canonical source existir.
+
 ### 14.1 Métricas
 
 | Nome | Tipo | Unidade | Labels | Cardinality budget | Alerta |
@@ -625,6 +628,8 @@ Preencher como índice. Detalhes vivem nos arquivos individuais.
 ---
 
 ## 15. Rollback / Recovery Plan
+
+> **🔗 Herdado de:** `specs/03_architecture/failure_modes.md` + `specs/03_architecture/resilience_patterns.md` (PENDENTES Lote 4). Esta §15 cobre cenários **específicos do sprint** não cobertos pelas fontes canônicas. Cada WI individual cobre rollback próprio em seu §25.
 
 ### 15.1 Cenários de rollback
 
@@ -666,6 +671,8 @@ Preencher como índice. Detalhes vivem nos arquivos individuais.
 ---
 
 ## 16. Security & Compliance Plan
+
+> **🔗 Herdado de:** `specs/03_architecture/security_model.md` + `specs/03_architecture/privacy_model.md` + `specs/03_architecture/compliance_matrix.md` (PENDENTES Lote 4). Esta §16 documenta **delta do sprint** — novos trust boundaries, novos assets, impactos em compliance. Cada WI mantém §26 próprio.
 
 ### 16.1 Threat Model do Sprint
 
