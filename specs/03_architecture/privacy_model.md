@@ -21,7 +21,7 @@ tags: ["architecture", "privacy", "linddun", "lgpd", "gdpr"]
 > **Última atualização:** 2026-04-23
 > **Owner:** Gustavo Schneiter
 > **Aprovador Final:** Gustavo Schneiter
-> **Revisores:** *(a definir — Privacy Officer, Legal, Security Lead)*
+> **Revisores:** ⚠️ **staffing-blocked** — promoção a `doc_status: FROZEN` bloqueada até ≥ 2 reviewers nomeados conforme roles indicados (endereça F-09 audit Lote 3+4)
 > **Supersedes:** —
 > **Superseded By:** —
 
@@ -258,17 +258,23 @@ Adicionado em Lote 5.5 endereçando audit F-07 (CTRL-PRIV-015 estava sendo usado
 
 ## 6. Direitos do titular (DSRs) — SLAs
 
-### 6.1 Direitos suportados
+### 6.1 Direitos suportados (com clock semantics explícita — F-11)
 
-| Direito (LGPD / GDPR)                 | Suporte    | SLA         | Evidência                       | Owner             |
-|---------------------------------------|-----------|--------------|----------------------------------|-------------------|
-| Confirmação de tratamento (LGPD 18 I / GDPR 15) | Self-service | 5 dias úteis (SLO 95%) | EVT-001 (DSR) | Privacy Officer  |
-| Acesso (LGPD 18 II / GDPR 15)                  | Self-service | 15 dias úteis          | EVT-001 (DSR) | Privacy Officer  |
-| Correção (LGPD 18 III / GDPR 16)               | Self-service | 5 dias úteis           | EVT-001 (DSR) | Privacy Officer  |
-| Anonimização/bloqueio/eliminação (LGPD 18 IV / GDPR 17) | Self-service | 30 dias             | EVT-017 | Privacy Officer  |
-| Portabilidade (LGPD 18 V / GDPR 20)            | Self-service | 15 dias úteis          | EVT-001       | Privacy Officer  |
-| Revogação de consentimento (LGPD 18 VI / GDPR 7) | Self-service | Imediato             | EVT-001       | Privacy Officer  |
-| Oposição (GDPR 21)                              | Manual (email) | 15 dias úteis       | EVT-001       | Privacy Officer  |
+> **Convenção de clock (F-11 audit Lote 3+4):**
+> - `clock_start` = momento em que `dsr_tickets.status` transiciona para `verified` (após verificação de identidade via MFA re-auth). Submissões pré-verificadas não consomem o relógio.
+> - `clock_stop` = momento em que `dsr_tickets.status` transiciona para `completed` ou `denied`.
+> - **Pausa**: legal hold, ambiguidade do pedido pendente esclarecimento (com notificação ao titular), ou indisponibilidade técnica documentada (cap 5 dias úteis somatório por DSR).
+> - **Calendário**: dias úteis = seg–sex, exceto feriados nacionais BR (operações sam) ou EU (operações weur). "30 dias" = corridos. "Imediato" = ≤ 5 minutos.
+
+| Direito (LGPD / GDPR)                 | Suporte    | SLA         | clock_start | clock_stop | Evidência | Owner |
+|---------------------------------------|-----------|--------------|-------------|-----------|-----------|-------|
+| Confirmação de tratamento (LGPD 18 I / GDPR 15) | Self-service | 5 dias úteis (SLO 95%) | DSR `verified` | DSR `completed` | EVT-001 (DSR) | Privacy Officer |
+| Acesso (LGPD 18 II / GDPR 15)                  | Self-service | 15 dias úteis | DSR `verified` | DSR `completed` (download disponível) | EVT-001 (DSR) | Privacy Officer |
+| Correção (LGPD 18 III / GDPR 16)               | Self-service | 5 dias úteis | DSR `verified` | DSR `completed` (mutação aplicada) | EVT-001 (DSR) | Privacy Officer |
+| Anonimização/bloqueio/eliminação (LGPD 18 IV / GDPR 17) | Self-service | 30 dias corridos | DSR `verified` | DSR `completed` (todos backends purged) | EVT-042 + EVT-017 | Privacy Officer |
+| Portabilidade (LGPD 18 V / GDPR 20)            | Self-service | 15 dias úteis | DSR `verified` | DSR `completed` (export bundle disponível) | EVT-001 | Privacy Officer |
+| Revogação de consentimento (LGPD 18 VI / GDPR 7) | Self-service | Imediato (≤ 5min) | request submission | propagação confirmada | EVT-001 | Privacy Officer |
+| Oposição (GDPR 21)                              | Manual (email) | 15 dias úteis | email recebido + ticket criado | decisão emitida | EVT-001 + EVT-044 | Privacy Officer |
 
 ### 6.2 Pipeline de DSR (erasure exemplo)
 

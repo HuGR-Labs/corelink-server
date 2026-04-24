@@ -21,7 +21,7 @@ tags: ["architecture", "observability", "metrics", "logs", "traces", "slo"]
 > **Última atualização:** 2026-04-23
 > **Owner:** Gustavo Schneiter
 > **Aprovador Final:** Gustavo Schneiter
-> **Revisores:** *(a definir — SRE Lead, Observability Engineer, Product Owner)*
+> **Revisores:** ⚠️ **staffing-blocked** — promoção a `doc_status: FROZEN` bloqueada até ≥ 2 reviewers nomeados conforme roles indicados (endereça F-09 audit Lote 3+4)
 > **Supersedes:** —
 > **Superseded By:** —
 
@@ -335,14 +335,20 @@ Convenção de URL: `grafana/d/corelink-<id-em-lowercase>`.
 - PR-reviewed; CI valida syntax + unit test via `promtool test rules`.
 - Campos obrigatórios: `name`, `severity`, `slo` OR `rationale`, `runbook_url`, `owner_team`.
 
-### 9.2 Severities
+### 9.2 Severities (com clock semantics — F-11)
 
-| Severity | Pager?          | Response SLA | Exemplo                                          |
-|----------|------------------|--------------|--------------------------------------------------|
-| SEV-1    | Yes, PagerDuty  | 5 min        | Availability SLO 5m fast-burn > 14.4             |
-| SEV-2    | Yes, PagerDuty  | 30 min       | SLO 1h burn > 6                                   |
-| SEV-3    | Slack `#oncall` | Business day | Saturation > 0.8; vuln HIGH em dep                |
-| SEV-4    | Ticket          | 5 business days | Drift de métricas; docs faltando               |
+> **Convenção de clock para Response SLA (audit Lote 3+4 F-11):**
+> - `clock_start` = momento do **alert fire** (PagerDuty/Slack timestamp do trigger automático). Não usa "first human view".
+> - `clock_stop` = `human_acknowledged_at` (oncall confirma `/ack` no PagerDuty ou reage no Slack thread).
+> - **Mitigation SLA** (separado): `clock_start = ack_time`, `clock_stop = mitigation_complete_announced` em status page ou Slack.
+> - **Calendário**: 24/7 para SEV-1/SEV-2; horário comercial (9h-18h local da região oncall) para SEV-3/SEV-4.
+
+| Severity | Pager?          | Response SLA (alert→ack) | Mitigation SLA (ack→mitigated) | Exemplo |
+|----------|------------------|---------------------------|---------------------------------|---------|
+| SEV-1    | Yes, PagerDuty  | 5 min (24/7)              | 30 min                          | Availability SLO 5m fast-burn > 14.4; cross-tenant breach |
+| SEV-2    | Yes, PagerDuty  | 30 min (24/7)             | 4 horas                         | SLO 1h burn > 6; backup falhou |
+| SEV-3    | Slack `#oncall` | 1 business day            | 5 business days                 | Saturation > 0.8; vuln HIGH em dep |
+| SEV-4    | Ticket           | 5 business days           | 30 business days                | Drift de métricas; docs faltando |
 
 ### 9.3 Multi-window multi-burn-rate (SRE Workbook)
 

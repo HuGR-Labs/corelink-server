@@ -21,7 +21,7 @@ tags: ["architecture", "reliability", "fmea", "failure-analysis", "incident"]
 > **Última atualização:** 2026-04-23
 > **Owner:** Gustavo Schneiter
 > **Aprovador Final:** Gustavo Schneiter
-> **Revisores:** *(a definir — SRE Lead, Reliability Engineer, Security Lead)*
+> **Revisores:** ⚠️ **staffing-blocked** — promoção a `doc_status: FROZEN` bloqueada até ≥ 2 reviewers nomeados conforme roles indicados (endereça F-09 audit Lote 3+4)
 > **Supersedes:** —
 > **Superseded By:** —
 
