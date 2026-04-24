@@ -1,0 +1,12 @@
+target/
+.git/
+.github/
+.vscode/
+.idea/
+.DS_Store
+*.md
+!README.md
+.env
+.env.*
+.wrangler/
+node_modules/

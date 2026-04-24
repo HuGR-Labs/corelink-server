@@ -1,0 +1,30 @@
+# Rust
+/target
+**/*.rs.bk
+Cargo.lock.bak
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env / secrets (nunca comitar)
+.env
+.env.local
+.env.*.local
+.dev.vars
+
+# Cloudflare / wrangler
+.wrangler/
+node_modules/
+
+# Logs
+*.log
+
+# Dados locais de dev
+/local-data/

@@ -1,0 +1,62 @@
+# Cloudflare Workers + Containers config
+# Workers lida com control plane (HTTP). Containers roda o servidor gRPC Rust.
+# Docs: https://developers.cloudflare.com/containers/
+
+name = "corelink"
+compatibility_date = "2026-04-01"
+
+# Worker (control plane) — a implementar depois em ./worker/
+# main = "worker/src/index.ts"
+
+# Container com o servidor gRPC Rust
+[[containers]]
+class_name = "CoreLinkServer"
+image = "./Dockerfile"
+max_instances = 5
+instance_type = "standard"
+
+# Durable Object que gerencia lifecycle do Container + event bus
+[[durable_objects.bindings]]
+name = "CORELINK_SERVER"
+class_name = "CoreLinkServer"
+
+# Migrations do Durable Object
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["CoreLinkServer"]
+
+# R2 bucket pra CAS blobs
+[[r2_buckets]]
+binding = "CAS_BUCKET"
+bucket_name = "corelink-cas-dev"
+preview_bucket_name = "corelink-cas-preview"
+
+# KV pra metadata hot lookup
+[[kv_namespaces]]
+binding = "METADATA_KV"
+id = "TODO_KV_NAMESPACE_ID"
+preview_id = "TODO_PREVIEW_KV_ID"
+
+# Vars não-secretas
+[vars]
+ENVIRONMENT = "dev"
+
+# Secrets: `wrangler secret put STRIPE_KEY` etc
+# - CLERK_SECRET_KEY
+# - STRIPE_SECRET_KEY
+# - DATABASE_URL (Neon Postgres)
+
+# Produção (rodar com --env prod)
+[env.prod]
+name = "corelink-prod"
+vars = { ENVIRONMENT = "prod" }
+
+[[env.prod.r2_buckets]]
+binding = "CAS_BUCKET"
+bucket_name = "corelink-cas-prod"
+
+[[env.prod.containers]]
+class_name = "CoreLinkServer"
+image = "./Dockerfile"
+max_instances = 20
+instance_type = "standard"

@@ -1,0 +1,43 @@
+[package]
+name = "corelink-server"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+description = "HuGR CoreLink — shared content-addressable cache for developers"
+license = "UNLICENSED"
+
+[dependencies]
+# gRPC stack
+tonic = "0.12"
+prost = "0.13"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
+futures = "0.3"
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Error handling
+anyhow = "1"
+thiserror = "2"
+
+# Serde (usado por quase tudo no futuro próximo)
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[build-dependencies]
+tonic-build = "0.12"
+
+[profile.release]
+# Build otimizado pra Cloudflare Containers
+lto = "fat"
+codegen-units = 1
+strip = true
+opt-level = 3
+
+[profile.dev]
+opt-level = 0
+debug = true
