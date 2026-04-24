@@ -175,7 +175,7 @@ Cada FM tem scores 1–5 em:
 | FM-250 | DDoS volumetric no edge                                  | 3 | 3 | 1 | 9   | P2      | CF DDoS managed; CTRL-RATE-001 |
 | FM-251 | Credential stuffing / brute force                         | 3 | 4 | 1 | 12  | P2      | CF WAF + lockout policy        |
 | FM-252 | PAT leaked em repo público                                | 3 | 3 | 3 | 27  | P2       | Secret scanning + auto-revoke  |
-| FM-253 | Cross-tenant read (security bug)                         | 5 | 2 | 4 | 40  | P1 (S=5 → upgrade; O 1→2 em S-19 audit Lote 3+4) | TLA+ INV-TENANT-ISOLATION + RB-FM-253 + CTRL-ISO-001..005 + CTRL-AUTHZ-001..002 |
+| FM-253 | Cross-tenant read (security bug)                         | 5 | 2 | 4 | 40  | P1 (S=5 → upgrade; O 1→2 em S-19 audit Lote 3+4) | TLA+ INV-TENANT-ISOLATION + RB-FM-253 + CTRL-ISO-001 + CTRL-ISO-002 + CTRL-ISO-003 + CTRL-ISO-004 + CTRL-ISO-005 + CTRL-AUTHZ-001 + CTRL-AUTHZ-002 |
 | FM-254 | Cache poisoning (TA-3 inserir blob com hash forjado)     | 5 | 2 | 5 | 50  | P1 (S=5 → upgrade; O 1→2 em S-19) | CTRL-CAS-001 + client verify  |
 | FM-255 | Tenant-pago abusa execute-action para criptominer        | 3 | 3 | 2 | 18  | P2      | PAT-ABUSE-DETECT-001 + quota    |
 | FM-256 | Compression bomb em CAS write                             | 3 | 2 | 2 | 12  | P2      | CTRL-COMP-001                  |
