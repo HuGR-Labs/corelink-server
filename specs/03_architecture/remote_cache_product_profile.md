@@ -1,9 +1,9 @@
 ---
 id: "REMOTE-CACHE-PRODUCT-PROFILE"
 type: "protocol"
-doc_status: "DRAFT"
+doc_status: "REVIEW"
 audit_status: "ACTIVE"
-version: "0.1.0"
+version: "0.2.0"
 created: "2026-04-24"
 updated: "2026-04-24"
 owner: "Gustavo Schneiter"
@@ -232,25 +232,37 @@ REAPI v2 suporta compressed-blobs via Zstandard.
 
 ## 7. Namespace partitioning por tenant
 
-### 7.1 Layout R2
+### 7.1 Layout R2 (com HMAC tenant prefix — CTRL-AUTH-004)
+
+R2 keys **NUNCA** usam `tenant_id` em plaintext. Toda chave é prefixada por HMAC(tenant_key, tenant_id)[:16] para que guessing de path por atacante com credencial de Tenant A não consiga derivar key de Tenant B. Formato canônico (corrigido S-06 do audit Lote 3+4; alinha com `data_model.md §5.1` e `storage_semantics_matrix.md §3.9`):
 
 ```
-cas-bucket/
-  cas/{tenant_id}/blake3/{digest}
-  cas/{tenant_id}/sha256/{digest}
-  chunks/{tenant_id}/blake3/{chunk_digest}
-  manifests/{tenant_id}/blake3/{manifest_digest}
+cas-<region>/
+  <HMAC16>/blake3/<hex[0:2]>/<hex[2:4]>/<hex>
+  <HMAC16>/sha256/<hex[0:2]>/<hex[2:4]>/<hex>
 
-ac-bucket/
-  ac/{tenant_id}/blake3/{action_digest}
+chunks-<region>/
+  <HMAC16>/blake3/<chunk_hex>
+
+manifests-<region>/
+  <HMAC16>/blake3/<manifest_hex>
+
+ac-<region>/
+  <HMAC16>/blake3/<action_hex>.json
+
+audit-<region>/
+  date=<YYYY-MM-DD>/<hour>/part-<ulid>.ndjson.gz   (Object Lock)
 ```
+
+Onde `HMAC16 = b64(HMAC_SHA256(tenant_derivation_key, tenant_id_bytes))[0:16]`. Tenant derivation key (TDK) vem do KMS (ver `key_management.md`); rotação anual. Com HMAC, a segurança não depende apenas de R2 IAM — mesmo com bucket policy mal configurada, um atacante precisa quebrar HMAC-SHA256 pra gerar prefix de outro tenant.
 
 ### 7.2 Regras
 
-- **REG-NAMESPACE-001:** Todo R2 key **DEVE** começar com `{type}/{tenant_id}/{digest_fn}/{digest}`.
-- **REG-NAMESPACE-002:** Nenhum code path pode construir key sem scoping por `tenant_id` explícito.
-- **REG-NAMESPACE-003:** List operation (S3 `ListObjectsV2`) **DEVE** sempre usar prefix `{type}/{tenant_id}/` — nunca scan global.
-- **REG-NAMESPACE-004:** Se cross-tenant dedup for habilitado (REG-DEDUP-002), layout separado: `shared/public/blake3/{digest}` com ACL própria.
+- **REG-NAMESPACE-001:** Todo R2 key **DEVE** começar com `<HMAC(tenant_key, tenant_id)[:16]>/<digest_fn>/<hex-shards>/<hex>`. Plaintext `tenant_id` em key é **proibido** (viola CTRL-AUTH-004 + CTRL-ISO-001).
+- **REG-NAMESPACE-002:** Nenhum code path pode construir key sem derivar HMAC do `tenant_id` via lib central `tenant_path::derive_prefix(tenant_id)` (property test obrigatório).
+- **REG-NAMESPACE-003:** List operation (S3 `ListObjectsV2`) **DEVE** sempre usar prefix `<HMAC16>/` — nunca scan global, nunca prefix derivado de outra forma.
+- **REG-NAMESPACE-004:** Se cross-tenant dedup for habilitado (REG-DEDUP-002, requer ADR com BYOE), layout separado: `shared-public/blake3/<digest>` com ACL própria; HMAC prefix é omitido apenas neste namespace explicitamente shared.
+- **REG-NAMESPACE-005:** Shards de 2 níveis (`<hex[0:2]>/<hex[2:4]>/`) para evitar hotspot em LIST + facilitar scrub paralelo por prefix.
 
 ---
 
@@ -310,11 +322,14 @@ Phase 1 — Mark (read-only):
   Iterate D1 manifest_chunks → add chunk_digest and parent_digest to M
 
 Phase 2 — Sweep (with grace period):
-  For each R2 object key `cas/{tenant_id}/{digest_fn}/{digest}`:
-    if (tenant_id, digest) NOT in M:
+  For each R2 object key `<HMAC16(tenant_id)>/<digest_fn>/<hex-shards>/<digest>`:
+    derive (tenant_id, digest) from index (D1 blob_meta row)
+    if (tenant_id, digest) NOT in M AND
+       NOT recently_re_referenced (AC entry created after mark_started_at; ver §9.4 INV-GC-004):
       age = now - r2_object.created_at
-      if age > GC_GRACE_PERIOD (24h default):
-        DELETE r2 object
+      if age > GC_GRACE_PERIOD (72h default pra CAS; mark-phase-aware):
+        SOFT-DELETE (tombstone em D1 com deleted_at) — ver PAT-SOFT-DELETE-001
+  After grace period dentro da janela tombstone (24h), physical DELETE r2 object
         Emit event `cas.gc.deleted`
       else:
         skip (too young, may be in-flight upload)
@@ -468,7 +483,7 @@ Bazel/Buck2 têm modo `--remote_download_minimal` onde cliente baixa APENAS outp
 | INV-CASIdempotency | CRITICAL | FF-HR-002 (tenant isolation não aplica aqui, mas correção sim) | Property test em Rust |
 | INV-TenantIsolation | CRITICAL | FF-HR-002 | Property test + TLA+ |
 | INV-AuditLogImmutability | HIGH | FF-HR-005 | Integration test + schema constraint |
-| INV-GC-001 (reachable never deleted) | CRITICAL | (novo FF-HR-011 proposto) | TLA+ model checking |
+| INV-GC-001 (reachable never deleted) | CRITICAL | FF-HR-011 (ADR-0012) | TLA+ model checking (CTRL-FORMAL-001) |
 | INV-QuotaEnforcement | HIGH | — | DO atomic test |
 | INV-DigestVerification | CRITICAL | FF-HR-005 | Integration test |
 

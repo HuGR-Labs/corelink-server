@@ -156,22 +156,24 @@ Cada operação REAPI / package mirror tem backend específico. Semântica aplic
 
 | Passo | Backend | Semântica |
 |---|---|---|
-| Emit event | D1 INSERT `usage_events` / `audit_log` | Transactional, **imutável** (schema constraint, no UPDATE allowed) |
-| Retention | 2 anos via scheduled purge | Implementado via cron DO |
+| Emit event (hot) | D1 INSERT `usage_events` / `audit_log` | Transactional, **imutável** (schema constraint, no UPDATE allowed) |
+| Fanout (warm) | Logpush → R2 `audit-<region>/` | Append-only, near-realtime |
+| Archive (cold) | R2 Object Lock Governance Mode | Hash-chained; **retention ≥ 7 anos (SOC 2)** — ver CTRL-AUDIT-005 |
+| Purge de hot tier | Cron DO rotaciona D1 após 90 dias | Dados continuam disponíveis no archive |
 
-**Invariant:** INV-AuditLogImmutability. D1 schema **DEVE** rejeitar UPDATE/DELETE via CHECK constraint ou permissions.
+**Invariant:** INV-AUDIT-APPEND-ONLY (canonical; `invariant_registry.md`). D1 schema **DEVE** rejeitar UPDATE/DELETE via CHECK constraint ou permissions; R2 **DEVE** ter Object Lock habilitado. Corrigido S-03/S-18 do audit Lote 3+4.
 
 ### 3.9 Tenant Isolation
 
-Todo lookup/update **DEVE** scope-by `tenant_id`:
+Todo lookup/update **DEVE** scope-by `tenant_id`, com prefix **HMAC-derivado** (CTRL-AUTH-004) — nunca `tenant_id` em plaintext:
 
-- R2 key: `cas/{tenant_id}/{digest}`
-- KV key: `meta/{tenant_id}/{digest}`
-- D1 WHERE: `tenant_id = :tid`
-- DO ID: derivado de `tenant_id`
+- R2 key canônico: `<HMAC(tenant_key, tenant_id)[:16]>/<digest_fn>/<hex[0:2]>/<hex[2:4]>/<hex>` (ver `data_model.md §5.1`)
+- KV key: `meta/<HMAC(tenant_key, tenant_id)[:16]>/<digest>`
+- D1 WHERE: `tenant_id = :tid` (coluna indexada; assertion dupla no Worker antes de atingir D1)
+- DO ID: derivado de HMAC(tenant_key, tenant_id), não de `tenant_id` plaintext
 - Container: não persiste per-tenant (stateless)
 
-**Invariant:** INV-TenantIsolation (CRITICAL). Verificado via property test (§13 TLA+ opcional).
+**Invariant:** INV-TenantIsolation (CRITICAL). Verificado via property test **E** TLA+ **obrigatório** (CTRL-FORMAL-001 em `security_model.md §6.9`; invariantes CRITICAL não têm escape de TLA+). Spec em `specs/tla/tenant_isolation.tla` (a criar). Corrigido S-02/F-03 do audit Lote 3+4.
 
 ---
 

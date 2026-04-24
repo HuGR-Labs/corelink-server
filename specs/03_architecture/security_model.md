@@ -373,8 +373,9 @@ Root KMS (Cloudflare Workers Secrets, HSM-backed)
 
 ### 8.2 SBOM
 
-- Formato: **CycloneDX 1.5** (JSON).
-- Gerado via `cargo-cyclonedx` em CI.
+- Formato canônico (ADR-0014): **CycloneDX 1.5+ JSON** (preferido) via `cargo-cyclonedx`; **SPDX 2.3+ JSON/YAML** também aceito quando stakeholder externo exigir (converter via `cyclonedx-cli convert`). Framework `§35.7 EVT-010` normativo.
+- Gerado em CI em todo build de release.
+- Assinado com cosign (CTRL-SUPPLY-002).
 - Publicado como release asset *e* enviado para Dependency-Track (self-hosted).
 - PRR **BLOCKED** se SBOM ausente.
 

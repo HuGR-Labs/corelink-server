@@ -336,15 +336,23 @@ Todos os eventos abaixo **DEVEM** gerar entry em `audit_log` (D1, imutável via 
 | `auth.denied.rate_limit` | tenant_id, rate_limit_key | WARN |
 | `auth.admin.config_changed` | admin_id, tenant_id, old_value, new_value, field | INFO |
 
-### 7.2 Retention
+### 7.2 Retention (tiered)
 
-- `audit_log` retido por **2 anos** no D1/Neon + archived em R2 `evidence-audits/` com retenção permanente.
-- Requisito pra SOC 2, LGPD Art. 16, HIPAA quando aplicável.
+Audit log vive em 3 tiers com SLAs distintos, mas **retenção total ≥ 7 anos** para SOC 2 / ISO 27001 / LGPD Art. 16:
+
+| Tier | Backend | Duração | Propósito |
+|---|---|---|---|
+| Hot | D1 / Neon | 90 dias | Query operacional rápida (Worker lookup, alert) |
+| Warm | R2 `audit-<region>/` via Logpush | até 1 ano | Análise / export para SIEM |
+| **Cold (archive)** | R2 Object Lock Governance Mode | **≥ 7 anos** | Compliance, forensics, legal hold |
+
+Pipeline: hot (90d) → warm (1y) → cold (≥7y, hash-chained). Total ≥ 7 anos conforme CTRL-AUDIT-005 (`security_model.md §6.8`). Corrigido S-03/F-03 do audit Lote 3+4.
 
 ### 7.3 Immutability
 
 - D1 schema: audit_log sem UPDATE/DELETE permitido (CHECK constraint + app-level rejection).
-- Archive em R2 com versioning + Object Lock (quando aplicável).
+- R2 archive com Object Lock Governance Mode + hash-chain diário (CTRL-AUDIT-001 + PAT-AUDIT-VERIFY-001).
+- Invariante canônico: INV-AUDIT-APPEND-ONLY (ver `invariant_registry.md`).
 
 ---
 
@@ -381,9 +389,9 @@ proptest! {
 }
 ```
 
-### 8.3 TLA+ spec (opcional, CRITICAL invariant)
+### 8.3 TLA+ spec (**OBRIGATÓRIO** — CRITICAL invariant)
 
-INV-TenantIsolation pode ter spec formal TLA+ (§13 do framework):
+INV-TenantIsolation é CRITICAL; TLA+ model check **é obrigatório** (CTRL-FORMAL-001 em `security_model.md §6.9`), sem exceção (corrigido S-02/F-03 do audit Lote 3+4). CI falha se invariante CRITICAL não tem TLC verde. Spec vive em `specs/tla/tenant_isolation.tla`:
 
 ```tla
 ---- MODULE TenantIsolation ----
