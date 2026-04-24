@@ -3,7 +3,7 @@ id: "FRAMEWORK-00"
 type: "framework"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "0.3.4"
+version: "0.4.0"
 created: "2026-04-23"
 updated: "2026-04-24"
 owner: "Gustavo Schneiter"
@@ -17,7 +17,7 @@ tags: ["meta", "process", "framework"]
 # 00 — Specification Framework
 
 > **doc_status:** DRAFT
-> **Versão:** 0.3.4
+> **Versão:** 0.4.0
 > **Última atualização:** 2026-04-24
 > **Owner:** Gustavo Schneiter
 > **Aprovador Final:** Gustavo Schneiter
@@ -2553,6 +2553,126 @@ Script `scripts/check_waivers.py` (a ser criado em Lote 2.5 ou junto do CI pipel
 
 ---
 
+## 35.7 Evidence Taxonomy — Tipos Formais de Prova para Gates
+
+> **Problema:** PRINC-031 exige evidence artifact pra toda caixa binária. Mas "evidence" sem taxonomia vira loteria: um reviewer aceita URL de dashboard, outro exige snapshot imutável, outro aceita screenshot sem timestamp. Sem regra, o rigor é performativo.
+>
+> **Solução:** taxonomia formal de **17 tipos de evidence**, cada um com regras específicas de formato, armazenamento, imutabilidade, retenção e acesso.
+
+### 35.7.1 Taxonomia canônica
+
+Cada tipo tem ID `EVT-XXX`. Ao preencher coluna `Evidence` em WI/ST/PRR, reviewer **DEVE** identificar qual tipo foi fornecido (por prefixo, link tipado, ou referência estruturada).
+
+| ID | Tipo | Conteúdo | Formato aceito | Armazenamento | Imutabilidade | Retenção mínima |
+|---|---|---|---|---|---|---|
+| **EVT-001** | **CI_LOG** | Log de execução de pipeline CI | URL GitHub Actions / GitLab CI run | GitHub Actions / GitLab | ✅ (via commit SHA + run ID) | 90 dias (política default CI); 1 ano pra runs de release |
+| **EVT-002** | **TEST_OUTPUT** | Output de test runner (cargo test, pytest, jest) | Arquivo `.txt`/`.xml`/`.json` linkado a CI run | Artifacts do CI run (EVT-001) | ✅ | Herda de EVT-001 |
+| **EVT-003** | **COVERAGE_REPORT** | Relatório de cobertura de testes | HTML/XML/JSON (llvm-cov, lcov, coverage.py) | Artifacts CI + badges repo | ✅ | 1 ano |
+| **EVT-004** | **BENCH_REPORT** | Relatório de benchmark | JSON output de `criterion` + comparativo p50/p99 vs baseline | Artifacts CI + `benches/history/` | ✅ | 1 ano |
+| **EVT-005** | **SAST_SCAN_REPORT** | Static Application Security Testing | SARIF JSON (CodeQL, semgrep, bandit) | GitHub Security tab + artifacts | ✅ | 1 ano |
+| **EVT-006** | **DAST_SCAN_REPORT** | Dynamic AST (endpoints HTTP) | OWASP ZAP report (HTML/JSON) | Artifacts CI | ✅ | 1 ano |
+| **EVT-007** | **DEPENDENCY_SCAN_REPORT** | Vuln scan de dependências | `cargo audit` output / GitHub Dependabot / Snyk JSON | Artifacts CI + GitHub Security | ✅ | 1 ano |
+| **EVT-008** | **FUZZ_REPORT** | Output de fuzzing | cargo-fuzz output + corpus + stats | Artifacts CI | ✅ | 6 meses |
+| **EVT-009** | **MUTATION_REPORT** | Mutation testing kill rate | cargo-mutants output JSON | Artifacts CI | ✅ | 6 meses |
+| **EVT-010** | **SBOM** | Software Bill of Materials | SPDX 2.3+ JSON/YAML | Artifacts de release + registry | ✅ (assinado com cosign) | 7 anos (supply chain) |
+| **EVT-011** | **BINARY_SIGNATURE** | Assinatura de binário/container | cosign verification output + attestation | Registry (R2, GHCR) + Sigstore public log | ✅ (crypto) | Permanente |
+| **EVT-012** | **SCREENSHOT** | Captura de tela | PNG com metadata EXIF (timestamp, device) | R2 bucket `evidence-screenshots/` com naming `YYYYMMDD-<hash>` | ✅ (hash-addressed) | 1 ano |
+| **EVT-013** | **DASHBOARD_SNAPSHOT** | Screenshot de dashboard Grafana/etc com timestamp | PNG + URL + timestamp ISO + query snapshot | R2 + Grafana snapshot URL (imutável) | ✅ (via snapshot API do Grafana) | 1 ano |
+| **EVT-014** | **DASHBOARD_URL** | Link para dashboard ao vivo (NÃO-imutável) | URL | URL externa | ❌ **dados mudam** | N/A |
+| **EVT-015** | **PR_APPROVAL** | Aprovação formal em PR | URL de PR review com "APPROVED" + timestamp | GitHub/GitLab | ✅ | Permanente (git history) |
+| **EVT-016** | **HUMAN_SIGNOFF** | Aprovação humana nomeada | Nome + papel + data + rationale + assinatura (se papel legal/compliance) | Corpo do artefato §30 (sign-off section) | ✅ via git commit | Permanente |
+| **EVT-017** | **RUNBOOK_EXECUTION** | Log de dry-run de runbook | Gravação de sessão (asciinema, vídeo) + timestamps + output | R2 `evidence-runbooks/` | ✅ | 1 ano |
+| **EVT-018** | **MIGRATION_APPLIED** | Comprovação de migration aplicada | Migration ID + apply timestamp + schema diff antes/depois | DB migration table + commit git | ✅ | Permanente (db history) |
+| **EVT-019** | **INCIDENT_LINK** | Link pra incident post-mortem | Spec doc `specs/incidents/INC-YYYYMMDD-NNN.md` | Repositório git | ✅ | Permanente |
+| **EVT-020** | **EXTERNAL_VENDOR_CONFIRMATION** | Comunicação formal com vendor | Email (PDF com headers completos) / support ticket screenshot | R2 `evidence-vendor/` | ✅ (assinado com timestamp) | 7 anos |
+| **EVT-021** | **AUDIT_REPORT** | Relatório de auditoria externa | PDF assinado do auditor | R2 `evidence-audits/` | ✅ (crypto) | 7 anos |
+| **EVT-022** | **TLA_MODEL_CHECK** | Output de TLC model checker | TLC output JSON + seed + spec | Repositório git + artifacts CI | ✅ | Permanente |
+| **EVT-023** | **CHAOS_EXPERIMENT_REPORT** | Resultado de chaos experiment | Report chaos-mesh/custom + métricas observadas | R2 + artifacts | ✅ | 1 ano |
+| **EVT-024** | **LOAD_TEST_REPORT** | Output de load test | wrk/oha/k6 output JSON + dashboard snapshot | Artifacts CI | ✅ | 1 ano |
+
+### 35.7.2 Regras de aceitação
+
+- **REG-EVID-001**: Toda caixa binária que **PASSA** (✅) em Completeness/DoD/Quality **DEVE** ter referência a pelo menos **1 evidence artifact** do tipo apropriado.
+- **REG-EVID-002**: `EVT-014 DASHBOARD_URL` **NÃO É suficiente como evidence isolada** — sempre combinar com `EVT-013 DASHBOARD_SNAPSHOT` pra auditabilidade temporal.
+- **REG-EVID-003**: Evidence **DEVE** ser referenciada com formato estruturado:
+  - Preferível: `[EVT-XXX]: <URL ou path>`
+  - Aceitável: descrição textual com link, desde que tipo EVT-XXX esteja claro
+- **REG-EVID-004**: Evidence com retenção expirada invalida a verificação; se o gate é re-auditado após expiração, evidence **DEVE** ser re-coletada.
+- **REG-EVID-005**: Evidence imutável é aquela que atende pelo menos UMA de:
+  - Assinada criptograficamente (cosign, GPG)
+  - Hash-addressed (conteúdo referenciado por hash SHA-256+)
+  - Imutável por plataforma (git commit, GitHub run ID, Sigstore log)
+  - Timestamped por fonte confiável (RFC 3161 timestamping)
+
+### 35.7.3 Mapping gate → tipos de evidence apropriados
+
+Exemplos de pareamento esperado (não-exaustivo):
+
+| Gate típico (WI §10) | Tipos de evidence aceitáveis |
+|---|---|
+| 10.1.7 `cargo clippy` clean | EVT-001 (CI log) |
+| 10.2.1 Todos AC testados e verdes | EVT-002 (test output) |
+| 10.2.5 Property test ≥ 1000 iter | EVT-002 + EVT-009 (mutation opcional) |
+| 10.4.1 Métricas emitindo | EVT-013 (dashboard snapshot) + EVT-014 (URL) |
+| 10.5.6 Dependencies scanned | EVT-007 |
+| 10.5.7 SAST clean | EVT-005 |
+| 10.5.8 DAST clean (se HTTP) | EVT-006 |
+| 10.7.1 Benchmark adicionado | EVT-004 |
+| 12 Invariant preservado | EVT-002 (property test) ou EVT-022 (TLA+ se CRITICAL) |
+| 15 Chaos experiment executado | EVT-023 |
+| 17 Rollback testado em staging | EVT-017 (runbook execution) |
+| 21 Sign-off humano | EVT-015 (PR approval) + EVT-016 (human signoff) |
+
+### 35.7.4 Armazenamento de evidence
+
+Bucket R2 `corelink-specs-evidence/` com estrutura:
+
+```
+evidence-screenshots/
+  YYYY/MM/DD/<artifact_id>_<hash>.png
+
+evidence-snapshots/
+  grafana/<dashboard_id>/<timestamp>_<hash>.png
+
+evidence-runbooks/
+  <runbook_id>/<YYYY-MM-DD>_<dry_run_id>.cast   # asciinema
+
+evidence-vendor/
+  YYYY/<vendor>/<ticket_id>_<hash>.pdf
+
+evidence-audits/
+  YYYY/<auditor>/<report_id>.pdf.sig
+```
+
+- **REG-EVID-010**: Bucket **DEVE** ter versioning ativado (imutabilidade via S3 Object Lock ou equivalente).
+- **REG-EVID-011**: Acesso ao bucket **DEVE** ser read-only pra usuários não-admin (prevent modification).
+- **REG-EVID-012**: Retention policy **DEVE** ser configurada por prefixo do bucket (aplicar tabela §35.7.1).
+
+### 35.7.5 Validação em CI
+
+Script `scripts/validate_evidence.py` (planejado):
+
+1. Parseia todos os WI/ST/PRR com `work_status: COMPLETE | SEALED | DONE | APPROVED | CONDITIONALLY_APPROVED`.
+2. Para cada caixa ✅ em Completeness/DoD/Quality, extrai evidence referenciada.
+3. Valida:
+   - Formato de referência (tipo EVT-XXX identificado)
+   - URL acessível (se URL)
+   - Timestamp dentro da janela de retenção
+   - Se EVT-013, confirma snapshot real (não só URL EVT-014)
+4. Falha CI se caixa ✅ sem evidence válida.
+
+### 35.7.6 Anti-padrões de evidence
+
+- ❌ **AP-EVID-001**: "evidence: PR review" sem link específico. Use EVT-015 com URL exato.
+- ❌ **AP-EVID-002**: "evidence: roda no CI" sem citar run ID. Use EVT-001 com URL.
+- ❌ **AP-EVID-003**: Screenshot sem timestamp visível. Use EVT-012 com EXIF ou sobrepor timestamp.
+- ❌ **AP-EVID-004**: "evidence: Grafana dashboard" (só URL ativo). Use EVT-013 com snapshot imutável.
+- ❌ **AP-EVID-005**: "evidence: conversa no Slack". Slack não é imutável nem auditável. Promover a EVT-016 (human signoff formal).
+- ❌ **AP-EVID-006**: "evidence: test coverage" sem número específico. Use EVT-003 com relatório que mostra percentual.
+- ❌ **AP-EVID-007**: Evidence reutilizada em gates não-relacionados ("mesmo CI log vale pra 10 gates distintos"). Cada gate **DEVE** ter evidence específica.
+
+---
+
 ## 36. Processo de Revisão e Sign-off
 
 ### 36.1 Papéis
@@ -2932,6 +3052,7 @@ Em casos em que regra deste framework impede resolução de problema real:
 | 0.3.2 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | **Lote 1-ter — cleanup final pós second GPT pass**: (a) CI script escope corrigido — exclui `_audits/` e `_archive/`, previne falso negativo em arquivos de review. (b) Schema `supersedes`/`superseded_by` agora aceita `string | lista de strings | null` — permite split 1→N e consolidação N→1 (REG-WI-SPLIT-001). (c) Schema §7.11.2 reconciliado: PRR usa `feature_wi` em vez de `parent` (relação lateral, não hierárquica); `feature_wi` adicionado como campo obrigatório apenas pra `type=prr`. (d) Coluna `Status` genérica renomeada pra `Estado requerido` em tabelas de trace (WI §4, ST §2, ADR §12.1, WI §18.1, sprint §5.1) e pra `Atendido?` em tabelas de checklist (sprint §5.x). (e) Drift `14 seções` → `19 seções §0–§18` em WI §17. (f) Framework cleanup: 5 ocorrências residuais de `ACCEPTED`/`PROPOSED` fora dos templates corrigidas (§5.3, §6.3, §14.2 template NFR, §34.6 template CAP, §34.8 template INV). (g) Duplicata §34.6/§34.7 removida. Validação YAML re-confirmada em 6 docs. |
 | 0.3.3 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | **Lote 1-quater — propagação parcial dos fixes de §7.11**: (a) §7.11.3 snippet canônico agora mostra `supersedes`/`superseded_by` aceitando escalar OU lista (match tabela §7.11.1, não §7.11.2 como o registro anterior dizia). (b) §7.11.4 Level 4 template agora inclui `feature_wi`, `capabilities`, `prod_target_date` apenas pra `type: prr` (template real de PRR). **ATENÇÃO:** schema table §7.11.2 **ainda não** declarava `capabilities` e `prod_target_date` neste ponto — corrigido em v0.3.4. (c) 3 resíduos finais de `\| Status \|` corrigidos: sprint §13.1 dependencies → `Atendida?`; ST §11.1 dependencies → `Atendida?`; WI §4 JTBD row valor `FROZEN` cru → `doc_status: FROZEN`. Backlog parcialmente zerado; drift schema↔snippet resolvido em v0.3.4. |
 | 0.3.4 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | **Lote 1-quinquies — fechamento schema §7.11.2 + correção retroativa de auditabilidade**: (a) Schema §7.11.2 adiciona `capabilities` (lista de strings, obrigatório apenas pra `type: prr`) e `prod_target_date` (ISO date, obrigatório apenas pra `prr`). (b) `work_status` e `assignee` ganharam aplicabilidade explícita por type. (c) Entrada v0.3.3 do change log **corrigida retroativamente**: trocada "tabela §7.11.2" por "tabela §7.11.1" (localização correta dos campos `supersedes`/`superseded_by`); marcada a propagação schema↔snippet como parcial em v0.3.3, completa em v0.3.4. Honestidade de auditabilidade preservada. Backlog de Lote 1 **finalmente zerado** (exceto os 2 itens reservados explicitamente pra Lotes 5 e 6). |
+| **0.4.0** | **2026-04-24** | **Gustavo (via Claude Opus 4.7)** | **Lote 2 — Framework SOTA com machine-readable real, risk lanes, control inheritance, waivers, evidence taxonomy.** 5 sub-lotes commitados incrementalmente: **(2.1)** JSON Schema real em `specs/_schemas/front_matter.schema.json` (draft 2020-12), enums validados, cross-field rules via `allOf`+`if`/`then`, schema para 35 types; script `scripts/validate_specs.py` com 2 camadas (YAML parseability em tudo; JSON Schema exceto templates). **(2.2)** Risk lanes: §33.5 novo com 3 lanes (LOW_RISK/STANDARD/HIGH_RISK), scoring de 5 dimensões, 10 forcing factors (FF-HR-*), matriz de gates por lane pra WI (33 seções categorizadas ✅/🟡/⛔), matriz de sign-offs (3/5-8/10-12 roles), 4 regras REG-LANE + auditoria trimestral. Reduz cerimônia sem reduzir rigor. **(2.3)** Control inheritance: §35.5 com catálogo de 15 fontes canônicas (observability_model, security_model, privacy_model, slo_catalog, failure_modes, etc em Nível 3), campo YAML `inherits_from`+`local_deltas`, 8 regras REG-INHERIT, mata duplicação em WI/Sprint/ST/PRR. **(2.4)** Waivers: §35.6 + `_templates/waiver.md` (11 seções: rationale, compensating_control, expires_at obrigatório, revalidation_trigger, review checkpoints T+25/50/75/90%, plano de resolução), 7 regras REG-WAIVER, enforcement automático via expiração, 5 anti-patterns catalogados (AP-WAIVER-*). Diretório `specs/_waivers/` criado. **(2.5)** Evidence taxonomy: §35.7 com **24 tipos formais de evidence** (EVT-001 a EVT-024: CI_LOG, TEST_OUTPUT, COVERAGE_REPORT, BENCH_REPORT, SAST/DAST_SCAN, FUZZ_REPORT, MUTATION_REPORT, SBOM, BINARY_SIGNATURE, SCREENSHOT, DASHBOARD_SNAPSHOT/URL, PR_APPROVAL, HUMAN_SIGNOFF, RUNBOOK_EXECUTION, MIGRATION_APPLIED, INCIDENT_LINK, EXTERNAL_VENDOR_CONFIRMATION, AUDIT_REPORT, TLA_MODEL_CHECK, CHAOS_EXPERIMENT_REPORT, LOAD_TEST_REPORT), cada um com formato/armazenamento/imutabilidade/retenção. Regra crítica: EVT-014 DASHBOARD_URL sozinho não é evidence válida (precisa EVT-013 SNAPSHOT). Mapping gate→tipos apropriados. Estrutura de bucket R2 `corelink-specs-evidence/`. 7 anti-patterns (AP-EVID-*). Preparação pra `scripts/validate_evidence.py`. **Resolve audit v1 Gaps 3, 4, 5 + reduz redundâncias (§6 do audit).** |
 
 ---
 
