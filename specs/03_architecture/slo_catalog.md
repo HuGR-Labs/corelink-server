@@ -109,12 +109,13 @@ Budgets são independentes por tier. Métricas agregadas em `corelink_slo_*{tier
 
 | Campo              | Valor                                                        |
 |--------------------|--------------------------------------------------------------|
-| SLI                | `corelink_cas_get_requests_total{outcome IN ("ok","miss")} / {outcome != "rate_limited_within_quota"}` |
+| SLI (numerador)    | `corelink_cas_get_requests_total{outcome IN ("ok","miss")}` |
+| SLI (denominador)  | `corelink_cas_get_requests_total{outcome NOT IN ("error_client_4xx_legitimate")}` — inclui `rate_limited_within_quota` (failure nosso, ver F-05 audit Lote 3+4) |
 | Target (team)      | 99.9%                                                        |
-| Target (enterprise)| 99.99%                                                       |
+| Target (enterprise)| 99.95% (alinhado com tier table §3; 99.99% requer baseline ≥ 30 dias + ADR — proibido sem evidence) |
 | Window             | 30 dias                                                      |
-| FMs                | FM-050, FM-057                                                |
-| Notas              | `miss` conta como OK; serviço respondeu corretamente         |
+| FMs                | FM-050, FM-057, FM-250                                        |
+| Notas              | `miss` conta como OK (servimos 200 sem body, é semântica correta); `rate_limited_within_quota` (cliente dentro do plan + nosso DO disse 429) **conta como failure** — bug nosso. `rate_limited_over_quota` (cliente excedeu plan) excluído (legítimo). Corrigido S-08 + F-05. |
 
 ### 4.3 Availability — CAS PUT
 

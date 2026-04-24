@@ -110,7 +110,7 @@ Planejamento: **Security + Availability + Confidentiality + Privacy + Processing
 ### 2.6 Mapping — Privacy (P series)
 
 | P1.1         | Privacy notice                                        | `/privacy` page; versioned                     | EVT-044                       |
-| P2.1         | Consent                                               | CTRL-PRIV-015 + opt-in UI                      | EVT-001                         |
+| P2.1         | Consent                                               | CTRL-PRIV-CONSENT-001..004 (privacy_model §5.6) | EVT-001 (consent events) + EVT-046 (LIA quando aplicável) |
 | P3.1..3.2    | Collection limited to purpose                         | CTRL-PRIV-003                                  | EVT-026                 |
 | P4.1..4.3    | Use, retention, disposal                              | `privacy_model.md §8`                          | EVT-042                      |
 | P5.1..5.2    | Access + correction                                   | CTRL-PRIV-022 DSR self-service                 | EVT-001 (DSR)                   |

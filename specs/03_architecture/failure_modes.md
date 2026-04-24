@@ -71,6 +71,11 @@ Cada FM tem scores 1–5 em:
 - 30 ≤ RPN < 60 → **P1**: runbook + test automatizado obrigatório.
 - RPN < 30 → **P2**: documentado; mitigação best-effort.
 
+**Override por severidade (regra explícita, S-09 do audit Lote 3+4):**
+
+- `S = 5` força minimum **P1** independente de RPN. Justificativa: severity 5 implica blast radius cross-tenant ou data loss; mesmo com O baixo, o impacto demanda runbook + test obrigatório.
+- Override **DEVE** ser anotado na coluna Classe como "P1 (S=5 → upgrade)" para auditabilidade.
+
 ---
 
 ## 2. Taxonomia de falhas
@@ -101,14 +106,14 @@ Cada FM tem scores 1–5 em:
 | FM-004 | Container deadline hit (> 60min)                        | 2 | 3 | 1 | 6   | P2      | PAT-TIMEOUT-002, user notification |
 | FM-005 | DO actor rebalance causa spike de latência              | 3 | 2 | 3 | 18  | P2      | PAT-DEGRADE-001                |
 | FM-006 | Panic em Rust não capturado (Worker)                    | 4 | 2 | 2 | 16  | P2      | PAT-ERROR-ISOLATE-001, std sanitizer |
-| FM-007 | Deserialization RCE (dep corrupted or bad serde config) | 5 | 1 | 5 | 25  | P2 (mas classe S=5 força P1) | PAT-INPUT-HARDEN-001, CTRL-INPUT-003 |
+| FM-007 | Deserialization RCE (dep corrupted or bad serde config) | 5 | 1 | 5 | 25  | P1 (S=5 → upgrade)         | PAT-INPUT-HARDEN-001, CTRL-INPUT-003 |
 
 ### 3.2 Storage
 
 | ID     | Descrição                                                | S | O | D | RPN | Classe | CTRLs / Patterns              |
 |--------|----------------------------------------------------------|---|---|---|-----|---------|--------------------------------|
 | FM-050 | R2 bucket parcialmente indisponível (região)           | 4 | 2 | 2 | 16  | P2      | PAT-REGION-FAILOVER-001        |
-| FM-051 | R2 bit rot detectado (hash mismatch on read)            | 5 | 1 | 4 | 20  | P1       | CTRL-CAS-002 verify + scrub periódico |
+| FM-051 | R2 bit rot detectado (hash mismatch on read)            | 5 | 1 | 4 | 20  | P1 (S=5 → upgrade) | CTRL-CAS-002 verify + scrub periódico |
 | FM-052 | R2 eventual consistency (LIST não vê PUT recente)       | 3 | 3 | 3 | 27  | P2       | PAT-READ-YOUR-WRITES-001       |
 | FM-053 | R2 IAM change não propagado (403 intermitente)          | 3 | 2 | 4 | 24  | P2       | PAT-RETRY-BACKOFF-001 + alert  |
 | FM-054 | KV eventual consistency (stale > 60s esperado)          | 2 | 5 | 3 | 30  | P1       | PAT-KV-TTL-001; nunca usar KV pra verdade |
@@ -119,14 +124,14 @@ Cada FM tem scores 1–5 em:
 | FM-059 | DO storage quota exceeded (32 MiB por DO)               | 3 | 3 | 3 | 27  | P2       | PAT-QUOTA-ALERT-001 + shard    |
 | FM-060 | R2 multipart upload orphaned (incomplete)                | 2 | 3 | 4 | 24  | P2       | PAT-SWEEPER-001 (abort multipart > 7d) |
 | FM-061 | Audit log R2 Object Lock impede emergency redaction     | 2 | 2 | 3 | 12  | P2       | RB-GDPR-ERASURE-HOLD (legal path) |
-| FM-062 | CAS/AC hash collision (criptográfico — BLAKE3)           | 5 | 1 | 5 | 25  | P2 (S=5 → P1)| Defense in depth: dupla hash algo opcional |
+| FM-062 | CAS/AC hash collision (criptográfico — BLAKE3)           | 5 | 1 | 5 | 25  | P1 (S=5 → upgrade)| Defense in depth: dupla hash algo opcional |
 
 ### 3.3 Network
 
 | ID     | Descrição                                                | S | O | D | RPN | Classe | CTRLs / Patterns              |
 |--------|----------------------------------------------------------|---|---|---|-----|---------|--------------------------------|
-| FM-100 | DNS outage (registrar / CF DNS)                          | 5 | 1 | 2 | 10  | P2      | PAT-DNS-TTL-001 + runbook       |
-| FM-101 | CF edge outage (região ou global)                        | 5 | 1 | 1 | 5   | P2      | Status page + comms plan       |
+| FM-100 | DNS outage (registrar / CF DNS)                          | 5 | 1 | 2 | 10  | P1 (S=5 → upgrade) | PAT-DNS-TTL-001 + runbook       |
+| FM-101 | CF edge outage (região ou global)                        | 5 | 1 | 1 | 5   | P1 (S=5 → upgrade) | Status page + comms plan       |
 | FM-102 | BGP leak afeta CF IPs                                    | 4 | 1 | 3 | 12  | P2      | CF Magic; mitigation ops        |
 | FM-103 | TLS cert expiry / revoked                                | 4 | 1 | 2 | 8   | P2      | Auto-renew + canary check       |
 | FM-104 | mTLS binding between Worker/Container drops              | 3 | 2 | 3 | 18  | P2      | PAT-RETRY-001 + alert           |
@@ -143,7 +148,7 @@ Cada FM tem scores 1–5 em:
 | FM-153 | Grafana Cloud outage                                     | 1 | 2 | 1 | 2   | P2      | Metrics em R2 Logpush como fallback |
 | FM-154 | Dep crate yank mid-deploy                                | 3 | 2 | 3 | 18  | P2      | `Cargo.lock` pinned + CI check |
 | FM-155 | Dep CVE HIGH descoberto                                   | 3 | 3 | 2 | 18  | P2      | PAT-PATCH-SLA-001 + cargo-audit CI |
-| FM-156 | Dep com maintainer malicioso (supply chain TA-5)        | 5 | 1 | 5 | 25  | P2 (S=5 → P1) | SLSA L3 + review + signed commits |
+| FM-156 | Dep com maintainer malicioso (supply chain TA-5)        | 5 | 1 | 5 | 25  | P1 (S=5 → upgrade) | SLSA L3 + review + signed commits |
 
 ### 3.5 Operational
 
@@ -164,21 +169,21 @@ Cada FM tem scores 1–5 em:
 | FM-250 | DDoS volumetric no edge                                  | 3 | 3 | 1 | 9   | P2      | CF DDoS managed; CTRL-RATE-001 |
 | FM-251 | Credential stuffing / brute force                         | 3 | 4 | 1 | 12  | P2      | CF WAF + lockout policy        |
 | FM-252 | PAT leaked em repo público                                | 3 | 3 | 3 | 27  | P2       | Secret scanning + auto-revoke  |
-| FM-253 | Cross-tenant read (security bug)                         | 5 | 1 | 4 | 20  | **P1** (S=5) | TLA+ INV-TenantIsolation obrig. |
-| FM-254 | Cache poisoning (TA-3 inserir blob com hash forjado)     | 5 | 1 | 5 | 25  | **P1** (S=5) | CTRL-CAS-001 + client verify   |
+| FM-253 | Cross-tenant read (security bug)                         | 5 | 1 | 4 | 20  | P1 (S=5 → upgrade)   | TLA+ INV-TenantIsolation obrig. |
+| FM-254 | Cache poisoning (TA-3 inserir blob com hash forjado)     | 5 | 1 | 5 | 25  | P1 (S=5 → upgrade)   | CTRL-CAS-001 + client verify   |
 | FM-255 | Tenant-pago abusa execute-action para criptominer        | 3 | 3 | 2 | 18  | P2      | PAT-ABUSE-DETECT-001 + quota    |
 | FM-256 | Compression bomb em CAS write                             | 3 | 2 | 2 | 12  | P2      | CTRL-COMP-001                  |
 | FM-257 | Replay attack com token válido capturado                  | 3 | 2 | 3 | 18  | P2      | CTRL-AUTH-007 nonce window      |
-| FM-258 | Insider data exfil via support tool                       | 5 | 1 | 5 | 25  | P2 (S=5 → P1) | CTRL-PRIV-016 consent + MFA + audit |
+| FM-258 | Insider data exfil via support tool                       | 5 | 1 | 5 | 25  | P1 (S=5 → upgrade) | CTRL-PRIV-016 consent + MFA + audit |
 
 ### 3.7 Data Integrity
 
 | ID     | Descrição                                                | S | O | D | RPN | Classe | CTRLs / Patterns              |
 |--------|----------------------------------------------------------|---|---|---|-----|---------|--------------------------------|
-| FM-300 | GC deleta blob ainda referenciado (refcount bug)         | 5 | 2 | 4 | 40  | **P1** | INV-GC-001 TLA+ + PAT-SOFT-DELETE-001 |
+| FM-300 | GC deleta blob ainda referenciado (refcount bug)         | 5 | 2 | 4 | 40  | P1                  | INV-GC-001 TLA+ + PAT-SOFT-DELETE-001 |
 | FM-301 | Migration doble-apply (idempotency bug)                  | 4 | 2 | 3 | 24  | P2      | PAT-MIGRATION-IDEM-001         |
-| FM-302 | Billing counter não incrementa (silent revenue leak)     | 3 | 2 | 5 | 30  | **P1** | Reconciliation diária           |
-| FM-303 | AC entry aponta pra blob de outro tenant (bug)           | 5 | 1 | 4 | 20  | **P1** (S=5) | INV-TenantIsolation + test integração |
+| FM-302 | Billing counter não incrementa (silent revenue leak)     | 3 | 2 | 5 | 30  | P1                  | Reconciliation diária           |
+| FM-303 | AC entry aponta pra blob de outro tenant (bug)           | 5 | 1 | 4 | 20  | P1 (S=5 → upgrade)   | INV-TenantIsolation + test integração |
 | FM-304 | Corrupção em audit chain (hash chain broken)             | 4 | 1 | 4 | 16  | P2 (S=4) | PAT-AUDIT-VERIFY-001 diário     |
 | FM-305 | Tombstone lost (GC não roda; storage infla)              | 3 | 3 | 3 | 27  | P2       | PAT-GC-HEALTHCHECK-001          |
 
@@ -198,7 +203,7 @@ Cada FM tem scores 1–5 em:
 | FM-401 | Thundering herd em cache miss                             | 3 | 3 | 2 | 18  | P2      | PAT-SINGLEFLIGHT-001           |
 | FM-402 | Feedback loop: alert dispara action que dispara alert      | 4 | 1 | 4 | 16  | P2 (S=4) | Dampening + runbook check     |
 | FM-403 | Latent leak em long-running Container                      | 3 | 3 | 4 | 36  | P1       | PAT-RESTART-JIT-001           |
-| FM-404 | GC sweep conflita com write (refcount racy)                | 5 | 1 | 4 | 20  | **P1** (S=5) | INV-GC-001 TLA+ linearizability |
+| FM-404 | GC sweep conflita com write (refcount racy)                | 5 | 1 | 4 | 20  | P1 (S=5 → upgrade)   | INV-GC-001 TLA+ linearizability |
 
 ---
 

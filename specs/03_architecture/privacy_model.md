@@ -243,6 +243,17 @@ Esta seção **estende** o control catalog de `security_model.md §6` com contro
 | CTRL-PRIV-015   | Constant-time signup response             | Middleware delay padroniza 200ms ±20ms                    | Anual    |
 | CTRL-PRIV-016   | Support read access requer consent         | Consent UI + MFA + time-boxed (15min) + audit rico         | Por evento |
 
+### 5.6 Consent management (P2.1 SOC 2 Privacy + LGPD Art. 7 / GDPR Art. 6,7)
+
+Adicionado em Lote 5.5 endereçando audit F-07 (CTRL-PRIV-015 estava sendo usado erroneamente como mapping para P2.1 Consent — mas CTRL-PRIV-015 é Constant-time signup, não consent).
+
+| ID                      | Controle                                  | Implementação                                            | Evidence | Revalidação |
+|-------------------------|-------------------------------------------|-----------------------------------------------------------|----------|-------------|
+| CTRL-PRIV-CONSENT-001   | Opt-in explícito por categoria de uso     | UI form com checkbox per-purpose (analytics, marketing, beta features); `purpose_tag` armazenado em DSR ledger; default `false` para tudo opcional | EVT-001 (consent event) + EVT-026 (schema valida purpose_tag enum) | Por mudança de UI |
+| CTRL-PRIV-CONSENT-002   | Revogação imediata de consent              | Endpoint `DELETE /v1/consent/<purpose>` propaga em ≤ 5min; cache invalidation + downstream notify; status retornado em `GET /v1/consent` | EVT-001 + EVT-024 (load test revocation latency) | Trimestral |
+| CTRL-PRIV-CONSENT-003   | Consent records imutáveis + auditáveis     | CloudEvents `dev.hugr.corelink.consent.{granted,revoked}.v1` em audit log (Object Lock 7y); incluem ts, principal, purpose, basis_legal | EVT-001 (audit event verify) + EVT-022 (TLA+ INV-AUDIT-APPEND-ONLY) | Contínuo |
+| CTRL-PRIV-CONSENT-004   | LIA documentado para legitimate interest   | Toda categoria que usa LIA tem doc EVT-046 anual com balancing test | EVT-046 + EVT-044 (Legal review) | Anual |
+
 ---
 
 ## 6. Direitos do titular (DSRs) — SLAs
