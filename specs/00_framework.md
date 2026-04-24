@@ -1948,6 +1948,161 @@ And {resultado adicional}
 
 ---
 
+## 33.5 Risk Lanes — Classificação de Trabalho por Risco
+
+> **Propósito:** nem toda unidade de trabalho carrega o mesmo risco nem merece o mesmo peso de gates. Impor o contrato completo (33 seções, 12 sign-offs, chaos, PRR, cost analysis) a uma correção tipográfica é **cerimônia sem rigor** (AP-007) e treina o time a burlar o processo. Impor o contrato mínimo a uma mudança que toca `tenant isolation` é **rigor superficial** (AP-019 adjacente).
+>
+> Este framework define **três lanes** que classificam WI, ST e Sprint por risco, com matriz explícita de gates obrigatórios por lane.
+
+### 33.5.1 As três lanes
+
+| Lane | Semântica | Exemplos típicos |
+|---|---|---|
+| `LOW_RISK` | Blast radius local; reversível trivialmente; zero customer impact direto | Correção de typo, update de docstring, refactor interno de função, teste adicional, rename de variável local, pagamento de dívida pequena |
+| `STANDARD` | Blast radius subsystem/system; reversível (two-way ou hybrid); customer impact indireto ou limitado | Nova feature de produto, mudança de infra, otimização de performance, nova métrica, nova capability user-facing sem breaking change |
+| `HIGH_RISK` | Blast radius product/organization; one-way door (ou hybrid com janela curta); customer impact material, regulatório ou inter-tenant | Mudança em `tenant isolation`, breaking change em API pública, migration destrutiva, novo controle SOC 2/HIPAA, feature que processa PII nova categoria, mudança de auth model, one-way vendor lock-in, GC/retention policy |
+
+### 33.5.2 Critérios de classificação (scoring)
+
+Calcula-se score a partir de 5 dimensões. Valor final determina lane **base** (antes de forcing factors §33.5.3).
+
+| Dimensão | Valores |
+|---|---|
+| **Blast radius** (§5.3) | local=0, subsystem=1, system=2, product=3, organization=4 |
+| **Reversibility** (§5.4) | two-way=0, hybrid=1, one-way=3 |
+| **Customer tiers afetados** | nenhum=0, 1 tier=1, multi-tier=2, todos os tiers=3 |
+| **Compliance triggers** (§5.6) | +1 por regulação aplicável (GDPR, LGPD, HIPAA, SOC 2, PCI) |
+| **Cross-tenant risk** | não=0, sim=3 |
+
+| Score total | Lane base |
+|---|---|
+| 0–2 | `LOW_RISK` |
+| 3–7 | `STANDARD` |
+| 8+ | `HIGH_RISK` |
+
+### 33.5.3 Forcing factors (forçam `HIGH_RISK` mesmo com score baixo)
+
+Qualquer item abaixo **OBRIGATORIAMENTE** classifica o trabalho como `HIGH_RISK`, independente do score:
+
+- **FF-HR-001**: Reversibility = `one-way door` com custo de reversão > 5 engineer-weeks
+- **FF-HR-002**: Toca `tenant isolation` (INV-TenantIsolation)
+- **FF-HR-003**: Introduz ou altera processamento de PII / PHI / dados regulados por HIPAA, GDPR sensitive categories, LGPD dados sensíveis
+- **FF-HR-004**: Breaking change em API pública sem período de coexistência ≥ 90 dias
+- **FF-HR-005**: Altera controle de segurança declarado em `security_model.md` (auth, authz, audit, encryption)
+- **FF-HR-006**: Altera retention policy ou garbage collection de dados de customer
+- **FF-HR-007**: Muda SLO declarado em `slo_catalog.md` pra pior (relaxa)
+- **FF-HR-008**: Introduz dependência em vendor com lock-in ≥ 12 meses pra migrar
+- **FF-HR-009**: Muda contrato com customer (ToS, SLA, DPA)
+- **FF-HR-010**: Primeiro WI/Sprint a tocar categoria regulatória nova pro produto
+
+Forcing factors **DEVEM** ser listados explicitamente no YAML de qualquer WI/Sprint classificado `HIGH_RISK`, usando campo `lane_forcing_factors: ["FF-HR-001", ...]`.
+
+### 33.5.4 Matriz de gates por lane
+
+Esta é a **fonte canônica** de quais seções de WI, ST e PRR são obrigatórias por lane. Templates reproduzem apenas o necessário; divergências entre framework e template são resolvidas a favor do framework.
+
+#### 33.5.4.1 Sections obrigatórias em Work Item (§0–§32 ver `_templates/work_item.md`)
+
+| Seção do WI | `LOW_RISK` | `STANDARD` | `HIGH_RISK` |
+|---|---|---|---|
+| §0 Identificação | ✅ | ✅ | ✅ |
+| §1 Intent | ✅ | ✅ | ✅ |
+| §2 Narrative | 🟡 (prosa curta, ≤ 100 palavras) | ✅ (300–500) | ✅ (300–500 + risk justification) |
+| §3 Customer Impact & Journey | ⛔ N/A | ✅ | ✅ |
+| §4 Capability Mapping / Trace | ✅ | ✅ | ✅ |
+| §5 Tipo e Classificação | ✅ (+ `lane: LOW_RISK`) | ✅ | ✅ (+ `lane_forcing_factors`) |
+| §6 Escopo | ✅ | ✅ | ✅ |
+| §7 Anti-Scope | 🟡 (≥ 1 item) | ✅ | ✅ |
+| §8 Acceptance Criteria (Gherkin) | ✅ (≥ 1 AC) | ✅ | ✅ |
+| §9 Design Decisions | 🟡 (inline, sem ADR) | ✅ | ✅ (≥ 1 ADR se decisão arquitetural) |
+| §10 Completeness Criteria SOTA | 10.1+10.2+10.3+10.11 obrigatórias; demais N/A | ✅ todas aplicáveis | ✅ TODAS |
+| §11 Definition of Done | ✅ | ✅ | ✅ |
+| §12 Invariants | 🟡 (apenas operacionais do WI) | ✅ | ✅ (+ formal spec se toca INV crítico) |
+| §13 Artifacts Produced | ✅ | ✅ | ✅ |
+| §14 Quality Standards SOTA | 14.1+14.2 | ✅ | ✅ TODAS (inclui 14.9 sustainability) |
+| §15 Chaos Experiments | ⛔ N/A | 🟡 (se toca I/O) | ✅ obrigatório |
+| §16 Production Readiness Review | ⛔ N/A | 🟡 (se customer-facing) | ✅ obrigatório |
+| §17 Sub-tasks | ✅ (se decomposto) | ✅ | ✅ |
+| §18 Dependencies | ✅ | ✅ | ✅ |
+| §19 Effort Estimate | ✅ (size T-shirt) | ✅ (PERT) | ✅ (PERT + histórico) |
+| §20 Time-boxing & Escalation | ✅ | ✅ | ✅ |
+| §21 Observability Plan | 🟡 (se emite nova métrica/log/trace) | ✅ | ✅ |
+| §22 Cost Analysis | ⛔ N/A | ✅ | ✅ (+ TCO 12m) |
+| §23 API / Contract Impact | ⛔ N/A | 🟡 (se toca API) | ✅ obrigatório |
+| §24 Post-mortem Hooks | ⛔ N/A | ✅ | ✅ |
+| §25 Rollback / Recovery | 🟡 (declarar reversibilidade) | ✅ | ✅ (+ teste de rollback) |
+| §26 Security & Privacy | ⛔ N/A | 🟡 (STRIDE mini) | ✅ STRIDE + LINDDUN completos |
+| §27 Knowledge Transfer | ⛔ N/A | ✅ | ✅ + onboarding test |
+| §28 Risk Register | 🟡 (riscos óbvios) | ✅ | ✅ + detectability + exposure + residual |
+| §29 Review Checkpoints | ✅ (code review) | ✅ (design + code + pre-merge) | ✅ + adversarial review |
+| §30 Sign-off | ver §33.5.4.3 | ver §33.5.4.3 | ver §33.5.4.3 |
+| §31 Change Log | ✅ | ✅ | ✅ |
+| §32 Apêndice Anti-patterns | 🟡 (se explícito) | ✅ | ✅ |
+
+**Legenda:** ✅ obrigatório · 🟡 condicional (com critério explicitado) · ⛔ N/A (seção pode ser omitida ou marcada como "N/A: LOW_RISK lane")
+
+#### 33.5.4.2 Sections obrigatórias em Sub-task (§0–§18)
+
+`LOW_RISK` ST obrigatórias: §0, §1, §2, §3, §6, §7 (subáreas 7.1, 7.2, 7.3, 7.7), §8, §11, §17, §18.
+
+`STANDARD` ST obrigatórias: todas §0–§18 aplicáveis.
+
+`HIGH_RISK` ST: sempre promovida a WI próprio (REG-WI-002c abaixo). ST **NÃO PODE** carregar classificação `HIGH_RISK` — se surgir, decompor.
+
+#### 33.5.4.3 Matriz de sign-offs por lane
+
+| Papel (§30) | `LOW_RISK` | `STANDARD` | `HIGH_RISK` |
+|---|---|---|---|
+| WI Owner | ✅ | ✅ | ✅ |
+| Code Reviewer | ✅ | ✅ | ✅ |
+| Security Reviewer | ⛔ | 🟡 se §5.6 indicar | ✅ obrigatório |
+| Privacy Reviewer | ⛔ | 🟡 se PII | ✅ obrigatório se PII/PHI |
+| SRE Reviewer | ⛔ | ✅ | ✅ |
+| QA Reviewer | ⛔ (tests passam no CI) | ✅ | ✅ |
+| Product Reviewer | ⛔ | ✅ | ✅ |
+| Architect | ⛔ | 🟡 se toca C4 component | ✅ obrigatório |
+| Cost Owner | ⛔ | 🟡 se custo > R$500/mês | ✅ obrigatório |
+| Legal | ⛔ | ⛔ | 🟡 se muda contrato/DPA |
+| Sprint Owner | ✅ | ✅ | ✅ |
+| Aprovador Final | ✅ | ✅ | ✅ |
+| **Total mínimo** | **3** | **5–8** | **10–12** |
+
+### 33.5.5 Registro da lane
+
+- **REG-LANE-001**: Todo Sprint, WI e ST **DEVE** ter campo YAML `lane: LOW_RISK | STANDARD | HIGH_RISK` no front matter.
+- **REG-LANE-002**: Schema `front_matter.schema.json` valida o enum.
+- **REG-LANE-003**: `HIGH_RISK` **DEVE** ser acompanhado de campo `lane_forcing_factors` listando IDs de FF-HR-* aplicáveis.
+- **REG-LANE-004**: Sub-task **NÃO PODE** ter `lane: HIGH_RISK` — alta severidade exige WI dedicado.
+
+### 33.5.6 Classificação e promoção/demoção
+
+- **REG-LANE-010**: Lane inicial é decidida pelo WI Owner no momento de criação, usando scoring §33.5.2 + forcing factors §33.5.3. Revisão pelo Sprint Owner.
+- **REG-LANE-011**: Demotion (ex: `HIGH_RISK → STANDARD`) durante execução **DEVE** ser aprovada pelo Aprovador Final + justificada por escrito em §32 (ou apêndice de dissent). Não é decisão unilateral do owner.
+- **REG-LANE-012**: Promotion (ex: `LOW_RISK → STANDARD`) é sempre permitida unilateralmente; ausência de promoção quando um forcing factor surge é violação de processo (tratada como incidente SEV-3).
+- **REG-LANE-013**: Mudança de lane **DEVE** disparar re-verificação dos gates adicionais da nova lane antes de prosseguir.
+
+### 33.5.7 Ferramenta de classificação (suggested)
+
+Repositório **DEVERIA** incluir script `scripts/classify_lane.py` que:
+
+1. Lê front matter do WI.
+2. Extrai blast_radius, reversibility, customer_tiers_affected, compliance_triggers, cross_tenant_risk de campos explícitos (ou prompts).
+3. Calcula score.
+4. Verifica forcing factors.
+5. Emite sugestão de lane + justificativa.
+
+Não-bloqueante em CI (humano decide), mas reduz atrito de classificação.
+
+### 33.5.8 Auditoria trimestral
+
+- **DEVE** Aprovador Final revisar trimestralmente distribuição de lanes concluídas.
+- **Red flags a investigar:**
+  - Predominância de `LOW_RISK` (>70%): possível subclassificação crônica.
+  - Predominância de `HIGH_RISK` (>25%): possível superclassificação (carga desnecessária).
+  - `STANDARD` próximo de `HIGH_RISK` repetidamente: threshold de scoring pode estar mal calibrado; considerar recalibrar §33.5.2.
+
+---
+
 # Parte VII — Processo
 
 ## 34. Templates

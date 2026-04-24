@@ -4,6 +4,9 @@ type: "work_item"
 doc_status: "DRAFT"                      # enum: DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
 work_status: "PROPOSED"                  # enum: PROPOSED | READY | DOING | REVIEWING | BLOCKED | DONE | CANCELED | ROLLED_BACK
 audit_status: "ACTIVE"                   # enum: ACTIVE | AUDIT_PENDING | AUDITED
+lane: "STANDARD"                         # enum: LOW_RISK | STANDARD | HIGH_RISK — ver framework §33.5. Se HIGH_RISK, adicionar lane_forcing_factors.
+# lane_forcing_factors:                   # lista de IDs FF-HR-* — obrigatório se lane=HIGH_RISK
+#   - "FF-HR-002"
 version: "1.0.0"
 created: "YYYY-MM-DD"
 updated: "YYYY-MM-DD"

@@ -4,6 +4,7 @@ type: "sprint"
 doc_status: "DRAFT"                      # enum: DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
 work_status: "PROPOSED"                  # enum: PROPOSED | READY | IN_PROGRESS | REVIEWING | COMPLETE | SEALED | FAILED
 audit_status: "ACTIVE"                   # enum: ACTIVE | AUDIT_PENDING | AUDITED
+lane: "STANDARD"                         # enum: LOW_RISK | STANDARD | HIGH_RISK — ver framework §33.5
 version: "1.0.0"
 created: "YYYY-MM-DD"
 updated: "YYYY-MM-DD"

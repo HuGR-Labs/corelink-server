@@ -4,6 +4,7 @@ type: "sub_task"
 doc_status: "DRAFT"                      # enum: DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
 work_status: "TODO"                      # enum: TODO | DOING | REVIEW | BLOCKED | DONE | CANCELED
 audit_status: "ACTIVE"                   # enum: ACTIVE | AUDIT_PENDING | AUDITED
+lane: "LOW_RISK"                         # enum: LOW_RISK | STANDARD (HIGH_RISK PROIBIDO em ST — promover a WI)
 version: "1.0.0"
 created: "YYYY-MM-DD"
 updated: "YYYY-MM-DD"
