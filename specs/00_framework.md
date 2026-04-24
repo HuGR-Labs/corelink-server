@@ -3,7 +3,7 @@ id: "FRAMEWORK-00"
 type: "framework"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "0.4.2"
+version: "0.5.0"
 created: "2026-04-23"
 updated: "2026-04-24"
 owner: "Gustavo Schneiter"
@@ -17,7 +17,7 @@ tags: ["meta", "process", "framework"]
 # 00 — Specification Framework
 
 > **doc_status:** DRAFT
-> **Versão:** 0.4.2
+> **Versão:** 0.5.0
 > **Última atualização:** 2026-04-24
 > **Owner:** Gustavo Schneiter
 > **Aprovador Final:** Gustavo Schneiter
@@ -2052,6 +2052,7 @@ Qualquer item abaixo **OBRIGATORIAMENTE** classifica o trabalho como `HIGH_RISK`
 - **FF-HR-008**: Introduz dependência em vendor com lock-in ≥ 12 meses pra migrar
 - **FF-HR-009**: Muda contrato com customer (ToS, SLA, DPA)
 - **FF-HR-010**: Primeiro WI/Sprint a tocar categoria regulatória nova pro produto
+- **FF-HR-011**: Altera algoritmo de garbage collection, refcount, ou invariante de reachability (INV-GC-*) com blast radius em integridade de dados (adicionado v0.5.0 via ADR-0012; correlaciona com FM-300, FM-303, FM-404)
 
 Forcing factors **DEVEM** ser listados explicitamente no YAML de qualquer WI/Sprint classificado `HIGH_RISK`, usando campo `lane_forcing_factors: ["FF-HR-001", ...]`.
 
@@ -2452,6 +2453,9 @@ Para quem: {papel}
 | Storage Semantics Matrix | `specs/03_architecture/storage_semantics_matrix.md` | Nível 3 (Lote 4) |
 | Auth Model | `specs/03_architecture/auth_model.md` | Nível 3 (Lote 4) |
 | Compliance Matrix | `specs/03_architecture/compliance_matrix.md` | Nível 3 |
+| Remote Cache Product Profile (CAS/AC/GC/dedup/protocol) | `specs/03_architecture/remote_cache_product_profile.md` | Nível 3 (promovido v0.5.0 via ADR-0013) |
+| Invariant Registry (INV-XXX catálogo canônico) | `specs/03_architecture/invariant_registry.md` | Nível 3 (criado v0.5.0) |
+| BYOK / Key Management | `specs/03_architecture/key_management.md` | Nível 3 (criado v0.5.0) |
 | Incident Response Process | `specs/05_quality/incident_response.md` | Nível 5 |
 | Runbook Library | `specs/05_quality/runbooks/` | Nível 5 |
 | Test Strategy | `specs/05_quality/test_strategy.md` | Nível 5 |
@@ -2624,7 +2628,7 @@ Script `scripts/check_waivers.py` (a ser criado em Lote 2.5 ou junto do CI pipel
 
 > **Problema:** PRINC-031 exige evidence artifact pra toda caixa binária. Mas "evidence" sem taxonomia vira loteria: um reviewer aceita URL de dashboard, outro exige snapshot imutável, outro aceita screenshot sem timestamp. Sem regra, o rigor é performativo.
 >
-> **Solução:** taxonomia formal de **17 tipos de evidence**, cada um com regras específicas de formato, armazenamento, imutabilidade, retenção e acesso.
+> **Solução:** taxonomia formal de **46 tipos de evidence** (24 originais + 22 expandidos no Lote 5.1 pra cobrir compliance, supply chain e privacy), cada um com regras específicas de formato, armazenamento, imutabilidade, retenção e acesso. Aliases humanos legíveis em §35.7.1.1.
 
 ### 35.7.1 Taxonomia canônica
 
@@ -2641,7 +2645,7 @@ Cada tipo tem ID `EVT-XXX`. Ao preencher coluna `Evidence` em WI/ST/PRR, reviewe
 | **EVT-007** | **DEPENDENCY_SCAN_REPORT** | Vuln scan de dependências | `cargo audit` output / GitHub Dependabot / Snyk JSON | Artifacts CI + GitHub Security | ✅ | 1 ano |
 | **EVT-008** | **FUZZ_REPORT** | Output de fuzzing | cargo-fuzz output + corpus + stats | Artifacts CI | ✅ | 6 meses |
 | **EVT-009** | **MUTATION_REPORT** | Mutation testing kill rate | cargo-mutants output JSON | Artifacts CI | ✅ | 6 meses |
-| **EVT-010** | **SBOM** | Software Bill of Materials | SPDX 2.3+ JSON/YAML | Artifacts de release + registry | ✅ (assinado com cosign) | 7 anos (supply chain) |
+| **EVT-010** | **SBOM** | Software Bill of Materials | **CycloneDX 1.5+ JSON** (preferido no ecossistema Rust via `cargo-cyclonedx`) ou SPDX 2.3+ JSON/YAML; ambos aceitos (ADR-0014) | Artifacts de release + registry | ✅ (assinado com cosign) | 7 anos (supply chain) |
 | **EVT-011** | **BINARY_SIGNATURE** | Assinatura de binário/container | cosign verification output + attestation | Registry (R2, GHCR) + Sigstore public log | ✅ (crypto) | Permanente |
 | **EVT-012** | **SCREENSHOT** | Captura de tela | PNG com metadata EXIF (timestamp, device) | R2 bucket `evidence-screenshots/` com naming `YYYYMMDD-<hash>` | ✅ (hash-addressed) | 1 ano |
 | **EVT-013** | **DASHBOARD_SNAPSHOT** | Screenshot de dashboard Grafana/etc com timestamp | PNG + URL + timestamp ISO + query snapshot | R2 + Grafana snapshot URL (imutável) | ✅ (via snapshot API do Grafana) | 1 ano |
@@ -2656,6 +2660,49 @@ Cada tipo tem ID `EVT-XXX`. Ao preencher coluna `Evidence` em WI/ST/PRR, reviewe
 | **EVT-022** | **TLA_MODEL_CHECK** | Output de TLC model checker | TLC output JSON + seed + spec | Repositório git + artifacts CI | ✅ | Permanente |
 | **EVT-023** | **CHAOS_EXPERIMENT_REPORT** | Resultado de chaos experiment | Report chaos-mesh/custom + métricas observadas | R2 + artifacts | ✅ | 1 ano |
 | **EVT-024** | **LOAD_TEST_REPORT** | Output de load test | wrk/oha/k6 output JSON + dashboard snapshot | Artifacts CI | ✅ | 1 ano |
+| **EVT-025** | **PENTEST_REPORT** | Relatório de pentest externo ou interno (red team) | PDF assinado do vendor/time + findings catalogados + retest evidence | R2 `evidence-pentest/` | ✅ (crypto + vendor sig) | 7 anos |
+| **EVT-026** | **SCHEMA_VALIDATION** | Output de validador de schema (JSON Schema / Protobuf / SQL DDL) | Log do validator + schema file hash + dataset | Artifacts CI + repo | ✅ | 1 ano |
+| **EVT-027** | **CLIENT_CONFORMANCE_TEST** | Output de test suite que verifica cliente externo (ex: CLI do cliente validando hash BLAKE3 server-side) | JSON/XML do runner + version do client testado | Artifacts CI | ✅ | 1 ano |
+| **EVT-028** | **CONFIG_SNAPSHOT** | Estado de configuração (DO singleton, flags, IAM policy) em momento específico | YAML/JSON + timestamp + commit hash + environment | R2 `evidence-config/` | ✅ (hash + timestamp) | 1 ano |
+| **EVT-029** | **ADR_DECISION** | Referência a ADR aprovado com decisão específica | ID ADR-XXXX + URL do doc em `doc_status: FROZEN` | Repositório git | ✅ (git history) | Permanente |
+| **EVT-030** | **BUG_BOUNTY_REPORT** | Relatório de submissão HackerOne/Bugcrowd | PDF do ticket + triagem + fix evidence | R2 `evidence-bounty/` + plataforma | ✅ | 7 anos |
+| **EVT-031** | **MONITORING_REPORT** | Relatório consolidado de uptime/synthetic canary | JSON do provider (StatusGator, Better Uptime, etc) + intervalo | R2 + provider | ✅ (provider-signed) | 1 ano |
+| **EVT-032** | **POLICY_SIGN** | Política corporativa assinada (Code of Conduct, Security Policy) | PDF assinado digitalmente + lista de assinantes + data | R2 `evidence-policies/` | ✅ (crypto sig) | 7 anos (compliance) |
+| **EVT-033** | **TRAINING_RECORD** | Comprovante de treinamento (security awareness, privacy) | LMS export + pass grade + certificate ID | R2 `evidence-training/` | ✅ | 3 anos |
+| **EVT-034** | **AUDIT_PLAN** | Plano de auditoria interna/externa (SOC 2, ISO 27001) | Doc assinado + escopo + cronograma + auditor | R2 `evidence-audits/` | ✅ | 7 anos |
+| **EVT-035** | **ACCESS_REVIEW** | Review trimestral de acessos/PATs/roles | CSV/JSON export + assinatura review owner + ações tomadas | R2 + ticket tracker | ✅ | 3 anos |
+| **EVT-036** | **NETWORK_DIAGRAM** | Diagrama formal de rede/topologia com versionamento | SVG/PNG + DSL (e.g. D2, Mermaid) committed + version ID | Repositório git | ✅ (git history) | Permanente |
+| **EVT-037** | **TLS_SCAN_REPORT** | Output de SSL Labs / testssl.sh | JSON/HTML report + target + timestamp + grade | Artifacts CI | ✅ | 1 ano |
+| **EVT-038** | **DEPLOY_LOG** | Log de deploy em produção (CF deploy, progressive rollout) | CF API response + version hash + timestamp + rollout ID | R2 `evidence-deploys/` | ✅ | 2 anos |
+| **EVT-039** | **WAIVER_ACTIVE** | Referência a waiver ativo cobrindo o gate | ID `WAIVER-YYYYMMDD-NNN` com `doc_status ≠ DEPRECATED` e `expires_at > now` | Repositório git + `_waivers/` | ✅ | Permanente (git) |
+| **EVT-040** | **VENDOR_REVIEW** | Due diligence de sub-processador (Cloudflare, Neon, Stripe) | PDF de SOC 2 report + DPA + scope letter | R2 `evidence-vendors/` | ✅ (vendor-signed) | 7 anos |
+| **EVT-041** | **DR_DRILL** | Disaster Recovery drill execution | Runbook completion log + RTO/RPO measured + lessons learned | R2 `evidence-dr/` | ✅ | 3 anos |
+| **EVT-042** | **ERASURE_TEST** | Teste E2E de DSR erasure (fake user lifecycle) | Test log + verification que 0 records remain + timestamp | Artifacts CI + R2 | ✅ | 3 anos |
+| **EVT-043** | **DATA_CLASSIFICATION_DOC** | Documento canônico de classificação de dado (LGPD/GDPR categories) | Doc versionado em `doc_status: FROZEN` + tabela dado × classificação | Repositório git | ✅ (git history) | Permanente |
+| **EVT-044** | **LEGAL_REVIEW** | Review formal do Legal sobre policy/contract/base legal | Email assinado ou ticket tracker + decisão + rationale | R2 `evidence-legal/` | ✅ | 7 anos |
+| **EVT-045** | **DPIA** | Data Protection Impact Assessment | Doc versionado seguindo GDPR Art. 35 + sign-off DPO | Repositório git + R2 | ✅ | 7 anos |
+| **EVT-046** | **LIA** | Legitimate Interest Assessment | Doc LIA template preenchido + balanceamento explícito + review anual | Repositório git | ✅ | 3 anos |
+
+### 35.7.1.1 Aliases canônicos (legibilidade humana)
+
+Para docs que preferem nomes mnemônicos a IDs numéricos, a seguinte tabela de aliases é **aceita** mas **DEVE** vir seguida do ID canônico entre parênteses na primeira menção do artefato:
+
+| Alias humano | EVT canônico |
+|---|---|
+| UNIT_TEST_PASS | EVT-002 |
+| INTEGRATION_TEST_PASS | EVT-002 |
+| E2E_TEST_PASS | EVT-002 |
+| FUZZ_OUTPUT | EVT-008 |
+| SAST_SCAN | EVT-005 |
+| DAST_SCAN | EVT-006 |
+| SLSA_PROVENANCE | EVT-011 |
+| RUNBOOK_VALIDATION | EVT-017 |
+| CHAOS_REPORT | EVT-023 |
+| LOAD_TEST | EVT-024 |
+| SCAN_REPORT | EVT-037 (TLS) ou EVT-005 (SAST) ou EVT-006 (DAST) — disambiguar no contexto |
+| AUDIT_LOG | EVT-001 (se CI) ou EVT-019 (se post-mortem) ou EVT-028 (se config) |
+
+Qualquer token EVT-<NOME_LIVRE> que não conste nem em §35.7.1 nem em §35.7.1.1 falha validação no `scripts/validate_evidence.py` (a implementar).
 
 ### 35.7.2 Regras de aceitação
 
