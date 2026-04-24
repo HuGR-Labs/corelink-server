@@ -167,7 +167,7 @@ tags: []
 
 ### 5.1 Upstream Artifacts Frozen
 
-| Item | Status | Verificação |
+| Item | Atendido? | Verificação |
 |---|---|---|
 | Spec(s) de Nível 2 referenciada(s) por este sprint estão `doc_status: FROZEN` | ❌ | `git log specs/02_product/capabilities.md` mostra commit com tag `frozen-vX`; front matter confirma `doc_status: FROZEN` |
 | Todos ADRs referenciados estão `doc_status: FROZEN` | ❌ | Front matter de cada ADR mostra `doc_status: FROZEN` (equivalente histórico: "ACCEPTED") |
@@ -175,7 +175,7 @@ tags: []
 
 ### 5.2 Team Readiness
 
-| Item | Status | Verificação |
+| Item | Atendido? | Verificação |
 |---|---|---|
 | Sprint Owner nomeado e disponível pela duração | ❌ | Calendário confirmado |
 | Todos revisores requeridos (Tech, Product, Security, Ops, QA) confirmaram disponibilidade | ❌ | Sign-off §20 tem nomes preenchidos |
@@ -184,7 +184,7 @@ tags: []
 
 ### 5.3 Environmental Readiness
 
-| Item | Status | Verificação |
+| Item | Atendido? | Verificação |
 |---|---|---|
 | Cloud accounts provisionados (Cloudflare, Neon, Clerk, Stripe) | ❌ | Login bem-sucedido em cada console |
 | Secrets necessários disponíveis em ambiente dev | ❌ | `wrangler secret list` mostra todos |
@@ -194,7 +194,7 @@ tags: []
 
 ### 5.4 Information Readiness
 
-| Item | Status | Verificação |
+| Item | Atendido? | Verificação |
 |---|---|---|
 | Toda CAP entregue por este sprint tem spec `FROZEN` | ❌ | Verificação manual + trace checker |
 | Todo invariante relevante está enunciado em `02_product/invariants.md` | ❌ | Verificação manual |
@@ -204,7 +204,7 @@ tags: []
 
 ### 5.5 Legal/Compliance Readiness (se aplicável)
 
-| Item | Status | Verificação |
+| Item | Atendido? | Verificação |
 |---|---|---|
 | Data handling do escopo revisado | ❌ ou N/A | Aprovação documentada |
 | Vendor agreements em ordem (se vendors novos) | ❌ ou N/A | Contratos arquivados |
@@ -213,7 +213,7 @@ tags: []
 
 ### 5.6 Quality Foundation Readiness
 
-| Item | Status | Verificação |
+| Item | Atendido? | Verificação |
 |---|---|---|
 | Test infrastructure operacional (unit, integration, property-based) | ❌ | `cargo test` verde |
 | Coverage tooling configurado (`cargo-llvm-cov`) | ❌ | Coverage report gerado |
@@ -293,7 +293,7 @@ Preencher como índice. Detalhes vivem nos arquivos individuais.
 
 ### 7.1 Funcional
 
-| Item | Status | Verificação |
+| Item | Atendido? | Verificação |
 |---|---|---|
 | Todas CAPs em §3 com status `FULL` ou `PARTIAL` foram entregues conforme escopo declarado | ❌ | Acceptance test correspondente verde |
 | Acceptance criteria de todos os WIs em §6 estão ✅ | ❌ | Inspeção do checklist |
@@ -302,7 +302,7 @@ Preencher como índice. Detalhes vivem nos arquivos individuais.
 
 ### 7.2 Quality Gates — Testing
 
-| Item | Status | Verificação | Threshold |
+| Item | Atendido? | Verificação | Threshold |
 |---|---|---|---|
 | Cobertura unit do código novo | ❌ | `cargo llvm-cov` | ≥ 85% |
 | Cobertura unit total do projeto | ❌ | `cargo llvm-cov` | ≥ 80% |
@@ -315,7 +315,7 @@ Preencher como índice. Detalhes vivem nos arquivos individuais.
 
 ### 7.3 Quality Gates — Performance
 
-| Item | Status | Verificação | SLO |
+| Item | Atendido? | Verificação | SLO |
 |---|---|---|---|
 | Latência p50 de cada novo endpoint | ❌ | `criterion` benchmark | NFR-XXX |
 | Latência p99 de cada novo endpoint | ❌ | `criterion` benchmark | NFR-XXX |
@@ -325,7 +325,7 @@ Preencher como índice. Detalhes vivem nos arquivos individuais.
 
 ### 7.4 Quality Gates — Security
 
-| Item | Status | Verificação |
+| Item | Atendido? | Verificação |
 |---|---|---|
 | Threat model atualizado para o novo escopo | ❌ | `specs/03_architecture/security_model.md` versão atualizada |
 | SAST scan limpo (no findings High/Critical) | ❌ | CodeQL ou semgrep |
@@ -338,7 +338,7 @@ Preencher como índice. Detalhes vivem nos arquivos individuais.
 
 ### 7.5 Quality Gates — Reliability
 
-| Item | Status | Verificação |
+| Item | Atendido? | Verificação |
 |---|---|---|
 | Chaos tests para novos failure modes | ❌ | `tests/chaos/` |
 | Graceful degradation verificada (R2 down, DB down, etc.) | ❌ | Cenários documentados executados |
@@ -349,7 +349,7 @@ Preencher como índice. Detalhes vivem nos arquivos individuais.
 
 ### 7.6 Quality Gates — Observability
 
-| Item | Status | Verificação |
+| Item | Atendido? | Verificação |
 |---|---|---|
 | Toda métrica planejada em §14 sendo emitida | ❌ | Query no Grafana Cloud |
 | Cardinality budget respeitado | ❌ | Análise de labels |
@@ -361,7 +361,7 @@ Preencher como índice. Detalhes vivem nos arquivos individuais.
 
 ### 7.7 Quality Gates — Documentation
 
-| Item | Status | Verificação |
+| Item | Atendido? | Verificação |
 |---|---|---|
 | Rustdoc 100% em itens públicos | ❌ | `cargo doc --no-deps` sem warnings |
 | README atualizado refletindo estado real | ❌ | Diff |
@@ -373,7 +373,7 @@ Preencher como índice. Detalhes vivem nos arquivos individuais.
 
 ### 7.8 Quality Gates — Compliance
 
-| Item | Status | Verificação |
+| Item | Atendido? | Verificação |
 |---|---|---|
 | Audit logs emitidos para operações sensíveis | ❌ | Test verifica entrada em audit log |
 | Data classification aplicada a novos dados | ❌ | Schema documenta classificação |
@@ -384,7 +384,7 @@ Preencher como índice. Detalhes vivem nos arquivos individuais.
 
 ### 7.9 Operational Readiness
 
-| Item | Status | Verificação |
+| Item | Atendido? | Verificação |
 |---|---|---|
 | Deployed em ambiente dev e estável por ≥ 24h | ❌ | Logs + métricas |
 | Deploy procedure 100% automatizado (zero manual steps) | ❌ | `wrangler deploy` ou pipeline equivalente |

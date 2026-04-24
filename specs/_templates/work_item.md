@@ -246,15 +246,15 @@ Customer ──► {{entrada/ação}} ──► {{API/UI}} ──► {{processam
 
 Rastreabilidade ascendente obrigatória. *Trace checker* valida no CI.
 
-| Artefato upstream | Status | Relação com este WI | Evidence |
+| Artefato upstream | Estado requerido | Relação com este WI | Evidence |
 |---|---|---|---|
-| **CAP-XXX**: {{nome}} | FROZEN | delivers FULL | `link` |
-| **CAP-YYY**: {{nome}} | FROZEN | delivers PARTIAL (subset A) | `link` |
-| **INV-AAA**: {{nome}} | ACTIVE | must preserve | teste em §14.4 |
-| **INV-BBB**: {{nome}} | PROPOSED | introduces new | TLA+ spec em `specs/03_architecture/formal/INV-BBB.tla` |
-| **NFR-CCC**: {{nome}} | FROZEN | must meet threshold | benchmark em §14.3 |
+| **CAP-XXX**: {{nome}} | `doc_status: FROZEN` | delivers FULL | `link` |
+| **CAP-YYY**: {{nome}} | `doc_status: FROZEN` | delivers PARTIAL (subset A) | `link` |
+| **INV-AAA**: {{nome}} | `doc_status: FROZEN`, `audit_status: ACTIVE` | must preserve | teste em §14.4 |
+| **INV-BBB**: {{nome}} | novo — `doc_status: DRAFT` neste WI, move pra `FROZEN` ao merge | introduces new | TLA+ spec em `specs/03_architecture/formal/INV-BBB.tla` |
+| **NFR-CCC**: {{nome}} | `doc_status: FROZEN` | must meet threshold | benchmark em §14.3 |
 | **ADR-XXXX**: {{decisão}} | `doc_status: FROZEN` | implements | — |
-| **User Journey UJ-YYY** | FROZEN | step 3 implementation | §3.3 |
+| **User Journey UJ-YYY** | `doc_status: FROZEN` | step 3 implementation | §3.3 |
 | **JTBD-ZZZ** | FROZEN | enables | §3 |
 
 ---
@@ -914,7 +914,7 @@ PRR completa em documento separado.
 
 ## 17. Sub-tasks
 
-> Ver `_templates/subtask.md` — cada sub-task é contrato próprio com 14 seções.
+> Ver `_templates/subtask.md` — cada sub-task é contrato próprio com **19 seções totais (§0–§18)**.
 >
 > **REG-WI-002**: Algo é sub-task IFF pode ser trabalhada em paralelo **E** tem *acceptance* independente.
 
@@ -950,12 +950,12 @@ graph TD
 
 ### 18.1 Upstream (bloqueia este WI)
 
-| Dependência | Tipo | Status | Hard blocker? |
+| Dependência | Tipo | Atendida? | Hard blocker? |
 |---|---|---|---|
-| WI-SXX-YYY `DONE` | interno sprint | ❌ | sim |
-| ADR-XXXX `doc_status: FROZEN` | decisão | ✅ | sim |
-| Spec `02_product/capabilities.md` `FROZEN` | spec | ✅ | sim |
-| Vendor X API disponível | externa | ✅ | sim |
+| WI-SXX-YYY com `work_status: DONE` + `doc_status: FROZEN` | interno sprint | ❌ | sim |
+| ADR-XXXX com `doc_status: FROZEN` | decisão | ✅ | sim |
+| Spec `02_product/capabilities.md` com `doc_status: FROZEN` | spec | ✅ | sim |
+| Vendor X API disponível em produção | externa | ✅ | sim |
 
 ### 18.2 Downstream (este WI desbloqueia)
 

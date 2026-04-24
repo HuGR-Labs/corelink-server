@@ -116,12 +116,12 @@ tags: []
 
 ## 2. Trace
 
-| Artefato upstream | Status | Relação | Evidence |
+| Artefato upstream | Estado requerido | Relação | Evidence |
 |---|---|---|---|
-| **WI-SXX-NNN** (parent) | DOING | part-of | — |
-| **CAP-XXX** (via parent) | FROZEN | contribui parcialmente | — |
-| **INV-YYY** (se aplicável) | ACTIVE | preserva | test em §10 |
-| **NFR-ZZZ** (se aplicável) | FROZEN | cumpre | bench em §10.3 |
+| **WI-SXX-NNN** (parent) | `work_status: DOING` + `doc_status: FROZEN` | part-of | — |
+| **CAP-XXX** (via parent) | `doc_status: FROZEN` | contribui parcialmente | — |
+| **INV-YYY** (se aplicável) | `doc_status: FROZEN`, `audit_status: ACTIVE` | preserva | test em §10 |
+| **NFR-ZZZ** (se aplicável) | `doc_status: FROZEN` | cumpre | bench em §10.3 |
 | **ADR-XXXX** (se aplicável) | `doc_status: FROZEN` | implementa | — |
 
 ---

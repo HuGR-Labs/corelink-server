@@ -505,11 +505,11 @@ Se não-reversível, declarar: **"Esta decisão não é reversível após {{even
 
 ### 12.1 Upstream (depende de)
 
-| Dependência | Tipo | Status |
+| Dependência | Tipo | Estado requerido |
 |---|---|---|
 | ADR-YYYY | decisão | `doc_status: FROZEN` |
-| CAP-XXX | capability | FROZEN |
-| Vendor X API vX.Y | externa | disponível |
+| CAP-XXX | capability | `doc_status: FROZEN` |
+| Vendor X API vX.Y | externa | disponível em produção (vendor status) |
 
 ### 12.2 Downstream (habilita / bloqueia)
 
