@@ -1,44 +1,46 @@
-# Sprint Contract — S-XX: {{Nome do Sprint}}
-
-> **Template Version:** 1.1.0
-
-```yaml
 ---
-id: S-XX
-type: sprint
-doc_status: DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
-work_status: PROPOSED | READY | IN_PROGRESS | REVIEWING | COMPLETE | SEALED | FAILED
-version: 1.0.0
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
-owner: {{Sprint Owner}}
-final_approver: {{Nome}}
+id: "S-XX-REPLACE"
+type: "sprint"
+doc_status: "DRAFT"                      # enum: DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
+work_status: "PROPOSED"                  # enum: PROPOSED | READY | IN_PROGRESS | REVIEWING | COMPLETE | SEALED | FAILED
+audit_status: "ACTIVE"                   # enum: ACTIVE | AUDIT_PENDING | AUDITED
+version: "1.0.0"
+created: "YYYY-MM-DD"
+updated: "YYYY-MM-DD"
+owner: "TEMPLATE_SPRINT_OWNER"
+final_approver: "TEMPLATE_FINAL_APPROVER"
 reviewers:
-  - role: tech_lead
-    name: {{Nome}}
-  - role: product
-    name: {{Nome}}
-  - role: security
-    name: {{Nome}}
-  - role: ops
-    name: {{Nome}}
-  - role: qa
-    name: {{Nome}}
-predecessor_sprints: [S-XX, S-XX]
-successor_sprints: [S-XX]
-related_adrs: [ADR-XXXX]
+  - role: "tech_lead"
+    name: "TEMPLATE_REVIEWER"
+  - role: "product"
+    name: "TEMPLATE_REVIEWER"
+  - role: "security"
+    name: "TEMPLATE_REVIEWER"
+  - role: "ops"
+    name: "TEMPLATE_REVIEWER"
+  - role: "qa"
+    name: "TEMPLATE_REVIEWER"
+predecessor_sprints: []
+successor_sprints: []
+related_adrs: []
 supersedes: null
 superseded_by: null
-tags: [{{subsistema}}]
+tags: []
 ---
-```
 
-> **doc_status:** DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
-> **work_status:** PROPOSED | READY | IN_PROGRESS | REVIEWING | COMPLETE | SEALED | FAILED
+# Sprint Contract — S-XX: {{Nome do Sprint}}
+
+> **Template Version:** 1.2.0
+> **doc_status:** DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED (default inicial: `DRAFT`)
+> **work_status:** PROPOSED | READY | IN_PROGRESS | REVIEWING | COMPLETE | SEALED | FAILED (default inicial: `PROPOSED`)
+> **audit_status:** ACTIVE | AUDIT_PENDING | AUDITED (default inicial: `ACTIVE`)
 > **Versão:** 1.0.0
 > **Última atualização:** YYYY-MM-DD
-> **Owner:** {{Nome}}
+> **Owner:** {{Sprint Owner}}
 > **Aprovador Final:** {{Nome}}
+> **Revisores:** {{Tech Lead, Product, Security, Ops, QA}}
+> **Supersedes:** —
+> **Superseded By:** —
 
 > **AVISO INVIOLÁVEL:** Este sprint só pode transicionar para `COMPLETE` quando **TODAS** as caixas de **Exit Criteria (§7)** e **Completeness Checklist (§17)** estiverem ✅. Não existe "parcialmente completo". Não existe "falta só X, fechamos sprint mesmo assim". Sprint que não cumpre integralmente **NÃO** passa — é estendido, decomposto ou declarado falho com aprendizado registrado.
 
@@ -79,7 +81,9 @@ tags: [{{subsistema}}]
 | **Sprint ID** | S-XX |
 | **Nome** | {{nome curto e descritivo}} |
 | **Versão do contrato** | 1.0.0 |
-| **Status** | PROPOSED |
+| **doc_status** | `DRAFT` (inicial) |
+| **work_status** | `PROPOSED` (inicial) |
+| **audit_status** | `ACTIVE` |
 | **Duração planejada** | {{X semanas / Y dias úteis}} |
 | **Data de início (planejada)** | YYYY-MM-DD |
 | **Data de fim (planejada)** | YYYY-MM-DD |
@@ -92,7 +96,7 @@ tags: [{{subsistema}}]
 | **Ops Reviewer** | {{Nome}} |
 | **QA Reviewer** | {{Nome}} |
 | **Aprovador Final** | {{Nome}} |
-| **Sprint(s) predecessor(es)** | S-XX, S-XX (devem estar `SEALED`) |
+| **Sprint(s) predecessor(es)** | S-XX, S-XX (devem estar com `work_status: SEALED` e `doc_status: FROZEN`) |
 | **Sprint(s) sucessor(es) imediato(s)** | S-XX (este sprint desbloqueia) |
 | **ADRs relacionados** | ADR-XXXX, ADR-XXXX |
 | **Specs upstream consumidas** | `02_product/capabilities.md`, `03_architecture/protocols/reapi.md`, etc |
@@ -165,9 +169,9 @@ tags: [{{subsistema}}]
 
 | Item | Status | Verificação |
 |---|---|---|
-| Spec(s) de Nível 2 referenciada(s) por este sprint estão `FROZEN` | ❌ | `git log specs/02_product/capabilities.md` mostra commit com tag `frozen-vX` |
-| Todos ADRs referenciados estão `ACCEPTED` | ❌ | Header de cada ADR mostra `Status: ACCEPTED` |
-| Sprint(s) predecessor(es) estão `SEALED` | ❌ | Header de cada predecessor mostra `Status: SEALED` |
+| Spec(s) de Nível 2 referenciada(s) por este sprint estão `doc_status: FROZEN` | ❌ | `git log specs/02_product/capabilities.md` mostra commit com tag `frozen-vX`; front matter confirma `doc_status: FROZEN` |
+| Todos ADRs referenciados estão `doc_status: FROZEN` | ❌ | Front matter de cada ADR mostra `doc_status: FROZEN` (equivalente histórico: "ACCEPTED") |
+| Sprint(s) predecessor(es) estão `work_status: SEALED` + `doc_status: FROZEN` | ❌ | Front matter de cada predecessor confirma ambos |
 
 ### 5.2 Team Readiness
 
@@ -562,9 +566,9 @@ Preencher como índice. Detalhes vivem nos arquivos individuais.
 
 | Dependência | Tipo | Status | Bloqueia? |
 |---|---|---|---|
-| Sprint S-XX `SEALED` | sprint | ❌ | sim |
-| ADR-XXXX `ACCEPTED` | adr | ❌ | sim |
-| Spec `02_product/capabilities.md` `FROZEN` | spec | ❌ | sim |
+| Sprint S-XX com `work_status: SEALED` + `doc_status: FROZEN` | sprint | ❌ | sim |
+| ADR-XXXX `doc_status: FROZEN` | adr | ❌ | sim |
+| Spec `02_product/capabilities.md` `doc_status: FROZEN` | spec | ❌ | sim |
 
 ### 13.2 Downstream (este sprint desbloqueia)
 

@@ -1,34 +1,46 @@
-# Work Item — WI-SXX-NNN: {{Título}}
-
-> **Template Version:** 2.1.0
-
-```yaml
 ---
-id: WI-SXX-NNN
-type: work_item
-doc_status: DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
-work_status: PROPOSED | READY | DOING | REVIEWING | BLOCKED | DONE | CANCELED | ROLLED_BACK
-version: 1.0.0
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
-owner: {{Nome}}
-assignee: {{Nome}}
-final_approver: {{Nome}}
+id: "WI-SXX-NNN-REPLACE"
+type: "work_item"
+doc_status: "DRAFT"                      # enum: DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
+work_status: "PROPOSED"                  # enum: PROPOSED | READY | DOING | REVIEWING | BLOCKED | DONE | CANCELED | ROLLED_BACK
+audit_status: "ACTIVE"                   # enum: ACTIVE | AUDIT_PENDING | AUDITED
+version: "1.0.0"
+created: "YYYY-MM-DD"
+updated: "YYYY-MM-DD"
+owner: "TEMPLATE_WI_OWNER"
+assignee: "TEMPLATE_ASSIGNEE"
+final_approver: "TEMPLATE_FINAL_APPROVER"
 reviewers:
-  - {{Nome}}
-parent: S-XX
+  - role: "eng"
+    name: "TEMPLATE_REVIEWER"
+  - role: "security"
+    name: "TEMPLATE_REVIEWER"
+  - role: "sre"
+    name: "TEMPLATE_REVIEWER"
+  - role: "qa"
+    name: "TEMPLATE_REVIEWER"
+  - role: "product"
+    name: "TEMPLATE_REVIEWER"
+parent: "S-XX-REPLACE"
 supersedes: null
 superseded_by: null
-tags: [{{subsistema}}, {{área}}]
+tags: []
 ---
-```
 
-> **doc_status:** DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
-> **work_status:** PROPOSED | READY | DOING | REVIEWING | BLOCKED | DONE | CANCELED | ROLLED_BACK
+# Work Item — WI-SXX-NNN: {{Título}}
+
+> **Template Version:** 2.2.0
+> **doc_status:** DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED (default inicial: `DRAFT`)
+> **work_status:** PROPOSED | READY | DOING | REVIEWING | BLOCKED | DONE | CANCELED | ROLLED_BACK (default inicial: `PROPOSED`)
+> **audit_status:** ACTIVE | AUDIT_PENDING | AUDITED (default inicial: `ACTIVE`)
 > **Versão:** 1.0.0
 > **Última atualização:** YYYY-MM-DD
 > **Owner (assignee):** {{Nome}}
+> **Aprovador Final:** {{Nome}}
+> **Revisores:** {{ENG: Nome; SEC: Nome; SRE: Nome; QA: Nome; PROD: Nome}}
 > **Sprint pai:** S-XX
+> **Supersedes:** —
+> **Superseded By:** —
 
 > **CONTRATO INVIOLÁVEL — LEIA ANTES DE TUDO:**
 >
@@ -117,7 +129,9 @@ Sem *evidence*, check é inválido.
 | **WI ID** | WI-SXX-NNN |
 | **Título** | {{título crisp em modo imperativo}} |
 | **Versão** | 1.0.0 |
-| **Status** | PROPOSED |
+| **doc_status** | `DRAFT` (inicial) |
+| **work_status** | `PROPOSED` (inicial) |
+| **audit_status** | `ACTIVE` |
 | **Sprint pai** | S-XX |
 | **WI pai (se sub-WI)** | WI-SXX-MMM |
 | **WIs filhos (se decomposto)** | WI-SXX-AAA, WI-SXX-BBB |
@@ -239,7 +253,7 @@ Rastreabilidade ascendente obrigatória. *Trace checker* valida no CI.
 | **INV-AAA**: {{nome}} | ACTIVE | must preserve | teste em §14.4 |
 | **INV-BBB**: {{nome}} | PROPOSED | introduces new | TLA+ spec em `specs/03_architecture/formal/INV-BBB.tla` |
 | **NFR-CCC**: {{nome}} | FROZEN | must meet threshold | benchmark em §14.3 |
-| **ADR-XXXX**: {{decisão}} | ACCEPTED | implements | — |
+| **ADR-XXXX**: {{decisão}} | `doc_status: FROZEN` | implements | — |
 | **User Journey UJ-YYY** | FROZEN | step 3 implementation | §3.3 |
 | **JTBD-ZZZ** | FROZEN | enables | §3 |
 
@@ -870,11 +884,14 @@ Aplicável se toca PII ou dados regulados (§5.6).
 
 Arquivo: `specs/04_sprints/SXX/work_items/WI-SXX-NNN-prr.md` (baseado em `_templates/production_readiness_review.md`).
 
-Status PRR:
-- [ ] Not started
-- [ ] In review
-- [ ] Approved
-- [ ] Conditionally approved (ver caveats)
+`work_status` do PRR (ver `production_readiness_review.md` §21):
+- [ ] `NOT_STARTED` — PRR doc criado, sem reviewers ativos
+- [ ] `IN_REVIEW` — reviewers avaliando
+- [ ] `CONDITIONALLY_APPROVED` — aprovado com caveats (rollout ≤ canary 10%; caveats com `expires_at` obrigatório)
+- [ ] `APPROVED` — aprovado pleno (rollout até GA 100%)
+- [ ] `REJECTED` — não pode promover em nenhuma porcentagem
+
+**Regra inviolável:** este WI **NÃO PODE** transicionar para `work_status: DONE` enquanto o PRR linkado estiver em `NOT_STARTED | IN_REVIEW | REJECTED` para features com impacto em produção.
 
 ### 16.3 Sumário PRR
 
@@ -936,7 +953,7 @@ graph TD
 | Dependência | Tipo | Status | Hard blocker? |
 |---|---|---|---|
 | WI-SXX-YYY `DONE` | interno sprint | ❌ | sim |
-| ADR-XXXX `ACCEPTED` | decisão | ✅ | sim |
+| ADR-XXXX `doc_status: FROZEN` | decisão | ✅ | sim |
 | Spec `02_product/capabilities.md` `FROZEN` | spec | ✅ | sim |
 | Vendor X API disponível | externa | ✅ | sim |
 
@@ -1017,7 +1034,7 @@ graph TD
 ### 20.3 Decisões possíveis em escalação
 
 1. **Re-escopear (reduzir scope)**: mover features marcadas pra WI futuro (novo WI com ID próprio), manter escopo mínimo viável neste WI (Partial Work Item, PWI).
-2. **Decompor (split WI)**: criar **WIs novos com IDs sequenciais próprios** (ex: `WI-SXX-020` e `WI-SXX-021` se o próximo disponível no sprint é `020`), transferir escopo, e marcar este WI como `doc_status: DEPRECATED` + `supersedes` apontando pros novos WIs (ver §22 Change Log + §0 metadata). **NUNCA** usar sufixos `.a`, `.b`, `.1`, `.2` — viola PRINC-006 (numeração estável, sem reuso, sem renumeração).
+2. **Decompor (split WI)**: criar **WIs novos com IDs sequenciais próprios** (ex: `WI-SXX-020` e `WI-SXX-021` se o próximo disponível no sprint é `020`), transferir escopo, e marcar este WI como `doc_status: SUPERSEDED` (se este WI já foi `FROZEN`) ou `doc_status: DEPRECATED` (se este WI nunca saiu de `DRAFT/REVIEW`). Preencher campo YAML `superseded_by` deste WI com a lista dos sucessores; cada WI sucessor registra `supersedes: ["<este WI>"]`. Ver §31 Change Log + §0 metadata. **NUNCA** usar sufixos `.a`, `.b`, `.1`, `.2` — viola PRINC-006 (numeração estável, sem reuso, sem renumeração).
 3. **Cancelar**: WI não é mais viável ou necessário. Transicionar `work_status → CANCELED` com learnings registrados em §24 (Post-mortem Hooks).
 4. **Estender sprint**: só em casos excepcionais, requer aprovação do Sprint Owner + Aprovador Final registrada em §20.4.
 
@@ -1360,7 +1377,7 @@ Este WI é (conforme §5.4):
 
 ### 29.2 Mid-execution review (durante `DOING`)
 
-- [ ] 50% marca: status update registrado em §19.5
+- [ ] 50% marca: status update registrado (§19.5 se houve re-estimate; §20.4 se houve escalação; §31 Change Log caso contrário)
 - [ ] Bloqueios identificados escalados conforme §20
 
 ### 29.3 Code review (durante `REVIEWING`)

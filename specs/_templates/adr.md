@@ -1,26 +1,26 @@
-# ADR-XXXX: {{Título declarativo e conciso}}
-
-> **Template Version:** 1.1.0
-
-```yaml
 ---
-id: ADR-XXXX
-type: adr
-doc_status: DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
-version: 1.0.0
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
-owner: {{Nome}}
-final_approver: {{Nome}}
+id: "ADR-XXXX-REPLACE"
+type: "adr"
+doc_status: "DRAFT"                      # enum: DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
+audit_status: "ACTIVE"                   # enum: ACTIVE | AUDIT_PENDING | AUDITED
+version: "1.0.0"
+created: "YYYY-MM-DD"
+updated: "YYYY-MM-DD"
+owner: "TEMPLATE_ADR_OWNER"
+final_approver: "TEMPLATE_FINAL_APPROVER"
 reviewers:
-  - {{Nome}}
+  - role: "tech_lead"
+    name: "TEMPLATE_REVIEWER"
 supersedes: null
 superseded_by: null
-tags: [{{área}}, {{tecnologia}}]
+tags: []
 ---
-```
 
-> **doc_status:** DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
+# ADR-XXXX: {{Título declarativo e conciso}}
+
+> **Template Version:** 1.2.0
+> **doc_status:** DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED (default inicial: `DRAFT`)
+> **audit_status:** ACTIVE | AUDIT_PENDING | AUDITED (default inicial: `ACTIVE`)
 > **Versão:** 1.0.0
 > **Última atualização:** YYYY-MM-DD
 > **Owner:** {{Nome}}
@@ -40,9 +40,10 @@ tags: [{{área}}, {{tecnologia}}]
 | **ID** | ADR-XXXX |
 | **Título** | {{título}} |
 | **Versão do ADR** | 1.0.0 |
-| **Status** | PROPOSED |
-| **Data Proposed** | YYYY-MM-DD |
-| **Data Accepted** | YYYY-MM-DD |
+| **doc_status** | `DRAFT` (inicial) |
+| **audit_status** | `ACTIVE` |
+| **Data Proposed** (→ `DRAFT`/`REVIEW`) | YYYY-MM-DD |
+| **Data Accepted** (→ `FROZEN`) | YYYY-MM-DD |
 | **Data Deprecated / Superseded** | YYYY-MM-DD (se aplicável) |
 | **Autores** | {{Nome <email>}} |
 | **Deciders (quem autoriza)** | {{Nome, Nome}} |
@@ -506,7 +507,7 @@ Se não-reversível, declarar: **"Esta decisão não é reversível após {{even
 
 | Dependência | Tipo | Status |
 |---|---|---|
-| ADR-YYYY | decisão | ACCEPTED |
+| ADR-YYYY | decisão | `doc_status: FROZEN` |
 | CAP-XXX | capability | FROZEN |
 | Vendor X API vX.Y | externa | disponível |
 
@@ -572,7 +573,7 @@ Se não-reversível, declarar: **"Esta decisão não é reversível após {{even
 |---|---|---|---|---|
 | 1.0.0 | YYYY-MM-DD | {{Nome}} | PROPOSED | Versão inicial |
 | 1.0.1 | YYYY-MM-DD | {{Nome}} | PROPOSED | Incorpora feedback de revisor X |
-| 1.1.0 | YYYY-MM-DD | {{Nome}} | ACCEPTED | Status após sign-off do Aprovador Final |
+| 1.1.0 | YYYY-MM-DD | {{Nome}} | FROZEN | `doc_status` após sign-off do Aprovador Final (equivalente histórico "ACCEPTED") |
 | 2.0.0 | YYYY-MM-DD | {{Nome}} | DEPRECATED | Substituída por ADR-ZZZZ |
 
 ---

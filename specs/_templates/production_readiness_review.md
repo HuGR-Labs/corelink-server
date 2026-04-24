@@ -1,48 +1,53 @@
-# Production Readiness Review (PRR) — {{Feature / WI}}
-
-> **Template Version:** 1.1.0
-
-```yaml
 ---
-id: PRR-SXX-NNN
-type: prr
-doc_status: DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
-work_status: NOT_STARTED | IN_REVIEW | CONDITIONALLY_APPROVED | APPROVED | REJECTED
-version: 1.0.0
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
-owner: {{Nome}}
-final_approver: {{Nome}}
+id: "PRR-SXX-NNN-REPLACE"
+type: "prr"
+doc_status: "DRAFT"                      # enum: DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
+work_status: "NOT_STARTED"               # enum: NOT_STARTED | IN_REVIEW | CONDITIONALLY_APPROVED | APPROVED | REJECTED
+audit_status: "ACTIVE"                   # enum: ACTIVE | AUDIT_PENDING | AUDITED
+version: "1.0.0"
+created: "YYYY-MM-DD"
+updated: "YYYY-MM-DD"
+owner: "TEMPLATE_PRR_OWNER"
+final_approver: "TEMPLATE_FINAL_APPROVER"
 reviewers:
-  - role: sre_lead
-    name: {{Nome}}
-  - role: security_lead
-    name: {{Nome}}
-  - role: privacy_lead
-    name: {{Nome}}
-  - role: product_lead
-    name: {{Nome}}
-  - role: architect
-    name: {{Nome}}
-  - role: finance
-    name: {{Nome}}
-  - role: legal
-    name: {{Nome}}  # se §19 aplicável
-feature_wi: WI-SXX-NNN
-capabilities: [CAP-XXX]
-prod_target_date: YYYY-MM-DD
+  - role: "sre_lead"
+    name: "TEMPLATE_REVIEWER"
+  - role: "security_lead"
+    name: "TEMPLATE_REVIEWER"
+  - role: "privacy_lead"
+    name: "TEMPLATE_REVIEWER"
+  - role: "product_lead"
+    name: "TEMPLATE_REVIEWER"
+  - role: "architect"
+    name: "TEMPLATE_REVIEWER"
+  - role: "finance"
+    name: "TEMPLATE_REVIEWER"
+  - role: "legal"
+    name: "TEMPLATE_REVIEWER_IF_APPLICABLE"
+feature_wi: "WI-SXX-NNN-REPLACE"
+capabilities:
+  - "CAP-XXX-REPLACE"
+prod_target_date: "YYYY-MM-DD"
 supersedes: null
 superseded_by: null
-tags: [{{subsistema}}]
+tags: []
 ---
-```
 
-> **doc_status:** DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
-> **work_status:** NOT_STARTED | IN_REVIEW | CONDITIONALLY_APPROVED | APPROVED | REJECTED
+# Production Readiness Review (PRR) — {{Feature / WI}}
+
+> **Template Version:** 1.2.0
+> **doc_status:** DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED (default inicial: `DRAFT`)
+> **work_status:** NOT_STARTED | IN_REVIEW | CONDITIONALLY_APPROVED | APPROVED | REJECTED (default inicial: `NOT_STARTED`)
+> **audit_status:** ACTIVE | AUDIT_PENDING | AUDITED (default inicial: `ACTIVE`)
 > **Versão:** 1.0.0
 > **Última atualização:** YYYY-MM-DD
+> **Owner:** {{Nome}}
+> **Aprovador Final:** {{Nome}}
+> **Revisores:** {{SRE Lead, Security Lead, Privacy Lead, Product Lead, Architect, Finance, Legal (se aplicável)}}
 > **Feature / WI:** WI-SXX-NNN / capability CAP-XXX
 > **Produção target date:** YYYY-MM-DD
+> **Supersedes:** —
+> **Superseded By:** —
 
 > **CONTRATO INVIOLÁVEL:**
 >
@@ -104,7 +109,9 @@ tags: [{{subsistema}}]
 | **Feature / WI** | {{WI-SXX-NNN}} |
 | **Capability** | CAP-XXX |
 | **Versão PRR** | 1.0.0 |
-| **Status** | NOT_STARTED |
+| **doc_status** | `DRAFT` (inicial) |
+| **work_status** | `NOT_STARTED` (inicial) |
+| **audit_status** | `ACTIVE` |
 | **Data proposta** | YYYY-MM-DD |
 | **Data target GA** | YYYY-MM-DD |
 | **Owner** | {{Nome}} |

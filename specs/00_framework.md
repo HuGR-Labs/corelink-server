@@ -1,28 +1,29 @@
-# 00 — Specification Framework
-
-```yaml
 ---
-id: FRAMEWORK-00
-type: framework
-doc_status: DRAFT
-version: 0.3.0
-created: 2026-04-23
-updated: 2026-04-24
-owner: Gustavo Schneiter
-final_approver: Gustavo Schneiter
+id: "FRAMEWORK-00"
+type: "framework"
+doc_status: "DRAFT"
+audit_status: "ACTIVE"
+version: "0.3.1"
+created: "2026-04-23"
+updated: "2026-04-24"
+owner: "Gustavo Schneiter"
+final_approver: "Gustavo Schneiter"
 reviewers: []
 supersedes: null
 superseded_by: null
-tags: [meta, process, framework]
+tags: ["meta", "process", "framework"]
 ---
-```
+
+# 00 — Specification Framework
 
 > **doc_status:** DRAFT
-> **Versão:** 0.3.0
+> **Versão:** 0.3.1
 > **Última atualização:** 2026-04-24
 > **Owner:** Gustavo Schneiter
 > **Aprovador Final:** Gustavo Schneiter
 > **Revisores:** *(a definir)*
+> **Supersedes:** —
+> **Superseded By:** —
 >
 > Este é o **meta-documento** do sistema de especificação do **HuGR CoreLink**. Define *como* especificamos o produto — princípios, hierarquia, vocabulário, processos, automações. Nenhum outro documento de spec pode existir sem este estar *frozen*.
 >
@@ -872,68 +873,101 @@ Ao executar `doc_status: FROZEN → THAWED`, **obrigatoriamente**:
 
 ### 7.11 Marcação obrigatória em documento
 
-Todo documento **DEVE** começar com bloco YAML front matter + bloco humano-legível:
+> **REGRA INVIOLÁVEL:** todo documento **DEVE** começar com YAML front matter **real** (delimitado por `---` no topo absoluto do arquivo, **antes** do H1) que parseia com `yaml.safe_load`. Acompanhado de bloco humano-legível **após** o H1 para leitura rápida.
 
-#### Para documentos **sem** trabalho executável (framework, níveis 1/2/3/5):
+#### 7.11.1 Campos obrigatórios para TODOS os documentos
+
+| Campo | Tipo | Obrigatório | Valores / Observação |
+|---|---|---|---|
+| `id` | string | ✅ | ID canônico (PRINC-006) |
+| `type` | string | ✅ | `framework \| adr \| pdr \| odr \| capability \| nfr \| invariant \| personas \| jtbd \| prfaq \| success_metrics \| constraints \| user_journey \| c4 \| protocol \| failure_modes \| security_model \| privacy_model \| observability_model \| slo_catalog \| resilience_patterns \| compliance_matrix \| data_model \| sprint \| work_item \| sub_task \| prr \| quality_definition \| runbook \| fitness_function \| incident` |
+| `doc_status` | enum | ✅ | `DRAFT \| REVIEW \| FROZEN \| THAWED \| SUPERSEDED \| DEPRECATED` |
+| `audit_status` | enum | ✅ | `ACTIVE \| AUDIT_PENDING \| AUDITED` |
+| `version` | semver string | ✅ | `X.Y.Z` |
+| `created` | ISO date | ✅ | `YYYY-MM-DD` |
+| `updated` | ISO date | ✅ | `YYYY-MM-DD` |
+| `owner` | string | ✅ | Nome |
+| `final_approver` | string | ✅ | Nome |
+| `reviewers` | lista de `{role, name}` | ✅ | Pode ser `[]` se ainda não designado |
+| `supersedes` | string ou null | ✅ | ID do doc substituído |
+| `superseded_by` | string ou null | ✅ | ID do doc que substitui este |
+| `tags` | lista de strings | ✅ | Pode ser `[]` |
+
+#### 7.11.2 Campos adicionais para artefatos de TRABALHO (Nível 4)
+
+Docs com `type ∈ {sprint, work_item, sub_task, prr}` **DEVEM** adicionar:
+
+| Campo | Tipo | Obrigatório | Valores |
+|---|---|---|---|
+| `work_status` | enum | ✅ | Específico por tipo — ver §7.2 |
+| `parent` | string | ✅ (exceto sprint) | ID do parent (sprint para WI, WI para ST) |
+| `assignee` | string | ✅ em WI/ST | Nome do assignee principal |
+
+#### 7.11.3 Template de front matter (TODOS os docs)
 
 ```yaml
 ---
-id: <ID canônico>
-type: <framework|adr|pdr|odr|capability|nfr|invariant|personas|jtbd|prfaq|...>
-doc_status: DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
-version: X.Y.Z
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
-owner: <nome>
-final_approver: <nome>
-reviewers: [<nome>, <nome>]
-supersedes: <ID> | null
-superseded_by: <ID> | null
-tags: [<tag>, <tag>]
+id: "<ID canônico>"
+type: "<type>"
+doc_status: "<estado>"          # ver §7.1
+audit_status: "<estado>"        # ver §40.9
+version: "X.Y.Z"
+created: "YYYY-MM-DD"
+updated: "YYYY-MM-DD"
+owner: "<nome>"
+final_approver: "<nome>"
+reviewers:
+  - role: "<role>"
+    name: "<nome>"
+supersedes: null                 # ou "ID" se substituir outro
+superseded_by: null              # ou "ID" se foi substituído
+tags: []
 ---
 ```
 
-Bloco humano-legível (abaixo do YAML):
+#### 7.11.4 Template adicional para Nível 4
+
+```yaml
+# adicionar aos campos §7.11.3:
+work_status: "<estado>"         # ver §7.2
+parent: "<ID>"                   # sprint → para WI; WI → para ST
+assignee: "<nome>"              # apenas WI/ST
+```
+
+#### 7.11.5 Bloco humano-legível (após H1)
 
 ```markdown
-> **doc_status:** DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
+> **doc_status:** <estado>
+> **work_status:** <estado>              # se aplicável
+> **audit_status:** <estado>
 > **Versão:** X.Y.Z
 > **Última atualização:** YYYY-MM-DD
 > **Owner:** <nome>
 > **Aprovador Final:** <nome>
-> **Revisores:** <nome1>, <nome2>
-> **Supersedes:** <ID> (se aplicável)
-> **Superseded By:** <ID> (se aplicável)
+> **Revisores:** <lista>
+> **Supersedes:** <ID | —>
+> **Superseded By:** <ID | —>
 ```
 
-#### Para documentos **com** trabalho executável (Nível 4: sprint, WI, ST, PRR):
+#### 7.11.6 Validação automática
 
-```yaml
----
-id: <ID canônico>
-type: <sprint|work_item|sub_task|prr>
-doc_status: DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
-work_status: <estado específico do tipo, ver §7.2>
-version: X.Y.Z
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
-owner: <nome>
-assignee: <nome>              # apenas WI/ST
-final_approver: <nome>
-reviewers: [<nome>, <nome>]
-parent: <ID do parent>        # sprint para WI, WI para ST
-supersedes: <ID> | null
-superseded_by: <ID> | null
-tags: [<tag>, <tag>]
----
+CI **DEVE** rodar:
+
+```bash
+python3 -c "
+import yaml, re, sys
+from pathlib import Path
+FM = re.compile(r'^---\n(.*?)\n---\n', re.DOTALL)
+for p in Path('specs').rglob('*.md'):
+    content = p.read_text()
+    m = FM.match(content)
+    if not m: sys.exit(f'{p}: sem front matter no topo')
+    yaml.safe_load(m.group(1))  # fails if invalid
+print('OK')
+"
 ```
 
-Bloco humano-legível adiciona:
-
-```markdown
-> **work_status:** <estado>
-> **Sprint/WI pai:** <ID>
-```
+Falha = merge bloqueado.
 
 ### 7.12 SLA de auditoria pós-*thaw*
 
@@ -1903,7 +1937,7 @@ Sprint (S-XX)
         └── Sub-task (ST-003)
 ```
 
-Seções principais (32 totais):
+Seções principais (33 totais, §0–§32):
 
 | Seção | Propósito |
 |---|---|
@@ -1948,7 +1982,7 @@ Princípio de decomposição:
 
 > **REG-WI-002**: Algo é sub-task (não *step*) IFF pode ser trabalhada em paralelo com outra sub-task **e** tem *acceptance* verificável independentemente. Sequencial-indivisível = *step* dentro de sub-task, não sub-task separada.
 
-Seções da sub-task (18 totais):
+Seções da sub-task (19 totais, §0–§18):
 
 | Seção | Propósito |
 |---|---|
@@ -2472,6 +2506,8 @@ Specs podem estar **bem escritas mas erradas**. Adversarial review simula:
 | **Ubiquitous Language** | Vocabulário único e consistente (DDD, Evans). |
 | **Fitness function** | Check automatizado de propriedade arquitetural (Neal Ford). |
 | **Blameless post-mortem** | Análise pós-incident focada em sistema, não pessoas. |
+| **PWI** (Partial Work Item) | WI re-escopado durante escalação (§20 do work_item template) para entregar um subconjunto viável do escopo original. Features retiradas movem para WI(s) novo(s) com IDs próprios. Ver REG-WI-SPLIT-001. |
+| **audit_status** | Metadata adicional de qualquer doc/artefato com estados `ACTIVE`, `AUDIT_PENDING`, `AUDITED`. Setado `AUDIT_PENDING` quando um upstream `FROZEN` é *thawed* e afeta este doc (§7.10). Voltando a `ACTIVE` após auditoria. |
 
 ---
 
@@ -2522,6 +2558,7 @@ Em casos em que regra deste framework impede resolução de problema real:
 | 0.1.0 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | Versão inicial (15 princípios, estrutura básica) |
 | 0.2.0 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | **Revisão SOTA**: expandiu 15→30 princípios; adicionou Partes III (linguagem), IV (rigor formal), V (cross-cutting concerns), VI (engenharia e entrega); 24 seções novas; formalizou TLA+, ISO/IEC 25010, SRE, STRIDE, LINDDUN, SLSA, Cavoukian, DDD Ubiquitous Language, Feature Lifecycle, Progressive Delivery, Resilience Patterns, Fitness Functions, Technical Debt, AI Governance; 11 anti-padrões adicionais (9→20) |
 | 0.3.0 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | **Lote 1 — audit remediation (GPT)**: (a) separou formalmente `doc_status` de `work_status` (§7 reescrita: §7.1 doc_status, §7.2 work_status por tipo, §7.3 mapping matrix, §7.4 ADR terminology reconciliation, §7.7 INV-LIFECYCLE-001, §7.11 YAML front matter obrigatório). (b) Corrigiu drift de section counts (WI 33 seções §0–§32, ST 19 §0–§18, Sprint 23 §0–§22, PRR 23 §0–§22, ADR 16 §0–§15). (c) Corrigiu refs quebradas ao glossário (§15 → §40). (d) Corrigiu WI split ID violation — REG-WI-SPLIT-001 força IDs sequenciais novos, proíbe sufixos `.a/.b`. (e) Alinhou SLSA gate: framework L3 até GA, PRR agora exige L2 para canary ≤ 10%, L3 para rollout ≥ 50%. (f) Sprint contract: adicionou `FAILED` state ao header. (g) Todos templates (sprint, WI, ST, ADR, PRR) agora têm YAML front matter + human-readable block com `doc_status` + `work_status` separados. (h) PRR gate desambiguado: `CONDITIONALLY_APPROVED` permite apenas canary ≤ 10%; caveats obrigam `expires_at`; expiração força auto-revert para `IN_REVIEW`. |
+| 0.3.1 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | **Lote 1-bis — correção pós-review GPT**: (a) YAML front matter real no topo absoluto dos 6 docs (sem code fence, parseável por `yaml.safe_load`), valida em CI. (b) Campos schema expandidos: `audit_status` (ACTIVE/AUDIT_PENDING/AUDITED), `type` com enum completo, `reviewers` como lista de `{role,name}`. (c) Eliminadas 10+ referências residuais a `Status`/`ACCEPTED`/`SEALED` no corpo dos 5 templates — agora todos usam `doc_status`/`work_status` consistentemente. (d) §34 count drift residual corrigido (32→33 totais, 18→19 totais). (e) Regra WI split unificada: original usa `superseded_by`, sucessores usam `supersedes`; referência corrigida §22→§31. (f) PWI formalmente definido no glossário §40.9. (g) PRR hook em WI §16 agora lista todos 5 work_status incluindo `REJECTED`; adiciona regra inviolável bloqueando WI DONE sem PRR OK. (h) §7.11 totalmente reescrita com tabelas de campos obrigatórios, templates canônicos e script de validação CI. |
 
 ---
 

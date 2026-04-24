@@ -1,34 +1,39 @@
-# Sub-task — ST-NNN: {{Título}}
-
-> **Template Version:** 2.1.0
-
-```yaml
 ---
-id: ST-NNN
-type: sub_task
-doc_status: DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
-work_status: TODO | DOING | REVIEW | BLOCKED | DONE | CANCELED
-version: 1.0.0
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
-owner: {{WI Owner}}
-assignee: {{Nome}}
-final_approver: {{WI Owner}}
+id: "ST-NNN-REPLACE"
+type: "sub_task"
+doc_status: "DRAFT"                      # enum: DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
+work_status: "TODO"                      # enum: TODO | DOING | REVIEW | BLOCKED | DONE | CANCELED
+audit_status: "ACTIVE"                   # enum: ACTIVE | AUDIT_PENDING | AUDITED
+version: "1.0.0"
+created: "YYYY-MM-DD"
+updated: "YYYY-MM-DD"
+owner: "TEMPLATE_WI_OWNER"
+assignee: "TEMPLATE_ASSIGNEE"
+final_approver: "TEMPLATE_WI_OWNER"
 reviewers:
-  - {{Nome}}
-parent: WI-SXX-NNN
+  - role: "eng"
+    name: "TEMPLATE_REVIEWER"
+parent: "WI-SXX-NNN-REPLACE"
 supersedes: null
 superseded_by: null
-tags: [{{área}}]
+tags: []
 ---
-```
 
-> **doc_status:** DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
-> **work_status:** TODO | DOING | REVIEW | BLOCKED | DONE | CANCELED
+# Sub-task — ST-NNN: {{Título}}
+
+> **Template Version:** 2.2.0
+> **doc_status:** DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED (default inicial: `DRAFT`)
+> **work_status:** TODO | DOING | REVIEW | BLOCKED | DONE | CANCELED (default inicial: `TODO`)
+> **audit_status:** ACTIVE | AUDIT_PENDING | AUDITED (default inicial: `ACTIVE`)
 > **Versão:** 1.0.0
 > **Última atualização:** YYYY-MM-DD
+> **Owner:** {{WI Owner}}
 > **Assignee:** {{Nome}}
+> **Aprovador Final:** {{WI Owner}}
+> **Revisores:** {{ENG: Nome}}
 > **WI pai:** WI-SXX-NNN
+> **Supersedes:** —
+> **Superseded By:** —
 
 > **CONTRATO INVIOLÁVEL:**
 >
@@ -78,7 +83,9 @@ tags: [{{área}}]
 | **ST ID** | ST-NNN |
 | **Título** | {{título crisp imperativo}} |
 | **Versão** | 1.0.0 |
-| **Status** | TODO |
+| **doc_status** | `DRAFT` (inicial) |
+| **work_status** | `TODO` (inicial) |
+| **audit_status** | `ACTIVE` |
 | **WI pai** | WI-SXX-NNN |
 | **Sprint** | S-XX |
 | **Assignee** | {{Nome}} |
@@ -115,7 +122,7 @@ tags: [{{área}}]
 | **CAP-XXX** (via parent) | FROZEN | contribui parcialmente | — |
 | **INV-YYY** (se aplicável) | ACTIVE | preserva | test em §10 |
 | **NFR-ZZZ** (se aplicável) | FROZEN | cumpre | bench em §10.3 |
-| **ADR-XXXX** (se aplicável) | ACCEPTED | implementa | — |
+| **ADR-XXXX** (se aplicável) | `doc_status: FROZEN` | implementa | — |
 
 ---
 
