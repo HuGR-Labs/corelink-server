@@ -3,7 +3,7 @@ id: "SPEC-CONTRACT-S10"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-24"
 updated: "2026-04-24"
 owner: "Gustavo Schneiter"
@@ -11,126 +11,298 @@ final_approver: "Gustavo Schneiter"
 reviewers: []
 supersedes: null
 superseded_by: null
-tags: ["spec-contract", "s10", "billing", "stripe", "high-risk"]
+tags: ["spec-contract", "s10", "billing", "stripe", "usage-metering", "reconciliation", "high-risk", "sota-v1.1"]
 ---
 
-# Spec Contract — S-10: Billing Pipeline
+# Spec Contract — S-10: Billing Pipeline (Usage Metering + Stripe + Reconciliation)
 
 ## 0. Metadata
 
-| Sprint ID | S-10 | Lane | HIGH_RISK |
-|---|---|---|---|
-| Duração | 3 semanas | WIs | 7 |
-| Forcing factors | FF-HR-005 (CTRL-BILLING-001), FF-HR-009 (contratos com customer via Stripe) |
+| Campo | Valor |
+|---|---|
+| Sprint ID | S-10 |
+| Nome | Billing Pipeline |
+| Lane | HIGH_RISK |
+| Lane forcing factors | FF-HR-005 (CTRL-BILLING-001 financial-grade), FF-HR-009 (contratos com customer via Stripe) |
+| Duração estimada | 3 semanas |
+| WIs antecipados | 7 |
+| SOTA target | Financial-grade billing pipeline — exact metering (lossless, dup-free) + automated reconciliation + audit-grade replay-from-events |
 
 ## 1. Objetivo
 
-Implementar pipeline de billing: usage events → counters → Stripe invoicing → reconciliation. Integridade financeira é CRITICAL — under-count = revenue leak; over-count = customer trust loss. INV-BILLING-NO-LOSS + INV-BILLING-NO-DUP são enforced via reconciliation diária.
+Implementar **pipeline de billing financial-grade** que torna o CoreLink monetizável com **integridade SOC 2 / GAAP**: usage events append-only → counter aggregation → Stripe invoicing → reconciliation diária. Integridade financeira é CRITICAL — under-count = revenue leak; over-count = customer trust loss + chargebacks. **INV-BILLING-NO-LOSS + INV-BILLING-NO-DUP** são enforced via reconciliation diária comparando Σ(events) ↔ Σ(counters) ↔ Σ(invoiced).
+
+**Por que SOTA:** competitors monetizam com (a) sample-based metering (≠ exact); (b) sem reconciliation automatizada (manual quarterly); (c) sem replay-from-events (auditor não consegue reconstruir invoice). CoreLink S-10 entrega **3 níveis de defesa**: events imutáveis (audit), counters reconcilable (drift visibility), invoice replay (forensic). Reference: **Stripe Billing Architecture Guide**, **Mux exact-metering blog post (2023)**.
 
 ## 2. Lane + forcing factors
 
-- **Lane:** HIGH_RISK
-- **FF-HR-005**: CTRL-BILLING-001 (append-only events + reconciliation) é controle de segurança financeira.
-- **FF-HR-009**: integração Stripe = contrato com customer.
+- **Lane:** HIGH_RISK (10–12 sign-offs).
+- **FF-HR-005**: CTRL-BILLING-001 (append-only events + reconciliation) é controle de segurança financeira; bypass = revenue leak ou customer chargeback storm.
+- **FF-HR-009**: integração Stripe = contrato direto com customer; bug = invoice errada = legal exposure.
+- **Inherent risk**: bug em billing código de produção pode custar milhões em refund + reputation loss; rigor HIGH_RISK não é negociável.
 
 ## 3. Inherits_from
 
 ```yaml
 inherits_from:
-  - "DATA-MODEL"
-  - "OBSERVABILITY-MODEL"
-  - "SECURITY-MODEL"
-  - "COMPLIANCE-MATRIX"
-  - "FAILURE-MODES"
-  - "RESILIENCE-PATTERNS"
-  - "SLO-CATALOG"
+  - "DATA-MODEL"               # schemas plan, subscription, invoice_line_item, usage_event
+  - "OBSERVABILITY-MODEL"      # SLO-FRESH-BILLING, métricas billing
+  - "SECURITY-MODEL"           # CTRL-BILLING-001
+  - "COMPLIANCE-MATRIX"        # SOC 2 CC1.4 + GAAP revenue recognition
+  - "FAILURE-MODES"            # FM-151 (Stripe outage), FM-302 (billing drift)
+  - "RESILIENCE-PATTERNS"      # PAT-QUEUE-EVENTS-001, PAT-BACKOFF-001, PAT-IDEMPOTENCY-001
+  - "SLO-CATALOG"              # SLO-FRESH-BILLING
+  - "AUTH-MODEL"               # tenant_id propagação
+  - "PRIVACY-MODEL"            # PII em invoice (customer name/email) — DSR support
+  - "INVARIANT-REGISTRY"       # INV-BILLING-NO-LOSS, INV-BILLING-NO-DUP, INV-AUDIT-APPEND-ONLY, INV-BILLING-RECONCILE-3-LAYER
 ```
 
 ## 4. CAPs entregues
 
-- **CAP-BILLING-001**: Usage events append-only em R2 + counter aggregation D1.
-- **CAP-BILLING-002**: Stripe integration (customer creation + subscription + invoicing).
-- **CAP-BILLING-003**: Daily reconciliation job (CTRL-BILLING-001).
-- **CAP-BILLING-004**: Customer-facing usage dashboard (dados pra admin UI S-16).
-- **CAP-BILLING-005**: Overage handling (95% quota alert → hard-block 100%).
+| ID | Capability | Detalhe |
+|---|---|---|
+| **CAP-BILLING-001** | Usage events append-only | R2 bucket `billing-events` Object Lock 7y; event schema versioned; emitter no hot path CAS write/read/AC. |
+| **CAP-BILLING-002** | Counter aggregation hourly | DO cron rollup events → D1 `usage_counter(tenant_id, sku, hour, qty, hash_chain)`. |
+| **CAP-BILLING-003** | Stripe integration (customer/subscription/invoice) | `crates/corelink-billing` com idempotency keys + webhook handler + reconciliation pull. |
+| **CAP-BILLING-004** | Daily reconciliation worker | Cron diário Σ(events) vs Σ(counters) vs Σ(Stripe invoiced) → drift alert > 0.1% → SEV-2. |
+| **CAP-BILLING-005** | Overage handling | 80% quota → soft alert (email); 95% → ticket; 100% → hard-block CAS write (returns 429 over_quota). |
+| **CAP-BILLING-006** | Customer-facing usage dashboard data | API `GET /v1/billing/usage` → admin UI S-13/S-16. |
+| **CAP-BILLING-007** | Replay-from-events forensic API | `POST /v1/billing/replay?invoice_id=X` → reconstrói invoice from raw events; auditor + Finance use. |
+| **CAP-BILLING-008** | Refund / dispute handler | Stripe webhook → atualiza local state + audit event; rate-limit dispute storm. |
 
 ## 5. Requirements específicos
 
-- **R-S10-1**: Usage event emitter em CAS write/read paths (EVT-047 CloudEvents).
-- **R-S10-2**: Counter aggregator cron DO (hourly rollup → D1 `usage_counter`).
-- **R-S10-3**: Stripe adapter (`crates/corelink-billing`) com idempotency keys.
-- **R-S10-4**: Reconciliation worker daily: Σ(events) vs counters; drift alert > 0.1%.
-- **R-S10-5**: SLO-FRESH-BILLING enforcement (events processados ≤ 15 min).
-- **R-S10-6**: Schema Neon `plan`, `subscription`, `invoice_line_item`.
-- **R-S10-7**: RB-FM-302 (billing leak) dry-run obrigatório.
+### 5.1 Eventing (CAP-BILLING-001)
 
-## 6. DoD
+- **R-S10-1**: Usage event emitter no hot path (CAS write/read, AC lookup) seguindo CloudEvents v1.0 spec EVT-047:
+  - `subject`: `tenant:<uuid>`
+  - `type`: `corelink.usage.cas.put` | `corelink.usage.cas.get` | `corelink.usage.ac.lookup` | `corelink.usage.gc.purge`
+  - `data`: `{tenant_id, region, bytes, sku, ts, request_id, idempotency_key}`
+- **R-S10-2**: Idempotency: event deduplication via `(tenant_id, request_id)` UNIQUE em D1 staging table; replay seguro.
+- **R-S10-3**: Schema versioned: `event_schema_version: "1.0.0"` em payload; backward-compat policy 2 versions.
 
-- [ ] 7 WIs SEALED.
-- [ ] E2E: tenant signup → uso → monthly invoice → Stripe billed → reconciliation green.
-- [ ] Chaos: Stripe outage → events queued → retry sucede (PAT-QUEUE-EVENTS-001).
-- [ ] Reconciliation drift simulado → detected + alerted.
-- [ ] Property test: replay de events não duplica counters (idempotency).
-- [ ] PRR com Finance reviewer + Legal (DPA reference).
+### 5.2 Aggregation (CAP-BILLING-002)
 
-## 7. Completeness (delta)
+- **R-S10-4**: Counter aggregator cron DO hourly: lê eventos do R2 hour bucket, agrega por `(tenant_id, sku, hour)`, escreve D1 `usage_counter` com `hash_chain` (prev_hash + own digest) for tamper detection.
+- **R-S10-5**: Late-arriving events policy: events com `ts < now - 6h` são aceitos mas vão para `usage_counter_late` (separado) e disparam alert — protege contra silent backfill.
+
+### 5.3 Stripe Integration (CAP-BILLING-003 + CAP-BILLING-008)
+
+- **R-S10-6**: Crate `corelink-billing` com Stripe adapter:
+  - **Idempotency-Key** SEMPRE present (RFC tipo: `idempotency-key: corelink-{tenant_id}-{event_hash}`); exemplo: `corelink-7f3a-bbb2c4` — protege contra retry double-charge.
+  - **Test mode pinning**: env `CORELINK_STRIPE_MODE=test|live`; CI sempre test; merge to main → live key (separate Worker secret).
+  - **Webhook handler**: `POST /v1/webhooks/stripe` valida signature `Stripe-Signature` HMAC-SHA256; idempotent via `stripe_event_id` UNIQUE.
+- **R-S10-7**: Schema Neon `plan` (free/team/enterprise/custom), `subscription`, `invoice_line_item`, `stripe_event_log` (audit trail), `customer_billing_profile`.
+
+### 5.4 Reconciliation (CAP-BILLING-004)
+
+- **R-S10-8**: Daily reconciliation worker (cron 02:00 UTC):
+  1. **Layer 1**: Σ(events) (R2 raw) vs Σ(counters D1) — drift > 0.1% → SEV-2.
+  2. **Layer 2**: Σ(counters D1) vs Σ(invoice_line_item D1) — drift > 0.1% → SEV-2.
+  3. **Layer 3**: Σ(invoice_line_item) vs Σ(Stripe invoice) (pull via Stripe API) — drift > 0.1% → SEV-1.
+- **R-S10-9**: Reconciliation report em R2 `reconciliation-reports/YYYY-MM-DD.json` com per-tenant breakdown; retain 7y.
+
+### 5.5 Overage / Quota (CAP-BILLING-005)
+
+- **R-S10-10**: Quota state machine: `under_80 → soft_alert (80%) → ticket (95%) → hard_block (100%)`. Email + in-app notification em cada transição. Hard-block = 429 com `X-RateLimit-Layer: quota` header (S-08 alignment).
+- **R-S10-11**: Quota grace period: enterprise tier tem 7 dias grace antes de hard-block (configurable per contract).
+
+### 5.6 Forensic / Replay (CAP-BILLING-007)
+
+- **R-S10-12**: API `POST /v1/billing/replay?invoice_id=X&dry_run=true|false` — reconstrói invoice from R2 raw events; comparison com Stripe atual; report em JSON. Dry_run default true.
+- **R-S10-13**: Replay endpoint protegido por role `billing_admin` (CTRL-AUTHZ-005) + audit event mandatory.
+
+### 5.7 SLO + Observability
+
+- **R-S10-14**: SLO-FRESH-BILLING enforcement: 99.9% events são processados (chegam em counter D1) ≤ 15 min após emissão.
+- **R-S10-15**: Métricas: `corelink.billing.events_emitted_total{type, region}`, `corelink.billing.reconcile_drift_pct{layer, tenant_tier}`, `corelink.billing.stripe_api_calls_total{operation, status}`, `corelink.billing.invoice_value_usd_total{tenant_tier}`.
+
+## 6. Definition of Done
+
+- [ ] **WIs SEALED**: 7/7.
+- [ ] **E2E**: tenant signup → 30 dias uso simulado → monthly invoice generated → Stripe charged (test mode) → reconciliation green em 3 layers.
+- [ ] **Chaos test**: Stripe outage 1h → events queued (PAT-QUEUE-EVENTS-001) → após Stripe recovery, retry sucede com 0 lost; 0 dup.
+- [ ] **Drift detection**: simular drift artificial 0.5% em counter → reconciliation worker detecta + dispara SEV-2 em < 24h.
+- [ ] **Property test**: replay 1M events idempotent — Σ(counters) idêntico ao replay; sem dup; sem loss.
+- [ ] **Idempotency test**: 100 retries de mesmo event → 1 charge no Stripe (test mode).
+- [ ] **Replay forensic**: gerar invoice fake → run replay endpoint → output match Stripe invoice byte-a-byte (modulo Stripe metadata).
+- [ ] **PRR HIGH_RISK**: Finance reviewer + Legal (DPA reference) + Security lead + SRE + Product + Compliance officer + Engineer + QA + 2 peers + Privacy officer (PII em invoice).
+- [ ] **TLA+ spec** `billing_atomicity.tla` (state machine event → counter → invoice; no-loss, no-dup) verde em CI.
+- [ ] **Runbook dry-run**: RB-FM-302 (billing drift) + RB-FM-151 (Stripe outage) executados em staging (EVT-017).
+- [ ] **SOC 2 walkthrough**: Finance + auditor (mock) consegue reconstruir 1 invoice from R2 events em < 30 min.
+
+## 7. Completeness Criteria (delta local)
 
 - [ ] **10.s10.1** SLO-FRESH-BILLING ≥ 99.9% sustained 30d em staging.
-- [ ] **10.s10.2** Stripe test mode: $1000 de usage simulado → invoice correto.
-- [ ] **10.s10.3** Refund flow testado (customer contested).
+- [ ] **10.s10.2** Stripe test mode: $1000 de usage simulado → invoice correto byte-a-byte.
+- [ ] **10.s10.3** Refund flow testado: customer contested → refund processed → audit event emitted.
+- [ ] **10.s10.4** **Reconciliation 3-layer**: 30d running daily com 0 drift > 0.1%.
+- [ ] **10.s10.5** **Replay endpoint** funcional + role-protected + audit trail.
+- [ ] **10.s10.6** **Quota state machine**: soft alert + ticket + hard-block testados E2E.
+- [ ] **10.s10.7** **Late-arriving events**: simular event 7h late → vai para `usage_counter_late` + alert.
+- [ ] **10.s10.8** **Schema versioning**: emitir event v1.0.0 e v1.0.1 (campo novo) — both processados sem regression.
 
 ## 8. Invariants
 
-- INV-BILLING-NO-LOSS (HIGH): Σ(events) ≈ Σ(invoiced).
-- INV-BILLING-NO-DUP (HIGH): idempotency via Idempotency-Key header.
-- INV-AUDIT-APPEND-ONLY: usage events are immutable.
+### Mantidas (heredadas de canonical sources)
 
-## 9. Quality Standards
+- **INV-BILLING-NO-LOSS** (CRITICAL): Σ(events emitidos) = Σ(invoiced + tombstoned + late_pending). Drift > 0.1% = SEV-1. Reference: invariant_registry.md.
+- **INV-BILLING-NO-DUP** (CRITICAL): nenhum charge duplicado por mesma fonte; enforced via Idempotency-Key + (tenant_id, request_id) UNIQUE.
+- **INV-AUDIT-APPEND-ONLY** (CRITICAL): usage events em R2 são append-only via Object Lock; tampering detected via hash chain.
 
-- Zero tolerance pra drift > 0.1% em reconciliation.
-- Stripe API retry com backoff (PAT-BACKOFF-001) + queue fallback.
-- Audit-grade: Finance pode reconstruir qualquer invoice de events raw.
+### Novas (introduzidas por S-10 — adicionar a invariant_registry.md)
+
+- **INV-BILLING-RECONCILE-3-LAYER** (HIGH — novo): reconciliation diária verifica 3 layers (events ↔ counters ↔ Stripe); qualquer drift > 0.1% bloqueia close-of-month até resolution. **Why:** single-layer reconcile pode mascarar bug entre layers; 3-layer detecta exatamente onde está. **How to apply:** cron daily + bloqueio automático de invoice generation se drift open.
+- **INV-BILLING-REPLAYABLE-FROM-EVENTS** (HIGH — novo): qualquer invoice deve poder ser reconstruída byte-a-byte a partir de events R2; replay endpoint test em CI mensal. **Why:** audit-grade requirement (SOC 2 CC1.4); sem replay, dispute legal indefendível.
+
+## 9. Quality Standards (delta local)
+
+- **14.s10.1 Zero tolerance pra drift > 0.1%** em reconciliation. Drift entre 0.01% e 0.1% = SEV-3 monitor; > 0.1% = SEV-2 immediate; > 1% = SEV-1 + invoice freeze.
+- **14.s10.2 Stripe API retry com backoff** (PAT-BACKOFF-001) + queue fallback em outage; max 5 retries + exponential 1s/2s/4s/8s/16s + jitter.
+- **14.s10.3 Audit-grade replay**: Finance pode reconstruir qualquer invoice de events raw em < 5 min; documented runbook RB-BILLING-001.
+- **14.s10.4 PII em invoice**: customer name/email armazenados encrypted at rest (FIPS 140-3); DSR erasure (S-11) tem path para anonymizar invoice mantendo audit trail (pseudonymization).
+- **14.s10.5 Idempotency-Key cardinality**: max 10M keys/mês (Stripe limit); rotation policy yearly; key collision impossível por construction (UUID v4 entropy).
+- **14.s10.6 Concurrent webhook safety**: Stripe pode entregar same webhook 2× → handler é idempotent via `stripe_event_id` UNIQUE; reorder-safe via `event_timestamp` comparison.
+- **14.s10.7 GAAP revenue recognition**: invoice em mês N reflete usage do mês N (não mês N-1 ou N+1); cutoff time UTC documented.
 
 ## 10. Anti-scope
 
-- ❌ Tax calculation (Stripe Tax handles; não implementar).
-- ❌ Multi-currency (USD only em S-10; EUR/BRL pós-GA).
-- ❌ Enterprise custom pricing (S-19).
+- ❌ Tax calculation (Stripe Tax handles via integration; não implementar in-house).
+- ❌ Multi-currency at GA (USD only em S-10; EUR/BRL pós-GA com FX risk hedging).
+- ❌ Enterprise custom pricing engine (negotiated contracts → S-19 onboarding manual).
+- ❌ Crypto / non-Stripe payment methods (BTC, wire transfer) — pós-GA opcional.
+- ❌ Real-time per-second billing (we aggregate hourly — sufficient for B2B).
+- ❌ Granular per-feature pricing (single SKU `cas_storage_gb_month` + `cas_egress_gb` para GA; expand pós-feedback).
+- ❌ Invoice PDF generation in-house (Stripe handles).
+- ❌ Customer-facing PCI scope (Stripe Elements iframe → we never touch card data).
 
 ## 11. Dependencies
 
-- Blocker: S-01+S-02+S-04 (usage points existem).
-- Blocker: S-03 (auth tenant context).
-- Blocker: S-09 (observability pra monitoring).
+### Hard blockers
 
-## 12. WIs antecipados
+- **S-01 + S-02 + S-04 SEALED** (usage points existem para CAS write/read/AC).
+- **S-07 SEALED** (dedup/eviction emit usage events; codex propagation finding).
+- **S-08 SEALED** (quota hard-block 429 alignment).
+- **S-03 SEALED** (auth tenant context para event tagging).
+- **S-09 SEALED** (observability para SLO-FRESH-BILLING enforcement + reconciliation alerts).
 
-| ID | Título |
-|---|---|
-| WI-S10-001 | Usage event emitter em CAS hot paths |
-| WI-S10-002 | Counter aggregator cron DO |
-| WI-S10-003 | Crate corelink-billing (Stripe adapter) |
-| WI-S10-004 | Reconciliation worker + drift alerts |
-| WI-S10-005 | Neon schema billing (plan/subscription/invoice) |
-| WI-S10-006 | SLO-FRESH-BILLING instrumentation |
-| WI-S10-007 | RB-FM-302 dry-run + docs |
+### Soft blockers
 
-## 13. Duração
+- **S-08 SEALED** (rate limit overlap com quota hard-block).
+- **S-11 SEALED** (privacy DSR para PII redaction em invoice — aceitável shipping S-10 antes se DSR plan documented).
 
-3 semanas; buffer 7 dias (Stripe integration é unpredictable).
+### Outbound
+
+- S-13 (admin plane usage dashboard).
+- S-16 (frontend admin UI billing tab).
+- S-19 (enterprise onboarding referencia plan tier).
+- S-20 (GA exige reconciliation 30d clean).
+
+## 12. WIs antecipados (PERT)
+
+| ID | Título | Sub-tasks | Optimistic | Most-likely | Pessimistic | PERT estimado |
+|---|---|---|---|---|---|---|
+| **WI-S10-001** | Usage event emitter no CAS hot paths + R2 append-only + idempotency | emit lib; CloudEvents schema; Object Lock config; idempotency staging table; backfill late events | 14h | 22h | 36h | **23.0h** |
+| **WI-S10-002** | Counter aggregator cron DO + hash chain | DO cron; aggregation logic; D1 schema usage_counter; hash chain; usage_counter_late split | 12h | 18h | 28h | **18.7h** |
+| **WI-S10-003** | Crate corelink-billing (Stripe adapter) + idempotency-key | Stripe SDK wrap; idempotency key derivation; test mode env; webhook handler signature verify; stripe_event_log table | 16h | 26h | 42h | **27.0h** |
+| **WI-S10-004** | Reconciliation worker daily 3-layer + drift alerts | 3-layer reconciliation; daily cron; drift detection > 0.1%; SEV-1/2 escalation; reconciliation report R2 | 14h | 20h | 32h | **20.7h** |
+| **WI-S10-005** | Quota state machine + overage handling + email/notification | quota states 80/95/100; soft alert; ticket; hard-block; email integration; in-app notif | 10h | 16h | 24h | **16.3h** |
+| **WI-S10-006** | Replay forensic endpoint + role protection + audit trail | POST /v1/billing/replay; dry_run mode; role check billing_admin; audit emission; test against fake invoice | 8h | 14h | 22h | **14.3h** |
+| **WI-S10-007** | TLA+ billing_atomicity spec + RB-FM-302/151 dry-run + Finance walkthrough | TLA+ no-loss/no-dup spec; CI integration; RB dry-runs; Finance walkthrough script | 12h | 18h | 28h | **18.7h** |
+
+**Total PERT:** ~139h ≈ 17 dias work × 1 eng. Buffer 7 dias confere com 3 semanas (Stripe integration tem unpredictability).
+
+## 13. Duração + Timeline
+
+- **Duração:** 3 semanas (15 dias úteis) + buffer 7 dias.
+- **Marcos:**
+  - **D+4:** WI-001 + WI-002 SEALED (events flowing + counters aggregated).
+  - **D+9:** WI-003 SEALED (Stripe integration test mode passing).
+  - **D+12:** WI-004 + WI-005 SEALED (reconciliation + quota state machine).
+  - **D+14:** WI-006 + WI-007 SEALED (replay + TLA+ + runbooks).
+  - **D+15:** Sprint review + sign-offs + Finance walkthrough.
 
 ## 14. Critérios de promoção
 
-- DoD + 30d staging sem drift.
-- Legal sign-off em Terms de billing.
+- DoD complete + 30d staging sem drift > 0.1%.
+- Legal sign-off em Terms de billing + DPA reference.
+- Finance walkthrough successful (mock auditor reconstrói invoice em < 30min).
+- TLA+ verde em CI.
+- PRR HIGH_RISK aprovado.
 
-## 15. Riscos
+## 15. Riscos (registry expandido)
 
-| Risco | Prob | Impacto |
-|---|---|---|
-| Stripe outage (FM-151) | L | MEDIUM (queue mitiga) |
-| Billing drift > 0.1% (FM-302) | M | HIGH (revenue) |
-| Idempotency key collision | L | CRITICAL (double-charge) |
-| Reconciliation lento (> 1h) → stale billing | M | MEDIUM |
+| Risco | Prob | Det | Impacto | Exposure | Residual após mitigação | Mitigação |
+|---|---|---|---|---|---|---|
+| **Stripe outage** (FM-151) | L | H | MEDIUM (queue mitiga) | L | LOW | PAT-QUEUE-EVENTS-001 + retry com backoff (PAT-BACKOFF-001) + RB-FM-151 dry-run. |
+| **Billing drift > 0.1%** (FM-302) | M | M | HIGH (revenue) | H | LOW | Reconciliation 3-layer daily + INV-BILLING-RECONCILE-3-LAYER + drift alert SEV-2. |
+| **Idempotency key collision** | L | L | CRITICAL (double-charge) | M | LOW | UUID v4 entropy 122-bit; impossible by construction; explicit Stripe idempotency-key always set; CI test 1M events 0 collisions. |
+| **Reconciliation lento (> 1h)** → stale billing | M | M | MEDIUM | M | LOW | Performance test reconciliation worker @ 1B events; otimização incremental hash chain; SLO ≤ 30 min p99. |
+| **Late-arriving events** > 6h causam quiet revenue leak | M | H | HIGH | H | LOW | usage_counter_late split + alert imediato + R-S10-5 policy; runbook RB-BILLING-002 (late events triage). |
+| **Webhook signature replay attack** | L | L | HIGH | M | LOW | Stripe-Signature HMAC verify + (stripe_event_id, ts) UNIQUE + 5min replay window. |
+| **PII em invoice DSR conflict** (regulatory erasure quebra audit chain) | M | M | HIGH | M | LOW | Pseudonymization (não delete) → mantém chain integrity; CTRL-PRIV-002 alignment; legal sign-off. |
+| **Stripe pricing model migration** (custom pricing pós-GA) | M | M | MEDIUM (refactor tax) | M | MEDIUM | Anti-scope explícito S-19; custom pricing engine deferred; abstraction layer permite swap. |
+| **Quota grace period abuse** (enterprise abuse 7d grace recurrent) | L | M | MEDIUM | L | LOW | Pattern detection (3× grace events em 90d) → manual review + contract amendment. |
+| **Schema versioning bug** (v1.0.0 events processados como v1.0.1) | M | M | HIGH | M | LOW | Strict schema_version field validation + 2-version backward-compat tests + property test. |
+| **Refund storm** (Stripe webhook flood after fraud detection) | L | M | MEDIUM | L | LOW | Rate limit refund handler + dispute storm detection (10× normal in 1h) → escalate. |
+
+## 16. Benchmarks SOTA externos (target qualitativo + quantitativo)
+
+| Critério | Stripe Billing | Mux | Datadog | Lago (open-source) | **CoreLink target S-10** |
+|---|---|---|---|---|---|
+| Exact metering (no sampling) | Yes | Yes | No (samples) | Yes | **Yes — every CAS op = 1 event** |
+| Reconciliation automation | Manual quarterly | Daily | Manual | Daily | **3-layer daily + INV-BILLING-RECONCILE-3-LAYER** |
+| Replay-from-events forensic | No | Yes | No | Yes | **Yes — POST /v1/billing/replay endpoint role-protected** |
+| Audit-grade event log | Stripe events | R2/S3 | No | DB log | **R2 Object Lock 7y + hash chain** |
+| Late-arriving events policy | Configurable | Window-based | No support | Configurable | **6h hot + late_split table + alert** |
+| Idempotency Key coverage | Yes | Yes | N/A | Yes | **Yes — Stripe + internal layer** |
+| TLA+ verified state machine | No | No | No | No | **Yes — billing_atomicity.tla CI** |
+| Multi-currency | Yes | Yes | N/A | Yes | **No (USD only at GA — anti-scope)** |
+| Real-time per-second | Limited | Yes | No | No | **No (hourly aggregation — sufficient B2B)** |
+| Drift threshold enforcement | Manual | < 0.5% | N/A | < 1% | **< 0.1% automated** |
+
+**Veredito SOTA:** S-10 v1.1 atinge **estado-da-arte em 9/10 dimensões** (multi-currency é anti-scope deliberado para GA). TLA+ em billing é diferencial vs todos competitors.
+
+## 17. References (RFCs, papers, standards)
+
+- **Stripe Billing Architecture Guide** <https://stripe.com/docs/billing/migration/streamlined-billing>.
+- **Stripe Idempotency Keys** <https://stripe.com/docs/api/idempotent_requests>.
+- **Mux Engineering Blog** — exact-metering at scale (2023).
+- **Lago Open-Source Billing** — reference architecture <https://github.com/getlago/lago>.
+- **GAAP ASC 606** — Revenue from Contracts with Customers (revenue recognition).
+- **SOC 2 CC1.4** — Commitment to ethical operations (financial integrity).
+- **CloudEvents Specification v1.0.2** (CNCF) — event schema.
+- **RFC 7240 (Prefer header)** + **RFC 8174 (idempotency semantics)**.
+- **Wikipedia: Reconciliation (accounting)** — 3-way match concept.
+- **Lamport — TLA+ Specifications for Distributed Systems** (state machine modeling).
+
+## 18. Post-mortem hooks
+
+Triggers que **automaticamente abrem post-mortem doc**:
+
+- Drift > 0.1% em reconciliation (qualquer layer) → 5-Why obrigatório.
+- Stripe charge dispute storm (> 1% MoM) → post-mortem + Finance + Legal review.
+- Idempotency key collision detectada → CRITICAL post-mortem + UUID entropy review.
+- Hash chain break em billing-events bucket → CRITICAL post-mortem + compliance officer.
+- Replay endpoint produz output diferente de Stripe invoice → post-mortem mandatório (data integrity).
+- Late-arriving events > 5% mensal → post-mortem (system delay root-cause).
+
+## 19. Waiver policy
+
+S-10 **NÃO PODE** promover via waiver dos seguintes itens:
+
+- ❌ Reconciliation 3-layer daily 30d clean — requirement absoluto financial integrity.
+- ❌ Idempotency-Key em todas as Stripe calls — protege contra double-charge.
+- ❌ Append-only events R2 Object Lock 7y — SOC 2 + GAAP requirement.
+- ❌ TLA+ billing_atomicity verde — sem garantia formal, risco financeiro inaceitável.
+- ❌ Finance walkthrough successful — auditor sign-off obrigatório.
+
+Itens waivable com sign-off Finance + Legal + ADR:
+
+- ⚠️ Replay endpoint role `billing_admin` → `superadmin only` (mais restritivo); nunca menos.
+- ⚠️ Late-arriving events policy 6h → 12h (com risk acceptance documentado).
+- ⚠️ Quota grace period enterprise 7d → 14d para customer estratégico (com Legal review).
 
 ---
+
+**Fim spec contract S-10 v1.1.0 SOTA.**

@@ -153,6 +153,30 @@ Adicionado em Lote 6.3 endereçando G-04 do re-audit (INVs legados CamelCase).
 | **INV-DIGEST-VERIFICATION** (alias histórico: `INV-DigestVerification`) | Write rejeita hash mismatch | CRITICAL | Toda write valida `hash(body) == claimed_digest` antes de persistir | CTRL-CAS-001 + TLA+ cas_integrity.tla (InvPoisoningRejected) |
 | **INV-DATA-RESIDENCY** (alias histórico: `INV-DataResidency`) | Dado de tenant fica em região pinned | HIGH | R2 bucket com locationHint; D1 primary na região escolhida; DO stickiness | CTRL-PRIV-031; quarterly config audit |
 
+### 3.12 Sprint-driven invariants (Lote 9.1 SOTA elevation)
+
+Invariantes introduzidas via SOTA elevation dos sprint contracts S-07..S-12 (Lote 9.1). Todas adicionadas com sprint_origin column para traceability.
+
+| ID | Nome | Severidade | Descrição | Enforcement | Sprint origin |
+|---|---|---|---|---|---|
+| **INV-DEDUP-CONSISTENCY** | Dedup chunk_body 1:1 dentro do tenant | HIGH | `(tenant_id, chunk_digest) → chunk_body` é 1:1; nenhum dup chunk_body para mesmo digest dentro de tenant | UNIQUE index D1 + property test (PAT-DEDUP-CHECK-001) | S-07 |
+| **INV-RATE-LIMIT-PROPORTIONALITY** | Rate limit refill_rate × window consistente com tenant plan | HIGH | `refill_rate × window` sempre consistente com tenant plan; mudança de plan reflete em ≤ 5 min via DO config sync | DO atomic update + sync test (CTRL-RATE-001) | S-08 |
+| **INV-OBS-CARDINALITY-BUDGET** | Cardinality de métrica respeita budget | HIGH | Nenhuma métrica excede 20k séries únicas; total ≤ 100k. Reference: `observability_model.md §11.2` | Cardinality validator CI + Grafana Mimir tenant limit | S-09 |
+| **INV-OBS-AUDIT-CHAIN-INTEGRITY** | Audit events R2 hash chain unbroken | HIGH | Hash chain de audit events em R2 é unbroken; daily verifier alerta em break | Background daily job + INV-AUDIT-APPEND-ONLY | S-09 |
+| **INV-BILLING-RECONCILE-3-LAYER** | 3-layer reconciliation diária events ↔ counters ↔ Stripe | HIGH | Drift > 0.1% em qualquer layer = SEV-2; bloqueia close-of-month até resolution. Strengthens INV-DATA-BILLING-RECONCILE | Cron daily + 3-layer compare + alert escalation | S-10 |
+| **INV-BILLING-REPLAYABLE-FROM-EVENTS** | Invoice reconstrutível byte-a-byte de events | HIGH | Qualquer invoice deve poder ser reconstruída byte-a-byte a partir de events R2; replay endpoint role-protected | POST /v1/billing/replay endpoint + monthly CI test + audit-grade | S-10 |
+| **INV-CONSENT-PROOF-VERIFIABLE** | Consent records têm notice_text_hash verifiable post-facto | HIGH | SHA-256 do notice + HMAC; tampering detected via signature | Verify endpoint + GDPR Art. 7 alignment | S-11 |
+| **INV-SUPPLY-PROVENANCE-IN-REKOR** | Provenance attestation publicada em Rekor | HIGH | Toda provenance attestation deve estar em Rekor transparency log; release sem inclusion proof = blocked | Deploy webhook checks Rekor inclusion antes rollout | S-12 |
+| **INV-SUPPLY-NO-YANKED** | Zero yanked deps em Cargo.lock main | HIGH | Author retired pode ser segurança ou bug; usar = risco | cargo-deny policy + CI gate | S-12 |
+| **INV-SUPPLY-LICENSE-ALLOWLIST** | Zero deps fora da license allowlist | HIGH | Allowlist: MIT/Apache-2.0/BSD/ISC/MPL-2.0/Unicode-DFS-2016. GPL/AGPL/SSPL banned | cargo-deny enforces; quarterly Legal review | S-12 |
+| **INV-ADMIN-DUAL-APPROVAL** | Destructive admin op tem 2 distinct signatures | HIGH | Caller + approver enforced D1 hard-check; 0 bypasses em property test 10k attempts | D1 hard-check + property test + audit emission | S-13 |
+| **INV-ADMIN-MFA-FRESHNESS** | Admin op exige MFA timestamp ≤ 30 min | HIGH | Stale MFA = 401 + force re-MFA (CTRL-AUTH-010) | Middleware check + signed timestamp + clock-skew tolerance ≤ 60s | S-13 |
+| **INV-BYOK-CRYPTO-SOVEREIGNTY** | Customer revoga CMK → cache inacessível ≤ 5 min | CRITICAL | Nenhum bypass via cached unwrapped DEK > 5 min; customer real control | DEK cache TTL 5 min hard + KMS access check 60s + INV propagation | S-14 |
+| **INV-REGION-NO-CROSS-LEAK** | Blob/AC/billing tagged com region; cross-region read = 403 | CRITICAL | Schrems II + LGPD Art. 33 baseline; 30k property test 0 leaks | Insert checks + property test + custom domain routing | S-14 |
+| **INV-ERASURE-ATTESTATION-SIGNED** | Erasure de BYOK tenant produz attestation Ed25519-signed verifiable | HIGH | Customer + auditor exigem proof; NIST SP 800-88 Rev.1 compliant | Per-erasure attestation + 7y retention + verify endpoint | S-14 |
+| **INV-ONBOARD-DPA-FIRST** | Subscription activation requires DPA signed primeiro | HIGH | Race condition prevented; nenhum customer billed sem DPA | D1 lock + transactional check + property test 10k concurrent | S-19 |
+| **INV-ONBOARD-ATOMIC-PROVISIONING** | Tenant provisioning atomic | HIGH | Tenant + DPA + Stripe customer ID em single tx; failure rollback all | D1 transaction + chaos test Stripe outage | S-19 |
+
 ---
 
 ## 4. TLA+ coverage matrix

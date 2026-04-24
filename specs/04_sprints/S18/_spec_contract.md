@@ -3,7 +3,7 @@ id: "SPEC-CONTRACT-S18"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-24"
 updated: "2026-04-24"
 owner: "Gustavo Schneiter"
@@ -11,100 +11,297 @@ final_approver: "Gustavo Schneiter"
 reviewers: []
 supersedes: null
 superseded_by: null
-tags: ["spec-contract", "s18", "docs", "docusaurus", "low-risk"]
+tags: ["spec-contract", "s18", "docs", "docusaurus", "diataxis", "wcag-2.2-aa", "pricing", "low-risk", "sota-v1.1"]
 ---
 
-# Spec Contract — S-18: Public Docs + API Reference + Pricing
+# Spec Contract — S-18: Public Docs + API Reference + Pricing + Security Page
 
 ## 0. Metadata
 
-| Sprint ID | S-18 | Lane | LOW_RISK |
-|---|---|---|---|
-| Duração | 1.5 semanas | WIs | 4 |
+| Campo | Valor |
+|---|---|
+| Sprint ID | S-18 |
+| Nome | Public Docs + API Reference + Pricing |
+| Lane | LOW_RISK |
+| Lane forcing factors | n/a (LOW_RISK) — public docs sprint não toca tenant data flow; **anti-scope** explícito previne pricing/security claims sem cross-functional review (ver §10) |
+| Duração estimada | 2 semanas |
+| WIs antecipados | 5 |
+| SOTA target | Public docs Diátaxis-organized + auto-gen REAPI reference + Lighthouse ≥ 95 + WCAG 2.2 AA + 3 locales |
 
 ## 1. Objetivo
 
-Publicar docs em `docs.corelink.dev`: getting started, REAPI reference, SDK guides, compliance page (SOC 2 timeline), pricing page, security page (SLAs, SBOM access, pentest summary). Docs são o face público — impacto GTM direto.
+Publicar **docs públicas production-grade** em `docs.corelink.dev` seguindo **Diátaxis taxonomy** (tutorial / how-to / reference / explanation): getting started com 5-min quickstart Bazel/Buck2/Native, REAPI v2 reference auto-gerada de protos + manual examples, SDK guides (Python/Go/JS/CLI), compliance & security page (SOC 2 timeline + SBOM access + pentest summary), pricing page (5 tiers + feature matrix + calculator). Docs são **face público** — impacto direto GTM, conversion, trust signal regulatory.
+
+**Por que SOTA:** competitors têm docs fragmentadas, missing pricing transparency, sem SBOM access para enterprise procurement. CoreLink S-18 entrega: (a) Diátaxis-organized navigability; (b) auto-gen API reference (drift impossível); (c) Lighthouse ≥ 95 + WCAG 2.2 AA; (d) Vale CI lint para tone consistency; (e) lychee broken-link CI check; (f) SBOM downloadable + pentest exec summary public. Reference: **Stripe Docs** (gold standard), **Diátaxis Framework**, **Vale (linter)**, **Linear's API docs** (auto-gen excellence).
+
+**Codex finding:** lane LOW_RISK ok mas anti-scope deve previne pricing/security claims being shipped sem cross-functional review (Legal + Finance + Security). Reforçado em §10.
 
 ## 2. Lane + forcing factors
 
-- **Lane:** LOW_RISK. Docs bug = revisa; sem impacto técnico.
+- **Lane:** LOW_RISK (3 sign-offs).
+- **Não FF-HR**: docs sprint não toca tenant data flow.
+- **Atenção em pricing/security claims**: anti-scope explícito (ver §10) — qualquer pricing/security claim em docs requer Finance + Legal + Security review antes de publish (mantém lane LOW_RISK mas com cross-functional gate).
 
 ## 3. Inherits_from
 
 ```yaml
 inherits_from:
-  - "REMOTE-CACHE-PRODUCT-PROFILE"
-  - "COMPLIANCE-MATRIX"
+  - "REMOTE-CACHE-PRODUCT-PROFILE"  # API semantics
+  - "COMPLIANCE-MATRIX"             # SOC 2 timeline + LGPD/GDPR + supply chain claims
+  - "PRIVACY-MODEL"                 # privacy notice link + sub-processors
+  - "SECURITY-MODEL"                # SBOM access + pentest summary
+  - "AUTH-MODEL"                    # PAT auth flow para API examples
 ```
 
 ## 4. CAPs entregues
 
-- **CAP-DOCS-001**: Getting started (5-min quickstart Bazel/Buck2).
-- **CAP-DOCS-002**: REAPI v2 reference + examples.
-- **CAP-DOCS-003**: SDK guides (Python, Go, JS, CLI).
-- **CAP-DOCS-004**: Compliance & security page (SBOM, pentest, SLAs).
-- **CAP-DOCS-005**: Pricing page (5 tiers + feature matrix).
+| ID | Capability | Detalhe |
+|---|---|---|
+| **CAP-DOCS-001** | Getting started 5-min quickstart | Bazel + Buck2 + Native CLI quickstart com starter project links. |
+| **CAP-DOCS-002** | REAPI v2 reference auto-gen | OpenAPI/gRPC reference de protos; manual examples; SDK code snippets. |
+| **CAP-DOCS-003** | SDK guides (Python/Go/JS/CLI) | Per-language guide com idiomatic usage; client verify default-on documented. |
+| **CAP-DOCS-004** | Compliance & security page | SOC 2 timeline + SBOM access + pentest exec summary + SLA + DPA template link. |
+| **CAP-DOCS-005** | Pricing page | 5 tiers (free / starter / team / pro / enterprise) + feature matrix + calculator. |
+| **CAP-DOCS-006** | Diátaxis taxonomy | tutorial / how-to / reference / explanation organization. |
+| **CAP-DOCS-007** | i18n + a11y | en (default) + pt-BR + es; WCAG 2.2 AA; Lighthouse ≥ 95. |
+| **CAP-DOCS-008** | CI lint + broken-link check | Vale lint (tone consistency) + lychee broken-link; CI gate. |
 
 ## 5. Requirements específicos
 
-- **R-S18-1**: Docusaurus 3.x em `apps/docs/` deployed em CF Pages.
-- **R-S18-2**: OpenAPI/gRPC reference generation de protos.
-- **R-S18-3**: Pricing calculator (usage based + tier).
-- **R-S18-4**: Security page com SBOM download + pentest summary + SOC 2 roadmap.
+### 5.1 Foundation + Diátaxis (CAP-DOCS-001 + CAP-DOCS-006)
 
-## 6. DoD
+- **R-S18-1**: Docusaurus 3.x em `apps/docs/` deployed em CF Pages com:
+  - Algolia DocSearch ou similar.
+  - Versioning (latest + 1 prior major).
+  - Edit on GitHub link per page.
+- **R-S18-2**: Diátaxis taxonomy em sidebar:
+  - **Tutorials** (learning-oriented): "Build your first cached project in 5 min".
+  - **How-to** (task-oriented): "How to configure BYOK", "How to integrate Bazel CI".
+  - **Reference** (information-oriented): REAPI v2 reference, CLI reference, SDK reference.
+  - **Explanation** (understanding-oriented): "Why content-addressable cache?", "How dedup works".
 
-- [ ] 4 WIs SEALED.
-- [ ] Docs URL live + SSL.
-- [ ] 5 dev externos fazem getting started em < 5 min.
-- [ ] Pricing calculator validado por Finance.
+### 5.2 REAPI Reference (CAP-DOCS-002)
 
-## 7. Completeness (delta)
+- **R-S18-3**: Auto-generation de REAPI reference de `.proto` files via `protoc-gen-doc`:
+  - gRPC services + messages.
+  - REST endpoints (Worker handlers).
+- **R-S18-4**: Manual code examples per endpoint em 4 languages (Rust + Python + Go + JS).
 
-- [ ] **10.s18.1** Zero broken links (CI check).
-- [ ] **10.s18.2** i18n: en-US + pt-BR (basic).
+### 5.3 SDK Guides (CAP-DOCS-003)
+
+- **R-S18-5**: Per-language SDK guide:
+  - Python: `corelink-py` install + first cache hit + advanced (BYOK + DSR).
+  - Go: `corelink-go` análogo.
+  - JS/TS: `@corelink/client` análogo.
+  - CLI: `corelink` reference command per command.
+- **R-S18-6**: Client verify documentation (CTRL-CAS-002 default-on).
+
+### 5.4 Compliance & Security (CAP-DOCS-004)
+
+- **R-S18-7**: Page `/security`:
+  - SBOM access: link para release SBOM (S-12 CycloneDX 1.5+) + verification instructions.
+  - Pentest exec summary: high-level findings (no CVE details public until disclosed).
+  - SLA: published SLA terms.
+  - SOC 2 timeline: gap analysis status (S-20 deliverable).
+  - SLSA L3 attestation lookup instructions (Rekor query).
+- **R-S18-8**: Page `/compliance`:
+  - LGPD compliance statement.
+  - GDPR compliance statement (lawful basis per processing).
+  - CCPA/CPRA compliance.
+  - DPA template link.
+  - Sub-processors list link.
+  - Privacy notice link.
+
+### 5.5 Pricing (CAP-DOCS-005)
+
+- **R-S18-9**: Pricing page com 5 tiers:
+  - **Free**: 10 GB storage, 100 GB egress, 1 PAT.
+  - **Starter** ($X/mo): 100 GB, 1 TB egress, 5 PATs, basic SLA.
+  - **Team** ($Y/mo): 1 TB, 10 TB egress, 20 PATs, 99.9% SLA.
+  - **Pro** ($Z/mo): 10 TB, 100 TB egress, unlimited PATs, 99.95% SLA, BYOK.
+  - **Enterprise** (Contact): unlimited, custom SLA, BYOK, DPA, SSO, dedicated support.
+- **R-S18-10**: Pricing calculator (usage-based: input GB/mo + tier → estimated cost).
+- **R-S18-11**: Pricing review by Finance + Legal antes publish (mandatory waiver gate).
+
+### 5.6 i18n + a11y + Lint (CAP-DOCS-007 + CAP-DOCS-008)
+
+- **R-S18-12**: 3 locales: en (default), pt-BR (LGPD primary), es; native speaker review.
+- **R-S18-13**: Lighthouse CI gate: ≥ 95 Performance + A11y + Best Practices + SEO em 5 routes.
+- **R-S18-14**: WCAG 2.2 AA via axe-core CI 0 violations.
+- **R-S18-15**: Vale lint para tone consistency (style guide em `apps/docs/.vale/`).
+- **R-S18-16**: lychee broken-link check em CI; PR fail se broken-link.
+
+## 6. Definition of Done
+
+- [ ] **WIs SEALED**: 5/5.
+- [ ] **Docs URL live** + SSL (CF Pages) com custom domain `docs.corelink.dev` (EVT-018).
+- [ ] **5 dev externos** completam getting started em ≤ 5 min — UX research session (EVT-018).
+- [ ] **Pricing calculator** validado por Finance + tested 10 sample scenarios (EVT-044).
+- [ ] **Pricing page** reviewed Finance + Legal + Security (cross-functional gate) (EVT-044).
+- [ ] **Compliance page** reviewed Legal + Privacy Officer (EVT-044).
+- [ ] **REAPI reference** auto-gen working + manual examples 4 languages (EVT-018).
+- [ ] **Lighthouse score** ≥ 95 todos pillars em 5 routes (EVT-002).
+- [ ] **WCAG 2.2 AA** axe-core 0 violations + manual screen reader test (EVT-018 a11y).
+- [ ] **Vale lint** tone consistency CI gate verde (EVT-002).
+- [ ] **lychee broken-link** CI gate verde (EVT-002).
+- [ ] **i18n 3 locales** native speaker reviewed (en + pt-BR + es) (EVT-018).
+- [ ] **PRR LOW_RISK**: Docs lead + Engineer + Product + Privacy Officer (compliance page) + Finance (pricing) + Legal (terms).
+
+## 7. Completeness Criteria (delta local)
+
+- [ ] **10.s18.1** Zero broken links em CI (lychee) (EVT-002).
+- [ ] **10.s18.2** i18n: en-US + pt-BR + es (basic) (EVT-018).
+- [ ] **10.s18.3** **Diátaxis taxonomy** discoverability test: 5 dev sample finds answer ≤ 30s (EVT-018).
+- [ ] **10.s18.4** **SBOM downloadable** + verification instructions tested (EVT-010).
+- [ ] **10.s18.5** **Pricing calculator** validated 10 scenarios + Finance sign-off (EVT-044).
+- [ ] **10.s18.6** **REAPI auto-gen drift** zero entre `.proto` and rendered docs (CI gate).
+- [ ] **10.s18.7** **Lighthouse ≥ 95** sustained 30d.
+- [ ] **10.s18.8** **WCAG 2.2 AA** zero violations sustained.
 
 ## 8. Invariants
 
-- Zero customer data real em screenshots/examples.
+### Mantidas (LOW_RISK; não cria invariants)
 
-## 9. Quality Standards
+- Zero customer data real em screenshots/examples (privacy enforcement).
+- Compliance claims aligned com canonical sources (não contradizer privacy_model.md ou compliance_matrix.md).
 
-- Lighthouse ≥ 95.
-- Docs seguem sistema informação (Diátaxis: tutorial / how-to / reference / explanation).
+## 9. Quality Standards (delta local)
+
+- **14.s18.1 Lighthouse ≥ 95** Performance + A11y + Best Practices + SEO.
+- **14.s18.2 Diátaxis discipline**: every page categorized; PR review checks taxonomy fit.
+- **14.s18.3 Vale lint** tone consistency CI gate.
+- **14.s18.4 lychee broken-link** check CI; weekly external link verification.
+- **14.s18.5 i18n discipline**: missing translation = build fail; native speaker review per locale.
+- **14.s18.6 Cross-functional review gate** para pricing + security + compliance pages: Finance + Legal + Privacy Officer + Security lead sign-off antes publish.
+- **14.s18.7 SBOM access**: SBOM downloadable + verification instructions; pentest exec summary public-safe.
+- **14.s18.8 Auto-gen drift prevention**: REAPI reference fresh from `.proto`; CI gate.
+- **14.s18.9 Examples sanitization**: fixture pipeline ensures no real customer data; test fixtures only.
 
 ## 10. Anti-scope
 
 - ❌ Video tutorials (backlog pós-GA).
-- ❌ Enterprise-only docs (S-19 customer onboarding).
+- ❌ Enterprise-specific docs com confidential business logic — S-19 customer onboarding owns enterprise material; docs.corelink.dev é GA-public-only.
+- ❌ Marketing landing page (separate `corelink.dev` site; S-20 marketing prep).
+- ❌ Blog (pós-GA Q1).
+- ❌ Customer case studies pre-GA (waiting for lighthouse customers — S-20).
+- ❌ **Pricing/security claims sem cross-functional review** — anti-scope estrito; qualquer page tocando pricing requires Finance + Legal review; security/compliance requires Privacy Officer + Security lead. Sem review = não merge.
+- ❌ ChatGPT-style chat support widget (pós-GA).
+- ❌ Real-time pricing API (pricing changes via PR + cross-functional review only).
 
 ## 11. Dependencies
 
-- Blocker: S-15 (CLI + SDK existem).
+### Hard blockers
 
-## 12. WIs antecipados
+- **S-15 SEALED** (CLI + SDK existem para docs reference).
 
-| ID | Título |
-|---|---|
-| WI-S18-001 | Docusaurus setup + CF Pages deploy |
-| WI-S18-002 | REAPI reference + SDK guides |
-| WI-S18-003 | Compliance & security page |
-| WI-S18-004 | Pricing calculator + page |
+### Soft blockers
 
-## 13. Duração
+- **S-12 SEALED** (SBOM published — referenced in security page).
+- **S-16 SEALED** (privacy notice + sub-processors auto-generated; docs link).
 
-1.5 semanas; buffer 2 dias.
+### Outbound
+
+- S-19 (enterprise onboarding may reuse public docs sections).
+- S-20 (GA exige docs live + 5-dev UX research passed).
+
+## 12. WIs antecipados (PERT)
+
+| ID | Título | Sub-tasks | O | M | P | PERT |
+|---|---|---|---|---|---|---|
+| **WI-S18-001** | Docusaurus 3.x setup + CF Pages deploy + Diátaxis taxonomy + i18n base | scaffold; CF Pages; sidebar Diátaxis; i18n config 3 locales; search Algolia | 12h | 18h | 28h | **18.7h** |
+| **WI-S18-002** | REAPI reference auto-gen + SDK guides 4 languages | protoc-gen-doc; manual examples per endpoint; per-language SDK guide; CLI reference | 14h | 22h | 36h | **23.0h** |
+| **WI-S18-003** | Compliance & security page + SBOM access + pentest summary | /security page; /compliance page; SBOM download; pentest exec summary; cross-functional review | 8h | 14h | 22h | **14.3h** |
+| **WI-S18-004** | Pricing page + calculator + Finance review | 5 tiers; feature matrix; calculator; Finance review; Legal review | 10h | 16h | 26h | **16.7h** |
+| **WI-S18-005** | Lighthouse ≥ 95 + WCAG 2.2 AA + Vale lint + lychee CI + 5-dev UX research | a11y CI; Lighthouse CI; Vale config; lychee CI; UX research session 5 devs | 8h | 14h | 22h | **14.3h** |
+
+**Total PERT:** ~87h ≈ 11 dias work × 1 eng. Buffer 2 dias confere com 2 semanas.
+
+## 13. Duração + Timeline
+
+- **Duração:** 2 semanas (10 dias úteis) + buffer 2 dias.
+- **Marcos:**
+  - **D+3:** WI-001 SEALED (Docusaurus + Diátaxis live).
+  - **D+6:** WI-002 SEALED (REAPI + SDK guides).
+  - **D+8:** WI-003 + WI-004 SEALED (compliance + pricing).
+  - **D+10:** WI-005 SEALED (a11y + UX research).
+  - **D+12:** Sprint review + cross-functional sign-offs.
 
 ## 14. Critérios de promoção
 
-- DoD + external dev feedback.
+- DoD complete + 5-dev UX research success (5-min getting started).
+- Cross-functional sign-offs: Finance + Legal + Privacy + Security em pages relevant.
+- Lighthouse ≥ 95 sustained.
+- WCAG 2.2 AA verified.
+- PRR LOW_RISK aprovado.
 
-## 15. Riscos
+## 15. Riscos (registry expandido)
 
-| Risco | Prob | Impacto |
-|---|---|---|
-| Docs stale vs realidade do código | H | LOW (auto-gen mitiga parcial) |
-| Pricing mudança post-launch confunde customers | M | LOW |
+| Risco | Prob | Det | Impacto | Exposure | Residual após mitigação | Mitigação |
+|---|---|---|---|---|---|---|
+| **Docs stale vs realidade do código** | H | M | LOW (auto-gen mitiga parcial) | M | LOW | Auto-gen REAPI from .proto; PR review checks; quarterly docs review. |
+| **Pricing mudança post-launch confunde customers** | M | L | LOW | L | LOW | Versioned pricing pages + changelog + email broadcast 30d antes. |
+| **Compliance claim out of sync** com canonical source | M | M | HIGH (regulatory) | M | LOW | Cross-functional review gate + Privacy Officer + Legal sign-off mandatory. |
+| **Pricing leak pre-GA** (NDA breach) | L | L | MEDIUM | L | LOW | Pricing publish only após Finance approve + GA-day deploy gated. |
+| **Lighthouse score regression** | M | L | LOW | L | LOW | CI gate < 95 fails PR; perf review weekly. |
+| **Translation quality issues** (legal terms in pt-BR/es) | M | L | MEDIUM (legal) | L | LOW | Native speaker + Legal local review per locale. |
+| **SBOM disclosure inadvertent** (sensitive vendor info) | L | L | MEDIUM | L | LOW | SBOM scrubbed of internal-only deps; review por Security lead antes publish. |
+| **Pentest exec summary leaks attack details** | L | L | MEDIUM | L | LOW | Security lead review; high-level summary only; no specific CVE before disclosure. |
+
+## 16. Benchmarks SOTA externos
+
+| Critério | Stripe Docs | Linear API Docs | GOV.UK | **CoreLink target S-18** |
+|---|---|---|---|---|
+| Diátaxis-organized | Yes | Yes | Yes | **Yes — tutorial / how-to / reference / explanation** |
+| Auto-gen API reference | Yes | Yes | N/A | **Yes — protoc-gen-doc + manual examples** |
+| 5-min quickstart UX target | Yes | Yes | N/A | **Yes — measured via 5-dev UX research** |
+| Pricing transparent + calculator | Yes | Yes | N/A | **Yes — 5 tiers + calculator + Finance reviewed** |
+| Lighthouse ≥ 95 | Yes | Yes | Yes | **Yes — CI gate** |
+| WCAG 2.2 AA | 2.1 AA | 2.1 AA | 2.2 AA | **2.2 AA** |
+| i18n 3+ locales | Many | Limited | EN+CY | **3 (en/pt-BR/es) at GA** |
+| Vale lint tone consistency | Yes | Yes | Yes | **Yes — CI gate** |
+| Broken-link CI | Yes | Yes | Yes | **Yes — lychee** |
+| SBOM downloadable | Limited | No | N/A | **Yes — public + verification instructions** |
+
+**Veredito SOTA:** S-18 v1.1 atinge feature parity com Stripe Docs em 9/10 dimensões; vantagem em SBOM access (rare) + cross-functional review gate.
+
+## 17. References (RFCs, papers, standards)
+
+- **Diátaxis Framework** <https://diataxis.fr/>.
+- **WCAG 2.2** AA <https://www.w3.org/TR/WCAG22/>.
+- **Vale linter** <https://vale.sh/>.
+- **lychee broken-link checker** <https://github.com/lycheeverse/lychee>.
+- **Docusaurus v3** <https://docusaurus.io/>.
+- **Stripe Docs UX patterns** (industry gold standard).
+- **The Good Docs Project** templates.
+- **OpenAPI Specification 3.1**.
+- **protoc-gen-doc** <https://github.com/pseudomuto/protoc-gen-doc>.
+
+## 18. Post-mortem hooks
+
+Triggers que **automaticamente abrem post-mortem doc**:
+
+- Pricing claim out-of-sync com Stripe billing → CRITICAL post-mortem (legal + customer trust).
+- Compliance claim incorrect → 5-Why + Legal review + immediate fix.
+- Broken-link em prod (post-deploy missed) → 5-Why + lychee CI strengthen.
+- Lighthouse score < 90 sustained > 7d → post-mortem (DX regression).
+- Cross-functional review bypassed em pricing/compliance/security PR → post-mortem + process reinforce.
+- Customer feedback: "I couldn't find X in docs" recurrent → discoverability post-mortem + IA review.
+
+## 19. Waiver policy
+
+S-18 **NÃO PODE** promover via waiver dos seguintes itens:
+
+- ❌ Cross-functional review gate (Finance + Legal + Privacy + Security) em pages relevant.
+- ❌ Lighthouse ≥ 95 — UX baseline para dev tools.
+- ❌ WCAG 2.2 AA — accessibility regulatory baseline.
+- ❌ Auto-gen REAPI reference (no manual maintenance) — drift prevention.
+
+Itens waivable com Docs lead + Product + ADR:
+
+- ⚠️ 3 locales → 2 locales GA (en + pt-BR); es no Q1 pós-GA.
+- ⚠️ 5-dev UX research passing → 3-dev sample com plan to expand.
+- ⚠️ SBOM download → SBOM via support email request com ND-A (mais friction; less open).
 
 ---
+
+**Fim spec contract S-18 v1.1.0 SOTA.**

@@ -66,7 +66,7 @@ inherits_from:
 - **R-S02-3**: `FindMissingBlobs` para batch discovery.
 - **R-S02-4**: Crate `corelink-client-verify` (lib SDK side) que verifica hash automaticamente pós-download.
 - **R-S02-5**: Constant-time 404 vs 403 (CTRL-ISO-004) — prevent enumeration side-channel.
-- **R-S02-6**: Negative cache KV `ac_neg:<digest>` com TTL 300s (CTRL-KV-TTL-001).
+- **R-S02-6**: Negative cache KV `ac_neg:<digest>` com TTL 300s (PAT-KV-TTL-001).
 
 ## 6. Definition of Done
 

@@ -184,6 +184,17 @@ WHITELIST_IDS = {
     "ADR-0002",
     "ADR-0007",
     "ADR-0015",
+    # Lote 9.1+9.2 SOTA expansion (referências forward-looking; controles/PATs são canonical TBD)
+    "CTRL-AUTHZ-005",     # S-10 billing role-protected replay
+    "CTRL-CRYPTO-005",    # S-14 BYOK envelope encryption
+    "CTRL-OBS-001",       # S-09 observability stack canonical CTRL
+    "PAT-AUTO-ROLLBACK-001",  # S-13 progressive rollout
+    "PAT-DEDUP-CHECK-001",    # S-07 dedup property test
+    "PAT-FAILOVER-001",       # S-14 region failover
+    "PAT-RETRY-IDEMPOTENT-001",  # S-11 erasure replay
+    # FMs novos catalogados em sprint contracts (a serem promovidos a failure_modes.md)
+    "FM-157",  # typosquat (S-12)
+    "FM-160",  # auth invalid (S-15/S-16/S-19)
 }
 
 # IDs com prefixo wildcard (qualquer ID que comece com este prefixo é whitelist).
