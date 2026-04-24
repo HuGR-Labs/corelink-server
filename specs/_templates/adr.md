@@ -1,7 +1,35 @@
 # ADR-XXXX: {{Título declarativo e conciso}}
 
-> **Template Version:** 1.0.0
-> **Status:** PROPOSED | ACCEPTED | DEPRECATED | SUPERSEDED
+> **Template Version:** 1.1.0
+
+```yaml
+---
+id: ADR-XXXX
+type: adr
+doc_status: DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
+version: 1.0.0
+created: YYYY-MM-DD
+updated: YYYY-MM-DD
+owner: {{Nome}}
+final_approver: {{Nome}}
+reviewers:
+  - {{Nome}}
+supersedes: null
+superseded_by: null
+tags: [{{área}}, {{tecnologia}}]
+---
+```
+
+> **doc_status:** DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
+> **Versão:** 1.0.0
+> **Última atualização:** YYYY-MM-DD
+> **Owner:** {{Nome}}
+> **Aprovador Final:** {{Nome}}
+> **Revisores:** {{Nome1, Nome2}}
+> **Supersedes:** {{ADR-YYYY | nenhum}}
+> **Superseded By:** {{ADR-ZZZZ | nenhum}}
+>
+> *Nota histórica: literatura clássica de ADR usa "PROPOSED → ACCEPTED → DEPRECATED → SUPERSEDED". Mapping canônico CoreLink: `PROPOSED`=`DRAFT/REVIEW`, `ACCEPTED`=`FROZEN`, `DEPRECATED`=`DEPRECATED`, `SUPERSEDED`=`SUPERSEDED`. Ver `00_framework.md §7.4`.*
 
 ---
 
@@ -530,7 +558,7 @@ Se não-reversível, declarar: **"Esta decisão não é reversível após {{even
 
 ## 14. Glossary
 
-> Termos específicos deste ADR que podem não estar no glossário master (`00_framework.md §15`).
+> Termos específicos deste ADR que podem não estar no glossário master (`00_framework.md §40`).
 
 | Termo | Definição |
 |---|---|

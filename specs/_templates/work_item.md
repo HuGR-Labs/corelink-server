@@ -1,9 +1,34 @@
 # Work Item — WI-SXX-NNN: {{Título}}
 
-> **Template Version:** 2.0.0
-> **Status:** PROPOSED | READY | DOING | REVIEWING | BLOCKED | DONE | CANCELED | ROLLED_BACK
+> **Template Version:** 2.1.0
+
+```yaml
+---
+id: WI-SXX-NNN
+type: work_item
+doc_status: DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
+work_status: PROPOSED | READY | DOING | REVIEWING | BLOCKED | DONE | CANCELED | ROLLED_BACK
+version: 1.0.0
+created: YYYY-MM-DD
+updated: YYYY-MM-DD
+owner: {{Nome}}
+assignee: {{Nome}}
+final_approver: {{Nome}}
+reviewers:
+  - {{Nome}}
+parent: S-XX
+supersedes: null
+superseded_by: null
+tags: [{{subsistema}}, {{área}}]
+---
+```
+
+> **doc_status:** DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
+> **work_status:** PROPOSED | READY | DOING | REVIEWING | BLOCKED | DONE | CANCELED | ROLLED_BACK
+> **Versão:** 1.0.0
 > **Última atualização:** YYYY-MM-DD
 > **Owner (assignee):** {{Nome}}
+> **Sprint pai:** S-XX
 
 > **CONTRATO INVIOLÁVEL — LEIA ANTES DE TUDO:**
 >
@@ -991,10 +1016,19 @@ graph TD
 
 ### 20.3 Decisões possíveis em escalação
 
-1. **Re-escopear (reduzir scope)**: mover features marcadas pra WI futuro, manter PWI mínimo.
-2. **Decompor (split WI)**: criar WI-SXX-NNN.a, WI-SXX-NNN.b, fechar este como `DONE` (parcial documentado).
-3. **Cancelar**: WI não é mais viável ou necessário. Marcar `CANCELED` com learnings.
-4. **Estender sprint**: só em casos excepcionais, requer aprovação do Sprint Owner + Aprovador Final.
+1. **Re-escopear (reduzir scope)**: mover features marcadas pra WI futuro (novo WI com ID próprio), manter escopo mínimo viável neste WI (Partial Work Item, PWI).
+2. **Decompor (split WI)**: criar **WIs novos com IDs sequenciais próprios** (ex: `WI-SXX-020` e `WI-SXX-021` se o próximo disponível no sprint é `020`), transferir escopo, e marcar este WI como `doc_status: DEPRECATED` + `supersedes` apontando pros novos WIs (ver §22 Change Log + §0 metadata). **NUNCA** usar sufixos `.a`, `.b`, `.1`, `.2` — viola PRINC-006 (numeração estável, sem reuso, sem renumeração).
+3. **Cancelar**: WI não é mais viável ou necessário. Transicionar `work_status → CANCELED` com learnings registrados em §24 (Post-mortem Hooks).
+4. **Estender sprint**: só em casos excepcionais, requer aprovação do Sprint Owner + Aprovador Final registrada em §20.4.
+
+**Regra de decomposição (REG-WI-SPLIT-001):**
+
+> Quando um WI é decomposto em escalação:
+> - Os novos WIs **DEVEM** ter IDs sequenciais extraídos do próximo livre no namespace do sprint (`WI-SXX-NNN`, onde NNN = max existente + 1).
+> - O WI original **DEVE** transicionar para `doc_status: DEPRECATED` (se nunca foi `FROZEN`) ou `doc_status: SUPERSEDED` (se já foi `FROZEN` e executado em parte).
+> - O campo YAML `superseded_by` do WI original **DEVE** listar os IDs dos sucessores.
+> - Cada novo WI **DEVE** ter `supersedes: [<ID original>]` no metadata.
+> - Trace-checker CI valida integridade da cadeia.
 
 ### 20.4 Log de escalações
 

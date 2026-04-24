@@ -1,7 +1,41 @@
 # Sprint Contract — S-XX: {{Nome do Sprint}}
 
-> **Template Version:** 1.0.0
-> **Status:** PROPOSED | READY | IN_PROGRESS | REVIEWING | COMPLETE | SEALED
+> **Template Version:** 1.1.0
+
+```yaml
+---
+id: S-XX
+type: sprint
+doc_status: DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
+work_status: PROPOSED | READY | IN_PROGRESS | REVIEWING | COMPLETE | SEALED | FAILED
+version: 1.0.0
+created: YYYY-MM-DD
+updated: YYYY-MM-DD
+owner: {{Sprint Owner}}
+final_approver: {{Nome}}
+reviewers:
+  - role: tech_lead
+    name: {{Nome}}
+  - role: product
+    name: {{Nome}}
+  - role: security
+    name: {{Nome}}
+  - role: ops
+    name: {{Nome}}
+  - role: qa
+    name: {{Nome}}
+predecessor_sprints: [S-XX, S-XX]
+successor_sprints: [S-XX]
+related_adrs: [ADR-XXXX]
+supersedes: null
+superseded_by: null
+tags: [{{subsistema}}]
+---
+```
+
+> **doc_status:** DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
+> **work_status:** PROPOSED | READY | IN_PROGRESS | REVIEWING | COMPLETE | SEALED | FAILED
+> **Versão:** 1.0.0
 > **Última atualização:** YYYY-MM-DD
 > **Owner:** {{Nome}}
 > **Aprovador Final:** {{Nome}}
@@ -195,9 +229,9 @@
 
 ## 6. Work Items
 
-> **REGRA INVIOLÁVEL:** Cada *Work Item* (WI) é um **contrato próprio** com rigor SOTA. WI **NÃO DEVE** ser escrito inline no sprint contract exceto em forma-sumário; **DEVE** existir como arquivo separado seguindo o template canônico `_templates/work_item.md` (22 seções obrigatórias incluindo Completeness Criteria, DoD, Invariants, Quality Standards).
+> **REGRA INVIOLÁVEL:** Cada *Work Item* (WI) é um **contrato próprio** com rigor SOTA. WI **NÃO DEVE** ser escrito inline no sprint contract exceto em forma-sumário; **DEVE** existir como arquivo separado seguindo o template canônico `_templates/work_item.md` (33 seções totais §0–§32, incluindo Completeness Criteria, DoD, Invariants, Quality Standards).
 >
-> Sub-tasks seguem o template `_templates/subtask.md` (14 seções), com rigor proporcional ao escopo atômico.
+> Sub-tasks seguem o template `_templates/subtask.md` (19 seções totais §0–§18), com rigor proporcional ao escopo atômico.
 
 ### 6.1 Relação hierárquica
 
@@ -331,7 +365,7 @@ Preencher como índice. Detalhes vivem nos arquivos individuais.
 | ADRs novos escritos para decisões tomadas | ❌ | `specs/03_architecture/adrs/` |
 | CHANGELOG.md do servidor atualizado | ❌ | Entrada nova |
 | API docs publicadas (gRPC reflection + OpenAPI) | ❌ | Endpoint `/docs` ou similar |
-| Glossário atualizado com novos termos | ❌ | `specs/00_framework.md §15` |
+| Glossário atualizado com novos termos | ❌ | `specs/00_framework.md §40` |
 
 ### 7.8 Quality Gates — Compliance
 

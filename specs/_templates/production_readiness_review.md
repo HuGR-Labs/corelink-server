@@ -1,7 +1,45 @@
 # Production Readiness Review (PRR) — {{Feature / WI}}
 
-> **Template Version:** 1.0.0
-> **Status:** NOT_STARTED | IN_REVIEW | CONDITIONALLY_APPROVED | APPROVED | REJECTED
+> **Template Version:** 1.1.0
+
+```yaml
+---
+id: PRR-SXX-NNN
+type: prr
+doc_status: DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
+work_status: NOT_STARTED | IN_REVIEW | CONDITIONALLY_APPROVED | APPROVED | REJECTED
+version: 1.0.0
+created: YYYY-MM-DD
+updated: YYYY-MM-DD
+owner: {{Nome}}
+final_approver: {{Nome}}
+reviewers:
+  - role: sre_lead
+    name: {{Nome}}
+  - role: security_lead
+    name: {{Nome}}
+  - role: privacy_lead
+    name: {{Nome}}
+  - role: product_lead
+    name: {{Nome}}
+  - role: architect
+    name: {{Nome}}
+  - role: finance
+    name: {{Nome}}
+  - role: legal
+    name: {{Nome}}  # se §19 aplicável
+feature_wi: WI-SXX-NNN
+capabilities: [CAP-XXX]
+prod_target_date: YYYY-MM-DD
+supersedes: null
+superseded_by: null
+tags: [{{subsistema}}]
+---
+```
+
+> **doc_status:** DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
+> **work_status:** NOT_STARTED | IN_REVIEW | CONDITIONALLY_APPROVED | APPROVED | REJECTED
+> **Versão:** 1.0.0
 > **Última atualização:** YYYY-MM-DD
 > **Feature / WI:** WI-SXX-NNN / capability CAP-XXX
 > **Produção target date:** YYYY-MM-DD
@@ -10,8 +48,15 @@
 >
 > PRR é **gate separado** do DoD do WI. DoD confirma que WI está implementado corretamente. PRR confirma que WI/feature está **pronta pra enfrentar customers em produção** com a resiliência, observability, reversibilidade e suporte necessários.
 >
-> Nenhuma feature **PODE** ser ativada em produção (GA ou canary > 5%) sem PRR `APPROVED`.
-> `CONDITIONALLY_APPROVED` significa deploy permitido com caveats registrados e prazo de resolução.
+> **Regra de rollout por `work_status` (inviolável):**
+>
+> | `work_status` | Rollout permitido | Observações |
+> |---|---|---|
+> | `NOT_STARTED` / `IN_REVIEW` / `REJECTED` | **Nenhum** | PRR incompleto ou reprovado |
+> | `CONDITIONALLY_APPROVED` | **Somente canary ≤ 10%** | Deploy maior **proibido** até `APPROVED`. Caveats em §20 com **expiration-date obrigatória**. Expiração força re-review (retorna a `IN_REVIEW` automaticamente). |
+> | `APPROVED` | Qualquer fase, incluindo GA (100%) | Sem caveats pendentes. |
+>
+> `CONDITIONALLY_APPROVED` **NÃO É** deploy livre com bilhete. É gate condicional que exige expansão para `APPROVED` antes de qualquer rollout > 10%.
 
 ---
 
@@ -452,20 +497,36 @@ Aplicável se processa PII / dados regulados.
 
 ## 13. Supply Chain & Artifacts
 
-### 13.1 Build & artifacts
+> **Regra inviolável:** target SLSA do framework (§26.1 de `00_framework.md`) é **Level 3** para builds de produção até GA. Este PRR obriga esse target por faixa de rollout. Aceitar Level 2 como permanente viola o framework.
 
-- [ ] Build reprodutível
-- [ ] Binário assinado (`cosign`)
-- [ ] SBOM gerado (SPDX)
-- [ ] Dependencies pinned (`Cargo.lock`)
-- [ ] Provenance attestation (SLSA Level ≥ 2)
+### 13.1 Requisito SLSA por faixa de rollout
 
-### 13.2 Review gates
+| Faixa de rollout | SLSA Level mínimo | Justificativa |
+|---|---|---|
+| Canary ≤ 5% | ≥ 2 | Exposição limitada, ainda em validação |
+| Canary > 5% até ≤ 10% | ≥ 2 | Idem (com CONDITIONALLY_APPROVED apenas) |
+| Expansion 10–49% | **≥ 3** | Exposição material requer provenance completa |
+| Broad rollout ≥ 50% | **3** | Gate para GA |
+| GA (100%) | **3** | Obrigatório (framework §26.1) |
+
+### 13.2 Build & artifacts
 
 | # | Check | Auto | Role | Evidence |
 |---|---|---|---|---|
-| 13.2.1 | SBOM publicado | 🤖 | 🔒 | artifact |
-| 13.2.2 | Binary signature válida | 🤖 | 🔒 | verification log |
+| 13.2.1 | Build reprodutível (hash comparison idêntico em 2 re-builds do mesmo commit) | 🤖 | 🔧 | CI log + hash diff |
+| 13.2.2 | Binário assinado via `cosign` | 🤖 | 🔒 | signature verification log |
+| 13.2.3 | SBOM gerado (formato SPDX 2.3+) | 🤖 | 🔒 | SBOM artifact URL |
+| 13.2.4 | Dependencies pinned (`Cargo.lock` commitado, sem `*` ou ranges em paths críticos) | 🤖 | 🔒 | `Cargo.lock` diff |
+| 13.2.5 | Provenance attestation conforme faixa §13.1 (SLSA Level 2 ou 3) | 🤖 | 🔒 | attestation artifact |
+
+### 13.3 Review gates
+
+| # | Check | Auto | Role | Evidence |
+|---|---|---|---|---|
+| 13.3.1 | SBOM publicado e acessível | 🤖 | 🔒 | URL |
+| 13.3.2 | Binary signature válida (re-verificada em pipeline) | 🤖 | 🔒 | verification log |
+| 13.3.3 | Ausência de dependências com vuln `High`/`Critical` sem waiver | 🤖 | 🔒 | `cargo audit` + `cargo deny` clean |
+| 13.3.4 | Se faixa ≥ 50%: SLSA Level 3 atestado | 🤖👤 | 🔒 | attestation + human audit |
 
 ---
 
@@ -615,11 +676,26 @@ Aplicável se muda contratos, DPA, ou introduz sub-processor.
 
 ## 20. Open Issues & Caveats
 
-> Issues conhecidas não-bloqueantes que viram deploy com `CONDITIONALLY_APPROVED`.
+> Issues conhecidas não-bloqueantes que justificam `CONDITIONALLY_APPROVED` em vez de `APPROVED`. **Cada caveat DEVE ter `expires_at`** — sem exceção. Ao expirar, PRR retorna automaticamente para `IN_REVIEW`.
 
-| # | Issue | Severity | Prazo pra resolver | Risk aceito? |
+| # | Issue | Severity | Owner | Compensating control | Expires at | Automated re-review trigger | Risk aceito? |
+|---|---|---|---|---|---|---|---|
+| — | — | LOW/MED/HIGH | Nome | Qual proteção temporária existe | YYYY-MM-DD | Event/alert que força re-review antes de expires_at | sim/não |
+
+### 20.1 Enforcement automático de expiração
+
+- [ ] Cada caveat tem entrada no sistema de calendário/tracking (ex: `tickets/prr-caveats/{{PRR-ID}}-{{#}}.yaml`).
+- [ ] Job periódico (diário) verifica `expires_at`; se expirado e caveat não resolvido:
+  - `work_status` do PRR vira `IN_REVIEW` automaticamente.
+  - Rollout > 10% é bloqueado automaticamente via feature flag policy.
+  - On-call de produto recebe notification.
+- [ ] Caveats resolvidos movem para §20.2 (resolução histórica) e não contam para validação.
+
+### 20.2 Resolução histórica de caveats
+
+| # | Issue | Resolvido em | Como | Assinado por |
 |---|---|---|---|---|
-| — | — | — | — | sim/não |
+| — | — | YYYY-MM-DD | — | — |
 
 ---
 
@@ -639,8 +715,8 @@ Aplicável se muda contratos, DPA, ou introduz sub-processor.
 
 ### Decisão final
 
-- [ ] **APPROVED** — pode promover a produção conforme plan §3
-- [ ] **CONDITIONALLY_APPROVED** — pode promover com caveats em §20; prazo de resolução definido
+- [ ] **APPROVED** — pode promover a produção conforme plan §3 **em qualquer fase, incluindo GA (100%)**
+- [ ] **CONDITIONALLY_APPROVED** — rollout **permitido APENAS até canary ≤ 10%**. Caveats em §20 com `expires_at` obrigatória. Promoção para fase > 10% **proibida** até PRR transicionar para `APPROVED`.
 - [ ] **REJECTED** — não pode promover; razões registradas abaixo
 
 ### Razões de rejeição (se REJECTED)

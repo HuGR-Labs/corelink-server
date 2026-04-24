@@ -1,9 +1,34 @@
 # Sub-task — ST-NNN: {{Título}}
 
-> **Template Version:** 2.0.0
-> **Status:** TODO | DOING | REVIEW | BLOCKED | DONE | CANCELED
+> **Template Version:** 2.1.0
+
+```yaml
+---
+id: ST-NNN
+type: sub_task
+doc_status: DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
+work_status: TODO | DOING | REVIEW | BLOCKED | DONE | CANCELED
+version: 1.0.0
+created: YYYY-MM-DD
+updated: YYYY-MM-DD
+owner: {{WI Owner}}
+assignee: {{Nome}}
+final_approver: {{WI Owner}}
+reviewers:
+  - {{Nome}}
+parent: WI-SXX-NNN
+supersedes: null
+superseded_by: null
+tags: [{{área}}]
+---
+```
+
+> **doc_status:** DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
+> **work_status:** TODO | DOING | REVIEW | BLOCKED | DONE | CANCELED
+> **Versão:** 1.0.0
 > **Última atualização:** YYYY-MM-DD
 > **Assignee:** {{Nome}}
+> **WI pai:** WI-SXX-NNN
 
 > **CONTRATO INVIOLÁVEL:**
 >

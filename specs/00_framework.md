@@ -1,7 +1,24 @@
 # 00 — Specification Framework
 
-> **Status:** DRAFT
-> **Versão:** 0.2.0
+```yaml
+---
+id: FRAMEWORK-00
+type: framework
+doc_status: DRAFT
+version: 0.3.0
+created: 2026-04-23
+updated: 2026-04-24
+owner: Gustavo Schneiter
+final_approver: Gustavo Schneiter
+reviewers: []
+supersedes: null
+superseded_by: null
+tags: [meta, process, framework]
+---
+```
+
+> **doc_status:** DRAFT
+> **Versão:** 0.3.0
 > **Última atualização:** 2026-04-24
 > **Owner:** Gustavo Schneiter
 > **Aprovador Final:** Gustavo Schneiter
@@ -27,7 +44,7 @@
 4. [Hierarquia dos 5 Níveis](#4-hierarquia-dos-5-níveis)
 5. [Rastreabilidade Bidirecional](#5-rastreabilidade-bidirecional)
 6. [Numeração e Identificadores Estáveis](#6-numeração-e-identificadores-estáveis)
-7. [Frozen Flag System — Ciclo de Vida](#7-frozen-flag-system--ciclo-de-vida)
+7. [Ciclo de Vida — `doc_status` × `work_status`](#7-ciclo-de-vida--doc_status--work_status)
 8. [Relações Entre Artefatos](#8-relações-entre-artefatos)
 
 ### Parte III — Linguagem e Vocabulário
@@ -579,7 +596,7 @@ Nível 5 é **transversal**: informa Níveis 2, 3, 4, mas é escrito por último
 
 **Critérios de *freeze* (por sprint):**
 
-Ver template em `_templates/sprint_contract.md`. Resumo: 22 seções obrigatórias, DoR/DoD binários, invariants operacionais, traceability matrix completa.
+Ver template em `_templates/sprint_contract.md`. Resumo: 23 seções totais (§0–§22), DoR/DoD binários, invariants operacionais, traceability matrix completa.
 
 ### 4.6 Nível 5 — Framework de Qualidade
 
@@ -685,11 +702,20 @@ Quando múltiplos autores podem reservar ID simultaneamente:
 
 ---
 
-## 7. Frozen Flag System — Ciclo de Vida
+## 7. Ciclo de Vida — Separação entre `doc_status` e `work_status`
 
-### 7.1 Estados válidos
+> **PRINCÍPIO FUNDACIONAL:** Todo artefato tem **dois eixos de estado independentes**:
+>
+> 1. **`doc_status`** — estado do *documento em si* (está escrito? revisado? aprovado? imutável?). Aplica-se a **todos** os artefatos (framework, ADR, PDR, ODR, Sprint Contract, WI, ST, PRR, specs de Níveis 1–5, runbooks, etc.).
+> 2. **`work_status`** — estado da *execução do trabalho* descrito no documento (pendente? em andamento? bloqueado? concluído?). Aplica-se **apenas aos artefatos de trabalho** (Sprint, WI, ST, PRR).
+>
+> Essa separação existe porque um documento de sprint pode estar `doc_status=FROZEN` (contrato assinado, imutável) enquanto o `work_status=IN_PROGRESS` (execução em andamento). Misturar os dois eixos — como a v0.2 fazia — gera contradições irresolvíveis ("DONE equivale a FROZEN?").
 
-| Estado | Semântica | Pode ser referenciado por downstream? | Imutável? |
+### 7.1 Ciclo de vida documental (`doc_status`)
+
+Aplica-se a **todo e qualquer** documento do sistema de spec. Este é o eixo canônico.
+
+| `doc_status` | Semântica | Pode ser referenciado por downstream? | Imutável? |
 |---|---|---|---|
 | `DRAFT` | Em escrita ativa | ❌ | ❌ |
 | `REVIEW` | Submetido a revisão formal | ❌ | ❌ (só autor + revisores mudam) |
@@ -698,7 +724,84 @@ Quando múltiplos autores podem reservar ID simultaneamente:
 | `SUPERSEDED` | Substituído por versão nova | ❌ (referencie o *superseder*) | ✅ (histórico) |
 | `DEPRECATED` | Obsoleto, não substituído | ⚠️ com aviso | ✅ |
 
-### 7.2 Transições
+### 7.2 Ciclo de vida de trabalho (`work_status`)
+
+Aplica-se **apenas aos artefatos de trabalho**. Cada tipo tem seu próprio conjunto de estados, mas todos compartilham estrutura: iniciam em algum estado "pré-execução", transicionam para "em execução", terminam em "concluído" ou "abortado".
+
+#### 7.2.1 Sprint Contract (`work_status`)
+
+| Estado | Semântica |
+|---|---|
+| `PROPOSED` | Sprint contract criado mas DoR não verificado |
+| `READY` | DoR 100% ✅, pronto para execução |
+| `IN_PROGRESS` | Execução iniciada |
+| `REVIEWING` | DoD em verificação (dry run) |
+| `COMPLETE` | DoD 100% ✅ |
+| `SEALED` | Sign-off completo + retrospectiva feita; sprint imutável |
+| `FAILED` | Não cumpriu DoD no prazo + não foi estendido; aprendizado registrado |
+
+#### 7.2.2 Work Item (`work_status`)
+
+| Estado | Semântica |
+|---|---|
+| `PROPOSED` | WI criado dentro de um sprint proposto |
+| `READY` | DoR do WI ✅; pode ser atribuído |
+| `DOING` | Assignee executando |
+| `REVIEWING` | PR aberto em review |
+| `BLOCKED` | Dependência upstream ou bloqueio externo impedindo progresso |
+| `DONE` | DoD do WI 100% ✅, PR mergeado |
+| `CANCELED` | WI descartado (obsoleto ou desnecessário) |
+| `ROLLED_BACK` | WI foi `DONE` mas precisou ser revertido; aprendizado em post-mortem |
+
+#### 7.2.3 Sub-task (`work_status`)
+
+| Estado | Semântica |
+|---|---|
+| `TODO` | Pendente |
+| `DOING` | Em execução |
+| `REVIEW` | PR em revisão |
+| `BLOCKED` | Dependência impedindo progresso |
+| `DONE` | Completeness criteria 100% ✅ + PR mergeado no branch do WI pai |
+| `CANCELED` | ST descartada |
+
+#### 7.2.4 Production Readiness Review (`work_status`)
+
+| Estado | Semântica |
+|---|---|
+| `NOT_STARTED` | PRR documento criado mas nenhum review realizado |
+| `IN_REVIEW` | Reviewers avaliando gates |
+| `CONDITIONALLY_APPROVED` | Aprovado com caveats (ver §8 de PRR). Deploy permitido apenas em canary ≤ 10% até resolução dos caveats com expiration-date obrigatória |
+| `APPROVED` | Aprovado pleno. Pode promover até GA (100%) |
+| `REJECTED` | Reprovado. Não pode promover em nenhuma porcentagem |
+
+### 7.3 Mapeamento entre tipos de artefato e eixos de estado
+
+| Tipo de artefato | `doc_status`? | `work_status`? | Notas |
+|---|---|---|---|
+| Framework (este doc) | ✅ | ❌ | Documento normativo, sem "trabalho executável" |
+| Nível 1 — Visão (PR/FAQ, Personas, JTBD, Metrics) | ✅ | ❌ | Documentos descritivos |
+| Nível 2 — Capabilities, NFRs, Invariants, Constraints, User Journeys | ✅ | ❌ | Documentos descritivos |
+| Nível 3 — ADRs, PDRs, ODRs, C4, Data Model, Protocols, Failure Modes, Security/Privacy Models, SLO Catalog | ✅ | ❌ | Documentos decisórios/descritivos. ADR/PDR/ODR usam `doc_status=FROZEN` em vez do termo histórico "ACCEPTED" (ver §7.4 abaixo) |
+| Nível 4 — Sprint Contract | ✅ | ✅ | Duplo eixo obrigatório |
+| Nível 4 — Work Item | ✅ | ✅ | Duplo eixo obrigatório |
+| Nível 4 — Sub-task | ✅ | ✅ | Duplo eixo obrigatório |
+| Nível 4 — Production Readiness Review | ✅ | ✅ | Duplo eixo obrigatório |
+| Nível 5 — Quality Framework (DoR, DoD, Quality Gates, Test Strategy, Fitness Functions, Runbooks) | ✅ | ❌ | Documentos normativos |
+
+### 7.4 ADR / PDR / ODR — reconciliação com terminologia histórica
+
+A literatura clássica de ADRs (Michael Nygard) usa `Status: PROPOSED → ACCEPTED → DEPRECATED/SUPERSEDED`. Esses termos mapeiam 1:1 para o nosso `doc_status` canônico:
+
+| Termo histórico ADR | `doc_status` canônico CoreLink |
+|---|---|
+| `PROPOSED` | `DRAFT` ou `REVIEW` (conforme o ADR esteja em escrita ou submetido a revisão) |
+| `ACCEPTED` | `FROZEN` |
+| `DEPRECATED` | `DEPRECATED` |
+| `SUPERSEDED` | `SUPERSEDED` |
+
+**Regra:** ADRs **DEVEM** usar `doc_status` canônico no cabeçalho. O termo "ACCEPTED" **PODE** aparecer em prosa ou change log histórico, desde que o cabeçalho mostre `doc_status: FROZEN`. Templates atuais devem ser atualizados.
+
+### 7.5 Transições de `doc_status`
 
 ```
      ┌──────────────────────────────┐
@@ -712,7 +815,24 @@ DRAFT ──► REVIEW ──► FROZEN ──► THAWED ──► REVIEW ──
               └──► DRAFT (se rejeitado)
 ```
 
-### 7.3 Autorização de transições
+### 7.6 Transições de `work_status` — regra geral
+
+`work_status` é monotonicamente progressivo com possibilidade de regressão controlada:
+
+- **Sprint:** `PROPOSED → READY → IN_PROGRESS → REVIEWING → COMPLETE → SEALED`. Pode ir para `FAILED` de qualquer estado ativo.
+- **WI:** `PROPOSED → READY → DOING → REVIEWING → DONE`. Pode entrar/sair `BLOCKED` a qualquer momento em `DOING/REVIEWING`. Pode ir `CANCELED` de qualquer estado não-final. Pode ir `ROLLED_BACK` a partir de `DONE`.
+- **ST:** `TODO → DOING → REVIEW → DONE`. Pode entrar/sair `BLOCKED`. Pode ir `CANCELED` de qualquer estado não-final.
+- **PRR:** `NOT_STARTED → IN_REVIEW → (CONDITIONALLY_APPROVED | APPROVED | REJECTED)`. `CONDITIONALLY_APPROVED` expira numa data definida e vira `IN_REVIEW` automaticamente se caveats não resolvidos.
+
+### 7.7 Invariante cruzada: `doc_status` × `work_status`
+
+> **INV-LIFECYCLE-001:** Um artefato de trabalho **NÃO PODE** ter `work_status` ∈ {`IN_PROGRESS`, `DOING`, `REVIEWING`, `DONE`, `COMPLETE`, `SEALED`, `APPROVED`, `CONDITIONALLY_APPROVED`} enquanto seu `doc_status` ≠ `FROZEN`.
+>
+> Justificativa: execução só começa sobre contrato imutável. Contrato ainda em revisão (`doc_status=DRAFT|REVIEW`) não é contrato, é rascunho.
+>
+> Verificação: CI `trace-check` valida a combinação em todo PR que altera estado.
+
+### 7.8 Autorização de transições (`doc_status`)
 
 | Transição | Autorizado |
 |---|---|
@@ -724,39 +844,104 @@ DRAFT ──► REVIEW ──► FROZEN ──► THAWED ──► REVIEW ──
 | `FROZEN → SUPERSEDED` | Aprovador Final (ao aprovar *superseder*) |
 | `FROZEN → DEPRECATED` | Aprovador Final, após ADR/PDR justificando |
 
-### 7.4 Obrigações de *thaw*
+### 7.9 Autorização de transições (`work_status`)
 
-Ao executar `FROZEN → THAWED`, **obrigatoriamente**:
+| Transição | Autorizado |
+|---|---|
+| `PROPOSED → READY` (Sprint/WI) | Sprint Owner + Tech Lead, após DoR 100% ✅ |
+| `READY → IN_PROGRESS/DOING` | Sprint Owner (Sprint) ou WI Owner (WI) |
+| `* → BLOCKED` | Qualquer assignee, com razão registrada |
+| `BLOCKED → (estado anterior)` | Assignee, após bloqueio resolvido |
+| `DOING/REVIEWING → DONE` (WI) | WI Owner, após DoD 100% ✅ + sign-off |
+| `COMPLETE → SEALED` (Sprint) | Aprovador Final, após retrospectiva |
+| `* → FAILED` (Sprint) | Aprovador Final, com learnings registrados |
+| `* → CANCELED` | Sprint Owner / WI Owner, com justificativa |
+| `DONE → ROLLED_BACK` (WI) | Aprovador Final, após post-mortem de incident vinculado |
+
+### 7.10 Obrigações de *thaw* (`FROZEN → THAWED`)
+
+Ao executar `doc_status: FROZEN → THAWED`, **obrigatoriamente**:
 
 1. **Criar issue/ticket** documentando: razão, escopo de mudança, *rollback plan* se mudança quebrar algo.
 2. **Listar downstream dependentes** (ferramenta: *trace checker*).
-3. **Marcar todos downstream *frozen*** como `AUDIT_PENDING`.
+3. **Marcar todos downstream `doc_status: FROZEN`** como `AUDIT_PENDING` (metadata, não `doc_status`).
 4. **Re-validar consistência** antes de re-*freeze*.
-5. **Comunicar stakeholders impactados** via canal definido (ex: issue + notification).
+5. **Comunicar stakeholders impactados** via canal definido.
 6. **Incrementar versão** apropriadamente (major se semântica mudou).
+7. **Pausar sprints em `work_status: IN_PROGRESS`** cujos WIs dependam do documento sob *thaw* (enforcement de INV-LIFECYCLE-001).
 
-### 7.5 Marcação obrigatória em documento
+### 7.11 Marcação obrigatória em documento
 
-Todo documento **DEVE** começar com bloco:
+Todo documento **DEVE** começar com bloco YAML front matter + bloco humano-legível:
+
+#### Para documentos **sem** trabalho executável (framework, níveis 1/2/3/5):
+
+```yaml
+---
+id: <ID canônico>
+type: <framework|adr|pdr|odr|capability|nfr|invariant|personas|jtbd|prfaq|...>
+doc_status: DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
+version: X.Y.Z
+created: YYYY-MM-DD
+updated: YYYY-MM-DD
+owner: <nome>
+final_approver: <nome>
+reviewers: [<nome>, <nome>]
+supersedes: <ID> | null
+superseded_by: <ID> | null
+tags: [<tag>, <tag>]
+---
+```
+
+Bloco humano-legível (abaixo do YAML):
 
 ```markdown
-> **Status:** DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
+> **doc_status:** DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
 > **Versão:** X.Y.Z
 > **Última atualização:** YYYY-MM-DD
-> **Owner:** Nome
-> **Aprovador Final:** Nome
-> **Revisores:** Nome1, Nome2
+> **Owner:** <nome>
+> **Aprovador Final:** <nome>
+> **Revisores:** <nome1>, <nome2>
 > **Supersedes:** <ID> (se aplicável)
 > **Superseded By:** <ID> (se aplicável)
 ```
 
-### 7.6 SLA de auditoria pós-*thaw*
+#### Para documentos **com** trabalho executável (Nível 4: sprint, WI, ST, PRR):
+
+```yaml
+---
+id: <ID canônico>
+type: <sprint|work_item|sub_task|prr>
+doc_status: DRAFT | REVIEW | FROZEN | THAWED | SUPERSEDED | DEPRECATED
+work_status: <estado específico do tipo, ver §7.2>
+version: X.Y.Z
+created: YYYY-MM-DD
+updated: YYYY-MM-DD
+owner: <nome>
+assignee: <nome>              # apenas WI/ST
+final_approver: <nome>
+reviewers: [<nome>, <nome>]
+parent: <ID do parent>        # sprint para WI, WI para ST
+supersedes: <ID> | null
+superseded_by: <ID> | null
+tags: [<tag>, <tag>]
+---
+```
+
+Bloco humano-legível adiciona:
+
+```markdown
+> **work_status:** <estado>
+> **Sprint/WI pai:** <ID>
+```
+
+### 7.12 SLA de auditoria pós-*thaw*
 
 | Tipo de mudança | SLA para re-*freeze* downstream auditado |
 |---|---|
 | Patch (tipográfico) | ≤ 24h |
 | Minor (adição não-breaking) | ≤ 7 dias |
-| Major (breaking, semântica muda) | ≤ 30 dias; sprints dependentes pausam até conclusão |
+| Major (breaking, semântica muda) | ≤ 30 dias; sprints dependentes pausam até conclusão (ver §7.10.7) |
 
 ---
 
@@ -1700,15 +1885,15 @@ And {resultado adicional}
 
 ### 34.1 Sprint Contract
 
-Ver `_templates/sprint_contract.md` — template canônico com 22 seções obrigatórias governando um sprint inteiro. §6 do sprint contract **NÃO** inlina WIs; apenas indexa e referencia os arquivos individuais de WI.
+Ver `_templates/sprint_contract.md` — template canônico com **23 seções totais (§0–§22)** governando um sprint inteiro. §6 do sprint contract **NÃO** inlina WIs; apenas indexa e referencia os arquivos individuais de WI.
 
 ### 34.2 ADR / PDR / ODR
 
-Ver `_templates/adr.md` — template com 15 seções, aplicável aos 3 tipos com adaptações mínimas.
+Ver `_templates/adr.md` — template com **16 seções totais (§0–§15)**, aplicável aos 3 tipos (ADR / PDR / ODR) com adaptações mínimas.
 
 ### 34.3 Work Item (template v2.0)
 
-Ver `_templates/work_item.md` — template canônico com **32 seções obrigatórias** governando cada WI individualmente, incluindo evidence-driven gates (PRINC-031), role + automation tagging (PRINC-032), PRR hook (PRINC-033) e escalation protocol (PRINC-034). Estrutura hierárquica:
+Ver `_templates/work_item.md` — template canônico com **33 seções totais (§0–§32)** governando cada WI individualmente, incluindo evidence-driven gates (PRINC-031), role + automation tagging (PRINC-032), PRR hook (PRINC-033) e escalation protocol (PRINC-034). Estrutura hierárquica:
 
 ```
 Sprint (S-XX)
@@ -1757,7 +1942,7 @@ Seções principais (32 totais):
 
 ### 34.4 Sub-task (template v2.0)
 
-Ver `_templates/subtask.md` — template canônico com **18 seções obrigatórias** para unidades atômicas de trabalho, com mesmo rigor evidence-driven + role/automation tagging do WI, proporcional ao escopo atômico.
+Ver `_templates/subtask.md` — template canônico com **19 seções totais (§0–§18)** para unidades atômicas de trabalho, com mesmo rigor evidence-driven + role/automation tagging do WI, proporcional ao escopo atômico.
 
 Princípio de decomposição:
 
@@ -1791,7 +1976,7 @@ Seções da sub-task (18 totais):
 
 Ver `_templates/production_readiness_review.md` — template canônico para o gate **"pronto pra produção"** (PRINC-033), separado do DoD de WI.
 
-Cobre 22 seções: SLO/SLI/Error Budget, Capacity Planning, Load Testing, Chaos Engineering, Disaster Recovery, Observability, Runbooks, Security, Privacy, Supply Chain, Rollback, Deployment Strategy, Customer Support, Communication Plan, Cost/Finance, Legal/Contract.
+Cobre **23 seções totais (§0–§22)**: SLO/SLI/Error Budget, Capacity Planning, Load Testing, Chaos Engineering, Disaster Recovery, Observability, Runbooks, Security, Privacy, Supply Chain, Rollback, Deployment Strategy, Customer Support, Communication Plan, Cost/Finance, Legal/Contract.
 
 Status possíveis: `NOT_STARTED | IN_REVIEW | CONDITIONALLY_APPROVED | APPROVED | REJECTED`.
 
@@ -1799,8 +1984,8 @@ Status possíveis: `NOT_STARTED | IN_REVIEW | CONDITIONALLY_APPROVED | APPROVED 
 
 | Regra | Enunciado |
 |---|---|
-| **REG-DECOMP-001** | Todo WI **DEVE** usar template `work_item.md` v2.0 (32 seções preenchidas) |
-| **REG-DECOMP-002** | Toda ST **DEVE** usar template `subtask.md` v2.0 (18 seções preenchidas) |
+| **REG-DECOMP-001** | Todo WI **DEVE** usar template `work_item.md` v2.0 (33 seções totais §0–§32 preenchidas) |
+| **REG-DECOMP-002** | Toda ST **DEVE** usar template `subtask.md` v2.0 (19 seções totais §0–§18 preenchidas) |
 | **REG-DECOMP-002b** | Toda feature com impacto em produção **DEVE** passar por PRR (`production_readiness_review.md`) antes de GA |
 | **REG-DECOMP-002c** | Toda caixa binária em WI/ST/PRR **DEVE** ter evidence artifact (PRINC-031) |
 | **REG-DECOMP-002d** | Toda caixa em WI/ST/PRR **DEVE** ter role + automation tag (PRINC-032) |
@@ -2336,6 +2521,7 @@ Em casos em que regra deste framework impede resolução de problema real:
 |---|---|---|---|
 | 0.1.0 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | Versão inicial (15 princípios, estrutura básica) |
 | 0.2.0 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | **Revisão SOTA**: expandiu 15→30 princípios; adicionou Partes III (linguagem), IV (rigor formal), V (cross-cutting concerns), VI (engenharia e entrega); 24 seções novas; formalizou TLA+, ISO/IEC 25010, SRE, STRIDE, LINDDUN, SLSA, Cavoukian, DDD Ubiquitous Language, Feature Lifecycle, Progressive Delivery, Resilience Patterns, Fitness Functions, Technical Debt, AI Governance; 11 anti-padrões adicionais (9→20) |
+| 0.3.0 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | **Lote 1 — audit remediation (GPT)**: (a) separou formalmente `doc_status` de `work_status` (§7 reescrita: §7.1 doc_status, §7.2 work_status por tipo, §7.3 mapping matrix, §7.4 ADR terminology reconciliation, §7.7 INV-LIFECYCLE-001, §7.11 YAML front matter obrigatório). (b) Corrigiu drift de section counts (WI 33 seções §0–§32, ST 19 §0–§18, Sprint 23 §0–§22, PRR 23 §0–§22, ADR 16 §0–§15). (c) Corrigiu refs quebradas ao glossário (§15 → §40). (d) Corrigiu WI split ID violation — REG-WI-SPLIT-001 força IDs sequenciais novos, proíbe sufixos `.a/.b`. (e) Alinhou SLSA gate: framework L3 até GA, PRR agora exige L2 para canary ≤ 10%, L3 para rollout ≥ 50%. (f) Sprint contract: adicionou `FAILED` state ao header. (g) Todos templates (sprint, WI, ST, ADR, PRR) agora têm YAML front matter + human-readable block com `doc_status` + `work_status` separados. (h) PRR gate desambiguado: `CONDITIONALLY_APPROVED` permite apenas canary ≤ 10%; caveats obrigam `expires_at`; expiração força auto-revert para `IN_REVIEW`. |
 
 ---
 
