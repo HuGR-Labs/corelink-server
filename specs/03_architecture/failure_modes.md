@@ -142,7 +142,7 @@ Cada FM tem scores 1–5 em:
 | FM-152 | Neon outage                                              | 4 | 2 | 1 | 8   | P2      | Read-only mode + alert         |
 | FM-153 | Grafana Cloud outage                                     | 1 | 2 | 1 | 2   | P2      | Metrics em R2 Logpush como fallback |
 | FM-154 | Dep crate yank mid-deploy                                | 3 | 2 | 3 | 18  | P2      | `Cargo.lock` pinned + CI check |
-| FM-155 | Dep CVE HIGH descoberto                                   | 3 | 3 | 2 | 18  | P2      | PAT-PATCH-SLA + cargo-audit CI |
+| FM-155 | Dep CVE HIGH descoberto                                   | 3 | 3 | 2 | 18  | P2      | PAT-PATCH-SLA-001 + cargo-audit CI |
 | FM-156 | Dep com maintainer malicioso (supply chain TA-5)        | 5 | 1 | 5 | 25  | P2 (S=5 → P1) | SLSA L3 + review + signed commits |
 
 ### 3.5 Operational
@@ -150,11 +150,11 @@ Cada FM tem scores 1–5 em:
 | ID     | Descrição                                                | S | O | D | RPN | Classe | CTRLs / Patterns              |
 |--------|----------------------------------------------------------|---|---|---|-----|---------|--------------------------------|
 | FM-200 | Deploy introduz regressão não testada                   | 4 | 3 | 2 | 24  | P2      | PAT-PROGRESSIVE-ROLLOUT-001    |
-| FM-201 | Config change causa rate-limit drop                     | 3 | 3 | 2 | 18  | P2      | PAT-DUAL-APPROVAL + auto-rollback |
-| FM-202 | Runbook desatualizado em incident                        | 3 | 4 | 3 | 36  | P1       | PAT-RUNBOOK-DRILL (mensal)    |
+| FM-201 | Config change causa rate-limit drop                     | 3 | 3 | 2 | 18  | P2      | PAT-DUAL-APPROVAL-001 + auto-rollback |
+| FM-202 | Runbook desatualizado em incident                        | 3 | 4 | 3 | 36  | P1       | PAT-RUNBOOK-DRILL-001 (mensal)    |
 | FM-203 | Oncall sobrecarregado (fadiga → missed alert)            | 4 | 2 | 3 | 24  | P2      | Pager discipline (§9 obs)     |
-| FM-204 | Secret rotation quebra serviço                            | 4 | 2 | 2 | 16  | P2      | PAT-ROLL-FORWARD (overlap period) |
-| FM-205 | Manual intervention apaga dado (admin mistake)           | 5 | 2 | 3 | 30  | P1       | PAT-DUAL-APPROVAL + soft-delete |
+| FM-204 | Secret rotation quebra serviço                            | 4 | 2 | 2 | 16  | P2      | PAT-ROLL-FORWARD-001 (overlap period) |
+| FM-205 | Manual intervention apaga dado (admin mistake)           | 5 | 2 | 3 | 30  | P1       | PAT-DUAL-APPROVAL-001 + soft-delete |
 | FM-206 | Terraform drift (estado real ≠ definido)                  | 3 | 3 | 4 | 36  | P1       | PAT-DRIFT-DETECTION-001       |
 
 ### 3.6 Adversarial

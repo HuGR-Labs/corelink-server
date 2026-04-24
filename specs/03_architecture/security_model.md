@@ -252,7 +252,7 @@ Cada CTRL **DEVE** ter: descrição, implementação, owner (time), evidência o
 
 | ID           | Controle                            | Implementação                                              | Evidence     | Revalidação |
 |--------------|-------------------------------------|------------------------------------------------------------|--------------|-------------|
-| CTRL-ISO-001 | HMAC tenant prefix                  | Ver CTRL-AUTH-004                                          | — | — |
+| CTRL-ISO-001 | HMAC tenant prefix                  | Ver CTRL-AUTH-004; lib `tenant_path::derive_prefix(tenant_id)` única; property test garante 2 tenants distintos → 2 prefixes distintos | EVT-002 (property test cross-tenant) + EVT-022 (TLA+ INV-TENANT-ISOLATION) | Semestral (alinhado com TDK rotation, ver `key_management.md §3`) |
 | CTRL-ISO-002 | AuthZ check on storage call         | Worker valida tenant_id == prefix HMAC(tenant_key, caller) | EVT-022 | Contínuo |
 | CTRL-ISO-003 | R2 bucket policy enforcement        | IAM policy + pre-signed URL com path fixo                  | EVT-005 | Trimestral |
 | CTRL-ISO-004 | Constant-time 404 vs 403            | Middleware uniformiza latência e body                      | EVT-025 | Anual |
@@ -317,6 +317,38 @@ Cada CTRL **DEVE** ter: descrição, implementação, owner (time), evidência o
 | ID           | Controle                            | Implementação                                              | Evidence     | Revalidação |
 |--------------|-------------------------------------|------------------------------------------------------------|--------------|-------------|
 | CTRL-PRIV-001 | Log redaction + allowlist schema  | Lib `log-schema`; deny unknown fields; structured JSON     | EVT-005 | Contínuo |
+
+### 6.11 Credentials (lifecycle de tokens & secrets — ver `auth_model.md` + `key_management.md`)
+
+Adicionado em Lote 5.4 endereçando audit S-10. Mantém referências cruzadas com `auth_model.md §5` e `key_management.md §3`.
+
+| ID           | Controle                            | Implementação                                              | Evidence     | Revalidação |
+|--------------|-------------------------------------|------------------------------------------------------------|--------------|-------------|
+| CTRL-CRED-001 | No secret in logs / dump | Lint pre-commit detecta padrões (PAT prefix, JWT, AWS keys); Worker nunca emite headers `Authorization`; crash dumps redatados via Sentry sanitizer | EVT-005 (SAST regex) + EVT-002 | Contínuo |
+| CTRL-CRED-002 | PAT hashed at rest | Apenas hash (Argon2id-friendly KDF) é persistido; full token só existe em emissão (via UI) e no client | EVT-002 + EVT-022 (TLA+ secret-not-stored) | Contínuo |
+| CTRL-CRED-003 | Token rotation enforcement | Tokens admin: 90d; CI tokens: 1y; user PATs: 1y default; expiry hard | EVT-001 (rotation drill log) + EVT-035 | Trimestral |
+| CTRL-CRED-004 | Revocation propaga em ≤ 60s | KV `pat_invalid:<hash>` set imediato; D1 update; cache invalidation broadcast via DO | EVT-024 (load test rev), EVT-002 | Trimestral |
+
+### 6.12 Network Perimeter
+
+Adicionado em Lote 5.4 endereçando audit S-10. Cobre `CTRL-NET-001..004` que estavam dangling.
+
+| ID           | Controle                            | Implementação                                              | Evidence     | Revalidação |
+|--------------|-------------------------------------|------------------------------------------------------------|--------------|-------------|
+| CTRL-NET-001 | HSTS preload | Domain `cache.corelink.dev` em [hstspreload.org](https://hstspreload.org); header `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload` | EVT-037 (SSL Labs A+) | Trimestral |
+| CTRL-NET-002 | CAA record pinned | DNS CAA record permite apenas Let's Encrypt + Cloudflare-managed para emitir cert; bloqueia rogue CA | EVT-001 (DNS check) | Trimestral |
+| CTRL-NET-003 | CF service binding auth | Worker → Container via service binding (não público); binding nomes em manifest; CF account-level isolation | EVT-028 (config snapshot) | Trimestral |
+| CTRL-NET-004 | Error envelope sanitizer | Middleware converte panics/upstream errors em envelope `{error:{code,request_id}}` sem leak de stack trace ou DB internals | EVT-002 + EVT-005 | Contínuo |
+
+### 6.13 Data Integrity (anti-tamper de metadata + GC)
+
+Adicionado em Lote 5.4 endereçando audit S-10 (CTRL-META-001 + CTRL-GC-001 dangling).
+
+| ID           | Controle                            | Implementação                                              | Evidence     | Revalidação |
+|--------------|-------------------------------------|------------------------------------------------------------|--------------|-------------|
+| CTRL-META-001 | Metadata row checksum | Cada row em `blob_meta` carrega `sha256(canonical_form(row))` em coluna; trigger D1 verifica antes de UPDATE; drift = alerta + freeze | EVT-002 + EVT-022 (TLA+ INV-GC-003) | Trimestral |
+| CTRL-GC-001 | GC grace period 72h + soft-delete | Sweep não deleta blob com `last_referenced_at < now - 72h` E `mark_started_at`-aware (ver `remote_cache_product_profile.md §9.3`) | EVT-022 (TLA+ INV-GC-001) + EVT-002 + EVT-023 (chaos GC race) | Por mudança em algoritmo GC |
+| CTRL-GC-002 | Reconcile diário refcount | Job `gc-reconcile-worker` recomputa refcount de eventos vs `blob_meta.refcount`; alert se drift > 0.1% | EVT-013 (drift dashboard) + EVT-001 | Diário |
 
 ---
 

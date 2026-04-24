@@ -200,7 +200,7 @@ Budgets são independentes por tier. Métricas agregadas em `corelink_slo_*{tier
 |--------------------|--------------------------------------------------------------|
 | SLI                | `corelink_isolation_assertion_total{outcome="pass"} / total` |
 | Target             | 100.0% (sem budget)                                          |
-| Fonte              | Assertions de `tenant_id` em toda storage call (PAT-AUTHZ-002) |
+| Fonte              | Assertions de `tenant_id` em toda storage call (PAT-AUTHZ-001 em `resilience_patterns.md §3.9`; CTRL-AUTHZ-002 em `security_model.md §6.1`) |
 | Notas              | Qualquer violação → incident SEV-1 + TLA+ re-check            |
 
 ### 4.11 Freshness — Billing events

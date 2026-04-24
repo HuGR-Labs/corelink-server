@@ -272,6 +272,129 @@ tags: ["architecture", "reliability", "patterns", "retry", "circuit-breaker"]
 - Todo erro retornado ao cliente: `{ error: { code, message, hint, request_id, documentation_url } }`.
 - `code` ∈ error_code enum (§5.3 obs).
 
+#### PAT-AUTHZ-001 — Dupla assertion de tenant_id em storage calls
+- **Problema:** confused-deputy — Worker chama storage em nome do tenant errado.
+- **Solução:** toda storage call recebe `tenant_id` explícito como parâmetro *e* executa assertion `assert_eq!(computed_hmac_prefix, expected_hmac_prefix)` antes de emitir a request.
+- **FMs mitigados:** FM-253, FM-303, FM-E-006.
+- **Evidence:** EVT-022 (modelo TLA+ de INV-TENANT-ISOLATION cobre) + EVT-002 (property test).
+
+### 3.10 Patterns adicionais (Lote 5.4 — preenchimento de dangling refs do audit)
+
+Esses patterns completam gaps identificados em `failure_modes.md` e `slo_catalog.md` que referenciavam PAT-XXX ainda não catalogados.
+
+#### PAT-ABUSE-DETECT-001 — Detecção de abuse comportamental
+- **Problema:** Tenant pago abusa exec-action para criptominer, ou bot scraper mascara-se como CI legítimo.
+- **Solução:** heurísticas em stream: (a) CPU/wallclock ratio > threshold sustained; (b) egress bytes / exec minutes fora de distribuição; (c) action_digest entropy baixa + alta frequência. Dispara downgrade silencioso + alert ops.
+- **Métrica:** `corelink_abuse_score{tenant_id}`.
+- **FMs mitigados:** FM-255.
+- **Evidence:** EVT-013 + EVT-017 (runbook para triage).
+
+#### PAT-BACKOFF-001 — Backoff exponencial + jitter genérico
+- **Problema:** CF API / downstream throttled intermitentemente.
+- **Solução:** lib interna `backoff::jittered`. Config default `base=100ms, factor=2.0, max=10s, attempts=5`. Generalização de PAT-RETRY-001 para não-idempotent-retry APIs.
+- **FMs mitigados:** FM-150.
+- **Evidence:** EVT-002 (convergence test).
+
+#### PAT-DNS-TTL-001 — DNS TTL conservador + monitor
+- **Problema:** DNS outage em registrar externo derruba resolução mesmo com CF infra up.
+- **Solução:** TTL de records críticos = 300s (não-default 86400s); CF DNS com secondary registrar; synthetic monitor resolvem de múltiplas regiões.
+- **FMs mitigados:** FM-100.
+- **Evidence:** EVT-031 (synthetic monitor).
+
+#### PAT-ERROR-ISOLATE-001 — Panic/error isolation no Worker
+- **Problema:** panic em Rust (sem catch_unwind) derruba isolate inteiro (N requests em batch).
+- **Solução:** envelopar hot path em `std::panic::catch_unwind` (equivalente WASM); converter panic → 500 com request_id; emit `corelink_panic_total` counter; non-zero counter vira alert.
+- **FMs mitigados:** FM-006.
+- **Evidence:** EVT-002 (panic injection test) + EVT-013.
+
+#### PAT-GC-HEALTHCHECK-001 — GC scheduler health
+- **Problema:** GC silenciosamente para → tombstones acumulam → storage infla.
+- **Solução:** GC emite heartbeat em cada phase start/end em métrica `corelink_gc_last_run_seconds`; alert se > 36h (janela de 1.5× do período target de 24h).
+- **FMs mitigados:** FM-305.
+- **Evidence:** EVT-013 + EVT-017.
+
+#### PAT-INPUT-HARDEN-001 — Input hardening agressivo
+- **Problema:** deserialization RCE, path traversal, malformed digest.
+- **Solução:** (a) serde com `deny_unknown_fields` + tipos explícitos; (b) path canonicalization rejeita `..`, `\0`, UTF-8 inválido; (c) digest regex `^[a-f0-9]{64}$` antes de qualquer parse.
+- **CTRLs associados:** CTRL-INPUT-001..004 (security_model §6.5).
+- **FMs mitigados:** FM-007.
+- **Evidence:** EVT-005 + EVT-008 (fuzz targets específicos em parsers).
+
+#### PAT-KV-TTL-001 — KV com TTL curto + never-source-of-truth
+- **Problema:** KV global eventual consistency > 60s causa leitura stale.
+- **Solução:** TTL máximo 300s em KV; nenhum dado que não tolere 60s de stale fica em KV; D1/R2 são source of truth; KV só caches derivados.
+- **FMs mitigados:** FM-054.
+- **Evidence:** EVT-026 (schema validation rejeita uso inapropriado) + EVT-002.
+
+#### PAT-MEMORY-001 — Memory budget per-isolate
+- **Problema:** CF Worker tem limite 128 MB heap; OOM kill é silencioso.
+- **Solução:** allocator lib que rastreia high-watermark; reject requests com payload > 5 MiB no hot path (redirecionar para streaming); emit `corelink_isolate_heap_peak_bytes`.
+- **FMs mitigados:** FM-002.
+- **Evidence:** EVT-024 (load test com payload grande).
+
+#### PAT-MONOTONIC-001 — Clock monotonic para timestamps de ordem
+- **Problema:** clock skew entre Worker regiões → timestamps fora de ordem.
+- **Solução:** timestamps de audit/ULID usam clock monotonic local + sync NTP tolerância ±1s; conflitos resolvidos por `request_id` ULID (tie-breaker).
+- **FMs mitigados:** FM-350.
+- **Evidence:** EVT-002 (property test de monotonicidade).
+
+#### PAT-ONLINE-MIGRATE-001 — Migration online D1/Neon
+- **Problema:** ALTER TABLE bloqueia tabela; migration no hot path derruba SLO.
+- **Solução:** expand-migrate-contract: (1) adicionar coluna nullable; (2) dual-write + backfill batched (PAT-JITTER-001 entre batches); (3) switch reads; (4) remove old coluna em release futura.
+- **FMs mitigados:** FM-056, FM-301.
+- **Evidence:** EVT-018 (migration applied) + EVT-002.
+
+#### PAT-PATCH-SLA-001 — SLA de aplicação de patch CVE
+- **Problema:** CVE HIGH publicado em dep; tempo para deploy fix.
+- **Solução:** SLA: CRITICAL ≤ 48h, HIGH ≤ 7d, MEDIUM ≤ 30d; automation via `cargo-audit` + GitHub Dependabot + release cadence semanal (pode forçar off-cycle para CRITICAL).
+- **FMs mitigados:** FM-155.
+- **Evidence:** EVT-007 (dependency scan) + EVT-038 (deploy log).
+
+#### PAT-QUEUE-EVENTS-001 — Queue para eventos externos (Stripe)
+- **Problema:** Stripe API outage durante billing call quebra fluxo.
+- **Solução:** billing events são enfileirados em R2 + worker que retenta com exp backoff + dedupe via idempotency key; outage de Stripe ≠ outage do CoreLink.
+- **FMs mitigados:** FM-151.
+- **Evidence:** EVT-002 + EVT-023 (chaos test inject Stripe failure).
+
+#### PAT-READ-YOUR-WRITES-001 — Read-your-writes para eventual storage
+- **Problema:** R2 LIST é eventual; PUT + immediate LIST pode não ver.
+- **Solução:** app mantém in-memory write-through cache de writes recentes (TTL 60s); LIST consulta cache primeiro + R2.
+- **FMs mitigados:** FM-052.
+- **Evidence:** EVT-002 (property test concurrent PUT+LIST).
+
+#### PAT-RUNBOOK-DRILL-001 — Runbook dry-run mensal
+- **Problema:** runbook desatualizado descoberto em incident real.
+- **Solução:** oncall faz dry-run de 1 runbook P0/P1 por mês; output em EVT-017; atualiza runbook se discrepância.
+- **FMs mitigados:** FM-202.
+- **Evidence:** EVT-017.
+
+#### PAT-SESSION-CONSISTENCY-001 — D1 Sessions API para reads
+- **Problema:** D1 primary latency spike em cold region.
+- **Solução:** reads sequenciais do mesmo request usam D1 Sessions API (bookmark-based consistency) → leituras consistentes sem sempre ir ao primary.
+- **FMs mitigados:** FM-055.
+- **Evidence:** EVT-002 (read-after-write test).
+
+#### PAT-SWEEPER-001 — Sweeper de orphans (multipart incomplete)
+- **Problema:** multipart upload abortado deixa parts órfãos que consomem storage silenciosamente.
+- **Solução:** job diário lista multipart em-flight > 7d e aborta (`AbortMultipartUpload`).
+- **FMs mitigados:** FM-060.
+- **Evidence:** EVT-017.
+
+#### PAT-TIMEOUT-002 — Deadline hard em exec-action com kill
+- **Problema:** exec-action do cliente pode travar indefinidamente.
+- **Solução:** deadline enforced por Container runtime (CF Containers); SIGKILL após deadline_s; grace 2s para SIGTERM graceful.
+- **FMs mitigados:** FM-004.
+- **Evidence:** EVT-002 (deadline test) + EVT-023 (chaos com hang).
+
+#### PAT-TTL-JITTER-001 — Jitter em TTLs de cache
+- **Problema:** N entries expiram ao mesmo tempo → thundering herd.
+- **Solução:** TTL setado com jitter ±10% (hash-based para determinismo).
+- **FMs mitigados:** FM-352.
+- **Evidence:** EVT-002.
+
+#### PAT-AUTHZ-002 — (alias histórico; ver PAT-AUTHZ-001)
+- **Nota:** `slo_catalog.md §4.10` citava `PAT-AUTHZ-002` — mapeamento canônico é **PAT-AUTHZ-001** acima. Referência mantida para compat dos audits Lote 3+4.
+
 ---
 
 ## 4. Anti-patterns (proibidos sem ADR)
