@@ -240,6 +240,7 @@ Esta seção **estende** o control catalog de `security_model.md §6` com contro
 
 | ID              | Controle                                  | Implementação                                            | Revalidação |
 |------------------|-------------------------------------------|-----------------------------------------------------------|-------------|
+| CTRL-PRIV-014   | Audit minimizado (não-repudiation balanced) | Audit log armazena `actor_hash` (SHA256 do PAT/principal_id) — não nome do usuário; logs de ações sensíveis usam apenas o ID pseudonimizado; nome resolvido só on-demand via UI privilegiada com audit | Contínuo (lint anti-PII) |
 | CTRL-PRIV-015   | Constant-time signup response             | Middleware delay padroniza 200ms ±20ms                    | Anual    |
 | CTRL-PRIV-016   | Support read access requer consent         | Consent UI + MFA + time-boxed (15min) + audit rico         | Por evento |
 

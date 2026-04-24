@@ -357,6 +357,15 @@ Adicionado em Lote 5.4 endereçando audit S-10 (CTRL-META-001 + CTRL-GC-001 dang
 | CTRL-GC-001 | GC grace period 72h + soft-delete | Sweep não deleta blob com `last_referenced_at < now - 72h` E `mark_started_at`-aware (ver `remote_cache_product_profile.md §9.3`) | EVT-022 (TLA+ INV-GC-001) + EVT-002 + EVT-023 (chaos GC race) | Por mudança em algoritmo GC |
 | CTRL-GC-002 | Reconcile diário refcount | Job `gc-reconcile-worker` recomputa refcount de eventos vs `blob_meta.refcount`; alert se drift > 0.1% | EVT-013 (drift dashboard) + EVT-001 | Diário |
 
+### 6.14 Billing Integrity
+
+Adicionado em Lote 5.11 (cross-ref validator) endereçando CTRL-BILLING-001 dangling em THR-T-005.
+
+| ID           | Controle                            | Implementação                                              | Evidence     | Revalidação |
+|--------------|-------------------------------------|------------------------------------------------------------|--------------|-------------|
+| CTRL-BILLING-001 | Append-only events + reconciliation diária | `usage_events` table append-only (CHECK constraint UPDATE/DELETE rejeitado); `usage_counter` agregado é derivado de eventos; reconcile diário detecta drift | EVT-002 (test reconcile) + EVT-013 (drift dashboard) + EVT-001 | Diário |
+| CTRL-BILLING-002 | Idempotency em billing API | Stripe API calls usam Idempotency-Key (PAT-IDEMPOTENCY-001); evita double-charge em retry | EVT-002 | Contínuo |
+
 ---
 
 ## 7. Criptografia (algoritmos, chaves, rotação)
