@@ -150,6 +150,10 @@ WHITELIST_IDS = {
     "SLO-CORRECT-ISO",
     # CTRL placeholder em template
     "CTRL-XXX",
+    # CTRL-KEY-030..032: placeholders Fase 2 BYOE (key_management §5.4)
+    "CTRL-KEY-030",
+    "CTRL-KEY-031",
+    "CTRL-KEY-032",
     # Runbook placeholder (template exemplo)
     "RB-XXX",
     # SLOs em formato sem header standalone (definidos em corpo do §4.X mas não como anchor)
