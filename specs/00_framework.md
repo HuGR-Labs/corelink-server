@@ -2458,6 +2458,101 @@ Após fonte canônica criada e `doc_status: FROZEN`, downstream migra para heran
 
 ---
 
+## 35.6 Waivers — Exceções Formais com Expiração Obrigatória
+
+> **Problema:** em execução real, haverá casos em que atender a 100% dos gates do framework é **tecnicamente impossível, financeiramente inviável, temporalmente inviável** ou **incompatível com um constraint contratual/regulatório externo**. Sem mecanismo formal, o time cria "N/A oportunistas" ou marca ✅ de fé — o processo se degrada.
+>
+> **Solução:** Waiver — exceção **formal, temporária, com compensating control, prazo duro e plano de resolução**.
+
+### 35.6.1 Princípios invioláveis do waiver
+
+- **REG-WAIVER-001**: Todo waiver **DEVE** ter `expires_at` (data ISO) — após ela, waiver invalida automaticamente e CI bloqueia merges/deploys dependentes.
+- **REG-WAIVER-002**: Todo waiver **DEVE** ter `compensating_control` — proteção alternativa operacional durante a vigência. "Aceitar risco sem proteção" não é waiver; é ADR de risk acceptance (caminho diferente).
+- **REG-WAIVER-003**: Todo waiver **DEVE** ter `rationale` ≥ 10 caracteres — sem justificativa escrita, waiver é inválido.
+- **REG-WAIVER-004**: Todo waiver **DEVE** ter `revalidation_trigger` — evento/condição que força re-review antes de `expires_at`.
+- **REG-WAIVER-005**: Todo waiver **DEVE** ter `gates_waived` — lista explícita de gates do framework sendo dispensados (IDs tipo `REG-XXX-NNN`), não descrições em prosa.
+- **REG-WAIVER-006**: Duração máxima recomendada: **6 meses**. Waivers ≥ 6 meses exigem escalação + justificativa adicional + sign-off do Aprovador Final.
+- **REG-WAIVER-007**: Waiver **NÃO PODE** ser renovado indefinidamente. Após 2 renovações consecutivas sem resolução da causa raiz, **escalação obrigatória** ao Aprovador Final pra decisão binária: (a) consertar a causa raiz, ou (b) aceitar formalmente como constraint permanente via ADR (mata o waiver, abre trade-off permanente).
+
+### 35.6.2 Campos obrigatórios no YAML front matter
+
+Schema JSON valida automaticamente:
+
+| Campo | Tipo | Obrigatório |
+|---|---|---|
+| `type` | literal "waiver" | ✅ |
+| `gates_waived` | lista de strings (IDs de gates) | ✅ (mínimo 1) |
+| `rationale` | string ≥ 10 chars | ✅ |
+| `compensating_control` | string | ✅ |
+| `expires_at` | ISO date | ✅ |
+| `revalidation_trigger` | string | ✅ |
+
+Proibidos em `type: waiver`: `work_status`, `parent`, `assignee`, `feature_wi`, `capabilities`, `prod_target_date`.
+
+### 35.6.3 Localização e numeração
+
+- **REG-WAIVER-010**: Waivers vivem em `specs/_waivers/WAIVER-<YYYYMMDD>-<NNN>-<slug>.md`.
+- **REG-WAIVER-011**: ID formato `WAIVER-YYYYMMDD-NNN` — data de criação + sequencial do dia.
+- **REG-WAIVER-012**: Diretório `specs/_waivers/` é escopo canônico; CI `validate_specs.py` valida contra schema.
+
+### 35.6.4 Relação com PRR `CONDITIONALLY_APPROVED`
+
+PRR em `CONDITIONALLY_APPROVED` (§16 do PRR template) também usa caveats com expiração. Relação:
+
+- **Caveat de PRR**: exceção **específica a UM PRR**, vigente até resolução. Não é waiver formal — é registro no próprio PRR.
+- **Waiver formal**: aplicável a **múltiplos artefatos ou global**. Documento separado em `specs/_waivers/`.
+
+**Regra:** quando um caveat de PRR se repete em ≥ 2 PRRs diferentes (mesmo controle dispensado), **DEVE** ser promovido para waiver formal. Caveat individual pontual permanece no PRR.
+
+### 35.6.5 Template canônico
+
+Ver `_templates/waiver.md` — 11 seções obrigatórias:
+
+| Seção | Conteúdo |
+|---|---|
+| §0 Identificação | metadata, gates dispensados, escopo, expiração |
+| §1 Executive Summary | 3–5 sentenças acessíveis |
+| §2 Gate(s) dispensado(s) | IDs exatos + referência do framework |
+| §3 Rationale | prosa detalhada + alternativas consideradas + evidência |
+| §4 Compensating Control | descrição + diferenças vs controle canônico + owner + testes |
+| §5 Impact Assessment | risco residual + usuários afetados + compliance impact |
+| §6 Escopo | temporal, por artefato, geográfico, por tier |
+| §7 Conditions for Revocation | auto-triggers (CI) + manual triggers + process |
+| §8 Review Checkpoints | T+25%, T+50%, T+75%, T+90% (go/no-go renovação) |
+| §9 Plano de Resolução | causa raiz + ações + critério de sucesso + fallback |
+| §10 Sign-off | Owner + Gate Owner + Security/Privacy/Compliance/Legal conforme + Aprovador Final |
+| §11 Change Log | versionado |
+
+### 35.6.6 Enforcement automático de expiração
+
+Script `scripts/check_waivers.py` (a ser criado em Lote 2.5 ou junto do CI pipeline):
+
+1. Lê todos os waivers em `specs/_waivers/` com `doc_status: FROZEN`.
+2. Calcula `days_until_expiry = expires_at - today`.
+3. Emite warnings em CI:
+   - `days_until_expiry ≤ 30`: ⚠️ warn (planejar resolução)
+   - `days_until_expiry ≤ 7`: 🟡 alert (escalação próxima)
+   - `days_until_expiry ≤ 0`: 🔴 **bloqueio de merge/deploy** pra PRs que dependem do waiver (identificado via `inherits_from` ou referência textual).
+4. Incidente automático SEV-3 aberto se waiver expirar em produção ativa.
+
+### 35.6.7 Auditoria de waivers
+
+- **DEVE** Aprovador Final revisar trimestralmente inventário de waivers ativos.
+- **Red flags:**
+  - > 10 waivers ativos simultaneamente em produção: sinal de framework mal calibrado.
+  - Waivers com renovações ≥ 2 consecutivas: plano de resolução falhou, escalação obrigatória.
+  - Mesmo gate dispensado em ≥ 3 waivers diferentes: framework impossível de cumprir, revisar o gate.
+
+### 35.6.8 Anti-padrões de waiver
+
+- ❌ **AP-WAIVER-001**: Waiver sem compensating control ("aceitamos o risco por 6 meses"). → ADR de risk acceptance, não waiver.
+- ❌ **AP-WAIVER-002**: Waiver sem `expires_at` ou com expiração "indefinida". → Bloqueado pelo schema.
+- ❌ **AP-WAIVER-003**: Waiver renovado em silêncio via bump de versão sem re-approval. → Renovação **DEVE** passar por sign-off de novo.
+- ❌ **AP-WAIVER-004**: Waiver cobrindo dezenas de gates ("this WI waives all security gates"). → Waivers granulares; agrupamento excessivo é abuso.
+- ❌ **AP-WAIVER-005**: Waiver como "N/A oportunista" em checklist de WI/ST pra evitar trabalho. → Se é N/A legítimo, marca N/A com rationale no próprio artefato; waiver é para dispensa de gate que **aplicava**.
+
+---
+
 ## 36. Processo de Revisão e Sign-off
 
 ### 36.1 Papéis
