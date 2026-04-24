@@ -1,0 +1,6 @@
+# TLC state dumps (recriados a cada run)
+states/
+
+# TLC artifacts
+*.st
+*.fp
