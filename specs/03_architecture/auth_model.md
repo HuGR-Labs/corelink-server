@@ -29,6 +29,13 @@ tags: ["architecture", "security", "auth", "multi-tenant"]
 >
 > Referência normativa: ADRs/WIs/PRRs **DEVEM** citar este documento ao tocar identidade, escopo, token, rotação ou revogação. `inherits_from: ["AUTH-MODEL"]` obrigatório quando aplicável.
 
+> **🚦 Phase boundary (F-12 audit Lote 3+4):**
+> CoreLink GA inicial cobre **Fase 1 — Remote Cache** (CAS + AC + GC + REAPI cache-only).
+> **Fase 2 — Remote Execution** (`execute-action`, executor identity, sandbox runtime) é **futuro** (roadmap pós-GA).
+> Seções/CTRLs/SLOs/labels marcados com `(Fase 2)` ou `execute-action` referem-se a planejamento; em GA inicial podem ser omitidos do scope mínimo.
+
+
+
 ---
 
 ## Sumário

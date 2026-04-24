@@ -95,21 +95,29 @@ Planejamento: **Security + Availability + Confidentiality + Privacy + Processing
 
 ### 2.3 Mapping — Availability (A series)
 
+| TSC Criterion | Requisito resumido | CTRLs internos | Evidence |
+|---------------|---------------------|----------------|----------|
 | A1.1         | Identify/monitor availability                        | SLOs `slo_catalog.md` + alerts                | EVT-013                |
 | A1.2         | Recovery + contingency                               | Runbooks + chaos tests                         | EVT-023 + EVT-017 |
 | A1.3         | Recovery infrastructure testing                      | DR drill semestral                             | EVT-041                          |
 
 ### 2.4 Mapping — Confidentiality (C series)
 
+| TSC Criterion | Requisito resumido | CTRLs internos | Evidence |
+|---------------|---------------------|----------------|----------|
 | C1.1         | Identify + classify confidential                      | `privacy_model.md §2`                          | EVT-043           |
 | C1.2         | Protection controls                                   | CTRL-CRYPTO-002, CTRL-ISO-001..005             | EVT-005                         |
 
 ### 2.5 Mapping — Processing Integrity (PI series)
 
+| TSC Criterion | Requisito resumido | CTRLs internos | Evidence |
+|---------------|---------------------|----------------|----------|
 | PI1.1..1.5   | Inputs/processing/outputs correctness                 | CTRL-CAS-001, -002; CTRL-AC-001, -002; input validation CTRL-INPUT-001..004; reconciliation PAT-RECONCILE-001 | EVT-022 + EVT-002 |
 
 ### 2.6 Mapping — Privacy (P series)
 
+| TSC Criterion | Requisito resumido | CTRLs internos | Evidence |
+|---------------|---------------------|----------------|----------|
 | P1.1         | Privacy notice                                        | `/privacy` page; versioned                     | EVT-044                       |
 | P2.1         | Consent                                               | CTRL-PRIV-CONSENT-001..004 (privacy_model §5.6) | EVT-001 (consent events) + EVT-046 (LIA quando aplicável) |
 | P3.1..3.2    | Collection limited to purpose                         | CTRL-PRIV-003                                  | EVT-026                 |
@@ -138,6 +146,8 @@ Statement of Applicability (SoA) cobre os 93 controles Anexo A:2022. Mapping com
 
 ### 3.3 Controles específicos relevantes
 
+| Controle Anexo A | Implementação CoreLink | Evidence |
+|------------------|------------------------|----------|
 | A.8.2 (Privileged access) | Just-in-time admin; MFA mandatório | CTRL-AUTH-010 |
 | A.8.9 (Config mgmt)       | Terraform + drift detection        | PAT-DRIFT-DETECTION-001 |
 | A.8.24 (Cryptography)     | Algoritmos e key mgmt              | §7 security_model |

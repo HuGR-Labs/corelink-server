@@ -32,6 +32,13 @@ tags: ["architecture", "security", "threat-model", "stride", "controls"]
 >
 > Referência normativa: todo WI/Sprint/PRR que introduza novo trust boundary, novo asset em produção, ou novo control **DEVE** declarar `inherits_from: ["SECURITY-MODEL"]` e referenciar IDs de controle (`CTRL-XXX`) em vez de redefini-los.
 
+> **🚦 Phase boundary (F-12 audit Lote 3+4):**
+> CoreLink GA inicial cobre **Fase 1 — Remote Cache** (CAS + AC + GC + REAPI cache-only).
+> **Fase 2 — Remote Execution** (`execute-action`, executor identity, sandbox runtime) é **futuro** (roadmap pós-GA).
+> Seções/CTRLs/SLOs/labels marcados com `(Fase 2)` ou `execute-action` referem-se a planejamento; em GA inicial podem ser omitidos do scope mínimo.
+
+
+
 ---
 
 ## Sumário

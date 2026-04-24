@@ -31,6 +31,13 @@ tags: ["architecture", "data-model", "schema", "cas", "ac", "billing"]
 >
 > Regra: mudanças em entidades core requerem ADR + migration plan + data integrity test antes do merge.
 
+> **🚦 Phase boundary (F-12 audit Lote 3+4):**
+> CoreLink GA inicial cobre **Fase 1 — Remote Cache** (CAS + AC + GC + REAPI cache-only).
+> **Fase 2 — Remote Execution** (`execute-action`, executor identity, sandbox runtime) é **futuro** (roadmap pós-GA).
+> Seções/CTRLs/SLOs/labels marcados com `(Fase 2)` ou `execute-action` referem-se a planejamento; em GA inicial podem ser omitidos do scope mínimo.
+
+
+
 ---
 
 ## Sumário
