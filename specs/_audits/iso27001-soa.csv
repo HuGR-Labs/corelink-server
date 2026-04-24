@@ -1,0 +1,46 @@
+annex_a_2022,control_name,applicability,corelink_implementation,ctrl_internal,evidence,owner,last_review
+A.5.1,Policies for information security,Yes,Public security policy + InfoSec Policy doc;,CTRL-AUDIT-001,EVT-032,Security Lead,2026-04-24
+A.5.2,Information security roles and responsibilities,Yes,RACI + org chart in /policies/,N/A (process),EVT-032,Privacy Officer + Security Lead,2026-04-24
+A.5.3,Segregation of duties,Yes,IAM roles distintos: kms-admin/app-deploy/devops; dual-approval em destructive ops,CTRL-KEY-004 + CTRL-AUTH-010,EVT-035,Security Lead,2026-04-24
+A.5.7,Threat intelligence,Yes,Subscription a feeds (CISA + GitHub Security advisories) + cargo-audit daily,CTRL-SUPPLY-004,EVT-007,Security Lead,2026-04-24
+A.5.10,Acceptable use of information assets,Yes,AUP em onboarding,N/A (process),EVT-032,HR + Privacy Officer,2026-04-24
+A.5.12,Classification of information,Yes,Data map em privacy_model.md §2,CTRL-PRIV-002,EVT-043,Privacy Officer,2026-04-24
+A.5.15,Access control,Yes,RBAC via PAT scopes (auth_model.md §3),CTRL-AUTHZ-001,EVT-002,Security Lead,2026-04-24
+A.5.18,Access rights review,Yes,Quarterly review (CTRL-CRED-003 + CTRL-AUTH-010),CTRL-CRED-003,EVT-035,Security Lead,2026-04-24
+A.5.23,Information security for cloud services,Yes,DPA com Cloudflare/Neon/Stripe; subprocessor list pública,N/A (vendor mgmt),EVT-040,Privacy Officer,2026-04-24
+A.5.24,IS incident management planning,Yes,Runbooks + incident.md template + RB-BREACH-NOTIF,CTRL-AUDIT-005,EVT-017,SRE Lead,2026-04-24
+A.5.30,ICT readiness for business continuity,Yes,DR drill semestral; RB-FM-057 (Neon failover),N/A (operational),EVT-041,SRE Lead,2026-04-24
+A.6.1,Screening,Yes,Background check em offer letters (US/BR),N/A (HR),EVT-032,HR,2026-04-24
+A.6.3,Information security awareness training,Yes,Onboarding security training (annual refresh),N/A (HR),EVT-033,Security Lead + HR,2026-04-24
+A.6.5,Responsibilities after termination,Yes,Offboarding checklist + key revocation < 24h,CTRL-CRED-004,EVT-035,HR + Security Lead,2026-04-24
+A.7.1,Physical security perimeters,N/A (deferred to Cloudflare),Cloudflare data centers — vendor cert,CF SOC 2 attestation,EVT-040,N/A,2026-04-24
+A.7.2,Physical entry,N/A (deferred),Idem A.7.1,N/A,EVT-040,N/A,2026-04-24
+A.8.1,User endpoint devices,Yes,MDM corporate; encrypt at rest mandatory,N/A (corporate IT),EVT-032,IT,2026-04-24
+A.8.2,Privileged access rights,Yes,JIT admin via WebAuthn + dual-approval; CTRL-AUTH-010,CTRL-AUTH-010,EVT-035,Security Lead,2026-04-24
+A.8.3,Information access restriction,Yes,Tenant isolation INV-TENANT-ISOLATION + AuthZ scopes,CTRL-ISO-001..005,EVT-022,Security Lead + Architect,2026-04-24
+A.8.5,Secure authentication,Yes,WebAuthn + PAT signed; no passwords,CTRL-AUTH-001 + CTRL-AUTH-010,EVT-002,Security Lead,2026-04-24
+A.8.7,Protection against malware,Yes,SAST + DAST + dependency scan + container hardening,CTRL-EXEC-002 + CTRL-EXEC-003,EVT-005,Security Lead,2026-04-24
+A.8.8,Management of technical vulnerabilities,Yes,cargo-audit daily + Dependabot + patch SLAs (PAT-PATCH-SLA-001),CTRL-SUPPLY-004,EVT-007,Security Lead,2026-04-24
+A.8.9,Configuration management,Yes,Terraform + drift detection + CTRL-NET-003,PAT-DRIFT-DETECTION-001,EVT-028,SRE Lead,2026-04-24
+A.8.10,Information deletion,Yes,DSR erasure pipeline (privacy_model §6.2) + GC,CTRL-PRIV-030 + CTRL-GC-001,EVT-042,Privacy Officer,2026-04-24
+A.8.11,Data masking,Yes,Log redaction + tenant_id pseudonymization,CTRL-PRIV-001 + CTRL-PRIV-011,EVT-005,Privacy Officer,2026-04-24
+A.8.12,Data leakage prevention,Yes,DLP scan + log allowlist schema,CTRL-PRIV-001,EVT-005,Privacy Officer,2026-04-24
+A.8.13,Information backup,Yes,R2 replication + Object Lock 7y,CTRL-AUDIT-005,EVT-041,SRE Lead,2026-04-24
+A.8.15,Logging,Yes,Audit log + observability stack,CTRL-AUDIT-002,EVT-001,SRE Lead,2026-04-24
+A.8.16,Monitoring activities,Yes,observability_model.md (alerts SLO-based),CTRL-AUDIT-004,EVT-013,SRE Lead,2026-04-24
+A.8.17,Clock synchronization,Yes,NTP via CF; PAT-MONOTONIC-001,PAT-MONOTONIC-001,EVT-002,SRE Lead,2026-04-24
+A.8.20,Networks security,Yes,TLS 1.3 + HSTS + CAA pinned,CTRL-CRYPTO-001 + CTRL-NET-001 + CTRL-NET-002,EVT-037,Security Lead,2026-04-24
+A.8.21,Security of network services,Yes,CF service binding (CTRL-NET-003),CTRL-NET-003,EVT-028,SRE Lead,2026-04-24
+A.8.22,Segregation in networks,Yes,Trust boundaries TB-0..TB-5,CTRL-ISO-001..005,EVT-036,Security Lead + Architect,2026-04-24
+A.8.23,Web filtering,Yes,Container egress allowlist,CTRL-NET-005,EVT-028,Security Lead,2026-04-24
+A.8.24,Use of cryptography,Yes,key_management.md + CTRL-CRYPTO-001..003 + CTRL-KEY-001..016,CTRL-CRYPTO-* + CTRL-KEY-*,EVT-002,Security Lead + Cryptography Reviewer,2026-04-24
+A.8.25,Secure development life cycle,Yes,Spec-first + lane-based gates + adversarial review HIGH_RISK,N/A (process),EVT-029,Architect,2026-04-24
+A.8.26,Application security requirements,Yes,security_model.md + privacy_model.md inheritance,N/A (process),EVT-029,Security Lead,2026-04-24
+A.8.27,Secure system architecture and engineering principles,Yes,framework §2 PRINCs + STRIDE/LINDDUN,N/A (process),EVT-029,Architect,2026-04-24
+A.8.28,Secure coding,Yes,Rust + clippy strict + lints + property tests,CTRL-INPUT-001..004,EVT-005,Architect,2026-04-24
+A.8.29,Security testing in development and acceptance,Yes,Pentest annual + chaos + fuzz + SAST + DAST,N/A (process),EVT-025,Security Lead,2026-04-24
+A.8.30,Outsourced development,N/A,No outsourced dev,N/A,N/A,N/A,2026-04-24
+A.8.31,Separation of dev/test/prod environments,Yes,env: dev/staging/prod isolated; PAT scopes per-env,CTRL-AUTH-004,EVT-028,SRE Lead,2026-04-24
+A.8.32,Change management,Yes,PR review + progressive rollout + dual-approval destructive,PAT-PROGRESSIVE-ROLLOUT-001 + PAT-DUAL-APPROVAL-001,EVT-038,SRE Lead,2026-04-24
+A.8.33,Test information,Yes,Test data synthetic; no PII em test fixtures,CTRL-PRIV-002,EVT-026,Privacy Officer,2026-04-24
+A.8.34,Protection of information systems during audit testing,Yes,Pentest scope acordado + window controlado,N/A (process),EVT-025,Security Lead,2026-04-24
