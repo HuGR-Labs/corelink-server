@@ -873,26 +873,34 @@ Preencher como índice. Detalhes vivem nos arquivos individuais.
 >
 > Forcing factors `lane_forcing_factors` (FF-HR-XXX) **DEVEM** estar listados no YAML do sprint quando `lane: HIGH_RISK`.
 
-### 20.1 Tabela de sign-offs
+### 20.1 Tabela de sign-offs (alinhada com framework §33.5.4.3)
 
-| Papel | Nome | Critério de aprovação | LOW | STD | HIGH | Assinatura | Data |
-|---|---|---|---|---|---|---|---|
-| **Sprint Owner** | {{Nome}} | Sprint executado conforme contrato; gaps documentados | ✅ | ✅ | ✅ | _________________ | YYYY-MM-DD |
-| **Tech Lead** | {{Nome}} | §17.1 (Code), §17.2 (Test), §17.6 (Performance) ✅ | ✅ | ✅ | ✅ | _________________ | YYYY-MM-DD |
-| **Security Reviewer** | {{Nome}} | §16 (Security plan) executado, §17.5 ✅ | 🟡 (se toca security) | ✅ | ✅ | _________________ | YYYY-MM-DD |
-| **Ops Reviewer** | {{Nome}} | §14 (Observability), §15 (Rollback), §17.4 ✅ | 🟡 (se toca prod) | ✅ | ✅ | _________________ | YYYY-MM-DD |
-| **QA Reviewer** | {{Nome}} | §9 (Test Strategy) executado, §17.2 ✅ | 🟡 (se ≥ 1 WI STANDARD) | ✅ | ✅ | _________________ | YYYY-MM-DD |
-| **Product Reviewer** | {{Nome}} | CAPs em §3 entregues conforme escopo | ⛔ N/A | 🟡 (se customer-facing) | ✅ | _________________ | YYYY-MM-DD |
-| **Architect** | {{Nome}} | Arquitetura coerente com ADRs; TLA+/INV impactos revisados | ⛔ N/A | 🟡 (se toca INV/ADR) | ✅ | _________________ | YYYY-MM-DD |
-| **Privacy Reviewer** | {{Nome}} | §16 delta privacy; DSR/consent impact; LGPD/GDPR trilha | ⛔ N/A | 🟡 (se toca PII) | ✅ | _________________ | YYYY-MM-DD |
-| **Compliance Reviewer** | {{Nome}} | §16 compliance delta; SOC 2/ISO 27001 mappings; waivers | ⛔ N/A | 🟡 (se compliance-critical) | ✅ | _________________ | YYYY-MM-DD |
-| **Adversarial Reviewer** | {{Nome}} | Hostil challenge nos invariantes; documentar findings rebatidos | ⛔ N/A | ⛔ N/A | ✅ | _________________ | YYYY-MM-DD |
-| **External Reviewer** | {{Nome}} (opcional, sub-processor/partner) | Revisão independente de escopo específico (FedRAMP, BAA HIPAA) | ⛔ N/A | ⛔ N/A | 🟡 (se contrato exige) | _________________ | YYYY-MM-DD |
-| **Aprovador Final** | {{Nome}} | Sprint atende ao contrato integralmente | ✅ | ✅ | ✅ | _________________ | YYYY-MM-DD |
+Esta matriz é **derivada 1:1 da matriz canônica** em `00_framework.md §33.5.4.3`. Diferenças com framework são proibidas: qualquer alteração DEVE ser via ADR com bump do framework.
+
+| Papel (framework §33.5.4.3) | Nome | LOW_RISK | STANDARD | HIGH_RISK | Assinatura | Data |
+|---|---|---|---|---|---|---|
+| **Sprint Owner** (análogo a WI Owner) | {{Nome}} | ✅ | ✅ | ✅ | _________________ | YYYY-MM-DD |
+| **Code Reviewer** (Tech Lead) | {{Nome}} | ✅ | ✅ | ✅ | _________________ | YYYY-MM-DD |
+| **Security Reviewer** | {{Nome}} | ⛔ | 🟡 se §16 indicar | ✅ obrigatório | _________________ | YYYY-MM-DD |
+| **Privacy Reviewer** | {{Nome}} | ⛔ | 🟡 se PII | ✅ obrigatório se PII/PHI | _________________ | YYYY-MM-DD |
+| **SRE Reviewer** (Ops) | {{Nome}} | ⛔ | ✅ | ✅ | _________________ | YYYY-MM-DD |
+| **QA Reviewer** | {{Nome}} | ⛔ (tests passam no CI) | ✅ | ✅ | _________________ | YYYY-MM-DD |
+| **Product Reviewer** | {{Nome}} | ⛔ | ✅ | ✅ | _________________ | YYYY-MM-DD |
+| **Architect** | {{Nome}} | ⛔ | 🟡 se toca C4 component | ✅ obrigatório | _________________ | YYYY-MM-DD |
+| **Cost Owner** (Finance) | {{Nome}} | ⛔ | 🟡 se custo > R$500/mês | ✅ obrigatório | _________________ | YYYY-MM-DD |
+| **Legal** | {{Nome}} | ⛔ | ⛔ | 🟡 se muda contrato/DPA | _________________ | YYYY-MM-DD |
+| **Aprovador Final** | {{Nome}} | ✅ | ✅ | ✅ | _________________ | YYYY-MM-DD |
+| **Compliance Reviewer** (extensão sprint-level, não em §33.5.4.3) | {{Nome}} | ⛔ | ⛔ | 🟡 se SOC 2/ISO 27001 critical | _________________ | YYYY-MM-DD |
+| **Adversarial Reviewer** (extensão sprint-level) | {{Nome}} | ⛔ | ⛔ | ✅ | _________________ | YYYY-MM-DD |
 
 **Legenda:** ✅ obrigatório · 🟡 condicional (critério ao lado) · ⛔ N/A.
 
-**Contagem por lane:** LOW_RISK = 3 mínimo; STANDARD = 5–8 (com condicionais); HIGH_RISK = 10–12 (11 default, +1 External se contratualmente exigido). Alinha com framework §33.5.4.3.
+**Contagem por lane (framework §33.5.4.3):**
+- `LOW_RISK`: **3** (Sprint Owner + Code Reviewer + Aprovador Final)
+- `STANDARD`: **5–8** (+ SRE + QA + Product; opcionais: Security/Privacy/Architect/Cost)
+- `HIGH_RISK`: **10–12** (os 11 canônicos + Compliance/Adversarial como extensões sprint-only)
+
+> **Nota:** Compliance Reviewer e Adversarial Reviewer são extensões do sprint template (não estão na matriz WI §33.5.4.3). Alinha com práticas de sprint-level adversarial review onde múltiplos WIs se compõem.
 
 ### Apêndice: Dissents (se houver)
 

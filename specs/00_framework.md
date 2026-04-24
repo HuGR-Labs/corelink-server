@@ -453,7 +453,7 @@ Adicionados no Lote 2 (v0.4.0) para elevar a princípios fundamentais as regras 
 
 #### PRINC-038 — Evidence é tipada; "dashboard URL" sozinho não é evidence
 
-> **DEVE** toda caixa binária de Completeness/DoD/Quality marcada como ✅ ter referência a **pelo menos 1 evidence artifact** tipado conforme §35.7.1 (EVT-001 a EVT-024).
+> **DEVE** toda caixa binária de Completeness/DoD/Quality marcada como ✅ ter referência a **pelo menos 1 evidence artifact** tipado conforme §35.7.1 (EVT-001 a EVT-049 — expandido em Lote 5.1 e Lote 6.3; 49 tipos atuais).
 > **DEVE** evidence ser **imutável** por pelo menos UMA das: assinatura criptográfica, hash-addressed, plataforma imutável (git, CI run), ou timestamp RFC 3161.
 > **NÃO DEVE** `EVT-014 DASHBOARD_URL` isolado ser aceito como evidence — precisa acompanhar `EVT-013 DASHBOARD_SNAPSHOT` pra auditabilidade temporal.
 > **NÃO DEVE** a mesma evidence ser reusada pra múltiplos gates não-relacionados ("um CI log vale pra 10 gates distintos" é AP-EVID-007).
@@ -2703,7 +2703,11 @@ Para docs que preferem nomes mnemônicos a IDs numéricos, a seguinte tabela de 
 | CHAOS_REPORT | EVT-023 |
 | LOAD_TEST | EVT-024 |
 | SCAN_REPORT | EVT-037 (TLS) ou EVT-005 (SAST) ou EVT-006 (DAST) — disambiguar no contexto |
-| AUDIT_LOG | EVT-001 (se CI) ou EVT-019 (se post-mortem) ou EVT-028 (se config) |
+| AUDIT_LOG | **EVT-047 (AUDIT_EVENT)** por default; EVT-001 só se for CI pipeline log; EVT-019 se post-mortem link; EVT-028 se config snapshot. Desambiguar obrigatório (Lote 6.3) |
+| AUDIT_EVENT | EVT-047 |
+| DSR_EVIDENCE | EVT-048 |
+| CONSENT_EVENT | EVT-049 |
+| POLICY_SIGN | EVT-032 |
 
 Qualquer token EVT-<NOME_LIVRE> que não conste nem em §35.7.1 nem em §35.7.1.1 falha validação no `scripts/validate_evidence.py` (a implementar).
 
@@ -3130,7 +3134,7 @@ Specs podem estar **bem escritas mas erradas**. Adversarial review simula:
 | **Compensating control** | Proteção alternativa vigente durante o período de um waiver, substituindo (parcial ou totalmente) o controle dispensado. |
 | **Revalidation trigger** | Evento/condição que força re-review de um waiver antes de `expires_at`. Ex: "vendor lança feature X", "audit finding Y". |
 | **Gates_waived** | Lista de IDs de gates do framework (formato `REG-XXX-NNN`) dispensados por um waiver específico. Não aceita prosa genérica. |
-| **Evidence taxonomy** | Conjunto de 24 tipos formais (`EVT-001` a `EVT-024`) que classificam evidências aceitas para gates. Cada tipo tem regras de formato, armazenamento, imutabilidade e retenção. Ver §35.7. |
+| **Evidence taxonomy** | Conjunto de **49 tipos formais** (`EVT-001` a `EVT-049`; 24 originais + 22 Lote 5.1 + 3 Lote 6.3 — AUDIT_EVENT/DSR_EVIDENCE/CONSENT_EVENT) que classificam evidências aceitas para gates. Cada tipo tem regras de formato, armazenamento, imutabilidade e retenção. Ver §35.7. |
 | **Evidence type** (`EVT-XXX`) | ID canônico de um tipo de evidência. Exemplos: `EVT-001 CI_LOG`, `EVT-013 DASHBOARD_SNAPSHOT`, `EVT-022 TLA_MODEL_CHECK`. |
 | **Immutable evidence** | Evidência que atende ≥ 1 critério: assinatura criptográfica, hash-addressed, plataforma imutável (git/CI run), timestamp RFC 3161. `DASHBOARD_URL` isolado **não é** immutable. |
 

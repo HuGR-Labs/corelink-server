@@ -41,7 +41,7 @@ SPECS_DIR = REPO_ROOT / "specs"
 # Definitions são detectadas dentro de canonical sources nos paths abaixo.
 ID_PATTERNS = {
     "EVT": re.compile(r"\bEVT-\d{3}\b"),
-    "CTRL": re.compile(r"\bCTRL-[A-Z]+-\d{3}\b"),
+    "CTRL": re.compile(r"\bCTRL-[A-Z]+(?:-[A-Z]+)*-\d{3}\b"),  # v3 Lote 7.2: aceita multi-segmento (CTRL-PRIV-CONSENT-001, H-01)
     "PAT": re.compile(r"\bPAT-[A-Z][A-Z0-9-]+-\d{3}\b"),
     "FM": re.compile(r"\bFM-\d{3}\b"),
     "INV": re.compile(r"\bINV-[A-Za-z][A-Za-z0-9_-]+\b"),  # v2 Lote 6.3: aceita CamelCase legados (G-04)
