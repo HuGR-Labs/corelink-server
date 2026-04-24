@@ -13,7 +13,7 @@ Cargo.lock.bak
 .DS_Store
 Thumbs.db
 
-# Env / secrets (nunca comitar)
+# Env / secrets
 .env
 .env.local
 .env.*.local
@@ -28,3 +28,9 @@ node_modules/
 
 # Dados locais de dev
 /local-data/
+
+# Python venv para scripts de validação
+.venv-specs/
+.venv/
+__pycache__/
+*.pyc

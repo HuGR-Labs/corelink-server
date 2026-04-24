@@ -1,0 +1,312 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://humangr-labs.github.io/corelink-specs/schemas/front_matter.schema.json",
+  "title": "CoreLink Spec — Front Matter Schema",
+  "description": "Valida o YAML front matter obrigatório de todos os documentos de spec do CoreLink. Referência normativa: 00_framework.md §7.11.",
+  "type": "object",
+  "required": ["id", "type", "doc_status", "audit_status", "version", "created", "updated", "owner", "final_approver", "reviewers", "supersedes", "superseded_by", "tags"],
+  "additionalProperties": true,
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "ID canônico conforme PRINC-006 (framework §2.1). Formato varia por tipo: FRAMEWORK-00, ADR-XXXX, CAP-XXX, INV-XXX, NFR-XXX, S-XX, WI-SXX-NNN, ST-NNN, PRR-SXX-NNN, WAIVER-YYYYMMDD-NNN, etc."
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "framework",
+        "adr",
+        "pdr",
+        "odr",
+        "capability",
+        "nfr",
+        "invariant",
+        "constraint",
+        "personas",
+        "jtbd",
+        "prfaq",
+        "success_metrics",
+        "user_journey",
+        "c4",
+        "protocol",
+        "failure_modes",
+        "security_model",
+        "privacy_model",
+        "observability_model",
+        "slo_catalog",
+        "resilience_patterns",
+        "compliance_matrix",
+        "data_model",
+        "storage_semantics_matrix",
+        "auth_model",
+        "sprint",
+        "work_item",
+        "sub_task",
+        "prr",
+        "quality_definition",
+        "runbook",
+        "fitness_function",
+        "incident",
+        "post_mortem",
+        "waiver"
+      ]
+    },
+    "doc_status": {
+      "type": "string",
+      "enum": ["DRAFT", "REVIEW", "FROZEN", "THAWED", "SUPERSEDED", "DEPRECATED"]
+    },
+    "audit_status": {
+      "type": "string",
+      "enum": ["ACTIVE", "AUDIT_PENDING", "AUDITED"]
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Semver X.Y.Z"
+    },
+    "created": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "updated": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "owner": {
+      "type": "string",
+      "minLength": 1
+    },
+    "final_approver": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reviewers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["role", "name"],
+        "additionalProperties": false,
+        "properties": {
+          "role": { "type": "string", "minLength": 1 },
+          "name": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "supersedes": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "string", "minLength": 1 },
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      ],
+      "description": "ID(s) do(s) doc(s) substituído(s). Escalar para 1→1; lista para N→1 (consolidação)."
+    },
+    "superseded_by": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "string", "minLength": 1 },
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      ],
+      "description": "ID(s) do(s) doc(s) que substitui(em) este. Escalar para 1→1; lista para 1→N (ex: WI split)."
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "assignee": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Obrigatório em work_item e sub_task (ver allOf); proibido nos demais types."
+    },
+    "parent": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Obrigatório em work_item (→ sprint) e sub_task (→ WI); proibido em sprint e prr."
+    },
+    "work_status": {
+      "type": "string",
+      "description": "Obrigatório em sprint, work_item, sub_task, prr. Enum específico por type (ver allOf)."
+    },
+    "feature_wi": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^WI-S\\d{2}-\\d{3}$",
+      "description": "Obrigatório apenas em prr; proibido nos demais types."
+    },
+    "capabilities": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^CAP(-[A-Z0-9]+)?-\\d{3}$" },
+      "minItems": 1,
+      "description": "Obrigatório apenas em prr; proibido nos demais types."
+    },
+    "prod_target_date": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "description": "Obrigatório apenas em prr; proibido nos demais types."
+    },
+    "lane": {
+      "type": "string",
+      "enum": ["LOW_RISK", "STANDARD", "HIGH_RISK"],
+      "description": "Classificação de risco (aplicável a sprint, work_item, sub_task). Ver framework §35."
+    },
+    "predecessor_sprints": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^S-\\d{2}$" }
+    },
+    "successor_sprints": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^S-\\d{2}$" }
+    },
+    "related_adrs": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^ADR-\\d{4}$" }
+    },
+    "inherits_from": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Lista de IDs de docs canônicos dos quais este doc herda controles/requisitos. Ver framework §36 Control Inheritance."
+    },
+    "local_deltas": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Seções onde este doc sobrescreve ou estende o herdado. Livre-form."
+    },
+    "gates_waived": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Obrigatório em waiver; proibido nos demais. Lista de gates liberados."
+    },
+    "compensating_control": {
+      "type": "string",
+      "description": "Obrigatório em waiver; proibido nos demais."
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "description": "Obrigatório em waiver. Após essa data, waiver invalida automaticamente e CI bloqueia builds que dependem dele."
+    },
+    "revalidation_trigger": {
+      "type": "string",
+      "description": "Obrigatório em waiver. Evento/condição que força re-avaliação antes de expires_at."
+    },
+    "rationale": {
+      "type": "string",
+      "minLength": 10,
+      "description": "Obrigatório em waiver. Justificativa escrita."
+    }
+  },
+  "allOf": [
+    {
+      "comment": "Regras cross-field por type — work artifact types DEVEM ter work_status",
+      "if": {
+        "properties": { "type": { "enum": ["sprint", "work_item", "sub_task", "prr"] } }
+      },
+      "then": {
+        "required": ["work_status"]
+      }
+    },
+    {
+      "comment": "Sprint: work_status enum específico",
+      "if": { "properties": { "type": { "const": "sprint" } } },
+      "then": {
+        "properties": {
+          "work_status": {
+            "enum": ["PROPOSED", "READY", "IN_PROGRESS", "REVIEWING", "COMPLETE", "SEALED", "FAILED"]
+          }
+        },
+        "not": { "anyOf": [
+          { "required": ["assignee"] },
+          { "required": ["parent"] },
+          { "required": ["feature_wi"] },
+          { "required": ["capabilities"] },
+          { "required": ["prod_target_date"] },
+          { "required": ["gates_waived"] },
+          { "required": ["compensating_control"] },
+          { "required": ["expires_at"] }
+        ]}
+      }
+    },
+    {
+      "comment": "Work Item: enum + parent + assignee obrigatórios",
+      "if": { "properties": { "type": { "const": "work_item" } } },
+      "then": {
+        "required": ["parent", "assignee"],
+        "properties": {
+          "work_status": {
+            "enum": ["PROPOSED", "READY", "DOING", "REVIEWING", "BLOCKED", "DONE", "CANCELED", "ROLLED_BACK"]
+          },
+          "parent": { "pattern": "^S-\\d{2}$" }
+        },
+        "not": { "anyOf": [
+          { "required": ["feature_wi"] },
+          { "required": ["capabilities"] },
+          { "required": ["prod_target_date"] },
+          { "required": ["gates_waived"] }
+        ]}
+      }
+    },
+    {
+      "comment": "Sub-task: enum + parent + assignee obrigatórios",
+      "if": { "properties": { "type": { "const": "sub_task" } } },
+      "then": {
+        "required": ["parent", "assignee"],
+        "properties": {
+          "work_status": {
+            "enum": ["TODO", "DOING", "REVIEW", "BLOCKED", "DONE", "CANCELED"]
+          },
+          "parent": { "pattern": "^WI-S\\d{2}-\\d{3}$" }
+        },
+        "not": { "anyOf": [
+          { "required": ["feature_wi"] },
+          { "required": ["capabilities"] },
+          { "required": ["prod_target_date"] },
+          { "required": ["gates_waived"] }
+        ]}
+      }
+    },
+    {
+      "comment": "PRR: feature_wi + capabilities + prod_target_date obrigatórios; parent proibido",
+      "if": { "properties": { "type": { "const": "prr" } } },
+      "then": {
+        "required": ["feature_wi", "capabilities", "prod_target_date"],
+        "properties": {
+          "work_status": {
+            "enum": ["NOT_STARTED", "IN_REVIEW", "CONDITIONALLY_APPROVED", "APPROVED", "REJECTED"]
+          }
+        },
+        "not": { "anyOf": [
+          { "required": ["parent"] },
+          { "required": ["assignee"] },
+          { "required": ["gates_waived"] }
+        ]}
+      }
+    },
+    {
+      "comment": "Waiver: campos específicos obrigatórios",
+      "if": { "properties": { "type": { "const": "waiver" } } },
+      "then": {
+        "required": ["gates_waived", "compensating_control", "expires_at", "revalidation_trigger", "rationale"],
+        "not": { "anyOf": [
+          { "required": ["work_status"] },
+          { "required": ["parent"] },
+          { "required": ["assignee"] },
+          { "required": ["feature_wi"] },
+          { "required": ["capabilities"] },
+          { "required": ["prod_target_date"] }
+        ]}
+      }
+    }
+  ]
+}

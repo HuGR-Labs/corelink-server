@@ -971,36 +971,37 @@ prod_target_date: "YYYY-MM-DD"
 
 #### 7.11.6 Validação automática
 
-CI **DEVE** rodar:
+CI **DEVE** rodar `scripts/validate_specs.py`, que aplica duas camadas de validação:
+
+1. **Parseabilidade YAML** em todos os docs de `specs/` (exceto `_audits/`, `_archive/`, `_schemas/`): front matter **DEVE** parsear com `yaml.safe_load`.
+2. **JSON Schema** (`specs/_schemas/front_matter.schema.json`, draft 2020-12) em todos os docs **exceto** `_templates/` (templates têm placeholders intencionais).
+
+Campos validados pelo schema:
+
+- Enums: `doc_status`, `work_status`, `audit_status`, `type`, `lane`
+- Formato: `version` (semver `X.Y.Z`), `created`/`updated`/`prod_target_date`/`expires_at` (ISO `YYYY-MM-DD`)
+- Padrões de ID: `feature_wi` (`WI-SXX-NNN`), `capabilities` (`CAP-XXX`), `parent`, `predecessor_sprints`
+- Cross-field rules: PRR **DEVE** ter `feature_wi`+`capabilities`+`prod_target_date` e **NÃO PODE** ter `parent`/`assignee`; Waiver **DEVE** ter `gates_waived`+`compensating_control`+`expires_at`+`revalidation_trigger`+`rationale`; Sprint **NÃO PODE** ter `parent`; etc.
+- Tipos união: `supersedes` / `superseded_by` aceitam `null | string | lista de strings`
+- Estruturas: `reviewers` é lista de `{role, name}`
+
+Schema canônico em `specs/_schemas/front_matter.schema.json`.
+
+Executar manualmente:
 
 ```bash
-python3 -c "
-import yaml, re, sys
-from pathlib import Path
+# Instalar dependências (primeira vez):
+python3 -m venv .venv-specs
+source .venv-specs/bin/activate
+pip install jsonschema pyyaml
 
-FM = re.compile(r'^---\n(.*?)\n---\n', re.DOTALL)
-
-# Diretórios EXCLUÍDOS da validação (não são specs normativos):
-#   _audits/   — relatórios de auditoria gerados por revisores externos
-#   _archive/  — specs históricas preservadas sem front matter novo
-SKIP_DIRS = {'_audits', '_archive'}
-
-for p in Path('specs').rglob('*.md'):
-    if any(part in SKIP_DIRS for part in p.parts):
-        continue
-    content = p.read_text()
-    m = FM.match(content)
-    if not m:
-        sys.exit(f'{p}: sem front matter no topo')
-    try:
-        yaml.safe_load(m.group(1))
-    except yaml.YAMLError as e:
-        sys.exit(f'{p}: YAML inválido: {e}')
-print('OK')
-"
+# Validar:
+python3 scripts/validate_specs.py           # silencioso se OK
+python3 scripts/validate_specs.py -v        # verbose (lista cada arquivo)
+python3 scripts/validate_specs.py --strict  # aplica schema também aos templates (falha esperada)
 ```
 
-Falha = merge bloqueado.
+Falha em CI = **merge bloqueado**.
 
 ### 7.12 SLA de auditoria pós-*thaw*
 
