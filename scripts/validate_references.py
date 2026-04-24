@@ -130,6 +130,9 @@ WHITELIST_IDS = {
     "INV-DATA-MONOTONIC-TS",
     "INV-DATA-BILLING-RECONCILE",
     "INV-DATA-ERASURE-COMPLETE",
+    # Sprint-level meta-invariants (não técnicas; não no invariant_registry):
+    "INV-DATA-CLASSIFICATION",  # S-00 planning invariant
+    "INV-SCOPE-DISCIPLINE",     # S-00 planning invariant
     # Legacy CamelCase aliases — EXPIRAM EM 2026-10-24 (invariant_registry §5).
     # Após essa data, _LEGACY_INV_ALIASES_EXPIRED = True e estes IDs NÃO
     # estarão mais na whitelist (validator falhará em uses).

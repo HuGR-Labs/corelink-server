@@ -41,6 +41,7 @@
         "storage_semantics_matrix",
         "auth_model",
         "sprint",
+        "spec_contract",
         "work_item",
         "sub_task",
         "prr",
