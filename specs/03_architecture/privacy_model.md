@@ -250,9 +250,9 @@ Adicionado em Lote 5.5 endereçando audit F-07 (CTRL-PRIV-015 estava sendo usado
 
 | ID                      | Controle                                  | Implementação                                            | Evidence | Revalidação |
 |-------------------------|-------------------------------------------|-----------------------------------------------------------|----------|-------------|
-| CTRL-PRIV-CONSENT-001   | Opt-in explícito por categoria de uso     | UI form com checkbox per-purpose (analytics, marketing, beta features); `purpose_tag` armazenado em DSR ledger; default `false` para tudo opcional | EVT-001 (consent event) + EVT-026 (schema valida purpose_tag enum) | Por mudança de UI |
-| CTRL-PRIV-CONSENT-002   | Revogação imediata de consent              | Endpoint `DELETE /v1/consent/<purpose>` propaga em ≤ 5min; cache invalidation + downstream notify; status retornado em `GET /v1/consent` | EVT-001 + EVT-024 (load test revocation latency) | Trimestral |
-| CTRL-PRIV-CONSENT-003   | Consent records imutáveis + auditáveis     | CloudEvents `dev.hugr.corelink.consent.{granted,revoked}.v1` em audit log (Object Lock 7y); incluem ts, principal, purpose, basis_legal | EVT-001 (audit event verify) + EVT-022 (TLA+ INV-AUDIT-APPEND-ONLY) | Contínuo |
+| CTRL-PRIV-CONSENT-001   | Opt-in explícito por categoria de uso     | UI form com checkbox per-purpose (analytics, marketing, beta features); `purpose_tag` armazenado em DSR ledger; default `false` para tudo opcional | EVT-049 (consent event) + EVT-026 (schema valida purpose_tag enum) | Por mudança de UI |
+| CTRL-PRIV-CONSENT-002   | Revogação imediata de consent              | Endpoint `DELETE /v1/consent/<purpose>` propaga em ≤ 5min; cache invalidation + downstream notify; status retornado em `GET /v1/consent` | EVT-049 + EVT-024 (load test revocation latency) | Trimestral |
+| CTRL-PRIV-CONSENT-003   | Consent records imutáveis + auditáveis     | CloudEvents `dev.hugr.corelink.consent.{granted,revoked}.v1` em audit log (Object Lock 7y); incluem ts, principal, purpose, basis_legal | EVT-049 + EVT-047 (audit event verify) + EVT-022 (TLA+ INV-AUDIT-APPEND-ONLY) | Contínuo |
 | CTRL-PRIV-CONSENT-004   | LIA documentado para legitimate interest   | Toda categoria que usa LIA tem doc EVT-046 anual com balancing test | EVT-046 + EVT-044 (Legal review) | Anual |
 
 ---
@@ -269,13 +269,13 @@ Adicionado em Lote 5.5 endereçando audit F-07 (CTRL-PRIV-015 estava sendo usado
 
 | Direito (LGPD / GDPR)                 | Suporte    | SLA         | clock_start | clock_stop | Evidência | Owner |
 |---------------------------------------|-----------|--------------|-------------|-----------|-----------|-------|
-| Confirmação de tratamento (LGPD 18 I / GDPR 15) | Self-service | 5 dias úteis (SLO 95%) | DSR `verified` | DSR `completed` | EVT-001 (DSR) | Privacy Officer |
-| Acesso (LGPD 18 II / GDPR 15)                  | Self-service | 15 dias úteis | DSR `verified` | DSR `completed` (download disponível) | EVT-001 (DSR) | Privacy Officer |
-| Correção (LGPD 18 III / GDPR 16)               | Self-service | 5 dias úteis | DSR `verified` | DSR `completed` (mutação aplicada) | EVT-001 (DSR) | Privacy Officer |
+| Confirmação de tratamento (LGPD 18 I / GDPR 15) | Self-service | 5 dias úteis (SLO 95%) | DSR `verified` | DSR `completed` | EVT-048 (DSR_EVIDENCE) | Privacy Officer |
+| Acesso (LGPD 18 II / GDPR 15)                  | Self-service | 15 dias úteis | DSR `verified` | DSR `completed` (download disponível) | EVT-048 (DSR_EVIDENCE) | Privacy Officer |
+| Correção (LGPD 18 III / GDPR 16)               | Self-service | 5 dias úteis | DSR `verified` | DSR `completed` (mutação aplicada) | EVT-048 (DSR_EVIDENCE) | Privacy Officer |
 | Anonimização/bloqueio/eliminação (LGPD 18 IV / GDPR 17) | Self-service | 30 dias corridos | DSR `verified` | DSR `completed` (todos backends purged) | EVT-042 + EVT-017 | Privacy Officer |
-| Portabilidade (LGPD 18 V / GDPR 20)            | Self-service | 15 dias úteis | DSR `verified` | DSR `completed` (export bundle disponível) | EVT-001 | Privacy Officer |
-| Revogação de consentimento (LGPD 18 VI / GDPR 7) | Self-service | Imediato (≤ 5min) | request submission | propagação confirmada | EVT-001 | Privacy Officer |
-| Oposição (GDPR 21)                              | Manual (email) | 15 dias úteis | email recebido + ticket criado | decisão emitida | EVT-001 + EVT-044 | Privacy Officer |
+| Portabilidade (LGPD 18 V / GDPR 20)            | Self-service | 15 dias úteis | DSR `verified` | DSR `completed` (export bundle disponível) | EVT-048 | Privacy Officer |
+| Revogação de consentimento (LGPD 18 VI / GDPR 7) | Self-service | Imediato (≤ 5min) | request submission | propagação confirmada | EVT-048 | Privacy Officer |
+| Oposição (GDPR 21)                              | Manual (email) | 15 dias úteis | email recebido + ticket criado | decisão emitida | EVT-048 + EVT-044 | Privacy Officer |
 
 ### 6.2 Pipeline de DSR (erasure exemplo)
 

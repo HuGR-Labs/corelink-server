@@ -119,10 +119,10 @@ Planejamento: **Security + Availability + Confidentiality + Privacy + Processing
 | TSC Criterion | Requisito resumido | CTRLs internos | Evidence |
 |---------------|---------------------|----------------|----------|
 | P1.1         | Privacy notice                                        | `/privacy` page; versioned                     | EVT-044                       |
-| P2.1         | Consent                                               | CTRL-PRIV-CONSENT-001..004 (privacy_model §5.6) | EVT-001 (consent events) + EVT-046 (LIA quando aplicável) |
+| P2.1         | Consent                                               | CTRL-PRIV-CONSENT-001..004 (privacy_model §5.6) | EVT-049 (consent events) + EVT-046 (LIA quando aplicável) |
 | P3.1..3.2    | Collection limited to purpose                         | CTRL-PRIV-003                                  | EVT-026                 |
 | P4.1..4.3    | Use, retention, disposal                              | `privacy_model.md §8`                          | EVT-042                      |
-| P5.1..5.2    | Access + correction                                   | CTRL-PRIV-022 DSR self-service                 | EVT-001 (DSR)                   |
+| P5.1..5.2    | Access + correction                                   | CTRL-PRIV-022 DSR self-service                 | EVT-048 (DSR_EVIDENCE)          |
 | P6.1..6.7    | Disclosure + notification                             | DPA + breach runbook                           | EVT-017                |
 | P7.1         | Data quality                                          | Reconciliation                                 | EVT-002              |
 | P8.1         | Monitoring + enforcement                              | Privacy Officer role + quarterly review        | EVT-034                        |
@@ -168,10 +168,10 @@ Statement of Applicability (SoA) cobre os 93 controles Anexo A:2022. Mapping com
 | Art. 7 | Base legal                                             | `privacy_model.md §9`                      | EVT-044                 |
 | Art. 11 | Dado sensível — não coletamos default                | §2 privacy_model                            | EVT-026            |
 | Art. 15 | Término do tratamento                                  | §8 privacy_model (retention)                | EVT-042                 |
-| Art. 17 | Titular tem direito                                    | §6 privacy_model (DSRs)                     | EVT-001                    |
-| Art. 18 I–IX | Direitos específicos                              | §6 privacy_model                            | EVT-001                    |
+| Art. 17 | Titular tem direito                                    | §6 privacy_model (DSRs)                     | EVT-048 (DSR_EVIDENCE)     |
+| Art. 18 I–IX | Direitos específicos                              | §6 privacy_model                            | EVT-048 (DSR_EVIDENCE)     |
 | Art. 33 | Transferência internacional                           | §7 privacy_model (SCC, residency)          | EVT-044                 |
-| Art. 37 | Registro de operações                                  | Audit events CloudEvents                    | EVT-001                    |
+| Art. 37 | Registro de operações                                  | Audit events CloudEvents                    | EVT-047 (AUDIT_EVENT)      |
 | Art. 38 | Relatório de impacto à proteção de dados (RIPD)       | DPIA por WI HIGH_RISK                       | EVT-045                         |
 | Art. 41 | Encarregado (DPO)                                      | Privacy Officer nomeado (Gustavo interim)   | EVT-032                  |
 | Art. 48 | Comunicação de incidente à ANPD                        | `RB-BREACH-NOTIF`                           | EVT-017           |
@@ -266,7 +266,7 @@ Report público derivado de SOC 2 Type II. Distribuível livremente (marketing).
 | EVT-022 | PR que toca INV CRITICAL | 7y                  |
 | EVT-019 | Pós incident SEV-1/2 | 7y                  |
 | EVT-013 | Mensal (auto)       | 7y                  |
-| EVT-001       | Contínuo                | 7y (Object Lock)    |
+| EVT-047 (AUDIT_EVENT) | Contínuo                | 7y (Object Lock)    |
 
 ### 8.3 Audit log schema (CloudEvents)
 

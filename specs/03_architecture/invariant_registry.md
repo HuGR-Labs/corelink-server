@@ -143,6 +143,16 @@ Upgrade de severidade requer ADR.
 | **INV-SUPPLY-SIGNED-DEPLOY** | Apenas binários assinados deployados | HIGH | CF Worker deploy valida cosign signature antes de ativar | CTRL-SUPPLY-002; CI gate |
 | **INV-SUPPLY-SBOM-PRESENT** | Todo release tem SBOM | HIGH | PR de release é BLOCKED sem EVT-010 (CycloneDX 1.5+ via ADR-0014) | CI gate; PRR gate |
 
+### 3.11 Product / Quota (domain PRODUCT)
+
+Adicionado em Lote 6.3 endereçando G-04 do re-audit (INVs legados CamelCase).
+
+| ID | Nome | Severidade | Descrição | Enforcement |
+|---|---|---|---|---|
+| **INV-QUOTA-ENFORCEMENT** (alias histórico: `INV-QuotaEnforcement`) | Quota de tenant nunca ultrapassada | HIGH | Em nenhum estado, tenant consome mais que quota configurada | DO atomic counter per-tenant + write path check (CTRL-QUOTA-001) |
+| **INV-DIGEST-VERIFICATION** (alias histórico: `INV-DigestVerification`) | Write rejeita hash mismatch | CRITICAL | Toda write valida `hash(body) == claimed_digest` antes de persistir | CTRL-CAS-001 + TLA+ cas_integrity.tla (InvPoisoningRejected) |
+| **INV-DATA-RESIDENCY** (alias histórico: `INV-DataResidency`) | Dado de tenant fica em região pinned | HIGH | R2 bucket com locationHint; D1 primary na região escolhida; DO stickiness | CTRL-PRIV-031; quarterly config audit |
+
 ---
 
 ## 4. TLA+ coverage matrix
@@ -171,6 +181,9 @@ Por 6 meses (até 2026-10-24), estes aliases continuam referenciáveis mas dispa
 | `INV-TenantIsolation` | INV-TENANT-ISOLATION |
 | `INV-AuditLogImmutability` | INV-AUDIT-APPEND-ONLY |
 | `INV-CASIdempotency` | INV-CAS-IDEMPOTENCY |
+| `INV-QuotaEnforcement` | INV-QUOTA-ENFORCEMENT |
+| `INV-DigestVerification` | INV-DIGEST-VERIFICATION |
+| `INV-DataResidency` | INV-DATA-RESIDENCY |
 | `INV-DATA-TENANT-ISOLATION` (de `data_model.md §7`) | INV-TENANT-ISOLATION |
 | `INV-DATA-AUDIT-CHAIN` | INV-AUDIT-APPEND-ONLY |
 | `INV-DATA-BLOB-HASH` | INV-CAS-INTEGRITY |

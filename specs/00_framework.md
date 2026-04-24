@@ -2628,7 +2628,7 @@ Script `scripts/check_waivers.py` (a ser criado em Lote 2.5 ou junto do CI pipel
 
 > **Problema:** PRINC-031 exige evidence artifact pra toda caixa binária. Mas "evidence" sem taxonomia vira loteria: um reviewer aceita URL de dashboard, outro exige snapshot imutável, outro aceita screenshot sem timestamp. Sem regra, o rigor é performativo.
 >
-> **Solução:** taxonomia formal de **46 tipos de evidence** (24 originais + 22 expandidos no Lote 5.1 pra cobrir compliance, supply chain e privacy), cada um com regras específicas de formato, armazenamento, imutabilidade, retenção e acesso. Aliases humanos legíveis em §35.7.1.1.
+> **Solução:** taxonomia formal de **49 tipos de evidence** (24 originais + 22 expandidos no Lote 5.1 + 3 de disambiguation no Lote 6.3 pra separar CI_LOG de audit/DSR/consent events), cada um com regras específicas de formato, armazenamento, imutabilidade, retenção e acesso. Aliases humanos legíveis em §35.7.1.1.
 
 ### 35.7.1 Taxonomia canônica
 
@@ -2682,6 +2682,9 @@ Cada tipo tem ID `EVT-XXX`. Ao preencher coluna `Evidence` em WI/ST/PRR, reviewe
 | **EVT-044** | **LEGAL_REVIEW** | Review formal do Legal sobre policy/contract/base legal | Email assinado ou ticket tracker + decisão + rationale | R2 `evidence-legal/` | ✅ | 7 anos |
 | **EVT-045** | **DPIA** | Data Protection Impact Assessment | Doc versionado seguindo GDPR Art. 35 + sign-off DPO | Repositório git + R2 | ✅ | 7 anos |
 | **EVT-046** | **LIA** | Legitimate Interest Assessment | Doc LIA template preenchido + balanceamento explícito + review anual | Repositório git | ✅ | 3 anos |
+| **EVT-047** | **AUDIT_EVENT** | Entry único em audit log (CloudEvents) — key op / config change / admin op / tenant op | JSON CloudEvent `{type, actor_hash, tenant_id, op, ts, request_id, outcome}` | R2 `audit-<region>/` Object Lock Governance | ✅ (hash chain via PAT-AUDIT-VERIFY-001) | 7 anos (SOC 2) |
+| **EVT-048** | **DSR_EVIDENCE** | Proof de resolução de DSR ticket (access/correction/erasure/portability/objection) | Export bundle + audit trail CloudEvents + timestamps clock_start/clock_stop | R2 `evidence-dsr/` | ✅ | 5 anos (legal) |
+| **EVT-049** | **CONSENT_EVENT** | Evento de granted/revoked consent com prova de informed consent | CloudEvent `consent.{granted,revoked}.v1` + notice_text_hash + notice_version + locale + wording_id | R2 `audit-<region>/` + consent ledger D1 | ✅ | 7 anos (legal) |
 
 ### 35.7.1.1 Aliases canônicos (legibilidade humana)
 

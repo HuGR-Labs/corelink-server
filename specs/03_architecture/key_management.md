@@ -50,7 +50,7 @@ tags: ["architecture", "security", "kms", "byok", "byoe", "encryption"]
 4. **Rotation by default** — todas as chaves rotacionam; compromisso detectado ⇒ rotação imediata + re-wrap.
 5. **BYOK opt-in** — customer enterprise pode trazer suas próprias KEKs (CMK em seu KMS externo).
 6. **Transparent to customer** — mudanças de chave não quebram operações; re-wrap online.
-7. **Auditable** — toda operação com chave (use, rotate, revoke) gera EVT-001.
+7. **Auditable** — toda operação com chave (use, rotate, revoke) gera EVT-047 (AUDIT_EVENT).
 
 ---
 
@@ -96,7 +96,7 @@ BYOK-CUSTOMER-<tenant_id>  (optional; replaces KEK-GLOBAL envelope step)
 
 - `INV-KEY-NO-SKIP`: writes nunca usam key em state `{pending, rotated, retired, destroyed}`.
 - `INV-KEY-OVERLAP`: durante rotation, ambas keys (old + new) são válidas para reads por até 24h (overlap period).
-- `INV-KEY-AUDIT`: toda transição de state gera EVT-001 + EVT-028.
+- `INV-KEY-AUDIT`: toda transição de state gera EVT-047 (AUDIT_EVENT) + EVT-028.
 
 ### 3.3 Online rotation
 
@@ -188,7 +188,7 @@ Customer enterprise pode requisitar **attestation criptográfica** de erasure:
 4. Attestation assinada com chave Ed25519 CoreLink (long-term) + timestamp RFC 3161.
 5. Customer pode verificar assinatura com chave pública publicada.
 
-Endereça F-13 (SOTA gap vs concorrentes). Evidence: EVT-045 (DPIA-like) + EVT-001.
+Endereça F-13 (SOTA gap vs concorrentes). Evidence: EVT-045 (DPIA-like) + EVT-047.
 
 ---
 
@@ -221,14 +221,14 @@ Estende o catálogo de `security_model.md §6`.
 |---|---|---|---|---|
 | CTRL-KEY-001 | Root key in HSM (FIPS 140-2 L3) | CF Workers Secrets HSM-backed | EVT-040 (vendor attestation) | Anual |
 | CTRL-KEY-002 | TDK per-tenant via HKDF | HKDF-SHA256(KEK-GLOBAL, salt=tenant_id, info=...) | EVT-002 (test vectors) | Anual |
-| CTRL-KEY-003 | No key export from HSM | HSM policy + audit | EVT-001 | Trimestral |
+| CTRL-KEY-003 | No key export from HSM | HSM policy + audit | EVT-047 | Trimestral |
 | CTRL-KEY-004 | Separation of duties | IAM roles: kms-admin ≠ app-deploy ≠ devops | EVT-035 | Trimestral |
 
 ### 8.2 Rotation
 
 | ID | Controle | Implementação | Evidence | Revalidação |
 |---|---|---|---|---|
-| CTRL-KEY-005 | Annual TDK rotation | Automation via CF API + re-wrap background job | EVT-001 + EVT-013 | Anual (per key) |
+| CTRL-KEY-005 | Annual TDK rotation | Automation via CF API + re-wrap background job | EVT-047 + EVT-013 | Anual (per key) |
 | CTRL-KEY-006 | Overlap 24h durante rotation | Ambas keys válidas em reads | EVT-002 | Por rotation |
 | CTRL-KEY-007 | Emergency rotation | Runbook RB-KEY-COMPROMISE; SLA 1h para revoke + 24h para re-wrap completo | EVT-017 | Semestral (drill) |
 
@@ -238,20 +238,20 @@ Estende o catálogo de `security_model.md §6`.
 |---|---|---|---|---|
 | CTRL-KEY-010 | BYOK multi-cloud support | Adapters AWS KMS, GCP KMS, Azure KV, Vault | EVT-002 (per adapter) | Por release |
 | CTRL-KEY-011 | Customer kill switch < 5 min | Cache invalidation em revocation detectada | EVT-024 (chaos test) | Semestral |
-| CTRL-KEY-012 | BYOK audit export | Customer vê todos unwraps no KMS log + CoreLink espelha | EVT-001 | Contínuo |
+| CTRL-KEY-012 | BYOK audit export | Customer vê todos unwraps no KMS log + CoreLink espelha | EVT-047 | Contínuo |
 
 ### 8.4 Erasure attestation
 
 | ID | Controle | Implementação | Evidence | Revalidação |
 |---|---|---|---|---|
 | CTRL-KEY-015 | Signed erasure receipt | Ed25519 sign + RFC 3161 timestamp | EVT-011 | Por DSR |
-| CTRL-KEY-016 | Public verifiability | Chave pública publicada em `/.well-known/corelink-erasure-pubkey` | EVT-001 | Por release |
+| CTRL-KEY-016 | Public verifiability | Chave pública publicada em `/.well-known/corelink-erasure-pubkey` | EVT-047 | Por release |
 
 ### 8.5 Audit
 
 | ID | Controle | Implementação | Evidence | Revalidação |
 |---|---|---|---|---|
-| CTRL-KEY-020 | All key ops logged | Evento `key.{created,rotated,retired,destroyed,used}` em CloudEvents | EVT-001 | Contínuo |
+| CTRL-KEY-020 | All key ops logged | Evento `key.{created,rotated,retired,destroyed,used}` em CloudEvents | EVT-047 | Contínuo |
 | CTRL-KEY-021 | Dual-approval destructive ops | `kms:ScheduleKeyDeletion` etc requer 2-person CoreLink + MFA | EVT-015 + EVT-016 | Por evento |
 
 ---

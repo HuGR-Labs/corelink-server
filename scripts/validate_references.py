@@ -44,7 +44,7 @@ ID_PATTERNS = {
     "CTRL": re.compile(r"\bCTRL-[A-Z]+-\d{3}\b"),
     "PAT": re.compile(r"\bPAT-[A-Z][A-Z0-9-]+-\d{3}\b"),
     "FM": re.compile(r"\bFM-\d{3}\b"),
-    "INV": re.compile(r"\bINV-[A-Z][A-Z0-9_-]+\b"),
+    "INV": re.compile(r"\bINV-[A-Za-z][A-Za-z0-9_-]+\b"),  # v2 Lote 6.3: aceita CamelCase legados (G-04)
     "FF-HR": re.compile(r"\bFF-HR-\d{3}\b"),
     "SLO": re.compile(r"\bSLO-[A-Z][A-Z0-9-]+\b"),
     "RB": re.compile(r"\bRB-[A-Z][A-Z0-9-]+\b"),
@@ -125,6 +125,9 @@ WHITELIST_IDS = {
     "INV-TenantIsolation",
     "INV-AuditLogImmutability",
     "INV-CASIdempotency",
+    "INV-QuotaEnforcement",
+    "INV-DigestVerification",
+    "INV-DataResidency",
     # Template placeholders
     "INV-AAA",
     "INV-BBB",
@@ -132,6 +135,7 @@ WHITELIST_IDS = {
     "INV-YYY",
     "INV-ZZZ",
     "INV-XXX",
+    "INV-XXX-name",   # template placeholder em framework examples
     "INV-LIFECYCLE-001",  # framework-internal example
     "INV-GC",  # plural-form mention
     "FM-XXX",
