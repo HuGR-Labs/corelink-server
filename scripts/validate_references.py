@@ -164,6 +164,7 @@ WHITELIST_IDS = {
     # ADRs forward-looking (a serem criadas durante respectivos sprints implementation)
     "ADR-0021",  # S-04: AC digest signing HKDF vs Ed25519
     "ADR-0022",  # S-05: chunk size vs multipart part size decoupling
+    "ADR-0023",  # S-02 WI-S02-004: constant-time defense via timing padding middleware
     "FM-XXX",
     "ADR-XXXX",
     "ADR-YYYY",
