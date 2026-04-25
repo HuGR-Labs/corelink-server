@@ -231,6 +231,30 @@ WHITELIST_IDS = {
     "INV-MULTIPART-MANIFEST-VALID",              # S-05 WI-S05-005
     "INV-MULTIPART-DUAL-SIDE-VERIFY",            # S-05 WI-S05-005
     "INV-MULTIPART-STREAMING-VERIFY-FAIL-FAST",  # S-05 WI-S05-005
+    # Forward-looking GC INVs (S-06 Lote 10.6 — promovidas em registry §3.17 preemptivamente):
+    "INV-GC-IDEMPOTENT-RERUN",                   # S-06 WI-S06-001
+    "INV-GC-SINGLE-RUNNING-PER-TENANT-REGION",   # S-06 WI-S06-001
+    "INV-GC-PHASE-MONOTONIC",                    # S-06 WI-S06-001
+    "INV-GC-MARK-STARTED-AT-IMMUTABLE",          # S-06 WI-S06-001
+    "INV-GC-DEGRADE-MODE-PROBE-PER-BATCH",       # S-06 WI-S06-001
+    "INV-GC-MARK-STARTED-AT-ATOMIC",             # S-06 WI-S06-002
+    "INV-GC-REACHABLE-SET-COMPLETE",             # S-06 WI-S06-002
+    "INV-GC-MARK-TENANT-SCOPED",                 # S-06 WI-S06-002
+    "INV-GC-MARK-PHASE-BUDGETED",                # S-06 WI-S06-002
+    "INV-GC-MARK-D1-BOUNDED-BATCH",              # S-06 WI-S06-002
+    "INV-GC-SWEEP-AUDIT-FAIL-CLOSED",            # S-06 WI-S06-003
+    "INV-GC-SWEEP-IDEMPOTENT",                   # S-06 WI-S06-003
+    "INV-GC-SWEEP-TENANT-SCOPED",                # S-06 WI-S06-003
+    "INV-GC-GRACE-RESPECTED",                    # S-06 WI-S06-003
+    "INV-GC-PHYSICAL-DELETE-IDEMPOTENT",         # S-06 WI-S06-004
+    "INV-GC-GRACE-BOUNDARY-STRICT",              # S-06 WI-S06-004
+    "INV-GC-R2-D1-ORDERING",                     # S-06 WI-S06-004
+    "INV-GC-DSR-BYPASS-AUTHORIZED",              # S-06 WI-S06-004
+    "INV-GC-RECONCILE-AUTO-FIX-BOUNDED",         # S-06 WI-S06-005
+    "INV-GC-RECONCILE-AUDIT-FAIL-CLOSED",        # S-06 WI-S06-005
+    "INV-GC-CI-GATE-ENFORCED",                   # S-06 WI-S06-006
+    "INV-GC-PROPERTY-TEST-CROSS-VALIDATED",      # S-06 WI-S06-006
+    "INV-GC-30D-SUSTAINED-VERIFICATION",         # S-06 WI-S06-006
     # Patterns referenciados forward-looking em S-02 (definidos em resilience_patterns.md mas missing entry-anchor)
     "PAT-CIRCUIT-BREAKER-001",
     "PAT-INVALIDATE-001",  # S-03 v1.1 forward-looking pattern (revocation propagation)
@@ -257,6 +281,7 @@ WHITELIST_IDS = {
     "ADR-0039",  # S-05 WI-S05-002: Chunker public API stability + semver + FastCDC mask seeds versioning policy
     "ADR-0040",  # S-05 WI-S05-004: Multipart D1 sharding strategy (per-tenant_tier OR per-region; trigger 80% of D1 10 GB hard limit)
     "ADR-0041",  # S-05 WI-S05-005: Manifest public API stability + sig domain separation policy
+    "ADR-0042",  # S-06 WI-S06-001: GC worker scheduler design + degrade-mode contract
     "FM-XXX",
     "ADR-XXXX",
     "ADR-YYYY",
@@ -290,6 +315,9 @@ WHITELIST_IDS = {
     "RB-FM-AC-BUCKET-LEAK",          # S-04 WI-S04-002
     "RB-FM-AC-CACHE-MISS-STORM",     # S-04 WI-S04-001 forward-looking
     "RB-FM-MULTIPART-MIGRATION-BUG", # S-05 WI-S05-004 forward-looking
+    "RB-FM-302",                     # S-06 WI-S06-005 refcount drift forward
+    "RB-FM-GC-WORKER-STALL",         # S-06 WI-S06-001 forward
+    "RB-FM",                         # plural-form mention "RB-FM-*" em ADR-0042 + WI-S06-007
     # SLOs em formato sem header standalone (definidos em corpo do §4.X mas não como anchor)
     "SLO-DEPLOY-SAFE",
     "SLO-INCIDENTS",

@@ -322,6 +322,47 @@ Invariantes que governam multipart upload, chunking determinism, manifest dual-s
 
 ---
 
+### 3.17 Garbage Collection domain — Lote 10.6 (S-06 sprint)
+
+Invariantes que governam GC mark-sweep + refcount reconciliation + TLA+ formal verification CI gate. **Promovidas preemptivamente em Lote 10.6** (consistency com lesson Lote 10.5/10.5bis); refinements possíveis em Lote 10.6bis pós-Agent R4 review.
+
+| ID | Nome | Severidade | Descrição | Enforcement | TLA+ file |
+|---|---|---|---|---|---|
+| **INV-GC-IDEMPOTENT-RERUN** | Worker crashed mid-phase; resume from checkpoint = same final state | HIGH | gc_run table tracks status='running' / 'crashed'; idempotent re-run via PAT-RETRY-IDEMPOTENT-001; checkpoint per batch boundary | Property test 10k iter `prop_gc_run_idempotent_resume` + integration test crash mid-phase | (planned `gc_correctness.tla` already verified Lote 5.13) |
+| **INV-GC-SINGLE-RUNNING-PER-TENANT-REGION** | Partial UNIQUE WHERE status='running' previne race | HIGH | `CREATE UNIQUE INDEX uq_gc_run_running ON gc_run(tenant_id, region) WHERE status='running'` (lesson Lote 10.5bis partial UNIQUE) | Integration test concurrent INSERT same (tenant, region) → second rejected | N/A (DB invariant) |
+| **INV-GC-PHASE-MONOTONIC** | Valid transitions: idle→mark→sweep→physical_delete→reconcile→completed | HIGH | Handler enforces; reverse rejected; CHECK constraint inline em gc_run.phase | Property test phase transitions + integration test reverse rejection | N/A (architecture invariant) |
+| **INV-GC-MARK-STARTED-AT-IMMUTABLE** | mark_started_at_ms captured ONCE atomically; immutable post-capture | CRITICAL | SQL `UPDATE gc_run SET mark_started_at_ms = unix_ms() WHERE run_id=? AND mark_started_at_ms IS NULL`; idempotent | TLA+ obligation `MarkPhaseStart` action; property test concurrent capture | Coberto por `gc_correctness.tla` |
+| **INV-GC-DEGRADE-MODE-PROBE-PER-BATCH** | Worker probes degrade-mode at every batch boundary; abort ≤ 100ms | HIGH | DO config-singleton query per batch loop iteration; PAT-DEGRADE-001 alignment | Chaos test enable gc-pause mid-phase; abort latency bounded | N/A (architecture invariant) |
+| **INV-GC-MARK-STARTED-AT-ATOMIC** | SQL UPDATE WHERE IS NULL atomic capture; idempotent re-run preserves | CRITICAL | Same SQL WHERE IS NULL; race-free; TLA+ obligation | Property test 1000 concurrent capture attempts | Coberto por `gc_correctness.tla` |
+| **INV-GC-REACHABLE-SET-COMPLETE** | Mark phase 3-pass scan covers `union(blob_meta + ac_meta + manifest_chunks)` | CRITICAL | `corelink-gc::mark` 3 distinct passes; reachable superset-safe | Property test 10k random tenant states; reachable identified correctly | Coberto por `gc_correctness.tla` (InvGCNeverDeleteReachable) |
+| **INV-GC-MARK-TENANT-SCOPED** | All mark queries WHERE tenant_id = ctx.tenant_id; sqlx prepared; clippy lint | CRITICAL | sqlx prepared statements; clippy custom lint forbids `&str` SQL literals; TenantCtx-only enforcement | CI lint + integration test cross-tenant injection rejected | N/A (architecture invariant; Lote 10.4bis lesson) |
+| **INV-GC-MARK-PHASE-BUDGETED** | Mark phase ≤ 10 min p99 @ 1M blobs; PhaseBudgetExceeded error if exceeds | HIGH | Criterion benchmark CI gate; SEV-2 alert if exceeds | Benchmark `bench_mark_1m_blobs` + integration test 5M blobs PhaseBudgetExceeded | N/A (SLO invariant; SLO-FRESH-GC) |
+| **INV-GC-MARK-D1-BOUNDED-BATCH** | 250 rows/batch + 100ms jitter (Lote 10.4bis D1 100KB limit lesson) | HIGH | Hard-coded batch size; D1 throttle adaptive halve | Integration test batch boundary; D1 100KB constraint validated | N/A (architecture invariant) |
+| **INV-GC-SWEEP-AUDIT-FAIL-CLOSED** | Audit emit failure → sweep ROLLBACK; preserves INV-GC-001 + INV-OBS-AUDIT-CHAIN-INTEGRITY | CRITICAL | D1 batch atomic (blob_meta UPDATE + gc_candidate UPDATE + audit_outbox INSERT); both succeed or both fail; SweepError::AuditEmissionFailed | Chaos test simulate audit_outbox INSERT failure; integration test asserts no soft-delete persists | N/A (cripto + governance invariant) |
+| **INV-GC-SWEEP-IDEMPOTENT** | Re-run on already-swept candidate = AlreadySwept no-op | HIGH | `gc_candidate.status` UPDATE atomic; AlreadySwept SweepDecision; PAT-RETRY-IDEMPOTENT-001 | Property test 1000 sweep + re-sweep same candidate | N/A (architecture invariant) |
+| **INV-GC-SWEEP-TENANT-SCOPED** | All sweep queries tenant-scoped strict; cross-tenant impossible | CRITICAL | sqlx prepared + tenant_id NOT NULL + clippy lint | Property test 1000 concurrent sweeps different tenants; CI lint | N/A (architecture invariant; Lote 10.4bis lesson) |
+| **INV-GC-GRACE-RESPECTED** | Physical-delete (WI-S06-004) only fires post-grace; CAP-GC-002 reversibility | HIGH | SQL filter `WHERE blob_meta.deleted_at_ms < (now - grace_period)` strict `<`; env-config grace 72h CAS / 24h AC | Integration test boundary; chaos test reversibility | N/A (architecture invariant) |
+| **INV-GC-PHYSICAL-DELETE-IDEMPOTENT** | Re-run on already-deleted = no-op (PAT-RETRY-IDEMPOTENT-001) | HIGH | R2 DeleteObject S3-compatible idempotent; D1 row purge idempotent | Property test 10k iter `prop_physical_delete_idempotent` | N/A (architecture invariant) |
+| **INV-GC-GRACE-BOUNDARY-STRICT** | SQL `<` (NOT `<=`) grace boundary; reversibility window respected | CRITICAL | Hard-coded `<` em SQL filter; integration test boundary `deleted_at = exact boundary` → NOT deleted | Chaos test #1 boundary; integration test asserts | N/A (architecture invariant) |
+| **INV-GC-R2-D1-ORDERING** | R2 DeleteObject before D1 purge; orphan recoverable; reconcile detects | HIGH | Atomic R2-then-D1 ordering (Lote 10.4bis WI-S04-005 lesson); chaos test R2 fail preserves D1 | Chaos test #2 R2 outage + integration test recovery | N/A (architecture invariant) |
+| **INV-GC-DSR-BYPASS-AUTHORIZED** | DSR signal verified pre-bypass grace; S-11 forward auth | HIGH | DSR signal authentication mandatory; bypass path isolated | S-11 forward integration test stub | N/A (architecture invariant) |
+| **INV-GC-RECONCILE-AUTO-FIX-BOUNDED** | Auto-fix only ≤5 records per tenant; > 5 manual review + SEV-1 | HIGH | Hard-coded threshold 5; configurable env; SEV-1 alert + paused state if exceeds | Property test boundary; integration test SEV escalation | N/A (architecture invariant) |
+| **INV-GC-RECONCILE-AUDIT-FAIL-CLOSED** | Audit emit failure → reconcile ROLLBACK | CRITICAL | D1 batch atomic; SweepError::AuditEmissionFailed analog | Chaos test simulate audit fail; integration test asserts | N/A (cripto + governance invariant) |
+| **INV-GC-CI-GATE-ENFORCED** | TLA+ CI gate blocks merge se TLC red; override via ADR + Architect + Crypto SME | HIGH | GitHub branch protection required status check; PR fail logic | CI workflow `tla-ci-gate.yml`; integration test PR weakening obligation rejected | (planned `gc_correctness.tla` Lote 5.13 verified) |
+| **INV-GC-PROPERTY-TEST-CROSS-VALIDATED** | Rust property test 100k iter cross-validates TLA+ obligations (Mark + UpdateActionResult interleavings) | HIGH | `prop_gc_004_race_mark_update_ar_100k` em CI nightly; deterministic seeds; 0 violations sustained | CI nightly green sustained 30d (S-20 GA gate) | (cross-validation; gc_correctness.tla aligned) |
+| **INV-GC-30D-SUSTAINED-VERIFICATION** | 30d sustained TLA+ verde + chaos zero violations gate pre-S-20 GA | HIGH | CI workflow `tla-30d-sustained.yml` daily aggregate; chaos test 30d staging continuous | Sprint contract DoD §10.s06.4 + Critério Promoção | (governance invariant; Lote 10.6 ship gate) |
+
+**Cross-references**:
+- `ADR-0042` documenta worker scheduler design + degrade-mode contract (vide `scripts/validate_references.py` whitelist).
+- `specs/tla/gc_correctness.tla` (Lote 5.13 + 7.1 fixes) — formal verification baseline.
+- `failure_modes.md FM-300/305/404` — runbook RB-FM-300/404/305 dry-runs em WI-S06-007.
+- `security_model.md CTRL-GC-001/002` — control alignment.
+- `slo_catalog.md SLO-CORRECT-GC + SLO-FRESH-GC` — operational metrics.
+
+**Aliases históricos:** nenhum. Estes ~22 IDs introduzidos em Lote 10.6 (sprint S-06 spec) e **promovidos preemptivamente em Lote 10.6** (consistency com lesson Lote 10.4bis CI gate validate_inv_promotion.py + lesson Lote 10.5 §3.16 promovida preemptive); refinements possíveis em Lote 10.6bis pós-Agent R4 review.
+
+---
+
 ## 4. TLA+ coverage matrix
 
 CRITICAL invariantes **DEVEM** ter TLA+ spec + model check verde no CI (CTRL-FORMAL-001 em `security_model.md §6.9`).
