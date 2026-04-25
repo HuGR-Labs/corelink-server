@@ -3,9 +3,9 @@ id: "SPEC-CONTRACT-S04"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-04-24"
-updated: "2026-04-24"
+updated: "2026-04-25"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -243,6 +243,14 @@ Itens waivable com Architect + Crypto SME + ADR:
 
 **Lote 10.4bis amendment**: 95%-com-waiver path para conformance REMOVIDO (era ⚠️ no v1.1.0). HIGH_RISK GA exige 100% conformance non-negotiable. Emergency Bazel security release (CVE-driven) bypass cadence quarterly via Architect approval + ADR within 1 sprint (vide WI-S04-006 §6.1.10).
 
+## 20. Change Log
+
+| Versão | Data | Autor | Mudança |
+|---|---|---|---|
+| 1.0.0 | 2026-04-24 | Gustavo | Initial sprint contract S-04 (Action Cache + HKDF signing; HIGH_RISK 13 sign-offs). |
+| 1.1.0 | 2026-04-25 | Gustavo | Lote 10.4bis P0 fixes (Agent R4 review remediation): HKDF info bytes domain separation; 95%-with-waiver REMOVED; INV §3.15 promotion; ADR canonical path adrs/; TenantCtx-only; audit fail-closed; 4-tier P0/P1/P2/P3. |
+| 1.2.0 | 2026-04-25 | Gustavo | **Lote 10.4-tris fixes** (Sonnet R5 independent review; 6 NEW P0s + 11 P1s + ADR creation): (a) **P0-R5-001** key_id=0 reserved sentinel + `SigError::KeyIdReserved`; (b) **P0-R5-002** HKDF-Extract composition with path-HMAC TDK documented in ADR-0021 §Risks (Option B accepted under HMAC security; attack cost 2^128); (c) **P0-R5-003** canonical_bytes 121 bytes retained; result_hash = BLAKE3(merkle_root).hex() D1 INDEX column ONLY (NOT cripto binding); ADR-0037; (d) **P0-R5-004** Gherkin BatchUpdateActionResult struck; (e) **P0-R5-005** Crypto SME mandatory (WI-004 SEAL non-waivable) vs advisory (WI-006 PRR ceremony) split explicit em BOTH WIs + ADR-0034; (f) **P0-R5-006** §30.1 key rotation procedures `sig_key_id` + `path_key_id` independent lifecycles; (g) **P1-R5-016** ADRs 0021/0034/0035/0036/0037 stubs created. |
+
 ---
 
-**Fim spec contract S-04 v1.1.0 SOTA.**
+**Fim spec contract S-04 v1.2.0 SOTA.**

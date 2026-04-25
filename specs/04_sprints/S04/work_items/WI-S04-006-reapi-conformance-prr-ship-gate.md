@@ -4,7 +4,7 @@ type: "work_item"
 doc_status: "DRAFT"
 work_status: "READY"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.2.0"
 created: "2026-04-25"
 updated: "2026-04-25"
 lane: "HIGH_RISK"
@@ -494,11 +494,20 @@ Feature: S-04 PRR HIGH_RISK 13 sign-off ship gate
 - Cost regression hidden = financial loss compounds.
 - ±10% tolerance balances flake vs real regression.
 
-### 9.9 Why advisory + mandatory split (Crypto SME advisory)
+### 9.9 Why advisory + mandatory split (Crypto SME) — Lote 10.4-tris P0-R5-005 explicit resolution
 
-- Crypto SME deeply review during S-04 implementation (WI-S04-003 + WI-S04-004); ship gate is final pass.
-- Advisory permits ship if Crypto SME unavailable on ship date but post-ship review committed.
-- Documented in ADR-0034 / S-04 sign-off table.
+**Sonnet R5 P0-R5-005 fix**: contradiction between WI-S04-004 §30 row 13 ("MANDATORY EMPHATIC; non-waivable") AND WI-S04-006 §6.1.6/§30 ("advisory; ADR-0034 waiver path") was real and unresolved post-Lote 10.4bis. Canonical resolution per ADR-0034:
+
+- **WI-S04-004 SEAL** = Crypto SME **MANDATORY EMPHATIC, NON-WAIVABLE**. Substantive cripto review (HKDF protocol; constant-time validation; key rotation `sig_key_id` + `path_key_id`; HKDF-Extract composition with path-HMAC TDK use; ADR-0021 endorsement; ADR-0037 result_hash semantic) happens at WI-S04-004 SEAL — NOT at PRR. Sprint cannot proceed past WI-S04-004 SEAL without Crypto SME signoff. ADR-0034 Option C (sprint extension via ADR) is the ONLY path if Crypto SME unavailable at WI-004 SEAL window.
+
+- **PRR ceremony (WI-S04-006)** = Crypto SME **ADVISORY**. The substantive review already happened at WI-004 SEAL; PRR ceremony is final cross-WI consistency check. If Crypto SME unavailable at PRR ceremony date, ADR-0034 Option A (Architect + AppSec covenant) acceptable — they confirm WI-004 Crypto SME signoff stands; post-ship review committed within 14d.
+
+- **Effect**: Crypto SME blocks WI-004 SEAL (ship-blocking); does NOT block PRR (deferrable). This split aligns with the principle "substantive review at the artifact's SEAL, not at the bundle's ceremony".
+
+This distinction is documented in BOTH WIs explicitly (Lote 10.4-tris P0-R5-005):
+- WI-S04-004 §30 row 13: "MANDATORY EMPHATIC (non-waivable; required BEFORE WI-S04-004 SEAL)" + cross-ref to ADR-0021 + ADR-0037.
+- WI-S04-006 §30 row 13: "ADVISORY at PRR ceremony — substantive review happened at WI-004 SEAL; PRR advisory role only; ADR-0034 Option A waiver acceptable if SME unavailable PRR date".
+- ADR-0034 Decision Matrix row "Crypto SME": Option A NO (PRR ceremony advisory only), Option B NO, Option C yes (sprint extension); Non-waivable YES (cripto WIs).
 
 ### 9.10 ADR potencial?
 

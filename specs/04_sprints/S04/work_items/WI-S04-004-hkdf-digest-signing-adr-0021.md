@@ -4,7 +4,7 @@ type: "work_item"
 doc_status: "DRAFT"
 work_status: "READY"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.2.0"
 created: "2026-04-25"
 updated: "2026-04-25"
 lane: "HIGH_RISK"
@@ -99,6 +99,10 @@ pub enum SigError {
     #[error("key_id {sig_key_id} unknown or rotated out (oldest active: {oldest_active})")]
     KeyIdUnknown { sig_key_id: u32, oldest_active: u32 },
 
+    /// Lote 10.4-tris P0-R5-001: key_id=0 reserved sentinel ("never-issued"); rotation starts at 1.
+    #[error("key_id reserved (sentinel value; rotation starts at 1)")]
+    KeyIdReserved,
+
     #[error("backend error: {0}")]
     BackendError(String),                       // KMS / Cloudflare Secrets fetch failed
 
@@ -141,12 +145,27 @@ impl SignatureVerifier for HkdfVerifier {
         if sig.len() != 32 {
             return Err(SigError::LengthMismatch { expected: 32, got: sig.len() });
         }
+        // Lote 10.4-tris P0-R5-001 fix: key_id=0 reserved sentinel ("never-issued"); rotation
+        // starts from key_id=1; reject any sig with sig_key_id==0 explicitly to prevent the
+        // 4-byte all-zero salt edge case (distinct from RFC 5869 32-zero-byte default).
+        if sig_key_id == 0 {
+            return Err(SigError::KeyIdReserved);  // sentinel; never legitimate
+        }
         if !self.accepted_key_ids.contains(&sig_key_id) {
-            let oldest = *self.accepted_key_ids.iter().min().unwrap_or(&0);
+            // Lote 10.4-tris P0-R5-001 fix: unwrap_or(&1) NOT &0 (avoid leaking sentinel via error response;
+            // also ensures `oldest_active` always reports a valid key_id).
+            // debug_assert!(!self.accepted_key_ids.is_empty()) — production verifier init guarantee.
+            debug_assert!(!self.accepted_key_ids.is_empty(),
+                "accepted_key_ids must not be empty in production verifier");
+            let oldest = *self.accepted_key_ids.iter().min().unwrap_or(&1);
             return Err(SigError::KeyIdUnknown { sig_key_id, oldest_active: oldest });
         }
         let tdk = self.tdk_handle.fetch(sig_key_id)?;
         // Lote 10.4bis P0 fix: salt = sig_key_id binds version (matches sign path).
+        // Lote 10.4-tris P0-R5-002 documented: this HKDF-Extract step is the unified entry point
+        // for sig_key derivation. Path-HMAC use of TDK (S-01 corelink-tenant-path) is documented
+        // in ADR-0021 §Risks as analyzed under HMAC security assumption (NOT formally composed
+        // through HKDF-Extract); accepted with attack cost bounded by 2^128 per Crypto SME advisory.
         let salt = sig_key_id.to_le_bytes();
         let hk = Hkdf::<Sha256>::new(Some(&salt), &tdk);
         let mut sig_key = [0u8; 32];
@@ -1015,13 +1034,41 @@ Fallback: handler returns 503 if sig verify backend unavailable (KMS down + cach
 | 10 | Privacy | _TBD; TDK leak prevention review_ | _pending_ | _pending_ |
 | 11 | Architect | _TBD; **mandatory** — ADR-0021 ratificação + key rotation infra_ | _pending_ | _pending_ |
 | 12 | AppSec | _TBD; **mandatory emphatic** — constant-time discipline + TDK hygiene_ | _pending_ | _pending_ |
-| 13 | Crypto SME | _**MANDATORY EMPHATIC** — sig protocol independent review; constant-time validation; key rotation analysis; test vectors; HKDF + BLAKE3-keyed audit; ADR-0021 endorsement_ | _pending_ | _pending_ |
+| 13 | Crypto SME | _**MANDATORY EMPHATIC** (non-waivable; Lote 10.4-tris P0-R5-005 explicit per Sonnet R5) — required BEFORE WI-S04-004 SEAL: sig protocol independent review; constant-time validation; key rotation analysis (BOTH `sig_key_id` AND `path_key_id` per P0-R5-006); test vectors; HKDF + BLAKE3-keyed audit; ADR-0021 endorsement; review of HKDF-Extract composition with path-HMAC TDK use (P0-R5-002 acceptability ruling)._ | _pending_ | _pending_ |
+
+### 30.1 Key Rotation Procedures (Lote 10.4-tris P0-R5-006 fix — explicit independent lifecycles)
+
+`sig_key_id` and `path_key_id` are INDEPENDENT key-version columns in `ac_meta`. Their rotation procedures are also independent:
+
+#### `sig_key_id` rotation (HKDF signing TDK)
+
+1. Generate new TDK_v<N+1> via KMS (Worker secret `CORELINK_TDK_V<N+1>`).
+2. Add `current_key_id = N+1` em `HkdfSigner` config; new envelopes signed with v<N+1>.
+3. Add `accepted_key_ids = [N, N+1]` em `HkdfVerifier` config (grace period 30d retains old TDK).
+4. After 30d grace, remove `N` from `accepted_key_ids`; old envelopes signed with v<N> rejected with `SigError::KeyIdUnknown`; affected customers must re-execute Action (per WI-001 §1 narrative point 11 chaos test).
+
+#### `path_key_id` rotation (TDK for path-prefix derivation)
+
+1. Generate new TDK_v<M+1> via KMS (Worker secret `CORELINK_PATH_TDK_V<M+1>`).
+2. **DO NOT re-compute existing `tenant_prefix` materialized columns** — they are bound to the TDK version that signed them at INSERT time; preserved per-row via `path_key_id`.
+3. New INSERTs use TDK_v<M+1> + new `path_key_id = M+1`; old rows retain TDK_v<M> via their persisted `path_key_id`.
+4. GET handler reads `tenant_prefix` from D1 row (materialized BLOB column; NOT recomputed from TDK at GET time per WI-S04-001 §1 step [3]); GET path reconstruction is INDEPENDENT of current TDK version.
+5. **Eviction (WI-S04-005)** uses `tenant_prefix` from materialized column for R2 path construction; deletion is independent of TDK rotation.
+6. **TDK_v<M> retention**: keep retired path TDKs available indefinitely (NEVER delete) — required for any future read of rows persisted with that version. Documented em runbook RB-PATH-TDK-RETENTION (forward stub).
+
+#### Invariant `INV-AC-PATH-SIG-KEY-VERSION-INDEPENDENT` (NEW; promote to §3.15):
+
+`sig_key_id` and `path_key_id` MAY diverge per row when rotation happens between path computation (INSERT step) and HKDF signing (UpdateActionResult step). This is a VALID state, not an invariant violation. Handler INSERT MUST use current `sig_key_id` AND current `path_key_id` at the moment of write; no atomic snapshot required across the two key versions.
+
+#### Forward: ADR-0021 §RotationProcedures captures the canonical procedure.
 
 ## 31. Change Log
 
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-25 | Gustavo (via Claude Opus 4.7) | Criação WI-S04-004 (Lote 10.4); SOTA pós-Lote 10.3bis (32 seções; 13-row sign-off; 14-row risk; Mann-Whitney 3-prong cripto-grade |Δmedian| ≤ 0.5ms; cost TCO 12m; 12 chaos experiments; STRIDE+LINDDUN delta full; Crypto SME MANDATORY EMPHATIC; ADR-0021 ratificação plan). |
+| 1.1.0 | 2026-04-25 | Gustavo (Lote 10.4bis Agent R4) | P0 fixes: salt = sig_key_id binds version (RFC 5869 Extract); HKDF info `b"ac-sig"` non-prefix domain separation from `b"manifest-sig"`/`b"meta-manifest-sig"`; canonical_bytes 89→121 bytes (added result_hash binding); sig_alg CHECK constraint inline; Crypto SME promoted MANDATORY EMPHATIC. |
+| 1.2.0 | 2026-04-25 | Gustavo (Lote 10.4-tris Sonnet R5) | **P0-R5-001**: key_id=0 reserved sentinel; rotation starts at 1; `unwrap_or(&1)` not `&0`; debug_assert non-empty accepted_key_ids; `SigError::KeyIdReserved` variant added. **P0-R5-002**: HKDF-Extract composition with path-HMAC TDK use documented in ADR-0021 §Risks (accepted under HMAC security assumption; attack cost 2^128). **P0-R5-003**: canonical_bytes 121 bytes retained com result_hash documented as **derived `BLAKE3(merkle_root)` for D1 index lookup ONLY (NOT cripto binding)**; verify_full is the cripto authority for sig+structure; result_hash column is index column, not security boundary; ADR-0037 §A1 clarifies. **P0-R5-005**: Crypto SME MANDATORY EMPHATIC explicit (non-waivable; required BEFORE WI-S04-004 SEAL); WI-S04-006 §6.1.6 advisory role at PRR ceremony only (substantive review at this WI's SEAL). **P0-R5-006**: §30.1 NEW — explicit key rotation procedures for BOTH `sig_key_id` AND `path_key_id`; INV-AC-PATH-SIG-KEY-VERSION-INDEPENDENT promoted. |
 
 ## 32. Anti-patterns evitados
 
