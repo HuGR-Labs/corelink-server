@@ -197,6 +197,25 @@ WHITELIST_IDS = {
     "INV-AUDIT-CHAIN-HASH-DETERMINISTIC",  # S-03 WI-S03-007
     "INV-AUDIT-EVENT-TYPE-EXHAUSTIVE",     # S-03 WI-S03-007
     "INV-AUDIT-RETENTION-HINT-ACCURATE",   # S-03 WI-S03-007
+    # Forward-looking AC INVs (S-04 Lote 10.4 — promovidas em registry §3.15 em Lote 10.4bis P0 fix):
+    "INV-AC-MERKLE-VALID",                 # S-04 WI-S04-003
+    "INV-AC-MERKLE-DETERMINISTIC",         # S-04 WI-S04-003
+    "INV-AC-BOUNDED-PARSER",               # S-04 WI-S04-003
+    "INV-AC-CYCLE-FREE",                   # S-04 WI-S04-003
+    "INV-AC-DUAL-SIDE-VERIFY",             # S-04 WI-S04-003
+    "INV-AC-DIGEST-SIGNED",                # S-04 WI-S04-004
+    "INV-AC-SIG-CONSTANT-TIME",            # S-04 WI-S04-004
+    "INV-AC-SIG-INFO-FIXED",               # S-04 WI-S04-004
+    "INV-AC-KEY-ROTATION-GRACE",           # S-04 WI-S04-004
+    "INV-AC-TDK-ZEROIZED",                 # S-04 WI-S04-004
+    "INV-AC-CANONICAL-BYTES-STABLE",       # S-04 WI-S04-004
+    "INV-AC-IDEMPOTENT",                   # S-04 WI-S04-001
+    "INV-AC-NEG-CACHE-INVALIDATED-ON-UPDATE",  # S-04 WI-S04-001
+    "INV-AC-RESULT-HASH-IMMUTABLE",        # S-04 WI-S04-001
+    "INV-AC-EVICT-TENANT-SCOPED",          # S-04 WI-S04-005
+    "INV-AC-EVICT-CONSISTENCY",            # S-04 WI-S04-005
+    "INV-AC-TTL-MONOTONIC",                # S-04 WI-S04-005
+    "INV-DATA-AC-REFS-EXIST",              # data_model.md §4.2 alias of INV-AC-OUTPUTS-VALID
     # Patterns referenciados forward-looking em S-02 (definidos em resilience_patterns.md mas missing entry-anchor)
     "PAT-CIRCUIT-BREAKER-001",
     "PAT-INVALIDATE-001",  # S-03 v1.1 forward-looking pattern (revocation propagation)
@@ -216,6 +235,9 @@ WHITELIST_IDS = {
     "ADR-0032",  # S-03 WI-S03-006: WebAuthn Level 3 + AAGUID allowlist + step-up flow design
     "ADR-0033",  # S-03 WI-S03-007: Audit event taxonomy EVT-047 + CloudEvents 1.0 + chain hash alignment
     "ADR-0034",  # S-03 WI-S03-008 (Lote 10.3bis): Solo-tier PRR waiver (staffing reality dual-hat com expiry)
+    "ADR-0035",  # S-04 WI-S04-001: AC handler invariants (TenantCtx-only; warn-only outputs check em GET; R2-first then D1; 100 batch cap)
+    "ADR-0036",  # S-04 WI-S04-002: AC schema design + migration governance + R2 bucket provisioning policy + region addition workflow
+    "ADR-0037",  # S-04 WI-S04-003: AC Merkle protocol (BLAKE3 + RFC 6962 domain sep + bounded parser + deterministic build + dual-side verify)
     "FM-XXX",
     "ADR-XXXX",
     "ADR-YYYY",
@@ -243,6 +265,11 @@ WHITELIST_IDS = {
     "RB-FM-NEON-OUTAGE",             # S-03 WI-S03-005
     "RB-FM-KEY-ROTATION-DRIFT",      # S-03 WI-S03-005
     "RB-FM-WEBAUTHN-MDS-OUTAGE",     # S-03 WI-S03-006
+    "RB-FM-AC-TTL-DRIFT",            # S-04 WI-S04-005
+    "RB-FM-AC-TTL-STORM",            # S-04 WI-S04-005
+    "RB-FM-AC-MIGRATION-BUG",        # S-04 WI-S04-002
+    "RB-FM-AC-BUCKET-LEAK",          # S-04 WI-S04-002
+    "RB-FM-AC-CACHE-MISS-STORM",     # S-04 WI-S04-001 forward-looking
     # SLOs em formato sem header standalone (definidos em corpo do §4.X mas não como anchor)
     "SLO-DEPLOY-SAFE",
     "SLO-INCIDENTS",
