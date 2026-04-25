@@ -334,7 +334,7 @@ audit-<region>/
 | `presigned:get:<hash>` | signed URL                 | 15 min      | Idem                                |
 | `nonce:<tenant>:<id>`  | timestamp                  | 120s        | Replay protection (CTRL-AUTH-007)   |
 | `pat_valid:<hash>`     | minimal claims JSON         | 60s         | Rápido verify path (defesa em profundidade vs DB miss) |
-| `ac_neg:<digest>`      | flag                        | 300s        | Negative cache                      |
+| `ac_neg:<tenant_prefix>:<digest>` | flag             | 60s         | Negative cache (tenant-scoped via Layer 4 prefix; TTL shorter than CAS — actions stale rápido pós-rebuild; per-tenant scoping previne cross-tenant negative-cache leak/poisoning; amended Lote 10.4bis per WI-S04-001 §9.3) |
 
 **KV é global eventual** — jamais source-of-truth.
 

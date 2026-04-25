@@ -114,6 +114,15 @@ introduced_in_sprint: S-XX
 | `COR_AC_ACTION_NOT_FOUND` | 404 | never | `ActionNotFoundError` | "Action result not in cache" | Execute action and call UpdateActionResult to populate |
 | `COR_AC_TTL_EXPIRED` | 410 | never | `ActionExpiredError` | "Action result has expired" | Re-execute action |
 | `COR_AC_MERKLE_INVALID` | 422 | never | `MerkleVerificationError` | "Merkle tree verification failed" | Verify ActionResult proto integrity; possible cache poisoning |
+| `COR_AC_OUTPUTS_MISSING` | 422 | never | `OutputsMissingError` | "ActionResult references missing or tombstoned blobs" | Re-execute action to repopulate referenced blobs |
+| `COR_AC_SIG_INVALID` | 422 | never | `SignatureInvalidError` | "Action result signature verification failed" | Possible cache tampering; re-execute action and report to support |
+| `COR_AC_BACKEND_UNAVAILABLE` | 503 | exponential | `BackendUnavailableError` | "Action cache backend temporarily unavailable" | Retry with exponential backoff per `Retry-After` |
+| `COR_AC_RESULT_HASH_MISMATCH` | 409 | never | `ResultHashMismatchError` | "Existing cached result hash differs from upload" | Possible non-deterministic build; investigate compiler determinism |
+| `COR_AC_DIGEST_MISMATCH` | 422 | never | `DigestMismatchError` | "URL digest does not match request body" | Recompute action digest from canonical Action proto |
+| `COR_AC_PAYLOAD_TOO_LARGE` | 413 | never | `PayloadTooLargeError` | "ActionResult exceeds 1 MiB limit" | Reduce output_files metadata size or chunk via CAS |
+| `COR_AC_INTERNAL` | 500 | exponential | `InternalServerError` | "Internal error processing action cache request" | Retry; if persistent, contact support with `request_id` |
+| `COR_AC_DEPRECATED` | 503 | never | `ACDeprecatedError` | "Action cache temporarily disabled (rollback)" | Retry after `Retry-After`; check status page |
+| `COR_AC_KEY_ID_UNKNOWN` | 422 | never | `KeyIdUnknownError` | "Action result signed with rotated-out key" | Re-execute action; older entries past rotation grace are invalidated |
 
 ### 3.3 Auth errors (S-03)
 

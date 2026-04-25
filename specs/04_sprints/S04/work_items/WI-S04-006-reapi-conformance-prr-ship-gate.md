@@ -50,12 +50,14 @@ Este WI é o **ship gate** de S-04: AC entra em production-ready state somente a
 ```text
 Ship Gate Components:
 
-1. **REAPI v2 Conformance Suite**:
-   - Source: bazelbuild/remote-apis @ pinned commit (vendored em WI-S04-001 build.rs).
-   - Subset: AC operations only (GetActionResult, UpdateActionResult, BatchUpdateActionResult).
-   - Run: nightly CI against staging environment.
-   - Gate: 100% pass; PR red if regression.
-   - Quarterly bump cadence (community engagement).
+1. **REAPI v2 Conformance Suite** (Lote 10.4bis P0 fix #5: pin test set + REMOVE BatchUpdateActionResult):
+   - Source: bazelbuild/remote-apis @ **commit pinned in ADR-0036** (vendored em WI-S04-001 build.rs).
+   - **Subset enumerated**: AC operations only — `GetActionResult` (4 conformance tests: hit/miss/expired/wrong-tenant) + `UpdateActionResult` (6 conformance tests: success/idempotent/digest-mismatch/payload-too-large/sig-flow/result-hash-mismatch). **Lote 10.4bis P0 fix**: removido "BatchUpdateActionResult" — REAPI v2 has NO batch RPC on ActionCache (only on CAS via WI-S01-005 BatchUpdateBlobs).
+   - **Total**: 10 conformance tests covering AC subset; full list em ADR-0036 Annex A.
+   - Run: nightly CI against staging environment + per-commit on PRs touching `crates/corelink-worker/src/reapi/ac/`.
+   - **Gate: 100% pass non-negotiable** (sprint contract §19 amended em Lote 10.4bis to remove 95% waiver path); PR red if regression.
+   - **Emergency Bazel security release** (CVE-driven): bypass quarterly cadence via Architect approval + ADR within 1 sprint.
+   - Quarterly bump cadence (community engagement); Bazel current + next major (Bazel 7+8 em S-04 GA).
 
 2. **DASH-AC Dashboards** (Grafana ou CF Analytics):
    - Cache hit ratio per (tenant_tier, region) — customer-visible business métrica.
@@ -128,7 +130,13 @@ HIGH_RISK em N dimensões:
 
 6. **Cache hit ratio business métrica deviation**: customer expects 70% but staging workload = 50%; customer SLA breach if S-04 GA promises 70%. Mitigação: synthetic workload calibrated against real Bazel projects (Bazel reference projects); ADR-0019 documents per-tier expected hit ratio (free tier short TTL = lower hit ratio expected).
 
-7. **72h SLO incident reset clock**: minor incident at 71h reset; ship delayed +72h. Mitigação: incident classification (P1/P2/P3); P3 minor (e.g., metric drift) does not reset; P1/P2 reset; pre-defined per ADR.
+7. **72h SLO incident reset clock** (Lote 10.4bis P0 fix #4: define classification explicitly): minor incident at 71h reset; ship delayed +72h. Mitigação: **incident classification 4-tier** (added Lote 10.4bis):
+   - **P0 (blocker)**: cross-tenant data leak detected; sig invalid sustained > 5/h; REAPI conformance regression; cache hit ratio drop > 50% sustained 30min. **Resets clock immediately**; SEV-0 incident response.
+   - **P1 (high)**: SLO-AVAIL-AC < 99.9% sustained 30min; p99 latency > 200ms warm; backend unavailable spike. **Resets clock**.
+   - **P2 (medium)**: tampering counter increment (single event); INV-AC-OUTPUTS-VALID drift > 5 records; chaos test detection. **Resets clock**.
+   - **P3 (minor)**: metric drift < 5%; informational alert; runbook documentation gap. **Does NOT reset clock**.
+
+   Classification authority: **Architect + Security Lead joint** (single-engineer Owner cannot self-classify); auto-reset triggered if DASH-AC alert sustained > 5min. Documented em `_spec_contract.md` §4.X (Lote 10.4bis amendment).
 
 8. **Cost regression gate flake**: bench latency varies ±15%; gate fails ±10%. Mitigação: bench warm-up + multiple runs (5×); take median; flake retry 3×.
 
@@ -840,14 +848,17 @@ Fallback: if production rollout shows incident, gradual rollback per documented 
 | 10 | Privacy | _TBD; **mandatory** — PII redaction + tenant pseudonymity_ | _pending_ | _pending_ |
 | 11 | Architect | _TBD; **mandatory** — ADR ratificações + handler trait composability + non-exhaustive evolution_ | _pending_ | _pending_ |
 | 12 | AppSec | _TBD; **mandatory emphatic** — tampering detection + sig integration + bucket ACL_ | _pending_ | _pending_ |
-| 13 | Crypto SME (advisory) | _**MANDATORY EMPHATIC** — HKDF sig protocol + Merkle protocol + constant-time + key rotation; ADR-0021 endorsement_ | _pending_ | _pending_ |
+| 13 | Crypto SME | _**MANDATORY EMPHATIC** (Lote 10.4bis P0 fix #2: removido "advisory" label — was contradicting WI-S04-004 §30 row 13 MANDATORY EMPHATIC). Resolution: WI-S04-004 SME review is **non-waivable pre-PRR** (40-80h booking, was 4h ST-018; industry-norm 10× larger); WI-S04-006 PRR ceremony **references WI-S04-004's sign-off** as cripto domain validation. PRR may proceed if WI-S04-004 has SME sign-off; PRR may NOT proceed without it. Independent review of: HKDF sig protocol + Merkle protocol + constant-time discipline + key rotation analysis + test vectors review + ADR-0021 endorsement._ | _pending_ | _pending_ |
 
-**Sign-off discipline**:
-- 12 mandatory sign-offs required.
-- 1 advisory (Crypto SME) acceptable post-ship review per ADR-0034 waiver path.
-- ADR-0034 documents staffing-blocked compensation patterns (Architect compensates SRE Lead concerns).
-- Sign-off entries require checklist evidence; rubber-stamp prohibited.
-- Sign-off via GitHub PR review + git commit signing.
+**Sign-off discipline** (Lote 10.4bis P0 fix #2 + #3):
+- **12 mandatory sign-offs required + Crypto SME (now mandatory non-waivable)** = 13 total mandatory.
+- ADR-0034 documents staffing-blocked compensation patterns (Architect compensates SRE Lead concerns); applies to **SRE Lead only** (not Crypto SME — that role's review is non-waivable for cripto WI-S04-004).
+- **Staffing reality** (Lote 10.4bis P0 fix #3 — carry-forward defect from S-03 part2): 9-of-13 unstaffed currently. Resolution paths (must pick one before sprint kickoff D-0):
+  - (a) Explicit retention plan with names/firms confirmed by D-0.
+  - (b) Amend mandatory sign-off count via sprint contract update.
+  - (c) Accept staffing-blocked SEAL slip with Owner+Final-Approver-only sign-off (NOT recommended for HIGH_RISK GA).
+- Sign-off entries require **checklist evidence** (each role: "I read XYZ and verified A/B/C"); rubber-stamp prohibited.
+- Sign-off via GitHub PR review + git commit signing; CI gate validates non-empty entries.
 
 ## 31. Change Log
 

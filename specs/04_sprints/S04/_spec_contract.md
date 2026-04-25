@@ -233,14 +233,15 @@ S-04 **NÃO PODE** promover via waiver dos seguintes itens:
 
 - ❌ INV-AC-TENANT-SCOPED property test 100k green — security baseline.
 - ❌ Merkle verify dual-side — INV-CAS-INTEGRITY alignment.
-- ❌ REAPI v2 conformance suite passa — DX baseline.
+- ❌ REAPI v2 conformance suite passa **100%** — DX baseline (Lote 10.4bis tightening; HIGH_RISK GA não deve shippar com 5% conformance gap; emergency bumps via ADR forward).
 - ❌ HKDF digest signing CTRL-AC-002 — security baseline.
 
 Itens waivable com Architect + Crypto SME + ADR:
 
 - ⚠️ Cache hit ratio target 70% → 50% com plan to improve next sprint.
 - ⚠️ AC GetActionResult p99 150ms → 200ms com customer SLA addendum.
-- ⚠️ Conformance suite 100% → 95% com explicit waiver list per check.
+
+**Lote 10.4bis amendment**: 95%-com-waiver path para conformance REMOVIDO (era ⚠️ no v1.1.0). HIGH_RISK GA exige 100% conformance non-negotiable. Emergency Bazel security release (CVE-driven) bypass cadence quarterly via Architect approval + ADR within 1 sprint (vide WI-S04-006 §6.1.10).
 
 ---
 

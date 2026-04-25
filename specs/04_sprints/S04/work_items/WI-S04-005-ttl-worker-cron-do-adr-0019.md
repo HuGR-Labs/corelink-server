@@ -128,10 +128,10 @@ pub struct S07PerTierTtlResolver { /* ... */ }
 
 **Constraint cripto-driven (tenant scoping)**:
 
-1. **DELETE tenant-scoped strict**: SQL `DELETE FROM ac_meta WHERE tenant_id = ? AND action_digest = ?` — never `WHERE expires_at < ?` alone (would cross-tenant delete).
-2. **R2 path scoping**: DELETE uses tenant_prefix = HMAC(TDK, tenant_id) consistent with WI-S04-001 layer 4.
-3. **Bounded batch**: 1000 rows per tick; sleep between; avoid D1 lock contention + R2 rate limit.
-4. **Per-region shard**: each region's TTL worker only deletes its own region's rows; cross-region deletion impossible by design (region filter in SELECT).
+1. **DELETE tenant-scoped strict**: SQL `DELETE FROM ac_meta WHERE tenant_id = ? AND action_digest = ?` — never `WHERE expires_at < ?` alone (would cross-tenant delete). **Lote 10.4bis P0 fix**: CI gate (clippy lint OR grep) em `crates/corelink-worker/src/ac/ttl/` enforce que todo DELETE statement inclui `tenant_id = ?` clause.
+2. **R2 path scoping**: DELETE reads `tenant_prefix` BLOB(16) materialized em `ac_meta` column (Lote 10.4bis P0 fix: WI-S04-002 schema fix); cron worker uses column directly **without TDK access** (avoids cron trust boundary expansion). Previously spec was silent on cron derivation, implying cron needed TDK to re-compute HMAC — closed by column materialization. Layer 4 path consistency with WI-S04-001 handler INSERT.
+3. **Bounded batch**: **Lote 10.4bis P0 fix: 250 rows/tick** (was 1000; reduced for D1 batch 100KB limit — 1000 rows × ~200B audit-event = 200KB+ exceeds D1 batch limit). 250 × ~400B (D1 DELETE + audit_outbox INSERT pair) = 100KB. Sleep 100ms between; avoid D1 lock contention + R2 rate limit.
+4. **Per-region shard**: each region's TTL worker only deletes its own region's rows; cross-region deletion impossible by design (region filter in SELECT). **Lote 10.4bis P0 fix**: stagger alarms across regions (sam=00, iad=12, lhr=24, nrt=36, syd=48 minutes past hour) to spread D1 lock contention; documented em §6.1 cron config.
 
 ## 2. Narrative (HIGH_RISK ≥ 300 palavras + risk justification)
 
@@ -143,13 +143,18 @@ HIGH_RISK em N dimensões:
 
 1. **Cross-tenant DELETE**: bug em SQL WHERE clause `DELETE WHERE expires_at < ?` (sem tenant_id filter) → deletes ALL expired rows globally; if pagination buggy, cross-tenant rows entangled. Catastrophic FM-303-adjacent. Mitigação: SQL DELETE always `WHERE tenant_id = ? AND action_digest = ?`; never bulk-delete by expires_at alone; integration test asserts.
 
-2. **R2 vs D1 inconsistency**: D1 DELETE succeeds, R2 DELETE fails (R2 down) → orphan R2 envelope; subsequent GET returns 404 (D1 row gone) but envelope still consumes storage. Mitigação: R2-first then D1-DELETE; if R2 fails, retry via outbox; if persistent fail, SEV-2 + manual reconcile. Reverse (D1-first) leaves orphan R2 unreferenced; S-06 GC reconcile catches eventually but slower fix.
+2. **R2 vs D1 inconsistency** (Lote 10.4bis P0 fix: clarified flow + atomicity boundaries):
+   - **Step order**: R2 DELETE (external) → on success → D1 DELETE + audit_outbox INSERT (atomic D1 batch) → KV invalidate (post-batch).
+   - **R2 DELETE fails (5xx)**: retry once with backoff; if persistent, abort batch row + preserve D1 row (still valid R2 reference); audit emit `ac.evict.r2_failed`; metric alert; next tick retries (idempotent: `expires_at < now` still selects row).
+   - **D1 batch fails after R2 success**: R2 envelope already deleted; D1 row references dead R2; subsequent GET returns 404 from R2-not-found path (customer-acceptable — entry expired); next cron tick re-attempts D1 DELETE (idempotent). Orphan window = 1 cron interval.
+   - **D1 batch atomicity**: D1 DELETE + audit_outbox INSERT atomic via single `db.batch([...])` call; both succeed OR both rollback. R2 DELETE is OUTSIDE the batch (precedes it); the atomicity is between D1 ops only, NOT the R2-D1 pair.
+   - Reverse ordering (D1-first then R2): leaves orphan R2 unreferenced; S-06 GC reconcile catches but slower fix; chosen ordering (R2-first) preferred.
 
 3. **Refresh-on-hit storm**: every GET triggers UPDATE last_hit_at + expires_at; high-rate workload (100 req/s same digest) = 100 D1 UPDATE/s = lock contention. Mitigação: refresh-on-hit only if last_hit_at < now - refresh_threshold (e.g., 60s); reduces UPDATE rate proportionally; integration test under 1k req/s burst.
 
 4. **Cron DO sharding (5 regions)**: each region's worker independent; coordination not needed (region scoping). BUT global expiry policy change (e.g., emergency TTL=0 for all tenants pos-incident) requires coordinated update; central control plane needed. Mitigação: env-config single source-of-truth; each DO reads at alarm fire; no distributed state.
 
-5. **Batch size too large**: 10000 rows per batch → D1 timeout → partial commit → inconsistent state. Mitigação: batch size 1000 (well below D1 ~100-statement-batch limit per op; D1 SELECT 1000 LIMIT is OK fetch-only); R2 DELETE 1000 sequential takes ~10s OK within 30s alarm budget.
+5. **Batch size too large** (Lote 10.4bis P0 fix: D1 batch 100KB limit conflict): 10000 rows per batch → D1 timeout → partial commit → inconsistent state. Mitigação: **batch size 250** (was 1000 in v1.0; reduced em Lote 10.4bis para D1 batch 100KB limit — each row produces D1 DELETE + audit_outbox INSERT pair ~400 bytes; 250 × 400 = 100KB exactly aligned; R2 DELETE is sequential outside D1 batch). R2 DELETE 250 sequential takes ~2.5s OK within 30s alarm budget. Multiple batches per tick com sleep 100ms; loop until batch returns < 250 OR alarm budget exhausted.
 
 6. **TTL jitter**: all expires_at exactly at hour boundary → cron tick at hour boundary expires all simultaneously → R2 DELETE storm. Mitigação: refresh-on-hit adds jitter (±10% randomization); batch-bounded eviction smooths storm; alert if batch_size hits cap continuously (sustained workload too high; needs scale).
 
@@ -518,7 +523,7 @@ Feature: AC TTL infrastructure (cron DO + refresh-on-hit)
 - [ ] **10.s04.005.8** TierTtlResolver trait: env-config fallback active S-04 GA; S-07 forward replaceable (EVT-027 ADR-0019).
 - [ ] **10.s04.005.9** Métricas (8 listadas §6.1.10) emitted; dashboard widget partial (full em WI-S04-006).
 - [ ] **10.s04.005.10** Cargo-audit + cargo-deny + clippy `-D warnings` clean.
-- [ ] **10.s04.005.11** Cost regression gate: per-eviction cost ≤ $0.000003 (R2 + D1 + KV) (Lote 9.4 §14.10).
+- [ ] **10.s04.005.11** Cost regression gate (Lote 10.4bis P0 fix corrigida): per-eviction cost ≤ $0.000015 (with headroom over $0.000011 actual; was wrongly $0.000003 in v1.0) (Lote 9.4 §14.10).
 - [ ] **10.s04.005.12** Runbooks RB-FM-AC-TTL-DRIFT + RB-FM-AC-TTL-STORM published.
 
 ## 11. DoD
@@ -576,7 +581,7 @@ TLA+ alignment: tenant_isolation.tla — TTL flow respects tenant scoping; evict
 - **14.s04.005.7** Runbooks: RB-FM-AC-TTL-DRIFT + RB-FM-AC-TTL-STORM.
 - **14.s04.005.8** Forward-compat: TierTtlResolver trait swappable (env → S-07 config-singleton).
 - **14.s04.005.9** Memory bounded: per-tick ≤ 1 MiB heap (1000 rows × ~1 KiB serialized).
-- **14.s04.005.10** Cost regression gate: per-eviction ≤ $0.000003.
+- **14.s04.005.10** Cost regression gate (Lote 10.4bis P0 fix): per-eviction ≤ $0.000015 (with 35% headroom over actual $0.000011).
 
 ## 15. Chaos Experiments
 
@@ -698,7 +703,7 @@ Dashboard widget DASH-AC TTL (partial; full em WI-S04-006):
 - D1 DELETE: $1/M.
 - KV DELETE: $5/M.
 - Audit outbox INSERT: ~$0.50/M.
-- Per-eviction: ~$0.000011 ≈ $0.000003 amortized over batch.
+- Per-eviction: **~$0.000011** (Lote 10.4bis P0 fix: prior text said "$0.000003 amortized over batch" — the per-op cost IS $0.000011; "amortized" was misleading. Actual cost: R2 $4.5/M + D1 $1/M + KV $5/M + audit_outbox $0.50/M = $11/M = $0.000011 per eviction).
 
 **Per-refresh cost** (synchronous in handler):
 - D1 UPDATE: $1/M.
@@ -706,11 +711,11 @@ Dashboard widget DASH-AC TTL (partial; full em WI-S04-006):
 
 **TCO 12m projection** (10M GET/dia → 10% trigger refresh = 1M refreshes/dia; 1M evictions/dia at ~1y entry rotation):
 - Refresh: 1M × $0.000001 = $1/dia.
-- Eviction: 1M × $0.000003 = $3/dia.
+- Eviction: 1M × $0.000011 = $11/dia (Lote 10.4bis P0 fix: was $0.000003 errado).
 - DO compute (5 instances × 1 tick/h × 30s): negligible (~$0.10/dia).
 - Total: ~$5/dia × 365 = **~$1.8k/yr**.
 
-**Cost regression gate**: per-eviction ≤ $0.000003 + per-refresh ≤ $0.000001.
+**Cost regression gate** (Lote 10.4bis P0 fix corrigida math): per-eviction ≤ $0.000015 (with 35% headroom over $0.000011) + per-refresh ≤ $0.000001.
 
 **Comparison vs alternatives**:
 - TTL via R2 lifecycle policies (R2 native expiry): $0/yr but coarse-grained (per-bucket; not per-tenant); LOSES audit emission.

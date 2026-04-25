@@ -53,11 +53,11 @@ Implementar `crates/corelink-worker/src/reapi/ac.rs` — handlers REAPI v2 `Acti
 ```text
 GetActionResult flow:
   Request gRPC (Bazel client) → Tower auth_stack (S-03 WI-S03-003) → TenantCtx ext →
-    [1] negative_cache::lookup(action_digest)  → KV `ac_neg:<tenant_prefix>:<action_digest>` TTL 60s
+    [1] negative_cache::lookup(action_digest)  → KV `ac_neg:<tenant_prefix>:<action_digest>` TTL 60s (canonical em data_model.md §6.1 pós-Lote 10.4bis amendment)
     [2] ac_meta::lookup(tenant_id, action_digest) → D1 SELECT
     [3] r2::get(ac-<region>/<tenant_prefix>/<action_digest>.json) → AC envelope (signed)
     [4] sig::verify(envelope, tenant_key) → corelink-ac WI-S04-004 HKDF verify
-    [5] outputs_check::warn-if-missing → INV-AC-OUTPUTS-VALID daily reconcile (WI-S04-003)
+    [5] outputs_check::warn-if-missing (1% sampled per Lote 10.4bis P0 fix; full check em UPDATE) → INV-AC-OUTPUTS-VALID daily reconcile (WI-S04-003)
     [6] ttl::refresh-on-hit(tenant_id, action_digest) → D1 UPDATE last_hit_at, expires_at += renewal
     [7] audit::emit(ac.get.ok | ac.get.miss)
   Response: ActionResult proto OR 404 COR_AC_ACTION_NOT_FOUND (negative cache populated)
@@ -119,8 +119,8 @@ pub enum AcError {
 
 **Cripto-driven invariants enforced em cada handler call**:
 
-1. **Tenant-scoped lookup**: `ac_meta::lookup` SQL é `WHERE tenant_id = $1 AND action_digest = $2` — `tenant_id` vem **EXCLUSIVAMENTE** de `TenantCtx.tenant_id` (não query param, não header, não body). Wrapper `with_tenant_ctx!` macro (S-03 WI-S03-005) garante `SET LOCAL app.current_tenant`.
-2. **Tenant-prefix derivation**: `tenant_prefix = HMAC(TDK, tenant_id)[:16]` reused via `corelink-tenant-path` (S-01 WI-S01-001); R2 path é `ac-<region>/<tenant_prefix>/<action_digest>.json`. Layer 4 da 5-Layer Defense.
+1. **Tenant-scoped lookup**: `ac_meta::lookup` SQL é `WHERE tenant_id = $1 AND action_digest = $2` — `tenant_id` vem **EXCLUSIVAMENTE** de `TenantCtx.tenant_id` (não query param, não header, não body). **Lote 10.4bis P0 fix**: D1 enforcement is sqlx prepared statement compile-time `tenant_id` parameter binding + handler-level mandatory `WHERE tenant_id = ctx.tenant_id` clause + clippy custom lint forbidding `&str` SQL literals + integration test asserts compile failure for queries lacking the binding. **D1/SQLite has no RLS, no GUCs, no `SET LOCAL` semantic** (those are Postgres primitives consumed em S-03 WI-S03-005 RLS for `account`/`webauthn_credentials` Neon tables; `with_tenant_ctx!` macro is Postgres-only). Layer 2 enforcement em D1 é sqlx + handler discipline; **Layer 4 (HMAC path prefix) carries proportionally more weight in 5-Layer Defense for AC than for auth tables** (which have Postgres RLS as Layer 2). See `auth_model.md §8.1` for Postgres-vs-D1 asymmetry.
+2. **Tenant-prefix derivation**: `tenant_prefix = HMAC(TDK_v<path_key_id>, tenant_id)[:16]` reused via `corelink-tenant-path` (S-01 WI-S01-001); R2 path é `ac-<region>/<tenant_prefix_hex>/<action_digest>.json`. **Lote 10.4bis P0 fix**: `tenant_prefix` materialized em `ac_meta` column (BLOB(16)) per WI-S04-002 schema fix; pre-computed em handler INSERT step [7]; cron worker (WI-S04-005) reads column directly **without TDK access** (avoids cron trust boundary expansion); `path_key_id` column tracks TDK rotation version (forward-compat S-14 cross-region rotation). Layer 4 da 5-Layer Defense.
 3. **Idempotência**: `UpdateActionResult` em mesmo `(tenant_id, action_digest)` é no-op pós-verify (returns echo); ON CONFLICT (tenant_id, action_digest) DO UPDATE last_hit_at = excluded.last_hit_at apenas.
 
 **Surface dual gRPC + REST**:
@@ -149,13 +149,13 @@ Bug em handler é **catastrófico em N dimensões**:
 
 7. **TTL expiry handling**: ActionResult expirado (last_hit_at + tier_ttl < now) deve retornar 410 `COR_AC_TTL_EXPIRED` (não 404), pra Bazel re-execute action, não confuse com cache miss. Mitigação: D1 lookup INCLUI `expires_at` check; explicit branch in handler; chaos test em S-07 boundary.
 
-8. **Audit emission asymmetry**: `ac.get.miss` emitted pre-handler; `ac.get.ok` post-handler — mas race em pre→post se handler crashes mid-flight. Mitigação: outbox pattern (reuse WI-S01-005 audit_outbox); pre-emit + post-emit em mesma D1 batch transaction (atomic OR rollback).
+8. **Audit emission asymmetry**: `ac.get.miss` emitted pre-handler; `ac.get.ok` post-handler — mas race em pre→post se handler crashes mid-flight. Mitigação: outbox pattern (reuse WI-S01-004 audit_outbox); pre-emit + post-emit em mesma D1 batch transaction (atomic OR rollback).
 
 **Atacante adversarial scenarios**:
 
 - **Action digest collision attempt**: atacante computes Action proto que collides com legítima Action de outro tenant; uploads ActionResult; expects to override. Mitigação: BLAKE3 256-bit (collision-resistant 2^128); **TENANT-SCOPED** key `(tenant_id, action_digest)` — collision intra-tenant é cripto-impossivel; cross-tenant é blocked by Layer 4 path scoping.
 - **Merkle tree malformation** (depth > 100, fanout > 10000): worker memory exhaustion. Mitigação: `corelink-ac` parser tem bounds (max depth 32, max output_files 4096) — exceed → 422 reject; chaos test load-tests max bounds.
-- **REAPI BatchUpdateActionResult abuse**: REAPI permite batch ops; atacante envia batch de 10000 entries; D1 batch limit overflow OR timeout; partial commit causes inconsistency. Mitigação: batch size cap 100 (per REAPI guidance); >100 → 400 `COR_AC_BATCH_TOO_LARGE`.
+- **Parallel UpdateActionResult abuse** (Lote 10.4bis P0 fix: REAPI v2 has NO batch RPC on ActionCache; só CAS has `BatchUpdateBlobs`/`BatchReadBlobs`. Bazel/Buck2 issue parallel singular `UpdateActionResult` RPCs): atacante envia 10000 paralelas; D1 connection pool overflow OR timeout. Mitigação: per-PAT rate limit S-08 forward; per-tenant concurrent UPDATE cap (forward S-13 admin plane); CF Workers automatic concurrency throttling.
 - **Large ActionResult body** (output_files contém metadata > 1 MB): DoS via storage exhaustion. Mitigação: D1 ac_meta.blob_refs JSON column max 10 KB (CHECK constraint); R2 envelope max 1 MiB — exceed → 413 `COR_AC_PAYLOAD_TOO_LARGE`.
 
 **Risk justification HIGH_RISK**:
@@ -227,9 +227,9 @@ REAPI handler (gRPC + REST surface); HIGH_RISK; FF-HR-002 + FF-HR-005.
    - Step [2] **ac_meta::lookup**: D1 SELECT result_hash, blob_refs, expires_at, created_at, last_hit_at WHERE tenant_id = $1 AND action_digest = $2 AND (expires_at IS NULL OR expires_at > NOW()); MISS → populate negative cache, 404.
    - Step [3] **r2::get**: R2 GET `ac-<region>/<tenant_prefix>/<action_digest>.json`; envelope JSON.
    - Step [4] **sig::verify** (delegate WI-S04-004): HKDF tenant_key info="ac-sig"; mismatch → 422 `COR_AC_SIG_INVALID` + audit emit.
-   - Step [5] **outputs_check** (delegate WI-S04-003 partial): warn-log if any output_file digest tombstoned; **NÃO bloqueia GET** (INV-AC-OUTPUTS-VALID é reconcile-eventual; GET fail-soft to avoid customer breakage during race); enforced strictly em UPDATE step.
+   - Step [5] **outputs_check** (delegate WI-S04-003 partial; **Lote 10.4bis P0 fix: 1% sampled** to avoid 40M D1 SELECT/day cost on 10M-GET workload): warn-log if any output_file digest tombstoned; **NÃO bloqueia GET** (INV-AC-OUTPUTS-VALID é reconcile-eventual; GET fail-soft to avoid customer breakage during race); enforced strictly em UPDATE step. Métrica `corelink.ac.outputs.tombstoned_warning_total{sampled=true}` reflects sampled rate. Reconcile diário (S-06 forward) é authoritative drift detection.
    - Step [6] **ttl::refresh-on-hit**: D1 UPDATE last_hit_at = now(), expires_at = now() + tier_ttl (per S-07 ADR-0019); single batch.
-   - Step [7] **audit emit**: `ac.get.ok` event into outbox (WI-S01-005 reuse).
+   - Step [7] **audit emit**: `ac.get.ok` event into outbox (WI-S01-004 audit_outbox table reuse).
    - Response: ActionResult proto serialized.
 
 4. **UpdateActionResult flow**:
@@ -496,12 +496,16 @@ R2 is content-addressable + idempotent (PUT same path = overwrite OK; consistent
 - Reverse (D1-first then R2) means crash before R2 PUT → D1 has row referencing missing R2 object → GET fails 404 forever (ghost row).
 - R2-first: crash before D1 INSERT → orphan R2 (recoverable; GC reconcile cleans); D1 absence = retry-safe Update.
 
-### 9.6 Why 100 batch limit (REAPI BatchUpdateActionResult)
+### 9.6 (REMOVED Lote 10.4bis P0 fix) — REAPI v2 has no batch RPC on ActionCache
 
-- D1 batch op limit ~100 statements (CF Workers + sqlx pragmatic).
-- Larger batch = D1 timeout (60s) hit on high-write tenants.
-- 100 is REAPI guideline (Bazel client default batch = 50-100).
-- Exceed → 400 `COR_AC_BATCH_TOO_LARGE` (reject early; no partial commit).
+**Lote 10.4bis P0 fix**: Prior text claimed "BatchUpdateActionResult" — REAPI v2 does **NOT** define a batch RPC on the `ActionCache` service. The batch RPCs in REAPI v2 are on **`ContentAddressableStorage`** only (`BatchUpdateBlobs`, `BatchReadBlobs`). For AC, Bazel/Buck2 issue **parallel singular `UpdateActionResult` RPCs**.
+
+Consequence: server-side "batch cap" doesn't apply (there is no server-side batch). Concurrency control is via:
+- **Per-PAT rate limit** (S-08 forward; this WI marks rate_limit hook stub).
+- **Per-tenant concurrent UPDATE cap** (forward S-13 admin plane).
+- **CF Workers automatic concurrency throttling** (per-isolate request queueing).
+
+`COR_AC_BATCH_TOO_LARGE` error code remains in taxonomy for future BatchUpdateBlobs (CAS WI-S01-005) cross-reference but is NOT emitted from ActionCache handlers in S-04.
 
 ### 9.7 Why reject `result_hash` mismatch as 409 (não 200 with overwrite)
 
@@ -513,7 +517,7 @@ Both WARRANT customer attention. 409 + audit log → customer investigates. Sile
 
 ### 9.8 Why outbox pattern em audit emit (não synchronous)
 
-Synchronous emit to S-09 chain = +20ms per request; AC hot path budget é 150ms p99. Reuse audit_outbox table pattern (WI-S01-005); single D1 batch with handler ops; drain worker emits async.
+Synchronous emit to S-09 chain = +20ms per request; AC hot path budget é 150ms p99. Reuse audit_outbox table pattern (WI-S01-004 schema); single D1 batch with handler ops; drain worker emits async.
 
 ### 9.9 Why Mann-Whitney "not_found" vs "wrong_tenant_404"
 
@@ -680,7 +684,7 @@ PRR HIGH_RISK 13 sign-offs gated em WI-S04-006 ship gate. Este WI mini-PRR Archi
 - WI-S04-003 (corelink-ac Merkle codec + verify) SEALED.
 - WI-S04-004 (HKDF signing) SEALED.
 - WI-S01-001 (corelink-tenant-path) SEALED (tenant_prefix derivation).
-- WI-S01-005 (audit_outbox table) SEALED.
+- WI-S01-004 (audit_outbox table — Lote 10.4bis P0 fix; was incorrectly cited as WI-S01-005) SEALED.
 - Crypto SME availability (review HKDF integration boundary).
 
 ### Soft blockers
@@ -781,7 +785,7 @@ HTTP error mapping (downstream-visible):
 - `Result hash mismatch` → 409 `COR_AC_RESULT_HASH_MISMATCH` + body `{ existing, attempted }`.
 - `Digest mismatch` (URL vs body) → 422 `COR_AC_DIGEST_MISMATCH`.
 - `Scope insufficient` → 403 `COR_AUTH_SCOPE_INSUFFICIENT` (S-03 reuse).
-- `Batch too large` (BatchUpdateActionResult) → 400 `COR_AC_BATCH_TOO_LARGE`.
+- (removed Lote 10.4bis: `Batch too large` was BatchUpdateActionResult; REAPI v2 has no AC batch RPC; cross-reference CAS WI-S01-005 BatchUpdateBlobs.)
 - `Payload too large` (>1 MiB) → 413 `COR_AC_PAYLOAD_TOO_LARGE`.
 - `Backend unavailable` → 503 `COR_AC_BACKEND_UNAVAILABLE` + Retry-After.
 

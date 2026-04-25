@@ -49,38 +49,57 @@ Provisionar **D1 schema** `ac_meta` + **R2 bucket** `ac-<region>` per region (`s
 
 ```sql
 -- File: migrations/003_ac_meta.sql
-BEGIN;
+-- Lote 10.4bis P0 fix: CHECK constraints inlined em CREATE TABLE
+-- (SQLite/D1 NÃO suporta `ALTER TABLE … ADD CONSTRAINT chk_*`; só inline at CREATE TABLE).
+-- Lote 10.4bis P0 fix: BEGIN/COMMIT removidos (wrangler d1 migrations apply usa transaction implícita).
 
 CREATE TABLE IF NOT EXISTS ac_meta (
   -- Tenant scope (PK component 1; ALL queries filter via tenant_id Layer 4)
   tenant_id           TEXT        NOT NULL,
 
-  -- Action identity (PK component 2; REAPI v2 SHA-256 hex digest)
+  -- Tenant prefix materialized (Lote 10.4bis P0 fix: WI-S04-002 P0 #2 + WI-S04-005 P0 #1)
+  -- Pre-computed at INSERT em handler step [7]; cron worker reads sem TDK access
+  -- (avoids cron trust boundary expansion); 16 bytes raw HMAC(TDK_v<path_key_id>, tenant_id)[:16]
+  tenant_prefix       BLOB        NOT NULL,             -- length=16 enforced via CHECK
+  path_key_id         INTEGER     NOT NULL DEFAULT 1,   -- TDK rotation version for path derivation (forward-compat S-14)
+
+  -- Action identity (PK component 2; REAPI v2 SHA-256 / BLAKE3 hex digest)
   action_digest       TEXT        NOT NULL,
 
   -- Result metadata
-  result_hash         TEXT        NOT NULL,             -- SHA-256 of ActionResult proto canonical bytes
+  -- Lote 10.4bis P0 decision per ADR-0037: result_hash == merkle_root direct
+  -- (eliminates protobuf-determinism dependency; prost não garante deterministic encoding)
+  result_hash         TEXT        NOT NULL,             -- 64 hex chars = BLAKE3-256 of merkle_root
   blob_refs           TEXT        NOT NULL,             -- JSON array of digests (output_files + output_dirs)
   blob_refs_count     INTEGER     NOT NULL,             -- denormalized for cheap COUNT
-  result_size_bytes   INTEGER     NOT NULL,             -- for cost/quota observability
+  result_size_bytes   INTEGER     NOT NULL,             -- envelope payload size for cost/quota observability
 
   -- Lifecycle timestamps (unix ms)
   created_at          INTEGER     NOT NULL,
   last_hit_at         INTEGER     NOT NULL,
-  expires_at          INTEGER     NULL,                 -- NULL = no expiry; per-tier override S-07/ADR-0019
+  expires_at          INTEGER     NULL,                 -- NULL = no expiry pre-S-07; per-tier override S-07/ADR-0019
 
   -- Crypto integrity binding
   sig_key_id          INTEGER     NOT NULL DEFAULT 1,   -- HKDF tenant_key version (rotation support)
-  sig_alg             TEXT        NOT NULL DEFAULT 'hkdf-sha256',  -- WI-S04-004 algorithm
+  sig_alg             TEXT        NOT NULL DEFAULT 'hkdf-sha256',  -- WI-S04-004 algorithm; v2+ via ADR migration
 
   -- Region scope (R2 envelope location)
   region              TEXT        NOT NULL,             -- 'sam', 'iad', 'lhr', 'nrt', 'syd'
 
   -- Source attribution (audit cross-check; reuse WI-S03-007 chain)
-  created_by_pat_id   TEXT        NULL,                 -- PAT id at write time (NULLABLE for legacy entries)
+  created_by_pat_id   TEXT        NULL,                 -- PAT id at write time (NULL pre-WI-S03-002 PAT migration legacy)
   created_by_request_id TEXT      NULL,                 -- request_id correlation
 
-  PRIMARY KEY (tenant_id, action_digest)
+  PRIMARY KEY (tenant_id, action_digest),
+
+  -- CHECK constraints inlined (defense-in-depth; SQLite supports inline CHECK only)
+  CHECK (length(blob_refs) <= 10240),                  -- chk_ac_blob_refs_size: 10 KiB max JSON array
+  CHECK (blob_refs_count >= 0 AND blob_refs_count <= 4096),  -- chk_ac_blob_refs_count
+  CHECK (result_size_bytes >= 0 AND result_size_bytes <= 1048576),  -- chk_ac_result_size: 1 MiB
+  CHECK (region IN ('sam', 'iad', 'lhr', 'nrt', 'syd')),  -- chk_ac_region (ADR for new region)
+  CHECK (sig_alg = 'hkdf-sha256'),                      -- chk_ac_sig_alg: v1 only; v2+ via ADR migration (Lote 10.4bis P1: was 'hkdf-blake3' future-compat hint causing whitelist confusion)
+  CHECK (last_hit_at >= created_at AND (expires_at IS NULL OR expires_at >= created_at)),  -- chk_ac_lifecycle
+  CHECK (length(tenant_prefix) = 16)                   -- chk_ac_tenant_prefix_len: 16-byte HMAC truncation per data_model.md §5.2
 );
 
 -- Index: tenant + TTL queries (eviction worker WI-S04-005)
@@ -92,32 +111,15 @@ CREATE INDEX IF NOT EXISTS idx_ac_meta_tenant_expires
 CREATE INDEX IF NOT EXISTS idx_ac_meta_tenant_last_hit
   ON ac_meta(tenant_id, last_hit_at);
 
--- Index: region (rare; cross-region migration support; not hot path)
+-- Index: region (cross-region migration support S-14; analytics queries)
 CREATE INDEX IF NOT EXISTS idx_ac_meta_region
   ON ac_meta(region)
   WHERE region IS NOT NULL;
-
--- CHECK constraints (defense-in-depth; D1 SQLite supports CHECK)
-ALTER TABLE ac_meta ADD CONSTRAINT chk_ac_blob_refs_size
-  CHECK (length(blob_refs) <= 10240);  -- 10 KiB max JSON array
-
-ALTER TABLE ac_meta ADD CONSTRAINT chk_ac_blob_refs_count
-  CHECK (blob_refs_count >= 0 AND blob_refs_count <= 4096);
-
-ALTER TABLE ac_meta ADD CONSTRAINT chk_ac_result_size
-  CHECK (result_size_bytes >= 0 AND result_size_bytes <= 1048576);  -- 1 MiB
-
-ALTER TABLE ac_meta ADD CONSTRAINT chk_ac_region
-  CHECK (region IN ('sam', 'iad', 'lhr', 'nrt', 'syd'));
-
-ALTER TABLE ac_meta ADD CONSTRAINT chk_ac_sig_alg
-  CHECK (sig_alg IN ('hkdf-sha256', 'hkdf-blake3'));  -- forward-compat
-
-ALTER TABLE ac_meta ADD CONSTRAINT chk_ac_lifecycle
-  CHECK (last_hit_at >= created_at AND (expires_at IS NULL OR expires_at >= created_at));
-
-COMMIT;
 ```
+
+**Lote 10.4bis SQL correctness gates** (pre-deploy CI):
+- `sqlite3 :memory: < migrations/003_ac_meta.sql` dry-run em CI (catches syntax errors at parser level antes deploy).
+- `wrangler d1 migrations apply CORELINK_DB --env staging` integration test em CI nightly.
 
 ```toml
 # wrangler.toml additions (R2 bucket bindings per region)
@@ -149,17 +151,27 @@ preview_bucket_name = "corelink-ac-syd-preview"
 
 ```bash
 # R2 bucket provisioning (idempotent; CI script)
+# Lote 10.4bis P0 fix: wrangler CLI commands corrigidos
+# (was `lifecycle set` + `cors set` — neither são subcomandos válidos em wrangler 3.x/4.x;
+# corretos: `lifecycle add` + REST API for CORS via curl ou dashboard)
 for region in sam iad lhr nrt syd; do
   bucket="corelink-ac-${region}"
   wrangler r2 bucket create "$bucket" --location "$region" || echo "Bucket $bucket already exists"
-  wrangler r2 bucket lifecycle set "$bucket" --rule '
-    {
-      "id": "abort-multipart-incomplete-7d",
-      "status": "Enabled",
-      "abortIncompleteMultipartUpload": { "daysAfterInitiation": 7 }
-    }'
-  # Public access OFF; only Worker bindings can read/write
-  wrangler r2 bucket cors set "$bucket" --rules '[]'
+
+  # Lifecycle: abort incomplete multipart > 7d (REAPI guidance)
+  # Note: wrangler r2 bucket lifecycle add adds a single rule; idempotent via rule id check
+  wrangler r2 bucket lifecycle add "$bucket" \
+    --id "abort-multipart-incomplete-7d" \
+    --action "AbortIncompleteMultipartUpload" \
+    --days 7 || echo "Lifecycle rule already present"
+
+  # CORS: empty rules (no public access).
+  # wrangler 4.x não tem `cors set`; usar Cloudflare REST API via curl OR set via dashboard.
+  # Documented em scripts/provision_ac_buckets.sh; CI cron audit valida (chaos #2).
+  curl -X PUT "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/r2/buckets/${bucket}/cors" \
+    -H "Authorization: Bearer ${CF_API_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d '{"rules": []}' || echo "CORS rules already empty"
 done
 ```
 
@@ -171,7 +183,7 @@ done
 - Rollback plan: in case of bug, **mark migration as no-op** via dummy migration 003a; never DROP TABLE in prod (data loss risk).
 
 **Constraint cripto-driven**:
-- `tenant_id TEXT NOT NULL` — UUID v7 string (S-03 WI-S03-005); sqlx `with_tenant_ctx!` macro guarantees `SET LOCAL app.current_tenant`.
+- `tenant_id TEXT NOT NULL` — UUID v7 string (S-03 WI-S03-005). **Lote 10.4bis P0 fix**: D1/SQLite has no RLS, no GUCs, no `SET LOCAL` semantic (those are Postgres primitives consumed em S-03 WI-S03-005 RLS for `account`/`webauthn_credentials` Neon tables). D1 enforcement em `ac_meta` é via sqlx prepared statement compile-time `tenant_id` parameter binding + handler-level mandatory `WHERE tenant_id = ctx.tenant_id` clause + clippy custom lint forbidding `&str` SQL literals + Layer 4 HMAC path scoping (proportionally more weight em D1 than Postgres tables which have RLS as Layer 2).
 - PRIMARY KEY composite `(tenant_id, action_digest)` — Layer 4 enforcement at storage layer; impossible cross-tenant via PK alone.
 - `blob_refs TEXT NOT NULL` — JSON array; FK lógico (não FK SQL strict — D1 limitation + perf) to `blob_meta(tenant_id, digest)`; reconcile diário enforces (S-06 GC).
 - `sig_key_id` — multi-key support (rotation); same pattern WI-S03-005 `*_key_id` columns.
@@ -203,7 +215,7 @@ Schema é o **physical foundation** da AC; bug em PRIMARY KEY ou CHECK constrain
 
 - **Malicious migration replay**: attacker re-runs migration 003 in prod after schema drifted; CREATE TABLE IF NOT EXISTS no-op'd; CHECK constraints unchanged. Mitigação: migration framework hash-validates SQL file; mismatch → reject; ADR-0036 documents migration governance.
 
-- **Tenant_id NULL injection** via SQL: rare but defense-in-depth. Mitigação: NOT NULL constraint; sqlx prepared statement type-check; `with_tenant_ctx!` macro asserts.
+- **Tenant_id NULL injection** via SQL: rare but defense-in-depth. Mitigação: NOT NULL constraint; sqlx prepared statement type-check (Lote 10.4bis P0 fix: removido `with_tenant_ctx!` claim — Postgres-only macro; D1 enforcement is sqlx + handler discipline).
 
 - **Schema diff drift between staging + prod**: dev applies new migration in staging, forgets prod; handler in prod uses fields not present. Mitigação: CI gate `wrangler d1 migrations list` matches expected state in both envs; deploy fails if mismatch.
 
@@ -322,12 +334,13 @@ Schema migration + infra provisioning; HIGH_RISK; FF-HR-002 + FF-HR-005.
     - CI cron: `wrangler r2 bucket policy get corelink-ac-<region>` validates no public ACL.
     - Alert if drift; runbook RB-FM-AC-BUCKET-LEAK forward.
 
-13. **Sizing validation**:
-    - Estimate row size: ~250 bytes per ac_meta row (action_digest 64 + result_hash 64 + blob_refs JSON ~50 + timestamps + others ~70).
-    - 10M unique actions/tenant × 100 tenants = 1B rows = ~250 GB. D1 free tier 5GB; paid tier 100GB+ per DB.
-    - Decision: **D1 sharded per tenant_tier OR per region** → S-09 forward (database scaling).
-    - For S-04 GA: assume 100 tenants × 100k actions = 10M rows = 2.5 GB; fits paid D1 single shard.
-    - ADR-0036 documents sharding criteria.
+13. **Sizing validation** (Lote 10.4bis P0 fix: corrigida math + D1 hard-limit):
+    - Estimate row size: ~270 bytes per ac_meta row (action_digest 64 + result_hash 64 + blob_refs JSON ~50 + tenant_prefix 16 + timestamps + others ~76).
+    - **S-04 GA target**: 100 tenants × 100k actions = **10M rows ≈ 2.7 GB** (fits D1 free tier 5 GB; paid tier 10 GB hard limit per database).
+    - **D1 hard limit per database**: 10 GB current (CF policy as of 2026; subject to change). At 270 bytes/row, 10 GB ≈ 37M rows = sharding trigger.
+    - **Sharding trigger** (ADR-0036): at 80% of D1 limit (≈ 8 GB / 30M rows), sprint contract escalates to per-region D1 OR per-tenant_tier D1 sharding (S-09 forward database scaling).
+    - **Storage growth metric** alert: `corelink.d1.ac_meta.size_bytes` alert if > 50% growth/quarter (suggests workload escalation).
+    - **NOT** 1B rows × 250 B = 250 GB (prior typo Lote 10.4 — that scenario requires sharding by definition; ADR-0036 documents).
 
 ### 6.2 Out-of-scope (deferred)
 
@@ -716,9 +729,11 @@ Dashboard widget DASH-AC infra:
 - D1 migration apply: free tier; <1s execution.
 - R2 bucket provisioning: free; CF dashboard ops.
 
-**Storage cost** (steady state):
-- D1 ac_meta storage: 10M rows × 250 bytes = 2.5 GB.
-  - D1 paid tier: $0.75/GB/mo × 2.5 GB = ~$2/mo = **$24/yr**.
+**Storage cost** (steady state; Lote 10.4bis P0 fix corrigida pricing):
+- D1 ac_meta storage: 10M rows × 270 bytes = **2.7 GB** (S-04 GA target).
+  - D1 paid tier: $0.75/GB/month × 2.7 GB = **~$2/mo = ~$24/yr** (within free tier 5 GB; paid tier billing kicks in only se exceder free; alerting on growth via metric).
+  - **D1 hard limit 10 GB per database**; sharding trigger at 80% (8 GB ≈ 30M rows; ADR-0036).
+  - 1B rows × 270 B = 270 GB scenario requires **mandatory sharding** before reaching that scale.
 - R2 ac-<region> storage: 10M unique × 5 KB envelopes = 50 GB total (5 regions × 10 GB each).
   - R2 storage: $0.015/GB/mo × 50 GB = $0.75/mo = **$9/yr**.
 
@@ -777,7 +792,7 @@ Fallback: handler returns 503 `COR_AC_DEPRECATED` if 003a deprecated flag set; B
 - **Repudiation**: migration applied event in audit chain (S-09 forward); ALL DDL ops logged.
 - **Information disclosure**: R2 bucket public access OFF (CI enforces); CORS empty (no browser leak); per-region buckets isolated per CF account.
 - **DoS**: D1 batch limit ~100 statements; INSERT ON CONFLICT atomic; R2 PUT idempotent.
-- **Elevation of privilege**: schema is global (not per-tenant); handler enforces tenant scope; `with_tenant_ctx!` macro cross-cuts.
+- **Elevation of privilege**: schema is global (not per-tenant); handler enforces tenant scope via sqlx prepared statement + WHERE-clause discipline (Lote 10.4bis P0 fix: removido `with_tenant_ctx!` claim — Postgres-only; D1 has no RLS/SET LOCAL).
 
 **LINDDUN delta**:
 - **Linkability**: tenant_id UUID v7 pseudonymous; action_digest content-hash (non-PII).
@@ -823,13 +838,15 @@ Fallback: handler returns 503 `COR_AC_DEPRECATED` if 003a deprecated flag set; B
 5. **Adversarial (pre-merge D+4)**: red team — migration replay, ACL drift, tenant_id NULL injection.
 6. **PRR (D+5)**: Architect mini sign-off (full ship gate em WI-S04-006).
 
-## 30. Sign-off (HIGH_RISK 13)
+## 30. Sign-off (HIGH_RISK 14 — Lote 10.4bis: DBA + Crypto SME both)
+
+Lote 10.4bis P0 fix: sprint contract §6 mandates Crypto SME (HKDF integration boundary review for sig_key_id rotation column); WI-S04-002 v1.0 silently swapped Crypto SME for DBA. Resolution: **add DBA as row 14** while keeping Crypto SME row 13 mandatory; both review schema (DBA: PK + indices + sizing; Crypto SME: sig_key_id + path_key_id rotation impact).
 
 | # | Role | Name | Signed Date | Status |
 |---|---|---|---|---|
 | 1 | Owner | Gustavo Schneiter | _pending_ | _pending_ |
 | 2 | Final Approver | Gustavo Schneiter | _pending_ | _pending_ |
-| 3 | SRE Lead | _staffing-blocked_ | _pending_ | _pending_ |
+| 3 | SRE Lead | _staffing-blocked; ADR-0034 waiver_ | _pending_ | _pending_ |
 | 4 | Security Lead | _TBD; CORS + bucket ACL hardening review_ | _pending_ | _pending_ |
 | 5 | Engineer (peer 1) | _TBD_ | _pending_ | _pending_ |
 | 6 | Engineer (peer 2) | _TBD_ | _pending_ | _pending_ |
@@ -837,9 +854,10 @@ Fallback: handler returns 503 `COR_AC_DEPRECATED` if 003a deprecated flag set; B
 | 8 | Product | Gustavo Schneiter | _pending_ | _pending_ |
 | 9 | Compliance | _TBD_ | _pending_ | _pending_ |
 | 10 | Privacy | _TBD; bucket public access policy review_ | _pending_ | _pending_ |
-| 11 | Architect | _TBD; **mandatory** — schema design + migration governance_ | _pending_ | _pending_ |
-| 12 | AppSec | _TBD; **mandatory** — CORS + bucket ACL + migration replay_ | _pending_ | _pending_ |
-| 13 | DBA (advisory) | _mandatory; PK direction + index design + sizing projection_ | _pending_ | _pending_ |
+| 11 | Architect | _TBD; **mandatory** — schema design + migration governance + tenant_prefix materialization_ | _pending_ | _pending_ |
+| 12 | AppSec | _TBD; **mandatory** — CORS + bucket ACL + migration replay + SQL inline CHECK_ | _pending_ | _pending_ |
+| 13 | Crypto SME (advisory) | _mandatory; sig_key_id + path_key_id rotation impact + canonical_bytes binding (per ADR-0021)_ | _pending_ | _pending_ |
+| 14 | DBA (advisory) | _mandatory; PK composite direction + index design + sizing projection 2.7 GB + D1 10GB hard-limit + sharding trigger ADR-0036_ | _pending_ | _pending_ |
 
 ## 31. Change Log
 

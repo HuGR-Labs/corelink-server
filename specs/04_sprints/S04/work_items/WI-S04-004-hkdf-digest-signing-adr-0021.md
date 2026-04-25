@@ -115,11 +115,15 @@ pub struct HkdfSigner {
 impl SignatureSigner for HkdfSigner {
     fn sign(&self, canonical_bytes: &[u8]) -> Result<(Vec<u8>, u32), SigError> {
         let tdk = self.tdk_handle.fetch(self.current_key_id)?;  // KMS/CF Secrets
-        let hk = Hkdf::<Sha256>::new(None, &tdk);
+        // Lote 10.4bis P0 fix: salt binds sig_key_id (RFC 5869 Extract step) — TDK rotation
+        // produces correlated keying material; binding key version into salt removes correlation
+        // (industry SOTA per TLS 1.3, Signal Protocol).
+        let salt = self.current_key_id.to_le_bytes();
+        let hk = Hkdf::<Sha256>::new(Some(&salt), &tdk);
         let mut sig_key = [0u8; 32];
         hk.expand(b"ac-sig", &mut sig_key)
             .map_err(|e| SigError::TdkDerivationFailed(e.to_string()))?;
-        // Sig = BLAKE3-keyed-hash(sig_key, canonical_bytes); 32 bytes
+        // Sig = BLAKE3-keyed-hash(sig_key, canonical_bytes); 32 bytes (PRF-secure MAC)
         let mut hasher = blake3::Hasher::new_keyed(&sig_key);
         hasher.update(canonical_bytes);
         let sig = hasher.finalize().as_bytes().to_vec();
@@ -142,7 +146,9 @@ impl SignatureVerifier for HkdfVerifier {
             return Err(SigError::KeyIdUnknown { sig_key_id, oldest_active: oldest });
         }
         let tdk = self.tdk_handle.fetch(sig_key_id)?;
-        let hk = Hkdf::<Sha256>::new(None, &tdk);
+        // Lote 10.4bis P0 fix: salt = sig_key_id binds version (matches sign path).
+        let salt = sig_key_id.to_le_bytes();
+        let hk = Hkdf::<Sha256>::new(Some(&salt), &tdk);
         let mut sig_key = [0u8; 32];
         hk.expand(b"ac-sig", &mut sig_key)
             .map_err(|e| SigError::TdkDerivationFailed(e.to_string()))?;
@@ -171,10 +177,37 @@ pub trait TdkHandle: Send + Sync {
 **Canonical bytes computation** (what gets signed):
 
 ```rust
-// canonical_bytes = blake3-keyless(version || tenant_id || action_digest || merkle_root || created_at_ms)
-// fields concatenated as fixed-length: version u8 LE + tenant_id 16 bytes UUIDv7 + action_digest 32 bytes + merkle_root 32 bytes + created_at_ms u64 LE
-// Total: 1 + 16 + 32 + 32 + 8 = 89 bytes
+// Lote 10.4bis P0 fix: canonical_bytes inclui result_hash binding (was 89 bytes; now 121 bytes).
+// Prior layout omitted result_hash; binding was implicit via merkle_root, but only valid IF
+// verifier always recomputes Merkle root before trusting envelope.merkle_root. To eliminate
+// API misuse footgun where handler could call verify_sig (sig only) WITHOUT verify_structure
+// (Merkle only), result_hash is now bound directly into the signed canonical bytes.
+//
+// canonical_bytes = version || tenant_id || action_digest || merkle_root || result_hash || created_at_ms
+// Layout (121 bytes total):
+//   offset  size  field
+//   0       1     version (u8 LE)
+//   1       16    tenant_id (UUIDv7 raw bytes)
+//   17      32    action_digest (BLAKE3 hash bytes)
+//   49      32    merkle_root (BLAKE3 hash bytes)
+//   81      32    result_hash (= merkle_root direct per ADR-0037; redundant binding for
+//                  defense-in-depth + future schema migration if result_hash semantic decouples)
+//   113     8     created_at_ms (u64 LE)
+//   total   121 bytes
+
+pub fn canonical_bytes(envelope: &AcEnvelope) -> [u8; 121] {
+    let mut out = [0u8; 121];
+    out[0] = envelope.version;
+    out[1..17].copy_from_slice(envelope.tenant_id.as_bytes());
+    out[17..49].copy_from_slice(&envelope.action_digest);
+    out[49..81].copy_from_slice(&envelope.merkle_root);
+    out[81..113].copy_from_slice(&envelope.result_hash);  // NEW Lote 10.4bis
+    out[113..121].copy_from_slice(&envelope.created_at_ms.to_le_bytes());
+    out
+}
 ```
+
+**Lote 10.4bis additional API hardening**: `SignatureVerifier::verify_sig` is **internal-only** (não public); only `ActionResultVerifier::verify_full` exposed publicly. This forces structure-then-sig ordering by API design (impossible to call sig verify standalone from external code). Prevents the API misuse footgun where an attacker tricks a handler into calling `verify_sig` on a tampered envelope without first checking structure.
 
 **ADR-0021 RATIFICAÇÃO** (este WI promotes from "forward-looking" to "ratified"):
 
@@ -211,13 +244,17 @@ pub trait TdkHandle: Send + Sync {
 > **Future**: If multi-party verifiability needed (federation, customer audit external sig verify) → S-XX forward; ADR upgrade.
 >
 > **Risks accepted:**
-> - HKDF compromise (chave leak) = forge possible BUT scoped to compromised tenant; Merkle dual-side verify (WI-S04-003) catches if client also has independent verify (some chave + Merkle).
-> - Symmetric → server has full power to forge; mitigated via audit chain (S-09) + tenant_id binding + chave rotation annual.
+> - **HKDF compromise (chave leak)** = forge possible BUT scoped to compromised tenant; Merkle dual-side verify (WI-S04-003) catches in **partial compromise** (insider with R2 access but no HKDF key); under **full HKDF key compromise**, attacker recomputes Merkle root + re-signs envelope, defeating both layers. Mitigated externally via TDK rotation + audit chain (S-09) anomaly detection.
+> - **Symmetric trust model** → server has full power to forge; mitigated via audit chain (S-09) + tenant_id binding + chave rotation annual.
+> - **FIPS 140-3 compliance** (Lote 10.4bis P0 fix): BLAKE3-keyed-hash is **NOT** FIPS-approved (only SHA-3-based KMAC is FIPS-approved per NIST SP 800-185). For SLSA L3 / SOC 2 / FedRAMP customers, this matters. **CoreLink S-04 GA accepts non-FIPS-MAC**; SLSA L3 alignment is via Merkle dual-side verify + audit chain (which use FIPS-approvable primitives at the boundaries). Post-GA migration path (HMAC-SHA256 OR KMAC) available via ADR if customer demand emerges.
+> - **Side-channel via memory access patterns** (Lote 10.4bis P0 fix): BLAKE3 SIMD vectorization (AVX2/AVX-512) has memory access patterns that are not constant-cache-time strictly. CF Workers shared infrastructure (cross-Worker isolate cache lines) precludes constant-cache-time guarantees regardless of MAC choice. Mitigated by per-tenant TDK isolation (one chave compromise affects one tenant) + 256-bit MAC strength (PRF-secure 2^128 forge resistance). Future post-quantum migration via S-XX ADR if NIST PQC standard mandates change.
 >
 > **Mitigations:**
 > - Annual TDK rotation (key_management.md §3); `sig_key_id` versioning; verifier accepts current + 1 previous.
-> - INV-AC-MERKLE-VALID independent (WI-S04-003); double-cripto layered.
-> - Audit chain (S-09) detects anomalies post-hoc.
+> - INV-AC-MERKLE-VALID independent (WI-S04-003); double-cripto layered (effective in partial compromise).
+> - Audit chain (S-09) detects anomalies post-hoc (CRITICAL alert if sig_invalid sustained > 5/h).
+> - HKDF salt = `sig_key_id.to_le_bytes()` removes correlated keying material across rotations (Lote 10.4bis P0 fix).
+> - canonical_bytes inclui result_hash binding (121 bytes; Lote 10.4bis P0 fix: prevents API misuse where verify_sig called without verify_structure).
 
 **Constraint cripto-driven**:
 
@@ -563,7 +600,7 @@ Vide ADR-0021 §1; key points: tenant-scoped server-only verify; no public-key v
 ### 9.2 Why BLAKE3-keyed-hash (not HMAC-SHA256)
 
 - BLAKE3 4× faster (SIMD); critical for verify p99 ≤ 1ms.
-- BLAKE3-keyed mode is BLAKE3 with 32-byte key prefix; native; cryptographically sound (Merkle-Damgård but with strong domain separation).
+- BLAKE3-keyed mode uses BLAKE3 with the 32-byte key as the IV via the `keyed_hash` flag. **Lote 10.4bis P0 fix correção**: BLAKE3 is **NOT** Merkle-Damgård (prior text incorrect); it is a **Bao binary tree** of 1024-byte chunks with explicit domain separation flags. Construction is collision-resistant ~2^128 against MAC forgery (PRF-secure); designed-in domain separation prevents length-extension. Reference: BLAKE3 paper §6 (NIST-compatible analysis); RustCrypto `blake3` crate is widely-deployed standard.
 - HMAC-SHA256 alternative also acceptable; chose BLAKE3 for performance + consistency with Merkle (WI-003 BLAKE3).
 
 ### 9.3 Why HKDF salt = None

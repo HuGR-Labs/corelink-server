@@ -138,6 +138,9 @@ pub enum MerkleError {
     #[error("merkle root mismatch: computed={computed:x?}, claimed={claimed:x?}")]
     RootMismatch { computed: [u8; 32], claimed: [u8; 32] },
 
+    #[error("cycle detected in output_directories at digest {0:x?}")]
+    CycleDetected([u8; 32]),                               // Lote 10.4bis P0 fix: variant added; was referenced em §2.5 + §8 Gherkin mas missing from enum
+
     #[error("digest format invalid in node: {0}")]
     InvalidDigestFormat(String),
 
@@ -177,15 +180,21 @@ HIGH_RISK justificado em N dimensões:
 
 1. **Merkle bypass via missing verifier call**: handler chama `build()` em UpdateActionResult mas esquece `verify_structure()`; árvore inválida (e.g., output_file digest format errado, depth excessive) escreve em R2; subsequent GET serve corrompido. Mitigação: `build()` retorna `Result<AcEnvelope, BuildError>`; build() **chama internamente** verify_structure() OR retorna erro; impossível bypass via API misuse.
 
-2. **Tampering em R2 envelope (rest)**: atacante com R2 access write modifica result_hash em envelope; assinatura HKDF detecta (WI-S04-004); MAS se atacante também forja sig (chave compromise), cliente-side verify recomputa Merkle root e compara com envelope.merkle_root field; mismatch detected. Mitigação: dual-side verify (envelope.merkle_root é binding entre struct + sig).
+2. **Tampering em R2 envelope (rest)** — **partial compromise scenarios** (Lote 10.4bis P0 fix: prior text overstated dual-side defense under FULL chave compromise):
+   - **Storage-tier insider** (R2 write access mas no HKDF key): modifies result_hash em envelope; HKDF sig fails (mismatch); detected by sig::verify alone. Merkle dual-side é redundância adicional aqui — útil se o storage path é compromised mid-pipeline (sig was generated before tamper, now stored bytes don't match canonical_bytes). Mitigação primary: HKDF sig.
+   - **Wire-tampering between handler and R2** (during PUT or GET): same as storage-tier; sig catches.
+   - **Compromised writer-side mid-pipeline** (sig was generated for envelope_v1; envelope_v2 stored with tampered fields; sig still valid for v1 but v2's content differs): Merkle binding catches via canonical_bytes mismatch (envelope.merkle_root signed alongside).
+   - **Full HKDF key compromise** (atacante has TDK access): atacante modifies result, recomputes Merkle root, sets envelope.merkle_root = recomputed root, **re-signs envelope with compromised key**. Both verify_structure (matching root) and verify_sig (valid sig) return OK. **Defense-in-depth FAILS in full chave compromise**; mitigated externally via TDK rotation + audit chain detection (S-09) + tenant_id binding limits blast radius.
+
+   Honest formulation: dual-side verify catches storage-tier tampering even when writer-side has been compromised mid-pipeline OR sig delegate is misused (e.g., wrong-key SignatureVerifier accepted). Both fail together in full chave compromise. Threat model in `merkle_protocol.md` enumerates which adversary capabilities each layer defends against.
 
 3. **DoS via giant tree** (depth=10000 OR fanout=1M): parser allocates 1 MiB per node × 1M nodes = 1 TB; Worker memory exhaustion (CF cap 128 MiB) → OOM crash. Mitigação: bounded parser (depth ≤ 32 = 4M leaves max; fanout ≤ 4096 per node; total nodes ≤ 100k; payload ≤ 1 MiB); reject early at decode time before alloc.
 
-4. **Determinism violation**: two clients build same (tenant, action_digest, result) but different Merkle root (e.g., HashMap iteration order in protobuf). REAPI v2 idempotency violated; UPDATE same digest twice with different root → COR_AC_RESULT_HASH_MISMATCH false-positive. Mitigação: builder iterates output_files + output_directories in **lexicographic order by digest**; protobuf canonical serialization (deterministic); test 1000 random ActionResults each built 100 times → all 100 builds identical bytes.
+4. **Determinism violation**: two clients build same (tenant, action_digest, result) but different Merkle root (e.g., HashMap iteration order in protobuf). REAPI v2 idempotency violated; UPDATE same digest twice with different root → COR_AC_RESULT_HASH_MISMATCH false-positive. **Lote 10.4bis P0 fix per ADR-0037 ratificação**: `prost` does NOT guarantee deterministic encoding for messages with map/repeated fields; "protobuf canonical serialization (deterministic)" claim was wrong. **Decision (ADR-0037 Lote 10.4bis)**: `result_hash = merkle_root` direct (eliminates protobuf-bytes dependency); Merkle tree is built from lex-sorted `(output_files + output_directories)` digests; the tree itself is the canonical artifact, not the proto encoding. Builder iterates outputs in **lexicographic order by digest**; tree shape determined by sorted leaf digests + balanced binary structure (Bao-style). Test 1000 random ActionResults each built 100 times → all 100 builds produce identical merkle_root bytes (= identical result_hash bytes).
 
 5. **Output_directories nested Merkle abuse**: REAPI Directory proto contains nested Directory references; cycle detection mandatory (else infinite recursion). Mitigação: bounded parser tracks visited node digests; cycle → `MerkleError::CycleDetected` (added to error enum); test 100 crafted cyclic protos rejected.
 
-6. **INV-AC-OUTPUTS-VALID race**: build calls `outputs::validate` at T+0; S-06 GC tombstones blob_X at T+1; envelope already constructed references blob_X. Mitigação: validation uses `SELECT ... FOR SHARE` semantics OR repeatable-read snapshot (D1 SQLite has limited semantics); fall-back: reconcile diário catches drift; this WI does best-effort point-in-time check; **acceptable** since strict atomicity unimplementable in CF Workers + D1 + R2 without distributed transaction.
+6. **INV-AC-OUTPUTS-VALID race**: build calls `outputs::validate` at T+0; S-06 GC tombstones blob_X at T+1; envelope already constructed references blob_X. **Lote 10.4bis P0 fix**: SQLite/D1 has **NO row-level locking primitives** (`SELECT ... FOR SHARE` é Postgres-only); transactions são serializable-by-engine but cannot re-claim a row. Honest formulation: **INV-AC-OUTPUTS-VALID is point-in-time best-effort**. We accept TOCTOU between handler outputs check and S-06 GC tombstone window; reconcile diário (S-06 forward) é the **only** mechanism for drift detection + correction. Race window is bounded by GC mark-phase + S-06 outbox emission window. INV-AC-OUTPUTS-VALID-EVENTUAL-CONSISTENCY tier explicitly documented (registry §3.15 + chaos test); orphan_rate metric monitors.
 
 7. **Codec adapter drift (REAPI v2 spec evolution)**: Bazel 8 adds new ActionResult fields; codec drops or mishandles. Mitigação: `prost` codegen from vendored .proto (WI-S04-001); upgrade via migration ADR; conformance suite catches.
 
@@ -193,7 +202,7 @@ HIGH_RISK justificado em N dimensões:
 
 **Atacante adversarial scenarios**:
 
-- **Cache poisoning via R2 envelope tampering**: insider (CF employee, contractor) modifies envelope to point to blob D' (attacker's malicious binary). Mitigação primary: HKDF sig (WI-S04-004) detects; **secondary** (defense-in-depth): client-side Merkle verify catches even if sig forged (chave compromise scenario). Combined: 2 layers of cripto verify.
+- **Cache poisoning via R2 envelope tampering**: insider (CF employee, contractor) modifies envelope to point to blob D' (attacker's malicious binary). Mitigação primary: HKDF sig (WI-S04-004) detects (insider sem HKDF key = sig fails). **Lote 10.4bis P0 fix**: prior text claimed Merkle catches "even if sig forged" — that is true ONLY for **partial compromise** (insider has R2 access but not HKDF key; sig forge requires both). Under **full HKDF key compromise**, attacker recomputes Merkle root + re-signs; both layers fail. Realistic dual-side defense: 2 cripto layers requiring partial compromise (one path) — full compromise mitigated externally via TDK rotation + S-09 audit chain anomaly detection.
 
 - **Merkle root collision attempt**: attacker crafts ActionResult with same Merkle root as legitimate but different output_files. BLAKE3-256 collision-resistant 2^128; attempt computationally infeasible (10^29 years brute-force).
 
@@ -271,7 +280,7 @@ Cripto library; HIGH_RISK; FF-HR-002 + FF-HR-005 + FF-HR-009.
    - Leaf: `leaf_hash = blake3(b"\x00" || digest_bytes)` (domain separation per RFC 6962-style).
    - Inner: `inner_hash = blake3(b"\x01" || left || right)` (domain separation prevents 2nd-preimage tree-shape attack).
    - Root: top of recursion.
-   - Determinism: lex sort outputs; binary tree balanced; no timestamps; protobuf canonical.
+   - Determinism: lex sort outputs; binary tree balanced; no timestamps. **Lote 10.4bis P0 fix per ADR-0037**: `result_hash = merkle_root` direct (eliminates protobuf encoding dependency; `prost` does not guarantee deterministic encoding for map/repeated fields).
 
 4. **Merkle verifier** (`src/merkle/verifier.rs`):
    - `verify_structure(envelope)`: re-build tree from envelope.result; compare computed root to envelope.merkle_root; mismatch → `MerkleError::RootMismatch`.
