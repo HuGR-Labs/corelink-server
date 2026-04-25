@@ -39,8 +39,8 @@ tags: ["architecture", "tla", "formal-verification", "planning", "obligation-mat
 
 ### Invariants alvo
 
-- **INV-BILLING-NO-LOSS** (CRITICAL — registry §3.9): Σ(events emitidos) = Σ(invoiced + tombstoned + late_pending). Drift > 0.1% = SEV-1.
-- **INV-BILLING-NO-DUP** (CRITICAL): nenhum charge duplicado por mesma fonte.
+- **INV-BILLING-NO-LOSS** (HIGH — registry §3.9; severity drift fix Lote 9.5b Codex R3-05): Σ(events emitidos) = Σ(invoiced + tombstoned + late_pending). Drift > 0.1% = SEV-1.
+- **INV-BILLING-NO-DUP** (HIGH — registry §3.9): nenhum charge duplicado por mesma fonte.
 - **INV-BILLING-RECONCILE-3-LAYER** (HIGH — §3.12): drift > 0.1% em qualquer layer = SEV-2; bloqueia close-of-month.
 - **INV-BILLING-REPLAYABLE-FROM-EVENTS** (HIGH — §3.12): InvReplayDeterministic.
 

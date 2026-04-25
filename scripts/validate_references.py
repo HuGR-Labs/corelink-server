@@ -191,6 +191,7 @@ WHITELIST_IDS = {
     "SLO-FRESH-PAT-REVOKE",  # S-03 v1.1 forward-looking SLO (a ser definido em slo_catalog.md durante S-03 implementation)
     "SLO-FRESH-GC",  # S-06 v1.1 forward-looking SLO (mark phase freshness)
     "SLO-CORRECT-GC",  # S-06 v1.1 forward-looking SLO (GC correctness gate)
+    "SLO-AVAIL-AUTH",  # S-03 v1.1 forward-looking SLO (auth path availability)
     # ADRs exemplo no framework (não são deployments reais)
     "ADR-0002",
     "ADR-0007",

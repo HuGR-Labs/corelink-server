@@ -47,7 +47,7 @@ tags: ["architecture", "invariants", "registry", "tla"]
 
 Formato canônico: `INV-<DOMAIN>-<NAME>`.
 
-- `<DOMAIN>` ∈ `{TENANT, CAS, AC, GC, DATA, AUDIT, CONF, AVAIL, BILLING, SUPPLY}` (ver §3).
+- `<DOMAIN>` ∈ `{TENANT, CAS, AC, GC, DATA, AUDIT, CONF, AVAIL, BILLING, SUPPLY, PRODUCT, KEY, ADMIN, OBS, DEDUP, RATE-LIMIT, BYOK, REGION, CONSENT, ONBOARD, ERASURE}` (ver §3). Domains adicionados em §3.11+ via Lote 6+9 expansion.
 - `<NAME>` em `SCREAMING_KEBAB_CASE` (hifens, não camelCase).
 - Total ≤ 40 chars.
 

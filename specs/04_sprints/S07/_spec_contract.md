@@ -121,6 +121,7 @@ Herda `_sprint_creation_contract §8`. Adiciona:
 - **14.s07.4 Cascade prevention**: eviction NUNCA cascateia pra remover chunks ainda referenciados por manifest ativo (INV-GC-003 + INV-DEDUP-CONSISTENCY).
 - **14.s07.5 Observability deep**: cada eviction decision emite log estruturado com `{tenant_id, chunk_digest_hex8, reason, bytes_reclaimed}`.
 - **14.s07.6 Benchmark SOTA**: criterion benchmark published em `benches/eviction/history/` comparando against baseline; PR regression > 10% bloqueia merge.
+- **14.s07.7 Cost regression gate** (Lote 9.5b — meta-contract §14.10 universal HIGH_RISK): per-op cost benchmark em $USD/million ops para hot path eviction worker (D1 query + R2 DeleteObject overhead); PR > 10% cost regression bloqueia merge sem ADR. Per-tenant cost projection sustained 7d staging em DoD.
 
 ## 10. Anti-scope
 

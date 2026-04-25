@@ -118,10 +118,10 @@ inherits_from:
 - [ ] **Property test 100k iter** tenant isolation: nenhum read retorna blob fora de namespace do tenant (EVT-002).
 - [ ] **TLA+ verdes em CI**: `tenant_isolation.tla` + `cas_integrity.tla` (EVT-022).
 - [ ] **Load test** read 50k QPS × 10 min em staging com SLO-AVAIL-CAS-GET preserved (EVT-021).
-- [ ] **Client verify default-on**: SDK em 3 languages (Python/Go/JS — S-15 ownership) tested integration; opt-out path documented (EVT-002 + EVT-018).
+- [ ] **Client verify default-on no crate Rust** (`corelink-client-verify`): bit-rot detection 100% via property test em CI (EVT-002). **NOTA Lote 9.5**: integração FFI Python/Go/JS é entregável **S-15** (outbound consumer); S-02 entrega o crate Rust + ABI stable. SDK integration tests rodam em S-15 sprint, não bloqueiam SEAL S-02.
 - [ ] **Side-channel test**: medir latência 404 vs 403 → p99 diff < 5ms via criterion benchmark; statistical test Mann-Whitney p > 0.05 (EVT-002 + EVT-040 if external review).
 - [ ] **Runbook `RB-FM-253`** (cross-tenant read) dry-run executado em staging (EVT-017).
-- [ ] **SBOM + signed release** (CycloneDX 1.5+ via S-12 R-S12-3) (EVT-010).
+- [ ] **SBOM + signed release** (CycloneDX 1.5+) — formato e enforcement definido em S-12 (forward-looking; S-02 honra format mas full SLSA L3 attestation gate é S-12 sealing) (EVT-010).
 - [ ] **Negative cache** test: probe storm 1k QPS de unknown digests → measure cost reduction vs no-cache baseline (EVT-021).
 - [ ] **Streaming memory test**: read 1 GiB blob via ByteStream → Worker memory peak < 50 MiB (não load full blob) (EVT-002).
 - [ ] **Bit rot integrity test**: corrupt R2 object out-of-band → 100% client verify catches (EVT-002).

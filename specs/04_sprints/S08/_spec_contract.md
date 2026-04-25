@@ -123,6 +123,7 @@ Universal (`_sprint_creation_contract §7`) **+**:
 - **14.s08.4 Retry-After reflete realidade**: 2 clients com mesmo Retry-After realmente ambos voltam a passar no próximo tick.
 - **14.s08.5 RFC 9331 compliance**: headers padrão IETF (não custom X-*).
 - **14.s08.6 Observability full**: cada 429 emitir log `{tenant_id, type, current, limit, remaining, refill_eta_ms}`.
+- **14.s08.7 Cost regression gate** (Lote 9.5b — meta §14.10): rate limit middleware $USD/million ops baseline; PR > 10% cost regression bloqueia merge sem ADR. DO storage growth + KV ops cost projection per tenant tier.
 
 ## 10. Anti-scope
 

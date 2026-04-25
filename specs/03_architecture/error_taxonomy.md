@@ -38,6 +38,29 @@ tags: ["architecture", "errors", "taxonomy", "sdk", "customer-facing", "canonica
 
 ---
 
+## 0. Cross-doc consistency note (Lote 9.5b)
+
+**Lote 9.5b R3-09 fix**: `observability_model.md §X` define enum legada `AUTH_*`, `CAS_*`, `TENANT_*`, `RATE_*` para classificação interna de error_code em logs structurados. Esta taxonomia (`COR_*`) é **customer-facing** e SDK-facing. Mapping canonical:
+
+| Customer-facing (este doc) | Internal log enum (observability_model.md) |
+|---|---|
+| `COR_AUTH_*` | `AUTH_*` |
+| `COR_CAS_*` | `CAS_*` |
+| `COR_AC_*` | `CAS_*` (subset) |
+| `COR_RATE_*` | `RATE_*` |
+| `COR_QUOTA_*` (em `COR_RATE_TENANT_QUOTA`) | `RATE_*` |
+| `COR_BILLING_*` | `BILLING_*` (planned em Lote 9.5+) |
+| `COR_BYOK_*` | `BYOK_*` (planned) |
+| `COR_PRIVACY_*` (DSR/CONSENT/RESIDENCY) | `PRIVACY_*` |
+| `COR_ADMIN_*` | `ADMIN_*` |
+| `COR_MULTIPART_*` | `CAS_*` (subset) |
+| `COR_ONBOARD_*` | `ONBOARD_*` (new — para S-19) |
+| `COR_SERVICE_*` | (no mapping — generic) |
+
+**CI gate planned (Lote 9.5+)**: `scripts/check_error_taxonomy.py` valida domain coverage + onboard domain presence se S-19 ativo + observability_model cross-doc compatibility check.
+
+---
+
 ## 1. Princípios de design
 
 1. **Customer-actionable**: cada error tem uma `next_action` que o customer pode tomar (não "internal error").
@@ -156,7 +179,21 @@ introduced_in_sprint: S-XX
 | `COR_MULTIPART_MERKLE_INVALID` | 422 | never | `MerkleInvalidError` | "Merkle tree of parts is invalid" | Verify all parts uploaded with correct hashes |
 | `COR_MULTIPART_TIMEOUT` | 408 | linear | `MultipartTimeoutError` | "Multipart upload session expired" | Restart multipart upload |
 
-### 3.10 Service / infrastructure errors
+### 3.10 Onboarding / Customer Lifecycle (S-19)
+
+Domínio adicionado em Lote 9.5b endereçando Opus R3 R3-10 + Codex R3-10.
+
+| error_code | HTTP | retryable | SDK exception | customer_message (en) | next_action |
+|---|---|---|---|---|---|
+| `COR_ONBOARD_EMAIL_VERIFICATION_PENDING` | 403 | after_delay | `EmailVerifyPendingError` | "Email verification required to complete signup" | Check inbox for verification email; retry após click |
+| `COR_ONBOARD_DPA_NOT_SIGNED` | 402 | never | `DPANotSignedError` | "DPA must be signed before service activation" | Visit `<dashboard>/onboarding/dpa` to accept |
+| `COR_ONBOARD_DPA_VERSION_BUMPED` | 409 | never | `DPAReSignRequiredError` | "Updated DPA requires re-acceptance" | Re-accept DPA at `<dashboard>/onboarding/dpa`; 30d grace before degrade |
+| `COR_ONBOARD_TENANT_PROVISIONING_FAILED` | 500 | exponential | `TenantProvisioningError` | "Account setup failed" | Retry signup; if persistent, contact support@corelink.dev with request_id |
+| `COR_ONBOARD_STRIPE_LINK_FAILED` | 500 | exponential | `StripeLinkError` | "Could not link payment provider" | Retry; check Stripe status; contact support if persistent |
+| `COR_ONBOARD_SIGNUP_RATE_LIMITED` | 429 | after_delay | `SignupRateLimitedError` | "Too many signup attempts from this IP" | Wait `Retry-After` seconds; contact support if NAT |
+| `COR_ONBOARD_INCOMPLETE_FLOW` | 409 | never | `IncompleteOnboardingError` | "Onboarding incomplete; resume required" | Continue at `<dashboard>/onboarding/resume` |
+
+### 3.11 Service / infrastructure errors
 
 | error_code | HTTP | retryable | SDK exception | customer_message | next_action |
 |---|---|---|---|---|---|

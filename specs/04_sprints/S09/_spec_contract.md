@@ -171,6 +171,7 @@ inherits_from:
 - **14.s09.4 Tracing coverage**: ≥ 90% das requests CAS/AC têm trace_id; ≥ 100% das requests com latency p99 breach têm trace tail-sampled (visível em Tempo).
 - **14.s09.5 Log volume budget**: produção emite ≤ 1 GB/dia/tenant em logs (warning), ≤ 5 GB/dia (alert). Reference: privacy_model §11.4 cost control.
 - **14.s09.6 Dashboard freshness**: cada dashboard tem `lastUpdated` annotation; PR de mudança de funcionalidade core deve atualizar dashboard correspondente (CI hook).
+- **14.s09.7 Cost regression gate** (Lote 9.5b — meta §14.10): cardinality budget é literal Prom cost — gate é o pontocentral. Grafana Mimir tenant cost projection $USD/month per tier; PR adicionando label > 10% cardinality estimate bloqueia merge sem ADR. Logpush volume + Tempo trace storage included em estimate.
 
 ## 10. Anti-scope
 

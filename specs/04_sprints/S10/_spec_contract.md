@@ -164,6 +164,7 @@ inherits_from:
 - **14.s10.5 Idempotency-Key cardinality**: max 10M keys/mês (Stripe limit); rotation policy yearly; key collision impossível por construction (UUID v4 entropy).
 - **14.s10.6 Concurrent webhook safety**: Stripe pode entregar same webhook 2× → handler é idempotent via `stripe_event_id` UNIQUE; reorder-safe via `event_timestamp` comparison.
 - **14.s10.7 GAAP revenue recognition**: invoice em mês N reflete usage do mês N (não mês N-1 ou N+1); cutoff time UTC documented.
+- **14.s10.8 Cost regression gate** (Lote 9.5b — meta §14.10): billing pipeline $USD/million events baseline; Stripe API costs per invoice generation tracked; PR > 10% cost regression bloqueia merge sem ADR. R2 events bucket retention 7y storage cost projection per tenant tier.
 
 ## 10. Anti-scope
 
