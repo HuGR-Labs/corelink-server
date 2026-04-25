@@ -4,7 +4,7 @@ type: "work_item"
 doc_status: "DRAFT"
 work_status: "READY"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.2.0"
 created: "2026-04-25"
 updated: "2026-04-25"
 lane: "HIGH_RISK"
@@ -482,7 +482,11 @@ TLA+ alignment: `cas_integrity.tla` chunked variant (forward S-09 TLA+ work).
 - 14.s05.005.6: Métricas: corelink.manifest.{verify_duration_us, build_duration_us, bounds_exceeded_total{kind}}.
 - 14.s05.005.7: Public API stability `#[non_exhaustive]`; semver post v1.0; ADR-0041.
 - 14.s05.005.8: REAPI v2 spec compliance (manifest format aligned).
-- 14.s05.005.9: Memory bounded ≤ 32 KiB stack per verify.
+- 14.s05.005.9: Memory bounded (Lote 10.5-tris P0-SR5-003 fix — math corrected; was claimed ≤ 32 KiB stack but Vec<ChunkRef> at 81920 × 40 bytes = 3.28 MB heap):
+  - **`verify_full` / `verify_structure`**: ≤ 4 MiB heap (Manifest worst-case 81920 ChunkRefs ~3.28 MB + envelope fields ~32 KB) + ≤ 32 KiB stack.
+  - **`verify_streaming`** (Lote 10.5-tris P0-SR5-003 (c) redesign): does NOT hold full `Vec<ChunkRef>` in memory; verifier reads from D1 `manifest_chunks` table per-chunk (one row at a time) → **O(1) memory per chunk** (~64 bytes); total streaming verify memory ~32 KiB stack only. Architectural cleanup: aligns with D1 manifest_chunks table's existing purpose (Lote 10.5bis WI-S05-004 batch INSERT em step [10] of SplitBlob).
+  - **Per-request peak combined** (chunker buffer + manifest in-memory): chunker 2 MiB + manifest 3.5 MB = ~5.5 MB total during SplitBlob. CF Worker 128 MiB / 5.5 MB ≈ 23 max concurrent split ops per Worker isolate; semaphore 4 per tenant caps tenant concurrency.
+  - **INV-MULTIPART-STREAMING-MEMORY** (registry §3.16): "verify_streaming O(1) per-chunk; build/verify_full bounded by 81920-chunk worst case ~3.5 MB heap". Updated by Lote 10.5-tris.
 - 14.s05.005.10: Cost regression gate: per-op cost ≤ $0.000002 (verify) + $0.000005 (build).
 
 ## 15. Chaos Experiments (5)

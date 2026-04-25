@@ -4,7 +4,7 @@ type: "work_item"
 doc_status: "DRAFT"
 work_status: "READY"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.2.0"
 created: "2026-04-25"
 updated: "2026-04-25"
 lane: "HIGH_RISK"
@@ -61,24 +61,35 @@ SplitBlob flow:
     [6] FOR EACH chunk:
         a. chunk_digest = BLAKE3(chunk.bytes)
         b. chunks::upsert(tenant_id, chunk_digest, size_bytes) → D1 INSERT ON CONFLICT (refcount += 1)
-        c. r2::put(chunk-<region>/<tenant_prefix>/<chunk_digest>) → R2 PUT (small object)
-    [7] manifest::build(chunks_in_order) → Merkle root (delegate WI-S05-005)
-    [8] manifest::sign(envelope) → HKDF (delegate WI-S04-004 sig pattern)
-    [9] r2::put(manifest-<region>/<tenant_prefix>/<blob_digest>.json) → R2 PUT manifest envelope
+        c. r2::put(chunk-<region>/<tenant_prefix>/<chunk_digest>) → R2 PUT (small object) → returns ChunkPutReceipt
+    [6.5] **AWAIT ALL ChunkPutReceipts** via `futures::future::try_join_all(receipts)` — Lote 10.5-tris P0-SR5-001 fix:
+          - if ANY chunk PUT returns Err → abort SplitBlob with `MultipartError::ChunkPutFailed { chunk_index, source }` → 503 + Retry-After
+          - manifest::build + sign NOT invoked until all receipts accepted (compile-time enforcement via ChunkPutReceipt type)
+          - ChunkPutReceipt is unit struct returned by r2::put on success ONLY; absent receipt = uncommitted PUT
+    [6.6] **CAPTURE created_at_ms ONCE** (Lote 10.5-tris P1-SR5-002 fix): `let created_at_ms = unix_ms_now();` BEFORE step [7]; reused on retry of step [9] without re-signing.
+    [7] manifest::build(chunks_in_order, all_receipts_received) → Merkle root (delegate WI-S05-005)
+    [8] manifest::sign(envelope, created_at_ms) → HKDF (delegate WI-S04-004 sig pattern); signed exactly ONCE; canonical_bytes computed once and stored em local variable
+    [9] r2::put(manifest-<region>/<tenant_prefix>/<blob_digest>.json) → R2 PUT manifest envelope; on retry, reuses same envelope bytes + signature (no re-sign)
     [10] manifest_chunks::insert_batch(blob_digest, chunk_index, chunk_digest) → D1
     [11] cas_blobs::set_chunked(blob_digest, true) → D1 UPDATE
     [12] audit emit cas.split.ok (outbox; WI-S01-004 reuse)
   Response: SplitBlobResponse { manifest_digest, chunk_digests[], ... }
 
-SpliceBlob flow:
+SpliceBlob flow (Lote 10.5-tris P0-SR5-002 fix — explicit per-chunk pipeline; sequential verify-then-write within chunk; NO unverified bytes ever reach client):
   Request gRPC → Tower auth_stack → TenantCtx ext →
     [1] scope_check::cache_r → 403 if missing
     [2] body decode → SpliceBlobRequest (manifest_digest)
     [3] manifest::lookup(tenant_id, manifest_digest) → D1 SELECT manifest_chunks ordered
-    [4] manifest::verify_signature → delegate WI-S04-004-style HKDF sig
-    [5] FOR EACH chunk_digest in order:
-        a. r2::stream_get(chunk-<region>/<tenant_prefix>/<chunk_digest>) → stream chunks back-to-back
-    [6] response stream → client receives reassembled blob
+    [4] manifest::verify_signature → delegate WI-S04-004-style HKDF sig (verify_full: structure + sig)
+    [5] **PER-CHUNK PIPELINE (sequential within chunk; pipelined across chunks)** — Lote 10.5-tris P0-SR5-002:
+        FOR i in 0..chunk_count:
+          5.1) chunk_bytes_i = r2::stream_get(chunk-<region>/<tenant_prefix>/<manifest.chunks[i].digest>)  // R2 GET
+          5.2) verifier.verify_chunk(i, chunk_bytes_i, manifest.chunks[i].digest)  // BLAKE3(chunk_bytes_i) == claimed_digest
+               → on mismatch: cancel_token.cancel(); abort entire SpliceBlob with gRPC ABORTED OR HTTP 499; client receives exactly the i prior verified chunks + error; NO partial chunk i bytes delivered
+          5.3) IF verify Ok → write chunk_bytes_i to client sink (gRPC ByteStream OR REST chunked transfer)
+        Pipeline parallelism: while writing chunk N to client (5.3), chunk N+1 can be R2-GETting (5.1) AND chunk N+1 verified (5.2);
+        but write to client sink for chunk i ONLY after verify(i) returns Ok. 1-chunk lookahead buffer = 2 MiB; total memory ≤ 4 MiB stack budget preserved.
+    [6] response stream complete → client receives reassembled blob
     [7] audit emit cas.splice.ok
   Response: streaming bytes (REAPI v2.3+ ByteStream)
 ```

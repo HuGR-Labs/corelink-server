@@ -4,7 +4,7 @@ type: "work_item"
 doc_status: "DRAFT"
 work_status: "READY"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.2.0"
 created: "2026-04-25"
 updated: "2026-04-25"
 lane: "HIGH_RISK"
@@ -214,7 +214,7 @@ Chunker é **single source of truth** for content-addressing em multipart blobs.
 
 **Atacante adversarial scenarios**:
 
-- **Determinism poison via crafted FastCDC input**: attacker constructs blob that hits FastCDC anchor at every byte → 100k+ tiny chunks → D1 manifest_chunks bloat. Mitigação: bounded MAX_CHUNKS_PER_BLOB = 80000 (per WI-S05-005 INV); chunker rejects via `feed()` before inserting; FastCDC min bound = 1 MiB prevents tiny chunks anyway.
+- **Determinism poison via crafted FastCDC input**: attacker constructs blob that hits FastCDC anchor at every byte → 100k+ tiny chunks → D1 manifest_chunks bloat. Mitigação: bounded MAX_CHUNKS_PER_BLOB = 81920 (per WI-S05-005 INV); chunker rejects via `feed()` before inserting; FastCDC min bound = 1 MiB prevents tiny chunks anyway.
 
 - **Memory exhaustion via crafted large input**: 1 TiB stream. Mitigação: BlobTooLarge error at 160 GiB; streaming pipeline never accumulates full blob.
 
@@ -275,7 +275,7 @@ Cripto library; HIGH_RISK; FF-HR-005 + FF-HR-009.
    - `src/chunker/`: trait + dispatch.
    - `src/fixed/`: Fixed2MiB impl.
    - `src/fastcdc/`: FastCDC impl.
-   - `src/bounds.rs`: constants (MAX_BLOB_SIZE = 160 GiB; MAX_CHUNKS_PER_BLOB = 80000).
+   - `src/bounds.rs`: constants (MAX_BLOB_SIZE = 160 GiB; MAX_CHUNKS_PER_BLOB = 81920).
    - `src/error.rs`: ChunkerError enum.
 
 2. **Fixed2MiB chunker** (`src/fixed/`):
@@ -487,7 +487,7 @@ BLAKE3 4× faster on AVX-512; critical for ≥ 500 MB/s native (recalibrated Lot
 
 R2 multipart hard limit: 10000 parts × 16 MiB part = 160 GiB single multipart session. Beyond → stitched flow WI-S05-006.
 
-### 9.7 Why MAX_CHUNKS_PER_BLOB = 80000
+### 9.7 Why MAX_CHUNKS_PER_BLOB = 81920
 
 160 GiB / 2 MiB chunk = 80000 chunks. WI-S05-005 manifest builder enforces; bounded parser rejects > 80000.
 
@@ -518,7 +518,7 @@ ADR-0022 já forward; este WI ratifies (DRAFT → ACCEPTED). New related ADR pot
 - [ ] **10.s05.002.9** rustdoc 100% public API + 4 examples + threat model README + spec doc `chunker_protocol.md`.
 - [ ] **10.s05.002.10** Public API stability: `#[non_exhaustive]` on enum + struct; semver discipline.
 - [ ] **10.s05.002.11** ADR-0022 ratificada (DRAFT → ACCEPTED) + ADR-0039 forward (chunker public API stability + mask seeds versioning).
-- [ ] **10.s05.002.12** Bound enforcement: MAX_BLOB_SIZE 160 GiB, MAX_CHUNKS_PER_BLOB 80000 validated by chaos test.
+- [ ] **10.s05.002.12** Bound enforcement: MAX_BLOB_SIZE 160 GiB, MAX_CHUNKS_PER_BLOB 81920 validated by chaos test.
 
 ## 11. DoD
 
@@ -543,7 +543,7 @@ ADR-0022 já forward; este WI ratifies (DRAFT → ACCEPTED). New related ADR pot
 
 - **INV-CAS-IDEMPOTENCY** (CRITICAL, registry §3.3): same input bytes + same `ChunkerConfig` → same chunk boundaries + same digests byte-identical; property test 100k.
 - **INV-MULTIPART-CHUNK-DETERMINISTIC** (CRITICAL, NEW — promovida registry §3.16 Lote 10.5bis): FastCDC mask seeds fixed em `ChunkerConfig::default()`; ADR-0022 stability commitment.
-- **INV-MULTIPART-BOUNDED-PARSER** (HIGH, NEW): MAX_BLOB_SIZE 160 GiB, MAX_CHUNKS_PER_BLOB 80000 enforced at decode time.
+- **INV-MULTIPART-BOUNDED-PARSER** (HIGH, NEW): MAX_BLOB_SIZE 160 GiB, MAX_CHUNKS_PER_BLOB 81920 enforced at decode time.
 - **INV-MULTIPART-STREAMING-MEMORY** (HIGH, NEW): per-request stack ≤ 4 MiB (chunker buffer 2 MiB + headroom); zero-allocation Iterator.
 - **INV-CAS-INTEGRITY** (CRITICAL, registry §3.3): chunker BLAKE3 hash inline; integrity binding per chunk; manifest builder em WI-S05-005 binds tree.
 
@@ -747,7 +747,7 @@ Fallback: if chunker crash detected, handler returns 503; multipart writes pause
 - **Tampering**: BLAKE3-256 hash inline catches per-chunk tampering; manifest builder em WI-S05-005 binds tree.
 - **Repudiation**: chunker output deterministic; same input → same chunks; auditable via test vectors Annex.
 - **Information disclosure**: chunker is content-pure; no PII handling beyond passing bytes through.
-- **DoS**: bounded parser MAX_BLOB_SIZE 160 GiB + MAX_CHUNKS_PER_BLOB 80000; cargo-fuzz validates.
+- **DoS**: bounded parser MAX_BLOB_SIZE 160 GiB + MAX_CHUNKS_PER_BLOB 81920; cargo-fuzz validates.
 - **Elevation of privilege**: not applicable (lib).
 
 **LINDDUN delta**:
