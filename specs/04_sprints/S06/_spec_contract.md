@@ -3,9 +3,9 @@ id: "SPEC-CONTRACT-S06"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-04-24"
-updated: "2026-04-24"
+updated: "2026-04-25"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -95,19 +95,22 @@ inherits_from:
   - **INV-GC-004 enforcement** (mark-phase-aware): pre-sweep, verify `ac.created_at < mark_started_at` para todos AC entries que referenciam digest; se any `ac.created_at >= mark_started_at` → digest é re-referenciado durante mark, **não** deletar.
   - Audit emit `corelink.gc.sweep_executed` per blob com `prev_state, mark_started_at, sweep_executed_at`.
 - **R-S06-7**: Undelete path: customer re-upload de mesmo digest dentro do grace OR admin endpoint `POST /v1/admin/gc/undelete?digest=X` reverte `deleted_at = NULL` + audit.
+- **R-S06-7.1**: **Sweep p99 ≤ 5 min @ 100k candidates** per (tenant, region) (Lote 10.6bis P0-5 fix Part 1: separate budget line, NOT sub-allocation of mark's 10 min). Rationale: sweep is cost-distinct phase (per-candidate INV-GC-004 EXISTS check + soft-delete UPDATE + audit emit; bounded concurrency 8; D1 batch ≤250 rows per Lote 10.5bis lesson). Mark and sweep run sequentially per (tenant, region) cron tick; total mark+sweep ≤ 15 min p99 budget @ 1M blobs / 100k candidates respectively.
 
 ### 5.4 Physical Delete (CAP-GC-001)
 
 - **R-S06-8**: Physical delete worker (separate job; runs hourly): blobs com `deleted_at < now() - grace_period` → R2 DeleteObject + `blob_meta` row purge.
 - **R-S06-9**: Physical delete idempotent: re-run safe (PAT-RETRY-IDEMPOTENT-001).
+- **R-S06-9.1**: **Physical delete p99 ≤ 30 min @ 100k candidates** per (tenant, region) hourly tick (Lote 10.6bis P0-5 fix Part 2a: separate budget line; arithmetic re-derived using D1 batch ≤250 row Lote 10.5bis constraint). Derivation: 100k candidates × 50ms R2 DeleteObject / bounded_concurrency 8 ≈ 625s ≈ 10.4min R2 work; 100k candidates / 83 candidates-per-D1-batch = ~1200 batches × 100ms D1 p99 / concurrency 8 ≈ 15s D1 work; total ≈ 11min p99; budget headroom 2.7×; SEV-2 alert sustained > 25min.
 
 ### 5.5 Refcount Reconciliation (CAP-GC-004)
 
 - **R-S06-10**: Refcount reconciliation daily (CTRL-GC-002):
-  - Recompute per (tenant_id, digest): `expected_refcount = count(ac_meta where outputs contains digest AND deleted_at IS NULL)`.
+  - Recompute per (tenant_id, digest): `expected_refcount = count(ac_meta where blob_refs contains digest AND deleted_at_ms IS NULL)` via SQL `json_each(a.blob_refs)` (Lote 10.6bis Part 2a P0-1 fix; **NOT** `LIKE '%digest%'` — string-substring match produces false drift signals; canonical idiom is `json_each` JSON-aware membership).
   - Compare with `blob_meta.refcount`.
-  - Drift > 0.1% = SEV-2 alert; specific tenants drift > 1% = SEV-1.
-  - Auto-fix: small drifts (<5 records) auto-corrected; large drifts pause + manual review.
+  - Drift > 0.1% global = SEV-2 alert; per-tenant drift > 1% = SEV-1.
+  - Auto-fix: drift count ≤5 AND drift % ≤ 0.01% per tenant (scale-invariant percentage-floor + absolute-floor; Lote 10.6bis Part 2a P0-6 fix); larger drifts pause + manual review.
+- **R-S06-10.1**: **Reconcile p99 ≤ 1h @ 1M blobs** per (tenant, region) daily cron (analytics workload; not hot path). Re-derived post-Part 2a P0-1: json_each per-row extracts O(json_array_size) joined with `idx_ac_meta_tenant_deleted_at`; chunked iteration 1k blobs/chunk × bounded concurrency 4-8.
 
 ### 5.6 TLA+ CI Gate (CAP-GC-008)
 
@@ -315,4 +318,14 @@ Itens waivable com SRE lead + Architect + Security lead + ADR:
 
 ---
 
-**Fim spec contract S-06 v1.1.0 SOTA.**
+## 20. Change Log
+
+| Versão | Data | Autor | Mudança |
+|---|---|---|---|
+| 1.0.0 | 2026-04-24 | Gustavo | Initial sprint contract v1.0 SOTA. |
+| 1.1.0 | 2026-04-24 | Gustavo | Sprint contract HIGH_RISK SOTA hardening. |
+| 1.2.0 | 2026-04-25 | Gustavo | **Lote 10.6bis P0 fixes** (Agent R4 review remediation): (a) §5.3 R-S06-7.1 sweep budget separate ≤5min @100k (Part 1 P0-5); (b) §5.4 R-S06-9.1 physical delete budget separate ≤30min @100k arithmetic re-derived com D1 batch ≤250 (Part 2a P0-5); (c) §5.5 R-S06-10 SQL canonical idiom `json_each` (NOT LIKE '%digest%'; Part 2a P0-1 highest-leverage); (d) §5.5 auto-fix threshold scale-invariant percentage+absolute floor (Part 2a P0-6); (e) §5.5 R-S06-10.1 reconcile budget separate ≤1h @1M blobs. |
+
+---
+
+**Fim spec contract S-06 v1.2.0 SOTA.**

@@ -125,15 +125,25 @@ pub enum SweepError {
 
 1. **INV-GC-004 strict `<` comparison** (TLA+ `gc_correctness.tla` `InvGCReRefProtected` obligation):
    ```sql
-   -- Per gc_candidate row, sweep query:
+   -- Per gc_candidate row, sweep query (Lote 10.6bis P0-1 fix):
+   -- Use json_each contains (canonical idiom WI-S04-002 line 244); NOT LIKE substring.
+   -- Why: (a) WI-S04-002 §244 establishes json_each contains as canonical;
+   -- (b) leading-% LIKE forces full-scan, makes §14.s06.003.4 p99 ≤ 50ms SLO impossível;
+   -- (c) string-typing-erasure silenciosamente quebra se blob_refs schema evoluir;
+   -- json_each preserves type semantics + enables index pushdown via composite (tenant_id, created_at) idx.
    SELECT EXISTS (
-       SELECT 1 FROM ac_meta
-       WHERE tenant_id = $1
-         AND blob_refs LIKE '%' || $2 || '%'         -- digest é em ac.outputs
-         AND created_at_ms >= $3                     -- $3 = gc_candidate.mark_started_at_ms; STRICT >=
+       SELECT 1 FROM ac_meta a, json_each(a.blob_refs) j
+       WHERE a.tenant_id = $1
+         AND j.value = $2                            -- digest exact match em ac.outputs (não substring)
+         AND a.created_at >= $3                      -- $3 = gc_candidate.mark_started_at_ms; STRICT >=
+                                                     -- Lote 10.6bis P0-2 fix: column é `created_at` (canonical
+                                                     -- WI-S04-002 line 78); was wrongly `created_at_ms` em prior draft;
+                                                     -- sqlx::query_as! falha compile com nome errado
    ) AS reference_after_mark;
    ```
    Se TRUE → `status='protected_re_ref'`; do NOT soft-delete. Se FALSE → safe to soft-delete.
+
+   **Performance**: composite index `idx_ac_meta_tenant_created_at` (tenant_id, created_at) covers WHERE clause; json_each is per-row scan over typically small blob_refs JSON array (≤10 KiB CHECK constraint per WI-S04-002); p99 ≤ 50ms achievable.
 
 2. **Strict `<` (não `<=`)** — TLA+ obligation: comparison é STRICT; ac.created_at exatamente igual a mark_started_at_ms é caso fronteira; opta por strict < (mais conservador; favorable to reachable).
 
@@ -223,14 +233,17 @@ Sweep phase impl; HIGH_RISK; FF-HR-011 + FF-HR-005 + FF-HR-009.
        digest: &str,
        mark_started_at_ms: u64,
    ) -> Result<Option<AcRef>, SweepError> {
+       // Lote 10.6bis P0-1+P0-2 fix: json_each contains (canonical WI-S04-002 §244)
+       // + correct column name `created_at` (não created_at_ms).
        let row: Option<AcRef> = sqlx::query_as!(
            AcRef,
-           r#"SELECT action_digest, created_at_ms FROM ac_meta
-              WHERE tenant_id = ? AND blob_refs LIKE ?
-                AND created_at_ms >= ?  -- STRICT >= per TLA+ obligation
+           r#"SELECT a.action_digest, a.created_at FROM ac_meta a, json_each(a.blob_refs) j
+              WHERE a.tenant_id = ?
+                AND j.value = ?
+                AND a.created_at >= ?  -- STRICT >= per TLA+ obligation
               LIMIT 1"#,
            tenant_id.to_string(),
-           format!("%{}%", digest),
+           digest,                              // exact match (não LIKE substring)
            mark_started_at_ms as i64,
        ).fetch_optional(d1).await?;
        Ok(row)
@@ -341,7 +354,7 @@ Feature: Sweep phase + INV-GC-004 enforce + audit emit
 
   Scenario: Sweep happy path (confirmed orphan)
     Given gc_candidate (digest=D, mark_started_at_ms=T, status='candidate')
-    Given no ac_meta entry references D with created_at_ms >= T
+    Given no ac_meta entry references D with created_at >= T  // Lote 10.6bis P0-2 column name fix
     When SweepPhase::execute(gc_run, tenant, region)
     Then SQL EXISTS check returns NULL (no re-ref)
     And blob_meta.deleted_at_ms = unix_ms_now()

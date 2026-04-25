@@ -169,7 +169,72 @@ CREATE INDEX IF NOT EXISTS idx_gc_candidates_protected
 **Cripto-driven invariants enforced**:
 
 1. **`mark_started_at_ms` atomic capture**: SQL `UPDATE gc_run SET mark_started_at_ms = unixepoch_ms() WHERE run_id = X AND mark_started_at_ms IS NULL`. Idempotent; only first call sets; subsequent reads observe stable value. **TLA+ obligation**: `gc_correctness.tla` `MarkPhaseStart` action.
+
+   **Lote 10.6bis P0-3 fix: UPDATE-commit-before-scan ordering pinned**. Per TLA+ `GCMarkStart` action requires atomic precedence over any `GCMarkStep`; previously Rust spec only pinned task ordering, não D1 commit boundary. Concrete impl:
+   ```rust
+   // Step A: UPDATE + AWAIT COMMIT (synchronous; D1 commit ack received)
+   let result = sqlx::query("UPDATE gc_run SET mark_started_at_ms = ? WHERE run_id = ? AND mark_started_at_ms IS NULL")
+       .bind(unix_ms_now()).bind(run_id)
+       .execute(&d1).await?;        // .await synchronizes; commit observed atomically before next line
+
+   // Step B: ONLY AFTER A's commit acks → begin reachable set scan
+   if result.rows_affected() == 0 {
+       // Already set by prior crashed run; idempotent resume; read existing value.
+       let existing: i64 = sqlx::query_scalar("SELECT mark_started_at_ms FROM gc_run WHERE run_id = ?")
+           .bind(run_id).fetch_one(&d1).await?;
+       gc_run.mark_started_at_ms = Some(existing as u64);
+   } else {
+       gc_run.mark_started_at_ms = Some(unix_ms_now());
+   }
+   // INVARIANT: at this point, ANY observer of D1 sees mark_started_at_ms; concurrent UpdateActionResult
+   // happening AFTER step A's commit ack will have ac.created_at > mark_started_at_ms (TLA+ obligation).
+   self.execute_3_pass_scan(gc_run.mark_started_at_ms.unwrap()).await?;
+   ```
+
+   **TLA+ ↔ Rust action mapping table** (Lote 10.6bis P0-3 fix; faithfully bridges TLA+ obligations to code):
+
+   | TLA+ Action (gc_correctness.tla) | Rust impl invocation site | Pre-condition observable | Post-condition observable |
+   |---|---|---|---|
+   | `MarkPhaseStart` | `mark.rs::execute()` step A | `gc_run.mark_started_at_ms IS NULL` | D1 commit ack: `gc_run.mark_started_at_ms = T` |
+   | `GCMarkStep(blob)` | `mark.rs::execute_3_pass_scan()` per batch | `gc_run.mark_started_at_ms = T` (from step A commit) | reachable set ⊇ blob if reachable |
+   | `UpdateActionResult(ac, blob)` | `WI-S04-001 handler` (concurrent) | (any) | `ac.created_at = T_ac` (real-time clock) |
+   | `SweepStep(blob)` | `WI-S06-003 sweep::execute()` per candidate | `gc_run.phase = sweep`; `mark_started_at_ms = T` | `EXISTS(ac WHERE ac.blob_refs CONTAINS blob AND ac.created_at >= T)` → ProtectedReRef; ELSE → SoftDelete |
+   | `InvGCReRefProtected` | TLA+ invariant + Rust property test 100k race (WI-S06-006) | (always) | reachable blobs (with concurrent UpdateAR) NEVER deleted |
 2. **Reachable set união**: `union(blob_meta WHERE refcount > 0, ac_meta.outputs[*], manifest_chunks WHERE blob_digest IN cas_blobs)`. Tenant-scoped strict (Lote 10.4bis lesson).
+
+   **Mark phase ac_meta scan SQL** (Lote 10.6bis P0-6 fix: previously not published; now explicit using json_each canonical idiom; same pattern as INV-GC-004 sweep query em WI-S06-003):
+   ```sql
+   -- Pass 2: ac_meta.outputs scan (extracts all digests referenced em ANY ac_meta entry for tenant)
+   SELECT DISTINCT j.value AS digest FROM ac_meta a, json_each(a.blob_refs) j
+   WHERE a.tenant_id = ?                              -- TenantCtx-only (Lote 10.4bis lesson)
+     AND a.created_at >= ?                            -- snapshot lower bound (mark_started_at_ms - 24h grace)
+   ORDER BY j.value
+   LIMIT 250 OFFSET ?                                 -- Lote 10.4bis lesson D1 100KB / 250 rows batch
+   ;
+   -- Lote 10.6bis P0-1+P0-2 fix: json_each canonical (não LIKE '%digest%'); column `created_at` (não `_ms`).
+   ```
+
+   **Mark phase manifest_chunks scan SQL** (3-hop traversal):
+   ```sql
+   -- Pass 3: manifest_chunks → chunks → blob_digest reachability
+   SELECT DISTINCT mc.chunk_digest AS digest
+   FROM manifest_chunks mc
+   WHERE mc.tenant_id = ?                             -- TenantCtx-only
+     AND mc.created_at >= ?                           -- snapshot bound
+   LIMIT 250 OFFSET ?
+   ;
+   ```
+
+   **Mark phase blob_meta refcount scan SQL** (denormalized counter; reconcile detects drift WI-S06-005):
+   ```sql
+   -- Pass 1: blob_meta.refcount > 0 (live blobs)
+   SELECT b.digest FROM blob_meta b
+   WHERE b.tenant_id = ?                              -- TenantCtx-only
+     AND b.refcount > 0
+     AND b.deleted_at_ms IS NULL                      -- not soft-deleted
+   LIMIT 250 OFFSET ?
+   ;
+   ```
 3. **Multi-pass scan**: 3 distinct passes (blob_meta → ac_meta → manifest_chunks); each batched 250 rows (Lote 10.5bis lesson D1 100KB limit); jitter 100ms.
 4. **D1 throttle adaptive**: backoff exponential se sustained 429; batch size halved temporary; circuit breaker se 10 batches consecutive throttled.
 5. **mark_run_id FK rigor**: `gc_candidates.mark_run_id` references `gc_run.run_id`; NEVER stale (cleaned by sweep phase post-completion).

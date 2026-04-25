@@ -96,6 +96,10 @@ pub enum GcStatus {
     Crashed { phase_when_crashed: String },
     /// Aborted via degrade-mode `gc-pause`.
     Aborted,
+    /// Phase failure (PhaseBudgetExceeded, PhaseFailure non-recoverable);
+    /// Lote 10.6bis P0-4 fix: variant added (was missing); WI-S06-002 §6.1.10
+    /// sets status='failed' which previously CHECK rejected; gap closed.
+    Failed { phase: String, reason: String, failed_at_ms: u64 },
 }
 
 pub struct GcRun {
@@ -202,7 +206,7 @@ CREATE TABLE IF NOT EXISTS gc_run (
 
   -- CHECK constraints inlined (Lote 10.4bis lesson)
   CHECK (phase IN ('idle', 'mark', 'sweep', 'physical_delete', 'reconcile', 'completed', 'failed')),
-  CHECK (status IN ('pending', 'running', 'succeeded', 'crashed', 'aborted')),
+  CHECK (status IN ('pending', 'running', 'succeeded', 'crashed', 'aborted', 'failed')),  -- Lote 10.6bis P0-4 fix: 'failed' variant added; WI-S06-002 §6.1.10 sets status='failed' on PhaseBudgetExceeded
   CHECK (region IN ('sam', 'iad', 'lhr', 'nrt', 'syd')),
   CHECK (last_checkpoint_at_ms >= started_at_ms),
   CHECK ((completed_at_ms IS NULL) OR (completed_at_ms >= started_at_ms)),
