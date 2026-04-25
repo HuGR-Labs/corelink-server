@@ -3,7 +3,7 @@ id: "SPEC-CONTRACT-S00"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-24"
 updated: "2026-04-24"
 owner: "Gustavo Schneiter"
@@ -11,7 +11,7 @@ final_approver: "Gustavo Schneiter"
 reviewers: []
 supersedes: null
 superseded_by: null
-tags: ["spec-contract", "s00", "planning", "meta"]
+tags: ["spec-contract", "s00", "planning", "meta", "prfaq", "roadmap", "standard", "sota-v1.1"]
 ---
 
 # Spec Contract — S-00: Roadmap & Planning
@@ -46,6 +46,8 @@ inherits_from:
   - "FRAMEWORK-00"
   - "REMOTE-CACHE-PRODUCT-PROFILE"
   - "COMPLIANCE-MATRIX"
+  - "OBSERVABILITY-MODEL"   # success metrics tracking (Lote 9.4 add)
+  - "FAILURE-MODES"          # roadmap risk awareness (Lote 9.4 add)
 ```
 
 ## 4. CAPs entregues
@@ -66,10 +68,12 @@ inherits_from:
 
 - [ ] PRFAQ aprovado por Aprovador Final + Product Reviewer (EVT-016).
 - [ ] Capabilities catalog validado: cross-ref com todos os canonical sources existentes mostra zero CAPs órfãos ou redundantes (EVT-001).
-- [ ] Success metrics têm thresholds numéricos (sem "best effort").
-- [ ] Roadmap revisado por: Tech Lead, SRE Lead, Security Lead, Finance/Cost Owner. Dates realistas dada capacity.
+- [ ] Success metrics têm thresholds numéricos (sem "best effort") (EVT-016).
+- [ ] Roadmap revisado por: Tech Lead, SRE Lead, Security Lead, Finance/Cost Owner. Dates realistas dada capacity (EVT-016).
 - [ ] 21 spec contracts (S-00 a S-20) com YAML front matter parsing no schema (EVT-026).
-- [ ] Todo sprint skeleton tem: objetivo, lane, forcing factors (se HIGH), inherits_from ≥ mínimo, WIs antecipados count.
+- [ ] Todo sprint skeleton tem: objetivo, lane, forcing factors (se HIGH), inherits_from ≥ mínimo, WIs antecipados count (EVT-002 cross-ref validator).
+- [ ] **PRR STANDARD** 5–8 sign-offs: Tech Lead + SRE Lead + Security Lead + Finance/Cost Owner + Product + Compliance + 2 peers (EVT-031).
+- [ ] **Mid-check (Lote 9.4 codex finding fix)**: D+3 review com 2 reviewers; ajuste timeline se necessário antes D+5 final.
 
 ## 7. Completeness Criteria (delta local)
 
@@ -81,16 +85,17 @@ Herda universal §8 meta-contract. Delta específico:
 
 ## 8. Invariants específicas
 
-Sprint não toca invariantes técnicas (é meta-trabalho). Mas protege:
+**Lote 9.4 codex S-00:86-87 finding fix**: S-00 é meta-sprint; **não toca invariantes técnicas** (registry §3) nem cria invariants novas. INV-DATA-CLASSIFICATION e INV-SCOPE-DISCIPLINE referenciados na v1.0 eram **meta-rules de processo, não invariantes técnicas formais** — promovidas a quality standards (§9 abaixo) como melhor categorização semântica.
 
-- **INV-DATA-CLASSIFICATION**: PRFAQ não vaza dados sensíveis de tenants reais (é hypothetical).
-- **INV-SCOPE-DISCIPLINE** (sprint-level): o output do S-00 é a lei; sprints subsequentes não podem alterar roadmap sem ADR.
+Sprint **não cria nem modifica** invariantes do registry. Trabalho de planning só.
 
 ## 9. Quality Standards (delta local)
 
 - **14.s00.1 PRFAQ quality**: < 1 página; testa-se "smell test" (se parece produto vapor, reescreva).
 - **14.s00.2 Dep graph**: topological sort roda limpo; sem ciclos.
 - **14.s00.3 Spec contract consistency**: todos os 21 spec contracts passam schema + zero dangling refs.
+- **14.s00.4 Data classification meta-rule** (era v1.0 INV-DATA-CLASSIFICATION): PRFAQ não vaza dados sensíveis de tenants reais — é hypothetical/anonymized.
+- **14.s00.5 Scope discipline meta-rule** (era v1.0 INV-SCOPE-DISCIPLINE): output do S-00 é a lei; sprints subsequentes não podem alterar roadmap sem ADR explícito.
 
 ## 10. Anti-scope
 
@@ -132,14 +137,16 @@ S-00 promove para S-01 (em curso) quando:
 - S-01 `sprint.md` já existente (done Lote 8) citado em roadmap.md §S-01 como "em execução".
 - Zero dangling cross-refs no validator.
 
-## 15. Riscos antecipados
+## 15. Riscos (registry expandido — 6 colunas Lote 9.4)
 
-| Risco | Prob | Impacto | Mitigação |
-|---|---|---|---|
-| PRFAQ vira waffle ("bold claims sem backing") | M | H | Review com "smell test"; rejeitar se não acreditável |
-| Roadmap dates são otimistas | H | H | PERT estimation + 20% buffer global + gap analysis |
-| Capability catalog vira lista de todo mundo | M | M | ≤ 80 CAPs máximo; força consolidar |
-| Scope creep em spec contracts (virar WIs full) | M | M | Time-box 5 dias; spec contracts são skeletons not full specs |
+| Risco | Prob | Det | Impacto | Exposure | Residual após mitigação | Mitigação |
+|---|---|---|---|---|---|---|
+| **PRFAQ vira waffle** ("bold claims sem backing") | M | M | HIGH | M | LOW | Review com "smell test"; rejeitar se não acreditável; Product Reviewer + Aprovador Final mandatory. |
+| **Roadmap dates são otimistas** | H | M | HIGH | H | MEDIUM | PERT estimation + 20% buffer global + gap analysis; mid-check D+3. |
+| **Capability catalog vira lista de todo mundo** | M | L | MEDIUM | L | LOW | ≤ 80 CAPs máximo; força consolidar; per-domain limit. |
+| **Scope creep em spec contracts** (virar WIs full) | M | L | MEDIUM | L | LOW | Time-box 5 dias; spec contracts são skeletons not full specs; v1.0 minimum bar. |
+| **Cycle em dependencies graph** | L | L | HIGH | L | LOW | Topological sort em CI; refusa se cycle detected. |
+| **Data classification leak em PRFAQ** | L | L | MEDIUM | L | LOW | Quality 14.s00.4 + Privacy Officer review pre-publish. |
 
 ---
 

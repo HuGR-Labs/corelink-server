@@ -156,8 +156,14 @@ WHITELIST_IDS = {
     "INV-GC",  # plural-form mention
     "INV-SUPPLY",  # plural-form mention em §4.3 ("INV-SUPPLY-*")
     "INV-CAS-SIDE-CHANNEL",  # short-form mention em S-02 §6 (full ID INV-CAS-SIDE-CHANNEL-INDISTINGUISHABLE)
+    "INV-AC",  # plural-form mention em S-04 §8 (registry §3.3 INV-AC-* pattern)
     # Patterns referenciados forward-looking em S-02 (definidos em resilience_patterns.md mas missing entry-anchor)
     "PAT-CIRCUIT-BREAKER-001",
+    "PAT-INVALIDATE-001",  # S-03 v1.1 forward-looking pattern (revocation propagation)
+    "PAT-MIGRATION-IDEM-001",  # S-01 v1.1 (D1 idempotent migration; resilience_patterns.md anchor pendente)
+    # ADRs forward-looking (a serem criadas durante respectivos sprints implementation)
+    "ADR-0021",  # S-04: AC digest signing HKDF vs Ed25519
+    "ADR-0022",  # S-05: chunk size vs multipart part size decoupling
     "FM-XXX",
     "ADR-XXXX",
     "ADR-YYYY",
@@ -182,6 +188,9 @@ WHITELIST_IDS = {
     "SLO-LAT-CAS-PUT-MULTIPART",
     "SLO-TENANT",
     "SLO-XXX",
+    "SLO-FRESH-PAT-REVOKE",  # S-03 v1.1 forward-looking SLO (a ser definido em slo_catalog.md durante S-03 implementation)
+    "SLO-FRESH-GC",  # S-06 v1.1 forward-looking SLO (mark phase freshness)
+    "SLO-CORRECT-GC",  # S-06 v1.1 forward-looking SLO (GC correctness gate)
     # ADRs exemplo no framework (não são deployments reais)
     "ADR-0002",
     "ADR-0007",

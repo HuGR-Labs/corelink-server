@@ -3,7 +3,7 @@ id: "SPEC-CONTRACT-S01"
 type: "spec_contract"
 doc_status: "FROZEN"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-24"
 updated: "2026-04-24"
 owner: "Gustavo Schneiter"
@@ -11,12 +11,20 @@ final_approver: "Gustavo Schneiter"
 reviewers: []
 supersedes: null
 superseded_by: null
-tags: ["spec-contract", "s01", "cas", "foundation", "high-risk"]
+tags: ["spec-contract", "s01", "cas", "foundation", "blake3", "hmac", "tenant-prefix", "high-risk", "sota-v1.1"]
 ---
 
-# Spec Contract — S-01: CAS Foundation
+# Spec Contract — S-01: CAS Foundation (Write Path + BLAKE3 + HMAC Tenant Prefix + TLA+ Verified)
 
 > **Status:** FROZEN (sprint.md já criado e referenciando este contract). Retroativo no Lote 8.1.
+> **Lote 9.4 v1.0.0 → v1.1.0 SOTA elevation**: bump version + EVT addition + 6-col risk register + PERT explicit.
+
+> **SOTA framing:** S-01 é a **foundation** do produto inteiro — bug em tenant isolation aqui = blast radius de 100% dos sprints subsequentes. CoreLink S-01 entrega:
+> (a) **TLA+ tenant_isolation.tla 5-layer defense** (camada 5 HMAC implementada aqui) verified em CI;
+> (b) **BLAKE3 SIMD-optimized** integrity verify at write (≥ 2 GB/s single core);
+> (c) **TenantPrefix newtype** com private field; única construction via `derive_prefix(TDK, tenant_id)`;
+> (d) **Property test 10k iter** + **pentest adversarial review** (EVT-025);
+> (e) **CI gate TLC** bloqueando merge se invariantes não verdes.
 
 ## 0. Metadata
 
@@ -73,7 +81,7 @@ inherits_from:
 
 ## 6. Definition of Done
 
-- [ ] 7 WIs SEALED.
+- [ ] 7 WIs SEALED (EVT-031).
 - [ ] Property test 10k iter verde (EVT-002).
 - [ ] TLA+ CI gate: 4/4 specs verdes bloqueiam merge se falham (EVT-022).
 - [ ] SAST + clippy clean (EVT-005 + EVT-001).
@@ -122,15 +130,15 @@ inherits_from:
 
 | ID | Título | Estimativa |
 |---|---|---|
-| WI-S01-001 | Lib tenant_path HMAC | 42h |
-| WI-S01-002 | BLAKE3 hasher + verify at write | 24h |
-| WI-S01-003 | R2 adapter single-blob | 32h |
-| WI-S01-004 | D1 schema + migration + refcount | 20h |
-| WI-S01-005 | REAPI BatchUpdateBlobs handler | 48h |
-| WI-S01-006 | Property tests 10k iter | 24h |
-| WI-S01-007 | CI workflow TLC gate + SBOM | 16h |
+| WI-S01-001 | Lib tenant_path HMAC | 42h (PERT: O=28h M=42h P=68h) |
+| WI-S01-002 | BLAKE3 hasher + verify at write | 24h (PERT: O=16h M=24h P=38h) |
+| WI-S01-003 | R2 adapter single-blob | 32h (PERT: O=22h M=32h P=50h) |
+| WI-S01-004 | D1 schema + migration + refcount | 20h (PERT: O=14h M=20h P=32h) |
+| WI-S01-005 | REAPI BatchUpdateBlobs handler | 48h (PERT: O=32h M=48h P=78h) |
+| WI-S01-006 | Property tests 10k iter | 24h (PERT: O=16h M=24h P=38h) |
+| WI-S01-007 | CI workflow TLC gate + SBOM | 16h (PERT: O=10h M=16h P=26h) |
 
-Total: ~206h (~5 weeks 1 dev; 3 weeks 2 devs parcial).
+Total: ~206h PERT-weighted (~5 weeks 1 dev; 3 weeks 2 devs parcial). Buffer 5 dias confere.
 
 ## 13. Duração
 
@@ -142,14 +150,17 @@ Total: ~206h (~5 weeks 1 dev; 3 weeks 2 devs parcial).
 - PRR approved (10-12 sign-offs).
 - Staging 72h sem SEV-1.
 
-## 15. Riscos antecipados
+## 15. Riscos (registry expandido — 6 colunas)
 
-| Risco | Prob | Impacto | Mitigação |
-|---|---|---|---|
-| TLA+ small-bound não pega bug produção | M | HIGH | property test 10k + pentest + Apalache futuro |
-| Clerk API muda mid-sprint | L | MEDIUM | PAT stubado; integração em S-03 |
-| BLAKE3 crate CVE | L | CRITICAL | cargo-audit + dupla hash fallback |
-| D1 migration rollback | M | HIGH | PAT-MIGRATION-IDEM-001; staging rehearsal |
+| Risco | Prob | Det | Impacto | Exposure | Residual após mitigação | Mitigação |
+|---|---|---|---|---|---|---|
+| **TLA+ small-bound não pega bug produção** | M | M | HIGH | M | LOW | Property test 10k iter + pentest + Apalache symbolic future + adversarial review trimestral. |
+| **Clerk API muda mid-sprint** | L | L | MEDIUM | L | LOW | PAT stubado; integração real em S-03; weekly Clerk changelog review. |
+| **BLAKE3 crate CVE** | L | L | CRITICAL | L | LOW | cargo-audit daily + dupla hash fallback (SHA-256 secondary verify); Lote 9.1 supply chain S-12. |
+| **D1 migration rollback** | M | L | HIGH | L | LOW | PAT-MIGRATION-IDEM-001; staging rehearsal; transactional migration. |
+| **HMAC key leak** (TDK exfil) | L | M | CRITICAL | L | LOW | Cloudflare Secrets Store; never logged; INV-CONF-AT-REST + KMS-backed. |
+| **Cross-tenant via path collision** (HMAC truncation) | L | M | CRITICAL | L | LOW | TenantPrefix newtype private field; single construction; TLA+ verifies; property test 100k. |
+| **Cost regression** > 10% baseline | M | L | MEDIUM | L | LOW | Lote 9.4 §14.10 cost regression gate; criterion benchmark. |
 
 ---
 
