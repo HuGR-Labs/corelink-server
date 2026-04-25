@@ -1,11 +1,11 @@
 ---
 id: "ADR-0019"
 type: "adr"
-doc_status: "DRAFT"
+doc_status: "FROZEN"
 audit_status: "ACTIVE"
-version: "0.1.0"
+version: "1.0.0"
 created: "2026-04-24"
-updated: "2026-04-24"
+updated: "2026-04-25"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -80,3 +80,10 @@ Durante S-07 implementation:
 - `specs/04_sprints/S07/_spec_contract.md` (CAP-EVICT-002).
 - Opus Round 2 C-03 (`specs/_audits/2026-04-24-opus-independent-sota-review-r2.md:63-71`).
 - Codex Round 2 CF-05.
+
+## Change Log
+
+| Versão | Data | Autor | Mudança |
+|---|---|---|---|
+| 0.1.0 | 2026-04-24 | Gustavo (Lote 9.1) | Criação ADR-0019 (TTL ownership boundary S-04 → S-07 supersedes per-tier defaults). |
+| 1.0.0 | 2026-04-25 | Gustavo (Lote 10.7bis P0-5 fix) | **DRAFT → FROZEN promotion** (Agent R4 + Sonnet R5 caught: WI-S07-002/005 cited "ADR-0019 FROZEN" mas era DRAFT). Content audit by Owner: Decision §32 tier vocabulary (free/solo/team/business/enterprise — 5 tiers) + per-tier TTL semantics (7d/30d/90d/365d/730d max) + S-07 supersedes S-04 default 90d via this ADR. Architect + Crypto SME independent re-review optional (advisory; substantive content audit complete pre-FROZEN). |

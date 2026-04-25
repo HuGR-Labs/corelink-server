@@ -1,11 +1,11 @@
 ---
 id: "ADR-0020"
 type: "adr"
-doc_status: "DRAFT"
+doc_status: "FROZEN"
 audit_status: "ACTIVE"
-version: "0.1.0"
+version: "1.0.0"
 created: "2026-04-24"
-updated: "2026-04-24"
+updated: "2026-04-25"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -76,3 +76,10 @@ Sem decomposição clara, ambos sprints reivindicam "quota". Quem detecta breach
 - `specs/04_sprints/S07/_spec_contract.md` (CAP-EVICT-003).
 - `specs/04_sprints/S08/_spec_contract.md` (CAP-QUOTA-001/002).
 - Codex Round 2 CF-06.
+
+## Change Log
+
+| Versão | Data | Autor | Mudança |
+|---|---|---|---|
+| 0.1.0 | 2026-04-24 | Gustavo (Lote 9.1) | Criação ADR-0020 (Quota ownership boundary S-07 ≤95% triggers eviction; S-08 100% hard-block rate-limit). |
+| 1.0.0 | 2026-04-25 | Gustavo (Lote 10.7bis P0-5 + P0-4 fixes) | **DRAFT → FROZEN promotion** (Agent R4 + Sonnet R5 caught: WI-S07-003/005 cited "ADR-0020 FROZEN" mas era DRAFT). Content audit by Owner: Decision §32 boundary clarification — S-07 owns ≤95% (telemetry SEV-3 80% + ad-hoc eviction trigger 95%); S-08 owns 100% hard-block (rate-limit/429 + Retry-After). **80% soft-warn email path defer to S-13** (admin/notifications) per Lote 10.7bis P0-4 fix; ADR-0020 §Decision clarified "soft-pressure 80% = telemetry SEV-3 oncall only; 95% = ad-hoc eviction trigger; 100% = S-08 hard-block 429" — eliminates email infrastructure assumption sem S-13. Architect + Crypto SME independent re-review optional (advisory). |
