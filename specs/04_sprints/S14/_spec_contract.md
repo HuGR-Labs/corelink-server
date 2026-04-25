@@ -85,7 +85,7 @@ inherits_from:
 - **R-S14-2**: Tenant `primary_region` enforcement no write path:
   - Insert check: `tenant.region == request.region`; mismatch = 403 + audit emission.
   - DO `region_enforcer` validates per-request.
-- **R-S14-3**: Hot blob replica detector (top 1% via métrica `corelink.cas.get.bytes_total{tenant_id}`) + replication worker copia para sibling region async; lag p99 ≤ 60s.
+- **R-S14-3**: Hot blob replica detector (top 1% identified via offline aggregation, **NÃO** via métrica labeled por `tenant_id` — proibido por INV-OBS-CARDINALITY-BUDGET S-09). Strategy: (a) métrica agregada `corelink.cas.get.bytes_total{tenant_tier, region}` para budget-safe live monitoring; (b) offline daily job em audit log R2 (S-09 audit bucket) computa top-1% per tenant via batch query — escapa cardinality budget porque é offline. Replication worker copia para sibling region async; lag p99 ≤ 60s. **Lote 9.4 Opus H-02 fix.**
 - **R-S14-4**: PAT-REGION-FAILOVER-001 read failover: se primary region 503/504 → read from secondary; SLO preserved transparently.
 - **R-S14-5**: DPA amendment template em `legal/dpa-residency-amendment.md` covering residency commitment per region; Schrems II TIA template em `legal/tia-template.md`.
 
@@ -147,8 +147,8 @@ inherits_from:
 
 - **INV-DATA-RESIDENCY** (HIGH — herda S-11): tenant region pinned + enforced cross-region.
 - **INV-TENANT-ISOLATION** (CRITICAL): mantém cross-region; TLA+ verifica.
-- **INV-KEY-NO-SKIP** (HIGH — key_management): BYOK revoke → writes fail corretamente.
-- **INV-KEY-OVERLAP** (HIGH — herda S-13): rotation overlap respected.
+- **INV-KEY-NO-SKIP** (HIGH — invariant_registry §3.13): BYOK revoke → writes fail corretamente.
+- **INV-KEY-OVERLAP** (HIGH — invariant_registry §3.13 + key_management §3.2.1 + ADR-0018): rotation overlap respected per asset class — Ed25519 attestation key 30d, BYOK CMK 7d.
 
 ### Novas (introduzidas por S-14 — adicionar a invariant_registry.md §3.12)
 
@@ -164,7 +164,7 @@ inherits_from:
 - **14.s14.4 FIPS compliance documented** per provider; quarterly review com Crypto SME.
 - **14.s14.5 Kill switch SLA ≤ 5 min** com chaos drill weekly.
 - **14.s14.6 DEK cache eviction** atomic; revocation propagates ≤ 5 min via subscribe-pub.
-- **14.s14.7 Erasure attestation** assinada com per-region Ed25519 key; key rotation overlap 30d.
+- **14.s14.7 Erasure attestation** assinada com per-region Ed25519 key; key rotation overlap 30d (canonical: `key_management.md §3.2.1` + ADR-0018).
 - **14.s14.8 Cost regression gate**: BYOK adds < 15% overhead em CAS path; matched em benchmark CI.
 
 ## 10. Anti-scope

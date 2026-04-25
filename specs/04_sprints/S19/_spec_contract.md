@@ -199,6 +199,7 @@ inherits_from:
 
 - **S-09 SEALED** (conversion funnel instrumented).
 - **S-13 SEALED** (admin plane support para enterprise inquiry handoff config).
+- **S-14 SEALED** (BYOK + DPA enterprise; lighthouse customer enterprise tier consome BYOK setup wizard + DPA amendment Schrems II TIA do S-14).
 
 ### Outbound
 

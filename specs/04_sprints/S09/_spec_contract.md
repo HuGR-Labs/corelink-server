@@ -11,7 +11,7 @@ final_approver: "Gustavo Schneiter"
 reviewers: []
 supersedes: null
 superseded_by: null
-tags: ["spec-contract", "s09", "observability", "metrics", "logs", "traces", "alerts", "slo", "standard", "sota-v1.1"]
+tags: ["spec-contract", "s09", "observability", "metrics", "logs", "traces", "alerts", "slo", "high-risk", "sota-v1.1"]
 ---
 
 # Spec Contract — S-09: Observability Stack (RED + USE + Logs/Traces/Audit/Alerts)
@@ -57,6 +57,7 @@ inherits_from:
   - "PRIVACY-MODEL"            # CTRL-PRIV-001 PII redaction enforcement
   - "SECURITY-MODEL"           # CTRL-AUDIT-001 audit log integrity
   - "DATA-MODEL"               # cardinality budget per dimension
+  - "INVARIANT-REGISTRY"       # INV-OBS-CARDINALITY-BUDGET, INV-OBS-AUDIT-CHAIN-INTEGRITY, INV-AUDIT-APPEND-ONLY (Lote 9.4)
 ```
 
 ## 4. CAPs entregues
@@ -136,7 +137,7 @@ inherits_from:
 - [ ] **PagerDuty**: SEV-1 + SEV-2 dispatch end-to-end testado (synthetic page) ack < 5min.
 - [ ] **Synthetic canary**: 24/7 de 3 regiões (us-east, eu-west, ap-south) sustentado 72h sem gap.
 - [ ] **Runbook dry-run** (EVT-017): `RB-FM-153` (Grafana Cloud outage) + `RB-OBS-CARDINALITY-001` (cardinality explosion) executados em staging.
-- [ ] **Sign-offs (HIGH_RISK)**: SRE lead + Privacy officer + Security lead + Engineer responsável + QA + Product + Compliance officer.
+- [ ] **Sign-offs (HIGH_RISK 10–12)**: SRE lead + Privacy officer + Security lead + Engineer responsável + QA + Product + Compliance officer + Architect + AppSec advisor + DPO interim + 1 peer reviewer.
 
 ## 7. Completeness Criteria (delta local)
 
@@ -237,7 +238,7 @@ inherits_from:
 - PII redaction DLP test 0 leaks.
 - Audit chain verify 7d clean.
 - Oncall rotation starts (PagerDuty schedule live).
-- PRR-S09 approved (HIGH_RISK lane: 7 sign-offs).
+- PRR-S09 approved (HIGH_RISK lane: 11 sign-offs conforme §6 DoD).
 
 ## 15. Riscos (registry expandido)
 

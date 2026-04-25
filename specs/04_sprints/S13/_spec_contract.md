@@ -81,12 +81,12 @@ inherits_from:
 
 - **R-S13-4**: Endpoint `POST /v1/admin/ops` exige header `X-Dual-Approver: <user_id>` + `X-Approver-Signature: <hmac>` em adição ao caller MFA.
 - **R-S13-5**: Hard-check (não advisory): missing approver → 403 + audit emit `admin.op.dual_approval_missing`.
-- **R-S13-6**: Approver não pode ser o caller (separation of duties); enforced via D1 check.
+- **R-S13-6**: Approver não pode ser o caller (separation of duties); enforced via D1 check. **Lote 9.4 Opus H-08 collusion-rotation defense**: além de `caller ≠ approver`, enforcement adicional: nas últimas 3 destructive ops em janela de 24h, deve haver ≥ 3 distinct approvers (anti-collusion-rotation pattern AC-2(7) NIST SP 800-53). Property test cobre cenário de A→approve B / B→approve A loop em sequence.
 
 ### 5.3 Secret Rotation (CAP-ADMIN-003)
 
-- **R-S13-7**: Secret rotation worker para 4 asset types:
-  - **TDK** (tenant derivation keys, S-01) — overlap 7d (CTRL-KEY-002 + INV-KEY-OVERLAP).
+- **R-S13-7**: Secret rotation worker para 4 asset types; overlap conforme tabela canonical em `key_management.md §3.2.1` (ADR-0018):
+  - **TDK** (tenant derivation keys, S-01) — overlap 7d (CTRL-KEY-002).
   - **PAT signing keys** (S-03) — overlap 24h.
   - **Audit chain key** (S-09 R-S09-10) — overlap 24h.
   - **BYOK** (S-14, customer-driven trigger) — overlap 7d.
@@ -129,8 +129,8 @@ inherits_from:
 - [ ] **Config rollback**: rollback to T-7d version ≤ 5 min (drill) (EVT-027).
 - [ ] **CTRL-AUDIT-003** (MFA attestation admin ops) enforced + audit chain integrity verified.
 - [ ] **CTRL-AUTH-010** (MFA fresh ≤ 30min) enforced; expiry test passes.
-- [ ] **INV-KEY-OVERLAP** (key_management §3.2) — rotation overlap 7d para TDKs verified em property test (EVT-002).
-- [ ] **PRR HIGH_RISK**: SRE lead + Security lead + Engineer + QA + Compliance officer + Product + 2 peers + Architect + AppSec.
+- [ ] **INV-KEY-OVERLAP** (key_management §3.2.1 + ADR-0018) — rotation overlap per asset class (TDK 7d / PAT 24h / audit 24h / BYOK 7d) verified em property test (EVT-002).
+- [ ] **PRR HIGH_RISK** (10–12 sign-offs): SRE lead + Security lead + Engineer + QA + Compliance officer + Product + 2 peers + Architect + AppSec + Privacy officer + Crypto SME (secret rotation review).
 - [ ] **Runbook dry-run**: RB-FM-205 (admin mistake) + RB-FM-201 (config rate-limit drop) + RB-FM-206 (terraform drift) (EVT-017).
 
 ## 7. Completeness Criteria (delta local)
@@ -147,13 +147,13 @@ inherits_from:
 
 ### Mantidas
 
-- **INV-KEY-OVERLAP** (HIGH — key_management §3.2): rotation overlap period respected.
+- **INV-KEY-OVERLAP** (HIGH — invariant_registry §3.13 + key_management §3.2.1 + ADR-0018): rotation overlap period respected per asset class.
 - **INV-AUDIT-APPEND-ONLY** (CRITICAL — herda S-09): admin op audit events append-only.
 - **CTRL-AUTH-010 + CTRL-AUDIT-003 + CTRL-CRED-003**: mantidas via enforcement runtime.
 
 ### Novas (introduzidas por S-13 — adicionar a invariant_registry.md §3.12)
 
-- **INV-ADMIN-DUAL-APPROVAL** (HIGH — novo): toda destructive admin op tem 2 distinct signatures (caller + approver); 0 bypasses em property test 10k attempts. **Why:** single-signature admin = insider threat trivial; dual-approval é defense-in-depth foundation. **How to apply:** D1 hard-check + property test + audit emission.
+- **INV-ADMIN-DUAL-APPROVAL** (HIGH — registry §3.12): toda destructive admin op tem 2 distinct signatures (caller + approver); 0 bypasses em property test 10k attempts. **Lote 9.4 Opus H-08 strengthening**: collusion-rotation defense — últimas 3 destructive ops em 24h DEVE ter ≥ 3 distinct approvers (anti-A↔B rotation). **Why:** single-signature admin = insider threat trivial; 2-engineer collusion via reciprocal approval = bypass com 2 admins; rotation tracking eleva barra. **How to apply:** D1 hard-check + property test 10k including collusion-rotation scenario + audit emission + NIST SP 800-53 AC-2(7) alignment.
 - **INV-ADMIN-MFA-FRESHNESS** (HIGH — novo): admin op exige MFA timestamp ≤ 30 min antes da request; expirado = 401 + force re-MFA. **Why:** stale MFA = persistent session hijack vector (CTRL-AUTH-010). **How to apply:** middleware check.
 
 ## 9. Quality Standards (delta local)
@@ -189,6 +189,7 @@ inherits_from:
 
 ### Outbound
 
+- S-10 (billing usage dashboard consome admin plane config-singleton; S-10 declara S-13 como outbound consumer).
 - S-14 (BYOK rotation usa secret rotation framework).
 - S-16 (admin UI consome admin plane API).
 - S-17 (chaos testing usa progressive rollout para deploy chaos).

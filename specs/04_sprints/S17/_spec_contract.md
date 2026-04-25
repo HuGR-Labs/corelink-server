@@ -93,7 +93,7 @@ inherits_from:
   - Monthly cadence: oncall executa 1 P0/P1 runbook (rotating which one).
   - Output em EVT-017 com timing + discrepancies + updates.
   - Runbook drift detection (FM-202 mitigation): if dry-run > 2× expected → flag for review.
-- **R-S17-8**: All 26 runbooks dry-run executed em últimos 90d (S-20 GA gate).
+- **R-S17-8**: All 40 runbooks dry-run executed em últimos 90d (S-20 GA gate).
 
 ### 5.4 Incident Template + Post-Mortem (CAP-OPS-004)
 
@@ -144,7 +144,7 @@ inherits_from:
 ## 7. Completeness Criteria (delta local)
 
 - [ ] **10.s17.1** Oncall schedule published; rotation começou (sustained 30d minimum to validate fadigue metrics).
-- [ ] **10.s17.2** Chaos test coverage ≥ 8 FMs do failure_modes §3 (de 26 P0/P1; cobre os mais críticos).
+- [ ] **10.s17.2** Chaos test coverage ≥ 8 FMs do failure_modes §3 (cobertura crítica; remaining FMs covered post-GA).
 - [ ] **10.s17.3** **DR drill semestral** scheduled + 1 cycle completed em staging.
 - [ ] **10.s17.4** **Runbook dry-run cadence**: monthly sustained 3 months minimum (S-20 gate exige 90d).
 - [ ] **10.s17.5** **Post-mortem blameless culture** documented + trained (engineering all-hands).

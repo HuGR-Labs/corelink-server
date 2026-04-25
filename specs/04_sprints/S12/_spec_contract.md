@@ -116,7 +116,7 @@ inherits_from:
   - Cargo build embed timestamp → use `SOURCE_DATE_EPOCH`.
   - LLVM debug info paths → use `--remap-path-prefix`.
   - Rustc compiler version pin via `rust-toolchain.toml`.
-- **R-S12-14**: Goal: 100% bit-identical em release builds; aceitável < 100% se fontes documentadas.
+- **R-S12-14**: Reproducible build target via ADR-0015: 2-runner diff ≤ 5% bytes em release builds; **fontes de non-determinism documentadas em `docs/build/reproducible.md` + ADR-0015 são pré-requisito** (não fallback). Goal medium-term (12 months pós-GA): 100% bit-identical com toolchain mais maduro.
 
 ### 5.6 Dependency-Track (CAP-SUPPLY-006)
 
@@ -143,14 +143,14 @@ inherits_from:
 - [ ] **Dependency-Track** integration: SBOM ingerido + 1 CVE simulado triggers Slack alert.
 - [ ] **RB-FM-156** (dep malicioso scenario) dry-run executado com Security lead + SRE.
 - [ ] **RB-FM-157** (typosquatting) dry-run executado.
-- [ ] **PRR HIGH_RISK**: Security lead + SRE + Engineer + Compliance officer + Product + QA + 2 peers + AppSec advisor.
+- [ ] **PRR HIGH_RISK** (10–12 sign-offs): Security lead + SRE + Engineer + Compliance officer + Product + QA + 2 peers + AppSec advisor + Architect + Crypto SME (Cosign keyless OIDC review).
 
 ## 7. Completeness Criteria (delta local)
 
 - [ ] **10.s12.1** SBOM export passa NTIA minimum elements check (cyclonedx-cli).
 - [ ] **10.s12.2** Cosign verify failure em deploy bloqueia rollout (chaos test); evidence captured EVT-011.
 - [ ] **10.s12.3** SLSA L3 attestation visible em Rekor publicly; auditor pode lookup.
-- [ ] **10.s12.4** **Reproducible build** 2-runner diff: 100% bit-identical OU documented sources com ADR.
+- [ ] **10.s12.4** **Reproducible build** 2-runner diff ≤ 5% bytes (release builds) AND ADR-0015 ratificado AND non-determinism sources documented em `docs/build/reproducible.md` (EVT-027).
 - [ ] **10.s12.5** **cargo-audit daily cron** verde sustained 30d staging.
 - [ ] **10.s12.6** **Dependency-Track** continuous CVE matching ativo; mock CVE injection → alert delivered ≤ 15 min.
 - [ ] **10.s12.7** **Cosign keyless OIDC** working (Fulcio short-lived cert via GitHub Actions identity).

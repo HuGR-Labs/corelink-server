@@ -11,7 +11,7 @@ final_approver: "Gustavo Schneiter"
 reviewers: []
 supersedes: null
 superseded_by: null
-tags: ["spec-contract", "s08", "rate-limit", "quotas", "abuse-detection", "bulkhead", "standard", "sota"]
+tags: ["spec-contract", "s08", "rate-limit", "quotas", "abuse-detection", "bulkhead", "high-risk", "sota-v1.1"]
 ---
 
 # Spec Contract — S-08: Rate Limiting Multi-Camada + Quotas + Abuse Detection (SOTA)
@@ -45,11 +45,12 @@ Implementar o **bulkhead principal do CoreLink multi-tenant**: isolamento compor
 ```yaml
 inherits_from:
   - "RESILIENCE-PATTERNS"
-  - "SECURITY-MODEL"      # CTRL-RATE-001, CTRL-AUTH-007 (replay nonce)
+  - "SECURITY-MODEL"      # CTRL-RATE-001, CTRL-QUOTA-001, CTRL-AUTH-007 (replay nonce)
   - "OBSERVABILITY-MODEL"
   - "FAILURE-MODES"       # FM-250, FM-251, FM-255, FM-401 (thundering herd)
   - "SLO-CATALOG"         # SLI-AVAIL-CAS-GET precisa distinguir within vs over quota
   - "AUTH-MODEL"          # PAT-level rate limit depends on scope
+  - "INVARIANT-REGISTRY"  # INV-RATE-LIMIT-PROPORTIONALITY, INV-AVAIL-ISOLATION, INV-QUOTA-ENFORCEMENT (Lote 9.4)
 ```
 
 ## 4. CAPs entregues
@@ -58,7 +59,7 @@ inherits_from:
 - **CAP-RATE-002**: Per-IP rate limit edge CF (adversarial IP floods).
 - **CAP-RATE-003**: Per-PAT rate limit (hijacked credential containment).
 - **CAP-RATE-004**: Global rate limit circuit breaker (system-wide DoS mitigation).
-- **CAP-QUOTA-001**: Storage quota per-tenant enforcement com soft (80%) / alert (95%) / hard (100%) states.
+- **CAP-QUOTA-001**: **Storage hard-block (≥ 100% — boundary com S-07 / ADR-0020)** — quando `tenant.bytes_used ≥ tenant.storage_limit`, write retorna 429 com `X-Rate-Limit-Type: over_quota` + `Retry-After: days-until-month-reset`. Soft (80%) e alert (95%) **transferidos para S-07 CAP-EVICT-003** (eviction-driven soft-pressure). S-08 entra em ação quando S-07 eviction não deu conta de manter `bytes_used < limit`.
 - **CAP-QUOTA-002**: Bytes ingress/egress quota (monthly rolling) pra bandwidth tier.
 - **CAP-ABUSE-001**: Abuse detection heurística multi-feature (`corelink_abuse_score{tenant_id}`).
 - **CAP-ABUSE-002**: Automated response: downgrade silencioso, admin review trigger, extreme case suspend.
@@ -94,12 +95,13 @@ Universal (`_sprint_creation_contract §7`) **+**:
 - [ ] **Rate limit headers RFC 9331** (RateLimit, RateLimit-Policy) implementados — padrão IETF atualizado.
 - [ ] **Property test** 10k iter cobrindo race conditions em DO token bucket update (EVT-002).
 - [ ] **Coverage ≥ 90%**.
+- [ ] **PRR HIGH_RISK** (10–12 sign-offs Lote 9.4 normalize): SRE lead + Security lead + Engineer + QA + Product + Compliance officer + Privacy officer + Architect + AppSec advisor + 2 peers (EVT-031).
 
 ## 7. Completeness Criteria SOTA (delta local)
 
 - [ ] **10.s08.1 SLI correctness**: rate limit response NÃO contabiliza no denominador do SLI quando é legítimo (over_quota); contabiliza quando within_quota (corretude crítica pra error budget).
 - [ ] **10.s08.2 Rate limit overhead**: middleware adiciona p99 ≤ 3ms (criterion benchmark).
-- [ ] **10.s08.3 Abuse response humane**: nenhum tenant é suspended sem human-in-the-loop (automated signal, human decides suspend).
+- [ ] **10.s08.3 Abuse response humane (Lote 9.4 Opus H-06 LGPD Art. 20 alignment)**: nenhum tenant é suspended sem human-in-the-loop. Automated downgrade/throttle DEVE expor: (a) endpoint `GET /v1/admin/abuse_score` para customer self-service inspection do score atual + features que contribuíram; (b) endpoint `POST /v1/admin/abuse_appeal` com payload de explanation + timeline → roteia para human reviewer ≤ 24h; (c) audit log emit para cada decisão automatizada (CTRL-AUDIT-003 alignment). Compliance: LGPD Art. 20 (revisão de decisões automatizadas) + GDPR Art. 22.
 - [ ] **10.s08.4 Per-tenant isolation formal**: property test proves 1 tenant's rate limit state não afeta outros.
 - [ ] **10.s08.5 Monthly reset determinístico**: bandwidth quota reset em 1º dia UTC do mês seguinte; não em sliding window.
 

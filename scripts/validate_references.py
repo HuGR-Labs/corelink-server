@@ -116,10 +116,8 @@ WHITELIST_IDS = {
     "INVARIANT-REGISTRY",
     "KEY-MANAGEMENT",
     "LIA-TEMPLATE",
-    # Cross-doc invariants defined in key_management.md only
-    "INV-KEY-NO-SKIP",
-    "INV-KEY-OVERLAP",
-    "INV-KEY-AUDIT",
+    # INV-KEY-* canonicalized em invariant_registry.md §3.13 (Lote 9.4 / ADR-0018);
+    # whitelist removida — agora resolve via registry.
     # Aliases históricos canonical em invariant_registry.md §5
     "INV-DATA-AC-REFS-EXIST",
     "INV-DATA-AUDIT-CHAIN",
@@ -156,6 +154,7 @@ WHITELIST_IDS = {
     "INV-XXX-name",   # template placeholder em framework examples
     "INV-LIFECYCLE-001",  # framework-internal example
     "INV-GC",  # plural-form mention
+    "INV-SUPPLY",  # plural-form mention em §4.3 ("INV-SUPPLY-*")
     "FM-XXX",
     "ADR-XXXX",
     "ADR-YYYY",

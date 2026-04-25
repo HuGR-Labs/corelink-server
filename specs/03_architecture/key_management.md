@@ -95,8 +95,24 @@ BYOK-CUSTOMER-<tenant_id>  (optional; replaces KEK-GLOBAL envelope step)
 ### 3.2 Invariantes
 
 - `INV-KEY-NO-SKIP`: writes nunca usam key em state `{pending, rotated, retired, destroyed}`.
-- `INV-KEY-OVERLAP`: durante rotation, ambas keys (old + new) são válidas para reads por até 24h (overlap period).
+- `INV-KEY-OVERLAP`: durante rotation, ambas keys (old + new) são válidas para reads por **período definido per asset class** (ver tabela 3.2.1 abaixo). O upper bound default é 24h; classes específicas têm overlap maior por trade-off de blast radius vs operational throughput.
 - `INV-KEY-AUDIT`: toda transição de state gera EVT-047 (AUDIT_EVENT) + EVT-028.
+
+#### 3.2.1 Overlap period per asset class (canonical)
+
+Tabela autoritativa para `INV-KEY-OVERLAP` — sprints downstream **devem** referenciar este valor, não inventar números soltos. Mudança requer ADR (ver ADR-0018).
+
+| Asset class | Overlap target | Justificativa | Sprint primário |
+|---|---|---|---|
+| **PAT signing key** | 24h | Curto blast radius; PAT verifica signature inline; tokens rotated rápido | S-03 |
+| **Audit chain key** (per-region) | 24h | Hash chain integrity precisa rotation rápida; janela de tampering minimal | S-09 |
+| **TDK** (tenant derivation key) | 7d | Re-wrap de envelope CAS é background job ≥ TB-scale; 24h causa starvation | S-01, S-13 |
+| **BYOK customer CMK** | 7d (CoreLink-side cache) | Customer trigger; CoreLink mantém DEK cache até CMK access expira; overlap = customer notification window | S-14 |
+| **Ed25519 attestation key** (per-region erasure) | 30d | Long-lived signing key; attestations 7y retention; rotation overlap garante verifiability passada | S-14 |
+
+**Hard upper bound:** nenhum asset class pode exceder 30d de overlap sem ADR explícito + Security lead sign-off. Justificativa: NIST SP 800-57 Pt 1 Rev 5 §5.3 recomenda overlap < 90d; CoreLink adopta 30d para defense-in-depth.
+
+**Property test obrigatório por sprint que toca rotation**: simular rotation start → completion, verificar que durante overlap período old + new são válidas para reads, mas writes vão exclusivamente para new (INV-KEY-NO-SKIP).
 
 ### 3.3 Online rotation
 

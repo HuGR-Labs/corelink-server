@@ -96,13 +96,18 @@ inherits_from:
   - **Grafana Loki**: log labels com PII (rare por CTRL-PRIV-001) → query API delete.
   - **Stripe**: customer.delete (mantém invoice por GAAP — pseudonymize subject info).
 - **R-S11-5**: **Crypto-erase** para BYOK customers (S-14): erasure efetiva via destroy customer-managed key (NIST SP 800-88 Rev.1 compliant); evidence emitido em audit.
-- **R-S11-6**: Verification job: 24h após erasure, sweep 7 backends → verify 0 records; report em `dsr-erasure-reports/<id>.json` retain 7y.
+- **R-S11-6**: Verification job: 24h após erasure, sweep **10 backends total (Lote 9.4 Opus H-10 expansion)**:
+  - **Erasure-effective (mutable, full delete)** — 6 backends: D1, Neon, R2 (mutable buckets), KV, DO, Stripe (customer.delete).
+  - **Erasure-pseudonymized (Object Lock WORM)** — 4 backends: R2 audit bucket (Object Lock 7y, S-09 R-S09-10), R2 billing-events (Object Lock 7y, S-10 R-S10-1), Loki long-term R2 cold archive (S-09 R-S09-5), Cloudflare Analytics Engine (rolling 30d retention).
+  - **Pseudonymization rule**: PII em records imutáveis substituído por `tenant_id_hash = sha256(tenant_id || erasure_salt)` + `pii_redacted_marker`; tenant_id ID pode ser correlacionado pelo customer com sua própria erasure_salt (kept separately) mas não por terceiros.
+  - Conflict resolution: GDPR Art. 17 (right to erasure) vs Object Lock 7y (audit immutability) — **pseudonymization é o escape valve regulatório aceito** (EDPB Guidelines 5/2020). Customer/auditor confirmation flow documented em runbook RB-DSR-ERASURE-INCOMPLETE.
+  - Report em `dsr-erasure-reports/<id>.json` retain 7y; per-backend status (`erased`, `pseudonymized`, `partial_failure`, `failed`).
 
 ### 5.3 Consent Ledger (CAP-PRIV-003)
 
 - **R-S11-7**: Endpoint `POST /v1/consent/<purpose>` → grava em D1 `consent_ledger`:
   - `subject_id`, `purpose` (e.g., `analytics`, `marketing`, `email_transactional`), `granted: bool`, `notice_text_hash` (SHA-256 do notice text shown), `notice_version` (semver), `locale` (ISO 639-1), `wording_id` (UUID do A/B test), `ui_capture_ts` (browser ts), `submission_ts` (server ts), `ip_addr_hash` (SHA-256), `signature` (HMAC).
-- **R-S11-8**: `DELETE /v1/consent/<purpose>` revoga; cascade ao processamento downstream em ≤ 24h.
+- **R-S11-8**: `DELETE /v1/consent/<purpose>` revoga **com proof simétrico (Lote 9.4 Opus H-05)** — consent_revocation table espelha schema do consent_ledger 6-field: `subject_id`, `purpose`, `revoked: bool`, `notice_text_hash` (do notice em vigor no momento da revoga), `notice_version`, `locale`, `wording_id`, `ui_capture_ts`, `submission_ts`, `ip_addr_hash`, `signature` HMAC. Cascade ao processamento downstream ≤ 24h. **GDPR Art. 7 alignment**: revoke é "as easy as giving consent" + cryptographically attested. Verify endpoint `GET /v1/consent/revocation/verify?revocation_id=X` retorna proof verificável.
 - **R-S11-9**: `GET /v1/consent` → user vê todos os consents + history with timestamps + notice diffs.
 
 ### 5.4 Privacy Notice Versioning (CAP-PRIV-004)
@@ -179,8 +184,8 @@ inherits_from:
 
 ### Novas (introduzidas por S-11 — adicionar a invariant_registry.md)
 
-- **INV-DATA-ERASURE-COMPLETE** (CRITICAL — novo): erasure cross-backend é efetiva em 7/7 backends; 0 records remanescentes 30d post-request. **Why:** LGPD Art. 18 + GDPR Art. 17 = right to erasure absoluto; gap = regulatory finding (multa). **How to apply:** verification job 24h post-erasure + audit retain 7y.
-- **INV-DATA-RESIDENCY** (CRITICAL — novo): tenant region pinned não vaza cross-region; 10k property test 0 violations. **Why:** Schrems II + LGPD Art. 33 § 1º + GDPR Art. 44 (cross-border transfer); gap = catastrofic legal exposure. **How to apply:** insert checks region tag + property test CI + custom domain routing.
+- **INV-DATA-ERASURE-COMPLETE** (HIGH — herda registry §3.5; **NÃO é novo** — ID já existia desde Lote 5; S-11 reforça evidence): erasure cross-backend é efetiva em 7/7 backends; 0 records remanescentes 30d post-request. **Why:** LGPD Art. 18 + GDPR Art. 17 = right to erasure absoluto; gap = regulatory finding (multa). **How to apply:** verification job 24h post-erasure + audit retain 7y. **Severity drift Lote 9.4:** S-11 v1.1 inicialmente classificou como CRITICAL — corrigido para HIGH alinhando ao registry; severity bump para CRITICAL requer ADR + Privacy Officer sign-off.
+- **INV-DATA-RESIDENCY** (HIGH — herda registry §3.11; **NÃO é novo**): tenant region pinned não vaza cross-region; 10k property test 0 violations. **Why:** Schrems II + LGPD Art. 33 § 1º + GDPR Art. 44 (cross-border transfer); gap = catastrofic legal exposure. **How to apply:** insert checks region tag + property test CI + custom domain routing. **Severity drift Lote 9.4:** mesma correção que ERASURE-COMPLETE.
 - **INV-CONSENT-PROOF-VERIFIABLE** (HIGH — novo): consent records têm notice_text_hash verifiable post-facto; tampering detected via signature. **Why:** GDPR Art. 7 exige proof of informed consent; sem hash = consent não defensible. **How to apply:** SHA-256 + HMAC + verify endpoint.
 - **INV-AUDIT-APPEND-ONLY** (CRITICAL — herda): DSR events e consent events são imutáveis em R2 Object Lock 7y.
 

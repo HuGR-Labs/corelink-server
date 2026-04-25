@@ -14,7 +14,7 @@ superseded_by: null
 tags: ["spec-contract", "s20", "ga", "readiness", "prr", "external-pentest", "soc-2", "lighthouse-customers", "high-risk", "sota-v1.1"]
 ---
 
-# Spec Contract — S-20: GA Readiness (PRR Global + 72h Staging + External Pentest + Lighthouse Customers + Engineering/Launch Split)
+# Spec Contract — S-20: GA Readiness (PRR Global + 30d Sustained Staging + External Pentest + Lighthouse Customers + Engineering/Launch Split)
 
 ## 0. Metadata
 
@@ -122,7 +122,7 @@ inherits_from:
 
 ### 6.1 Engineering Gate (binary)
 
-- [ ] **WIs SEALED**: 8/8.
+- [ ] **Engineering Gate WIs SEALED**: 7/7 (WI-S20-001..007). **WI-S20-008 (launch orchestration) NÃO bloqueia engineering gate** — tracked separately em §6.2 launch orchestration.
 - [ ] **PRR global APPROVED** com zero CONDITIONALLY_APPROVED sub-items (EVT-031).
 - [ ] **External pentest report clean**: zero HIGH/CRITICAL findings pending; retest passed (EVT-040).
 - [ ] **30d sustained staging**: zero SEV-1; < 3 SEV-2 not resolved (concurrent observation period; documented post-S-17 chaos automation 4-week period).
@@ -132,10 +132,10 @@ inherits_from:
 - [ ] **All docs (S-18) complete + reviewed** (EVT-016 + EVT-018).
 - [ ] **Compliance officer sign-off** (EVT-044).
 - [ ] **All SLOs sustained 30d** prod-like load (concurrent staging) (EVT-021).
-- [ ] **All 26 runbooks dry-run** executed em últimos 90d (cumulative S-17 + S-20) (EVT-017).
+- [ ] **All 40 runbooks dry-run** executed em últimos 90d (cumulative S-17 + S-20) (EVT-017).
 - [ ] **Zero active waivers em controles CRITICAL** (EVT-015 if exists; EVT-031 PRR).
 - [ ] **TLA+ all 4 specs verde em CI**: tenant_isolation + cas_integrity + audit_immutability + gc_correctness (EVT-022).
-- [ ] **Full SBOM v1.0 (CycloneDX 1.5+) signed published** (alinhado S-12 R-S12-3) (EVT-010).
+- [ ] **SBOM CycloneDX 1.5+ signed (alinhado S-12 R-S12-3) signed published** (alinhado S-12 R-S12-3) (EVT-010).
 - [ ] **Zero SEV-1 in prod in 30d prior to GA** (production-like staging observation).
 - [ ] **All TLA+ specs verdes** em CI sustained.
 
@@ -181,8 +181,8 @@ Todas as invariants CRITICAL (14 canonical sources contribute) **must be active*
 
 ## 9. Quality Standards (delta local)
 
-- **Full SBOM v1.0 (CycloneDX 1.5+) signed published** — alinhado S-12 R-S12-3.
-- **All 26 runbooks dry-run tested in 90d** (cumulative S-17 + S-20 cadence).
+- **SBOM CycloneDX 1.5+ signed (alinhado S-12 R-S12-3) signed published** — alinhado S-12 R-S12-3.
+- **All 40 runbooks dry-run tested in 90d** (cumulative S-17 + S-20 cadence).
 - **Zero SEV-1 in prod in 30d prior to GA** (production-equivalent staging — não há prod até GA day).
 - **TLA+ all 4 specs verdes em CI** sustained.
 - **External pentest retest passed** within 2 weeks of remediation submission.
@@ -314,7 +314,7 @@ S-20 **NÃO PODE** promover via waiver dos seguintes itens — todos são GA gat
 - ❌ 30d sustained staging zero SEV-1 — operational baseline.
 - ❌ 3 lighthouse customers SLA met — customer trust baseline.
 - ❌ PRR global APPROVED — process baseline.
-- ❌ All 26 runbooks dry-run em 90d — operational baseline.
+- ❌ All 40 runbooks dry-run em 90d — operational baseline.
 - ❌ TLA+ all 4 specs verde em CI — formal verification baseline.
 - ❌ SBOM CycloneDX 1.5+ signed published — supply chain baseline.
 - ❌ Zero active waivers em controles CRITICAL — security baseline.

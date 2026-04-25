@@ -56,7 +56,7 @@ inherits_from:
 - **CAP-AC-001**: REAPI GetActionResult (cache hit)
 - **CAP-AC-002**: REAPI UpdateActionResult (cache write)
 - **CAP-AC-003**: Merkle verification server-side + client-side
-- **CAP-AC-004**: AC TTL management (default 90d; refresh on hit)
+- **CAP-AC-004**: AC TTL management **infrastructure** (TTL worker + refresh-on-hit + expiry detection). **Default value supersedido por S-07 CAP-EVICT-002 per-tier table** (ADR-0019); S-04 entrega a infra de TTL, não o policy de defaults por tier. Free-tier customers em pre-S-07 staging usam 90d default; pós-S-07 SEALED, defaults migram per ADR-0019 §migration-plan.
 - **CAP-AC-005**: AC entry invalidation (cliente-requested + admin override)
 
 ## 5. Requirements específicos

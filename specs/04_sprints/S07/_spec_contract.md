@@ -61,8 +61,8 @@ inherits_from:
 - **CAP-DEDUP-002**: Dedup ratio métrica exposta (`corelink_dedup_ratio{tenant_id, type=chunk|blob}`).
 - **CAP-DEDUP-003**: Dedup ratio per-tier dashboard (em DASH-CAS).
 - **CAP-EVICT-001**: LRU eviction por tenant via `blob_meta.last_accessed_at` updated em hits; eviction worker bate 95%-of-quota trigger.
-- **CAP-EVICT-002**: TTL-based AC entry expiry per-tier (free=7d, solo=30d, team=90d, business=365d, enterprise=customer-configurable).
-- **CAP-EVICT-003**: Quota enforcement — 80% soft-warn (email), 95% alert, 100% reject write com error tipado `TENANT_QUOTA_EXCEEDED` + Retry-After indicating eviction schedule.
+- **CAP-EVICT-002**: TTL-based AC entry expiry **per-tier (canonical defaults — supersedes S-04 CAP-AC-004 default 90d via ADR-0019)**: free=7d, solo=30d, team=90d, business=365d, enterprise=customer-configurable (default 365d, max 730d).
+- **CAP-EVICT-003**: **Storage soft-pressure eviction (renamed Lote 9.4 / ADR-0020)** — 80% soft-warn (email), 95% trigger eviction worker. **Hard-block 100% transferido para S-08 CAP-QUOTA-001** (rate-limit/429 layer); S-07 eviction reduz `bytes_used` antes do hit hard-block. Boundary: ≤ 95% = S-07 owns; ≥ 100% = S-08 owns.
 - **CAP-EVICT-004**: Eviction is **soft-delete-first** (reuses GC grace period 72h) — cliente pode "undelete" via re-upload within grace.
 
 ## 5. Requirements específicos

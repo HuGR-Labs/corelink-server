@@ -1,9 +1,9 @@
 ---
 id: "SPRINT-CREATION-CONTRACT"
 type: "framework"
-doc_status: "DRAFT"
+doc_status: "REVIEW"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.0.1"
 created: "2026-04-24"
 updated: "2026-04-24"
 owner: "Gustavo Schneiter"
@@ -16,10 +16,10 @@ tags: ["meta", "sprint", "contract", "process"]
 
 # Sprint Creation Contract (META) — requisitos invariáveis de toda sprint
 
-> **doc_status:** DRAFT (FROZEN staffing-blocked)
-> **Versão:** 1.0.0 · **Última atualização:** 2026-04-24
+> **doc_status:** REVIEW (Lote 9.4 promotion pós Codex r2 + Opus independent review). FROZEN ainda depende de: (a) ≥ 2 reviewers nomeados; (b) `scripts/validate_specs.py` rodando em CI (jsonschema dep installed).
+> **Versão:** 1.0.1 · **Última atualização:** 2026-04-24
 > **Owner:** Gustavo Schneiter · **Aprovador Final:** Gustavo Schneiter
-> **Revisores:** ⚠️ **staffing-blocked**
+> **Revisores:** [Codex GPT (R1+R2 audit), Opus 4.7 (independent R2 audit)] — **Reviewers humanos ainda staffing-blocked**.
 
 > **Propósito:** esse é o **contrato meta** que define o que TODA sprint do CoreLink **DEVE** ter ao ser criada. Cada sprint individual (S-00, S-01, …, S-20) tem seu próprio `_spec_contract.md` com requirements específicos, mas todos derivam desta base.
 >
@@ -242,6 +242,7 @@ Herda `_templates/sprint_contract.md §14` do template. Universal:
 - **14.7 Operability quality**: runbook para cada FM classe P0/P1 introduzido.
 - **14.8 Evolvability quality**: breaking changes = bump major + migration doc.
 - **14.9 Sustainability** (HIGH_RISK only): memory footprint bounded; zero allocations em hot path steady-state.
+- **14.10 Cost regression gate (universal Lote 9.4)**: cada sprint que toca hot path (CAS/AC/billing/observability/region) DEVE incluir benchmark com per-op cost estimate em $USD por million ops; PR > 10% regression bloqueia merge sem ADR. Aplicação obrigatória em S-07/S-08/S-09/S-10/S-14; opt-in para outros. Reference: codex R1 SOTA enrichment + Opus H-09. Per-tenant tier: monthly cost projection sustained 7d staging em DoD.
 
 ## 11. Processo: PROPOSED → READY → IN_PROGRESS → SEALED
 

@@ -153,9 +153,9 @@ Adicionado em Lote 6.3 endereçando G-04 do re-audit (INVs legados CamelCase).
 | **INV-DIGEST-VERIFICATION** (alias histórico: `INV-DigestVerification`) | Write rejeita hash mismatch | CRITICAL | Toda write valida `hash(body) == claimed_digest` antes de persistir | CTRL-CAS-001 + TLA+ cas_integrity.tla (InvPoisoningRejected) |
 | **INV-DATA-RESIDENCY** (alias histórico: `INV-DataResidency`) | Dado de tenant fica em região pinned | HIGH | R2 bucket com locationHint; D1 primary na região escolhida; DO stickiness | CTRL-PRIV-031; quarterly config audit |
 
-### 3.12 Sprint-driven invariants (Lote 9.1 SOTA elevation)
+### 3.12 Sprint-driven invariants (Lote 9.1 SOTA elevation, expandido em Lote 9.4)
 
-Invariantes introduzidas via SOTA elevation dos sprint contracts S-07..S-12 (Lote 9.1). Todas adicionadas com sprint_origin column para traceability.
+Invariantes introduzidas via SOTA elevation dos sprint contracts S-07..S-19 (Lotes 9.1 + 9.4). Todas adicionadas com sprint_origin column para traceability.
 
 | ID | Nome | Severidade | Descrição | Enforcement | Sprint origin |
 |---|---|---|---|---|---|
@@ -177,22 +177,73 @@ Invariantes introduzidas via SOTA elevation dos sprint contracts S-07..S-12 (Lot
 | **INV-ONBOARD-DPA-FIRST** | Subscription activation requires DPA signed primeiro | HIGH | Race condition prevented; nenhum customer billed sem DPA | D1 lock + transactional check + property test 10k concurrent | S-19 |
 | **INV-ONBOARD-ATOMIC-PROVISIONING** | Tenant provisioning atomic | HIGH | Tenant + DPA + Stripe customer ID em single tx; failure rollback all | D1 transaction + chaos test Stripe outage | S-19 |
 
+### 3.13 Key management (domain KEY) — Lote 9.4
+
+Invariantes que governam crypto key lifecycle. Definidas inicialmente em `key_management.md §3.2`; promovidas formalmente ao registry em Lote 9.4 (Opus C-02 finding).
+
+| ID | Nome | Severidade | Descrição | Enforcement | TLA+ file |
+|---|---|---|---|---|---|
+| **INV-KEY-NO-SKIP** | Writes nunca usam key em state inválido | HIGH | Writes nunca em state `{pending, rotated, retired, destroyed}`; retorno 503 se única key disponível for inválida | State machine em `corelink-key` crate + property test rotation flow + INV-KEY-AUDIT trail | (planned `key_lifecycle.tla`) |
+| **INV-KEY-OVERLAP** | Rotation overlap respeitado per asset class | HIGH | Tabela canonical `key_management.md §3.2.1`: PAT 24h / audit 24h / TDK 7d / BYOK 7d / Ed25519 attest 30d. Hard upper 30d sem ADR | Property test per asset class + rotation worker S-13 | (planned `key_lifecycle.tla`) |
+| **INV-KEY-AUDIT** | Toda transição emite EVT-047 + EVT-028 | HIGH | State machine transition append-only audit; chain integrity verified daily | Audit emit em rotation worker + S-09 hash chain | Coberto por `audit_immutability.tla` |
+
+**Aliases históricos:** nenhum. Estes IDs sempre estiveram em `key_management.md §3.2` desde Lote 4; Lote 9.4 promove ao registry sem rename.
+
+**Cross-reference**: `ADR-0018-key-overlap-per-asset.md` documenta a decisão de per-asset overlap (vs single 24h global proposto inicialmente).
+
 ---
 
 ## 4. TLA+ coverage matrix
 
 CRITICAL invariantes **DEVEM** ter TLA+ spec + model check verde no CI (CTRL-FORMAL-001 em `security_model.md §6.9`).
 
+### 4.1 Specs verdes (CI green)
+
 | Invariante | TLA+ spec | Status |
 |---|---|---|
-| INV-TENANT-ISOLATION | `specs/tla/tenant_isolation.tla` + `.cfg` | ✅ criado (Lote 5.13) — spec com 5 camadas de defesa + adversarial path-guess action |
-| INV-CAS-INTEGRITY | `specs/tla/cas_integrity.tla` + `.cfg` | ✅ criado (Lote 5.13) — modelo write-path reject + bit rot adversarial |
-| INV-CAS-IDEMPOTENCY | Coberto por `cas_integrity.tla` via Hash determinístico | ✅ propriedade algorítmica verificada |
-| INV-CAS-IMMUTABILITY | Coberto por `cas_integrity.tla` (InvCASImmutability) | ✅ |
-| INV-AC-TENANT-SCOPED | Deriva de INV-TENANT-ISOLATION | ✅ via TLA+ de isolation |
-| INV-GC-001 | `specs/tla/gc_correctness.tla` + `.cfg` | ✅ criado (Lote 5.13) — mark+sweep+grace+mark_started_at-aware |
-| INV-GC-004 | Coberto por `gc_correctness.tla` (InvGCReRefProtected) | ✅ |
-| INV-AUDIT-APPEND-ONLY | Cobertura D1 schema + daily verify | ✅ (sem TLA+ necessário — enforcement storage layer) |
+| INV-TENANT-ISOLATION | `specs/tla/tenant_isolation.tla` + `.cfg` | ✅ GREEN (Lote 5.13) — spec com 5 camadas de defesa + adversarial path-guess action |
+| INV-CAS-INTEGRITY | `specs/tla/cas_integrity.tla` + `.cfg` | ✅ GREEN (Lote 5.13) — modelo write-path reject + bit rot adversarial |
+| INV-CAS-IDEMPOTENCY | Coberto por `cas_integrity.tla` via Hash determinístico | ✅ GREEN propriedade algorítmica verificada |
+| INV-CAS-IMMUTABILITY | Coberto por `cas_integrity.tla` (InvCASImmutability) | ✅ GREEN |
+| INV-AC-TENANT-SCOPED | Deriva de INV-TENANT-ISOLATION | ✅ GREEN via TLA+ de isolation |
+| INV-GC-001 | `specs/tla/gc_correctness.tla` + `.cfg` | ✅ GREEN (Lote 5.13) — mark+sweep+grace+mark_started_at-aware |
+| INV-GC-004 | Coberto por `gc_correctness.tla` (InvGCReRefProtected) | ✅ GREEN |
+| INV-AUDIT-APPEND-ONLY | `specs/tla/audit_immutability.tla` + D1 schema + daily verify | ✅ GREEN (Lote 6.2) |
+| INV-DIGEST-VERIFICATION | Coberto por `cas_integrity.tla` (InvPoisoningRejected) | ✅ GREEN |
+
+### 4.2 Specs PLANNED (Lote 9.4 obligation matrix — pré-condição S-10/S-11/S-13/S-14/S-19 implementation)
+
+CRITICAL/HIGH invariants adicionados em §3.12 + §3.13 que requerem TLA+ pelo enforcement table §2:
+
+| Invariante | TLA+ spec planejado | Status | Sprint owner | Justificativa TLA+ |
+|---|---|---|---|---|
+| INV-BILLING-RECONCILE-3-LAYER | `specs/tla/billing_atomicity.tla` | 📋 PLANNED | S-10 | atomicity event→counter→invoice; concurrent reconcile races |
+| INV-BILLING-REPLAYABLE-FROM-EVENTS | Coberto por `billing_atomicity.tla` (InvReplayDeterministic) | 📋 PLANNED | S-10 | replay determinism com state space rico |
+| INV-DATA-ERASURE-COMPLETE | `specs/tla/dsr_erasure_atomicity.tla` | 📋 PLANNED | S-11 | cross-backend atomic OR compensating-rollback; 7 backends |
+| INV-CONSENT-PROOF-VERIFIABLE | Coberto por `dsr_erasure_atomicity.tla` (InvConsentSymmetry) | 📋 PLANNED | S-11 | consent grant/revoke symmetry |
+| INV-BYOK-CRYPTO-SOVEREIGNTY | `specs/tla/byok_sovereignty.tla` | 📋 PLANNED | S-14 | DEK cache TTL 5 min hard + KMS revocation propagation |
+| INV-REGION-NO-CROSS-LEAK | `specs/tla/region_residency.tla` | 📋 PLANNED | S-14 | tenant region pinning property test 30k |
+| INV-ONBOARD-DPA-FIRST | `specs/tla/onboarding_atomicity.tla` | 📋 PLANNED | S-19 | DPA-first ordering; race condition impossibility |
+| INV-ONBOARD-ATOMIC-PROVISIONING | Coberto por `onboarding_atomicity.tla` (InvAtomicTx) | 📋 PLANNED | S-19 | tenant + DPA + Stripe atomic |
+| INV-KEY-NO-SKIP / INV-KEY-OVERLAP | `specs/tla/key_lifecycle.tla` | 📋 PLANNED | S-13 | rotation state machine per asset class |
+| INV-ADMIN-DUAL-APPROVAL | Coberto por `key_lifecycle.tla` (InvCallerNeqApprover) | 📋 PLANNED | S-13 | dual-approval state machine |
+
+### 4.3 Specs sem TLA+ requirement (HIGH severity mas non-distributed)
+
+| Invariante | Justificativa não-TLA+ |
+|---|---|
+| INV-DEDUP-CONSISTENCY | Algorithmic property; UNIQUE index enforces; covered by property test |
+| INV-RATE-LIMIT-PROPORTIONALITY | DO atomic counter; covered by property test 10k iter |
+| INV-OBS-CARDINALITY-BUDGET | Static budget validator CI; non-distributed |
+| INV-OBS-AUDIT-CHAIN-INTEGRITY | Hash chain; coberto por `audit_immutability.tla` indiretamente |
+| INV-SUPPLY-* | Build-time checks; non-runtime distributed semantics |
+| INV-ADMIN-MFA-FRESHNESS | Middleware timestamp check; non-distributed |
+| INV-ERASURE-ATTESTATION-SIGNED | Signature verification; algorithmic |
+| INV-KEY-AUDIT | Coberto por `audit_immutability.tla` |
+
+### 4.4 CI obligation gate (Lote 9.4)
+
+**Regra**: pre-S-20 GA gate, todo INV CRITICAL com `Status: PLANNED` deve transitar para `GREEN`. CI script `scripts/check_tla_obligations.py` (criar pós-Lote 9.4) lê esta matrix e falha PR se invariante CRITICAL declarado num sprint contract não tem TLA+ status `GREEN | PLANNED com sprint_owner`.
 
 ---
 
