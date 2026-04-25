@@ -289,6 +289,39 @@ Invariantes que governam Action Cache lifecycle: REAPI handlers + idempotency, M
 
 ---
 
+### 3.16 Multipart Upload + Chunking domain — Lote 10.5 (S-05 sprint)
+
+Invariantes que governam multipart upload, chunking determinism, manifest dual-side verify, R2 multipart adapter, sweeper orphan abort. **Promovidas preemptivamente em Lote 10.5** (consistency com lesson Lote 10.4bis CI gate validate_inv_promotion.py — INVs declared em WIs DEVEM existir em registry pré-SEAL); refinements possíveis em Lote 10.5bis pós-Agent R4 review remediation.
+
+| ID | Nome | Severidade | Descrição | Enforcement | TLA+ file |
+|---|---|---|---|---|---|
+| **INV-MULTIPART-IDEMPOTENT** | SplitBlob mesma `(tenant_id, blob_digest)` retorna existing manifest_digest; cas_blobs.is_chunked flag previne re-chunking; chunks ON CONFLICT increments refcount; multipart_sessions UNIQUE in_progress | HIGH | Handler step [3.5] short-circuits if is_chunked=true; D1 INSERT ON CONFLICT DO UPDATE refcount += 1; UNIQUE `(tenant_id, blob_digest, state='in_progress')` em multipart_sessions | Property test 10k iter `prop_split_idempotent` + integration test re-Split | (planned `cas_integrity.tla` chunked variant; PLANNED) |
+| **INV-MULTIPART-MANIFEST-SIGNED** | Manifest envelope signed com HKDF info=`b"manifest-sig"` separated domain `b"ac-sig"` (WI-S04-004 ADR-0021 reuse pattern) | HIGH | `corelink-manifest::sig` HKDF info constant; CI byte-equal test asserts; ADR-0021/0038/0041 documents domain separation | CI test grep + assert + integration test cross-domain replay rejection | N/A (cripto invariant) |
+| **INV-MULTIPART-CONCURRENCY-BOUNDED** | Per-tenant semaphore caps SplitBlob concurrency (default 4); 429 if exhausted; tunable per-tier S-13 forward | HIGH | `tokio::sync::Semaphore::new(4)` per-tenant; ConcurrencyLimitReached error → 429 + Retry-After; metric alert | Property test concurrency storm + chaos test 1000 parallel | N/A (architecture invariant) |
+| **INV-MULTIPART-CHUNK-DETERMINISTIC** | FastCDC mask seeds fixed em ChunkerConfig::default(); same input → same chunks byte-identical (Fixed and FastCDC) | CRITICAL | `corelink-chunker` mask_s/mask_l constants; ADR-0022 stability commitment; test vectors Annex; CI byte-equal | Property test 1000 random × 100 chunkings = 100% byte-identical; ADR-0022 ratificada Lote 10.5 | N/A (cripto invariant) |
+| **INV-MULTIPART-BOUNDED-PARSER** | Chunker MAX_BLOB_SIZE 160 GiB; MAX_CHUNKS_PER_BLOB 80000; manifest MAX_CHUNK_COUNT 80000; MAX_TOTAL_SIZE 160 GiB; enforced at decode time | HIGH | `corelink-chunker::bounds` + `corelink-manifest::bounds` constants; reject early; cargo-fuzz harness 1h CI nightly | Property test + cargo-fuzz × 3 targets (chunker fixed + chunker fastcdc + manifest decode) | N/A (parser invariant) |
+| **INV-MULTIPART-STREAMING-MEMORY** | Per-request stack ≤ 4 MiB (chunker buffer 2 MiB + headroom); zero-allocation Iterator pattern | HIGH | `corelink-chunker::Chunker::feed` returns `impl Iterator<Item = Chunk<'a>>` borrowing internal buffer; lifetime-bounded; integration test 1 GiB blob no OOM | Integration test + valgrind/MSAN no leak | N/A (architecture invariant) |
+| **INV-MULTIPART-ORPHAN-DETECTABLE** | `MultipartAdapter::list_orphans(bucket, max_age)` enumerates sessions with `last_activity_at < now - max_age` (default 7d); sweeper consumes | HIGH | D1 SELECT multipart_sessions WHERE state='in_progress' AND last_activity_at < now - max_age + R2 ListMultipartUploads | Sweeper cron DO test (WI-S05-006); RB-FM-060 dry-run | N/A (architecture invariant; FM-060 mitigation) |
+| **INV-MULTIPART-PATH-TENANT-SCOPED** | R2 object_key inclui tenant_prefix (Layer 4); never trusts client-provided path components | CRITICAL | `MultipartAdapter` constructs object_key from tenant_prefix BLOB(16) materialized em chunks/multipart_sessions; CI grep gate forbids client-path concat | Property test 10k iter cross-tenant path attempt rejection | (planned `tenant_isolation.tla` multipart variant; PLANNED) |
+| **INV-MULTIPART-STATE-MONOTONIC** | multipart_sessions state in_progress → completed OR aborted; never reverse | HIGH | Handler-level enforcement (não CHECK em D1 — CHECK doesn't model state transitions); INV documented + integration test asserts | Integration test reverse transition rejected; chaos test | N/A (architecture invariant) |
+| **INV-MULTIPART-PATH-KEY-MATERIALIZED** | tenant_prefix BLOB(16) materialized em chunks + multipart_sessions columns; cron worker reads sem TDK access (lesson Lote 10.4bis WI-S04-005) | HIGH | Schema columns `tenant_prefix BLOB NOT NULL` + `path_key_id INTEGER`; CHECK length=16; pre-computed em handler INSERT | CI test schema column exists; integration test prefix consistency | N/A (architecture invariant) |
+| **INV-MULTIPART-MANIFEST-VALID** | manifest.merkle_root binds chunk tree; verify_structure rejects 100% tampered manifests | CRITICAL | `corelink-manifest::verify_structure` re-builds tree from manifest.chunks; compare to manifest.merkle_root; mismatch → MerkleError::RootMismatch | Property test 10k iter `prop_manifest_tampering_detected` + chaos test envelope tampering | (planned `cas_integrity.tla` chunked variant; PLANNED) |
+| **INV-MULTIPART-DUAL-SIDE-VERIFY** | Server pre-persist + client post-download both invokeable; verify_structure independent of sig (defense-in-depth para partial chave compromise) | HIGH | Server-side em UpdateActionResult-equivalent (SplitBlob handler); client-side via SDK (S-15 Rust SDK; non-Rust clients per spec doc reference vectors) | Integration test dual-side; chaos test partial chave compromise | N/A (architecture invariant) |
+| **INV-MULTIPART-STREAMING-VERIFY-FAIL-FAST** | Mid-stream tampered chunk catches before chunk N+1 processed (SpliceBlob streaming verify) | HIGH | `corelink-manifest::verify_streaming` per-chunk hash verify inline; fail-fast em mismatch; signal handler abort | Property test 100 manifests × 1 tampered chunk → 100% caught at chunk N | N/A (architecture invariant) |
+
+**Cross-references**:
+- `ADR-0022` ratificada Lote 10.5 (chunk vs part decoupling).
+- `ADR-0038, ADR-0039, ADR-0040, ADR-0041` documentam decisões S-05 (vide `scripts/validate_references.py` whitelist).
+- ADR-0040 sharding strategy (per-tenant_tier OR per-region; trigger 80% D1 10 GB hard limit).
+- TLA+ specs PLANNED (cas_integrity.tla chunked variant, tenant_isolation.tla multipart variant) — implementação em sprints S-09 ou S-12.
+- `data_model.md §4.X` schema canonical (chunks + manifest_chunks + multipart_sessions adicionadas Lote 10.5).
+- `error_taxonomy.md §3.X` mapeia COR_MULTIPART_* errors.
+- `compliance_matrix.md` mapeia INV-MULTIPART-* para LGPD/GDPR/SLSA L3 alignment.
+
+**Aliases históricos:** nenhum. Estes 13 IDs introduzidos em Lote 10.5 (sprint S-05 spec) e **promovidos preemptivamente em Lote 10.5** (consistency com lesson Lote 10.4bis CI gate validate_inv_promotion.py); refinements possíveis em Lote 10.5bis pós-Agent R4 review.
+
+---
+
 ## 4. TLA+ coverage matrix
 
 CRITICAL invariantes **DEVEM** ter TLA+ spec + model check verde no CI (CTRL-FORMAL-001 em `security_model.md §6.9`).

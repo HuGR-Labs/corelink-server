@@ -159,6 +159,7 @@ WHITELIST_IDS = {
     "INV-AC",  # plural-form mention em S-04 §8 (registry §3.3 INV-AC-* pattern)
     "INV-AUTH",  # plural-form mention em registry §3.14 ("INV-AUTH-*" pattern intro)
     "INV-AUTH-PAT",  # plural-form mention em registry §3.14 + §3.13 (PAT-related INVs)
+    "INV-MULTIPART",  # plural-form mention em registry §3.16 intro ("INV-MULTIPART-* pattern")
     # Forward-looking INVs introduced em sprint WIs; serão promovidas a invariant_registry.md em respective sprint implementation:
     "INV-AUTH-CLOCK-SKEW-BOUND",       # S-03 WI-S03-001
     "INV-AUTH-ISS-EXACT-MATCH",        # S-03 WI-S03-001
@@ -216,6 +217,20 @@ WHITELIST_IDS = {
     "INV-AC-EVICT-CONSISTENCY",            # S-04 WI-S04-005
     "INV-AC-TTL-MONOTONIC",                # S-04 WI-S04-005
     "INV-DATA-AC-REFS-EXIST",              # data_model.md §4.2 alias of INV-AC-OUTPUTS-VALID
+    # Forward-looking Multipart INVs (S-05 Lote 10.5 — promovidas em registry §3.16 em Lote 10.5bis P0 fix):
+    "INV-MULTIPART-IDEMPOTENT",                  # S-05 WI-S05-001 + WI-S05-003 + WI-S05-004
+    "INV-MULTIPART-MANIFEST-SIGNED",             # S-05 WI-S05-001 + WI-S05-005
+    "INV-MULTIPART-CONCURRENCY-BOUNDED",         # S-05 WI-S05-001 + WI-S05-003
+    "INV-MULTIPART-CHUNK-DETERMINISTIC",         # S-05 WI-S05-002
+    "INV-MULTIPART-BOUNDED-PARSER",              # S-05 WI-S05-002 + WI-S05-005
+    "INV-MULTIPART-STREAMING-MEMORY",            # S-05 WI-S05-002
+    "INV-MULTIPART-ORPHAN-DETECTABLE",           # S-05 WI-S05-003
+    "INV-MULTIPART-PATH-TENANT-SCOPED",          # S-05 WI-S05-003
+    "INV-MULTIPART-STATE-MONOTONIC",             # S-05 WI-S05-004
+    "INV-MULTIPART-PATH-KEY-MATERIALIZED",       # S-05 WI-S05-004
+    "INV-MULTIPART-MANIFEST-VALID",              # S-05 WI-S05-005
+    "INV-MULTIPART-DUAL-SIDE-VERIFY",            # S-05 WI-S05-005
+    "INV-MULTIPART-STREAMING-VERIFY-FAIL-FAST",  # S-05 WI-S05-005
     # Patterns referenciados forward-looking em S-02 (definidos em resilience_patterns.md mas missing entry-anchor)
     "PAT-CIRCUIT-BREAKER-001",
     "PAT-INVALIDATE-001",  # S-03 v1.1 forward-looking pattern (revocation propagation)
@@ -238,6 +253,10 @@ WHITELIST_IDS = {
     "ADR-0035",  # S-04 WI-S04-001: AC handler invariants (TenantCtx-only; warn-only outputs check em GET; R2-first then D1; 100 batch cap)
     "ADR-0036",  # S-04 WI-S04-002: AC schema design + migration governance + R2 bucket provisioning policy + region addition workflow
     "ADR-0037",  # S-04 WI-S04-003: AC Merkle protocol (BLAKE3 + RFC 6962 domain sep + bounded parser + deterministic build + dual-side verify)
+    "ADR-0038",  # S-05 WI-S05-001: SplitBlob/SpliceBlob handler invariants (TenantCtx-only; bounded concurrency 4/tenant; streaming pipeline; manifest sig domain separation)
+    "ADR-0039",  # S-05 WI-S05-002: Chunker public API stability + semver + FastCDC mask seeds versioning policy
+    "ADR-0040",  # S-05 WI-S05-004: Multipart D1 sharding strategy (per-tenant_tier OR per-region; trigger 80% of D1 10 GB hard limit)
+    "ADR-0041",  # S-05 WI-S05-005: Manifest public API stability + sig domain separation policy
     "FM-XXX",
     "ADR-XXXX",
     "ADR-YYYY",
@@ -270,6 +289,7 @@ WHITELIST_IDS = {
     "RB-FM-AC-MIGRATION-BUG",        # S-04 WI-S04-002
     "RB-FM-AC-BUCKET-LEAK",          # S-04 WI-S04-002
     "RB-FM-AC-CACHE-MISS-STORM",     # S-04 WI-S04-001 forward-looking
+    "RB-FM-MULTIPART-MIGRATION-BUG", # S-05 WI-S05-004 forward-looking
     # SLOs em formato sem header standalone (definidos em corpo do §4.X mas não como anchor)
     "SLO-DEPLOY-SAFE",
     "SLO-INCIDENTS",
