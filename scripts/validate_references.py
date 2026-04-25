@@ -317,6 +317,7 @@ WHITELIST_IDS = {
     "RB-FM-MULTIPART-MIGRATION-BUG", # S-05 WI-S05-004 forward-looking
     "RB-FM-302",                     # S-06 WI-S06-005 refcount drift forward
     "RB-FM-GC-WORKER-STALL",         # S-06 WI-S06-001 forward
+    "RB-EMAIL-HASH-KEY-ROTATION",    # S-03 WI-S03-005 Lote 10.3-tris P0-R5-003 forward stub
     "RB-FM",                         # plural-form mention "RB-FM-*" em ADR-0042 + WI-S06-007
     # SLOs em formato sem header standalone (definidos em corpo do §4.X mas não como anchor)
     "SLO-DEPLOY-SAFE",

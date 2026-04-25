@@ -4,7 +4,7 @@ type: "work_item"
 doc_status: "DRAFT"
 work_status: "READY"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-04-25"
 updated: "2026-04-25"
 lane: "HIGH_RISK"
@@ -429,7 +429,7 @@ Anti-abuse + queue backpressure. 10k mass revoke = 100 messages × 100 entries =
 
 ### 9.6 Why batch 100 entries per queue message (não 1)
 
-CF Queue 1 message ≤ 256 KiB; RevokedEntry ~200 bytes; 100 entries ~20 KiB OK. Batching reduces queue throughput needs (10k revoke = 100 messages vs 10000); consumer processes batch atomic; cost reduction.
+CF Queue 1 message ≤ **128 KB** (Lote 10.3-tris P0-CONFIRMED-001 fix; was incorrect 256 KiB — Cloudflare Queue actual limit per CF docs Q4 2025); RevokedEntry ~200 bytes; 100 entries ~20 KB (well within 128 KB headroom 6.4×); 100-entry cap re-verified safe even with metadata bloat 5× = 100 KB still safe. Batching reduces queue throughput needs (10k revoke = 100 messages vs 10000); consumer processes batch atomic; cost reduction.
 
 ### 9.7 Why explicit reason enum (não free-text)
 

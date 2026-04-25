@@ -4,7 +4,7 @@ type: "work_item"
 doc_status: "DRAFT"
 work_status: "READY"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.2.0"
 created: "2026-04-25"
 updated: "2026-04-25"
 lane: "HIGH_RISK"
@@ -270,10 +270,18 @@ WebAuthn cripto adapter + admin flow integration; HIGH_RISK; FF-HR-002 + FF-HR-0
    - `test_attestation_chain_invalid`: malformed cert chain → reject.
    - `test_aaguid_denylist`: deprecated authenticator AAGUID → reject.
 
-10. **Recovery flow**:
+10. **Recovery flow** (Lote 10.3-tris P0-R5-002a fix — magic link REPLACED com 6-digit OTP; sprint contract §10 anti-scope alignment):
     - User loses device → registers backup authenticator pre-emptively (best practice em UX).
-    - If all credentials lost: account recovery via Clerk SSO email magic link → register new authenticator → invalidate old.
-    - Tracked em `auth.webauthn.recovery_initiated` audit event.
+    - If all credentials lost: account recovery via **Clerk SSO email + 6-digit OTP code** (NOT magic link — Lote 10.3-tris P0-R5-002a fix; sprint contract §10 anti-scope explicitly rejects magic link due to phishing-prone clicks):
+      - **OTP generation**: server-side cryptographically random 6 decimal digits (0-9; ~20 bits entropy); generated via `rand::OsRng` em DPO authority server.
+      - **TTL**: 10 minutes (fixed; documented em ADR-0032).
+      - **Single-use**: persisted em `auth_recovery_otp(user_id, otp_hash, expires_at_ms, consumed_at_ms)` — UNIQUE on user_id ensures only one active OTP per user; `consumed_at_ms IS NOT NULL` rejects re-use.
+      - **Hashing at rest**: OTP NEVER stored plaintext; Argon2id-hashed (same parameters as PAT) before INSERT; verified via constant-time compare.
+      - **Delivery**: email channel (Clerk SSO email infrastructure); subject line + body include "do NOT click links — type the 6 digits manually" anti-phishing instruction.
+      - **Rate limiting**: 3 OTP generation attempts per user per hour; 5 verify attempts per OTP before invalidation; circuit breaker via WI-S03-008 chaos suite.
+      - **Audit**: emit `auth.webauthn.recovery_otp_generated` (pre-issue) + `auth.webauthn.recovery_otp_consumed` (post-success) + `auth.webauthn.recovery_otp_failed` (verify fail) — all in audit chain S-09.
+    - Tracked em `auth.webauthn.recovery_initiated` + 3 new sub-events audit chain.
+    - Cross-reference: ADR-0032 §A1 "OTP-vs-magic-link rationale" (forward addendum to be added in Lote 10.3-tris).
 
 11. **rustdoc + 4 examples**:
     - `examples/passkey_enroll.rs`.
@@ -473,11 +481,28 @@ Feature: WebAuthn Level 3 — registration + authentication + admin step-up
 - Bug em cross-browser = production breakage para minority users.
 - Matrix em CI = early detection.
 
-### 9.9 Why sign_count regression = SEV-1 (não SEV-2)
+### 9.9 Why sign_count regression policy is W3C-COMPLIANT (Lote 10.3-tris P0-R5-002b)
 
-- Regression é replay attack signal OR cloned authenticator (rare; implies HW tamper).
-- High signal-to-noise; warrants SEV-1 alert + immediate user notification.
-- Trade-off: noisy if authenticator counter resets em rare scenarios (legacy USB hubs); mitigated via "≥ 3 regressions in 24h" alert threshold.
+**Lote 10.3-tris fix** — corrige contradição entre §9.9 ("first regression = SEV-1") e §28 R-004 ("≥ 3 regressions in 24h = alert threshold"). Ambas não podem ser true. Resolução adopta W3C WebAuthn L3 §6.1.1 recomendação:
+
+**Policy** (3 cases per W3C):
+1. **`sign_count = 0` always (passkey behavior)**: authenticator nunca incrementa counter. **EXEMPT** from regression tracking — não é replay signal; é configuração canônica de passkey. Sign in/out repetidamente é OK; storage mantém `sign_count = 0` permanentemente.
+2. **`sign_count` initial = 0, then non-zero**: authenticator começou em 0 e está agora reportando counter. Track from primeira non-zero observation; regression check against last non-zero stored.
+3. **`sign_count` initial ≥ 1 + regression detected**: este é o cloned-authenticator OR replay signal:
+    - **First regression**: SEV-2 alert (page SRE; investigate; do NOT page user). Document em `auth.webauthn.sign_count_regression` audit event with full context (got, stored, credential_id, ip, user_agent, prior_8_authentications_history).
+    - **Forensic confirmation** (≥ 2 independent signals: SEV-2 alert ack + IP geolocation mismatch ≥ 1000km from prior auth + user_agent fingerprint mismatch): **escalate to SEV-1**; force credential re-registration; notify user via secure channel (NOT the same channel as auth).
+    - **Threshold "≥ 3 in 24h" REMOVED** — was creating 24h-72h false safety window where real cloned attack absorbed silently. Sonnet R5 P0-R5-002b confirms removal.
+
+**Why this is correct**: passkeys legitimately report `sign_count = 0` always (Apple iCloud Keychain, 1Password, etc.). Original §9.9 SEV-1-on-first-regression would fire spurious alerts on every passkey login from compliant authenticators → alert fatigue → real cloned-authenticator attack ignored. W3C-compliant policy distinguishes signal from noise.
+
+**Audit emission** (added em §6.1.x):
+- `auth.webauthn.sign_count_observation` (every auth; counter value persisted; deltas captured for forensic).
+- `auth.webauthn.sign_count_regression_detected` (SEV-2; first regression).
+- `auth.webauthn.sign_count_regression_confirmed` (SEV-1; forensic confirmation).
+
+**§28 R-004 update**: remove "≥ 3 in 24h" threshold; replace with "single regression = SEV-2 + investigation; forensic confirmation = SEV-1 + force re-registration".
+
+**Reference**: W3C WebAuthn L3 §6.1.1 "Authenticator Counters"; FIDO Alliance Security Reference v2.2 §3.4.
 
 ### 9.10 ADR potencial?
 
@@ -751,7 +776,7 @@ RTO ≤ 30 min (deploy rollback); RPO 0 (stateless ceremony; credentials in Neon
 | R-001 | webauthn-rs CVE em upgrade | L | M | CRITICAL | L | LOW | cargo-audit weekly + version pin + property test |
 | R-002 | Cross-browser drift breaks production | M | H | HIGH | M | LOW | CI matrix 16 scenarios + report quirks |
 | R-003 | AAGUID allowlist outdated (new authenticators) | M | M | LOW | M | LOW | Quarterly review + customer feedback channel |
-| R-004 | sign_count regression false positive (counter reset) | L | M | MEDIUM | L | LOW | Threshold > 3 events em 24h; alert tunable |
+| R-004 | sign_count regression false positive (counter reset) | L | M | MEDIUM | L | LOW | **W3C-COMPLIANT POLICY** (Lote 10.3-tris P0-R5-002b): `sign_count = 0` always = EXEMPT (passkey behavior canonical); first regression = SEV-2 + investigate; forensic confirmation (≥2 independent signals: SRE ack + IP geolocation mismatch + UA fingerprint mismatch) = SEV-1 + force credential re-registration. Threshold "≥ 3 in 24h" REMOVED — was creating 24h-72h false safety window absorbing real cloned-authenticator attacks silently. |
 | R-005 | Origin allowlist misconfigured em prod (localhost) | L | L | CRITICAL | L | LOW | Prod deploy guard + chaos PR |
 | R-006 | Attestation chain compromised (CA breach) | L | L | CRITICAL | L | LOW | FIDO MDS validates chain; allowlist enforces |
 | R-007 | UV bypass via legacy authenticator | L | M | HIGH | L | LOW | UV required em admin; allow_credentials filtered |
@@ -796,6 +821,8 @@ RTO ≤ 30 min (deploy rollback); RPO 0 (stateless ceremony; credentials in Neon
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-25 | Gustavo (via Claude Opus 4.7) | Criação WI-S03-006 (Lote 10.3); SOTA full (W3C L3 + 4 browsers + passkey + YubiKey + admin step-up + 5 INVs + 10 chaos + 12-row risk + ADR-0032). |
+| 1.1.0 | 2026-04-25 | Gustavo (Lote 10.3-tris cross-WI sync) | Lote 10.3bis cross-WI references absorbed: `auth.webauthn.new_device_used` event added (coordinates with WI-S03-007 §6.1.3 expanded enum 23→33); webauthn-rs library version pin upgraded para `=0.5.x` exact patch with sha256 `.crate` checksum verification (WI-006 was skipped by Lote 10.3bis cycle — this fixes Sonnet R5 P0-R5-002c version freeze defect). |
+| 1.2.0 | 2026-04-25 | Gustavo (Lote 10.3-tris Sonnet R5 P0 fixes) | **P0-R5-002a — Recovery flow magic link → 6-digit OTP** (sprint contract §10 anti-scope alignment); 10min TTL; single-use; Argon2id-hashed at rest; 3 generation/hour + 5 verify/OTP rate limits; 3 audit sub-events. **P0-R5-002b — sign_count W3C-compliant policy** (§9.9 + §28 R-004 contradiction resolved): `sign_count=0` exempt; first regression SEV-2; forensic confirmation SEV-1; "≥3 in 24h" threshold REMOVED. **P0-R5-002c — version freeze closure**: WI-006 now at v1.2.0 matching all other WIs. |
 
 ## 32. Anti-patterns evitados
 

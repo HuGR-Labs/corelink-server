@@ -4,7 +4,7 @@ type: "work_item"
 doc_status: "DRAFT"
 work_status: "READY"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-04-25"
 updated: "2026-04-25"
 lane: "HIGH_RISK"
@@ -455,7 +455,7 @@ Each WI emit distinct event types for:
 - Anomaly detection tractability (e.g., spike em `auth.denied.invalid` signals attack).
 - Forensic timeline clarity.
 
-Trade-off: more types = more taxonomy maintenance; 23 is balance.
+Trade-off: more types = more taxonomy maintenance; **33 is the balance** (Lote 10.3-tris P1-CONFIRMED-004 fix; was stale "23 is balance" text after Lote 10.3bis enum expansion). Forensic coverage rationale: 33 types capture all auth deny-paths (6 granular denied subtypes prevent monotone "denied" event mass-aggregation; 3 lifecycle events distinguish issued/refreshed/revoked; new_device_used signals stolen-passkey scenarios). Adds ~1.5KB to binary. Justified by §26 LINDDUN analysis row "DR1 — distinguishability of failure modes for forensic analysis".
 
 ### 9.5 Why redact_pat! macro (não runtime check)
 

@@ -4,7 +4,7 @@ type: "work_item"
 doc_status: "DRAFT"
 work_status: "READY"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-04-25"
 updated: "2026-04-25"
 lane: "HIGH_RISK"
@@ -218,12 +218,14 @@ Cripto core crate; HIGH_RISK; FF-HR-002 + FF-HR-005 + FF-HR-009.
    }
    ```
 
-7-bis. **Bounded concurrent verify via `Semaphore` (P0 fix Lote 10.3bis — Worker memory budget enforcement)**:
+7-bis. **Bounded concurrent verify via `Semaphore` (P0 fix Lote 10.3bis + Lote 10.3-tris P0-R5-001 runtime fix — Worker memory budget enforcement; CF Workers WASM-COMPATIBLE)**:
    - Argon2 verify cost = 64 MiB ephemeral RAM per call. CF Worker isolate budget = 128 MiB.
    - Max safe concurrent = ⌊128/64⌋ = **2** verifies; mas defensive default = **N=1** (serialize).
-   - Implementação: `static VERIFY_SEMAPHORE: tokio::sync::Semaphore = Semaphore::new(N)` private em crate.
+   - **Lote 10.3-tris P0-R5-001 runtime compatibility fix**: `tokio::sync::Semaphore` requires tokio executor — **NOT present** em CF Workers WASM (V8 isolates use wasm-bindgen-futures + JS Promise resolution; tokio's executor absent). Sonnet R5 caught this runtime panic/deadlock defect that Opus R4 missed analyzing API semantics depth-first.
+   - Implementação canonical: `static VERIFY_SEMAPHORE: async_lock::Semaphore = Semaphore::new(N)` private em crate (`async-lock` crate é runtime-agnostic; WASM-safe; drop-in replacement). Documented em ADR-0025 runtime compatibility note.
+   - Alternative (if Cargo features split native vs WASM): use `cfg(target_arch = "wasm32")` to branch — `async_lock::Semaphore` em wasm32, `tokio::sync::Semaphore` em native (test/benchmarks). NOT used in production deploy path.
    - `pub async fn verify(plaintext, hash)` adquire permit antes de Argon2 compute; releases on drop.
-   - **Backpressure**: se permit não disponível em ≤ 50ms (timeout via `try_acquire_owned` com tokio::time::timeout), retorna `Err(PatError::BackpressureExhausted)` → middleware (WI-S03-003) maps to HTTP 503 `service_busy` + Retry-After.
+   - **Backpressure**: se permit não disponível em ≤ 50ms (timeout via `async_lock::Semaphore::try_acquire` + manual deadline check; NO tokio::time::timeout — WASM-incompatible), retorna `Err(PatError::BackpressureExhausted)` → middleware (WI-S03-003) maps to HTTP 503 `service_busy` + Retry-After.
    - Configurable via env var `CORELINK_PAT_VERIFY_CONCURRENCY` (default 1; range [1, 2]); production deploy guard rejects > 2 (cripto correctness invariant).
    - **Decoupled de S-08 rate limit**: este Semaphore protege Worker memory; rate limit S-08 protege backend rate. Layered.
 

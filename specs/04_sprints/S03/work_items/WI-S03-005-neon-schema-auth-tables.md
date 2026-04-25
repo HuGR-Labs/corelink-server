@@ -4,7 +4,7 @@ type: "work_item"
 doc_status: "DRAFT"
 work_status: "READY"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-04-25"
 updated: "2026-04-25"
 lane: "HIGH_RISK"
@@ -275,6 +275,65 @@ Schema + migration + cripto column encryption; HIGH_RISK; FF-HR-002 + FF-HR-005 
    - Function `hmac(bytea, bytea, text)` é nativa em `pgcrypto` (não requires `pg_strom`).
    - Used for `WHERE email_hash = $1` lookups (cannot use encrypted column for equality without decrypt-all scan).
    - Trade-off: deterministic = same email → same hash; rainbow table risk mitigada via key secrecy + HMAC.
+
+3-bis. **`app.email_hash_key` bootstrap path** (Lote 10.3-tris P0-R5-003 fix — silent key-material omission CLOSED; production deploy fail-closed instead of silent INSERT failure / NULL email_hash bypass / empty-key rainbow attack):
+
+   **(a) Key derivation** (HKDF-SHA256 via Worker secret):
+   ```
+   email_hash_key = HKDF-SHA256(
+     master_key   = $CORELINK_MASTER_KEY (Worker secret; 32 bytes random; rotated quarterly),
+     salt         = "corelink-email-hash-salt-v1" (constant; documented),
+     info         = b"corelink-v1-email-hash-key" (domain separation; non-prefix from other HKDF info bytes),
+     output_len   = 32 bytes
+   )
+   ```
+   - **HKDF info domain separation**: `b"corelink-v1-email-hash-key"` é distinct + non-prefix de:
+     - `b"ac-sig"` (S-04 AC sig key)
+     - `b"manifest-sig"` (S-05 multipart manifest sig key)
+     - `b"meta-manifest-sig"` (S-05 meta-manifest sig key)
+     - `b"audit-chain"` (S-09 audit chain hash key)
+   - Rationale: HKDF info collision attacks impossível pre-image; non-prefix garante length-extension safe.
+
+   **(b) Connection setup via `before_acquire` hook** (sqlx pool + Hyperdrive serverless driver):
+   ```rust
+   pool_options.before_acquire(|conn, meta| Box::pin(async move {
+     let key = std::env::var("CORELINK_EMAIL_HASH_KEY")
+       .map_err(|_| sqlx::Error::Configuration("CORELINK_EMAIL_HASH_KEY not set".into()))?;
+     sqlx::query("SET LOCAL app.email_hash_key = $1")
+       .bind(&key)
+       .execute(&mut *conn).await?;
+     Ok(true)
+   }));
+   ```
+   - **Worker secret injection**: `CORELINK_EMAIL_HASH_KEY` é env var (Worker secret); set via `wrangler secret put`; HKDF-derived from master at deploy time OR runtime (deploy-time preferred; reduces hot-path crypto).
+   - **`SET LOCAL`** é transaction-scoped (resets em COMMIT/ROLLBACK); per request DEVE estar em transaction (matches RLS pattern §4 Lote 10.3bis fix).
+
+   **(c) Migration deploy guard** (fail-closed if key empty):
+   ```sql
+   -- migrations/002_auth_tables.sql line 1 (BEFORE table creates)
+   DO $$
+   BEGIN
+     IF current_setting('app.email_hash_key', true) IS NULL
+        OR current_setting('app.email_hash_key', true) = '' THEN
+       RAISE EXCEPTION 'app.email_hash_key not set; refusing migration. Run: ALTER DATABASE ... SET app.email_hash_key = ''<HKDF-derived-key-hex>''';
+     END IF;
+   END $$;
+   ```
+   - Migration FAILS if key not set; refuses to create email_hash UNIQUE constraint without key. Closes "INSERT failure → fail-open NULL email_hash" defect.
+
+   **(d) Failure mode handling**:
+   - **`current_setting()` raises** (key not set in session): caller MUST `RAISE EXCEPTION` not catch silently; INSERT fails with explicit error code (auth registration broken DELIBERATELY rather than silent NULL email_hash).
+   - **Empty fallback key `''`**: REJECTED by deploy guard (b above); cannot deploy without real key.
+   - **Key rotation**: requires `(re-compute all email_hash values, rebuild idx_user_email_hash)` runbook; tracked em `RB-EMAIL-HASH-KEY-ROTATION` (forward; ST-019 Lote 10.3-tris adds runbook stub). Rotation cadence quarterly (90d) aligned with master_key rotation policy.
+   - **Cross-region replication**: each region has own `app.email_hash_key` derived from same master via HKDF (deterministic); same email → same hash across regions; no replication needed for the key itself.
+
+   **(e) ADR-0031 addendum** (forward; Lote 10.3-tris ST-019): "email_hash_key initialization path + HKDF derivation + key rotation runbook"; whitelist em validate_references.py.
+
+   **(f) Property test** (forward; Lote 10.3-tris): `prop_email_hash_deterministic` — same `(email, key)` → same hash; different keys → different hashes; HMAC-SHA256 correctness vs RFC 2104 test vectors.
+
+   **(g) Chaos test**: deploy with empty key → migration FAILS at deploy guard; verify fail-closed (NOT fail-open with NULL email_hash).
+
+   **Effort tracking**: 6h spec + migration guard + before_acquire + ADR-0031 addendum (Sonnet R5 P0-R5-003 estimate confirmed).
 
 4. **Row-Level Security (RLS) policies** (P0 fix Lote 10.3bis — SET LOCAL lifecycle correctness):
    - All 7 tables: `ENABLE ROW LEVEL SECURITY`.
