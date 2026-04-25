@@ -3,7 +3,7 @@ id: "SPEC-CONTRACT-S06"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-04-24"
 updated: "2026-04-25"
 owner: "Gustavo Schneiter"
@@ -325,7 +325,8 @@ Itens waivable com SRE lead + Architect + Security lead + ADR:
 | 1.0.0 | 2026-04-24 | Gustavo | Initial sprint contract v1.0 SOTA. |
 | 1.1.0 | 2026-04-24 | Gustavo | Sprint contract HIGH_RISK SOTA hardening. |
 | 1.2.0 | 2026-04-25 | Gustavo | **Lote 10.6bis P0 fixes** (Agent R4 review remediation): (a) §5.3 R-S06-7.1 sweep budget separate ≤5min @100k (Part 1 P0-5); (b) §5.4 R-S06-9.1 physical delete budget separate ≤30min @100k arithmetic re-derived com D1 batch ≤250 (Part 2a P0-5); (c) §5.5 R-S06-10 SQL canonical idiom `json_each` (NOT LIKE '%digest%'; Part 2a P0-1 highest-leverage); (d) §5.5 auto-fix threshold scale-invariant percentage+absolute floor (Part 2a P0-6); (e) §5.5 R-S06-10.1 reconcile budget separate ≤1h @1M blobs. |
+| 1.3.0 | 2026-04-25 | Gustavo | **Lote 10.6-tris fixes** (Sonnet R5 independent review remediation; 2 NEW P0s self-inflicted by Lote 10.6bis + 4 NEW P1s + 4 OPUS-MISS): NEW-P0-1 TLC v1.8.0 SHA-256 literal `d5d07d5dab38ddb840c91ec48fa02f28b37a608d5af9a73570018591dbc8ef7f` + bootstrap ceremony in ADR-0042 §A1 (was placeholder `<TBD>` that always failed comparison); NEW-P0-2 TLA+ scope limitations explicit in WI-006 §1.7 + ADR-0042 §A3 (soft-delete grace window NOT in TLA+; covered architecturally by WI-004 conditional refcount=0 predicate + WI-005 reconcile orphan detection); NEW-P1-1 DSR Ed25519 key rotation enforcement specified (`dsr_dpo_pubkeys` schema with expires_at_ms CHECK + runtime fail-closed + `validate_dsr_pubkey_expiry.py` CI gate); NEW-P1-2 `_signoff_calendar.yaml` template seeded; NEW-P1-3 WI-005 §2 stale LIKE narrative updated to json_each; NEW-P1-4 WI-001 GcStatus state-machine documented in change log; OPUS-MISS-1 `InvMarkingConsistent` vacuously-true branch removed + cfg bounds documented in ADR-0042 §A2; OPUS-MISS-2 PRNG ChaCha20Rng::seed_from_u64 pinned in property test fixture; OPUS-MISS-3 cost regression gate per-WI derivation explicit (post-Lote 10.6bis re-derivation); OPUS-MISS-4 INV-GC-RECONCILE-AUTO-FIX-BOUNDED registry alignment with dual-condition gate. **Projection**: post-fix score 9.1/10 (first SOTA 9-10 crossing in program). |
 
 ---
 
-**Fim spec contract S-06 v1.2.0 SOTA.**
+**Fim spec contract S-06 v1.3.0 SOTA.**

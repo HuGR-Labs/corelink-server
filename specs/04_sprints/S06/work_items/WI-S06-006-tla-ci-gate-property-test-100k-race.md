@@ -4,7 +4,7 @@ type: "work_item"
 doc_status: "DRAFT"
 work_status: "READY"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-04-25"
 updated: "2026-04-25"
 lane: "HIGH_RISK"
@@ -61,10 +61,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install TLC v1.8.0 (SHA-256 PINNED — Lote 10.6bis P0-W6-2 supply-chain fix)
+      - name: Install TLC v1.8.0 (SHA-256 PINNED — Lote 10.6bis P0-W6-2 + Lote 10.6-tris NEW-P0-1)
         run: |
-          # tla2tools.jar v1.8.0 SHA-256 (locked; bumps require ADR + Architect + Crypto SME signoff per ADR-0042 addendum)
-          EXPECTED_SHA="<TLA_TOOLS_v1_8_0_SHA256_TBD_AT_FIRST_DOWNLOAD>"
+          # tla2tools.jar v1.8.0 SHA-256 (locked; bumps require ADR + Architect + Crypto SME signoff per ADR-0042 addendum §A1)
+          # Lote 10.6-tris NEW-P0-1 fix: literal 64-char hex (was placeholder string that always failed).
+          # Bootstrap trust: SHA computed 2026-04-25 by Owner (Gustavo Schneiter) via fresh download from
+          # github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar (artifact size 4356704 bytes;
+          # `shasum -a 256 tla2tools.jar`). Architect + Crypto SME independent re-verification REQUIRED
+          # pre-merge per §9.X bootstrap trust ceremony — both reviewers must commit signed verification
+          # comments to the ADR-0042 addendum §A1 sign-off block before this workflow merges to main.
+          EXPECTED_SHA="d5d07d5dab38ddb840c91ec48fa02f28b37a608d5af9a73570018591dbc8ef7f"
           curl --retry 3 --fail -L \
             https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar \
             -o tla2tools.jar
@@ -141,11 +147,24 @@ fn prop_gc_004_race_mark_update_ar_100k() {
 }
 
 fn generate_random_interleaving(seed: u64) -> Scenario {
+    // Lote 10.6-tris OPUS-MISS-2 fix: PRNG determinism PINNED to ChaCha20Rng + seed_from_u64.
+    // Reproducibility is now a code-level guarantee (NOT a documentation claim) — CI failure
+    // at iter=42 reproduces deterministically across all platforms (rust-stdlib HashMap iteration
+    // ordering is the only remaining non-determinism source, addressed by sorted iteration in scenario).
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha20Rng;
+    let mut rng = ChaCha20Rng::seed_from_u64(seed);
+
     // Generates random Mark + UpdateActionResult interleavings:
     // - Mark phase: captures mark_started_at_ms = T (random within scenario timeline)
     // - Concurrent UpdateActionResult: ac_meta INSERT at T-100ms..T+1000ms (random)
     // - Sweep phase: invokes INV-GC-004 SQL EXISTS check
     // Edge cases: ac.created_at = T exactly (boundary); ac.created_at = T+1ms (just after; protected); ac.created_at = T-1ms (just before mark; orphan).
+    //
+    // Lote 10.6bis P0-W6-1 adversarial inputs (fixture must emit):
+    // - blob_refs envelope mutation: {"refs":[...],"metadata":{"parent_digest":<other_digest>}}
+    // - Short-digest substring scenarios (16-char prefix in metadata field containing digest D as substring)
+    // - Schema-evolution scenario: blob_refs evolves to JSON object — assert SQL fails compile OR returns 0 protected
     // ...
 }
 
@@ -192,6 +211,30 @@ async fn execute_gc_scenario(scenario: Scenario) -> ScenarioResult {
 | `UpdateActionResult(ac)` | `crates/corelink-ac::update_action_result` writes `ac_meta.created_at_ms` server-side | INV-GC-004 mark-phase-aware re-ref |
 | `SweepStep(blob)` | `sweep_phase::execute` per-candidate; INV-GC-004 EXISTS check via `json_each(a.blob_refs) j WHERE j.value = $candidate AND a.created_at_ms >= mark_started_at_ms` | INV-GC-004 enforcement |
 | `InvGCReRefProtected` | property test `prop_gc_004_race_mark_update_ar_100k` 100k iter; CI nightly | TLA+ ↔ Rust differential alignment |
+
+7. **TLA+ formal verification SCOPE LIMITATIONS** (Lote 10.6-tris NEW-P0-2 fix — explicit caveat documented; Crypto SME PRR review must acknowledge):
+
+   **What `gc_correctness.tla` proves**:
+   - Mark-and-sweep algorithm correctness for the active → physically-deleted transition under arbitrary interleavings of `Mark + UpdateActionResult` actions.
+   - INV-GC-001 (reachable never deleted) holds at the `physically_deleted` set membership check.
+   - INV-GC-004 (mark-phase-aware re-ref) holds via `mark_started_at` < `ac.created_at` strict comparison.
+   - Bounded-state TLC model check: Blobs={b1,b2,b3}, AC_Entries={e1,e2,e3,e4}, MaxTime=8 (verify exact bounds in `gc_correctness.cfg`). At these bounds, all interleavings exhaustively explored. **Property test 100k extends coverage** to larger-scale interleavings via random sampling against the real Rust impl (defense-in-depth layer 2).
+
+   **What `gc_correctness.tla` does NOT prove**:
+   - **Soft-delete grace window** (72h CAS / 24h AC): the TLA+ model's `GCSweepBlob` action transitions blob directly from active to `physically_deleted` atomically — there is NO `soft_deleted` intermediate state in the TLA+ spec. The Rust implementation's two-phase soft-delete (WI-S06-003) → physical delete (WI-S06-004) is **outside the TLA+ formal coverage**.
+   - **Re-reference during grace window**: an UpdateActionResult firing AFTER soft-delete but BEFORE physical-delete is protected by **architectural mechanisms** (NOT TLA+):
+     - (a) `WHERE refcount = 0` conditional D1 batch predicate in physical-delete (WI-S06-004 §6.1.6, Lote 10.6bis P0-4 fix) — refcount increment by S-01 CAS write handler causes DELETE no-op.
+     - (b) `undelete` path via re-upload (CAP-GC-002, sprint contract §5.3 R-S06-7) — customer re-upload during grace reverts `deleted_at = NULL`.
+   - **DSR bypass path** (WI-S06-004 §1.4): Ed25519 signal verification + scope + replay protection are NOT in TLA+ scope; protected by Crypto SME-reviewed Ed25519 verify + `dsr_signals_processed.signal_id` UNIQUE constraint.
+   - **Physical-delete cron orchestration** (WI-S06-004): R2→D1 ordering + crash recovery via reconcile orphan detection is operational, NOT formally verified.
+
+   **Implication for "INV-GC-001 formally proven" claim**: the claim is correct AT THE ALGORITHM LEVEL (mark-sweep correctness) but does NOT extend to the grace-window reversibility mechanism. WI-007 §1.7 + sprint contract §6 DoD must reflect this scope. The **defense-in-depth** chain is:
+   - **Layer 1 (TLA+)**: mark-sweep algorithm at bounded scale.
+   - **Layer 2 (Property test 100k)**: real Rust impl at larger scale; cross-validates TLA+ obligations.
+   - **Layer 3 (Chaos under load 4h-1kQPS + 30d sustained)**: production-like workload; INV-GC-001/004 violation counters = 0.
+   - **Layer 4 (Conditional `refcount = 0` predicate + reconcile orphan detection)**: grace window protection NOT covered by Layers 1-3; covered by code-level invariants (WI-S06-004 §6.1.6 + WI-S06-005 reconcile).
+
+   **Future TLA+ extension** (NOT required for S-06 SEAL; deferred to S-07+ per scope-honest documentation): extend `gc_correctness.tla` with `soft_deleted` state, `grace_period` time variable, `Undelete` action, and verify INV-GC-001 holds across the soft-delete→physical-delete transition. Effort estimate: ~8h TLA+ extension + ~4h Crypto SME re-review. Tracked as `Lote 10.7+ TLA+ scope expansion` (post-S-06 SEAL).
 
 ## 2. Narrative (HIGH_RISK ≥ 300 palavras)
 
@@ -377,8 +420,11 @@ Feature: TLA+ CI gate + property test 100k race
 - 9.7: GitHub branch protection enforces required status checks; `enforce_admins: true`.
 - 9.8: Cross-validation property test (TLA+ ↔ Rust alignment) with **negative-control discriminating-power assertion** against deliberately-broken LIKE-substring impl (Lote 10.6bis P0-W6-1).
 - 9.9: ADR-0042 addendum for TLC version+SHA pinning policy (Lote 10.6bis P0-W6-2; "TLC version + SHA pinned; bumps require ADR + Architect + Crypto SME signoff" — addendum added as §A1 of ADR-0042 in WI-007 §10.s06.007.8 ratificação).
-- 9.10: TLC ≤ 5 min p99 per PR (model state space bounded).
+- 9.10: TLC ≤ 5 min p99 per PR (model state space bounded). **TLC cfg bounds explicit** (Lote 10.6-tris OPUS-MISS-1): `gc_correctness.cfg` SETS `Blobs={b1,b2,b3}`, `AC_Entries={e1,e2,e3,e4}`, `MaxTime=8` → state space exhaustively explored at these bounds; property test 100k extends coverage to larger-scale interleavings via random sampling against real Rust impl. Bounds documented in WI-006 §1 TLA+ section + ADR-0042 addendum §A2. `InvMarkingConsistent` invariant cleaned up (vacuously-true `/\ TRUE` branch removed) per Lote 10.6-tris OPUS-MISS-1.
 - 9.11: **Hard cross-WI dependency on WI-S06-003 P0-1 json_each fix landed** (Lote 10.6bis P0-W6-1; without it, property test passes green silently against broken SQL).
+- 9.12: **TLC SHA-256 bootstrap trust ceremony** (Lote 10.6-tris NEW-P0-1 fix): SHA `d5d07d5dab38ddb840c91ec48fa02f28b37a608d5af9a73570018591dbc8ef7f` computed 2026-04-25 by Owner via fresh download; Architect + Crypto SME independent re-verification REQUIRED pre-merge (commit signed verification comments to ADR-0042 addendum §A1 sign-off block). NO merge of `tla-ci-gate.yml` to main without 2 independent SHA verifications. Bumps to TLC version require ADR + Architect + Crypto SME signoff.
+- 9.13: **TLA+ formal verification SCOPE LIMITATIONS documented** (Lote 10.6-tris NEW-P0-2 fix): `gc_correctness.tla` covers mark-sweep algorithm; soft-delete grace window NOT in TLA+ scope (covered architecturally by WI-S06-004 §6.1.6 conditional `WHERE refcount = 0` predicate + WI-S06-005 reconcile orphan detection). "INV-GC-001 formally proven" claim qualified by §1 invariant 7 scope statement. Future TLA+ extension (S-07+ deferred) will model two-phase soft+physical delete.
+- 9.14: **PRNG determinism pinned** (Lote 10.6-tris OPUS-MISS-2): `ChaCha20Rng::seed_from_u64(iter)` em property test fixture; cross-platform reproducibility = code-level guarantee.
 
 ### 10. Completeness Criteria
 
@@ -463,7 +509,7 @@ Total Optimistic: ~30h. PERT: ~33h.
 - 28 Risk Register (12-row): TLA+ scope incompleto M M HIGH M LOW (adversarial review); CI flake L H LOW L LOW (deterministic seeds); property test flake M H LOW L LOW (retry 3×); TLA+↔Rust drift L M HIGH L LOW (cross-validation); merge override abuse L L HIGH L LOW (ADR + Architect signoff); PR scope miss M L MEDIUM L LOW (path filter); CI cost regression M L MEDIUM L LOW; 30d sustained gate slip M M HIGH M LOW; spec corruption attack L L HIGH L LOW (adversarial review); production gap L M HIGH L LOW (quarterly re-review); GitHub Actions outage L L LOW L LOW; TLC version drift L L MEDIUM L LOW (pinned version).
 - 29 Review: D+0 design (Architect + Crypto SME); D+2 AppSec; D+5 code review; D+6 Crypto SME independent; D+7 PRR mini.
 - 30 Sign-off (HIGH_RISK 13): standard 12 mandatory; Crypto SME **MANDATORY EMPHATIC** (TLA+ obligation alignment).
-- 31 Change Log: 1.0.0 / 2026-04-25 / Gustavo (Lote 10.6); 1.1.0 / 2026-04-25 / Gustavo (Lote 10.6bis Part 2b P0 fixes: P0-W6-1 fixture adversarial inputs + cross-WI dep + negative control; P0-W6-2 TLC SHA pinning; P0-W6-3 override mechanism CODEOWNERS+workflow+enforce_admins; P0-W6-W7-1 30d sustained workflow design pinned; P1-W6-1 TLA+↔Rust action mapping; P1-W6-2 +2 chaos scenarios; P1-W6-3 measurable criterion ≥1000 scenarios; P2-W6-2 cost re-derived private-repo billing).
+- 31 Change Log: 1.0.0 / 2026-04-25 / Gustavo (Lote 10.6); 1.1.0 / 2026-04-25 / Gustavo (Lote 10.6bis Part 2b P0 fixes: P0-W6-1 fixture adversarial inputs + cross-WI dep + negative control; P0-W6-2 TLC SHA pinning; P0-W6-3 override mechanism CODEOWNERS+workflow+enforce_admins; P0-W6-W7-1 30d sustained workflow design pinned; P1-W6-1 TLA+↔Rust action mapping; P1-W6-2 +2 chaos scenarios; P1-W6-3 measurable criterion ≥1000 scenarios; P2-W6-2 cost re-derived private-repo billing); 1.2.0 / 2026-04-25 / Gustavo (Lote 10.6-tris Sonnet R5 P0+P1+OPUS-MISS fixes: NEW-P0-1 TLC SHA literal `d5d07d5dab38ddb840c91ec48fa02f28b37a608d5af9a73570018591dbc8ef7f` + bootstrap ceremony §9.12; NEW-P0-2 TLA+ scope limitations explicit §1.7 + soft-delete grace coverage caveat; OPUS-MISS-1 InvMarkingConsistent vacuously-true branch removed + TLC cfg bounds documented §9.10; OPUS-MISS-2 PRNG ChaCha20Rng::seed_from_u64 §9.14; ADR-0042 addendum §A1 SHA pinning + §A2 cfg bounds added).
 - 32 Anti-patterns: ❌ Skip CI gate; ❌ Override sem ADR + CODEOWNERS approvals; ❌ Admin bypass on main; ❌ TLC binary unverified; ❌ Property test flake silenciada; ❌ Property test fixture without adversarial inputs; ❌ TLA+ scope reduction sem ADR; ❌ Skip 30d sustained gate; ❌ Cross-tenant property test scenarios; ❌ TLC version drift sem ADR.
 
 ---

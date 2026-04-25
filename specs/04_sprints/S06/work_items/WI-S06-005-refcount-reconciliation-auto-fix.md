@@ -4,7 +4,7 @@ type: "work_item"
 doc_status: "DRAFT"
 work_status: "READY"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-04-25"
 updated: "2026-04-25"
 lane: "HIGH_RISK"
@@ -134,7 +134,7 @@ Refcount é denormalized counter; bug em UpdateActionResult/DeleteActionResult/S
 
 1. **Refcount drift cascade**: stale refcount = blob com refcount=2 mas only 1 ac_meta entry references → mark sees refcount > 0 → blob "reachable" → never deleted (false positive; storage bloat) OR refcount=0 mas 1 ac_meta references → mark sees orphan → sweep deletes → INV-GC-001 violation. Mitigação: reconcile daily + auto-fix.
 
-2. **SQL aggregate query performance**: `LIKE '%' || digest || '%'` é full-scan ac_meta.blob_refs JSON column (D1 SQLite no JSON path index). Mitigação: chunked iteration + bounded concurrency; phase budget 1h p99 @ 1M blobs.
+2. **SQL aggregate query performance** (Lote 10.6-tris NEW-P1-3 stale-narrative fix; reflects post-Lote 10.6bis P0-1 canonical idiom): `json_each(a.blob_refs) j WHERE j.value = blob_meta.digest` é JSON-aware membership test com index pushdown via `idx_ac_meta_tenant_deleted_at` (tenant + soft-delete pre-filter). Per-row extract is O(json_array_size) (typical AC has 1-10 outputs). **NOT** the previously-flagged LIKE substring full-scan. Re-derived phase budget 1h p99 @ 1M blobs (sprint contract §5.5 R-S06-10.1) accounts for: (a) chunked iteration 1k blobs/chunk × bounded concurrency 4-8; (b) D1 batch ≤250 row Lote 10.5bis lesson; (c) `created_at_ms < reconcile_started_at_ms` snapshot bound; (d) cost ≤ $0.000010 per reconcile-batch (D1 reads ~$0.001/M rows; 1k blobs × ~5 ac_meta rows scanned via index = 5k row reads × $0.001/M = $0.000005; plus json_each per-row extract overhead ~$0.000003; plus audit_outbox INSERT ~$0.000002 = ~$0.000010 worst case). Was previously $0.000005 estimate based on LIKE full-scan analytic shape; updated to $0.000010 per Lote 10.6bis P0-1 fix (sprint contract §5.5 v1.2.0). Mitigação: chunked iteration + bounded concurrency.
 
 3. **Auto-fix discipline boundary**: 5 records é arbitrary threshold; small drifts likely transient (UpdateAR mid-flight); large drifts indicate systemic bug. Mitigação: configurable threshold via env; audit chain captures auto-fix decisions.
 
@@ -385,7 +385,7 @@ Total Optimistic: ~28h. PERT: ~31h.
 - 28 Risk Register (12-row; Lote 10.6bis expansion): drift cascade L M HIGH L LOW; auto-fix > threshold L M HIGH L LOW; race UpdateAR M L LOW L LOW; cross-tenant L L CRITICAL L LOW; phase budget L L MEDIUM L LOW; audit fail L M MEDIUM L LOW; D1 throttle M L LOW L LOW; refcount manipulation L M MEDIUM L LOW; cost regression M L MEDIUM L LOW; SEV escalation noisy M L LOW L LOW; **SQL semantic defect (LIKE substring vs json_each) cascading to auto-fix corruption** (Lote 10.6bis P0-1) L H CRITICAL H LOW (SQL canonical idiom + property test regression); **auto-fix-vs-UpdateAR race ping-pong** (Lote 10.6bis P0-7 #11) L M MEDIUM L LOW (conditional WHERE refcount = stored_refcount predicate).
 - 29 Review: D+0..D+5 standard.
 - 30 Sign-off (HIGH_RISK 13): standard 12 mandatory + Crypto SME advisory (no cripto-load-bearing path; reconcile is analytics workload).
-- 31 Change Log: 1.0.0 / 2026-04-25 / Gustavo (Lote 10.6); 1.1.0 / 2026-04-25 / Gustavo (Lote 10.6bis Part 2a P0 fixes: P0-1 SQL LIKE→json_each canonical idiom + snapshot bound; P0-6 auto-fix scale-invariant percentage+absolute floor + drift_pending failure mode; P0-7 5 NEW chaos adversarial scenarios; P1-5 cron timing ≥30min after mark/sweep; P1-6 race window snapshot SQL bound; P2-7 SEV-1 threshold per-tenant >1% not global).
+- 31 Change Log: 1.0.0 / 2026-04-25 / Gustavo (Lote 10.6); 1.1.0 / 2026-04-25 / Gustavo (Lote 10.6bis Part 2a P0 fixes: P0-1 SQL LIKE→json_each canonical idiom + snapshot bound; P0-6 auto-fix scale-invariant percentage+absolute floor + drift_pending failure mode; P0-7 5 NEW chaos adversarial scenarios; P1-5 cron timing ≥30min after mark/sweep; P1-6 race window snapshot SQL bound; P2-7 SEV-1 threshold per-tenant >1% not global); 1.2.0 / 2026-04-25 / Gustavo (Lote 10.6-tris Sonnet R5 fixes: NEW-P1-3 §2 narrative stale LIKE reference replaced with json_each + cost re-derivation $0.000010; OPUS-MISS-3 cost derivation explicit; INV-GC-RECONCILE-AUTO-FIX-BOUNDED registry alignment OPUS-MISS-4 acknowledged via cross-ref to invariant_registry.md update).
 - 32 Anti-patterns: ❌ SQL `LIKE '%digest%'` substring (use json_each); ❌ Single absolute-floor auto-fix (use percentage+absolute); ❌ Auto-fix without conditional predicate; ❌ Cross-tenant; ❌ Skip audit; ❌ Trust client tenant_id; ❌ Variable-time SQL; ❌ Hard-coded thresholds; ❌ SEV-1 global >1% (use per-tenant >1%).
 
 ---

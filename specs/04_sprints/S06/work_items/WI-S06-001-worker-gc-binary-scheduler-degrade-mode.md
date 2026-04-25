@@ -4,7 +4,7 @@ type: "work_item"
 doc_status: "DRAFT"
 work_status: "READY"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.2.0"
 created: "2026-04-25"
 updated: "2026-04-25"
 lane: "HIGH_RISK"
@@ -633,7 +633,11 @@ D+0 design (Architect + SRE); D+1 AppSec; D+3 code review; D+4 chaos suite; D+5 
 
 ## 31. Change Log
 
-1.0.0 / 2026-04-25 / Gustavo: Criação WI-S06-001 (Lote 10.6; SOTA pós-Lote 10.5bis lessons applied: partial UNIQUE WHERE status='running'; CHECK inline; BEGIN/COMMIT removidos; tenant_id NOT NULL; TenantCtx-only enforcement; ADR-0042 forward).
+| Versão | Data | Autor | Mudança |
+|---|---|---|---|
+| 1.0.0 | 2026-04-25 | Gustavo | Criação WI-S06-001 (Lote 10.6; SOTA pós-Lote 10.5bis lessons applied: partial UNIQUE WHERE status='running'; CHECK inline; BEGIN/COMMIT removidos; tenant_id NOT NULL; TenantCtx-only enforcement; ADR-0042 forward). |
+| 1.1.0 | 2026-04-25 | Gustavo | **Lote 10.6bis P0-4 fix**: GcStatus state-machine gap closure — variant `failed` added to enum (line 88) + migration CHECK constraint includes `'failed'` (line 209); `GcPhase::Failed { phase, error_message, failed_at }` carries error context; WI-S06-002 §6.1.10 sets `status='failed'` on `PhaseBudgetExceeded`. |
+| 1.2.0 | 2026-04-25 | Gustavo | **Lote 10.6-tris NEW-P1-4 fix**: documented P0-4 resolution in change log explicitly (Sonnet R5 flagged change log silence on P0-4 absorption). State-machine final: `pending → running → {succeeded, crashed (recoverable via checkpoint resume), aborted (manual stop via degrade-mode), failed (terminal: PhaseBudgetExceeded OR PhaseFailure non-recoverable)}`. Cross-referenced WI-S06-002 PhaseBudgetExceeded → status='failed' mapping. |
 
 ## 32. Anti-patterns evitados
 

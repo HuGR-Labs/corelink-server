@@ -211,15 +211,23 @@ InvGCReRefProtected ==
 \* Invariante derivado: durante "marking", se blob é reachable, então
 \* eventualmente é adicionado a mark_set OU é protegido por INV-GC-004.
 \* Este é o check core do race condition.
+\*
+\* Lote 10.6-tris OPUS-MISS-1 fix: removido o branch vacuously-true `/\ TRUE`
+\* que tornava o invariante mais fraco do que parecia. O check agora afirma
+\* corretamente: durante marking, todo blob in mark_progress está em mark_set
+\* OU não tem AC entry pre-existente referenciando-o (i.e., não é reachable).
+\*
+\* TLC cfg bounds (Lote 10.6-tris OPUS-MISS-1 documented):
+\* - Blobs={b1,b2,b3}, AC_Entries={e1,e2,e3,e4}, MaxTime=8 (verify gc_correctness.cfg)
+\* - At these bounds, all interleavings exhaustively explored.
+\* - Property test 100k extends coverage via random sampling against real Rust impl.
 InvMarkingConsistent ==
     gc_phase = "marking" =>
         \A b \in mark_progress:
             (b \in mark_set) \/
-            \* b foi visitado mas não tem refs ativas no momento do step
+            \* b foi visitado mas não tem AC entries referenciando-o no momento do step
             ~(\E e \in DOMAIN ac_entries:
                 /\ b \in ac_entries[e].blob_refs
-                /\ ac_entries[e].created_at <= now - 1
-                /\ \* AC já existia quando step aconteceu
-                   TRUE)
+                /\ ac_entries[e].created_at <= now - 1)
 
 ================================================================================

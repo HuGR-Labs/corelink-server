@@ -4,7 +4,7 @@ type: "work_item"
 doc_status: "DRAFT"
 work_status: "READY"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-04-25"
 updated: "2026-04-25"
 lane: "HIGH_RISK"
@@ -101,12 +101,12 @@ Este WI é o **ship gate** de S-06; entra production-ready apenas após:
    - ADR-0042 (worker scheduler design + degrade-mode contract): ratificada em WI-S06-001.
    - All whitelisted em validate_references.py.
 
-9. **Cost regression gate all-WIs**:
-   - Per-cron-tick + checkpoint (WI-001) ≤ targets.
-   - Per-mark-batch (WI-002) ≤ $0.000005.
-   - Per-sweep (WI-003) ≤ $0.000005.
-   - Per-physical-delete (WI-004) ≤ $0.000005.
-   - Per-reconcile-batch (WI-005) ≤ $0.000005.
+9. **Cost regression gate all-WIs** (Lote 10.6-tris OPUS-MISS-3 — derivation explicit; per-WI re-derived post-Lote 10.6bis):
+   - Per-cron-tick + checkpoint (WI-001) ≤ targets (audit emit + DO alarm re-arm + checkpoint UPDATE = ~$0.000003).
+   - Per-mark-batch (WI-002) ≤ $0.000005 (D1 batch read ≤250 rows × $0.001/M reads = $0.00025 per 1M batches; per-batch share $0.0000025 + json_each overhead $0.0000025 = ~$0.000005).
+   - Per-sweep (WI-003) ≤ $0.000005 (D1 EXISTS check + UPDATE deleted_at + audit emit per candidate; post-json_each idiom is index-friendly — same ballpark as pre-fix LIKE analytical shape).
+   - Per-physical-delete (WI-004) ≤ $0.000010 (R2 DeleteObject $4.5/M = $0.0000045 + D1 batch share + audit; updated post-Lote 10.6bis P0-5 phase budget re-derivation).
+   - Per-reconcile-batch (WI-005) ≤ $0.000010 (Lote 10.6-tris OPUS-MISS-3 update — was $0.000005 pre-fix LIKE; post-json_each: D1 reads ~5k rows/batch × $0.001/M = $0.000005 + json_each per-row extract $0.000003 + audit_outbox $0.000002 = ~$0.000010; sprint contract §5.5 v1.2.0 R-S06-10.1 derivation).
    - CI gate ±10% tolerance.
 
 10. **Customer-facing communication ready**:
@@ -626,6 +626,8 @@ D+0 WI-S06-001..006 SEALED; D+1 30d sustained TLA+ verde + chaos validation; D+2
 
 1.0.0 / 2026-04-25 / Gustavo: Criação WI-S06-007 (Lote 10.6; SOTA pós-Lote 10.5bis lessons applied: 4-tier incident classification; Crypto SME mandatory non-waivable; validate_inv_promotion CI gate; production rollout gradual; sprint contract drift defense; canonical_bytes layouts; ADR canonical path adrs/).
 1.1.0 / 2026-04-25 / Gustavo: Lote 10.6bis Part 2b P0 fixes — P0-W7-1 sign-off booking calendar §30.1 + validate_signoff_calendar.py CI gate (closes S-04/S-05 carry-forward 10-of-13-TBD persistent program defect); P0-W7-2 INV count alignment ~22→23 with registry; P0-W7-3 chaos test split 4h-1kQPS pre-merge gate vs 30d sustained post-sprint; P0-W7-4 RB dry-runs ≥3 runs + p95 + chaos PR magnitudes pinned; P1-W7-1 DSR ST-021 rebudget 3h→16h Privacy 8h + Crypto SME 8h; P1-W7-2 row-12 AppSec lane "audit fail-closed + supply-chain" vs row-13 Crypto SME lane "TLA+ + json_each semantic"; P1-W7-3 validate_prr_signoff.py CI gate.
+
+1.2.0 / 2026-04-25 / Gustavo: Lote 10.6-tris Sonnet R5 fixes — NEW-P1-2 `_signoff_calendar.yaml` template seeded em `specs/04_sprints/S06/_signoff_calendar.yaml` (closes "CI gate permanently red unless file seeded" defect); OPUS-MISS-3 cost regression gate per-WI derivation explicit (post-Lote 10.6bis re-derivation: per-reconcile-batch ≤$0.000010 with json_each idiom; per-physical-delete ≤$0.000010 with D1 batch ≤250 + R2 cost; per-mark-batch and per-sweep ≤$0.000005); cross-references to Sonnet R5 audit at `specs/_audits/2026-04-25-sonnet-r5-s06-wi-review.md`.
 
 ## 32. Anti-patterns evitados
 

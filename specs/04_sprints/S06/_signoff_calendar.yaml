@@ -1,0 +1,153 @@
+---
+# S-06 Sign-off Booking Calendar (Lote 10.6bis P0-W7-1 + Lote 10.6-tris NEW-P1-2 template seeding)
+#
+# Read by: scripts/validate_signoff_calendar.py (NEW; ST-022 in WI-S06-007)
+# Behavior:
+#   - File MUST exist before WI-S06-007 SEALED (Lote 10.6-tris NEW-P1-2 fix).
+#   - status: "TBD" allowed UNTIL within lead_time_days of PRR date.
+#   - status: "BOOKED" or "CONFIRMED" required at lead_time_days threshold.
+#   - status: "WAIVED" allowed only with adr_ref pointing to active ADR.
+#   - Gate FAILS CI if any TBD slot is within D-3 of PRR date AND role is non-waivable.
+#   - Gate WARNS at D-7 if status still TBD.
+#
+# WI-S06-007 §30.1 reference:
+#   Crypto SME (row 13, MANDATORY non-waivable) — D-14 advance booking required.
+#
+# Update protocol: as bookings are confirmed, update status: TBD → BOOKED → CONFIRMED.
+# Owner of this file: Sprint Owner (Gustavo Schneiter).
+# Format version: 1.0.0
+---
+sprint_id: "S-06"
+sprint_name: "Garbage Collection: Mark & Sweep + INV-GC-001/004 enforcement"
+prr_meeting_target_date: "TBD"  # populate when sprint timeline locked; D+6 of sprint
+ship_decision_target_date: "TBD"  # D+8 of sprint
+
+format_version: "1.0.0"
+schema_path: "schemas/signoff_calendar.schema.json"  # forward; not yet implemented
+last_updated_ms: 1745627904000  # 2026-04-25 (file created)
+last_updated_by: "Gustavo Schneiter (Owner)"
+
+slots:
+  - row: 1
+    role: "Owner"
+    name: "Gustavo Schneiter"
+    lead_time_days: 0
+    waivable: false
+    status: "PENDING"   # self-scheduled
+    notes: "Owner self-schedules; D+6 PRR + D+8 ship decision"
+
+  - row: 2
+    role: "Final Approver"
+    name: "Gustavo Schneiter"
+    lead_time_days: 0
+    waivable: false
+    status: "PENDING"   # self-scheduled
+    notes: "Final ship decision authority"
+
+  - row: 3
+    role: "SRE Lead"
+    name: "TBD"
+    lead_time_days: 3
+    waivable: true
+    status: "WAIVED"
+    adr_ref: "ADR-0034"
+    notes: "Staffing-blocked; ADR-0034 waiver via Architect compensation"
+
+  - row: 4
+    role: "Security Lead"
+    name: "TBD"
+    lead_time_days: 3
+    waivable: true
+    status: "TBD"
+    waiver_path: "ADR-0034 with audit-fail-closed evidence checklist"
+    notes: "Mandatory; INV-GC-004 + audit fail-closed review"
+
+  - row: 5
+    role: "Engineer (peer 1)"
+    name: "TBD"
+    lead_time_days: 3
+    waivable: true
+    status: "TBD"
+    waiver_path: "Owner + 1 peer acceptable"
+    notes: "Mandatory; code review"
+
+  - row: 6
+    role: "Engineer (peer 2)"
+    name: "TBD"
+    lead_time_days: 3
+    waivable: true
+    status: "TBD"
+    waiver_path: "Owner + 1 peer acceptable"
+    notes: "Mandatory; code review"
+
+  - row: 7
+    role: "QA"
+    name: "TBD"
+    lead_time_days: 3
+    waivable: true
+    status: "TBD"
+    waiver_path: "ADR-0034"
+    notes: "Mandatory; chaos suite + 100k race property test green"
+
+  - row: 8
+    role: "Product"
+    name: "Gustavo Schneiter"
+    lead_time_days: 0
+    waivable: false
+    status: "PENDING"   # self-scheduled
+    notes: "Self-scheduled"
+
+  - row: 9
+    role: "Compliance"
+    name: "TBD"
+    lead_time_days: 5
+    waivable: true
+    status: "TBD"
+    waiver_path: "ADR-0034 with LGPD Art. 16 retention evidence"
+    notes: "Mandatory; LGPD Art. 16 retention compliance review"
+
+  - row: 10
+    role: "Privacy"
+    name: "TBD"
+    lead_time_days: 5
+    waivable: true
+    status: "TBD"
+    waiver_path: "DPO interim acceptable per ADR-0017"
+    notes: "Mandatory; DSR erasure interaction review (8h budget per Lote 10.6bis P1-W7-1)"
+
+  - row: 11
+    role: "Architect"
+    name: "TBD"
+    lead_time_days: 7
+    waivable: true
+    status: "TBD"
+    waiver_path: "ADR-0034; Crypto SME co-sign acceptable"
+    notes: "Mandatory; ADR-0042 ratificação + cumulative INV §3.17 + R2→D1 crash-recovery ordering"
+
+  - row: 12
+    role: "AppSec"
+    name: "TBD"
+    lead_time_days: 7
+    waivable: false  # mandatory emphatic per Lote 10.6bis P1-W7-2
+    status: "TBD"
+    notes: "MANDATORY EMPHATIC; audit fail-closed boundary + multi-tenant strict + supply-chain TLC pinning + override mechanism CODEOWNERS verification (Lote 10.6bis P1-W7-2 lane fix; was incorrectly TLA+ obligation alignment)"
+
+  - row: 13
+    role: "Crypto SME"
+    name: "TBD"
+    lead_time_days: 14   # D-14 per Lote 10.6bis P0-W7-1
+    waivable: false   # NON-WAIVABLE per sprint contract §19 + Lote 10.4bis lesson
+    status: "TBD"
+    notes: "MANDATORY NON-WAIVABLE; TLA+ formal verification + property test 100k cross-validation + INV-GC-004 strict < semantics + json_each EXISTS check semantic equivalence + DSR Ed25519 verify + TLC SHA-256 bootstrap ceremony §A1 + key rotation cadence (Lote 10.6-tris NEW-P1-1) + TLA+ scope caveat soft-delete grace (Lote 10.6-tris NEW-P0-2). Sprint extension via ADR if booking slips; NO waiver allowed."
+
+# CI Gate Behavior (validate_signoff_calendar.py — ST-022 implements):
+# - Read this file.
+# - For each slot:
+#   - If status in [BOOKED, CONFIRMED, WAIVED]: OK.
+#   - If status == TBD or PENDING:
+#     - Compute days_until_prr = prr_meeting_target_date - now.
+#     - If days_until_prr is None (target_date == "TBD"): WARN "PRR date not set for slot {row}".
+#     - If days_until_prr <= 0: FAIL "PRR is today or past; slot {row} still TBD".
+#     - If days_until_prr <= 3 AND waivable == false: FAIL "Non-waivable slot {row} TBD within D-3".
+#     - If days_until_prr <= lead_time_days AND status == TBD: WARN "Slot {row} approaching booking deadline".
+# - Emit metric: corelink.s06.signoff_calendar.{tbd_count, booked_count, days_to_prr}.
