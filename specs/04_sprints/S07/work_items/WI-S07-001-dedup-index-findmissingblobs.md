@@ -4,7 +4,7 @@ type: "work_item"
 doc_status: "DRAFT"
 work_status: "READY"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-25"
 updated: "2026-04-25"
 lane: "STANDARD"
@@ -21,10 +21,10 @@ inherits_from:
   - "STORAGE-SEMANTICS"
   - "SECURITY-MODEL"
   - "INVARIANT-REGISTRY"
-tags: ["wi", "s07", "dedup", "manifest_chunks", "findmissingblobs", "reapi", "standard"]
+tags: ["wi", "s07", "dedup", "chunks", "findmissingblobs", "reapi", "standard"]
 ---
 
-# WI-S07-001 — Dedup Index `manifest_chunks (tenant_id, chunk_digest) UNIQUE` + FindMissingBlobs Otimizado (REAPI v2 §FindMissingBlobs RPC; client skip re-upload of chunks already in tenant; baseline ≥ 2.5× dedup ratio sustained 7d staging) + INV-DEDUP-CONSISTENCY enforcement
+# WI-S07-001 — Dedup Lookup via `chunks` table (PK `(tenant_id, chunk_digest)` + `refcount`; pre-existing S-05 schema; NO new index/migration needed) + FindMissingBlobs Otimizado (REAPI v2 §FindMissingBlobs RPC; client skip re-upload of chunks already in tenant; baseline ≥ 2.5× dedup ratio sustained 7d staging) + INV-DEDUP-CONSISTENCY enforcement (Lote 10.7bis P0-1 fix: was incorrectly `UNIQUE INDEX manifest_chunks(tenant_id, chunk_digest)` which would break dedup — multiple manifests share chunks; corrected to `chunks` table which already has correct PK from S-05 WI-S05-004)
 
 > **doc_status:** DRAFT · **work_status:** READY · **lane:** STANDARD
 > **Parent:** [S-07](../sprint.md) · **Assignee:** Gustavo Schneiter
@@ -36,14 +36,14 @@ tags: ["wi", "s07", "dedup", "manifest_chunks", "findmissingblobs", "reapi", "st
 | Campo | Valor |
 |---|---|
 | ID | WI-S07-001 |
-| Título | D1 UNIQUE INDEX `idx_manifest_chunks_tenant_digest` em `manifest_chunks(tenant_id, chunk_digest)` para dedup lookup O(1) (< 2ms p99); REAPI v2 `FindMissingBlobs` handler returns absent-only chunks (skip-upload optimization); INV-DEDUP-CONSISTENCY enforcement (`(tenant_id, chunk_digest) → chunk_body` 1:1 dentro do tenant); cross-tenant dedup OFF default (CTRL-ISO-005 + `dedup.cross_tenant.enabled=false`); benchmark ≥ 2.5× dedup ratio sustained 7d staging (target SOTA 3×) |
+| Título | Dedup lookup via `chunks` table O(1) PK lookup (Lote 10.7bis P0-1 fix: pre-existing S-05 WI-S05-004 schema com `PRIMARY KEY (tenant_id, chunk_digest)` + `refcount` column; NO new migration needed; was incorrectly proposing UNIQUE INDEX em `manifest_chunks` which would BREAK dedup since same chunk_digest legitimately appears em multiple manifests for different blobs); REAPI v2 `FindMissingBlobs` handler returns absent-only chunks (skip-upload optimization); INV-DEDUP-CONSISTENCY already enforced by `chunks` PK; cross-tenant dedup OFF default (CTRL-ISO-005 + `dedup.cross_tenant.enabled=false`); benchmark ≥ 2.5× dedup ratio sustained 7d staging (target SOTA 3×) |
 | Sprint | S-07 |
 | Lane | STANDARD |
 | Forcing factors | none (no CRITICAL touched; INV-TENANT-ISOLATION inherited via tenant_id scope) |
 
 ## 1. Intent
 
-Adicionar **dedup intra-tenant** O(1) reaproveitando S-05 multipart `manifest_chunks` table: UNIQUE INDEX por `(tenant_id, chunk_digest)` permite content-addressable lookup; REAPI v2 `FindMissingBlobs` retorna apenas chunks **genuinamente ausentes**, eliminando re-upload bytes redundantes (target: ≥ 50% bytes saved em workload Docker pulls):
+Adicionar **dedup intra-tenant** O(1) reaproveitando S-05 `chunks` table (Lote 10.7bis P0-1 fix; original spec incorrectly referenced `manifest_chunks`): `chunks` table tem `PRIMARY KEY (tenant_id, chunk_digest) + refcount` purpose-built for dedup; PK lookup é O(log N); REAPI v2 `FindMissingBlobs` retorna apenas chunks **genuinamente ausentes**, eliminando re-upload bytes redundantes (target: ≥ 50% bytes saved em workload Docker pulls):
 
 ```rust
 // File: crates/corelink-dedup/src/lib.rs
@@ -52,7 +52,7 @@ Adicionar **dedup intra-tenant** O(1) reaproveitando S-05 multipart `manifest_ch
 
 #[async_trait]
 pub trait DedupIndex: Send + Sync {
-    /// O(1) lookup: returns true se chunk_digest existe em D1 manifest_chunks
+    /// O(1) lookup: returns true se chunk_digest existe em D1 `chunks` table (Lote 10.7bis P0-1 fix)
     /// para o tenant — content-addressable hit; cliente pode pular upload.
     /// Tenant-scoped strict (INV-TENANT-ISOLATION); cross-tenant rejeitado
     /// pre-impl (CTRL-ISO-005; dedup.cross_tenant.enabled MUST be false).
@@ -87,28 +87,35 @@ pub enum DedupError {
 
 **Cripto-driven invariants enforced**:
 
-1. **Tenant-scoped UNIQUE constraint**: D1 schema (Lote 10.5 WI-S05-004 base):
+1. **Tenant-scoped dedup via `chunks` table PRIMARY KEY** (Lote 10.7bis P0-1 fix; uses pre-existing S-05 schema):
    ```sql
-   -- ALREADY EXISTS in manifest_chunks (S-05 base):
-   --   blob_digest BLOB NOT NULL,
-   --   chunk_index INTEGER NOT NULL,
-   --   chunk_digest BLOB NOT NULL,
-   --   tenant_id TEXT NOT NULL,
-   --   ...
+   -- ALREADY EXISTS in `chunks` table (S-05 WI-S05-004 §6.1 lines 56-101):
+   --   tenant_id           TEXT        NOT NULL,
+   --   chunk_digest        TEXT        NOT NULL,
+   --   r2_object_key       TEXT        NOT NULL,
+   --   refcount            INTEGER     NOT NULL DEFAULT 1,  -- 1:1 (tenant_id, chunk_digest) → chunk_body via PK + refcount
+   --   created_at          INTEGER     NOT NULL,
+   --   last_referenced_at  INTEGER     NOT NULL,
+   --   deleted_at          INTEGER     NULL,                -- soft-delete grace (S-06 inheritance)
+   --   PRIMARY KEY (tenant_id, chunk_digest),               -- UNIQUE per tenant; enforces INV-DEDUP-CONSISTENCY
+   --   CHECK (refcount >= 0)
    --
-   -- S-07 Lote 10.7 NEW INDEX (inline em CREATE TABLE para parity com Lote 10.5bis lesson;
-   --                             OR CREATE INDEX em separate migration since manifest_chunks
-   --                             already exists from S-05 — D1 supports CREATE INDEX post-CREATE TABLE):
-   CREATE UNIQUE INDEX idx_manifest_chunks_tenant_digest
-       ON manifest_chunks (tenant_id, chunk_digest);
+   -- S-07 Lote 10.7bis P0-1 fix: NO new migration needed. The `chunks` table PK
+   -- (tenant_id, chunk_digest) IS the dedup uniqueness constraint. Original Lote 10.7
+   -- spec proposed UNIQUE INDEX em `manifest_chunks` which would break dedup (same
+   -- chunk_digest legitimately appears em multiple blobs' manifests; UNIQUE rejects
+   -- second blob's INSERT). The `chunks` table is purpose-built for dedup; reverse
+   -- lookup index `idx_manifest_chunks_tenant_chunk` (S-05 line 128) handles
+   -- "which blobs reference chunk X" queries.
    ```
-   - **Why UNIQUE on (tenant_id, chunk_digest)**: enforces INV-DEDUP-CONSISTENCY — same `(tenant_id, chunk_digest)` MUST refer to same chunk_body bytes (content-addressed via BLAKE3); no two distinct chunk_body for same digest dentro do tenant.
-   - **Why tenant-scoped (NOT global)**: CTRL-ISO-005 — cross-tenant dedup is existence oracle (THR-I-004 em security_model.md §6); off by default.
+   - **Why `chunks` PK (NOT manifest_chunks UNIQUE)**: dedup canonical model — N blobs share 1 chunk via N rows em `manifest_chunks` referencing 1 row em `chunks` (refcount = N). UNIQUE em manifest_chunks would block N>1.
+   - **INV-DEDUP-CONSISTENCY enforcement**: `chunks` PK guarantees 1:1 `(tenant_id, chunk_digest) → chunk_body bytes` via content-addressing (BLAKE3); INSERT ON CONFLICT increments refcount.
+   - **Tenant-scoped (NOT global)**: CTRL-ISO-005 — cross-tenant dedup is existence oracle (THR-I-004 em security_model.md §6); off by default.
 
 2. **CTRL-ISO-005 enforcement** (cross-tenant gate):
    - Code path explicitly `if !config.dedup.cross_tenant_enabled { return Err(CrossTenantBlocked); }` em qualquer chamada cross-tenant.
    - `config.dedup.cross_tenant_enabled` defaults `false`; flipping to `true` requires ADR + BYOE (S-14) + Privacy Lead signoff.
-   - CI lint: `clippy custom rule` forbids constructing dedup query without explicit `tenant_id` parameter.
+   - CI grep gate (NOT clippy::disallowed_method which is path-based; Lote 10.7bis P1-2 lesson absorbed) — `! grep -rn -E 'FROM\s+chunks\s+WHERE\s+(?!.*tenant_id)' src/ tests/` em CI workflow forbids `chunks` SELECT without `tenant_id` filter; cargo-spellcheck OR AST-grep custom rule alternative for stronger enforcement.
 
 3. **D1 batch ≤ 250 row constraint** (Lote 10.5bis lesson): `find_missing` chunks input list capped at 250 per query; chunked iteration if input larger.
 
@@ -131,7 +138,7 @@ Dedup intra-tenant é a **economia direta** do CoreLink: para um workload Docker
 **Adversarial scenarios considered**:
 - **Existence oracle attack** (CTRL-ISO-005): atacante envia FindMissingBlobs com guessed digests; server vaza "chunk existe em qualquer tenant" se cross-tenant dedup ativo. Mitigação: tenant-scoped strict; cross-tenant disabled default.
 - **Dedup ratio inflation** (false positive): bug em chunker BLAKE3 → digests duplicados artificialmente; ratio measurement falso. Mitigação: property test 10k iter cobrindo determinism (S-05 inheritance).
-- **D1 index size explosion**: 30M chunks per tenant × 32-byte digest + ~24 bytes overhead = ~1.7 GB index; abaixo 10 GB D1 limit per shard mas merece monitoring. Mitigação: alert metric `corelink.d1.idx.manifest_chunks.size_bytes` SEV-2 > 80%.
+- **D1 index size explosion**: 30M chunks per tenant × 32-byte digest + ~24 bytes overhead = ~1.7 GB `chunks` table size; abaixo 10 GB D1 limit per shard mas merece monitoring. Mitigação: alert metric `corelink.d1.chunks.size_bytes` SEV-2 > 80% (consistent com ADR-0040 multipart D1 sharding trigger).
 
 ## 3. Customer Impact & Journey
 
@@ -151,7 +158,7 @@ Dedup intra-tenant é a **economia direta** do CoreLink: para um workload Docker
 
 - **CAP-DEDUP-001** (Intra-tenant chunk dedup) — IMPLEMENTA primary index + lookup.
 - **CAP-DEDUP-002** (Dedup ratio metric) — IMPLEMENTA emit (consumed by WI-S07-005 dashboard).
-- Trace: `data_model.md §4.1 manifest_chunks` + `security_model.md CTRL-ISO-005` + `invariant_registry.md INV-DEDUP-CONSISTENCY`.
+- Trace: `data_model.md §4.1` + `WI-S05-004 §6.1 chunks table` (PK + refcount; canonical dedup table) + `security_model.md CTRL-ISO-005` + `invariant_registry.md INV-DEDUP-CONSISTENCY`.
 
 ## 5. Tipo
 
@@ -162,14 +169,9 @@ Indexed lookup library + REAPI handler; STANDARD lane.
 ### 6.1 In-scope
 
 1. **`crates/corelink-dedup/` module** — DedupIndex trait + D1 impl + tests.
-2. **D1 migration** `migrations/00X_dedup_index.sql`:
-   ```sql
-   CREATE UNIQUE INDEX idx_manifest_chunks_tenant_digest
-       ON manifest_chunks (tenant_id, chunk_digest);
-   ```
-   - Migration runs in maintenance window if `manifest_chunks` already populated (S-05 SEALED); idx build time bounded ~5min @ 10M rows.
-3. **`chunk_exists` lookup**: O(1) D1 SELECT `WHERE tenant_id = ? AND chunk_digest = ? LIMIT 1`; returns bool.
-4. **`find_missing` batch**: D1 SELECT `WHERE tenant_id = ? AND chunk_digest IN (?, ?, ...)`; input chunked at 250 per query (D1 batch ≤250 lesson); returns Vec<Digest> of NOT-found.
+2. **NO new D1 migration** (Lote 10.7bis P0-1 fix): `chunks` table from S-05 WI-S05-004 §6.1 lines 56-101 already has `PRIMARY KEY (tenant_id, chunk_digest)` which IS the dedup uniqueness constraint. Reverse lookup index `idx_manifest_chunks_tenant_chunk` (line 128) already exists for "which blobs reference chunk X" queries. **Original Lote 10.7 spec proposed `CREATE UNIQUE INDEX idx_manifest_chunks_tenant_digest ON manifest_chunks(tenant_id, chunk_digest)` — this was WRONG**: `manifest_chunks` is a per-blob ordered list (PK includes blob_digest); same chunk_digest legitimately appears in multiple blobs' manifests; UNIQUE constraint would reject second blob's INSERT, breaking dedup entirely. Migration cancelled.
+3. **`chunk_exists` lookup** (uses `chunks` table PK): O(log N) D1 SELECT `WHERE tenant_id = ? AND chunk_digest = ? AND deleted_at IS NULL LIMIT 1`; returns bool. The `deleted_at IS NULL` predicate ensures soft-deleted chunks (S-06 grace window 72h) are treated as missing — forcing client to re-upload, which acts as undelete (re-INSERT increments refcount; `deleted_at` reset). Crypto SME advisory note: this semantic chosen for safety (skip-upload of soft-deleted = race with physical delete).
+4. **`find_missing` batch** (uses `chunks` table): D1 SELECT `WHERE tenant_id = ? AND chunk_digest IN (?, ?, ...) AND deleted_at IS NULL`; input chunked at 250 per query (D1 batch ≤250 lesson); returns Vec<Digest> of NOT-found (set difference em caller). Uses `chunks` PK for O(log N) per lookup; total `find_missing` cost = O(K log N) where K = batch size.
 5. **REAPI v2 FindMissingBlobs handler** em `crates/corelink-worker/src/handlers/find_missing_blobs.rs`:
    - gRPC service signature per REAPI v2 spec: `rpc FindMissingBlobs(FindMissingBlobsRequest) returns (FindMissingBlobsResponse)`.
    - Tower auth_stack (S-03 WI-S03-003) extracts TenantCtx.
@@ -179,7 +181,7 @@ Indexed lookup library + REAPI handler; STANDARD lane.
 6. **CTRL-ISO-005 cross-tenant gate**:
    - Config struct `DedupConfig { cross_tenant_enabled: bool /* default false */ }`.
    - All DedupIndex methods MUST receive TenantCtx; cross-tenant calls return `Err(CrossTenantBlocked)`.
-   - CI lint: `clippy::disallowed_method` rule prohibiting `manifest_chunks` SELECT without `tenant_id` filter (custom lint OR grep CI gate).
+   - **CI grep gate** (Lote 10.7bis P1-2 fix; clippy::disallowed_method is path-based not content-based, infeasible para SQL string inspection): `! grep -rn -E 'FROM\s+chunks\s+WHERE\s+(?!.*tenant_id)' src/ tests/` em CI workflow forbids `chunks` SELECT without `tenant_id` filter; alternative: AST-grep custom rule on `sqlx::query!` macro arguments OR cargo-spellcheck regex rule.
 7. **Métricas**:
    - `corelink.dedup.lookup_total{result=hit|miss}` (counter).
    - `corelink.dedup.lookup_duration_us` (histogram; SLO ≤ 2ms p99).
@@ -191,7 +193,7 @@ Indexed lookup library + REAPI handler; STANDARD lane.
    - `prop_dedup_idempotent`: same chunk_digest queried 1k times → same result.
    - `prop_dedup_tenant_isolation`: 1k queries different tenants; same chunk_digest; assert independent results (no cross-tenant leak).
    - `prop_find_missing_batch_chunked`: input 1k digests; assert chunked 250-per-query; result equivalent to 1k independent lookups.
-   - `prop_dedup_consistency`: insert chunk twice with same `(tenant_id, chunk_digest)` → UNIQUE constraint rejects duplicate.
+   - `prop_dedup_consistency`: insert same `(tenant_id, chunk_digest)` row N times → INSERT ON CONFLICT increments refcount to N; PK enforces 1:1 (tenant_id, chunk_digest) → chunk_body. (Lote 10.7bis P0-1 fix: original spec incorrectly framed as "UNIQUE rejects duplicate"; correct dedup semantic é refcount increment.)
    - `prop_cross_tenant_blocked`: attempt cross-tenant query → `Err(CrossTenantBlocked)` always.
 9. **Chaos suite** (≥ 6 STANDARD lane; SOTA aim ≥ 8):
    - 1. D1 index missing (drop test) → fallback to scan; alert SEV-2.
@@ -214,7 +216,7 @@ Indexed lookup library + REAPI handler; STANDARD lane.
 
 - ❌ Cross-tenant dedup query path (CTRL-ISO-005 violation).
 - ❌ Skip TenantCtx (multi-tenant injection vector).
-- ❌ Plain `manifest_chunks` SELECT without `tenant_id` filter.
+- ❌ Plain `chunks` SELECT without `tenant_id` filter (custom CI grep gate enforces).
 - ❌ D1 batch > 250 rows per query (Lote 10.5bis lesson).
 - ❌ Skip property test for tenant isolation.
 - ❌ Cache dedup results em local memory without TTL (stale read on chunk evict).
@@ -225,24 +227,28 @@ Indexed lookup library + REAPI handler; STANDARD lane.
 ```gherkin
 Feature: Dedup index + FindMissingBlobs
 
-  Scenario: chunk_exists hit (chunk already in tenant)
-    Given manifest_chunks contains row (tenant=T, chunk_digest=D, blob_digest=B)
+  Scenario: chunk_exists hit (chunk already in tenant; uses `chunks` table PK)
+    Given chunks table contains row (tenant=T, chunk_digest=D, refcount≥1, deleted_at IS NULL)
     When chunk_exists(T, D) called
-    Then returns Ok(true) em ≤ 2ms p99
+    Then SELECT 1 FROM chunks WHERE tenant_id=T AND chunk_digest=D AND deleted_at IS NULL LIMIT 1
+    Then returns Ok(true) em ≤ 2ms p99 (PK lookup O(log N))
     And metric corelink.dedup.lookup_total{result=hit} += 1
 
-  Scenario: chunk_exists miss (chunk not in tenant)
-    Given manifest_chunks does NOT contain (tenant=T, chunk_digest=D)
+  Scenario: chunk_exists miss (chunk not in tenant; OR soft-deleted in grace)
+    Given chunks does NOT contain (tenant=T, chunk_digest=D) OR row exists with deleted_at IS NOT NULL (S-06 grace)
     When chunk_exists(T, D) called
     Then returns Ok(false)
+    Then client must re-upload (acts as undelete via INSERT ON CONFLICT incrementing refcount)
     And metric corelink.dedup.lookup_total{result=miss} += 1
 
-  Scenario: find_missing returns absent-only
-    Given tenant T has chunks [D1, D2, D3] em manifest_chunks
+  Scenario: find_missing returns absent-only (uses `chunks` table)
+    Given tenant T has chunks [D1, D2, D3] em chunks table (refcount≥1, deleted_at IS NULL each)
     Given client requests find_missing(T, [D1, D4, D5])
     When handler invoked
-    Then returns Ok([D4, D5])  // D1 present (omitted); D4, D5 absent
-    And bytes_saved_total += sum(D1 size_bytes)
+    Then SELECT chunk_digest FROM chunks WHERE tenant_id=T AND chunk_digest IN (D1,D4,D5) AND deleted_at IS NULL
+    Then result set = [D1] (present subset)
+    Then returns Ok([D4, D5])  // set difference: input \ present
+    And bytes_saved_total += sum(D1 size_bytes for refcount-fresh chunks)
 
   Scenario: find_missing chunked at 250
     Given client requests find_missing(T, 1000 digests)
@@ -257,12 +263,13 @@ Feature: Dedup index + FindMissingBlobs
     Then query uses T1 (NOT T2 from request body)
     And tenant T2's chunks invisible to T1's query
 
-  Scenario: Duplicate INSERT rejected by UNIQUE constraint
-    Given (tenant=T, chunk_digest=D) already in manifest_chunks
-    When second INSERT attempts (tenant=T, chunk_digest=D, blob_digest=B2)
-    Then UNIQUE constraint violation; sqlx returns 409 equivalent
-    And audit emit corelink.dedup.unique_constraint_violation
-    And INV-DEDUP-CONSISTENCY preserved
+  Scenario: Duplicate chunk INSERT increments refcount (NOT rejected; correct dedup semantic)
+    Given (tenant=T, chunk_digest=D) already em chunks table com refcount=1
+    When second blob B2 references chunk D via SplitBlob (S-05); INSERT ON CONFLICT into chunks
+    Then PK constraint hit; ON CONFLICT increments refcount to 2 (sqlx UPSERT semantic)
+    Then INV-DEDUP-CONSISTENCY preserved (chunk_body 1:1 cripto-grade via BLAKE3; refcount = N referencing manifests)
+    Then NO audit anomaly (legitimate dedup hit; expected behavior)
+    Note: this scenario clarifies why UNIQUE INDEX em manifest_chunks (original Lote 10.7 spec) was wrong — manifest_chunks INSERT CAN have multiple rows per chunk_digest (one per blob); chunks INSERT ON CONFLICT increments refcount instead.
 
   Scenario: FindMissingBlobs REAPI v2 conformance
     Given REAPI v2 client sends FindMissingBlobsRequest with 100 digests
@@ -298,7 +305,7 @@ Feature: Dedup index + FindMissingBlobs
 - [ ] **10.s07.001.6** REAPI v2 FindMissingBlobs conformance test green (against bazelbuild/remote-apis test fixtures).
 - [ ] **10.s07.001.7** CTRL-ISO-005 enforcement: 100 cross-tenant attack attempts blocked; audit emit verified.
 - [ ] **10.s07.001.8** Métricas (6) emitted; cross_tenant_blocked_total alerts SEV-2 if > 0.
-- [ ] **10.s07.001.9** Cargo-audit + cargo-deny + clippy clean; custom clippy lint forbids manifest_chunks SELECT sem tenant_id.
+- [ ] **10.s07.001.9** Cargo-audit + cargo-deny + clippy clean; **CI grep gate** (Lote 10.7bis P1-2 fix) forbids `chunks` SELECT sem tenant_id (replaces infeasible clippy::disallowed_method claim).
 - [ ] **10.s07.001.10** Cost regression gate: per-lookup ≤ $0.0000003 (D1 read share).
 - [ ] **10.s07.001.11** Dedup ratio measurable: ≥ 2.5× sustained 7d staging em ≥ 3 tenants Docker workload.
 
@@ -340,7 +347,7 @@ Feature: Dedup index + FindMissingBlobs
 - 14.s07.001.6: Métricas (6 §6.1.7 enumerated).
 - 14.s07.001.7: Memory bounded ≤ 100 KiB stack per request.
 - 14.s07.001.8: Cost regression gate per-lookup ≤ $0.0000003; per-find_missing-batch ≤ $0.000005.
-- 14.s07.001.9: Custom clippy lint enforces tenant_id em manifest_chunks queries (CI fail without).
+- 14.s07.001.9: CI grep gate (Lote 10.7bis P1-2) enforces tenant_id em `chunks` queries (CI fail without).
 - 14.s07.001.10: D1 batch ≤ 250 row constraint enforced em find_missing (Lote 10.5bis lesson).
 
 ## 15. Chaos Experiments (8 — STANDARD floor 6 + 2 margin)
@@ -370,7 +377,7 @@ STANDARD lane — sprint review (5 sign-offs); not full HIGH_RISK PRR.
 
 ## 18. Dependencies
 
-- Hard: S-05 SEALED (manifest_chunks table base); S-03 WI-S03-003 SEALED (TenantCtx middleware).
+- Hard: S-05 SEALED (`chunks` table + `manifest_chunks` table base); S-03 WI-S03-003 SEALED (TenantCtx middleware).
 - Soft: WI-S07-005 (dashboard consumes metrics; can stub interim).
 
 ## 19. Effort PERT: ~21h. ## 20. Time-boxing: 28h hard limit.
@@ -399,7 +406,7 @@ STANDARD lane — sprint review (5 sign-offs); not full HIGH_RISK PRR.
 
 ## 25. Rollback / Recovery
 
-- Rollback: drop INDEX `idx_manifest_chunks_tenant_digest` (D1 ALTER ~5min downtime per shard); fallback to full scan (slower but correct).
+- Rollback: NO new index introduced em Lote 10.7bis P0-1 fix; uses `chunks` table PK from S-05. Rollback = revert handler code (FindMissingBlobs); dedup lookup falls back to existing S-05 patterns (chunks PK + manifest_chunks reverse lookup).
 - Recovery: re-build index from `manifest_chunks` (~5min @ 10M rows); no data loss.
 - RTO ≤ 15min; RPO 0 (index reproducible from base table).
 
@@ -452,7 +459,8 @@ D+0 design (Architect); D+2 AppSec (CTRL-ISO-005); D+5 code review (Engineer pee
 
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
-| 1.0.0 | 2026-04-25 | Gustavo (Lote 10.7) | Criação WI-S07-001; SOTA pós-Lote 10.6-tris lessons absorbed: TenantCtx-only; D1 batch ≤250; CHECK inline (manifest_chunks já existe S-05); custom clippy lint para tenant_id enforcement; CTRL-ISO-005 cross-tenant gate default false. |
+| 1.0.0 | 2026-04-25 | Gustavo (Lote 10.7) | Criação WI-S07-001; SOTA pós-Lote 10.6-tris lessons absorbed: TenantCtx-only; D1 batch ≤250; CHECK inline; custom clippy lint para tenant_id enforcement; CTRL-ISO-005 cross-tenant gate default false. **DEFEITO INTRODUZIDO**: spec proposed UNIQUE INDEX em `manifest_chunks(tenant_id, chunk_digest)` — incorrect; would break dedup since same chunk_digest legitimately appears em multiple blobs' manifests. |
+| 1.1.0 | 2026-04-25 | Gustavo (Lote 10.7bis Agent R4 P0-1 + Sonnet R5 P0-1 fix) | **P0-1 corrected**: dedup table is `chunks` (S-05 WI-S05-004 §6.1; PK `(tenant_id, chunk_digest) + refcount` purpose-built); UNIQUE INDEX em `manifest_chunks` removed (would break dedup). Migration cancelled (NO new schema needed). `chunk_exists`/`find_missing` queries `chunks` table com `deleted_at IS NULL` predicate (S-06 grace window respect). Duplicate INSERT semantic corrected: PK ON CONFLICT increments refcount (não rejects). **P1-2 corrected**: clippy::disallowed_method claim replaced com CI grep gate (`! grep -rn -E 'FROM\s+chunks\s+WHERE\s+(?!.*tenant_id)' src/ tests/`) — clippy::disallowed_method is path-based not content-based; infeasible para SQL string inspection. Cross-WI consistency: usa same `chunks` table que S-05 + S-06 GC. |
 
 ## 32. Anti-patterns evitados
 
