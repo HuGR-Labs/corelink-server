@@ -155,6 +155,9 @@ WHITELIST_IDS = {
     "INV-LIFECYCLE-001",  # framework-internal example
     "INV-GC",  # plural-form mention
     "INV-SUPPLY",  # plural-form mention em §4.3 ("INV-SUPPLY-*")
+    "INV-CAS-SIDE-CHANNEL",  # short-form mention em S-02 §6 (full ID INV-CAS-SIDE-CHANNEL-INDISTINGUISHABLE)
+    # Patterns referenciados forward-looking em S-02 (definidos em resilience_patterns.md mas missing entry-anchor)
+    "PAT-CIRCUIT-BREAKER-001",
     "FM-XXX",
     "ADR-XXXX",
     "ADR-YYYY",
