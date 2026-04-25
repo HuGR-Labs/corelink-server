@@ -4,7 +4,7 @@ type: "work_item"
 doc_status: "DRAFT"
 work_status: "READY"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-25"
 updated: "2026-04-25"
 lane: "HIGH_RISK"
@@ -113,18 +113,44 @@ API Handler; HIGH_RISK; FF-HR-002 + FF-HR-005.
 
 1. **gRPC `BatchUpdateBlobs` handler** em `crates/corelink-worker/src/reapi/cas_write.rs`:
    - Request: `[Request { digest, data }]` (small blobs inline).
-   - Per-request: auth → VerifiedBody → R2Writer → BlobMetaStore → audit.
    - Response: `[Response { digest, status }]` (per-blob outcome).
+   - Per-blob orchestration **strictly ordered** (vide §6.1.7 dual-write reconciliation contract):
+     1. Auth (PAT scope `cache:w`) — fast reject pre-storage.
+     2. `VerifiedBody::new(claimed_digest, body)` — BLAKE3 verify; reject pre-R2.
+     3. **R2 PUT** com `If-None-Match: *` (blob físico primeiro).
+     4. **D1 batch atomic** via `db.batch([INSERT blob_meta, INSERT audit_outbox])` — index + audit em mesma transação.
+     5. Response success retornada ao cliente; **audit emission é fire-and-forget pós-response** (drained por background worker; vide §6.1.6).
+
 2. **`ByteStream::Write` handler**:
-   - Streaming write up to 5 MiB; size guard.
-   - Single blob per stream.
-3. **Auth middleware** integration (S-03 stub):
+   - Streaming write up to 5 MiB; size guard byte-counting (não Content-Length trust).
+   - Single blob per stream; mesmo pipeline orchestration §6.1.1 acima.
+
+3. **Auth middleware** integration (S-03 stub via `auth_stub_contract.md` Lote 9.5b):
    - Reads `Authorization: Bearer <PAT>`.
    - Returns 401 se invalid; 403 se scope insufficient.
-   - Injects TenantCtx.
+   - Injects `TenantCtx { principal_id, tenant_id, scopes: PatScopes }` (scope-set, não single string — futureproof S-03 fine-grained `cache:w:cas`).
+
 4. **HTTP REST surface** equivalent `POST /v1/cas/<digest>` (multipart form; small blobs).
-5. **Métricas + audit** per request.
-6. **error_taxonomy mapping** completa para todos error variants.
+
+5. **Métricas + structured logs** per request (audit é separado §6.1.6).
+
+6. **`audit_outbox` table + drain worker** (Outbox Pattern):
+   - Schema (criado por WI-S01-004): `audit_outbox(id, tenant_id, digest, request_id, event_type, emitted_at NULL, payload_json)`.
+   - Drain worker: scheduled CF Cron `*/30 * * * * *` (30s); SELECT outbox rows com `emitted_at IS NULL` LIMIT 100; emit a S-09 audit chain; UPDATE `emitted_at = now()`. **At-least-once**: re-emit possível em retry; consumer dedup por `request_id`.
+   - Métrica `corelink.cas.audit_outbox.lag_seconds` (gauge); alert se > 60s.
+
+7. **Dual-write reconciliation contract (R2 ↔ D1)** — resolve a armadilha documentada em `storage_semantics_matrix.md §3.2` (orphan R2 blob se Worker crash entre R2 PUT e D1 INSERT):
+   - **Orphan classes definidas**:
+     - **R2-only orphan**: R2 PUT 200 OK + D1 batch falhou/Worker crashed. Mitigação: WI-S01-005 handler tenta `R2.delete` best-effort **somente se** R2 PUT retornou 200 (não 412 — 412 = idempotent dup, não nosso). Se delete também falha → relegate ao GC sweep S-06.
+     - **D1-only orphan** (impossível por design): D1 batch só executa após R2 PUT success; ordering é R2-first.
+     - **audit_outbox orphan**: row em outbox sem `emitted_at` por > 5 min. Drain worker re-attempts; alert SEV-2 se backlog > 100.
+   - **Reconciliation cadence**:
+     - **Fast path** (in-handler): R2 best-effort delete em D1-batch failure (RTO ~10ms).
+     - **Slow path** (S-06 GC sweep, forward dependency): scheduled job (1×/dia) lista R2 prefix; LEFT JOIN com D1 `blob_meta`; órfãos > 5min de idade → ou ingestão de volta (cria blob_meta retroativamente; **rejeitado** — viola idempotency invariant) ou DELETE em R2 (recupera storage). Decisão: DELETE.
+   - **Contract referência**: ADR-0027 (forward; whitelisted) — "CoreLink dual-write reconciliation: R2-first + audit outbox + GC sweep".
+   - **Não-objetivo**: full distributed transaction (2PC sobre R2/D1) — Cloudflare não oferece coordinator; trade-off aceito = transient inconsistency window ≤ 24h até GC sweep, bounded por monitoring.
+
+8. **error_taxonomy mapping** completa para todos error variants (§23).
 
 ### 6.2 Out-of-scope
 
@@ -145,15 +171,16 @@ API Handler; HIGH_RISK; FF-HR-002 + FF-HR-005.
 ```gherkin
 Feature: BatchUpdateBlobs handler
 
-  Scenario: Happy path single blob
+  Scenario: Happy path single blob (Outbox Pattern orchestration)
     Given Tenant A authenticated with scope "cache:w"
     And BatchUpdateBlobsRequest with 1 blob (digest=D_X, data=5KB hello)
     When handler processes request
     Then VerifiedBody::new succeeds
-    And R2Writer.put called with correct path
-    And BlobMetaStore.insert returns Inserted
-    And response status[0] = OK
-    And audit event "corelink.cas.put_completed" emitted
+    And R2Writer.put called with correct path AND If-None-Match: * (returns 200)
+    And db.batch([INSERT blob_meta, INSERT audit_outbox]) executes atomically (returns 2 rows affected)
+    And response status[0] = OK returned to client (T+90ms p50)
+    And eventually drain worker emits "corelink.cas.put_completed" to S-09 audit chain (T+30s p50, T+60s p99)
+    And outbox row UPDATE emitted_at = now()
 
   Scenario: Hash mismatch (cache poisoning attempt)
     Given Request { digest=D_X, data=different_content }
@@ -171,21 +198,48 @@ Feature: BatchUpdateBlobs handler
     And HTTP 403
     And error_code COR_AUTH_SCOPE_INSUFFICIENT
 
-  Scenario: Idempotent retry
-    Given digest D_X already persisted
+  Scenario: Idempotent retry (R2 owns; D1 deduplicates)
+    Given digest D_X already persisted (R2 200 prior write; D1 row present)
     When BatchUpdateBlobs same request retried
-    Then response status[0] = OK (idempotent)
-    And R2 If-None-Match returns 412 → mapped to Ok
-    And BlobMetaStore.insert returns AlreadyExists → mapped to Ok
-    And no duplicate audit event (dedup via request_id)
+    Then R2 PUT If-None-Match returns 412 → handler treats as idempotent (NOT our blob; do NOT delete)
+    And handler skips R2 delete on rollback path (critical: 412 != "we created it")
+    And db.batch attempts INSERT OR IGNORE blob_meta + INSERT audit_outbox(retry_dedup=true)
+    And blob_meta INSERT is no-op (already exists)
+    And outbox INSERT skipped if request_id already in outbox (idempotent ingestion)
+    And response status[0] = OK
+    And NO duplicate audit event downstream (dedup via request_id at consumer)
+
+  Scenario: D1 batch fails after R2 PUT 200 (orphan reconciliation fast-path)
+    Given R2 PUT returned 200 (we created blob)
+    When db.batch fails (D1 timeout / network error)
+    Then handler invokes R2.delete(path) best-effort (max 1 retry; ≤ 100ms)
+    And response status[0] = ABORTED (gRPC code 10) com message "transient_storage_failure"
+    And HTTP 503 com Retry-After: 1
+    And metric corelink.cas.dual_write_rollback_total{result="r2_delete_ok|r2_delete_failed"} incremented
+    And if R2 delete also fails → orphan logged + GC sweep S-06 will reconcile (slow path)
+
+  Scenario: D1 batch fails after R2 PUT 412 (no-op rollback)
+    Given R2 PUT returned 412 (blob already existed; we did NOT create)
+    When db.batch fails (transient)
+    Then handler does NOT call R2.delete (would delete legitimate blob owned by prior writer)
+    And response status[0] = ABORTED (transient)
+    And metric corelink.cas.dual_write_rollback_total{result="412_skip_delete"} incremented
 
   Scenario: Size limit exceeded
     Given Request com blob de 6 MiB
     When handler reads body
     Then 5 MiB limit hit; abort
-    And response code 11 (OUT_OF_RANGE) → HTTP 413
+    And response code 8 (RESOURCE_EXHAUSTED) → HTTP 413
     And error_code COR_CAS_BLOB_TOO_LARGE
     And next_action hint "Use multipart upload (S-05)"
+    (gRPC canonical mapping verified vs bazelbuild/remote-apis @ v2.13.0)
+
+  Scenario: Audit outbox drain lag alert
+    Given audit_outbox table accumulates 100 rows com emitted_at IS NULL
+    When drain worker scheduled run completes
+    Then if outbox lag > 60s p99 → metric corelink.cas.audit_outbox.lag_seconds emitted
+    And alert SEV-2 fires if sustained > 5min
+    And runbook RB-FM-OUTBOX-DRAIN engaged
 
   Scenario: REAPI v2 conformance — BatchUpdateBlobs proto
     Given bazelbuild/remote-apis test suite
@@ -204,17 +258,39 @@ Feature: BatchUpdateBlobs handler
 
 Bazel cliente envia 50 blobs em batch; se 1 hash mismatch fail-fast all → cliente retry todos 50 → wasteful. Per-blob result permite cliente retry only failed → graceful degradation.
 
-### 9.2 Why audit emission é synchronous (fail-closed)
+### 9.2 Why Outbox Pattern para audit (não synchronous emit no hot path)
 
-Async audit emission permitiria write succeed mas audit fail silent → compliance gap. Synchronous: if audit fails, write é rolled back. Trade-off: latency overhead ~10-20ms per request; aceitável em SLO budget (1s p99 50 blobs).
+Synchronous audit emit em hot path tem dois problemas:
+1. **Latency tax**: emit RPC para S-09 audit chain ~10-30ms p99 → afeta SLO p99 ≤ 1s budget.
+2. **Failure mode contraditório**: se emit falha após D1 INSERT, "rollback D1 row" requer DELETE — viola INV-CAS-IMMUTABILITY (blob_meta é append-only conceptualmente; DELETE é GC-only após retention window).
 
-### 9.3 Why streaming size guard (não Content-Length trust)
+**Outbox Pattern resolve**:
+- Audit event escrito em `audit_outbox` table **dentro da mesma D1 transaction** que `blob_meta` INSERT (atômico via `db.batch([...])`).
+- Background drain worker emit ao S-09 chain com at-least-once guarantee; consumer dedup por `request_id`.
+- Failure modes:
+  - D1 batch falha → R2 best-effort delete (vide §6.1.7); cliente recebe ABORTED; sem partial state em D1.
+  - Drain worker falha persistente → outbox lag métrica + alert SEV-2 + runbook RB-FM-OUTBOX-DRAIN; eventual consistency garantida.
+- Trade-off aceito: window de visibilidade audit ≤ 60s p99 (drain cadence 30s + emit ~10s); SOC 2 compliance OK (audit é durable em D1 desde T+0; exposure window é só "delay to S-09 chain").
 
-Atacante pode mentir Content-Length. Stream guard count bytes durante read; abort em 5 MiB threshold antes de OOM.
+### 9.3 Why R2-first em ordering (não D1-first)
 
-### 9.4 ADR potencial?
+D1-first criaria index sem blob físico → read-side 404 + AuthZ confusion + cliente cache invalidation paradox. R2-first garante que se index existe, blob existe; se blob existe sem index, GC sweep limpa silently. Asymmetric reconciliation é mais simples + correto.
 
-Não. Patterns reused.
+### 9.4 Why streaming size guard (não Content-Length trust)
+
+Atacante pode mentir Content-Length. Stream guard count bytes durante read; abort em 5 MiB threshold antes de OOM. Memory bounded: ≤ 5 MiB per stream + buffer overhead = ≤ 8 MiB peak Worker.
+
+### 9.5 Why bounded concurrency em batch (16 concurrent puts)
+
+Worker CPU 50ms/request budget. Batch 50 blobs sequential = 50 × 30ms = 1.5s (excede). Parallel via `try_join_all` sem limit = R2 round-trip dominates + Worker subrequest count limit (50). Bounded `buffer_unordered(16)` = balance: ~3-4 parallel rounds × 30ms = 90-120ms total. Tunable via env var.
+
+### 9.6 Why gRPC status code `RESOURCE_EXHAUSTED` (8) — não `OUT_OF_RANGE` (11)
+
+REAPI v2 conformance + gRPC canonical mapping: `OUT_OF_RANGE` é semantica read-past-EOF; `RESOURCE_EXHAUSTED` é "operation rejected because system resource exhausted" (size limit fits). Verificado contra `bazelbuild/remote-apis @ v2.13.0` test suite. HTTP equivalent 413 Payload Too Large.
+
+### 9.7 ADR potencial?
+
+**Sim — ADR-0027**: "Dual-write reconciliation contract (R2-first + audit outbox + GC sweep)" — documenta trade-off vs full 2PC + reconciliation cadence + orphan classes + monitoring. Whitelisted em validate_references.py até materializar em S-01 implementation.
 
 ## 10. Completeness Criteria SOTA
 
@@ -250,20 +326,38 @@ Não. Patterns reused.
 | gRPC handler | `crates/corelink-worker/src/reapi/cas_write.rs` | Rust |
 | HTTP REST handler | `crates/corelink-worker/src/http/cas_write.rs` | Rust |
 | Auth middleware integration | `crates/corelink-worker/src/middleware/auth.rs` | Rust |
+| Outbox drain worker | `crates/corelink-worker/src/scheduled/outbox_drain.rs` | Rust (CF Cron) |
 | REAPI conformance test | `tests/reapi_conformance/cas_write.rs` | Rust test |
 | Integration test E2E | `tests/integration_cas_write.rs` | Rust test |
+| Chaos suite (orphan reconciliation) | `tests/chaos/dual_write.rs` | Rust |
+| ADR-0027 | `specs/02_governance/decisions/ADR-0027-dual-write-reconciliation.md` | Markdown |
+| Runbook RB-FM-OUTBOX-DRAIN | `specs/05_runbooks/RB-FM-OUTBOX-DRAIN.md` | Markdown |
 
 ## 14. Quality Standards SOTA
 
-Standard 14.5.1..10 (zero unsafe, doc, coverage 90%, perf p99 ≤ 1s, SAST clean, métricas RED, runbook RB-FM-254, breaking semver, memory bounded, cost regression).
+- **14.5.1** Zero `unsafe`; zero `unwrap` em src/.
+- **14.5.2** rustdoc 100% public API + 4 examples (single blob, batch, idempotent retry, error mapping).
+- **14.5.3** Test coverage ≥ 90% (`cargo tarpaulin`); critical handler paths 95%+.
+- **14.5.4** Latency: p99 ≤ 1s para 50 small blobs (warm); p99 cold ≤ 1.5s; bounded concurrency 16 enforced.
+- **14.5.5** SAST: cargo-audit + cargo-deny + clippy `-D warnings` clean; cargo-fuzz 1h corpus em proto deserializer.
+- **14.5.6** Métricas RED + outbox lag gauge + dual-write rollback counter.
+- **14.5.7** Runbooks: RB-FM-403 (size limit storm), RB-FM-OUTBOX-DRAIN, RB-FM-254 (R2 5xx storm).
+- **14.5.8** Breaking changes em REAPI proto = sprint-spec ADR + client migration plan.
+- **14.5.9** Memory bounded: ≤ 8 MiB peak Worker (5 MiB body + buffer overhead).
+- **14.5.10** Cost regression gate em CI: per-op cost ≤ $0.000010; weekly bench panel.
 
 ## 15. Chaos Experiments
 
-1. Auth stub failure → graceful 401.
-2. R2 5xx storm → exponential backoff.
-3. Audit emit failure → write rolled back.
-4. Concurrent 100 same-digest different-tenants → all succeed (paths distinct).
-5. Concurrent 100 same-digest same-tenant different-body → only first succeeds; rest see 409.
+1. **Auth stub failure** → graceful 401; verify no R2/D1 side-effects (fast-fail). Hypothesis: handler short-circuits before storage.
+2. **R2 5xx storm** (50% PUT failure rate sustained 5min) → verify exponential backoff (PAT-RETRY-IDEMPOTENT-001) + bounded retries (max 3) + circuit breaker open after 50% sustained 1min. Hypothesis: handler does not pile up Worker subrequest queue.
+3. **D1 batch timeout (after R2 PUT 200)** → verify R2 best-effort delete fires; metric `corelink.cas.dual_write_rollback_total{result="r2_delete_ok"}` incremented; orphan blob if delete also fails → GC S-06 path engaged within 5 min.
+4. **D1 batch timeout (after R2 PUT 412)** → verify R2 delete is **NOT** called (would delete legitimate blob); metric `result="412_skip_delete"`.
+5. **audit_outbox drain worker offline 10min** → outbox accumulates; lag alert SEV-2; verify durability (no lost events; consumer dedup on resume).
+6. **Concurrent 100 same-digest different-tenants** → all 100 succeed (paths distinct via tenant_prefix HMAC).
+7. **Concurrent 100 same-digest same-tenant different-body** → first writer wins R2 200; rest see VerifiedBody mismatch (digest != computed); 1 success + 99 ABORTED-codes. INV-CAS-IDEMPOTENCY enforced.
+8. **Worker isolate cold start during request** → verify p99 cold ≤ 500ms (vs 200ms warm); cold-start metric `corelink.worker.cold_start_total` emitted.
+9. **R2 region failover** (wnam offline) → tenant pinned to wnam fails 503; cross-region degradation behavior documented em SLO degradation matrix; S-14 forward implements failover.
+10. **Worker subrequest budget exhaustion** (51+ R2 calls em batch) → verify bounded concurrency 16 enforces budget; rest queue + sequential.
 
 ## 16. PRR
 
@@ -312,7 +406,31 @@ O: 24h, M: 28.5h, P: 50h → PERT 32h.
 
 ## 22. Cost Analysis
 
-Per-request cost: auth check + D1 query + R2 PutObject + audit emit ~= $0.0002 per request. TCO 12m com 10M req/dia: ~$22k/yr.
+**Per-request breakdown** (warm path, single 5 KiB blob):
+
+| Component | Cost | Note |
+|---|---|---|
+| Worker invocation | $0.50/M requests | CF Workers paid plan |
+| R2 PUT | $4.50/M Class A ops | dominate fixed cost |
+| D1 batch (2 INSERTs) | $1/M reads (estimate; D1 prices per op) | atomic; counted as 1 batch |
+| Audit outbox INSERT | included em D1 batch | zero marginal |
+| Drain worker emit (S-09) | $0.50/M outbox rows × 0.05 amortized | scheduled; small |
+| Subrequest count | 2 (R2 + D1) of 50 budget | well within |
+
+Per-request total: **~$0.000007** (7 µ$/req).
+
+**TCO 12m projection**:
+- Workload: 10M req/dia × 365 = 3.65 B req/yr.
+- Annual: 3.65 B × $0.000007 = **~$25.5k/yr**.
+- Storage (R2): assume 30% writes new content avg 50 KB → 50 TB/yr → R2 storage $0.015/GB-month × 50 TB × 12 = **$9k/yr**.
+- D1 storage (blob_meta + audit_outbox): ~30 GB/yr → trivial < $100/yr.
+- **Total estimated**: $35-40k/yr (em 10M req/dia workload).
+
+**Cost regression gate** (§14.10): per-request cost ≤ $0.000010 (43% headroom); CI bench fails se exceder. Métrica `corelink.cas.cost_per_op_usd` emitted weekly.
+
+**Comparison vs alternatives**:
+- BuildBuddy hosted: ~$50/build × 1000 builds/dia = $1.5M/yr (CoreLink CapEx model wins ≥ 50× para enterprise tier).
+- Self-hosted Bazel remote: ~$20k/yr infra + 0.5 FTE ops ($75k) = $95k/yr (CoreLink wins 2-3×).
 
 ## 23. API Contract
 
@@ -330,21 +448,50 @@ Hot rollback via WASM previous version.
 
 ## 26. Security & Privacy
 
-STRIDE + LINDDUN per S-01 sprint contract §12.
+**STRIDE delta** (vs S-01 sprint contract §12 baseline):
+
+- **Spoofing**: PAT scope `cache:w` enforcement em auth middleware (5-layer defense Layer 1); request com PAT tampered → 401 antes de R2/D1 touch. TenantCtx imutável construído por `auth.rs` com TDK-backed tenant_id resolution; impossível forge downstream.
+- **Tampering**: VerifiedBody envelope (WI-S01-002) garante body bytes match claimed_digest; adversary modifying body durante in-flight → digest mismatch detected pre-R2 PUT. R2 If-None-Match: * previne overwrite de blob existente; idempotent write semantics.
+- **Repudiation**: audit_outbox row criado **dentro da mesma D1 transaction** que blob_meta INSERT (impossível write succeed sem audit row). Drain worker emit ao S-09 chain (forward) com chain hash integrity. CloudEvents 1.0 spec format; `request_id` propagado client → handler → outbox → S-09 chain → SIEM.
+- **Information disclosure**: claimed_digest, computed_digest, request_id em audit; **body bytes nunca em audit/logs/error messages** — INV-NO-BODY-IN-LOGS aplicada via clippy custom lint + grep CI gate. PAT plaintext nunca emitted (S-09 redact macro `redact_pat!` em error paths).
+- **DoS**: per-PAT rate limit S-08 forward (cap 100 req/s); size limit 5 MiB streaming guard previne memory exhaustion; bounded concurrency 16 em batch previne Worker subrequest budget exhaustion (50 limit).
+- **Elevation of privilege**: PAT scope é DB-fonte-de-verdade (não inferred from prefix); cliente não pode escalar `cache:r` → `cache:w` mudando PAT format.
+
+**LINDDUN delta**:
+
+- **Linkability**: tenant_id em audit é UUID v7 (pseudonymous); cross-tenant linkage impossível sem D1 access (privileged).
+- **Identifiability**: principal_id (PAT owner) em audit é PII; redact em external SIEM forwarding via S-09 PII filter; full-fidelity em internal audit chain (hashed at-rest).
+- **Non-repudiation**: append-only audit chain (S-09); blob_meta + audit em mesma D1 transaction garante consistency.
+- **Detectability**: timing constant em error paths (vide WI-S02-004 forward); cliente não distingue "blob exists em outro tenant" vs "blob não existe".
+- **Disclosure of information**: response payload contém apenas digest + status; nunca body content em error response.
+- **Unawareness**: SLA documenta "audit eventual visibility ≤ 60s p99 via outbox pattern" — cliente não pode assumir audit emit é synchronous.
+- **Non-compliance**: outbox row durability garante SOC 2 audit trail completeness; LGPD Art. 38 (registro de operações) satisfied via at-least-once + dedup.
 
 ## 27. Knowledge Transfer
 
-Tech talk: "REAPI v2 + 5-Layer Defense in Action".
+- **Tech talk** (1h): "REAPI v2 + Outbox Pattern + 5-Layer Defense in Action" — internal team + external candidates onboarding.
+- **Doc** `docs/internal/reapi-write-path.md` — sequence diagram cliente → Worker → R2 → D1 batch → outbox → drain worker → S-09 chain.
+- **Runbook RB-FM-OUTBOX-DRAIN** — outbox lag spike triage (consumer offline, D1 query slow, S-09 chain ingestion failure, drain worker config drift).
+- **Doc** `docs/internal/dual-write-reconciliation.md` — orphan classes, GC interaction, monitoring playbook.
+- **Workshop** (2h): com Architect + AppSec + SRE Lead pós-merge — adversarial walkthrough (D1 partition, R2 partial-write, drain worker failure modes).
+- **ADR-0027** — formal decision record para reuse em S-04 (AC handler), S-05 (multipart), S-06 (GC reconciliation reference).
 
-## 28. Risk Register
+## 28. Risk Register (6-col)
 
-| ID | R | P | D | I | E | Res | Mitigação |
+| ID | Risco | Prob | Det | Impacto | Exposure | Residual | Mitigação |
 |---|---|---|---|---|---|---|---|
-| R-001 | TenantCtx leak via shared mutable state | L | M | CRITICAL | M | LOW | Immutable struct + per-request creation |
-| R-002 | Size limit bypass via Content-Length lie | M | M | HIGH (FM-403) | M | LOW | Streaming byte counter; abort early |
-| R-003 | REAPI conformance regression | M | L | MEDIUM | L | LOW | Conformance suite CI per PR |
-| R-004 | Audit emit failure silent | L | M | HIGH | L | LOW | Fail-closed write rollback; SEV-2 alert |
-| R-005 | Cost regression > 10% | M | L | MEDIUM | L | LOW | §14.10 |
+| R-001 | TenantCtx leak via shared mutable state | L | M | CRITICAL | M | LOW | Immutable struct + per-request construction; cargo-audit weekly |
+| R-002 | Size limit bypass via Content-Length lie (FM-403 amplification) | M | M | HIGH | M | LOW | Streaming byte counter; abort em 5 MiB; fuzz test |
+| R-003 | REAPI conformance regression em proto upgrade | M | L | MEDIUM | L | LOW | bazelbuild/remote-apis pinned @ v2.13.0; CI per PR |
+| R-004 | R2-only orphan blob (Worker crash entre R2 PUT 200 e D1 batch) | M | M | MEDIUM | M | LOW | R2 best-effort delete + GC sweep S-06 (≤ 24h); cost monitoring |
+| R-005 | audit_outbox drain worker offline > 1h | L | M | HIGH | L | LOW | Outbox durability D1; lag alert SEV-2; runbook; at-least-once |
+| R-006 | R2 PUT 412 + D1 fail → wrong rollback (delete legitimate blob) | L | H | CRITICAL | M | LOW | Strict guard: only delete em 200, never em 412; chaos test §15.4 |
+| R-007 | Bounded concurrency 16 inadequate sob load (Worker subrequest 50 budget) | M | M | MEDIUM | M | LOW | Tunable env var; load test em CI; cost regression gate |
+| R-008 | gRPC status code drift (REAPI v2 spec change) | L | L | LOW | L | LOW | Conformance test; quarterly review |
+| R-009 | Drain worker double-emit em retry (consumer dedup miss) | L | M | MEDIUM | L | LOW | At-least-once contract + request_id dedup em S-09 consumer |
+| R-010 | Cost regression > 10% per-op | M | L | MEDIUM | L | LOW | §14.10 cost gate; weekly bench |
+| R-011 | D1 batch latency drift (> 50ms p99) impacta SLO | M | M | MEDIUM | M | LOW | D1 metric panel; investigate query plan; reindex policy |
+| R-012 | Audit emit lag > 60s p99 sustained → SOC 2 visibility gap | L | M | HIGH | L | LOW | SEV-2 alert + drain worker auto-scaling (S-13 forward) |
 
 ## 29. Review Checkpoints
 
@@ -352,13 +499,30 @@ Tech talk: "REAPI v2 + 5-Layer Defense in Action".
 2. Code (D+3): peer + Security.
 3. Adversarial (pre-merge): cross-tenant property + REAPI conformance.
 
-## 30. Sign-off (HIGH_RISK 10-12)
+## 30. Sign-off (HIGH_RISK 13)
 
-Standard.
+| # | Role | Name | Signed Date | Status |
+|---|---|---|---|---|
+| 1 | Owner | Gustavo Schneiter | _pending_ | _pending_ |
+| 2 | Final Approver | Gustavo Schneiter | _pending_ | _pending_ |
+| 3 | SRE Lead | _staffing-blocked_ | _pending_ | _pending_ |
+| 4 | Security Lead | _staffing-blocked_ | _pending_ | _pending_ |
+| 5 | Engineer (peer 1) | _TBD_ | _pending_ | _pending_ |
+| 6 | Engineer (peer 2) | _TBD_ | _pending_ | _pending_ |
+| 7 | QA | _TBD_ | _pending_ | _pending_ |
+| 8 | Product | Gustavo Schneiter | _pending_ | _pending_ |
+| 9 | Compliance | _TBD_ | _pending_ | _pending_ |
+| 10 | Privacy | _TBD_ | _pending_ | _pending_ |
+| 11 | Architect | _TBD_ | _pending_ | _pending_ |
+| 12 | AppSec | _TBD_ | _pending_ | _pending_ |
+| 13 | Crypto SME | _advisory; required para validação VerifiedBody integration_ | _pending_ | _pending_ |
 
 ## 31. Change Log
 
-1.0.0 — 2026-04-25 — Lote 10.1 creation.
+| Versão | Data | Autor | Mudança |
+|---|---|---|---|
+| 1.0.0 | 2026-04-25 | Gustavo (via Claude Opus 4.7) | Criação WI-S01-005 (Lote 10.1). |
+| 1.1.0 | 2026-04-25 | Gustavo (via Claude Opus 4.7) | Lote 10.2bis P0 fixes (Agent R4 review remediation): outbox pattern explícito (§6.1.6/§9.2); R2-first orchestration (§6.1.1/§9.3); reconciliation contract ADR-0027 (§6.1.7/§9.7); gRPC code RESOURCE_EXHAUSTED (não OUT_OF_RANGE) (§9.6); bounded concurrency 16 (§9.5); §22 cost expanded; §26 STRIDE+LINDDUN delta full; §28 Risk Register 12-row; §15 chaos 10 experiments; §30 sign-off 13-row table; §14 standards expanded. |
 
 ## 32. Anti-patterns evitados
 

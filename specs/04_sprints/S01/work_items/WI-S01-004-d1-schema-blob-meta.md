@@ -4,7 +4,7 @@ type: "work_item"
 doc_status: "DRAFT"
 work_status: "READY"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-25"
 updated: "2026-04-25"
 lane: "HIGH_RISK"
@@ -48,13 +48,13 @@ Schema canônico D1 para `blob_meta` (per-region) com migration idempotente + re
 
 ```sql
 CREATE TABLE IF NOT EXISTS blob_meta (
-    digest         TEXT NOT NULL,             -- BLAKE3 hex 64-char
-    tenant_id      BLOB NOT NULL,             -- UUID v4 16-byte
-    refcount       INTEGER NOT NULL DEFAULT 0,
-    size_bytes     INTEGER NOT NULL,
-    created_at     INTEGER NOT NULL,          -- Unix epoch seconds
+    digest           TEXT NOT NULL,           -- BLAKE3 hex 64-char
+    tenant_id        BLOB NOT NULL,           -- UUID v7 16-byte (canonical: UUID v7 per ADR; v4 era anterior)
+    refcount         INTEGER NOT NULL DEFAULT 0 CHECK (refcount >= 0),
+    size_bytes       INTEGER NOT NULL CHECK (size_bytes > 0),
+    created_at       INTEGER NOT NULL,        -- Unix epoch seconds (SQLite INTEGER é 64-bit; safe ~ano 292B)
     last_accessed_at INTEGER NOT NULL,
-    deleted_at     INTEGER,                   -- NULL = alive; non-NULL = tombstoned
+    deleted_at       INTEGER,                 -- NULL = alive; non-NULL = tombstoned
     PRIMARY KEY (tenant_id, digest)
 );
 
@@ -65,6 +65,23 @@ CREATE INDEX idx_blob_meta_tenant_alive
 CREATE INDEX idx_blob_meta_gc_candidates
     ON blob_meta(deleted_at)
     WHERE deleted_at IS NOT NULL;
+
+-- Audit outbox table (consumed por WI-S01-005 Outbox Pattern; vide ADR-0027)
+CREATE TABLE IF NOT EXISTS audit_outbox (
+    id           BLOB PRIMARY KEY,            -- UUID v7
+    tenant_id    BLOB NOT NULL,
+    digest       TEXT,                        -- nullable (não-blob events)
+    request_id   TEXT NOT NULL,               -- client-provided idempotency key
+    event_type   TEXT NOT NULL,               -- corelink.cas.put_completed | poisoning_attempt | ...
+    payload_json TEXT NOT NULL,               -- CloudEvents 1.0 envelope
+    enqueued_at  INTEGER NOT NULL,
+    emitted_at   INTEGER,                     -- NULL = pending drain; non-NULL = sent to S-09 chain
+    UNIQUE (request_id, event_type)           -- idempotent re-INSERT em retry
+);
+
+CREATE INDEX idx_audit_outbox_pending
+    ON audit_outbox(enqueued_at)
+    WHERE emitted_at IS NULL;
 ```
 
 Migration `migrations/001_blob_meta.sql` aplica idempotently via `CREATE TABLE IF NOT EXISTS`. Insert path usa `INSERT OR IGNORE` (idempotent INSERT — INV-CAS-IMMUTABILITY).
@@ -81,7 +98,11 @@ Bugs catastróficos:
 
 Mitigação:
 1. **PRIMARY KEY (tenant_id, digest)**: D1 SQLite enforces; INSERT OR IGNORE → idempotent (segundo INSERT é silent no-op; INV-CAS-IMMUTABILITY enforced).
-2. **Refcount via TRANSACTION**: `BEGIN; UPDATE blob_meta SET refcount = refcount + 1 WHERE tenant_id=? AND digest=?; COMMIT;` — D1 single-row update é atomic em SQLite engine.
+2. **Refcount via single-statement atomic UPDATE com RETURNING**: `UPDATE blob_meta SET refcount = refcount + 1, last_accessed_at = ?2 WHERE tenant_id=?1 AND digest=?3 RETURNING refcount` — D1 single-row update é atomic em SQLite engine.
+   - **CRITICAL — D1 Worker binding constraints**: D1 não suporta multi-statement client-driven transactions over the Worker binding. `BEGIN/UPDATE/COMMIT` em separate `db.prepare()` calls executa em autocommit mode, perdendo ACID grouping (gotcha; será test-flaky em load). Multi-statement work usa `db.batch([stmt1, stmt2, ...])` que D1 executa como single transaction. Schema design favorece single-row UPDATE com RETURNING wherever possível.
+   - **Exemplo correto** (Rust com `worker` crate): `let stmt = db.prepare("UPDATE blob_meta SET refcount=refcount+1 WHERE tenant_id=?1 AND digest=?2 RETURNING refcount").bind(&[tenant_id, digest])?; let row = stmt.first().await?;`
+   - **Exemplo correto multi-statement** (vide WI-S01-005 outbox pattern): `db.batch([stmt_insert_blob_meta, stmt_insert_audit_outbox]).await?;` — atomic.
+   - **CHECK constraint** `CHECK (refcount >= 0)` mandatory; previne bug em decrement_refcount onde silently goes negative; violation retorna error em `db.batch`.
 3. **Migration framework**: `migrations/<NNN>_<name>.sql` com `CREATE IF NOT EXISTS`; CI validate per region D1 schema sync.
 4. **Index design**: `idx_blob_meta_tenant_alive` is partial index `WHERE deleted_at IS NULL` → AuthZ checks são O(log n) only sobre alive blobs; tombstoned não bloat index.
 5. **GC index** `idx_blob_meta_gc_candidates` partial sobre `deleted_at IS NOT NULL` → S-06 sweep efficient.
@@ -204,7 +225,23 @@ Tombstoned blobs accumulate até physical delete (S-06 grace period 72h). Sem pa
 
 ### 9.4 Why INTEGER timestamps (Unix epoch seconds)
 
-D1 SQLite TEXT date format slow + indexable inconsistente. INTEGER unix epoch = atomic compare + sortable + index-friendly + 32-bit OK até 2106.
+D1 SQLite TEXT date format slow + indexable inconsistente. INTEGER unix epoch = atomic compare + sortable + index-friendly. SQLite **INTEGER é 64-bit nativo** (não 32-bit; signed 32-bit rolls em 2038, unsigned 32-bit em 2106 — ambos irrelevantes aqui). Y2106/2038 não-aplicável; safe até ~ano 292B (signed 64-bit max).
+
+### 9.5 Why per-tenant blob (não cross-tenant CAS dedup)
+
+Decisão **deliberada**: cross-tenant content addressing seria storage-saving mas:
+- Privacy violação (content fingerprinting cross-customer): atacante PUT digest_X em tenant A; verifica via FindMissingBlobs no tenant B se "missing" — leak de existence.
+- Billing complexity: quem paga storage de blob shared? First-writer? Last-reader?
+- Deletion isolation: tenant A LGPD erasure cannot delete blob ainda em use por tenant B.
+- Trade-off: aceita storage waste (cross-tenant duplication) em troca de isolation hard-by-construction. Future S-XX pode revisitar com privacy-preserving CAS dedup (e.g., CR-Lite tickets).
+
+### 9.6 Why audit_outbox em mesmo schema (não separate D1 DB)
+
+Outbox pattern (ADR-0027) requires **single transaction** abrange `blob_meta` INSERT + `audit_outbox` INSERT. D1 não tem cross-database transactions; portanto `audit_outbox` mora no mesmo D1 instance. Drain worker emit ao S-09 chain remoto (separado).
+
+### 9.7 Migration rollback policy (additive-only com CI enforcement)
+
+Migrations são **additive-only** (CREATE TABLE/COLUMN, never DROP/ALTER). Disruptive change requer ADR + dual-write window. CI gate `scripts/check_migrations_additive.py` diff vs main; fails em DROP/ALTER COLUMN. Vide WI-S01-007 §6.1 para CI integration.
 
 ### 9.5 ADR potencial?
 

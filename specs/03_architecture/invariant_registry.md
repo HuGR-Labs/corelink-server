@@ -194,6 +194,61 @@ Invariantes que governam crypto key lifecycle. Definidas inicialmente em `key_ma
 
 ---
 
+### 3.14 Auth domain (domain AUTH) — Lote 10.3 (S-03 sprint)
+
+Invariantes que governam auth lifecycle: JWT validation (Clerk), PAT lifecycle (Argon2id), Tower middleware orchestration, revocation propagation, schema RLS, WebAuthn ceremonies, audit emission. Promovidas ao registry em Lote 10.3bis (P0 fix dos reviews agent-r4-s03-part1+part2).
+
+| ID | Nome | Severidade | Descrição | Enforcement | TLA+ file |
+|---|---|---|---|---|---|
+| **INV-AUTH-JWT-VALIDATE-RS256-ONLY** | JWT validation rejects all non-RS256 alg | CRITICAL | `jsonwebtoken` 9.x `Validation::new(Algorithm::RS256)` enforce; rejeita alg=none + key confusion HS-with-public-pem | Property test 10k iter + adversarial regression em `corelink-clerk/tests/adversarial.rs` (CVE-2015-9235 + CVE-2018-0114) | (planned `auth_jwt_validation.tla`; PLANNED) |
+| **INV-AUTH-CLOCK-SKEW-BOUND** | Clock skew leeway ≤ 60s em todos JWT validation paths | HIGH | RFC 7519 §4.1.4 industry standard ±60s; código-gated constant em `ClerkAdapter::new`; uniform exp/nbf/iat | Static check em construtor + integration test boundary | N/A (constant invariant) |
+| **INV-AUTH-ISS-EXACT-MATCH** | Issuer compared exact match (não prefix) | CRITICAL | Allowlist `Vec<String>` exact eq; previne `https://clerk.corelink.dev.attacker.com` confusion | Property test 10k iter random origin/issuer combinations | N/A (regression test) |
+| **INV-AUTH-KID-RESOLUTION** | KID miss triggers single refresh + retry; no infinite loop | HIGH | Lazy JWKS refresh + 1 retry max; timeout fail → KidNotInJwks | Integration test KID rotation chaos + counter assert | N/A (state machine) |
+| **INV-AUTH-PAT-HASH-ARGON2ID-2024** | PAT hashes use Argon2id m≥65536/t≥3/p≥4 (OWASP 2024) | CRITICAL | All hashes em PHC string format `$argon2id$v=19$m=65536,t=3,p=4$...`; verify rejects underprovisioned params | Static check em deploy gate + cargo-deny version pin `argon2 = "0.5"` | N/A (cripto invariant) |
+| **INV-AUTH-PAT-PLAINTEXT-NEVER-PERSISTED** | PAT plaintext nunca em DB / logs / traces / errors | CRITICAL | `PatPlaintext` newtype sem Display/Debug/Serialize; único `into_string()` em mint() return | CI grep gate + clippy custom lint + static analysis | N/A (compile-time enforced) |
+| **INV-AUTH-PAT-VERIFY-CONSTANT-TIME** | Mann-Whitney 3-prong + power analysis sustained em CI nightly | CRITICAL | N≥10000 per arm + power 1−β≥0.80 + Šidák 3-trial + bootstrap 95% CI sobre \|Δmedian\| ≤ 5ms | CI nightly job + alert se p < 0.05 sustained 3 trials | N/A (statistical test) |
+| **INV-AUTH-PAT-SALT-PER-TOKEN** | Each PAT mint generates unique 16-byte salt via getrandom | HIGH | mint() chama `getrandom` independente per token; PHC string embeds salt | Property test 100k unique salts | N/A (cripto invariant) |
+| **INV-AUTH-PAT-SCOPE-DB-IS-SOT** | Scope nunca inferido from PAT prefix string; DB column é fonte | HIGH | Server-side reads `api_tokens.scopes` BIGINT column; PAT prefix é hint apenas | Property test cross-tenant scope spoofing rejection | N/A (architecture invariant) |
+| **INV-AUTH-TENANTCTX-IMMUTABLE** | TenantCtx fields private; nenhum mutation path | CRITICAL | Builder pattern em `corelink-worker/middleware/tenant_ctx.rs`; `#[non_exhaustive]`; cargo-deny lints `unsafe = "deny"` | Compile-time enforcement + chaos test layer-mismatch detection | (planned `tenant_ctx_propagation.tla`; PLANNED) |
+| **INV-AUTH-5-LAYER-ORDERING** | Middleware layer order é canonical (auth → ctx → scope → rate-limit → audit pre → handler → audit post) | CRITICAL | Tower `ServiceBuilder` composition fixed; integration test asserts ordering via fail-closed assertions | Chaos test 5-layer scramble + fail-closed assertions | (planned `tenant_ctx_propagation.tla`) |
+| **INV-AUTH-SESSION-CACHE-KEY-CT** | Session cache key compare é constant-time via `subtle::ConstantTimeEq` | HIGH | KV key construction sha256 truncated 16-byte; lookup compara via subtle | Mann-Whitney timing test em key compare path | N/A (cripto invariant) |
+| **INV-AUTH-SCOPE-MIDDLEWARE-LEVEL** | Scope check enforced via Tower layer; routes sem layer = explicit `allow_unauthenticated()` opt-out | HIGH | `axum::routing` requires `require_scope(scope)` OR `allow_unauthenticated`; deny-by-default | Compile-time route definition + integration test | N/A (architecture invariant) |
+| **INV-AUTH-AUDIT-PRE-POST-ORDERING** | Pre-handler `auth.token.validated` antes; post-handler `auth.{ok,denied}` depois; same outbox transaction | HIGH | Outbox INSERT em D1 batch atomic com TenantCtx commit (reuse WI-S01-005 pattern) + `tokio::catch_unwind` panic recovery | Property test pré/post pair completeness + chaos test panic recovery | Coberto parcial por `audit_immutability.tla` |
+| **INV-AUTH-REVOCATION-IDEMPOTENT** | Retry revoke = single audit event + same revoked_at timestamp | CRITICAL | DO storage idempotent ingest dedup via `(pat_id, revoked_at)` UNIQUE constraint | Property test 100k retries com same pat_id assert single audit event | (planned `auth_revocation.tla`; PLANNED) |
+| **INV-AUTH-REVOCATION-SLO-60S** | Cross-region propagation ≤ 60s p99 sustained 72h | CRITICAL | DO + CF Queue at-least-once; tiered alert SEV-2 em > 30s, SEV-1 em > 60s | SLO measurement + chaos test cross-region propagation stress | (planned `auth_revocation.tla`) |
+| **INV-AUTH-D1-IS-SOT** | D1 `revoked_at IS NULL` filter authoritative em verify path; DO storage é orchestration optimization | HIGH | Verify cold path query D1 antes de approving; DO `is_revoked()` é admin path only | Architecture review + integration test verify-vs-revoke race | N/A (architecture invariant) |
+| **INV-AUTH-MASS-REVOKE-ATOMIC** | Mass revoke é all-or-none via D1 batch | CRITICAL | Single `UPDATE api_tokens SET revoked_at WHERE tenant_id = X` atomic; D1 transactional | Property test 10k mass revoke assert all-or-none | (planned `auth_revocation.tla`) |
+| **INV-AUTH-PROPAGATION-AT-LEAST-ONCE** | CF Queue at-least-once + consumer dedup via `(pat_id, revoked_at)` | HIGH | Queue retry policy 5×; DLQ; consumer idempotent ingest | Chaos test queue outage + consumer offline | N/A (queue semantic) |
+| **INV-AUTH-SCHEMA-RLS-DEFAULT-ON** | All auth tables have RLS enabled (account/tenant/user_account/membership/api_tokens/webauthn_credentials/revocation_log) | CRITICAL | `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` em migration 002; CI gate verifies `pg_class.relrowsecurity = true` | CI test query `SELECT relrowsecurity FROM pg_class WHERE relname IN (...)` | N/A (DB invariant) |
+| **INV-AUTH-PII-ENCRYPTED** | email + webauthn keys store as BYTEA (ciphertext) via pgcrypto | CRITICAL | `pgp_sym_encrypt_bytea` em INSERT; raw text never persisted | CI test verify ciphertext format em rows; backup leak chaos | N/A (cripto + DB invariant) |
+| **INV-AUTH-MIGRATION-ADDITIVE** | No DROP TABLE/COLUMN ou ALTER COLUMN destructive em migrations | HIGH | `scripts/check_migrations_additive.py` CI gate diff vs main | CI gate em PR | N/A (governance invariant) |
+| **INV-AUTH-CASCADE-DSR-COMPLETE** | account DELETE cascades tenant + user_account + membership + api_tokens + webauthn_credentials | HIGH | FK `ON DELETE CASCADE` policies em DDL; integration test full cascade | DSR cascade integration test | N/A (DB invariant) |
+| **INV-AUTH-AUDIT-PSEUDONYMIZATION** | Audit chain retains pseudonymous IDs (sha256 prefix); DSR cascade não touches audit chain | CRITICAL | Pseudonymization em emit time; chain integrity preserved post-erasure | DSR integration test + LGPD Art. 18 compliance | Coberto por `audit_immutability.tla` |
+| **INV-AUTH-WEBAUTHN-UV-REQUIRED-ADMIN** | Admin step-up requires UV=1 (biometric/PIN); UV=0 rejected | CRITICAL | `WebAuthnAdapter::finish_authentication` checks `flags & UV != 0` em admin paths | Adversarial regression test + CI integration test | N/A (W3C spec compliance) |
+| **INV-AUTH-WEBAUTHN-ATTESTATION-VERIFIED** | Registration verifies attestation chain; AAGUID em allowlist | CRITICAL | `webauthn-rs::start_registration` + `finish_registration` enforces; AAGUID lookup em config | Cargo-fuzz CBOR/COSE 1h + adversarial test | N/A (W3C spec compliance) |
+| **INV-AUTH-WEBAUTHN-SIGN-COUNT-MONOTONIC** | sign_count strictly increasing; regression = SEV-1 alert | HIGH | Server checks `response.sign_count > stored.sign_count`; W3C accepts sign_count=0 (não monotonic em passkey ecosystem); regression triggers SEV-1 | Property test 1k random ceremonies + chaos test replay | N/A (W3C spec compliance) |
+| **INV-AUTH-WEBAUTHN-ORIGIN-EXACT** | Origin allowlist exact match (no prefix bypass); rejects subdomain spoof | CRITICAL | `Vec<Url>` exact eq compare; W3C §13.4.9 origin matching | Adversarial regression test (origin spoof) + CI test | N/A (W3C spec compliance) |
+| **INV-AUTH-WEBAUTHN-RP-ID-CANONICAL** | RP ID = "corelink.dev" eTLD+1 (not subdomain) | CRITICAL | `WebAuthnAdapter::new` validates rp_id é eTLD+1; fails se subdomain | Static check em construtor | N/A (W3C spec compliance) |
+| **INV-AUDIT-NO-RAW-PII** | Zero raw PII em chain (email, raw principal_id, raw pat_id) | CRITICAL | `redact_pat!` macro mandatory; `hash_principal_id` 64-bit prefix; CI lint enforces | CI lint custom binary `tools/audit_pii_lint/` + grep CI gate | N/A (compile-time + CI lint) |
+| **INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER** | Audit outbox INSERT em mesma D1 batch que TenantCtx commit | CRITICAL | `db.batch([INSERT blob_meta OR TenantCtx, INSERT audit_outbox])` atomic; failure rolls back | Chaos test D1 batch failure + assert no orphan TenantCtx | Coberto parcial por `audit_immutability.tla` |
+| **INV-AUDIT-CHAIN-HASH-DETERMINISTIC** | content_hash deterministic via canonical JSON (RFC 8785 / serde_jcs) | HIGH | `serde_jcs` crate (JCS) + Unicode NFC; property test serialize twice byte-equal | Property test deterministic JSON 1000 events | N/A (cripto invariant) |
+| **INV-AUDIT-EVENT-TYPE-EXHAUSTIVE** | All AuthEventType variants têm AuthEventData payload impl + serde tag | HIGH | Rust `match` exhaustive em internal handlers; `#[non_exhaustive]` em external surface | Compile-time + property test enum exhaustive | N/A (compile-time) |
+| **INV-AUDIT-RETENTION-HINT-ACCURATE** | Event retention_hint matches tenant.tier (Solo30d/Team90d/Business1y/Enterprise7y) | HIGH | Lookup-time em emit; property test verify hint matches tier | Property test 4 tier types + integration test | N/A (architecture invariant) |
+| **INV-NEG-CACHE-MONOTONIC** | Negative cache writes use monotonic version_stamp; older stamps rejected silently | HIGH | KV value envelope inclui version_stamp u64; put_miss compara antes write | Property test concurrent put_miss vs invalidate_on_write | N/A (KV invariant) |
+| **INV-NO-BODY-IN-LOGS** | Body bytes nunca em audit/logs/error messages | CRITICAL | `redact_pat!` + clippy custom lint + grep CI gate | Static analysis + CI gate | N/A (compile-time + CI lint) |
+| **INV-NO-PII-IN-LOGS** | Raw PII (email, principal_id) nunca em logs/traces; hashed prefix only | CRITICAL | `hash_principal_id` macro + tracing field redaction | Static analysis + CI gate | N/A (compile-time + CI lint) |
+
+**Cross-references**:
+- `ADR-0024..ADR-0033` documentam decisões S-03 (vide `scripts/validate_references.py` whitelist).
+- TLA+ specs PLANNED em §4.2 (auth_jwt_validation, tenant_ctx_propagation, auth_revocation) — implementação em sprints S-09 ou S-12.
+- `auth_model.md §8.1` (5-layer defense) é fonte canonical para INV-AUTH-5-LAYER-ORDERING.
+- `key_management.md §3.13` documenta INV-AUTH-PAT-* details.
+- `compliance_matrix.md` mapeia INV-AUTH-* para LGPD/GDPR/SOC 2/NIST AAL3 controls.
+
+**Aliases históricos:** nenhum. Estes 38 IDs introduzidos em Lote 10.3 (sprint S-03 spec) e promovidos ao registry em Lote 10.3bis (P0 fix Agent R4 review remediation).
+
+---
+
 ## 4. TLA+ coverage matrix
 
 CRITICAL invariantes **DEVEM** ter TLA+ spec + model check verde no CI (CTRL-FORMAL-001 em `security_model.md §6.9`).

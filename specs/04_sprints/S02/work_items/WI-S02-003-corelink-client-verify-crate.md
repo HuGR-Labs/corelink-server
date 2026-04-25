@@ -4,7 +4,7 @@ type: "work_item"
 doc_status: "DRAFT"
 work_status: "READY"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-25"
 updated: "2026-04-25"
 lane: "HIGH_RISK"
@@ -431,9 +431,24 @@ Doc `docs/internal/client-verify-pattern.md` — explica default-on rationale + 
 3. ABI review (D+3): FFI surface review com S-15 owner forward (planning).
 4. Pre-merge: property tests + criterion + cbindgen verify.
 
-## 30. Sign-off (HIGH_RISK 10-12)
+## 30. Sign-off (HIGH_RISK 13)
 
-11 roles incl. Crypto SME + AppSec + S-15 future owner advisory.
+| # | Role | Name | Signed Date | Status |
+|---|---|---|---|---|
+| 1 | Owner | Gustavo Schneiter | _pending_ | _pending_ |
+| 2 | Final Approver | Gustavo Schneiter | _pending_ | _pending_ |
+| 3 | SRE Lead | _staffing-blocked_ | _pending_ | _pending_ |
+| 4 | Security Lead | _TBD_ | _pending_ | _pending_ |
+| 5 | Engineer (peer 1) | _TBD_ | _pending_ | _pending_ |
+| 6 | Engineer (peer 2) | _TBD_ | _pending_ | _pending_ |
+| 7 | QA | _TBD_ | _pending_ | _pending_ |
+| 8 | Product | Gustavo Schneiter | _pending_ | _pending_ |
+| 9 | Compliance | _TBD_ | _pending_ | _pending_ |
+| 10 | Privacy | _TBD_ | _pending_ | _pending_ |
+| 11 | Architect | _TBD_ | _pending_ | _pending_ |
+| 12 | AppSec | _TBD; emphatic — client-side verify threat model + FFI surface review_ | _pending_ | _pending_ |
+| 13 | Crypto SME | _mandatory; client-side BLAKE3 verify constant-time + threat model attestation chain_ | _pending_ | _pending_ |
+| _advisory_ | S-15 future owner | _TBD; review FFI bindings reusability_ | _advisory_ | _pending_ |
 
 ## 31. Change Log
 

@@ -105,7 +105,7 @@ inherits_from:
 - **INV-TENANT-ISOLATION** (CRITICAL, TLA+): implementada via HMAC prefix + dupla assertion.
 - **INV-CAS-INTEGRITY** (CRITICAL, TLA+): implementada via write-time hash check.
 - **INV-CAS-IDEMPOTENCY** (CRITICAL): deriva de BLAKE3 determinístico.
-- **INV-CAS-IMMUTABILITY** (CRITICAL): `INSERT IF NOT EXISTS` em D1 + R2 versioning.
+- **INV-CAS-IMMUTABILITY** (CRITICAL): write-once via `INSERT OR IGNORE` em D1 + `If-None-Match: *` header em R2 PUT (412 retornado em segundo writer; não usa R2 versioning bucket-level — anti-scope WI-S01-003 §7).
 
 ## 9. Quality Standards (delta local)
 

@@ -4,7 +4,7 @@ type: "work_item"
 doc_status: "DRAFT"
 work_status: "READY"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-25"
 updated: "2026-04-25"
 lane: "HIGH_RISK"
@@ -101,16 +101,33 @@ Mitigação layered:
 3. **Constant-time per-byte ops** em digest compare (WI-S01-002) — nível mais baixo.
 4. **Rate limit per-PAT** (S-08 forward): even com timing padding perfeito, 10k probes em sequence fica suspicious; rate limit caps enumeration speed.
 
-**Statistical proof via Mann-Whitney U:**
-T-test assume normal distributions; latency distributions são not normal (long-tailed). Mann-Whitney U é non-parametric, robust. Null hypothesis: "two distributions are same"; test outputs p-value. p > 0.05 = fail to reject null = distributions statistically indistinguishable. p < 0.05 = distributions different = leak exists.
+**Statistical proof via Mann-Whitney U + power analysis (corrected methodology):**
+
+T-test assume normal distributions; latency distributions são not normal (long-tailed). Mann-Whitney U é non-parametric, robust. Null hypothesis: "two distributions são same"; test outputs p-value.
+
+**CRITICAL — methodology correta (não cargo-cult)**:
+
+`p > 0.05` sozinho **NÃO prova distributions são same**; significa "fail to reject H0" — pode-se ser baixo poder estatístico (small sample, undetectable effect). Para defender side-channel ausente, **3-prong evidence-grade test**:
+
+1. **Sample size + power**: N ≥ 10000 amostras por arm (cross-tenant existing vs cross-tenant non-existing). Power 1−β ≥ 0.80 com effect size d = 0.2 (small/practically-relevant) calculado a priori via `g*power`-equivalent (`statrs::distribution::statistical_power`).
+2. **p-value gate**: Mann-Whitney U p > 0.05 (null retido).
+3. **Confidence interval no |Δmedian|**: bootstrap CI 95% sobre median latency diff; target |Δmedian| ≤ 1ms com 95% CI cruzando 0 (zero-inclusive).
+
+Combined: "high power test failed to reject; effect size point estimate < 1ms; CI consistent with zero" = evidence-grade indistinguishability claim.
+
+**Multiple-test correction (CI flake mitigation)**:
+
+Statistical tests em CI com p=0.05 falham 5% das runs por chance (1-em-20). Bonferroni/Šidák correction:
+- Run **3 independent trials** (different random seeds; same handler state).
+- Reject só se ALL 3 trials p < 0.05 (Šidák combined α ≈ 0.000125 effective; flake < 1-em-8000 runs).
 
 **Why p > 0.05 target (not 0.01):**
 - Strict (p > 0.01) = rare false positives mas requires more samples + tighter padding.
-- p > 0.05 é industry-standard "indistinguishable" baseline (NIST timing attack analysis).
-- Better: p > 0.5 if achievable; document achievability in benchmark report.
+- p > 0.05 é industry-standard "indistinguishable" baseline (NIST SP 800-90B Annex C; CVE-2018-0114 mitigation guides).
+- Power 1-β ≥ 0.80 + |Δmedian| ≤ 1ms é o **real gate** (não p sozinho).
 
-**Criterion benchmark p99 diff < 5ms:**
-Statistical test = property; benchmark = numerical bound. Both satisfied = robust evidence. < 5ms é practical threshold (network jitter já é ~5-10ms; further mitigation marginal).
+**Criterion benchmark |Δmedian| < 1ms (não p99 diff < 5ms vago):**
+Statistical test = property; benchmark = numerical bound on **median diff** (mais informativo que p99). < 1ms é practical threshold (CF Worker scheduler quanta ~1ms; padding granularity ≥ 5ms dominates jitter).
 
 **Risk justification HIGH_RISK:**
 - **FF-HR-002**: timing leak = cross-tenant existence oracle = isolation breach indireta.
@@ -272,13 +289,19 @@ Sim — ADR-0023 documentando "Constant-Time Defense via Timing Padding Middlewa
 
 ## 10. Completeness Criteria SOTA
 
-- [ ] **10.4.1** Mann-Whitney U test 10k×10k samples → p > 0.05 (EVT-002).
-- [ ] **10.4.2** Criterion benchmark p99 diff < 5ms (EVT-002).
-- [ ] **10.4.3** Métrica timing_diff_ms emitted continuously + alert configured (EVT-013).
+- [ ] **10.4.1** Mann-Whitney U + power analysis 3-prong (EVT-002):
+  - N ≥ 10000 samples per arm (cross-tenant existing vs non-existing).
+  - Power 1−β ≥ 0.80 com effect d = 0.2 (calculated a priori).
+  - Šidák correction 3-trial gate: ALL 3 independent trials p > 0.05 (combined α ≈ 0.000125).
+  - Bootstrap 95% CI sobre |Δmedian| ≤ 1ms (CI cruzando 0 mandatory).
+- [ ] **10.4.2** Criterion benchmark |Δmedian| < 1ms (não p99 diff < 5ms — median é evidence-grade) (EVT-002).
+- [ ] **10.4.3** Métrica `corelink.cas.side_channel.timing_diff_ms` emitida continuously com aggregation method spec'd: 5min sliding window, p99 of |median(group_A) − median(group_B)|; alert SEV-2 se sustained > 2ms 30min (EVT-013).
 - [ ] **10.4.4** Adversarial property test 1000 enumeration attempts → 0 statistical leak (EVT-002).
-- [ ] **10.4.5** ADR-0023 ratificado (EVT-027).
-- [ ] **10.4.6** Documentation `docs/internal/side-channel-defense.md` reviewed by AppSec.
-- [ ] **10.4.7** Cost regression gate (§14.10): padding adds bounded latency tax (~150ms expected; not exceeding budget).
+- [ ] **10.4.5** ADR-0023 ratificado (path concreto: `specs/02_governance/decisions/ADR-0023-constant-time-timing-padding.md`) (EVT-027).
+- [ ] **10.4.6** Documentation `docs/internal/side-channel-defense.md` reviewed by AppSec + Crypto SME.
+- [ ] **10.4.7** Cost regression gate (§14.10): padding adds bounded latency tax (~150ms expected; cost regression bench em CI).
+- [ ] **10.4.8** Edge case `elapsed > target_p99_ms` handling: log SEV-3 anomaly + emit response sem additional padding (não shorten); rely on rate-limit + alert para detection. Spec'd em §15.5 chaos.
+- [ ] **10.4.9** Padding granularity ≥ 5ms (CF Worker scheduler quanta ~1ms; ≥ 5ms dominates jitter); validated em chaos test §15.6.
 
 ## 11. DoD
 
@@ -302,7 +325,7 @@ Sim — ADR-0023 documentando "Constant-Time Defense via Timing Padding Middlewa
 | Tower middleware | `crates/corelink-worker/src/middleware/timing_padding.rs` | Rust |
 | Adversarial test | `crates/corelink-worker/tests/timing_indistinguishability.rs` | Rust |
 | Criterion benchmark | `crates/corelink-worker/benches/side_channel.rs` | Rust |
-| ADR-0023 | `specs/03_architecture/adrs/ADR-0023-...` | Markdown |
+| ADR-0023 | `specs/02_governance/decisions/ADR-0023-constant-time-timing-padding.md` | Markdown |
 | Documentation | `docs/internal/side-channel-defense.md` | Markdown |
 
 ## 14. Quality Standards SOTA
@@ -431,9 +454,24 @@ Doc `side-channel-defense.md` + onboarding test 5 questions.
 3. Adversarial (pre-merge): 10k×10k Mann-Whitney + criterion sustained 24h.
 4. Pre-merge: ADR-0023 ratified.
 
-## 30. Sign-off (HIGH_RISK 10-12)
+## 30. Sign-off (HIGH_RISK 13)
 
-11 roles incl. AppSec emphatic + Statistician advisor + Crypto SME.
+| # | Role | Name | Signed Date | Status |
+|---|---|---|---|---|
+| 1 | Owner | Gustavo Schneiter | _pending_ | _pending_ |
+| 2 | Final Approver | Gustavo Schneiter | _pending_ | _pending_ |
+| 3 | SRE Lead | _staffing-blocked_ | _pending_ | _pending_ |
+| 4 | Security Lead | _TBD; emphatic — side-channel review_ | _pending_ | _pending_ |
+| 5 | Engineer (peer 1) | _TBD_ | _pending_ | _pending_ |
+| 6 | Engineer (peer 2) | _TBD_ | _pending_ | _pending_ |
+| 7 | QA | _TBD_ | _pending_ | _pending_ |
+| 8 | Product | Gustavo Schneiter | _pending_ | _pending_ |
+| 9 | Compliance | _TBD_ | _pending_ | _pending_ |
+| 10 | Privacy | _TBD_ | _pending_ | _pending_ |
+| 11 | Architect | _TBD_ | _pending_ | _pending_ |
+| 12 | AppSec | _TBD; **mandatory emphatic** — Mann-Whitney methodology + power analysis sign-off_ | _pending_ | _pending_ |
+| 13 | Crypto SME | _mandatory; constant-time primitives + jitter design review_ | _pending_ | _pending_ |
+| _advisory_ | Statistician advisor | _TBD; sourcing options: external consultant OR Crypto SME doubles role; non-fictional gate required_ | _advisory_ | _pending_ |
 
 ## 31. Change Log
 

@@ -4,7 +4,7 @@ type: "work_item"
 doc_status: "DRAFT"
 work_status: "READY"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-25"
 updated: "2026-04-25"
 lane: "HIGH_RISK"
@@ -24,7 +24,7 @@ inherits_from:
 tags: ["wi", "s02", "test", "property-test-100k", "rb-fm-253", "bit-rot", "prr"]
 ---
 
-# WI-S02-006 — Property Test 100k Tenant Isolation + RB-FM-253 Dry-Run + Bit-Rot Test + PRR
+# WI-S02-006 — Property Test 100k Tenant Isolation (Round-Robin Strategy) + RB-FM-253 Dry-Run + Bit-Rot Test + PRR
 
 > **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
 > **Parent:** [S-02](../sprint.md) · **Assignee:** Gustavo Schneiter
@@ -46,10 +46,11 @@ tags: ["wi", "s02", "test", "property-test-100k", "rb-fm-253", "bit-rot", "prr"]
 Suite de validação final da S-02 que materializa evidence para PRR HIGH_RISK sign-off:
 
 1. **Property test 100k iter** em `crates/corelink-worker/tests/prop_cas_read.rs`:
-   - `prop_tenant_isolation_read_path` (100k iter).
+   - `prop_tenant_isolation_read_path` (100k iter; round-robin strategy — vide §2 narrative; ≥ 40 reps per (tenant_i, tenant_j) pair).
    - `prop_get_blob_unary_isolation` (10k iter).
-   - `prop_find_missing_no_existence_oracle` (10k iter).
-   - `prop_negative_cache_correctness` (10k iter race conditions).
+   - `prop_find_missing_no_existence_oracle` (10k iter; inclui response-size leak guard).
+   - `prop_negative_cache_correctness` (10k iter race conditions; exercita put_miss vs invalidate_on_write monotonic version stamp invariant INV-NEG-CACHE-MONOTONIC; vide WI-S02-005 §9.11).
+   - `prop_constant_time_response` (10k iter Mann-Whitney + power analysis; vide WI-S02-004 §10.4.1; reused gate).
 2. **Bit rot integration test** em `tests/integration_bit_rot.rs`:
    - Setup: write blob via S-01 path, body persisted em R2.
    - Inject corruption: directly modify R2 object out-of-band (via wrangler R2 admin API).
@@ -72,6 +73,17 @@ Property tests 100k iter cover state space muito maior que TLA+ small bounds (~3
 - Assert: 100% das reads cross-tenant retornam 404 ou 403 mas NUNCA blob alheio.
 - Assert: 100% das reads tombstoned retornam 404 (não retornam body do blob soft-deleted).
 - 0 false positive (legítimo read retorna blob errado) em 100k iter = 99.999%+ confidence.
+
+**Round-Robin shrinker strategy (não cargo-cult; explicit semantics):**
+
+Random sampling sobre 50 tenants pode-se miss subtle (tenant_i, tenant_j) cross-pair interactions — birthday-bound says 50² = 2500 distinct pairs; em 100k iter random, alguns pairs underexplored. Round-robin garante coverage:
+
+- **Strategy explicit**: per iteration `i`, `tenant_actor = i % 50`; per op `j`, `tenant_target = (i // 50 + j) % 50` para cross-tenant attempts. Garante cada (i, j) pair com `i != j` é tested ≥ 40× em 100k iter (100k / 2500 = 40 reps minimum). Pair coverage matrix verified em test setup.
+- **Shrinker**: ao falha encontrada, proptest shrinker rotaciona deterministicamente — primeiro reduz ops por iter, depois reduz tenants ativos (mantendo round-robin invariant), depois reduz state action space. Output: minimal counter-example com structure preserved.
+- **vs pure random** (rejected baseline): random 100k iter cobre ~2400/2500 pairs em expectation com 100 missing; round-robin garante 100% coverage with 40× redundancy.
+- **Implementation**: custom `proptest::Strategy` via `derive(Arbitrary)` override; deterministic via `proptest::test_runner::Config { rng_algorithm: RngAlgorithm::ChaCha, .. }`.
+
+Without round-robin, a (tenant_42, tenant_17) cross-pair bug might escape 100k random iter; with round-robin, deterministic 40 reps per pair guarantees catch. Property = "for all (i, j) with i != j, ≥ 40 cross-attempt iterations exercised".
 
 `prop_find_missing_no_existence_oracle`:
 - Tenant B requests FindMissingBlobs([1000 random digests]).

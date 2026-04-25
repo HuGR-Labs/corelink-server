@@ -4,7 +4,7 @@ type: "work_item"
 doc_status: "DRAFT"
 work_status: "READY"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-25"
 updated: "2026-04-25"
 lane: "HIGH_RISK"
@@ -83,7 +83,7 @@ Negative caching é dual-edged sword: **performance optimization** (reduce cost 
 
 1. **Stale negative survives write** (FM-302 adjacent): cliente PUT digest_X (success); imediato GET digest_X retorna stale 404 from KV cache; cliente confused → retry storm.
 2. **Cross-tenant cache poisoning**: key não inclui tenant_id; Tenant A cache miss para digest_X poisons Tenant B; Tenant B's GET retorna spurious 404 mesmo se tem blob.
-3. **Cache populates wrong reason**: marks blob as NotFound quando deveria ser Tombstoned (different semantics; soft-delete should be 410 Gone, não 404 Not Found).
+3. **Cache populates wrong reason**: marks blob as NotFound quando deveria ser Tombstoned (decisão GA freeze: ambos mapeiam para HTTP 404 — vide §9.10; enum é forward-future-ready mas handler atualmente uniforma).
 4. **TTL too long**: stale negatives sustain past write; window of inconsistency > 300s.
 5. **TTL too short**: cache miss rate high; cost benefit eliminated.
 
@@ -210,20 +210,34 @@ Feature: Negative cache KV adapter
     Then 1000 lookups: cache hit → return 404 (no D1/R2)
     And cost reduction ≥ 80% measured (vs no-cache baseline)
 
-  Scenario: Stale window bounded
-    Given negative cache populated for digest_X at T=0
-    Given CAS write succeeds at T=10s
-    Given invalidate_on_write fires at T=10s
-    Then cliente GET at T=11s returns 404 stale max 1s (KV propagation)
-    And p99 stale window ≤ 5s (KV strong consistency CF)
+  Scenario: Stale window bounded — region-local strong; cross-region eventual
+    Given negative cache populated for digest_X em region wnam at T=0
+    Given CAS write succeeds at T=10s (writes propagate same-region wnam)
+    Given invalidate_on_write fires at T=10s em wnam KV
+    Then cliente GET em wnam at T=11s returns 404 stale max 1s (region-local strongly consistent)
+    And p99 stale window dentro do originating region ≤ 5s
+    And **cross-region propagation eventual ≤ 60s** (CF KV global eventual consistency; documented limitation)
+    Note: cache miss em outra região = fall-through to D1 + R2 (correct fallback; nunca incorrect read)
 
-  Scenario: MissReason variant correctness
+  Scenario: MissReason variant correctness — S-02 GA freeze 404 uniform
     Given Tenant A has tombstoned digest D_T (deleted_at != NULL)
     When CAS read handler resolves
     Then negative_cache.put_miss(tenant_A, D_T, Tombstoned) called
     And lookup returns MissReason::Tombstoned
-    And handler maps to HTTP 410 Gone (not 404)
-    (semantics correct; though for S-02 GA, both 404 and 410 mapped to 404 — Tombstoned distinction reserved for future S-06 GC)
+    And handler maps to HTTP 404 Not Found com error_code COR_CAS_BLOB_NOT_FOUND (uniform com NotFound)
+    (S-02 GA decision: enum existe forward-future-ready mas todos variants → HTTP 404 + uniform error_code para minimizar information disclosure surface; 410 Gone semantic reserved para S-06 GC sprint com explicit ADR + migration plan)
+    And response body identical para NotFound + Tombstoned + CrossTenantMasked (atacante não distingue)
+    (alinhamento com WI-S02-001 §6.1.6 não-tombstoned 404)
+
+  Scenario: Concurrent put_miss vs invalidate_on_write — race resolution via monotonic version stamp
+    Given KV é eventually consistent (cross-region; per-region strong)
+    Given client A probes digest_X at T+0 → handler computes miss → put_miss(tenant_A, digest_X, NotFound) com version_stamp v=1
+    Given concurrent client B writes digest_X at T+1ms → invalidate_on_write(tenant_A, digest_X) com version_stamp v=2
+    When KV ordering arrives [v=2 invalidate, v=1 put_miss] em eventual order
+    Then put_miss with v=1 < current_v=2 is **rejected silently** (stale write loses; KV stores tagged version)
+    Then post-race state: KV key absent (invalidation wins; correct)
+    And property test prop_negative_cache_race (WI-S02-006 §6.1.4) exercises 10k iter
+    And invariant INV-NEG-CACHE-MONOTONIC enforced
 ```
 
 ## 9. Design Decisions
@@ -254,7 +268,43 @@ TTL-only = stale window 5min after write; cliente confused. Explicit invalidatio
 
 ### 9.5 Why MissReason enum (não bool flag)
 
-Future-proof: Tombstoned (410 Gone) vs NotFound (404) vs CrossTenantMasked (404 with internal audit) have different semantics. Enum provides type-safe switch em handler.
+Future-proof: NotFound vs Tombstoned vs CrossTenantMasked carry different audit semantic em internal logs (NotFound = expected; Tombstoned = soft-delete log; CrossTenantMasked = privacy-significant attempt). Enum provides type-safe switch em audit emission. **HTTP semantic é uniformizada em GA** (vide §9.10).
+
+### 9.10 GA decision freeze — todos MissReason mapeiam para HTTP 404
+
+**Decisão (Lote 10.2bis P0 fix — supersede gap WI-005 vs WI-001 review)**: ao GA, **todos** os MissReason variants retornam HTTP 404 com `error_code = COR_CAS_BLOB_NOT_FOUND` uniform; response body identical (atacante não distingue NotFound vs Tombstoned vs CrossTenantMasked via response).
+
+Razões:
+- **Information disclosure minimization**: 410 Gone vs 404 Not Found revela existence (Tombstoned implica "existed previously"; cliente cross-tenant infere via 410). Uniformização elimina oracle.
+- **REAPI v2 compatibility**: bazelbuild/remote-apis test suite assume 404 para missing blob; 410 não-canonical em REAPI semantics.
+- **Audit-only differentiation**: enum sustains internal audit reason (S-09 chain logs Tombstoned distinctly); cliente vê uniform 404.
+- **Migration path**: S-06 GC sprint pode revisitar 410 Gone semantic com explicit ADR + privacy review + REAPI conformance re-validation.
+
+ADR `ADR-0028: MissReason → HTTP 404 uniform freeze (S-02 GA)` documenta + 410 Gone deferido S-06.
+
+Whitelist em validate_references.py.
+
+### 9.11 Why monotonic version stamp para race resolution put_miss vs invalidate
+
+KV é eventually consistent globally. Concurrent ops em mesmo key (`ac_neg:<region>:<tenant>:<digest>`) podem chegar fora de ordem em replica nodes. Sem ordering control:
+- T+0 cliente A probes → put_miss arrives at KV node X.
+- T+1ms cliente B writes → invalidate arrives at KV node Y.
+- Eventual replication: node X→Y, Y→X em ordem inconsistent.
+- Pior caso: invalidate aplicada primeiro (correct), put_miss arrives second (stale; sobrescreve com NotFound permanente).
+
+**Mitigação**: cada KV write inclui `version_stamp` (monotonic; derived from request timestamp + tenant_id hash). KV value envelope:
+```rust
+struct CachedMissEnvelope {
+    miss_reason: MissReason,
+    version_stamp: u64,  // monotonic
+    cached_at: u64,      // epoch ms
+}
+```
+- put_miss: KV.put se NEW.version_stamp > EXISTING.version_stamp OR EXISTING absent.
+- invalidate_on_write: KV.delete sempre (cleanup é absolute).
+- Conflict resolution: write-with-newest-stamp wins; older stamps rejected silently.
+
+Property test `prop_negative_cache_race` (WI-S02-006 §6.1.4) exercises 10k iter concurrent put/invalidate; invariant INV-NEG-CACHE-MONOTONIC: "KV state após qualquer race trace é igual ao state após sequential ordering with newest stamp".
 
 ### 9.6 Lazy populate vs eager
 
@@ -415,9 +465,23 @@ Doc `docs/internal/negative-cache-pattern.md` — reusable pattern para outros c
 2. Code (D+2): peer.
 3. Adversarial (pre-merge): cross-tenant property + stale window.
 
-## 30. Sign-off (HIGH_RISK 10-12)
+## 30. Sign-off (HIGH_RISK 13)
 
-11 roles incl. Architect (cache pattern review).
+| # | Role | Name | Signed Date | Status |
+|---|---|---|---|---|
+| 1 | Owner | Gustavo Schneiter | _pending_ | _pending_ |
+| 2 | Final Approver | Gustavo Schneiter | _pending_ | _pending_ |
+| 3 | SRE Lead | _staffing-blocked_ | _pending_ | _pending_ |
+| 4 | Security Lead | _TBD_ | _pending_ | _pending_ |
+| 5 | Engineer (peer 1) | _TBD_ | _pending_ | _pending_ |
+| 6 | Engineer (peer 2) | _TBD_ | _pending_ | _pending_ |
+| 7 | QA | _TBD_ | _pending_ | _pending_ |
+| 8 | Product | Gustavo Schneiter | _pending_ | _pending_ |
+| 9 | Compliance | _TBD_ | _pending_ | _pending_ |
+| 10 | Privacy | _TBD_ | _pending_ | _pending_ |
+| 11 | Architect | _TBD; emphatic — cache invariants + concurrency race review_ | _pending_ | _pending_ |
+| 12 | AppSec | _TBD; cross-tenant key construction validation_ | _pending_ | _pending_ |
+| 13 | Crypto SME | _advisory; non-crypto-touching WI mas mantém alinhamento sprint contract §14_ | _pending_ | _pending_ |
 
 ## 31. Change Log
 

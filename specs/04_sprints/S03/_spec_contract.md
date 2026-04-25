@@ -36,7 +36,7 @@ Substituir PAT stub de S-01/S-02 por **auth real production-grade**: Clerk SSO p
 
 ## 2. Lane + forcing factors
 
-- **Lane:** HIGH_RISK (10–12 sign-offs).
+- **Lane:** HIGH_RISK (13 sign-offs: 12 mandatory + 1 advisory Crypto SME).
 - **FF-HR-002**: tenant_id derivado do auth context — bug quebra isolation cross-tenant.
 - **FF-HR-005**: implementa CTRL-AUTH-001..010 + CTRL-CRED-001..004 + CTRL-AUTHZ-001..002 (16+ controles).
 - **FF-HR-009**: Terms of Service + PAT scope agreement = contrato customer; bug = legal exposure.
@@ -100,8 +100,8 @@ inherits_from:
 - [ ] **SSO flow E2E**: signup → tenant created → PAT emitted → use em CAS write → revoke → falha (EVT-018).
 - [ ] **MFA WebAuthn testado** com 3 devices diferentes (YubiKey, platform authenticator, passkey iCloud Keychain) (EVT-018).
 - [ ] **LGPD DSR support**: export PAT list + revoke em erasure pipeline (S-11 integration) (EVT-042).
-- [ ] **Property test 10k iter**: revocation propagation race conditions; 0 false positive (EVT-002).
-- [ ] **PRR HIGH_RISK** 10–12 sign-offs: SRE + Security lead + Engineer + QA + Product + Compliance + Privacy + Architect + AppSec + Crypto SME (Argon2id review) + 2 peers (EVT-031).
+- [ ] **Property test 10k iter PR + 100k iter nightly** (≤ 30 min com Argon2 sampled 1% iter para fit budget; cf. WI-S03-008 §6.1.1): revocation propagation race conditions; 0 false positive (EVT-002).
+- [ ] **PRR HIGH_RISK 13 sign-offs** (12 mandatory + 1 advisory): Owner + Final Approver + SRE Lead + Security Lead + Engineer (×2 peer) + QA + Product + Compliance + Privacy + Architect + AppSec + Crypto SME advisory (EVT-031).
 - [ ] **TLA+ tenant_isolation.tla** verde sustained com auth real integration (EVT-022).
 - [ ] **CTRL-CRED-001..004** todos com evidence (PAT only-once display, no PAT em logs, hash storage, revocation ≤ 60s) (EVT-024).
 - [ ] **OWASP ASVS V2/V3** checklist 100% pass (EVT-002).

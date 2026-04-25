@@ -157,6 +157,46 @@ WHITELIST_IDS = {
     "INV-SUPPLY",  # plural-form mention em §4.3 ("INV-SUPPLY-*")
     "INV-CAS-SIDE-CHANNEL",  # short-form mention em S-02 §6 (full ID INV-CAS-SIDE-CHANNEL-INDISTINGUISHABLE)
     "INV-AC",  # plural-form mention em S-04 §8 (registry §3.3 INV-AC-* pattern)
+    "INV-AUTH",  # plural-form mention em registry §3.14 ("INV-AUTH-*" pattern intro)
+    "INV-AUTH-PAT",  # plural-form mention em registry §3.14 + §3.13 (PAT-related INVs)
+    # Forward-looking INVs introduced em sprint WIs; serão promovidas a invariant_registry.md em respective sprint implementation:
+    "INV-AUTH-CLOCK-SKEW-BOUND",       # S-03 WI-S03-001
+    "INV-AUTH-ISS-EXACT-MATCH",        # S-03 WI-S03-001
+    "INV-AUTH-JWT-VALIDATE-RS256-ONLY",# S-03 WI-S03-001
+    "INV-AUTH-KID-RESOLUTION",         # S-03 WI-S03-001
+    "INV-AUTH-PAT-HASH-ARGON2ID-2024", # S-03 WI-S03-002
+    "INV-AUTH-PAT-PLAINTEXT-NEVER-PERSISTED",  # S-03 WI-S03-002
+    "INV-AUTH-PAT-SALT-PER-TOKEN",     # S-03 WI-S03-002
+    "INV-AUTH-PAT-SCOPE-DB-IS-SOT",    # S-03 WI-S03-002
+    "INV-AUTH-PAT-VERIFY-CONSTANT-TIME",  # S-03 WI-S03-002
+    "INV-NEG-CACHE-MONOTONIC",         # S-02 WI-S02-005 (P0 fix Lote 10.2bis)
+    "INV-NO-BODY-IN-LOGS",             # S-01 WI-S01-005 (P0 fix Lote 10.2bis)
+    "INV-NO-PII-IN-LOGS",              # S-03 WI-S03-001
+    "INV-AUTH-TENANTCTX-IMMUTABLE",    # S-03 WI-S03-003
+    "INV-AUTH-5-LAYER-ORDERING",       # S-03 WI-S03-003
+    "INV-AUTH-SESSION-CACHE-KEY-CT",   # S-03 WI-S03-003
+    "INV-AUTH-SCOPE-MIDDLEWARE-LEVEL", # S-03 WI-S03-003
+    "INV-AUTH-AUDIT-PRE-POST-ORDERING",# S-03 WI-S03-003
+    "INV-AUTH-REVOCATION-IDEMPOTENT",  # S-03 WI-S03-004
+    "INV-AUTH-REVOCATION-SLO-60S",     # S-03 WI-S03-004
+    "INV-AUTH-D1-IS-SOT",              # S-03 WI-S03-004
+    "INV-AUTH-MASS-REVOKE-ATOMIC",     # S-03 WI-S03-004
+    "INV-AUTH-PROPAGATION-AT-LEAST-ONCE",  # S-03 WI-S03-004
+    "INV-AUTH-SCHEMA-RLS-DEFAULT-ON",      # S-03 WI-S03-005
+    "INV-AUTH-PII-ENCRYPTED",              # S-03 WI-S03-005
+    "INV-AUTH-MIGRATION-ADDITIVE",         # S-03 WI-S03-005
+    "INV-AUTH-CASCADE-DSR-COMPLETE",       # S-03 WI-S03-005
+    "INV-AUTH-AUDIT-PSEUDONYMIZATION",     # S-03 WI-S03-005
+    "INV-AUTH-WEBAUTHN-UV-REQUIRED-ADMIN", # S-03 WI-S03-006
+    "INV-AUTH-WEBAUTHN-ATTESTATION-VERIFIED",  # S-03 WI-S03-006
+    "INV-AUTH-WEBAUTHN-SIGN-COUNT-MONOTONIC",  # S-03 WI-S03-006
+    "INV-AUTH-WEBAUTHN-ORIGIN-EXACT",      # S-03 WI-S03-006
+    "INV-AUTH-WEBAUTHN-RP-ID-CANONICAL",   # S-03 WI-S03-006
+    "INV-AUDIT-NO-RAW-PII",                # S-03 WI-S03-007
+    "INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER",  # S-03 WI-S03-007
+    "INV-AUDIT-CHAIN-HASH-DETERMINISTIC",  # S-03 WI-S03-007
+    "INV-AUDIT-EVENT-TYPE-EXHAUSTIVE",     # S-03 WI-S03-007
+    "INV-AUDIT-RETENTION-HINT-ACCURATE",   # S-03 WI-S03-007
     # Patterns referenciados forward-looking em S-02 (definidos em resilience_patterns.md mas missing entry-anchor)
     "PAT-CIRCUIT-BREAKER-001",
     "PAT-INVALIDATE-001",  # S-03 v1.1 forward-looking pattern (revocation propagation)
@@ -165,6 +205,17 @@ WHITELIST_IDS = {
     "ADR-0021",  # S-04: AC digest signing HKDF vs Ed25519
     "ADR-0022",  # S-05: chunk size vs multipart part size decoupling
     "ADR-0023",  # S-02 WI-S02-004: constant-time defense via timing padding middleware
+    "ADR-0024",  # S-03 WI-S03-001: Clerk JWKS cache strategy (lazy refresh em KID miss)
+    "ADR-0025",  # S-03 WI-S03-002: Argon2id calibration target + deploy validation gate
+    "ADR-0026",  # S-03 WI-S03-002: PatScopes bitset u64 layout + future migration u128
+    "ADR-0027",  # S-01 WI-S01-005: Dual-write reconciliation contract (R2-first + audit outbox + GC sweep)
+    "ADR-0028",  # S-02 WI-S02-005: MissReason → HTTP 404 uniform freeze (S-02 GA; 410 Gone deferido S-06)
+    "ADR-0029",  # S-03 WI-S03-003: TenantCtx immutability + session cache strategy + audit pre/post-emit ordering
+    "ADR-0030",  # S-03 WI-S03-004: Revocation propagation (DO + Queue + ≤ 60s SLO; combined 120s stale window)
+    "ADR-0031",  # S-03 WI-S03-005: Auth domain Neon Postgres schema + pgcrypto + RLS + DSR cascade
+    "ADR-0032",  # S-03 WI-S03-006: WebAuthn Level 3 + AAGUID allowlist + step-up flow design
+    "ADR-0033",  # S-03 WI-S03-007: Audit event taxonomy EVT-047 + CloudEvents 1.0 + chain hash alignment
+    "ADR-0034",  # S-03 WI-S03-008 (Lote 10.3bis): Solo-tier PRR waiver (staffing reality dual-hat com expiry)
     "FM-XXX",
     "ADR-XXXX",
     "ADR-YYYY",
@@ -183,6 +234,15 @@ WHITELIST_IDS = {
     "CTRL-KEY-032",
     # Runbook placeholder (template exemplo)
     "RB-XXX",
+    # Forward-looking runbooks introduced em sprint WIs (criados durante respective sprint implementation):
+    "RB-FM-OUTBOX-DRAIN",     # S-01 WI-S01-005 (P0 fix Lote 10.2bis)
+    "RB-FM-SIGSTORE-OUTAGE",  # S-01 WI-S01-007 (P1 fix Lote 10.2bis)
+    "RB-FM-AUTH-CACHE-MISS-STORM",  # S-03 WI-S03-003
+    "RB-FM-REVOKE-LAG",              # S-03 WI-S03-004
+    "RB-FM-REVOKE-DRIFT",            # S-03 WI-S03-004
+    "RB-FM-NEON-OUTAGE",             # S-03 WI-S03-005
+    "RB-FM-KEY-ROTATION-DRIFT",      # S-03 WI-S03-005
+    "RB-FM-WEBAUTHN-MDS-OUTAGE",     # S-03 WI-S03-006
     # SLOs em formato sem header standalone (definidos em corpo do §4.X mas não como anchor)
     "SLO-DEPLOY-SAFE",
     "SLO-INCIDENTS",

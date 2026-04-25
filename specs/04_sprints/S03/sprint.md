@@ -85,7 +85,7 @@ Ver `_spec_contract.md §4`. Auth_model §8.1 5-layer defense — este sprint im
 | S03-D5 | Neon schema | `migrations/002_auth_tables.sql` | Account + Tenant + Membership + PAT + WebAuthn credential com pgcrypto column encryption |
 | S03-D6 | WebAuthn flows | `crates/corelink-worker/src/auth/webauthn.rs` | Level 3 spec; passkey + YubiKey + platform; cross-browser CI |
 | S03-D7 | Audit events EVT-047 | `crates/corelink-worker/src/audit/auth_events.rs` | 4 event types (issued/revoked/login/mfa_verified); chain hash S-09 |
-| S03-D8 | Property + pentest + RB + PRR | `tests/prop_revocation.rs` + `PRR-S03.md` | 10k iter revocation race; pentest clean; RB-FM-160 dry-run; PRR 11 sign-offs |
+| S03-D8 | Property + pentest + RB + PRR | `tests/prop_revocation.rs` + `PRR-S03.md` | Property tests: 10k iter PR (≤ 1 min) + 100k iter nightly (≤ 30 min orçamento; Argon2 sampled 1% para fit budget); pentest clean; RB-FM-160 dry-run; PRR 13 sign-offs (12 mandatory + 1 advisory Crypto SME) |
 
 ## 6. Escopo técnico por camada (inherits_from)
 
@@ -120,8 +120,8 @@ Ver `_spec_contract.md §4`. Auth_model §8.1 5-layer defense — este sprint im
 - [ ] SSO flow E2E: signup → tenant created → PAT emitted → use em CAS write → revoke → falha (EVT-018).
 - [ ] MFA WebAuthn 3 devices (YubiKey + platform + iCloud Keychain passkey) (EVT-018).
 - [ ] LGPD DSR export PAT list + revoke em erasure pipeline (S-11 integration) (EVT-042).
-- [ ] Property test 10k iter revocation race conditions (EVT-002).
-- [ ] PRR HIGH_RISK 10–12 sign-offs (EVT-031): SRE + Security + Engineer + QA + Product + Compliance + Privacy + Architect + AppSec + Crypto SME + 2 peers.
+- [ ] Property test 10k iter PR + 100k iter nightly (≤ 30 min com Argon2 sampled 1% iter budget; vide WI-S03-008 §6.1 P0 fix Lote 10.3bis) (EVT-002).
+- [ ] PRR HIGH_RISK 13 sign-offs (12 mandatory + 1 advisory Crypto SME) (EVT-031): Owner + Final Approver + SRE + Security + Engineer (×2) + QA + Product + Compliance + Privacy + Architect + AppSec + Crypto SME advisory.
 - [ ] TLA+ tenant_isolation.tla green sustained pós-integração (EVT-022).
 - [ ] OWASP ASVS V2/V3 100% checklist pass (EVT-002).
 - [ ] Cost regression gate: auth middleware p99 ≤ 5ms sustained (Lote 9.4 §14.10).
@@ -165,7 +165,7 @@ STRIDE: spoofing/tampering/info-disclosure todos cobertos via 5-layer defense + 
 
 PAT scope escalation / revocation > 60s / WebAuthn replay / Argon2id timing attack / PAT log leak / JWKS cache compromise — todos triggers post-mortem CRITICAL.
 
-## 14. Sign-off (HIGH_RISK 10–12)
+## 14. Sign-off (HIGH_RISK 13)
 
 Owner + Final Approver + SRE Lead + Security Lead + Engineer + QA + Product + Compliance + Privacy + Architect + AppSec + Crypto SME + 2 peers (12 mandatory + 1 optional Crypto SME = 13).
 

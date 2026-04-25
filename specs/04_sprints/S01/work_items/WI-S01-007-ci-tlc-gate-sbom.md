@@ -4,7 +4,7 @@ type: "work_item"
 doc_status: "DRAFT"
 work_status: "READY"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-25"
 updated: "2026-04-25"
 lane: "HIGH_RISK"
@@ -109,27 +109,62 @@ CI Infrastructure; HIGH_RISK; FF-HR-005.
 ### 6.1 In-scope
 
 1. **GitHub Actions workflow** `.github/workflows/cas_foundation.yml`:
-   - `tla-check` job: TLC model check 4 specs.
-   - `rust-build` job: cargo build --release --target wasm32-unknown-unknown.
+   - `tla-check` job: TLC model check 4 specs (vide §6.1.7 explicit bounds + JVM/timeout config).
+   - `rust-build` job: cargo build --release --target wasm32-unknown-unknown (com sccache; vide §6.1.8 cache strategy).
    - `rust-test` job: unit + integration + property tests 10k.
    - `clippy-strict` job: `cargo clippy --all-targets -D warnings`.
    - `sast` job: semgrep + custom rules.
    - `cargo-audit` job: dependency CVE check (advisory-db nightly update).
    - `cargo-deny` job: license + sources + advisories policy enforcement.
-   - `sbom` job: cyclonedx-cli generate + validate NTIA minimum.
-   - `cosign-sign` job: sigstore keyless OIDC + Rekor inclusion (release branch only).
+   - `sbom` job: cyclonedx-cli generate + sbomqs NTIA validation (não apenas schema check).
+   - `cosign-sign` job: sigstore keyless OIDC + Rekor inclusion (release branch only); fork-PR guard `if: github.event.pull_request.head.repo.full_name == github.repository`.
+
 2. **Nightly workflow** `.github/workflows/nightly.yml`:
-   - `fuzz` job: cargo-fuzz 1h per target (digest_parse, reapi_deserialize, tenant_path_decode).
+   - `fuzz` job: cargo-fuzz 1h per target **em paralelo** (matrix runner; 3 jobs concurrent).
    - `proptest-extended` job: 100k iter (vs 10k em PR).
-   - `tlc-extended` job: TLC com larger bounds (5 tenants × 50 ops vs 3×10 em PR).
+   - `tlc-extended` job: TLC com larger bounds (5 tenants × 50 ops vs 3×10 em PR; vide §6.1.7 bounds table).
+
+7. **TLC explicit state-space bounds** (P0 fix; resolve "gate é theatre" risco):
+
+   Cada `.cfg` file commits explicit constants + timeout/coverage config:
+
+   | Spec | PR bounds | Nightly bounds | TLC config |
+   |---|---|---|---|
+   | `tenant_isolation.cfg` (PR) | `MaxTenants = 3`, `MaxOps = 10`, `MaxDigests = 5` | `MaxTenants = 5`, `MaxOps = 50`, `MaxDigests = 20` | `-deadlock`, `-coverage 60`, `-workers 2`, `-checkpoint 0` (no checkpoint), `-fp 32` |
+   | `cas_integrity.cfg` (PR) | `MaxBlobs = 5`, `MaxOps = 10` | `MaxBlobs = 20`, `MaxOps = 50` | idem |
+   | `gc_correctness.cfg` (PR) | `MaxBlobs = 3`, `MaxRefs = 5`, `MaxOps = 8` | `MaxBlobs = 10`, `MaxRefs = 20`, `MaxOps = 30` | idem + `-difftrace` |
+   | `audit_immutability.cfg` (PR) | `MaxEvents = 10`, `MaxChainLen = 20` | `MaxEvents = 50`, `MaxChainLen = 100` | idem |
+
+   - **Hard timeout per spec** PR: 8 min (`timeout 480s java -jar tla2tools.jar ...`); nightly: 30 min (`timeout 1800s ...`).
+   - **State-space size estimation** documented em `specs/tla/README.md`: explicit-state cardinality cap aprox 10^7 PR / 10^9 nightly em GitHub runners (16 GB RAM, 4 vCPU `ubuntu-latest`).
+   - **TLC tools pinned**: `tla2tools.jar` URL `https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar` + SHA-256 verified pre-exec; verification script `scripts/verify_tla_tools.sh`.
+   - **Failure mode policy**: timeout = job FAIL (não PASS silent); coverage gauge 100% expected (vide TLC `-coverage` output); deadlock flag mandatory (catches stuck states).
+
+8. **CI cache strategy** (resolve "≤ 20min PR" credibility):
+   - `actions/cache` em `~/.cargo/registry`, `~/.cargo/git`, `target/` keyed por `Cargo.lock` SHA.
+   - `sccache` com `actions-rs/sccache@<pinned>` para Rust incremental builds.
+   - Expected runtime: cold cache 28-32 min; warm cache 12-16 min. Documentar em workflow comments.
+
+9. **Action pinning policy** (SLSA L3 alignment):
+   - All third-party actions pinned por SHA-256 (não tag).
+   - Auto-update via Renovate config `.github/renovate.json`; PR review required.
+   - Examples: `actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab` (não `@v4`).
+
+10. **Fork-PR secret protection**:
+    - Jobs com secrets (cosign, SBOM publish, deploy) gated por `if: github.event.pull_request.head.repo.full_name == github.repository`.
+    - External fork PRs run public-only jobs (TLC, build, test, clippy); cosign + deploy skipped com explicit "skipped: external fork" log.
+
 3. **deny.toml** policy file:
    - License allowlist: MIT, Apache-2.0, BSD-2/3-Clause, ISC, MPL-2.0, Unicode-DFS-2016.
    - Ban GPL/AGPL/SSPL/Commons-Clause.
    - 0 yanked deps.
    - Sources: only crates.io (no git deps non-pinned).
    - Advisories: deny RUSTSEC-* unless waived ADR.
-4. **cyclonedx-cli config** integrado em release pipeline.
-5. **Cosign keyless setup** via GitHub Actions OIDC; Fulcio cert auto-rotates per build; Rekor inclusion proof attached.
+
+4. **cyclonedx-cli config** integrado em release pipeline + sbomqs NTIA validator pós-generation.
+
+5. **Cosign keyless setup** via GitHub Actions OIDC; Fulcio cert (10min lived) per build; Rekor inclusion proof attached. **Outage policy explícito**: Sigstore offline → release blocked + ops escalation runbook RB-FM-SIGSTORE-OUTAGE; sem "grace period" silencioso (cert curto não pode-se cachear; honestidade vs theatre).
+
 6. **Fuzz harnesses** em `crates/corelink-*/fuzz/fuzz_targets/`:
    - `digest_parse.rs` — parse hex digest from string.
    - `reapi_deserialize.rs` — REAPI proto bytes deserialization.
@@ -384,7 +419,7 @@ Doc `docs/internal/ci-gates.md` — explica each gate's rationale + how to debug
 | ID | R | P | D | I | E | Res | Mitigação |
 |---|---|---|---|---|---|---|---|
 | R-001 | TLC runtime > 30min em large bounds | M | M | LOW (CI delay) | M | LOW | Per-PR small bounds; nightly extended |
-| R-002 | Cosign Fulcio outage | L | L | MEDIUM | L | LOW | Cache previous Rekor proof; grace period 24h |
+| R-002 | Cosign Fulcio/Sigstore outage blocks release | L | L | MEDIUM | L | LOW | Outage = release blocked (Fulcio certs 10min lived; nada para cachear). Runbook RB-FM-SIGSTORE-OUTAGE: escalation + comm; release queue até restore. Sem "grace period" silencioso. |
 | R-003 | False positive cargo-audit (unrelated CVE) | M | L | LOW | L | LOW | RUSTSEC-* waiver via ADR if applicable |
 | R-004 | GitHub Actions free tier exceeded | L | L | LOW | L | LOW | Pay tier ~$5/month if needed |
 | R-005 | Workflow YAML injection | L | M | HIGH | L | LOW | No `pull_request_target` em untrusted; review |

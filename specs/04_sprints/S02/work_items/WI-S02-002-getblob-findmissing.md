@@ -4,7 +4,7 @@ type: "work_item"
 doc_status: "DRAFT"
 work_status: "READY"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-25"
 updated: "2026-04-25"
 lane: "HIGH_RISK"
@@ -417,9 +417,23 @@ Tech talk: "REAPI v2 Batch Discovery — Why Bazel Lives or Dies on FindMissingB
 2. Code review (D+3): peer + Security.
 3. Pre-merge: REAPI conformance + property test green.
 
-## 30. Sign-off (HIGH_RISK 10-12)
+## 30. Sign-off (HIGH_RISK 13)
 
-11 roles incl. Architect (parallel AuthZ design) + Security (existence oracle review) + AppSec.
+| # | Role | Name | Signed Date | Status |
+|---|---|---|---|---|
+| 1 | Owner | Gustavo Schneiter | _pending_ | _pending_ |
+| 2 | Final Approver | Gustavo Schneiter | _pending_ | _pending_ |
+| 3 | SRE Lead | _staffing-blocked_ | _pending_ | _pending_ |
+| 4 | Security Lead | _TBD_ | _pending_ | _pending_ |
+| 5 | Engineer (peer 1) | _TBD_ | _pending_ | _pending_ |
+| 6 | Engineer (peer 2) | _TBD_ | _pending_ | _pending_ |
+| 7 | QA | _TBD_ | _pending_ | _pending_ |
+| 8 | Product | Gustavo Schneiter | _pending_ | _pending_ |
+| 9 | Compliance | _TBD_ | _pending_ | _pending_ |
+| 10 | Privacy | _TBD_ | _pending_ | _pending_ |
+| 11 | Architect | _TBD; emphatic — parallel AuthZ design + existence oracle review_ | _pending_ | _pending_ |
+| 12 | AppSec | _TBD; emphatic — masking strategy validation_ | _pending_ | _pending_ |
+| 13 | Crypto SME | _advisory; non-crypto-touching WI mas mantém alinhamento sprint contract §14_ | _pending_ | _pending_ |
 
 ## 31. Change Log
 

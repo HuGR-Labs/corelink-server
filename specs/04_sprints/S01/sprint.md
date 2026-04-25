@@ -119,7 +119,7 @@ Todos os elementos abaixo herdam dos canonical sources listados no `inherits_fro
 - `INV-TENANT-ISOLATION` (CRITICAL): TLA+ `tenant_isolation.tla` + property test
 - `INV-CAS-INTEGRITY` (CRITICAL): TLA+ `cas_integrity.tla` + write-time check
 - `INV-CAS-IDEMPOTENCY` (CRITICAL): property test (same body → same digest)
-- `INV-CAS-IMMUTABILITY` (CRITICAL): write-once via `INSERT IF NOT EXISTS` em D1
+- `INV-CAS-IMMUTABILITY` (CRITICAL): write-once via `INSERT OR IGNORE` em D1 + `If-None-Match: *` header em R2 PUT (412 segundo writer; vide WI-S01-003 §7 anti-scope R2 versioning)
 
 ### 6.4 SLOs aplicáveis (herda `slo_catalog.md §4`)
 
