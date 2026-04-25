@@ -102,19 +102,24 @@ pub enum EvictionError {
 **Cripto-driven invariants enforced**:
 
 1. **INV-GC-001 inheritance** (CRITICAL): eviction NEVER deletes reachable blob:
+   - **Scope: blob-only eviction** (Lote 10.7bis P0-8 fix; chunk lifecycle owned by S-06 GC via `chunks.refcount` + sweep). Eviction iterates `blob_meta` (LRU candidates); reachable check counts active references via `ac_meta.blob_refs` (NOT `manifest_chunks` — that conflated blob-eviction with chunk-eviction; original spec used wrong identifier `chunk_digest = blob_digest` which never matches except for unimultipart blobs).
    - **Soft-delete-first**: eviction sets `blob_meta.deleted_at = now()` (NOT physical R2 delete).
    - **Reuse S-06 GC grace 72h**: `physical delete` happens via WI-S06-004 cron AFTER `deleted_at < now - 72h`; reconcile (WI-S06-005) catches drift.
-   - **Cascade prevention**: pre-evict, verify `blob_meta.refcount > 0` query: if reachable via active manifest_chunks OR active ac_meta.blob_refs, **DO NOT evict** (returns `Err(GcInvariantViolation)`).
-   - **Reachable check SQL** (canonical idiom; Lote 10.6bis P0-1 lesson absorbed):
+   - **Cascade prevention**: pre-evict, verify `active_refcount = 0` query for the BLOB digest. If reachable via any active `ac_meta.blob_refs`, **DO NOT evict** (returns `Err(GcInvariantViolation)`).
+   - **Race-aware reachable check SQL** (Lote 10.7bis P0-6 fix — strict-`<` predicate analogous to S-06 INV-GC-004 protects legitimate-re-ref during eviction phase):
      ```sql
-     SELECT
-         (SELECT COUNT(*) FROM manifest_chunks
-          WHERE tenant_id = $1 AND chunk_digest = $2) +
-         (SELECT COUNT(*) FROM ac_meta a, json_each(a.blob_refs) j
-          WHERE a.tenant_id = $1 AND j.value = $2 AND a.deleted_at IS NULL)
-         AS active_refcount
+     -- Capture evict_started_at_ms BEFORE scan begins (mirroring INV-GC-MARK-STARTED-AT-ATOMIC pattern from S-06):
+     -- UPDATE eviction_run SET evict_started_at_ms = unix_ms_now() WHERE run_id = ?  -- commit-then-scan
+     SELECT COUNT(*) AS active_refcount
+     FROM ac_meta a, json_each(a.blob_refs) j
+     WHERE a.tenant_id = $1
+       AND j.value = $2                             -- blob_digest under eviction consideration
+       AND a.deleted_at IS NULL
+       AND a.created_at < $3                        -- evict_started_at_ms; legitimate-re-ref via UpdateAR AFTER this point is protected (INV-GC-004 strict-< inheritance pattern; Lote 10.6bis P0-1 idiom)
      ```
-     - Uses `json_each(a.blob_refs)` (NOT `LIKE '%digest%'` — lesson Lote 10.6bis P0-1 carried forward); index-friendly via existing `idx_ac_meta_tenant_deleted_at`.
+     - **Strict-`<` semantic**: AC entries created AT OR AFTER `evict_started_at_ms` are protected (race-correctness — eviction must NOT delete blob with concurrent UpdateAR re-ref); same boundary semantic as S-06 INV-GC-004 (Lote 10.6bis P0-3 + P0-1 lessons combined).
+     - Uses `json_each(a.blob_refs)` (NOT `LIKE '%digest%'` — Lote 10.6bis P0-1 lesson); index-friendly via existing `idx_ac_meta_tenant_deleted_at`.
+     - **Crypto SME EMPHATIC mandatory** for race-correctness derivation (analogous to S-06 INV-GC-004 review).
 
 2. **TenantCtx-only enforcement** (Lote 10.4bis lesson): tenant_id from middleware; NEVER from request body.
 
@@ -219,16 +224,18 @@ Cron worker + reachable-check + tier-aware policy; STANDARD lane.
    ORDER BY last_accessed_at ASC                     -- coldest first
    LIMIT 250;                                         -- D1 batch cap (Lote 10.5bis lesson)
    ```
-6. **Reachable check pre-evict** (canonical `json_each` idiom — Lote 10.6bis P0-1 lesson absorbed):
+6. **Reachable check pre-evict** (Lote 10.7bis P0-6 + P0-8 fixes — race-aware strict-`<` predicate; blob-only scope; canonical `json_each` idiom from Lote 10.6bis P0-1):
    ```sql
-   SELECT
-       (SELECT COUNT(*) FROM manifest_chunks
-        WHERE tenant_id = ? AND chunk_digest = ?) +
-       (SELECT COUNT(*) FROM ac_meta a, json_each(a.blob_refs) j
-        WHERE a.tenant_id = ? AND j.value = ? AND a.deleted_at IS NULL)
-       AS active_refcount;
+   -- evict_started_at_ms captured BEFORE scan via UPDATE eviction_run; commit-then-scan ordering
+   SELECT COUNT(*) AS active_refcount
+   FROM ac_meta a, json_each(a.blob_refs) j
+   WHERE a.tenant_id = ?
+     AND j.value = ?                              -- blob_digest under eviction consideration
+     AND a.deleted_at IS NULL
+     AND a.created_at < ?;                         -- evict_started_at_ms; strict-< race protection (legitimate-re-ref via UpdateAR AFTER this point is protected)
    ```
    - If `active_refcount > 0` → **CASCADE PREVENTED**; `cascade_prevented_count += 1`; skip eviction; emit metric.
+   - **Eviction scope is BLOB-only** (Lote 10.7bis P0-8 fix): chunks (refcount-managed via `chunks` table) are S-06 GC's domain (sweep + grace + reconcile). WI-S07-002 NEVER touches chunks directly.
 7. **Soft-delete eviction batch** (D1 atomic):
    ```sql
    BEGIN;

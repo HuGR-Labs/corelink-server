@@ -160,7 +160,7 @@ LRU tracking library + DO singleton; STANDARD lane.
    - DO alarm re-arm AT START (Lote 10.4bis lesson).
 4. **Hot path integration** (CAS GET handler S-02 + AC GET handler S-04):
    - Post-GET success, fire-and-forget call to `LruTracker::record_access(tenant_ctx, digest)`.
-   - Spawned via `wasm_bindgen_futures::spawn_local` ou `tokio::spawn` (NOT awaited; latency neutral).
+   - **Spawned via `worker::send_future()`** (Lote 10.7bis Sonnet R5 P0-3 fix — `wasm_bindgen_futures::spawn_local` and `tokio::spawn` do NOT exist em CF Workers Rust runtime per `workers-rs` crate): `worker::send_future()` is the canonical CF Workers API for non-awaited future execution; OR alternatively non-awaited fetch to DO singleton stub (`do_stub.fetch(...)` without `.await`) — both patterns documented em CF Workers Rust SDK. NEVER `tokio::spawn` (no tokio reactor in CF Workers V8 isolate); NEVER `wasm_bindgen_futures::spawn_local` (browser WASM API; not available in CF Workers runtime).
    - If record_access fails → log WARN; do NOT propagate (LRU is best-effort).
 5. **Refresh threshold 60s dedup**:
    - DO check: if `buffer[key]` already exists with `last_accessed_at >= now - 60s` → skip add (already recent).

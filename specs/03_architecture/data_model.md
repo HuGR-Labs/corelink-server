@@ -262,13 +262,24 @@ CREATE TABLE usage_counter (
   PRIMARY KEY (tenant_id, period, metric)
 );
 
--- tenant quota
+-- tenant quota (POLICY: config; immutable per period)
 CREATE TABLE tenant_quota (
   tenant_id         TEXT        PRIMARY KEY,
   max_storage_bytes INTEGER     NOT NULL,
   max_rps           INTEGER     NOT NULL,
   max_concurrent_exec INTEGER   NOT NULL,
   updated_at        INTEGER     NOT NULL
+);
+
+-- tenant storage state (STATE: mutable telemetry; running counter; Lote 10.7bis P0-2 NEW)
+-- Separates "policy" (max_storage_bytes em tenant_quota) from "state" (bytes_used here).
+-- DO singleton `quota-<tenant_id>` em S-07 WI-S07-003 reservation pattern reads/writes here every 5min.
+CREATE TABLE tenant_storage_state (
+  tenant_id           TEXT        PRIMARY KEY,
+  bytes_used          INTEGER     NOT NULL DEFAULT 0,           -- monotonic except on eviction (decrements)
+  bytes_used_updated_at  INTEGER  NOT NULL,                      -- unix ms
+  last_synced_at      INTEGER     NOT NULL,                      -- unix ms; DO last sync to D1
+  CHECK (bytes_used >= 0)
 );
 ```
 

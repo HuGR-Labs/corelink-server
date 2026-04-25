@@ -3,7 +3,7 @@ id: "SPEC-CONTRACT-S07"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-04-24"
 updated: "2026-04-24"
 owner: "Gustavo Schneiter"
@@ -205,4 +205,14 @@ Nenhum waiver previsto. Se sprint precisar relaxar requirement, criar waiver con
 
 ---
 
-**Fim de spec contract S-07 SOTA (v1.1).** Upgrade de v1.0 (compacto) para v1.1 (SOTA) executado em Lote 9.1 endereçando user intent "tudo SOTA, fucking awesome".
+## 20. Change Log
+
+| Versão | Data | Autor | Mudança |
+|---|---|---|---|
+| 1.0.0 | 2026-04-24 | Gustavo (Lote 9.1) | Initial sprint contract S-07 (Dedup + Eviction Policy; STANDARD lane). |
+| 1.1.0 | 2026-04-24 | Gustavo (Lote 9.1 SOTA elevation) | SOTA upgrade endereçando "tudo SOTA, fucking awesome": 19 sections; benchmarks externos NativeLink + BuildBuddy; 6-row risk register; SLA targets; ADR-0019/0020 references. |
+| 1.2.0 | 2026-04-25 | Gustavo (Lote 10.7bis R4 + R5 review remediation) | **9 P0s + 3 R5 P0s applied** (não exhaustive — phased approach Phases 1-5): (a) **P0-1** WI-S07-001 chunks NOT manifest_chunks (was wrong table; UNIQUE on per-blob list breaks dedup); (b) **P0-3** column-name drift `_ms` suffix → canonical (deleted_at, created_at, last_accessed_at); (c) **P0-5 + P0-4** ADR-0019/0020 DRAFT → FROZEN promotion + 80% email defer to S-13 (boundary clarification em ADR-0020); (d) **P0-2** new `tenant_storage_state` table (separates STATE from POLICY tenant_quota; NEW migration); (e) **P0-6** race-aware reachable check com strict-< predicate (`a.created_at < evict_started_at_ms`; analogous a S-06 INV-GC-004); (f) **P0-8** scope-reduce eviction to BLOB-only (chunks lifecycle owned by S-06 GC); (g) **P0-9** DO routing via tenant.primary_region; (h) **R5 P0-2** size-proportional reservation TTL (ttl = max(60s, request_bytes/1MB/s × 2x), capped 7d) — multipart 160 GiB no longer over-quota mid-upload; (i) **R5 P0-3** fire-and-forget via `worker::send_future()` (NOT `tokio::spawn` nor `wasm_bindgen_futures::spawn_local` — those don't exist em CF Workers Rust runtime). Score trajectory: pre-bis 7.2/10 (R4 7.6 + R5 6.8) → post-bis projected 8.5/10 (R4 estimate). Remaining: P0-7 tier taxonomy ADR amendment, P1s (SLO-DEDUP-RATIO definition, race property test 100k iter, etc.) — defer to Lote 10.7-tris. |
+
+---
+
+**Fim de spec contract S-07 SOTA (v1.2.0).** Upgrade history: v1.0→v1.1 SOTA elevation (Lote 9.1); v1.1→v1.2 R4+R5 P0 fixes (Lote 10.7bis).

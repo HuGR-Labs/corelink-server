@@ -112,17 +112,26 @@ pub enum QuotaError {
    - State em DO storage: `bytes_used`, `pending_reservations: HashMap<ReservationId, (bytes, expires_at_ms)>`.
    - Pessimistic check: `bytes_used + sum(pending_reservations.bytes) + request_bytes ≤ max`.
 
-2. **Reservation pattern** (eliminates FM-059):
-   - Pre-write: `check_and_reserve(req_bytes)` → DO atomic increment pending counter; returns ReservationId + 60s TTL.
+2. **Reservation pattern** (eliminates FM-059; **size-proportional TTL** Lote 10.7bis Sonnet R5 P0-2 fix):
+   - Pre-write: `check_and_reserve(req_bytes)` → DO atomic increment pending counter; returns ReservationId + size-proportional TTL.
+   - **Size-proportional TTL formula** (Lote 10.7bis R5 P0-2 fix; was hard-coded 60s — too short for multipart 160 GiB ~218min @ 100 Mbps):
+     - `ttl_seconds = max(60, (request_bytes / MIN_UPLOAD_RATE_BYTES_PER_SEC) * 2)` — 2× safety factor.
+     - `MIN_UPLOAD_RATE_BYTES_PER_SEC = 1_000_000` (1 MB/s lower-bound; CF Workers slow client tolerated).
+     - At 1 GiB request: `1_073_741_824 / 1_000_000 * 2 = 2147s ≈ 36min` TTL.
+     - At 160 GiB multipart: `171_798_691_840 / 1_000_000 * 2 = 343597s ≈ 95h` TTL — bounded em hard cap of 7d (604800s) to prevent indefinite reservation leak from abandoned uploads.
+     - Hard cap: `min(ttl_seconds, 604800)` — 7d max; aligns com S-05 multipart_sessions sweeper window.
+   - **Heartbeat extension** (alternative for multipart sessions; more rigorous): on each `UploadPart` RPC (S-05), re-extend reservation TTL via `extend_reservation(id, +TTL)` heartbeat — clean semantic, bounded operationally.
    - Post-write success: `commit_reservation(id)` → DO moves pending → committed (`bytes_used += req_bytes`); decrements pending.
    - Post-write fail OR TTL expired: `release_reservation(id)` → DO removes pending entry; bytes never counted.
    - **Race-free**: DO actor model serializes; concurrent writes can't both pass check_and_reserve at boundary.
 
 3. **TenantCtx-only enforcement** (Lote 10.4bis lesson): tenant_id from middleware; NEVER from request body.
 
+3-bis. **DO routing via tenant.primary_region** (Lote 10.7bis R4 P0-9 fix — multi-region tenant cross-region inconsistency previously dismissed): DO ID `quota-<tenant_id>` resolved within tenant's primary region (per `tenant.primary_region` em data_model.md line 152). Worker→DO binding routes via primary_region edge; cross-region writes hit primary_region DO via Cloudflare backbone (~50-100ms RTT cross-region tolerated since primary region pinned per tenant). For GA: each tenant pinned to ONE primary region; multi-region tenant scenarios deferred to S-14 BYOK + multi-region replication. SLA p99 ≤ 3ms holds within primary region; cross-region requests degraded but rare (most tenants single-region per pricing tier defaults).
+
 4. **Audit fail-closed** (Lote 10.6bis pattern): each check + commit + release audit-emitted; if audit fails on critical path (commit), reservation auto-expires (does NOT count toward quota — fail-closed bias toward over-counting NOT under-counting).
 
-5. **D1 source-of-truth periodic sync**: DO state synced to D1 `tenant_quota.bytes_used` every 5min (eventual consistency); on DO restart, recover from D1 (cold start); intermediate writes via DO authoritative.
+5. **D1 source-of-truth periodic sync** (Lote 10.7bis P0-2 fix — uses NEW `tenant_storage_state` table; was incorrectly referencing phantom `tenant_quota.bytes_used`): DO state synced to D1 `tenant_storage_state` (PRIMARY KEY tenant_id; columns bytes_used + bytes_used_updated_at + last_synced_at) every 5min (eventual consistency); on DO restart, recover from D1 (cold start); intermediate writes via DO authoritative. **Schema separation rationale** (R4 P0-2 option B): `tenant_quota` is POLICY (max_storage_bytes immutable per period); `tenant_storage_state` is STATE (mutable running counter). Migration `00X_tenant_storage_state.sql` creates table + backfills bytes_used via reconcile from `blob_meta` aggregate `SUM(size_bytes) WHERE deleted_at IS NULL` per tenant.
 
 ## 2. Narrative (≥ 200 palavras + race-free justification)
 
@@ -206,7 +215,7 @@ Tower middleware + DO singleton per tenant; STANDARD lane.
      - Remove from pending; audit emit `corelink.quota.released`.
    - **TTL auto-release** (DO alarm): scan every 60s; remove pending with `expires_at_ms < now`.
 5. **D1 sync** (eventual consistency):
-   - Every 5min, DO writes `tenant_quota.bytes_used` to D1 source-of-truth.
+   - Every 5min, DO writes `tenant_storage_state.bytes_used` to D1 source-of-truth.
    - On DO cold start (worker restart): read `bytes_used` from D1; replay durable pending_reservations (DO storage); D1 + DO converge.
 6. **429 response with Retry-After**:
    - Status 429 Too Many Requests (per RFC 7231).
