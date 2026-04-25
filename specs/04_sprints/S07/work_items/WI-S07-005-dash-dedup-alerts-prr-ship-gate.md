@@ -4,7 +4,7 @@ type: "work_item"
 doc_status: "DRAFT"
 work_status: "READY"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-25"
 updated: "2026-04-25"
 lane: "STANDARD"
@@ -97,7 +97,7 @@ panels:
 
 **Cripto-driven invariants enforced** (cumulative S-07; all NEW promovidas via this WI):
 
-1. **INV-EVICT-SOFT-DELETE-FIRST** (HIGH, NEW): eviction sets `deleted_at_ms`; NEVER R2 DELETE direct (WI-S07-002 §12).
+1. **INV-EVICT-SOFT-DELETE-FIRST** (HIGH, NEW): eviction sets `deleted_at`; NEVER R2 DELETE direct (WI-S07-002 §12).
 2. **INV-EVICT-CASCADE-PREVENTED** (HIGH, NEW): pre-evict reachable check via canonical `json_each` SQL; refuses if `active_refcount > 0` (WI-S07-002 §12).
 3. **INV-LRU-CONSISTENCY** (HIGH, NEW): eviction respects authoritative `last_accessed_at` (DO buffered + D1 base UNION); 0 race violations (WI-S07-004 §12).
 
@@ -188,7 +188,7 @@ Sprint ship gate; STANDARD lane.
 7. **Cumulative INV §3.X promotion** (3 NEW; registry update):
    ```markdown
    <!-- Add to invariant_registry.md §3.X (or NEW §3.18 S-07 section) -->
-   | INV-EVICT-SOFT-DELETE-FIRST | Eviction sets deleted_at_ms; NEVER R2 DELETE direct | HIGH | WI-S07-002 §6.1.7 | chaos test #1 + property prop_evict_idempotent | N/A |
+   | INV-EVICT-SOFT-DELETE-FIRST | Eviction sets deleted_at; NEVER R2 DELETE direct | HIGH | WI-S07-002 §6.1.7 | chaos test #1 + property prop_evict_idempotent | N/A |
    | INV-EVICT-CASCADE-PREVENTED | Pre-evict reachable check via json_each refuses if active_refcount > 0 | HIGH | WI-S07-002 §6.1.6 | chaos test #2 + property prop_evict_cascade_prevention | N/A |
    | INV-LRU-CONSISTENCY | Eviction respects authoritative last_accessed_at (DO buffered + D1 base UNION) | HIGH | WI-S07-004 §6.1.7 | chaos test #1 + property prop_lru_eviction_race | N/A |
    ```

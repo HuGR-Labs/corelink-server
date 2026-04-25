@@ -4,7 +4,7 @@ type: "work_item"
 doc_status: "DRAFT"
 work_status: "READY"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-25"
 updated: "2026-04-25"
 lane: "STANDARD"
@@ -153,7 +153,7 @@ LRU tracking library + DO singleton; STANDARD lane.
    - Index: `idx_blob_meta_tenant_last_accessed ON blob_meta(tenant_id, last_accessed_at)` for LRU scan ORDER BY.
 3. **DO singleton** `lru-tracker-<region>`:
    - State em DO storage:
-     - `buffer: BTreeMap<(TenantId, Digest), u64>` (last_accessed_at_ms; latest-write-wins per (tenant, digest)).
+     - `buffer: BTreeMap<(TenantId, Digest), u64>` (last_accessed_at; latest-write-wins per (tenant, digest)).
      - `last_flush_at_ms: u64`.
    - DO alarm: every 30s OR on `buffer.len() >= 1000` → flush.
    - DO durable storage persists buffer across restart.
@@ -163,7 +163,7 @@ LRU tracking library + DO singleton; STANDARD lane.
    - Spawned via `wasm_bindgen_futures::spawn_local` ou `tokio::spawn` (NOT awaited; latency neutral).
    - If record_access fails → log WARN; do NOT propagate (LRU is best-effort).
 5. **Refresh threshold 60s dedup**:
-   - DO check: if `buffer[key]` already exists with `last_accessed_at_ms >= now - 60s` → skip add (already recent).
+   - DO check: if `buffer[key]` already exists with `last_accessed_at >= now - 60s` → skip add (already recent).
    - Else: insert/update.
 6. **30s flush logic**:
    - Flush triggered: alarm fires (30s elapsed) OR buffer.len() >= 1000.

@@ -4,7 +4,7 @@ type: "work_item"
 doc_status: "DRAFT"
 work_status: "READY"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-25"
 updated: "2026-04-25"
 lane: "STANDARD"
@@ -187,7 +187,7 @@ Tower middleware + DO singleton per tenant; STANDARD lane.
    - WI-S05-001 SplitBlob handler (request_bytes = blob.size_bytes; per-blob check; chunks contado as part of SplitBlob result).
 3. **DO singleton per tenant** `quota-<tenant_id>`:
    - State em DO storage: `bytes_used: u64, pending_reservations: HashMap<ReservationId, ReservationEntry>, max_storage_bytes: u64, last_d1_sync_at_ms: u64`.
-   - `ReservationEntry { bytes: u64, expires_at_ms: u64, created_at_ms: u64 }`.
+   - `ReservationEntry { bytes: u64, expires_at_ms: u64, created_at: u64 }`.
    - DO alarm cleanup: every 60s scan `pending_reservations`; remove entries with `expires_at_ms < now`.
    - DO alarm re-arm AT START (Lote 10.4bis lesson).
 4. **Reservation lifecycle**:
