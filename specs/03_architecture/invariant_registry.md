@@ -362,6 +362,27 @@ Invariantes que governam GC mark-sweep + refcount reconciliation + TLA+ formal v
 
 **Aliases históricos:** nenhum. Estes ~22 IDs introduzidos em Lote 10.6 (sprint S-06 spec) e **promovidos preemptivamente em Lote 10.6** (consistency com lesson Lote 10.4bis CI gate validate_inv_promotion.py + lesson Lote 10.5 §3.16 promovida preemptive); refinements possíveis em Lote 10.6bis pós-Agent R4 review.
 
+### 3.18 Dedup + Eviction + Quota domain — Lote 10.7 (S-07 sprint)
+
+INVs introduced by Sprint S-07 (Dedup + Eviction Policy; STANDARD lane). Promovidas preemptivamente em Lote 10.7 (consistency com lesson Lote 10.4bis CI gate validate_inv_promotion.py); refinements possíveis em Lote 10.7bis pós-Agent R4/R5 reviews.
+
+| INV | Description | Severity | Mechanism | Validation | TLA+ |
+|---|---|---|---|---|---|
+| **INV-EVICT-SOFT-DELETE-FIRST** | Eviction sets `blob_meta.deleted_at_ms`; NEVER R2 DELETE direct (reuses S-06 GC grace 72h via WI-S06-004 physical-delete cron) | HIGH | WI-S07-002 §6.1.7 soft-delete batch; physical delete delegated to S-06 | Chaos test #1 + property `prop_evict_idempotent`; 30d sustained zero INV-GC-001 violations | N/A (architecture invariant; INV-GC-001 inheritance chain) |
+| **INV-EVICT-CASCADE-PREVENTED** | Pre-evict reachable check refuses if `active_refcount > 0` (chunks ref'd by manifest_chunks OR ac_meta.blob_refs); canonical `json_each` SQL idiom (Lote 10.6bis P0-1 lesson) | HIGH | WI-S07-002 §6.1.6 reachable check; SQL `(SELECT COUNT(*) FROM manifest_chunks ...) + (SELECT COUNT(*) FROM ac_meta a, json_each(a.blob_refs) j ...) AS active_refcount` | Chaos test #2 + property `prop_evict_cascade_prevention` | N/A (cascade prevention; INV-GC-003 + INV-DEDUP-CONSISTENCY combined) |
+| **INV-EVICT-TTL-CAP-RESPECTED** | Enterprise TTL ≤ 730d hard cap (CAP-EVICT-002 boundary); admin override > cap rejected by validator | MEDIUM | WI-S07-002 §6.1.3 `ttl_for_tier` hard cap em config validator | Chaos test #7 (override rejection) + integration test boundary | N/A (config invariant) |
+| **INV-LRU-CONSISTENCY** | Eviction respects authoritative `last_accessed_at` via DO buffered + D1 base UNION lookup; 0 race violations (eviction NEVER deletes blob accessed within tier_lru_window even sob race) | HIGH | WI-S07-004 §6.1.7 `last_accessed_at_authoritative` MAX(DO_buffered, D1_base); WI-S07-002 reachable check consumes | Property test 10k iter `prop_lru_eviction_race` (sprint contract §6 DoD GC+Evict race) + chaos test #1 | N/A (architecture invariant; race-free correctness) |
+| **INV-QUOTA-RESERVATION-TTL** | Pending reservations auto-release after 60s TTL; eliminates FM-059 race window (concurrent writes at quota boundary); no quota leak | HIGH | WI-S07-003 §6.1.4 reservation lifecycle + DO alarm cleanup; sprint contract §15 R-S07-001 mitigation | Chaos test #4 + property `prop_quota_ttl_release` | N/A (DO actor model; race-free serialization) |
+
+**Cross-references**:
+- `ADR-0019` documenta TTL ownership boundary S-04 → S-07 supersedes (per-tier defaults).
+- `ADR-0020` documenta Quota ownership boundary S-07 (≤95% trigger eviction) → S-08 (100% hard-block).
+- `failure_modes.md FM-059, FM-300, FM-305` — runbook RB-FM-059 + RB-FM-305 dry-runs em WI-S07-005.
+- `security_model.md CTRL-ISO-005, CTRL-QUOTA-001` — control alignment.
+- `slo_catalog.md SLO-DEDUP-RATIO` (forward; defined in WI-S07-005 dashboard).
+
+**Aliases históricos:** nenhum. Estes 5 IDs introduzidos em Lote 10.7 (sprint S-07 spec) e **promovidos preemptivamente em Lote 10.7** (consistency com lesson Lote 10.4bis CI gate validate_inv_promotion.py); refinements possíveis em Lote 10.7bis pós-Agent R4/R5 reviews.
+
 ---
 
 ## 4. TLA+ coverage matrix

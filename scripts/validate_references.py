@@ -160,6 +160,7 @@ WHITELIST_IDS = {
     "INV-AUTH",  # plural-form mention em registry §3.14 ("INV-AUTH-*" pattern intro)
     "INV-AUTH-PAT",  # plural-form mention em registry §3.14 + §3.13 (PAT-related INVs)
     "INV-MULTIPART",  # plural-form mention em registry §3.16 intro ("INV-MULTIPART-* pattern")
+    "INV-LRU",  # plural-form mention em S-07 §3.18 + WI-S07-004 narrative (registry §3.18 INV-LRU-* pattern)
     # Forward-looking INVs introduced em sprint WIs; serão promovidas a invariant_registry.md em respective sprint implementation:
     "INV-AUTH-CLOCK-SKEW-BOUND",       # S-03 WI-S03-001
     "INV-AUTH-ISS-EXACT-MATCH",        # S-03 WI-S03-001
@@ -319,6 +320,8 @@ WHITELIST_IDS = {
     "RB-FM-GC-WORKER-STALL",         # S-06 WI-S06-001 forward
     "RB-EMAIL-HASH-KEY-ROTATION",    # S-03 WI-S03-005 Lote 10.3-tris P0-R5-003 forward stub
     "RB-PATH-TDK-RETENTION",         # S-04 WI-S04-004 Lote 10.4-tris P0-R5-006 forward stub
+    # SLO forward-stubs (defined em sprint implementation; whitelisted at spec time):
+    "SLO-DEDUP-RATIO",               # S-07 WI-S07-005 forward; will be added to slo_catalog.md em Lote 10.7+
     "RB-FM",                         # plural-form mention "RB-FM-*" em ADR-0042 + WI-S06-007
     # SLOs em formato sem header standalone (definidos em corpo do §4.X mas não como anchor)
     "SLO-DEPLOY-SAFE",
