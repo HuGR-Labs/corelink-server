@@ -50,7 +50,10 @@
         "fitness_function",
         "incident",
         "post_mortem",
-        "waiver"
+        "waiver",
+        "architecture",
+        "governance",
+        "audit"
       ]
     },
     "doc_status": {

@@ -231,16 +231,37 @@ CRITICAL/HIGH invariants adicionados em §3.12 + §3.13 que requerem TLA+ pelo e
 
 ### 4.3 Specs sem TLA+ requirement (HIGH severity mas non-distributed)
 
-| Invariante | Justificativa não-TLA+ |
-|---|---|
-| INV-DEDUP-CONSISTENCY | Algorithmic property; UNIQUE index enforces; covered by property test |
-| INV-RATE-LIMIT-PROPORTIONALITY | DO atomic counter; covered by property test 10k iter |
-| INV-OBS-CARDINALITY-BUDGET | Static budget validator CI; non-distributed |
-| INV-OBS-AUDIT-CHAIN-INTEGRITY | Hash chain; coberto por `audit_immutability.tla` indiretamente |
-| INV-SUPPLY-* | Build-time checks; non-runtime distributed semantics |
-| INV-ADMIN-MFA-FRESHNESS | Middleware timestamp check; non-distributed |
-| INV-ERASURE-ATTESTATION-SIGNED | Signature verification; algorithmic |
-| INV-KEY-AUDIT | Coberto por `audit_immutability.tla` |
+Lote 9.5c expansion: catalogadas todas as invariantes HIGH cuja semantics não justifica TLA+ (algorithmic + non-distributed + check coberto por outras validações: property test, schema constraint, CI gate, single-table reconcile, etc.).
+
+| Invariante | Severidade | Justificativa não-TLA+ |
+|---|---|---|
+| INV-AC-OUTPUTS-VALID | HIGH | Reconcile diário schema-level (FK em D1); cross-doc S-06 GC + reconcile cron; não distributed semantics |
+| INV-GC-003 | HIGH | Refcount consistency; reconcile diário CTRL-GC-002; covered by property test S-06 |
+| INV-DATA-MONOTONIC-TS | MEDIUM | Writer enforces via `MAX(now, prev_value)`; algorithmic não-distributed |
+| INV-DATA-BILLING-RECONCILE | HIGH | Subsumed por INV-BILLING-RECONCILE-3-LAYER (S-10 PLANNED `billing_atomicity.tla`) |
+| INV-AUDIT-RETENTION | HIGH | Object Lock hardware enforcement; quarterly audit (não invariant runtime) |
+| INV-CONF-AT-REST | HIGH | R2 SSE + D1/Neon SSE config; quarterly config audit (EVT-028); não runtime invariant |
+| INV-CONF-IN-FLIGHT | HIGH | TLS 1.3 enforced em CF Edge + Workers; SSL Labs A+ check (EVT-037); não runtime semantics |
+| INV-AVAIL-ISOLATION | HIGH | Coberto indiretamente por TLA+ tenant_isolation (5-layer defense) + property test bulkhead PAT-BULKHEAD-001 |
+| INV-BILLING-NO-LOSS | HIGH | Subsumed por INV-BILLING-RECONCILE-3-LAYER + planned `billing_atomicity.tla` (S-10 PLANNED) |
+| INV-BILLING-NO-DUP | HIGH | Idempotency-Key + (tenant_id, request_id) UNIQUE; coberto por `billing_atomicity.tla` planned |
+| INV-SUPPLY-SIGNED-DEPLOY | HIGH | CI gate + Cosign verify pre-rollout; build-time check, não runtime |
+| INV-SUPPLY-SBOM-PRESENT | HIGH | CI gate; build-time |
+| INV-SUPPLY-PROVENANCE-IN-REKOR | HIGH | CI gate Rekor inclusion proof; build-time |
+| INV-SUPPLY-NO-YANKED | HIGH | cargo-deny CI gate; build-time |
+| INV-SUPPLY-LICENSE-ALLOWLIST | HIGH | cargo-deny CI gate; build-time |
+| INV-QUOTA-ENFORCEMENT | HIGH | DO atomic counter per-tenant + write path check (CTRL-QUOTA-001); covered by property test S-08 |
+| INV-DATA-RESIDENCY | HIGH | Subsumed por INV-REGION-NO-CROSS-LEAK (S-14 PLANNED `region_residency.tla` / `byok_sovereignty.tla`) |
+| INV-DEDUP-CONSISTENCY | HIGH | Algorithmic property; UNIQUE index enforces; covered by property test S-07 |
+| INV-RATE-LIMIT-PROPORTIONALITY | HIGH | DO atomic counter; covered by property test 10k iter |
+| INV-OBS-CARDINALITY-BUDGET | HIGH | Static budget validator CI (`cardinality_check.py`); non-distributed |
+| INV-OBS-AUDIT-CHAIN-INTEGRITY | HIGH | Hash chain; coberto por `audit_immutability.tla` indiretamente; daily verifier job |
+| INV-ADMIN-MFA-FRESHNESS | HIGH | Middleware timestamp check; non-distributed |
+| INV-ERASURE-ATTESTATION-SIGNED | HIGH | Signature verification; algorithmic; per-region Ed25519 key |
+| INV-CONSENT-PROOF-VERIFIABLE | HIGH | Coberto por `dsr_erasure_atomicity.tla` planned (S-11) via InvConsentSymmetry |
+| INV-CAS-SIDE-CHANNEL-INDISTINGUISHABLE | HIGH | Statistical algorithmic property (Mann-Whitney U); criterion benchmark + adversarial test 10k samples; não state-machine distributed |
+| INV-KEY-AUDIT | HIGH | Coberto por `audit_immutability.tla` |
+| INV-KEY-OVERLAP | HIGH | Per-asset table canonical em `key_management.md §3.2.1` + ADR-0018; covered by `key_lifecycle.tla` PLANNED (S-13 §4.2 entry) |
 
 ### 4.4 CI obligation gate (Lote 9.4)
 

@@ -151,7 +151,7 @@ inherits_from:
 
 - [ ] **WIs SEALED**: 8/8.
 - [ ] **E2E erasure**: fake user signup → use product 30d → DSR erasure request → 0 records cross-backend em ≤ 30d (verification job verde).
-- [ ] **Erasure cross-backend coverage**: 7 backends (D1, Neon, R2, KV, DO, Loki, Stripe) com test isolado per backend + integrated.
+- [ ] **Erasure cross-backend coverage**: **10 backends total** (Lote 9.5c R3-11 alignment com R-S11-6): 6 erasure-effective (D1, Neon, R2 mutable, KV, DO, Stripe) + 4 pseudonymized via Object Lock (R2 audit 7y, R2 billing-events 7y, Loki cold archive 400d, CF Analytics Engine rolling 30d). Test isolado per backend + integrated cross-backend.
 - [ ] **Crypto-erase BYOK**: simulate enterprise BYOK + DSR erasure → key destroyed; data inacessível (NIST SP 800-88 evidence).
 - [ ] **Residency**: 10k tenant EU + 10k US property test verde; 0 cross-region leaks.
 - [ ] **Consent UI screenshot evidence captured** (EVT-012 + EVT-049) com all 6 fields populated.
@@ -170,7 +170,7 @@ inherits_from:
 - [ ] **10.s11.2** DPIA preenchido para cada feature privacy-impacting (dedup, telemetry, billing minimum).
 - [ ] **10.s11.3** LIA template preenchido para telemetria sob legitimate interest.
 - [ ] **10.s11.4** **Crypto-erase NIST SP 800-88 Rev.1 compliant** para BYOK tenants (witness key destroy ceremony).
-- [ ] **10.s11.5** **Erasure verification job 24h post-erasure**: 0 records cross 7 backends; report retained 7y.
+- [ ] **10.s11.5** **Erasure verification job 24h post-erasure**: 0 records cross 10 backends total (6 effective + 4 pseudonymized via Object Lock); report retained 7y.
 - [ ] **10.s11.6** **DSR receipt JWT** signed verifiable via public endpoint.
 - [ ] **10.s11.7** **3 locales** (PT-BR, EN, ES) para privacy notice + DSR UI mandatory at GA.
 - [ ] **10.s11.8** **Sub-processor change notification** ≥ 30d testado em staging (mock change → email triggered).

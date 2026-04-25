@@ -82,14 +82,16 @@ inherits_from:
   - `corelink version` semver + git rev + SLSA attestation link.
 - **R-S15-3**: `--output=json` flag em todos subcommands para scripting.
 - **R-S15-4**: Auth via env var `CORELINK_PAT` ou config file `~/.corelink/config.toml`; nunca em CLI args (security).
-- **R-S15-5**: `corelink doctor` outputs:
-  - Network: ping CF endpoint per region; report latency p50/p99.
-  - Auth: PAT validity + tenant scope.
-  - Storage: writeable test (1KB blob) + readable test.
-  - BYOK: if configured, KMS access check.
-  - Region: tenant region matches expected.
-  - Quota: current usage vs plan limit.
-  - Per-failure: actionable next step (link to docs).
+- **R-S15-5**: `corelink doctor` outputs **8 checks** (Lote 9.5c — alinha 8 checks vs 6 inconsistency Codex R3-14 fix):
+  1. **Network**: ping CF endpoint per region; report latency p50/p99.
+  2. **Auth**: PAT validity + tenant scope.
+  3. **Storage write**: writeable test (1KB blob) com tenant prefix derivation.
+  4. **Storage read**: readable test (round-trip integrity verify).
+  5. **BYOK**: if configured, KMS access check (S-14 alignment).
+  6. **Region**: tenant region matches expected (`<tenant>.<region>.corelink.dev`).
+  7. **Quota**: current usage vs plan limit + soft/hard thresholds (S-07/S-08 boundary).
+  8. **Client verify**: BLAKE3 verify default-on em SDK (CTRL-CAS-002 reflection).
+  - Per-failure: actionable next step (link to docs error_taxonomy `COR_*` codes).
 
 ### 5.2 Bazel + Buck2 (CAP-SDK-001 + CAP-SDK-002)
 

@@ -8,7 +8,7 @@ version: "1.0.0"
 created: "2026-04-25"
 updated: "2026-04-25"
 lane: "STANDARD"
-lane_forcing_factors: []
+# lane_forcing_factors omitted: STANDARD lane permite empty (REG-LANE-003 só obriga se lane=HIGH_RISK)
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []

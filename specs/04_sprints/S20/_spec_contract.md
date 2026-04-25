@@ -278,7 +278,7 @@ Todas as invariants CRITICAL (14 canonical sources contribute) **must be active*
 | TLA+ formal verification | Some services | Some services | Limited | **Yes — 4 specs verdes CI** |
 | Engineering/Launch separation | Yes | Yes | Yes | **Yes — engineering gate binary independent** |
 | SBOM CycloneDX signed | Yes | Yes | Yes | **Yes — CycloneDX 1.5+ aligned S-12** |
-| 26 runbooks dry-run 90d | Yes | Yes | Yes | **Yes — cumulative S-17 + S-20** |
+| 42 runbooks dry-run 90d | Yes | Yes | Yes | **Yes — cumulative S-17 + S-20 (count atual repo Lote 9.5c)** |
 
 **Veredito SOTA:** S-20 v1.1 atinge feature parity com AWS/GCP GA processes em 9/9 dimensões; vantagem em TLA+ verification (rare in industry) + Engineering/Launch separation discipline.
 

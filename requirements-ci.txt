@@ -1,0 +1,12 @@
+# CI dependencies for spec validation scripts (Lote 9.5c).
+# Install: pip install -r requirements-ci.txt
+#
+# Used by:
+#   - scripts/validate_specs.py        (jsonschema + pyyaml)
+#   - scripts/validate_references.py   (stdlib only)
+#   - scripts/check_tla_obligations.py (stdlib only)
+#   - scripts/check_error_taxonomy.py  (stdlib only)
+#   - scripts/check_cost_regression.py (stdlib only)
+
+jsonschema>=4.21.0,<5.0.0
+pyyaml>=6.0.0,<7.0.0

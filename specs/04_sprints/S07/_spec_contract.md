@@ -128,7 +128,7 @@ Herda `_sprint_creation_contract §8`. Adiciona:
 - ❌ **Cross-tenant dedup** (backlog post-GA). Privacy risk via existence oracle (CTRL-ISO-005). Requer BYOE + ADR novo.
 - ❌ **Content-defined chunking** (FastCDC). S-05 estabeleceu fixed 2 MiB; redesign fora de escopo.
 - ❌ **Delta compression** entre chunks similares (research-grade; pós-GA).
-- ❌ **Zstd/LZ4 compression** antes de store. Defer pra S-11 ou ADR específica (ROI duvidoso pra binários já compressed).
+- ❌ **Zstd/LZ4 compression** antes de store. **Anti-scope GA** (Lote 9.5c — Codex R3-16 fix; era erroneamente "defer pra S-11" mas S-11 é privacy/DSR, não storage/perf). Compression é decisão pós-GA Q1 com ADR específica + benchmark vs storage/CPU trade-off (ROI duvidoso pra binários já compressed como Docker layers).
 - ❌ **Eviction ML-based** (predictive LRU). Simple LRU baseline primeiro; ML se métrica justificar.
 
 ## 11. Dependencies

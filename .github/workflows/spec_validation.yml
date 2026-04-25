@@ -1,0 +1,56 @@
+name: Spec Validation (Lote 9.5c)
+
+# Runs spec validation gates per Lote 9.5b/c CI hardening:
+# - validate_references.py: cross-reference IDs (CTRL/PAT/INV/FM/EVT/RB/ADR/SLO/FF-HR/WAIVER)
+# - validate_specs.py: YAML front matter + JSON Schema validation
+# - check_tla_obligations.py: TLA+ obligation matrix consistency
+# - check_error_taxonomy.py: error_taxonomy.md schema instantiation
+# - check_cost_regression.py: §14.10 universal cost regression gate adoption
+
+on:
+  pull_request:
+    paths:
+      - 'specs/**'
+      - 'scripts/validate_*.py'
+      - 'scripts/check_*.py'
+      - '.github/workflows/spec_validation.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'specs/**'
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  spec-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements-ci.txt
+
+      - name: Validate references (CTRL/PAT/INV/FM/EVT/RB/ADR/SLO)
+        run: python3 scripts/validate_references.py
+
+      - name: Validate specs (YAML front matter + JSON Schema)
+        run: python3 scripts/validate_specs.py
+
+      - name: Check TLA+ obligations matrix
+        run: python3 scripts/check_tla_obligations.py
+        # NOTE: warnings (forward-looking PLANNED specs) are OK; errors block.
+
+      - name: Check error_taxonomy.md schema + domain coverage
+        run: python3 scripts/check_error_taxonomy.py
+
+      - name: Check cost regression gate adoption
+        run: python3 scripts/check_cost_regression.py

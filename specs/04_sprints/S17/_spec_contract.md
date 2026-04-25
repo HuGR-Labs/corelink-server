@@ -194,7 +194,7 @@ inherits_from:
 
 ### Outbound
 
-- S-20 (GA exige all 26 runbooks dry-run em 90d + 4-week chaos test sustained + DR drill done).
+- S-20 (GA exige all 42 runbooks dry-run em 90d + 4-week chaos test sustained + DR drill done; count atual repo Lote 9.5c, vs 26 baseline original).
 
 ## 12. WIs antecipados (PERT)
 
