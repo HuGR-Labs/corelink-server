@@ -321,7 +321,7 @@ WHITELIST_IDS = {
     "RB-EMAIL-HASH-KEY-ROTATION",    # S-03 WI-S03-005 Lote 10.3-tris P0-R5-003 forward stub
     "RB-PATH-TDK-RETENTION",         # S-04 WI-S04-004 Lote 10.4-tris P0-R5-006 forward stub
     # SLO forward-stubs (defined em sprint implementation; whitelisted at spec time):
-    "SLO-DEDUP-RATIO",               # S-07 WI-S07-005 forward; will be added to slo_catalog.md em Lote 10.7+
+    # SLO-DEDUP-RATIO promoted from forward-stub → canonical em slo_catalog.md §4.8.1 (Lote 10.7bis P1-1 fix)
     "RB-FM",                         # plural-form mention "RB-FM-*" em ADR-0042 + WI-S06-007
     # SLOs em formato sem header standalone (definidos em corpo do §4.X mas não como anchor)
     "SLO-DEPLOY-SAFE",

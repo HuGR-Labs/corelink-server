@@ -205,6 +205,24 @@ SLOs individuais (§4.x) podem override interpolation via linha explícita "Targ
 | SLI                | `corelink_ac_get_duration_seconds_bucket{outcome="hit", le≤0.15} / total` |
 | Target             | 99% < 150ms                                                  |
 
+### 4.8.1 Efficiency — Dedup Ratio (S-07)
+
+**SLO-DEDUP-RATIO**: dedup ratio per-tenant intra-tenant chunk-level (storage cost efficiency SLI; revenue/marketing claim defensibility) (Lote 10.7bis P1-1 fix — was forward-stub whitelist; now formally defined).
+
+| Campo              | Valor                                                        |
+|--------------------|--------------------------------------------------------------|
+| SLI                | `corelink_dedup_bytes_saved_total{type="chunk", tenant_id} / corelink_dedup_bytes_uploaded_total{tenant_id}` (per-tenant ratio aggregated 7d window via `rate()`) |
+| Target (free)      | ≥ 2.0× sustained (lower expectation for ad-hoc workloads)   |
+| Target (solo)      | ≥ 2.5× sustained 7d                                         |
+| Target (team)      | ≥ 2.5× sustained 7d (sprint contract S-07 §6 DoD baseline)  |
+| Target (business)  | ≥ 2.8× sustained 7d                                         |
+| Target (enterprise)| ≥ 3.0× sustained 7d (target SOTA matching BuildBuddy claim) |
+| Error budget       | 5% of 30d window (1.5d/30d em violation tolerada)            |
+| Multi-burn windows | 1h fast-burn (10× SLO violation rate; SEV-2) + 6h slow-burn (3× rate; SEV-3) per Google SRE Workbook Ch. 5 pattern |
+| Rationale          | Dedup ratio é revenue/cost SLI; below target = customer cost overhead; above target = competitive advantage. Anomaly detection layer SEV-3 (drop > 30% WoW) é AT-LEAST-ONE-OF-2 burn-rate alerting. |
+| Owner              | WI-S07-001 (lookup) + WI-S07-005 (dashboard); SRE on-call    |
+| References         | Sprint contract S-07 §6 DoD; benchmark NativeLink ~2.1× / BuildBuddy ~2.8× / target SOTA 3× |
+
 ### 4.9 Correctness — CAS integrity
 
 **SLO-CORRECT-CAS**: % de responses verificadas pelo client-side hash.

@@ -65,7 +65,7 @@ tags: ["architecture", "data-model", "schema", "cas", "ac", "billing"]
 | `User`               | Pessoa física com acesso                                  | Neon                   | `user_id` (UUIDv7)                     |
 | `Membership`         | `User × Tenant` + role                                    | Neon                   | composite                               |
 | `PAT`                | Personal Access Token (hashed)                            | Neon (hash) + D1 (quick verify) | `pat_id` (UUIDv7) + `token_hash` |
-| `Plan`               | free / team / enterprise                                   | Neon                   | `plan_id`                               |
+| `Plan`               | free / solo / team / business / enterprise (5 tiers canonical; Lote 10.7bis P0-7 fix — was 3 tiers; align com slo_catalog.md §3.1 + WI-S07-002 ttl_for_tier 5-arm match) | Neon                   | `plan_id`                               |
 | `Subscription`       | `Tenant × Plan × billing_period`                          | Neon                   | `subscription_id`                       |
 | `Region`             | Código da região (enum)                                    | static / config         | `region_code`                           |
 | `Blob`               | Binário CAS; conteúdo indexado por hash                   | R2 `cas-<region>`      | `digest` (`algo:hex`)                  |
