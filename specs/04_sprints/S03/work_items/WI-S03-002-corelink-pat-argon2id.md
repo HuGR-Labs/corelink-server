@@ -530,8 +530,8 @@ TLA+ alignment: `tenant_isolation.tla` Layer 1 (PAT scope) — este WI implement
 | Adversarial regression | `crates/corelink-pat/tests/adversarial.rs` | Rust |
 | Calibration bench | `crates/corelink-pat/benches/argon2_calibrate.rs` | Rust criterion |
 | Fuzz target | `crates/corelink-pat/fuzz/fuzz_targets/verify.rs` | cargo-fuzz |
-| ADR-0025 | `specs/02_governance/decisions/ADR-0025-argon2-calibration.md` | Markdown |
-| ADR-0026 | `specs/02_governance/decisions/ADR-0026-scope-bitset-layout.md` | Markdown |
+| ADR-0025 | `specs/03_architecture/adrs/ADR-0025-argon2-calibration.md` | Markdown |
+| ADR-0026 | `specs/03_architecture/adrs/ADR-0026-scope-bitset-layout.md` | Markdown |
 | Examples (4) | `crates/corelink-pat/examples/` | Rust |
 
 ## 14. Quality Standards SOTA

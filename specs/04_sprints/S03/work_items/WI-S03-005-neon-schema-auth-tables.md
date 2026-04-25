@@ -592,7 +592,7 @@ TLA+ alignment: planned `data_integrity.tla` (pós-S-09); modela cascade + RLS +
 | Master key rotation chaos | `tests/chaos/key_rotation.rs` | Rust |
 | DSR cascade test | `tests/integration_dsr_cascade.rs` | Rust |
 | Connection pool tuning | `crates/corelink-worker/src/db/pool.rs` | Rust |
-| ADR-0031 | `specs/02_governance/decisions/ADR-0031-neon-schema-pgcrypto.md` | Markdown |
+| ADR-0031 | `specs/03_architecture/adrs/ADR-0031-neon-schema-pgcrypto.md` | Markdown |
 | Examples (4) | `crates/corelink-worker/examples/db/` | Rust |
 
 ## 14. Quality Standards SOTA

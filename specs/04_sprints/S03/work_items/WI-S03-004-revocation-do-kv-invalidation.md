@@ -518,7 +518,7 @@ TLA+ alignment: planned spec `revocation_propagation.tla` (S-09 ou S-12 forward)
 | Chaos suite | `tests/chaos/revocation_propagation.rs` | Rust |
 | Runbook RB-FM-REVOKE-LAG | `specs/05_runbooks/RB-FM-REVOKE-LAG.md` | Markdown |
 | Runbook RB-FM-REVOKE-DRIFT | `specs/05_runbooks/RB-FM-REVOKE-DRIFT.md` | Markdown |
-| ADR-0030 | `specs/02_governance/decisions/ADR-0030-revocation-propagation.md` | Markdown |
+| ADR-0030 | `specs/03_architecture/adrs/ADR-0030-revocation-propagation.md` | Markdown |
 | Examples (4) | `crates/corelink-worker/examples/revocation/` | Rust |
 
 ## 14. Quality Standards SOTA

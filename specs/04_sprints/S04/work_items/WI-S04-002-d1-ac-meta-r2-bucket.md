@@ -602,7 +602,7 @@ Sim — **ADR-0036**: "AC schema design + migration governance + R2 bucket provi
 | Integration tests | `tests/it_ac_meta_lifecycle.rs` | Rust |
 | Rollback runbook | `specs/02_governance/runbooks/RB-FM-AC-MIGRATION-BUG.md` | Markdown |
 | Bucket leak runbook | `specs/02_governance/runbooks/RB-FM-AC-BUCKET-LEAK.md` | Markdown |
-| ADR-0036 | `specs/02_governance/decisions/ADR-0036-ac-schema-migration-governance.md` | Markdown |
+| ADR-0036 | `specs/03_architecture/adrs/ADR-0036-ac-schema-migration-governance.md` | Markdown |
 
 ## 14. Quality Standards SOTA
 

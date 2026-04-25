@@ -404,7 +404,7 @@ TLA+ alignment: `tenant_isolation.tla` Layer 1 (PAT/JWT scope) — este WI imple
 | Property tests | `crates/corelink-clerk/tests/prop_validate.rs` | Rust |
 | Adversarial regression tests | `crates/corelink-clerk/tests/adversarial.rs` | Rust |
 | E2E integration | `tests/e2e_clerk.rs` | Rust |
-| ADR-0024 | `specs/02_governance/decisions/ADR-0024-clerk-jwks-cache.md` | Markdown |
+| ADR-0024 | `specs/03_architecture/adrs/ADR-0024-clerk-jwks-cache.md` | Markdown |
 | Examples | `crates/corelink-clerk/examples/` (basic.rs, multi_issuer.rs, rotation.rs) | Rust |
 
 ## 14. Quality Standards SOTA

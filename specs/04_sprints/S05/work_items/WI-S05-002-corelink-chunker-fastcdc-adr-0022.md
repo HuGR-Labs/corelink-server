@@ -38,7 +38,7 @@ tags: ["wi", "s05", "chunker", "fastcdc", "blake3", "streaming", "adr-0022", "hi
 | Campo | Valor |
 |---|---|
 | ID | WI-S05-002 |
-| Título | Crate `corelink-chunker` — fixed-size 2 MiB chunks (default) + FastCDC content-defined chunking opt-in (Xia 2016); zero-allocation streaming Iterator API; BLAKE3 SIMD hash inline; INV-CAS-IDEMPOTENCY enforce (same input → same chunks byte-identical); ADR-0022 ratificada (chunk size vs multipart part size decoupling); criterion benchmarks ≥ 2 GB/s single core; cargo-fuzz harness 1h CI nightly |
+| Título | Crate `corelink-chunker` — fixed-size 2 MiB chunks (default) + FastCDC content-defined chunking opt-in (Xia 2016); zero-allocation streaming Iterator API; BLAKE3 SIMD hash inline; INV-CAS-IDEMPOTENCY enforce (same input → same chunks byte-identical); ADR-0022 ratificada (chunk size vs multipart part size decoupling); criterion benchmarks ≥ 500 MB/s native + ≥ 200 MB/s WASM (Lote 10.5bis recalibration; was 2 GB/s desktop AVX-512 ceiling); cargo-fuzz harness 1h CI nightly |
 | Sprint | S-05 |
 | Lane | HIGH_RISK |
 | Forcing factors | FF-HR-005 (chunker determinism é INV-CAS-IDEMPOTENCY load-bearing), FF-HR-009 (defense-in-depth — chunker is single source of truth for content-addressing) |
@@ -50,7 +50,7 @@ Implementar `crates/corelink-chunker/` — biblioteca cripto-coordenada que:
 1. **Codec chunker**: streaming Iterator API; zero-allocation per chunk.
 2. **Fixed-size chunker** (default): 2 MiB chunks + final partial.
 3. **FastCDC chunker** (opt-in via flag): content-defined chunking via rolling hash (Xia et al., USENIX ATC 2016).
-4. **BLAKE3 hash inline**: per-chunk hash computed during streaming (SIMD-optimized; ≥ 2 GB/s single core).
+4. **BLAKE3 hash inline**: per-chunk hash computed during streaming (SIMD-optimized; ≥ 500 MB/s native + ≥ 200 MB/s WASM (Lote 10.5bis recalibration; was 2 GB/s desktop AVX-512 ceiling)).
 5. **INV-CAS-IDEMPOTENCY enforce**: determinism property — same input bytes → same chunk boundaries → same chunk digests byte-identical.
 
 ```rust
@@ -119,12 +119,19 @@ pub struct Chunk<'a> {
 }
 
 pub trait Chunker {
-    /// Feed bytes into chunker; emits chunks as boundaries are detected.
-    /// Returns Iterator that yields chunks; Iterator is lazy (zero-allocation).
-    fn feed<'a>(&'a mut self, bytes: &'a [u8]) -> Box<dyn Iterator<Item = Chunk<'a>> + 'a>;
+    /// **Lote 10.5bis P0 fix**: API redesigned for genuine zero-allocation.
+    /// Pull-based: caller invokes `next_chunk(input)` repeatedly; each call returns
+    /// `Some(Chunk)` if a boundary is detected mid-input, else `None` (more input needed).
+    /// `Chunk<'a>` borrows internal buffer; consumer must consume before next call OR copy.
+    /// Was `Box<dyn Iterator<...>>` which DID heap-allocate per `feed()` call (one trait-object box
+    /// per call; ~24 bytes × N calls per blob); contradicted "zero-allocation" claim throughout WI.
+    fn next_chunk<'a>(&'a mut self, input: &'a [u8]) -> Option<Chunk<'a>>;
+
+    /// Feed remaining bytes after `next_chunk` returned None (input fully consumed).
+    fn feed_more(&mut self, input: &[u8]) -> usize;  // returns bytes consumed
 
     /// Finalize: emit any remaining buffered bytes as final partial chunk.
-    /// Must be called after last feed().
+    /// Must be called after last `feed_more` / `next_chunk`.
     fn finalize<'a>(&'a mut self) -> Option<Chunk<'a>>;
 
     /// Reset chunker state (for reuse).
@@ -183,7 +190,7 @@ pub enum ChunkerError {
 2. **FastCDC opt-in via flag**: enable via `ChunkerConfig::FastCDC2MiB`; default disabled (S-04 GA); customer-controlled per-blob.
 3. **FastCDC determinism**: mask seeds + min/avg/max bounds fixed em config; rolling-hash anchor independent of memory layout.
 4. **Streaming Iterator zero-allocation**: per-chunk `&[u8]` slice; no Vec allocation per chunk; backpressure native.
-5. **BLAKE3 SIMD**: `blake3::Hasher` SIMD-optimized; throughput ≥ 2 GB/s single core (criterion benchmark gate).
+5. **BLAKE3 SIMD**: `blake3::Hasher` SIMD-optimized; throughput ≥ 500 MB/s native + ≥ 200 MB/s WASM (Lote 10.5bis recalibration; was 2 GB/s desktop AVX-512 ceiling) (criterion benchmark gate).
 
 ## 2. Narrative (HIGH_RISK ≥ 300 palavras + risk justification)
 
@@ -238,12 +245,12 @@ Chunker é **single source of truth** for content-addressing em multipart blobs.
 - FastCDC opt-in: similar count but better dedup on model fine-tuning deltas.
 
 **Persona 3 — Performance reviewer**:
-- Criterion benchmark `chunker_throughput`: ≥ 2 GB/s single core (BLAKE3 SIMD).
+- Criterion benchmark `chunker_throughput`: ≥ 500 MB/s native + ≥ 200 MB/s WASM (CF Workers realistic; Lote 10.5bis P0 fix recalibration: was 2 GB/s desktop AVX-512 ceiling unachievable em deploy target).
 - Cargo-fuzz: 1h CI nightly; 0 panics on arbitrary input.
 - Property test: 1000 blobs × 100 chunkings = 100% byte-identical (determinism).
 
 **SLA addendum**:
-- Chunker throughput ≥ 2 GB/s single core (BLAKE3 SIMD; AVX2/AVX-512 dispatch).
+- Chunker throughput ≥ 500 MB/s native; ≥ 200 MB/s CF Workers WASM (Lote 10.5bis P0 fix).
 - Streaming memory bound ≤ 4 MiB stack per invocation.
 - FastCDC determinism: mask seeds fixed; same input → same boundaries 100%.
 - FastCDC opt-in: enable via `ChunkerConfig::algorithm = FastCDC2MiB`; default disabled (S-05 GA).
@@ -304,7 +311,7 @@ Cripto library; HIGH_RISK; FF-HR-005 + FF-HR-009.
    - 10k samples per arm; power 1−β ≥ 0.80; |Δmedian| ≤ 5ms (middleware-grade).
 
 7. **Criterion benchmarks** (`benches/`):
-   - `bench_fixed_throughput`: target ≥ 2 GB/s single core (BLAKE3 SIMD).
+   - `bench_fixed_throughput`: target ≥ 500 MB/s native + ≥ 200 MB/s WASM (CF Workers realistic; Lote 10.5bis P0 fix recalibration: was 2 GB/s desktop AVX-512 ceiling unachievable em deploy target).
    - `bench_fastcdc_throughput`: target ≥ 1.5 GB/s single core (rolling-hash overhead).
    - `bench_streaming_pipeline`: target ≥ 100 MB/s end-to-end (chunker + R2 PUT mock).
    - Cost regression gate: PR > 10% regression bloqueia.
@@ -321,7 +328,7 @@ Cripto library; HIGH_RISK; FF-HR-005 + FF-HR-009.
    - External SLSA L3 reviewer can reproduce.
 
 10. **ADR-0022 ratificação**:
-    - Update `specs/02_governance/decisions/ADR-0022-chunk-size-vs-part-size-decoupling.md` from DRAFT to ACCEPTED.
+    - Update `specs/03_architecture/adrs/ADR-0022-chunk-size-vs-part-size-decoupling.md` from DRAFT to ACCEPTED.
     - Document rationale, mitigations, future tunable per-tenant.
     - Whitelist em validate_references.py (já forward-looking; promote).
 
@@ -432,7 +439,7 @@ Feature: corelink-chunker fixed-size + FastCDC
   Scenario: BLAKE3 throughput benchmark
     Given criterion benchmark bench_fixed_throughput
     When 1 GiB random data chunked
-    Then ≥ 2 GB/s single core (BLAKE3 SIMD AVX2/AVX-512 dispatch)
+    Then ≥ 500 MB/s native + ≥ 200 MB/s WASM (Lote 10.5bis recalibration; was 2 GB/s desktop AVX-512 ceiling) (BLAKE3 SIMD AVX2/AVX-512 dispatch)
 
   Scenario: Cargo-fuzz harness 1h — no panics
     Given fuzz target fuzz_chunker_fixed + fuzz_chunker_fastcdc
@@ -470,7 +477,7 @@ INV-CAS-IDEMPOTENCY requires same input → same chunks. Mask seeds are part of 
 
 ### 9.4 Why BLAKE3 SIMD (não SHA-256)
 
-BLAKE3 4× faster on AVX-512; critical for ≥ 2 GB/s throughput. Same security level (256-bit collision-resistant). REAPI v2 multi-hash supports BLAKE3 (Bazel 7+ adopted).
+BLAKE3 4× faster on AVX-512; critical for ≥ 500 MB/s native (recalibrated Lote 10.5bis) throughput. Same security level (256-bit collision-resistant). REAPI v2 multi-hash supports BLAKE3 (Bazel 7+ adopted).
 
 ### 9.5 Why streaming Iterator (não buffered)
 
@@ -502,7 +509,7 @@ ADR-0022 já forward; este WI ratifies (DRAFT → ACCEPTED). New related ADR pot
   - prop_fixed_determinism, prop_fastcdc_determinism, prop_chunk_size_bounds, prop_total_size_invariant, prop_blob_too_large_rejected.
 - [ ] **10.s05.002.2** Mann-Whitney U + power analysis 3-prong em chunker timing across distributions (EVT-002):
   - N ≥ 10000 samples per arm; power 1−β ≥ 0.80 com Cohen's d = 0.2; Šidák 3-trial; |Δmedian| ≤ 5ms.
-- [ ] **10.s05.002.3** Criterion benchmarks: Fixed throughput ≥ 2 GB/s single core; FastCDC ≥ 1.5 GB/s; streaming pipeline ≥ 100 MB/s (EVT-021).
+- [ ] **10.s05.002.3** Criterion benchmarks: Fixed throughput ≥ 500 MB/s native + ≥ 200 MB/s WASM (Lote 10.5bis recalibration; was 2 GB/s desktop AVX-512 ceiling); FastCDC ≥ 1.5 GB/s; streaming pipeline ≥ 100 MB/s (EVT-021).
 - [ ] **10.s05.002.4** Cargo-fuzz harness 1h CI nightly (Fixed + FastCDC targets) → 0 panics, 0 OOM (EVT-002).
 - [ ] **10.s05.002.5** Test vectors Annex (50 known input + expected chunks Fixed + FastCDC) — chunker output matches per spec (EVT-002).
 - [ ] **10.s05.002.6** Determinism — 1000 blobs × 100 chunkings = 100% byte-identical (Fixed and FastCDC) (EVT-002).
@@ -519,7 +526,7 @@ ADR-0022 já forward; este WI ratifies (DRAFT → ACCEPTED). New related ADR pot
 - [ ] All Gherkin scenarios green em integration test.
 - [ ] Property tests 10k green em CI; 100k nightly green.
 - [ ] Mann-Whitney 3-prong test green.
-- [ ] Criterion benchmarks green (≥ 2 GB/s Fixed; ≥ 1.5 GB/s FastCDC).
+- [ ] Criterion benchmarks green (≥ 500 MB/s native (recalibrated Lote 10.5bis) Fixed; ≥ 1.5 GB/s FastCDC).
 - [ ] Cargo-fuzz 1h CI nightly green.
 - [ ] Test vectors Annex published + integrated CI.
 - [ ] Determinism property tests green (Fixed and FastCDC).
@@ -560,15 +567,15 @@ TLA+ alignment: `cas_integrity.tla` chunked variant (forward S-09 TLA+ work).
 | Spec doc | `crates/corelink-chunker/spec/chunker_protocol.md` | Markdown |
 | README | `crates/corelink-chunker/README.md` | Markdown |
 | Examples | `crates/corelink-chunker/examples/` (4 examples) | Rust |
-| ADR-0022 ratificada | `specs/02_governance/decisions/ADR-0022-chunk-size-vs-part-size-decoupling.md` | Markdown |
-| ADR-0039 | `specs/02_governance/decisions/ADR-0039-chunker-public-api-stability.md` | Markdown |
+| ADR-0022 ratificada | `specs/03_architecture/adrs/ADR-0022-chunk-size-vs-part-size-decoupling.md` | Markdown |
+| ADR-0039 | `specs/03_architecture/adrs/ADR-0039-chunker-public-api-stability.md` | Markdown |
 
 ## 14. Quality Standards SOTA
 
 - **14.s05.002.1** `#![forbid(unsafe_code)]`; zero `unwrap` em src/.
 - **14.s05.002.2** rustdoc 100% public API + 4 examples + threat model README + spec/chunker_protocol.md.
 - **14.s05.002.3** Test coverage ≥ 95% (cripto boundary).
-- **14.s05.002.4** Latência: chunker p99 throughput ≥ 2 GB/s (Fixed); ≥ 1.5 GB/s (FastCDC).
+- **14.s05.002.4** Latência: chunker p99 throughput ≥ 500 MB/s native (recalibrated Lote 10.5bis) (Fixed); ≥ 1.5 GB/s (FastCDC).
 - **14.s05.002.5** SAST: cargo-audit + cargo-deny + clippy `-D warnings`; cargo-fuzz 1h CI nightly (2 targets).
 - **14.s05.002.6** Métricas: 4 listadas §6.1.12; alert if dedup_ratio < 1.2× sustained 7d.
 - **14.s05.002.7** Public API stability: `#[non_exhaustive]`; semver post v1.0; ADR-0039.

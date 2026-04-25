@@ -38,7 +38,7 @@ tags: ["wi", "s05", "sweeper", "cron-do", "rb-fm-060", "prr", "ship-gate", "stit
 | Campo | Valor |
 |---|---|
 | ID | WI-S05-006 |
-| Título | Sweeper cron Durable Object aborts multipart > 7d (FM-060 mitigation; PAT-SWEEPER-001) + RB-FM-060 dry-run executado em staging + 160 GiB stitched multipart flow E2E test + REAPI v2.3+ conformance suite SplitBlob/SpliceBlob 100% green + DASH-MULTIPART dashboards + throughput ≥ 100 MB/s sustained 72h staging + PRR HIGH_RISK 13 sign-offs ship gate + cumulative INV §3.16 promotion (10 INVs) + ADR-0022/0038/0039/0040/0041 ratificação confirmation |
+| Título | Sweeper cron Durable Object aborts multipart > 7d (FM-060 mitigation; PAT-SWEEPER-001) + RB-FM-060 dry-run executado em staging + 160 GiB stitched multipart flow E2E test + REAPI v2.3+ conformance suite SplitBlob/SpliceBlob 100% green + DASH-MULTIPART dashboards + throughput ≥ 100 MB/s sustained 72h staging + PRR HIGH_RISK 13 sign-offs ship gate + cumulative INV §3.16 promotion (13 INVs) + ADR-0022/0038/0039/0040/0041 ratificação confirmation |
 | Sprint | S-05 |
 | Lane | HIGH_RISK |
 | Forcing factors | FF-HR-002 (ship gate prevents cross-tenant via final validation), FF-HR-005 (PRR enforces all CTRL-CAS controls), FF-HR-009 (defense-in-depth final validation) |
@@ -67,7 +67,7 @@ Este WI é o **ship gate** de S-05; entra production-ready apenas após:
 
 4. **REAPI v2.3+ conformance suite** SplitBlob/SpliceBlob 100% green:
    - Pinned commit em ADR-0038 Annex.
-   - Subset enumerated: 10 conformance tests covering AC subset (lesson Lote 10.4bis WI-S04-006 pattern).
+   - Subset enumerated: 10 conformance tests covering CAS multipart subset (Lote 10.5bis P0 fix: was wrongly AC subset — copy-paste from WI-S04-006; actual CAS SplitBlob/SpliceBlob subset).
    - CI nightly + per-commit on PR touching multipart code.
 
 5. **DASH-MULTIPART dashboards** (Grafana):
@@ -83,7 +83,7 @@ Este WI é o **ship gate** de S-05; entra production-ready apenas após:
    - Each role's checklist + sign-off entry; rubber-stamp prohibited.
    - 2h structured PRR meeting.
 
-8. **Cumulative INV §3.16 promotion** (10 INVs):
+8. **Cumulative INV §3.16 promotion** (13 INVs; Lote 10.5bis P0 fix: was 10 self-inconsistency):
    - INV-MULTIPART-IDEMPOTENT, INV-MULTIPART-MANIFEST-SIGNED, INV-MULTIPART-CONCURRENCY-BOUNDED (WI-S05-001).
    - INV-MULTIPART-CHUNK-DETERMINISTIC, INV-MULTIPART-BOUNDED-PARSER, INV-MULTIPART-STREAMING-MEMORY (WI-S05-002).
    - INV-MULTIPART-ORPHAN-DETECTABLE, INV-MULTIPART-PATH-TENANT-SCOPED (WI-S05-003).
@@ -148,7 +148,7 @@ S-05 ship gate é go/no-go review. Bug em ship = customer-facing incident; aplic
 
 **Persona 2 — DevOps reviewing operational readiness**: DASH-MULTIPART live; orphan rate < 1% sustained; sweeper aborts > 7d as expected; RB-FM-060 dry-run documented post-mortem.
 
-**Persona 3 — Compliance reviewer**: 5 ADRs ratificadas (0022, 0038-0041); 10 INVs §3.16 promovidas; SLSA L3 partial alignment.
+**Persona 3 — Compliance reviewer**: 5 ADRs ratificadas (0022, 0038-0041); 13 INVs §3.16 promovidas; SLSA L3 partial alignment.
 
 **SLA addendum**:
 - Multipart Split p99 ≤ 1s for 10 MiB; throughput ≥ 100 MB/s sustained.
@@ -224,7 +224,7 @@ PRR ship gate; HIGH_RISK; FF-HR-002 + FF-HR-005 + FF-HR-009.
    - Crypto SME MANDATORY non-waivable (40-80h booking).
    - Sign-offs via GitHub PR review + git commit signing.
 
-8. **Cumulative INV §3.16 promotion** (10 INVs):
+8. **Cumulative INV §3.16 promotion** (13 INVs; Lote 10.5bis P0 fix: was 10 self-inconsistency):
    - Update `specs/03_architecture/invariant_registry.md` §3.16 NEW.
    - CI gate validate_inv_promotion.py validates.
 
@@ -254,7 +254,7 @@ PRR ship gate; HIGH_RISK; FF-HR-002 + FF-HR-005 + FF-HR-009.
 - ❌ Ship with throughput < 100 MB/s sustained 72h.
 - ❌ Ship with cost regression > 10%.
 - ❌ Ship with ADR não ratificada (5 ADRs mandatory).
-- ❌ Ship with 10 INVs §3.16 não promovidas.
+- ❌ Ship with 13 INVs §3.16 não promovidas.
 - ❌ Ship with sign-off rubber-stamp.
 - ❌ Production rollout direct 100% (gradual mandatory; lesson Lote 10.4bis).
 - ❌ Skip 160 GiB stitched flow E2E.
@@ -308,8 +308,8 @@ Feature: S-05 PRR HIGH_RISK 13 sign-off ship gate
     Then 12 mandatory + 1 advisory (Crypto SME MANDATORY this WI; advisory in WI-006 ceremony reference)
     And no rubber-stamp
 
-  Scenario: 10 INVs §3.16 promotion CI gate
-    Given invariant_registry.md §3.16 NEW with 10 INVs
+  Scenario: 13 INVs §3.16 promotion CI gate
+    Given invariant_registry.md §3.16 NEW with 13 INVs
     When validate_inv_promotion.py runs
     Then all WI-declared INVs match registry
     And CI green
@@ -362,7 +362,7 @@ Feature: S-05 PRR HIGH_RISK 13 sign-off ship gate
 - [ ] **10.s05.006.5** DASH-MULTIPART 10 panels live; alerts live.
 - [ ] **10.s05.006.6** 72h SLO sustained: throughput ≥ 100 MB/s.
 - [ ] **10.s05.006.7** PRR 13 sign-offs collected; rubber-stamp prohibited.
-- [ ] **10.s05.006.8** 10 INVs §3.16 promovidas + CI gate green (validate_inv_promotion.py).
+- [ ] **10.s05.006.8** 13 INVs §3.16 promovidas + CI gate green (validate_inv_promotion.py).
 - [ ] **10.s05.006.9** 5 ADRs ratificadas + whitelist.
 - [ ] **10.s05.006.10** Cost regression gate green all WIs.
 - [ ] **10.s05.006.11** Customer comm ready (SLA addendum + release notes + onboarding).
@@ -380,7 +380,7 @@ Feature: S-05 PRR HIGH_RISK 13 sign-off ship gate
 - [ ] DASH-MULTIPART live; alerts validated.
 - [ ] 72h SLO sustained.
 - [ ] PRR 13 sign-offs collected.
-- [ ] 10 INVs §3.16 promovidas + CI gate green.
+- [ ] 13 INVs §3.16 promovidas + CI gate green.
 - [ ] 5 ADRs ratificadas.
 - [ ] Customer comm ready.
 - [ ] Production rollout plan documented.
@@ -455,7 +455,7 @@ Total: ~16 INVs (some overlap nomenclatura across S-04 and S-05; consolidated em
 9. ADR ratificação rollback → CI gate red sem ADR amendment.
 10. Customer comm gap → review process catches.
 11. CI ship-gate workflow regression → CI red.
-12. 10 INVs §3.16 not promovidas → validate_inv_promotion.py CI red.
+12. 13 INVs §3.16 not promovidas → validate_inv_promotion.py CI red.
 
 ## 16. PRR
 
@@ -477,7 +477,7 @@ THE PRR. Esta WI é a PRR.
 | ST-010 | PRR meeting execution (2h) | 2 |
 | ST-011 | 13 sign-off collection | 3 |
 | ST-012 | Cost regression gate setup | 3 |
-| ST-013 | 10 INVs §3.16 registry update | 2 |
+| ST-013 | 13 INVs §3.16 registry update | 2 |
 | ST-014 | 5 ADRs ratificação confirmation | 2 |
 | ST-015 | SLA addendum customer | 3 |
 | ST-016 | Release notes + Bazel onboarding | 4 |
@@ -539,7 +539,7 @@ Internal:
 - Conformance regression → community engagement.
 - ADR ratificação rollback → 5-Why; senior review.
 - Cost regression > 10% → bench drill-down.
-- 10 INVs §3.16 not promovidas → CI gate red; resolve before SEAL.
+- 13 INVs §3.16 not promovidas → CI gate red; resolve before SEAL.
 
 ## 25. Rollback / Recovery
 
@@ -569,7 +569,7 @@ Production rollout rollback: 100% → 50% → 10% → 0% via Wrangler version re
 | R-007 | 160 GiB stitched flow bug | L | M | HIGH | L | LOW | Integration test 200 GiB blob; chaos test mid-flight |
 | R-008 | Crypto SME unavailable on ship date | M | L | MEDIUM | L | LOW | 2-week advance booking; lesson Lote 10.4bis 40-80h |
 | R-009 | Cost regression > 10% sustained | M | L | MEDIUM | L | LOW | §14.10 cost gate; weekly bench |
-| R-010 | 10 INVs §3.16 not promovidas (lesson Lote 10.4bis persistent gap) | M | M | HIGH | M | LOW | validate_inv_promotion.py CI gate; ST-013 explicit |
+| R-010 | 13 INVs §3.16 not promovidas (lesson Lote 10.4bis persistent gap) | M | M | HIGH | M | LOW | validate_inv_promotion.py CI gate; ST-013 explicit |
 | R-011 | ADR ratificação rollback pressure | L | L | LOW | L | LOW | ADR change requires ADR; transparency |
 | R-012 | Sweeper cron stale > 1h (silent death) | L | M | HIGH | L | LOW | Alarm re-arm at start (lesson Lote 10.4bis WI-S04-005); metric alert |
 
@@ -604,7 +604,7 @@ D+0 WI-001..005 SEALED; D+1 conformance + 100k green; D+2 72h SLO start; D+3 DAS
 
 ## 32. Anti-patterns evitados
 
-- ❌ Ship without 100% conformance; ❌ Ship without 13 sign-offs; ❌ Ship without RB-FM-060 dry-run; ❌ Ship com 1+ tenant isolation violation 100k; ❌ Ship com throughput < 100 MB/s; ❌ Ship com cost regression > 10%; ❌ Ship com ADR não ratificada; ❌ Ship com 10 INVs não promovidas; ❌ Ship com sign-off rubber-stamp; ❌ Production rollout direct 100%; ❌ Skip 160 GiB stitched flow; ❌ Skip post-ship review; ❌ Crypto SME advisory para cripto WIs (lesson Lote 10.4bis fix).
+- ❌ Ship without 100% conformance; ❌ Ship without 13 sign-offs; ❌ Ship without RB-FM-060 dry-run; ❌ Ship com 1+ tenant isolation violation 100k; ❌ Ship com throughput < 100 MB/s; ❌ Ship com cost regression > 10%; ❌ Ship com ADR não ratificada; ❌ Ship com 13 INVs não promovidas; ❌ Ship com sign-off rubber-stamp; ❌ Production rollout direct 100%; ❌ Skip 160 GiB stitched flow; ❌ Skip post-ship review; ❌ Crypto SME advisory para cripto WIs (lesson Lote 10.4bis fix).
 
 ---
 

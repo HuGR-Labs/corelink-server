@@ -538,7 +538,7 @@ TLA+ alignment: planned `webauthn_ceremony.tla` (S-09 ou pós); modela challenge
 | Adversarial regression | `crates/corelink-webauthn/tests/adversarial.rs` | Rust |
 | Cross-browser Playwright | `e2e/webauthn/` (Playwright JS) | TypeScript |
 | Fuzz target CBOR/COSE | `crates/corelink-webauthn/fuzz/fuzz_targets/cose_parse.rs` | cargo-fuzz |
-| ADR-0032 | `specs/02_governance/decisions/ADR-0032-webauthn-level3.md` | Markdown |
+| ADR-0032 | `specs/03_architecture/adrs/ADR-0032-webauthn-level3.md` | Markdown |
 | Examples (4) | `crates/corelink-webauthn/examples/` | Rust |
 
 ## 14. Quality Standards SOTA

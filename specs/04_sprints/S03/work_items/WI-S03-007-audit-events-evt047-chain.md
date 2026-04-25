@@ -552,7 +552,7 @@ TLA+ alignment: planned `audit_chain.tla` (S-09 forward); modela emit → outbox
 | Property tests | `crates/corelink-audit/tests/prop_audit.rs` | Rust |
 | Integration tests | `tests/integration_audit_emit.rs` | Rust |
 | Auth event taxonomy doc | `docs/internal/auth-event-taxonomy.md` | Markdown |
-| ADR-0033 | `specs/02_governance/decisions/ADR-0033-audit-events-cloudevents.md` | Markdown |
+| ADR-0033 | `specs/03_architecture/adrs/ADR-0033-audit-events-cloudevents.md` | Markdown |
 | Examples (4) | `crates/corelink-audit/examples/` | Rust |
 
 ## 14. Quality Standards SOTA

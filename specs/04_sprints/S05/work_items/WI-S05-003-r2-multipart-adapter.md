@@ -144,7 +144,7 @@ pub enum MultipartError {
 **Cripto-driven invariants**:
 
 1. **R2 path tenant-scoped**: `object_key = chunk-<region>/<tenant_prefix>/<chunk_digest>` OR `manifest-<region>/<tenant_prefix>/<blob_digest>.json`; `tenant_prefix` from materialized column WI-S05-004 (lesson Lote 10.4bis); never trusts client-provided path components.
-2. **Idempotent completion**: re-issuing CompleteMultipartUpload with same upload_id + same parts list = no-op (R2 native idempotency); `UNIQUE (tenant_id, blob_digest)` em D1 multipart_sessions table prevents double-record.
+2. **Idempotent completion**: re-issuing CompleteMultipartUpload with same upload_id + same parts list = no-op (R2 native idempotency); **partial UNIQUE** `(tenant_id, blob_digest_expected) WHERE state='in_progress'` em D1 multipart_sessions table prevents concurrent in-flight (Lote 10.5bis P0 fix: was wrongly stated as plain UNIQUE; per `invariant_registry.md §3.16` row INV-MULTIPART-IDEMPOTENT and WI-S05-004 schema; partial UNIQUE allows multiple completed/aborted records as audit trail).
 3. **Orphan detection invariant**: ListMultipartUploads returns sessions with `LastModified > max_age`; sweeper aborts via this trait method (WI-S05-006).
 4. **Bounded concurrency per-tenant**: 8 parallel UploadPart per tenant (default; tunable per-tier); avoid R2 rate limit spike.
 
@@ -380,13 +380,18 @@ Feature: R2 multipart adapter
 - 14.s05.003.9: Memory bounded: per-request stack ≤ 4 MiB.
 - 14.s05.003.10: Cost regression gate: per-op cap.
 
-### 15. Chaos Experiments (5)
+### 15. Chaos Experiments (10; Lote 10.5bis P0 fix: was 5 below sprint contract §10 mandate ≥10)
 
 1. Client disconnect mid-UploadPart → adapter.abort invoked.
 2. R2 5xx mid-Complete → retry 3× → persistent fail 503 + audit.
 3. Wrangler binding misconfigured → deploy guard CI red.
 4. 10001 parts attempt → MaxPartsExceeded.
 5. Cross-tenant upload_id replay → rejected.
+6. **R2 quota exceeded mid-Complete** (Lote 10.5bis): R2 returns 429 quota; adapter returns 503 + sweeper aborts pending sessions; audit emit.
+7. **Region fail-over mid-multipart** (Lote 10.5bis): R2 us-east-1 fails; adapter routes to us-west-2; ETag tracking continues coherent.
+8. **upload_id TTL expiry** (Lote 10.5bis): 7d session expires; UploadPart returns 404; handler routes to fresh Initiate (idempotent retry-on-existing).
+9. **D1 multipart_sessions partial UNIQUE collision** (Lote 10.5bis): race two Initiates same `(tenant, blob)` em `state='in_progress'`; one wins, second rejected; integration test asserts retry-on-existing returns winner's upload_id.
+10. **R2 ListMultipartUploads pagination edge** (Lote 10.5bis): 1000+ orphans em single region; pagination correctness asserted via sweeper consumption.
 
 ### 16. PRR
 
@@ -495,7 +500,7 @@ D+0 design (Architect); D+2 AppSec; D+4 code review (peer); D+5 chaos suite; D+6
 | 10 | Privacy | _TBD_ |
 | 11 | Architect | _TBD; **mandatory** — R2 adapter + orphan sweeper signal_ |
 | 12 | AppSec | _TBD; **mandatory** — cross-tenant binding + Wrangler CLI_ |
-| 13 | Crypto SME (advisory) | _ETag tracking pattern review_ |
+| 13 | Crypto SME | _**mandatory** (Lote 10.5bis P0 fix: was advisory; cross-tenant upload_id binding INV-MULTIPART-PATH-TENANT-SCOPED is CRITICAL per §12; upgraded to mandatory per Lote 10.4bis lesson Crypto SME mandatory non-waivable for security-domain WIs); ETag content-hash collision analysis (S3 multipart MD5 ETag is NOT cripto-grade per S3 spec; review acceptable scope)_ |
 
 ### 31. Change Log
 

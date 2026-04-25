@@ -637,7 +637,7 @@ TLA+ alignment: cas_integrity.tla extension for AC variant; INV-AC-MERKLE-VALID 
 | Spec doc | `crates/corelink-ac/spec/merkle_protocol.md` | Markdown |
 | README | `crates/corelink-ac/README.md` | Markdown |
 | Examples | `crates/corelink-ac/examples/` (4 examples) | Rust |
-| ADR-0037 | `specs/02_governance/decisions/ADR-0037-ac-merkle-protocol.md` | Markdown |
+| ADR-0037 | `specs/03_architecture/adrs/ADR-0037-ac-merkle-protocol.md` | Markdown |
 
 ## 14. Quality Standards SOTA
 

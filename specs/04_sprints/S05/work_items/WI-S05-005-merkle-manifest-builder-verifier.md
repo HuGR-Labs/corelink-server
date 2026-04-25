@@ -39,7 +39,7 @@ tags: ["wi", "s05", "merkle", "manifest", "builder", "verifier", "dual-side", "h
 | Campo | Valor |
 |---|---|
 | ID | WI-S05-005 |
-| Título | Manifest tree builder/verifier; dual-side verify (server pre-persist + client post-download via SDK); streaming progressive verify (fail-fast em mid-stream invalid chunk); INV-CAS-INTEGRITY tree enforcement; HKDF sig info=`b"manifest-sig"` separated domain (lesson WI-S04-004 ADR-0021); bounded parser MAX_CHUNKS_PER_BLOB 80000; cycle detection (re-uses pattern WI-S04-003); test vectors Annex A + B; cargo-fuzz 1h CI nightly; Mann-Whitney 3-prong cripto-grade |Δmedian| ≤ 1ms |
+| Título | Manifest tree builder/verifier; dual-side verify (server pre-persist + client post-download via SDK); streaming progressive verify (fail-fast em mid-stream invalid chunk); INV-CAS-INTEGRITY tree enforcement; HKDF sig info=`b"manifest-sig"` separated domain (lesson WI-S04-004 ADR-0021); bounded parser MAX_CHUNKS_PER_BLOB 81920; cycle detection (re-uses pattern WI-S04-003); test vectors Annex A + B; cargo-fuzz 1h CI nightly; Mann-Whitney 3-prong cripto-grade |Δmedian| ≤ 1ms |
 | Sprint | S-05 |
 | Lane | HIGH_RISK |
 | Forcing factors | FF-HR-002 (manifest forge → cross-tenant chunk leak via reassembled blob), FF-HR-005 (CTRL-CAS-001 distribuído em tree; verify boundary), FF-HR-009 (defense-in-depth — server + client verify) |
@@ -66,7 +66,7 @@ pub struct Manifest {
     pub tenant_id: TenantId,
     pub blob_digest: BlobDigest,           // 32 bytes BLAKE3-256 of total reassembled bytes
     pub merkle_root: [u8; 32],             // BLAKE3-256 of chunk tree
-    pub chunk_count: u32,                  // ≤ 80000
+    pub chunk_count: u32,                  // ≤ 81920 (Lote 10.5bis P0 fix off-by-one)
     pub total_size_bytes: u64,             // sum of chunk sizes
     pub chunks: Vec<ChunkRef>,             // ordered chunk references
     pub created_at_ms: u64,
@@ -95,29 +95,59 @@ pub trait ManifestBuilder {
 
 pub trait ManifestVerifier {
     /// Server pre-persist: verify Merkle structure + bounds (no sig check; that's separate).
-    fn verify_structure(&self, manifest: &Manifest) -> Result<(), VerifyError>;
+    /// **Lote 10.5bis P0 fix**: pub(crate); NOT public — caller deve usar verify_full
+    /// to prevent API misuse (verify_sig sem verify_structure first).
+    pub(crate) fn verify_structure(&self, manifest: &Manifest) -> Result<(), VerifyError>;
 
-    /// Client-side post-download: verify Merkle + bounds + sig delegate.
+    /// Client-side post-download: verify structure THEN sig (pinned ordering; lesson WI-S04-003 chaos #1).
     /// Returns Ok(()) only if structure + sig both valid.
+    /// **Public API**: this is the only way to verify a manifest from external code.
     fn verify_full(
         &self,
         manifest: &Manifest,
-        sig_verifier: &dyn SignatureVerifier,    // WI-S04-004 trait reuse
+        sig_verifier: &dyn SignatureVerifier,    // WI-S04-004 trait reuse via wrapper (see §6.1.X)
     ) -> Result<(), VerifyError>;
 
     /// Streaming progressive verify: as chunks arrive, verify each against manifest's chunk_digests.
-    /// Fail-fast em mid-stream invalid chunk; signal handler to abort streaming.
+    /// Fail-fast em mid-stream invalid chunk; signal handler to abort streaming via cancel_token.
+    /// **Lote 10.5bis P0 fix**: cancel_token mandatory — caller drops/cancels token to abort upstream
+    /// stream when verifier signals mismatch; previously abort mechanism was unspecified (returning
+    /// Result alone doesn't propagate cancellation back to producer).
     async fn verify_streaming<'a>(
         &'a self,
         manifest: &'a Manifest,
         chunk_stream: impl Stream<Item = (u32, Bytes)> + 'a,
+        cancel_token: tokio_util::sync::CancellationToken,  // Lote 10.5bis P0 fix
     ) -> Result<(), VerifyError>;
+}
+
+/// Lote 10.5bis P0 fix: ManifestSignatureVerifier wraps WI-S04-004 SignatureVerifier
+/// trait with HKDF info=`b"manifest-sig"` domain separation hard-wired internally.
+/// The WI-S04-004 SignatureVerifier hard-codes `info=b"ac-sig"`; this wrapper provides
+/// the manifest-domain equivalent without modifying upstream WI-S04-004 (which may
+/// already be SEALED).
+pub struct ManifestSignatureVerifier {
+    tdk_handle: Arc<dyn TdkHandle>,
+    accepted_key_ids: Vec<u32>,
+}
+
+impl ManifestSignatureVerifier {
+    /// Sign manifest envelope with HKDF info=`b"manifest-sig"`.
+    pub fn sign_manifest(&self, canonical_bytes: &[u8]) -> Result<(Vec<u8>, u32), SigError> {
+        // ... (impl mirrors WI-S04-004 HkdfSigner but with info=b"manifest-sig" + salt=current_key_id)
+    }
+
+    /// Verify manifest sig with HKDF info=`b"manifest-sig"`.
+    /// CI byte-equal test asserts info string distinct from `b"ac-sig"` and `b"meta-manifest-sig"`.
+    pub fn verify_manifest_sig(&self, canonical_bytes: &[u8], sig: &[u8], sig_key_id: u32) -> Result<(), SigError> {
+        // ... (impl mirrors WI-S04-004 HkdfVerifier but with info=b"manifest-sig")
+    }
 }
 
 #[derive(thiserror::Error, Debug)]
 pub enum ManifestError {
     #[error("chunk count {found} exceeds bound {bound}")]
-    ChunkCountExceeded { found: u32, bound: u32 },          // bound=80000
+    ChunkCountExceeded { found: u32, bound: u32 },          // bound=81920
 
     #[error("total size {found} exceeds bound {bound}")]
     TotalSizeExceeded { found: u64, bound: u64 },           // bound=160 GiB
@@ -149,20 +179,58 @@ pub enum VerifyError {
 
 1. **Merkle hash = BLAKE3-256** (consistent com WI-S04-003 Merkle pattern).
 2. **Determinism**: tree construction byte-stable for same `(tenant_id, blob_digest, ordered chunks)` — no timestamps in tree; protobuf-free encoding (lesson Lote 10.4bis WI-S04-003 P0 fix: result_hash = merkle_root direct).
-3. **Domain separation**: HKDF info=`b"manifest-sig"` (different from `b"ac-sig"` in WI-S04-004); prevents cross-domain replay.
-4. **Bounded parser**: MAX_CHUNK_COUNT 80000; MAX_TOTAL_SIZE 160 GiB; reject early at decode.
-5. **Streaming progressive verify**: fail-fast pattern; never trust client-supplied bytes mid-stream.
+3. **Domain separation**: HKDF info=`b"manifest-sig"` (different from `b"ac-sig"` in WI-S04-004 + `b"meta-manifest-sig"` in WI-S05-006 stitched flow); prevents cross-domain replay; CI byte-equal test asserts all 3 info strings present, distinct, non-prefix.
+4. **Bounded parser**: MAX_CHUNK_COUNT 81920 (= 160 GiB / 2 MiB exato; **Lote 10.5bis P0 fix**: was 80000 off-by-one with 160 GiB / 2 MiB = 81920); MAX_TOTAL_SIZE 160 GiB; reject early at decode.
+5. **Streaming progressive verify**: fail-fast pattern; never trust client-supplied bytes mid-stream; abort signal via `CancellationToken` parameter (Lote 10.5bis P0 fix: previously unspecified).
+6. **canonical_bytes() binding** (Lote 10.5bis P0 fix: highest-leverage; previously unpublished): sig MUST commit to all bound-relevant fields, not merely merkle_root.
 
-**Tree shape** (consistent com WI-S04-003 RFC 6962 domain separation):
-- Leaf: `leaf_hash = blake3(b"\x00" || chunk_digest)` (domain separation per RFC 6962-style).
-- Inner: `inner_hash = blake3(b"\x01" || left || right)` (prevents 2nd-preimage tree-shape attack).
-- Root: top of recursion; balanced binary tree over chunk_digests sorted by index.
+**Tree shape** (Lote 10.5bis P0 fix: pinned ordering by chunk_index ascending; **NOT** lex-sort-by-digest like WI-S04-003 — that pattern was for ActionResult unordered file paths; for multipart, chunks are an ORDERED sequence whose concatenation is the blob):
 
-**Pattern reuse from WI-S04-003**:
+- Leaves are `leaf_hash[i] = blake3(b"\x00" || chunks[i].digest)` for `i in 0..chunk_count` (domain separation per RFC 6962-style).
+- Inner nodes are `inner_hash = blake3(b"\x01" || left || right)` (prevents 2nd-preimage tree-shape attack).
+- Tree is balanced binary over leaves **in chunk_index ascending order; NO sorting** — order is semantic (concatenation order produces the blob).
+- Root: top of recursion.
+- Property test `prop_manifest_chunk_order_preserved`: shuffle input chunks → manifest_root differs → reject (asserts order matters).
+
+**`Manifest::canonical_bytes()` layout** (Lote 10.5bis P0 fix; explicit per WI-S04-004 §6.1.5 layout style; the sig signs over canonical_bytes, NOT merely merkle_root):
+
+```
+canonical_bytes_v1 = 
+    version_le_u8                              (1 byte)
+ || tenant_id_uuidv7                           (16 bytes; raw UUIDv7)
+ || blob_digest                                (32 bytes; BLAKE3-256)
+ || merkle_root                                (32 bytes; BLAKE3-256)
+ || chunk_count_le_u32                         (4 bytes)
+ || total_size_bytes_le_u64                    (8 bytes)
+ || created_at_ms_le_u64                       (8 bytes)
+ || chunker_algo_le_u8                         (1 byte; Fixed2MiB=1, FastCDC2MiB=2)
+                                               ─── 102 bytes total
+
+pub fn canonical_bytes(manifest: &Manifest) -> [u8; 102] {
+    let mut out = [0u8; 102];
+    out[0] = manifest.version;
+    out[1..17].copy_from_slice(manifest.tenant_id.as_bytes());
+    out[17..49].copy_from_slice(&manifest.blob_digest);
+    out[49..81].copy_from_slice(&manifest.merkle_root);
+    out[81..85].copy_from_slice(&manifest.chunk_count.to_le_bytes());
+    out[85..93].copy_from_slice(&manifest.total_size_bytes.to_le_bytes());
+    out[93..101].copy_from_slice(&manifest.created_at_ms.to_le_bytes());
+    out[101] = manifest.chunker_algo as u8;
+    out
+}
+```
+
+**Why all 8 fields signed** (defense against bound-bypass forge):
+- An attacker who captures a valid manifest with `chunk_count=25, total_size_bytes=50_MiB` could otherwise forge a manifest with same `merkle_root` but `chunk_count=80000, total_size_bytes=160_GiB` — bounded parser would accept (within bounds) and sig would still verify. By committing chunk_count + total_size_bytes into canonical_bytes, the sig binds the bounds-relevant metadata.
+- `chunks: Vec<ChunkRef>` is NOT in canonical_bytes — `merkle_root` already commits to chunks via tree binding.
+- `sig`, `sig_key_id` are NOT in canonical_bytes — those are the sig output, not input.
+
+**Pattern reuse from WI-S04-003** (with corrections):
 - BLAKE3 + RFC 6962 domain separation: same primitive.
 - Bounded parser + cycle detection: not applicable here (manifest tree is flat list of chunks; no nested directories).
-- Test vectors Annex pattern: 50 valid + 50 invalid manifests.
-- cargo-fuzz harness 1h: same approach.
+- Test vectors Annex pattern: 70 valid + 70 invalid manifests (Lote 10.5bis P0 fix; was 50+50 — 50 inadequate for 7 error variants).
+- cargo-fuzz harness 1h: 4 targets (decode, verify, sig, build/encode — Lote 10.5bis P0 fix: was 3 missing builder).
+- **NOT** reused: lex-sort-by-digest (WI-S04-003 pattern only valid for unordered ActionResult outputs; multipart chunks are ordered sequence).
 
 ## 2. Narrative (HIGH_RISK ≥ 300 palavras + risk justification)
 
@@ -178,7 +246,7 @@ HIGH_RISK em N dimensões:
 
 4. **Sig domain separation drift**: dev refactors HKDF info from `b"manifest-sig"` to `b"ac-sig"` — manifest sig becomes valid em AC envelope domain (cross-domain replay). Mitigação: CI byte-equal test asserts info string fixed; ADR-0021/0038 documents domain separation.
 
-5. **MAX_CHUNK_COUNT exceeded**: crafted manifest com 1B chunks → D1 manifest_chunks INSERT exhaustion. Mitigação: bounded MAX_CHUNK_COUNT 80000; `ChunkCountExceeded` error em `build()`; verify_structure rejects.
+5. **MAX_CHUNK_COUNT exceeded**: crafted manifest com 1B chunks → D1 manifest_chunks INSERT exhaustion. Mitigação: bounded MAX_CHUNK_COUNT 81920; `ChunkCountExceeded` error em `build()`; verify_structure rejects.
 
 6. **Chunk index out-of-order attack**: malicious manifest claims chunks [0, 5, 1, 2, 3, 4] (out of order); reassembly produces wrong bytes. Mitigação: builder enforces sorted by index 0..N-1 sequential; verify checks; integration test asserts.
 
@@ -239,7 +307,7 @@ Cripto library; HIGH_RISK; FF-HR-002 + FF-HR-005 + FF-HR-009.
 3. Verifier dual-side: server pre-persist + client post-download.
 4. Streaming progressive verify: fail-fast mid-stream.
 5. HKDF sig info=`b"manifest-sig"` (domain separated from `b"ac-sig"`); reuses `SignatureVerifier` trait from WI-S04-004.
-6. Bounded parser: MAX_CHUNK_COUNT 80000; MAX_TOTAL_SIZE 160 GiB.
+6. Bounded parser: MAX_CHUNK_COUNT 81920; MAX_TOTAL_SIZE 160 GiB.
 7. Property tests (10k iter PR; 100k nightly):
    - `prop_manifest_determinism`: 1000 random × 100 builds = byte-identical.
    - `prop_manifest_round_trip`: encode → decode → re-encode = identical.
@@ -297,9 +365,9 @@ Feature: Merkle manifest builder + verifier dual-side
     And property test prop_manifest_determinism green
 
   Scenario: Bounded parser rejects oversized manifest (chunk_count)
-    Given manifest claiming 100000 chunks (> 80000 max)
+    Given manifest claiming 100000 chunks (> 81920 max)
     When verify_structure
-    Then error ManifestError::ChunkCountExceeded { found: 100000, bound: 80000 }
+    Then error ManifestError::ChunkCountExceeded { found: 100000, bound: 81920 }
     And p99 reject ≤ 1ms (fail-fast at decode)
 
   Scenario: Bounded parser rejects oversized manifest (total_size)
@@ -337,7 +405,7 @@ Feature: Merkle manifest builder + verifier dual-side
 - **9.2** RFC 6962 domain separation (\x00 leaf / \x01 inner) — prevents tree-shape attack.
 - **9.3** HKDF info=`b"manifest-sig"` separated from `b"ac-sig"` (cross-domain replay defense).
 - **9.4** Streaming progressive verify mandatory em SpliceBlob (defense-in-depth).
-- **9.5** Bounded MAX_CHUNK_COUNT 80000 = 160 GiB / 2 MiB (consistent ADR-0022).
+- **9.5** Bounded MAX_CHUNK_COUNT 81920 = 160 GiB / 2 MiB (consistent ADR-0022).
 - **9.6** result_hash = merkle_root direct (lesson Lote 10.4bis WI-S04-003 P0 fix; eliminates protobuf-determinism dependency).
 - **9.7** SignatureVerifier trait reuse from WI-S04-004 (no duplicate cripto stack).
 - **9.8** Test vectors Annex pattern reuse from WI-S04-003.
@@ -381,7 +449,7 @@ Feature: Merkle manifest builder + verifier dual-side
 - **INV-MULTIPART-MANIFEST-VALID** (CRITICAL, NEW promovida §3.16 Lote 10.5bis): verify_structure rejects 100% tampered manifests.
 - **INV-MULTIPART-DUAL-SIDE-VERIFY** (HIGH, NEW): server + client both invokeable; structure independent of sig.
 - **INV-MULTIPART-STREAMING-VERIFY-FAIL-FAST** (HIGH, NEW): mid-stream tampered chunk catches before next chunk processed.
-- **INV-MULTIPART-BOUNDED-PARSER** (HIGH, registry §3.16): MAX_CHUNK_COUNT 80000; MAX_TOTAL_SIZE 160 GiB.
+- **INV-MULTIPART-BOUNDED-PARSER** (HIGH, registry §3.16): MAX_CHUNK_COUNT 81920; MAX_TOTAL_SIZE 160 GiB.
 
 TLA+ alignment: `cas_integrity.tla` chunked variant (forward S-09 TLA+ work).
 
@@ -402,7 +470,7 @@ TLA+ alignment: `cas_integrity.tla` chunked variant (forward S-09 TLA+ work).
 | Spec doc | `crates/corelink-manifest/spec/manifest_protocol.md` | Markdown |
 | README + threat model | `crates/corelink-manifest/README.md` | Markdown |
 | Examples | `crates/corelink-manifest/examples/` (4 examples) | Rust |
-| ADR-0041 | `specs/02_governance/decisions/ADR-0041-manifest-api-stability.md` | Markdown |
+| ADR-0041 | `specs/03_architecture/adrs/ADR-0041-manifest-api-stability.md` | Markdown |
 
 ## 14. Quality Standards SOTA (compact)
 

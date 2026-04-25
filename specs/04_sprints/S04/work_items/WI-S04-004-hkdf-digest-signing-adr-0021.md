@@ -423,7 +423,7 @@ Cripto signing infra; HIGH_RISK; FF-HR-002 + FF-HR-005 + FF-HR-009.
     - Validates: no buffer overflow, no panic on malformed input, no constant-time leak via differential timing.
 
 13. **ADR-0021 ratificação**:
-    - Update `specs/02_governance/decisions/ADR-0021-ac-digest-signing-hkdf-vs-ed25519.md` from DRAFT to ACCEPTED.
+    - Update `specs/03_architecture/adrs/ADR-0021-ac-digest-signing-hkdf-vs-ed25519.md` from DRAFT to ACCEPTED.
     - Document rationale; mitigations; risks accepted; future considerations.
     - Whitelist em validate_references.py (already as forward-looking; promote).
 
@@ -718,7 +718,7 @@ TLA+ alignment: cas_integrity.tla; INV-AC-DIGEST-SIGNED enforced via verify_full
 | Test vectors Annex C + D | `crates/corelink-ac/spec/test_vectors_sig.md` + `tests/fixtures/sig/` | Markdown + JSON |
 | Sig README + threat model | `crates/corelink-ac/src/sig/README.md` | Markdown |
 | Examples | `crates/corelink-ac/examples/sig/` (4 examples) | Rust |
-| ADR-0021 ratificada | `specs/02_governance/decisions/ADR-0021-ac-digest-signing-hkdf-vs-ed25519.md` | Markdown |
+| ADR-0021 ratificada | `specs/03_architecture/adrs/ADR-0021-ac-digest-signing-hkdf-vs-ed25519.md` | Markdown |
 | Constant-time clippy lint | `crates/corelink-ac/.clippy.toml` config | TOML |
 | HKDF info CI test | `crates/corelink-ac/tests/ci_info_constant.rs` | Rust |
 

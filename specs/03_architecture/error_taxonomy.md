@@ -187,6 +187,13 @@ introduced_in_sprint: S-XX
 | `COR_MULTIPART_PART_MISSING` | 422 | never | `PartMissingError` | "Multipart part `<n>` not received" | Re-upload the missing part |
 | `COR_MULTIPART_MERKLE_INVALID` | 422 | never | `MerkleInvalidError` | "Merkle tree of parts is invalid" | Verify all parts uploaded with correct hashes |
 | `COR_MULTIPART_TIMEOUT` | 408 | linear | `MultipartTimeoutError` | "Multipart upload session expired" | Restart multipart upload |
+| `COR_MULTIPART_BLOB_TOO_LARGE` | 413 | never | `BlobTooLargeError` | "Blob exceeds 160 GiB single multipart cap" | Use stitched multipart flow (WI-S05-006) for blobs > 160 GiB |
+| `COR_MULTIPART_BACKEND_UNAVAILABLE` | 503 | exponential | `BackendUnavailableError` | "Multipart backend (R2) temporarily unavailable" | Retry with exponential backoff per `Retry-After` |
+| `COR_MULTIPART_CONCURRENCY_LIMITED` | 429 | after_delay | `ConcurrencyLimitedError` | "Concurrent multipart sessions limit reached for tenant" | Reduce concurrent uploads or wait `Retry-After` seconds |
+| `COR_MULTIPART_ALGO_UNSUPPORTED` | 422 | never | `ChunkerAlgoUnsupportedError` | "Chunker algorithm not supported (Fixed2MiB / FastCDC2MiB only)" | Use one of the supported algorithms |
+| `COR_MULTIPART_SIG_INVALID` | 422 | never | `ManifestSigInvalidError` | "Manifest signature verification failed" | Possible cache tampering; re-upload original blob; report to support |
+| `COR_MULTIPART_CHUNK_MISSING` | 422 | never | `ChunkMissingError` | "Manifest references missing or tombstoned chunk" | Re-upload original blob (chunks may have been GC'd) |
+| `COR_MULTIPART_MANIFEST_NOT_FOUND` | 404 | never | `ManifestNotFoundError` | "Manifest with digest not in storage" | Verify digest is correct or use SplitBlob to populate |
 
 ### 3.10 Onboarding / Customer Lifecycle (S-19)
 

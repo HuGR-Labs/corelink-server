@@ -258,7 +258,7 @@ REAPI handler (gRPC + REST); HIGH_RISK; FF-HR-002 + FF-HR-005.
      - For each chunk: BLAKE3 hash → upsert `chunks(tenant_id, chunk_digest, r2_object_key, size_bytes, refcount)` ON CONFLICT (tenant_id, chunk_digest) DO UPDATE SET refcount = refcount + 1.
      - Parallel R2 PUT chunks (bounded concurrency 8 per blob).
    - Step [7] **manifest::build** (delegate WI-S05-005): Merkle root from chunk digests in order.
-   - Step [8] **manifest::sign** (delegate WI-S04-004 sig pattern): HKDF info=`b"manifest-sig"` (different from `b"ac-sig"`).
+   - Step [8] **manifest::sign** (Lote 10.5bis P0 fix: explicit API; was hand-wave "delegate WI-S04-004 sig pattern" without API surface): handler invokes WI-S05-005 `ManifestSignatureVerifier::sign_manifest(canonical_bytes(envelope))` which wraps WI-S04-004 HKDF primitives with `info=b"manifest-sig"` domain-separated from `b"ac-sig"` (WI-S04-004 hard-codes `b"ac-sig"`; manifest-sig wrapper provides separate domain without modifying upstream). canonical_bytes layout published em WI-S05-005 §1 (102 bytes; binds tenant_id + blob_digest + merkle_root + chunk_count + total_size_bytes + created_at_ms + chunker_algo).
    - Step [9] **r2::put manifest**: envelope JSON at `manifest-<region>/<tenant_prefix>/<blob_digest>.json`.
    - Step [10] **manifest_chunks INSERT batch**: D1 INSERT INTO manifest_chunks (blob_digest, chunk_index, chunk_digest, tenant_id) batch (capped 250 rows/batch per Lote 10.4bis D1 100KB limit lesson).
    - Step [11] **cas_blobs UPDATE**: SET is_chunked = true.
@@ -268,11 +268,14 @@ REAPI handler (gRPC + REST); HIGH_RISK; FF-HR-002 + FF-HR-005.
 4. **SpliceBlob flow** (streaming):
    - Step [0] **scope_check**: `PatScope::CacheR` mandatory.
    - Step [3] **manifest::lookup**: D1 SELECT manifest_chunks WHERE blob_digest = $1 AND tenant_id = $2 ORDER BY chunk_index ASC.
-   - Step [4] **manifest::verify_signature** (delegate WI-S04-004 SignatureVerifier trait pattern): R2 GET manifest envelope; HKDF verify; mismatch → 422.
-   - Step [5] **streaming reassembly**:
-     - For each `chunk_digest` in order: R2 GetObject streaming.
-     - Per-chunk hash verify in stream (BLAKE3 incremental) — fail-fast if mismatch.
-     - Forward bytes to client sink via gRPC `Stream<ByteStream>` OR REST chunked transfer encoding.
+   - Step [4] **ManifestSignatureVerifier::verify_full** (Lote 10.5bis P0 fix): handler invokes WI-S05-005 `ManifestVerifier::verify_full(manifest, &manifest_sig_verifier)` which ALWAYS calls `verify_structure()` BEFORE `verify_sig()` (forced ordering by API design; `verify_structure` is `pub(crate)` not exposed). Mismatch (structure OR sig) → 422 + audit emit.
+   - Step [5] **streaming reassembly with progressive verify** (Lote 10.5bis P0 fix: pinned position; previously contradictory across §1, §6.1.4, §6.2):
+     - Handler creates `tokio_util::sync::CancellationToken`.
+     - Handler invokes WI-S05-005 `ManifestVerifier::verify_streaming(manifest, chunk_stream, cancel_token)` em parallel with R2 chunk streaming.
+     - Verifier per-chunk hash verify in stream (BLAKE3 incremental); on mismatch chunk N → cancels token → upstream R2 stream aborted before chunk N+1 read; verifier returns `Err(StreamingChunkMismatch { index: N })`.
+     - Forward bytes to client sink via gRPC `Stream<ByteStream>` OR REST chunked transfer encoding only after per-chunk verify passes.
+     - **Verifier impl** lives em WI-S05-005 (handler invokes); **invocation site + cancel_token wiring** lives em this WI.
+     - WI-S05-001 ↔ WI-S05-005 SEAL coupling: both must SEAL together for INV-MULTIPART-STREAMING-VERIFY-FAIL-FAST.
    - Step [6] **audit emit**: `cas.splice.ok` post-stream-complete; `cas.splice.error` if mid-stream fail.
    - Response: streaming bytes total = `cas_blobs.size_bytes`.
 
@@ -334,7 +337,7 @@ REAPI handler (gRPC + REST); HIGH_RISK; FF-HR-002 + FF-HR-005.
 - **D1 schema** (chunks + manifest_chunks + multipart_sessions): WI-S05-004.
 - **Manifest builder/verifier**: WI-S05-005.
 - **Sweeper cron DO + RB-FM-060**: WI-S05-006.
-- **Streaming progressive verify** (verify chunk hash mid-stream): partial in this WI; full em WI-S05-005.
+- (Lote 10.5bis P0 fix: removido contradição "partial in this WI; full em WI-S05-005"). Streaming progressive verify: **invocation site + cancel_token wiring** lives em this WI; **verifier impl + per-chunk BLAKE3 verify** lives em WI-S05-005. Both WIs SEAL together for INV-MULTIPART-STREAMING-VERIFY-FAIL-FAST.
 - **Pre-fetch chunk hot tier** (cache popular chunks): pós-GA.
 - **Resumable upload**: anti-scope (sprint contract §10).
 
@@ -573,7 +576,7 @@ TLA+ alignment: `cas_integrity.tla` chunked-blob variant (forward S-09 TLA+ work
 | Mann-Whitney timing tests | `crates/corelink-worker/tests/timing_split_splice.rs` | Rust |
 | E2E integration | `tests/e2e_bazel_split_splice.rs` | Rust |
 | Conformance harness | `tests/conformance/reapi_v2_split_splice.rs` | Rust |
-| ADR-0038 | `specs/02_governance/decisions/ADR-0038-split-splice-handler-invariants.md` | Markdown |
+| ADR-0038 | `specs/03_architecture/adrs/ADR-0038-split-splice-handler-invariants.md` | Markdown |
 | Examples | `crates/corelink-worker/examples/multipart/` (4 examples) | Rust |
 | OWASP API Top 10 checklist | `specs/_audits/2026-XX-XX-owasp-api-top10-multipart.md` | Markdown |
 

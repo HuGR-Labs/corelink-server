@@ -483,7 +483,7 @@ TLA+ alignment: `tenant_isolation.tla` Layers 1-3 (PAT scope + tenant resolution
 | E2E integration | `tests/e2e_auth_clerk_pat.rs` | Rust |
 | Chaos suite | `tests/chaos/auth_5layer_propagation.rs` | Rust |
 | Production deploy guard | `crates/corelink-worker/src/init/deploy_guard.rs` | Rust |
-| ADR-0029 | `specs/02_governance/decisions/ADR-0029-tenantctx-session-cache.md` | Markdown |
+| ADR-0029 | `specs/03_architecture/adrs/ADR-0029-tenantctx-session-cache.md` | Markdown |
 | Examples | `crates/corelink-worker/examples/auth/` (4 examples) | Rust |
 | OWASP ASVS V4 checklist | `specs/_audits/2026-XX-XX-asvs-v4-auth.md` | Markdown |
 

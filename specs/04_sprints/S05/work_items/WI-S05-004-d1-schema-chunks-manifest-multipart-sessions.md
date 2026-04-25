@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS chunks (
   -- CHECK constraints inlined
   CHECK (length(tenant_prefix) = 16),
   CHECK (region IN ('sam', 'iad', 'lhr', 'nrt', 'syd')),
-  CHECK (size_bytes >= 1 AND size_bytes <= 4194304),    -- 1 byte to 4 MiB max chunk
+  CHECK (size_bytes >= 1 AND size_bytes <= 4194304),    -- size 1 byte to 4 MiB max (FastCDC bound; Fixed2MiB final partial chunk pode ser < 1 MiB; Lote 10.5bis P0 fix: comment corrigido — original "1 MiB to 4 MiB" inverted lower bound; final partial pode ser 1 byte)
   CHECK (refcount >= 0)                                 -- never negative; 0 = candidate for S-06 GC
 );
 
@@ -117,7 +117,7 @@ CREATE TABLE IF NOT EXISTS manifest_chunks (
   PRIMARY KEY (tenant_id, blob_digest, chunk_index),
 
   -- CHECK constraints inlined
-  CHECK (chunk_index >= 0 AND chunk_index <= 80000)     -- 80000 = max chunks (160 GiB / 2 MiB)
+  CHECK (chunk_index >= 0 AND chunk_index < 81920)      -- Lote 10.5bis P0 fix: 81920 = 160 GiB / 2 MiB exato (was off-by-one 80000); chunk_index 0..81919 = 81920 chunks max
 );
 
 -- Index: tenant + blob (manifest lookup ordered)
@@ -158,8 +158,21 @@ CREATE TABLE IF NOT EXISTS multipart_sessions (
   CHECK (region IN ('sam', 'iad', 'lhr', 'nrt', 'syd')),
   CHECK (last_activity_at >= started_at),
 
-  UNIQUE (tenant_id, blob_digest_expected, state)         -- prevent duplicate in_progress for same blob
+  -- Lote 10.5bis P0 fix: partial UNIQUE (state='in_progress' only); allows multiple
+  -- completed/aborted records as audit trail; previously plain UNIQUE wrongly blocked
+  -- second multipart of same blob after completion/abort.
+  -- Handler semantic on collision: retry-on-existing (return existing upload_id), matching
+  -- S3/R2 native multipart idempotency contract (NOT 409).
+  UNIQUE (tenant_id, blob_digest_expected, state)
+    -- Note: SQLite/D1 supports partial UNIQUE via separate CREATE UNIQUE INDEX statement;
+    -- inline UNIQUE here covers all states; partial constraint via index below.
 );
+
+-- Partial UNIQUE INDEX (Lote 10.5bis P0 fix): only state='in_progress' enforces uniqueness;
+-- completed/aborted records can be duplicated (legitimate audit trail).
+CREATE UNIQUE INDEX IF NOT EXISTS uq_multipart_sessions_in_progress
+  ON multipart_sessions(tenant_id, blob_digest_expected)
+  WHERE state = 'in_progress';
 
 -- Index: sweeper consumes (state=in_progress + last_activity older than 7d)
 CREATE INDEX IF NOT EXISTS idx_multipart_sessions_orphan_sweep
@@ -417,7 +430,7 @@ Feature: D1 schema chunks + manifest_chunks + multipart_sessions
 | Property tests | `tests/prop_multipart_schema.rs` | Rust |
 | Integration tests | `tests/it_multipart_lifecycle.rs` | Rust |
 | Rollback runbook | `specs/02_governance/runbooks/RB-FM-MULTIPART-MIGRATION-BUG.md` | Markdown |
-| ADR-0040 (forward) | `specs/02_governance/decisions/ADR-0040-multipart-d1-sharding.md` | Markdown |
+| ADR-0040 (forward) | `specs/03_architecture/adrs/ADR-0040-multipart-d1-sharding.md` | Markdown |
 
 ## 14. Quality Standards SOTA (compact)
 

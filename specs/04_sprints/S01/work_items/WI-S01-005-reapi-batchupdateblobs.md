@@ -330,7 +330,7 @@ REAPI v2 conformance + gRPC canonical mapping: `OUT_OF_RANGE` é semantica read-
 | REAPI conformance test | `tests/reapi_conformance/cas_write.rs` | Rust test |
 | Integration test E2E | `tests/integration_cas_write.rs` | Rust test |
 | Chaos suite (orphan reconciliation) | `tests/chaos/dual_write.rs` | Rust |
-| ADR-0027 | `specs/02_governance/decisions/ADR-0027-dual-write-reconciliation.md` | Markdown |
+| ADR-0027 | `specs/03_architecture/adrs/ADR-0027-dual-write-reconciliation.md` | Markdown |
 | Runbook RB-FM-OUTBOX-DRAIN | `specs/05_runbooks/RB-FM-OUTBOX-DRAIN.md` | Markdown |
 
 ## 14. Quality Standards SOTA

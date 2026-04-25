@@ -592,7 +592,7 @@ TLA+ alignment: `tenant_isolation.tla` AC variant — handler ops respect tenant
 | Conformance harness | `tests/conformance/reapi_v2_ac.rs` | Rust |
 | REAPI proto vendored | `proto/build/bazel/remote/execution/v2/remote_execution.proto` | Proto |
 | Build script | `crates/corelink-worker/build.rs` | Rust |
-| ADR-0035 | `specs/02_governance/decisions/ADR-0035-ac-handler-invariants.md` | Markdown |
+| ADR-0035 | `specs/03_architecture/adrs/ADR-0035-ac-handler-invariants.md` | Markdown |
 | Examples | `crates/corelink-worker/examples/ac/` (4 examples) | Rust |
 | OWASP API Top 10 checklist | `specs/_audits/2026-XX-XX-owasp-api-top10-ac.md` | Markdown |
 

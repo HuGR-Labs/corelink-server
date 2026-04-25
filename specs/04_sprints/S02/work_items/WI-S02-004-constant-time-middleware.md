@@ -297,7 +297,7 @@ Sim — ADR-0023 documentando "Constant-Time Defense via Timing Padding Middlewa
 - [ ] **10.4.2** Criterion benchmark |Δmedian| < 1ms (não p99 diff < 5ms — median é evidence-grade) (EVT-002).
 - [ ] **10.4.3** Métrica `corelink.cas.side_channel.timing_diff_ms` emitida continuously com aggregation method spec'd: 5min sliding window, p99 of |median(group_A) − median(group_B)|; alert SEV-2 se sustained > 2ms 30min (EVT-013).
 - [ ] **10.4.4** Adversarial property test 1000 enumeration attempts → 0 statistical leak (EVT-002).
-- [ ] **10.4.5** ADR-0023 ratificado (path concreto: `specs/02_governance/decisions/ADR-0023-constant-time-timing-padding.md`) (EVT-027).
+- [ ] **10.4.5** ADR-0023 ratificado (path concreto: `specs/03_architecture/adrs/ADR-0023-constant-time-timing-padding.md`) (EVT-027).
 - [ ] **10.4.6** Documentation `docs/internal/side-channel-defense.md` reviewed by AppSec + Crypto SME.
 - [ ] **10.4.7** Cost regression gate (§14.10): padding adds bounded latency tax (~150ms expected; cost regression bench em CI).
 - [ ] **10.4.8** Edge case `elapsed > target_p99_ms` handling: log SEV-3 anomaly + emit response sem additional padding (não shorten); rely on rate-limit + alert para detection. Spec'd em §15.5 chaos.
@@ -325,7 +325,7 @@ Sim — ADR-0023 documentando "Constant-Time Defense via Timing Padding Middlewa
 | Tower middleware | `crates/corelink-worker/src/middleware/timing_padding.rs` | Rust |
 | Adversarial test | `crates/corelink-worker/tests/timing_indistinguishability.rs` | Rust |
 | Criterion benchmark | `crates/corelink-worker/benches/side_channel.rs` | Rust |
-| ADR-0023 | `specs/02_governance/decisions/ADR-0023-constant-time-timing-padding.md` | Markdown |
+| ADR-0023 | `specs/03_architecture/adrs/ADR-0023-constant-time-timing-padding.md` | Markdown |
 | Documentation | `docs/internal/side-channel-defense.md` | Markdown |
 
 ## 14. Quality Standards SOTA
