@@ -737,6 +737,7 @@ D+0 design (Architect; edge layer + IaC); D+2 NetSec (CF Ruleset + threat model)
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-25 | Gustavo (Lote 10.8) | Criação WI-S08-002; HIGH_RISK; SOTA pós-Lote 10.7bis lessons absorbed: NAT-aware (P0-6 generalizado); CF Workers Rust API worker::send_future (R5 P0-3); 100k nightly property test (P1-3); audit fail-closed (Lote 10.6bis); alarm re-arm AT START (Lote 10.4bis); D1 batch ≤250 (Lote 10.5bis); CHECK inline (Lote 10.5bis); column drift no `_ms` suffix (Lote 10.7bis P0-3). Humane response LGPD Art. 20 / GDPR Art. 22 fully integrado (sprint contract §7.10.s08.3 alignment). NEW migrations ip_blocklist + ip_blocklist_suggestions. NetSec advisor substitutes Crypto SME (no cripto load-bearing). |
+| 1.1.0 | 2026-04-25 | Gustavo (Lote 10.8bis) | R4+R5 review remediation: P1-3 FM-251 → FM-201 canonical (FM-251 = "Credential stuffing" não "rate FP"); R5 P1-5 CF Terraform schema atualizado para provider v4+ canonical (action_parameters wrapping ratelimit{}; legacy v3 top-level ratelimit{} block deprecated); provider version pin "~> 4.0" added. |
 
 ## 32. Anti-patterns evitados
 

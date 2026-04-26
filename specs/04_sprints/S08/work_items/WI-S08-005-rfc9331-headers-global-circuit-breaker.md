@@ -220,6 +220,12 @@ pub enum CircuitError {
 
 11. **CF Workers Rust runtime APIs** (Lote 10.7bis R5 P0-3 lesson absorbed): `worker::send_future()`; NEVER `tokio::spawn`.
 
+12. **Cross-WI orphaned reservation behavior (Lote 10.8bis CI-3 corrected)**: when global circuit opens em WI-S08-005 middleware, all subsequent requests short-circuit with 429 GlobalCircuitOpen ANTES de chegar em WI-S08-003 quota_layer. This means in-flight reservations granted ANTES do circuit trip can orphan: write proceeds (or fails) without reaching `confirm_storage`/`release_storage_reservation`. Behavior:
+    - WI-S08-003 DO `Quota-<tenant_id>` alarm sweep (5min cycle) auto-releases reservations at TTL (size-proportional; default 60s minimum); orphaned reservations clean up automatically.
+    - During circuit-open extended event (> reservation_ttl): sweep cycle releases stale reservations preventing inflated `bytes_used + active_reserved`.
+    - On circuit close: WI-S08-001 + WI-S08-003 resume normally; spurious StorageOver rejections from inflated active_reserved bounded ≤ next sweep cycle.
+    - SEV-3 alert if `corelink.quota.reservations_active{tenant_id}` > 100 sustained (WI-S08-003 §6.1.10 metric); operator visibility.
+
 ## 2. Narrative (HIGH_RISK ≥ 300 palavras + race-correctness justification)
 
 Response wrapper + RFC 9331 + global circuit breaker constitute **the system-wide observability + emergency layer**. Without them: (a) Bazel/Buck2 clients can't reliably retry (legacy `X-RateLimit-*` headers vary across vendors); (b) SLI inflation occurs (legitimate over-quota counts as failure → false error budget exhaust); (c) cascading failures cascade indefinitely (camadas 1-3 are per-tenant/IP/PAT scoped; system-wide overload bypasses).
@@ -790,6 +796,7 @@ D+0 design (Architect; multi-signal + hysteresis); D+2 AppSec (TenantCtx + Admin
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-25 | Gustavo (Lote 10.8) | Criação WI-S08-005; HIGH_RISK; SOTA pós-Lote 10.7bis lessons absorbed: multi-signal trigger (sprint contract §15 R-S08-004 driven; standard circuit-breaker pattern (Netflix Hystrix / Resilience4j Rust emerging)); CF Workers Rust API worker::send_future (R5 P0-3); 100k nightly property test (P1-3); audit fail-closed (Lote 10.6bis); alarm re-arm AT START (Lote 10.4bis); D1 batch ≤250 (Lote 10.5bis); CHECK inline (Lote 10.5bis); column drift no `_ms` suffix (P0-3); chrono `tomorrow_at_utc_midnight()` for bandwidth Retry-After (Lote 10.5bis); 5-tier canonical baselines (P0-7). RFC 9331 IETF stable canonical (sprint contract §14.s08.5). 5 X-Rate-Limit-Type discriminators (sprint contract §5 R-S08-8). SLI distinction CRITICAL implementação (sprint contract §7.10.s08.1). Multi-signal trigger NOT single-signal (sprint contract §15 R-S08-004). Hysteresis no-flapping. HalfOpen 10% sample no-thundering-herd. NEW migrations global_circuit_state + global_circuit_trips_history. Manual override admin S-13 audit trail. Sprint contract estimate 8h revised upward to ~19h porque scope expansion include camada 4 global circuit + multi-signal + hysteresis + RFC 9331 fixture parser. SRE peer / NetSec advisor substitutes Crypto SME (circuit breaker design). |
+| 1.1.0 | 2026-04-25 | Gustavo (Lote 10.8bis) | R4+R5 review remediation: P0-B multi-signal trigger ~12 occurrences misattributing "Lote 10.7bis P0-9 race-aware" replaced com canonical "sprint contract §15 R-S08-004 + standard circuit-breaker pattern (Netflix Hystrix / Resilience4j)"; P1-3 FM-251 → FM-201 canonical (FM-251 = "Credential stuffing" não "rate FP"); P1-4 PAT-CIRCUIT-BREAKER-001 → PAT-CIRCUIT-001 canonical (resilience_patterns.md line 126); R5 P1-2 do_error_rate_5m averaging methodology — replaced sum-of-overlapping-rolling-rates / total (double-counting; biases LATE detection) com most-recent observation; R5 P1-3 ManualOverride TripReason excluded from counts_against_sli() (planned drill = intentional NOT bug); CI-3 orphaned reservation behavior documented (DO alarm sweep auto-recovers em ≤ next sweep cycle). Aggregate score post-bis target ≥ 8.5/10 (R4 7.6 + R5 7.0 baselines). |
 
 ## 32. Anti-patterns evitados
 
