@@ -152,7 +152,7 @@ resource "pagerduty_service" "corelink_prod_iad" { ... }
 
 5. **Auto-quarantine flapping alerts** (sprint contract §14.s09.2):
    - Alert flapping > 3×/week (synthetic + production combined) → PagerDuty API silence policy applied automatically.
-   - Sloth-style flapping detection: `count_over_time(ALERTS{alertstate="firing"}[7d]) > 3` recording rule.
+   - Sloth-style flapping detection: `sum_over_time(increase(ALERTS_FOR_STATE{alertstate="firing"}[5m])[7d:5m]) > 3 (Lote 10.9bis P1 R5 P1-6: ALERTS ephemeral metric replaced with persistent ALERTS_FOR_STATE counter)` recording rule.
    - 5-Why post-mortem mandatory before un-quarantine.
 
 6. **promtool test rules** (sprint contract §6 DoD):
@@ -252,7 +252,7 @@ Prometheus Alertmanager YAML rules + PagerDuty Terraform IaC + promtool CI gate 
    - acknowledgement_timeout 600s (10min target MTTA buffer).
 
 3. **Auto-quarantine logic** (`scripts/alert-quarantine.py`):
-   - CI cron: weekly `count_over_time(ALERTS{alertstate="firing"}[7d]) > 3` query.
+   - CI cron: weekly `sum_over_time(increase(ALERTS_FOR_STATE{alertstate="firing"}[5m])[7d:5m]) > 3 (Lote 10.9bis P1 R5 P1-6: ALERTS ephemeral metric replaced with persistent ALERTS_FOR_STATE counter)` query.
    - For each flapping alert: PagerDuty API silence policy applied (24h silence).
    - 5-Why post-mortem mandatory; un-quarantine via PR + manual approval.
 
@@ -620,6 +620,7 @@ D+0 design (Architect; multi-burn-rate calibration); D+1 SRE (PagerDuty + escala
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-25 | Gustavo (Lote 10.9) | Criação WI-S09-006; HIGH_RISK; SOTA pós-Lote 10.7bis + Lote 10.8bis/tris lessons absorbed: 5-tier canonical Tier (P0-7); 100k nightly property test (P1-3); column drift no `_ms` suffix (P0-3); sign-off cap 12 (Lote 10.8bis P1-2); INV §3.12 (Lote 10.9bis P0-B corrected from §3.13/§3.14 — direct regression of Lote 10.8bis P1-13) (Lote 10.8bis P1-13). NEW alert YAML files (~56 rules; 7 SLIs × 8 rules each). NEW PagerDuty 5 services Terraform. NEW auto-quarantine script. **Lote 10.8-tris P1-NEW-1 lesson absorbed**: rigorous YAML count == narrative claim CI verification (avoid bis-introduced drift). **Lote 10.8bis P1-NEW-3 lesson absorbed**: ManualOverride excluded from SLI burn rate computation. Multi-burn-rate Sloth-style 4-window per Google SRE Workbook Ch 5. Runbook URL discipline + SLO coverage CI gates. Cardinality discipline inheritance from WI-S09-001. Audit trail inheritance from WI-S09-004. |
+| 1.1.0 | 2026-04-25 | Gustavo (Lote 10.9bis) | R4+R5 review remediation: P0-B INV §3.X → §3.12; P0-E Prom métricas underscores; P0-F PagerDuty 5 → 3 services per sprint contract §5.5 R-S09-14 canonical (staging, prod-us, prod-eu); R5 P1-6 ALERTS PromQL ephemeral metric → ALERTS_FOR_STATE persistent counter via increase + sum_over_time 7d (count_over_time misses non-contiguous fires). Aggregate target ≥ 8.5 (R4 7.6 + R5 7.0 baselines). |
 
 ## 32. Anti-patterns evitados
 

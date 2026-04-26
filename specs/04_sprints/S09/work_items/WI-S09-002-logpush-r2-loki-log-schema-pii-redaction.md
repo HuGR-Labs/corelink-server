@@ -336,7 +336,7 @@ JSON Schema 2020-12 + Rust crate (redact! macro + Redact trait) + CF Logpush IaC
            field_names = ["EventTimestampMs", "ScriptName", "Outcome", "Logs", "Exceptions", "Diagnostics", "RequestUrl"]
            timestamp_format = "rfc3339"
        }
-       filter = "{\"where\":{\"and\":[{\"key\":\"Outcome\",\"operator\":\"!=\",\"value\":\"unknown\"}]}}"
+       filter = "{\"where\":{\"and\":[{\"key\":\"Outcome\",\"operator\":\"neq\",\"value\":\"unknown\"}]}}"  # Lote 10.9bis P1 R4 P1-12: CF Logpush operator canonical é "neq" NOT "!=" (canonical operators: eq, neq, lt, gt, contains, in, not in)
    }
 
    resource "cloudflare_r2_bucket" "corelink_logs" {
@@ -381,8 +381,8 @@ JSON Schema 2020-12 + Rust crate (redact! macro + Redact trait) + CF Logpush IaC
 
        #[test]
        fn dlp_no_pii_leak_em_redacted_logs(
-           email in r"\PC{1,30}@\PC{1,30}\.\PC{2,5}",  // RFC 6531 Unicode email pattern
-           ipv4 in r"[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}",
+           email in r"[a-zA-Z0-9.+_-]{1,30}@[a-zA-Z0-9-]{1,30}\.[a-z]{2,5}",  // RFC 5321 local-part canonical (Lote 10.9bis P1 R5 P1-5: \PC POSIX syntax NÃO supported em Rust regex crate; replaced with valid Rust regex; Unicode coverage via secondary `\p{L}` test)
+           ipv4 in r"(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}",  // valid IPv4 RFC 791 canonical (Lote 10.9bis P1 R5 P1-7: prevents from_str() failure on invalid IPs; IpAddress::default() fallback eliminated)
            ipv6 in r"[0-9a-f]{0,4}(:[0-9a-f]{0,4}){2,7}",
            bearer in r"Bearer [a-zA-Z0-9]{32,128}",
            blob_digest in r"BLAKE3:[0-9a-f]{64}"
@@ -393,7 +393,7 @@ JSON Schema 2020-12 + Rust crate (redact! macro + Redact trait) + CF Logpush IaC
                .event("test_event")
                .tenant_id(uuid::Uuid::new_v4())
                .user_email(EmailAddress(email.clone()))
-               .client_ip(IpAddress::from_str(&ipv4).unwrap_or_else(|_| IpAddress::from_str(&ipv6).unwrap_or(IpAddress::default())))
+               .client_ip(IpAddress::from_str(&ipv4).expect("proptest IPv4 regex now produces valid addresses; Lote 10.9bis P1 R5 P1-7 corrected"))
                .auth_token(BearerToken(bearer.clone()))
                .digest(BlobDigest(blob_digest.clone()))
                .build();
@@ -766,6 +766,7 @@ D+0 design (Architect; redact! macro + R2 lifecycle); D+1 Privacy (LGPD/GDPR + L
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-25 | Gustavo (Lote 10.9) | Criação WI-S09-002; HIGH_RISK; SOTA pós-Lote 10.7bis + Lote 10.8bis/tris lessons absorbed: 5-tier canonical Tier (P0-7); CF Workers Rust API worker::send_future (R5 P0-3); 100k nightly property test (P1-3); fail-OPEN log emit (vs audit fail-closed Lote 10.6bis distinction); column drift no `_ms` suffix (P0-3); sign-off cap 12 (Lote 10.8bis P1-2); INV §3.X → §3.X (CTRL-PRIV-001 referenced; INV-AUDIT-APPEND-ONLY separate WI-S09-004); DLP scanner n=10k (Lote 10.8bis P0-E statistical rigor adapted); IPv6 /64 redaction (Lote 10.7bis lesson reused from WI-S08-002 NAT discussion). NEW JSON Schema artifact log_event.schema.json. NEW corelink-log-schema crate (redact! macro + 4 redactors). NEW Terraform Logpush + R2 lifecycle + Loki tenant config. CTRL-PRIV-001 enforcement via tipo-driven compile-time discipline. LGPD Art. 32 + GDPR Art. 32 compliance. |
+| 1.1.0 | 2026-04-25 | Gustavo (Lote 10.9bis) | R4+R5 review remediation: P0-B INV §3.X → §3.12; P0-C R2 storage class transitions REMOVED (CF R2 single-tier; only Expiration supported; transitions InfrequentAccess/Archive são AWS S3 features NÃO em CF R2); P0-E Prom métricas underscores; R4 P1-12 Logpush operator `!=` → `neq` canonical; R5 P1-5 proptest regex `\PC` POSIX → valid Rust regex `[a-zA-Z0-9.+_-]`; R5 P1-7 IpAddress::default() fallback eliminated via valid IPv4 regex (RFC 791). Aggregate target ≥ 8.5 (R4 6.8 + R5 7.0 baselines). |
 
 ## 32. Anti-patterns evitados
 

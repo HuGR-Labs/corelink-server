@@ -568,6 +568,7 @@ D+0 design (Architect; sampling strategy); D+1 SRE (Tempo integration); D+2 AppS
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-25 | Gustavo (Lote 10.9) | Criação WI-S09-003; HIGH_RISK; SOTA pós-Lote 10.7bis + Lote 10.8bis/tris lessons absorbed: 5-tier canonical Tier (P0-7); CF Workers Rust API worker::send_future (R5 P0-3); 100k nightly property test (P1-3); fail-OPEN tracing emit (Lote 10.6bis distinction; audit fail-closed em WI-S09-004 separate); column drift no `_ms` suffix (P0-3); sign-off cap 12 (Lote 10.8bis P1-2); INV §3.X → §3.13 (Lote 10.8bis P1-13). NEW corelink-tracing crate + OTLP middleware. W3C Trace Context Recommendation 2020 canonical. Head 1% + tail 100% errors (Google SRE Workbook Ch 6). OpenMetrics 1.0 exemplars (trace_id em Exemplar field NUNCA em label; Lote 10.8bis cardinality discipline absorbed). redact! macro inheritance from WI-S09-002 (PII em span attributes forbidden). Tempo backend integration. |
+| 1.1.0 | 2026-04-25 | Gustavo (Lote 10.9bis) | R4+R5 review remediation: P0-B INV §3.X → §3.12; P0-E Prom métricas underscores. WI scored 8.0/10 R4 — strongest among 7. P1 carry-forward (cost analysis math hole §22; tail buffer 10k spans memory math) deferred ao Lote 10.9-tris se necessário. Aggregate target ≥ 8.5 (R4 8.0 + R5 7.5 baselines). |
 
 ## 32. Anti-patterns evitados
 

@@ -36,7 +36,7 @@ tags: ["wi", "s09", "synthetic-canary", "runbook-dry-run", "rb-fm-153", "rb-obs-
 | Campo | Valor |
 |---|---|
 | ID | WI-S09-007 |
-| Título | Synthetic canary 3 regiões (us-east IAD + eu-west LHR + ap-south BOM) 24/7 sustained 72h sem gap (sprint contract §6 DoD); CF Workers cron-trigger executando canary tests CAS PUT/GET + AC lookup end-to-end via OTLP-instrumented HTTP client; assertions: latency p99 ≤ 100ms, error rate ≤ 0.1%, response correctness validation (BLAKE3 digest match); dashboard health-check em paralelo verifying Mimir/Loki/Tempo tenant ingest functioning + dashboard refresh latency; RB-FM-153 (Grafana Cloud outage) runbook dry-run em staging — simulated outage durante 30min, validate (a) graceful "no data" em dashboards, (b) SEV-3 alert fires, (c) Twilio backup notification path, (d) recovery on simulated resume; RB-OBS-CARDINALITY-001 (cardinality explosion) runbook dry-run — synthetic injection 25k séries via test-only metric, validate cardinality_check.py CI gate rejects, Mimir tenant tier limit secondary defense rejects ingest, SEV-2 alert fires; sprint contract §6 DoD EVT-017 mandatory |
+| Título | Synthetic canary 3 regiões (enam (Eastern North America) + weur (Western Europe) + apac (Asia-Pacific) — Lote 10.9bis P1 R4 P1-10 corrected from IATA codes (IAD/LHR/BOM são CF colo codes for Workers request.cf.colo NOT R2 region hints; canonical R2 region hints per data_model.md §2.1)) 24/7 sustained 72h sem gap (sprint contract §6 DoD); CF Workers cron-trigger executando canary tests CAS PUT/GET + AC lookup end-to-end via OTLP-instrumented HTTP client; assertions: latency p99 ≤ 100ms, error rate ≤ 0.1%, response correctness validation (BLAKE3 digest match); dashboard health-check em paralelo verifying Mimir/Loki/Tempo tenant ingest functioning + dashboard refresh latency; RB-FM-153 (Grafana Cloud outage) runbook dry-run em staging — simulated outage durante 30min, validate (a) graceful "no data" em dashboards, (b) SEV-3 alert fires, (c) Twilio backup notification path, (d) recovery on simulated resume; RB-OBS-CARDINALITY-001 (cardinality explosion) runbook dry-run — synthetic injection 25k séries via test-only metric, validate cardinality_check.py CI gate rejects, Mimir tenant tier limit secondary defense rejects ingest, SEV-2 alert fires; sprint contract §6 DoD EVT-017 mandatory |
 | Sprint | S-09 |
 | Lane | HIGH_RISK |
 | Forcing factors | FF-HR-005 (canary é foundation operability validation; sem canary = blind production confidence; sprint contract §6 DoD explicit: 24/7 + 72h sustained antes ship gate) |
@@ -103,7 +103,7 @@ pub enum CanaryError {
 **Cripto-driven invariants enforced**:
 
 1. **24/7 multi-region canary** (sprint contract §6 DoD):
-   - 3 regions: us-east IAD, eu-west LHR, ap-south BOM (canonical CF region codes).
+   - 3 regions: enam (Eastern NA) + weur (Western EU) + apac (Asia-Pacific) — R2 region hints canonical (Lote 10.9bis P1 R4 P1-10) (canonical CF region codes).
    - CF Workers cron-trigger interval: 60s per region (1 canary loop/min/region = 1440 loops/dia/region = 4320 loops/72h/region; × 3 regions = 12960 loops total/72h).
    - 72h sustained sem gap (sprint contract §6 DoD; total 12960 successful canary loops/72h (Lote 10.9bis P0-A correction; previous claim 38880 was 3× inflated triple-counting; correct: 60s × 60min/h × 24h × 3 days × 3 regions / 60s = 12960)).
 
@@ -155,7 +155,7 @@ pub enum CanaryError {
 
 Synthetic canary é **the operational confidence primitive** — distinguishes "ship-ready service" from "service that ran tests once em CI". CF Workers cron-trigger canary 24/7 from 3 geo-distributed regions exercises full CAS write/read + AC lookup paths every 60s; 72h sustained = 12960 successful loops/72h (Lote 10.9bis P0-A corrected from previous 38880 triple-counted) = high-confidence operability evidence. Sprint contract §6 DoD: este número é gate para GA readiness (S-20 ship).
 
-**Why 3 regions specific** (us-east IAD + eu-west LHR + ap-south BOM): each tests independent CF region + R2 storage + DO instance + D1 database; cross-region failure modes detected (e.g., DO routing primary_region misconfigured, R2 cross-region replication lag). Single-region canary insufficient for multi-region production confidence.
+**Why 3 regions specific** (enam (Eastern North America) + weur (Western Europe) + apac (Asia-Pacific) — Lote 10.9bis P1 R4 P1-10 corrected from IATA codes (IAD/LHR/BOM são CF colo codes for Workers request.cf.colo NOT R2 region hints; canonical R2 region hints per data_model.md §2.1)): each tests independent CF region + R2 storage + DO instance + D1 database; cross-region failure modes detected (e.g., DO routing primary_region misconfigured, R2 cross-region replication lag). Single-region canary insufficient for multi-region production confidence.
 
 **Why 60s interval**: balances canary cost (CF Workers cron + R2 ops + observability ingest) vs detection latency. 60s = 1440 loops/dia/region; sufficient sample size for SLO computation (1440 = 95% CI ±0.5% on success rate). Shorter intervals (10s) cost prohibitive; longer (5min) detection latency too high.
 
@@ -471,7 +471,7 @@ Feature: Synthetic Canary 3 Regions + Runbook Dry-Run
 
 ## 9. Design Decisions
 
-- 9.1: 3 regions specific (us-east IAD + eu-west LHR + ap-south BOM); sprint contract §6 DoD canonical.
+- 9.1: 3 regions specific (enam (Eastern North America) + weur (Western Europe) + apac (Asia-Pacific) — Lote 10.9bis P1 R4 P1-10 corrected from IATA codes (IAD/LHR/BOM são CF colo codes for Workers request.cf.colo NOT R2 region hints; canonical R2 region hints per data_model.md §2.1)); sprint contract §6 DoD canonical.
 - 9.2: 60s cron interval; balances cost vs detection latency.
 - 9.3: 72h sustained (sprint contract §6 DoD ship gate criterion).
 - 9.4: CAS PUT + GET + AC LOOKUP synthetic flow.
@@ -665,6 +665,7 @@ D+0 design (Architect; 3 regions + 72h target); D+1 SRE (CF Workers cron + multi
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-25 | Gustavo (Lote 10.9) | Criação WI-S09-007; HIGH_RISK; SOTA pós-Lote 10.7bis + Lote 10.8bis/tris lessons absorbed: 5-tier canonical Tier (P0-7); CF Workers Rust API worker::Fetch (R5 P0-3); 100k nightly property test (P1-3); column drift no `_ms` suffix (P0-3); sign-off cap 12 (Lote 10.8bis P1-2); INV §3.12 (Lote 10.9bis P0-B corrected from §3.13/§3.14 — direct regression of Lote 10.8bis P1-13) (Lote 10.8bis P1-13). NEW 2 runbooks (RB-FM-153 Grafana outage + RB-OBS-CARDINALITY-001 cardinality explosion) sprint contract §6 DoD EVT-017. **Lote 10.8bis P1-NEW-3 inheritance**: synthetic tenant SLI exclusion (analogous a ManualOverride exclusion em WI-S08-005). 3 regions specific (IAD + LHR + BOM); 60s cron canonical; 72h sustained ship gate. BLAKE3 digest correctness (consistent com CAS digests primary). Audit trail inheritance from WI-S09-004. |
+| 1.1.0 | 2026-04-25 | Gustavo (Lote 10.9bis) | R4+R5 review remediation: **P0-A canary loop count 38880 → 12960 (3× inflated triple-counted)**; correct math: 60s × 60min × 24h × 3 days × 3 regions / 60s = 12960 loops total/72h; ~10 occurrences fixed (header, narrative, Personas, chaos test 9, Gherkin, completeness criterion, risk register, cost analysis); P0-B INV §3.X → §3.12; P0-E Prom métricas underscores; R4 P1-10 region codes IATA (IAD/LHR/BOM são CF colo codes for Workers request.cf.colo) → R2 region hints (enam/weur/apac canonical per data_model.md §2.1). Sprint contract §6 DoD ship-gate criterion canary loop count corrected via Phase 1. Aggregate target ≥ 8.5 (R4 6.8 + R5 6.0 baselines). |
 
 ## 32. Anti-patterns evitados
 
