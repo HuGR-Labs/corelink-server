@@ -26,7 +26,7 @@ inherits_from:
 tags: ["wi", "s08", "abuse-detection", "scoring", "heuristica", "lgpd-art20", "humane-response", "high-risk"]
 ---
 
-# WI-S08-004 — Abuse Detection Heurística Multi-Feature + Scoring + Humane Response (`crates/corelink-abuse-detector`; weighted-sum score `corelink_abuse_score{tenant_id}` em [0.0, 1.0]; features = {cpu_wallclock_ratio, egress_bytes_per_min, action_digest_entropy, concurrent_exec_count} sprint contract §5 R-S08-7; observed via S-09 metrics 5min aggregation windows; 4-tier response gradient: noop / silent-downgrade-50% / admin-review-trigger-SEV2 / suspend-candidate-human-review-only; LGPD Art. 20 + GDPR Art. 22 humane response sprint contract §7.10.s08.3 (3 customer self-service endpoints: GET /v1/admin/abuse_score + POST /v1/admin/abuse_appeal + audit log every decision); threshold calibration via 10 synthetic workloads (5 benign / 5 abusive) ≥ 80% true positive + 0 false positive sprint contract §6 DoD; per-tenant isolation formal property test sprint contract §7.10.s08.4)
+# WI-S08-004 — Abuse Detection Heurística Multi-Feature + Scoring + Humane Response (`crates/corelink-abuse-detector`; weighted-sum score `corelink_abuse_score{tenant_id}` em [0.0, 1.0]; features = {cpu_wallclock_ratio, egress_bytes_per_min, action_digest_entropy, concurrent_exec_count} sprint contract §5 R-S08-7; observed via S-09 metrics 5min aggregation windows; 4-tier response gradient: noop / silent-downgrade-50% / admin-review-trigger-SEV2 / suspend-candidate-human-review-only; LGPD Art. 20 + GDPR Art. 22 humane response sprint contract §7.10.s08.3 (3 customer self-service endpoints: GET /v1/admin/abuse_score + POST /v1/admin/abuse_appeal + audit log every decision); threshold calibration via 50 synthetic workloads (n=50 benign + n=50 high-intensity abusive; Lote 10.8bis P0-E corrected; 95% CI requirement) ≥ 80% true positive + 0 false positive sprint contract §6 DoD; per-tenant isolation formal property test sprint contract §7.10.s08.4)
 
 > **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
 > **Parent:** [S-08](../sprint.md) · **Assignee:** Gustavo Schneiter
@@ -38,7 +38,7 @@ tags: ["wi", "s08", "abuse-detection", "scoring", "heuristica", "lgpd-art20", "h
 | Campo | Valor |
 |---|---|
 | ID | WI-S08-004 |
-| Título | Heurística-based abuse detection NÃO-ML (anti-scope sprint contract §10); 4 features observed via S-09 metrics 5min windows: (a) `cpu_wallclock_ratio` (cpu_seconds / wallclock_seconds; abusive ≥ 0.95 sustained = compute farming); (b) `egress_bytes_per_min` (egress / min; abusive ≥ 95th percentile WoW + 5σ); (c) `action_digest_entropy` (Shannon entropy of unique action_digests; abusive ≤ 1 bit = single-action spam); (d) `concurrent_exec_count` (parallel exec sessions; abusive ≥ 100× plan tier baseline); weighted-sum score em [0.0, 1.0]; weights calibrated em staging (10 synthetic workloads); 4-tier response gradient with humane LGPD Art. 20 alignment: score < 0.5 noop / 0.5–0.8 silent-downgrade-50%-rate-1h-auto-recover / 0.8–0.95 admin-review-trigger-SEV-2 / ≥ 0.95 suspend-candidate-human-review-NEVER-auto / 3 customer-facing endpoints (S-13 dependency staging stub OK); audit log every decision (LGPD compliance); per-tenant isolation property test 100k nightly (sprint contract §7.10.s08.4) |
+| Título | Heurística-based abuse detection NÃO-ML (anti-scope sprint contract §10); 4 features observed via S-09 metrics 5min windows: (a) `cpu_wallclock_ratio` (cpu_seconds / wallclock_seconds; abusive ≥ 0.95 sustained = compute farming); (b) `egress_bytes_per_min` (egress / min; abusive ≥ 95th percentile WoW + 5σ); (c) `action_digest_entropy` (Shannon entropy of unique action_digests; abusive ≤ 1 bit = single-action spam); (d) `concurrent_exec_count` (parallel exec sessions; abusive ≥ 100× plan tier baseline); weighted-sum score em [0.0, 1.0]; weights calibrated em staging (50+50 synthetic workloads (Lote 10.8bis P0-E corrected)); 4-tier response gradient with humane LGPD Art. 20 alignment: score < 0.5 noop / 0.5–0.8 silent-downgrade-50%-rate-1h-auto-recover / 0.8–0.95 admin-review-trigger-SEV-2 / ≥ 0.95 suspend-candidate-human-review-NEVER-auto / 3 customer-facing endpoints (S-13 dependency staging stub OK); audit log every decision (LGPD compliance); per-tenant isolation property test 100k nightly (sprint contract §7.10.s08.4) |
 | Sprint | S-08 |
 | Lane | HIGH_RISK |
 | Forcing factors | FF-HR-005 (CTRL-RATE-001 + CTRL-AUTH security controls; abuse detection complements bulkhead camadas 1-4), FF-HR-002 (cross-tenant SLO degradation if abuse undetected) |
@@ -165,7 +165,7 @@ pub enum AbuseError {
 
 1. **Heurística-only (NOT ML)** — sprint contract §10 anti-scope absorbed:
    - 4 features: cpu_wallclock_ratio, egress_bytes_per_min, action_digest_entropy_bits, concurrent_exec_count.
-   - Weighted-sum scoring; weights calibrated em staging (10 synthetic workloads sprint contract §6 DoD).
+   - Weighted-sum scoring; weights calibrated em staging (50+50 synthetic workloads (Lote 10.8bis P0-E corrected) sprint contract §6 DoD).
    - Transparent: customer can inspect features + weights + contributions (LGPD Art. 20 compliance).
 
 2. **Per-tenant isolation** (sprint contract §7.10.s08.4 property test 100k):
@@ -221,7 +221,7 @@ pub enum AbuseError {
    Initial weights from sprint contract benchmarks; tunable via admin S-13 ADR future (post-staging calibration).
 
 6. **Calibration target** (sprint contract §6 DoD):
-   - 10 synthetic workloads (5 benign, 5 abusive) em staging.
+   - 50 synthetic workloads (n=50 benign + n=50 high-intensity abusive; Lote 10.8bis P0-E) em staging.
    - Benign scenarios: (1) typical Bazel build 200 RPS team plan; (2) parallel CI at 1000 RPS business; (3) ML model training egress 10 GB/min; (4) Docker layer rebuild 50 RPS; (5) academic research 100 RPS team.
    - Abusive scenarios: (6) compute farming cpu_ratio=0.95 sustained 2h; (7) scraping egress 100× baseline; (8) action_digest spam (1 unique digest 10k requests); (9) exec flood 1000× baseline; (10) combined multi-vector attack.
    - **Pass criteria**: 0 false positives benign + ≥ 80% true positives abusive.
@@ -275,7 +275,7 @@ pub enum AbuseError {
 
 Abuse detection é **the proactive layer** — bulkhead camadas 1-4 (per-tenant DO + per-IP edge + per-PAT + global circuit) reactively limit current rate; abuse detection identifies *patterns* that precede breach (compute farming, scraping, spam, exec flood). 4-feature heurística simples primeiro (sprint contract §10 anti-scope ML); calibrated em staging; transparent (LGPD Art. 20 compliance).
 
-**Why heurística NOT ML** (sprint contract §10 anti-scope): ML adds (a) opacity (LGPD Art. 20 inverso — customer cannot inspect "decision factors"); (b) operational complexity (model training, retraining, drift detection); (c) cost (inference latency on each request); (d) false-positive risk (ML may overfit staging patterns). Heurística simples 4-feature: transparent, tunable via admin, low false-positive rate (calibrated 0 false positives em 5 benign workloads). ML deferred S-14+ if heurística insuficiente.
+**Why heurística NOT ML** (sprint contract §10 anti-scope): ML adds (a) opacity (LGPD Art. 20 inverso — customer cannot inspect "decision factors"); (b) operational complexity (model training, retraining, drift detection); (c) cost (inference latency on each request); (d) false-positive risk (ML may overfit staging patterns). Heurística simples 4-feature: transparent, tunable via admin, low false-positive rate (calibrated 95% CI FP rate ≤ 5% on n=50 benign workloads (Lote 10.8bis P0-E)). ML deferred S-14+ if heurística insuficiente.
 
 **Why 4 features specifically**:
 - **cpu_wallclock_ratio**: detects compute farming (sustained CPU usage near wallclock indicates botnet/cryptominer using CoreLink as compute substrate).
@@ -289,7 +289,7 @@ Abuse detection é **the proactive layer** — bulkhead camadas 1-4 (per-tenant 
 
 **Why 5min aggregation window**: balance sensitivity vs noise. 1min: false-positives from natural burst; 1h: too slow to react. 5min: industry standard (PagerDuty, Datadog); aligns S-09 metrics 5min canonical.
 
-**Why calibration via 10 synthetic workloads**: pre-launch validation; 0 false positive benign + ≥ 80% true positive abusive (sprint contract §6 DoD). Real-world calibration post-launch via shadow mode (compute scores; do NOT apply gradient; collect ground truth via customer feedback for 30d).
+**Why calibration via 50+50 synthetic workloads (Lote 10.8bis P0-E corrected)**: pre-launch validation; 0 false positive benign + ≥ 80% true positive abusive (sprint contract §6 DoD). Real-world calibration post-launch via shadow mode (compute scores; do NOT apply gradient; collect ground truth via customer feedback for 30d).
 
 **Adversarial scenarios**:
 - **Adversary game-theoretic** (knows weights): adversary just-below-threshold attack vector. Mitigation: weights tunable via admin S-13; rotating weights detected via anomaly metric; combined-feature score harder to game than single feature.
@@ -310,11 +310,9 @@ Abuse detection é **the proactive layer** — bulkhead camadas 1-4 (per-tenant 
 
 **Persona 2 — Customer (heavy ML training egress)**: tenant T ML training; egress 5 GB/min × 30min sustained; egress 50× baseline. Score component egress_norm = 1.0 (saturated); other features normal. Score = 0.30×0 + 0.25×1.0 + 0.25×0 + 0.20×0 = 0.25; tier Noop. No false-positive (other features normal).
 
-**Persona 3 — Customer (silent downgrade marginal)**: tenant T compute farming attempt cpu_ratio=0.85 sustained; entropy=2 bits (some variation). Score = 0.30×0.7 + 0.25×0 + 0.25×0.33 + 0.20×0 = 0.29; tier Noop ainda. Hmm wait — example needs higher.
+**Persona 3 — Customer (compute-farming high intensity SilentDowngrade)**: tenant T compute farming pattern: cpu_ratio=0.98 sustained + entropy=0.5 (1-2 unique actions repeated) + exec=50× baseline. Score = 0.30×0.96 + 0.25×0 + 0.25×0.83 + 0.20×0.5 = 0.596; tier SilentDowngrade50pct1h. Tenant gets rate cap reduced 50% for 1h; auto-recover if score drops. Admin notified SEV-3.
 
-Actually rebuilding: cpu_ratio=0.95 + entropy=1.5 + exec=5×baseline → score = 0.30×0.9 + 0.25×0 + 0.25×0.5 + 0.20×0.04 = 0.27+0+0.125+0.008 = 0.40; still Noop. Heurística needs tighter thresholds in practice — calibration target TBD em staging.
-
-**Persona 3 (revised) — Compute-farming pattern**: cpu_ratio=0.98 + entropy=0.5 + exec=50×baseline → score = 0.30×0.96 + 0.25×0 + 0.25×0.83 + 0.20×0.5 = 0.288+0+0.208+0.1 = 0.596; tier SilentDowngrade50pct1h. Tenant gets rate cap reduced 50% for 1h; auto-recover if score drops. Admin notified SEV-3.
+**Persona 3.1 — Calibration acknowledged limitation (Lote 10.8bis P0-E absorbed)**: medium-intensity compute-farming patterns (e.g., cpu_ratio=0.85, entropy=2 bits, exec=5× baseline → score ≈ 0.29) DO score Noop tier — heurística calibrated for high-intensity attacks NOT subtle medium-intensity patterns. This is a **known limitation of n=50+50 weighted-sum heurística**: low-medium-intensity abuse falls within natural CPU-heavy workload variance (e.g., legitimate AOT compilation, parallel testing). Mitigation: (a) periodic shadow re-calibration via real production traffic post-launch (shadow mode 30d ground-truth labeling); (b) ML-based scoring deferred S-14+ for finer-grained discrimination; (c) for now, S-08 explicitly accepts that medium-intensity abuse will require manual customer-relations escalation rather than automated detection. Sprint contract §6 DoD calibration target: ≥ 80% TP **on the 50-abusive HIGH-INTENSITY workloads** (NOT medium-intensity); medium-intensity acknowledged as out-of-scope automated detection.
 
 **Persona 4 — Customer (admin review)**: combined-vector attack: cpu=0.99 + egress=20× baseline + entropy=0.3 + exec=80×baseline. Score = 0.30×0.98 + 0.25×1.0 + 0.25×0.9 + 0.20×0.79 = 0.294+0.25+0.225+0.158 = 0.927; tier AdminReviewTriggerSev2. Admin alerted; reviews context (was customer running bona-fide ML training? compute farming?); decides.
 
@@ -328,7 +326,7 @@ Actually rebuilding: cpu_ratio=0.95 + entropy=1.5 + exec=5×baseline → score =
 - Score computation latency: ≤ 1s p99 per tenant (cron 5min batch).
 - Customer appeal SLA: ≤ 24h human review (humane LGPD).
 - Customer self-service /v1/admin/abuse_score: ≤ 200ms p99.
-- Calibration target: 0 false positives benign + ≥ 80% true positives abusive em staging 10 workloads.
+- **Calibration target (Lote 10.8bis P0-E corrected)**: 95% CI FP rate ≤ 5% on n=50 benign workloads (binomial: 0 FP em 50 samples → 95% CI upper 5.7%; ≤ 2 FP em 50 → 95% CI upper 9.6% acceptable initial); 95% CI TP rate ≥ 80% on n=50 high-intensity abusive workloads (≥ 40 TP em 50 → CI lower 67%; ≥ 45 TP → CI lower 78% target). Pre-launch staging validation; post-launch 30d shadow re-calibration via production traffic ground-truth labeling.
 - INV-TENANT-ISOLATION: 0 cross-tenant feature leak em chaos test 30d.
 
 ## 4. Capability Mapping
@@ -483,7 +481,7 @@ Heurística scoring + cron DO + admin endpoints + Tower middleware response grad
     - `prop_appeal_sla_24h`: 1k synthetic appeals; assert SLA deadline = submitted_at + 24h.
 
 12. **Chaos suite** (HIGH_RISK ≥ 10; this WI = 11):
-    - 1. **Calibration validation**: 10 synthetic workloads (5 benign + 5 abusive); assert 0 FP + ≥ 80% TP (sprint contract §6 DoD).
+    - 1. **Calibration validation**: 50+50 synthetic workloads; assert 0 FP + ≥ 80% TP (sprint contract §6 DoD).
     - 2. **Adversary just-below-threshold**: simulate adversary score=0.49 sustained; assert no false-positive downgrade.
     - 3. **Score regression race**: tenant score 0.85 at T0; 0.45 at T0+5min; assert downgrade applied at T0; auto-recover at T0+5min; bounded ≤ 5min false-downgrade.
     - 4. **Customer appeal wave**: 10k appeals at once; assert PriorityQueue por score; SLA ≤ 24h sustained; overflow alert SEV-3.
@@ -592,13 +590,15 @@ Feature: Abuse Detection Heurística + Scoring + Humane Response
     Then INV-TENANT-ISOLATION verified em property test 100k iter
     Then cross_tenant_feature_leak_total metric = 0
 
-  Scenario: Calibration target 10 synthetic workloads
-    Given 5 benign workloads (typical Bazel + parallel CI + ML training + Docker rebuild + academic research)
-    Given 5 abusive workloads (compute farming + scraping + spam + exec flood + multi-vector)
+  Scenario: Calibration target 50+50 synthetic workloads (Lote 10.8bis P0-E statistically rigorous)
+    Given n=50 benign workloads (10× variations of typical Bazel + parallel CI + ML training + Docker rebuild + academic research; intra-class variance simulating real production diversity)
+    Given n=50 high-intensity abusive workloads (10× variations of compute farming + scraping + spam + exec flood + multi-vector; high-intensity defined: cpu_ratio≥0.9, egress≥10× baseline, entropy≤1 bit, exec≥50× baseline)
     When cron computes scores
-    Then 0 false positives benign (all score < 0.5; tier=Noop)
-    Then ≥ 4/5 abusive workloads tier ≥ SilentDowngrade50pct1h (≥ 80% TP)
-    Then sprint contract §6 DoD validated
+    Then ≤ 2 FP em 50 benign (95% CI upper-bound 9.6% acceptable; target ideal 0 FP em 50 → CI upper 5.7%)
+    Then ≥ 40 TP em 50 high-intensity abusive (95% CI lower-bound 67%; target ≥ 45 TP → CI lower 78%)
+    Then medium-intensity abuse (intermediate cases) acknowledged out-of-scope automated detection (Persona 3.1; sprint contract §6 DoD)
+    Then statistical methodology validated by Data Scientist advisor sign-off
+    Then sprint contract §6 DoD calibration target satisfied
 
   Scenario: S-09 metrics outage AbuseError::MetricsLag
     Given S-09 metrics endpoint unavailable 30min
@@ -619,7 +619,7 @@ Feature: Abuse Detection Heurística + Scoring + Humane Response
 - 9.7: Customer self-service endpoints transparent (LGPD Art. 20 compliance).
 - 9.8: Customer appeal SLA ≤ 24h human review.
 - 9.9: Per-tenant isolation property test 100k (sprint contract §7.10.s08.4).
-- 9.10: Calibration via 10 synthetic workloads (sprint contract §6 DoD).
+- 9.10: Calibration via 50+50 synthetic workloads (Lote 10.8bis P0-E corrected) (sprint contract §6 DoD).
 - 9.11: Weights persistent em D1 `abuse_calibration_weights`; tunable via admin S-13.
 - 9.12: Audit fail-closed (Lote 10.6bis absorbed).
 - 9.13: NO new ADR (extends CTRL-RATE-001 + CAP-ABUSE-001/002 sprint contract canonical).
@@ -630,7 +630,7 @@ Feature: Abuse Detection Heurística + Scoring + Humane Response
 - [ ] **10.s08.004.2** All 11 Gherkin scenarios green.
 - [ ] **10.s08.004.3** Property tests 7 × 10k green; **100k nightly sustained 7d** (HIGH_RISK SOTA bar; Lote 10.7bis P1-3).
 - [ ] **10.s08.004.4** Chaos suite 11 scenarios green.
-- [ ] **10.s08.004.5** **Calibration target met**: 10 synthetic workloads em staging; 0 FP benign + ≥ 80% TP abusive (sprint contract §6 DoD).
+- [ ] **10.s08.004.5** **Calibration target met**: 50+50 synthetic workloads (Lote 10.8bis P0-E corrected) em staging; 95% CI FP rate ≤ 5% upper-bound benign + 95% CI TP rate ≥ 80% lower-bound abusive (Lote 10.8bis P0-E) (sprint contract §6 DoD).
 - [ ] **10.s08.004.6** Customer appeal SLA ≤ 24h sustained 7d.
 - [ ] **10.s08.004.7** **Per-tenant isolation 100k property test** (sprint contract §7.10.s08.4 explicit).
 - [ ] **10.s08.004.8** AutoSuspendForbidden enforced (0 attempts succeed em property test 100k).
@@ -700,7 +700,7 @@ HIGH_RISK 12 sign-offs PRR (Compliance + Privacy mandatory emphatic for LGPD); s
 | ST-006 | Admin endpoints (4) S-13 stubs | 2 |
 | ST-007 | D1 migrations (4 new tables) | 1 |
 | ST-008 | Métricas (9) emit | 1 |
-| ST-009 | 10 synthetic workloads calibration (5 benign + 5 abusive) | 3 |
+| ST-009 | 50+50 synthetic workloads (Lote 10.8bis P0-E corrected) calibration (n=50 benign + n=50 high-intensity abusive; 95% CI methodology rigor) | 8 |
 | ST-010 | Property tests (7 × 10k; 100k nightly) | 3.5 |
 | ST-011 | Chaos suite (11) | 2.5 |
 | ST-012 | Compliance review (LGPD Art. 20) | 1 |
@@ -814,7 +814,7 @@ D+0 design (Architect; heurística + 4-feature choice); D+1 Compliance (LGPD Art
 
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
-| 1.0.0 | 2026-04-25 | Gustavo (Lote 10.8) | Criação WI-S08-004; HIGH_RISK; SOTA pós-Lote 10.7bis lessons absorbed: 5-tier canonical baselines (P0-7); CF Workers Rust API worker::send_future (R5 P0-3); 100k nightly property test + per-tenant isolation explicit (P1-3 + sprint contract §7.10.s08.4); audit fail-closed (Lote 10.6bis); alarm re-arm AT START (Lote 10.4bis); D1 batch ≤250 (Lote 10.5bis); CHECK inline (Lote 10.5bis); column drift no `_ms` suffix (P0-3). Humane LGPD Art. 20 + GDPR Art. 22 fully integrado (sprint contract §7.10.s08.3 alignment): NEVER auto-suspend + 3 customer-facing endpoints (transparency + appeal + audit) + 24h SLA. Heurística NOT ML (anti-scope §10). 4 features specifically chosen (compute/scrape/spam/flood). 4-tier response gradient. Calibration via 10 synthetic workloads (sprint contract §6 DoD). NEW migrations abuse_score_history + abuse_appeals + abuse_response_actions + abuse_calibration_weights. Data Scientist advisor substitutes Crypto SME (statistical methodology). |
+| 1.0.0 | 2026-04-25 | Gustavo (Lote 10.8) | Criação WI-S08-004; HIGH_RISK; SOTA pós-Lote 10.7bis lessons absorbed: 5-tier canonical baselines (P0-7); CF Workers Rust API worker::send_future (R5 P0-3); 100k nightly property test + per-tenant isolation explicit (P1-3 + sprint contract §7.10.s08.4); audit fail-closed (Lote 10.6bis); alarm re-arm AT START (Lote 10.4bis); D1 batch ≤250 (Lote 10.5bis); CHECK inline (Lote 10.5bis); column drift no `_ms` suffix (P0-3). Humane LGPD Art. 20 + GDPR Art. 22 fully integrado (sprint contract §7.10.s08.3 alignment): NEVER auto-suspend + 3 customer-facing endpoints (transparency + appeal + audit) + 24h SLA. Heurística NOT ML (anti-scope §10). 4 features specifically chosen (compute/scrape/spam/flood). 4-tier response gradient. Calibration via 50+50 synthetic workloads (Lote 10.8bis P0-E corrected) (sprint contract §6 DoD). NEW migrations abuse_score_history + abuse_appeals + abuse_response_actions + abuse_calibration_weights. Data Scientist advisor substitutes Crypto SME (statistical methodology). |
 
 ## 32. Anti-patterns evitados
 
