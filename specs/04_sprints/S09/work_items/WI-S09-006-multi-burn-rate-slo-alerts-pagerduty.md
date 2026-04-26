@@ -123,8 +123,8 @@ resource "pagerduty_service" "corelink_staging" {
 
 resource "pagerduty_service" "corelink_prod_us" { ... }
 resource "pagerduty_service" "corelink_prod_eu" { ... }
-resource "pagerduty_service" "corelink_prod_sam" { ... }
-resource "pagerduty_service" "corelink_prod_iad" { ... }
+# Lote 10.9-quaters NEW-P1-1: corelink_prod_sam removed (was incoherent com narrative claim 3 services)
+# Lote 10.9-quaters NEW-P1-1: corelink_prod_iad removed
 
 # 3 services per sprint contract §5.5 R-S09-14 canonical (Lote 10.9bis P0-F corrected)
 ```
@@ -503,7 +503,7 @@ HIGH_RISK 12 sign-offs PRR (framework §33.5.4.3 cap).
 | ID | Sub-task | h |
 |---|---|---|
 | ST-001 | Alert YAML design 7 SLIs × 4 rules + 4 recording = ~56 rules | 4 |
-| ST-002 | PagerDuty 5 services Terraform + escalation policies | 2 |
+| ST-002 | PagerDuty 3 services Terraform (Lote 10.9-quaters NEW-P1-1) + escalation policies | 2 |
 | ST-003 | Auto-quarantine script + 5-Why post-mortem hook | 1.5 |
 | ST-004 | Runbook coverage CI hook + SLO coverage CI hook | 1.5 |
 | ST-005 | promtool test fixtures + CI gate | 1.5 |

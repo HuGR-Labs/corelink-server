@@ -24,7 +24,7 @@ inherits_from:
 tags: ["wi", "s09", "grafana", "dashboards", "dashboards-as-code", "terraform", "high-risk"]
 ---
 
-# WI-S09-005 — 12 Grafana Dashboards-as-Code (`infra/grafana/dashboards/*.json`; Terraform-provisioned via `cloudflare/terraform-provider-grafana`; canonical 12 dashboards conforme `observability_model.md §10`: DASH-GLOBAL-HEALTH + DASH-CAS + DASH-AC + DASH-AUTH + DASH-GC + DASH-BILLING + DASH-RATE-LIMIT (S-08 inheritance) + DASH-DEDUP (S-07 inheritance) + DASH-PRIVACY + DASH-CHAOS + DASH-COST + DASH-SLO; JSON-as-code versionado; AdminCtx RBAC datasource permissions; lastUpdated annotation per dashboard; Lote 10.8-tris P1-NEW-1 alert count discipline absorbed — verify YAML rule count matches narrative claim; freshness CI hook)
+# WI-S09-005 — 12 Grafana Dashboards-as-Code (`infra/grafana/dashboards/*.json`; Terraform-provisioned via `cloudflare/terraform-provider-grafana`; canonical 12 dashboards conforme `observability_model.md §10` Nível-3 (Lote 10.9-quaters NEW-P0-1 corrected): DASH-GLOBAL-HEALTH + DASH-GLOBAL-PRODUCT + DASH-TENANT + DASH-CAS + DASH-AC + DASH-EXEC + DASH-GC + DASH-SUPPLY-CHAIN + DASH-SECURITY + DASH-PRIVACY + DASH-COST + DASH-SLO-CATALOG; 5 prior subsystem dashboards (AUTH/BILLING/RATE-LIMIT/DEDUP/CHAOS) refactored as panels embedded em parent dashboards (AUTH→SECURITY, BILLING→COST, RATE-LIMIT→TENANT, DEDUP→CAS, CHAOS→SLO-CATALOG); JSON-as-code versionado; AdminCtx RBAC datasource permissions; lastUpdated annotation per dashboard; Lote 10.8-tris P1-NEW-1 alert count discipline absorbed — verify YAML rule count matches narrative claim; freshness CI hook)
 
 > **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
 > **Parent:** [S-09](../sprint.md) · **Assignee:** Gustavo Schneiter
@@ -36,7 +36,7 @@ tags: ["wi", "s09", "grafana", "dashboards", "dashboards-as-code", "terraform", 
 | Campo | Valor |
 |---|---|
 | ID | WI-S09-005 |
-| Título | 12 Grafana dashboards canonical em `infra/grafana/dashboards/*.json` JSON-as-code; Terraform-provisioned via `cloudflare/terraform-provider-grafana` (free Grafana Cloud OSS provider): DASH-GLOBAL-HEALTH (RED + USE overview SLO em uma tela; multi-camada) + DASH-CAS (CAS hot path latency p50/p99 + bytes throughput + error rate per region) + DASH-AC (Action Cache hit/miss ratio + lookup duration) + DASH-AUTH (PAT auth events + auth failures + replay nonce metrics from S-03) + DASH-GC (S-06 garbage collection runs + reachable count + reconcile drift + INV-GC-001 invariant canary) + DASH-BILLING (S-10 billing events emitted + reconciliation lag) + DASH-RATE-LIMIT (S-08 4-camada bulkhead + per-tenant DO + edge IP + per-PAT detection + global circuit breaker; SLI distinction within-quota vs over-quota inheritance from WI-S08-006) + DASH-DEDUP (S-07 dedup ratio per tier + chunk reuse + SLO-DEDUP-RATIO multi-burn-rate) + DASH-PRIVACY (CTRL-PRIV-001 DLP scan results + log volume per tier + GDPR Art. 17 erasure pending + audit chain integrity inheritance from WI-S09-004) + DASH-CHAOS (S-17 chaos test results + property test pass rate + 100k nightly status) + DASH-COST (per-region $USD/mo Mimir + Loki + Tempo + R2 + Workers Unbound projection; cardinality budget tracking from WI-S09-001) + DASH-SLO (consolidated multi-burn-rate alerts SLO-CATALOG canonical; error budget burn rate per SLI); JSON-as-code versionado em git; lastUpdated annotation per dashboard; AdminCtx RBAC datasource permissions (RBAC redacted per-tenant labels for non-admin viewers); Lote 10.8-tris P1-NEW-1 alert count discipline absorbed (verify alert YAML rule count matches narrative claim) |
+| Título | 12 Grafana dashboards canonical em `infra/grafana/dashboards/*.json` JSON-as-code (Lote 10.9-quaters NEW-P0-1 corrected; aligned com observability_model.md §10 Nível-3): DASH-GLOBAL-HEALTH (RED + USE overview SRE on-call entry point) + DASH-GLOBAL-PRODUCT (business pulse: tenants ativos, hit ratio, MRR proxy) + DASH-TENANT (per-tenant deep-dive; embedded rate-limit panels from S-08 inheritance) + DASH-CAS (CAS hot path; embedded dedup panels from S-07 inheritance) + DASH-AC (Action Cache hit/miss + Merkle failures) + DASH-EXEC (Execute Action S-17: active slots, queue depth, exit codes) + DASH-GC (S-06 garbage collection runs + reachable + reconcile drift + INV-GC-001 canary) + DASH-SUPPLY-CHAIN (SBOM drift + vuln counts + release verify status) + DASH-SECURITY (AuthN failures + abuse signals; embedded PAT auth panels from S-03 + abuse panels from S-08 inheritance) + DASH-PRIVACY (CTRL-PRIV-001 DLP + log volume + GDPR Art. 17 + audit chain integrity from WI-S09-004) + DASH-COST (per-region $USD/mo + cardinality tracking; embedded billing panels from S-10 inheritance) + DASH-SLO-CATALOG (consolidated multi-burn-rate alerts; embedded chaos panels from S-17 inheritance); JSON-as-code versionado; AdminCtx RBAC; freshness CI hook |
 | Sprint | S-09 |
 | Lane | HIGH_RISK |
 | Forcing factors | FF-HR-005 (operational visibility é foundation security control completeness; sem dashboards = blind production; sprint contract §1 explicit "sem operabilidade não há GA") |
@@ -93,18 +93,21 @@ resource "grafana_dashboard" "dash_global_health" {
     overwrite   = true  # CI replays; idempotent
 }
 
-# 12 dashboards listed canonically per sprint contract §4 CAP-OBS-005
+# 12 dashboards canonical per sprint contract §4 CAP-OBS-005 + observability_model.md §10
+# (Lote 10.9-quaters NEW-P0-1 corrected from prior list with AUTH/BILLING/RATE-LIMIT/DEDUP/CHAOS;
+#  those refactored into panels embedded em parent dashboards: AUTH→SECURITY, BILLING→COST,
+#  RATE-LIMIT→TENANT, DEDUP→CAS, CHAOS→SLO-CATALOG)
+resource "grafana_dashboard" "dash_global_product" { config_json = file("${path.module}/dashboards/dash-global-product.json") ... }
+resource "grafana_dashboard" "dash_tenant" { config_json = file("${path.module}/dashboards/dash-tenant.json") ... }
 resource "grafana_dashboard" "dash_cas" { config_json = file("${path.module}/dashboards/dash-cas.json") ... }
 resource "grafana_dashboard" "dash_ac" { ... }
-resource "grafana_dashboard" "dash_auth" { ... }
+resource "grafana_dashboard" "dash_exec" { ... }
 resource "grafana_dashboard" "dash_gc" { ... }
-resource "grafana_dashboard" "dash_billing" { ... }
-resource "grafana_dashboard" "dash_rate_limit" { ... }
-resource "grafana_dashboard" "dash_dedup" { ... }
+resource "grafana_dashboard" "dash_supply_chain" { ... }
+resource "grafana_dashboard" "dash_security" { ... }
 resource "grafana_dashboard" "dash_privacy" { ... }
-resource "grafana_dashboard" "dash_chaos" { ... }
 resource "grafana_dashboard" "dash_cost" { ... }
-resource "grafana_dashboard" "dash_slo" { ... }
+resource "grafana_dashboard" "dash_slo_catalog" { ... }
 ```
 
 **Cripto-driven invariants enforced**:
@@ -218,19 +221,19 @@ JSON-as-code dashboards + Terraform provisioning + CI freshness hook + screensho
 
 ### 6.1 In-scope
 
-1. **12 dashboard JSON files** em `infra/grafana/dashboards/`:
-   - `dash-global-health.json` — RED + USE overview entry point (~15 panels).
-   - `dash-cas.json` — CAS hot path detail (PUT/GET latency p50/p95/p99; bytes throughput; error rate per region; cardinality budget annotation; ~18 panels).
-   - `dash-ac.json` — Action Cache hit/miss; lookup duration histogram com exemplar (~10 panels).
-   - `dash-auth.json` — PAT auth events; auth failures; replay nonce metrics (S-03 inheritance; ~8 panels).
+1. **12 dashboard JSON files** em `infra/grafana/dashboards/` (Lote 10.9-quaters NEW-P0-1 corrected — canonical observability_model.md §10):
+   - `dash-global-health.json` — RED + USE overview SRE on-call entry point (~15 panels).
+   - `dash-global-product.json` — Business pulse: tenants ativos + cache hit ratio + storage used + MRR proxy (~10 panels).
+   - `dash-tenant.json` — Per-tenant deep-dive: hit ratio + latência + quota + top errors; embedded panels: rate-limit (S-08 inheritance from WI-S08-006), dedup (S-07 inheritance) (~14 panels).
+   - `dash-cas.json` — CAS hot path detail (PUT/GET latency p50/p95/p99; bytes throughput; error rate per region; cardinality budget annotation; embedded dedup panels from S-07 inheritance; ~18 panels).
+   - `dash-ac.json` — Action Cache hit/miss; lookup duration histogram com exemplar; Merkle failures (~10 panels).
+   - `dash-exec.json` — Execute Action (S-17): active slots + queue depth + durations + exit codes (~10 panels; S-17 dependency).
    - `dash-gc.json` — S-06 GC runs; reachable count; reconcile drift; INV-GC-001 canary (~12 panels).
-   - `dash-billing.json` — S-10 billing events; reconciliation lag (~10 panels; S-10 dependency).
-   - `dash-rate-limit.json` — S-08 4-camada bulkhead inheritance from WI-S08-006 DASH-RATE; SLI distinction within-quota vs over-quota; ~14 panels.
-   - `dash-dedup.json` — S-07 dedup ratio per tier; chunk reuse; SLO-DEDUP-RATIO multi-burn-rate; ~10 panels.
-   - `dash-privacy.json` — CTRL-PRIV-001 DLP results; log volume per tier; GDPR Art. 17 erasure pending; audit chain integrity inheritance from WI-S09-004; ~12 panels.
-   - `dash-chaos.json` — S-17 chaos results; property test 100k nightly status; ~8 panels.
-   - `dash-cost.json` — per-region $USD/mo Mimir + Loki + Tempo + R2 + Workers; cardinality budget tracking inheritance from WI-S09-001; ~10 panels.
-   - `dash-slo.json` — consolidated multi-burn-rate alerts from WI-S09-006; error budget burn rate per SLI; ~16 panels.
+   - `dash-supply-chain.json` — SBOM drift + vuln counts + release verify status (~8 panels).
+   - `dash-security.json` — AuthN failures + anomalous tenant behavior + abuse signals; embedded panels: PAT auth (S-03 inheritance), abuse detection (S-08 WI-S08-004 inheritance) (~12 panels).
+   - `dash-privacy.json` — CTRL-PRIV-001 DLP results; log volume per tier; GDPR Art. 17 erasure pending; audit chain integrity inheritance from WI-S09-004 (~12 panels).
+   - `dash-cost.json` — per-region $USD/mo Mimir + Loki + Tempo + R2 + Workers; cardinality budget tracking inheritance from WI-S09-001; embedded panels: billing (S-10 inheritance) (~12 panels).
+   - `dash-slo-catalog.json` — consolidated multi-burn-rate alerts from WI-S09-006; error budget burn rate per SLI; embedded panels: chaos test status (S-17 inheritance) (~16 panels).
 
 2. **Terraform provisioning** (`infra/grafana/dashboards.tf`):
    - 12 `grafana_dashboard` resources; `overwrite = true`; idempotent apply.
@@ -489,9 +492,9 @@ HIGH_RISK 12 sign-offs PRR (framework §33.5.4.3 cap).
 |---|---|---|
 | ST-001 | DASH-GLOBAL-HEALTH JSON design + 15 panels | 3 |
 | ST-002 | DASH-CAS + DASH-AC JSON (~28 panels) | 4 |
-| ST-003 | DASH-AUTH + DASH-GC JSON (~20 panels) | 3 |
-| ST-004 | DASH-BILLING + DASH-DEDUP + DASH-RATE-LIMIT (inheritance from WI-S08-006) JSON (~34 panels) | 4 |
-| ST-005 | DASH-PRIVACY + DASH-CHAOS + DASH-COST + DASH-SLO JSON (~46 panels) | 4 |
+| ST-003 | DASH-EXEC + DASH-GC JSON (~22 panels) | 3 |
+| ST-004 | DASH-GLOBAL-PRODUCT + DASH-TENANT + DASH-SUPPLY-CHAIN JSON (~32 panels; embedded RATE-LIMIT panels em TENANT, DEDUP em CAS) | 4 |
+| ST-005 | DASH-SECURITY + DASH-PRIVACY + DASH-COST + DASH-SLO-CATALOG JSON (~52 panels; embedded AUTH em SECURITY, BILLING em COST, CHAOS em SLO-CATALOG) | 4 |
 | ST-006 | Terraform provisioning + folder + role config | 2 |
 | ST-007 | Freshness CI hook + screenshot snapshot job | 1.5 |
 | ST-008 | AdminCtx RBAC datasource permissions | 1 |
@@ -503,7 +506,7 @@ HIGH_RISK 12 sign-offs PRR (framework §33.5.4.3 cap).
 ## 18. Dependencies
 
 - Hard: WI-S09-001 SEALED (métricas emit lib + cardinality budget); WI-S09-002 SEALED (logs em Loki); WI-S09-003 SEALED (exemplar deep link); WI-S09-004 SEALED (audit chain integrity em DASH-PRIVACY).
-- Soft: S-06 SEALED (DASH-GC content); S-07 SEALED (DASH-DEDUP); S-08 SEALED (DASH-RATE-LIMIT inheritance from WI-S08-006); S-10 SEALED OR em paralelo (DASH-BILLING staging stub OK); S-11 (DASH-PRIVACY DSR section).
+- Soft: S-06 SEALED (DASH-GC content); S-07 SEALED (dedup panels embedded em DASH-CAS; Lote 10.9-quaters NEW-P0-1 corrected); S-08 SEALED (rate-limit panels embedded em DASH-TENANT + abuse panels em DASH-SECURITY inheritance from WI-S08-004/006); S-10 SEALED OR em paralelo (billing panels embedded em DASH-COST staging stub OK); S-11 (DASH-PRIVACY DSR section); S-17 SEALED OR paralelo (DASH-EXEC + chaos panels em DASH-SLO-CATALOG).
 - Hard infra: Grafana Cloud OSS provider Terraform; Grafana folder + role configurable; Mimir + Loki + Tempo tenants provisioned.
 
 ## 19. Effort PERT: ~24.7h. ## 20. Time-boxing: 36h hard limit.

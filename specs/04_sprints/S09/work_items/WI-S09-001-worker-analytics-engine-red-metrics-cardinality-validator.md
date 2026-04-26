@@ -524,7 +524,7 @@ Feature: Worker Analytics Engine Metrics Emit + Cardinality Budget
 - [ ] **10.s09.001.2** All 10 Gherkin scenarios green.
 - [ ] **10.s09.001.3** Property tests 6 × 10k green; **100k nightly sustained 7d** (HIGH_RISK SOTA bar; Lote 10.7bis P1-3).
 - [ ] **10.s09.001.4** Chaos suite 10 scenarios green.
-- [ ] **10.s09.001.5** **Cardinality budget enforced em CI**: `cardinality_check.py` green em 9 RED + 6 USE = 15 métricas baseline; total ~1780 séries (well under 100k global budget).
+- [ ] **10.s09.001.5** **Cardinality budget enforced em CI**: `cardinality_check.py` green em 9 RED + 6 USE = 15 métricas baseline; total ~5400 séries (Lote 10.9-quaters NEW-P1-4 corrected from ~1780 prior; histogram bucket multiplier applied; well under 100k global budget).
 - [ ] **10.s09.001.6** Mimir tier limit secondary defense configured per region.
 - [ ] **10.s09.001.7** Exemplar deep link Grafana Tempo testado (click → trace open) for 3 fluxos: cas.put, cas.get, ac.lookup.
 - [ ] **10.s09.001.8** Forbidden label CI lint validated (PR with trace_id em label rejected).

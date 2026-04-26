@@ -96,6 +96,13 @@ pub enum AuditSubject {
 /// Lote 10.9bis P0-J: typed AuditEventData enum replaces serde_json::Value.
 /// Compile-time PII enforcement: each variant uses redact!-wrapped types only.
 /// serde_json::Value REJECTED — accepts arbitrary user input bypassing type system.
+///
+/// Lote 10.9-quaters NEW-P0-2 critical security boundary: BlobDigest, BearerToken,
+/// IpAddress, EmailAddress wrapper types implement `serde::Serialize` EXPLICITLY
+/// (em corelink-log-schema crate; WI-S09-002) to call `Redact::redact()` at serialization
+/// boundary. `#[derive(serde::Serialize)]` on this enum is safe BECAUSE the wrapper types
+/// own their Serialize impl that emits redacted output — NOT raw inner values. Without this
+/// explicit impl, raw PII would write to 7-year immutable R2 Object Lock audit archive.
 #[derive(serde::Serialize)]
 #[serde(tag = "subject", rename_all = "snake_case")]
 pub enum AuditEventData {
@@ -143,7 +150,7 @@ pub enum AuditEventData {
 
 pub struct AuditEvent {
     /// CloudEvents v1.0 required attributes (CNCF spec).
-    pub spec_version: &'static str, // "1.0" (Lote 10.9bis P0-G corrected from "1.0"; observability_model.md §7.1 canonical)
+    pub spec_version: &'static str, // "1.0" (Lote 10.9bis P0-G corrected from "1.0.2"; Lote 10.9-quaters NEW-P1-5 typo fix; observability_model.md §7.1 canonical)
     pub id: EventId,                                    // ULID
     pub source: String,                                 // "corelink/region/<region>"
     pub subject: AuditSubject,
@@ -294,7 +301,7 @@ Audit log integrity é **the compliance primitive** do CoreLink. SOC 2 CC7.2 aud
 ## 4. Capability Mapping
 
 - **CAP-OBS-004** (CloudEvents audit log) — IMPLEMENTA primary.
-- Trace: `observability_model.md §7 audit canonical` + `security_model.md CTRL-AUDIT-001` + `invariant_registry.md INV-AUDIT-APPEND-ONLY (S-06 inherited) + INV-OBS-AUDIT-CHAIN-INTEGRITY (NEW §3.14)` + sprint contract §5.4 (R-S09-10/11) + CloudEvents v1.0 spec (CNCF) + SOC 2 CC7.2 + LGPD Art. 32 + GDPR Art. 32.
+- Trace: `observability_model.md §7 audit canonical` + `security_model.md CTRL-AUDIT-001` + `invariant_registry.md INV-AUDIT-APPEND-ONLY (S-06 inherited) + INV-OBS-AUDIT-CHAIN-INTEGRITY (NEW §3.12; Lote 10.9-quaters NEW-P1-3 corrected from §3.14)` + sprint contract §5.4 (R-S09-10/11) + CloudEvents v1.0 spec (CNCF) + SOC 2 CC7.2 + LGPD Art. 32 + GDPR Art. 32.
 
 ## 5. Tipo
 

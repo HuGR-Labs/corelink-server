@@ -166,7 +166,7 @@ Synthetic canary é **the operational confidence primitive** — distinguishes "
 **Why RB-OBS-CARDINALITY-001 priority**: cardinality explosion is #1 root cause of Prom blowup (NetflixOSS 2018 precedent; cited em WI-S09-001 narrative). Sprint contract §15 R-Cardinality-explosion identifies as M-Probability/H-Detection/HIGH-Impact risk. Dry-run validates CI gate + Mimir tier limit defense-in-depth.
 
 **Adversarial scenarios**:
-- **Region partial outage** (R2 down em IAD only): canary IAD fails; SEV-2 after 3 consecutive; cross-region canary continues; isolation verified.
+- **Region partial outage** (R2 down em enam region only): canary enam fails; SEV-2 after 3 consecutive; cross-region canary continues; isolation verified.
 - **Canary cron drift** (CF Workers cron lag > 60s): SEV-3 alert; investigation; CF infra status check.
 - **Synthetic tenant accidentally counted em SLI**: WI-S09-006 recording rule filter excludes; verify via property test.
 - **Canary digest correctness break**: BLAKE3 mismatch alert SEV-1; investigation indicates CAS data integrity issue (rare; validate via WI-S01 inheritance).
@@ -182,7 +182,7 @@ Synthetic canary é **the operational confidence primitive** — distinguishes "
 
 **Persona 1 — SRE pre-GA review**: opens canary dashboard; sees 12960/12960 successful loops over 72h (Lote 10.9bis P0-A corrected); ship gate criterion met.
 
-**Persona 2 — Oncall responder**: receives SEV-2 alert "canary IAD failed 3 consecutive"; opens runbook; investigates; root-causes (e.g., R2 IAD transient outage); ack within 1h.
+**Persona 2 — Oncall responder**: receives SEV-2 alert "canary enam failed 3 consecutive"; opens runbook; investigates; root-causes (e.g., R2 enam transient outage); ack within 1h.
 
 **Persona 3 — DevOps reviewing**: opens canary dashboard weekly; tracks success rate trend per region; identifies degradation early.
 
@@ -355,7 +355,7 @@ CF Workers cron-trigger canary + Rust crate + runbook documentation + dry-run sc
     - `prop_grafana_outage_dryrun_safe`: 1k simulations; assert no production data loss em staging.
 
 11. **Chaos suite** (HIGH_RISK ≥ 10):
-    - 1. **Region partial outage** (R2 IAD down): canary IAD fails; SEV-2 after 3; cross-region continues.
+    - 1. **Region partial outage** (R2 enam down): canary enam fails; SEV-2 after 3; cross-region continues.
     - 2. **Canary cron drift**: synthetic CF Workers cron lag; SEV-3 alert.
     - 3. **Synthetic tenant SLI inflation**: assert canary excluded.
     - 4. **BLAKE3 digest mismatch**: synthetic CAS corruption; SEV-1 alert.
@@ -390,7 +390,7 @@ CF Workers cron-trigger canary + Rust crate + runbook documentation + dry-run sc
 Feature: Synthetic Canary 3 Regions + Runbook Dry-Run
 
   Scenario: Canary loop succeeds em all 3 regions
-    Given canary deployed em IAD + LHR + BOM
+    Given canary deployed em enam + weur + apac
     When CF Workers cron triggers each minute
     Then canary loop executes: CAS PUT + GET + AC LOOKUP
     Then assertions pass: cas_put_latency_p99_ms ≤ 100, cas_get ≤ 50, ac_lookup ≤ 30
@@ -405,10 +405,10 @@ Feature: Synthetic Canary 3 Regions + Runbook Dry-Run
     Then ship gate criterion met
 
   Scenario: Region partial outage detection
-    Given R2 IAD experiencing transient outage 5min
-    When canary IAD fails 3 consecutive loops
+    Given R2 enam experiencing transient outage 5min
+    When canary enam fails 3 consecutive loops
     Then SEV-2 alert: corelink_canary_assertion_failures_total{region=iad}
-    Then cross-region canary (LHR + BOM) continues
+    Then cross-region canary (weur + apac) continues
     Then isolation verified
 
   Scenario: BLAKE3 digest mismatch SEV-1
@@ -566,7 +566,7 @@ HIGH_RISK 12 sign-offs PRR (framework §33.5.4.3 cap).
 
 - Hard: WI-S09-001 SEALED (métricas emit + cardinality budget); WI-S09-002 SEALED (logs); WI-S09-003 SEALED (tracing); WI-S09-004 SEALED (audit em canary execution); WI-S09-005 SEALED (dashboards consume canary métricas); WI-S09-006 SEALED (alerts trigger on canary failures + ManualOverride/synthetic exclusion pattern).
 - Soft: S-01 + S-02 SEALED (CAS write/read paths real); S-04 SEALED (AC); S-08 SEALED (rate limit aware exclusion).
-- Hard infra: 3 CF regions (IAD/LHR/BOM) provisioned; staging environment for runbook dry-runs; PagerDuty + Twilio backup configured.
+- Hard infra: 3 R2 regions (enam/weur/apac) provisioned (Lote 10.9-quaters NEW-P1-2 corrected from IATA codes); staging environment for runbook dry-runs; PagerDuty + Twilio backup configured.
 
 ## 19. Effort PERT: ~12.3h. ## 20. Time-boxing: 18h hard limit.
 

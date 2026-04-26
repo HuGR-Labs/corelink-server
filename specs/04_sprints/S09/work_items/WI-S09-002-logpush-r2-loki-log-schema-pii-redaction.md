@@ -25,7 +25,7 @@ inherits_from:
 tags: ["wi", "s09", "logpush", "loki", "log-schema", "pii-redaction", "ctrl-priv-001", "lgpd", "gdpr", "high-risk"]
 ---
 
-# WI-S09-002 — Logpush → R2 + Grafana Loki + Structured Log Schema (`specs/_schemas/log_event.schema.json`) + PII Redaction Lib (`crates/corelink-log-schema`; tipo-driven `redact!` macro Rust; DLP scanner CI test 10k PII fixtures = 0 leaks; CTRL-PRIV-001 enforcement; lifecycle hot 30d Loki query / warm 90d Logpush index / cold 400d R2 Glacier-equiv / purge > 400d per privacy_model.md §6; LGPD Art. 32 + GDPR Art. 32 minimization compliance; FF-HR-003 PII em logs/audit forcing factor)
+# WI-S09-002 — Logpush → R2 + Grafana Loki + Structured Log Schema (`specs/_schemas/log_event.schema.json`) + PII Redaction Lib (`crates/corelink-log-schema`; tipo-driven `redact!` macro Rust; DLP scanner CI test 10k PII fixtures = 0 leaks; CTRL-PRIV-001 enforcement; lifecycle: Loki 30d hot tier (LogQL query) + R2 single-expiration 400d retention (Lote 10.9-quaters NEW-P0-3 corrected: CF R2 single-tier; storage class transitions removed; Loki tier é query-tier NOT storage class) per privacy_model.md §6; LGPD Art. 32 + GDPR Art. 32 minimization compliance; FF-HR-003 PII em logs/audit forcing factor)
 
 > **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
 > **Parent:** [S-09](../sprint.md) · **Assignee:** Gustavo Schneiter
@@ -37,7 +37,7 @@ tags: ["wi", "s09", "logpush", "loki", "log-schema", "pii-redaction", "ctrl-priv
 | Campo | Valor |
 |---|---|
 | ID | WI-S09-002 |
-| Título | Structured log schema (`specs/_schemas/log_event.schema.json` JSON Schema 2020-12; required fields: ts ISO8601 RFC 3339, level DEBUG/INFO/WARN/ERROR, event snake_case, tenant_id UUID, region, request_id, trace_id; **forbidden in payload** per CTRL-PRIV-001: email regex patterns, IPv4/IPv6 sem allowlist redacted to /24, bearer tokens, blob_digest sem hash truncation > 16 chars); PII redaction lib `crates/corelink-log-schema` Rust crate com tipo-driven `redact!(field, value)` macro applying `RedactPolicy::Allowlist([&str])` types-only-em-INFO-superior; DLP scanner test 10k PII fixtures geradas via `proptest` → expect 0 leaks (CTRL-PRIV-001 falsifiability target sprint contract §6 DoD); Logpush config CF → R2 com lifecycle hot 30d (Loki query indexed) + warm 90d (Logpush index searchable) + cold 400d (R2 Glacier-equivalent storage class) + purge > 400d (privacy_model.md §6 retention compliance); LGPD Art. 32 (security measures) + GDPR Art. 32 (data minimization) compliance; FF-HR-003 PII em logs/audit forcing factor + FF-HR-005 CTRL-PRIV-001 bypass = leak regulatory |
+| Título | Structured log schema (`specs/_schemas/log_event.schema.json` JSON Schema 2020-12; required fields: ts ISO8601 RFC 3339, level DEBUG/INFO/WARN/ERROR, event snake_case, tenant_id UUID, region, request_id, trace_id; **forbidden in payload** per CTRL-PRIV-001: email regex patterns, IPv4/IPv6 sem allowlist redacted to /24, bearer tokens, blob_digest sem hash truncation > 16 chars); PII redaction lib `crates/corelink-log-schema` Rust crate com tipo-driven `redact!(field, value)` macro applying `RedactPolicy::Allowlist([&str])` types-only-em-INFO-superior; DLP scanner test 10k PII fixtures geradas via `proptest` → expect 0 leaks (CTRL-PRIV-001 falsifiability target sprint contract §6 DoD); Logpush config CF → R2 com lifecycle: Loki 30d hot retention (LogQL query) + R2 single-expiration 400d (Lote 10.9-quaters NEW-P0-3 corrected; CF R2 single-tier; transitions removed) (privacy_model.md §6 retention compliance); LGPD Art. 32 (security measures) + GDPR Art. 32 (data minimization) compliance; FF-HR-003 PII em logs/audit forcing factor + FF-HR-005 CTRL-PRIV-001 bypass = leak regulatory |
 | Sprint | S-09 |
 | Lane | HIGH_RISK |
 | Forcing factors | FF-HR-003 (PII handling em logs pipeline; sprint contract §2 explicit), FF-HR-005 (CTRL-PRIV-001 bypass = leak regulatory; LGPD Art. 32 + GDPR Art. 32 minimization compliance gap) |
@@ -62,12 +62,18 @@ macro_rules! redact {
     }};
 }
 
-pub trait Redact {
+pub trait Redact: Clone {
     type Output: serde::Serialize;
     fn redact(self) -> Self::Output;
 }
 
+// Lote 10.9-quaters NEW-P0-2 critical security fix: redact wrapper types MUST implement
+// `serde::Serialize` explicitly (NOT via #[derive]) to call Redact::redact() at serialization
+// boundary. Without this, #[derive(Serialize)] on AuditEventData (WI-S09-004) bypasses redaction
+// and writes raw PII to immutable 7-year R2 Object Lock audit archive.
+
 // Built-in redactors (allowlist enum; NO String-typed fields accept raw user input):
+#[derive(Clone)]
 pub struct EmailAddress(pub String);
 impl Redact for EmailAddress {
     type Output = String;
@@ -80,7 +86,14 @@ impl Redact for EmailAddress {
         }
     }
 }
+impl serde::Serialize for EmailAddress {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        // Lote 10.9-quaters NEW-P0-2: serialize redacted form NOT raw inner String
+        self.clone().redact().serialize(serializer)
+    }
+}
 
+#[derive(Clone)]
 pub struct IpAddress(pub std::net::IpAddr);
 impl Redact for IpAddress {
     type Output = String;
@@ -99,7 +112,13 @@ impl Redact for IpAddress {
         }
     }
 }
+impl serde::Serialize for IpAddress {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.clone().redact().serialize(serializer)
+    }
+}
 
+#[derive(Clone)]
 pub struct BearerToken(pub String);
 impl Redact for BearerToken {
     type Output = String;
@@ -112,7 +131,13 @@ impl Redact for BearerToken {
         }
     }
 }
+impl serde::Serialize for BearerToken {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.clone().redact().serialize(serializer)
+    }
+}
 
+#[derive(Clone)]
 pub struct BlobDigest(pub String);
 impl Redact for BlobDigest {
     type Output = String;
@@ -123,6 +148,21 @@ impl Redact for BlobDigest {
         } else {
             "<digest_redacted>".into()
         }
+    }
+}
+impl serde::Serialize for BlobDigest {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.clone().redact().serialize(serializer)
+    }
+}
+
+/// Lote 10.9-quaters NEW-P0-2 alternative pattern (defense-in-depth):
+/// Explicit Redacted<T> wrapper for compile-time enforcement of redaction at serde boundary.
+/// Use cases: audit event fields where Redact-impl types MUST emit redacted form.
+pub struct Redacted<T: Redact>(pub T);
+impl<T: Redact> serde::Serialize for Redacted<T> where T::Output: serde::Serialize {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.clone().redact().serialize(serializer)
     }
 }
 
@@ -226,7 +266,7 @@ pub enum LogSchemaError {
 2. **Logpush + R2 lifecycle** (privacy_model.md §6 retention; sprint contract §5.2 R-S09-5):
    - **Hot 30d**: Logpush → R2 → Grafana Loki indexed (LogQL queryable; `loki.url = "https://logs-prod-xxx.grafana.net/loki/api/v1/push"`).
    - **Warm 90d**: Logpush index retained em R2 (LogQL slower; cold-archive lookups).
-   - **Cold 400d**: R2 Glacier-equivalent storage class (CF R2 lifecycle rule); SOC 2 audit retention.
+   - **Single-tier 400d**: R2 Lifecycle Expiration only (CF R2 single storage tier; Lote 10.9-quaters NEW-P0-3 corrected); SOC 2 audit retention satisfied via 400d retention boundary.
    - **Purge > 400d**: R2 Lifecycle delete; LGPD Art. 13 III + GDPR Art. 17 (right to erasure) compliance.
 
 3. **TenantCtx-only enforcement** (Lote 10.4bis lesson): tenant_id em log events from middleware (S-03 WI-S03-003); NEVER request body.
@@ -263,7 +303,7 @@ Logs são **the highest-volume PII-adjacent surface** do CoreLink — Bazel clie
 
 **Why 10k DLP fixtures + 0 leaks target** (Lote 10.8bis P0-E statistical rigor): n=10 fixtures (initial sprint contract assumption) is statistically meaningless (95% CI upper bound 35% leak rate). n=10k via proptest random generators provides 95% CI < 0.04% leak rate (10× SOTA bar improvement vs P0-E lesson). Fixture diversity covers RFC 6531 Unicode emails, IPv6 mapped IPv4, BLAKE3 + SHA-256 digests.
 
-**Why Logpush + R2 + Loki tri-tier lifecycle**: LGPD Art. 13 III + GDPR Art. 17 (right to erasure) require deterministic data retention deletion. R2 lifecycle rules canonical (`max_object_age_days: 400`); LogQL query SLO ≤ 5s for 30d hot tier; archived 400d via R2 Glacier-equivalent storage class (cost ~$0.004/GB/mo cold vs $0.015/GB/mo hot). After 400d: Lifecycle DELETE; audit log records the deletion (CTRL-AUDIT-001 separate concern em WI-S09-004).
+**Why Logpush + R2 + Loki single-tier lifecycle** (Lote 10.9-quaters NEW-P0-3 corrected): LGPD Art. 13 III + GDPR Art. 17 (right to erasure) require deterministic data retention deletion. R2 lifecycle rules canonical (`max_object_age_days: 400`); single tier ($0.015/GB-mo throughout 400d; CF R2 has no storage class transitions). Loki provides 30d hot tier query-only retention (separate from R2 storage class concept). After 400d: R2 Lifecycle DELETE; audit log records the deletion (CTRL-AUDIT-001 separate concern em WI-S09-004).
 
 **Why log volume budget per privacy_model §11.4**: cost discipline + abuse mitigation. Bad-PR adicionando DEBUG logging em hot path → 100x volume spike → $$$ Loki ingest. Per-tenant budget enforces alarm threshold; auto-throttle (drop DEBUG) prevents runaway.
 
@@ -365,7 +405,7 @@ JSON Schema 2020-12 + Rust crate (redact! macro + Redact trait) + CF Logpush IaC
 4. **Grafana Loki integration** (Logpush → R2 → Loki ingest):
    - Loki tenant configuration: `tenant_id_label = "tenant"`; query enforcement.
    - LogQL canonical queries: `{tenant_id="X"} | json | __error__ = ""`.
-   - Retention policy: 30d hot tier em Loki; 90d warm tier via Logpush index;cold 400d direct R2 Glacier-equivalent query (slower but available).
+   - Retention policy: 30d hot tier em Loki (LogQL query indexed); R2 single-tier expiration 400d (no Glacier-equivalent transition; Lote 10.9-quaters NEW-P0-3); after 30d Loki retention, queries against R2 archive directly slower (~30s)
 
 5. **DLP scanner CI test** (`tests/dlp_scanner.rs`):
    ```rust
@@ -464,7 +504,7 @@ JSON Schema 2020-12 + Rust crate (redact! macro + Redact trait) + CF Logpush IaC
     - 6. **Bad-PR adding raw email log**: clippy lint rejects compile; integration test asserts.
     - 7. **Schema validation failure** (synthetic invalid event): CI gate rejects PR; runtime alerts SEV-2.
     - 8. **Concurrent emit + redact race**: tipo-driven; deterministic; property test 100k.
-    - 9. **R2 Glacier retrieval (cold tier)**: 90d+ archive; LogQL query slower (~30s); SLO documented.
+    - 9. **R2 archive retrieval beyond Loki retention**: 30d+ since Loki tier; query against R2 archive slower (~30s); SLO documented (single-tier R2 NOT Glacier; Lote 10.9-quaters NEW-P0-3)
     - 10. **GDPR Art. 17 erasure (tenant_id deletion propagation)**: WI-S11 handles; logs purge via R2 lifecycle 400d auto.
     - 11. **TenantCtx tampering**: tenant_id from middleware (S-03); request body claim ignored.
 
@@ -570,7 +610,7 @@ Feature: Logpush + R2 + Loki + Log Schema + PII Redaction
 - 9.1: redact! macro tipo-driven (NOT runtime DLP scrub); compile-time discipline.
 - 9.2: Built-in redactors (EmailAddress, IpAddress, BearerToken, BlobDigest); allowlist enum.
 - 9.3: JSON Schema 2020-12 strict; `additionalProperties: false`.
-- 9.4: 4-tier R2 lifecycle hot/warm/cold/purge per privacy_model §6.
+- 9.4: R2 single-tier lifecycle 400d expiration per privacy_model §6 (Lote 10.9-quaters NEW-P0-3 corrected; CF R2 NOT multi-tier).
 - 9.5: 5-tier canonical log volume budget (Lote 10.7bis P0-7 absorbed).
 - 9.6: DLP scanner n=10k fixtures via proptest (Lote 10.8bis P0-E statistical rigor adapted).
 - 9.7: Fail-OPEN log emit (vs audit fail-closed em WI-S09-004).
@@ -588,7 +628,7 @@ Feature: Logpush + R2 + Loki + Log Schema + PII Redaction
 - [ ] **10.s09.002.4** Chaos suite 11 scenarios green.
 - [ ] **10.s09.002.5** **DLP scanner 0 leaks em 10k fixtures** (sprint contract §6 DoD; CTRL-PRIV-001 falsifiability).
 - [ ] **10.s09.002.6** Schema validation CI gate green em 100% PR sample logs.
-- [ ] **10.s09.002.7** **R2 lifecycle 4-tier configured** per region; Terraform validate green.
+- [ ] **10.s09.002.7** **R2 lifecycle single-tier 400d expiration configured** per region + Loki 30d hot retention; Terraform validate green (Lote 10.9-quaters NEW-P0-3 corrected).
 - [ ] **10.s09.002.8** Loki query SLO ≤ 5s p99 hot tier (30d) sustained 7d.
 - [ ] **10.s09.002.9** Volume budget per-tier enforcement; auto-throttle DEBUG only.
 - [ ] **10.s09.002.10** Métricas (6 §6.1.10) emitted via WI-S09-001 emit lib; cardinality budget respected.
@@ -633,7 +673,7 @@ Feature: Logpush + R2 + Loki + Log Schema + PII Redaction
 - 14.s09.002.9: TenantCtx-only (Lote 10.4bis); CF Workers Rust API worker::send_future (Lote 10.7bis R5 P0-3); 5-tier canonical (Lote 10.7bis P0-7).
 - 14.s09.002.10: 100k nightly property test (HIGH_RISK SOTA bar; Lote 10.7bis P1-3).
 - 14.s09.002.11: tipo-driven redaction (compile-time > runtime); type system primary defense.
-- 14.s09.002.12: 4-tier R2 lifecycle hot/warm/cold/purge (privacy_model §6 + LGPD/GDPR minimization).
+- 14.s09.002.12: R2 single-tier lifecycle 400d expiration (Lote 10.9-quaters NEW-P0-3) + Loki 30d hot retention; LGPD Art. 32 + GDPR Art. 32 minimization satisfied via single retention boundary.
 
 ## 15. Chaos Experiments (11)
 
@@ -719,11 +759,11 @@ HIGH_RISK 12 sign-offs PRR (framework §33.5.4.3 cap; Privacy + Compliance empha
 - D(etectability): DLP scanner CI test 10k fixtures.
 - D(isclosure): redaction enforced; log retention 400d auto-purge.
 - U(nawareness): customer self-service erasure via WI-S11.
-- N(on-compliance): **LGPD Art. 32 (medidas de segurança) + GDPR Art. 32 (data minimization) compliance**: tipo-driven redaction + 4-tier lifecycle + 400d retention auto-purge + DLP CI test.
+- N(on-compliance): **LGPD Art. 32 (medidas de segurança) + GDPR Art. 32 (data minimization) compliance**: tipo-driven redaction + R2 single-tier lifecycle (400d) + Loki 30d hot retention auto-purge (Lote 10.9-quaters NEW-P0-3) + DLP CI test.
 
 ## 27. Knowledge Transfer
 
-Tech talk (2h): "S-09 Logs: tipo-driven Redaction + DLP CI + R2 Lifecycle"; doc `docs/dev/logs-architecture.md`; onboarding test 8 questions: redact! macro rationale (compile-time > runtime), 4 built-in redactors (EmailAddress/IpAddress/BearerToken/BlobDigest), DLP scanner n=10k (Lote 10.8bis P0-E rigor), R2 4-tier lifecycle (privacy_model §6), LGPD Art. 32 + GDPR Art. 32 compliance, schema validation CI gate, fail-open emit (vs audit fail-closed), tenant_tier vs tenant_id em métricas.
+Tech talk (2h): "S-09 Logs: tipo-driven Redaction + DLP CI + R2 Lifecycle"; doc `docs/dev/logs-architecture.md`; onboarding test 8 questions: redact! macro rationale (compile-time > runtime), 4 built-in redactors (EmailAddress/IpAddress/BearerToken/BlobDigest), DLP scanner n=10k (Lote 10.8bis P0-E rigor), R2 single-tier lifecycle 400d (privacy_model §6; Lote 10.9-quaters NEW-P0-3), LGPD Art. 32 + GDPR Art. 32 compliance, schema validation CI gate, fail-open emit (vs audit fail-closed), tenant_tier vs tenant_id em métricas.
 
 ## 28. Risk Register (12-row HIGH_RISK)
 
@@ -758,7 +798,7 @@ D+0 design (Architect; redact! macro + R2 lifecycle); D+1 Privacy (LGPD/GDPR + L
 | 8 | Product (Gustavo) | _pending_ |
 | 9 | Compliance | _TBD; **mandatory emphatic** — LGPD Art. 32 + GDPR Art. 32 + 400d auto-purge_ |
 | 10 | Privacy | _TBD; **mandatory emphatic** — LINDDUN + tipo-driven redaction + DLP CI_ |
-| 11 | Architect | _TBD; **mandatory** — redact! macro + R2 lifecycle + 4-tier discipline; consolidates Crypto SME advisory race-correctness review per ADR-0034_ |
+| 11 | Architect | _TBD; **mandatory** — redact! macro + R2 lifecycle + single-tier discipline (Lote 10.9-quaters NEW-P0-3); consolidates Crypto SME advisory race-correctness review per ADR-0034_ |
 | 12 | AppSec | _TBD; **mandatory emphatic** — type system discipline + forbidden field enforcement_ |
 
 ## 31. Change Log

@@ -79,15 +79,15 @@ inherits_from:
 ### 5.1 Métricas (CAP-OBS-001)
 
 - **R-S09-1**: Worker analytics engine bindings emitindo métricas RED conforme `observability_model.md §4.2`:
-  - `corelink.cas.put.requests_total{tenant_tier, region, result}`
-  - `corelink.cas.put.duration_seconds{tenant_tier, region, p50/p95/p99}`
-  - `corelink.cas.get.bytes_total{tenant_tier, region}`
-  - `corelink.ac.lookup.requests_total{tenant_tier, region, hit/miss}`
-  - `corelink.gc.runs_total{phase, status}`
-  - `corelink.dedup.ratio{tenant_tier, region}` (S-07)
-  - `corelink.rate_limit.rejects_total{layer, tenant_tier, reason}` (S-08)
-  - `corelink.privacy.dsr_active_total{type}` (S-11)
-  - `corelink.billing.events_emitted_total{type, region}` (S-10)
+  - `corelink_cas_put_requests_total{tenant_tier, region, result}`
+  - `corelink_cas_put_duration_seconds{tenant_tier, region, p50/p95/p99}`
+  - `corelink_cas_get_bytes_total{tenant_tier, region}`
+  - `corelink_ac_lookup_requests_total{tenant_tier, region, hit/miss}`
+  - `corelink_gc_runs_total{phase, status}`
+  - `corelink_dedup_ratio{tenant_tier, region}` (S-07)
+  - `corelink_rate_limit_rejects_total{layer, tenant_tier, reason}` (S-08)
+  - `corelink_privacy_dsr_active_total{type}` (S-11)
+  - `corelink_billing_events_emitted_total{type, region}` (S-10)
 - **R-S09-2**: **Cardinality budget**: máximo **20k séries únicas por métrica em produção**, **100k global**. Validator em CI rejeitando label sets além do budget. Reference: `observability_model.md §11.2`.
 - **R-S09-3**: USE metrics (Utilization/Saturation/Errors) para infraestrutura cloudflare: Worker CPU time (cf.cpu_time), R2 ops/sec, D1 row scans, KV read/write quotas, DO storage size.
 
