@@ -738,6 +738,7 @@ D+0 design (Architect; edge layer + IaC); D+2 NetSec (CF Ruleset + threat model)
 |---|---|---|---|
 | 1.0.0 | 2026-04-25 | Gustavo (Lote 10.8) | Criação WI-S08-002; HIGH_RISK; SOTA pós-Lote 10.7bis lessons absorbed: NAT-aware (P0-6 generalizado); CF Workers Rust API worker::send_future (R5 P0-3); 100k nightly property test (P1-3); audit fail-closed (Lote 10.6bis); alarm re-arm AT START (Lote 10.4bis); D1 batch ≤250 (Lote 10.5bis); CHECK inline (Lote 10.5bis); column drift no `_ms` suffix (Lote 10.7bis P0-3). Humane response LGPD Art. 20 / GDPR Art. 22 fully integrado (sprint contract §7.10.s08.3 alignment). NEW migrations ip_blocklist + ip_blocklist_suggestions. NetSec advisor substitutes Crypto SME (no cripto load-bearing). |
 | 1.1.0 | 2026-04-25 | Gustavo (Lote 10.8bis) | R4+R5 review remediation: P1-3 FM-251 → FM-201 canonical (FM-251 = "Credential stuffing" não "rate FP"); R5 P1-5 CF Terraform schema atualizado para provider v4+ canonical (action_parameters wrapping ratelimit{}; legacy v3 top-level ratelimit{} block deprecated); provider version pin "~> 4.0" added. |
+| 1.2.0 | 2026-04-25 | Gustavo (Lote 10.8-tris **SEALED**) | Sonnet R5 round-2 review tris-validation pass: 0 NEW findings em este WI (round-2 tris score 7.8/10 from 7.0 round-1; +0.8 delta). P2 carry-forward to pre-launch advisory: ratio_4xx >= 0.99 (não exact == 1.0); ipnet WASM compatibility gate. **WI sealed pre-implementation**. |
 
 ## 32. Anti-patterns evitados
 
