@@ -57,12 +57,13 @@ use cloudevents::{Event, EventBuilder};
 pub trait AuditEmitter: Send + Sync {
     /// Emit audit event with hash chain link to previous; FAIL-CLOSED on error.
     /// Returns Err if emit fails — caller MUST abort transaction (Lote 10.6bis pattern).
+    /// Lote 10.9bis P0-J: typed AuditEventData enum (NOT serde_json::Value); compile-time PII enforcement.
     async fn emit(
         &self,
         subject: AuditSubject,                          // 8 canonical CNCF subjects
         tenant_ctx: &TenantCtx,                         // Lote 10.4bis enforcement
         attributes: AuditAttributes,                    // CloudEvents v1.0 attributes
-        data: serde_json::Value,                        // event body (PII redacted via WI-S09-002 redact!)
+        data: AuditEventData,                           // typed enum per AuditSubject; redact!-wrapped fields canonical
     ) -> Result<EventId, AuditError>;
 
     /// Verify chain integrity for region; daily background job.
@@ -92,6 +93,54 @@ pub enum AuditSubject {
     AbuseDetected,                                      // S-08 abuse score events
 }
 
+/// Lote 10.9bis P0-J: typed AuditEventData enum replaces serde_json::Value.
+/// Compile-time PII enforcement: each variant uses redact!-wrapped types only.
+/// serde_json::Value REJECTED — accepts arbitrary user input bypassing type system.
+#[derive(serde::Serialize)]
+#[serde(tag = "subject", rename_all = "snake_case")]
+pub enum AuditEventData {
+    Tenant {
+        tenant_id: TenantId,
+        action: TenantAction,                           // Created | Deleted | Upgraded | Suspended
+        previous_tier: Option<Tier>,
+        new_tier: Option<Tier>,
+    },
+    CasPut {
+        digest_truncated: BlobDigest,                   // redact! truncated 16 hex chars
+        size_bytes: u64,
+        result: PutResult,
+    },
+    CasGet {
+        digest_truncated: BlobDigest,
+        size_bytes: u64,
+        cache_hit: bool,
+    },
+    AcLookup {
+        action_digest_truncated: BlobDigest,
+        cache_hit: bool,
+    },
+    GcPurge {
+        chunks_purged: u64,
+        bytes_reclaimed: u64,
+        reachable_count: u64,
+    },
+    AuthLogin {
+        pat_id_redacted: BearerToken,                   // redact! ****<last4>
+        client_ip_redacted: IpAddress,                  // redact! /24 IPv4 or /64 IPv6
+        result: AuthResult,
+    },
+    QuotaExceeded {
+        bytes_used: u64,
+        max_storage_bytes: u64,
+        retry_after_seconds: u64,
+    },
+    AbuseDetected {
+        abuse_score: f64,
+        response_tier: ResponseTier,                    // Noop | SilentDowngrade | AdminReview | SuspendCandidate
+        features_breakdown: AbuseFeatures,              // typed; no raw user input
+    },
+}
+
 pub struct AuditEvent {
     /// CloudEvents v1.0 required attributes (CNCF spec).
     pub spec_version: &'static str, // "1.0" (Lote 10.9bis P0-G corrected from "1.0"; observability_model.md §7.1 canonical)
@@ -101,7 +150,7 @@ pub struct AuditEvent {
     pub event_type: String,                             // "dev.hugr.corelink.<subject>.v1"
     pub time: DateTime<Utc>,                            // RFC 3339
     pub data_content_type: &'static str,                // "application/json"
-    pub data: serde_json::Value,                        // PII redacted
+    pub data: AuditEventData,                           // Lote 10.9bis P0-J: typed enum (NOT serde_json::Value); compile-time PII enforcement via redact!-wrapped variants
 
     /// CoreLink-specific extensions (CloudEvents extension attributes):
     pub tenant_id: TenantId,                            // for tenant_id-indexed queries
@@ -173,7 +222,7 @@ pub enum AuditError {
    - NEW subject requires PR amending `AuditSubject` enum + `observability_model.md §7`.
    - Compliance Officer sign-off mandatory para NEW subject (regulatory scoping).
 
-7. **PII redaction inheritance from WI-S09-002**: redact! macro applied to `data: serde_json::Value` content; raw email/IP/bearer/digest forbidden em audit data; runtime DLP scanner CI test (10k fixtures inheritance).
+7. **PII redaction compile-time enforcement (Lote 10.9bis P0-J corrected; was structurally impossible com serde_json::Value)**: typed `AuditEventData` enum (per AuditSubject) com redact!-wrapped fields canonical (BlobDigest, BearerToken, IpAddress, EmailAddress); raw email/IP/bearer/digest forbidden via type system; runtime DLP scanner CI test (10k fixtures inheritance) é defense-in-depth secondary; chain digest BLAKE3(serde_json::to_string(&audit_event)) deterministic via struct field ordering (RFC 8785 JCS NOT needed for typed structs; serde_json em structs serializes em declaration order).
 
 8. **TenantCtx-only enforcement** (Lote 10.4bis lesson): `tenant_id` em event from middleware (S-03); NEVER request body.
 
@@ -311,7 +360,7 @@ CloudEvents emitter Rust crate + R2 Object Lock IaC + DO daily verifier job + SI
    - **NOT fail-closed**: audit already committed em R2 quando emit returns Ok.
 
 7. **PII redaction inheritance** (from WI-S09-002):
-   - `data: serde_json::Value` em event body MUST use redact! macro for sensitive fields.
+   - `data: AuditEventData` typed enum (Lote 10.9bis P0-J corrected from `serde_json::Value`); fields MUST use redact!-wrapped types canonical (BlobDigest, BearerToken, IpAddress, EmailAddress); compile-time enforcement via type system primary defense; DLP scanner runtime secondary.
    - DLP scanner CI test inheritance: 10k audit fixtures + 0 leaks.
    - clippy lint catches raw String em audit data.
 

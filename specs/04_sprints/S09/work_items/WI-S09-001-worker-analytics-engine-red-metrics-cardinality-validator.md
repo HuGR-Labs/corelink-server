@@ -262,17 +262,18 @@ CF Workers Analytics Engine binding emit lib + Python cardinality validator + Pr
 
 1. **`crates/corelink-metrics/` module** — MetricsEmitter trait + Analytics Engine impl + tests.
 
-2. **9 RED métricas canonical emitting** (sprint contract §5.1 R-S09-1):
+2. **9 RED métricas canonical emitting** (sprint contract §5.1 R-S09-1; **Lote 10.9bis P0-I corrected — histogram bucket multiplier applied**):
    - `corelink_cas_put_requests_total{tenant_tier, region, result}` (counter; 5×30×3 = 450 séries)
-   - `corelink_cas_put_duration_seconds{tenant_tier, region}` (histogram; 5×30 = 150 séries × buckets)
+   - `corelink_cas_put_duration_seconds{tenant_tier, region}` (histogram; 5×30 = 150 label combos × **(11 buckets + _sum + _count) = 13 séries por combo** = 1950 séries; Lote 10.9bis P0-I: bucket multiplier was previously omitted, validator was 13× off-budget)
    - `corelink_cas_get_bytes_total{tenant_tier, region}` (counter; 150 séries)
    - `corelink_ac_lookup_requests_total{tenant_tier, region, hit/miss}` (counter; 300 séries)
+   - `corelink_ac_lookup_duration_seconds{tenant_tier, region}` (histogram; 150 × 13 = 1950 séries)
    - `corelink_gc_runs_total{phase, status}` (counter; 4 phase × 3 status = 12 séries)
    - `corelink_dedup_ratio{tenant_tier, region}` (gauge; 150 séries; from S-07)
    - `corelink_rate_limit_rejects_total{layer, tenant_tier, reason}` (counter; 4×5×6 = 120 séries; from S-08)
    - `corelink_privacy_dsr_active_total{type}` (gauge; ~5 dsr_type = 5 séries; from S-11)
    - `corelink_billing_events_emitted_total{type, region}` (counter; ~10 type × 30 region = 300 séries; from S-10)
-   - **Total RED**: ~1700 séries (well under 20k per-metric; ~17% of 100k global budget allocated to RED).
+   - **Total RED (Lote 10.9bis P0-I corrected)**: ~5400 séries (was claimed 1700; corrected via histogram bucket multiplier = ~1500 + 2 histograms × 1950 each = 5400). Still well under 100k global budget (~5.4% allocation), but validator algorithm CORRECTLY applies bucket multiplier (P0-I fix).
 
 3. **6 USE métricas Cloudflare runtime** (sprint contract §5.1 R-S09-3):
    - `corelink_cf_cpu_time_us{region}` (gauge per Worker invocation; 30 séries).
@@ -297,11 +298,16 @@ CF Workers Analytics Engine binding emit lib + Python cardinality validator + Pr
    GLOBAL_BUDGET = 100_000
 
    # Parse Rust source for CanonicalMetric + MetricLabels enum (use syn-style parsing).
-   def estimate_cardinality(metric_name: str, labels: dict[str, int]) -> int:
-       """Cartesian product of label cardinalities."""
+   # Lote 10.9bis P0-I correction: histogram bucket multiplier applied (was missing; validator was 13× off-budget).
+   HISTOGRAM_BUCKET_COUNT = 11  # canonical Prom default buckets; emit _bucket × 11 + _sum + _count = 13 séries por label combo
+
+   def estimate_cardinality(metric_name: str, metric_kind: str, labels: dict[str, int]) -> int:
+       """Cartesian product of label cardinalities; histogram applies bucket multiplier (Lote 10.9bis P0-I)."""
        result = 1
        for label, card in labels.items():
            result *= card
+       if metric_kind == "histogram":
+           result *= (HISTOGRAM_BUCKET_COUNT + 2)  # 11 _bucket{le=X} + _sum + _count = 13× per label combo
        return result
 
    def check_pr_diff(diff_path: Path) -> int:
