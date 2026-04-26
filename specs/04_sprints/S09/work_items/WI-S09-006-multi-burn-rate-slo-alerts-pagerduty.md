@@ -298,12 +298,12 @@ Prometheus Alertmanager YAML rules + PagerDuty Terraform IaC + promtool CI gate 
 9. **Cardinality discipline** (WI-S09-001 inheritance): alert rules use aggregated tenant_tier (NOT raw tenant_id). Recording rules cardinality bounded.
 
 10. **Métricas operacionais**:
-    - `corelink.alerts.fired_total{alertname, severity}` (counter; informational).
-    - `corelink.alerts.dispatched_total{pagerduty_service, severity}` (counter; **alert SEV-3 if dispatch failures > 0.1%** — PagerDuty SLA).
-    - `corelink.alerts.flapping_quarantined_total{alertname}` (counter; **alert SEV-3 if > 0** — alert hygiene).
-    - `corelink.alerts.runbook_coverage_pct` (gauge; **alert SEV-2 if < 100% SEV-1/2 alerts**).
-    - `corelink.alerts.mtta_seconds_p99` (histogram; **alert SEV-2 if > 300s sustained 7d** — sprint contract §10.s09.4).
-    - `corelink.alerts.synthetic_dispatch_failures_total` (counter; **alert SEV-1 if > 0** — synthetic test failure).
+    - `corelink_alerts_fired_total{alertname, severity}` (counter; informational).
+    - `corelink_alerts_dispatched_total{pagerduty_service, severity}` (counter; **alert SEV-3 if dispatch failures > 0.1%** — PagerDuty SLA).
+    - `corelink_alerts_flapping_quarantined_total{alertname}` (counter; **alert SEV-3 if > 0** — alert hygiene).
+    - `corelink_alerts_runbook_coverage_pct` (gauge; **alert SEV-2 if < 100% SEV-1/2 alerts**).
+    - `corelink_alerts_mtta_seconds_p99` (histogram; **alert SEV-2 if > 300s sustained 7d** — sprint contract §10.s09.4).
+    - `corelink_alerts_synthetic_dispatch_failures_total` (counter; **alert SEV-1 if > 0** — synthetic test failure).
 
 11. **Property tests** (10k iter PR; **100k nightly per HIGH_RISK SOTA bar**):
     - `prop_burn_rate_math_correct`: 10k synthetic error rates; assert burn_rate computation matches Google SRE formula.
@@ -397,7 +397,7 @@ Feature: Multi-Burn-Rate SLO Alerts + PagerDuty Integration
     Given PagerDuty API returns 503 sustained 30min
     When SEV-1 alert fires
     Then secondary fallback dispatch (email + SMS via Twilio backup)
-    Then SEV-2 alert: corelink.alerts.dispatched_total{pagerduty_service=*, dispatch=fail}
+    Then SEV-2 alert: corelink_alerts_dispatched_total{pagerduty_service=*, dispatch=fail}
     Then on-call notified despite PagerDuty outage
 
   Scenario: Synthetic page weekly cron
@@ -456,9 +456,9 @@ Feature: Multi-Burn-Rate SLO Alerts + PagerDuty Integration
 
 ## 12. Invariants Validated
 
-- **INV-OBS-CARDINALITY-BUDGET** (HIGH; registry §3.13): aggregated recording rules; cardinality bounded.
+- **INV-OBS-CARDINALITY-BUDGET** (HIGH; registry §3.12): aggregated recording rules; cardinality bounded.
 - **INV-AVAIL-ISOLATION** (HIGH; registry §3.8): per-tier alerts respect tenant isolation.
-- **INV-OBS-AUDIT-CHAIN-INTEGRITY** (HIGH; registry §3.14): alert silence emits audit via WI-S09-004.
+- **INV-OBS-AUDIT-CHAIN-INTEGRITY** (HIGH; registry §3.12): alert silence emits audit via WI-S09-004.
 
 ## 13. Artifacts Produced
 
@@ -619,7 +619,7 @@ D+0 design (Architect; multi-burn-rate calibration); D+1 SRE (PagerDuty + escala
 
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
-| 1.0.0 | 2026-04-25 | Gustavo (Lote 10.9) | Criação WI-S09-006; HIGH_RISK; SOTA pós-Lote 10.7bis + Lote 10.8bis/tris lessons absorbed: 5-tier canonical Tier (P0-7); 100k nightly property test (P1-3); column drift no `_ms` suffix (P0-3); sign-off cap 12 (Lote 10.8bis P1-2); INV §3.13 + §3.14 (Lote 10.8bis P1-13). NEW alert YAML files (~56 rules; 7 SLIs × 8 rules each). NEW PagerDuty 5 services Terraform. NEW auto-quarantine script. **Lote 10.8-tris P1-NEW-1 lesson absorbed**: rigorous YAML count == narrative claim CI verification (avoid bis-introduced drift). **Lote 10.8bis P1-NEW-3 lesson absorbed**: ManualOverride excluded from SLI burn rate computation. Multi-burn-rate Sloth-style 4-window per Google SRE Workbook Ch 5. Runbook URL discipline + SLO coverage CI gates. Cardinality discipline inheritance from WI-S09-001. Audit trail inheritance from WI-S09-004. |
+| 1.0.0 | 2026-04-25 | Gustavo (Lote 10.9) | Criação WI-S09-006; HIGH_RISK; SOTA pós-Lote 10.7bis + Lote 10.8bis/tris lessons absorbed: 5-tier canonical Tier (P0-7); 100k nightly property test (P1-3); column drift no `_ms` suffix (P0-3); sign-off cap 12 (Lote 10.8bis P1-2); INV §3.12 (Lote 10.9bis P0-B corrected from §3.13/§3.14 — direct regression of Lote 10.8bis P1-13) (Lote 10.8bis P1-13). NEW alert YAML files (~56 rules; 7 SLIs × 8 rules each). NEW PagerDuty 5 services Terraform. NEW auto-quarantine script. **Lote 10.8-tris P1-NEW-1 lesson absorbed**: rigorous YAML count == narrative claim CI verification (avoid bis-introduced drift). **Lote 10.8bis P1-NEW-3 lesson absorbed**: ManualOverride excluded from SLI burn rate computation. Multi-burn-rate Sloth-style 4-window per Google SRE Workbook Ch 5. Runbook URL discipline + SLO coverage CI gates. Cardinality discipline inheritance from WI-S09-001. Audit trail inheritance from WI-S09-004. |
 
 ## 32. Anti-patterns evitados
 

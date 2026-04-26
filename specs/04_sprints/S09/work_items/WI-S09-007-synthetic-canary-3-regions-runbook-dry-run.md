@@ -104,8 +104,8 @@ pub enum CanaryError {
 
 1. **24/7 multi-region canary** (sprint contract §6 DoD):
    - 3 regions: us-east IAD, eu-west LHR, ap-south BOM (canonical CF region codes).
-   - CF Workers cron-trigger interval: 60s per region (1 canary loop/min/region = 4320 loops/dia/region = 12960/dia total).
-   - 72h sustained sem gap (sprint contract §6 DoD; total 12960 × 3 = 38880 successful canary loops).
+   - CF Workers cron-trigger interval: 60s per region (1 canary loop/min/region = 1440 loops/dia/region = 4320 loops/72h/region; × 3 regions = 12960 loops total/72h).
+   - 72h sustained sem gap (sprint contract §6 DoD; total 12960 successful canary loops/72h (Lote 10.9bis P0-A correction; previous claim 38880 was 3× inflated triple-counting; correct: 60s × 60min/h × 24h × 3 days × 3 regions / 60s = 12960)).
 
 2. **Canary loop assertions**:
    - CAS PUT 1 KB blob: latency p99 ≤ 100ms, success.
@@ -124,17 +124,17 @@ pub enum CanaryError {
    - Simulated outage em staging: block Mimir/Loki/Tempo endpoints 30min via firewall rule.
    - Expected behavior:
      - Dashboards show "no data" graceful (NOT crash).
-     - SEV-3 alert fires (`corelink.dashboard.refresh_failures_total`).
+     - SEV-3 alert fires (`corelink_dashboard_refresh_failures_total`).
      - Twilio backup SMS dispatched (PagerDuty primary degraded).
      - Synthetic canary continues from 3 regions (independent of Grafana stack).
    - Recovery: simulated resume; validate dashboards re-flow data within 30s; alerts auto-resolve.
 
 5. **RB-OBS-CARDINALITY-001 (cardinality explosion) runbook dry-run** (sprint contract §6 DoD EVT-017):
-   - Synthetic injection: test-only metric `corelink.test.cardinality_explosion{label_a, label_b, ..., label_z}` adds 25k unique series em staging.
+   - Synthetic injection: test-only metric `corelink_test_cardinality_explosion{label_a, label_b, ..., label_z}` adds 25k unique series em staging.
    - Expected behavior:
      - cardinality_check.py CI gate (WI-S09-001) would catch em PR (verify offline).
      - Runtime: Mimir tenant tier limit rejects ingest beyond 20k per-metric (WI-S09-001 secondary defense).
-     - SEV-2 alert fires (`corelink.metrics.cardinality_budget_violation_total`).
+     - SEV-2 alert fires (`corelink_metrics_cardinality_budget_violation_total`).
      - Degraded observability documented (some series dropped; not all queryable).
    - Recovery: rollback test metric; runtime alerts auto-resolve; investigation per RB-OBS-CARDINALITY-001 step-by-step.
 
@@ -153,7 +153,7 @@ pub enum CanaryError {
 
 ## 2. Narrative (HIGH_RISK ≥ 300 palavras + canary discipline justification)
 
-Synthetic canary é **the operational confidence primitive** — distinguishes "ship-ready service" from "service that ran tests once em CI". CF Workers cron-trigger canary 24/7 from 3 geo-distributed regions exercises full CAS write/read + AC lookup paths every 60s; 72h sustained = 38880 successful loops = high-confidence operability evidence. Sprint contract §6 DoD: este número é gate para GA readiness (S-20 ship).
+Synthetic canary é **the operational confidence primitive** — distinguishes "ship-ready service" from "service that ran tests once em CI". CF Workers cron-trigger canary 24/7 from 3 geo-distributed regions exercises full CAS write/read + AC lookup paths every 60s; 72h sustained = 12960 successful loops/72h (Lote 10.9bis P0-A corrected from previous 38880 triple-counted) = high-confidence operability evidence. Sprint contract §6 DoD: este número é gate para GA readiness (S-20 ship).
 
 **Why 3 regions specific** (us-east IAD + eu-west LHR + ap-south BOM): each tests independent CF region + R2 storage + DO instance + D1 database; cross-region failure modes detected (e.g., DO routing primary_region misconfigured, R2 cross-region replication lag). Single-region canary insufficient for multi-region production confidence.
 
@@ -180,7 +180,7 @@ Synthetic canary é **the operational confidence primitive** — distinguishes "
 
 ## 3. Customer Impact & Journey
 
-**Persona 1 — SRE pre-GA review**: opens canary dashboard; sees 38880/38880 successful loops over 72h; ship gate criterion met.
+**Persona 1 — SRE pre-GA review**: opens canary dashboard; sees 12960/12960 successful loops over 72h (Lote 10.9bis P0-A corrected); ship gate criterion met.
 
 **Persona 2 — Oncall responder**: receives SEV-2 alert "canary IAD failed 3 consecutive"; opens runbook; investigates; root-causes (e.g., R2 IAD transient outage); ack within 1h.
 
@@ -192,7 +192,7 @@ Synthetic canary é **the operational confidence primitive** — distinguishes "
 
 **SLA addendum**:
 - Canary loop interval: 60s per region (1 loop/min/region).
-- 72h sustained sem gap: 38880 successful loops total target (3 regions × 12960 loops/72h).
+- 72h sustained sem gap: 12960 successful loops total target (3 regions × 4320 loops/72h/region; Lote 10.9bis P0-A correction).
 - Detection latency: ≤ 5min (3 consecutive failures × 60s intervals).
 - Runbook dry-run cadence: quarterly (RB-FM-153 + RB-OBS-CARDINALITY-001 + others as added).
 
@@ -282,7 +282,7 @@ CF Workers cron-trigger canary + Rust crate + runbook documentation + dry-run sc
    # RB-FM-153: Grafana Cloud Outage
 
    ## Detection
-   - SEV-3 alert: corelink.dashboard.refresh_failures_total > 0 sustained 5min
+   - SEV-3 alert: corelink_dashboard_refresh_failures_total > 0 sustained 5min
    - Synthetic canary independent confirms (canary remains up)
 
    ## Triage
@@ -310,7 +310,7 @@ CF Workers cron-trigger canary + Rust crate + runbook documentation + dry-run sc
    # RB-OBS-CARDINALITY-001: Cardinality Explosion
 
    ## Detection
-   - SEV-2 alert: corelink.metrics.cardinality_budget_violation_total > 0
+   - SEV-2 alert: corelink_metrics_cardinality_budget_violation_total > 0
    - Mimir tenant tier limit rejects ingest
 
    ## Triage
@@ -329,7 +329,7 @@ CF Workers cron-trigger canary + Rust crate + runbook documentation + dry-run sc
    3. Mimir tier limit re-validated
 
    ## Dry-run validation (sprint contract §6 DoD EVT-017)
-   - Inject test-only metric corelink.test.cardinality_explosion{label_a..z} 25k séries em staging
+   - Inject test-only metric corelink_test_cardinality_explosion{label_a..z} 25k séries em staging
    - Validate (a) cardinality_check.py rejects offline + (b) Mimir tier limit rejects ingest + (c) SEV-2 fires
    ```
 
@@ -340,11 +340,11 @@ CF Workers cron-trigger canary + Rust crate + runbook documentation + dry-run sc
    - Property test validates canary doesn't inflate SLI false-positive.
 
 9. **Métricas operacionais**:
-    - `corelink.canary.loops_total{region, result=pass|fail}` (counter; expected ~38880/72h target).
-    - `corelink.canary.assertion_failures_total{region, assertion}` (counter; **alert SEV-2 if 3+ consecutive em region**).
-    - `corelink.canary.observability_health_failures_total{component}` (counter; **alert SEV-3 if any > 0**).
-    - `corelink.canary.dispatch_lag_ms{region}` (histogram; cron drift detection; **alert SEV-3 if > 90s**).
-    - `corelink.canary.digest_mismatch_total{region}` (counter; **alert SEV-1 if > 0** — data integrity issue).
+    - `corelink_canary_loops_total{region, result=pass|fail}` (counter; expected ~12960/72h target (Lote 10.9bis P0-A corrected)).
+    - `corelink_canary_assertion_failures_total{region, assertion}` (counter; **alert SEV-2 if 3+ consecutive em region**).
+    - `corelink_canary_observability_health_failures_total{component}` (counter; **alert SEV-3 if any > 0**).
+    - `corelink_canary_dispatch_lag_ms{region}` (histogram; cron drift detection; **alert SEV-3 if > 90s**).
+    - `corelink_canary_digest_mismatch_total{region}` (counter; **alert SEV-1 if > 0** — data integrity issue).
 
 10. **Property tests** (10k iter PR; **100k nightly per HIGH_RISK SOTA bar**):
     - `prop_canary_assertion_correctness`: 10k synthetic canary results; assert overall_pass logic correct.
@@ -363,7 +363,7 @@ CF Workers cron-trigger canary + Rust crate + runbook documentation + dry-run sc
     - 6. **RB-FM-153 dry-run em staging**: full execution; validate behavior; documentation update.
     - 7. **RB-OBS-CARDINALITY-001 dry-run em staging**: full execution; validate containment.
     - 8. **3 regions simultaneous outage**: SEV-1 (catastrophic); page on-call multi-tier.
-    - 9. **72h sustained simulation**: 38880 loops; assert 100% success em ideal conditions.
+    - 9. **72h sustained simulation**: 12960 loops; assert 100% success em ideal conditions.
     - 10. **Canary tenant erasure (synthetic)**: legal review confirms exemption; not real customer.
 
 ### 6.2 Out-of-scope (deferred)
@@ -395,19 +395,19 @@ Feature: Synthetic Canary 3 Regions + Runbook Dry-Run
     Then canary loop executes: CAS PUT + GET + AC LOOKUP
     Then assertions pass: cas_put_latency_p99_ms ≤ 100, cas_get ≤ 50, ac_lookup ≤ 30
     Then BLAKE3 digest matches (data integrity)
-    Then corelink.canary.loops_total{result=pass} increments
+    Then corelink_canary_loops_total{result=pass} increments
 
   Scenario: 72h sustained validation (sprint contract §6 DoD ship gate)
     Given canary running 24/7 em 3 regions
     When 72h elapsed
-    Then total loops 38880 (3 × 12960 expected)
+    Then total loops 12960 (3 regions × 4320 loops/72h; Lote 10.9bis P0-A corrected)
     Then success rate 100% (or documented exceptions)
     Then ship gate criterion met
 
   Scenario: Region partial outage detection
     Given R2 IAD experiencing transient outage 5min
     When canary IAD fails 3 consecutive loops
-    Then SEV-2 alert: corelink.canary.assertion_failures_total{region=iad}
+    Then SEV-2 alert: corelink_canary_assertion_failures_total{region=iad}
     Then cross-region canary (LHR + BOM) continues
     Then isolation verified
 
@@ -416,21 +416,21 @@ Feature: Synthetic Canary 3 Regions + Runbook Dry-Run
     Given canary CAS GET reads blob with digest D' != D (synthetic corruption)
     When canary loop validates
     Then CanaryError::DigestMismatch returned
-    Then SEV-1 alert: corelink.canary.digest_mismatch_total{region}
+    Then SEV-1 alert: corelink_canary_digest_mismatch_total{region}
     Then data integrity investigation per RB-CAS-DIGEST-001
 
   Scenario: Observability stack outage detected
     Given Mimir tenant unavailable 30min
     When canary observability health check runs
     Then HealthReport: all_components_healthy=false
-    Then SEV-3 alert: corelink.canary.observability_health_failures_total{component=mimir}
+    Then SEV-3 alert: corelink_canary_observability_health_failures_total{component=mimir}
     Then service continues (canary independent)
 
   Scenario: RB-FM-153 dry-run validates Grafana outage handling
     Given staging environment em quarantine
     When dry-run script blocks Mimir/Loki/Tempo endpoints 30min
     Then dashboards show "no data" graceful (NOT crash)
-    Then SEV-3 alert fires: corelink.dashboard.refresh_failures_total
+    Then SEV-3 alert fires: corelink_dashboard_refresh_failures_total
     Then Twilio backup SMS dispatched
     Then on simulated resume: dashboards re-flow within 30s
     Then runbook documentation updated based on findings
@@ -438,17 +438,17 @@ Feature: Synthetic Canary 3 Regions + Runbook Dry-Run
 
   Scenario: RB-OBS-CARDINALITY-001 dry-run validates cardinality explosion handling
     Given staging environment em quarantine
-    When dry-run script injects test metric corelink.test.cardinality_explosion 25k séries
+    When dry-run script injects test metric corelink_test_cardinality_explosion 25k séries
     Then cardinality_check.py rejects offline (CI gate; PR would fail)
     Then Mimir tier limit rejects ingest beyond 20k per-metric
-    Then SEV-2 alert fires: corelink.metrics.cardinality_budget_violation_total
+    Then SEV-2 alert fires: corelink_metrics_cardinality_budget_violation_total
     Then degraded observability documented (some series dropped)
     Then on rollback: alerts auto-resolve
     Then sprint contract §6 DoD EVT-017 satisfied
 
   Scenario: Synthetic tenant excluded from SLI
     Given canary tenant_id 00000000-0000-0000-0000-CANARY00000
-    Given 38880 canary loops over 72h
+    Given 12960 canary loops over 72h (Lote 10.9bis P0-A)
     When SLI burn rate computation runs
     Then canary loops NOT counted em SLI denominator
     Then SLI computation reflects only real traffic
@@ -458,7 +458,7 @@ Feature: Synthetic Canary 3 Regions + Runbook Dry-Run
     Given CF Workers cron expected interval 60s
     Given actual interval > 90s sustained 5min
     When canary dispatch_lag_ms metric exceeds threshold
-    Then SEV-3 alert: corelink.canary.dispatch_lag_ms > 90000
+    Then SEV-3 alert: corelink_canary_dispatch_lag_ms > 90000
     Then investigation; CF infra status check
 
   Scenario: 3 regions simultaneous outage SEV-1
@@ -489,7 +489,7 @@ Feature: Synthetic Canary 3 Regions + Runbook Dry-Run
 - [ ] **10.s09.007.2** All 10 Gherkin scenarios green.
 - [ ] **10.s09.007.3** Property tests 6 × 10k green; **100k nightly sustained 7d** (HIGH_RISK SOTA bar).
 - [ ] **10.s09.007.4** Chaos suite 10 scenarios green.
-- [ ] **10.s09.007.5** **Synthetic canary 24/7 sustained 72h sem gap** (sprint contract §6 DoD; 38880 loops total).
+- [ ] **10.s09.007.5** **Synthetic canary 24/7 sustained 72h sem gap** (sprint contract §6 DoD; 12960 loops total/72h (Lote 10.9bis P0-A correction)).
 - [ ] **10.s09.007.6** **RB-FM-153 dry-run executed em staging** (sprint contract §6 DoD EVT-017).
 - [ ] **10.s09.007.7** **RB-OBS-CARDINALITY-001 dry-run executed em staging** (sprint contract §6 DoD EVT-017).
 - [ ] **10.s09.007.8** Observability stack health: Mimir/Loki/Tempo/dashboards all 4 components SLO compliance.
@@ -505,8 +505,8 @@ Feature: Synthetic Canary 3 Regions + Runbook Dry-Run
 ## 12. Invariants Validated
 
 - **INV-AVAIL-ISOLATION** (HIGH; registry §3.8): canary excluded from SLI; doesn't affect tenant isolation.
-- **INV-OBS-CARDINALITY-BUDGET** (HIGH; registry §3.13): RB-OBS-CARDINALITY-001 dry-run validates secondary defense.
-- **INV-OBS-AUDIT-CHAIN-INTEGRITY** (HIGH; registry §3.14): canary execution audit emit via WI-S09-004.
+- **INV-OBS-CARDINALITY-BUDGET** (HIGH; registry §3.12): RB-OBS-CARDINALITY-001 dry-run validates secondary defense.
+- **INV-OBS-AUDIT-CHAIN-INTEGRITY** (HIGH; registry §3.12): canary execution audit emit via WI-S09-004.
 - **INV-TENANT-ISOLATION** (CRITICAL, TLA+): synthetic canary tenant isolated; no cross-contamination.
 
 ## 13. Artifacts Produced
@@ -577,7 +577,7 @@ HIGH_RISK 12 sign-offs PRR (framework §33.5.4.3 cap).
 ## 22. Cost Analysis
 
 - CF Workers cron: included em CF Workers Unbound plan (cron-trigger free tier).
-- R2 ops: 38880 PUT + 38880 GET / 72h × 365/3 / 1M ≈ trivial; ~$0.05/yr.
+- R2 ops: 12960 PUT + 12960 GET (Lote 10.9bis P0-A) / 72h × 365/3 / 1M ≈ trivial; ~$0.05/yr.
 - Mimir/Loki/Tempo ingest: included em existing tenant cost (WI-S09-001/002/003).
 - TCO 12m: ~$1/yr canary infrastructure.
 - **Cost saved by canary discipline**: prevents catastrophic GA failure (SEV-1 first-week + customer SLA breach + reputation cost ${significant}).
@@ -664,7 +664,7 @@ D+0 design (Architect; 3 regions + 72h target); D+1 SRE (CF Workers cron + multi
 
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
-| 1.0.0 | 2026-04-25 | Gustavo (Lote 10.9) | Criação WI-S09-007; HIGH_RISK; SOTA pós-Lote 10.7bis + Lote 10.8bis/tris lessons absorbed: 5-tier canonical Tier (P0-7); CF Workers Rust API worker::Fetch (R5 P0-3); 100k nightly property test (P1-3); column drift no `_ms` suffix (P0-3); sign-off cap 12 (Lote 10.8bis P1-2); INV §3.13 + §3.14 (Lote 10.8bis P1-13). NEW 2 runbooks (RB-FM-153 Grafana outage + RB-OBS-CARDINALITY-001 cardinality explosion) sprint contract §6 DoD EVT-017. **Lote 10.8bis P1-NEW-3 inheritance**: synthetic tenant SLI exclusion (analogous a ManualOverride exclusion em WI-S08-005). 3 regions specific (IAD + LHR + BOM); 60s cron canonical; 72h sustained ship gate. BLAKE3 digest correctness (consistent com CAS digests primary). Audit trail inheritance from WI-S09-004. |
+| 1.0.0 | 2026-04-25 | Gustavo (Lote 10.9) | Criação WI-S09-007; HIGH_RISK; SOTA pós-Lote 10.7bis + Lote 10.8bis/tris lessons absorbed: 5-tier canonical Tier (P0-7); CF Workers Rust API worker::Fetch (R5 P0-3); 100k nightly property test (P1-3); column drift no `_ms` suffix (P0-3); sign-off cap 12 (Lote 10.8bis P1-2); INV §3.12 (Lote 10.9bis P0-B corrected from §3.13/§3.14 — direct regression of Lote 10.8bis P1-13) (Lote 10.8bis P1-13). NEW 2 runbooks (RB-FM-153 Grafana outage + RB-OBS-CARDINALITY-001 cardinality explosion) sprint contract §6 DoD EVT-017. **Lote 10.8bis P1-NEW-3 inheritance**: synthetic tenant SLI exclusion (analogous a ManualOverride exclusion em WI-S08-005). 3 regions specific (IAD + LHR + BOM); 60s cron canonical; 72h sustained ship gate. BLAKE3 digest correctness (consistent com CAS digests primary). Audit trail inheritance from WI-S09-004. |
 
 ## 32. Anti-patterns evitados
 

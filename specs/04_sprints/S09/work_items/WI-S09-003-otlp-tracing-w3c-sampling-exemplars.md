@@ -139,7 +139,7 @@ pub enum TracingError {
 5. **TenantCtx-only enforcement** (Lote 10.4bis lesson): tenant_id from middleware (S-03); span attribute `tenant.id` extracted from TenantCtx.
 
 6. **Audit fail-OPEN para tracing emit** (vs audit fail-CLOSED em S-04/S-06; matches WI-S09-001 + WI-S09-002 fail-open canonical):
-   - OTLP export failure → SEV-3 alert; counter `corelink.tracing.export_failures_total`; service continues.
+   - OTLP export failure → SEV-3 alert; counter `corelink_tracing_export_failures_total`; service continues.
    - Distinção canonical Lote 10.6bis lesson absorbed.
 
 7. **CF Workers Rust runtime APIs** (Lote 10.7bis R5 P0-3 lesson absorbed): OTLP export via `worker::send_future()` (HTTP POST fire-and-forget); NEVER `tokio::spawn`. `async_lock::Mutex` for sampling decision shared state if needed (Lote 10.3-tris).
@@ -186,9 +186,9 @@ OTLP tracing distribuído é **the debug primitive** do CoreLink — multi-DO + 
 
 **Persona 3 — Developer adding span**: adds `tracer.start_span("my_op", cx)`; SDK auto-handles head sampling (1%); if op errors, tail-samples 100% retroactively; trace appears em Tempo for debug.
 
-**Persona 4 — SRE reviewing**: checks `corelink.tracing.export_failures_total` SEV-3 alert; investigates Tempo tenant config; resolves OTLP endpoint TLS cert issue.
+**Persona 4 — SRE reviewing**: checks `corelink_tracing_export_failures_total` SEV-3 alert; investigates Tempo tenant config; resolves OTLP endpoint TLS cert issue.
 
-**Persona 5 — Platform engineer reviewing cost**: `corelink.tracing.spans_exported_total{sampled_decision}` em DASH-COST shows ~1% head-sampled + ~0.1% tail-sampled; total ingest ~1.1% req volume; under cost budget.
+**Persona 5 — Platform engineer reviewing cost**: `corelink_tracing_spans_exported_total{sampled_decision}` em DASH-COST shows ~1% head-sampled + ~0.1% tail-sampled; total ingest ~1.1% req volume; under cost budget.
 
 **SLA addendum**:
 - W3C Trace Context propagation: 100% Worker→DO→R2→D1→Neon (synthetic test 24/7).
@@ -257,11 +257,11 @@ OTLP middleware + OpenTelemetry SDK Rust + Tempo integration; HIGH_RISK; FF-HR-0
    - **Forbidden em span attributes**: raw email, raw IP, raw bearer token (use redact! macro from WI-S09-002).
 
 10. **Métricas operacionais**:
-    - `corelink.tracing.spans_exported_total{sampled_decision=head_sampled|tail_sampled|dropped}` (counter; ~1.1% of request volume).
-    - `corelink.tracing.export_failures_total{reason}` (counter; **alert SEV-3 if > 1%**).
-    - `corelink.tracing.sampling_overhead_us` (histogram; SLO ≤ 5% latency p99 — sprint contract §15).
-    - `corelink.tracing.tail_sample_buffer_pressure` (gauge; **alert SEV-3 if > 80% sustained**).
-    - `corelink.tracing.context_parse_failures_total{reason}` (counter; **alert SEV-2 if > 0.1%**).
+    - `corelink_tracing_spans_exported_total{sampled_decision=head_sampled|tail_sampled|dropped}` (counter; ~1.1% of request volume).
+    - `corelink_tracing_export_failures_total{reason}` (counter; **alert SEV-3 if > 1%**).
+    - `corelink_tracing_sampling_overhead_us` (histogram; SLO ≤ 5% latency p99 — sprint contract §15).
+    - `corelink_tracing_tail_sample_buffer_pressure` (gauge; **alert SEV-3 if > 80% sustained**).
+    - `corelink_tracing_context_parse_failures_total{reason}` (counter; **alert SEV-2 if > 0.1%**).
 
 11. **Property tests** (10k iter PR; **100k nightly per HIGH_RISK SOTA bar** — Lote 10.7bis P1-3 absorbed):
     - `prop_w3c_traceparent_roundtrip`: 10k random traceparent values; assert parse + serialize roundtrip identity.
@@ -352,7 +352,7 @@ Feature: OTLP Tracing + W3C Trace Context + Sampling + Exemplars
   Scenario: Tempo outage fail-open
     Given Tempo OTLP endpoint returns 503 sustained 30min
     When span ends
-    Then export fails; counter corelink.tracing.export_failures_total increments
+    Then export fails; counter corelink_tracing_export_failures_total increments
     Then Worker continues serving requests (fail-open)
     Then SEV-3 alert (NOT SEV-1 — request not blocked)
     Then on Tempo recovery: future spans export normally
@@ -361,7 +361,7 @@ Feature: OTLP Tracing + W3C Trace Context + Sampling + Exemplars
     Given request com header "traceparent: invalid-format"
     When extract_context called
     Then parser rejects; new local trace_id generated
-    Then counter corelink.tracing.context_parse_failures_total increments
+    Then counter corelink_tracing_context_parse_failures_total increments
     Then service continues (no abort)
 
   Scenario: Sampling overhead within 5% budget
@@ -406,7 +406,7 @@ Feature: OTLP Tracing + W3C Trace Context + Sampling + Exemplars
 
 ## 12. Invariants Validated
 
-- **INV-OBS-CARDINALITY-BUDGET** (HIGH; registry §3.13): trace_id em Exemplar NÃO em label preserves budget.
+- **INV-OBS-CARDINALITY-BUDGET** (HIGH; registry §3.12): trace_id em Exemplar NÃO em label preserves budget.
 - **INV-AVAIL-ISOLATION** (HIGH; registry §3.8): tracing fail-open preserves request availability.
 - **INV-TENANT-ISOLATION** (CRITICAL, TLA+): TenantCtx-only middleware (S-03 inheritance).
 

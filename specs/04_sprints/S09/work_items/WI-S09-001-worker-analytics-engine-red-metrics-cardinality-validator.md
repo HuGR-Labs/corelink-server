@@ -37,7 +37,7 @@ tags: ["wi", "s09", "metrics", "red-use", "cardinality-budget", "analytics-engin
 | Campo | Valor |
 |---|---|
 | ID | WI-S09-001 |
-| Título | CF Workers Analytics Engine binding emit lib (`crates/corelink-metrics`) emitindo 9 métricas RED canonical (`corelink.cas.put.requests_total{tenant_tier, region, result}`, `corelink.cas.put.duration_seconds{tenant_tier, region}` histogram p50/p95/p99, `corelink.cas.get.bytes_total{tenant_tier, region}`, `corelink.ac.lookup.requests_total{tenant_tier, region, hit/miss}`, `corelink.gc.runs_total{phase, status}`, `corelink.dedup.ratio{tenant_tier, region}` from S-07, `corelink.rate_limit.rejects_total{layer, tenant_tier, reason}` from S-08, `corelink.privacy.dsr_active_total{type}` from S-11, `corelink.billing.events_emitted_total{type, region}` from S-10) + USE métricas Cloudflare runtime (cf.cpu_time gauge, r2.ops counter por bucket, d1.row_scans counter por database, kv.read_quota_used / kv.write_quota_used gauge, do.storage_size gauge); cardinality budget enforcement INV-OBS-CARDINALITY-BUDGET via Python validator CI gate (`scripts/cardinality_check.py`) que estimates séries em PR diff antes de merge; Grafana Mimir tenant limit secondary enforcement; per-metric explicit budget table em `observability_model.md §11.2`; **trace_id NUNCA em label** (exemplar field separate per OpenMetrics 1.0 — Lote 10.8bis lessons absorbed regarding cardinality discipline) |
+| Título | CF Workers Analytics Engine binding emit lib (`crates/corelink-metrics`) emitindo 9 métricas RED canonical (`corelink_cas_put_requests_total{tenant_tier, region, result}`, `corelink_cas_put_duration_seconds{tenant_tier, region}` histogram p50/p95/p99, `corelink_cas_get_bytes_total{tenant_tier, region}`, `corelink_ac_lookup_requests_total{tenant_tier, region, hit/miss}`, `corelink_gc_runs_total{phase, status}`, `corelink_dedup_ratio{tenant_tier, region}` from S-07, `corelink_rate_limit_rejects_total{layer, tenant_tier, reason}` from S-08, `corelink_privacy_dsr_active_total{type}` from S-11, `corelink_billing_events_emitted_total{type, region}` from S-10) + USE métricas Cloudflare runtime (cf.cpu_time gauge, r2.ops counter por bucket, d1.row_scans counter por database, kv.read_quota_used / kv.write_quota_used gauge, do.storage_size gauge); cardinality budget enforcement INV-OBS-CARDINALITY-BUDGET via Python validator CI gate (`scripts/cardinality_check.py`) que estimates séries em PR diff antes de merge; Grafana Mimir tenant limit secondary enforcement; per-metric explicit budget table em `observability_model.md §11.2`; **trace_id NUNCA em label** (exemplar field separate per OpenMetrics 1.0 — Lote 10.8bis lessons absorbed regarding cardinality discipline) |
 | Sprint | S-09 |
 | Lane | HIGH_RISK |
 | Forcing factors | FF-HR-005 (CTRL-AUDIT-001 audit chain integrity correlated; observability foundation = blind production se falha = SEV-1 inevitável; sprint contract §2 explicit) |
@@ -90,37 +90,37 @@ pub trait MetricsEmitter: Send + Sync {
 #[derive(strum::Display, strum::EnumIter)]
 pub enum CanonicalMetric {
     // RED métricas (sprint contract §5.1 R-S09-1)
-    #[strum(serialize = "corelink.cas.put.requests_total")]
+    #[strum(serialize = "corelink_cas_put_requests_total")]
     CasPutRequestsTotal,
-    #[strum(serialize = "corelink.cas.put.duration_seconds")]
+    #[strum(serialize = "corelink_cas_put_duration_seconds")]
     CasPutDurationSeconds,
-    #[strum(serialize = "corelink.cas.get.bytes_total")]
+    #[strum(serialize = "corelink_cas_get_bytes_total")]
     CasGetBytesTotal,
-    #[strum(serialize = "corelink.ac.lookup.requests_total")]
+    #[strum(serialize = "corelink_ac_lookup_requests_total")]
     AcLookupRequestsTotal,
-    #[strum(serialize = "corelink.gc.runs_total")]
+    #[strum(serialize = "corelink_gc_runs_total")]
     GcRunsTotal,
-    #[strum(serialize = "corelink.dedup.ratio")]
+    #[strum(serialize = "corelink_dedup_ratio")]
     DedupRatio,
-    #[strum(serialize = "corelink.rate_limit.rejects_total")]
+    #[strum(serialize = "corelink_rate_limit_rejects_total")]
     RateLimitRejectsTotal,
-    #[strum(serialize = "corelink.privacy.dsr_active_total")]
+    #[strum(serialize = "corelink_privacy_dsr_active_total")]
     PrivacyDsrActiveTotal,
-    #[strum(serialize = "corelink.billing.events_emitted_total")]
+    #[strum(serialize = "corelink_billing_events_emitted_total")]
     BillingEventsEmittedTotal,
 
     // USE métricas Cloudflare runtime
-    #[strum(serialize = "corelink.cf.cpu_time_us")]
+    #[strum(serialize = "corelink_cf_cpu_time_us")]
     CfCpuTimeUs,
-    #[strum(serialize = "corelink.r2.ops_total")]
+    #[strum(serialize = "corelink_r2_ops_total")]
     R2OpsTotal,
-    #[strum(serialize = "corelink.d1.row_scans_total")]
+    #[strum(serialize = "corelink_d1_row_scans_total")]
     D1RowScansTotal,
-    #[strum(serialize = "corelink.kv.read_quota_used")]
+    #[strum(serialize = "corelink_kv_read_quota_used")]
     KvReadQuotaUsed,
-    #[strum(serialize = "corelink.kv.write_quota_used")]
+    #[strum(serialize = "corelink_kv_write_quota_used")]
     KvWriteQuotaUsed,
-    #[strum(serialize = "corelink.do.storage_size_bytes")]
+    #[strum(serialize = "corelink_do_storage_size_bytes")]
     DoStorageSizeBytes,
 }
 
@@ -163,7 +163,7 @@ pub enum MetricsError {
 
 **Cripto-driven invariants enforced**:
 
-1. **INV-OBS-CARDINALITY-BUDGET** (HIGH; registry §3.13 [Lote 10.8bis lesson INV §3.X → §3.12+; verified canonical position via grep]):
+1. **INV-OBS-CARDINALITY-BUDGET** (HIGH; registry §3.12 [Lote 10.8bis lesson INV §3.X → §3.12+; verified canonical position via grep]):
    - **Per-metric budget**: máximo **20k séries únicas** (cartesian de tenant_tier × region × result × ...).
    - **Global budget**: máximo **100k séries totais** across all métricas.
    - **Enforcement primary**: Python validator `scripts/cardinality_check.py` em CI; estimates cartesian product de PR diff antes de merge.
@@ -182,7 +182,7 @@ pub enum MetricsError {
    - Audit emit fail-closed (S-04/S-06 pattern; data integrity).
    - Metrics emit **fail-open** (best-effort; observability degradation acceptable; missing metric NOT compromise security/integrity).
    - Rationale: blocking request on metrics emit failure would create reverse-priority outage (metrics infra outage → all requests blocked).
-   - Enforce: emit errors logged em SEV-3 + counter `corelink.metrics.emit_failures_total{reason}` (alerting if > 1% of emits fail).
+   - Enforce: emit errors logged em SEV-3 + counter `corelink_metrics_emit_failures_total{reason}` (alerting if > 1% of emits fail).
 
 7. **5-tier canonical Tier label** (Lote 10.7bis P0-7 absorbed): `enum Tier { Free, Solo, Team, Business, Enterprise }`. Cartesian em métrica `cas.put.requests_total{tenant_tier, region, result}` = 5 × 30 × 3 = **450 séries** (well under 20k budget); 9 RED métricas × 450 avg = 4050 séries baseline.
 
@@ -201,11 +201,11 @@ pub enum MetricsError {
    # 4. Reject PR if forbidden label detected (trace_id, tenant_id, request_id, blob_digest).
    ```
 
-9. **Audit fail-closed para cardinality budget violations** (Lote 10.6bis pattern adapted): emit `corelink.metrics.cardinality_budget_violation_total` SEV-2 alert; CI gate fails PR; commit blocked.
+9. **Audit fail-closed para cardinality budget violations** (Lote 10.6bis pattern adapted): emit `corelink_metrics_cardinality_budget_violation_total` SEV-2 alert; CI gate fails PR; commit blocked.
 
 ## 2. Narrative (HIGH_RISK ≥ 300 palavras + cardinality discipline justification)
 
-Worker Analytics Engine bindings constituem a **emit primitive** do CoreLink observability stack. Sem disciplina rigorosa de cardinality budget, **single bad-PR pode catastrofically explode prometheus storage** — NetflixOSS 2018 incident: `request_id` adicionado em label causou 5B séries em 24h, $50k/mo Prometheus blowup, 14h debug. CoreLink absorbeu lessons via INV-OBS-CARDINALITY-BUDGET (registry §3.13) + validator CI gate.
+Worker Analytics Engine bindings constituem a **emit primitive** do CoreLink observability stack. Sem disciplina rigorosa de cardinality budget, **single bad-PR pode catastrofically explode prometheus storage** — NetflixOSS 2018 incident: `request_id` adicionado em label causou 5B séries em 24h, $50k/mo Prometheus blowup, 14h debug. CoreLink absorbeu lessons via INV-OBS-CARDINALITY-BUDGET (registry §3.12) + validator CI gate.
 
 **Why Analytics Engine (vs Worker emit direto via fetch)**: CF Analytics Engine bindings são purpose-built para Workers — `event.waitUntil()` fire-and-forget; aggregation no edge antes de Prom remote write; sub-µs emit overhead. Direct fetch emit per-request blocks request hot path (50-200ms latency tax inaceitável em SLA p99 ≤ 3ms).
 
@@ -237,7 +237,7 @@ Worker Analytics Engine bindings constituem a **emit primitive** do CoreLink obs
 
 **Persona 3 — Developer adding bad-PR (trace_id label)**: PR adds `trace_id: String` to `MetricLabels` struct; CI lint rejects with `ForbiddenLabelDetected{label: "trace_id"}`; PR blocked; developer educated on Exemplar pattern.
 
-**Persona 4 — SRE responder**: SEV-3 alert fires `corelink.metrics.cardinality_budget_violation_total > 0`; opens dashboard; identifies offending metric; investigates recent PRs; rolls back if necessary.
+**Persona 4 — SRE responder**: SEV-3 alert fires `corelink_metrics_cardinality_budget_violation_total > 0`; opens dashboard; identifies offending metric; investigates recent PRs; rolls back if necessary.
 
 **Persona 5 — Platform engineer reviewing cost**: Grafana Mimir tenant cost projection $USD/month em DASH-COST; cardinality count vs budget tracked; per-PR cost regression gate (sprint contract §14.s09.7) prevents > 10% increases.
 
@@ -263,24 +263,24 @@ CF Workers Analytics Engine binding emit lib + Python cardinality validator + Pr
 1. **`crates/corelink-metrics/` module** — MetricsEmitter trait + Analytics Engine impl + tests.
 
 2. **9 RED métricas canonical emitting** (sprint contract §5.1 R-S09-1):
-   - `corelink.cas.put.requests_total{tenant_tier, region, result}` (counter; 5×30×3 = 450 séries)
-   - `corelink.cas.put.duration_seconds{tenant_tier, region}` (histogram; 5×30 = 150 séries × buckets)
-   - `corelink.cas.get.bytes_total{tenant_tier, region}` (counter; 150 séries)
-   - `corelink.ac.lookup.requests_total{tenant_tier, region, hit/miss}` (counter; 300 séries)
-   - `corelink.gc.runs_total{phase, status}` (counter; 4 phase × 3 status = 12 séries)
-   - `corelink.dedup.ratio{tenant_tier, region}` (gauge; 150 séries; from S-07)
-   - `corelink.rate_limit.rejects_total{layer, tenant_tier, reason}` (counter; 4×5×6 = 120 séries; from S-08)
-   - `corelink.privacy.dsr_active_total{type}` (gauge; ~5 dsr_type = 5 séries; from S-11)
-   - `corelink.billing.events_emitted_total{type, region}` (counter; ~10 type × 30 region = 300 séries; from S-10)
+   - `corelink_cas_put_requests_total{tenant_tier, region, result}` (counter; 5×30×3 = 450 séries)
+   - `corelink_cas_put_duration_seconds{tenant_tier, region}` (histogram; 5×30 = 150 séries × buckets)
+   - `corelink_cas_get_bytes_total{tenant_tier, region}` (counter; 150 séries)
+   - `corelink_ac_lookup_requests_total{tenant_tier, region, hit/miss}` (counter; 300 séries)
+   - `corelink_gc_runs_total{phase, status}` (counter; 4 phase × 3 status = 12 séries)
+   - `corelink_dedup_ratio{tenant_tier, region}` (gauge; 150 séries; from S-07)
+   - `corelink_rate_limit_rejects_total{layer, tenant_tier, reason}` (counter; 4×5×6 = 120 séries; from S-08)
+   - `corelink_privacy_dsr_active_total{type}` (gauge; ~5 dsr_type = 5 séries; from S-11)
+   - `corelink_billing_events_emitted_total{type, region}` (counter; ~10 type × 30 region = 300 séries; from S-10)
    - **Total RED**: ~1700 séries (well under 20k per-metric; ~17% of 100k global budget allocated to RED).
 
 3. **6 USE métricas Cloudflare runtime** (sprint contract §5.1 R-S09-3):
-   - `corelink.cf.cpu_time_us{region}` (gauge per Worker invocation; 30 séries).
-   - `corelink.r2.ops_total{bucket, op_type}` (counter; ~5 buckets × 4 op_type = 20 séries).
-   - `corelink.d1.row_scans_total{database}` (counter; ~10 databases = 10 séries).
-   - `corelink.kv.read_quota_used{namespace}` (gauge; ~5 KV namespaces = 5 séries).
-   - `corelink.kv.write_quota_used{namespace}` (gauge; 5 séries).
-   - `corelink.do.storage_size_bytes{do_class}` (gauge; ~10 DO classes = 10 séries).
+   - `corelink_cf_cpu_time_us{region}` (gauge per Worker invocation; 30 séries).
+   - `corelink_r2_ops_total{bucket, op_type}` (counter; ~5 buckets × 4 op_type = 20 séries).
+   - `corelink_d1_row_scans_total{database}` (counter; ~10 databases = 10 séries).
+   - `corelink_kv_read_quota_used{namespace}` (gauge; ~5 KV namespaces = 5 séries).
+   - `corelink_kv_write_quota_used{namespace}` (gauge; 5 séries).
+   - `corelink_do_storage_size_bytes{do_class}` (gauge; ~10 DO classes = 10 séries).
    - **Total USE**: ~80 séries (negligible budget impact).
 
 4. **Cardinality budget validator** `scripts/cardinality_check.py`:
@@ -349,7 +349,7 @@ CF Workers Analytics Engine binding emit lib + Python cardinality validator + Pr
                    Err(e) => {
                        // Fail-open: log + counter; do NOT propagate to caller
                        worker::console_warn!("metrics emit failed: {}", e);
-                       emit_metric("corelink.metrics.emit_failures_total", 1.0, &[("reason", "ae_write_failed")]);
+                       emit_metric("corelink_metrics_emit_failures_total", 1.0, &[("reason", "ae_write_failed")]);
                    }
                }
            });
@@ -372,15 +372,15 @@ CF Workers Analytics Engine binding emit lib + Python cardinality validator + Pr
 9. **CF Workers Rust runtime APIs** (Lote 10.7bis R5 P0-3 lesson absorbed): all emits via `worker::send_future()`; NEVER `tokio::spawn`. `async_lock::RwLock` for cardinality tracker (Lote 10.3-tris).
 
 10. **Audit fail-closed para cardinality budget violations** (Lote 10.6bis adapted):
-    - Runtime detection: `inc_counter` em metric near budget triggers `corelink.metrics.cardinality_approaching_budget_total` SEV-3.
-    - CI gate: PR adding label exceeding budget → fail; emit `corelink.metrics.cardinality_budget_violation_total` audit event.
+    - Runtime detection: `inc_counter` em metric near budget triggers `corelink_metrics_cardinality_approaching_budget_total` SEV-3.
+    - CI gate: PR adding label exceeding budget → fail; emit `corelink_metrics_cardinality_budget_violation_total` audit event.
 
 11. **Métricas operacionais** (this WI emits about itself):
-    - `corelink.metrics.emit_total{metric_canonical, result}` (counter; meta-emit; ≤ 16 metrics × 2 result = 32 séries).
-    - `corelink.metrics.emit_failures_total{reason}` (counter; **alert SEV-3 if > 1% of emits fail sustained 5min**).
-    - `corelink.metrics.cardinality_approaching_budget_total{metric}` (counter; **alert SEV-3 if > 0** — proactive warning before hard limit).
-    - `corelink.metrics.cardinality_budget_violation_total{metric}` (counter; **alert SEV-2 if > 0** — hard limit hit; degraded observability).
-    - `corelink.metrics.emit_duration_us` (histogram; SLO ≤ 50µs p99).
+    - `corelink_metrics_emit_total{metric_canonical, result}` (counter; meta-emit; ≤ 16 metrics × 2 result = 32 séries).
+    - `corelink_metrics_emit_failures_total{reason}` (counter; **alert SEV-3 if > 1% of emits fail sustained 5min**).
+    - `corelink_metrics_cardinality_approaching_budget_total{metric}` (counter; **alert SEV-3 if > 0** — proactive warning before hard limit).
+    - `corelink_metrics_cardinality_budget_violation_total{metric}` (counter; **alert SEV-2 if > 0** — hard limit hit; degraded observability).
+    - `corelink_metrics_emit_duration_us` (histogram; SLO ≤ 50µs p99).
 
 12. **Property tests** (10k iter PR; **100k nightly per HIGH_RISK SOTA bar** — Lote 10.7bis P1-3 absorbed):
     - `prop_cardinality_cartesian_correct`: 10k random label combinations; assert estimate matches actual cartesian.
@@ -428,7 +428,7 @@ CF Workers Analytics Engine binding emit lib + Python cardinality validator + Pr
 Feature: Worker Analytics Engine Metrics Emit + Cardinality Budget
 
   Scenario: Within-budget metric emit succeeds
-    Given canonical metric corelink.cas.put.requests_total
+    Given canonical metric corelink_cas_put_requests_total
     Given labels {tenant_tier=team, region=iad, result=Success}
     When inc_counter(metric, labels, 1) called
     Then AE write_data_point dispatched via worker::send_future (fail-open)
@@ -438,14 +438,14 @@ Feature: Worker Analytics Engine Metrics Emit + Cardinality Budget
   Scenario: Cardinality budget approaching alert
     Given canonical metric near 16k séries (80% of 20k per-metric budget)
     When inc_counter adds 17000th unique label tuple
-    Then SEV-3 alert: corelink.metrics.cardinality_approaching_budget_total{metric}
+    Then SEV-3 alert: corelink_metrics_cardinality_approaching_budget_total{metric}
     Then proactive warning to platform team via PagerDuty SEV-3 (sprint contract §6 DoD)
 
   Scenario: Cardinality budget violation
     Given canonical metric exceeds 20k séries
     When inc_counter adds 20001st tuple
     Then Mimir tier limit rejects ingest
-    Then SEV-2 alert: corelink.metrics.cardinality_budget_violation_total{metric}
+    Then SEV-2 alert: corelink_metrics_cardinality_budget_violation_total{metric}
     Then degraded observability documented (some series dropped)
     Then CI gate would have caught earlier in PR flow
 
@@ -464,7 +464,7 @@ Feature: Worker Analytics Engine Metrics Emit + Cardinality Budget
 
   Scenario: Exemplar emission with trace_id (separate from label)
     Given OTLP middleware (WI-S09-003) propagated trace_id to context
-    When observe_histogram(corelink.cas.put.duration_seconds, labels, 0.004, exemplar=Some(trace_id))
+    When observe_histogram(corelink_cas_put_duration_seconds, labels, 0.004, exemplar=Some(trace_id))
     Then OpenMetrics line emitted: cas_put_duration_seconds_bucket{...} 12345 # {trace_id="abc"} 0.004 timestamp
     Then Grafana Tempo deep link works: click exemplar → opens trace
     Then trace_id NEVER appears in label slot (cardinality preserved)
@@ -473,7 +473,7 @@ Feature: Worker Analytics Engine Metrics Emit + Cardinality Budget
     Given AE binding write_data_point returns error 30min sustained
     When inc_counter called for any metric
     Then emit returns Ok (fail-open canonical; observability degradation OK)
-    Then corelink.metrics.emit_failures_total{reason=ae_write_failed} increments
+    Then corelink_metrics_emit_failures_total{reason=ae_write_failed} increments
     Then SEV-3 alert (NOT SEV-1 — request not blocked)
     Then on AE recovery: emits resume; no retry buffer (best-effort)
 
@@ -509,7 +509,7 @@ Feature: Worker Analytics Engine Metrics Emit + Cardinality Budget
 - 9.8: Python validator CI gate primary; Mimir tier limit secondary defense.
 - 9.9: TenantCtx-only enforcement (Lote 10.4bis).
 - 9.10: CF Workers Rust API worker::send_future (Lote 10.7bis R5 P0-3).
-- 9.11: NEW INV-OBS-CARDINALITY-BUDGET registered em invariant_registry §3.13.
+- 9.11: NEW INV-OBS-CARDINALITY-BUDGET registered em invariant_registry §3.12.
 - 9.12: NO new ADR (extends observability_model.md §11.2 budget canonical).
 
 ## 10. Completeness Criteria SOTA
@@ -534,7 +534,7 @@ Feature: Worker Analytics Engine Metrics Emit + Cardinality Budget
 
 ## 12. Invariants Validated
 
-- **INV-OBS-CARDINALITY-BUDGET** (HIGH; registry §3.13): per-metric ≤ 20k + global ≤ 100k; CI gate + Mimir tier limit defense-in-depth.
+- **INV-OBS-CARDINALITY-BUDGET** (HIGH; registry §3.12): per-metric ≤ 20k + global ≤ 100k; CI gate + Mimir tier limit defense-in-depth.
 - **INV-AVAIL-ISOLATION** (HIGH; registry §3.8): tenant_tier aggregation (NOT tenant_id) preserves cross-tenant isolation em métricas.
 - **INV-TENANT-ISOLATION** (CRITICAL, TLA+): no per-tenant labels; aggregated metrics privacy-preserving.
 
@@ -696,7 +696,7 @@ D+0 design (Architect; cardinality discipline); D+1 SRE (Mimir integration); D+2
 
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
-| 1.0.0 | 2026-04-25 | Gustavo (Lote 10.9) | Criação WI-S09-001; HIGH_RISK; SOTA pós-Lote 10.7bis + Lote 10.8bis/tris lessons absorbed: 5-tier canonical Tier (P0-7); CF Workers Rust API worker::send_future (R5 P0-3); 100k nightly property test (P1-3); audit fail-closed para cardinality violations (Lote 10.6bis adapted; metrics emit fail-OPEN distinct case); D1 N/A (Mimir backend); CHECK inline N/A (enum-typed); column drift no `_ms` suffix (P0-3); sign-off cap 12 (Lote 10.8bis P1-2 framework §33.5.4.3); INV §3.X → §3.13 (Lote 10.8bis P1-13 lesson). NEW INV-OBS-CARDINALITY-BUDGET (HIGH; registry §3.13). NEW Python validator scripts/cardinality_check.py CI gate. trace_id em Exemplar field NOT label (Lote 10.8bis cardinality discipline absorbed). |
+| 1.0.0 | 2026-04-25 | Gustavo (Lote 10.9) | Criação WI-S09-001; HIGH_RISK; SOTA pós-Lote 10.7bis + Lote 10.8bis/tris lessons absorbed: 5-tier canonical Tier (P0-7); CF Workers Rust API worker::send_future (R5 P0-3); 100k nightly property test (P1-3); audit fail-closed para cardinality violations (Lote 10.6bis adapted; metrics emit fail-OPEN distinct case); D1 N/A (Mimir backend); CHECK inline N/A (enum-typed); column drift no `_ms` suffix (P0-3); sign-off cap 12 (Lote 10.8bis P1-2 framework §33.5.4.3); INV §3.X → §3.13 (Lote 10.8bis P1-13 lesson). NEW INV-OBS-CARDINALITY-BUDGET (HIGH; registry §3.12). NEW Python validator scripts/cardinality_check.py CI gate. trace_id em Exemplar field NOT label (Lote 10.8bis cardinality discipline absorbed). |
 
 ## 32. Anti-patterns evitados
 

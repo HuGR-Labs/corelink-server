@@ -37,7 +37,7 @@ tags: ["wi", "s09", "audit-log", "cloudevents", "hash-chain", "soc2", "r2-object
 | Campo | Valor |
 |---|---|
 | ID | WI-S09-004 |
-| Título | CloudEvents v1.0.2 emitter compliance subjects 8 canonical (tenant: + cas:put/get + ac:lookup + gc:purge + auth:login + quota:exceeded + abuse:detected; per `observability_model.md §7`); sink R2 bucket `audit-events-<region>` em Object Lock Governance Mode 7y retention (CTRL-AUDIT-001 + INV-AUDIT-APPEND-ONLY foundation S-06 inherited); **per-region hash chain integrity** — cada event tem `prev_hash: BLAKE3-256` referenciando previous event digest + own digest computed on event body; daily verifier job runs at UTC 02:00 per region, walks chain do mais recente para genesis, alerta SEV-1 immediately em qualquer break detectado (sprint contract §6 DoD: 7d clean required); SIEM fan-out via Cloudflare Queue → customer webhook configurable per region (sprint contract §5.4 R-S09-11); INV-OBS-AUDIT-CHAIN-INTEGRITY enforcement (NEW invariant registry §3.14); **audit emit fail-CLOSED** (Lote 10.6bis pattern canonical absorbed; transaction aborts se audit emit fails — distinct from WI-S09-001/002/003 fail-OPEN observability emit) |
+| Título | CloudEvents v1.0.2 emitter compliance subjects 8 canonical (tenant: + cas:put/get + ac:lookup + gc:purge + auth:login + quota:exceeded + abuse:detected; per `observability_model.md §7`); sink R2 bucket `audit-events-<region>` em Object Lock Governance Mode 7y retention (CTRL-AUDIT-001 + INV-AUDIT-APPEND-ONLY foundation S-06 inherited); **per-region hash chain integrity** — cada event tem `prev_hash: BLAKE3-256` referenciando previous event digest + own digest computed on event body; daily verifier job runs at UTC 02:00 per region, walks chain do mais recente para genesis, alerta SEV-1 immediately em qualquer break detectado (sprint contract §6 DoD: 7d clean required); SIEM fan-out via Cloudflare Queue → customer webhook configurable per region (sprint contract §5.4 R-S09-11); INV-OBS-AUDIT-CHAIN-INTEGRITY enforcement (NEW invariant registry §3.12); **audit emit fail-CLOSED** (Lote 10.6bis pattern canonical absorbed; transaction aborts se audit emit fails — distinct from WI-S09-001/002/003 fail-OPEN observability emit) |
 | Sprint | S-09 |
 | Lane | HIGH_RISK |
 | Forcing factors | FF-HR-005 (CTRL-AUDIT-001 audit chain integrity = SOC 2 CC7.2 compliance; chain break = compliance gap), FF-HR-003 (PII em audit events; redact! macro inheritance from WI-S09-002) |
@@ -144,13 +144,13 @@ pub enum AuditError {
 
 **Cripto-driven invariants enforced**:
 
-1. **INV-OBS-AUDIT-CHAIN-INTEGRITY** (HIGH; registry §3.14 NEW per sprint contract §8):
+1. **INV-OBS-AUDIT-CHAIN-INTEGRITY** (HIGH; registry §3.12 NEW per sprint contract §8):
    - Per-region hash chain: `event[i].prev_hash == BLAKE3(event[i-1].event_digest)`.
    - Genesis event: `prev_hash = 0x00..00` (32 bytes zeros).
    - Daily verifier walks chain; alerts SEV-1 em first break detected.
    - **Why per-region (não global)**: cross-region split-brain risk eliminated; sprint contract §15 R-Audit-chain-break.
 
-2. **INV-AUDIT-APPEND-ONLY** (CRITICAL; registry §3.X inherited from S-06):
+2. **INV-AUDIT-APPEND-ONLY** (CRITICAL; registry §3.12 inherited from S-06):
    - R2 Object Lock Governance Mode 7y (canonical SOC 2 CC7.2 retention).
    - CF R2 cannot DELETE/MODIFY objects within retention window even with admin credentials.
    - TLA+ proven em `specs/tla/audit_immutability.tla` (Lote 6.2 GREEN status).
@@ -323,14 +323,14 @@ CloudEvents emitter Rust crate + R2 Object Lock IaC + DO daily verifier job + SI
    - **Distinct from WI-S09-001/002/003 fail-OPEN**: this WI is the canonical fail-closed exemplar.
 
 10. **Métricas operacionais**:
-    - `corelink.audit.events_emitted_total{subject, region}` (counter; 8 subjects × 30 regions = 240 séries; well under budget).
-    - `corelink.audit.emit_failures_total{reason}` (counter; **alert SEV-1 if > 0** — fail-closed; transaction aborts).
-    - `corelink.audit.chain_head_event_id{region}` (gauge; current head ULID; informational).
-    - `corelink.audit.chain_verify_runs_total{region, result}` (counter; daily; **alert SEV-1 if break**).
-    - `corelink.audit.chain_verify_duration_ms{region}` (histogram; SLO ≤ 5min p99).
-    - `corelink.audit.siem_fanout_failures_total{customer_id_hash}` (counter; **alert SEV-2 if > 1%** — best-effort).
-    - `corelink.audit.r2_object_lock_violations_total{region}` (counter; **alert SEV-1 if > 0** — admin DELETE attempt detected).
-    - `corelink.audit.pii_in_data_detected_total` (counter; **alert SEV-1 if > 0** — DLP regression em audit).
+    - `corelink_audit_events_emitted_total{subject, region}` (counter; 8 subjects × 30 regions = 240 séries; well under budget).
+    - `corelink_audit_emit_failures_total{reason}` (counter; **alert SEV-1 if > 0** — fail-closed; transaction aborts).
+    - `corelink_audit_chain_head_event_id{region}` (gauge; current head ULID; informational).
+    - `corelink_audit_chain_verify_runs_total{region, result}` (counter; daily; **alert SEV-1 if break**).
+    - `corelink_audit_chain_verify_duration_ms{region}` (histogram; SLO ≤ 5min p99).
+    - `corelink_audit_siem_fanout_failures_total{customer_id_hash}` (counter; **alert SEV-2 if > 1%** — best-effort).
+    - `corelink_audit_r2_object_lock_violations_total{region}` (counter; **alert SEV-1 if > 0** — admin DELETE attempt detected).
+    - `corelink_audit_pii_in_data_detected_total` (counter; **alert SEV-1 if > 0** — DLP regression em audit).
 
 11. **Property tests** (10k iter PR; **100k nightly per HIGH_RISK SOTA bar** — Lote 10.7bis P1-3):
     - `prop_chain_integrity_under_concurrent_emits`: 100k race emits; assert chain order monotonic + integrity preserved (BLAKE3 hash chain).
@@ -386,14 +386,14 @@ Feature: CloudEvents Audit Emitter + R2 Object Lock + Hash Chain + Daily Verifie
     Then event_digest = BLAKE3(canonical_json(event_body))
     Then R2 Object Lock write succeeds (fail-closed; transaction commits)
     Then chain head updated to E[i] with H[i]
-    Then corelink.audit.events_emitted_total{subject=cas:put, region=iad} increments
+    Then corelink_audit_events_emitted_total{subject=cas:put, region=iad} increments
 
   Scenario: Audit emit fails fail-closed
     Given R2 Object Lock write returns 503 transient error
     When emit called
     Then AuditError::R2WriteFailed returned
     Then caller transaction MUST abort (fail-closed canonical Lote 10.6bis)
-    Then corelink.audit.emit_failures_total{reason=r2_write_failed} increments
+    Then corelink_audit_emit_failures_total{reason=r2_write_failed} increments
     Then SEV-1 alert (audit data integrity priority)
 
   Scenario: Hash chain integrity preserved under concurrent emits
@@ -410,14 +410,14 @@ Feature: CloudEvents Audit Emitter + R2 Object Lock + Hash Chain + Daily Verifie
     When verifier runs at UTC 02:00
     Then stream walk identifies break at E[k]
     Then ChainVerifyReport { chain_intact=false, broken_at=Some(E[k]) }
-    Then corelink.audit.chain_verify_runs_total{region=iad, result=break} increments
+    Then corelink_audit_chain_verify_runs_total{region=iad, result=break} increments
     Then SEV-1 alert immediately; investigation per RB-AUDIT-CHAIN-001
 
   Scenario: R2 Object Lock prevents DELETE within retention
     Given audit event committed em R2 with 7y Object Lock
     When admin attempts R2 DELETE via CF API
     Then R2 rejects (Object Lock Governance Mode)
-    Then SEV-1 alert: corelink.audit.r2_object_lock_violations_total
+    Then SEV-1 alert: corelink_audit_r2_object_lock_violations_total
     Then incident response per RB-AUDIT-LOCK-VIOLATION
 
   Scenario: SIEM webhook fan-out (best-effort; not fail-closed)
@@ -446,7 +446,7 @@ Feature: CloudEvents Audit Emitter + R2 Object Lock + Hash Chain + Daily Verifie
     When PR opens
     Then Compliance Officer sign-off required (mandatory emphatic; regulatory scoping)
     Then observability_model.md §7 amended with new subject
-    Then CloudEvents type registered: "io.corelink.dsr.request.v1"
+    Then CloudEvents type registered: "io.corelink_dsr_request_v1"
 
   Scenario: Verifier job 7d clean (sprint contract §6 DoD)
     Given daily verifier runs 7 consecutive days
@@ -475,7 +475,7 @@ Feature: CloudEvents Audit Emitter + R2 Object Lock + Hash Chain + Daily Verifie
 - 9.8: redact! macro inheritance from WI-S09-002 (PII em audit data forbidden).
 - 9.9: TenantCtx-only enforcement (Lote 10.4bis).
 - 9.10: CF Workers Rust API worker::send_future (Lote 10.7bis R5 P0-3).
-- 9.11: NEW INV-OBS-AUDIT-CHAIN-INTEGRITY registered em invariant_registry §3.14.
+- 9.11: NEW INV-OBS-AUDIT-CHAIN-INTEGRITY registered em invariant_registry §3.12.
 - 9.12: NO new ADR (extends security_model.md CTRL-AUDIT-001 + observability_model.md §7 canonical).
 
 ## 10. Completeness Criteria SOTA
@@ -499,7 +499,7 @@ Feature: CloudEvents Audit Emitter + R2 Object Lock + Hash Chain + Daily Verifie
 
 ## 12. Invariants Validated
 
-- **INV-OBS-AUDIT-CHAIN-INTEGRITY** (HIGH; registry §3.14 NEW): hash chain unbroken; daily verifier 7d clean.
+- **INV-OBS-AUDIT-CHAIN-INTEGRITY** (HIGH; registry §3.12 NEW): hash chain unbroken; daily verifier 7d clean.
 - **INV-AUDIT-APPEND-ONLY** (CRITICAL, TLA+ proven em Lote 6.2): R2 Object Lock 7y enforces append-only at storage level.
 - **INV-AVAIL-ISOLATION** (HIGH; registry §3.8): per-region chain; cross-region failures isolated.
 - **INV-TENANT-ISOLATION** (CRITICAL, TLA+): TenantCtx-only middleware (S-03 inheritance).

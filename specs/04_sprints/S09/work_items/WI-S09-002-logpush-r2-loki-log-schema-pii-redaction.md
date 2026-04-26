@@ -345,23 +345,19 @@ JSON Schema 2020-12 + Rust crate (redact! macro + Redact trait) + CF Logpush IaC
        location = var.region
    }
 
-   # Lifecycle rule: hot 30d, warm 90d, cold 400d, purge > 400d (privacy_model §6)
+   # Lifecycle rule: 400d retention via Expiration; tier transitions NOT supported em CF R2 (Lote 10.9bis P0-C correction)
+   # CF R2 has single storage tier (NOT AWS S3 Standard/IA/Glacier multi-tier); only Expiration + AbortIncompleteMultipartUpload supported.
+   # Cost discipline: retention boundary canonical; cold-tier migration deferred until CF ships R2 storage classes (announced 2026 H2 roadmap).
    resource "cloudflare_r2_bucket_lifecycle_rule" "logs_lifecycle" {
        bucket_name = cloudflare_r2_bucket.corelink_logs.name
        rule {
-           id = "tier-transition"
+           id = "logs-retention"
            status = "Enabled"
-           transition {
-               days = 30
-               storage_class = "InfrequentAccess"  # warm
-           }
-           transition {
-               days = 90
-               storage_class = "Archive"  # cold (Glacier-equivalent)
-           }
            expiration {
-               days = 400  # LGPD Art. 13 III + GDPR Art. 17 minimization
+               days = 400  # LGPD Art. 13 III + GDPR Art. 17 minimization (single retention; no tier transitions em R2)
            }
+           # Future (when R2 ships storage classes): add transitions to InfrequentAccess at 30d, Archive at 90d.
+           # Until then: single hot tier; cost ~$0.015/GB-mo throughout 400d.
        }
    }
    ```
@@ -440,16 +436,16 @@ JSON Schema 2020-12 + Rust crate (redact! macro + Redact trait) + CF Logpush IaC
 8. **CF Workers Rust runtime APIs** (Lote 10.7bis R5 P0-3 lesson absorbed): emit via `worker::send_future()`; NEVER `tokio::spawn`.
 
 9. **Log emit fail-OPEN** (vs audit fail-closed):
-   - Logpush ingest fail → SEV-3 alert; counter `corelink.logs.ingest_failures_total`; service continues.
+   - Logpush ingest fail → SEV-3 alert; counter `corelink_logs_ingest_failures_total`; service continues.
    - Distinção canonical Lote 10.6bis lesson absorbed (audit em WI-S09-004 separate concern; fail-closed there).
 
 10. **Métricas operacionais**:
-    - `corelink.logs.events_emitted_total{tenant_tier, region, level}` (counter; via WI-S09-001 emit lib).
-    - `corelink.logs.ingest_failures_total{reason}` (counter; **alert SEV-3 if > 1%**).
-    - `corelink.logs.volume_bytes_per_day{tenant_tier, region}` (gauge; **alert SEV-3 if > 80% budget; SEV-2 if ≥ 100%**).
-    - `corelink.logs.dlp_scan_leaks_total` (counter; **alert SEV-1 if > 0** — runtime PII regression).
-    - `corelink.logs.schema_validation_failures_total{schema_field}` (counter; **alert SEV-2 if > 0** — invalid log emit).
-    - `corelink.logs.lifecycle_transition_failures_total{stage}` (counter; **alert SEV-2 if > 0** — R2 lifecycle stuck).
+    - `corelink_logs_events_emitted_total{tenant_tier, region, level}` (counter; via WI-S09-001 emit lib).
+    - `corelink_logs_ingest_failures_total{reason}` (counter; **alert SEV-3 if > 1%**).
+    - `corelink_logs_volume_bytes_per_day{tenant_tier, region}` (gauge; **alert SEV-3 if > 80% budget; SEV-2 if ≥ 100%**).
+    - `corelink_logs_dlp_scan_leaks_total` (counter; **alert SEV-1 if > 0** — runtime PII regression).
+    - `corelink_logs_schema_validation_failures_total{schema_field}` (counter; **alert SEV-2 if > 0** — invalid log emit).
+    - `corelink_logs_lifecycle_transition_failures_total{stage}` (counter; **alert SEV-2 if > 0** — R2 lifecycle stuck).
 
 11. **Property tests** (10k iter PR; **100k nightly per HIGH_RISK SOTA bar** — Lote 10.7bis P1-3 absorbed):
     - `prop_dlp_no_pii_leak`: 100k fixtures via proptest (RFC 6531 Unicode + IPv4/IPv6 + bearer + digest); 0 leaks expected.
@@ -526,20 +522,17 @@ Feature: Logpush + R2 + Loki + Log Schema + PII Redaction
     Then validation fails (additionalProperties: false; "email" não em schema)
     Then PR fails CI gate
 
-  Scenario: R2 lifecycle hot 30d → warm 90d → cold 400d → purge
+  Scenario: R2 lifecycle single-tier 400d retention (Lote 10.9bis P0-C correction)
     Given log object created at T0 em R2 bucket corelink-logs-iad
-    When 30d elapse
-    Then storage class transitions to InfrequentAccess (warm tier)
-    When 90d elapse
-    Then storage class transitions to Archive (cold tier; Glacier-equivalent)
     When 400d elapse
-    Then object deleted (R2 lifecycle expiration)
+    Then object deleted (R2 lifecycle Expiration; only supported transition em CF R2 currently)
     Then LGPD Art. 13 III + GDPR Art. 17 minimization satisfied
+    Note: CF R2 single-tier storage; multi-tier transitions (InfrequentAccess/Archive) NOT supported (vs AWS S3); deferred até CF ships R2 storage classes
 
   Scenario: Volume budget exceeded auto-throttle
     Given tenant T (team tier; 1 GB/dia budget)
     When tenant emits 6 GB logs em 24h sustained
-    Then SEV-2 alert: corelink.logs.volume_bytes_per_day{tenant_tier=team} ≥ 5 GB
+    Then SEV-2 alert: corelink_logs_volume_bytes_per_day{tenant_tier=team} ≥ 5 GB
     Then auto-throttle: DEBUG level logs dropped; INFO/WARN/ERROR preserved
     Then customer notification (S-13 stub OK)
 
@@ -547,7 +540,7 @@ Feature: Logpush + R2 + Loki + Log Schema + PII Redaction
     Given Logpush ingest fails 30min sustained
     When Worker emits log event
     Then emit returns Ok (fail-open canonical; observability degradation OK)
-    Then corelink.logs.ingest_failures_total{reason=logpush_unavailable} increments
+    Then corelink_logs_ingest_failures_total{reason=logpush_unavailable} increments
     Then SEV-3 alert (NOT SEV-1 — request not blocked)
     Then on Logpush recovery: emits resume
 

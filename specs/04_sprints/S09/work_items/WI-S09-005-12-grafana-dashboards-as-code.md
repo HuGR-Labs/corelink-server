@@ -278,11 +278,11 @@ JSON-as-code dashboards + Terraform provisioning + CI freshness hook + screensho
 9. **CF Workers Rust runtime APIs**: N/A (this WI is Terraform + Grafana JSON, no Rust code).
 
 10. **Métricas operacionais** (this WI emits about itself):
-    - `corelink.dashboard.refresh_total{dashboard_uid}` (counter; informational).
-    - `corelink.dashboard.query_latency_ms{dashboard_uid, panel_id}` (histogram; SLO ≤ 3s p99).
-    - `corelink.dashboard.cardinality_drift_total{dashboard_uid}` (counter; **alert SEV-3 if > 0**).
-    - `corelink.dashboard.freshness_age_days{dashboard_uid}` (gauge; **alert SEV-3 if any > 90d**).
-    - `corelink.dashboard.rbac_violations_total{role, dashboard_uid}` (counter; **alert SEV-2 if > 0** — non-admin attempted admin view).
+    - `corelink_dashboard_refresh_total{dashboard_uid}` (counter; informational).
+    - `corelink_dashboard_query_latency_ms{dashboard_uid, panel_id}` (histogram; SLO ≤ 3s p99).
+    - `corelink_dashboard_cardinality_drift_total{dashboard_uid}` (counter; **alert SEV-3 if > 0**).
+    - `corelink_dashboard_freshness_age_days{dashboard_uid}` (gauge; **alert SEV-3 if any > 90d**).
+    - `corelink_dashboard_rbac_violations_total{role, dashboard_uid}` (counter; **alert SEV-2 if > 0** — non-admin attempted admin view).
 
 11. **Property tests** (10k iter PR; **100k nightly per HIGH_RISK SOTA bar**):
     - `prop_dashboard_count_canonical`: assert always exactly 12 files; canonical names match sprint contract §4.
@@ -345,7 +345,7 @@ Feature: 12 Grafana Dashboards-as-Code
     When opens DASH-CAS with tenant filter
     Then datasource ACL redacts per-tenant labels
     Then 403 returned for tenant-specific drill-down
-    Then audit emit corelink.dashboard.rbac_violations_total{role=viewer}
+    Then audit emit corelink_dashboard_rbac_violations_total{role=viewer}
 
   Scenario: Manual UI edit drift overwritten by Terraform
     Given engineer manually edits DASH-CAS em Grafana UI
@@ -384,7 +384,7 @@ Feature: 12 Grafana Dashboards-as-Code
     Given Mimir tenant unavailable 30min sustained
     When DASH-GLOBAL-HEALTH refreshes
     Then panels show "no data" graceful (NOT crash)
-    Then SEV-3 alert: corelink.dashboard.refresh_failures_total
+    Then SEV-3 alert: corelink_dashboard_refresh_failures_total
     Then service continues; recovery on resume
 
   Scenario: Screenshots archived in docs/dashboards/
@@ -431,10 +431,10 @@ Feature: 12 Grafana Dashboards-as-Code
 
 ## 12. Invariants Validated
 
-- **INV-OBS-CARDINALITY-BUDGET** (HIGH; registry §3.13): per-dashboard annotation; sum ≤ 100k.
+- **INV-OBS-CARDINALITY-BUDGET** (HIGH; registry §3.12): per-dashboard annotation; sum ≤ 100k.
 - **INV-AVAIL-ISOLATION** (HIGH; registry §3.8): RBAC enforces per-tenant isolation em queries.
 - **INV-TENANT-ISOLATION** (CRITICAL, TLA+): aggregated views enforce no cross-tenant leak.
-- **INV-OBS-AUDIT-CHAIN-INTEGRITY** (HIGH; registry §3.14): DASH-PRIVACY consume audit chain status from WI-S09-004.
+- **INV-OBS-AUDIT-CHAIN-INTEGRITY** (HIGH; registry §3.12): DASH-PRIVACY consume audit chain status from WI-S09-004.
 
 ## 13. Artifacts Produced
 
@@ -591,7 +591,7 @@ D+0 design (Architect; 12 canonical list); D+1 SRE (Mimir/Loki/Tempo tenant); D+
 
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
-| 1.0.0 | 2026-04-25 | Gustavo (Lote 10.9) | Criação WI-S09-005; HIGH_RISK; SOTA pós-Lote 10.7bis + Lote 10.8bis/tris lessons absorbed: 5-tier canonical Tier (P0-7); AdminCtx RBAC datasource permissions (Lote 10.8 P1-NEW-2 inheritance); 100k nightly property test (P1-3); column drift no `_ms` suffix (P0-3); sign-off cap 12 (Lote 10.8bis P1-2); INV §3.13 + §3.14 (Lote 10.8bis P1-13). NEW 12 dashboard JSON files + Terraform provisioning + freshness CI hook. **Lote 10.8-tris P1-NEW-1 lesson absorbed**: rigorous file count == canonical narrative claim verification (avoid bis-introduced drift). Cardinality budget annotation per dashboard (WI-S09-001 inheritance). Exemplar 3 fluxos integration (WI-S09-003 inheritance). Audit chain integrity em DASH-PRIVACY (WI-S09-004 inheritance). PII redaction inheritance from WI-S09-002 (source métricas already redacted). |
+| 1.0.0 | 2026-04-25 | Gustavo (Lote 10.9) | Criação WI-S09-005; HIGH_RISK; SOTA pós-Lote 10.7bis + Lote 10.8bis/tris lessons absorbed: 5-tier canonical Tier (P0-7); AdminCtx RBAC datasource permissions (Lote 10.8 P1-NEW-2 inheritance); 100k nightly property test (P1-3); column drift no `_ms` suffix (P0-3); sign-off cap 12 (Lote 10.8bis P1-2); INV §3.12 (Lote 10.9bis P0-B corrected from §3.13/§3.14 — direct regression of Lote 10.8bis P1-13) (Lote 10.8bis P1-13). NEW 12 dashboard JSON files + Terraform provisioning + freshness CI hook. **Lote 10.8-tris P1-NEW-1 lesson absorbed**: rigorous file count == canonical narrative claim verification (avoid bis-introduced drift). Cardinality budget annotation per dashboard (WI-S09-001 inheritance). Exemplar 3 fluxos integration (WI-S09-003 inheritance). Audit chain integrity em DASH-PRIVACY (WI-S09-004 inheritance). PII redaction inheritance from WI-S09-002 (source métricas already redacted). |
 
 ## 32. Anti-patterns evitados
 
