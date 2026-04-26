@@ -24,7 +24,7 @@ inherits_from:
 tags: ["wi", "s09", "alerts", "multi-burn-rate", "sloth", "pagerduty", "slo-driven", "high-risk"]
 ---
 
-# WI-S09-006 — Multi-Burn-Rate SLO Alerts (Sloth-style 4-window per SLI; sprint contract §5.5 R-S09-13) + Promtool Validation + PagerDuty Integration End-to-End (`infra/alerts/*.yaml`; Prometheus Alertmanager rules conforme Google SRE Workbook Ch 5; per SLI no SLO-CATALOG: page if burn_rate(1h) > 14.4 AND burn_rate(5min) > 14.4 OR ticket if burn_rate(6h) > 6 AND burn_rate(30min) > 6; PagerDuty service per environment {staging, prod-us, prod-eu, prod-sam, prod-iad}; runbook URL no alert payload (deep link); auto-quarantine flapping alerts > 3×/week per sprint contract §14.s09.2; sprint contract §6 DoD MTTA < 5min synthetic 7d)
+# WI-S09-006 — Multi-Burn-Rate SLO Alerts (Sloth-style 4-window per SLI; sprint contract §5.5 R-S09-13) + Promtool Validation + PagerDuty Integration End-to-End (`infra/alerts/*.yaml`; Prometheus Alertmanager rules conforme Google SRE Workbook Ch 5; per SLI no SLO-CATALOG: page if burn_rate(1h) > 14.4 AND burn_rate(5min) > 14.4 OR ticket if burn_rate(6h) > 6 AND burn_rate(30min) > 6; PagerDuty 3 services per environment {staging, prod-us, prod-eu} (Lote 10.9bis P0-F corrected from 5 per sprint contract §5.5 R-S09-14 canonical 3); runbook URL no alert payload (deep link); auto-quarantine flapping alerts > 3×/week per sprint contract §14.s09.2; sprint contract §6 DoD MTTA < 5min synthetic 7d)
 
 > **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
 > **Parent:** [S-09](../sprint.md) · **Assignee:** Gustavo Schneiter
@@ -36,7 +36,7 @@ tags: ["wi", "s09", "alerts", "multi-burn-rate", "sloth", "pagerduty", "slo-driv
 | Campo | Valor |
 |---|---|
 | ID | WI-S09-006 |
-| Título | Multi-burn-rate SLO alerts (Sloth-style 4-window per SLI conforme Google SRE Workbook Ch 5 — multi-burn-rate-alerting; alternativa a threshold-based clássicos = false positives reduzidos 100x); para cada SLI em `slo_catalog.md` (SLI-AVAIL-CAS-GET, SLI-AVAIL-CAS-PUT, SLI-AVAIL-AC-LOOKUP, SLO-DEDUP-RATIO inheritance from S-07, SLO-LATENCY-P99-CAS-PUT, etc), gerar 4 alerts: **page if burn_rate(1h) > 14.4 AND burn_rate(5min) > 14.4** (fast burn; 2% budget burned em 1h = page imediato) OU **ticket if burn_rate(6h) > 6 AND burn_rate(30min) > 6** (slow burn; 3% budget em 6h = next-business-day ticket); Prometheus Alertmanager rules em `infra/alerts/multi-burn-rate.yaml`; promtool test rules verde 100% rules em CI; PagerDuty service per environment (staging, prod-us, prod-eu, prod-sam, prod-iad — 5 services configurable per region); SEV-1 → on-call page imediato; SEV-2 → ticket business hours; runbook URL embedded no alert payload via `runbook_url` annotation (deep link to `docs/runbooks/RB-*.md`); **auto-quarantine flapping alerts** > 3×/week (sprint contract §14.s09.2 SRE Workbook Ch 8 alert discipline) via PagerDuty API + post-mortem mandatório; sprint contract §6 DoD MTTA < 5min synthetic 7d sustained |
+| Título | Multi-burn-rate SLO alerts (Sloth-style 4-window per SLI conforme Google SRE Workbook Ch 5 — multi-burn-rate-alerting; alternativa a threshold-based clássicos = false positives reduzidos 100x); para cada SLI em `slo_catalog.md` (SLI-AVAIL-CAS-GET, SLI-AVAIL-CAS-PUT, SLI-AVAIL-AC-LOOKUP, SLO-DEDUP-RATIO inheritance from S-07, SLO-LATENCY-P99-CAS-PUT, etc), gerar 4 alerts: **page if burn_rate(1h) > 14.4 AND burn_rate(5min) > 14.4** (fast burn; 2% budget burned em 1h = page imediato) OU **ticket if burn_rate(6h) > 6 AND burn_rate(30min) > 6** (slow burn; 3% budget em 6h = next-business-day ticket); Prometheus Alertmanager rules em `infra/alerts/multi-burn-rate.yaml`; promtool test rules verde 100% rules em CI; PagerDuty service per environment (staging, prod-us, prod-eu — 3 services per sprint contract §5.5 R-S09-14 canonical (Lote 10.9bis P0-F; 5 services prior claim corrected)); SEV-1 → on-call page imediato; SEV-2 → ticket business hours; runbook URL embedded no alert payload via `runbook_url` annotation (deep link to `docs/runbooks/RB-*.md`); **auto-quarantine flapping alerts** > 3×/week (sprint contract §14.s09.2 SRE Workbook Ch 8 alert discipline) via PagerDuty API + post-mortem mandatório; sprint contract §6 DoD MTTA < 5min synthetic 7d sustained |
 | Sprint | S-09 |
 | Lane | HIGH_RISK |
 | Forcing factors | FF-HR-005 (alert reliability é foundation operability; alert flapping = oncall fatigue = SEV-1 missed = SLA breach) |
@@ -126,7 +126,7 @@ resource "pagerduty_service" "corelink_prod_eu" { ... }
 resource "pagerduty_service" "corelink_prod_sam" { ... }
 resource "pagerduty_service" "corelink_prod_iad" { ... }
 
-# 5 services per sprint contract §5.5 R-S09-14
+# 3 services per sprint contract §5.5 R-S09-14 canonical (Lote 10.9bis P0-F corrected)
 ```
 
 **Cripto-driven invariants enforced**:
@@ -139,8 +139,8 @@ resource "pagerduty_service" "corelink_prod_iad" { ... }
 
 2. **Lote 10.8-tris P1-NEW-1 lesson absorbed**: alert YAML rule count MUST match narrative claim. CI verification: `yq '.groups[].rules | length' infra/alerts/multi-burn-rate.yaml` == canonical claimed total.
 
-3. **PagerDuty 5 services per environment** (sprint contract §5.5 R-S09-14):
-   - staging, prod-us, prod-eu, prod-sam, prod-iad.
+3. **PagerDuty 3 services per environment** (sprint contract §5.5 R-S09-14 canonical; Lote 10.9bis P0-F):
+   - staging, prod-us, prod-eu (3 services per sprint contract §5.5 R-S09-14; Lote 10.9bis P0-F).
    - Per-service escalation policy: oncall rotation primary + secondary.
    - SEV-1 → page imediato (acknowledgement_timeout 10min target MTTA).
    - SEV-2 → ticket business hours.
@@ -180,7 +180,7 @@ Multi-burn-rate alerting é **the alert discipline primitive** do CoreLink — o
 
 **Why 4 windows per SLI**: short window (5m/30m) catches rapid burn; long window (1h/6h) confirms sustained. AND combination prevents transient spike false alerts (single 5m spike NÃO é page-worthy unless sustained 1h).
 
-**Why PagerDuty 5 services per environment**: per-region oncall rotation; SEV-1 page → imediate response on-call engineer; SEV-2 ticket → business-hours review; SEV-3 alerta → dashboard visibility only (não page). Sprint contract §10.s09.4 MTTA < 5min synthetic 7d sustained.
+**Why PagerDuty 3 services (Lote 10.9bis P0-F corrected per sprint contract §5.5 R-S09-14 canonical) per environment**: per-region oncall rotation; SEV-1 page → imediate response on-call engineer; SEV-2 ticket → business-hours review; SEV-3 alerta → dashboard visibility only (não page). Sprint contract §10.s09.4 MTTA < 5min synthetic 7d sustained.
 
 **Why runbook URL no alert payload** (sprint contract §14.s09.3): incident responder during SEV-1 has 5min MTTA budget; opening alert → click runbook URL = direct context. Without runbook URL, responder must manually search `docs/runbooks/`; 2-5min wasted.
 
@@ -246,8 +246,8 @@ Prometheus Alertmanager YAML rules + PagerDuty Terraform IaC + promtool CI gate 
    - `multi-burn-rate-latency.yaml` — SLO-LATENCY-P99-CAS-PUT × 4 rules = 4 rules.
    - **Total**: ~7 SLIs × 4 rules + 7 SLIs × 4 recording rules = ~56 rules total (verify via `yq '.groups[].rules | length' | awk '{s+=$1} END {print s}'`).
 
-2. **PagerDuty 5 services** em `infra/pagerduty/services.tf`:
-   - corelink-staging, corelink-prod-us, corelink-prod-eu, corelink-prod-sam, corelink-prod-iad.
+2. **PagerDuty 3 services** em `infra/pagerduty/services.tf`:
+   - corelink-staging, corelink-prod-us, corelink-prod-eu (3 per sprint contract §5.5 R-S09-14; Lote 10.9bis P0-F).
    - Per-service escalation policy: oncall rotation 4-week per region.
    - acknowledgement_timeout 600s (10min target MTTA buffer).
 
@@ -425,7 +425,7 @@ Feature: Multi-Burn-Rate SLO Alerts + PagerDuty Integration
 - 9.1: Multi-burn-rate Sloth-style (Google SRE Workbook Ch 5 canonical).
 - 9.2: 4 windows per SLI: 5m + 30m + 1h + 6h.
 - 9.3: Multipliers 14.4x fast burn + 6x slow burn (SRE canonical).
-- 9.4: PagerDuty 5 services per environment.
+- 9.4: PagerDuty 3 services per environment (sprint contract §5.5 R-S09-14 canonical; Lote 10.9bis P0-F corrected from prior 5).
 - 9.5: Runbook URL annotation mandatory (sprint contract §14.s09.3).
 - 9.6: Auto-quarantine flapping > 3×/week (sprint contract §14.s09.2).
 - 9.7: ManualOverride excluded from SLI (Lote 10.8bis P1-NEW-3 inheritance).
@@ -445,7 +445,7 @@ Feature: Multi-Burn-Rate SLO Alerts + PagerDuty Integration
 - [ ] **10.s09.006.7** Runbook coverage 100% SEV-1/SEV-2 alerts (CI gate).
 - [ ] **10.s09.006.8** SLO coverage 100% SLIs em slo_catalog.md (CI gate).
 - [ ] **10.s09.006.9** Auto-quarantine logic deployed; 5-Why post-mortem hook.
-- [ ] **10.s09.006.10** PagerDuty 5 services configurados; escalation policies live.
+- [ ] **10.s09.006.10** PagerDuty 3 services configurados (Lote 10.9bis P0-F); escalation policies live.
 - [ ] **10.s09.006.11** ManualOverride SLI exclusion validated (Lote 10.8bis P1-NEW-3).
 - [ ] **10.s09.006.12** Lote 10.8-tris P1-NEW-1 lesson absorbed: YAML count == narrative claim CI verification.
 - [ ] **10.s09.006.13** Cost regression gate per sprint contract §14.s09.7 (PagerDuty seat count tracking).

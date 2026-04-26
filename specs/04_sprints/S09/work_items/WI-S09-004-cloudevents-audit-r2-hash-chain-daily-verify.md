@@ -25,7 +25,7 @@ inherits_from:
 tags: ["wi", "s09", "audit-log", "cloudevents", "hash-chain", "soc2", "r2-object-lock", "high-risk"]
 ---
 
-# WI-S09-004 — CloudEvents v1.0.2 Audit Emitter + R2 Object Lock 7y + Per-Region Hash Chain Integrity + Daily Verifier Job + SIEM Fan-Out (`crates/corelink-audit-emitter`; CloudEvents v1.0.2 spec compliance subjects {tenant:<id>, cas:put, cas:get, ac:lookup, gc:purge, auth:login, quota:exceeded, abuse:detected}; sink R2 bucket `audit-events-<region>` Object Lock Governance Mode 7y CTRL-AUDIT-001 + INV-AUDIT-APPEND-ONLY; per-region hash chain — cada event tem `prev_hash` BLAKE3 + own digest; daily verifier job alerta em break SEV-1; SIEM fan-out via Cloudflare Queue → customer webhook compliance integration; INV-OBS-AUDIT-CHAIN-INTEGRITY enforcement; **audit emit fail-CLOSED** (vs WI-S09-001/002/003 fail-OPEN distinção Lote 10.6bis lesson canonical))
+# WI-S09-004 — CloudEvents v1.0 Audit Emitter + R2 Object Lock 7y + Per-Region Hash Chain Integrity + Daily Verifier Job + SIEM Fan-Out (`crates/corelink-audit-emitter`; CloudEvents v1.0 spec compliance subjects {tenant:<id>, cas:put, cas:get, ac:lookup, gc:purge, auth:login, quota:exceeded, abuse:detected}; sink R2 bucket `audit-events-<region>` Object Lock Governance Mode 7y CTRL-AUDIT-001 + INV-AUDIT-APPEND-ONLY; per-region hash chain — cada event tem `prev_hash` BLAKE3 + own digest; daily verifier job alerta em break SEV-1; SIEM fan-out via Cloudflare Queue → customer webhook compliance integration; INV-OBS-AUDIT-CHAIN-INTEGRITY enforcement; **audit emit fail-CLOSED** (vs WI-S09-001/002/003 fail-OPEN distinção Lote 10.6bis lesson canonical))
 
 > **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
 > **Parent:** [S-09](../sprint.md) · **Assignee:** Gustavo Schneiter
@@ -37,14 +37,14 @@ tags: ["wi", "s09", "audit-log", "cloudevents", "hash-chain", "soc2", "r2-object
 | Campo | Valor |
 |---|---|
 | ID | WI-S09-004 |
-| Título | CloudEvents v1.0.2 emitter compliance subjects 8 canonical (tenant: + cas:put/get + ac:lookup + gc:purge + auth:login + quota:exceeded + abuse:detected; per `observability_model.md §7`); sink R2 bucket `audit-events-<region>` em Object Lock Governance Mode 7y retention (CTRL-AUDIT-001 + INV-AUDIT-APPEND-ONLY foundation S-06 inherited); **per-region hash chain integrity** — cada event tem `prev_hash: BLAKE3-256` referenciando previous event digest + own digest computed on event body; daily verifier job runs at UTC 02:00 per region, walks chain do mais recente para genesis, alerta SEV-1 immediately em qualquer break detectado (sprint contract §6 DoD: 7d clean required); SIEM fan-out via Cloudflare Queue → customer webhook configurable per region (sprint contract §5.4 R-S09-11); INV-OBS-AUDIT-CHAIN-INTEGRITY enforcement (NEW invariant registry §3.12); **audit emit fail-CLOSED** (Lote 10.6bis pattern canonical absorbed; transaction aborts se audit emit fails — distinct from WI-S09-001/002/003 fail-OPEN observability emit) |
+| Título | CloudEvents v1.0 emitter compliance subjects 8 canonical (tenant: + cas:put/get + ac:lookup + gc:purge + auth:login + quota:exceeded + abuse:detected; per `observability_model.md §7`); sink R2 bucket `audit-events-<region>` em Object Lock Governance Mode 7y retention (CTRL-AUDIT-001 + INV-AUDIT-APPEND-ONLY foundation S-06 inherited); **per-region hash chain integrity** — cada event tem `prev_hash: BLAKE3-256` referenciando previous event digest + own digest computed on event body; daily verifier job runs at UTC 02:00 per region, walks chain do mais recente para genesis, alerta SEV-1 immediately em qualquer break detectado (sprint contract §6 DoD: 7d clean required); SIEM fan-out via Cloudflare Queue → customer webhook configurable per region (sprint contract §5.4 R-S09-11); INV-OBS-AUDIT-CHAIN-INTEGRITY enforcement (NEW invariant registry §3.12); **audit emit fail-CLOSED** (Lote 10.6bis pattern canonical absorbed; transaction aborts se audit emit fails — distinct from WI-S09-001/002/003 fail-OPEN observability emit) |
 | Sprint | S-09 |
 | Lane | HIGH_RISK |
 | Forcing factors | FF-HR-005 (CTRL-AUDIT-001 audit chain integrity = SOC 2 CC7.2 compliance; chain break = compliance gap), FF-HR-003 (PII em audit events; redact! macro inheritance from WI-S09-002) |
 
 ## 1. Intent
 
-Audit log é **the compliance primitive** do CoreLink — SOC 2 CC7.2 explicit requirement: "audit logs are immutable + integrity-verified". Sem hash chain integrity, customer compliance officer cannot verify CoreLink history isn't tampered → audit deficiency → contract loss. CloudEvents v1.0.2 is canonical CNCF spec for audit event format; R2 Object Lock Governance Mode 7y enforces immutability at storage level (CF cannot delete/modify objects within retention window even with admin credentials). Daily verifier job is **the canary primitive** — break detection must be ≤ 24h.
+Audit log é **the compliance primitive** do CoreLink — SOC 2 CC7.2 explicit requirement: "audit logs are immutable + integrity-verified". Sem hash chain integrity, customer compliance officer cannot verify CoreLink history isn't tampered → audit deficiency → contract loss. CloudEvents v1.0 is canonical CNCF spec for audit event format; R2 Object Lock Governance Mode 7y enforces immutability at storage level (CF cannot delete/modify objects within retention window even with admin credentials). Daily verifier job is **the canary primitive** — break detection must be ≤ 24h.
 
 ```rust
 // File: crates/corelink-audit-emitter/src/lib.rs
@@ -61,7 +61,7 @@ pub trait AuditEmitter: Send + Sync {
         &self,
         subject: AuditSubject,                          // 8 canonical CNCF subjects
         tenant_ctx: &TenantCtx,                         // Lote 10.4bis enforcement
-        attributes: AuditAttributes,                    // CloudEvents v1.0.2 attributes
+        attributes: AuditAttributes,                    // CloudEvents v1.0 attributes
         data: serde_json::Value,                        // event body (PII redacted via WI-S09-002 redact!)
     ) -> Result<EventId, AuditError>;
 
@@ -93,12 +93,12 @@ pub enum AuditSubject {
 }
 
 pub struct AuditEvent {
-    /// CloudEvents v1.0.2 required attributes (CNCF spec).
-    pub spec_version: &'static str,                     // "1.0.2"
+    /// CloudEvents v1.0 required attributes (CNCF spec).
+    pub spec_version: &'static str, // "1.0" (Lote 10.9bis P0-G corrected from "1.0"; observability_model.md §7.1 canonical)
     pub id: EventId,                                    // ULID
     pub source: String,                                 // "corelink/region/<region>"
     pub subject: AuditSubject,
-    pub event_type: String,                             // "io.corelink.<subject>.v1"
+    pub event_type: String,                             // "dev.hugr.corelink.<subject>.v1"
     pub time: DateTime<Utc>,                            // RFC 3339
     pub data_content_type: &'static str,                // "application/json"
     pub data: serde_json::Value,                        // PII redacted
@@ -128,7 +128,7 @@ pub enum AuditError {
     #[error("hash chain break detected: previous_event_id={previous}; current_event_id={current}; prev_hash mismatch")]
     HashChainBreak { previous: EventId, current: EventId },
 
-    #[error("CloudEvents v1.0.2 schema validation failed: {0}")]
+    #[error("CloudEvents v1.0 schema validation failed: {0}")]
     CloudEventsValidation(String),
 
     #[error("fan-out webhook failed (NOT fail-closed; audit already committed): {0}")]
@@ -163,7 +163,7 @@ pub enum AuditError {
    - Rationale: audit data integrity > availability; missing audit event = compliance gap (4% global revenue regulatory fine risk).
    - Lote 10.6bis lesson: distinção fundamental entre obs (degradação OK) vs audit (integridade > disponibilidade).
 
-5. **CloudEvents v1.0.2 strict compliance** (CNCF spec):
+5. **CloudEvents v1.0 strict compliance** (CNCF spec):
    - Required attributes: `specversion`, `id`, `source`, `type`, `time`, `data_content_type`, `data`.
    - Custom extensions: `tenantid`, `region`, `traceid`, `prevhash`, `eventdigest` (lowercase per CloudEvents naming).
    - Schema validation em CI via `cloudevents-cli` validator.
@@ -196,7 +196,7 @@ pub enum AuditError {
 
 Audit log integrity é **the compliance primitive** do CoreLink. SOC 2 CC7.2 audit explicit requirement: "system monitoring + audit logs are immutable + integrity verifiable". Without hash chain, customer compliance officer cannot prove CoreLink history não foi tampered → audit deficiency → contract loss (regulated industries: HIPAA covered entities, financial services GLBA, EU GDPR controllers).
 
-**Why CloudEvents v1.0.2** (CNCF spec): canonical industry-standard audit event format; vendor-neutral (Datadog/Splunk/Sumo SIEM all canonical consume); customer compliance integration via SIEM webhook simplified; vs custom format = customer SDK fragmentation.
+**Why CloudEvents v1.0** (CNCF spec): canonical industry-standard audit event format; vendor-neutral (Datadog/Splunk/Sumo SIEM all canonical consume); customer compliance integration via SIEM webhook simplified; vs custom format = customer SDK fragmentation.
 
 **Why R2 Object Lock Governance Mode 7y**: SOC 2 CC7.2 minimum 1y; ISO 27001 minimum 3y; HIPAA minimum 6y; CoreLink targets 7y para max coverage + safety margin. Governance Mode (não Compliance Mode): CoreLink admin can extend retention; CANNOT delete/modify within retention. Compliance Mode would prevent even legitimate retention extension; over-restrictive.
 
@@ -245,7 +245,7 @@ Audit log integrity é **the compliance primitive** do CoreLink. SOC 2 CC7.2 aud
 ## 4. Capability Mapping
 
 - **CAP-OBS-004** (CloudEvents audit log) — IMPLEMENTA primary.
-- Trace: `observability_model.md §7 audit canonical` + `security_model.md CTRL-AUDIT-001` + `invariant_registry.md INV-AUDIT-APPEND-ONLY (S-06 inherited) + INV-OBS-AUDIT-CHAIN-INTEGRITY (NEW §3.14)` + sprint contract §5.4 (R-S09-10/11) + CloudEvents v1.0.2 spec (CNCF) + SOC 2 CC7.2 + LGPD Art. 32 + GDPR Art. 32.
+- Trace: `observability_model.md §7 audit canonical` + `security_model.md CTRL-AUDIT-001` + `invariant_registry.md INV-AUDIT-APPEND-ONLY (S-06 inherited) + INV-OBS-AUDIT-CHAIN-INTEGRITY (NEW §3.14)` + sprint contract §5.4 (R-S09-10/11) + CloudEvents v1.0 spec (CNCF) + SOC 2 CC7.2 + LGPD Art. 32 + GDPR Art. 32.
 
 ## 5. Tipo
 
@@ -255,9 +255,9 @@ CloudEvents emitter Rust crate + R2 Object Lock IaC + DO daily verifier job + SI
 
 ### 6.1 In-scope
 
-1. **`crates/corelink-audit-emitter/` module** — AuditEmitter trait + CloudEvents v1.0.2 impl + R2 writer + chain logic.
+1. **`crates/corelink-audit-emitter/` module** — AuditEmitter trait + CloudEvents v1.0 impl + R2 writer + chain logic.
 
-2. **CloudEvents v1.0.2 emission**:
+2. **CloudEvents v1.0 emission**:
    - `cloudevents` Rust crate v0.7+ canonical SDK.
    - 8 subjects enum (sprint contract §5.4 R-S09-10).
    - Strict schema validation via `cloudevents-cli` em CI.
@@ -446,7 +446,7 @@ Feature: CloudEvents Audit Emitter + R2 Object Lock + Hash Chain + Daily Verifie
     When PR opens
     Then Compliance Officer sign-off required (mandatory emphatic; regulatory scoping)
     Then observability_model.md §7 amended with new subject
-    Then CloudEvents type registered: "io.corelink_dsr_request_v1"
+    Then CloudEvents type registered: "dev.hugr.corelink.dsr.request.v1 (Lote 10.9bis P0-G corrected)"
 
   Scenario: Verifier job 7d clean (sprint contract §6 DoD)
     Given daily verifier runs 7 consecutive days
@@ -465,7 +465,7 @@ Feature: CloudEvents Audit Emitter + R2 Object Lock + Hash Chain + Daily Verifie
 
 ## 9. Design Decisions
 
-- 9.1: CloudEvents v1.0.2 (CNCF spec canonical).
+- 9.1: CloudEvents v1.0 (CNCF spec canonical).
 - 9.2: R2 Object Lock Governance Mode 7y (SOC 2 max coverage).
 - 9.3: Per-region hash chain (split-brain risk eliminated).
 - 9.4: BLAKE3-256 hash chain (5x faster than SHA-256).
@@ -486,7 +486,7 @@ Feature: CloudEvents Audit Emitter + R2 Object Lock + Hash Chain + Daily Verifie
 - [ ] **10.s09.004.4** Chaos suite 11 scenarios green.
 - [ ] **10.s09.004.5** **Daily verifier 7d clean** sustained (sprint contract §6 DoD; INV-OBS-AUDIT-CHAIN-INTEGRITY).
 - [ ] **10.s09.004.6** R2 Object Lock 7y retention configured + verified via `aws s3api get-object-lock-configuration`.
-- [ ] **10.s09.004.7** CloudEvents v1.0.2 schema validation em CI green em 100% PR sample events.
+- [ ] **10.s09.004.7** CloudEvents v1.0 schema validation em CI green em 100% PR sample events.
 - [ ] **10.s09.004.8** PII redaction inheritance: 0 leaks em 10k audit fixtures (DLP CI test from WI-S09-002).
 - [ ] **10.s09.004.9** SIEM fan-out webhook tested em staging 24/7.
 - [ ] **10.s09.004.10** Métricas (8 §6.1.10) emitted; chain break alerts SEV-1; r2_object_lock_violations alerts SEV-1.
@@ -534,7 +534,7 @@ Feature: CloudEvents Audit Emitter + R2 Object Lock + Hash Chain + Daily Verifie
 - 14.s09.004.9: redact! macro inheritance from WI-S09-002 (PII em audit data forbidden).
 - 14.s09.004.10: **Audit fail-CLOSED** canonical (Lote 10.6bis pattern; distinct from observability fail-OPEN em WI-S09-001/002/003).
 - 14.s09.004.11: BLAKE3-256 hash chain (consistent with CAS digests primary).
-- 14.s09.004.12: CloudEvents v1.0.2 strict CNCF spec compliance.
+- 14.s09.004.12: CloudEvents v1.0 strict CNCF spec compliance.
 
 ## 15. Chaos Experiments (11)
 
@@ -549,7 +549,7 @@ HIGH_RISK 12 sign-offs PRR (framework §33.5.4.3 cap; Compliance + AppSec emphat
 | ID | Sub-task | h |
 |---|---|---|
 | ST-001 | Module skeleton + AuditEmitter trait + 8 subjects enum | 2 |
-| ST-002 | CloudEvents v1.0.2 emit lib + schema validation | 2 |
+| ST-002 | CloudEvents v1.0 emit lib + schema validation | 2 |
 | ST-003 | Per-region hash chain + DO chain head atomic update | 3 |
 | ST-004 | R2 Object Lock IaC + bucket configuration per region | 1.5 |
 | ST-005 | Daily verifier DO + cron alarm + stream walk | 2.5 |
@@ -586,7 +586,7 @@ HIGH_RISK 12 sign-offs PRR (framework §33.5.4.3 cap; Compliance + AppSec emphat
 
 - Public Rust: `AuditEmitter` trait + `AuditEvent`, `AuditSubject`, `ChainVerifyReport`, `AuditError` types; `#[non_exhaustive]`.
 - Storage: R2 Object Lock Governance Mode 7y per region.
-- Wire: CloudEvents v1.0.2 (CNCF spec).
+- Wire: CloudEvents v1.0 (CNCF spec).
 - Fan-out: Cloudflare Queue → customer webhook.
 
 ## 24. Post-mortem Hooks
@@ -624,7 +624,7 @@ HIGH_RISK 12 sign-offs PRR (framework §33.5.4.3 cap; Compliance + AppSec emphat
 
 ## 27. Knowledge Transfer
 
-Tech talk (2h): "S-09 Audit: CloudEvents + Hash Chain + Fail-CLOSED"; doc `docs/dev/audit-architecture.md`; onboarding test 8 questions: CloudEvents v1.0.2 spec, R2 Object Lock Governance vs Compliance, BLAKE3 chain integrity, daily verifier 24h cycle, fail-CLOSED vs fail-OPEN distinção (Lote 10.6bis), per-region split-brain elimination, SOC 2 CC7.2 requirements, LGPD Art. 16 vs 18 retention conflict.
+Tech talk (2h): "S-09 Audit: CloudEvents + Hash Chain + Fail-CLOSED"; doc `docs/dev/audit-architecture.md`; onboarding test 8 questions: CloudEvents v1.0 spec, R2 Object Lock Governance vs Compliance, BLAKE3 chain integrity, daily verifier 24h cycle, fail-CLOSED vs fail-OPEN distinção (Lote 10.6bis), per-region split-brain elimination, SOC 2 CC7.2 requirements, LGPD Art. 16 vs 18 retention conflict.
 
 ## 28. Risk Register (12-row HIGH_RISK)
 
@@ -666,7 +666,7 @@ D+0 design (Architect; chain integrity); D+1 Compliance (SOC 2 CC7.2 + LGPD/GDPR
 
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
-| 1.0.0 | 2026-04-25 | Gustavo (Lote 10.9) | Criação WI-S09-004; HIGH_RISK; SOTA pós-Lote 10.7bis + Lote 10.8bis/tris lessons absorbed: 5-tier canonical Tier (P0-7); CF Workers Rust API worker::send_future (R5 P0-3); 100k nightly property test (P1-3); **audit fail-CLOSED canonical** (Lote 10.6bis pattern; distinct from observability fail-OPEN em WI-S09-001/002/003); race-aware chain head update (Lote 10.7bis P0-6 adapted from S-06 INV-GC-004 + S-07 WI-S07-002 lessons); column drift no `_ms` suffix (P0-3); sign-off cap 12 (Lote 10.8bis P1-2); INV §3.14 (NEW INV-OBS-AUDIT-CHAIN-INTEGRITY canonical position). NEW corelink-audit-emitter crate. NEW CloudEvents v1.0.2 schema artifact. NEW R2 Object Lock 7y IaC. NEW daily verifier DO. NEW 2 runbooks (RB-AUDIT-CHAIN-001 + RB-AUDIT-LOCK-VIOLATION). redact! macro inheritance from WI-S09-002 (PII em audit data forbidden via type system). BLAKE3-256 hash chain (consistent with CAS digests primary). SOC 2 CC7.2 + LGPD Art. 32 + GDPR Art. 32 compliance. LGPD Art. 16 retention vs Art. 18 erasure humane review (Lote 10.8bis humane LGPD pattern). |
+| 1.0.0 | 2026-04-25 | Gustavo (Lote 10.9) | Criação WI-S09-004; HIGH_RISK; SOTA pós-Lote 10.7bis + Lote 10.8bis/tris lessons absorbed: 5-tier canonical Tier (P0-7); CF Workers Rust API worker::send_future (R5 P0-3); 100k nightly property test (P1-3); **audit fail-CLOSED canonical** (Lote 10.6bis pattern; distinct from observability fail-OPEN em WI-S09-001/002/003); race-aware chain head update (Lote 10.7bis P0-6 adapted from S-06 INV-GC-004 + S-07 WI-S07-002 lessons); column drift no `_ms` suffix (P0-3); sign-off cap 12 (Lote 10.8bis P1-2); INV §3.14 (NEW INV-OBS-AUDIT-CHAIN-INTEGRITY canonical position). NEW corelink-audit-emitter crate. NEW CloudEvents v1.0 schema artifact. NEW R2 Object Lock 7y IaC. NEW daily verifier DO. NEW 2 runbooks (RB-AUDIT-CHAIN-001 + RB-AUDIT-LOCK-VIOLATION). redact! macro inheritance from WI-S09-002 (PII em audit data forbidden via type system). BLAKE3-256 hash chain (consistent with CAS digests primary). SOC 2 CC7.2 + LGPD Art. 32 + GDPR Art. 32 compliance. LGPD Art. 16 retention vs Art. 18 erasure humane review (Lote 10.8bis humane LGPD pattern). |
 
 ## 32. Anti-patterns evitados
 

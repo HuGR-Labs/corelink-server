@@ -109,8 +109,20 @@ resource "grafana_dashboard" "dash_slo" { ... }
 
 **Cripto-driven invariants enforced**:
 
-1. **12 dashboards canonical** (sprint contract §4 CAP-OBS-005 explicit list; observability_model.md §10):
-   - DASH-GLOBAL-HEALTH, DASH-CAS, DASH-AC, DASH-AUTH, DASH-GC, DASH-BILLING, DASH-RATE-LIMIT, DASH-DEDUP, DASH-PRIVACY, DASH-CHAOS, DASH-COST, DASH-SLO.
+1. **12 dashboards canonical** (Lote 10.9bis P0-D corrected — aligned com observability_model.md §10 Nível-3 canonical):
+   - **DASH-GLOBAL-HEALTH** (RED + USE overview SRE on-call entry point)
+   - **DASH-GLOBAL-PRODUCT** (Business pulse: tenants ativos, hit ratio, storage, MRR proxy)
+   - **DASH-TENANT** (per-tenant deep-dive: hit ratio, latência, quota, top errors; consume rate-limit panels from WI-S08-006 inheritance)
+   - **DASH-CAS** (CAS hot path; consume dedup panels from S-07 inheritance)
+   - **DASH-AC** (Action Cache hit/miss + Merkle failures)
+   - **DASH-EXEC** (Execute Action: active slots, queue depth, exit codes; S-17 future)
+   - **DASH-GC** (S-06 garbage collection runs + reachable + reconcile drift + INV-GC-001 canary)
+   - **DASH-SUPPLY-CHAIN** (SBOM drift + vuln counts + release verify status)
+   - **DASH-SECURITY** (AuthN failures + anomalous tenant behavior + abuse signals; consume PAT auth + S-08 abuse panels inheritance)
+   - **DASH-PRIVACY** (CTRL-PRIV-001 DLP + log volume + GDPR Art. 17 erasure + audit chain integrity from WI-S09-004)
+   - **DASH-COST** (per-tenant + per-region cost; consume billing + cardinality budget panels from WI-S08-001 inheritance)
+   - **DASH-SLO-CATALOG** (consolidated multi-burn-rate alerts SLO-CATALOG canonical; consume chaos test status from S-17 inheritance)
+   - **Lote 10.9bis P0-D correction**: prior WI list (DASH-AUTH/BILLING/RATE-LIMIT/DEDUP/CHAOS/SLO) replaced with canonical observability_model.md §10 12 dashboards. The 5 prior subsystem-specific dashboards are now **panels embedded em parent dashboards** (AUTH→SECURITY, BILLING→COST, RATE-LIMIT→TENANT, DEDUP→CAS, CHAOS→SLO-CATALOG) for canonical hierarchy compliance. Sprint contract §4 CAP-OBS-005 amended em Phase 2 commit.
    - **Lote 10.8-tris P1-NEW-1 lesson absorbed**: actual file count must match narrative claim (avoid bis-introduced drift; tris audit catches discrepancies).
 
 2. **JSON-as-code discipline**:

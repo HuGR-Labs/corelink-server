@@ -68,7 +68,7 @@ inherits_from:
 | **CAP-OBS-002** | Structured logs (JSON-lines) | Logpush → R2 (cold 400d) + Grafana Loki (warm 90d); schema-validated em CI. |
 | **CAP-OBS-003** | Distributed tracing (OTLP) | W3C Trace Context propagation; head-based sampling 1% + tail-based sampling para errors. Tempo backend. |
 | **CAP-OBS-004** | CloudEvents audit log | Append-only R2 (Object Lock Governance Mode 7y); fan-out via Pub/Sub-equivalent (Queue) para SIEM. |
-| **CAP-OBS-005** | 12 dashboards canônicos | DASH-GLOBAL-HEALTH, DASH-CAS, DASH-AC, DASH-AUTH, DASH-GC, DASH-BILLING, DASH-RATE-LIMIT, DASH-DEDUP, DASH-PRIVACY, DASH-CHAOS, DASH-COST, DASH-SLO. JSON-as-code. |
+| **CAP-OBS-005 (Lote 10.9bis P0-D corrected)** | 12 dashboards canônicos (aligned com observability_model.md §10 Nível-3 canonical) | DASH-GLOBAL-HEALTH, DASH-GLOBAL-PRODUCT, DASH-TENANT, DASH-CAS, DASH-AC, DASH-EXEC, DASH-GC, DASH-SUPPLY-CHAIN, DASH-SECURITY, DASH-PRIVACY, DASH-COST, DASH-SLO-CATALOG. JSON-as-code. Note: prior list (DASH-AUTH/BILLING/RATE-LIMIT/DEDUP/CHAOS) refactored into panels em parent dashboards (Lote 10.9bis P0-D Phase 2). |
 | **CAP-OBS-006** | Multi-burn-rate SLO alerts | Sloth-style 4 windows (1h/6h, 5min/30min) per SLI; reduces false positives vs threshold simples. |
 | **CAP-OBS-007** | PagerDuty integration | SEV-1 / SEV-2 paging; runbook URL no alert payload (deep link); silence policies por window de change. |
 | **CAP-OBS-008** | PII redaction enforcement | `corelink-log-schema` crate + CI check + DLP scanner em logs de staging para regression test. |
@@ -111,8 +111,8 @@ inherits_from:
 
 ### 5.4 Audit (CAP-OBS-004)
 
-- **R-S09-10**: CloudEvents v1.0 emitter conforme `observability_model.md §7`:
-  - Subject: `tenant:<id>`, `cas:put`, `cas:get`, `ac:lookup`, `gc:purge`, `auth:login`, `quota:exceeded`.
+- **R-S09-10 (Lote 10.9bis P0-H corrected)**: CloudEvents v1.0 emitter conforme `observability_model.md §7`:
+  - Subject: 8 canonical: `tenant:<id>`, `cas:put`, `cas:get`, `ac:lookup`, `gc:purge`, `auth:login`, `quota:exceeded`, `abuse:detected` (Lote 10.9bis P0-H added abuse:detected to align with DoD §6 "8 subjects" + S-08 abuse score events compliance auditing).
   - Sink: R2 bucket `audit-events` com Object Lock Governance Mode 7y (CTRL-AUDIT-001).
   - Hash chain: cada event tem `prev_hash` + own digest → daily verifier job.
 - **R-S09-11**: Fan-out via Cloudflare Queue → SIEM webhook (configurable per region) para customer compliance integration.
