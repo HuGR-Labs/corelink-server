@@ -68,9 +68,9 @@ inherits_from:
 
 - **R-S08-1**: DO `RateLimiter-<tenant_id>` com token bucket (refill rate = plan × multiplier); state persistente; sub-ms latency via DO sticky placement.
 - **R-S08-2**: CF edge per-IP rate rules via Workers API ou CF Ruleset Engine (não-atrelado a tenant; IP blocklist 429 silencioso pra CIDR abusivos).
-- **R-S08-3**: PAT-scoped rate check no middleware: `corelink_pat_rate{pat_id}` counter; cap per-PAT 10× refill-rate do tenant (detects PAT misuse).
+- **R-S08-3 (Lote 10.8bis P0-C corrected)**: PAT-scoped misuse DETECTION (NOT enforcement): `corelink_quota_pat_misuse_detected_total{pat_id}` SEV-2 alert when per-PAT observed rate > 10× tenant_refill (compromised credential signal). **Aggregate per-tenant rate enforcement em camada 1** (R-S08-1 DO RateLimiter); per-PAT camada 3 é observability-on-PATs apenas. Original "cap" framing rejected porque single PAT cannot exceed tenant aggregate (camada 1 already 429s).
 - **R-S08-4**: Global circuit breaker DO `GlobalRateLimiter`: trip em error_rate > 50% sustained 5 min; `degrade_mode=emergency` fallback.
-- **R-S08-5**: Quota checker middleware: pre-write check atomic em D1 `tenant_quota.used_bytes` vs `max_storage_bytes`; atomic CAS.
+- **R-S08-5 (Lote 10.7bis P0-2 + Lote 10.8bis P1-6 corrected)**: Quota checker middleware: pre-write check atomic via DO actor (NOT D1 SQLite atomic CAS — D1 sem native CAS); canonical `tenant_storage_state.bytes_used` vs `tenant_quota.max_storage_bytes`. Original phantom column `tenant_quota.used_bytes` rejected (Lote 10.7bis P0-2: column doesn't exist in data_model.md; canonical é separate `tenant_storage_state` table for STATE vs `tenant_quota` for POLICY).
 - **R-S08-6**: Monthly bandwidth quota: counter aggregated em DO `BandwidthTracker-<tenant>-<YYYY-MM>`; reset monthly.
 - **R-S08-7**: Abuse score calculator: features = `{cpu_wallclock_ratio, egress_bytes_per_min, action_digest_entropy, concurrent_exec_count}`; score via weighted sum; threshold calibrado com real workload em staging.
 - **R-S08-8**: Response codes tipados:
@@ -89,7 +89,7 @@ Universal (`_sprint_creation_contract §7`) **+**:
 - [ ] **Chaos test isolation**: 1 tenant flood 10k QPS sustentado → vizinhos mantêm SLO-AVAIL-CAS-GET (EVT-023).
 - [ ] **429 distinction implemented**: `rate_limited_within_quota` vs `rate_limited_over_quota` emitido separadamente; SLI-AVAIL-CAS-GET usa apenas within-quota no numerador (EVT-002).
 - [ ] **Load test bandwidth quota**: tenant consome 100% de bandwidth monthly → writes rejected with `over_quota` 429 + Retry-After = days-until-month-reset.
-- [ ] **Abuse score calibration**: 10 synthetic workloads (5 benign, 5 abusive) → 0 false positives em benign, ≥ 80% true positives em abusive (EVT-004 benchmark).
+- [ ] **Abuse score calibration (Lote 10.8bis P0-E corrected)**: n=50 benign + n=50 high-intensity abusive workloads → 95% CI FP rate ≤ 5% upper-bound (≤ 2 FP em 50 acceptable; target ideal 0 FP) + 95% CI TP rate ≥ 80% lower-bound (≥ 40 TP em 50; target ≥ 45 TP) (EVT-004 benchmark; statistical methodology validated by Data Scientist advisor).
 - [ ] **RB-FM-250** (DDoS volumetric) dry-run (EVT-017).
 - [ ] **Alerts armados**: per-tenant quota 95% (SEV-3 per-tenant), global circuit breaker trip (SEV-1 oncall), abuse score threshold (SEV-2).
 - [ ] **Rate limit headers RFC 9331** (RateLimit, RateLimit-Policy) implementados — padrão IETF atualizado.

@@ -81,11 +81,16 @@ pub enum RateLimitType {
 
 impl RateLimitType {
     /// Returns true if this 429 type is bug nosso (SLI failure denominator counted)
-    /// vs legitimate (NOT counted).
-    pub fn counts_against_sli(&self) -> bool {
+    /// vs legitimate (NOT counted). Lote 10.8bis P1-3 (R5): GlobalCircuitOpen requires
+    /// trip_reason context — ManualOverride trips (planned drill / load shed) are
+    /// intentional and excluded from SLI denominator.
+    pub fn counts_against_sli(&self, trip_reason: Option<&TripReason>) -> bool {
         match self {
             RateLimitType::TenantQuota => true,           // bug nosso
-            RateLimitType::GlobalCircuitOpen => true,     // bug nosso (system overload)
+            RateLimitType::GlobalCircuitOpen => match trip_reason {
+                Some(TripReason::ManualOverride { .. }) => false,  // planned drill; SLI exclusion
+                _ => true,                                          // bug nosso (system overload)
+            },
             RateLimitType::PerIp => false,                // legitimate edge
             RateLimitType::PerPat => false,               // legitimate PAT misuse
             RateLimitType::OverQuota => false,            // legitimate over-plan
@@ -270,7 +275,7 @@ Response wrapper + RFC 9331 + global circuit breaker constitute **the system-wid
 ## 4. Capability Mapping
 
 - **CAP-RATE-004** (Global rate limit circuit breaker camada 4) — IMPLEMENTA primary.
-- Trace: `security_model.md CTRL-RATE-001` (camada 4) + `resilience_patterns.md PAT-CIRCUIT-BREAKER-001` + `slo_catalog.md SLI-AVAIL-CAS-GET (within-quota distinction)` + `failure_modes.md FM-251 (rate FP) + FM-401 (thundering herd)` + sprint contract §7.10.s08.1 (SLI correctness) + RFC 9331 (IETF) + RFC 6585 (Retry-After).
+- Trace: `security_model.md CTRL-RATE-001` (camada 4) + `resilience_patterns.md PAT-CIRCUIT-001 (Lote 10.8bis P1-4 corrected; canonical name em resilience_patterns.md line 126)` + `slo_catalog.md SLI-AVAIL-CAS-GET (within-quota distinction)` + `failure_modes.md FM-201 (Config change causa rate-limit drop; canonical FM lookup; Lote 10.8bis P1-3 corrected — FM-251 actually é "Credential stuffing / brute force") + FM-401 (thundering herd)` + sprint contract §7.10.s08.1 (SLI correctness) + RFC 9331 (IETF) + RFC 6585 (Retry-After).
 
 ## 5. Tipo
 
@@ -322,9 +327,13 @@ Tower middleware response wrapper + DO singleton global circuit breaker + RFC 93
            .filter(|o| matches!(o.status, ObservationStatus::ServerError5xx))
            .count() as f64 / total;
        let p99_us = percentile(&window_5min.iter().map(|o| o.latency_p99_us).collect(), 99.0);
-       let do_err_rate = window_5min.iter()
+       // Lote 10.8bis P1-2 (R5): use most recent observation (NOT average of overlapping
+       // 5-min rolling rates, which double-counts and biases toward LATE detection).
+       // Each observation.do_error_rate_5m is already a rolling 5min rate; averaging
+       // across observations produces moving-average-of-moving-average smoothing.
+       let do_err_rate = window_5min.last()
            .map(|o| o.do_error_rate_5m)
-           .sum::<f64>() / total;
+           .unwrap_or(0.0);
 
        let signal_a = error_5xx_rate > thresholds.error_5xx;             // > 0.5
        let signal_b = p99_us > thresholds.p99_latency_us;                 // > 5×SLO

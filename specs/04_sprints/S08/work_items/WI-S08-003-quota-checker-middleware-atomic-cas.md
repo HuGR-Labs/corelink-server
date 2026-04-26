@@ -301,7 +301,7 @@ Sprint contract §5 R-S08-3 amend (will be applied em this Lote 10.8bis Phase 6 
 - **CAP-QUOTA-001** (Storage hard-block 100% boundary com S-07) — IMPLEMENTA primary.
 - **CAP-QUOTA-002** (Monthly bandwidth) — IMPLEMENTA primary.
 - **CAP-RATE-003** (Per-PAT camada 3) — IMPLEMENTA primary.
-- Trace: `security_model.md CTRL-QUOTA-001 + CTRL-RATE-001` + `invariant_registry.md INV-QUOTA-ENFORCEMENT + INV-AVAIL-ISOLATION` + `failure_modes.md FM-059 (quota race) + FM-251 (rate limit FP) + FM-255 (over-quota)` + ADR-0020 FROZEN + S-07 WI-S07-003 (DO `Quota-<tenant_id>` shared).
+- Trace: `security_model.md CTRL-QUOTA-001 + CTRL-RATE-001` + `invariant_registry.md INV-QUOTA-ENFORCEMENT + INV-AVAIL-ISOLATION` + `failure_modes.md FM-059 (quota race) + FM-201 (Config change causa rate-limit drop; Lote 10.8bis P1-3 corrected) + FM-255 (over-quota)` + ADR-0020 FROZEN + S-07 WI-S07-003 (DO `Quota-<tenant_id>` shared).
 
 ## 5. Tipo
 
@@ -349,7 +349,9 @@ DO singleton + QuotaChecker trait + Tower middleware + D1 backing; HIGH_RISK; FF
                utilization_pct: (self.bytes_used + active_reserved) as f64 / self.max_storage_bytes as f64,
            })
        } else {
-           let overshoot = total_committed.saturating_sub(self.max_storage_bytes - 1);  // strict-< boundary
+           // Lote 10.8bis P1-6 (R5): canonical overshoot é total_committed - max (NOT max-1);
+           // strict-< predicate already ensured total_committed >= max em este branch.
+           let overshoot = total_committed.saturating_sub(self.max_storage_bytes);
            Err(QuotaError::StorageOver {
                used: self.bytes_used,
                max: self.max_storage_bytes,

@@ -25,7 +25,7 @@ inherits_from:
 tags: ["wi", "s08", "dashboard", "alerts", "sli-distinction", "prr-ship-gate", "rb-fm-250", "ddos-runbook", "high-risk"]
 ---
 
-# WI-S08-006 — DASH-RATE Operational Dashboard + Alerts + SLI Distinction Validation + RB-FM-250 DDoS Volumetric Runbook Dry-Run + S-08 PRR Ship Gate (`infra/grafana/dashboards/dash-rate.json`; aggregates 41 métricas from WI-S08-001/002/003/004/005; 8 alert rules canonical; SEV taxonomy SEV-1/2/3 conforme observability_model.md §3.1; SLI distinction panel within-quota-429 vs over-quota-429 sprint contract §7.10.s08.1; RB-FM-250 DDoS volumetric runbook dry-run sprint contract §6 DoD EVT-017; cost regression cron-tick gate; consolidated PRR HIGH_RISK 13 sign-offs ship gate; SLO-AVAIL-CAS-GET denominator correctness validation; 100k property test acceptance harness for cross-WI integration)
+# WI-S08-006 — DASH-RATE Operational Dashboard + Alerts + SLI Distinction Validation + RB-FM-250 DDoS Volumetric Runbook Dry-Run + S-08 PRR Ship Gate (`infra/grafana/dashboards/dash-rate.json`; aggregates 41 métricas from WI-S08-001/002/003/004/005; 14 alert rules canonical (Lote 10.8bis P1-1 corrected; reconciles to actual YAML rule count: 4 SEV-1 + 5 SEV-2 + 5 SEV-3); SEV taxonomy SEV-1/2/3 conforme observability_model.md §3.1; SLI distinction panel within-quota-429 vs over-quota-429 sprint contract §7.10.s08.1; RB-FM-250 DDoS volumetric runbook dry-run sprint contract §6 DoD EVT-017; cost regression cron-tick gate; consolidated PRR HIGH_RISK 12 sign-offs (framework §33.5.4.3 cap; Lote 10.8bis P1-2) ship gate; SLO-AVAIL-CAS-GET denominator correctness validation; 100k property test acceptance harness for cross-WI integration)
 
 > **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
 > **Parent:** [S-08](../sprint.md) · **Assignee:** Gustavo Schneiter
@@ -37,14 +37,14 @@ tags: ["wi", "s08", "dashboard", "alerts", "sli-distinction", "prr-ship-gate", "
 | Campo | Valor |
 |---|---|
 | ID | WI-S08-006 |
-| Título | DASH-RATE Grafana dashboard agregando 41 métricas de WI-S08-001 (7) + WI-S08-002 (7) + WI-S08-003 (9) + WI-S08-004 (9) + WI-S08-005 (9); 14 panels organized por camada bulkhead (per-tenant + per-IP + per-PAT + global) + SLI distinction panel within-quota vs over-quota (sprint contract §7.10.s08.1 critical) + abuse detection panel + manual override + customer appeal queue panel; 8 alert rules canonical: SEV-1 global circuit trip + cross-tenant violation + auto-suspend attempt; SEV-2 admin review trigger + PAT misuse + manual override + reconcile drift + appeals queue overflow; SEV-3 quota 95% + single-signal alarm + appeal SLA breach + abuse calibration drift + suggest block pending; RB-FM-250 DDoS volumetric runbook dry-run validation sprint contract §6 DoD EVT-017 (sustained 100k QPS distributed flood test → CF DDoS managed engages + camada 2 edge per-IP + camada 4 global circuit shed gracefully; SLO maintained for non-attacker tenants; recovery ≤ 15min); cost regression gate cron-tick ≤ $0.001/region/cycle; consolidated PRR HIGH_RISK 13 sign-offs ship gate enforces sprint contract §6 DoD complete; ADR-0034 staffing waiver acknowledged; 100k property test cross-WI acceptance harness em CI nightly |
+| Título | DASH-RATE Grafana dashboard agregando 41 métricas de WI-S08-001 (7) + WI-S08-002 (7) + WI-S08-003 (9) + WI-S08-004 (9) + WI-S08-005 (9); 14 panels organized por camada bulkhead (per-tenant + per-IP + per-PAT + global) + SLI distinction panel within-quota vs over-quota (sprint contract §7.10.s08.1 critical) + abuse detection panel + manual override + customer appeal queue panel; 14 alert rules canonical (Lote 10.8bis P1-1 corrected; reconciles to actual YAML rule count: 4 SEV-1 + 5 SEV-2 + 5 SEV-3): SEV-1 global circuit trip + cross-tenant violation + auto-suspend attempt; SEV-2 admin review trigger + PAT misuse + manual override + reconcile drift + appeals queue overflow; SEV-3 quota 95% + single-signal alarm + appeal SLA breach + abuse calibration drift + suggest block pending; RB-FM-250 DDoS volumetric runbook dry-run validation sprint contract §6 DoD EVT-017 (sustained 100k QPS distributed flood test → CF DDoS managed engages + camada 2 edge per-IP + camada 4 global circuit shed gracefully; SLO maintained for non-attacker tenants; recovery ≤ 15min); cost regression gate cron-tick ≤ $0.001/region/cycle; consolidated PRR HIGH_RISK 12 sign-offs (framework §33.5.4.3 cap; Lote 10.8bis P1-2) ship gate enforces sprint contract §6 DoD complete; ADR-0034 staffing waiver acknowledged; 100k property test cross-WI acceptance harness em CI nightly |
 | Sprint | S-08 |
 | Lane | HIGH_RISK |
 | Forcing factors | FF-HR-005 (CTRL-RATE-001 + CTRL-QUOTA-001 + CTRL-AUTH operational visibility é security control completeness; sem dashboard = silent regression risk), FF-HR-002 (cross-tenant SLO regression sem visibility) |
 
 ## 1. Intent
 
-DASH-RATE consolidates operational visibility para todas 4 camadas do bulkhead (sprint contract §4 PAT-RATE-LIMIT-001) + abuse detection + SLI distinction + global circuit. Sem dashboard: silent regressions, missed false-positives, undetected cross-tenant degradation, customer appeal SLA breach, calibration drift. RB-FM-250 dry-run validates DDoS volumetric runbook (sprint contract §6 DoD EVT-017). PRR HIGH_RISK 13 sign-offs ship gate enforces consolidated S-08 readiness antes de ship.
+DASH-RATE consolidates operational visibility para todas 4 camadas do bulkhead (sprint contract §4 PAT-RATE-LIMIT-001) + abuse detection + SLI distinction + global circuit. Sem dashboard: silent regressions, missed false-positives, undetected cross-tenant degradation, customer appeal SLA breach, calibration drift. RB-FM-250 dry-run validates DDoS volumetric runbook (sprint contract §6 DoD EVT-017). PRR HIGH_RISK 12 sign-offs (framework §33.5.4.3 cap; Lote 10.8bis P1-2) ship gate enforces consolidated S-08 readiness antes de ship.
 
 ```yaml
 # File: infra/grafana/dashboards/dash-rate.json
@@ -377,7 +377,7 @@ alerts:
    - Alert SEV-1 if SLI counter regression detected (within-quota counter ≠ expected under known traffic).
    - Property test 100k cross-WI integration validates correctness.
 
-2. **8 alert rules canonical** (consolidated from sprint contract §6 DoD):
+2. **14 alert rules canonical (Lote 10.8bis P1-1 corrected; reconciles to actual YAML rule count: 4 SEV-1 + 5 SEV-2 + 5 SEV-3)** (consolidated from sprint contract §6 DoD):
    - SEV-1 (4): global circuit trip + isolation violation + auto-suspend LGPD canary + SLI regression.
    - SEV-2 (5): abuse admin review + PAT misuse + manual override + blocklist drift + appeals queue overflow + storage 100%.
    - SEV-3 (5): storage 95% (S-07 boundary; sprint contract DoD) + single-signal alarm + appeal SLA breach + suggest block SLA breach + abuse calibration drift.
@@ -387,9 +387,9 @@ alerts:
    - Expected: CF DDoS-managed engages (account-level); CF edge per-IP (camada 2) blocks per-IP excess; per-tenant DO RateLimiter (camada 1) backstop; global circuit breaker (camada 4) trips if signals breach.
    - Pass criteria: SLO-AVAIL-CAS-GET maintained for non-attacker tenants ≥ 99.0% (degraded from 99.9% baseline; attack-window only); recovery ≤ 15min after attack ceases.
 
-4. **PRR HIGH_RISK 13 sign-offs ship gate** (sprint contract §6 DoD enforced):
+4. **PRR HIGH_RISK 12 sign-offs (framework §33.5.4.3 cap; Lote 10.8bis P1-2) ship gate** (sprint contract §6 DoD enforced):
    - Lane-aware per `00_framework.md §33.5.4.3`.
-   - Ship blocked unless: 13 sign-offs collected; ADR-0034 staffing waiver acknowledged for unstaffed roles; chaos test 30d sustained; calibration validated; alerts armed.
+   - Ship blocked unless: 12 sign-offs collected (framework §33.5.4.3 cap; Lote 10.8bis P1-2); ADR-0034 staffing waiver acknowledged for unstaffed roles; chaos test 30d sustained; calibration validated; alerts armed.
    - Validates ALL 6 WIs SEALED.
 
 5. **Cost regression cron-tick gate** (sprint contract §14.s08.7 absorbed):
@@ -415,14 +415,14 @@ DASH-RATE consolidates operational visibility for all 4 camadas + abuse + global
 
 **Why dashboard NOT just metrics**: raw metrics não actionable; dashboard provides: (a) cross-WI correlation (SLI distinction shows holistic SLO impact); (b) historical trending (calibration drift over weeks); (c) cross-camada visibility (camadas 1-4 status simultaneously); (d) customer appeals queue depth; (e) PRR ship gate status table. Grafana JSON canonical (IaC; reproducible).
 
-**Why 8 alert rules canonical** (sprint contract §6 DoD consolidates): each prior WI emits relevant alerts (cross_tenant_violation, auto_suspend_attempts, pat_misuse, etc.); WI-S08-006 ties them into single coordinated alert config + runbook routing. SEV taxonomy (`observability_model.md §3.1`):
+**Why 14 alert rules canonical (Lote 10.8bis P1-1 corrected; reconciles to actual YAML rule count: 4 SEV-1 + 5 SEV-2 + 5 SEV-3)** (sprint contract §6 DoD consolidates): each prior WI emits relevant alerts (cross_tenant_violation, auto_suspend_attempts, pat_misuse, etc.); WI-S08-006 ties them into single coordinated alert config + runbook routing. SEV taxonomy (`observability_model.md §3.1`):
 - SEV-1: oncall pager 5min response (catastrophic; user-facing outage OR LGPD violation OR cross-tenant breach).
 - SEV-2: admin notification 1h response (degraded but bounded; manual review needed).
 - SEV-3: visibility 24h response (trending OR SLA breach but not user-facing).
 
 **Why RB-FM-250 dry-run** (sprint contract §6 DoD EVT-017 absorbed): runbook validation = canonical practice antes de ship. Dry-run simulated DDoS flood (100k QPS distributed); validates: (a) CF DDoS-managed engages account-level; (b) CF edge per-IP (camada 2) drops adversarial; (c) per-tenant DO (camada 1) backstops; (d) global circuit (camada 4) trips IF signals breach; (e) non-attacker tenants SLO maintained ≥ 99.0%; (f) recovery ≤ 15min. Pass criteria documented em RB-FM-250 runbook artifact.
 
-**Why PRR HIGH_RISK 13 sign-offs ship gate** (sprint contract §6 DoD + framework §33.5.4.3): lane-aware sign-off discipline; HIGH_RISK requires 10-12 sign-offs (lower bound); S-08 = 13 (Crypto SME advisory + Compliance + Privacy emphatic for LGPD). ADR-0034 staffing waiver formally acknowledged for unstaffed roles.
+**Why PRR HIGH_RISK 12 sign-offs (framework §33.5.4.3 cap; Lote 10.8bis P1-2) ship gate** (sprint contract §6 DoD + framework §33.5.4.3): lane-aware sign-off discipline; HIGH_RISK requires 10-12 sign-offs (lower bound); S-08 = 12 max (framework cap; Crypto SME advisory consolidated as Architect race-correctness review per ADR-0034 path). ADR-0034 staffing waiver formally acknowledged for unstaffed roles.
 
 **Why 100k property test acceptance harness**: validates cross-WI integration (e.g., SLI distinction across all 5 type discriminators; circuit breaker trip triggers correct 429 type; PAT misuse triggers per_pat header). Single-WI property tests cover individual modules; this harness covers integration.
 
@@ -436,7 +436,7 @@ DASH-RATE consolidates operational visibility for all 4 camadas + abuse + global
 **Risk justification HIGH_RISK**:
 - **FF-HR-005**: operational visibility é security control completeness (CTRL-RATE-001 + CTRL-QUOTA-001).
 - **FF-HR-002**: cross-tenant SLO regression sem visibility.
-- 13 sign-offs (consolidated PRR ship gate) + chaos via RB-FM-250 dry-run + property test 100k cross-WI integration.
+- 12 sign-offs (HIGH_RISK upper-bound consolidated PRR ship gate; Lote 10.8bis P1-2) + chaos via RB-FM-250 dry-run + property test 100k cross-WI integration.
 
 ## 3. Customer Impact & Journey
 
@@ -485,7 +485,7 @@ Grafana dashboard JSON IaC + alert rules YAML + RB-FM-250 runbook dry-run + PRR 
    - Row 7: Cost + RFC 9331 compliance.
    - Row 8: PRR ship gate status.
 
-2. **`infra/alerts/dash-rate.alerts.yaml`** — 8 alert rules canonical organized SEV taxonomy:
+2. **`infra/alerts/dash-rate.alerts.yaml`** — 14 alert rules canonical (Lote 10.8bis P1-1 corrected; reconciles to actual YAML rule count: 4 SEV-1 + 5 SEV-2 + 5 SEV-3) organized SEV taxonomy:
    - SEV-1 (4): global circuit trip + isolation violation + auto-suspend LGPD canary + SLI regression.
    - SEV-2 (5): abuse admin review + PAT misuse + manual override + blocklist drift + appeals queue overflow + storage 100%.
    - SEV-3 (5): storage 95% + single-signal alarm + appeal SLA breach + suggest block SLA breach + abuse calibration drift.
@@ -592,7 +592,7 @@ Feature: DASH-RATE Operational Dashboard + Alerts + RB-FM-250 + PRR Ship Gate
     Then numerator = 50 success
     Then SLO = 100% (legitimate over-plan; sprint contract §7.10.s08.1)
 
-  Scenario: 8 alert rules canonical fire correctly
+  Scenario: 14 alert rules canonical (Lote 10.8bis P1-1 corrected; reconciles to actual YAML rule count: 4 SEV-1 + 5 SEV-2 + 5 SEV-3) fire correctly
     Given dashboard alerting rules deployed
     When synthetic events match each rule
     Then all 8 fires correctly: 4 SEV-1 + 5 SEV-2 + 5 SEV-3 (total 14 unique conditions; 8 distinct rules with multiple conditions)
@@ -610,9 +610,9 @@ Feature: DASH-RATE Operational Dashboard + Alerts + RB-FM-250 + PRR Ship Gate
     Then recovery ≤ 15min after attack ceases (hysteresis)
     Then post-mortem documented
 
-  Scenario: PRR ship gate 13 sign-offs collected
+  Scenario: PRR ship gate 12 sign-offs collected (framework §33.5.4.3 cap; Lote 10.8bis P1-2)
     Given S-08 6 WIs SEALED individual PRRs
-    Given 13 sign-offs collected (or staffing-waivered ADR-0034)
+    Given 12 sign-offs collected (framework §33.5.4.3 cap; Lote 10.8bis P1-2) (or staffing-waivered ADR-0034)
     Given chaos 30d clean; calibration validated; alerts armed; RB-FM-250 dry-run pass
     Given 100k property test cross-WI integration green
     When PRR ship gate evaluator runs
@@ -658,10 +658,10 @@ Feature: DASH-RATE Operational Dashboard + Alerts + RB-FM-250 + PRR Ship Gate
 ## 9. Design Decisions
 
 - 9.1: Grafana JSON IaC (NOT manual config); reproducible via Terraform.
-- 9.2: 8 alert rules canonical organized SEV taxonomy `observability_model.md §3.1`.
+- 9.2: 14 alert rules canonical (Lote 10.8bis P1-1 corrected; reconciles to actual YAML rule count: 4 SEV-1 + 5 SEV-2 + 5 SEV-3) organized SEV taxonomy `observability_model.md §3.1`.
 - 9.3: SLI distinction panel critical (sprint contract §7.10.s08.1).
 - 9.4: RB-FM-250 dry-run mandatory (sprint contract §6 DoD EVT-017).
-- 9.5: PRR HIGH_RISK 13 sign-offs ship gate (sprint contract §6 DoD).
+- 9.5: PRR HIGH_RISK 12 sign-offs (framework §33.5.4.3 cap; Lote 10.8bis P1-2) ship gate (sprint contract §6 DoD).
 - 9.6: 100k property test cross-WI integration harness.
 - 9.7: Cost regression gate (sprint contract §14.s08.7).
 - 9.8: AdminCtx-gated dashboard (RBAC).
@@ -678,7 +678,7 @@ Feature: DASH-RATE Operational Dashboard + Alerts + RB-FM-250 + PRR Ship Gate
 - [ ] **10.s08.006.4** Property tests 4 × 10k green; **100k nightly cross-WI integration sustained 7d** (HIGH_RISK SOTA bar; Lote 10.7bis P1-3).
 - [ ] **10.s08.006.5** Chaos suite 10 scenarios green.
 - [ ] **10.s08.006.6** **RB-FM-250 DDoS dry-run pass** (sprint contract §6 DoD EVT-017): SLO ≥ 99.0% non-attacker + recovery ≤ 15min.
-- [ ] **10.s08.006.7** **PRR HIGH_RISK 13 sign-offs ship gate** validated for S-08; ship-ready.
+- [ ] **10.s08.006.7** **PRR HIGH_RISK 12 sign-offs (framework §33.5.4.3 cap; Lote 10.8bis P1-2) ship gate** validated for S-08; ship-ready.
 - [ ] **10.s08.006.8** **SLI distinction implemented + validated**: within-quota vs over-quota separate counters + SLO denominator excludes over-quota (sprint contract §7.10.s08.1).
 - [ ] **10.s08.006.9** Cost regression gate: $/million_ops baseline established + CI gate.
 - [ ] **10.s08.006.10** AdminCtx-gated dashboard RBAC; per-tenant labels redacted from non-admin viewers.
@@ -686,7 +686,7 @@ Feature: DASH-RATE Operational Dashboard + Alerts + RB-FM-250 + PRR Ship Gate
 - [ ] **10.s08.006.12** **Chaos test 30d sustained**: zero INV-AVAIL-ISOLATION + zero LGPD violations + zero SLI denominator drift.
 - [ ] **10.s08.006.13** Cargo-audit + cargo-deny + clippy + Terraform validate clean.
 - [ ] **10.s08.006.14** Calibration validated (10 synthetic workloads from WI-S08-004 sprint contract §6 DoD).
-- [ ] **10.s08.006.15** **All 8 alert rules armed** in production-equivalent staging environment.
+- [ ] **10.s08.006.15** **All 14 alert rules (Lote 10.8bis P1-1) armed** in production-equivalent staging environment.
 
 ## 11. DoD
 
@@ -697,7 +697,7 @@ Feature: DASH-RATE Operational Dashboard + Alerts + RB-FM-250 + PRR Ship Gate
 - **INV-AVAIL-ISOLATION** (HIGH; registry §3.8): operational visibility canonical part.
 - **INV-AUDIT-APPEND-ONLY** (CRITICAL, TLA+): all dashboard config + alert silence audited.
 - **INV-TENANT-ISOLATION** (CRITICAL, TLA+): AdminCtx-gated; per-tenant labels RBAC.
-- **INV-RATE-LIMIT-PROPORTIONALITY** (HIGH; registry §3.X): visibility validates plan tier proportionality.
+- **INV-RATE-LIMIT-PROPORTIONALITY** (HIGH; registry §3.12): visibility validates plan tier proportionality.
 - **INV-QUOTA-ENFORCEMENT** (HIGH; registry §3.11): visibility validates atomic enforcement.
 
 ## 13. Artifacts Produced
@@ -729,9 +729,9 @@ Feature: DASH-RATE Operational Dashboard + Alerts + RB-FM-250 + PRR Ship Gate
 - 14.s08.006.10: TenantCtx + AdminCtx (Lote 10.4bis); CF Workers Rust API worker::send_future (Lote 10.7bis R5 P0-3); RBAC enforcement.
 - 14.s08.006.11: 100k nightly property test cross-WI (HIGH_RISK SOTA bar; Lote 10.7bis P1-3).
 - 14.s08.006.12: SLI distinction implemented (sprint contract §7.10.s08.1 critical).
-- 14.s08.006.13: PRR HIGH_RISK 13 sign-offs ship gate (framework §33.5.4.3).
+- 14.s08.006.13: PRR HIGH_RISK 12 sign-offs (framework §33.5.4.3 cap; Lote 10.8bis P1-2) ship gate (framework §33.5.4.3).
 - 14.s08.006.14: RB-FM-250 dry-run pass (sprint contract §6 DoD EVT-017).
-- 14.s08.006.15: 8 alert rules armed production-equivalent staging.
+- 14.s08.006.15: 14 alert rules (Lote 10.8bis P1-1) armed production-equivalent staging.
 
 ## 15. Chaos Experiments (10)
 
@@ -739,7 +739,7 @@ Feature: DASH-RATE Operational Dashboard + Alerts + RB-FM-250 + PRR Ship Gate
 
 ## 16. PRR
 
-HIGH_RISK 13 sign-offs PRR; **consolidated S-08 ship gate**; sprint contract §6 DoD enforces.
+HIGH_RISK 12 sign-offs (framework §33.5.4.3 cap; Lote 10.8bis P1-2) PRR; **consolidated S-08 ship gate**; sprint contract §6 DoD enforces.
 
 ## 17. Sub-tasks
 
@@ -822,7 +822,7 @@ HIGH_RISK 13 sign-offs PRR; **consolidated S-08 ship gate**; sprint contract §6
 
 ## 27. Knowledge Transfer
 
-Tech talk (2h): "S-08 DASH-RATE: Operational Visibility + 8 Alert Rules + RB-FM-250 + PRR Ship Gate"; doc `docs/dev/dash-rate-architecture.md`; onboarding test 8 questions: SLI distinction (sprint contract §7.10.s08.1), 8 alert rules SEV taxonomy, RB-FM-250 dry-run pass criteria, PRR ship gate 13 sign-offs (lane-aware §33.5.4.3), 100k cross-WI property test, cost regression gate (§14.s08.7), AdminCtx RBAC, hysteresis duration clauses prevent flapping.
+Tech talk (2h): "S-08 DASH-RATE: Operational Visibility + 14 Alert Rules (Lote 10.8bis P1-1) + RB-FM-250 + PRR Ship Gate"; doc `docs/dev/dash-rate-architecture.md`; onboarding test 8 questions: SLI distinction (sprint contract §7.10.s08.1), 14 alert rules SEV taxonomy, RB-FM-250 dry-run pass criteria, PRR ship gate 12 sign-offs (lane-aware §33.5.4.3 cap; Lote 10.8bis P1-2), 100k cross-WI property test, cost regression gate (§14.s08.7), AdminCtx RBAC, hysteresis duration clauses prevent flapping.
 
 ## 28. Risk Register (12-row HIGH_RISK)
 
@@ -843,9 +843,9 @@ Tech talk (2h): "S-08 DASH-RATE: Operational Visibility + 8 Alert Rules + RB-FM-
 
 ## 29. Review Checkpoints
 
-D+0 design (Architect; dashboard layout); D+1 SRE (alert rules + runbook routing); D+2 AppSec (TenantCtx + AdminCtx + RBAC); D+3 Compliance (LGPD canary alert); D+4 code review; D+5 RB-FM-250 dry-run; D+6 chaos validation + 100k integration; D+7 PRR HIGH_RISK 13 sign-offs ship gate.
+D+0 design (Architect; dashboard layout); D+1 SRE (alert rules + runbook routing); D+2 AppSec (TenantCtx + AdminCtx + RBAC); D+3 Compliance (LGPD canary alert); D+4 code review; D+5 RB-FM-250 dry-run; D+6 chaos validation + 100k integration; D+7 PRR HIGH_RISK 12 sign-offs (framework §33.5.4.3 cap; Lote 10.8bis P1-2) ship gate.
 
-## 30. Sign-off (HIGH_RISK 13 — CONSOLIDATED S-08 SHIP GATE)
+## 30. Sign-off (HIGH_RISK 12 — CONSOLIDATED S-08 SHIP GATE; framework §33.5.4.3 cap; Lote 10.8bis P1-2)
 
 | # | Role | Status |
 |---|---|---|
@@ -857,15 +857,14 @@ D+0 design (Architect; dashboard layout); D+1 SRE (alert rules + runbook routing
 | 8 | Product (Gustavo) | _pending_ |
 | 9 | Compliance | _TBD; **mandatory emphatic** — LGPD canary alert + appeal SLA validation + audit trail completeness (consolidates LGPD review across 6 WIs)_ |
 | 10 | Privacy | _TBD; **mandatory emphatic** — RBAC + per-tenant labels redacted_ |
-| 11 | Architect | _TBD; **mandatory emphatic** — multi-camada visibility + SLI distinction (sprint contract §7.10.s08.1) + PRR ship gate enforcement_ |
+| 11 | Architect | _TBD; **mandatory emphatic** — multi-camada visibility + SLI distinction (sprint contract §7.10.s08.1) + PRR ship gate enforcement; consolidates Data Engineering advisor for dashboard metrics correctness (Crypto SME N/A — observability is NOT cripto-load-bearing)_ |
 | 12 | AppSec | _TBD; **mandatory** — RBAC datasource permissions + alert silence audit_ |
-| 13 | Crypto SME | _advisory — observability is NOT cripto-load-bearing; substituted by Data Engineering advisor for dashboard metrics correctness if Crypto SME unstaffed (ADR-0034 path)_ |
 
 ## 31. Change Log
 
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
-| 1.0.0 | 2026-04-25 | Gustavo (Lote 10.8) | Criação WI-S08-006; HIGH_RISK; **S-08 PRR consolidated ship gate**; SOTA pós-Lote 10.7bis lessons absorbed: SLI distinction (sprint contract §7.10.s08.1 critical absorbed); CF Workers Rust API worker::send_future (R5 P0-3); 100k nightly cross-WI integration property test (P1-3); audit fail-closed (Lote 10.6bis); 5-tier canonical (P0-7); column drift no `_ms` suffix (P0-3). 14 dashboard panels consolidating 41 métricas de WI-S08-001/002/003/004/005. 8 alert rules canonical SEV taxonomy. RB-FM-250 DDoS volumetric runbook dry-run validation (sprint contract §6 DoD EVT-017). PRR HIGH_RISK 13 sign-offs ship gate (framework §33.5.4.3 lane-aware; ADR-0034 staffing waiver). Cost regression gate cron-tick (sprint contract §14.s08.7). 100k cross-WI integration property test acceptance harness. AdminCtx RBAC datasource permissions. Sprint contract estimate 12h revised upward to ~17h porque scope expansion include cross-WI integration harness + RB-FM-250 dry-run + PRR evaluator + cost regression gate. |
+| 1.0.0 | 2026-04-25 | Gustavo (Lote 10.8) | Criação WI-S08-006; HIGH_RISK; **S-08 PRR consolidated ship gate**; SOTA pós-Lote 10.7bis lessons absorbed: SLI distinction (sprint contract §7.10.s08.1 critical absorbed); CF Workers Rust API worker::send_future (R5 P0-3); 100k nightly cross-WI integration property test (P1-3); audit fail-closed (Lote 10.6bis); 5-tier canonical (P0-7); column drift no `_ms` suffix (P0-3). 14 dashboard panels consolidating 41 métricas de WI-S08-001/002/003/004/005. 14 alert rules canonical (Lote 10.8bis P1-1 corrected; reconciles to actual YAML rule count: 4 SEV-1 + 5 SEV-2 + 5 SEV-3) SEV taxonomy. RB-FM-250 DDoS volumetric runbook dry-run validation (sprint contract §6 DoD EVT-017). PRR HIGH_RISK 12 sign-offs (framework §33.5.4.3 cap; Lote 10.8bis P1-2) ship gate (framework §33.5.4.3 lane-aware; ADR-0034 staffing waiver). Cost regression gate cron-tick (sprint contract §14.s08.7). 100k cross-WI integration property test acceptance harness. AdminCtx RBAC datasource permissions. Sprint contract estimate 12h revised upward to ~17h porque scope expansion include cross-WI integration harness + RB-FM-250 dry-run + PRR evaluator + cost regression gate. |
 
 ## 32. Anti-patterns evitados
 

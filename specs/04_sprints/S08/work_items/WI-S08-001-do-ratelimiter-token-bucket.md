@@ -94,7 +94,7 @@ pub enum RateLimitError {
 
 **Cripto-driven invariants enforced**:
 
-1. **INV-RATE-LIMIT-PROPORTIONALITY** (HIGH; registry §3.X): `refill_rate × window` always proportional to tenant Plan tier:
+1. **INV-RATE-LIMIT-PROPORTIONALITY** (HIGH; registry §3.12): `refill_rate × window` always proportional to tenant Plan tier:
    - **5-tier canonical** (Lote 10.7bis P0-7 absorbed): free/solo/team/business/enterprise.
    - **Refill rates** (per `slo_catalog.md §3.1` interpolation; baselines from `_spec_contract §16` external benchmarks):
      - `free`: 10 RPS sustained, 50 burst.
@@ -198,8 +198,15 @@ DO singleton + RateLimiter trait + CF Workers integration; HIGH_RISK; FF-HR-005 
            self.last_refill_at_ms = now_ms;
            RateLimitResult { allowed: true, tokens_remaining: self.tokens, ... retry_after_seconds: None }
        } else {
-           let needed = amount - refilled_tokens;
-           let retry_after_secs = (needed / self.plan_refill_rate_per_sec).ceil() as u64;
+           // Lote 10.8bis P1-1 (R5): guard division-by-zero for refill_rate=0 (canceled tenant; R-009).
+           // Without guard: f64::INFINITY.ceil() as u64 saturates to u64::MAX, emitting
+           // Retry-After: 18446744073709551615 (HTTP client misinterpretation).
+           let retry_after_secs = if self.plan_refill_rate_per_sec <= f64::EPSILON {
+               86400 * 7  // 7 days = effectively "never" (canonical canceled-tenant retry)
+           } else {
+               let needed = amount - refilled_tokens;
+               (needed / self.plan_refill_rate_per_sec).ceil() as u64
+           };
            // tokens NOT decremented (failure case)
            // last_refill_at_ms updated to compute correct next-tick
            self.last_refill_at_ms = now_ms;
@@ -394,11 +401,11 @@ Feature: DO RateLimiter token bucket per-tenant
 
 ## 11. DoD
 
-- [ ] Module compila + tests green; all Gherkin/property/chaos green; 13 sign-offs (HIGH_RISK).
+- [ ] Module compila + tests green; all Gherkin/property/chaos green; 12 sign-offs (HIGH_RISK upper-bound; framework §33.5.4.3 cap 10-12; Crypto SME advisory consolidated as Architect race-correctness review per ADR-0034 path; Lote 10.8bis P1-2 corrected).
 
 ## 12. Invariants Validated
 
-- **INV-RATE-LIMIT-PROPORTIONALITY** (HIGH; registry §3.X): refill × window proportional to plan; 5min sync.
+- **INV-RATE-LIMIT-PROPORTIONALITY** (HIGH; registry §3.12): refill × window proportional to plan; 5min sync.
 - **INV-AVAIL-ISOLATION** (HIGH; registry §3.8): per-tenant DO; cross-tenant impossible.
 - **INV-TENANT-ISOLATION** (CRITICAL, TLA+): inherited via DO ID + TenantCtx middleware.
 
@@ -433,7 +440,7 @@ Feature: DO RateLimiter token bucket per-tenant
 
 ## 16. PRR
 
-HIGH_RISK 13 sign-offs PRR; sprint contract §6 DoD enforces.
+HIGH_RISK 12 sign-offs (framework §33.5.4.3 cap; Lote 10.8bis P1-2) PRR; sprint contract §6 DoD enforces.
 
 ## 17. Sub-tasks
 
@@ -515,9 +522,9 @@ Tech talk (1.5h): "S-08 Rate Limit: DO Actor + Token Bucket Math + 5-Tier Plan S
 
 ## 29. Review Checkpoints
 
-D+0 design (Architect; race analysis); D+2 AppSec (TenantCtx + audit); D+4 code review; D+6 chaos validation; D+7 PRR HIGH_RISK 13 sign-offs.
+D+0 design (Architect; race analysis); D+2 AppSec (TenantCtx + audit); D+4 code review; D+6 chaos validation; D+7 PRR HIGH_RISK 12 sign-offs (framework §33.5.4.3 cap; Lote 10.8bis P1-2).
 
-## 30. Sign-off (HIGH_RISK 13)
+## 30. Sign-off (HIGH_RISK 12 — framework §33.5.4.3 cap)
 
 | # | Role | Status |
 |---|---|---|
@@ -529,9 +536,8 @@ D+0 design (Architect; race analysis); D+2 AppSec (TenantCtx + audit); D+4 code 
 | 8 | Product (Gustavo) | _pending_ |
 | 9 | Compliance | _TBD; **mandatory** — LGPD Art. 20 (decisões automatizadas) advisory_ |
 | 10 | Privacy | _TBD; **mandatory** — no PII em rate limit metrics_ |
-| 11 | Architect | _TBD; **mandatory** — DO routing + 5-tier canonical_ |
+| 11 | Architect | _TBD; **mandatory** — DO routing + 5-tier canonical + race-correctness review (DO actor; consolidates Crypto SME advisory per ADR-0034 path; Lote 10.8bis P1-2 cap reduction)_ |
 | 12 | AppSec | _TBD; **mandatory emphatic** — bulkhead correctness + audit fail-closed_ |
-| 13 | Crypto SME | _advisory — race-correctness review (DO actor; not cripto-load-bearing per se)_ |
 
 ## 31. Change Log
 

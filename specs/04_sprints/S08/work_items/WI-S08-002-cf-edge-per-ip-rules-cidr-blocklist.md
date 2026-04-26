@@ -48,6 +48,17 @@ CF edge per-IP rate limit é o **outermost bulkhead layer** do CoreLink — drop
 
 ```yaml
 # File: infra/cloudflare/rulesets/per_ip_rate_limit.tf (Terraform managed)
+# Lote 10.8bis P1-5 (R5): provider v4+ canonical schema — `action_parameters` block
+# wrapping `ratelimit{}` (NOT legacy v3 top-level `ratelimit{}` block).
+
+terraform {
+  required_providers {
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = "~> 4.0"  # provider v4+ canonical (Lote 10.8bis P1-5)
+    }
+  }
+}
 
 resource "cloudflare_ruleset" "corelink_edge_rate_limit" {
   zone_id     = var.cloudflare_zone_id
@@ -56,17 +67,19 @@ resource "cloudflare_ruleset" "corelink_edge_rate_limit" {
   kind        = "zone"
   phase       = "http_ratelimit"
 
-  # Camada 2a: anonymous (no Authorization header)
+  # Camada 2a: anonymous (no Authorization header) — provider v4 syntax
   rules {
     action      = "block"
     description = "Anonymous IP rate limit"
     expression  = "(http.request.uri.path matches \"^/v1/\" and not http.request.headers[\"authorization\"][0] matches \".*\")"
-    ratelimit {
-      characteristics       = ["ip.src"]
-      period                = 60
-      requests_per_period   = 600    # 10 RPS sustained over 60s window
-      mitigation_timeout    = 60
-      counting_expression   = ""
+    action_parameters {
+      ratelimit {
+        characteristics       = ["ip.src"]
+        period                = 60
+        requests_per_period   = 600    # 10 RPS sustained over 60s window
+        mitigation_timeout    = 60
+        counting_expression   = ""
+      }
     }
   }
 
@@ -75,11 +88,13 @@ resource "cloudflare_ruleset" "corelink_edge_rate_limit" {
     action      = "block"
     description = "Authenticated IP rate limit (NAT-aware)"
     expression  = "(http.request.uri.path matches \"^/v1/\" and http.request.headers[\"authorization\"][0] matches \".*\")"
-    ratelimit {
-      characteristics       = ["ip.src"]
-      period                = 60
-      requests_per_period   = 60000   # 1000 RPS sustained over 60s window
-      mitigation_timeout    = 60
+    action_parameters {
+      ratelimit {
+        characteristics       = ["ip.src"]
+        period                = 60
+        requests_per_period   = 60000   # 1000 RPS sustained over 60s window
+        mitigation_timeout    = 60
+      }
     }
   }
 
@@ -242,7 +257,7 @@ CF edge per-IP rate limit é a **outermost defense-in-depth layer** do bulkhead 
 ## 4. Capability Mapping
 
 - **CAP-RATE-002** (Per-IP edge rate limit) — IMPLEMENTA primary.
-- Trace: `security_model.md CTRL-RATE-001` (security control camada 2) + `resilience_patterns.md PAT-RATE-LIMIT-001` (multi-camada bulkhead) + `failure_modes.md FM-250 (DDoS volumetric)` + `failure_modes.md FM-251 (rate limit false-positive)` + sprint contract §7.10.s08.3 (humane automated response LGPD).
+- Trace: `security_model.md CTRL-RATE-001` (security control camada 2) + `resilience_patterns.md PAT-RATE-LIMIT-001` (multi-camada bulkhead) + `failure_modes.md FM-250 (DDoS volumetric)` + `failure_modes.md FM-201 (Config change rate-limit drop; Lote 10.8bis P1-3 — FM-251 canonical é "Credential stuffing / brute force")` + sprint contract §7.10.s08.3 (humane automated response LGPD).
 
 ## 5. Tipo
 

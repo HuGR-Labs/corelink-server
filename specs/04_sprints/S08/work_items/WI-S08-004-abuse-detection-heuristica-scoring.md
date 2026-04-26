@@ -333,7 +333,7 @@ Abuse detection é **the proactive layer** — bulkhead camadas 1-4 (per-tenant 
 
 - **CAP-ABUSE-001** (Abuse detection heurística multi-feature) — IMPLEMENTA primary.
 - **CAP-ABUSE-002** (Automated response: downgrade + admin trigger; suspend NEVER auto) — IMPLEMENTA primary.
-- Trace: `security_model.md CTRL-RATE-001 + CTRL-AUTH` + `invariant_registry.md INV-AVAIL-ISOLATION + INV-TENANT-ISOLATION` + `failure_modes.md FM-251 (rate FP)` + `privacy_model.md PII redaction` + sprint contract §7.10.s08.3 (LGPD Art. 20) + §7.10.s08.4 (per-tenant isolation property test).
+- Trace: `security_model.md CTRL-RATE-001 + CTRL-AUTH` + `invariant_registry.md INV-AVAIL-ISOLATION + INV-TENANT-ISOLATION` + `failure_modes.md FM-201 (Config change causa rate-limit drop; canonical FM lookup; Lote 10.8bis P1-3 corrected — FM-251 actually é "Credential stuffing / brute force")` + `privacy_model.md PII redaction` + sprint contract §7.10.s08.3 (LGPD Art. 20) + §7.10.s08.4 (per-tenant isolation property test).
 
 ## 5. Tipo
 
