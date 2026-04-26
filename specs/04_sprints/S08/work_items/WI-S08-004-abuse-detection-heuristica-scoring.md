@@ -430,13 +430,13 @@ Heurística scoring + cron DO + admin endpoints + Tower middleware response grad
    CREATE TABLE abuse_response_actions (
        tenant_id TEXT NOT NULL,
        applied_at INTEGER NOT NULL,                 -- unix ms; canonical no _ms suffix
-       expires_at INTEGER NOT NULL,                 -- when downgrade lifts (or NULL for permanent)
+       expires_at INTEGER,                          -- when downgrade lifts; NULL = pending human review (AdminReview/SuspendCandidate tiers; Lote 10.8-tris P1-NEW-3 NOT NULL → NULLABLE corrected)
        action TEXT NOT NULL,                        -- silent_downgrade_50pct_1h | admin_review_triggered | suspend_candidate
        triggered_by_score REAL NOT NULL,
        reverted_at INTEGER,                         -- when reverted (auto-recover OR appeal approved)
        PRIMARY KEY (tenant_id, applied_at),
        CHECK (triggered_by_score >= 0.5 AND triggered_by_score <= 1.0),
-       CHECK (expires_at > applied_at),
+       CHECK (expires_at IS NULL OR expires_at > applied_at),
        CHECK (reverted_at IS NULL OR reverted_at >= applied_at)
    );
 

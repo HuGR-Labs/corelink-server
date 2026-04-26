@@ -187,10 +187,18 @@ DO singleton + RateLimiter trait + CF Workers integration; HIGH_RISK; FF-HR-005 
 3. **Token bucket math** (lazy refill canonical):
    ```rust
    pub fn check_and_consume(&mut self, amount: f64, now_ms: i64) -> RateLimitResult {
+       // Lote 10.8-tris P1-NEW-2 (CI-2 completeness): apply WI-S08-004 SilentDowngrade override BEFORE refill.
+       // Read tenant_rate_override (cached 5min em DO memory; refresh on staleness).
+       let override_multiplier = self.cached_rate_override_or_refresh(now_ms);  // [0.0, 1.0] (1.0 = no downgrade)
+       let effective_refill_rate = self.plan_refill_rate_per_sec * override_multiplier;
+       // Audit + emit metric corelink.rate_limiter.override_active{tenant_id, multiplier} if multiplier < 1.0.
+       // SEV-3 alert if cache_age > 600s (stale override during active downgrade window):
+       // corelink.rate_limiter.override_cache_lag_secs > 600 (Lote 10.8-tris P1-NEW-2 alert).
+
        // Clamp monotonic: if now < last_refill, use last_refill (clock skew safety)
        let now_ms = now_ms.max(self.last_refill_at_ms);
        let delta_secs = (now_ms - self.last_refill_at_ms) as f64 / 1000.0;
-       let refilled_tokens = (self.tokens + delta_secs * self.plan_refill_rate_per_sec)
+       let refilled_tokens = (self.tokens + delta_secs * effective_refill_rate)
            .min(self.plan_burst_capacity);
 
        if refilled_tokens >= amount {
@@ -416,7 +424,7 @@ Feature: DO RateLimiter token bucket per-tenant
 | RateLimiter module | `crates/corelink-rate-limiter/` | Rust |
 | DO singleton impl | `crates/corelink-rate-limiter/src/do_singleton.rs` | Rust |
 | Tower middleware | `crates/corelink-worker/src/middleware/rate_limit.rs` | Rust |
-| D1 migrations | `migrations/00X_rate_limiter_state.sql`, `migrations/00X_tenant_plan.sql` | SQL |
+| D1 migrations | `migrations/00X_rate_limiter_state.sql`, `migrations/00X_tenant_plan.sql`, `migrations/00X_tenant_rate_override.sql` (shared schema com WI-S08-004 §6.1.4 SilentDowngrade communication mechanism; Lote 10.8-tris P1-NEW-2 cross-WI artifact reference) | SQL |
 | Property tests | `crates/corelink-rate-limiter/tests/prop_rate_limit.rs` | Rust |
 | Chaos suite | `tests/chaos_rate_limit.rs` | Rust |
 | Wrangler DO binding | `wrangler.toml` (additions) | TOML |

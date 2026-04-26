@@ -268,7 +268,7 @@ Sprint contract §5 R-S08-3 amend (will be applied em this Lote 10.8bis Phase 6 
 - **Reservation orphan** (write fails after reserve, no release call): DO alarm sweep auto-releases at expiry; bytes_used decrement reverts; eventual consistency.
 - **Plan downgrade mid-flight** (max_storage_bytes decreased while bytes_used > new max): pre-existing reservations honored (TTL); new check_and_reserve returns Err(StorageOver) immediately; eviction (S-07) drives down bytes_used; no data loss (eviction is soft-delete grace).
 - **Bandwidth reset race at midnight** (tenant uploads at 23:59:59.999 UTC; counter decrements at 00:00:00.000Z): chrono crate atomic check; either old DO accepts (last-millisecond) or new DO accepts (first-millisecond); never both; never neither.
-- **PAT compromise** (attacker uses PAT at 100× tenant rate): camada 3 cap 10× → 90% requests rejected; SEV-2 alert; admin revokes PAT (S-03 RUNBOOK-AUTH-003).
+- **PAT compromise** (attacker uses PAT at 100× tenant rate): camada 1 (WI-S08-001 DO RateLimiter) já throttles tenant aggregate to 200 RPS sustained (96% of attacker requests 429 com X-Rate-Limit-Type: tenant_quota — camada 1 enforcement). Camada 3 detection threshold (10× tenant = 2000 RPS observed per-PAT) exceeded → SEV-2 alert emitted; request **NOT blocked at camada 3** (camada 1 owns aggregate enforcement); admin revokes PAT (S-03 RUNBOOK-AUTH-003). Lote 10.8-tris P0-NEW-1 enforcement framing corrected.
 - **DO restart amid in-flight reservation**: durable storage persists pending reservations + bytes_used; cold start recovers state from D1 snapshot; alarm re-armed AT START (Lote 10.4bis).
 - **Monthly bandwidth wraparound** (tenant exceeds quota at 28th of month): Err(BandwidthOver); customer notified; reset 1st of next month; chrono crate computes reset_secs deterministic.
 
@@ -314,7 +314,7 @@ DO singleton + QuotaChecker trait + Tower middleware + D1 backing; HIGH_RISK; FF
 1. **`crates/corelink-quota/` module** — QuotaChecker trait + DO impl (shared com S-07 WI-S07-003) + Tower middleware + tests.
 
 2. **DO `Quota-<tenant_id>` extended** (single DO; multi-method; shared com S-07 WI-S07-003 reservation pattern):
-   - State: `bytes_used: u64, reservations: HashMap<ReservationId, ReservationEntry>, pending_release_alarms: BinaryHeap<(expiry_ms, ReservationId)>, bandwidth_egress_bytes: u64, bandwidth_ingress_bytes: u64, bandwidth_period: String "YYYY-MM", per_pat_state: HashMap<PatId, TokenBucketState>`.
+   - State: `bytes_used: u64, reservations: HashMap<ReservationId, ReservationEntry>, pending_release_alarms: BinaryHeap<(expiry_ms, ReservationId)>, bandwidth_egress_bytes: u64, bandwidth_ingress_bytes: u64, bandwidth_period: String "YYYY-MM", per_pat_observations: HashMap<PatId, PatRateObservationState>` (Lote 10.8-tris P0-NEW-1 type rename: detector NOT token bucket).
    - DO routing via `tenant.primary_region` (Lote 10.7bis P0-9).
    - DO alarm 60s sweep: (a) release expired reservations; (b) snapshot to D1 (Lote 10.5bis batch ≤ 250); (c) check bandwidth period transition (cross 1st-UTC-midnight → reset).
    - DO alarm re-arm AT START (Lote 10.4bis lesson absorbed).
@@ -418,7 +418,7 @@ DO singleton + QuotaChecker trait + Tower middleware + D1 backing; HIGH_RISK; FF
 
    pub fn check_pat_rate(&mut self, pat_id: &PatId, now_ms: i64) -> Result<PatRateResult, QuotaError> {
        let misuse_threshold = pat_rate_misuse_threshold_for_tier(&self.plan_tier);  // = 10× tenant refill_rate
-       let state = self.per_pat_state.entry(pat_id.clone()).or_insert(PatRateState::new(now_ms));
+       let state = self.per_pat_observations.entry(pat_id.clone()).or_insert(PatRateObservationState::new(now_ms));
 
        // Update rolling rate (1min window EWMA)
        state.update_rolling_rate(now_ms);
@@ -547,7 +547,7 @@ DO singleton + QuotaChecker trait + Tower middleware + D1 backing; HIGH_RISK; FF
     - `prop_atomic_cas_strict_lt`: 10k random concurrent reservations at boundary; assert no over-commit; strict-< predicate honored.
     - `prop_reservation_ttl_release`: random TTL + release sequences; assert bytes_used decrements correctly; no orphan.
     - `prop_bandwidth_period_transition`: simulate 1st-UTC-midnight crossing at random ms offsets; assert deterministic reset; old period snapshotted to D1.
-    - `prop_pat_rate_cap`: 1k PATs × 1k requests each; assert per-PAT ≤ 10× tenant cap.
+    - `prop_pat_rate_misuse_detection_threshold`: 1k PATs × 1k requests each; assert misuse_detected=true triggers when per-PAT observed_rate > 10× tenant_refill threshold (detection NOT enforcement; camada 1 owns aggregate; Lote 10.8-tris P0-NEW-1 rename).
     - `prop_concurrent_reservations_serialization`: 1000 concurrent check_and_reserve same DO; assert serialization (DO actor); deterministic outcome.
     - `prop_reservation_expiry_safety`: clock skew + TTL boundary; assert no spurious release; monotonic clamp.
 
@@ -557,7 +557,7 @@ DO singleton + QuotaChecker trait + Tower middleware + D1 backing; HIGH_RISK; FF
     - 3. **Plan downgrade max_storage decreased**: pre-existing reservations honored; new check_and_reserve fails immediately; eviction (S-07) drives bytes_used down; no data loss.
     - 4. **Bandwidth reset race at midnight** (uploads at 23:59:59.999 UTC + 00:00:00.001 UTC): chrono atomic check; deterministic period assignment; no double-counting.
     - 5. **Multipart upload 160 GiB at 100 Mbps**: reservation TTL = 218min × 2x safety = ~7.3h; under 7d cap; reservation persists full upload duration; bytes_used delta correct on completion.
-    - 6. **PAT compromise** (single PAT 50× tenant rate): camada 3 cap 10× kicks in; 80% requests rejected; SEV-2 alert; admin revokes.
+    - 6. **PAT compromise** (single PAT 50× tenant rate): camada 1 throttles tenant aggregate to plan refill (most requests already 429'd com tenant_quota); camada 3 detection threshold (10× tenant) exceeded → misuse_detected=true; SEV-2 alert emitted; request **NOT blocked at camada 3**; admin revokes PAT. Lote 10.8-tris P0-NEW-1 enforcement framing corrected.
     - 7. **DO restart amid in-flight reservations**: durable storage persists; cold start recovers state from D1 snapshot; alarm re-armed AT START; pending alarms re-scheduled.
     - 8. **D1 outage 30min**: DO continues authoritative; reservations + bytes_used in-memory; on D1 recovery, sync resumes; no enforcement gap.
     - 9. **Audit emit fail mid-confirm**: confirm_storage rolls back? NO — fail-closed bias toward over-counting (charge tenant for legitimate use); reconcile catches drift; SEV-1 alert.
@@ -698,7 +698,7 @@ Feature: Quota Checker Middleware (Storage + Bandwidth + Per-PAT)
 - 9.8: Per-PAT camada 3 é misuse DETECTOR não enforcer (Lote 10.8bis P0-C correction; aggregate enforcement em camada 1 WI-S08-001 DO; threshold = 10× tenant refill alarm signal; sprint contract §5 R-S08-3 amend queued Phase 6).
 - 9.9: TenantCtx-only (Lote 10.4bis); pat_id from same TenantCtx.
 - 9.10: Audit fail-closed bias toward over-counting (Lote 10.6bis pattern adapted).
-- 9.11: NEW migrations bandwidth_state + bandwidth_history + quota_reservations + pat_rate_state.
+- 9.11: NEW migrations bandwidth_state + bandwidth_history + quota_reservations + pat_rate_observation (Lote 10.8-tris P1-NEW-4 corrected from pat_rate_state stale reference; rolling rate EWMA detector NOT token bucket).
 - 9.12: NO new ADR (extends ADR-0020 boundary; CTRL-QUOTA-001 + CTRL-RATE-001 canonical).
 - 9.13: Sprint contract §5 R-S08-5 phantom column will require correction in `tris` cycle review feedback.
 
@@ -737,7 +737,7 @@ Feature: Quota Checker Middleware (Storage + Bandwidth + Per-PAT)
 | QuotaChecker module | `crates/corelink-quota/` | Rust |
 | DO singleton impl (extended) | `crates/corelink-quota/src/do_singleton.rs` | Rust |
 | Tower middleware | `crates/corelink-worker/src/middleware/quota.rs` | Rust |
-| D1 migrations | `migrations/00X_bandwidth_state.sql`, `migrations/00X_bandwidth_history.sql`, `migrations/00X_quota_reservations.sql`, `migrations/00X_pat_rate_state.sql` | SQL |
+| D1 migrations | `migrations/00X_bandwidth_state.sql`, `migrations/00X_bandwidth_history.sql`, `migrations/00X_quota_reservations.sql`, `migrations/00X_pat_rate_observation.sql` (Lote 10.8-tris P1-NEW-4 path corrected from `pat_rate_state.sql` stale reference) | SQL |
 | Property tests | `crates/corelink-quota/tests/prop_quota.rs` | Rust |
 | Chaos suite | `tests/chaos_quota.rs` | Rust |
 | Wrangler DO binding | `wrangler.toml` (extends `Quota-<tenant_id>` from S-07) | TOML |
