@@ -26,7 +26,7 @@ inherits_from:
 tags: ["wi", "s08", "rfc-9331", "rate-limit-headers", "global-circuit-breaker", "sli-distinction", "high-risk"]
 ---
 
-# WI-S08-005 — Response Code Types + RFC 9331 RateLimit Headers + Global Circuit Breaker Camada 4 (`crates/corelink-rate-limit-headers` + `crates/corelink-global-circuit`; consolidates 429 responses from camadas 1-3 WI-S08-001/002/003 + camada 4 global circuit; RFC 9331 (IETF RateLimit + RateLimit-Policy headers stable; supersedes custom X-RateLimit-* legacy); 5 X-Rate-Limit-Type discriminators tenant_quota|per_ip|per_pat|over_quota|global_circuit_open sprint contract §5 R-S08-8; SLI distinction critical: within-plan-429 counted em SLI numerator (bug; sprint contract §7.10.s08.1) vs over-quota-429 NOT counted (legitimate); Retry-After RFC 6585 always present; global circuit breaker DO `GlobalRateLimiter-<region>` trip em error_rate > 50% sustained 5min com hysteresis para prevent flapping; degrade_mode=emergency fallback; multi-signal trigger Lote 10.7bis P0-9 race-aware lesson absorbed; CAP-RATE-004 system-wide DoS mitigation)
+# WI-S08-005 — Response Code Types + RFC 9331 RateLimit Headers + Global Circuit Breaker Camada 4 (`crates/corelink-rate-limit-headers` + `crates/corelink-global-circuit`; consolidates 429 responses from camadas 1-3 WI-S08-001/002/003 + camada 4 global circuit; RFC 9331 (IETF RateLimit + RateLimit-Policy headers stable; supersedes custom X-RateLimit-* legacy); 5 X-Rate-Limit-Type discriminators tenant_quota|per_ip|per_pat|over_quota|global_circuit_open sprint contract §5 R-S08-8; SLI distinction critical: within-plan-429 counted em SLI numerator (bug; sprint contract §7.10.s08.1) vs over-quota-429 NOT counted (legitimate); Retry-After RFC 6585 always present; global circuit breaker DO `GlobalRateLimiter-<region>` trip em error_rate > 50% sustained 5min com hysteresis para prevent flapping; degrade_mode=emergency fallback; multi-signal trigger sprint contract §15 R-S08-004 + standard circuit-breaker hysteresis pattern (Netflix Hystrix / Resilience4j canonical); CAP-RATE-004 system-wide DoS mitigation)
 
 > **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
 > **Parent:** [S-08](../sprint.md) · **Assignee:** Gustavo Schneiter
@@ -38,7 +38,7 @@ tags: ["wi", "s08", "rfc-9331", "rate-limit-headers", "global-circuit-breaker", 
 | Campo | Valor |
 |---|---|
 | ID | WI-S08-005 |
-| Título | Tower middleware response wrapper consolidando 429 de camadas 1-3 (WI-S08-001 per-tenant DO + WI-S08-002 CF edge per-IP + WI-S08-003 quota + per-PAT) + camada 4 global circuit breaker DO `GlobalRateLimiter-<region>`; RFC 9331 IETF headers `RateLimit: limit=<n>, remaining=<n>, reset=<seconds>` + `RateLimit-Policy: <window>;w=<seconds>` (supersedes legacy custom `X-RateLimit-*` per IETF stability); 5 discriminators `X-Rate-Limit-Type` tenant_quota|per_ip|per_pat|over_quota|global_circuit_open (sprint contract §5 R-S08-8); SLI distinction CRITICAL (sprint contract §7.10.s08.1): within-plan-429 (`tenant_quota` type) → emite `corelink_rate_limited_within_quota_total` → conta em SLO-AVAIL-CAS-GET denominador (é bug nosso = SLI failure); over-quota-429 (`over_quota` type) → emite `corelink_rate_limited_over_quota_total` → NÃO conta no denominador (legitimate; tenant excedeu plan; SLI pass); `Retry-After` RFC 6585 always present (seconds-until-refill realistic; sprint contract §5 R-S08-9); global circuit breaker DO trip em error_rate > 50% sustained 5min via multi-signal trigger Lote 10.7bis P0-9 race-aware (NOT single metric — combination 5xx + p99-latency + DO error_rate); hysteresis recovery 90% under threshold sustained 2min antes de re-engage; degrade_mode=emergency fallback returns 429 todos requests (graceful shed); CAP-RATE-004 system-wide DoS mitigation |
+| Título | Tower middleware response wrapper consolidando 429 de camadas 1-3 (WI-S08-001 per-tenant DO + WI-S08-002 CF edge per-IP + WI-S08-003 quota + per-PAT) + camada 4 global circuit breaker DO `GlobalRateLimiter-<region>`; RFC 9331 IETF headers `RateLimit: limit=<n>, remaining=<n>, reset=<seconds>` + `RateLimit-Policy: <window>;w=<seconds>` (supersedes legacy custom `X-RateLimit-*` per IETF stability); 5 discriminators `X-Rate-Limit-Type` tenant_quota|per_ip|per_pat|over_quota|global_circuit_open (sprint contract §5 R-S08-8); SLI distinction CRITICAL (sprint contract §7.10.s08.1): within-plan-429 (`tenant_quota` type) → emite `corelink_rate_limited_within_quota_total` → conta em SLO-AVAIL-CAS-GET denominador (é bug nosso = SLI failure); over-quota-429 (`over_quota` type) → emite `corelink_rate_limited_over_quota_total` → NÃO conta no denominador (legitimate; tenant excedeu plan; SLI pass); `Retry-After` RFC 6585 always present (seconds-until-refill realistic; sprint contract §5 R-S08-9); global circuit breaker DO trip em error_rate > 50% sustained 5min via multi-signal trigger sprint contract §15 R-S08-004 + standard hysteresis pattern (NOT single metric — combination 5xx + p99-latency + DO error_rate); hysteresis recovery 90% under threshold sustained 2min antes de re-engage; degrade_mode=emergency fallback returns 429 todos requests (graceful shed); CAP-RATE-004 system-wide DoS mitigation |
 | Sprint | S-08 |
 | Lane | HIGH_RISK |
 | Forcing factors | FF-HR-005 (CTRL-RATE-001 camada 4 global circuit é security control; bypass = catastrophic AVAIL outage cross-tenant); FF-HR-002 (global circuit FP catastrophic full outage; sprint contract §15 R-S08-004) |
@@ -133,7 +133,7 @@ pub enum TripReason {
     Error5xxRateExceeded { observed: f64, threshold: f64 },
     LatencyP99Exceeded { observed_us: u64, threshold_us: u64 },
     DoErrorRateExceeded { observed: f64, threshold: f64 },
-    MultiSignalCombined,                              // ≥ 2 signals tripped (Lote 10.7bis P0-9 race-aware multi-signal canonical)
+    MultiSignalCombined,                              // ≥ 2 signals tripped (sprint contract §15 R-S08-004 multi-signal canonical (Netflix Hystrix pattern))
     ManualOverride { admin_id: String, reason: String },
 }
 
@@ -191,7 +191,7 @@ pub enum CircuitError {
      - `over_quota` (bandwidth): seconds-until-next-month-1st-UTC (chrono crate Lote 10.5bis).
      - `global_circuit_open`: 60s minimum (hysteresis recovery sample interval).
 
-5. **Global circuit breaker multi-signal trigger** (Lote 10.7bis P0-9 race-aware lesson absorbed):
+5. **Global circuit breaker multi-signal trigger** (sprint contract §15 R-S08-004 + standard circuit-breaker hysteresis pattern (Netflix Hystrix / Resilience4j canonical)):
    - **Single-signal trigger é false-positive vulnerability** (sprint contract §15 R-S08-004); thus require **≥ 2 signals tripped** OR **manual override**:
      - Signal A: `error_rate_5xx > 0.5 sustained 5min`.
      - Signal B: `p99_latency > 5×SLO sustained 5min`.
@@ -227,7 +227,7 @@ Response wrapper + RFC 9331 + global circuit breaker constitute **the system-wid
 
 **Why global circuit breaker camada 4** (sprint contract §4 CAP-RATE-004): camadas 1-3 are scoped (tenant/IP/PAT); system-wide outage (control-plane down, DO storage layer overloaded, cross-region cascading failure) bypasses all 3. Camada 4 is last-resort: trip → 429 all requests + 60s recovery sample. Better to shed 100% requests for 60s than to cascade-fail indefinitely.
 
-**Why multi-signal trigger** (Lote 10.7bis P0-9 race-aware lesson absorbed; sprint contract §15 R-S08-004): single-signal trip = false-positive vulnerability. Example: SLO-AVAIL-CAS-GET uses error_rate_5xx; if S-09 metrics endpoint blip causes 5xx for ALL request types simultaneously → single-signal trip → full outage from observability glitch. Multi-signal: ≥ 2 signals tripped concurrently (5xx + latency + DO error) → real systemic failure → trip justified.
+**Why multi-signal trigger** (sprint contract §15 R-S08-004 + standard circuit-breaker hysteresis pattern (Netflix Hystrix / Resilience4j canonical); sprint contract §15 R-S08-004): single-signal trip = false-positive vulnerability. Example: SLO-AVAIL-CAS-GET uses error_rate_5xx; if S-09 metrics endpoint blip causes 5xx for ALL request types simultaneously → single-signal trip → full outage from observability glitch. Multi-signal: ≥ 2 signals tripped concurrently (5xx + latency + DO error) → real systemic failure → trip justified.
 
 **Why hysteresis recovery**: single threshold transition = flapping. Example: error_rate=0.501 trips circuit; recovers to 0.499; signal noise oscillates; circuit flaps every 5min destroying availability. Hysteresis: open at 0.5; recovery at 0.45 sustained 2min (prevents oscillation). Sample 10% in HalfOpen prevents thundering herd on full re-engage.
 
@@ -306,7 +306,7 @@ Tower middleware response wrapper + DO singleton global circuit breaker + RFC 93
    - DO alarm 60s sweep: trim observations buffer, check signals, update state, snapshot to D1 (Lote 10.5bis batch ≤ 250).
    - Re-arm AT START (Lote 10.4bis lesson).
 
-6. **Multi-signal trigger** (Lote 10.7bis P0-9 race-aware absorbed):
+6. **Multi-signal trigger** (sprint contract §15 R-S08-004 + standard circuit-breaker pattern absorbed):
    ```rust
    pub fn evaluate_signals(observations: &VecDeque<HealthObservation>, thresholds: &Thresholds, now_ms: i64) -> Option<TripReason> {
        let window_5min: Vec<&HealthObservation> = observations.iter()
@@ -333,7 +333,7 @@ Tower middleware response wrapper + DO singleton global circuit breaker + RFC 93
        let signals_tripped = [signal_a, signal_b, signal_c].iter().filter(|x| **x).count();
 
        if signals_tripped >= 2 {
-           // Multi-signal trip (CANONICAL Lote 10.7bis P0-9 race-aware lesson)
+           // Multi-signal trip (CANONICAL sprint contract §15 R-S08-004 + standard circuit-breaker pattern)
            Some(TripReason::MultiSignalCombined)
        } else if signals_tripped == 1 {
            // Single-signal alarm only (NOT trip); SEV-3 alert
@@ -465,7 +465,7 @@ Tower middleware response wrapper + DO singleton global circuit breaker + RFC 93
 
 ## 7. Anti-Scope
 
-- ❌ Single-signal trigger (Lote 10.7bis P0-9 race-aware lesson; multi-signal canonical).
+- ❌ Single-signal trigger (sprint contract §15 R-S08-004 + standard circuit-breaker pattern; multi-signal canonical).
 - ❌ No hysteresis (flapping vulnerability).
 - ❌ Legacy `X-RateLimit-*` headers (RFC 9331 IETF stable canonical).
 - ❌ SLI conflation (within-quota + over-quota same counter).
@@ -581,7 +581,7 @@ Feature: Response Code Types + RFC 9331 Headers + Global Circuit Breaker
 - 9.1: RFC 9331 IETF (NOT custom `X-RateLimit-*`); customer SDK universal compliance.
 - 9.2: 5 X-Rate-Limit-Type discriminators (sprint contract §5 R-S08-8 canonical).
 - 9.3: SLI distinction: within-quota in denominator (bug); over-quota excluded (legitimate; sprint contract §7.10.s08.1).
-- 9.4: Multi-signal trigger (Lote 10.7bis P0-9 race-aware absorbed; sprint contract §15 R-S08-004).
+- 9.4: Multi-signal trigger (sprint contract §15 R-S08-004 + standard circuit-breaker pattern absorbed; sprint contract §15 R-S08-004).
 - 9.5: Hysteresis recovery (no flapping; canonical pattern).
 - 9.6: HalfOpen 10% sample (gradual recovery; no thundering herd).
 - 9.7: Per-region circuit (NOT global global; deferred S-14 federation).
@@ -644,9 +644,9 @@ Feature: Response Code Types + RFC 9331 Headers + Global Circuit Breaker
 - 14.s08.005.6: SAST clean.
 - 14.s08.005.7: Métricas (9 §6.1.13).
 - 14.s08.005.8: Cost regression gate per-request ≤ $0.0000001.
-- 14.s08.005.9: TenantCtx-only (Lote 10.4bis); CF Workers Rust API worker::send_future (Lote 10.7bis R5 P0-3); column drift no `_ms` suffix (Lote 10.7bis P0-3); D1 batch ≤250 (Lote 10.5bis); CHECK inline (Lote 10.5bis); chrono `tomorrow_at_utc_midnight()` for bandwidth Retry-After (Lote 10.5bis).
+- 14.s08.005.9: TenantCtx-only (Lote 10.4bis); CF Workers Rust API worker::send_future (Lote 10.7bis R5 P0-3); column drift no `_ms` suffix (Lote 10.7bis P0-3); D1 batch ≤250 (Lote 10.5bis); CHECK inline (Lote 10.5bis); `corelink_time::secs_until_next_month_first_utc_midnight()` for bandwidth Retry-After (Lote 10.8bis P0-D correct chrono primitive).
 - 14.s08.005.10: 100k nightly property test (HIGH_RISK SOTA bar; Lote 10.7bis P1-3).
-- 14.s08.005.11: Multi-signal trigger (Lote 10.7bis P0-9 race-aware absorbed).
+- 14.s08.005.11: Multi-signal trigger (sprint contract §15 R-S08-004 + standard circuit-breaker pattern absorbed).
 - 14.s08.005.12: RFC 9331 IETF compliance via 3rd-party parser fixture.
 
 ## 15. Chaos Experiments (12)
@@ -738,7 +738,7 @@ HIGH_RISK 12 sign-offs PRR; sprint contract §6 DoD enforces.
 
 ## 27. Knowledge Transfer
 
-Tech talk (1.5h): "S-08 Rate Limit Headers + Global Circuit: RFC 9331 + Multi-Signal + Hysteresis"; doc `docs/dev/rate-limit-headers-architecture.md`; onboarding test 8 questions: RFC 9331 vs legacy X-RateLimit-* rationale, 5 discriminators + SLI distinction (sprint contract §7.10.s08.1), multi-signal trigger (Lote 10.7bis P0-9 race-aware), hysteresis recovery no-flapping, HalfOpen 10% sample no-thundering-herd, per-region scope, manual override audit (LGPD trail), Retry-After type-specific computation.
+Tech talk (1.5h): "S-08 Rate Limit Headers + Global Circuit: RFC 9331 + Multi-Signal + Hysteresis"; doc `docs/dev/rate-limit-headers-architecture.md`; onboarding test 8 questions: RFC 9331 vs legacy X-RateLimit-* rationale, 5 discriminators + SLI distinction (sprint contract §7.10.s08.1), multi-signal trigger (sprint contract §15 R-S08-004 + standard hysteresis pattern), hysteresis recovery no-flapping, HalfOpen 10% sample no-thundering-herd, per-region scope, manual override audit (LGPD trail), Retry-After type-specific computation.
 
 ## 28. Risk Register (12-row HIGH_RISK)
 
@@ -780,11 +780,11 @@ D+0 design (Architect; multi-signal + hysteresis); D+2 AppSec (TenantCtx + Admin
 
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
-| 1.0.0 | 2026-04-25 | Gustavo (Lote 10.8) | Criação WI-S08-005; HIGH_RISK; SOTA pós-Lote 10.7bis lessons absorbed: multi-signal trigger (P0-9 race-aware lesson generalizado para circuit breaker); CF Workers Rust API worker::send_future (R5 P0-3); 100k nightly property test (P1-3); audit fail-closed (Lote 10.6bis); alarm re-arm AT START (Lote 10.4bis); D1 batch ≤250 (Lote 10.5bis); CHECK inline (Lote 10.5bis); column drift no `_ms` suffix (P0-3); chrono `tomorrow_at_utc_midnight()` for bandwidth Retry-After (Lote 10.5bis); 5-tier canonical baselines (P0-7). RFC 9331 IETF stable canonical (sprint contract §14.s08.5). 5 X-Rate-Limit-Type discriminators (sprint contract §5 R-S08-8). SLI distinction CRITICAL implementação (sprint contract §7.10.s08.1). Multi-signal trigger NOT single-signal (sprint contract §15 R-S08-004). Hysteresis no-flapping. HalfOpen 10% sample no-thundering-herd. NEW migrations global_circuit_state + global_circuit_trips_history. Manual override admin S-13 audit trail. Sprint contract estimate 8h revised upward to ~19h porque scope expansion include camada 4 global circuit + multi-signal + hysteresis + RFC 9331 fixture parser. SRE peer / NetSec advisor substitutes Crypto SME (circuit breaker design). |
+| 1.0.0 | 2026-04-25 | Gustavo (Lote 10.8) | Criação WI-S08-005; HIGH_RISK; SOTA pós-Lote 10.7bis lessons absorbed: multi-signal trigger (sprint contract §15 R-S08-004 driven; standard circuit-breaker pattern (Netflix Hystrix / Resilience4j Rust emerging)); CF Workers Rust API worker::send_future (R5 P0-3); 100k nightly property test (P1-3); audit fail-closed (Lote 10.6bis); alarm re-arm AT START (Lote 10.4bis); D1 batch ≤250 (Lote 10.5bis); CHECK inline (Lote 10.5bis); column drift no `_ms` suffix (P0-3); chrono `tomorrow_at_utc_midnight()` for bandwidth Retry-After (Lote 10.5bis); 5-tier canonical baselines (P0-7). RFC 9331 IETF stable canonical (sprint contract §14.s08.5). 5 X-Rate-Limit-Type discriminators (sprint contract §5 R-S08-8). SLI distinction CRITICAL implementação (sprint contract §7.10.s08.1). Multi-signal trigger NOT single-signal (sprint contract §15 R-S08-004). Hysteresis no-flapping. HalfOpen 10% sample no-thundering-herd. NEW migrations global_circuit_state + global_circuit_trips_history. Manual override admin S-13 audit trail. Sprint contract estimate 8h revised upward to ~19h porque scope expansion include camada 4 global circuit + multi-signal + hysteresis + RFC 9331 fixture parser. SRE peer / NetSec advisor substitutes Crypto SME (circuit breaker design). |
 
 ## 32. Anti-patterns evitados
 
-- ❌ Single-signal trigger (Lote 10.7bis P0-9 race-aware lesson); ❌ No hysteresis (flapping); ❌ Legacy X-RateLimit-* (RFC 9331 canonical); ❌ SLI conflation; ❌ Retry-After missing; ❌ Cross-region federation initial; ❌ TenantCtx bypass; ❌ AdminCtx bypass on override; ❌ tokio::spawn em CF Workers; ❌ Skip alarm re-arm AT START; ❌ Skip manual override audit (LGPD trail).
+- ❌ Single-signal trigger (sprint contract §15 R-S08-004 + standard circuit-breaker pattern); ❌ No hysteresis (flapping); ❌ Legacy X-RateLimit-* (RFC 9331 canonical); ❌ SLI conflation; ❌ Retry-After missing; ❌ Cross-region federation initial; ❌ TenantCtx bypass; ❌ AdminCtx bypass on override; ❌ tokio::spawn em CF Workers; ❌ Skip alarm re-arm AT START; ❌ Skip manual override audit (LGPD trail).
 
 ---
 

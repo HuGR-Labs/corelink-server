@@ -38,7 +38,7 @@ tags: ["wi", "s08", "quota", "rate-limit", "per-pat", "atomic-cas", "do-actor", 
 | Campo | Valor |
 |---|---|
 | ID | WI-S08-003 |
-| Título | Quota checker middleware unificado (storage hard-block 100% + bandwidth monthly + per-PAT rate); atomic CAS via DO actor model (race-free serialization NOT D1 SQLite atomic — D1 sem native CAS); DO `Quota-<tenant_id>` shared com S-07 WI-S07-003 reservation DO (single DO; multiple methods); canonical `tenant_storage_state.bytes_used` (Lote 10.7bis P0-2 NEW table absorbed; sprint contract phantom `tenant_quota.bytes_used` REJECTED — current sprint contract §5 R-S08-5 will need correction in `tris` cycle); race-aware strict-< pre-write predicate `bytes_used + request_bytes < max_storage_bytes` (analogous a S-06 INV-GC-004 + S-07 WI-S07-002 lessons absorbed); CAP-QUOTA-001 boundary com S-07: S-07 owns ≤95% eviction trigger; S-08 owns 100% hard-block + 95-100% transition window; ADR-0020 FROZEN; bandwidth monthly via DO `BandwidthTracker-<tenant>-<YYYY-MM>` aggregator (egress + ingress separately tracked); reset 1st UTC monthly atomic via DO alarm (Lote 10.5bis chrono crate `tomorrow_at_utc_midnight()` lesson); per-PAT rate camada 3 of 4 (sprint contract §5 R-S08-3): `pat_rate.check{pat_id}` cap = 10× tenant refill_rate detects PAT misuse; response 429 + `X-Rate-Limit-Type: over_quota | per_pat` (canonical 5-enum em WI-S08-005; bandwidth excedence é semantically over-plan → subsumed sob `over_quota` discriminator; reason field em audit log distingue storage vs bandwidth — Lote 10.8bis Phase 1 P0-A absorbed) |
+| Título | Quota checker middleware unificado (storage hard-block 100% + bandwidth monthly + per-PAT rate); atomic CAS via DO actor model (race-free serialization NOT D1 SQLite atomic — D1 sem native CAS); DO `Quota-<tenant_id>` shared com S-07 WI-S07-003 reservation DO (single DO; multiple methods); canonical `tenant_storage_state.bytes_used` (Lote 10.7bis P0-2 NEW table absorbed; sprint contract phantom `tenant_quota.bytes_used` REJECTED — current sprint contract §5 R-S08-5 will need correction in `tris` cycle); race-aware strict-< pre-write predicate `bytes_used + request_bytes < max_storage_bytes` (analogous a S-06 INV-GC-004 + S-07 WI-S07-002 lessons absorbed); CAP-QUOTA-001 boundary com S-07: S-07 owns ≤95% eviction trigger; S-08 owns 100% hard-block + 95-100% transition window; ADR-0020 FROZEN; bandwidth monthly via DO `BandwidthTracker-<tenant>-<YYYY-MM>` aggregator (egress + ingress separately tracked); reset 1st UTC monthly atomic via DO alarm (Lote 10.8bis P0-D corrected: chrono crate `next_month_first_utc_midnight()` canonical primitive; previous fabricated `tomorrow_at_utc_midnight()` reference REJECTED — wrong semantics); per-PAT rate camada 3 of 4 (sprint contract §5 R-S08-3): `pat_rate.check{pat_id}` cap = 10× tenant refill_rate detects PAT misuse; response 429 + `X-Rate-Limit-Type: over_quota | per_pat` (canonical 5-enum em WI-S08-005; bandwidth excedence é semantically over-plan → subsumed sob `over_quota` discriminator; reason field em audit log distingue storage vs bandwidth — Lote 10.8bis Phase 1 P0-A absorbed) |
 | Sprint | S-08 |
 | Lane | HIGH_RISK |
 | Forcing factors | FF-HR-005 (CTRL-QUOTA-001 + per-PAT camada 3 security controls; bypass = AVAIL-ISOLATION violation cross-tenant), FF-HR-002 (cross-tenant SLO degradation se quota deficit) |
@@ -88,7 +88,11 @@ pub trait QuotaChecker: Send + Sync {
         bytes: u64,
     ) -> Result<BandwidthCheckResult, QuotaError>;
 
-    /// Per-PAT rate check (camada 3); returns Ok(remaining) if within 10× tenant refill_rate cap.
+    /// Per-PAT misuse DETECTION (NOT aggregate enforcement; camada 1 owns aggregate).
+    /// Lote 10.8bis P0-C correction: returns Ok always (request not blocked); emits
+    /// `corelink.quota.pat_misuse_detected_total{pat_id}` metric SEV-2 alert se
+    /// per-PAT rate > misuse threshold. Aggregate per-tenant rate enforced em camada 1
+    /// (WI-S08-001 DO RateLimiter); camada 3 é purely observability-on-PATs.
     async fn check_pat_rate(
         &self,
         tenant_ctx: &TenantCtx,
@@ -114,11 +118,11 @@ pub struct BandwidthCheckResult {
 }
 
 pub struct PatRateResult {
-    pub allowed: bool,
+    pub allowed: bool,                             // ALWAYS true post-Lote 10.8bis P0-C (misuse-detector NOT enforcer)
     pub pat_id: PatId,
-    pub tokens_remaining: f64,
-    pub cap_rate_per_sec: f64,                     // = 10× tenant refill_rate
-    pub retry_after_seconds: Option<u64>,
+    pub observed_rate_per_sec: f64,                // observed rolling rate per PAT
+    pub misuse_threshold_per_sec: f64,             // = 10× tenant refill (alarm threshold; NOT cap)
+    pub misuse_detected: bool,                     // true if observed > threshold; emits SEV-2 alert
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -129,8 +133,9 @@ pub enum QuotaError {
     #[error("bandwidth quota exceeded: month={period} consumed={consumed} max={max}; resets in {reset_secs}s")]
     BandwidthOver { period: String, consumed: u64, max: u64, reset_secs: u64 },
 
-    #[error("PAT rate exceeded: pat_id={pat_id}; cap={cap}; retry after {retry_after_secs}s")]
-    PatRateOver { pat_id: String, cap: f64, retry_after_secs: u64 },
+    // PatRateOver REMOVED per Lote 10.8bis P0-C: per-PAT camada 3 é misuse-detector NOT enforcer.
+    // Compromised PAT detection: per-PAT observed rate > 10× tenant refill triggers SEV-2 alert + admin revoke flow.
+    // Request blocking handled by camada 1 (WI-S08-001 per-tenant DO; aggregate enforcement).
 
     #[error("reservation expired: {reservation_id}")]
     ReservationExpired { reservation_id: String },
@@ -185,21 +190,48 @@ pub enum QuotaError {
 
 7. **DO routing via `tenant.primary_region`** (Lote 10.7bis P0-9 lesson absorbed): DO `Quota-<tenant_id>` resolved within tenant primary region; cross-region requests route via primary; SLA p99 ≤ 5ms within primary (slightly higher than RateLimiter ≤3ms because quota CAS is atomic D1 backing; not pure in-memory).
 
-8. **Monthly bandwidth canonical reset** (chrono crate `tomorrow_at_utc_midnight()` Lote 10.5bis lesson):
+8. **Monthly bandwidth canonical reset** (chrono crate `next_month_first_utc_midnight()` correct primitive — Lote 10.8bis P0-D fix; previous reference to `tomorrow_at_utc_midnight()` was semantically wrong: returns next-day midnight NOT next-month-1st-UTC):
    - DO `BandwidthTracker-<tenant>-<YYYY-MM>` aggregator with separate counters: `egress_bytes`, `ingress_bytes`.
-   - Reset trigger: 1st UTC of month at 00:00:00.000Z (atomic via DO alarm; Lote 10.4bis re-arm AT START).
+   - Reset trigger: 1st UTC of next month at 00:00:00.000Z (atomic via DO alarm scheduled at exact next-month boundary; Lote 10.4bis re-arm AT START).
+   - **Canonical chrono utility** (defined em `crates/corelink-time/src/lib.rs`):
+     ```rust
+     /// Returns the UTC midnight of the 1st day of the next calendar month.
+     /// Handles December → January year increment (e.g., 2026-12 → 2027-01-01 00:00:00Z).
+     /// Lote 10.8bis P0-D corrects prior misuse of `tomorrow_at_utc_midnight()`.
+     pub fn next_month_first_utc_midnight(now: DateTime<Utc>) -> DateTime<Utc> {
+         let (year, month) = if now.month() == 12 {
+             (now.year() + 1, 1u32)
+         } else {
+             (now.year(), now.month() + 1)
+         };
+         let next_first = NaiveDate::from_ymd_opt(year, month, 1)
+             .expect("year+month always valid post-increment");
+         next_first.and_hms_opt(0, 0, 0)
+             .expect("00:00:00 always valid")
+             .and_utc()
+     }
+
+     /// Seconds until next-month-1st UTC midnight from `now_ms`. Used for Retry-After header
+     /// em over_quota responses (bandwidth excedence). Returns u64 seconds; min 0.
+     pub fn secs_until_next_month_first_utc_midnight(now_ms: i64) -> u64 {
+         let now = DateTime::from_timestamp_millis(now_ms).expect("valid unix ms");
+         let next_first = next_month_first_utc_midnight(now);
+         (next_first.timestamp() - now.timestamp()).max(0) as u64
+     }
+     ```
    - Old DO snapshot persisted to D1 `bandwidth_history(tenant_id, period TEXT, egress_bytes, ingress_bytes, snapshotted_at)`; new DO `BandwidthTracker-<tenant>-<YYYY-MM+1>` boots fresh.
    - **Determinism**: NOT sliding window; calendar boundary canonical (sprint contract §10.s08.5).
+   - **Property test obrigatório** (P0-D fallout): boundary cases `next_month_first_utc_midnight` testado em (a) Jan 1 00:00:01 → next Feb 1; (b) Dec 31 23:59:59 → next Jan 1 (year increment); (c) Feb 28 non-leap → Mar 1; (d) Feb 28 leap year (2028) → Feb 29 → Mar 1.
 
-9. **Per-PAT rate camada 3** (sprint contract §5 R-S08-3): cap = 10× tenant refill_rate (canonical 5-tier from WI-S08-001 §3.1):
+9. **Per-PAT misuse detection camada 3** (Lote 10.8bis P0-C correction; sprint contract §5 R-S08-3 amend queued Phase 6): observability-on-PATs (NOT enforcement; aggregate enforcement em camada 1):
    ```rust
-   pub fn pat_rate_cap_for_tier(tier: &Tier) -> f64 {
+   pub fn pat_rate_misuse_threshold_for_tier(tier: &Tier) -> f64 {
        let (tenant_refill, _burst) = WI_S08_001::refill_rate_for_tier(tier);
-       tenant_refill * 10.0   // PAT cap = 10× tenant; detects PAT misuse / hijack
+       tenant_refill * 10.0   // misuse alarm threshold (NOT enforcement cap; aggregate em camada 1)
        // free 100 RPS / solo 500 / team 2000 / business 10000 / enterprise 100000
    }
    ```
-   Single PAT cannot exhaust > 10% of tenant rate; rate budget shared across multiple PATs (typical scenarios: 5–20 PATs per tenant; one PAT operates ≤1× refill).
+   Architectural correction: aggregate per-tenant rate enforced em camada 1 (WI-S08-001 DO RateLimiter). Camada 3 emits SEV-2 metric alert when single PAT observed rate > 10× tenant_refill (compromised credential signal); request NOT blocked at camada 3 (camada 1 already throttles aggregate). Compromised PAT signature: single PAT >> tenant_aggregate / num_PATs, indicating attacker maxing one credential while others idle. Detection latency ≤ 5min via metric aggregation; admin revoke flow S-03 RUNBOOK-AUTH-003.
 
 10. **TenantCtx-only enforcement** (Lote 10.4bis lesson): tenant_id from Tower middleware (S-03 WI-S03-003); pat_id from same TenantCtx (Lote 10.4bis structure absorbed).
 
@@ -219,9 +251,17 @@ Quota checker é **the economic isolation primitive** do CoreLink — sem isso, 
 
 **Why ADR-0020 FROZEN boundary com S-07** (Lote 10.7bis Phase 3 absorbed): without explicit boundary, S-07 eviction + S-08 hard-block would conflict (which trigger fires? when?). ADR-0020: S-07 owns ≤95% (eviction primary; soft pressure); S-08 owns 100% (hard-block residual; eviction insufficient). 95-100% transition window: S-08 monitors; alert SEV-3 (customer-facing) + SEV-2 (internal) signaling eviction lag.
 
-**Why monthly bandwidth NOT sliding window** (sprint contract §10.s08.5): determinism canonical; calendar boundary 1st UTC midnight. Sliding window would create gaming: upload at end-of-window when sliding overlaps; calendar rigid. chrono crate `tomorrow_at_utc_midnight()` (Lote 10.5bis lesson) computes deterministic next-reset.
+**Why monthly bandwidth NOT sliding window** (sprint contract §10.s08.5): determinism canonical; calendar boundary 1st UTC midnight. Sliding window would create gaming: upload at end-of-window when sliding overlaps; calendar rigid. chrono crate `next_month_first_utc_midnight()` (Lote 10.8bis P0-D corrected primitive — previous reference to `tomorrow_at_utc_midnight()` from Lote 10.5bis lineage was fabricated; that lesson actually concerned partial UNIQUE indexes em S-05 dedup) computes deterministic next-reset boundary handling December → January year increment.
 
-**Why per-PAT cap 10× tenant** (sprint contract §5 R-S08-3): typical tenant has 5–20 PATs (CI/CD pipeline + dev workstations + shared services); one PAT typically 5–10% of tenant rate. Misuse signal: single PAT consuming > 10× refill = compromised credential OR misconfigured client. 10× cap balanced: high enough not to constrain legitimate (10% of tenant rate per-PAT typical); low enough to detect misuse (compromised PAT typically saturates).
+**Why per-PAT camada 3 é DETECTOR não enforcer** (Lote 10.8bis P0-C absorbed; sprint contract §5 R-S08-3 requer correção em `tris` cycle):
+
+CRITICAL CLARIFICATION: Per-PAT camada 3 é a **misuse-detection layer**, NOT a rate-enforcement layer. Camada 1 (WI-S08-001 per-tenant DO RateLimiter) **já enforces aggregate per-tenant rate** (e.g., 200 RPS team plan). Per-PAT cap = `10× tenant_refill_rate` (e.g., 2000 RPS team) é o **misuse alarm threshold**: single PAT consuming > 2000 RPS = signal of compromised credential OR misconfigured client. **Isso NÃO blocks the request** (camada 1 already 429s when tenant aggregate exceeded); apenas emits SEV-2 alert.
+
+Math correctness: 5 PATs × 200 RPS each = 1000 RPS aggregate; camada 1 throttles to 200 RPS sustained; camada 3 detection threshold (2000 RPS per PAT) triggers ZERO false-positives em legitimate usage (typical PAT 5–10% of tenant rate). Compromised PAT signals: single PAT > 2000 RPS observed during compromise scenario (attacker maxing one credential while others idle); detection latency ≤ 5min via metric aggregation; admin revoke flow S-03 RUNBOOK-AUTH-003.
+
+Why threshold = 10× tenant: balances false-positive (high enough to not flag legitimate burst usage) vs false-negative (low enough to detect deliberate compromise; saturating attacks typically hit ≥ 10× tenant aggregate before being throttled by camada 1). Compromised PAT mathematical signature: single PAT >> aggregate / num_PATs (e.g., 1 PAT consuming 5× aggregate = anomaly).
+
+Sprint contract §5 R-S08-3 amend (will be applied em this Lote 10.8bis Phase 6 spread sprint contract correction): "PAT-scoped rate **observability**: `corelink_quota_pat_misuse_detected_total{pat_id}` SEV-2 alert when per-PAT observed rate > 10× tenant refill (compromised credential signal); enforcement of aggregate per-tenant rate handled em camada 1 (WI-S08-001 DO)."
 
 **Adversarial scenarios**:
 - **Race at boundary** (2 concurrent writes at exhausted state): DO actor serializes; first succeeds (bytes_used + req < max); second sees updated bytes_used; deterministic strict-< rejection.
@@ -245,7 +285,7 @@ Quota checker é **the economic isolation primitive** do CoreLink — sem isso, 
 
 **Persona 3 — Customer (bandwidth 95%)**: tenant consumed 95 GiB / 100 GiB monthly egress; download 10 GiB blob. Pre-check: 95 + 10 = 105 GiB ≥ 100 GiB → Err(BandwidthOver); response 429 + X-Rate-Limit-Type: over_quota + Retry-After: seconds-until-month-reset (audit log `reason=bandwidth_egress_exceeded` para discriminação observability; canonical 5-enum em WI-S08-005 preserved; Lote 10.8bis P0-A). Customer self-service: upgrade plan OR wait for reset.
 
-**Persona 4 — Customer (PAT misuse)**: tenant team tier (200 RPS); PAT-A configured for CI/CD; attacker steals PAT-A; floods at 5000 RPS. Per-PAT cap = 200 × 10 = 2000 RPS; 60% requests rejected with `X-Rate-Limit-Type: per_pat`; SEV-2 alert "PAT misuse detected"; admin revokes PAT (S-03 RUNBOOK-AUTH-003).
+**Persona 4 — Customer (PAT misuse detected)**: tenant team tier (200 RPS aggregate, enforced em camada 1); PAT-A configured for CI/CD; attacker steals PAT-A; floods at 5000 RPS attempting saturation. Camada 1 (WI-S08-001 per-tenant DO) caps aggregate at 200 RPS sustained; 96% of attacker requests already 429'd with `X-Rate-Limit-Type: tenant_quota` (camada 1 enforcement). Camada 3 (this WI) detects single PAT-A consuming > 200×10 = 2000 RPS observed (despite camada 1 throttling, attacker's intent is visible em request rate before throttle); emits `corelink.quota.pat_misuse_detected_total{pat_id=PAT-A}` SEV-2 alert; admin notification PagerDuty; admin revokes PAT (S-03 RUNBOOK-AUTH-003). Lote 10.8bis P0-C correction: per-PAT camada 3 é misuse DETECTOR; aggregate enforcement is camada 1.
 
 **Persona 5 — DevOps reviewing**: DASH-RATE (WI-S08-006) shows per-tenant bytes_used utilization + bandwidth-month-consumed + per-PAT rate distribution; alert if per-PAT rate > 10× WoW (legitimate growth signal vs misuse).
 
@@ -355,13 +395,13 @@ DO singleton + QuotaChecker trait + Tower middleware + D1 backing; HIGH_RISK; FF
        let new_total = counter.saturating_add(bytes);
        if new_total < max_bytes {                         // strict-<
            *counter = new_total;
-           Ok(BandwidthCheckResult { allowed: true, bytes_consumed_this_month: new_total, max_bytes_this_month: max_bytes, period: self.bandwidth_period.clone(), seconds_until_reset: secs_until_next_utc_midnight_1st(now_ms) })
+           Ok(BandwidthCheckResult { allowed: true, bytes_consumed_this_month: new_total, max_bytes_this_month: max_bytes, period: self.bandwidth_period.clone(), seconds_until_reset: corelink_time::secs_until_next_month_first_utc_midnight(now_ms) })
        } else {
            Err(QuotaError::BandwidthOver {
                period: self.bandwidth_period.clone(),
                consumed: *counter,
                max: max_bytes,
-               reset_secs: secs_until_next_utc_midnight_1st(now_ms),
+               reset_secs: corelink_time::secs_until_next_month_first_utc_midnight(now_ms),
            })
        }
    }
@@ -369,22 +409,47 @@ DO singleton + QuotaChecker trait + Tower middleware + D1 backing; HIGH_RISK; FF
 
 6. **Per-PAT rate check camada 3** (token bucket per-PAT; cap = 10× tenant refill_rate):
    ```rust
+   // Lote 10.8bis P0-C correction: per-PAT camada 3 é DETECTOR não enforcer.
+   // Aggregate rate enforced em camada 1 (WI-S08-001 DO RateLimiter); this method emits SEV-2 alert
+   // when per-PAT observed rate exceeds 10× tenant_refill threshold (compromised credential signal).
+   // Returns Ok always (request not blocked); admin notification via metric.
+
    pub fn check_pat_rate(&mut self, pat_id: &PatId, now_ms: i64) -> Result<PatRateResult, QuotaError> {
-       let pat_cap = pat_rate_cap_for_tier(&self.plan_tier);   // = 10× tenant refill_rate
-       let pat_burst = pat_cap * 5.0;                           // 5x burst capacity
-       let state = self.per_pat_state.entry(pat_id.clone()).or_insert(TokenBucketState::new(pat_burst, now_ms));
-       // Lazy refill (analogous a WI-S08-001 token bucket math)
-       let now_ms = now_ms.max(state.last_refill_at_ms);   // monotonic clamp
-       let delta_secs = (now_ms - state.last_refill_at_ms) as f64 / 1000.0;
-       let refilled = (state.tokens + delta_secs * pat_cap).min(pat_burst);
-       if refilled >= 1.0 {
-           state.tokens = refilled - 1.0;
-           state.last_refill_at_ms = now_ms;
-           Ok(PatRateResult { allowed: true, pat_id: pat_id.clone(), tokens_remaining: state.tokens, cap_rate_per_sec: pat_cap, retry_after_seconds: None })
-       } else {
-           let retry_after_secs = (1.0 - refilled / pat_cap).ceil() as u64;
-           Err(QuotaError::PatRateOver { pat_id: pat_id.to_string(), cap: pat_cap, retry_after_secs })
+       let misuse_threshold = pat_rate_misuse_threshold_for_tier(&self.plan_tier);  // = 10× tenant refill_rate
+       let state = self.per_pat_state.entry(pat_id.clone()).or_insert(PatRateState::new(now_ms));
+
+       // Update rolling rate (1min window EWMA)
+       state.update_rolling_rate(now_ms);
+
+       let observed_rate = state.observed_rate_per_sec;
+       let misuse_detected = observed_rate > misuse_threshold;
+
+       if misuse_detected {
+           // Emit SEV-2 alert (NOT block request; aggregate enforcement em camada 1)
+           emit_metric("corelink.quota.pat_misuse_detected_total", 1.0, &[("pat_id", pat_id.as_str())]);
+           audit_emit("corelink.quota.pat_misuse_detected", &PatMisuseEvent {
+               pat_id: pat_id.clone(),
+               tenant_id: self.tenant_id.clone(),
+               observed_rate,
+               threshold: misuse_threshold,
+               detected_at_ms: now_ms,
+           })?;
        }
+
+       // Always allowed at camada 3 (detector); camada 1 owns rate enforcement
+       Ok(PatRateResult {
+           allowed: true,
+           pat_id: pat_id.clone(),
+           observed_rate_per_sec: observed_rate,
+           misuse_threshold_per_sec: misuse_threshold,
+           misuse_detected,
+       })
+   }
+
+   pub fn pat_rate_misuse_threshold_for_tier(tier: &Tier) -> f64 {
+       let (tenant_refill, _burst) = WI_S08_001::refill_rate_for_tier(tier);
+       tenant_refill * 10.0   // misuse alarm threshold (NOT cap; aggregate em camada 1)
+       // free 100 RPS / solo 500 / team 2000 / business 10000 / enterprise 100000
    }
    ```
 
@@ -441,17 +506,24 @@ DO singleton + QuotaChecker trait + Tower middleware + D1 backing; HIGH_RISK; FF
    CREATE INDEX idx_reservations_active ON quota_reservations(tenant_id, expires_at)
        WHERE confirmed_at IS NULL AND released_at IS NULL;
 
-   CREATE TABLE pat_rate_state (
+   -- Lote 10.8bis P0-C correction: NOT a token bucket (no bucket = no enforcement);
+   -- detection-only: stores rolling rate observation per PAT for SEV-2 alert when threshold exceeded.
+   CREATE TABLE pat_rate_observation (
        pat_id TEXT PRIMARY KEY,
        tenant_id TEXT NOT NULL,
-       tokens REAL NOT NULL DEFAULT 0,                 -- f64
-       last_refill_at INTEGER NOT NULL,                -- unix ms; canonical no _ms suffix
-       cap_rate_per_sec REAL NOT NULL,                 -- = 10× tenant refill_rate
-       last_synced_at INTEGER NOT NULL,                -- unix ms; canonical no _ms suffix
-       CHECK (tokens >= 0)
+       observed_rate_per_sec REAL NOT NULL DEFAULT 0,   -- 1min EWMA rolling rate
+       last_observation_at INTEGER NOT NULL,            -- unix ms; canonical no _ms suffix
+       misuse_threshold_per_sec REAL NOT NULL,          -- = 10× tenant refill_rate (alarm threshold; NOT enforcement)
+       last_misuse_detected_at INTEGER,                 -- NULL until detected; canonical no _ms suffix
+       last_synced_at INTEGER NOT NULL,                 -- unix ms; canonical no _ms suffix
+       CHECK (observed_rate_per_sec >= 0),
+       CHECK (misuse_threshold_per_sec > 0),
+       CHECK (last_misuse_detected_at IS NULL OR last_misuse_detected_at >= last_observation_at - 60000)
    );
 
-   CREATE INDEX idx_pat_rate_tenant ON pat_rate_state(tenant_id);
+   CREATE INDEX idx_pat_observation_tenant ON pat_rate_observation(tenant_id);
+   CREATE INDEX idx_pat_observation_recent_misuse ON pat_rate_observation(last_misuse_detected_at)
+       WHERE last_misuse_detected_at IS NOT NULL;
    ```
 
 9. **Audit fail-closed** (Lote 10.6bis pattern absorbed): emit `corelink.quota.{check_storage, confirm_storage, release_storage, check_bandwidth, period_reset, check_pat_rate, pat_misuse_detected}` audit events; fail-closed if audit emit fails.
@@ -565,14 +637,17 @@ Feature: Quota Checker Middleware (Storage + Bandwidth + Per-PAT)
     Then Err(BandwidthOver { period="2026-04", consumed=95GiB, max=100GiB, reset_secs=secs_until_2026-05-01_00:00:00Z })
     Then 429 + X-Rate-Limit-Type: over_quota + Retry-After: reset_secs (canonical 5-enum; audit log reason=bandwidth_egress_exceeded discrimina from storage_hard_block; Lote 10.8bis P0-A)
 
-  Scenario: PAT rate cap detection (compromised PAT)
-    Given tenant T (team plan; refill_rate=200 RPS; PAT cap = 200 × 10 = 2000 RPS)
-    Given PAT-A floods at 5000 RPS
-    When check_pat_rate(PAT-A) for each request
-    Then 60% requests rejected (cap 2000)
-    Then 429 + X-Rate-Limit-Type: per_pat + Retry-After: 1
-    Then SEV-2 alert: corelink.quota.pat_misuse_detected (PAT-A; tenant T)
+  Scenario: PAT misuse DETECTION (compromised PAT) — Lote 10.8bis P0-C correction
+    Given tenant T (team plan; refill_rate=200 RPS aggregate, enforced em camada 1)
+    Given misuse_threshold = 200 × 10 = 2000 RPS (alarm threshold; NOT enforcement cap)
+    Given PAT-A floods attempting 5000 RPS
+    When camada 1 (WI-S08-001 DO) throttles tenant aggregate to 200 RPS sustained (96% of attacker requests 429 com X-Rate-Limit-Type: tenant_quota)
+    When camada 3 (this WI) check_pat_rate(PAT-A) per request observes per-PAT rate
+    Then per-PAT observed_rate > 2000 RPS misuse_threshold (attacker intent visible em request rate)
+    Then misuse_detected = true; SEV-2 alert: corelink.quota.pat_misuse_detected_total{pat_id=PAT-A}
+    Then audit emit corelink.quota.pat_misuse_detected (PAT-A; tenant T; observed_rate; threshold)
     Then admin revokes PAT-A (S-03 RUNBOOK-AUTH-003)
+    Then camada 3 returns Ok (request NOT blocked at camada 3; camada 1 owns aggregate enforcement)
 
   Scenario: Concurrent reservations boundary race
     Given tenant T bytes_used=99 GiB; max=100 GiB
@@ -618,7 +693,7 @@ Feature: Quota Checker Middleware (Storage + Bandwidth + Per-PAT)
 - 9.5: Canonical `tenant_storage_state.bytes_used` (Lote 10.7bis P0-2 NEW table; sprint contract phantom REJECTED).
 - 9.6: ADR-0020 FROZEN boundary com S-07 (Lote 10.7bis Phase 3 absorbed).
 - 9.7: Calendar-month bandwidth reset (NOT sliding window; sprint contract §10.s08.5).
-- 9.8: Per-PAT cap = 10× tenant refill (sprint contract §5 R-S08-3 canonical).
+- 9.8: Per-PAT camada 3 é misuse DETECTOR não enforcer (Lote 10.8bis P0-C correction; aggregate enforcement em camada 1 WI-S08-001 DO; threshold = 10× tenant refill alarm signal; sprint contract §5 R-S08-3 amend queued Phase 6).
 - 9.9: TenantCtx-only (Lote 10.4bis); pat_id from same TenantCtx.
 - 9.10: Audit fail-closed bias toward over-counting (Lote 10.6bis pattern adapted).
 - 9.11: NEW migrations bandwidth_state + bandwidth_history + quota_reservations + pat_rate_state.
@@ -634,7 +709,7 @@ Feature: Quota Checker Middleware (Storage + Bandwidth + Per-PAT)
 - [ ] **10.s08.003.5** **INV-QUOTA-ENFORCEMENT 30d sustained chaos zero violations** (sprint contract §6 DoD).
 - [ ] **10.s08.003.6** Quota check overhead ≤ 5ms p99 criterion benchmark.
 - [ ] **10.s08.003.7** Reservation TTL formula validated em multipart upload (160 GiB @ 100 Mbps).
-- [ ] **10.s08.003.8** Bandwidth period reset deterministic (chrono crate `tomorrow_at_utc_midnight()` Lote 10.5bis).
+- [ ] **10.s08.003.8** Bandwidth period reset deterministic via `corelink_time::next_month_first_utc_midnight()` (Lote 10.8bis P0-D correct chrono primitive; property test boundary: Jan 1, Dec 31 → year increment, Feb 28 non-leap, Feb 28/29 leap year).
 - [ ] **10.s08.003.9** Per-PAT cap detected misuse (5x tenant rate) within 5min SEV-2 alert.
 - [ ] **10.s08.003.10** Métricas (9) emitted; cross_tenant_violation_total alerts SEV-1 if > 0; pat_misuse_detected SEV-2.
 - [ ] **10.s08.003.11** Cargo-audit + cargo-deny + clippy clean.

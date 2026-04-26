@@ -676,7 +676,7 @@ Feature: Abuse Detection Heurística + Scoring + Humane Response
 - 14.s08.004.7: SAST clean.
 - 14.s08.004.8: Métricas (9 §6.1.10).
 - 14.s08.004.9: Cost regression gate per-cycle ≤ $0.001/region/5min.
-- 14.s08.004.10: TenantCtx-only (Lote 10.4bis); CF Workers Rust API worker::send_future (Lote 10.7bis R5 P0-3); 5-tier canonical (Lote 10.7bis P0-7); column drift no `_ms` suffix (Lote 10.7bis P0-3); D1 batch ≤250 (Lote 10.5bis); CHECK inline (Lote 10.5bis); chrono `tomorrow_at_utc_midnight()` if cycle aligned (Lote 10.5bis).
+- 14.s08.004.10: TenantCtx-only (Lote 10.4bis); CF Workers Rust API worker::send_future (Lote 10.7bis R5 P0-3); 5-tier canonical (Lote 10.7bis P0-7); column drift no `_ms` suffix (Lote 10.7bis P0-3); D1 batch ≤250 (Lote 10.5bis); CHECK inline (Lote 10.5bis); chrono `corelink_time::utc_5min_floor()` for cron-tick alignment (NOT `tomorrow_at_utc_midnight()` — fabricated lineage rejected Lote 10.8bis P0-D).
 - 14.s08.004.11: 100k nightly property test (HIGH_RISK SOTA bar; Lote 10.7bis P1-3).
 - 14.s08.004.12: Humane LGPD Art. 20 compliance: NEVER auto-suspend; transparent score breakdown; appeal SLA ≤ 24h.
 
