@@ -149,7 +149,7 @@ Cada FM tem scores 1–5 em:
 | ID     | Descrição                                                | S | O | D | RPN | Classe | CTRLs / Patterns              |
 |--------|----------------------------------------------------------|---|---|---|-----|---------|--------------------------------|
 | FM-150 | Cloudflare API limits hit (control plane op)            | 2 | 3 | 1 | 6   | P2      | PAT-BACKOFF-001                |
-| FM-151 | Stripe API outage (billing)                              | 2 | 2 | 1 | 4   | P2      | PAT-QUEUE-EVENTS-001 (retry)   |
+| FM-151 | Stripe API outage (billing)                              | 2 | 2 | 1 | 4   | P2      | PAT-QUEUE-EVENTS-001 (retry) + RB-FM-151 |
 | FM-152 | Neon outage                                              | 4 | 2 | 1 | 8   | P2      | Read-only mode + alert         |
 | FM-153 | Grafana Cloud outage                                     | 1 | 2 | 1 | 2   | P2      | Metrics em R2 Logpush como fallback |
 | FM-154 | Dep crate yank mid-deploy                                | 3 | 2 | 3 | 18  | P2      | `Cargo.lock` pinned + CI check |
@@ -271,6 +271,7 @@ Cada FM P0/P1 **DEVE** ter runbook em `specs/05_quality/runbooks/RB-<FM-ID>.md` 
 - `RB-FM-254` (cache poisoning) → trimestral.
 - `RB-FM-258` (insider exfil) → anual (tabletop with HR/Legal).
 - `RB-FM-300` (GC refcount bug) → semestral (destructive; staging only).
+- `RB-FM-151` (Stripe outage; FM-151 mitigation) → semestral; staging dry-run prerequisite (sprint contract S-10 §6 DoD; criado Lote 10.10bis).
 - `RB-FM-302` (billing leak) → mensal (reconciliation checks).
 - `RB-FM-303` (AC entry cross-tenant) → trimestral; TLA+ replay.
 - `RB-FM-400` (retry storm) → trimestral; chaos test mensal.
