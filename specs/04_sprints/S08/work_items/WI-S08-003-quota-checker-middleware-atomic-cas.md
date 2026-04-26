@@ -38,7 +38,7 @@ tags: ["wi", "s08", "quota", "rate-limit", "per-pat", "atomic-cas", "do-actor", 
 | Campo | Valor |
 |---|---|
 | ID | WI-S08-003 |
-| Título | Quota checker middleware unificado (storage hard-block 100% + bandwidth monthly + per-PAT rate); atomic CAS via DO actor model (race-free serialization NOT D1 SQLite atomic — D1 sem native CAS); DO `Quota-<tenant_id>` shared com S-07 WI-S07-003 reservation DO (single DO; multiple methods); canonical `tenant_storage_state.bytes_used` (Lote 10.7bis P0-2 NEW table absorbed; sprint contract phantom `tenant_quota.bytes_used` REJECTED — current sprint contract §5 R-S08-5 will need correction in `tris` cycle); race-aware strict-< pre-write predicate `bytes_used + request_bytes < max_storage_bytes` (analogous a S-06 INV-GC-004 + S-07 WI-S07-002 lessons absorbed); CAP-QUOTA-001 boundary com S-07: S-07 owns ≤95% eviction trigger; S-08 owns 100% hard-block + 95-100% transition window; ADR-0020 FROZEN; bandwidth monthly via DO `BandwidthTracker-<tenant>-<YYYY-MM>` aggregator (egress + ingress separately tracked); reset 1st UTC monthly atomic via DO alarm (Lote 10.5bis chrono crate `tomorrow_at_utc_midnight()` lesson); per-PAT rate camada 3 of 4 (sprint contract §5 R-S08-3): `pat_rate.check{pat_id}` cap = 10× tenant refill_rate detects PAT misuse; response 429 + `X-Rate-Limit-Type: over_quota | per_pat | bandwidth_quota` |
+| Título | Quota checker middleware unificado (storage hard-block 100% + bandwidth monthly + per-PAT rate); atomic CAS via DO actor model (race-free serialization NOT D1 SQLite atomic — D1 sem native CAS); DO `Quota-<tenant_id>` shared com S-07 WI-S07-003 reservation DO (single DO; multiple methods); canonical `tenant_storage_state.bytes_used` (Lote 10.7bis P0-2 NEW table absorbed; sprint contract phantom `tenant_quota.bytes_used` REJECTED — current sprint contract §5 R-S08-5 will need correction in `tris` cycle); race-aware strict-< pre-write predicate `bytes_used + request_bytes < max_storage_bytes` (analogous a S-06 INV-GC-004 + S-07 WI-S07-002 lessons absorbed); CAP-QUOTA-001 boundary com S-07: S-07 owns ≤95% eviction trigger; S-08 owns 100% hard-block + 95-100% transition window; ADR-0020 FROZEN; bandwidth monthly via DO `BandwidthTracker-<tenant>-<YYYY-MM>` aggregator (egress + ingress separately tracked); reset 1st UTC monthly atomic via DO alarm (Lote 10.5bis chrono crate `tomorrow_at_utc_midnight()` lesson); per-PAT rate camada 3 of 4 (sprint contract §5 R-S08-3): `pat_rate.check{pat_id}` cap = 10× tenant refill_rate detects PAT misuse; response 429 + `X-Rate-Limit-Type: over_quota | per_pat` (canonical 5-enum em WI-S08-005; bandwidth excedence é semantically over-plan → subsumed sob `over_quota` discriminator; reason field em audit log distingue storage vs bandwidth — Lote 10.8bis Phase 1 P0-A absorbed) |
 | Sprint | S-08 |
 | Lane | HIGH_RISK |
 | Forcing factors | FF-HR-005 (CTRL-QUOTA-001 + per-PAT camada 3 security controls; bypass = AVAIL-ISOLATION violation cross-tenant), FF-HR-002 (cross-tenant SLO degradation se quota deficit) |
@@ -243,7 +243,7 @@ Quota checker é **the economic isolation primitive** do CoreLink — sem isso, 
 
 **Persona 2 — Customer (storage 100%)**: tenant bytes_used = 99.5 GiB; upload 1 GiB. Pre-check: 99.5 + 1 = 100.5 GiB ≥ 100 GiB → Err(StorageOver); response 429 + X-Rate-Limit-Type: over_quota + Retry-After: days-until-month-reset (or 0 if pay-per-use plan). Customer prompted to upgrade plan OR delete content. SLI: not counted in numerator (legitimate over-quota; sprint contract §7.10.s08.1).
 
-**Persona 3 — Customer (bandwidth 95%)**: tenant consumed 95 GiB / 100 GiB monthly egress; download 10 GiB blob. Pre-check: 95 + 10 = 105 GiB ≥ 100 GiB → Err(BandwidthOver); response 429 + X-Rate-Limit-Type: bandwidth_quota + Retry-After: seconds-until-month-reset. Customer self-service: upgrade plan OR wait for reset.
+**Persona 3 — Customer (bandwidth 95%)**: tenant consumed 95 GiB / 100 GiB monthly egress; download 10 GiB blob. Pre-check: 95 + 10 = 105 GiB ≥ 100 GiB → Err(BandwidthOver); response 429 + X-Rate-Limit-Type: over_quota + Retry-After: seconds-until-month-reset (audit log `reason=bandwidth_egress_exceeded` para discriminação observability; canonical 5-enum em WI-S08-005 preserved; Lote 10.8bis P0-A). Customer self-service: upgrade plan OR wait for reset.
 
 **Persona 4 — Customer (PAT misuse)**: tenant team tier (200 RPS); PAT-A configured for CI/CD; attacker steals PAT-A; floods at 5000 RPS. Per-PAT cap = 200 × 10 = 2000 RPS; 60% requests rejected with `X-Rate-Limit-Type: per_pat`; SEV-2 alert "PAT misuse detected"; admin revokes PAT (S-03 RUNBOOK-AUTH-003).
 
@@ -393,7 +393,9 @@ DO singleton + QuotaChecker trait + Tower middleware + D1 backing; HIGH_RISK; FF
    pub fn quota_layer<S>() -> tower::Layer<S> {
        // Pre-write: check_storage_and_reserve (CAS PUT) ou check_bandwidth (egress) ou check_pat_rate (todos);
        // Post-write success: confirm_storage; failure: release_storage_reservation.
-       // 429 + X-Rate-Limit-Type {over_quota | bandwidth_quota | per_pat} + Retry-After.
+       // 429 + X-Rate-Limit-Type {over_quota | per_pat} + Retry-After.
+       // Bandwidth excedence subsumed sob `over_quota` (canonical 5-enum em WI-S08-005; Lote 10.8bis P0-A);
+       // audit log `reason` field distingue: storage_hard_block | bandwidth_egress | bandwidth_ingress.
    }
    ```
 
@@ -561,7 +563,7 @@ Feature: Quota Checker Middleware (Storage + Bandwidth + Per-PAT)
     When download 10 GiB blob (egress)
     Then 95+10=105 ≥ 100 (strict-<)
     Then Err(BandwidthOver { period="2026-04", consumed=95GiB, max=100GiB, reset_secs=secs_until_2026-05-01_00:00:00Z })
-    Then 429 + X-Rate-Limit-Type: bandwidth_quota + Retry-After: reset_secs
+    Then 429 + X-Rate-Limit-Type: over_quota + Retry-After: reset_secs (canonical 5-enum; audit log reason=bandwidth_egress_exceeded discrimina from storage_hard_block; Lote 10.8bis P0-A)
 
   Scenario: PAT rate cap detection (compromised PAT)
     Given tenant T (team plan; refill_rate=200 RPS; PAT cap = 200 × 10 = 2000 RPS)
@@ -727,7 +729,7 @@ HIGH_RISK 12 sign-offs PRR; sprint contract §6 DoD enforces.
 ## 23. API Contract
 
 - Public: `QuotaChecker` trait + `StorageReservation`, `BandwidthCheckResult`, `PatRateResult`, `QuotaError` types; `#[non_exhaustive]`.
-- HTTP: 429 + `Retry-After` + `X-Rate-Limit-Type {over_quota | bandwidth_quota | per_pat}` (delegate WI-S08-005 RFC 9331 headers wrap).
+- HTTP: 429 + `Retry-After` + `X-Rate-Limit-Type {over_quota | per_pat}` (canonical 5-enum em WI-S08-005; bandwidth excedence subsumed sob `over_quota`; audit log `reason` field discriminates storage_hard_block vs bandwidth_{egress,ingress} for observability; Lote 10.8bis Phase 1 P0-A) (delegate WI-S08-005 RFC 9331 headers wrap).
 
 ## 24. Post-mortem Hooks
 
