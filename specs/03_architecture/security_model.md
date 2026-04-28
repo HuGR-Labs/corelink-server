@@ -390,11 +390,16 @@ Adicionado em Lote 5.11 (cross-ref validator) endereçando CTRL-BILLING-001 dang
 ```
 Root KMS (Cloudflare Workers Secrets, HSM-backed)
   └─ Tenant Derivation Key (TDK) — 1 por tenant
-       ├─ Path-HMAC key (HKDF info = "path")           → CTRL-AUTH-004
-       ├─ AC-Signature key (HKDF info = "ac-sig")      → CTRL-AC-002
-       └─ Envelope key (HKDF info = "envelope")        → CTRL-CRYPTO-002
-  └─ Audit chain key (HKDF info = "audit-chain")        → CTRL-AUDIT-001
-  └─ Release signing key (Ed25519, offline-HSM)         → CTRL-SUPPLY-002
+       ├─ Path-HMAC key            (HKDF info = "corelink/v1/path")              → CTRL-AUTH-004
+       ├─ AC-Signature key         (HKDF info = "corelink/v1/ac-sig")            → CTRL-AC-002
+       ├─ Envelope key             (HKDF info = "corelink/v1/envelope")          → CTRL-CRYPTO-002
+       ├─ DSR receipt JWS key      (HKDF info = "corelink/v1/dsr-receipt")       → CTRL-PRIV-DSR-RECEIPT (S-11)
+       ├─ Consent HMAC key         (HKDF info = "corelink/v1/consent-hmac")      → CTRL-PRIV-CONSENT-003 (S-11)
+       └─ Erasure salt             (HKDF info = "corelink/v1/erasure-salt")      → CTRL-PRIV-ERASE-PSEUDO (S-11; pseudonymize subject_id em audit retained)
+  └─ Audit chain key               (HKDF info = "corelink/v1/audit-chain")        → CTRL-AUDIT-001
+  └─ Audit pseudonym key           (HKDF info = "corelink/v1/audit-pseudonym")    → CTRL-PRIV-014 + CTRL-AUDIT-001 (S-11; subject_id → erased_<hash> em audit log post-DSR)
+  └─ DKIM broadcast key            (HKDF info = "corelink/v1/dkim-broadcast")     → CTRL-PRIV-SUBPROCESSOR (S-11; sub-processor 30d notice DKIM-signed)
+  └─ Release signing key (Ed25519, offline-HSM)                                  → CTRL-SUPPLY-002
 ```
 
 | Key                | Lifetime | Rotation trigger                           | Re-wrap necessário?             |

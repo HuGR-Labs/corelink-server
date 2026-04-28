@@ -20,7 +20,7 @@ tags: ["runbook", "p1", "privacy", "dsr", "erasure", "lgpd", "gdpr", "compliance
 
 ## Pré-condições
 
-- S-11 DSR pipeline live com 10-backend coverage (6 erasure-effective + 4 pseudonymized Object Lock).
+- S-11 DSR pipeline live com 12-backend canonical coverage (8 erasure-effective + 4 pseudonymized via legal_hold; Lote 10.11.0-bis privacy_model.md §6.2 source-of-truth).
 - Verification job 24h post-erasure cron ativo.
 - Audit chain integrity preservado.
 - Erasure attestation Ed25519 disponível (S-14 BYOK customers).
@@ -37,20 +37,24 @@ tags: ["runbook", "p1", "privacy", "dsr", "erasure", "lgpd", "gdpr", "compliance
 ### Detection per backend
 
 ```
-Erasure-effective backends (FULL DELETE expected):
-  D1: SELECT count(*) FROM <table> WHERE subject_id = ? — should be 0
-  Neon: SELECT count(*) FROM <table> WHERE subject_id = ? — should be 0
-  R2 (mutable): aws s3 ls s3://corelink-cas/<tenant_prefix>/ — should be empty
+Erasure-effective backends (8 canonical pós Lote 10.11.0-bis — FULL DELETE/UPDATE expected):
+  Neon main (dsr_tickets/account/tenant/user_account/consent_ledger/subscription):
+    SELECT count(*) WHERE subject_user_id = ? — should be 0
+  Neon billing fiscal exception:
+    legal_hold rows preserved; PII nullified (LGPD Art. 16 5y) — verify pii_redacted=true marker
+  R2 CAS refcount-aware:
+    subject_unaffiliated → refcount decremented; subject_dedicated → tombstone + GC sweep
+  R2 AC: aws s3 ls s3://corelink-ac/<tenant_prefix>/<subject_id>/ — should be empty
+  D1 (blob_meta/ac_meta): SELECT count(*) WHERE subject_id = ? — should be 0
   KV: cf kv:bulk get --prefix=<subject_prefix> — should return 0
-  DO: do.list_keys(<prefix>) — should return 0
-  Stripe: customer.id deleted — verify via API
-  Loki (warm 90d): query API delete confirmed
+  Stripe Customer.update: customer.metadata + email/name/address nullified (NOT customer.delete; PCI scope)
+  Loki: /loki/api/v1/delete query confirmed; retention compaction triggered
 
-Pseudonymized backends (PII REPLACED, audit chain preserved):
-  R2 audit (Object Lock 7y): records remain BUT subject_id replaced com sha256(tenant_id || erasure_salt)
-  R2 billing-events (Object Lock 7y): same
-  Loki cold (R2 archive 400d): same
-  Cloudflare Analytics Engine (rolling 30d): same; auto-expires
+Pseudonymized backends (4 canonical pós Lote 10.11.0-bis — PII REPLACED, retention preserved):
+  R2 audit Object Lock 7y: subject_id → erased_<HMAC(salt, subject_id)> via HKDF info=corelink/v1/audit-pseudonym
+  Neon PITR backup 30d: rotação natural; tombstone replay em qualquer restore
+  R2 CAS legal_hold partition: pseudonymize index references; release pós legal_hold expiry
+  R2 evidence-* buckets 7y: subject_id pseudonymized; payload retain por SLA framework
 ```
 
 ## Comunicação
@@ -77,7 +81,7 @@ Pseudonymized backends (PII REPLACED, audit chain preserved):
 ### Step 2: Per-record remediation (≤ 7d)
 
 **Case A: Erasure-effective backend gap**
-- Manual erasure execute imediato (SQL DELETE / R2 delete / KV purge / DO delete / Stripe delete).
+- Manual erasure execute imediato (Neon SQL DELETE / R2 CAS refcount-aware scrub / R2 AC delete / D1 row delete / KV purge / Stripe `Customer.update` PII nullify NOT delete — PCI scope per Lote 10.11.0-bis canonical).
 - Audit emit `corelink.privacy.erasure_completed_retroactive` per record.
 - Re-run verification job 24h post-fix.
 
@@ -150,10 +154,10 @@ Pseudonymized backends (PII REPLACED, audit chain preserved):
 
 - **Backend coverage CI gate**: PR adicionando new backend MUST add to DSR sweep list (compile-time check).
 - **Property test expansion**: 10k subject_id variations + chaos backend unavailability.
-- **Pseudonymization E2E test**: monthly synthetic DSR + verify all 10 backends.
+- **Pseudonymization E2E test**: monthly synthetic DSR + verify all 12 backends canonical (8 effective + 4 pseudonymized; Lote 10.11.0-bis privacy_model.md §6.2).
 - **Customer-facing erasure dashboard** (S-16): customer pode verify erasure status real-time.
 - **Erasure attestation Ed25519 verify endpoint** (S-14 R-S14-10): customer pode verify post-erasure proof.
-- **TLA+ `dsr_erasure_atomicity.tla` (planned)**: formal model erasure atomic OR compensating-rollback.
+- **TLA+ `dsr_erasure_atomicity.tla` (🟡 spec written, Lote 10.11.0-bis-prime; TLC CI gate pendente first run verde via `.github/workflows/tla_check.yml`)**: formal model erasure atomic OR compensating-rollback; 5 state invariants + 3 temporal properties + 10 actions; 12-backend canonical bound.
 
 ## Post-incident
 
@@ -180,12 +184,12 @@ Pseudonymized backends (PII REPLACED, audit chain preserved):
 ## References
 
 - `invariant_registry.md` INV-DATA-ERASURE-COMPLETE (§3.5).
-- `specs/04_sprints/S11/_spec_contract.md` (10-backend erasure + verification 24h R-S11-6).
+- `specs/04_sprints/S11/_spec_contract.md` (12-backend canonical erasure + verification 24h R-S11-6; Lote 10.11.0-bis).
 - `specs/04_sprints/S14/_spec_contract.md` (erasure attestation Ed25519 R-S14-10).
 - `specs/03_architecture/privacy_model.md`.
 - `specs/03_architecture/error_taxonomy.md` `COR_DSR_*`.
 - LGPD Art. 18 (right to erasure) + Art. 48 (incident notification).
 - GDPR Art. 17 (right to erasure) + Art. 33 (breach notification).
 - CCPA §1798.105 (right to delete).
-- EDPB Guidelines 5/2020 (pseudonymization).
+- GDPR Recital 26 + Art. 11 + WP29 Opinion 05/2014 endorsed by EDPB (anonymization techniques pseudonymization).
 - NIST SP 800-88 Rev.1 (crypto-erase via key destroy).

@@ -121,6 +121,20 @@ tags: ["architecture", "reliability", "patterns", "retry", "circuit-breaker"]
 - **Custo:** 5% de duplicação; apenas em reads GET idempotentes; desabilitado por padrão.
 - **FMs:** FM-055, FM-057.
 
+#### PAT-RETRY-IDEMPOTENT-001 — Retry regulatory-grade fail-CLOSED (Lote 10.11.0-bis)
+- **Problema:** PAT-RETRY-001 é genérico (transient errors em hot path); regulatory pipelines (DSR erasure, audit append, breach notification) exigem **fail-CLOSED** com cross-backend ack idempotency, dead-letter quarantine e on-call paging em retry exhaustion. Aplicar PAT-RETRY-001 em pipeline regulatório arrisca silent loss.
+- **Solução:** especialização de PAT-RETRY-001 com:
+  - **Idempotency key obrigatória** (`Idempotency-Key: dsr-<ticket_id>-<step>` per backend ack); replay safe via dedup table TTL 7d.
+  - **Dead-letter queue** após `max_attempts` exausto (default 5; vs PAT-RETRY-001 default 3): worker move job para `dlq.<pipeline>`, on-call page acionada em ≤ 5 min.
+  - **Cross-backend coordination:** ack de N backends é tracked em D1 `dsr_backend_acks(ticket_id, backend, ack_at, attempt_n)`; só transição `in_progress → completed` quando todos N ack'd.
+  - **Fail-CLOSED audit:** failure_reason persisted em `dsr_tickets.failure_reason`; audit chain entry `dsr.failed.v1` antes do `dsr.completed.v1` ser permitido.
+  - **Backoff:** `base=200ms, factor=2.0, max=30s, max_attempts=5, jitter=full` (mais conservador que PAT-RETRY-001).
+  - **Proibido:** retry em `error_code IN (LEGAL_HOLD_*, JURISDICTION_*, FRAUD_CHECK_*, CONSENT_LAPSED_*)`.
+- **Aplicabilidade:** S-11 DSR pipeline (12 backends), S-09 audit append, S-09 SIEM alert delivery, S-11 sub-processor broadcast.
+- **Métrica:** `corelink_pipeline_retry_attempts_total{pipeline, op, outcome}`, `corelink_pipeline_dlq_depth{pipeline}`.
+- **FMs:** FM-003, FM-053, FM-450, FM-451, FM-452, FM-453.
+- **TLA+ obrigatório:** spec `dsr_erasure_atomicity` (S-11 WI-S11-008) prova `INV-DATA-ERASURE-COMPLETE` sob retry.
+
 ### 3.3 Isolation
 
 #### PAT-CIRCUIT-001 — Circuit breaker
@@ -159,6 +173,17 @@ tags: ["architecture", "reliability", "patterns", "retry", "circuit-breaker"]
 - **Problema:** DOs podem migrar entre datacenters; latência spike.
 - **Solução:** state do DO é eventual; writes críticos persistem em D1; DO é cache.
 - **FMs:** FM-005.
+
+#### PAT-ROUTING-PINNED-001 — Region-pinned routing fail-CLOSED (Lote 10.11.0-bis)
+- **Problema:** custom domain ou misconfigured DNS pode rotear request para região errada (residency violation INV-DATA-RESIDENCY); fallback "passthrough" cria fail-OPEN privacy leak. Endereça GPT P1-7 round-1.
+- **Solução:** edge router resolve `tenant.primary_region` via KV cache (TTL 5min) ANTES de qualquer storage op; mismatch entre região do PoP e `primary_region`:
+  - **Default:** redirect 307 com `Location:` apontando para custom domain regional (custo: extra hop ≤ 50ms).
+  - **Fail-CLOSED policy (regulatory):** se redirect indisponível ou tenant tem `residency_strict=true`, retorna 451 `legal_residency_violation` com audit log entry; NUNCA passthrough silencioso.
+  - **No "break-glass" passthrough flag:** flag `residency_strict` é write-once-true (não revertível pra false sem dual approval + ANPD/EDPB notification).
+- **Aplicabilidade:** S-11 WI-S11-007 residency E2E + custom domain routing.
+- **Métrica:** `corelink_routing_misroute_total{tenant_region, edge_pop, action}` (action ∈ {redirected, blocked}).
+- **TLA+:** spec property test ≥ 20k cases (WI-S11-007) prova `\A r \in Region : write(b, r) ⇒ stored(b) \in r`.
+- **FMs:** FM-100, FM-451.
 
 ### 3.5 Graceful
 
@@ -211,6 +236,20 @@ tags: ["architecture", "reliability", "patterns", "retry", "circuit-breaker"]
 - **Problema:** bit rot silencioso em R2.
 - **Solução:** job varre blobs aleatórios, recomputa hash, compara; suspicious → isolate + alerta.
 - **FMs:** FM-051.
+
+#### PAT-FORMAL-VERIFICATION-001 — TLA+ obrigatório para HIGH_RISK invariants (Lote 10.11.0-bis)
+- **Problema:** invariants CRITICAL (audit append-only, DSR erasure atomicity, residency pinning, consent proof) não podem depender só de testes unit/integration — race conditions sob concorrência multi-region escapam fuzzing/property tests sem state-space exhaustion. Falhas silentes = regulatory exposure.
+- **Solução:** invariants marcados `severity=CRITICAL` em `invariant_registry.md` MUST ter spec TLA+ executável:
+  - **Bootstrap:** TLC v1.8.0 SHA-256 pinned (ADR-0042 §A1) via `scripts/run_tlc_corelink.sh` wrapper (mandatory SHA pin verify; opt-out via `TLC_SHA256_SKIP=1` apenas local dev). Lote 10.11.0-bis-prime cycle 2: scripts canonical em `scripts/run_tlc_corelink.sh` (NOT `specs/tla/bootstrap.sh` legado).
+  - **CI gate:** `.github/workflows/tla_check.yml` roda em PR que toca `specs/tla/**`; invoca runner per spec; falha = block merge. Lote 10.11.0-bis-prime cycle 2 canonical (NOT `tla-check` workflow legado).
+  - **Spec quality:** Init + Next + Spec=Init /\ [][Next]_vars /\ Fairness; CONSTANTS declarados; helpers documentados; bounded state space (TypeOK constraint); SHA-256 pin.
+  - **Invariants enforced:** `THEOREM Spec => []TypeOK /\ []InvX` para cada invariant CRITICAL ligado.
+  - **Fairness conditions:** WF/SF explicit; deadlock check (`tlc -deadlock`).
+  - **Liveness:** properties como `<>completed` para temporal claims (DSR ≤ 24h, breach ≤ 72h).
+  - **No tautologies:** banido `\/ TRUE`, `\A x : TRUE`, etc. (Lote 10.11.0 finding).
+- **Aplicabilidade:** 5 specs canonical declaradas em `specs/tla/README.md` (tenant_isolation, gc_correctness, cas_integrity, audit_immutability, dsr_erasure_atomicity); +N specs novas a partir de S-12.
+- **FMs:** apply em invariants — não em FMs específicos (cross-cutting governance pattern).
+- **Evidence:** EVT-022 (TLA+ result + commit SHA + TLC version + state count).
 
 ### 3.7 Operational
 

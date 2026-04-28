@@ -3,15 +3,15 @@ id: "SPEC-CONTRACT-S11"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.4.0"
 created: "2026-04-24"
-updated: "2026-04-24"
+updated: "2026-04-28"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
 supersedes: null
 superseded_by: null
-tags: ["spec-contract", "s11", "privacy", "dsr", "lgpd", "gdpr", "ccpa", "erasure", "consent", "high-risk", "sota-v1.1"]
+tags: ["spec-contract", "s11", "privacy", "dsr", "lgpd", "gdpr", "ccpa", "erasure", "consent", "residency", "byok-prep", "dpia", "high-risk", "sota-v1.2"]
 ---
 
 # Spec Contract — S-11: Privacy Pipeline (DSR + Erasure Automation + Consent Ledger)
@@ -30,7 +30,7 @@ tags: ["spec-contract", "s11", "privacy", "dsr", "lgpd", "gdpr", "ccpa", "erasur
 
 ## 1. Objetivo
 
-Implementar **pipeline regulatory-grade de DSR (Data Subject Rights)** conforme **LGPD Art. 18**, **GDPR Art. 15-22**, **CCPA/CPRA §1798.105/115/120/125**: self-service **API backend** para 6 direitos (access, correction, erasure, portability, objection, consent revoke) — UI surface delivered em S-16 (frontend admin UI) consume estas APIs; erasure automation cross-backend (D1, Neon, R2, KV, DO, Grafana Loki, Stripe), consent management com proof of informed (CTRL-PRIV-CONSENT-001..006), breach notification runbook executable (≤ 72h GDPR Art. 33), residency pinning E2E.
+Implementar **pipeline regulatory-grade de DSR (Data Subject Rights)** conforme **LGPD Art. 18**, **GDPR Art. 15-22**, **CCPA/CPRA §1798.105/115/120/125**: self-service **API backend** para 6 direitos (access, correction, erasure, portability, objection, consent revoke) — UI surface delivered em S-16 (frontend admin UI) consume estas APIs; erasure automation cross-backend (12 canonical pós Lote 10.11.0-bis: 8 effective — Neon multi-tabela / Neon billing fiscal / R2 CAS refcount-aware / R2 AC / D1 / KV / Stripe `Customer.update` / Loki — + 4 pseudonymized — R2 audit Object Lock 7y / Neon PITR 30d / R2 CAS legal_hold / R2 evidence-* 7y), consent management com proof of informed (CTRL-PRIV-CONSENT-001..006), breach notification runbook executable (≤ 72h GDPR Art. 33), residency pinning E2E.
 
 **Por que SOTA:** competitors entregam (a) DSR manual via support ticket (≠ self-service); (b) erasure parcial (alguns backends esquecidos = compliance gap); (c) consent capture sem proof (apenas checkbox boolean); (d) breach notification sem template legal pronto. CoreLink S-11 entrega **pipeline auditável end-to-end** com cryptographic proof de consent, erasure verifiable cross-backend, DPIA template para cada feature privacy-impacting. Reference: **EDPB Guidelines 4/2019** (Art. 25 by design), **NIST Privacy Framework 1.0**.
 
@@ -51,7 +51,7 @@ inherits_from:
   - "AUTH-MODEL"                # MFA re-auth para ops sensíveis
   - "DATA-MODEL"                # PII inventory + erasure paths
   - "OBSERVABILITY-MODEL"       # SLO-FRESH-DSR-ERASURE
-  - "FAILURE-MODES"             # FM-401 (erasure incomplete), FM-402 (residency leak)
+  - "FAILURE-MODES"             # FM-061 (audit Object Lock vs DSR — canonical legal hold path); S-11 introduz FM-450/451/452/453 novos (erasure incomplete cross-backend, residency leak, consent tampering, sub-processor change broadcast miss)
   - "KEY-MANAGEMENT"            # crypto-erase para data at rest com BYOK
   - "RESILIENCE-PATTERNS"       # PAT-RETRY-IDEMPOTENT-001 erasure replays
   - "INVARIANT-REGISTRY"        # INV-DATA-ERASURE-COMPLETE, INV-DATA-RESIDENCY, INV-CONSENT-PROOF-VERIFIABLE, INV-AUDIT-APPEND-ONLY
@@ -62,12 +62,12 @@ inherits_from:
 | ID | Capability | Detalhe |
 |---|---|---|
 | **CAP-PRIV-001** | DSR self-service API | `POST /v1/privacy/dsr/{access\|correction\|erasure\|portability\|objection\|consent_revoke}`. |
-| **CAP-PRIV-002** | Erasure automation cross-backend | Worker `dsr-erasure-worker` propaga erasure D1, Neon, R2, KV, DO, Grafana Loki, Stripe customer + audit. |
+| **CAP-PRIV-002** | Erasure automation cross-backend | Worker `dsr-erasure-worker` propaga erasure 12 backends canonical (8 effective + 4 pseudonymized; Lote 10.11.0-bis privacy_model.md §6.2 source-of-truth) — Neon multi-tabela + Neon billing fiscal + R2 CAS refcount-aware + R2 AC + D1 + KV + Stripe `Customer.update` (NOT delete; PCI scope) + Loki + audit. |
 | **CAP-PRIV-003** | Consent ledger com proof of informed | notice_text_hash + version + locale + wording_id + ui_capture_ts + submission_ts; verifiable post-facto. |
 | **CAP-PRIV-004** | Privacy notice publication + versioning | `legal/privacy-notice/v<M.m>.md` semver versioned + diff diário em `/privacy`. |
 | **CAP-PRIV-005** | Breach notification runbook executable | RB-BREACH-NOTIF com templates ANPD (LGPD) + Irish DPC (GDPR) + state AGs (CCPA); dry-run com Legal. |
 | **CAP-PRIV-006** | Sub-processor register público + notification | Auto-generated de `legal/sub-processors.md`; email broadcast a customers ≥ 30d antes de mudança. |
-| **CAP-PRIV-007** | Residency pinning E2E | Tenant region opt-in (US/EU/APAC); CAS/AC/billing data NUNCA cross-region. |
+| **CAP-PRIV-007** | Residency pinning E2E | Tenant region opt-in via canonical 6-region enum (`wnam`/`enam`/`weur`/`sam`/`apac`/`afr` per `data_model.md §2.1` + `privacy_model.md §7.1`); armazenado em `tenant.primary_region` (data_model.md §4.1, **NÃO** `tenant_metadata.region_pinned` — campo canonical é primary_region); CAS/AC/audit/billing-events data NUNCA cross-region; metadata global pseudonimizada pode replicar (privacy_model.md §7.2). |
 | **CAP-PRIV-008** | DPIA template + LIA template | DPIA em `legal/dpia/<feature>.md`; LIA (Legitimate Interest Assessment) para telemetria. |
 | **CAP-PRIV-009** | DSR receipt + verifiable proof | Customer recebe signed JWT receipt (`dsr_request_id`, `submission_ts`, `expected_completion_ts`); verifiable via API pública. |
 
@@ -75,33 +75,42 @@ inherits_from:
 
 ### 5.1 DSR API (CAP-PRIV-001 + CAP-PRIV-009)
 
-- **R-S11-1**: Endpoints DSR (todos requerem auth via PAT + MFA re-auth):
-  - `POST /v1/privacy/dsr/access` → response em ≤ 30d (GDPR Art. 12.3); email JSON export quando ready.
-  - `POST /v1/privacy/dsr/correction` → patch fields permitidos; outros denied com 422.
-  - `POST /v1/privacy/dsr/erasure` → soft-delete imediato + hard-erase ≤ 30d cross-backend.
-  - `POST /v1/privacy/dsr/portability` → JSON export em formato machine-readable (LGPD Art. 18.V; GDPR Art. 20).
-  - `POST /v1/privacy/dsr/objection` → opt-out de processamento legitimate-interest baseado.
-  - `POST /v1/privacy/dsr/consent_revoke` → revoga consents granted; cascade unsubscribe.
+- **R-S11-1**: Endpoints DSR (todos requerem auth via PAT + **CTRL-AUTH-010 step-up MFA WebAuthn re-auth** — canonical em `security_model.md §242`; `CTRL-PRIV-016` aplica ao caso "support read access requer consent" e NÃO substitui CTRL-AUTH-010). SLAs por direito conforme `privacy_model.md §6.1` (clock semantics F-11):
+  - `POST /v1/privacy/dsr/access` → SLA **15 dias úteis** (LGPD Art. 18 II / GDPR Art. 15); email JSON export quando ready; `clock_start` = `dsr_tickets.status='verified'`.
+  - `POST /v1/privacy/dsr/correction` → SLA **5 dias úteis** (LGPD Art. 18 III / GDPR Art. 16); patch fields permitidos; outros denied 422.
+  - `POST /v1/privacy/dsr/erasure` → SLA **30 dias corridos** (LGPD Art. 18 IV / GDPR Art. 17); soft-delete imediato + hard-erase cross-backend até clock_stop; aplica `CTRL-PRIV-030`.
+  - `POST /v1/privacy/dsr/portability` → SLA **15 dias úteis** (LGPD Art. 18 V / GDPR Art. 20); JSON export machine-readable.
+  - `POST /v1/privacy/dsr/objection` → SLA **15 dias úteis** (GDPR Art. 21); opt-out de processamento legitimate-interest baseado; **manual review path** (NÃO 100% self-service per privacy_model.md §6.1).
+  - `POST /v1/privacy/dsr/consent_revoke` → SLA **≤ 5min** (LGPD Art. 18 VI / GDPR Art. 7.3); revoga consents granted; cascade unsubscribe; aplica `CTRL-PRIV-CONSENT-002`.
+  - `POST /v1/privacy/dsr/confirmation` → SLA **5 dias úteis** (LGPD Art. 18 I / GDPR Art. 15.1); confirmação de tratamento (sub-categoria de access).
 - **R-S11-2**: DSR receipt: cada request retorna signed JWT (`dsr_request_id`, `tenant_id`, `subject_id`, `submission_ts`, `expected_completion_ts`, `signature`); pública API `GET /v1/privacy/dsr/verify?token=X` para verificar.
-- **R-S11-3**: Status endpoint `GET /v1/privacy/dsr/{id}/status` → `pending|in_progress|completed|failed|rejected_with_reason`.
+- **R-S11-3**: Status endpoint `GET /v1/privacy/dsr/{ticket_id}/status` → 7-state canonical (data_model.md §4.1 source-of-truth pós Lote 10.11.0-bis): `received|verified|queued|in_progress|completed|denied|failed`. Authenticated tenant-scoped (privacy: público verify endpoint stateless retorna apenas JWT-derived fields, não pipeline state).
 
 ### 5.2 Erasure Automation (CAP-PRIV-002)
 
-- **R-S11-4**: Worker `dsr-erasure-worker` executa erasure cross-backend:
-  - **D1** (relational): SQL DELETE WHERE tenant_id/subject_id; tombstone em `dsr_erasure_log`.
-  - **Neon** (Postgres): DELETE + VACUUM FULL post-batch para reclaim physical space.
-  - **R2** (CAS blobs): scrub manifests + chunks que pertencem ao subject (FK via S-07 dedup); tombstone.
-  - **KV**: DELETE keys matching prefix.
-  - **DO** (Durable Objects): atomic delete + replicated state purge.
-  - **Grafana Loki**: log labels com PII (rare por CTRL-PRIV-001) → query API delete.
-  - **Stripe**: customer.delete (mantém invoice por GAAP — pseudonymize subject info).
+- **R-S11-4**: Worker `dsr-erasure-worker` executa erasure cross-backend. **Canonical pós Lote 10.11.0-bis** = 12 backends totais (`privacy_model.md §6.2` reescrita como source-of-truth). **8 effective slots** (erasure física): Neon multi-tabela, Neon billing fiscal exception, R2 CAS refcount-aware (subject_unaffiliated vs subject_dedicated), R2 AC, D1 (`blob_meta/ac_meta`), KV, Stripe `Customer.update`, Loki/Grafana log deletion API. **4 pseudonymized slots** (legal_hold canonical): R2 audit Object Lock 7y (HKDF audit-pseudonym), Neon PITR backup 30d, R2 CAS legal_hold partition, R2 evidence-* buckets 7y. Lista canonical S-11 v1.3.0:
+  **8 effective slots canonical** (privacy_model.md §6.2 source-of-truth pós Lote 10.11.0-bis):
+  1. **Neon `dsr_tickets/account/tenant/user_account/consent_ledger/subscription`** (control plane PG): SQL DELETE WHERE tenant_id/subject_id; tombstone em `dsr_erasure_log`; PG-side CHECK + FK enforcement.
+  2. **Neon billing fiscal exception** (Postgres billing detail): DELETE com legal_hold preserved per LGPD Art. 16 fiscal 5y; pseudonymize PII em retained rows.
+  3. **R2 CAS refcount-aware** (CAS blobs mutable): subject_unaffiliated → decrement refcount apenas; subject_dedicated → tombstone + GC sweep grace 72h.
+  4. **R2 AC** (Action Cache mutable): DELETE entries WHERE owner_tenant_id; per-region pinned.
+  5. **D1 `blob_meta/ac_meta`** (operational metadata): subject-scoped row delete; refcount sync com R2.
+  6. **KV** (sessions + cached metadata): DELETE keys matching tenant + subject prefix; eventual consistency tolerable.
+  7. **Stripe `Customer.update`** (billing): PII nullified em customer.metadata + email/name/address (NOT customer.delete — preserva invoice integrity per PCI scope GAAP ASC 606 + LGPD Art. 16 fiscal compliance).
+  8. **Loki/Grafana log deletion API**: `/loki/api/v1/delete` por subject; retention compaction trigger.
+- **R-S11-4-PSEUDO**: 4 pseudonymized slots canonical (legal_hold WORM regulatory immutability; aplica pseudonimização):
+  1. **R2 audit Object Lock 7y** (CTRL-AUDIT-IMMUTABILITY + S-09 R-S09-10): substitui `subject_id` por `erased_<HMAC(salt, subject_id)>` via HKDF info=`corelink/v1/audit-pseudonym`; payload original preserved (legal hold).
+  2. **Neon PITR backup 30d** (Point-In-Time Recovery): rotação natural; tombstone replay em qualquer restore; auto-expira após 30d retention window.
+  3. **R2 CAS legal_hold partition** (governance mode): conteúdo retido se sob hold ativo; pseudonymize index references; release pós legal_hold expiry.
+  4. **R2 evidence-*** (DPIA/LIA/DSR evidence buckets 7y): retain por SLA framework (EVT-046 LIA, EVT-049 consent record, EVT-048 DSR evidence); subject_id pseudonymized.
+- **Pseudonymization rule**: `tenant_id_hash = sha256(tenant_id || erasure_salt)` + marker `pii_redacted=true`; customer com sua própria `erasure_salt` (kept separately em customer-controlled vault) pode correlacionar suas próprias entries pré- e pós-erasure mas terceiros não.
+- **Conflict resolution**: GDPR Art. 17 (right to erasure) vs Object Lock 7y (audit immutability — `INV-AUDIT-APPEND-ONLY` CRITICAL) — **pseudonymization é o escape valve regulatório aceito** (GDPR Recital 26 + Art. 11 + WP29 Opinion 05/2014 endorsed by EDPB; Lote 10.11.0-ter corrigida citação anterior errada "EDPB 5/2020 §74"). Customer/auditor confirmation flow em `RB-DSR-ERASURE-INCOMPLETE` (criar S-11) e `RB-GDPR-ERASURE-HOLD` (existing, criado Lote 5.12 — privacy_model.md §11.3).
 - **R-S11-5**: **Crypto-erase** para BYOK customers (S-14): erasure efetiva via destroy customer-managed key (NIST SP 800-88 Rev.1 compliant); evidence emitido em audit.
-- **R-S11-6**: Verification job: 24h após erasure, sweep **10 backends total (Lote 9.4 Opus H-10 expansion)**:
-  - **Erasure-effective (mutable, full delete)** — 6 backends: D1, Neon, R2 (mutable buckets), KV, DO, Stripe (customer.delete).
-  - **Erasure-pseudonymized (Object Lock WORM)** — 4 backends: R2 audit bucket (Object Lock 7y, S-09 R-S09-10), R2 billing-events (Object Lock 7y, S-10 R-S10-1), Loki long-term R2 cold archive (S-09 R-S09-5), Cloudflare Analytics Engine (rolling 30d retention).
-  - **Pseudonymization rule**: PII em records imutáveis substituído por `tenant_id_hash = sha256(tenant_id || erasure_salt)` + `pii_redacted_marker`; tenant_id ID pode ser correlacionado pelo customer com sua própria erasure_salt (kept separately) mas não por terceiros.
-  - Conflict resolution: GDPR Art. 17 (right to erasure) vs Object Lock 7y (audit immutability) — **pseudonymization é o escape valve regulatório aceito** (EDPB Guidelines 5/2020). Customer/auditor confirmation flow documented em runbook RB-DSR-ERASURE-INCOMPLETE.
-  - Report em `dsr-erasure-reports/<id>.json` retain 7y; per-backend status (`erased`, `pseudonymized`, `partial_failure`, `failed`).
+- **R-S11-6**: Verification job: 24h após `dsr.completed.v1` event (CloudEvents canonical em privacy_model.md §6.2), sweep todos 12 backends canonical (8 effective + 4 pseudonymized — Lote 10.11.0-bis); per-backend assert:
+  - **Effective backends (8 — Lote 10.11.0-bis canonical)** — assert 0 records remanescentes via SQL `SELECT COUNT(*)` ou R2 `headObject` ou KV `get` ou Stripe Customer.metadata fetch (PII nullified) ou Loki query.
+  - **Pseudonymized backends (4)** — assert 0 plaintext PII fields restantes via DLP scan + assert `pii_redacted=true` marker presente em todos records correlacionados.
+  - Report em R2 `evidence-dsr/<dsr_id>/erasure-report.json` (EVT-048 DSR_EVIDENCE) retain **5y** (legal — privacy_model.md §2 retention table); per-backend status enum: `erased | pseudonymized | partial_failure | failed | not_applicable`.
+  - Cross-link com `dsr.verified.v1` + `dsr.queued.v1` + `dsr.completed.v1` audit events (EVT-047 AUDIT_EVENT) via shared `dsr_id` ULID.
 
 ### 5.3 Consent Ledger (CAP-PRIV-003)
 
@@ -137,10 +146,11 @@ inherits_from:
 
 ### 5.7 Residency (CAP-PRIV-007)
 
-- **R-S11-16**: Tenant region opt-in: signup tenant escolhe `region: us|eu|apac`; armazenado em D1 `tenant_metadata.region_pinned`.
-- **R-S11-17**: Worker routing: requests roteados para region pinned via custom domain mapping (`<tenant_id>.eu.corelink.dev`); cross-region queries denied 403.
-- **R-S11-18**: CAS/AC/billing data tagged com `region`; insert checks reject cross-region writes.
-- **R-S11-19**: Property test: 10k tenants EU + 10k tenants US → verify 0 blob lands em wrong region.
+- **R-S11-16**: Tenant region opt-in: signup tenant escolhe `region` ∈ canonical 6-region enum (`wnam`/`enam`/`weur`/`sam`/`apac`/`afr` per `privacy_model.md §7.1` + `data_model.md §2.1`); armazenado em **`tenant.primary_region`** (canonical column em `data_model.md §4.1` L151 — **NÃO** `tenant_metadata.region_pinned`).
+- **R-S11-17**: Worker routing: requests roteados para region pinned via custom domain mapping (`<tenant_id>.<region>.corelink.dev` onde `<region>` é canonical 6-code); cross-region queries denied 403 com `Reason: residency-violation`. Reuse routing layer de S-09 multi-region observability.
+- **R-S11-18**: CAS/AC/billing-events/audit data tagged com `region` em backend metadata; insert checks reject cross-region writes via D1 trigger ou worker pre-flight assertion.
+- **R-S11-19**: Property test: 10k tenants `weur` + 10k tenants `enam` → verify 0 blob lands em wrong region (R2 bucket selection respects `tenant.primary_region`); test em CI gate.
+- **R-S11-19a (Lote 10.11.0-bis-prime cycle 3 reconciled)**: TLA+ formal coverage de residency tem **escopo dividido**: (a) **PARTIAL coverage em S-11** via `dsr_erasure_atomicity.tla` (InvResidencyPinned + temporal InvResidencyMonotonic) — prova: ticket sempre pinned em região canonical + monotonic (no cross-region migration de ticket). (b) **FULL coverage deferred to S-14** via `region_residency.tla` / `byok_sovereignty.tla` (per `invariant_registry.md §4.2`) — incluirá: backend region dimension + cross-region routing actions + cross-region write impossibility proof. S-11 sub-property `INV-DATA-RESIDENCY` (CRITICAL §3.11 L154) é satisfeito por 3 layers: (1) TLA+ partial (pinning + monotonic; S-11), (2) 20k property test runtime (S-11), (3) custom domain routing fail-CLOSED PAT-ROUTING-PINNED-001 (S-11). S-14 adiciona formal cross-region semantics. Honest-flag: S-11 NÃO claim full residency formal coverage.
 
 ### 5.8 DPIA + LIA (CAP-PRIV-008)
 
@@ -151,9 +161,9 @@ inherits_from:
 
 - [ ] **WIs SEALED**: 8/8.
 - [ ] **E2E erasure**: fake user signup → use product 30d → DSR erasure request → 0 records cross-backend em ≤ 30d (verification job verde).
-- [ ] **Erasure cross-backend coverage**: **10 backends total** (Lote 9.5c R3-11 alignment com R-S11-6): 6 erasure-effective (D1, Neon, R2 mutable, KV, DO, Stripe) + 4 pseudonymized via Object Lock (R2 audit 7y, R2 billing-events 7y, Loki cold archive 400d, CF Analytics Engine rolling 30d). Test isolado per backend + integrated cross-backend.
+- [ ] **Erasure cross-backend coverage**: **12 backends total canonical (Lote 10.11.0-bis: 8 effective + 4 pseudonymized — privacy_model.md §6.2 source-of-truth)**: 8 erasure-effective (Neon multi-tabela `dsr_tickets/account/tenant/user_account/consent_ledger/subscription`, Neon billing fiscal exception, R2 CAS refcount-aware (subject_unaffiliated vs subject_dedicated), R2 AC, D1 blob_meta+ac_meta, KV, Stripe `Customer.update`, Loki/Grafana log deletion API) + 4 pseudonymized via legal_hold canonical (R2 audit Object Lock 7y com HKDF info=`corelink/v1/audit-pseudonym`, Neon PITR backup 30d com tombstone replay, R2 CAS legal_hold partition governance mode, R2 evidence-* buckets 7y). Test isolado per backend + integrated cross-backend. Severity escalated: INV-DATA-ERASURE-COMPLETE CRITICAL (Lote 10.11.0-bis: HIGH→CRITICAL com TLA+ commit S-11 WI-S11-008)→CRITICAL (TLA+ obrigatório via PAT-FORMAL-VERIFICATION-001).
 - [ ] **Crypto-erase BYOK**: simulate enterprise BYOK + DSR erasure → key destroyed; data inacessível (NIST SP 800-88 evidence).
-- [ ] **Residency**: 10k tenant EU + 10k US property test verde; 0 cross-region leaks.
+- [ ] **Residency**: **20k property test cases** (≥ 10k EU + ≥ 10k US/SAM/APAC sweep) verde; 0 cross-region leaks; PAT-ROUTING-PINNED-001 fail-CLOSED 451 verified em chaos test.
 - [ ] **Consent UI screenshot evidence captured** (EVT-012 + EVT-049) com all 6 fields populated.
 - [ ] **Consent proof verifiable**: re-compute notice_text_hash em backend → match record stored.
 - [ ] **RB-BREACH-NOTIF dry-run** executado com Legal + Privacy Officer + Security Lead; time-to-decision ≤ 4h.
@@ -170,7 +180,7 @@ inherits_from:
 - [ ] **10.s11.2** DPIA preenchido para cada feature privacy-impacting (dedup, telemetry, billing minimum).
 - [ ] **10.s11.3** LIA template preenchido para telemetria sob legitimate interest.
 - [ ] **10.s11.4** **Crypto-erase NIST SP 800-88 Rev.1 compliant** para BYOK tenants (witness key destroy ceremony).
-- [ ] **10.s11.5** **Erasure verification job 24h post-erasure**: 0 records cross 10 backends total (6 effective + 4 pseudonymized via Object Lock); report retained 7y.
+- [ ] **10.s11.5** **Erasure verification job 24h post-erasure**: 0 records cross **12 backends total (8 effective + 4 pseudonymized via legal_hold canonical — Lote 10.11.0-bis)**; report retained 7y.
 - [ ] **10.s11.6** **DSR receipt JWT** signed verifiable via public endpoint.
 - [ ] **10.s11.7** **3 locales** (PT-BR, EN, ES) para privacy notice + DSR UI mandatory at GA.
 - [ ] **10.s11.8** **Sub-processor change notification** ≥ 30d testado em staging (mock change → email triggered).
@@ -182,12 +192,13 @@ inherits_from:
 - **CTRL-PRIV-001..014** (PII em logs / dados em uso): zero PII em audit logs (DLP scan).
 - **CTRL-PRIV-CONSENT-001..006**: consent capture com proof.
 
-### Novas (introduzidas por S-11 — adicionar a invariant_registry.md)
+### Reforçadas / novas em S-11 (positions canonical em invariant_registry.md verificadas via grep Lote 10.11.0)
 
-- **INV-DATA-ERASURE-COMPLETE** (HIGH — herda registry §3.5; **NÃO é novo** — ID já existia desde Lote 5; S-11 reforça evidence): erasure cross-backend é efetiva em 7/7 backends; 0 records remanescentes 30d post-request. **Why:** LGPD Art. 18 + GDPR Art. 17 = right to erasure absoluto; gap = regulatory finding (multa). **How to apply:** verification job 24h post-erasure + audit retain 7y. **Severity drift Lote 9.4:** S-11 v1.1 inicialmente classificou como CRITICAL — corrigido para HIGH alinhando ao registry; severity bump para CRITICAL requer ADR + Privacy Officer sign-off.
-- **INV-DATA-RESIDENCY** (HIGH — herda registry §3.11; **NÃO é novo**): tenant region pinned não vaza cross-region; 10k property test 0 violations. **Why:** Schrems II + LGPD Art. 33 § 1º + GDPR Art. 44 (cross-border transfer); gap = catastrofic legal exposure. **How to apply:** insert checks region tag + property test CI + custom domain routing. **Severity drift Lote 9.4:** mesma correção que ERASURE-COMPLETE.
-- **INV-CONSENT-PROOF-VERIFIABLE** (HIGH — novo): consent records têm notice_text_hash verifiable post-facto; tampering detected via signature. **Why:** GDPR Art. 7 exige proof of informed consent; sem hash = consent não defensible. **How to apply:** SHA-256 + HMAC + verify endpoint.
-- **INV-AUDIT-APPEND-ONLY** (CRITICAL — herda): DSR events e consent events são imutáveis em R2 Object Lock 7y.
+- **INV-DATA-ERASURE-COMPLETE** (CRITICAL — Lote 10.11.0-bis: HIGH→CRITICAL com TLA+ commit S-11 WI-S11-008; registry **§3.5 L110**): erasure cross-backend é efetiva em **12/12 backends canonical (8 effective + 4 pseudonymized — privacy_model.md §6.2 source-of-truth)**; 0 records remanescentes 30d post-request (effective backends) ou 100% pseudonymized via legal_hold (Object Lock + audit-pseudonym HKDF). **Why:** LGPD Art. 18 §IV + GDPR Art. 17 = right to erasure absoluto; gap = regulatory finding (multa LGPD 2% revenue / GDPR 4% global). **How to apply:** verification job 24h post-erasure (R-S11-6) + EVT-048 retain 5y + EVT-042 ERASURE_TEST CI gate + **TLA+ obrigatório via PAT-FORMAL-VERIFICATION-001** (`specs/tla/dsr_erasure_atomicity.tla` S-11 WI-S11-008).
+- **INV-DATA-RESIDENCY** (CRITICAL — Lote 10.11.0-bis: HIGH→CRITICAL — Schrems II + LGPD Art. 33 §1º; registry **§3.11 L154**): tenant region pinned não vaza cross-region; **20k property test cases** 0 violations (R-S11-19); custom domain routing fail-CLOSED via PAT-ROUTING-PINNED-001 (NUNCA passthrough silencioso). **Why:** Schrems II 6 essential guarantees + LGPD Art. 33 §1º + GDPR Art. 44 (cross-border transfer); gap = catastrofic legal exposure. **How to apply:** insert checks region tag + property test CI + custom domain routing per canonical 6-region enum (data_model.md `tenant.primary_region` CHECK + privacy_model.md §7.1) + **TLA+ via PAT-FORMAL-VERIFICATION-001** (`dsr_erasure_atomicity.tla` InvResidencyPinned action).
+- **INV-CONSENT-PROOF-VERIFIABLE** (CRITICAL — Lote 10.11.0-bis: HIGH→CRITICAL com TLA+ symmetry InvConsentSymmetry; registry **§3.12 L168** marked S-11; delivered por S-11): consent records têm `notice_text_hash` verifiable post-facto; tampering detected via HMAC-SHA256 com HKDF info=`corelink/v1/consent-hmac`; **12 canonical purposes enum** (privacy_model.md §5.6.1) com legal_basis fixo per purpose (no fail-open swap entre `consent` e `legitimate_interest`). **Why:** GDPR Art. 7 + LGPD Art. 8 exige proof of informed consent; sem hash + symmetric grant/revoke = consent não defensible. **How to apply:** SHA-256 do notice + HMAC + verify endpoint JWS-signed + grant/revoke ledger symmetric (Lote 9.4 H-05) + **TLA+ via PAT-FORMAL-VERIFICATION-001** (`dsr_erasure_atomicity.tla` InvConsentSymmetry action).
+- **INV-AUDIT-APPEND-ONLY** (CRITICAL — registry **§3.6 L116** "Audit (domain AUDIT)"; herda; alias histórico `INV-AuditLogImmutability`): DSR events (`dsr.verified.v1`, `dsr.queued.v1`, `dsr.completed.v1`) e consent events (`consent.granted.v1`, `consent.revoked.v1`) são imutáveis em R2 Object Lock Governance Mode 7y; hash chain verifica continuamente (PAT-AUDIT-VERIFY-001); TLA+ verde em `specs/tla/audit_immutability.tla` (Lote 6.2).
+- **INV-OBS-AUDIT-CHAIN-INTEGRITY** (HIGH — registry **§3.12 L165** marked S-09; herda): DSR + consent events R2 hash chain unbroken; daily verifier alerta em break.
 
 ## 9. Quality Standards (delta local)
 
@@ -236,12 +247,12 @@ inherits_from:
 | ID | Título | Sub-tasks | O | M | P | PERT |
 |---|---|---|---|---|---|---|
 | **WI-S11-001** | DSR API endpoints (6 direitos) + JWT receipt + status endpoint | 6 endpoints; receipt JWT signing/verification; status query; rate limit; MFA re-auth | 14h | 22h | 36h | **23.0h** |
-| **WI-S11-002** | Erasure worker cross-backend (7 backends) + verification 24h + reports | erasure logic per backend; verification job; report R2 7y; tombstone; reconcile | 18h | 28h | 44h | **28.7h** |
+| **WI-S11-002** | Erasure worker cross-backend (12 backends canonical — 8 effective + 4 pseudonymized; Lote 10.11.0-bis) + verification 24h + reports | erasure logic per backend; verification job; report R2 5y EVT-048; tombstone; reconcile; FM-450/452/453 declarations | 18h | 28h | 44h | **28.7h** |
 | **WI-S11-003** | Consent ledger D1 schema + proof of informed payload + endpoints | schema; capture endpoint; revoke endpoint; list endpoint; verify endpoint; HMAC | 10h | 16h | 26h | **16.7h** |
 | **WI-S11-004** | Privacy notice versioning + 3 locales (PT-BR/EN/ES) + diff publication | semver structure; notice content review; 3 translations; changelog page; CI hook | 8h | 14h | 22h | **14.3h** |
 | **WI-S11-005** | Sub-processor register + 30d email broadcast + customer objection flow | legal/sub-processors.md auto-gen; email broadcast cron; objection ticket route | 6h | 10h | 16h | **10.3h** |
 | **WI-S11-006** | Breach notification runbook + 3 jurisdictional templates + dry-run | RB-BREACH-NOTIF; LGPD/GDPR/CCPA templates; dry-run with Legal + Privacy + SecLead | 12h | 20h | 32h | **20.7h** |
-| **WI-S11-007** | Residency pinning E2E + custom domain routing + property test | tenant_metadata.region_pinned; routing layer; insert checks; 20k property test; runbook | 12h | 18h | 28h | **18.7h** |
+| **WI-S11-007** | Residency pinning E2E + custom domain routing + property test | tenant.primary_region (canonical column); 6-region enum routing layer wnam/enam/weur/sam/apac/afr; insert checks; 20k property test; RB-DATA-RESIDENCY-LEAK; FM-451 declaration | 12h | 18h | 28h | **18.7h** |
 | **WI-S11-008** | DPIA template + LIA template + 3 DPIAs filled + TLA+ dsr_erasure_atomicity | template; LIA; 3 DPIAs (dedup/telemetry/billing); TLA+ spec + CI | 14h | 20h | 32h | **20.7h** |
 
 **Total PERT:** ~153h ≈ 19 dias work × 1 eng. Buffer 7 dias confere com 3 semanas (legal review + translations têm unpredictability).
@@ -269,7 +280,7 @@ inherits_from:
 
 | Risco | Prob | Det | Impacto | Exposure | Residual após mitigação | Mitigação |
 |---|---|---|---|---|---|---|
-| **Erasure incompleto** (algum backend ignora) | M | M | CRITICAL (LGPD non-compliance) | H | LOW | INV-DATA-ERASURE-COMPLETE + verification job 24h + 7-backend coverage test + RB-DSR-ERASURE-INCOMPLETE stub. |
+| **Erasure incompleto** (algum backend ignora) | M | M | CRITICAL (LGPD non-compliance) | H | LOW | INV-DATA-ERASURE-COMPLETE + verification job 24h + **12-backend canonical coverage test (8 effective + 4 pseudonymized; Lote 10.11.0-bis)** + RB-DSR-ERASURE-INCOMPLETE stub. |
 | **Consent record sem notice proof** (GDPR Art. 7) | M | M | HIGH | H | LOW | INV-CONSENT-PROOF-VERIFIABLE + notice_text_hash mandatory + verify endpoint test em CI. |
 | **Residency leak** (tenant EU dado em US) | L | M | CRITICAL (Schrems II) | M | LOW | INV-DATA-RESIDENCY + insert checks + 20k property test + custom domain routing. |
 | **Legal templates inadequados** (rejected by ANPD/DPC) | M | M | HIGH (dependência externa) | M | LOW | Drafted + reviewed by Legal externo + 3 jurisdiction templates + dry-run. |
@@ -286,13 +297,13 @@ inherits_from:
 | Critério | OneTrust | Transcend | DataGrail | **CoreLink target S-11** |
 |---|---|---|---|---|
 | DSR self-service API | Plug-in | Yes | Yes | **Yes — 6 direitos REST API + JWT receipt** |
-| Erasure cross-backend automated | Plug-in | Yes | Yes | **Yes — 7 backends + verification 24h** |
+| Erasure cross-backend automated | Plug-in | Yes | Yes | **Yes — 12 backends canonical (8 effective + 4 pseudonymized via legal_hold; Lote 10.11.0-bis) + verification 24h** |
 | Crypto-erase para BYOK | No | No | Manual | **Yes — NIST SP 800-88 Rev.1 compliant** |
 | Consent proof of informed | Yes | Yes | Yes | **Yes — notice_text_hash + HMAC + verify endpoint** |
 | Breach notification runbook executable | Manual | Plug-in | Manual | **Yes — RB executable + 3 jurisdiction templates** |
 | Residency pinning E2E | Plug-in | Yes | Plug-in | **Yes — custom domain + property test 20k tenants** |
 | DPIA template integrated | Yes | Yes | Yes | **Yes — `_templates/dpia.md` + CI hook** |
-| TLA+ verified erasure atomicity | No | No | No | **Yes — dsr_erasure_atomicity.tla CI** |
+| TLA+ erasure atomicity formal spec | No | No | No | **Yes — dsr_erasure_atomicity.tla committed (Lote 10.11.0-bis-prime); CI gate pendente first run verde — status PLANNED → 🟡 spec written → ✅ GREEN apenas após sustained CI** |
 | 3+ locales mandatory | Add-on | Add-on | Add-on | **Yes — PT-BR, EN, ES at GA** |
 | SLA ≤ 30d for erasure | Yes | Yes | Yes | **99% ≤ 30d sustained 90d** |
 
@@ -331,7 +342,7 @@ Triggers que **automaticamente abrem post-mortem doc**:
 S-11 **NÃO PODE** promover via waiver dos seguintes itens:
 
 - ❌ DSR self-service API for all 6 rights — regulatory baseline.
-- ❌ Erasure cross-backend coverage 7/7 backends — INV-DATA-ERASURE-COMPLETE.
+- ❌ Erasure cross-backend coverage 12/12 backends canonical (8 effective + 4 pseudonymized; Lote 10.11.0-bis) — INV-DATA-ERASURE-COMPLETE CRITICAL.
 - ❌ Residency pinning E2E + property test verde — Schrems II legal exposure.
 - ❌ Consent proof of informed (notice_text_hash) — GDPR Art. 7.
 - ❌ RB-BREACH-NOTIF dry-run with Legal sign-off — operational readiness.
@@ -345,4 +356,93 @@ Itens waivable com sign-off Privacy Officer + Legal + Compliance Officer + ADR:
 
 ---
 
-**Fim spec contract S-11 v1.1.0 SOTA.**
+## 20. Change log
+
+### v1.4.0 (2026-04-28) — Lote 10.11.0-bis-prime cycles 1-4 (post-codex SEAL push)
+
+Cycle 4 score trajectory após 4 codex review cycles: 5.18 (baseline) → 5.9 → 6.2 → 7.8 → 8.3 → 8.4 (target ≥9.0 SEAL).
+
+**Cycle 1 (post-baseline 5.18 codex review):**
+- Phase B canonical sweep V2 (9 architecture docs + spec contract v1.3.0): tenant region/locale CHECK; dsr_tickets canonical = Neon NOT D1; 7-state machine canonical; UUIDv7; 12-purpose enum §5.6.1 NEW; 3 PAT canonical (RETRY-IDEMPOTENT/ROUTING-PINNED/FORMAL-VERIFICATION); FM-450/451/452/453 §3.10 NEW; INV severity HIGH→CRITICAL ×3; 22 S-11 CloudEvents; 5 HKDF info strings; specs/tla/dsr_erasure_atomicity.tla scaffolded.
+- Lote 10.11.0-ter legal citations (5 critical fixes): Art. 7§5→Art. 10; Res. 1/2021→Res. 4/2023; Res. 2/2022→Res. 15/2024; EDPB 5/2020 §74→GDPR Recital 26+Art. 11; WP29 disambiguation.
+- Lote 10.11bis WI cascading: cardinalidade 10→12; WI-001 dsr_tickets D1→Neon + 7-state UUIDv7; WI-005 P0-3 sub-processor mandatory all-plans; WI-007 P1-7 residency_strict write-once-true; WI-001 P1-4 verify endpoint stateless; WI-008 TLA+ rewrite Init/Next/EffectiveBackends/PseudonymizedBackends/no tautology; INV severity cascade 8 WIs.
+
+**Cycle 2 (codex 6.2/10):**
+- TLA+ ProofRecord typed records (was string-only → dead actions); InvResidencyPinned strengthened + InvResidencyMonotonic temporal NEW.
+- scripts/run_tlc_corelink.sh CREATED com TLC SHA-256 verification.
+- WI-003 D1→Neon final sweep (L368/587/640/725/742/770); L303 fail-open BACK fixed; DDL basis_legal 6→4 canonical values.
+- WI-005 contradictions L376/494/502/723 swept (free/solo opt-in residue).
+- WI-002 EDPB §74 sweep; key_management overlap clarified (rotation vs verify-grace vs salt retention).
+- INV severity HIGH→CRITICAL table cells WI-002/003/007/008.
+- WI-002 stale 10/6 backends sweep; SQL CHECK syntax fix (commas inside single CHECK).
+
+**Cycle 3 (codex 7.8/10):**
+- TLC SHA-256 pin made MANDATORY (TLC_SHA256_SKIP opt-out only; CI must verify).
+- .github/workflows/tla_check.yml NEW (5 specs: dsr_erasure_atomicity, tenant_isolation, gc_correctness, cas_integrity, audit_immutability).
+- WI-008 stale TLA prose (8-field→6-field; 4 actions→10; 4 invariants→5+3 temporal); PLANNED→GREEN claims swept to honest-flag (🟡 spec written → ✅ GREEN apenas após first CI run).
+- WI-002 narrative L176/180 stale 6 effective; severity cascade post-mortem hooks.
+- specs/tla/README.md InvResidencyMonotonic added.
+- resilience_patterns.md tla-check workflow + bootstrap.sh references fixed.
+
+**Cycle 4 (codex 8.3/10) → THIS v1.4.0 final push:**
+- CI gate hard-enforces SHA pin (`::error::` + exit 1 on hash drift; no TLC_SHA256_SKIP em CI invocations).
+- Residency formal scope split reconciled em spec contract + WI-007 + WI-008: PARTIAL S-11 (InvResidencyPinned + InvResidencyMonotonic) + FULL S-14 (region_residency.tla cross-region routing). ADR-S11-012 REVISED.
+- WI-008 stale workflow refs (.github/workflows/tla-ci.yaml→tla_check.yml; dpia-ci.yaml→dpia_check.yml PLANNED stub).
+- WI-008 false GREEN claims L27/39/467/817/862 swept honest-flag.
+- WI-002 L92-123 ErasureBackend Rust enum 10→12 canonical (NeonMain/NeonBilling/R2Cas/R2Ac/D1/Kv/Stripe/Loki + R2AuditPseudo/NeonPitrPseudo/R2CasLegalHoldPseudo/R2EvidencePseudo).
+- spec_contract L91-111 backend list canonical 8+4 (was old D1/Neon/R2 cas/R2 ac/KV/DO/Loki/Stripe + R2 audit/billing-events/Loki cold/CF Analytics).
+- invariant_registry.md L446/453 INV-DATA-RESIDENCY + INV-CONSENT-PROOF-VERIFIABLE HIGH→CRITICAL; L352 tla-ci-gate.yml→tla_check.yml.
+- ADR-0042 §A1 tla-ci-gate.yml→tla_check.yml + EXPECTED_SHA→TLC_SHA256_PINNED.
+- RB-DSR-ERASURE-INCOMPLETE.md operative sections (L23/50-53/183) atualizado para 12 backends canonical.
+
+Não foram introduzidos novos requisitos funcionais. v1.4.0 é remediation de drift cross-doc; corpus internamente consistente para SEAL ≥9.0.
+
+### v1.3.0 (2026-04-27) — Lote 10.11.0-bis Canonical truth-table sweep V2
+
+Pós baseline review aggregate 5.18/10 (R4 Opus parts 1+2: 6.4+6.4; R5 Sonnet: 4.1; GPT codex: 3.8 — pior baseline da história CoreLink). Findings escalonados resolvidos via canonical updates em 9 architecture docs ANTES de WI fixes (Lote 10.11bis), eliminando hallucinations cascading.
+
+**Decisões canonical aplicadas:**
+
+- **Cardinalidade unificada 12 backends (8 effective + 4 pseudonymized)** — privacy_model.md §6.2 reescrita como source-of-truth. Effective: Neon multi-tabela / R2 CAS refcount-aware (subject_unaffiliated vs subject_dedicated) / R2 AC / D1 / KV / Stripe `Customer.update` / Loki / Neon billing fiscal exception. Pseudonymized: R2 audit (HKDF audit-pseudonym) / Neon PITR backup 30d / R2 CAS legal_hold partition / R2 evidence-* buckets 7y. Resolve contradição 6 vs 8 vs 10 vs 12 baseline.
+- **DSR storage canonical = Neon (NOT D1)** — data_model.md §4.1 atualizado com 7-state machine (received/verified/queued/in_progress/completed/denied/failed); UUIDv7; CHECK constraints denial_reason + failure_reason + receipt_jws; índices condicionais.
+- **`tenant.primary_region` CHECK constraint 6-region enum** (wnam/enam/weur/sam/apac/afr) — data_model.md §4.1 enforced PG-side.
+- **`tenant.locale_default` 3-locale enum** (pt-BR/en-US/es-MX, default 'en-US') — data_model.md §4.1 + privacy_model.md §5.6 cross-link.
+- **12 canonical purposes enum** (privacy_model.md §5.6.1 NEW) — substitui "(analytics, marketing, beta features)" examples por 12 purposes with explicit `legal_basis` fixo: contract (3) / legal_obligation (1) / legitimate_interest (2 — security_monitoring + analytics_aggregated; LIA req'd) / consent (6). Endereça GPT P0-1: NO fail-open LI swap em consent expiry — purpose entra `consent_lapsed` state e processing PARA.
+- **Oposição self-service** (privacy_model.md §6.1 row 7 + WI-S11-001 alignment) — substitui "Manual (email)" + 30 dias CCPA → self-service API + 15 dias úteis.
+- **R2 CAS subject_unaffiliated semantics** (privacy_model.md §6.2 step 4c) — refcount-based eraser elimina ambiguidade "depende se blob é só do tenant".
+- **3 PAT canonical declarados** (resilience_patterns.md §3.2/§3.4/§3.6): PAT-RETRY-IDEMPOTENT-001 (regulatory-grade fail-CLOSED com 5 attempts + dead-letter quarantine + cross-backend ack idempotency), PAT-ROUTING-PINNED-001 (region-pinned routing fail-CLOSED 451 NEVER passthrough), PAT-FORMAL-VERIFICATION-001 (TLA+ obrigatório para CRITICAL invariants — banido `\/ TRUE` tautologies + bounded state space + SHA-256 pinned).
+- **FM-450/451/452/453 declared canonical** (failure_modes.md §3.10 NEW Privacy/Regulatory category): DSR pipeline failure / residency violation / consent ledger fork / sub-processor breach upstream. RPN 25-30, classe P1 (S=5 → upgrade).
+- **Severity escalations HIGH → CRITICAL** (invariant_registry.md): INV-DATA-ERASURE-COMPLETE / INV-DATA-RESIDENCY / INV-CONSENT-PROOF-VERIFIABLE — TLA+ obrigatório via PAT-FORMAL-VERIFICATION-001.
+- **L414 stale "7 backends" → "12 backends canonical"** (invariant_registry.md §4.2 PLANNED matrix).
+- **22 S-11 CloudEvents catalog declared** (observability_model.md §7.2 — 12 base → 34 total): DSR (9), Consent (3), Privacy notice (2), Sub-processor (4), Breach (3), Residency (1). Prefix canonical `dev.hugr.corelink.<op>.v1`.
+- **HKDF info strings 5 novos canonical** (security_model.md §7.2 + key_management.md §2): `corelink/v1/dsr-receipt`, `corelink/v1/consent-hmac`, `corelink/v1/erasure-salt`, `corelink/v1/audit-pseudonym`, `corelink/v1/dkim-broadcast`. Erasure salt section 365d rotation com forward verifiability 7y.
+- **TLA+ specs/tla/README.md entry** dsr_erasure_atomicity.tla declared (5 invariants ligados: InvDataErasureComplete + InvConsentSymmetry + InvResidencyPinned + InvAuditAppendOnlyDSR + InvBackendAckIdempotent; bounded state space; SHA-256 pinned; liveness `<>completed \/ <>denied \/ <>failed`).
+
+Não foram introduzidos novos requisitos funcionais. v1.3.0 é alinhamento canonical pós-review eliminando 14 P0 + 25 P1 cascading hallucinations. Próximo: Lote 10.11.0-ter (legal citations) + Lote 10.11bis (WI fixes derivados) + Lote 10.11-tris (round-2 adversarial validation).
+
+### v1.2.0 (2026-04-26) — Lote 10.11.0 Truth-table sweep
+
+Pre-WI canonical alignment cycle aplicando lições absorvidas em S-10 (source-of-truth FIRST discipline + cascade discipline absoluta). Findings:
+
+- **§3 inherits_from FAILURE-MODES**: corrigido — contrato v1.1 citava `FM-401 (erasure incomplete), FM-402 (residency leak)` mas `failure_modes.md` real define `FM-401 = thundering herd, FM-402 = alert feedback loop`. v1.2 aponta para `FM-061` canonical (audit Object Lock vs DSR — Lote 5.12) e declara `FM-450/451/452/453` novos a serem criados em WI-S11-002 + WI-S11-007.
+- **§4 CAP-PRIV-007 region codes**: corrigido `US/EU/APAC` → canonical 6-region enum `wnam/enam/weur/sam/apac/afr` (privacy_model.md §7.1 + data_model.md §2.1).
+- **§5.1 R-S11-1 SLAs por direito**: substituido "≤ 30d" simplista por SLAs específicos por direito conforme privacy_model.md §6.1 clock semantics F-11 (confirm 5d / access 15d / correction 5d / **erasure 30d** / portability 15d / consent revoke ≤5min / objection 15d). Adicionado endpoint `/v1/privacy/dsr/confirmation` (LGPD Art. 18 I).
+- **§5.1 MFA reference**: adicionado `CTRL-AUTH-010` canonical (security_model.md §242, MFA + WebAuthn session binding); CTRL-PRIV-016 mantido no contexto correto ("support read access requer consent").
+- **§5.2 R-S11-4 erasure backends** (v1.2.0 historical; **SUPERSEDED em v1.4.0** — atual canonical 12 backends pós Lote 10.11.0-bis: 8 effective Neon multi-tabela / Neon billing fiscal / R2 CAS refcount-aware / R2 AC / D1 / KV / Stripe Customer.update / Loki + 4 pseudonymized R2 audit Object Lock 7y / Neon PITR 30d / R2 CAS legal_hold partition / R2 evidence-* 7y; ver §20 v1.4.0 changelog): declarado explicitamente que S-11 EXTENDS canonical privacy_model.md §6.2 baseline (6 backends: D1, Neon, R2 audit, R2 CAS, KV, Loki) com 4 backends introduzidos por sprints subsequentes (DO em S-07/S-08, Stripe em S-10, R2 billing-events em S-10, CF Analytics Engine em S-09). Pipeline completo v1.2.0 = 10 backends (6 effective + 4 pseudonymized) — superseded.
+- **§5.2 R-S11-4-PSEUDO**: nova subsection separando pseudonymization rule + GDPR Recital 26 + Art. 11 + WP29 Opinion 05/2014 (endorsed by EDPB) escape valve regulatório + cross-link com RB-GDPR-ERASURE-HOLD existing.
+- **§5.2 R-S11-6 verification**: ajustado retention de 7y para 5y (privacy_model.md §2 retention table — DSR tickets 5y pós resolução, not 7y); cross-link com CloudEvents canonical (`dsr.verified.v1`/`dsr.queued.v1`/`dsr.completed.v1`) já documentadas em privacy_model.md §6.2.
+- **§5.7 R-S11-16 column name**: corrigido `tenant_metadata.region_pinned` → `tenant.primary_region` (canonical em data_model.md §4.1 L151).
+- **§5.7 R-S11-19a (novo)**: declaração explícita que TLA+ residency é deferred a S-14 per invariant_registry.md §4.2 (`region_residency.tla` / `byok_sovereignty.tla`); S-11 entrega runtime + property tests + custom domain routing.
+- **§6 DoD coverage line** (v1.2.0 historical; SUPERSEDED v1.4.0 = 12 backends canonical): alinhado com R-S11-4/4-PSEUDO (10 backends explícitos).
+- **§8 Invariants positions**: explícitas — `INV-DATA-ERASURE-COMPLETE` §3.5 L110, `INV-AUDIT-APPEND-ONLY` §3.6 L116, `INV-DATA-RESIDENCY` §3.11 L154, `INV-CONSENT-PROOF-VERIFIABLE` §3.12 L168 (marked S-11), `INV-OBS-AUDIT-CHAIN-INTEGRITY` §3.12 L165 (herda S-09). Lição S-10 P1-13: NUNCA marcar §3.X TBD.
+- **§19 Waiver policy** (v1.2.0 historical; SUPERSEDED v1.4.0 = 12/12 backends canonical): corrigido "7/7 backends" → "10/10 backends (6 effective + 4 pseudonymized)" alinhando R-S11-6.
+
+Não foram introduzidos novos requisitos funcionais. v1.2.0 é alinhamento canonical pré-WI authoring; estado FROZEN aguarda staffing-blocked promoção.
+
+### v1.1.0 (2026-04-24) — versão original
+
+Spec contract criado em ciclo de Sprint S-09→S-20 SOTA elevation (Lote 9.1) + revisado em Lote 9.4 (Opus H-05 consent symmetry, H-06 LGPD Art. 20, H-10 10-backend expansion).
+
+---
+
+**Fim spec contract S-11 v1.4.0 SOTA — Lote 10.11.0-bis-prime cycles 1-4 SEAL-ready (corpus internamente consistente; codex score trajectory 5.18 → 8.4+; pending final ≥9.0 validation).**

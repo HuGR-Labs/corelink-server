@@ -148,12 +148,15 @@ CREATE TABLE tenant (
   tenant_id         UUID        PRIMARY KEY,
   account_id        UUID        NOT NULL REFERENCES account(account_id),
   display_name       TEXT        NOT NULL,
-  primary_region    TEXT        NOT NULL,
+  primary_region    TEXT        NOT NULL CHECK (primary_region IN ('wnam','enam','weur','sam','apac','afr')),
+  locale_default    TEXT        NOT NULL DEFAULT 'en-US' CHECK (locale_default IN ('pt-BR','en-US','es-MX')),
   plan_id           TEXT        NOT NULL REFERENCES plan(plan_id),
   status            TEXT        NOT NULL CHECK (status IN ('provisioning','active','suspended','deleting')),
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
   deleted_at        TIMESTAMPTZ NULL
 );
+-- primary_region: 6-region canonical (privacy_model.md §7.1 L313-320). CHECK enforced PG-side.
+-- locale_default: 3-locale canonical (WI-S11-004 privacy notice). pt-BR primary, en-US fallback, es-MX LATAM.
 
 CREATE TABLE user_account (
   user_id           UUID        PRIMARY KEY,
@@ -208,18 +211,39 @@ CREATE TABLE subscription (
   status            TEXT        NOT NULL CHECK (status IN ('active','past_due','canceled'))
 );
 
--- DSR
+-- DSR (canonical storage = Neon; NOT D1. Lote 10.11.0-bis decision.)
+-- ticket_id = UUIDv7 (RFC 9562 §5.7) — embeds Unix-ms timestamp for sort-by-arrival without separate index.
+-- 7-state canonical machine (Lote 10.11.0-bis): granularity needed for SLO-FRESH-DSR-ERASURE §4.12 + WI-S11-001..002.
+--   received    — DSR submitted, awaiting subject verification (MFA step-up CTRL-AUTH-010)
+--   verified    — Subject identity confirmed via JWT receipt + WebAuthn/TOTP step-up
+--   queued      — Routed to erasure pipeline, awaiting worker slot (PAT-RETRY-IDEMPOTENT-001)
+--   in_progress — Worker actively executing across 12 backends (8 effective + 4 pseudonymized)
+--   completed   — All backends ack'd within 24h SLO; receipt sealed in audit chain
+--   denied      — Refused with documented legal ground (legal_hold, fraud_check, admin_override)
+--   failed      — System error after retry exhaustion; 24h SLO breach; on-call paged
 CREATE TABLE dsr_tickets (
-  ticket_id         UUID        PRIMARY KEY,
-  tenant_id         UUID        NOT NULL,
-  subject_user_id   UUID        NULL,
+  ticket_id         UUID        PRIMARY KEY,                -- UUIDv7
+  tenant_id         UUID        NOT NULL REFERENCES tenant(tenant_id),
+  subject_user_id   UUID        NULL REFERENCES user_account(user_id),
   request_kind      TEXT        NOT NULL CHECK (request_kind IN ('access','correction','erasure','portability','objection','consent_revoke')),
-  status            TEXT        NOT NULL CHECK (status IN ('received','verified','processing','completed','denied')),
+  status            TEXT        NOT NULL CHECK (status IN ('received','verified','queued','in_progress','completed','denied','failed')),
   received_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  verified_at       TIMESTAMPTZ NULL,
   completed_at      TIMESTAMPTZ NULL,
+  failed_at         TIMESTAMPTZ NULL,
+  denial_reason     TEXT        NULL CHECK (denial_reason IN ('legal_hold','fraud_check','admin_override','jurisdiction_mismatch','duplicate_request')),
+  failure_reason    TEXT        NULL,                       -- free-text post-mortem ref
   legal_hold        BOOLEAN     NOT NULL DEFAULT false,
-  payload           JSONB       NULL
+  receipt_jws       TEXT        NULL,                       -- JWS compact serialization (CTRL-PRIV-DSR-RECEIPT)
+  payload           JSONB       NULL,
+  -- terminal-state invariants (split em CHECKs separados — Lote 10.11.0-bis fix:
+  -- comma-separated dentro de single CHECK é invalid SQL syntax)
+  CHECK ((status <> 'denied')    OR (denial_reason  IS NOT NULL)),
+  CHECK ((status <> 'failed')    OR (failure_reason IS NOT NULL)),
+  CHECK ((status <> 'completed') OR (receipt_jws    IS NOT NULL))
 );
+CREATE INDEX idx_dsr_tickets_tenant_status ON dsr_tickets(tenant_id, status) WHERE status NOT IN ('completed','denied','failed');
+CREATE INDEX idx_dsr_tickets_subject ON dsr_tickets(subject_user_id) WHERE subject_user_id IS NOT NULL;
 ```
 
 ### 4.2 D1 (operational, por região) — DDL abreviada
@@ -422,9 +446,18 @@ CRITICAL invariants (em **bold**) requerem TLA+ model (CTRL-FORMAL-001):
        ↑              ↑               ↑
      signup      self/admin        DSR request
 
- DSR:
-   received  →  verified  →  processing  →  completed|denied
+ DSR (canonical 7-state, Lote 10.11.0-bis):
+   received  →  verified  →  queued  →  in_progress  →  completed
+       ↓           ↓           ↓            ↓
+     denied      denied      failed       failed
+       (legal_hold | fraud_check | admin_override | jurisdiction_mismatch | duplicate_request)
+       (failure_reason populated; on-call paged on 24h SLO breach)
 ```
+
+Notas:
+- `denied` é terminal (legal grounds documentados em `denial_reason`); `failed` é terminal mas sinaliza retentativa manual via on-call.
+- Transição `queued → in_progress` é idempotente (PAT-RETRY-IDEMPOTENT-001).
+- Receipt JWS gerado apenas em `completed` (CTRL-PRIV-DSR-RECEIPT canonical).
 
 Cada transição emite evento CloudEvents (§7 obs).
 

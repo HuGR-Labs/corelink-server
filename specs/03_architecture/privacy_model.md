@@ -252,12 +252,35 @@ Adicionado em Lote 5.5 endereçando audit F-07 (CTRL-PRIV-015 estava sendo usado
 
 | ID                      | Controle                                  | Implementação                                            | Evidence | Revalidação |
 |-------------------------|-------------------------------------------|-----------------------------------------------------------|----------|-------------|
-| CTRL-PRIV-CONSENT-001   | Opt-in explícito + proof of informed consent | UI form com checkbox per-purpose (analytics, marketing, beta features); `purpose_tag` armazenado em DSR ledger; default `false` para tudo opcional; **consent record carrega**: `notice_text_hash` (SHA-256 do texto exato mostrado), `notice_version` (semver do privacy notice), `locale` (ex: `pt-BR`, `en-US`), `wording_id` (ID do texto do checkbox: ex: `consent-analytics-v3`), `ui_capture_timestamp` (quando UI renderizou notice), `submission_timestamp` (quando usuário clicou) | EVT-049 (consent event com todos os campos acima) + EVT-026 (schema valida purpose_tag + notice_version enum) | Por mudança de UI/texto |
+| CTRL-PRIV-CONSENT-001   | Opt-in explícito + proof of informed consent | UI form com checkbox per-purpose (12 canonical purposes — ver §5.6.1 abaixo); `purpose_tag` armazenado em consent ledger Neon (NOT D1; Lote 10.11.0-bis decision); default `false` para tudo `consent`-based; **consent record carrega**: `notice_text_hash` (SHA-256 do texto exato mostrado), `notice_version` (semver do privacy notice), `locale` (3-enum canonical: `pt-BR`, `en-US`, `es-MX`), `wording_id` (ID do texto do checkbox: ex: `consent-analytics-personalized-v3`), `ui_capture_timestamp` (quando UI renderizou notice), `submission_timestamp` (quando usuário clicou) | EVT-049 (consent event com todos os campos acima) + EVT-026 (schema valida purpose_tag + notice_version + locale enum) | Por mudança de UI/texto |
 | CTRL-PRIV-CONSENT-002   | Revogação imediata de consent              | Endpoint `DELETE /v1/consent/<purpose>` propaga em ≤ 5min; cache invalidation + downstream notify; status retornado em `GET /v1/consent`; revogação carrega **mesmos campos de proof** que grant (notice_version atual, locale, wording_id do "unsubscribe" text) | EVT-049 (revoke event) + EVT-024 (load test revocation latency) | Trimestral |
 | CTRL-PRIV-CONSENT-003   | Consent records imutáveis + auditáveis     | CloudEvents `dev.hugr.corelink.consent.{granted,revoked}.v1` em audit log (Object Lock 7y); **payload completo**: ts + principal_hash + tenant_id + purpose_tag + basis_legal + notice_text_hash + notice_version + locale + wording_id + ui_capture_ts + submission_ts + ip_country + user_agent_class | EVT-049 + EVT-047 (audit event verify) + EVT-022 (TLA+ INV-AUDIT-APPEND-ONLY) | Contínuo |
 | CTRL-PRIV-CONSENT-004   | LIA documentado para legitimate interest   | Toda categoria que usa LIA tem doc EVT-046 anual com balancing test | EVT-046 + EVT-044 (Legal review) | Anual |
 | CTRL-PRIV-CONSENT-005   | Notice versioning + retranslation enforcement | Privacy notice é versionado via git (`legal/privacy-notice/v<major.minor>.md`); mudança material (GDPR definition) bumps major + force re-consent; locale em toda UI consent é obrigatório match com `Accept-Language` header; mismatch = rejeita submit | EVT-043 (DATA_CLASSIFICATION_DOC com notice version) + EVT-044 (Legal review pre-release) | Por release de notice |
 | CTRL-PRIV-CONSENT-006   | Proof of display (optional screenshot evidence) | UI SDK opcional captura rendered HTML/PDF do consent form no momento da submission; enviado para R2 `evidence-consent-screenshots/` hash-addressed; customer enterprise pode opt-in para auditoria reforçada | EVT-012 (SCREENSHOT) + EVT-049 | Sob demanda |
+
+#### 5.6.1 Canonical purpose enum (12 valores, Lote 10.11.0-bis)
+
+> Cada purpose tem **legal_basis fixo** (não pode trocar dinamicamente — endereça GPT P0-1 round-1: "fail-open LI swap após expiry de 90d viola CTRL-PRIV-CONSENT-003 immutability"). Mudança de basis em purpose = bump major do notice_version + force re-consent.
+
+| `purpose_tag`              | Descrição                                                  | Legal basis (LGPD Art. / GDPR Art. 6)                         | Default | Revoga? |
+|----------------------------|------------------------------------------------------------|---------------------------------------------------------------|---------|---------|
+| `service_delivery`         | Operações core CAS/AC/exec (sem opt-out possível)           | `contract` (LGPD Art. 7§V / GDPR 6(1)(b))                      | `true`  | NÃO     |
+| `account_management`       | Auth, billing, tenant admin                                 | `contract` (LGPD Art. 7§V / GDPR 6(1)(b))                      | `true`  | NÃO     |
+| `regulatory_compliance`    | Audit retention, DSR fulfillment, breach reporting          | `legal_obligation` (LGPD Art. 7§II / GDPR 6(1)(c))             | `true`  | NÃO     |
+| `security_monitoring`      | Anomaly detection, abuse prevention, fraud prevention       | `legitimate_interest` (LGPD Art. 10 / GDPR 6(1)(f)) — LIA req'd| `true`  | OBJETÁVEL (LGPD Art. 18§II / GDPR Art. 21) |
+| `analytics_aggregated`     | Métricas anonimizadas cross-tenant (k≥50, privacy budget)   | `legitimate_interest` (LGPD Art. 10 / GDPR 6(1)(f)) — LIA req'd| `true`  | OBJETÁVEL                          |
+| `analytics_personalized`   | Per-tenant dashboards com PII reidentificável               | `consent` (LGPD Art. 7§I / GDPR 6(1)(a))                       | `false` | SIM (≤5min)                        |
+| `marketing_email`          | Newsletter, product updates                                  | `consent`                                                     | `false` | SIM                                |
+| `marketing_research`       | Surveys, NPS, user research                                  | `consent`                                                     | `false` | SIM                                |
+| `beta_features`            | Preview/experimental features (telemetry enriched)          | `consent`                                                     | `false` | SIM                                |
+| `third_party_integrations` | Stripe, GitHub, custom webhooks (data egress controlled)    | `consent` (per-integration granular)                          | `false` | SIM (per integration)              |
+| `cross_tenant_benchmarks`  | Share aggregated metrics em leaderboards/benchmarks         | `consent`                                                     | `false` | SIM                                |
+| `training_ml_models`       | Opt-in para ML cache prediction (data minimized + k-anon)    | `consent`                                                     | `false` | SIM                                |
+
+**Invariante:** purpose com `legal_basis = consent` MUST honor revogação ≤ 5min (CTRL-PRIV-CONSENT-002). purpose com `legal_basis = legitimate_interest` MUST suportar objection workflow (CTRL-PRIV-DSR-OBJECTION; ver §6.1 row 7). purpose com `legal_basis = contract` ou `legal_obligation` NÃO é revogável sem encerrar contrato.
+
+**No fail-open:** se `consent` expira (TTL ou re-consent não renovado), basis NÃO degrada para `legitimate_interest` automaticamente — purpose entra em estado `consent_lapsed` e processamento PARA até re-consent ou hard delete (§6.2 erasure pipeline). Endereça GPT P0-1.
 
 ---
 
@@ -279,21 +302,29 @@ Adicionado em Lote 5.5 endereçando audit F-07 (CTRL-PRIV-015 estava sendo usado
 | Anonimização/bloqueio/eliminação (LGPD 18 IV / GDPR 17) | Self-service | 30 dias corridos | DSR `verified` | DSR `completed` (todos backends purged) | EVT-042 + EVT-017 | Privacy Officer |
 | Portabilidade (LGPD 18 V / GDPR 20)            | Self-service | 15 dias úteis | DSR `verified` | DSR `completed` (export bundle disponível) | EVT-048 | Privacy Officer |
 | Revogação de consentimento (LGPD 18 VI / GDPR 7) | Self-service | Imediato (≤ 5min) | request submission | propagação confirmada | EVT-048 | Privacy Officer |
-| Oposição (GDPR 21)                              | Manual (email) | 15 dias úteis | email recebido + ticket criado | decisão emitida | EVT-048 + EVT-044 | Privacy Officer |
+| Oposição (LGPD 18 §II / GDPR 21)                | Self-service | 15 dias úteis | DSR `verified` | DSR `completed` (objection registered + processing paused) | EVT-048 + EVT-044 | Privacy Officer |
 
 ### 6.2 Pipeline de DSR (erasure exemplo)
 
 ```
-1. Usuário solicita via UI/API → DSR ticket criado (D1 table `dsr_tickets`)
+1. Usuário solicita via UI/API → DSR ticket criado (Neon table `dsr_tickets` — canonical pós Lote 10.11.0-bis; data_model.md §4.1)
 2. Verificar identidade (MFA re-auth + attestation)  → audit event `dsr.verified.v1`
 3. Job enfileira `dsr-erasure-worker`                → audit event `dsr.queued.v1`
-4. Worker propaga:
-   a. D1: delete de accounts, DSR ticket preservado
-   b. Neon: delete billing detail (excepto dados fiscais, legal hold 5y)
-   c. R2 (audit): NÃO deletar (legal hold 7y); marcar como `subject_erased` em index
-   d. R2 (CAS): depende se blob é só do tenant. Se shared: não deletar; se dedicated: propagar tombstone + GC
-   e. KV: invalidate
-   f. Grafana/Loki: apply log deletion API (Loki `/loki/api/v1/delete`)
+4. Worker propaga (12 backends canonical, Lote 10.11.0-bis — 8 effective + 4 pseudonymized):
+   **Effective erasure (8):**
+   a. Neon `dsr_tickets` + `account` + `tenant` + `user_account` + `consent_ledger` + `subscription`: hard delete subject rows; preserve DSR ticket + audit refs
+   b. Neon billing detail (`invoice`, `usage_event`): retain dados fiscais sob legal_hold (LGPD Art. 16 §3º — fiscal/contábil 5y)
+   c. R2 CAS: refcount-based eraser. **`subject_unaffiliated`**: blob compartilhado entre tenants ou referenciado por outros subjects → NÃO deleta físico, apenas remove o subject's reference; refcount decremented; blob mantido até refcount==0 + grace 72h. **`subject_dedicated`**: blob apenas referenciado pelo subject erased → tombstone imediato + GC sweep.
+   d. R2 AC entries: invalidate todas as entradas onde `subject_user_id` aparece; cache evicted; downstream caches notified
+   e. D1 `blob_meta` + `ac_meta`: delete subject-scoped rows; refcount sync com R2
+   f. KV: invalidate session tokens + cached subject metadata
+   g. Stripe: `Customer.update` com PII nullified (NOT delete — preserva invoice integrity per PCI scope; pseudonymize email/name/address per Stripe API spec)
+   h. Loki/Grafana: apply log deletion API (`/loki/api/v1/delete`) com retention compaction trigger
+   **Pseudonymized retention (4) — legal_hold canonical:**
+   i. R2 audit log (Object Lock 7y): NÃO deletar (CTRL-AUDIT-IMMUTABILITY); subject_id substituído por `erased_<hkdf_hash>`; HKDF info = `corelink/v1/audit-pseudonym`
+   j. Backup PITR (Neon point-in-time recovery, 30d): rotação natural; tombstone replay em qualquer restore
+   k. R2 CAS legal_hold partition (governance mode): conteúdo retido se sob hold ativo; pseudonymize index references
+   l. Compliance evidence store (R2 `evidence-*` buckets): retain por SLA do framework (EVT-046 LIA, EVT-049 consent record, EVT-048 DSR evidence) — 7y; subject_id pseudonymized
 5. Evento final `dsr.completed.v1` com hash dos steps                      → SLO counter
 6. Notificação ao usuário (email + in-app)
 ```

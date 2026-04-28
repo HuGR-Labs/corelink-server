@@ -16,21 +16,21 @@ tags: ["runbook", "p1", "privacy", "residency", "schrems-ii", "gdpr", "lgpd"]
 
 # RB-DATA-RESIDENCY-LEAK — Residency Leak (Cross-Region Tenant Data Exposure / Schrems II Risk)
 
-> **INV:** INV-DATA-RESIDENCY HIGH + INV-REGION-NO-CROSS-LEAK CRITICAL | **CTRL:** CTRL-PRIV-031 | **SLA:** detect ≤ 1h, mitigate ≤ 6h, customer notification ≤ 72h
+> **INV:** INV-DATA-RESIDENCY CRITICAL (Lote 10.11.0-bis: HIGH→CRITICAL Schrems II) + INV-REGION-NO-CROSS-LEAK CRITICAL | **CTRL:** CTRL-PRIV-031 | **SLA:** detect ≤ 1h, mitigate ≤ 6h, customer notification ≤ 72h
 
 ## Pré-condições
 
-- S-14 multi-region live (4 regiões: WNAM/ENAM/WEUR/SAM).
-- Tenant region pinned via D1 `tenant_metadata.region_pinned`.
+- Multi-region: 6 regiões canonical pós Lote 10.11.0-bis (wnam/enam/weur/sam Phase 1 production live; apac/afr Phase 2/3 deferred per privacy_model.md §7.1; data_model.md §4.1 `tenant.primary_region` CHECK constraint enforced for all 6 enum values).
+- Tenant region pinned via Neon `tenant.primary_region` (canonical pós Lote 10.11.0-bis; data_model.md §4.1 — NÃO `tenant_metadata.region_pinned` legacy).
 - Insert checks reject cross-region writes.
-- 30k property test verde (S-14 R-S14-19).
+- 20k property test verde S-11 (R-S11-19); 30k S-14 R-S14-19 deferred (cross-region routing semantics).
 - Schrems II TIA template + DPA amendment prontos (S-14 + S-11).
 
 ## Detecção
 
 ### Sinais primários
 
-- Property test 30k cross-region detect cross-region blob.
+- Property test cross-region detect cross-region blob (S-11: 20k baseline; S-14: 30k expandido).
 - Customer report: "I'm EU-pinned and my data is appearing in US logs/queries".
 - Audit log reveals routing bug: cross-region blob access events.
 - Métrica `corelink.region.cross_region_violation_total` > 0.
@@ -42,12 +42,12 @@ tags: ["runbook", "p1", "privacy", "residency", "schrems-ii", "gdpr", "lgpd"]
 SELECT
   bm.digest,
   bm.region as blob_region,
-  tm.region_pinned as expected_region,
+  t.primary_region as expected_region,  -- canonical pós Lote 10.11.0-bis; data_model.md §4.1
   bm.tenant_id,
   bm.created_at
 FROM blob_meta bm
-JOIN tenant_metadata tm ON tm.tenant_id = bm.tenant_id
-WHERE bm.region != tm.region_pinned
+JOIN tenant t ON t.tenant_id = bm.tenant_id  -- canonical Neon `tenant` table NÃO legacy `tenant_metadata`
+WHERE bm.region != t.primary_region
   AND bm.deleted_at IS NULL
 ORDER BY bm.created_at DESC
 LIMIT 100;
@@ -88,7 +88,7 @@ corelink.region.audit_residency_check_fail_total
 ### Step 2: Migrate data to correct region (≤ 6h)
 1. For each affected blob:
    - **Hash verify** integrity em both regions.
-   - **Copy to correct region** (per tenant.region_pinned).
+   - **Copy to correct region** (per `tenant.primary_region` canonical pós Lote 10.11.0-bis; data_model.md §4.1).
    - **Verify hash post-copy**.
    - **Delete from wrong region** (após verify).
 2. Update D1 `blob_meta.region` per fix.
@@ -108,7 +108,7 @@ corelink.region.audit_residency_check_fail_total
 
 ### Step 4: Block recurrence (≤ 24h)
 1. Insert checks reinforced (root cause fix).
-2. Property test 30k → 100k.
+2. Property test S-11 baseline 20k → S-14 30k → 100k nightly cron sustained 90d.
 3. Custom domain routing strict enforcement.
 4. Monitoring + alerts amplified.
 
@@ -152,7 +152,7 @@ corelink.region.audit_residency_check_fail_total
 ### Cold fix (1-4 weeks)
 
 - **Insert checks reinforced** em D1 schema (region tag mandatory + check constraint).
-- **Property test** 30k → 100k cross-region scenarios.
+- **Property test** S-11 baseline 20k (R-S11-19) → S-14 30k (R-S14-19) → 100k nightly cron sustained 90d cross-region scenarios.
 - **TLA+ region_residency.tla** (planned Lote 9.4 obligation matrix): formal model region pinning.
 - **Custom domain routing** strict: `<tenant_id>.<region>.corelink.dev` enforced (no fallback).
 - **Quarterly Schrems II TIA review** (S-14 R-S14-5 alignment).

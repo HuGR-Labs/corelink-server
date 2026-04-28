@@ -28,15 +28,17 @@ tags: ["tla", "formal-verification", "evidence"]
 | `gc_correctness.tla` + `.cfg` | **InvGCReachableNeverDeleted** (core INV-GC-001) + **InvGCReRefProtected** (INV-GC-004) + InvMarkingConsistent. v3 (Lote 7.1): ambos invariantes agora no cfg; Mark multi-pass com UpdateActionResult interleaved. | ~170k states | ✅ verde |
 | `cas_integrity.tla` + `.cfg` | InvCASIntegrityUncorrupted + InvClientVerifyIsSound + InvCASImmutability + InvPoisoningRejected. v2 (Lote 6.1): BitRot muta r2_storage body real (não flag). | ~3k states | ✅ verde |
 | `audit_immutability.tla` + `.cfg` | InvAuditAppendOnly + InvAuditChainIntact + InvAuditOrderPreserved + InvAuditRejectTamper + **InvDefenseInDepth**. v2 (Lote 7.1): adversary agora REALMENTE muta audit_log quando `object_lock_on=FALSE ∧ db_constraint_on=FALSE` (defense-in-depth explícito). | ~5k states | ✅ verde |
+| `dsr_erasure_atomicity.tla` + `.cfg` (S-11 WI-S11-008) | **State invariants (5):** InvErasureComplete (INV-DATA-ERASURE-COMPLETE CRITICAL) + InvConsentSymmetry (INV-CONSENT-PROOF-VERIFIABLE CRITICAL) + InvResidencyPinned (INV-DATA-RESIDENCY CRITICAL) + InvBackendAckIdempotent + TypeOK. **Temporal properties (3):** InvAuditAppendOnly (box-prime sobre Len+prefix) + **InvResidencyMonotonic** (region pinning monotonic; no cross-region migration; Lote 10.11.0-bis-prime cycle 2 NEW) + EventualTermination (liveness `~>`). CONSTANTS: Backends (12 canonical = 8 EffectiveBackends + 4 PseudonymizedBackends), ConsentBasedPurposes/NonConsentPurposes, Subjects, Tenants, Tickets, Regions (6), Locales (3), MaxConcurrentErasures, MaxAuditChainLen, MaxAttempts. ASSUME garante partição válida e cardinalidades. WF fairness em todas as transition actions. SHA-256 pinned (TLC v1.8.0 ADR-0042 §A1). | TBD pós-CI primeiro run | 🟡 spec written (Lote 10.11.0-bis-prime); **TLC verification pending CI green run** via `.github/workflows/tla_check.yml` + `scripts/run_tlc_corelink.sh` (status PLANNED → GREEN somente após CI gate verde primeira vez) |
 
 ## Como rodar
 
 ```bash
 cd specs/tla
-tlc -config tenant_isolation.cfg   tenant_isolation.tla
-tlc -config gc_correctness.cfg     gc_correctness.tla
-tlc -config cas_integrity.cfg      cas_integrity.tla
-tlc -config audit_immutability.cfg audit_immutability.tla
+tlc -config tenant_isolation.cfg       tenant_isolation.tla
+tlc -config gc_correctness.cfg         gc_correctness.tla
+tlc -config cas_integrity.cfg          cas_integrity.tla
+tlc -config audit_immutability.cfg     audit_immutability.tla
+tlc -config dsr_erasure_atomicity.cfg  dsr_erasure_atomicity.tla   # S-11 WI-S11-008 PLANNED
 ```
 
 Requer TLA+ Toolbox ou `tlc` CLI (https://github.com/tlaplus/tlaplus).

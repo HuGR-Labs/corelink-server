@@ -97,7 +97,7 @@ InvReplayDeterministic == \E replay_function:
 
 ### Invariants alvo
 
-- **INV-DATA-ERASURE-COMPLETE** (HIGH — §3.5): erasure efetiva em 7/7 backends (mais 4 pseudonymized — total 10 backends post Lote 9.4).
+- **INV-DATA-ERASURE-COMPLETE** (CRITICAL — §3.5; Lote 10.11.0-bis HIGH→CRITICAL com TLA+ commit): erasure efetiva em 12/12 backends canonical (8 effective + 4 pseudonymized; privacy_model.md §6.2 source-of-truth pós Lote 10.11.0-bis).
 - **INV-CONSENT-PROOF-VERIFIABLE** (HIGH — §3.12): consent records verifiable post-facto.
 
 ### Modelo
@@ -116,7 +116,7 @@ Actions:
   SubmitDSR(subject_id, type=erasure)
   EraseFromBackend(backend, subject_id)  \* delete em mutable
   PseudonymizeBackend(backend, subject_id)  \* SHA-256 replace em immutable
-  VerificationJob24h(request_id)  \* sweep all 10 backends
+  VerificationJob24h(request_id)  \* sweep all 12 backends canonical (8 effective + 4 pseudonymized; Lote 10.11.0-bis)
   CompensatingRollback(request_id)  \* if partial failure
   ConsentRevoke(subject_id, purpose)  \* symmetric proof
 

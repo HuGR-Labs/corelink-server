@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# CoreLink TLC runner — reusable wrapper para CI gate per spec.
+#
+# Usage: ./scripts/run_tlc_corelink.sh <spec_basename>
+# Example: ./scripts/run_tlc_corelink.sh dsr_erasure_atomicity
+#
+# Reuses ADR-0042 §A1 TLC v1.8.0 SHA-256 pinned bootstrap ceremony.
+# Expected pinned SHA-256: d5d07d5dab38ddb840c91ec48fa02f28b37a608d5af9a73570018591dbc8ef7f
+
+set -euo pipefail
+
+SPEC_NAME="${1:?Usage: $0 <spec_basename>}"
+SPEC_DIR="$(git rev-parse --show-toplevel)/specs/tla"
+TLC_VERSION_REQUIRED="1.8.0"
+TLC_SHA256_PINNED="d5d07d5dab38ddb840c91ec48fa02f28b37a608d5af9a73570018591dbc8ef7f"
+
+if [[ ! -f "${SPEC_DIR}/${SPEC_NAME}.tla" ]]; then
+  echo "ERROR: spec ${SPEC_DIR}/${SPEC_NAME}.tla not found" >&2
+  exit 2
+fi
+
+if [[ ! -f "${SPEC_DIR}/${SPEC_NAME}.cfg" ]]; then
+  echo "ERROR: cfg ${SPEC_DIR}/${SPEC_NAME}.cfg not found" >&2
+  exit 2
+fi
+
+# Verify TLC SHA-256 pin (per ADR-0042 §A1) — MANDATORY supply-chain gate.
+# Lote 10.11.0-bis-prime cycle 5 fix: SHA verification targets the actual TLC artifact
+# (tla2tools.jar OR a single-file binary), NOT a wrapper script. Workflow installer
+# may set TLC_JAR=/path/to/tla2tools.jar to direct the hash check at the artifact.
+# Opt-OUT only via TLC_SHA256_SKIP=1 (for local dev with newer TLC; CI MUST verify).
+TLC_BIN="${TLC_BIN:-tlc}"
+if ! command -v "${TLC_BIN}" >/dev/null 2>&1; then
+  echo "ERROR: TLC binary not found in PATH (expected at \`${TLC_BIN}\`)" >&2
+  exit 4
+fi
+
+# Determine artifact to hash:
+#   1. Explicit TLC_JAR env var (workflow-friendly; canonical for CI).
+#   2. Fall back to TLC_BIN (covers single-file native binary distributions).
+ACTUAL_TLC_PATH="$(command -v "${TLC_BIN}")"
+ARTIFACT_PATH="${TLC_JAR:-${ACTUAL_TLC_PATH}}"
+if [[ ! -f "${ARTIFACT_PATH}" ]]; then
+  echo "ERROR: TLC artifact not found at \`${ARTIFACT_PATH}\`" >&2
+  echo "       Set TLC_JAR=/path/to/tla2tools.jar OR ensure ${TLC_BIN} is the artifact itself." >&2
+  exit 4
+fi
+
+if [[ "${TLC_SHA256_SKIP:-0}" == "1" ]]; then
+  echo "WARNING: TLC SHA-256 verification SKIPPED via TLC_SHA256_SKIP=1 (local dev only; CI MUST not skip)." >&2
+else
+  ACTUAL_SHA="$(shasum -a 256 "${ARTIFACT_PATH}" | awk '{print $1}')"
+  if [[ "${ACTUAL_SHA}" != "${TLC_SHA256_PINNED}" ]]; then
+    echo "ERROR: TLC SHA-256 supply-chain pin mismatch (ADR-0042 §A1 violation)" >&2
+    echo "       expected: ${TLC_SHA256_PINNED}" >&2
+    echo "       actual:   ${ACTUAL_SHA}" >&2
+    echo "       artifact: ${ARTIFACT_PATH}" >&2
+    echo "       Either install pinned TLC v${TLC_VERSION_REQUIRED} (set TLC_JAR=jar path) or set TLC_SHA256_SKIP=1 (NOT for CI)." >&2
+    exit 3
+  fi
+fi
+
+cd "${SPEC_DIR}"
+echo "Running TLC: ${SPEC_NAME}.tla with config ${SPEC_NAME}.cfg (artifact verified: ${ARTIFACT_PATH})"
+exec "${TLC_BIN}" -config "${SPEC_NAME}.cfg" "${SPEC_NAME}.tla"

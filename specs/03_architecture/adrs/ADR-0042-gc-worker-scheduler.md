@@ -86,7 +86,7 @@ S-06 GC worker é **single point of failure** para INV-GC-001 (reachable never d
 
 ## §A1 Addendum — TLC v1.8.0 Version + SHA-256 Pinning Policy (Lote 10.6-tris NEW-P0-1 + Lote 10.6bis P0-W6-2)
 
-**Policy**: TLA+ Tools (`tla2tools.jar`) version + SHA-256 are pinned in CI workflow `tla-ci-gate.yml`. Bumps to either require ADR + Architect + Crypto SME signoff in this addendum.
+**Policy**: TLA+ Tools (`tla2tools.jar`) version + SHA-256 are pinned in CI workflow `tla_check.yml`. Bumps to either require ADR + Architect + Crypto SME signoff in this addendum.
 
 **Current pinned values** (2026-04-25):
 - Version: `v1.8.0`
@@ -94,11 +94,11 @@ S-06 GC worker é **single point of failure** para INV-GC-001 (reachable never d
 - Source: `https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar`
 - Artifact size: 4356704 bytes
 
-**Bootstrap trust ceremony** (REQUIRED pre-merge of `tla-ci-gate.yml` to main):
+**Bootstrap trust ceremony** (REQUIRED pre-merge of `tla_check.yml` to main):
 1. Owner (Gustavo Schneiter) computed SHA via fresh download from official GitHub release on 2026-04-25.
 2. **Architect**: independent re-download + `shasum -a 256 tla2tools.jar` verification → commit signed verification comment to this addendum sign-off block confirming SHA matches.
 3. **Crypto SME**: independent re-download (different machine, different network) + verification → commit signed verification comment.
-4. Both signatures REQUIRED before `tla-ci-gate.yml` merges to main. Branch protection enforced via CODEOWNERS + `tla-override-validate.yml` (WI-006 §1 invariant 2).
+4. Both signatures REQUIRED before `tla_check.yml` merges to main. Branch protection enforced via CODEOWNERS + `tla_override_validate.yml` (WI-006 §1 invariant 2).
 
 **Sign-off block** (populated as ceremony completes):
 - [ ] Owner: Gustavo Schneiter (computed 2026-04-25)
@@ -108,7 +108,7 @@ S-06 GC worker é **single point of failure** para INV-GC-001 (reachable never d
 **Bump procedure** (TLC version OR SHA change):
 1. Open ADR (this file or supersession ADR).
 2. Architect + Crypto SME independent verification of new SHA.
-3. Update `EXPECTED_SHA` literal in `tla-ci-gate.yml`.
+3. Update `TLC_SHA256_PINNED` literal in `tla_check.yml`.
 4. CI must pass green on a test PR before merge.
 5. Update this addendum with new pinned values + sign-off block.
 

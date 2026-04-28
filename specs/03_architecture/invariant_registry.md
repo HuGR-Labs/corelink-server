@@ -107,7 +107,7 @@ Upgrade de severidade requer ADR.
 |---|---|---|---|---|
 | **INV-DATA-MONOTONIC-TS** | Timestamps monotonic | MEDIUM | `last_accessed_at`, `updated_at` nunca regridem | Writer enforces via `MAX(now, prev_value)` |
 | **INV-DATA-BILLING-RECONCILE** | Usage counter ≈ Σ(usage events) | HIGH | Drift ≤ 0.1% entre `usage_counter` agregado e eventos emitidos | Reconcile diário (PAT-RECONCILE-001) |
-| **INV-DATA-ERASURE-COMPLETE** | DSR erasure é efetiva | HIGH | Após DSR-erasure resolved, nenhum backend retorna dado do subject (exceto legal hold) | E2E test (EVT-042) |
+| **INV-DATA-ERASURE-COMPLETE** | DSR erasure é efetiva | CRITICAL (Lote 10.11.0-bis: HIGH→CRITICAL com TLA+ commit S-11 WI-S11-008) | Após DSR-erasure resolved, nenhum backend retorna dado do subject (exceto legal hold). Aplica-se aos 12 backends canonical (8 effective: Neon multi-tabela / Neon billing fiscal exception / R2 CAS refcount-aware / R2 AC / D1 / KV / Stripe `Customer.update` / Loki; 4 pseudonymized: R2 audit Object Lock 7y / Neon PITR backup 30d / R2 CAS legal_hold partition / R2 evidence-* buckets 7y) | E2E test (EVT-042) + **TLA+ em `specs/tla/dsr_erasure_atomicity.tla`** (S-11 WI-S11-008) + PAT-RETRY-IDEMPOTENT-001 + PAT-FORMAL-VERIFICATION-001 |
 
 ### 3.6 Audit (domain AUDIT)
 
@@ -151,7 +151,7 @@ Adicionado em Lote 6.3 endereçando G-04 do re-audit (INVs legados CamelCase).
 |---|---|---|---|---|
 | **INV-QUOTA-ENFORCEMENT** (alias histórico: `INV-QuotaEnforcement`) | Quota de tenant nunca ultrapassada | HIGH | Em nenhum estado, tenant consome mais que quota configurada | DO atomic counter per-tenant + write path check (CTRL-QUOTA-001) |
 | **INV-DIGEST-VERIFICATION** (alias histórico: `INV-DigestVerification`) | Write rejeita hash mismatch | CRITICAL | Toda write valida `hash(body) == claimed_digest` antes de persistir | CTRL-CAS-001 + TLA+ cas_integrity.tla (InvPoisoningRejected) |
-| **INV-DATA-RESIDENCY** (alias histórico: `INV-DataResidency`) | Dado de tenant fica em região pinned | HIGH | R2 bucket com locationHint; D1 primary na região escolhida; DO stickiness | CTRL-PRIV-031; quarterly config audit |
+| **INV-DATA-RESIDENCY** (alias histórico: `INV-DataResidency`) | Dado de tenant fica em região pinned | CRITICAL (Lote 10.11.0-bis: HIGH→CRITICAL — Schrems II + LGPD Art. 33 §1º; 20k property test + custom domain routing TLA+ S-11 WI-S11-007) | R2 bucket com locationHint; D1 primary na região escolhida; DO stickiness; edge router PAT-ROUTING-PINNED-001 fail-CLOSED 451 em mismatch (NUNCA passthrough silencioso) | CTRL-PRIV-031; quarterly config audit + 20k property test cases ≥ 0 leaks + PAT-FORMAL-VERIFICATION-001 |
 
 ### 3.12 Sprint-driven invariants (Lote 9.1 SOTA elevation, expandido em Lote 9.4)
 
@@ -165,7 +165,7 @@ Invariantes introduzidas via SOTA elevation dos sprint contracts S-07..S-19 (Lot
 | **INV-OBS-AUDIT-CHAIN-INTEGRITY** | Audit events R2 hash chain unbroken | HIGH | Hash chain de audit events em R2 é unbroken; daily verifier alerta em break | Background daily job + INV-AUDIT-APPEND-ONLY | S-09 |
 | **INV-BILLING-RECONCILE-3-LAYER** | 3-layer reconciliation diária events ↔ counters ↔ Stripe | HIGH | Drift > 0.1% em qualquer layer = SEV-2; bloqueia close-of-month até resolution. Strengthens INV-DATA-BILLING-RECONCILE | Cron daily + 3-layer compare + alert escalation | S-10 |
 | **INV-BILLING-REPLAYABLE-FROM-EVENTS** | Invoice reconstrutível byte-a-byte de events | HIGH | Qualquer invoice deve poder ser reconstruída byte-a-byte a partir de events R2; replay endpoint role-protected | POST /v1/billing/replay endpoint + monthly CI test + audit-grade | S-10 |
-| **INV-CONSENT-PROOF-VERIFIABLE** | Consent records têm notice_text_hash verifiable post-facto | HIGH | SHA-256 do notice + HMAC; tampering detected via signature | Verify endpoint + GDPR Art. 7 alignment | S-11 |
+| **INV-CONSENT-PROOF-VERIFIABLE** | Consent records têm notice_text_hash verifiable post-facto | CRITICAL (Lote 10.11.0-bis: HIGH→CRITICAL com TLA+ symmetry InvConsentSymmetry) | SHA-256 do notice + HMAC-SHA256 com HKDF info=`corelink/v1/consent-hmac`; tampering detected via signature; grant/revoke ledger symmetric (Lote 9.4 H-05); 12 canonical purposes enum (privacy_model.md §5.6.1); legal_basis fixo per purpose (no fail-open swap) | Verify endpoint JWS-signed + GDPR Art. 7 + LGPD Art. 8 alignment + **TLA+ via `dsr_erasure_atomicity.tla`** (InvConsentSymmetry, S-11 WI-S11-008) + PAT-FORMAL-VERIFICATION-001 | S-11 |
 | **INV-SUPPLY-PROVENANCE-IN-REKOR** | Provenance attestation publicada em Rekor | HIGH | Toda provenance attestation deve estar em Rekor transparency log; release sem inclusion proof = blocked | Deploy webhook checks Rekor inclusion antes rollout | S-12 |
 | **INV-SUPPLY-NO-YANKED** | Zero yanked deps em Cargo.lock main | HIGH | Author retired pode ser segurança ou bug; usar = risco | cargo-deny policy + CI gate | S-12 |
 | **INV-SUPPLY-LICENSE-ALLOWLIST** | Zero deps fora da license allowlist | HIGH | Allowlist: MIT/Apache-2.0/BSD/ISC/MPL-2.0/Unicode-DFS-2016. GPL/AGPL/SSPL banned | cargo-deny enforces; quarterly Legal review | S-12 |
@@ -349,7 +349,7 @@ Invariantes que governam GC mark-sweep + refcount reconciliation + TLA+ formal v
 | **INV-GC-DSR-BYPASS-AUTHORIZED** | DSR signal verified pre-bypass grace; S-11 forward auth | HIGH | DSR signal authentication mandatory; bypass path isolated | S-11 forward integration test stub | N/A (architecture invariant) |
 | **INV-GC-RECONCILE-AUTO-FIX-BOUNDED** | Auto-fix gate: `drift_count ≤5 AND drift_percent ≤0.01%` per tenant (scale-invariant percentage-floor + absolute-floor; Lote 10.6bis P0-6 + Lote 10.6-tris OPUS-MISS-4); > 5 records OR > 0.01% → manual review + SEV-1; auto-fix failure mode: 3-attempt exponential backoff → `gc_drift_pending` table → SEV-2 (NOT SEV-1) | HIGH | Dual-condition gate (configurable env); SEV-1 alert + paused state if either condition exceeded | Property test `prop_auto_fix_scale_invariant` boundary at 10/1k/100k tenant sizes; integration test SEV escalation; `prop_auto_fix_failure_drift_pending` D1 throttle resilience | N/A (architecture invariant) |
 | **INV-GC-RECONCILE-AUDIT-FAIL-CLOSED** | Audit emit failure → reconcile ROLLBACK | CRITICAL | D1 batch atomic; SweepError::AuditEmissionFailed analog | Chaos test simulate audit fail; integration test asserts | N/A (cripto + governance invariant) |
-| **INV-GC-CI-GATE-ENFORCED** | TLA+ CI gate blocks merge se TLC red; override via ADR + Architect + Crypto SME | HIGH | GitHub branch protection required status check; PR fail logic | CI workflow `tla-ci-gate.yml`; integration test PR weakening obligation rejected | (planned `gc_correctness.tla` Lote 5.13 verified) |
+| **INV-GC-CI-GATE-ENFORCED** | TLA+ CI gate blocks merge se TLC red; override via ADR + Architect + Crypto SME | HIGH | GitHub branch protection required status check; PR fail logic | CI workflow `.github/workflows/tla_check.yml` (Lote 10.11.0-bis-prime cycle 3 canonical); integration test PR weakening obligation rejected | (planned `gc_correctness.tla` Lote 5.13 verified) |
 | **INV-GC-PROPERTY-TEST-CROSS-VALIDATED** | Rust property test 100k iter cross-validates TLA+ obligations (Mark + UpdateActionResult interleavings) | HIGH | `prop_gc_004_race_mark_update_ar_100k` em CI nightly; deterministic seeds; 0 violations sustained | CI nightly green sustained 30d (S-20 GA gate) | (cross-validation; gc_correctness.tla aligned) |
 | **INV-GC-30D-SUSTAINED-VERIFICATION** | 30d sustained TLA+ verde + chaos zero violations gate pre-S-20 GA | HIGH | CI workflow `tla-30d-sustained.yml` daily aggregate; chaos test 30d staging continuous | Sprint contract DoD §10.s06.4 + Critério Promoção | (governance invariant; Lote 10.6 ship gate) |
 
@@ -411,8 +411,9 @@ CRITICAL/HIGH invariants adicionados em §3.12 + §3.13 que requerem TLA+ pelo e
 |---|---|---|---|---|
 | INV-BILLING-RECONCILE-3-LAYER | `specs/tla/billing_atomicity.tla` | 📋 PLANNED | S-10 | atomicity event→counter→invoice; concurrent reconcile races |
 | INV-BILLING-REPLAYABLE-FROM-EVENTS | Coberto por `billing_atomicity.tla` (InvReplayDeterministic) | 📋 PLANNED | S-10 | replay determinism com state space rico |
-| INV-DATA-ERASURE-COMPLETE | `specs/tla/dsr_erasure_atomicity.tla` | 📋 PLANNED | S-11 | cross-backend atomic OR compensating-rollback; 7 backends |
-| INV-CONSENT-PROOF-VERIFIABLE | Coberto por `dsr_erasure_atomicity.tla` (InvConsentSymmetry) | 📋 PLANNED | S-11 | consent grant/revoke symmetry |
+| INV-DATA-ERASURE-COMPLETE | `specs/tla/dsr_erasure_atomicity.tla` | 🟡 spec written (Lote 10.11.0-bis-prime); **TLC verification pending CI green** (PLANNED → ✅ GREEN apenas após first CI run verde) | S-11 | cross-backend atomic OR compensating-rollback; **12 backends canonical (8 effective + 4 pseudonymized — Lote 10.11.0-bis)** |
+| INV-CONSENT-PROOF-VERIFIABLE | Coberto por `dsr_erasure_atomicity.tla` (InvConsentSymmetry) | 🟡 spec written (Lote 10.11.0-bis-prime); TLC verification pending CI | S-11 | consent grant/revoke ledger symmetric (Lote 9.4 H-05); 6-field proof canonical |
+| INV-DATA-RESIDENCY | `specs/tla/dsr_erasure_atomicity.tla` (InvResidencyPinned + InvResidencyMonotonic) + property test 20k | 🟡 spec written (Lote 10.11.0-bis-prime); TLC verification pending CI | S-11 | tenant.primary_region pinning + monotonic (no cross-region migration) + custom domain routing fail-CLOSED |
 | INV-BYOK-CRYPTO-SOVEREIGNTY | `specs/tla/byok_sovereignty.tla` | 📋 PLANNED | S-14 | DEK cache TTL 5 min hard + KMS revocation propagation |
 | INV-REGION-NO-CROSS-LEAK | `specs/tla/region_residency.tla` | 📋 PLANNED | S-14 | tenant region pinning property test 30k |
 | INV-ONBOARD-DPA-FIRST | `specs/tla/onboarding_atomicity.tla` | 📋 PLANNED | S-19 | DPA-first ordering; race condition impossibility |
@@ -442,14 +443,14 @@ Lote 9.5c expansion: catalogadas todas as invariantes HIGH cuja semantics não j
 | INV-SUPPLY-NO-YANKED | HIGH | cargo-deny CI gate; build-time |
 | INV-SUPPLY-LICENSE-ALLOWLIST | HIGH | cargo-deny CI gate; build-time |
 | INV-QUOTA-ENFORCEMENT | HIGH | DO atomic counter per-tenant + write path check (CTRL-QUOTA-001); covered by property test S-08 |
-| INV-DATA-RESIDENCY | HIGH | Subsumed por INV-REGION-NO-CROSS-LEAK (S-14 PLANNED `region_residency.tla` / `byok_sovereignty.tla`) |
+| INV-DATA-RESIDENCY | CRITICAL (Lote 10.11.0-bis Schrems II) | **PARTIAL coverage S-11** via `dsr_erasure_atomicity.tla` (InvResidencyPinned + temporal InvResidencyMonotonic — Lote 10.11.0-bis-prime cycle 3); **FULL coverage S-14** via `region_residency.tla` (cross-region routing actions); subsumido por INV-REGION-NO-CROSS-LEAK em S-14. |
 | INV-DEDUP-CONSISTENCY | HIGH | Algorithmic property; UNIQUE index enforces; covered by property test S-07 |
 | INV-RATE-LIMIT-PROPORTIONALITY | HIGH | DO atomic counter; covered by property test 10k iter |
 | INV-OBS-CARDINALITY-BUDGET | HIGH | Static budget validator CI (`cardinality_check.py`); non-distributed |
 | INV-OBS-AUDIT-CHAIN-INTEGRITY | HIGH | Hash chain; coberto por `audit_immutability.tla` indiretamente; daily verifier job |
 | INV-ADMIN-MFA-FRESHNESS | HIGH | Middleware timestamp check; non-distributed |
 | INV-ERASURE-ATTESTATION-SIGNED | HIGH | Signature verification; algorithmic; per-region Ed25519 key |
-| INV-CONSENT-PROOF-VERIFIABLE | HIGH | Coberto por `dsr_erasure_atomicity.tla` planned (S-11) via InvConsentSymmetry |
+| INV-CONSENT-PROOF-VERIFIABLE | CRITICAL (Lote 10.11.0-bis com TLA+ symmetry) | Coberto por `dsr_erasure_atomicity.tla` 🟡 spec written (S-11 WI-S11-008); CI gate pendente; via InvConsentSymmetry. |
 | INV-CAS-SIDE-CHANNEL-INDISTINGUISHABLE | HIGH | Statistical algorithmic property (Mann-Whitney U); criterion benchmark + adversarial test 10k samples; não state-machine distributed |
 | INV-KEY-AUDIT | HIGH | Coberto por `audit_immutability.tla` |
 | INV-KEY-OVERLAP | HIGH | Per-asset table canonical em `key_management.md §3.2.1` + ADR-0018; covered by `key_lifecycle.tla` PLANNED (S-13 §4.2 entry) |

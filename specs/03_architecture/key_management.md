@@ -60,11 +60,16 @@ tags: ["architecture", "security", "kms", "byok", "byoe", "encryption"]
 Root HSM (Cloudflare Workers Secrets, FIPS 140-2 L3 backed)
  ├─ KEK-GLOBAL (annual rotation)
  │   └─ TDK-<tenant_id>  (annual rotation; HKDF(KEK-GLOBAL, salt=tenant_id))
- │       ├─ Path-HMAC key  (HKDF info="path")        → CTRL-AUTH-004
- │       ├─ AC-Sig key     (HKDF info="ac-sig")      → CTRL-AC-002
- │       └─ Envelope key   (HKDF info="envelope")    → CTRL-CRYPTO-002
- ├─ Audit chain key     (HKDF info="audit-chain")    → CTRL-AUDIT-001
- └─ Release signing     (Ed25519, offline-HSM)       → CTRL-SUPPLY-002
+ │       ├─ Path-HMAC key       (HKDF info="corelink/v1/path")          → CTRL-AUTH-004
+ │       ├─ AC-Sig key          (HKDF info="corelink/v1/ac-sig")        → CTRL-AC-002
+ │       ├─ Envelope key        (HKDF info="corelink/v1/envelope")      → CTRL-CRYPTO-002
+ │       ├─ DSR receipt JWS key (HKDF info="corelink/v1/dsr-receipt")   → CTRL-PRIV-DSR-RECEIPT (S-11)
+ │       ├─ Consent HMAC key    (HKDF info="corelink/v1/consent-hmac")  → CTRL-PRIV-CONSENT-003 (S-11)
+ │       └─ Erasure salt        (HKDF info="corelink/v1/erasure-salt")  → CTRL-PRIV-ERASE-PSEUDO (S-11)
+ ├─ Audit chain key           (HKDF info="corelink/v1/audit-chain")     → CTRL-AUDIT-001
+ ├─ Audit pseudonym key       (HKDF info="corelink/v1/audit-pseudonym") → CTRL-PRIV-014 (S-11; subject_id pseudonymize)
+ ├─ DKIM broadcast key        (HKDF info="corelink/v1/dkim-broadcast")  → CTRL-PRIV-SUBPROCESSOR (S-11)
+ └─ Release signing           (Ed25519, offline-HSM)                    → CTRL-SUPPLY-002
 
 BYOK-CUSTOMER-<tenant_id>  (optional; replaces KEK-GLOBAL envelope step)
  └─ Customer CMK em AWS KMS / GCP KMS / Azure Key Vault / HashiCorp Vault
@@ -109,8 +114,19 @@ Tabela autoritativa para `INV-KEY-OVERLAP` — sprints downstream **devem** refe
 | **TDK** (tenant derivation key) | 7d | Re-wrap de envelope CAS é background job ≥ TB-scale; 24h causa starvation | S-01, S-13 |
 | **BYOK customer CMK** | 7d (CoreLink-side cache) | Customer trigger; CoreLink mantém DEK cache até CMK access expira; overlap = customer notification window | S-14 |
 | **Ed25519 attestation key** (per-region erasure) | 30d | Long-lived signing key; attestations 7y retention; rotation overlap garante verifiability passada | S-14 |
+| **Erasure salt** (HKDF info="corelink/v1/erasure-salt") | **30d** rotation, **7y retention** | Pseudonymize subject_id em audit retained: `erased_<HMAC(salt, subject_id)>`; rotation re-pseudonymize lazy on read; salt itself retained 7y para forward verifiability (retention ≠ overlap; ADR-S11-014 separação semântica). | S-11 |
+| **DSR receipt JWS key** | **30d** rotation, **90d verify-grace** | Per-region; receipt JWS verificável post-facto; rotation 30d hard upper bound; verify-grace 90d permite receipts antigos continuarem verificáveis pós rotation (separate from overlap window). | S-11 |
+| **Consent HMAC key** | **30d** rotation, **7y verify-grace** | Long-lived verify-grace permite re-derive HMAC post-facto sobre records 7y retention; rotation overlap (active period) cap **30d** hard upper bound. | S-11 |
+| **DKIM broadcast key** | **30d** rotation, **DNS TTL overlap** | Email DKIM signing; rotation overlap respeita DNS record TTL (publish new selector + retire after old DNS records expire). | S-11 |
 
-**Hard upper bound:** nenhum asset class pode exceder 30d de overlap sem ADR explícito + Security lead sign-off. Justificativa: NIST SP 800-57 Pt 1 Rev 5 §5.3 recomenda overlap < 90d; CoreLink adopta 30d para defense-in-depth.
+**Hard upper bound (Lote 10.11.0-bis canonical clarification):** nenhum asset class pode exceder **30d de overlap window** sem ADR explícito + Security lead sign-off. Justificativa: NIST SP 800-57 Pt 1 Rev 5 §5.3 recomenda overlap < 90d; CoreLink adopta 30d defense-in-depth.
+
+**Distinção semântica importante** (ADR-S11-014 NEW): há TRÊS conceitos distintos para chaves de longo período:
+- **Rotation overlap** (active dual-use): cap **30d** absoluto (hard upper bound).
+- **Verify-grace** (key retired mas usable for verification only): pode estender (90d JWS / 7y HMAC + audit chain) — não é "overlap" no sentido write-key.
+- **Salt retention** (salt material kept para re-pseudonymize lazy): pode estender 7y — não é key rotation, é forward verifiability material.
+
+WI-S11 pre-bis usava 365d como "overlap" — semantically incorrect; corrigido para distinguir overlap (30d cap) vs verify-grace/retention.
 
 **Property test obrigatório por sprint que toca rotation**: simular rotation start → completion, verificar que durante overlap período old + new são válidas para reads, mas writes vão exclusivamente para new (INV-KEY-NO-SKIP).
 

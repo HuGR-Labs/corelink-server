@@ -306,6 +306,36 @@ Nomes: `<service>.<op>[.<stage>]`.
 | `pat.revoked.v1`                  | Audit                                   | 7y        |
 | `admin.config.changed.v1`         | Audit                                   | 7y        |
 | `policy.waiver.granted.v1`        | Governança                              | 7y        |
+| **DSR (S-11, Lote 10.11.0-bis)** |                                         |           |
+| `dsr.received.v1`                 | DSR submitted (pre-verification)        | 7y        |
+| `dsr.verified.v1`                 | Subject identity confirmed (MFA step-up) | 7y        |
+| `dsr.queued.v1`                   | Routed to erasure pipeline               | 7y        |
+| `dsr.in_progress.v1`              | Worker actively executing                | 7y        |
+| `dsr.backend_ack.v1`              | Per-backend completion ack (12 backends) | 7y        |
+| `dsr.completed.v1`                | All backends ack'd; receipt sealed       | 7y        |
+| `dsr.denied.v1`                   | Refusal with documented legal ground     | 7y        |
+| `dsr.failed.v1`                   | Retry exhaustion; on-call paged          | 7y        |
+| `dsr.receipt.issued.v1`           | JWS receipt produced (CTRL-PRIV-DSR-RECEIPT) | 7y    |
+| **Consent (S-11)**                |                                         |           |
+| `consent.granted.v1`              | Per-purpose grant with proof of informed | 7y        |
+| `consent.revoked.v1`              | Per-purpose revoke (≤5min propagation)   | 7y        |
+| `consent.lapsed.v1`               | TTL expired; processing paused (NOT degraded to LI) | 7y |
+| **Privacy notice (S-11)**         |                                         |           |
+| `privacy_notice.published.v1`     | New notice version (semver bump + diff)  | 7y        |
+| `privacy_notice.translated.v1`    | Locale variant published (pt-BR/en-US/es-MX) | 7y    |
+| **Sub-processor (S-11)**          |                                         |           |
+| `subprocessor.added.v1`           | Sub-processor onboarded; 30d broadcast initiated | 7y |
+| `subprocessor.changed.v1`         | Sub-processor updated; 30d notice          | 7y      |
+| `subprocessor.removed.v1`         | Sub-processor offboarded                   | 7y      |
+| `subprocessor.objection.received.v1` | Customer objected during 30d window | 7y         |
+| **Breach (S-11)**                 |                                         |           |
+| `breach.declared.v1`              | Internal breach declaration (clock starts) | 7y      |
+| `breach.notified.v1`              | Authority/subject notification sent        | 7y      |
+| `breach.dryrun.v1`                | Quarterly dry-run validation               | 7y      |
+| **Residency (S-11)**              |                                         |           |
+| `residency.violation.v1`          | PAT-ROUTING-PINNED-001 fail-CLOSED 451 emitted | 7y  |
+
+**Total catalog: 12 base + 22 S-11 = 34 canonical CloudEvents (Lote 10.11.0-bis).** Schema enforced via observability_model schema validator (EVT-026); prefix canonical `dev.hugr.corelink.<op>.v1` (Lote 10.9bis P0-G).
 
 Events cross-link com logs via `request_id` e com traces via `trace_id` (propagados em attributes).
 
