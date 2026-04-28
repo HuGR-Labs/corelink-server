@@ -18,9 +18,9 @@ tags: ["architecture", "tla", "formal-verification", "planning", "obligation-mat
 
 > **Propósito**: planning detail para 4 TLA+ specs novas identificadas em Lote 9.1+9.4 que cobrem invariants CRITICAL/HIGH adicionados em §3.12 + §3.13 do registry.
 >
-> **Status**: PLANNED — implementação detalhada acontece **durante** o sprint owner respectivo. Este doc é o blueprint que garante (a) escopo capturado; (b) invariants alvo claras; (c) adversarial actions enumeradas; (d) CI integration plan documented.
+> **Status canonical pós Lote 10.11.0-bis-prime cycle 12**: S-11 dsr_erasure_atomicity.tla é **🟡 spec written** (committed em `specs/tla/`); demais (S-10 billing, S-13 key_lifecycle, S-14 byok_sovereignty / region_residency, S-19 onboarding_atomicity) permanecem **📋 PLANNED**. Este doc é o blueprint que garante (a) escopo capturado; (b) invariants alvo claras; (c) adversarial actions enumeradas; (d) CI integration plan documented.
 >
-> **Cross-reference**: `invariant_registry.md §4.2` (TLA+ obligation matrix) lista estas 4 specs como `📋 PLANNED` com sprint owners.
+> **Cross-reference**: `invariant_registry.md §4.2` (TLA+ obligation matrix) lista S-11 dsr_erasure_atomicity como `🟡 spec written` (Lote 10.11.0-bis-prime); demais 4 specs permanecem `📋 PLANNED` com sprint owners.
 
 ---
 
@@ -98,7 +98,7 @@ InvReplayDeterministic == \E replay_function:
 ### Invariants alvo
 
 - **INV-DATA-ERASURE-COMPLETE** (CRITICAL — §3.5; Lote 10.11.0-bis HIGH→CRITICAL com TLA+ commit): erasure efetiva em 12/12 backends canonical (8 effective + 4 pseudonymized; privacy_model.md §6.2 source-of-truth pós Lote 10.11.0-bis).
-- **INV-CONSENT-PROOF-VERIFIABLE** (HIGH — §3.12): consent records verifiable post-facto.
+- **INV-CONSENT-PROOF-VERIFIABLE** (CRITICAL — §3.12; Lote 10.11.0-bis HIGH→CRITICAL com TLA+ symmetry): consent records verifiable post-facto via 6-field proof + HMAC.
 
 ### Modelo
 
@@ -107,8 +107,8 @@ State machine: DSR request → erasure cross-backend OR compensating-rollback.
 ```
 Variables:
   dsr_requests: Map<RequestID, DSRRequest>
-  backends: Set<{D1, Neon, R2_mutable, KV, DO, Loki, Stripe}>  \* 6 erasure-effective
-  pseudo_backends: Set<{R2_audit, R2_billing, Loki_cold, CFAnalytics}>  \* 4 pseudonymized
+  effective_backends: Set<{NeonMain, NeonBilling, R2Cas, R2Ac, D1, Kv, Stripe, Loki}>  \* 8 effective canonical Lote 10.11.0-bis
+  pseudo_backends: Set<{R2AuditPseudo, NeonPitrPseudo, R2CasLegalHoldPseudo, R2EvidencePseudo}>  \* 4 pseudonymized canonical
   records: Map<{Backend, SubjectID}, Record>
   audit_chain: Sequence<AuditEvent>
 
@@ -149,7 +149,7 @@ InvConsentSymmetry ==
 
 ### CI integration
 
-- `make tla-dsr-erasure-atomicity` TLC bound (Subjects=3, Backends=10, MaxOps=15).
+- `make tla-dsr-erasure-atomicity` TLC bound canonical pós Lote 10.11.0-bis (Subjects=2, Tickets=2, Backends=12 (8 effective + 4 pseudonymized), Regions=6, Locales=3, MaxConcurrentErasures=2, MaxAuditChainLen=30, MaxAttempts=5).
 - PR triggers: `crates/corelink-privacy/**` OR `privacy_model.md §X (DSR)`.
 
 ### Owner: S-11 implementação (D+12 milestone)

@@ -243,7 +243,7 @@ Não — regulatory feature, sem A/B.
    - (d) Final decision (accept ou terminate) emitida em audit `sub_processor.objection_filed.v1`.
 6. D1 schema migration: 2 NEW tables (sub_processor_broadcast_log + sub_processor_objection) — DDL §6.1.7.
 7. 3 CloudEvents canonical types em audit-`<region>` Object Lock 7y; emit fail-CLOSED.
-8. **FM-453 (NEW)** declaration em failure_modes.md: "Sub-processor change broadcast miss (delivery confirmation gap)" P1 (S=4 → upgrade FF-HR-010); RB-FM-453 mapping.
+8. **FM-453 (NEW)** declaration em failure_modes.md: "Sub-processor change broadcast miss (delivery confirmation gap)" P1 (S=4 → upgrade FF-HR-010); RB-SUB-PROCESSOR-BROADCAST-MISS mapping.
 9. RB-SUB-PROCESSOR-BROADCAST-MISS runbook (NEW canonical) — SOP para detect + remediate broadcast miss.
 10. WI-S11-003 integration: consent_ledger sub_processor_notifications purpose check antes de send (only subscribed customers receive).
 11. Email templates 3 locales × 3 types (notification + objection confirm + decision) = 9 .mjml files reusing WI-S11-004 template infrastructure.
@@ -468,7 +468,7 @@ And distinct from WI-S10-001 billing fail-OPEN (split-tier discipline; ADR-S11-0
 Given broadcast em ts T com 1000 recipients enqueued
 When 24h após T, sub_processor_broadcast_log query: count(delivery_status='delivered') / count(*) < 95%
 Then SEV-2 alert disparado conforme FM-453 P1 (S=4)
-And RB-SUB-PROCESSOR-BROADCAST-MISS runbook acionado (SOP em specs/runbooks/RB-SUB-PROCESSOR-BROADCAST-MISS.md)
+And RB-SUB-PROCESSOR-BROADCAST-MISS runbook acionado (SOP em specs/05_quality/runbooks/RB-SUB-PROCESSOR-BROADCAST-MISS.md)
 And SOP step: (a) classify failure mode (transient infra vs DKIM key issue vs CF Email bug); (b) manual retry list filter; (c) escalate Privacy Officer se > 5% violation; (d) regulatory disclosure consideration se > 30d window
 ```
 
@@ -513,7 +513,7 @@ And SOP step: (a) classify failure mode (transient infra vs DKIM key issue vs CF
 - [ ] **C-1.6** Objection endpoint POST handler em corelink-privacy-dsr-api (S-11-001 reuse) ou separate worker.
 - [ ] **C-1.7** ADR-S11-008 v2 (Lote 10.11.0-bis REVISED) mandatory all-plans rationale committed.
 - [ ] **C-1.8** RB-SUB-PROCESSOR-BROADCAST-MISS runbook committed.
-- [ ] **C-1.9** failure_modes.md FM-453 entry + RB-FM-453 mapping.
+- [ ] **C-1.9** failure_modes.md FM-453 entry + RB-SUB-PROCESSOR-BROADCAST-MISS mapping.
 
 ### 10.2 Test Completeness
 

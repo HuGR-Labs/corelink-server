@@ -16,7 +16,7 @@ tags: ["runbook", "p1", "privacy", "dsr", "erasure", "lgpd", "gdpr", "compliance
 
 # RB-DSR-ERASURE-INCOMPLETE — Erasure Incomplete (DSR Backend Coverage Gap + Pseudonymization Conflict)
 
-> **INV:** INV-DATA-ERASURE-COMPLETE HIGH | **CTRL:** CTRL-PRIV-030 | **SLA:** detect ≤ 24h, remediate ≤ 30 days (regulatory absoluto)
+> **INV:** INV-DATA-ERASURE-COMPLETE CRITICAL (Lote 10.11.0-bis: HIGH→CRITICAL com TLA+ commit) | **CTRL:** CTRL-PRIV-030 | **SLA:** detect ≤ 24h, remediate ≤ 30 days (regulatory absoluto)
 
 ## Pré-condições
 

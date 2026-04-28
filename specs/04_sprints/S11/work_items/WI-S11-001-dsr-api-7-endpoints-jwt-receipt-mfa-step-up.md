@@ -205,7 +205,7 @@ CoreLink processa 3 classes de dado (privacy_model.md §1): (1) conta do dev (Hu
 - **Privacy-aware data subject** (titular GDPR/LGPD): submete DSR para ver/corrigir/apagar seus dados.
 - **Tenant admin/owner**: submete DSR em nome de seus customers (HuGR é operador).
 - **Privacy Officer interno HuGR**: monitora queue + SLA via dashboards (S-13 admin plane).
-- **External auditor SOC 2 / regulator (ANPD, Irish DPC)**: verifica trail via audit events 7y + DSR_EVIDENCE EVT-048 5y.
+- **External auditor SOC 2 / regulator (ANPD, Irish DPC)**: verifica trail via audit events 7y + DSR_EVIDENCE EVT-048 7y.
 
 ### 3.2 Customer journey (touchpoints)
 
@@ -361,7 +361,7 @@ CREATE INDEX idx_dsr_tickets_expected ON dsr_tickets(expected_completion_at)
 - **Worker-CP** (control plane): novo route handlers em `crates/corelink-privacy-dsr-api`.
 - **Neon** (canonical pós Lote 10.11.0-bis): novo table `dsr_tickets` (schema migration N+1 onde N é última de S-10). NOT D1.
 - **R2 audit-`<region>`**: 6 canonical CloudEvents types appended (Object Lock 7y).
-- **R2 evidence-dsr/**: bucket novo para EVT-048 DSR_EVIDENCE outputs (5y retention per privacy_model.md §2).
+- **R2 evidence-dsr/**: bucket novo para EVT-048 DSR_EVIDENCE outputs (7y retention canonical aligned com privacy_model.md §8 + R2 Object Lock framework).
 - **Cloudflare Email** (S-13 inheritance): templates trigger.
 - **Worker `corelink-rate-limit`** (S-08): novo bucket policy DSR.
 
@@ -572,7 +572,7 @@ And se requester não é tenant owner do dsr_id, response é 404 (não 403; CTRL
 
 - [ ] **D-3.1** `docs/api/privacy-dsr.md` OpenAPI 3.1 com 11 endpoints + JSON schemas.
 - [ ] **D-3.2** `docs/dev/dsr-state-machine.md` com diagram (mermaid) das 7 states + transitions.
-- [ ] **D-3.3** `docs/runbooks/RB-DSR-INTAKE-FAILURE.md` SOP para SRE oncall.
+- [ ] **D-3.3** `specs/05_quality/runbooks/RB-DSR-INTAKE-FAILURE.md` SOP para SRE oncall.
 - [ ] **D-3.4** Privacy notice update em WI-S11-004 referencia este endpoint.
 
 ### 10.4 Observability Completeness
@@ -615,7 +615,7 @@ Acima 10.x checked + sign-off matrix §30 12 confirmados + chaos test 30d stagin
 - `migrations/N+1__dsr_tickets.sql` (DDL + indexes).
 - `docs/api/privacy-dsr.md` OpenAPI 3.1.
 - `docs/dev/dsr-state-machine.md` (mermaid).
-- `docs/runbooks/RB-DSR-INTAKE-FAILURE.md` (NEW).
+- `specs/05_quality/runbooks/RB-DSR-INTAKE-FAILURE.md` (NEW).
 - 6 CloudEvents schemas em `schemas/cloudevents/dsr-{submitted,verified,queued,completed,failed,rejected}.v1.json`.
 - Grafana dashboard JSON `dashboards/corelink-dsr-pipeline.json`.
 - 4 Prom metrics + alerts em S-09 inheritance.
@@ -683,7 +683,7 @@ Acima 10.x checked + sign-off matrix §30 12 confirmados + chaos test 30d stagin
 
 - **Neon** (canonical Lote 10.11.0-bis): dsr_tickets table low-volume (~100/month/tenant em early stage); negligible cost; PG-side CHECK + FK adicionalmente protege regulatory invariants.
 - **R2 audit-`<region>`**: 6 events/DSR avg; 7y Object Lock; ≈$0.02/tenant/year.
-- **R2 evidence-dsr/**: access/portability bundles; max ~50MB/DSR; 5y retention; ≈$0.05/tenant/year.
+- **R2 evidence-dsr/**: access/portability bundles; max ~50MB/DSR; 7y retention canonical; ≈$0.05/tenant/year.
 - **Cloudflare Email**: 4 emails/DSR avg (submit confirm + mfa verify + 14d warn + complete); ≈$0.001/email.
 - **WebAuthn validation CPU**: amortized via S-03 worker pool; negligible delta.
 - **Total estimated**: ≤ $0.10/tenant/year (well under §14 budget cap).
@@ -718,7 +718,7 @@ LINDDUN per privacy_model.md §4 + STRIDE per security_model.md §6:
 - D(etectability): public verify endpoint stateless — não vaza submission state via timing/error msg.
 - D(isclosure): request_payload encrypted at rest AES-256-GCM (CTRL-CRYPTO-002); no PII em logs.
 - U(nawareness): privacy notice (WI-S11-004) explica DSR rights + endpoint URLs.
-- N(on-compliance): **LGPD Art. 18 + GDPR Art. 15-22 + CCPA §1798.105/115/120/125 + SOC 2 P5.1..5.2 compliance** via 7-endpoint canonical + audit trail 7y + 5y EVT-048.
+- N(on-compliance): **LGPD Art. 18 + GDPR Art. 15-22 + CCPA §1798.105/115/120/125 + SOC 2 P5.1..5.2 compliance** via 7-endpoint canonical + audit trail 7y + 7y EVT-048 (canonical).
 
 ## 27. Knowledge Transfer
 

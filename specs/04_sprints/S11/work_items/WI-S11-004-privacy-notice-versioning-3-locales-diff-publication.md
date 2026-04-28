@@ -273,7 +273,7 @@ crates/corelink-privacy-notice-emit/           # NEW small crate
 └─ src/
    └─ lib.rs                                   # 2 CloudEvents emitter (published + deprecated)
 
-specs/runbooks/RB-PRIVACY-NOTICE-LATE-PUBLICATION.md  # NEW (CTRL-PRIV-CONSENT-005 SLA miss)
+specs/05_quality/runbooks/RB-PRIVACY-NOTICE-LATE-PUBLICATION.md  # NEW (CTRL-PRIV-CONSENT-005 SLA miss)
 ```
 
 ### 6.4 Sistemas externos tocados
@@ -453,7 +453,7 @@ And distinct from WI-S10-001 billing fail-OPEN (split-tier discipline)
 - [ ] **D-3.1** `legal/privacy-notice/REVIEW_PROCESS.md` SOP native speaker + Legal local.
 - [ ] **D-3.2** ADR-S11-007 material vs minor criteria.
 - [ ] **D-3.3** `docs/dev/privacy-notice-publishing.md` CI/CD workflow.
-- [ ] **D-3.4** `specs/runbooks/RB-PRIVACY-NOTICE-LATE-PUBLICATION.md` (NEW canonical).
+- [ ] **D-3.4** `specs/05_quality/runbooks/RB-PRIVACY-NOTICE-LATE-PUBLICATION.md` (NEW canonical).
 
 ### 10.4 Observability Completeness
 
@@ -493,7 +493,7 @@ And distinct from WI-S10-001 billing fail-OPEN (split-tier discipline)
 - ADR-S11-007 material vs minor criteria.
 - 2 CloudEvents schemas em `schemas/cloudevents/privacy-notice-{published,deprecated}.v1.json`.
 - 9 email templates (3 locales × 3 notification types) em `legal/privacy-notice/TEMPLATES/`.
-- `specs/runbooks/RB-PRIVACY-NOTICE-LATE-PUBLICATION.md`.
+- `specs/05_quality/runbooks/RB-PRIVACY-NOTICE-LATE-PUBLICATION.md`.
 - Grafana dashboard JSON.
 - 3 Prom metrics + alerts.
 

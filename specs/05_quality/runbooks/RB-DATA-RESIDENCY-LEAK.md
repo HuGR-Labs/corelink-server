@@ -69,7 +69,7 @@ corelink.region.audit_residency_check_fail_total
 - **Customer notification**: REQUIRED within 72h (GDPR Art. 33).
 - **Regulatory notification**:
   - **EU tenant affected**: Lead supervisory authority (Irish DPC) within 72h GDPR Art. 33.
-  - **LGPD applicable**: ANPD notification per Art. 48 + Resolution CD/ANPD nº 2/2022.
+  - **LGPD applicable**: ANPD notification per Art. 48 + Resolução CD/ANPD nº 15/2024 (incident communication; substitui Res. 2/2022 fiscalização — correção Lote 10.11.0-ter).
   - **DPC consideration**: cross-border transfer = Schrems II implications; legal basis review.
 - **Status page**: customer-facing notification (transparency = trust signal).
 - **DPO interim** (Gustavo) involvement mandatory.
@@ -194,5 +194,5 @@ corelink.region.audit_residency_check_fail_total
 - **Schrems II ruling (CJEU C-311/18)** — invalidação Privacy Shield.
 - **EDPB Recommendations 01/2020** — supplementary measures international transfers.
 - **GDPR Art. 33 (breach notification 72h) + Art. 44 (cross-border transfer)**.
-- **LGPD Art. 33 § 1º** + **Resolution CD/ANPD nº 2/2022**.
+- **LGPD Art. 33 § 1º** + **Resolução CD/ANPD nº 15/2024** (incident communication; correção Lote 10.11.0-ter).
 - RB-FM-105 (region replication diverge — adjacent runbook).

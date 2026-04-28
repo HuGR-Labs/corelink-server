@@ -215,10 +215,10 @@ Cada FM tem scores 1–5 em:
 
 | ID     | Descrição                                                | S | O | D | RPN | Classe | CTRLs / Patterns              |
 |--------|----------------------------------------------------------|---|---|---|-----|---------|--------------------------------|
-| FM-450 | DSR pipeline failure: cross-backend ack timeout, retry exausto, 24h SLO breach | 5 | 2 | 3 | 30 | P1 (S=5 → upgrade) | PAT-RETRY-IDEMPOTENT-001 + INV-DATA-ERASURE-COMPLETE TLA+ + CTRL-PRIV-DSR-RECEIPT + RB-FM-450 + dead-letter quarantine + on-call page ≤5min |
-| FM-451 | Residency violation: custom domain misroute, edge PoP passthrough, blob escreveu fora `tenant.primary_region` | 5 | 1 | 4 | 20 | P1 (S=5 → upgrade) | PAT-ROUTING-PINNED-001 + INV-DATA-RESIDENCY TLA+ + property test 20k cases + RB-FM-451 + 451 status + ANPD/EDPB notification path |
-| FM-452 | Consent ledger fork: parallel grant/revoke writes break append-only chain (race condition cross-region) | 5 | 1 | 5 | 25 | P1 (S=5 → upgrade) | PAT-AUDIT-VERIFY-001 + INV-CONSENT-PROOF-VERIFIABLE + INV-AUDIT-APPEND-ONLY + CTRL-PRIV-CONSENT-003 + Lamport clock per ledger + RB-FM-452 |
-| FM-453 | Sub-processor breach upstream (Stripe/Cloudflare/etc.) forces our 72h notification clock; broadcast channel down | 5 | 2 | 3 | 30 | P1 (S=5 → upgrade) | PAT-RETRY-IDEMPOTENT-001 broadcast + EDPB Guidelines 9/2022 + LGPD ANPD Res. 15/2024 + RB-FM-453 + 30d objection flow |
+| FM-450 | DSR pipeline failure: cross-backend ack timeout, retry exausto, 24h SLO breach | 5 | 2 | 3 | 30 | P1 (S=5 → upgrade) | PAT-RETRY-IDEMPOTENT-001 + INV-DATA-ERASURE-COMPLETE TLA+ + CTRL-PRIV-DSR-RECEIPT + RB-DSR-ERASURE-INCOMPLETE + dead-letter quarantine + on-call page ≤5min |
+| FM-451 | Residency violation: custom domain misroute, edge PoP passthrough, blob escreveu fora `tenant.primary_region` | 5 | 1 | 4 | 20 | P1 (S=5 → upgrade) | PAT-ROUTING-PINNED-001 + INV-DATA-RESIDENCY TLA+ + property test 20k cases + RB-DATA-RESIDENCY-LEAK + 451 HTTP status + ANPD/EDPB notification path |
+| FM-452 | Consent ledger fork: parallel grant/revoke writes break append-only chain (race condition cross-region) | 5 | 1 | 5 | 25 | P1 (S=5 → upgrade) | PAT-AUDIT-VERIFY-001 + INV-CONSENT-PROOF-VERIFIABLE + INV-AUDIT-APPEND-ONLY + CTRL-PRIV-CONSENT-003 + Lamport clock per ledger + RB-CONSENT-TAMPERING |
+| FM-453 | Sub-processor breach upstream (Stripe/Cloudflare/etc.) forces our 72h notification clock; broadcast channel down | 5 | 2 | 3 | 30 | P1 (S=5 → upgrade) | PAT-RETRY-IDEMPOTENT-001 broadcast + EDPB Guidelines 9/2022 + LGPD ANPD Res. 15/2024 + RB-SUB-PROCESSOR-BROADCAST-MISS + 30d objection flow |
 
 ---
 

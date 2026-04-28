@@ -29,7 +29,7 @@ inherits_from:
 tags: ["wi", "s11", "erasure", "dsr", "lgpd-art-18", "gdpr-art-17", "cross-backend", "object-lock-pseudonymization", "edpb-5-2020", "high-risk"]
 ---
 
-# WI-S11-002 — DSR Erasure Worker Cross-Backend (12 Backends Canonical Lote 10.11.0-bis: 8 Effective + 4 Pseudonymized via legal_hold) + Verification Job 24h Sweep + Report R2 evidence-dsr 5y + Tombstones + FM-450/452 Declarations (`crates/corelink-privacy-erasure-worker`; consume queue de WI-S11-001 com `dsr.queued.v1` payload; orchestra erasure cross-backend canonical 12 (8 effective: Neon multi-tabela + Neon billing fiscal exception + R2 CAS refcount-aware + R2 AC + D1 + KV + Stripe Customer.update + Loki — privacy_model.md §6.2 source-of-truth pós Lote 10.11.0-bis) + pseudonymization 4 canonical Lote 10.11.0-bis (R2 audit Object Lock 7y / Neon PITR backup 30d / R2 CAS legal_hold partition governance mode / R2 evidence-* buckets 7y — privacy_model.md §6.2 source-of-truth; Object Lock WORM regulatory immutability GDPR Recital 26 + Art. 11 + WP29 Opinion 05/2014 endorsed by EDPB (anonymization)); INV-DATA-ERASURE-COMPLETE CRITICAL (Lote 10.11.0-bis: HIGH→CRITICAL com TLA+ commit S-11 WI-S11-008) §3.5 L110 satisfaction; verification job 24h sweep posts EVT-048 DSR_EVIDENCE em R2 evidence-dsr/<dsr_id>/erasure-report.json retain 5y; tombstone em D1 `dsr_erasure_log` por backend; emit fail-CLOSED audit per backend completion; SLO-FRESH-DSR-ERASURE 99% ≤30d sustainment; **NEW FM-450 erasure-incomplete cross-backend + FM-452 consent-tampering-detected** declared em failure_modes.md; idempotency replay-safe via dsr_id ULID + per-backend idempotency_key 35-char; PAT-RETRY-IDEMPOTENT-001 erasure replays 100×)
+# WI-S11-002 — DSR Erasure Worker Cross-Backend (12 Backends Canonical Lote 10.11.0-bis: 8 Effective + 4 Pseudonymized via legal_hold) + Verification Job 24h Sweep + Report R2 evidence-dsr 7y + Tombstones + FM-450/452 Declarations (`crates/corelink-privacy-erasure-worker`; consume queue de WI-S11-001 com `dsr.queued.v1` payload; orchestra erasure cross-backend canonical 12 (8 effective: Neon multi-tabela + Neon billing fiscal exception + R2 CAS refcount-aware + R2 AC + D1 + KV + Stripe Customer.update + Loki — privacy_model.md §6.2 source-of-truth pós Lote 10.11.0-bis) + pseudonymization 4 canonical Lote 10.11.0-bis (R2 audit Object Lock 7y / Neon PITR backup 30d / R2 CAS legal_hold partition governance mode / R2 evidence-* buckets 7y — privacy_model.md §6.2 source-of-truth; Object Lock WORM regulatory immutability GDPR Recital 26 + Art. 11 + WP29 Opinion 05/2014 endorsed by EDPB (anonymization)); INV-DATA-ERASURE-COMPLETE CRITICAL (Lote 10.11.0-bis: HIGH→CRITICAL com TLA+ commit S-11 WI-S11-008) §3.5 L110 satisfaction; verification job 24h sweep posts EVT-048 DSR_EVIDENCE em R2 evidence-dsr/<dsr_id>/erasure-report.json retain 7y (canonical); tombstone em D1 `dsr_erasure_log` por backend; emit fail-CLOSED audit per backend completion; SLO-FRESH-DSR-ERASURE 99% ≤30d sustainment; **NEW FM-450 erasure-incomplete cross-backend + FM-452 consent-tampering-detected** declared em failure_modes.md; idempotency replay-safe via dsr_id ULID + per-backend idempotency_key 35-char; PAT-RETRY-IDEMPOTENT-001 erasure replays 100×)
 
 > **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
 > **Parent:** [S-11](../sprint.md) · **Assignee:** Gustavo Schneiter
@@ -41,7 +41,7 @@ tags: ["wi", "s11", "erasure", "dsr", "lgpd-art-18", "gdpr-art-17", "cross-backe
 | Campo | Valor |
 |---|---|
 | ID | WI-S11-002 |
-| Título | Erasure worker 12 backends canonical Lote 10.11.0-bis (8 effective + 4 pseudonymized via legal_hold) — extends privacy_model.md §6.2 reescrita pós Lote 10.11.0-bis como source-of-truth: 12 backends canonical (8 effective + 4 pseudonymized via legal_hold); pseudonymization rule `tenant_id_hash = sha256(tenant_id \|\| erasure_salt)` + marker `pii_redacted=true` per GDPR Recital 26 + Art. 11 + WP29 Opinion 05/2014 endorsed by EDPB (anonymization) escape valve regulatório vs INV-AUDIT-APPEND-ONLY CRITICAL §3.6 L116 7y immutability; verification job 24h sweep posts per-backend status enum `erased\|pseudonymized\|partial_failure\|failed\|not_applicable` em EVT-048 DSR_EVIDENCE 5y retention; tombstone D1 `dsr_erasure_log` per backend; CloudEvents `dev.hugr.corelink.dsr.erasure.{started,backend_completed,verification_passed,verification_failed,completed}.v1` 5 canonical types per Lote 10.9bis P0-G prefix; idempotency `(dsr_id, backend)` UNIQUE em D1 staging table per-backend dedup; replay-safe via PAT-RETRY-IDEMPOTENT-001 erasure replays 100× (sprint contract §9 14.s11.4) |
+| Título | Erasure worker 12 backends canonical Lote 10.11.0-bis (8 effective + 4 pseudonymized via legal_hold) — extends privacy_model.md §6.2 reescrita pós Lote 10.11.0-bis como source-of-truth: 12 backends canonical (8 effective + 4 pseudonymized via legal_hold); pseudonymization rule `tenant_id_hash = sha256(tenant_id \|\| erasure_salt)` + marker `pii_redacted=true` per GDPR Recital 26 + Art. 11 + WP29 Opinion 05/2014 endorsed by EDPB (anonymization) escape valve regulatório vs INV-AUDIT-APPEND-ONLY CRITICAL §3.6 L116 7y immutability; verification job 24h sweep posts per-backend status enum `erased\|pseudonymized\|partial_failure\|failed\|not_applicable` em EVT-048 DSR_EVIDENCE 7y retention canonical; tombstone D1 `dsr_erasure_log` per backend; CloudEvents `dev.hugr.corelink.dsr.erasure.{started,backend_completed,verification_passed,verification_failed,completed}.v1` 5 canonical types per Lote 10.9bis P0-G prefix; idempotency `(dsr_id, backend)` UNIQUE em D1 staging table per-backend dedup; replay-safe via PAT-RETRY-IDEMPOTENT-001 erasure replays 100× (sprint contract §9 14.s11.4) |
 | Sprint | S-11 |
 | Lane | HIGH_RISK |
 | Forcing factors | FF-HR-003 (PII direct exposure regulatory), FF-HR-005 (CTRL-PRIV-030 erasure pipeline), FF-HR-010 (1ª regulatory full impl LGPD/GDPR/CCPA) |
@@ -52,7 +52,7 @@ DSR Erasure Worker é **o coração regulatory** do CoreLink Privacy Pipeline �
 **8 effective slots** (erasure física possível): (1) Neon multi-tabela (`dsr_tickets/account/tenant/user_account/consent_ledger/subscription`), (2) Neon billing fiscal exception sob legal_hold, (3) R2 CAS refcount-aware (subject_unaffiliated vs subject_dedicated), (4) R2 AC, (5) D1 (`blob_meta/ac_meta`), (6) KV session+metadata, (7) Stripe `Customer.update` (PII nullified, NOT delete — PCI scope), (8) Loki/Grafana log deletion API.
 **4 pseudonymized slots** (legal_hold canonical, retention obrigatório): (i) R2 audit Object Lock 7y (HKDF info=`corelink/v1/audit-pseudonym`), (ii) Neon PITR backup 30d (tombstone replay em restore), (iii) R2 CAS legal_hold partition governance mode, (iv) R2 evidence-* buckets 7y → aplica **pseudonymization** per GDPR Recital 26 + Art. 11 + WP29 Opinion 05/2014 endorsed by EDPB (anonymization) escape valve regulatório.
 
-Verification job 24h sweep posta per-backend status em EVT-048 DSR_EVIDENCE 5y retention. Tombstones em D1 `dsr_erasure_log` per backend permitem audit forensic. Emit fail-CLOSED audit per backend completion (split-tier discipline Lote 10.6bis: erasure events são regulatory-grade NÃO toleram silent loss; distinto de WI-S10-001 billing fail-OPEN).
+Verification job 24h sweep posta per-backend status em EVT-048 DSR_EVIDENCE 7y retention canonical. Tombstones em D1 `dsr_erasure_log` per backend permitem audit forensic. Emit fail-CLOSED audit per backend completion (split-tier discipline Lote 10.6bis: erasure events são regulatory-grade NÃO toleram silent loss; distinto de WI-S10-001 billing fail-OPEN).
 
 ```rust
 // File: crates/corelink-privacy-erasure-worker/src/lib.rs
@@ -82,7 +82,7 @@ pub trait ErasureWorker: Send + Sync {
     ) -> Result<BackendErasureOutcome, ErasureWorkerError>;
 
     /// Verification job: 24h post-erasure-completed sweep all 12 backends canonical (8 effective + 4 pseudonymized — Lote 10.11.0-bis).
-    /// Posts EVT-048 DSR_EVIDENCE em R2 evidence-dsr/<dsr_id>/erasure-report.json retain 5y.
+    /// Posts EVT-048 DSR_EVIDENCE em R2 evidence-dsr/<dsr_id>/erasure-report.json retain 7y (canonical).
     async fn verify_erasure(
         &self,
         dsr_id: DsrId,
@@ -187,14 +187,14 @@ CoreLink stack: 12 backends canonical (8 effective + 4 pseudonymized — Lote 10
 
 ### 2.2 Abordagem
 
-Worker `corelink-privacy-erasure-worker` consome queue Cloudflare Queue (introduzido S-09 inheritance) com payload `dsr.queued.v1` (`{dsr_id, tenant_id, subject_id, request_type='erasure'}`). Orquestra erasure em 12 backends canonical (8 effective + 4 pseudonymized — Lote 10.11.0-bis) via async pipeline (per-backend independent + per-dsr atomic via dsr_erasure_log tombstones). Effective (8 — Lote 10.11.0-bis canonical) → Neon multi-tabela DELETE / R2 CAS refcount-aware scrub / Stripe Customer.update PII nullify / Loki log deletion API. Pseudonymized (4) → substituir PII fields por sha256(subject_id || erasure_salt) + marker `pii_redacted=true`. Audit emit fail-CLOSED por backend completion (split-tier discipline Lote 10.6bis). Idempotency `(dsr_id, backend)` UNIQUE em `dsr_erasure_log` permite replay-safe (PAT-RETRY-IDEMPOTENT-001). Verification job 24h sweep posts EVT-048 DSR_EVIDENCE 5y; verifica per backend conforme `is_effective()`. Tombstone permite forensic audit pelo regulator.
+Worker `corelink-privacy-erasure-worker` consome queue Cloudflare Queue (introduzido S-09 inheritance) com payload `dsr.queued.v1` (`{dsr_id, tenant_id, subject_id, request_type='erasure'}`). Orquestra erasure em 12 backends canonical (8 effective + 4 pseudonymized — Lote 10.11.0-bis) via async pipeline (per-backend independent + per-dsr atomic via dsr_erasure_log tombstones). Effective (8 — Lote 10.11.0-bis canonical) → Neon multi-tabela DELETE / R2 CAS refcount-aware scrub / Stripe Customer.update PII nullify / Loki log deletion API. Pseudonymized (4) → substituir PII fields por sha256(subject_id || erasure_salt) + marker `pii_redacted=true`. Audit emit fail-CLOSED por backend completion (split-tier discipline Lote 10.6bis). Idempotency `(dsr_id, backend)` UNIQUE em `dsr_erasure_log` permite replay-safe (PAT-RETRY-IDEMPOTENT-001). Verification job 24h sweep posts EVT-048 DSR_EVIDENCE 7y; verifica per backend conforme `is_effective()`. Tombstone permite forensic audit pelo regulator.
 
 ### 2.3 Valor entregue
 
 - **Regulatory baseline absoluto**: LGPD Art. 18 IV + GDPR Art. 17 + CCPA §1798.105 atendidos via 12-backend canonical (Lote 10.11.0-bis) coverage.
 - **GDPR Recital 26 + Art. 11 + WP29 Opinion 05/2014 endorsed by EDPB (anonymization techniques) alignment**: pseudonymization escape valve documentada + auditable; defensible em ANPD/Irish DPC investigations. (Lote 10.11.0-ter: corrigida citação errada anterior "EDPB 5/2020 §74" — Guidelines 5/2020 são sobre consent, não erasure pseudonymization).
 - **INV-DATA-ERASURE-COMPLETE CRITICAL (Lote 10.11.0-bis: HIGH→CRITICAL com TLA+ commit S-11 WI-S11-008) §3.5 L110**: erasure cross-backend efetiva em 12/12 backends canonical (8 effective + 4 pseudonymized; Lote 10.11.0-bis); 0 records remanescentes 30d post-request (effective) ou 100% pseudonymized (Object Lock).
-- **Customer trust**: verification job 24h posts EVT-048 5y — customer pode auditor independent self-service via WI-S11-001 receipt URL.
+- **Customer trust**: verification job 24h posts EVT-048 7y — customer pode auditor independent self-service via WI-S11-001 receipt URL.
 - **SLO-FRESH-DSR-ERASURE foundation**: 99% ≤30d sustained 90d (slo_catalog.md §4.12).
 
 ### 2.4 Principais riscos & trade-offs
@@ -260,7 +260,7 @@ Worker `corelink-privacy-erasure-worker` consome queue Cloudflare Queue (introdu
 | Failure modes | **FM-450 (NEW S-11)** erasure-incomplete cross-backend; **FM-452 (NEW S-11)** consent-tampering-detected; FM-061 (audit Object Lock vs DSR — canonical legal hold path); FM-105 (inter-region latency Loki cold archive) |
 | Métricas | `corelink_dsr_erasure_backend_outcome_total{backend, status, tenant_tier}` + `corelink_dsr_erasure_p95_seconds{backend}` + `corelink_dsr_erasure_verification_total{outcome}` + `corelink_dsr_erasure_pseudonymization_marker_total{backend}` |
 | Eventos | 5 CloudEvents canonical: erasure.started/backend_completed/verification_passed/verification_failed/completed |
-| Evidence | EVT-048 (DSR_EVIDENCE 5y) + EVT-042 (ERASURE_TEST CI) + EVT-047 (AUDIT_EVENT 7y) + EVT-002 (CI integration) |
+| Evidence | EVT-048 (DSR_EVIDENCE 7y canonical) + EVT-042 (ERASURE_TEST CI) + EVT-047 (AUDIT_EVENT 7y) + EVT-002 (CI integration) |
 | SLOs | SLO-FRESH-DSR-ERASURE (99% ≤30d sustained 90d) — slo_catalog.md §4.12 |
 
 ## 5. Tipo e Classificação
@@ -301,7 +301,7 @@ Não — regulatory feature, sem A/B (multi-arm = compliance risk).
 1. NEW crate `crates/corelink-privacy-erasure-worker` (queue consumer + per-backend erase + verification).
 2. 12 backend adapters canonical pós Lote 10.11.0-bis (effective: NeonMain, NeonBilling, R2Cas refcount-aware, R2Ac, D1, Kv, Stripe Customer.update, Loki; pseudonymized: R2AuditPseudo, NeonPitrPseudo, R2CasLegalHoldPseudo, R2EvidencePseudo).
 3. D1 schema migration: `dsr_erasure_log` table per-backend tombstones (DDL §6.1.7).
-4. R2 bucket NEW `evidence-dsr-`<region>`` para EVT-048 DSR_EVIDENCE outputs (5y retention; NÃO Object Lock — porque report pode ser regenerated).
+4. R2 bucket NEW `evidence-dsr-`<region>`` para EVT-048 DSR_EVIDENCE outputs (7y retention canonical + R2 Object Lock governance mode framework (privacy_model.md §6.2 4-pseudonymized canonical) — porque report pode ser regenerated).
 5. Cloudflare Queue consumer integration (S-09 inheritance).
 6. Per-backend idempotency_key derivation aligned com Lote 10.10-quaters Idempotency-Key 35-char canonical: `corelink-{dsr_id_short(8)}-{backend}-{retry_count(3)}` formato; UNIQUE em dsr_erasure_log.
 7. Audit emit fail-CLOSED via `crates/corelink-audit-emit` (S-09 inheritance) — 5 CloudEvents types em audit-`<region>` Object Lock 7y.
@@ -418,8 +418,8 @@ crates/corelink-privacy-pseudonymize/         # NEW small crate
 └─ tests/
    └─ pseudonymization_invariants.rs
 
-specs/runbooks/RB-DSR-ERASURE-INCOMPLETE.md   # NEW canonical
-specs/runbooks/RB-CONSENT-TAMPERING.md        # NEW canonical (FM-452 mitigation)
+specs/05_quality/runbooks/RB-DSR-ERASURE-INCOMPLETE.md   # NEW canonical
+specs/05_quality/runbooks/RB-CONSENT-TAMPERING.md        # NEW canonical (FM-452 mitigation)
 ```
 
 ### 6.4 Sistemas externos tocados
@@ -593,9 +593,9 @@ Given `failure_modes.md` pre-WI-S11-002 não tem FM-450 nem FM-452
 When WI-S11-002 commit applied
 Then failure_modes.md tem FM-450 entry: "DSR erasure-incomplete cross-backend" P0 (S=5 → upgrade FF-HR-010)
 And failure_modes.md tem FM-452 entry: "Consent record tampering detected" P1 (S=5 → upgrade)
-And specs/runbooks/RB-DSR-ERASURE-INCOMPLETE.md existe com canonical SOP (decision tree per backend × failure class × remediation)
-And specs/runbooks/RB-CONSENT-TAMPERING.md existe com canonical SOP (notice_text_hash verify + investigation flow)
-And validate_references.py: zero S-11 dangling FM/RB
+And specs/05_quality/runbooks/RB-DSR-ERASURE-INCOMPLETE.md existe com canonical SOP (decision tree per backend × failure class × remediation)
+And specs/05_quality/runbooks/RB-CONSENT-TAMPERING.md existe com canonical SOP (notice_text_hash verify + investigation flow)
+And validate_references.py: zero NEW dangling S-11 FM/RB introduced by this WI (pre-existing repo-wide dangling refs catalogued separately em audit log; not S-11 scope)
 ```
 
 ## 9. Design Decisions
@@ -660,8 +660,8 @@ And validate_references.py: zero S-11 dangling FM/RB
 ### 10.3 Documentation Completeness
 
 - [ ] **D-3.1** `docs/dev/dsr-erasure-architecture.md` com diagrama 12 backends canonical (8 effective + 4 pseudonymized — Lote 10.11.0-bis) + atomicity model.
-- [ ] **D-3.2** `docs/runbooks/RB-DSR-ERASURE-INCOMPLETE.md` SOP com decision tree.
-- [ ] **D-3.3** `docs/runbooks/RB-CONSENT-TAMPERING.md` SOP investigation flow.
+- [ ] **D-3.2** `specs/05_quality/runbooks/RB-DSR-ERASURE-INCOMPLETE.md` SOP com decision tree.
+- [ ] **D-3.3** `specs/05_quality/runbooks/RB-CONSENT-TAMPERING.md` SOP investigation flow.
 - [ ] **D-3.4** `docs/dev/pseudonymization-pattern.md` GDPR Recital 26 + Art. 11 + WP29 Op. 05/2014 endorsed by EDPB (anonymization techniques) alignment.
 - [ ] **D-3.5** ADR-S11-003 (erasure_salt interim) + ADR-S11-004 (eventual consistency cross-backend) committed.
 
@@ -696,7 +696,7 @@ And validate_references.py: zero S-11 dangling FM/RB
 
 | INV | Severity | Position canonical | Cobertura WI-S11-002 |
 |---|---|---|---|
-| **INV-DATA-ERASURE-COMPLETE** | CRITICAL (Lote 10.11.0-bis) | invariant_registry.md §3.5 L110 | 12/12 backends canonical (8 effective + 4 pseudonymized; Lote 10.11.0-bis) erasure-effective ou pseudonymized; verification 24h sweep; EVT-048 retain 5y; tombstones em dsr_erasure_log per backend |
+| **INV-DATA-ERASURE-COMPLETE** | CRITICAL (Lote 10.11.0-bis) | invariant_registry.md §3.5 L110 | 12/12 backends canonical (8 effective + 4 pseudonymized; Lote 10.11.0-bis) erasure-effective ou pseudonymized; verification 24h sweep; EVT-048 retain 7y; tombstones em dsr_erasure_log per backend |
 | **INV-AUDIT-APPEND-ONLY** | CRITICAL | invariant_registry.md §3.6 L116 | 5 CloudEvents emit fail-CLOSED em audit-`<region>` Object Lock 7y; pseudonymization preserva audit immutability via secondary index update (não deleta original) |
 | **INV-CONSENT-PROOF-VERIFIABLE** (foundation) | CRITICAL (Lote 10.11.0-bis) | invariant_registry.md §3.12 L168 | Erasure cobertura para R2 audit pseudonymizes consent events sem quebrar notice_text_hash signature; full satisfação em WI-S11-003 |
 
@@ -707,8 +707,8 @@ And validate_references.py: zero S-11 dangling FM/RB
 - `migrations/N+2__dsr_erasure_log.sql` (DDL + indexes).
 - 5 CloudEvents schemas em `schemas/cloudevents/dsr-erasure-{started,backend_completed,verification_passed,verification_failed,completed}.v1.json`.
 - `docs/dev/dsr-erasure-architecture.md` + `docs/dev/pseudonymization-pattern.md`.
-- `specs/runbooks/RB-DSR-ERASURE-INCOMPLETE.md` (NEW).
-- `specs/runbooks/RB-CONSENT-TAMPERING.md` (NEW).
+- `specs/05_quality/runbooks/RB-DSR-ERASURE-INCOMPLETE.md` (NEW).
+- `specs/05_quality/runbooks/RB-CONSENT-TAMPERING.md` (NEW).
 - `specs/03_architecture/adrs/ADR-S11-003-erasure-salt-interim.md` (NEW).
 - `specs/03_architecture/adrs/ADR-S11-004-cross-backend-eventual-consistency.md` (NEW).
 - failure_modes.md FM-450 + FM-452 entries.
@@ -726,7 +726,7 @@ And validate_references.py: zero S-11 dangling FM/RB
 - **14.s11.2.7** Audit fail-CLOSED 5 CloudEvents types — distinct from billing fail-OPEN (split-tier).
 - **14.s11.2.8** INV §3.X positions canonical verified pre-merge (Lote 10.8bis P1-13 lesson absorbed).
 - **14.s11.2.9** Cross-tenant attack: 0 leaks em 100k random pairs property test.
-- **14.s11.2.10** EVT-048 + EVT-042 evidence retention compliance (5y + 3y respectively per privacy_model.md §2).
+- **14.s11.2.10** EVT-048 + EVT-042 evidence retention compliance (7y EVT-048 canonical aligned com privacy_model.md §8 + 3y EVT-042 ERASURE_TEST CI per privacy_model.md §2).
 
 ## 15. Chaos Experiments (10)
 
@@ -788,7 +788,7 @@ PRR HIGH_RISK 12 sign-offs (§30) + chaos 30d staging + verification job 24h ver
 
 - **Cloudflare Queue**: 1 message/DSR consumer + 10 retries worst-case; ≈$0.001/DSR.
 - **D1 dsr_erasure_log**: ~10 rows/DSR; negligible.
-- **R2 evidence-dsr-`<region>`**: 1 erasure-report.json per DSR; max ~50KB; 5y retention; ≈$0.001/DSR/year.
+- **R2 evidence-dsr-`<region>`**: 1 erasure-report.json per DSR; max ~50KB; 7y retention canonical; ≈$0.001/DSR/year.
 - **Stripe API**: 1 Customer.update per DSR pseudonymize; included em current S-10 budget.
 - **Loki delete API**: 1 call per DSR; included em S-09 budget.
 - **D1 erasure_salt vault**: ~64 bytes per tenant + per-DSR salt; negligible.
@@ -827,7 +827,7 @@ LINDDUN per privacy_model.md §4 + STRIDE per security_model.md §6:
 - D(etectability): verification job 24h sweep gates dsr.completed.v1; partial_failure SEV-1 alert.
 - D(isclosure): erasure_salt encrypted at rest AES-256-GCM CTRL-CRYPTO-002; Stripe pseudonymize via metadata not delete.
 - U(nawareness): per-backend status em EVT-048 erasure-report.json transparente para titular.
-- N(on-compliance): **LGPD Art. 18 IV + GDPR Art. 17 + CCPA §1798.105 + SOC 2 P4.1..4.3 + GDPR Recital 26 + Art. 11 + WP29 Opinion 05/2014 endorsed by EDPB (anonymization) + GAAP ASC 606 + LGPD Art. 16 fiscal compliance** via 12-backend canonical (Lote 10.11.0-bis) coverage + pseudonymization escape valve + 24h verification + 5y EVT-048.
+- N(on-compliance): **LGPD Art. 18 IV + GDPR Art. 17 + CCPA §1798.105 + SOC 2 P4.1..4.3 + GDPR Recital 26 + Art. 11 + WP29 Opinion 05/2014 endorsed by EDPB (anonymization) + GAAP ASC 606 + LGPD Art. 16 fiscal compliance** via 12-backend canonical (Lote 10.11.0-bis) coverage + pseudonymization escape valve + 24h verification + 7y EVT-048 (canonical).
 
 ## 27. Knowledge Transfer
 
@@ -876,7 +876,7 @@ D+0 design review (Architect; eventual consistency model + GDPR Recital 26 + Art
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.1.0 | 2026-04-28 | Gustavo (Lote 10.11.0-bis + 10.11bis) | **Canonical fixes pós baseline review aggregate 5.18/10**: (a) **Cardinalidade 12 backends canonical Lote 10.11.0-bis** (8 effective: Neon multi-tabela / Neon billing fiscal exception / R2 CAS refcount-aware (subject_unaffiliated vs subject_dedicated) / R2 AC / D1 / KV / Stripe Customer.update / Loki + 4 pseudonymized: R2 audit Object Lock 7y com HKDF audit-pseudonym / Neon PITR backup 30d / R2 CAS legal_hold partition / R2 evidence-* buckets 7y) — substituindo "10 backends total" v1.0. (b) **EDPB 5/2020 §74 → GDPR Recital 26 + Art. 11 + WP29 Op. 05/2014 endorsed by EDPB** (anonymization) — Guidelines 5/2020 são sobre consent não erasure pseudonymization (GPT P0-5). (c) **INV-DATA-ERASURE-COMPLETE HIGH→CRITICAL** + TLA+ obrigatório via PAT-FORMAL-VERIFICATION-001 (S-11 WI-S11-008 commit). (d) **HKDF info canonical** = `corelink/v1/erasure-salt` para pseudonymization + `corelink/v1/audit-pseudonym` para subject_id em audit retained. |
-| 1.0.0 | 2026-04-26 | Gustavo (Lote 10.11) | Criação WI-S11-002; HIGH_RISK; SOTA pós-S-10 SEALED 9.35/10. **Coração regulatory** do CoreLink Privacy Pipeline — 12 backends canonical (8 effective + 4 pseudonymized — Lote 10.11.0-bis) totais (8 effective slots: D1, Neon, R2 cas mutable, R2 ac mutable, KV, DO, Stripe, Loki + 4 pseudonymized: R2 audit-`<region>` 7y, R2 billing-events-`<region>` 7y, Loki cold archive R2, CF Analytics Engine 30d) — extends privacy_model.md §6.2 baseline canonical 6 com S-07/S-08/S-09/S-10 inheritance. INV-DATA-ERASURE-COMPLETE CRITICAL (Lote 10.11.0-bis: HIGH→CRITICAL com TLA+ commit S-11 WI-S11-008) §3.5 L110 satisfaction. GDPR Recital 26 + Art. 11 + WP29 Opinion 05/2014 endorsed by EDPB (anonymization) pseudonymization escape valve regulatório vs INV-AUDIT-APPEND-ONLY CRITICAL §3.6 L116 7y immutability. Verification job 24h sweep posts EVT-048 DSR_EVIDENCE 5y retention em R2 evidence-dsr/<dsr_id>/erasure-report.json com per-backend status enum (`erased\|pseudonymized\|partial_failure\|failed\|not_applicable`). Tombstone em D1 dsr_erasure_log per backend forensic-grade. Audit emit fail-CLOSED 5 CloudEvents canonical types `dev.hugr.corelink.dsr.erasure.{started,backend_completed,verification_passed,verification_failed,completed}.v1` per Lote 10.9bis P0-G prefix — split-tier discipline (Lote 10.6bis fail-OPEN billing vs fail-CLOSED audit; ADR-S11-002 cross-WI). Idempotency UNIQUE (dsr_id, backend) per-backend dedup; replay-safe 100× (PAT-RETRY-IDEMPOTENT-001; sprint contract §9 14.s11.4). Refcount-aware R2 mutable scrub (S-07 dedup safety) — blob shared entre tenants não quebra. Stripe customer pseudonymize NÃO delete (GAAP ASC 606 + LGPD Art. 16 fiscal preservation). erasure_salt per-tenant + per-DSR scope forward secrecy (ADR-S11-003 interim D1 vault até S-14 BYOK KMS final). Cross-backend eventual consistency (ADR-S11-004 — 2PC inviável Stripe + Object Lock heterogeneity). 12 AC scenarios + 10 chaos + 12 risks + 10 post-mortem hooks. NEW FM-450 (erasure-incomplete cross-backend P0 S=5→upgrade FF-HR-010) + FM-452 (consent tampering P1 S=5→upgrade) declared em failure_modes.md. NEW RB-DSR-ERASURE-INCOMPLETE + RB-CONSENT-TAMPERING runbooks. NEW pseudonymize crate `corelink-privacy-pseudonymize` separate (foundation S-14 BYOK refactor). **Lote 10.10 lessons absorbed**: (a) source-of-truth FIRST — INV positions §3.5 L110 + §3.6 L116 + §3.12 L168 verified pre-merge (Lote 10.8bis P1-13); (b) typed enum NÃO serde_json::Value (Lote 10.9-quinquies NEW-P0-2); (c) sign-off cap 12 (Lote 10.8bis P1-2); (d) cascade discipline absoluta — sweep 12 backends canonical (8 effective + 4 pseudonymized — Lote 10.11.0-bis) × 8 sub-systems (effective + pseudonymized + verification + tombstone + audit + idempotency + refcount + erasure_salt); (e) split-tier discipline canonical (Lote 10.6bis fail-OPEN billing vs fail-CLOSED audit); (f) corelink_time canonical helper for SLA calculations (Lote 10.10-quaters lesson); (g) typed enum Region (canonical 6-region); (h) PrimaryKey 4-tuple inclusion via dsr_erasure_log (similar pattern to WI-S10-002 PK 4-tuple). |
+| 1.0.0 | 2026-04-26 | Gustavo (Lote 10.11) | Criação WI-S11-002; HIGH_RISK; SOTA pós-S-10 SEALED 9.35/10. **Coração regulatory** do CoreLink Privacy Pipeline — 12 backends canonical (8 effective + 4 pseudonymized — Lote 10.11.0-bis) totais (8 effective slots: D1, Neon, R2 cas mutable, R2 ac mutable, KV, DO, Stripe, Loki + 4 pseudonymized: R2 audit-`<region>` 7y, R2 billing-events-`<region>` 7y, Loki cold archive R2, CF Analytics Engine 30d) — extends privacy_model.md §6.2 baseline canonical 6 com S-07/S-08/S-09/S-10 inheritance. INV-DATA-ERASURE-COMPLETE CRITICAL (Lote 10.11.0-bis: HIGH→CRITICAL com TLA+ commit S-11 WI-S11-008) §3.5 L110 satisfaction. GDPR Recital 26 + Art. 11 + WP29 Opinion 05/2014 endorsed by EDPB (anonymization) pseudonymization escape valve regulatório vs INV-AUDIT-APPEND-ONLY CRITICAL §3.6 L116 7y immutability. Verification job 24h sweep posts EVT-048 DSR_EVIDENCE 7y retention canonical em R2 evidence-dsr (aligned cycle 16)/<dsr_id>/erasure-report.json com per-backend status enum (`erased\|pseudonymized\|partial_failure\|failed\|not_applicable`). Tombstone em D1 dsr_erasure_log per backend forensic-grade. Audit emit fail-CLOSED 5 CloudEvents canonical types `dev.hugr.corelink.dsr.erasure.{started,backend_completed,verification_passed,verification_failed,completed}.v1` per Lote 10.9bis P0-G prefix — split-tier discipline (Lote 10.6bis fail-OPEN billing vs fail-CLOSED audit; ADR-S11-002 cross-WI). Idempotency UNIQUE (dsr_id, backend) per-backend dedup; replay-safe 100× (PAT-RETRY-IDEMPOTENT-001; sprint contract §9 14.s11.4). Refcount-aware R2 mutable scrub (S-07 dedup safety) — blob shared entre tenants não quebra. Stripe customer pseudonymize NÃO delete (GAAP ASC 606 + LGPD Art. 16 fiscal preservation). erasure_salt per-tenant + per-DSR scope forward secrecy (ADR-S11-003 interim D1 vault até S-14 BYOK KMS final). Cross-backend eventual consistency (ADR-S11-004 — 2PC inviável Stripe + Object Lock heterogeneity). 12 AC scenarios + 10 chaos + 12 risks + 10 post-mortem hooks. NEW FM-450 (erasure-incomplete cross-backend P0 S=5→upgrade FF-HR-010) + FM-452 (consent tampering P1 S=5→upgrade) declared em failure_modes.md. NEW RB-DSR-ERASURE-INCOMPLETE + RB-CONSENT-TAMPERING runbooks. NEW pseudonymize crate `corelink-privacy-pseudonymize` separate (foundation S-14 BYOK refactor). **Lote 10.10 lessons absorbed**: (a) source-of-truth FIRST — INV positions §3.5 L110 + §3.6 L116 + §3.12 L168 verified pre-merge (Lote 10.8bis P1-13); (b) typed enum NÃO serde_json::Value (Lote 10.9-quinquies NEW-P0-2); (c) sign-off cap 12 (Lote 10.8bis P1-2); (d) cascade discipline absoluta — sweep 12 backends canonical (8 effective + 4 pseudonymized — Lote 10.11.0-bis) × 8 sub-systems (effective + pseudonymized + verification + tombstone + audit + idempotency + refcount + erasure_salt); (e) split-tier discipline canonical (Lote 10.6bis fail-OPEN billing vs fail-CLOSED audit); (f) corelink_time canonical helper for SLA calculations (Lote 10.10-quaters lesson); (g) typed enum Region (canonical 6-region); (h) PrimaryKey 4-tuple inclusion via dsr_erasure_log (similar pattern to WI-S10-002 PK 4-tuple). |
 
 ## 32. Anti-patterns evitados
 

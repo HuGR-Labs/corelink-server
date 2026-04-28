@@ -131,7 +131,7 @@ Decision tree em YAML (legal/breach-notification/rb-breach-notif-decision-tree.y
 - **Privacy-aware data subject**: receives notification email se affected (sev-1/2; severity-3 caso-a-caso).
 - **Privacy Officer interno HuGR**: decision owner em incident real + dry-run.
 - **Legal team interno + externo**: review templates pre-dispatch.
-- **Security Lead**: triage + containment per RB-FM-XXX cross-reference.
+- **Security Lead**: triage + containment per RB-BREACH-NOTIF cross-reference.
 - **External regulator (ANPD, Irish DPC, California AG)**: receives notification per template em jurisdiction-appropriate language.
 
 ### 3.2 Customer journey (touchpoints)
@@ -181,7 +181,7 @@ Decision tree em YAML (legal/breach-notification/rb-breach-notif-decision-tree.y
 | CAPs | CAP-PRIV-005 | Breach notification runbook executable |
 | Invariantes | INV-AUDIT-APPEND-ONLY (CRITICAL §3.6 L116) |
 | Controles | CTRL-PRIV-032 (breach notification runbook) |
-| Padrões | PAT-RUNBOOK-DRY-RUN-001 (semestral tabletop) |
+| Padrões | PAT-RUNBOOK-DRILL-001 (resilience_patterns.md §3.7 canonical; semestral tabletop específico para breach notification — extends monthly drill SLA) |
 | Failure modes | FM-061 (audit Object Lock vs DSR — legal hold path); FM-450 (erasure-incomplete cross-backend; can trigger breach se PII lingers) |
 | Métricas | `corelink_breach_time_to_notification_seconds{jurisdiction}` + `corelink_breach_time_to_decision_seconds` + `corelink_breach_dry_run_completion_total{outcome}` + `corelink_breach_customer_notification_delivery_total{outcome}` |
 | Eventos | 1 CloudEvent canonical: breach.notification_dispatched |
@@ -230,7 +230,7 @@ Não — regulatory feature.
    - `legal/breach-notification/ccpa-state-ag-template.en.md` — California AG (CCPA §1798.82).
 3. Customer notification template 3 locales:
    - `legal/breach-notification/customer-breach-notification.{pt-BR,en-US,es-MX}.mjml` (reuse WI-S11-004 mjml infra).
-4. RB-BREACH-NOTIF runbook expanded em `specs/runbooks/RB-BREACH-NOTIF.md` (existing Lote 5.12 stub → production-grade):
+4. RB-BREACH-NOTIF runbook expanded em `specs/05_quality/runbooks/RB-BREACH-NOTIF.md` (existing Lote 5.12 stub → production-grade):
    - Section 1: Decision tree summary + YAML cross-ref.
    - Section 2: Severity classification criteria.
    - Section 3: Notification flow per jurisdiction (regulators + customers).
@@ -252,7 +252,7 @@ Não — regulatory feature.
 8. Crate `corelink-privacy-breach-emit` (NEW small crate) — emit helper para audit event + delivery confirmation tracking.
 9. 4 Prom metrics for breach observability (time-to-notification, time-to-decision, dry-run completion, customer delivery).
 10. Status page banner integration (S-09 inheritance) — banner.json updates per breach severity.
-11. Cross-reference RB-FM-* runbooks (e.g., RB-FM-061 audit Object Lock conflict; RB-DSR-ERASURE-INCOMPLETE WI-S11-002 cross-link).
+11. Cross-reference RB-FM-* runbooks (e.g., RB-GDPR-ERASURE-HOLD audit Object Lock conflict; RB-DSR-ERASURE-INCOMPLETE WI-S11-002 cross-link).
 
 #### 6.1.4 RB-BREACH-NOTIF runbook structure (excerpt)
 
@@ -347,7 +347,7 @@ legal/breach-notification/
    ├─ scenario-2-r2-cross-tenant-exposure.md
    └─ scenario-3-audit-chain-integrity-break.md
 
-specs/runbooks/RB-BREACH-NOTIF.md              # production-grade expansion (existing Lote 5.12)
+specs/05_quality/runbooks/RB-BREACH-NOTIF.md              # production-grade expansion (existing Lote 5.12)
 
 crates/corelink-privacy-breach-emit/           # NEW small crate
 ├─ Cargo.toml
@@ -558,7 +558,7 @@ And property test 100 random (severity, alert_recipients) combinations: 100% mat
 
 - `legal/breach-notification/` 7 files (1 YAML decision tree + 3 jurisdictional templates + 3 customer notification mjml).
 - `legal/breach-notification/dry-run-scenarios/` 3 scenarios.
-- `specs/runbooks/RB-BREACH-NOTIF.md` production-grade expansion (sections 1-8).
+- `specs/05_quality/runbooks/RB-BREACH-NOTIF.md` production-grade expansion (sections 1-8).
 - `crates/corelink-privacy-breach-emit/` (NEW; ~400 LoC).
 - ADR-S11-009 jurisdictional coverage rationale.
 - 1 CloudEvent schema em `schemas/cloudevents/breach-notification-dispatched.v1.json`.
@@ -662,7 +662,7 @@ LINDDUN per privacy_model.md §4 + STRIDE per security_model.md §6:
 
 ## 27. Knowledge Transfer
 
-Tech talk (1h): "S-11 Breach Notification: 3 jurisdictional templates + decision tree YAML + dry-run semestral + PagerDuty escalation matrix"; doc `specs/runbooks/RB-BREACH-NOTIF.md`; onboarding test 6 questões: 3 jurisdictional templates rationale (ADR-S11-009 BR/EU/US-CA target market), decision tree YAML severity classification (3 sev × 3 jurisdiction = 9 combinations), dry-run cadence semestral (DD-004), time-to-decision ≤ 4h SLO interno (DD-005 operational readiness), PagerDuty 3 services escalation, audit fail behavior (regulatory SLA priority over audit completeness).
+Tech talk (1h): "S-11 Breach Notification: 3 jurisdictional templates + decision tree YAML + dry-run semestral + PagerDuty escalation matrix"; doc `specs/05_quality/runbooks/RB-BREACH-NOTIF.md`; onboarding test 6 questões: 3 jurisdictional templates rationale (ADR-S11-009 BR/EU/US-CA target market), decision tree YAML severity classification (3 sev × 3 jurisdiction = 9 combinations), dry-run cadence semestral (DD-004), time-to-decision ≤ 4h SLO interno (DD-005 operational readiness), PagerDuty 3 services escalation, audit fail behavior (regulatory SLA priority over audit completeness).
 
 ## 28. Risk Register (12-row HIGH_RISK)
 

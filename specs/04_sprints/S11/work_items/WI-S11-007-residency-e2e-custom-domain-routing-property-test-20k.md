@@ -27,7 +27,7 @@ inherits_from:
 tags: ["wi", "s11", "residency", "data-residency", "schrems-ii", "lgpd-art-33", "gdpr-art-44", "custom-domain-routing", "20k-property-test", "fm-451", "high-risk"]
 ---
 
-# WI-S11-007 — Residency Pinning E2E + Custom Domain Routing 6-Region Canonical Enum (`<tenant_id>.<region>.corelink.dev` per `data_model.md §2.1` + `privacy_model.md §7.1` — wnam/enam/weur/sam/apac/afr) + Insert Checks Reject Cross-Region Writes (D1 trigger + Worker pre-flight assertion) + 20k Property Test (10k weur + 10k enam) + RB-DATA-RESIDENCY-LEAK Runbook + FM-451 Declaration + INV-DATA-RESIDENCY CRITICAL (Lote 10.11.0-bis: HIGH→CRITICAL Schrems II) §3.11 Runtime Cobertura (`crates/corelink-privacy-residency-enforcement`; tenant.primary_region canonical column em `data_model.md §4.1` L151 — NOT tenant_metadata.region_pinned legacy; Worker routing via custom domain mapping; insert checks via D1 CHECK constraint + worker pre-flight; 20k property test 10k weur + 10k enam → 0 cross-region leaks; RB-DATA-RESIDENCY-LEAK runbook NEW; FM-451 NEW declarado em failure_modes.md; TLA+ deferred to S-14 region_residency.tla per invariant_registry.md §4.2 — S-11 entrega runtime + property tests + custom domain routing; Schrems II + LGPD Art. 33 § 1º + GDPR Art. 44 alignment; CloudEvents `dev.hugr.corelink.residency.{request_routed,write_rejected_cross_region}.v1` 2 canonical types per Lote 10.9bis P0-G prefix em audit-`<region>` Object Lock 7y emit fail-CLOSED)
+# WI-S11-007 — Residency Pinning E2E + Custom Domain Routing 6-Region Canonical Enum (`<tenant_id>.<region>.corelink.dev` per `data_model.md §2.1` + `privacy_model.md §7.1` — wnam/enam/weur/sam/apac/afr) + Insert Checks Reject Cross-Region Writes (D1 trigger + Worker pre-flight assertion) + 20k Property Test (10k weur + 10k enam) + RB-DATA-RESIDENCY-LEAK Runbook + FM-451 Declaration + INV-DATA-RESIDENCY CRITICAL (Lote 10.11.0-bis: HIGH→CRITICAL Schrems II) §3.11 Runtime Cobertura (`crates/corelink-privacy-residency-enforcement`; tenant.primary_region canonical column em `data_model.md §4.1` L151 — NOT tenant_metadata.region_pinned legacy; Worker routing via custom domain mapping; insert checks via D1 CHECK constraint + worker pre-flight; 20k property test 10k weur + 10k enam → 0 cross-region leaks; RB-DATA-RESIDENCY-LEAK runbook NEW; FM-451 NEW declarado em failure_modes.md; TLA+ scope split (Lote 10.11.0-bis-prime cycle 3 reconciled): PARTIAL S-11 via dsr_erasure_atomicity.tla (InvResidencyPinned + temporal InvResidencyMonotonic — pinning + monotonic); FULL S-14 via region_residency.tla (cross-region routing actions) per invariant_registry.md §4.2 — S-11 entrega runtime + property tests + custom domain routing + TLA+ partial coverage; Schrems II + LGPD Art. 33 § 1º + GDPR Art. 44 alignment; CloudEvents `dev.hugr.corelink.residency.{request_routed,write_rejected_cross_region}.v1` 2 canonical types per Lote 10.9bis P0-G prefix em audit-`<region>` Object Lock 7y emit fail-CLOSED)
 
 > **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
 > **Parent:** [S-11](../sprint.md) · **Assignee:** Gustavo Schneiter
@@ -249,7 +249,7 @@ Não — regulatory feature.
    - Iterações: 20k baseline em CI + 100k nightly cron;
    - Assertions: 0 cross-region leaks; per-tenant primary_region preserved.
 7. RB-DATA-RESIDENCY-LEAK runbook (NEW canonical) — SOP detect + remediate residency leak.
-8. **FM-451 (NEW)** declaration em failure_modes.md: "Residency leak (cross-region write detected)" P0 (S=5 → upgrade FF-HR-010); RB-FM-451 mapping.
+8. **FM-451 (NEW)** declaration em failure_modes.md: "Residency leak (cross-region write detected)" P0 (S=5 → upgrade FF-HR-010); RB-DATA-RESIDENCY-LEAK mapping.
 9. 2 CloudEvents canonical types em audit-`<region>` Object Lock 7y; emit fail-CLOSED.
 10. Region migration request endpoint POST /v1/admin/tenant/region-migration (auth via PAT + step-up MFA per CTRL-AUTH-010; reuses WI-S11-001 step-up MFA pattern):
     - Cria ticket em D1 `region_migration_request`;
@@ -319,7 +319,7 @@ specs/03_architecture/adrs/
 ├─ ADR-S11-010-tla-residency-deferred-s14.md    # NEW
 └─ ADR-S11-011-region-migration-cooldown-30d.md # NEW
 
-specs/runbooks/RB-DATA-RESIDENCY-LEAK.md         # NEW canonical
+specs/05_quality/runbooks/RB-DATA-RESIDENCY-LEAK.md         # NEW canonical
 
 # Region migration endpoint (reuse corelink-privacy-dsr-api pattern)
 crates/corelink-privacy-dsr-api/src/routes/region_migration.rs  # NEW route

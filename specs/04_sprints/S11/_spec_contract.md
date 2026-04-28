@@ -104,12 +104,12 @@ inherits_from:
   3. **R2 CAS legal_hold partition** (governance mode): conteúdo retido se sob hold ativo; pseudonymize index references; release pós legal_hold expiry.
   4. **R2 evidence-*** (DPIA/LIA/DSR evidence buckets 7y): retain por SLA framework (EVT-046 LIA, EVT-049 consent record, EVT-048 DSR evidence); subject_id pseudonymized.
 - **Pseudonymization rule**: `tenant_id_hash = sha256(tenant_id || erasure_salt)` + marker `pii_redacted=true`; customer com sua própria `erasure_salt` (kept separately em customer-controlled vault) pode correlacionar suas próprias entries pré- e pós-erasure mas terceiros não.
-- **Conflict resolution**: GDPR Art. 17 (right to erasure) vs Object Lock 7y (audit immutability — `INV-AUDIT-APPEND-ONLY` CRITICAL) — **pseudonymization é o escape valve regulatório aceito** (GDPR Recital 26 + Art. 11 + WP29 Opinion 05/2014 endorsed by EDPB; Lote 10.11.0-ter corrigida citação anterior errada "EDPB 5/2020 §74"). Customer/auditor confirmation flow em `RB-DSR-ERASURE-INCOMPLETE` (criar S-11) e `RB-GDPR-ERASURE-HOLD` (existing, criado Lote 5.12 — privacy_model.md §11.3).
+- **Conflict resolution**: GDPR Art. 17 (right to erasure) vs Object Lock 7y (audit immutability — `INV-AUDIT-APPEND-ONLY` CRITICAL) — **pseudonymization é o escape valve regulatório aceito** (GDPR Recital 26 + Art. 11 + WP29 Opinion 05/2014 endorsed by EDPB; Lote 10.11.0-ter corrigida citação anterior errada "EDPB 5/2020 §74"). Customer/auditor confirmation flow em `RB-DSR-ERASURE-INCOMPLETE` (criada cycle 13) e `RB-GDPR-ERASURE-HOLD` (existing, criado Lote 5.12 — privacy_model.md §11.3).
 - **R-S11-5**: **Crypto-erase** para BYOK customers (S-14): erasure efetiva via destroy customer-managed key (NIST SP 800-88 Rev.1 compliant); evidence emitido em audit.
 - **R-S11-6**: Verification job: 24h após `dsr.completed.v1` event (CloudEvents canonical em privacy_model.md §6.2), sweep todos 12 backends canonical (8 effective + 4 pseudonymized — Lote 10.11.0-bis); per-backend assert:
   - **Effective backends (8 — Lote 10.11.0-bis canonical)** — assert 0 records remanescentes via SQL `SELECT COUNT(*)` ou R2 `headObject` ou KV `get` ou Stripe Customer.metadata fetch (PII nullified) ou Loki query.
   - **Pseudonymized backends (4)** — assert 0 plaintext PII fields restantes via DLP scan + assert `pii_redacted=true` marker presente em todos records correlacionados.
-  - Report em R2 `evidence-dsr/<dsr_id>/erasure-report.json` (EVT-048 DSR_EVIDENCE) retain **5y** (legal — privacy_model.md §2 retention table); per-backend status enum: `erased | pseudonymized | partial_failure | failed | not_applicable`.
+  - Report em R2 `evidence-dsr/<dsr_id>/erasure-report.json` (EVT-048 DSR_EVIDENCE) retain **7y** (canonical aligned com privacy_model.md §8 audit log retention + 4-pseudonymized R2 evidence-* bucket framework Object Lock governance mode); per-backend status enum: `erased | pseudonymized | partial_failure | failed | not_applicable`.
   - Cross-link com `dsr.verified.v1` + `dsr.queued.v1` + `dsr.completed.v1` audit events (EVT-047 AUDIT_EVENT) via shared `dsr_id` ULID.
 
 ### 5.3 Consent Ledger (CAP-PRIV-003)
@@ -172,7 +172,7 @@ inherits_from:
 - [ ] **DPIA** preenchido para 3 features (dedup, telemetry, billing).
 - [ ] **PRR HIGH_RISK**: Privacy Officer + Legal + DPO interim + Security lead + Compliance officer + SRE + Engineer + QA + Product + 2 peers.
 - [ ] **TLA+ spec** `dsr_erasure_atomicity.tla` (verifica cross-backend erasure é atomic ou compensating-rollback) verde em CI.
-- [ ] **Runbook dry-run**: RB-GDPR-ERASURE-HOLD (existing) + new RB stub `RB-DSR-ERASURE-INCOMPLETE` (criar) + new RB stub `RB-DATA-RESIDENCY-LEAK` (criar) (EVT-017).
+- [ ] **Runbook dry-run**: RB-GDPR-ERASURE-HOLD (existing) + RB-DSR-ERASURE-INCOMPLETE (criada cycle 13) + RB-DATA-RESIDENCY-LEAK (criada cycle 13) + RB-CONSENT-TAMPERING + RB-DSR-INTAKE-FAILURE + RB-PRIVACY-NOTICE-LATE-PUBLICATION + RB-SUB-PROCESSOR-BROADCAST-MISS + RB-TLA-COUNTEREXAMPLE (todas criadas cycle 13/14 stub canonical em specs/05_quality/runbooks/) (EVT-017).
 
 ## 7. Completeness Criteria (delta local)
 
@@ -180,7 +180,7 @@ inherits_from:
 - [ ] **10.s11.2** DPIA preenchido para cada feature privacy-impacting (dedup, telemetry, billing minimum).
 - [ ] **10.s11.3** LIA template preenchido para telemetria sob legitimate interest.
 - [ ] **10.s11.4** **Crypto-erase NIST SP 800-88 Rev.1 compliant** para BYOK tenants (witness key destroy ceremony).
-- [ ] **10.s11.5** **Erasure verification job 24h post-erasure**: 0 records cross **12 backends total (8 effective + 4 pseudonymized via legal_hold canonical — Lote 10.11.0-bis)**; report retained 7y.
+- [ ] **10.s11.5** **Erasure verification job 24h post-erasure**: 0 records cross **12 backends total (8 effective + 4 pseudonymized via legal_hold canonical — Lote 10.11.0-bis)**; **DSR report retained 7y** canonical (privacy_model.md §8 audit retention + R2 evidence-* bucket Object Lock governance framework; aligned cycle 15 SEAL push — was previously 5y/7y split, now unified 7y).
 - [ ] **10.s11.6** **DSR receipt JWT** signed verifiable via public endpoint.
 - [ ] **10.s11.7** **3 locales** (PT-BR, EN, ES) para privacy notice + DSR UI mandatory at GA.
 - [ ] **10.s11.8** **Sub-processor change notification** ≥ 30d testado em staging (mock change → email triggered).
@@ -194,7 +194,7 @@ inherits_from:
 
 ### Reforçadas / novas em S-11 (positions canonical em invariant_registry.md verificadas via grep Lote 10.11.0)
 
-- **INV-DATA-ERASURE-COMPLETE** (CRITICAL — Lote 10.11.0-bis: HIGH→CRITICAL com TLA+ commit S-11 WI-S11-008; registry **§3.5 L110**): erasure cross-backend é efetiva em **12/12 backends canonical (8 effective + 4 pseudonymized — privacy_model.md §6.2 source-of-truth)**; 0 records remanescentes 30d post-request (effective backends) ou 100% pseudonymized via legal_hold (Object Lock + audit-pseudonym HKDF). **Why:** LGPD Art. 18 §IV + GDPR Art. 17 = right to erasure absoluto; gap = regulatory finding (multa LGPD 2% revenue / GDPR 4% global). **How to apply:** verification job 24h post-erasure (R-S11-6) + EVT-048 retain 5y + EVT-042 ERASURE_TEST CI gate + **TLA+ obrigatório via PAT-FORMAL-VERIFICATION-001** (`specs/tla/dsr_erasure_atomicity.tla` S-11 WI-S11-008).
+- **INV-DATA-ERASURE-COMPLETE** (CRITICAL — Lote 10.11.0-bis: HIGH→CRITICAL com TLA+ commit S-11 WI-S11-008; registry **§3.5 L110**): erasure cross-backend é efetiva em **12/12 backends canonical (8 effective + 4 pseudonymized — privacy_model.md §6.2 source-of-truth)**; 0 records remanescentes 30d post-request (effective backends) ou 100% pseudonymized via legal_hold (Object Lock + audit-pseudonym HKDF). **Why:** LGPD Art. 18 §IV + GDPR Art. 17 = right to erasure absoluto; gap = regulatory finding (multa LGPD 2% revenue / GDPR 4% global). **How to apply:** verification job 24h post-erasure (R-S11-6) + EVT-048 retain 7y (canonical pós cycle 15 SEAL unified) + EVT-042 ERASURE_TEST CI gate + **TLA+ obrigatório via PAT-FORMAL-VERIFICATION-001** (`specs/tla/dsr_erasure_atomicity.tla` S-11 WI-S11-008).
 - **INV-DATA-RESIDENCY** (CRITICAL — Lote 10.11.0-bis: HIGH→CRITICAL — Schrems II + LGPD Art. 33 §1º; registry **§3.11 L154**): tenant region pinned não vaza cross-region; **20k property test cases** 0 violations (R-S11-19); custom domain routing fail-CLOSED via PAT-ROUTING-PINNED-001 (NUNCA passthrough silencioso). **Why:** Schrems II 6 essential guarantees + LGPD Art. 33 §1º + GDPR Art. 44 (cross-border transfer); gap = catastrofic legal exposure. **How to apply:** insert checks region tag + property test CI + custom domain routing per canonical 6-region enum (data_model.md `tenant.primary_region` CHECK + privacy_model.md §7.1) + **TLA+ via PAT-FORMAL-VERIFICATION-001** (`dsr_erasure_atomicity.tla` InvResidencyPinned action).
 - **INV-CONSENT-PROOF-VERIFIABLE** (CRITICAL — Lote 10.11.0-bis: HIGH→CRITICAL com TLA+ symmetry InvConsentSymmetry; registry **§3.12 L168** marked S-11; delivered por S-11): consent records têm `notice_text_hash` verifiable post-facto; tampering detected via HMAC-SHA256 com HKDF info=`corelink/v1/consent-hmac`; **12 canonical purposes enum** (privacy_model.md §5.6.1) com legal_basis fixo per purpose (no fail-open swap entre `consent` e `legitimate_interest`). **Why:** GDPR Art. 7 + LGPD Art. 8 exige proof of informed consent; sem hash + symmetric grant/revoke = consent não defensible. **How to apply:** SHA-256 do notice + HMAC + verify endpoint JWS-signed + grant/revoke ledger symmetric (Lote 9.4 H-05) + **TLA+ via PAT-FORMAL-VERIFICATION-001** (`dsr_erasure_atomicity.tla` InvConsentSymmetry action).
 - **INV-AUDIT-APPEND-ONLY** (CRITICAL — registry **§3.6 L116** "Audit (domain AUDIT)"; herda; alias histórico `INV-AuditLogImmutability`): DSR events (`dsr.verified.v1`, `dsr.queued.v1`, `dsr.completed.v1`) e consent events (`consent.granted.v1`, `consent.revoked.v1`) são imutáveis em R2 Object Lock Governance Mode 7y; hash chain verifica continuamente (PAT-AUDIT-VERIFY-001); TLA+ verde em `specs/tla/audit_immutability.tla` (Lote 6.2).
@@ -247,7 +247,7 @@ inherits_from:
 | ID | Título | Sub-tasks | O | M | P | PERT |
 |---|---|---|---|---|---|---|
 | **WI-S11-001** | DSR API endpoints (6 direitos) + JWT receipt + status endpoint | 6 endpoints; receipt JWT signing/verification; status query; rate limit; MFA re-auth | 14h | 22h | 36h | **23.0h** |
-| **WI-S11-002** | Erasure worker cross-backend (12 backends canonical — 8 effective + 4 pseudonymized; Lote 10.11.0-bis) + verification 24h + reports | erasure logic per backend; verification job; report R2 5y EVT-048; tombstone; reconcile; FM-450/452/453 declarations | 18h | 28h | 44h | **28.7h** |
+| **WI-S11-002** | Erasure worker cross-backend (12 backends canonical — 8 effective + 4 pseudonymized; Lote 10.11.0-bis) + verification 24h + reports | erasure logic per backend; verification job; report R2 7y EVT-048 (canonical aligned cycle 16); tombstone; reconcile; FM-450/452/453 declarations | 18h | 28h | 44h | **28.7h** |
 | **WI-S11-003** | Consent ledger D1 schema + proof of informed payload + endpoints | schema; capture endpoint; revoke endpoint; list endpoint; verify endpoint; HMAC | 10h | 16h | 26h | **16.7h** |
 | **WI-S11-004** | Privacy notice versioning + 3 locales (PT-BR/EN/ES) + diff publication | semver structure; notice content review; 3 translations; changelog page; CI hook | 8h | 14h | 22h | **14.3h** |
 | **WI-S11-005** | Sub-processor register + 30d email broadcast + customer objection flow | legal/sub-processors.md auto-gen; email broadcast cron; objection ticket route | 6h | 10h | 16h | **10.3h** |
@@ -323,7 +323,7 @@ inherits_from:
 - **ISO/IEC 27701:2019** — Privacy Information Management System (PIMS).
 - **ISO/IEC 27018:2019** — code of practice for PII protection in public clouds.
 - **Schrems II (CJEU C-311/18)** — invalidação Privacy Shield + adequacy decisions.
-- **Brazilian ANPD Resolution CD/ANPD nº 2/2022** — incident notification requirements.
+- **Brazilian ANPD Resolution CD/ANPD nº 15/2024** — incident notification requirements (substitui Res. 2/2022 que tratou de procedimentos de fiscalização; correção Lote 10.11.0-ter).
 
 ## 18. Post-mortem hooks
 
