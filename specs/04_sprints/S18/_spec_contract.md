@@ -3,9 +3,9 @@ id: "SPEC-CONTRACT-S18"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-04-24"
-updated: "2026-04-24"
+updated: "2026-04-29"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -125,7 +125,7 @@ inherits_from:
 
 ### 5.6 i18n + a11y + Lint (CAP-DOCS-007 + CAP-DOCS-008)
 
-- **R-S18-12**: 3 locales: en (default), pt-BR (LGPD primary), es; native speaker review.
+- **R-S18-12**: 3 locales: **en-US** (default) + **pt-BR** (LGPD primary) + **es-419** (LATAM canonical matching S-11 + S-15 + S-16 alignment Lote 10.16); native speaker review per locale; **NÃO há reduction allowance "3 → 2"** (Lote 10.18 codex P1 fix; prior wording allowed regression — removida).
 - **R-S18-13**: Lighthouse CI gate: ≥ 95 Performance + A11y + Best Practices + SEO em 5 routes.
 - **R-S18-14**: WCAG 2.2 AA via axe-core CI 0 violations.
 - **R-S18-15**: Vale lint para tone consistency (style guide em `apps/docs/.vale/`).
@@ -137,20 +137,20 @@ inherits_from:
 - [ ] **Docs URL live** + SSL (CF Pages) com custom domain `docs.corelink.dev` (EVT-018).
 - [ ] **5 dev externos** completam getting started em ≤ 5 min — UX research session (EVT-018).
 - [ ] **Pricing calculator** validado por Finance + tested 10 sample scenarios (EVT-044).
-- [ ] **Pricing page** reviewed Finance + Legal + Security (cross-functional gate) (EVT-044).
+- [ ] **Pricing page** reviewed Finance + Legal (cross-functional gate CF-1; Lote 10.18 codex P1 canonical fix — Security removida do pricing review path; Security é cross-functional gate CF-2 apenas para security page) (EVT-044).
 - [ ] **Compliance page** reviewed Legal + Privacy Officer (EVT-044).
 - [ ] **REAPI reference** auto-gen working + manual examples 4 languages (EVT-018).
 - [ ] **Lighthouse score** ≥ 95 todos pillars em 5 routes (EVT-002).
 - [ ] **WCAG 2.2 AA** axe-core 0 violations + manual screen reader test (EVT-018 a11y).
 - [ ] **Vale lint** tone consistency CI gate verde (EVT-002).
 - [ ] **lychee broken-link** CI gate verde (EVT-002).
-- [ ] **i18n 3 locales** native speaker reviewed (en + pt-BR + es) (EVT-018).
-- [ ] **PRR LOW_RISK**: Docs lead + Engineer + Product + Privacy Officer (compliance page) + Finance (pricing) + Legal (terms).
+- [ ] **i18n 3 locales canonical en-US + pt-BR + es-419** (Lote 10.18 codex P1 alignment matching S-11 + S-15 + S-16); native speaker reviewed (EVT-018).
+- [ ] **PRR LOW_RISK** (3 sign-offs canonical; Lote 10.18 codex P1 canonical fix — Finance/Legal/Privacy NÃO folded em main PRR — eles são separate publish gate CF-1/CF-2/CF-3 per anti-scope §10): Owner + Final Approver + Docs lead. Cross-functional reviewers (Finance + Legal + Privacy Officer + Security lead) contribuem em separate publish gate per page (não main PRR sign-off).
 
 ## 7. Completeness Criteria (delta local)
 
 - [ ] **10.s18.1** Zero broken links em CI (lychee) (EVT-002).
-- [ ] **10.s18.2** i18n: en-US + pt-BR + es (basic) (EVT-018).
+- [ ] **10.s18.2** i18n: **en-US + pt-BR + es-419** canonical (Lote 10.18 codex P1; "basic" wording removida — locale matrix completa per S-11 alignment) (EVT-018).
 - [ ] **10.s18.3** **Diátaxis taxonomy** discoverability test: 5 dev sample finds answer ≤ 30s (EVT-018).
 - [ ] **10.s18.4** **SBOM downloadable** + verification instructions tested (EVT-010).
 - [ ] **10.s18.5** **Pricing calculator** validated 10 scenarios + Finance sign-off (EVT-044).
@@ -208,11 +208,11 @@ inherits_from:
 
 | ID | Título | Sub-tasks | O | M | P | PERT |
 |---|---|---|---|---|---|---|
-| **WI-S18-001** | Docusaurus 3.x setup + CF Pages deploy + Diátaxis taxonomy + i18n base | scaffold; CF Pages; sidebar Diátaxis; i18n config 3 locales; search Algolia | 12h | 18h | 28h | **18.7h** |
-| **WI-S18-002** | REAPI reference auto-gen + SDK guides 4 languages | protoc-gen-doc; manual examples per endpoint; per-language SDK guide; CLI reference | 14h | 22h | 36h | **23.0h** |
-| **WI-S18-003** | Compliance & security page + SBOM access + pentest summary | /security page; /compliance page; SBOM download; pentest exec summary; cross-functional review | 8h | 14h | 22h | **14.3h** |
-| **WI-S18-004** | Pricing page + calculator + Finance review | 5 tiers; feature matrix; calculator; Finance review; Legal review | 10h | 16h | 26h | **16.7h** |
-| **WI-S18-005** | Lighthouse ≥ 95 + WCAG 2.2 AA + Vale lint + lychee CI + 5-dev UX research | a11y CI; Lighthouse CI; Vale config; lychee CI; UX research session 5 devs | 8h | 14h | 22h | **14.3h** |
+| **WI-S18-001** | Docusaurus 3.x foundation + Diátaxis taxonomy + i18n config + custom domain (Lote 10.18 codex P2 alignment com filename `WI-S18-001-docusaurus-foundation-diataxis-i18n-custom-domain.md`) | scaffold; CF Pages; sidebar Diátaxis; i18n config 3 locales; Algolia DocSearch; custom domain `docs.corelink.dev` | 12h | 18h | 28h | **18.7h** |
+| **WI-S18-002** | Getting started 5-min quickstart + REAPI auto-gen + 4-language code examples (Lote 10.18 codex P2 alignment com filename `WI-S18-002-getting-started-reapi-auto-gen-4-language-examples.md`) | quickstart Bazel/Buck2/Native; protoc-gen-doc CI gate; manual examples per endpoint Rust/Python/Go/JS | 14h | 22h | 36h | **23.0h** |
+| **WI-S18-003** | SDK guides Python pyO3 + Go cgo + JS/TS WASM + CLI per-command reference (Lote 10.18 codex P2 alignment com filename `WI-S18-003-sdk-guides-python-go-js-cli-per-command.md`) | per-language SDK guide; client verify default-on documented; CLI reference per command | 10h | 16h | 26h | **16.7h** |
+| **WI-S18-004** | Compliance + security + pricing pages + cross-functional gate (Lote 10.18 codex P2 alignment com filename `WI-S18-004-compliance-security-pricing-pages-cross-functional-gate.md`) | /compliance + /security + /pricing pages; SBOM access + Cosign verify + Rekor; pricing 5 tiers + calculator 10 scenarios; CODEOWNERS + CI hard merge control | 12h | 18h | 28h | **18.7h** |
+| **WI-S18-005** | i18n + WCAG + Lighthouse + Vale + lychee + UX research + closing PRR (Lote 10.18 codex P2 alignment com filename `WI-S18-005-i18n-wcag-lighthouse-vale-lychee-ux-research-prr-closing.md`) | native speaker review 3 locales en-US/pt-BR/es-419; axe-core CI; Lighthouse CI em PR preview (não live); Vale + lychee CI; UX research 5 devs; PRR closing 3 sign-offs canonical + cross-functional publish gate separate | 10h | 14h | 22h | **14.7h** |
 
 **Total PERT:** ~87h ≈ 11 dias work × 1 eng. Buffer 2 dias confere com 2 semanas.
 
@@ -296,11 +296,11 @@ S-18 **NÃO PODE** promover via waiver dos seguintes itens:
 - ❌ WCAG 2.2 AA — accessibility regulatory baseline.
 - ❌ Auto-gen REAPI reference (no manual maintenance) — drift prevention.
 
-Itens waivable com Docs lead + Product + ADR:
+Itens waivable com Docs lead + Product + ADR (Lote 10.18 codex P1 canonical tightening):
 
-- ⚠️ 3 locales → 2 locales GA (en + pt-BR); es no Q1 pós-GA.
-- ⚠️ 5-dev UX research passing → 3-dev sample com plan to expand.
-- ⚠️ SBOM download → SBOM via support email request com ND-A (mais friction; less open).
+- ❌ **3 locales en-US/pt-BR/es-419 NÃO waivable** (Lote 10.18 codex P1 fix — prior "3 → 2 locales" allowance removida; LGPD pt-BR canonical + LATAM es-419 alignment com S-11/S-15/S-16 mandatory).
+- ⚠️ 5-dev UX research passing → 3-dev sample com plan to expand (sustained baseline).
+- ❌ **SBOM download path NÃO waivable** (Lote 10.18 codex P1 fix — prior "SBOM via support email com NDA" allowance removida; SBOM canonical = public download via S-12 release artifacts; NDA-gated SBOM = enterprise procurement friction inaceitável + S-12 SLSA L3 transparency baseline).
 
 ---
 
