@@ -3,9 +3,9 @@ id: "SPEC-CONTRACT-S20"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-04-24"
-updated: "2026-04-24"
+updated: "2026-04-29"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -83,7 +83,7 @@ inherits_from:
 
 ### 5.1 Engineering Gate (CAP-GA-001..006)
 
-- **R-S20-1**: **Global PRR** (`PRR-GA-001`) seguindo `_templates/production_readiness_review.md` com lane HIGH_RISK; 10–12 sign-offs:
+- **R-S20-1**: **Global PRR** (`PRR-GA-001`) seguindo `_templates/production_readiness_review.md` com lane HIGH_RISK; **13 sign-offs canonical (Lote 10.20 codex P0 canonical fix — count alignment)**:
   - SRE lead + Security lead + Privacy officer + DPO interim + Compliance officer + Engineer + QA + Product + Architect + AppSec + Crypto SME (BYOK) + Finance (billing).
 - **R-S20-2**: External pentest engagement:
   - Hire Schellman ou A-LIGN (scope: full CoreLink production-equivalent staging environment).
@@ -132,7 +132,7 @@ inherits_from:
 - [ ] **All docs (S-18) complete + reviewed** (EVT-016 + EVT-018).
 - [ ] **Compliance officer sign-off** (EVT-044).
 - [ ] **All SLOs sustained 30d** prod-like load (concurrent staging) (EVT-021).
-- [ ] **All 40 runbooks dry-run** executed em últimos 90d (cumulative S-17 + S-20) (EVT-017).
+- [ ] **P0/P1 priority subset (~25 of 47) runbooks dry-run** executed em últimos 90d (cumulative S-17 + S-20; Lote 10.20 codex P1 canonical math fix per S-17 Lote 10.17 alignment; prior "all 40" era inconsistente; canonical scope = P0/P1 priority subset) (EVT-017).
 - [ ] **Zero active waivers em controles CRITICAL** (EVT-015 if exists; EVT-031 PRR).
 - [ ] **TLA+ all 4 specs verde em CI**: tenant_isolation + cas_integrity + audit_immutability + gc_correctness (EVT-022).
 - [ ] **SBOM CycloneDX 1.5+ signed (alinhado S-12 R-S12-3) signed published** (alinhado S-12 R-S12-3) (EVT-010).
@@ -151,7 +151,7 @@ inherits_from:
 
 - [ ] **10.s20.1** All SLOs sustained 30d prod-like load.
 - [ ] **10.s20.2** All runbooks dry-run executed in last 90d.
-- [ ] **10.s20.3** All CAP-XXX in roadmap delivered (roadmap coverage = 100%).
+- [ ] **10.s20.3** All **CAP-GA-XXX** (engineering gate scope) delivered (CAP-GA-001..006 = 100% coverage); **CAP-LAUNCH-001 EXPLICITLY EXCLUDED** from engineering gate per Lote 10.20 codex P0 canonical fix (prior "All CAP-XXX" wording made launch indirectly blocking via this criterion). CAP-LAUNCH-001 satisfaction tracked separately em §6.2 launch orchestration soft-gate.
 - [ ] **10.s20.4** Zero active waivers em controles CRITICAL.
 - [ ] **10.s20.5** SOC 2 gap analysis identifies concrete GAP-XX items + fix timeline.
 - [ ] **10.s20.6** **External pentest retest passed** (post-remediation verification).
@@ -182,7 +182,7 @@ Todas as invariants CRITICAL (14 canonical sources contribute) **must be active*
 ## 9. Quality Standards (delta local)
 
 - **SBOM CycloneDX 1.5+ signed (alinhado S-12 R-S12-3) signed published** — alinhado S-12 R-S12-3.
-- **All 40 runbooks dry-run tested in 90d** (cumulative S-17 + S-20 cadence).
+- **P0/P1 priority subset (~25 of 47) runbooks dry-run tested in 90d** (cumulative S-17 + S-20 cadence; Lote 10.20 codex P1 canonical math fix per S-17 Lote 10.17 alignment).
 - **Zero SEV-1 in prod in 30d prior to GA** (production-equivalent staging — não há prod até GA day).
 - **TLA+ all 4 specs verdes em CI** sustained.
 - **External pentest retest passed** within 2 weeks of remediation submission.
@@ -312,19 +312,18 @@ S-20 **NÃO PODE** promover via waiver dos seguintes itens — todos são GA gat
 
 - ❌ External pentest report clean (zero HIGH/CRITICAL pending) — security baseline.
 - ❌ 30d sustained staging zero SEV-1 — operational baseline.
-- ❌ 3 lighthouse customers SLA met — customer trust baseline.
+- ❌ **3 lighthouse customers SLA met sustained 30d (Lote 10.20 codex P0 fix — canonical NÃO waivable; prior \"3→2 customers / 30d→21d\" allowance REMOVIDA porque secretly violava binary GA gate)** — customer trust baseline + GA evidence.
 - ❌ PRR global APPROVED — process baseline.
-- ❌ All 40 runbooks dry-run em 90d — operational baseline.
+- ❌ **P0/P1 priority subset (~25 of 47) runbooks dry-run em 90d** (Lote 10.20 codex P1 canonical math fix per S-17 Lote 10.17 alignment; prior "all 40" inconsistente) — operational baseline.
 - ❌ TLA+ all 4 specs verde em CI — formal verification baseline.
-- ❌ SBOM CycloneDX 1.5+ signed published — supply chain baseline.
+- ❌ **SBOM CycloneDX 1.5+ signed published (Lote 10.20 codex P1 fix — NÃO waivable; prior \"fallback to CycloneDX 1.4 via ADR\" allowance REMOVIDA per S-12 R-S12-3 alignment)** — supply chain baseline.
 - ❌ Zero active waivers em controles CRITICAL — security baseline.
 
-Itens waivable com 14-canonical-source sign-off + ADR + CEO/Founder approval:
+Itens waivable com 14-canonical-source sign-off + ADR + CEO/Founder approval (Lote 10.20 codex P0 canonical tightening — lighthouse + SLA waivers removidos):
 
-- ⚠️ 3 lighthouse customers → 2 lighthouse customers se 1 desiste (com plan to add 1 within 60d pós-GA).
-- ⚠️ SLA claim met em 30d → 21d com explicit acceptance.
 - ⚠️ Apache 2.0 open source release timing → pós-GA discussion (anti-scope mantém).
 - ⚠️ Marketing/Launch orchestration delay → independent of engineering gate; pode delay launch sin technical impact.
+- ⚠️ APAC region GA expansion → pós-GA Q1 (anti-scope mantém).
 
 ---
 

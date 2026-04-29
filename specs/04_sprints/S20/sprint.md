@@ -253,7 +253,7 @@ S-20 **NÃO introduz novos INVs** (cumulative ratification per spec contract §8
 - [ ] **All 27+ INVs cumulative active** (S-13..S-19 + canonical sources): INV-TENANT-ISOLATION + INV-CAS-INTEGRITY + INV-AUDIT-APPEND-ONLY + INV-GC-001/004 + INV-BILLING-NO-LOSS/NO-DUP + INV-BYOK-CRYPTO-SOVEREIGNTY + INV-REGION-NO-CROSS-LEAK + INV-CONSENT-PROOF-VERIFIABLE + INV-SUPPLY-* + INV-DATA-RESIDENCY/ERASURE-COMPLETE + INV-OBS-* + INV-DEDUP-CONSISTENCY + INV-RATE-LIMIT-PROPORTIONALITY + INV-BILLING-RECONCILE-3-LAYER/REPLAYABLE + INV-ERASURE-ATTESTATION-SIGNED + INV-ADMIN-DUAL-APPROVAL/MFA-FRESHNESS + INV-ONBOARD-DPA-FIRST/ATOMIC-PROVISIONING + INV-SUPPLY-NO-YANKED/LICENSE-ALLOWLIST + INV-KEY-NO-SKIP/OVERLAP (EVT-022).
 - [ ] **10.s20.1** All SLOs sustained 30d prod-like load *(GA Evidence Gate D+60)*.
 - [ ] **10.s20.2** All runbooks dry-run executed em last 90d (~25 of 47 P0/P1 priority subset).
-- [ ] **10.s20.3** All CAP-XXX in roadmap delivered (roadmap coverage = 100%).
+- [ ] **10.s20.3** All **CAP-GA-XXX** delivered (CAP-GA-001..006 engineering gate scope = 100% coverage); **CAP-LAUNCH-001 EXPLICITLY EXCLUDED** from this criterion (Lote 10.20 codex P0 canonical fix — prior wording made WI-S20-008 launch indirectly blocking via this criterion; now engineering gate is truly binary independent of launch readiness).
 - [ ] **10.s20.4** Zero active waivers em controles CRITICAL.
 - [ ] **10.s20.5** SOC 2 gap analysis identifies concrete GAP-XX items + fix timeline.
 - [ ] **10.s20.6** External pentest retest passed (post-remediation verification).
