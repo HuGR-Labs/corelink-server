@@ -210,7 +210,7 @@ Schema é o foundation: bug em design = cross-tenant data exposure que NUNCA ser
 - **FF-HR-009**: foundation para Layer 1-3 defense; downstream WIs depend on schema correctness.
 - **Reversibility**: schema bugs em prod = downtime migration; pre-deploy validation + dry-run staging.
 
-13 sign-offs incl. Architect (relational design + RLS), Privacy (DSR + pgcrypto), AppSec (insider threat surface), DBA (Postgres 16 specifics).
+11 sign-offs canonical incl. Architect (relational design + RLS + Crypto SME pgcrypto specialization), Privacy (DSR + pgcrypto), AppSec (insider threat surface). DBA (Postgres 16 specifics) folds into Architect.
 
 ## 3. Customer Impact & Journey
 
@@ -691,7 +691,7 @@ TLA+ alignment: planned `data_integrity.tla` (pós-S-09); modela cascade + RLS +
 
 ## 16. PRR
 
-PRR HIGH_RISK 13 sign-offs gated em WI-S03-008 ship gate.
+PRR HIGH_RISK 11 sign-offs canonical gated em WI-S03-008 ship gate.
 
 - [ ] All Gherkin green.
 - [ ] Property + chaos green.
@@ -868,7 +868,7 @@ Per-tenant emergency: admin override via `auth_admin` role; logged em audit chai
 5. **Performance (D+8)**: load test + Neon staging bench.
 6. **PRR (D+10)**: Architect sign-off.
 
-## 30. Sign-off (HIGH_RISK 13)
+## 30. Sign-off (HIGH_RISK 11 canonical)
 
 | # | Role | Name | Signed Date | Status |
 |---|---|---|---|---|

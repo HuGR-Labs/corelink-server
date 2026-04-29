@@ -147,7 +147,7 @@ Revocation correctness é o segundo pilar (após auth correctness) do auth postu
 - **FF-HR-009**: defense-in-depth coordination — revoke é cross-cutting (D1 + KV + DO + audit + cross-region).
 - **Reversibility**: revoke gap detected via audit chain anomaly OR customer report; resposta = mass rotation. Mitigação proativa: chaos test propagation, monitoring lag, runbook ready.
 
-13 sign-offs incl. SRE Lead (DO operations), Architect (broadcast pattern), AppSec (timing windows).
+11 sign-offs canonical incl. SRE Lead (DO operations), Architect (broadcast pattern + Crypto SME specialization), AppSec (timing windows).
 
 ## 3. Customer Impact & Journey
 
@@ -558,7 +558,7 @@ TLA+ alignment: planned spec `revocation_propagation.tla` (S-09 ou S-12 forward)
 
 ## 16. PRR
 
-PRR HIGH_RISK 13 sign-offs gated em WI-S03-008 ship gate.
+PRR HIGH_RISK 11 sign-offs canonical gated em WI-S03-008 ship gate.
 
 - [ ] All Gherkin green.
 - [ ] Property + chaos suite green em staging.
@@ -745,7 +745,7 @@ Per-tenant emergency: mass-revoke endpoint OR direct D1 UPDATE (admin override).
 4. **Performance (D+10)**: load test + propagation chaos.
 5. **PRR (D+12)**: Architect sign-off + readiness review.
 
-## 30. Sign-off (HIGH_RISK 13)
+## 30. Sign-off (HIGH_RISK 11 canonical)
 
 | # | Role | Name | Signed Date | Status |
 |---|---|---|---|---|

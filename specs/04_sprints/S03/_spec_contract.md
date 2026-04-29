@@ -3,7 +3,7 @@ id: "SPEC-CONTRACT-S03"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-04-24"
 updated: "2026-04-24"
 owner: "Gustavo Schneiter"
@@ -36,7 +36,7 @@ Substituir PAT stub de S-01/S-02 por **auth real production-grade**: Clerk SSO p
 
 ## 2. Lane + forcing factors
 
-- **Lane:** HIGH_RISK (13 sign-offs: 12 mandatory + 1 advisory Crypto SME).
+- **Lane:** HIGH_RISK (11 sign-offs canonical per framework §33.5.4.3 + ADR-0034; Crypto SME folds into Architect role; AppSec é o 11º slot).
 - **FF-HR-002**: tenant_id derivado do auth context — bug quebra isolation cross-tenant.
 - **FF-HR-005**: implementa CTRL-AUTH-001..010 + CTRL-CRED-001..004 + CTRL-AUTHZ-001..002 (16+ controles).
 - **FF-HR-009**: Terms of Service + PAT scope agreement = contrato customer; bug = legal exposure.
@@ -101,7 +101,7 @@ inherits_from:
 - [ ] **MFA WebAuthn testado** com 3 devices diferentes (YubiKey, platform authenticator, passkey iCloud Keychain) (EVT-018).
 - [ ] **LGPD DSR support**: export PAT list + revoke em erasure pipeline (S-11 integration) (EVT-042).
 - [ ] **Property test 10k iter PR + 100k iter nightly** (≤ 30 min com Argon2 sampled 1% iter para fit budget; cf. WI-S03-008 §6.1.1): revocation propagation race conditions; 0 false positive (EVT-002).
-- [ ] **PRR HIGH_RISK 13 sign-offs** (12 mandatory + 1 advisory): Owner + Final Approver + SRE Lead + Security Lead + Engineer (×2 peer) + QA + Product + Compliance + Privacy + Architect + AppSec + Crypto SME advisory (EVT-031).
+- [ ] **PRR HIGH_RISK 11 sign-offs canonical** (per framework §33.5.4.3 + ADR-0034): Owner + Final Approver + Architect (Crypto SME specialization for JWT/Argon2id/WebAuthn/CBOR-COSE) + Security Lead + SRE Lead + Engineer + QA Lead + Product + Compliance + Privacy + AppSec advisor (EVT-031).
 - [ ] **TLA+ tenant_isolation.tla** verde sustained com auth real integration (EVT-022).
 - [ ] **CTRL-CRED-001..004** todos com evidence (PAT only-once display, no PAT em logs, hash storage, revocation ≤ 60s) (EVT-024).
 - [ ] **OWASP ASVS V2/V3** checklist 100% pass (EVT-002).
@@ -276,6 +276,15 @@ Itens waivable com Security lead + Crypto SME + ADR:
 - ⚠️ MFA freshness 30 min → 60 min (com explicit risk acceptance).
 - ⚠️ Argon2id m_cost 65536 → 32768 com calibration adjusted.
 - ⚠️ Revocation 60s → 90s com customer SLA addendum.
+
+---
+
+
+## 16. Changelog (cumulative)
+
+| Versão | Data | Autor | Mudança |
+|---|---|---|---|
+| 1.3.0 | 2026-04-29 | Gustavo (Lote 10.3-bis-quater cycle 1 SEAL canonical sweep) | **Sign-off canonical normalization 13/10-12 → 11** (per framework §33.5.4.3 HIGH_RISK matrix + ADR-0034 solo-tier waiver; aligns S-01 + S-02 SEAL precedent). Crypto SME folds into Architect role as specialization (precedent for cripto-load-bearing WIs); Adversarial folds into AppSec; peer reviewers contribuem em PR review sem sign-off canonical separado. **39+ locations updated** across spec_contract + sprint + 8 WIs: §1 lane + §6 PRR DoD; sprint §5 D8 + §6 DoD + §14 matrix; WI-001..008 narratives + §30 headings; WI-008 §9.4 design decision rewritten + §3 + §6 + §8 AC + §10.6.5 + §11 + §14.6.4 + §17 sub-tasks + §18 dependencies + §19 timeline + §28 changelog + §32 anti-patterns. |
 
 ---
 

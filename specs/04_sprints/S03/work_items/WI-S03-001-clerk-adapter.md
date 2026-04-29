@@ -124,7 +124,7 @@ JWT validation é boundary crítico: vulnerabilidades clássicas (alg=none confu
 - **FF-HR-009**: defense-in-depth layer 1 (PAT/JWT scope) do 5-layer defense (auth_model §8.1).
 - **Reversibility**: signature bypass detectado tarde (audit gap) = breach com customer notification overhead; mitigação proativa via property tests + adversarial fuzzing.
 
-10-12 sign-offs incl. Crypto SME (review JWT validation) + AppSec (review JWKS fetch boundary).
+11 sign-offs canonical incl. Architect (Crypto SME specialization for JWT validation) + AppSec (JWKS fetch boundary review).
 
 ## 3. Customer Impact & Journey
 
@@ -596,7 +596,7 @@ Fallback degradation: se ClerkAdapter completamente inoperante, S-03 WI-S03-003 
 5. **Adversarial (pre-merge D+7)**: red team session — alg=none, key confusion, JWKS poisoning.
 6. **PRR (D+9)**: Architect sign-off + readiness review (gates inclusion em WI-S03-008 ship gate).
 
-## 30. Sign-off (HIGH_RISK 13)
+## 30. Sign-off (HIGH_RISK 11 canonical)
 
 | # | Role | Name | Signed Date | Status |
 |---|---|---|---|---|

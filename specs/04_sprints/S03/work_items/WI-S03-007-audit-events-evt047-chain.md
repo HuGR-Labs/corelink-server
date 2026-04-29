@@ -201,7 +201,7 @@ Audit é o último elo da defesa: se prevention falha, audit detecta + atribui +
 - **FF-HR-009**: Layer 5 of 5-layer defense; cross-check + last-line accountability.
 - **Reversibility**: audit gap detected late (compliance audit OR incident); proativo via property test + chain integrity validation.
 
-13 sign-offs incl. Compliance (mandatory; SOC 2 + LGPD), Privacy (PII redact), Crypto SME (chain hash + redact macro).
+11 sign-offs canonical incl. Compliance (mandatory; SOC 2 + LGPD), Privacy (PII redact), Architect (Crypto SME specialization for chain hash + redact macro).
 
 ## 3. Customer Impact & Journey
 
@@ -592,7 +592,7 @@ TLA+ alignment: planned `audit_chain.tla` (S-09 forward); modela emit → outbox
 
 ## 16. PRR
 
-PRR HIGH_RISK 13 sign-offs gated em WI-S03-008 ship gate.
+PRR HIGH_RISK 11 sign-offs canonical gated em WI-S03-008 ship gate.
 
 - [ ] All Gherkin green.
 - [ ] Property + chaos green.
@@ -767,7 +767,7 @@ RTO ≤ 30 min; RPO 0 (events durables em D1).
 5. **Compliance (D+8)**: Compliance review SOC 2 + LGPD Art. 38 traceability.
 6. **PRR (D+10)**: Architect sign-off.
 
-## 30. Sign-off (HIGH_RISK 13)
+## 30. Sign-off (HIGH_RISK 11 canonical)
 
 | # | Role | Name | Signed Date | Status |
 |---|---|---|---|---|
@@ -808,4 +808,4 @@ RTO ≤ 30 min; RPO 0 (events durables em D1).
 
 ---
 
-**Fim WI-S03-007.** Próximo: WI-S03-008 (PRR ship gate — property test 10k revocation + pentest engagement + DSR PAT export + RB-FM-160 + 13 sign-offs).
+**Fim WI-S03-007.** Próximo: WI-S03-008 (PRR ship gate — property test 10k revocation + pentest engagement + DSR PAT export + RB-FM-160 + 11 sign-offs canonical).

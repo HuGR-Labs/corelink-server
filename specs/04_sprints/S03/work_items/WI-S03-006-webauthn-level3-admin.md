@@ -166,7 +166,7 @@ WebAuthn é a base do phishing-resistant authentication moderno. Implementação
 - **FF-HR-009**: phishing-resistant MFA é Layer 0 — primeira linha de defense.
 - **Reversibility**: WebAuthn bypass detection difícil (cliente vê "authenticated" badge); proativo property test + Mann-Whitney + cross-browser CI.
 
-13 sign-offs incl. Crypto SME (mandatory; CBOR/COSE + attestation), AppSec (origin allowlist + RP ID), Privacy (biometric data handling — does CoreLink ever see? No — biometric stays em authenticator).
+11 sign-offs canonical incl. Architect (Crypto SME specialization mandatory for CBOR/COSE + attestation), AppSec (origin allowlist + RP ID), Privacy (biometric data handling — does CoreLink ever see? No — biometric stays em authenticator).
 
 ## 3. Customer Impact & Journey
 
@@ -603,7 +603,7 @@ TLA+ alignment: planned `webauthn_ceremony.tla` (S-09 ou pós); modela challenge
 
 ## 16. PRR
 
-PRR HIGH_RISK 13 sign-offs gated em WI-S03-008 ship gate.
+PRR HIGH_RISK 11 sign-offs canonical gated em WI-S03-008 ship gate.
 
 - [ ] All Gherkin green.
 - [ ] Adversarial regression + cross-browser green.
@@ -696,7 +696,7 @@ Dashboard widget DASH-AUTH:
 - COSE/CBOR parse CPU: ~5ms.
 - Per-ceremony total: ~$0.000005.
 
-**TCO 12m projection** (assume 100 admin ops/dia × 13 sign-offs em S-03 + 100k registrations/yr + 1M authentications/yr):
+**TCO 12m projection** (assume 100 admin ops/dia × 11 sign-offs canonical em S-03 + 100k registrations/yr + 1M authentications/yr):
 - Registrations: 100k × $0.000005 = $0.50/yr.
 - Authentications: 1M × $0.000005 = $5/yr.
 - Cross-browser CI: ~$200/mês compute = $2.4k/yr.
@@ -797,7 +797,7 @@ RTO ≤ 30 min (deploy rollback); RPO 0 (stateless ceremony; credentials in Neon
 7. **Cross-browser (D+13)**: Playwright matrix runtime.
 8. **PRR (D+14)**: Architect sign-off.
 
-## 30. Sign-off (HIGH_RISK 13)
+## 30. Sign-off (HIGH_RISK 11 canonical)
 
 | # | Role | Name | Signed Date | Status |
 |---|---|---|---|---|

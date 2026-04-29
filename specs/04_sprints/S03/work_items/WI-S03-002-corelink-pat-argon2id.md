@@ -736,7 +736,7 @@ Se Argon2 lib bug discovered: emergency rotation script — re-mint all active P
 6. **Mann-Whitney baseline (D+8)**: establish p-value baseline em CI nightly.
 7. **PRR (D+10)**: Architect sign-off + readiness review.
 
-## 30. Sign-off (HIGH_RISK 13)
+## 30. Sign-off (HIGH_RISK 11 canonical)
 
 | # | Role | Name | Signed Date | Status |
 |---|---|---|---|---|

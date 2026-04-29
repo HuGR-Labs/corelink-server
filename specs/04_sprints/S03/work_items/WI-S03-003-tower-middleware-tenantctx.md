@@ -121,7 +121,7 @@ Auth middleware é o **único ponto de orquestração** entre 5 layers de defens
 - **FF-HR-009**: defense-in-depth: este middleware é a sequência canônica de checks; ordem matters.
 - **Reversibility**: TenantCtx leak detection difícil (não-explicit em logs); proativo property test em CI nightly + chaos test em staging.
 
-13 sign-offs incl. Architect (composability + non-exhaustive evolution review), AppSec (5-layer ordering + session cache poisoning).
+11 sign-offs canonical incl. Architect (composability + non-exhaustive evolution + Crypto SME specialization), AppSec (5-layer ordering + session cache poisoning).
 
 ## 3. Customer Impact & Journey
 
@@ -524,7 +524,7 @@ TLA+ alignment: `tenant_isolation.tla` Layers 1-3 (PAT scope + tenant resolution
 
 ## 16. PRR
 
-PRR HIGH_RISK 13 sign-offs gated em WI-S03-008 ship gate. Este WI mini-PRR Architect + AppSec + Crypto SME + Security Lead.
+PRR HIGH_RISK 11 sign-offs canonical gated em WI-S03-008 ship gate. Este WI mini-PRR Architect (Crypto SME specialization) + AppSec + Security Lead.
 
 - [ ] All Gherkin green.
 - [ ] Property + Mann-Whitney + chaos green.
@@ -728,7 +728,7 @@ Fallback degradation: se ClerkAdapter offline, JWT path 503; PAT path continues.
 5. **Adversarial (pre-merge D+8)**: red team session — TenantCtx tampering, session cache poisoning, scope bypass.
 6. **PRR (D+10)**: Architect sign-off + readiness review.
 
-## 30. Sign-off (HIGH_RISK 13)
+## 30. Sign-off (HIGH_RISK 11 canonical)
 
 | # | Role | Name | Signed Date | Status |
 |---|---|---|---|---|
