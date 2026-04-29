@@ -6,7 +6,7 @@ work_status: "READY"
 audit_status: "ACTIVE"
 version: "1.1.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-04-28"
 lane: "STANDARD"
 parent: "S-07"
 assignee: "Gustavo Schneiter"
@@ -23,10 +23,10 @@ inherits_from:
 tags: ["wi", "s07", "dashboard", "dash-dedup", "alerts", "anomaly-detection", "sprint-review", "ship-gate", "standard"]
 ---
 
-# WI-S07-005 — DASH-DEDUP Grafana Dashboard (10 panels: dedup ratio per-tenant_tier; bytes saved; eviction rate per-region; quota utilization heatmap; LRU drift; cascade prevention; 95%/100% breach counters; SOTA bench comparison NativeLink ~2.1× / BuildBuddy ~2.8×) + Alerts (anomaly detection dedup ratio drop > 30% WoW SEV-3; quota 95% breach SEV-2 per-tenant; quota 100% breach SEV-1; INV-LRU-CONSISTENCY violation SEV-1; INV-GC-001 violation SEV-0 inheritance) + Sprint Review STANDARD 5 sign-offs ship gate + ADR-0019/0020 ratificação confirmation + cumulative INV §3.X promotion (3 NEW: INV-EVICT-SOFT-DELETE-FIRST + INV-EVICT-CASCADE-PREVENTED + INV-LRU-CONSISTENCY)
+# WI-S07-005 — DASH-DEDUP Grafana Dashboard (10 panels: dedup ratio per-tenant_tier; bytes saved; eviction rate per-region; quota utilization heatmap; LRU drift; cascade prevention; 95%/100% breach counters; SOTA bench comparison NativeLink ~2.1× / BuildBuddy ~2.8×) + Alerts (anomaly detection dedup ratio drop > 30% WoW SEV-3; quota 95% breach SEV-2 per-tenant; quota 100% breach SEV-1; INV-LRU-CONSISTENCY violation SEV-1; INV-GC-001 violation SEV-0 inheritance) + Sprint Review STANDARD 5 sign-offs ship gate + ADR-0019/0020 ratificação confirmation + cumulative INV §3.X promotion (5 NEW: INV-EVICT-SOFT-DELETE-FIRST + INV-EVICT-CASCADE-PREVENTED + INV-EVICT-TTL-CAP-RESPECTED + INV-LRU-CONSISTENCY + INV-QUOTA-RESERVATION-TTL — canonical Lote 10.7-tris cycle 5 alignment)
 
 > **doc_status:** DRAFT · **work_status:** READY · **lane:** STANDARD
-> **Parent:** [S-07](../sprint.md) · **Assignee:** Gustavo Schneiter
+> **Parent:** [S-07](../_spec_contract.md) (sprint contract; sprint.md not yet authored — defer to S-07-bis if full sprint doc needed) · **Assignee:** Gustavo Schneiter
 
 ---
 
@@ -35,7 +35,7 @@ tags: ["wi", "s07", "dashboard", "dash-dedup", "alerts", "anomaly-detection", "s
 | Campo | Valor |
 |---|---|
 | ID | WI-S07-005 |
-| Título | DASH-DEDUP Grafana 10-panel dashboard; alert rules SEV-0..3; SOTA bench comparison vs NativeLink + BuildBuddy publicado em report; sprint review STANDARD 5 sign-offs; ADR-0019 (TTL ownership S-07 supersedes S-04) + ADR-0020 (Quota ownership) ratificação confirmation; cumulative INV §3.X promotion (3 NEW); RB-FM-305 + RB-FM-059 dry-run reports linked; customer-visible bytes_reclaimed + dedup_ratio metric forward S-16 |
+| Título | DASH-DEDUP Grafana 10-panel dashboard; alert rules SEV-0..3; SOTA bench comparison vs NativeLink + BuildBuddy publicado em report; sprint review STANDARD 5 sign-offs; ADR-0019 (TTL ownership S-07 supersedes S-04) + ADR-0020 (Quota ownership) ratificação confirmation; cumulative INV §3.X promotion (5 NEW canonical per Lote 10.7-tris cycle 5: EVICT-SOFT-DELETE-FIRST + EVICT-CASCADE-PREVENTED + EVICT-TTL-CAP-RESPECTED + LRU-CONSISTENCY + QUOTA-RESERVATION-TTL); RB-FM-305 + RB-FM-059 dry-run reports linked; customer-visible bytes_reclaimed + dedup_ratio metric forward S-16 |
 | Sprint | S-07 |
 | Lane | STANDARD |
 | Forcing factors | none |
@@ -49,7 +49,7 @@ Sprint ship gate: validate **all S-07 capabilities ship-ready** through observab
 3. **SOTA bench**: comparison report vs NativeLink OSS (~2.1×) + BuildBuddy enterprise (~2.8×); CoreLink target ≥ 2.5× (intra-tenant; cross-tenant deferred).
 4. **Runbook dry-runs**: RB-FM-305 (tombstone lost) + RB-FM-059 (DO quota exceeded) executed em staging.
 5. **ADR ratificação**: ADR-0019 (TTL ownership) + ADR-0020 (Quota ownership) confirmed em PRR Architect signoff.
-6. **Cumulative INV promotion** (3 NEW from S-07): INV-EVICT-SOFT-DELETE-FIRST + INV-EVICT-CASCADE-PREVENTED + INV-LRU-CONSISTENCY.
+6. **Cumulative INV promotion** (5 NEW from S-07 — canonical Lote 10.7-tris cycle 5; aligns registry §3.X L365-375): INV-EVICT-SOFT-DELETE-FIRST + INV-EVICT-CASCADE-PREVENTED + INV-EVICT-TTL-CAP-RESPECTED + INV-LRU-CONSISTENCY + INV-QUOTA-RESERVATION-TTL.
 
 ```yaml
 # observability/dashboards/dash-dedup.json
@@ -72,9 +72,9 @@ panels:
     threshold_critical: 0.95
   - title: "LRU Drift p99"
     type: timeseries
-    query: histogram_quantile(0.99, corelink_lru_drift_ms_bucket)
+    query: histogram_quantile(0.99, sum(rate(corelink_lru_drift_ms_bucket[5m])) by (le))
     sla_target_ms: 60000
-  - title: "Cascade Prevention (chunks ref'd; refused eviction)"
+  - title: "Cascade Prevention (blobs ref'd by active AC; refused eviction; BLOB-scope per Lote 10.7bis P0-8)"
     type: timeseries
     query: rate(corelink_evict_cascade_prevented_total[5m])
   - title: "95% Breach Events per Tenant"
@@ -116,7 +116,7 @@ S-07 ship gate gate consolidates all 4 prior WIs into **operational confidence**
 - **SOTA bench** is **revenue/marketing claim defensibility**: customer asks "why CoreLink vs NativeLink?", we cite measured dedup ratio comparison + benchmark report PDF.
 - **Runbook dry-runs** validate operational procedures end-to-end; RB-FM-305 (tombstone lost; S-06 inheritance verified) + RB-FM-059 (DO quota race; FM-059 mitigation verified).
 - **ADR ratificação** sealed: ADR-0019 (TTL ownership boundary clear S-04 vs S-07) + ADR-0020 (quota ownership boundary clear S-07 vs S-08).
-- **INV cumulative promotion**: 3 NEW invariants registered §3.X with traces to property tests + chaos.
+- **INV cumulative promotion**: 5 NEW invariants registered §3.X with traces to property tests + chaos (canonical Lote 10.7-tris cycle 5).
 
 **Why STANDARD lane** (NOT HIGH_RISK PRR):
 - Sprint contract §2 explicit: STANDARD; eviction is reversible; quota race-free via DO actor; dedup is metadata index.
@@ -179,18 +179,20 @@ Sprint ship gate; STANDARD lane.
    - Comparison: CoreLink dedup ratio measured vs NativeLink OSS (deployed locally; baseline) vs BuildBuddy (cited published claim 2.8×).
    - Methodology section: reproducible benchmark scripts em `benches/dedup-bench/`.
    - Honest report: if CoreLink < target, document gap + improvement plan; do NOT cherry-pick.
-5. **3 RB dry-run reports**:
+5. **2 RB dry-run reports** (canonical sprint contract §6 DoD: RB-FM-305 + RB-FM-059; Lote 10.7-tris cycle 3 fix; was 3 — drift from sprint contract):
    - **RB-FM-305 dry-run** (tombstone lost; consumed by WI-S07-002 ST-010): chaos PR simulates GC tombstone loss; engineer follows runbook; SLA detection ≤ 5min, remediation ≤ 30min, customer notif ≤ 1h. Report em `specs/_audits/2026-XX-XX-rb-fm-305-dry-run-s07.md`.
    - **RB-FM-059 dry-run** (DO quota exceeded; consumed by WI-S07-003 ST-011): chaos PR injects FM-059 race scenario; engineer follows runbook; verify DO atomic + reservation pattern catches; INV-QUOTA-ENFORCEMENT 0 violations. Report em `specs/_audits/2026-XX-XX-rb-fm-059-dry-run-s07.md`.
 6. **ADR ratificação confirmation**:
    - ADR-0019 (TTL ownership S-07 supersedes S-04): existing FROZEN (Lote 9.4); confirm no regressions; Architect cite-and-acknowledge in sprint review notes.
    - ADR-0020 (Quota ownership S-07 owns ≤95%, S-08 owns 100% hard-block): existing FROZEN; confirm boundary respected by WI-S07-002/003.
-7. **Cumulative INV §3.X promotion** (3 NEW; registry update):
+7. **Cumulative INV §3.X promotion** (5 NEW; registry update — canonical alignment Lote 10.7-tris cycle 4 fix; was 3, registry §3.X actual is 5):
    ```markdown
-   <!-- Add to invariant_registry.md §3.X (or NEW §3.18 S-07 section) -->
+   <!-- Add to invariant_registry.md §3.X (canonical 5 NEW per Lote 10.7-tris cycle 4) -->
    | INV-EVICT-SOFT-DELETE-FIRST | Eviction sets deleted_at; NEVER R2 DELETE direct | HIGH | WI-S07-002 §6.1.7 | chaos test #1 + property prop_evict_idempotent | N/A |
-   | INV-EVICT-CASCADE-PREVENTED | Pre-evict reachable check via json_each refuses if active_refcount > 0 | HIGH | WI-S07-002 §6.1.6 | chaos test #2 + property prop_evict_cascade_prevention | N/A |
+   | INV-EVICT-CASCADE-PREVENTED | Pre-evict reachable check via json_each refuses if blob ref'd by active ac_meta.blob_refs (BLOB-scope per Lote 10.7bis P0-8) | HIGH | WI-S07-002 §6.1.6 | chaos test #2 + property prop_evict_cascade_prevention | N/A |
+   | INV-EVICT-TTL-CAP-RESPECTED | Enterprise TTL ≤ 730d hard cap (CAP-EVICT-002) | MEDIUM | WI-S07-002 §6.1.3 | chaos test #7 + integration boundary | N/A |
    | INV-LRU-CONSISTENCY | Eviction respects authoritative last_accessed_at (DO buffered + D1 base UNION) | HIGH | WI-S07-004 §6.1.7 | chaos test #1 + property prop_lru_eviction_race | N/A |
+   | INV-QUOTA-RESERVATION-TTL | Pending reservations auto-release after size-proportional TTL min(7d, max(60s, req_bytes/1MB/s × 2)) | HIGH | WI-S07-003 §6.2 | chaos test #4 + property prop_quota_ttl_release | N/A |
    ```
 8. **Sprint review STANDARD 5 sign-off ceremony** (60min structured):
    - Pre-review: each role completes checklist evidence (Engineer peer, QA, AppSec, SRE; Owner curates).
@@ -201,7 +203,7 @@ Sprint ship gate; STANDARD lane.
      - All property tests 100k nightly green sustained 7d.
      - All chaos tests green.
      - SOTA bench report present em `benches/`.
-     - 3 RB dry-run reports present em `specs/_audits/`.
+     - 2 RB dry-run reports present em `specs/_audits/` (RB-FM-305 + RB-FM-059 per sprint contract §6 DoD).
      - DASH-DEDUP JSON validates Grafana schema.
      - Alert YAML validates Prometheus schema.
      - 5 sign-offs via PR review approvals.
@@ -220,7 +222,7 @@ Sprint ship gate; STANDARD lane.
 ## 7. Anti-Scope
 
 - ❌ Ship sem sprint review (5 sign-offs mandatory).
-- ❌ Ship sem 3 RB dry-runs.
+- ❌ Ship sem 2 RB dry-runs (RB-FM-305 + RB-FM-059 canonical per sprint contract §6 DoD; Lote 10.7-tris cycle 3 fix).
 - ❌ Ship sem SOTA bench report.
 - ❌ Ship sem ADR-0019/0020 ratificação confirmation.
 - ❌ Ship sem cumulative INV §3.X promotion.
@@ -271,10 +273,10 @@ Feature: S-07 sprint ship gate
     Given ADR-0020 file at FROZEN
     When sprint review Architect signoff
     Then sprint review notes cite ADR-0020 (Quota ownership boundary S-07 ≤95% vs S-08 100%)
-    And boundary respected by WI-S07-002 (95% trigger eviction) + WI-S07-003 (100% return 429)
+    And boundary respected by WI-S07-002 (95% trigger eviction) + WI-S07-003 (100% emits provisional 429 — transitional; S-08 owns canonical rate-limit DO per ADR-0020 FROZEN)
 
   Scenario: Cumulative INV §3.X promotion
-    Given invariant_registry.md updated with 3 NEW INVs
+    Given invariant_registry.md updated with 5 NEW INVs (canonical §3.X group; INV-DEDUP-CONSISTENCY in §3.3 separate domain)
     When validate_inv_promotion.py runs
     Then all WI-declared INVs (INV-EVICT-SOFT-DELETE-FIRST + INV-EVICT-CASCADE-PREVENTED + INV-LRU-CONSISTENCY) match registry
     And CI green
@@ -303,7 +305,7 @@ Feature: S-07 sprint ship gate
 - [ ] **10.s07.005.4** RB-FM-059 dry-run + post-mortem report.
 - [ ] **10.s07.005.5** ADR-0019 ratificação confirmed em sprint review notes.
 - [ ] **10.s07.005.6** ADR-0020 ratificação confirmed em sprint review notes.
-- [ ] **10.s07.005.7** 3 NEW INVs §3.X promovidas + validate_inv_promotion.py CI green.
+- [ ] **10.s07.005.7** 5 NEW INVs §3.X promovidas + validate_inv_promotion.py CI green (canonical Lote 10.7-tris cycle 4 alignment).
 - [ ] **10.s07.005.8** Sprint review 5 sign-offs collected; ship decision = GO.
 - [ ] **10.s07.005.9** Customer-visible metrics emit (consumed by S-16 forward).
 - [ ] **10.s07.005.10** CI ship-gate workflow `s07-ship-gate.yml` operational.
@@ -317,7 +319,7 @@ Feature: S-07 sprint ship gate
 - [ ] SOTA bench report published.
 - [ ] 2 RB dry-runs + post-mortems.
 - [ ] ADR-0019/0020 ratificadas + cited em sprint review.
-- [ ] 3 NEW INVs promovidas.
+- [ ] 5 NEW INVs promovidas (canonical §3.X group per Lote 10.7-tris cycle 4 alignment; INV-DEDUP-CONSISTENCY in §3.3 separate domain).
 - [ ] Sprint review 5 sign-offs.
 - [ ] CI ship-gate workflow green.
 
@@ -353,7 +355,7 @@ End-to-end validation of:
 
 - 14.s07.005.1: 10 panels + alerts validated; PagerDuty + Slack integration.
 - 14.s07.005.2: SOTA bench reproducible (scripts em benches/).
-- 14.s07.005.3: 2 RB dry-runs ≥ 3 runs each (Lote 10.6bis P0-W7-4 lesson absorbed).
+- 14.s07.005.3: 2 RB dry-runs (RB-FM-305 + RB-FM-059) executed em staging (sprint contract §6 DoD canonical; Lote 10.6bis P0-W7-4 lesson absorbed; design-readiness gate accepts ≥1 dry-run per RB).
 - 14.s07.005.4: Sprint review 60min structured.
 - 14.s07.005.5: ADR ratificação cite-and-acknowledge (rubber-stamp prevention; Sonnet R5 lesson).
 - 14.s07.005.6: validate_inv_promotion.py CI gate green.
@@ -467,14 +469,14 @@ D+0 dashboard authoring; D+2 alert rules; D+4 SOTA bench scripts run; D+5 RB dry
 
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
-| 1.0.0 | 2026-04-25 | Gustavo (Lote 10.7) | Criação WI-S07-005 (sprint ship gate); SOTA pós-Lote 10.6-tris lessons absorbed: ADR ratificação cite-and-acknowledge (rubber-stamp prevention); validate_inv_promotion CI gate; RB dry-run ≥3 runs (Lote 10.6bis lesson scaled down to STANDARD 1+ run sufficient); customer-visible metrics forward S-16. |
+| 1.0.0 | 2026-04-25 | Gustavo (Lote 10.7) | Criação WI-S07-005 (sprint ship gate); SOTA pós-Lote 10.6-tris lessons absorbed: ADR ratificação cite-and-acknowledge (rubber-stamp prevention); validate_inv_promotion CI gate; RB dry-run ≥1 run sufficient for STANDARD lane (Lote 10.6bis lesson scaled down); customer-visible metrics forward S-16. |
 
 ## 32. Anti-patterns evitados
 
-- ❌ Ship sem 5 sign-offs; ❌ Ship sem 3 RB dry-runs (2 here); ❌ Ship com cherry-picked bench; ❌ Skip ADR cite-and-acknowledge (rubber-stamp); ❌ Ship com INV count drift; ❌ Skip alert tune-in 2-week; ❌ DASH-DEDUP cardinality bomb (top-50 only).
+- ❌ Ship sem 5 sign-offs; ❌ Ship sem 2 RB dry-runs (RB-FM-305 + RB-FM-059; canonical per sprint contract §6 DoD); ❌ Ship com cherry-picked bench; ❌ Skip ADR cite-and-acknowledge (rubber-stamp); ❌ Ship com INV count drift; ❌ Skip alert tune-in 2-week; ❌ DASH-DEDUP cardinality bomb (top-50 only).
 
 ---
 
-**Fim WI-S07-005.** S-07 spec FULL completo (5 WIs STANDARD; 0 ADRs novos — usa ADR-0019/0020 existing; 3 NEW INVs §3.X).
+**Fim WI-S07-005.** S-07 spec FULL completo (5 WIs STANDARD; 0 ADRs novos — usa ADR-0019/0020 existing; 5 NEW INVs §3.X canonical per Lote 10.7-tris cycle 4).
 
 **Próximo**: dispatch 2-round adversarial reviews (Agent R4 + Sonnet R5) per Lote 10.X cycle pattern.

@@ -6,7 +6,7 @@ work_status: "READY"
 audit_status: "ACTIVE"
 version: "1.2.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-04-28"
 lane: "STANDARD"
 parent: "S-07"
 assignee: "Gustavo Schneiter"
@@ -24,10 +24,10 @@ inherits_from:
 tags: ["wi", "s07", "quota", "middleware", "tower", "do-atomic", "rate-limit", "standard"]
 ---
 
-# WI-S07-003 — Quota Enforcement Middleware (Tower layer; pre-write check `bytes_used + request_bytes ≤ tenant_quota.max_storage_bytes`; DO atomic counter via `quota-{tenant_id}` durable object pessimistic-check eliminating FM-059 race; 95% threshold triggers WI-S07-002 eviction; 100% returns `TENANT_QUOTA_EXCEEDED` 429 + Retry-After; latency adds ≤ 3ms p99 to write path)
+# WI-S07-003 — Quota Enforcement Middleware (Tower layer; pre-write check `bytes_used + request_bytes ≤ tenant_quota.max_storage_bytes`; DO atomic counter via `quota-{tenant_id}` durable object pessimistic-check eliminating FM-059 race; 95% threshold triggers WI-S07-002 eviction; 100% emits PROVISIONAL `TENANT_QUOTA_EXCEEDED` 429 + Retry-After (transitional implementation; canonical S-08 CAP-QUOTA-001 ships rate-limit DO with `Retry-After: days-until-month-reset` per ADR-0020 FROZEN); latency adds ≤ 3ms p99 to write path)
 
 > **doc_status:** DRAFT · **work_status:** READY · **lane:** STANDARD
-> **Parent:** [S-07](../sprint.md) · **Assignee:** Gustavo Schneiter
+> **Parent:** [S-07](../_spec_contract.md) (sprint contract; sprint.md not yet authored — defer to S-07-bis if full sprint doc needed) · **Assignee:** Gustavo Schneiter
 
 ---
 
@@ -36,7 +36,7 @@ tags: ["wi", "s07", "quota", "middleware", "tower", "do-atomic", "rate-limit", "
 | Campo | Valor |
 |---|---|
 | ID | WI-S07-003 |
-| Título | Tower middleware quota enforcement bound em write path (CAS PUT WI-S01-001, AC UpdateActionResult WI-S04-001, multipart SplitBlob WI-S05-001); pre-check `bytes_used + request_bytes ≤ tenant_quota.max_storage_bytes`; DO atomic counter via `quota-<tenant_id>` durable object pessimistic-check eliminating FM-059 race; 95% threshold triggers WI-S07-002 ad-hoc eviction; 100% returns 429 `TENANT_QUOTA_EXCEEDED` + Retry-After; latency adds ≤ 3ms p99 to write path; INV-QUOTA-ENFORCEMENT property test verified |
+| Título | Tower middleware quota enforcement bound em write path (CAS PUT WI-S01-001, AC UpdateActionResult WI-S04-001, multipart SplitBlob WI-S05-001); pre-check `bytes_used + request_bytes ≤ tenant_quota.max_storage_bytes`; DO atomic counter via `quota-<tenant_id>` durable object pessimistic-check eliminating FM-059 race; 95% threshold triggers WI-S07-002 ad-hoc eviction; 100% emits PROVISIONAL 429 `TENANT_QUOTA_EXCEEDED` + Retry-After (transitional; canonical S-08 CAP-QUOTA-001 rate-limit DO with `Retry-After: days-until-month-reset` per ADR-0020 FROZEN); latency adds ≤ 3ms p99 to write path; INV-QUOTA-ENFORCEMENT property test verified |
 | Sprint | S-07 |
 | Lane | STANDARD |
 | Forcing factors | none directly; INV-QUOTA-ENFORCEMENT (HIGH) inherited |
@@ -62,7 +62,7 @@ pub trait QuotaEnforcer: Send + Sync {
     ) -> Result<QuotaCheckResult, QuotaError>;
 
     /// Post-write commit: increments durable counter (called only after R2 PUT + D1 INSERT succeed).
-    /// Reservations not committed within TTL (default 60s) auto-released.
+    /// Reservations not committed within TTL auto-released. TTL = size-proportional `max(60s, request_bytes / MIN_UPLOAD_RATE_BYTES_PER_SEC * 2)` (canonical §6.2 Lote 10.7bis R5 P0-2).
     async fn commit_reservation(
         &self,
         tenant_ctx: &TenantCtx,
@@ -115,9 +115,10 @@ pub enum QuotaError {
 2. **Reservation pattern** (eliminates FM-059; **size-proportional TTL** Lote 10.7bis Sonnet R5 P0-2 fix):
    - Pre-write: `check_and_reserve(req_bytes)` → DO atomic increment pending counter; returns ReservationId + size-proportional TTL.
    - **Size-proportional TTL formula** (Lote 10.7bis R5 P0-2 fix; was hard-coded 60s — too short for multipart 160 GiB ~218min @ 100 Mbps):
-     - `ttl_seconds = max(60, (request_bytes / MIN_UPLOAD_RATE_BYTES_PER_SEC) * 2)` — 2× safety factor.
+     - `ttl_seconds = min(7 * 86400, max(60, (request_bytes / MIN_UPLOAD_RATE_BYTES_PER_SEC) * 2))` — floor 60s, ceiling 7d cap (Lote 10.7-tris cycle 3 fix), 2× safety factor.
      - `MIN_UPLOAD_RATE_BYTES_PER_SEC = 1_000_000` (1 MB/s lower-bound; CF Workers slow client tolerated).
      - At 1 GiB request: `1_073_741_824 / 1_000_000 * 2 = 2147s ≈ 36min` TTL.
+     - At extreme 1 TiB request: clamped to 7d ceiling (single client should not hold reservation > week).
      - At 160 GiB multipart: `171_798_691_840 / 1_000_000 * 2 = 343597s ≈ 95h` TTL — bounded em hard cap of 7d (604800s) to prevent indefinite reservation leak from abandoned uploads.
      - Hard cap: `min(ttl_seconds, 604800)` — 7d max; aligns com S-05 multipart_sessions sweeper window.
    - **Heartbeat extension** (alternative for multipart sessions; more rigorous): on each `UploadPart` RPC (S-05), re-extend reservation TTL via `extend_reservation(id, +TTL)` heartbeat — clean semantic, bounded operationally.
@@ -137,15 +138,15 @@ pub enum QuotaError {
 
 Quota enforcement é **the gate em write path** — sem isso, billing leak (cliente excede plan; storage cost ≥ revenue); com race condition (FM-059), high-throughput tenant escapes ao breach 100%. DO actor model eliminates race: cada tenant tem `quota-<tenant_id>` DO singleton; check-and-reserve é atomic (CF DO single-threaded actor); concurrent writes serializam at DO boundary.
 
-**Reservation TTL pattern** é load-bearing: middleware pre-checks + reserva → write happens → commit OR release. Se write crashes (Worker timeout, R2 503), reservation expira em 60s e é auto-released (não-leak). Comparado com naive "increment counter atomic on write success": com naive, race window é entre check (D1 SELECT bytes_used) e commit (D1 UPDATE +=); concurrent writes ambos pass check em ~1% sob 1k QPS → over-quota by 1%. Reservation pattern fecha essa race.
+**Reservation TTL pattern** é load-bearing: middleware pre-checks + reserva → write happens → commit OR release. Se write crashes (Worker timeout, R2 503), reservation expira em size-proportional TTL (`max(60s, req_bytes/1MB/s × 2x)` per §6.2 Lote 10.7bis R5 P0-2 fix; floor 60s for tiny requests, scales to ~36min @ 1 GiB) e é auto-released (não-leak). Comparado com naive "increment counter atomic on write success": com naive, race window é entre check (D1 SELECT bytes_used) e commit (D1 UPDATE +=); concurrent writes ambos pass check em ~1% sob 1k QPS → over-quota by 1%. Reservation pattern fecha essa race.
 
 **95% threshold ad-hoc eviction** é mecanismo proativo: ao detectar utilization ≥ 95%, middleware fires `WI-S07-002::execute_quota_trigger` antes do hit hard 100%; reduces customer-visible 429 frequency.
 
-**100% hard-block** retorna `TENANT_QUOTA_EXCEEDED` 429 + `Retry-After` header (per HTTP spec); cliente Bazel/Buck2 retries automaticamente; UX degradado mas previsível. **Hard-block é S-08 CAP-QUOTA-001 territory** (sprint contract §1 explicit boundary): S-07 owns ≤ 95% (eviction); S-08 owns 100% (rate-limit/429 layer). Middleware emite 429 mas hard-block infrastructure (rate-limit DO) é S-08. Por enquanto WI-S07-003 implementa 429 emit; S-08 enrich com rate-limit per-tenant.
+**100% hard-block boundary**: per ADR-0020 FROZEN, S-08 owns canonical 100% rate-limit/429 + Retry-After (rate-limit DO layer). S-07 WI-S07-003 emits PROVISIONAL 429 + Retry-After as transitional implementation: middleware-level response shape established now, but the canonical rate-limit DO infrastructure ships in S-08 CAP-QUOTA-001 (Lote 10.7-tris cycle 3 alignment). Boundary: ≤ 95% = S-07 eviction trigger; ≥ 100% = S-08 hard-block (S-07 emits provisional 429 deferring to S-08 for canonical rate-limit DO).
 
 **Adversarial scenarios**:
 - **High-throughput race** (FM-059): 100 concurrent writes ao 99% quota; sem DO atomic, todas passam check; over-quota 100×. Mitigação: DO actor + reservation pattern.
-- **Reservation leak**: write crashes; reservation never committed nor released; counts toward quota indefinitely. Mitigação: 60s TTL auto-release; D1 reconcile diário (S-09 forward) catches drift.
+- **Reservation leak**: write crashes; reservation never committed nor released; counts toward quota indefinitely. Mitigação: size-proportional TTL auto-release (`max(60s, req_bytes/1MB/s × 2x)` per §6.2; floor 60s); D1 reconcile diário (S-09 forward) catches drift.
 - **DO restart amid pending reservations**: DO state lost; pending reservations forgotten. Mitigação: DO durable storage (pending reservations persisted); cold start recovers from D1 base + replay reservations from durable storage.
 - **Tenant tier upgrade mid-quota**: max_storage_bytes increases atomic; in-flight reservations honored under new max. Mitigação: tenant_quota.updated_at watermark; DO refreshes max from D1 on each check.
 
@@ -165,7 +166,7 @@ Quota enforcement é **the gate em write path** — sem isso, billing leak (clie
 
 **SLA addendum**:
 - Quota check latency adds ≤ 3ms p99 to write path (sprint contract §10.s07.3).
-- 429 + Retry-After header per RFC 7231 §6.6.4.
+- 429 + Retry-After header per RFC 6585 §4 (canonical 429 Too Many Requests definition; Lote 10.7-tris cycle 6 anchor fix; was incorrectly RFC 7231 §6.6.4).
 - 95% threshold ad-hoc trigger latency: middleware-to-eviction-decision ≤ 500ms p99.
 - INV-QUOTA-ENFORCEMENT 0 violations (property test 10k + chaos race).
 
@@ -204,7 +205,7 @@ Tower middleware + DO singleton per tenant; STANDARD lane.
      - Read tenant_quota.max_storage_bytes from D1 (cached 5min em DO).
      - Compute would_use = bytes_used + sum(pending_reservations.bytes) + request_bytes.
      - If would_use > max → Err(Exceeded); audit emit `corelink.quota.exceeded`.
-     - Else: generate ReservationId (UUIDv7); insert pending_reservations[id] = (request_bytes, now + 60s); return Ok(QuotaCheckResult).
+     - Else: generate ReservationId (UUIDv7); compute `ttl_seconds = min(7 * 86400, max(60, request_bytes / MIN_UPLOAD_RATE_BYTES_PER_SEC * 2))` (§6.2 size-proportional canonical: floor 60s, ceiling 7d cap per ADR-0020); insert pending_reservations[id] = (request_bytes, now + ttl_seconds); return Ok(QuotaCheckResult).
      - If utilization_pct ≥ 0.95 → set `trigger_eviction = true` (caller invokes WI-S07-002 trigger).
    - **commit_reservation**:
      - Look up pending_reservations[id]; if not found → Err(NotFound).
@@ -217,8 +218,8 @@ Tower middleware + DO singleton per tenant; STANDARD lane.
 5. **D1 sync** (eventual consistency):
    - Every 5min, DO writes `tenant_storage_state.bytes_used` to D1 source-of-truth.
    - On DO cold start (worker restart): read `bytes_used` from D1; replay durable pending_reservations (DO storage); D1 + DO converge.
-6. **429 response with Retry-After**:
-   - Status 429 Too Many Requests (per RFC 7231).
+6. **429 response with Retry-After (PROVISIONAL — S-07 transitional; S-08 owns canonical per ADR-0020)**:
+   - Status 429 Too Many Requests (per RFC 6585 §4).
    - `Retry-After: 3600` header (default 1h; tunable per tier).
    - Body: JSON `{ "error": "TENANT_QUOTA_EXCEEDED", "details": { "would_use": ..., "max": ..., "retry_after_seconds": 3600 } }`.
    - Error code: `COR_S07_QUOTA_EXCEEDED` (NEW; add to error_taxonomy.md §15).
@@ -229,7 +230,7 @@ Tower middleware + DO singleton per tenant; STANDARD lane.
    - Trigger latency budget 500ms p99; if exceeds, write proceeds (eviction continues async).
 8. **TenantCtx-only** (Lote 10.4bis lesson): tenant_id from TenantCtx; `quota-<tenant_id>` DO ID derived from `(region, tenant_id)` deterministic.
 9. **Audit fail-closed** (Lote 10.6bis pattern): each check/commit/release audit-emit; on audit fail at commit, ROLLBACK reservation (release).
-10. **Métricas**:
+10. **Métricas** (CloudEvent dotted naming; Prometheus exposed name = underscored per convention; Lote 10.7-tris cycle 6 clarification):
     - `corelink.quota.check_total{result=ok|exceeded}` (counter).
     - `corelink.quota.check_duration_us` (histogram; SLO ≤ 3ms p99).
     - `corelink.quota.committed_bytes_total{tenant_id}` (counter).
@@ -242,16 +243,16 @@ Tower middleware + DO singleton per tenant; STANDARD lane.
 11. **Property tests** (10k iter PR; 100k nightly):
     - `prop_quota_atomic_no_race`: 1000 concurrent check_and_reserve at boundary 99%; assert NEVER over-quota; INV-QUOTA-ENFORCEMENT 0 violations.
     - `prop_quota_reservation_lifecycle`: check → commit OR release; bytes_used consistent.
-    - `prop_quota_ttl_release`: pending never committed; auto-released after 60s; no quota leak.
+    - `prop_quota_ttl_release`: pending never committed; auto-released after size-proportional TTL (floor 60s; scales with req_bytes per §6.2); no quota leak.
     - `prop_quota_tenant_isolation`: 1000 concurrent across tenants; no cross-tenant impact.
     - `prop_quota_tier_upgrade`: tier upgrade mid-quota; max_storage_bytes refreshed; in-flight reservations honored.
 12. **Chaos suite** (8 scenarios):
     - 1. **FM-059 race**: 1000 concurrent writes at 99.9% quota → DO actor serializes; 0 over-quota.
     - 2. **DO restart mid-pending**: DO killed; cold start; pending reservations recovered from durable storage.
     - 3. **D1 sync lag**: D1 down 10min; DO continues authoritative; on D1 recovery, sync completes; no data loss.
-    - 4. **Reservation TTL leak**: write crashes; reservation never committed; auto-release at 60s; bytes never counted.
+    - 4. **Reservation TTL leak**: write crashes; reservation never committed; auto-release at size-proportional TTL (floor 60s; §6.2); bytes never counted.
     - 5. **95% trigger storm**: 100 tenants reach 95% simultaneously; per-tenant trigger; no thundering herd (per-tenant DOs independent).
-    - 6. **100% hard-block**: tenant at 100%; new write returns 429 + Retry-After; cliente respects header.
+    - 6. **100% provisional 429**: tenant at 100%; new write returns PROVISIONAL 429 + Retry-After (transitional per ADR-0020; canonical S-08 ships rate-limit DO); cliente respects header.
     - 7. **Tier upgrade mid-flight**: customer upgrades free→solo at 99% quota; max increases; pending reservations honored.
     - 8. **Audit fail-closed**: audit emit fails at commit; reservation released (NOT committed); fail-closed bias.
 
@@ -267,7 +268,7 @@ Tower middleware + DO singleton per tenant; STANDARD lane.
 - ❌ D1-only quota check (race condition FM-059; use DO atomic).
 - ❌ Skip reservation pattern (race window).
 - ❌ Skip TTL auto-release (reservation leak).
-- ❌ Hard-coded 60s TTL (config-driven; default 60s).
+- ❌ Hard-coded TTL (canonical: size-proportional formula `max(60s, req_bytes/1MB/s × 2x)` per §6.2 Lote 10.7bis R5 P0-2; floor 60s).
 - ❌ TenantCtx bypass.
 - ❌ Skip audit emit.
 - ❌ Block writes ≥95% (95% triggers eviction; only 100% blocks; sprint contract §1 boundary).
@@ -298,7 +299,7 @@ Feature: Quota enforcement middleware
     Then eviction worker reclaims 6GB; bytes_used drops to 90GB
     Then write proceeds (reservation honored; commit increments to 92GB post-eviction)
 
-  Scenario: 100% hard-block returns 429
+  Scenario: 100% emits provisional 429 (S-07 transitional; S-08 canonical per ADR-0020)
     Given tenant T at 99GB used / 100GB max
     Given write request 2GB
     When middleware check_and_reserve(T, 2GB)
@@ -321,7 +322,7 @@ Feature: Quota enforcement middleware
   Scenario: Reservation TTL auto-release
     Given middleware reserves 1GB for write
     Given Worker crashes before commit_reservation called
-    When 60s TTL elapses
+    When size-proportional TTL elapses (`max(60s, req_bytes/1MB/s × 2x)` per §6.2; floor 60s for tiny requests)
     Then DO alarm scans pending_reservations
     Then expired reservation removed; bytes never counted
     Then bytes_used unchanged
@@ -355,10 +356,10 @@ Feature: Quota enforcement middleware
 ## 9. Design Decisions
 
 - 9.1: DO actor model per tenant `quota-<tenant_id>`; race-free serialization (FM-059 mitigation).
-- 9.2: Reservation pattern (60s TTL auto-release); eliminates check-then-commit race window.
+- 9.2: Reservation pattern (size-proportional TTL auto-release `max(60s, req_bytes/1MB/s × 2x)` per §6.2; eliminates check-then-commit race window).
 - 9.3: D1 sync 5min eventual consistency; DO authoritative em hot path.
 - 9.4: 95% threshold triggers eviction async-spawn; doesn't block write.
-- 9.5: 100% hard-block returns 429 + Retry-After (per RFC 7231 §6.6.4).
+- 9.5: 100% emits PROVISIONAL 429 + Retry-After (transitional per ADR-0020; per RFC 6585 §4; canonical S-08 ships rate-limit DO with `Retry-After: days-until-month-reset`).
 - 9.6: Tower middleware mounted AFTER auth_stack (TenantCtx must exist).
 - 9.7: TenantCtx-only enforcement (Lote 10.4bis lesson).
 - 9.8: Audit fail-closed at commit (Lote 10.6bis pattern).
@@ -386,7 +387,7 @@ Feature: Quota enforcement middleware
 
 - **INV-QUOTA-ENFORCEMENT** (HIGH; sprint contract §8): tenant real-time check; atomic via DO actor; 0 race violations.
 - **INV-TENANT-ISOLATION** (CRITICAL, TLA+): DO ID per-tenant; cross-tenant impossible.
-- **INV-QUOTA-RESERVATION-TTL** (HIGH, NEW promovida §3.X): pending reservations auto-release at 60s; no quota leak.
+- **INV-QUOTA-RESERVATION-TTL** (HIGH, NEW promovida §3.X): pending reservations auto-release at size-proportional TTL (`max(60s, req_bytes/1MB/s × 2x)` per §6.2 Lote 10.7bis R5 P0-2; floor 60s); no quota leak.
 
 ## 13. Artifacts Produced
 
@@ -464,7 +465,7 @@ STANDARD lane sprint review (5 sign-offs).
 ## 23. API Contract
 
 - Public: `QuotaEnforcer` trait + `QuotaCheckResult`, `QuotaError`, `ReservationId` types; `#[non_exhaustive]`.
-- HTTP: 429 + Retry-After per RFC 7231 §6.6.4.
+- HTTP: PROVISIONAL 429 + Retry-After per RFC 6585 §4 (transitional per ADR-0020; canonical S-08 CAP-QUOTA-001 rate-limit DO).
 - Error: `COR_S07_QUOTA_EXCEEDED` (NEW; add error_taxonomy.md §15).
 
 ## 24. Post-mortem Hooks
@@ -501,9 +502,9 @@ Tech talk (1h): "S-07 Quota: DO Actor + Reservation Pattern Eliminates FM-059"; 
 | ID | Risco | Prob | Det | Imp | Exp | Res | Mitigação |
 |---|---|---|---|---|---|---|---|
 | R-001 | FM-059 race condition | M | M | HIGH | M | LOW | DO atomic + reservation pattern; property test |
-| R-002 | Reservation leak (write crashes pre-commit) | M | L | LOW | L | LOW | 60s TTL auto-release |
+| R-002 | Reservation leak (write crashes pre-commit) | M | L | LOW | L | LOW | Size-proportional TTL auto-release (`max(60s, req_bytes/1MB/s × 2x)` per §6.2) |
 | R-003 | DO restart loses pending state | L | L | LOW | L | LOW | DO durable storage; D1 reconcile |
-| R-004 | D1↔DO sync lag > 60s | L | M | MEDIUM | L | LOW | Alert SEV-2; reconcile job |
+| R-004 | D1↔DO sync lag > 60s | L | M | MEDIUM | L | LOW | Alert SEV-1 + reconcile job (canonical per §post-mortem hooks; Lote 10.7-tris cycle 5 alignment) |
 | R-005 | False 429 (legitimate write blocked) | L | L | MEDIUM | L | LOW | Retry-After bounded; eviction relief |
 | R-006 | Customer upgrade race (max change mid-write) | L | L | LOW | L | LOW | DO refresh max on each check (5min) |
 | R-007 | Audit fail-closed false positive | L | M | MEDIUM | L | LOW | Retry audit; eventual ROLLBACK |
@@ -531,7 +532,7 @@ D+0 design (Architect; race analysis FM-059); D+2 AppSec (TenantCtx + audit); D+
 
 ## 32. Anti-patterns evitados
 
-- ❌ D1-only quota check (race); ❌ Skip reservation; ❌ Skip TTL auto-release; ❌ Hard-coded 60s TTL; ❌ TenantCtx bypass; ❌ Skip audit; ❌ Block ≥95% (95% triggers, 100% blocks); ❌ Skip Retry-After header.
+- ❌ D1-only quota check (race); ❌ Skip reservation; ❌ Skip TTL auto-release; ❌ Hard-coded fixed TTL (canonical: size-proportional per §6.2); ❌ TenantCtx bypass; ❌ Skip audit; ❌ Block ≥95% (95% triggers, 100% blocks); ❌ Skip Retry-After header.
 
 ---
 

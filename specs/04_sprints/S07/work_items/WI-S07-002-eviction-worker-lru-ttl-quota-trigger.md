@@ -6,7 +6,7 @@ work_status: "READY"
 audit_status: "ACTIVE"
 version: "1.2.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-04-28"
 lane: "STANDARD"
 parent: "S-07"
 assignee: "Gustavo Schneiter"
@@ -24,10 +24,10 @@ inherits_from:
 tags: ["wi", "s07", "eviction", "lru", "ttl", "quota", "soft-delete-first", "standard"]
 ---
 
-# WI-S07-002 — Eviction Worker (`worker-evict` cron daily 02:00 UTC + jitter ±10min per region; ad-hoc trigger ≥95% quota; LRU per `blob_meta.last_accessed_at`; TTL per-tier free=7d/solo=30d/team=90d/business=365d/enterprise=730d max; soft-delete-first reusing S-06 GC grace 72h; cascade prevention; INV-GC-001 inheritance — NEVER deletes reachable blob)
+# WI-S07-002 — Eviction Worker (`worker-evict` cron daily 02:00 UTC + jitter ±10min per region; ad-hoc trigger ≥95% quota; LRU per `blob_meta.last_accessed_at`; TTL per-tier free=7d/solo=30d/team=90d/business=365d/enterprise=365d default with admin override up to 730d max (canonical per ADR-0019; Lote 10.7-tris cycle 3 fix); soft-delete-first reusing S-06 GC grace 72h; cascade prevention; INV-GC-001 inheritance — NEVER deletes reachable blob)
 
 > **doc_status:** DRAFT · **work_status:** READY · **lane:** STANDARD
-> **Parent:** [S-07](../sprint.md) · **Assignee:** Gustavo Schneiter
+> **Parent:** [S-07](../_spec_contract.md) (sprint contract; sprint.md not yet authored — defer to S-07-bis if full sprint doc needed) · **Assignee:** Gustavo Schneiter
 
 ---
 
@@ -36,7 +36,7 @@ tags: ["wi", "s07", "eviction", "lru", "ttl", "quota", "soft-delete-first", "sta
 | Campo | Valor |
 |---|---|
 | ID | WI-S07-002 |
-| Título | Eviction worker (`crates/corelink-evict`); cron daily 02:00 UTC + jitter ±10min per region (PAT-JITTER-001); ad-hoc trigger quando tenant atinge 95% `tenant_quota.max_storage_bytes`; LRU policy via `blob_meta.last_accessed_at`; TTL per-tier (free=7d, solo=30d, team=90d, business=365d, enterprise=730d max — supersedes S-04 default 90d via ADR-0019); soft-delete-first (reuses S-06 GC grace 72h via `deleted_at`); cascade prevention (NEVER evict chunk still ref'd em manifest ativo; INV-GC-003 + INV-DEDUP-CONSISTENCY); INV-GC-001 inheritance NEVER violates (chaos test 30d staging) |
+| Título | Eviction worker (`crates/corelink-evict`); cron daily 02:00 UTC + jitter ±10min per region (PAT-JITTER-001); ad-hoc trigger quando tenant atinge 95% `tenant_quota.max_storage_bytes`; LRU policy via `blob_meta.last_accessed_at`; TTL per-tier (free=7d, solo=30d, team=90d, business=365d, enterprise=365d default with admin override cap 730d — supersedes S-04 default 90d via ADR-0019); soft-delete-first (reuses S-06 GC grace 72h via `deleted_at`); cascade prevention (BLOB-scope per Lote 10.7bis P0-8: NEVER evict blob ref'd by active `ac_meta.blob_refs`; chunk-level reachability owned by S-06 GC via `chunks.refcount`; INV-GC-001 inheritance); INV-GC-001 inheritance NEVER violates (chaos test 30d staging) |
 | Sprint | S-07 |
 | Lane | STANDARD |
 | Forcing factors | none directly (STANDARD per sprint contract); BUT cripto-adjacent invariant inheritance: INV-GC-001 (CRITICAL) MUST hold via S-06 grace + reconcile; degrade to chaos test gate |
@@ -44,7 +44,7 @@ tags: ["wi", "s07", "eviction", "lru", "ttl", "quota", "soft-delete-first", "sta
 ## 1. Intent
 
 Eviction worker enforça **storage cost discipline** via 3 mechanisms layered:
-1. **TTL per-tier**: AC entry expira após tier-specific window (free=7d ... enterprise=730d max).
+1. **TTL per-tier**: AC entry expira após tier-specific window (free=7d ... business=365d ... enterprise=365d default with admin override cap 730d per ADR-0019).
 2. **LRU**: blob_meta com `last_accessed_at < now - tier_lru_window` evicted (when quota pressure ≥95%).
 3. **Quota trigger**: ad-hoc evict pass quando tenant atinge 95% `max_storage_bytes`.
 
@@ -115,10 +115,10 @@ pub enum EvictionError {
      WHERE a.tenant_id = $1
        AND j.value = $2                             -- blob_digest under eviction consideration
        AND a.deleted_at IS NULL
-       AND a.created_at < $3                        -- evict_started_at_ms; legitimate-re-ref via UpdateAR AFTER this point is protected (INV-GC-004 strict-< inheritance pattern; Lote 10.6bis P0-1 idiom)
+       AND a.created_at < $3                        -- evict_started_at_ms; AC entries with created_at >= evict_started_at_ms are PROTECTED (canonical INV-GC-004 inheritance pattern; equivalent contrapositive SQL delete predicate; protect-if->= per gc_correctness.tla L152-154 — S-06 Lote 10.6 cycle 4/5 canonical)
      ```
-     - **Strict-`<` semantic**: AC entries created AT OR AFTER `evict_started_at_ms` are protected (race-correctness — eviction must NOT delete blob with concurrent UpdateAR re-ref); same boundary semantic as S-06 INV-GC-004 (Lote 10.6bis P0-3 + P0-1 lessons combined).
-     - Uses `json_each(a.blob_refs)` (NOT `LIKE '%digest%'` — Lote 10.6bis P0-1 lesson); index-friendly via existing `idx_ac_meta_tenant_deleted_at`.
+     - **Canonical `>=` protects (TLA-aligned)**: AC entries with `ac.created_at >= evict_started_at_ms` are PROTECTED — race-correctness: eviction must NOT delete blob with concurrent UpdateAR re-ref; same boundary semantic as S-06 INV-GC-004 protect-if-equal-or-newer per `gc_correctness.tla` L152-154 (Lote 10.6 cycle 4/5 canonical); equivalent SQL delete predicate `< evict_started_at_ms` (strict less-than for delete is the contrapositive).
+     - Uses `json_each(a.blob_refs)` (NOT `LIKE '%digest%'` — Lote 10.6bis P0-1 lesson); index-friendly via existing `idx_ac_meta_tenant_deleted` (canonical pós S-06 Lote 10.6 cycle 1).
      - **Crypto SME EMPHATIC mandatory** for race-correctness derivation (analogous to S-06 INV-GC-004 review).
 
 2. **TenantCtx-only enforcement** (Lote 10.4bis lesson): tenant_id from middleware; NEVER from request body.
@@ -134,7 +134,7 @@ pub enum EvictionError {
 ## 2. Narrative (≥ 250 palavras + cripto-adjacent risk justification)
 
 Eviction policy é **3-layer defense** contra storage cost overrun:
-1. **TTL per-tier** (CAP-EVICT-002): free tier 7d aggressive; enterprise 730d generous; reflects pricing semantics.
+1. **TTL per-tier** (CAP-EVICT-002): free tier 7d aggressive; enterprise 365d default (admin override cap 730d per ADR-0019); reflects pricing semantics.
 2. **LRU** (CAP-EVICT-001): cold blobs com `last_accessed_at < now - tier_lru_window` candidatos.
 3. **Quota trigger** (CAP-EVICT-003): 95% quota → eviction worker fires ad-hoc; reclaim até voltar abaixo de 90%.
 
@@ -200,7 +200,7 @@ Cron worker + reachable-check + tier-aware policy; STANDARD lane.
            Tier::Solo       => Duration::from_secs(30 * 86400),   // 30d
            Tier::Team       => Duration::from_secs(90 * 86400),   // 90d
            Tier::Business   => Duration::from_secs(365 * 86400),  // 365d
-           Tier::Enterprise => Duration::from_secs(730 * 86400),  // 730d max (capped per CAP-EVICT-002)
+           Tier::Enterprise => Duration::from_secs(365 * 86400),  // 365d default (canonical per ADR-0019 §Decision; max 730d via admin override; Lote 10.7bis cycle 2 fix)
        }
    }
    ```
@@ -232,7 +232,7 @@ Cron worker + reachable-check + tier-aware policy; STANDARD lane.
    WHERE a.tenant_id = ?
      AND j.value = ?                              -- blob_digest under eviction consideration
      AND a.deleted_at IS NULL
-     AND a.created_at < ?;                         -- evict_started_at_ms; strict-< race protection (legitimate-re-ref via UpdateAR AFTER this point is protected)
+     AND a.created_at < ?;                         -- evict_started_at_ms; race-protection: AC with created_at >= evict_started_at_ms is PROTECTED (canonical INV-GC-004 inheritance per gc_correctness.tla L152-154)
    ```
    - If `active_refcount > 0` → **CASCADE PREVENTED**; `cascade_prevented_count += 1`; skip eviction; emit metric.
    - **Eviction scope is BLOB-only** (Lote 10.7bis P0-8 fix): chunks (refcount-managed via `chunks` table) are S-06 GC's domain (sweep + grace + reconcile). WI-S07-002 NEVER touches chunks directly.
@@ -246,14 +246,14 @@ Cron worker + reachable-check + tier-aware policy; STANDARD lane.
    COMMIT;
    ```
    - If audit_outbox INSERT fails → ROLLBACK (Lote 10.6bis fail-closed pattern).
-8. **Quota trigger entry point** (consumed by WI-S07-003 middleware):
-   - When middleware detects `bytes_used / max_storage_bytes ≥ 0.95`, invokes `execute_quota_trigger(tenant_ctx, target_bytes_to_reclaim)`.
+8. **Quota trigger entry point** (consumed by WI-S07-003 middleware; canonical async fire-and-forget per Lote 10.7bis R5 P0-3):
+   - When middleware detects `bytes_used / max_storage_bytes ≥ 0.95`, invokes `worker::send_future(execute_quota_trigger(tenant_ctx, target_bytes_to_reclaim))` — async-spawn does NOT block hot path write (canonical Lote 10.7bis R5 P0-3 fire-and-forget; aligns WI-S07-003 §6 Gherkin L298 + design decision L361; cycle 6 sync→async alignment).
    - `target_bytes_to_reclaim` = `bytes_used - 0.90 * max_storage_bytes` (reclaim until 90% headroom).
-   - Synchronous trigger blocks middleware up to phase budget 500ms p99; longer offloaded to next daily cron.
+   - Async eviction phase budget 500ms p99 from trigger receipt to first soft-delete (observability target; not a sync block).
 9. **Cron DO scheduler** (delegate ADR-0019 / ADR-0042 cron pattern):
    - `wrangler.toml` cron entry: `cron = "0 2 * * *"` per region.
    - Sticky DO per region; alarm re-arm at start.
-10. **Métricas**:
+10. **Métricas** (spec uses CloudEvent dotted naming `corelink.evict.*`; Prometheus exposed metric names replace dots with underscores per `prometheus.io/docs/practices/naming/` convention — e.g., `corelink.evict.cron_fired_total` → `corelink_evict_cron_fired_total` em queries; Lote 10.7-tris cycle 6 clarification):
     - `corelink.evict.cron_fired_total{region}` (counter).
     - `corelink.evict.candidates_scanned_total{tenant_id}` (counter).
     - `corelink.evict.ttl_expired_total{tenant_id, tier}` (counter).
@@ -262,16 +262,16 @@ Cron worker + reachable-check + tier-aware policy; STANDARD lane.
     - `corelink.evict.cascade_prevented_total{tenant_id}` (counter; alert if drops abruptly = bug signal).
     - `corelink.evict.quota_trigger_fired_total{tenant_id}` (counter).
     - `corelink.evict.duration_ms{region}` (histogram; SLO ≤ phase budget).
-    - `corelink.evict.gc_invariant_violation_total` (counter; **alert if > 0; SEV-1**).
+    - `corelink.evict.gc_invariant_violation_total` (counter; **alert if > 0; SEV-0** — canonical INV-GC-001 inheritance is CRITICAL severity per invariant_registry; aligns WI-S07-005 ship-gate; Lote 10.7-tris cycle 5 fix).
 11. **Property tests** (10k iter PR; 100k nightly):
     - `prop_evict_idempotent`: re-run on already soft-deleted = no-op.
     - `prop_evict_tenant_isolation`: 1000 concurrent across tenants; no cross-tenant impact.
-    - `prop_evict_cascade_prevention`: chunk ref'd by manifest_chunks → eviction refused; 100% INV-GC-003 preserved.
+    - `prop_evict_cascade_prevention`: blob ref'd by active `ac_meta.blob_refs` (created_at < evict_started_at_ms) → eviction refused; 100% INV-GC-001 preserved (BLOB-scope per Lote 10.7bis P0-8; chunk reachability = S-06 GC scope).
     - `prop_evict_gc_race`: simulate S-06 mark phase concurrent with eviction; 0 INV-GC-001 violations.
     - `prop_evict_quota_trigger`: tenant at 95% quota → trigger fires; reclaims to 90%; 0 false positives.
 12. **Chaos suite** (8 scenarios; STANDARD floor 6 + 2 margin):
     - 1. **GC race**: S-06 mark phase fires; eviction fires; INV-GC-001 0 violations (chaos test 30d sustained per sprint contract DoD).
-    - 2. **Cascade prevention**: chunk ref'd by 5 manifests; eviction attempts; refused 5/5; cascade_prevented metric 5.
+    - 2. **Cascade prevention**: blob ref'd by 5 active AC entries (`ac_meta.blob_refs`); eviction attempts; refused 5/5; cascade_prevented metric 5 (BLOB-scope per Lote 10.7bis P0-8).
     - 3. **Cron stale**: worker panics mid-eviction; alarm re-arm-at-start triggers; no missed cycle.
     - 4. **Quota trigger storm**: 1000 tenants reach 95% simultaneously; per-tenant trigger; no cross-tenant interference.
     - 5. **Audit fail-closed**: audit_outbox INSERT fails; D1 batch ROLLBACK; no silent eviction.
@@ -308,7 +308,7 @@ Feature: Eviction worker LRU + TTL + quota trigger
 
   Scenario: Daily cron TTL eviction (free tier)
     Given tenant T (tier=free) with blob B last_accessed_at = now - 8d
-    Given blob B has refcount = 0 (no manifest_chunks, no ac_meta refs)
+    Given blob B has active_refcount = 0 (no `ac_meta.blob_refs` referencing B; chunk-level lifecycle = S-06 GC scope per Lote 10.7bis P0-8)
     When cron fires at 02:XX UTC (jittered)
     Then SELECT identifies B as candidate (last_accessed < now - 7d)
     Then reachable check returns active_refcount = 0
@@ -324,11 +324,11 @@ Feature: Eviction worker LRU + TTL + quota trigger
     Then B NOT marked candidate
     Then deleted_at remains NULL
 
-  Scenario: Cascade prevention (chunk ref'd by manifest)
-    Given blob B with chunk_digest C
-    Given manifest_chunks has row (tenant=T, chunk_digest=C, blob_digest=B2)
+  Scenario: Cascade prevention (blob ref'd by active AC)
+    Given blob B (digest=B)
+    Given ac_meta has row (tenant=T, blob_refs contains B, deleted_at IS NULL, created_at < evict_started_at_ms)
     When eviction attempts B
-    Then reachable check returns active_refcount = 1 (manifest_chunks hit)
+    Then reachable check returns active_refcount = 1 (ac_meta.blob_refs hit; canonical INV-GC-004 inheritance per Lote 10.7bis P0-8 scope-reduce)
     Then eviction REFUSED; cascade_prevented_count += 1
     Then deleted_at remains NULL
     Then audit emit corelink.evict.cascade_prevented
@@ -414,7 +414,7 @@ Feature: Eviction worker LRU + TTL + quota trigger
 ## 12. Invariants Validated
 
 - **INV-GC-001** (CRITICAL, registry §3.4 + TLA+): inherited via S-06 GC grace + reconcile; eviction NEVER violates (chaos test 30d sustained).
-- **INV-GC-003** (HIGH): refcount consistency preserved via cascade prevention (NEVER evict ref'd chunk).
+- **INV-GC-003** (HIGH): refcount consistency preserved via cascade prevention (NEVER evict ref'd blob; BLOB-scope per Lote 10.7bis P0-8 — chunk-level refcount owned by S-06 GC reconcile WI-S06-005).
 - **INV-CAS-IMMUTABILITY** (CRITICAL): eviction is metadata `deleted_at` mark; chunk body untouched.
 - **INV-DEDUP-CONSISTENCY** (HIGH; WI-S07-001 base): cascade prevention preserves dedup invariant.
 - **INV-TENANT-ISOLATION** (CRITICAL, TLA+): tenant-scoped strict.

@@ -25,7 +25,7 @@ tags: ["wi", "s07", "lru", "last_accessed_at", "hot-path", "do-batch", "race-tes
 # WI-S07-004 — `blob_meta.last_accessed_at` Hot Path Update via DO Singleton Batch (NOT atomic D1 UPDATE per GET — write amplification too high; bounded write-coalescing 30s window per region; eventual consistency tolerable for LRU; refresh threshold 60s — skip update if `now - last_accessed_at < 60s`) + Property Test 10k iter Race (Eviction vs concurrent GET; `last_accessed_at` racing with eviction `last_accessed < tier_lru_window`)
 
 > **doc_status:** DRAFT · **work_status:** READY · **lane:** STANDARD
-> **Parent:** [S-07](../sprint.md) · **Assignee:** Gustavo Schneiter
+> **Parent:** [S-07](../_spec_contract.md) (sprint contract; sprint.md not yet authored — defer to S-07-bis if full sprint doc needed) · **Assignee:** Gustavo Schneiter
 
 ---
 
@@ -180,13 +180,15 @@ LRU tracking library + DO singleton; STANDARD lane.
    - Returns MAX(DO_buffered, D1_base).
    - **Eviction worker (WI-S07-002) MUST use this method**, NOT direct D1 read.
 8. **TenantCtx-only** (Lote 10.4bis lesson).
-9. **Métricas**:
+9. **Métricas** (CloudEvent dotted naming; Prometheus exposed name = underscored per convention; Lote 10.7-tris cycle 6):
    - `corelink.lru.record_access_total{tenant_id}` (counter).
    - `corelink.lru.record_access_dedup_total` (counter; refresh threshold dedup).
    - `corelink.lru.buffer_size` (gauge per region).
    - `corelink.lru.flush_total{region, result=ok|partial|failed}` (counter).
    - `corelink.lru.flush_duration_ms{region}` (histogram).
-   - `corelink.lru.drift_ms{region}` (histogram; DO buffered timestamp - D1 base sync lag; SLO ≤ 60s p99).
+   - `corelink.lru.drift_ms{region}` (histogram; eviction `last_accessed_at` drift vs authoritative; consumed by WI-S07-005 LRU Drift p99 panel).
+   - `corelink.lru.consistency_violation_total{tenant_id}` (counter; INV-LRU-CONSISTENCY violation; alert SEV-1 if > 0; Lote 10.7-tris cycle 6 added — was referenced by WI-S07-005 alert L171 but not declared).
+   - `corelink.lru.do_d1_sync_lag_ms{region}` (histogram; DO buffered timestamp - D1 base sync lag; SLO ≤ 60s p99; symmetric with `corelink.quota.do_d1_sync_lag_ms`; cycle 6 metric-name disambiguation fix).
    - `corelink.lru.authoritative_lookup_total{source=do|d1|union}` (counter).
 10. **Property tests** (10k iter PR; 100k nightly):
     - `prop_lru_monotonic`: 1000 access records; assert last_accessed_at strict-monotonic (Lote 10.4bis INV-AC-TTL-MONOTONIC inheritance pattern).

@@ -6,7 +6,7 @@ work_status: "READY"
 audit_status: "ACTIVE"
 version: "1.1.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-04-28"
 lane: "STANDARD"
 parent: "S-07"
 assignee: "Gustavo Schneiter"
@@ -27,7 +27,7 @@ tags: ["wi", "s07", "dedup", "chunks", "findmissingblobs", "reapi", "standard"]
 # WI-S07-001 — Dedup Lookup via `chunks` table (PK `(tenant_id, chunk_digest)` + `refcount`; pre-existing S-05 schema; NO new index/migration needed) + FindMissingBlobs Otimizado (REAPI v2 §FindMissingBlobs RPC; client skip re-upload of chunks already in tenant; baseline ≥ 2.5× dedup ratio sustained 7d staging) + INV-DEDUP-CONSISTENCY enforcement (Lote 10.7bis P0-1 fix: was incorrectly `UNIQUE INDEX manifest_chunks(tenant_id, chunk_digest)` which would break dedup — multiple manifests share chunks; corrected to `chunks` table which already has correct PK from S-05 WI-S05-004)
 
 > **doc_status:** DRAFT · **work_status:** READY · **lane:** STANDARD
-> **Parent:** [S-07](../sprint.md) · **Assignee:** Gustavo Schneiter
+> **Parent:** [S-07](../_spec_contract.md) (sprint contract; sprint.md not yet authored — defer to S-07-bis if full sprint doc needed) · **Assignee:** Gustavo Schneiter
 
 ---
 
@@ -201,7 +201,7 @@ Indexed lookup library + REAPI handler; STANDARD lane.
    - 3. Batch size > 250 → `Err(BatchTooLarge)` + 400.
    - 4. D1 throttle on lookup → exponential backoff retry.
    - 5. Index size > 80% D1 limit → alert SEV-2; sharding plan triggered.
-   - 6. UNIQUE constraint violation attempt (duplicate INSERT) → caught + 409 + audit.
+   - 6. Duplicate INSERT same (tenant_id, chunk_digest) → ON CONFLICT bumps refcount (canonical dedup semantic per Lote 10.7bis P0-1; aligns prop_dedup_consistency property at §6.X above; was incorrectly framed as 409 reject in original spec — duplicate is normal dedup hit, not error).
    - 7. FindMissingBlobs with 0 input → returns empty Vec (not error).
    - 8. FindMissingBlobs with 1k input → chunked 4×250 batches; all results aggregated.
 
@@ -297,7 +297,7 @@ Feature: Dedup index + FindMissingBlobs
 
 ## 10. Completeness Criteria SOTA
 
-- [ ] **10.s07.001.1** D1 migration applied in staging; index built ≤ 5min @ 10M rows; verified via `EXPLAIN QUERY PLAN`.
+- [ ] **10.s07.001.1** Pre-existing S-05 `chunks` PK schema verified deploy-compatible (Lote 10.7bis P0-1: NO new migration; PK lookup `(tenant_id, chunk_digest)` already in WI-S05-004); `EXPLAIN QUERY PLAN` confirms index hit on chunk_exists query.
 - [ ] **10.s07.001.2** `chunk_exists` p99 ≤ 2ms criterion benchmark green.
 - [ ] **10.s07.001.3** `find_missing` p99 ≤ 50ms @ 250-batch criterion benchmark green.
 - [ ] **10.s07.001.4** Property tests 5 × 10k green; 100k nightly green sustained 7d.
@@ -314,16 +314,16 @@ Feature: Dedup index + FindMissingBlobs
 - [ ] Module compila + integration tests green.
 - [ ] All Gherkin scenarios green.
 - [ ] Property tests 10k green.
-- [ ] D1 migration deployed staging.
+- [ ] Pre-existing S-05 `chunks` PK schema verified in staging (Lote 10.7bis P0-1: NO new migration needed).
 - [ ] FindMissingBlobs REAPI v2 conformance green.
 - [ ] Métricas em DASH-DEDUP forward (consumed by WI-S07-005).
 - [ ] Architect + AppSec + SRE reviews.
 
 ## 12. Invariants Validated
 
-- **INV-DEDUP-CONSISTENCY** (HIGH, registry §3.X — already exists): 1:1 tenant_id+chunk_digest enforced by UNIQUE INDEX.
+- **INV-DEDUP-CONSISTENCY** (HIGH, registry §3.12 L162 — already exists; Lote 10.7-tris cycle 6 section ref fix): 1:1 (tenant_id, chunk_digest) → chunk_body enforced by `chunks` PK from S-05.
 - **INV-TENANT-ISOLATION** (CRITICAL, registry §3.1 + TLA+ tenant_isolation.tla): tenant_id scope strict; cross-tenant blocked.
-- **INV-CAS-IMMUTABILITY** (CRITICAL, registry §3.3): dedup is metadata-only; chunk body untouched.
+- **INV-CAS-IMMUTABILITY** (CRITICAL, registry §3.2 L86 — Lote 10.7-tris cycle 6 section ref fix; was incorrectly §3.3): dedup is metadata-only; chunk body untouched.
 - **INV-NEG-CACHE-MONOTONIC** (HIGH, registry §3.6): not directly applicable (dedup is positive cache); consistent.
 
 ## 13. Artifacts Produced
@@ -332,7 +332,7 @@ Feature: Dedup index + FindMissingBlobs
 |---|---|---|
 | Dedup module | `crates/corelink-dedup/` | Rust |
 | FindMissingBlobs handler | `crates/corelink-worker/src/handlers/find_missing_blobs.rs` | Rust |
-| D1 migration | `migrations/00X_dedup_index.sql` | SQL |
+| ~~D1 migration~~ | ~~`migrations/00X_dedup_index.sql`~~ — NOT NEEDED (Lote 10.7bis P0-1: pre-existing S-05 `chunks` PK suffices) | — |
 | Property tests | `crates/corelink-dedup/tests/prop_dedup.rs` | Rust |
 | Chaos suite | `tests/chaos_dedup.rs` | Rust |
 | REAPI conformance integration | `tests/reapi_findmissing_conformance.rs` | Rust |
@@ -363,7 +363,7 @@ STANDARD lane — sprint review (5 sign-offs); not full HIGH_RISK PRR.
 | ID | Sub-task | h |
 |---|---|---|
 | ST-001 | Module skeleton + DedupIndex trait | 1 |
-| ST-002 | D1 migration + index | 1.5 |
+| ST-002 | Verify pre-existing S-05 `chunks` PK deploy-compatibility (Lote 10.7bis P0-1: NO new migration; replaces removed migration sub-task) | 0.5 |
 | ST-003 | chunk_exists + find_missing impl + sqlx prepared | 3 |
 | ST-004 | FindMissingBlobs REAPI handler | 3 |
 | ST-005 | CTRL-ISO-005 cross-tenant gate + custom clippy lint | 2 |
@@ -407,7 +407,7 @@ STANDARD lane — sprint review (5 sign-offs); not full HIGH_RISK PRR.
 ## 25. Rollback / Recovery
 
 - Rollback: NO new index introduced em Lote 10.7bis P0-1 fix; uses `chunks` table PK from S-05. Rollback = revert handler code (FindMissingBlobs); dedup lookup falls back to existing S-05 patterns (chunks PK + manifest_chunks reverse lookup).
-- Recovery: re-build index from `manifest_chunks` (~5min @ 10M rows); no data loss.
+- Recovery: no rebuild needed — `chunks` PK is base storage (S-05 canonical); refcount derivable via reconcile S-06 WI-S06-005 if drift detected; no data loss.
 - RTO ≤ 15min; RPO 0 (index reproducible from base table).
 
 ## 26. Security & Privacy

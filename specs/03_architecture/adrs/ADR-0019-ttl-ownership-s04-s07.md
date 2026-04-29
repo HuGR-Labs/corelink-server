@@ -43,12 +43,16 @@ S-04 mantém entrega de **CAP-AC-004 infrastructure** (TTL worker, refresh on hi
 
 ## Migration plan
 
-Durante S-07 implementation:
-1. Pre-S-07: existing tenants têm TTL 90d default (S-04 setup).
-2. S-07 deploy: rollout per-tier defaults via DO config-singleton (S-13 admin plane).
-3. Free tenants com entries ativas > 7d: 14d notification email + grace period.
-4. Pós-grace: TTL aplicado per tier; entries expiradas seguem normal eviction flow.
-5. Audit trail: cada migration evento emite `corelink.ac.tier_migration` CloudEvent.
+**Execution scope amendment** (Lote 10.7-tris cycle 4 alignment): migration EXECUTION deferred to S-13 admin plane (config rollout) + S-13 notification surface (email infra), matching ADR-0020 email defer pattern. S-07 owns RUNTIME TTL resolution (`ttl_for_tier` + per-tier defaults wired into eviction worker); S-13 owns ROLLOUT mechanics (DO config-singleton push + 14d notification + grace handling). Audit event `corelink.ac.tier_migration` is emitted by S-13 migration worker (not S-07 eviction worker) — separation of concerns.
+
+Phased execution (S-13 owned):
+1. Pre-deploy: existing tenants têm TTL 90d default (S-04 setup).
+2. S-07 deploy (S-13 config-singleton push): rollout per-tier defaults via DO config (S-13 admin plane).
+3. Free tenants com entries ativas > 7d: 14d notification email + grace period (S-13 notification worker per ADR-0020 email infra defer pattern).
+4. Pós-grace: TTL aplicado per tier; entries expiradas seguem normal eviction flow (S-07 eviction worker consumes config).
+5. Audit trail: S-13 migration worker emits `corelink.ac.tier_migration` CloudEvent per migration event.
+
+S-07 deliverable scope: TTL config consumption + eviction flow respects new tier defaults (already covered by WI-S07-002 §6.1.3 `ttl_for_tier`). Migration orchestration is S-13 deliverable scope (ADR-0019 cycle 4 alignment).
 
 ## Consequences
 

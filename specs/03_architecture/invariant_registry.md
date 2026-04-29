@@ -3,9 +3,9 @@ id: "INVARIANT-REGISTRY"
 type: "invariant"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "0.1.0"
+version: "0.2.0"
 created: "2026-04-24"
-updated: "2026-04-24"
+updated: "2026-04-28"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -17,8 +17,8 @@ tags: ["architecture", "invariants", "registry", "tla"]
 # Invariant Registry — Catálogo Canônico de INV-XXX
 
 > **doc_status:** DRAFT
-> **Versão:** 0.1.0
-> **Última atualização:** 2026-04-24
+> **Versão:** 0.2.0
+> **Última atualização:** 2026-04-28 (Lote 10.7-tris cycle 5: S-07 INVs added §3.18; cycle 6 banner sync)
 > **Owner:** Gustavo Schneiter
 > **Aprovador Final:** Gustavo Schneiter
 > **Revisores:** ⚠️ **staffing-blocked** — promoção a `doc_status: FROZEN` bloqueada até ≥ 2 reviewers nomeados conforme roles indicados (endereça F-09 audit Lote 3+4)
@@ -369,10 +369,10 @@ INVs introduced by Sprint S-07 (Dedup + Eviction Policy; STANDARD lane). Promovi
 | INV | Description | Severity | Mechanism | Validation | TLA+ |
 |---|---|---|---|---|---|
 | **INV-EVICT-SOFT-DELETE-FIRST** | Eviction sets `blob_meta.deleted_at`; NEVER R2 DELETE direct (reuses S-06 GC grace 72h via WI-S06-004 physical-delete cron) | HIGH | WI-S07-002 §6.1.7 soft-delete batch; physical delete delegated to S-06 | Chaos test #1 + property `prop_evict_idempotent`; 30d sustained zero INV-GC-001 violations | N/A (architecture invariant; INV-GC-001 inheritance chain) |
-| **INV-EVICT-CASCADE-PREVENTED** | Pre-evict reachable check refuses if `active_refcount > 0` (chunks ref'd by manifest_chunks OR ac_meta.blob_refs); canonical `json_each` SQL idiom (Lote 10.6bis P0-1 lesson) | HIGH | WI-S07-002 §6.1.6 reachable check; SQL `(SELECT COUNT(*) FROM manifest_chunks ...) + (SELECT COUNT(*) FROM ac_meta a, json_each(a.blob_refs) j ...) AS active_refcount` | Chaos test #2 + property `prop_evict_cascade_prevention` | N/A (cascade prevention; INV-GC-003 + INV-DEDUP-CONSISTENCY combined) |
+| **INV-EVICT-CASCADE-PREVENTED** | Pre-evict reachable check refuses if blob is referenced via `ac_meta.blob_refs` (S-07 BLOB-scope); chunk-level reachability owned by S-06 GC via `chunks.refcount` + sweep (Lote 10.7bis P0-8 scope-reduce); canonical `json_each` SQL idiom | HIGH | WI-S07-002 §6.1.6 reachable check; SQL `SELECT COUNT(*) FROM ac_meta a, json_each(a.blob_refs) j WHERE a.tenant_id = ? AND j.value = ? AND a.deleted_at IS NULL AND a.created_at < ?` (race-protection contrapositive of INV-GC-004 protect-if->=); chunks lifecycle = S-06 GC scope NOT S-07 | Chaos test #2 + property `prop_evict_cascade_prevention` | N/A (cascade prevention; INV-GC-003 + INV-DEDUP-CONSISTENCY combined) |
 | **INV-EVICT-TTL-CAP-RESPECTED** | Enterprise TTL ≤ 730d hard cap (CAP-EVICT-002 boundary); admin override > cap rejected by validator | MEDIUM | WI-S07-002 §6.1.3 `ttl_for_tier` hard cap em config validator | Chaos test #7 (override rejection) + integration test boundary | N/A (config invariant) |
 | **INV-LRU-CONSISTENCY** | Eviction respects authoritative `last_accessed_at` via DO buffered + D1 base UNION lookup; 0 race violations (eviction NEVER deletes blob accessed within tier_lru_window even sob race) | HIGH | WI-S07-004 §6.1.7 `last_accessed_at_authoritative` MAX(DO_buffered, D1_base); WI-S07-002 reachable check consumes | Property test 10k iter `prop_lru_eviction_race` (sprint contract §6 DoD GC+Evict race) + chaos test #1 | N/A (architecture invariant; race-free correctness) |
-| **INV-QUOTA-RESERVATION-TTL** | Pending reservations auto-release after 60s TTL; eliminates FM-059 race window (concurrent writes at quota boundary); no quota leak | HIGH | WI-S07-003 §6.1.4 reservation lifecycle + DO alarm cleanup; sprint contract §15 R-S07-001 mitigation | Chaos test #4 + property `prop_quota_ttl_release` | N/A (DO actor model; race-free serialization) |
+| **INV-QUOTA-RESERVATION-TTL** | Pending reservations auto-release after size-proportional TTL `min(7d, max(60s, request_bytes / 1MB/s × 2))` (canonical Lote 10.7bis R5 P0-2; floor 60s, ceiling 7d); eliminates FM-059 race window (concurrent writes at quota boundary); no quota leak | HIGH | WI-S07-003 §6.2 reservation lifecycle + DO alarm cleanup; sprint contract §15 R-S07-001 mitigation | Chaos test #4 + property `prop_quota_ttl_release` | N/A (DO actor model; race-free serialization) |
 
 **Cross-references**:
 - `ADR-0019` documenta TTL ownership boundary S-04 → S-07 supersedes (per-tier defaults).
