@@ -82,7 +82,7 @@ Adversarial considerations:
 - **Reversibility**: one-way-door — bug shipped permite poisoning; rollback não recupera blobs já poisoned (clientes podem ter consumido).
 - **Type-driven invariant**: erro em compile-time (impossible to forget verify) >> runtime check (forgettable em refactor).
 
-Por isso exige: 10–12 sign-offs, TLA+ (`cas_integrity.tla` cobre InvPoisoningRejected), property test 10k iter, fuzz adversarial 1h nightly, criterion benchmark, SAST clean.
+Por isso exige: 11 sign-offs canonical HIGH_RISK, TLA+ (`cas_integrity.tla` cobre InvPoisoningRejected), property test 10k iter, fuzz adversarial 1h nightly, criterion benchmark, SAST clean.
 
 ## 3. Customer Impact & Journey
 
@@ -267,7 +267,7 @@ Não identificada decisão arquitetural disruptiva nova requerendo ADR. Patterns
 - [ ] Criterion benchmark commited com baseline.
 - [ ] Code review por 2 peers + Crypto SME (BLAKE3 review) + Security lead.
 - [ ] Documentação rustdoc completa + 3 examples.
-- [ ] PRR sign-offs 10-12 roles documented.
+- [ ] PRR sign-offs 11 roles canonical documented.
 
 ## 12. Invariants
 
@@ -314,7 +314,7 @@ Não identificada decisão arquitetural disruptiva nova requerendo ADR. Patterns
 
 ## 16. Production Readiness Review (HIGH_RISK = obrigatório)
 
-PRR doc em `specs/04_sprints/S01/PRR-WI-S01-002.md` (a criar pré-merge). Sign-offs 10-12 roles incluindo Crypto SME (BLAKE3 review).
+PRR doc em `specs/04_sprints/S01/PRR-WI-S01-002.md` (a criar pré-merge). Sign-offs 11 roles canonical incluindo Crypto SME (BLAKE3 review).
 
 ## 17. Sub-tasks
 
@@ -452,7 +452,7 @@ Triggers:
 4. **Adversarial review** (pre-merge): 10k poisoning attempts + 1000 partial-match timing analysis.
 5. **Pre-merge gate**: PRR sign-offs documented + criterion benchmark green + cargo-audit clean.
 
-## 30. Sign-off (HIGH_RISK = 10–12 roles)
+## 30. Sign-off (HIGH_RISK = 11 roles canonical)
 
 | Role | Name | Signed | Date |
 |---|---|---|---|

@@ -63,12 +63,12 @@ Implementar o **CAS write path mínimo viável** do CoreLink com integridade cri
 
 ### 2.2 Anti-scope
 
-- ❌ Multipart upload (blobs > 5 MiB) — próximo sprint.
-- ❌ Read path — WI separado em S02.
-- ❌ Action Cache (AC) — S03.
-- ❌ Garbage Collection — S04.
+- ❌ Multipart upload (blobs > 5 MiB) — S-05.
+- ❌ Read path — S-02.
+- ❌ Action Cache (AC) — S-04.
+- ❌ Garbage Collection — S-06.
 - ❌ Remote Execution (Fase 2 pós-GA).
-- ❌ Billing events — S05.
+- ❌ Billing events — S-10.
 - ❌ Frontend / admin UI — fora de escopo.
 
 ## 3. Customer Impact & Journey
@@ -145,7 +145,7 @@ Todas abaixo obrigatórias (framework §33.5.4.1 HIGH_RISK matrix):
 - [ ] Runbook `RB-FM-254` dry-run executado (EVT-017)
 - [ ] SBOM gerado + assinado (EVT-010 CycloneDX 1.5)
 - [ ] Adversarial review executado (EVT-025 pentest interno)
-- [ ] ADR-0015 (se emergir decisão arquitetural não prevista)
+- [ ] ADR-0043 (HMAC tenant prefix algorithm choice — forward; whitelisted em validate_references.py)
 
 ## 8. Dependencies
 
@@ -204,9 +204,9 @@ Herda de `security_model.md` + `privacy_model.md`. Delta local:
 - Todo incident P0/P1 durante ou pós-S01 → post_mortem obrigatório referenciando FM correspondente.
 - PRR signoff exige zero SEV-1 em 72h de staging rollout.
 
-## 14. Sign-off (HIGH_RISK — 10–12 roles)
+## 14. Sign-off (HIGH_RISK — 11 roles canonical)
 
-Ver tabela canônica em `00_framework.md §33.5.4.3`. Sprint S-01 exige **todos os 11 papéis** + Compliance + Adversarial = **13 total** (incluindo extensões sprint-only).
+Ver tabela canônica em `00_framework.md §33.5.4.3`. Sprint S-01 exige **os 11 papéis HIGH_RISK** (Compliance + Adversarial já incluídos no count canonical; alinhado com ADR-0034 solo-tier waiver).
 
 > Sign-off será preenchido ao final do sprint em `sprint.md §14.1`. Template em `specs/_templates/sprint_contract.md §20.1`.
 

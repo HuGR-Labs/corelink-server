@@ -3,9 +3,9 @@ id: "SPEC-CONTRACT-S01"
 type: "spec_contract"
 doc_status: "FROZEN"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.4.0"
 created: "2026-04-24"
-updated: "2026-04-24"
+updated: "2026-04-29"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -89,7 +89,7 @@ inherits_from:
 - [ ] Load test 10k QPS × 10 min staging (EVT-024).
 - [ ] Chaos: R2 latency inject + D1 failover (EVT-023).
 - [ ] Observability: `DASH-CAS` live + alertas armados (EVT-013).
-- [ ] PRR (EVT-016 sign-offs 10-12 roles).
+- [ ] PRR (EVT-016 sign-offs 11 roles canonical HIGH_RISK per framework §33.5.4.3).
 - [ ] Runbook `RB-FM-254` dry-run (EVT-017).
 - [ ] SBOM CycloneDX 1.5 signed (EVT-010 + EVT-011).
 - [ ] Adversarial review (EVT-025).
@@ -147,7 +147,7 @@ Total: ~206h PERT-weighted (~5 weeks 1 dev; 3 weeks 2 devs parcial). Buffer 5 di
 ## 14. Critérios de promoção
 
 - DoD §6 completa.
-- PRR approved (10-12 sign-offs).
+- PRR approved (11 sign-offs canonical HIGH_RISK).
 - Staging 72h sem SEV-1.
 
 ## 15. Riscos (registry expandido — 6 colunas)
@@ -161,6 +161,18 @@ Total: ~206h PERT-weighted (~5 weeks 1 dev; 3 weeks 2 devs parcial). Buffer 5 di
 | **HMAC key leak** (TDK exfil) | L | M | CRITICAL | L | LOW | Cloudflare Secrets Store; never logged; INV-CONF-AT-REST + KMS-backed. |
 | **Cross-tenant via path collision** (HMAC truncation) | L | M | CRITICAL | L | LOW | TenantPrefix newtype private field; single construction; TLA+ verifies; property test 100k. |
 | **Cost regression** > 10% baseline | M | L | MEDIUM | L | LOW | Lote 9.4 §14.10 cost regression gate; criterion benchmark. |
+
+---
+
+## 16. Changelog
+
+| Versão | Data | Autor | Mudança |
+|---|---|---|---|
+| 1.0.0 | 2026-04-24 | Gustavo | Spec contract retroativo (Lote 8.1). |
+| 1.1.0 | 2026-04-24 | Gustavo (Lote 9.4 SOTA elevation) | EVT addition + 6-col risk register + PERT explicit. |
+| 1.4.0 | 2026-04-29 | Gustavo (Lote 10.1bis cycle 3 codex SEAL remediation) | **2 P1 + 1 P2 fixed** (score 8.9→target ≥9.0): (a) **WI-005 batch payload contract** — explicit BatchUpdateBlobs aggregate cap ≤ 4 MiB (REAPI MaxBatchTotalSizeBytes); per-blob inline ≤ 4 MiB; ByteStream::Write 4-5 MiB single blob; §9.4 narrative + §14.5.9 memory budget reconciled (peak ≤ 8 MiB defensible per surface); §1 Intent + §1.6.1 body validation explicit. (b) **WI-005 proto type canonical** — BatchUpdateBlobs request format `build.bazel.remote.execution.v2.BatchUpdateBlobsRequest/Response` (não ByteStream WriteRequest); ByteStream::Write proto separado clarified §6.1.2. (c) **WI-006/007 CI artifact unification** — property tests workflow embedded em cas_foundation.yml (PR) + nightly.yml (extended) per WI-007 §6.1.1+6.1.2; fuzz harness path tenant_path_decode.rs unified (L171 + L320 alinhados). |
+| 1.3.0 | 2026-04-28 | Gustavo (Lote 10.1bis cycle 2 codex SEAL remediation) | **2 P1 ENGINEERING + 3 P2 EDITORIAL fixed** (score 7.1→8.6→target ≥9.0): (a) **WI-004 schema canonical** — `tenant_id BLOB`→`TEXT` + `digest 'BLAKE3 hex 64-char'`→`'algo:hex'` (per data_model.md §1 L71 + §2.1 L94 + §4.2 L253-254); audit_outbox `id`/`tenant_id` BLOB→TEXT for consistency; LINDDUN UUIDv4→UUIDv7. (b) **WI-005 gRPC status canonical** — 413=OUT_OF_RANGE→RESOURCE_EXHAUSTED (8) (alinha §9.6 L289 + bazelbuild/remote-apis v2.13.0); hash-mismatch AC code 13 (INTERNAL)→code 10 (ABORTED) canonical; full mapping table now includes gRPC numeric codes. (c) **WI-007 fuzz harness** — base32 → HMAC16 base64url canonical. (d) **WI-003 sign-off placeholder** — count ambiguity removed (Owner+FA já incluídos nos 11). |
+| 1.2.0 | 2026-04-28 | Gustavo (Lote 10.1bis cycle 1 codex SEAL remediation) | **4 codex 7.1 blockers fixed**: (a) **P0 blob_meta canonical** — WI-004 refcount DEFAULT 0→1 (S-06 GC mark requires `refcount > 0` reachability per data_model.md §4.2 L257); timestamps seconds → milliseconds (canonical); 3 AC scenarios updated (first INSERT refcount=1; refcount race initial=1 final=101); §9.4 design decision aligned. (b) **P1 TenantPrefix encoding** — WI-001+003 base32 → HMAC16 canonical (`b64(HMAC_SHA256)[0:16]` per remote_cache_product_profile.md §7.1 + storage_semantics_matrix.md §3); AC-4 renamed; helper renamed `to_hmac16`; key format strings unified; ST-004 description updated. (c) **P1 audit semantics WI-005** — split INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER (handler→outbox via D1 batch, this WI scope) from INV-AUDIT-APPEND-ONLY (S-09 chain immutability, downstream); §12 invariants table corrected; §10.5.5 completeness clarified. (d) **P1 WI-006 anti-scope alignment** — property test reframed for storage-layer (R2Reader direct, not REAPI read endpoint S-02); UUIDv4 → UUIDv7 canonical (data_model.md §3); arbitrary_cas_op enum clarified (Put + GetStorageLayer; Delete is S-06); refcount race scenario explicit S-01 scope. (e) **P2 ADR-0015 collision** — renamed to ADR-0043 (HMAC tenant prefix algorithm; ADR-0015 já alocado para reproducible-build-best-effort); 4 references updated + sprint.md DoD. (f) **P2 sign-off normalization** — 10-12/13 → 11 canonical (framework §33.5.4.3 HIGH_RISK matrix + ADR-0034 solo-tier waiver); 14 locations updated across spec_contract + sprint + 5 WIs. |
 
 ---
 

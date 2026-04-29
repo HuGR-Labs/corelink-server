@@ -54,7 +54,9 @@ proptest! {
         tenants in vec(any::<TenantId>(), 2..50),
         ops in vec(any::<CasOp>(), 100..1000)
     ) {
-        // Run ops; assert no cross-tenant read returned wrong tenant's blob
+        // Storage-layer test (R2Writer + R2Reader direct; not REAPI surface — REAPI read endpoint is S-02 anti-scope).
+        // Run write ops + storage-layer reads via WI-S01-003 R2Reader integration helper;
+        // assert no path collision (HMAC16 prefixes differ per tenant) and no cross-tenant byte access at R2 layer.
     }
 
     #[test]
@@ -137,9 +139,9 @@ Test infrastructure; HIGH_RISK; FF-HR-002 + FF-HR-005.
    - `prop_refcount_race_safe` — concurrent 100 increments + 100 decrements.
    - `prop_hmac_truncation_safe` — try construct valid path without TDK; expect impossible.
 3. **Helper module** `prop_helpers.rs` com:
-   - `arbitrary_tenant_id()` — UUID v4 generator.
+   - `arbitrary_tenant_id()` — UUID v7 generator (canonical per data_model.md §3 tenant_id schema).
    - `arbitrary_blob_body(max_size)` — Vec<u8> with bounded size.
-   - `arbitrary_cas_op()` — enum {Put, Get, Delete} com payload.
+   - `arbitrary_cas_op()` — enum {Put, GetStorageLayer} com payload (Get exercises R2Reader directly; REAPI Read endpoint is S-02 anti-scope; Delete is S-06 GC scope).
 4. **CI integration**: `cargo test --test prop_cas --release` em PR; nightly extended (100k iter).
 5. **Regression DB**: `tests/proptest-regressions/` versioned em git.
 
@@ -163,10 +165,10 @@ Test infrastructure; HIGH_RISK; FF-HR-002 + FF-HR-005.
 ```gherkin
 Feature: Property tests 10k iter
 
-  Scenario: Tenant isolation property
-    Given 50 tenants e 1000 random CAS ops distributed
-    When suite runs
-    Then 0 cross-tenant reads in 10k iterations
+  Scenario: Tenant isolation property (storage-layer)
+    Given 50 tenants e 1000 random CAS ops distributed (Put + storage-layer GetStorageLayer)
+    When suite runs (via WI-S01-003 R2Writer/R2Reader; REAPI Read endpoint NOT exercised — S-02 scope)
+    Then 0 cross-tenant byte access in 10k iterations (HMAC16 path injectivity holds)
     And test runtime ≤ 30s em CI
 
   Scenario: CAS integrity property
@@ -186,10 +188,10 @@ Feature: Property tests 10k iter
     When TenantPath::derive called for both
     Then 0 collisions observed
 
-  Scenario: Refcount race safety
-    Given 100 concurrent increments + 100 concurrent decrements
+  Scenario: Refcount race safety (D1 single-row atomic)
+    Given 100 concurrent BlobMetaStore.increment_refcount + 100 concurrent decrement_refcount (S-01 scope per WI-S01-004 §6.1.4)
     When all complete
-    Then final refcount == initial (no drift)
+    Then final refcount == initial (no drift; D1 single-statement atomic UPDATE RETURNING)
 
   Scenario: Property regression DB
     Given seed for known-failure case persisted
@@ -259,7 +261,8 @@ Não. Standard testing practice.
 | Main property test | `crates/corelink-worker/tests/prop_cas.rs` | Rust test |
 | Helpers | `crates/corelink-worker/tests/prop_helpers.rs` | Rust test mod |
 | Regression DB | `tests/proptest-regressions/` | text fixture |
-| CI workflow | `.github/workflows/property_tests.yml` | YAML |
+| CI workflow (PR) | embedded em `.github/workflows/cas_foundation.yml` (rust-test job per WI-S01-007 §6.1.1) | YAML |
+| CI workflow (nightly) | embedded em `.github/workflows/nightly.yml` (proptest-extended job per WI-S01-007 §6.1.2) | YAML |
 
 ## 14. Quality Standards SOTA
 

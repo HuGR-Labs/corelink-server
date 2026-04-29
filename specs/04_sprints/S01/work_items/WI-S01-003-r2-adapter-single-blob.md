@@ -62,9 +62,9 @@ impl R2Reader {
 }
 ```
 
-Path canônico (REG-NAMESPACE-001..005):
+Path canônico (REG-NAMESPACE-001..005; HMAC16 = `b64(HMAC_SHA256(TDK, tenant_id))[0:16]`):
 ```
-cas-<region>/<TenantPrefix-base32-16chars>/blake3/<hex[0:2]>/<hex[2:4]>/<full-hex>
+cas-<region>/<HMAC16>/blake3/<hex[0:2]>/<hex[2:4]>/<full-hex>
 ```
 
 Onde `TenantPrefix` é construído via S-01 WI-S01-001 `corelink-tenant-path` crate (HMAC-derived). `VerifiedBody` é o envelope from WI-S01-002 (already verify'd integrity).
@@ -92,7 +92,7 @@ R2 SDK choice: native Cloudflare Workers binding (`env.R2_BUCKET.put(key, value)
 - **FF-HR-005**: implementa CTRL-AUTH-004 (HMAC tenant prefix) na storage layer.
 - **Reversibility**: blob escrito em path errado é one-way-door — recovery requer manual sweep + customer notification.
 
-Por isso exige: 10–12 sign-offs, TLA+ tenant_isolation.tla cobrindo storage layer, property test 100k iter cross-tenant, chaos test R2 latency injection, RB-FM-253 dry-run.
+Por isso exige: 11 sign-offs canonical HIGH_RISK, TLA+ tenant_isolation.tla cobrindo storage layer, property test 100k iter cross-tenant, chaos test R2 latency injection, RB-FM-253 dry-run.
 
 ## 3. Customer Impact & Journey
 
@@ -120,7 +120,7 @@ Por isso exige: 10–12 sign-offs, TLA+ tenant_isolation.tla cobrindo storage la
 
 1. **`R2Writer` struct** + `put(ctx, VerifiedBody) -> Result<()>`:
    - Path derivation via `TenantPath::derive(ctx.tenant_id)`.
-   - Key format: `cas-<region>/<prefix-base32>/blake3/<hex[0:2]>/<hex[2:4]>/<full-hex>`.
+   - Key format: `cas-<region>/<HMAC16>/blake3/<hex[0:2]>/<hex[2:4]>/<full-hex>` (HMAC16 canonical per remote_cache_product_profile.md §7.1).
    - PutObject com `If-None-Match: *` (reject duplicate; idempotent semantics).
    - SSE-S3 enabled (default em CF R2; verify ativo).
 2. **`R2Reader` struct** + `get(ctx, digest) -> Result<Bytes>`:
@@ -171,7 +171,7 @@ Feature: R2 single-blob adapter
 
   Background:
     Given Tenant A authenticated with tenant_id "uuid-A"
-    And TenantPrefix(A) base32-16 = "ABC123XYZ4567PQR"
+    And TenantPrefix(A) HMAC16 (b64 URL-safe, 16 chars) = "ABC123XYZ4567PQR" (illustrative; real HMAC16 derived from TDK)
     And R2 bucket cas-wnam is provisioned
 
   Scenario: Successful PUT — happy path
@@ -342,7 +342,7 @@ Não identificada decisão arquitetural disruptiva nova. CF native binding é ca
 
 ## 16. Production Readiness Review
 
-PRR doc em `specs/04_sprints/S01/PRR-WI-S01-003.md`. Sign-offs 10-12 incluindo Architect (R2 SDK choice review).
+PRR doc em `specs/04_sprints/S01/PRR-WI-S01-003.md`. Sign-offs 11 canonical incluindo Architect (R2 SDK choice review).
 
 ## 17. Sub-tasks
 
@@ -440,9 +440,9 @@ Tech talk: "R2 + HMAC Tenant Path: 5-Layer Defense in Action" — record. Doc `d
 4. Adversarial (pre-merge): cross-tenant property test inspection.
 5. Pre-merge: PRR + criterion + chaos test.
 
-## 30. Sign-off (HIGH_RISK 10-12)
+## 30. Sign-off (HIGH_RISK 11 canonical)
 
-[Owner + Final Approver + 11 roles incluindo Architect (R2 review) + Security + Crypto SME (HMAC review)]
+[11 roles canonical HIGH_RISK (per framework §33.5.4.3; Owner + Final Approver já incluídos no count) — Architect (R2 review) + Security + Crypto SME (HMAC review) + ...]
 
 ## 31. Change Log
 

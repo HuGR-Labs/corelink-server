@@ -55,7 +55,7 @@ Implementar **crate Rust interno `corelink-tenant-path`** que encapsula a única
 pub fn derive_prefix(tdk: &TenantDerivationKey, tenant_id: Uuid) -> TenantPrefix;
 ```
 
-Onde `TenantPrefix` é `[u8; 16]` (16 bytes raw; encoding textual = base32 URL-safe para path R2). Zero call sites alternativos permitidos: compile-time enforcement via `#[deny(missing_docs, unsafe_code)]` + `pub(crate)` em `derive_prefix_raw_internal`.
+Onde `TenantPrefix` é `[u8; 16]` (16 bytes raw; encoding textual canônico = `HMAC16 = b64(HMAC_SHA256(TDK, tenant_id_bytes))[0:16]` per `remote_cache_product_profile.md §7.1` + `storage_semantics_matrix.md §3`). Zero call sites alternativos permitidos: compile-time enforcement via `#[deny(missing_docs, unsafe_code)]` + `pub(crate)` em `derive_prefix_raw_internal`.
 
 ## 2. Narrative (HIGH_RISK ≥ 300 palavras + risk justification)
 
@@ -63,7 +63,7 @@ O isolamento de tenant no CoreLink depende inteiramente do prefixo HMAC-SHA256 (
 
 O ataque direto é: **Tenant A autentica, deriva prefix `P_A`, mas por bug escreve em `P_B`** (path traversal via config drift, typo no test, ou erro de refactor em code review incompleto). Sistema acha que é write legítimo (HMAC válido; apenas o prefix apontado está errado). Blob de A aparece no namespace de B. Próxima leitura de B vê blob alheio. Cross-tenant exposure.
 
-A mitigação *é architectural*: centralizar derivação num ponto único, testável, type-safe. `TenantPrefix` é um newtype que **só** pode ser construído via `derive_prefix()`. Lib expõe 1 função pública + 1 helper de encoding (`to_base32_16chars`). Compile-time: nenhum caller pode construir `TenantPrefix` diretamente (field private). Se dev precisa de prefix, **obrigatoriamente** passa pela função. Se chamar derivação 2x com mesmo input, retorna mesmo output (determinismo).
+A mitigação *é architectural*: centralizar derivação num ponto único, testável, type-safe. `TenantPrefix` é um newtype que **só** pode ser construído via `derive_prefix()`. Lib expõe 1 função pública + 1 helper de encoding (`to_hmac16` — RFC 4648 §5 base64 URL-safe truncated 16 chars; alinha HMAC16 canonical). Compile-time: nenhum caller pode construir `TenantPrefix` diretamente (field private). Se dev precisa de prefix, **obrigatoriamente** passa pela função. Se chamar derivação 2x com mesmo input, retorna mesmo output (determinismo).
 
 Isso é o padrão **type-driven security**: o sistema de tipos carrega o invariante. Bugs de layer-above ficam impossíveis por construção.
 
@@ -73,7 +73,7 @@ Isso é o padrão **type-driven security**: o sistema de tipos carrega o invaria
 - Blast radius: todos os tenants em todas as regiões.
 - Reversibility: one-way-door se ship com bug — deploy rollback não recupera blobs já contaminados em outros namespaces.
 
-Por isso exige: 10–12 sign-offs, TLA+ check, property test 10k iter, SAST clean, adversarial review, chaos test, PRR completa.
+Por isso exige: 11 sign-offs canonical HIGH_RISK, TLA+ check, property test 10k iter, SAST clean, adversarial review, chaos test, PRR completa.
 
 ## 3. Customer Impact & Journey
 
@@ -105,7 +105,7 @@ Trace canônico: `auth_model.md §8.1 (5 camadas de defesa)` → camada 5 (R2 ke
 - Struct `TenantDerivationKey([u8; 32])` + `impl` pra load from Cloudflare Secrets binding.
 - Struct `TenantPrefix([u8; 16])` — newtype with private field.
 - Function `derive_prefix(tdk: &TenantDerivationKey, tenant_id: Uuid) -> TenantPrefix` (HMAC-SHA256, info="path" via HKDF).
-- Impl `Display` para `TenantPrefix` com encoding **base32 URL-safe + truncate 16 chars** (mais compacto que hex, e URL-safe sem padding).
+- Impl `Display` para `TenantPrefix` com encoding **HMAC16 canonical** = `b64(HMAC_SHA256(TDK, tenant_id_bytes))[0:16]` (RFC 4648 §5 base64 URL-safe; truncate 16 chars; alinha `remote_cache_product_profile.md §7.1` + `storage_semantics_matrix.md §3`; URL-safe sem padding).
 - Errors: `DeriveError` enum apenas para casos onde input é estruturalmente inválido (ex: TDK com tamanho errado — deveria ser impossível por construção, mas defense-in-depth).
 - Unit tests (12 cases): edge cases de HMAC, determinism, injectivity pair-wise com dataset fixo.
 - Property tests `proptest`: 10k iter — for all pairs of distinct tenant_ids, prefix outputs differ. Determinism.
@@ -159,12 +159,13 @@ When derive_prefix(T1, tid) e derive_prefix(T2, tid) são computados
 Then outputs são distintos
 ```
 
-### AC-4: Encoding base32 URL-safe
+### AC-4: Encoding HMAC16 canonical (b64 URL-safe)
 
 ```gherkin
 Given um TenantPrefix resultado de derive_prefix
 When Display é chamado
-Then output tem exatamente 16 caracteres ASCII do alfabeto base32 URL-safe
+Then output tem exatamente 16 caracteres ASCII do alfabeto base64 URL-safe (RFC 4648 §5)
+  And alinha contrato canonical HMAC16 = b64(HMAC_SHA256(TDK, tenant_id_bytes))[0:16] per remote_cache_product_profile.md §7.1
   And não contém padding ('=')
   And não contém caracteres reservados de URL (/, ?, #, %)
 ```
@@ -200,7 +201,7 @@ Then output é "TenantDerivationKey(REDACTED)" exatamente
 
 ### 9.1 HMAC-SHA256 vs HMAC-BLAKE3
 
-**Decidido:** HMAC-SHA256 (ADR pendente — ADR-0015 a criar).
+**Decidido:** HMAC-SHA256 (ADR-0043 forward — ADR-0015 já alocado para reproducible-build-best-effort; ADR-0043 é HMAC tenant prefix algorithm choice canonical para S-01).
 
 **Rationale:**
 - HMAC-SHA256 é FIPS 140-2 compliant; HMAC-BLAKE3 não.
@@ -237,7 +238,7 @@ Todas as checkboxes de §10 **+**:
 
 - [ ] TLA+ `tenant_isolation.tla` verde em CI (EVT-022) — invariante formal protegida.
 - [ ] PR approved por Tech Lead + Security Reviewer + Architect (EVT-015)
-- [ ] Sign-off §30 assinado por todos os 10-12 papéis HIGH_RISK (EVT-016)
+- [ ] Sign-off §30 assinado por todos os 11 papéis HIGH_RISK canonical (EVT-016)
 - [ ] Release tagged + SBOM CycloneDX 1.5 assinado (EVT-010 + EVT-011)
 - [ ] Documentation merged + linked em `auth_model.md §8.1` como implementação de camada 5.
 
@@ -289,20 +290,20 @@ Evidence: EVT-023 (CHAOS_EXPERIMENT_REPORT).
 
 ## 16. Production Readiness Review (HIGH_RISK = obrigatório)
 
-PRR separada — criar `PRR-S01-001-tenant-path.md` após implementação completa, seguindo `_templates/production_readiness_review.md` com lane=HIGH_RISK, 9–10 sign-offs.
+PRR separada — criar `PRR-S01-001-tenant-path.md` após implementação completa, seguindo `_templates/production_readiness_review.md` com lane=HIGH_RISK, 11 sign-offs canonical.
 
 ## 17. Sub-tasks
 
 - **ST-001**: Setup crate skeleton + Cargo.toml dependencies (2h)
 - **ST-002**: Implement `TenantDerivationKey` + HMAC-SHA256 wrapper (4h)
 - **ST-003**: Implement `derive_prefix` + HKDF-Expand (4h)
-- **ST-004**: Implement `TenantPrefix` newtype + base32 Display (3h)
+- **ST-004**: Implement `TenantPrefix` newtype + HMAC16 Display (b64 URL-safe truncated; canonical) (3h)
 - **ST-005**: Unit tests 12 cases (3h)
 - **ST-006**: Property tests 10k iter (4h)
 - **ST-007**: cargo-fuzz target + CI integration (3h)
 - **ST-008**: Criterion benchmark + baseline commit (2h)
 - **ST-009**: Rustdoc + README + integration em auth_model.md §8.1 (3h)
-- **ST-010**: ADR-0015 (HMAC algorithm choice) (2h)
+- **ST-010**: ADR-0043 (HMAC algorithm choice; tenant prefix derivation) (2h)
 - **ST-011**: Chaos experiments C-1, C-2 (4h)
 - **ST-012**: PRR preparation + sign-off orchestration (4h)
 
@@ -321,7 +322,7 @@ Total: ~38h efetivas (~5 dias úteis de 1 dev full-time em HIGH_RISK com revisõ
 |---|---|
 | Best case | 28h |
 | Most likely | 38h |
-| Worst case | 60h (se ADR-0015 trava em bikeshed ou HMAC bench falhar CF target) |
+| Worst case | 60h (se ADR-0043 trava em bikeshed ou HMAC bench falhar CF target) |
 | **PERT** (4O + B + W) / 6 | **~42h** |
 
 **T-shirt equivalente:** M (Medium, 1 sprint week).
@@ -410,10 +411,10 @@ Nenhum. Mantém TB-0..TB-5 canônicos.
 ## 29. Review Checkpoints (HIGH_RISK = code + design + pre-merge + adversarial)
 
 - **Design review** (após ST-003): Tech Lead + Security Lead revêem API + invariantes.
-- **Pre-PR review** (após ST-009): todos os 10–12 signoff roles chegam em parallel branches.
+- **Pre-PR review** (após ST-009): todos os 11 signoff roles canonical chegam em parallel branches.
 - **Adversarial review** (após merge em staging): pentest interno tentando forge prefix de outro tenant via fuzz + code review.
 
-## 30. Sign-off (HIGH_RISK = 10–12 roles; framework §33.5.4.3)
+## 30. Sign-off (HIGH_RISK = 11 roles canonical; framework §33.5.4.3)
 
 Preencher ao final. Alinha 1:1 com matriz canônica em `00_framework.md §33.5.4.3`.
 
@@ -450,4 +451,4 @@ Este WI foi estruturado para evitar explicitamente:
 
 ---
 
-**Fim de WI-S01-001.** Next: implementar ST-001 (skeleton crate). ADR-0015 (HMAC choice) a criar em paralelo.
+**Fim de WI-S01-001.** Next: implementar ST-001 (skeleton crate). ADR-0043 (HMAC choice; tenant prefix derivation) a criar em paralelo.

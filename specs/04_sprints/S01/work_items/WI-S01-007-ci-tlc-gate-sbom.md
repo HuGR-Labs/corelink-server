@@ -168,7 +168,7 @@ CI Infrastructure; HIGH_RISK; FF-HR-005.
 6. **Fuzz harnesses** em `crates/corelink-*/fuzz/fuzz_targets/`:
    - `digest_parse.rs` — parse hex digest from string.
    - `reapi_deserialize.rs` — REAPI proto bytes deserialization.
-   - `tenant_path_decode.rs` — base32 prefix decode.
+   - `tenant_path_decode.rs` — HMAC16 (base64url, 16 chars) prefix decode (canonical per remote_cache_product_profile.md §7.1).
 
 ### 6.2 Out-of-scope (deferred)
 
@@ -317,7 +317,7 @@ Validations enforced (não invariants per se):
 | deny.toml policy | `deny.toml` | TOML |
 | Fuzz harness — digest | `crates/corelink-hash/fuzz/fuzz_targets/digest_parse.rs` | Rust |
 | Fuzz harness — REAPI | `crates/corelink-worker/fuzz/fuzz_targets/reapi_deserialize.rs` | Rust |
-| Fuzz harness — path | `crates/corelink-tenant-path/fuzz/fuzz_targets/decode.rs` | Rust |
+| Fuzz harness — path | `crates/corelink-tenant-path/fuzz/fuzz_targets/tenant_path_decode.rs` | Rust |
 
 ## 14. Quality Standards SOTA
 
@@ -430,7 +430,7 @@ Doc `docs/internal/ci-gates.md` — explica each gate's rationale + how to debug
 2. Code (D+3): peer + Security.
 3. Validation PR (D+5): demonstrate gate behavior.
 
-## 30. Sign-off (HIGH_RISK 10-12)
+## 30. Sign-off (HIGH_RISK 11 canonical)
 
 11 roles incl. Security + AppSec emphatic.
 

@@ -47,7 +47,7 @@ tags: ["wi", "s01", "cas", "reapi", "bytestream", "batchupdateblobs"]
 
 ## 1. Intent
 
-Implementar Worker handlers para REAPI v2 `ContentAddressableStorage::BatchUpdateBlobs` (small blobs ≤ 4 MiB inline) + `ByteStream::Write` (single blob ≤ 5 MiB streaming) que orchestram:
+Implementar Worker handlers para REAPI v2 `ContentAddressableStorage::BatchUpdateBlobs` (per-blob inline ≤ 4 MiB; **aggregate request ≤ 4 MiB** = REAPI `MaxBatchTotalSizeBytes` advertised via `Capabilities.GetCapabilities`; blobs > 4 MiB devem usar ByteStream::Write) + `ByteStream::Write` (single blob ≤ 5 MiB streaming) que orchestram:
 
 ```rust
 async fn batch_update_blobs(ctx: TenantCtx, req: BatchUpdateBlobsRequest)
@@ -59,7 +59,7 @@ async fn bytestream_write(ctx: TenantCtx, req_stream: impl Stream<Item = WriteRe
 
 Cada handler:
 1. **Auth middleware** valida PAT + injeta `TenantCtx` (S-03 stub).
-2. **Body validation**: size ≤ 5 MiB (HTTP 413 se exceeds; multipart é S-05).
+2. **Body validation**: BatchUpdateBlobs aggregate ≤ 4 MiB (REAPI MaxBatchTotalSizeBytes; HTTP 413 se exceeds → cliente fragmenta) OR ByteStream::Write single blob ≤ 5 MiB (HTTP 413 se exceeds; multipart é S-05).
 3. **VerifiedBody::new** (WI-S01-002) valida hash → reject COR_CAS_DIGEST_MISMATCH se mismatch.
 4. **R2Writer.put** (WI-S01-003) escreve com HMAC tenant path + If-None-Match.
 5. **BlobMetaStore.insert** (WI-S01-004) idempotent INSERT.
@@ -80,9 +80,9 @@ Mitigação:
 2. **Streaming size guard**: count bytes durante read; abort early se exceeds 5 MiB; return 413.
 3. **WI-S01-002 + WI-S01-003 design** garantem race-safety: VerifiedBody enforces hash match; R2 If-None-Match enforces write-once.
 4. **error_taxonomy mapping** explicit: each Result variant → specific COR_* code → SDK throws specific exception.
-5. **Audit emission é fail-closed**: se audit emit falha, write é rolled back (R2 best-effort delete; D1 row not inserted).
+5. **Audit OUTBOX INSERT é fail-closed** (handler → `audit_outbox` table via D1 `db.batch` atomic; INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER): se outbox INSERT falha, write é rolled back (R2 best-effort delete; D1 `blob_meta` row not committed). Drain do outbox para S-09 audit chain é assíncrono best-effort com at-least-once + dedup por `request_id`; INV-AUDIT-APPEND-ONLY é enforced no chain (S-09 owner), não aqui.
 
-REAPI v2 conformance: BatchUpdateBlobs request format proto-defined (`google::bytestream::WriteRequest`); response format proto-defined; gRPC status codes mapped consistently (400=INVALID_ARGUMENT, 401=UNAUTHENTICATED, 403=PERMISSION_DENIED, 409=ABORTED ou ALREADY_EXISTS, 413=OUT_OF_RANGE, 500=INTERNAL).
+REAPI v2 conformance: BatchUpdateBlobs request/response format proto-defined em `build.bazel.remote.execution.v2.BatchUpdateBlobsRequest` + `BatchUpdateBlobsResponse` (per `bazelbuild/remote-apis @ v2.13.0` `remote_execution.proto`); ByteStream::Write usa `google::bytestream::WriteRequest` (proto separado; handler distinto §6.1.2). gRPC canonical status codes mapped consistently + gRPC numeric codes: 400=INVALID_ARGUMENT (3), 401=UNAUTHENTICATED (16), 403=PERMISSION_DENIED (7), 409=ABORTED (10) ou ALREADY_EXISTS (6), 413=RESOURCE_EXHAUSTED (8) (per §9.6 — não OUT_OF_RANGE which é read-past-EOF), 500=INTERNAL (13).
 
 **Risk justification HIGH_RISK:**
 - **FF-HR-002**: TenantCtx propagation bug = cross-tenant catastrophic.
@@ -186,7 +186,7 @@ Feature: BatchUpdateBlobs handler
     Given Request { digest=D_X, data=different_content }
     When handler processes
     Then VerifiedBody::new returns HashMismatch
-    And response status[0] = code 13 (ABORTED) com message "digest mismatch"
+    And response status[0] = code 10 (ABORTED) com message "digest mismatch" (gRPC canonical: ABORTED=10; INTERNAL=13)
     And HTTP equivalent maps to 409
     And audit "corelink.cas.poisoning_attempt" emitted
     And R2 NOT called
@@ -278,7 +278,7 @@ D1-first criaria index sem blob físico → read-side 404 + AuthZ confusion + cl
 
 ### 9.4 Why streaming size guard (não Content-Length trust)
 
-Atacante pode mentir Content-Length. Stream guard count bytes durante read; abort em 5 MiB threshold antes de OOM. Memory bounded: ≤ 5 MiB per stream + buffer overhead = ≤ 8 MiB peak Worker.
+Atacante pode mentir Content-Length. Stream guard count bytes durante read; abort em threshold antes de OOM. Memory bounded por surface: (a) **ByteStream::Write**: ≤ 5 MiB single body + buffer overhead = ≤ 8 MiB peak Worker. (b) **BatchUpdateBlobs**: aggregate ≤ 4 MiB total (REAPI MaxBatchTotalSizeBytes) + bounded concurrency 16 inflight + buffer overhead = ≤ 8 MiB peak Worker (todos os blobs in-flight cabem dentro do aggregate cap; 16-concurrency aplica ao R2 PUT round-trip parallelism, não a buffers independentes per blob). Both surfaces unified em ≤ 8 MiB peak budget canonical.
 
 ### 9.5 Why bounded concurrency em batch (16 concurrent puts)
 
@@ -298,7 +298,7 @@ REAPI v2 conformance + gRPC canonical mapping: `OUT_OF_RANGE` é semantica read-
 - [ ] **10.5.2** Property test 100k iter cross-tenant attempts → 0 successes (EVT-002).
 - [ ] **10.5.3** Latency SLO-LAT-CAS-PUT p99 ≤ 1s sustained 72h staging (EVT-021).
 - [ ] **10.5.4** error_taxonomy mapping completa: 100% Result variants → COR_* code (EVT-002).
-- [ ] **10.5.5** Audit emission fail-closed verified em chaos test.
+- [ ] **10.5.5** Audit OUTBOX INSERT fail-closed verified em chaos test (INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER); drain to S-09 chain at-least-once verified em integration test.
 - [ ] **10.5.6** Cost regression gate: handler hot path benchmark (§14.10).
 
 ## 11. DoD
@@ -317,7 +317,8 @@ REAPI v2 conformance + gRPC canonical mapping: `OUT_OF_RANGE` é semantica read-
 - INV-CAS-INTEGRITY (CRITICAL): VerifiedBody envelope enforced.
 - INV-CAS-IMMUTABILITY (CRITICAL): R2 If-None-Match + D1 INSERT OR IGNORE.
 - INV-CAS-IDEMPOTENCY (CRITICAL): same digest → same body byte-identical.
-- INV-AUDIT-APPEND-ONLY (CRITICAL): audit emit fail-closed.
+- INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER (CRITICAL): handler→outbox INSERT atomic via D1 batch; fail-closed rollback (canonical scope para este WI).
+- INV-AUDIT-APPEND-ONLY (CRITICAL; downstream): chain immutability enforced em S-09 audit chain (reference apenas; não enforced neste WI).
 
 ## 13. Artifacts Produced
 
@@ -343,7 +344,7 @@ REAPI v2 conformance + gRPC canonical mapping: `OUT_OF_RANGE` é semantica read-
 - **14.5.6** Métricas RED + outbox lag gauge + dual-write rollback counter.
 - **14.5.7** Runbooks: RB-FM-403 (size limit storm), RB-FM-OUTBOX-DRAIN, RB-FM-254 (R2 5xx storm).
 - **14.5.8** Breaking changes em REAPI proto = sprint-spec ADR + client migration plan.
-- **14.5.9** Memory bounded: ≤ 8 MiB peak Worker (5 MiB body + buffer overhead).
+- **14.5.9** Memory bounded: ≤ 8 MiB peak Worker per request — ByteStream::Write (5 MiB body + 3 MiB overhead) OR BatchUpdateBlobs (≤ 4 MiB aggregate + ≤ 4 MiB scratch). Surface caps documented em `Capabilities.GetCapabilities` REAPI response.
 - **14.5.10** Cost regression gate em CI: per-op cost ≤ $0.000010; weekly bench panel.
 
 ## 15. Chaos Experiments

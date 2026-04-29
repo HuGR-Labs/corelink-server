@@ -48,11 +48,11 @@ Schema canônico D1 para `blob_meta` (per-region) com migration idempotente + re
 
 ```sql
 CREATE TABLE IF NOT EXISTS blob_meta (
-    digest           TEXT NOT NULL,           -- BLAKE3 hex 64-char
-    tenant_id        BLOB NOT NULL,           -- UUID v7 16-byte (canonical: UUID v7 per ADR; v4 era anterior)
-    refcount         INTEGER NOT NULL DEFAULT 0 CHECK (refcount >= 0),
+    digest           TEXT NOT NULL,           -- canonical 'algo:hex' (e.g. 'blake3:a1b2c3...'; per data_model.md §1 L71 + §2.1 L94)
+    tenant_id        TEXT NOT NULL,           -- UUIDv7 canonical text form (per data_model.md §4.2 L254 + §2.1 L91)
+    refcount         INTEGER NOT NULL DEFAULT 1 CHECK (refcount >= 0),  -- canonical data_model.md §4.2 (S-06 GC mark depends on refcount > 0 reachability; first write yields refcount=1 per sprint.md §1.4)
     size_bytes       INTEGER NOT NULL CHECK (size_bytes > 0),
-    created_at       INTEGER NOT NULL,        -- Unix epoch seconds (SQLite INTEGER é 64-bit; safe ~ano 292B)
+    created_at       INTEGER NOT NULL,        -- Unix epoch milliseconds (canonical data_model.md §4.2; SQLite INTEGER é 64-bit; safe ~ano 292B)
     last_accessed_at INTEGER NOT NULL,
     deleted_at       INTEGER,                 -- NULL = alive; non-NULL = tombstoned
     PRIMARY KEY (tenant_id, digest)
@@ -68,8 +68,8 @@ CREATE INDEX idx_blob_meta_gc_candidates
 
 -- Audit outbox table (consumed por WI-S01-005 Outbox Pattern; vide ADR-0027)
 CREATE TABLE IF NOT EXISTS audit_outbox (
-    id           BLOB PRIMARY KEY,            -- UUID v7
-    tenant_id    BLOB NOT NULL,
+    id           TEXT PRIMARY KEY,            -- UUIDv7 text form
+    tenant_id    TEXT NOT NULL,
     digest       TEXT,                        -- nullable (não-blob events)
     request_id   TEXT NOT NULL,               -- client-provided idempotency key
     event_type   TEXT NOT NULL,               -- corelink.cas.put_completed | poisoning_attempt | ...
@@ -168,7 +168,7 @@ Feature: blob_meta schema + refcount
 
   Scenario: First INSERT — happy path
     When BlobMetaStore.insert(uuid-A, D_X, 5000) called
-    Then row exists: (tenant_id=uuid-A, digest=D_X, refcount=0, size_bytes=5000, deleted_at=NULL)
+    Then row exists: (tenant_id=uuid-A, digest=D_X, refcount=1, size_bytes=5000, deleted_at=NULL)
     And InsertOutcome::Inserted returned
 
   Scenario: Idempotent duplicate INSERT
@@ -189,9 +189,9 @@ Feature: blob_meta schema + refcount
     And refcount independent per tenant
 
   Scenario: Atomic refcount increment
-    Given row (uuid-A, D_X, refcount=0)
+    Given row (uuid-A, D_X, refcount=1) (canonical first-write default)
     When 100 concurrent increment_refcount called
-    Then final refcount == 100 (no race; D1 transaction atomic)
+    Then final refcount == 101 (no race; D1 transaction atomic)
 
   Scenario: Soft-delete tombstone
     When BlobMetaStore.soft_delete(uuid-A, D_X) called
@@ -223,9 +223,9 @@ Composite primary key combina:
 
 Tombstoned blobs accumulate até physical delete (S-06 grace period 72h). Sem partial index, queries sobre alive set scan tombstones too. Partial index keeps alive-set queries O(log n_alive) sem n_total.
 
-### 9.4 Why INTEGER timestamps (Unix epoch seconds)
+### 9.4 Why INTEGER timestamps (Unix epoch milliseconds)
 
-D1 SQLite TEXT date format slow + indexable inconsistente. INTEGER unix epoch = atomic compare + sortable + index-friendly. SQLite **INTEGER é 64-bit nativo** (não 32-bit; signed 32-bit rolls em 2038, unsigned 32-bit em 2106 — ambos irrelevantes aqui). Y2106/2038 não-aplicável; safe até ~ano 292B (signed 64-bit max).
+D1 SQLite TEXT date format slow + indexable inconsistente. INTEGER unix epoch (milliseconds canonical per data_model.md §4.2) = atomic compare + sortable + index-friendly. SQLite **INTEGER é 64-bit nativo** (não 32-bit; signed 32-bit rolls em 2038, unsigned 32-bit em 2106 — ambos irrelevantes aqui). Y2106/2038 não-aplicável; safe até ~ano 292B (signed 64-bit max). Unidade ms (não s) alinha com `last_accessed_at` hot-path em S-07 + audit chain timestamps em S-09.
 
 ### 9.5 Why per-tenant blob (não cross-tenant CAS dedup)
 
@@ -365,7 +365,7 @@ D1 read $1/M ops; write $1/M ops. TCO 12m com 100M ops/dia: ~$36k/yr.
 ## 26. Security & Privacy
 
 STRIDE: tampering — atomic transactions enforce; info disclosure — tenant_id em PK + partial indexes.
-LINDDUN: linkability — tenant_id é pseudonymous UUID v4.
+LINDDUN: linkability — tenant_id é pseudonymous UUIDv7 (canonical per data_model.md §2.1).
 
 ## 27. Knowledge Transfer
 
@@ -387,7 +387,7 @@ Doc `docs/internal/d1-schema-pattern.md` — partial index strategy + atomic ref
 2. Code review (D+2): peer + Architect.
 3. Pre-merge: PRR + schema sync verify.
 
-## 30. Sign-off (HIGH_RISK 10-12)
+## 30. Sign-off (HIGH_RISK 11 canonical)
 
 [12 roles incl. Architect (schema) + Security].
 

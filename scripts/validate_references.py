@@ -283,6 +283,7 @@ WHITELIST_IDS = {
     "ADR-0040",  # S-05 WI-S05-004: Multipart D1 sharding strategy (per-tenant_tier OR per-region; trigger 80% of D1 10 GB hard limit)
     "ADR-0041",  # S-05 WI-S05-005: Manifest public API stability + sig domain separation policy
     "ADR-0042",  # S-06 WI-S06-001: GC worker scheduler design + degrade-mode contract
+    "ADR-0043",  # S-01 WI-S01-001: HMAC tenant prefix algorithm choice (HMAC-SHA256 vs HMAC-BLAKE3; FIPS compliance)
     "FM-XXX",
     "ADR-XXXX",
     "ADR-YYYY",
