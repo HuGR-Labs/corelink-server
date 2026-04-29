@@ -3,9 +3,9 @@ id: "SPEC-CONTRACT-S19"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-04-24"
-updated: "2026-04-24"
+updated: "2026-04-29"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -75,7 +75,7 @@ inherits_from:
 - **R-S19-1**: Signup orchestration (frontend em S-16; backend em S-19):
   - User submits email → Clerk email verify.
   - Email verified → tenant provisioning atomic em D1 (`tenant`, `tenant_metadata`, `usage_counter` initialized).
-  - Region pinned per Accept-Language ou explicit selection (US default; EU detected via locale).
+  - Region pinned per **rendered locale cookie `corelink_locale`** (set by S-16 middleware; Lote 10.19 codex P1 canonical fix aligned com Lote 10.16; NÃO Accept-Language header direct) ou explicit user selection (US default; EU detected via cookie reflecting active locale após S-16 middleware sets based on first-visit Accept-Language detection).
   - First PAT created automaticamente com scope read-write + 90d expiry.
 - **R-S19-2**: Signup atomicity: tenant provisioning + DPA acceptance + Stripe customer ID em single transaction; failure rollback all.
 - **R-S19-3**: Signup ≤ 3 min start-to-finish (measured via dev workshop; 5-dev sample).

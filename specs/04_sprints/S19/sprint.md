@@ -143,7 +143,7 @@ Ver `_spec_contract.md §4`. Foundation: `privacy_model.md §5.6` (CTRL-PRIV-CON
 
 Métricas underscored snake_case com label `plan` aplicável; **NUNCA per-tenant labels** (INV-OBS-CARDINALITY-BUDGET); cardinality budget 7 steps × 3 regions × 5 tiers = 105 séries por métrica; ≤ 20k séries totais respeitado:
 
-- `corelink_onboarding_step_started_total{step, region, plan}` (counter; step ∈ signup_start|email_verified|dpa_signed|tier_selected|stripe_activated|first_pat_created|first_cas_put).
+- `corelink_onboarding_step_started_total{step, region, plan}` (counter; step ∈ signup_start|email_verified|dpa_signed|tier_selected|stripe_activated|first_pat_created|first_cas_put; **`plan` label canonical = tier dimension** per observability_model.md §3.1 — values free/starter/team/pro/enterprise; cardinality 7 × 3 × 5 = 105 séries; Lote 10.19 codex P2 clarification: `plan` IS the tier dimension).
 - `corelink_onboarding_step_completed_total{step, region, plan}` (counter).
 - `corelink_onboarding_step_abandoned_total{step, reason, region, plan}` (counter; reason ∈ timeout|user_canceled|error|browser_close).
 - `corelink_onboarding_step_duration_seconds_bucket{step, region, plan}` (histogram p50/p95/p99 per step).
@@ -191,7 +191,7 @@ Métricas underscored snake_case com label `plan` aplicável; **NUNCA per-tenant
 - [ ] **DPA 3 locales** native speaker + Legal local reviewed (en-US + pt-BR + es-419) (EVT-044).
 - [ ] **Signup form a11y** AA (axe-core 0 violations) (EVT-018).
 - [ ] **Zero secrets em URL** (no PAT, no consent token, no session token) — fuzz test 1k random params (EVT-002).
-- [ ] **PRR HIGH_RISK 11 sign-offs canonical**: Owner + Final Approver + Architect + Privacy Officer + Legal + Engineer + QA + Product + SRE Lead + Compliance Officer + Sales lead + Privacy/UX advisor (Crypto SME folds into Architect; per spec contract §6 + framework §33.5.4.3 + ADR-0034 solo-tier waiver).
+- [ ] **PRR HIGH_RISK 12 sign-offs canonical (Lote 10.19 codex P2 count alignment fix)**: Owner + Final Approver + Architect (Privacy + Legal SME specialization folded; Crypto SME folded para casos cripto-touching) + Privacy Officer + Legal Counsel (separate sign-off; legal-touching WI per S-14 + S-19 pattern; NÃO folded into Architect) + Engineer (S-19 lead) + QA Lead + Product + SRE Lead + Compliance Officer + Sales lead + Privacy/UX advisor = **12 sign-offs total** (prior wording "11 canonical" enumerava 12 roles inconsistente — codex P2 fix: explicit count 12); per spec contract §6 + framework §33.5.4.3 + ADR-0034 solo-tier waiver.
 - [ ] **Runbook**: cria RB-FM-SIGNUP-FAILED stub se signup atomicity falha em prod (EVT-017).
 - [ ] **CTRL-PRIV-CONSENT-001..006** reflected (UI capture per S-16 WI-S16-003 pattern; backend S-11 enforce).
 - [ ] **INV-CONSENT-PROOF-VERIFIABLE** (CRITICAL — registry §3.12 herdada S-11) reforced via DPA verify endpoint round-trip.
