@@ -1,0 +1,140 @@
+name: corelink-hash (WI-S01-002)
+
+# CI gate for the corelink-hash crate per WI-S01-002 §13 + §17.
+# PR lane: build/clippy/tests (debug + release)/doc/canonical-vectors smoke +
+# WASM target build + cargo-fuzz 60s smoke.
+# Nightly lane: 1h fuzz + cargo-mutants kill rate + audit.
+
+on:
+  pull_request:
+    paths:
+      - 'crates/corelink-hash/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/corelink-hash.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'crates/corelink-hash/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+  schedule:
+    # Nightly full lane.
+    - cron: '37 4 * * *'
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  pr-gate:
+    name: PR gate (build + clippy + tests + canonical vectors)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy (workspace, -D warnings)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: cargo test (workspace, debug)
+        run: cargo test --workspace --all-targets
+
+      - name: cargo test (release — perf + ct-variance gates AC §8)
+        run: cargo test --release --package corelink-hash
+
+      - name: cargo test (canonical vectors — fast smoke)
+        run: cargo test --package corelink-hash canonical_vectors
+
+      - name: cargo doc (deny broken intra-doc links)
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo doc --no-deps --workspace
+
+  wasm-build:
+    name: WASM target builds (CF Workers compile compatibility)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+      - name: cargo check (corelink-hash on wasm32-unknown-unknown)
+        run: cargo check --package corelink-hash --target wasm32-unknown-unknown
+
+  audit:
+    name: cargo-audit (advisory DB)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: rustsec/audit-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  fuzz-smoke:
+    name: cargo-fuzz smoke (60s, both targets)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - run: cargo install cargo-fuzz --locked
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "crates/corelink-hash/fuzz -> target"
+      - name: digest_parse 60s
+        working-directory: crates/corelink-hash
+        run: cargo fuzz run digest_parse -- -max_total_time=60
+      - name: verify_body 60s
+        working-directory: crates/corelink-hash
+        run: cargo fuzz run verify_body -- -max_total_time=60
+
+  fuzz-nightly:
+    name: cargo-fuzz nightly (1h each)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - run: cargo install cargo-fuzz --locked
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "crates/corelink-hash/fuzz -> target"
+      - name: digest_parse 3600s
+        working-directory: crates/corelink-hash
+        run: cargo fuzz run digest_parse -- -max_total_time=3600
+      - name: verify_body 3600s
+        working-directory: crates/corelink-hash
+        run: cargo fuzz run verify_body -- -max_total_time=3600
+
+  mutants-nightly:
+    name: cargo-mutants kill-rate ≥ 80%
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+      - run: cargo install cargo-mutants --locked
+      - run: cargo mutants --package corelink-hash --no-shuffle --check

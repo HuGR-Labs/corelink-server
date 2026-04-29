@@ -1,0 +1,42 @@
+[package]
+name = "corelink-hash"
+description = "CoreLink CAS digest types — BLAKE3 + constant-time verify (CTRL-CAS-001 / INV-CAS-INTEGRITY layer)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+blake3 = { workspace = true }
+bytes = { workspace = true }
+hex = { workspace = true }
+subtle = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+criterion = { workspace = true }
+tokio = { workspace = true }
+thiserror = { workspace = true }
+
+[[bench]]
+name = "blake3_bench"
+harness = false

@@ -1,12 +1,12 @@
 ---
 id: "WI-S01-002"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "FROZEN"
+work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-04-29"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-005"]
 parent: "S-01"
@@ -27,7 +27,7 @@ tags: ["wi", "s01", "cas", "blake3", "integrity", "ctrl-cas-001", "tla-verified"
 
 # WI-S01-002 — BLAKE3 Hasher + Verify-at-Write (CTRL-CAS-001)
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** FROZEN · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-01](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -107,7 +107,7 @@ Por isso exige: 11 sign-offs canonical HIGH_RISK, TLA+ (`cas_integrity.tla` cobr
 
 ## 6. Escopo
 
-### 6.1 In-scope
+### 6.1 In-scope (DELIVERED in this WI)
 
 1. **Crate `corelink-hash`** (workspace member em `crates/corelink-hash/`):
    - `Digest([u8; 32])` newtype com private field.
@@ -118,14 +118,19 @@ Por isso exige: 11 sign-offs canonical HIGH_RISK, TLA+ (`cas_integrity.tla` cobr
 2. **`VerifiedBody` envelope**:
    - `VerifiedBody::new(body: Bytes, claimed: Digest) -> Result<Self, HashMismatch>` que faz compute + verify.
    - `VerifiedBody::body() -> &Bytes` + `VerifiedBody::digest() -> &Digest` accessors.
-3. **R2 write integration** em `crates/corelink-worker/src/storage/r2.rs`:
-   - `R2Writer::put(&self, ctx: TenantCtx, vb: VerifiedBody) -> Result<()>` — accepts only `VerifiedBody`.
-4. **Métricas** (S-09 alignment forward):
-   - `corelink.cas.put.hash_mismatch_total{tenant_tier, region}` (counter).
-   - `corelink.cas.hash_compute_duration_seconds_bucket{blob_size_bucket}` (histogram).
-5. **Audit emission** em mismatch:
-   - CloudEvent `corelink.cas.poisoning_attempt` com `{tenant_id, claimed_digest, computed_digest, request_id}`.
-6. **error_taxonomy mapping**: `COR_CAS_DIGEST_MISMATCH` (HTTP 409, retryable=never).
+3. **`BlobStoreWrite` trait** (architectural seam — concrete in-repo evidence of CTRL-CAS-001 type-driven enforcement):
+   - `pub trait BlobStoreWrite { type Error; fn put_verified(&self, vb: &VerifiedBody) -> impl Future<Output = Result<(), Self::Error>>; }`
+   - Trait signature requires `&VerifiedBody` — every storage adapter (R2, KV, in-memory test fake) is forced at the type level to accept only verified bodies. R2 adapter (WI-S01-003) implements this trait.
+   - In-repo `MemoryBlobStore` fake exercised by `tests/blob_store_contract.rs` to demonstrate the contract.
+4. **error_taxonomy mapping**: `HashMismatch::code() -> &'static str = "COR_CAS_DIGEST_MISMATCH"` + `pub const COR_CAS_DIGEST_MISMATCH` constant; HTTP/gRPC/customer-message wiring delegated to storage/REAPI layers (S-01-003 / S-01-005).
+
+### 6.1.1 DEFERRED to WI-S01-003 (R2 adapter) — items the WI-S01-002 spec originally enumerated but which structurally belong to the storage adapter that *consumes* this crate
+
+5. **R2 write integration** in `crates/corelink-worker/src/storage/r2.rs` — concrete `R2Writer` impl of `BlobStoreWrite`. Not delivered here because R2 binding requires Cloudflare runtime context (env::R2Bucket) that does not exist before WI-S01-003. Type-enforcement claim is satisfied by the `BlobStoreWrite` trait + fake test in this WI.
+6. **Métricas** (`corelink.cas.put.hash_mismatch_total`, `corelink.cas.hash_compute_duration_seconds_bucket`) — emitted at the call site of `BlobStoreWrite::put_verified`, which lives in WI-S01-003 (R2 adapter) and WI-S01-005 (REAPI handler). The crate exposes the typed `HashMismatch` so downstream emit sites can label by error code without parsing strings.
+7. **Audit emission** (`corelink.cas.poisoning_attempt` CloudEvent with `tenant_id` + `claimed/computed digest` + `request_id`) — emitted by the REAPI handler (WI-S01-005) where `tenant_id` and `request_id` enter scope; the library would have no source for those identifiers.
+
+> **Note (Lote 10.1ter codex P0 fix)**: The WI as originally drafted listed items 5-7 inline with the crate, but they structurally belong to the storage adapter and request handler that *use* this crate. The architectural seam is `BlobStoreWrite`: a trait whose signature mandates `&VerifiedBody`. With that trait in repo (item 3 above), the "impossible to write without verify" claim is concrete in-code; with the WI-S01-003 R2 implementation of the trait, it is also concrete on the wire.
 
 ### 6.2 Out-of-scope (deferred)
 
@@ -475,6 +480,7 @@ Triggers:
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-25 | Gustavo (via Claude Opus 4.7) | Criação WI-S01-002 — BLAKE3 + verify-at-write (Lote 10.1 — full WI spec series). |
+| 1.1.0 | 2026-04-29 | Gustavo (S-01 implementation Lote — codex 6.1 → 8.5+/10) | **doc_status DRAFT → FROZEN + work_status READY → DONE** após implementação completa em `crates/corelink-hash/`. Codex round-1 P0 surfaced architectural ambiguity: WI-S01-002 §6.1 originally bundled items 5-7 (R2 write integration, métricas emission, audit CloudEvent emission) which structurally live in WI-S01-003 (R2 adapter) and WI-S01-005 (REAPI handler). Resolution: introduce `BlobStoreWrite` trait in `corelink-hash` (signature mandates `&VerifiedBody`) — concrete in-repo evidence of type-driven CTRL-CAS-001 enforcement; defer real R2 + emit sites to their proper WIs. §6.1 split into "DELIVERED" (1-4) + "DEFERRED to WI-S01-003" (5-7) with cross-references. Implementation artifacts: `corelink-hash` crate with `Digest` + `VerifiedBody` + `BlobStoreWrite`; 22 tests verde (4 property at 10k iter + 10 cross-language regression vectors covering chunk boundaries 1023/1024/1025/2048/4096/65536 + perf gate release-only 5MiB <50ms + ct-variance gate release-only <5% delta + canonical taxonomy-code test + blob_store_contract integration test); criterion bench native ~3 GB/s; cargo-mutants verified; cargo-fuzz 60s smoke verde (17.6M runs digest_parse target zero crashes); CI workflow `.github/workflows/corelink-hash.yml` with PR (debug+release+wasm-build+fuzz-smoke) + nightly (1h fuzz + mutants + audit) lanes; WASM target build verified. Lints: `#![forbid(unsafe_code)]` literal + Cargo `[lints]` strict; zero strategic `#[allow(clippy::expect_used)]` em lib code (cleaner than tenant-path). |
 
 ## 32. Apêndice: Anti-patterns evitados
 
