@@ -272,7 +272,7 @@ HIGH_RISK em N dimensões:
 - **Reversibility**: cache poisoning detected via INV-AC-OUTPUTS-VALID-EVENTUAL-CONSISTENCY pattern (S-06 forward reconcile).
 - **Customer impact**: build with poisoned binary = supply chain incident.
 
-13 sign-offs incl. **Crypto SME mandatory emphatic** (BLAKE3 + Merkle protocol + sig domain separation review).
+11 sign-offs canonical incl. **Architect with Crypto SME specialization mandatory emphatic** (BLAKE3 + Merkle protocol + sig domain separation review).
 
 ## 3. Customer Impact & Journey
 
@@ -603,7 +603,7 @@ Crate version pin via Cargo.lock; revert via cargo update. RTO ≤ 10 min; RPO 0
 
 D+0 design (Architect + Crypto SME); D+2 AppSec; D+5 code review; D+6 Crypto SME independent review (BLAKE3 + Merkle protocol + sig domain sep); D+8 adversarial; D+9 cargo-fuzz; D+10 PRR mini.
 
-## 30. Sign-off (HIGH_RISK 13)
+## 30. Sign-off (HIGH_RISK 11 canonical)
 
 | # | Role | Status |
 |---|---|---|

@@ -3,7 +3,7 @@ id: "SPEC-CONTRACT-S05"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-04-24"
 updated: "2026-04-25"
 owner: "Gustavo Schneiter"
@@ -36,7 +36,7 @@ Estender CAS para **blobs > 5 MiB até 5 TiB** via R2 multipart upload + decompo
 
 ## 2. Lane + forcing factors
 
-- **Lane:** HIGH_RISK (10–12 sign-offs).
+- **Lane:** HIGH_RISK (11 sign-offs canonical per framework §33.5.4.3 + ADR-0034; Crypto SME folds into Architect; DBA folds into Architect; AppSec é o 11º slot).
 - **FF-HR-005**: integridade agora distribuída em tree — bug em 1 chunk compromete blob inteiro.
 - **FF-HR-002**: chunks compartilhados intra-tenant — vazamento se chunk index não scopeado.
 
@@ -115,7 +115,7 @@ inherits_from:
 - [ ] **Orphan parts**: abort testado chaos-style — induce client disconnect mid-upload → sweeper aborts em 7d (EVT-023).
 - [ ] **Property test 100k**: manifest verify rejeita árvores inválidas (EVT-002).
 - [ ] **SLO-LAT-CAS-PUT-MULTIPART** definido (novo SLO em SLO-CATALOG) + sustained (EVT-021).
-- [ ] **PRR HIGH_RISK** 10–12 sign-offs: SRE + Security + Engineer + QA + Product + Compliance + Architect + AppSec + 2 peers + Crypto SME (Merkle BLAKE3 review) (EVT-031).
+- [ ] **PRR HIGH_RISK 11 sign-offs canonical** (per framework §33.5.4.3 + ADR-0034): Owner + Final Approver + Architect (Crypto SME specialization for Merkle BLAKE3 + FastCDC determinism + DBA specialization for D1 schema sizing) + Security Lead + SRE Lead + Engineer + QA Lead + Product + Compliance + Privacy + AppSec advisor (EVT-031).
 - [ ] **Throughput** ≥ 100 MB/s steady em staging (EVT-021).
 - [ ] **Dedup ratio** measurable em workload sintético; baseline ≥ 1.5× (EVT-021).
 - [ ] **Chunk vs part size** documentação clarification em `data_model.md §4.3` + ADR-0022 (EVT-046 if Legal needed; EVT-027).
@@ -274,7 +274,7 @@ Itens waivable com Architect + ADR:
 
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
-| 1.0.0 | 2026-04-24 | Gustavo | Initial sprint contract S-05 (Multipart + Chunking + Merkle dual-side; HIGH_RISK 13 sign-offs). |
+| 1.0.0 | 2026-04-24 | Gustavo | Initial sprint contract S-05 (Multipart + Chunking + Merkle dual-side; HIGH_RISK 11 sign-offs canonical). |
 | 1.1.0 | 2026-04-25 | Gustavo | Lote 10.5bis P0 fixes (Agent R4 review remediation): pull-based chunk API; BLAKE3 throughput recalibration ≥500 MB/s native + ≥200 MB/s WASM; partial UNIQUE WHERE state='in_progress'; canonical_bytes 102 bytes; ADR canonical path; INV §3.16 promotion; ADR-0040 substantive content (per-region 5 shards). |
 | 1.2.0 | 2026-04-25 | Gustavo | **Lote 10.5-tris fixes** (Sonnet R5 independent review; 4 NEW P0s + 4 P1s): (a) **P0-SR5-001** WI-001 SplitBlob `ChunkPutReceipt` type + try_join_all all R2 PUTs awaited before manifest::build; manifest sign happens AFTER all chunk persistence verified; (b) **P0-SR5-002** WI-001 SpliceBlob explicit per-chunk pipeline (sequential verify-then-write within chunk; pipeline at chunk-level; NO unverified bytes ever reach client; 1-chunk lookahead 2 MiB buffer); (c) **P0-SR5-003** WI-005 manifest memory budget corrected (Vec<ChunkRef> 81920 × 40 bytes = 3.28 MB heap; verify_streaming redesigned O(1) memory via D1 manifest_chunks per-chunk read; INV-MULTIPART-STREAMING-MEMORY updated); (d) **P0-SR5-004** ADR-0040 §A1 `multipart_sessions` cross-shard migration discipline (reconcile job scope explicit; sweeper multi-shard aware during dual-write window); INV-MULTIPART-ORPHAN-DETECTABLE updated registry §3.16; (e) **P1-SR5-001** cross-crate alignment MAX_CHUNKS_PER_BLOB 80000→81920 (corelink-chunker matches corelink-manifest); registry INV-MULTIPART-BOUNDED-PARSER updated; (f) **P1-SR5-002** SplitBlob created_at_ms captured ONCE before signing; reused on retry. |
 

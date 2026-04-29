@@ -182,7 +182,7 @@ R2 multipart adapter wraps Cloudflare R2 SDK (S3-compatible). Bug em adapter cas
 - **FF-HR-005**: R2 multipart commit é atomic boundary; bug = partial blob persisted.
 - **Reversibility**: orphan parts cleaned by sweeper 7d; no data loss.
 
-13 sign-offs.
+11 sign-offs canonical.
 
 ## 3. Customer Impact & Journey
 
@@ -395,7 +395,7 @@ Feature: R2 multipart adapter
 
 ### 16. PRR
 
-PRR HIGH_RISK 13 sign-offs gated em WI-S05-006. Este WI mini-PRR Architect + AppSec.
+PRR HIGH_RISK 11 sign-offs canonical gated em WI-S05-006. Este WI mini-PRR Architect + AppSec.
 
 ### 17. Sub-tasks
 
@@ -486,7 +486,7 @@ Crate version pin; revert via cargo update + redeploy. RTO ≤ 10 min; RPO 0 (st
 
 D+0 design (Architect); D+2 AppSec; D+4 code review (peer); D+5 chaos suite; D+6 PRR mini.
 
-### 30. Sign-off (HIGH_RISK 13)
+### 30. Sign-off (HIGH_RISK 11 canonical)
 
 | # | Role | Status |
 |---|---|---|

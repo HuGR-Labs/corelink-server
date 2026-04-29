@@ -114,7 +114,7 @@ Ver `_spec_contract.md §4`. Foundation para INV-DEDUP-CONSISTENCY (S-07).
 - [ ] Orphan parts: client disconnect chaos → sweeper aborts em 7d (EVT-023).
 - [ ] Property test 100k manifest verify rejeita árvores inválidas (EVT-002).
 - [ ] SLO-LAT-CAS-PUT-MULTIPART definido + sustained (EVT-021).
-- [ ] PRR HIGH_RISK 10–12 sign-offs (EVT-031).
+- [ ] PRR HIGH_RISK 11 sign-offs canonical (per framework §33.5.4.3 + ADR-0034) (EVT-031).
 - [ ] Throughput ≥ 100 MB/s steady (EVT-021).
 - [ ] Dedup ratio ≥ 1.5× sintético (EVT-021).
 - [ ] ADR-0022 ratificado (EVT-027).

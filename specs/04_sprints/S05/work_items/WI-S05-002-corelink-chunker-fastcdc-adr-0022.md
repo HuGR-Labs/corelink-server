@@ -229,7 +229,7 @@ Chunker é **single source of truth** for content-addressing em multipart blobs.
 - **Reversibility**: chunker bug post-deploy = customer cache invalidation cascade; rollback via Wrangler version revert.
 - **Customer impact**: dedup ratio drop = R2 cost spike; bug em determinism = cache effectively useless.
 
-13 sign-offs incl. **Crypto SME mandatory emphatic** (BLAKE3 + FastCDC determinism review).
+11 sign-offs canonical incl. **Architect with Crypto SME specialization mandatory emphatic** (BLAKE3 + FastCDC determinism review; per framework §33.5.4.3 single Architect sign-off encompasses Crypto SME for cripto-load-bearing WIs).
 
 ## 3. Customer Impact & Journey
 
@@ -609,7 +609,7 @@ TLA+ alignment: `cas_integrity.tla` chunked variant (forward S-09 TLA+ work).
 
 ## 16. PRR
 
-PRR HIGH_RISK 13 sign-offs gated em WI-S05-006. Este WI mini-PRR Architect + **Crypto SME mandatory emphatic**.
+PRR HIGH_RISK 11 sign-offs canonical gated em WI-S05-006. Este WI mini-PRR **Architect with Crypto SME specialization mandatory emphatic**.
 
 - [ ] All Gherkin green.
 - [ ] Property + Mann-Whitney + chaos green.
@@ -797,7 +797,7 @@ Fallback: if chunker crash detected, handler returns 503; multipart writes pause
 6. **Cargo-fuzz (D+9)**: 1h fuzz validates 0 panics.
 7. **PRR (D+10)**: Architect + Crypto SME mini sign-off.
 
-## 30. Sign-off (HIGH_RISK 13)
+## 30. Sign-off (HIGH_RISK 11 canonical)
 
 | # | Role | Name | Signed Date | Status |
 |---|---|---|---|---|

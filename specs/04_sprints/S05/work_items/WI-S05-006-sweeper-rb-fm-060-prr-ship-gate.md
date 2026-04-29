@@ -26,7 +26,7 @@ inherits_from:
 tags: ["wi", "s05", "sweeper", "cron-do", "rb-fm-060", "prr", "ship-gate", "stitched-flow", "high-risk"]
 ---
 
-# WI-S05-006 — Sweeper Cron DO (PAT-SWEEPER-001 abort multipart > 7d) + RB-FM-060 Dry-Run + 160 GiB Stitched Multipart Flow + REAPI Conformance + DASH-MULTIPART + Throughput 100 MB/s Sustained 72h + PRR HIGH_RISK 13 Sign-offs Ship Gate
+# WI-S05-006 — Sweeper Cron DO (PAT-SWEEPER-001 abort multipart > 7d) + RB-FM-060 Dry-Run + 160 GiB Stitched Multipart Flow + REAPI Conformance + DASH-MULTIPART + Throughput 100 MB/s Sustained 72h + PRR HIGH_RISK 11 Sign-offs Canonical Ship Gate
 
 > **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
 > **Parent:** [S-05](../sprint.md) · **Assignee:** Gustavo Schneiter
@@ -38,7 +38,7 @@ tags: ["wi", "s05", "sweeper", "cron-do", "rb-fm-060", "prr", "ship-gate", "stit
 | Campo | Valor |
 |---|---|
 | ID | WI-S05-006 |
-| Título | Sweeper cron Durable Object aborts multipart > 7d (FM-060 mitigation; PAT-SWEEPER-001) + RB-FM-060 dry-run executado em staging + 160 GiB stitched multipart flow E2E test + REAPI v2.3+ conformance suite SplitBlob/SpliceBlob 100% green + DASH-MULTIPART dashboards + throughput ≥ 100 MB/s sustained 72h staging + PRR HIGH_RISK 13 sign-offs ship gate + cumulative INV §3.16 promotion (13 INVs) + ADR-0022/0038/0039/0040/0041 ratificação confirmation |
+| Título | Sweeper cron Durable Object aborts multipart > 7d (FM-060 mitigation; PAT-SWEEPER-001) + RB-FM-060 dry-run executado em staging + 160 GiB stitched multipart flow E2E test + REAPI v2.3+ conformance suite SplitBlob/SpliceBlob 100% green + DASH-MULTIPART dashboards + throughput ≥ 100 MB/s sustained 72h staging + PRR HIGH_RISK 11 sign-offs canonical ship gate + cumulative INV §3.16 promotion (13 INVs) + ADR-0022/0038/0039/0040/0041 ratificação confirmation |
 | Sprint | S-05 |
 | Lane | HIGH_RISK |
 | Forcing factors | FF-HR-002 (ship gate prevents cross-tenant via final validation), FF-HR-005 (PRR enforces all CTRL-CAS controls), FF-HR-009 (defense-in-depth final validation) |
@@ -78,7 +78,7 @@ Este WI é o **ship gate** de S-05; entra production-ready apenas após:
    - Continuous synthetic Bazel workload (Docker layers + ML model files).
    - Pause clock on P0/P1/P2 incidents (lesson Lote 10.4bis 4-tier classification).
 
-7. **PRR HIGH_RISK 13 sign-offs**:
+7. **PRR HIGH_RISK 11 sign-offs canonical**:
    - 12 mandatory (Owner + Final Approver + SRE Lead + Security Lead + Engineer×2 + QA + Product + Compliance + Privacy + Architect + AppSec) + Crypto SME mandatory (lesson Lote 10.4bis: Crypto SME MANDATORY EMPHATIC for cripto WIs).
    - Each role's checklist + sign-off entry; rubber-stamp prohibited.
    - 2h structured PRR meeting.
@@ -140,7 +140,7 @@ S-05 ship gate é go/no-go review. Bug em ship = customer-facing incident; aplic
 
 **Risk justification HIGH_RISK**: ship gate prevents cross-tenant catastrophic; PRR enforces all CTRL-CAS controls; defense-in-depth final validation across 5 prior WIs.
 
-13 sign-offs.
+11 sign-offs canonical.
 
 ## 3. Customer Impact & Journey
 
@@ -219,7 +219,7 @@ PRR ship gate; HIGH_RISK; FF-HR-002 + FF-HR-005 + FF-HR-009.
    - Monitor: SLO-LAT-CAS-PUT-MULTIPART p99 ≤ 1s (10 MiB Split); throughput ≥ 100 MB/s.
    - 4-tier incident classification (lesson Lote 10.4bis).
 
-7. **PRR HIGH_RISK 13 sign-off ceremony** (2h structured):
+7. **PRR HIGH_RISK 11 sign-off canonical ceremony** (2h structured):
    - Per-role checklist (lesson Lote 10.4bis pattern).
    - Crypto SME MANDATORY non-waivable (40-80h booking).
    - Sign-offs via GitHub PR review + git commit signing.
@@ -248,7 +248,7 @@ PRR ship gate; HIGH_RISK; FF-HR-002 + FF-HR-005 + FF-HR-009.
 ## 7. Anti-Scope
 
 - ❌ Ship without 100% conformance.
-- ❌ Ship without 13 sign-offs.
+- ❌ Ship without 11 sign-offs canonical.
 - ❌ Ship without RB-FM-060 dry-run.
 - ❌ Ship with 1+ tenant isolation violation in 100k.
 - ❌ Ship with throughput < 100 MB/s sustained 72h.
@@ -263,7 +263,7 @@ PRR ship gate; HIGH_RISK; FF-HR-002 + FF-HR-005 + FF-HR-009.
 ## 8. Acceptance Criteria (Gherkin) (compact 12 scenarios)
 
 ```gherkin
-Feature: S-05 PRR HIGH_RISK 13 sign-off ship gate
+Feature: S-05 PRR HIGH_RISK 11 sign-off canonical ship gate
 
   Scenario: Sweeper cron tick (single region orphan abort)
     Given multipart_sessions has 5 sessions state=in_progress + last_activity > 7d em region=sam
@@ -302,7 +302,7 @@ Feature: S-05 PRR HIGH_RISK 13 sign-off ship gate
     Then alerts route to PagerDuty + Slack
     And throughput panel shows ≥ 100 MB/s baseline
 
-  Scenario: PRR HIGH_RISK 13 sign-offs collected
+  Scenario: PRR HIGH_RISK 11 sign-offs canonical collected
     Given PRR meeting executed (2h)
     When 13 roles sign + checklist evidence
     Then 12 mandatory + 1 advisory (Crypto SME MANDATORY this WI; advisory in WI-006 ceremony reference)
@@ -361,7 +361,7 @@ Feature: S-05 PRR HIGH_RISK 13 sign-off ship gate
 - [ ] **10.s05.006.4** REAPI v2.3+ conformance 100% AC ops nightly.
 - [ ] **10.s05.006.5** DASH-MULTIPART 10 panels live; alerts live.
 - [ ] **10.s05.006.6** 72h SLO sustained: throughput ≥ 100 MB/s.
-- [ ] **10.s05.006.7** PRR 13 sign-offs collected; rubber-stamp prohibited.
+- [ ] **10.s05.006.7** PRR 11 sign-offs canonical collected; rubber-stamp prohibited.
 - [ ] **10.s05.006.8** 13 INVs §3.16 promovidas + CI gate green (validate_inv_promotion.py).
 - [ ] **10.s05.006.9** 5 ADRs ratificadas + whitelist.
 - [ ] **10.s05.006.10** Cost regression gate green all WIs.
@@ -379,7 +379,7 @@ Feature: S-05 PRR HIGH_RISK 13 sign-off ship gate
 - [ ] REAPI conformance 100% green nightly.
 - [ ] DASH-MULTIPART live; alerts validated.
 - [ ] 72h SLO sustained.
-- [ ] PRR 13 sign-offs collected.
+- [ ] PRR 11 sign-offs canonical collected.
 - [ ] 13 INVs §3.16 promovidas + CI gate green.
 - [ ] 5 ADRs ratificadas.
 - [ ] Customer comm ready.
@@ -436,7 +436,7 @@ Total: ~16 INVs (some overlap nomenclatura across S-04 and S-05; consolidated em
 - 14.s05.006.3: SLO 72h continuous; P3 only não reseta.
 - 14.s05.006.4: RB-FM-060 dry-run ≤ 5min/30min/1h targets.
 - 14.s05.006.5: Dashboard alerts PagerDuty + Slack.
-- 14.s05.006.6: PRR meeting 2h structured; 13 sign-offs.
+- 14.s05.006.6: PRR meeting 2h structured; 11 sign-offs canonical.
 - 14.s05.006.7: Cost gate ±10% tolerance.
 - 14.s05.006.8: Customer comm pre-ship.
 - 14.s05.006.9: 5 ADRs ratificadas.
@@ -475,7 +475,7 @@ THE PRR. Esta WI é a PRR.
 | ST-008 | 72h SLO continuous staging setup | 3 |
 | ST-009 | PRR meeting prep (checklists per role) | 4 |
 | ST-010 | PRR meeting execution (2h) | 2 |
-| ST-011 | 13 sign-off collection | 3 |
+| ST-011 | 11 sign-off canonical collection | 3 |
 | ST-012 | Cost regression gate setup | 3 |
 | ST-013 | 13 INVs §3.16 registry update | 2 |
 | ST-014 | 5 ADRs ratificação confirmation | 2 |
@@ -577,7 +577,7 @@ Production rollout rollback: 100% → 50% → 10% → 0% via Wrangler version re
 
 D+0 WI-001..005 SEALED; D+1 conformance + 100k green; D+2 72h SLO start; D+3 DASH live; D+4 RB-FM-060 dry-run; D+5 72h SLO complete; D+6 PRR meeting; D+7 customer comm ready; D+8 ship decision; D+9 production 10%; D+11 50%; D+13 100%; D+20 post-ship review.
 
-## 30. Sign-off (HIGH_RISK 13)
+## 30. Sign-off (HIGH_RISK 11 canonical)
 
 | # | Role | Status |
 |---|---|---|
@@ -604,7 +604,7 @@ D+0 WI-001..005 SEALED; D+1 conformance + 100k green; D+2 72h SLO start; D+3 DAS
 
 ## 32. Anti-patterns evitados
 
-- ❌ Ship without 100% conformance; ❌ Ship without 13 sign-offs; ❌ Ship without RB-FM-060 dry-run; ❌ Ship com 1+ tenant isolation violation 100k; ❌ Ship com throughput < 100 MB/s; ❌ Ship com cost regression > 10%; ❌ Ship com ADR não ratificada; ❌ Ship com 13 INVs não promovidas; ❌ Ship com sign-off rubber-stamp; ❌ Production rollout direct 100%; ❌ Skip 160 GiB stitched flow; ❌ Skip post-ship review; ❌ Crypto SME advisory para cripto WIs (lesson Lote 10.4bis fix).
+- ❌ Ship without 100% conformance; ❌ Ship without 11 sign-offs canonical; ❌ Ship without RB-FM-060 dry-run; ❌ Ship com 1+ tenant isolation violation 100k; ❌ Ship com throughput < 100 MB/s; ❌ Ship com cost regression > 10%; ❌ Ship com ADR não ratificada; ❌ Ship com 13 INVs não promovidas; ❌ Ship com sign-off rubber-stamp; ❌ Production rollout direct 100%; ❌ Skip 160 GiB stitched flow; ❌ Skip post-ship review; ❌ Crypto SME (folds into Architect specialization per Lote 10.4-bis-quater normalization).
 
 ---
 

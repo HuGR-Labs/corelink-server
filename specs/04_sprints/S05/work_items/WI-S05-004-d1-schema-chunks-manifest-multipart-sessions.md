@@ -242,7 +242,7 @@ Schema é physical foundation de multipart + chunking. HIGH_RISK em N dimensões
 - **D1 storage growth at scale**: 250M chunks rows = sharding mandatory; ADR-0040 forward.
 - **Reversibility**: schema bug em prod = data loss risk; rollback via dummy migration; pre-deploy validation mandatory.
 
-13 sign-offs incl. DBA + Architect + AppSec.
+11 sign-offs canonical incl. Architect (DBA specialization for D1 schema sizing + chunks/manifest tables) + AppSec.
 
 ## 3. Customer Impact & Journey
 
@@ -541,7 +541,7 @@ Tech talk (1h): "D1 Multipart Schema + Sharding Forward Strategy". Doc `docs/int
 
 D+0 design (Architect+DBA); D+1 AppSec; D+2 code review; D+3 migration test staging; D+4 PRR mini.
 
-## 30. Sign-off (HIGH_RISK 13)
+## 30. Sign-off (HIGH_RISK 11 canonical)
 
 | # | Role | Status |
 |---|---|---|

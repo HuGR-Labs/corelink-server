@@ -203,7 +203,7 @@ HIGH_RISK em N dimensões:
 - **Reversibility**: chunked blobs cannot trivially un-chunk; rollback via manifest invalidation + re-upload required.
 - **Customer impact**: Bazel/Buck2 v2.3+ clients require SplitBlob for > 5 MiB blobs; broken handler = customer build fails.
 
-13 sign-offs incl. Architect (REAPI conformance), AppSec (5-layer scoping for chunks), Crypto SME (Merkle BLAKE3 review).
+11 sign-offs canonical incl. Architect (REAPI conformance + Crypto SME specialization for Merkle BLAKE3), AppSec (5-layer scoping for chunks).
 
 ## 3. Customer Impact & Journey
 
@@ -632,7 +632,7 @@ TLA+ alignment: `cas_integrity.tla` chunked-blob variant (forward S-09 TLA+ work
 
 ## 16. PRR
 
-PRR HIGH_RISK 13 sign-offs gated em WI-S05-006 ship gate. Este WI mini-PRR Architect + AppSec + Security Lead.
+PRR HIGH_RISK 11 sign-offs canonical gated em WI-S05-006 ship gate. Este WI mini-PRR Architect + AppSec + Security Lead.
 
 - [ ] All Gherkin green.
 - [ ] Property + Mann-Whitney + chaos green.
@@ -855,7 +855,7 @@ Fallback: handler 503 if R2 OR D1 down; Bazel client falls back to direct PUT (g
 6. **Conformance (D+9)**: Bazel community engagement; REAPI v2.3+ conformance suite green em CI nightly.
 7. **PRR (D+10)**: Architect mini sign-off (full ship gate em WI-S05-006).
 
-## 30. Sign-off (HIGH_RISK 13)
+## 30. Sign-off (HIGH_RISK 11 canonical)
 
 | # | Role | Name | Signed Date | Status |
 |---|---|---|---|---|
