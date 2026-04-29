@@ -302,7 +302,7 @@ Abuse detection é **the proactive layer** — bulkhead camadas 1-4 (per-tenant 
 **Risk justification HIGH_RISK**:
 - **FF-HR-005**: complementa CTRL-RATE-001 + CTRL-AUTH; abuse detection critical for AVAIL-ISOLATION.
 - **FF-HR-002**: undetected abuse leads cross-tenant degradation.
-- 12 sign-offs (Compliance + Privacy mandatory emphatic; LGPD Art. 20 alignment) + chaos suite + property test 100k.
+- 11 sign-offs canonical (Compliance + Privacy mandatory emphatic; LGPD Art. 20 alignment) + chaos suite + property test 100k.
 
 ## 3. Customer Impact & Journey
 
@@ -644,7 +644,7 @@ Feature: Abuse Detection Heurística + Scoring + Humane Response
 
 ## 11. DoD
 
-- [ ] Module compila + tests green; all Gherkin/property/chaos green; 12 sign-offs (HIGH_RISK).
+- [ ] Module compila + tests green; all Gherkin/property/chaos green; 11 sign-offs canonical (HIGH_RISK).
 
 ## 12. Invariants Validated
 
@@ -687,7 +687,7 @@ Feature: Abuse Detection Heurística + Scoring + Humane Response
 
 ## 16. PRR
 
-HIGH_RISK 12 sign-offs PRR (Compliance + Privacy mandatory emphatic for LGPD); sprint contract §6 DoD enforces.
+HIGH_RISK 11 sign-offs canonical PRR (Compliance + Privacy mandatory emphatic for LGPD); sprint contract §6 DoD enforces.
 
 ## 17. Sub-tasks
 
@@ -792,9 +792,9 @@ Tech talk (2h): "S-08 Abuse Detection: Heurística Multi-Feature + LGPD Art. 20 
 
 ## 29. Review Checkpoints
 
-D+0 design (Architect; heurística + 4-feature choice); D+1 Compliance (LGPD Art. 20 alignment); D+2 Privacy (LINDDUN linkability + transparency); D+3 AppSec (TenantCtx + audit + AutoSuspendForbidden); D+4 code review; D+5 calibration validation 10 workloads; D+6 chaos validation; D+7 PRR HIGH_RISK 12 sign-offs.
+D+0 design (Architect; heurística + 4-feature choice); D+1 Compliance (LGPD Art. 20 alignment); D+2 Privacy (LINDDUN linkability + transparency); D+3 AppSec (TenantCtx + audit + AutoSuspendForbidden); D+4 code review; D+5 calibration validation 10 workloads; D+6 chaos validation; D+7 PRR HIGH_RISK 11 sign-offs canonical.
 
-## 30. Sign-off (HIGH_RISK 12)
+## 30. Sign-off (HIGH_RISK 11 canonical)
 
 | # | Role | Status |
 |---|---|---|

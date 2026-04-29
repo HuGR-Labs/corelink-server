@@ -147,7 +147,7 @@ DO RateLimiter é **the primary bulkhead** do CoreLink — sem isso, INV-AVAIL-I
 **Risk justification HIGH_RISK**:
 - **FF-HR-005**: CTRL-RATE-001 security control; bypass = AVAIL-ISOLATION violation cross-tenant.
 - **FF-HR-002**: per-tenant bulkhead failure permits cross-tenant degradation (sprint contract §2 explicit).
-- 13 sign-offs + chaos 30d sustained + property test 100k race iterations.
+- 11 sign-offs canonical + chaos 30d sustained + property test 100k race iterations.
 
 ## 3. Customer Impact & Journey
 
@@ -409,7 +409,7 @@ Feature: DO RateLimiter token bucket per-tenant
 
 ## 11. DoD
 
-- [ ] Module compila + tests green; all Gherkin/property/chaos green; 12 sign-offs (HIGH_RISK upper-bound; framework §33.5.4.3 cap 10-12; Crypto SME advisory consolidated as Architect race-correctness review per ADR-0034 path; Lote 10.8bis P1-2 corrected).
+- [ ] Module compila + tests green; all Gherkin/property/chaos green; 11 sign-offs canonical (HIGH_RISK; framework §33.5.4.3 + ADR-0034 solo-tier waiver; Crypto SME folds into Architect race-correctness review specialization).
 
 ## 12. Invariants Validated
 
@@ -448,7 +448,7 @@ Feature: DO RateLimiter token bucket per-tenant
 
 ## 16. PRR
 
-HIGH_RISK 12 sign-offs (framework §33.5.4.3 cap; Lote 10.8bis P1-2) PRR; sprint contract §6 DoD enforces.
+HIGH_RISK 11 sign-offs canonical PRR (per framework §33.5.4.3 + ADR-0034); sprint contract §6 DoD enforces.
 
 ## 17. Sub-tasks
 
@@ -530,9 +530,9 @@ Tech talk (1.5h): "S-08 Rate Limit: DO Actor + Token Bucket Math + 5-Tier Plan S
 
 ## 29. Review Checkpoints
 
-D+0 design (Architect; race analysis); D+2 AppSec (TenantCtx + audit); D+4 code review; D+6 chaos validation; D+7 PRR HIGH_RISK 12 sign-offs (framework §33.5.4.3 cap; Lote 10.8bis P1-2).
+D+0 design (Architect; race analysis + Crypto SME specialization); D+2 AppSec (TenantCtx + audit); D+4 code review; D+6 chaos validation; D+7 PRR HIGH_RISK 11 sign-offs canonical.
 
-## 30. Sign-off (HIGH_RISK 12 — framework §33.5.4.3 cap)
+## 30. Sign-off (HIGH_RISK 11 canonical)
 
 | # | Role | Status |
 |---|---|---|

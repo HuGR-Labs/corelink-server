@@ -253,7 +253,7 @@ Response wrapper + RFC 9331 + global circuit breaker constitute **the system-wid
 **Risk justification HIGH_RISK**:
 - **FF-HR-005**: CTRL-RATE-001 camada 4; bypass = catastrophic full outage.
 - **FF-HR-002**: global circuit FP catastrophic full outage (sprint contract §15 R-S08-004 critical impact).
-- 12 sign-offs + chaos suite + property test 100k race iterations on multi-signal trigger.
+- 11 sign-offs canonical + chaos suite + property test 100k race iterations on multi-signal trigger.
 
 ## 3. Customer Impact & Journey
 
@@ -626,7 +626,7 @@ Feature: Response Code Types + RFC 9331 Headers + Global Circuit Breaker
 
 ## 11. DoD
 
-- [ ] Module compila + tests green; all Gherkin/property/chaos green; 12 sign-offs (HIGH_RISK).
+- [ ] Module compila + tests green; all Gherkin/property/chaos green; 11 sign-offs canonical (HIGH_RISK).
 
 ## 12. Invariants Validated
 
@@ -670,7 +670,7 @@ Feature: Response Code Types + RFC 9331 Headers + Global Circuit Breaker
 
 ## 16. PRR
 
-HIGH_RISK 12 sign-offs PRR; sprint contract §6 DoD enforces.
+HIGH_RISK 11 sign-offs canonical PRR; sprint contract §6 DoD enforces.
 
 ## 17. Sub-tasks
 
@@ -774,9 +774,9 @@ Tech talk (1.5h): "S-08 Rate Limit Headers + Global Circuit: RFC 9331 + Multi-Si
 
 ## 29. Review Checkpoints
 
-D+0 design (Architect; multi-signal + hysteresis); D+2 AppSec (TenantCtx + AdminCtx + audit fail-closed); D+3 SRE (signal threshold tuning); D+4 code review; D+5 RFC 9331 fixture parser validation; D+6 chaos validation; D+7 PRR HIGH_RISK 12 sign-offs.
+D+0 design (Architect; multi-signal + hysteresis); D+2 AppSec (TenantCtx + AdminCtx + audit fail-closed); D+3 SRE (signal threshold tuning); D+4 code review; D+5 RFC 9331 fixture parser validation; D+6 chaos validation; D+7 PRR HIGH_RISK 11 sign-offs canonical.
 
-## 30. Sign-off (HIGH_RISK 12)
+## 30. Sign-off (HIGH_RISK 11 canonical)
 
 | # | Role | Status |
 |---|---|---|

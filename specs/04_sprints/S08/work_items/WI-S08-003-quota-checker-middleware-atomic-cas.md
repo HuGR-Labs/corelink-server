@@ -275,7 +275,7 @@ Sprint contract §5 R-S08-3 amend (will be applied em this Lote 10.8bis Phase 6 
 **Risk justification HIGH_RISK**:
 - **FF-HR-005**: CTRL-QUOTA-001 + per-PAT security controls; bypass = AVAIL-ISOLATION violation.
 - **FF-HR-002**: per-tenant bulkhead failure; cross-tenant SLO degradation se quota deficit.
-- 12 sign-offs + chaos 30d sustained + property test 100k race iterations on atomic CAS predicate.
+- 11 sign-offs canonical + chaos 30d sustained + property test 100k race iterations on atomic CAS predicate.
 
 ## 3. Customer Impact & Journey
 
@@ -721,7 +721,7 @@ Feature: Quota Checker Middleware (Storage + Bandwidth + Per-PAT)
 
 ## 11. DoD
 
-- [ ] Module compila + tests green; all Gherkin/property/chaos green; 12 sign-offs (HIGH_RISK).
+- [ ] Module compila + tests green; all Gherkin/property/chaos green; 11 sign-offs canonical (HIGH_RISK).
 
 ## 12. Invariants Validated
 
@@ -763,7 +763,7 @@ Feature: Quota Checker Middleware (Storage + Bandwidth + Per-PAT)
 
 ## 16. PRR
 
-HIGH_RISK 12 sign-offs PRR; sprint contract §6 DoD enforces.
+HIGH_RISK 11 sign-offs canonical PRR; sprint contract §6 DoD enforces.
 
 ## 17. Sub-tasks
 
@@ -866,9 +866,9 @@ Tech talk (1.5h): "S-08 Quota Checker: Atomic CAS via DO Actor + Race-Aware Pred
 
 ## 29. Review Checkpoints
 
-D+0 design (Architect; race-aware predicate); D+2 AppSec (TenantCtx + audit + PAT cap); D+3 Crypto SME (race correctness atomic CAS); D+4 code review; D+6 chaos validation; D+7 PRR HIGH_RISK 12 sign-offs.
+D+0 design (Architect; race-aware predicate + Crypto SME specialization for atomic CAS race correctness); D+2 AppSec (TenantCtx + audit + PAT cap); D+4 code review; D+6 chaos validation; D+7 PRR HIGH_RISK 11 sign-offs canonical.
 
-## 30. Sign-off (HIGH_RISK 12)
+## 30. Sign-off (HIGH_RISK 11 canonical)
 
 | # | Role | Status |
 |---|---|---|

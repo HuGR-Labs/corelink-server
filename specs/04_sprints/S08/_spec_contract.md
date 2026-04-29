@@ -3,7 +3,7 @@ id: "SPEC-CONTRACT-S08"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-04-24"
 updated: "2026-04-24"
 owner: "Gustavo Schneiter"
@@ -35,7 +35,7 @@ Implementar o **bulkhead principal do CoreLink multi-tenant**: isolamento compor
 
 ## 2. Lane + forcing factors
 
-- **Lane:** HIGH_RISK (10–12 sign-offs).
+- **Lane:** HIGH_RISK (11 sign-offs canonical per framework §33.5.4.3 + ADR-0034).
 - **FF-HR-005**: CTRL-RATE-001 + CTRL-QUOTA-001 são controles formais de segurança; bypass via deficit = AVAIL-ISOLATION violation (INV-AVAIL-ISOLATION cross-tenant SLO degradation).
 - **FF-HR-002**: per-tenant bulkhead falho permite cross-tenant degradation; equivalência à tenant isolation embora mitigável via degrade_mode.
 - **Justificativa upgrade STANDARD → HIGH_RISK**: codex audit findings 2026-04-24 indica que CTRL-RATE-001 + CTRL-QUOTA-001 são security controls que ativam FF-HR-005 lane forcing factor.
@@ -95,7 +95,7 @@ Universal (`_sprint_creation_contract §7`) **+**:
 - [ ] **Rate limit headers RFC 9331** (RateLimit, RateLimit-Policy) implementados — padrão IETF atualizado.
 - [ ] **Property test** 10k iter cobrindo race conditions em DO token bucket update (EVT-002).
 - [ ] **Coverage ≥ 90%**.
-- [ ] **PRR HIGH_RISK** (10–12 sign-offs Lote 9.4 normalize): SRE lead + Security lead + Engineer + QA + Product + Compliance officer + Privacy officer + Architect + AppSec advisor + 2 peers (EVT-031).
+- [ ] **PRR HIGH_RISK 11 sign-offs canonical** (per framework §33.5.4.3 + ADR-0034): Owner + Final Approver + Architect (Crypto SME specialization for race correctness atomic CAS) + Security Lead + SRE Lead + Engineer + QA Lead + Product + Compliance + Privacy + AppSec advisor (peer reviewers contribuem em PR review sem sign-off canonical separado) (EVT-031).
 
 ## 7. Completeness Criteria SOTA (delta local)
 
