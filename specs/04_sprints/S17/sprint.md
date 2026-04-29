@@ -55,7 +55,7 @@ Decomposição em 6 WIs: (1) **WI-S17-001** chaos scheduler + 8 chaos types stag
 
 - **WI-S17-002**: DR drill scheduler semestral cadence calendar (every 6 months; cycle 1 = simulate CF region outage in staging + failover to secondary region + SLO sustained; cycle 2 = simulate D1 primary loss + restore from backup; cycle 3 = simulate BYOK key compromise + crypto-erase + customer notification — cycles 2/3 deferred annual at GA via waiver opt); 1 cycle completed em staging (cycle 1 CF region outage; full execution; full report); DR drill report includes pre-drill state + drill timeline + SLO impact measured + lessons learned + runbook updates needed (archived 7y for compliance per Quality Standard 14.s17.7); drill em staging only + isolated tenant for chaos (anti-prod hit guarantee); SRE lead facilitates drill execution; report committed em `specs/_audits/2026-XX-XX-dr-drill-cycle-1.md`.
 
-- **WI-S17-003**: Runbook dry-run workflow tracker (PAT-RUNBOOK-DRILL-001 mensal cadence; oncall executa 1 P0/P1 runbook por mês; rotating which runbook per month per spec contract §5.3); 3 P0/P1 dry-runs executed em sprint (RB-FM-051 R2 bit rot + RB-FM-057 Neon failover + RB-FM-202 runbook stale meta-drill canonical mensal — covering critical paths); output em EVT-017 com timing + discrepancies + updates; runbook drift detection FM-202 mitigation (if dry-run duration > 2× expected → flag for review + post-mortem trigger per Quality Standard 14.s17.2); monthly cadence calendar published; tracker tool em `specs/04_runbooks/_dry_run_log.md` com runbook ID + ts + duration_actual + duration_expected + discrepancies + updates needed + reviewer; all 47 runbooks dry-run em últimos 90d (S-20 GA gate per spec contract §5.3 — count atual repo é 47 runbooks; canonical baseline 42 atualizado para 47 dado scope expansion S-13/S-14 added BYOK + privacy runbooks).
+- **WI-S17-003**: Runbook dry-run workflow tracker (PAT-RUNBOOK-DRILL-001 mensal cadence; oncall executa 1 P0/P1 runbook por mês; rotating which runbook per month per spec contract §5.3); 3 P0/P1 dry-runs executed em sprint (RB-FM-051 R2 bit rot + RB-FM-057 Neon failover + RB-FM-202 runbook stale meta-drill canonical mensal — covering critical paths); output em EVT-017 com timing + discrepancies + updates; runbook drift detection FM-202 mitigation (if dry-run duration > 2× expected → flag for review + post-mortem trigger per Quality Standard 14.s17.2); monthly cadence calendar published; tracker tool em `specs/04_runbooks/_dry_run_log.md` com runbook ID + ts + duration_actual + duration_expected + discrepancies + updates needed + reviewer; **P0/P1 priority subset (~25 of 47) dry-run em 90d** (S-20 GA gate REVISED Lote 10.17 codex P0 math fix; original "all 47/90d" era infeasible = ~16/month burdensome; subset definition: P0/P1 priority labels em runbook frontmatter; P2/P3 runbooks deferred pós-GA continuous coverage; sustainable cadence 8 dry-runs/month × 3 months = 24 covers ~25 P0/P1 subset).
 
 - **WI-S17-004**: Incident template `specs/_templates/incident.md` (header com severity SEV-1/2/3 + start/end ts + services affected + customer impact estimate; timeline com events ts + actor; resolution com actions taken + verification); post-mortem template `specs/_templates/post_mortem.md` (blameless culture enforced — sin nomeação de blame; foco em system/process improvements; 5-Why analysis structured questions; action items com owner + due date + status tracking; lessons learned positive + negative; SRE lead reviews per Quality Standard 14.s17.3; reviewed Engineering + SRE); 1 synthetic incident test full flow (synthetic SEV-2 simulado em staging; team works through incident response per templates; post-mortem produced + reviewed + action items tracked); engineering all-hands training (1.5h session; blameless culture reinforce; 5-Why technique training; q&a; community reinforcement); post-mortems retroactively linked a sprint (sprint owner accepts/rejects action items per spec contract §5.4 R-S17-11).
 
@@ -90,7 +90,7 @@ Decomposição em 6 WIs: (1) **WI-S17-001** chaos scheduler + 8 chaos types stag
 **Persona 2 — Compliance auditor (SOC 2 + ISO 27001)**:
 - Audit evidence pack: chaos test reports 4 weeks (EVT-023) + DR drill report (EVT-023 + EVT-017) + 3 runbook dry-run EVT-017s + 1 post-mortem synthetic test + PagerDuty schedule (EVT-026 ou EVT-018 alternative) + fadigue dashboard (EVT-021) + 1 game day report (EVT-023) — all 7y retention.
 - Recovery capability: DR drill 1 cycle completed em staging com SLO impact measurement = recovery validated.
-- Operational discipline: monthly runbook drill cadence sustained 30d post-sprint (per Completeness Criteria 10.s17.4) + 90d coverage S-20 gate (47 runbooks; per spec contract §5.3 R-S17-8 atualizado de 40→47).
+- Operational discipline: 8 dry-runs/month sustained 30d post-sprint (per Completeness Criteria 10.s17.4 + Lote 10.17 codex P0 canonical math fix) + 90d coverage S-20 gate (P0/P1 priority subset ~25 of 47; sustainable rate 8/month × 3 months = 24 covers subset).
 - Post-mortem culture: blameless template + 5-Why + sin nomeação de blame + engineering all-hands training = psychological safety baseline.
 
 **Persona 3 — Oncall Manager**:
@@ -242,7 +242,7 @@ Cardinality budget INV-OBS-CARDINALITY-BUDGET respeitado (≤ 20k séries única
 
 ### Outbound
 
-- S-20 (GA exige all 47 runbooks dry-run em 90d + 4-week chaos test sustained + DR drill done + game day quarterly cadence; count atual repo 47, vs canonical baseline 42 from spec contract; expansion S-13/S-14 added BYOK + privacy runbooks).
+- S-20 (GA exige P0/P1 priority subset ~25 of 47 dry-run em 90d + 4-week chaos test sustained + DR drill done + game day quarterly cadence; Lote 10.17 codex P0 canonical math fix — original "all 47/90d" era infeasible = ~16/month burdensome; revised subset = sustainable 8/month × 3 months covers ~25 P0/P1).
 
 ## 9. Timeline
 
@@ -268,7 +268,7 @@ DASH-OPS-MATURITY (novo dashboard, internal SRE-only):
 - Chaos safe-mode abort rate (`corelink_chaos_safe_mode_abort_total{trigger}`); CRITICAL alert se trigger=prod_sev1 (zero tolerance).
 - DR drill outcome (`corelink_dr_drill_total{cycle, outcome}`); alert se outcome=fail.
 - DR drill SLO impact (`corelink_dr_drill_slo_impact_seconds`); review per cycle.
-- Runbook dry-run rate per runbook (`corelink_runbook_dry_run_total{runbook_id}`); alert se monthly cadence missed.
+- Runbook dry-run rate per runbook (`corelink_runbook_dry_run_total{runbook_id}`); alert se 8/month cadence missed (Lote 10.17 codex P0 canonical math fix; prior 1/month inconsistent com 3 dry-runs/30d sprint window).
 - Runbook drift detection (`corelink_runbook_dry_run_duration_ratio`); flag se > 2.0 (FM-202 mitigation).
 - Oncall SEV-1/shift (`corelink_oncall_sev1_per_shift`); alert > 2.
 - Oncall SEV-2/shift (`corelink_oncall_sev2_per_shift`); alert > 5.
