@@ -3,7 +3,7 @@ id: "SPEC-CONTRACT-S03"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.2.0"
+version: "1.9.0"
 created: "2026-04-24"
 updated: "2026-04-24"
 owner: "Gustavo Schneiter"
@@ -62,12 +62,14 @@ inherits_from:
 | ID | Capability | Detalhe |
 |---|---|---|
 | **CAP-AUTH-001** | Clerk SSO signup + login | Email + WebAuthn optional via Clerk SDK; JWKS validation. |
-| **CAP-AUTH-002** | PAT emission com scopes tipados | `cache:r`, `cache:w`, `admin:read`, `admin:write`, `billing:admin`; emit one-time-display. |
+| **CAP-AUTH-002** | PAT emission com scopes tipados | `cache-r`, `cache-w`, `cache-rw`, `cache-find-missing`, `admin-tenant-read`, `admin-tenant-write`, `admin-billing` (canonical hyphen-form per auth_model.md §scope L176-184); emit one-time-display. |
 | **CAP-AUTH-003** | PAT revocation propagation ≤ 60s global | CTRL-CRED-004; DO broadcast + KV cache invalidation 3 regiões. |
 | **CAP-AUTH-004** | MFA WebAuthn obrigatório admin ops | CTRL-AUTH-010; passkey + YubiKey support; freshness 30 min (S-13 alignment). |
 | **CAP-AUTH-005** | Tenant provisioning | Account → Tenant → Membership atomic; tenant_id stable identifier. |
 | **CAP-AUTH-006** | Audit events PAT lifecycle | EVT-047 CloudEvents: `pat.issued`, `pat.revoked`, `pat.used`, `auth.login`, `mfa.verified`. |
 | **CAP-AUTH-007** | Argon2id PAT hash | NIST SP 800-63B compliant; cost params per OWASP 2024 (m=65536, t=3, p=4). |
+| **CAP-AUTH-008** | WebAuthn MFA Level 3 | W3C WebAuthn Level 3 spec compliance; passkey + YubiKey + platform authenticator; per WI-S03-006 (cycle 6 codex SEAL: was implicit em WI-006 §4 mas não enumerated em spec_contract; aligned). |
+| **CAP-AUTH-009** | Phishing-resistant admin ops | WebAuthn step-up obrigatório admin operations (UV=1 required; per WI-S03-006); CTRL-AUTH-010. |
 
 ## 5. Requirements específicos
 
@@ -75,7 +77,7 @@ inherits_from:
 - **R-S03-2**: Middleware `tower` (gRPC) + Worker handler (HTTP) interceptando + injetando `TenantCtx { tenant_id, user_id, scopes, mfa_ts }`.
 - **R-S03-3**: Crate `corelink-pat` com:
   - **Argon2id** hash (params: `m_cost=65536`, `t_cost=3`, `p_cost=4` — OWASP 2024 recommendation).
-  - PAT format: `corelink_<env>_<base64url(32 bytes)>` (e.g., `corelink_live_a8f...`).
+  - PAT format canonical: `corelink_<env>_<token_id>.<random_secret>` (e.g., `corelink_pat_abc12345.x9k...`); `token_id` = 16-char deterministic indexed lookup key (UUIDv7 short form OR SHA-256 prefix); `random_secret` = 32 bytes random base64url (cycle 7 codex SEAL alignment com auth_model.md §2.3 verify primitive + WI-S03-005 schema token_id column).
   - Verify: timing-safe compare via `subtle::ConstantTimeEq`.
   - Scope check: typed enum + bitfield matching.
 - **R-S03-4**: Revocation broadcast via DO `pat-invalidator-<region>`:

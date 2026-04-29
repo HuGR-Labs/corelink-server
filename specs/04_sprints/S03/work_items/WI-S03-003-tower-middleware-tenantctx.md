@@ -137,14 +137,14 @@ Auth middleware é o **único ponto de orquestração** entre 5 layers de defens
 - Customer-visible: ≤ 5ms p99 warm (KV hit Clerk JWKS); 412 if `org_id` em JWT mas tenant não em D1/Neon (race; cliente retry após onboarding).
 
 **Persona 3 — Compliance auditor revisando access patterns**:
-- Audit query `SELECT request_id, tenant_id, principal_id_hash, auth_method, scopes, route, status FROM audit_chain WHERE event_type='auth.token.validated' AND tenant_id = ? AND timestamp > ?`.
+- Audit query `SELECT request_id, tenant_id, principal_id_hash, auth_method, scopes, route, status FROM audit_chain WHERE event_type='auth.token.validated' AND tenant_id = ? AND timestamp > ?` (audit_chain stored in S-09 chain; PAT canonical SoT é Neon `pat` per data_model.md §4.1).
 - Auditor sees full audit trail per tenant; PII redacted (principal_id hashed em external SIEM forwarding).
 
 **SLA addendum** (P0 fix Lote 10.3bis — stale window orthogonality):
 - Auth middleware p99 ≤ 10ms warm path (cache hit); ≤ 280ms cold path (Argon2 verify).
 - **Stale window é ≤ 60s p99 (single SLA)** — NÃO additivo:
   - **Hot path** (session cache hit; verify path bypass D1): stale window = session cache TTL = 60s.
-  - **Cold path** (cache miss; D1 lookup com `revoked_at IS NULL` constraint authoritative): stale window = D1 commit visibility ≤ 100ms (regional Neon strong consistency).
+  - **Cold path** (cache miss; **Neon `pat` lookup** com `revoked_at IS NULL` constraint authoritative — canonical SoT per data_model.md §4.1; cycle 3 codex SEAL alignment, was incorrectly 'D1' em pre-cycle text): stale window = Neon commit visibility ≤ 100ms (regional Postgres strong consistency).
   - **Cross-region propagation** (WI-S03-004): SLO ≤ 60s p99 — eixo independente; reads em outras regions miss session cache → fall-through D1 → revoked_at authoritative.
   - **Combined max** = max(hot, cold, cross-region) = **60s p99** (NOT 120s; eixos não compõem aditivamente).
 - 5xx auth backend (Clerk down OR D1 down) → 503 `auth_unavailable` com Retry-After: 5s.
@@ -311,7 +311,7 @@ Feature: Tower middleware auth stack
     When request POST /v1/cas/<digest> requires cache_w
     Then middleware verify ok; scope_check fails
     And response 403 com error_code COR_AUTH_SCOPE_INSUFFICIENT
-    And error_body { required: "cache:w", granted: ["cache:r"] }
+    And error_body { required: "cache-w", granted: ["cache-r"] } (canonical hyphen-form per auth_model.md §scope)
     And audit "auth.denied.scope" emitted
 
   Scenario: Session cache invalidation on revoke (WI-S03-004 hook)
@@ -430,7 +430,7 @@ Sim — **ADR-0029**: "TenantCtx immutability + session cache strategy + audit p
 - [ ] **10.5.2** Mann-Whitney U + power analysis 3-prong em invalid vs scope-insufficient timing (EVT-002):
   - N ≥ 10000 samples per arm.
   - Power 1−β ≥ 0.80 com effect d = 0.2.
-  - Šidák 3-trial gate (combined α ≈ 0.000125).
+  - Šidák correction: ALL 3 trials × 3 pairwise = 9 tests p > 0.05 (full conjunction); per-test α' ≈ 0.0057 controls combined familywise α at 0.05 (cycle 1 codex SEAL math correction).
   - |Δmedian| ≤ 5ms com 95% CI cruzando 0.
 - [ ] **10.5.3** TenantCtx immutability static-checked: clippy custom lint OR cargo-semver-checks impede `pub` field addition em release (EVT-002).
 - [ ] **10.5.4** 5-layer defense propagation chaos test em staging: TenantCtx mismatch detection ≤ 1s alert (EVT-022).
@@ -709,7 +709,7 @@ Fallback degradation: se ClerkAdapter offline, JWT path 503; PAT path continues.
 | R-001 | TenantCtx mutation via `unsafe { transmute }` em handler | L | L | CRITICAL | L | LOW | Private fields + cargo-deny `[lints.rust] unsafe = "deny"`; chaos test layer mismatch |
 | R-002 | Session cache poisoning (insider write to KV) | L | L | CRITICAL | L | LOW | wrangler binding scope restrict; deployer-only privilege; KV not trust boundary |
 | R-003 | Argon2 storm exhausts Worker memory (128 MiB) | M | H | HIGH | M | LOW | Bounded concurrent verify (memory budget); rate limit S-08 forward; alert sustained |
-| R-004 | Mann-Whitney CI flake (1-em-20 false positive) | M | H | LOW | M | LOW | Šidák 3-trial gate; combined α ≈ 0.000125 |
+| R-004 | Mann-Whitney CI flake (1-em-20 false positive) | M | H | LOW | M | LOW | Šidák correction: ALL 3 trials × 3 pairs = 9 tests p > 0.05; per-test α' ≈ 0.0057 controls familywise α at 0.05 (cycle 2 codex SEAL math correction) |
 | R-005 | Session cache TTL drift causes hot-path stale window > 60s SLA | L | M | HIGH | L | LOW | Env var validation em deploy; integration test boundary; cold path D1 authoritative fallback bounded |
 | R-006 | Scope check bypass via missing layer em new route | L | H | CRITICAL | L | LOW | Compile-time route definition requires `require_scope` OR `allow_unauthenticated`; deny-by-default |
 | R-007 | TenantCtx shape evolution breaks handlers | M | M | MEDIUM | M | LOW | `#[non_exhaustive]` + dot-dot pattern matching convention; CI gate em handler patterns |
@@ -734,17 +734,17 @@ Fallback degradation: se ClerkAdapter offline, JWT path 503; PAT path continues.
 |---|---|---|---|---|
 | 1 | Owner | Gustavo Schneiter | _pending_ | _pending_ |
 | 2 | Final Approver | Gustavo Schneiter | _pending_ | _pending_ |
-| 3 | SRE Lead | _staffing-blocked_ | _pending_ | _pending_ |
-| 4 | Security Lead | _TBD; emphatic — 5-layer ordering review_ | _pending_ | _pending_ |
-| 5 | Engineer (peer 1) | _TBD_ | _pending_ | _pending_ |
-| 6 | Engineer (peer 2) | _TBD_ | _pending_ | _pending_ |
-| 7 | QA | _TBD_ | _pending_ | _pending_ |
+| 3 | Architect | _TBD; composability + non-exhaustive evolution review_ (com Crypto SME specialization mandatory: Mann-Whitney 3-prong + dummy Argon2 + constant-time key compare (mandatory)) | _pending_ | _pending_ |
+| 4 | Security Lead | _TBD_ | _pending_ | _pending_ |
+| 5 | SRE Lead | _staffing-blocked_ | _pending_ | _pending_ |
+| 6 | Engineer (S-03 lead) | _TBD_ | _pending_ | _pending_ |
+| 7 | QA Lead | _TBD_ | _pending_ | _pending_ |
 | 8 | Product | Gustavo Schneiter | _pending_ | _pending_ |
-| 9 | Compliance | _TBD_ | _pending_ | _pending_ |
-| 10 | Privacy | _TBD; PII redaction policy review_ | _pending_ | _pending_ |
-| 11 | Architect | _TBD; **mandatory** — composability + non_exhaustive evolution_ | _pending_ | _pending_ |
-| 12 | AppSec | _TBD; **mandatory emphatic** — session cache poisoning + scope bypass review_ | _pending_ | _pending_ |
-| 13 | Crypto SME | _mandatory; Mann-Whitney 3-prong + dummy Argon2 + constant-time key compare_ | _pending_ | _pending_ |
+| 9 | Compliance Officer | _TBD_ | _pending_ | _pending_ |
+| 10 | Privacy Officer | _TBD_ | _pending_ | _pending_ |
+| 11 | AppSec advisor | _TBD; 5-layer ordering + session cache poisoning_ | _pending_ | _pending_ |
+
+> Crypto SME folds into Architect role specialization (cycle 1 codex SEAL alignment per framework §33.5.4.3 + ADR-0034 solo-tier waiver). Peer reviewers contribuem em PR review sem sign-off canonical separado (folded into Engineer + Architect).
 
 ## 31. Change Log
 

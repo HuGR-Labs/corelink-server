@@ -90,7 +90,7 @@ tags: ["architecture", "data-model", "schema", "cas", "ac", "billing"]
 |--------------------------------------|-------------|-------------------------------------|
 | Internal entity (account, tenant…)  | UUIDv7       | `01938af0-abcd-7123-8456-..........` |
 | Event (usage/audit)                  | ULID         | `01HKE3Z9ABCDEF01234567890`         |
-| PAT                                  | Custom (prefix.payload.sig) | `pat_v1_abc.Hy...........` |
+| PAT                                  | `corelink_<env>_<token_id>.<random_secret>` (canonical per auth_model.md §2.3 + S-03 cycle 7 SEAL) | `corelink_pat_abc12345.x9k...........` |
 | Blob digest                          | `algo:hex`   | `blake3:a1b2c3d4...`                |
 | Region                               | enum code    | `wnam`, `weur`, `sam`, ...          |
 | Request-id                           | ULID          | propagado em logs/traces            |

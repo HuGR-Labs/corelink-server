@@ -134,15 +134,16 @@ Um **principal** é qualquer entidade autenticada que executa operação no Core
 Todo token CoreLink tem formato:
 
 ```
-corelink_<type>_<base64(secret_bytes)>
+corelink_<env>_<token_id>.<random_secret> (cycle 7 codex SEAL canonical; replaces pre-fix base64 form)
 ```
 
-Onde `<type>` é um dos: `pat`, `ci`, `ro`, `exec` (reserved). Prefixo identifica classe de principal.
+Onde `<env>` é um dos: `pat` (user-emitted), `ci` (CI runner token), `ro` (read-only token), `exec` (Fase 2 executor; reserved). Format canonical: `corelink_<env>_<token_id>.<random_secret>` (per WI-S03-002 §6.1; cycle 6 codex SEAL alignment com spec_contract §5 R-S03-3 + WI-S03-005 PAT lookup primitive).
 
 ### 2.2 Geração
 
 - Server-side via `secrets` (CSPRNG) → 32 bytes random → base64.
-- Hash SHA-256 armazenado em `api_tokens.token_hash` (nunca plaintext).
+- PAT format canonical = `corelink_<env>_<token_id>.<random_secret>` (per WI-S03-002 §6.1; cycle 6 codex SEAL): `token_id` = 16-char deterministic index key (UUIDv7 short form OR SHA-256 prefix); `random_secret` = 32 bytes random base64url.
+- **Argon2id PHC string** (com salt) armazenado em **Neon `pat.token_hash`** (canonical SoT per data_model.md §4.1; nunca plaintext); per OWASP 2024 PAT hashing best practice. Lookup é deterministic via `token_id` index (NÃO por token_hash que é salted; constant-time compare via Argon2 verify após row found by token_id).
 - Plaintext retornado 1x ao user (no momento da criação); não recuperável depois.
 
 ### 2.3 Validação
@@ -150,7 +151,9 @@ Onde `<type>` é um dos: `pat`, `ci`, `ro`, `exec` (reserved). Prefixo identific
 Cada request autenticada:
 1. Parse `Authorization: Bearer <token>` ou gRPC metadata.
 2. Hash SHA-256 do token.
-3. Lookup em `api_tokens` WHERE `token_hash = :hash AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())`.
+3. **Step 3a**: Parse PAT format → extract `token_id` (deterministic prefix; per WI-S03-002 §6.1 PAT format canonical).
+3. **Step 3b**: Lookup em **Neon `pat`** WHERE `token_id = :tid AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())` (deterministic indexed lookup; ≤ 10ms p99 per WI-S03-005 §10).
+3. **Step 3c**: Argon2id verify(`random_secret_provided`, `pat.token_hash`) com constant-time compare; reject se mismatch (canonical SoT per data_model.md §4.1).
 4. Load scopes associados.
 5. Populate request context com `principal_id`, `tenant_id`, `scopes`.
 6. Atomic update `last_used_at` (async, batched).
@@ -307,7 +310,7 @@ Revogação **DEVE** efetivar em **≤ 60 segundos** em todas as réplicas globa
 ```
 1. User clica "Revoke" no dashboard
 2. API `DELETE /tokens/{id}`:
-   a. D1 UPDATE api_tokens SET revoked_at = NOW() WHERE id = :id
+   a. D1 UPDATE pat (canonical Neon SoT per data_model.md §4.1) SET revoked_at = NOW() WHERE id = :id
    b. Broadcast a todos DOs de revocation via DO message
    c. Invalidate token em KV cache
 3. Próxima request com esse token:

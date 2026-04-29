@@ -83,12 +83,12 @@ pub struct PropagationStatus {
 }
 
 impl RevocationDo {
-    /// API: revoke PAT. Cascades:
-    /// 1. UPDATE D1 api_tokens SET revoked_at = now() (transactional).
-    /// 2. INSERT este DO storage (revocation list).
+    /// API: revoke PAT. Cascades (canonical: Neon `pat` é SoT per data_model.md §4.1; cycle 3 codex SEAL alignment):
+    /// 1. UPDATE **Neon `pat`** SET revoked_at = now() (transactional; canonical SoT).
+    /// 2. INSERT este DO storage (revocation list — DO é hot-path broadcast cache, não SoT).
     /// 3. INSERT audit_outbox `auth.token.revoked` (atomic com #1).
-    /// 4. Trigger broadcast queue para outras regiões.
-    /// 5. Local KV invalidate: WI-S03-003 SessionCache::invalidate hook.
+    /// 4. Trigger broadcast queue para outras regiões (cross-region propagation ≤ 60s SLO).
+    /// 5. Local KV invalidate: WI-S03-003 SessionCache::invalidate hook (KV é hot-path session cache, não SoT).
     /// 6. Returns acknowledgment (idempotent; second call no-op).
     pub async fn revoke(&self, req: RevokeRequest) -> Result<RevokeResponse, RevocationError>;
 
@@ -121,13 +121,13 @@ Revocation correctness é o segundo pilar (após auth correctness) do auth postu
 
 2. **DO storage data loss em region failover**: Cloudflare Durable Object é region-pinned mas pode-se migrate em failure. Storage durável (pre-write log) garante persistence across migration. Confirmed: CF DO storage tem write-ahead log; data loss impossible se commit returned.
 
-3. **KV invalidation race vs concurrent verify**: T+0 cliente A verify hit cache (returns stale TenantCtx); T+1ms revoke fires; KV.delete cache; T+5ms session_cache hit returns stale. Janela de 5ms é fundamental; mitigação: revoke também updates D1 `api_tokens.revoked_at` BEFORE KV invalidate; verify path checks revoked_at em D1 fallback (cold path); window é ≤ session cache TTL (60s).
+3. **KV invalidation race vs concurrent verify**: T+0 cliente A verify hit cache (returns stale TenantCtx); T+1ms revoke fires; KV.delete cache; T+5ms session_cache hit returns stale. Janela de 5ms é fundamental; mitigação: revoke também updates D1 `pat.revoked_at` BEFORE KV invalidate; verify path checks revoked_at em D1 fallback (cold path); window é ≤ session cache TTL (60s).
 
 4. **Propagation lag > 60s SLO**: Queue backlog OR DO RPC slow OR region partition. Mitigação: tiered alert SEV-2 em > 30s p99; SEV-1 em > 60s p99; runbook RB-FM-REVOKE-LAG. Multi-region partition é CF-side; degradation expected during incidents.
 
 5. **Mass revoke storm**: tenant emergency mass-revoke 10k PATs em 1 op; queue backpressure; em-flight verifies durante 60s window. Mitigação: rate-limit mass revoke via DO (bounded 100 revokes/sec per tenant); batch broadcast (100 entries per queue message); audit emit per entry.
 
-6. **Audit emission gap em revocation**: revoke succeeds em D1 mas audit outbox INSERT fails; compliance gap. Mitigação: outbox INSERT é parte da mesma D1 batch que `api_tokens` UPDATE; reuse WI-S01-005 atomic transaction guarantee.
+6. **Audit emission gap em revocation**: revoke succeeds em D1 mas audit outbox INSERT fails; compliance gap. Mitigação: outbox INSERT é parte da mesma D1 batch que `pat` (canonical Neon SoT per data_model.md §4.1) UPDATE; reuse WI-S01-005 atomic transaction guarantee.
 
 7. **Dashboard race vs actual revoke**: user clicks "revoke"; UI shows revoked imediato; backend processing ainda pendente; user clicks again → idempotent. Mitigação: idempotent revoke via `(pat_id, revoked_at)` unique constraint; second call no-op.
 
@@ -160,8 +160,9 @@ Revocation correctness é o segundo pilar (após auth correctness) do auth postu
 
 **Persona 2 — Admin mass-revoking tenant tokens (security incident)**:
 - Admin: POST `/api/v1/admin/tokens/revoke-all` (com `tenant_id` + reason `SecurityIncident`).
-- DO: batch UPDATE `api_tokens` WHERE tenant_id=X SET revoked_at=now() (single atomic statement); 10k rows affected ≤ 5s.
-- Outbox: 10k rows INSERT batched.
+- DO orchestrates 2-phase mass revoke (cycle 4 codex SEAL alignment):
+  - **Phase 1 (atomic)**: UPDATE **Neon `pat`** WHERE tenant_id=X SET revoked_at=now() (single atomic Postgres transaction; canonical SoT per data_model.md §4.1; 10k rows affected ≤ 5s).
+  - **Phase 2 (chunked)**: audit_outbox INSERT em chunks of 1000 rows (10 batches × 1000 = 10k total; tolerates partial commit via queue at-least-once + consumer dedup; eventual completeness ≤ 5min).
 - Queue: 100 entries per message × 100 messages = bounded backpressure.
 - Customer-visible: "all tokens revoked; users must re-authenticate; propagation ≤ 60s globally".
 - Audit: 10k `auth.token.revoked` events em chain.
@@ -197,7 +198,7 @@ Revocation lifecycle + cross-region orchestration; HIGH_RISK; FF-HR-002 + FF-HR-
    - DO storage: `Map<PatId, RevokedEntry>` persistent.
 
 2. **D1 integration**:
-   - UPDATE `api_tokens SET revoked_at = ?, revocation_reason = ? WHERE pat_id = ?`.
+   - UPDATE `pat SET revoked_at = ?, revocation_reason = ? WHERE pat_id = ?`.
    - INSERT `audit_outbox` (`auth.token.revoked` event).
    - Both em mesma `db.batch([...])` (atomic).
    - INSERT `revocation_log` table (denormalized; DO ↔ D1 dual-write tolerated via reconciliation; vide §6.1.7).
@@ -212,7 +213,7 @@ Revocation lifecycle + cross-region orchestration; HIGH_RISK; FF-HR-002 + FF-HR-
 
 4. **Local KV invalidate hook** (integration WI-S03-003):
    - Após DO storage commit, call `SessionCache::invalidate(token_hash)` em local region.
-   - Token hash derivation: from PatId, lookup D1 `api_tokens.token_hash` field.
+   - Token hash derivation: from PatId, lookup D1 `pat.token_hash` field.
    - Returns ack; failure não bloqueia (best-effort; KV invalidate é optimization; D1 revoked_at é SoT).
 
 5. **Mass revoke endpoint**:
@@ -232,7 +233,7 @@ Revocation lifecycle + cross-region orchestration; HIGH_RISK; FF-HR-002 + FF-HR-
    - `corelink.auth.revocation.is_revoked_query_total{path=hot|admin}` (counter).
 
 7. **Reconciliation** (DO ↔ D1):
-   - Background job (CF Cron daily) compares DO storage vs D1 `api_tokens` revoked_at.
+   - Background job (CF Cron daily) compares DO storage vs D1 `pat` (canonical Neon SoT per data_model.md §4.1) revoked_at.
    - Diff em either direction = SEV-2 alert + manual sync runbook RB-FM-REVOKE-DRIFT.
    - Bound: drift ≤ 5min em transient state aceito; > 1h sustained = real bug.
 
@@ -263,7 +264,7 @@ Revocation lifecycle + cross-region orchestration; HIGH_RISK; FF-HR-002 + FF-HR-
 
 - **Distributed revocation across non-CF regions** (cliente self-hosted): pós-GA Q3+.
 - **Revocation API external (RFC 7009 OAuth)**: pós-GA.
-- **Per-scope revocation** (revoke `cache:w` mas keep `cache:r`): S-13 admin plane (granular).
+- **Per-scope revocation** (revoke `cache-w` mas keep `cache-r`; canonical hyphen-form): S-13 admin plane (granular).
 - **Time-bound revocation** (auto-restore após X hours): rejected design (security anti-pattern).
 - **Mass revoke beyond tenant scope** (org-wide; multi-tenant): S-14 enterprise.
 - **WebAuthn credential revocation**: WI-S03-006.
@@ -294,7 +295,7 @@ Feature: Revocation lifecycle + cross-region propagation
   Scenario: Single revoke happy path
     When user calls revoke(PAT_X, reason=UserInitiated) em wnam
     Then DO.revoke() executes:
-      And D1 UPDATE api_tokens SET revoked_at=now() WHERE pat_id=PAT_X
+      And D1 UPDATE pat (canonical Neon SoT per data_model.md §4.1) SET revoked_at=now() WHERE pat_id=PAT_X
       And D1 INSERT audit_outbox (event=auth.token.revoked)
       And DO storage INSERT RevokedEntry
       And local KV.delete(auth:session:<hash(PAT_X)>) called
@@ -324,9 +325,9 @@ Feature: Revocation lifecycle + cross-region propagation
   Scenario: Mass revoke atomic + audit complete
     Given Tenant A has 10000 active PATs
     When admin POST /api/v1/admin/tokens/revoke-all com tenant_id=A reason=SecurityIncident
-    Then D1 UPDATE api_tokens SET revoked_at=now() WHERE tenant_id=A executes em ≤ 5s
-    And 10000 rows affected
-    And audit_outbox has 10000 INSERT rows (em mesmo db.batch)
+    Then **Neon UPDATE pat SET revoked_at=now() WHERE tenant_id=A** executes em ≤ 5s atomic Postgres transaction (Phase 1; canonical SoT per data_model.md §4.1; cycle 4 codex SEAL)
+    And 10000 rows affected (UPDATE all-or-none per INV-AUTH-MASS-REVOKE-ATOMIC)
+    And audit_outbox has 10000 INSERT rows chunked em 10 batches of 1000 (Phase 2; eventual completeness ≤ 5min via queue at-least-once)
     And Queue has 100 messages × 100 entries each = 10000 entries enqueued
     And response { revoked_count: 10000, mass_revoke_id: <UUID> }
     And metric corelink.auth.revocation.requested_total{reason="SecurityIncident"} += 10000
@@ -358,7 +359,7 @@ Feature: Revocation lifecycle + cross-region propagation
 
   Scenario: Reconciliation drift detection
     Given DO storage shows PAT_X revoked at T+0
-    Given D1 api_tokens.revoked_at IS NULL (drift)
+    Given Neon `pat`.revoked_at IS NULL (drift)
     When reconciliation Cron runs
     Then drift detected
     And SEV-2 alert fires
@@ -395,7 +396,7 @@ D1 alone teria:
 - No native broadcast; must poll.
 - Eventual consistency cross-region.
 
-Combined: D1 = transactional truth (atomic com api_tokens row); DO = real-time orchestration.
+Combined: D1 = transactional truth (atomic com pat row); DO = real-time orchestration.
 
 ### 9.2 Why CF Queue (não pure DO RPC fan-out)
 
@@ -415,11 +416,11 @@ PAT-INVALIDATE-001 canonical em resilience_patterns.md.
 
 ### 9.4 Why D1 revoked_at IS NOT NULL como SoT (não DO storage)
 
-D1 transactional commit (mesmo batch que api_tokens). DO storage é eventual após D1 commit; pode-se ser inconsistente em DO migration window (rare but possible). Em verify path, **D1 é authoritative**; DO é optimization.
+D1 transactional commit (mesmo batch que pat). DO storage é eventual após D1 commit; pode-se ser inconsistente em DO migration window (rare but possible). Em verify path, **D1 é authoritative**; DO é optimization.
 
 Specifically: verify path
 1. SessionCache hit → return TenantCtx (hot path).
-2. SessionCache miss → D1 lookup api_tokens com revoked_at IS NULL constraint.
+2. SessionCache miss → D1 lookup pat com revoked_at IS NULL constraint.
 3. D1 returns row OR not-found; revoke handled at D1 level.
 4. DO query (`is_revoked`) é admin path only; not in critical verify path.
 
@@ -478,7 +479,7 @@ Sim — **ADR-0030**: "Revocation propagation: DO + Queue + ≤ 60s SLO single S
 ## 11. DoD
 
 - [ ] RevocationDo Durable Object impl + wrangler.toml binding.
-- [ ] D1 migrations: api_tokens revoked_at column + revocation_log table.
+- [ ] D1 migrations: pat revoked_at column + revocation_log table.
 - [ ] Queue + consumer impl.
 - [ ] Per-region SessionCache invalidate hooks integrated.
 - [ ] Mass revoke endpoint + admin scope check.
@@ -496,7 +497,7 @@ Sim — **ADR-0030**: "Revocation propagation: DO + Queue + ≤ 60s SLO single S
 
 - **INV-AUTH-REVOCATION-IDEMPOTENT** (CRITICAL): retry revoke = single audit event + same revoked_at; property test 100k.
 - **INV-AUTH-REVOCATION-SLO-60S** (CRITICAL): cross-region propagation ≤ 60s p99 sustained.
-- **INV-AUTH-D1-IS-SOT** (HIGH): D1 revoked_at IS NULL é authoritative em verify path; DO storage is optimization.
+- **INV-AUTH-NEON-IS-SOT** (HIGH): Neon `pat.revoked_at IS NULL` é authoritative em verify path; DO storage + KV session cache são hot-path optimization (não SoT). Cycle 4 codex SEAL canonical alignment per data_model.md §4.1.
 - **INV-AUTH-MASS-REVOKE-ATOMIC** (CRITICAL): mass revoke é all-or-none via D1 batch.
 - **INV-AUTH-PROPAGATION-AT-LEAST-ONCE** (HIGH): queue at-least-once + consumer dedup; eventual delivery.
 
@@ -601,7 +602,7 @@ PRR HIGH_RISK 11 sign-offs canonical gated em WI-S03-008 ship gate.
 - WI-S03-002 (corelink-pat) SEALED — pat_id + token_hash references.
 - WI-S03-003 (middleware) SEALED — SessionCache::invalidate public hook.
 - WI-S01-005 audit_outbox table available.
-- WI-S03-005 (Neon schema) — `api_tokens` table com `revoked_at` column.
+- WI-S03-005 (Neon schema) — `pat` (canonical Neon SoT per data_model.md §4.1) table com `revoked_at` column.
 
 ### Soft blockers
 
@@ -751,17 +752,17 @@ Per-tenant emergency: mass-revoke endpoint OR direct D1 UPDATE (admin override).
 |---|---|---|---|---|
 | 1 | Owner | Gustavo Schneiter | _pending_ | _pending_ |
 | 2 | Final Approver | Gustavo Schneiter | _pending_ | _pending_ |
-| 3 | SRE Lead | _TBD; **mandatory emphatic** — DO + Queue operations + SLO budgeting_ | _pending_ | _pending_ |
-| 4 | Security Lead | _TBD; revoke timing + insider threat review_ | _pending_ | _pending_ |
-| 5 | Engineer (peer 1) | _TBD_ | _pending_ | _pending_ |
-| 6 | Engineer (peer 2) | _TBD_ | _pending_ | _pending_ |
-| 7 | QA | _TBD_ | _pending_ | _pending_ |
+| 3 | Architect | _TBD; broadcast pattern + DO sharding review_ (com Crypto SME specialization mandatory: revocation broadcast TLS posture + KV cache key derivation review) | _pending_ | _pending_ |
+| 4 | Security Lead | _TBD; revocation latency + cache poisoning review_ | _pending_ | _pending_ |
+| 5 | SRE Lead | _staffing-blocked_ | _pending_ | _pending_ |
+| 6 | Engineer (S-03 lead) | _TBD_ | _pending_ | _pending_ |
+| 7 | QA Lead | _TBD_ | _pending_ | _pending_ |
 | 8 | Product | Gustavo Schneiter | _pending_ | _pending_ |
-| 9 | Compliance | _TBD; LGPD Art. 47 + GDPR Art. 17 traceability_ | _pending_ | _pending_ |
-| 10 | Privacy | _TBD_ | _pending_ | _pending_ |
-| 11 | Architect | _TBD; **mandatory** — DO vs D1 SoT + queue trade-offs_ | _pending_ | _pending_ |
-| 12 | AppSec | _TBD; admin scope + insider abuse + chaos suite review_ | _pending_ | _pending_ |
-| 13 | Crypto SME | _advisory; non-crypto-touching mas alinhamento sprint contract §14_ | _pending_ | _pending_ |
+| 9 | Compliance Officer | _TBD_ | _pending_ | _pending_ |
+| 10 | Privacy Officer | _TBD_ | _pending_ | _pending_ |
+| 11 | AppSec advisor | _TBD; timing windows + revocation race review_ | _pending_ | _pending_ |
+
+> Crypto SME folds into Architect role specialization (cycle 1 codex SEAL alignment per framework §33.5.4.3 + ADR-0034 solo-tier waiver). Peer reviewers contribuem em PR review sem sign-off canonical separado (folded into Engineer + Architect).
 
 ## 31. Change Log
 

@@ -773,17 +773,17 @@ RTO ≤ 30 min; RPO 0 (events durables em D1).
 |---|---|---|---|---|
 | 1 | Owner | Gustavo Schneiter | _pending_ | _pending_ |
 | 2 | Final Approver | Gustavo Schneiter | _pending_ | _pending_ |
-| 3 | SRE Lead | _staffing-blocked_ | _pending_ | _pending_ |
+| 3 | Architect | _TBD; emit hook placement + canonical form review_ (com Crypto SME specialization mandatory: chain hash deterministic JSON + canonical form + redact macros (mandatory pair-program)) | _pending_ | _pending_ |
 | 4 | Security Lead | _TBD_ | _pending_ | _pending_ |
-| 5 | Engineer (peer 1) | _TBD_ | _pending_ | _pending_ |
-| 6 | Engineer (peer 2) | _TBD_ | _pending_ | _pending_ |
-| 7 | QA | _TBD_ | _pending_ | _pending_ |
+| 5 | SRE Lead | _staffing-blocked_ | _pending_ | _pending_ |
+| 6 | Engineer (S-03 lead) | _TBD_ | _pending_ | _pending_ |
+| 7 | QA Lead | _TBD_ | _pending_ | _pending_ |
 | 8 | Product | Gustavo Schneiter | _pending_ | _pending_ |
-| 9 | Compliance | _TBD; **mandatory emphatic** — SOC 2 + LGPD Art. 38 + GDPR Art. 30 traceability_ | _pending_ | _pending_ |
-| 10 | Privacy | _TBD; **mandatory emphatic** — PII redaction + DSR pseudonymization + retention_ | _pending_ | _pending_ |
-| 11 | Architect | _TBD; **mandatory** — taxonomy + envelope + emit pattern_ | _pending_ | _pending_ |
-| 12 | AppSec | _TBD; chain integrity + insider threat surface_ | _pending_ | _pending_ |
-| 13 | Crypto SME | _mandatory; chain hash deterministic + redact macros + canonical JSON_ | _pending_ | _pending_ |
+| 9 | Compliance Officer | _TBD; emphatic — SOC 2 + LGPD audit trail completeness_ | _pending_ | _pending_ |
+| 10 | Privacy Officer | _TBD; emphatic — PII redact macros + canonical JSON_ | _pending_ | _pending_ |
+| 11 | AppSec advisor | _TBD; redaction completeness + side-channel via timing_ | _pending_ | _pending_ |
+
+> Crypto SME folds into Architect role specialization (cycle 1 codex SEAL alignment per framework §33.5.4.3 + ADR-0034 solo-tier waiver). Peer reviewers contribuem em PR review sem sign-off canonical separado (folded into Engineer + Architect).
 
 ## 31. Change Log
 

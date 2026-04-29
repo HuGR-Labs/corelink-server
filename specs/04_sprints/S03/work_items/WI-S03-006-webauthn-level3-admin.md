@@ -394,8 +394,8 @@ Feature: WebAuthn Level 3 — registration + authentication + admin step-up
     When AuthenticationResponse arrives with sign_count = 50
     Then SignCountRegression detected
     And response 401 com error_code COR_AUTH_SIGN_COUNT_REGRESSION
-    And metric corelink.auth.webauthn.sign_count_regression_total += 1
-    And SEV-1 alert fires
+    And metric corelink_auth_webauthn_sign_count_regression_total += 1 (canonical underscored per observability_model.md §4.1)
+    And **SEV-2 alert fires** (first regression; W3C-compliant policy per Lote 10.3-tris P0-R5-002b + cycle 4 codex SEAL alignment com §28 R-004 + §31 v1.2.0; SEV-1 only após forensic confirmation)
     And user notified via email "potential security issue with your authenticator"
 
   Scenario: Challenge expired (TTL 300s)
@@ -515,7 +515,7 @@ Sim — **ADR-0032**: "WebAuthn Level 3 implementation strategy + AAGUID allowli
 - [ ] **10.5.3** Cross-browser CI matrix 16/16 scenarios green (Chrome + Firefox + Safari + Edge) (EVT-018).
 - [ ] **10.5.4** Real authenticator E2E test em staging com pelo menos: 1 passkey + 1 YubiKey 5 + 1 Touch ID + 1 Windows Hello (EVT-018).
 - [ ] **10.5.5** Admin step-up flow E2E green: mass revoke + billing change + tenant DELETE all require WebAuthn (EVT-040).
-- [ ] **10.5.6** Sign_count regression detection: synthetic replay → 100% caught + SEV-1 alert (EVT-022).
+- [ ] **10.5.6** Sign_count regression detection: synthetic replay → 100% caught + **SEV-2 alert** (first regression; W3C-compliant per P0-R5-002b + cycle 4 codex SEAL) (EVT-022).
 - [ ] **10.5.7** Cargo-audit + cargo-deny clean (no CVE em webauthn-rs OR coset OR ciborium).
 - [ ] **10.5.8** Cargo-fuzz target em CBOR/COSE deserialize 1h corpus; 0 panics (EVT-008).
 - [ ] **10.5.9** OWASP ASVS V2.1 (general authenticator security) + V2.5 (multi-factor authenticator) 100% pass (EVT-002).
@@ -599,7 +599,7 @@ TLA+ alignment: planned `webauthn_ceremony.tla` (S-09 ou pós); modela challenge
 
 9. **High-volume registration storm**: 100 users simultaneously enroll passkey; verify backend handles + Worker memory bound.
 
-10. **Recovery flow** (lost device): user with single credential loses device; tests email magic link → re-register → invalidate old.
+10. **Recovery flow** (lost device): user with single credential loses device; tests **OTP recovery flow** (Clerk SSO email + 6-digit OTP per Lote 10.3-tris P0-R5-002a + ADR-0032 §A1; magic link explicitly REJECTED em sprint contract §10 anti-scope) → re-register → invalidate old. Cycle 4 codex SEAL.
 
 ## 16. PRR
 
@@ -720,13 +720,13 @@ Erro mapping:
 - `RpIdMismatch` → 401 `COR_AUTH_RP_ID_MISMATCH`.
 - `UserVerificationMissing` → 403 `COR_AUTH_UV_REQUIRED`.
 - `AttestationInvalid` → 403 `COR_AUTH_ATTESTATION_INVALID`.
-- `SignCountRegression` → 401 `COR_AUTH_SIGN_COUNT_REGRESSION` + SEV-1 alert.
+- `SignCountRegression` → 401 `COR_AUTH_SIGN_COUNT_REGRESSION` + **SEV-2 alert** (first regression W3C-compliant per P0-R5-002b; SEV-1 only após forensic confirmation via §28 R-004 escalation).
 - `CredentialNotFound` → 404 `COR_AUTH_CREDENTIAL_NOT_FOUND`.
 
 ## 24. Post-mortem Hooks
 
 - WebAuthn bypass exploit detected → CRITICAL post-mortem + breach review.
-- Sign_count regression sustained > 3 events em 24h → SEV-1 + force re-registration + user notification.
+- Sign_count regression: first event SEV-2 (per Lote 10.3-tris P0-R5-002b W3C-compliant policy + cycle 4 codex SEAL); forensic confirmation escalates to SEV-1 + force re-registration + user notification. **NOTE: "≥3 events em 24h" threshold REMOVED per P0-R5-002b**; cycle 5 codex SEAL alignment.
 - Cross-browser CI matrix red sustained > 1 day → SEV-2.
 - Origin spoof attempts spike → SEV-2 (active attack indicator).
 - AAGUID denylist activation (deprecated authenticator detected em prod) → SEV-2 + customer notification.
@@ -736,7 +736,7 @@ Erro mapping:
 
 Hot rollback via Wrangler. Per-credential admin override: admin can DELETE credential via API (logged audit).
 
-User recovery: lost device → email magic link (Clerk SSO) → re-register passkey → invalidate old.
+User recovery: lost device → **6-digit OTP via Clerk SSO email** (per Lote 10.3-tris P0-R5-002a + ADR-0032; magic link rejected em sprint contract §10 anti-scope) → re-register passkey → invalidate old. Cycle 4 codex SEAL.
 
 RTO ≤ 30 min (deploy rollback); RPO 0 (stateless ceremony; credentials in Neon).
 
@@ -803,18 +803,17 @@ RTO ≤ 30 min (deploy rollback); RPO 0 (stateless ceremony; credentials in Neon
 |---|---|---|---|---|
 | 1 | Owner | Gustavo Schneiter | _pending_ | _pending_ |
 | 2 | Final Approver | Gustavo Schneiter | _pending_ | _pending_ |
-| 3 | SRE Lead | _staffing-blocked_ | _pending_ | _pending_ |
-| 4 | Security Lead | _TBD; emphatic — admin step-up + insider abuse_ | _pending_ | _pending_ |
-| 5 | Engineer (peer 1) | _TBD_ | _pending_ | _pending_ |
-| 6 | Engineer (peer 2) | _TBD_ | _pending_ | _pending_ |
-| 7 | QA | _TBD; cross-browser matrix oversight_ | _pending_ | _pending_ |
+| 3 | Architect | _TBD; recovery flow design review_ (com Crypto SME specialization mandatory: CBOR/COSE + attestation + WebAuthn Level 3 spec compliance (mandatory pair-program)) | _pending_ | _pending_ |
+| 4 | Security Lead | _TBD_ | _pending_ | _pending_ |
+| 5 | SRE Lead | _staffing-blocked_ | _pending_ | _pending_ |
+| 6 | Engineer (S-03 lead) | _TBD_ | _pending_ | _pending_ |
+| 7 | QA Lead | _TBD_ | _pending_ | _pending_ |
 | 8 | Product | Gustavo Schneiter | _pending_ | _pending_ |
-| 9 | Compliance | _TBD; NIST AAL3 traceability_ | _pending_ | _pending_ |
-| 10 | Privacy | _TBD; biometric data flow review_ | _pending_ | _pending_ |
-| 11 | Architect | _TBD; ceremony state machine + recovery flow_ | _pending_ | _pending_ |
-| 12 | AppSec | _TBD; **mandatory emphatic** — origin allowlist + RP ID + attestation_ | _pending_ | _pending_ |
-| 13 | Crypto SME | _**mandatory pair-program** — CBOR/COSE + attestation chain + sign_count semantics_ | _pending_ | _pending_ |
-| _advisory_ | UX Researcher | _TBD; passkey + YubiKey UX review_ | _advisory_ | _pending_ |
+| 9 | Compliance Officer | _TBD_ | _pending_ | _pending_ |
+| 10 | Privacy Officer | _TBD; biometric data handling (no server-side; authenticator-only)_ | _pending_ | _pending_ |
+| 11 | AppSec advisor | _TBD; emphatic — origin allowlist + RP ID + magic link removal validation_ | _pending_ | _pending_ |
+
+> Crypto SME folds into Architect role specialization (cycle 1 codex SEAL alignment per framework §33.5.4.3 + ADR-0034 solo-tier waiver). Peer reviewers contribuem em PR review sem sign-off canonical separado (folded into Engineer + Architect).
 
 ## 31. Change Log
 

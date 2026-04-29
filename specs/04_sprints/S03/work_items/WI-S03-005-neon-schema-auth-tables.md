@@ -26,7 +26,7 @@ inherits_from:
 tags: ["wi", "s03", "auth", "neon", "postgres", "schema", "pgcrypto", "high-risk"]
 ---
 
-# WI-S03-005 — Neon Schema (account / tenant / user_account / membership / api_tokens) + pgcrypto Column Encryption + Migration `002_auth_tables`
+# WI-S03-005 — Neon Schema (account / tenant / user_account / membership / pat) + pgcrypto Column Encryption + Migration `002_auth_tables`
 
 > **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
 > **Parent:** [S-03](../sprint.md) · **Assignee:** Gustavo Schneiter
@@ -47,7 +47,7 @@ tags: ["wi", "s03", "auth", "neon", "postgres", "schema", "pgcrypto", "high-risk
 
 Implementar schema relacional Postgres em Neon (canonical source per `data_model.md`) para auth domain com:
 
-1. **7 tables**: `account`, `tenant`, `user_account`, `membership`, `api_tokens`, `webauthn_credentials`, `revocation_log`.
+1. **7 tables**: `account`, `tenant`, `user_account`, `membership`, `pat`, `webauthn_credentials`, `revocation_log`.
 2. **pgcrypto column-level encryption** para sensitive fields: `email`, `webauthn_credentials.attestation_object`, `webauthn_credentials.public_key` (PII + cripto material).
 3. **Row-Level Security (RLS)** policies enforcing tenant isolation em queries application-level (defense-in-depth Layer 2; Layer 1 é app-side TenantCtx, vide WI-S03-003).
 4. **Idempotent migration** `migrations/002_auth_tables.sql` em CockroachDB-compatible syntax para Neon (Postgres 16+).
@@ -59,9 +59,9 @@ Implementar schema relacional Postgres em Neon (canonical source per `data_model
 -- DDL omite `DEFAULT gen_random_uuid()` (que produces v4) — todos INSERTs DEVEM provider id app-side via uuid::Uuid::now_v7().
 -- App-side type: `Uuid` em sqlx; CI gate verifica zero `gen_random_uuid()` em queries.
 
--- account: top-level customer entity (corp ou individual)
+-- account: top-level customer entity (corp ou individual; canonical PK = account_id per data_model.md §4.1 L60)
 CREATE TABLE account (
-    id              UUID PRIMARY KEY,                            -- UUID v7 app-side mint (NOT default; vide nota acima)
+    account_id      UUID PRIMARY KEY,                            -- UUID v7 app-side mint (NOT default); canonical column name per data_model.md §4.1
     name            TEXT NOT NULL,
     type            account_type NOT NULL,                       -- enum: 'individual' | 'business' | 'enterprise'
     billing_email   BYTEA,                                       -- pgcrypto encrypted (PII); pgp_sym_encrypt_bytea
@@ -71,10 +71,10 @@ CREATE TABLE account (
     deleted_at      TIMESTAMPTZ                                  -- soft delete; DSR retention
 );
 
--- tenant: scope of multi-tenant isolation; all CAS data attributed to tenant
+-- tenant: scope of multi-tenant isolation; all CAS data attributed to tenant (canonical PK = `tenant_id` per data_model.md §4.1)
 CREATE TABLE tenant (
-    id              UUID PRIMARY KEY,                            -- UUID v7 app-side
-    account_id      UUID NOT NULL REFERENCES account(id) ON DELETE CASCADE,
+    tenant_id       UUID PRIMARY KEY,                            -- UUID v7 app-side; canonical column name per data_model.md §4.1 L181
+    account_id      UUID NOT NULL REFERENCES account(account_id) ON DELETE CASCADE,
     slug            TEXT NOT NULL UNIQUE,                        -- URL-friendly: "acme-corp"
     region          region_t NOT NULL,                           -- enum: 'wnam' | 'enam' | 'weur' | 'eeur' | 'apac'
     tier            tier_t NOT NULL DEFAULT 'team',              -- enum: 'solo' | 'team' | 'business' | 'enterprise'
@@ -87,9 +87,9 @@ CREATE TABLE tenant (
 CREATE INDEX idx_tenant_account_alive ON tenant(account_id) WHERE deleted_at IS NULL;
 CREATE INDEX idx_tenant_region ON tenant(region) WHERE deleted_at IS NULL;
 
--- user_account: human authentication identity (Clerk-managed; mirror em Neon)
+-- user_account: human authentication identity (Clerk-managed; mirror em Neon; canonical PK = `user_id` per data_model.md §4.1 L182)
 CREATE TABLE user_account (
-    id              UUID PRIMARY KEY,                            -- UUID v7 app-side
+    user_id         UUID PRIMARY KEY,                            -- UUID v7 app-side; canonical column name per data_model.md §4.1
     clerk_user_id   TEXT NOT NULL UNIQUE,                        -- Clerk's stable user ID
     email           BYTEA NOT NULL,                              -- pgcrypto encrypted via pgp_sym_encrypt_bytea
     email_key_id    INTEGER NOT NULL DEFAULT 1,                  -- multi-key support (rotation)
@@ -104,8 +104,8 @@ CREATE INDEX idx_user_email_hash ON user_account(email_hash) WHERE deleted_at IS
 
 -- membership: M:N relationship user_account ↔ tenant; defines role
 CREATE TABLE membership (
-    user_account_id UUID NOT NULL REFERENCES user_account(id) ON DELETE CASCADE,
-    tenant_id       UUID NOT NULL REFERENCES tenant(id) ON DELETE CASCADE,
+    user_account_id UUID NOT NULL REFERENCES user_account(user_id) ON DELETE CASCADE,
+    tenant_id       UUID NOT NULL REFERENCES tenant(tenant_id) ON DELETE CASCADE,
     role            role_t NOT NULL,                             -- enum: 'admin' | 'member' | 'viewer'
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     deleted_at      TIMESTAMPTZ,
@@ -115,32 +115,33 @@ CREATE TABLE membership (
 CREATE INDEX idx_membership_tenant_alive ON membership(tenant_id, role) WHERE deleted_at IS NULL;
 CREATE INDEX idx_membership_user_alive ON membership(user_account_id) WHERE deleted_at IS NULL;
 
--- api_tokens: PAT lifecycle storage (consumed by WI-S03-002 + WI-S03-003 + WI-S03-004)
-CREATE TABLE api_tokens (
-    id              UUID PRIMARY KEY,                            -- UUID v7 app-side
-    tenant_id       UUID NOT NULL REFERENCES tenant(id) ON DELETE CASCADE,
-    principal_id    UUID NOT NULL REFERENCES user_account(id) ON DELETE CASCADE,
-    token_hash      TEXT NOT NULL UNIQUE,                        -- Argon2id PHC string from WI-S03-002
-    env             pat_env_t NOT NULL,                          -- enum: 'pat' | 'ci' | 'ro'
-    scopes          BIGINT NOT NULL DEFAULT 0,                   -- u64 bitset (PatScopes; WI-S03-002)
-    name            TEXT NOT NULL,                               -- user-provided label
-    issued_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-    expires_at      TIMESTAMPTZ,
-    last_used_at    TIMESTAMPTZ,
-    revoked_at      TIMESTAMPTZ,                                 -- WI-S03-004 SoT
-    revocation_reason  revocation_reason_t,                      -- enum
-    revoked_by      UUID REFERENCES user_account(id),
-    CHECK (scopes >= 0)                                          -- bitset non-negative
+-- pat: PAT lifecycle storage (canonical per data_model.md §4.1 L179; consumed by WI-S03-002 + WI-S03-003 + WI-S03-004)
+-- Cycle 1 codex SEAL alignment: pat → pat (canonical name); FK refs corrected; types aligned.
+CREATE TABLE pat (
+    pat_id            UUID        PRIMARY KEY,                   -- UUID v7 app-side
+    token_id          TEXT        NOT NULL UNIQUE,               -- 16-char deterministic indexed lookup key (cycle 7 codex SEAL; per auth_model.md §2.3 verification primitive: corelink_<env>_<token_id>.<random_secret>); enables ≤10ms p99 SELECT before Argon2id verify on token_hash
+    tenant_id         UUID        NOT NULL REFERENCES tenant(tenant_id) ON DELETE CASCADE,
+    issued_to_user    UUID        NULL REFERENCES user_account(user_id),
+    kind              TEXT        NOT NULL CHECK (kind IN ('user','ci','readonly','executor','service')), -- canonical 5-variant enum per data_model.md §4.1 L183
+    token_hash        BYTEA       NOT NULL UNIQUE,               -- raw bytes; Argon2id PHC string serialized as BYTEA por canonical schema (text-encoding via app layer); aligns data_model.md §4.1 L184
+    scopes            TEXT[]      NOT NULL,                      -- canonical TEXT[] form per data_model.md §4.1 L185 (e.g., ['cache-r','cache-find-missing']); runtime PatScopes bitset (ADR-0026 forward) é serialization optimization aplicada via app-layer transform — schema source-of-truth é TEXT[] for query flexibility + DSR audit trail
+    expires_at        TIMESTAMPTZ NULL,
+    last_used_at      TIMESTAMPTZ NULL,
+    revoked_at        TIMESTAMPTZ NULL,                          -- WI-S03-004 SoT
+    revocation_reason revocation_reason_t,                       -- enum
+    revoked_by        UUID        REFERENCES user_account(user_id),
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_api_tokens_tenant_alive ON api_tokens(tenant_id, principal_id) WHERE revoked_at IS NULL;
-CREATE INDEX idx_api_tokens_principal_alive ON api_tokens(principal_id) WHERE revoked_at IS NULL;
-CREATE INDEX idx_api_tokens_expires ON api_tokens(expires_at) WHERE revoked_at IS NULL AND expires_at IS NOT NULL;
+CREATE INDEX idx_pat_token_id ON pat(token_id);                               -- B-tree for ≤10ms p99 verify lookup (cycle 7 codex SEAL: deterministic indexed lookup primitive per auth_model.md §2.3)
+CREATE INDEX idx_pat_tenant_alive ON pat(tenant_id, issued_to_user) WHERE revoked_at IS NULL;
+CREATE INDEX idx_pat_user_alive ON pat(issued_to_user) WHERE revoked_at IS NULL;
+CREATE INDEX idx_pat_expires ON pat(expires_at) WHERE revoked_at IS NULL AND expires_at IS NOT NULL;
 
 -- webauthn_credentials: WebAuthn Level 3 storage (consumed by WI-S03-006)
 CREATE TABLE webauthn_credentials (
     id                  UUID PRIMARY KEY,                        -- UUID v7 app-side
-    user_account_id     UUID NOT NULL REFERENCES user_account(id) ON DELETE CASCADE,
+    user_account_id     UUID NOT NULL REFERENCES user_account(user_id) ON DELETE CASCADE,
     credential_id       BYTEA NOT NULL UNIQUE,                   -- WebAuthn credentialId
     public_key          BYTEA NOT NULL,                          -- pgcrypto encrypted (CBOR-encoded COSE key) via pgp_sym_encrypt_bytea
     public_key_key_id   INTEGER NOT NULL DEFAULT 1,              -- multi-key support (rotation)
@@ -178,15 +179,15 @@ CREATE INDEX idx_revocation_tenant ON revocation_log(tenant_id, revoked_at);
 
 Schema é o foundation: bug em design = cross-tenant data exposure que NUNCA será fixed via app-layer patch. Bugs catastróficos:
 
-1. **Missing tenant_id em PK**: query `SELECT * FROM api_tokens WHERE id = ?` sem tenant filter retorna alheio token. Mitigação: `api_tokens.id` é UUID globally unique (não composite), MAS app-layer queries SEMPRE filter `WHERE tenant_id = $TenantCtx.tenant_id`; RLS policy enforces (defense-in-depth).
+1. **Missing tenant_id em PK**: query `SELECT * FROM pat WHERE id = ?` sem tenant filter retorna alheio token. Mitigação: `pat.id` é UUID globally unique (não composite), MAS app-layer queries SEMPRE filter `WHERE tenant_id = $TenantCtx.tenant_id`; RLS policy enforces (defense-in-depth).
 
-2. **Cascade DELETE perigoso**: `ON DELETE CASCADE` em `tenant` → triggers cascade purge de `api_tokens`, `membership`. Bom para DSR erasure (S-11) MAS perigoso em accidental tenant DELETE (admin ops). Mitigação: `tenant.deleted_at` soft delete (não hard DELETE em prod); hard DELETE só em DSR pipeline + audit requirement; admin ops via API endpoint que soft-deletes com waiver.
+2. **Cascade DELETE perigoso**: `ON DELETE CASCADE` em `tenant` → triggers cascade purge de `pat`, `membership`. Bom para DSR erasure (S-11) MAS perigoso em accidental tenant DELETE (admin ops). Mitigação: `tenant.deleted_at` soft delete (não hard DELETE em prod); hard DELETE só em DSR pipeline + audit requirement; admin ops via API endpoint que soft-deletes com waiver.
 
 3. **Email column unencrypted**: PII clear text em DB; insider attack OR backup leak = compliance breach (LGPD Art. 46). Mitigação: pgcrypto `pgp_sym_encrypt(email, master_key)` em INSERT; `email_hash = HMAC(static_hash_key, email)` para lookup-by-email queries (deterministic; non-reversible).
 
 4. **token_hash collisão**: Argon2id PHC strings teoricamente unique (256-bit hash + 128-bit salt = 2^384 keyspace), MAS UNIQUE constraint em PK rejeita collision graciously. Bug class: app-layer não-handling de UNIQUE violation → retry storm. Mitigação: app-layer catches UniqueViolation; returns user-friendly "token already exists" (semanticamente impossible mas defensivo).
 
-5. **Migration breaking change**: ALTER COLUMN type em `api_tokens.scopes` (e.g., u64 → u128 quando >64 scopes) = downtime + cliente-side breaking. Mitigação: migration policy `additive-only`; bump major schema version + dual-write window + ADR + sprint.
+5. **Migration breaking change**: ALTER COLUMN type em `pat.scopes` (e.g., u64 → u128 quando >64 scopes) = downtime + cliente-side breaking. Mitigação: migration policy `additive-only`; bump major schema version + dual-write window + ADR + sprint.
 
 6. **RLS policy gap**: app deploys com RLS disabled em new query path; query bypassa tenant filter. Mitigação: RLS é DEFAULT ON em todas as tables auth; app-side queries explicitly set `SET LOCAL app.current_tenant = $tenant_id` per request; CI test verifies RLS enforcement em test queries.
 
@@ -229,7 +230,7 @@ Schema é o foundation: bug em design = cross-tenant data exposure que NUNCA ser
 **Persona 3 — Compliance auditor LGPD review**:
 - Audit query: `SELECT pgp_sym_decrypt(billing_email, key) FROM account WHERE id = ?` (privileged; logged).
 - Audit chain (S-09 forward) shows all PII access events.
-- DSR erasure: Cliente request → `UPDATE account SET deleted_at = now()` → cascade marks tenant + user_account + membership + api_tokens; physical purge via S-11 retention worker (30d grace).
+- DSR erasure: Cliente request → `UPDATE account SET deleted_at = now()` → cascade marks tenant + user_account + membership + pat; physical purge via S-11 retention worker (30d grace).
 
 **SLA addendum**:
 - Tenant provisioning ≤ 2s p99.
@@ -339,7 +340,7 @@ Schema + migration + cripto column encryption; HIGH_RISK; FF-HR-002 + FF-HR-005 
    - All 7 tables: `ENABLE ROW LEVEL SECURITY`.
    - Per-tenant filter policy:
      ```sql
-     CREATE POLICY tenant_isolation ON api_tokens
+     CREATE POLICY tenant_isolation ON pat
        USING (tenant_id = current_setting('app.current_tenant')::uuid);
      ```
    - **Lifecycle correctness para CF Workers + sqlx pool**:
@@ -375,7 +376,7 @@ Schema + migration + cripto column encryption; HIGH_RISK; FF-HR-002 + FF-HR-005 
 
 8. **DSR (S-11 forward) hooks**:
    - Soft-delete columns (`deleted_at`) em todas as tables.
-   - Cascade rules: account DELETE → tenant DELETE → membership/api_tokens DELETE.
+   - Cascade rules: account DELETE → tenant DELETE → membership/pat DELETE.
    - Audit chain (S-09 forward) **não** cascades; pseudonymous IDs preserve linkability sem PII.
    - DSR worker (S-11) hard-deletes after 30d grace; audit chain retained.
 
@@ -454,7 +455,7 @@ Feature: Neon auth schema + pgcrypto + RLS
     And RLS policy active: SELECT * FROM tenant requires SET LOCAL app.current_tenant
 
   Scenario: PII email encryption roundtrip
-    When INSERT INTO user_account (id, clerk_user_id, email, email_hash, full_name) VALUES (
+    When INSERT INTO user_account (user_id, clerk_user_id, email, email_hash, full_name) VALUES (
       $1,  -- UUID v7 app-side mint
       'user_xyz',
       pgp_sym_encrypt_bytea('user@acme.com'::bytea, current_setting('app.master_key')::bytea),
@@ -468,31 +469,31 @@ Feature: Neon auth schema + pgcrypto + RLS
 
   Scenario: Lookup by email via email_hash (deterministic)
     Given user inserted com email='user@acme.com' + email_hash=H
-    When SELECT id FROM user_account WHERE email_hash = hmac(lower(trim('user@acme.com'))::bytea, current_setting('app.email_hash_key')::bytea, 'sha256')
+    When SELECT user_id FROM user_account WHERE email_hash = hmac(lower(trim('user@acme.com'))::bytea, current_setting('app.email_hash_key')::bytea, 'sha256')
     Then user row returned em ≤ 5ms (idx_user_email_hash)
 
   Scenario: RLS enforces tenant isolation
     Given Tenant A em wnam; Tenant B em wnam (same DB)
     Given user_X membership tenant_A
-    When SET LOCAL app.current_tenant = tenant_A.id
-    Then SELECT * FROM api_tokens returns só tenant_A rows
-    When SET LOCAL app.current_tenant = tenant_B.id
-    Then SELECT * FROM api_tokens returns só tenant_B rows
+    When SET LOCAL app.current_tenant = tenant_A.tenant_id
+    Then SELECT * FROM pat returns só tenant_A rows
+    When SET LOCAL app.current_tenant = tenant_B.tenant_id
+    Then SELECT * FROM pat returns só tenant_B rows
     When app forgets SET (default Postgres role)
     Then SELECT returns 0 rows (RLS denies; no NULL bypass)
 
-  Scenario: api_tokens INSERT (consumed by WI-S03-002 mint)
-    Given Argon2id hash + scopes bitset gerados em app
-    When INSERT INTO api_tokens (tenant_id, principal_id, token_hash, env, scopes, name, expires_at) VALUES (...)
+  Scenario: pat INSERT (consumed by WI-S03-002 mint)
+    Given Argon2id hash + scopes TEXT[] (canonical per data_model.md §4.1; runtime PatScopes bitset transform via app layer per ADR-0026) gerados em app
+    When INSERT INTO pat (pat_id, tenant_id, issued_to_user, kind, token_hash, scopes, expires_at) VALUES (...) (canonical schema per data_model.md §4.1)
     Then row inserted; UNIQUE token_hash enforced
-    And idx_api_tokens_tenant_alive updated
+    And idx_pat_tenant_alive updated
     When duplicate token_hash retry
     Then UniqueViolation returned; app handles gracefully
 
   Scenario: Revocation lifecycle (WI-S03-004 integration)
-    Given api_token row T_1 active (revoked_at IS NULL)
-    When UPDATE api_tokens SET revoked_at = now(), revocation_reason = 'UserInitiated', revoked_by = U_1 WHERE id = T_1
-    Then row updated; idx_api_tokens_tenant_alive partial index excludes T_1
+    Given pat row T_1 active (revoked_at IS NULL)
+    When UPDATE pat SET revoked_at = now(), revocation_reason = 'UserInitiated', revoked_by = U_1 WHERE pat_id = T_1
+    Then row updated; idx_pat_tenant_alive partial index excludes T_1
     And subsequent SELECT WHERE revoked_at IS NULL não retorna T_1
     And INSERT INTO revocation_log (...) executes em mesma transaction
     And UNIQUE (pat_id, revoked_at) enforces idempotency
@@ -503,13 +504,13 @@ Feature: Neon auth schema + pgcrypto + RLS
     Then account marcado deletado; cascade NOT triggered (soft delete)
     When DSR worker (S-11) ENTRY: DELETE FROM account WHERE deleted_at < (now() - INTERVAL '30 days')
     Then ON DELETE CASCADE fires:
-      And tenant DELETE → cascade api_tokens, webauthn (all rows for tenant)
+      And tenant DELETE → cascade pat, webauthn (all rows for tenant)
       And user_account DELETE → cascade membership
     And audit_chain rows pertaining to A_1 são pseudonymized (account_id replaced with pseudo_id)
     And LGPD Art. 18 erasure requirement satisfied
 
   Scenario: Migration validation rejects destructive changes
-    Given PR introduces `ALTER TABLE api_tokens DROP COLUMN scopes`
+    Given PR introduces `ALTER TABLE pat DROP COLUMN scopes`
     When CI runs scripts/check_migrations_additive.py
     Then validator reports: "Destructive change detected (DROP COLUMN); requires explicit ADR + dual-write window"
     And PR fails
@@ -578,7 +579,7 @@ Feature: Neon auth schema + pgcrypto + RLS
 ### 9.7 Why cascade DELETE em FK (não SET NULL)
 
 - account → tenant: tenant orphaned sem account makes no semantic sense.
-- tenant → api_tokens: PAT orphaned sem tenant impossible to authorize.
+- tenant → pat: PAT orphaned sem tenant impossible to authorize.
 - Cascade preserves referential integrity by-construction.
 - Trade-off: accidental account DELETE catastrophic. Mitigação: soft delete em prod; hard DELETE só em DSR pipeline.
 
@@ -634,7 +635,7 @@ Sim — **ADR-0031**: "Auth domain Neon Postgres schema + pgcrypto column encryp
 - **INV-AUTH-SCHEMA-RLS-DEFAULT-ON** (CRITICAL): all auth tables have RLS enabled; CI gate verifies pg_class.relrowsecurity = true.
 - **INV-AUTH-PII-ENCRYPTED** (CRITICAL): email + webauthn keys store as BYTEA (ciphertext); CI test verifies ciphertext format.
 - **INV-AUTH-MIGRATION-ADDITIVE** (HIGH): no DROP/ALTER destructive em migrations; CI gate.
-- **INV-AUTH-CASCADE-DSR-COMPLETE** (HIGH): account DELETE cascades tenant + user_account + membership + api_tokens + webauthn.
+- **INV-AUTH-CASCADE-DSR-COMPLETE** (HIGH): account DELETE cascades tenant + user_account + membership + pat + webauthn.
 - **INV-AUTH-AUDIT-PSEUDONYMIZATION** (CRITICAL): audit chain retains pseudonymous IDs sem PII; DSR cascade não touches audit chain.
 
 TLA+ alignment: planned `data_integrity.tla` (pós-S-09); modela cascade + RLS + soft delete invariants.
@@ -874,18 +875,17 @@ Per-tenant emergency: admin override via `auth_admin` role; logged em audit chai
 |---|---|---|---|---|
 | 1 | Owner | Gustavo Schneiter | _pending_ | _pending_ |
 | 2 | Final Approver | Gustavo Schneiter | _pending_ | _pending_ |
-| 3 | SRE Lead | _staffing-blocked_ | _pending_ | _pending_ |
-| 4 | Security Lead | _TBD_ | _pending_ | _pending_ |
-| 5 | Engineer (peer 1) | _TBD_ | _pending_ | _pending_ |
-| 6 | Engineer (peer 2) | _TBD_ | _pending_ | _pending_ |
-| 7 | QA | _TBD_ | _pending_ | _pending_ |
+| 3 | Architect | _TBD; relational design + RLS + DBA specialization (Postgres 16 specifics)_ (com Crypto SME specialization mandatory: pgcrypto column-level encryption + sig_key_id rotation review) | _pending_ | _pending_ |
+| 4 | Security Lead | _TBD; insider threat surface + RLS policies_ | _pending_ | _pending_ |
+| 5 | SRE Lead | _staffing-blocked_ | _pending_ | _pending_ |
+| 6 | Engineer (S-03 lead) | _TBD_ | _pending_ | _pending_ |
+| 7 | QA Lead | _TBD_ | _pending_ | _pending_ |
 | 8 | Product | Gustavo Schneiter | _pending_ | _pending_ |
-| 9 | Compliance | _TBD; **mandatory** — LGPD Art. 18 + Art. 46 traceability_ | _pending_ | _pending_ |
-| 10 | Privacy | _TBD; **mandatory emphatic** — pgcrypto + DSR cascade + email_hash design_ | _pending_ | _pending_ |
-| 11 | Architect | _TBD; **mandatory** — relational design + RLS + multi-region replication_ | _pending_ | _pending_ |
-| 12 | AppSec | _TBD; insider threat + backup leak surface review_ | _pending_ | _pending_ |
-| 13 | Crypto SME | _advisory; pgcrypto key separation + rotation strategy_ | _pending_ | _pending_ |
-| _advisory_ | DBA | _TBD external advisor; Postgres 16 specifics + pg_stat tuning_ | _advisory_ | _pending_ |
+| 9 | Compliance Officer | _TBD_ | _pending_ | _pending_ |
+| 10 | Privacy Officer | _TBD; emphatic — DSR cascade + pgcrypto column-level_ | _pending_ | _pending_ |
+| 11 | AppSec advisor | _TBD; insider threat surface + DSR cascade_ | _pending_ | _pending_ |
+
+> Crypto SME folds into Architect role specialization (cycle 1 codex SEAL alignment per framework §33.5.4.3 + ADR-0034 solo-tier waiver). Peer reviewers contribuem em PR review sem sign-off canonical separado (folded into Engineer + Architect).
 
 ## 31. Change Log
 

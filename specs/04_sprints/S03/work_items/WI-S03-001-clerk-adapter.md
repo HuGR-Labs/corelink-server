@@ -176,11 +176,11 @@ Auth adapter; HIGH_RISK; FF-HR-002 + FF-HR-005 + FF-HR-009.
    - `set(instance_hash, jwks, ttl_secs)` — KV PUT.
    - `delete(instance_hash)` — explicit refresh trigger.
 5. **`refresh_jwks` method**: explicit fetch + cache replace; emit metric `clerk.jwks.refresh_total`.
-6. **Métricas (auth_model.md §3.13.7)**:
-   - `corelink.auth.clerk.validate_total{result}` (result ∈ ok|sig_invalid|expired|aud_mismatch|iss_mismatch|kid_miss|jwks_fetch_failed).
-   - `corelink.auth.clerk.validate_duration_ms_bucket` (histogram p50/p95/p99).
-   - `corelink.auth.clerk.jwks_cache_hits_total` (counter).
-   - `corelink.auth.clerk.jwks_refresh_total{trigger}` (trigger ∈ scheduled|kid_miss|manual).
+6. **Métricas** (canonical underscored Prometheus form per observability_model.md §4.1; label `plan` per §3.1; outcome enum per §3.1):
+   - `corelink_auth_clerk_validate_total{outcome, plan}` (outcome ∈ ok|sig_invalid|expired|aud_mismatch|iss_mismatch|kid_miss|jwks_fetch_failed).
+   - `corelink_auth_clerk_validate_duration_seconds_bucket{outcome}` (histogram p50/p95/p99; SI unit seconds).
+   - `corelink_auth_clerk_jwks_cache_hits_total` (counter).
+   - `corelink_auth_clerk_jwks_refresh_total{trigger}` (trigger ∈ scheduled|kid_miss|manual).
 7. **Observability** — trace span `clerk.validate` com attributes `clerk.kid`, `clerk.iss`, `clerk.aud`, `result` (no `sub` raw, only hashed). Logs structured JSON.
 8. **Property tests** (10k iter):
    - alg=none rejected (regression CVE-2015).
@@ -237,13 +237,13 @@ Feature: ClerkAdapter JWT validate
       | iat | now |
     When validate(jwt) called
     Then Result::Ok(ClerkPrincipal { user_id: "user_2abc", org_id: Some("org_xyz"), .. })
-    And metric clerk.validate_total{result="ok"} incremented
+    And metric corelink_auth_clerk_validate_total{outcome="ok"} incremented
 
   Scenario: alg=none rejected (CVE-2015 regression)
     Given JWT with header alg=none and no signature
     When validate(jwt) called
     Then Result::Err(AuthError::SignatureInvalid)
-    And metric clerk.validate_total{result="sig_invalid"} incremented
+    And metric corelink_auth_clerk_validate_total{outcome="sig_invalid"} incremented
 
   Scenario: Key confusion RS-to-HS rejected (CVE-2018 regression)
     Given JWT with header alg=HS256
@@ -602,17 +602,17 @@ Fallback degradation: se ClerkAdapter completamente inoperante, S-03 WI-S03-003 
 |---|---|---|---|---|
 | 1 | Owner | Gustavo Schneiter | _pending_ | _pending_ |
 | 2 | Final Approver | Gustavo Schneiter | _pending_ | _pending_ |
-| 3 | SRE Lead | _staffing-blocked_ | _pending_ | _pending_ |
+| 3 | Architect | _TBD; cache pattern + lazy refresh + Crypto SME specialization mandatory (JWT validation logic + alg allowlist + 5 CVE regressions)_ | _pending_ | _pending_ |
 | 4 | Security Lead | _TBD; emphatic — JWT validation boundary review_ | _pending_ | _pending_ |
-| 5 | Engineer (peer 1) | _TBD_ | _pending_ | _pending_ |
-| 6 | Engineer (peer 2) | _TBD_ | _pending_ | _pending_ |
-| 7 | QA | _TBD_ | _pending_ | _pending_ |
+| 5 | SRE Lead | _staffing-blocked_ | _pending_ | _pending_ |
+| 6 | Engineer (S-03 lead) | _TBD_ | _pending_ | _pending_ |
+| 7 | QA Lead | _TBD_ | _pending_ | _pending_ |
 | 8 | Product | Gustavo Schneiter | _pending_ | _pending_ |
-| 9 | Compliance | _TBD_ | _pending_ | _pending_ |
-| 10 | Privacy | _TBD_ | _pending_ | _pending_ |
-| 11 | Architect | _TBD; cache pattern + lazy refresh review_ | _pending_ | _pending_ |
-| 12 | AppSec | _TBD; emphatic — JWKS fetch boundary + TLS posture_ | _pending_ | _pending_ |
-| 13 | Crypto SME | _mandatory; JWT validation logic + alg allowlist + 5 CVE regressions_ | _pending_ | _pending_ |
+| 9 | Compliance Officer | _TBD_ | _pending_ | _pending_ |
+| 10 | Privacy Officer | _TBD_ | _pending_ | _pending_ |
+| 11 | AppSec advisor | _TBD; emphatic — JWKS fetch boundary + TLS posture_ | _pending_ | _pending_ |
+
+> Crypto SME (JWT validation + alg allowlist + 5 CVE regressions) folds into Architect role specialization mandatory. Peer reviewers contribuem em PR review sem sign-off canonical separado (folded into Engineer + Architect roles per framework §33.5.4.3 + ADR-0034 solo-tier waiver).
 
 ## 31. Change Log
 

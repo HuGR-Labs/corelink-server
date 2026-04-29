@@ -146,7 +146,7 @@ PAT hashing + verify é o backbone do auth não-SSO. Bugs conhecidos em libs que
 - Cache mitigação: post-verify hot path usa session cache (KV 60s TTL) para evitar Argon2 em todo request — **separated em WI-S03-003** middleware.
 
 **Persona 3 — Compliance auditor revisando token storage**:
-- Audit query `SELECT id, principal_id, scopes, issued_at FROM api_tokens WHERE tenant = ? AND revoked_at IS NULL` — never `token_hash` em audit reports.
+- Audit query `SELECT pat_id, issued_to_user, scopes, created_at FROM pat WHERE tenant_id = ? AND revoked_at IS NULL` — canonical schema per data_model.md §4.1; never `token_hash` em audit reports.
 - LGPD/GDPR: PAT plaintext é "credential" categoria PII especial; never logged; never returned post-mint; full audit trail issued/used/revoked events (WI-S03-007).
 
 **SLA addendum**: cripto path (Argon2 verify) p99 ~250ms by design; documentado em SLA Auth Path. Cache-hit path (post-verify) ≤ 5ms p99.
@@ -258,7 +258,7 @@ Cripto core crate; HIGH_RISK; FF-HR-002 + FF-HR-005 + FF-HR-009.
     - **N ≥ 10000 samples per arm**: valid PAT verify timing vs invalid PAT verify timing.
     - **Power calculation a priori**: `statrs` compute power 1−β ≥ 0.80 com effect size Cohen's d = 0.2 (small/practically-relevant).
     - **Mann-Whitney U test**: target p > 0.05 (fail to reject H0).
-    - **Šidák 3-trial gate**: independent random seeds; ALL 3 trials p > 0.05 (combined α ≈ 0.000125 effective; flake mitigation).
+    - **Šidák 3-trial gate**: independent random seeds; ALL 3 trials × 3 pairwise = 9 tests must p > 0.05 (full conjunction); per-test Šidák α' = 1 − (1−0.05)^(1/9) ≈ 0.0057 controls combined familywise α at 0.05 target. Earlier '0.000125' was math error; cycle 1 codex SEAL corrected (aligned com S-02 cycle 13 + INV registry §3.12).
     - **Bootstrap 95% CI on |Δmedian|**: target ≤ 5ms; CI must cross zero (zero-inclusive).
     - Combined verdict: high-power test failed to reject + small effect + CI cruzando 0 = **evidence-grade indistinguishability** claim (não cargo-cult).
     - Same 3-prong gate em parse_env (valid env vs invalid env strings; |Δmedian| ≤ 100µs).
@@ -277,7 +277,7 @@ Cripto core crate; HIGH_RISK; FF-HR-002 + FF-HR-005 + FF-HR-009.
 
 ### 6.2 Out-of-scope (deferred)
 
-- **DB persistence** (`api_tokens` table): WI-S03-005 (Neon schema).
+- **DB persistence** (`pat` (canonical Neon SoT per data_model.md §4.1) table): WI-S03-005 (Neon schema).
 - **Tower middleware integration**: WI-S03-003.
 - **Revocation propagation**: WI-S03-004.
 - **Session cache (post-verify)**: WI-S03-003 middleware (KV 60s TTL).
@@ -339,7 +339,7 @@ Feature: corelink-pat — mint, verify, parse_env
     Given 10000 invalid PAT verify timings collected
     Given power 1−β ≥ 0.80 com effect size d = 0.2 calculado a priori
     When Mann-Whitney U test applied across 3 independent trials (Šidák correction)
-    Then ALL 3 trials p > 0.05 (combined α ≈ 0.000125)
+    Then ALL 3 trials × 3 pairs = 9 tests p > 0.05 (full conjunction; per-test Šidák α' ≈ 0.0057 controls combined familywise α at 0.05; cycle 2 codex SEAL math correction)
     And bootstrap 95% CI sobre |Δmedian| ≤ 5ms
     And CI cruzando 0 (zero-inclusive; effect indistinguishable from zero)
     (Combined evidence-grade indistinguishability: high-power test failed to reject + small effect + CI consistente com zero)
@@ -479,7 +479,7 @@ Feature: corelink-pat — mint, verify, parse_env
 - [ ] **10.5.2** Mann-Whitney U + power analysis 3-prong em verify timing (EVT-002):
   - N ≥ 10000 samples per arm (valid PAT verify vs invalid PAT verify).
   - Power 1−β ≥ 0.80 com effect size d = 0.2 (calculated a priori via `statrs::distribution::statistical_power`).
-  - Šidák correction 3-trial gate: ALL 3 independent trials p > 0.05 (combined α ≈ 0.000125; flake < 1-em-8000 runs).
+  - Šidák correction: ALL 3 trials × 3 pairwise = 9 tests p > 0.05 (full conjunction); per-test α' ≈ 0.0057 controls combined familywise α at 0.05 target (cycle 1 codex SEAL math correction; aligns S-02 cycle 13 + INV registry §3.12).
   - Bootstrap 95% CI sobre |Δmedian| ≤ 5ms (CI cruzando 0 mandatory).
   - **NOTE methodology correta**: `p > 0.05` sozinho NÃO prova distributions são same; apenas "fail to reject H0". Evidence-grade requires high-power test failing to reject + small effect size + CI consistent with zero. Cf. WI-S03-003 §10.5.2 padrão canônico.
 - [ ] **10.5.3** Mann-Whitney U + power analysis 3-prong em parse_env timing (EVT-002):
@@ -650,7 +650,7 @@ Dashboard widget DASH-AUTH:
 - Mint: ~250ms CPU (Argon2 dominate) + 1 DB INSERT (deferred WI-S03-005). Em 100 mints/dia: 25 sec CPU/dia ≈ negligível.
 - Verify: ~250ms CPU per verify (Argon2). Em 10M req/dia × 0.5% verify (cache miss; rest hit session cache em WI-S03-003 middleware): 50k verifies/dia × 250ms = 12.5k sec CPU = 3.5h CPU/dia em workload total.
 - Hot-path mitigation: WI-S03-003 caches verify result em KV (TTL 60s); reduce verify rate ≥ 99%.
-- Storage: 1 row per PAT em api_tokens (WI-S03-005); ~200 bytes/row.
+- Storage: 1 row per PAT em Neon pat (canonical SoT per data_model.md §4.1) (WI-S03-005); ~200 bytes/row.
 
 ## 23. API Contract
 
@@ -742,17 +742,17 @@ Se Argon2 lib bug discovered: emergency rotation script — re-mint all active P
 |---|---|---|---|---|
 | 1 | Owner | Gustavo Schneiter | _pending_ | _pending_ |
 | 2 | Final Approver | Gustavo Schneiter | _pending_ | _pending_ |
-| 3 | SRE Lead | _staffing-blocked_ | _pending_ | _pending_ |
+| 3 | Architect | _TBD; calibration target + bitset layout reuse review_ (com Crypto SME specialization mandatory: Argon2 OWASP 2024 params + Mann-Whitney constant-time + adversarial regression suite (mandatory pair-program)) | _pending_ | _pending_ |
 | 4 | Security Lead | _TBD; emphatic — Argon2 params + threat model_ | _pending_ | _pending_ |
-| 5 | Engineer (peer 1) | _TBD_ | _pending_ | _pending_ |
-| 6 | Engineer (peer 2) | _TBD_ | _pending_ | _pending_ |
-| 7 | QA | _TBD_ | _pending_ | _pending_ |
+| 5 | SRE Lead | _staffing-blocked_ | _pending_ | _pending_ |
+| 6 | Engineer (S-03 lead) | _TBD_ | _pending_ | _pending_ |
+| 7 | QA Lead | _TBD_ | _pending_ | _pending_ |
 | 8 | Product | Gustavo Schneiter | _pending_ | _pending_ |
-| 9 | Compliance | _TBD_ | _pending_ | _pending_ |
-| 10 | Privacy | _TBD; PAT plaintext storage policy review_ | _pending_ | _pending_ |
-| 11 | Architect | _TBD; calibration target + bitset layout reuse review_ | _pending_ | _pending_ |
-| 12 | AppSec | _TBD; emphatic — threat model + cargo-fuzz results_ | _pending_ | _pending_ |
-| 13 | Crypto SME | _**mandatory pair-program** — Argon2 OWASP 2024 params + Mann-Whitney constant-time + adversarial regression suite_ | _pending_ | _pending_ |
+| 9 | Compliance Officer | _TBD_ | _pending_ | _pending_ |
+| 10 | Privacy Officer | _TBD; PAT plaintext storage policy review_ | _pending_ | _pending_ |
+| 11 | AppSec advisor | _TBD; emphatic — threat model + cargo-fuzz results_ | _pending_ | _pending_ |
+
+> Crypto SME folds into Architect role specialization (cycle 1 codex SEAL alignment per framework §33.5.4.3 + ADR-0034 solo-tier waiver). Peer reviewers contribuem em PR review sem sign-off canonical separado (folded into Engineer + Architect).
 
 ## 31. Change Log
 
