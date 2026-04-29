@@ -326,7 +326,7 @@ Digest signing é o **last cripto layer** entre Merkle (WI-S04-003) e cliente tr
 - **Reversibility**: sig key compromise = global re-sign required (TDK rotation); existing envelopes invalid post-rotation; planned procedure but disruptive.
 - **Customer impact**: sig fail in prod = AC offline for tenant; CRITICAL-blocker.
 
-13 sign-offs incl. **Crypto SME emphatic mandatory** (sig protocol + constant-time + key management).
+11 sign-offs canonical incl. **Architect with Crypto SME specialization emphatic mandatory** (sig protocol + constant-time + key management; per framework §33.5.4.3 single Architect sign-off encompasses Crypto SME specialization for cripto-load-bearing WIs).
 
 ## 3. Customer Impact & Journey
 
@@ -782,7 +782,7 @@ TLA+ alignment: cas_integrity.tla; INV-AC-DIGEST-SIGNED enforced via verify_full
 
 ## 16. PRR
 
-PRR HIGH_RISK 13 sign-offs gated em WI-S04-006. Este WI mini-PRR Architect + **Crypto SME mandatory emphatic**.
+PRR HIGH_RISK 11 sign-offs canonical gated em WI-S04-006. Este WI mini-PRR **Architect with Crypto SME specialization mandatory emphatic**.
 
 - [ ] All Gherkin green.
 - [ ] Property + Mann-Whitney 3-prong cripto-grade green.
@@ -1018,7 +1018,7 @@ Fallback: handler returns 503 if sig verify backend unavailable (KMS down + cach
 6. **Cargo-fuzz (D+9)**: 1h fuzz validates 0 panics.
 7. **PRR (D+10)**: Architect + Crypto SME mini sign-off (full ship gate em WI-S04-006).
 
-## 30. Sign-off (HIGH_RISK 13)
+## 30. Sign-off (HIGH_RISK 11 canonical)
 
 | # | Role | Name | Signed Date | Status |
 |---|---|---|---|---|

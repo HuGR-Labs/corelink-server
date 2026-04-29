@@ -220,7 +220,7 @@ HIGH_RISK justificado em N dimensões:
 - **Reversibility**: cache poisoning detected only when customer build fails AT LATER TIME (or ext audit); INV-AC-OUTPUTS-VALID daily reconcile partial coverage.
 - **Customer impact**: build with poisoned binary = supply chain incident; could cascade to customer's customers (CoreLink customer's customer).
 
-13 sign-offs incl. Architect, AppSec, Crypto SME (BLAKE3 review + Merkle protocol), Security Lead.
+11 sign-offs canonical incl. Architect (Crypto SME specialization for BLAKE3 review + Merkle protocol), AppSec, Security Lead.
 
 ## 3. Customer Impact & Journey
 
@@ -678,7 +678,7 @@ TLA+ alignment: cas_integrity.tla extension for AC variant; INV-AC-MERKLE-VALID 
 
 ## 16. PRR
 
-PRR HIGH_RISK 13 sign-offs gated em WI-S04-006. Este WI mini-PRR Architect + Crypto SME (mandatory).
+PRR HIGH_RISK 11 sign-offs canonical gated em WI-S04-006. Este WI mini-PRR Architect (Crypto SME specialization mandatory for Merkle).
 
 - [ ] All Gherkin green.
 - [ ] Property + Mann-Whitney + chaos green.
@@ -904,7 +904,7 @@ Fallback: if corelink-ac crash detected, handler returns 503 (graceful); no enve
 6. **Cargo-fuzz (D+9)**: 1h fuzz validates 0 panics.
 7. **PRR (D+10)**: Architect + Crypto SME mini sign-off (full ship em WI-S04-006).
 
-## 30. Sign-off (HIGH_RISK 13)
+## 30. Sign-off (HIGH_RISK 11 canonical)
 
 | # | Role | Name | Signed Date | Status |
 |---|---|---|---|---|

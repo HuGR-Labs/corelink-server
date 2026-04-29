@@ -26,7 +26,7 @@ inherits_from:
 tags: ["wi", "s04", "ac", "conformance", "reapi", "dashboard", "rb-fm-303", "prr", "ship-gate", "high-risk"]
 ---
 
-# WI-S04-006 — REAPI v2 Conformance Test Suite + DASH-AC Dashboards + Cache Hit Ratio Business Métrica + RB-FM-303 Dry-Run + Property Test 100k Tenant Isolation + PRR HIGH_RISK 13 Sign-offs Ship Gate
+# WI-S04-006 — REAPI v2 Conformance Test Suite + DASH-AC Dashboards + Cache Hit Ratio Business Métrica + RB-FM-303 Dry-Run + Property Test 100k Tenant Isolation + PRR HIGH_RISK 11 Sign-offs Canonical Ship Gate
 
 > **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
 > **Parent:** [S-04](../sprint.md) · **Assignee:** Gustavo Schneiter
@@ -38,14 +38,14 @@ tags: ["wi", "s04", "ac", "conformance", "reapi", "dashboard", "rb-fm-303", "prr
 | Campo | Valor |
 |---|---|
 | ID | WI-S04-006 |
-| Título | bazelbuild/remote-apis conformance suite 100% AC ops; DASH-AC dashboards (cache hit ratio + latency + tenant isolation alert); cache hit ratio customer-visible business métrica; RB-FM-303 (AC cross-tenant) dry-run executado em staging; property test 100k tenant isolation; PRR HIGH_RISK 13 sign-offs ship gate; ADR-0021 ratificada confirmação; cost regression gate green; SLO 72h sustained; ship/no-ship decision |
+| Título | bazelbuild/remote-apis conformance suite 100% AC ops; DASH-AC dashboards (cache hit ratio + latency + tenant isolation alert); cache hit ratio customer-visible business métrica; RB-FM-303 (AC cross-tenant) dry-run executado em staging; property test 100k tenant isolation; PRR HIGH_RISK 11 sign-offs canonical ship gate; ADR-0021 ratificada confirmação; cost regression gate green; SLO 72h sustained; ship/no-ship decision |
 | Sprint | S-04 |
 | Lane | HIGH_RISK |
 | Forcing factors | FF-HR-002 (ship gate prevents FM-303 catastrophic; cross-tenant validation primary), FF-HR-005 (PRR enforces all CTRL-AC controls), FF-HR-009 (defense-in-depth final validation) |
 
 ## 1. Intent
 
-Este WI é o **ship gate** de S-04: AC entra em production-ready state somente após PRR HIGH_RISK 13 sign-offs aprovados + REAPI v2 conformance 100% + 72h SLO sustained + RB-FM-303 dry-run executado + property test 100k cross-tenant 0 violations + custom dashboard live + cost gate green.
+Este WI é o **ship gate** de S-04: AC entra em production-ready state somente após PRR HIGH_RISK 11 sign-offs canonical aprovados + REAPI v2 conformance 100% + 72h SLO sustained + RB-FM-303 dry-run executado + property test 100k cross-tenant 0 violations + custom dashboard live + cost gate green.
 
 ```text
 Ship Gate Components:
@@ -87,11 +87,11 @@ Ship Gate Components:
    - 0 violations tolerated (CRITICAL gate).
    - Coverage: random tenant pairs × random action_digests × random ActionResults.
 
-6. **PRR HIGH_RISK 13 sign-offs**:
+6. **PRR HIGH_RISK 11 sign-offs canonical**:
    - Owner + Final Approver (Gustavo).
    - SRE Lead (staffing waiver per ADR-0034 forward).
    - Security Lead, Engineer×2, QA, Product, Compliance, Privacy, Architect, AppSec, Crypto SME (advisory).
-   - 12 mandatory + 1 advisory = 13 total.
+   - 11 mandatory canonical (per framework §33.5.4.3 + ADR-0034); Crypto SME folds into Architect specialization; DBA folds into Architect; Adversarial folds into AppSec.
    - Each role signs gates: their domain checks complete.
 
 7. **72h SLO sustained**:
@@ -160,7 +160,7 @@ HIGH_RISK em N dimensões:
 - **Reversibility**: ship decision is binary; rollback via revert deploy; minor blast radius if caught early.
 - **Customer impact**: ship-broken = immediate customer perception of unreliability; trust erosion.
 
-13 sign-offs — this WI's defining moment.
+11 sign-offs canonical — this WI's defining moment.
 
 ## 3. Customer Impact & Journey
 
@@ -245,7 +245,7 @@ PRR ship gate; HIGH_RISK; FF-HR-002 + FF-HR-005 + FF-HR-009.
    - Assertion: 0 cross-tenant access (TenantB GET on TenantA's entry → 404).
    - CI gate: 100% pass; ANY violation blocks ship.
 
-6. **PRR HIGH_RISK 13 sign-off ceremony**:
+6. **PRR HIGH_RISK 11 sign-off canonical ceremony**:
    - PRR review meeting: 2-hour structured review.
    - Each role's checklist:
      - **Owner / Final Approver** (Gustavo): all WIs SEALED; ship readiness.
@@ -313,7 +313,7 @@ PRR ship gate; HIGH_RISK; FF-HR-002 + FF-HR-005 + FF-HR-009.
 ## 7. Anti-Scope
 
 - ❌ Ship without 100% conformance.
-- ❌ Ship without 13 sign-offs.
+- ❌ Ship without 11 sign-offs canonical.
 - ❌ Ship without RB-FM-303 dry-run completion.
 - ❌ Ship with 1+ tenant isolation violation in 100k test.
 - ❌ Ship with SLO < 99.9% sustained.
@@ -328,7 +328,7 @@ PRR ship gate; HIGH_RISK; FF-HR-002 + FF-HR-005 + FF-HR-009.
 ## 8. Acceptance Criteria (Gherkin)
 
 ```gherkin
-Feature: S-04 PRR HIGH_RISK 13 sign-off ship gate
+Feature: S-04 PRR HIGH_RISK 11 sign-off canonical ship gate
 
   Background:
     Given WI-S04-001..005 SEALED
@@ -381,10 +381,10 @@ Feature: S-04 PRR HIGH_RISK 13 sign-off ship gate
     Then real-time hit ratio displayed
     And 24h trend rendered
 
-  Scenario: PRR HIGH_RISK 13 sign-offs collected
+  Scenario: PRR HIGH_RISK 11 sign-offs canonical collected
     Given PRR review meeting executed (2h structured)
     When each role completes checklist + signs
-    Then 12 mandatory + 1 advisory = 13 sign-offs collected
+    Then 11 mandatory canonical sign-offs collected (Crypto SME + DBA folded into Architect; Adversarial folded into AppSec per framework §33.5.4.3)
     And sign-offs evidenced in PR review + git commit signing
     And no rubber-stamp (each sign-off has checklist evidence)
 
@@ -427,14 +427,14 @@ Feature: S-04 PRR HIGH_RISK 13 sign-off ship gate
     When PRR review missing SRE Lead sign-off
     Then ADR-0034 waiver invoked: Architect compensates with on-call playbook review
     And sign-off marked "_staffing-blocked_waiver_per_ADR-0034_"
-    And ship still proceeds (12 mandatory + 1 advisory still met via Architect compensation)
+    And ship still proceeds (11 canonical met via Architect compensation per framework §33.5.4.3 + ADR-0034)
 
   Scenario: Crypto SME advisory waiver (acceptable per ADR-0034)
     Given Crypto SME unavailable on ship date
     When sign-off pending > 1 week
     Then advisory waiver: Architect + AppSec covenant; Crypto SME post-ship review committed
     And sign-off marked "_advisory_post_ship_"
-    And ship proceeds with 12 mandatory complete
+    And ship proceeds with 11 canonical complete
 
   Scenario: Quarterly conformance bump cadence
     Given REAPI v2 spec evolves (new Bazel client version)
@@ -522,7 +522,7 @@ This distinction is documented in BOTH WIs explicitly (Lote 10.4-tris P0-R5-005)
 - [ ] **10.s04.006.4** RB-FM-303 dry-run executed; post-mortem written (EVT-017).
 - [ ] **10.s04.006.5** DASH-AC dashboards live; 8 panels deployed; alerts to PagerDuty + Slack (EVT-021).
 - [ ] **10.s04.006.6** Cache hit ratio business métrica emit + customer dashboard S-16 displays (EVT-021).
-- [ ] **10.s04.006.7** PRR HIGH_RISK 12 mandatory + 1 advisory = 13 sign-offs collected (EVT-031).
+- [ ] **10.s04.006.7** PRR HIGH_RISK 11 sign-offs canonical collected (EVT-031).
 - [ ] **10.s04.006.8** Cost regression gate green: per-op costs within targets (Lote 9.4 §14.10).
 - [ ] **10.s04.006.9** ADR-0021, ADR-0035, ADR-0036, ADR-0037 all ratificadas + whitelisted (EVT-027).
 - [ ] **10.s04.006.10** Customer-facing communication ready: SLA addendum + release notes + Bazel onboarding doc (EVT-027).
@@ -540,7 +540,7 @@ This distinction is documented in BOTH WIs explicitly (Lote 10.4-tris P0-R5-005)
 - [ ] RB-FM-303 dry-run + post-mortem complete.
 - [ ] DASH-AC dashboards live; alerts validated.
 - [ ] Customer dashboard S-16 cache hit ratio emit OK.
-- [ ] PRR meeting (2h) executado; 13 sign-offs collected.
+- [ ] PRR meeting (2h) executado; 11 sign-offs canonical collected.
 - [ ] Cost regression gate green.
 - [ ] All 4 ADRs ratificadas.
 - [ ] Customer-facing comm ready.
@@ -602,7 +602,7 @@ TLA+ alignment: tenant_isolation.tla AC variant; cas_integrity.tla extension for
 - **14.s04.006.3** SLO 72h: continuous; P3 only does not reset.
 - **14.s04.006.4** RB-FM-303 dry-run: detection ≤ 5min; remediation ≤ 30min; customer comm ≤ 1h.
 - **14.s04.006.5** Dashboard alerts: PagerDuty + Slack; tested via chaos.
-- **14.s04.006.6** PRR meeting: 2h structured; 13 sign-offs documented.
+- **14.s04.006.6** PRR meeting: 2h structured; 11 sign-offs canonical documented.
 - **14.s04.006.7** Cost regression gate: ±10% tolerance.
 - **14.s04.006.8** Customer comm: SLA addendum + release notes + onboarding doc.
 - **14.s04.006.9** ADR ratificadas: all 4 ACCEPTED.
@@ -643,7 +643,7 @@ THE PRR. Esta WI é a PRR.
 - [ ] All 4 ADRs ratificadas.
 - [ ] SLO 72h sustained.
 - [ ] RB-FM-303 dry-run + post-mortem.
-- [ ] 13 sign-offs collected.
+- [ ] 11 sign-offs canonical collected.
 - [ ] Cost gate green.
 - [ ] Customer comm ready.
 - [ ] Ship rollout plan documented.
@@ -663,7 +663,7 @@ THE PRR. Esta WI é a PRR.
 | ST-009 | Synthetic Bazel workload calibration | 4h |
 | ST-010 | PRR meeting prep (checklists per role) | 4h |
 | ST-011 | PRR meeting execution (2h) | 2h |
-| ST-012 | 13 sign-off collection (PR review + git signing) | 3h |
+| ST-012 | 11 sign-off canonical collection (PR review + git signing) | 3h |
 | ST-013 | Cost regression gate setup + bench baseline | 3h |
 | ST-014 | ADR ratificação confirmation (all 4 ACCEPTED) | 2h |
 | ST-015 | SLA addendum customer doc | 3h |
@@ -833,7 +833,7 @@ Fallback: if production rollout shows incident, gradual rollback per documented 
 4. **DASH-AC live (D+3)**: dashboards + alerts validated.
 5. **RB-FM-303 dry-run (D+4)**: execution + post-mortem.
 6. **72h SLO complete (D+5)**: continuous run validates.
-7. **PRR meeting (D+6)**: 2h structured; 13 sign-offs.
+7. **PRR meeting (D+6)**: 2h structured; 11 sign-offs canonical.
 8. **Customer comm ready (D+7)**: SLA + release notes + onboarding.
 9. **Ship decision (D+8)**: GO/NO-GO; if GO, start gradual rollout.
 10. **Production 10% (D+9)**: monitor 24h.
@@ -841,7 +841,7 @@ Fallback: if production rollout shows incident, gradual rollback per documented 
 12. **Production 100% (D+13)**: full rollout.
 13. **Post-ship review (D+20)**: 1-week review; post-mortem if incidents.
 
-## 30. Sign-off (HIGH_RISK 13)
+## 30. Sign-off (HIGH_RISK 11 canonical)
 
 | # | Role | Name | Signed Date | Status |
 |---|---|---|---|---|
@@ -860,7 +860,7 @@ Fallback: if production rollout shows incident, gradual rollback per documented 
 | 13 | Crypto SME | _**MANDATORY EMPHATIC** (Lote 10.4bis P0 fix #2: removido "advisory" label — was contradicting WI-S04-004 §30 row 13 MANDATORY EMPHATIC). Resolution: WI-S04-004 SME review is **non-waivable pre-PRR** (40-80h booking, was 4h ST-018; industry-norm 10× larger); WI-S04-006 PRR ceremony **references WI-S04-004's sign-off** as cripto domain validation. PRR may proceed if WI-S04-004 has SME sign-off; PRR may NOT proceed without it. Independent review of: HKDF sig protocol + Merkle protocol + constant-time discipline + key rotation analysis + test vectors review + ADR-0021 endorsement._ | _pending_ | _pending_ |
 
 **Sign-off discipline** (Lote 10.4bis P0 fix #2 + #3):
-- **12 mandatory sign-offs required + Crypto SME (now mandatory non-waivable)** = 13 total mandatory.
+- **11 sign-offs canonical mandatory** (per framework §33.5.4.3 + ADR-0034); Crypto SME (HKDF + Merkle review) folds into Architect role specialization (non-waivable specialization for cripto-load-bearing WIs).
 - ADR-0034 documents staffing-blocked compensation patterns (Architect compensates SRE Lead concerns); applies to **SRE Lead only** (not Crypto SME — that role's review is non-waivable for cripto WI-S04-004).
 - **Staffing reality** (Lote 10.4bis P0 fix #3 — carry-forward defect from S-03 part2): 9-of-13 unstaffed currently. Resolution paths (must pick one before sprint kickoff D-0):
   - (a) Explicit retention plan with names/firms confirmed by D-0.
@@ -878,7 +878,7 @@ Fallback: if production rollout shows incident, gradual rollback per documented 
 ## 32. Anti-patterns evitados
 
 - ❌ Ship without 100% conformance.
-- ❌ Ship without 13 sign-offs.
+- ❌ Ship without 11 sign-offs canonical.
 - ❌ Ship without RB-FM-303 dry-run.
 - ❌ Ship with 1+ tenant isolation violation in 100k.
 - ❌ Ship with SLO < 99.9%.

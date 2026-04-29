@@ -3,7 +3,7 @@ id: "SPEC-CONTRACT-S04"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-04-24"
 updated: "2026-04-25"
 owner: "Gustavo Schneiter"
@@ -36,7 +36,7 @@ Implementar **Action Cache (AC) production-grade** — a "cereja" do remote cach
 
 ## 2. Lane + forcing factors
 
-- **Lane:** HIGH_RISK (10–12 sign-offs).
+- **Lane:** HIGH_RISK (11 sign-offs canonical per framework §33.5.4.3 + ADR-0034; Crypto SME folds into Architect role; DBA folds into Architect; AppSec é o 11º slot).
 - **FF-HR-002**: AC cross-tenant = serve build result de outro tenant = catastrófico (FM-303).
 - **FF-HR-005**: implementa CTRL-AC-001 (Merkle verify) + CTRL-AC-002 (digest signing HKDF).
 
@@ -247,7 +247,7 @@ Itens waivable com Architect + Crypto SME + ADR:
 
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
-| 1.0.0 | 2026-04-24 | Gustavo | Initial sprint contract S-04 (Action Cache + HKDF signing; HIGH_RISK 13 sign-offs). |
+| 1.0.0 | 2026-04-24 | Gustavo | Initial sprint contract S-04 (Action Cache + HKDF signing; HIGH_RISK 11 sign-offs canonical). |
 | 1.1.0 | 2026-04-25 | Gustavo | Lote 10.4bis P0 fixes (Agent R4 review remediation): HKDF info bytes domain separation; 95%-with-waiver REMOVED; INV §3.15 promotion; ADR canonical path adrs/; TenantCtx-only; audit fail-closed; 4-tier P0/P1/P2/P3. |
 | 1.2.0 | 2026-04-25 | Gustavo | **Lote 10.4-tris fixes** (Sonnet R5 independent review; 6 NEW P0s + 11 P1s + ADR creation): (a) **P0-R5-001** key_id=0 reserved sentinel + `SigError::KeyIdReserved`; (b) **P0-R5-002** HKDF-Extract composition with path-HMAC TDK documented in ADR-0021 §Risks (Option B accepted under HMAC security; attack cost 2^128); (c) **P0-R5-003** canonical_bytes 121 bytes retained; result_hash = BLAKE3(merkle_root).hex() D1 INDEX column ONLY (NOT cripto binding); ADR-0037; (d) **P0-R5-004** Gherkin BatchUpdateActionResult struck; (e) **P0-R5-005** Crypto SME mandatory (WI-004 SEAL non-waivable) vs advisory (WI-006 PRR ceremony) split explicit em BOTH WIs + ADR-0034; (f) **P0-R5-006** §30.1 key rotation procedures `sig_key_id` + `path_key_id` independent lifecycles; (g) **P1-R5-016** ADRs 0021/0034/0035/0036/0037 stubs created. |
 

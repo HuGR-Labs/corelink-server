@@ -165,7 +165,7 @@ Bug em handler é **catastrófico em N dimensões**:
 - **Reversibility**: cache poisoning é detectable via INV-AC-OUTPUTS-VALID daily reconcile mas **invisible até customer build fails**; P0 incident exposure.
 - **Customer impact**: hit ratio < 50% = perceived broken; > 95% = wow customer.
 
-13 sign-offs incl. Architect (REAPI conformance), AppSec (5-layer scoping), Crypto SME (HKDF signing integration WI-S04-004 boundary).
+11 sign-offs canonical incl. Architect (REAPI conformance + Crypto SME specialization for HKDF signing integration WI-S04-004 boundary), AppSec (5-layer scoping).
 
 ## 3. Customer Impact & Journey
 
@@ -635,7 +635,7 @@ TLA+ alignment: `tenant_isolation.tla` AC variant — handler ops respect tenant
 
 ## 16. PRR
 
-PRR HIGH_RISK 13 sign-offs gated em WI-S04-006 ship gate. Este WI mini-PRR Architect + AppSec + Security Lead.
+PRR HIGH_RISK 11 sign-offs canonical gated em WI-S04-006 ship gate. Este WI mini-PRR Architect + AppSec + Security Lead.
 
 - [ ] All Gherkin scenarios green em integration.
 - [ ] Property + Mann-Whitney + chaos green.
@@ -868,7 +868,7 @@ Fallback degradation: handler 503 if R2 down; Bazel client falls back to local e
 6. **Conformance (D+9)**: Bazel community engagement; REAPI v2 conformance suite green em CI nightly.
 7. **PRR (D+10)**: Architect mini sign-off (full ship gate em WI-S04-006).
 
-## 30. Sign-off (HIGH_RISK 13)
+## 30. Sign-off (HIGH_RISK 11 canonical)
 
 | # | Role | Name | Signed Date | Status |
 |---|---|---|---|---|

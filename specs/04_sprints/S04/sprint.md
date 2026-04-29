@@ -158,9 +158,9 @@ STRIDE: AC tenant isolation (INV-AC-TENANT-SCOPED) é THE primary threat — mit
 
 Cross-tenant AC leak / Merkle invalid persisted / INV-AC-OUTPUTS-VALID violation > 5 records / REAPI conformance regression / cache hit ratio < 50% sustained.
 
-## 14. Sign-off (HIGH_RISK 10–12)
+## 14. Sign-off (HIGH_RISK 11 canonical)
 
-11 roles incl. Crypto SME (HKDF review) + AppSec.
+11 roles canonical per framework §33.5.4.3 + ADR-0034: Owner + Final Approver + Architect (Crypto SME specialization for HKDF + Merkle + DBA specialization for D1/R2 sizing) + Security Lead + SRE Lead + Engineer + QA Lead + Product + Compliance + Privacy + AppSec advisor.
 
 ## 15. Change log
 

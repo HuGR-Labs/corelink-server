@@ -228,7 +228,7 @@ Schema é o **physical foundation** da AC; bug em PRIMARY KEY ou CHECK constrain
 - **Reversibility**: schema bug em prod = data loss risk (cannot DROP TABLE); rollback via dummy migration only; pre-deploy validation mandatory.
 - **Customer impact**: schema drift breaks all AC ops; full sprint downtime; staging gate critical.
 
-13 sign-offs incl. Architect (schema design + migration governance), DBA (D1 + R2 sizing + indexing), AppSec (CORS + bucket public access guard).
+11 sign-offs canonical incl. Architect (schema design + migration governance + DBA specialization for D1/R2 sizing + indexing + Crypto SME specialization for sig_key_id rotation column), AppSec (CORS + bucket public access guard).
 
 ## 3. Customer Impact & Journey
 
@@ -643,7 +643,7 @@ Sim — **ADR-0036**: "AC schema design + migration governance + R2 bucket provi
 
 ## 16. PRR
 
-PRR HIGH_RISK 13 sign-offs gated em WI-S04-006. Este WI mini-PRR Architect + DBA + AppSec.
+PRR HIGH_RISK 11 sign-offs canonical gated em WI-S04-006. Este WI mini-PRR Architect (DBA + Crypto SME specialization) + AppSec.
 
 - [ ] All Gherkin green.
 - [ ] Property + chaos green.
@@ -838,9 +838,9 @@ Fallback: handler returns 503 `COR_AC_DEPRECATED` if 003a deprecated flag set; B
 5. **Adversarial (pre-merge D+4)**: red team — migration replay, ACL drift, tenant_id NULL injection.
 6. **PRR (D+5)**: Architect mini sign-off (full ship gate em WI-S04-006).
 
-## 30. Sign-off (HIGH_RISK 14 — Lote 10.4bis: DBA + Crypto SME both)
+## 30. Sign-off (HIGH_RISK 11 canonical — DBA + Crypto SME folded into Architect specialization per framework §33.5.4.3)
 
-Lote 10.4bis P0 fix: sprint contract §6 mandates Crypto SME (HKDF integration boundary review for sig_key_id rotation column); WI-S04-002 v1.0 silently swapped Crypto SME for DBA. Resolution: **add DBA as row 14** while keeping Crypto SME row 13 mandatory; both review schema (DBA: PK + indices + sizing; Crypto SME: sig_key_id + path_key_id rotation impact).
+Lote 10.4-bis-quater normalization: framework §33.5.4.3 HIGH_RISK matrix = 11 sign-offs canonical. Both DBA (PK + indices + sizing) and Crypto SME (sig_key_id + path_key_id rotation impact) review schema as **specializations within Architect role** (precedent: S-01 + S-02 + S-03 SEAL ceremonies; aligns ADR-0034 solo-tier waiver). Single Architect sign-off encompasses both review domains for this WI.
 
 | # | Role | Name | Signed Date | Status |
 |---|---|---|---|---|

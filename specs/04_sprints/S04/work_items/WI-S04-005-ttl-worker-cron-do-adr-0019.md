@@ -181,7 +181,7 @@ HIGH_RISK em N dimensões:
 - **Reversibility**: deletion irreversible (R2+D1); pre-deploy validation mandatory; rollback test simulates partial fail.
 - **Customer impact**: aggressive TTL = customer build slow (cache miss); conservative TTL = storage cost growth.
 
-13 sign-offs incl. Architect (cron DO design + sharding), DBA (D1 batch semantics), AppSec (cross-tenant DELETE prevention).
+11 sign-offs canonical incl. Architect (cron DO design + sharding + DBA specialization for D1 batch semantics), AppSec (cross-tenant DELETE prevention).
 
 ## 3. Customer Impact & Journey
 
@@ -611,7 +611,7 @@ TLA+ alignment: tenant_isolation.tla — TTL flow respects tenant scoping; evict
 
 ## 16. PRR
 
-PRR HIGH_RISK 13 sign-offs gated em WI-S04-006. Este WI mini-PRR Architect + DBA + AppSec.
+PRR HIGH_RISK 11 sign-offs canonical gated em WI-S04-006. Este WI mini-PRR Architect (DBA specialization) + AppSec.
 
 - [ ] All Gherkin green.
 - [ ] Property + chaos green.
@@ -820,7 +820,7 @@ Fallback: if cron broken, manual eviction via admin script (S-13 forward); RB-FM
 5. **Chaos (D+6)**: 12 scenarios validated.
 6. **PRR (D+7)**: Architect mini sign-off (full ship em WI-S04-006).
 
-## 30. Sign-off (HIGH_RISK 13)
+## 30. Sign-off (HIGH_RISK 11 canonical)
 
 | # | Role | Name | Signed Date | Status |
 |---|---|---|---|---|
@@ -861,4 +861,4 @@ Fallback: if cron broken, manual eviction via admin script (S-13 forward); RB-FM
 
 ---
 
-**Fim WI-S04-005.** Próximo: WI-S04-006 (REAPI v2 conformance test suite + DASH-AC dashboards + RB-FM-303 dry-run + PRR ship gate 13 sign-offs).
+**Fim WI-S04-005.** Próximo: WI-S04-006 (REAPI v2 conformance test suite + DASH-AC dashboards + RB-FM-303 dry-run + PRR ship gate 11 sign-offs canonical).
