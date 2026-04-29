@@ -53,7 +53,7 @@ Adopt **3 waiver paths** for PRR sign-off slots, with explicit boundaries and au
 | 1-2 Owner + Final Approver | n/a (self) | n/a | yes | n/a |
 | 3 SRE Lead | yes | n/a | yes | no |
 | 4 Security Lead | yes | n/a | yes | no |
-| 5-6 Engineer ×2 | n/a | yes | yes | no |
+| 5 Engineer (canonical single slot per framework §33.5.4.3 + S-01..S-05 SEAL precedent; peer reviewers folded in) | n/a | yes | yes | no |
 | 7 QA | yes | n/a | yes | no |
 | 8 Product | n/a (self) | n/a | yes | n/a |
 | 9 Compliance | yes | n/a | yes | no |

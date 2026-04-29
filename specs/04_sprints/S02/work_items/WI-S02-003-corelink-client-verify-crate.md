@@ -54,18 +54,26 @@ pub struct ClientVerifier {
 
 #[derive(Debug, Clone)]
 pub struct VerifyConfig {
-    /// Default true; opt-out requires explicit set.
-    pub enabled: bool,
-    /// Emit warning log on opt-out.
-    pub warn_on_optout: bool,
+    /// Default true; opt-out requires explicit builder method (não direct field set).
+    /// Cycle 9 SEAL fix: fields agora `pub(crate)` (private to crate) + builder pattern obrigatório
+    /// para enforce default-on intent canonical (CTRL-CAS-002); evita silent opt-out via field assign.
+    pub(crate) enabled: bool,
+    pub(crate) warn_on_optout: bool,
+}
+
+impl VerifyConfig {
+    /// Canonical builder: returns default config (`enabled: true`, `warn_on_optout: true`).
+    pub fn new() -> Self { Self::default() }
+
+    /// Explicit opt-out path; emits warning log + métrica counter (CI gate verifies opt-out warning emitted).
+    pub fn disabled() -> Self { Self { enabled: false, warn_on_optout: true } }
 }
 
 impl Default for VerifyConfig {
-    fn default() -> Self {
-        Self { enabled: true, warn_on_optout: true }
-    }
+    fn default() -> Self { Self { enabled: true, warn_on_optout: true } }
 }
 
+// === Rust-native API surface (idiomatic; for direct Rust consumers e.g. corelink-server, corelink-cli) ===
 impl ClientVerifier {
     pub fn new(config: VerifyConfig) -> Self;
 
@@ -79,6 +87,25 @@ impl ClientVerifier {
         expected: &Digest,
     ) -> impl Stream<Item = Result<Bytes, VerifyError>>;
 }
+
+// === C-ABI FFI surface (separate module `ffi.rs`; consumed via cbindgen → Python pyO3 + Go cgo in S-15 FFI sprint) ===
+// NOTE: JS/WASM consumers use a separate Rust → wasm-bindgen pipeline (NOT cbindgen + C ABI):
+//   - WASM target `wasm32-unknown-unknown` com `#[wasm_bindgen]` attributes em separate module `wasm.rs` (feature-gated `wasm`).
+//   - wasm-bindgen generates JS shim + .d.ts; consumes Rust-native types directly (Result<>, async/await, structs).
+//   - No cbindgen header generated for WASM target; C ABI surface (ffi.rs) is consumed only by Python pyO3 + Go cgo.
+// Public C-compatible signatures (no Rust-only types; explicit error codes; opaque handle pattern):
+#[no_mangle]
+pub extern "C" fn corelink_verifier_new(config_enabled: u8, config_warn_optout: u8) -> *mut ClientVerifier;
+#[no_mangle]
+pub extern "C" fn corelink_verifier_verify(
+    handle: *const ClientVerifier,
+    body_ptr: *const u8, body_len: usize,
+    digest_hex_ptr: *const u8, digest_hex_len: usize,
+    out_error_code: *mut i32,
+) -> i32;  // 0 = OK; non-zero = error (mapped to VerifyError variants via error_code lookup table)
+#[no_mangle]
+pub extern "C" fn corelink_verifier_free(handle: *mut ClientVerifier);
+// Stream variant deferred to S-15 FFI sprint (async cross-language complexity; sync verify suffices for SDK MVP).
 
 #[derive(Debug, thiserror::Error)]
 pub enum VerifyError {
@@ -109,7 +136,9 @@ Opt-in verify = optional security; muitos clients disable for "performance" → 
 - ABI-stable signatures = SemVer commitment para SDK consumers.
 
 **Stream-aware verify** é diferencial:
-Naive: download full body → hash full body → compare. Memory-bounded em SDK side (Python pyO3, JS WASM têm budget tight). Stream-aware: hash incrementally durante download (BLAKE3 supports incremental); fail-fast em mid-download corruption; memory peak ≤ 1 MiB chunk.
+Naive: download full body → hash full body → compare (memory peak = full blob; problematic em SDK tight budget Python pyO3 / JS WASM). Stream-aware: hash incrementally durante download (BLAKE3 supports incremental update); memory peak ≤ 1 MiB chunk.
+
+**Detection latency clarification (cycle 9 SEAL fix)**: BLAKE3 incremental hash detects corruption **at end-of-stream** (final hash compute); intermediate chunk integrity is not validated mid-download (no Merkle proof per chunk em current scope). Fail-fast em mid-download requires per-chunk Merkle proofs (deferred to S-05 multipart Merkle WI-S05-005); for S-02 single-blob streaming, detection é at-end. Memory benefit (incremental hash não buffer full body) holds independently of detection-latency tradeoff.
 
 **Risk justification HIGH_RISK:**
 - **FF-HR-005**: implementa CTRL-CAS-002 — security control canonical. Falha aqui = INV-CAS-INTEGRITY violated em client side.
@@ -142,8 +171,11 @@ Library (FFI-ready); HIGH_RISK; FF-HR-005.
 
 1. **Crate `corelink-client-verify`** em `crates/corelink-client-verify/`:
    - `Cargo.toml` standalone (deps: `corelink-hash` from S-01, `subtle`, `bytes`, `tokio` opt-in via feature `stream`).
-   - `lib.rs` com `pub` items para FFI surface.
-   - Build target `cdylib` para C ABI (FFI wrappers consume via cgo / pyO3 / wasm-bindgen).
+   - **Two-layer API surface design** (resolves ABI/FFI contradiction):
+     - `lib.rs` exposes Rust-native idiomatic API (`Result<(), VerifyError>`, `impl Stream<Item=...>`, `AsyncRead`) — for direct Rust consumers (corelink-server, corelink-cli).
+     - `ffi.rs` (feature-gated `ffi`) exposes **C-ABI compatible** `extern "C"` functions com opaque handle pattern + explicit error codes (no `Result<>`, no generics, no `impl Trait`) — for cbindgen → S-15 FFI wrappers.
+     - Build targets: default `rlib` (Rust-native consumers); `cdylib` apenas com `--features ffi` (C-ABI surface via `extern "C"` em `ffi.rs`).
+   - cbindgen header generation gated em CI: `cbindgen --crate corelink-client-verify --output target/include/corelink_verify.h`; produces ONLY signatures from `ffi.rs` module (Rust-native types invisible).
 2. **`ClientVerifier::verify` method**:
    - Sync compute BLAKE3(body) reusing `corelink_hash::Digest::compute`.
    - Constant-time compare via `subtle::ConstantTimeEq`.
@@ -213,8 +245,8 @@ Feature: Client-side verify default-on
     And final assertion at end-of-stream returns DigestMismatch
     And memory peak ≤ 1 MiB chunk + overhead ≤ 2 MiB total
 
-  Scenario: Opt-out emit warning
-    Given VerifyConfig { enabled: false, warn_on_optout: true }
+  Scenario: Opt-out emit warning (builder pattern enforced; cycle 12 SEAL fix)
+    Given VerifyConfig::disabled() (canonical builder; private fields no longer constructible directly)
     When verifier created
     Then tracing::warn! emitted: "client_verify=disabled; proceed at own risk"
     And counter corelink_client_verify_optout_total incremented
@@ -232,11 +264,12 @@ Feature: Client-side verify default-on
     Then variance em verify duration < 5% (criterion benchmark)
     And no statistical correlation prefix length vs duration
 
-  Scenario: ABI stability for FFI
-    Given crate built as cdylib
-    When examined via cbindgen
-    Then C-compatible signatures generated
-    And no Rust-only types in public API surface
+  Scenario: ABI stability for FFI (separate ffi.rs module)
+    Given crate built as cdylib com `--features ffi`
+    When examined via cbindgen com scope limited to ffi.rs module
+    Then C-compatible signatures generated (opaque handle pattern + i32 error codes; no Result<>, no impl Trait, no generics)
+    And no Rust-only types em FFI public API surface (lib.rs Rust-native types stay private to FFI consumer view)
+    And Rust-native API (lib.rs com Result<>, impl Stream<>) continues to work for direct Rust consumers (corelink-server, corelink-cli)
 
   Scenario: Stand-alone build (no Worker deps)
     When cargo build -p corelink-client-verify --no-default-features
@@ -431,24 +464,23 @@ Doc `docs/internal/client-verify-pattern.md` — explica default-on rationale + 
 3. ABI review (D+3): FFI surface review com S-15 owner forward (planning).
 4. Pre-merge: property tests + criterion + cbindgen verify.
 
-## 30. Sign-off (HIGH_RISK 13)
+## 30. Sign-off (HIGH_RISK 11 canonical; framework §33.5.4.3 + ADR-0034)
 
 | # | Role | Name | Signed Date | Status |
 |---|---|---|---|---|
 | 1 | Owner | Gustavo Schneiter | _pending_ | _pending_ |
 | 2 | Final Approver | Gustavo Schneiter | _pending_ | _pending_ |
-| 3 | SRE Lead | _staffing-blocked_ | _pending_ | _pending_ |
+| 3 | Architect | _TBD; mandatory — Crypto SME specialization for client-side BLAKE3 verify constant-time + threat model attestation chain_ | _pending_ | _pending_ |
 | 4 | Security Lead | _TBD_ | _pending_ | _pending_ |
-| 5 | Engineer (peer 1) | _TBD_ | _pending_ | _pending_ |
-| 6 | Engineer (peer 2) | _TBD_ | _pending_ | _pending_ |
-| 7 | QA | _TBD_ | _pending_ | _pending_ |
+| 5 | SRE Lead | _staffing-blocked_ | _pending_ | _pending_ |
+| 6 | Engineer (S-02 lead) | _TBD_ | _pending_ | _pending_ |
+| 7 | QA Lead | _TBD_ | _pending_ | _pending_ |
 | 8 | Product | Gustavo Schneiter | _pending_ | _pending_ |
-| 9 | Compliance | _TBD_ | _pending_ | _pending_ |
-| 10 | Privacy | _TBD_ | _pending_ | _pending_ |
-| 11 | Architect | _TBD_ | _pending_ | _pending_ |
-| 12 | AppSec | _TBD; emphatic — client-side verify threat model + FFI surface review_ | _pending_ | _pending_ |
-| 13 | Crypto SME | _mandatory; client-side BLAKE3 verify constant-time + threat model attestation chain_ | _pending_ | _pending_ |
-| _advisory_ | S-15 future owner | _TBD; review FFI bindings reusability_ | _advisory_ | _pending_ |
+| 9 | Compliance Officer | _TBD_ | _pending_ | _pending_ |
+| 10 | Privacy Officer | _TBD_ | _pending_ | _pending_ |
+| 11 | AppSec advisor | _TBD; emphatic — client-side verify threat model + FFI ABI surface review_ | _pending_ | _pending_ |
+
+> Crypto SME (mandatory for BLAKE3 + threat model) folds into Architect role specialization. S-15 future owner FFI review é informational input antes do sprint S-15, não sign-off canonical aqui. Peer reviewers contribuem em PR review sem sign-off canonical separado.
 
 ## 31. Change Log
 
@@ -466,4 +498,4 @@ Doc `docs/internal/client-verify-pattern.md` — explica default-on rationale + 
 
 ---
 
-**Fim WI-S02-003.** Próximo: WI-S02-004 (constant-time 404/403 middleware).
+**Fim WI-S02-003.** Próximo: WI-S02-004 (constant-time 404 MissReason parity middleware per ADR-0028 3-arm).

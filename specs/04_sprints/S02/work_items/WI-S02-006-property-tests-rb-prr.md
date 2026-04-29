@@ -49,7 +49,7 @@ Suite de validação final da S-02 que materializa evidence para PRR HIGH_RISK s
    - `prop_tenant_isolation_read_path` (100k iter; round-robin strategy — vide §2 narrative; ≥ 40 reps per (tenant_i, tenant_j) pair).
    - `prop_get_blob_unary_isolation` (10k iter).
    - `prop_find_missing_no_existence_oracle` (10k iter; inclui response-size leak guard).
-   - `prop_negative_cache_correctness` (10k iter race conditions; exercita put_miss vs invalidate_on_write monotonic version stamp invariant INV-NEG-CACHE-MONOTONIC; vide WI-S02-005 §9.11).
+   - `prop_negative_cache_correctness` (10k iter race conditions; exercita put_miss vs invalidate_on_write eventual-consistency convergence invariant per WI-S02-005 §9.11; **NÃO** monotonic version stamp — KV não oferece atomic CAS; oracle: 0 incorrect hot reads + convergence within TTL bound).
    - `prop_constant_time_response` (10k iter Mann-Whitney + power analysis; vide WI-S02-004 §10.4.1; reused gate).
 2. **Bit rot integration test** em `tests/integration_bit_rot.rs`:
    - Setup: write blob via S-01 path, body persisted em R2.
@@ -70,7 +70,7 @@ WI-S02-001..005 implementam features. **Este WI prova que features funcionam sob
 
 Property tests 100k iter cover state space muito maior que TLA+ small bounds (~3 tenants × 10 ops). Adversarial property:
 - 50 tenants × 1000 random read ops com mixed digests (próprios + cross-tenant + non-existent).
-- Assert: 100% das reads cross-tenant retornam 404 ou 403 mas NUNCA blob alheio.
+- Assert: 100% das reads cross-tenant retornam 404 uniform per ADR-0028 (CrossTenantMasked variant) — NUNCA 403 (status-code differential = enumeration oracle); NUNCA blob alheio.
 - Assert: 100% das reads tombstoned retornam 404 (não retornam body do blob soft-deleted).
 - 0 false positive (legítimo read retorna blob errado) em 100k iter = 99.999%+ confidence.
 
@@ -90,10 +90,10 @@ Without round-robin, a (tenant_42, tenant_17) cross-pair bug might escape 100k r
 - Some digests pertencem a Tenant A.
 - Assert: response shows them as "missing" (não distinguishable de "really missing").
 
-`prop_negative_cache_correctness`:
-- Mixed sequence: write digest_X → invalidate cache → read digest_X → assert 200.
-- Mixed sequence: read non-existent → cache populated → re-read → cache hit.
-- Race conditions: concurrent write + read same digest; assert no stale cached negative.
+`prop_negative_cache_correctness` (aligned com WI-S02-005 §9.11 eventual-consistency model):
+- Mixed sequence: write digest_X → invalidate cache (KV.delete) → read digest_X within same region/replica → assert 200 OK (cache hit cleared; fall-through D1+R2).
+- Mixed sequence: read non-existent → cache populated (NotFound TTL 300s) → re-read within TTL → cache hit returns 404.
+- Race conditions: concurrent write + read same digest; assert eventual convergence — **stale 404 transient acceptable up to TTL bound (≤ 300s)**; assert (a) NO incorrect 200 OK (returning blob from wrong tenant OR stale body); (b) post-TTL-expiry OR explicit invalidation propagation, next read converges to correct semantic; (c) Bazel cliente retry pattern resolves remaining staleness. **NÃO** invariant of "no stale cached negative ever" — that contradicts CF KV eventual consistency reality per WI-005 §9.11.
 
 **Bit rot integration test:**
 - Real-world FM-051 (R2 silent corruption) é low probability mas catastrophic; chaos test simulates.
@@ -191,7 +191,7 @@ Feature: S-02 ship gate validation
     Given 50 tenants × 1000 random read ops mix
     When property test runs 100k cases
     Then 0 cross-tenant reads returned wrong tenant's blob
-    And test runtime ≤ 90s em CI
+    And test runtime ≤ **5min em CI typical, ≤ 10min upper bound** (cycle 9 SEAL: previous 90s claim was optimistic — 100k iter × per-iter ~5ms tenant_path derive + R2/D1 mock + AuthZ check = ~500s realistic; CI runner CPU varies; upper bound 600s prevents flake while keeping fast feedback). Soft target ≤ 5min para fast PR feedback; hard fail apenas se > 10min.
 
   Scenario: prop_get_blob_unary_isolation
     Given 10k random (tenant, digest) pairs com mixed ownership
@@ -206,11 +206,13 @@ Feature: S-02 ship gate validation
     And response indistinguishable from truly missing
     And Mann-Whitney U on response sizes/timings p > 0.05
 
-  Scenario: prop_negative_cache_correctness
+  Scenario: prop_negative_cache_correctness (eventual-consistency aligned)
     Given 10k race scenarios (write + read concurrent)
     When property runs
-    Then no stale cached negative observed
-    And no cross-tenant cache poisoning
+    Then 0 incorrect hot reads (no 200 OK returning wrong content; no cross-tenant cache poisoning)
+    And eventual convergence dentro de TTL bound (≤ 300s) OR explicit invalidation propagation
+    And transient stale 404 acceptable per WI-S02-005 §9.11 (KV não atomic CAS; CF docs propagation "60s OR MORE")
+    And cliente retry pattern resolves staleness within bounded window
 
   Scenario: Bit rot detection 100%
     Given 10 bit-rot scenarios injected directly em R2
@@ -245,7 +247,7 @@ Feature: S-02 ship gate validation
 
 ### 9.1 Why 100k iter (não 10k)
 
-S-02 é HIGH_RISK; cross-tenant catastrophe. Higher confidence statistical bound: 100k > 10k = 10× more confidence. Runtime ~90s acceptable em CI.
+S-02 é HIGH_RISK; cross-tenant catastrophe. Higher confidence statistical bound: 100k > 10k = 10× more confidence. Runtime ~5min typical em CI runner (per cycle 9 SEAL realistic estimate; previous "~90s" claim was optimistic — 100k iter × ~5ms per-iter = ~500s realistic; CI runner CPU varies; soft target ≤ 5min para fast PR feedback; hard fail apenas se > 10min upper bound).
 
 ### 9.2 Why bit rot direct injection (não simulated em test mock)
 
@@ -310,7 +312,7 @@ Não. Standard practice; aligned com framework HIGH_RISK matrix.
 - **14.6.1** Test reliability ≥ 99% (no flakes em 7d nightly).
 - **14.6.2** Documentação: each test has docstring explaining invariant.
 - **14.6.3** Coverage: combined unit + integration + property = ≥ 95%.
-- **14.6.4** CI runtime ≤ 90s for 100k property test.
+- **14.6.4** CI runtime ≤ 5min soft target / ≤ 10min hard upper bound for 100k property test (cycle 9+10 SEAL: realistic estimate; 100k × ~5ms per-iter ≈ ~500s).
 - **14.6.5** SAST clean.
 - **14.6.6** Métricas: CI test duration tracked.
 - **14.6.7** Runbook: nenhum novo (RB-FM-253 reused; this WI executes).

@@ -126,20 +126,27 @@ API Handler (batch + unary); HIGH_RISK; FF-HR-002 + FF-HR-005.
 1. **gRPC `GetBlob` unary handler** em `crates/corelink-worker/src/reapi/cas_unary.rs`:
    - Single digest request → blob bytes inline em response (≤ 4 MiB).
    - Reject 4 MiB+ blobs com `COR_CAS_BLOB_TOO_LARGE` + hint "Use ByteStream::Read for larger blobs".
+   - Required PAT scope: `cache-r` (per auth_model.md §scope table L176; canonical hyphen-form).
    - Same auth + AuthZ + tenant prefix logic do WI-S02-001.
-2. **gRPC `FindMissingBlobs` batch handler**:
+2. **gRPC `BatchReadBlobs` batch handler** em `crates/corelink-worker/src/reapi/cas_batch_read.rs` (REAPI mandatory per remote_cache_product_profile.md §12.2 L412):
+   - Request: array of digests, max 1000 + max aggregate response size 4 MiB (REAPI canonical batch cap).
+   - Per-digest dispatch: GetBlob unary semantics applied em parallel.
+   - Response: per-digest envelope (digest + data + status) — digests com size > inline limit retornam status pointing a ByteStream::Read fallback.
+   - Required PAT scope: `cache-r`.
+3. **gRPC `FindMissingBlobs` batch handler**:
    - Request: array of digests, max 1000.
    - Per-digest D1 AuthZ check (parallel via Tokio join_all).
    - Response: subset of digests não existentes em tenant scope.
    - Cross-tenant blobs → "missing" (não distinguishable de truly missing).
+   - Required PAT scope: **`cache-find-missing`** (canonical per auth_model.md L179; `cache-r` is read access — `cache-find-missing` é separate scope para discovery operations sem implicar download capability).
 3. **HTTP REST surfaces equivalentes**:
    - `GET /v1/cas/<digest>?inline=true` → unary response (alternativa a Range-supported streaming).
    - `POST /v1/cas/find-missing` com JSON `{"digests": [...]}` → array response.
 4. **Per-digest AuthZ parallel**: Tokio `join_all(digests.map(|d| authz_check(d)))`; bounded concurrency (max 100 parallel D1 queries).
-5. **Métricas**:
-   - `corelink.cas.get_blob.requests_total{tenant_tier, region, result}` (counter).
-   - `corelink.cas.find_missing.batch_size_bucket{tenant_tier}` (histogram).
-   - `corelink.cas.find_missing.duration_seconds_bucket{batch_size_bucket}` (histogram).
+5. **Métricas** (canonical underscored Prometheus form per observability_model.md §4.1; label `plan` per §3.1):
+   - `corelink_cas_get_blob_requests_total{plan, region, outcome}` (counter).
+   - `corelink_cas_find_missing_batch_size_bucket{plan}` (histogram).
+   - `corelink_cas_find_missing_duration_seconds_bucket{batch_size_bucket}` (histogram).
 6. **error_taxonomy mapping**:
    - `COR_CAS_BLOB_NOT_FOUND` (per-digest em FindMissingBlobs response).
    - `COR_CAS_BLOB_TOO_LARGE` (GetBlob com blob > 4 MiB; suggest streaming Read).
@@ -147,9 +154,9 @@ API Handler (batch + unary); HIGH_RISK; FF-HR-002 + FF-HR-005.
 
 ### 6.2 Out-of-scope (deferred)
 
-- **BatchReadBlobs** (REAPI v2 batch read N blobs em single response): defer pós-GA; complexity vs benefit marginal.
+- **Batch reads para blobs > 4 MiB inline**: defer; cliente usa `BatchReadBlobs` para inline + `ByteStream::Read` para grandes (REAPI canonical pattern).
 - **Streaming Read** (large blobs): WI-S02-001.
-- **Constant-time 404/403** at HTTP level: WI-S02-004 (este WI emit basic 404 vs 403 distinction).
+- **Constant-time 404 MissReason parity** at HTTP level: WI-S02-004 (este WI emit canonical 404 uniform per ADR-0028; 403 reserved para PAT scope failures).
 - **Negative cache** integration: WI-S02-005.
 
 ## 7. Anti-Scope (expandido para HIGH_RISK)
@@ -170,7 +177,7 @@ Feature: GetBlob unary + FindMissingBlobs batch
   Background:
     Given Tenant A has blobs D_X (5 KB), D_Y (50 KB), D_Z (100 KB)
     And Tenant B has blob D_W (5 KB)
-    And Tenant A is authenticated with PAT scope cache:r
+    And Tenant A is authenticated with PAT scopes [`cache-r`, `cache-find-missing`] (canonical hyphen-form per auth_model.md L176-179)
 
   Scenario: GetBlob unary happy path (small blob)
     When Tenant A requests GetBlob(D_X)
@@ -253,9 +260,9 @@ CTRL-ISO-005 prevents existence oracle: atacante com PAT B não pode learn "Tena
 - HTTP/2 header overhead + JSON wrapping em larger blobs incurs cost; streaming Read é better fit.
 - SDK auto-routing simplifies cliente decision.
 
-### 9.5 Why no BatchReadBlobs
+### 9.5 Why BatchReadBlobs in-scope (REAPI mandatory; cycle 7 SEAL fix)
 
-Bazel cliente consume sequentially; batch read não saves much vs N parallel GetBlobs (HTTP/2 multiplexing). Complexity (memory budget management for N inline blobs) vs benefit marginal. Defer pós-GA se demand emerge.
+REAPI v2 spec marks `BatchReadBlobs` como **mandatory** (per remote_cache_product_profile.md §12.2 L412 ✅); deferring violates conformance gate (sprint contract §6 DoD: 'REAPI v2 conformance test suite passes'). Earlier rationale ("Bazel cliente consume sequentially") era incorrect — Bazel actually issues batch reads em build storms (manifest lookup + multi-output retrieval); HTTP/2 multiplexing helps mas batch reduces request overhead + auth round-trips. Memory budget: per-request aggregate cap 4 MiB (REAPI canonical batch size); per-blob inline cap 4 MiB; large blobs (> 4 MiB) returned com pointer to ByteStream::Read fallback (REAPI canonical pattern).
 
 ### 9.6 ADR potencial?
 
@@ -263,7 +270,7 @@ Não. Patterns reused do WI-S02-001 + REAPI v2 spec compliance.
 
 ## 10. Completeness Criteria SOTA
 
-- [ ] **10.2.1** REAPI v2 conformance (bazelbuild/remote-apis) GetBlob + FindMissingBlobs 100% pass (EVT-002).
+- [ ] **10.2.1** REAPI v2 conformance (bazelbuild/remote-apis) GetBlob + **BatchReadBlobs** + FindMissingBlobs 100% pass (EVT-002; full REAPI mandatory trio per remote_cache_product_profile.md §12.2 L410-412).
 - [ ] **10.2.2** Property test 10k batch enumeration → 0 cross-tenant existence leak (EVT-002).
 - [ ] **10.2.3** FindMissingBlobs p99 ≤ 200ms para batch de 1000 (criterion EVT-002).
 - [ ] **10.2.4** GetBlob p99 ≤ 100ms warm; ≤ 150ms cold (EVT-021).
@@ -373,7 +380,7 @@ O: 24h, M: 26.5h, P: 45h → PERT 29.5h.
 ## 22. Cost Analysis
 
 - Per FindMissingBlobs 1000 digests: 1000 D1 reads × $1/M = $1/M ops.
-- TCO 12m com 1M batch/dia × 365 = 365M batch × 1k digests = 365B D1 reads = ~$365/yr (well within budget).
+- TCO 12m com 1M batch/dia × 365 = 365M batch × 1k digests = 365B D1 reads = **365,000 × $1/M = ~$365k/yr** (math fix cycle 7: 365 billion / 1 million = 365 thousand units of millions). Still budget-able for paid B2B SaaS (target customer ARPU justifies); cost regression gate em CI prevents creep.
 
 ## 23. API Contract
 
@@ -417,23 +424,23 @@ Tech talk: "REAPI v2 Batch Discovery — Why Bazel Lives or Dies on FindMissingB
 2. Code review (D+3): peer + Security.
 3. Pre-merge: REAPI conformance + property test green.
 
-## 30. Sign-off (HIGH_RISK 13)
+## 30. Sign-off (HIGH_RISK 11 canonical; framework §33.5.4.3 + ADR-0034)
 
 | # | Role | Name | Signed Date | Status |
 |---|---|---|---|---|
 | 1 | Owner | Gustavo Schneiter | _pending_ | _pending_ |
 | 2 | Final Approver | Gustavo Schneiter | _pending_ | _pending_ |
-| 3 | SRE Lead | _staffing-blocked_ | _pending_ | _pending_ |
+| 3 | Architect | _TBD; emphatic — parallel AuthZ design + existence oracle review_ | _pending_ | _pending_ |
 | 4 | Security Lead | _TBD_ | _pending_ | _pending_ |
-| 5 | Engineer (peer 1) | _TBD_ | _pending_ | _pending_ |
-| 6 | Engineer (peer 2) | _TBD_ | _pending_ | _pending_ |
-| 7 | QA | _TBD_ | _pending_ | _pending_ |
+| 5 | SRE Lead | _staffing-blocked_ | _pending_ | _pending_ |
+| 6 | Engineer (S-02 lead) | _TBD_ | _pending_ | _pending_ |
+| 7 | QA Lead | _TBD_ | _pending_ | _pending_ |
 | 8 | Product | Gustavo Schneiter | _pending_ | _pending_ |
-| 9 | Compliance | _TBD_ | _pending_ | _pending_ |
-| 10 | Privacy | _TBD_ | _pending_ | _pending_ |
-| 11 | Architect | _TBD; emphatic — parallel AuthZ design + existence oracle review_ | _pending_ | _pending_ |
-| 12 | AppSec | _TBD; emphatic — masking strategy validation_ | _pending_ | _pending_ |
-| 13 | Crypto SME | _advisory; non-crypto-touching WI mas mantém alinhamento sprint contract §14_ | _pending_ | _pending_ |
+| 9 | Compliance Officer | _TBD_ | _pending_ | _pending_ |
+| 10 | Privacy Officer | _TBD_ | _pending_ | _pending_ |
+| 11 | AppSec advisor | _TBD; emphatic — masking strategy validation_ | _pending_ | _pending_ |
+
+> Crypto SME (advisory non-crypto-touching for this WI) folds into Architect role. Peer reviewers contribuem em PR review sem sign-off canonical separado (folded into Engineer + Architect roles per framework §33.5.4.3 + ADR-0034 solo-tier waiver).
 
 ## 31. Change Log
 

@@ -198,7 +198,7 @@ Cada célula abaixo é uma **ameaça específica** com ID `THR-<STRIDE>-<NNN>`. 
 | ID         | Ameaça                                                                              | Asset alvo   | Boundary | CTRLs                                  |
 |------------|--------------------------------------------------------------------------------------|--------------|----------|-----------------------------------------|
 | THR-I-001  | **Cross-tenant read** — Tenant A lê blob do Tenant B via path guessing             | AST-BLOB     | TB-3     | CTRL-ISO-001 (HMAC path), CTRL-ISO-002 (AuthZ check), CTRL-ISO-003 (bucket policy) |
-| THR-I-002  | Side-channel timing exposing existência de blob                                     | AST-BLOB     | TB-3     | CTRL-ISO-004 (constant-time 404 vs 403) |
+| THR-I-002  | Side-channel timing exposing existência de blob (3-arm 404 MissReason parity per ADR-0028) | AST-BLOB     | TB-3     | CTRL-ISO-004 (constant-time 404 MissReason parity per ADR-0023; pairwise Mann-Whitney + Šidák) |
 | THR-I-003  | Log contém PII/secret do tenant                                                     | AST-AUDIT    | TB-2     | CTRL-PRIV-001 (redact + schema allowlist) |
 | THR-I-004  | Dedup cross-tenant revela que outro tenant tem o mesmo blob (existence oracle)     | AST-BLOB     | TB-3     | CTRL-ISO-005 (dedup tenant-local DEFAULT; cross-tenant apenas com ADR) |
 | THR-I-005  | Error message expõe storage backend internals                                       | AST-CONFIG   | TB-1     | CTRL-NET-004 (error envelope sanitizer) |
@@ -262,7 +262,7 @@ Cada CTRL **DEVE** ter: descrição, implementação, owner (time), evidência o
 | CTRL-ISO-001 | HMAC tenant prefix                  | Ver CTRL-AUTH-004; lib `tenant_path::derive_prefix(tenant_id)` única; property test garante 2 tenants distintos → 2 prefixes distintos | EVT-002 (property test cross-tenant) + EVT-022 (TLA+ INV-TENANT-ISOLATION) | Semestral (alinhado com TDK rotation, ver `key_management.md §3`) |
 | CTRL-ISO-002 | AuthZ check on storage call         | Worker valida tenant_id == prefix HMAC(tenant_key, caller) | EVT-022 | Contínuo |
 | CTRL-ISO-003 | R2 bucket policy enforcement        | IAM policy + pre-signed URL com path fixo                  | EVT-005 | Trimestral |
-| CTRL-ISO-004 | Constant-time 404 vs 403            | Middleware uniformiza latência e body                      | EVT-025 | Anual |
+| CTRL-ISO-004 | Constant-time 404 MissReason parity (per ADR-0023 + ADR-0028) | Tower middleware (`TimingPaddingLayer`) uniformiza latência across 3 arms (NotFound × CrossTenantMasked × Tombstoned per ADR-0028); pairwise Mann-Whitney U + Šidák correction; |Δmedian| ≤ 1ms gate; alert SEV-2 > 5ms 5min | EVT-025 + EVT-040 | Anual |
 | CTRL-ISO-005 | Dedup tenant-local default          | Cross-tenant dedup apenas via ADR com BYOE                 | EVT-029 | Por mudança |
 
 ### 6.4 Supply Chain

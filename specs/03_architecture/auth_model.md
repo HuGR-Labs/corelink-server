@@ -212,12 +212,19 @@ Adicionar scopes novos é mudança de superfície de segurança. **DEVE** seguir
 
 Toda operação autenticada tem `tenant_id` derivado do principal. Scope é aplicado **dentro** do tenant.
 
-```
+```pseudocode
+// Generic auth boundary (S-03 middleware):
 if request.tenant_id != principal.tenant_id:
-    return 403
+    return 403  // PAT scope/identity mismatch — non-CAS-read paths
+
+// CAS read handlers (S-02 ADR-0028 override): cross-tenant blob access masked as 404 uniform
+// (existence oracle closed; per ADR-0028 MissReason → 404 freeze):
+if request.path.starts_with("/cas/") AND blob_meta.tenant_id != principal.tenant_id:
+    return 404 with COR_CAS_BLOB_NOT_FOUND  // CrossTenantMasked variant
+    + audit emit "corelink.cas.cross_tenant_attempt" (forensics retain reason)
 ```
 
-Isso é tão crítico que merece invariant dedicado: **INV-TenantIsolation** (CRITICAL, forcing factor FF-HR-002).
+Isso é tão crítico que merece invariant dedicado: **INV-TenantIsolation** (CRITICAL, forcing factor FF-HR-002). Per ADR-0028 (S-02 GA freeze), CAS read handlers retornam 404 uniform across MissReason variants (NotFound × CrossTenantMasked × Tombstoned) para fechar enumeration oracle; 403 reservado para PAT scope failures (não cross-tenant blob access).
 
 ### 4.2 Scope check
 

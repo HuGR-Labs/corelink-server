@@ -86,7 +86,7 @@ O ataque direto é: **Tenant B autentica com PAT legítimo, request URL contém 
 A mitigação é arquitetural: **AuthZ check pre-R2** (CTRL-ISO-002 em `security_model.md §6.4`). Implementação: D1 query `SELECT 1 FROM blob_meta WHERE digest=? AND tenant_id=? AND deleted_at IS NULL LIMIT 1` antes de R2 GetObject. Se row count = 0 → **404 (uniform per ADR-0028; CrossTenantMasked variant from S-02 WI-S02-005 NegativeCache MissReason taxonomy)** + audit emit `corelink.cas.cross_tenant_attempt` (forensics retém reason real; client observa apenas 404). Esta query é O(1) (UNIQUE index `(tenant_id, digest)`); overhead < 5ms p99.
 
 Adicional: **5-layer defense** propagation:
-- **Layer 1**: PAT scope `cache:r` enforced (S-03 middleware).
+- **Layer 1**: PAT scope `cache-r` enforced (canonical hyphen-form per auth_model.md §scope; S-03 middleware).
 - **Layer 2**: Tenant prefix derivation HMAC (corelink-tenant-path crate; type-safe via TenantPrefix newtype).
 - **Layer 3**: AuthZ check D1 (este WI).
 - **Layer 4**: R2 GetObject path includes tenant prefix; impossível bypassar by construction.
@@ -117,7 +117,7 @@ Por isso exige: 11 sign-offs canonical HIGH_RISK, TLA+ tenant_isolation.tla gree
 - **CAP-CAS-004** (GET blob by digest) — IMPLEMENTA primary.
 - **CAP-CAS-006** (Streaming read) — IMPLEMENTA chunked.
 - **CAP-CAS-005** (Client-side verify) — DEPENDENCY hard upstream (S-02 WI-S02-003).
-- **CAP-CAS-008** (Side-channel-resistant 404/403) — DEPENDENCY hard upstream (S-02 WI-S02-004).
+- **CAP-CAS-008** (Side-channel-resistant 404 MissReason parity per ADR-0028) — DEPENDENCY hard upstream (S-02 WI-S02-004 timing-padding middleware via ADR-0023).
 - **CAP-CAS-007** (Negative caching) — DEPENDENCY soft upstream (S-02 WI-S02-005).
 
 Trace canônico: `auth_model.md §8.1 (5 camadas de defesa)` → camada 3 (AuthZ check) implementada aqui; camadas 1-2 reused de S-01; camadas 4-5 herdadas via R2 path + audit.
@@ -142,7 +142,7 @@ Trace canônico: `auth_model.md §8.1 (5 camadas de defesa)` → camada 3 (AuthZ
    - Range header support REAPI-equivalent semantics.
 3. **Tenant context propagation**:
    - `TenantCtx { tenant_id, user_id, scopes, mfa_ts }` injected via middleware (S-03 stub OK até real).
-   - Validation: scope `cache:r` required; rejected outras scopes.
+   - Validation: scope `cache-r` required (canonical hyphen-form per auth_model.md §scope); rejected outras scopes.
 4. **AuthZ check pre-R2** (CTRL-ISO-002):
    - D1 query `SELECT 1 FROM blob_meta WHERE digest=? AND tenant_id=? AND deleted_at IS NULL LIMIT 1`.
    - Row count 0 → **404 uniform** (per ADR-0028; MissReason ∈ {NotFound, CrossTenantMasked, Tombstoned} all map to 404 com same body) + audit emit `corelink.cas.cross_tenant_attempt` (forensics retém reason real; S-09 alignment).
@@ -189,7 +189,7 @@ Feature: REAPI ByteStream::Read CAS handler
     And blob_meta has row (tenant_id="uuid-A", digest=D_X, deleted_at=NULL)
 
   Scenario: Successful read same-tenant (happy path)
-    Given Tenant A is authenticated with PAT scope "cache:r"
+    Given Tenant A is authenticated with PAT scope "cache-r" (canonical hyphen-form per auth_model.md §scope)
     When Tenant A requests GET /v1/cas/<D_X>
     Then response status is 200
     And response body bytes equal blob X content
@@ -198,7 +198,7 @@ Feature: REAPI ByteStream::Read CAS handler
     And metric corelink_cas_get_requests_total{result="hit"} incremented
 
   Scenario: Cross-tenant attempt masked as 404 (CRITICAL — ADR-0028 uniform freeze)
-    Given Tenant B is authenticated with PAT scope "cache:r"
+    Given Tenant B is authenticated with PAT scope "cache-r"
     When Tenant B requests GET /v1/cas/<D_X>
     Then response status is 404 (uniform per ADR-0028; CrossTenantMasked MissReason variant)
     And response body contains error_code "COR_CAS_BLOB_NOT_FOUND" (uniform)
@@ -227,7 +227,7 @@ Feature: REAPI ByteStream::Read CAS handler
     And response time p99 < 200ms warm
 
   Scenario: PAT scope insufficient
-    Given Tenant A is authenticated with PAT scope "cache:w" only (no cache:r)
+    Given Tenant A is authenticated with PAT scope "cache-w" only (no cache-r; canonical hyphen-form)
     When Tenant A requests GET /v1/cas/<D_X>
     Then response status is 403
     And error_code "COR_AUTH_SCOPE_INSUFFICIENT"
@@ -448,14 +448,14 @@ Triggers que automaticamente abrem post-mortem doc:
 - **Repudiation**: audit emission per request (CTRL-AUDIT-003 alignment).
 - **Information disclosure**: ✅ THE primary threat — mitigated via 5-layer defense + AuthZ check + property test 100k.
 - **Denial of service**: per-PAT + per-IP rate limit (S-08 forward); negative cache reduces probe storm cost.
-- **Elevation of privilege**: scope `cache:r` insufficient para writes; type-safe enforcement.
+- **Elevation of privilege**: scope `cache-r` insufficient para writes; type-safe enforcement.
 
 ### LINDDUN delta
 
 - **Linkability**: tenant_id é PII → never em logs externos sem redaction (S-09 R-S09-6).
 - **Identifiability**: digest é content-derived; não identifies tenant directly.
 - **Non-repudiation**: audit chain S-09.
-- **Detectability**: side-channel timing 404/403 — covered em WI-S02-004.
+- **Detectability**: side-channel timing across 404 MissReason variants — covered em WI-S02-004 (per ADR-0023 + ADR-0028).
 - **Disclosure of information**: covered acima STRIDE.
 - **Unawareness**: customer informed via SDK warning logs em verify failures.
 - **Non-compliance**: GDPR Art. 32 (security measures) + LGPD Art. 46 — coberto via 5-layer defense + audit.
@@ -490,22 +490,21 @@ Triggers que automaticamente abrem post-mortem doc:
 
 Sprint S-02 sign-off matrix (sprint.md §14). Para WI-S02-001 (foundation), exige toda a matriz:
 
-| Role | Name | Signed (Y/N) | Date |
-|---|---|---|---|
-| Owner | Gustavo Schneiter | | |
-| Final Approver | Gustavo Schneiter | | |
-| SRE Lead | TBD | | |
-| Security Lead | TBD | | |
-| Engineer (S-02 lead) | TBD | | |
-| QA Lead | TBD | | |
-| Product | TBD | | |
-| Compliance Officer | TBD | | |
-| Privacy Officer | TBD | | |
-| Architect | TBD | | |
-| AppSec advisor | TBD | | |
-| Peer reviewer 1 | TBD | | |
-| Peer reviewer 2 | TBD | | |
-| Crypto SME | TBD | | |
+| # | Role | Name | Signed (Y/N) | Date |
+|---|---|---|---|---|
+| 1 | Owner | Gustavo Schneiter | | |
+| 2 | Final Approver | Gustavo Schneiter | | |
+| 3 | Architect | TBD | | |
+| 4 | Security Lead | TBD | | |
+| 5 | SRE Lead | TBD | | |
+| 6 | Engineer (S-02 lead) | TBD | | |
+| 7 | QA Lead | TBD | | |
+| 8 | Product | Gustavo Schneiter | | |
+| 9 | Compliance Officer | TBD | | |
+| 10 | Privacy Officer | TBD | | |
+| 11 | AppSec advisor | TBD | | |
+
+> Crypto SME (BLAKE3 verify review) folds into Architect specialization. Peer reviewers contribuem em PR review sem sign-off canonical separado (folded into Engineer + Architect roles per framework §33.5.4.3 + ADR-0034 solo-tier waiver).
 
 ## 31. Change Log
 

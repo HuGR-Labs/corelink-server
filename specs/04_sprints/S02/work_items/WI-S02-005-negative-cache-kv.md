@@ -25,7 +25,7 @@ inherits_from:
 tags: ["wi", "s02", "kv", "negative-cache", "performance", "cost-reduction", "pat-kv-ttl-001"]
 ---
 
-# WI-S02-005 — Negative Cache KV Adapter (`ac_neg:<digest>` per-region TTL 300s)
+# WI-S02-005 — Negative Cache KV Adapter (`ac_neg:<region>:<HMAC16>:<digest_hex>` per-region TTL 300s; HMAC16 canonical)
 
 > **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
 > **Parent:** [S-02](../sprint.md) · **Assignee:** Gustavo Schneiter
@@ -96,8 +96,8 @@ Mitigação:
 
 **Atacante adversarial scenarios:**
 - **Probe storm enumeration**: atacante envia 1000 random digests; sem negative cache, cada hit D1+R2 = $$. Com negative cache + per-PAT rate limit (S-08 forward), cost reduced + enumeration speed capped.
-- **Cache pollution**: atacante envia random non-existent digests para fill KV. KV per-tenant; atacante's tenant scope only; outros não afetados. KV size bounded by tenant; eviction LRU at scale.
-- **Race write vs negative cache populate**: cliente PUT digest_X concurrent com prior probe que populated KV `ac_neg:digest_X`. Order matters: invalidation precedes populate? Lazy populate (write returns success → invalidate → cliente retry GET → no negative cache hit). Race resolved.
+- **Cache pollution**: atacante envia random non-existent digests para fill KV. KV per-tenant (HMAC16 key prefix); atacante's tenant scope only; outros não afetados. KV size bounded by **TTL eviction (300s expiry)** — Cloudflare Workers KV não oferece explicit LRU primitive; expiry-based reclamation only. Cliente storm fills KV temporarily mas drains automatically em TTL. Per-tenant rate limit (S-08 forward) caps fill rate antes de cost regression.
+- **Race write vs negative cache populate**: cliente PUT digest_X concurrent com prior probe que populated KV `ac_neg:<region>:<HMAC16>:<digest_hex>`. Order matters: invalidation precedes populate? Cliente retry pattern resolves: write returns success → invalidate → if probe populates after, cliente next GET sees stale 404 → cliente retry → next access finds cache TTL'd OR explicitly invalidated → fall-through → 200 OK. Race window bounded by **TTL hard bound (≤ 300s); typical CF KV propagation 60s mas not guaranteed (CF docs explicitly 'OR MORE')**; not strongly consistent (vide §9.11).
 
 **Risk justification HIGH_RISK:**
 - **FF-HR-002**: cross-tenant cache poisoning é isolation breach.
@@ -135,7 +135,7 @@ Cache adapter; HIGH_RISK; FF-HR-002 + FF-HR-005.
 2. **`MissReason` enum** com 3 variants + derive Serialize/Deserialize.
 3. **Integration em CAS read path** (WI-S02-001 GetBlob):
    - GET handler check `negative_cache.lookup` antes D1 AuthZ check.
-   - Hit → return 404 imediato uniform (com timing padding via WI-S02-004 middleware). Short-circuit é canonical para GetBlob — invalidation hook em S-01 PUT (§6.1.4) garante freshness; window stale ≤ 5s region-local per §8 AC scenario.
+   - Hit → return 404 imediato uniform (com timing padding via WI-S02-004 middleware). Short-circuit é acceptable para GetBlob single-digest read porque: (a) invalidation hook em S-01 PUT (§6.1.4) executes KV.delete imediatamente após write success; (b) CF Workers KV propagation latency é typically ≤ 60s globally per [CF KV docs](https://developers.cloudflare.com/kv/concepts/how-kv-works/) — **mas docs explicitamente notam "60 seconds OR MORE"; defensible hard bound é TTL (≤ 300s)**; (c) worst-case stale window = TTL bound; client retry pattern resolves (next access após propagation OR TTL expiry = miss → fall-through → 200 OK).
    - Miss → fall-through to D1 + R2 paths.
 4. **Integration em CAS write path** (WI-S01-005):
    - PutBlob success → call `negative_cache.invalidate_on_write(tenant, digest)`.
@@ -145,10 +145,10 @@ Cache adapter; HIGH_RISK; FF-HR-002 + FF-HR-005.
    - Populate cache for confirmed missing digests post-batch.
    - Distinção semantic: GetBlob (§6.1.3) PODE short-circuit em cache hit (single-digest read; invalidation hook); FindMissingBlobs DEVE fall-through (authoritative batch dedup discovery).
 6. **Per-region KV namespace binding** via wrangler.toml: `KV_NEGATIVE_CACHE_<REGION>`.
-7. **Métricas**:
-   - `corelink.cas.negative_cache.hits_total{tenant_tier, region}` (counter).
-   - `corelink.cas.negative_cache.invalidation_total{trigger}` (trigger ∈ s01_write, manual).
-   - `corelink.cas.negative_cache.stale_window_seconds_bucket` (histogram; tracks time between write and invalidation propagation).
+7. **Métricas** (canonical underscored Prometheus form per observability_model.md §4.1; label `plan` per §3.1):
+   - `corelink_cas_negative_cache_hits_total{plan, region}` (counter).
+   - `corelink_cas_negative_cache_invalidation_total{trigger}` (trigger ∈ s01_write, manual).
+   - `corelink_cas_negative_cache_stale_window_seconds_bucket` (histogram; tracks time between write and invalidation propagation).
 
 ### 6.2 Out-of-scope (deferred)
 
@@ -212,14 +212,14 @@ Feature: Negative cache KV adapter
     Then 1000 lookups: cache hit → return 404 (no D1/R2)
     And cost reduction ≥ 80% measured (vs no-cache baseline)
 
-  Scenario: Stale window bounded — region-local strong; cross-region eventual
+  Scenario: Stale window bounded by TTL — eventually consistent (CF KV reality)
     Given negative cache populated for digest_X em region wnam at T=0
-    Given CAS write succeeds at T=10s (writes propagate same-region wnam)
-    Given invalidate_on_write fires at T=10s em wnam KV
-    Then cliente GET em wnam at T=11s returns 404 stale max 1s (region-local strongly consistent)
-    And p99 stale window dentro do originating region ≤ 5s
-    And **cross-region propagation eventual ≤ 60s** (CF KV global eventual consistency; documented limitation)
+    Given CAS write succeeds at T=10s; invalidate_on_write fires at T=10s em wnam KV (KV.delete idempotent)
+    Then cliente GET em wnam at T=11s pode retornar stale 404 (CF KV é eventually consistent; CF docs explicitly state propagation "60 seconds OR MORE")
+    And **defensible hard bound = TTL (≤ 300s)** — typical propagation 60s mas not guaranteed; cliente retry pattern OR TTL expiry resolves
+    And cliente retry pattern resolves: next access após propagation OR TTL expiry = cache miss → fall-through to D1 + R2 → 200 OK
     Note: cache miss em outra região = fall-through to D1 + R2 (correct fallback; nunca incorrect read)
+    Note: TTL 300s stale window é acceptable para "blob doesn't exist" semantic — customer impact é "esperar até TTL bound para ver blob recém-escrito sem retry"; trade-off explícito vs DO/D1 cost+latency overhead (DO migration path em §9.11)
 
   Scenario: MissReason variant correctness — S-02 GA freeze 404 uniform
     Given Tenant A has tombstoned digest D_T (deleted_at != NULL)
@@ -231,22 +231,22 @@ Feature: Negative cache KV adapter
     And response body identical para NotFound + Tombstoned + CrossTenantMasked (atacante não distingue)
     (alinhamento com WI-S02-001 §6.1.6 não-tombstoned 404)
 
-  Scenario: Concurrent put_miss vs invalidate_on_write — race resolution via monotonic version stamp
-    Given KV é eventually consistent (cross-region; per-region strong)
-    Given client A probes digest_X at T+0 → handler computes miss → put_miss(tenant_A, digest_X, NotFound) com version_stamp v=1
-    Given concurrent client B writes digest_X at T+1ms → invalidate_on_write(tenant_A, digest_X) com version_stamp v=2
-    When KV ordering arrives [v=2 invalidate, v=1 put_miss] em eventual order
-    Then put_miss with v=1 < current_v=2 is **rejected silently** (stale write loses; KV stores tagged version)
-    Then post-race state: KV key absent (invalidation wins; correct)
-    And property test prop_negative_cache_race (WI-S02-006 §6.1.4) exercises 10k iter
-    And invariant INV-NEG-CACHE-MONOTONIC enforced
+  Scenario: Concurrent put_miss vs invalidate_on_write — race resolution via TTL + last-write-wins + retry
+    Given KV é eventually consistent (CF Workers KV; no atomic CAS primitive)
+    Given client A probes digest_X at T+0 → handler computes miss → put_miss(tenant_A, digest_X, NotFound)
+    Given concurrent client B writes digest_X at T+1ms → invalidate_on_write(tenant_A, digest_X) → KV.delete()
+    When KV ordering arrives em eventual order (no strong ordering guarantee)
+    Then worst case: put_miss arrives last → KV holds stale NotFound for up to **TTL 300s defensible hard bound** (typical propagation 60s mas CF docs explicitly 'OR MORE'; não guaranteed)
+    But cliente retry pattern resolves: next probe finds stale 404 → cliente retries (per Bazel cache miss retry semantics) → next access finds cache TTL'd OR fresh invalidation → fall-through → 200 OK
+    And property test prop_negative_cache_race (WI-S02-006 §6.1.4) exercises 10k iter; assert: post-race state converges within **TTL bound (≤ 300s) + retry** to correct semantic
+    Note: NO atomic CAS / version_stamp em KV — primitive does not exist on Workers KV platform; convergence guarantee é eventual, not strong
 ```
 
 ## 9. Design Decisions
 
 ### 9.1 Why CF KV (não DO ou D1)
 
-- **Eventually consistent global**: KV is fine for cache (stale tolerable max 5s).
+- **Eventually consistent global**: KV is fine for cache (stale tolerable bounded por TTL ≤ 300s; typical CF KV propagation 60s mas not guaranteed per docs).
 - **Edge-distributed**: low latency reads em todas as regiões.
 - **TTL native**: KV supports TTL natively; no manual eviction worker.
 - **Cost**: KV $0.50/M reads vs D1 $1/M; cache hits cheaper.
@@ -266,7 +266,7 @@ Tenant residency: EU tenant's negative cache stays em EU KV. Aligned com S-14 re
 
 ### 9.4 Why explicit invalidation em write path (não TTL only)
 
-TTL-only = stale window 5min after write; cliente confused. Explicit invalidation removes stale immediately; window ≤ 5s (KV propagation). Cost minor (1 KV.delete per write).
+TTL-only = stale window TTL 300s after write; cliente confused. Explicit invalidation chama KV.delete imediatamente após write success; stale window thereafter bounded por KV propagation latency (typical 60s mas CF docs explicitly 'OR MORE'; defensible hard bound continua TTL ≤ 300s). Cost minor (1 KV.delete per write).
 
 ### 9.5 Why MissReason enum (não bool flag)
 
@@ -286,27 +286,29 @@ ADR `ADR-0028: MissReason → HTTP 404 uniform freeze (S-02 GA)` documenta + 410
 
 Whitelist em validate_references.py.
 
-### 9.11 Why monotonic version stamp para race resolution put_miss vs invalidate
+### 9.11 Why no atomic CAS — KV reality + TTL + last-write-wins + client retry resolves race
 
-KV é eventually consistent globally. Concurrent ops em mesmo key (`ac_neg:<region>:<tenant>:<digest>`) podem chegar fora de ordem em replica nodes. Sem ordering control:
-- T+0 cliente A probes → put_miss arrives at KV node X.
-- T+1ms cliente B writes → invalidate arrives at KV node Y.
-- Eventual replication: node X→Y, Y→X em ordem inconsistent.
-- Pior caso: invalidate aplicada primeiro (correct), put_miss arrives second (stale; sobrescreve com NotFound permanente).
+CF Workers KV is **eventually consistent globally** (no strong consistency, no atomic compare-and-swap primitive) — verified per [CF KV consistency docs](https://developers.cloudflare.com/kv/concepts/how-kv-works/). Concurrent ops em mesmo key (`ac_neg:<region>:<HMAC16>:<digest_hex>`) podem chegar fora de ordem; KV resolves with simple last-write-wins. Atomic CAS via version_stamp (originally proposed) **is not realizable on this platform** — read-then-write is racy on KV.
 
-**Mitigação**: cada KV write inclui `version_stamp` (monotonic; derived from request timestamp + tenant_id hash). KV value envelope:
-```rust
-struct CachedMissEnvelope {
-    miss_reason: MissReason,
-    version_stamp: u64,  // monotonic
-    cached_at: u64,      // epoch ms
-}
-```
-- put_miss: KV.put se NEW.version_stamp > EXISTING.version_stamp OR EXISTING absent.
-- invalidate_on_write: KV.delete sempre (cleanup é absolute).
-- Conflict resolution: write-with-newest-stamp wins; older stamps rejected silently.
+**Race scenario:**
+- T+0 cliente A probes → put_miss arrives at KV (NotFound cached).
+- T+1ms cliente B writes → invalidate_on_write fires KV.delete().
+- KV propagation: ~60s typical globally.
+- Worst case: stale NotFound persists up to min(60s propagation, TTL 300s).
 
-Property test `prop_negative_cache_race` (WI-S02-006 §6.1.4) exercises 10k iter concurrent put/invalidate; invariant INV-NEG-CACHE-MONOTONIC: "KV state após qualquer race trace é igual ao state após sequential ordering with newest stamp".
+**Why this is acceptable for negative cache (not for atomic primitives):**
+1. **Negative cache é hint, not authoritative source-of-truth**: GetBlob short-circuit on cache hit é optimization; FindMissingBlobs MUST fall-through R2 HEAD anyway (per storage_semantics_matrix.md authoritative requirement; vide §6.1.5).
+2. **Customer impact bounded**: "esperar até **TTL bound (≤ 300s)** para ver blob recém-escrito sem retry; typical 60s propagation" — annoying mas not catastrophic; Bazel client retry semantics resolve naturally bem antes do TTL.
+3. **TTL bound**: even sem invalidation, stale negatives expire em 300s (PAT-KV-TTL-001).
+4. **Trade-off documented**: alternativa (DO singleton per-tenant para strong consistency) adds latency overhead (sub-ms KV → 5-15ms DO round-trip) + cost (DO requests $$); deferred até customer feedback indica need.
+
+**Race resolution actual** (last-write-wins + TTL + retry):
+- put_miss: simple `KV.put(key, MissReason::NotFound, expirationTtl: 300)`.
+- invalidate_on_write: simple `KV.delete(key)`.
+- No version_stamp envelope.
+- Property test `prop_negative_cache_eventually_consistent` (WI-S02-006 §6.1.4): exercises 10k iter; assert post-race convergence **dentro de TTL bound (≤ 300s; typical 60s não guaranteed)** + cliente retry pattern resolves para correct semantic. **NÃO** invariant of monotonic ordering — invariant é eventual convergence + bounded staleness por TTL.
+
+**Future migration path**: se customer feedback indica strong consistency necessária para negative cache, migrate para DO singleton per-tenant — requires explicit ADR + cost/latency review. S-02 GA accepts eventual consistency as documented limitation.
 
 ### 9.6 Lazy populate vs eager
 
@@ -319,7 +321,7 @@ Não. Patterns reused (KV cache pattern standard).
 ## 10. Completeness Criteria SOTA
 
 - [ ] **10.5.1** Probe storm cost reduction ≥ 80% measured em integration test (EVT-021).
-- [ ] **10.5.2** Stale window p99 ≤ 5s (criterion benchmark write-then-GET timing).
+- [ ] **10.5.2** Stale window bounded by TTL (≤ 300s defensible hard bound; typical CF KV propagation ≤ 60s but not guaranteed per CF docs); criterion benchmark write-then-GET measures typical + p99 propagation latency for telemetry SLO tracking (não hard correctness gate).
 - [ ] **10.5.3** Cross-tenant isolation property test 100k iter → 0 cross-tenant hits (EVT-002).
 - [ ] **10.5.4** Invalidation hook coverage: 100% successful writes trigger invalidate (EVT-002).
 - [ ] **10.5.5** TTL 300s configurable via DO config-singleton (S-13 forward; static at GA).
@@ -433,7 +435,7 @@ NegativeCache é internal Rust; no external API impact.
 
 ## 24. Post-mortem Hooks
 
-- Stale negative bug em produção (write→GET inconsistency > 5s) → SEV-2 + 5-Why.
+- Stale negative bug em produção (write→GET inconsistency > **TTL bound 300s** OR > typical CF KV propagation 60s sustained) → SEV-2 + 5-Why post-mortem (validate invalidation hook fired + KV propagation timing + cliente retry pattern works).
 - Cross-tenant cache leak → CRITICAL post-mortem + breach notification consideration.
 - Invalidation hook miss (write succeeded; cache not invalidated) → post-mortem.
 
@@ -458,7 +460,7 @@ Doc `docs/internal/negative-cache-pattern.md` — reusable pattern para outros c
 | R-002 | Cross-tenant cache key collision | L | M | CRITICAL | L | LOW | Per-tenant key construction + property test |
 | R-003 | KV outage breaks read path | L | L | LOW | L | LOW | Graceful fall-through to D1 |
 | R-004 | TTL too long causes business issue | L | M | MEDIUM | L | LOW | 300s default + tunable via DO config |
-| R-005 | Cache size bloat (atacante pollution) | L | L | LOW | L | LOW | KV LRU eviction at scale; per-tenant scope |
+| R-005 | Cache size bloat (atacante pollution) | L | L | LOW | L | LOW | KV TTL eviction (300s expiry; Workers KV não oferece explicit LRU primitive); per-tenant scope (HMAC16 prefix); per-tenant rate limit S-08 forward caps fill rate |
 | R-006 | Cost regression gate | M | L | LOW | L | LOW | §14.10 |
 
 ## 29. Review Checkpoints
@@ -467,23 +469,23 @@ Doc `docs/internal/negative-cache-pattern.md` — reusable pattern para outros c
 2. Code (D+2): peer.
 3. Adversarial (pre-merge): cross-tenant property + stale window.
 
-## 30. Sign-off (HIGH_RISK 13)
+## 30. Sign-off (HIGH_RISK 11 canonical; framework §33.5.4.3 + ADR-0034)
 
 | # | Role | Name | Signed Date | Status |
 |---|---|---|---|---|
 | 1 | Owner | Gustavo Schneiter | _pending_ | _pending_ |
 | 2 | Final Approver | Gustavo Schneiter | _pending_ | _pending_ |
-| 3 | SRE Lead | _staffing-blocked_ | _pending_ | _pending_ |
+| 3 | Architect | _TBD; emphatic — cache invariants + concurrency race review_ | _pending_ | _pending_ |
 | 4 | Security Lead | _TBD_ | _pending_ | _pending_ |
-| 5 | Engineer (peer 1) | _TBD_ | _pending_ | _pending_ |
-| 6 | Engineer (peer 2) | _TBD_ | _pending_ | _pending_ |
-| 7 | QA | _TBD_ | _pending_ | _pending_ |
+| 5 | SRE Lead | _staffing-blocked_ | _pending_ | _pending_ |
+| 6 | Engineer (S-02 lead) | _TBD_ | _pending_ | _pending_ |
+| 7 | QA Lead | _TBD_ | _pending_ | _pending_ |
 | 8 | Product | Gustavo Schneiter | _pending_ | _pending_ |
-| 9 | Compliance | _TBD_ | _pending_ | _pending_ |
-| 10 | Privacy | _TBD_ | _pending_ | _pending_ |
-| 11 | Architect | _TBD; emphatic — cache invariants + concurrency race review_ | _pending_ | _pending_ |
-| 12 | AppSec | _TBD; cross-tenant key construction validation_ | _pending_ | _pending_ |
-| 13 | Crypto SME | _advisory; non-crypto-touching WI mas mantém alinhamento sprint contract §14_ | _pending_ | _pending_ |
+| 9 | Compliance Officer | _TBD_ | _pending_ | _pending_ |
+| 10 | Privacy Officer | _TBD_ | _pending_ | _pending_ |
+| 11 | AppSec advisor | _TBD; cross-tenant HMAC16 key construction validation_ | _pending_ | _pending_ |
+
+> Crypto SME (advisory non-crypto-touching for this WI; mantém alinhamento sprint contract §14) folds into Architect role. Peer reviewers contribuem em PR review sem sign-off canonical separado (folded into Engineer + Architect roles per framework §33.5.4.3 + ADR-0034 solo-tier waiver).
 
 ## 31. Change Log
 

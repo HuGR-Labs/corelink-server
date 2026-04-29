@@ -176,7 +176,7 @@ Invariantes introduzidas via SOTA elevation dos sprint contracts S-07..S-19 (Lot
 | **INV-ERASURE-ATTESTATION-SIGNED** | Erasure de BYOK tenant produz attestation Ed25519-signed verifiable | HIGH | Customer + auditor exigem proof; NIST SP 800-88 Rev.1 compliant | Per-erasure attestation + 7y retention + verify endpoint | S-14 |
 | **INV-ONBOARD-DPA-FIRST** | Subscription activation requires DPA signed primeiro | HIGH | Race condition prevented; nenhum customer billed sem DPA | D1 lock + transactional check + property test 10k concurrent | S-19 |
 | **INV-ONBOARD-ATOMIC-PROVISIONING** | Tenant provisioning atomic | HIGH | Tenant + DPA + Stripe customer ID em single tx; failure rollback all | D1 transaction + chaos test Stripe outage | S-19 |
-| **INV-CAS-SIDE-CHANNEL-INDISTINGUISHABLE** | Timing distribution 404 vs 403 statistically indistinguishable | HIGH | Constant-time middleware + jitter; Mann-Whitney p > 0.05 em 10k samples; criterion benchmark p99 diff < 5ms | Adversarial test S-02 + criterion CI | S-02 |
+| **INV-CAS-SIDE-CHANNEL-INDISTINGUISHABLE** | Timing distribution **across all 404 MissReason variants (NotFound × CrossTenantMasked × Tombstoned per ADR-0028)** statistically indistinguishable; 3-arm parity model | HIGH | Constant-time middleware + jitter; **pairwise Mann-Whitney U** ALL 9 tests must p > 0.05 (3 trials × 3 pairs full conjunction) com **Šidák correction** (per-test α' ≈ 0.0057 controls combined familywise α at 0.05); 10k samples per arm × 3 arms; criterion benchmark **|Δmedian| ≤ 1ms + p99 diff < 5ms across pairs**; cycle 13 SEAL math correction (earlier '0.000125' was incorrect) | Adversarial test S-02 (3-arm methodology) + criterion CI | S-02 |
 
 ### 3.13 Key management (domain KEY) — Lote 9.4
 

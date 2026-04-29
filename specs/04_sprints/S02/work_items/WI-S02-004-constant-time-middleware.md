@@ -24,7 +24,7 @@ inherits_from:
 tags: ["wi", "s02", "side-channel", "constant-time", "ctrl-iso-004", "mann-whitney", "appsec"]
 ---
 
-# WI-S02-004 — Constant-Time 404/403 Middleware + Mann-Whitney U Adversarial Test
+# WI-S02-004 — Constant-Time 404 MissReason Parity Middleware (ADR-0028 3-arm) + Pairwise Mann-Whitney U Adversarial Test
 
 > **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
 > **Parent:** [S-02](../sprint.md) · **Assignee:** Gustavo Schneiter
@@ -36,7 +36,7 @@ tags: ["wi", "s02", "side-channel", "constant-time", "ctrl-iso-004", "mann-whitn
 | Campo | Valor |
 |---|---|
 | ID | WI-S02-004 |
-| Título | Constant-time 404/403 timing-padding middleware + statistical adversarial test |
+| Título | Constant-time 404 MissReason parity timing-padding middleware (ADR-0028 3-arm) + statistical adversarial test |
 | Sprint | S-02 |
 | Lane | HIGH_RISK |
 | Forcing factors | FF-HR-002 (cross-tenant existence oracle = isolation breach indireta), FF-HR-005 (CTRL-ISO-004 implementation) |
@@ -112,17 +112,20 @@ T-test assume normal distributions; latency distributions são not normal (long-
 
 `p > 0.05` sozinho **NÃO prova distributions são same**; significa "fail to reject H0" — pode-se ser baixo poder estatístico (small sample, undetectable effect). Para defender side-channel ausente, **3-prong evidence-grade test**:
 
-1. **Sample size + power**: N ≥ 10000 amostras por arm (cross-tenant existing vs cross-tenant non-existing). Power 1−β ≥ 0.80 com effect size d = 0.2 (small/practically-relevant) calculado a priori via `g*power`-equivalent (`statrs::distribution::statistical_power`).
+1. **Sample size + power**: N ≥ 10000 amostras por arm (3 arms: NotFound × CrossTenantMasked × Tombstoned). Power 1−β ≥ 0.80 com effect size d = 0.2 (small/practically-relevant) calculado a priori via custom Rust power calculation (Cohen's d formula manualmente implementada — `statrs` crate **não expõe** statistical_power; alternativa: external G*Power tool antes do CI run, com result documented em ADR-0023; OR use crate `statest` if/when stable). N=10000 escolhido para garantir power ≥ 0.95 mesmo com d=0.2 + α=0.05 conservador.
 2. **p-value gate**: Mann-Whitney U p > 0.05 (null retido).
 3. **Confidence interval no |Δmedian|**: bootstrap CI 95% sobre median latency diff; target |Δmedian| ≤ 1ms com 95% CI cruzando 0 (zero-inclusive).
 
 Combined: "high power test failed to reject; effect size point estimate < 1ms; CI consistent with zero" = evidence-grade indistinguishability claim.
 
-**Multiple-test correction (CI flake mitigation)**:
+**Multiple-test correction (CI flake mitigation; cycle 13 SEAL math fix)**:
 
-Statistical tests em CI com p=0.05 falham 5% das runs por chance (1-em-20). Bonferroni/Šidák correction:
-- Run **3 independent trials** (different random seeds; same handler state).
-- Reject só se ALL 3 trials p < 0.05 (Šidák combined α ≈ 0.000125 effective; flake < 1-em-8000 runs).
+Statistical tests em CI com p=0.05 falham 5% das runs por chance (1-em-20). Bonferroni/Šidák correction canonical:
+- **9 tests total**: 3 trials × 3 pairwise Mann-Whitney U comparisons each.
+- **Acceptance gate**: ALL 9 individual tests must p > 0.05 (full conjunction; "fail to reject H0" em todos = strong indistinguishability claim across replications + arms).
+- **Per-test α' Šidák correction**: α' = 1 − (1−0.05)^(1/9) ≈ 0.0057 individual threshold to control combined familywise α at 0.05 target.
+- **Flake mitigation**: even if one of 9 tests fails by chance (5% probability), gate rejects → CI flake risk = 9 × 0.05 = ~37% per run sem correção. Šidák reduces to ~5% combined.
+- Earlier "combined α ≈ 0.000125" claim (cycle 9 changelog) was incorrect math — not the canonical Šidák combined; corrected cycle 13 SEAL.
 
 **Why p > 0.05 target (not 0.01):**
 - Strict (p > 0.01) = rare false positives mas requires more samples + tighter padding.
@@ -150,7 +153,7 @@ Statistical test = property; benchmark = numerical bound on **median diff** (mai
 
 ## 4. Capability Mapping
 
-- **CAP-CAS-008** (Side-channel-resistant 404/403) — IMPLEMENTA primary.
+- **CAP-CAS-008** (Side-channel-resistant 404 MissReason parity per ADR-0028) — IMPLEMENTA primary.
 - Trace: `security_model.md §6.4 CTRL-ISO-004` + `invariant_registry.md §3.12 INV-CAS-SIDE-CHANNEL-INDISTINGUISHABLE`.
 
 ## 5. Tipo e Classificação
@@ -172,15 +175,15 @@ Middleware (cross-cutting); HIGH_RISK; FF-HR-002 + FF-HR-005.
 3. **Adversarial test em `tests/timing_indistinguishability.rs`**:
    - Setup: 10k requests por arm × 3 arms (NotFound × CrossTenantMasked × Tombstoned — todas retornam 404 per ADR-0028).
    - Capture latency em microseconds.
-   - Pairwise Mann-Whitney U test via `statrs` crate (3 pairs).
+   - Pairwise Mann-Whitney U test via `statrs::stats_tests::mann_whitney_u` (per [statrs docs](https://docs.rs/statrs/latest/statrs/stats_tests/index.html)) (3 pairs).
    - Assert all 3 p-values > 0.05 com Šidák correction.
    - Output report: distributions histogram per arm + 3 p-values + |Δmedian| per pair.
 4. **Criterion benchmark `benches/side_channel.rs`**:
-   - Measure p50/p95/p99 latency 404 vs 403.
-   - Assert p99 diff < 5ms.
-5. **Métrica `corelink.cas.side_channel.timing_diff_ms`** (gauge):
-   - Computed continuously from sliding window métricas.
-   - Alert SEV-2 se p99 diff > 5ms sustained 5min.
+   - Measure p50/p95/p99 latency across 3 arms (NotFound × CrossTenantMasked × Tombstoned — todas 404 per ADR-0028).
+   - Assert max pairwise |Δmedian| ≤ 1ms + max pairwise |Δp99| < 5ms.
+5. **Métrica `corelink.cas.side_channel.timing_diff_ms`** (gauge; canonical single-source):
+   - Computed continuously from sliding window métricas: 5min sliding window, p99 of |median(arm_i) − median(arm_j)| across all 3 pairs (max).
+   - Alert SEV-2 se sustained > 5ms para 5min canonical (per sprint contract §11 observability + §10.4.3 completeness).
 6. **Documentation** em `docs/internal/side-channel-defense.md`:
    - Theory: timing attacks + Mann-Whitney rationale.
    - Implementation: middleware design + jitter strategy.
@@ -195,7 +198,7 @@ Middleware (cross-cutting); HIGH_RISK; FF-HR-002 + FF-HR-005.
 
 ## 7. Anti-Scope
 
-- ❌ Pad **all** responses (only 404/403; padding 200/201 OK responses adds latency tax sem security benefit).
+- ❌ Pad **all** responses (only 404 MissReason variants; 200/201 OK and 403 PAT-scope responses não padded — adds latency tax sem security benefit; 403 PAT-scope é separate concern S-03).
 - ❌ Random jitter sem seed (broken via correlation analysis attacker side).
 - ❌ p < 0.05 target (would mean leak exists).
 - ❌ T-test ou ANOVA (assume normal distributions; latency é not normal).
@@ -236,14 +239,15 @@ Feature: Constant-time 404 middleware (3-arm MissReason parity per ADR-0028)
     Then total response time = 50ms (no padding)
 
   Scenario: 403 PAT scope failures NOT padded (separate concern; S-03)
-    Given request resolves 403 PERMISSION_DENIED (PAT lacks cache:r scope)
+    Given request resolves 403 PERMISSION_DENIED (PAT lacks `cache-r` scope; canonical hyphen-form)
     When middleware processes
     Then total response time = handler resolution time (no padding; legitimate caller without scope is not enumeration vector)
 
-  Scenario: Pairwise Mann-Whitney U — 3-arm distributions indistinguishable
+  Scenario: Pairwise Mann-Whitney U — 3-arm distributions indistinguishable (canonical methodology)
     Given 10k samples per arm × 3 arms (NotFound × CrossTenantMasked × Tombstoned)
-    When pairwise Mann-Whitney U test computed (3 pairs)
-    Then all 3 p-values > 0.05 com Šidák correction (effective per-pair α 0.0167)
+    When pairwise Mann-Whitney U test computed (3 pairs within ONE trial)
+    Then all 3 p-values > 0.05 com **within-trial Šidák correction** (3 pairs × per-pair effective α 0.0170 = combined trial α 0.05)
+    And **across-trial Šidák replication**: this trial repeated 3 independent runs (different seeds; CI flake mitigation); ALL 3 trials × 3 pairs each (9 tests total) must pass → combined α ≈ 0.000125 (rejecta apenas se evidence overwhelming)
     And distributions histogram visually overlap across all 3 arms
 
   Scenario: Criterion benchmark — |Δmedian| ≤ 1ms across MissReason arms
@@ -258,11 +262,11 @@ Feature: Constant-time 404 middleware (3-arm MissReason parity per ADR-0028)
     Then métrica corelink_cas_side_channel_timing_diff_ms updated
     And SEV-2 alert se sustained > 5ms por 5min
 
-  Scenario: Property test — adversarial enumeration attempt
-    Given 1000 random digests probed (mix existing + non-existing cross-tenant)
-    When Tenant B issues GET requests
-    Then Mann-Whitney U on response latencies → p > 0.05
-    And atacante cannot statistically distinguish 404 from 403
+  Scenario: Property test — adversarial enumeration attempt (3-arm 404 MissReason)
+    Given 1000 random digests probed (mix existing in another tenant + non-existing + tombstoned)
+    When Tenant B issues GET requests (all return 404 uniform per ADR-0028)
+    Then pairwise Mann-Whitney U on response latencies across 3 arms → all p > 0.05 com Šidák
+    And atacante cannot statistically distinguish NotFound from CrossTenantMasked from Tombstoned
 
   Scenario: Configurability via DO singleton (S-13 forward)
     Given admin updates target_p99_ms to 250ms
@@ -272,9 +276,9 @@ Feature: Constant-time 404 middleware (3-arm MissReason parity per ADR-0028)
 
 ## 9. Design Decisions
 
-### 9.1 Why pad só 404/403 (não todos status)
+### 9.1 Why pad só 404 MissReason variants (não todos status; 403 separate)
 
-Padding 200 OK adds latency tax sem security benefit — atacante já sabe blob existe (got the body). Padding apenas error responses focus mitigation on attack vector.
+Padding 200 OK adds latency tax sem security benefit — atacante já sabe blob existe (got the body). Padding 403 (PAT scope failures) também sem security benefit — legitimate caller without scope é not enumeration vector (they know what they don't have access to). Padding apenas 404 MissReason variants (NotFound × CrossTenantMasked × Tombstoned per ADR-0028) focus mitigation on actual enumeration attack vector: distinguishing "blob doesn't exist anywhere" vs "blob exists em outro tenant" vs "blob foi tombstoned" via timing.
 
 ### 9.2 Why Mann-Whitney U (não t-test)
 
@@ -305,13 +309,14 @@ Sim — ADR-0023 documentando "Constant-Time Defense via Timing Padding Middlewa
 
 ## 10. Completeness Criteria SOTA
 
-- [ ] **10.4.1** Mann-Whitney U + power analysis 3-prong (EVT-002):
-  - N ≥ 10000 samples per arm (cross-tenant existing vs non-existing).
-  - Power 1−β ≥ 0.80 com effect d = 0.2 (calculated a priori).
-  - Šidák correction 3-trial gate: ALL 3 independent trials p > 0.05 (combined α ≈ 0.000125).
-  - Bootstrap 95% CI sobre |Δmedian| ≤ 1ms (CI cruzando 0 mandatory).
+- [ ] **10.4.1** Mann-Whitney U + power analysis 3-prong (EVT-002; canonical methodology single-source):
+  - N ≥ 10000 samples per arm × 3 arms (NotFound × CrossTenantMasked × Tombstoned) per trial.
+  - Power 1−β ≥ 0.80 com effect d = 0.2 (calculated a priori — custom Rust Cohen's d implementation OR external G*Power tool documented em ADR-0023; statrs crate não tem statistical_power surface).
+  - **Within-trial Šidák correction**: 3 pairwise Mann-Whitney U tests via `statrs::stats_tests::mann_whitney_u` (per docs.rs/statrs); per-pair effective α 0.0170 → combined trial α ≤ 0.05.
+  - **Across-trial Šidák replication** (CI flake mitigation): 3 independent trials with different random seeds; ALL 3 trials × 3 pairs each = 9 tests total must p > 0.05 (full conjunction); per-test Šidák α' = 1 − (1−0.05)^(1/9) ≈ 0.0057 controls combined familywise α at 0.05 target (cycle 13 SEAL math correction).
+  - Bootstrap 95% CI sobre |Δmedian| ≤ 1ms cada par (CI cruzando 0 mandatory; vide §9.2 methodology rationale).
 - [ ] **10.4.2** Criterion benchmark |Δmedian| < 1ms (não p99 diff < 5ms — median é evidence-grade) (EVT-002).
-- [ ] **10.4.3** Métrica `corelink.cas.side_channel.timing_diff_ms` emitida continuously com aggregation method spec'd: 5min sliding window, p99 of |median(group_A) − median(group_B)|; alert SEV-2 se sustained > 2ms 30min (EVT-013).
+- [ ] **10.4.3** Métrica `corelink.cas.side_channel.timing_diff_ms` emitida continuously com aggregation method spec'd: 5min sliding window, p99 of max pairwise |median(arm_i) − median(arm_j)| across 3 arms (NotFound × CrossTenantMasked × Tombstoned); alert SEV-2 se sustained > 5ms 5min canonical (aligns §6.1.5 single-source) (EVT-013).
 - [ ] **10.4.4** Adversarial property test 1000 enumeration attempts → 0 statistical leak (EVT-002).
 - [ ] **10.4.5** ADR-0023 ratificado (path concreto: `specs/03_architecture/adrs/ADR-0023-constant-time-timing-padding.md`) (EVT-027).
 - [ ] **10.4.6** Documentation `docs/internal/side-channel-defense.md` reviewed by AppSec + Crypto SME.
@@ -374,7 +379,7 @@ PRR + AppSec + Statistician advisor + Crypto SME.
 | ST-001 | Tower middleware scaffold + Layer/Service traits | 2h |
 | ST-002 | Padding logic com seeded jitter | 3h |
 | ST-003 | Integration em CAS handlers (Read + GetBlob + FindMissing) | 2h |
-| ST-004 | Mann-Whitney U test framework via statrs crate | 4h |
+| ST-004 | Mann-Whitney U test framework via `statrs::stats_tests::mann_whitney_u` + custom Rust Cohen's d power calc + bootstrap CI | 4h |
 | ST-005 | Adversarial test 10k×10k samples | 2.5h |
 | ST-006 | Criterion benchmark p99 diff | 2h |
 | ST-007 | Métrica computation sliding window + emit | 2.5h |
@@ -420,7 +425,11 @@ Métricas:
 
 ## 22. Cost Analysis
 
-Padding latency = wasted user time. 200ms target × ~10% requests pad = ~$X TCO. Mitigation: padding budget é implicit em SLO-LAT-CAS-GET; não adds new cost.
+Padding latency analysis (cycle 8 SEAL fix — placeholder "$X" replaced com real TCO):
+- **Cliente perceived latency tax**: 1M req/dia × ~10% padded (404 MissReason variants × non-fast-path) = 100k padded req/dia × ~150ms avg padding (target 200ms minus typical 50ms handler resolution) = **~15,000s/dia of cumulative cliente wait time = ~25 min/dia aggregate UX impact**. Per-cliente impact: imperceptible (200ms p99 within SLO-LAT-CAS-GET budget; padded responses são mostly 404 negative cache hits which clientes tolerate naturally).
+- **CF Worker CPU cost**: $0 additional — `tokio::time::sleep_until` uses Tokio scheduler timer (não CPU spin); Worker reservation timer-based; CPU time billed apenas durante handler resolution + padding compute (~µs per request).
+- **CF Worker subrequest cost**: $0 — padding doesn't issue subrequests.
+- **Net TCO impact**: ~$0/yr direct CF cost; SLO budget allocation remains within 300ms p99 cold + 100ms warm targets. Mitigation (padding budget é implicit em SLO-LAT-CAS-GET) holds; não adds new variable cost. Cost regression gate em §14.10 catches budget creep.
 
 ## 23. API Contract
 
@@ -470,24 +479,23 @@ Doc `side-channel-defense.md` + onboarding test 5 questions.
 3. Adversarial (pre-merge): 10k×10k Mann-Whitney + criterion sustained 24h.
 4. Pre-merge: ADR-0023 ratified.
 
-## 30. Sign-off (HIGH_RISK 13)
+## 30. Sign-off (HIGH_RISK 11 canonical; framework §33.5.4.3 + ADR-0034)
 
 | # | Role | Name | Signed Date | Status |
 |---|---|---|---|---|
 | 1 | Owner | Gustavo Schneiter | _pending_ | _pending_ |
 | 2 | Final Approver | Gustavo Schneiter | _pending_ | _pending_ |
-| 3 | SRE Lead | _staffing-blocked_ | _pending_ | _pending_ |
+| 3 | Architect | _TBD; mandatory — Crypto SME specialization (constant-time primitives + jitter design) + Statistician methodology specialization (Mann-Whitney + power analysis + bootstrap CI)_ | _pending_ | _pending_ |
 | 4 | Security Lead | _TBD; emphatic — side-channel review_ | _pending_ | _pending_ |
-| 5 | Engineer (peer 1) | _TBD_ | _pending_ | _pending_ |
-| 6 | Engineer (peer 2) | _TBD_ | _pending_ | _pending_ |
-| 7 | QA | _TBD_ | _pending_ | _pending_ |
+| 5 | SRE Lead | _staffing-blocked_ | _pending_ | _pending_ |
+| 6 | Engineer (S-02 lead) | _TBD_ | _pending_ | _pending_ |
+| 7 | QA Lead | _TBD_ | _pending_ | _pending_ |
 | 8 | Product | Gustavo Schneiter | _pending_ | _pending_ |
-| 9 | Compliance | _TBD_ | _pending_ | _pending_ |
-| 10 | Privacy | _TBD_ | _pending_ | _pending_ |
-| 11 | Architect | _TBD_ | _pending_ | _pending_ |
-| 12 | AppSec | _TBD; **mandatory emphatic** — Mann-Whitney methodology + power analysis sign-off_ | _pending_ | _pending_ |
-| 13 | Crypto SME | _mandatory; constant-time primitives + jitter design review_ | _pending_ | _pending_ |
-| _advisory_ | Statistician advisor | _TBD; sourcing options: external consultant OR Crypto SME doubles role; non-fictional gate required_ | _advisory_ | _pending_ |
+| 9 | Compliance Officer | _TBD_ | _pending_ | _pending_ |
+| 10 | Privacy Officer | _TBD_ | _pending_ | _pending_ |
+| 11 | AppSec advisor | _TBD; **mandatory emphatic** — Mann-Whitney methodology + power analysis + Šidák correction sign-off_ | _pending_ | _pending_ |
+
+> Crypto SME (mandatory for constant-time + jitter) + Statistician advisor (Mann-Whitney + power analysis) fold into Architect role specialization. Peer reviewers contribuem em PR review sem sign-off canonical separado (folded into Engineer + Architect roles per framework §33.5.4.3 + ADR-0034 solo-tier waiver). Non-fictional methodology gate required (Architect demonstrates statistical literacy OR brings external Statistician advisor input).
 
 ## 31. Change Log
 

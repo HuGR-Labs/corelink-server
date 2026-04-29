@@ -388,7 +388,7 @@ Cliente faz `FindMissingBlobs` pra digest X → servidor responde "missing". Cli
 ### 11.2 Solução
 
 - **REG-NEGATIVE-001:** `FindMissingBlobs` **DEVE** sempre fallback a R2 HEAD em miss de KV, pra não depender de eventual consistency do KV.
-- **REG-NEGATIVE-002:** Negative cache entry ("blob X não existe") **NÃO DEVE** ser cacheada em KV — apenas positive entries.
+- **REG-NEGATIVE-002 (revised cycle 7 SEAL Lote 10.2bis):** Negative cache entries ("blob X não existe") **PODEM** ser cacheadas em KV **somente para `GetBlob` short-circuit path** (single-digest read; per WI-S02-005 §6.1.3); cliente retry pattern + TTL bound (≤ 300s) resolve eventual consistency staleness. **`FindMissingBlobs` continua mandatorily fall-through to R2 HEAD per REG-NEGATIVE-001** (não pode usar negative cache short-circuit). HMAC16 key canonical (`ac_neg:<region>:<HMAC16>:<digest_hex>`); cross-tenant cache poisoning impossível por construction. ADR-0028 freeze: todos MissReason variants → 404 uniform.
 
 ---
 

@@ -103,7 +103,7 @@ introduced_in_sprint: S-XX
 |---|---|---|---|---|---|
 | `COR_CAS_DIGEST_MISMATCH` | 409 | never | `DigestMismatchError` | "Provided digest does not match content hash" | Recompute digest from body and retry; do not retry with same payload |
 | `COR_CAS_BLOB_NOT_FOUND` | 404 | never | `BlobNotFoundError` | "Blob with digest <X> not found" | Verify digest is correct or upload first |
-| `COR_CAS_TENANT_FORBIDDEN` | 403 | never | `TenantForbiddenError` | "Access to this resource is forbidden" | Check PAT scope and tenant_id matches blob owner |
+| `COR_CAS_TENANT_FORBIDDEN` | 403 | never | `TenantForbiddenError` | "Access to this resource is forbidden" | Check PAT scope (e.g. missing `cache-r`); **NÃO retornado por CAS read handlers para cross-tenant blob access** — per ADR-0028 (S-02 GA freeze): cross-tenant CAS reads return 404 uniform `COR_CAS_BLOB_NOT_FOUND` to fechar enumeration oracle; 403 reservado para PAT scope failures (S-03 auth middleware) |
 | `COR_CAS_BLOB_TOO_LARGE` | 413 | never | `BlobTooLargeError` | "Blob exceeds maximum size for your tier" | Use multipart upload (S-05) or upgrade tier |
 | `COR_CAS_QUOTA_EXCEEDED` | 429 | after_delay | `QuotaExceededError` | "Storage quota reached" | Free space via deletion or upgrade tier; check `Retry-After` header |
 
