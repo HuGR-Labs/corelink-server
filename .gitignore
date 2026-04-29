@@ -43,3 +43,7 @@ node_modules/
 .venv/
 __pycache__/
 *.pyc
+
+# Autonomous driver runtime state
+scripts/autonomous_state.json
+scripts/autonomous_driver.log
