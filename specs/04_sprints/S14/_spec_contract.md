@@ -3,9 +3,9 @@ id: "SPEC-CONTRACT-S14"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-04-24"
-updated: "2026-04-24"
+updated: "2026-04-29"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -26,13 +26,13 @@ tags: ["spec-contract", "s14", "region", "failover", "byok", "kms", "fips-140-3"
 | Lane forcing factors | FF-HR-002 (cross-region tenant isolation), FF-HR-003 (residency PII), FF-HR-005 (BYOK introduces crypto controls), FF-HR-008 (vendor lock-in via multi-cloud KMS), FF-HR-009 (DPA enterprise customer-facing contract) |
 | Duração estimada | 4 semanas |
 | WIs antecipados | 9 |
-| SOTA target | Multi-region production + BYOK enterprise tier — 4 regiões verde + read failover transparent SLO + 4 KMS providers (AWS/GCP/Azure/Vault) com FIPS 140-3 verified + customer kill switch ≤ 5min |
+| SOTA target | Multi-region production + BYOK enterprise tier — 4 regiões verde + read failover transparent SLO + 4 KMS providers (AWS/GCP/Azure/Vault) com FIPS 140-3 (AWS KMS L1 + Vault Enterprise L1) / 140-2 (GCP KMS L1, Azure Key Vault Premium L2) documented per provider em compliance/byok-fips-matrix.md + customer kill switch ≤ 6 min p99 (60s detection + 5min DEK cache TTL hard) |
 
 ## 1. Objetivo
 
 Expandir CoreLink para **multi-region production-grade** (4 regiões: WNAM/ENAM/WEUR/SAM; APAC/AFR deferred) + **BYOK enterprise tier** com 4 KMS providers (AWS KMS / GCP KMS / Azure Key Vault / HashiCorp Vault), region read failover transparent (PAT-REGION-FAILOVER-001), customer kill switch (revoke CMK → cache inacessível ≤ 5 min), erasure attestation signed Ed25519 (NIST SP 800-88 Rev.1 compliant). Critical pra **enterprise audience** (FedRAMP-ready customers + EU data residency + crypto sovereignty).
 
-**Por que SOTA:** competitors offer either multi-region OR BYOK, raramente ambos com rigor formal. CoreLink S-14 entrega: (a) BYOK FIPS 140-3 verified per provider; (b) crypto-erase via key destroy NIST compliant (S-11 alignment); (c) DPA amendment template para residency contract; (d) Schrems II TIA template. Reference: **NIST SP 800-57 Pt 1 Rev 5** (key management), **NIST SP 800-130** (cryptographic key management framework).
+**Por que SOTA:** competitors offer either multi-region OR BYOK, raramente ambos com rigor formal. CoreLink S-14 entrega: (a) BYOK FIPS doc per provider em `compliance/byok-fips-matrix.md` (140-3 onde available — AWS KMS L1, Vault Enterprise L1; 140-2 transitional onde 140-3 not yet certified — GCP KMS L1, Azure Key Vault Premium L2); (b) crypto-erase via key destroy NIST compliant (S-11 alignment); (c) DPA amendment template para residency contract; (d) Schrems II TIA template. Reference: **NIST SP 800-57 Pt 1 Rev 5** (key management), **NIST SP 800-130** (cryptographic key management framework).
 
 **Decomposição vs codex finding scope-overstuffed:** S-14 mantém 9 WIs (originalmente 8 + 1 split BYOK adapter trait); região coordinator + failover separado de BYOK; BYOK 4 providers em 2 WIs (AWS isolado high-priority + GCP/Azure/Vault batch).
 
@@ -95,7 +95,7 @@ inherits_from:
   - `trait KmsProvider { fn wrap_dek(&self, dek: &[u8]) -> Result<WrappedDek>; fn unwrap_dek(&self, wrapped: &WrappedDek) -> Result<Dek>; fn check_access(&self) -> Result<KmsAccessStatus>; }`.
   - 4 implementations: `AwsKmsProvider`, `GcpKmsProvider`, `AzureKeyVaultProvider`, `VaultProvider`.
 - **R-S14-7**: Envelope encryption flow:
-  - Write: gen ephemeral DEK (BLAKE3 256-bit) → encrypt body AES-256-GCM com DEK → wrap DEK via KMS → store wrapped DEK em D1 + body em R2.
+  - Write: gen ephemeral **DEK random 32 bytes via CSPRNG** (`getrandom::getrandom`; NOT BLAKE3-derived per Lote 10.14 codex P1 fix — deterministic DEK = compromise propagation across blobs same hash) → encrypt body AES-256-GCM (FIPS 197 + FIPS 140-3 approved) com DEK + nonce 96-bit random → wrap DEK via KMS → store wrapped DEK em D1 + body em R2.
   - Read: fetch wrapped DEK → unwrap via KMS → decrypt body.
 - **R-S14-8**: CMK revocation detection: KMS access check em background (every 60s); revoked → degrade tenant read-only + emit `corelink.byok.cmk_revoked` audit + alert customer.
 - **R-S14-9**: Customer kill switch: revoke CMK → cache 503 ≤ 5 min globally; chaos test verified.
@@ -114,12 +114,14 @@ inherits_from:
 
 ## 6. Definition of Done
 
-- [ ] **WIs SEALED**: 9/9.
+> **Two-phase SEAL** (per timeline): items verificáveis instantaneamente fecham em **Implementation SEAL D+30** (libera downstream S-15/S-16/S-17/S-19 development); items requerendo "sustained 30d staging" (4 regions stable, BYOK matrix test weekly green sustained, kill switch chaos drill weekly, replication lag p99 sustained 7d, DPA signed lighthouse customer) fecham em **GA Evidence Gate SEAL D+60** (libera GA promotion S-20). Ambos SEALs canonicos; sprint considerado concluído apenas após GA Evidence Gate D+60. Lote 10.14 codex P1 alignment.
+
+- [ ] **WIs SEALED**: 9/9 *(Implementation SEAL D+30)*.
 - [ ] **4 regiões live** + chaos test region outage cada região (EVT-023).
 - [ ] **Tenant EU** property test: blob lands em WEUR, nunca ENAM (20k test) (EVT-002).
 - [ ] **BYOK AWS KMS E2E**: customer CMK → wrap DEK → CAS write → read decrypt sucesso (EVT-024).
 - [ ] **BYOK 4 providers matrix test** verde em staging (16 combinations) (EVT-002).
-- [ ] **Kill switch test**: revoke CMK → cache 503 ≤ 5 min global; chaos drill (EVT-023).
+- [ ] **Kill switch test (Lote 10.14 codex P0 canonical disambiguation)**: revoke CMK → detection p99 ≤ 60s (KMS access check interval) + DEK cache TTL hard ≤ 5 min → **customer-perceived global cache 503 p99 ≤ 6 min**; chaos drill weekly D+30..D+60 (EVT-023). Componentes individuais hard-fail (não waiverable per §19); SLA total realistic é 6 min p99 (não 5 min).
 - [ ] **SLO sustained** during region failover chaos: SLO-LAT-CAS-GET p99 < 300ms preserved (EVT-021).
 - [ ] **Replication lag** p99 ≤ 60s para hot blobs sustained 7d staging (EVT-021).
 - [ ] **Residency DPA amendment** drafted + reviewed por Legal externo (EVT-044).
@@ -204,7 +206,7 @@ inherits_from:
 |---|---|---|---|---|---|---|
 | **WI-S14-001** | R2+D1+DO provisioning 4 regions + Terraform module + migration | terraform module; 4 regions provisioning; data migration script; runbook | 18h | 28h | 44h | **28.7h** |
 | **WI-S14-002** | Tenant region pinning enforcement + 30k property test | insert checks; DO region_enforcer; property test; runbook RB-region-leak | 12h | 18h | 28h | **18.7h** |
-| **WI-S14-003** | Hot blob replica worker (PAT-REGION-FAILOVER-001) + read failover | hot blob detector métrica; replica worker async; failover routing; chaos test | 16h | 24h | 36h | **24.7h** |
+| **WI-S14-003** | Hot blob replica worker (PAT-REGION-FAILOVER-001) + read failover | hot blob detector **OFFLINE batch aggregation** sobre S-09 audit log R2 (per Lote 9.4 Opus H-02 canonical fix; **NÃO** via live métrica labeled by `tenant_id` proibido por INV-OBS-CARDINALITY-BUDGET); replica worker async; failover routing; chaos test | 16h | 24h | 36h | **24.7h** |
 | **WI-S14-004** | BYOK adapter trait + AWS KMS adapter (first-class) + matrix test framework | trait design; AWS adapter; envelope encryption; matrix test framework; FIPS doc | 18h | 28h | 44h | **28.7h** |
 | **WI-S14-005** | BYOK GCP/Azure/Vault adapters + 16-combination matrix test | 3 adapters; matrix test 16 combinations; staging deploy; FIPS doc per provider | 20h | 32h | 50h | **32.7h** |
 | **WI-S14-006** | CMK revocation detection + customer kill switch ≤ 5 min + chaos drill | KMS access check 60s; cache TTL 5 min; revoke flow; chaos test; runbook RB-BYOK-REVOKE | 12h | 18h | 28h | **18.7h** |
@@ -299,17 +301,18 @@ Triggers que **automaticamente abrem post-mortem doc**:
 
 S-14 **NÃO PODE** promover via waiver dos seguintes itens:
 
-- ❌ INV-BYOK-CRYPTO-SOVEREIGNTY ≤ 5 min kill switch — customer trust baseline.
+- ❌ INV-BYOK-CRYPTO-SOVEREIGNTY kill switch SLA non-waivable (Lote 10.14 codex P0 canonical disambiguation): **detection ≤ 60s** (KMS access check interval; SLO-BYOK-CMK-DETECT) + **DEK cache TTL ≤ 5 min hard** (no extension; SLO-BYOK-DEK-EVICT) → **customer-perceived global kill switch p99 ≤ 6 min** (60s detection p99 + 5 min cache TTL p99). Componentes individuais hard-fail; total realistic SLA é 6 min p99 (não 5 min).
+- ❌ DEK cache TTL ≤ 5 min hard non-waivable (componente do kill switch; cannot be waived).
 - ❌ INV-REGION-NO-CROSS-LEAK property test verde — Schrems II baseline.
 - ❌ External pentest BYOK clean — security baseline.
-- ❌ FIPS 140-3 / 140-2 documented per provider — compliance baseline.
+- ❌ FIPS doc per provider (140-3 onde available — AWS KMS + Vault Enterprise; 140-2 onde 140-3 ainda not certified — GCP KMS L1, Azure Key Vault Premium L2; matrix em `compliance/byok-fips-matrix.md` documented per provider) — compliance baseline.
 - ❌ Erasure attestation Ed25519 signed verifiable — NIST SP 800-88 requirement.
 
 Itens waivable com Security lead + Compliance officer + Legal + ADR:
 
-- ⚠️ DEK cache TTL 5 min → 10 min com explicit risk acceptance (não menos).
 - ⚠️ BYOK 4 providers → 3 providers GA (defer 1 to post-GA com customer demand).
 - ⚠️ Replication lag p99 ≤ 60s → ≤ 120s com customer SLA addendum.
+- ⚠️ KMS check interval 60s → 30s (tightening; reduces detection p99 a ~30s; cost overhead 2× KMS API calls).
 
 ---
 
