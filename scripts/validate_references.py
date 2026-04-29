@@ -334,6 +334,12 @@ WHITELIST_IDS = {
     "SLO-FRESH-GC",  # S-06 v1.1 forward-looking SLO (mark phase freshness)
     "SLO-CORRECT-GC",  # S-06 v1.1 forward-looking SLO (GC correctness gate)
     "SLO-AVAIL-AUTH",  # S-03 v1.1 forward-looking SLO (auth path availability)
+    "SLO-SUPPLY-CVE-DETECTION",  # S-12 forward-looking SLO (CVE alert delivery ≤ 15 min p99)
+    "SLO-SUPPLY-DEPLOY-VERIFY-LATENCY",  # S-12 forward-looking SLO (Cosign deploy verify ≤ 5s p99)
+    "CTRL-AUTH-014",  # S-12 forward-looking CTRL (quarterly secret rotation; canonical in security_model.md)
+    "RB-AUTH-014",  # S-12 forward-looking RB (CF API token emergency rotation)
+    "RB-FM-156",  # S-12 dep maintainer malicious (criado durante WI-S12-007)
+    "RB-FM-157",  # S-12 typosquatting (criado durante WI-S12-007)
     # ADRs exemplo no framework (não são deployments reais)
     "ADR-0002",
     "ADR-0007",

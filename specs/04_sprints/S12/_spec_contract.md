@@ -3,7 +3,7 @@ id: "SPEC-CONTRACT-S12"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-04-24"
 updated: "2026-04-24"
 owner: "Gustavo Schneiter"
@@ -247,7 +247,7 @@ inherits_from:
 | **Cosign learning curve** + Fulcio OIDC setup | M | L | LOW | L | LOW | Hire AppSec consultant para 1-week ramp se needed; Fulcio docs maduros. |
 | **Dep supply chain attack** durante sprint (FM-156) | L | H | CRITICAL | M | LOW | cargo-deny + advisory monitoring + Slack alert + RB-FM-156. |
 | **Typosquatting** (FM-157) — typo crate publish | L | H | HIGH | M | LOW | Cargo crates official + lockfile review hook; cargo-deny sources allowlist. |
-| **Rekor outage** (sigstore down) blocks deploy | L | M | HIGH (operational) | L | LOW | Local cache de Rekor inclusion proofs + grace period 24h; document fallback. |
+| **Rekor outage** (sigstore down) blocks deploy | L | M | HIGH (operational) | L | **NEGLIGIBLE — fail-closed canonical** | **NO grace period; NO operator override**: deploy hard-blocks até Rekor recovers. INV-SUPPLY-PROVENANCE-IN-REKOR é CRITICAL gate por design (offline tampering trivial sem Rekor). Local cache permitido APENAS para performance (lookup speed); jamais substitui inclusion proof requirement em deploy verify. Codex SEAL P0 alignment cycle 1: replaces ambiguous '24h grace' policy. |
 | **License audit miss** (transitive GPL leak) | M | M | HIGH (legal) | M | LOW | cargo-deny exhaustive license allowlist; quarterly Legal review. |
 | **SBOM ingestion fails** (Dependency-Track outage) | M | L | LOW (alerting delay) | L | LOW | Self-hosted DT + redundant CVE matching via OSS Index API fallback. |
 | **GitHub Actions secrets exfiltration** (compromised dep step) | L | L | CRITICAL (sign keys) | M | LOW | Cosign keyless OIDC = no long-lived secrets; minimal permissions; audit. |

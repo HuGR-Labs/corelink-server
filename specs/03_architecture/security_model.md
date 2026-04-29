@@ -274,6 +274,9 @@ Cada CTRL **DEVE** ter: descrição, implementação, owner (time), evidência o
 | CTRL-SUPPLY-003 | SBOM mandatório                    | CycloneDX gerado em build; publicado em release            | EVT-010 | Por release |
 | CTRL-SUPPLY-004 | Dependency pinning + audit         | `Cargo.lock` committed; `cargo-audit` CI; deny unmaintained | EVT-001 | Diário (CI) |
 | CTRL-SUPPLY-005 | No dynamic loading                 | Sem WASM carregada em runtime; sem `dlopen`                | EVT-005 | Por release |
+| CTRL-SUPPLY-006 | License allowlist                  | `cargo-deny` license enforcement (MIT/Apache-2.0/BSD/ISC/MPL-2.0; deny GPL/AGPL/SSPL); CI gate | EVT-001 | Por PR + diário (CI) |
+| CTRL-SUPPLY-007 | Yanked dep block                   | `cargo-deny` rejects yanked deps in `Cargo.lock`; INV-SUPPLY-NO-YANKED enforced | EVT-001 | Por PR |
+| CTRL-SUPPLY-008 | Reproducible build verification    | 2-runner parallel build + SHA-256 diff; document non-determinism sources via ADR-0015 | EVT-027 | Por release |
 
 ### 6.5 Input Handling
 
