@@ -1,0 +1,23 @@
+[workspace]
+
+[package]
+name = "corelink-tenant-path-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+corelink-tenant-path = { path = ".." }
+uuid = { version = "1", features = ["v7"] }
+zeroize = "1.8"
+
+[[bin]]
+name = "derive_prefix"
+path = "fuzz_targets/derive_prefix.rs"
+test = false
+doc = false
+bench = false

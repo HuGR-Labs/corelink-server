@@ -1,15 +1,25 @@
-[package]
-name = "corelink-server"
+[workspace]
+resolver = "2"
+members = [
+    "apps/server",
+    "crates/tenant-path",
+]
+exclude = [
+    "crates/tenant-path/fuzz",
+]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.80"
-description = "HuGR CoreLink — shared content-addressable cache for developers"
 license = "UNLICENSED"
+publish = false
 
-[dependencies]
+[workspace.dependencies]
 # gRPC stack
 tonic = "0.12"
 prost = "0.13"
+tonic-build = "0.12"
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -24,12 +34,21 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 anyhow = "1"
 thiserror = "2"
 
-# Serde (usado por quase tudo no futuro próximo)
+# Serde
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-[build-dependencies]
-tonic-build = "0.12"
+# Crypto / encoding (S-01 tenant-path foundation)
+hmac = "0.12"
+sha2 = "0.10"
+base64 = "0.22"
+uuid = { version = "1", features = ["v7"] }
+subtle = "2"
+zeroize = { version = "1.8", features = ["derive"] }
+
+# Test / bench
+proptest = "1.5"
+criterion = { version = "0.5", features = ["html_reports"] }
 
 [profile.release]
 # Build otimizado pra Cloudflare Containers

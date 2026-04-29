@@ -3,6 +3,15 @@
 **/*.rs.bk
 Cargo.lock.bak
 
+# cargo-mutants output
+mutants.out/
+mutants.out.old/
+
+# cargo-fuzz local artifacts
+crates/*/fuzz/target/
+crates/*/fuzz/corpus/
+crates/*/fuzz/artifacts/
+
 # IDE
 .vscode/
 .idea/

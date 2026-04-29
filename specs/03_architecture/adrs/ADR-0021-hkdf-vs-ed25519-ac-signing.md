@@ -74,7 +74,7 @@ let sig = blake3::Hasher::new_keyed(&sig_key).update(canonical_bytes).finalize()
 **Risk: TDK multi-derivation without unified HKDF-Extract step.**
 
 The TDK is used for:
-1. `tenant_prefix = HMAC-SHA256(TDK, tenant_id)[:16]` (raw HMAC; S-01 corelink-tenant-path).
+1. `tenant_prefix = HMAC-SHA256(TDK, tenant_id)` truncated at the serialization boundary to 16 ASCII chars via `b64url_no_pad(...)[..16]` (raw HMAC bytes inside `corelink-tenant-path`, base64-URL-truncated for path use; canonical algorithm registered in **ADR-0043**).
 2. `sig_key = HKDF-Expand(HKDF-Extract(salt=sig_key_id, IKM=TDK), info=b"ac-sig")` (HKDF chain; this WI).
 
 These two usages share the same root secret without a unified HKDF-Extract step. In the formal security model, all uses of an IKM should pass through a single HKDF-Extract before any derivation.

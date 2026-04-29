@@ -1,0 +1,122 @@
+name: tenant-path (WI-S01-001)
+
+# CI gate for the corelink-tenant-path crate per WI-S01-001 §13 + §17.
+# Fast lane on every PR; nightly full lane includes 1h fuzz + cargo-mutants.
+
+on:
+  pull_request:
+    paths:
+      - 'crates/tenant-path/**'
+      - 'apps/server/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/tenant-path.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'crates/tenant-path/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+  schedule:
+    # Nightly full lane (fuzz 1h, cargo-mutants, criterion compare).
+    - cron: '17 4 * * *'
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  pr-gate:
+    name: PR gate (build + clippy + tests + canonical vectors)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy (workspace, -D warnings)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: cargo test (workspace, debug)
+        run: cargo test --workspace --all-targets
+
+      - name: cargo test (release, includes perf regression gate AC-6)
+        run: cargo test --release --package corelink-tenant-path
+
+      - name: cargo test (canonical vectors only — fast smoke)
+        run: cargo test --package corelink-tenant-path canonical_vectors
+
+      - name: cargo doc (deny broken intra-doc links)
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo doc --no-deps --workspace
+
+  audit:
+    name: cargo-audit (advisory DB)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: rustsec/audit-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  fuzz-smoke:
+    name: cargo-fuzz smoke (60s)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+      - name: Cargo cache (fuzz)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "crates/tenant-path/fuzz -> target"
+      - name: Run fuzz target 60s
+        working-directory: crates/tenant-path
+        run: cargo fuzz run derive_prefix -- -max_total_time=60
+
+  fuzz-nightly:
+    name: cargo-fuzz nightly (1h)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - run: cargo install cargo-fuzz --locked
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "crates/tenant-path/fuzz -> target"
+      - name: Run fuzz target 3600s
+        working-directory: crates/tenant-path
+        run: cargo fuzz run derive_prefix -- -max_total_time=3600
+
+  mutants-nightly:
+    name: cargo-mutants kill-rate ≥ 80%
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+      - run: cargo install cargo-mutants --locked
+      - name: Run cargo-mutants
+        run: cargo mutants --package corelink-tenant-path --no-shuffle --check

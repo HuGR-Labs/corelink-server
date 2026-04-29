@@ -9,7 +9,6 @@ pub mod health {
 use health::health_server::{Health, HealthServer};
 use health::{health_check_response::ServingStatus, HealthCheckRequest, HealthCheckResponse};
 
-#[derive(Default)]
 struct HealthService;
 
 #[tonic::async_trait]
@@ -43,7 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     info!(%addr, "CoreLink server starting");
 
     Server::builder()
-        .add_service(HealthServer::new(HealthService::default()))
+        .add_service(HealthServer::new(HealthService))
         // TODO semana 1: add_service(CasServer::new(CasService::new(...)))
         // TODO semana 1: add_service(ActionCacheServer::new(...))
         // TODO semana 1: add_service(ByteStreamServer::new(...))

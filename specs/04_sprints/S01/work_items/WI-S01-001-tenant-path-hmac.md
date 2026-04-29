@@ -1,12 +1,12 @@
 ---
 id: "WI-S01-001"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "FROZEN"
+work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-24"
-updated: "2026-04-24"
+updated: "2026-04-29"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-002", "FF-HR-005"]
 parent: "S-01"
@@ -28,7 +28,7 @@ tags: ["wi", "s01", "tenant-isolation", "hmac", "crypto", "foundation"]
 
 # WI-S01-001 — Lib `tenant_path`: HMAC tenant prefix derivation
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** FROZEN · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-01](../sprint.md) · **Assignee:** Gustavo Schneiter
 > **Revisores:** ⚠️ **staffing-blocked** até ≥ 2 reviewers nomeados
 > **inherits_from:** SECURITY-MODEL + AUTH-MODEL + KEY-MANAGEMENT + INVARIANT-REGISTRY + DATA-MODEL + REMOTE-CACHE-PRODUCT-PROFILE
@@ -55,7 +55,7 @@ Implementar **crate Rust interno `corelink-tenant-path`** que encapsula a única
 pub fn derive_prefix(tdk: &TenantDerivationKey, tenant_id: Uuid) -> TenantPrefix;
 ```
 
-Onde `TenantPrefix` é `[u8; 16]` (16 bytes raw; encoding textual canônico = `HMAC16 = b64(HMAC_SHA256(TDK, tenant_id_bytes))[0:16]` per `remote_cache_product_profile.md §7.1` + `storage_semantics_matrix.md §3`). Zero call sites alternativos permitidos: compile-time enforcement via `#[deny(missing_docs, unsafe_code)]` + `pub(crate)` em `derive_prefix_raw_internal`.
+Onde `TenantPrefix` é `[u8; 16]` armazenando os **16 bytes ASCII** que formam a truncation `HMAC16 = b64url_no_pad(HMAC_SHA256(TDK, tenant_id_bytes))[..16]` per `remote_cache_product_profile.md §7.1` + `storage_semantics_matrix.md §3` + **ADR-0043** (canonical algorithm decision). Zero call sites alternativos permitidos: compile-time enforcement via `#![forbid(unsafe_code)]` + `[lints]` Cargo strict (deny `unwrap_used`/`expect_used`/`panic`) + field privado em `TenantPrefix` (newtype só construível via `derive_prefix`).
 
 ## 2. Narrative (HIGH_RISK ≥ 300 palavras + risk justification)
 
@@ -104,7 +104,7 @@ Trace canônico: `auth_model.md §8.1 (5 camadas de defesa)` → camada 5 (R2 ke
 - Crate `corelink-tenant-path` em `crates/tenant-path/`.
 - Struct `TenantDerivationKey([u8; 32])` + `impl` pra load from Cloudflare Secrets binding.
 - Struct `TenantPrefix([u8; 16])` — newtype with private field.
-- Function `derive_prefix(tdk: &TenantDerivationKey, tenant_id: Uuid) -> TenantPrefix` (HMAC-SHA256, info="path" via HKDF).
+- Function `derive_prefix(tdk: &TenantDerivationKey, tenant_id: Uuid) -> TenantPrefix` (algorithm: `HMAC-SHA256 → b64url-no-pad → [..16]`; canonical per ADR-0043).
 - Impl `Display` para `TenantPrefix` com encoding **HMAC16 canonical** = `b64(HMAC_SHA256(TDK, tenant_id_bytes))[0:16]` (RFC 4648 §5 base64 URL-safe; truncate 16 chars; alinha `remote_cache_product_profile.md §7.1` + `storage_semantics_matrix.md §3`; URL-safe sem padding).
 - Errors: `DeriveError` enum apenas para casos onde input é estruturalmente inválido (ex: TDK com tamanho errado — deveria ser impossível por construção, mas defense-in-depth).
 - Unit tests (12 cases): edge cases de HMAC, determinism, injectivity pair-wise com dataset fixo.
@@ -208,15 +208,27 @@ Then output é "TenantDerivationKey(REDACTED)" exatamente
 - BLAKE3 é usado para content hashing onde velocidade importa mais.
 - Isolamento de tenant precisa FIPS pra compliance SOC 2 enterprise.
 
-### 9.2 HKDF com `info="path"`
+### 9.2 Por que NÃO HKDF com `info="path"` (rejeitado)
 
-Derivação final: `TenantPrefix = HKDF_Expand(HMAC_Extract(TDK, tenant_id), info="path", L=16)`.
+**Considerado e rejeitado.** Uma alternativa avaliada foi `TenantPrefix = HKDF_Expand(HMAC_Extract(TDK, tenant_id), info="path", L=16)`. Rejeitada porque:
 
-Separa do uso de TDK para AC signing (info="ac-sig") e envelope encryption (info="envelope"), garantindo que comprometer path-HMAC não leake outras derivações.
+1. HMAC-SHA256 já é um PRF: dois `tenant_id`s distintos produzem outputs computacionalmente independentes. A separação de domínio que `info` daria é redundante para um único consumer (esta crate) operando sobre um único message-space (UUIDs).
+2. As labels `b"ac-sig"`, `b"manifest-sig"`, `b"envelope"` listadas em `key_management.md §2.1` são separação **entre consumers distintos do TDK** (S-01 vs S-04 vs S-05), não entre dois inputs no mesmo consumer.
+3. HKDF dobra o custo HMAC (Extract + Expand) sem ganho de isolamento mensurável.
 
-### 9.3 16 bytes vs 32 bytes
+Decisão canônica: HMAC-SHA256 simples + b64url-trunc-16. Ver **ADR-0043** §"Rejected alternatives" para o registro completo.
 
-16 bytes truncados de HMAC-SHA256 = 128 bits entropia. Collision probability = 2^-64 para prefix guessing — aceitável para namespacing (não para auth). Trade-off: path length em R2/D1 indexing.
+### 9.3 Entropia e probabilidade de colisão (96 bits)
+
+`HMAC16` tem `16 chars × 6 bits/char = 96 bits` de entropia útil sobre o alfabeto base64 URL-safe.
+
+- **Per-pair collision probability**: `≈ 2^-96` (vanishingly small).
+- **Birthday bound**: `≈ 2^48` tenants independentes para 50% chance de qualquer colisão no sistema.
+- **Em escala realista** (`10^9 ≈ 2^30` tenants): número esperado de pares colidentes `≈ 2^{2·30 - 96 - 1} = 2^{-37}` — negligível.
+
+Trade-off de path length em R2/D1 indexing: 16 chars é o ponto canonical do `remote_cache_product_profile.md §7.1`. Colisões NUNCA concedem autorização (que é enforçada pelas camadas 1-4 de `auth_model.md §8.1`); apenas significariam co-residência em namespace, inofensiva dadas essas camadas upstream.
+
+> **Note (Lote pós-codex P1 fix):** versões anteriores deste WI claimavam "128 bits entropia, 2^-64 collision" — incorreto. Corrigido nesta seção. Ver `_spec_contract.md` change log v1.5.0 + ADR-0043 v1.1.0 §"Negative trade-offs".
 
 ## 10. Completeness Criteria SOTA (HIGH_RISK = TODAS aplicáveis)
 
@@ -296,7 +308,7 @@ PRR separada — criar `PRR-S01-001-tenant-path.md` após implementação comple
 
 - **ST-001**: Setup crate skeleton + Cargo.toml dependencies (2h)
 - **ST-002**: Implement `TenantDerivationKey` + HMAC-SHA256 wrapper (4h)
-- **ST-003**: Implement `derive_prefix` + HKDF-Expand (4h)
+- **ST-003**: Implement `derive_prefix` (algorithm: `HMAC-SHA256 → b64url-no-pad → [..16]`; canonical per ADR-0043) (4h)
 - **ST-004**: Implement `TenantPrefix` newtype + HMAC16 Display (b64 URL-safe truncated; canonical) (3h)
 - **ST-005**: Unit tests 12 cases (3h)
 - **ST-006**: Property tests 10k iter (4h)
@@ -438,6 +450,7 @@ Preencher ao final. Alinha 1:1 com matriz canônica em `00_framework.md §33.5.4
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | Criação WI — Foundation da lib tenant_path. Lane HIGH_RISK com FF-HR-002 + FF-HR-005. 12 sub-tasks, ~42h estimado. |
+| 1.1.0 | 2026-04-29 | Gustavo (S-01 implementation Lote — codex 7.1 → 8.9/10) | **doc_status DRAFT → SEALED + work_status READY → DONE** após implementação completa em `crates/tenant-path/`. P1 fixes aplicados pré-SEAL (codex round 1+2): (a) §1 wording 16-bytes-raw → 16-bytes-ASCII + ADR-0043 ref; (b) §9.2 reframe HKDF "preferred" → "rejected" com reasoning explícito; (c) §9.3 entropy math corrected (96-bit per-pair 2^-96, birthday-bound 2^48); (d) §6.1 + §17 ST-003 dropped HKDF references; (e) lint enforcement updated to `#![forbid(unsafe_code)]` literal + Cargo `[lints]`. Implementation artifacts: 22 tests verde (4 property at 10k iter + 5 cross-language regression vectors + perf regression release-only ≤100μs gate), criterion bench ~3.2 μs/call (31× under AC-6 budget), cargo-mutants 100% kill rate (7 caught + 2 unviable / 9), cargo-fuzz 60s smoke verde, clippy `-D warnings` workspace verde, `from_bytes` takes `Zeroizing<[u8; 32]>` for source-buffer scrubbing, `TenantPrefix::as_bytes` removed from public surface. ADR-0043 v1.1.0 + ADR-0021 §1.1 L77 + `_spec_contract.md` v1.5.0 atualizados em mesmo Lote. |
 
 ## 32. Apêndice: Anti-patterns evitados
 
