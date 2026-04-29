@@ -3,9 +3,9 @@ id: "SPEC-CONTRACT-S15"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-04-24"
-updated: "2026-04-24"
+updated: "2026-04-29"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -62,7 +62,7 @@ inherits_from:
 | **CAP-SDK-002** | Buck2 starter project + docs | `examples/buck2-starter`; `.buckconfig` reference; CI test. |
 | **CAP-SDK-003** | FFI wrappers client-verify | Python (pyO3), Go (cgo), JS/TS (WASM); reuse `corelink-client-verify` crate S-02. |
 | **CAP-SDK-004** | CI integration templates | GitHub Actions + GitLab + CircleCI YAML templates publicados. |
-| **CAP-SDK-005** | Telemetry opt-in | CLI emite telemetry de usage anonymized se `--telemetry=on`; default off (privacy-first). |
+| **CAP-SDK-005** | Telemetry opt-in | CLI emite telemetry de usage anonymized **apenas** se `corelink config set telemetry on` (persistent flag em `~/.corelink/config.toml`); default off (privacy-first); **NÃO há `--telemetry=on` cmdline flag** — bypass via cmdline rejected per Lote 10.15 codex P2 alignment. |
 
 ## 5. Requirements específicos
 
@@ -97,7 +97,7 @@ inherits_from:
 
 - **R-S15-6**: `examples/bazel-starter/` real project com:
   - `WORKSPACE` + `BUILD.bazel` files.
-  - `.bazelrc` reference: `--remote_cache=https://corelink.dev/v1/cache --remote_header=Authorization=Bearer ${CORELINK_PAT}`.
+  - `.bazelrc` reference (Lote 10.15 codex P0 canonical fix CTRL-CRED-001): `--remote_cache=https://corelink.dev/v1/cache --credential_helper=%workspace%/.bazel/corelink-credential-helper.sh` — credential helper protocol Bazel 6+ retorna token via stdout (nunca em argv); shell-expansion `${CORELINK_PAT}` em `--remote_header` colocaria PAT em argv (`ps aux` leak) = CTRL-CRED-001 violation. Helper script reads `CORELINK_PAT` env var + emits Bazel JSON response per <https://bazel.build/docs/credential-helper>.
   - `README.md` step-by-step ≤ 5 min setup.
   - Integration test em GitHub Actions: clone → `bazel build //:hello` → confirma cache hit.
 - **R-S15-7**: `examples/buck2-starter/` análogo: `BUCK` files, `.buckconfig` reference, CI test.
@@ -122,7 +122,7 @@ inherits_from:
 
 ### 5.5 Telemetry (CAP-SDK-005)
 
-- **R-S15-14**: CLI telemetry opt-in (`corelink config set telemetry on`); default off.
+- **R-S15-14**: CLI telemetry opt-in **apenas** via `corelink config set telemetry on` (persistent em `~/.corelink/config.toml`); default off. **NÃO há `--telemetry=on` cmdline flag** (Lote 10.15 codex P2 canonical alignment) — bypass via cmdline rejected (privacy-first design).
 - **R-S15-15**: Anonymized: CLI version + OS + subcommand + success/fail; nunca tenant_id, blob digests, PAT.
 
 ## 6. Definition of Done
