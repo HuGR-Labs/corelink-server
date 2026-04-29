@@ -72,7 +72,7 @@ async fn http_get_blob(
 Onde:
 - **`TenantCtx`** é injetado pelo middleware S-03 (stub durante S-02; real após S-03 SEALED) contendo `tenant_id` + `scopes` validated.
 - **Streaming chunked** 1 MiB per chunk via `tokio::io::AsyncReadExt`; Worker memory bounded ≤ 50 MiB peak per request.
-- **AuthZ check pré-R2**: D1 lookup `blob_meta WHERE digest=? AND tenant_id=?` antes de R2 GetObject; mismatch = 403 + audit emit.
+- **AuthZ check pré-R2**: D1 lookup `blob_meta WHERE digest=? AND tenant_id=? AND deleted_at IS NULL` antes de R2 GetObject; mismatch = **404 uniform per ADR-0028** (CrossTenantMasked variant) + audit emit `corelink.cas.cross_tenant_attempt` (forensics).
 - **Tenant prefix derivation**: reusing `corelink-tenant-path` crate (S-01); zero novo crypto code.
 
 Zero call sites alternativos permitidos para R2 GetObject — todo read path passa pelo handler ByteStream::Read OR HTTP GET.
@@ -83,7 +83,7 @@ O CAS read path é a metade complementar do write path do S-01 e expõe **superf
 
 O ataque direto é: **Tenant B autentica com PAT legítimo, request URL contém digest D que pertence a Tenant A. Bug em path lookup permite Worker calcular prefix `P_A` (do digest's owner) em vez de `P_B` (do requester) → R2 GetObject retorna blob de A → cliente B vê dado alheio**. Sistema responde "200 OK" porque caminho aponta a blob existente; nenhum signal externo de que isolation foi quebrada. Cliente B agora tem visibilidade de Tenant A.
 
-A mitigação é arquitetural: **AuthZ check pre-R2** (CTRL-ISO-002 em `security_model.md §6.4`). Implementação: D1 query `SELECT 1 FROM blob_meta WHERE digest=? AND tenant_id=? LIMIT 1` antes de R2 GetObject. Se row count = 0 → 403 + audit emit. Esta query é O(1) (UNIQUE index `(tenant_id, digest)`); overhead < 5ms p99.
+A mitigação é arquitetural: **AuthZ check pre-R2** (CTRL-ISO-002 em `security_model.md §6.4`). Implementação: D1 query `SELECT 1 FROM blob_meta WHERE digest=? AND tenant_id=? AND deleted_at IS NULL LIMIT 1` antes de R2 GetObject. Se row count = 0 → **404 (uniform per ADR-0028; CrossTenantMasked variant from S-02 WI-S02-005 NegativeCache MissReason taxonomy)** + audit emit `corelink.cas.cross_tenant_attempt` (forensics retém reason real; client observa apenas 404). Esta query é O(1) (UNIQUE index `(tenant_id, digest)`); overhead < 5ms p99.
 
 Adicional: **5-layer defense** propagation:
 - **Layer 1**: PAT scope `cache:r` enforced (S-03 middleware).
@@ -100,7 +100,7 @@ Streaming complexity: REAPI ByteStream::Read suporta `read_offset` + `read_limit
 - **Blast radius**: todos os tenants em todas as regiões; first-touch surface do read path.
 - **Reversibility**: one-way-door — bug shipped = dados de tenant A vistos por outros tenants até detection.
 
-Por isso exige: 10–12 sign-offs, TLA+ tenant_isolation.tla green sustained, property test 100k iter, SAST clean, adversarial review (pentest internal), chaos test (R2 latency + D1 failover), PRR completa, RB-FM-253 dry-run.
+Por isso exige: 11 sign-offs canonical HIGH_RISK, TLA+ tenant_isolation.tla green sustained, property test 100k iter, SAST clean, adversarial review (pentest internal), chaos test (R2 latency + D1 failover), PRR completa, RB-FM-253 dry-run.
 
 ## 3. Customer Impact & Journey
 
@@ -145,20 +145,20 @@ Trace canônico: `auth_model.md §8.1 (5 camadas de defesa)` → camada 3 (AuthZ
    - Validation: scope `cache:r` required; rejected outras scopes.
 4. **AuthZ check pre-R2** (CTRL-ISO-002):
    - D1 query `SELECT 1 FROM blob_meta WHERE digest=? AND tenant_id=? AND deleted_at IS NULL LIMIT 1`.
-   - Row count 0 → 403 + audit emit `corelink.cas.cross_tenant_attempt` (S-09 alignment).
+   - Row count 0 → **404 uniform** (per ADR-0028; MissReason ∈ {NotFound, CrossTenantMasked, Tombstoned} all map to 404 com same body) + audit emit `corelink.cas.cross_tenant_attempt` (forensics retém reason real; S-09 alignment).
    - Query overhead p99 ≤ 5ms (criterion).
 5. **R2 streaming read**:
    - Path: `cas-<region>/<TenantPrefix>/blake3/<hex[0:2]>/<hex[2:4]>/<hex>` reusing S-01 path lib.
    - R2 SDK `GetObject` com `Range` header se applicable.
    - Forward chunks 1 MiB ao cliente sem buffering full blob.
-6. **Tombstone respect**: 404 se `blob_meta.deleted_at IS NOT NULL` (S-06 GC alignment).
+6. **Tombstone respect**: 404 se `blob_meta.deleted_at IS NOT NULL` (S-06 GC alignment; ADR-0028 uniform 404 freeze; 410 Gone deferido S-06).
 7. **Métricas + observability**: 8 métricas novas (S-02 sprint.md §11).
-8. **Error responses**: error_taxonomy.md `COR_CAS_BLOB_NOT_FOUND`, `COR_CAS_TENANT_FORBIDDEN`, `COR_CAS_DIGEST_MISMATCH` (client-verify path).
+8. **Error responses**: error_taxonomy.md `COR_CAS_BLOB_NOT_FOUND` (uniform 404 per ADR-0028 — covers NotFound + CrossTenantMasked + Tombstoned MissReason variants), `COR_CAS_DIGEST_MISMATCH` (client-verify path; bit rot). NOTE: `COR_CAS_TENANT_FORBIDDEN` (403) reservado para PAT scope failures (S-03), NÃO para cross-tenant blob access (which is uniform 404 + audit forensics).
 
 ### 6.2 Out-of-scope (deferred to other WIs)
 
 - Client verify implementation: WI-S02-003.
-- Constant-time 404 vs 403: WI-S02-004 (this WI emits 403 com normal timing; padding adicionado em WI-004 middleware).
+- Constant-time 404 timing parity across MissReason variants: WI-S02-004 (this WI emits uniform 404 com normal timing; padding adicionado em WI-004 middleware).
 - Negative cache populate/lookup: WI-S02-005.
 - GetBlob unary + FindMissingBlobs batch: WI-S02-002.
 
@@ -197,14 +197,15 @@ Feature: REAPI ByteStream::Read CAS handler
     And response time p99 < 300ms cold / < 100ms warm
     And metric corelink_cas_get_requests_total{result="hit"} incremented
 
-  Scenario: Cross-tenant attempt rejected (CRITICAL)
+  Scenario: Cross-tenant attempt masked as 404 (CRITICAL — ADR-0028 uniform freeze)
     Given Tenant B is authenticated with PAT scope "cache:r"
     When Tenant B requests GET /v1/cas/<D_X>
-    Then response status is 403
-    And response body contains error_code "COR_CAS_TENANT_FORBIDDEN"
+    Then response status is 404 (uniform per ADR-0028; CrossTenantMasked MissReason variant)
+    And response body contains error_code "COR_CAS_BLOB_NOT_FOUND" (uniform)
     And no R2 GetObject was called (verified via R2 mock)
-    And audit event "corelink.cas.cross_tenant_attempt" emitted with tenant_id="uuid-B", digest=D_X
+    And audit event "corelink.cas.cross_tenant_attempt" emitted with tenant_id="uuid-B", digest=D_X (forensics retém reason real)
     And metric corelink_cas_isolation_assertion_total{outcome="rejected"} incremented
+    And response timing matches MissReason="never_existed" arm via WI-S02-004 padding (constant-time defense)
 
   Scenario: Tombstoned blob (deleted_at != NULL)
     Given blob X is soft-deleted (blob_meta.deleted_at = now())
@@ -298,7 +299,7 @@ Não identificada decisão arquitetural nova requerendo ADR. Patterns reused do 
 - [ ] SAST clean (clippy + semgrep).
 - [ ] Code review por 2 peers + Security lead + Architect.
 - [ ] Documentação inline (rustdoc) + arch diagram.
-- [ ] PRR sign-offs 10-12 roles documented.
+- [ ] PRR sign-offs 11 roles canonical documented.
 
 ## 12. Invariants
 
@@ -349,7 +350,7 @@ Não identificada decisão arquitetural nova requerendo ADR. Patterns reused do 
 ## 16. Production Readiness Review (HIGH_RISK = obrigatório)
 
 - PRR doc em `specs/04_sprints/S02/PRR-WI-S02-001.md` (a criar pré-merge).
-- Sign-offs 10-12 roles (sprint.md §14).
+- Sign-offs 11 roles canonical (sprint.md §14).
 - Adversarial review: pentest internal cross-tenant attempts.
 
 ## 17. Sub-tasks
@@ -483,9 +484,9 @@ Triggers que automaticamente abrem post-mortem doc:
 2. **Code review intermédio** (D+1): peer 1 review ST-001..005.
 3. **Code review final** (D+3): peer 2 + Security lead approve full.
 4. **Adversarial review** (pre-merge): pentest internal — cross-tenant attempts + property test inspection.
-5. **Pre-merge gate**: 10-12 sign-offs documented.
+5. **Pre-merge gate**: 11 sign-offs canonical documented.
 
-## 30. Sign-off (HIGH_RISK = 10–12 roles; framework §33.5.4.3)
+## 30. Sign-off (HIGH_RISK = 11 roles canonical; framework §33.5.4.3)
 
 Sprint S-02 sign-off matrix (sprint.md §14). Para WI-S02-001 (foundation), exige toda a matriz:
 

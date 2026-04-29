@@ -116,7 +116,7 @@ Naive: download full body → hash full body → compare. Memory-bounded em SDK 
 - **Reversibility**: bug em verify shipped = cliente consome corrupted/poisoned body sem detect; data integrity claim falsa.
 - **Customer trust**: "client verify default-on" é marketing claim; falha aqui = contract violation.
 
-Por isso: 10-12 sign-offs incl. Crypto SME (BLAKE3 review consistente com S-01 WI-S01-002), property test 10k iter mismatch detection, integration test em 3 FFI wrappers (S-15 forward), constant-time compare (subtle crate).
+Por isso: 11 sign-offs canonical HIGH_RISK incl. Crypto SME (BLAKE3 review consistente com S-01 WI-S01-002), property test 10k iter mismatch detection, ABI-stable interface contract (FFI integration tests = S-15 forward), constant-time compare (subtle crate).
 
 ## 3. Customer Impact & Journey
 

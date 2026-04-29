@@ -45,7 +45,7 @@ tags: ["wi", "s02", "side-channel", "constant-time", "ctrl-iso-004", "mann-whitn
 
 ## 1. Intent
 
-Tower middleware em `crates/corelink-worker/src/middleware/timing_padding.rs` que envolve handlers (CAS read + AC read) e enforce **statistical indistinguishability** entre 404 (resource not found) e 403 (cross-tenant forbidden):
+Tower middleware em `crates/corelink-worker/src/middleware/timing_padding.rs` que envolve handlers (CAS read + AC read) e enforce **statistical indistinguishability** entre **404 MissReason variants** (NotFound × CrossTenantMasked × Tombstoned — todos retornam HTTP 404 uniforme per ADR-0028; defense é timing parity, não status-code differential):
 
 ```rust
 pub struct TimingPaddingLayer {
@@ -63,8 +63,9 @@ impl<S> Service<Request> for TimingPaddingService<S> {
         let start = Instant::now();
         let resp = self.inner.call(req).await?;
 
-        // If resp is 404 OR 403, pad to target_p99_ms ± jitter
-        if matches!(resp.status(), 404 | 403) {
+        // If resp is 404 (uniform per ADR-0028; covers all MissReason variants), pad to target_p99_ms ± jitter.
+        // 403 (PAT scope failure — S-03) é separate concern; not padded here.
+        if resp.status() == 404 {
             let elapsed = start.elapsed();
             let target = self.compute_padded_target(elapsed);
             tokio::time::sleep_until(start + target).await;
@@ -74,12 +75,13 @@ impl<S> Service<Request> for TimingPaddingService<S> {
 }
 ```
 
-Adicionalmente: **adversarial Mann-Whitney U test** em `tests/timing_indistinguishability.rs` que prova statistical p > 0.05 (null hypothesis: distributions são same — desejamos NOT reject):
-- 10,000 amostras 404 (digest doesn't exist anywhere).
-- 10,000 amostras 403 (digest exists em outro tenant).
-- Run Mann-Whitney U test em latency distributions.
-- Assert p-value > 0.05 (indistinguishable).
-- Criterion benchmark: p99 diff < 5ms.
+Adicionalmente: **adversarial pairwise Mann-Whitney U test** em `tests/timing_indistinguishability.rs` que prova statistical p > 0.05 em **todos os pares** (Šidák correction; null hypothesis: distributions são same — desejamos NOT reject):
+- 10,000 amostras 404 (NotFound — digest never_existed em qualquer tenant).
+- 10,000 amostras 404 (CrossTenantMasked — digest exists em outro tenant; AuthZ row count 0).
+- 10,000 amostras 404 (Tombstoned — `blob_meta.deleted_at IS NOT NULL`).
+- Run pairwise Mann-Whitney U test em 3 distributions (3 pairs: NotFound vs CrossTenantMasked, NotFound vs Tombstoned, CrossTenantMasked vs Tombstoned).
+- Assert all 3 p-values > 0.05 com Šidák combined α (effective p > 0.0167 per pair).
+- Criterion benchmark: |Δmedian| ≤ 1ms; p99 diff < 5ms across 3 arms.
 
 CTRL-ISO-004 enforcement layer + INV-CAS-SIDE-CHANNEL-INDISTINGUISHABLE (HIGH em registry §3.12 Lote 9.4 add).
 
@@ -89,15 +91,16 @@ Side-channel timing attacks são **invisible vulnerabilities**: handler responde
 
 1. Obtém PAT válido para Tenant B.
 2. Probe "candidate" digests possivelmente pertencentes a Tenant A (e.g., guessed Docker image hashes, public model checkpoint digests).
-3. Mede latency 404 (digest doesn't exist anywhere — fast path: KV negative cache hit OR D1 not found).
-4. Mede latency 403 (digest exists em A — slower path: D1 found + AuthZ reject).
-5. Statistical analysis: cluster fast vs slow → fast = doesn't exist; slow = exists em outro tenant.
+3. Mede latency 404 NotFound (digest doesn't exist anywhere — fast path: KV negative cache hit OR D1 not found).
+4. Mede latency 404 CrossTenantMasked (digest exists em A — different code path: D1 found + AuthZ reject + emit forensics audit). Per ADR-0028 status code é uniform 404, MAS underlying compute path differs → timing leak possível sem padding.
+5. Mede latency 404 Tombstoned (digest had existed in A but was soft-deleted — D1 found com deleted_at != NULL).
+6. Statistical analysis: cluster latency distributions → revela qual MissReason aplica → enumera digests cross-tenant OR identifies tombstoned (which discloses prior existence).
 
 Resultado: atacante **enumera** Tenant A's blob digests sem direct access — INV-TENANT-ISOLATION violation indireta + privacy leak (CTRL-ISO-005). Em build cache scenario, digest revelation pode permit reconstruction de proprietary ML models OR sensitive build artifacts.
 
 Mitigação layered:
-1. **Cross-tenant masked as 404** (WI-S02-001 + WI-S02-002): handler retorna mesmo status code. Mas latency ainda diff.
-2. **This WI**: timing padding adicional. After handler resolve, middleware pads response time para fixed target (e.g., 200ms) com small jitter (±10%). Both 404 e 403 paths converge to same observable latency distribution.
+1. **Uniform 404 per ADR-0028** (WI-S02-001 + WI-S02-002 + WI-S02-005): handler retorna mesmo status code para todas MissReason variants (NotFound, CrossTenantMasked, Tombstoned). Mas underlying compute path differs → latency ainda pode revelar reason.
+2. **This WI**: timing padding adicional. After handler resolve, middleware pads response time para fixed target (e.g., 200ms) com small jitter (±10%). Todas as 3 MissReason paths convergem to same observable latency distribution.
 3. **Constant-time per-byte ops** em digest compare (WI-S01-002) — nível mais baixo.
 4. **Rate limit per-PAT** (S-08 forward): even com timing padding perfeito, 10k probes em sequence fica suspicious; rate limit caps enumeration speed.
 
@@ -134,7 +137,7 @@ Statistical test = property; benchmark = numerical bound on **median diff** (mai
 - **FF-HR-005**: CTRL-ISO-004 (canonical control) implementação.
 - **Reversibility**: information disclosure é one-way; atacante já learned existence.
 
-10-12 sign-offs incl. AppSec (side-channel review) + Statistician advisor (Mann-Whitney methodology).
+11 sign-offs canonical HIGH_RISK incl. AppSec (side-channel review) + Statistician advisor (Mann-Whitney methodology).
 
 ## 3. Customer Impact & Journey
 
@@ -160,18 +163,18 @@ Middleware (cross-cutting); HIGH_RISK; FF-HR-002 + FF-HR-005.
 
 1. **Tower `TimingPaddingLayer` middleware**:
    - Wrap CAS Read + GetBlob + FindMissingBlobs handlers.
-   - Compute padded target em function of (status, elapsed): if status 404 OR 403, pad up to target_p99_ms.
+   - Compute padded target em function of (status, elapsed): if status 404 (uniform per ADR-0028; all MissReason variants), pad up to target_p99_ms. (403 PAT scope failures não padded; separate concern.)
    - Jitter ±10% via deterministic RNG seeded per request_id (não broken via correlation).
 2. **`TimingPaddingConfig`**:
    - `target_p99_ms: 200` (default; tunable via DO config-singleton S-13 forward).
    - `jitter_pct: 10` (±10%).
    - `enabled: true` (default; opt-out via dev mode flag rare).
 3. **Adversarial test em `tests/timing_indistinguishability.rs`**:
-   - Setup: 10k requests 404 (random digests) + 10k requests 403 (digests existing em other tenant).
+   - Setup: 10k requests por arm × 3 arms (NotFound × CrossTenantMasked × Tombstoned — todas retornam 404 per ADR-0028).
    - Capture latency em microseconds.
-   - Mann-Whitney U test via `statrs` crate.
-   - Assert p-value > 0.05.
-   - Output report: distributions histogram + p-value.
+   - Pairwise Mann-Whitney U test via `statrs` crate (3 pairs).
+   - Assert all 3 p-values > 0.05 com Šidák correction.
+   - Output report: distributions histogram per arm + 3 p-values + |Δmedian| per pair.
 4. **Criterion benchmark `benches/side_channel.rs`**:
    - Measure p50/p95/p99 latency 404 vs 403.
    - Assert p99 diff < 5ms.
@@ -203,20 +206,27 @@ Middleware (cross-cutting); HIGH_RISK; FF-HR-002 + FF-HR-005.
 ## 8. Acceptance Criteria (Gherkin)
 
 ```gherkin
-Feature: Constant-time 404/403 middleware
+Feature: Constant-time 404 middleware (3-arm MissReason parity per ADR-0028)
 
   Background:
     Given Tenant A has digest D_X (existing)
     And Tenant B is authenticated
+    And digest D_Y exists in Tenant A but is tombstoned (deleted_at != NULL)
+    And digest D_Z never existed anywhere
     And TimingPaddingConfig { target_p99_ms: 200, jitter_pct: 10 }
 
-  Scenario: Padding applied to 404 response
-    Given request resolves 404 in 50ms (fast path)
+  Scenario: Padding applied to 404 NotFound (D_Z)
+    Given request resolves 404 NotFound in 50ms (fast path; KV negative cache hit)
     When middleware processes
     Then total response time padded to 200ms ± 20ms (10% jitter)
 
-  Scenario: Padding applied to 403 response
-    Given request resolves 403 in 80ms (slower path)
+  Scenario: Padding applied to 404 CrossTenantMasked (D_X queried by B)
+    Given request resolves 404 CrossTenantMasked in 80ms (D1 found + AuthZ row count 0)
+    When middleware processes
+    Then total response time padded to 200ms ± 20ms
+
+  Scenario: Padding applied to 404 Tombstoned (D_Y queried by A)
+    Given request resolves 404 Tombstoned in 60ms (D1 found com deleted_at != NULL)
     When middleware processes
     Then total response time padded to 200ms ± 20ms
 
@@ -225,20 +235,26 @@ Feature: Constant-time 404/403 middleware
     When middleware processes
     Then total response time = 50ms (no padding)
 
-  Scenario: Mann-Whitney U test — distributions indistinguishable
-    Given 10k 404 samples + 10k 403 samples
-    When Mann-Whitney U test computed
-    Then p-value > 0.05 (null hypothesis NOT rejected)
-    And distributions histogram visually overlap
+  Scenario: 403 PAT scope failures NOT padded (separate concern; S-03)
+    Given request resolves 403 PERMISSION_DENIED (PAT lacks cache:r scope)
+    When middleware processes
+    Then total response time = handler resolution time (no padding; legitimate caller without scope is not enumeration vector)
 
-  Scenario: Criterion benchmark p99 diff < 5ms
+  Scenario: Pairwise Mann-Whitney U — 3-arm distributions indistinguishable
+    Given 10k samples per arm × 3 arms (NotFound × CrossTenantMasked × Tombstoned)
+    When pairwise Mann-Whitney U test computed (3 pairs)
+    Then all 3 p-values > 0.05 com Šidák correction (effective per-pair α 0.0167)
+    And distributions histogram visually overlap across all 3 arms
+
+  Scenario: Criterion benchmark — |Δmedian| ≤ 1ms across MissReason arms
     Given criterion sustained measurement
-    When p99(404) and p99(403) computed
-    Then |p99(404) - p99(403)| < 5ms
+    When median(NotFound), median(CrossTenantMasked), median(Tombstoned) computed
+    Then max pairwise |Δmedian| ≤ 1ms
+    And max pairwise |Δp99| < 5ms
 
   Scenario: Métrica side_channel timing_diff_ms emitted
     Given continuous response stream
-    When sliding window computes
+    When sliding window computes max pairwise |Δmedian| across 3 arms
     Then métrica corelink_cas_side_channel_timing_diff_ms updated
     And SEV-2 alert se sustained > 5ms por 5min
 

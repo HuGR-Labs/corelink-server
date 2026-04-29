@@ -3,7 +3,7 @@ id: "SPEC-CONTRACT-S02"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.3.0"
 created: "2026-04-24"
 updated: "2026-04-24"
 owner: "Gustavo Schneiter"
@@ -26,17 +26,17 @@ tags: ["spec-contract", "s02", "cas", "read-path", "client-verify", "side-channe
 | Lane forcing factors | FF-HR-002 (cross-tenant read = catastrophic blast radius), FF-HR-005 (CTRL-CAS-002 + CTRL-ISO-002 + CTRL-ISO-004 — security controls implementation) |
 | Duração estimada | 3 semanas + buffer 5 dias |
 | WIs antecipados | 6 |
-| SOTA target | Read path tier-1 — sub-100ms p99 cache-warm + client verify default-on + side-channel-resistant 404/403 + negative cache + streaming memory-bounded |
+| SOTA target | Read path tier-1 — sub-100ms p99 cache-warm + client verify default-on (Rust crate + ABI stable; FFI = S-15) + side-channel-resistant 404 across MissReason variants (per ADR-0028) + negative cache (HMAC16 keyed) + streaming memory-bounded |
 
 ## 1. Objetivo
 
-Implementar **path de leitura CAS production-grade** completando o loop write→read iniciado em S-01: REAPI `ByteStream::Read` (streaming chunked, memory-bounded), `GetBlob` unary (small blobs ≤ 4 MB inline), `FindMissingBlobs` (batch discovery para clients Bazel/Buck2), client-side verify obrigatório default-on (`corelink-client-verify` crate, CTRL-CAS-002), negative caching de 404 (KV TTL curto reduz cost de probe attacks + speed up legitimate misses), constant-time 404 vs 403 (CTRL-ISO-004 — prevent enumeration side-channel). Sem read path, S-01 é write-only e produto inviável.
+Implementar **path de leitura CAS production-grade** completando o loop write→read iniciado em S-01: REAPI `ByteStream::Read` (streaming chunked, memory-bounded), `GetBlob` unary (small blobs ≤ 4 MB inline), `FindMissingBlobs` (batch discovery para clients Bazel/Buck2), client-side verify obrigatório default-on (`corelink-client-verify` crate Rust + ABI stable; FFI integration tests Python/Go/JS = S-15 deliverable, CTRL-CAS-002), negative caching de 404 (KV TTL curto + HMAC16 keyed reduz cost de probe attacks + speed up legitimate misses), constant-time 404 across MissReason variants (CTRL-ISO-004 + ADR-0028 uniform freeze — prevent enumeration side-channel). Sem read path, S-01 é write-only e produto inviável.
 
-**Por que SOTA:** competitors entregam read path com client verify opt-in (BuildBuddy) ou ausente (NativeLink em alguns SDKs); sem constant-time response distinction → enumeration side-channel; sem negative cache → cost overhead em probe storms. CoreLink S-02 entrega: (a) **TLA+ tenant_isolation.tla covering read path**; (b) **constant-time 404/403** com p99 diff < 5ms verified; (c) **client verify default-on em 3 languages** via `corelink-client-verify` crate (S-15 reuse); (d) **side-channel benchmarks** (timing attack resistance via criterion); (e) **streaming memory-bounded** (Worker chunk-based, não buffer completo). Reference: **REAPI v2 spec**, **OWASP Side-Channel Testing**, **NIST SP 800-53 SC-4 (Information in Shared Resources)**.
+**Por que SOTA:** competitors entregam read path com client verify opt-in (BuildBuddy) ou ausente (NativeLink em alguns SDKs); sem constant-time response distinction → enumeration side-channel; sem negative cache → cost overhead em probe storms. CoreLink S-02 entrega: (a) **TLA+ tenant_isolation.tla covering read path**; (b) **constant-time 404 across 3 MissReason arms** (per ADR-0028) com pairwise Mann-Whitney + Šidák; (c) **client verify default-on Rust crate + ABI stable** (`corelink-client-verify`; FFI Python/Go/JS = S-15 deliverable); (d) **side-channel benchmarks** (timing attack resistance via criterion + |Δmedian| ≤ 1ms); (e) **streaming memory-bounded** (Worker chunk-based, não buffer completo). Reference: **REAPI v2 spec**, **OWASP Side-Channel Testing**, **NIST SP 800-53 SC-4 (Information in Shared Resources)**.
 
 ## 2. Lane + forcing factors
 
-- **Lane:** HIGH_RISK (10–12 sign-offs).
+- **Lane:** HIGH_RISK (11 sign-offs canonical per framework §33.5.4.3 + ADR-0034).
 - **FF-HR-002**: reads cross-tenant seriam catastróficos; mesma superfície do S-01 (tenant isolation invariant).
 - **FF-HR-005**: implementa CTRL-CAS-002 (client integrity verify), CTRL-ISO-002 (AuthZ on storage call), CTRL-ISO-004 (constant-time response). Bypass = security control failure.
 - **FF-HR-002 escalation**: side-channel attack = enumeration de digests cross-tenant; bypass de tenant isolation indireta.
@@ -89,11 +89,13 @@ inherits_from:
 
 ### 5.3 Side-Channel Resistance (CAP-CAS-008)
 
-- **R-S02-7**: Constant-time 404 vs 403 (CTRL-ISO-004) — prevent enumeration side-channel:
-  - Worker responde com mesmo timing window para ambos os cases.
-  - Implementação: timing-padding via `tokio::time::sleep` + jitter ou pre-computed delay.
-  - Benchmark criterion: p99 diff entre 404 vs 403 < 5ms (target SOTA).
-- **R-S02-8**: Adversarial test: 10k requests probe digest random → measure timing distribution; statistical test (Mann-Whitney U) validates indistinguishability `p > 0.05`.
+Canonical decision per ADR-0028 (forward-whitelisted): **MissReason → HTTP 404 uniform freeze** (variants `NotFound` / `Tombstoned` / `CrossTenantMasked` all map to 404 com same body). 410 Gone deferido S-06. Side-channel defense é at **timing layer**, não status-code differential.
+
+- **R-S02-7**: Constant-time 404 across MissReason variants (CTRL-ISO-004) — prevent existence enumeration:
+  - Worker responde com mesmo timing window para todas as variants 404 (never_existed, cross_tenant_masked, tombstoned).
+  - Implementação: timing-padding via `tokio::time::sleep` + jitter ou pre-computed delay (WI-S02-004 middleware).
+  - Benchmark criterion: |Δmedian| ≤ 1ms across MissReason arms; p99 diff < 5ms (target SOTA).
+- **R-S02-8**: Adversarial test: 10k requests por arm (3 arms: never_existed × cross_tenant_masked × tombstoned) → measure timing distribution; pairwise Mann-Whitney U validates indistinguishability `p > 0.05` em all 3 pairs (Šidák correction; vide WI-S02-004 §2).
 
 ### 5.4 Negative Cache (CAP-CAS-007)
 
@@ -105,7 +107,7 @@ inherits_from:
 ### 5.5 Tenant Isolation (CAP-CAS-004 envelope)
 
 - **R-S02-10**: Tenant context propagation: `Authorization: Bearer <PAT>` → resolve `tenant_id` (S-03 reuse via auth middleware) → namespace lookup `<tenant_prefix>/<digest>` em R2; reject se prefix mismatch.
-- **R-S02-11**: AuthZ check em storage call (CTRL-ISO-002): pre-R2 read, verify `tenant_id` matches blob_meta.tenant_id em D1; mismatch = 403 + audit emit.
+- **R-S02-11**: AuthZ check em storage call (CTRL-ISO-002): pre-R2 read, verify `tenant_id` matches blob_meta.tenant_id em D1; mismatch = **404 (uniform per ADR-0028; CrossTenantMasked variant)** + audit emit `corelink.cas.cross_tenant_attempt` (forensics retain original reason; client observa apenas 404).
 
 ### 5.6 Observability + SLO
 
@@ -119,13 +121,13 @@ inherits_from:
 - [ ] **TLA+ verdes em CI**: `tenant_isolation.tla` + `cas_integrity.tla` (EVT-022).
 - [ ] **Load test** read 50k QPS × 10 min em staging com SLO-AVAIL-CAS-GET preserved (EVT-021).
 - [ ] **Client verify default-on no crate Rust** (`corelink-client-verify`): bit-rot detection 100% via property test em CI (EVT-002). **NOTA Lote 9.5**: integração FFI Python/Go/JS é entregável **S-15** (outbound consumer); S-02 entrega o crate Rust + ABI stable. SDK integration tests rodam em S-15 sprint, não bloqueiam SEAL S-02.
-- [ ] **Side-channel test**: medir latência 404 vs 403 → p99 diff < 5ms via criterion benchmark; statistical test Mann-Whitney p > 0.05 (EVT-002 + EVT-040 if external review).
+- [ ] **Side-channel test**: medir latência **404 across MissReason variants** (never_existed × cross_tenant_masked × tombstoned) → p99 diff < 5ms + |Δmedian| ≤ 1ms via criterion benchmark; pairwise Mann-Whitney U all p > 0.05 com Šidák correction (EVT-002 + EVT-040 if external review).
 - [ ] **Runbook `RB-FM-253`** (cross-tenant read) dry-run executado em staging (EVT-017).
 - [ ] **SBOM + signed release** (CycloneDX 1.5+) — formato e enforcement definido em S-12 (forward-looking; S-02 honra format mas full SLSA L3 attestation gate é S-12 sealing) (EVT-010).
 - [ ] **Negative cache** test: probe storm 1k QPS de unknown digests → measure cost reduction vs no-cache baseline (EVT-021).
 - [ ] **Streaming memory test**: read 1 GiB blob via ByteStream → Worker memory peak < 50 MiB (não load full blob) (EVT-002).
 - [ ] **Bit rot integrity test**: corrupt R2 object out-of-band → 100% client verify catches (EVT-002).
-- [ ] **PRR HIGH_RISK** (10–12 sign-offs): SRE lead + Security lead + Engineer + QA + Product + Compliance officer + Privacy officer + Architect + AppSec advisor + 2 peers + Crypto SME (BLAKE3 verify review) (EVT-031).
+- [ ] **PRR HIGH_RISK** (11 sign-offs canonical per framework §33.5.4.3 + ADR-0034): Owner + Final Approver + Architect + Security + SRE + QA + Product + Compliance + Privacy + AppSec + Crypto SME (BLAKE3 verify review) — Compliance + AppSec já incluídos no count canonical (EVT-031).
 - [ ] **Cost regression gate**: CAS GET hot path benchmark per-op cost; < 10% regression vs S-01 write baseline (Lote 9.4 §14.10).
 
 ## 7. Completeness Criteria (delta local)
@@ -151,7 +153,7 @@ inherits_from:
 
 ### Novas (S-02 — adicionar a invariant_registry §3.12 como Lote 9.4 followup se needed)
 
-- **INV-CAS-SIDE-CHANNEL-INDISTINGUISHABLE** (HIGH — Lote 9.4 candidate for §3.12): timing distribution de 404 vs 403 é statistically indistinguishable (Mann-Whitney p > 0.05). **Why:** prevent enumeration of digest existence cross-tenant. **How to apply:** criterion benchmark + adversarial test 10k samples + `corelink.cas.side_channel.timing_diff_ms` < 5ms p99.
+- **INV-CAS-SIDE-CHANNEL-INDISTINGUISHABLE** (HIGH — Lote 9.4 candidate for §3.12): timing distribution **across all 404 MissReason variants** (never_existed, cross_tenant_masked, tombstoned) é statistically indistinguishable (pairwise Mann-Whitney U p > 0.05; Šidák corrected). **Why:** prevent enumeration of digest existence (cross-tenant OR tombstoned) — per ADR-0028 status code é uniform 404; defense é timing parity. **How to apply:** criterion benchmark + adversarial test 10k samples per arm + `corelink.cas.side_channel.timing_diff_ms` < 5ms p99 + |Δmedian| ≤ 1ms.
 
 ## 9. Quality Standards (delta local)
 
@@ -200,7 +202,7 @@ inherits_from:
 |---|---|---|---|---|---|---|
 | **WI-S02-001** | REAPI ByteStream::Read handler + HTTP GET + tenant context propagation | bytestream handler; chunk 1MiB; HTTP REST surface; auth middleware reuse S-03 stub; AuthZ check pre-R2 | 14h | 22h | 36h | **23.0h** |
 | **WI-S02-002** | GetBlob unary + FindMissingBlobs + small-blob inline | unary handler; size-based dispatch; FindMissingBlobs batch logic; benchmark | 10h | 16h | 26h | **16.7h** |
-| **WI-S02-003** | Crate corelink-client-verify (SDK lib) + 3 language integration tests | BLAKE3 verify lib; default-on toggle; opt-out warning; FFI integration tests Python/Go/JS | 12h | 18h | 30h | **19.0h** |
+| **WI-S02-003** | Crate corelink-client-verify (Rust SDK lib) + ABI-stable interface | BLAKE3 verify lib; default-on toggle; opt-out warning; ABI-stable contract (FFI integration tests Python/Go/JS = S-15 scope) | 12h | 18h | 30h | **19.0h** |
 | **WI-S02-004** | Constant-time 404/403 middleware + criterion benchmark + Mann-Whitney test | timing-padding middleware; jitter; criterion benchmark; statistical test 10k samples | 14h | 22h | 36h | **23.0h** |
 | **WI-S02-005** | Negative cache KV adapter + invalidation hook em S-01 write | KV per-region; TTL 300s; invalidation hook; probe storm test | 8h | 14h | 22h | **14.3h** |
 | **WI-S02-006** | Property test 100k tenant isolation + RB-FM-253 dry-run + bit-rot test + PRR | property test framework; tenant isolation 100k iter; bit rot inject; RB-FM-253 walkthrough; PRR docs | 12h | 18h | 30h | **19.0h** |
@@ -213,7 +215,7 @@ inherits_from:
 - **Marcos:**
   - **D+4:** WI-001 SEALED (ByteStream::Read live em staging).
   - **D+6:** WI-002 SEALED (GetBlob + FindMissingBlobs).
-  - **D+9:** WI-003 SEALED (client-verify crate + 3-language integration).
+  - **D+9:** WI-003 SEALED (client-verify Rust crate + ABI stable; FFI integration = S-15).
   - **D+12:** WI-004 SEALED (constant-time + side-channel test passed).
   - **D+13:** WI-005 SEALED (negative cache + invalidation).
   - **D+15:** WI-006 SEALED (property test + runbook + PRR).
@@ -290,7 +292,7 @@ S-02 **NÃO PODE** promover via waiver dos seguintes itens:
 - ❌ INV-TENANT-ISOLATION property test 100k green — security baseline.
 - ❌ TLA+ tenant_isolation + cas_integrity green em CI — formal verification baseline.
 - ❌ Constant-time 404/403 (CTRL-ISO-004) — side-channel resistance baseline.
-- ❌ Client verify default-on em 3 SDKs — CTRL-CAS-002 baseline.
+- ❌ Client verify default-on Rust crate + ABI stable — CTRL-CAS-002 baseline (FFI integration tests Python/Go/JS = S-15 sprint scope).
 - ❌ Bit rot 100% detection — INV-CAS-INTEGRITY baseline.
 
 Itens waivable com Security lead + Architect + ADR:
@@ -302,4 +304,15 @@ Itens waivable com Security lead + Architect + ADR:
 
 ---
 
-**Fim spec contract S-02 v1.1.0 SOTA.**
+## 16. Changelog
+
+| Versão | Data | Autor | Mudança |
+|---|---|---|---|
+| 1.0.0 | 2026-04-24 | Gustavo | Spec contract retroativo (Lote 9.5a). |
+| 1.1.0 | 2026-04-24 | Gustavo (Lote 9.4 SOTA elevation) | EVT addition + 6-col risk register + PERT explicit. |
+| 1.3.0 | 2026-04-29 | Gustavo (Lote 10.2bis cycle 2 codex SEAL remediation) | **3 P0/P1 + P2 polish** (score 8.8→target ≥9.0): (a) **P0 WI-004 AC scenarios full rewrite** — 3-arm 404 model (NotFound × CrossTenantMasked × Tombstoned) replaces 404-vs-403; pairwise Mann-Whitney + Šidák; |Δmedian| ≤ 1ms criterion; sprint.md §6.3 INV updated. (b) **P1 stale 3-SDK seal language swept** — _spec_contract §0 SOTA target + §1 objetivo + §1 SOTA framing + §12 PERT WI-003 + §13 marcos + §15 anti-waivable + sprint.md §9 milestones. (c) **P1 sign-off matrix prune** — sprint.md §14 13-item list → 11 canonical (Crypto SME folds into Architect; Adversarial into AppSec); WI-006 §2 PRR list + §6.1.4 PRR doc + §30 heading aligned. (d) **P2 editorial** — WI-001 §1 AuthZ wording 403→404 uniform; WI-002 §3 error mapping clarified (404 uniform vs 403 PAT scope). |
+| 1.2.0 | 2026-04-29 | Gustavo (Lote 10.2bis cycle 1 codex SEAL remediation) | **4 codex 6.8 P0/P1 ENGINEERING blockers fixed**: (a) **P0 response contract** — 403 cross-tenant → 404 uniform per ADR-0028 (MissReason freeze); side-channel defense relocated from status-code differential → timing layer (3 arms: NotFound × CrossTenantMasked × Tombstoned all 404; pairwise Mann-Whitney + Šidák); _spec_contract §5.3 + §5.5 + §6 DoD + §8 INV rewritten; sprint.md §3 + §6.2 aligned; WI-001 §2 + §6.1.4 + §6.1.6 + §6.1.8 + §8 AC updated; WI-004 §1 + §2 + §6.1 fully rewritten (3-arm methodology). (b) **P1 negative cache canonical** — KV key `tenant_id_hex` → HMAC16 canonical (per remote_cache_product_profile.md §7.1); GetBlob short-circuit semantics clarified (canonical with invalidation hook); FindMissingBlobs MUST fall-through (storage_semantics_matrix.md authoritative requirement); semantic distinction explicit. (c) **P1 S-02/S-15 boundary** — sprint.md §2.1 + §5 D3 + §7 DoD aligned com spec_contract §6 NOTA: S-02 ships Rust crate + ABI stable; FFI integration tests Python/Go/JS = S-15 (NÃO bloqueia SEAL S-02). (d) **P1 sign-offs 13/10-12 → 11 canonical** (framework §33.5.4.3 + ADR-0034) — 13+ locations across spec_contract + sprint + 6 WIs. |
+
+---
+
+**Fim spec contract S-02 v1.3.0 SOTA.**

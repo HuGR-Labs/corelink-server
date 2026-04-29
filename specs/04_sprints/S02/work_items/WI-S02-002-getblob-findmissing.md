@@ -98,7 +98,7 @@ Decision: **client trade-off documented**:
 - **FF-HR-005**: implementa CTRL-ISO-002 + CTRL-ISO-005 em batch surface; security-critical layer.
 - **Reversibility**: information disclosure é one-way; atacante já learned blob existence.
 
-Por isso: 10–12 sign-offs, property test 100k batch queries cross-tenant, side-channel timing analysis (WI-S02-004 dependency), constant-time per-digest filter, REAPI conformance suite.
+Por isso: 11 sign-offs canonical HIGH_RISK, property test 100k batch queries cross-tenant, side-channel timing analysis (WI-S02-004 dependency), constant-time per-digest filter, REAPI conformance suite.
 
 ## 3. Customer Impact & Journey
 
@@ -107,7 +107,7 @@ Por isso: 10–12 sign-offs, property test 100k batch queries cross-tenant, side
 **Customer-visible:**
 - `FindMissingBlobs` p99 ≤ 200ms para batch de 1000 digests (criterion benchmark).
 - `GetBlob` p99 ≤ 150ms cold; ≤ 50ms warm.
-- Clear error mapping: 404 individual digests em batch retornados como "missing"; 403 cross-tenant attempts → entire request rejected (não per-digest leak).
+- Clear error mapping: 404 individual digests em batch retornados como "missing" (uniform per ADR-0028; covers NotFound + CrossTenantMasked + Tombstoned). PAT scope failures → 403 PERMISSION_DENIED em request-level (não per-digest; S-03 scope check).
 
 ## 4. Capability Mapping
 

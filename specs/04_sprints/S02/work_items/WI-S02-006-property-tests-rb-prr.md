@@ -109,9 +109,10 @@ Runbook walkthrough simulado em staging:
 4. Verify forensic via R2 audit log (S-09 forward) + customer notification preparation.
 5. Document findings in EVT-017.
 
-**PRR HIGH_RISK 11 sign-offs:**
-- Owner + Final Approver + SRE + Security + Engineer + QA + Product + Compliance + Privacy + Architect + AppSec advisor + 2 peers + Crypto SME = 13 (matrix per sprint contract).
-- Each role validates specific aspect (Architect: design; Security: STRIDE delta; AppSec: side-channel; Crypto SME: BLAKE3 + Argon2id reuse; etc.).
+**PRR HIGH_RISK 11 sign-offs canonical** (per framework §33.5.4.3 + ADR-0034):
+- Owner + Final Approver + Architect + Security Lead + SRE Lead + Engineer + QA Lead + Product + Compliance + Privacy + AppSec advisor = 11.
+- Crypto SME (BLAKE3 + Mann-Whitney methodology) folds into Architect role; Adversarial reviewer folds into AppSec; peer reviewers contribuem em PR sem sign-off canonical separado.
+- Each role validates specific aspect (Architect: design + Crypto SME specialization; Security: STRIDE delta; AppSec: side-channel + pentest; etc.).
 - PRR doc captures sign-off matrix + adversarial review + risk acceptance for residuals.
 
 **Risk justification HIGH_RISK:**
@@ -121,7 +122,7 @@ Runbook walkthrough simulado em staging:
 
 ## 3. Customer Impact & Journey
 
-**JTBD (CoreLink team + customer trust):** "Como customer enterprise, eu vejo PRR doc com 13 sign-offs + 100k property test green + bit rot test passed + RB-FM-253 dry-run executed = confidence to commit DPA."
+**JTBD (CoreLink team + customer trust):** "Como customer enterprise, eu vejo PRR doc com 11 sign-offs canonical (HIGH_RISK matrix) + 100k property test green + bit rot test passed + RB-FM-253 dry-run executed = confidence to commit DPA."
 
 Indirect: foundation para enterprise customer engagement (S-19 onboarding pre-engagement).
 
@@ -150,7 +151,7 @@ Test infrastructure + PRR; HIGH_RISK; FF-HR-002 + FF-HR-005.
    - Captures EVT-017 evidence.
    - Reports drift se runbook steps vs reality differ.
 4. **PRR doc** `specs/04_sprints/S02/PRR-S02.md`:
-   - Sign-off matrix (13 roles).
+   - Sign-off matrix (11 roles canonical per framework §33.5.4.3 + ADR-0034; Crypto SME folds into Architect; Adversarial folds into AppSec).
    - Risk register summary (residual after mitigations).
    - Promotion gate criteria checklist.
    - Adversarial review summary (link to pentest report).
@@ -229,7 +230,7 @@ Feature: S-02 ship gate validation
   Scenario: PRR sign-offs
     Given S-02 implementation complete + tests green + adversarial review done
     When PRR review session
-    Then 13 sign-offs collected (Owner + Final + 11 roles)
+    Then 11 sign-offs canonical collected (Owner + Final Approver já incluídos no count per framework §33.5.4.3)
     And residual risks accepted formally
     And promotion gate criteria checked all green
     And PRR-S02.md committed em main branch
@@ -258,7 +259,7 @@ Manual = drift risk (runbook outdated; reviewer skips step). Automated = reprodu
 
 External pentest é S-20 GA gate. S-02 internal pentest is reasonable confidence + cheaper + more iterative.
 
-### 9.5 Why 13 sign-offs (não 11 mandatory + 2 advisory)
+### 9.5 Why 11 sign-offs canonical (per framework §33.5.4.3 HIGH_RISK matrix + ADR-0034 solo-tier)
 
 Per S-02 sprint contract §14, advisory roles (Crypto SME) são strongly recommended for crypto-touching surface. Treating as mandatory ensures scrutiny.
 
@@ -271,7 +272,7 @@ Não. Standard practice; aligned com framework HIGH_RISK matrix.
 - [ ] **10.6.1** Property test 100k iter green sustained 7d nightly (EVT-002).
 - [ ] **10.6.2** Bit rot 10 scenarios → 100% caught (EVT-002).
 - [ ] **10.6.3** RB-FM-253 dry-run executed staging + EVT-017 captured (EVT-017).
-- [ ] **10.6.4** PRR-S02.md com 13 sign-offs documented (EVT-031).
+- [ ] **10.6.4** PRR-S02.md com 11 sign-offs canonical documented (EVT-031).
 - [ ] **10.6.5** Adversarial review report + findings em audit doc (EVT-040 internal).
 - [ ] **10.6.6** Promotion gate checklist 100% green.
 - [ ] **10.6.7** All S-02 DoD items have EVT linked + verifiable.
@@ -282,7 +283,7 @@ Não. Standard practice; aligned com framework HIGH_RISK matrix.
 - [ ] Bit rot integration test 10 scenarios.
 - [ ] RB-FM-253 automated dry-run script.
 - [ ] EVT-017 captured em staging dry-run.
-- [ ] PRR-S02.md com 13 sign-offs.
+- [ ] PRR-S02.md com 11 sign-offs canonical.
 - [ ] Adversarial review report.
 - [ ] Sprint review presentation.
 
@@ -323,7 +324,7 @@ Already covered em RB-FM-253 dry-run + bit rot test.
 
 ## 16. PRR
 
-This WI **is the PRR**. Output: `PRR-S02.md` com 13 sign-offs.
+This WI **is the PRR**. Output: `PRR-S02.md` com 11 sign-offs canonical.
 
 ## 17. Sub-tasks
 
@@ -338,7 +339,7 @@ This WI **is the PRR**. Output: `PRR-S02.md` com 13 sign-offs.
 | ST-007 | Staging deployment for dry-run | 1.5h |
 | ST-008 | Adversarial review (pentest internal) | 4h |
 | ST-009 | Audit doc authoring | 1.5h |
-| ST-010 | PRR-S02.md authoring + 13 sign-offs collection | 3h |
+| ST-010 | PRR-S02.md authoring + 11 sign-offs canonical collection | 3h |
 | ST-011 | Sprint review presentation prep | 1.5h |
 | ST-012 | All EVT linked verification | 1h |
 
@@ -411,11 +412,11 @@ Tech talk: "S-02 Ship Gate: 100k Property Tests + Adversarial Review" — 30 min
 1. Design (D+0): QA + Security + Architect approve test strategy.
 2. Code (D+5): peer + Security.
 3. Adversarial run (D+10): pentest internal.
-4. PRR review session (D+13): 13 sign-offs.
+4. PRR review session (D+13): 11 sign-offs canonical.
 
-## 30. Sign-off (HIGH_RISK 13 roles)
+## 30. Sign-off (HIGH_RISK 11 roles canonical)
 
-Per S-02 sprint contract §14: 13 sign-offs incluindo Crypto SME.
+Per S-02 sprint contract §14: 11 sign-offs canonical incluindo Crypto SME (specialized reviewer dentro dos 11).
 
 ## 31. Change Log
 

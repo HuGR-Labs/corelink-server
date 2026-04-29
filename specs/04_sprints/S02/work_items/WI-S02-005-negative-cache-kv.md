@@ -71,7 +71,7 @@ pub enum MissReason {
 }
 ```
 
-Key format: `ac_neg:<region>:<tenant_id_hex>:<digest_hex>` (per-region per-tenant per-digest).
+Key format: `ac_neg:<region>:<HMAC16>:<digest_hex>` (per-region per-tenant per-digest; HMAC16 canonical = `b64(HMAC_SHA256(TDK, tenant_id))[0:16]` per remote_cache_product_profile.md §7.1; NUNCA plaintext tenant_id).
 TTL: 300s (PAT-KV-TTL-001).
 Invalidation: WI-S01-005 (REAPI BatchUpdateBlobs handler) calls `invalidate_on_write` on successful write; ensures stale negatives evict immediately.
 
@@ -88,7 +88,7 @@ Negative caching é dual-edged sword: **performance optimization** (reduce cost 
 5. **TTL too short**: cache miss rate high; cost benefit eliminated.
 
 Mitigação:
-1. **Key per-tenant**: `ac_neg:<region>:<tenant_id_hex>:<digest_hex>` — cross-tenant impossible by construction.
+1. **Key per-tenant via HMAC16**: `ac_neg:<region>:<HMAC16>:<digest_hex>` (HMAC16 canonical per remote_cache_product_profile.md §7.1; NUNCA plaintext tenant_id) — cross-tenant impossible by construction; alinha contract com R2/D1 path layout.
 2. **Invalidation hook em write path**: WI-S01-005 PutBlob handler chama `invalidate_on_write(tenant, digest)` em success → KV.delete(key) imediato → stale negative removed before cliente next GET.
 3. **MissReason enum** explicit: NotFound / Tombstoned / CrossTenantMasked — handler decide HTTP semantic per reason.
 4. **TTL 300s**: balance — long enough to catch repeated probes em 5min window; short enough that stale-window é bounded; PAT-KV-TTL-001 canonical.
@@ -104,7 +104,7 @@ Mitigação:
 - **FF-HR-005**: cache invalidation correctness é storage semantics enforcement.
 - **Reversibility**: stale negative bug = customer support storm; rapidly fixable mas customer trust impacted.
 
-10-12 sign-offs incl. Architect (cache invalidation review).
+11 sign-offs canonical HIGH_RISK incl. Architect (cache invalidation review).
 
 ## 3. Customer Impact & Journey
 
@@ -133,15 +133,17 @@ Cache adapter; HIGH_RISK; FF-HR-002 + FF-HR-005.
    - Key format canônico.
    - TTL 300s default; tunable via DO config-singleton (S-13 forward).
 2. **`MissReason` enum** com 3 variants + derive Serialize/Deserialize.
-3. **Integration em CAS read path** (WI-S02-001):
+3. **Integration em CAS read path** (WI-S02-001 GetBlob):
    - GET handler check `negative_cache.lookup` antes D1 AuthZ check.
-   - Hit → return 404 imediato (com timing padding via WI-S02-004 middleware).
+   - Hit → return 404 imediato uniform (com timing padding via WI-S02-004 middleware). Short-circuit é canonical para GetBlob — invalidation hook em S-01 PUT (§6.1.4) garante freshness; window stale ≤ 5s region-local per §8 AC scenario.
    - Miss → fall-through to D1 + R2 paths.
 4. **Integration em CAS write path** (WI-S01-005):
    - PutBlob success → call `negative_cache.invalidate_on_write(tenant, digest)`.
 5. **Integration em FindMissingBlobs** (WI-S02-002):
-   - Batch lookup: parallel `negative_cache.lookup` for all digests; cache misses fall-through to D1.
+   - **MUST be authoritative** per `storage_semantics_matrix.md §FindMissingBlobs` (Bazel cliente decide upload baseado em response — stale negative = redundant upload sad path mas NÃO catastrophic; stale positive = missed upload é catastrophic).
+   - Batch lookup pattern: parallel `negative_cache.lookup` as **hint**; **all "missing" decisions verified via D1 + R2 HEAD compensating check** (KV pode estar stale após PUT). Cache hit é hint; falsh-through still required.
    - Populate cache for confirmed missing digests post-batch.
+   - Distinção semantic: GetBlob (§6.1.3) PODE short-circuit em cache hit (single-digest read; invalidation hook); FindMissingBlobs DEVE fall-through (authoritative batch dedup discovery).
 6. **Per-region KV namespace binding** via wrangler.toml: `KV_NEGATIVE_CACHE_<REGION>`.
 7. **Métricas**:
    - `corelink.cas.negative_cache.hits_total{tenant_tier, region}` (counter).
@@ -179,7 +181,7 @@ Feature: Negative cache KV adapter
 
   Scenario: Populate miss + lookup hit
     When negative_cache.put_miss(tenant_A, digest_X, NotFound) called
-    Then KV key "ac_neg:wnam:<tenant_A_hex>:<digest_X_hex>" set with TTL 300s
+    Then KV key "ac_neg:wnam:<HMAC16(tenant_A)>:<digest_X_hex>" set with TTL 300s (HMAC16 canonical)
     When negative_cache.lookup(tenant_A, digest_X) called within 300s
     Then Result::Ok(Some(NotFound)) returned
 

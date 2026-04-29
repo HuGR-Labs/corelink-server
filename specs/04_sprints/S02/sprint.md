@@ -60,7 +60,7 @@ Sem read path, S-01 é write-only e produto inviável. Bug em tenant isolation =
 
 - **WI-S02-001**: REAPI ByteStream::Read handler + HTTP GET surface + tenant context propagation reusing S-01 TenantPrefix.
 - **WI-S02-002**: GetBlob unary (small ≤ 4 MiB inline) + FindMissingBlobs batch endpoint (REAPI conformance).
-- **WI-S02-003**: Crate `corelink-client-verify` (Rust lib) + 3-language FFI integration tests (Python pyO3 + Go cgo + JS WASM); default-on toggle.
+- **WI-S02-003**: Crate `corelink-client-verify` (Rust lib) + ABI-stable interface + default-on toggle. **NOTA Lote 9.5**: FFI integration tests Python pyO3 / Go cgo / JS WASM são entregável **S-15** (consumer); S-02 entrega Rust crate + ABI stable; SDK integration tests rodam em S-15 sprint, não bloqueiam SEAL S-02.
 - **WI-S02-004**: Constant-time 404/403 middleware (timing-padding + jitter) + criterion benchmark + Mann-Whitney U adversarial test 10k samples.
 - **WI-S02-005**: Negative cache KV adapter (`ac_neg:<digest>` per-region; TTL 300s) + invalidation hook em S-01 write path.
 - **WI-S02-006**: Property test 100k tenant isolation + bit-rot integrity test + RB-FM-253 dry-run + PRR HIGH_RISK doc.
@@ -86,7 +86,7 @@ Sem read path, S-01 é write-only e produto inviável. Bug em tenant isolation =
 - Bazel/Buck2 cache HIT em < 100ms warm (vs 300-500ms competitors).
 - Bit rot detectado client-side via BLAKE3 verify default-on (CTRL-CAS-002).
 - Tenant isolation cryptographic (5 layers; TLA+ verified).
-- 404 vs 403 timing-indistinguishable (não é enumeration vector contra meu blob digests).
+- 404 timing-indistinguishable across MissReason variants (per ADR-0028 uniform 404 freeze; não é enumeration vector contra meu blob digests).
 
 **CAPs entregues** (do _spec_contract.md):
 - `CAP-CAS-004` (GET blob by digest)
@@ -109,11 +109,11 @@ Ver `_spec_contract.md §4` para tabela canonical CAPs. Este sprint endereça 6 
 |---|---|---|---|
 | S02-D1 | ByteStream::Read Worker handler (gRPC + HTTP) | `src/reapi/cas_read.rs` + `src/http/cas_read.rs` | gRPC handler conform REAPI v2; HTTP GET `/v1/cas/<digest>` working; tenant context propagated via TenantPrefix lookup; AuthZ check pre-R2 read |
 | S02-D2 | GetBlob unary + FindMissingBlobs batch | `src/reapi/cas_unary.rs` | GetBlob inline ≤ 4 MiB; FindMissingBlobs batch dedup discovery; size-based dispatch |
-| S02-D3 | Crate `corelink-client-verify` (lib SDK side) | `crates/corelink-client-verify/src/lib.rs` | BLAKE3 verify post-download; default-on toggle; opt-out warning emit; FFI bindings Python/Go/JS |
+| S02-D3 | Crate `corelink-client-verify` (lib SDK side) | `crates/corelink-client-verify/src/lib.rs` | BLAKE3 verify post-download; default-on toggle; opt-out warning emit; ABI-stable interface (FFI integration tests Python/Go/JS = S-15 deliverable per spec_contract §6 NOTA Lote 9.5) |
 | S02-D4 | Constant-time 404/403 middleware + benchmarks | `src/middleware/timing_padding.rs` + `benches/side_channel.rs` | Criterion benchmark p99 diff < 5ms; Mann-Whitney U test 10k samples p > 0.05 |
 | S02-D5 | Negative cache KV adapter | `src/cache/negative.rs` | `ac_neg:<digest>` per-region; TTL 300s; invalidation hook em S-01 PUT; cost reduction ≥ 80% probe storms |
 | S02-D6 | Property tests 100k tenant isolation + bit-rot test + integration tests | `tests/prop_cas_read.rs` + `tests/integration_e2e.rs` | 100k iter cross-tenant attempts → 0 successes; bit-rot inject → 100% catch; E2E S-01 write → S-02 read byte-identical |
-| S02-D7 | RB-FM-253 dry-run + PRR HIGH_RISK doc | `specs/05_quality/runbooks/RB-FM-253.md` (existing) + `PRR-S02.md` | RB dry-run executed em staging com Security + SRE; PRR doc 10–12 sign-offs |
+| S02-D7 | RB-FM-253 dry-run + PRR HIGH_RISK doc | `specs/05_quality/runbooks/RB-FM-253.md` (existing) + `PRR-S02.md` | RB dry-run executed em staging com Security + SRE; PRR doc 11 sign-offs canonical (HIGH_RISK matrix per framework §33.5.4.3) |
 
 ## 6. Escopo técnico por camada (inherits_from)
 
@@ -130,7 +130,7 @@ Todos os elementos abaixo herdam dos canonical sources listados no `inherits_fro
 - PAT scope `cache:r` obrigatório para reads (vs `cache:w` em S-01).
 - TenantPrefix derivation reusing S-01 `corelink-tenant-path` crate (dependência hard).
 - **Delta local:** PAT validation stub continua até S-03 SEALED; integration test cobre stub→real transition.
-- **Delta local:** AuthZ check em storage call (CTRL-ISO-002) — pre-R2 read verifica `tenant_id` matches `blob_meta.tenant_id` em D1; mismatch = 403 + audit emit `corelink.cas.cross_tenant_attempt`.
+- **Delta local:** AuthZ check em storage call (CTRL-ISO-002) — pre-R2 read verifica `tenant_id` matches `blob_meta.tenant_id` em D1; mismatch = **404 (uniform per ADR-0028; CrossTenantMasked variant)** + audit emit `corelink.cas.cross_tenant_attempt` (forensics; client observa apenas 404).
 
 ### 6.3 Invariantes verificadas (herda `invariant_registry.md §3`)
 
@@ -138,7 +138,7 @@ Todos os elementos abaixo herdam dos canonical sources listados no `inherits_fro
 - `INV-CAS-INTEGRITY` (CRITICAL): TLA+ `cas_integrity.tla` + client verify default-on (CTRL-CAS-002).
 - `INV-CAS-IMMUTABILITY` (CRITICAL): reads após GC soft-delete respeitam tombstone.
 - `INV-CAS-IDEMPOTENCY` (CRITICAL): same digest sempre retorna same body byte-identical.
-- `INV-CAS-SIDE-CHANNEL-INDISTINGUISHABLE` (HIGH — registry §3.12 add Lote 9.4): timing distribution 404 vs 403 statistically indistinguishable; Mann-Whitney p > 0.05; criterion p99 diff < 5ms.
+- `INV-CAS-SIDE-CHANNEL-INDISTINGUISHABLE` (HIGH — registry §3.12 add Lote 9.4): timing distribution **across all 404 MissReason variants** (NotFound × CrossTenantMasked × Tombstoned per ADR-0028) statistically indistinguishable; pairwise Mann-Whitney U all p > 0.05 com Šidák correction; criterion |Δmedian| ≤ 1ms; p99 diff < 5ms.
 
 ### 6.4 SLOs aplicáveis (herda `slo_catalog.md §4`)
 
@@ -168,10 +168,10 @@ Todas abaixo obrigatórias (framework §33.5.4.1 HIGH_RISK matrix):
 - [ ] **Bit rot detection test**: corrupt R2 object out-of-band → 100% client verify catches (EVT-002)
 - [ ] **Negative cache effectiveness**: probe storm 1k QPS unknown digests → cost reduction ≥ 80% vs no-cache (EVT-021)
 - [ ] **Streaming memory test**: read 1 GiB blob via ByteStream → Worker memory peak < 50 MiB (EVT-002)
-- [ ] **Client verify default-on**: 3 SDKs Python/Go/JS tested integration; opt-out warning log emitted (EVT-002 + EVT-018)
+- [ ] **Client verify default-on**: Rust crate verify path complete + ABI-stable interface (FFI integration tests Python/Go/JS = S-15 sprint scope per spec_contract §6 NOTA Lote 9.5; NÃO bloqueia SEAL S-02); opt-out warning log emitted (EVT-002)
 - [ ] Progressive rollout dry-run em staging (EVT-038)
 - [ ] Observability plan executado (métricas emitindo, dashboards criados) (EVT-013)
-- [ ] PRR HIGH_RISK 10–12 sign-offs (EVT-031)
+- [ ] PRR HIGH_RISK 11 sign-offs canonical per framework §33.5.4.3 + ADR-0034 (EVT-031)
 - [ ] Runbook `RB-FM-253` (cross-tenant read) dry-run executado (EVT-017)
 - [ ] SBOM gerado + assinado CycloneDX 1.5+ (EVT-010)
 - [ ] Adversarial review executado (EVT-025 pentest interno)
@@ -198,7 +198,7 @@ Todas abaixo obrigatórias (framework §33.5.4.1 HIGH_RISK matrix):
 - **Sprint kick-off**: 2026-05-22 (após S-01 SEALED target 2026-05-19)
 - **D+4 milestone**: WI-S02-001 SEALED (ByteStream::Read live em staging).
 - **D+6 milestone**: WI-S02-002 SEALED (GetBlob + FindMissingBlobs).
-- **D+9 milestone**: WI-S02-003 SEALED (client-verify crate + 3-lang integration).
+- **D+9 milestone**: WI-S02-003 SEALED (client-verify Rust crate + ABI stable; FFI integration = S-15).
 - **D+12 milestone**: WI-S02-004 SEALED (constant-time + side-channel test passed).
 - **D+13 milestone**: WI-S02-005 SEALED (negative cache + invalidation hook).
 - **D+15 milestone**: WI-S02-006 SEALED (property + RB-FM-253 + PRR).
@@ -276,24 +276,24 @@ Triggers que **automaticamente abrem post-mortem doc**:
 - TLA+ CI red (tenant_isolation ou cas_integrity) → CRITICAL post-mortem + invariant scope review.
 - Bit rot detected em produção (não em CI) → post-mortem + R2 scrub frequency review.
 
-## 14. Sign-off (HIGH_RISK — 10–12 roles)
+## 14. Sign-off (HIGH_RISK — 11 roles canonical)
 
-Ver tabela canônica em `00_framework.md §33.5.4.3`. Sprint S-02 exige **todos os 11 papéis** + Crypto SME (BLAKE3 verify review) + AppSec (side-channel test review) = **13 total** (incluindo extensões sprint-only).
+Ver tabela canônica em `00_framework.md §33.5.4.3`. Sprint S-02 exige **os 11 papéis HIGH_RISK** (Compliance + Adversarial + AppSec já incluídos no count canonical; alinhado com ADR-0034 solo-tier waiver). Crypto SME (BLAKE3 verify review) + AppSec (side-channel test review) são specialized reviewers dentro dos 11 (não extensão).
 
-Roles obrigatórios:
+Roles canonical (11 per framework §33.5.4.3 HIGH_RISK matrix):
 1. Owner (Gustavo Schneiter)
 2. Final Approver (Gustavo Schneiter)
-3. SRE Lead
-4. Security Lead
-5. Engineer (S-02 implementation lead)
-6. QA Lead
-7. Product
-8. Compliance Officer
-9. Privacy Officer
-10. Architect
-11. AppSec advisor (side-channel review)
-12. 2 peer reviewers
-13. Crypto SME (BLAKE3 verify + Mann-Whitney statistical review)
+3. Architect (design + Crypto SME specialization for BLAKE3 + Mann-Whitney methodology review)
+4. Security Lead (STRIDE + Crypto compliance specialization)
+5. SRE Lead
+6. Engineer (S-02 implementation lead)
+7. QA Lead
+8. Product
+9. Compliance Officer
+10. Privacy Officer
+11. AppSec advisor / Adversarial reviewer (side-channel + pentest)
+
+> Peer reviewers contribuem feedback durante PR review mas não são sign-off canonical separado (folded into Engineer + Architect roles).
 
 > Sign-off será preenchido ao final do sprint em `sprint.md §14.1`. Template em `specs/_templates/sprint_contract.md §20.1`.
 
