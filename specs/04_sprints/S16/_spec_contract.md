@@ -3,9 +3,9 @@ id: "SPEC-CONTRACT-S16"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-04-24"
-updated: "2026-04-24"
+updated: "2026-04-29"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -57,7 +57,7 @@ inherits_from:
 | ID | Capability | Detalhe |
 |---|---|---|
 | **CAP-UI-001** | Tenant onboarding flow | Signup → DPA acceptance → billing setup → first PAT created; backend handlers reuse S-03/S-10. |
-| **CAP-UI-002** | Usage dashboard per-tenant | Métricas (CAS hit ratio, GB stored, GB egress, AC hit %), quota progress, plan tier. |
+| **CAP-UI-002** | Usage dashboard per-tenant | Métricas (CAS hit ratio, GB stored, GB egress, AC hit %), quota progress, plan tier. **Lote 10.16 codex P0 fix — DEFERRED post-S-16 (full Grafana embed em S-18 ou pós-GA)**: WI mapping cycle 1 repurposed WI-S16-003 to consent UI (legal compliance prioritized); CAP-UI-002 full implementation deferred com ADR-S16-002 (committed em WI-S16-007 PRR doc). S-16 SEAL ships com `/dashboard` route renderizando: billing overview (WI-S16-002 widget) + audit viewer link (WI-S16-005) + basic plan/quota progress widget (server-side calculated, no Grafana). Full Grafana embed + métricas drill-down deferred. Customer impact: MEDIUM (workaround = email request from ops); NÃO GA-blocking; S-20 GA gate revisita. |
 | **CAP-UI-003** | Audit log viewer self-service | CloudEvents R2 query proxy; filters por subject/type/ts; export JSON. |
 | **CAP-UI-004** | Consent management UI | Captura 6-field proof per consent (notice_text_hash + version + locale + wording_id + ui_capture_ts + submission_ts) — CTRL-PRIV-CONSENT-001..006. |
 | **CAP-UI-005** | DSR request form | 6 direitos (access/correction/erasure/portability/objection/consent_revoke); MFA re-auth; JWT receipt. |
