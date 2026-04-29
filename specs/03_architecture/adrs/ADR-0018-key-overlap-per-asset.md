@@ -34,6 +34,7 @@ Resultado: o invariante canônico é violado pelos sprints que dizem segui-lo. P
 |---|---|---|
 | PAT signing key | 24h | Curto blast radius; tokens rotated rápido |
 | Audit chain key (per-region) | 24h | Hash chain integrity precisa rotation rápida |
+| Admin signing key (HMAC para dual-approval) | 24h | Curto blast radius (igual ao PAT signing); admin op é dual-approver-bound; rotation frequente reduz surface de signature replay |
 | TDK (tenant derivation key) | 7d | Re-wrap envelope CAS é background TB-scale; 24h causa starvation |
 | BYOK customer CMK | 7d | Customer trigger; CoreLink-side DEK cache TTL window |
 | Ed25519 attestation key | 30d | Long-lived signing; attestations 7y retention |
@@ -42,7 +43,7 @@ Resultado: o invariante canônico é violado pelos sprints que dizem segui-lo. P
 
 ## Rationale
 
-- **PAT/Audit (24h)**: blast radius pequeno; signature inline; speed de rotation prioridade.
+- **PAT/Audit/Admin signing (24h)**: blast radius pequeno; signature inline; speed de rotation prioridade.
 - **TDK/BYOK (7d)**: re-wrap operations em scale (TB-EB) demandam janela operacional realista; 24h em workload típico (1k tenants × 50TB cada) é fisicamente infactível pra completar background re-wrap sem starvation de live traffic.
 - **Ed25519 attestation (30d)**: long-lived signing key (não wrapping); attestations geradas hoje precisam ser verifiable 7y depois; rotation muito rápida invalida verifiability. NIST SP 800-57 Pt 1 Rev 5 Table 4 categoriza signing keys com cryptoperiod 1-3y; 30d overlap é fração disso.
 

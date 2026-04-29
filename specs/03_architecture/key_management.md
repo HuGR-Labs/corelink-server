@@ -111,6 +111,7 @@ Tabela autoritativa para `INV-KEY-OVERLAP` — sprints downstream **devem** refe
 |---|---|---|---|
 | **PAT signing key** (HMAC-SHA256; hybrid HMAC + Argon2id per S-03 cycle 9 SEAL decision (a)) | 24h | Curto blast radius; PAT verifica HMAC sig fast-fail (≤100µs) ANTES Argon2id PHC verify (defense-in-depth); rotation 24h overlap; multi-key support via signing_key_id column (data_model.md §4.1) | S-03 |
 | **Audit chain key** (per-region) | 24h | Hash chain integrity precisa rotation rápida; janela de tampering minimal | S-09 |
+| **Admin signing key** (HMAC-SHA256; per-region; usada por dual-approval para assinar `op_payload \|\| nonce \|\| ts`) | 24h | Curto blast radius (igual ao PAT signing); admin op é dual-approver-bound; rotation frequente reduz surface de bypass via signature replay | S-13 |
 | **TDK** (tenant derivation key) | 7d | Re-wrap de envelope CAS é background job ≥ TB-scale; 24h causa starvation | S-01, S-13 |
 | **BYOK customer CMK** | 7d (CoreLink-side cache) | Customer trigger; CoreLink mantém DEK cache até CMK access expira; overlap = customer notification window | S-14 |
 | **Ed25519 attestation key** (per-region erasure) | 30d | Long-lived signing key; attestations 7y retention; rotation overlap garante verifiability passada | S-14 |
@@ -261,7 +262,7 @@ Estende o catálogo de `security_model.md §6`.
 | ID | Controle | Implementação | Evidence | Revalidação |
 |---|---|---|---|---|
 | CTRL-KEY-005 | Annual TDK rotation | Automation via CF API + re-wrap background job | EVT-047 + EVT-013 | Anual (per key) |
-| CTRL-KEY-006 | Overlap 24h durante rotation | Ambas keys válidas em reads | EVT-002 | Por rotation |
+| CTRL-KEY-006 | Overlap durante rotation per asset class (ver §3.2.1 canonical table; TDK 7d / PAT signing 24h / Audit chain 24h / Admin signing 24h / BYOK CMK 7d / Ed25519 attestation 30d) | Ambas keys válidas em reads durante overlap window | EVT-002 | Por rotation |
 | CTRL-KEY-007 | Emergency rotation | Runbook RB-KEY-COMPROMISE; SLA 1h para revoke + 24h para re-wrap completo | EVT-017 | Semestral (drill) |
 
 ### 8.3 BYOK

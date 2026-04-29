@@ -3,7 +3,7 @@ id: "SPEC-CONTRACT-S13"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-04-24"
 updated: "2026-04-24"
 owner: "Gustavo Schneiter"
@@ -81,15 +81,17 @@ inherits_from:
 
 - **R-S13-4**: Endpoint `POST /v1/admin/ops` exige header `X-Dual-Approver: <user_id>` + `X-Approver-Signature: <hmac>` em adição ao caller MFA.
 - **R-S13-5**: Hard-check (não advisory): missing approver → 403 + audit emit `admin.op.dual_approval_missing`.
-- **R-S13-6**: Approver não pode ser o caller (separation of duties); enforced via D1 check. **Lote 9.4 Opus H-08 collusion-rotation defense**: além de `caller ≠ approver`, enforcement adicional: nas últimas 3 destructive ops em janela de 24h, deve haver ≥ 3 distinct approvers (anti-collusion-rotation pattern AC-2(7) NIST SP 800-53). Property test cobre cenário de A→approve B / B→approve A loop em sequence.
+- **R-S13-6**: Approver não pode ser o caller (separation of duties); enforced via D1 check. **Lote 9.4 Opus H-08 collusion-rotation defense (Lote 10.13 codex P0 strengthening)**: além de `caller ≠ approver`, enforcement adicional canônico: **the new approver MUST NOT have approved any of the last 2 destructive ops in this tenant's 24h window**. Equivalente: qualquer rolling window de 3 destructive ops consecutivas em 24h tem ≥ 3 distinct approvers (anti-A↔B reciprocal collusion AC-2(7) NIST SP 800-53). Algoritmo prévio "DISTINCT approvers em LIMIT 3 prior" tinha bypass em A→B/B→A/A→B (3 ops bypass, 4ª falha) — nova oracle é stronger: rejeita logo na 3ª op. Property test 10k cobre cenário canônico.
 
 ### 5.3 Secret Rotation (CAP-ADMIN-003)
 
 - **R-S13-7**: Secret rotation worker para 4 asset types; overlap conforme tabela canonical em `key_management.md §3.2.1` (ADR-0018):
-  - **TDK** (tenant derivation keys, S-01) — overlap 7d (CTRL-KEY-002).
-  - **PAT signing keys** (S-03) — overlap 24h.
-  - **Audit chain key** (S-09 R-S09-10) — overlap 24h.
-  - **BYOK** (S-14, customer-driven trigger) — overlap 7d.
+  - **TDK** (tenant derivation keys, S-01) — overlap 7d (CTRL-KEY-005 rotation + CTRL-KEY-006 overlap; per `key_management.md §3.2.1` canonical table).
+  - **PAT signing keys** (S-03) — overlap 24h (CTRL-KEY-005/006).
+  - **Audit chain key** (S-09 R-S09-10) — overlap 24h (CTRL-KEY-005/006).
+  - **Admin signing key** (per-region HMAC para dual-approval signature) — overlap 24h (CTRL-KEY-005/006; ADR-0018 5ª asset class).
+  - **BYOK** (S-14, customer-driven trigger) — overlap 7d (CTRL-KEY-010/011/012; canonical em `key_management.md §3.2.1`).
+  - **Total: 5 asset types** (TDK + PAT signing + Audit chain + Admin signing + BYOK) per ADR-0018 atualizado Lote 10.13 (admin signing adicionado como 5ª classe).
 - **R-S13-8**: Rotation observability: métrica `corelink.admin.rotation_in_progress{asset_type, status}`.
 - **R-S13-9**: Rotation rollback: se downstream errors > 1% durante rotation, auto-rollback PAT-ROLL-FORWARD-001.
 
@@ -130,7 +132,7 @@ inherits_from:
 - [ ] **CTRL-AUDIT-003** (MFA attestation admin ops) enforced + audit chain integrity verified.
 - [ ] **CTRL-AUTH-010** (MFA fresh ≤ 30min) enforced; expiry test passes.
 - [ ] **INV-KEY-OVERLAP** (key_management §3.2.1 + ADR-0018) — rotation overlap per asset class (TDK 7d / PAT 24h / audit 24h / BYOK 7d) verified em property test (EVT-002).
-- [ ] **PRR HIGH_RISK** (10–12 sign-offs): SRE lead + Security lead + Engineer + QA + Compliance officer + Product + 2 peers + Architect + AppSec + Privacy officer + Crypto SME (secret rotation review).
+- [ ] **PRR HIGH_RISK** (11 sign-offs canonical per framework §33.5.4.3 + ADR-0034; range 10–12 satisfeito): Owner + Final Approver + Architect (Crypto SME folded para secret rotation cripto-load-bearing — ADR-0034 precedent S-12 SLSA L3 + Cosign keyless OIDC review; canonical asset classes: TDK/PAT/Audit/Admin signing/BYOK) + Security Lead + SRE Lead + Engineer (S-13 lead) + QA Lead + Product + Compliance Officer + Privacy Officer + AppSec advisor. Peer reviewers contribuem em PR review sem sign-off canonical separado (folded into Engineer + Architect).
 - [ ] **Runbook dry-run**: RB-FM-205 (admin mistake) + RB-FM-201 (config rate-limit drop) + RB-FM-206 (terraform drift) (EVT-017).
 
 ## 7. Completeness Criteria (delta local)
