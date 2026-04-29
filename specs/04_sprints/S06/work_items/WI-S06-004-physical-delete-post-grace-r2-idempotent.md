@@ -36,7 +36,7 @@ tags: ["wi", "s06", "gc", "physical-delete", "r2", "idempotent", "post-grace", "
 | Campo | Valor |
 |---|---|
 | ID | WI-S06-004 |
-| Título | Hourly cron physical-delete worker; consume `gc_candidates` (status='swept') filter `blob_meta.deleted_at_ms < now - grace_period`; R2 DeleteObject (idempotent PAT-RETRY-IDEMPOTENT-001) + D1 row purge **with idempotent crash-recovery** (NOT 2PC ACID-atomic; Lote 10.6bis P0-2 framing fix; recovery via WI-S06-005 reconcile orphan detection); bytes_reclaimed tracking; DSR erasure bypass path (S-11 forward signal acelera grace = 0; **Ed25519 DPO-signed + tenant+digest-scoped + replay-protected via UNIQUE signal_id**; Lote 10.6bis P0-3 auth depth specified pre-impl + Crypto SME MANDATORY); chaos test R2 partial outage; FM-305 (tombstone lost) detection signal |
+| Título | Hourly cron physical-delete worker; consume `gc_candidates` (status='swept') filter `blob_meta.deleted_at < now - grace_period`; R2 DeleteObject (idempotent PAT-RETRY-IDEMPOTENT-001) + D1 row purge **with idempotent crash-recovery** (NOT 2PC ACID-atomic; Lote 10.6bis P0-2 framing fix; recovery via WI-S06-005 reconcile orphan detection); bytes_reclaimed tracking; DSR erasure bypass path (S-11 forward signal acelera grace = 0; **Ed25519 DPO-signed + tenant+digest-scoped + replay-protected via UNIQUE signal_id**; Lote 10.6bis P0-3 auth depth specified pre-impl + Crypto SME MANDATORY); chaos test R2 partial outage; FM-305 (tombstone lost) detection signal |
 | Sprint | S-06 |
 | Lane | HIGH_RISK |
 | Forcing factors | FF-HR-011 (irreversível; bug = data loss permanente), FF-HR-005 (controle integridade dados; FM-305 mitigation) |
@@ -53,7 +53,7 @@ Physical delete é **irreversível**; runs hourly; consume swept candidates apen
 #[async_trait]
 pub trait PhysicalDeletePhase: Send + Sync {
     /// Hourly cron entry point.
-    /// Consumes gc_candidates WHERE status='swept' AND deleted_at_ms < (now - grace_period).
+    /// Consumes gc_candidates WHERE status='swept' AND deleted_at < (now - grace_period).
     /// R2 DeleteObject + D1 row purge atomic per candidate.
     /// Idempotent (PAT-RETRY-IDEMPOTENT-001).
     async fn execute(
@@ -93,7 +93,7 @@ pub enum PhysicalDeleteError {
 
 **Cripto-driven invariants enforced**:
 
-1. **Grace period boundary STRICT enforcement**: `WHERE blob_meta.deleted_at_ms < (unix_ms_now() - grace_period_ms)`. Grace = 72h CAS / 24h AC (sprint contract §5.3). Boundary check === Lote 10.4bis lesson D1 query precision.
+1. **Grace period boundary STRICT enforcement**: `WHERE blob_meta.deleted_at < (unix_ms_now() - grace_period_ms)`. Grace = 72h CAS / 24h AC (sprint contract §5.3). Boundary check === Lote 10.4bis lesson D1 query precision.
 
 2. **R2 DeleteObject idempotent**: re-call em already-deleted blob = 200 OK (S3-compatible idempotent semantics). PAT-RETRY-IDEMPOTENT-001 (resilience patterns).
 
@@ -137,7 +137,7 @@ Physical delete é **point of no return**. Bug em grace boundary check OR DSR by
 
 7. **Phase budget** (Lote 10.6bis P0-5 re-derivation com D1 batch ≤250 row Lote 10.5bis explicit): sprint contract §5.4 R-S06-9.1 ≤30 min p99 @ 100k candidates per (tenant, region) hourly tick. **Correct derivation**: R2 DeleteObject 50ms × 100k / bounded_concurrency 8 ≈ 625s ≈ 10.4min R2 work; D1 batch share — each batch contains 3 rows per candidate (DELETE blob_meta + DELETE gc_candidate + INSERT audit_outbox) so 250-row D1 batch caps at ~83 candidates → 100k / 83 = ~1200 batches × D1_batch_p99(100ms) / concurrency 8 ≈ 15s D1 work; total ≈ 11min p99 @ 100k. Budget headroom 30min/11min = 2.7×. SEV-2 alert threshold 25min sustained. Mitigação: bounded concurrency 8; D1 batch ≤250 explicit; phase budget enforcement.
 
-8. **Forensic trail**: each physical-delete emit `corelink.gc.physical_delete.executed` event com forensic data (digest, bytes_reclaimed, deleted_at_ms, mark_run_id).
+8. **Forensic trail**: each physical-delete emit `corelink.gc.physical_delete.executed` event com forensic data (digest, bytes_reclaimed, deleted_at, mark_run_id).
 
 **Atacante adversarial scenarios**:
 
@@ -150,7 +150,7 @@ Physical delete é **point of no return**. Bug em grace boundary check OR DSR by
 - **FF-HR-011**: irreversível; bug = data loss permanente.
 - **FF-HR-005**: FM-305 (tombstone lost) mitigation; reclaim measurable.
 
-13 sign-offs.
+11 sign-offs (canonical Lote 10.6 cycle 4 alignment with sprint.md §14 + _spec_contract §2 HIGH_RISK lane).
 
 ## 3. Customer Impact & Journey
 
@@ -183,10 +183,10 @@ Physical delete worker; HIGH_RISK; FF-HR-011 + FF-HR-005.
 
 1. `crates/corelink-gc/src/physical_delete/` module.
 2. **Hourly cron DO** (separate from mark/sweep cron; 5 regions); alarm re-arm at start (Lote 10.4bis lesson).
-3. **Grace boundary SQL filter**: `WHERE status='swept' AND blob_meta.deleted_at_ms < (now - grace_period_ms)` strict `<`.
+3. **Grace boundary SQL filter**: `WHERE status='swept' AND blob_meta.deleted_at < (now - grace_period_ms)` strict `<`.
 4. **R2→D1 ordering with idempotent crash-recovery** (Lote 10.6bis P0-2 framing fix; NOT 2PC ACID-atomic; recovery via WI-S06-005 reconcile orphan detection within 24h).
 5. **R2 DeleteObject idempotent** + retry exponential backoff.
-6. **D1 row purge with conditional `WHERE refcount = 0` predicate** (Lote 10.6bis P0-4 race fix): `DELETE FROM blob_meta WHERE digest = ? AND refcount = 0 AND deleted_at_ms < (now - grace_period_ms)` — predicate fails if customer CAS write incremented refcount in race window between physical-delete tick start and D1 commit; row preserved if race detected; reconcile catches orphan in next 24h cron.
+6. **D1 row purge with conditional `WHERE refcount = 0` predicate** (Lote 10.6bis P0-4 race fix): `DELETE FROM blob_meta WHERE digest = ? AND refcount = 0 AND deleted_at < (now - grace_period_ms)` — predicate fails if customer CAS write incremented refcount in race window between physical-delete tick start and D1 commit; row preserved if race detected; reconcile catches orphan in next 24h cron.
 7. **bytes_reclaimed tracking**: sum blob_size_bytes per run; persist em gc_run + audit emit + customer-visible metric.
 8. **DSR erasure bypass signal handler** (S-11 forward; staging stub OK): immediate physical-delete grace=0.
 9. **Bounded concurrency** 8 parallel physical-deletes per tenant per region (avoid R2 rate limit storm).
@@ -201,14 +201,14 @@ Physical delete worker; HIGH_RISK; FF-HR-011 + FF-HR-005.
     - `corelink.gc.physical_delete.phase_duration_ms{region}` (histogram; SLO ≤ 30 min p99).
 12. **Property tests** (10k iter PR; 100k nightly):
     - `prop_physical_delete_idempotent`: re-run on already-deleted = no-op.
-    - `prop_grace_boundary_strict`: `deleted_at_ms = (now - grace)` exactly → NOT deleted (boundary; strict `<`).
+    - `prop_grace_boundary_strict`: `deleted_at = (now - grace)` exactly → NOT deleted (boundary; strict `<`).
     - `prop_tenant_isolation`: 1000 concurrent across tenants; no interference.
     - `prop_r2_d1_crash_recovery` (Lote 10.6bis P0-2 renamed; was prop_r2_d1_atomic): simulate R2 success + D1 fail; D1 row preserved; reconcile detects orphan; next tick recovers via idempotent retry. NOT a 2PC atomicity property.
     - `prop_dsr_bypass_immediate`: valid DSR signal (Ed25519 verified) grace=0; immediate physical-delete; integration test.
     - `prop_physical_delete_re_upload_race` (Lote 10.6bis P0-4 NEW): 1k threads physical-delete vs CAS write same digest within 100ms window; assert conditional `WHERE refcount = 0` predicate prevents dangling ac_meta; assert no INV-CAS-IMMUTABILITY violation.
     - `prop_dsr_signature_forge_rejected` (Lote 10.6bis P0-3 NEW): inject DSR signals with (a) invalid Ed25519 signature; (b) wildcard scope; (c) replayed signal_id; assert each rejected with appropriate audit emit; bypass refused.
 13. **Chaos suite** (sprint contract HIGH_RISK ≥ 10):
-    - 1. Grace boundary off-by-one (deleted_at_ms = exact boundary) → strict `<` rejects; chaos test asserts.
+    - 1. Grace boundary off-by-one (deleted_at = exact boundary) → strict `<` rejects; chaos test asserts.
     - 2. R2 outage 1h mid-cron → physical-delete pauses; next tick retries; idempotent.
     - 3. R2 success + D1 fail → D1 row preserved; reconcile catches; chaos test asserts no orphan.
     - 4. Cross-tenant injection → sqlx prepared rejects.
@@ -216,7 +216,7 @@ Physical delete worker; HIGH_RISK; FF-HR-011 + FF-HR-005.
     - 6. Bounded concurrency storm 1000 parallel → semaphore caps at 8; metric alert.
     - 7. Phase budget exceeded (1M candidates) → SEV-2 alert.
     - 8. Audit emit fail → physical-delete ROLLBACK; SEV-1.
-    - 9. **Customer re-upload race post-grace boundary** (Lote 10.6bis P0-4 RE-FRAMED): physical-delete D1 commit at T+25ms; customer CAS write INSERT-OR-IGNORE at T+15ms (sees stale blob_meta row pre-physical-delete-D1-commit) → customer-cached pointer becomes dangling at T+25ms after physical-delete D1 commits. **Resolution**: physical-delete D1 batch uses **conditional predicate** `DELETE FROM blob_meta WHERE digest = ? AND refcount = 0 AND deleted_at_ms < (now - grace_period_ms)` — customer's CAS write S-01 increments refcount to 1 in race window → conditional predicate fails → DELETE no-op → row preserved. Hard-to-reach race (customer INSERT commits BEFORE physical-delete predicate evaluates AND physical-delete commits AFTER): WI-S06-005 reconcile detects R2-deleted/D1-still-present orphan within 24h. Property test `prop_physical_delete_re_upload_race` 1k threads physical-delete vs CAS write; assert no dangling ac_meta.
+    - 9. **Customer re-upload race post-grace boundary** (Lote 10.6bis P0-4 RE-FRAMED): physical-delete D1 commit at T+25ms; customer CAS write INSERT-OR-IGNORE at T+15ms (sees stale blob_meta row pre-physical-delete-D1-commit) → customer-cached pointer becomes dangling at T+25ms after physical-delete D1 commits. **Resolution**: physical-delete D1 batch uses **conditional predicate** `DELETE FROM blob_meta WHERE digest = ? AND refcount = 0 AND deleted_at < (now - grace_period_ms)` — customer's CAS write S-01 increments refcount to 1 in race window → conditional predicate fails → DELETE no-op → row preserved. Hard-to-reach race (customer INSERT commits BEFORE physical-delete predicate evaluates AND physical-delete commits AFTER): WI-S06-005 reconcile detects R2-deleted/D1-still-present orphan within 24h. Property test `prop_physical_delete_re_upload_race` 1k threads physical-delete vs CAS write; assert no dangling ac_meta.
     - 10. Worker crash mid-batch → resume from checkpoint; idempotent.
     - 11. **Cron tick missed** (CF Workers DO alarm not fired) → next tick double-load 200k candidates → phase budget exceeded → SEV-2 alert sustained 25min; auto-shed via priority queue (oldest-grace-expired first).
     - 12. **Cron clock skew across regions** (5 regions, NTP drift 1s) → grace boundary ambiguous at 1ms-from-boundary; resolution: D1 server-side `unix_timestamp_ms()` evaluated at D1 query time (NOT at Worker tick time); cross-region clock skew bounded by D1 single-region authoritative timestamp.
@@ -252,7 +252,7 @@ Physical delete worker; HIGH_RISK; FF-HR-011 + FF-HR-005.
 Feature: Physical delete worker post-grace + idempotent
 
   Scenario: Physical delete happy path post-grace
-    Given gc_candidate status='swept'; blob_meta.deleted_at_ms = T (T < now - 72h)
+    Given gc_candidate status='swept'; blob_meta.deleted_at = T (T < now - 72h)
     When hourly cron fires
     Then SQL WHERE filter selects candidate
     And R2 DeleteObject called (idempotent)
@@ -261,7 +261,7 @@ Feature: Physical delete worker post-grace + idempotent
     And metric corelink.gc.physical_delete.executed_total +1
 
   Scenario: Grace period strict boundary (NOT yet expired)
-    Given deleted_at_ms = (now - 72h + 1ms) (1ms before boundary)
+    Given deleted_at = (now - 72h + 1ms) (1ms before boundary)
     When cron fires
     Then SQL filter `< (now - 72h)` does NOT match (strict <)
     And blob NOT physically deleted
@@ -454,7 +454,7 @@ Mini-PRR Architect + AppSec + SRE.
 - **27 Knowledge Transfer**: Tech talk (1h); doc `gc-physical-delete.md`; onboarding test 5 questions.
 - **28 Risk Register** (12-row; Lote 10.6bis expansion): grace boundary bug L M CRITICAL L LOW (chaos test); R2 outage cascade M M HIGH M LOW (retry); D1 fail post-R2 L M MEDIUM L LOW (reconcile catches); cross-tenant injection L L CRITICAL L LOW (sqlx prepared); **DSR bypass auth defect** (Lote 10.6bis P0-3) L L CRITICAL L LOW (Ed25519 verify + pre-exec audit + replay protection); **DSR bypass timing race** L M MEDIUM L LOW; bounded concurrency miss M L LOW L LOW; phase budget exceeded L L MEDIUM L LOW; audit emit fail L M MEDIUM L LOW; **customer re-upload race undetected** (Lote 10.6bis P0-4) L M MEDIUM L LOW (conditional refcount=0 predicate + reconcile orphan detection); **R2/D1 cross-system "atomic" framing misuse** (Lote 10.6bis P0-2) L M MEDIUM L LOW (spec wording fixed; downstream impl assumes crash-recovery); cost regression M L MEDIUM L LOW.
 - **29 Review Checkpoints**: D+0 design; D+1 AppSec; D+3 code review; D+4 chaos; D+5 PRR mini.
-- **30 Sign-off (HIGH_RISK 13)**: Owner+FinalApprover Gustavo (1-2); SRE Lead waiver ADR-0034; Security Lead mandatory; Engineer×2 mandatory; QA mandatory; Product Gustavo; Compliance mandatory (DSR LGPD Art. 16); Privacy mandatory (DSR bypass authorization review); Architect mandatory (R2→D1 crash-recovery ordering); AppSec mandatory (cross-tenant + DSR scope rejection); **Crypto SME MANDATORY (Lote 10.6bis P0-3 promoted from advisory; non-waivable for DSR Ed25519 verify + key rotation cadence + signal_id UNIQUE constraint)**.
+- **30 Sign-off (HIGH_RISK 11)**: Final Approver Gustavo; SRE Lead waiver ADR-0034; Security Lead mandatory; Engineer mandatory; QA mandatory; Product Gustavo; Compliance mandatory (DSR LGPD Art. 16); Privacy mandatory (DSR bypass authorization review); Architect mandatory (R2→D1 crash-recovery ordering); AppSec mandatory (cross-tenant + DSR scope rejection); **Crypto SME MANDATORY (Lote 10.6bis P0-3 promoted from advisory; non-waivable for DSR Ed25519 verify + key rotation cadence + signal_id UNIQUE constraint)**.
 - **31 Change Log**: 1.0.0 / 2026-04-25 / Gustavo (Lote 10.6); 1.1.0 / 2026-04-25 / Gustavo (Lote 10.6bis Part 2a P0 fixes: P0-2 atomic→crash-recovery wording; P0-3 DSR Ed25519 + scope + replay + Crypto SME mandatory; P0-4 conditional refcount=0 predicate + race re-frame; P0-5 phase budget arithmetic re-derived with D1 batch ≤250); 1.2.0 / 2026-04-25 / Gustavo (Lote 10.6-tris Sonnet R5 NEW-P1-1 fix: DSR Ed25519 key rotation enforcement mechanism specified — `dsr_dpo_pubkeys` schema with expires_at_ms = created_at + 90d CHECK constraint; runtime fail-closed on no-valid-pubkey; cross-region revocation propagation via S-14 forward; `validate_dsr_pubkey_expiry.py` weekly CI gate; signal_id global uniqueness via UUIDv7+region prefix; pre-execution audit captures dpo_pubkey_id provenance).
 - **32 Anti-patterns**: ❌ Grace `<=`; ❌ Skip R2→D1 crash-recovery ordering; ❌ Claim "atomic" cross-system semantics; ❌ Cross-tenant; ❌ Skip audit; ❌ DSR signal sem Ed25519 sig; ❌ DSR wildcard scope; ❌ DSR replay; ❌ Skip pre-exec DSR audit; ❌ Skip conditional refcount=0 predicate; ❌ Trust client tenant_id; ❌ Hard-coded grace; ❌ Retry sem backoff.
 

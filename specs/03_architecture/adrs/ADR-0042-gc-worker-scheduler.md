@@ -98,7 +98,7 @@ S-06 GC worker é **single point of failure** para INV-GC-001 (reachable never d
 1. Owner (Gustavo Schneiter) computed SHA via fresh download from official GitHub release on 2026-04-25.
 2. **Architect**: independent re-download + `shasum -a 256 tla2tools.jar` verification → commit signed verification comment to this addendum sign-off block confirming SHA matches.
 3. **Crypto SME**: independent re-download (different machine, different network) + verification → commit signed verification comment.
-4. Both signatures REQUIRED before `tla_check.yml` merges to main. Branch protection enforced via CODEOWNERS + `tla_override_validate.yml` (WI-006 §1 invariant 2).
+4. Both signatures REQUIRED before `tla_check.yml` merges to main. Branch protection enforced via CODEOWNERS + `tla_override_validate.yml` (PLANNED WI-S06-006 deliverable — not yet in tree; WI-006 §1 invariant 2).
 
 **Sign-off block** (populated as ceremony completes):
 - [ ] Owner: Gustavo Schneiter (computed 2026-04-25)
@@ -120,10 +120,12 @@ S-06 GC worker é **single point of failure** para INV-GC-001 (reachable never d
 
 **Policy**: `gc_correctness.cfg` SETS bounds are documented here; changes require ADR.
 
-**Current bounds** (verify in cfg file):
-- `Blobs = {b1, b2, b3}` — 3 blobs (sufficient for race scenarios with ≥1 reachable + ≥1 orphan)
-- `AC_Entries = {e1, e2, e3, e4}` — 4 AC entries (sufficient for INV-GC-004 boundary cases)
-- `MaxTime = 8` — time horizon for interleaving exhaustion
+**Current bounds** (verified em `specs/tla/gc_correctness.cfg` Lote 10.6 cycle 2):
+- `Blobs = {b1, b2}` — 2 blobs (sufficient for race scenarios with ≥1 reachable + ≥1 orphan)
+- `AC_Entries = {e1}` — 1 AC entry (sufficient for INV-GC-004 boundary cases at minimal cardinality)
+- `MaxTime = 10` — time horizon for interleaving exhaustion
+- `GracePeriod = 2` — abstract time units modeling 72h CAS grace
+- **Note**: Bounds intentionally minimal for CI tractability (~5k-50k states; ≤30s TLC). Production assurance via larger bounds em distributed TLC + Apalache symbolic + property test 100k random sampling (defense-in-depth layer 2).
 
 **Coverage at these bounds**: TLC exhaustively explores all interleavings of `Mark + UpdateActionResult + Sweep` actions over the bounded state space. Property test 100k extends coverage via random sampling against real Rust impl at larger scale (defense-in-depth layer 2).
 
@@ -139,7 +141,7 @@ S-06 GC worker é **single point of failure** para INV-GC-001 (reachable never d
 
 **What `gc_correctness.tla` proves**:
 - INV-GC-001 (reachable never deleted) at the active → physically_deleted transition.
-- INV-GC-004 (mark-phase-aware re-ref) via `mark_started_at < ac.created_at` strict comparison.
+- INV-GC-004 (mark-phase-aware re-ref) via `ac.created_at >= mark_started_at` protect-if-equal-or-newer canonical TLA semantics (`gc_correctness.tla` L152-154; equivalent: delete only if all `ac.created_at < mark_started_at`).
 - All interleavings of `Mark + UpdateActionResult` actions at the bounded state space (§A2 bounds).
 
 **What `gc_correctness.tla` does NOT prove** (covered architecturally instead):

@@ -45,7 +45,7 @@ tags: ["wi", "s06", "gc", "tla", "ci-gate", "property-test", "100k-race", "high-
 CAP-GC-008: TLA+ CI gate é **formal verification baseline**; PR que toca GC code OR D1 schema (`blob_meta`/`ac_meta`) **MUST** trigger TLC model check; if TLC red → PR blocked. Property test 100k race em Rust **cross-validates** TLA+ obligations (Mark + UpdateActionResult interleavings; INV-GC-001 + INV-GC-004):
 
 ```yaml
-# .github/workflows/tla-ci-gate.yml
+# .github/workflows/tla_check.yml (canonical filename pós Lote 10.6 cycle 4; was tla-ci-gate.yml in WI authoring draft)
 name: TLA+ CI Gate
 
 on:
@@ -91,7 +91,7 @@ jobs:
       - name: Verify INV-GC-001 + INV-GC-004 invariants verified
         run: |
           grep -q "Model checking completed.*0 errors found" tlc-output.log
-          grep -q "InvGCNeverDeleteReachable: TRUE" tlc-output.log
+          grep -q "InvGCReachableNeverDeleted: TRUE" tlc-output.log  # canonical name pós Lote 10.6 cycle 1 (was InvGCNeverDeleteReachable typo)
           grep -q "InvGCReRefProtected: TRUE" tlc-output.log
       - name: Cross-validate Rust property test alignment
         run: |
@@ -181,7 +181,7 @@ async fn execute_gc_scenario(scenario: Scenario) -> ScenarioResult {
 
 2. **PR fail logic**: TLC red → CI fails → merge blocked; reviewer can override only via **pinned GitHub mechanism** (Lote 10.6bis P0-W6-3 fix):
    - **CODEOWNERS rule**: `crates/corelink-gc/** specs/tla/gc_correctness.tla @humangr-labs/architect-team @humangr-labs/crypto-sme-team` — modifications to TLA+ spec OR GC code require **2 approving reviews** (1 Architect + 1 Crypto SME group; non-overlapping).
-   - **Override workflow** `tla-override-validate.yml`: parses PR body / commit trailers for `Tla-Override-ADR: ADR-XXXX`; asserts (a) ADR file exists at `specs/03_architecture/adrs/ADR-XXXX-*.md`; (b) `doc_status: ACCEPTED`; (c) Architect + Crypto SME approvals in ADR sign-off block. Only on success posts a synthetic green status check that satisfies the required `tla-ci-gate` check.
+   - **Override workflow** `tla_override_validate.yml`: parses PR body / commit trailers for `Tla-Override-ADR: ADR-XXXX`; asserts (a) ADR file exists at `specs/03_architecture/adrs/ADR-XXXX-*.md`; (b) `doc_status: ACCEPTED`; (c) Architect + Crypto SME approvals in ADR sign-off block. Only on success posts a synthetic green status check that satisfies the required `tla_check` check (canonical workflow filename pós Lote 10.6 cycle 4).
    - **Branch protection** on `main`: `enforce_admins: true` (Lote 10.4bis governance — disables admin-bypass; closes the rubber-stamp regression default).
    - **Without ADR + 2 approvals**: NO override path. Force-push blocked.
 
@@ -192,7 +192,7 @@ async fn execute_gc_scenario(scenario: Scenario) -> ScenarioResult {
 
 4. **30d sustained TLA+ verde** (sprint contract §10.s06.4) — workflow design pinned (Lote 10.6bis P0-W6-W7-1):
    - **Cadence**: daily 06:00 UTC (post-overnight property test) + manual trigger via `workflow_dispatch`.
-   - **Query mechanism**: `gh api repos/$REPO/actions/workflows/tla-ci-gate.yml/runs?per_page=100&created=>=$THIRTY_DAYS_AGO` — paginate; aggregate.
+   - **Query mechanism**: `gh api repos/$REPO/actions/workflows/tla_check.yml/runs?per_page=100&created=>=$THIRTY_DAYS_AGO` — paginate; aggregate.
    - **Verde definition**: ALL non-cancelled / non-skipped runs in 30d window have `conclusion=='success'`. Cancelled runs IGNORED. Skipped runs (PR didn't touch GC code) IGNORED.
    - **30d window**: last 30 calendar days from workflow run's `now()`.
    - **P0/P1 incident clock reset** (Lote 10.4bis 4-tier classification): if any TLC red sustained > 4h OR property-test violation incident in window → 30d clock RESET (clock starts from incident resolution timestamp).
@@ -208,8 +208,8 @@ async fn execute_gc_scenario(scenario: Scenario) -> ScenarioResult {
 |---|---|---|
 | `MarkPhaseStart` | `mark_phase::execute_3_pass_scan` start; UPDATE `gc_run.mark_started_at_ms` commit-then-scan ordering | INV-GC-MARK-STARTED-AT-ATOMIC + INV-GC-MARK-STARTED-AT-IMMUTABLE |
 | `GCMarkStep(blob)` | `mark_phase::scan_batch` per-blob iteration over D1 chunks; `json_each(a.blob_refs) j WHERE j.value = blob.digest` predicate | INV-GC-001 reachable-set-complete |
-| `UpdateActionResult(ac)` | `crates/corelink-ac::update_action_result` writes `ac_meta.created_at_ms` server-side | INV-GC-004 mark-phase-aware re-ref |
-| `SweepStep(blob)` | `sweep_phase::execute` per-candidate; INV-GC-004 EXISTS check via `json_each(a.blob_refs) j WHERE j.value = $candidate AND a.created_at_ms >= mark_started_at_ms` | INV-GC-004 enforcement |
+| `UpdateActionResult(ac)` | `crates/corelink-ac::update_action_result` writes `ac_meta.created_at` server-side | INV-GC-004 mark-phase-aware re-ref |
+| `SweepStep(blob)` | `sweep_phase::execute` per-candidate; INV-GC-004 EXISTS check via `json_each(a.blob_refs) j WHERE j.value = $candidate AND a.created_at >= mark_started_at_ms` | INV-GC-004 enforcement |
 | `InvGCReRefProtected` | property test `prop_gc_004_race_mark_update_ar_100k` 100k iter; CI nightly | TLA+ ↔ Rust differential alignment |
 
 7. **TLA+ formal verification SCOPE LIMITATIONS** (Lote 10.6-tris NEW-P0-2 fix — explicit caveat documented; Crypto SME PRR review must acknowledge):
@@ -217,8 +217,8 @@ async fn execute_gc_scenario(scenario: Scenario) -> ScenarioResult {
    **What `gc_correctness.tla` proves**:
    - Mark-and-sweep algorithm correctness for the active → physically-deleted transition under arbitrary interleavings of `Mark + UpdateActionResult` actions.
    - INV-GC-001 (reachable never deleted) holds at the `physically_deleted` set membership check.
-   - INV-GC-004 (mark-phase-aware re-ref) holds via `mark_started_at` < `ac.created_at` strict comparison.
-   - Bounded-state TLC model check: Blobs={b1,b2,b3}, AC_Entries={e1,e2,e3,e4}, MaxTime=8 (verify exact bounds in `gc_correctness.cfg`). At these bounds, all interleavings exhaustively explored. **Property test 100k extends coverage** to larger-scale interleavings via random sampling against the real Rust impl (defense-in-depth layer 2).
+   - INV-GC-004 (mark-phase-aware re-ref) holds via `ac.created_at >= mark_started_at` protect-if-equal-or-newer canonical TLA semantics (`gc_correctness.tla` L152-154; equivalent: delete only if all `ac.created_at < mark_started_at`).
+   - Bounded-state TLC model check (Lote 10.6 cycle 2 canonical): Blobs={b1,b2}, AC_Entries={e1}, MaxTime=10, GracePeriod=2 (cfg authoritative em `specs/tla/gc_correctness.cfg`). At these minimal bounds, all interleavings exhaustively explored (~5k-50k states; ≤30s CI). **Property test 100k extends coverage** to larger-scale interleavings via random sampling against the real Rust impl (defense-in-depth layer 2).
 
    **What `gc_correctness.tla` does NOT prove**:
    - **Soft-delete grace window** (72h CAS / 24h AC): the TLA+ model's `GCSweepBlob` action transitions blob directly from active to `physically_deleted` atomically — there is NO `soft_deleted` intermediate state in the TLA+ spec. The Rust implementation's two-phase soft-delete (WI-S06-003) → physical delete (WI-S06-004) is **outside the TLA+ formal coverage**.
@@ -276,7 +276,7 @@ HIGH_RISK em N dimensões:
 - **FF-HR-005**: integridade.
 - **FF-HR-009**: defense-in-depth 3 layers.
 
-13 sign-offs incl. **Crypto SME mandatory emphatic** (TLA+ obligation alignment).
+11 sign-offs (canonical Lote 10.6 cycle 4 alignment with sprint.md §14 + _spec_contract §2; HIGH_RISK lane ceiling 12) incl. **Crypto SME mandatory emphatic** (TLA+ obligation alignment).
 
 ## 3. Customer Impact & Journey
 
@@ -305,14 +305,14 @@ CI infrastructure + formal verification gate; HIGH_RISK; FF-HR-011 + FF-HR-005 +
 
 ### 6.1 In-scope
 
-1. **`.github/workflows/tla-ci-gate.yml`**: TLC model check em PR touching GC code OR migrations.
+1. **`.github/workflows/tla_check.yml`** (canonical filename pós Lote 10.6 cycle 4): TLC model check em PR touching GC code OR migrations.
 2. **TLC integration**: download tla2tools.jar; run model check com gc_correctness.cfg.
 3. **Invariant assertions**: parse TLC output; assert INV-GC-001 + INV-GC-004 verified.
 4. **Property test 100k**: `crates/corelink-gc/tests/prop_gc_race_100k.rs` — random interleavings; cross-validates TLA+ obligations.
 5. **Property test scenario generator**: deterministic seeds; covers Mark + UpdateActionResult + sweep edge cases.
 6. **PR fail logic**: GitHub Actions status check required; merge blocked if TLC red.
 7. **Override discipline**: ADR + Architect + Crypto SME sign-off mandatory pre-override.
-8. **30d sustained verification**: GitHub Actions history check; CI workflow `tla-30d-sustained.yml` daily runs aggregate verde 30d.
+8. **30d sustained verification**: GitHub Actions history check; CI workflow `tla-30d-sustained.yml` (PLANNED — WI-S06-006 deliverable; not yet in tree) daily runs aggregate verde 30d.
 9. **Property test CI integration**: nightly CI `cargo test --release --test prop_gc_race_100k -- --ignored`.
 10. **Métricas**:
     - `corelink.ci.tla.runs_total{result}` (counter).
@@ -327,7 +327,7 @@ CI infrastructure + formal verification gate; HIGH_RISK; FF-HR-011 + FF-HR-005 +
 12. **Chaos suite** (12 scenarios; SOTA bar above HIGH_RISK floor 10; Lote 10.6bis P1-W6-2 expansion):
     - 1. PR touches GC code → CI gate triggers; TLC verde → merge unblocked.
     - 2. PR weakens TLA+ obligation → CI red; merge blocked.
-    - 3. **CI override attempt without ADR + 2-team CODEOWNERS approvals** (Lote 10.6bis P0-W6-3 reframed): admin attempts force-push with `enforce_admins: true` on `main` → blocked by branch protection; `tla-override-validate.yml` rejects PR without `Tla-Override-ADR:` trailer + ADR doc with Architect + Crypto SME approvals.
+    - 3. **CI override attempt without ADR + 2-team CODEOWNERS approvals** (Lote 10.6bis P0-W6-3 reframed): admin attempts force-push with `enforce_admins: true` on `main` → blocked by branch protection; `tla_override_validate.yml` rejects PR without `Tla-Override-ADR:` trailer + ADR doc with Architect + Crypto SME approvals.
     - 4. Property test 100k violation injected → SEV-0 alert; merge blocked.
     - 5. TLC flake (rare) → retry 3×; if persistent, investigate.
     - 6. TLA+ ↔ Rust drift simulated (intentional impl bug) → property test catches; CI red.
@@ -360,7 +360,7 @@ Feature: TLA+ CI gate + property test 100k race
 
   Scenario: PR touches GC code → CI gate triggers
     Given PR modifies crates/corelink-gc/src/sweep.rs
-    When CI workflow tla-ci-gate runs
+    When CI workflow tla_check runs
     Then TLC model check executes ≤ 5 min
     And INV-GC-001 + INV-GC-004 verified TRUE
     And status check green; merge unblocked
@@ -389,7 +389,7 @@ Feature: TLA+ CI gate + property test 100k race
     Then if all 3 fail, mark as persistent; investigation triggered
 
   Scenario: 30d sustained verde gate
-    Given CI history checked daily via tla-30d-sustained.yml
+    Given CI history checked daily via tla-30d-sustained.yml (PLANNED WI-S06-006 deliverable)
     When 30d window passes with all CI runs verde
     Then metric `corelink.ci.tla.30d_sustained_verde` = TRUE
     And S-20 GA promotion unblocked
@@ -414,15 +414,15 @@ Feature: TLA+ CI gate + property test 100k race
 - 9.1: TLC pinned version v1.8.0 + **SHA-256 integrity-verified** (Lote 10.6bis P0-W6-2; supply-chain hardening; bumps require ADR + Architect + Crypto SME signoff).
 - 9.2: PR scope filter (path-based; minimal blast radius).
 - 9.3: Property test 100k nightly (não per-PR; CI cost bounded).
-- 9.4: **Override mechanism PINNED** (Lote 10.6bis P0-W6-3): CODEOWNERS rule + signed git-trailer + `tla-override-validate.yml` workflow; `enforce_admins: true` on `main` (no admin bypass).
+- 9.4: **Override mechanism PINNED** (Lote 10.6bis P0-W6-3): CODEOWNERS rule + signed git-trailer + `tla_override_validate.yml` workflow; `enforce_admins: true` on `main` (no admin bypass).
 - 9.5: 30d sustained verde gate workflow design PINNED (Lote 10.6bis P0-W6-W7-1): daily 06:00 UTC + clock reset on P0/P1 incidents per 4-tier classification.
 - 9.6: Deterministic property test seeds (reproducible failures); **fixture generator emits adversarial inputs** (envelope mutation, substring collisions, schema evolution; Lote 10.6bis P0-W6-1).
 - 9.7: GitHub branch protection enforces required status checks; `enforce_admins: true`.
 - 9.8: Cross-validation property test (TLA+ ↔ Rust alignment) with **negative-control discriminating-power assertion** against deliberately-broken LIKE-substring impl (Lote 10.6bis P0-W6-1).
 - 9.9: ADR-0042 addendum for TLC version+SHA pinning policy (Lote 10.6bis P0-W6-2; "TLC version + SHA pinned; bumps require ADR + Architect + Crypto SME signoff" — addendum added as §A1 of ADR-0042 in WI-007 §10.s06.007.8 ratificação).
-- 9.10: TLC ≤ 5 min p99 per PR (model state space bounded). **TLC cfg bounds explicit** (Lote 10.6-tris OPUS-MISS-1): `gc_correctness.cfg` SETS `Blobs={b1,b2,b3}`, `AC_Entries={e1,e2,e3,e4}`, `MaxTime=8` → state space exhaustively explored at these bounds; property test 100k extends coverage to larger-scale interleavings via random sampling against real Rust impl. Bounds documented in WI-006 §1 TLA+ section + ADR-0042 addendum §A2. `InvMarkingConsistent` invariant cleaned up (vacuously-true `/\ TRUE` branch removed) per Lote 10.6-tris OPUS-MISS-1.
+- 9.10: TLC ≤ 5 min p99 per PR (model state space bounded). **TLC cfg bounds explicit** (canonical Lote 10.6 cycle 4 alignment with cfg actual): `gc_correctness.cfg` SETS `Blobs={b1,b2}`, `AC_Entries={e1}`, `MaxTime=10`, `GracePeriod=2` → state space exhaustively explored at these bounds (~5k-50k states); property test 100k extends coverage to larger-scale interleavings via random sampling against real Rust impl. Bounds documented in ADR-0042 §A2 canonical. `InvMarkingConsistent` invariant cleaned up (vacuously-true `/\ TRUE` branch removed) per Lote 10.6-tris OPUS-MISS-1.
 - 9.11: **Hard cross-WI dependency on WI-S06-003 P0-1 json_each fix landed** (Lote 10.6bis P0-W6-1; without it, property test passes green silently against broken SQL).
-- 9.12: **TLC SHA-256 bootstrap trust ceremony** (Lote 10.6-tris NEW-P0-1 fix): SHA `d5d07d5dab38ddb840c91ec48fa02f28b37a608d5af9a73570018591dbc8ef7f` computed 2026-04-25 by Owner via fresh download; Architect + Crypto SME independent re-verification REQUIRED pre-merge (commit signed verification comments to ADR-0042 addendum §A1 sign-off block). NO merge of `tla-ci-gate.yml` to main without 2 independent SHA verifications. Bumps to TLC version require ADR + Architect + Crypto SME signoff.
+- 9.12: **TLC SHA-256 bootstrap trust ceremony** (Lote 10.6-tris NEW-P0-1 fix): SHA `d5d07d5dab38ddb840c91ec48fa02f28b37a608d5af9a73570018591dbc8ef7f` computed 2026-04-25 by Owner via fresh download; Architect + Crypto SME independent re-verification REQUIRED pre-merge (commit signed verification comments to ADR-0042 addendum §A1 sign-off block). NO merge of `tla_check.yml` (canonical) to main without 2 independent SHA verifications. Bumps to TLC version require ADR + Architect + Crypto SME signoff.
 - 9.13: **TLA+ formal verification SCOPE LIMITATIONS documented** (Lote 10.6-tris NEW-P0-2 fix): `gc_correctness.tla` covers mark-sweep algorithm; soft-delete grace window NOT in TLA+ scope (covered architecturally by WI-S06-004 §6.1.6 conditional `WHERE refcount = 0` predicate + WI-S06-005 reconcile orphan detection). "INV-GC-001 formally proven" claim qualified by §1 invariant 7 scope statement. Future TLA+ extension (S-07+ deferred) will model two-phase soft+physical delete.
 - 9.14: **PRNG determinism pinned** (Lote 10.6-tris OPUS-MISS-2): `ChaCha20Rng::seed_from_u64(iter)` em property test fixture; cross-platform reproducibility = code-level guarantee.
 
@@ -430,9 +430,9 @@ Feature: TLA+ CI gate + property test 100k race
 
 - [ ] **10.s06.006.1** TLA+ CI workflow live; PR triggers TLC model check.
 - [ ] **10.s06.006.2** Property test 100k race em CI nightly; 0 violations sustained; fixture generator emits adversarial inputs (envelope mutation, substring collisions, schema evolution); negative-control test against broken LIKE impl FAILS as expected (proves discriminating power).
-- [ ] **10.s06.006.3** **30d sustained TLA+ verde gate** (sprint contract DoD §10.s06.4); workflow `tla-30d-sustained.yml` published with cadence + query + clock-reset semantics + gauge emission.
+- [ ] **10.s06.006.3** **30d sustained TLA+ verde gate** (sprint contract DoD §10.s06.4); workflow `tla-30d-sustained.yml` (PLANNED deliverable — not yet in tree) published with cadence + query + clock-reset semantics + gauge emission. Distinct from the live gate `tla_check.yml` which runs per-PR.
 - [ ] **10.s06.006.4** PR fail logic via GitHub branch protection; `enforce_admins: true` on `main`.
-- [ ] **10.s06.006.5** Override mechanism PINNED: CODEOWNERS rule + `tla-override-validate.yml` workflow + signed git-trailer; ADR + Architect + Crypto SME signoff validated by workflow.
+- [ ] **10.s06.006.5** Override mechanism PINNED: CODEOWNERS rule + `tla_override_validate.yml` workflow + signed git-trailer; ADR + Architect + Crypto SME signoff validated by workflow.
 - [ ] **10.s06.006.6** Métricas (7) emitted; CRITICAL alert violations > 0; SEV-1 binary_tamper_detected.
 - [ ] **10.s06.006.7** TLA+ ↔ Rust alignment cross-validation: property test `prop_tla_rust_alignment` runs ≥ 1000 TLA+ scenarios → executes against Rust impl → asserts identical final state; CI nightly green (Lote 10.6bis P1-W6-3 measurable criterion).
 - [ ] **10.s06.006.8** Quarterly re-review process documented.
@@ -458,8 +458,8 @@ Feature: TLA+ CI gate + property test 100k race
 
 | Artifact | Path | Tipo |
 |---|---|---|
-| CI workflow | `.github/workflows/tla-ci-gate.yml` | YAML |
-| 30d sustained workflow | `.github/workflows/tla-30d-sustained.yml` | YAML |
+| CI workflow | `.github/workflows/tla_check.yml` (canonical; live) | YAML |
+| 30d sustained workflow | `.github/workflows/tla-30d-sustained.yml` (PLANNED — WI-S06-006 deliverable; not yet in tree) | YAML |
 | Property test 100k | `crates/corelink-gc/tests/prop_gc_race_100k.rs` | Rust |
 | Cross-validation tests | `crates/corelink-gc/tests/prop_tla_rust_alignment.rs` | Rust |
 | Override ADR template | `specs/03_architecture/adrs/ADR-template-tla-override.md` | Markdown |
@@ -480,7 +480,7 @@ Mini-PRR Architect + **Crypto SME mandatory emphatic** (TLA+ obligation).
 
 | ID | h |
 |---|---|
-| ST-001 CI workflow tla-ci-gate.yml | 3 |
+| ST-001 CI workflow tla_check.yml | 3 |
 | ST-002 TLC integration + invariant assertions | 3 |
 | ST-003 PR scope filter (path-based) | 1 |
 | ST-004 GitHub branch protection config | 1 |
@@ -508,7 +508,7 @@ Total Optimistic: ~30h. PERT: ~33h.
 - 27 Knowledge Transfer: Tech talk 2h "TLA+ CI Gate + Property Test 100k Race + Cross-Validation"; doc; onboarding test 5q.
 - 28 Risk Register (12-row): TLA+ scope incompleto M M HIGH M LOW (adversarial review); CI flake L H LOW L LOW (deterministic seeds); property test flake M H LOW L LOW (retry 3×); TLA+↔Rust drift L M HIGH L LOW (cross-validation); merge override abuse L L HIGH L LOW (ADR + Architect signoff); PR scope miss M L MEDIUM L LOW (path filter); CI cost regression M L MEDIUM L LOW; 30d sustained gate slip M M HIGH M LOW; spec corruption attack L L HIGH L LOW (adversarial review); production gap L M HIGH L LOW (quarterly re-review); GitHub Actions outage L L LOW L LOW; TLC version drift L L MEDIUM L LOW (pinned version).
 - 29 Review: D+0 design (Architect + Crypto SME); D+2 AppSec; D+5 code review; D+6 Crypto SME independent; D+7 PRR mini.
-- 30 Sign-off (HIGH_RISK 13): standard 12 mandatory; Crypto SME **MANDATORY EMPHATIC** (TLA+ obligation alignment).
+- 30 Sign-off (HIGH_RISK 11): standard 10 mandatory; Crypto SME **MANDATORY EMPHATIC** (TLA+ obligation alignment).
 - 31 Change Log: 1.0.0 / 2026-04-25 / Gustavo (Lote 10.6); 1.1.0 / 2026-04-25 / Gustavo (Lote 10.6bis Part 2b P0 fixes: P0-W6-1 fixture adversarial inputs + cross-WI dep + negative control; P0-W6-2 TLC SHA pinning; P0-W6-3 override mechanism CODEOWNERS+workflow+enforce_admins; P0-W6-W7-1 30d sustained workflow design pinned; P1-W6-1 TLA+↔Rust action mapping; P1-W6-2 +2 chaos scenarios; P1-W6-3 measurable criterion ≥1000 scenarios; P2-W6-2 cost re-derived private-repo billing); 1.2.0 / 2026-04-25 / Gustavo (Lote 10.6-tris Sonnet R5 P0+P1+OPUS-MISS fixes: NEW-P0-1 TLC SHA literal `d5d07d5dab38ddb840c91ec48fa02f28b37a608d5af9a73570018591dbc8ef7f` + bootstrap ceremony §9.12; NEW-P0-2 TLA+ scope limitations explicit §1.7 + soft-delete grace coverage caveat; OPUS-MISS-1 InvMarkingConsistent vacuously-true branch removed + TLC cfg bounds documented §9.10; OPUS-MISS-2 PRNG ChaCha20Rng::seed_from_u64 §9.14; ADR-0042 addendum §A1 SHA pinning + §A2 cfg bounds added).
 - 32 Anti-patterns: ❌ Skip CI gate; ❌ Override sem ADR + CODEOWNERS approvals; ❌ Admin bypass on main; ❌ TLC binary unverified; ❌ Property test flake silenciada; ❌ Property test fixture without adversarial inputs; ❌ TLA+ scope reduction sem ADR; ❌ Skip 30d sustained gate; ❌ Cross-tenant property test scenarios; ❌ TLC version drift sem ADR.
 

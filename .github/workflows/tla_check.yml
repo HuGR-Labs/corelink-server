@@ -14,10 +14,32 @@ on:
       - 'specs/tla/**'
       - 'scripts/run_tlc_corelink.sh'
       - '.github/workflows/tla_check.yml'
+      # S-06 contract trigger surface (Lote 10.6 cycle 2 fix CAP-GC-008):
+      - 'crates/corelink-gc/**'              # GC worker implementation
+      - 'crates/corelink-storage/**'         # blob_meta + ac_meta schema-touching code
+      - 'migrations/**'                      # D1 schema migrations (canonical column names)
+      - 'specs/03_architecture/data_model.md'  # canonical schema docs
+      - 'specs/03_architecture/invariant_registry.md'  # INV definition changes
+      - 'specs/03_architecture/adrs/ADR-0042-gc-worker-scheduler.md'  # TLC bootstrap ceremony
+      # S-11 trigger surface
+      - 'crates/corelink-privacy-erasure-worker/**'
+      - 'crates/corelink-privacy-consent-ledger/**'
   push:
     branches: [main]
     paths:
+      # Mirror PR trigger surface (Lote 10.6 cycle 4 fix CAP-GC-008: post-merge history
+      # must observe same surface as PR gate; codex cycle 3 finding push.main narrower).
       - 'specs/tla/**'
+      - 'scripts/run_tlc_corelink.sh'
+      - '.github/workflows/tla_check.yml'
+      - 'crates/corelink-gc/**'
+      - 'crates/corelink-storage/**'
+      - 'migrations/**'
+      - 'specs/03_architecture/data_model.md'
+      - 'specs/03_architecture/invariant_registry.md'
+      - 'specs/03_architecture/adrs/ADR-0042-gc-worker-scheduler.md'
+      - 'crates/corelink-privacy-erasure-worker/**'
+      - 'crates/corelink-privacy-consent-ledger/**'
 
 permissions:
   contents: read

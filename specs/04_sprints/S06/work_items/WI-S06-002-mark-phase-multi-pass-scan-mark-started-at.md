@@ -122,7 +122,7 @@ CREATE TABLE IF NOT EXISTS gc_candidates (
   -- Blob digest (PK component 2)
   digest                 TEXT     NOT NULL,
 
-  -- INV-GC-004 anchor (denormalized from gc_run; sweep checks ac.created_at < mark_started_at_ms strict)
+  -- INV-GC-004 anchor (denormalized from gc_run; sweep enforces canonical TLA `>=` protects: deletes only if ALL `ac.created_at < mark_started_at_ms`; protect-if-equal-or-newer per gc_correctness.tla L152-154)
   mark_started_at_ms     INTEGER  NOT NULL,
 
   -- gc_run FK
@@ -138,7 +138,7 @@ CREATE TABLE IF NOT EXISTS gc_candidates (
   -- Lifecycle timestamps
   created_at_ms          INTEGER  NOT NULL,
   swept_at_ms            INTEGER  NULL,
-  physically_deleted_at_ms INTEGER NULL,
+  physically_deleted_at INTEGER NULL,
   protected_at_ms        INTEGER  NULL,
 
   -- Reason for protected status (forensic trail)
@@ -187,7 +187,7 @@ CREATE INDEX IF NOT EXISTS idx_gc_candidates_protected
        gc_run.mark_started_at_ms = Some(unix_ms_now());
    }
    // INVARIANT: at this point, ANY observer of D1 sees mark_started_at_ms; concurrent UpdateActionResult
-   // happening AFTER step A's commit ack will have ac.created_at > mark_started_at_ms (TLA+ obligation).
+   // happening AFTER step A's commit ack will have ac.created_at >= mark_started_at_ms (TLA+ obligation; canonical protect-if->= boundary in gc_correctness.tla L152-154; even at-equal protected).
    self.execute_3_pass_scan(gc_run.mark_started_at_ms.unwrap()).await?;
    ```
 
@@ -231,7 +231,7 @@ CREATE INDEX IF NOT EXISTS idx_gc_candidates_protected
    SELECT b.digest FROM blob_meta b
    WHERE b.tenant_id = ?                              -- TenantCtx-only
      AND b.refcount > 0
-     AND b.deleted_at_ms IS NULL                      -- not soft-deleted
+     AND b.deleted_at IS NULL                      -- not soft-deleted
    LIMIT 250 OFFSET ?
    ;
    ```
@@ -272,7 +272,7 @@ Mark phase é **single source of truth for reachable set**. Bug em scan = reacha
 - **FF-HR-005**: GC integrity control.
 - **Reversibility**: mark fault detected pre-sweep via property test 100k; sweep doesn't fire if mark crashes; gc_candidates rollback safe.
 
-13 sign-offs.
+11 sign-offs (canonical Lote 10.6 cycle 4 alignment with framework §33.5.4.3 HIGH_RISK lane 10–12).
 
 ## 3. Customer Impact & Journey
 
@@ -622,7 +622,7 @@ Mark phase idempotent re-run; mark_started_at_ms preserved across crashes; gc_ca
 
 D+0 design (Architect + SRE); D+2 AppSec; D+4 code review; D+5 chaos suite; D+6 PRR mini.
 
-## 30. Sign-off (HIGH_RISK 13)
+## 30. Sign-off (HIGH_RISK 11)
 
 | # | Role | Status |
 |---|---|---|

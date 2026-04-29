@@ -182,7 +182,12 @@ Next ==
     \/ \E b \in Blobs: GCSweepBlob(b)
     \/ GCSweepEnd
 
-Spec == Init /\ [][Next]_vars
+Spec ==
+  /\ Init
+  /\ [][Next]_vars
+  /\ \A b \in Blobs : WF_vars(GCMarkStep(b))   \* fairness: every blob eventually marked (canonical action name)
+  /\ \A b \in Blobs : WF_vars(GCSweepBlob(b))  \* fairness: every unreachable blob eventually swept (canonical action name)
+  \* WF on UpdateActionResult intentionally omitted (write path; client-driven, not GC-driven)
 
 (*-- Invariantes CRITICAL ----------------------------------------------------*)
 
@@ -217,9 +222,9 @@ InvGCReRefProtected ==
 \* corretamente: durante marking, todo blob in mark_progress está em mark_set
 \* OU não tem AC entry pre-existente referenciando-o (i.e., não é reachable).
 \*
-\* TLC cfg bounds (Lote 10.6-tris OPUS-MISS-1 documented):
-\* - Blobs={b1,b2,b3}, AC_Entries={e1,e2,e3,e4}, MaxTime=8 (verify gc_correctness.cfg)
-\* - At these bounds, all interleavings exhaustively explored.
+\* TLC cfg bounds (canonical Lote 10.6 cycle 4 — verify against gc_correctness.cfg):
+\* - Blobs={b1,b2}, AC_Entries={e1}, MaxTime=10, GracePeriod=2
+\* - At these bounds, all interleavings exhaustively explored (~5k-50k states; ≤30s TLC).
 \* - Property test 100k extends coverage via random sampling against real Rust impl.
 InvMarkingConsistent ==
     gc_phase = "marking" =>

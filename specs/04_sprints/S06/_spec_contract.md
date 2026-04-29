@@ -32,7 +32,7 @@ tags: ["spec-contract", "s06", "gc", "mark-sweep", "tla", "ff-hr-011", "high-ris
 
 Implementar **GC production-grade** para reclaim de blobs não-referenciados sem **nunca** deletar dado reachable: Mark-and-Sweep multi-pass (não-bloqueante com CAS writes), grace period 72h CAS / 24h AC com soft-delete reversível, mark-phase-aware re-ref protection (INV-GC-004 — blob re-referenciado durante sweep não é deletado), refcount reconciliation diária (CTRL-GC-002). **Bug em GC = trust lost permanentemente**: customer perde dado, perde fé na plataforma, churn.
 
-**Por que SOTA:** competitors (BuildBuddy, NativeLink) operam GC com "best effort grace period" sem TLA+ verification; race conditions entre Mark+UpdateActionResult são causa #1 de incidentes em remote cache mature. CoreLink S-06 entrega: (a) **TLA+ `gc_correctness.tla` verified** (formally proven INV-GC-001/004 hold under all interleavings); (b) **mark-phase-aware re-ref** com `mark_started_at` timestamp comparado com `ac.created_at` (pattern verificado pela TLA+); (c) **soft-delete reversible** 72h grace; (d) **chaos test** GC sob load 30d sem violation. Reference: **NIST SP 800-88 Rev.1** (sanitization), **TLA+ Specifications for Distributed Systems** (Lamport), **Postgres VACUUM semantics**, **Cassandra tombstone tuning best practices**.
+**Por que SOTA:** competitors (BuildBuddy, NativeLink) operam GC com "best effort grace period" sem TLA+ verification; race conditions entre Mark+UpdateActionResult são causa #1 de incidentes em remote cache mature. CoreLink S-06 entrega: (a) **TLA+ `gc_correctness.tla` verified** (formally proven InvGCReachableNeverDeleted + InvGCReRefProtected hold under modeled interleavings — Mark + Sweep + UpdateActionResult; **out-of-TLA-scope explicit**: soft-delete grace window, DSR bypass, physical-delete orchestration covered architecturally per WI-S06-006 §1.7 + ADR-0042 §A3); (b) **mark-phase-aware re-ref** com `mark_started_at` timestamp comparado com `ac.created_at` (pattern verificado pela TLA+); (c) **soft-delete reversible** 72h grace; (d) **chaos test** GC sob load 30d sem violation. Reference: **NIST SP 800-88 Rev.1** (sanitization), **TLA+ Specifications for Distributed Systems** (Lamport), **Postgres VACUUM semantics**, **Cassandra tombstone tuning best practices**.
 
 ## 2. Lane + forcing factors
 
@@ -51,7 +51,7 @@ inherits_from:
   - "SECURITY-MODEL"                # CTRL-GC-001..002
   - "STORAGE-SEMANTICS-MATRIX"      # tombstone semantics + grace period
   - "FAILURE-MODES"                 # FM-300 (refcount bug), FM-305 (tombstone lost), FM-404 (gc-write-race)
-  - "RESILIENCE-PATTERNS"           # PAT-DEGRADE-001 (pause GC global), PAT-RETRY-IDEMPOTENT-001
+  - "RESILIENCE-PATTERNS"           # PAT-DEGRADE-001 (pause GC global), PAT-RETRY-IDEMPOTENT-001, PAT-SOFT-DELETE-001 (FM-300 mitigation; soft-delete reversible 72h grace), PAT-GC-HEALTHCHECK-001 (FM-305 mitigation; tombstone-lost detection)
   - "SLO-CATALOG"                   # SLO-CORRECT-GC, SLO-FRESH-GC
   - "PRIVACY-MODEL"                 # CTRL-PRIV-014 (DSR erasure ↔ GC interaction)
   - "OBSERVABILITY-MODEL"           # DASH-GC, métricas reclaimed
@@ -63,7 +63,7 @@ inherits_from:
 |---|---|---|
 | **CAP-GC-001** | Mark-and-sweep GC com grace period | Multi-pass scan; soft-delete; grace 72h CAS / 24h AC. |
 | **CAP-GC-002** | Soft-delete reversible | Tombstone in `blob_meta.deleted_at`; undelete via re-upload (mesmo digest) ou explicit admin restore endpoint dentro do grace. |
-| **CAP-GC-003** | Mark-phase-aware re-ref protection | `INV-GC-004`: blob re-referenciado via AC update após `mark_started_at` é protegido (`ac.created_at > mark_started_at` check pre-sweep). |
+| **CAP-GC-003** | Mark-phase-aware re-ref protection | `INV-GC-004`: blob re-referenciado via AC update após `mark_started_at` é protegido (`ac.created_at >= mark_started_at` check pre-sweep — protect-if-equal-or-newer canonical TLA semantics em `gc_correctness.tla` L152-154; Lote 10.6 cycle 4 fix). |
 | **CAP-GC-004** | Refcount reconciliation daily | CTRL-GC-002; reconcile `blob_meta.refcount` vs `count(ac_meta where ac.outputs contains digest)`; drift > 0.1% = SEV-2. |
 | **CAP-GC-005** | GC metrics + dashboard | DASH-GC: mark/sweep/reclaim per-tenant + per-region rates; runs/day; bytes reclaimed; grace queue depth. |
 | **CAP-GC-006** | Storage bytes reclaimed tracking | Per-tier visibility — customer-visible quota relief; finance-visible cost relief. |
@@ -81,7 +81,7 @@ inherits_from:
 ### 5.2 Mark Phase (CAP-GC-001)
 
 - **R-S06-4**: Mark phase: multi-pass scan `blob_meta` + `ac_meta` + `manifest_chunks`:
-  - Batch size 10k rows/iteration (tunable via config — 14.s06.2 quality).
+  - Batch size **250 rows/iteration** canonical (Lote 10.4bis lesson D1 100KB envelope limit; aligned com WI-S06-002 + invariant_registry.md §3.4 + WI-S06-005 §5.5 reconcile budget canonical pós Lote 10.6bis).
   - `mark_started_at` timestamp captured at phase start; persisted em `gc_run` table.
   - Jitter 100ms entre batches para evitar D1 throttle.
   - Reachable set computado: `union(blob_meta.refcount > 0, ac_meta.outputs, manifest_chunks)`.
@@ -92,7 +92,7 @@ inherits_from:
 
 - **R-S06-6**: Sweep phase: soft-delete `blob_meta.deleted_at = now()`:
   - Grace 72h CAS / 24h AC (em line com data_model + storage_semantics_matrix).
-  - **INV-GC-004 enforcement** (mark-phase-aware): pre-sweep, verify `ac.created_at < mark_started_at` para todos AC entries que referenciam digest; se any `ac.created_at >= mark_started_at` → digest é re-referenciado durante mark, **não** deletar.
+  - **INV-GC-004 enforcement** (mark-phase-aware): canonical TLA semantics em `gc_correctness.tla` L152-154 — protect-if-`>=`. Pre-sweep, verify ALL AC entries que referenciam digest têm `ac.created_at < mark_started_at` (equivalent formulation); se any `ac.created_at >= mark_started_at` → digest é re-referenciado durante mark, **não** deletar.
   - Audit emit `corelink.gc.sweep_executed` per blob com `prev_state, mark_started_at, sweep_executed_at`.
 - **R-S06-7**: Undelete path: customer re-upload de mesmo digest dentro do grace OR admin endpoint `POST /v1/admin/gc/undelete?digest=X` reverte `deleted_at = NULL` + audit.
 - **R-S06-7.1**: **Sweep p99 ≤ 5 min @ 100k candidates** per (tenant, region) (Lote 10.6bis P0-5 fix Part 1: separate budget line, NOT sub-allocation of mark's 10 min). Rationale: sweep is cost-distinct phase (per-candidate INV-GC-004 EXISTS check + soft-delete UPDATE + audit emit; bounded concurrency 8; D1 batch ≤250 rows per Lote 10.5bis lesson). Mark and sweep run sequentially per (tenant, region) cron tick; total mark+sweep ≤ 15 min p99 budget @ 1M blobs / 100k candidates respectively.
@@ -106,11 +106,11 @@ inherits_from:
 ### 5.5 Refcount Reconciliation (CAP-GC-004)
 
 - **R-S06-10**: Refcount reconciliation daily (CTRL-GC-002):
-  - Recompute per (tenant_id, digest): `expected_refcount = count(ac_meta where blob_refs contains digest AND deleted_at_ms IS NULL)` via SQL `json_each(a.blob_refs)` (Lote 10.6bis Part 2a P0-1 fix; **NOT** `LIKE '%digest%'` — string-substring match produces false drift signals; canonical idiom is `json_each` JSON-aware membership).
+  - Recompute per (tenant_id, digest): `expected_refcount = count(ac_meta where blob_refs contains digest AND deleted_at IS NULL)` via SQL `json_each(a.blob_refs)` (Lote 10.6bis Part 2a P0-1 fix; **NOT** `LIKE '%digest%'` — string-substring match produces false drift signals; canonical idiom is `json_each` JSON-aware membership).
   - Compare with `blob_meta.refcount`.
   - Drift > 0.1% global = SEV-2 alert; per-tenant drift > 1% = SEV-1.
   - Auto-fix: drift count ≤5 AND drift % ≤ 0.01% per tenant (scale-invariant percentage-floor + absolute-floor; Lote 10.6bis Part 2a P0-6 fix); larger drifts pause + manual review.
-- **R-S06-10.1**: **Reconcile p99 ≤ 1h @ 1M blobs** per (tenant, region) daily cron (analytics workload; not hot path). Re-derived post-Part 2a P0-1: json_each per-row extracts O(json_array_size) joined with `idx_ac_meta_tenant_deleted_at`; chunked iteration 1k blobs/chunk × bounded concurrency 4-8.
+- **R-S06-10.1**: **Reconcile p99 ≤ 1h @ 1M blobs** per (tenant, region) daily cron (analytics workload; not hot path). Re-derived post-Part 2a P0-1: json_each per-row extracts O(json_array_size) joined with `idx_ac_meta_tenant_deleted`; chunked iteration 1k blobs/chunk × bounded concurrency 4-8.
 
 ### 5.6 TLA+ CI Gate (CAP-GC-008)
 
@@ -169,7 +169,7 @@ inherits_from:
 - **14.s06.1 GC worker idempotent**: re-run safe (crashes mid-flight não corrompem); checkpoint per phase persistente em `gc_run` table.
 - **14.s06.2 Batch size tunável** via config (não hard-coded); admin plane S-13 expõe knob.
 - **14.s06.3 Zero race conditions** entre mark/sweep/write (formally verified TLA+ + property test 100k).
-- **14.s06.4 Mark-phase-aware re-ref discipline**: `mark_started_at` é timestamp único per gc_run; comparison strict `>` (não `>=`).
+- **14.s06.4 Mark-phase-aware re-ref discipline**: `mark_started_at` é timestamp único per gc_run; protection uses `ac.created_at >= mark_started_at` (protect-if-equal-or-newer; canonical TLA semantics — Lote 10.6 cycle 4 fix; equivalent: sweep só deleta se TODAS AC entries têm `ac.created_at < mark_started_at`).
 - **14.s06.5 Audit chain integrity**: cada sweep emite event encadeado (S-09 audit chain alignment); tampering detected daily verifier.
 - **14.s06.6 Cost regression gate** (§14.10): GC worker per-op cost benchmark; PR > 10% regression bloqueia.
 - **14.s06.7 Reclaim metric customer-visible**: tenant pode ver `bytes_reclaimed_last_30d` em dashboard S-16.
@@ -247,7 +247,7 @@ inherits_from:
 
 | Risco | Prob | Det | Impacto | Exposure | Residual após mitigação | Mitigação |
 |---|---|---|---|---|---|---|
-| **Mark phase demora > 1h** (blocking) | M | M | HIGH (FM-305) | M | LOW | Multi-pass batched 10k rows + jitter + benchmark 1M ≤ 10 min; SLO-FRESH-GC tracking. |
+| **Mark phase demora > 1h** (blocking SLO miss) | M | M | HIGH (SLO-FRESH-GC; operational risk — no specific FM since pause é graceful) | M | LOW | Multi-pass batched **250 rows** canonical (Lote 10.4bis lesson D1 100KB envelope limit) + jitter 100ms + benchmark 1M ≤ 10 min; SLO-FRESH-GC alert + PAT-DEGRADE-001 graceful pause. |
 | **INV-GC-001 violação produção** (deleta reachable) | L | M | CRITICAL (FM-300) | M | LOW | TLA+ verified + property test 100k + chaos test sob load + grace 72h reversível + RB-FM-300. |
 | **Refcount drift > 0.1%** | M | L | MEDIUM (FM-302 adjacente) | L | LOW | Reconciliation daily + auto-fix small + SEV-2 alert + manual review > 5 records. |
 | **Sweep deleta tombstone antes undelete window** (FM-305) | L | M | HIGH | L | LOW | Grace 72h CAS / 24h AC enforced via cron physical delete checks `deleted_at < now - grace`; RB-FM-305. |

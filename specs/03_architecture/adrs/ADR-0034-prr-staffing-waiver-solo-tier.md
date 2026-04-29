@@ -6,7 +6,7 @@ audit_status: "ACTIVE"
 version: "1.0.0"
 created: "2026-04-25"
 updated: "2026-04-25"
-title: "PRR Staffing Waiver Path for Solo-Tier Sprints (HIGH_RISK 13 sign-offs)"
+title: "PRR Staffing Waiver Path for Solo-Tier Sprints (HIGH_RISK 11 sign-offs (canonical lane 10–12 framework §33.5.4.3; Lote 10.6 cycle 4 alignment))"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -24,7 +24,7 @@ tags: ["adr", "prr", "staffing", "waiver", "solo-tier", "governance"]
 
 ## Context
 
-CoreLink HIGH_RISK sprints require 13 PRR sign-offs (12 mandatory + 1 advisory Crypto SME) per framework §33.5.4.3. CoreLink is currently solo-tier (single engineer + Architect + Crypto SME contracted advisory). Strict 13/13 sign-off requirement BLOCKS sprint SEAL when reviewers are unavailable. Without a documented waiver path, the program ships with `_TBD_` slots accumulating across sprints (persistent S-04/S-05/S-06 carry-forward defect Sonnet R5 flagged).
+CoreLink HIGH_RISK sprints require 11 PRR sign-offs (10 mandatory + 1 advisory Crypto SME; canonical lane 10–12 framework §33.5.4.3) per framework §33.5.4.3. CoreLink is currently solo-tier (single engineer + Architect + Crypto SME contracted advisory). Strict 11/11 sign-off requirement BLOCKS sprint SEAL when reviewers are unavailable. Without a documented waiver path, the program ships with `_TBD_` slots accumulating across sprints (persistent S-04/S-05/S-06 carry-forward defect Sonnet R5 flagged).
 
 ## Decision
 

@@ -138,7 +138,7 @@ slots:
     lead_time_days: 14   # D-14 per Lote 10.6bis P0-W7-1
     waivable: false   # NON-WAIVABLE per sprint contract §19 + Lote 10.4bis lesson
     status: "TBD"
-    notes: "MANDATORY NON-WAIVABLE; TLA+ formal verification + property test 100k cross-validation + INV-GC-004 strict < semantics + json_each EXISTS check semantic equivalence + DSR Ed25519 verify + TLC SHA-256 bootstrap ceremony §A1 + key rotation cadence (Lote 10.6-tris NEW-P1-1) + TLA+ scope caveat soft-delete grace (Lote 10.6-tris NEW-P0-2). Sprint extension via ADR if booking slips; NO waiver allowed."
+    notes: "MANDATORY NON-WAIVABLE; TLA+ formal verification + property test 100k cross-validation + INV-GC-004 protect-if-`>=` canonical TLA semantics (gc_correctness.tla L152-154) + json_each EXISTS check semantic equivalence + DSR Ed25519 verify + TLC SHA-256 bootstrap ceremony §A1 + key rotation cadence (Lote 10.6-tris NEW-P1-1) + TLA+ scope caveat soft-delete grace (Lote 10.6-tris NEW-P0-2). Sprint extension via ADR if booking slips; NO waiver allowed."
 
 # CI Gate Behavior (validate_signoff_calendar.py — ST-022 implements):
 # - Read this file.

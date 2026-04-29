@@ -25,7 +25,7 @@ inherits_from:
 tags: ["wi", "s06", "gc", "dashboard", "rb-dry-run", "prr", "ship-gate", "high-risk"]
 ---
 
-# WI-S06-007 — DASH-GC Dashboards (10 panels) + Customer-Visible `bytes_reclaimed_last_30d` Métrica + RB-FM-300/404/305 Dry-Runs Executados + PRR HIGH_RISK 13 Sign-offs Ship Gate + 30d Sustained TLA+ Verde + Cumulative INV §3.17 Promotion + ADR-0042 Ratificação
+# WI-S06-007 — DASH-GC Dashboards (10 panels) + Customer-Visible `bytes_reclaimed_last_30d` Métrica + RB-FM-300/404/305 Dry-Runs Executados + PRR HIGH_RISK 11 Sign-offs Ship Gate + 30d Sustained TLA+ Verde + Cumulative INV §3.17 Promotion + ADR-0042 Ratificação
 
 > **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
 > **Parent:** [S-06](../sprint.md) · **Assignee:** Gustavo Schneiter
@@ -37,7 +37,7 @@ tags: ["wi", "s06", "gc", "dashboard", "rb-dry-run", "prr", "ship-gate", "high-r
 | Campo | Valor |
 |---|---|
 | ID | WI-S06-007 |
-| Título | DASH-GC dashboards (10 panels: mark/sweep/physical-delete rates per region; reclaim bytes per tenant_tier; INV-GC-004 violations counter; refcount drift; sweeper tick rate; orphan candidate count; phase budget exceeded; degrade-mode active; TLA+ CI 30d sustained); customer-visible `bytes_reclaimed_last_30d` business metric (S-16 forward); 3 RB dry-runs executados em staging (RB-FM-300 refcount bug; RB-FM-404 gc-write-race; RB-FM-305 tombstone lost); PRR HIGH_RISK 13 sign-offs ship gate; 30d sustained TLA+ verde + chaos sob load (sprint contract DoD); cumulative INV §3.17 promotion; ADR-0042 ratificação confirmation |
+| Título | DASH-GC dashboards (10 panels: mark/sweep/physical-delete rates per region; reclaim bytes per tenant_tier; INV-GC-004 violations counter; refcount drift; sweeper tick rate; orphan candidate count; phase budget exceeded; degrade-mode active; TLA+ CI 30d sustained); customer-visible `bytes_reclaimed_last_30d` business metric (S-16 forward); 3 RB dry-runs executados em staging (RB-FM-300 refcount bug; RB-FM-404 gc-write-race; RB-FM-305 tombstone lost); PRR HIGH_RISK 11 sign-offs ship gate; 30d sustained TLA+ verde + chaos sob load (sprint contract DoD); cumulative INV §3.17 promotion; ADR-0042 ratificação confirmation |
 | Sprint | S-06 |
 | Lane | HIGH_RISK |
 | Forcing factors | FF-HR-011 (ship gate prevents catastrophic FM-300/305/404), FF-HR-005 (PRR enforces all CTRL-GC controls), FF-HR-009 (defense-in-depth final validation) |
@@ -69,7 +69,7 @@ Este WI é o **ship gate** de S-06; entra production-ready apenas após:
    - **RB-FM-305** (tombstone lost): chaos PR simulates GC not running for 7d; engineer follows runbook; storage growth detected; manual mark+sweep trigger via admin API.
 
 4. **30d sustained TLA+ verde** (sprint contract §10.s06.4 + Critério Promoção):
-   - CI history checked daily via `tla-30d-sustained.yml` (WI-S06-006).
+   - CI history checked daily via `tla-30d-sustained.yml` (PLANNED WI-S06-006 deliverable; not yet in tree).
    - All 30 days verde required pre-S-20 GA promotion.
    - Concurrent S-07/S-08 sprints (post-S-06 sprint timeline).
 
@@ -83,8 +83,8 @@ Este WI é o **ship gate** de S-06; entra production-ready apenas após:
      - Pause clock on P0/P1 incidents (4-tier classification Lote 10.4bis lesson).
      - DoD checkbox §10.s06.007.5b.
 
-6. **PRR HIGH_RISK 13 sign-offs**:
-   - 12 mandatory (Owner + Final Approver + SRE Lead + Security Lead + Engineer×2 + QA + Product + Compliance + Privacy + Architect + AppSec) + Crypto SME mandatory (TLA+ obligation alignment; Lote 10.4bis lesson Crypto SME mandatory non-waivable).
+6. **PRR HIGH_RISK 11 sign-offs** (canonical alignment Lote 10.6 cycle 4 fix; was 13, now matches sprint.md §14 + _spec_contract §2 lane HIGH_RISK ceiling 12):
+   - 10 mandatory (Final Approver + SRE Lead + Security Lead + Engineer + QA + Product + Compliance + Privacy + Architect + AppSec) + Crypto SME mandatory (TLA+ obligation alignment; Lote 10.4bis lesson Crypto SME mandatory non-waivable).
    - Each role's checklist + sign-off; rubber-stamp prohibido (Lote 10.4bis lesson).
    - 2h structured PRR meeting.
 
@@ -144,7 +144,7 @@ S-06 ship gate é go/no-go review pre-S-20 GA pendency. Bug em ship = customer t
 
 **Risk justification HIGH_RISK**: ship gate prevents catastrophic FM-300/305/404; PRR enforces all CTRL-GC controls; defense-in-depth final validation across 6 prior WIs.
 
-13 sign-offs.
+11 sign-offs (canonical Lote 10.6 cycle 4 alignment with sprint.md §14 + _spec_contract §2 HIGH_RISK lane).
 
 ## 3. Customer Impact & Journey
 
@@ -226,11 +226,11 @@ PRR ship gate; HIGH_RISK; FF-HR-011 + FF-HR-005 + FF-HR-009.
      - Remediation: manual mark+sweep trigger via admin API stub; verify ≤ 30min p95.
      - Post-mortem.
 
-5. **30d sustained TLA+ verde gate**: WI-S06-006 workflow `tla-30d-sustained.yml` daily aggregate verde 30d; required pre-S-20 GA.
+5. **30d sustained TLA+ verde gate**: WI-S06-006 workflow `tla-30d-sustained.yml` (PLANNED deliverable) daily aggregate verde 30d; required pre-S-20 GA.
 
 6. **30d sustained chaos test**: 30d staging with concurrent Bazel + multipart synthetic workload; INV-GC-001/004 violations metric = 0; SLO sustained metrics tracked.
 
-7. **PRR HIGH_RISK 13 sign-off ceremony** (2h structured):
+7. **PRR HIGH_RISK 11 sign-off ceremony** (2h structured; canonical Lote 10.6 cycle 4 alignment):
    - Per-role checklist (Lote 10.4bis pattern).
    - Crypto SME MANDATORY non-waivable (TLA+ obligation; cripto WIs).
    - Sign-offs via GitHub PR review + git commit signing.
@@ -259,7 +259,7 @@ PRR ship gate; HIGH_RISK; FF-HR-011 + FF-HR-005 + FF-HR-009.
 ## 7. Anti-Scope
 
 - ❌ Ship sem 30d sustained TLA+ verde.
-- ❌ Ship sem 13 sign-offs.
+- ❌ Ship sem 11 sign-offs (canonical Lote 10.6 cycle 4 alignment with framework §33.5.4.3 HIGH_RISK lane 10–12).
 - ❌ Ship sem 3 RB dry-runs executados.
 - ❌ Ship com 1+ INV-GC-001/004 violation em 30d.
 - ❌ Ship com refcount drift > 0.1% sustained.
@@ -274,7 +274,7 @@ PRR ship gate; HIGH_RISK; FF-HR-011 + FF-HR-005 + FF-HR-009.
 ## 8. Acceptance Criteria (Gherkin) (compact 12 scenarios)
 
 ```gherkin
-Feature: S-06 PRR HIGH_RISK 13 sign-off ship gate
+Feature: S-06 PRR HIGH_RISK 11 sign-off ship gate
 
   Scenario: DASH-GC dashboards live + alerts validated
     Given Grafana 10 panels provisioned
@@ -306,7 +306,7 @@ Feature: S-06 PRR HIGH_RISK 13 sign-off ship gate
     And post-mortem written
 
   Scenario: 30d sustained TLA+ verde gate
-    Given CI history `tla-30d-sustained.yml` daily checks
+    Given CI history `tla-30d-sustained.yml` (PLANNED WI-S06-006 deliverable) daily checks
     When 30d window passes verde
     Then metric corelink.ci.tla.30d_sustained_verde = TRUE
     And S-20 GA promotion unblocked
@@ -327,7 +327,7 @@ Feature: S-06 PRR HIGH_RISK 13 sign-off ship gate
     And SLO-CORRECT-GC + SLO-FRESH-GC verde
     And pause-clock-on-P0/P1 incidents per 4-tier classification
 
-  Scenario: PRR HIGH_RISK 13 sign-offs collected
+  Scenario: PRR HIGH_RISK 11 sign-offs collected
     Given PRR meeting 2h structured executed
     When 13 roles sign + checklist evidence
     Then 12 mandatory + Crypto SME (mandatory; not advisory) collected
@@ -376,7 +376,7 @@ Feature: S-06 PRR HIGH_RISK 13 sign-off ship gate
 - [ ] **10.s06.007.4** **30d sustained TLA+ verde gate** (sprint contract §10.s06.4 + Critério Promoção).
 - [ ] **10.s06.007.5a** **4h-under-1kQPS chaos zero INV-GC-001/004 violations** (Lote 10.6bis P0-W7-3 NEW; pre-merge gate; CI-runnable; repeatable; ≥3 runs with seed variance documented).
 - [ ] **10.s06.007.5b** **30d sustained staging chaos zero INV-GC-001/004 violations** (sprint contract DoD §10.s06.2; post-sprint observation; pause-clock-on-P0/P1).
-- [ ] **10.s06.007.6** PRR 13 sign-offs collected; rubber-stamp prevented.
+- [ ] **10.s06.007.6** PRR 11 sign-offs collected; rubber-stamp prevented.
 - [ ] **10.s06.007.7** 23 INVs §3.17 promovidas + CI gate green (validate_inv_promotion.py).
 - [ ] **10.s06.007.8** ADR-0042 ratificada + whitelist.
 - [ ] **10.s06.007.9** Cost regression gate green all WIs.
@@ -397,7 +397,7 @@ Feature: S-06 PRR HIGH_RISK 13 sign-off ship gate
 - [ ] 3 RB dry-runs + post-mortem.
 - [ ] 30d sustained TLA+ verde gate.
 - [ ] 30d sustained chaos zero violations.
-- [ ] PRR 13 sign-offs collected.
+- [ ] PRR 11 sign-offs collected.
 - [ ] 23 INVs §3.17 promovidas.
 - [ ] ADR-0042 ratificada.
 - [ ] Customer comm ready.
@@ -439,7 +439,7 @@ Plus mantidas:
 - 14.s06.007.2: 30d sustained chaos zero violations cripto-grade gate.
 - 14.s06.007.3: 3 RB dry-runs ≤ 5/30/60 min targets.
 - 14.s06.007.4: Dashboard alerts PagerDuty + Slack.
-- 14.s06.007.5: PRR 2h structured; 13 sign-offs.
+- 14.s06.007.5: PRR 2h structured; 11 sign-offs (canonical Lote 10.6 cycle 4 alignment with framework §33.5.4.3 HIGH_RISK lane 10–12).
 - 14.s06.007.6: Cost gate ±10%.
 - 14.s06.007.7: Customer comm pre-ship.
 - 14.s06.007.8: ADR-0042 ratificada.
@@ -481,7 +481,7 @@ THE PRR. Esta WI é a PRR.
 | ST-008 30d sustained chaos suite + workload | 6 |
 | ST-009 PRR meeting prep + checklists per role | 4 |
 | ST-010 PRR meeting execution (2h) | 2 |
-| ST-011 13 sign-off collection | 3 |
+| ST-011 11 sign-off collection | 3 |
 | ST-012 Cost regression gate setup all WIs | 3 |
 | ST-013 23 INVs §3.17 registry update | 3 |
 | ST-014 ADR-0042 ratificação confirmation | 2 |
@@ -556,7 +556,7 @@ Production rollout rollback: 100% → 50% → 10% → 0% via Wrangler version re
 - Tech talk (3h): "S-06 GC GA — Architecture Overview + Operational Readiness + TLA+ Formal Verification".
 - Doc `docs/customer/gc-feature-overview.md`.
 - Workshop com all reviewers + on-call team.
-- Onboarding test (10 questions): INV-GC-001/004 rationale, mark_started_at_ms anchor, sweep audit fail-closed, grace boundary strict <, refcount reconcile thresholds, TLA+ CI gate, RB-FM-300/404/305 procedures.
+- Onboarding test (10 questions): INV-GC-001/004 rationale, mark_started_at_ms anchor, sweep audit fail-closed, INV-GC-004 boundary `>=` protects (canonical TLA L152-154), refcount reconcile thresholds, TLA+ CI gate, RB-FM-300/404/305 procedures.
 
 ## 28. Risk Register (12-row 6-col)
 
@@ -577,9 +577,9 @@ Production rollout rollback: 100% → 50% → 10% → 0% via Wrangler version re
 
 ## 29. Review Checkpoints
 
-D+0 WI-S06-001..006 SEALED; D+1 30d sustained TLA+ verde + chaos validation; D+2 DASH-GC live; D+3 RB-FM-300 dry-run; D+4 RB-FM-404; D+5 RB-FM-305; D+6 PRR meeting; D+7 customer comm; D+8 ship decision; D+9 production 10%; D+11 50%; D+13 100%; D+20 post-ship review.
+D+0 WI-S06-001..006 SEALED; D+1 TLA+ first-CI verde + chaos validation kicked off (30d sustained observation é **post-sprint** parallel com S-07/S-08 sprints — Opus C-04 pattern; ver _spec_contract.md "30d staging sustained gate é post-sprint observation"); D+2 DASH-GC live; D+3 RB-FM-300 dry-run; D+4 RB-FM-404; D+5 RB-FM-305; D+6 PRR meeting; D+7 customer comm; D+8 ship decision; D+9 production 10%; D+11 50%; D+13 100%; D+20 post-ship review; D+30 post-sprint 30d sustained validation gate (parallel obs).
 
-## 30. Sign-off (HIGH_RISK 13)
+## 30. Sign-off (HIGH_RISK 11)
 
 | # | Role | Status | Lane (Lote 10.6bis P1-W7-2 fix) |
 |---|---|---|---|
@@ -631,7 +631,7 @@ D+0 WI-S06-001..006 SEALED; D+1 30d sustained TLA+ verde + chaos validation; D+2
 
 ## 32. Anti-patterns evitados
 
-- ❌ Ship sem 30d sustained TLA+ verde; ❌ Ship sem 13 sign-offs; ❌ Ship sem 3 RB dry-runs; ❌ Ship com INV-GC-001/004 violation; ❌ Ship com refcount drift > 0.1% sustained; ❌ Ship com cost regression > 10%; ❌ Ship com ADR não ratificada; ❌ Ship com 23 INVs não promovidas; ❌ Ship com sign-off rubber-stamp; ❌ Production rollout direct 100%; ❌ Skip 30d chaos sustained; ❌ Skip post-ship review; ❌ Crypto SME advisory para cripto WIs (lesson Lote 10.4bis fix).
+- ❌ Ship sem 30d sustained TLA+ verde; ❌ Ship sem 11 sign-offs; ❌ Ship sem 3 RB dry-runs; ❌ Ship com INV-GC-001/004 violation; ❌ Ship com refcount drift > 0.1% sustained; ❌ Ship com cost regression > 10%; ❌ Ship com ADR não ratificada; ❌ Ship com 23 INVs não promovidas; ❌ Ship com sign-off rubber-stamp; ❌ Production rollout direct 100%; ❌ Skip 30d chaos sustained; ❌ Skip post-ship review; ❌ Crypto SME advisory para cripto WIs (lesson Lote 10.4bis fix).
 
 ---
 

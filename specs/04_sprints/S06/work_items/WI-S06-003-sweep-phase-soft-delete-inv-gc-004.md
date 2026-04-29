@@ -25,7 +25,7 @@ inherits_from:
 tags: ["wi", "s06", "gc", "sweep", "soft-delete", "inv-gc-004", "audit", "high-risk"]
 ---
 
-# WI-S06-003 — Sweep Phase: Soft-Delete `blob_meta.deleted_at` + Grace 72h CAS / 24h AC + **INV-GC-004 Enforce** (mark_started_at_ms strict `<` ac.created_at; TLA+ Obligation) + Audit Emission Per Sweep + Property Test 100k Race Mark+UpdateActionResult
+# WI-S06-003 — Sweep Phase: Soft-Delete `blob_meta.deleted_at` + Grace 72h CAS / 24h AC + **INV-GC-004 Enforce** (`ac.created_at >= mark_started_at_ms` protects; canonical TLA `gc_correctness.tla` L152-154 protect-if-equal-or-newer) + Audit Emission Per Sweep + Property Test 100k Race Mark+UpdateActionResult
 
 > **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
 > **Parent:** [S-06](../sprint.md) · **Assignee:** Gustavo Schneiter
@@ -37,7 +37,7 @@ tags: ["wi", "s06", "gc", "sweep", "soft-delete", "inv-gc-004", "audit", "high-r
 | Campo | Valor |
 |---|---|
 | ID | WI-S06-003 |
-| Título | Sweep phase: consume gc_candidates (status='candidate') from WI-S06-002; per-candidate enforce **INV-GC-004** (sweep checks `ac.created_at < gc_candidate.mark_started_at_ms` strict; if any AC entry references digest com created_at >= mark_started_at_ms → status='protected_re_ref'; do NOT delete); soft-delete `blob_meta.deleted_at = now()` for confirmed orphans; grace 72h CAS / 24h AC; audit emission per sweep com `prev_state` capturado; property test 100k race Mark+UpdateActionResult interleavings → 0 INV-GC-004 violations |
+| Título | Sweep phase: consume gc_candidates (status='candidate') from WI-S06-002; per-candidate enforce **INV-GC-004** (canonical TLA `>=` protects: sweep deletes only if ALL AC entries referencing digest have `ac.created_at < gc_candidate.mark_started_at_ms`; if any AC has `ac.created_at >= mark_started_at_ms` → status='protected_re_ref'; do NOT delete); soft-delete `blob_meta.deleted_at = now()` for confirmed orphans; grace 72h CAS / 24h AC; audit emission per sweep com `prev_state` capturado; property test 100k race Mark+UpdateActionResult interleavings → 0 INV-GC-004 violations |
 | Sprint | S-06 |
 | Lane | HIGH_RISK |
 | Forcing factors | FF-HR-011 (sweep é onde INV-GC-001/004 enforcement happens; bug = data loss permanente), FF-HR-005 (controle integridade dados), FF-HR-009 (defense-in-depth — TLA+ + property test + chaos under load + grace reversible) |
@@ -57,7 +57,7 @@ pub use crate::error::SweepError;
 #[async_trait]
 pub trait SweepPhase: Send + Sync {
     /// Execute sweep phase consuming gc_candidates (status='candidate').
-    /// Per-candidate: enforce INV-GC-004 (mark_started_at_ms strict < ac.created_at).
+    /// Per-candidate: enforce INV-GC-004 — canonical TLA L152-154 protect-if-`>=`; sweep deletes only if ALL `ac.created_at < mark_started_at_ms`.
     /// If protected → status='protected_re_ref'.
     /// If confirmed orphan → soft-delete blob_meta + status='swept'.
     /// Audit emit per decision.
@@ -145,7 +145,7 @@ pub enum SweepError {
 
    **Performance**: composite index `idx_ac_meta_tenant_created_at` (tenant_id, created_at) covers WHERE clause; json_each is per-row scan over typically small blob_refs JSON array (≤10 KiB CHECK constraint per WI-S04-002); p99 ≤ 50ms achievable.
 
-2. **Strict `<` (não `<=`)** — TLA+ obligation: comparison é STRICT; ac.created_at exatamente igual a mark_started_at_ms é caso fronteira; opta por strict < (mais conservador; favorable to reachable).
+2. **Canonical `>=` protects (TLA L152-154)** — protect-if-equal-or-newer: ac.created_at exatamente igual a mark_started_at_ms é treated as protected (favorable to reachable); equivalent SQL delete predicate: `ALL ac.created_at < mark_started_at_ms` (strict less-than for delete is the contrapositive).
 
 3. **Audit emission MANDATORY per sweep decision**: outbox pattern (Lote 10.4bis WI-S01-004); `corelink.gc.sweep.{soft_deleted, protected_re_ref}` events com `prev_state` BlobState capturado.
 
@@ -161,7 +161,7 @@ pub enum SweepError {
 
 Sweep phase é **executor of soft-delete decisions**. Bug em INV-GC-004 enforce produces FM-300 (refcount bug → reachable deleted) — single most-feared GC failure mode. HIGH_RISK em N dimensões:
 
-1. **INV-GC-004 race com UpdateActionResult** (canonical TLA+ scenario): worker captures mark_started_at_ms = T; concurrent UpdateActionResult fires at T+1ms (creates new ac_meta entry referencing blob B; ac.created_at = T+1ms); mark phase doesn't see new ac_meta row (mark scan completed before T+1ms); sweep phase MUST detect via `ac.created_at >= mark_started_at_ms` check; if check missed → B incorrectly soft-deleted. Mitigação: SQL EXISTS check em sweep query (above §1.1); strict `<` semantics; property test 100k iter race scenarios; TLA+ obligation `InvGCReRefProtected`. Property test framework simulates concurrent Mark + UpdateActionResult interleavings; INV-GC-004 violation = test failure.
+1. **INV-GC-004 race com UpdateActionResult** (canonical TLA+ scenario): worker captures mark_started_at_ms = T; concurrent UpdateActionResult fires at T+1ms (creates new ac_meta entry referencing blob B; ac.created_at = T+1ms); mark phase doesn't see new ac_meta row (mark scan completed before T+1ms); sweep phase MUST detect via `ac.created_at >= mark_started_at_ms` check; if check missed → B incorrectly soft-deleted. Mitigação: SQL EXISTS check em sweep query (above §1.1); canonical TLA `>=` protect semantics (protect-if-equal-or-newer; L152-154); property test 100k iter race scenarios; TLA+ obligation `InvGCReRefProtected`. Property test framework simulates concurrent Mark + UpdateActionResult interleavings; INV-GC-004 violation = test failure.
 
 2. **Audit emit failure cascading**: INV-OBS-AUDIT-CHAIN-INTEGRITY (S-09 forward) requires every state transition emit audit event. If audit_outbox INSERT fails (D1 throttle, table corrupt), sweep MUST fail-closed (no soft-delete) — preserves both INV-GC-001 (reachable not deleted) AND INV-OBS-AUDIT-CHAIN-INTEGRITY. Fail-open would soft-delete without forensic trail. Mitigação: D1 batch (blob_meta UPDATE + audit_outbox INSERT) atomic; both succeed or both fail; SweepError::AuditEmissionFailed; SEV-1 alert.
 
@@ -191,7 +191,7 @@ Sweep phase é **executor of soft-delete decisions**. Bug em INV-GC-004 enforce 
 - **FF-HR-009**: defense-in-depth — TLA+ + property test 100k + chaos under load 30d + grace 72h reversible.
 - **Reversibility**: soft-delete reversible WITHIN grace window; physical-delete irreversível (WI-S06-004).
 
-13 sign-offs incl. **Crypto SME mandatory emphatic** (TLA+ obligation; INV-GC-004 cripto-coordenado boundary).
+11 sign-offs (canonical Lote 10.6 cycle 4 alignment with framework §33.5.4.3 HIGH_RISK lane 10–12) incl. **Crypto SME mandatory emphatic** (TLA+ obligation; INV-GC-004 cripto-coordenado boundary).
 
 ## 3. Customer Impact & Journey
 
@@ -254,10 +254,10 @@ Sweep phase impl; HIGH_RISK; FF-HR-011 + FF-HR-005 + FF-HR-009.
    ```sql
    -- Sweep happy path (orphan confirmed):
    UPDATE blob_meta
-   SET deleted_at_ms = unix_ms_now()
+   SET deleted_at = unix_ms_now()
    WHERE tenant_id = ?
      AND digest = ?
-     AND deleted_at_ms IS NULL  -- idempotent
+     AND deleted_at IS NULL  -- idempotent
    RETURNING size_bytes, refcount, last_referenced_at_ms, created_at_ms;
    -- RETURNING captures BlobState for audit emit (prev_state).
    ```
@@ -265,7 +265,7 @@ Sweep phase impl; HIGH_RISK; FF-HR-011 + FF-HR-005 + FF-HR-009.
 4. **Atomic D1 batch** (blob_meta UPDATE + gc_candidate UPDATE + audit_outbox INSERT):
    ```rust
    d1.batch([
-       blob_meta_update,         // SET deleted_at_ms = ...
+       blob_meta_update,         // SET deleted_at = ...
        gc_candidate_update,      // SET status = 'swept'
        audit_outbox_insert,      // event = corelink.gc.sweep.soft_deleted; prev_state = ...
    ]).await?;
@@ -304,7 +304,7 @@ Sweep phase impl; HIGH_RISK; FF-HR-011 + FF-HR-005 + FF-HR-009.
    - `prop_sweep_idempotent`: re-sweep on already-swept candidate → AlreadySwept (no-op).
    - `prop_sweep_tenant_isolation`: 1000 concurrent sweeps different tenants; no cross-tenant interference.
    - `prop_sweep_audit_atomic`: simulate audit_outbox INSERT failure mid-batch; sweep ROLLBACK (no soft-delete); SweepError::AuditEmissionFailed.
-   - `prop_grace_period_respected`: soft-delete + check deleted_at_ms; physical-delete (WI-S06-004) only fires post-grace.
+   - `prop_grace_period_respected`: soft-delete + check deleted_at; physical-delete (WI-S06-004) only fires post-grace.
 
 10. **Mann-Whitney 3-prong cripto-grade timing test**:
     - Goal: cliente cannot distinguish sweep timing for "orphan confirmed" vs "protected_re_ref" via timing (paths via different SQL queries; might differ).
@@ -321,7 +321,7 @@ Sweep phase impl; HIGH_RISK; FF-HR-011 + FF-HR-005 + FF-HR-009.
     - 8. Re-upload soft-deleted blob within grace → CAS write handler S-01 detects + restores.
     - 9. Concurrent sweep + UpdateActionResult storm (1k QPS) → INV-GC-004 caught 100% (chaos under load test sprint contract DoD).
     - 10. mark_started_at_ms = NULL (mark phase failed) → SweepError::MarkAnchorMissing; sweep doesn't fire.
-    - 11. Grace period boundary (deleted_at_ms = T - grace + 1ms) → physical-delete WI-S06-004 doesn't fire yet.
+    - 11. Grace period boundary (deleted_at = T - grace + 1ms) → physical-delete WI-S06-004 doesn't fire yet.
     - 12. Audit chain tampering daily verifier (S-09) → drift detected post-sweep.
 
 ### 6.2 Out-of-scope
@@ -357,7 +357,7 @@ Feature: Sweep phase + INV-GC-004 enforce + audit emit
     Given no ac_meta entry references D with created_at >= T  // Lote 10.6bis P0-2 column name fix
     When SweepPhase::execute(gc_run, tenant, region)
     Then SQL EXISTS check returns NULL (no re-ref)
-    And blob_meta.deleted_at_ms = unix_ms_now()
+    And blob_meta.deleted_at = unix_ms_now()
     And gc_candidate.status = 'swept'
     And audit emit corelink.gc.sweep.soft_deleted with prev_state captured
     And metric corelink.gc.sweep.soft_deleted_total +1
@@ -370,7 +370,7 @@ Feature: Sweep phase + INV-GC-004 enforce + audit emit
     Then SweepDecision::ProtectedReRef returned
     Then gc_candidate.status = 'protected_re_ref'; protected_reason = "ac.created_at = T+1; mark_started_at = T"
     And audit emit corelink.gc.sweep.protected_re_ref
-    And blob_meta.deleted_at_ms unchanged (still NULL)
+    And blob_meta.deleted_at unchanged (still NULL)
     And metric corelink.gc.sweep.protected_re_ref_total +1
     And property test prop_inv_gc_004_race_mark_update_ar 100k iter green
 
@@ -386,7 +386,7 @@ Feature: Sweep phase + INV-GC-004 enforce + audit emit
     Given audit_outbox INSERT fails (D1 throttle simulated)
     When sweep batch executes
     Then D1 batch atomic ROLLBACK
-    And blob_meta.deleted_at_ms unchanged
+    And blob_meta.deleted_at unchanged
     And gc_candidate.status unchanged (still 'candidate')
     And SweepError::AuditEmissionFailed returned
     And metric corelink.gc.sweep.audit_emit_failed_total +1
@@ -429,9 +429,9 @@ Feature: Sweep phase + INV-GC-004 enforce + audit emit
     And audit emit corelink.gc.sweep.dsr_erasure_bypass
 
   Scenario: Re-upload soft-deleted blob within grace (CAP-GC-002)
-    Given blob_meta.deleted_at_ms = T (within grace 72h)
+    Given blob_meta.deleted_at = T (within grace 72h)
     When customer re-uploads mesmo digest via CAS write handler S-01 (Lote 10.1+10.2 patterns reused)
-    Then S-01 handler detects soft-delete row + sets deleted_at_ms = NULL
+    Then S-01 handler detects soft-delete row + sets deleted_at = NULL
     And audit emit corelink.gc.undelete_via_reupload
 
   Scenario: Race storm 1k QPS UpdateActionResult during sweep (sprint contract DoD)
@@ -498,7 +498,7 @@ Feature: Sweep phase + INV-GC-004 enforce + audit emit
 ## 12. Invariants Validated
 
 - **INV-GC-001** (CRITICAL, registry §3.4 + TLA+ `gc_correctness.tla`): reachable never deleted; sweep enforces via INV-GC-004 strict `<` + grace period + audit fail-closed.
-- **INV-GC-004** (CRITICAL, registry §3.4 + TLA+ `InvGCReRefProtected`): mark-phase-aware re-ref protection; SQL EXISTS check `ac.created_at >= mark_started_at_ms` strict; property test 100k iter zero violations.
+- **INV-GC-004** (CRITICAL, registry §3.4 + TLA+ `InvGCReRefProtected`): mark-phase-aware re-ref protection; SQL EXISTS check `ac.created_at >= mark_started_at_ms` (protect-if-equal-or-newer canonical TLA L152-154); property test 100k iter zero violations.
 - **INV-GC-SWEEP-AUDIT-FAIL-CLOSED** (CRITICAL, NEW promovida §3.17): audit emit failure → sweep ROLLBACK; preserves both INV-GC-001 and INV-OBS-AUDIT-CHAIN-INTEGRITY.
 - **INV-GC-SWEEP-IDEMPOTENT** (HIGH, NEW): re-run on already-swept = AlreadySwept no-op.
 - **INV-GC-SWEEP-TENANT-SCOPED** (CRITICAL, NEW): all queries WHERE tenant_id; sqlx prepared.
@@ -597,7 +597,7 @@ Mini-PRR Architect + **Crypto SME mandatory emphatic** + Security Lead.
 
 ## 25. Rollback / Recovery
 
-Sweep idempotent; soft-delete reversible WITHIN grace; rollback via `blob_meta.deleted_at_ms = NULL` UPDATE; RTO ≤ 30 min; RPO 0 (within grace; post-grace physical-delete irreversível).
+Sweep idempotent; soft-delete reversible WITHIN grace; rollback via `blob_meta.deleted_at = NULL` UPDATE; RTO ≤ 30 min; RPO 0 (within grace; post-grace physical-delete irreversível).
 
 ## 26. Security & Privacy (compact)
 
@@ -632,7 +632,7 @@ Sweep idempotent; soft-delete reversible WITHIN grace; rollback via `blob_meta.d
 
 D+0 design (Architect + Crypto SME); D+2 AppSec; D+5 code review; D+6 Crypto SME independent review (TLA+ alignment); D+8 adversarial; D+9 chaos suite; D+10 PRR mini.
 
-## 30. Sign-off (HIGH_RISK 13)
+## 30. Sign-off (HIGH_RISK 11)
 
 | # | Role | Status |
 |---|---|---|

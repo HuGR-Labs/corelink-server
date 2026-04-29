@@ -36,7 +36,7 @@ tags: ["wi", "s06", "gc", "reconcile", "refcount", "ctrl-gc-002", "auto-fix", "h
 | Campo | Valor |
 |---|---|
 | ID | WI-S06-005 |
-| Título | Daily reconciliation job (cron 03:00 UTC + jitter; ≥30min após mark/sweep latest completion); recompute `expected_refcount = count(ac_meta a, json_each(a.blob_refs) j WHERE j.value = digest AND a.deleted_at_ms IS NULL)` per (tenant_id, digest) (Lote 10.6bis P0-1 fix: canonical `json_each` JSON-aware membership; NOT `LIKE '%digest%'` substring match); compare with `blob_meta.refcount`; drift > 0.1% global = SEV-2; per-tenant > 1% = SEV-1; auto-fix small drifts via percentage-floor + absolute-floor (drift_count ≤5 AND drift_percent ≤0.01%; Lote 10.6bis P0-6 scale-invariant) com audit emit; manual review large drifts pause + alert; CTRL-GC-002 enforcement; INV-GC-003 sustained < 0.1% drift 7d (sprint contract DoD) |
+| Título | Daily reconciliation job (cron 03:00 UTC + jitter; ≥30min após mark/sweep latest completion); recompute `expected_refcount = count(ac_meta a, json_each(a.blob_refs) j WHERE j.value = digest AND a.deleted_at IS NULL  -- canonical column name pós data_model.md §4.2 (Lote 10.6 cycle 1))` per (tenant_id, digest) (Lote 10.6bis P0-1 fix: canonical `json_each` JSON-aware membership; NOT `LIKE '%digest%'` substring match); compare with `blob_meta.refcount`; drift > 0.1% global = SEV-2; per-tenant > 1% = SEV-1; auto-fix small drifts via percentage-floor + absolute-floor (drift_count ≤5 AND drift_percent ≤0.01%; Lote 10.6bis P0-6 scale-invariant) com audit emit; manual review large drifts pause + alert; CTRL-GC-002 enforcement; INV-GC-003 sustained < 0.1% drift 7d (sprint contract DoD) |
 | Sprint | S-06 |
 | Lane | HIGH_RISK |
 | Forcing factors | FF-HR-011 (refcount drift cascades to wrong reachable computation; INV-GC-001 indirect risk), FF-HR-005 (controle integridade; refcount fundação de mark phase) |
@@ -99,16 +99,16 @@ pub enum ReconcileError {
         FROM ac_meta a, json_each(a.blob_refs) j
         WHERE a.tenant_id = blob_meta.tenant_id
           AND j.value = blob_meta.digest
-          AND a.deleted_at_ms IS NULL
-          AND a.created_at_ms < ?) AS expected_refcount  -- bound to reconcile_started_at_ms snapshot (Lote 10.6bis P1-6 fix)
+          AND a.deleted_at IS NULL  -- canonical column name pós data_model.md §4.2 (Lote 10.6 cycle 1)
+          AND a.created_at < ?  -- canonical (unix ms via INTEGER NOT NULL)) AS expected_refcount  -- bound to reconcile_started_at_ms snapshot (Lote 10.6bis P1-6 fix)
    FROM blob_meta
    WHERE blob_meta.tenant_id = ?
-     AND blob_meta.deleted_at_ms IS NULL;
+     AND blob_meta.deleted_at IS NULL  -- canonical column name pós data_model.md §4.2 (Lote 10.6 cycle 1);
    ```
    - **Why `json_each`**: D1/SQLite native JSON-aware membership; matches each element of `blob_refs` JSON array exactly via `j.value = digest`; survives schema evolution (e.g., `{refs:[...], metadata:{...}}` envelope) — LIKE silently matches metadata strings forever.
    - **Auto-fix amplification risk eliminated**: substring collisions inflate `expected_refcount` → wrong drift → wrong UPDATE refcount → permanent canonical-state corruption. `json_each` removes this class.
-   - **Index requirement**: `idx_ac_meta_tenant_deleted_at` covers tenant + soft-delete pre-filter (verified WI-S04-002); `json_each` per-row extract is O(json_array_size) (small — typical AC has 1-10 outputs).
-   - **Snapshot bound**: `a.created_at_ms < reconcile_started_at_ms` mirrors WI-S06-003 mark phase pattern; bounds race window to writes-before-snapshot (Lote 10.6bis P1-6 fix).
+   - **Index requirement**: `idx_ac_meta_tenant_deleted (canonical pós Lote 10.6 cycle 1)` covers tenant + soft-delete pre-filter (verified WI-S04-002); `json_each` per-row extract is O(json_array_size) (small — typical AC has 1-10 outputs).
+   - **Snapshot bound**: `a.created_at < reconcile_started_at_ms` mirrors WI-S06-003 mark phase pattern; bounds race window to writes-before-snapshot (Lote 10.6bis P1-6 fix).
 
 2. **Drift threshold**:
    - Global drift % = drifts_detected / blobs_scanned.
@@ -134,7 +134,7 @@ Refcount é denormalized counter; bug em UpdateActionResult/DeleteActionResult/S
 
 1. **Refcount drift cascade**: stale refcount = blob com refcount=2 mas only 1 ac_meta entry references → mark sees refcount > 0 → blob "reachable" → never deleted (false positive; storage bloat) OR refcount=0 mas 1 ac_meta references → mark sees orphan → sweep deletes → INV-GC-001 violation. Mitigação: reconcile daily + auto-fix.
 
-2. **SQL aggregate query performance** (Lote 10.6-tris NEW-P1-3 stale-narrative fix; reflects post-Lote 10.6bis P0-1 canonical idiom): `json_each(a.blob_refs) j WHERE j.value = blob_meta.digest` é JSON-aware membership test com index pushdown via `idx_ac_meta_tenant_deleted_at` (tenant + soft-delete pre-filter). Per-row extract is O(json_array_size) (typical AC has 1-10 outputs). **NOT** the previously-flagged LIKE substring full-scan. Re-derived phase budget 1h p99 @ 1M blobs (sprint contract §5.5 R-S06-10.1) accounts for: (a) chunked iteration 1k blobs/chunk × bounded concurrency 4-8; (b) D1 batch ≤250 row Lote 10.5bis lesson; (c) `created_at_ms < reconcile_started_at_ms` snapshot bound; (d) cost ≤ $0.000010 per reconcile-batch (D1 reads ~$0.001/M rows; 1k blobs × ~5 ac_meta rows scanned via index = 5k row reads × $0.001/M = $0.000005; plus json_each per-row extract overhead ~$0.000003; plus audit_outbox INSERT ~$0.000002 = ~$0.000010 worst case). Was previously $0.000005 estimate based on LIKE full-scan analytic shape; updated to $0.000010 per Lote 10.6bis P0-1 fix (sprint contract §5.5 v1.2.0). Mitigação: chunked iteration + bounded concurrency.
+2. **SQL aggregate query performance** (Lote 10.6-tris NEW-P1-3 stale-narrative fix; reflects post-Lote 10.6bis P0-1 canonical idiom): `json_each(a.blob_refs) j WHERE j.value = blob_meta.digest` é JSON-aware membership test com index pushdown via `idx_ac_meta_tenant_deleted (canonical pós Lote 10.6 cycle 1)` (tenant + soft-delete pre-filter). Per-row extract is O(json_array_size) (typical AC has 1-10 outputs). **NOT** the previously-flagged LIKE substring full-scan. Re-derived phase budget 1h p99 @ 1M blobs (sprint contract §5.5 R-S06-10.1) accounts for: (a) chunked iteration 1k blobs/chunk × bounded concurrency 4-8; (b) D1 batch ≤250 row Lote 10.5bis lesson; (c) `created_at_ms < reconcile_started_at_ms` snapshot bound; (d) cost ≤ $0.000010 per reconcile-batch (D1 reads ~$0.001/M rows; 1k blobs × ~5 ac_meta rows scanned via index = 5k row reads × $0.001/M = $0.000005; plus json_each per-row extract overhead ~$0.000003; plus audit_outbox INSERT ~$0.000002 = ~$0.000010 worst case). Was previously $0.000005 estimate based on LIKE full-scan analytic shape; updated to $0.000010 per Lote 10.6bis P0-1 fix (sprint contract §5.5 v1.2.0). Mitigação: chunked iteration + bounded concurrency.
 
 3. **Auto-fix discipline boundary**: 5 records é arbitrary threshold; small drifts likely transient (UpdateAR mid-flight); large drifts indicate systemic bug. Mitigação: configurable threshold via env; audit chain captures auto-fix decisions.
 
@@ -158,7 +158,7 @@ Refcount é denormalized counter; bug em UpdateActionResult/DeleteActionResult/S
 - **FF-HR-011**: refcount drift cascades to INV-GC-001 risk.
 - **FF-HR-005**: controle integridade; refcount foundational.
 
-13 sign-offs.
+11 sign-offs (canonical Lote 10.6 cycle 4 alignment with framework §33.5.4.3 HIGH_RISK lane 10–12).
 
 ## 3. Customer Impact & Journey
 
@@ -216,7 +216,7 @@ Reconciliation worker; HIGH_RISK; FF-HR-011 + FF-HR-005.
     - 1. Sustained drift < 0.1% (sprint contract DoD §10.s06.5) → no SEV alert.
     - 2. Drift 0.5% global → SEV-2 alert; auto-fix percentage+absolute floor; metric tracks.
     - 3. Drift 2% per-tenant → SEV-1 alert; auto-fix paused; manual review required.
-    - 4. Concurrent UpdateAR mid-reconcile → snapshot via `reconcile_started_at_ms` + `a.created_at_ms < snapshot` predicate bounds race window deterministically.
+    - 4. Concurrent UpdateAR mid-reconcile → snapshot via `reconcile_started_at_ms` + `a.created_at < snapshot` predicate bounds race window deterministically.
     - 5. Cross-tenant scan injection → sqlx prepared rejects.
     - 6. D1 throttle on auto-fix UPDATE → exponential backoff retry 3 attempts (100/500/2000ms) → on persistent fail, persist `gc_drift_pending` row; SEV-2 (NOT SEV-1); next cron tick re-fixes.
     - 7. Phase budget exceeded (5M blobs) → SEV-2 alert.
@@ -298,7 +298,7 @@ Feature: Reconciliation daily + drift detection + auto-fix
 - 9.2: SQL aggregate **canonical `json_each(a.blob_refs) j WHERE j.value = digest`** (Lote 10.6bis P0-1; **NOT** `LIKE '%digest%'` — substring match silently breaks on schema evolution + collisions + amplifies into auto-fix corruption).
 - 9.3: **Auto-fix scale-invariant percentage+absolute floor**: `drift_count ≤ 5 AND drift_percent ≤ 0.01%` (Lote 10.6bis P0-6; rationalize over single-floor-of-5 which mis-fires across tenant scales). Auto-fix failure: 3-attempt exponential backoff → `gc_drift_pending` table → SEV-2 (NOT SEV-1).
 - 9.4: SEV escalation 0.1% / 1% (sprint contract §5.5 R-S06-10).
-- 9.5: Snapshot via `reconcile_started_at_ms`; SQL predicate `a.created_at_ms < reconcile_started_at_ms` bounds race window deterministically (mirrors WI-S06-003 mark phase pattern; Lote 10.6bis P1-6 fix).
+- 9.5: Snapshot via `reconcile_started_at_ms`; SQL predicate `a.created_at < reconcile_started_at_ms` bounds race window deterministically (mirrors WI-S06-003 mark phase pattern; Lote 10.6bis P1-6 fix).
 - 9.6: TenantCtx-only (Lote 10.4bis).
 - 9.7: Audit fail-closed (lesson WI-S06-003).
 - 9.8: Phase budget **separate sprint contract §5.5 R-S06-10.1: ≤1h p99 @ 1M blobs** (NOT sub-allocation of mark/sweep).
@@ -384,7 +384,7 @@ Total Optimistic: ~28h. PERT: ~31h.
 - 27 Knowledge Transfer: tech talk 1h; doc; onboarding 5q.
 - 28 Risk Register (12-row; Lote 10.6bis expansion): drift cascade L M HIGH L LOW; auto-fix > threshold L M HIGH L LOW; race UpdateAR M L LOW L LOW; cross-tenant L L CRITICAL L LOW; phase budget L L MEDIUM L LOW; audit fail L M MEDIUM L LOW; D1 throttle M L LOW L LOW; refcount manipulation L M MEDIUM L LOW; cost regression M L MEDIUM L LOW; SEV escalation noisy M L LOW L LOW; **SQL semantic defect (LIKE substring vs json_each) cascading to auto-fix corruption** (Lote 10.6bis P0-1) L H CRITICAL H LOW (SQL canonical idiom + property test regression); **auto-fix-vs-UpdateAR race ping-pong** (Lote 10.6bis P0-7 #11) L M MEDIUM L LOW (conditional WHERE refcount = stored_refcount predicate).
 - 29 Review: D+0..D+5 standard.
-- 30 Sign-off (HIGH_RISK 13): standard 12 mandatory + Crypto SME advisory (no cripto-load-bearing path; reconcile is analytics workload).
+- 30 Sign-off (HIGH_RISK 11): standard 10 mandatory + Crypto SME advisory (no cripto-load-bearing path; reconcile is analytics workload).
 - 31 Change Log: 1.0.0 / 2026-04-25 / Gustavo (Lote 10.6); 1.1.0 / 2026-04-25 / Gustavo (Lote 10.6bis Part 2a P0 fixes: P0-1 SQL LIKE→json_each canonical idiom + snapshot bound; P0-6 auto-fix scale-invariant percentage+absolute floor + drift_pending failure mode; P0-7 5 NEW chaos adversarial scenarios; P1-5 cron timing ≥30min after mark/sweep; P1-6 race window snapshot SQL bound; P2-7 SEV-1 threshold per-tenant >1% not global); 1.2.0 / 2026-04-25 / Gustavo (Lote 10.6-tris Sonnet R5 fixes: NEW-P1-3 §2 narrative stale LIKE reference replaced with json_each + cost re-derivation $0.000010; OPUS-MISS-3 cost derivation explicit; INV-GC-RECONCILE-AUTO-FIX-BOUNDED registry alignment OPUS-MISS-4 acknowledged via cross-ref to invariant_registry.md update).
 - 32 Anti-patterns: ❌ SQL `LIKE '%digest%'` substring (use json_each); ❌ Single absolute-floor auto-fix (use percentage+absolute); ❌ Auto-fix without conditional predicate; ❌ Cross-tenant; ❌ Skip audit; ❌ Trust client tenant_id; ❌ Variable-time SQL; ❌ Hard-coded thresholds; ❌ SEV-1 global >1% (use per-tenant >1%).
 

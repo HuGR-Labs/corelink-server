@@ -234,7 +234,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_gc_run_running
 1. **Single running gc_run per (tenant, region)**: partial UNIQUE em `WHERE status = 'running'` (Lote 10.5bis lesson); previne race two cron ticks concurrent.
 2. **Tenant-scoped strict**: `gc_run.tenant_id NOT NULL`; per-region per-tenant isolation; cross-tenant GC catastrophic FM-300.
 3. **Idempotent re-run**: worker crashed mid-phase → status='crashed' → next cron tick OR admin trigger resumes from `last_checkpoint_at_ms`; PAT-RETRY-IDEMPOTENT-001.
-4. **mark_started_at_ms é INV-GC-004 anchor**: persisted at Mark phase start; sweep phase compares strictly `<` against `ac.created_at` (lesson canonical from TLA+ `gc_correctness.tla`).
+4. **mark_started_at_ms é INV-GC-004 anchor**: persisted at Mark phase start; sweep phase enforces `ac.created_at >= mark_started_at_ms` protects (canonical TLA `gc_correctness.tla` L152-154 — protect-if-equal-or-newer; equivalent: sweep only deletes if all AC `ac.created_at < mark_started_at_ms`).
 5. **Degrade-mode `gc-pause` global stop**: DO config-singleton; PAT-DEGRADE-001; emergency abort.
 
 ## 2. Narrative (HIGH_RISK ≥ 300 palavras)
@@ -269,7 +269,7 @@ GC worker é **single point of failure** for INV-GC-001 (reachable never deleted
 - **FF-HR-005**: GC integrity control; bug = customer trust loss permanente.
 - **Reversibility**: worker crash recoverable via checkpoint; phase transitions atomic; gc_run tracking forensic.
 
-13 sign-offs.
+11 sign-offs (canonical Lote 10.6 cycle 4 alignment with framework §33.5.4.3 HIGH_RISK lane 10–12).
 
 ## 3. Customer Impact & Journey
 
@@ -432,7 +432,7 @@ Feature: Worker-gc skeleton + scheduler + degrade-mode
 - **9.4** CHECK constraints inline (Lote 10.4bis SQLite/D1 lesson).
 - **9.5** Degrade-mode probe per batch boundary (lesson WI-S04-005 cron alarm pattern).
 - **9.6** Audit outbox WI-S01-004 (Lote 10.4bis citation lesson).
-- **9.7** mark_started_at_ms é INV-GC-004 anchor — captured ONCE at Mark phase start; comparable strict `<` em sweep (TLA+ obligation).
+- **9.7** mark_started_at_ms é INV-GC-004 anchor — captured ONCE at Mark phase start; sweep enforces `ac.created_at >= mark_started_at_ms` protects (canonical TLA L152-154 protect-if-equal-or-newer).
 - **9.8** Manual admin trigger é forward S-13; staging stub OK.
 - **9.9** ADR forward — ADR-0042 (worker scheduler design + degrade-mode contract; ratificada em WI-S06-007 ship gate).
 - **9.10** No new ADR-numbered for gc_run schema (governed by existing ADR-0036 schema migration governance).
@@ -505,7 +505,7 @@ Listed §6.1.11.
 
 ## 16. PRR
 
-PRR HIGH_RISK 13 sign-offs gated em WI-S06-007. Mini-PRR: Architect + AppSec + SRE.
+PRR HIGH_RISK 11 sign-offs gated em WI-S06-007. Mini-PRR: Architect + AppSec + SRE.
 
 ## 17. Sub-tasks
 
@@ -615,7 +615,7 @@ Wrangler version revert; gc_run table preserved (no DROP); RTO ≤ 10 min; RPO 0
 
 D+0 design (Architect + SRE); D+1 AppSec; D+3 code review; D+4 chaos suite; D+5 PRR mini.
 
-## 30. Sign-off (HIGH_RISK 13)
+## 30. Sign-off (HIGH_RISK 11)
 
 | # | Role | Status |
 |---|---|---|

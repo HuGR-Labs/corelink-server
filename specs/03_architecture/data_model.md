@@ -270,11 +270,13 @@ CREATE TABLE ac_meta (
   action_digest     TEXT        NOT NULL,
   result_hash       TEXT        NOT NULL,
   blob_refs         TEXT        NOT NULL,  -- JSON array of digests
-  created_at        INTEGER     NOT NULL,
-  last_hit_at       INTEGER     NOT NULL,
-  expires_at        INTEGER     NULL,
+  created_at        INTEGER     NOT NULL,           -- unix ms
+  last_hit_at       INTEGER     NOT NULL,           -- unix ms
+  expires_at        INTEGER     NULL,               -- unix ms TTL
+  deleted_at        INTEGER     NULL,               -- soft-delete grace 24h (S-06 GC; Lote 10.6 cycle 1 canonical)
   PRIMARY KEY (tenant_id, action_digest)
 );
+CREATE INDEX idx_ac_meta_tenant_deleted ON ac_meta(tenant_id, deleted_at) WHERE deleted_at IS NULL;
 
 -- usage counters (agregados incremental)
 CREATE TABLE usage_counter (

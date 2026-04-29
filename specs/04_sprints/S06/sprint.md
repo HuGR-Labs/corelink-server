@@ -48,7 +48,7 @@ Implementar **GC production-grade** que reclaim blobs não-referenciados sem **n
 ### 2.1 In-scope
 
 - **WI-S06-001**: Worker-gc binary skeleton + scheduler + degrade-mode `gc-pause`.
-- **WI-S06-002**: Mark phase multi-pass scan D1 + batching 10k rows + jitter + `mark_started_at` persistence.
+- **WI-S06-002**: Mark phase multi-pass scan D1 + batching 250 rows canonical (Lote 10.4bis lesson D1 100KB envelope; aligned _spec_contract §5.2) + jitter + `mark_started_at` persistence.
 - **WI-S06-003**: Sweep phase soft-delete + grace check + INV-GC-004 enforce + audit emit.
 - **WI-S06-004**: Physical delete job (post-grace) + idempotency.
 - **WI-S06-005**: Refcount reconciliation daily (CTRL-GC-002) + auto-fix small drifts.
@@ -78,11 +78,11 @@ Ver `_spec_contract.md §4`. Foundation: TLA+ gc_correctness.tla green sustained
 | ID | Entregável | Onde | DoD |
 |---|---|---|---|
 | S06-D1 | Worker-gc skeleton + scheduler + degrade-mode | `crates/corelink-gc/` | Cron daily 02:00 UTC + jitter; sticky DO; `gc-pause` flag PAT-DEGRADE-001 |
-| S06-D2 | Mark phase | `crates/corelink-gc/src/mark.rs` | Multi-pass batched 10k; mark_started_at persistente em gc_run; benchmark 1M ≤ 10 min |
-| S06-D3 | Sweep phase + INV-GC-004 + audit | `crates/corelink-gc/src/sweep.rs` | Soft-delete + grace 72h CAS / 24h AC; ac.created_at < mark_started_at strict check; CloudEvent emit per sweep |
+| S06-D2 | Mark phase | `crates/corelink-gc/src/mark.rs` | Multi-pass batched 250 rows canonical (D1 envelope; Lote 10.4bis); mark_started_at persistente em gc_run; benchmark 1M ≤ 10 min |
+| S06-D3 | Sweep phase + INV-GC-004 + audit | `crates/corelink-gc/src/sweep.rs` | Soft-delete + grace 72h CAS / 24h AC; INV-GC-004 enforcement: `ac.created_at >= mark_started_at` protects (canonical TLA `gc_correctness.tla` L152-154; equivalent: delete only if all `ac.created_at < mark_started_at`); CloudEvent emit per sweep |
 | S06-D4 | Physical delete job | `crates/corelink-gc/src/physical_delete.rs` | Idempotent re-run; R2 DeleteObject; row purge |
 | S06-D5 | Refcount reconciliation | `crates/corelink-gc/src/reconcile.rs` | Daily; auto-fix < 5 records; SEV-2 alert > 0.1%; SEV-1 > 1% |
-| S06-D6 | TLA+ CI gate + property test 100k | `.github/workflows/tla.yml` + `tests/prop_gc_race.rs` | TLC integration triggers PR em corelink-gc; race Mark+UpdateAR 100k iter green |
+| S06-D6 | TLA+ CI gate + property test 100k | `.github/workflows/tla_check.yml` + `tests/prop_gc_race.rs` | TLC integration triggers PR em corelink-gc; race Mark+UpdateAR 100k iter green (canonical workflow filename pós Lote 10.6 cycle 4) |
 | S06-D7 | DASH-GC + reclaimed métrica + RBs + PRR | `observability/dashboards/dash_gc.json` + `PRR-S06.md` | Dashboard live; customer-visible bytes_reclaimed_last_30d em S-16; 3 RB dry-runs; PRR 11 sign-offs |
 
 ## 6. Escopo técnico por camada (inherits_from)
