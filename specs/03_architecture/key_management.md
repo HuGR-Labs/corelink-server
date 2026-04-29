@@ -109,7 +109,7 @@ Tabela autoritativa para `INV-KEY-OVERLAP` — sprints downstream **devem** refe
 
 | Asset class | Overlap target | Justificativa | Sprint primário |
 |---|---|---|---|
-| **PAT signing key** | 24h | Curto blast radius; PAT verifica signature inline; tokens rotated rápido | S-03 |
+| **PAT signing key** (HMAC-SHA256; hybrid HMAC + Argon2id per S-03 cycle 9 SEAL decision (a)) | 24h | Curto blast radius; PAT verifica HMAC sig fast-fail (≤100µs) ANTES Argon2id PHC verify (defense-in-depth); rotation 24h overlap; multi-key support via signing_key_id column (data_model.md §4.1) | S-03 |
 | **Audit chain key** (per-region) | 24h | Hash chain integrity precisa rotation rápida; janela de tampering minimal | S-09 |
 | **TDK** (tenant derivation key) | 7d | Re-wrap de envelope CAS é background job ≥ TB-scale; 24h causa starvation | S-01, S-13 |
 | **BYOK customer CMK** | 7d (CoreLink-side cache) | Customer trigger; CoreLink mantém DEK cache até CMK access expira; overlap = customer notification window | S-14 |

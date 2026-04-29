@@ -119,7 +119,8 @@ CREATE INDEX idx_membership_user_alive ON membership(user_account_id) WHERE dele
 -- Cycle 1 codex SEAL alignment: pat → pat (canonical name); FK refs corrected; types aligned.
 CREATE TABLE pat (
     pat_id            UUID        PRIMARY KEY,                   -- UUID v7 app-side
-    token_id          TEXT        NOT NULL UNIQUE,               -- 16-char deterministic indexed lookup key (cycle 7 codex SEAL; per auth_model.md §2.3 verification primitive: corelink_<env>_<token_id>.<random_secret>); enables ≤10ms p99 SELECT before Argon2id verify on token_hash
+    token_id          TEXT        NOT NULL UNIQUE,               -- 16-char deterministic indexed lookup key (cycle 7 codex SEAL; per auth_model.md §2.3); enables ≤10ms p99 SELECT before Argon2id verify on token_hash
+    signing_key_id    INTEGER     NOT NULL DEFAULT 1,            -- pat_signing_key version for HMAC sig validation (cycle 9 SEAL decision (a) hybrid; multi-key support per key_management.md §3.2 24h rotation overlap)
     tenant_id         UUID        NOT NULL REFERENCES tenant(tenant_id) ON DELETE CASCADE,
     issued_to_user    UUID        NULL REFERENCES user_account(user_id),
     kind              TEXT        NOT NULL CHECK (kind IN ('user','ci','readonly','executor','service')), -- canonical 5-variant enum per data_model.md §4.1 L183

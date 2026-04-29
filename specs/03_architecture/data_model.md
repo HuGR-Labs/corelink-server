@@ -90,7 +90,7 @@ tags: ["architecture", "data-model", "schema", "cas", "ac", "billing"]
 |--------------------------------------|-------------|-------------------------------------|
 | Internal entity (account, tenant…)  | UUIDv7       | `01938af0-abcd-7123-8456-..........` |
 | Event (usage/audit)                  | ULID         | `01HKE3Z9ABCDEF01234567890`         |
-| PAT                                  | `corelink_<env>_<token_id>.<random_secret>` (canonical per auth_model.md §2.3 + S-03 cycle 7 SEAL) | `corelink_pat_abc12345.x9k...........` |
+| PAT                                  | `corelink_<env>_<token_id>.<random_secret>.<hmac_sig>` (canonical hybrid HMAC + Argon2id per auth_model.md §2.3 + S-03 cycle 9 SEAL decision (a)) | `corelink_pat_abc12345.x9k....abcDEF12345` |
 | Blob digest                          | `algo:hex`   | `blake3:a1b2c3d4...`                |
 | Region                               | enum code    | `wnam`, `weur`, `sam`, ...          |
 | Request-id                           | ULID          | propagado em logs/traces            |
@@ -181,7 +181,9 @@ CREATE TABLE pat (
   tenant_id         UUID        NOT NULL REFERENCES tenant(tenant_id),
   issued_to_user    UUID        NULL REFERENCES user_account(user_id),
   kind              TEXT        NOT NULL CHECK (kind IN ('user','ci','readonly','executor','service')),
-  token_hash        BYTEA       NOT NULL UNIQUE,
+  token_id          TEXT        NOT NULL UNIQUE,           -- 16-char deterministic indexed lookup key (cycle 9 SEAL decision (a) hybrid; per auth_model.md §2.3)
+  token_hash        BYTEA       NOT NULL UNIQUE,           -- Argon2id PHC string serialized as BYTEA
+  signing_key_id    INTEGER     NOT NULL DEFAULT 1,        -- pat_signing_key version for HMAC sig validation (multi-key rotation per key_management.md §3.2)
   scopes            TEXT[]      NOT NULL,
   expires_at        TIMESTAMPTZ NULL,
   last_used_at       TIMESTAMPTZ NULL,

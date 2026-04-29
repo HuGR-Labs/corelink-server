@@ -91,7 +91,7 @@ Ver `_spec_contract.md §4`. Auth_model §8.1 5-layer defense — este sprint im
 
 ### 6.1 Auth (herda `auth_model.md §3 + §5 + §8.1`)
 
-- PAT format: `corelink_<env>_<base64url(32 bytes)>`.
+- PAT format: `corelink_<env>_<token_id>.<random_secret>.<hmac_sig>` (hybrid HMAC + Argon2id per cycle 9 SEAL decision (a)).
 - Argon2id params OWASP 2024: m=65536, t=3, p=4.
 - 5-layer defense propagation: PAT scope → tenant prefix derivation → AuthZ check → R2 key prefix → audit cross-check.
 - **Delta local**: PAT signing key 24h overlap (per ADR-0018 + key_management §3.2.1).

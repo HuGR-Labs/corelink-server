@@ -3,7 +3,7 @@ id: "SPEC-CONTRACT-S03"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.9.0"
+version: "1.10.0"
 created: "2026-04-24"
 updated: "2026-04-24"
 owner: "Gustavo Schneiter"
@@ -77,7 +77,7 @@ inherits_from:
 - **R-S03-2**: Middleware `tower` (gRPC) + Worker handler (HTTP) interceptando + injetando `TenantCtx { tenant_id, user_id, scopes, mfa_ts }`.
 - **R-S03-3**: Crate `corelink-pat` com:
   - **Argon2id** hash (params: `m_cost=65536`, `t_cost=3`, `p_cost=4` — OWASP 2024 recommendation).
-  - PAT format canonical: `corelink_<env>_<token_id>.<random_secret>` (e.g., `corelink_pat_abc12345.x9k...`); `token_id` = 16-char deterministic indexed lookup key (UUIDv7 short form OR SHA-256 prefix); `random_secret` = 32 bytes random base64url (cycle 7 codex SEAL alignment com auth_model.md §2.3 verify primitive + WI-S03-005 schema token_id column).
+  - PAT format canonical: `corelink_<env>_<token_id>.<random_secret>.<hmac_sig>` (cycle 9 SEAL decision (a) hybrid HMAC + Argon2id; e.g., `corelink_pat_abc12345.x9k....abcDEF12345`); `token_id` = 16-char deterministic indexed lookup key; `random_secret` = 32 bytes random base64url; `hmac_sig` = base64url(HMAC-SHA256(pat_signing_key, token_id||"."||random_secret))[:22] fast-fail layer (≤100µs; defense vs DDoS + phishing).
   - Verify: timing-safe compare via `subtle::ConstantTimeEq`.
   - Scope check: typed enum + bitfield matching.
 - **R-S03-4**: Revocation broadcast via DO `pat-invalidator-<region>`:

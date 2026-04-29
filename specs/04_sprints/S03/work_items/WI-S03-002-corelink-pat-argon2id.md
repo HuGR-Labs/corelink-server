@@ -46,7 +46,7 @@ tags: ["wi", "s03", "auth", "pat", "argon2id", "timing-safe", "high-risk"]
 
 Implementar `crates/corelink-pat/` — biblioteca de PAT (Personal Access Token) com:
 
-1. **Geração canônica** PAT format `corelink_<env>_<base64url(32B random)>` (env ∈ `pat | ci | ro`).
+1. **Geração canônica** PAT format `corelink_<env>_<token_id>.<random_secret>.<hmac_sig>` (env ∈ `pat | ci | ro | exec`; cycle 9 SEAL decision (a) hybrid HMAC + Argon2id).
 2. **Hash Argon2id** com OWASP 2024 params (m=65536 KiB, t=3 iter, p=4 lanes) + salt 16B random per token; storage canônico PHC string.
 3. **Timing-safe verify** via `subtle::ConstantTimeEq` em **dois níveis**: (a) prefix parsing constant-time; (b) hash comparison constant-time (via Argon2 lib API).
 4. **Scope bitset** representação compacta de scopes (auth_model.md §3.1, 13 scopes) em `u64` (1 bit por scope; future-proof para até 64 scopes).
