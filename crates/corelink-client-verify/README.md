@@ -48,6 +48,10 @@ cgo wrappers in S-15) lives in module [`ffi`](src/ffi.rs):
 - `corelink_verifier_verify(handle, body, body_len, hex, hex_len, *out_code) -> i32`
 - `corelink_verifier_free(handle)`
 - `corelink_verify_error_code_to_str(code) -> *const c_char`
+- `corelink_verify_opt_out_total() -> u64` — canonical FFI accessor for the
+  process-global `opt_out_total()` counter. Wrapper authors (Python pyO3, Go
+  cgo) MUST surface this metric so observability dashboards can track silent
+  default-on bypasses; do not duplicate the accounting per-language.
 
 The constants `DIGEST_HEX_LEN`, `COR_VERIFY_OK`, `COR_VERIFY_ERR_*`
 are also exported in the cbindgen-generated header at
