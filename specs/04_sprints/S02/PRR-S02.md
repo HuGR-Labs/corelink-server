@@ -1,10 +1,10 @@
 ---
 id: "PRR-S02"
 type: "prr"
-doc_status: "DRAFT"
-work_status: "CONDITIONALLY_APPROVED"
+doc_status: "FROZEN"
+work_status: "APPROVED"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-30"
 updated: "2026-04-30"
 owner: "Gustavo Schneiter"

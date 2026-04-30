@@ -76,7 +76,13 @@ async fn write_blob(
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 64,
+        // WI-S02-002 §10.2.2 + sprint DoD canonical: 10k batch enumeration
+        // attempts. Each case spawns a full `(tenant_a_blobs, tenant_b_query_subset)`
+        // pair via random strategies, exercising the FindMissingBlobs handler
+        // end-to-end with random-input diversity (closes Sonnet sprint-close P1-1
+        // raised against the previous 64-case config).
+        cases: 10_000,
+        max_shrink_iters: 64,
         .. ProptestConfig::default()
     })]
 
