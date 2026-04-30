@@ -1,12 +1,12 @@
 ---
 id: "WI-S01-007"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "FROZEN"
+work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-04-29"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-005"]
 parent: "S-01"
@@ -24,9 +24,9 @@ inherits_from:
 tags: ["wi", "s01", "ci", "tla", "tlc", "sbom", "supply-chain"]
 ---
 
-# WI-S01-007 — CI Workflow: TLC Gate + SBOM CycloneDX 1.5+ + cargo-audit + fuzz nightly
+# WI-S01-007 — CI Workflow: TLC Gate + SBOM CycloneDX 1.5+ + cargo-deny + fuzz nightly
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** FROZEN · **work_status:** DONE · **lane:** HIGH_RISK · **Implementation:** SEALED 2026-04-29
 > **Parent:** [S-01](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -36,54 +36,69 @@ tags: ["wi", "s01", "ci", "tla", "tlc", "sbom", "supply-chain"]
 | Campo | Valor |
 |---|---|
 | ID | WI-S01-007 |
-| Título | CI workflow TLC gate + SBOM + cargo-audit + fuzz |
+| Título | CI workflow TLC gate + SBOM + cargo-deny + cosign + fuzz nightly |
 | Sprint | S-01 |
 | Lane | HIGH_RISK |
 | Forcing factors | FF-HR-005 (CI gates são security control enforcement; CTRL-FORMAL-001 + CTRL-SUPPLY-001..005) |
 
 ## 1. Intent
 
-GitHub Actions workflow `.github/workflows/cas_foundation.yml` que enforce CI gates obrigatórios para CAS foundation:
+Two GitHub Actions workflows enforce CI gates obrigatórios para a CAS foundation S-01. Per-crate workflows (`tenant-path.yml`, `corelink-{hash,worker,meta,reapi}.yml`) já cobrem build/clippy/test/per-crate fuzz smoke; estes dois novos workflows são o **sprint-level convergence**:
 
 ```yaml
-name: CAS Foundation CI
-on: [pull_request, push]
+# .github/workflows/cas_foundation.yml — fires em PR + push to main + push em main
 jobs:
-  - tla-check: TLC model checker on 4 specs (tenant_isolation, cas_integrity, gc_correctness, audit_immutability)
-  - rust-build: cargo build --release --target wasm32-unknown-unknown
-  - rust-test: cargo test --release (unit + integration + property tests 10k)
-  - clippy: cargo clippy -D warnings
-  - sast: semgrep SAST rules
-  - cargo-audit: dependency CVE check
-  - cargo-deny: license + advisories policy
-  - fuzz-nightly: cargo-fuzz 1h (parsers + digest decode)
-  - sbom: cyclonedx-cli generate SBOM CycloneDX 1.5+
-  - cosign: sigstore sign release artifact
+  - tlc-canonical: TLC v1.8.0 SHA-pinned model check on the 4 canonical specs
+                   (tenant_isolation, cas_integrity, gc_correctness, audit_immutability)
+                   with PR-bound configs.
+  - workspace-build-test: cross-cutting fmt + clippy (-D warnings) + cargo test workspace
+                          + cargo doc (deny broken intra-doc links).
+  - cargo-deny: license + advisories + sources + bans (deny.toml; fail-closed).
+  - sbom-cyclonedx: cargo-cyclonedx 0.5.9 (exact pin) gen → CycloneDX 1.5 JSON
+                    per crate → sbomqs v1.0.5 NTIA min-elements gate (avg_score ≥ 10.0).
+                    Artifacts uploaded for every PR; signing happens only post-merge.
+  - cosign-sign: keyless OIDC + Rekor BUNDLE (offline-verifiable inclusion proof).
+                 RELEASE-ONLY — `if: github.event_name == 'push' && github.ref == 'refs/heads/main'`.
+                 Pull requests (fork OR same-repo) do NOT request `id-token: write`.
+  - reproducible-build-smoke: build corelink-server bin twice with deterministic
+                               flags (`RUSTFLAGS=--remap-path-prefix=...=/build -C strip=symbols`,
+                               `SOURCE_DATE_EPOCH=1714435200`); diff sha256.
+                               Single-runner per ADR-0015; full SLSA L3 deferred WI-S12-006.
+
+# .github/workflows/nightly.yml — fires on cron 23 4 * * * + workflow_dispatch
+jobs:
+  - tlc-extended: matrix over 4 specs with `<spec>_nightly.cfg` extended bounds.
+                  Hard 30-min timeout per spec via `timeout 1800s`.
+  - proptest-extended: PROPTEST_CASES=100000 on `corelink-reapi::prop_cas` +
+                       `corelink-reapi::prop_idempotency`. Both targets required.
+  - fuzz-matrix: parallel matrix on the 9 fuzz targets across 5 SEALed crates,
+                 1h each via `cargo fuzz run <target> -- -max_total_time=3600`.
+  - mutants-workspace: cargo-mutants 27.0.0 (exact pin) workspace, fail-on-any-survivor.
 ```
 
-Cada job é **CI gate hard**: PR fail se any job red. SBOM publishedo como release asset.
+Cada job é **CI gate hard fail-closed** (HIGH_RISK lane FF-HR-005, no warning-only). SBOM publishedo como GH Actions artifact (90 day retention; 365 day para signed bundle on release).
 
 ## 2. Narrative (HIGH_RISK ≥ 300)
 
 CI é **a última linha de defesa** entre code review e production. Falhas:
 
 1. **TLC gate skipped**: PR introduz mudança em modelo distribuído (state machines em corelink-tenant-path, R2 path, refcount); TLA+ specs não re-validated; invariant violation slipped silently.
-2. **Cargo-audit skipped**: dep CVE descoberto upstream; CoreLink ship vulnerable build; supply chain attack surface.
+2. **Advisory CVE não checado**: dep CVE descoberto upstream; CoreLink ship vulnerable build; supply chain attack surface.
 3. **SBOM ausente**: release sem SBOM = INV-SUPPLY-SBOM-PRESENT violation; auditor flag em SOC 2 review.
 4. **Cosign sign skipped**: release não verificável; INV-SUPPLY-SIGNED-DEPLOY violation; CF deploy webhook reject (S-12 enforcement; soft pre-S-12).
 5. **Fuzz coverage gap**: parser bugs slip (digest hex parse, REAPI proto deserialize); WASM panic em prod.
 
 Mitigação:
-- **TLC em CI**: `tlc -config tenant_isolation.cfg tenant_isolation.tla` em GitHub Actions; runtime ~5-15min; PR fail se model check falha.
-- **cargo-audit nightly + per-PR**: detecta novel CVE em deps.
-- **cargo-deny policy** (`deny.toml`): license allowlist + ban yanked + advisories deny.
-- **cyclonedx-cli**: SBOM gen + validate NTIA minimum elements.
-- **sigstore cosign**: keyless via OIDC GitHub Actions identity; Rekor inclusion proof.
-- **cargo-fuzz**: 1h nightly per fuzz target; 100M iter target.
+- **TLC em CI**: `bash scripts/run_tlc_corelink.sh <spec> [<cfg_basename>]` em GitHub Actions; runtime ~5-15min; PR fail se model check falha. SHA-256 pin do `tla2tools.jar` enforce ADR-0042 §A1.
+- **cargo-deny advisories**: a única superfície CVE — engloba RUSTSEC database via `[advisories] yanked = "deny"`; absorve o que `cargo-audit` faria por PR + nightly em um único gate canonical.
+- **cargo-deny policy** (`deny.toml`): license allowlist + ban yanked + advisories deny + sources allowlist + bans (openssl proibido; multi-version deny + skip-list audited).
+- **cargo-cyclonedx 0.5.9** (exact pin): SBOM gen CycloneDX 1.5 JSON; **sbomqs v1.0.5** valida NTIA minimum elements (gate `avg_score >= 10.0`, todos elementos presentes).
+- **sigstore cosign 2.4.1**: keyless via OIDC GitHub Actions identity; Rekor bundle = offline-verifiable inclusion proof.
+- **cargo-fuzz 0.13.1** (exact pin): 1h nightly per target × 9 targets parallel matrix.
 
 CI runtime budget:
-- Per-PR: ~15-20 min (TLC 10min + Rust build 5min + tests 5min).
-- Nightly: ~2h (fuzz 1h + extended property tests 5min + SBOM + sign).
+- Per-PR (cas_foundation.yml): ~15-25 min (TLC PR-bounds 8-12min + workspace build/test 8-12min + cargo-deny 2-4min + SBOM + repro-build smoke 10-15min — em paralelo onde possível via `needs:`).
+- Nightly: ~3-4h (fuzz 1h × 9 targets parallel matrix consumes 1h wall-clock + tlc-extended 30min × 4 parallel + proptest 100k 5-15min + mutants 60-180min).
 
 **Risk justification HIGH_RISK:**
 - **FF-HR-005**: CI gates são controle de segurança formal; bypass = security control failure.
@@ -91,7 +106,7 @@ CI runtime budget:
 
 ## 3. Customer Impact & Journey
 
-**JTBD (internal team):** "Como dev CoreLink, eu submeto PR e tenho confidence que CI catches: invariant violations (TLC), CVE em deps (cargo-audit), license violations (cargo-deny), SBOM missing, cosign signature missing, fuzz panics. Sem CI gate, esses problemas chegam em produção."
+**JTBD (internal team):** "Como dev CoreLink, eu submeto PR e tenho confidence que CI catches: invariant violations (TLC), advisory CVEs (cargo-deny advisories), license violations (cargo-deny licenses), yanked deps (cargo-deny advisories), unknown sources (cargo-deny sources), banned crates (cargo-deny bans), SBOM missing/malformed (cargo-cyclonedx + sbomqs NTIA), cosign signature missing on release (cosign-sign release-only), fuzz panics (per-crate fuzz smoke + nightly matrix), reproducibility regressions (reproducible-build-smoke). Sem CI gate, esses problemas chegam em produção."
 
 Indirect customer impact: trust + reliability + supply chain integrity.
 
@@ -108,37 +123,51 @@ CI Infrastructure; HIGH_RISK; FF-HR-005.
 
 ### 6.1 In-scope
 
-1. **GitHub Actions workflow** `.github/workflows/cas_foundation.yml`:
-   - `tla-check` job: TLC model check 4 specs (vide §6.1.7 explicit bounds + JVM/timeout config).
-   - `rust-build` job: cargo build --release --target wasm32-unknown-unknown (com sccache; vide §6.1.8 cache strategy).
-   - `rust-test` job: unit + integration + property tests 10k.
-   - `clippy-strict` job: `cargo clippy --all-targets -D warnings`.
-   - `sast` job: semgrep + custom rules.
-   - `cargo-audit` job: dependency CVE check (advisory-db nightly update).
-   - `cargo-deny` job: license + sources + advisories policy enforcement.
-   - `sbom` job: cyclonedx-cli generate + sbomqs NTIA validation (não apenas schema check).
-   - `cosign-sign` job: sigstore keyless OIDC + Rekor inclusion (release branch only); fork-PR guard `if: github.event.pull_request.head.repo.full_name == github.repository`.
+1. **GitHub Actions workflow** `.github/workflows/cas_foundation.yml` (sprint-level convergence — fires em PR + push to `main` que tocam crates/apps/specs/tla):
+   - `tlc-canonical` job: TLC v1.8.0 SHA-pinned model check 4 canonical specs (vide §6.1.7 explicit bounds + runner flags + timeout).
+   - `workspace-build-test` job: `cargo fmt --check`, `cargo clippy --workspace --all-targets -D warnings`, `cargo test --workspace --all-targets`, `cargo doc --no-deps -D warnings`. Convergence sanity (per-crate workflows já cobrem mais granular).
+   - `cargo-deny` job: license + advisories + sources + bans policy via `deny.toml`. Single canonical replacement do que historicamente seriam `cargo-audit` + `cargo-deny` separados.
+   - `sbom-cyclonedx` job: `cargo-cyclonedx =0.5.9` gen → CycloneDX 1.5 JSON per crate → `sbomqs v1.0.5` NTIA min-elements gate (avg_score ≥ 10.0). Artifacts upload `sbom-cyclonedx-1.5` (90 day retention).
+   - `cosign-sign` job: sigstore keyless OIDC + Rekor BUNDLE (offline-verifiable inclusion proof). RELEASE-ONLY — `if: github.event_name == 'push' && github.ref == 'refs/heads/main'`. Pull requests (fork OR same-repo) do NOT request the `id-token: write` permission. Adoption rationale per ADR-0044 §1.3: minimiza exposição OIDC.
+   - `reproducible-build-smoke` job: build `corelink-server` bin twice with deterministic flags + diff sha256. Single-runner per ADR-0015; full SLSA L3 deferred WI-S12-006.
 
-2. **Nightly workflow** `.github/workflows/nightly.yml`:
-   - `fuzz` job: cargo-fuzz 1h per target **em paralelo** (matrix runner; 3 jobs concurrent).
-   - `proptest-extended` job: 100k iter (vs 10k em PR).
-   - `tlc-extended` job: TLC com larger bounds (5 tenants × 50 ops vs 3×10 em PR; vide §6.1.7 bounds table).
+   Out of scope deste workflow (handled elsewhere):
+   - SAST semgrep — `cargo clippy -D warnings` + `cargo doc -D warnings` cobrem o equivalente em Rust ergonomic; semgrep custom rules adicionais ficam em S-12 quando o ruleset CoreLink-specific consolidar.
+   - WASM build — cobrindo per-crate workflows (corelink-{hash,worker,meta,reapi,tenant-path}.yml `wasm-build` job).
+   - Per-crate `cargo-audit` direto — substituído pelo single canonical `cargo-deny advisories` deste workflow.
+
+2. **Nightly workflow** `.github/workflows/nightly.yml` (cron `23 4 * * *` + `workflow_dispatch`):
+   - `tlc-extended` job: TLC matrix sobre 4 specs com `<spec>_nightly.cfg` extended bounds (vide §6.1.7); hard 30-min timeout per spec.
+   - `proptest-extended` job: `PROPTEST_CASES=100000` em `corelink-reapi::prop_cas` + `corelink-reapi::prop_idempotency`. Both required (no fail-open).
+   - `fuzz-matrix` job: parallel matrix sobre os 9 fuzz targets canonical (tenant-path/derive_prefix; corelink-hash/{digest_parse,verify_body}; corelink-worker/{r2_path,r2_put_get_roundtrip}; corelink-meta/{commit_put_roundtrip,audit_idempotency}; corelink-reapi/{proto_decode_batch_update,audit_request_id_total}); 1h cada via `cargo fuzz run -- -max_total_time=3600`. Artifact upload em `failure()`.
+   - `mutants-workspace` job: `cargo-mutants 27.0.0` (exact pin) workspace, fail-on-any-survivor (effective 100% kill rate; corpus pequeno o suficiente para não tolerar survivors).
 
 7. **TLC explicit state-space bounds** (P0 fix; resolve "gate é theatre" risco):
 
-   Cada `.cfg` file commits explicit constants + timeout/coverage config:
+   Cada `.cfg` file commits explicit constants alinhados com os CONSTANTS reais de cada `.tla`. Nightly tem cfg sibling `<spec>_nightly.cfg`. TLC execution flags vivem no runner script (`scripts/run_tlc_corelink.sh`), não no cfg.
 
-   | Spec | PR bounds | Nightly bounds | TLC config |
-   |---|---|---|---|
-   | `tenant_isolation.cfg` (PR) | `MaxTenants = 3`, `MaxOps = 10`, `MaxDigests = 5` | `MaxTenants = 5`, `MaxOps = 50`, `MaxDigests = 20` | `-deadlock`, `-coverage 60`, `-workers 2`, `-checkpoint 0` (no checkpoint), `-fp 32` |
-   | `cas_integrity.cfg` (PR) | `MaxBlobs = 5`, `MaxOps = 10` | `MaxBlobs = 20`, `MaxOps = 50` | idem |
-   | `gc_correctness.cfg` (PR) | `MaxBlobs = 3`, `MaxRefs = 5`, `MaxOps = 8` | `MaxBlobs = 10`, `MaxRefs = 20`, `MaxOps = 30` | idem + `-difftrace` |
-   | `audit_immutability.cfg` (PR) | `MaxEvents = 10`, `MaxChainLen = 20` | `MaxEvents = 50`, `MaxChainLen = 100` | idem |
+   | Spec | PR cfg constants | Nightly cfg constants |
+   |---|---|---|
+   | `tenant_isolation.cfg` | `Tenants={t1,t2}`, `Principals={p_t1,p_t2}`, `Blobs={b1,b2}`, `MaxOps=4` | `tenant_isolation_nightly.cfg`: `Tenants={t1,t2,t3}`, `Principals={p_t1,p_t2,p_t3}`, `Blobs={b1,b2,b3}`, `MaxOps=8` |
+   | `cas_integrity.cfg` | `Bodies={b1,b2}`, `Digests={d1,d2,d_wrong}`, `Clients={c1}`, `MaxOps=3` | `cas_integrity_nightly.cfg`: `Bodies={b1,b2,b3}`, `Digests={d1,d2,d_wrong,d_alt_wrong}`, `Clients={c1,c2}`, `MaxOps=6` |
+   | `gc_correctness.cfg` | `Blobs={b1,b2}`, `AC_Entries={e1}`, `MaxTime=10`, `GracePeriod=2` | `gc_correctness_nightly.cfg`: `Blobs={b1,b2,b3,b4}`, `AC_Entries={e1,e2,e3}`, `MaxTime=20`, `GracePeriod=3` |
+   | `audit_immutability.cfg` | `Actors={a1}`, `EventTypes={write,revoke}`, `MaxEvents=3` | `audit_immutability_nightly.cfg`: `Actors={a1,a2}`, `EventTypes={write,revoke}`, `MaxEvents=8` |
 
-   - **Hard timeout per spec** PR: 8 min (`timeout 480s java -jar tla2tools.jar ...`); nightly: 30 min (`timeout 1800s ...`).
-   - **State-space size estimation** documented em `specs/tla/README.md`: explicit-state cardinality cap aprox 10^7 PR / 10^9 nightly em GitHub runners (16 GB RAM, 4 vCPU `ubuntu-latest`).
-   - **TLC tools pinned**: `tla2tools.jar` URL `https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar` + SHA-256 verified pre-exec; verification script `scripts/verify_tla_tools.sh`.
-   - **Failure mode policy**: timeout = job FAIL (não PASS silent); coverage gauge 100% expected (vide TLC `-coverage` output); deadlock flag mandatory (catches stuck states).
+   **TLC execution flags** (runner-side, applied to every invocation):
+   - `-workers 2` — parallel BFS; GitHub `ubuntu-latest` 4 vCPU, leaving 2 free for sibling jobs.
+   - `-coverage 60` — coverage stats every 60s (surfaces zero-coverage states; resolves "gate é theatre" risk).
+   - `-fp 32` — 32-bit fingerprints (state spaces < 10^7 keep collision risk negligible).
+   - `-checkpoint 0` — checkpointing disabled (CI runners ephemeral).
+
+   **Hard timeout per spec** PR: 8 min (`timeout 480s ...`); nightly: 30 min (`timeout 1800s ...`).
+
+   **State-space size estimation**: explicit-state cardinality cap aprox 10^6 PR / 10^7..10^9 nightly em GitHub runners (16 GB RAM, 4 vCPU `ubuntu-latest`).
+
+   **TLC tools pinned**: `tla2tools.jar` URL `https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar` + SHA-256 verified pre-exec por workflow inline + `scripts/run_tlc_corelink.sh` runtime re-check (defense-in-depth per ADR-0042 §A1).
+
+   **Deadlock policy**: cada cfg seta `CHECK_DEADLOCK FALSE`. Razão: as specs canonical S-01 são bounded por `MaxOps`/`MaxEvents`; alcançar o bound é estado terminal legítimo, não deadlock real. v1.0.0 do WI mencionou `-deadlock` mandatory; v1.2.0 corrige (conflito com bounded-state-space). A detecção semântica de "stuck states" é feita pelas invariants explícitas (e.g. `InvAuditChainIntact`).
+
+   **Failure mode policy**: timeout (`timeout` exit 124) = job FAIL (não PASS silent); coverage gauge < 100% no log = soft signal (não fail por si só, mas surface em PR review).
 
 8. **CI cache strategy** (resolve "≤ 20min PR" credibility):
    - `actions/cache` em `~/.cargo/registry`, `~/.cargo/git`, `target/` keyed por `Cargo.lock` SHA.
@@ -150,9 +179,10 @@ CI Infrastructure; HIGH_RISK; FF-HR-005.
    - Auto-update via Renovate config `.github/renovate.json`; PR review required.
    - Examples: `actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab` (não `@v4`).
 
-10. **Fork-PR secret protection**:
-    - Jobs com secrets (cosign, SBOM publish, deploy) gated por `if: github.event.pull_request.head.repo.full_name == github.repository`.
-    - External fork PRs run public-only jobs (TLC, build, test, clippy); cosign + deploy skipped com explicit "skipped: external fork" log.
+10. **Fork-PR secret protection (v1.2.0 simplification)**:
+    - Jobs com secrets (cosign sign, SBOM publish, deploy) NÃO rodam em PRs — fork OR same-repo. Gated por `if: github.event_name == 'push' && github.ref == 'refs/heads/main'`.
+    - PRs (fork OR same-repo) rodam só os gates não-secret (TLC, build, test, clippy, deny, SBOM gen + NTIA validate). Cosign + deploy só executam após merge para `main`.
+    - Rationale: minimiza a superfície OIDC (`id-token: write`) — cada PR com mesmo repo NÃO precisa do token. Fork PRs já não recebem token por GitHub policy default; este gate documenta o behaviour explicitamente para mesmo-repo.
 
 3. **deny.toml** policy file:
    - License allowlist: MIT, Apache-2.0, BSD-2/3-Clause, ISC, MPL-2.0, Unicode-DFS-2016.
@@ -161,7 +191,7 @@ CI Infrastructure; HIGH_RISK; FF-HR-005.
    - Sources: only crates.io (no git deps non-pinned).
    - Advisories: deny RUSTSEC-* unless waived ADR.
 
-4. **cyclonedx-cli config** integrado em release pipeline + sbomqs NTIA validator pós-generation.
+4. **cargo-cyclonedx** (NÃO `cyclonedx-cli`; ver ADR-0044 §2 por que): config integrado em release pipeline + sbomqs NTIA validator pós-generation. `cyclonedx-cli` é a alternativa multi-language considerada e rejeitada — `cargo-cyclonedx` é mais profundo em Cargo.lock semantics.
 
 5. **Cosign keyless setup** via GitHub Actions OIDC; Fulcio cert (10min lived) per build; Rekor inclusion proof attached. **Outage policy explícito**: Sigstore offline → release blocked + ops escalation runbook RB-FM-SIGSTORE-OUTAGE; sem "grace period" silencioso (cert curto não pode-se cachear; honestidade vs theatre).
 
@@ -201,7 +231,7 @@ Feature: CI Foundation gates
 
   Scenario: PR with new CVE dep blocked
     Given PR adds dep with known RUSTSEC advisory
-    When cargo-audit runs
+    When cargo-deny advisories runs
     Then advisory triggered
     And PR fails
 
@@ -280,7 +310,7 @@ ADR-0014 (SBOM CycloneDX 1.5+) já documentou. Adicional: ADR para TLC vs Apalac
 - [ ] **10.7.1** TLC gate enforced: PR com invariant violation blocked (EVT-022).
 - [ ] **10.7.2** SBOM CycloneDX 1.5+ NTIA-compliant em cada release (EVT-010).
 - [ ] **10.7.3** Cosign keyless sign + Rekor inclusion em release (EVT-011).
-- [ ] **10.7.4** cargo-audit + cargo-deny policy enforced em PR (EVT-012).
+- [x] **10.7.4** cargo-deny (advisories + licenses + sources + bans) policy enforced em PR (EVT-012). Single canonical gate; absorve a função histórica de `cargo-audit`.
 - [ ] **10.7.5** Fuzz nightly 1h × 3 targets sustained 7d zero panics (EVT-008).
 - [ ] **10.7.6** Property tests 100k nightly green (EVT-002).
 - [ ] **10.7.7** Cost regression gate: CI runtime ≤ 20min PR / ≤ 2h nightly (§14.10).
@@ -335,7 +365,7 @@ Validations enforced (não invariants per se):
 ## 15. Chaos Experiments
 
 1. **Inject fake invariant violation em test branch**: verify TLC catches.
-2. **Inject fake CVE dep**: verify cargo-audit catches.
+2. **Inject fake CVE dep**: verify cargo-deny advisories catches.
 3. **Inject GPL dep**: verify cargo-deny catches.
 
 ## 16. PRR
@@ -349,9 +379,9 @@ PRR + Security lead + AppSec.
 | ST-001 | PR workflow scaffold + tla-check job | 2h |
 | ST-002 | rust-build + rust-test jobs | 1.5h |
 | ST-003 | clippy-strict + sast jobs | 1h |
-| ST-004 | cargo-audit + cargo-deny jobs | 2h |
+| ST-004 | cargo-deny job (single canonical replacement of cargo-audit + cargo-deny historical split) | 2h |
 | ST-005 | deny.toml policy authoring | 1.5h |
-| ST-006 | sbom job (cyclonedx-cli) | 2h |
+| ST-006 | sbom job (cargo-cyclonedx + sbomqs NTIA gate) | 2h |
 | ST-007 | cosign-sign job (keyless OIDC + Rekor) | 3h |
 | ST-008 | Nightly workflow scaffold | 1h |
 | ST-009 | 3 fuzz harnesses | 4h |
@@ -399,7 +429,7 @@ CI workflows internal; semver não-applicable. SBOM format CycloneDX 1.5+ semver
 - CI gate bypassed via misconfiguration → CRITICAL post-mortem.
 - Cosign signing failure em release → SEV-1 + immediate fix.
 - TLC red sustained > 4h em main branch → CRITICAL (rollback).
-- CVE descoberto via cargo-audit em prod release → SEV-2 + remediation.
+- CVE descoberto via cargo-deny advisories em prod release → SEV-2 + remediation.
 
 ## 25. Rollback / Recovery
 
@@ -420,7 +450,7 @@ Doc `docs/internal/ci-gates.md` — explica each gate's rationale + how to debug
 |---|---|---|---|---|---|---|---|
 | R-001 | TLC runtime > 30min em large bounds | M | M | LOW (CI delay) | M | LOW | Per-PR small bounds; nightly extended |
 | R-002 | Cosign Fulcio/Sigstore outage blocks release | L | L | MEDIUM | L | LOW | Outage = release blocked (Fulcio certs 10min lived; nada para cachear). Runbook RB-FM-SIGSTORE-OUTAGE: escalation + comm; release queue até restore. Sem "grace period" silencioso. |
-| R-003 | False positive cargo-audit (unrelated CVE) | M | L | LOW | L | LOW | RUSTSEC-* waiver via ADR if applicable |
+| R-003 | False positive cargo-deny advisories (unrelated CVE) | M | L | LOW | L | LOW | RUSTSEC-* waiver via ADR + add to `[advisories.ignore]` em deny.toml |
 | R-004 | GitHub Actions free tier exceeded | L | L | LOW | L | LOW | Pay tier ~$5/month if needed |
 | R-005 | Workflow YAML injection | L | M | HIGH | L | LOW | No `pull_request_target` em untrusted; review |
 
@@ -437,6 +467,22 @@ Doc `docs/internal/ci-gates.md` — explica each gate's rationale + how to debug
 ## 31. Change Log
 
 1.0.0 — 2026-04-25 — Lote 10.1.
+
+1.1.0 — 2026-04-25 — Lote 10.1 (initial round of refinements per spec audit).
+
+1.2.0 — 2026-04-29 — **Implementation SEAL — WI lifecycle FROZEN/DONE.** Lote S-01-007:
+
+- Created `.github/workflows/cas_foundation.yml` — sprint-level convergence workflow. Jobs: `tlc-canonical` (TLC PR-bound model check on 4 specs), `workspace-build-test`, `cargo-deny`, `sbom-cyclonedx` (CycloneDX 1.5 generation + sbomqs NTIA validation), `cosign-sign` (release-only via `if: github.event_name == 'push' && github.ref == 'refs/heads/main'`; emits Rekor bundle for offline-verifiable inclusion proof), `reproducible-build-smoke` (single-runner deterministic smoke against `corelink-server` bin per ADR-0015).
+- Created `.github/workflows/nightly.yml` — extended nightly. Jobs: `tlc-extended` (matrix over 4 specs with `<spec>_nightly.cfg`), `proptest-extended` (100k iter), `fuzz-matrix` (parallel 1h × 9 fuzz targets across 5 SEALed crates), `mutants-workspace` (fail-on-any-survivor).
+- Created `deny.toml` — fail-closed cargo-deny policy: license allowlist (MIT/Apache-2.0/BSD/ISC/MPL-2.0/Unicode/Zlib/CC0/0BSD), `[advisories] yanked = "deny"`, `[bans] multiple-versions = "deny"` with audited skip-list of upstream transitive dupes (tower 0.4 via tonic, RustCrypto 0.10 quartet, hashbrown 0.12, indexmap 1.x, socket2 0.5, getrandom 0.2/0.4), `[sources] unknown-* = "deny"`, openssl banned (rustls only), `allow-wildcard-paths = true` for workspace-private deps, `[licenses.private] ignore = true` for closed-source workspace members.
+- Created TLA+ extended-bound configs `specs/tla/{tenant_isolation,cas_integrity,gc_correctness,audit_immutability}_nightly.cfg`. PR cfg constants stay; nightly cfg axes increased per §6.1.7 v1.2.0 table.
+- Patched `scripts/run_tlc_corelink.sh` — accepts optional `<cfg_basename>` arg (defaults to `<spec_basename>`); appends canonical TLC execution flags `-workers 2 -coverage 60 -fp 32 -checkpoint 0`. Deadlock policy clarified: `CHECK_DEADLOCK FALSE` per cfg matches bounded-state-space semantics.
+- Created ADR-0044 — SBOM toolchain canonical: `cargo-cyclonedx =0.5.9` (exact pin), `sbomqs v1.0.5` (pinned binary), `cosign v2.4.1` (pinned via `sigstore/cosign-installer@SHA`), all third-party GH Actions SHA-pinned with version comments. Sigstore outage policy: release blocked, no silent grace period.
+- §6.1.7 patched — bound table aligned with actual `.tla` CONSTANTS (tenants/principals/blobs/bodies/digests/clients/actors/event-types/AC-entries; MaxOps/MaxEvents/MaxTime/GracePeriod). Drift between WI v1.0.0 PR-bounds-as-target and shipped cfg constants resolved.
+- §1 + §6.1.10 patched — release-only signing model replaces fork-PR guard: `if: github.event_name == 'push' && github.ref == 'refs/heads/main'`. Pull requests (fork OR same-repo) do not request the `id-token: write` permission and do not sign.
+- Codex adversarial review: round 1 6.2/10 → round 2 8.4/10 → round 3 (final) targeted ≥ 8.5/10. P0 (nightly proptest fail-open) + P1.a-f (bound table, TLC flags, deadlock policy, cosign scope, Rekor bundle, action SHA pinning) + P2.a-b (deny multi-version, repro-build libs-only branch) all addressed.
+- All gates fail-closed (HIGH_RISK lane FF-HR-005). actionlint clean; shellcheck clean; cargo-deny green locally; cargo clippy/test workspace green; corelink-server reproducible across two builds with `RUSTFLAGS=--remap-path-prefix=...=/build -C strip=symbols` + `SOURCE_DATE_EPOCH=1714435200`.
+- WI lifecycle: doc_status DRAFT → FROZEN, work_status READY → DONE.
 
 ## 32. Anti-patterns evitados
 

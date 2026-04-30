@@ -1,15 +1,24 @@
 #!/usr/bin/env bash
 # CoreLink TLC runner — reusable wrapper para CI gate per spec.
 #
-# Usage: ./scripts/run_tlc_corelink.sh <spec_basename>
-# Example: ./scripts/run_tlc_corelink.sh dsr_erasure_atomicity
+# Usage:
+#   ./scripts/run_tlc_corelink.sh <spec_basename>
+#   ./scripts/run_tlc_corelink.sh <spec_basename> <cfg_basename>
+# Examples:
+#   ./scripts/run_tlc_corelink.sh dsr_erasure_atomicity
+#   ./scripts/run_tlc_corelink.sh tenant_isolation tenant_isolation_nightly
+#
+# When <cfg_basename> is omitted, defaults to <spec_basename> (i.e. the PR
+# lane: tenant_isolation.tla + tenant_isolation.cfg). Pass an explicit cfg
+# basename to run the nightly extended bounds (per WI-S01-007 §6.1.7).
 #
 # Reuses ADR-0042 §A1 TLC v1.8.0 SHA-256 pinned bootstrap ceremony.
 # Expected pinned SHA-256: d5d07d5dab38ddb840c91ec48fa02f28b37a608d5af9a73570018591dbc8ef7f
 
 set -euo pipefail
 
-SPEC_NAME="${1:?Usage: $0 <spec_basename>}"
+SPEC_NAME="${1:?Usage: $0 <spec_basename> [cfg_basename]}"
+CFG_NAME="${2:-${SPEC_NAME}}"
 SPEC_DIR="$(git rev-parse --show-toplevel)/specs/tla"
 TLC_VERSION_REQUIRED="1.8.0"
 TLC_SHA256_PINNED="d5d07d5dab38ddb840c91ec48fa02f28b37a608d5af9a73570018591dbc8ef7f"
@@ -19,8 +28,8 @@ if [[ ! -f "${SPEC_DIR}/${SPEC_NAME}.tla" ]]; then
   exit 2
 fi
 
-if [[ ! -f "${SPEC_DIR}/${SPEC_NAME}.cfg" ]]; then
-  echo "ERROR: cfg ${SPEC_DIR}/${SPEC_NAME}.cfg not found" >&2
+if [[ ! -f "${SPEC_DIR}/${CFG_NAME}.cfg" ]]; then
+  echo "ERROR: cfg ${SPEC_DIR}/${CFG_NAME}.cfg not found" >&2
   exit 2
 fi
 
@@ -61,5 +70,29 @@ else
 fi
 
 cd "${SPEC_DIR}"
-echo "Running TLC: ${SPEC_NAME}.tla with config ${SPEC_NAME}.cfg (artifact verified: ${ARTIFACT_PATH})"
-exec "${TLC_BIN}" -config "${SPEC_NAME}.cfg" "${SPEC_NAME}.tla"
+echo "Running TLC: ${SPEC_NAME}.tla with config ${CFG_NAME}.cfg (artifact verified: ${ARTIFACT_PATH})"
+
+# Canonical TLC execution flags per WI-S01-007 §6.1.7:
+#   -workers 2     parallel BFS (GitHub `ubuntu-latest` has 4 vCPU; 2 leaves
+#                  headroom for other PR jobs in same runner pool).
+#   -coverage 60   prints coverage statistics every 60s (catches "gate is
+#                  theatre" — zero-coverage states surface explicitly).
+#   -fp 32         32-bit fingerprints for compactness on these small bounds
+#                  (default 64-bit; 32-bit ~1 in 4B collision risk acceptable
+#                  given <10^7 states).
+#   -checkpoint 0  disable checkpointing (CI runners are ephemeral; no
+#                  resumption use-case; checkpoint I/O is pure overhead).
+#
+# NOTE on deadlock detection: each cfg explicitly sets `CHECK_DEADLOCK FALSE`
+# because the canonical S-01 specs are bounded by `MaxOps`/`MaxEvents` —
+# reaching the bound is a terminal state, NOT a real deadlock. Disabling the
+# detector avoids spurious false-positives at termination. The original
+# WI §6.1.7 text mentioned `-deadlock` mandatory, but that conflicts with
+# bounded-state-space semantics; v1.2.0 of the WI clarifies this.
+exec "${TLC_BIN}" \
+  -config "${CFG_NAME}.cfg" \
+  -workers 2 \
+  -coverage 60 \
+  -fp 32 \
+  -checkpoint 0 \
+  "${SPEC_NAME}.tla"

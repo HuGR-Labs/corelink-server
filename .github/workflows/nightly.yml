@@ -1,0 +1,215 @@
+name: Nightly extended gates (WI-S01-007)
+
+# Sprint-level nightly workflow per WI-S01-007 §6.1.2.
+# Adds extended-bound runs that are too costly for per-PR gating:
+#
+#   1. tlc-extended: TLC v1.8.0 SHA-256 pinned, **extended bounds**
+#      (per WI §6.1.7 nightly column) on the 4 canonical S-01 specs.
+#      Hard 30-min timeout per spec; fail-closed.
+#   2. proptest-extended: proptest 100k iter (vs 10k on PR) for the
+#      cross-component property tests in corelink-reapi (WI-S01-006).
+#   3. fuzz-matrix: parallel matrix runner for ALL 9 fuzz targets across
+#      the 5 S-01 SEALed crates, 1h each. Runs in parallel via `strategy.matrix`.
+#   4. mutants-workspace: cargo-mutants on the workspace; default fail-on-
+#      any-survivor mode, i.e. effective 100% kill-rate requirement (the
+#      sprint corpus is small enough that there's no headroom for survivors;
+#      stricter than the per-WI 80% baseline by design).
+#
+# All gates fail-closed (HIGH_RISK lane FF-HR-005).
+
+on:
+  schedule:
+    # 04:23 UTC nightly — staggered relative to per-crate nightly crons
+    # (which fire at :17, :37, :47, :53). This workflow runs LAST so its
+    # failures surface clearly.
+    - cron: '23 4 * * *'
+  workflow_dispatch:
+    # Manual trigger for ops/dev to re-run nightly on demand (e.g. after a
+    # PR landing flagged in nightly post-mortem).
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ---------------------------------------------------------------------
+  # 1. TLC extended bounds (per WI §6.1.7 nightly column).
+  # Each spec gets a 30-min hard timeout; failures (timeout, deadlock,
+  # invariant violation) fail the job — no warning-only.
+  # ---------------------------------------------------------------------
+  tlc-extended:
+    name: TLC extended (${{ matrix.spec }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        spec:
+          - tenant_isolation
+          - cas_integrity
+          - gc_correctness
+          - audit_immutability
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Java (TLC requires JVM)
+        uses: actions/setup-java@3a4f6e1af504cf6a31855fa899c6aa5355ba6c12 # v4.7.0
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Install pinned TLC v1.8.0 (SHA-256 verified — ADR-0042 §A1)
+        env:
+          TLC_VERSION: '1.8.0'
+          TLC_SHA256_PINNED: 'd5d07d5dab38ddb840c91ec48fa02f28b37a608d5af9a73570018591dbc8ef7f'
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/tla"
+          curl -fsSL -o "$RUNNER_TEMP/tla/tla2tools.jar" \
+            "https://github.com/tlaplus/tlaplus/releases/download/v${TLC_VERSION}/tla2tools.jar"
+          ACTUAL_SHA="$(sha256sum "$RUNNER_TEMP/tla/tla2tools.jar" | awk '{print $1}')"
+          if [[ "${ACTUAL_SHA}" != "${TLC_SHA256_PINNED}" ]]; then
+            echo "::error::TLC SHA-256 supply-chain pin violation (ADR-0042 §A1)"
+            exit 1
+          fi
+          mkdir -p "$HOME/.local/bin"
+          cat > "$HOME/.local/bin/tlc" <<'EOF'
+          #!/usr/bin/env bash
+          exec java -cp "${TLC_JAR}" tlc2.TLC "$@"
+          EOF
+          chmod +x "$HOME/.local/bin/tlc"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          echo "TLC_JAR=$RUNNER_TEMP/tla/tla2tools.jar" >> "$GITHUB_ENV"
+
+      - name: TLC extended (${{ matrix.spec }} + ${{ matrix.spec }}_nightly.cfg)
+        run: timeout 1800s bash scripts/run_tlc_corelink.sh ${{ matrix.spec }} ${{ matrix.spec }}_nightly
+
+  # ---------------------------------------------------------------------
+  # 2. proptest extended (100k iter) for cross-component property tests.
+  # Override `PROPTEST_CASES` env var; gate at <= 5 min total runtime per
+  # WI §10.7.6 / Gherkin "Property test extended 100k".
+  # ---------------------------------------------------------------------
+  proptest-extended:
+    name: proptest extended (100k iter cross-component)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
+
+      - uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
+        with:
+          workspaces: ". -> target"
+
+      - uses: arduino/setup-protoc@f4d5893b897028ff5739576ea0409746887fa536 # v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Build first so the test binary is cached; PROPTEST_CASES applies at
+      # runtime only.
+      - name: cargo build --release (test artifacts)
+        run: cargo test --release --workspace --no-run
+
+      - name: proptest 100k iter (cross-component WI-S01-006)
+        env:
+          PROPTEST_CASES: '100000'
+          # Extended timeouts to absorb 100k cases without spurious flake.
+          PROPTEST_MAX_LOCAL_REJECTS: '100000'
+          PROPTEST_MAX_GLOBAL_REJECTS: '500000'
+        run: |
+          set -euo pipefail
+          # Run the cross-component property test targets (10x cases on the
+          # WI-S01-006 prop_cas + prop_idempotency suite). Both targets are
+          # declared in `crates/corelink-reapi/Cargo.toml` and MUST exist —
+          # if either is missing, that's a regression and the job fails.
+          cargo test --release --package corelink-reapi --test prop_cas
+          cargo test --release --package corelink-reapi --test prop_idempotency
+
+  # ---------------------------------------------------------------------
+  # 3. Fuzz matrix — all 9 targets across 5 SEALed crates, 1h each parallel.
+  # ---------------------------------------------------------------------
+  fuzz-matrix:
+    name: fuzz 1h (${{ matrix.crate }}::${{ matrix.target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { crate: tenant-path, target: derive_prefix }
+          - { crate: corelink-hash, target: digest_parse }
+          - { crate: corelink-hash, target: verify_body }
+          - { crate: corelink-worker, target: r2_path }
+          - { crate: corelink-worker, target: r2_put_get_roundtrip }
+          - { crate: corelink-meta, target: commit_put_roundtrip }
+          - { crate: corelink-meta, target: audit_idempotency }
+          - { crate: corelink-reapi, target: proto_decode_batch_update }
+          - { crate: corelink-reapi, target: audit_request_id_total }
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: dtolnay/rust-toolchain@5b842231ba77f5c045dba54ac5560fed2db780e2 # nightly as of 2026-04-29
+
+      - name: Install cargo-fuzz (pinned)
+        # Pin the exact cargo-fuzz version so future upstream changes
+        # (e.g. libfuzzer flag semantics) don't silently alter coverage.
+        run: cargo install cargo-fuzz --locked --version =0.13.1
+
+      - uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
+        with:
+          workspaces: "crates/${{ matrix.crate }}/fuzz -> target"
+
+      - uses: arduino/setup-protoc@f4d5893b897028ff5739576ea0409746887fa536 # v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run fuzz target 3600s (${{ matrix.target }})
+        working-directory: crates/${{ matrix.crate }}
+        run: cargo fuzz run ${{ matrix.target }} -- -max_total_time=3600
+
+      - name: Upload fuzz artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5.0
+        with:
+          name: fuzz-artifacts-${{ matrix.crate }}-${{ matrix.target }}
+          path: crates/${{ matrix.crate }}/fuzz/artifacts/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # ---------------------------------------------------------------------
+  # 4. cargo-mutants workspace kill-rate gate (fail-on-any-survivor).
+  # `cargo mutants` exits non-zero on any unkilled mutant by default; that
+  # is the fail-closed config used by every per-crate nightly workflow.
+  # On this small sprint corpus an unkilled mutant means insufficient test
+  # coverage of the mutated code path — fix the test, not the threshold.
+  # ---------------------------------------------------------------------
+  mutants-workspace:
+    name: cargo-mutants workspace (fail-on-any-survivor)
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
+
+      - uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
+        with:
+          workspaces: ". -> target"
+
+      - uses: arduino/setup-protoc@f4d5893b897028ff5739576ea0409746887fa536 # v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install cargo-mutants (pinned)
+        # Pin the exact mutant-runner version so workflow runs are
+        # reproducible and a future cargo-mutants upstream change can't
+        # silently shift our kill-rate.
+        run: cargo install cargo-mutants --locked --version =27.0.0
+
+      - name: cargo-mutants workspace
+        run: cargo mutants --workspace --no-shuffle --minimum-test-timeout=600

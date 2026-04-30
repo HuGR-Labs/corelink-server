@@ -1,0 +1,138 @@
+# cargo-deny policy — CoreLink supply-chain gate (WI-S01-007 §6.1.3 + ADR-0014).
+#
+# Enforced by `.github/workflows/cas_foundation.yml::cargo-deny` on every PR
+# that touches Rust code or workspace manifests. Fail-closed: ANY finding in
+# advisories / bans / sources / licenses fails the gate; HIGH_RISK lane has
+# zero "warning-only" tolerance.
+#
+# Re-classification (e.g. accepting a new license, allowlisting a yanked
+# crate by ADR waiver) requires:
+#   1. ADR documenting the decision
+#   2. Bump of this file with the ADR ID in the comment
+#   3. Security review sign-off
+#
+# Format ref: https://embarkstudios.github.io/cargo-deny/checks/
+# Schema version 2 (cargo-deny 0.14+).
+
+[graph]
+# All targets shipped by CoreLink workspace. Workers WASM target is the
+# production runtime; x86_64-unknown-linux-gnu covers the dev/test host.
+targets = [
+    { triple = "wasm32-unknown-unknown" },
+    { triple = "x86_64-unknown-linux-gnu" },
+    { triple = "aarch64-apple-darwin" },
+]
+all-features = false
+no-default-features = false
+
+[output]
+feature-depth = 1
+
+# ---------------------------------------------------------------------------
+# Advisories — RUSTSEC + dependency CVE policy.
+# ---------------------------------------------------------------------------
+# Fail-closed: vulnerability/unmaintained/unsound/yanked all DENY.
+# `notice` is the only "info" lane; bumped to deny so nothing slips silently.
+[advisories]
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+version = 2
+yanked = "deny"
+ignore = []
+# CVSS threshold not applied: HIGH_RISK lane treats EVERY advisory as
+# blocking until explicitly waived via ADR.
+
+# ---------------------------------------------------------------------------
+# Licenses — allowlist (CTRL-SUPPLY-005 + INV-SUPPLY-LICENSE-ALLOWLIST).
+# ---------------------------------------------------------------------------
+# Allow only permissive + weak-copyleft (MPL-2.0 file-level only). GPL/AGPL/
+# SSPL/Commons-Clause are anti-pattern for a hosted service shipping
+# closed-source CF Workers code.
+[licenses]
+version = 2
+unused-allowed-license = "allow"  # crates with no license info reported by exceptions
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "MPL-2.0",
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+    "Zlib",
+    "CC0-1.0",
+    "0BSD",
+]
+confidence-threshold = 0.93
+# Workspace's own crates carry `license = "UNLICENSED"` (closed-source per
+# Cargo.toml workspace.package; CoreLink is a hosted service, not a
+# library). cargo-deny treats UNLICENSED as parse-error; allow it ONLY for
+# our own workspace member crates via private-crate registry exception.
+exceptions = []
+
+# `private` blocks individual crates from license enforcement when they're
+# `publish = false` workspace members. This is the cargo-deny canonical
+# way to handle a closed-source workspace (see cargo-deny issue #321).
+[licenses.private]
+ignore = true
+registries = []
+
+# ---------------------------------------------------------------------------
+# Bans — explicit deny list + duplicate-version policy.
+# ---------------------------------------------------------------------------
+[bans]
+# `multiple-versions = "deny"` would be the strictest setting, but transitive
+# deps inside the tonic/axum/hyper stack legitimately pull two `tower`
+# majors (0.4 from tonic 0.12, 0.5 from axum 0.7). Until tonic 0.13 lands,
+# enumerate the known dupes in `skip` so the gate still catches *new*
+# duplicates while not flagging the pinned, audited pair.
+multiple-versions = "deny"
+wildcards = "deny"           # all external version specifiers must be pinned (>= or =)
+# Workspace member crates use `{ workspace = true }` which cargo-deny
+# reports as wildcard. Allow this private-workspace pattern; external
+# wildcards (e.g. `serde = "*"`) still fail.
+allow-wildcard-paths = true
+highlight = "all"
+allow = []
+deny = [
+    # Anti-pattern crates banned org-wide.
+    { crate = "openssl", reason = "use rustls (WASM-friendly + no system OpenSSL link)" },
+    { crate = "openssl-sys", reason = "transitive ban; rustls only" },
+]
+# Known transitive dupes from upstream — re-evaluate on every tonic/axum/
+# RustCrypto/sigstore bump. Each entry is the OLDER duplicate; the newer
+# version is preferred. Removing an entry should be done concurrently with
+# the upstream bump that resolves it.
+skip = [
+    # tonic 0.12 still depends on tower 0.4; axum 0.7 + corelink-reapi pull
+    # tower 0.5. Resolves on tonic 0.13 (currently RC).
+    { crate = "tower@0.4.13", reason = "transitive via tonic 0.12; resolves on tonic 0.13" },
+    # RustCrypto upgraded the digest/block-buffer/cpufeatures/crypto-common
+    # quartet from 0.10/0.10/0.2/0.1 to 0.11/0.10/0.3/0.2; older line still
+    # pinned via tonic + tracing dep tree.
+    { crate = "block-buffer@0.10.4", reason = "transitive via tonic stack; RustCrypto 0.11 migration in flight" },
+    { crate = "cpufeatures@0.2.17", reason = "transitive via sha2 0.10; resolves with sha2 0.11" },
+    { crate = "crypto-common@0.1.7", reason = "transitive via digest 0.10" },
+    { crate = "digest@0.10.7", reason = "transitive via tonic stack" },
+    # rand 0.9 ships getrandom 0.3; older crates still ship 0.2.
+    { crate = "getrandom@0.2.17", reason = "transitive via uuid v7" },
+    { crate = "getrandom@0.4.2", reason = "transitive via newer dev-dep" },
+    # hashbrown/indexmap 0.12/1.x lingering via prost-build / older async stack.
+    { crate = "hashbrown@0.12.3", reason = "transitive via prost-build / older async stack" },
+    { crate = "indexmap@1.9.3", reason = "transitive via prost-build" },
+    # socket2 0.5 + 0.6 from tokio + newer hyper-util.
+    { crate = "socket2@0.5.10", reason = "transitive via tokio 1.40 stack; resolves with tokio 1.42+" },
+]
+skip-tree = []
+
+# ---------------------------------------------------------------------------
+# Sources — only crates.io + the sigstore/cyclonedx GitHub orgs (if pinned).
+# ---------------------------------------------------------------------------
+# Git deps must be SHA-pinned; non-pinned git refs blocked.
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

@@ -12,6 +12,11 @@ crates/*/fuzz/target/
 crates/*/fuzz/corpus/
 crates/*/fuzz/artifacts/
 
+# SBOM outputs (CI uploads via actions/upload-artifact; local rebuilds
+# always regen from Cargo.lock per WI-S01-007 §6.1.4 — never commit).
+sbom/
+**/bom.json
+
 # IDE
 .vscode/
 .idea/
