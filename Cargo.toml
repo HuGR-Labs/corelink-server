@@ -9,6 +9,7 @@ members = [
     "crates/corelink-reapi",
     "crates/corelink-client-verify",
     "crates/corelink-clerk",
+    "crates/corelink-pat",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
@@ -69,6 +70,7 @@ corelink-meta = { path = "crates/corelink-meta" }
 corelink-reapi = { path = "crates/corelink-reapi" }
 corelink-client-verify = { path = "crates/corelink-client-verify" }
 corelink-clerk = { path = "crates/corelink-clerk" }
+corelink-pat = { path = "crates/corelink-pat" }
 
 # Test / bench
 proptest = "1.5"

@@ -1,12 +1,12 @@
 ---
 id: "WI-S03-002"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "FROZEN"
+work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-04-30"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-002", "FF-HR-005", "FF-HR-009"]
 parent: "S-03"
@@ -27,7 +27,7 @@ tags: ["wi", "s03", "auth", "pat", "argon2id", "timing-safe", "high-risk"]
 
 # WI-S03-002 — `corelink-pat` Crate (Argon2id OWASP 2024 + Timing-Safe Verify + Scope Bitset)
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** FROZEN · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-03](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -170,11 +170,14 @@ Cripto core crate; HIGH_RISK; FF-HR-002 + FF-HR-005 + FF-HR-009.
    - Cargo.toml deps: `argon2 = "0.5"` (audited 2024+; supports m=65536), `subtle = "2.5"`, `getrandom = "0.2"`, `base64 = "0.22"` (URL-safe), `serde`, `thiserror`, `time = "0.3"`.
    - `lib.rs` re-exports `mint`, `verify`, `parse_env`, types.
 
-2. **PAT format**:
-   - Canonical: `corelink_<env>_<base64url(32 random bytes)>` totaling ~57 chars.
-   - `<env>` ∈ `pat | ci | ro` (3 chars); strict enum.
-   - Suffix 32 bytes random (256-bit entropy) → base64url no padding (43 chars).
-   - Total canonical length: 13 (`corelink_xxx_`) + 43 (b64) = 56 chars (predictable; constant-time validation).
+2. **PAT format** (cycle 9 SEAL decision (a) hybrid HMAC + Argon2id; aligned with `auth_model.md §2.2` + `_spec_contract.md §5 R-S03-3`):
+   - Canonical: `corelink_<env>_<token_id>.<random_secret>.<hmac_sig>` totaling 95 or 96 chars.
+   - `<env>` ∈ `pat | ci | ro` (2-3 chars); strict enum.
+   - `<token_id>` = 16 chars Crockford base32 (deterministic indexed lookup key; non-secret).
+   - `<random_secret>` = 43 chars base64url-no-pad (32 random bytes; 256-bit entropy possession factor).
+   - `<hmac_sig>` = 22 chars base64url-no-pad (HMAC-SHA256(pat_signing_key, token_id || "." || random_secret) truncated to 16 bytes / 128-bit).
+   - Total canonical length: 9 (`corelink_`) + 2..=3 (env) + 1 (`_`) + 16 (token_id) + 1 (`.`) + 43 (random_secret) + 1 (`.`) + 22 (hmac_sig) = **95 or 96 chars** (predictable; constant-time validation).
+   - **Cycle 1.3 SEAL impl correction**: WI v1.2.0 §6.1.2 listed pre-cycle-9 format `corelink_<env>_<base64url(32 random bytes)>` (56 chars). Implementation matches the canonical hybrid format documented elsewhere in this WI (§1, §5, §6.1.4) and in spec_contract §5 R-S03-3. v1.3.0 reconciles §6.1.2 to the canonical layout.
 
 3. **`mint()` function**:
    - Generate 32 random bytes via `getrandom` (panics if entropy unavailable; correct for cripto).
@@ -759,6 +762,7 @@ Se Argon2 lib bug discovered: emergency rotation script — re-mint all active P
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-25 | Gustavo (via Claude Opus 4.7) | Criação WI-S03-002 (Lote 10.3). |
+| 1.3.0 | 2026-04-30 | Gustavo (via Claude Opus 4.7 [1M]) | **WI-S03-002 SEALED — implementation phase.** Crate `crates/corelink-pat/` (15 source files, 4 test targets, 2 examples) implementing canonical hybrid PAT format `corelink_<env>_<token_id>.<random_secret>.<hmac_sig>` (cycle 9 SEAL decision (a)). Deps: `argon2 = "0.5"`, `hmac = "0.12"`, `subtle = "2"`, `password-hash = "0.5"`, `rand_core = "0.6"`, `uuid = "1"` (v7 + serde + rng-getrandom features). API surface: `mint()`, `verify_with_hash()`, `verify_hmac_only()`, `dummy_verify_for_constant_time()`, `parse_env()`, `parse_plaintext()`, plus `PatScopes` u64 bitset (12 named scopes + 52 reserved bits; `SCOPE_KNOWN_MASK` covers the 12 canonical bits). Newtypes: `PatPlaintext` (no Display/Serialize/Debug-with-bytes; Drop scrubs via zeroize::Zeroize); `PatHash` (PHC string; safe to log; `Debug` redacts the hash bytes); `PatId` (UUIDv7); `PatTokenId` (16-char Crockford b32 lookup key); `PatSigningKey` (Vec<u8>; ZeroizeOnDrop; rejects keys < 32 bytes via `PatError::SigningKeyTooShort`); `PatScopes` (u64 transparent serde). `PatEnv` enum exhaustive over `pat \| ci \| ro`. `PatError` variants: `Malformed`, `InvalidPat`, `HashError(&'static str)`, `EntropyUnavailable`, `SigningKeyTooShort`. **Implementation drift fix**: §6.1.2 of v1.2.0 listed pre-cycle-9 format `corelink_<env>_<base64url(32 random bytes)>` (56 chars) which contradicts §1, §5, and §6.1.4 of the same WI (which already cited the cycle 9 hybrid format) plus `auth_model.md §2.2` and `_spec_contract.md §5 R-S03-3`. v1.3.0 reconciles §6.1.2 to canonical layout (95 or 96 chars depending on env tag length). **Tests**: 26 tests across 4 test targets (10 canonical_vectors regression vectors + 8 adversarial CVE-class regressions + 8 prop_pat property tests + 2 release-only constant_time variance probes). prop_pat splits the 10k iter envelope into ARGON2_HEAVY_CASES=8 (cross-key isolation + tampered-secret rejection; Argon2id ~250ms/case in release, ~3s in debug; nightly CI re-runs at canonical 10k via `proptest-cases` env override) and SHAPE_CASES=10000 (parser-no-panic, scope u64 roundtrip, scope.has bitwise-equivalence; cheap per-case). Constant-time gate: `parse_env` median variance ≤ 20% across 5 probe classes (3 valid envs + 2 unknown envs at matching lengths); `parse_plaintext` malformity-shape sanity ceiling ≤ 95%. **OWASP 2024 floor enforcement**: `verify_argon2id` re-checks the embedded PHC params (algorithm == argon2id, m_cost ≥ 65536, t_cost ≥ 3, p_cost ≥ 4) BEFORE invoking the hasher — so a downgraded DB row never silently passes. **Cold-path constant-time pad**: `dummy_verify_for_constant_time(&str) -> Result<(), PatError>` always returns `Err(InvalidPat)` and runs an Argon2id verify against a fixed dummy PHC so the wire response latency envelope of cold-path branches matches the warm path (mandated by WI-S03-003 cycle 10.3bis P0 cross-WI fix). **Zero-unsafe**: `#![forbid(unsafe_code)]` + crate-level Cargo `[lints]` deny `unwrap_used`/`expect_used`/`panic`/`indexing_slicing`. **WASM compatibility note**: argon2 0.5 compiles to wasm32-unknown-unknown, but Argon2id execution at OWASP 2024 cost params exceeds typical CF Worker CPU budgets — wasm32 check deferred per S-03-001 precedent (which deferred wasm32 for `ring`); deployed validation runs in the host-server runtime. Workspace `Cargo.toml` adds `crates/corelink-pat` member + path-dep registration. Tests verde: workspace clippy `-D warnings` clean; canonical_vectors 10/10; adversarial 8/8; prop_pat 8/8; constant_time release-gated (debug ignored). Validators verde: `validate_specs.py` (265 docs) + `validate_inv_promotion.py` (146 INVs / 136 referenced; 100% coverage). **No per-WI codex** (per protocol change 2026-04-30; sprint-close Sonnet adversarial review covers the full S-03 corpus). |
 
 ## 32. Anti-patterns evitados
 

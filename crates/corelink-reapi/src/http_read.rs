@@ -115,11 +115,11 @@ where
 
 /// Build an axum `Router` exposing `GET /v1/cas/:digest` with the
 /// canonical [`TimingPaddingLayer`] applied (WI-S02-004 / ADR-0023
-/// constant-time 404 [`MissReason`] parity defense).
+/// constant-time 404 [`crate::read::MissReason`] parity defense).
 ///
 /// The layer mounts at the router boundary so EVERY 404 response
 /// (regardless of which arm of the orchestrator emitted it: digest
-/// parse, AuthZ scope, [`MissReason::NeverExisted`], `Tombstoned`,
+/// parse, AuthZ scope, [`crate::read::MissReason::NeverExisted`], `Tombstoned`,
 /// `R2OrphanRow`) flows through the padding pipeline. `200 OK` and
 /// `4xx≠404` / `5xx` responses are passed through unchanged.
 ///

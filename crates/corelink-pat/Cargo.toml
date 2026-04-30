@@ -1,0 +1,72 @@
+[package]
+name = "corelink-pat"
+description = "CoreLink Personal Access Token (PAT) primitives — canonical hybrid format `corelink_<env>_<token_id>.<random_secret>.<hmac_sig>` (auth_model.md §2.2 + spec_contract S-03 §5 R-S03-3 cycle 9 SEAL decision (a)). Implements Argon2id (OWASP 2024: m=65536, t=3, p=4) PHC mint/verify, HMAC-SHA256 fast-fail signature, constant-time `subtle::ConstantTimeEq` compare across both layers, scope u64 bitset, and `dummy_verify_for_constant_time` for downstream middleware (WI-S03-003). HIGH_RISK auth boundary (FF-HR-002 / FF-HR-005 / FF-HR-009)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+# Argon2id PHC string format. 0.5.x is the audited current line; OWASP 2024
+# params are `m_cost = 65536 KiB`, `t_cost = 3`, `p_cost = 4`. Pinned by major
+# to keep PHC + Algorithm::Argon2id surface stable; bumps gated by cargo-deny.
+argon2 = { version = "0.5", default-features = false, features = ["alloc", "password-hash"] }
+# Argon2's `Salt` / `SaltString` types are surfaced via `password-hash`.
+password-hash = { version = "0.5", default-features = false, features = ["alloc", "rand_core"] }
+hmac = { workspace = true }
+sha2 = { workspace = true }
+subtle = { workspace = true }
+base64 = { workspace = true }
+hex = { workspace = true }
+rand_core = { version = "0.6", default-features = false, features = ["getrandom"] }
+zeroize = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true, features = ["v7", "rng-getrandom", "serde"] }
+
+[dev-dependencies]
+proptest = { workspace = true }
+serde_json = { workspace = true }
+
+[[example]]
+name = "mint_and_verify"
+path = "examples/mint_and_verify.rs"
+
+[[example]]
+name = "scope_check"
+path = "examples/scope_check.rs"
+
+[[test]]
+name = "prop_pat"
+path = "tests/prop_pat.rs"
+
+[[test]]
+name = "adversarial"
+path = "tests/adversarial.rs"
+
+[[test]]
+name = "canonical_vectors"
+path = "tests/canonical_vectors.rs"
+
+[[test]]
+name = "constant_time"
+path = "tests/constant_time.rs"

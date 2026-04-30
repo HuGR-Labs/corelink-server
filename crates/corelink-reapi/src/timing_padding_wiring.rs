@@ -27,7 +27,8 @@
 //!   `Err(Status::not_found)` lands as HTTP 200 + `grpc-status: 5`
 //!   in initial response headers (vide tonic 0.12
 //!   `status.rs::into_http`). The HTTP-404-only predicate would miss
-//!   it; the [`MissMarker`] extension does not survive the
+//!   it; the request-extension miss marker (`MissMarker` in the
+//!   request-handling layer) does not survive the
 //!   `tonic::Status → http::Response` transform; [`PredicateKind::GrpcNotFound`]
 //!   is the only canonical detection. Codex round-1 P0 + round-2
 //!   P0 fix.

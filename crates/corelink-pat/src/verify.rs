@@ -1,0 +1,79 @@
+//! Two-stage `verify` orchestrator: HMAC fast-fail then Argon2id.
+//!
+//! The middleware (WI-S03-003) drives the lookup primitive between
+//! step 3a and step 3b — this crate exposes the cryptographic
+//! verifications and leaves the DB-fetch shape under the
+//! middleware's control. The orchestrator below covers the offline
+//! scenario where caller already has the stored hash + token id in
+//! hand (test harness, integration test, calibration tool).
+
+use crate::argon::verify_argon2id;
+use crate::error::PatError;
+use crate::format::{parse_plaintext, PatPlaintextParts};
+use crate::sig::verify_hmac_sig;
+use crate::types::{PatEnv, PatHash, PatSigningKey, PatTokenId};
+
+/// Result of a successful end-to-end verify. Carries the parsed
+/// `token_id` + `env` so the middleware can perform downstream
+/// scope checks without re-parsing.
+#[derive(Debug, Clone)]
+pub struct VerifiedPat {
+    /// The env tag observed in the plaintext (must match the DB row).
+    pub env: PatEnv,
+    /// The `token_id` segment used as the canonical lookup key.
+    pub token_id: PatTokenId,
+}
+
+/// Verify a PAT plaintext end-to-end against the stored
+/// `(token_id, hash)` pair plus the per-region signing key.
+///
+/// Steps (per `auth_model.md §2.3`):
+///
+/// 1. **Parse** the plaintext into canonical segments.
+/// 2. **Step 3a** — HMAC sig fast-fail. Reject in ≤100µs if the
+///    signature does not match.
+/// 3. (Caller does the DB lookup — out of this crate's scope.)
+/// 4. **Step 3c** — Argon2id verify of the `random_secret_b64`
+///    against the stored PHC string.
+///
+/// On any failure the function returns the same
+/// [`PatError::InvalidPat`] for sig+hash mismatches and
+/// [`PatError::Malformed`] for parse-shape errors so the wire
+/// surface cannot discriminate. [`PatError::HashError`] is reserved
+/// for DB-corruption scenarios (PHC string unparseable).
+pub fn verify_with_hash(
+    plaintext: &str,
+    expected_token_id: &PatTokenId,
+    stored_hash: &PatHash,
+    signing_key: &PatSigningKey,
+) -> Result<VerifiedPat, PatError> {
+    let parts: PatPlaintextParts = parse_plaintext(plaintext)?;
+
+    // Token id must match the one looked up from the DB. This is
+    // a trivial constant-time comparison over a fixed length.
+    if parts.token_id.as_str() != expected_token_id.as_str() {
+        return Err(PatError::InvalidPat);
+    }
+
+    // Step 3a — HMAC fast-fail.
+    verify_hmac_sig(signing_key, &parts.hmac_preimage, &parts.hmac_sig_bytes)?;
+
+    // Step 3c — Argon2id PHC verify.
+    verify_argon2id(&parts.random_secret_b64, stored_hash)?;
+
+    Ok(VerifiedPat {
+        env: parts.env,
+        token_id: parts.token_id,
+    })
+}
+
+/// HMAC-only verify (for use cases where the caller wants to fail
+/// fast before reaching the DB layer).
+pub fn verify_hmac_only(
+    plaintext: &str,
+    signing_key: &PatSigningKey,
+) -> Result<(PatEnv, PatTokenId), PatError> {
+    let parts = parse_plaintext(plaintext)?;
+    verify_hmac_sig(signing_key, &parts.hmac_preimage, &parts.hmac_sig_bytes)?;
+    Ok((parts.env, parts.token_id))
+}
