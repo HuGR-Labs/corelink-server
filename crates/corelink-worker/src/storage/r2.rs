@@ -449,6 +449,74 @@ impl R2Backend for InMemoryR2 {
 // Failure-injecting test backend
 // ---------------------------------------------------------------------------
 
+/// Test wrapper backend that counts `get` / `put_if_none_match` /
+/// `head` calls per inner backend. Lets the WI-S02-001 integration
+/// tests assert "no R2 GET was issued on the cross-tenant path" beyond
+/// the `keys_snapshot` invariant — which only checks final state, not
+/// whether the GET method was called.
+#[derive(Debug)]
+pub struct CountingR2<B: R2Backend> {
+    inner: Arc<B>,
+    get_calls: std::sync::atomic::AtomicUsize,
+    put_calls: std::sync::atomic::AtomicUsize,
+    head_calls: std::sync::atomic::AtomicUsize,
+}
+
+impl<B: R2Backend> CountingR2<B> {
+    /// Wrap an existing backend with call counters.
+    #[must_use]
+    pub fn new(inner: Arc<B>) -> Self {
+        Self {
+            inner,
+            get_calls: std::sync::atomic::AtomicUsize::new(0),
+            put_calls: std::sync::atomic::AtomicUsize::new(0),
+            head_calls: std::sync::atomic::AtomicUsize::new(0),
+        }
+    }
+
+    /// Number of `get` invocations observed.
+    #[must_use]
+    pub fn get_calls(&self) -> usize {
+        self.get_calls.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    /// Number of `put_if_none_match` invocations observed.
+    #[must_use]
+    pub fn put_calls(&self) -> usize {
+        self.put_calls.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    /// Number of `head` invocations observed.
+    #[must_use]
+    pub fn head_calls(&self) -> usize {
+        self.head_calls.load(std::sync::atomic::Ordering::Acquire)
+    }
+}
+
+impl<B: R2Backend> R2Backend for CountingR2<B> {
+    async fn put_if_none_match(
+        &self,
+        key: &str,
+        body: Bytes,
+    ) -> Result<BackendPutOutcome, R2Error> {
+        self.put_calls
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        self.inner.put_if_none_match(key, body).await
+    }
+
+    async fn get(&self, key: &str) -> Result<Bytes, R2Error> {
+        self.get_calls
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        self.inner.get(key).await
+    }
+
+    async fn head(&self, key: &str) -> Result<bool, R2Error> {
+        self.head_calls
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        self.inner.head(key).await
+    }
+}
+
 /// Test backend that injects [`R2Error::Backend`] on every call.
 ///
 /// Used by the integration tests to verify that the writer surfaces

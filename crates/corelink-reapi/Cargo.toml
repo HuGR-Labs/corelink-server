@@ -48,6 +48,8 @@ host-server = [
     "dep:async-trait",
     "dep:tower",
     "dep:http",
+    "dep:axum",
+    "dep:http-body-util",
     "uuid/v7",
     "uuid/rng-getrandom",
 ]
@@ -75,6 +77,9 @@ futures = { workspace = true, optional = true }
 async-trait = { version = "0.1", optional = true }
 tower = { version = "0.5", features = ["util"], optional = true }
 http = { version = "1", optional = true }
+# HTTP REST surface (`GET /v1/cas/<digest>`) — host-server feature only.
+axum = { version = "0.7", default-features = false, features = ["http1", "http2", "tokio"], optional = true }
+http-body-util = { version = "0.1", optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
@@ -82,6 +87,13 @@ tokio = { workspace = true }
 zeroize = { workspace = true }
 hex = { workspace = true }
 async-trait = "0.1"
+# HTTP client for the read_handler_e2e tests (the production wire client
+# is left to S-15 SDK; these tests use raw hyper to avoid pulling
+# reqwest into the workspace just for tests).
+hyper = { version = "1", features = ["client", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+http = "1"
 
 [build-dependencies]
 tonic-build = { workspace = true }
@@ -105,3 +117,11 @@ path = "tests/capabilities.rs"
 [[test]]
 name = "prop_cas"
 path = "tests/prop_cas.rs"
+
+[[test]]
+name = "prop_cross_tenant_read"
+path = "tests/prop_cross_tenant_read.rs"
+
+[[test]]
+name = "read_handler_e2e"
+path = "tests/read_handler_e2e.rs"

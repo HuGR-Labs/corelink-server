@@ -150,7 +150,7 @@ Todos os elementos abaixo herdam dos canonical sources listados no `inherits_fro
 - PAT scope `cache-r` obrigatório para reads (canonical hyphen-form per auth_model.md §scope; vs `cache-w` em S-01).
 - TenantPrefix derivation reusing S-01 `corelink-tenant-path` crate (dependência hard).
 - **Delta local:** PAT validation stub continua até S-03 SEALED; integration test cobre stub→real transition.
-- **Delta local:** AuthZ check em storage call (CTRL-ISO-002) — pre-R2 read verifica `tenant_id` matches `blob_meta.tenant_id` em D1; mismatch = **404 (uniform per ADR-0028; CrossTenantMasked variant)** + audit emit `corelink.cas.cross_tenant_attempt` (forensics; client observa apenas 404).
+- **Delta local:** AuthZ check em storage call (CTRL-ISO-002) — pre-R2 read verifica `tenant_id` matches `blob_meta.tenant_id` em D1; mismatch = **404 (uniform per ADR-0028 v1.1.0; CrossTenantMasked variant)** + read-side audit emit `corelink.cas.read_miss` (low-severity info; conflated com NeverExisted no read seam — disambiguação cross-tenant é offline pelo S-09 chain consumer com global digest index, que reclassifica para SEV-1 `corelink.cas.cross_tenant_attempt` quando aplicável). Client observa apenas 404 uniform.
 
 ### 6.3 Invariantes verificadas (herda `invariant_registry.md §3`)
 
@@ -187,7 +187,7 @@ Todas abaixo obrigatórias (framework §33.5.4.1 HIGH_RISK matrix):
 - [ ] **Side-channel test**: criterion benchmark p99 diff < 5ms; Mann-Whitney U test p > 0.05 (EVT-002 + EVT-040 if external review)
 - [ ] **Bit rot detection test**: corrupt R2 object out-of-band → 100% client verify catches (EVT-002)
 - [ ] **Negative cache effectiveness**: probe storm 1k QPS unknown digests → cost reduction ≥ 80% vs no-cache (EVT-021)
-- [ ] **Streaming memory test**: read 1 GiB blob via ByteStream → Worker memory peak < 50 MiB (EVT-002)
+- [ ] **Streaming memory test**: bounded by S-01 single-blob 5 MiB cap; peak ~6 MiB << 50 MiB ceiling. 1 GiB AC deferred to WI-S05-005 multipart read where `R2Backend::get_stream` lands (EVT-002 partial; full target in S-05).
 - [ ] **Client verify default-on**: Rust crate verify path complete + ABI-stable interface (FFI integration tests Python/Go/JS = S-15 sprint scope per spec_contract §6 NOTA Lote 9.5; NÃO bloqueia SEAL S-02); opt-out warning log emitted (EVT-002)
 - [ ] Progressive rollout dry-run em staging (EVT-038)
 - [ ] Observability plan executado (métricas emitindo, dashboards criados) (EVT-013)

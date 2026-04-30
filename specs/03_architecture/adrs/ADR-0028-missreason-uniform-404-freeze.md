@@ -3,7 +3,7 @@ id: "ADR-0028"
 type: "adr"
 doc_status: "FROZEN"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-29"
 updated: "2026-04-29"
 owner: "Gustavo Schneiter"
@@ -22,13 +22,27 @@ FROZEN (S-02 WI-S02-005 ratificada em Lote 10.2bis cycle 7+ SEAL ship gate; supe
 
 ## Context
 
-S-02 read path resolves a request com várias possible "miss" semantic outcomes:
+S-02 read path resolves a request com várias possible "miss" semantic outcomes. **Taxonomy (canonical) vs runtime read-side enum (impl reality)**:
 
-| MissReason | Cause | Detection path |
+**Canonical taxonomy variants** (per ADR-0028 v1.0.0 model; this is the policy schema):
+
+| MissReason (taxonomy) | Cause | Detection path |
 |---|---|---|
 | `NotFound` | Digest never existed in tenant scope | KV negative cache hit OR D1 row absent |
-| `CrossTenantMasked` | Digest exists em outro tenant; AuthZ check returns row count 0 | D1 query + AuthZ reject + audit emit `corelink.cas.cross_tenant_attempt` |
+| `CrossTenantMasked` | Digest exists em outro tenant; AuthZ check returns row count 0 | D1 query + AuthZ reject + audit emit `corelink.cas.read_miss` (read-side, low-severity, conflated com `NotFound` por design — read-handler não pode distinguir sem side-channel oracle); reclassificação para `corelink.cas.cross_tenant_attempt` (SEV-1) acontece offline pelo S-09 chain consumer com global digest index. Ver WI-S02-001 v1.1.0 §31. |
 | `Tombstoned` | Digest had existed but was soft-deleted (S-06 GC) | D1 row found com `deleted_at IS NOT NULL` |
+
+**Runtime read-side enum** (per WI-S02-001 v1.1.0 implementation; `crate::corelink_reapi::read::MissReason`):
+
+```rust
+enum MissReason {
+    NeverExisted,    // folds taxonomy { NotFound, CrossTenantMasked }
+    Tombstoned,      // 1:1 with taxonomy
+    R2OrphanRow,     // new variant — row alive in D1 but R2 GET miss
+}
+```
+
+The fold (`NotFound` + `CrossTenantMasked` → `NeverExisted`) is structural: the read seam queries `MetaStore::get((tenant_id, digest))` which returns `Ok(None)` for both arms — no side-channel oracle exists at the read seam to distinguish them. The S-09 chain consumer uses the offline global digest index to reclassify `NeverExisted` rows into the canonical `CrossTenantMasked` taxonomy variant when it confirms cross-tenant ownership; the SEV-1 `corelink.cas.cross_tenant_attempt` event fires from there. The `R2OrphanRow` variant is new in v1.1.0 — the prior taxonomy did not enumerate the orphan-window-during-GC case explicitly; it surfaces as a uniform 404 still (per the freeze) but emits `corelink.cas.r2_orphan_detected` (SEV-2) for SRE GC-reconcile triage.
 
 **Original S-02 spec (pre-cycle 7)** mapped these to different HTTP status codes:
 - `NotFound` → 404
@@ -73,10 +87,11 @@ Grpc-Status: 5 (NOT_FOUND)
 ```
 
 - Atacante NÃO distingue NotFound vs CrossTenantMasked vs Tombstoned via response.
-- Audit trail (S-09 chain) retém **forensic reason** distinctly:
-  - `corelink.cas.read_miss` (NotFound)
-  - `corelink.cas.cross_tenant_attempt` (CrossTenantMasked)
-  - `corelink.cas.tombstone_read_attempt` (Tombstoned)
+- Audit trail (S-09 chain) retém **forensic reason** distinctly via per-arm CE event types:
+  - `corelink.cas.read_miss` (NotFound + read-side CrossTenantMasked, conflated)
+  - `corelink.cas.cross_tenant_attempt` (CrossTenantMasked confirmed by S-09 offline using global digest index — SEV-1 reclassification)
+  - `corelink.cas.tombstoned_read_attempt` (Tombstoned)
+  - `corelink.cas.r2_orphan_detected` (R2 GET miss after AuthZ pass — orphan window inside GC reconcile lag)
 - Side-channel timing parity enforced via ADR-0023 (constant-time middleware; 3-arm methodology).
 
 **410 Gone semantic deferred to S-06 GC sprint** com explicit ADR + privacy review + REAPI conformance re-validation. Não é S-02 GA scope.
@@ -132,6 +147,13 @@ Grpc-Status: 5 (NOT_FOUND)
 - **S-02 GA**: ADR-0028 freeze; 404 uniform.
 - **S-06 GC sprint**: revisit 410 Gone semantic com explicit ADR + privacy review + REAPI conformance re-validation; only if customer feedback demands it.
 - **Forensic API S-13**: admin endpoint exposes MissReason to authorized roles (Compliance, Privacy, Security) for debugging without revealing to standard cliente.
+
+## Changelog
+
+| Versão | Data | Autor | Mudança |
+|---|---|---|---|
+| 1.0.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | Criação ADR-0028. 404 uniform freeze; 410 Gone deferred S-06. |
+| 1.1.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | WI-S02-001 implementation alignment per codex round-4 P2 finding: read-side handler emits `corelink.cas.read_miss` (low-severity, info) for the conflated `NeverExisted/CrossTenantMasked` arm because the trait-level `MetaStore::get` cannot distinguish without a side-channel oracle; the SEV-1 `corelink.cas.cross_tenant_attempt` event is reserved for the offline S-09 chain consumer that has access to the global digest index. Tombstone event_type literal corrected to `corelink.cas.tombstoned_read_attempt` (matches `crate::audit::REAPI_TOMBSTONED_READ_ATTEMPT`). Added `corelink.cas.r2_orphan_detected` for the R2 GET miss after AuthZ pass arm. |
 
 ---
 

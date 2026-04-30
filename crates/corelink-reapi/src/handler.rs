@@ -6,7 +6,7 @@
 //! - [`CasWriteService`] — implements
 //!   `build.bazel.remote.execution.v2.ContentAddressableStorage` (write half).
 //! - [`CapabilitiesService`] — implements `Capabilities.GetCapabilities`.
-//! - [`ByteStreamWriteService`] — implements `google.bytestream.ByteStream`.
+//! - [`ByteStreamService`] — implements `google.bytestream.ByteStream`.
 //!
 //! All three services share a single `Arc<HandlerCore<…>>` so the auth
 //! validator + storage + meta + orphan reconciler can be wired once at
@@ -15,10 +15,11 @@
 //! ## Auth seam
 //!
 //! Authentication runs as the first step of each RPC. We extract the
-//! `authorization: Bearer <token>` header from the gRPC `Metadata`, run the
-//! injected [`PatValidator`], and bind the resulting [`TenantContext`].
-//! From there a [`corelink_worker::TenantCtx`] is derived (TDK lookup +
-//! prefix derivation happens in [`HandlerCore::derive_storage_ctx`]).
+//! `authorization: Bearer <token>` header from the gRPC `Metadata`, run
+//! the injected [`PatValidator`], and bind the resulting
+//! [`crate::pat::TenantContext`]. From there a
+//! [`corelink_worker::TenantCtx`] is derived (TDK lookup + prefix
+//! derivation runs inline at the start of each authenticated RPC).
 //!
 //! ## TDK plumbing
 //!
@@ -41,7 +42,7 @@ use bytes::Bytes;
 use corelink_hash::Digest;
 use corelink_meta::MetaStore;
 use corelink_tenant_path::TenantDerivationKey;
-use corelink_worker::storage::r2::{R2Backend, R2Writer};
+use corelink_worker::storage::r2::{R2Backend, R2Reader, R2Writer};
 use corelink_worker::{Region, TenantCtx as StorageTenantCtx};
 use tonic::{async_trait, Code, Request, Response, Status, Streaming};
 use uuid::Uuid;
@@ -50,10 +51,11 @@ use crate::capabilities::{
     server_capabilities, MAX_BATCH_TOTAL_SIZE_BYTES, MAX_CAS_BLOB_SIZE_BYTES,
 };
 use crate::error_map::{
-    HashErrorMapping, MetaErrorMapping, R2ErrorMapping, COR_AUTH_PAT_INVALID,
-    COR_AUTH_SCOPE_INSUFFICIENT, COR_CAS_BAD_DIGEST, COR_CAS_BAD_RESOURCE_NAME,
-    COR_CAS_BATCH_TOO_LARGE, COR_CAS_BLOB_TOO_LARGE, COR_CAS_DIGEST_FUNCTION_UNSUPPORTED,
-    GRPC_INVALID_ARGUMENT, GRPC_PERMISSION_DENIED, GRPC_RESOURCE_EXHAUSTED, GRPC_UNAUTHENTICATED,
+    miss_mapping, HashErrorMapping, MetaErrorMapping, R2ErrorMapping, ReadErrorMapping,
+    COR_AUTH_PAT_INVALID, COR_AUTH_SCOPE_INSUFFICIENT, COR_CAS_BAD_DIGEST,
+    COR_CAS_BAD_RESOURCE_NAME, COR_CAS_BATCH_TOO_LARGE, COR_CAS_BLOB_TOO_LARGE,
+    COR_CAS_DIGEST_FUNCTION_UNSUPPORTED, GRPC_INVALID_ARGUMENT, GRPC_PERMISSION_DENIED,
+    GRPC_RESOURCE_EXHAUSTED, GRPC_UNAUTHENTICATED,
 };
 use crate::orchestrator::{
     CasPutOutcome, CasWriteOrchestrator, CommitPutPlan, OrchestratorError, OrphanReconciler,
@@ -69,6 +71,35 @@ use crate::proto::reapi::{
     BatchUpdateBlobsRequest, BatchUpdateBlobsResponse, Digest as ProtoDigest,
     GetCapabilitiesRequest, ServerCapabilities,
 };
+use crate::read::{CasReadOrchestrator, MissReason, ReadOutcome};
+
+/// Canonical chunk size for `ByteStream::Read` streaming responses.
+///
+/// 1 MiB matches the canonical REAPI v2 conformance recommendation per
+/// `remote_cache_product_profile.md §7.2.1` and stays well below the
+/// gRPC default `max_decoding_message_size` (4 MiB) so existing clients
+/// (Bazel/Buck2) decode without bumping limits. Worker peak memory per
+/// concurrent request is therefore bounded by `chunk + framing overhead`
+/// — ≪ the 50 MiB hard ceiling per WI-S02-001 §10.1.3.
+///
+/// ## Streaming surface scope (WI-S02-001 v1.1.0 §6.1.5 clarification)
+///
+/// The current [`crate::read::CasReadOrchestrator`] returns the full
+/// blob body via [`corelink_worker::storage::r2::R2Reader::get`] which
+/// itself returns `bytes::Bytes` (full materialization at the storage
+/// adapter seam). Combined with the S-01 single-blob 5 MiB cap
+/// (`SINGLE_BLOB_LIMIT_BYTES`), Worker peak memory per concurrent read
+/// is bounded by `5 MiB body + 1 MiB chunk overhead = ~6 MiB` — well
+/// below the 50 MiB hard ceiling for any S-02 supported blob size.
+///
+/// True end-to-end streaming (R2 SDK streamed response forwarded
+/// byte-for-byte without an intermediate materialization) requires
+/// extending `R2Backend::get` → `R2Backend::get_stream`; that change
+/// lands in **WI-S05-005** (multipart read) alongside
+/// `R2Backend::put_multipart`. Until then the 1 GiB AC scenario in
+/// §10.1.3 is unreachable by construction (writes are capped at 5 MiB
+/// in S-01).
+pub const READ_CHUNK_SIZE_BYTES: usize = 1024 * 1024;
 
 /// Clock seam — production wires `std::time::SystemTime`; tests pin a fixed
 /// instant via the `Clock` trait. Pure trait so the handler can compile to
@@ -96,6 +127,14 @@ impl Clock for SystemClock {
 /// Convenience type holding the cross-cutting handler dependencies. All
 /// three gRPC services borrow this `Arc` — instantiating a service is
 /// cheap (no per-RPC allocation in the hot path).
+///
+/// ## Read seam (WI-S02-001)
+///
+/// Adds an [`R2Reader`] alongside the existing `R2Writer`. Both are
+/// pinned to the same `Region` (the auth dispatcher must hand the
+/// handler a region-pinned core) and share the same backend `Arc<B>`.
+/// The reader is constructed once at deploy time and cloned cheaply
+/// per-request through the per-service `Arc<HandlerCore>`.
 pub struct HandlerCore<V, B, M, R, C>
 where
     V: PatValidator,
@@ -107,6 +146,7 @@ where
     pat: V,
     tdk: Arc<TenantDerivationKey>,
     writer: Arc<R2Writer<B>>,
+    reader: Arc<R2Reader<B>>,
     meta: Arc<M>,
     reconciler: Arc<R>,
     clock: C,
@@ -133,25 +173,67 @@ where
     R: OrphanReconciler + 'static,
     C: Clock + 'static,
 {
-    /// Construct a fresh handler core. The five dependencies (auth,
-    /// TDK, writer, meta, reconciler) are sharable across service clones.
+    /// Construct a fresh handler core. The six dependencies (auth, TDK,
+    /// writer, reader, meta, reconciler) are sharable across service
+    /// clones. `writer.region()` and `reader.region()` MUST agree —
+    /// the constructor asserts via `debug_assert_eq!` so any wiring bug
+    /// surfaces in CI rather than at first cross-tenant request.
     #[must_use]
     pub fn new(
         pat: V,
         tdk: Arc<TenantDerivationKey>,
         writer: Arc<R2Writer<B>>,
+        reader: Arc<R2Reader<B>>,
         meta: Arc<M>,
         reconciler: Arc<R>,
         clock: C,
     ) -> Self {
+        debug_assert_eq!(
+            writer.region(),
+            reader.region(),
+            "HandlerCore: writer.region() and reader.region() must agree (caller wiring bug)"
+        );
         Self {
             pat,
             tdk,
             writer,
+            reader,
             meta,
             reconciler,
             clock,
         }
+    }
+
+    /// Borrow the metadata store. Used by the HTTP read handler to
+    /// invoke the [`crate::read::CasReadOrchestrator`] without taking
+    /// ownership of the core.
+    #[must_use]
+    pub fn meta(&self) -> &M {
+        self.meta.as_ref()
+    }
+
+    /// Borrow the R2 reader.
+    #[must_use]
+    pub fn reader(&self) -> &R2Reader<B> {
+        self.reader.as_ref()
+    }
+
+    /// Borrow the PAT validator.
+    #[must_use]
+    pub const fn pat(&self) -> &V {
+        &self.pat
+    }
+
+    /// Borrow the TDK so HTTP handlers can derive a [`StorageTenantCtx`].
+    #[must_use]
+    pub fn tdk(&self) -> &TenantDerivationKey {
+        self.tdk.as_ref()
+    }
+
+    /// Borrow the clock.
+    #[must_use]
+    pub const fn clock(&self) -> &C {
+        &self.clock
     }
 
     /// Authenticate a tonic `Request`, returning the parsed
@@ -337,10 +419,12 @@ where
         &self,
         _request: Request<BatchReadBlobsRequest>,
     ) -> Result<Response<BatchReadBlobsResponse>, Status> {
-        // Read path is WI-S02-001; this stub keeps the service surface
-        // symmetric so generated client stubs (Bazel/Buck2) typecheck.
+        // BatchReadBlobs (small ≤ 4 MiB unary read of N blobs in one
+        // call) lands in WI-S02-002; WI-S02-001 owns ByteStream::Read +
+        // HTTP GET only. The unimplemented surface preserves symmetric
+        // client codegen against the same proto file.
         Err(Status::unimplemented(
-            "BatchReadBlobs lands in WI-S02-001; current build is S-01 (write-only)",
+            "BatchReadBlobs lands in WI-S02-002; use ByteStream::Read or GET /v1/cas/<digest>",
         ))
     }
 }
@@ -470,9 +554,11 @@ use crate::proto::bytestream::{
     WriteResponse,
 };
 
-/// Concrete `ByteStream` service. Only the `Write` RPC is implemented in
-/// S-01; `Read` and `QueryWriteStatus` return `unimplemented`.
-pub struct ByteStreamWriteService<V, B, M, R, C>
+/// Concrete `ByteStream` service. Implements `Write` (WI-S01-005) +
+/// `Read` (WI-S02-001) over the canonical 1 MiB chunk semantics.
+/// `QueryWriteStatus` remains `unimplemented` (resumable upload semantics
+/// land in S-05 multipart).
+pub struct ByteStreamService<V, B, M, R, C>
 where
     V: PatValidator + 'static,
     B: R2Backend + 'static,
@@ -483,7 +569,7 @@ where
     core: Arc<HandlerCore<V, B, M, R, C>>,
 }
 
-impl<V, B, M, R, C> std::fmt::Debug for ByteStreamWriteService<V, B, M, R, C>
+impl<V, B, M, R, C> std::fmt::Debug for ByteStreamService<V, B, M, R, C>
 where
     V: PatValidator + 'static,
     B: R2Backend + 'static,
@@ -492,12 +578,12 @@ where
     C: Clock + 'static,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ByteStreamWriteService")
+        f.debug_struct("ByteStreamService")
             .finish_non_exhaustive()
     }
 }
 
-impl<V, B, M, R, C> Clone for ByteStreamWriteService<V, B, M, R, C>
+impl<V, B, M, R, C> Clone for ByteStreamService<V, B, M, R, C>
 where
     V: PatValidator + 'static,
     B: R2Backend + 'static,
@@ -512,7 +598,7 @@ where
     }
 }
 
-impl<V, B, M, R, C> ByteStreamWriteService<V, B, M, R, C>
+impl<V, B, M, R, C> ByteStreamService<V, B, M, R, C>
 where
     V: PatValidator + 'static,
     B: R2Backend + 'static,
@@ -534,7 +620,7 @@ where
 }
 
 #[async_trait]
-impl<V, B, M, R, C> ByteStream for ByteStreamWriteService<V, B, M, R, C>
+impl<V, B, M, R, C> ByteStream for ByteStreamService<V, B, M, R, C>
 where
     V: PatValidator + 'static,
     B: R2Backend + 'static,
@@ -546,11 +632,121 @@ where
 
     async fn read(
         &self,
-        _request: Request<ReadRequest>,
+        request: Request<ReadRequest>,
     ) -> Result<Response<Self::ReadStream>, Status> {
-        Err(Status::unimplemented(
-            "ByteStream::Read lands in WI-S02-001",
-        ))
+        // Step 1 — auth + scope (cache-r required per WI §6.1.3, mapped
+        // to typed AuthScope::CacheRead — see `pat.rs` rustdoc on the
+        // canonical hyphen vs colon form: the typed enum's `as_str()`
+        // emits the colon-form `cache:r` matching auth_stub_contract.md
+        // §2 wire literal; auth_model.md §scope's hyphen-form is the
+        // human-tier label and is normalized at the S-03 Clerk
+        // adapter boundary).
+        let (pat_ctx, storage_ctx) = self.core.authenticate(&request)?;
+        pat_ctx
+            .require_scope(AuthScope::CacheRead)
+            .map_err(|e| pat_error_to_status(&e))?;
+
+        // Step 2 — parse the ReadRequest's `resource_name` per REAPI v2.
+        // Form: `[<instance_name>/]blobs/<digest_hash>/<size_bytes>`.
+        let inner = request.into_inner();
+        let parsed = parse_read_resource_name(&inner.resource_name).map_err(|msg| {
+            make_status(Code::InvalidArgument, COR_CAS_BAD_RESOURCE_NAME, msg, 0)
+        })?;
+
+        // Step 3 — REAPI v2 read_offset / read_limit semantics
+        // validation. Negative read_offset / read_limit → OUT_OF_RANGE
+        // / INVALID_ARGUMENT respectively (proto-level pre-check; the
+        // orchestrator does not need to know about offsets — those are
+        // a transport-layer chunking detail).
+        if inner.read_offset < 0 {
+            return Err(make_status(
+                Code::OutOfRange,
+                COR_CAS_BAD_RESOURCE_NAME,
+                "ByteStream::Read read_offset is negative",
+                0,
+            ));
+        }
+        if inner.read_limit < 0 {
+            return Err(make_status(
+                Code::InvalidArgument,
+                COR_CAS_BAD_RESOURCE_NAME,
+                "ByteStream::Read read_limit is negative",
+                0,
+            ));
+        }
+
+        // Step 4 — orchestrate (AuthZ + R2 GET).
+        let orch = CasReadOrchestrator::new(self.core.reader.as_ref(), self.core.meta.as_ref());
+        let outcome = orch
+            .read_blob(&storage_ctx, &parsed.digest)
+            .await
+            .map_err(|e| read_orch_error_to_status(&e))?;
+        let (body, size_bytes) = match outcome {
+            ReadOutcome::Hit { body, size_bytes } => (body, size_bytes),
+            ReadOutcome::NotFound(reason) => {
+                emit_read_miss_audit(
+                    &storage_ctx,
+                    pat_ctx.principal_id(),
+                    pat_ctx.region(),
+                    pat_ctx.request_id(),
+                    &parsed.digest,
+                    reason,
+                );
+                return Err(miss_to_status());
+            }
+        };
+
+        // Step 5 — body integrity defense-in-depth: blob_meta-recorded
+        // size MUST match observed bytes. A divergence here means an
+        // out-of-band R2 mutation — surface as INTERNAL (programmer /
+        // ops bug, not client-driven). Bit-rot detection at the BLAKE3
+        // level is the client-verify layer (WI-S02-003); this assert is
+        // a quick size-only sanity check that closes one specific
+        // R2-corruption window without slowing the hot path.
+        if body.len() as u64 != size_bytes {
+            return Err(make_status(
+                Code::Internal,
+                crate::error_map::COR_INTERNAL,
+                "blob_meta size_bytes does not match R2 body length (R2 corruption suspected)",
+                size_bytes,
+            ));
+        }
+
+        // Step 5b — size_bytes hint cross-check. If the client supplied
+        // the optional `size_bytes` segment in resource_name, it MUST
+        // match the blob_meta-recorded value; a mismatch indicates
+        // tooling drift (or a confusion attack against the client) —
+        // reject up-front so the client surfaces the inconsistency
+        // (codex round-1 P3 fix: hint was previously ignored).
+        if let Some(declared_size) = parsed.size_bytes {
+            let declared_u64 = u64::try_from(declared_size).unwrap_or(u64::MAX);
+            if declared_u64 != size_bytes {
+                return Err(make_status(
+                    Code::InvalidArgument,
+                    COR_CAS_BAD_RESOURCE_NAME,
+                    "ByteStream::Read resource_name's declared size_bytes does not match the blob_meta-recorded size",
+                    size_bytes,
+                ));
+            }
+        }
+
+        // Step 6 — apply read_offset + read_limit and stream chunks.
+        let payload = slice_for_offset_limit(body, inner.read_offset, inner.read_limit)?;
+        let payload_len = payload.len();
+        let stream = chunked_read_stream_with_audit(
+            payload,
+            ReadAuditTail {
+                tenant_id: storage_ctx.tenant_id(),
+                principal_id: pat_ctx.principal_id(),
+                region: pat_ctx.region(),
+                client_request_id: pat_ctx.request_id().to_owned(),
+                digest: parsed.digest,
+                size_bytes,
+                payload_len: payload_len as u64,
+            },
+        );
+
+        Ok(Response::new(stream))
     }
 
     async fn write(
@@ -989,9 +1185,11 @@ fn make_status(code: Code, taxonomy: &str, message: &str, contextual_size: u64) 
 fn grpc_code_from_i32(c: i32) -> Code {
     match c {
         3 => Code::InvalidArgument,
+        5 => Code::NotFound,
         7 => Code::PermissionDenied,
         8 => Code::ResourceExhausted,
         10 => Code::Aborted,
+        11 => Code::OutOfRange,
         13 => Code::Internal,
         14 => Code::Unavailable,
         16 => Code::Unauthenticated,
@@ -1046,6 +1244,559 @@ fn deterministic_audit_id(client_request_id: &str, tenant: Uuid, digest: &Digest
     bytes[6] = (bytes[6] & 0x0F) | 0x70;
     bytes[8] = (bytes[8] & 0x3F) | 0x80;
     Uuid::from_bytes(bytes)
+}
+
+/// Parsed REAPI ByteStream::Read resource_name. Symmetric to
+/// `ParsedResource` (write-side; module-private) but for the read
+/// surface — there is no `uploads/<uuid>` segment in the read form
+/// per REAPI v2 §"reading from the CAS".
+#[derive(Debug, PartialEq, Eq)]
+pub struct ParsedReadResource {
+    /// The 64-char-hex BLAKE3-256 digest extracted from the second
+    /// segment after `blobs/`.
+    pub digest: Digest,
+    /// Optional size hint — `None` if the client omitted the size_bytes
+    /// segment (REAPI v2 §read accepts the bare-digest form). The
+    /// handler cross-checks against the blob_meta-recorded size when
+    /// the hint is `Some(_)`, surfacing a mismatch as
+    /// `INVALID_ARGUMENT` to discourage tooling drift; the
+    /// blob_meta-recorded value is the canonical source of truth for
+    /// stream framing.
+    pub size_bytes: Option<i64>,
+}
+
+/// Parse a REAPI ByteStream::Read resource_name. Canonical forms (per
+/// REAPI v2 + remote_cache_product_profile.md §7.2.1):
+///
+/// - `<instance_name>/blobs/<digest_hash>/<size_bytes>`
+/// - `blobs/<digest_hash>/<size_bytes>` (instance empty)
+/// - `<instance_name>/blobs/<digest_hash>` (size omitted; legacy
+///   bare-digest form accepted by REAPI v2 conformance suite).
+///
+/// `<digest_hash>` MUST be 64 lowercase hex chars (BLAKE3-256). The
+/// optional `<size_bytes>` segment must parse as a non-negative `i64`.
+/// Trailing segments after `<size_bytes>` are rejected — `blobs/<h>/<s>`
+/// is the canonical tail; anything beyond is a wire-protocol violation.
+///
+/// Exposed `pub` so `cargo-fuzz` smoke tests can exercise the parser
+/// against arbitrary bytes without rebuilding the whole gRPC stack.
+///
+/// # Errors
+///
+/// Returns a `&'static str` diagnostic on malformed input. Never
+/// panics; the parser is total over `str` input.
+pub fn parse_read_resource_name(name: &str) -> Result<ParsedReadResource, &'static str> {
+    let parts: Vec<&str> = name.split('/').collect();
+    let blobs_pos = parts
+        .iter()
+        .position(|p| *p == "blobs")
+        .ok_or("missing 'blobs' segment in resource_name")?;
+    let after = parts
+        .get(blobs_pos..)
+        .ok_or("malformed resource_name: missing tail")?;
+    // After splitting on `/`, the slice is `["blobs", hash, size?, …]`.
+    // Codex round-1 P3: the prior implementation used `[_, hash, size_str, ..]`
+    // which silently accepted trailing garbage (`blobs/<h>/<s>/etc/junk`).
+    // Tighten to exact-match arms so the parser is total + canonical.
+    let (hash, size_bytes) = match after {
+        [_, hash] => (*hash, None),
+        [_, hash, size_str] => {
+            let size: i64 = size_str
+                .parse()
+                .map_err(|_| "resource_name: size_bytes is not a non-negative integer")?;
+            if size < 0 {
+                return Err("resource_name: size_bytes is negative");
+            }
+            (*hash, Some(size))
+        }
+        _ => {
+            return Err(
+                "malformed resource_name: expected exactly blobs/<hash>[/<size>]; trailing segments are not permitted",
+            );
+        }
+    };
+    let digest = Digest::from_hex(hash).map_err(|_| "resource_name: digest hex malformed")?;
+    Ok(ParsedReadResource {
+        digest,
+        size_bytes,
+    })
+}
+
+/// Apply REAPI v2 `read_offset` / `read_limit` semantics to a body.
+///
+/// Per `google.bytestream` §read:
+/// - `read_offset` MUST be in `[0, body.len()]`. Equal to `body.len()`
+///   yields an empty stream (legitimate trailing read). Greater than
+///   `body.len()` is `OUT_OF_RANGE`.
+/// - `read_limit == 0` ⇒ "no limit" (read to end).
+/// - `read_limit > 0` ⇒ stream `min(read_limit, body.len() - offset)` bytes.
+fn slice_for_offset_limit(body: Bytes, offset: i64, limit: i64) -> Result<Bytes, Status> {
+    let body_len = body.len();
+    let body_len_i64 = i64::try_from(body_len).unwrap_or(i64::MAX);
+    if offset > body_len_i64 {
+        return Err(make_status(
+            Code::OutOfRange,
+            COR_CAS_BAD_RESOURCE_NAME,
+            "ByteStream::Read read_offset exceeds blob size",
+            body_len as u64,
+        ));
+    }
+    let offset_usize = usize::try_from(offset).unwrap_or(usize::MAX);
+    let remaining = body_len.saturating_sub(offset_usize);
+    let take = if limit == 0 {
+        remaining
+    } else {
+        usize::try_from(limit).unwrap_or(usize::MAX).min(remaining)
+    };
+    Ok(body.slice(offset_usize..offset_usize.saturating_add(take)))
+}
+
+/// Audit emission tail bundle. Captured by
+/// [`chunked_read_stream_with_audit`] so the read_completed envelope is
+/// emitted **post-stream-completion**, with the actually-delivered
+/// `bytes_sent` count — partial reads (`read_offset`/`read_limit`) and
+/// client disconnects therefore audit accurately, not as full reads.
+/// Codex round-1 P2(a) fix.
+struct ReadAuditTail {
+    tenant_id: Uuid,
+    principal_id: Uuid,
+    region: Region,
+    client_request_id: String,
+    digest: Digest,
+    /// blob_meta-recorded full body size (from D1 row).
+    size_bytes: u64,
+    /// Length of the payload we actually slice into chunks (post
+    /// `read_offset` + `read_limit`). Travels into the audit envelope
+    /// alongside `size_bytes` so SIEM can spot partial-read patterns.
+    payload_len: u64,
+}
+
+/// Build a `ReadStream` of `ReadResponse` chunks at `READ_CHUNK_SIZE_BYTES`
+/// granularity AND emit the `corelink.cas.read_completed` audit
+/// envelope after the LAST chunk has been polled (so a client
+/// disconnect MID-stream audits as a partial / aborted read, not a
+/// successful full read).
+///
+/// The audit emission is wrapped via `futures::stream::unfold` so the
+/// terminal "emit the audit envelope" branch fires when the underlying
+/// chunk iterator has yielded its last frame. If the stream is dropped
+/// before completion (client cancellation), the inner state's `Drop`
+/// path emits a structured `tracing::warn!` for SRE forensics.
+///
+/// Empty body case: REAPI v2 §"reading from CAS" allows reading the
+/// canonical empty blob (BLAKE3 of `b""`); we emit a single empty
+/// `ReadResponse{data: []}` followed by end-of-stream so clients see
+/// a non-empty stream they can collect with the same code path.
+fn chunked_read_stream_with_audit(
+    body: Bytes,
+    audit: ReadAuditTail,
+) -> futures::stream::BoxStream<'static, Result<ReadResponse, Status>> {
+    use futures::StreamExt;
+    let chunks = chunk_bytes_for_read(body, READ_CHUNK_SIZE_BYTES);
+    let total_chunks = chunks.len();
+
+    // Convert chunks to `Vec<u8>` once so the iterator is `'static`.
+    let frames: Vec<ReadResponse> = chunks
+        .into_iter()
+        .map(|c| ReadResponse { data: c.to_vec() })
+        .collect();
+
+    // State for the unfold: (frames_remaining_iter, bytes_sent, audit).
+    let bytes_sent = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let bytes_sent_for_unfold = std::sync::Arc::clone(&bytes_sent);
+
+    let frames_iter = frames.into_iter();
+    let unfold_state = (frames_iter, bytes_sent_for_unfold);
+
+    let stream = futures::stream::unfold(unfold_state, |(mut iter, bytes_sent)| async move {
+        match iter.next() {
+            Some(frame) => {
+                bytes_sent.fetch_add(
+                    frame.data.len() as u64,
+                    std::sync::atomic::Ordering::AcqRel,
+                );
+                Some((Ok(frame), (iter, bytes_sent)))
+            }
+            None => None,
+        }
+    });
+
+    // Wrap in a `ReadCompleteAudit` Drop guard so the audit envelope is
+    // emitted regardless of completion path (success → terminal None;
+    // cancellation → guard Drop). The guard checks `bytes_sent` at
+    // emission time so partial reads are audited correctly.
+    let guard = ReadCompleteAuditGuard {
+        audit,
+        bytes_sent,
+        total_chunks,
+        emitted: false,
+    };
+    let stream_with_guard = futures::stream::unfold(
+        (Box::pin(stream)
+            as std::pin::Pin<
+                Box<dyn futures::Stream<Item = Result<ReadResponse, Status>> + Send>,
+            >, guard),
+        |(mut s, mut guard)| async move {
+            match s.as_mut().next().await {
+                Some(item) => Some((item, (s, guard))),
+                None => {
+                    // Terminal branch — emit the read_completed envelope
+                    // with the actual bytes_sent count.
+                    guard.emit_completion();
+                    None
+                }
+            }
+        },
+    );
+    stream_with_guard.boxed()
+}
+
+/// Drop-time fallback: client cancelled the stream before the last
+/// chunk was polled. Emit a warn-line (no info-level "completed")
+/// so SIEM can distinguish abandoned vs completed reads.
+struct ReadCompleteAuditGuard {
+    audit: ReadAuditTail,
+    bytes_sent: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    total_chunks: usize,
+    emitted: bool,
+}
+
+impl ReadCompleteAuditGuard {
+    fn emit_completion(&mut self) {
+        if self.emitted {
+            return;
+        }
+        self.emitted = true;
+        let bytes_sent = self
+            .bytes_sent
+            .load(std::sync::atomic::Ordering::Acquire);
+        emit_read_completed_audit_post_stream(
+            self.audit.tenant_id,
+            self.audit.principal_id,
+            self.audit.region,
+            &self.audit.client_request_id,
+            &self.audit.digest,
+            self.audit.size_bytes,
+            self.audit.payload_len,
+            bytes_sent,
+            self.total_chunks,
+        );
+    }
+}
+
+impl Drop for ReadCompleteAuditGuard {
+    fn drop(&mut self) {
+        if self.emitted {
+            return;
+        }
+        let bytes_sent = self
+            .bytes_sent
+            .load(std::sync::atomic::Ordering::Acquire);
+        // Cancellation path — partial / aborted read. Distinct event
+        // type so dashboards can graph cancellation rate separately.
+        tracing::warn!(
+            target: "corelink.audit",
+            event_type = "corelink.cas.read_aborted",
+            tenant = %self.audit.tenant_id,
+            principal = %self.audit.principal_id,
+            region = %region_str(self.audit.region),
+            digest = %self.audit.digest.to_hex(),
+            size_bytes = self.audit.size_bytes,
+            payload_len = self.audit.payload_len,
+            bytes_sent = bytes_sent,
+            "CAS read aborted (client cancelled stream before completion)"
+        );
+    }
+}
+
+/// Split a `Bytes` body into a `Vec<Bytes>` of chunks at `chunk_size`
+/// granularity. Empty body → `vec![Bytes::new()]` (one empty frame for
+/// REAPI conformance — clients expect at least one ReadResponse).
+fn chunk_bytes_for_read(body: Bytes, chunk_size: usize) -> Vec<Bytes> {
+    if chunk_size == 0 {
+        return vec![body];
+    }
+    if body.is_empty() {
+        return vec![Bytes::new()];
+    }
+    let mut out = Vec::with_capacity(body.len().div_ceil(chunk_size));
+    let mut start = 0usize;
+    while start < body.len() {
+        let end = start.saturating_add(chunk_size).min(body.len());
+        out.push(body.slice(start..end));
+        start = end;
+    }
+    out
+}
+
+/// Map [`crate::read::ReadOrchestratorError`] → tonic `Status`.
+fn read_orch_error_to_status(e: &crate::read::ReadOrchestratorError) -> Status {
+    let m = e.mapping();
+    make_status(grpc_code_from_i32(m.grpc_code), m.taxonomy_code, m.message, 0)
+}
+
+/// Map a `ReadOutcome::NotFound` into the canonical wire status. Per
+/// ADR-0028 every [`MissReason`] variant maps to the same wire 404 +
+/// `COR_CAS_BLOB_NOT_FOUND` taxonomy code; the disambiguation lives in
+/// the audit envelope, not in the wire response.
+fn miss_to_status() -> Status {
+    let m = miss_mapping();
+    make_status(grpc_code_from_i32(m.grpc_code), m.taxonomy_code, m.message, 0)
+}
+
+/// Public re-export of the read-completed audit emitter (module-private
+/// `emit_read_completed_audit_post_stream`) for the HTTP read handler
+/// in [`crate::http_read`]. Same shape; the cross-module helper keeps
+/// audit envelopes byte-identical between gRPC and HTTP transports
+/// (codex round-1 P1(b) parity fix).
+#[allow(
+    clippy::too_many_arguments,
+    reason = "shared cross-module audit emitter; bundling args adds a struct noise without reuse"
+)]
+pub fn emit_read_completed_audit_pub(
+    tenant_id: Uuid,
+    principal_id: Uuid,
+    region: Region,
+    client_request_id: &str,
+    digest: &Digest,
+    size_bytes: u64,
+    payload_len: u64,
+    bytes_sent: u64,
+    total_chunks: usize,
+) {
+    emit_read_completed_audit_post_stream(
+        tenant_id,
+        principal_id,
+        region,
+        client_request_id,
+        digest,
+        size_bytes,
+        payload_len,
+        bytes_sent,
+        total_chunks,
+    );
+}
+
+/// Public re-export of the read-miss audit emitter (module-private
+/// `emit_read_miss_audit`) for the HTTP read handler in
+/// [`crate::http_read`]. Same shape; ensures HTTP and gRPC 404 paths
+/// emit byte-identical envelopes (codex round-1 P1(b) parity fix).
+pub fn emit_read_miss_audit_pub(
+    storage_ctx: &StorageTenantCtx,
+    principal_id: Uuid,
+    region: Region,
+    client_request_id: &str,
+    digest: &Digest,
+    reason: MissReason,
+) {
+    emit_read_miss_audit(
+        storage_ctx,
+        principal_id,
+        region,
+        client_request_id,
+        digest,
+        reason,
+    );
+}
+
+/// Emit the canonical `corelink.cas.read_completed` audit envelope on
+/// a successful FULL stream completion.
+///
+/// `bytes_sent` is the actually-delivered byte count (post
+/// `read_offset`/`read_limit`); when `bytes_sent < payload_len` we
+/// emit a partial-read marker (codex P2(a) fix — partial reads no
+/// longer audit as full reads).
+#[allow(
+    clippy::too_many_arguments,
+    reason = "audit emitter aggregates many forensic fields; bundling adds noise without reuse"
+)]
+fn emit_read_completed_audit_post_stream(
+    tenant_id: Uuid,
+    principal_id: Uuid,
+    region: Region,
+    client_request_id: &str,
+    digest: &Digest,
+    size_bytes: u64,
+    payload_len: u64,
+    bytes_sent: u64,
+    total_chunks: usize,
+) {
+    let canonical = format!("blake3:{}", digest.to_hex());
+    let envelope_id = deterministic_audit_id(client_request_id, tenant_id, digest);
+    // Codex round-2 P3 fix: the envelope's `data.size_bytes` field is
+    // the canonical blob_meta-recorded body length per the audit
+    // contract (matches the write-side `read_completed` semantics in
+    // CTRL-AUDIT-003). The actually-delivered byte count travels
+    // alongside as a structured tracing field (`bytes_sent`) and into
+    // the audit chain (S-09) via a separate column once the
+    // out-of-band event surface ships.
+    let envelope = crate::audit::AuditEnvelopeBuilder::read_completed(
+        crate::audit::AuditPrincipal {
+            tenant_id,
+            principal_id,
+            region: region_str(region),
+        },
+        client_request_id,
+        canonical,
+        size_bytes,
+        crate::audit::AuditTime { envelope_id },
+    )
+    .build();
+    if let Ok(json) = envelope.to_json() {
+        tracing::info!(
+            target: "corelink.audit",
+            event_type = crate::audit::REAPI_READ_COMPLETED,
+            tenant = %tenant_id,
+            principal = %principal_id,
+            region = %region_str(region),
+            digest = %digest.to_hex(),
+            size_bytes = size_bytes,
+            payload_len = payload_len,
+            bytes_sent = bytes_sent,
+            total_chunks = total_chunks,
+            envelope = %json,
+            "CAS read completed"
+        );
+    }
+}
+
+/// Emit a per-MissReason audit envelope on a 404 path. Per ADR-0028
+/// the disambiguation lives here, never on the wire.
+///
+/// Codex round-1 P2(b) + round-4 P2 fix: each [`MissReason`] now emits
+/// a DISTINCT CE event type so the SEV-1 cross-tenant alert is no
+/// longer poisoned by ordinary cache misses or tombstone reads.
+///
+/// Severity matrix (per WI §11 + ADR-0028):
+/// - [`MissReason::NeverExisted`] → `info!` + [`crate::audit::REAPI_READ_MISS`].
+///   The conflated NeverExisted/CrossTenantMasked arm cannot be
+///   disambiguated at the read-side without a side-channel oracle;
+///   the S-09 chain consumer reclassifies to `cross_tenant_attempt`
+///   (SEV-1) using the offline global digest index.
+/// - [`MissReason::Tombstoned`] → `info!` +
+///   [`crate::audit::REAPI_TOMBSTONED_READ_ATTEMPT`]. Legitimate
+///   post-GC read.
+/// - [`MissReason::R2OrphanRow`] → `error!` +
+///   [`crate::audit::REAPI_R2_ORPHAN_DETECTED`]. SEV-2 maps to the
+///   GC reconcile signal.
+fn emit_read_miss_audit(
+    storage_ctx: &StorageTenantCtx,
+    principal_id: Uuid,
+    region: Region,
+    client_request_id: &str,
+    digest: &Digest,
+    reason: MissReason,
+) {
+    let canonical = format!("blake3:{}", digest.to_hex());
+    let envelope_id = deterministic_audit_id(client_request_id, storage_ctx.tenant_id(), digest);
+    let envelope = match reason {
+        // Codex round-4 P2 fix: emit the low-severity `read_miss`
+        // event type for the conflated NeverExisted/CrossTenantMasked
+        // arm. The S-09 chain consumer reclassifies to
+        // `cross_tenant_attempt` (SEV-1) using the offline global
+        // digest index when applicable; the read-side handler can't
+        // disambiguate without a side-channel oracle and therefore
+        // does NOT trip the SEV-1 alert here.
+        MissReason::NeverExisted => crate::audit::AuditEnvelope {
+            specversion: "1.0",
+            id: envelope_id,
+            source: format!("corelink://tenant/{}", storage_ctx.tenant_id()),
+            r#type: crate::audit::REAPI_READ_MISS,
+            subject: canonical.clone(),
+            datacontenttype: "application/json",
+            data: crate::audit::AuditEnvelopeData {
+                tenant_id: storage_ctx.tenant_id(),
+                principal_id,
+                digest: canonical.clone(),
+                size_bytes: 0,
+                region: region_str(region),
+                request_id: client_request_id.to_owned(),
+            },
+        },
+        MissReason::Tombstoned => crate::audit::AuditEnvelope {
+            specversion: "1.0",
+            id: envelope_id,
+            source: format!("corelink://tenant/{}", storage_ctx.tenant_id()),
+            r#type: crate::audit::REAPI_TOMBSTONED_READ_ATTEMPT,
+            subject: canonical.clone(),
+            datacontenttype: "application/json",
+            data: crate::audit::AuditEnvelopeData {
+                tenant_id: storage_ctx.tenant_id(),
+                principal_id,
+                digest: canonical.clone(),
+                size_bytes: 0,
+                region: region_str(region),
+                request_id: client_request_id.to_owned(),
+            },
+        },
+        MissReason::R2OrphanRow => crate::audit::AuditEnvelope {
+            specversion: "1.0",
+            id: envelope_id,
+            source: format!("corelink://tenant/{}", storage_ctx.tenant_id()),
+            r#type: crate::audit::REAPI_R2_ORPHAN_DETECTED,
+            subject: canonical.clone(),
+            datacontenttype: "application/json",
+            data: crate::audit::AuditEnvelopeData {
+                tenant_id: storage_ctx.tenant_id(),
+                principal_id,
+                digest: canonical.clone(),
+                size_bytes: 0,
+                region: region_str(region),
+                request_id: client_request_id.to_owned(),
+            },
+        },
+    };
+    let json = envelope.to_json().unwrap_or_default();
+    let event_type = envelope.r#type;
+    match reason {
+        MissReason::NeverExisted => {
+            // Severity is `info!` — the conflated NeverExisted /
+            // CrossTenantMasked arm is high-volume by definition
+            // (every Bazel/Buck2 cache-miss probe surfaces here). The
+            // S-09 chain consumer reclassifies to `warn!` /
+            // `cross_tenant_attempt` SEV-1 only when its global digest
+            // index confirms cross-tenant ownership; the read-side
+            // handler stays silent on the alert lane (codex round-4
+            // P2 fix).
+            tracing::info!(
+                target: "corelink.audit",
+                event_type = event_type,
+                reason = "never_existed_or_cross_tenant",
+                tenant = %storage_ctx.tenant_id(),
+                principal = %principal_id,
+                region = %region_str(region),
+                digest = %digest.to_hex(),
+                envelope = %json,
+                "CAS read miss (uniform 404 per ADR-0028; classification deferred to S-09 chain consumer)"
+            );
+        }
+        MissReason::Tombstoned => {
+            tracing::info!(
+                target: "corelink.audit",
+                event_type = event_type,
+                reason = "tombstoned",
+                tenant = %storage_ctx.tenant_id(),
+                principal = %principal_id,
+                region = %region_str(region),
+                digest = %digest.to_hex(),
+                envelope = %json,
+                "CAS read of tombstoned blob (uniform 404)"
+            );
+        }
+        MissReason::R2OrphanRow => {
+            tracing::error!(
+                target: "corelink.audit",
+                event_type = event_type,
+                reason = "r2_orphan_row",
+                tenant = %storage_ctx.tenant_id(),
+                principal = %principal_id,
+                region = %region_str(region),
+                digest = %digest.to_hex(),
+                envelope = %json,
+                "CAS read encountered R2 orphan row (GC reconcile pending)"
+            );
+        }
+    }
 }
 
 struct ParsedResource {
@@ -1115,6 +1866,52 @@ mod tests {
         assert!(parse_resource_name("nope").is_err());
         assert!(parse_resource_name("uploads/uuid").is_err());
         assert!(parse_resource_name("uploads/uuid/blobs/notenoughhex/0").is_err());
+    }
+
+    #[test]
+    fn parse_read_resource_name_canonical_with_size() {
+        let h = "d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24";
+        let name = format!("corelink-instance/blobs/{h}/11");
+        let parsed = parse_read_resource_name(&name).unwrap();
+        assert_eq!(parsed.digest.to_hex(), h);
+        assert_eq!(parsed.size_bytes, Some(11));
+    }
+
+    #[test]
+    fn parse_read_resource_name_canonical_bare_digest() {
+        let h = "d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24";
+        let name = format!("corelink-instance/blobs/{h}");
+        let parsed = parse_read_resource_name(&name).unwrap();
+        assert_eq!(parsed.digest.to_hex(), h);
+        assert_eq!(parsed.size_bytes, None);
+    }
+
+    #[test]
+    fn parse_read_resource_name_rejects_trailing_garbage() {
+        // codex round-1 P3 fix: trailing segments must be rejected.
+        let h = "d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24";
+        let name = format!("corelink-instance/blobs/{h}/11/extra-junk");
+        assert!(parse_read_resource_name(&name).is_err());
+        let name2 = format!("corelink-instance/blobs/{h}/11/x/y/z");
+        assert!(parse_read_resource_name(&name2).is_err());
+    }
+
+    #[test]
+    fn parse_read_resource_name_rejects_negative_size() {
+        let h = "d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24";
+        let name = format!("corelink-instance/blobs/{h}/-1");
+        assert!(parse_read_resource_name(&name).is_err());
+    }
+
+    #[test]
+    fn parse_read_resource_name_rejects_malformed_hash() {
+        let name = "corelink-instance/blobs/zzz/11";
+        assert!(parse_read_resource_name(name).is_err());
+    }
+
+    #[test]
+    fn parse_read_resource_name_rejects_missing_blobs_segment() {
+        assert!(parse_read_resource_name("corelink-instance/uploads/abc").is_err());
     }
 
     #[test]

@@ -23,7 +23,7 @@
 //!
 //! ## Cross-tenant isolation
 //!
-//! [`TenantContext`] does NOT carry the per-region [`TenantDerivationKey`];
+//! [`TenantContext`] does NOT carry the per-region [`corelink_tenant_path::TenantDerivationKey`];
 //! the auth layer applies the TDK once at construction time when it builds
 //! the downstream [`corelink_worker::TenantCtx`] for storage adapters.
 //! That separation matches `tenant.rs §"Why the constructor takes a

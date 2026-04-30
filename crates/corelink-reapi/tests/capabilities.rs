@@ -23,7 +23,7 @@ use corelink_reapi::proto::reapi::capabilities_client::CapabilitiesClient;
 use corelink_reapi::proto::reapi::GetCapabilitiesRequest;
 use corelink_reapi::{CapabilitiesService, StubPatValidator};
 use corelink_tenant_path::TenantDerivationKey;
-use corelink_worker::storage::r2::{InMemoryR2, R2Writer};
+use corelink_worker::storage::r2::{InMemoryR2, R2Reader, R2Writer};
 use corelink_worker::Region;
 use tokio::net::TcpListener;
 use tonic::transport::Server;
@@ -34,12 +34,14 @@ async fn get_capabilities_advertises_canonical_caps() {
     let tdk = Arc::new(TenantDerivationKey::from_bytes(Zeroizing::new([0u8; 32])));
     let backend = Arc::new(InMemoryR2::new());
     let writer = Arc::new(R2Writer::new(Region::Wnam, Arc::clone(&backend)));
+    let reader = Arc::new(R2Reader::new(Region::Wnam, Arc::clone(&backend)));
     let meta = Arc::new(InMemoryMetaStore::new());
     let reconciler = Arc::new(NoopOrphanReconciler);
     let core = Arc::new(HandlerCore::new(
         StubPatValidator::new(),
         tdk,
         writer,
+        reader,
         meta,
         reconciler,
         SystemClock,

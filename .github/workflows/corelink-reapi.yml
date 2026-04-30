@@ -1,8 +1,12 @@
-name: corelink-reapi (WI-S01-005)
+name: corelink-reapi (WI-S01-005 + WI-S02-001)
 
-# CI gate for the corelink-reapi crate per WI-S01-005 §13 + §14.
-# PR lane: build/clippy/tests (debug + release)/doc/canonical-vectors smoke +
-# WASM target build (pure-logic core, no host-server feature).
+# CI gate for the corelink-reapi crate per WI-S01-005 §13 + §14 +
+# WI-S02-001 §13 (CAS read path: ByteStream::Read + HTTP GET surface +
+# tenant-isolation 100k concurrent property test + read_handler_e2e
+# 14 e2e scenarios + parse_read_resource_name fuzz target).
+#
+# PR lane: build/clippy/tests (debug + release)/doc/canonical-vectors
+# smoke + WASM target build (pure-logic core, no host-server feature).
 # Nightly lane: cargo-mutants kill rate + cargo-audit advisory DB scan.
 
 on:
@@ -80,6 +84,12 @@ jobs:
 
       - name: cargo test (handler e2e gRPC scenarios)
         run: cargo test --package corelink-reapi --test handler_e2e
+
+      - name: cargo test (read handler e2e — gRPC + HTTP, WI-S02-001)
+        run: cargo test --package corelink-reapi --test read_handler_e2e
+
+      - name: cargo test (cross-tenant isolation property — 10k iter + 100k concurrent, WI-S02-001)
+        run: cargo test --release --package corelink-reapi --test prop_cross_tenant_read
 
       - name: cargo doc (deny broken intra-doc links)
         env:

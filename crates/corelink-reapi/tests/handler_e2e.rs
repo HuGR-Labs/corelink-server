@@ -48,10 +48,10 @@ use corelink_reapi::proto::reapi::batch_update_blobs_request as bub_req;
 use corelink_reapi::proto::reapi::content_addressable_storage_client::ContentAddressableStorageClient;
 use corelink_reapi::proto::reapi::{BatchUpdateBlobsRequest, Digest as ProtoDigest};
 use corelink_reapi::{
-    AuthScope, ByteStreamWriteService, CapabilitiesService, CasWriteService, StubPatValidator,
+    AuthScope, ByteStreamService, CapabilitiesService, CasWriteService, StubPatValidator,
 };
 use corelink_tenant_path::TenantDerivationKey;
-use corelink_worker::storage::r2::{InMemoryR2, R2Writer};
+use corelink_worker::storage::r2::{InMemoryR2, R2Reader, R2Writer};
 use corelink_worker::Region;
 use tokio::net::TcpListener;
 use tonic::metadata::MetadataValue;
@@ -75,6 +75,7 @@ impl Harness {
         let tdk = Arc::new(TenantDerivationKey::from_bytes(Zeroizing::new([0u8; 32])));
         let backend = Arc::new(InMemoryR2::new());
         let writer = Arc::new(R2Writer::new(Region::Wnam, Arc::clone(&backend)));
+        let reader = Arc::new(R2Reader::new(Region::Wnam, Arc::clone(&backend)));
         let meta = Arc::new(InMemoryMetaStore::new());
         let reconciler = Arc::new(NoopOrphanReconciler);
 
@@ -98,6 +99,7 @@ impl Harness {
             pat,
             tdk,
             Arc::clone(&writer),
+            Arc::clone(&reader),
             Arc::clone(&meta),
             reconciler,
             SystemClock,
@@ -105,7 +107,7 @@ impl Harness {
 
         let cas = CasWriteService::new(Arc::clone(&core));
         let caps = CapabilitiesService::new(Arc::clone(&core));
-        let bs = ByteStreamWriteService::new(Arc::clone(&core));
+        let bs = ByteStreamService::new(Arc::clone(&core));
 
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();

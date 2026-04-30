@@ -25,3 +25,9 @@ name = "audit_request_id_total"
 path = "fuzz_targets/audit_request_id_total.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "parse_read_resource_name"
+path = "fuzz_targets/parse_read_resource_name.rs"
+test = false
+doc = false

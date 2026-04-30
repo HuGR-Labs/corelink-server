@@ -59,6 +59,16 @@ pub const COR_CAS_DIGEST_FUNCTION_UNSUPPORTED: &str = "COR_CAS_DIGEST_FUNCTION_U
 /// HTTP 400. Distinct from `COR_CAS_DIGEST_MISMATCH` (the BLAKE3-of-body vs
 /// declared-digest disagreement, gRPC ABORTED 10).
 pub const COR_CAS_BAD_DIGEST: &str = "COR_CAS_BAD_DIGEST";
+/// `error_taxonomy.md` code for the canonical CAS blob-not-found 404
+/// returned by the read path. Per ADR-0028 the wire response for
+/// `(NeverExisted | CrossTenantMasked | Tombstoned)` is uniform — all
+/// three [`crate::read::MissReason`] variants surface this single
+/// taxonomy code; the disambiguation lives in the audit-emit envelope
+/// for forensics, not in the wire response.
+pub const COR_CAS_BLOB_NOT_FOUND: &str = "COR_CAS_BLOB_NOT_FOUND";
+/// gRPC code (canonical numeric) for NOT_FOUND. Used by the read path
+/// to surface the uniform 404 to gRPC clients.
+pub const GRPC_NOT_FOUND: i32 = 5;
 /// `error_taxonomy.md` code for unexpected internal failures.
 pub const COR_INTERNAL: &str = "COR_INTERNAL";
 /// `error_taxonomy.md` code for transient degradation; hint client to retry.
@@ -182,6 +192,38 @@ impl R2ErrorMapping for R2Error {
                 message: "R2 transient backend failure",
             },
         }
+    }
+}
+
+/// Mapping for [`crate::read::ReadOrchestratorError`].
+///
+/// The TRANSPORT failures map to `UNAVAILABLE` / `INTERNAL`. The 404
+/// happy-path outcome is NOT modeled here — it lives on
+/// [`crate::read::ReadOutcome::NotFound`] and surfaces via
+/// [`COR_CAS_BLOB_NOT_FOUND`].
+pub trait ReadErrorMapping {
+    /// The canonical [`ErrorMapping`] for this error.
+    fn mapping(&self) -> ErrorMapping;
+}
+
+impl ReadErrorMapping for crate::read::ReadOrchestratorError {
+    fn mapping(&self) -> ErrorMapping {
+        match self {
+            crate::read::ReadOrchestratorError::Meta(m) => m.mapping(),
+            crate::read::ReadOrchestratorError::R2(r) => r.mapping(),
+        }
+    }
+}
+
+/// Canonical wire mapping for the uniform 404 surfaced by every
+/// [`crate::read::MissReason`] variant — per ADR-0028, the client
+/// surface is single-arm `COR_CAS_BLOB_NOT_FOUND`.
+#[must_use]
+pub const fn miss_mapping() -> ErrorMapping {
+    ErrorMapping {
+        taxonomy_code: COR_CAS_BLOB_NOT_FOUND,
+        grpc_code: GRPC_NOT_FOUND,
+        message: "blob not found",
     }
 }
 

@@ -58,6 +58,59 @@ pub const REAPI_PUT_COMPLETED: &str = "corelink.cas.put_completed";
 /// audit pipeline supports out-of-band events.
 pub const REAPI_POISONING_ATTEMPT: &str = "corelink.cas.poisoning_attempt";
 
+/// Canonical CE `type` for a CAS read attempt that surfaced as 404
+/// because the requesting tenant has no row in `blob_meta` for the
+/// requested digest.
+///
+/// **Severity-tier rationale (codex round-4 P2 fix).** Earlier drafts
+/// used `corelink.cas.cross_tenant_attempt` here, but the read-side
+/// `MetaStore::get` cannot distinguish "never-existed-digest" from
+/// "exists-under-other-tenant" without a side-channel oracle (see
+/// [`crate::read::MissReason::NeverExisted`] rustdoc). Routing every
+/// such 404 to a SEV-1 cross-tenant alert poisons the dashboard with
+/// ordinary cache-miss probes. We therefore emit the load-bearing
+/// security event ([`REAPI_CROSS_TENANT_ATTEMPT`]) only when the S-09
+/// chain consumer confirms — using the global digest-existence index —
+/// that the digest IS held by another tenant. Until S-09 ships the
+/// out-of-band classifier, the read handler emits this `read_miss`
+/// event at `tracing::info!` level so SRE can see the rate without
+/// firing alarm bells.
+pub const REAPI_READ_MISS: &str = "corelink.cas.read_miss";
+
+/// Canonical CE `type` for a CONFIRMED cross-tenant read attempt.
+/// Emitted ONLY by the audit chain consumer (S-09) once it has
+/// verified — using the global digest index — that the requested
+/// digest exists under a DIFFERENT tenant_id. The read handler in
+/// this crate emits [`REAPI_READ_MISS`] for the high-volume
+/// `NeverExisted` arm and leaves the cross-tenant classification to
+/// the offline consumer. This split is the **only** way to distinguish
+/// without a side-channel oracle — see WI-S02-001 v1.1.0 §31
+/// changelog.
+pub const REAPI_CROSS_TENANT_ATTEMPT: &str = "corelink.cas.cross_tenant_attempt";
+
+/// Canonical CE `type` for a CAS read attempt that surfaced as 404
+/// because the row is tombstoned (`deleted_at IS NOT NULL`). This is
+/// the legitimate "read after S-06 GC soft-delete" path — emitted at
+/// `tracing::info!` rather than `warn!`, distinct from the cross-tenant
+/// SEV-1 signal.
+pub const REAPI_TOMBSTONED_READ_ATTEMPT: &str = "corelink.cas.tombstoned_read_attempt";
+
+/// Canonical CE `type` for a CAS read attempt where AuthZ found an
+/// alive row but R2 returned NotFound — indicates an orphan blob_meta
+/// row inside the GC reconciliation window. Emitted at
+/// `tracing::error!` (orphan-counter spike maps to a SEV-2; the GC
+/// sweep S-06 reconciles within ≤ 24h).
+pub const REAPI_R2_ORPHAN_DETECTED: &str = "corelink.cas.r2_orphan_detected";
+
+/// Canonical CE `type` for a successful CAS read. The audit envelope
+/// is structurally distinct from the write envelope (no `size_bytes`
+/// at the top level — the consumer reads it from the
+/// blob_meta-recorded value via the digest if needed). Emitted on every
+/// 200 hit at the **end** of the byte stream (so partial reads and
+/// client disconnects are NOT audited as full reads — see
+/// `handler::ReadAuditTail` rustdoc for the pattern).
+pub const REAPI_READ_COMPLETED: &str = "corelink.cas.read_completed";
+
 /// Build an `audit_outbox.payload_json` envelope.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AuditEnvelopeBuilder {
@@ -138,6 +191,53 @@ impl AuditEnvelopeBuilder {
             digest_canonical_text: digest_canonical_text.into(),
             size_bytes: 0,
             event_type: REAPI_POISONING_ATTEMPT,
+        }
+    }
+
+    /// Construct a fresh builder for `corelink.cas.cross_tenant_attempt`.
+    /// `size_bytes` is forced to `0` because the requesting tenant has
+    /// no legitimate visibility into the foreign blob's size; emitting
+    /// a non-zero value here would itself be a side-channel oracle.
+    #[must_use]
+    pub fn cross_tenant_attempt(
+        principal: AuditPrincipal,
+        request_id: impl Into<String>,
+        digest_canonical_text: impl Into<String>,
+        time: AuditTime,
+    ) -> Self {
+        Self {
+            id: time.envelope_id,
+            tenant_id: principal.tenant_id,
+            principal_id: principal.principal_id,
+            request_id: request_id.into(),
+            region: principal.region,
+            digest_canonical_text: digest_canonical_text.into(),
+            size_bytes: 0,
+            event_type: REAPI_CROSS_TENANT_ATTEMPT,
+        }
+    }
+
+    /// Construct a fresh builder for `corelink.cas.read_completed`.
+    /// `size_bytes` carries the blob_meta-recorded body length (the
+    /// authoritative source); it travels into the audit envelope so the
+    /// S-09 chain consumer can correlate egress bytes per tenant.
+    #[must_use]
+    pub fn read_completed(
+        principal: AuditPrincipal,
+        request_id: impl Into<String>,
+        digest_canonical_text: impl Into<String>,
+        size_bytes: u64,
+        time: AuditTime,
+    ) -> Self {
+        Self {
+            id: time.envelope_id,
+            tenant_id: principal.tenant_id,
+            principal_id: principal.principal_id,
+            request_id: request_id.into(),
+            region: principal.region,
+            digest_canonical_text: digest_canonical_text.into(),
+            size_bytes,
+            event_type: REAPI_READ_COMPLETED,
         }
     }
 

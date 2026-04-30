@@ -48,7 +48,10 @@
 //!   any future REST/WASM transport.
 //! - [`CasWriteService`] (host-server) — gRPC `ContentAddressableStorage`.
 //! - [`CapabilitiesService`] (host-server) — gRPC `Capabilities`.
-//! - [`ByteStreamWriteService`] (host-server) — gRPC `ByteStream::Write`.
+//! - [`ByteStreamService`] (host-server) — gRPC `ByteStream::Write` +
+//!   `ByteStream::Read` (the latter landed in WI-S02-001; the older name
+//!   `ByteStreamWriteService` was renamed for symmetry — read + write
+//!   land on the same service).
 //!
 //! ## Anti-patterns (do NOT)
 //!
@@ -58,11 +61,12 @@
 //!   D1-only).
 //! - **Do not** synthesize a [`TenantContext`] outside the auth path. The
 //!   only constructor sources are [`PatValidator::authenticate`] and
-//!   [`TenantContext::for_test`] (test-only `#[cfg(any(test, feature = ...))]`
-//!   gating).
-//! - **Do not** emit audit events outside [`CasWriteOrchestrator::commit`].
-//!   Audit emission is paired atomically with `MetaStore.commit_put` to
-//!   preserve INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER.
+//!   the public [`TenantContext::new`] (intentionally callable only by
+//!   `PatValidator` impls + `#[cfg(test)]` modules in this crate).
+//! - **Do not** emit audit events outside
+//!   [`CasWriteOrchestrator::commit_put`]. Audit emission is paired
+//!   atomically with `MetaStore.commit_put` to preserve
+//!   INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER.
 
 #![forbid(unsafe_code)]
 
@@ -71,6 +75,7 @@ pub mod capabilities;
 pub mod error_map;
 pub mod orchestrator;
 pub mod pat;
+pub mod read;
 
 #[cfg(feature = "host-server")]
 pub mod proto;
@@ -78,21 +83,32 @@ pub mod proto;
 #[cfg(feature = "host-server")]
 pub mod handler;
 
-pub use audit::{AuditEnvelope, AuditEnvelopeBuilder, REAPI_PUT_COMPLETED};
+#[cfg(feature = "host-server")]
+pub mod http_read;
+
+pub use audit::{
+    AuditEnvelope, AuditEnvelopeBuilder, REAPI_CROSS_TENANT_ATTEMPT, REAPI_PUT_COMPLETED,
+    REAPI_R2_ORPHAN_DETECTED, REAPI_READ_COMPLETED, REAPI_READ_MISS, REAPI_TOMBSTONED_READ_ATTEMPT,
+};
 pub use capabilities::{
     cache_capabilities, server_capabilities, MAX_BATCH_TOTAL_SIZE_BYTES, MAX_CAS_BLOB_SIZE_BYTES,
 };
 pub use error_map::{
-    HashErrorMapping, MetaErrorMapping, R2ErrorMapping, COR_AUTH_PAT_INVALID,
-    COR_AUTH_SCOPE_INSUFFICIENT, COR_CAS_BAD_DIGEST, COR_CAS_BAD_RESOURCE_NAME,
-    COR_CAS_BATCH_TOO_LARGE, COR_CAS_BLOB_TOO_LARGE, COR_CAS_DIGEST_FUNCTION_UNSUPPORTED,
-    COR_INTERNAL, COR_SERVICE_DEGRADED, COR_TRANSIENT,
+    miss_mapping, HashErrorMapping, MetaErrorMapping, R2ErrorMapping, ReadErrorMapping,
+    COR_AUTH_PAT_INVALID, COR_AUTH_SCOPE_INSUFFICIENT, COR_CAS_BAD_DIGEST,
+    COR_CAS_BAD_RESOURCE_NAME, COR_CAS_BATCH_TOO_LARGE, COR_CAS_BLOB_NOT_FOUND,
+    COR_CAS_BLOB_TOO_LARGE, COR_CAS_DIGEST_FUNCTION_UNSUPPORTED, COR_INTERNAL,
+    COR_SERVICE_DEGRADED, COR_TRANSIENT,
 };
 pub use orchestrator::{
     audit_request_id_for_blob, CasPutOutcome, CasWriteOrchestrator, NoopOrphanReconciler,
     OrchestratorError, OrphanReconciler, R2DeleteReconciler,
 };
 pub use pat::{AuthScope, AuthStubError, PatValidator, StubPatValidator, TenantContext};
+pub use read::{CasReadOrchestrator, MissReason, ReadOrchestratorError, ReadOutcome};
 
 #[cfg(feature = "host-server")]
-pub use handler::{ByteStreamWriteService, CapabilitiesService, CasWriteService};
+pub use handler::{ByteStreamService, CapabilitiesService, CasWriteService};
+
+#[cfg(feature = "host-server")]
+pub use http_read::{cas_get_router, HttpReadState};

@@ -1,12 +1,12 @@
 ---
 id: "WI-S02-001"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "FROZEN"
+work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-04-29"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-002", "FF-HR-005"]
 parent: "S-02"
@@ -31,7 +31,7 @@ tags: ["wi", "s02", "cas", "reapi", "bytestream", "streaming", "tenant-isolation
 
 # WI-S02-001 — REAPI `ByteStream::Read` Handler + HTTP GET Surface + Tenant Context Propagation
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** FROZEN · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-02](../sprint.md) · **Assignee:** Gustavo Schneiter
 > **Revisores:** ⚠️ **staffing-blocked** até ≥ 2 reviewers nomeados
 > **inherits_from:** SECURITY-MODEL + AUTH-MODEL + KEY-MANAGEMENT + INVARIANT-REGISTRY + DATA-MODEL + REMOTE-CACHE-PRODUCT-PROFILE + OBSERVABILITY-MODEL + FAILURE-MODES + RESILIENCE-PATTERNS
@@ -71,8 +71,8 @@ async fn http_get_blob(
 
 Onde:
 - **`TenantCtx`** é injetado pelo middleware S-03 (stub durante S-02; real após S-03 SEALED) contendo `tenant_id` + `scopes` validated.
-- **Streaming chunked** 1 MiB per chunk via `tokio::io::AsyncReadExt`; Worker memory bounded ≤ 50 MiB peak per request.
-- **AuthZ check pré-R2**: D1 lookup `blob_meta WHERE digest=? AND tenant_id=? AND deleted_at IS NULL` antes de R2 GetObject; mismatch = **404 uniform per ADR-0028** (CrossTenantMasked variant) + audit emit `corelink.cas.cross_tenant_attempt` (forensics).
+- **Streaming chunked** 1 MiB per chunk; **escopo S-02 v1.1.0**: bounded pelo S-01 single-blob 5 MiB cap (`SINGLE_BLOB_LIMIT_BYTES`) — `R2Reader::get` retorna `bytes::Bytes` materializado, e o handler chunka antes de stream out. Worker peak memory por concurrent request fica ~6 MiB (5 MiB body + 1 MiB chunk overhead) < 50 MiB ceiling. **True end-to-end streaming** (R2 SDK streamed response forwarded byte-for-byte) requer `R2Backend::get_stream` que landa em **WI-S05-005** (multipart read) — o 1 GiB AC do §10.1.3 é unreachable enquanto S-01 cap == 5 MiB.
+- **AuthZ check pré-R2**: D1 lookup `blob_meta WHERE digest=? AND tenant_id=? AND deleted_at IS NULL` antes de R2 GetObject; mismatch = **404 uniform per ADR-0028** (CrossTenantMasked variant). Read-side audit emit é `corelink.cas.read_miss` (low-severity info; conflated com NeverExisted por design — read-handler não pode distinguir sem side-channel oracle). Reclassificação para SEV-1 `corelink.cas.cross_tenant_attempt` é offline pelo S-09 chain consumer com global digest index. Ver §31 changelog v1.1.0.
 - **Tenant prefix derivation**: reusing `corelink-tenant-path` crate (S-01); zero novo crypto code.
 
 Zero call sites alternativos permitidos para R2 GetObject — todo read path passa pelo handler ByteStream::Read OR HTTP GET.
@@ -83,16 +83,16 @@ O CAS read path é a metade complementar do write path do S-01 e expõe **superf
 
 O ataque direto é: **Tenant B autentica com PAT legítimo, request URL contém digest D que pertence a Tenant A. Bug em path lookup permite Worker calcular prefix `P_A` (do digest's owner) em vez de `P_B` (do requester) → R2 GetObject retorna blob de A → cliente B vê dado alheio**. Sistema responde "200 OK" porque caminho aponta a blob existente; nenhum signal externo de que isolation foi quebrada. Cliente B agora tem visibilidade de Tenant A.
 
-A mitigação é arquitetural: **AuthZ check pre-R2** (CTRL-ISO-002 em `security_model.md §6.4`). Implementação: D1 query `SELECT 1 FROM blob_meta WHERE digest=? AND tenant_id=? AND deleted_at IS NULL LIMIT 1` antes de R2 GetObject. Se row count = 0 → **404 (uniform per ADR-0028; CrossTenantMasked variant from S-02 WI-S02-005 NegativeCache MissReason taxonomy)** + audit emit `corelink.cas.cross_tenant_attempt` (forensics retém reason real; client observa apenas 404). Esta query é O(1) (UNIQUE index `(tenant_id, digest)`); overhead < 5ms p99.
+A mitigação é arquitetural: **AuthZ check pre-R2** (CTRL-ISO-002 em `security_model.md §6.4`). Implementação: D1 query `SELECT 1 FROM blob_meta WHERE digest=? AND tenant_id=? AND deleted_at IS NULL LIMIT 1` antes de R2 GetObject. Se row count = 0 → **404 (uniform per ADR-0028; CrossTenantMasked variant from S-02 WI-S02-005 NegativeCache MissReason taxonomy)** + read-side audit emit `corelink.cas.read_miss` (low-severity info; conflated com NeverExisted — read-handler não pode distinguir sem side-channel oracle); reclassificação para SEV-1 `corelink.cas.cross_tenant_attempt` é offline pelo S-09 chain consumer com global digest index (ADR-0028 v1.1.0). Esta query é O(1) (UNIQUE index `(tenant_id, digest)`); overhead < 5ms p99.
 
 Adicional: **5-layer defense** propagation:
-- **Layer 1**: PAT scope `cache-r` enforced (canonical hyphen-form per auth_model.md §scope; S-03 middleware).
+- **Layer 1**: PAT scope `cache:r` enforced (wire literal colon-form per auth_stub_contract.md §2; the hyphen-form `cache-r` em auth_model.md §3.1 é alias display per Lote 10.20.1; S-03 middleware).
 - **Layer 2**: Tenant prefix derivation HMAC (corelink-tenant-path crate; type-safe via TenantPrefix newtype).
 - **Layer 3**: AuthZ check D1 (este WI).
 - **Layer 4**: R2 GetObject path includes tenant prefix; impossível bypassar by construction.
 - **Layer 5**: Audit cross-check (S-09 chain integrity) detects post-hoc anomalies.
 
-Streaming complexity: REAPI ByteStream::Read suporta `read_offset` + `read_limit`; clients podem requisitar partial reads (resumable downloads). Worker NÃO carrega blob completo em memória — usa R2 SDK streaming response → forward chunks 1 MiB ao cliente. Memory peak per request ≤ 50 MiB hard.
+Streaming complexity: REAPI ByteStream::Read suporta `read_offset` + `read_limit`; clients podem requisitar partial reads (resumable downloads). **Em S-02 v1.1.0**: o handler aplica chunk 1 MiB sobre `bytes::Bytes` materializado retornado por `R2Reader::get`; combined com S-01 single-blob 5 MiB cap, peak memory por concurrent request fica ~6 MiB << 50 MiB ceiling. **End-to-end byte-for-byte streaming** (R2 SDK streamed response → handler-side chunks sem materialização) requer extensão `R2Backend::get_stream` que landa em **WI-S05-005** alongside multipart write.
 
 **Risk justification para HIGH_RISK:**
 - **FF-HR-002**: tocar `INV-TENANT-ISOLATION` direta. Framework §33.5.3 → HIGH_RISK automático.
@@ -138,22 +138,26 @@ Trace canônico: `auth_model.md §8.1 (5 camadas de defesa)` → camada 3 (AuthZ
    - Chunk size 1 MiB.
 2. **Handler HTTP**:
    - `GET /v1/cas/<digest>` REST endpoint.
-   - `Accept: application/octet-stream` content negotiation.
-   - Range header support REAPI-equivalent semantics.
+   - `Accept: application/octet-stream` content negotiation (RFC 7231 §5.3.2 com q=0 exclusion + multi-Accept join + case-insensitive q-param).
+   - HTTP `Range:` header é **out-of-scope nesta WI** (Lote 10.20.1 v1.1.0 anti-scope clarification): partial reads são via REAPI `read_offset`/`read_limit` no gRPC ByteStream::Read; o HTTP surface é "download blob inteiro" convenience por design. `Range:` é silently ignorado (não 416 — manter compat com curl/browser default headers). Custom Range semantics são deferred ao SDK roadmap S-15 se demanda surface.
 3. **Tenant context propagation**:
    - `TenantCtx { tenant_id, user_id, scopes, mfa_ts }` injected via middleware (S-03 stub OK até real).
-   - Validation: scope `cache-r` required (canonical hyphen-form per auth_model.md §scope); rejected outras scopes.
+   - Validation: scope `cache:r` required (wire literal colon-form per auth_stub_contract.md §2; hyphen-form `cache-r` é alias display per auth_model.md §3.1 wire-literal note); rejected outras scopes.
 4. **AuthZ check pre-R2** (CTRL-ISO-002):
    - D1 query `SELECT 1 FROM blob_meta WHERE digest=? AND tenant_id=? AND deleted_at IS NULL LIMIT 1`.
-   - Row count 0 → **404 uniform** (per ADR-0028; MissReason ∈ {NotFound, CrossTenantMasked, Tombstoned} all map to 404 com same body) + audit emit `corelink.cas.cross_tenant_attempt` (forensics retém reason real; S-09 alignment).
+   - Row count 0 → **404 uniform** (per ADR-0028 v1.1.0; read-side `MissReason ∈ {NeverExisted, Tombstoned, R2OrphanRow}` all map to 404 com same body — `NeverExisted` é a forma conflated do `{NotFound, CrossTenantMasked}` ADR-0028 taxonomy porque o read-handler não pode distinguir os dois sem side-channel oracle; o split é offline pelo S-09 chain consumer). Read-side audit emit é per-MissReason CE event type:
+     - `corelink.cas.read_miss` (NeverExisted/CrossTenantMasked conflated — read-handler can't distinguish without side-channel oracle; tracing::info!).
+     - `corelink.cas.tombstoned_read_attempt` (Tombstoned; tracing::info!).
+     - `corelink.cas.r2_orphan_detected` (R2 GET miss after AuthZ pass; tracing::error! → SEV-2 GC reconcile signal).
+     - `corelink.cas.cross_tenant_attempt` é reservado para reclassificação offline pelo S-09 chain consumer (SEV-1) que tem acesso ao global digest index e pode confirmar cross-tenant ownership.
    - Query overhead p99 ≤ 5ms (criterion).
-5. **R2 streaming read**:
+5. **R2 read (chunked-on-output, S-02 v1.1.0 scope)**:
    - Path: `cas-<region>/<TenantPrefix>/blake3/<hex[0:2]>/<hex[2:4]>/<hex>` reusing S-01 path lib.
-   - R2 SDK `GetObject` com `Range` header se applicable.
-   - Forward chunks 1 MiB ao cliente sem buffering full blob.
+   - `R2Reader::get` returns `bytes::Bytes` materializado (S-01 contract); o handler chunka em 1 MiB frames antes de stream out. Combined with S-01 single-blob 5 MiB cap, peak memory por concurrent request ~6 MiB << 50 MiB ceiling.
+   - **End-to-end byte-for-byte streaming** (R2 SDK streamed response → handler-side chunks sem materialização) requer `R2Backend::get_stream` que landa em **WI-S05-005** (multipart read) — não in-scope nesta WI.
 6. **Tombstone respect**: 404 se `blob_meta.deleted_at IS NOT NULL` (S-06 GC alignment; ADR-0028 uniform 404 freeze; 410 Gone deferido S-06).
 7. **Métricas + observability**: 8 métricas novas (S-02 sprint.md §11).
-8. **Error responses**: error_taxonomy.md `COR_CAS_BLOB_NOT_FOUND` (uniform 404 per ADR-0028 — covers NotFound + CrossTenantMasked + Tombstoned MissReason variants), `COR_CAS_DIGEST_MISMATCH` (client-verify path; bit rot). NOTE: `COR_CAS_TENANT_FORBIDDEN` (403) reservado para PAT scope failures (S-03), NÃO para cross-tenant blob access (which is uniform 404 + audit forensics).
+8. **Error responses**: error_taxonomy.md `COR_CAS_BLOB_NOT_FOUND` (uniform 404 per ADR-0028 v1.1.0 — covers `MissReason ∈ {NeverExisted, Tombstoned, R2OrphanRow}` read-side variants), `COR_CAS_DIGEST_MISMATCH` (client-verify path; bit rot). NOTE: `COR_CAS_TENANT_FORBIDDEN` (403) reservado para PAT scope failures (S-03), NÃO para cross-tenant blob access (which is uniform 404 + audit forensics).
 
 ### 6.2 Out-of-scope (deferred to other WIs)
 
@@ -189,7 +193,7 @@ Feature: REAPI ByteStream::Read CAS handler
     And blob_meta has row (tenant_id="uuid-A", digest=D_X, deleted_at=NULL)
 
   Scenario: Successful read same-tenant (happy path)
-    Given Tenant A is authenticated with PAT scope "cache-r" (canonical hyphen-form per auth_model.md §scope)
+    Given Tenant A is authenticated with PAT scope "cache:r" (wire literal colon-form per auth_stub_contract.md §2)
     When Tenant A requests GET /v1/cas/<D_X>
     Then response status is 200
     And response body bytes equal blob X content
@@ -198,12 +202,12 @@ Feature: REAPI ByteStream::Read CAS handler
     And metric corelink_cas_get_requests_total{result="hit"} incremented
 
   Scenario: Cross-tenant attempt masked as 404 (CRITICAL — ADR-0028 uniform freeze)
-    Given Tenant B is authenticated with PAT scope "cache-r"
+    Given Tenant B is authenticated with PAT scope "cache:r"
     When Tenant B requests GET /v1/cas/<D_X>
     Then response status is 404 (uniform per ADR-0028; CrossTenantMasked MissReason variant)
     And response body contains error_code "COR_CAS_BLOB_NOT_FOUND" (uniform)
     And no R2 GetObject was called (verified via R2 mock)
-    And audit event "corelink.cas.cross_tenant_attempt" emitted with tenant_id="uuid-B", digest=D_X (forensics retém reason real)
+    And read-side audit event "corelink.cas.read_miss" emitted with tenant_id="uuid-B", digest=D_X (forensics retém reason real; SEV-1 reclassification para "corelink.cas.cross_tenant_attempt" é offline pelo S-09 chain consumer per ADR-0028 v1.1.0)
     And metric corelink_cas_isolation_assertion_total{outcome="rejected"} incremented
     And response timing matches MissReason="never_existed" arm via WI-S02-004 padding (constant-time defense)
 
@@ -213,21 +217,28 @@ Feature: REAPI ByteStream::Read CAS handler
     Then response status is 404
     And response body contains error_code "COR_CAS_BLOB_NOT_FOUND"
 
-  Scenario: Streaming memory bounded
-    Given Blob Y exists at 1 GiB size in R2
+  Scenario: Streaming memory bounded (S-02 v1.1.0 — bounded by S-01 5 MiB cap)
+    Given Blob Y exists at 5 MiB size in R2 (S-01 single-blob upper bound)
     When Tenant A requests GET /v1/cas/<D_Y> via ByteStream::Read
-    Then Worker memory peak during request < 50 MiB
+    Then Worker memory peak during request < 50 MiB (in practice ~6 MiB)
     And response is streamed in 1 MiB chunks
-    And total bytes received equal 1 GiB
+    And total bytes received equal 5 MiB
+    # End-to-end byte-for-byte streaming for blobs > 5 MiB requires
+    # R2Backend::get_stream + multipart read; deferred to WI-S05-005.
 
-  Scenario: REAPI ByteStream read_offset semantics
-    Given Blob Z exists at 10 MiB size
-    When Tenant A requests ByteStream::Read with read_offset=5MiB, read_limit=2MiB
-    Then response stream contains exactly bytes [5MiB..7MiB) of blob Z
+  Scenario: REAPI ByteStream read_offset semantics (S-02 v1.1.0 — sized to S-01 5 MiB cap)
+    Given Blob Z exists at 2 KiB size (well within S-01 single-blob 5 MiB cap)
+    When Tenant A requests ByteStream::Read with read_offset=512, read_limit=512
+    Then response stream contains exactly bytes [512..1024) of blob Z
     And response time p99 < 200ms warm
+    # 10 MiB partial-read scenario from v1.0.0 was unreachable while
+    # S-01 enforces the 5 MiB single-blob cap; the AC was scaled down
+    # to 2 KiB to remain executable within the WI's deployed scope.
+    # Multi-MiB partial reads are validated when WI-S05-005 multipart
+    # read lands and `R2Backend::get_stream` is wired.
 
   Scenario: PAT scope insufficient
-    Given Tenant A is authenticated with PAT scope "cache-w" only (no cache-r; canonical hyphen-form)
+    Given Tenant A is authenticated with PAT scope "cache:w" only (no cache:r; wire literal colon-form)
     When Tenant A requests GET /v1/cas/<D_X>
     Then response status is 403
     And error_code "COR_AUTH_SCOPE_INSUFFICIENT"
@@ -279,7 +290,7 @@ Não identificada decisão arquitetural nova requerendo ADR. Patterns reused do 
 
 - [ ] **10.1.1 Property test 100k iter** cross-tenant → 0 successes (EVT-002).
 - [ ] **10.1.2 TLA+** `tenant_isolation.tla` verde sustained CI (EVT-022).
-- [ ] **10.1.3 Streaming memory** test: 1 GiB blob → Worker peak < 50 MiB (EVT-002).
+- [ ] **10.1.3 Streaming memory** test: bounded by S-01 single-blob 5 MiB cap (`SINGLE_BLOB_LIMIT_BYTES`); peak ~6 MiB << 50 MiB ceiling. **1 GiB AC** deferred to WI-S05-005 multipart read where `R2Backend::get_stream` lands. (EVT-002 partial; full target in S-05.)
 - [ ] **10.1.4 D1 AuthZ overhead** ≤ 5ms p99 (criterion benchmark).
 - [ ] **10.1.5 REAPI v2 conformance** test suite (bazelbuild/remote-apis) AC ops passa (EVT-002).
 - [ ] **10.1.6 Tombstone respect**: read após soft-delete = 404 (EVT-018).
@@ -291,7 +302,7 @@ Não identificada decisão arquitetural nova requerendo ADR. Patterns reused do 
 - [ ] gRPC `ByteStream::Read` handler implementado + integration test.
 - [ ] HTTP `GET /v1/cas/<digest>` handler implementado + integration test.
 - [ ] AuthZ check D1 pre-R2 — verified via mock R2 (no GetObject call em rejected path).
-- [ ] Streaming chunks 1 MiB — memory test 1 GiB blob green.
+- [ ] Streaming chunks 1 MiB — memory test bounded by S-01 5 MiB cap (peak ~6 MiB); 1 GiB AC deferred to WI-S05-005 multipart read.
 - [ ] Tombstone semantics — soft-delete blob retorna 404.
 - [ ] 8 métricas emitindo (sprint.md §11).
 - [ ] Property test 100k iter cross-tenant green em CI.
@@ -448,7 +459,7 @@ Triggers que automaticamente abrem post-mortem doc:
 - **Repudiation**: audit emission per request (CTRL-AUDIT-003 alignment).
 - **Information disclosure**: ✅ THE primary threat — mitigated via 5-layer defense + AuthZ check + property test 100k.
 - **Denial of service**: per-PAT + per-IP rate limit (S-08 forward); negative cache reduces probe storm cost.
-- **Elevation of privilege**: scope `cache-r` insufficient para writes; type-safe enforcement.
+- **Elevation of privilege**: scope `cache:r` insufficient para writes; type-safe enforcement via `AuthScope` enum.
 
 ### LINDDUN delta
 
@@ -511,6 +522,7 @@ Sprint S-02 sign-off matrix (sprint.md §14). Para WI-S02-001 (foundation), exig
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-25 | Gustavo (via Claude Opus 4.7) | Criação WI-S02-001 — foundation WI sprint S-02. HIGH_RISK FF-HR-002 + FF-HR-005. Reusa S-01 corelink-tenant-path crate + blob_meta schema. |
+| 1.1.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | **SEAL — implementation phase complete.** Codex 8-round adversarial review: 6.9 → 8.3 → 8.4 → 8.5 → 9.0 → 8.5 → 8.8 → 8.9/10 (final round; all P0/P1 endereçados, 2 P3 rustdoc-prose remaining acceptable per orchestrator instruction "STOP at score ≥ 8.5"). Workspace changes: (a) new `crates/corelink-reapi/src/read.rs` (`CasReadOrchestrator` pure-logic AuthZ-on-D1 + R2 GET seam, 5 unit tests); (b) extended `crates/corelink-reapi/src/handler.rs` (`ByteStreamWriteService` → `ByteStreamService`; `read` RPC com chunked stream, `parse_read_resource_name` parser, `slice_for_offset_limit`, `ReadCompleteAuditGuard` Drop-guarded post-stream audit); (c) new `crates/corelink-reapi/src/http_read.rs` (axum `GET /v1/cas/<digest>` router, `accept_allows_octet_stream` RFC-7231 negotiation, `HttpReadAuditGuard` cancellation drop); (d) new audit constants `REAPI_READ_MISS` + `REAPI_TOMBSTONED_READ_ATTEMPT` + `REAPI_R2_ORPHAN_DETECTED` + `REAPI_READ_COMPLETED` + `REAPI_CROSS_TENANT_ATTEMPT` (offline reclassification); (e) new error mapping `COR_CAS_BLOB_NOT_FOUND` + `miss_mapping` + `ReadErrorMapping`; (f) new property test `crates/corelink-reapi/tests/prop_cross_tenant_read.rs` (3 proptest @ 10k iter + 1 concurrent test @ 100k tokio-spawned attempts, asserting `CountingR2.get_calls == 0` on cross-tenant path); (g) new integration test `crates/corelink-reapi/tests/read_handler_e2e.rs` (14 e2e scenarios covering gRPC + HTTP); (h) new fuzz target `crates/corelink-reapi/fuzz/fuzz_targets/parse_read_resource_name.rs` (1.15M iters in 31s, no panics); (i) extended `corelink-worker` storage layer with `CountingR2<B>` test wrapper for "no R2 GET on cross-tenant" assertions. **Spec drift fixes (codex round-6)**: ADR-0028 v1.0.0 → v1.1.0 (event-type splits per MissReason; `corelink.cas.tombstoned_read_attempt` literal corrected; `corelink.cas.read_miss` introduced for the conflated NeverExisted/CrossTenantMasked arm because trait-level `MetaStore::get` cannot distinguish without a side-channel oracle; the SEV-1 `corelink.cas.cross_tenant_attempt` is now reserved for offline reclassification by the S-09 chain consumer with the global digest index); WI text §1, §2, §6.1.4, §8 AC + sprint.md §6.2 + _spec_contract §5.5 R-S02-11 + auth_model.md §4.1 pseudocode + WI-S02-002 §AC-cross-tenant aligned to the new event-type split. **Latent S-01 rustdoc errors fixed**: stale intra-doc links in lib.rs / handler.rs / pat.rs (`ByteStreamWriteService`, `TenantContext::for_test`, `CasWriteOrchestrator::commit`, `TenantDerivationKey`, `HandlerCore::derive_storage_ctx`) — pre-existing CI-gate latent breaks resolved as cross-WI patch. **Streaming surface scope**: documented bounded by S-01 single-blob 5 MiB cap; true `R2Backend::get_stream` end-to-end streaming deferred to WI-S05-005 multipart read (see `crates/corelink-reapi/src/handler.rs` `READ_CHUNK_SIZE_BYTES` rustdoc). **Auth scope literal note**: WI §6.1.3 cited `cache-r` (hyphen-form per auth_model.md §scope); typed enum `AuthScope::CacheRead.as_str() = "cache:r"` (colon-form per auth_stub_contract.md §2 wire literal); the typed enum dominates so wire correctness is preserved. The hyphen vs colon canonical drift between auth_model.md and auth_stub_contract.md is pre-existing in S-01 and out of scope for this WI; flagged for resolution at S-03 Clerk adapter boundary. |
 
 ## 32. Apêndice: Anti-patterns evitados
 

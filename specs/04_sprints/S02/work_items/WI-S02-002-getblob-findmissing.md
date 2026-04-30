@@ -197,7 +197,7 @@ Feature: GetBlob unary + FindMissingBlobs batch
     When Tenant A requests GetBlob(D_W)  # belongs to B
     Then response status is NOT_FOUND
     And metric corelink_cas_isolation_assertion_total{outcome="rejected"} incremented
-    And audit event "corelink.cas.cross_tenant_attempt" emitted
+    And read-side audit event "corelink.cas.read_miss" emitted (low-severity info; conflated com NeverExisted no read seam — read-handler não pode distinguir sem side-channel oracle; SEV-1 reclassification para "corelink.cas.cross_tenant_attempt" é offline pelo S-09 chain consumer com global digest index per ADR-0028 v1.1.0)
     (404 não 403 — não distinguishable per CTRL-ISO-004; full constant-time em WI-S02-004)
 
   Scenario: FindMissingBlobs happy path

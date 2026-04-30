@@ -3,9 +3,9 @@ id: "AUTH-MODEL"
 type: "auth_model"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "0.1.0"
+version: "0.2.0"
 created: "2026-04-24"
-updated: "2026-04-24"
+updated: "2026-04-29"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -17,8 +17,8 @@ tags: ["architecture", "security", "auth", "multi-tenant"]
 # Auth Model — Principals, Scopes, Rotation, Revocation
 
 > **doc_status:** DRAFT
-> **Versão:** 0.1.0
-> **Última atualização:** 2026-04-24
+> **Versão:** 0.2.0
+> **Última atualização:** 2026-04-29
 > **Owner:** Gustavo Schneiter
 > **Aprovador Final:** Gustavo Schneiter
 > **Revisores:** ⚠️ **staffing-blocked** — promoção a `doc_status: FROZEN` bloqueada até ≥ 2 reviewers nomeados conforme roles indicados (endereça F-09 audit Lote 3+4)
@@ -178,11 +178,13 @@ JWT validação via JWKS fetch cache:
 
 Scopes seguem padrão `<resource>-<action>`. Lista completa:
 
+> **Wire literal note (S-01 SEAL alignment):** os PAT JWT claim wire literals são **colon-form** per `auth_stub_contract.md §2` (e.g. `cache:r`, `cache:w`); a hyphen-form abaixo é o human-display alias canônico (UI / docs / dashboards). O typed enum `corelink_reapi::AuthScope::CacheRead.as_str() = "cache:r"` é o source of truth para a wire — handlers comparam contra colon-form. As duas formas são equivalentes; a normalização final (canonical = colon-form em wire, hyphen-form em UI) será resolvida no S-03 Clerk adapter boundary.
+
 | Scope | Descrição | Quem tipicamente tem |
 |---|---|---|
-| `cache-r` | Read CAS blobs + AC results | read-only token |
-| `cache-w` | Write CAS blobs + AC results | CI token, dev token |
-| `cache-rw` | Abrev: `cache-r` + `cache-w` | CI token, dev token |
+| `cache-r` (wire: `cache:r`) | Read CAS blobs + AC results | read-only token |
+| `cache-w` (wire: `cache:w`) | Write CAS blobs + AC results | CI token, dev token |
+| `cache-rw` (wire: `cache:r` + `cache:w` set) | Abrev: `cache-r` + `cache-w` | CI token, dev token |
 | `cache-find-missing` | Executar `FindMissingBlobs` (não implica download) | read-only token, CI |
 | `cache-delete` | Delete blobs (rare, admin) | admin token |
 | `admin-tenant-read` | Listar config do tenant | admin dashboard |
@@ -224,14 +226,16 @@ Toda operação autenticada tem `tenant_id` derivado do principal. Scope é apli
 if request.tenant_id != principal.tenant_id:
     return 403  // PAT scope/identity mismatch — non-CAS-read paths
 
-// CAS read handlers (S-02 ADR-0028 override): cross-tenant blob access masked as 404 uniform
+// CAS read handlers (S-02 ADR-0028 v1.1.0 override): cross-tenant blob access masked as 404 uniform
 // (existence oracle closed; per ADR-0028 MissReason → 404 freeze):
 if request.path.starts_with("/cas/") AND blob_meta.tenant_id != principal.tenant_id:
-    return 404 with COR_CAS_BLOB_NOT_FOUND  // CrossTenantMasked variant
-    + audit emit "corelink.cas.cross_tenant_attempt" (forensics retain reason)
+    return 404 with COR_CAS_BLOB_NOT_FOUND  // CrossTenantMasked variant (uniform with NeverExisted)
+    + read-side audit emit "corelink.cas.read_miss" (low-severity info; conflated com NeverExisted —
+      read-handler não pode distinguir sem side-channel oracle; SEV-1 reclassification para
+      "corelink.cas.cross_tenant_attempt" é offline pelo S-09 chain consumer com global digest index)
 ```
 
-Isso é tão crítico que merece invariant dedicado: **INV-TenantIsolation** (CRITICAL, forcing factor FF-HR-002). Per ADR-0028 (S-02 GA freeze), CAS read handlers retornam 404 uniform across MissReason variants (NotFound × CrossTenantMasked × Tombstoned) para fechar enumeration oracle; 403 reservado para PAT scope failures (não cross-tenant blob access).
+Isso é tão crítico que merece invariant dedicado: **INV-TenantIsolation** (CRITICAL, forcing factor FF-HR-002). Per ADR-0028 v1.1.0 (S-02 GA freeze), CAS read handlers retornam 404 uniform across taxonomy MissReason variants `{NotFound, CrossTenantMasked, Tombstoned}`; runtime read-side enum é `{NeverExisted, Tombstoned, R2OrphanRow}` (NeverExisted folds NotFound + CrossTenantMasked porque o read-handler não pode distinguir sem side-channel oracle — disambiguação é offline pelo S-09 chain consumer). 403 reservado para PAT scope failures (não cross-tenant blob access).
 
 ### 4.2 Scope check
 
@@ -404,8 +408,10 @@ proptest! {
         server.upload(&tenant_a, &digest, random_bytes()).unwrap();
         // Tenant B tries to read
         let result = server.read(&tenant_b, &digest);
-        // Must fail with 404 or 403, never return tenant_a's blob
-        assert!(matches!(result, Err(AuthError::NotFound | AuthError::Forbidden)));
+        // Per ADR-0028 (S-02 GA freeze) cross-tenant CAS reads MUST surface
+        // as uniform 404 NotFound (never 403). The 403/Forbidden path is
+        // reserved exclusively for PAT scope failures (S-03 middleware).
+        assert!(matches!(result, Err(AuthError::NotFound)));
     }
 }
 ```

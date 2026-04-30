@@ -32,7 +32,7 @@ tags: ["spec-contract", "s02", "cas", "read-path", "client-verify", "side-channe
 
 Implementar **path de leitura CAS production-grade** completando o loop write→read iniciado em S-01: REAPI `ByteStream::Read` (streaming chunked, memory-bounded), `GetBlob` unary (small blobs ≤ 4 MB inline), `FindMissingBlobs` (batch discovery para clients Bazel/Buck2), client-side verify obrigatório default-on (`corelink-client-verify` crate Rust + ABI stable; FFI integration tests Python/Go/JS = S-15 deliverable, CTRL-CAS-002), negative caching de 404 (KV TTL curto + HMAC16 keyed reduz cost de probe attacks + speed up legitimate misses), constant-time 404 across MissReason variants (CTRL-ISO-004 + ADR-0028 uniform freeze — prevent enumeration side-channel). Sem read path, S-01 é write-only e produto inviável.
 
-**Por que SOTA:** competitors entregam read path com client verify opt-in (BuildBuddy) ou ausente (NativeLink em alguns SDKs); sem constant-time response distinction → enumeration side-channel; sem negative cache → cost overhead em probe storms. CoreLink S-02 entrega: (a) **TLA+ tenant_isolation.tla covering read path**; (b) **constant-time 404 across 3 MissReason arms** (per ADR-0028) com pairwise Mann-Whitney + Šidák; (c) **client verify default-on Rust crate + ABI stable** (`corelink-client-verify`; FFI Python/Go/JS = S-15 deliverable); (d) **side-channel benchmarks** (timing attack resistance via criterion + |Δmedian| ≤ 1ms); (e) **streaming memory-bounded** (Worker chunk-based, não buffer completo). Reference: **REAPI v2 spec**, **OWASP Side-Channel Testing**, **NIST SP 800-53 SC-4 (Information in Shared Resources)**.
+**Por que SOTA:** competitors entregam read path com client verify opt-in (BuildBuddy) ou ausente (NativeLink em alguns SDKs); sem constant-time response distinction → enumeration side-channel; sem negative cache → cost overhead em probe storms. CoreLink S-02 entrega: (a) **TLA+ tenant_isolation.tla covering read path**; (b) **constant-time 404 across 3 MissReason arms** (per ADR-0028) com pairwise Mann-Whitney + Šidák; (c) **client verify default-on Rust crate + ABI stable** (`corelink-client-verify`; FFI Python/Go/JS = S-15 deliverable); (d) **side-channel benchmarks** (timing attack resistance via criterion + |Δmedian| ≤ 1ms); (e) **streaming memory-bounded** (S-02 v1.1.0: bounded by S-01 single-blob 5 MiB cap; peak ~6 MiB << 50 MiB ceiling; true byte-for-byte streaming via `R2Backend::get_stream` deferred to WI-S05-005 multipart read). Reference: **REAPI v2 spec**, **OWASP Side-Channel Testing**, **NIST SP 800-53 SC-4 (Information in Shared Resources)**.
 
 ## 2. Lane + forcing factors
 
@@ -73,7 +73,7 @@ inherits_from:
 
 ### 5.1 REAPI handlers (CAP-CAS-004 + CAP-CAS-006 + CAP-CAS-009)
 
-- **R-S02-1**: REAPI `ByteStream::Read` Worker handler com streaming chunked (1 MiB chunks); `read_offset` + `read_limit` semantics conforme REAPI v2 spec.
+- **R-S02-1**: REAPI `ByteStream::Read` Worker handler com streaming chunked-on-output (1 MiB chunks); `read_offset` + `read_limit` semantics conforme REAPI v2 spec. **S-02 v1.1.0 scope**: chunks são aplicados sobre `bytes::Bytes` materializado retornado por `R2Reader::get` (S-01 contract); peak memory ~6 MiB sob S-01 single-blob 5 MiB cap; true byte-for-byte streaming deferred to WI-S05-005 multipart read.
 - **R-S02-2**: `GetBlob` unary handler para small blobs ≤ 4 MB inline; falls back to ByteStream se larger.
 - **R-S02-3**: `FindMissingBlobs` batch endpoint: input `[digest]` → output `[missing_digests]`; enables Bazel client efficient pre-upload check; PAT scope `cache-find-missing` (canonical hyphen-form per auth_model.md §scope).
 - **R-S02-3b**: `BatchReadBlobs` batch endpoint (REAPI mandatory per remote_cache_product_profile.md §12.2): input `[digest]` → output `[{digest, data, status}]`; aggregate cap 4 MiB; large blobs return ByteStream::Read pointer; PAT scope `cache-r`.
@@ -109,7 +109,7 @@ Canonical decision per ADR-0028 (forward-whitelisted): **MissReason → HTTP 404
 ### 5.5 Tenant Isolation (CAP-CAS-004 envelope)
 
 - **R-S02-10**: Tenant context propagation: `Authorization: Bearer <PAT>` → resolve `tenant_id` (S-03 reuse via auth middleware) → namespace lookup `<tenant_prefix>/<digest>` em R2; reject se prefix mismatch.
-- **R-S02-11**: AuthZ check em storage call (CTRL-ISO-002): pre-R2 read, verify `tenant_id` matches blob_meta.tenant_id em D1; mismatch = **404 (uniform per ADR-0028; CrossTenantMasked variant)** + audit emit `corelink.cas.cross_tenant_attempt` (forensics retain original reason; client observa apenas 404).
+- **R-S02-11**: AuthZ check em storage call (CTRL-ISO-002): pre-R2 read, verify `tenant_id` matches blob_meta.tenant_id em D1; mismatch = **404 (uniform per ADR-0028 v1.1.0; CrossTenantMasked variant)** + read-side audit emit `corelink.cas.read_miss` (low-severity info; conflated com NeverExisted no read seam — read-handler não pode distinguir sem side-channel oracle); reclassificação para SEV-1 `corelink.cas.cross_tenant_attempt` é offline pelo S-09 chain consumer com global digest index. Client observa apenas 404 uniform.
 
 ### 5.6 Observability + SLO
 
@@ -127,7 +127,7 @@ Canonical decision per ADR-0028 (forward-whitelisted): **MissReason → HTTP 404
 - [ ] **Runbook `RB-FM-253`** (cross-tenant read) dry-run executado em staging (EVT-017).
 - [ ] **SBOM + signed release** (CycloneDX 1.5+) — formato e enforcement definido em S-12 (forward-looking; S-02 honra format mas full SLSA L3 attestation gate é S-12 sealing) (EVT-010).
 - [ ] **Negative cache** test: probe storm 1k QPS de unknown digests → measure cost reduction vs no-cache baseline (EVT-021).
-- [ ] **Streaming memory test**: read 1 GiB blob via ByteStream → Worker memory peak < 50 MiB (não load full blob) (EVT-002).
+- [ ] **Streaming memory test**: bounded by S-01 single-blob 5 MiB cap (`SINGLE_BLOB_LIMIT_BYTES`); peak ~6 MiB << 50 MiB ceiling. 1 GiB AC deferred to WI-S05-005 multipart read where `R2Backend::get_stream` lands (EVT-002 partial; full target in S-05).
 - [ ] **Bit rot integrity test**: corrupt R2 object out-of-band → 100% client verify catches (EVT-002).
 - [ ] **PRR HIGH_RISK 11 sign-offs canonical** (per framework §33.5.4.3 + ADR-0034; aligns sprint.md §14 single-source): Owner + Final Approver + Architect (Crypto SME specialization for BLAKE3 verify + Mann-Whitney methodology + Statistician methodology + side-channel design) + Security Lead + SRE Lead + Engineer (S-02 lead) + QA Lead + Product + Compliance Officer + Privacy Officer + AppSec advisor (peer reviewers contribuem em PR review sem sign-off canonical separado) (EVT-031).
 - [ ] **Cost regression gate**: CAS GET hot path benchmark per-op cost; < 10% regression vs S-01 write baseline (Lote 9.4 §14.10).
@@ -141,7 +141,7 @@ Canonical decision per ADR-0028 (forward-whitelisted): **MissReason → HTTP 404
 - [ ] **10.s02.5** **Negative cache effectiveness**: probe storm cost reduced ≥ 80% vs baseline (EVT-021).
 - [ ] **10.s02.6** **Client verify default-on (Rust crate)**: `corelink-client-verify` `VerifyConfig::default()` returns `enabled: true`; opt-out path requires explicit flag + emit warning log; CI gate verifica default. **NOTA Lote 9.5**: 3-SDK FFI ubiquity (Python/Go/JS) é entregável **S-15** (não bloqueia SEAL S-02) (EVT-002).
 - [ ] **10.s02.7** **Tenant isolation property test**: 100k iter cross-tenant attempts → 0 successes (EVT-002).
-- [ ] **10.s02.8** **Streaming memory bounded**: 1 GiB blob read → Worker peak < 50 MiB (EVT-002).
+- [ ] **10.s02.8** **Streaming memory bounded**: bounded by S-01 5 MiB cap; peak ~6 MiB << 50 MiB ceiling (1 GiB AC deferred to WI-S05-005 multipart read) (EVT-002 partial).
 - [ ] **10.s02.9** **Bit rot detection**: 100% bit rot scenarios caught client-side (EVT-002).
 
 ## 8. Invariants
