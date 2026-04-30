@@ -97,6 +97,11 @@ tokio = { workspace = true }
 zeroize = { workspace = true }
 hex = { workspace = true }
 async-trait = "0.1"
+# WI-S02-006 cross-component property + bit-rot integration tests
+# exercise the WI-S02-003 SDK verifier as a downstream consumer of the
+# read path. Dev-only — production code does not link client-verify
+# from the server crate (the SDK is consumed by client SDKs in S-15).
+corelink-client-verify = { workspace = true }
 # HTTP client for the read_handler_e2e tests (the production wire client
 # is left to S-15 SDK; these tests use raw hyper to avoid pulling
 # reqwest into the workspace just for tests).
@@ -151,3 +156,11 @@ path = "tests/batch_read_blobs_e2e.rs"
 [[test]]
 name = "timing_padding_grpc_e2e"
 path = "tests/timing_padding_grpc_e2e.rs"
+
+[[test]]
+name = "prop_cas_read"
+path = "tests/prop_cas_read.rs"
+
+[[test]]
+name = "integration_bit_rot"
+path = "tests/integration_bit_rot.rs"

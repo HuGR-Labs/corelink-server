@@ -348,6 +348,7 @@ dependencies = [
  "axum",
  "blake3",
  "bytes",
+ "corelink-client-verify",
  "corelink-hash",
  "corelink-meta",
  "corelink-tenant-path",

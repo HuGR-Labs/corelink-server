@@ -444,6 +444,28 @@ impl InMemoryR2 {
             .expect("InMemoryR2 mutex must not be poisoned in test code");
         guard.remove(key).is_some()
     }
+
+    /// Test-only helper: simulate **R2 silent bit rot** (FM-051) on an
+    /// existing key by overwriting the stored bytes with the supplied
+    /// `corrupt_body`. Used by the WI-S02-006 bit-rot integration test
+    /// to drive `corelink_client_verify::ClientVerifier::verify` into
+    /// a digest mismatch on the read path. Production code MUST never
+    /// call this — there is no on-Cloudflare equivalent.
+    ///
+    /// Returns `true` iff a value was overwritten (the key existed
+    /// pre-call). Tests should assert the return value to avoid
+    /// false-passing scenarios where the key never existed.
+    #[allow(
+        clippy::expect_used,
+        reason = "test fake: a poisoned mutex in test code is itself a test failure"
+    )]
+    pub fn inject_corrupt_for_test(&self, key: &str, corrupt_body: Bytes) -> bool {
+        let mut guard = self
+            .inner
+            .lock()
+            .expect("InMemoryR2 mutex must not be poisoned in test code");
+        guard.insert(key.to_owned(), corrupt_body).is_some()
+    }
 }
 
 impl R2Backend for InMemoryR2 {
