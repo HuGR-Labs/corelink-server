@@ -39,17 +39,27 @@ use corelink_worker::Region;
 use thiserror::Error;
 use uuid::Uuid;
 
-/// Typed PAT scope. S-01 only consumes [`AuthScope::CacheRead`] +
-/// [`AuthScope::CacheWrite`]; the others (Admin, Billing, Privacy) are
-/// declared so a fixture-backed `StubPatValidator` can carry full-fidelity
-/// PAT scope-sets that match the canonical `auth_stub_contract.md §2` enum
-/// without requiring re-typing in S-03.
+/// Typed PAT scope. S-01 + S-02 consumes [`AuthScope::CacheRead`],
+/// [`AuthScope::CacheWrite`], and [`AuthScope::CacheFindMissing`]; the
+/// others (Admin, Billing, Privacy) are declared so a fixture-backed
+/// `StubPatValidator` can carry full-fidelity PAT scope-sets that match
+/// the canonical `auth_stub_contract.md §2` enum without requiring
+/// re-typing in S-03.
+///
+/// `CacheFindMissing` is a discovery-only scope (`cache:find-missing`):
+/// it grants the bearer permission to invoke `FindMissingBlobs` (a
+/// pre-upload existence check) without implying read access to the
+/// underlying blobs. This split honours auth_model.md §scope L188
+/// "Default de CLI/CI tokens: cache-rw + cache-find-missing".
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AuthScope {
     /// `cache:r` — read CAS blobs / AC results.
     CacheRead,
     /// `cache:w` — write CAS blobs / AC results.
     CacheWrite,
+    /// `cache:find-missing` — invoke `FindMissingBlobs` (existence check).
+    /// Does NOT imply `CacheRead` (download). Added WI-S02-002 SEAL.
+    CacheFindMissing,
     /// `admin:read`. Out of scope for S-01 handlers; present for parity.
     AdminRead,
     /// `admin:write`. Out of scope for S-01 handlers.
@@ -69,6 +79,7 @@ impl AuthScope {
         match self {
             Self::CacheRead => "cache:r",
             Self::CacheWrite => "cache:w",
+            Self::CacheFindMissing => "cache:find-missing",
             Self::AdminRead => "admin:read",
             Self::AdminWrite => "admin:write",
             Self::BillingAdmin => "billing:admin",
@@ -372,10 +383,32 @@ mod tests {
     fn auth_scope_canonical_strings() {
         assert_eq!(AuthScope::CacheRead.as_str(), "cache:r");
         assert_eq!(AuthScope::CacheWrite.as_str(), "cache:w");
+        assert_eq!(AuthScope::CacheFindMissing.as_str(), "cache:find-missing");
         assert_eq!(AuthScope::AdminRead.as_str(), "admin:read");
         assert_eq!(AuthScope::AdminWrite.as_str(), "admin:write");
         assert_eq!(AuthScope::BillingAdmin.as_str(), "billing:admin");
         assert_eq!(AuthScope::PrivacyAdmin.as_str(), "privacy:admin");
+    }
+
+    #[test]
+    fn cache_find_missing_does_not_imply_cache_read() {
+        // Critical: cache:find-missing grants existence-check capability
+        // ONLY. A PAT carrying ONLY `CacheFindMissing` MUST NOT pass a
+        // `require_scope(CacheRead)` check (defense against scope
+        // creep — discovery-only tokens can list, not download).
+        let mut v = StubPatValidator::new();
+        v.insert(
+            "find-only",
+            Uuid::from_u128(99),
+            Uuid::from_u128(199),
+            Region::Wnam,
+            [AuthScope::CacheFindMissing],
+        );
+        let ctx = v.authenticate("find-only", "req-find").unwrap();
+        ctx.require_scope(AuthScope::CacheFindMissing).unwrap();
+        // Read scope MUST be denied — no implicit upgrade.
+        assert!(ctx.require_scope(AuthScope::CacheRead).is_err());
+        assert!(ctx.require_scope(AuthScope::CacheWrite).is_err());
     }
 
     #[test]

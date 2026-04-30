@@ -3,9 +3,9 @@ id: "ERROR-TAXONOMY"
 type: "architecture"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "0.2.0"
+version: "0.3.1"
 created: "2026-04-24"
-updated: "2026-04-24"
+updated: "2026-04-29"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -106,8 +106,10 @@ introduced_in_sprint: S-XX
 | `COR_CAS_TENANT_FORBIDDEN` | 403 | never | `TenantForbiddenError` | "Access to this resource is forbidden" | Check PAT scope (e.g. missing `cache-r`); **NÃO retornado por CAS read handlers para cross-tenant blob access** — per ADR-0028 (S-02 GA freeze): cross-tenant CAS reads return 404 uniform `COR_CAS_BLOB_NOT_FOUND` to fechar enumeration oracle; 403 reservado para PAT scope failures (S-03 auth middleware) |
 | `COR_CAS_BLOB_TOO_LARGE` | 413 | never | `BlobTooLargeError` | "Blob exceeds maximum size for your tier" | Use multipart upload (S-05) or upgrade tier |
 | `COR_CAS_BATCH_TOO_LARGE` | 413 | never | `BatchTooLargeError` | "BatchUpdateBlobs aggregate exceeds MaxBatchTotalSizeBytes (4 MiB)" | Fragment the batch into smaller groups OR use ByteStream::Write for the oversized blob (canonical capability advertised via `Capabilities.GetCapabilities`) |
+| `COR_CAS_BATCH_SIZE_EXCEEDED` | 413 | never | `BatchSizeExceededError` | "FindMissingBlobs/BatchReadBlobs request carries more digests than the canonical 1000 batch cap" | Fragment the digest list into chunks of ≤ 1000 entries per request (REAPI v2 conformance recommendation) |
 | `COR_CAS_BAD_RESOURCE_NAME` | 400 | never | `BadResourceNameError` | "ByteStream resource_name is malformed or missing required segments" | Build the resource_name as `<instance>/uploads/<uuid>/blobs/<digest>/<size_bytes>` per REAPI v2 §`ByteStream` ABI |
 | `COR_CAS_DIGEST_FUNCTION_UNSUPPORTED` | 400 | never | `DigestFunctionUnsupportedError` | "BatchUpdateBlobs.digest_function declares a hash the server does not advertise" | Read `Capabilities.GetCapabilities` first; CoreLink S-01 advertises BLAKE3 only |
+| `COR_CAS_COMPRESSOR_UNSUPPORTED` | 412 | never | `CompressorUnsupportedError` | "BatchReadBlobs.acceptable_compressors must include Compressor.IDENTITY (= 0) or be empty" | Set `acceptable_compressors = []` (defaults to IDENTITY) OR include `Compressor.IDENTITY` (= 0) in the list. CoreLink S-01 supports IDENTITY only; compressed batch responses (ZSTD/DEFLATE/BROTLI) ship in WI-S05-005 once `CacheCapabilities.supported_compressors` advertises them. |
 | `COR_CAS_BAD_DIGEST` | 400 | never | `BadDigestError` | "BatchUpdateBlobs digest is malformed (length / hex / size_bytes mismatch)" | Recompute digest hex (64 lowercase chars) and ensure `digest.size_bytes == data.len()` |
 | `COR_CAS_QUOTA_EXCEEDED` | 429 | after_delay | `QuotaExceededError` | "Storage quota reached" | Free space via deletion or upgrade tier; check `Retry-After` header |
 
@@ -315,7 +317,7 @@ export class DigestMismatchError extends CoreLinkError {}
 
 ---
 
-**Fim error_taxonomy.md v0.2.0.**
+**Fim error_taxonomy.md v0.3.1.**
 
 ---
 
@@ -325,3 +327,5 @@ export class DigestMismatchError extends CoreLinkError {}
 |---|---|---|---|
 | 0.1.0 | 2026-04-24 | Gustavo (Lote 9.4) | Catalog inicial. |
 | 0.2.0 | 2026-04-29 | Gustavo (WI-S01-005 SEAL Lote — codex round-1 P2 fix) | Added 4 new CAS codes referenced by WI-S01-005 §23 + `corelink-reapi` `error_map.rs`: `COR_CAS_BATCH_TOO_LARGE` (HTTP 413, gRPC RESOURCE_EXHAUSTED — `BatchUpdateBlobs` aggregate exceeds `MaxBatchTotalSizeBytes` 4 MiB; distinguishable at SDK level from per-blob `COR_CAS_BLOB_TOO_LARGE`); `COR_CAS_BAD_RESOURCE_NAME` (HTTP 400, gRPC INVALID_ARGUMENT — `ByteStream::Write` resource_name unparseable); `COR_CAS_DIGEST_FUNCTION_UNSUPPORTED` (HTTP 400 — server advertises BLAKE3 only in S-01); `COR_CAS_BAD_DIGEST` (HTTP 400 — digest hex / `size_bytes` mismatch). All four mapped to canonical gRPC codes per WI §9.6. |
+| 0.3.0 | 2026-04-29 | Gustavo (WI-S02-002 SEAL Lote 11.2) | Added `COR_CAS_BATCH_SIZE_EXCEEDED` (HTTP 413, gRPC OUT_OF_RANGE) for `FindMissingBlobs` / `BatchReadBlobs` requests carrying more than the canonical 1000-digest batch cap. Distinct from `COR_CAS_BATCH_TOO_LARGE` (`RESOURCE_EXHAUSTED`, aggregate-bytes cap on `BatchUpdateBlobs`). Per WI-S02-002 §6.1.5 + REAPI v2 conformance recommendation. |
+| 0.3.1 | 2026-04-29 | Gustavo (WI-S02-002 SEAL Lote 11.2 — codex round-2 P2 fix) | Added `COR_CAS_COMPRESSOR_UNSUPPORTED` (HTTP 412, gRPC FAILED_PRECONDITION) for `BatchReadBlobs` requests where `acceptable_compressors` is non-empty AND does NOT include `Compressor.IDENTITY` (= 0). REAPI v2 §`BatchReadBlobsRequest` semantics: an empty `acceptable_compressors` list means the client accepts the default IDENTITY encoding; a non-empty list MUST include IDENTITY in S-01 because CoreLink does NOT advertise compressed batch encodings yet (`CacheCapabilities.supported_compressors` and `supported_batch_update_compressors` are both empty until ZSTD/DEFLATE/BROTLI ship in WI-S05-005). Distinct from `COR_CAS_DIGEST_FUNCTION_UNSUPPORTED` (digest-function negotiation, not compressor negotiation) so dashboard / log triage can bucket compressor-negotiation failures separately. |

@@ -73,6 +73,7 @@
 pub mod audit;
 pub mod capabilities;
 pub mod error_map;
+pub mod find_missing;
 pub mod orchestrator;
 pub mod pat;
 pub mod read;
@@ -94,11 +95,15 @@ pub use capabilities::{
     cache_capabilities, server_capabilities, MAX_BATCH_TOTAL_SIZE_BYTES, MAX_CAS_BLOB_SIZE_BYTES,
 };
 pub use error_map::{
-    miss_mapping, HashErrorMapping, MetaErrorMapping, R2ErrorMapping, ReadErrorMapping,
-    COR_AUTH_PAT_INVALID, COR_AUTH_SCOPE_INSUFFICIENT, COR_CAS_BAD_DIGEST,
-    COR_CAS_BAD_RESOURCE_NAME, COR_CAS_BATCH_TOO_LARGE, COR_CAS_BLOB_NOT_FOUND,
-    COR_CAS_BLOB_TOO_LARGE, COR_CAS_DIGEST_FUNCTION_UNSUPPORTED, COR_INTERNAL,
-    COR_SERVICE_DEGRADED, COR_TRANSIENT,
+    miss_mapping, FindMissingErrorMapping, HashErrorMapping, MetaErrorMapping, R2ErrorMapping,
+    ReadErrorMapping, COR_AUTH_PAT_INVALID, COR_AUTH_SCOPE_INSUFFICIENT, COR_CAS_BAD_DIGEST,
+    COR_CAS_BAD_RESOURCE_NAME, COR_CAS_BATCH_SIZE_EXCEEDED, COR_CAS_BATCH_TOO_LARGE,
+    COR_CAS_BLOB_NOT_FOUND, COR_CAS_BLOB_TOO_LARGE, COR_CAS_COMPRESSOR_UNSUPPORTED,
+    COR_CAS_DIGEST_FUNCTION_UNSUPPORTED, COR_INTERNAL, COR_SERVICE_DEGRADED, COR_TRANSIENT,
+};
+pub use find_missing::{
+    FindMissingError, FindMissingOrchestrator, FindMissingOutcome, MAX_FIND_MISSING_BATCH_SIZE,
+    MAX_PARALLEL_AUTHZ,
 };
 pub use orchestrator::{
     audit_request_id_for_blob, CasPutOutcome, CasWriteOrchestrator, NoopOrphanReconciler,

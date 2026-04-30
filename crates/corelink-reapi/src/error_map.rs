@@ -45,6 +45,22 @@ pub const COR_CAS_BLOB_TOO_LARGE: &str = "COR_CAS_BLOB_TOO_LARGE";
 /// canonical `error_taxonomy.md §3.1` table at v0.2.0; gRPC mapping is
 /// `RESOURCE_EXHAUSTED` (8); HTTP equivalent 413.
 pub const COR_CAS_BATCH_TOO_LARGE: &str = "COR_CAS_BATCH_TOO_LARGE";
+/// `error_taxonomy.md` code for a `FindMissingBlobs` (or
+/// `BatchReadBlobs`) request that exceeds the canonical 1000-digest
+/// batch cap. Registered in `error_taxonomy.md §3.1` at v0.3.0
+/// (Lote 11.2 — WI-S02-002 SEAL); gRPC mapping is `OUT_OF_RANGE` (11);
+/// HTTP 413. Distinct from `COR_CAS_BATCH_TOO_LARGE`
+/// (`RESOURCE_EXHAUSTED` — aggregate-bytes cap on the
+/// `BatchUpdateBlobs` write surface).
+pub const COR_CAS_BATCH_SIZE_EXCEEDED: &str = "COR_CAS_BATCH_SIZE_EXCEEDED";
+/// `error_taxonomy.md` code for a `BatchReadBlobsRequest` whose
+/// `acceptable_compressors` list is non-empty but does NOT include
+/// `Compressor.IDENTITY` — CoreLink S-01 advertises IDENTITY only via
+/// `CacheCapabilities`; the client must call `GetCapabilities` to
+/// negotiate. Registered in `error_taxonomy.md §3.1` at v0.3.0
+/// (Lote 11.2 — WI-S02-002 SEAL); gRPC mapping is
+/// `FAILED_PRECONDITION` (9); HTTP 412.
+pub const COR_CAS_COMPRESSOR_UNSUPPORTED: &str = "COR_CAS_COMPRESSOR_UNSUPPORTED";
 /// `error_taxonomy.md` code for an unparseable `ByteStream::Write`
 /// `resource_name`. Registered in `error_taxonomy.md §3.1` at v0.2.0;
 /// gRPC mapping `INVALID_ARGUMENT` (3); HTTP 400.
@@ -95,6 +111,9 @@ pub const GRPC_UNAUTHENTICATED: i32 = 16;
 pub const GRPC_PERMISSION_DENIED: i32 = 7;
 /// gRPC code for UNAVAILABLE.
 pub const GRPC_UNAVAILABLE: i32 = 14;
+/// gRPC code (canonical numeric) for OUT_OF_RANGE. Used by the
+/// `FindMissingBlobs` / `BatchReadBlobs` batch-cap rejection path.
+pub const GRPC_OUT_OF_RANGE: i32 = 11;
 
 /// Mapping triple: error_taxonomy code, gRPC numeric code, dev-facing message.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -211,6 +230,24 @@ impl ReadErrorMapping for crate::read::ReadOrchestratorError {
         match self {
             crate::read::ReadOrchestratorError::Meta(m) => m.mapping(),
             crate::read::ReadOrchestratorError::R2(r) => r.mapping(),
+        }
+    }
+}
+
+/// Mapping for [`crate::find_missing::FindMissingError`].
+///
+/// `Meta` transport faults map to `UNAVAILABLE` (the orchestrator
+/// surfaces them as transient). The "digest is missing" case is NOT
+/// modeled as an error — it is the happy-path outcome.
+pub trait FindMissingErrorMapping {
+    /// The canonical [`ErrorMapping`] for this error.
+    fn mapping(&self) -> ErrorMapping;
+}
+
+impl FindMissingErrorMapping for crate::find_missing::FindMissingError {
+    fn mapping(&self) -> ErrorMapping {
+        match self {
+            crate::find_missing::FindMissingError::Meta(m) => m.mapping(),
         }
     }
 }

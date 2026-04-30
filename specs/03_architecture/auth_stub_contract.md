@@ -3,7 +3,7 @@ id: "AUTH-STUB-CONTRACT"
 type: "architecture"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "0.1.0"
+version: "0.2.0"
 created: "2026-04-25"
 updated: "2026-04-25"
 owner: "Gustavo Schneiter"
@@ -82,12 +82,16 @@ pub struct TenantCtx {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Scope {
-    CacheRead,        // "cache:r"
-    CacheWrite,       // "cache:w"
-    AdminRead,        // "admin:read"
-    AdminWrite,       // "admin:write"
-    BillingAdmin,     // "billing:admin"
-    PrivacyAdmin,     // "privacy:admin"
+    CacheRead,         // "cache:r"
+    CacheWrite,        // "cache:w"
+    CacheFindMissing,  // "cache:find-missing" (added WI-S02-002 SEAL Lote 11.2;
+                       //                       discovery-only, does NOT imply
+                       //                       download capability per
+                       //                       auth_model.md §scope L188)
+    AdminRead,         // "admin:read"
+    AdminWrite,        // "admin:write"
+    BillingAdmin,      // "billing:admin"
+    PrivacyAdmin,      // "privacy:admin"
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -324,6 +328,7 @@ CI gate (post-S-03):
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 0.1.0 | 2026-04-25 | Gustavo (via Claude Opus 4.7) | Criação interface contract S-02↔S-03 bridge (Lote 9.5b Phase 4 — Opus R3 H-N3-04 fix). |
+| 0.2.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | **WI-S02-002 SEAL Lote 11.2** — added `Scope::CacheFindMissing` (wire `cache:find-missing`) so the typed enum mirrors `auth_model.md §scope L188` canonical hyphen-form scope `cache-find-missing` (discovery-only; does NOT imply download capability). Wire literal stays colon-form per the cross-spec normalization rule (handlers compare against typed enum's `as_str()`). |
 
 ---
 

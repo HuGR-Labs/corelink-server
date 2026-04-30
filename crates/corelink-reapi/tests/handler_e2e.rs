@@ -544,6 +544,48 @@ async fn bytestream_write_rejects_protocol_violations() {
     }
 }
 
+/// Codex round-4 P2 SEAL fix (cross-WI patch into S-01-005 surface):
+/// `BatchUpdateBlobsRequest.Request.compressor != IDENTITY` MUST be
+/// rejected per-blob with INVALID_ARGUMENT. Compressed-batch upload
+/// is deferred to WI-S05-005; until then, the only acceptable
+/// `compressor` is `IDENTITY` (= 0). A silent accept would let the
+/// server hash compressed bytes against the declared digest.
+#[tokio::test]
+async fn batch_update_rejects_non_identity_compressor_per_blob() {
+    let h = Harness::boot().await;
+    let body = b"compressed-pretend".to_vec();
+    let d = Digest::compute(&body);
+    let mut client = h.cas_client().await;
+    let req = auth_request(
+        BatchUpdateBlobsRequest {
+            instance_name: String::new(),
+            requests: vec![bub_req::Request {
+                digest: Some(ProtoDigest {
+                    hash: d.to_hex(),
+                    size_bytes: body.len() as i64,
+                }),
+                data: body,
+                compressor: 1, // ZSTD — unsupported in S-01
+            }],
+            digest_function: 9,
+        },
+        TOKEN_WRITE,
+        "req-batch-zstd",
+    );
+    let resp = client
+        .batch_update_blobs(req)
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(resp.responses.len(), 1);
+    let entry = &resp.responses[0];
+    let status = entry.status.as_ref().unwrap();
+    assert_eq!(status.code, 3, "INVALID_ARGUMENT for non-IDENTITY compressor");
+    assert!(status.message.contains("IDENTITY"));
+    // Verify nothing landed in storage.
+    assert_eq!(h.backend.len(), 0);
+}
+
 #[tokio::test]
 async fn bytestream_write_oversize_returns_resource_exhausted() {
     let h = Harness::boot().await;

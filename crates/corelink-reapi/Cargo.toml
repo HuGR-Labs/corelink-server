@@ -44,7 +44,6 @@ host-server = [
     "dep:prost-types",
     "dep:tokio",
     "dep:tokio-stream",
-    "dep:futures",
     "dep:async-trait",
     "dep:tower",
     "dep:http",
@@ -66,6 +65,12 @@ uuid = { workspace = true, features = ["serde"] }
 tracing = { workspace = true }
 blake3 = { workspace = true }
 bytes = { workspace = true }
+# `futures` is consumed by the pure-logic `find_missing` orchestrator
+# (`stream::iter().buffer_unordered(MAX_PARALLEL_AUTHZ)`); the crate is
+# `no_std`-friendly + wasm32-clean so it stays out of `host-server` so
+# the find-missing batch dispatcher can be reused inside a Cloudflare
+# Worker pure-logic build.
+futures = { workspace = true }
 
 # Host-server runtime (gated behind feature).
 tonic = { workspace = true, optional = true }
@@ -73,7 +78,6 @@ prost = { workspace = true, optional = true }
 prost-types = { version = "0.13", optional = true }
 tokio = { workspace = true, optional = true }
 tokio-stream = { workspace = true, optional = true }
-futures = { workspace = true, optional = true }
 async-trait = { version = "0.1", optional = true }
 tower = { version = "0.5", features = ["util"], optional = true }
 http = { version = "1", optional = true }
@@ -125,3 +129,15 @@ path = "tests/prop_cross_tenant_read.rs"
 [[test]]
 name = "read_handler_e2e"
 path = "tests/read_handler_e2e.rs"
+
+[[test]]
+name = "prop_find_missing_batch"
+path = "tests/prop_find_missing_batch.rs"
+
+[[test]]
+name = "find_missing_handler_e2e"
+path = "tests/find_missing_handler_e2e.rs"
+
+[[test]]
+name = "batch_read_blobs_e2e"
+path = "tests/batch_read_blobs_e2e.rs"

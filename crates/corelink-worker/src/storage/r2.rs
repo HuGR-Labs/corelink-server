@@ -409,6 +409,41 @@ impl InMemoryR2 {
             .expect("InMemoryR2 mutex must not be poisoned in test code");
         guard.keys().cloned().collect()
     }
+
+    /// Test-only helper: forcibly delete the R2 object whose key
+    /// EXACTLY matches `key` while leaving any external `blob_meta`
+    /// row untouched. Used by integration tests to simulate the
+    /// canonical "R2 orphan window" — an alive `blob_meta` row
+    /// whose R2 object disappeared (e.g. R2 GC race; backup-restore
+    /// with stale R2; force-delete via R2 API). Production code MUST
+    /// never call this; the GC reconciler in S-06 closes the orphan
+    /// window via the supported deletion API.
+    ///
+    /// Returns `true` iff a key was removed (i.e. the orphan was
+    /// actually staged). Tests should assert the return value to
+    /// avoid false-passing scenarios where the digest never
+    /// existed.
+    ///
+    /// Codex round-4 P2 SEAL fix: the earlier signature took
+    /// `(tenant_id, region, digest)` but ignored tenant_id +
+    /// region and matched by digest-hex suffix only. Two different
+    /// tenants writing the same body would both be evicted by the
+    /// first call — collapsing into a false-pass on
+    /// isolation/orphan scenarios. The exact-key form is
+    /// unambiguous; tests compute the canonical key via the
+    /// `keys_snapshot()` helper paired with their own
+    /// (tenant, region) state.
+    #[allow(
+        clippy::expect_used,
+        reason = "test fake: a poisoned mutex in test code is itself a test failure"
+    )]
+    pub fn evict_key_for_test(&self, key: &str) -> bool {
+        let mut guard = self
+            .inner
+            .lock()
+            .expect("InMemoryR2 mutex must not be poisoned in test code");
+        guard.remove(key).is_some()
+    }
 }
 
 impl R2Backend for InMemoryR2 {

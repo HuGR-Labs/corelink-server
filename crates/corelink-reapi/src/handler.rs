@@ -51,12 +51,13 @@ use crate::capabilities::{
     server_capabilities, MAX_BATCH_TOTAL_SIZE_BYTES, MAX_CAS_BLOB_SIZE_BYTES,
 };
 use crate::error_map::{
-    miss_mapping, HashErrorMapping, MetaErrorMapping, R2ErrorMapping, ReadErrorMapping,
-    COR_AUTH_PAT_INVALID, COR_AUTH_SCOPE_INSUFFICIENT, COR_CAS_BAD_DIGEST,
-    COR_CAS_BAD_RESOURCE_NAME, COR_CAS_BATCH_TOO_LARGE, COR_CAS_BLOB_TOO_LARGE,
-    COR_CAS_DIGEST_FUNCTION_UNSUPPORTED, GRPC_INVALID_ARGUMENT, GRPC_PERMISSION_DENIED,
-    GRPC_RESOURCE_EXHAUSTED, GRPC_UNAUTHENTICATED,
+    miss_mapping, FindMissingErrorMapping, HashErrorMapping, MetaErrorMapping, R2ErrorMapping,
+    ReadErrorMapping, COR_AUTH_PAT_INVALID, COR_AUTH_SCOPE_INSUFFICIENT, COR_CAS_BAD_DIGEST,
+    COR_CAS_BAD_RESOURCE_NAME, COR_CAS_BATCH_SIZE_EXCEEDED, COR_CAS_BATCH_TOO_LARGE,
+    COR_CAS_BLOB_TOO_LARGE, COR_CAS_DIGEST_FUNCTION_UNSUPPORTED, GRPC_INVALID_ARGUMENT,
+    GRPC_NOT_FOUND, GRPC_PERMISSION_DENIED, GRPC_RESOURCE_EXHAUSTED, GRPC_UNAUTHENTICATED,
 };
+use crate::find_missing::{FindMissingOrchestrator, MAX_FIND_MISSING_BATCH_SIZE};
 use crate::orchestrator::{
     CasPutOutcome, CasWriteOrchestrator, CommitPutPlan, OrchestratorError, OrphanReconciler,
 };
@@ -67,8 +68,9 @@ use crate::proto::reapi::content_addressable_storage_server::{
     ContentAddressableStorage, ContentAddressableStorageServer,
 };
 use crate::proto::reapi::{
-    batch_update_blobs_response, BatchReadBlobsRequest, BatchReadBlobsResponse,
-    BatchUpdateBlobsRequest, BatchUpdateBlobsResponse, Digest as ProtoDigest,
+    batch_read_blobs_response, batch_update_blobs_response, BatchReadBlobsRequest,
+    BatchReadBlobsResponse, BatchUpdateBlobsRequest, BatchUpdateBlobsResponse,
+    Digest as ProtoDigest, FindMissingBlobsRequest, FindMissingBlobsResponse,
     GetCapabilitiesRequest, ServerCapabilities,
 };
 use crate::read::{CasReadOrchestrator, MissReason, ReadOutcome};
@@ -417,15 +419,780 @@ where
 
     async fn batch_read_blobs(
         &self,
-        _request: Request<BatchReadBlobsRequest>,
+        request: Request<BatchReadBlobsRequest>,
     ) -> Result<Response<BatchReadBlobsResponse>, Status> {
-        // BatchReadBlobs (small ≤ 4 MiB unary read of N blobs in one
-        // call) lands in WI-S02-002; WI-S02-001 owns ByteStream::Read +
-        // HTTP GET only. The unimplemented surface preserves symmetric
-        // client codegen against the same proto file.
-        Err(Status::unimplemented(
-            "BatchReadBlobs lands in WI-S02-002; use ByteStream::Read or GET /v1/cas/<digest>",
-        ))
+        // Step 1 — auth + scope (`cache:r` required; same as
+        // ByteStream::Read).
+        let (pat_ctx, storage_ctx) = self.core.authenticate(&request)?;
+        pat_ctx
+            .require_scope(AuthScope::CacheRead)
+            .map_err(|e| pat_error_to_status(&e))?;
+
+        let inner = request.into_inner();
+
+        // Step 2 — digest-function negotiation (BLAKE3 only; same
+        // contract as BatchUpdateBlobs).
+        if inner.digest_function != 0
+            && inner.digest_function != crate::capabilities::DigestFunction::Blake3 as i32
+        {
+            return Err(make_status(
+                Code::InvalidArgument,
+                COR_CAS_DIGEST_FUNCTION_UNSUPPORTED,
+                "BatchReadBlobsRequest.digest_function declares a non-BLAKE3 hash; CoreLink advertises BLAKE3 only via Capabilities.GetCapabilities",
+                0,
+            ));
+        }
+
+        // Step 2b — `acceptable_compressors` honor (codex round-2 P2
+        // SEAL fix). REAPI v2 §`BatchReadBlobsRequest`: an empty
+        // `acceptable_compressors` list MUST be treated as "client
+        // accepts the default IDENTITY encoding"; a non-empty list
+        // restricts the server's permitted response encodings. CoreLink
+        // S-01 advertises IDENTITY only via `CacheCapabilities` (no
+        // ZSTD/DEFLATE/BROTLI server-side compression yet). If a
+        // client supplies a non-empty list that does NOT include
+        // `Compressor.IDENTITY` (= 0) the server cannot satisfy the
+        // request — surface `FAILED_PRECONDITION` with a hint
+        // pointing at `GetCapabilities`. (Compressed batch responses
+        // ship with the multipart write surface in WI-S05-005 / the
+        // `compressed-blobs` ByteStream resources.)
+        if !inner.acceptable_compressors.is_empty()
+            && !inner.acceptable_compressors.contains(&0)
+        {
+            return Err(make_status(
+                Code::FailedPrecondition,
+                crate::error_map::COR_CAS_COMPRESSOR_UNSUPPORTED,
+                "BatchReadBlobsRequest.acceptable_compressors must include Compressor.IDENTITY (= 0) or be empty; CoreLink S-01 supports IDENTITY only (compressed batch responses ship in WI-S05-005)",
+                0,
+            ));
+        }
+
+        // Step 3 — batch-size cap (canonical 1000 — same as
+        // FindMissingBlobs; REAPI v2 recommendation).
+        if inner.digests.len() > MAX_FIND_MISSING_BATCH_SIZE {
+            return Err(make_status(
+                Code::OutOfRange,
+                COR_CAS_BATCH_SIZE_EXCEEDED,
+                "BatchReadBlobsRequest carries more digests than the canonical CoreLink batch cap (1000)",
+                inner.digests.len() as u64,
+            ));
+        }
+
+        // Step 4 — TWO-PASS dispatch (codex round-1 P0 fix —
+        // memory-bounded by construction):
+        //
+        //   Pass 1: parallel D1 lookups for `(presence, size_bytes,
+        //           declared-size-cross-check)`. NO body bytes
+        //           materialized. Cumulative `aggregate_running_bytes`
+        //           is computed in input order from the size_bytes
+        //           returned per row; entries for which inclusion
+        //           would exceed the canonical 4 MiB aggregate cap
+        //           are flagged for FAILED_PRECONDITION fallback —
+        //           the body is NEVER fetched.
+        //   Pass 2: parallel R2 GET only for the slots that fit. Per
+        //           slot we additionally cross-check
+        //           `body.len() == size_bytes` (R2 corruption guard,
+        //           defense-in-depth — same shape as ByteStream::Read
+        //           handler step 5).
+        //
+        // Worst-case Worker memory: 1000 D1 hits + at most ⌈4 MiB /
+        // smallest hit⌉ R2 bodies in flight → bounded by 4 MiB hot
+        // window + per-row metadata, well under the 50 MiB ceiling
+        // even at the 1000-digest batch cap. The earlier
+        // single-pass variant could materialize 1000 × 4 MiB = 4 GiB
+        // before the aggregate-cap trim ran (codex round-1 P0).
+        //
+        // Per-blob caller-supplied `size_bytes` cross-check
+        // (codex round-1 P1 fix): a malformed `(hash, wrong_size)`
+        // tuple is a tooling bug — REAPI v2 §
+        // "BatchReadBlobsRequest.Digest" mandates size_bytes match
+        // the body. We surface the mismatch as INVALID_ARGUMENT for
+        // that per-blob slot (parity with `ByteStream::Read` step
+        // 5b's stricter check).
+        let inline_cap_bytes: u64 =
+            u64::try_from(MAX_BATCH_TOTAL_SIZE_BYTES).unwrap_or(u64::MAX);
+        let single_blob_inline_cap_bytes: u64 = inline_cap_bytes; // 4 MiB
+
+        // 4a. Pre-validate digests + decode hex per-index.
+        #[derive(Clone)]
+        enum SlotState {
+            // Digest hex was malformed; surface
+            // INVALID_ARGUMENT per-blob.
+            BadDigest {
+                proto_digest: Option<ProtoDigest>,
+                message: String,
+            },
+            // Well-formed; needs the D1 metadata pass.
+            Pending {
+                proto_digest: ProtoDigest,
+                digest: Digest,
+            },
+        }
+        let n_input = inner.digests.len();
+        let mut slots: Vec<SlotState> = Vec::with_capacity(n_input);
+        for pd in inner.digests.into_iter() {
+            let parsed_digest = Digest::from_hex(&pd.hash);
+            let pd_size = pd.size_bytes;
+            if pd_size < 0 {
+                slots.push(SlotState::BadDigest {
+                    proto_digest: Some(pd),
+                    message: "digest.size_bytes is negative".to_owned(),
+                });
+                continue;
+            }
+            match parsed_digest {
+                Err(_) => {
+                    slots.push(SlotState::BadDigest {
+                        proto_digest: Some(pd),
+                        message: "digest hex is malformed (expected 64 lowercase hex chars)".to_owned(),
+                    });
+                }
+                Ok(d) => {
+                    slots.push(SlotState::Pending {
+                        proto_digest: pd,
+                        digest: d,
+                    });
+                }
+            }
+        }
+
+        // 4b. Pass 1 — bounded-parallel D1 lookups for size_bytes +
+        // miss-reason. Per ADR-0028 the wire response for every miss
+        // arm is uniform `NOT_FOUND`, but the audit-emit envelope MUST
+        // disambiguate NeverExisted (low-severity) from Tombstoned
+        // (legitimate post-GC) so the S-09 forensics pipeline can
+        // distinguish ordinary cache-miss probes from genuine
+        // tombstone-read attempts (codex round-2 P2 SEAL fix).
+        //
+        // Each future yields `(idx, Result<MetaPass1Result, ErrorMapping>)`.
+        #[derive(Clone, Copy, Debug)]
+        enum MetaPass1Result {
+            /// Row absent OR exists in another tenant's scope (uniform
+            /// per ADR-0028 — no oracle).
+            NeverExisted,
+            /// Row exists but `deleted_at` is set.
+            Tombstoned,
+            /// Row exists + alive; size_bytes is the canonical size.
+            Alive { size_bytes: u64 },
+        }
+        use futures::stream::StreamExt;
+        const BOUNDED_CONCURRENCY: usize = 16;
+        let pending_indices: Vec<(usize, Digest)> = slots
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, s)| match s {
+                SlotState::Pending { digest, .. } => Some((idx, *digest)),
+                SlotState::BadDigest { .. } => None,
+            })
+            .collect();
+        let meta_ref: &M = self.core.meta.as_ref();
+        let tenant_id = storage_ctx.tenant_id();
+        let mut size_results: Vec<
+            Option<Result<MetaPass1Result, crate::error_map::ErrorMapping>>,
+        > = (0..n_input).map(|_| None).collect();
+        let mut size_stream = futures::stream::iter(pending_indices.clone())
+            .map(move |(idx, digest)| async move {
+                let key = corelink_meta::BlobMetaKey::new(tenant_id, digest);
+                let row_opt = meta_ref.get(&key).await;
+                let mapped: Result<MetaPass1Result, crate::error_map::ErrorMapping> = match row_opt {
+                    Err(e) => Err(e.mapping()),
+                    Ok(None) => Ok(MetaPass1Result::NeverExisted),
+                    Ok(Some(row)) => {
+                        if row.is_alive() {
+                            Ok(MetaPass1Result::Alive {
+                                size_bytes: row.size_bytes,
+                            })
+                        } else {
+                            Ok(MetaPass1Result::Tombstoned)
+                        }
+                    }
+                };
+                (idx, mapped)
+            })
+            .buffer_unordered(BOUNDED_CONCURRENCY);
+        while let Some((idx, mapped)) = size_stream.next().await {
+            if let Some(slot) = size_results.get_mut(idx) {
+                *slot = Some(mapped);
+            }
+        }
+
+        // 4c. Decide per-slot which bodies to fetch (running aggregate
+        // cap in input order; missed/oversize/aggregate-cap-rejected
+        // slots flagged here so Pass 2 only does R2 GETs for hits
+        // that fit).
+        #[derive(Clone)]
+        enum Decision {
+            BadDigest {
+                proto_digest: Option<ProtoDigest>,
+                message: String,
+                grpc_code: i32,
+            },
+            Miss {
+                proto_digest: ProtoDigest,
+                digest: Digest,
+                reason: MissReason,
+            },
+            ExceedsSingleCap {
+                proto_digest: ProtoDigest,
+            },
+            ExceedsAggregate {
+                proto_digest: ProtoDigest,
+            },
+            CallerSizeMismatch {
+                proto_digest: ProtoDigest,
+                row_size: u64,
+            },
+            MetaTransport {
+                proto_digest: ProtoDigest,
+                mapping: crate::error_map::ErrorMapping,
+            },
+            Fetch {
+                proto_digest: ProtoDigest,
+                digest: Digest,
+                row_size: u64,
+            },
+        }
+        let mut running: u64 = 0;
+        let mut decisions: Vec<Decision> = Vec::with_capacity(n_input);
+        for (idx, slot) in slots.iter().enumerate() {
+            match slot {
+                SlotState::BadDigest {
+                    proto_digest,
+                    message,
+                } => {
+                    decisions.push(Decision::BadDigest {
+                        proto_digest: proto_digest.clone(),
+                        message: message.clone(),
+                        grpc_code: GRPC_INVALID_ARGUMENT,
+                    });
+                }
+                SlotState::Pending {
+                    proto_digest,
+                    digest,
+                } => {
+                    let mapped = match size_results.get(idx).and_then(|s| s.clone()) {
+                        Some(v) => v,
+                        None => {
+                            // Defensive — should never happen as Pass 1
+                            // fills every Pending slot. Treat as transport
+                            // failure for safety.
+                            decisions.push(Decision::MetaTransport {
+                                proto_digest: proto_digest.clone(),
+                                mapping: crate::error_map::ErrorMapping {
+                                    taxonomy_code: crate::error_map::COR_INTERNAL,
+                                    grpc_code: crate::error_map::GRPC_INTERNAL,
+                                    message: "BatchReadBlobs Pass 1 yielded no result for slot",
+                                },
+                            });
+                            continue;
+                        }
+                    };
+                    match mapped {
+                        Err(mapping) => {
+                            decisions.push(Decision::MetaTransport {
+                                proto_digest: proto_digest.clone(),
+                                mapping,
+                            });
+                        }
+                        Ok(MetaPass1Result::NeverExisted) => {
+                            decisions.push(Decision::Miss {
+                                proto_digest: proto_digest.clone(),
+                                digest: *digest,
+                                reason: MissReason::NeverExisted,
+                            });
+                        }
+                        Ok(MetaPass1Result::Tombstoned) => {
+                            decisions.push(Decision::Miss {
+                                proto_digest: proto_digest.clone(),
+                                digest: *digest,
+                                reason: MissReason::Tombstoned,
+                            });
+                        }
+                        Ok(MetaPass1Result::Alive {
+                            size_bytes: row_size,
+                        }) => {
+                            // Caller-supplied size cross-check
+                            // (codex round-1 P1).
+                            let declared = u64::try_from(proto_digest.size_bytes)
+                                .unwrap_or(u64::MAX);
+                            if declared != row_size {
+                                decisions.push(Decision::CallerSizeMismatch {
+                                    proto_digest: proto_digest.clone(),
+                                    row_size,
+                                });
+                                continue;
+                            }
+                            // Single-blob inline cap.
+                            if row_size > single_blob_inline_cap_bytes {
+                                decisions.push(Decision::ExceedsSingleCap {
+                                    proto_digest: proto_digest.clone(),
+                                });
+                                continue;
+                            }
+                            // Aggregate cap (running, in input order).
+                            let after = running.saturating_add(row_size);
+                            if after > inline_cap_bytes {
+                                decisions.push(Decision::ExceedsAggregate {
+                                    proto_digest: proto_digest.clone(),
+                                });
+                                continue;
+                            }
+                            running = after;
+                            decisions.push(Decision::Fetch {
+                                proto_digest: proto_digest.clone(),
+                                digest: *digest,
+                                row_size,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4d. Pass 2 — bounded-parallel R2 GETs ONLY for the Fetch
+        // slots. Worst-case in-flight bytes: BOUNDED_CONCURRENCY ×
+        // single-blob 4 MiB cap = 64 MiB; the aggregate-cap trim
+        // means total RETURNED bytes never exceed 4 MiB — but we do
+        // need to keep the in-flight working set bounded. We chunk
+        // BOUNDED_CONCURRENCY at 8 here (lower than the Pass 1
+        // limit) so peak Worker memory stays comfortably under the
+        // 50 MiB ceiling even on a fully-saturated batch. Note: the
+        // production deployment will further cap by the binding
+        // adapter's R2 client connection pool.
+        let reader_ref: &corelink_worker::storage::r2::R2Reader<B> =
+            self.core.reader.as_ref();
+        const FETCH_CONCURRENCY: usize = 8;
+        let storage_ctx_ref = &storage_ctx;
+        let fetch_targets: Vec<(usize, Digest)> = decisions
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, d)| match d {
+                Decision::Fetch { digest, .. } => Some((idx, *digest)),
+                _ => None,
+            })
+            .collect();
+        // Pass 2 result type: a typed enum so the orphan condition
+        // (alive blob_meta + `R2Error::NotFound`) is structurally
+        // distinguishable from generic Err mappings — the earlier
+        // pointer-equality sentinel approach was fragile to
+        // refactors that rebuilt the string (codex round-3 P2 SEAL
+        // fix).
+        #[derive(Clone)]
+        enum FetchOutcome {
+            Body(Bytes),
+            R2Orphan,
+            Other(crate::error_map::ErrorMapping),
+        }
+        let mut fetched: Vec<Option<FetchOutcome>> = (0..n_input).map(|_| None).collect();
+        let mut fetch_stream = futures::stream::iter(fetch_targets)
+            .map(move |(idx, digest)| async move {
+                let res = reader_ref.get(storage_ctx_ref, &digest).await;
+                let mapped: FetchOutcome = match res {
+                    Ok(b) => FetchOutcome::Body(b),
+                    // R2 orphan row — alive blob_meta + R2 NotFound.
+                    // Per ADR-0028 surface as uniform 404 on the
+                    // wire (GC reconciler in S-06 repairs the
+                    // orphan window) AND tag the slot so the
+                    // response-composition phase emits the
+                    // canonical SEV-2 `r2_orphan_detected` audit.
+                    Err(corelink_worker::storage::error::R2Error::NotFound) => {
+                        FetchOutcome::R2Orphan
+                    }
+                    Err(e) => FetchOutcome::Other(e.mapping()),
+                };
+                (idx, mapped)
+            })
+            .buffer_unordered(FETCH_CONCURRENCY);
+        while let Some((idx, mapped)) = fetch_stream.next().await {
+            if let Some(slot) = fetched.get_mut(idx) {
+                *slot = Some(mapped);
+            }
+        }
+
+        // 4e. Compose final responses in input order. Per-slot audit
+        // emission lands here so the S-09 forensics / chain consumer
+        // sees `corelink.cas.read_miss` (uniform NeverExisted +
+        // CrossTenantMasked + Tombstoned per ADR-0028) for batch
+        // miss probes AND `corelink.cas.read_completed` for
+        // successful per-blob delivery — at parity with
+        // `ByteStream::Read` (codex round-2 P1 SEAL fix).
+        let mut responses: Vec<batch_read_blobs_response::Response> =
+            Vec::with_capacity(n_input);
+        for (idx, decision) in decisions.into_iter().enumerate() {
+            let resp = match decision {
+                Decision::BadDigest {
+                    proto_digest,
+                    message,
+                    grpc_code,
+                } => batch_read_blobs_response::Response {
+                    digest: proto_digest,
+                    data: vec![],
+                    compressor: 0,
+                    status: Some(crate::proto::google_rpc::Status {
+                        code: grpc_code,
+                        message,
+                        details: vec![],
+                    }),
+                },
+                Decision::Miss {
+                    proto_digest,
+                    digest,
+                    reason,
+                } => {
+                    // Audit emission parity with `ByteStream::Read`
+                    // (ADR-0028 + WI-S02-002 §11): each per-slot
+                    // miss surfaces as the canonical CE event type
+                    // for its [`MissReason`] — `read_miss` for
+                    // NeverExisted (low-severity, conflated with
+                    // CrossTenantMasked per ADR-0028; S-09
+                    // reclassifier folds true cross-tenant via the
+                    // global digest index), `tombstoned_read_attempt`
+                    // for legitimate post-GC reads. The wire
+                    // response stays the uniform 404 (codex round-2
+                    // P2 SEAL fix). The `slot_idx` token is mixed
+                    // into the audit `id` derivation so duplicate
+                    // digests in the same batch do NOT collide on
+                    // the `audit_outbox` PK (codex round-3 P2 SEAL
+                    // fix).
+                    emit_read_miss_audit_at_slot(
+                        &storage_ctx,
+                        pat_ctx.principal_id(),
+                        pat_ctx.region(),
+                        pat_ctx.request_id(),
+                        &digest,
+                        reason,
+                        idx,
+                    );
+                    batch_read_blobs_response::Response {
+                        digest: Some(proto_digest),
+                        data: vec![],
+                        compressor: 0,
+                        status: Some(crate::proto::google_rpc::Status {
+                            code: GRPC_NOT_FOUND,
+                            message: "blob not found".to_owned(),
+                            details: vec![],
+                        }),
+                    }
+                }
+                Decision::ExceedsSingleCap { proto_digest } => {
+                    batch_read_blobs_response::Response {
+                        digest: Some(proto_digest),
+                        data: vec![],
+                        compressor: 0,
+                        status: Some(crate::proto::google_rpc::Status {
+                            code: 9, // FAILED_PRECONDITION
+                            message:
+                                "blob exceeds 4 MiB BatchReadBlobs inline cap; use ByteStream::Read"
+                                    .to_owned(),
+                            details: vec![],
+                        }),
+                    }
+                }
+                Decision::ExceedsAggregate { proto_digest } => {
+                    batch_read_blobs_response::Response {
+                        digest: Some(proto_digest),
+                        data: vec![],
+                        compressor: 0,
+                        status: Some(crate::proto::google_rpc::Status {
+                            code: 9, // FAILED_PRECONDITION
+                            message: "blob skipped: BatchReadBlobs aggregate cap (4 MiB) exceeded; use ByteStream::Read for this digest"
+                                .to_owned(),
+                            details: vec![],
+                        }),
+                    }
+                }
+                Decision::CallerSizeMismatch {
+                    proto_digest,
+                    row_size,
+                } => batch_read_blobs_response::Response {
+                    digest: Some(proto_digest),
+                    data: vec![],
+                    compressor: 0,
+                    status: Some(crate::proto::google_rpc::Status {
+                        code: GRPC_INVALID_ARGUMENT,
+                        message: format!(
+                            "digest.size_bytes does not match the blob_meta-recorded size ({row_size})"
+                        ),
+                        details: vec![],
+                    }),
+                },
+                Decision::MetaTransport {
+                    proto_digest,
+                    mapping,
+                } => batch_read_blobs_response::Response {
+                    digest: Some(proto_digest),
+                    data: vec![],
+                    compressor: 0,
+                    status: Some(crate::proto::google_rpc::Status {
+                        code: mapping.grpc_code,
+                        message: mapping.message.to_owned(),
+                        details: vec![],
+                    }),
+                },
+                Decision::Fetch {
+                    proto_digest,
+                    digest,
+                    row_size,
+                } => match fetched.get(idx).and_then(|s| s.clone()) {
+                    Some(FetchOutcome::Body(body)) => {
+                        // R2 corruption guard: row size must equal
+                        // body length (defense-in-depth, same shape
+                        // as ByteStream::Read step 5).
+                        if (body.len() as u64) != row_size {
+                            batch_read_blobs_response::Response {
+                                digest: Some(proto_digest),
+                                data: vec![],
+                                compressor: 0,
+                                status: Some(crate::proto::google_rpc::Status {
+                                    code: crate::error_map::GRPC_INTERNAL,
+                                    message:
+                                        "blob_meta size_bytes does not match R2 body length"
+                                            .to_owned(),
+                                    details: vec![],
+                                }),
+                            }
+                        } else {
+                            // Audit emission parity with
+                            // `ByteStream::Read`: a successfully
+                            // delivered batch slot emits
+                            // `corelink.cas.read_completed`. The
+                            // batch path delivers ALL bytes inline
+                            // before sending the response (no Drop
+                            // guard / abort window), so we emit the
+                            // canonical `bytes_sent == size_bytes`
+                            // shape here. The `slot_idx` token is
+                            // mixed into the audit `id` derivation
+                            // so per-slot duplicates of the SAME
+                            // digest do NOT collide on the
+                            // `audit_outbox` PK (codex round-3 P2
+                            // SEAL fix).
+                            let body_len = body.len() as u64;
+                            emit_read_completed_audit_post_stream_at_slot(
+                                storage_ctx.tenant_id(),
+                                pat_ctx.principal_id(),
+                                pat_ctx.region(),
+                                pat_ctx.request_id(),
+                                &digest,
+                                row_size,
+                                body_len,
+                                body_len,
+                                1, // batch slot is delivered as one frame
+                                idx,
+                            );
+                            batch_read_blobs_response::Response {
+                                digest: Some(proto_digest),
+                                data: body.to_vec(),
+                                compressor: 0,
+                                status: Some(crate::proto::google_rpc::Status {
+                                    code: 0,
+                                    message: "ok".to_owned(),
+                                    details: vec![],
+                                }),
+                            }
+                        }
+                    }
+                    Some(FetchOutcome::R2Orphan) => {
+                        // R2 orphan detection: alive blob_meta but
+                        // R2 reported NotFound — emit the canonical
+                        // SEV-2 `corelink.cas.r2_orphan_detected`
+                        // audit envelope so the GC reconciler signal
+                        // lights up; response stays uniform 404.
+                        emit_read_miss_audit_at_slot(
+                            &storage_ctx,
+                            pat_ctx.principal_id(),
+                            pat_ctx.region(),
+                            pat_ctx.request_id(),
+                            &digest,
+                            MissReason::R2OrphanRow,
+                            idx,
+                        );
+                        batch_read_blobs_response::Response {
+                            digest: Some(proto_digest),
+                            data: vec![],
+                            compressor: 0,
+                            status: Some(crate::proto::google_rpc::Status {
+                                code: GRPC_NOT_FOUND,
+                                message: "blob not found".to_owned(),
+                                details: vec![],
+                            }),
+                        }
+                    }
+                    Some(FetchOutcome::Other(mapping)) => batch_read_blobs_response::Response {
+                        digest: Some(proto_digest),
+                        data: vec![],
+                        compressor: 0,
+                        status: Some(crate::proto::google_rpc::Status {
+                            code: mapping.grpc_code,
+                            message: mapping.message.to_owned(),
+                            details: vec![],
+                        }),
+                    },
+                    None => batch_read_blobs_response::Response {
+                        digest: Some(proto_digest),
+                        data: vec![],
+                        compressor: 0,
+                        status: Some(crate::proto::google_rpc::Status {
+                            code: crate::error_map::GRPC_INTERNAL,
+                            message: "BatchReadBlobs Pass 2 yielded no result for slot"
+                                .to_owned(),
+                            details: vec![],
+                        }),
+                    },
+                },
+            };
+            responses.push(resp);
+        }
+
+        Ok(Response::new(BatchReadBlobsResponse { responses }))
+    }
+
+    async fn find_missing_blobs(
+        &self,
+        request: Request<FindMissingBlobsRequest>,
+    ) -> Result<Response<FindMissingBlobsResponse>, Status> {
+        // Step 1 — auth + scope. Per WI-S02-002 §6.1.2 +
+        // `auth_model.md §3.1 L188` the canonical scope for
+        // `FindMissingBlobs` is **strictly** `cache:find-missing`
+        // (discovery-only; does NOT imply download capability). The
+        // canonical taxonomy treats `cache:r` and `cache:find-missing`
+        // as DISTINCT capabilities — the auth model deliberately
+        // separates them so a CI / read-only token can be issued that
+        // discovers existence WITHOUT being able to download (and,
+        // symmetrically, so a download token can be issued that does
+        // NOT carry batch-discovery capability). Codex round-1 P1
+        // (WI-S02-002 SEAL): the earlier "read implies discovery"
+        // shortcut expanded policy beyond the canonical scope table
+        // and made the new scope unenforceable for read-only tokens.
+        // We strictly require `cache:find-missing` here.
+        let (pat_ctx, storage_ctx) = self.core.authenticate(&request)?;
+        pat_ctx
+            .require_scope(AuthScope::CacheFindMissing)
+            .map_err(|e| pat_error_to_status(&e))?;
+
+        let inner = request.into_inner();
+
+        // Step 2 — digest-function negotiation (BLAKE3 only).
+        if inner.digest_function != 0
+            && inner.digest_function != crate::capabilities::DigestFunction::Blake3 as i32
+        {
+            return Err(make_status(
+                Code::InvalidArgument,
+                COR_CAS_DIGEST_FUNCTION_UNSUPPORTED,
+                "FindMissingBlobsRequest.digest_function declares a non-BLAKE3 hash; CoreLink advertises BLAKE3 only via Capabilities.GetCapabilities",
+                0,
+            ));
+        }
+
+        // Step 3 — batch-size cap.
+        if inner.blob_digests.len() > MAX_FIND_MISSING_BATCH_SIZE {
+            return Err(make_status(
+                Code::OutOfRange,
+                COR_CAS_BATCH_SIZE_EXCEEDED,
+                "FindMissingBlobsRequest carries more digests than the canonical CoreLink batch cap (1000)",
+                inner.blob_digests.len() as u64,
+            ));
+        }
+
+        // Step 4 — pre-validate digests up-front. A malformed digest
+        // mid-batch is a top-level INVALID_ARGUMENT (NOT a per-digest
+        // 404 that would silently mask a tooling bug). REAPI v2
+        // canonical: malformed inputs are top-level errors.
+        //
+        // We carry the declared `size_bytes` alongside each `Digest`
+        // so the orchestrator can enforce the canonical REAPI
+        // `Digest = (hash, size_bytes)` identity (codex round-2 P1
+        // SEAL fix): a request `(H, wrong_size)` whose underlying
+        // blob `(H, real_size)` exists with `real_size != wrong_size`
+        // surfaces as MISSING — a tooling bug that ships a wrong
+        // size MUST NOT be silently masked as "present", and the
+        // wire response stays REAPI-conformant.
+        let mut parsed: Vec<(Digest, Option<u64>)> =
+            Vec::with_capacity(inner.blob_digests.len());
+        for pd in &inner.blob_digests {
+            let d = Digest::from_hex(&pd.hash).map_err(|_| {
+                make_status(
+                    Code::InvalidArgument,
+                    COR_CAS_BAD_DIGEST,
+                    "digest hex is malformed (expected 64 lowercase hex chars)",
+                    0,
+                )
+            })?;
+            if pd.size_bytes < 0 {
+                return Err(make_status(
+                    Code::InvalidArgument,
+                    COR_CAS_BAD_DIGEST,
+                    "digest.size_bytes is negative",
+                    0,
+                ));
+            }
+            // SAFETY of `as u64`: pd.size_bytes is non-negative here
+            // (checked above), so the cast widens losslessly.
+            #[allow(
+                clippy::cast_sign_loss,
+                reason = "non-negative checked above"
+            )]
+            let declared = pd.size_bytes as u64;
+            parsed.push((d, Some(declared)));
+        }
+
+        // Step 5 — dispatch the find_missing orchestrator (REAPI
+        // size-aware variant).
+        let orch = FindMissingOrchestrator::new(self.core.meta.as_ref());
+        let outcome = orch
+            .find_missing_with_sizes(&storage_ctx, &parsed)
+            .await
+            .map_err(|e| {
+                let m = e.mapping();
+                make_status(
+                    grpc_code_from_i32(m.grpc_code),
+                    m.taxonomy_code,
+                    m.message,
+                    0,
+                )
+            })?;
+
+        // Step 6 — emit metrics + audit (low-severity per WI §6.1.5;
+        // the FindMissingBlobs surface is high-volume and SHOULD NOT
+        // emit per-digest CE envelopes — that would pollute the audit
+        // chain). We log a single batch-summary line to
+        // `corelink.audit` so SRE can dashboard request rate +
+        // missing-rate without per-digest noise.
+        emit_find_missing_batch_audit(
+            &storage_ctx,
+            pat_ctx.principal_id(),
+            pat_ctx.region(),
+            pat_ctx.request_id(),
+            parsed.len(),
+            outcome.missing.len(),
+            outcome.d1_lookups,
+        );
+
+        // Step 7 — recompose response in input order. The
+        // orchestrator's `slot_is_missing: Vec<bool>` is the canonical
+        // per-slot answer (codex round-2 P1 SEAL fix); a single linear
+        // pass over `parsed` paired with `slot_is_missing` is
+        // unambiguous even when the input contains the SAME hash with
+        // DIFFERENT declared sizes (`[(H, real), (H, wrong)]` —
+        // REAPI Digest identity = `(hash, size_bytes)`, so each slot
+        // gets its own answer).
+        let mut missing_blob_digests: Vec<ProtoDigest> =
+            Vec::with_capacity(outcome.missing.len());
+        for (i, (digest, declared)) in parsed.iter().enumerate() {
+            if matches!(outcome.slot_is_missing.get(i), Some(true)) {
+                let size_bytes = match declared {
+                    Some(s) => i64::try_from(*s).unwrap_or(i64::MAX),
+                    None => 0,
+                };
+                missing_blob_digests.push(ProtoDigest {
+                    hash: digest.to_hex(),
+                    size_bytes,
+                });
+            }
+        }
+
+        Ok(Response::new(FindMissingBlobsResponse {
+            missing_blob_digests,
+        }))
     }
 }
 
@@ -982,6 +1749,26 @@ where
     R: OrphanReconciler,
     C: Clock,
 {
+    // Per-blob compressor validation (codex round-4 P2 SEAL fix):
+    // REAPI v2.12.0 `BatchUpdateBlobsRequest.Request.compressor` is
+    // the encoding of the inline `data` field. CoreLink S-01 only
+    // accepts `IDENTITY` (= 0) — `Capabilities.GetCapabilities`
+    // returns empty `supported_batch_update_compressors`, so a
+    // ZSTD/DEFLATE/BROTLI-compressed upload would silently hash the
+    // compressed bytes against the declared digest and fail with
+    // `COR_CAS_DIGEST_MISMATCH` (or, worse, accept ambiguous bytes
+    // if the digest happens to match). Reject early with
+    // `INVALID_ARGUMENT` + `COR_CAS_DIGEST_FUNCTION_UNSUPPORTED`
+    // (the same taxonomy code already covers
+    // capability-negotiation failures on the BatchUpdateBlobs
+    // surface). Compressed-batch upload ships with WI-S05-005.
+    if sub.compressor != 0 {
+        return per_blob_failure(
+            sub.digest.clone(),
+            GRPC_INVALID_ARGUMENT,
+            "BatchUpdateBlobsRequest.Request.compressor must be IDENTITY (= 0); CoreLink S-01 supports IDENTITY only",
+        );
+    }
     let proto_digest = match sub.digest {
         Some(d) => d,
         None => {
@@ -1241,6 +2028,38 @@ fn deterministic_audit_id(client_request_id: &str, tenant: Uuid, digest: &Digest
     bytes.copy_from_slice(&out.as_bytes()[..16]);
     // UUIDv7 markings: version 0b0111 in byte 6 high nibble; variant 0b10
     // in byte 8 high two bits.
+    bytes[6] = (bytes[6] & 0x0F) | 0x70;
+    bytes[8] = (bytes[8] & 0x3F) | 0x80;
+    Uuid::from_bytes(bytes)
+}
+
+/// Slot-aware variant of [`deterministic_audit_id`] for batch handlers
+/// (codex round-3 P2 SEAL fix). Mixes a `slot_idx` token into the
+/// hashed material so per-slot duplicates of the same digest within a
+/// single request emit distinct CE `id`s — preventing
+/// `audit_outbox` PK collisions when a Bazel client batches the same
+/// digest twice in a `BatchReadBlobs` request. The non-slot variant
+/// remains the canonical id for non-batch handlers (ByteStream::Read,
+/// HTTP read), which only see at most one event per
+/// (request_id, digest) pair.
+fn deterministic_audit_id_at_slot(
+    client_request_id: &str,
+    tenant: Uuid,
+    digest: &Digest,
+    slot_idx: usize,
+) -> Uuid {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"corelink-reapi-audit-id-v2-slot\0");
+    hasher.update(client_request_id.as_bytes());
+    hasher.update(b"\0");
+    hasher.update(tenant.as_bytes());
+    hasher.update(b"\0");
+    hasher.update(digest.to_hex().as_bytes());
+    hasher.update(b"\0");
+    hasher.update(&(slot_idx as u64).to_le_bytes());
+    let out = hasher.finalize();
+    let mut bytes = [0u8; 16];
+    bytes.copy_from_slice(&out.as_bytes()[..16]);
     bytes[6] = (bytes[6] & 0x0F) | 0x70;
     bytes[8] = (bytes[8] & 0x3F) | 0x80;
     Uuid::from_bytes(bytes)
@@ -1797,6 +2616,214 @@ fn emit_read_miss_audit(
             );
         }
     }
+}
+
+/// Slot-aware variant of [`emit_read_completed_audit_post_stream`]
+/// for batch handlers (codex round-3 P2 SEAL fix). The audit envelope
+/// `id` mixes the `slot_idx` so per-slot duplicates of the same
+/// digest in a single `BatchReadBlobs` request do NOT collide on the
+/// `audit_outbox` PK.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "audit emitter aggregates many forensic fields; bundling adds noise without reuse"
+)]
+fn emit_read_completed_audit_post_stream_at_slot(
+    tenant_id: Uuid,
+    principal_id: Uuid,
+    region: Region,
+    client_request_id: &str,
+    digest: &Digest,
+    size_bytes: u64,
+    payload_len: u64,
+    bytes_sent: u64,
+    total_chunks: usize,
+    slot_idx: usize,
+) {
+    let canonical = format!("blake3:{}", digest.to_hex());
+    let envelope_id =
+        deterministic_audit_id_at_slot(client_request_id, tenant_id, digest, slot_idx);
+    let envelope = crate::audit::AuditEnvelopeBuilder::read_completed(
+        crate::audit::AuditPrincipal {
+            tenant_id,
+            principal_id,
+            region: region_str(region),
+        },
+        client_request_id,
+        canonical,
+        size_bytes,
+        crate::audit::AuditTime { envelope_id },
+    )
+    .build();
+    if let Ok(json) = envelope.to_json() {
+        tracing::info!(
+            target: "corelink.audit",
+            event_type = crate::audit::REAPI_READ_COMPLETED,
+            tenant = %tenant_id,
+            principal = %principal_id,
+            region = %region_str(region),
+            digest = %digest.to_hex(),
+            size_bytes = size_bytes,
+            payload_len = payload_len,
+            bytes_sent = bytes_sent,
+            total_chunks = total_chunks,
+            slot_idx = slot_idx,
+            envelope = %json,
+            "CAS read completed (batch slot)"
+        );
+    }
+}
+
+/// Slot-aware variant of [`emit_read_miss_audit`] for batch handlers
+/// (codex round-3 P2 SEAL fix). The audit envelope `id` mixes the
+/// `slot_idx` to keep per-slot CE ids unique even when the same
+/// digest appears multiple times in the request.
+fn emit_read_miss_audit_at_slot(
+    storage_ctx: &StorageTenantCtx,
+    principal_id: Uuid,
+    region: Region,
+    client_request_id: &str,
+    digest: &Digest,
+    reason: MissReason,
+    slot_idx: usize,
+) {
+    let canonical = format!("blake3:{}", digest.to_hex());
+    let envelope_id = deterministic_audit_id_at_slot(
+        client_request_id,
+        storage_ctx.tenant_id(),
+        digest,
+        slot_idx,
+    );
+    let envelope = match reason {
+        MissReason::NeverExisted => crate::audit::AuditEnvelope {
+            specversion: "1.0",
+            id: envelope_id,
+            source: format!("corelink://tenant/{}", storage_ctx.tenant_id()),
+            r#type: crate::audit::REAPI_READ_MISS,
+            subject: canonical.clone(),
+            datacontenttype: "application/json",
+            data: crate::audit::AuditEnvelopeData {
+                tenant_id: storage_ctx.tenant_id(),
+                principal_id,
+                digest: canonical.clone(),
+                size_bytes: 0,
+                region: region_str(region),
+                request_id: client_request_id.to_owned(),
+            },
+        },
+        MissReason::Tombstoned => crate::audit::AuditEnvelope {
+            specversion: "1.0",
+            id: envelope_id,
+            source: format!("corelink://tenant/{}", storage_ctx.tenant_id()),
+            r#type: crate::audit::REAPI_TOMBSTONED_READ_ATTEMPT,
+            subject: canonical.clone(),
+            datacontenttype: "application/json",
+            data: crate::audit::AuditEnvelopeData {
+                tenant_id: storage_ctx.tenant_id(),
+                principal_id,
+                digest: canonical.clone(),
+                size_bytes: 0,
+                region: region_str(region),
+                request_id: client_request_id.to_owned(),
+            },
+        },
+        MissReason::R2OrphanRow => crate::audit::AuditEnvelope {
+            specversion: "1.0",
+            id: envelope_id,
+            source: format!("corelink://tenant/{}", storage_ctx.tenant_id()),
+            r#type: crate::audit::REAPI_R2_ORPHAN_DETECTED,
+            subject: canonical.clone(),
+            datacontenttype: "application/json",
+            data: crate::audit::AuditEnvelopeData {
+                tenant_id: storage_ctx.tenant_id(),
+                principal_id,
+                digest: canonical.clone(),
+                size_bytes: 0,
+                region: region_str(region),
+                request_id: client_request_id.to_owned(),
+            },
+        },
+    };
+    let json = envelope.to_json().unwrap_or_default();
+    let event_type = envelope.r#type;
+    match reason {
+        MissReason::NeverExisted => {
+            tracing::info!(
+                target: "corelink.audit",
+                event_type = event_type,
+                reason = "never_existed_or_cross_tenant",
+                tenant = %storage_ctx.tenant_id(),
+                principal = %principal_id,
+                region = %region_str(region),
+                digest = %digest.to_hex(),
+                slot_idx = slot_idx,
+                envelope = %json,
+                "CAS batch-read miss (uniform 404 per ADR-0028; classification deferred to S-09 chain consumer)"
+            );
+        }
+        MissReason::Tombstoned => {
+            tracing::info!(
+                target: "corelink.audit",
+                event_type = event_type,
+                reason = "tombstoned",
+                tenant = %storage_ctx.tenant_id(),
+                principal = %principal_id,
+                region = %region_str(region),
+                digest = %digest.to_hex(),
+                slot_idx = slot_idx,
+                envelope = %json,
+                "CAS batch-read of tombstoned blob (uniform 404)"
+            );
+        }
+        MissReason::R2OrphanRow => {
+            tracing::error!(
+                target: "corelink.audit",
+                event_type = event_type,
+                reason = "r2_orphan_row",
+                tenant = %storage_ctx.tenant_id(),
+                principal = %principal_id,
+                region = %region_str(region),
+                digest = %digest.to_hex(),
+                slot_idx = slot_idx,
+                envelope = %json,
+                "CAS batch-read encountered R2 orphan row (GC reconcile pending)"
+            );
+        }
+    }
+}
+
+/// Emit a single batch-summary audit line for a `FindMissingBlobs`
+/// invocation. WI-S02-002 §6.1.5 mandates batch-level audit (NOT
+/// per-digest CE envelopes) so the audit chain is not flooded by
+/// 1000-digest cache-miss probes.
+///
+/// The line goes to `corelink.audit` at `info!` level; SRE
+/// dashboards can trend `(missing / total)` ratio per tenant for
+/// regression monitoring.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "audit emitter aggregates many forensic fields; bundling adds noise without reuse"
+)]
+fn emit_find_missing_batch_audit(
+    storage_ctx: &StorageTenantCtx,
+    principal_id: Uuid,
+    region: Region,
+    client_request_id: &str,
+    requested: usize,
+    missing: usize,
+    d1_lookups: usize,
+) {
+    tracing::info!(
+        target: "corelink.audit",
+        event_type = "corelink.cas.find_missing_batch",
+        tenant = %storage_ctx.tenant_id(),
+        principal = %principal_id,
+        region = %region_str(region),
+        request_id = %client_request_id,
+        requested = requested,
+        missing = missing,
+        d1_lookups = d1_lookups,
+        "FindMissingBlobs batch processed"
+    );
 }
 
 struct ParsedResource {

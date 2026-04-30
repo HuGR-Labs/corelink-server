@@ -1,21 +1,18 @@
 // Vendored MINIMAL SUBSET from `bazelbuild/remote-apis @ v2.12.0`,
-// `build/bazel/remote/execution/v2/remote_execution.proto`. CoreLink S-01 only
-// implements:
+// `build/bazel/remote/execution/v2/remote_execution.proto`. CoreLink S-01 +
+// S-02 implements (post WI-S02-002 SEAL):
 //
-//   - `ContentAddressableStorage.BatchUpdateBlobs`  (WI-S01-005, this file)
-//   - `Capabilities.GetCapabilities`                (WI-S01-005, this file)
-//   - `ContentAddressableStorage.BatchReadBlobs`    (WI-S02-001, surfaced
-//                                                    here as `unimplemented`
-//                                                    stub so generated client
-//                                                    stubs typecheck against
-//                                                    the canonical service
-//                                                    surface — wire-compat
-//                                                    with future S-02 land.)
+//   - `ContentAddressableStorage.BatchUpdateBlobs`  (WI-S01-005)
+//   - `ContentAddressableStorage.FindMissingBlobs`  (WI-S02-002)
+//   - `ContentAddressableStorage.BatchReadBlobs`    (WI-S02-002 — small-blob
+//                                                    inline batch read)
+//   - `Capabilities.GetCapabilities`                (WI-S01-005)
 //
-// All other RPCs (`FindMissingBlobs`, `GetTree`, `SplitBlob`, `SpliceBlob`,
-// `Execution`, `ActionCache`) are intentionally OMITTED from this vendored
-// subset; they are out-of-scope for S-01 and live in their respective sprints
-// (S-02 read path, S-04 AC, S-05 multipart, S-08 execution).
+// `ByteStream::Read` (large-blob streaming) lives in WI-S02-001 in the
+// vendored `google/bytestream/bytestream.proto`. All other RPCs (`GetTree`,
+// `SplitBlob`, `SpliceBlob`, `Execution`, `ActionCache`) are intentionally
+// OMITTED from this vendored subset; they are out-of-scope and live in their
+// respective sprints (S-04 AC, S-05 multipart, S-08 execution).
 //
 // FIELD TAGS + MESSAGE NAMES MATCH UPSTREAM byte-for-byte for every message
 // included here. Wire-compat with `bazelbuild/remote-apis @ v2.12.0` clients
@@ -75,8 +72,30 @@ service ContentAddressableStorage {
   // for the canonical mapping to error_taxonomy COR_CAS_DIGEST_MISMATCH.
   rpc BatchUpdateBlobs(BatchUpdateBlobsRequest) returns (BatchUpdateBlobsResponse);
 
-  // Download many blobs at once. SURFACE ONLY in S-01; server returns
-  // `Status::unimplemented` until WI-S02-001 lands the read path.
+  // Determine if blobs are present in the CAS.
+  //
+  // Clients can use this RPC to short-circuit `BatchUpdateBlobs` upload
+  // sessions: send a list of digests and the server returns the SUBSET that
+  // is NOT present under the requesting tenant. Cross-tenant blobs surface
+  // as "missing" — the response is structurally indistinguishable from a
+  // truly never-existed digest, closing the cross-tenant existence-oracle
+  // attack (CTRL-ISO-005 + ADR-0028).
+  //
+  // Top-level errors: INVALID_ARGUMENT for malformed requests;
+  // OUT_OF_RANGE (HTTP 413) when the request carries more than the
+  // CoreLink batch cap (1000 digests).
+  rpc FindMissingBlobs(FindMissingBlobsRequest) returns (FindMissingBlobsResponse);
+
+  // Download many small blobs at once (each ≤ 4 MiB inline; aggregate
+  // response ≤ 4 MiB per `MaxBatchTotalSizeBytes`). For larger blobs use
+  // ByteStream::Read.
+  //
+  // Per-blob status carries the result; INVALID_ARGUMENT for malformed
+  // digest, NOT_FOUND for a (possibly-cross-tenant-masked) miss,
+  // FAILED_PRECONDITION when a single blob exceeds the 4 MiB inline
+  // cap OR when including its body would exceed the canonical 4 MiB
+  // aggregate-response cap (the client should fall back to
+  // ByteStream::Read for that digest).
   rpc BatchReadBlobs(BatchReadBlobsRequest) returns (BatchReadBlobsResponse);
 }
 
@@ -152,10 +171,28 @@ message BatchUpdateBlobsResponse {
   repeated Response responses = 1;
 }
 
+// A request message for `ContentAddressableStorage.FindMissingBlobs`.
+message FindMissingBlobsRequest {
+  // The instance of the execution system to operate against.
+  string instance_name = 1;
+
+  // A list of digests of blobs to check for existence.
+  repeated Digest blob_digests = 2;
+
+  // The digest function used to compute the digests of the blobs being
+  // queried.
+  DigestFunction.Value digest_function = 3;
+}
+
+// A response message for `ContentAddressableStorage.FindMissingBlobs`.
+message FindMissingBlobsResponse {
+  // The digests of the blobs the server does NOT have under the
+  // requesting tenant. Cross-tenant blobs are surfaced as "missing"
+  // for existence-oracle masking.
+  repeated Digest missing_blob_digests = 1;
+}
+
 // A request message for `ContentAddressableStorage.BatchReadBlobs`.
-//
-// Vendored for client-stub typecheck only; CoreLink S-01 returns
-// `Status::unimplemented` for this RPC — the read-path landing is WI-S02-001.
 message BatchReadBlobsRequest {
   // The instance of the execution system to operate against.
   string instance_name = 1;
@@ -172,9 +209,6 @@ message BatchReadBlobsRequest {
 }
 
 // A response message for `ContentAddressableStorage.BatchReadBlobs`.
-//
-// Vendored for client-stub typecheck only; CoreLink S-01 server returns
-// `Status::unimplemented` for this RPC.
 message BatchReadBlobsResponse {
   message Response {
     Digest digest = 1;

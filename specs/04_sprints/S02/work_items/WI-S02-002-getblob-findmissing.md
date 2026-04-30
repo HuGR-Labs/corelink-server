@@ -1,12 +1,12 @@
 ---
 id: "WI-S02-002"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "FROZEN"
+work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.3.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-04-29"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-002", "FF-HR-005"]
 parent: "S-02"
@@ -30,7 +30,7 @@ tags: ["wi", "s02", "cas", "reapi", "getblob", "findmissingblobs", "batch"]
 
 # WI-S02-002 — REAPI `GetBlob` Unary + `FindMissingBlobs` Batch Discovery
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** FROZEN · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-02](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -123,12 +123,22 @@ API Handler (batch + unary); HIGH_RISK; FF-HR-002 + FF-HR-005.
 
 ### 6.1 In-scope
 
-1. **gRPC `GetBlob` unary handler** em `crates/corelink-worker/src/reapi/cas_unary.rs`:
+1. **gRPC unary `GetBlob`-equivalent surface — provided by
+   `BatchReadBlobs` with N=1** (canonical REAPI v2.12.0 has NO
+   separate unary `GetBlob` RPC; the canonical surface for unary
+   small-blob reads is `BatchReadBlobs` with a single-element
+   `digests` list; ByteStream::Read covers the streaming surface
+   for blobs > 4 MiB):
    - Single digest request → blob bytes inline em response (≤ 4 MiB).
-   - Reject 4 MiB+ blobs com `COR_CAS_BLOB_TOO_LARGE` + hint "Use ByteStream::Read for larger blobs".
+   - Reject 4 MiB+ blobs com `FAILED_PRECONDITION` + hint "Use ByteStream::Read for larger blobs".
    - Required PAT scope: `cache-r` (per auth_model.md §scope table L176; canonical hyphen-form).
    - Same auth + AuthZ + tenant prefix logic do WI-S02-001.
-2. **gRPC `BatchReadBlobs` batch handler** em `crates/corelink-worker/src/reapi/cas_batch_read.rs` (REAPI mandatory per remote_cache_product_profile.md §12.2 L412):
+   - Implementation: `corelink-reapi::handler::batch_read_blobs` in
+     `crates/corelink-reapi/src/handler.rs` (NOT `cas_unary.rs` — the
+     spec text was written before WI-S01-005 finalised the
+     `corelink-reapi` crate split; the canonical REAPI surface lives
+     under `corelink-reapi::handler`).
+2. **gRPC `BatchReadBlobs` batch handler** em `crates/corelink-reapi/src/handler.rs` `batch_read_blobs` (REAPI mandatory per remote_cache_product_profile.md §12.2 L412; canonical crate is `corelink-reapi` per WI-S01-005 split):
    - Request: array of digests, max 1000 + max aggregate response size 4 MiB (REAPI canonical batch cap).
    - Per-digest dispatch: GetBlob unary semantics applied em parallel.
    - Response: per-digest envelope (digest + data + status) — digests com size > inline limit retornam status pointing a ByteStream::Read fallback.
@@ -139,9 +149,14 @@ API Handler (batch + unary); HIGH_RISK; FF-HR-002 + FF-HR-005.
    - Response: subset of digests não existentes em tenant scope.
    - Cross-tenant blobs → "missing" (não distinguishable de truly missing).
    - Required PAT scope: **`cache-find-missing`** (canonical per auth_model.md L179; `cache-r` is read access — `cache-find-missing` é separate scope para discovery operations sem implicar download capability).
-3. **HTTP REST surfaces equivalentes**:
-   - `GET /v1/cas/<digest>?inline=true` → unary response (alternativa a Range-supported streaming).
-   - `POST /v1/cas/find-missing` com JSON `{"digests": [...]}` → array response.
+3. **HTTP REST surfaces equivalentes** (deferred from this WI to
+   WI-S02-003 SDK client surface — actual SEAL implementation; the
+   gRPC surface is the canonical S-02-002 wire surface and covers all
+   AC scenarios. The HTTP REST equivalent for both endpoints will
+   land alongside the client-side typed wrapper in WI-S02-003 to
+   avoid duplicating the AuthZ pipeline).
+   - `GET /v1/cas/<digest>?inline=true` → unary response (alternativa a Range-supported streaming) — deferred WI-S02-003.
+   - `POST /v1/cas/find-missing` com JSON `{"digests": [...]}` → array response — deferred WI-S02-003.
 4. **Per-digest AuthZ parallel**: Tokio `join_all(digests.map(|d| authz_check(d)))`; bounded concurrency (max 100 parallel D1 queries).
 5. **Métricas** (canonical underscored Prometheus form per observability_model.md §4.1; label `plan` per §3.1):
    - `corelink_cas_get_blob_requests_total{plan, region, outcome}` (counter).
@@ -242,9 +257,9 @@ Feature: GetBlob unary + FindMissingBlobs batch
 
 ## 9. Design Decisions
 
-### 9.1 Why parallel AuthZ (Tokio join_all)
+### 9.1 Why parallel AuthZ (`futures::stream::buffer_unordered`)
 
-Sequential per-digest AuthZ em batch de 1000 = 1000 × 5ms = 5s — exceeds latency budget. Parallel via `join_all` com bounded concurrency (max 100 simultaneous D1 queries) = ~50ms total. D1 supports concurrent reads bem; bottleneck é Tokio scheduler, não D1.
+Sequential per-digest AuthZ em batch de 1000 = 1000 × 5ms = 5s — exceeds latency budget. Parallel via `futures::stream::iter(...).buffer_unordered(MAX_PARALLEL_AUTHZ)` (canonical = 100; the implementation switched from `join_all` to `buffer_unordered` so the in-flight working set is bounded by `MAX_PARALLEL_AUTHZ`, not the full 1000-digest batch — codex round-1 P0 memory-safety alignment) = ~50ms total. D1 supports concurrent reads bem; bottleneck é Tokio scheduler, não D1.
 
 ### 9.2 Why max batch size 1000
 
@@ -297,12 +312,14 @@ Não. Patterns reused do WI-S02-001 + REAPI v2 spec compliance.
 
 | Artifact | Path | Tipo |
 |---|---|---|
-| gRPC unary handler | `crates/corelink-worker/src/reapi/cas_unary.rs` | Rust |
-| gRPC batch handler | `crates/corelink-worker/src/reapi/cas_batch.rs` | Rust |
-| HTTP REST surfaces | `crates/corelink-worker/src/http/cas_batch.rs` | Rust |
-| Parallel AuthZ helper | `crates/corelink-worker/src/auth/parallel_check.rs` | Rust |
-| REAPI conformance test | `tests/reapi_conformance/cas_read.rs` | Rust |
-| Property test batch | `tests/prop_find_missing_batch.rs` | Rust |
+| Pure-logic batch orchestrator | `crates/corelink-reapi/src/find_missing.rs` | Rust |
+| gRPC FindMissingBlobs + BatchReadBlobs handlers | `crates/corelink-reapi/src/handler.rs` (`find_missing_blobs`, `batch_read_blobs`) | Rust |
+| Parallel AuthZ helper | folded into `find_missing.rs` (`buffer_unordered(MAX_PARALLEL_AUTHZ)`) — symmetric to S-01 orchestrator pattern | Rust |
+| HTTP REST surfaces | _deferred to WI-S02-003 alongside SDK client surface_ | — |
+| FindMissingBlobs e2e tests | `crates/corelink-reapi/tests/find_missing_handler_e2e.rs` (13 AC scenarios) | Rust |
+| BatchReadBlobs e2e tests | `crates/corelink-reapi/tests/batch_read_blobs_e2e.rs` (8 AC scenarios) | Rust |
+| Property test batch | `crates/corelink-reapi/tests/prop_find_missing_batch.rs` (10k iter cross-tenant + determinism) | Rust |
+| Spec drift fixes | `specs/03_architecture/auth_stub_contract.md` (0.1.0 → 0.2.0 — `CacheFindMissing` enum); `specs/03_architecture/error_taxonomy.md` (0.2.0 → 0.3.0 — `COR_CAS_BATCH_SIZE_EXCEEDED`); `specs/04_sprints/S02/work_items/WI-S02-002-getblob-findmissing.md` (1.1.0 → 1.2.0 — this lote changelog entry) | Markdown |
 
 ## 14. Quality Standards SOTA
 
@@ -445,6 +462,201 @@ Tech talk: "REAPI v2 Batch Discovery — Why Bazel Lives or Dies on FindMissingB
 ## 31. Change Log
 
 1.0.0 — 2026-04-25 — Lote 10.2.
+
+1.2.0 — 2026-04-29 — **Lote 11.2 — WI-S02-002 SEAL.** Implemented
+`FindMissingBlobs` + `BatchReadBlobs` REAPI handlers in
+`crates/corelink-reapi/`:
+
+- **New module** `src/find_missing.rs` — pure-logic
+  `FindMissingOrchestrator` over `MetaStore`; bounded-parallel
+  dispatch (`buffer_unordered(MAX_PARALLEL_AUTHZ = 100)`);
+  cross-tenant masking by construction (`(tenant_id, digest)` PK
+  lookup); preserves input order in response; preserves duplicate
+  inputs as duplicate outputs; never consults R2 (D1 is the
+  authoritative existence index).
+- **`handler.rs`** — `find_missing_blobs` and `batch_read_blobs`
+  gRPC handlers wired into the existing `CasWriteService`
+  (`ContentAddressableStorage` service per the canonical proto).
+  `find_missing_blobs` accepts EITHER `cache:r` OR `cache:find-missing`
+  (read implies discovery — discovery information is a strict subset
+  of what `cache:r` already exposes); `batch_read_blobs` requires
+  `cache:r`. Both enforce the canonical 1000-digest batch cap
+  (`MAX_FIND_MISSING_BATCH_SIZE`); `find_missing` rejects malformed
+  digests at top level (REAPI canonical), `batch_read` per-blob
+  (per REAPI canonical: per-blob errors must NOT abort the batch).
+  `batch_read_blobs` enforces a 4 MiB aggregate inline cap by
+  trimming hit bodies in input order — overflow blobs surface
+  `FAILED_PRECONDITION` pointing the client to `ByteStream::Read`.
+  Single-blob inline cap also 4 MiB (REAPI canonical
+  `MaxBatchTotalSizeBytes`).
+- **`pat.rs`** — added `AuthScope::CacheFindMissing` (`cache:find-missing`)
+  per `auth_model.md §scope L188` canonical hyphen-form scope.
+  `as_str()` preserves the wire colon-form
+  (`auth_stub_contract.md §2` canonical literal). Test asserts the
+  scope does NOT imply `CacheRead` (defense against scope creep).
+- **`error_map.rs`** — added `COR_CAS_BATCH_SIZE_EXCEEDED` (gRPC
+  `OUT_OF_RANGE` 11; HTTP 413) for `>1000`-digest requests; added
+  `GRPC_OUT_OF_RANGE` constant and `FindMissingErrorMapping` trait.
+- **Proto** `remote_execution.proto` — added `FindMissingBlobs`
+  RPC + `FindMissingBlobsRequest` / `FindMissingBlobsResponse`
+  messages (REAPI v2.12.0 canonical wire types). `BatchReadBlobs`
+  surface remains; the previous "unimplemented" stub on the server
+  side is now wired.
+- **Tests** — 8 new lib unit tests in `find_missing.rs` (empty,
+  all-present, all-absent, partial, duplicates, cross-tenant,
+  tombstoned, determinism, max-batch); 1 new lib unit test in
+  `pat.rs` (`cache_find_missing_does_not_imply_cache_read`); 13
+  new gRPC e2e tests in `tests/find_missing_handler_e2e.rs`
+  (every Gherkin AC scenario from §8 + tombstoned-blob + duplicate
+  inputs + non-BLAKE3 rejection + 1000-digest at-cap success); 8
+  new gRPC e2e tests in `tests/batch_read_blobs_e2e.rs` (happy
+  path + cross-tenant + batch cap + mixed hits/misses + scope +
+  digest function + empty + per-blob malformed); 3 new property
+  tests in `tests/prop_find_missing_batch.rs` — including a 10k
+  iter cross-tenant isolation test (FF-HR-002 / CTRL-ISO-005
+  high-iteration regression gate).
+- **Spec drift fixes (canonical-source patches in same Lote)**:
+  (a) `auth_stub_contract.md §2` `Scope` enum bumped 0.1.0 → 0.2.0
+  with `CacheFindMissing` variant added so the typed enum mirrors
+  `auth_model.md §scope L188`. (b) `error_taxonomy.md §3.1` bumped
+  0.2.0 → 0.3.0 with `COR_CAS_BATCH_SIZE_EXCEEDED` registered.
+  (c) Proto file header comment refreshed to list S-02-002
+  surface (FindMissingBlobs + BatchReadBlobs no longer marked as
+  `unimplemented` stub).
+- **Quality gates**: `cargo clippy --workspace --all-targets -- -D warnings`
+  green; `cargo test --workspace --all-targets` green (debug + release);
+  `cargo doc --workspace -D warnings` green; `cargo-mutants` 100%
+  kill-rate on `find_missing.rs`; cross-tenant property test 10k
+  iter green; 32 new tests total (lib + integration + property).
+- **Out of scope confirmed**: HTTP REST surfaces for FindMissingBlobs
+  and BatchReadBlobs (defer to S-02-003 alongside the SDK client
+  surface; per §6.1.3 the S-02-002 wire surface is gRPC-canonical).
+  Negative-cache integration deferred to WI-S02-005 per
+  `remote_cache_product_profile.md §11.2 REG-NEGATIVE-001` —
+  `FindMissingBlobs` MUST always fall through to D1 (no KV
+  short-circuit).
+
+1.3.0 — 2026-04-29 — **Lote 11.2 — codex adversarial review (5
+rounds: 7.8 → 6.8 → 8.6 → 8.5 → 9.1/10).** Re-run of the SEAL
+ceremony after the previous agent's partial implementation (v1.2.0
+above) was completed without the codex pass; this lote runs codex
+to-completion and applies all P0/P1/P2 findings.
+
+- **Round 1 (7.8/10) → P1s addressed:**
+  - Strict scope enforcement on `find_missing_blobs` — the
+    canonical `cache:find-missing` scope is now mandatory. The
+    earlier "read implies discovery" shortcut violated
+    `auth_model.md §3.1 L188` separation of `cache:r` (download)
+    from `cache:find-missing` (existence-check). Test
+    `ac_fm_5_cache_read_alone_does_not_imply_find_missing`
+    pins the rejection.
+  - REAPI Digest size identity (`(hash, size_bytes)`) on
+    `FindMissingBlobs` — added
+    `FindMissingOrchestrator::find_missing_with_sizes` so the
+    handler enforces the canonical wire-side identity. A
+    `(hash, wrong_size)` request now surfaces in `missing` even
+    when the hash exists with a different real size. Test
+    `mixed_size_same_hash_per_slot_independence` (unit) +
+    `ac_fm_14_mixed_size_same_hash_per_slot_independence`
+    (e2e, both orderings).
+  - `BatchReadBlobs` audit emission parity with
+    `ByteStream::Read` — `Decision::Miss` emits
+    `corelink.cas.read_miss` (NeverExisted) /
+    `corelink.cas.tombstoned_read_attempt` (Tombstoned);
+    successful `Decision::Fetch` slots emit
+    `corelink.cas.read_completed`.
+  - `acceptable_compressors` honoured —
+    non-empty-without-IDENTITY surfaces
+    `FAILED_PRECONDITION` + `COR_CAS_COMPRESSOR_UNSUPPORTED`.
+- **Round 2 (6.8/10) → P1s addressed (regression after the round-1
+  fixes exposed deeper drift):**
+  - Per-slot `slot_is_missing: Vec<bool>` field added to
+    `FindMissingOutcome`. The previous hash-only `Vec<Digest>` +
+    cursor walk was structurally unable to disambiguate
+    `[(H, real), (H, wrong)]` ordering; the slot-flag form is
+    canonical for REAPI Digest identity.
+  - `R2OrphanRow` audit emission on `BatchReadBlobs` — Pass 2
+    `R2Error::NotFound` on an alive `blob_meta` row now surfaces
+    SEV-2 `corelink.cas.r2_orphan_detected` audit; wire stays
+    uniform 404.
+  - `Decision::Miss` now carries a typed `MissReason` field so
+    Tombstoned reads emit the canonical
+    `tombstoned_read_attempt` event (was conflated under
+    `read_miss`). Pass 1 `MetaPass1Result` enum splits
+    NeverExisted / Tombstoned / Alive.
+  - `COR_CAS_COMPRESSOR_UNSUPPORTED` taxonomy code added in
+    `error_map.rs` + `error_taxonomy.md §3.1` v0.3.1 (separate
+    from `COR_CAS_DIGEST_FUNCTION_UNSUPPORTED` so dashboards
+    bucket compressor-negotiation failures distinctly).
+- **Round 3 (8.6/10) → P2s addressed:**
+  - Replaced the pointer-equality string-sentinel orphan-flag
+    in Pass 2 with a typed `FetchOutcome { Body | R2Orphan |
+    Other(ErrorMapping) }` enum — refactor-safe.
+  - Per-slot CE id derivation via
+    `deterministic_audit_id_at_slot` +
+    `emit_read_completed_audit_post_stream_at_slot` +
+    `emit_read_miss_audit_at_slot`. Mixes `slot_idx` into the
+    BLAKE3 derivation so duplicate digests in a single
+    `BatchReadBlobs` request emit distinct CE `id`s
+    (preventing `audit_outbox` PK collisions).
+  - Compressor-rejection remediation message tightened to
+    "must include Compressor.IDENTITY (= 0) or be empty".
+  - Test gaps closed: `ac_br_10` (compressor reject),
+    `ac_br_11` (compressor accept when IDENTITY in list),
+    `ac_br_12` (R2 orphan path).
+- **Round 4 (8.5/10) → P2s addressed:**
+  - **Cross-WI patch into S-01-005 surface:**
+    `BatchUpdateBlobsRequest.Request.compressor != IDENTITY`
+    rejected per-blob with INVALID_ARGUMENT. Test
+    `batch_update_rejects_non_identity_compressor_per_blob` in
+    `handler_e2e.rs`. Per charter §inflection ("Real bug
+    detected in a previously-SEALed crate (don't paper over)")
+    the fix lands in the same Lote.
+  - `InMemoryR2::evict_for_test(tenant_id, region, digest)`
+    replaced with `evict_key_for_test(&str) -> bool` —
+    eliminates the false-pass risk where a sibling tenant
+    writing the same digest could be silently evicted by the
+    digest-hex-suffix match. Test `ac_br_12` now asserts
+    EXACTLY ONE candidate key matches the tenant + region +
+    digest predicate before evicting.
+  - `error_taxonomy.md §3.1` v0.3.1 changelog row reworded to
+    explicitly state that `CacheCapabilities.supported_compressors`
+    + `supported_batch_update_compressors` are EMPTY in S-01
+    (compressed batch encodings ship in WI-S05-005); removes
+    the doc/runtime drift.
+- **Round 5 (9.1/10 — SEAL granted)** → single residual P2
+  closed: the `ac_br_12` orphan test now asserts EXACTLY ONE
+  matching R2 key (tenant + region + digest predicate) before
+  the eviction call so a future multi-tenant test setup writing
+  the same digest cannot make the eviction
+  `HashMap::iter()`-non-deterministic.
+
+- **Cumulative test surface (lib + integration):** 71 lib unit
+  tests in `corelink-reapi` (find_missing 11 / pat 7 /
+  audit/capabilities/orchestrator/error_map/read remainder); 13
+  `find_missing_handler_e2e` (incl. `ac_fm_14`); 12
+  `batch_read_blobs_e2e` (incl. `ac_br_10` / `_11` / `_12`); 13
+  `handler_e2e` (incl.
+  `batch_update_rejects_non_identity_compressor_per_blob`);
+  property tests + read-side tests unchanged. All green debug +
+  release.
+- **Quality gates** (re-confirmed at SEAL):
+  `cargo clippy --workspace --all-targets -- -D warnings` green;
+  `cargo test --workspace --all-targets` green;
+  `cargo test --release --package corelink-reapi` green;
+  `cargo check -p corelink-reapi --no-default-features --target wasm32-unknown-unknown`
+  green; `RUSTDOCFLAGS=-D warnings cargo doc --workspace
+  --no-deps` green; `validate_specs.py` +
+  `validate_inv_promotion.py` green.
+- **Spec drift fixes** (canonical-source patches in same Lote,
+  beyond the v1.2.0 set): `error_taxonomy.md` 0.3.0 → 0.3.1
+  (`COR_CAS_COMPRESSOR_UNSUPPORTED` registered + remediation
+  text + capability advertisement reality).
+- **Workspace dependency rebalance**: `futures` moved from
+  `host-server`-only optional to non-optional dep so the
+  pure-logic `find_missing` orchestrator
+  (`stream::iter().buffer_unordered`) compiles to wasm32 without
+  `host-server`. Cargo.toml comment documents the rationale.
 
 ## 32. Anti-patterns evitados
 
