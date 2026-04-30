@@ -222,11 +222,8 @@ where
     };
 
     // Step 5 — derive storage ctx.
-    let storage_ctx = corelink_worker::TenantCtx::new(
-        state.core.tdk(),
-        pat_ctx.tenant_id(),
-        pat_ctx.region(),
-    );
+    let storage_ctx =
+        corelink_worker::TenantCtx::new(state.core.tdk(), pat_ctx.tenant_id(), pat_ctx.region());
 
     // Step 6 — orchestrate.
     let orch = CasReadOrchestrator::new(state.core.reader(), state.core.meta());
@@ -234,11 +231,7 @@ where
         Ok(o) => o,
         Err(e) => {
             let m = e.mapping();
-            return error_response(
-                grpc_status_to_http(m.grpc_code),
-                m.taxonomy_code,
-                m.message,
-            );
+            return error_response(grpc_status_to_http(m.grpc_code), m.taxonomy_code, m.message);
         }
     };
 
@@ -264,11 +257,7 @@ where
                 reason,
             );
             let m = miss_mapping();
-            return error_response(
-                StatusCode::NOT_FOUND,
-                m.taxonomy_code,
-                m.message,
-            );
+            return error_response(StatusCode::NOT_FOUND, m.taxonomy_code, m.message);
         }
     };
 
@@ -352,8 +341,7 @@ fn chunked_http_body_with_audit(body: Bytes, audit: HttpReadAuditTail) -> Body {
     let stream = futures::stream::unfold(unfold_state, |(mut iter, bytes_sent)| async move {
         match iter.next() {
             Some(c) => {
-                bytes_sent
-                    .fetch_add(c.len() as u64, std::sync::atomic::Ordering::AcqRel);
+                bytes_sent.fetch_add(c.len() as u64, std::sync::atomic::Ordering::AcqRel);
                 Some((Ok::<Bytes, std::io::Error>(c), (iter, bytes_sent)))
             }
             None => None,
@@ -367,10 +355,13 @@ fn chunked_http_body_with_audit(body: Bytes, audit: HttpReadAuditTail) -> Body {
         emitted: false,
     };
     let stream_with_guard = futures::stream::unfold(
-        (Box::pin(stream)
-            as std::pin::Pin<
-                Box<dyn futures::Stream<Item = Result<Bytes, std::io::Error>> + Send>,
-            >, guard),
+        (
+            Box::pin(stream)
+                as std::pin::Pin<
+                    Box<dyn futures::Stream<Item = Result<Bytes, std::io::Error>> + Send>,
+                >,
+            guard,
+        ),
         |(mut s, mut guard)| async move {
             match s.as_mut().next().await {
                 Some(item) => Some((item, (s, guard))),
@@ -397,9 +388,7 @@ impl HttpReadAuditGuard {
             return;
         }
         self.emitted = true;
-        let bytes_sent = self
-            .bytes_sent
-            .load(std::sync::atomic::Ordering::Acquire);
+        let bytes_sent = self.bytes_sent.load(std::sync::atomic::Ordering::Acquire);
         crate::handler::emit_read_completed_audit_pub(
             self.audit.tenant_id,
             self.audit.principal_id,
@@ -419,9 +408,7 @@ impl Drop for HttpReadAuditGuard {
         if self.emitted {
             return;
         }
-        let bytes_sent = self
-            .bytes_sent
-            .load(std::sync::atomic::Ordering::Acquire);
+        let bytes_sent = self.bytes_sent.load(std::sync::atomic::Ordering::Acquire);
         // Codex round-3 P3 fix: include `region` for per-region
         // forensic triage parity with the gRPC `read_aborted` line.
         let region_label = match self.audit.region {
@@ -449,11 +436,7 @@ impl Drop for HttpReadAuditGuard {
 /// body type be `'static`).
 fn chunk_bytes(body: Bytes, chunk_size: usize) -> Vec<Bytes> {
     if chunk_size == 0 || body.is_empty() {
-        return if body.is_empty() {
-            vec![]
-        } else {
-            vec![body]
-        };
+        return if body.is_empty() { vec![] } else { vec![body] };
     }
     let mut out = Vec::with_capacity(body.len().div_ceil(chunk_size));
     let mut start = 0usize;
@@ -585,15 +568,15 @@ fn error_response(status: StatusCode, taxonomy_code: &'static str, message: &str
 
 fn grpc_status_to_http(grpc_code: i32) -> StatusCode {
     match grpc_code {
-        3 | 9 => StatusCode::BAD_REQUEST,         // INVALID_ARGUMENT / FAILED_PRECONDITION
-        5 => StatusCode::NOT_FOUND,               // NOT_FOUND
-        7 => StatusCode::FORBIDDEN,               // PERMISSION_DENIED
-        8 => StatusCode::PAYLOAD_TOO_LARGE,       // RESOURCE_EXHAUSTED
-        10 => StatusCode::CONFLICT,               // ABORTED
-        11 => StatusCode::RANGE_NOT_SATISFIABLE,  // OUT_OF_RANGE
-        14 => StatusCode::SERVICE_UNAVAILABLE,    // UNAVAILABLE
-        16 => StatusCode::UNAUTHORIZED,           // UNAUTHENTICATED
-        _ => StatusCode::INTERNAL_SERVER_ERROR,   // INTERNAL / UNKNOWN
+        3 | 9 => StatusCode::BAD_REQUEST, // INVALID_ARGUMENT / FAILED_PRECONDITION
+        5 => StatusCode::NOT_FOUND,       // NOT_FOUND
+        7 => StatusCode::FORBIDDEN,       // PERMISSION_DENIED
+        8 => StatusCode::PAYLOAD_TOO_LARGE, // RESOURCE_EXHAUSTED
+        10 => StatusCode::CONFLICT,       // ABORTED
+        11 => StatusCode::RANGE_NOT_SATISFIABLE, // OUT_OF_RANGE
+        14 => StatusCode::SERVICE_UNAVAILABLE, // UNAVAILABLE
+        16 => StatusCode::UNAUTHORIZED,   // UNAUTHENTICATED
+        _ => StatusCode::INTERNAL_SERVER_ERROR, // INTERNAL / UNKNOWN
     }
 }
 
@@ -655,10 +638,7 @@ mod tests {
     #[test]
     fn extract_bearer_http_rejects_basic() {
         let mut h = HeaderMap::new();
-        h.insert(
-            header::AUTHORIZATION,
-            "Basic dXNlcjpwYXNz".parse().unwrap(),
-        );
+        h.insert(header::AUTHORIZATION, "Basic dXNlcjpwYXNz".parse().unwrap());
         assert!(extract_bearer_http(&h).is_err());
     }
 
@@ -677,25 +657,19 @@ mod tests {
         assert!(accept_allows_octet_stream("*/*"));
         assert!(accept_allows_octet_stream("application/*"));
         assert!(accept_allows_octet_stream("application/octet-stream"));
-        assert!(accept_allows_octet_stream(
-            "application/octet-stream;q=0.9"
-        ));
+        assert!(accept_allows_octet_stream("application/octet-stream;q=0.9"));
         assert!(accept_allows_octet_stream("text/plain, application/*"));
         assert!(accept_allows_octet_stream(
             "text/plain;q=0.5, application/octet-stream;q=1.0"
         ));
         // Multiple-spaces / mixed-case.
-        assert!(accept_allows_octet_stream(
-            "Application/Octet-Stream"
-        ));
+        assert!(accept_allows_octet_stream("Application/Octet-Stream"));
     }
 
     #[test]
     fn accept_parser_rejects_explicit_exclusions() {
         // codex round-2 P3: q=0 exclusions MUST surface as 406.
-        assert!(!accept_allows_octet_stream(
-            "application/octet-stream;q=0"
-        ));
+        assert!(!accept_allows_octet_stream("application/octet-stream;q=0"));
         assert!(!accept_allows_octet_stream("application/*;q=0"));
         assert!(!accept_allows_octet_stream("*/*;q=0, text/plain"));
         // Specificity: explicit application/octet-stream;q=0
@@ -724,9 +698,7 @@ mod tests {
     fn accept_parser_q_param_is_case_insensitive() {
         // Codex round-4 P3 fix: RFC 7231 §3.1.1.1 parameter names are
         // case-insensitive; uppercase `Q=` must be honored.
-        assert!(!accept_allows_octet_stream(
-            "application/octet-stream;Q=0"
-        ));
+        assert!(!accept_allows_octet_stream("application/octet-stream;Q=0"));
         assert!(!accept_allows_octet_stream("application/*;Q=0"));
     }
 }

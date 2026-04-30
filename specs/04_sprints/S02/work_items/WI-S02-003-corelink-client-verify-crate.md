@@ -1,12 +1,12 @@
 ---
 id: "WI-S02-003"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "FROZEN"
+work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "2.1.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-04-29"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-005"]
 parent: "S-02"
@@ -26,7 +26,7 @@ tags: ["wi", "s02", "client-verify", "blake3", "ctrl-cas-002", "sdk-side", "ffi-
 
 # WI-S02-003 — Crate `corelink-client-verify` (Default-On Bit-Rot + Cache Poisoning Detection)
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** FROZEN · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-02](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -484,7 +484,46 @@ Doc `docs/internal/client-verify-pattern.md` — explica default-on rationale + 
 
 ## 31. Change Log
 
-1.0.0 — 2026-04-25 — Lote 10.2.
+1.0.0 — 2026-04-25 — Lote 10.2. Initial DRAFT.
+
+1.1.0 — 2026-04-25 — Cycle 9 SEAL fixes folded in pre-impl: builder-pattern enforcement on `VerifyConfig` (private fields + `pub fn new() / disabled()`), detection-latency clarification (mismatch surfaces at end-of-stream; per-chunk Merkle deferred to S-05).
+
+2.0.0 — 2026-04-29 — **SEALED.** Lote S-02-003 implementation complete. Major bump for `doc_status: DRAFT → FROZEN` + `work_status: READY → DONE`. Implementation artifacts at `crates/corelink-client-verify/` (rlib + cdylib + staticlib gated by `--features ffi`, `[lints]` strict). All §8 ACs verified:
+
+- AC "Default config enables verify" → `default_is_enabled` + `prop_default_always_enabled` (10k iter).
+- AC "Sync verify happy path / mismatch detected" → `verify_match_basic` / `verify_mismatch_basic` + `prop_verify_match_always_ok` / `prop_verify_mismatch_always_err` (10k iter each).
+- AC "Stream verify fail-fast at end-of-stream" → `stream_mismatch_detected_at_end_of_stream` + `stream_happy_path_yields_all_chunks_and_terminates_clean` (5 MiB happy-path round-trip; cf. WI §10.3.3 memory bound). Stream constant-time compare uses `subtle::ConstantTimeEq` on raw bytes (not hex strings).
+- AC "Opt-out emit warning" → `tracing::warn!(target = "corelink_client_verify::optout", code = "COR_CAS_VERIFY_DISABLED", ...)` in `ClientVerifier::new` + atomic `OPT_OUT_TOTAL` counter exposed via `opt_out_total()` (Rust API) and `corelink_verify_opt_out_total()` (C-ABI surface).
+- AC "Property test — constant-time compare" → `constant_time_variance_on_verify` (release-only; 4 mismatch-probe classes × 800 trials × 256 iters; baseline-relative 5% variance gate; structural Ok-vs-Err asymmetry documented as separate `match_vs_mismatch_control_flow_documented` test).
+- AC "ABI stability for FFI" → `tests/abi_smoke.rs` (compile-time `extern "C"` signature pins for both ctors + the verify entry point + opt_out_total accessor) + `cbindgen.toml` (with `[defines]` mapping `feature = "ffi"` / `"stream"` to header-side preprocessor flags) + committed header at `include/corelink_client_verify.h` + workflow `cbindgen-header-stable` job that regenerates and `diff --exit-code`s against the committed copy. Default-on enforced at the FFI surface by SPLITTING the constructor: `corelink_verifier_new_default_on()` (no args) and `corelink_verifier_new_disabled(uint8_t warn)` (separate symbol). Zero-init = null handle = INVALID_INPUT.
+- AC "Stand-alone build (no Worker deps)" → `cargo build --no-default-features` job + `cargo tree` filter that asserts the dep set excludes `corelink-worker`, `corelink-meta`, `corelink-reapi`, `corelink-tenant-path`, `tonic`, `prost`, `worker`.
+
+Quality evidence:
+- `cargo clippy --workspace --all-targets -- -D warnings` clean.
+- `cargo clippy -p corelink-client-verify --all-targets --features stream,ffi -- -D warnings` clean.
+- `cargo test --workspace --all-targets` clean (debug + release).
+- `cargo test --release --package corelink-client-verify --features stream,ffi` passes including the constant-time variance gate.
+- `cargo check --target wasm32-unknown-unknown` clean (CF Workers compile compatibility).
+- `cargo fuzz run verify_sync -- -max_total_time=60` and `verify_ffi -- -max_total_time=60` clean (verify_ffi covers null handle / null out / null digest pointer / oversized body / wrong digest length / non-hex / non-UTF-8 paths via fuzzer-driven control bits; oracle walks the entry-point precedence tree).
+- `cargo mutants --features stream,ffi`: 16/16 viable mutants caught (100% kill rate).
+
+Spec drift patched in same Lote: `error_taxonomy.md v0.3.1 → v0.3.2` adds `COR_CAS_VERIFY_DISABLED` (no HTTP mapping; client-side only) and `COR_CAS_VERIFY_IO` (transport I/O before EOS) — both surfaced exclusively by `corelink-client-verify`.
+
+Two-layer API surface delivered per §6.1: lib.rs Rust-native idiomatic API (Result, async stream behind feature `stream`); `ffi` module (feature-gated, opaque handle + `extern "C"` + `i32` error codes) for cbindgen → S-15 FFI wrappers (Python pyO3 + Go cgo); JS/TS WASM uses a separate wasm-bindgen pipeline (NOT cbindgen).
+
+CI workflow `.github/workflows/corelink-client-verify.yml` mirrors `corelink-hash.yml` pattern: PR gate (build + clippy + tests + canonical vectors + doc), stand-alone build, WASM target, cbindgen header drift, audit, fuzz smoke (60s × 2 targets), nightly fuzz 1h, nightly mutants ≥ 80%.
+
+2.1.0 — 2026-04-29 — **Codex round adversarial-review iterations applied pre-SEAL.** Round 1 5.0/10 → Round 2 6.0/10 → Round 3 8.2/10 → Round 4 SCORE TBD/10. Round-progression fixes folded in:
+- (R1 P0) FFI default-on contract: split combined `corelink_verifier_new(enabled, warn)` into `corelink_verifier_new_default_on()` + `corelink_verifier_new_disabled(warn)`. Zero-init = null handle = INVALID_INPUT (was: silent opt-out).
+- (R1 P0) FFI verify entry point: validate body_len ≤ isize::MAX and digest_hex_len == 64 BEFORE constructing slices. Adversarial lengths now reject pre-dereference.
+- (R1 P1) Stream verify constant-time: use `subtle::ConstantTimeEq` on raw 32-byte arrays at EOF (was: hex-string == short-circuit comparison, which leaked).
+- (R1 P1) FFI module gated behind `--features ffi`. Cargo.toml declares `crate-type = ["rlib", "cdylib", "staticlib"]`. `bytes` dep moved to optional + stream feature.
+- (R2 P1) `DIGEST_LEN` exported into the cbindgen header as numeric literal `DIGEST_BYTES = 32` (header is now self-consistent). README documents the `-DCORELINK_CLIENT_VERIFY_FFI` preprocessor flag downstream C consumers must define.
+- (R2 P2) FFI fuzz target rewritten: drives both ctors + 4 digest codecs (happy hex, wrong-length [carve-out 64], non-hex correct length, non-UTF-8 correct length); oracle walks the verify-entry-point precedence tree; null_handle / null_out / oversized_body / null_body / null_digest_ptr_with_correct_len all now driven by fuzzer control bits. Found + fixed an oracle-precedence bug round-3 (null_body vs wrong_len ordering) before this release.
+- (R3 Medium) Streaming contract: rustdoc + README + `examples/verify_stream.rs` now explicitly document the staging-then-commit pattern; SDK consumers MUST NOT persist chunks until clean termination.
+- (R3 Medium) `corelink_verify_opt_out_total() -> u64` added to the FFI surface so SDK FFI wrappers (Python pyO3, Go cgo) read the canonical opt-out metric without per-language duplication.
+- (R3 Medium-Low) Null `digest_hex_ptr` with correct length: new abi_smoke test + new fuzzer control bit + dedicated rejection branch in the verify entry point (`COR_VERIFY_ERR_INVALID_INPUT`).
+- (R3 Low) Constant-time variance gate broadened: 4 mismatch-probe classes (zero / first-byte-diff / middle-byte-diff / last-byte-diff) measured pairwise against zero baseline; separate `match_vs_mismatch_control_flow_documented` test asserts mismatch is slower than match (regression guard) with rationale that the Ok/Err structural asymmetry is not exploitable for prefix recovery.
 
 ## 32. Anti-patterns evitados
 

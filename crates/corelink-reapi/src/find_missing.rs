@@ -488,7 +488,10 @@ mod tests {
 
         // B asks for them — all surface as missing.
         let orch = FindMissingOrchestrator::new(&meta);
-        let out = orch.find_missing(&ctx_b, &[d_a1, d_a2, d_a3]).await.unwrap();
+        let out = orch
+            .find_missing(&ctx_b, &[d_a1, d_a2, d_a3])
+            .await
+            .unwrap();
         assert_eq!(out.missing, vec![d_a1, d_a2, d_a3]);
         assert_eq!(out.d1_lookups, 3);
     }
@@ -592,23 +595,15 @@ mod tests {
 
         // Order A: [(d, real), (d, wrong)] — only slot 1 missing.
         let orch = FindMissingOrchestrator::new(&meta);
-        let pairs_a: Vec<(Digest, Option<u64>)> =
-            vec![(d, Some(real_size)), (d, Some(999))];
-        let out_a = orch
-            .find_missing_with_sizes(&ctx, &pairs_a)
-            .await
-            .unwrap();
+        let pairs_a: Vec<(Digest, Option<u64>)> = vec![(d, Some(real_size)), (d, Some(999))];
+        let out_a = orch.find_missing_with_sizes(&ctx, &pairs_a).await.unwrap();
         assert_eq!(out_a.slot_is_missing, vec![false, true]);
         assert_eq!(out_a.missing, vec![d]); // only the wrong-size slot
         assert_eq!(out_a.d1_lookups, 2);
 
         // Order B: [(d, wrong), (d, real)] — only slot 0 missing.
-        let pairs_b: Vec<(Digest, Option<u64>)> =
-            vec![(d, Some(999)), (d, Some(real_size))];
-        let out_b = orch
-            .find_missing_with_sizes(&ctx, &pairs_b)
-            .await
-            .unwrap();
+        let pairs_b: Vec<(Digest, Option<u64>)> = vec![(d, Some(999)), (d, Some(real_size))];
+        let out_b = orch.find_missing_with_sizes(&ctx, &pairs_b).await.unwrap();
         assert_eq!(out_b.slot_is_missing, vec![true, false]);
         assert_eq!(out_b.missing, vec![d]);
         assert_eq!(out_b.d1_lookups, 2);

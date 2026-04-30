@@ -1,0 +1,197 @@
+name: corelink-client-verify (WI-S02-003)
+
+# CI gate for the corelink-client-verify crate per WI-S02-003 §13 + §17.
+# PR lane: build/clippy/tests (debug + release)/doc/canonical vectors smoke +
+# stand-alone (no-default-features) build + WASM target build + cbindgen
+# header drift + cargo-fuzz 60s smoke (both targets).
+# Nightly lane: 1h fuzz + cargo-mutants kill rate + audit.
+
+on:
+  pull_request:
+    paths:
+      - 'crates/corelink-client-verify/**'
+      - 'crates/corelink-hash/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/corelink-client-verify.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'crates/corelink-client-verify/**'
+      - 'crates/corelink-hash/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+  schedule:
+    # Nightly full lane.
+    - cron: '41 4 * * *'
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  pr-gate:
+    name: PR gate (build + clippy + tests + canonical vectors)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy (workspace, -D warnings)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: cargo clippy (corelink-client-verify, all features)
+        run: cargo clippy --package corelink-client-verify --all-targets --features stream,ffi -- -D warnings
+
+      - name: cargo test (workspace, debug)
+        run: cargo test --workspace --all-targets
+
+      - name: cargo test (client-verify, stream + ffi)
+        run: cargo test --package corelink-client-verify --features stream,ffi --all-targets
+
+      - name: cargo test (release — perf + ct-variance gates)
+        run: cargo test --release --package corelink-client-verify --features stream
+
+      - name: cargo test (canonical vectors — fast smoke)
+        run: cargo test --package corelink-client-verify canonical_vectors_verify_against_known_hex
+
+      - name: cargo doc (deny broken intra-doc links)
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo doc --no-deps --workspace
+
+  standalone-build:
+    name: Stand-alone build (no Worker deps; AC §6.1 — FFI distribution friction)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+      - name: cargo build (no default features)
+        run: cargo build --package corelink-client-verify --no-default-features
+      - name: cargo tree (assert no Worker deps)
+        run: |
+          set -eux
+          # Stand-alone tree must not pull `corelink-worker`, `corelink-meta`,
+          # `corelink-reapi`, `corelink-tenant-path`, `tonic`, `prost`, or `worker`.
+          # This is the canonical guarantee called out in WI-S02-003 §6.1
+          # and §10.3.4.
+          UNEXPECTED='corelink-worker|corelink-meta|corelink-reapi|corelink-tenant-path|tonic|prost|worker'
+          if cargo tree --package corelink-client-verify --no-default-features --edges normal | grep -E "$UNEXPECTED"; then
+            echo "ERROR: corelink-client-verify must not depend on Worker internals"
+            exit 1
+          fi
+
+  wasm-build:
+    name: WASM target builds (CF Workers compile compatibility)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+      - name: cargo check (corelink-client-verify on wasm32-unknown-unknown)
+        run: cargo check --package corelink-client-verify --target wasm32-unknown-unknown
+
+  cbindgen-header-stable:
+    name: cbindgen header drift gate (ABI stability)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+      - name: Install cbindgen
+        run: cargo install cbindgen --locked
+      - name: Regenerate header
+        run: |
+          cbindgen \
+            --crate corelink-client-verify \
+            --config crates/corelink-client-verify/cbindgen.toml \
+            --output /tmp/corelink_client_verify.h
+      - name: Diff against committed header
+        run: |
+          set -eux
+          diff -u \
+            crates/corelink-client-verify/include/corelink_client_verify.h \
+            /tmp/corelink_client_verify.h
+
+  audit:
+    name: cargo-audit (advisory DB)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: rustsec/audit-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  fuzz-smoke:
+    name: cargo-fuzz smoke (60s, both targets)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - run: cargo install cargo-fuzz --locked
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "crates/corelink-client-verify/fuzz -> target"
+      - name: verify_sync 60s
+        working-directory: crates/corelink-client-verify
+        run: cargo fuzz run verify_sync -- -max_total_time=60
+      - name: verify_ffi 60s
+        working-directory: crates/corelink-client-verify
+        run: cargo fuzz run verify_ffi -- -max_total_time=60
+
+  fuzz-nightly:
+    name: cargo-fuzz nightly (1h each)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - run: cargo install cargo-fuzz --locked
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "crates/corelink-client-verify/fuzz -> target"
+      - name: verify_sync 3600s
+        working-directory: crates/corelink-client-verify
+        run: cargo fuzz run verify_sync -- -max_total_time=3600
+      - name: verify_ffi 3600s
+        working-directory: crates/corelink-client-verify
+        run: cargo fuzz run verify_ffi -- -max_total_time=3600
+
+  mutants-nightly:
+    name: cargo-mutants kill-rate >= 80%
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+      - run: cargo install cargo-mutants --locked
+      - run: cargo mutants --package corelink-client-verify --features stream --no-shuffle

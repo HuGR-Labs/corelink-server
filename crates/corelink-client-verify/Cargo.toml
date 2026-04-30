@@ -1,0 +1,90 @@
+[package]
+name = "corelink-client-verify"
+description = "CoreLink client-side digest verify SDK helper — default-on BLAKE3 mismatch detection (CTRL-CAS-002 / INV-CAS-INTEGRITY client layer). Stand-alone crate consumed by SDK FFI wrappers (Python pyO3, Go cgo, JS/TS WASM)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+# `rlib` for direct Rust consumers (corelink-server, corelink-cli).
+# `cdylib` + `staticlib` are also declared so an `--features ffi` build
+# emits the C-ABI dynamic + static archives consumed by Python pyO3 +
+# Go cgo wrappers in S-15. With the `ffi` feature OFF the extra crate
+# types still build but contain no `extern "C"` symbols, since the
+# `ffi` module itself is `#[cfg(feature = "ffi")]`.
+crate-type = ["rlib", "cdylib", "staticlib"]
+
+[features]
+default = []
+# Async stream verify on top of Tokio `AsyncRead`. Opt-in so default sync
+# consumers (Python pyO3 + Go cgo) do not pay the Tokio compile cost.
+stream = ["dep:tokio", "dep:futures", "dep:blake3", "dep:hex", "dep:bytes"]
+# C-ABI surface (`extern "C"` functions in `ffi.rs`) for cbindgen → S-15
+# Python pyO3 / Go cgo wrappers. JS/WASM uses a separate wasm-bindgen
+# pipeline (no cbindgen). When enabled, `cdylib` is the consumed artifact.
+ffi = []
+
+[lints.rust]
+# `deny` (not `forbid`) because the `ffi` module intentionally re-enables
+# unsafe locally for the cbindgen-stable raw-pointer surface. Every
+# other module pins the stricter `#[deny(unsafe_code)]` attribute on
+# itself in lib.rs; the FFI exception is scoped + audited.
+unsafe_code = "deny"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+corelink-hash = { workspace = true }
+subtle = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+# Stream-mode deps (feature-gated). `bytes` is only used in the stream
+# state machine to forward chunks to the SDK consumer, so it stays
+# optional alongside Tokio + futures. Sync verify path (default + ffi)
+# does not pay this compile cost.
+tokio = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+blake3 = { workspace = true, optional = true }
+hex = { workspace = true, optional = true }
+bytes = { workspace = true, optional = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+criterion = { workspace = true }
+hex = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+futures = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[[bench]]
+name = "verify_bench"
+harness = false
+
+[[example]]
+name = "verify_simple"
+path = "examples/verify_simple.rs"
+
+[[example]]
+name = "verify_stream"
+path = "examples/verify_stream.rs"
+required-features = ["stream"]
+
+[[example]]
+name = "disable_verify"
+path = "examples/disable_verify.rs"

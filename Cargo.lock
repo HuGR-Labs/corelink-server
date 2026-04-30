@@ -295,6 +295,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
 
 [[package]]
+name = "corelink-client-verify"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "bytes",
+ "corelink-hash",
+ "criterion",
+ "futures",
+ "hex",
+ "proptest",
+ "subtle",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "corelink-hash"
 version = "0.1.0"
 dependencies = [

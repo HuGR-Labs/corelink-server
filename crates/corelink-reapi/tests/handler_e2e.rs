@@ -572,15 +572,14 @@ async fn batch_update_rejects_non_identity_compressor_per_blob() {
         TOKEN_WRITE,
         "req-batch-zstd",
     );
-    let resp = client
-        .batch_update_blobs(req)
-        .await
-        .unwrap()
-        .into_inner();
+    let resp = client.batch_update_blobs(req).await.unwrap().into_inner();
     assert_eq!(resp.responses.len(), 1);
     let entry = &resp.responses[0];
     let status = entry.status.as_ref().unwrap();
-    assert_eq!(status.code, 3, "INVALID_ARGUMENT for non-IDENTITY compressor");
+    assert_eq!(
+        status.code, 3,
+        "INVALID_ARGUMENT for non-IDENTITY compressor"
+    );
     assert!(status.message.contains("IDENTITY"));
     // Verify nothing landed in storage.
     assert_eq!(h.backend.len(), 0);

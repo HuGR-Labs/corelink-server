@@ -7,6 +7,7 @@ members = [
     "crates/corelink-worker",
     "crates/corelink-meta",
     "crates/corelink-reapi",
+    "crates/corelink-client-verify",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
@@ -14,6 +15,7 @@ exclude = [
     "crates/corelink-worker/fuzz",
     "crates/corelink-meta/fuzz",
     "crates/corelink-reapi/fuzz",
+    "crates/corelink-client-verify/fuzz",
 ]
 
 [workspace.package]
@@ -32,6 +34,7 @@ tonic-build = "0.12"
 # Async runtime
 tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1"
+tokio-util = { version = "0.7", features = ["io"] }
 futures = "0.3"
 
 # Observability
@@ -63,6 +66,7 @@ corelink-hash = { path = "crates/corelink-hash" }
 corelink-worker = { path = "crates/corelink-worker" }
 corelink-meta = { path = "crates/corelink-meta" }
 corelink-reapi = { path = "crates/corelink-reapi" }
+corelink-client-verify = { path = "crates/corelink-client-verify" }
 
 # Test / bench
 proptest = "1.5"

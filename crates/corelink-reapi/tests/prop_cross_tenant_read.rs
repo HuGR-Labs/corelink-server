@@ -373,7 +373,9 @@ async fn concurrent_cross_tenant_isolation_100k() {
     let mut leaked = 0usize;
     let mut ok_misses = 0usize;
     for r in outcomes {
-        let outcome = r.expect("task did not panic").expect("orchestrator did not error");
+        let outcome = r
+            .expect("task did not panic")
+            .expect("orchestrator did not error");
         match outcome {
             ReadOutcome::Hit { .. } => {
                 leaked += 1;

@@ -57,8 +57,7 @@ use corelink_reapi::proto::reapi::batch_update_blobs_request as bub_req;
 use corelink_reapi::proto::reapi::content_addressable_storage_client::ContentAddressableStorageClient;
 use corelink_reapi::proto::reapi::{BatchUpdateBlobsRequest, Digest as ProtoDigest};
 use corelink_reapi::{
-    cas_get_router, AuthScope, ByteStreamService, CasWriteService, HttpReadState,
-    StubPatValidator,
+    cas_get_router, AuthScope, ByteStreamService, CasWriteService, HttpReadState, StubPatValidator,
 };
 use corelink_tenant_path::TenantDerivationKey;
 use corelink_worker::storage::r2::{InMemoryR2, R2Reader, R2Writer};
@@ -187,12 +186,7 @@ fn auth_request<T>(payload: T, token: &str, request_id: &str) -> tonic::Request<
     req
 }
 
-async fn write_blob_via_grpc(
-    h: &Harness,
-    body: &[u8],
-    token: &str,
-    request_id: &str,
-) -> Digest {
+async fn write_blob_via_grpc(h: &Harness, body: &[u8], token: &str, request_id: &str) -> Digest {
     let mut client = h.cas_client().await;
     let digest = Digest::compute(body);
     let req = auth_request(
@@ -218,11 +212,7 @@ async fn write_blob_via_grpc(
 }
 
 fn read_resource_name(digest: &Digest, size_bytes: usize) -> String {
-    format!(
-        "corelink-instance/blobs/{}/{}",
-        digest.to_hex(),
-        size_bytes
-    )
+    format!("corelink-instance/blobs/{}/{}", digest.to_hex(), size_bytes)
 }
 
 async fn drain_read_stream(

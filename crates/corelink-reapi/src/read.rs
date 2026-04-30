@@ -453,7 +453,10 @@ mod tests {
         let orch = CasReadOrchestrator::new(&reader, &meta);
         let err = orch.read_blob(&ctx, &digest).await.unwrap_err();
         assert!(
-            matches!(err, ReadOrchestratorError::R2(R2Error::RegionMismatch { .. })),
+            matches!(
+                err,
+                ReadOrchestratorError::R2(R2Error::RegionMismatch { .. })
+            ),
             "expected RegionMismatch; got {err:?}"
         );
     }

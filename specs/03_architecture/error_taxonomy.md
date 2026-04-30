@@ -3,7 +3,7 @@ id: "ERROR-TAXONOMY"
 type: "architecture"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "0.3.1"
+version: "0.3.2"
 created: "2026-04-24"
 updated: "2026-04-29"
 owner: "Gustavo Schneiter"
@@ -102,6 +102,8 @@ introduced_in_sprint: S-XX
 | error_code | HTTP | retryable | SDK exception | customer_message (en) | next_action |
 |---|---|---|---|---|---|
 | `COR_CAS_DIGEST_MISMATCH` | 409 | never | `DigestMismatchError` | "Provided digest does not match content hash" | Recompute digest from body and retry; do not retry with same payload |
+| `COR_CAS_VERIFY_DISABLED` | n/a (client-side) | never | `VerifyDisabledError` | "Client verify is disabled (opt-out); proceed at own risk" | Re-construct the SDK client with default `verify=True`; explicit opt-out is intentional and emits a `tracing::warn!` + counter increment per CTRL-CAS-002 (`corelink-client-verify` crate, WI-S02-003). Client-side error only; no server HTTP mapping. |
+| `COR_CAS_VERIFY_IO` | n/a (client-side) | sometimes | `VerifyIoError` | "Stream verify I/O error before end-of-stream" | Retry the download; partial body is NOT integrity-checked and MUST NOT be consumed. Surfaced by `corelink-client-verify::verify_stream` (WI-S02-003 §6.1). |
 | `COR_CAS_BLOB_NOT_FOUND` | 404 | never | `BlobNotFoundError` | "Blob with digest <X> not found" | Verify digest is correct or upload first |
 | `COR_CAS_TENANT_FORBIDDEN` | 403 | never | `TenantForbiddenError` | "Access to this resource is forbidden" | Check PAT scope (e.g. missing `cache-r`); **NÃO retornado por CAS read handlers para cross-tenant blob access** — per ADR-0028 (S-02 GA freeze): cross-tenant CAS reads return 404 uniform `COR_CAS_BLOB_NOT_FOUND` to fechar enumeration oracle; 403 reservado para PAT scope failures (S-03 auth middleware) |
 | `COR_CAS_BLOB_TOO_LARGE` | 413 | never | `BlobTooLargeError` | "Blob exceeds maximum size for your tier" | Use multipart upload (S-05) or upgrade tier |
@@ -317,7 +319,7 @@ export class DigestMismatchError extends CoreLinkError {}
 
 ---
 
-**Fim error_taxonomy.md v0.3.1.**
+**Fim error_taxonomy.md v0.3.2.**
 
 ---
 
@@ -329,3 +331,4 @@ export class DigestMismatchError extends CoreLinkError {}
 | 0.2.0 | 2026-04-29 | Gustavo (WI-S01-005 SEAL Lote — codex round-1 P2 fix) | Added 4 new CAS codes referenced by WI-S01-005 §23 + `corelink-reapi` `error_map.rs`: `COR_CAS_BATCH_TOO_LARGE` (HTTP 413, gRPC RESOURCE_EXHAUSTED — `BatchUpdateBlobs` aggregate exceeds `MaxBatchTotalSizeBytes` 4 MiB; distinguishable at SDK level from per-blob `COR_CAS_BLOB_TOO_LARGE`); `COR_CAS_BAD_RESOURCE_NAME` (HTTP 400, gRPC INVALID_ARGUMENT — `ByteStream::Write` resource_name unparseable); `COR_CAS_DIGEST_FUNCTION_UNSUPPORTED` (HTTP 400 — server advertises BLAKE3 only in S-01); `COR_CAS_BAD_DIGEST` (HTTP 400 — digest hex / `size_bytes` mismatch). All four mapped to canonical gRPC codes per WI §9.6. |
 | 0.3.0 | 2026-04-29 | Gustavo (WI-S02-002 SEAL Lote 11.2) | Added `COR_CAS_BATCH_SIZE_EXCEEDED` (HTTP 413, gRPC OUT_OF_RANGE) for `FindMissingBlobs` / `BatchReadBlobs` requests carrying more than the canonical 1000-digest batch cap. Distinct from `COR_CAS_BATCH_TOO_LARGE` (`RESOURCE_EXHAUSTED`, aggregate-bytes cap on `BatchUpdateBlobs`). Per WI-S02-002 §6.1.5 + REAPI v2 conformance recommendation. |
 | 0.3.1 | 2026-04-29 | Gustavo (WI-S02-002 SEAL Lote 11.2 — codex round-2 P2 fix) | Added `COR_CAS_COMPRESSOR_UNSUPPORTED` (HTTP 412, gRPC FAILED_PRECONDITION) for `BatchReadBlobs` requests where `acceptable_compressors` is non-empty AND does NOT include `Compressor.IDENTITY` (= 0). REAPI v2 §`BatchReadBlobsRequest` semantics: an empty `acceptable_compressors` list means the client accepts the default IDENTITY encoding; a non-empty list MUST include IDENTITY in S-01 because CoreLink does NOT advertise compressed batch encodings yet (`CacheCapabilities.supported_compressors` and `supported_batch_update_compressors` are both empty until ZSTD/DEFLATE/BROTLI ship in WI-S05-005). Distinct from `COR_CAS_DIGEST_FUNCTION_UNSUPPORTED` (digest-function negotiation, not compressor negotiation) so dashboard / log triage can bucket compressor-negotiation failures separately. |
+| 0.3.2 | 2026-04-29 | Gustavo (WI-S02-003 SEAL Lote — corelink-client-verify crate) | Added two client-side error codes surfaced by the new `corelink-client-verify` crate (CTRL-CAS-002 implementation). `COR_CAS_VERIFY_DISABLED` (no HTTP mapping; client-side only) is returned by `ClientVerifier::verify` when the SDK was constructed via `VerifyConfig::disabled()` and `verify` was nonetheless called — guards a configuration-bug oracle. `COR_CAS_VERIFY_IO` (no HTTP mapping; client-side only) is surfaced by `verify_stream` when the underlying `AsyncRead` errored before end-of-stream; the partial body is NOT integrity-checked and MUST NOT be consumed. Both codes complement server-side `COR_CAS_DIGEST_MISMATCH` (HTTP 409); the client-side verify catches bit rot in R2 (FM-051) + cache poisoning at transit (THR-T-001) + read-path regressions (FM-300 adjacent). |

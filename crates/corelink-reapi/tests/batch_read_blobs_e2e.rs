@@ -257,10 +257,7 @@ async fn ac_br_3_batch_size_limit_top_level_out_of_range() {
     let h = Harness::boot().await;
     let mut digests = Vec::with_capacity(1001);
     for i in 0..1001u32 {
-        digests.push(pd(
-            Digest::compute(format!("body-{i}").as_bytes()),
-            7,
-        ));
+        digests.push(pd(Digest::compute(format!("body-{i}").as_bytes()), 7));
     }
     let mut client = h.cas_client().await;
     let req = auth_request(
@@ -306,8 +303,16 @@ async fn ac_br_4_mixed_hits_misses_cross_tenant() {
     assert_eq!(resp.responses.len(), 3);
     assert_eq!(resp.responses[0].status.as_ref().unwrap().code, 0);
     assert_eq!(resp.responses[0].data, body_present);
-    assert_eq!(resp.responses[1].status.as_ref().unwrap().code, 5, "absent → NOT_FOUND");
-    assert_eq!(resp.responses[2].status.as_ref().unwrap().code, 5, "cross-tenant → NOT_FOUND");
+    assert_eq!(
+        resp.responses[1].status.as_ref().unwrap().code,
+        5,
+        "absent → NOT_FOUND"
+    );
+    assert_eq!(
+        resp.responses[2].status.as_ref().unwrap().code,
+        5,
+        "cross-tenant → NOT_FOUND"
+    );
     assert!(resp.responses[1].data.is_empty());
     assert!(resp.responses[2].data.is_empty());
 }
@@ -399,7 +404,11 @@ async fn ac_br_9_caller_supplied_size_mismatch_per_blob_invalid_argument() {
     let resp = client.batch_read_blobs(req).await.unwrap().into_inner();
     assert_eq!(resp.responses.len(), 1);
     let r = &resp.responses[0];
-    assert_eq!(r.status.as_ref().unwrap().code, 3, "INVALID_ARGUMENT per-blob");
+    assert_eq!(
+        r.status.as_ref().unwrap().code,
+        3,
+        "INVALID_ARGUMENT per-blob"
+    );
     assert!(r.data.is_empty(), "no body bytes returned on size mismatch");
 }
 

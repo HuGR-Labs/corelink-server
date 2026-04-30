@@ -1,0 +1,33 @@
+[workspace]
+
+[package]
+name = "corelink-client-verify-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+# Both `stream` and `ffi` features are enabled in the fuzz crate so
+# the harnesses can drive the C-ABI surface (verify_ffi) and the sync
+# verify path (verify_sync). The default-feature builds of the
+# library still get exercised by the unit tests + workflow PR gate.
+corelink-client-verify = { path = "..", features = ["stream", "ffi"] }
+hex = "0.4"
+
+[[bin]]
+name = "verify_sync"
+path = "fuzz_targets/verify_sync.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "verify_ffi"
+path = "fuzz_targets/verify_ffi.rs"
+test = false
+doc = false
+bench = false

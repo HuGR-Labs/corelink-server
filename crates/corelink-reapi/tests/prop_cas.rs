@@ -765,7 +765,10 @@ async fn boundary_blob_just_over_5_mib_rejects_e2e() {
             size,
             limit,
         }) => {
-            assert_eq!(size, corelink_worker::storage::r2::SINGLE_BLOB_LIMIT_BYTES + 1);
+            assert_eq!(
+                size,
+                corelink_worker::storage::r2::SINGLE_BLOB_LIMIT_BYTES + 1
+            );
             assert_eq!(limit, corelink_worker::storage::r2::SINGLE_BLOB_LIMIT_BYTES);
         }
         other => panic!("expected R2(BlobTooLarge), got: {other:?}"),

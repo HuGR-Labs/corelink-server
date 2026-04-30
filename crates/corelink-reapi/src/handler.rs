@@ -456,9 +456,7 @@ where
         // pointing at `GetCapabilities`. (Compressed batch responses
         // ship with the multipart write surface in WI-S05-005 / the
         // `compressed-blobs` ByteStream resources.)
-        if !inner.acceptable_compressors.is_empty()
-            && !inner.acceptable_compressors.contains(&0)
-        {
+        if !inner.acceptable_compressors.is_empty() && !inner.acceptable_compressors.contains(&0) {
             return Err(make_status(
                 Code::FailedPrecondition,
                 crate::error_map::COR_CAS_COMPRESSOR_UNSUPPORTED,
@@ -509,8 +507,7 @@ where
         // the body. We surface the mismatch as INVALID_ARGUMENT for
         // that per-blob slot (parity with `ByteStream::Read` step
         // 5b's stricter check).
-        let inline_cap_bytes: u64 =
-            u64::try_from(MAX_BATCH_TOTAL_SIZE_BYTES).unwrap_or(u64::MAX);
+        let inline_cap_bytes: u64 = u64::try_from(MAX_BATCH_TOTAL_SIZE_BYTES).unwrap_or(u64::MAX);
         let single_blob_inline_cap_bytes: u64 = inline_cap_bytes; // 4 MiB
 
         // 4a. Pre-validate digests + decode hex per-index.
@@ -544,7 +541,8 @@ where
                 Err(_) => {
                     slots.push(SlotState::BadDigest {
                         proto_digest: Some(pd),
-                        message: "digest hex is malformed (expected 64 lowercase hex chars)".to_owned(),
+                        message: "digest hex is malformed (expected 64 lowercase hex chars)"
+                            .to_owned(),
                     });
                 }
                 Ok(d) => {
@@ -587,14 +585,14 @@ where
             .collect();
         let meta_ref: &M = self.core.meta.as_ref();
         let tenant_id = storage_ctx.tenant_id();
-        let mut size_results: Vec<
-            Option<Result<MetaPass1Result, crate::error_map::ErrorMapping>>,
-        > = (0..n_input).map(|_| None).collect();
+        let mut size_results: Vec<Option<Result<MetaPass1Result, crate::error_map::ErrorMapping>>> =
+            (0..n_input).map(|_| None).collect();
         let mut size_stream = futures::stream::iter(pending_indices.clone())
             .map(move |(idx, digest)| async move {
                 let key = corelink_meta::BlobMetaKey::new(tenant_id, digest);
                 let row_opt = meta_ref.get(&key).await;
-                let mapped: Result<MetaPass1Result, crate::error_map::ErrorMapping> = match row_opt {
+                let mapped: Result<MetaPass1Result, crate::error_map::ErrorMapping> = match row_opt
+                {
                     Err(e) => Err(e.mapping()),
                     Ok(None) => Ok(MetaPass1Result::NeverExisted),
                     Ok(Some(row)) => {
@@ -713,8 +711,8 @@ where
                         }) => {
                             // Caller-supplied size cross-check
                             // (codex round-1 P1).
-                            let declared = u64::try_from(proto_digest.size_bytes)
-                                .unwrap_or(u64::MAX);
+                            let declared =
+                                u64::try_from(proto_digest.size_bytes).unwrap_or(u64::MAX);
                             if declared != row_size {
                                 decisions.push(Decision::CallerSizeMismatch {
                                     proto_digest: proto_digest.clone(),
@@ -759,8 +757,7 @@ where
         // 50 MiB ceiling even on a fully-saturated batch. Note: the
         // production deployment will further cap by the binding
         // adapter's R2 client connection pool.
-        let reader_ref: &corelink_worker::storage::r2::R2Reader<B> =
-            self.core.reader.as_ref();
+        let reader_ref: &corelink_worker::storage::r2::R2Reader<B> = self.core.reader.as_ref();
         const FETCH_CONCURRENCY: usize = 8;
         let storage_ctx_ref = &storage_ctx;
         let fetch_targets: Vec<(usize, Digest)> = decisions
@@ -816,8 +813,7 @@ where
         // miss probes AND `corelink.cas.read_completed` for
         // successful per-blob delivery — at parity with
         // `ByteStream::Read` (codex round-2 P1 SEAL fix).
-        let mut responses: Vec<batch_read_blobs_response::Response> =
-            Vec::with_capacity(n_input);
+        let mut responses: Vec<batch_read_blobs_response::Response> = Vec::with_capacity(n_input);
         for (idx, decision) in decisions.into_iter().enumerate() {
             let resp = match decision {
                 Decision::BadDigest {
@@ -1106,8 +1102,7 @@ where
         // surfaces as MISSING — a tooling bug that ships a wrong
         // size MUST NOT be silently masked as "present", and the
         // wire response stays REAPI-conformant.
-        let mut parsed: Vec<(Digest, Option<u64>)> =
-            Vec::with_capacity(inner.blob_digests.len());
+        let mut parsed: Vec<(Digest, Option<u64>)> = Vec::with_capacity(inner.blob_digests.len());
         for pd in &inner.blob_digests {
             let d = Digest::from_hex(&pd.hash).map_err(|_| {
                 make_status(
@@ -1127,10 +1122,7 @@ where
             }
             // SAFETY of `as u64`: pd.size_bytes is non-negative here
             // (checked above), so the cast widens losslessly.
-            #[allow(
-                clippy::cast_sign_loss,
-                reason = "non-negative checked above"
-            )]
+            #[allow(clippy::cast_sign_loss, reason = "non-negative checked above")]
             let declared = pd.size_bytes as u64;
             parsed.push((d, Some(declared)));
         }
@@ -1175,8 +1167,7 @@ where
         // DIFFERENT declared sizes (`[(H, real), (H, wrong)]` —
         // REAPI Digest identity = `(hash, size_bytes)`, so each slot
         // gets its own answer).
-        let mut missing_blob_digests: Vec<ProtoDigest> =
-            Vec::with_capacity(outcome.missing.len());
+        let mut missing_blob_digests: Vec<ProtoDigest> = Vec::with_capacity(outcome.missing.len());
         for (i, (digest, declared)) in parsed.iter().enumerate() {
             if matches!(outcome.slot_is_missing.get(i), Some(true)) {
                 let size_bytes = match declared {
@@ -1345,8 +1336,7 @@ where
     C: Clock + 'static,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ByteStreamService")
-            .finish_non_exhaustive()
+        f.debug_struct("ByteStreamService").finish_non_exhaustive()
     }
 }
 
@@ -1416,9 +1406,8 @@ where
         // Step 2 — parse the ReadRequest's `resource_name` per REAPI v2.
         // Form: `[<instance_name>/]blobs/<digest_hash>/<size_bytes>`.
         let inner = request.into_inner();
-        let parsed = parse_read_resource_name(&inner.resource_name).map_err(|msg| {
-            make_status(Code::InvalidArgument, COR_CAS_BAD_RESOURCE_NAME, msg, 0)
-        })?;
+        let parsed = parse_read_resource_name(&inner.resource_name)
+            .map_err(|msg| make_status(Code::InvalidArgument, COR_CAS_BAD_RESOURCE_NAME, msg, 0))?;
 
         // Step 3 — REAPI v2 read_offset / read_limit semantics
         // validation. Negative read_offset / read_limit → OUT_OF_RANGE
@@ -2135,10 +2124,7 @@ pub fn parse_read_resource_name(name: &str) -> Result<ParsedReadResource, &'stat
         }
     };
     let digest = Digest::from_hex(hash).map_err(|_| "resource_name: digest hex malformed")?;
-    Ok(ParsedReadResource {
-        digest,
-        size_bytes,
-    })
+    Ok(ParsedReadResource { digest, size_bytes })
 }
 
 /// Apply REAPI v2 `read_offset` / `read_limit` semantics to a body.
@@ -2230,10 +2216,7 @@ fn chunked_read_stream_with_audit(
     let stream = futures::stream::unfold(unfold_state, |(mut iter, bytes_sent)| async move {
         match iter.next() {
             Some(frame) => {
-                bytes_sent.fetch_add(
-                    frame.data.len() as u64,
-                    std::sync::atomic::Ordering::AcqRel,
-                );
+                bytes_sent.fetch_add(frame.data.len() as u64, std::sync::atomic::Ordering::AcqRel);
                 Some((Ok(frame), (iter, bytes_sent)))
             }
             None => None,
@@ -2251,10 +2234,13 @@ fn chunked_read_stream_with_audit(
         emitted: false,
     };
     let stream_with_guard = futures::stream::unfold(
-        (Box::pin(stream)
-            as std::pin::Pin<
-                Box<dyn futures::Stream<Item = Result<ReadResponse, Status>> + Send>,
-            >, guard),
+        (
+            Box::pin(stream)
+                as std::pin::Pin<
+                    Box<dyn futures::Stream<Item = Result<ReadResponse, Status>> + Send>,
+                >,
+            guard,
+        ),
         |(mut s, mut guard)| async move {
             match s.as_mut().next().await {
                 Some(item) => Some((item, (s, guard))),
@@ -2286,9 +2272,7 @@ impl ReadCompleteAuditGuard {
             return;
         }
         self.emitted = true;
-        let bytes_sent = self
-            .bytes_sent
-            .load(std::sync::atomic::Ordering::Acquire);
+        let bytes_sent = self.bytes_sent.load(std::sync::atomic::Ordering::Acquire);
         emit_read_completed_audit_post_stream(
             self.audit.tenant_id,
             self.audit.principal_id,
@@ -2308,9 +2292,7 @@ impl Drop for ReadCompleteAuditGuard {
         if self.emitted {
             return;
         }
-        let bytes_sent = self
-            .bytes_sent
-            .load(std::sync::atomic::Ordering::Acquire);
+        let bytes_sent = self.bytes_sent.load(std::sync::atomic::Ordering::Acquire);
         // Cancellation path — partial / aborted read. Distinct event
         // type so dashboards can graph cancellation rate separately.
         tracing::warn!(
@@ -2351,7 +2333,12 @@ fn chunk_bytes_for_read(body: Bytes, chunk_size: usize) -> Vec<Bytes> {
 /// Map [`crate::read::ReadOrchestratorError`] → tonic `Status`.
 fn read_orch_error_to_status(e: &crate::read::ReadOrchestratorError) -> Status {
     let m = e.mapping();
-    make_status(grpc_code_from_i32(m.grpc_code), m.taxonomy_code, m.message, 0)
+    make_status(
+        grpc_code_from_i32(m.grpc_code),
+        m.taxonomy_code,
+        m.message,
+        0,
+    )
 }
 
 /// Map a `ReadOutcome::NotFound` into the canonical wire status. Per
@@ -2360,7 +2347,12 @@ fn read_orch_error_to_status(e: &crate::read::ReadOrchestratorError) -> Status {
 /// the audit envelope, not in the wire response.
 fn miss_to_status() -> Status {
     let m = miss_mapping();
-    make_status(grpc_code_from_i32(m.grpc_code), m.taxonomy_code, m.message, 0)
+    make_status(
+        grpc_code_from_i32(m.grpc_code),
+        m.taxonomy_code,
+        m.message,
+        0,
+    )
 }
 
 /// Public re-export of the read-completed audit emitter (module-private

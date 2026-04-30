@@ -281,10 +281,7 @@ async fn ac_fm_3_batch_size_limit_surfaces_out_of_range() {
     let h = Harness::boot().await;
     let mut digests = Vec::with_capacity(1001);
     for i in 0..1001u32 {
-        digests.push(pd(
-            Digest::compute(format!("body-{i}").as_bytes()),
-            7,
-        ));
+        digests.push(pd(Digest::compute(format!("body-{i}").as_bytes()), 7));
     }
     let mut client = h.cas_client().await;
     let req = auth_request(
@@ -521,10 +518,7 @@ async fn ac_fm_13_at_max_batch_size_completes_successfully() {
     let h = Harness::boot().await;
     let mut digests = Vec::with_capacity(1000);
     for i in 0..1000u32 {
-        digests.push(pd(
-            Digest::compute(format!("body-{i}").as_bytes()),
-            7,
-        ));
+        digests.push(pd(Digest::compute(format!("body-{i}").as_bytes()), 7));
     }
     let mut client = h.cas_client().await;
     let req = auth_request(
@@ -560,8 +554,8 @@ async fn ac_fm_14_mixed_size_same_hash_per_slot_independence() {
         FindMissingBlobsRequest {
             instance_name: String::new(),
             blob_digests: vec![
-                pd(d_present, 6),     // canonical size
-                pd(d_present, 999),   // wrong size — REAPI identity says missing
+                pd(d_present, 6),   // canonical size
+                pd(d_present, 999), // wrong size — REAPI identity says missing
             ],
             digest_function: 0,
         },
@@ -587,8 +581,8 @@ async fn ac_fm_14_mixed_size_same_hash_per_slot_independence() {
         FindMissingBlobsRequest {
             instance_name: String::new(),
             blob_digests: vec![
-                pd(d_present, 999),   // wrong size first
-                pd(d_present, 6),     // canonical size second
+                pd(d_present, 999), // wrong size first
+                pd(d_present, 6),   // canonical size second
             ],
             digest_function: 0,
         },
