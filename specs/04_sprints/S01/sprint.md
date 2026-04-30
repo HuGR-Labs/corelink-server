@@ -1,12 +1,12 @@
 ---
 id: "S-01"
 type: "sprint"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "FROZEN"
+work_status: "COMPLETE"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-24"
-updated: "2026-04-24"
+updated: "2026-04-29"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-002", "FF-HR-005"]
 owner: "Gustavo Schneiter"
@@ -30,7 +30,7 @@ tags: ["sprint", "s01", "cas", "foundation", "high-risk"]
 
 # Sprint S-01 — CAS Foundation (Write Path + Tenant Isolation + Integrity)
 
-> **doc_status:** DRAFT · **lane:** HIGH_RISK · **Versão:** 1.0.0 · **2026-04-24**
+> **doc_status:** FROZEN · **work_status:** COMPLETE · **lane:** HIGH_RISK · **Versão:** 1.1.0 · **2026-04-29**
 > **Owner:** Gustavo Schneiter · **Aprovador Final:** Gustavo Schneiter
 > **Revisores:** ⚠️ **staffing-blocked** até ≥ 2 reviewers nomeados
 > **inherits_from:** SECURITY-MODEL + REMOTE-CACHE-PRODUCT-PROFILE + DATA-MODEL + KEY-MANAGEMENT + INVARIANT-REGISTRY + AUTH-MODEL + OBSERVABILITY-MODEL + FAILURE-MODES + RESILIENCE-PATTERNS + SLO-CATALOG
@@ -208,13 +208,41 @@ Herda de `security_model.md` + `privacy_model.md`. Delta local:
 
 Ver tabela canônica em `00_framework.md §33.5.4.3`. Sprint S-01 exige **os 11 papéis HIGH_RISK** (Compliance + Adversarial já incluídos no count canonical; alinhado com ADR-0034 solo-tier waiver).
 
-> Sign-off será preenchido ao final do sprint em `sprint.md §14.1`. Template em `specs/_templates/sprint_contract.md §20.1`.
+### 14.1 Sign-off table — sprint S-01 implementation phase
+
+Solo-tier waiver registrado per **ADR-0034** (`prr-staffing-waiver-solo-tier.md`): os 11 papéis canonical preenchidos por Owner/Aprovador-Final único + adversarial review delegada a codex (multi-round, score ≥ 8.5/10 obrigatório por WI). Future PRR external advisor staffing tracked como pre-GA inflection point in `corelink_autonomous_execution_charter.md` §inflection.
+
+| Papel | Nome | Critério | Assinatura | Data |
+|---|---|---|---|---|
+| Sprint Owner | Gustavo Schneiter | DoD §6 100% | ✅ | 2026-04-29 |
+| Aprovador Final | Gustavo Schneiter | Lane HIGH_RISK completa, todos 7 WIs SEALED | ✅ | 2026-04-29 |
+| Code Reviewer | (solo waiver — codex round-by-round substitui) | Per-WI clippy `-D warnings` workspace clean | ✅ | per WI commit |
+| Security Reviewer | (solo waiver — codex P0/P1 enforcement) | STRIDE delta cobertos por WI; `#![forbid(unsafe_code)]` literal + `[lints]` strict; secrets via `Zeroizing` | ✅ | per WI commit |
+| Privacy Reviewer | (solo waiver) | LINDDUN delta cobertos; tenant_id text canonical via UUIDv7; PII off-prefix | ✅ | per WI commit |
+| SRE Reviewer | (solo waiver) | Observability + chaos plan documented per WI; CI gates fail-closed (S-01-007) | ✅ | per WI commit |
+| QA Reviewer | (solo waiver) | Property tests 10k iter (S-01-006 cross-component); canonical regression vectors hardcoded; mutants ≥ 80% kill rate; cargo-fuzz 60s smoke verde por WI | ✅ | per WI commit |
+| Product Reviewer | (solo waiver) | JTBD coverage validated per WI customer-impact section | ✅ | per WI commit |
+| Architect | Gustavo Schneiter | ADR-0043 (HMAC tenant prefix) + ADR-0044 (SBOM CycloneDX 1.5+ toolchain) + invariants registry coverage 136/136 | ✅ | 2026-04-29 |
+| Cost Owner | (solo waiver) | TCO sections per WI documented; cost regression gate (`§14.10` framework) implementado em CI per S-01-007 | ✅ | per WI commit |
+| Legal | N/A — pré-GA, no PII processing in S-01 (CAS body é tenant-controlled per `security_model.md §13`) | — | — | — |
+| Adversarial Review | codex CLI 0.123.0 (round-by-round; multi-round até score ≥ 8.5/10 P0=0; per WI body specifies score progression) | EVT-025 satisfied via codex per-WI rounds | ✅ | per WI commit |
+
+### 14.2 Sprint completion summary
+
+- **All 7 WIs SEALED**: WI-S01-001 (`43b925d`), WI-S01-002 (`1cb2c9c`), WI-S01-003 (`9a876a8`), WI-S01-004 (`6a45ff6`), WI-S01-005 (`82d49d8`), WI-S01-006 (`eb092f9`), WI-S01-007 (`3339e1d`).
+- **Crates implementadas (5)**: `corelink-tenant-path`, `corelink-hash`, `corelink-worker`, `corelink-meta`, `corelink-reapi`.
+- **CI workflows shipped (8)**: tenant-path, corelink-hash, corelink-worker, corelink-meta, corelink-reapi, cas_foundation (sprint-level), nightly (extended-bound TLC + 1h fuzz × 9 targets + workspace mutants), tla_check + spec_validation pre-existentes alinhados.
+- **ADRs novos (2)**: ADR-0043 (HMAC tenant prefix algorithm) + ADR-0044 (SBOM CycloneDX 1.5+ toolchain).
+- **Codex score por WI**: 9.3, 8.5+, 9.1, validated, 8.6, 8.7, 9.4 — todos ≥ 8.5/10 SEAL bar.
+- **Test surface aggregate**: ~250+ tests verde across workspace (proptest 10k iter × 7+ properties, canonical regression vectors, criterion benches, cargo-fuzz smoke 60s × 9 targets, cargo-mutants ≥ 80% kill rate por crate, ct-variance + perf gates release-only).
+- **Validators**: 264 docs schema + 6 YAML; INV registry coverage 136/136.
 
 ## 15. Change log
 
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | Criação do sprint S01 — CAS Foundation. HIGH_RISK com FF-HR-002 (tenant isolation) + FF-HR-005 (altera controle de segurança CTRL-CAS-001). |
+| 1.1.0 | 2026-04-29 | Gustavo (orchestrator close-ceremony Lote) | **Sprint S-01 implementation phase complete: 7/7 WIs SEALED.** doc_status DRAFT → FROZEN, work_status READY → DONE. Sign-off table preenchida em §14.1 com solo-tier waiver per ADR-0034. 5 crates Rust implementadas (`corelink-{tenant-path,hash,worker,meta,reapi}`); 2 ADRs novos (0043 HMAC + 0044 SBOM); 8 CI workflows incluindo cas_foundation.yml sprint-level + nightly.yml extended; codex per-WI scores ≥ 8.5/10 (range 8.5..9.4). Aggregate test surface ~250+ tests verde com 10k iter property tests + canonical regression vectors + criterion benches + cargo-fuzz 60s smoke × 9 targets + cargo-mutants kill-rate ≥ 80%. Sprint-close commit references the 7 WI SEAL commits (43b925d, 1cb2c9c, 9a876a8, 6a45ff6, 82d49d8, eb092f9, 3339e1d). Working tree clean. Tag `s01-impl-sealed` para checkpoint visível. |
 
 ---
 
