@@ -1,0 +1,103 @@
+[package]
+name = "corelink-reapi"
+description = "CoreLink REAPI v2 handlers — `BatchUpdateBlobs`, `ByteStream::Write`, `Capabilities::GetCapabilities` (WI-S01-005). Tonic-based gRPC services that orchestrate `corelink-hash` (BLAKE3 verify), `corelink-worker` (R2 PUT), and `corelink-meta` (D1 batch + audit outbox) into the canonical CAS write path."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[features]
+# `host-server` pulls the tonic + tokio runtime that lets the handlers run as
+# a host-side gRPC server (developer machines, CI integration tests). Real
+# Cloudflare Workers deploy uses `tonic-web` + `worker::Router` integration in
+# a follow-up WI; that path stays out of `host-server`. The crate's pure-logic
+# modules (`audit`, `error_map`, `pat`, `capabilities`, `orchestrator`)
+# compile to wasm32 without `host-server`.
+#
+# The `host-server` feature ALSO opts into uuid's `v7` + `rng-getrandom` so
+# the gRPC handler can mint correlation ids when the client omits
+# `x-request-id`. The wasm32 build path does not need a runtime UUID
+# generator (it uses content-derived deterministic ids only) so we keep
+# `getrandom` out of the wasm closure.
+default = ["host-server"]
+host-server = [
+    "dep:tonic",
+    "dep:prost",
+    "dep:prost-types",
+    "dep:tokio",
+    "dep:tokio-stream",
+    "dep:futures",
+    "dep:async-trait",
+    "dep:tower",
+    "dep:http",
+    "uuid/v7",
+    "uuid/rng-getrandom",
+]
+
+[dependencies]
+corelink-hash = { workspace = true }
+corelink-tenant-path = { workspace = true }
+corelink-worker = { workspace = true }
+corelink-meta = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true, features = ["serde"] }
+tracing = { workspace = true }
+blake3 = { workspace = true }
+bytes = { workspace = true }
+
+# Host-server runtime (gated behind feature).
+tonic = { workspace = true, optional = true }
+prost = { workspace = true, optional = true }
+prost-types = { version = "0.13", optional = true }
+tokio = { workspace = true, optional = true }
+tokio-stream = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+async-trait = { version = "0.1", optional = true }
+tower = { version = "0.5", features = ["util"], optional = true }
+http = { version = "1", optional = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+tokio = { workspace = true }
+zeroize = { workspace = true }
+hex = { workspace = true }
+async-trait = "0.1"
+
+[build-dependencies]
+tonic-build = { workspace = true }
+
+[[test]]
+name = "canonical_vectors"
+path = "tests/canonical_vectors.rs"
+
+[[test]]
+name = "prop_idempotency"
+path = "tests/prop_idempotency.rs"
+
+[[test]]
+name = "handler_e2e"
+path = "tests/handler_e2e.rs"
+
+[[test]]
+name = "capabilities"
+path = "tests/capabilities.rs"

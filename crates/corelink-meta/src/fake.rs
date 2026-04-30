@@ -239,10 +239,7 @@ fn key_pair(key: &BlobMetaKey) -> (String, String) {
 /// Splitting plan from commit is the load-bearing detail that gives the
 /// fake true atomic-batch semantics: a NotFound/Tombstoned/Underflow on
 /// the blob_meta side never leaves an orphan audit row.
-fn plan_outbox_stage(
-    inner: &Inner,
-    audit: &AuditEvent,
-) -> Result<StagePlan, MetaError> {
+fn plan_outbox_stage(inner: &Inner, audit: &AuditEvent) -> Result<StagePlan, MetaError> {
     let key = (audit.request_id.as_str().to_owned(), audit.event_type);
     if let Some(existing) = inner.outbox.get(&key) {
         if existing.payload_json == audit.payload_json {
@@ -382,10 +379,7 @@ impl MetaStore for InMemoryMetaStore {
         })
     }
 
-    async fn commit_soft_delete(
-        &self,
-        request: CommitSoftDeleteRequest,
-    ) -> Result<(), MetaError> {
+    async fn commit_soft_delete(&self, request: CommitSoftDeleteRequest) -> Result<(), MetaError> {
         let pk = key_pair(&request.key);
         let tenant = *request.key.tenant();
         let digest_text = request.key.digest_canonical_text();

@@ -1,0 +1,28 @@
+// Vendored from `bazelbuild/remote-apis @ v2.12.0` —
+// `build/bazel/semver/semver.proto`. Field tags + names match upstream byte-
+// for-byte so REAPI v2.12.0 clients (Bazel/Buck2) interop verbatim. Trimmed
+// of downstream irrelevant comments to keep the vendored set diffable.
+//
+// Upstream license: Apache-2.0 (https://github.com/bazelbuild/remote-apis/blob/v2.12.0/LICENSE).
+
+syntax = "proto3";
+
+package build.bazel.semver;
+
+option java_outer_classname = "SemverProto";
+option java_package = "build.bazel.semver";
+option go_package = "github.com/bazelbuild/remote-apis/build/bazel/semver";
+
+// The full version of a given tool.
+message SemVer {
+  // The major version, e.g 10 for 10.2.3.
+  int32 major = 1;
+  // The minor version, e.g. 2 for 10.2.3.
+  int32 minor = 2;
+  // The patch version, e.g 3 for 10.2.3.
+  int32 patch = 3;
+  // The pre-release version. Either this field or major/minor/patch fields
+  // must be filled. They are mutually exclusive. Pre-release versions are
+  // assumed to be earlier than any released versions.
+  string prerelease = 4;
+}

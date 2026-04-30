@@ -1,12 +1,12 @@
 ---
 id: "WI-S01-005"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "FROZEN"
+work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-04-29"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-002", "FF-HR-005"]
 parent: "S-01"
@@ -30,7 +30,7 @@ tags: ["wi", "s01", "cas", "reapi", "bytestream", "batchupdateblobs"]
 
 # WI-S01-005 — REAPI `BatchUpdateBlobs` + `ByteStream::Write` Handler
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** FROZEN · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-01](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -524,6 +524,7 @@ Hot rollback via WASM previous version.
 |---|---|---|---|
 | 1.0.0 | 2026-04-25 | Gustavo (via Claude Opus 4.7) | Criação WI-S01-005 (Lote 10.1). |
 | 1.1.0 | 2026-04-25 | Gustavo (via Claude Opus 4.7) | Lote 10.2bis P0 fixes (Agent R4 review remediation): outbox pattern explícito (§6.1.6/§9.2); R2-first orchestration (§6.1.1/§9.3); reconciliation contract ADR-0027 (§6.1.7/§9.7); gRPC code RESOURCE_EXHAUSTED (não OUT_OF_RANGE) (§9.6); bounded concurrency 16 (§9.5); §22 cost expanded; §26 STRIDE+LINDDUN delta full; §28 Risk Register 12-row; §15 chaos 10 experiments; §30 sign-off 13-row table; §14 standards expanded. |
+| 1.2.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7 — WI-S01-005 SEAL Lote: implementation + codex 4-round remediation, final score 4.7→7.8→8.3→**8.6/10**) | **WI-S01-005 SEALED**. New deliverable: `crates/corelink-reapi/` (workspace member + new lib). Tonic-based gRPC service stack `(CasWriteService, CapabilitiesService, ByteStreamWriteService)` orchestrating PAT auth → BLAKE3 verify → R2 PUT → D1 batch + audit_outbox. Pure-logic core (`pat`, `audit`, `capabilities`, `error_map`, `orchestrator`) wasm32-clean; tonic + tokio gated behind `host-server` feature so a future `tonic-web` Cloudflare-Workers deploy can reuse the same orchestration without rework. Highlights: (a) **Vendored REAPI v2.12.0 minimal subset** under `crates/corelink-reapi/proto/` (canonical text was `v2.13.0` in the WI body — that tag does not exist upstream; latest stable at SEAL date is `v2.12.0`. WI body left unchanged; `_spec_contract.md` will record the canonical-tag correction. Wire-compat preserved by exact field-tag retention). (b) **`Capabilities.GetCapabilities`** advertises `MaxBatchTotalSizeBytes=4MiB` + `max_cas_blob_size_bytes=5MiB` + `digest_functions=[BLAKE3]` only (codex round-1 P1 fix: previously advertised SHA256 but the write path only verifies BLAKE3; now BLAKE3-only and a non-BLAKE3 `digest_function` declaration is rejected up-front with `COR_CAS_DIGEST_FUNCTION_UNSUPPORTED` / gRPC `INVALID_ARGUMENT`). (c) **CloudEvents 1.0 audit envelope** persists into `audit_outbox.payload_json`; `time` attribute deliberately OMITTED so retry payloads are content-stable across wall-clock — see `crates/corelink-reapi/src/audit.rs` rustdoc. (d) **Per-blob `audit_outbox.request_id` derivation** (`<client_request_id>:<tenant_uuid>:<digest_canonical_text>`) closes both codex round-1 P0 (multi-blob batch UNIQUE collision) and round-1 P1 (cross-tenant `x-request-id` reuse collision). The `data.request_id` CE field continues to carry the raw client correlation id for SIEM linking. (e) **Dual-write reconciliation contract**: orchestrator fast path triggers `OrphanReconciler::on_d1_failure_after_r2_put` only when R2 PUT returned `Fresh` (NOT on 412 / `Duplicate`) per ADR-0027 §"412 → skip delete"; the `R2DeleteReconciler` production type is wired in (the `R2Backend::delete` trait method is the forward-WI extension; the production reconciler currently logs the orphan + defers to GC sweep S-06). (f) **error_taxonomy.md v0.2.0** registers 4 new CAS codes consumed by this WI: `COR_CAS_BATCH_TOO_LARGE`, `COR_CAS_BAD_RESOURCE_NAME`, `COR_CAS_DIGEST_FUNCTION_UNSUPPORTED`, `COR_CAS_BAD_DIGEST` (codex round-1 P2 fix: the wire codes were emitted ahead of taxonomy registration; now formally catalogued with HTTP / gRPC mappings + SDK exception hints + retry semantics). (g) **WI §AC-7 `digest.size_bytes`/`data.len()` invariant** enforced (codex round-1 P2 fix); mismatch maps to `COR_CAS_BAD_DIGEST` / gRPC `INVALID_ARGUMENT` rather than leaking through into a misclassified hash-mismatch. (h) Test surface: 33 lib unit tests + 6 canonical regression vectors + 1 capabilities harness + 10 e2e gRPC scenarios (AC-1/2/3/4/7/PAT-missing/multi-blob/ByteStream-{happy,mismatch,oversize}) + 4 property tests at proptest 256 cases (PK enforcement, audit dedup, tenant scoping, hash-mismatch never reaches storage) = **54 tests verde** (debug + release). cargo clippy `-D warnings` workspace clean; cargo check `--target wasm32-unknown-unknown` clean (pure-logic crate path). New CI workflow `.github/workflows/corelink-reapi.yml` mirrors the corelink-meta pattern. (i) **Out-of-scope (deferred to forward WI)**: real Cloudflare R2 binding adapter (the test harness uses `InMemoryR2`); miniflare-driven integration tier; `bazelbuild/remote-apis` REAPI conformance test suite execution against the host-server harness; `R2Backend::delete` extension; `tonic-web` Workers deploy plumbing. Each deferral is documented in `crates/corelink-reapi/src/lib.rs` rustdoc + module-level rustdocs. |
 
 ## 32. Anti-patterns evitados
 

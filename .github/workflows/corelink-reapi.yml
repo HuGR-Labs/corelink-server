@@ -1,0 +1,136 @@
+name: corelink-reapi (WI-S01-005)
+
+# CI gate for the corelink-reapi crate per WI-S01-005 §13 + §14.
+# PR lane: build/clippy/tests (debug + release)/doc/canonical-vectors smoke +
+# WASM target build (pure-logic core, no host-server feature).
+# Nightly lane: cargo-mutants kill rate + cargo-audit advisory DB scan.
+
+on:
+  pull_request:
+    paths:
+      - 'crates/corelink-reapi/**'
+      - 'crates/corelink-hash/**'
+      - 'crates/corelink-meta/**'
+      - 'crates/corelink-worker/**'
+      - 'crates/tenant-path/**'
+      - 'specs/03_architecture/error_taxonomy.md'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/corelink-reapi.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'crates/corelink-reapi/**'
+      - 'crates/corelink-hash/**'
+      - 'crates/corelink-meta/**'
+      - 'crates/corelink-worker/**'
+      - 'crates/tenant-path/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+  schedule:
+    # Nightly full lane (mutants + audit).
+    - cron: '53 4 * * *'
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  pr-gate:
+    name: PR gate (build + clippy + tests + canonical vectors)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy (workspace, -D warnings)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: cargo test (workspace, debug)
+        run: cargo test --workspace --all-targets
+
+      - name: cargo test (release — perf + property gates)
+        run: cargo test --release --package corelink-reapi
+
+      - name: cargo test (canonical regression vectors — fast smoke)
+        run: cargo test --package corelink-reapi --test canonical_vectors
+
+      - name: cargo test (capabilities gRPC harness)
+        run: cargo test --package corelink-reapi --test capabilities
+
+      - name: cargo test (handler e2e gRPC scenarios)
+        run: cargo test --package corelink-reapi --test handler_e2e
+
+      - name: cargo doc (deny broken intra-doc links)
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo doc --no-deps --workspace
+
+  wasm-build:
+    name: WASM target build (CF Workers compile compatibility — pure-logic core)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      # The host-server feature pulls tonic + tokio (not wasm-friendly); we
+      # check the pure-logic core (no default features) which IS the surface
+      # a future tonic-web / `worker::Router` adapter will reuse on CF
+      # Workers. The host-server runtime stays out of the wasm closure.
+      - name: cargo check (corelink-reapi default-features off, wasm32)
+        run: cargo check --package corelink-reapi --no-default-features --target wasm32-unknown-unknown
+
+  audit:
+    name: cargo-audit (advisory DB)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: rustsec/audit-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  mutants-nightly:
+    name: cargo-mutants kill-rate ≥ 80%
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - run: cargo install cargo-mutants --locked
+      - run: cargo mutants --package corelink-reapi --no-shuffle --minimum-test-timeout=600

@@ -27,8 +27,7 @@ pub const MIGRATION_FILE_PATH: &str = "migrations/d1/0001_blob_meta.sql";
 
 /// Raw SQL DDL embedded at compile time. The exact bytes that
 /// `wrangler d1 execute --file <MIGRATION_FILE_PATH>` will apply.
-pub const MIGRATION_SQL: &str =
-    include_str!("../../../migrations/d1/0001_blob_meta.sql");
+pub const MIGRATION_SQL: &str = include_str!("../../../migrations/d1/0001_blob_meta.sql");
 
 /// BLAKE3-256 of [`MIGRATION_SQL`] rendered as 64-char lowercase hex —
 /// load-bearing canonical regression vector.
@@ -80,7 +79,8 @@ mod tests {
         assert_eq!(h1, h2);
         assert_eq!(h1.len(), 64, "BLAKE3-256 hex must be 64 chars");
         assert!(
-            h1.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+            h1.chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
             "lowercase hex"
         );
     }

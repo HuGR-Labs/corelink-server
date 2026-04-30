@@ -1,0 +1,27 @@
+[package]
+name = "corelink-reapi-fuzz"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+prost = "0.13"
+corelink-reapi = { path = ".." }
+
+[[bin]]
+name = "proto_decode_batch_update"
+path = "fuzz_targets/proto_decode_batch_update.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "audit_request_id_total"
+path = "fuzz_targets/audit_request_id_total.rs"
+test = false
+doc = false

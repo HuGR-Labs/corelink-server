@@ -1,0 +1,318 @@
+// Vendored MINIMAL SUBSET from `bazelbuild/remote-apis @ v2.12.0`,
+// `build/bazel/remote/execution/v2/remote_execution.proto`. CoreLink S-01 only
+// implements:
+//
+//   - `ContentAddressableStorage.BatchUpdateBlobs`  (WI-S01-005, this file)
+//   - `Capabilities.GetCapabilities`                (WI-S01-005, this file)
+//   - `ContentAddressableStorage.BatchReadBlobs`    (WI-S02-001, surfaced
+//                                                    here as `unimplemented`
+//                                                    stub so generated client
+//                                                    stubs typecheck against
+//                                                    the canonical service
+//                                                    surface — wire-compat
+//                                                    with future S-02 land.)
+//
+// All other RPCs (`FindMissingBlobs`, `GetTree`, `SplitBlob`, `SpliceBlob`,
+// `Execution`, `ActionCache`) are intentionally OMITTED from this vendored
+// subset; they are out-of-scope for S-01 and live in their respective sprints
+// (S-02 read path, S-04 AC, S-05 multipart, S-08 execution).
+//
+// FIELD TAGS + MESSAGE NAMES MATCH UPSTREAM byte-for-byte for every message
+// included here. Wire-compat with `bazelbuild/remote-apis @ v2.12.0` clients
+// (Bazel/Buck2) is preserved by:
+//
+//   - Same proto3 syntax.
+//   - Same `package build.bazel.remote.execution.v2;`.
+//   - Same field numbers for every retained message (`hash = 1; size_bytes = 2`
+//     in `Digest`, etc).
+//   - HTTP annotations (`option (google.api.http) = ...`) DROPPED — they are
+//     a transport-level hint that has no on-wire effect; gRPC/HTTP transport
+//     in CoreLink uses `tonic` directly without `google.api.http` plumbing.
+//
+// Additions or changes to this subset MUST be paired with a forward-compat
+// note in WI-S01-005 (or the consuming WI) §31 changelog.
+//
+// Upstream license: Apache-2.0 (https://github.com/bazelbuild/remote-apis/blob/v2.12.0/LICENSE).
+
+syntax = "proto3";
+
+package build.bazel.remote.execution.v2;
+
+import "build/bazel/semver/semver.proto";
+import "google/rpc/status.proto";
+
+option csharp_namespace = "Build.Bazel.Remote.Execution.V2";
+option go_package = "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2;remoteexecution";
+option java_multiple_files = true;
+option java_outer_classname = "RemoteExecutionProto";
+option java_package = "build.bazel.remote.execution.v2";
+option objc_class_prefix = "REAPI";
+
+// ===========================================================================
+// CAS service — write surface only (S-01).
+// ===========================================================================
+
+// The CAS (content-addressable storage) is used to store the inputs to and
+// outputs from the execution service. Each piece of content is addressed by
+// the digest of its binary data.
+//
+// Only the subset of RPCs CoreLink S-01 implements is included in the
+// vendored proto. The full upstream service has additional RPCs out-of-scope
+// here (see file header comment).
+service ContentAddressableStorage {
+  // Upload many blobs at once.
+  //
+  // The server may enforce a limit of the combined total size of blobs to be
+  // uploaded using this API. This limit may be obtained using the
+  // `Capabilities` API. Requests exceeding the limit should either be split
+  // into smaller chunks or uploaded using the `ByteStream` API, as
+  // appropriate.
+  //
+  // Top-level errors: INVALID_ARGUMENT when the request exceeds the server
+  // supported batch limit. Per-blob errors: RESOURCE_EXHAUSTED on quota,
+  // INVALID_ARGUMENT on digest/data mismatch. The CoreLink handler also
+  // returns ABORTED (gRPC code 10) on hash mismatch — see WI-S01-005 §9.6
+  // for the canonical mapping to error_taxonomy COR_CAS_DIGEST_MISMATCH.
+  rpc BatchUpdateBlobs(BatchUpdateBlobsRequest) returns (BatchUpdateBlobsResponse);
+
+  // Download many blobs at once. SURFACE ONLY in S-01; server returns
+  // `Status::unimplemented` until WI-S02-001 lands the read path.
+  rpc BatchReadBlobs(BatchReadBlobsRequest) returns (BatchReadBlobsResponse);
+}
+
+// ===========================================================================
+// Capabilities service.
+// ===========================================================================
+
+// The Capabilities service may be used by the remote execution API client
+// to query the various server-side capabilities of the cache and execution
+// system.
+service Capabilities {
+  // GetCapabilities returns the server capabilities configuration of the
+  // remote endpoint. Only the capabilities of the services supported by the
+  // endpoint will be returned: in CoreLink S-01 that means
+  // `cache_capabilities` only.
+  rpc GetCapabilities(GetCapabilitiesRequest) returns (ServerCapabilities);
+}
+
+// ===========================================================================
+// Messages.
+// ===========================================================================
+
+// A content digest. This is a standard SHA-256 / BLAKE3 / etc. hash of the
+// binary blob content.
+message Digest {
+  // The hash, represented as a lowercase hexadecimal string, padded with
+  // leading zeroes up to the hash function length.
+  string hash = 1;
+
+  // The size of the blob, in bytes.
+  int64 size_bytes = 2;
+}
+
+// A request message for `ContentAddressableStorage.BatchUpdateBlobs`.
+message BatchUpdateBlobsRequest {
+  // A request corresponding to a single blob that the client wants to upload.
+  message Request {
+    // The digest of the blob. This MUST be the digest of `data`.
+    Digest digest = 1;
+
+    // The raw binary data.
+    bytes data = 2;
+
+    // The format of `data`. Must be `IDENTITY`/unspecified, or one of the
+    // compressors advertised by the server's `CacheCapabilities`.
+    Compressor.Value compressor = 3;
+  }
+
+  // The instance of the execution system to operate against.
+  string instance_name = 1;
+
+  // The individual upload requests.
+  repeated Request requests = 2;
+
+  // The digest function used to compute the digests of the blobs being
+  // uploaded.
+  DigestFunction.Value digest_function = 5;
+}
+
+// A response message for `ContentAddressableStorage.BatchUpdateBlobs`.
+message BatchUpdateBlobsResponse {
+  // A response corresponding to a single blob that the client tried to
+  // upload.
+  message Response {
+    // The blob digest to which this response corresponds.
+    Digest digest = 1;
+
+    // The result of attempting to upload that blob.
+    google.rpc.Status status = 2;
+  }
+
+  // The responses to the requests.
+  repeated Response responses = 1;
+}
+
+// A request message for `ContentAddressableStorage.BatchReadBlobs`.
+//
+// Vendored for client-stub typecheck only; CoreLink S-01 returns
+// `Status::unimplemented` for this RPC — the read-path landing is WI-S02-001.
+message BatchReadBlobsRequest {
+  // The instance of the execution system to operate against.
+  string instance_name = 1;
+
+  // The individual blob digests.
+  repeated Digest digests = 2;
+
+  // A list of acceptable encodings for the returned inlined data, in no
+  // particular order.
+  repeated Compressor.Value acceptable_compressors = 3;
+
+  // The digest function of the blobs being requested.
+  DigestFunction.Value digest_function = 4;
+}
+
+// A response message for `ContentAddressableStorage.BatchReadBlobs`.
+//
+// Vendored for client-stub typecheck only; CoreLink S-01 server returns
+// `Status::unimplemented` for this RPC.
+message BatchReadBlobsResponse {
+  message Response {
+    Digest digest = 1;
+    bytes data = 2;
+    Compressor.Value compressor = 4;
+    google.rpc.Status status = 3;
+  }
+  repeated Response responses = 1;
+}
+
+// A request message for `Capabilities.GetCapabilities`.
+message GetCapabilitiesRequest {
+  // The instance of the execution system to operate against.
+  string instance_name = 1;
+}
+
+// A response message for `Capabilities.GetCapabilities`.
+message ServerCapabilities {
+  // Capabilities of the remote cache system.
+  CacheCapabilities cache_capabilities = 1;
+
+  // Capabilities of the remote execution system.
+  //
+  // CoreLink S-01 leaves this OPTIONAL+unset (cache-only deployment).
+  ExecutionCapabilities execution_capabilities = 2;
+
+  // Earliest RE API version supported, including deprecated versions.
+  build.bazel.semver.SemVer deprecated_api_version = 3;
+
+  // Earliest non-deprecated RE API version supported.
+  build.bazel.semver.SemVer low_api_version = 4;
+
+  // Latest RE API version supported.
+  build.bazel.semver.SemVer high_api_version = 5;
+}
+
+// The digest function used for converting values into keys for CAS and
+// Action Cache. CoreLink supports `BLAKE3` only in S-01; `SHA256` is the
+// default (field tag `1`) so legacy clients calling `GetCapabilities` see a
+// non-empty list and can negotiate.
+message DigestFunction {
+  enum Value {
+    UNKNOWN = 0;
+    SHA256 = 1;
+    SHA1 = 2;
+    MD5 = 3;
+    VSO = 4;
+    SHA384 = 5;
+    SHA512 = 6;
+    MURMUR3 = 7;
+    SHA256TREE = 8;
+    BLAKE3 = 9;
+    GITSHA1 = 10;
+  }
+}
+
+// Compression formats which may be supported.
+message Compressor {
+  enum Value {
+    IDENTITY = 0;
+    ZSTD = 1;
+    DEFLATE = 2;
+    BROTLI = 3;
+  }
+}
+
+// Allowed values for priority. CoreLink S-01 accepts the empty default range.
+message PriorityCapabilities {
+  message PriorityRange {
+    int32 min_priority = 1;
+    int32 max_priority = 2;
+  }
+  repeated PriorityRange priorities = 1;
+}
+
+// Describes the server/instance capabilities for updating the action cache.
+// Off in S-01 (AC lands in S-04).
+message ActionCacheUpdateCapabilities {
+  bool update_enabled = 1;
+}
+
+// Describes how the server treats absolute symlink targets.
+message SymlinkAbsolutePathStrategy {
+  enum Value {
+    UNKNOWN = 0;
+    DISALLOWED = 1;
+    ALLOWED = 2;
+  }
+}
+
+// Capabilities of the remote cache system. Per WI-S01-005 §6.1.3 + the
+// canonical contract WI v1.1.0:
+//   - max_batch_total_size_bytes = 4 * 1024 * 1024 (4 MiB).
+//   - max_cas_blob_size_bytes    = 5 * 1024 * 1024 (5 MiB; ByteStream cap).
+//   - digest_functions           = [BLAKE3, SHA256] (BLAKE3 canonical for
+//     S-01; SHA256 advertised so legacy Bazel clients can detect mismatch.)
+message CacheCapabilities {
+  // All digest functions supported by the remote cache.
+  repeated DigestFunction.Value digest_functions = 1;
+
+  // Capabilities for updating the action cache.
+  ActionCacheUpdateCapabilities action_cache_update_capabilities = 2;
+
+  // Supported cache priority range for both CAS and ActionCache.
+  PriorityCapabilities cache_priority_capabilities = 3;
+
+  // Maximum total size of blobs to be uploaded/downloaded using batch methods.
+  int64 max_batch_total_size_bytes = 4;
+
+  // Whether absolute symlink targets are supported.
+  SymlinkAbsolutePathStrategy.Value symlink_absolute_path_strategy = 5;
+
+  // Compressors supported by the "compressed-blobs" bytestream resources.
+  repeated Compressor.Value supported_compressors = 6;
+
+  // Compressors supported for inlined data in `BatchUpdateBlobs` requests.
+  repeated Compressor.Value supported_batch_update_compressors = 7;
+
+  // The maximum blob size that the server will accept for CAS blob uploads.
+  int64 max_cas_blob_size_bytes = 8;
+}
+
+// Capabilities of the remote execution system. CoreLink S-01 is cache-only
+// — this message is vendored for proto-surface completeness; S-08 will land
+// real execution.
+message ExecutionCapabilities {
+  // Remote execution may only support a single digest function.
+  DigestFunction.Value digest_function = 1;
+
+  // Whether remote execution is enabled for the particular server/instance.
+  bool exec_enabled = 2;
+
+  // Supported execution priority range.
+  PriorityCapabilities execution_priority_capabilities = 3;
+
+  // Supported node properties.
+  repeated string supported_node_properties = 4;
+
+  // All the digest functions supported by the remote execution system.
+  repeated DigestFunction.Value digest_functions = 5;
+}

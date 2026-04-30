@@ -319,6 +319,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-reapi"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "blake3",
+ "bytes",
+ "corelink-hash",
+ "corelink-meta",
+ "corelink-tenant-path",
+ "corelink-worker",
+ "futures",
+ "hex",
+ "http",
+ "proptest",
+ "prost",
+ "prost-types",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tonic-build",
+ "tower 0.5.3",
+ "tracing",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
 name = "corelink-server"
 version = "0.1.0"
 dependencies = [
@@ -1896,8 +1926,20 @@ version = "1.23.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ddd74a9687298c6858e9b88ec8935ec45d22e8fd5e6394fa1bd4e99a87789c76"
 dependencies = [
+ "getrandom 0.4.2",
  "js-sys",
+ "serde_core",
+ "uuid-rng-internal",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "uuid-rng-internal"
+version = "1.23.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1409d2323564d9b8d01192a77a0604a46bf29eb42e9b535aca34dec65482652b"
+dependencies = [
+ "getrandom 0.4.2",
 ]
 
 [[package]]

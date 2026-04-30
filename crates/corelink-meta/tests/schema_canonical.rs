@@ -93,10 +93,7 @@ fn canonical_tenant_text_form() {
 #[test]
 fn canonical_digest_text_form() {
     let digest = Digest::from_hex(CANONICAL_DIGEST_HEX).unwrap();
-    let key = BlobMetaKey::new(
-        Uuid::parse_str(CANONICAL_TENANT_TEXT).unwrap(),
-        digest,
-    );
+    let key = BlobMetaKey::new(Uuid::parse_str(CANONICAL_TENANT_TEXT).unwrap(), digest);
     assert_eq!(key.digest_canonical_text(), CANONICAL_DIGEST_TEXT);
 }
 
@@ -125,7 +122,10 @@ async fn first_insert_happy_path_canonical_vector() {
     assert_eq!(outcome, InsertOutcome::Inserted);
     let row = store.get(&key).await.unwrap().expect("row present");
     assert_eq!(row.size_bytes, 5_000);
-    assert_eq!(row.refcount, 1, "first write yields refcount=1 per sprint §1.4");
+    assert_eq!(
+        row.refcount, 1,
+        "first write yields refcount=1 per sprint §1.4"
+    );
     assert_eq!(row.created_at_ms, 1_700_000_000_000);
     assert_eq!(row.last_accessed_at_ms, 1_700_000_000_000);
     assert_eq!(row.deleted_at_ms, None);
@@ -281,11 +281,7 @@ async fn mark_outbox_drained_round_trip() {
             key,
             size_bytes: 1,
             now_ms: 100,
-            audit: AuditEvent::cas_put_completed(
-                Uuid::from_bytes([1; 16]),
-                req.clone(),
-                "{}",
-            ),
+            audit: AuditEvent::cas_put_completed(Uuid::from_bytes([1; 16]), req.clone(), "{}"),
         })
         .await
         .unwrap();
@@ -307,7 +303,11 @@ async fn mark_outbox_drained_round_trip() {
 
     // Drain non-existent → returns false, no mutation.
     let absent = store
-        .mark_outbox_drained(&RequestId::new("never-existed"), AuditEventType::CasSoftDeleted, 9_999)
+        .mark_outbox_drained(
+            &RequestId::new("never-existed"),
+            AuditEventType::CasSoftDeleted,
+            9_999,
+        )
         .unwrap();
     assert!(!absent);
 }
