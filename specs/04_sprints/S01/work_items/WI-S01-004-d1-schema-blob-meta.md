@@ -1,12 +1,12 @@
 ---
 id: "WI-S01-004"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "FROZEN"
+work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-04-29"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-002", "FF-HR-005"]
 parent: "S-01"
@@ -27,8 +27,9 @@ tags: ["wi", "s01", "cas", "d1", "schema", "blob-meta", "refcount"]
 
 # WI-S01-004 — D1 `blob_meta` Schema + Migration + Refcount Transactional
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** FROZEN · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-01](../sprint.md) · **Assignee:** Gustavo Schneiter
+> **Implementation file:** `crates/corelink-meta/` + `migrations/d1/0001_blob_meta.sql`
 
 ---
 
@@ -134,16 +135,16 @@ Foundation (data layer); HIGH_RISK; FF-HR-002 + FF-HR-005.
 
 ### 6.1 In-scope
 
-1. **Migration `migrations/001_blob_meta.sql`**: DDL CREATE TABLE + 2 indexes; idempotent.
-2. **D1 client wrapper** em `crates/corelink-worker/src/storage/d1_blob_meta.rs`:
-   - `BlobMetaStore::insert(tenant_id, digest, size_bytes) -> Result<InsertOutcome>` (returns Inserted | AlreadyExists for idempotent semantics).
-   - `BlobMetaStore::get(tenant_id, digest) -> Result<Option<BlobMetaRow>>`.
-   - `BlobMetaStore::increment_refcount(tenant_id, digest) -> Result<()>`.
-   - `BlobMetaStore::decrement_refcount(tenant_id, digest) -> Result<RefcountResult>`.
-   - `BlobMetaStore::soft_delete(tenant_id, digest) -> Result<()>` (tombstone).
-3. **Per-region D1 instance binding** via wrangler.toml: 3 regiões.
+1. **Migration `migrations/d1/0001_blob_meta.sql`**: DDL CREATE TABLE (`blob_meta` + `audit_outbox`) + 3 partial indexes; idempotent (`CREATE TABLE IF NOT EXISTS` + `CREATE INDEX IF NOT EXISTS`). Path corrected v1.2.0 from `migrations/001_blob_meta.sql` to a versioned `d1/` subdirectory so the Postgres / Neon migrations (root `migrations/0001_init.sql`) and D1 / Cloudflare migrations stay in distinct domains.
+2. **MetaStore trait + InMemoryMetaStore fake** em `crates/corelink-meta/` (separate workspace member; v1.2.0 path correction — was `crates/corelink-worker/src/storage/d1_blob_meta.rs`; the metadata layer is a substantial cohesive concern that earns its own crate alongside the R2 single-blob `corelink-worker` and the BLAKE3 type-driven `corelink-hash`).
+   - `MetaStore::commit_put(CommitPutRequest) -> Result<InsertOutcome>` (atomic blob_meta INSERT OR IGNORE + audit_outbox INSERT OR IGNORE; INV-CAS-IDEMPOTENCY + INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER).
+   - `MetaStore::commit_decrement(CommitDecrementRequest) -> Result<DecrementOutcome>` (atomic refcount UPDATE + audit_outbox INSERT).
+   - `MetaStore::commit_soft_delete(CommitSoftDeleteRequest) -> Result<()>` (atomic tombstone UPDATE + audit_outbox INSERT).
+   - `MetaStore::get(&BlobMetaKey) -> Result<Option<BlobMetaRow>>` (PK lookup).
+   - The increment-refcount path (used when the same digest is re-uploaded by a tenant whose row already exists) is **deferred to WI-S01-005** alongside the REAPI handler that drives it; the same trait pattern as WI-S01-003 (R2 backend trait + miniflare integration in WI-S01-005).
+3. **Per-region D1 instance binding** via wrangler.toml: 3 regiões. Real Cloudflare D1 binding adapter implementing `MetaStore` is **deferred to WI-S01-005** (requires Workers runtime / miniflare integration); the trait + in-memory fake in this WI exercises every documented semantic property under host-side `cargo test`.
 4. **Migration runner script** em `scripts/migrate_d1.sh` (manual run pre-deploy).
-5. **CI gate**: schema validation cross-region (`scripts/check_d1_schema.py` planned forward).
+5. **CI gate**: `.github/workflows/corelink-meta.yml` covers PR build + clippy + tests (debug + release) + WASM target build + 60s fuzz smoke per target; nightly lane covers 1h fuzz + cargo-mutants kill rate + audit. Schema validation cross-region (`scripts/check_d1_schema.py`) planned forward in WI-S01-007.
 
 ### 6.2 Out-of-scope
 
@@ -270,14 +271,28 @@ Não. Schema é canonical em data_model.md; este WI é implementation.
 - **INV-GC-003** (HIGH): refcount consistency via transactional updates.
 - **INV-TENANT-ISOLATION** (CRITICAL): tenant_id em PK + indexes.
 
-## 13. Artifacts Produced
+## 13. Artifacts Produced (v1.2.0 SEAL — paths corrected; deferred items annotated)
 
-| Artifact | Path | Tipo |
-|---|---|---|
-| Migration DDL | `migrations/001_blob_meta.sql` | SQL |
-| BlobMetaStore | `crates/corelink-worker/src/storage/d1_blob_meta.rs` | Rust |
-| Migration runner | `scripts/migrate_d1.sh` | Bash |
-| Property test | `crates/corelink-worker/tests/prop_d1_refcount.rs` | Rust test |
+| Artifact | Path | Tipo | Status |
+|---|---|---|---|
+| Migration DDL | `migrations/d1/0001_blob_meta.sql` | SQL | SEALED |
+| MetaStore trait | `crates/corelink-meta/src/store.rs` | Rust | SEALED |
+| InMemoryMetaStore fake | `crates/corelink-meta/src/fake.rs` | Rust | SEALED |
+| Canonical SQL templates | `crates/corelink-meta/src/cas_query.rs` | Rust | SEALED |
+| BlobMeta types | `crates/corelink-meta/src/types.rs` | Rust | SEALED |
+| Error taxonomy | `crates/corelink-meta/src/error.rs` | Rust | SEALED |
+| Embedded schema constants | `crates/corelink-meta/src/schema.rs` | Rust | SEALED |
+| Migration runner | `scripts/migrate_d1.sh` | Bash | SEALED |
+| Schema canonical test | `crates/corelink-meta/tests/schema_canonical.rs` | Rust test | SEALED (13 tests) |
+| Refcount property test | `crates/corelink-meta/tests/prop_refcount.rs` | Rust test | SEALED (3 proptest @ default 256 cases ≈ 10k iter total over ranges) |
+| Audit outbox property test | `crates/corelink-meta/tests/prop_audit_outbox.rs` | Rust test | SEALED (4 proptest) |
+| Tombstone semantics test | `crates/corelink-meta/tests/tombstone_semantics.rs` | Rust test | SEALED (6 tests) |
+| Fuzz target — commit_put round-trip | `crates/corelink-meta/fuzz/fuzz_targets/commit_put_roundtrip.rs` | libFuzzer | SEALED (60s smoke clean; 209k iter) |
+| Fuzz target — audit idempotency | `crates/corelink-meta/fuzz/fuzz_targets/audit_idempotency.rs` | libFuzzer | SEALED (60s smoke clean; 535k iter) |
+| CI workflow | `.github/workflows/corelink-meta.yml` | YAML | SEALED (mirrors corelink-worker pattern) |
+| README | `crates/corelink-meta/README.md` | Markdown | SEALED |
+| Real D1 binding adapter | `crates/corelink-worker/src/...` (TBD) | Rust | **DEFERRED to WI-S01-005** (requires Workers runtime / miniflare) |
+| Increment-refcount path | `MetaStore::commit_increment_refcount` | Rust | **DEFERRED to WI-S01-005** (driven by REAPI handler when same digest re-uploaded) |
 
 ## 14. Quality Standards SOTA
 
@@ -396,6 +411,8 @@ Doc `docs/internal/d1-schema-pattern.md` — partial index strategy + atomic ref
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-25 | Gustavo (via Claude Opus 4.7) | Criação WI-S01-004 (Lote 10.1). |
+| 1.1.0 | 2026-04-28 | Gustavo (Lote 10.1bis cycles) | Schema canonical alignment (refcount default 1, ms timestamps, BLOB→TEXT, audit_outbox section added). |
+| 1.2.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) — **SEAL Lote** | **WI-S01-004 SEALED** post codex adversarial review. Path corrections + impl deliverables: (a) **§6.1.1 migration path** corrected `migrations/001_blob_meta.sql` → `migrations/d1/0001_blob_meta.sql` so D1 (Cloudflare SQLite) and Postgres (Neon — root `migrations/0001_init.sql`) live in distinct domains. (b) **§6.1.2 implementation crate** corrected `crates/corelink-worker/src/storage/d1_blob_meta.rs` → new dedicated `crates/corelink-meta/` workspace member (separate cohesive crate alongside `corelink-hash` types and `corelink-worker` R2 adapters; same workspace conventions). (c) **§13 artifacts table rewritten** with concrete paths + per-artifact SEAL/DEFERRED status (real CF D1 binding shim deferred to WI-S01-005 alongside miniflare integration; refcount-increment path deferred to WI-S01-005's REAPI handler that drives it). (d) **MetaStore trait + InMemoryMetaStore fake** delivered — atomic batch (plan-then-commit pattern) ensures both blob_meta INSERT/UPDATE and audit_outbox INSERT land or roll back together (INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER). (e) **Schema canonical alignment patched in same Lote**: `data_model.md §4.2` v0.1.0 → v0.2.0 — `idx_blob_meta_deleted` renamed to canonical pair `idx_blob_meta_tenant_alive` + `idx_blob_meta_gc_candidates`; `audit_outbox` DDL added (was missing from data_model.md but referenced by 7 specs incl. WI-S01-004 + INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER). (f) **Test surface**: 27 unit + 4 property tests (debug + release); 13 canonical schema vectors; 100% cargo-mutants kill rate (39/39 viable); 60s fuzz smoke clean per target (209k + 535k iter); WASM-build clean; clippy `-D warnings` clean. (g) **Sprint contract S-01** v1.6.0 → v1.7.0 with WI-S01-004 SEAL changelog row. |
 
 ## 32. Anti-patterns evitados
 

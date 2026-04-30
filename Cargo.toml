@@ -5,11 +5,13 @@ members = [
     "crates/tenant-path",
     "crates/corelink-hash",
     "crates/corelink-worker",
+    "crates/corelink-meta",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
     "crates/corelink-hash/fuzz",
     "crates/corelink-worker/fuzz",
+    "crates/corelink-meta/fuzz",
 ]
 
 [workspace.package]
@@ -56,6 +58,7 @@ bytes = "1"
 # Internal crates
 corelink-tenant-path = { path = "crates/tenant-path" }
 corelink-hash = { path = "crates/corelink-hash" }
+corelink-meta = { path = "crates/corelink-meta" }
 
 # Test / bench
 proptest = "1.5"

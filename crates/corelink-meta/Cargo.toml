@@ -1,0 +1,52 @@
+[package]
+name = "corelink-meta"
+description = "CoreLink CAS metadata layer — D1 (SQLite) blob_meta + audit_outbox transactional store with idempotent INSERT semantics, atomic refcount, soft-delete tombstones, and outbox-pattern audit emission. Implements WI-S01-004."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+corelink-hash = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+tokio = { workspace = true }
+futures = { workspace = true }
+hex = { workspace = true }
+
+[[test]]
+name = "schema_canonical"
+path = "tests/schema_canonical.rs"
+
+[[test]]
+name = "prop_refcount"
+path = "tests/prop_refcount.rs"
+
+[[test]]
+name = "prop_audit_outbox"
+path = "tests/prop_audit_outbox.rs"
+
+[[test]]
+name = "tombstone_semantics"
+path = "tests/tombstone_semantics.rs"

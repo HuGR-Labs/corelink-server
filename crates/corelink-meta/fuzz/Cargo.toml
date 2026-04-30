@@ -1,0 +1,41 @@
+[workspace]
+
+[package]
+name = "corelink-meta-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+unwrap_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+
+[dependencies]
+libfuzzer-sys = "0.4"
+corelink-meta = { path = ".." }
+corelink-hash = { path = "../../corelink-hash" }
+uuid = "1"
+futures-executor = "0.3"
+
+[[bin]]
+name = "commit_put_roundtrip"
+path = "fuzz_targets/commit_put_roundtrip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "audit_idempotency"
+path = "fuzz_targets/audit_idempotency.rs"
+test = false
+doc = false
+bench = false

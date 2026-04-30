@@ -306,6 +306,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-meta"
+version = "0.1.0"
+dependencies = [
+ "corelink-hash",
+ "futures",
+ "hex",
+ "proptest",
+ "thiserror",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "corelink-server"
 version = "0.1.0"
 dependencies = [

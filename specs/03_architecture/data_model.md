@@ -3,9 +3,9 @@ id: "DATA-MODEL"
 type: "data_model"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "0.1.0"
+version: "0.2.0"
 created: "2026-04-23"
-updated: "2026-04-23"
+updated: "2026-04-29"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -251,20 +251,49 @@ CREATE INDEX idx_dsr_tickets_subject ON dsr_tickets(subject_user_id) WHERE subje
 ### 4.2 D1 (operational, por região) — DDL abreviada
 
 ```sql
--- Blob metadata
-CREATE TABLE blob_meta (
-  tenant_id         TEXT        NOT NULL,
-  digest            TEXT        NOT NULL,   -- 'algo:hex'
-  size_bytes        INTEGER     NOT NULL,
-  refcount          INTEGER     NOT NULL DEFAULT 1,
-  compression       TEXT        NULL,       -- 'zstd' | NULL
-  created_at        INTEGER     NOT NULL,   -- unix ms
-  last_accessed_at  INTEGER     NOT NULL,
-  deleted_at        INTEGER     NULL,       -- soft-delete grace
+-- Blob metadata (S-01 WI-S01-004 SEALED — canonical implementation file
+-- migrations/d1/0001_blob_meta.sql; column types + CHECK constraints
+-- enforced server-side).
+CREATE TABLE IF NOT EXISTS blob_meta (
+  tenant_id         TEXT        NOT NULL,                                 -- canonical UUIDv7 text (§2.1 L91)
+  digest            TEXT        NOT NULL,                                 -- canonical 'algo:hex' (§1 L71)
+  size_bytes        INTEGER     NOT NULL CHECK (size_bytes > 0),
+  refcount          INTEGER     NOT NULL DEFAULT 1 CHECK (refcount >= 0), -- first write yields 1 (S-01 sprint §1.4)
+  compression       TEXT        NULL,                                     -- 'zstd' | NULL (S-05 multipart)
+  created_at        INTEGER     NOT NULL,                                 -- unix epoch ms
+  last_accessed_at  INTEGER     NOT NULL,                                 -- unix epoch ms
+  deleted_at        INTEGER     NULL,                                     -- soft-delete grace (S-06)
   PRIMARY KEY (tenant_id, digest)
 );
 
-CREATE INDEX idx_blob_meta_deleted ON blob_meta(deleted_at) WHERE deleted_at IS NOT NULL;
+-- Partial index: alive set (AuthZ checks; S-02 read path).
+CREATE INDEX IF NOT EXISTS idx_blob_meta_tenant_alive
+  ON blob_meta(tenant_id, deleted_at)
+  WHERE deleted_at IS NULL;
+-- Partial index: GC sweep candidates (S-06).
+CREATE INDEX IF NOT EXISTS idx_blob_meta_gc_candidates
+  ON blob_meta(deleted_at)
+  WHERE deleted_at IS NOT NULL;
+
+-- Audit outbox (Outbox Pattern, ADR-0027). INSERTed in the same
+-- `db.batch([...])` as every blob_meta mutation so the pair is atomic
+-- (INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER). Drained to the S-09 audit chain
+-- by a separate worker.
+CREATE TABLE IF NOT EXISTS audit_outbox (
+  id            TEXT        PRIMARY KEY,                  -- UUIDv7 text
+  tenant_id     TEXT        NOT NULL,                     -- canonical UUIDv7 text
+  digest        TEXT        NULL,                         -- nullable for non-blob events
+  request_id    TEXT        NOT NULL,                     -- client idempotency key
+  event_type    TEXT        NOT NULL,                     -- e.g. 'corelink.cas.put_completed'
+  payload_json  TEXT        NOT NULL,                     -- CloudEvents 1.0 envelope
+  enqueued_at   INTEGER     NOT NULL,                     -- unix epoch ms
+  emitted_at    INTEGER     NULL,                         -- NULL until drained to S-09 chain
+  UNIQUE (request_id, event_type)                          -- idempotent retry dedupe
+);
+-- Partial index: pending drain queue (S-09 worker).
+CREATE INDEX IF NOT EXISTS idx_audit_outbox_pending
+  ON audit_outbox(enqueued_at)
+  WHERE emitted_at IS NULL;
 
 -- Action cache
 CREATE TABLE ac_meta (
@@ -510,6 +539,15 @@ Essas estimativas informam:
 - **REAPI v2** — https://github.com/bazelbuild/remote-apis
 - **Martin Kleppmann** — *Designing Data-Intensive Applications* (invariantes, migration patterns).
 - **Uber** — blog "Datastore consistency at scale" (expand-contract).
+
+---
+
+## 12. Change log
+
+| Versão | Data | Autor | Mudança |
+|---|---|---|---|
+| 0.1.0 | 2026-04-23 | Gustavo Schneiter | Criação inicial do data model. |
+| 0.2.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) — WI-S01-004 SEAL Lote | **§4.2 D1 schema canonical alignment** com a implementação SEALED em `crates/corelink-meta/`. (a) `blob_meta` DDL ganha `IF NOT EXISTS`, CHECK constraints (`size_bytes > 0`, `refcount >= 0`), partial indexes renomeados de `idx_blob_meta_deleted` para o par canonical `idx_blob_meta_tenant_alive` (alive set, AuthZ checks S-02) + `idx_blob_meta_gc_candidates` (GC sweep S-06), nomes que matcham WI-S01-004 §1 + SQL on-disk `migrations/d1/0001_blob_meta.sql`. (b) **`audit_outbox` DDL adicionado** — tabela referenciada por WI-S01-004 §1 + INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER + 7 outras spec docs (S-03 revocation, S-04 ttl-worker, S-05 reapi handler, S-09 chain), mas ausente do data_model.md original; canonical ddl agora está aqui (single source of truth). (c) Comentários inline citam canonical sources de cada coluna (UUIDv7 text §2.1; algo:hex §1; first-write refcount=1 sprint S-01 §1.4; ms timestamps §4.2). (d) Patches feitos no mesmo Lote da SEAL ceremony para evitar drift entre WI text + canonical ref + impl. |
 
 ---
 

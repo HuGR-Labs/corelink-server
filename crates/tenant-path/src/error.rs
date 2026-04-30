@@ -1,6 +1,6 @@
 //! Error type for [`derive_prefix`](crate::derive_prefix).
 //!
-//! In practice, [`derive_prefix`] is total over its typed inputs — the only
+//! In practice, [`derive_prefix`](crate::derive_prefix) is total over its typed inputs — the only
 //! way this enum is constructed is through internal invariants that should
 //! be impossible to violate (e.g. an HMAC engine returning a digest of the
 //! wrong size). The variant exists as defense-in-depth so that any future
