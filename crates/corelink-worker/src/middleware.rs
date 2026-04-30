@@ -22,8 +22,18 @@
 //!
 //! [miss-reason]: https://docs.rs/corelink-reapi/latest/corelink_reapi/read/enum.MissReason.html
 
+pub mod auth;
+pub mod auth_ctx;
+pub mod auth_error;
 pub mod timing_padding;
 
+pub use auth::{
+    detect_auth_method, extract_bearer, map_clerk_error, map_pat_error, parse_bearer_value,
+    AuthLayer, AuthService, AuthState, DetectedAuth, JwtTenantBinding, JwtTenantResolver,
+    JwtVerifier, PatVerification, PatVerifier,
+};
+pub use auth_ctx::{AuthCtx, AuthCtxBuilder, AuthMethod, PrincipalId, RequestId};
+pub use auth_error::AuthMiddlewareError;
 pub use timing_padding::{
     bootstrap_median_ci, canonical_pad_target, mann_whitney_u_p_value, miss_predicates,
     sidak_per_test_alpha, BootstrapMedianCi, JitterPolicy, MissArm, MissMarker, PredicateKind,

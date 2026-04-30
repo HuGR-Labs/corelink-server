@@ -1,12 +1,12 @@
 ---
 id: "WI-S03-003"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "FROZEN"
+work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-04-30"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-002", "FF-HR-005", "FF-HR-009"]
 parent: "S-03"
@@ -28,7 +28,7 @@ tags: ["wi", "s03", "auth", "middleware", "tower", "tenantctx", "5-layer-defense
 
 # WI-S03-003 — Tower Middleware + Immutable `TenantCtx` Injection + 5-Layer Defense Propagation + Session Cache (KV 60s)
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** FROZEN · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-03](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -751,6 +751,7 @@ Fallback degradation: se ClerkAdapter offline, JWT path 503; PAT path continues.
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-25 | Gustavo (via Claude Opus 4.7) | Criação WI-S03-003 (Lote 10.3); SOTA elevation pós-Lote 10.2bis (full STRIDE/LINDDUN delta + 13-row sign-off + 12-row risk + Mann-Whitney 3-prong + cost TCO + 10 chaos experiments). |
+| 1.2.0 | 2026-04-30 | Gustavo (via Claude Opus 4.7) | **SEAL implementation phase.** Landed core deliverable per protocol §"WI ceremony (NO codex)" 2026-04-30: Tower `AuthLayer` + `AuthService` em `crates/corelink-worker/src/middleware/auth.rs` (orchestration: header extract → method route → verifier dispatch → cross-tenant smuggle reconciliation → AuthCtx build → request.extensions inject); immutable `AuthCtx` + `AuthCtxBuilder` em `auth_ctx.rs` (private fields, `#[non_exhaustive]`, `Clone`-only mutation surface, `tenant_ctx()` storage projection); canonical `AuthMiddlewareError` taxonomy em `auth_error.rs` mapping to `COR_AUTH_*` wire codes + HTTP status 401/403/412/503; constant-time pad via `corelink_pat::dummy_verify_for_constant_time` (cross-WI per WI §3 P0; defense-in-depth call wrapping every PAT cold-path branch); cross-tenant header smuggle pre-check + post-verify `subtle::ConstantTimeEq` reconciliation; `PatVerifier` / `JwtVerifier` / `JwtTenantResolver` async-trait abstractions decoupling adapter wiring from middleware logic. Tests: 11 smoke scenarios (`tests/auth_middleware_smoke.rs`) green; 8 property tests at 10k iter release (`tests/prop_auth_middleware.rs`) green covering missing-token rejection, malformed-token rejection, expired-token rejection, cross-tenant header smuggling rejection (with dual-arm matching-passes property to prevent false-positive), and 5-layer consistency (auth-layer prefix == storage-layer prefix == derive_prefix(tdk, tenant_id)). `#![forbid(unsafe_code)]` + crate `[lints]` strict (deny unwrap/expect/panic/indexing); workspace clippy clean. **Deferred to follow-up WIs (per §6.2 anti-scope)**: real session cache (KV 60s) impl + Mann-Whitney 3-prong timing infra → WI-S03-004 (revocation DO + KV invalidation hook); ADR-0029 redação; rate-limit DoBased backend → WI-S08-001; production deploy guard → WI-S03-008 ship gate; OWASP ASVS V4 self-checklist → S-20 audit. Sprint-close adversarial review covers per protocol 2026-04-30 §"per-WI ceremony (NO codex)". |
 
 ## 32. Anti-patterns evitados
 
