@@ -101,3 +101,7 @@ path = "tests/handler_e2e.rs"
 [[test]]
 name = "capabilities"
 path = "tests/capabilities.rs"
+
+[[test]]
+name = "prop_cas"
+path = "tests/prop_cas.rs"
