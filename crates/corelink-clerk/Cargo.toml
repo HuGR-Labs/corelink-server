@@ -1,0 +1,87 @@
+[package]
+name = "corelink-clerk"
+description = "CoreLink Clerk SSO adapter — JWT RS256 validation + JWKS cache (24h, lazy refresh on KID miss) + claims extraction → ClerkPrincipal. Implements WI-S03-001 (HIGH_RISK auth boundary). Zero unsafe; constant-time primitives via `subtle`; explicit `Algorithm::RS256` allowlist (alg=none + RS↔HS confusion regressions covered by adversarial tests)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[features]
+default = []
+# Exposes `fakes::test_keys::TestRsaKey` (RSA keygen + PEM/JWKS
+# projection) so integration tests can craft signed JWTs without
+# requiring a live Clerk staging instance. NEVER enable this in
+# production crates that consume `corelink-clerk` — the surface
+# pulls `rsa` + `rand` and is gated by `forbid(unsafe_code)` but the
+# bytes it emits are non-secret-grade.
+test-utils = ["dep:rsa", "dep:rand"]
+
+[dependencies]
+# JWT validation surface — explicit `Algorithm::RS256` allowlist; audited
+# (last CVE class 2018, fixed pre-2.0). WI-S03-001 §9.1 mandates this crate.
+# 9.3 is the canonical pin per WI; lock major-only to keep ALG-allowlist API
+# stability.
+jsonwebtoken = "9.3"
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+subtle = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+hex = { workspace = true }
+base64 = { workspace = true }
+# Optional, gated behind `test-utils`. Production crates leave this off.
+rsa = { version = "0.9", features = ["sha2"], optional = true }
+rand = { version = "0.8", optional = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time"] }
+hmac = { workspace = true }
+sha2 = { workspace = true }
+tracing-subscriber = { workspace = true }
+# Pull our own crate with `test-utils` enabled so integration tests
+# in `tests/*.rs` can use the in-crate test-key helper.
+corelink-clerk = { path = ".", features = ["test-utils"] }
+
+[[example]]
+name = "basic"
+path = "examples/basic.rs"
+
+[[example]]
+name = "multi_issuer"
+path = "examples/multi_issuer.rs"
+
+[[example]]
+name = "rotation"
+path = "examples/rotation.rs"
+
+[[test]]
+name = "prop_validate"
+path = "tests/prop_validate.rs"
+
+[[test]]
+name = "adversarial"
+path = "tests/adversarial.rs"
+
+[[test]]
+name = "rotation"
+path = "tests/rotation.rs"
