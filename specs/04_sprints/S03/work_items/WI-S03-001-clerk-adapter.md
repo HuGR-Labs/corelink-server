@@ -1,12 +1,12 @@
 ---
 id: "WI-S03-001"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "FROZEN"
+work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-04-30"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-002", "FF-HR-005", "FF-HR-009"]
 parent: "S-03"
@@ -27,7 +27,7 @@ tags: ["wi", "s03", "auth", "clerk", "jwks", "jwt", "high-risk"]
 
 # WI-S03-001 — Clerk Adapter (JWKS Cache 24h + JWT Validate + Clock-Skew ±60s)
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** FROZEN · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-03](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
