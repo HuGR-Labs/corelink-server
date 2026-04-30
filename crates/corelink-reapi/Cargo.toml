@@ -46,11 +46,16 @@ host-server = [
     "dep:tokio-stream",
     "dep:async-trait",
     "dep:tower",
+    "dep:tower-layer",
     "dep:http",
     "dep:axum",
     "dep:http-body-util",
     "uuid/v7",
     "uuid/rng-getrandom",
+    # Pull the WI-S02-004 timing-padding middleware into the host-server
+    # build so the canonical layer is mounted on `cas_get_router` (HTTP
+    # REST) and on the gRPC stack via the `MissMarker` extension.
+    "corelink-worker/tower-middleware",
 ]
 
 [dependencies]
@@ -80,6 +85,7 @@ tokio = { workspace = true, optional = true }
 tokio-stream = { workspace = true, optional = true }
 async-trait = { version = "0.1", optional = true }
 tower = { version = "0.5", features = ["util"], optional = true }
+tower-layer = { version = "0.3", optional = true }
 http = { version = "1", optional = true }
 # HTTP REST surface (`GET /v1/cas/<digest>`) — host-server feature only.
 axum = { version = "0.7", default-features = false, features = ["http1", "http2", "tokio"], optional = true }
@@ -141,3 +147,7 @@ path = "tests/find_missing_handler_e2e.rs"
 [[test]]
 name = "batch_read_blobs_e2e"
 path = "tests/batch_read_blobs_e2e.rs"
+
+[[test]]
+name = "timing_padding_grpc_e2e"
+path = "tests/timing_padding_grpc_e2e.rs"

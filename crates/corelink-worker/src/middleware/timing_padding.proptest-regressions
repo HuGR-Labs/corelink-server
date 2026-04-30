@@ -1,0 +1,11 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 6bfcfd49ead70c6812a1db7aa4381c7a7f62264a9f619989f288cfaea1cf7023 # shrinks to target_ms = 1048, jitter_pct = 0, seed = 0, elapsed_ms = 0
+cc f7f23f79cf0b3e0df34e90bf0c2847057c1816a640ecc73035eeaec034ce6f0f # shrinks to target_ms = 303, jitter_pct = 0, seed = 11147669906246392115, elapsed_ms = 0
+cc 3a2096811d0784bc6a09bddbebe13fca7dade8f8e102122c16a01bf01d7f1478 # shrinks to target_ms = 261, jitter_pct = 2, seed = 3768691368999529503, elapsed_ms = 0
+cc 56cb56cbf4e5d1e7d931e668e419ee363a6420733a03fc9dc3f85630d7575fa3 # shrinks to target_ms = 5, jitter_pct = 0, seed = 0, elapsed_ms = 6
+cc 42e0d8f4faa90cfc8107114e75c303c526d055abceef47f92cda443c2e978f93 # shrinks to xs = [0.0, 0.0, 0.0, 0.0, 0.0], ys = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]

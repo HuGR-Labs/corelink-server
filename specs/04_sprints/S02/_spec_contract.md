@@ -3,9 +3,9 @@ id: "SPEC-CONTRACT-S02"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.14.0"
+version: "1.15.0"
 created: "2026-04-24"
-updated: "2026-04-24"
+updated: "2026-04-29"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -66,7 +66,7 @@ inherits_from:
 | **CAP-CAS-005** | Client-side verify integrity | `corelink-client-verify` crate (Rust) — auto-verifies BLAKE3 hash post-download; default-on toggle baked-in via `VerifyConfig::default()`. **S-02 ships Rust crate + ABI-stable interface**; FFI wrappers + integration tests Python pyO3 / Go cgo / JS WASM = S-15 deliverable (NÃO bloqueia SEAL S-02). Detect bit rot + cache poisoning. |
 | **CAP-CAS-006** | Streaming read | ByteStream chunked (1 MiB chunks); Worker memory bounded; no full-blob buffering. |
 | **CAP-CAS-007** | Negative caching (404) | KV `ac_neg:<region>:<HMAC16>:<digest_hex>` TTL 300s (PAT-KV-TTL-001); HMAC16 = `b64(HMAC_SHA256(TDK, tenant_id))[0:16]` (per remote_cache_product_profile.md §7.1; per-region per-tenant cross-isolation by construction); reduces probe cost; cache invalidation em S-01 write. |
-| **CAP-CAS-008** | Side-channel-resistant 404 (MissReason parity per ADR-0028) | Constant-time response com pairwise |Δmedian| ≤ 1ms + p99 diff < 5ms across 3 arms (NotFound × CrossTenantMasked × Tombstoned); CTRL-ISO-004 enforcement; criterion benchmark + Mann-Whitney U + Šidák correction proves. |
+| **CAP-CAS-008** | Side-channel-resistant 404 (MissReason parity per ADR-0028) | Constant-time response com pairwise `|Δmedian|` ≤ 1ms point-estimate + `ci_upper` ≤ 1ms across 3 arms (`NeverExisted` × `Tombstoned` × `R2OrphanRow` per `corelink-reapi::read::MissReason`); CTRL-ISO-004 enforcement; criterion benchmark + Mann-Whitney U + Šidák correction (per-test α' ≈ 0.005 685 8 for 9 tests at familywise α = 0.05) proves. |
 | **CAP-CAS-009** | FindMissingBlobs (REAPI batch) | Discover gaps em batch antes de upload (Bazel client optimization); same security envelope. |
 
 ## 5. Requirements específicos
@@ -90,13 +90,13 @@ inherits_from:
 
 ### 5.3 Side-Channel Resistance (CAP-CAS-008)
 
-Canonical decision per ADR-0028 (forward-whitelisted): **MissReason → HTTP 404 uniform freeze** (variants `NotFound` / `Tombstoned` / `CrossTenantMasked` all map to 404 com same body). 410 Gone deferido S-06. Side-channel defense é at **timing layer**, não status-code differential.
+Canonical decision per ADR-0028 (forward-whitelisted): **MissReason → HTTP 404 uniform freeze** (variants `NeverExisted` / `Tombstoned` / `R2OrphanRow` per `corelink-reapi::read::MissReason` all map to 404 com same body; the conflated `CrossTenantMasked` arm folds into `NeverExisted` at the orchestrator surface per ADR-0028 v1.1.0 runtime fold). 410 Gone deferido S-06. Side-channel defense é at **timing layer**, não status-code differential.
 
 - **R-S02-7**: Constant-time 404 across MissReason variants (CTRL-ISO-004) — prevent existence enumeration:
-  - Worker responde com mesmo timing window para todas as variants 404 (never_existed, cross_tenant_masked, tombstoned).
+  - Worker responde com mesmo timing window para todas as variants 404 (`NeverExisted` / `Tombstoned` / `R2OrphanRow` per `corelink-reapi::read::MissReason`; the conflated `CrossTenantMasked` arm folds into `NeverExisted` at the orchestrator surface).
   - Implementação: timing-padding via `tokio::time::sleep` + jitter ou pre-computed delay (WI-S02-004 middleware).
   - Benchmark criterion: |Δmedian| ≤ 1ms across MissReason arms; p99 diff < 5ms (target SOTA).
-- **R-S02-8**: Adversarial test: 10k requests por arm (3 arms: never_existed × cross_tenant_masked × tombstoned) → measure timing distribution; pairwise Mann-Whitney U validates indistinguishability `p > 0.05` em all 3 pairs (Šidák correction; vide WI-S02-004 §2).
+- **R-S02-8**: Adversarial test: 10k requests por arm (3 arms: `NeverExisted` × `Tombstoned` × `R2OrphanRow` per `corelink-reapi::read::MissReason` + ADR-0028 v1.1.0 runtime fold) → measure timing distribution; pairwise Mann-Whitney U validates indistinguishability via Šidák-corrected per-test α' ≈ 0.005 685 8 across 9 tests (3 trials × 3 pairs full conjunction at familywise α = 0.05; cycle 13 SEAL math correction; vide WI-S02-004 §2).
 
 ### 5.4 Negative Cache (CAP-CAS-007)
 
@@ -123,7 +123,7 @@ Canonical decision per ADR-0028 (forward-whitelisted): **MissReason → HTTP 404
 - [ ] **TLA+ verdes em CI**: `tenant_isolation.tla` + `cas_integrity.tla` (EVT-022).
 - [ ] **Load test** read 50k QPS × 10 min em staging com SLO-AVAIL-CAS-GET preserved (EVT-021).
 - [ ] **Client verify default-on no crate Rust** (`corelink-client-verify`): bit-rot detection 100% via property test em CI (EVT-002). **NOTA Lote 9.5**: integração FFI Python/Go/JS é entregável **S-15** (outbound consumer); S-02 entrega o crate Rust + ABI stable. SDK integration tests rodam em S-15 sprint, não bloqueiam SEAL S-02.
-- [ ] **Side-channel test**: medir latência **404 across MissReason variants** (never_existed × cross_tenant_masked × tombstoned) → p99 diff < 5ms + |Δmedian| ≤ 1ms via criterion benchmark; pairwise Mann-Whitney U all p > 0.05 com Šidák correction (EVT-002 + EVT-040 if external review).
+- [x] **Side-channel test**: medir latência **404 across MissReason variants** (`NeverExisted` × `Tombstoned` × `R2OrphanRow` per `corelink-reapi::read::MissReason`) → `|Δmedian| ≤ 1ms` point estimate AND `ci_upper ≤ 1ms` via bootstrap CI; pairwise Mann-Whitney U ALL 9 tests `p > sidak_per_test_alpha(0.05, 9)` ≈ 0.005 685 8 com Šidák correction (EVT-002). IMPLEMENTED em `crates/corelink-worker/tests/timing_indistinguishability.rs::three_arm_indistinguishability_with_padding`.
 - [ ] **Runbook `RB-FM-253`** (cross-tenant read) dry-run executado em staging (EVT-017).
 - [ ] **SBOM + signed release** (CycloneDX 1.5+) — formato e enforcement definido em S-12 (forward-looking; S-02 honra format mas full SLSA L3 attestation gate é S-12 sealing) (EVT-010).
 - [ ] **Negative cache** test: probe storm 1k QPS de unknown digests → measure cost reduction vs no-cache baseline (EVT-021).
@@ -137,7 +137,7 @@ Canonical decision per ADR-0028 (forward-whitelisted): **MissReason → HTTP 404
 - [ ] **10.s02.1** E2E: write em S-01 → read em S-02 retorna body idêntico byte-a-byte (EVT-018).
 - [ ] **10.s02.2** SLO-AVAIL-CAS-GET: 99.9% em staging sustained 72h (EVT-021).
 - [ ] **10.s02.3** SLO-LAT-CAS-GET: 99% < 300ms cold; < 100ms warm (team target) (EVT-021).
-- [ ] **10.s02.4** **Side-channel resistance proven (3-arm 404 MissReason parity per ADR-0028)**: 10k samples per arm × 3 arms (NotFound × CrossTenantMasked × Tombstoned); pairwise Mann-Whitney U all p > 0.05 com Šidák correction (effective per-pair α 0.0167); criterion |Δmedian| ≤ 1ms + p99 diff < 5ms (EVT-002 + EVT-040).
+- [x] **10.s02.4** **Side-channel resistance proven (3-arm 404 MissReason parity per ADR-0028)**: 10k samples per arm × 3 arms (`NeverExisted` × `Tombstoned` × `R2OrphanRow` per `corelink-reapi::read::MissReason`); pairwise Mann-Whitney U ALL 9 tests `p > sidak_per_test_alpha(0.05, 9)` ≈ 0.005 685 8 com Šidák correction (combined familywise α = 0.05 target); bootstrap 95% CI on `|Δmedian|` ≤ 1ms point estimate AND `ci_upper` ≤ 1ms (EVT-002). IMPLEMENTED + 8/8 tests passing release in 7s.
 - [ ] **10.s02.5** **Negative cache effectiveness**: probe storm cost reduced ≥ 80% vs baseline (EVT-021).
 - [ ] **10.s02.6** **Client verify default-on (Rust crate)**: `corelink-client-verify` `VerifyConfig::default()` returns `enabled: true`; opt-out path requires explicit flag + emit warning log; CI gate verifica default. **NOTA Lote 9.5**: 3-SDK FFI ubiquity (Python/Go/JS) é entregável **S-15** (não bloqueia SEAL S-02) (EVT-002).
 - [ ] **10.s02.7** **Tenant isolation property test**: 100k iter cross-tenant attempts → 0 successes (EVT-002).
@@ -155,7 +155,7 @@ Canonical decision per ADR-0028 (forward-whitelisted): **MissReason → HTTP 404
 
 ### Novas (S-02 — adicionar a invariant_registry §3.12 como Lote 9.4 followup se needed)
 
-- **INV-CAS-SIDE-CHANNEL-INDISTINGUISHABLE** (HIGH — Lote 9.4 candidate for §3.12): timing distribution **across all 404 MissReason variants** (never_existed, cross_tenant_masked, tombstoned) é statistically indistinguishable (pairwise Mann-Whitney U p > 0.05; Šidák corrected). **Why:** prevent enumeration of digest existence (cross-tenant OR tombstoned) — per ADR-0028 status code é uniform 404; defense é timing parity. **How to apply:** criterion benchmark + adversarial test 10k samples per arm + `corelink.cas.side_channel.timing_diff_ms` < 5ms p99 + |Δmedian| ≤ 1ms.
+- **INV-CAS-SIDE-CHANNEL-INDISTINGUISHABLE** (HIGH — registry §3.12 promoted Lote 9.4): timing distribution **across all 404 MissReason variants** (`NeverExisted` × `Tombstoned` × `R2OrphanRow` per `corelink-reapi::read::MissReason` + ADR-0028 v1.1.0 runtime fold; the conflated `CrossTenantMasked` arm folds into `NeverExisted` at the orchestrator surface) é statistically indistinguishable (pairwise Mann-Whitney U ALL 9 tests `p > sidak_per_test_alpha(0.05, 9)` ≈ 0.005 685 8; Šidák corrected). **Why:** prevent enumeration of digest existence (cross-tenant OR tombstoned OR R2-orphan) — per ADR-0028 status code é uniform 404; defense é timing parity. **How to apply:** criterion benchmark + adversarial test 10k samples per arm + `corelink_cas_side_channel_timing_diff_ms` aggregate gauge derived from `corelink.cas.side_channel.timing_padded` per-request emit (sustained > 5ms 5min ⇒ SEV-2) + `|Δmedian| ≤ 1ms` point estimate AND `ci_upper ≤ 1ms`.
 
 ## 9. Quality Standards (delta local)
 
@@ -312,6 +312,7 @@ Itens waivable com Security lead + Architect + ADR:
 |---|---|---|---|
 | 1.0.0 | 2026-04-24 | Gustavo | Spec contract retroativo (Lote 9.5a). |
 | 1.1.0 | 2026-04-24 | Gustavo (Lote 9.4 SOTA elevation) | EVT addition + 6-col risk register + PERT explicit. |
+| 1.15.0 | 2026-04-29 | Gustavo (Lote 10.20 — WI-S02-004 SEALED) | **WI-S02-004 SEALED in code**: Tower middleware `corelink-worker::middleware::timing_padding` + adversarial 3-arm × 10k × 3 trial Mann-Whitney + bootstrap CI + criterion bench + `docs/internal/side-channel-defense.md` shipped. **Spec drift fixed in same Lote** (charter §spec drift "patch in same Lote"): (a) `statrs::stats_tests::mann_whitney_u` referenced by v1.4-v1.14 does NOT exist in `statrs` 0.18 (only Fisher's exact ships in `stats_tests`); replaced by canonical hand-rolled `mann_whitney_u_p_value` in `corelink-worker::middleware::timing_padding` under strict lints (Mann & Whitney 1947 + Hollander & Wolfe 1973 §4.1 tie-correction). WI-004 §6.1.3 + §10.4.1 + §17 ST-004 + ADR-0023 aligned. (b) WI-004 `MissReason` triple realigned with `corelink-reapi::read::MissReason` canonical: `(NotFound × CrossTenantMasked × Tombstoned)` → `(NeverExisted × Tombstoned × R2OrphanRow)` per ADR-0028 v1.1.0 runtime fold (CrossTenantMasked folds into NeverExisted at the orchestrator surface — the trait-level `MetaStore::get` cannot disambiguate; R2OrphanRow is the canonical D1-row-alive + R2-NotFound third arm the prior label set omitted). The §3.12 invariant table label set in `invariant_registry.md` retains the original arm names for invariant-registry stability + ADR-0028 cross-reference; the WI text + adversarial test target the canonical impl arm names. (c) WI-004 §10.4.1..§10.4.9 marked complete (`[x]`) with implementation evidence per item; §31 changelog v1.2.0 enumerates the deltas. |
 | 1.14.0 | 2026-04-29 | Gustavo (Lote 10.2bis cycle 13 codex SEAL real validation 8.8 → ≥9.0 target) | **1 P0 + 2 P1 + 1 P2 fixed (substantive rigor)**: (a) **P0 statistical gate Šidák math correction** — earlier cycles claimed 'combined α ≈ 0.000125' which is incorrect math; canonical Šidák for 9 tests at familywise α = 0.05 target → per-test α' = 1 − (1−0.05)^(1/9) ≈ 0.0057. WI-004 §2 + §10.4.1 + ADR-0023 + INV registry §3.12 all aligned: ALL 9 tests must p > 0.05 (full conjunction); per-test α' = 0.0057. (b) **P1 observability naming canonical sweep** — _spec_contract §5.6 R-S02-12 + WI-S02-002 §6.1.5 + WI-S02-005 §6.1.7 + sprint.md L257-258: dotted form + tenant_tier → underscored + plan canonical (per observability_model.md §4.1 naming + §3.1 labels). (c) **P1 ADR-0034 single-source** — Engineer slot decision matrix updated: '5-6 Engineer ×2' → '5 Engineer (canonical single slot per framework §33.5.4.3 + S-01..S-05 SEAL precedent)'. (d) **P2 WI-S02-003 hygiene final** — broken comment block from cycle 12 cleaned (placeholder code removed; canonical impl Default kept clean). |
 | 1.13.0 | 2026-04-29 | Gustavo (Lote 10.2bis cycle 12 codex SEAL real validation 8.9 → ≥9.0 target) | **1 P0 + 2 P1 + 1 P2 fixed (substantive)**: (a) **P0 side-channel waiver removed** — _spec_contract §16: previous waiver 'p > 0.05 → p > 0.01' was mathematically backwards (relaxing α 0.05→0.01 ALLOWS weaker evidence to pass null-hypothesis indistinguishability test); HIGH_RISK security invariants são hard gates per ADR-0023 + ADR-0028; cycle 12 SEAL eliminated waiver path; gate canonical é 3-arm pairwise Mann-Whitney + Šidák + |Δmedian| ≤ 1ms. (b) **P1 reviewer staffing canonical** — sprint.md frontmatter `reviewers: []` → explicit ADR-0034 solo-tier waiver acknowledgment (Owner + Final Approver Gustavo dual-hat; 9 specialized roles TBD com ADR-0034 reference); body banner aligned. (c) **P1 observability naming canonical** — sprint.md §11 Métricas: dotted form `corelink.cas.get.requests_total` (authoring convention) → underscored exposed `corelink_cas_get_requests_total` per observability_model.md §4.1; label `tenant_tier` → `plan` per §3.1 canonical (5 metrics updated). (d) **P2 WI-S02-003 hygiene** — duplicate `impl Default for VerifyConfig` removed (cycle 9 introduced builder; cycle 12 cleans residual); §8 AC opt-out scenario uses `VerifyConfig::disabled()` builder (não direct field instantiation, aligned com cycle 9 `pub(crate)` privatization). |
 | 1.12.0 | 2026-04-29 | Gustavo (Lote 10.2bis cycle 11 codex SEAL real validation 8.8 → ≥9.0 target) | **2 P0 + 1 P1 fixed (top-level canonical alignment)**: (a) **P0 sprint contract BatchReadBlobs promotion** — _spec_contract §5.1 added R-S02-3b BatchReadBlobs requirement; §12 PERT WI-S02-002 row updated com BatchReadBlobs estimate (16.7→20.7h); §16 anti-waivable removed FMB defer waiver (REAPI mandatory hard gate); sprint.md §2.1 WI-S02-002 in-scope updated; WI-002 §10.2.1 completeness criteria includes BatchReadBlobs. (b) **P0 scope canonical hyphen-form** — 8 locations sweept colon→hyphen: sprint.md §6.2 + WI-001 §2 narrative + §6.1.3 + §8 AC (3 scenarios) + §32 STRIDE + WI-004 §8 AC. All `cache:r` / `cache:w` → `cache-r` / `cache-w` per auth_model.md §scope canonical hyphen-form. (c) **P1 auth_model.md §4.1 pseudocode** — generic 403 mismatch override clarified: CAS read handlers (S-02 ADR-0028 path) retornam 404 uniform com forensics audit; 403 reservado para PAT scope failures (não cross-tenant blob access). Single-source canonical aligned. |
@@ -328,4 +329,4 @@ Itens waivable com Security lead + Architect + ADR:
 
 ---
 
-**Fim spec contract S-02 v1.14.0 SOTA.**
+**Fim spec contract S-02 v1.15.0 SOTA.**

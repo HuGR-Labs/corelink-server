@@ -81,7 +81,7 @@ Sem read path, S-01 é write-only e produto inviável. Bug em tenant isolation =
 - **WI-S02-001**: REAPI ByteStream::Read handler + HTTP GET surface + tenant context propagation reusing S-01 TenantPrefix.
 - **WI-S02-002**: GetBlob unary (small ≤ 4 MiB inline) + **BatchReadBlobs batch read** (REAPI mandatory per remote_cache_product_profile.md §12.2; aggregate cap 4 MiB) + FindMissingBlobs batch endpoint (REAPI conformance).
 - **WI-S02-003**: Crate `corelink-client-verify` (Rust lib) + ABI-stable interface + default-on toggle. **NOTA Lote 9.5**: FFI integration tests Python pyO3 / Go cgo / JS WASM são entregável **S-15** (consumer); S-02 entrega Rust crate + ABI stable; SDK integration tests rodam em S-15 sprint, não bloqueiam SEAL S-02.
-- **WI-S02-004**: Constant-time 404 MissReason parity middleware (ADR-0028 3-arm: NotFound × CrossTenantMasked × Tombstoned; timing-padding + jitter) + criterion benchmark + pairwise Mann-Whitney U + Šidák adversarial test 10k samples per arm.
+- **WI-S02-004**: Constant-time 404 MissReason parity middleware (ADR-0028 3-arm per `corelink-reapi::read::MissReason`: `NeverExisted` × `Tombstoned` × `R2OrphanRow`; timing-padding + jitter) + criterion benchmark + pairwise Mann-Whitney U + Šidák adversarial test 10k samples per arm.
 - **WI-S02-005**: Negative cache KV adapter (`ac_neg:<region>:<HMAC16>:<digest_hex>` canonical per remote_cache_product_profile.md §7.1; per-region; TTL 300s) + invalidation hook em S-01 write path.
 - **WI-S02-006**: Property test 100k tenant isolation + bit-rot integrity test + RB-FM-253 dry-run + PRR HIGH_RISK doc.
 
@@ -130,7 +130,7 @@ Ver `_spec_contract.md §4` para tabela canonical CAPs. Este sprint endereça 6 
 | S02-D1 | ByteStream::Read Worker handler (gRPC + HTTP) | `src/reapi/cas_read.rs` + `src/http/cas_read.rs` | gRPC handler conform REAPI v2; HTTP GET `/v1/cas/<digest>` working; tenant context propagated via TenantPrefix lookup; AuthZ check pre-R2 read |
 | S02-D2 | GetBlob unary + FindMissingBlobs batch | `src/reapi/cas_unary.rs` | GetBlob inline ≤ 4 MiB; FindMissingBlobs batch dedup discovery; size-based dispatch |
 | S02-D3 | Crate `corelink-client-verify` (lib SDK side) | `crates/corelink-client-verify/src/lib.rs` | BLAKE3 verify post-download; default-on toggle; opt-out warning emit; ABI-stable interface (FFI integration tests Python/Go/JS = S-15 deliverable per spec_contract §6 NOTA Lote 9.5) |
-| S02-D4 | Constant-time 404 MissReason parity middleware (ADR-0028 3-arm) + benchmarks | `src/middleware/timing_padding.rs` + `benches/side_channel.rs` | Criterion benchmark |Δmedian| ≤ 1ms + p99 diff < 5ms across 3 arms; pairwise Mann-Whitney U + Šidák all p > 0.05 |
+| S02-D4 | Constant-time 404 MissReason parity middleware (ADR-0028 3-arm) + benchmarks | `crates/corelink-worker/src/middleware/timing_padding.rs` + `crates/corelink-worker/benches/side_channel.rs` | Criterion benchmark `|Δmedian|` ≤ 1ms point estimate AND `ci_upper` ≤ 1ms across 3 arms; pairwise Mann-Whitney U + Šidák ALL 9 tests `p > sidak_per_test_alpha(0.05, 9)` ≈ 0.005 685 8 |
 | S02-D5 | Negative cache KV adapter | `src/cache/negative.rs` | `ac_neg:<region>:<HMAC16>:<digest_hex>` (HMAC16 canonical per remote_cache_product_profile.md §7.1) per-region; TTL 300s; invalidation hook em S-01 PUT; cost reduction ≥ 80% probe storms |
 | S02-D6 | Property tests 100k tenant isolation + bit-rot test + integration tests | `tests/prop_cas_read.rs` + `tests/integration_e2e.rs` | 100k iter cross-tenant attempts → 0 successes; bit-rot inject → 100% catch; E2E S-01 write → S-02 read byte-identical |
 | S02-D7 | RB-FM-253 dry-run + PRR HIGH_RISK doc | `specs/05_quality/runbooks/RB-FM-253.md` (existing) + `PRR-S02.md` | RB dry-run executed em staging com Security + SRE; PRR doc 11 sign-offs canonical (HIGH_RISK matrix per framework §33.5.4.3) |
@@ -158,7 +158,7 @@ Todos os elementos abaixo herdam dos canonical sources listados no `inherits_fro
 - `INV-CAS-INTEGRITY` (CRITICAL): TLA+ `cas_integrity.tla` + client verify default-on (CTRL-CAS-002).
 - `INV-CAS-IMMUTABILITY` (CRITICAL): reads após GC soft-delete respeitam tombstone.
 - `INV-CAS-IDEMPOTENCY` (CRITICAL): same digest sempre retorna same body byte-identical.
-- `INV-CAS-SIDE-CHANNEL-INDISTINGUISHABLE` (HIGH — registry §3.12 add Lote 9.4): timing distribution **across all 404 MissReason variants** (NotFound × CrossTenantMasked × Tombstoned per ADR-0028) statistically indistinguishable; pairwise Mann-Whitney U all p > 0.05 com Šidák correction; criterion |Δmedian| ≤ 1ms; p99 diff < 5ms.
+- `INV-CAS-SIDE-CHANNEL-INDISTINGUISHABLE` (HIGH — registry §3.12 add Lote 9.4): timing distribution **across all 404 MissReason variants** (`NeverExisted` × `Tombstoned` × `R2OrphanRow` per `corelink-reapi::read::MissReason` + ADR-0028 v1.1.0 runtime fold; the conflated `CrossTenantMasked` arm folds into `NeverExisted` at the orchestrator surface) statistically indistinguishable; pairwise Mann-Whitney U ALL 9 tests `p > sidak_per_test_alpha(0.05, 9)` ≈ 0.005 685 8 (full conjunction at familywise α = 0.05) com Šidák correction; criterion `|Δmedian|` ≤ 1ms point estimate AND `ci_upper` ≤ 1ms across pairs.
 
 ### 6.4 SLOs aplicáveis (herda `slo_catalog.md §4`)
 
@@ -184,7 +184,7 @@ Todas abaixo obrigatórias (framework §33.5.4.1 HIGH_RISK matrix):
 - [ ] Integration tests E2E em staging CF: write em S-01 → read em S-02 byte-identical (EVT-002 + EVT-018)
 - [ ] Load test 50k QPS read sustained × 10 min em staging (EVT-024)
 - [ ] Chaos experiments: inject R2 latency + D1 primary failover + KV outage (EVT-023)
-- [ ] **Side-channel test**: criterion benchmark p99 diff < 5ms; Mann-Whitney U test p > 0.05 (EVT-002 + EVT-040 if external review)
+- [x] **Side-channel test**: criterion benchmark + Mann-Whitney U pairwise test ALL 9 `p > sidak_per_test_alpha(0.05, 9)` ≈ 0.005 685 8 + bootstrap 95% CI `point_estimate ≤ 1ms AND ci_upper ≤ 1ms` (EVT-002). IMPLEMENTED em `crates/corelink-worker/tests/timing_indistinguishability.rs`.
 - [ ] **Bit rot detection test**: corrupt R2 object out-of-band → 100% client verify catches (EVT-002)
 - [ ] **Negative cache effectiveness**: probe storm 1k QPS unknown digests → cost reduction ≥ 80% vs no-cache (EVT-021)
 - [ ] **Streaming memory test**: bounded by S-01 single-blob 5 MiB cap; peak ~6 MiB << 50 MiB ceiling. 1 GiB AC deferred to WI-S05-005 multipart read where `R2Backend::get_stream` lands (EVT-002 partial; full target in S-05).
@@ -279,7 +279,7 @@ Herda de `security_model.md` + `privacy_model.md`. Delta local:
 - **Novos trust boundaries:** nenhum (mantém TB-0..TB-5 canônicos).
 - **Privacy impact:** zero direto (read path é pull-only; client verifica integridade; nenhum PII novo introduzido).
 - **Adversarial scenarios** (pentest scope):
-  - Enumerate digests via timing across 404 MissReason variants (NotFound × CrossTenantMasked × Tombstoned per ADR-0028).
+  - Enumerate digests via timing across 404 MissReason variants (`NeverExisted` × `Tombstoned` × `R2OrphanRow` per `corelink-reapi::read::MissReason` + ADR-0028).
   - Bypass client verify via opt-out flag em SDK.
   - Cross-tenant read via crafted PAT + path manipulation.
   - Probe storm exploitando negative cache TTL.

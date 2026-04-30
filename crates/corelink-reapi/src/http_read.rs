@@ -58,6 +58,7 @@ use axum::Router;
 use bytes::Bytes;
 use corelink_hash::Digest;
 use corelink_meta::MetaStore;
+use corelink_worker::middleware::{MissArm, MissMarker, TimingPaddingLayer};
 use corelink_worker::storage::r2::R2Backend;
 
 use crate::error_map::{
@@ -112,7 +113,15 @@ where
     }
 }
 
-/// Build an axum `Router` exposing `GET /v1/cas/:digest`.
+/// Build an axum `Router` exposing `GET /v1/cas/:digest` with the
+/// canonical [`TimingPaddingLayer`] applied (WI-S02-004 / ADR-0023
+/// constant-time 404 [`MissReason`] parity defense).
+///
+/// The layer mounts at the router boundary so EVERY 404 response
+/// (regardless of which arm of the orchestrator emitted it: digest
+/// parse, AuthZ scope, [`MissReason::NeverExisted`], `Tombstoned`,
+/// `R2OrphanRow`) flows through the padding pipeline. `200 OK` and
+/// `4xx≠404` / `5xx` responses are passed through unchanged.
 ///
 /// Mount via:
 /// ```ignore
@@ -127,8 +136,34 @@ where
     R: OrphanReconciler + 'static,
     C: Clock + 'static,
 {
+    cas_get_router_with_padding(state, TimingPaddingLayer::canonical())
+}
+
+/// Variant of [`cas_get_router`] that accepts an explicit
+/// [`TimingPaddingLayer`] (canonical-defaults-overridden config /
+/// jitter policy / predicate kind). Production callers use the
+/// [`cas_get_router`] convenience; tests + chaos suites use this to
+/// inject deterministic / disabled / tighter padding.
+pub fn cas_get_router_with_padding<V, B, M, R, C>(
+    state: HttpReadState<V, B, M, R, C>,
+    padding_layer: TimingPaddingLayer,
+) -> Router
+where
+    V: PatValidator + Clone + 'static,
+    B: R2Backend + 'static,
+    M: MetaStore + 'static,
+    R: OrphanReconciler + 'static,
+    C: Clock + 'static,
+{
+    // Canonical predicate is `PredicateKind::Any` (the
+    // `TimingPaddingLayer::canonical` default) for the REST stack so
+    // a future refactor that rewrites 404 → 200 + body via a router-
+    // level `map_response` would still trigger padding via the
+    // `MissMarker` extension that `handle_cas_get` inserts on every
+    // miss path.
     Router::new()
         .route("/v1/cas/:digest", get(handle_cas_get::<V, B, M, R, C>))
+        .layer(padding_layer)
         .with_state(state)
 }
 
@@ -257,7 +292,19 @@ where
                 reason,
             );
             let m = miss_mapping();
-            return error_response(StatusCode::NOT_FOUND, m.taxonomy_code, m.message);
+            // Codex round-5 P1 fix: thread the MissArm through the
+            // MissMarker extension so the timing-padding emit hook
+            // can attribute the per-request padded latency to the
+            // canonical arm — the load-bearing field for the S-09
+            // pairwise-medians aggregation that derives
+            // `corelink_cas_side_channel_timing_diff_ms`.
+            let arm = miss_reason_to_arm(reason);
+            return error_response_with_arm(
+                StatusCode::NOT_FOUND,
+                m.taxonomy_code,
+                m.message,
+                Some(arm),
+            );
         }
     };
 
@@ -552,6 +599,15 @@ fn extract_request_id_http(headers: &HeaderMap) -> String {
 }
 
 fn error_response(status: StatusCode, taxonomy_code: &'static str, message: &str) -> Response {
+    error_response_with_arm(status, taxonomy_code, message, None)
+}
+
+fn error_response_with_arm(
+    status: StatusCode,
+    taxonomy_code: &'static str,
+    message: &str,
+    miss_arm: Option<MissArm>,
+) -> Response {
     let mut resp = Response::new(Body::from(format!(
         "{{\"error_code\":\"{taxonomy_code}\",\"message\":\"{message}\"}}"
     )));
@@ -563,7 +619,30 @@ fn error_response(status: StatusCode, taxonomy_code: &'static str, message: &str
         header::CONTENT_TYPE,
         HeaderValue::from_static("application/json"),
     );
+    // WI-S02-004 / ADR-0023: every 404 emitted by this handler is a
+    // [`MissReason`] arm and MUST flow through the timing-padding
+    // layer. Insert the canonical `MissMarker` extension (with the
+    // optional `MissArm` discriminator when known) so the
+    // `PredicateKind::Any` / `ExtensionMarker` predicates pad even
+    // if a downstream transformer rewrites the status code, AND so
+    // the timing-padding emit hook can attribute the padded
+    // latency to the canonical arm.
+    if status == StatusCode::NOT_FOUND {
+        let marker = miss_arm.map(MissMarker::for_arm).unwrap_or_default();
+        resp.extensions_mut().insert(marker);
+    }
     resp
+}
+
+/// Map `corelink-reapi::read::MissReason` → canonical
+/// `corelink-worker::middleware::MissArm` for the timing-padding
+/// emit hook (WI-S02-004 §10.4.3 + ADR-0023 §"Operational métrica").
+fn miss_reason_to_arm(reason: crate::read::MissReason) -> MissArm {
+    match reason {
+        crate::read::MissReason::NeverExisted => MissArm::NeverExisted,
+        crate::read::MissReason::Tombstoned => MissArm::Tombstoned,
+        crate::read::MissReason::R2OrphanRow => MissArm::R2OrphanRow,
+    }
 }
 
 fn grpc_status_to_http(grpc_code: i32) -> StatusCode {

@@ -1,6 +1,6 @@
 [package]
 name = "corelink-worker"
-description = "CoreLink Worker storage adapters — R2 single-blob CAS writer/reader (WI-S01-003); HMAC tenant path enforcement; If-None-Match idempotent semantics."
+description = "CoreLink Worker storage adapters — R2 single-blob CAS writer/reader (WI-S01-003); HMAC tenant path enforcement; If-None-Match idempotent semantics. Optional Tower middleware (`tower-middleware` feature) hosts the constant-time 404 timing-padding layer (WI-S02-004) — INV-CAS-SIDE-CHANNEL-INDISTINGUISHABLE."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -24,6 +24,28 @@ print_stdout = "deny"
 print_stderr = "deny"
 mod_module_files = "deny"
 
+[features]
+# Default profile excludes the Tower middleware so the pure-logic
+# storage-adapter modules (`storage::r2`, `storage::blob_store`, …) keep
+# building cleanly to `wasm32-unknown-unknown` without pulling http /
+# tower / tokio. The `tower-middleware` feature opts in to the
+# WI-S02-004 constant-time 404 timing-padding layer; consumers that wire
+# the middleware into the host-server gRPC/HTTP stack (corelink-reapi
+# `host-server` feature) flip this on.
+default = []
+tower-middleware = [
+    "dep:tower",
+    "dep:tower-layer",
+    "dep:tower-service",
+    "dep:http",
+    "dep:tokio",
+    "dep:pin-project-lite",
+    "dep:rand",
+    "dep:rand_chacha",
+    "dep:tracing",
+    "dep:futures",
+]
+
 [dependencies]
 corelink-hash = { workspace = true }
 corelink-tenant-path = { workspace = true }
@@ -32,7 +54,36 @@ thiserror = { workspace = true }
 uuid = { workspace = true }
 zeroize = { workspace = true }
 
+# Tower middleware (gated by `tower-middleware` feature).
+tower = { version = "0.5", default-features = false, optional = true }
+tower-layer = { version = "0.3", optional = true }
+tower-service = { version = "0.3", optional = true }
+http = { version = "1", optional = true }
+tokio = { workspace = true, optional = true }
+pin-project-lite = { version = "0.2", optional = true }
+rand = { version = "0.9", default-features = false, features = ["std", "std_rng", "os_rng"], optional = true }
+rand_chacha = { version = "0.9", default-features = false, features = ["std"], optional = true }
+tracing = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+
 [dev-dependencies]
 proptest = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["full", "test-util"] }
 futures = { workspace = true }
+http = "1"
+http-body-util = "0.1"
+tower = { version = "0.5", features = ["util"] }
+tower-layer = "0.3"
+tower-service = "0.3"
+criterion = { workspace = true }
+
+[[test]]
+name = "timing_indistinguishability"
+path = "tests/timing_indistinguishability.rs"
+required-features = ["tower-middleware"]
+
+[[bench]]
+name = "side_channel"
+path = "benches/side_channel.rs"
+harness = false
+required-features = ["tower-middleware"]

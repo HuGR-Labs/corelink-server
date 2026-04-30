@@ -87,6 +87,9 @@ pub mod handler;
 #[cfg(feature = "host-server")]
 pub mod http_read;
 
+#[cfg(feature = "host-server")]
+pub mod timing_padding_wiring;
+
 pub use audit::{
     AuditEnvelope, AuditEnvelopeBuilder, REAPI_CROSS_TENANT_ATTEMPT, REAPI_PUT_COMPLETED,
     REAPI_R2_ORPHAN_DETECTED, REAPI_READ_COMPLETED, REAPI_READ_MISS, REAPI_TOMBSTONED_READ_ATTEMPT,
@@ -116,4 +119,9 @@ pub use read::{CasReadOrchestrator, MissReason, ReadOrchestratorError, ReadOutco
 pub use handler::{ByteStreamService, CapabilitiesService, CasWriteService};
 
 #[cfg(feature = "host-server")]
-pub use http_read::{cas_get_router, HttpReadState};
+pub use http_read::{cas_get_router, cas_get_router_with_padding, HttpReadState};
+
+#[cfg(feature = "host-server")]
+pub use timing_padding_wiring::{
+    canonical_grpc_padding_layer, canonical_http_padding_layer, MissPaddingLayer,
+};

@@ -1039,7 +1039,24 @@ where
             responses.push(resp);
         }
 
-        Ok(Response::new(BatchReadBlobsResponse { responses }))
+        // WI-S02-004 / ADR-0023 — single-digest probe attack vector:
+        // when EVERY response in this batch is a NOT_FOUND, the
+        // overall response shape is a "miss" from the attacker's
+        // perspective. Insert the `MissMarker` extension so the
+        // timing-padding layer pads the response. Codex round-6 P1
+        // fix — earlier draft only padded ByteStream::Read; batch
+        // handlers were unprotected against single-digest probes.
+        let all_not_found = !responses.is_empty()
+            && responses.iter().all(|r| {
+                r.status.as_ref().is_some_and(|s| s.code == crate::error_map::GRPC_NOT_FOUND)
+            });
+        let mut response = Response::new(BatchReadBlobsResponse { responses });
+        if all_not_found {
+            response
+                .extensions_mut()
+                .insert(corelink_worker::middleware::MissMarker::new());
+        }
+        Ok(response)
     }
 
     async fn find_missing_blobs(
@@ -1181,9 +1198,22 @@ where
             }
         }
 
-        Ok(Response::new(FindMissingBlobsResponse {
+        // WI-S02-004 / ADR-0023 — single-digest probe attack vector:
+        // when EVERY input digest is reported missing, the response
+        // shape is a "miss" from the attacker's perspective. Insert
+        // the `MissMarker` extension so the timing-padding layer
+        // pads the response. Codex round-6 P1 fix.
+        let all_missing =
+            !parsed.is_empty() && missing_blob_digests.len() == parsed.len();
+        let mut response = Response::new(FindMissingBlobsResponse {
             missing_blob_digests,
-        }))
+        });
+        if all_missing {
+            response
+                .extensions_mut()
+                .insert(corelink_worker::middleware::MissMarker::new());
+        }
+        Ok(response)
     }
 }
 
@@ -1448,7 +1478,7 @@ where
                     &parsed.digest,
                     reason,
                 );
-                return Err(miss_to_status());
+                return Err(miss_to_status_with_arm(Some(miss_reason_label(reason))));
             }
         };
 
@@ -2341,18 +2371,50 @@ fn read_orch_error_to_status(e: &crate::read::ReadOrchestratorError) -> Status {
     )
 }
 
+/// Canonical label for a [`MissReason`] arm, mirrored by
+/// `corelink-worker::middleware::MissArm::label`. Used to encode the
+/// arm into the Status metadata so the timing-padding emit hook can
+/// attribute the padded latency to the arm.
+fn miss_reason_label(reason: MissReason) -> &'static str {
+    match reason {
+        MissReason::NeverExisted => "never_existed",
+        MissReason::Tombstoned => "tombstoned",
+        MissReason::R2OrphanRow => "r2_orphan_row",
+    }
+}
+
 /// Map a `ReadOutcome::NotFound` into the canonical wire status. Per
 /// ADR-0028 every [`MissReason`] variant maps to the same wire 404 +
 /// `COR_CAS_BLOB_NOT_FOUND` taxonomy code; the disambiguation lives in
 /// the audit envelope, not in the wire response.
+#[allow(dead_code, reason = "back-compat helper for handlers that surface 404 without a MissReason arm; production callers use miss_to_status_with_arm")]
 fn miss_to_status() -> Status {
+    miss_to_status_with_arm(None)
+}
+
+/// Variant of [`miss_to_status`] that mixes the canonical `MissArm`
+/// discriminator into the Status metadata so the
+/// `corelink-worker::middleware::TimingPaddingService` emit hook can
+/// attribute the padded latency to the arm. tonic's
+/// `Status::into_http` propagates metadata into the response
+/// headers, which is the only post-conversion-readable channel
+/// (response extensions do not survive `Status → http::Response`).
+/// The metadata key matches `corelink-worker`'s emit-side reader.
+/// Codex round-5 P1 fix.
+fn miss_to_status_with_arm(arm: Option<&'static str>) -> Status {
     let m = miss_mapping();
-    make_status(
+    let mut status = make_status(
         grpc_code_from_i32(m.grpc_code),
         m.taxonomy_code,
         m.message,
         0,
-    )
+    );
+    if let Some(label) = arm {
+        if let Ok(v) = label.parse::<tonic::metadata::AsciiMetadataValue>() {
+            status.metadata_mut().insert("x-corelink-miss-arm", v);
+        }
+    }
+    status
 }
 
 /// Public re-export of the read-completed audit emitter (module-private

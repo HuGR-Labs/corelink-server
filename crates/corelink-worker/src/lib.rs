@@ -85,6 +85,8 @@
 
 #![forbid(unsafe_code)]
 
+#[cfg(feature = "tower-middleware")]
+pub mod middleware;
 mod region;
 pub mod storage;
 mod tenant;
