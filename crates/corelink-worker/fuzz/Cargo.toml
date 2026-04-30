@@ -1,0 +1,44 @@
+[workspace]
+
+[package]
+name = "corelink-worker-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+unwrap_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+
+[dependencies]
+libfuzzer-sys = "0.4"
+corelink-worker = { path = ".." }
+corelink-hash = { path = "../../corelink-hash" }
+corelink-tenant-path = { path = "../../tenant-path" }
+bytes = "1"
+uuid = "1"
+zeroize = { version = "1.8", features = ["derive"] }
+futures-executor = "0.3"
+
+[[bin]]
+name = "r2_path"
+path = "fuzz_targets/r2_path.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "r2_put_get_roundtrip"
+path = "fuzz_targets/r2_put_get_roundtrip.rs"
+test = false
+doc = false
+bench = false

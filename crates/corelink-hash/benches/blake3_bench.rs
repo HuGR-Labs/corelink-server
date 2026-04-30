@@ -43,9 +43,7 @@ fn bench_verify_constant_time(c: &mut Criterion) {
     let a = Digest::compute(b"left");
     let b = Digest::compute(b"right");
     c.bench_function("Digest::verify_constant_time", |bencher| {
-        bencher.iter(|| {
-            black_box(black_box(&a).verify_constant_time(black_box(&b)))
-        });
+        bencher.iter(|| black_box(black_box(&a).verify_constant_time(black_box(&b))));
     });
 }
 

@@ -55,8 +55,7 @@ impl Digest {
                 return Err(ParseError::InvalidLength(bytes.len()));
             };
             let hi = decode_nibble(hi_byte).map_err(|()| ParseError::InvalidHexByte(i * 2))?;
-            let lo = decode_nibble(lo_byte)
-                .map_err(|()| ParseError::InvalidHexByte(i * 2 + 1))?;
+            let lo = decode_nibble(lo_byte).map_err(|()| ParseError::InvalidHexByte(i * 2 + 1))?;
             *slot = (hi << 4) | lo;
         }
         Ok(Self(out))

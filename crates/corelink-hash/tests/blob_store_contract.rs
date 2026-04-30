@@ -49,10 +49,9 @@ impl BlobStoreWrite for MemoryBlobStore {
 async fn put_verified_persists_under_digest_key() {
     let store = MemoryBlobStore::default();
     let body = Bytes::from_static(b"hello world");
-    let claimed = Digest::from_hex(
-        "d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24",
-    )
-    .expect("static hex");
+    let claimed =
+        Digest::from_hex("d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24")
+            .expect("static hex");
     let vb = VerifiedBody::new(body.clone(), claimed).expect("verifies");
 
     store.put_verified(&vb).await.expect("put ok");

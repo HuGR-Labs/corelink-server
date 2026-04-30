@@ -142,10 +142,9 @@ fn hash_mismatch_code_is_canonical() {
 #[test]
 fn successful_write_hello_world() {
     let body = Bytes::from_static(b"hello world");
-    let claimed = Digest::from_hex(
-        "d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24",
-    )
-    .expect("static hex");
+    let claimed =
+        Digest::from_hex("d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24")
+            .expect("static hex");
     let vb = VerifiedBody::new(body.clone(), claimed).expect("digest matches body");
     assert_eq!(vb.body().as_ref(), body.as_ref());
     assert_eq!(vb.digest().to_hex(), claimed.to_hex());
@@ -154,10 +153,9 @@ fn successful_write_hello_world() {
 #[test]
 fn mismatch_rejected() {
     let body = Bytes::from_static(b"goodbye world");
-    let claimed = Digest::from_hex(
-        "d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24",
-    )
-    .expect("static hex");
+    let claimed =
+        Digest::from_hex("d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24")
+            .expect("static hex");
     let err = VerifiedBody::new(body, claimed).expect_err("body should not verify");
     // Error type is unit-shaped; equality is the entire test surface.
     assert_eq!(err, HashMismatch);
@@ -190,7 +188,10 @@ fn verified_body_debug_redacts() {
     assert!(dbg.contains("VerifiedBody"));
     assert!(dbg.contains("digest"));
     assert!(dbg.contains("len"));
-    assert!(!dbg.contains("sensitive"), "Debug must not leak body bytes: {dbg}");
+    assert!(
+        !dbg.contains("sensitive"),
+        "Debug must not leak body bytes: {dbg}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -275,7 +276,11 @@ fn constant_time_variance() {
     let zero_digest = Digest::from_hex(&"0".repeat(64)).expect("zero hex");
 
     for trial in 0..TRIALS {
-        let probe = if trial % 2 == 0 { &zero_digest } else { &almost_match };
+        let probe = if trial % 2 == 0 {
+            &zero_digest
+        } else {
+            &almost_match
+        };
         let start = Instant::now();
         for _ in 0..ITERS_PER_TRIAL {
             std::hint::black_box(target.verify_constant_time(probe));
@@ -340,8 +345,7 @@ fn perf_regression_5mib_under_50ms() {
     }
     let elapsed = start.elapsed();
     let per_call_ms = elapsed.as_secs_f64() * 1000.0 / f64::from(iters);
-    let throughput_gib_per_sec =
-        (f64::from(iters) * 5.0 / 1024.0) / elapsed.as_secs_f64();
+    let throughput_gib_per_sec = (f64::from(iters) * 5.0 / 1024.0) / elapsed.as_secs_f64();
     eprintln!(
         "perf 5MiB×{iters}: total={elapsed:?}, per-call={per_call_ms:.2}ms, \
          throughput≈{throughput_gib_per_sec:.2} GiB/s"

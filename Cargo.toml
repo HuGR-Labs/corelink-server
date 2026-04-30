@@ -4,10 +4,12 @@ members = [
     "apps/server",
     "crates/tenant-path",
     "crates/corelink-hash",
+    "crates/corelink-worker",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
     "crates/corelink-hash/fuzz",
+    "crates/corelink-worker/fuzz",
 ]
 
 [workspace.package]
@@ -46,10 +48,14 @@ sha2 = "0.10"
 blake3 = { version = "1", features = ["traits-preview"] }
 base64 = "0.22"
 hex = "0.4"
-uuid = { version = "1", features = ["v7"] }
+uuid = { version = "1" }
 subtle = "2"
 zeroize = { version = "1.8", features = ["derive"] }
 bytes = "1"
+
+# Internal crates
+corelink-tenant-path = { path = "crates/tenant-path" }
+corelink-hash = { path = "crates/corelink-hash" }
 
 # Test / bench
 proptest = "1.5"

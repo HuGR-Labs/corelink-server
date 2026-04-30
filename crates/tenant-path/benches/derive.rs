@@ -7,8 +7,8 @@
     reason = "bench harness; macros generate items we do not own"
 )]
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use corelink_tenant_path::{derive_prefix, TenantDerivationKey};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use uuid::Uuid;
 use zeroize::Zeroizing;
 

@@ -156,10 +156,7 @@ fn tdk_avalanche_single_byte_flip() {
     let tdk_b = TenantDerivationKey::from_bytes(Zeroizing::new(bytes));
     let p_a = derive_prefix(&tdk_a, fixture_uuid());
     let p_b = derive_prefix(&tdk_b, fixture_uuid());
-    assert_ne!(
-        p_a, p_b,
-        "single-bit TDK flip must flip the derived prefix"
-    );
+    assert_ne!(p_a, p_b, "single-bit TDK flip must flip the derived prefix");
 }
 
 /// Single-bit change in tenant_id propagates (avalanche on the message side).
@@ -324,9 +321,7 @@ fn perf_regression_10k_under_1s() {
     let elapsed = start.elapsed();
 
     let per_call_ns = elapsed.as_nanos() / u128::from(iters);
-    eprintln!(
-        "perf_regression_10k_under_1s: {iters} calls in {elapsed:?} ({per_call_ns} ns/call)"
-    );
+    eprintln!("perf_regression_10k_under_1s: {iters} calls in {elapsed:?} ({per_call_ns} ns/call)");
 
     // Hard ceiling: 1s for 10k iterations = 100 μs per call mean. The AC-6
     // p99 budget is 100 μs and mean is always ≤ p99, so a mean above 100 μs
