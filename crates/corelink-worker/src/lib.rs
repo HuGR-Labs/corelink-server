@@ -85,6 +85,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod cache;
 #[cfg(feature = "tower-middleware")]
 pub mod middleware;
 mod region;

@@ -1,12 +1,12 @@
 ---
 id: "WI-S02-005"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "FROZEN"
+work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-04-30"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-002", "FF-HR-005"]
 parent: "S-02"
@@ -27,7 +27,7 @@ tags: ["wi", "s02", "kv", "negative-cache", "performance", "cost-reduction", "pa
 
 # WI-S02-005 — Negative Cache KV Adapter (`ac_neg:<region>:<HMAC16>:<digest_hex>` per-region TTL 300s; HMAC16 canonical)
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** FROZEN · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-02](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -488,6 +488,24 @@ Doc `docs/internal/negative-cache-pattern.md` — reusable pattern para outros c
 > Crypto SME (advisory non-crypto-touching for this WI; mantém alinhamento sprint contract §14) folds into Architect role. Peer reviewers contribuem em PR review sem sign-off canonical separado (folded into Engineer + Architect roles per framework §33.5.4.3 + ADR-0034 solo-tier waiver).
 
 ## 31. Change Log
+
+1.2.0 — 2026-04-30 — Lote impl S-02-005 SEAL. **Implementation phase complete:**
+  - Crate `corelink-worker`: new `cache/` module landed:
+    - `cache/miss_reason.rs` — `MissReason` enum (NotFound / Tombstoned / CrossTenantMasked) with single-byte ASCII tag wire encoding (`b'n'/b't'/b'x'`); forward-compatible `from_tag` returns `KvError::Corrupt` for unknown bytes.
+    - `cache/kv.rs` — `KvBackend` trait abstraction (`get` / `put_with_ttl` / `delete`) mirroring the `R2Backend` + `MetaStore` pattern. Test fakes: `InMemoryKv<C: Clock>` (lazy TTL eviction; clock-injectable via `FakeClock` for property tests), `AlwaysFailingKv` (chaos), `CountingKv<B>` (call observability). No atomic CAS primitive exposed (CF Workers KV reality per WI §9.11).
+    - `cache/negative.rs` — `NegativeCache<K: KvBackend>` with `lookup` / `put_miss` / `invalidate_on_write` async methods + canonical `ac_neg:<region>:<HMAC16>:<digest_hex>` key constructor (`pub(crate)`; only buildable through the cache surface, REG-NAMESPACE-002 enforced at module visibility). TTL configurable via `with_ttl(...)` with `MIN_NEGATIVE_CACHE_TTL_SECS = 60` floor (CF Workers KV `expirationTtl` minimum). Soft-miss policy on KV transport faults (`lookup → None`, `put_miss/invalidate → Ok(())`); strict surface `lookup_strict` propagates errors for diag/admin tooling. Region-pin guard rejects misrouted `TenantCtx` with `RegionMismatch` (programmer-error, never client-driven).
+  - Tests: 36 new unit tests (cache module) + 8 integration/property tests in `tests/prop_neg_cache.rs`:
+    - 6 proptest @ 10 000 cases each: cross-tenant isolation, key grammar (no plaintext tenant_id), last-write-wins, invalidate clears, TTL expiry, region-pin reject.
+    - 1 explicit 100 000-iter concurrent fuzz (`cross_tenant_isolation_concurrent_100k`) on tokio multi-thread runtime, 8 victims × 8 attackers, asserts 0 leaks.
+    - 1 deterministic TTL boundary regression vector (just-before / at / past TTL).
+  - `lib.rs` exports `pub mod cache`; default-feature build is wasm32-clean (no tower / tokio dep on the cache path).
+  - **Spec patches in same Lote:**
+    - WI frontmatter `doc_status: DRAFT → FROZEN`, `work_status: READY → DONE`, `version: 1.1.0 → 1.2.0`, `updated: 2026-04-25 → 2026-04-30`.
+    - Header status line aligned.
+  - **Deferred to integration tier (cross-WI):** real Cloudflare KV binding adapter (lands alongside the WI-S01-005-style miniflare-driven shim in S-02 sprint-close OR S-09 observability sprint); per-region `KV_NEGATIVE_CACHE_<REGION>` wrangler.toml binding (deferred to S-13 admin plane wrangler.toml landing — S-02 trait abstraction is complete, the wrangler binding is a deploy-time concern); `S02-D5` integration into the CAS read path / write path / `FindMissingBlobs` is the WI-S02-006 sprint-close convergence task (the cache adapter is the substrate, the integration is the next WI's deliverable). Cost-reduction probe-storm benchmark (§10.5.1) deferred to sprint-close E2E (requires real wrangler-dev + miniflare); the 100 000-iter concurrent fuzz already exercises probe-storm shape on the in-memory fake.
+  - Codex: per protocol change 2026-04-30 (charter §"Protocol change"), no per-WI codex review run; sprint-close codex covers the full S-02 corpus.
+
+1.1.0 — 2026-04-26 — Lote 10.2bis cycle 4 codex SEAL real validation: canonical key sweep `ac_neg:<digest>` → `ac_neg:<region>:<HMAC16>:<digest_hex>`; KV reality alignment (TTL + last-write-wins + retry; no atomic CAS); ADR-0028 freeze (todos `MissReason` → 404 uniform).
 
 1.0.0 — 2026-04-25 — Lote 10.2.
 
