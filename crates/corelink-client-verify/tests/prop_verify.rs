@@ -272,16 +272,23 @@ proptest! {
 )]
 fn constant_time_variance_on_verify() {
     // The CT gate measures the *constant-time-compare branch* —
-    // mismatch probes vs each other. Four probe classes:
-    // - zero_digest:        no shared bytes with the truth
-    // - first_byte_diff:    differs at index 0 (early-exit attack)
-    // - middle_byte_diff:   differs at index 15 (mid-buffer attack)
-    // - last_byte_diff:     differs at index 31 (longest shared prefix)
+    // mismatch probes vs each other across a prefix-length sweep
+    // (codex r3 P-Low closure for prefix-length / no-correlation
+    // claim). Six probe classes:
+    // - zero_digest: no shared bytes with the truth
+    // - prefix_0:    differs at byte 0 (zero correct prefix bytes)
+    // - prefix_8:    differs at byte 8 (8-byte correct prefix)
+    // - prefix_16:   differs at byte 16 (16-byte correct prefix)
+    // - prefix_24:   differs at byte 24 (24-byte correct prefix)
+    // - prefix_31:   differs at byte 31 (31-byte correct prefix; longest)
     //
-    // All four return Err(DigestMismatch) so the post-compare
+    // All six return Err(DigestMismatch) so the post-compare
     // control flow is identical (both legs allocate two hex
     // strings). A constant-time compare must produce statistically
-    // indistinguishable timings across these four probes.
+    // indistinguishable timings across the entire prefix-length
+    // sweep — any monotonic correlation between the prefix-bytes-
+    // -correct count and latency would leak `k` through timing,
+    // enabling chosen-prefix attacks.
     //
     // We do NOT include an `exact_match` probe in the gate because
     // its post-compare path is structurally different (returns
@@ -296,22 +303,32 @@ fn constant_time_variance_on_verify() {
     const ITERS_PER_TRIAL: usize = 256;
     let body = b"the canonical body for ct-variance through verify".to_vec();
     let truth = Digest::compute(&body);
-
-    let make_probe = |flip_index: usize| -> Digest {
+    // Prefix-length sweep (codex r3 P-Low closure): probe at k = 0, 8, 16,
+    // 24, 31 prefix-bytes-correct shapes. Each probe shares the first k
+    // bytes with the truth and differs at byte k. A constant-time compare
+    // must produce statistically indistinguishable timings across the
+    // entire sweep — any prefix-length-correlated latency would leak `k`
+    // through timing.
+    let make_prefix_probe = |k: usize| -> Digest {
         let mut bytes = *truth.as_bytes();
-        bytes[flip_index] ^= 0x01;
+        // Differ at byte k (after k correct bytes).
+        bytes[k] ^= 0x01;
         Digest::from_hex(&hex::encode(bytes)).expect("hex")
     };
     let zero_digest = Digest::from_hex(&"0".repeat(64)).expect("hex");
-    let first_byte_diff = make_probe(0);
-    let middle_byte_diff = make_probe(15);
-    let last_byte_diff = make_probe(31);
+    let prefix_0 = make_prefix_probe(0); // alias of first_byte_diff
+    let prefix_8 = make_prefix_probe(8);
+    let prefix_16 = make_prefix_probe(16); // alias of middle_byte_diff
+    let prefix_24 = make_prefix_probe(24);
+    let prefix_31 = make_prefix_probe(31); // alias of last_byte_diff
 
-    let probes: [(&str, &Digest); 4] = [
+    let probes: [(&str, &Digest); 6] = [
         ("zero", &zero_digest),
-        ("first_byte_diff", &first_byte_diff),
-        ("middle_byte_diff", &middle_byte_diff),
-        ("last_byte_diff", &last_byte_diff),
+        ("prefix_0", &prefix_0),
+        ("prefix_8", &prefix_8),
+        ("prefix_16", &prefix_16),
+        ("prefix_24", &prefix_24),
+        ("prefix_31", &prefix_31),
     ];
 
     let v = ClientVerifier::default_on();

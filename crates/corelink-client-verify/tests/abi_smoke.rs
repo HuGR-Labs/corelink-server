@@ -320,6 +320,58 @@ fn ffi_opt_out_total_increments_on_disabled_construction() {
     unsafe { corelink_verifier_free(v) };
 }
 
+/// FFI: `digest_hex_ptr == NULL && digest_hex_len == DIGEST_HEX_LEN` must
+/// reject with `COR_VERIFY_ERR_INVALID_INPUT` *before* dereference.
+///
+/// Closes the codex r3 finding "raw-pointer validation branch in the FFI
+/// entry point is still untested" — the null-then-length-passes-check
+/// branch at `ffi.rs::corelink_verifier_verify` (post the length gate
+/// short-circuits to invalid-input rather than UB).
+#[test]
+fn ffi_null_digest_hex_ptr_with_valid_length_rejects() {
+    let body = b"hello world";
+    let v = unsafe { corelink_verifier_new_default_on() };
+    assert!(!v.is_null());
+    let mut out: i32 = -1;
+    let rc = unsafe {
+        corelink_verifier_verify(
+            v,
+            body.as_ptr(),
+            body.len(),
+            core::ptr::null(),
+            DIGEST_HEX_LEN, // exactly 64 — the length check passes
+            &mut out,
+        )
+    };
+    assert_eq!(rc, COR_VERIFY_ERR_INVALID_INPUT);
+    assert_eq!(out, COR_VERIFY_ERR_INVALID_INPUT);
+    unsafe { corelink_verifier_free(v) };
+}
+
+/// FFI: `digest_hex_ptr == NULL && digest_hex_len == 0` rejects via the
+/// length gate (different code path from the length-passes-then-null
+/// branch above).
+#[test]
+fn ffi_null_digest_hex_ptr_with_zero_length_rejects() {
+    let body = b"hello world";
+    let v = unsafe { corelink_verifier_new_default_on() };
+    let mut out: i32 = -1;
+    let rc = unsafe {
+        corelink_verifier_verify(
+            v,
+            body.as_ptr(),
+            body.len(),
+            core::ptr::null(),
+            0,
+            &mut out,
+        )
+    };
+    // Length 0 != 64 trips the length gate first.
+    assert_eq!(rc, COR_VERIFY_ERR_INVALID_DIGEST);
+    assert_eq!(out, COR_VERIFY_ERR_INVALID_DIGEST);
+    unsafe { corelink_verifier_free(v) };
+}
+
 #[test]
 fn ffi_signatures_have_expected_layout() {
     // Compile-time function-pointer checks: if any of these signatures
