@@ -1,12 +1,12 @@
 ---
 id: "WI-S04-004"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "FROZEN"
+work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-05-01"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-002", "FF-HR-005", "FF-HR-009"]
 parent: "S-04"
@@ -28,7 +28,7 @@ tags: ["wi", "s04", "ac", "hkdf", "signing", "crypto", "adr-0021", "high-risk"]
 
 # WI-S04-004 — CTRL-AC-002 HKDF-SHA256 Digest Signing + Verifier + ADR-0021 (HKDF vs Ed25519 Decision) + Mann-Whitney 3-prong Cripto-Grade Constant-Time + Property Test 10k + Key Rotation Forward-Compat
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** FROZEN · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-04](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -1069,6 +1069,7 @@ Fallback: handler returns 503 if sig verify backend unavailable (KMS down + cach
 | 1.0.0 | 2026-04-25 | Gustavo (via Claude Opus 4.7) | Criação WI-S04-004 (Lote 10.4); SOTA pós-Lote 10.3bis (32 seções; 13-row sign-off; 14-row risk; Mann-Whitney 3-prong cripto-grade |Δmedian| ≤ 0.5ms; cost TCO 12m; 12 chaos experiments; STRIDE+LINDDUN delta full; Crypto SME MANDATORY EMPHATIC; ADR-0021 ratificação plan). |
 | 1.1.0 | 2026-04-25 | Gustavo (Lote 10.4bis Agent R4) | P0 fixes: salt = sig_key_id binds version (RFC 5869 Extract); HKDF info `b"ac-sig"` non-prefix domain separation from `b"manifest-sig"`/`b"meta-manifest-sig"`; canonical_bytes 89→121 bytes (added result_hash binding); sig_alg CHECK constraint inline; Crypto SME promoted MANDATORY EMPHATIC. |
 | 1.2.0 | 2026-04-25 | Gustavo (Lote 10.4-tris Sonnet R5) | **P0-R5-001**: key_id=0 reserved sentinel; rotation starts at 1; `unwrap_or(&1)` not `&0`; debug_assert non-empty accepted_key_ids; `SigError::KeyIdReserved` variant added. **P0-R5-002**: HKDF-Extract composition with path-HMAC TDK use documented in ADR-0021 §Risks (accepted under HMAC security assumption; attack cost 2^128). **P0-R5-003**: canonical_bytes 121 bytes retained com result_hash documented as **derived `BLAKE3(merkle_root)` for D1 index lookup ONLY (NOT cripto binding)**; verify_full is the cripto authority for sig+structure; result_hash column is index column, not security boundary; ADR-0037 §A1 clarifies. **P0-R5-005**: Crypto SME MANDATORY EMPHATIC explicit (non-waivable; required BEFORE WI-S04-004 SEAL); WI-S04-006 §6.1.6 advisory role at PRR ceremony only (substantive review at this WI's SEAL). **P0-R5-006**: §30.1 NEW — explicit key rotation procedures for BOTH `sig_key_id` AND `path_key_id`; INV-AC-PATH-SIG-KEY-VERSION-INDEPENDENT promoted. |
+| 1.3.0 | 2026-05-01 | Gustavo (via Claude Opus 4.7 1M) | **WI-S04-004 SEALED — implementation phase**. Real HKDF-SHA256 + BLAKE3-keyed signing infra delivered as `crates/corelink-ac/src/sig/` (4 sub-modules: `error.rs` 6-variant `SigError` taxonomy with `audit_code()` short-id contract; `canonical.rs` 121-byte preimage `compose()` mirroring `corelink-worker::reapi::ac::sig::AcEnvelope::canonicalize` 1:1 with compile-time `assert!` parity check; `tdk.rs` `TdkHandle` trait + `MockTdkHandle` deterministic test fixture + `Tdk` newtype wrapping `Zeroizing<Vec<u8>>` zero-on-drop with redacted Debug + crate-private `as_bytes` accessor; `hkdf_signer.rs` `HkdfSigner` + `HkdfVerifier` real impl with `salt = sig_key_id.to_le_bytes()` + `info = b"ac-sig"` per ADR-0021 + `subtle::ConstantTimeEq` verify path + `accepted_key_ids` rotation grace API [`new` / `admit` / `retire` / `rotate_to`] + reserved-sentinel rejection on every entry point + free-fn `compute_signature` for client SDK dual-side verify); `pub trait SignatureSigner` + `pub trait SignatureVerifier` Send+Sync surfaces consumed by `corelink-worker::reapi::ac::sig::CanonicalAcSigner` adapter (new — wraps `Arc<HkdfSigner>` + `Arc<HkdfVerifier>` and satisfies the worker's local `Signer` trait + maps every canonical `SigError` arm to the worker's local taxonomy preserving cripto-mismatch identity). Tests: 28 lib unit + 11 canonical_vectors_sig + 8 key_rotation_sig + 6 property × 10 000 iter (`prop_sign_verify_roundtrip` / `prop_tampered_sig_rejected` / `prop_wrong_key_id_rejected` / `prop_canonical_bytes_byte_stable` / `prop_cross_tenant_signature_rejected` / `prop_key_rotation_grace`) + Mann-Whitney 3-prong cripto-grade timing test (3 arms × 10 000 samples × 3 trials; 9 pair-tests; Šidák-corrected α' ≈ 0.005 686; 10/80/10 trimmed-mean central estimator per WI-S03-008 ct-variance lesson; bootstrap 95 % CI on `|Δ(trimmed_mean)|` ≤ 0.5 ms cripto-grade gate; release-mode-only via `#[cfg_attr(debug_assertions, ignore)]`; dudect §III.A batched measurement window of 256 verify ops per sample so timer-resolution ties don't overwhelm the rank statistic). HKDF info CI gate `b"ac-sig"` byte-equal asserted in lib unit + integration test. Hardening: `#![forbid(unsafe_code)]`; zero `unwrap`/`expect`/`panic` in src/; `clippy::indexing_slicing = "deny"` + canonical-offset compile-time `assert!` proof of in-range; `mod_module_files = "deny"` honored (`sig.rs` parent + `sig/` children). Workspace + worker integration: full `cargo test --workspace --all-targets --features corelink-worker/tower-middleware` 0 failures (all existing tests + 4 new `CanonicalAcSigner` adapter tests in worker side); `cargo clippy --workspace --all-targets --features corelink-worker/tower-middleware -- -D warnings` clean; `python3 scripts/validate_specs.py` clean; `python3 scripts/validate_references.py` no new dangling refs. **Deferred per charter trait-abstraction-defer**: real `CfSecretsTdkHandle` Cloudflare Secrets binding shim (alongside WI-S04-006 conformance suite + miniflare/wrangler-dev integration); 100k nightly property iter; cargo-fuzz 1h CI nightly target (alongside conformance suite); test vectors Annex C/D 50-vector publication (canonical_vectors_sig already covers the algorithmic boundary; external-consumer fixtures land alongside conformance suite); criterion p99 sign/verify ≤ 1ms benchmarks (alongside conformance suite). |
 
 ## 32. Anti-patterns evitados
 

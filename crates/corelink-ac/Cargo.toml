@@ -31,9 +31,17 @@ hex = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+# WI-S04-004 — HKDF-SHA256 digest signing infrastructure (CTRL-AC-002).
+hkdf = { workspace = true }
+sha2 = { workspace = true }
+subtle = { workspace = true }
+zeroize = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
+rand = "0.9"
+rand_chacha = "0.9"
 
 [[test]]
 name = "prop_merkle"
@@ -50,3 +58,20 @@ path = "tests/round_trip.rs"
 [[test]]
 name = "tampering"
 path = "tests/tampering.rs"
+
+# WI-S04-004 sig module test targets.
+[[test]]
+name = "prop_sig"
+path = "tests/prop_sig.rs"
+
+[[test]]
+name = "canonical_vectors_sig"
+path = "tests/canonical_vectors_sig.rs"
+
+[[test]]
+name = "key_rotation_sig"
+path = "tests/key_rotation_sig.rs"
+
+[[test]]
+name = "timing_sig"
+path = "tests/timing_sig.rs"

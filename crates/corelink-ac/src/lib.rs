@@ -102,6 +102,7 @@ pub mod codec;
 pub mod error;
 pub mod merkle;
 pub mod outputs;
+pub mod sig;
 pub mod types;
 
 pub use bounds::{
