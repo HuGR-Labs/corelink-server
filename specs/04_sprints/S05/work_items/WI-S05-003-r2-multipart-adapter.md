@@ -1,12 +1,12 @@
 ---
 id: "WI-S05-003"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "FROZEN"
+work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-05-01"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-002", "FF-HR-005"]
 parent: "S-05"
@@ -28,7 +28,7 @@ tags: ["wi", "s05", "r2", "multipart", "adapter", "etag", "abort", "high-risk"]
 
 # WI-S05-003 — R2 Multipart Adapter (`InitiateMultipartUpload` / `UploadPart` / `CompleteMultipartUpload` / `AbortMultipartUpload`) + ETag Tracking + Bounded Concurrency Per-Tenant + Chaos Test Client Disconnect
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** FROZEN · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-05](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -505,6 +505,8 @@ D+0 design (Architect); D+2 AppSec; D+4 code review (peer); D+5 chaos suite; D+6
 ### 31. Change Log
 
 1.0.0 / 2026-04-25 / Gustavo: Criação WI-S05-003 (Lote 10.5; SOTA pós-Lote 10.4bis lessons).
+
+1.3.0 / 2026-05-01 / Gustavo (via Claude Opus 4.7): **WI-S05-003 SEALED — implementation phase, `corelink-r2-multipart` v0.1.0 shipped.** New crate `crates/corelink-r2-multipart/` ships the canonical `MultipartAdapter` trait + `InMemoryMultipartAdapter` host-side fake honouring every load-bearing semantic the production R2 binding will inherit: (1) **5-Layer Defense Layer 4 path scoping** via `object_key::compose(...)` — every R2 key is structurally `<chunk\|manifest>-<region>/<tenant_prefix>/<digest_hex>[<.suffix>]` with the tenant_prefix segment sandwiched between the bucket family and the content digest; client-supplied path components are structurally unreachable and the constructor rejects bad regions / digests / suffixes via `MultipartError::InvalidObjectKey` (`INV-MULTIPART-PATH-TENANT-SCOPED` honoured by construction); (2) **Idempotent lifecycle** — `initiate` re-call on `(tenant_id, object_key)` while `InProgress` returns the existing upload id; `upload_part` records the same ETag for same-bytes; `complete` returns the cached `CompletedObject` after first success; `abort` is idempotent on `InProgress\|Aborted` and **rejected on `Completed`** per `INV-MULTIPART-FINALIZE-IRREVOCABLE`; (3) **Cross-tenant upload-id rejection** — `MultipartUpload` carries a bound `tenant_id` and every method takes `tenant_id` explicitly; mismatch surfaces as `MultipartError::CrossTenantUpload` and the session is left intact for the legitimate tenant; (4) **Bounded per-tenant concurrency** via `concurrency::PerTenantSemaphore` keyed on tenant UUID — default 8 permits per tenant (tunable per-tier S-13); `acquire` awaits, `try_acquire` trips `MultipartError::ConcurrencyLimitReached`; permit lifecycle via RAII `PartPermit` guard; F-001 closure preserved (every adapter instance owns its semaphore + session map; no globals); (5) **Bounded parser** — `PartNumber::new` rejects out-of-range numbers (`1..=10_000` per R2 hard limit) at construction; `upload_part` rejects bodies > 5 GiB (`R2_MAX_PART_SIZE_BYTES`); `MAX_SINGLE_SESSION_BLOB_BYTES = 16 MiB × 10_000 = 160_000 MiB` compile-time-asserted; (6) **Orphan enumeration** via `list_orphans(bucket, now, max_age)` — only path the WI-S05-006 sweeper has to discover sessions older than `max_age` and abort them. Tests: 46 lib unit + 8 property tests at 10k iter (PR; 100k via `PROPTEST_CASES`) covering tenant isolation distinct keys / cross-tenant replay rejected on every method / initiate idempotency / upload_part same-bytes idempotency / complete idempotency / abort safety (Completed reject + InProgress idempotent) / part ordering canonical (BTreeMap surfaces ascending part numbers regardless of upload order) / list_orphans bucket+age filters; 7 chaos suite scenarios (client disconnect mid-upload → adapter.abort + parts cleared / R2 5xx surfaces Backend / 10001 parts → MaxPartsExceeded / cross-tenant replay rejected + legitimate tenant unblocked / concurrency limit (semaphore caps at 8) / orphan sweeper consumes list_orphans + abort cycle / Complete ETag mismatch returns PartMissing(expected, actual)); 4 examples (happy_path / orphan_sweeper / cross_tenant_replay / concurrency_limit); README. Quality gates verde: `cargo test -p corelink-r2-multipart --all-targets` 0 failures (46 lib + 8 prop @ 10k + 7 chaos = 61 tests passing); `cargo clippy --workspace --all-targets --features corelink-worker/tower-middleware -- -D warnings` clean; `validate_specs.py` + `validate_references.py` no new dangling refs. **Trait-abstraction-defer pattern preserved** per charter — production `aws-sdk-s3` Cloudflare R2 binding shim deferred to WI-S05-006 alongside conformance suite (the `MultipartAdapter` trait + InMemory fake is the integration seam — the production shim's only job is to observably match the canonical reference impl); D1 `multipart_sessions` partial-UNIQUE schema mounting deferred to WI-S05-004 (the fake holds `(tenant_id, object_key) WHERE state='in_progress'` semantic in-memory until then); 6 metrics §6.1.8 + bucket-provisioning script + REST CORS curl + deploy guard CI all deferred to WI-S05-006 alongside the binding shim. wasm32-clean: only `tokio::sync::Semaphore` from tokio (no reactor); same artifact runs in the Cloudflare Workers WASM bundle and the host-side test harness.
 
 ### 32. Anti-patterns evitados
 

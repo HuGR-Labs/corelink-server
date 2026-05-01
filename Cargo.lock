@@ -490,6 +490,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-r2-multipart"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "corelink-tenant-path",
+ "futures",
+ "hex",
+ "proptest",
+ "sha2",
+ "thiserror",
+ "tokio",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
 name = "corelink-reapi"
 version = "0.1.0"
 dependencies = [
