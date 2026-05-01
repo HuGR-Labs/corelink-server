@@ -1,12 +1,12 @@
 ---
 id: "WI-S05-004"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "FROZEN"
+work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-05-01"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-002", "FF-HR-005"]
 parent: "S-05"
@@ -27,7 +27,7 @@ tags: ["wi", "s05", "d1", "schema", "chunks", "manifest", "multipart-sessions", 
 
 # WI-S05-004 — D1 Schema `chunks` + `manifest_chunks` + `multipart_sessions` + UNIQUE Constraint `(tenant_id, chunk_digest)` + tenant_prefix Materialization + Migration Idempotency
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** FROZEN · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-05](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -47,7 +47,9 @@ tags: ["wi", "s05", "d1", "schema", "chunks", "manifest", "multipart-sessions", 
 3 novas tabelas D1 + 1 column adição (cas_blobs.is_chunked) — backbone físico de multipart + chunking que WI-S05-001 handler consome:
 
 ```sql
--- File: migrations/004_chunks_manifest_multipart.sql
+-- File: migrations/d1/0003_multipart_chunks_manifest.sql (v1.3.0 path correction:
+-- the D1 migration domain lives under migrations/d1/ per ADR-0036 + WI-S04-002
+-- precedent; the root migrations/ hosts the Neon Postgres migrations only).
 -- Lote 10.4bis P0 fix preemptive: CHECK constraints inline em CREATE TABLE
 -- (SQLite/D1 NÃO suporta `ALTER TABLE … ADD CONSTRAINT chk_*`).
 -- BEGIN/COMMIT removidos (wrangler implicit transactions).
@@ -272,7 +274,7 @@ Schema migration; HIGH_RISK; FF-HR-002 + FF-HR-005.
 
 ### 6.1 In-scope (compact form; details em §1)
 
-1. **D1 migration `migrations/004_chunks_manifest_multipart.sql`**: 3 new tables + 1 column adição.
+1. **D1 migration `migrations/d1/0003_multipart_chunks_manifest.sql`**: 3 new tables (chunks + manifest_chunks + multipart_sessions). The `cas_blobs.is_chunked` column adição is **DEFERRED to WI-S05-006** alongside the live-D1 binding shim — `cas_blobs` lives in the `0001_blob_meta.sql` domain and the canonical S-05 wiring through that flag happens together with the conformance suite (handler short-circuit on `is_chunked = 1` is exercised against the live binding, not the simulator).
 2. **CHECK constraints inline** (lesson Lote 10.4bis).
 3. **6 indices** (chunks: 2; manifest_chunks: 2; multipart_sessions: 2).
 4. **tenant_prefix BLOB(16) materialized** em chunks (cron sem TDK access).
@@ -421,16 +423,29 @@ Feature: D1 schema chunks + manifest_chunks + multipart_sessions
 
 ## 13. Artifacts Produced
 
-| Artifact | Path | Tipo |
-|---|---|---|
-| Migration SQL | `migrations/004_chunks_manifest_multipart.sql` | SQL |
-| Wrangler config update | `wrangler.toml` | TOML |
-| Deploy guard | `scripts/check_multipart_infra.sh` | Bash |
-| Schema doc update | `docs/internal/d1-schema-multipart.md` | Markdown |
-| Property tests | `tests/prop_multipart_schema.rs` | Rust |
-| Integration tests | `tests/it_multipart_lifecycle.rs` | Rust |
-| Rollback runbook | `specs/02_governance/runbooks/RB-FM-MULTIPART-MIGRATION-BUG.md` | Markdown |
-| ADR-0040 (forward) | `specs/03_architecture/adrs/ADR-0040-multipart-d1-sharding.md` | Markdown |
+(v1.3.0 update: paths reconciled to actual implementation; the
+canonical D1 migration directory is `migrations/d1/` per ADR-0036 +
+the WI-S04-002 precedent — not the root `migrations/` which hosts the
+Neon Postgres migrations only. Items marked DEFERRED follow the
+charter trait-abstraction-defer pattern and land in WI-S05-006
+alongside the production D1 binding shim + sweeper.)
+
+| Artifact | Path | Tipo | Status |
+|---|---|---|---|
+| Migration SQL | `migrations/d1/0003_multipart_chunks_manifest.sql` | SQL | SHIPPED |
+| Embedded SQL constant | `crates/corelink-multipart-schema::MIGRATION_0003_MULTIPART_CHUNKS_MANIFEST` | Rust (`include_str!`) | SHIPPED |
+| Host-side simulator | `crates/corelink-multipart-schema/src/sim.rs` (`MultipartSchema`) | Rust | SHIPPED |
+| Region enum + bucket bindings | `crates/corelink-multipart-schema/src/region.rs` | Rust | SHIPPED |
+| Wrangler config update (10 R2 bindings: 5 chunk + 5 manifest, default + prod) | `wrangler.toml` | TOML | SHIPPED |
+| Migration canonical-text regression tests | `crates/corelink-multipart-schema/tests/migration_canonical.rs` | Rust (19 tests) | SHIPPED |
+| Property tests (10k iter PR; 100k nightly via `PROPTEST_CASES`) | `crates/corelink-multipart-schema/tests/prop_multipart_schema.rs` | Rust (15 tests) | SHIPPED |
+| Idempotency canonical regression tests | `crates/corelink-multipart-schema/tests/idempotency_canonical.rs` | Rust (15 tests) | SHIPPED |
+| Schema doc | `docs/internal/d1-schema-multipart.md` | Markdown | SHIPPED |
+| Production D1 binding shim | `crates/<TBD>` (adapter wrapping wrangler/miniflare D1 client) | Rust | DEFERRED → WI-S05-006 |
+| Deploy guard | `scripts/check_multipart_infra.sh` | Bash | DEFERRED → WI-S05-006 |
+| Live-D1 lifecycle integration test | `tests/it_multipart_lifecycle.rs` (miniflare/wrangler-dev) | Rust | DEFERRED → WI-S05-006 |
+| Rollback runbook | `specs/02_governance/runbooks/RB-FM-MULTIPART-MIGRATION-BUG.md` | Markdown | DEFERRED → WI-S05-006 |
+| ADR-0040 (D1 sharding criteria) | `specs/03_architecture/adrs/ADR-0040-multipart-d1-sharding.md` | Markdown | DEFERRED → WI-S05-006 |
 
 ## 14. Quality Standards SOTA (compact)
 
@@ -560,6 +575,8 @@ D+0 design (Architect+DBA); D+1 AppSec; D+2 code review; D+3 migration test stag
 ## 31. Change Log
 
 1.0.0 / 2026-04-25 / Gustavo: Criação WI-S05-004 (Lote 10.5; SOTA pós-Lote 10.4bis lessons applied: CHECK inline; tenant_prefix materialized; ALTER ADD COLUMN; sharding ADR-0040 forward).
+
+1.3.0 / 2026-05-01 / Gustavo (via Claude Opus 4.7): **WI-S05-004 SEALED — implementation phase, host-side simulator + canonical SQL artifact + 5-region wrangler bindings shipped.** Migration `migrations/d1/0003_multipart_chunks_manifest.sql` ships 3 idempotent `CREATE TABLE IF NOT EXISTS` + 5 `CREATE INDEX IF NOT EXISTS` + 1 `CREATE UNIQUE INDEX IF NOT EXISTS` (the partial UNIQUE on `(tenant_id, blob_digest_expected) WHERE state = 'in_progress'` per Lote 10.5bis P0 fix); 19 inline CHECK constraints across the three tables (chunks: digest_len + tenant_prefix_len + path_key_id_positive + region + size_bytes 1..=4_194_304 + refcount_non_negative + lifecycle; manifest_chunks: blob_digest_len + chunk_digest_len + chunk_index 0..81920; multipart_sessions: blob_digest_len + tenant_prefix_len + path_key_id_positive + region + state_domain + lifecycle_activity + lifecycle_expires + lifecycle_finalized + finalized_iff_terminal); tenant_prefix BLOB(16) materialised on chunks + multipart_sessions per ADR-0035 H-3; tenant-leftmost PK on every table (chunks `(tenant_id, chunk_digest)`; manifest_chunks `(tenant_id, blob_digest, chunk_index)`; multipart_sessions PK on `session_id` with `tenant_id` binding column for cross-tenant rejection). New crate `crates/corelink-multipart-schema/` ships the canonical migration via `include_str!` ([`MIGRATION_0003_MULTIPART_CHUNKS_MANIFEST`]) + `MultipartSchema` host-side simulator pinning every load-bearing invariant of the migration (chunks idempotent ON CONFLICT increment refcount; manifest_chunks PK collision with mismatched chunk_digest rejected; multipart_sessions partial-UNIQUE in_progress + monotone state graph in_progress → completed | aborted; CrossTenantSession surfaced for the adversarial path; expires_at = started_at + 7d default TTL); `MultipartRegion` enum mirrors the 5-region SQL CHECK list (sam/iad/lhr/nrt/syd) with chunk + manifest R2 bucket + wrangler binding accessors. Tests: 40 lib unit + 19 migration_canonical (idempotent DDL + every PK direction + partial UNIQUE shape + every CHECK mnemonic + every inline CHECK predicate + region IN-list parity + 5 indices + no destructive tokens + no BEGIN/COMMIT + no ALTER ADD CONSTRAINT) + 15 idempotency_canonical (chunks idempotent increment + GC candidate flow + manifest idempotent vs PK collision + session partial-UNIQUE returns existing + completed/aborted audit-trail does not block fresh start + monotone state graph + cross-tenant isolation enforced + reapply migration no-op + manifest assembled in canonical order via PK btree) + 15 property tests (10 at 10k iter PR + 4 at 5k for multi-tenant population scans + 1 at 10k migration idempotency; nightly opts into 100k via `PROPTEST_CASES`) covering chunks PK uniqueness + cross-tenant distinct + size_bytes + path_key_id_positive + tenant isolation + manifest PK ordered scan + manifest chunk_index bounded + sessions state forward + sessions state reverse rejected + partial UNIQUE in_progress + completed audit-trail unblocked + expires_at correctness + multi-tenant chunks isolated + migration idempotency. **Wrangler.toml** updated with 10 R2 bindings (5 `CHUNK_BUCKET_*` + 5 `MANIFEST_BUCKET_*`) for default + `[env.prod]`. F-001 closure preserved (every `MultipartSchema` instance owns its three `BTreeMap`s; no global mutable state). wasm32-clean (no tokio in src/ — same artifact runs in CF Workers WASM bundle + host-side test harness). Trait-abstraction-defer pattern preserved per charter: real Cloudflare D1 binding shim deferred to WI-S05-006 conformance suite alongside the sweeper; storage-projection ADR-0040 forward sharding criteria + RB-FM-MULTIPART-MIGRATION-BUG runbook + deploy guard `scripts/check_multipart_infra.sh` deferred to WI-S05-006 alongside the binding shim. Quality gates: `cargo test --workspace --all-targets --features corelink-worker/tower-middleware` 0 failures; `cargo clippy --workspace --all-targets --features corelink-worker/tower-middleware -- -D warnings` clean; `validate_specs.py` + `validate_references.py` no new dangling refs; `check_migrations_additive.py` clean (5 migration files scanned).
 
 ## 32. Anti-patterns evitados
 

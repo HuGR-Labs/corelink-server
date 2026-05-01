@@ -1,0 +1,46 @@
+[package]
+name = "corelink-multipart-schema"
+description = "CoreLink D1 (Cloudflare SQLite) Multipart + Chunking + Merkle storage schema (WI-S05-004). Embeds the canonical migrations/d1/0003_multipart_chunks_manifest.sql + an in-memory schema simulator that enforces every load-bearing invariant of the migration: PK uniqueness on (tenant_id, chunk_digest) for chunks; PK (tenant_id, blob_digest, chunk_index) for manifest_chunks; partial UNIQUE on (tenant_id, blob_digest_expected) WHERE state='in_progress' for multipart_sessions; CHECK constraint enforcement; tenant-isolation envelope; INV-MULTIPART-IDEMPOTENT + INV-MULTIPART-CHUNK-DETERMINISTIC + INV-MULTIPART-STATE-MONOTONIC + INV-MULTIPART-PATH-KEY-MATERIALIZED. Production wiring (WI-S05-006) consumes the SQL artifact via wrangler d1 migrations apply; the simulator drives 10k iter property tests."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+uuid = { workspace = true, features = ["v7"] }
+hex = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+hex = { workspace = true }
+
+[[test]]
+name = "migration_canonical"
+path = "tests/migration_canonical.rs"
+
+[[test]]
+name = "prop_multipart_schema"
+path = "tests/prop_multipart_schema.rs"
+
+[[test]]
+name = "idempotency_canonical"
+path = "tests/idempotency_canonical.rs"

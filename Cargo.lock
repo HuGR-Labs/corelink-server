@@ -469,6 +469,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-multipart-schema"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "proptest",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "corelink-pat"
 version = "0.1.0"
 dependencies = [

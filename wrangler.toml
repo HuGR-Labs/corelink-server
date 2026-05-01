@@ -60,6 +60,61 @@ binding = "AC_BUCKET_SYD"
 bucket_name = "corelink-ac-syd"
 preview_bucket_name = "corelink-ac-syd-preview"
 
+# WI-S05-004 — R2 buckets for multipart chunks (5 regions per S-05 §5.1).
+# `chunks.r2_object_key` references `corelink-chunk-<region>/<tenant_prefix_hex>/<chunk_digest>`.
+# Region literals MUST match crates/corelink-multipart-schema::REGION_LIST.
+[[r2_buckets]]
+binding = "CHUNK_BUCKET_SAM"
+bucket_name = "corelink-chunk-sam"
+preview_bucket_name = "corelink-chunk-sam-preview"
+
+[[r2_buckets]]
+binding = "CHUNK_BUCKET_IAD"
+bucket_name = "corelink-chunk-iad"
+preview_bucket_name = "corelink-chunk-iad-preview"
+
+[[r2_buckets]]
+binding = "CHUNK_BUCKET_LHR"
+bucket_name = "corelink-chunk-lhr"
+preview_bucket_name = "corelink-chunk-lhr-preview"
+
+[[r2_buckets]]
+binding = "CHUNK_BUCKET_NRT"
+bucket_name = "corelink-chunk-nrt"
+preview_bucket_name = "corelink-chunk-nrt-preview"
+
+[[r2_buckets]]
+binding = "CHUNK_BUCKET_SYD"
+bucket_name = "corelink-chunk-syd"
+preview_bucket_name = "corelink-chunk-syd-preview"
+
+# WI-S05-004 — R2 buckets for multipart manifest envelopes (5 regions per S-05 §5.1).
+# Stores the Merkle root + ordered chunk list for each chunked blob.
+[[r2_buckets]]
+binding = "MANIFEST_BUCKET_SAM"
+bucket_name = "corelink-manifest-sam"
+preview_bucket_name = "corelink-manifest-sam-preview"
+
+[[r2_buckets]]
+binding = "MANIFEST_BUCKET_IAD"
+bucket_name = "corelink-manifest-iad"
+preview_bucket_name = "corelink-manifest-iad-preview"
+
+[[r2_buckets]]
+binding = "MANIFEST_BUCKET_LHR"
+bucket_name = "corelink-manifest-lhr"
+preview_bucket_name = "corelink-manifest-lhr-preview"
+
+[[r2_buckets]]
+binding = "MANIFEST_BUCKET_NRT"
+bucket_name = "corelink-manifest-nrt"
+preview_bucket_name = "corelink-manifest-nrt-preview"
+
+[[r2_buckets]]
+binding = "MANIFEST_BUCKET_SYD"
+bucket_name = "corelink-manifest-syd"
+preview_bucket_name = "corelink-manifest-syd-preview"
+
 # KV pra metadata hot lookup
 [[kv_namespaces]]
 binding = "METADATA_KV"
@@ -104,6 +159,47 @@ bucket_name = "corelink-ac-nrt"
 [[env.prod.r2_buckets]]
 binding = "AC_BUCKET_SYD"
 bucket_name = "corelink-ac-syd"
+
+# WI-S05-004 — prod-env multipart chunk + manifest bucket bindings.
+[[env.prod.r2_buckets]]
+binding = "CHUNK_BUCKET_SAM"
+bucket_name = "corelink-chunk-sam"
+
+[[env.prod.r2_buckets]]
+binding = "CHUNK_BUCKET_IAD"
+bucket_name = "corelink-chunk-iad"
+
+[[env.prod.r2_buckets]]
+binding = "CHUNK_BUCKET_LHR"
+bucket_name = "corelink-chunk-lhr"
+
+[[env.prod.r2_buckets]]
+binding = "CHUNK_BUCKET_NRT"
+bucket_name = "corelink-chunk-nrt"
+
+[[env.prod.r2_buckets]]
+binding = "CHUNK_BUCKET_SYD"
+bucket_name = "corelink-chunk-syd"
+
+[[env.prod.r2_buckets]]
+binding = "MANIFEST_BUCKET_SAM"
+bucket_name = "corelink-manifest-sam"
+
+[[env.prod.r2_buckets]]
+binding = "MANIFEST_BUCKET_IAD"
+bucket_name = "corelink-manifest-iad"
+
+[[env.prod.r2_buckets]]
+binding = "MANIFEST_BUCKET_LHR"
+bucket_name = "corelink-manifest-lhr"
+
+[[env.prod.r2_buckets]]
+binding = "MANIFEST_BUCKET_NRT"
+bucket_name = "corelink-manifest-nrt"
+
+[[env.prod.r2_buckets]]
+binding = "MANIFEST_BUCKET_SYD"
+bucket_name = "corelink-manifest-syd"
 
 [[env.prod.containers]]
 class_name = "CoreLinkServer"
