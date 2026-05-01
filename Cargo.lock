@@ -328,6 +328,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
 
 [[package]]
+name = "corelink-audit"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "hmac",
+ "proptest",
+ "serde",
+ "serde_jcs",
+ "serde_json",
+ "sha2",
+ "subtle",
+ "thiserror",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
 name = "corelink-auth-schema"
 version = "0.1.0"
 dependencies = [
@@ -1816,6 +1833,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "ryu-js"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6518fc26bced4d53678a22d6e423e9d8716377def84545fe328236e3af070e7f"
+
+[[package]]
 name = "same-file"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1864,6 +1887,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "serde_jcs"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3a60f3fda61525e439ef6d67422118f11e986566997d9021c56867ad814a0aa"
+dependencies = [
+ "ryu-js",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

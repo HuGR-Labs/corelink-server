@@ -1,12 +1,12 @@
 ---
 id: "WI-S03-007"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "FROZEN"
+work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-05-01"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-002", "FF-HR-005", "FF-HR-009"]
 parent: "S-03"
@@ -27,7 +27,7 @@ tags: ["wi", "s03", "auth", "audit", "evt-047", "cloudevents", "chain-integrity"
 
 # WI-S03-007 — Audit Events EVT-047 (auth.*) + CloudEvents 1.0 Envelope + Chain Integrity Alignment S-09
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** FROZEN · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-03](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -790,6 +790,7 @@ RTO ≤ 30 min; RPO 0 (events durables em D1).
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-25 | Gustavo (via Claude Opus 4.7) | Criação WI-S03-007 (Lote 10.3); SOTA full (CloudEvents 1.0 + 33 event types (Lote 10.3bis P0 expansion: +6 denied granular + 3 lifecycle + new_device_used) + chain hash + redact macros + per-tenant retention + 5 INVs + 10 chaos + 12-row risk + ADR-0033). |
+| 1.3.0 | 2026-05-01 | Gustavo (via Claude Opus 4.7) | **SEAL** — implementation phase complete. New crate `crates/corelink-audit/` with `AuthEvent` CloudEvents 1.0 envelope + 33-variant `AuthEventType` taxonomy (+ matching `AuthEventData` payloads, `#[non_exhaustive]` on every public enum) + RFC 8785 JCS canonicalization via `serde_jcs = "0.2"` for `compute_content_hash` + `link_chain_hash` (`sha256(prev_chain_hash \|\| content_hash)` — never re-canonicalize) + genesis chain hash (64 zero hex) + `verify_chain_link` constant-time comparison + hash-newtype PII surface (`PrincipalIdHash` / `PatIdHash` / `EmailHash` / `WebAuthnCredentialIdHash` — only constructor is SHA-256-prefix-16-hex derivation; rejects empty input) + `redact_pat!` macro returning canonical `[REDACTED-PAT]` placeholder + `RetentionHint::for_tier` canonical mapping + `Emitter` trait + `InMemoryEmitter` test sink (`Arc<Mutex<…>>`-shared snapshot/len/is_empty) + `MetricsObserver` trait + `NoopMetrics` / `InMemoryMetrics` sinks emitting the canonical 5 metrics + `AuthEventType::is_sev1()` predicate (exactly 6 SEV-1 events) + 27 unit tests + 8 property tests @ 10 000 iter (content_hash deterministic / diverges-on-field-change / no-raw-PII-in-canonical-bytes / event-type-string-canonical / chain-link-deterministic / retention-hint-canonical / emitter-round-trip) + 6 canonical-vector tests (33 type-string pinning, envelope shape for `auth.token.validated`, content_hash byte-equal, 3-event chain extension, SEV-1 set, in-memory emitter order) + 6 redaction integration tests + 4 examples (emit_token_validated / redaction_macros / chain_hash_compute / anomaly_emit) + ADR-0033 + `docs/internal/auth-event-taxonomy.md`. Strict crate lints: `forbid(unsafe_code)` + `deny(unwrap_used / expect_used / panic / indexing_slicing / todo / unimplemented / dbg_macro / print_stdout / print_stderr / mod_module_files)`. Workspace clippy + 49 tests verde. v1.0.0 §1 enum kept BOTH legacy `DeniedScope` / `DeniedInvalid` AND the 6 granular replacements per canonical 33-type count; the "(replaces…)" prose was author intent, not a deletion — both surfaces ship for backwards compat per WI §23 (`#[non_exhaustive]` + 1-yr deprecation policy). Production emitter shim (`OutboxEmitter` D1 batch + `DirectSiemEmitter` webhook + `MultiplexEmitter` SEV-1 fan-out) deferred to S-03 wiring + S-09 chain processor per charter trait-abstraction-defer pattern (matches `corelink-clerk` / `corelink-pat` / `corelink-webauthn`). Per-WI codex review skipped per 2026-04-30 protocol; sprint-close Sonnet review covers full S-03 corpus. |
 
 ## 32. Anti-patterns evitados
 

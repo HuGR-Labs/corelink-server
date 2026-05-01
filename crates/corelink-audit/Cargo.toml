@@ -1,0 +1,68 @@
+[package]
+name = "corelink-audit"
+description = "CoreLink audit event taxonomy + CloudEvents 1.0 envelope + chain-integrity primitives (WI-S03-007). Defines the canonical `auth.*` event family (EVT-047), the CloudEvents 1.0 envelope used by every S-03 producer + S-09 consumer, the deterministic content_hash via RFC 8785 JCS canonicalization, the redact-by-construction PII surface (`PrincipalIdHash` / `PatIdHash` / `EmailHash` newtypes + `redact_pat!` macro), the per-tenant retention hint, and the `Emitter` trait + `InMemoryEmitter` test sink. The S-09 chain processor reads the persisted JCS-canonical bytes off the outbox row and links events via `sha256(prev_chain_hash || content_hash)` — never re-canonicalizing on the chain side. Production `OutboxEmitter` + `DirectSiemEmitter` shims are deferred to S-03 wiring + S-09 fan-out per charter trait-abstraction-defer pattern."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_jcs = "0.2"
+sha2 = { workspace = true }
+hex = { workspace = true }
+hmac = { workspace = true }
+subtle = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true, features = ["v7", "rng-getrandom", "serde"] }
+zeroize = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[[example]]
+name = "emit_token_validated"
+path = "examples/emit_token_validated.rs"
+
+[[example]]
+name = "redaction_macros"
+path = "examples/redaction_macros.rs"
+
+[[example]]
+name = "chain_hash_compute"
+path = "examples/chain_hash_compute.rs"
+
+[[example]]
+name = "anomaly_emit"
+path = "examples/anomaly_emit.rs"
+
+[[test]]
+name = "prop_audit"
+path = "tests/prop_audit.rs"
+
+[[test]]
+name = "canonical_vectors"
+path = "tests/canonical_vectors.rs"
+
+[[test]]
+name = "redaction"
+path = "tests/redaction.rs"
