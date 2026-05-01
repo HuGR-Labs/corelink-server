@@ -60,5 +60,16 @@
 //!   event ([`ac::AcEventType`]) via the [`ac::audit::AuditSink`]
 //!   trait (atomic with the meta row mutation by spec — production
 //!   binding wires the row INSERT into the same D1 batch).
+//!
+//! ## SplitBlob/SpliceBlob (S-05 / WI-S05-001)
+//!
+//! [`cas`] hosts the SplitBlob/SpliceBlob handler trait + impl plus the
+//! per-WI trait abstractions for the multipart session row store, the
+//! chunk content-addressable store, the manifest builder/verifier, and
+//! the audit sink. The 5-Layer Defense is enforced symmetrically; the
+//! trait surface refuses cross-tenant probing structurally
+//! (`SessionKey`, `ChunkKey`, `ManifestKey` all take `tenant_id` by
+//! value as their first PK component).
 
 pub mod ac;
+pub mod cas;

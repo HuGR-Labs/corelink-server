@@ -1,12 +1,12 @@
 ---
 id: "WI-S05-001"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "FROZEN"
+work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-05-01"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-002", "FF-HR-005"]
 parent: "S-05"
@@ -31,7 +31,7 @@ tags: ["wi", "s05", "reapi", "splitblob", "spliceblob", "multipart", "chunking",
 
 # WI-S05-001 — REAPI v2 `SplitBlob` + `SpliceBlob` Handlers (gRPC + REST) + Tenant Context Propagation + Manifest Tree Integration + Streaming + Bounded Concurrency
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** FROZEN · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-05](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -878,6 +878,7 @@ Fallback: handler 503 if R2 OR D1 down; Bazel client falls back to direct PUT (g
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-25 | Gustavo (via Claude Opus 4.7) | Criação WI-S05-001 (Lote 10.5); SOTA pós-Lote 10.4bis (32 seções; 13-row sign-off; 14-row risk; Mann-Whitney 3-prong; cost TCO 12m; 12 chaos experiments; STRIDE+LINDDUN delta full; aplicada lições Lote 10.4bis: TenantCtx-only canonical, audit_outbox WI-S01-004, sig domain separation, no with_tenant_ctx claims). |
+| 1.3.0 | 2026-05-01 | Gustavo (via Claude Opus 4.7) | **WI-S05-001 SEALED — pure-logic SplitBlob/SpliceBlob handler shipped.** New module `crates/corelink-worker/src/reapi/cas/` with 6 sub-modules: `types.rs` (`BlobDigest` / `ChunkDigest` / `ManifestDigest` / `SessionId` / `ChunkIndex` newtypes + `MAX_CHUNKS_PER_BLOB = 81920` constant matching sprint contract §5.1 P1-SR5-001), `audit.rs` (5-variant `BlobEventType` taxonomy `#[non_exhaustive]` per WI brief — `blob.split.start` / `chunk_appended` / `finalized` / `aborted` / `splice.ok` — + `BlobAuditRecord` typed shape + `AuditSink` trait + `InMemoryAuditSink`), `session.rs` (`SessionStore` trait + `InMemorySessionStore` per-instance fake; `(tenant_id, blob_digest)` PK; `Live → Finalized | Aborted` lifecycle; idempotent finalize on session_id; chunk-ordering oracle with `out_of_order` + `bytes_mismatch` rejections; tenant-leftmost cross-tenant masking), `chunk_store.rs` (`ChunkStore` trait + `InMemoryChunkStore`; `(tenant_id, chunk_digest)` PK + content-addressable UPSERT with refcount += 1 mirroring WI-S05-004 ON CONFLICT), `assembler.rs` (`BlobAssembler` trait + `InMemoryBlobAssembler` generic over `ChunkStore` impl; `ManifestKey::new(tenant_id, blob_digest)` PK; manifest digest = BLAKE3 over canonical chunk-index || chunk-digest concat as a faithful WI-S05-005 stand-in; `stream_chunks` enforces `INV-MULTIPART-STREAMING-VERIFY-FAIL-FAST` — per-chunk hash verify BEFORE sink emit + cancellation on first mismatch with no leaked bytes; `ChunkSink` trait + `CollectingSink` test fake), `split_splice.rs` (`SplitSpliceHandler` trait + `SplitSpliceHandlerImpl` orchestrator; 5-Layer Defense structurally enforced via `AuthCtx` projection — region pinning, scope check, tenant-leftmost keys, materialized prefix, audit emit; per-instance `Arc`-shared deps with no `static LazyLock` (F-001 closure replicated); 9-variant `SplitError` + 6-variant `SpliceError` `#[non_exhaustive]` taxonomies with `cor_code()` mapping to `COR_MULTIPART_*` + `audit_reason()` short-id; `MAX_CHUNK_BYTES = 2 MiB` bound; `Clock` seam + `SystemClock` / `FakeClock`; idempotent flows: `init_split` echoes live session OR returns `AlreadyChunked` for finalized blobs, `append_chunk` is no-op on `(session_id, chunk_index, same_bytes)` retry, `finalize_split` echoes cached digest with `idempotent: true`, `abort_split` is idempotent on Aborted but rejected on Finalized preserving `INV-MULTIPART-FINALIZE-IRREVOCABLE`). 18 lib unit tests covering every Gherkin scenario in §8 (init/append/finalize/abort happy paths, cross-tenant 404, scope/region enforcement, ordering violations, bytes-mismatch idempotency, chunk-too-large, finalize-after-abort, abort-after-finalize, splice happy path + chunk-tamper-aborts-stream + unknown-manifest-404 + audit-emit-on-failure + clock-advance-no-effect-on-lifecycle). 4 property tests at PR-mode 10k+10k+1k+1k iter (~22k iter total) in `crates/corelink-worker/tests/prop_split_splice.rs`: `prop_split_tenant_isolation` (cross-tenant SpliceBlob MUST `ManifestNotFound` + sink stays empty), `prop_split_idempotent_finalize` (re-init MUST `AlreadyChunked` echoing same manifest_digest + Splice round-trip bytes-equal), `prop_abort_safety` (post-abort append `SessionAborted` + finalize rejected + idempotent re-abort), `prop_chunk_ordering_canonical` (out-of-order rejected + canonical succeeds). Tonic gRPC + axum REST surfaces deferred to WI-S05-006 conformance suite per charter trait-abstraction-defer pattern (handler trait is the integration seam). Real chunker (WI-S05-002), R2 multipart adapter (WI-S05-003), D1 schema (WI-S05-004), Merkle codec (WI-S05-005), sweeper (WI-S05-006) deferred to upstream WIs. Quality gates verde: `cargo test --workspace --all-targets --features corelink-worker/tower-middleware` 0 failures (~22k property iter); `cargo clippy ... -D warnings` clean; `validate_specs.py` + `validate_references.py` clean. Lições aplicadas: WI-S03-008 lesson 1 (artifact-by-artifact verification), WI-S03-008 lesson 4 (`_spec_contract.md` row), F-001 closure (per-instance Arc<Mutex<…>>), WI-S04-001 trait-abstraction-defer + 5-Layer Defense pattern, WI-S01-003 trait-fake-then-real-impl-swap. (No per-WI codex per 2026-04-30 protocol; sprint-close Sonnet review covers full S-05 corpus.) |
 
 ## 32. Anti-patterns evitados
 

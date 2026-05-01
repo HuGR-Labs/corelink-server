@@ -3,9 +3,9 @@ id: "SPEC-CONTRACT-S05"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.3.0"
+version: "1.4.0"
 created: "2026-04-24"
-updated: "2026-04-25"
+updated: "2026-05-01"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -277,6 +277,7 @@ Itens waivable com Architect + ADR:
 | 1.0.0 | 2026-04-24 | Gustavo | Initial sprint contract S-05 (Multipart + Chunking + Merkle dual-side; HIGH_RISK 11 sign-offs canonical). |
 | 1.1.0 | 2026-04-25 | Gustavo | Lote 10.5bis P0 fixes (Agent R4 review remediation): pull-based chunk API; BLAKE3 throughput recalibration ≥500 MB/s native + ≥200 MB/s WASM; partial UNIQUE WHERE state='in_progress'; canonical_bytes 102 bytes; ADR canonical path; INV §3.16 promotion; ADR-0040 substantive content (per-region 5 shards). |
 | 1.2.0 | 2026-04-25 | Gustavo | **Lote 10.5-tris fixes** (Sonnet R5 independent review; 4 NEW P0s + 4 P1s): (a) **P0-SR5-001** WI-001 SplitBlob `ChunkPutReceipt` type + try_join_all all R2 PUTs awaited before manifest::build; manifest sign happens AFTER all chunk persistence verified; (b) **P0-SR5-002** WI-001 SpliceBlob explicit per-chunk pipeline (sequential verify-then-write within chunk; pipeline at chunk-level; NO unverified bytes ever reach client; 1-chunk lookahead 2 MiB buffer); (c) **P0-SR5-003** WI-005 manifest memory budget corrected (Vec<ChunkRef> 81920 × 40 bytes = 3.28 MB heap; verify_streaming redesigned O(1) memory via D1 manifest_chunks per-chunk read; INV-MULTIPART-STREAMING-MEMORY updated); (d) **P0-SR5-004** ADR-0040 §A1 `multipart_sessions` cross-shard migration discipline (reconcile job scope explicit; sweeper multi-shard aware during dual-write window); INV-MULTIPART-ORPHAN-DETECTABLE updated registry §3.16; (e) **P1-SR5-001** cross-crate alignment MAX_CHUNKS_PER_BLOB 80000→81920 (corelink-chunker matches corelink-manifest); registry INV-MULTIPART-BOUNDED-PARSER updated; (f) **P1-SR5-002** SplitBlob created_at_ms captured ONCE before signing; reused on retry. |
+| 1.4.0 | 2026-05-01 | Gustavo (via Claude Opus 4.7) | **WI-S05-001 SEALED — implementation phase, pure-logic SplitBlob/SpliceBlob handler shipped.** Module `crates/corelink-worker/src/reapi/cas/` ships the canonical `SplitSpliceHandler` trait + `SplitSpliceHandlerImpl` plus 4 trait abstractions (`SessionStore`, `ChunkStore`, `BlobAssembler`, `AuditSink`) each with InMemory fakes preserving every documented semantic — same trait-abstraction-defer pattern that landed `reapi::ac` in S-04. Quality gates: 18 lib unit + 4 property tests at ~22k iter total (`prop_split_tenant_isolation` + `prop_split_idempotent_finalize` 10k each, `prop_abort_safety` + `prop_chunk_ordering_canonical` 1k each — nightly opts into 100k via `PROPTEST_CASES`); `cargo test --workspace --all-targets --features corelink-worker/tower-middleware` 0 failures; `cargo clippy ... -D warnings` clean; `validate_specs.py` + `validate_references.py` clean. F-001 closure replicated (no global mutable state — every shared collection on `Arc<Mutex<…>>` field). MAX_CHUNKS_PER_BLOB = 81920 cross-crate alignment per §5.1 P1-SR5-001 honored in the worker's `corelink-worker::reapi::cas::types::MAX_CHUNKS_PER_BLOB` constant. Tonic gRPC + axum REST surfaces deferred to WI-S05-006 alongside the conformance suite (handler trait is the integration seam). Real chunker / R2 multipart adapter / D1 schema / Merkle codec / sweeper still upstream (WI-S05-002..006). |
 
 ---
 
