@@ -1,12 +1,12 @@
 ---
 id: "WI-S03-005"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "FROZEN"
+work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-05-01"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-002", "FF-HR-005", "FF-HR-009"]
 parent: "S-03"
@@ -28,7 +28,7 @@ tags: ["wi", "s03", "auth", "neon", "postgres", "schema", "pgcrypto", "high-risk
 
 # WI-S03-005 — Neon Schema (account / tenant / user_account / membership / pat) + pgcrypto Column Encryption + Migration `002_auth_tables`
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** FROZEN · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-03](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -893,6 +893,7 @@ Per-tenant emergency: admin override via `auth_admin` role; logged em audit chai
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-25 | Gustavo (via Claude Opus 4.7) | Criação WI-S03-005 (Lote 10.3); SOTA full (7 tables + 6 enums + 11 indexes + pgcrypto + RLS + DSR cascade + migration additive + 5 INVs + 10 chaos + 12-row risk + ADR-0031). |
+| 1.3.0 | 2026-05-01 | Gustavo (via Claude Opus 4.7) | **WI SEALED** (no per-WI codex per 2026-04-30 protocol; sprint-close Sonnet review covers). Implementation: `migrations/002_auth_tables.sql` (7 tables, 6 enums, 11 indexes, pgcrypto extension + email_hash deploy guard, RLS enabled on all 7 tables, 4 tenant_isolation policies + 3 admin_only deny-all policies, schema_version=2 row inserted idempotently). New crate `crates/corelink-auth-schema/` with embedded migration text via `include_str!`, in-memory schema simulator (`AuthSchema`) enforcing UNIQUE / FK / cascade invariants, `EmailHashKey` HKDF-SHA256 derive + HMAC-SHA256 compute primitives matching the Postgres `hmac()` evaluation, audit pseudonymisation primitives (S-09 forward), and RLS lifecycle docs. Tests: 16 unit + 9 migration-canonical + 8 property tests at 10 000 iter (5 UNIQUE constraints + cross-tenant isolation envelope + empty-context returns zero rows + DSR cascade completeness at 2 048 iter). New CI gate `scripts/check_migrations_additive.py` scanning every migration file for `DROP TABLE/COLUMN/INDEX/TYPE/CONSTRAINT/TRIGGER/FUNCTION/EXTENSION/POLICY`, `ALTER COLUMN … TYPE`, `ALTER COLUMN … DROP NOT NULL`, `TRUNCATE`, `RENAME COLUMN/TABLE/TO` with `-- additive-allowed: ADR-NNNN <reason>` annotation override. ADR-0031 published. doc_status DRAFT → FROZEN; work_status READY → DONE; version 1.2.0 → 1.3.0. |
 
 ## 32. Anti-patterns evitados
 

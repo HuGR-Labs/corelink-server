@@ -1,0 +1,36 @@
+[package]
+name = "corelink-auth-schema"
+description = "CoreLink Neon Postgres auth schema (WI-S03-005). Embeds the canonical migrations/002_auth_tables.sql + an in-memory schema simulator used by property tests to enforce UNIQUE / cross-tenant-isolation invariants without a live Neon instance. Production callers use the SQL artifact; the simulator is a pure host-side fake."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+uuid = { workspace = true, features = ["v7"] }
+hex = { workspace = true }
+sha2 = { workspace = true }
+hmac = { workspace = true }
+zeroize = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
