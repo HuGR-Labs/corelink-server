@@ -49,6 +49,7 @@ tower-middleware = [
     "dep:subtle",
     "dep:sha2",
     "dep:async-trait",
+    "dep:serde",
 ]
 
 [dependencies]
@@ -75,6 +76,7 @@ corelink-pat = { workspace = true, optional = true }
 subtle = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }
 async-trait = { version = "0.1", optional = true }
+serde = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
@@ -107,6 +109,11 @@ required-features = ["tower-middleware"]
 [[test]]
 name = "auth_middleware_smoke"
 path = "tests/auth_middleware_smoke.rs"
+required-features = ["tower-middleware"]
+
+[[test]]
+name = "prop_revocation"
+path = "tests/prop_revocation.rs"
 required-features = ["tower-middleware"]
 
 [[bench]]

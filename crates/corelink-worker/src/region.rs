@@ -12,7 +12,12 @@
 /// [`crate::TenantCtx`] so that residency (INV-DATA-RESIDENCY) is enforced at
 /// adapter construction: a tenant pinned to WEUR cannot accidentally write to
 /// the WNAM bucket because the writer carries its region as state.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(
+    feature = "tower-middleware",
+    derive(serde::Serialize, serde::Deserialize)
+)]
+#[cfg_attr(feature = "tower-middleware", serde(rename_all = "lowercase"))]
 pub enum Region {
     /// West North America (Cloudflare hint: `wnam`).
     Wnam,

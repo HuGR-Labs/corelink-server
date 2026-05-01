@@ -1,12 +1,12 @@
 ---
 id: "WI-S03-004"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "FROZEN"
+work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-04-30"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-002", "FF-HR-005", "FF-HR-009"]
 parent: "S-03"
@@ -27,7 +27,7 @@ tags: ["wi", "s03", "auth", "revocation", "durable-object", "kv-invalidation", "
 
 # WI-S03-004 — Revocation Durable Object + KV Cache Invalidation + Cross-Region Propagation ≤ 60s p99
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** FROZEN · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-03](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -769,6 +769,7 @@ Per-tenant emergency: mass-revoke endpoint OR direct D1 UPDATE (admin override).
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-25 | Gustavo (via Claude Opus 4.7) | Criação WI-S03-004 (Lote 10.3); SOTA full (DO + Queue propagation, combined 120s SLA, 5 INVs, 10 chaos, 12-row risk, ADR-0030 forward). |
+| 1.3.0 | 2026-04-30 | Gustavo (via Claude Opus 4.7) | **SEALED** (no per-WI codex per 2026-04-30 protocol; sprint-close Sonnet review covers). Implementation in `crates/corelink-worker/src/auth/revocation.rs` (+ `auth.rs` module wiring) — gated behind the `tower-middleware` feature alongside the WI-S03-003 middleware so the pure-logic storage adapters keep building cleanly to `wasm32-unknown-unknown`. Trait-abstraction defer pattern (per WI-S01-003 lesson §1): four canonical traits — [`RevocationStore`] (DO-equivalent), [`MetaRevocationSink`] (Neon SoT writer), [`SessionCacheInvalidator`] (KV invalidate; canonical adapter [`KvSessionCacheInvalidator`] wraps any [`KvBackend`]), [`RevocationBroadcast`] (Queue producer) — the production CF binding shims land alongside the host-server wiring WI. Property tests at 10k iter (PR cap) cover INV-AUTH-REVOCATION-IDEMPOTENT, INV-AUTH-NEON-IS-SOT (under KV outage + Queue outage), INV-AUTH-MASS-REVOKE-ATOMIC, INV-AUTH-PROPAGATION-AT-LEAST-ONCE; concurrent stress at 100k tokio::spawn fan-out (idempotent ingest dedup + concurrent revoke under high replay load) + 3-region propagation alignment + mass-revoke vs single-revoke race. Canonical chunk size constants `MASS_REVOKE_OUTBOX_CHUNK_SIZE=1000` + `MASS_REVOKE_BROADCAST_BATCH_SIZE=100` per §6.1.5 + §9.6. `Region` derives `Ord`/`PartialOrd`/`Serialize`/`Deserialize` (additive); `RevokedEntry::new()` constructor exposed because the type is `#[non_exhaustive]`. ADR-0030 published. **Verified**: all 105 lib tests + 9 prop_revocation tests green; clippy `-D warnings` workspace clean. |
 
 ## 32. Anti-patterns evitados
 
