@@ -48,6 +48,7 @@ tower-middleware = [
     "dep:corelink-pat",
     "dep:subtle",
     "dep:sha2",
+    "dep:hmac",
     "dep:async-trait",
     "dep:serde",
 ]
@@ -75,6 +76,7 @@ corelink-clerk = { workspace = true, optional = true }
 corelink-pat = { workspace = true, optional = true }
 subtle = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }
+hmac = { workspace = true, optional = true }
 async-trait = { version = "0.1", optional = true }
 serde = { workspace = true, optional = true }
 
@@ -126,6 +128,16 @@ required-features = ["tower-middleware"]
 [[test]]
 name = "prop_auth_full"
 path = "tests/prop_auth_full.rs"
+required-features = ["tower-middleware"]
+
+[[test]]
+name = "prop_ac_handlers"
+path = "tests/prop_ac_handlers.rs"
+required-features = ["tower-middleware"]
+
+[[test]]
+name = "ac_handler_e2e"
+path = "tests/ac_handler_e2e.rs"
 required-features = ["tower-middleware"]
 
 [[bench]]

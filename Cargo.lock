@@ -550,6 +550,7 @@ dependencies = [
  "corelink-tenant-path",
  "criterion",
  "futures",
+ "hmac",
  "http",
  "http-body-util",
  "jsonwebtoken",

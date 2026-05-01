@@ -91,6 +91,8 @@ pub mod cache;
 #[cfg(feature = "tower-middleware")]
 pub mod middleware;
 mod region;
+#[cfg(feature = "tower-middleware")]
+pub mod reapi;
 pub mod storage;
 mod tenant;
 

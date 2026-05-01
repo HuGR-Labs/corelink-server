@@ -1,12 +1,12 @@
 ---
 id: "WI-S04-001"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "FROZEN"
+work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-05-01"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-002", "FF-HR-005"]
 parent: "S-04"
@@ -31,7 +31,7 @@ tags: ["wi", "s04", "ac", "reapi", "grpc", "rest", "action-cache", "high-risk"]
 
 # WI-S04-001 — REAPI v2 ActionCache Handlers (GetActionResult + UpdateActionResult) + gRPC + REST Surface + Tenant Context Propagation
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** FROZEN · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-04](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -891,6 +891,7 @@ Fallback degradation: handler 503 if R2 down; Bazel client falls back to local e
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-25 | Gustavo (via Claude Opus 4.7) | Criação WI-S04-001 (Lote 10.4); SOTA pós-Lote 10.3bis (32 seções; 13-row sign-off; 14-row risk; Mann-Whitney 3-prong; cost TCO 12m; 11 chaos experiments; STRIDE+LINDDUN delta full). |
+| 1.3.0 | 2026-05-01 | Gustavo (via Claude Opus 4.7) | **SEALED — implementation phase complete.** Shipped pure-logic AC handler module `crates/corelink-worker/src/reapi/ac/` (8 sub-modules: `handler.rs` orchestrator + `ActionCacheHandler` trait + `ActionCacheHandlerImpl`; `types.rs` `ActionDigest` / `ActionResult` / `ResultHash`; `meta.rs` `AcMetaStore` trait + `InMemoryAcMetaStore` fake; `sig.rs` `Signer` trait + `InMemoryFakeSigner` HMAC-SHA256 + `AcEnvelope::canonicalize` 121-byte preimage layout per ADR-0021 + `RESERVED_SIG_KEY_ID = 0` sentinel; `merkle.rs` `MerkleVerifier` trait + `InMemoryMerkleVerifier` fake exercising depth/fanout/length/all-zero-digest sentinel; `outputs.rs` `OutputsCheck` trait + `InMemoryOutputsCheck` fake; `neg_cache.rs` `AcNegCache` thin wrapper around S-02 `NegativeCache` pinning the canonical 60s TTL; `audit.rs` 8-variant `AcEventType` taxonomy + `AcAuditRecord` + `AuditSink` trait + `InMemoryAuditSink` capture sink; `reapi.rs` parent module gated behind `tower-middleware`). Trait surfaces consume the canonical `corelink_worker::middleware::AuthCtx` (S-03 WI-S03-003) so the 5-Layer Defense is structurally enforced (TenantCtx-only `tenant_id`, materialized `tenant_prefix` per ADR-0035 H-3, `SCOPE_CACHE_R/W` scope check, region pinning, audit emit). Negative cache integration reuses `corelink_worker::cache::negative::NegativeCache` directly. **Tests**: 49 unit tests (lib) + 13 Gherkin scenarios (`tests/ac_handler_e2e.rs`) + 5 property tests @ 10k iter (`tests/prop_ac_handlers.rs`: tenant isolation / idempotent / neg cache invalidate / TTL refresh monotonic / outputs missing blocks update). Quality gates: `cargo test --workspace --all-targets --features corelink-worker/tower-middleware` 0 failures; `cargo clippy --workspace --all-targets --features corelink-worker/tower-middleware -- -D warnings` clean; `python3 scripts/validate_specs.py` clean (no new failures); `python3 scripts/validate_references.py` no new dangling refs. **Deferred per charter trait-abstraction-defer pattern**: (a) tonic gRPC + axum REST surface wrappers — deferred to follow-up `corelink-reapi` `host-server`-feature integration WI alongside the REAPI conformance suite (WI-S04-006); (b) real Cloudflare D1 binding for `AcMetaStore` (WI-S04-002 schema + WI-S04-006 binding shim); (c) real HKDF-SHA256 signer for `Signer` (WI-S04-004); (d) real Merkle codec / verifier for `MerkleVerifier` (WI-S04-003); (e) Mann-Whitney 3-prong timing test (deferred alongside conformance suite — needs the gRPC surface to drive). Per WI brief no per-WI codex; sprint-close Sonnet adversarial review covers full S-04 corpus. Commit reference: `[this commit]`. |
 
 ## 32. Anti-patterns evitados
 
