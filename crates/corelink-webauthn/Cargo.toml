@@ -1,0 +1,74 @@
+[package]
+name = "corelink-webauthn"
+description = "CoreLink WebAuthn Level 3 admin primitives (WI-S03-006). Defines the canonical ceremony surface (registration / authentication / admin step-up + recovery-OTP), in-memory engine + stores used by property and adversarial tests, AAGUID allowlist / denylist machinery, and the Argon2id-hashed 6-digit recovery OTP (per Lote 10.3-tris P0-R5-002a — magic-link explicitly rejected). The production `webauthn-rs = 0.5` shim is wired behind a `feature = \"host-server\"` flag and is deferred to the staging-CF integration cycle alongside real authenticators (charter trait-abstraction-defer pattern); the trait surface, ceremony invariants, and property-test corpus that ship in this crate are the load-bearing security boundary at S-03 SEAL."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+# Argon2id PHC for the recovery OTP (Lote 10.3-tris P0-R5-002a — same audited
+# crate already pinned in `corelink-pat` so OWASP-2024 floor parameters stay
+# canonical across the auth stack).
+argon2 = { version = "0.5", default-features = false, features = ["alloc", "password-hash"] }
+password-hash = { version = "0.5", default-features = false, features = ["alloc", "rand_core"] }
+hmac = { workspace = true }
+sha2 = { workspace = true }
+subtle = { workspace = true }
+base64 = { workspace = true }
+hex = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+zeroize = { workspace = true }
+rand_core = { version = "0.6", default-features = false, features = ["getrandom"] }
+uuid = { workspace = true, features = ["v7", "rng-getrandom", "serde"] }
+
+[dev-dependencies]
+proptest = { workspace = true }
+serde_json = { workspace = true }
+
+[[example]]
+name = "passkey_enroll"
+path = "examples/passkey_enroll.rs"
+
+[[example]]
+name = "yubikey_admin_op"
+path = "examples/yubikey_admin_op.rs"
+
+[[example]]
+name = "cross_browser_test"
+path = "examples/cross_browser_test.rs"
+
+[[example]]
+name = "recovery_flow"
+path = "examples/recovery_flow.rs"
+
+[[test]]
+name = "prop_webauthn"
+path = "tests/prop_webauthn.rs"
+
+[[test]]
+name = "adversarial"
+path = "tests/adversarial.rs"
+
+[[test]]
+name = "canonical_vectors"
+path = "tests/canonical_vectors.rs"

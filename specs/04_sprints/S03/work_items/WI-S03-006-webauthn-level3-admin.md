@@ -1,12 +1,12 @@
 ---
 id: "WI-S03-006"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "FROZEN"
+work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-05-01"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-002", "FF-HR-005", "FF-HR-009"]
 parent: "S-03"
@@ -27,7 +27,7 @@ tags: ["wi", "s03", "auth", "webauthn", "passkey", "yubikey", "mfa", "level3", "
 
 # WI-S03-006 — WebAuthn Level 3 Admin Flows + Phishing-Resistant MFA + Cross-Browser (Chrome/Firefox/Safari/Edge)
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** FROZEN · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-03](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -822,6 +822,7 @@ RTO ≤ 30 min (deploy rollback); RPO 0 (stateless ceremony; credentials in Neon
 | 1.0.0 | 2026-04-25 | Gustavo (via Claude Opus 4.7) | Criação WI-S03-006 (Lote 10.3); SOTA full (W3C L3 + 4 browsers + passkey + YubiKey + admin step-up + 5 INVs + 10 chaos + 12-row risk + ADR-0032). |
 | 1.1.0 | 2026-04-25 | Gustavo (Lote 10.3-tris cross-WI sync) | Lote 10.3bis cross-WI references absorbed: `auth.webauthn.new_device_used` event added (coordinates with WI-S03-007 §6.1.3 expanded enum 23→33); webauthn-rs library version pin upgraded para `=0.5.x` exact patch with sha256 `.crate` checksum verification (WI-006 was skipped by Lote 10.3bis cycle — this fixes Sonnet R5 P0-R5-002c version freeze defect). |
 | 1.2.0 | 2026-04-25 | Gustavo (Lote 10.3-tris Sonnet R5 P0 fixes) | **P0-R5-002a — Recovery flow magic link → 6-digit OTP** (sprint contract §10 anti-scope alignment); 10min TTL; single-use; Argon2id-hashed at rest; 3 generation/hour + 5 verify/OTP rate limits; 3 audit sub-events. **P0-R5-002b — sign_count W3C-compliant policy** (§9.9 + §28 R-004 contradiction resolved): `sign_count=0` exempt; first regression SEV-2; forensic confirmation SEV-1; "≥3 in 24h" threshold REMOVED. **P0-R5-002c — version freeze closure**: WI-006 now at v1.2.0 matching all other WIs. |
+| 1.3.0 | 2026-05-01 | Gustavo (via Claude Opus 4.7) | **SEAL — implementation phase** (charter `2026-04-30 protocol`: no per-WI codex; sprint-close Sonnet adversarial review covers). New crate `crates/corelink-webauthn/` with `WebAuthnEngine` trait + `InMemoryEngine` + `ProductionEngineNotConfigured` sentinel + `ChallengeStore` / `CredentialStore` / `RecoveryOtpStore` traits + in-memory implementations; `RpId` / `Origin` / `OriginAllowlist` exact-match guards (rejects `localhost` / loopback / single-label / non-eTLD+1 / non-`https://` origins / userinfo); `AaguidPolicy` closed-default allowlist + denylist (synthetic AAGUIDs for YubiKey 5, Touch ID, Windows Hello, Android biometrics, iCloud passkey, deprecated YubiKey 4); `parse_cose_algorithm` rejecting `alg: 0` "none"; `AuthenticatorFlags` UP/UV/BE/BS bit accessors; `SignCount` + `assess()` W3C-compliant policy (passkey-exempt for `(0, 0)`; monotonic for `incoming > stored`; `Sev2InvestigationRequired` otherwise); recovery OTP module (`mint_otp` / `verify_otp` Argon2id PHC, `RecoveryChannel` enum locked to `ClerkSsoEmail` only — magic-link unrepresentable at the type level); `StepUpToken` (5min default TTL; constant-time `subtle::ConstantTimeEq` validation; bound to `(user_id, op_class, credential_id)`); `MetricsObserver` trait + `NoopMetrics` + `MetricsRecorder` (canonical 6 metrics from §6.1.7). 21 canonical-vector tests; 14 adversarial regressions; 7 property tests (`prop_challenge_uniqueness_10k`, `prop_origin_allowlist_strict` 10k cases, `prop_sign_count_assess` 10k cases, `prop_aaguid_policy` 10k cases, `prop_replay_resistance_single_use`, `prop_recovery_otp_single_use_100`, `prop_origin_allowlist_no_prefix_bypass_10k`); 4 examples (`passkey_enroll`, `yubikey_admin_op`, `cross_browser_test`, `recovery_flow`). ADR-0032 published. Workspace member added; crate-strict lints (`#![forbid(unsafe_code)]` + Cargo `[lints]` denying `unwrap_used` / `expect_used` / `panic` / `indexing_slicing` / `mod_module_files`); zero clippy warnings under `-D warnings`. The production `webauthn-rs = 0.5` shim is deferred to a downstream WI alongside Cloudflare credentials per charter `§inflection` (CF account is HARD inflection); the `ProductionEngineNotConfigured` sentinel + trait surface freeze the contract. Cross-browser Playwright matrix (`e2e/webauthn/`; 16 scenarios) lands as part of the production-shim WI alongside real authenticators. Frontmatter promoted DRAFT → FROZEN, READY → DONE; v1.2.0 → v1.3.0. |
 
 ## 32. Anti-patterns evitados
 

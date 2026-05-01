@@ -498,6 +498,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-webauthn"
+version = "0.1.0"
+dependencies = [
+ "argon2",
+ "base64",
+ "hex",
+ "hmac",
+ "password-hash",
+ "proptest",
+ "rand_core 0.6.4",
+ "serde",
+ "serde_json",
+ "sha2",
+ "subtle",
+ "thiserror",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
 name = "corelink-worker"
 version = "0.1.0"
 dependencies = [
