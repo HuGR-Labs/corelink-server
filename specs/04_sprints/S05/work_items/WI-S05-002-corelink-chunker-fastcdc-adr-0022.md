@@ -1,12 +1,12 @@
 ---
 id: "WI-S05-002"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "FROZEN"
+work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-05-01"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-005", "FF-HR-009"]
 parent: "S-05"
@@ -28,7 +28,7 @@ tags: ["wi", "s05", "chunker", "fastcdc", "blake3", "streaming", "adr-0022", "hi
 
 # WI-S05-002 — Crate `corelink-chunker` (Fixed-Size 2 MiB Default + FastCDC Opt-in + ADR-0022 Ratificada Chunk-vs-Part Decoupling) + Streaming Iterator + Determinism Property Test 100k
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** FROZEN · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-05](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -820,6 +820,7 @@ Fallback: if chunker crash detected, handler returns 503; multipart writes pause
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-25 | Gustavo (via Claude Opus 4.7) | Criação WI-S05-002 (Lote 10.5); SOTA pós-Lote 10.4bis (32 seções; 13-row sign-off; 12-row risk; Mann-Whitney 3-prong; cost TCO 12m; 11 chaos experiments; STRIDE+LINDDUN delta; aplicada lições Lote 10.4bis: ADR ratificação plan, test vectors Annex, cargo-fuzz 1h, Crypto SME mandatory emphatic). |
+| 1.3.0 | 2026-05-01 | Gustavo (via Claude Opus 4.7) | **WI-S05-002 SEALED — implementation phase, `corelink-chunker` v0.1.0 shipped.** New crate `crates/corelink-chunker/` ships the canonical pull-based zero-allocation streaming chunker (`Chunker` trait + `ChunkerKind` enum-dispatch + `FixedChunker` + `FastCdcChunker`) with BLAKE3-256 inline hash per chunk + bounded parser (`MAX_BLOB_SIZE` 160 GiB / `MAX_CHUNKS_PER_BLOB` 81 920 cross-crate aligned to `corelink-worker::reapi::cas::types::MAX_CHUNKS_PER_BLOB` per spec contract §5.1 P1-SR5-001) + canonical FastCDC mask seeds (`MASK_S = 0x0000_d9f0_0353_0000`, `MASK_L = 0x0000_d900_0353_0000`) + canonical Gear table derived at compile time from a fixed SplitMix64 seed (`"fastcdc1"`); 18 lib unit + 21 property tests + 16 canonical-vector tests + 13 bounds-enforcement tests + 1 doctest. Property suite honours `PROPTEST_CASES` env (256 PR / 10 000 nightly / 100 000 weekly). 4 examples landed (`fixed_default`, `fastcdc_optin`, `streaming`, `custom_config`). README + `spec/chunker_protocol.md` + `spec/test_vectors_chunker.md` published. **ADR-0022 ratificada (DRAFT → ACCEPTED + FROZEN)**: chunk size vs R2 multipart part size decoupling — chunk size = 2 MiB content addressing unit; multipart part size = 16 MiB R2 API unit; max single multipart blob = 160 GiB; canonical bounds + mask seeds frozen for life of crate v1.x. **ADR-0039 published (FROZEN)**: chunker public API stability + mask seed versioning policy — every constant in `corelink-chunker::bounds` + the Gear table is frozen; `ChunkerStep` is exhaustive (forgotten arms = stuck pipelines); other config / error / algorithm enums use `#[non_exhaustive]` for additive forward-compat. wasm32-clean (no tokio in src/). Trait-abstraction-defer pattern preserved: criterion benchmarks + cargo-fuzz 1h harness + Mann-Whitney 3-prong timing test + REAPI multipart wiring deferred to WI-S05-006 conformance suite per charter (the trait + bounded parser is the integration seam — handler integration lives in `corelink-worker::reapi::cas::split_splice` and only consumes the public API, which is frozen). Quality gates: `cargo test -p corelink-chunker --all-targets` 0 failures (4 test groups, 69 tests passing); `cargo test --workspace --all-targets --features corelink-worker/tower-middleware` 0 failures; `cargo clippy --workspace --all-targets --features corelink-worker/tower-middleware -- -D warnings` clean; `validate_specs.py` + `validate_references.py` clean. F-001 closure preserved (no global mutable state — every chunker instance owns its staging buffer + counters). |
 
 ## 32. Anti-patterns evitados
 

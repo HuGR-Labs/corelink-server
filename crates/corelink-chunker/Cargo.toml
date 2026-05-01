@@ -1,0 +1,47 @@
+[package]
+name = "corelink-chunker"
+description = "CoreLink content-defined chunker (WI-S05-002) — Fixed 2 MiB default + FastCDC opt-in (Xia et al., USENIX ATC 2016) with deterministic mask seeds; pull-based zero-allocation streaming API; BLAKE3-256 hash inline per chunk; bounded parser (MAX_BLOB_SIZE = 160 GiB, MAX_CHUNKS_PER_BLOB = 81920) cross-aligned with corelink-worker `reapi::cas::types::MAX_CHUNKS_PER_BLOB` per spec contract S-05 §5.1 P1-SR5-001. wasm32-clean (no tokio); same crate compiles into Cloudflare Worker bundle and the Rust client SDK."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+blake3 = { workspace = true }
+hex = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+rand = "0.9"
+rand_chacha = "0.9"
+
+[[test]]
+name = "prop_chunker"
+path = "tests/prop_chunker.rs"
+
+[[test]]
+name = "canonical_vectors"
+path = "tests/canonical_vectors.rs"
+
+[[test]]
+name = "bounds_enforcement"
+path = "tests/bounds_enforcement.rs"
