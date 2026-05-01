@@ -31,6 +31,35 @@ binding = "CAS_BUCKET"
 bucket_name = "corelink-cas-dev"
 preview_bucket_name = "corelink-cas-preview"
 
+# WI-S04-002 — R2 buckets for AC envelopes (5 regions per WI §1).
+# Production cutover happens via `scripts/provision_ac_buckets.sh <env>`;
+# bindings here pin the canonical name + preview-bucket convention.
+# Region literals MUST match crates/corelink-ac-schema::REGION_LIST.
+[[r2_buckets]]
+binding = "AC_BUCKET_SAM"
+bucket_name = "corelink-ac-sam"
+preview_bucket_name = "corelink-ac-sam-preview"
+
+[[r2_buckets]]
+binding = "AC_BUCKET_IAD"
+bucket_name = "corelink-ac-iad"
+preview_bucket_name = "corelink-ac-iad-preview"
+
+[[r2_buckets]]
+binding = "AC_BUCKET_LHR"
+bucket_name = "corelink-ac-lhr"
+preview_bucket_name = "corelink-ac-lhr-preview"
+
+[[r2_buckets]]
+binding = "AC_BUCKET_NRT"
+bucket_name = "corelink-ac-nrt"
+preview_bucket_name = "corelink-ac-nrt-preview"
+
+[[r2_buckets]]
+binding = "AC_BUCKET_SYD"
+bucket_name = "corelink-ac-syd"
+preview_bucket_name = "corelink-ac-syd-preview"
+
 # KV pra metadata hot lookup
 [[kv_namespaces]]
 binding = "METADATA_KV"
@@ -54,6 +83,27 @@ vars = { ENVIRONMENT = "prod" }
 [[env.prod.r2_buckets]]
 binding = "CAS_BUCKET"
 bucket_name = "corelink-cas-prod"
+
+# WI-S04-002 — prod-env AC bucket bindings (no `-preview` suffix in prod).
+[[env.prod.r2_buckets]]
+binding = "AC_BUCKET_SAM"
+bucket_name = "corelink-ac-sam"
+
+[[env.prod.r2_buckets]]
+binding = "AC_BUCKET_IAD"
+bucket_name = "corelink-ac-iad"
+
+[[env.prod.r2_buckets]]
+binding = "AC_BUCKET_LHR"
+bucket_name = "corelink-ac-lhr"
+
+[[env.prod.r2_buckets]]
+binding = "AC_BUCKET_NRT"
+bucket_name = "corelink-ac-nrt"
+
+[[env.prod.r2_buckets]]
+binding = "AC_BUCKET_SYD"
+bucket_name = "corelink-ac-syd"
 
 [[env.prod.containers]]
 class_name = "CoreLinkServer"

@@ -13,6 +13,12 @@
 #   scripts/migrate_d1.sh staging wnam
 #   scripts/migrate_d1.sh production weur
 #
+# Region list (canonical):
+#   - S-01 CAS regions: wnam, weur, sam.
+#   - S-04 AC regions (WI-S04-002): sam, iad, lhr, nrt, syd. Note `sam`
+#     overlaps with the CAS region list — same D1 binding can host both
+#     `blob_meta` (S-01) + `ac_meta` (S-04) tables.
+#
 # Requires:
 #   - wrangler CLI authenticated against the target Cloudflare account.
 #   - The D1 database binding `corelink_d1_<region>` declared in wrangler.toml
@@ -27,7 +33,7 @@ set -euo pipefail
 if [[ $# -ne 2 ]]; then
     echo "usage: $0 <env> <region>" >&2
     echo "  env:    staging | production | dev" >&2
-    echo "  region: wnam | weur | sam" >&2
+    echo "  region: wnam | weur | sam | iad | lhr | nrt | syd" >&2
     exit 64
 fi
 
@@ -47,7 +53,9 @@ case "$ENV" in
 esac
 
 case "$REGION" in
-    wnam|weur|sam) ;;
+    # S-01 CAS regions + S-04 AC regions (wnam/weur/sam are CAS;
+    # sam/iad/lhr/nrt/syd are AC; sam intentionally overlaps).
+    wnam|weur|sam|iad|lhr|nrt|syd) ;;
     *) echo "fatal: unknown region: $REGION" >&2; exit 64 ;;
 esac
 

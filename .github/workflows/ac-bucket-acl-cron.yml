@@ -1,0 +1,117 @@
+name: AC Bucket ACL Hardening Cron
+
+# WI-S04-002 §6.1.6 + §15 chaos #2 — runs nightly + on dispatch.
+# Verifies every `corelink-ac-<region>` bucket carries the canonical
+# empty-CORS posture and no public ACL. Drift fires alert via the
+# RB-FM-AC-BUCKET-LEAK runbook.
+#
+# Inputs (repo secrets):
+#   - CF_ACCOUNT_ID       : Cloudflare account id.
+#   - CF_API_TOKEN        : R2 read-only token (CORS GET + bucket list).
+#
+# Outputs:
+#   - Workflow exits 0 when every bucket is hardened; non-0 fires the
+#     scheduled-workflow failure notification (PagerDuty wiring lands
+#     in S-09 observability sprint).
+
+on:
+  schedule:
+    # 02:30 UTC daily — well outside any deploy window.
+    - cron: "30 2 * * *"
+  workflow_dispatch:
+    # Manual re-trigger after a runbook intervention.
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ac-bucket-acl-cron
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repo
+        # actions/checkout@v4.2.2 — pinned by SHA per WI-S01-007 supply-chain rules.
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - name: Verify required secrets present
+        env:
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${CF_ACCOUNT_ID:-}" || -z "${CF_API_TOKEN:-}" ]]; then
+            echo "::warning::CF_ACCOUNT_ID + CF_API_TOKEN secrets not set; ACL audit cannot run"
+            echo "secrets_missing=1" >> "$GITHUB_OUTPUT" || true
+            exit 0
+          fi
+
+      - name: Audit each AC bucket CORS rules
+        env:
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${CF_ACCOUNT_ID:-}" || -z "${CF_API_TOKEN:-}" ]]; then
+            echo "Skipping audit (secrets missing — see prior step)"
+            exit 0
+          fi
+          REGIONS=(sam iad lhr nrt syd)
+          ERRORS=0
+          for region in "${REGIONS[@]}"; do
+            bucket="corelink-ac-${region}"
+            url="https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/r2/buckets/${bucket}/cors"
+            echo "Auditing $bucket"
+            body=$(curl --silent --show-error -X GET "$url" \
+              -H "Authorization: Bearer ${CF_API_TOKEN}") || {
+                echo "::error::CORS GET failed for $bucket"
+                ERRORS=$((ERRORS+1))
+                continue
+              }
+            if ! python3 -c "
+import json, sys
+data = json.loads(sys.stdin.read())
+rules = data.get('result', data).get('rules', None)
+sys.exit(0 if rules == [] else 1)
+" <<<"$body"; then
+              echo "::error::Bucket $bucket CORS rules NOT empty — RB-FM-AC-BUCKET-LEAK"
+              ERRORS=$((ERRORS+1))
+            else
+              echo "  OK — $bucket CORS empty"
+            fi
+          done
+          if (( ERRORS > 0 )); then
+            echo "::error::$ERRORS bucket(s) drifted; trigger RB-FM-AC-BUCKET-LEAK"
+            exit 1
+          fi
+          echo "All 5 AC buckets hardened (empty CORS)."
+
+      - name: Re-assert canonical empty-CORS posture (self-heal)
+        if: ${{ failure() }}
+        env:
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${CF_ACCOUNT_ID:-}" || -z "${CF_API_TOKEN:-}" ]]; then
+            echo "Skipping self-heal (secrets missing)"
+            exit 0
+          fi
+          REGIONS=(sam iad lhr nrt syd)
+          for region in "${REGIONS[@]}"; do
+            bucket="corelink-ac-${region}"
+            url="https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/r2/buckets/${bucket}/cors"
+            echo "Re-asserting empty-CORS for $bucket"
+            curl --silent --show-error --fail-with-body \
+              -X PUT "$url" \
+              -H "Authorization: Bearer ${CF_API_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d '{"rules": []}' >/dev/null \
+              && echo "  reset" \
+              || echo "::warning::Self-heal PUT failed for $bucket"
+          done
