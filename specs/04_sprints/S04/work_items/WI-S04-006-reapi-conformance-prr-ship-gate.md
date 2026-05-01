@@ -1,12 +1,12 @@
 ---
 id: "WI-S04-006"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "FROZEN"
+work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-05-01"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-002", "FF-HR-005", "FF-HR-009"]
 parent: "S-04"
@@ -28,7 +28,7 @@ tags: ["wi", "s04", "ac", "conformance", "reapi", "dashboard", "rb-fm-303", "prr
 
 # WI-S04-006 — REAPI v2 Conformance Test Suite + DASH-AC Dashboards + Cache Hit Ratio Business Métrica + RB-FM-303 Dry-Run + Property Test 100k Tenant Isolation + PRR HIGH_RISK 11 Sign-offs Canonical Ship Gate
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** FROZEN · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-04](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -874,6 +874,7 @@ Fallback: if production rollout shows incident, gradual rollback per documented 
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-25 | Gustavo (via Claude Opus 4.7) | Criação WI-S04-006 (Lote 10.4); SOTA pós-Lote 10.3bis (32 seções; 13-row sign-off; 15-row risk; cumulative INV validation 19 INVs §3.15; 4 ADRs ratificadas; 12 chaos experiments; STRIDE+LINDDUN cumulative delta; ship gate + production rollout plan). |
+| 1.3.0 | 2026-05-01 | Gustavo (via Claude Opus 4.7 1M) | **WI-S04-006 SEALED** (charter `2026-04-30 protocol`: no per-WI codex; sprint-close Sonnet adversarial review covers). Cross-component property suite ships in `crates/corelink-worker/tests/prop_ac_full.rs` (4 release-mode properties at 1 × 100k SHIP-GATE [`prop_ac_full_stack_tenant_isolation_100k` — INV-AC-TENANT-SCOPED across handler+meta+envelope+merkle+sig+outputs+audit+ttl] + 3 × 10k PR [`prop_ac_full_stack_idempotent_under_concurrent_update`, `prop_ac_full_stack_negative_cache_invalidation_on_update`, `prop_ac_full_stack_ttl_eviction_tenant_scoped`]; total 130k iter PR; release-mode 9.2s wall-clock). REAPI v2 conformance subset ships in `crates/corelink-worker/tests/reapi_v2_ac_conformance.rs` (10 pinned tests against ADR-0036 §Annex A canonical AC subset: 4 GetActionResult + 6 UpdateActionResult; 100% pass non-negotiable per WI §6.1.1 + spec contract §19; **REAPI v2 has NO BatchUpdateActionResult** Lote 10.4bis P0 fix #5). DASH-AC dashboard `dashboards/grafana/DASH-AC.json` (8 canonical panels: cache hit ratio business metric / latency p99 GET+UPDATE warm+cold per region heatmap / tenant isolation cross-tenant alert stat / sig invalid rate / TTL eviction rate / negative cache rates / REAPI conformance status / cost per-op tracker) + alert rules `dashboards/alerts/dash-ac-alerts.yml` (11 rules: SEV-0 cross-tenant breach + SEV-0 sig invalid sustained + SEV-0 conformance regression + SEV-0 hit ratio drop + SEV-1 SLO availability / latency breach + SEV-2 outputs valid drift / TTL stalled / TTL storm / cost regression). RB-FM-303 host-side dry-run automated via `scripts/rb_fm_303_dry_run.sh` (cargo-driven walkthrough of 8 runbook steps + drift detection + EVT-017 evidence summary; full staging dry-run with chaos PR + on-call drill deferred until staging account provisioned). Audit trail: `specs/_audits/2026-05-01-rb-fm-303-dry-run.md` + `specs/_audits/2026-05-01-pentest-s04-internal.md` (six attack surfaces; zero HIGH/CRITICAL) + `specs/_audits/2026-05-01-adversarial-s04.md` (50+ scenarios catalogued across WI-S04-001..006). OWASP ASVS V5/V6/V8/V10/V14 self-checklist published at `specs/04_sprints/S04/asvs-v5-v6-v8-v10-v14-checklist.md` (67 PASS / 1 WAIVED [V8.3.8 customer-facing DPA disclosures — S-19 onboarding scope] / 14 N/A). **PRR-S04 canonical doc** at `specs/04_sprints/S04/PRR-S04.md` (`doc_status: FROZEN`, `work_status: APPROVED`, `audit_status: AUDITED`); 11 sign-offs canonical (5 ✅ APPROVED [Owner / Final Approver / Architect (incl. Crypto SME) / Engineer / Privacy] + 6 ⚠️ WAIVED via ADR-0034 dual-hat [Security Lead / SRE Lead / QA Lead / Compliance / AppSec] each with explicit revalidation triggers); promotion decision **PROMOTE TO STAGING-STABLE**. DEFERRED items: 72h SLO sustained staging + real CF R2/D1/KV/Cron-DO bindings + real Bazel/Buck2 client integration smoke + customer-facing comm (SLA addendum / release notes / Bazel onboarding doc) — all forward-looking gates with explicit revalidation triggers; none blocks S-04 SEAL per spec contract §6 partial-bullet pattern + charter `trait-abstraction-defer` pattern. Quality gates: `cargo test --workspace --all-targets --features corelink-worker/tower-middleware` 0 failures (debug + release); `cargo clippy --workspace --all-targets --features corelink-worker/tower-middleware -- -D warnings` clean; `python3 scripts/validate_specs.py` clean; `python3 scripts/validate_references.py` no new dangling refs; `python3 scripts/check_migrations_additive.py` clean; `bash scripts/rb_fm_303_dry_run.sh` exit 0. |
 
 ## 32. Anti-patterns evitados
 

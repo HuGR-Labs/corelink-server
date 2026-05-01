@@ -1,0 +1,184 @@
+# DASH-AC alert rules — WI-S04-006 §6.1.2 + §6.1.4 + spec contract §11.
+#
+# Routing per WI §6.1.2: PagerDuty (SEV-0 + SEV-1) + Slack (#corelink-alerts
+# all severities). Tested via chaos experiment WI §15.5 (dashboard noise
+# calibration) before staging dry-run.
+#
+# Severity mapping per WI §2 incident classification 4-tier (Lote 10.4bis):
+#   P0 = SEV-0 (cross-tenant data leak; sig invalid sustained > 5/h;
+#                conformance regression; cache hit ratio drop > 50%
+#                sustained 30 min)
+#   P1 = SEV-1 (SLO-AVAIL-AC < 99.9% sustained 30 min;
+#                p99 latency > 200 ms warm; backend unavailable spike)
+#   P2 = SEV-2 (tampering counter increment single event;
+#                INV-AC-OUTPUTS-VALID drift > 5 records;
+#                chaos test detection)
+#   P3 = SEV-3 (metric drift < 5%; informational; runbook gap)
+
+groups:
+  - name: corelink-action-cache
+    interval: 30s
+    rules:
+
+      - alert: AC_CrossTenantBreach
+        expr: sum(rate(corelink_ac_cross_tenant_total[1m])) > 0
+        for: 0m  # SEV-0; immediate fire
+        labels:
+          severity: sev0
+          runbook: RB-FM-303
+          sprint: S-04
+          gate: ship
+        annotations:
+          summary: "AC cross-tenant breach detected — INV-AC-TENANT-SCOPED violated"
+          description: |
+            corelink_ac_cross_tenant_total is non-zero. This is a SEV-0
+            incident — INV-AC-TENANT-SCOPED is the load-bearing security
+            invariant of S-04. Run RB-FM-303 immediately. Reset the 72h
+            SLO clock.
+          runbook_url: "../../specs/05_quality/runbooks/RB-FM-303-ac-cross-tenant.md"
+
+      - alert: AC_SigInvalidSustained
+        expr: sum(rate(corelink_ac_sig_invalid_total[1h])) * 3600 > 5
+        for: 5m
+        labels:
+          severity: sev0
+          runbook: RB-FM-303
+          sprint: S-04
+        annotations:
+          summary: "AC sig invalid rate sustained > 5/h — tampering signal"
+          description: |
+            Sig verify failure rate sustained > 5/hour. WI §6.1.2 panel 4
+            threshold. Could indicate: tampering of envelope canonical
+            bytes; HKDF info string drift; key rotation race. SEV-0;
+            page Architect + Security Lead + Crypto SME.
+
+      - alert: AC_ConformanceRegression
+        expr: corelink_reapi_conformance_pass < 1
+        for: 0m
+        labels:
+          severity: sev0
+          runbook: RB-AC-CONFORMANCE
+          sprint: S-04
+          gate: ship
+        annotations:
+          summary: "REAPI v2 conformance suite regression — PR / nightly red"
+          description: |
+            corelink_reapi_conformance_pass dropped below 1 (100% pass).
+            Per WI §6.1.1 + spec contract §19: 100% pass non-negotiable
+            for ship. Block any production rollout. Reset 72h SLO clock.
+
+      - alert: AC_CacheHitRatioDrop
+        expr: |
+          (
+            avg_over_time(corelink_cache_hit_ratio{type="ac"}[30m])
+              < 0.5 * avg_over_time(corelink_cache_hit_ratio{type="ac"}[7d])
+          )
+          or
+          (avg_over_time(corelink_cache_hit_ratio{type="ac"}[30m]) < 0.35)
+        for: 30m
+        labels:
+          severity: sev0
+          runbook: RB-AC-HIT-RATIO
+          sprint: S-04
+        annotations:
+          summary: "AC cache hit ratio dropped > 50% (or below 35% absolute) sustained 30 min"
+          description: |
+            P0 trigger per WI §2 4-tier classification. Customer-perceived
+            DX regression. Reset 72h SLO clock; page Product + Architect.
+
+      - alert: AC_SLOAvailabilityBreach
+        expr: |
+          (sum(rate(corelink_slo_good_total{slo="SLO-AVAIL-AC"}[30m]))
+            / sum(rate(corelink_slo_total_total{slo="SLO-AVAIL-AC"}[30m]))) < 0.999
+        for: 30m
+        labels:
+          severity: sev1
+          runbook: RB-AC-SLO-BURN
+          sprint: S-04
+        annotations:
+          summary: "SLO-AVAIL-AC < 99.9% sustained 30 min — P1; reset 72h clock"
+          description: |
+            SLO-AVAIL-AC error budget burn-rate exceeded. Page SRE.
+
+      - alert: AC_LatencyWarmP99Breach
+        expr: |
+          histogram_quantile(0.99,
+            sum by (le) (rate(corelink_ac_handler_duration_seconds_bucket{op="get", warmth="warm"}[5m]))
+          ) > 0.2
+        for: 30m
+        labels:
+          severity: sev1
+          runbook: RB-AC-LATENCY
+          sprint: S-04
+        annotations:
+          summary: "AC GET p99 warm > 200 ms sustained 30 min — P1; reset 72h clock"
+          description: |
+            SLO-LAT-AC-HIT p99 ≤ 150 ms warm; sustained breach > 200 ms is P1.
+            Page SRE; investigate D1 query plan / R2 latency.
+
+      - alert: AC_OutputsValidDrift
+        expr: increase(corelink_ac_outputs_valid_drift_total[24h]) > 5
+        for: 0m
+        labels:
+          severity: sev2
+          runbook: RB-FM-303
+          sprint: S-04
+        annotations:
+          summary: "INV-AC-OUTPUTS-VALID drift > 5 records over 24h — P2"
+          description: |
+            Reconcile job detected > 5 ac_meta rows referring to
+            blob_meta entries that were deleted (race with S-06 GC or
+            data corruption). Investigate; fix root cause.
+
+      - alert: AC_TtlEvictionStalled
+        expr: |
+          (rate(corelink_ac_ttl_rows_evicted_total[10m]) == 0)
+          and (corelink_ac_ttl_rows_pending > 0)
+        for: 15m
+        labels:
+          severity: sev2
+          runbook: RB-FM-AC-TTL-DRIFT
+          sprint: S-04
+        annotations:
+          summary: "AC TTL cron stalled — pending rows but no evictions"
+          description: |
+            Cron worker is not processing expired rows; pending rows
+            accumulating. Investigate cron worker; restart per
+            RB-FM-AC-TTL-DRIFT.
+
+      - alert: AC_TtlEvictionStorm
+        expr: corelink_ac_ttl_batch_hit_cap_total > 0
+        for: 5m
+        labels:
+          severity: sev2
+          runbook: RB-FM-AC-TTL-STORM
+          sprint: S-04
+        annotations:
+          summary: "AC TTL batch hit MAX_BATCH_SIZE — workload outpaces cron"
+          description: |
+            Workload generating expired rows faster than the canonical
+            250-row batch can drain. Per RB-FM-AC-TTL-STORM: temporarily
+            shorten cron interval.
+
+      - alert: AC_CostRegressionGate
+        expr: |
+          (
+            corelink_ac_cost_per_op_usd{op="get_warm"} > 0.0000055
+          )
+          or (
+            corelink_ac_cost_per_op_usd{op="update"} > 0.0000165
+          )
+          or (
+            corelink_ac_cost_per_op_usd{op="eviction"} > 0.0000033
+          )
+        for: 1h
+        labels:
+          severity: sev2
+          runbook: RB-AC-COST-REGRESSION
+          sprint: S-04
+        annotations:
+          summary: "AC per-op cost > 110% of target — cost gate red"
+          description: |
+            Cost regression gate per WI §6.1.2 panel 8 + spec contract
+            §14.10. ±10% tolerance crossed. Investigate; if regression
+            holds, file ADR for new baseline.

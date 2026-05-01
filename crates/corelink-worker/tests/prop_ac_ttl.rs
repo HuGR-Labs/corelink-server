@@ -133,14 +133,16 @@ proptest! {
         let actual = refresh_if_needed(now_ms, last_hit_at_ms, threshold);
         let expected = elapsed_ms >= threshold_ms;
         prop_assert_eq!(actual, expected);
-        // Monotonic guard: if now < last_hit, never refresh.
-        if now_ms > 0 {
-            let earlier = last_hit_at_ms.saturating_sub(1);
-            // Build a `now` that is strictly less than last_hit_at.
-            if last_hit_at_ms > 0 {
-                let rolled = earlier;
-                prop_assert!(!refresh_if_needed(rolled, last_hit_at_ms, threshold));
-            }
+        // Monotonic guard: if now < last_hit (clock rollback) AND
+        // threshold > 0 (i.e. the caller is asking the gate to defer
+        // a write), never refresh — `saturating_sub` returns 0,
+        // `0 >= threshold_ms` is false. The threshold == 0 case is
+        // the documented "always refresh" semantic
+        // (`refresh::tests::refresh_zero_threshold_always_triggers`)
+        // so we exclude it from the monotonic-guard branch.
+        if last_hit_at_ms > 0 && threshold_ms > 0 {
+            let rolled = last_hit_at_ms.saturating_sub(1);
+            prop_assert!(!refresh_if_needed(rolled, last_hit_at_ms, threshold));
         }
     }
 }
