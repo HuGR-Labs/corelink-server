@@ -3,7 +3,7 @@ id: "SPEC-CONTRACT-S05"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.7.0"
+version: "1.8.0"
 created: "2026-04-24"
 updated: "2026-05-01"
 owner: "Gustavo Schneiter"
@@ -284,4 +284,6 @@ Itens waivable com Architect + ADR:
 
 ---
 
-**Fim spec contract S-05 v1.6.0 SOTA.**
+| 1.8.0 | 2026-05-01 | Gustavo (via Claude Opus 4.7 1M; orchestrator-finalized after agent rate-limit) | **WI-S05-005 SEALED — `corelink-manifest` v0.1.0 shipped; Merkle manifest builder + dual-side verifier + O(1) streaming memory enforced.** New crate `crates/corelink-manifest/` ships 8 sub-modules: `bounds.rs` `MAX_CHUNKS_PER_BLOB = 81920` cross-crate alignment per §5.1 P1-SR5-001 (mirrors `corelink-chunker` + `corelink-worker::reapi::cas`); `types.rs` `ManifestEntry` + `ManifestRoot` + `ManifestId` newtypes; `merkle.rs` BLAKE3-256 RFC 6962-style domain separation `\x00`-leaf / `\x01`-inner mirroring `corelink-ac::merkle` byte-for-byte (cross-crate canonical Merkle parity per ADR-0037 v1.1.0); `builder.rs` streaming `ManifestBuilder` consuming `Iterator<Item = ManifestEntry>` without materializing the full chunk list; `verifier.rs` `ManifestVerifier::verify_streaming` reads one chunk at a time from the manifest store seam — **INV-MULTIPART-STREAMING-MEMORY enforced O(1) per spec contract §5.1 P0-SR5-003**; `sig.rs` HKDF-SHA256 manifest signer with `info = b"manifest-sig"` sibling-domain separation from `b"ac-sig"` (`corelink-ac::sig` exposes `keyed_mac_with_info` helper so the manifest signer reuses canonical HKDF infra without forking the TDK plumbing); `error.rs` 9-variant `ManifestError` `#[non_exhaustive]` + `audit_code()` short-id contract; `lib.rs` public re-exports. Worker integration via existing `BlobAssembler` trait (WI-S05-001 commit `fe0c07c`) — `corelink-manifest::CanonicalManifestVerifier` adapter satisfies the trait without breaking the existing `InMemoryBlobAssembler` test fake. Tests: 52 lib unit + 10 canonical_vectors + 7 prop @ 10k iter (`prop_manifest.rs` covers manifest determinism / tampering detection / streaming memory bound / chunk ordering / bounds enforcement / round-trip / cross-tenant rejection) + 3 streaming_memory + 13 tampering = **85 tests, all parallel-safe**. F-001 closure preserved (every `ManifestBuilder` instance owns its state; no global mutable state). wasm32-clean (no tokio in src/). **Trait-abstraction-defer per charter**: cargo-fuzz 1h CI nightly target + test vectors Annex 50-vector publication + criterion p99 verify benchmark + 100k nightly property iter — all consolidated alongside WI-S05-006 conformance suite. Quality gates: `cargo test -p corelink-manifest --all-targets` 0 failures (85 tests); `cargo clippy --workspace --all-targets --features corelink-worker/tower-middleware -- -D warnings` clean; `validate_specs.py` clean (273 schema-complete + 6 yaml). **Note**: agent hit Anthropic rate limit mid-flight (post-quality-gates); orchestrator-finalized SEAL ceremony (frontmatter flip + WI §31 changelog row + this row + commit) per charter `Real bug detected; don't paper over` pattern. |
+
+**Fim spec contract S-05 v1.8.0 SOTA.**

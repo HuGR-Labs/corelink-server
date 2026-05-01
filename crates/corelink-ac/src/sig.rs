@@ -63,7 +63,8 @@ pub mod tdk;
 pub use canonical::{compose as compose_canonical_bytes, AC_ENVELOPE_PREIMAGE_LEN};
 pub use error::SigError;
 pub use hkdf_signer::{
-    compute_signature, HkdfSigner, HkdfVerifier, AC_ENVELOPE_SIG_LEN, HKDF_INFO_AC_SIG, TDK_LEN,
+    compute_signature, keyed_mac_with_info, keyed_mac_with_info_from_bytes, HkdfSigner,
+    HkdfVerifier, AC_ENVELOPE_SIG_LEN, HKDF_INFO_AC_SIG, TDK_LEN,
 };
 pub use tdk::{derive_default_mock_tdk, MockTdkHandle, Tdk, TdkHandle};
 

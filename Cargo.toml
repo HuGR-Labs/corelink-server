@@ -18,6 +18,7 @@ members = [
     "crates/corelink-chunker",
     "crates/corelink-r2-multipart",
     "crates/corelink-multipart-schema",
+    "crates/corelink-manifest",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
@@ -88,6 +89,7 @@ corelink-ac = { path = "crates/corelink-ac" }
 corelink-chunker = { path = "crates/corelink-chunker" }
 corelink-r2-multipart = { path = "crates/corelink-r2-multipart" }
 corelink-multipart-schema = { path = "crates/corelink-multipart-schema" }
+corelink-manifest = { path = "crates/corelink-manifest" }
 
 # Test / bench
 proptest = "1.5"

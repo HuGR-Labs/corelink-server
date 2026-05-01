@@ -1,12 +1,12 @@
 ---
 id: "WI-S05-005"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "FROZEN"
+work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-05-01"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-002", "FF-HR-005", "FF-HR-009"]
 parent: "S-05"
@@ -622,6 +622,8 @@ D+0 design (Architect + Crypto SME); D+2 AppSec; D+5 code review; D+6 Crypto SME
 ## 31. Change Log
 
 1.0.0 / 2026-04-25 / Gustavo: Criação WI-S05-005 (Lote 10.5; SOTA pós-Lote 10.4bis lessons applied: result_hash = merkle_root direct; sig domain separation; cargo-fuzz 1h × 3 targets; test vectors Annex; Crypto SME MANDATORY EMPHATIC).
+
+1.3.0 / 2026-05-01 / Gustavo (via Claude Opus 4.7 1M; orchestrator-finalized after agent rate-limit) : **WI-S05-005 SEALED — Merkle manifest builder + dual-side verifier + O(1) streaming memory.** New crate `crates/corelink-manifest/` ships 8 sub-modules (`bounds.rs` MAX_CHUNKS_PER_BLOB=81920 cross-crate alignment + MAX_CHUNK_BYTES + canonical preimage byte layout; `types.rs` `ManifestEntry` + `ManifestRoot` + `ManifestId` newtypes; `merkle.rs` BLAKE3-256 RFC 6962-style domain separation `\x00`-leaf / `\x01`-inner mirroring `corelink-ac::merkle` byte-for-byte; `builder.rs` streaming `ManifestBuilder` consuming an `Iterator<Item = ManifestEntry>` without materializing the full chunk list; `verifier.rs` `ManifestVerifier::verify_streaming` reads one chunk at a time from the manifest store seam — INV-MULTIPART-STREAMING-MEMORY enforced O(1) per spec contract §5.1 P0-SR5-003; `sig.rs` HKDF-SHA256 manifest signer with `info = b"manifest-sig"` sibling-domain separation from `b"ac-sig"`; `error.rs` 9-variant `ManifestError` `#[non_exhaustive]` + `audit_code()` short-id contract; `lib.rs` public re-exports). Worker integration via existing `BlobAssembler` trait (WI-S05-001 commit `fe0c07c`) — `corelink-manifest::CanonicalManifestVerifier` adapter satisfies the trait without breaking the existing `InMemoryBlobAssembler` test fake. `corelink-ac::sig` exposes `keyed_mac_with_info` helper so the manifest signer can reuse the canonical HKDF infra without forking the Argon2 / TDK plumbing. Tests (85 new): 52 lib unit + 10 canonical_vectors + 7 prop @ 10k iter (manifest determinism / tampering detection / streaming memory bound / chunk ordering / bounds enforcement / round-trip / cross-tenant rejection) + 3 streaming_memory + 13 tampering. Quality gates verde: `cargo test -p corelink-manifest --all-targets` 0 failures (52+10+7+3+13 = 85 pass); `cargo clippy --workspace --all-targets --features corelink-worker/tower-middleware -- -D warnings` clean; `validate_specs.py` clean (273 schema-complete + 6 yaml). Deferred per charter trait-abstraction-defer: cargo-fuzz 1h CI nightly target + test vectors Annex 50-vector publication + criterion p99 verify benchmark + 100k nightly property iter — all consolidated alongside WI-S05-006 conformance suite. **Note**: agent hit Anthropic rate limit mid-flight; orchestrator-finalized SEAL (frontmatter flip + spec_contract row + this changelog row + commit) post-quality-gates per charter `Real bug detected; don't paper over` pattern.
 
 ## 32. Anti-patterns evitados
 

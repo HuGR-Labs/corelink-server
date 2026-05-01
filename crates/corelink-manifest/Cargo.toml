@@ -1,0 +1,59 @@
+[package]
+name = "corelink-manifest"
+description = "CoreLink Merkle manifest builder + dual-side verifier (WI-S05-005). Builds canonical Merkle tree manifests over chunk digests (BLAKE3-256, RFC 6962-style \\x00 leaf / \\x01 inner domain separation, chunk-index-ascending order — semantic, NOT lex-sorted), HKDF-SHA256 keyed signature with `info=b\"manifest-sig\"` domain separation (distinct from corelink-ac `b\"ac-sig\"`), bounded parser (MAX_CHUNKS_PER_BLOB = 81920 cross-crate aligned per S-05 spec contract §5.1 P1-SR5-001), 102-byte canonical preimage covering version + tenant_id + blob_digest + merkle_root + chunk_count + total_size_bytes + created_at_ms + chunker_algo (binds bound-relevant metadata into the sig per WI §6.1.5 Lote 10.5bis P0 fix), `verify_streaming` with O(1)-per-chunk memory via on-the-fly streamed `ChunkRef` iteration over the D1 manifest_chunks projection (INV-MULTIPART-STREAMING-MEMORY enforced — never materialises the full Vec<ChunkRef> 3.28 MB heap). wasm32-clean (no tokio in src/). Production handler `corelink-worker::reapi::cas` consumes via the BlobAssembler trait shipped in WI-S05-001 (the InMemory fake stays intact; the real impl is the canonical builder in this crate)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+corelink-ac = { workspace = true }
+corelink-hash = { workspace = true }
+blake3 = { workspace = true }
+hex = { workspace = true }
+hkdf = { workspace = true }
+sha2 = { workspace = true }
+subtle = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+zeroize = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+blake3 = { workspace = true }
+hex = { workspace = true }
+corelink-ac = { workspace = true }
+
+[[test]]
+name = "prop_manifest"
+path = "tests/prop_manifest.rs"
+
+[[test]]
+name = "canonical_vectors"
+path = "tests/canonical_vectors.rs"
+
+[[test]]
+name = "tampering"
+path = "tests/tampering.rs"
+
+[[test]]
+name = "streaming_memory"
+path = "tests/streaming_memory.rs"

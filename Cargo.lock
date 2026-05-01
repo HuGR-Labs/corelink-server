@@ -456,6 +456,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-manifest"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "corelink-ac",
+ "corelink-hash",
+ "hex",
+ "hkdf",
+ "proptest",
+ "sha2",
+ "subtle",
+ "thiserror",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
 name = "corelink-meta"
 version = "0.1.0"
 dependencies = [

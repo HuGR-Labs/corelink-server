@@ -350,6 +350,87 @@ pub fn compute_signature(
     Ok(keyed_mac(&sig_key, canonical_bytes))
 }
 
+/// Sibling-domain helper: compute an HKDF-SHA256 + BLAKE3 keyed-hash
+/// MAC tag over `canonical_bytes` using a per-tenant TDK fetched via
+/// the supplied [`TdkHandle`] but with a CALLER-SUPPLIED `info` byte
+/// string. Used by sibling crates (e.g. `corelink-manifest`) that need
+/// the same cripto stack with a domain-separated info string —
+/// `b"manifest-sig"` (WI-S05-005) / `b"meta-manifest-sig"` (WI-S05-006
+/// reserved) — without re-implementing the Extract+Expand+keyed-hash
+/// pipeline AND without breaking the [`Tdk`] hygiene contract (the
+/// raw bytes remain crate-private; the helper borrows them inside this
+/// function and drops the [`Tdk`] before returning).
+///
+/// The function preserves every cripto invariant of the AC sig
+/// pipeline:
+///
+/// - **Salt = `sig_key_id.to_le_bytes()`** — binds the rotation version
+///   into Extract per ADR-0021 §1 / Lote 10.4bis P0 fix.
+/// - **Length-bound output** = 32 bytes (BLAKE3 keyed-hash output;
+///   matches [`AC_ENVELOPE_SIG_LEN`]).
+/// - **Reserved sentinel rejection**: `sig_key_id == 0` rejected
+///   eagerly per ADR-0021 §Sentinel.
+///
+/// Callers MUST pin their `info` byte string in a `pub const` and
+/// gate it via a `tests::canonical_info_string` assertion (the same
+/// CI-gate pattern this crate uses for `b"ac-sig"`). Drift detection
+/// across the three info strings is the responsibility of the calling
+/// crate's tests; this helper does not enumerate the strings.
+///
+/// # Errors
+///
+/// - [`SigError::KeyIdReserved`] when `sig_key_id == 0`.
+/// - [`SigError::BackendError`] when the [`TdkHandle::fetch`] fails.
+/// - [`SigError::TdkDerivationFailed`] when HKDF-Expand reports a
+///   length error (unreachable in practice; surfaced as structural).
+pub fn keyed_mac_with_info(
+    tdk_handle: &dyn super::tdk::TdkHandle,
+    tenant_id: Uuid,
+    sig_key_id: u32,
+    info: &[u8],
+    canonical_bytes: &[u8],
+) -> Result<[u8; AC_ENVELOPE_SIG_LEN], SigError> {
+    if sig_key_id == RESERVED_SIG_KEY_ID {
+        return Err(SigError::KeyIdReserved);
+    }
+    let tdk = tdk_handle.fetch(tenant_id, sig_key_id)?;
+    let salt = sig_key_id.to_le_bytes();
+    let hk = Hkdf::<Sha256>::new(Some(&salt), tdk.as_bytes());
+    let mut sig_key = Zeroizing::new([0u8; 32]);
+    hk.expand(info, sig_key.as_mut_slice())
+        .map_err(|e| SigError::TdkDerivationFailed(e.to_string()))?;
+    Ok(keyed_mac(&sig_key, canonical_bytes))
+}
+
+/// Sibling-domain helper: compute an HKDF-SHA256 + BLAKE3 keyed-hash
+/// MAC tag from raw `tdk_bytes` (32 bytes) with a CALLER-SUPPLIED
+/// `info`. Mirrors [`keyed_mac_with_info`] but without the
+/// [`TdkHandle`] indirection — used by canonical-vector tests in
+/// sibling crates that need to pin a deterministic sig under a
+/// fixed mock TDK.
+///
+/// # Errors
+///
+/// - [`SigError::KeyIdReserved`] when `sig_key_id == 0`.
+/// - [`SigError::TdkDerivationFailed`] when HKDF-Expand reports a
+///   length error.
+pub fn keyed_mac_with_info_from_bytes(
+    tdk_bytes: &[u8; TDK_LEN],
+    sig_key_id: u32,
+    info: &[u8],
+    canonical_bytes: &[u8],
+) -> Result<[u8; AC_ENVELOPE_SIG_LEN], SigError> {
+    if sig_key_id == RESERVED_SIG_KEY_ID {
+        return Err(SigError::KeyIdReserved);
+    }
+    let salt = sig_key_id.to_le_bytes();
+    let hk = Hkdf::<Sha256>::new(Some(&salt), tdk_bytes);
+    let mut sig_key = Zeroizing::new([0u8; 32]);
+    hk.expand(info, sig_key.as_mut_slice())
+        .map_err(|e| SigError::TdkDerivationFailed(e.to_string()))?;
+    Ok(keyed_mac(&sig_key, canonical_bytes))
+}
+
 /// Assert that the canonical preimage length is what callers expect —
 /// a shape check used by the integration adapter in `corelink-worker`.
 const _: () = assert!(AC_ENVELOPE_SIG_LEN == 32);
