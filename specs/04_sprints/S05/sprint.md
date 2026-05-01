@@ -1,12 +1,12 @@
 ---
 id: "S-05"
 type: "sprint"
-doc_status: "DRAFT"
-work_status: "READY"
-audit_status: "ACTIVE"
-version: "1.0.0"
+doc_status: "FROZEN"
+work_status: "COMPLETE"
+audit_status: "AUDITED"
+version: "1.1.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-05-01"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-005", "FF-HR-002"]
 owner: "Gustavo Schneiter"
@@ -167,7 +167,8 @@ Cross-tenant chunk leak / multipart orphan > 30d / manifest invalid persisted / 
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-25 | Gustavo (via Claude Opus 4.7) | Criação sprint.md S-05 (Lote 9.5b). |
+| 1.1.0 | 2026-05-01 | Gustavo (via Claude Opus 4.7) | **S-05 IMPLEMENTATION SPRINT SEALED.** doc_status DRAFT → FROZEN; work_status READY → COMPLETE; audit_status ACTIVE → AUDITED. All 6 WIs SEALED (`fe0c07c` 001 / `290904f` 002 / `e0668df` 003 / `64e7d1a` 004 / `b40a290` 005 / `7f54ac8` 006). PRR-S05 STAGING-STABLE. Sonnet sprint-close adversarial review: 8.7/10 PASS (no P0; 4 P1 addressed in `_spec_contract.md` row 1.10.0). |
 
 ---
 
-**Fim de S-05 sprint contract.**
+**Fim de S-05 sprint contract — IMPLEMENTATION SEALED.**
