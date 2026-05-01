@@ -3,9 +3,9 @@ id: "ADR-0021"
 type: "adr"
 doc_status: "FROZEN"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-05-01"
 title: "HKDF-SHA256 + BLAKE3-keyed MAC vs Ed25519 for Action Cache Digest Signing"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
@@ -113,3 +113,4 @@ See WI-S04-004 §30.1 for canonical procedure. Summary:
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-25 | Gustavo (Lote 10.4-tris P1-R5-016 ADR-creation) | ADR file created from inline content em WI-S04-004 §1; §Risks (P0-R5-002 HKDF composition); §Sentinel (P0-R5-001 key_id=0); §RotationProcedures (P0-R5-006). Architect + Crypto SME independent re-verification REQUIRED pre-WI-S04-004 SEAL. |
+| 1.1.0 | 2026-05-01 | Gustavo (via Claude Opus 4.7 1M) | ADR ratified — WI-S04-004 SEALED. Implementation lives at `crates/corelink-ac/src/sig/` (HKDF-SHA256 + BLAKE3-keyed) and matches the canonical decision matrix byte-for-byte: `salt = sig_key_id.to_le_bytes()`, `info = b"ac-sig"`, 32-byte tag, `subtle::ConstantTimeEq` verify, `accepted_key_ids` whitelist for rotation grace, `sig_key_id == 0` reserved sentinel rejected on every entry point. §Risks Option B accepted under standard HMAC security assumptions (path-HMAC and HKDF-Extract share the TDK; attack cost bounded by 2^128). Test corpus pins the algorithm: 28 lib unit + 11 canonical vectors + 8 key rotation + 6 property × 10 000 iter + Mann-Whitney 3-prong cripto-grade timing gate (10/80/10 trimmed mean; 0.5 ms `\|Δ\|` upper-CI threshold; release-mode-only). HKDF info CI gate (`b"ac-sig"` byte-equal) prevents typo-driven drift. |

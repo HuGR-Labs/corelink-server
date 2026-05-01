@@ -25,20 +25,10 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use corelink_ac::sig::{
-    compose_canonical_bytes, HkdfSigner, HkdfVerifier, MockTdkHandle, SignatureSigner,
-    SignatureVerifier, TdkHandle, AC_ENVELOPE_PREIMAGE_LEN, AC_ENVELOPE_SIG_LEN, HKDF_INFO_AC_SIG,
-    RESERVED_SIG_KEY_ID, TDK_LEN,
+    compose_canonical_bytes, derive_default_mock_tdk, HkdfSigner, HkdfVerifier, MockTdkHandle,
+    SignatureSigner, SignatureVerifier, TdkHandle, AC_ENVELOPE_PREIMAGE_LEN, AC_ENVELOPE_SIG_LEN,
+    HKDF_INFO_AC_SIG, RESERVED_SIG_KEY_ID, TDK_LEN,
 };
-
-// Re-derived test-only deterministic TDK helper. Matches the
-// documented `MockTdkHandle::install_default` recipe byte-for-byte.
-fn derive_default_mock_tdk(tenant_id: Uuid, sig_key_id: u32) -> [u8; TDK_LEN] {
-    let mut h = blake3::Hasher::new();
-    h.update(b"corelink-ac-tdk-mock-v1");
-    h.update(tenant_id.as_bytes());
-    h.update(&sig_key_id.to_be_bytes());
-    *h.finalize().as_bytes()
-}
 
 fn fixed_tenant_a() -> Uuid {
     Uuid::parse_str("01938af0-abcd-7123-8456-000000000a01").unwrap()

@@ -65,7 +65,7 @@ pub use error::SigError;
 pub use hkdf_signer::{
     compute_signature, HkdfSigner, HkdfVerifier, AC_ENVELOPE_SIG_LEN, HKDF_INFO_AC_SIG, TDK_LEN,
 };
-pub use tdk::{MockTdkHandle, Tdk, TdkHandle};
+pub use tdk::{derive_default_mock_tdk, MockTdkHandle, Tdk, TdkHandle};
 
 /// Reserved `sig_key_id` sentinel (`0`); production rotations start at
 /// `1` per ADR-0021 §Sentinel + Lote 10.4-tris P0-R5-001.

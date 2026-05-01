@@ -28,7 +28,26 @@
 //! - **`result_hash` index column**: `BLAKE3(merkle_root)` per
 //!   ADR-0037 — D1 INDEX column only, NOT a cripto authority. The
 //!   binding authority is the HKDF-SHA256 envelope sig over the
-//!   canonical 121-byte preimage layout (delegated to WI-S04-004).
+//!   canonical 121-byte preimage layout — see [`sig`] (WI-S04-004).
+//!
+//! # Sig surface (WI-S04-004)
+//!
+//! The [`sig`] module ships the canonical HKDF-SHA256 + BLAKE3-keyed
+//! signer + verifier that satisfies CTRL-AC-002. Real-impl traits
+//! [`sig::SignatureSigner`] / [`sig::SignatureVerifier`] are consumed
+//! by:
+//!
+//! - the worker handler (`corelink-worker::reapi::ac::sig::CanonicalAcSigner`
+//!   adapter wraps `Arc<HkdfSigner>` + `Arc<HkdfVerifier>`);
+//! - the future Rust client SDK dual-side post-download verifier (see
+//!   [`sig::compute_signature`]).
+//!
+//! Per-tenant TDK lookup goes through [`sig::TdkHandle`]; the test
+//! fixture [`sig::MockTdkHandle`] is deterministic so canonical
+//! vectors + property tests are reproducible without any external
+//! secret store. The production `CfSecretsTdkHandle` Cloudflare
+//! Secrets shim ships alongside WI-S04-006 per the charter
+//! trait-abstraction-defer pattern.
 //!
 //! # Bounded parser
 //!
