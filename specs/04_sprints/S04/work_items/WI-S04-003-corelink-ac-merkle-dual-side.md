@@ -1,12 +1,12 @@
 ---
 id: "WI-S04-003"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "FROZEN"
+work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-05-01"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-002", "FF-HR-005", "FF-HR-009"]
 parent: "S-04"
@@ -30,7 +30,7 @@ tags: ["wi", "s04", "ac", "merkle", "codec", "verify", "dual-side", "high-risk",
 
 # WI-S04-003 — Crate `corelink-ac` (Merkle Tree Codec + Dual-Side Verifier + INV-AC-OUTPUTS-VALID Enforcement + ActionResult Proto Adapter + Bounded Parser)
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** FROZEN · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-04](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -927,6 +927,7 @@ Fallback: if corelink-ac crash detected, handler returns 503 (graceful); no enve
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-25 | Gustavo (via Claude Opus 4.7) | Criação WI-S04-003 (Lote 10.4); SOTA pós-Lote 10.3bis (32 seções; 13-row sign-off; 14-row risk; Mann-Whitney 3-prong; cost TCO 12m; 11 chaos experiments; STRIDE+LINDDUN delta full; Crypto SME emphatic mandatory). |
+| 1.3.0 | 2026-05-01 | Gustavo (via Claude Opus 4.7 1M) | **WI-S04-003 SEALED** — new crate `crates/corelink-ac/` ships the canonical Merkle codec + dual-side verifier; full delivery summary: (a) **`bounds.rs`** — pinned `MAX_TREE_DEPTH=32` / `MAX_TREE_FANOUT=4096` / `MAX_NODE_COUNT=100 000` / `MAX_PAYLOAD_BYTES=1 048 576` / `MAX_OUTPUT_FILES=4096` / `MAX_OUTPUT_DIRECTORIES=4096` constants matching the worker's existing `corelink-worker::reapi::ac::merkle` bounds verbatim. (b) **`merkle.rs`** — `build_root` deterministic balanced binary tree over the lex-sorted `output_files + output_directories` digest set; RFC 6962-style domain separation (`LEAF_PREFIX = 0x00`, `INNER_PREFIX = 0x01`); BLAKE3-256 hash; empty-tree canonical root = all-zeros sentinel; odd-leaf promotion at every level; `verify_root` recomputation + `MerkleError::RootMismatch`; `compute_result_hash = BLAKE3(merkle_root)` per ADR-0037. (c) **`MerkleVerifier` trait** + `CanonicalMerkleVerifier` zero-state `Send + Sync` real impl; the worker's existing `MerkleVerifier` trait + `InMemoryMerkleVerifier` test fake remain untouched (forward-compat preserved per WI §10 forward-compat clause). (d) **`codec.rs`** — `encode` + `decode` with bounds enforcement at parse-entry (pre-`serde_json::from_slice`) so an oversized envelope is rejected with `MerkleError::PayloadExceeded` without `serde_json` ever allocating; `version != 1` rejected on both encode + decode paths via `MerkleError::VersionUnsupported`. (e) **`outputs.rs`** — `BlobMetaReader` + `OutputsValidator` + `StrictOutputsValidator` abstractions enforcing `INV-AC-OUTPUTS-VALID` strict-fail on the builder seam; tenant-scoped lookup; pre-emptive `len-mismatch → BackendError` guard against a misbehaving reader. (f) **`error.rs`** — 11-variant `MerkleError` (`#[non_exhaustive]`); `audit_code()` short-id contract preserved 1:1 with the worker's existing `audit_code()` so SRE dashboards split by failure mode without parsing display strings; `BuildError` + `VerifyError` + `OutputsCheckError` companion enums. (g) **`types.rs`** — pure `AcEnvelope` / `ActionResult` / `ActionDigest` / `OutputFileDigest` / `OutputDirectoryDigest` wire shapes; `digest_serde` + `hex32_serde` adapters serialize digests as 64-char lowercase hex (canonical wire form); `AcEnvelope` is `#[non_exhaustive]` for additive forward-compat. (h) **Worker integration** — `corelink-worker` adds `corelink-ac` dependency + `CanonicalAcMerkleVerifier` adapter that projects the worker's local `ActionResult` into the `corelink-ac` wire shape, runs `CanonicalMerkleVerifier::verify`, and maps the canonical 11-variant error enum back to the worker's local `MerkleError` taxonomy (preserving the `audit_code` contract); the production handler is now wired to ship the canonical real impl. The `InMemoryMerkleVerifier` fake is unchanged — every existing `prop_ac_handlers` / `ac_handler_e2e` integration test continues to pass against the fake. (i) **Tests delivered** — 30 lib unit + 7 canonical-vector + 9 round-trip + 11 mutation-resistance + 6 property × 10 000 iter (`prop_merkle_determinism`, `prop_merkle_root_independent_of_insertion_order`, `prop_merkle_tampering_detected`, `prop_merkle_round_trip_codec_stable`, `prop_outputs_missing_rejected`, `prop_bounds_enforcement`) = **63 new tests + 3 worker adapter tests**, all passing on debug + release. (j) **wasm32-clean** — `corelink-ac` lib has no tokio dependency; uses synchronous `BlobMetaReader` so the same crate compiles into the future Cloudflare Worker bundle and the Rust client SDK. **Deferred per charter trait-abstraction-defer pattern**: criterion benchmarks p99 ≤ 10 ms verify @ 100 nodes (instrumented in WI-S04-006 alongside REAPI conformance suite); cargo-fuzz 1 h CI nightly harness (alongside conformance suite — needs gRPC surface up); Mann-Whitney 3-prong timing test (consolidated in WI-S04-006); cycle-detection in nested REAPI Directory protos (the current bounded parser rejects the `output_directories.len() > MAX_OUTPUT_DIRECTORIES` outer-bound case at decode; nested-Directory traversal lands when `corelink-reapi` ships the Tree proto codec in WI-S04-006); 100 k nightly property iter; 50 + 50 published Annex A/B test-vector fixtures (the canonical-vector + tampering tests in this crate exhaustively cover the algorithmic boundary; published fixtures land alongside the conformance suite in WI-S04-006). Quality gates verde: `cargo test --workspace --all-targets --features corelink-worker/tower-middleware` 0 failures; `cargo clippy --workspace --all-targets --features corelink-worker/tower-middleware -- -D warnings` clean; `python3 scripts/validate_specs.py` clean; `python3 scripts/validate_references.py` no new dangling refs. |
 
 ## 32. Anti-patterns evitados
 

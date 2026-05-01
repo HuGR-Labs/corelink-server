@@ -26,6 +26,7 @@
 //! handler never imports a different verifier type when WI-S04-003
 //! lands.
 
+use corelink_ac::MerkleVerifier as _CorelinkAcMerkleVerifier;
 use thiserror::Error;
 
 use super::types::ActionResult;
@@ -214,6 +215,112 @@ impl MerkleError {
     }
 }
 
+/// Production [`MerkleVerifier`] adapter wrapping the canonical
+/// `corelink-ac::CanonicalMerkleVerifier` (WI-S04-003).
+///
+/// Converts the worker's local [`ActionResult`] shape into the
+/// `corelink-ac` wire shape, runs the canonical verifier, and maps
+/// the canonical [`corelink_ac::MerkleError`] variants back to this
+/// crate's [`MerkleError`] enum (preserving the `audit_code`
+/// short-id contract).
+///
+/// This is the verifier the production handler wires; the
+/// [`InMemoryMerkleVerifier`] above remains the canonical test
+/// fake.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CanonicalAcMerkleVerifier {
+    inner: corelink_ac::CanonicalMerkleVerifier,
+}
+
+impl CanonicalAcMerkleVerifier {
+    /// Construct a fresh canonical verifier.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            inner: corelink_ac::CanonicalMerkleVerifier::new(),
+        }
+    }
+
+    /// Project the worker's [`ActionResult`] into the
+    /// `corelink-ac` wire shape. Cheap clone — the `digest` field is
+    /// `Copy`, only the `Vec<...>` digest references allocate.
+    fn project(result: &ActionResult) -> corelink_ac::ActionResult {
+        let files: Vec<corelink_ac::OutputFileDigest> = result
+            .output_files
+            .iter()
+            .map(|f| corelink_ac::OutputFileDigest::new(f.digest, f.size_bytes))
+            .collect();
+        let dirs: Vec<corelink_ac::OutputDirectoryDigest> = result
+            .output_directories
+            .iter()
+            .map(|d| corelink_ac::OutputDirectoryDigest::new(d.digest, d.size_bytes))
+            .collect();
+        corelink_ac::ActionResult::new(
+            files,
+            dirs,
+            result.exit_code,
+            result.raw_proto_bytes.clone(),
+        )
+    }
+}
+
+impl MerkleVerifier for CanonicalAcMerkleVerifier {
+    fn verify(&self, result: &ActionResult) -> Result<(), MerkleError> {
+        let projected = Self::project(result);
+        self.inner.verify(&projected).map_err(map_canonical_error)
+    }
+}
+
+/// Map a `corelink-ac` canonical error to the worker's local enum.
+///
+/// The two enums overlap on every variant the canonical verifier
+/// emits today; depth/fanout/file-count/directory-count map 1:1, and
+/// every "structural" failure (`Malformed`, `RootMismatch`,
+/// `CycleDetected`, `NodeCountExceeded`, `PayloadExceeded`,
+/// `VersionUnsupported`, `DecodeError`) collapses onto
+/// [`MerkleError::MalformedTree`] with a canonical-reason prefix so
+/// the audit-code dashboard split still surfaces the underlying
+/// failure mode via the message body.
+fn map_canonical_error(err: corelink_ac::MerkleError) -> MerkleError {
+    match err {
+        corelink_ac::MerkleError::DepthExceeded { depth, bound } => {
+            MerkleError::DepthExceeded { depth, bound }
+        }
+        corelink_ac::MerkleError::FanoutExceeded { fanout, bound } => {
+            MerkleError::FanoutExceeded { fanout, bound }
+        }
+        corelink_ac::MerkleError::TooManyOutputFiles { len, bound } => {
+            MerkleError::TooManyOutputFiles { len, bound }
+        }
+        corelink_ac::MerkleError::TooManyOutputDirectories { len, bound } => {
+            MerkleError::TooManyOutputDirectories { len, bound }
+        }
+        corelink_ac::MerkleError::Malformed { reason } => MerkleError::MalformedTree(reason),
+        corelink_ac::MerkleError::RootMismatch => {
+            MerkleError::MalformedTree("root_mismatch".to_string())
+        }
+        corelink_ac::MerkleError::CycleDetected { digest } => {
+            MerkleError::MalformedTree(format!("cycle_detected:{digest}"))
+        }
+        corelink_ac::MerkleError::NodeCountExceeded { count, bound } => MerkleError::MalformedTree(
+            format!("node_count_exceeded:found={count},bound={bound}"),
+        ),
+        corelink_ac::MerkleError::PayloadExceeded { found_bytes, bound } => {
+            MerkleError::MalformedTree(format!(
+                "payload_exceeded:found={found_bytes},bound={bound}"
+            ))
+        }
+        corelink_ac::MerkleError::VersionUnsupported(v) => {
+            MerkleError::MalformedTree(format!("version_unsupported:{v}"))
+        }
+        corelink_ac::MerkleError::DecodeError(s) => {
+            MerkleError::MalformedTree(format!("decode_error:{s}"))
+        }
+        // Forward-compat for additive variants in `corelink-ac`.
+        other => MerkleError::MalformedTree(format!("unmapped:{other}")),
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -259,6 +366,43 @@ mod tests {
     #[test]
     fn all_zero_digest_in_files_rejected() {
         let v = InMemoryMerkleVerifier::new();
+        let res = ActionResult::new(
+            vec![OutputFileDigest::new(
+                Digest::from_hex(&"00".repeat(32)).unwrap(),
+                1,
+            )],
+            Vec::new(),
+            0,
+            Vec::new(),
+        );
+        let err = v.verify(&res).unwrap_err();
+        assert!(matches!(err, MerkleError::MalformedTree(_)));
+    }
+
+    #[test]
+    fn canonical_ac_verifier_passes_well_formed() {
+        let v = CanonicalAcMerkleVerifier::new();
+        v.verify(&fresh_result()).unwrap();
+    }
+
+    #[test]
+    fn canonical_ac_verifier_rejects_too_many_files() {
+        let v = CanonicalAcMerkleVerifier::new();
+        let mut files = Vec::with_capacity(MAX_OUTPUT_FILES + 1);
+        for i in 0..=MAX_OUTPUT_FILES {
+            files.push(OutputFileDigest::new(
+                Digest::compute(format!("f{i}").as_bytes()),
+                1,
+            ));
+        }
+        let res = ActionResult::new(files, Vec::new(), 0, Vec::new());
+        let err = v.verify(&res).unwrap_err();
+        assert!(matches!(err, MerkleError::TooManyOutputFiles { .. }));
+    }
+
+    #[test]
+    fn canonical_ac_verifier_rejects_all_zero_digest_in_files() {
+        let v = CanonicalAcMerkleVerifier::new();
         let res = ActionResult::new(
             vec![OutputFileDigest::new(
                 Digest::from_hex(&"00".repeat(32)).unwrap(),
