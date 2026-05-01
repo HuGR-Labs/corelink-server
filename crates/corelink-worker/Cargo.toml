@@ -151,6 +151,16 @@ name = "prop_split_splice"
 path = "tests/prop_split_splice.rs"
 required-features = ["tower-middleware"]
 
+[[test]]
+name = "prop_multipart_full"
+path = "tests/prop_multipart_full.rs"
+required-features = ["tower-middleware"]
+
+[[test]]
+name = "reapi_v2_split_splice_conformance"
+path = "tests/reapi_v2_split_splice_conformance.rs"
+required-features = ["tower-middleware"]
+
 [[bench]]
 name = "side_channel"
 path = "benches/side_channel.rs"

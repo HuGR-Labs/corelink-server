@@ -292,6 +292,54 @@ pub trait SessionStore: Send + Sync {
         session_id: SessionId,
         now_ms: u64,
     ) -> impl Future<Output = Result<(), SessionStoreError>> + Send + 'a;
+
+    /// Enumerate orphan candidates: sessions in [`SessionState::Live`]
+    /// whose `last_activity_at_ms` is older than `now_ms - max_age_ms`
+    /// and pinned to `region`. Used by the WI-S05-006 sweeper cron DO
+    /// (`OrphanSweeper`) to discover sessions whose client never
+    /// completed nor aborted (FM-060 `multipart-orphan` mitigation per
+    /// PAT-SWEEPER-001).
+    ///
+    /// Bounded result set: at most `limit` rows. Production D1 binding
+    /// implements this as a partial-index-driven SELECT
+    /// (`uq_multipart_sessions_in_progress` per
+    /// `corelink-multipart-schema` migration 0003) so the canonical
+    /// scan never spans completed/aborted rows. Order is canonical
+    /// `(tenant_id, last_activity_at_ms ASC)` so the sweeper drains
+    /// the oldest backlog first.
+    ///
+    /// # Errors
+    ///
+    /// Backend-class only.
+    fn list_orphans<'a>(
+        &'a self,
+        region: Region,
+        now_ms: u64,
+        max_age_ms: u64,
+        limit: usize,
+    ) -> impl Future<Output = Result<Vec<OrphanCandidate>, SessionStoreError>> + Send + 'a;
+}
+
+/// One row surfaced by [`SessionStore::list_orphans`]: a stale Live
+/// session ready for sweeper-driven abort.
+///
+/// The shape is intentionally narrow — sweeper consumers only need the
+/// `(tenant_id, session_id, region, last_activity_at_ms)` quadruple to
+/// emit the canonical `corelink.blob.split.aborted` audit record with
+/// `reason = "orphan_swept"`. The full session snapshot stays accessible
+/// via [`SessionStore::lookup`] when forensics (post-mortem walkthrough,
+/// chaos PR triage) need to inspect the bound chunks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct OrphanCandidate {
+    /// Tenant scope (PK leftmost — sweeper enforces tenant-scoped
+    /// abort downstream).
+    pub tenant_id: Uuid,
+    /// Server-minted session id.
+    pub session_id: SessionId,
+    /// Region the session was pinned to.
+    pub region: Region,
+    /// Wall-clock epoch ms of the most recent state-mutating call.
+    pub last_activity_at_ms: u64,
 }
 
 /// In-memory multipart session store. Per-instance — no global state
@@ -577,6 +625,46 @@ impl SessionStore for InMemorySessionStore {
                 SessionState::Aborted => Ok(()), // idempotent
                 SessionState::Finalized { .. } => Err(SessionStoreError::AlreadyFinalized),
             }
+        }
+    }
+
+    fn list_orphans<'a>(
+        &'a self,
+        region: Region,
+        now_ms: u64,
+        max_age_ms: u64,
+        limit: usize,
+    ) -> impl Future<Output = Result<Vec<OrphanCandidate>, SessionStoreError>> + Send + 'a {
+        async move {
+            let g = self.lock()?;
+            let mut out: Vec<OrphanCandidate> = g
+                .by_session_id
+                .values()
+                .filter(|snap| {
+                    matches!(snap.state, SessionState::Live)
+                        && snap.region == region
+                        && now_ms.saturating_sub(snap.last_activity_at_ms) >= max_age_ms
+                })
+                .map(|snap| OrphanCandidate {
+                    tenant_id: snap.key.tenant_id(),
+                    session_id: snap.session_id,
+                    region: snap.region,
+                    last_activity_at_ms: snap.last_activity_at_ms,
+                })
+                .collect();
+            // Canonical order: (tenant_id, last_activity_at_ms ASC) so
+            // the sweeper drains the oldest backlog first AND so
+            // sibling shards produce identical traces under the same
+            // dataset (deterministic; aids RB-FM-060 dry-run drift
+            // detection).
+            out.sort_unstable_by(|a, b| {
+                a.tenant_id
+                    .cmp(&b.tenant_id)
+                    .then(a.last_activity_at_ms.cmp(&b.last_activity_at_ms))
+                    .then(a.session_id.0.cmp(&b.session_id.0))
+            });
+            out.truncate(limit);
+            Ok(out)
         }
     }
 }

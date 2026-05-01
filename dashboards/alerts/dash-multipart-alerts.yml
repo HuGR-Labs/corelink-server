@@ -1,0 +1,195 @@
+# DASH-MULTIPART alert rules — WI-S05-006 §6.1.5 + §6.1.6 + spec
+# contract §11.
+#
+# Routing per WI §6.1.5: PagerDuty (SEV-0 + SEV-1) + Slack
+# (#corelink-alerts all severities). Tested via chaos experiment WI
+# §15.6 (dashboard noise calibration) before staging dry-run.
+#
+# Severity mapping per WI §2 incident classification 4-tier (Lote
+# 10.4bis):
+#   P0 = SEV-0 (cross-tenant chunk leak; manifest forge sustained;
+#               sweeper cron stale > 1h sustained; conformance
+#               regression; throughput < 50 MB/s sustained)
+#   P1 = SEV-1 (throughput < 100 MB/s sustained 30 min;
+#               SLO-LAT-CAS-PUT-MULTIPART breach; R2 backend < 99%
+#               sustained 5 min)
+#   P2 = SEV-2 (tampering counter single event;
+#               orphan rate > 1% sustained 1h; sig invalid single
+#               event; cost regression > 10%)
+#   P3 = SEV-3 (metric drift < 5%; informational; dedup ratio < 1.2x
+#               sustained — does NOT reset 72h SLO clock per WI §2 P3)
+
+groups:
+  - name: corelink-multipart-cas
+    interval: 30s
+    rules:
+
+      - alert: Multipart_CrossTenantBreach
+        expr: sum(rate(corelink_multipart_cross_tenant_total[1m])) > 0
+        for: 0m  # SEV-0; immediate fire
+        labels:
+          severity: sev0
+          runbook: RB-FM-253
+          sprint: S-05
+          gate: ship
+        annotations:
+          summary: "Multipart CAS cross-tenant breach — INV-MULTIPART-PATH-TENANT-SCOPED violated"
+          description: |
+            corelink_multipart_cross_tenant_total is non-zero. This is a
+            SEV-0 incident — INV-MULTIPART-PATH-TENANT-SCOPED + INV-
+            TENANT-ISOLATION are load-bearing S-05 security invariants.
+            Run RB-FM-253 (cross-tenant read) immediately. Reset 72h
+            SLO clock.
+          runbook_url: "../../specs/05_quality/runbooks/RB-FM-253-cross-tenant-read.md"
+
+      - alert: Multipart_SigInvalidSustained
+        expr: sum(rate(corelink_multipart_sig_invalid_total[5m])) > 0
+        for: 5m
+        labels:
+          severity: sev0
+          runbook: RB-FM-254
+          sprint: S-05
+        annotations:
+          summary: "Multipart manifest sig invalid sustained — tampering signal"
+          description: |
+            Manifest sig verify failures sustained 5+ min. Could indicate:
+            tampering of manifest canonical bytes; HKDF info string drift
+            (manifest-sig vs ac-sig confusion); key rotation race. SEV-0;
+            page Architect + Security Lead + Crypto SME.
+          runbook_url: "../../specs/05_quality/runbooks/RB-FM-254-cache-poisoning.md"
+
+      - alert: Multipart_ConformanceRegression
+        expr: corelink_reapi_conformance_pass{rpc="split_splice"} < 1
+        for: 0m
+        labels:
+          severity: sev0
+          sprint: S-05
+        annotations:
+          summary: "REAPI v2 SplitBlob/SpliceBlob conformance regressed"
+          description: |
+            10-test conformance suite reported < 100 % pass. WI §6.1.4 +
+            spec contract §19 dictates 100 % conformance is non-
+            negotiable; ship-gate fails. Page Architect; freeze rollout;
+            re-run nightly to confirm.
+
+      - alert: Multipart_SweeperStale
+        expr: sum by (region) (rate(corelink_multipart_sweeper_ticks_total[1h])) < 0.0002
+        for: 1h  # roughly: < 1 tick / 1.4 h sustained
+        labels:
+          severity: sev1
+          runbook: RB-FM-060
+          sprint: S-05
+        annotations:
+          summary: "Multipart sweeper cron stale — alarm not re-armed"
+          description: |
+            Sweeper tick rate per region dropped below the canonical 1/h
+            cadence sustained > 1 h. RB-FM-060 chaos #1 (cron not re-
+            armed). Page SRE; check Cron DO `alarm()` re-arm path;
+            verify the DO is bound; re-deploy if needed.
+          runbook_url: "../../specs/05_quality/runbooks/RB-FM-060-multipart-orphan.md"
+
+      - alert: Multipart_OrphanRateHigh
+        expr: |
+          sum by (region) (increase(corelink_multipart_sweeper_orphans_aborted_total[1h]))
+          /
+          (sum by (region) (increase(corelink_multipart_sessions_started_total[1h])) > 0)
+          > 0.01
+        for: 1h
+        labels:
+          severity: sev2
+          runbook: RB-FM-060
+          sprint: S-05
+        annotations:
+          summary: "Multipart orphan rate sustained > 1%/h"
+          description: |
+            Per-region orphan rate > 1% sustained 1 h. Investigate
+            client SDK retry behaviour, network instability, or
+            specific tenant misuse per RB-FM-060.
+
+      - alert: Multipart_ThroughputBelowFloor
+        expr: sum by (op, region) (rate(corelink_multipart_bytes_total{op=~"split|splice"}[1m])) < 50000000
+        for: 30m
+        labels:
+          severity: sev0
+          sprint: S-05
+        annotations:
+          summary: "Multipart throughput < 50 MB/s sustained 30 min — P0 (resets 72h SLO)"
+          description: |
+            Throughput sustained below the P0 floor (50 MB/s). Per WI
+            §2 4-tier classification this resets the 72h SLO clock.
+            Investigate R2 / chunker / handler / streaming verify
+            hot path.
+
+      - alert: Multipart_LatencyP99Breach
+        expr: |
+          histogram_quantile(0.99,
+            sum by (le, op, region) (rate(corelink_multipart_handler_duration_seconds_bucket{op="split"}[5m]))
+          ) > 1
+        for: 30m
+        labels:
+          severity: sev1
+          sprint: S-05
+        annotations:
+          summary: "Multipart Split p99 > 1s sustained 30 min"
+          description: |
+            SLO-LAT-CAS-PUT-MULTIPART breach. p99 Split for 10 MiB
+            sustained > 1 s for 30 min. Investigate chunker hot path;
+            check BLAKE3 SIMD optimisation; check R2 part upload
+            latency.
+
+      - alert: Multipart_R2BackendDegraded
+        expr: |
+          sum by (region) (rate(corelink_r2_multipart_ops_total{outcome="ok"}[5m]))
+          /
+          (sum by (region) (rate(corelink_r2_multipart_ops_total[5m])) > 0)
+          < 0.99
+        for: 5m
+        labels:
+          severity: sev1
+          sprint: S-05
+        annotations:
+          summary: "R2 multipart backend availability < 99% sustained 5 min"
+          description: |
+            Per-region R2 multipart success rate dropped below 99%.
+            Could indicate R2 upstream incident; investigate via
+            Cloudflare status; consider tightening sweeper cadence.
+
+      - alert: Multipart_CostRegression
+        expr: corelink_multipart_cost_per_op_usd{op="split"} > 0.000044
+        for: 30m
+        labels:
+          severity: sev2
+          sprint: S-05
+        annotations:
+          summary: "Multipart cost per Split > 110% target sustained 30 min"
+          description: |
+            Cost regression gate at +10% per WI §10.s05.006.10. Run
+            criterion bench to drill down on the regressing hot path.
+
+      - alert: Multipart_DedupRatioBelowFloor
+        expr: corelink_dedup_ratio{type="chunk"} < 1.2
+        for: 1h
+        labels:
+          severity: sev3  # P3 — does NOT reset 72h SLO clock
+          sprint: S-05
+        annotations:
+          summary: "Multipart dedup ratio < 1.2x sustained 1h"
+          description: |
+            Per-tenant dedup ratio sustained below the 1.2x floor.
+            Customer workload review; FastCDC opt-in evaluation per
+            ADR-0022. P3 — informational; does not reset SLO clock.
+
+      - alert: Multipart_ManifestVerifyTampering
+        expr: sum(rate(corelink_multipart_manifest_verify_total{result=~"tampered|bounds_violation"}[5m])) > 0
+        for: 5m
+        labels:
+          severity: sev1
+          runbook: RB-FM-254
+          sprint: S-05
+        annotations:
+          summary: "Manifest verify tampering / bounds_violation sustained > 0/5 min"
+          description: |
+            Per INV-MULTIPART-DUAL-SIDE-VERIFY any verify failure
+            beyond the trivial "ok" arm is a possible cache-poisoning
+            signal. Page Security Lead + Architect; freeze rollout;
+            re-run prop_multipart_full_stack_streaming_verify_fail_fast.

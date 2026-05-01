@@ -40,7 +40,9 @@
 //! - Real D1 schema for chunks / manifest_chunks / multipart_sessions:
 //!   WI-S05-004.
 //! - Real Merkle manifest builder/verifier: WI-S05-005.
-//! - Sweeper cron DO + RB-FM-060: WI-S05-006.
+//! - Sweeper cron DO + RB-FM-060: lands in [`sweeper`] at WI-S05-006
+//!   alongside the REAPI conformance suite + 100k cross-tenant property
+//!   test + DASH-MULTIPART dashboard + PRR ship gate.
 
 pub mod assembler;
 pub mod audit;
@@ -48,6 +50,7 @@ pub mod chunk_store;
 pub mod handler;
 pub mod session;
 pub mod split_splice;
+pub mod sweeper;
 pub mod types;
 
 pub use assembler::{
@@ -59,13 +62,18 @@ pub use chunk_store::{
     ChunkKey, ChunkRecord, ChunkStore, ChunkStoreError, InMemoryChunkStore,
 };
 pub use session::{
-    BoundChunk, InMemorySessionStore, SessionFinalize, SessionInit, SessionKey, SessionSnapshot,
-    SessionState, SessionStore, SessionStoreError,
+    BoundChunk, InMemorySessionStore, OrphanCandidate, SessionFinalize, SessionInit, SessionKey,
+    SessionSnapshot, SessionState, SessionStore, SessionStoreError,
 };
 pub use split_splice::{
     Clock, FakeClock, FinalizeSplitOutcome, InitSplitOutcome, SpliceError, SpliceOutcome,
     SplitError, SplitSpliceHandler, SplitSpliceHandlerBuilder, SplitSpliceHandlerImpl, SystemClock,
     MAX_CHUNK_BYTES,
+};
+pub use sweeper::{
+    canonical_metric_pairs, InMemoryOrphanSweeper, OrphanSweeper, SweepBatchOutcome,
+    SweepRowOutcome, SweeperError, SweeperTickOutcome, MAX_BATCH_SIZE as SWEEPER_MAX_BATCH_SIZE,
+    ORPHAN_AGE_MS, ORPHAN_SWEPT_REASON, TICK_INTERVAL_MS,
 };
 pub use types::{
     BlobDigest, ChunkDigest, ChunkIndex, ManifestDigest, SessionId, MAX_CHUNKS_PER_BLOB,

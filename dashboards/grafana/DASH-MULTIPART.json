@@ -1,0 +1,329 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "CoreLink Multipart CAS metrics datasource (Prometheus / VictoriaMetrics / Grafana Cloud)",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "uid": "DASH-MULTIPART",
+  "title": "CoreLink — Multipart CAS (DASH-MULTIPART)",
+  "description": "WI-S05-006 §6.1.5 canonical multipart CAS dashboard. 10 panels per WI body §6.1.5: SplitBlob/SpliceBlob throughput, latency p99 Split/Splice warm/cold, orphan rate per region, dedup ratio per tenant_tier, sweeper tick rate, R2 backend availability, manifest sig invalid counter, REAPI conformance status, cost per-op tracker, manifest verify rate.",
+  "tags": ["corelink", "multipart", "cas", "s05", "high-risk", "ship-gate"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "tenant_tier",
+        "type": "custom",
+        "label": "Tenant Tier",
+        "multi": true,
+        "includeAll": true,
+        "options": [
+          { "text": "Free", "value": "free" },
+          { "text": "Solo", "value": "solo" },
+          { "text": "Team", "value": "team" },
+          { "text": "Business", "value": "business" },
+          { "text": "Enterprise", "value": "enterprise" }
+        ],
+        "query": "free,solo,team,business,enterprise"
+      },
+      {
+        "name": "region",
+        "type": "custom",
+        "label": "Region",
+        "multi": true,
+        "includeAll": true,
+        "options": [
+          { "text": "SAM", "value": "sam" },
+          { "text": "IAD", "value": "iad" },
+          { "text": "LHR", "value": "lhr" },
+          { "text": "NRT", "value": "nrt" },
+          { "text": "SYD", "value": "syd" }
+        ],
+        "query": "sam,iad,lhr,nrt,syd"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "SplitBlob / SpliceBlob throughput (rolling 1-min)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1.5 panel 1. Steady ≥ 100 MB/s sustained 72h is the canonical S-05 GA gate per spec contract §6.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": 0 },
+              { "color": "yellow", "value": 50000000 },
+              { "color": "green", "value": 100000000 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (op, region) (rate(corelink_multipart_bytes_total{op=~\"split|splice\", region=~\"$region\"}[1m]))",
+          "legendFormat": "{{op}} / {{region}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Latency p99 — Split / Splice warm + cold per region",
+      "type": "heatmap",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1.5 panel 2 + spec contract §9. SLO-LAT-CAS-PUT-MULTIPART p99 ≤ 1 s for 10 MiB Split; ≤ 10 s for 1 GiB Splice.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, op, warmth, region) (rate(corelink_multipart_handler_duration_seconds_bucket{region=~\"$region\"}[5m])))",
+          "legendFormat": "{{op}} / {{warmth}} / {{region}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Orphan rate per region",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1.5 panel 3 + RB-FM-060. Orphan rate = (orphan-aborted sessions / total sessions). Alert AC_MultipartOrphanRate fires SEV-2 if > 1% sustained 1h.",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 8 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 0.005 },
+              { "color": "red", "value": 0.01 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (region) (increase(corelink_multipart_sweeper_orphans_aborted_total{region=~\"$region\"}[1h])) / sum by (region) (increase(corelink_multipart_sessions_started_total{region=~\"$region\"}[1h]))",
+          "legendFormat": "{{region}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Dedup ratio per tenant_tier",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1.5 panel 4 + spec contract §6 DoD. Baseline ≥ 1.5× sintético; CAP-DEDUP-001 foundation; INV-DEDUP-CONSISTENCY (S-07).",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 8 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": 1 },
+              { "color": "yellow", "value": 1.2 },
+              { "color": "green", "value": 1.5 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "corelink_dedup_ratio{type=\"chunk\", tenant_tier=~\"$tenant_tier\"}",
+          "legendFormat": "{{tenant_tier}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Sweeper tick rate per region (alert if < 1/h)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1.5 panel 5. PAT-SWEEPER-001 cron tick rate = 1/h canonical. Alert AC_MultipartSweeperStale fires SEV-1 if < 1/h sustained 1h (RB-FM-060 chaos #1: cron not re-armed).",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 8 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": 0 },
+              { "color": "yellow", "value": 0.0002 },
+              { "color": "green", "value": 0.00027 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (region) (rate(corelink_multipart_sweeper_ticks_total{region=~\"$region\"}[1h]))",
+          "legendFormat": "{{region}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "R2 backend availability per region",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1.5 panel 6. R2 PUT/GET success rate; SLO-AVAIL-R2 ≥ 99.9% target. Alert MultipartR2BackendDegraded fires SEV-1 if < 99% sustained 5 min.",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 8 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0.95,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": 0 },
+              { "color": "yellow", "value": 0.99 },
+              { "color": "green", "value": 0.999 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (region) (rate(corelink_r2_multipart_ops_total{outcome=\"ok\", region=~\"$region\"}[5m])) / sum by (region) (rate(corelink_r2_multipart_ops_total{region=~\"$region\"}[5m]))",
+          "legendFormat": "{{region}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Manifest sig invalid counter (SEV-0 if > 0)",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1.5 panel 7. CTRL-MULTIPART-002 HKDF info=`b\"manifest-sig\"` separate domain from b\"ac-sig\". Sig invalid > 0 sustained 5 min = page Crypto SME (Architect).",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 14 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum (increase(corelink_multipart_sig_invalid_total[5m]))",
+          "legendFormat": "sig_invalid (5m)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "REAPI conformance status (last run)",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1.5 panel 8 + WI §6.1.4. REAPI v2 SplitBlob/SpliceBlob 10-test suite; nightly. Status = 1 → green; < 1 → page Architect.",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 14 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": 0 },
+              { "color": "yellow", "value": 0.9 },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "corelink_reapi_conformance_pass{rpc=\"split_splice\"}",
+          "legendFormat": "split/splice conformance",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Cost per-op tracker (Split / Splice / Sweeper)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1.5 panel 9 + WI §10.s05.006.10 cost regression gate. Per-Split ≤ $0.000040; per-Splice ≤ $0.000010; per-multipart-op ≤ $0.0000045. SEV-2 alert at 110% target (cost regression > 10%).",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 14 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 0.000044 },
+              { "color": "red", "value": 0.000048 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "corelink_multipart_cost_per_op_usd{op=~\"split|splice|sweeper\"}",
+          "legendFormat": "{{op}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Manifest verify rate per result (ok / tampered / bounds_violation)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1.5 panel 10 + INV-MULTIPART-DUAL-SIDE-VERIFY. Tampered + bounds_violation > 0 sustained 5 min = SEV-1 (cache poisoning suspect).",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 14 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (result) (rate(corelink_multipart_manifest_verify_total[5m]))",
+          "legendFormat": "{{result}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}
