@@ -45,15 +45,25 @@ pub mod meta;
 pub mod neg_cache;
 pub mod outputs;
 pub mod sig;
+pub mod ttl;
 pub mod types;
 
 pub use audit::{AcEventType, AuditSink, InMemoryAuditSink};
 pub use handler::{ActionCacheHandler, ActionCacheHandlerImpl, AcError};
 pub use merkle::{InMemoryMerkleVerifier, MerkleError, MerkleVerifier};
-pub use meta::{AcKey, AcMetaRow, AcMetaStore, AcMetaUpsertOutcome, InMemoryAcMetaStore};
+pub use meta::{
+    AcExpiredCandidate, AcKey, AcMetaRow, AcMetaStore, AcMetaUpsertOutcome,
+    InMemoryAcMetaStore,
+};
 pub use neg_cache::AcNegCache;
 pub use outputs::{InMemoryOutputsCheck, OutputsCheck, OutputsCheckError, OutputsCheckOutcome};
 pub use sig::{AcEnvelope, InMemoryFakeSigner, SigError, Signer};
+pub use ttl::{
+    refresh_if_needed, EnvConfigTierTtlResolver, EvictBatch, EvictBatchOutcome, EvictError,
+    EvictRowOutcome, InMemoryTtlWorker, MockTierTtlResolver, TenantTier, TierTtlResolver,
+    TtlWorker, TtlWorkerError, TtlWorkerTickOutcome, DEFAULT_REFRESH_THRESHOLD_MS,
+    DEFAULT_TIER_TTL_MS, MAX_BATCH_SIZE,
+};
 pub use types::{
     ActionDigest, ActionResult, OutputDirectoryDigest, OutputFileDigest, ResultHash,
 };

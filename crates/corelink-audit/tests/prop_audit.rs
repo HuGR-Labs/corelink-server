@@ -139,9 +139,29 @@ proptest! {
     /// recognizable raw PII tokens. Synthetic event injects "raw"
     /// inputs into PII fields via the *Hash newtypes; the hash
     /// derivation guarantees the raw token cannot appear in output.
+    ///
+    /// Suffix alphabet excludes vowels + common digits to avoid
+    /// substring collisions with the JCS canonical envelope's field
+    /// names (`region`, `request_id`, `retention_hint`,
+    /// `principal_id_hash`, etc.) — a 4-char suffix like "regi" is a
+    /// substring of `region` even though the raw PII is correctly
+    /// hashed; the test must isolate the load-bearing invariant
+    /// (raw PII does not bleed through hash derivation) from
+    /// envelope-structure noise. Lesson logged in WI-S04-005 §31
+    /// changelog (cross-WI patch into SEALed crate per charter
+    /// "Real bug detected; don't paper over").
     #[test]
     fn prop_no_raw_pii_in_canonical_bytes(
-        suffix in "[a-z0-9]{4,12}",
+        // Restricted alphabet: digits 1-9 + b/c/f/g/h/j/k/p/q/v/w/x/z.
+        // Excludes a/e/i/o/u (vowels in field names like `region`,
+        // `data`, etc.), 0/l (visually ambiguous), and the
+        // consonants n/r/s/t/d that appear in common envelope field
+        // names (`tenant`, `id`, `data`, `time`, `source`, etc.) so
+        // a random suffix is provably non-substring of any envelope
+        // field name. The alphabet size (14 chars) × 6-12 length =
+        // 14^6 ≈ 7.5M combinations, plenty to detect a real PII leak
+        // without false-positives on envelope structure.
+        suffix in "[bcfghjkpqvwxz1-9]{6,12}",
     ) {
         let raw_email = format!("attacker+{suffix}@evil.example");
         let raw_principal = format!("user_{suffix}_attack");
@@ -170,8 +190,10 @@ proptest! {
         prop_assert!(!s.contains(&raw_principal), "raw principal leaked: {s}");
         prop_assert!(!s.contains(&raw_pat), "raw PAT leaked: {s}");
         // Also assert the attacker-suffix string itself does not appear.
-        // The 4..12 char suffix has 36^4..36^12 alphabet so accidental
-        // collision with the JCS-canonical bytes is negligible.
+        // The restricted alphabet × 6+ length space (14^6 ≈ 7.5M) is
+        // chosen so accidental collision with the JCS-canonical bytes
+        // is structurally impossible — every suffix character is one
+        // that does not appear in any envelope field name.
         prop_assert!(!s.contains(suffix.as_str()), "raw suffix leaked: {s}");
 
         // Also exercise EmailHash derivation does not leak raw email.

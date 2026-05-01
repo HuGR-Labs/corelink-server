@@ -190,6 +190,29 @@ pub enum AcMetaError {
     MutexPoisoned,
 }
 
+/// Tenant-scoped descriptor of an expired row identified by the TTL
+/// worker (WI-S04-005). Carries the bare minimum the cron tick needs
+/// to issue a tenant-scoped R2 DELETE + D1 DELETE — the TDK is **not**
+/// dereferenced on the cron path (`tenant_prefix` is materialized at
+/// INSERT time per ADR-0035 H-3 + WI-S04-005 Lote 10.4bis P0 fix).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AcExpiredCandidate {
+    /// PK component 1.
+    pub tenant_id: Uuid,
+    /// PK component 2.
+    pub action_digest: Digest,
+    /// Materialized tenant prefix BLOB(16) — read off the column.
+    pub tenant_prefix: TenantPrefix,
+    /// Region this row was minted under. The TTL worker MUST refuse
+    /// candidates whose region differs from its own (per-region shard).
+    pub region: Region,
+    /// `expires_at` value the worker observed at SELECT time. The
+    /// production binding's `WHERE expires_at < ? AND region = ?`
+    /// filter is honored at the trait surface; the value is echoed
+    /// back so audit emission carries the canonical timestamp.
+    pub expires_at_ms: u64,
+}
+
 /// `ac_meta` row store contract.
 ///
 /// Production wiring (WI-S04-006) implements this against a Cloudflare
@@ -234,6 +257,72 @@ pub trait AcMetaStore: Send + Sync {
     fn refresh_on_hit<'a>(
         &'a self,
         request: AcRefreshRequest,
+    ) -> impl Future<Output = Result<bool, AcMetaError>> + Send + 'a;
+
+    /// Tenant-scoped batched SELECT of expired rows for one region —
+    /// the TTL worker (WI-S04-005) cron tick.
+    ///
+    /// **Tenant scoping**: the production binding emits
+    /// `SELECT … WHERE region = ?1 AND tenant_id = ?2 AND expires_at < ?3
+    /// ORDER BY expires_at ASC LIMIT ?4` — `tenant_id` is a mandatory
+    /// argument; cross-tenant batches are structurally impossible per
+    /// `INV-AC-EVICT-TENANT-SCOPED`.
+    ///
+    /// **Bounded batch**: callers MUST pass `limit <= 250` per
+    /// WI-S04-005 §6.1.5 (D1 100 KB batch ceiling). The TTL worker
+    /// caps at the canonical batch size; the trait surface accepts any
+    /// `usize` and trusts the caller (the cron worker is the only
+    /// production caller).
+    ///
+    /// Returns the candidate descriptors in `expires_at` ASC order so
+    /// the worker drains the oldest entries first.
+    fn select_expired_for_region<'a>(
+        &'a self,
+        region: Region,
+        tenant_id: Uuid,
+        now_ms: u64,
+        limit: usize,
+    ) -> impl Future<Output = Result<Vec<AcExpiredCandidate>, AcMetaError>> + Send + 'a;
+
+    /// Tenant-scoped enumeration of every tenant_id that has at least
+    /// one expired row in `region` at `now_ms`. The TTL worker calls
+    /// this once per tick to discover which tenants need work; per-
+    /// tenant batches are then drained via [`Self::select_expired_for_region`]
+    /// + [`Self::delete_tenant_scoped`].
+    ///
+    /// Production binding: `SELECT DISTINCT tenant_id FROM ac_meta
+    /// WHERE region = ?1 AND expires_at < ?2`.
+    fn tenants_with_expired<'a>(
+        &'a self,
+        region: Region,
+        now_ms: u64,
+    ) -> impl Future<Output = Result<Vec<Uuid>, AcMetaError>> + Send + 'a;
+
+    /// Tenant-scoped DELETE of a single `(tenant_id, action_digest)`
+    /// row. Production binding: `DELETE FROM ac_meta WHERE tenant_id =
+    /// ?1 AND action_digest = ?2 AND region = ?3` — the `region`
+    /// predicate is a defense-in-depth WHERE clause that re-asserts
+    /// the per-region cron worker's pinning even if the SELECT-time
+    /// region matched (WI-S04-005 §6.1.5).
+    ///
+    /// Returns `Ok(true)` when a row was deleted, `Ok(false)` when no
+    /// row matched (idempotent — re-running the cron tick after a
+    /// crash mid-batch is safe). The handler / cron worker MUST treat
+    /// `Ok(false)` as a no-op, **not** an error.
+    ///
+    /// **Anti-scope**: the trait surface intentionally does **not**
+    /// expose a "DELETE WHERE expires_at < ?" bulk method. Any future
+    /// scaling improvement that wants bulk DELETE MUST pin the
+    /// `tenant_id` + `region` predicates by construction (e.g., via a
+    /// `BulkTenantDelete { tenant_id, region, expires_before_ms }`
+    /// argument bundle that re-asserts the canonical scoping). Direct
+    /// expression of `WHERE expires_at < ?` alone is the FM-303
+    /// catastrophic anti-pattern.
+    fn delete_tenant_scoped<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        action_digest: &'a Digest,
+        region: Region,
     ) -> impl Future<Output = Result<bool, AcMetaError>> + Send + 'a;
 }
 
@@ -372,6 +461,87 @@ impl AcMetaStore for InMemoryAcMetaStore {
                 row.expires_at_ms = Some(request.now_ms + delta);
             }
             Ok(true)
+        }
+    }
+
+    fn select_expired_for_region<'a>(
+        &'a self,
+        region: Region,
+        tenant_id: Uuid,
+        now_ms: u64,
+        limit: usize,
+    ) -> impl Future<Output = Result<Vec<AcExpiredCandidate>, AcMetaError>> + Send + 'a {
+        async move {
+            let guard = self.inner.lock().map_err(|_| AcMetaError::MutexPoisoned)?;
+            // Tenant-scoped + region-scoped filter; mirrors the SQL
+            // `WHERE region = ? AND tenant_id = ? AND expires_at < ?`.
+            // Sorted ASC by expires_at so the oldest rows drain first.
+            let mut hits: Vec<&AcMetaRow> = guard
+                .values()
+                .filter(|row| {
+                    row.region == region
+                        && row.tenant_id == tenant_id
+                        && row
+                            .expires_at_ms
+                            .is_some_and(|exp| exp < now_ms)
+                })
+                .collect();
+            hits.sort_by_key(|row| row.expires_at_ms.unwrap_or(u64::MAX));
+            Ok(hits
+                .into_iter()
+                .take(limit)
+                .map(|row| AcExpiredCandidate {
+                    tenant_id: row.tenant_id,
+                    action_digest: row.action_digest.hash,
+                    tenant_prefix: row.tenant_prefix,
+                    region: row.region,
+                    expires_at_ms: row.expires_at_ms.unwrap_or(0),
+                })
+                .collect())
+        }
+    }
+
+    fn tenants_with_expired<'a>(
+        &'a self,
+        region: Region,
+        now_ms: u64,
+    ) -> impl Future<Output = Result<Vec<Uuid>, AcMetaError>> + Send + 'a {
+        async move {
+            let guard = self.inner.lock().map_err(|_| AcMetaError::MutexPoisoned)?;
+            let mut tenants: std::collections::BTreeSet<Uuid> = std::collections::BTreeSet::new();
+            for row in guard.values() {
+                if row.region == region
+                    && row.expires_at_ms.is_some_and(|exp| exp < now_ms)
+                {
+                    tenants.insert(row.tenant_id);
+                }
+            }
+            Ok(tenants.into_iter().collect())
+        }
+    }
+
+    fn delete_tenant_scoped<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        action_digest: &'a Digest,
+        region: Region,
+    ) -> impl Future<Output = Result<bool, AcMetaError>> + Send + 'a {
+        async move {
+            let mut guard = self.inner.lock().map_err(|_| AcMetaError::MutexPoisoned)?;
+            let key = AcKey::new(tenant_id, *action_digest);
+            // Defense-in-depth: re-assert region match before deletion
+            // (mirrors the production `AND region = ?` clause). A
+            // mis-routed delete (cron worker pinned to wnam handed a
+            // `weur` candidate) is a programmer error; surface as
+            // no-op rather than corrupt other regions.
+            let region_match = guard
+                .get(&key)
+                .map(|row| row.region == region)
+                .unwrap_or(false);
+            if !region_match {
+                return Ok(false);
+            }
+            Ok(guard.remove(&key).is_some())
         }
     }
 }
@@ -526,5 +696,201 @@ mod tests {
             .unwrap();
         let row = store.get(&req.key).await.unwrap().unwrap();
         assert_eq!(row.last_hit_at_ms, 5_000); // unchanged
+    }
+
+    fn upsert_req_with_ttl(
+        tid: Uuid,
+        ad_seed: &[u8],
+        rh_seed: &[u8],
+        now_ms: u64,
+        ttl_ms: Option<u64>,
+        region: Region,
+    ) -> AcUpsertRequest {
+        let mut req = upsert_req(tid, ad_seed, rh_seed, now_ms);
+        req.ttl_ms = ttl_ms;
+        req.region = region;
+        req
+    }
+
+    #[tokio::test]
+    async fn select_expired_filters_by_tenant_and_region() {
+        let store = InMemoryAcMetaStore::new();
+        // Tenant A — expired in wnam.
+        store
+            .upsert(upsert_req_with_ttl(
+                fixed_tenant_a(),
+                b"a1",
+                b"r1",
+                1_000,
+                Some(1_000),
+                Region::Wnam,
+            ))
+            .await
+            .unwrap();
+        // Tenant A — fresh in wnam.
+        store
+            .upsert(upsert_req_with_ttl(
+                fixed_tenant_a(),
+                b"a2",
+                b"r2",
+                1_000,
+                Some(60_000_000),
+                Region::Wnam,
+            ))
+            .await
+            .unwrap();
+        // Tenant B — expired in wnam.
+        store
+            .upsert(upsert_req_with_ttl(
+                fixed_tenant_b(),
+                b"b1",
+                b"r3",
+                1_000,
+                Some(2_000),
+                Region::Wnam,
+            ))
+            .await
+            .unwrap();
+        // Tenant A — expired in weur (different region).
+        store
+            .upsert(upsert_req_with_ttl(
+                fixed_tenant_a(),
+                b"a3",
+                b"r4",
+                1_000,
+                Some(500),
+                Region::Weur,
+            ))
+            .await
+            .unwrap();
+
+        // Tenant A's expired wnam rows only.
+        let exp = store
+            .select_expired_for_region(Region::Wnam, fixed_tenant_a(), 5_000_000, 100)
+            .await
+            .unwrap();
+        assert_eq!(exp.len(), 1);
+        assert_eq!(exp[0].tenant_id, fixed_tenant_a());
+        assert_eq!(exp[0].region, Region::Wnam);
+    }
+
+    #[tokio::test]
+    async fn select_expired_respects_limit_and_orders_asc() {
+        let store = InMemoryAcMetaStore::new();
+        for (i, ttl) in [3_000_u64, 1_000, 2_000].iter().enumerate() {
+            let mut req = upsert_req_with_ttl(
+                fixed_tenant_a(),
+                &[b'a', i as u8],
+                &[b'r', i as u8],
+                1_000,
+                Some(*ttl),
+                Region::Wnam,
+            );
+            req.now_ms = 1_000;
+            store.upsert(req).await.unwrap();
+        }
+        let exp = store
+            .select_expired_for_region(Region::Wnam, fixed_tenant_a(), 5_000_000, 2)
+            .await
+            .unwrap();
+        assert_eq!(exp.len(), 2);
+        // Oldest (1_000 + 1_000 = 2_000) first, then 3_000.
+        assert!(exp[0].expires_at_ms <= exp[1].expires_at_ms);
+    }
+
+    #[tokio::test]
+    async fn tenants_with_expired_returns_unique_tenants() {
+        let store = InMemoryAcMetaStore::new();
+        store
+            .upsert(upsert_req_with_ttl(
+                fixed_tenant_a(),
+                b"a1",
+                b"r",
+                1_000,
+                Some(1_000),
+                Region::Wnam,
+            ))
+            .await
+            .unwrap();
+        store
+            .upsert(upsert_req_with_ttl(
+                fixed_tenant_a(),
+                b"a2",
+                b"r",
+                1_000,
+                Some(2_000),
+                Region::Wnam,
+            ))
+            .await
+            .unwrap();
+        store
+            .upsert(upsert_req_with_ttl(
+                fixed_tenant_b(),
+                b"b1",
+                b"r",
+                1_000,
+                Some(1_000),
+                Region::Wnam,
+            ))
+            .await
+            .unwrap();
+        let tenants = store
+            .tenants_with_expired(Region::Wnam, 5_000_000)
+            .await
+            .unwrap();
+        assert_eq!(tenants.len(), 2);
+        assert!(tenants.contains(&fixed_tenant_a()));
+        assert!(tenants.contains(&fixed_tenant_b()));
+    }
+
+    #[tokio::test]
+    async fn delete_tenant_scoped_removes_only_that_tenants_row() {
+        let store = InMemoryAcMetaStore::new();
+        let req_a = upsert_req(fixed_tenant_a(), b"shared", b"r1", 1_000);
+        let req_b = upsert_req(fixed_tenant_b(), b"shared", b"r2", 1_000);
+        store.upsert(req_a.clone()).await.unwrap();
+        store.upsert(req_b.clone()).await.unwrap();
+        let removed = store
+            .delete_tenant_scoped(
+                fixed_tenant_a(),
+                req_a.key.action_digest(),
+                Region::Wnam,
+            )
+            .await
+            .unwrap();
+        assert!(removed);
+        // Tenant A row gone.
+        assert!(store.get(&req_a.key).await.unwrap().is_none());
+        // Tenant B row preserved.
+        assert!(store.get(&req_b.key).await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn delete_tenant_scoped_no_op_on_missing_row() {
+        let store = InMemoryAcMetaStore::new();
+        let absent = Digest::compute(b"absent");
+        let removed = store
+            .delete_tenant_scoped(fixed_tenant_a(), &absent, Region::Wnam)
+            .await
+            .unwrap();
+        assert!(!removed);
+    }
+
+    #[tokio::test]
+    async fn delete_tenant_scoped_refuses_region_mismatch() {
+        // Defense-in-depth: a cron worker pinned to weur asking to
+        // delete a wnam row is a programmer wiring error; the trait
+        // surface refuses (no-op) rather than corrupting the row.
+        let store = InMemoryAcMetaStore::new();
+        let mut req = upsert_req(fixed_tenant_a(), b"a", b"r", 1_000);
+        req.region = Region::Wnam;
+        store.upsert(req.clone()).await.unwrap();
+        let removed = store
+            .delete_tenant_scoped(fixed_tenant_a(), req.key.action_digest(), Region::Weur)
+            .await
+            .unwrap();
+        assert!(!removed);
+        // Row preserved.
+        assert!(store.get(&req.key).await.unwrap().is_some());
     }
 }

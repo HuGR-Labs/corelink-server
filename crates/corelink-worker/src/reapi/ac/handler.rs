@@ -428,6 +428,17 @@ where
     path_key_id: u32,
     ttl_extend_ms: u64,
     clock: Arc<dyn Clock>,
+    /// Per-instance sibling store for the [`ActionResult`] proto bytes
+    /// (production routes the proto through the envelope JSON; the
+    /// in-memory fake keeps a parallel map keyed by the canonical
+    /// envelope path). Scoped to the handler instance so concurrent
+    /// in-process tests cannot pollute each other's view (closes
+    /// F-001 audit finding 2026-05-01: prior process-global
+    /// `ACTION_RESULT_STASH` static caused parallel test flakes when
+    /// rejected `UpdateActionResult` proto bytes leaked across
+    /// instances).
+    action_result_stash:
+        Arc<tokio::sync::Mutex<std::collections::HashMap<String, ActionResult>>>,
 }
 
 impl<M, E, V, S, O, A, K> fmt::Debug for ActionCacheHandlerImpl<M, E, V, S, O, A, K>
@@ -575,6 +586,9 @@ where
             path_key_id: b.path_key_id,
             ttl_extend_ms: b.ttl_extend_ms,
             clock: b.clock,
+            action_result_stash: Arc::new(tokio::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
         }
     }
 
@@ -1122,23 +1136,27 @@ where
     /// envelope JSON.
     async fn persist_action_result(
         &self,
-        _region: Region,
-        _prefix: &TenantPrefix,
-        _action_hex: &str,
+        region: Region,
+        prefix: &TenantPrefix,
+        action_hex: &str,
         action_result: &ActionResult,
     ) -> Result<(), String> {
-        // The default impl persists to a thread-local sibling store.
-        // We attach the store as an internal field via a free
-        // function so the trait surface stays minimal.
+        // Per-instance stash keyed by the canonical envelope path —
+        // tenant isolation by construction (the `region/prefix/hex`
+        // tuple is tenant-leftmost). The stash is scoped to this
+        // handler instance so concurrent in-process tests cannot
+        // collide on shared keys (F-001 closure 2026-05-01).
         //
-        // For the pure-logic core we route this through the
-        // `envelope_store` by piggybacking on the canonical key with
-        // a `.proto` suffix (analogous to the production R2 layout
-        // that holds the proto inline within the envelope JSON).
-        // The fake `InMemoryAcEnvelopeStore` honors the suffixed key
-        // shape transparently.
-        let key = ActionResultStash::canonical(_region, _prefix, _action_hex);
-        ACTION_RESULT_STASH.lock().await.insert(key, action_result.clone());
+        // Production wiring inlines the `ActionResult` proto bytes
+        // inside the envelope JSON; the fake `InMemoryAcEnvelopeStore`
+        // delegates the proto round-trip back here so the property
+        // tests can assert the canonical shape without spinning up a
+        // real proto codec.
+        let key = ActionResultStash::canonical(region, prefix, action_hex);
+        self.action_result_stash
+            .lock()
+            .await
+            .insert(key, action_result.clone());
         Ok(())
     }
 
@@ -1150,7 +1168,7 @@ where
         action_hex: &str,
     ) -> Result<ActionResult, String> {
         let key = ActionResultStash::canonical(region, prefix, action_hex);
-        let guard = ACTION_RESULT_STASH.lock().await;
+        let guard = self.action_result_stash.lock().await;
         guard
             .get(&key)
             .cloned()
@@ -1158,13 +1176,12 @@ where
     }
 }
 
-/// Test/in-memory side-channel for the [`ActionResult`] proto bytes
-/// (production stashes them inside the envelope JSON; the in-memory
-/// fake keeps a parallel map keyed by the canonical envelope path).
-///
-/// Crate-level static so the property tests share a single store
-/// across handler instances; the canonical key (`region/prefix/hex`)
-/// preserves tenant isolation by construction.
+/// Canonical key generator for the per-instance [`ActionResult`]
+/// sibling stash (`region/prefix/hex` shape preserves tenant
+/// isolation by construction). Production routes the proto bytes
+/// through the envelope JSON inline; the in-memory fake delegates
+/// the round-trip back to a per-handler-instance map (see
+/// `ActionCacheHandlerImpl::action_result_stash`).
 struct ActionResultStash;
 
 impl ActionResultStash {
@@ -1177,10 +1194,6 @@ impl ActionResultStash {
         )
     }
 }
-
-static ACTION_RESULT_STASH: std::sync::LazyLock<
-    tokio::sync::Mutex<std::collections::HashMap<String, ActionResult>>,
-> = std::sync::LazyLock::new(|| tokio::sync::Mutex::new(std::collections::HashMap::new()));
 
 #[cfg(test)]
 #[allow(

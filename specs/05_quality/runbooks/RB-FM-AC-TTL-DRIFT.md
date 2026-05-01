@@ -72,4 +72,4 @@ The full host-side dry-run lands alongside the Cloudflare D1/R2 binding shim in 
 - ADR-0019 — TTL ownership boundary S-04 ↔ S-07.
 - `crates/corelink-worker/src/reapi/ac/ttl/worker.rs` — `TtlWorker::tick` reference impl.
 - `RB-FM-AC-TTL-STORM` — sibling runbook for sustained workload outpacing the cron interval.
-- `RB-FM-303-ac-cross-tenant.md` — escalation path if drift correlates with tenant-isolation alerts.
+- `RB-FM-303` — escalation path if drift correlates with tenant-isolation alerts.

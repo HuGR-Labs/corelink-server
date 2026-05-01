@@ -1,9 +1,9 @@
 ---
 id: "AUDIT-2026-05-01-S04-WIP-FINDINGS"
 type: "audit_report"
-doc_status: "DRAFT"
-audit_status: "ACTIVE"
-version: "1.0.0"
+doc_status: "FROZEN"
+audit_status: "AUDITED"
+version: "1.1.0"
 created: "2026-05-01"
 updated: "2026-05-01"
 owner: "Gustavo Schneiter"
@@ -42,6 +42,15 @@ tags: ["audit", "s04", "wip", "findings", "sprint-close"]
 3. Best (sprint-close decision needed): drop the in-memory stash entirely; have `InMemoryAcEnvelopeStore` carry the `ActionResult` bytes directly so the simulator is actually self-contained.
 
 **Owner:** Sonnet sprint-close adversarial reviewer to triage. If deemed P1, orchestrator opens a follow-up commit before sprint SEAL. If deemed P2, ship S-04 with the smell documented and revalidate at S-19 onboarding.
+
+**Status:** ✅ **CLOSED — fixed in-flight at WI-S04-005 SEAL** (2026-05-01).
+
+**Resolution:** Closure path #2 from this doc adopted (instance-scope). The process-global `static ACTION_RESULT_STASH: LazyLock<Mutex<HashMap>>` was replaced with a per-instance `action_result_stash: Arc<tokio::sync::Mutex<HashMap<String, ActionResult>>>` field on `ActionCacheHandlerImpl`. `persist_action_result` and `recover_action_result` now route through `&self.action_result_stash`, which is initialised per-handler in `ActionCacheHandlerImpl::new()`. The trailing crate-level `static` declaration + the `ActionResultStash` impl block (other than `canonical()` key generator, retained) were deleted. Tenant isolation by construction is preserved: the canonical key (`region/prefix/hex`) was already tenant-leftmost.
+
+**Verification:**
+- `cargo test -p corelink-worker --features tower-middleware --lib` (parallel default `--test-threads`) → 188 passed / 0 failed (was: 1 failed under contention, 0 failed serialised).
+- `cargo test -p corelink-worker --features tower-middleware --tests` → 298 passed / 0 failed.
+- `cargo clippy --workspace --all-targets --features corelink-worker/tower-middleware -- -D warnings` → clean.
 
 ---
 

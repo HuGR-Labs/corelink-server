@@ -141,6 +141,11 @@ name = "ac_handler_e2e"
 path = "tests/ac_handler_e2e.rs"
 required-features = ["tower-middleware"]
 
+[[test]]
+name = "prop_ac_ttl"
+path = "tests/prop_ac_ttl.rs"
+required-features = ["tower-middleware"]
+
 [[bench]]
 name = "side_channel"
 path = "benches/side_channel.rs"

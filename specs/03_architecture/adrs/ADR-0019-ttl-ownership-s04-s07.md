@@ -3,9 +3,9 @@ id: "ADR-0019"
 type: "adr"
 doc_status: "FROZEN"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-24"
-updated: "2026-04-25"
+updated: "2026-05-01"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -78,12 +78,46 @@ S-07 deliverable scope: TTL config consumption + eviction flow respects new tier
 - `S-07 _spec_contract.md`: já reflete; adicionar reference explícita a ADR-0019.
 - `S-18 _spec_contract.md`: pricing page renderiza tabela canonical; CI gate verifica match com ADR.
 
+## Boundary mechanism (WI-S04-005 implementation)
+
+The boundary mechanism between S-04 (infrastructure) and S-07 (per-tier defaults) is the `TierTtlResolver` trait shipped at `crates/corelink-worker/src/reapi/ac/ttl/resolver.rs`:
+
+```rust
+pub trait TierTtlResolver: Send + Sync + fmt::Debug {
+    /// Resolve the TTL delta (ms) for a tenant tier.
+    fn resolve_ttl_ms(&self, tier: TenantTier) -> u64;
+}
+```
+
+S-04 GA wires `EnvConfigTierTtlResolver` (single global default; `CORELINK_AC_TTL_DEFAULT_MS` env override). S-07 SEALED swaps in `S07PerTierTtlResolver` (config-singleton table lookup keyed off `tenant_quota.tier`). The trait stays Send+Sync+Debug so the AC handler holds it as `Arc<dyn TierTtlResolver>`; swap-out is a binding-time decision.
+
+The 5 canonical tiers (`Free`, `Solo`, `Team`, `Business`, `Enterprise`) are pinned in the `TenantTier` enum + canonical `as_str()` labels (`free`, `solo`, `team`, `business`, `enterprise`) matching the `tenant_quota.tier` SQL enum. `MockTierTtlResolver::s07_canonical()` returns the post-S-07 value table for property tests verifying the boundary swap leaves cron worker behavior unchanged.
+
+## TTL infrastructure delivery (WI-S04-005)
+
+**S-04 deliverables** (this WI):
+
+1. **Refresh-on-hit threshold gate** — `refresh_if_needed(now_ms, last_hit_at_ms, threshold)` pure-logic predicate; default 60s threshold (`DEFAULT_REFRESH_THRESHOLD_MS`); reduces D1 UPDATE storm under high-rate workloads (1k req/s on hot digest = 1k UPDATE/s without gate; ≤ 1 UPDATE/min per digest with gate).
+2. **Tenant-scoped batched eviction** — `EvictBatch::run_one_batch(tenant_id, now_ms, limit, request_id)` drives R2-DELETE → D1-DELETE → audit-emit → KV-invalidate per row in canonical order; bounded at `MAX_BATCH_SIZE = 250` (D1 100KB batch ceiling).
+3. **Per-region cron orchestrator** — `TtlWorker` trait + `InMemoryTtlWorker` fake; round-robin sweep across tenants with expired rows; `TtlWorkerTickOutcome::hit_row_ceiling` storm signal; per-region pinning enforced at SELECT + DELETE seams.
+4. **Audit emission** — 3 new `AcEventType` variants (`EvictTtlExpired` / `EvictR2Failed` / `EvictD1Failed`) emitted per row; chains into `corelink-audit` outbox in production wiring (WI-S04-006).
+5. **Trait-surface anti-DELETE-bulk** — `AcMetaStore::delete_tenant_scoped(tenant_id, action_digest, region)` is the only DELETE method; no "DELETE WHERE expires_at < ?" bulk method exists. Cross-tenant DELETE is structurally unreachable per `INV-AC-EVICT-TENANT-SCOPED`.
+
+**Deferred (WI-S04-006)**:
+
+- Real Cloudflare Cron Durable Object binding shim (alarm-based cron firing).
+- `S07PerTierTtlResolver` impl (lands when S-07 SEALED).
+- Migration worker emitting `corelink.ac.tier_migration` audit events (S-13 owned per ADR-0019 §Migration plan cycle 4).
+- Real R2 envelope `delete` adapter (envelope_store trait surface lands alongside conformance suite).
+
 ## References
 
 - `specs/04_sprints/S04/_spec_contract.md` (CAP-AC-004).
+- `specs/04_sprints/S04/work_items/WI-S04-005-ttl-worker-cron-do-adr-0019.md` (TTL infrastructure delivery).
 - `specs/04_sprints/S07/_spec_contract.md` (CAP-EVICT-002).
 - Opus Round 2 C-03 (`specs/_audits/2026-04-24-opus-independent-sota-review-r2.md:63-71`).
 - Codex Round 2 CF-05.
+- `crates/corelink-worker/src/reapi/ac/ttl/resolver.rs` — `TierTtlResolver` trait + S-04 GA fallback impl.
 
 ## Change Log
 
@@ -91,3 +125,4 @@ S-07 deliverable scope: TTL config consumption + eviction flow respects new tier
 |---|---|---|---|
 | 0.1.0 | 2026-04-24 | Gustavo (Lote 9.1) | Criação ADR-0019 (TTL ownership boundary S-04 → S-07 supersedes per-tier defaults). |
 | 1.0.0 | 2026-04-25 | Gustavo (Lote 10.7bis P0-5 fix) | **DRAFT → FROZEN promotion** (Agent R4 + Sonnet R5 caught: WI-S07-002/005 cited "ADR-0019 FROZEN" mas era DRAFT). Content audit by Owner: Decision §32 tier vocabulary (free/solo/team/business/enterprise — 5 tiers) + per-tier TTL semantics (7d/30d/90d/365d/730d max) + S-07 supersedes S-04 default 90d via this ADR. Architect + Crypto SME independent re-review optional (advisory; substantive content audit complete pre-FROZEN). |
+| 1.1.0 | 2026-05-01 | Gustavo (via Claude Opus 4.7 1M) | **WI-S04-005 SEALED — TTL infrastructure delivered.** ADR ratified — boundary mechanism implemented at `crates/corelink-worker/src/reapi/ac/ttl/`: `TierTtlResolver` trait + `EnvConfigTierTtlResolver` S-04 GA fallback + `MockTierTtlResolver::s07_canonical()` for property-test boundary swap verification. `S07PerTierTtlResolver` real impl deferred to S-07 (lands without rebuilding S-04 cron worker per ADR §Boundary mechanism). New §Boundary mechanism + §TTL infrastructure delivery sections added documenting the runtime artifacts (refresh-on-hit gate; bounded batch helper; per-region cron orchestrator; trait-surface anti-DELETE-bulk; 3 new audit event types). |

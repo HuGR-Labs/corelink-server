@@ -39,18 +39,20 @@ use uuid::Uuid;
 use super::types::{ActionDigest, ResultHash};
 use crate::Region;
 
-/// Canonical 8-variant AC event-type taxonomy per WI brief + WI §6.1.7.
+/// Canonical 11-variant AC event-type taxonomy per WI-S04-001 brief +
+/// WI-S04-005 §6.1.5 step 6.
 ///
 /// The 5 "core" variants enumerated in the WI brief
 /// (`ac.get.ok` / `ac.get.miss` / `ac.update.ok` /
 /// `ac.update.merkle_invalid` / `ac.update.outputs_missing`) plus 3
 /// canonical sub-variants the Gherkin scenarios in WI §8 require
 /// (`ac.get.sig_invalid` / `ac.update.result_mismatch` /
-/// `ac.update.sig_invalid`). Marked `#[non_exhaustive]` so additive
-/// growth (e.g., `ac.get.expired`, `ac.get.backend_unavailable`) lands
-/// without breaking downstream chain consumers — the new variants are
-/// added as the CAS audit chain consumer (S-09) gains support for the
-/// ac_get-flavor envelope.
+/// `ac.update.sig_invalid`) plus the 3 TTL eviction event types
+/// landed in WI-S04-005 (`ac.evict.ttl_expired` /
+/// `ac.evict.r2_failed` / `ac.evict.d1_failed`). Marked
+/// `#[non_exhaustive]` so additive growth (e.g., `ac.get.expired`,
+/// `ac.get.backend_unavailable`) lands without breaking downstream
+/// chain consumers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum AcEventType {
@@ -77,6 +79,17 @@ pub enum AcEventType {
     /// `corelink.ac.update.sig_invalid` — sig sign / verify failed
     /// mid-flight (CRITICAL severity).
     UpdateSigInvalid,
+    /// `corelink.ac.evict.ttl_expired` — TTL cron worker successfully
+    /// evicted an `ac_meta` row whose `expires_at < now_ms`. Emitted
+    /// per row by the WI-S04-005 cron tick.
+    EvictTtlExpired,
+    /// `corelink.ac.evict.r2_failed` — TTL cron worker R2 envelope
+    /// DELETE failed; D1 row preserved; next cron tick retries.
+    EvictR2Failed,
+    /// `corelink.ac.evict.d1_failed` — TTL cron worker D1 row DELETE
+    /// failed post-R2-success; orphan-R2 window opens; next cron tick
+    /// retries idempotently.
+    EvictD1Failed,
 }
 
 impl AcEventType {
@@ -92,6 +105,9 @@ impl AcEventType {
             Self::UpdateOutputsMissing => "corelink.ac.update.outputs_missing",
             Self::UpdateResultMismatch => "corelink.ac.update.result_mismatch",
             Self::UpdateSigInvalid => "corelink.ac.update.sig_invalid",
+            Self::EvictTtlExpired => "corelink.ac.evict.ttl_expired",
+            Self::EvictR2Failed => "corelink.ac.evict.r2_failed",
+            Self::EvictD1Failed => "corelink.ac.evict.d1_failed",
         }
     }
 
@@ -281,13 +297,16 @@ mod tests {
             AcEventType::UpdateOutputsMissing,
             AcEventType::UpdateResultMismatch,
             AcEventType::UpdateSigInvalid,
+            AcEventType::EvictTtlExpired,
+            AcEventType::EvictR2Failed,
+            AcEventType::EvictD1Failed,
         ];
         let mut set = std::collections::HashSet::new();
         for t in v {
             assert!(t.as_str().starts_with("corelink.ac."));
             assert!(set.insert(t.as_str()), "duplicate canonical: {}", t);
         }
-        assert_eq!(set.len(), 8);
+        assert_eq!(set.len(), 11);
     }
 
     #[test]
@@ -301,6 +320,9 @@ mod tests {
             AcEventType::UpdateMerkleInvalid,
             AcEventType::UpdateOutputsMissing,
             AcEventType::UpdateResultMismatch,
+            AcEventType::EvictTtlExpired,
+            AcEventType::EvictR2Failed,
+            AcEventType::EvictD1Failed,
         ] {
             assert!(!t.is_sev1(), "{} must not be SEV-1", t);
         }
