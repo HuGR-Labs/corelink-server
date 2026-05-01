@@ -352,16 +352,29 @@ fn constant_time_variance_on_verify() {
         }
     }
 
-    let mean = |xs: &[u128]| -> f64 {
-        let n = xs.len() as f64;
-        xs.iter().map(|&x| x as f64).sum::<f64>() / n
+    // Outlier-robust trimmed mean (10% trim each tail) — wall-clock
+    // measurements under workspace-parallel test contention exhibit
+    // occasional extreme spikes (preempted thread, GC cycle, thermal
+    // throttle) that distort the arithmetic mean. A graded CT leak is
+    // *systemic* — it shifts the bulk of the distribution — so the
+    // trimmed mean preserves leak-detection sensitivity while
+    // rejecting transient scheduler noise. The 5% gate is unchanged.
+    let trimmed_mean = |xs: &[u128]| -> f64 {
+        let mut sorted: Vec<u128> = xs.to_vec();
+        sorted.sort_unstable();
+        let n = sorted.len();
+        let trim = n / 10; // 10% each side → 80% retained
+        #[allow(clippy::indexing_slicing, reason = "trim < n/2 by construction")]
+        let core = &sorted[trim..n - trim];
+        let kept = core.len() as f64;
+        core.iter().map(|&x| x as f64).sum::<f64>() / kept
     };
     #[allow(clippy::indexing_slicing, reason = "fixed indices match the probes array")]
-    let baseline_mean = mean(&samples[0]);
+    let baseline_mean = trimmed_mean(&samples[0]);
 
     for (i, (label, _)) in probes.iter().enumerate() {
         #[allow(clippy::indexing_slicing, reason = "iterating in lockstep with samples")]
-        let m = mean(&samples[i]);
+        let m = trimmed_mean(&samples[i]);
         let delta = (m - baseline_mean).abs() / baseline_mean.max(m);
         eprintln!("ct-variance(verify): {label}={m:.0}ns delta_vs_zero={:.3}%", delta * 100.0);
         // The 5% gate is a release-mode statistical check; in

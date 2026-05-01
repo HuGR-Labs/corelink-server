@@ -348,6 +348,7 @@ dependencies = [
 name = "corelink-auth-schema"
 version = "0.1.0"
 dependencies = [
+ "corelink-audit",
  "hex",
  "hmac",
  "proptest",
@@ -538,8 +539,11 @@ dependencies = [
 name = "corelink-worker"
 version = "0.1.0"
 dependencies = [
+ "argon2",
  "async-trait",
+ "base64",
  "bytes",
+ "corelink-audit",
  "corelink-clerk",
  "corelink-hash",
  "corelink-pat",
@@ -549,6 +553,7 @@ dependencies = [
  "http",
  "http-body-util",
  "jsonwebtoken",
+ "password-hash",
  "pin-project-lite",
  "proptest",
  "rand 0.9.4",

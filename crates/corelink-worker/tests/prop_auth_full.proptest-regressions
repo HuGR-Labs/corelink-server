@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc f8b0504a7214c98a7027bebece1b4c307e5002d358288f10999a7362361a082d # shrinks to tenant_lo = 5863331058047036382, tenant_hi = 9476898674807430254, retry_count = 3, reason_idx = 1
+cc 098ac9d15572db355ba3acb8a559f0c39b6f076803f204ce2ab27194b471399a # shrinks to alg_idx = 3, header_extra = "8S8cZzZ1qcDjuB21", payload_extra = "F7dm3460T316iDut8NsiDk5gbozp2D1un592yA"
