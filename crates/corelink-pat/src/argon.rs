@@ -55,17 +55,28 @@ fn hasher() -> &'static Argon2<'static> {
     static H: OnceLock<Argon2<'static>> = OnceLock::new();
     H.get_or_init(|| {
         // `Params::new` only fails for clearly invalid argument
-        // tuples (m < 8 etc.); our constants are always valid.
-        // Fallback to the crate default if construction ever fails
-        // (provably unreachable) — better than panicking under
-        // strict lints.
+        // tuples (m < 8 etc.); the OWASP-2024 constants are
+        // statically valid for argon2 0.5.x and pinned by the
+        // semver-aware `[dependencies]` major. A silent fallback to
+        // `Params::default()` (m=19456, t=2, p=1) would underprovision
+        // the cold-path pad below the OWASP-2024 floor and is therefore
+        // refused — `unreachable!` surfaces a load-bearing invariant
+        // violation loudly so any future upstream API drift fails the
+        // sprint-close ct-variance gate, not a silent prod regression.
         let params = Params::new(
             ARGON2_M_COST_KIB,
             ARGON2_T_COST,
             ARGON2_P_COST,
             Some(ARGON2_OUTPUT_LEN),
         )
-        .unwrap_or_else(|_| Params::default());
+        .unwrap_or_else(|_| {
+            unreachable!(
+                "argon2 0.5 Params::new rejected statically-valid OWASP-2024 \
+                 tuple (m={ARGON2_M_COST_KIB}, t={ARGON2_T_COST}, p={ARGON2_P_COST}, \
+                 out={ARGON2_OUTPUT_LEN}) — upstream API drift; bump corelink-pat \
+                 minor and re-audit"
+            )
+        });
         Argon2::new(Algorithm::Argon2id, Version::V0x13, params)
     })
 }

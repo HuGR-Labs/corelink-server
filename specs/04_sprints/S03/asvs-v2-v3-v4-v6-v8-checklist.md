@@ -1,9 +1,9 @@
 ---
 id: "ASVS-S03-V2-V3-V4-V6-V8"
 type: "compliance_matrix"
-doc_status: "DRAFT"
-audit_status: "ACTIVE"
-version: "1.0.0"
+doc_status: "FROZEN"
+audit_status: "AUDITED"
+version: "1.1.0"
 created: "2026-05-01"
 updated: "2026-05-01"
 owner: "Gustavo Schneiter"
