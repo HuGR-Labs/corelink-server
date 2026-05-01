@@ -1,9 +1,9 @@
 ---
 id: "SPEC-CONTRACT-S04"
 type: "spec_contract"
-doc_status: "DRAFT"
-audit_status: "ACTIVE"
-version: "1.9.0"
+doc_status: "FROZEN"
+audit_status: "AUDITED"
+version: "1.10.0"
 created: "2026-04-24"
 updated: "2026-05-01"
 owner: "Gustavo Schneiter"
@@ -260,4 +260,6 @@ Itens waivable com Architect + Crypto SME + ADR:
 
 ---
 
-**Fim spec contract S-04 v1.9.0 SOTA.**
+| 1.10.0 | 2026-05-01 | Gustavo (via Claude Opus 4.7 1M) | **S-04 IMPLEMENTATION SPRINT SEALED** (sprint-close ceremony). Sonnet independent adversarial review post WI-S04-006 SEAL: **8.6/10 PASS** (no P0; 3 P1 all addressed in this Lote). **P1-001** ADR-0037 result_hash semantic divergence: ADR v1.0.0 declared `BLAKE3(merkle_root)`; the implementation in `corelink-worker::reapi::ac::types::ResultHash::compute` actually computes `BLAKE3(canonical_action_result_proto_bytes)`. ADR-0037 amended to v1.1.0 documenting the actual derivation with rationale (the proto bytes derivation binds the FULL `ActionResult` shape — Merkle outputs + stdout/stderr + exit_code + execution_metadata — at the D1 INDEX layer, providing stronger drift detection than the Merkle-only digest). `crates/corelink-ac/src/sig/canonical.rs:13` doc comment corrected to point at the actual derivation. The `corelink-ac::compute_result_hash(merkle_root)` free function is unused by any verify path today; redirected at S-15 client SDK SEAL. **P1-002** doc_status sweep — `sprint.md` → FROZEN/COMPLETE/AUDITED v1.1.0; `_spec_contract.md` (this doc) → FROZEN/AUDITED v1.10.0. **P1-003** TODO at `crates/corelink-worker/src/reapi/ac/handler.rs:708` replaced with explicit `DEFERRED(WI-S04-006)` comment + clarification that GET path is fail-open by design until the real Cloudflare D1 binding ships alongside the conformance suite (full `INV-AC-OUTPUTS-VALID` enforcement happens on UPDATE today). **S-04 implementation phase: 6/6 WIs SEALED** (`eca3c9c` 001 / `08bc549` 002 / `ff0f795` 003 / `8035db7` 004 + polish `c36e379` + `f43b215` / `a5f3d10` 005 + follow-up `b4b2405` / `f1749a7` 006). F-001 audit (`ACTION_RESULT_STASH` global state) closed in-flight at WI-S04-005. Outbound deps cleared per PRR-S04 §9: S-07 (LRU eviction tier consumes AC TTL surface), S-09 (audit chain + AC event types), S-13 (admin self-service Tier migration worker), S-14 (BYOK + DPA via signed AC envelopes), S-15 (Bazel/Buck2 client SDK consumes the canonical Merkle + sig surfaces), S-19 (customer onboarding via PRR ship gate + ASVS checklist), S-20 (GA via external pentest + 72h SLO sustained). |
+
+**Fim spec contract S-04 v1.10.0 SOTA — IMPLEMENTATION SEALED.**

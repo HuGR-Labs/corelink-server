@@ -10,7 +10,12 @@
 //!   5      16   tenant_id (UUIDv7 raw bytes)
 //!  21      32   action_digest_hash (BLAKE3-256 bytes)
 //!  53       8   action_digest_size_bytes (i64 BE)
-//!  61      32   result_hash (BLAKE3 of merkle_root, per ADR-0037)
+//!  61      32   result_hash (BLAKE3-256 of canonical ActionResult
+//!                proto bytes per ADR-0037 v1.1.0; binds the FULL
+//!                ActionResult shape — Merkle outputs + stdout/stderr
+//!                + exit_code + execution_metadata — to the index
+//!                column. NOT BLAKE3(merkle_root). See ADR-0037 §1.1.0
+//!                amendment.)
 //!  93       4   sig_key_id_repeat (u32 BE; binds the rotation
 //!                version into both the salt and the body so a
 //!                cross-version replay cannot pass verify)

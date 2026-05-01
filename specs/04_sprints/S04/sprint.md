@@ -1,12 +1,12 @@
 ---
 id: "S-04"
 type: "sprint"
-doc_status: "DRAFT"
-work_status: "READY"
-audit_status: "ACTIVE"
-version: "1.0.0"
+doc_status: "FROZEN"
+work_status: "COMPLETE"
+audit_status: "AUDITED"
+version: "1.1.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-05-01"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-002", "FF-HR-005"]
 owner: "Gustavo Schneiter"
@@ -167,7 +167,8 @@ Cross-tenant AC leak / Merkle invalid persisted / INV-AC-OUTPUTS-VALID violation
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-25 | Gustavo (via Claude Opus 4.7) | Criação sprint.md S-04 (Lote 9.5b). |
+| 1.1.0 | 2026-05-01 | Gustavo (via Claude Opus 4.7) | **S-04 IMPLEMENTATION SPRINT SEALED.** doc_status DRAFT → FROZEN; work_status READY → COMPLETE; audit_status ACTIVE → AUDITED. All 6 WIs SEALED (`eca3c9c` 001 / `08bc549` 002 / `ff0f795` 003 / `8035db7` 004 / `a5f3d10`+`b4b2405` 005 / `f1749a7` 006). PRR-S04 STAGING-STABLE. Sonnet sprint-close adversarial review: 8.6/10 PASS (no P0; 3 P1 addressed in `_spec_contract.md` row 1.10.0: ADR-0037 v1.1.0 amendment, doc_status sweep, handler.rs TODO closed). |
 
 ---
 
-**Fim de S-04 sprint contract.**
+**Fim de S-04 sprint contract — IMPLEMENTATION SEALED.**

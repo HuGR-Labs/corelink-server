@@ -705,8 +705,11 @@ where
     /// - [4] sig::verify (against canonical preimage rebuilt from row
     ///   fields) → 422 + audit on mismatch.
     /// - [5] outputs_check (warn-only, sampled at handler boundary —
-    ///   skipped for the in-memory fake; TODO add 1% sampling
-    ///   toggle in production wiring).
+    ///   skipped for the in-memory fake; DEFERRED(WI-S04-006): wire
+    ///   1% sampling toggle from `EnvConfigTierTtlResolver` once the
+    ///   real Cloudflare D1 binding ships alongside the conformance
+    ///   suite. Until then the GET path is fail-open by design and
+    ///   the full `INV-AC-OUTPUTS-VALID` check happens on UPDATE.
     /// - [6] meta::refresh_on_hit (last_hit_at → now_ms; expires_at
     ///   += ttl_extend_ms).
     /// - [7] audit emit `ac.get.ok`.
