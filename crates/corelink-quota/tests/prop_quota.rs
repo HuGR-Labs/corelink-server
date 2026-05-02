@@ -51,7 +51,12 @@ use corelink_quota::{
 use proptest::prelude::*;
 use uuid::Uuid;
 
-const PROPTEST_CASES: u32 = 10_000;
+fn proptest_cases() -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(10_000)
+}
 
 fn ten_a() -> Uuid {
     Uuid::from_u128(0xa)
@@ -153,7 +158,7 @@ fn quota_config_canonical_constants() {
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: PROPTEST_CASES,
+        cases: proptest_cases(),
         ..ProptestConfig::default()
     })]
 

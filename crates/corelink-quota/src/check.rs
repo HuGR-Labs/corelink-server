@@ -493,15 +493,15 @@ where
             QuotaError::Backend("decision lock poisoned".to_string())
         })?;
 
-        // Look up + remove the reservation.
-        let row = self.reservations.remove(tenant_id, reservation_id)?;
+        // Audit emit BEFORE the reservation tracker mutation
+        // (fail-closed envelope: audit failure leaves the reservation
+        // intact; TTL sweep will eventually reclaim the bytes).
+        let row = self.reservations.lookup(tenant_id, reservation_id)?;
         let Some(row) = row else {
             return Err(QuotaError::ReservationNotFound {
                 reservation_id: reservation_id.into_uuid(),
             });
         };
-
-        // Audit emit BEFORE the storage_state mutation.
         self.audit.emit(QuotaAuditRecord {
             event_type: QuotaEventType::ReservationRolledIn,
             tenant_id,
@@ -511,6 +511,7 @@ where
             created_by_request_id: "test".to_string(),
             now_ms,
         })?;
+        self.reservations.remove(tenant_id, reservation_id)?;
 
         // The `apply_eviction_reclaim` API on the storage state store
         // handles SUBTRACT; for ROLL-IN we increment via a different
@@ -549,11 +550,12 @@ where
         let _lock = self.decision_lock.lock().map_err(|_| {
             QuotaError::Backend("decision lock poisoned".to_string())
         })?;
-        let row = self.reservations.remove(tenant_id, reservation_id)?;
+        let row = self.reservations.lookup(tenant_id, reservation_id)?;
         match row {
             Some(row) => {
-                // Audit emit (idempotent — the explicit release fires
-                // even though TTL would have caught it eventually).
+                // Audit emit BEFORE remove (fail-closed envelope —
+                // audit failure leaves reservation intact for TTL
+                // sweep to reclaim).
                 self.audit.emit(QuotaAuditRecord {
                     event_type: QuotaEventType::ReservationExpired,
                     tenant_id,
@@ -563,6 +565,7 @@ where
                     created_by_request_id: "test".to_string(),
                     now_ms,
                 })?;
+                self.reservations.remove(tenant_id, reservation_id)?;
                 Ok(true)
             }
             None => {
