@@ -67,6 +67,30 @@ pub enum GcEventType {
     /// irreversible, so the forensic trail per row is the load-bearing
     /// observability invariant.
     PhysicalDeleted,
+    /// `corelink.gc.reconcile.refcount_reconciled` (WI-S06-005) —
+    /// reconcile phase observed `expected_refcount == stored_refcount`
+    /// for a `(tenant, digest)` pair (no drift). Emitted on the
+    /// `NoDrift` decision arm. Forensic trail per row gives operators
+    /// the canonical signal sustained drift < 0.1% (sprint contract DoD
+    /// §10.s06.5).
+    RefcountReconciled,
+    /// `corelink.gc.reconcile.refcount_auto_fixed` (WI-S06-005) —
+    /// reconcile phase detected a small drift (`drift_count ≤ 5 AND
+    /// drift_percent ≤ 0.01%` per Lote 10.6bis P0-6 dual-condition
+    /// gate) and auto-corrected `blob_meta.refcount` via UPDATE.
+    /// Emitted BEFORE the UPDATE (fail-closed envelope; production
+    /// wiring rolls back the D1 batch on emit failure). NOT SEV-1 —
+    /// alerts fire at the metric layer (>0.1% global drift sustained
+    /// per WI §6.1.8).
+    RefcountAutoFixed,
+    /// `corelink.gc.reconcile.refcount_manual_review_required`
+    /// (WI-S06-005) — reconcile phase detected a drift exceeding the
+    /// auto-fix gate (`drift_count > 5 OR drift_percent > 0.01%`).
+    /// Auto-fix is paused; the row is flagged for SRE review via the
+    /// audit chain. SEV-1 because per-tenant drift > 1% indicates a
+    /// systemic refcount-write bug (UpdateAR / DeleteAR / Sweep) and
+    /// reachable computation is at risk.
+    RefcountManualReviewRequired,
 }
 
 impl GcEventType {
@@ -82,6 +106,11 @@ impl GcEventType {
             Self::SweepSoftDeleted => "corelink.gc.sweep.soft_deleted",
             Self::SweepProtectedReRef => "corelink.gc.sweep.protected_re_ref",
             Self::PhysicalDeleted => "corelink.gc.physical_deleted",
+            Self::RefcountReconciled => "corelink.gc.reconcile.refcount_reconciled",
+            Self::RefcountAutoFixed => "corelink.gc.reconcile.refcount_auto_fixed",
+            Self::RefcountManualReviewRequired => {
+                "corelink.gc.reconcile.refcount_manual_review_required"
+            }
         }
     }
 
@@ -89,12 +118,19 @@ impl GcEventType {
     /// addition to the outbox per `corelink-audit::Emitter`
     /// fan-out). `RunAborted` + `RunFailed` are SEV-1 because a
     /// degrade-mode abort or terminal failure both warrant operator
-    /// pager wake-up. Sweep events are NOT SEV-1 — alerts fire at the
-    /// metric layer (>5% sustained `protected_re_ref_total` per
-    /// WI §6.1.8).
+    /// pager wake-up. `RefcountManualReviewRequired` (WI-S06-005) is
+    /// SEV-1 because per-tenant drift > 1% indicates a systemic
+    /// refcount-write bug at risk of cascading to INV-GC-001
+    /// (mark-phase reachable computation reads stale refcount). Sweep
+    /// events + `RefcountReconciled` + `RefcountAutoFixed` are NOT
+    /// SEV-1 — alerts fire at the metric layer (sustained per-tenant
+    /// drift > 0.1% per WI §6.1.8 / §10.s06.5).
     #[must_use]
     pub const fn is_sev1(self) -> bool {
-        matches!(self, Self::RunAborted | Self::RunFailed)
+        matches!(
+            self,
+            Self::RunAborted | Self::RunFailed | Self::RefcountManualReviewRequired
+        )
     }
 }
 
@@ -104,11 +140,13 @@ impl core::fmt::Display for GcEventType {
     }
 }
 
-/// Canonical event-string list (7 entries) for cross-component
+/// Canonical event-string list (11 entries) for cross-component
 /// regression tests + dashboard widget configuration. WI-S06-003
-/// extended the list from 5 → 7 with the sweep-decision events.
+/// extended the list from 5 → 7 with the sweep-decision events;
+/// WI-S06-004 → 8 with `physical_deleted`; WI-S06-005 → 11 with the
+/// reconcile decision events.
 #[must_use]
-pub const fn canonical_audit_event_strings() -> &'static [&'static str; 7] {
+pub const fn canonical_audit_event_strings() -> &'static [&'static str; 11] {
     &[
         "corelink.gc.run_started",
         "corelink.gc.run_completed",
@@ -117,6 +155,10 @@ pub const fn canonical_audit_event_strings() -> &'static [&'static str; 7] {
         "corelink.gc.run_failed",
         "corelink.gc.sweep.soft_deleted",
         "corelink.gc.sweep.protected_re_ref",
+        "corelink.gc.physical_deleted",
+        "corelink.gc.reconcile.refcount_reconciled",
+        "corelink.gc.reconcile.refcount_auto_fixed",
+        "corelink.gc.reconcile.refcount_manual_review_required",
     ]
 }
 
@@ -274,22 +316,29 @@ mod tests {
             GcEventType::RunFailed,
             GcEventType::SweepSoftDeleted,
             GcEventType::SweepProtectedReRef,
+            GcEventType::PhysicalDeleted,
+            GcEventType::RefcountReconciled,
+            GcEventType::RefcountAutoFixed,
+            GcEventType::RefcountManualReviewRequired,
         ];
         let mut set = std::collections::HashSet::new();
         for t in v {
             assert!(t.as_str().starts_with("corelink.gc."));
             assert!(set.insert(t.as_str()), "duplicate canonical: {}", t);
         }
-        assert_eq!(set.len(), 7);
+        assert_eq!(set.len(), 11);
     }
 
     #[test]
     fn sev1_taxonomy_is_subset() {
         assert!(GcEventType::RunAborted.is_sev1());
         assert!(GcEventType::RunFailed.is_sev1());
+        assert!(GcEventType::RefcountManualReviewRequired.is_sev1());
         assert!(!GcEventType::RunStarted.is_sev1());
         assert!(!GcEventType::RunCompleted.is_sev1());
         assert!(!GcEventType::PhaseTransitioned.is_sev1());
+        assert!(!GcEventType::RefcountReconciled.is_sev1());
+        assert!(!GcEventType::RefcountAutoFixed.is_sev1());
     }
 
     #[test]
@@ -305,10 +354,31 @@ mod tests {
     #[test]
     fn canonical_event_strings_cover_taxonomy() {
         let canonical = canonical_audit_event_strings();
-        assert_eq!(canonical.len(), 7);
+        assert_eq!(canonical.len(), 11);
         for s in canonical {
             assert!(s.starts_with("corelink.gc."));
         }
+    }
+
+    #[test]
+    fn reconcile_event_strings_match_taxonomy() {
+        assert_eq!(
+            GcEventType::RefcountReconciled.as_str(),
+            "corelink.gc.reconcile.refcount_reconciled"
+        );
+        assert_eq!(
+            GcEventType::RefcountAutoFixed.as_str(),
+            "corelink.gc.reconcile.refcount_auto_fixed"
+        );
+        assert_eq!(
+            GcEventType::RefcountManualReviewRequired.as_str(),
+            "corelink.gc.reconcile.refcount_manual_review_required"
+        );
+        // RefcountManualReviewRequired IS SEV-1; the auto-fix +
+        // reconciled events are NOT — alerts fire at the metric layer.
+        assert!(!GcEventType::RefcountReconciled.is_sev1());
+        assert!(!GcEventType::RefcountAutoFixed.is_sev1());
+        assert!(GcEventType::RefcountManualReviewRequired.is_sev1());
     }
 
     #[test]

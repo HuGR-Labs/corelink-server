@@ -88,6 +88,7 @@ pub mod error;
 pub mod mark;
 pub mod metrics;
 pub mod physical_delete;
+pub mod reconcile;
 pub mod region;
 pub mod run;
 pub mod schedule;
@@ -112,6 +113,14 @@ pub use mark::{
 pub use metrics::{
     canonical_metric_names, GcMetricKind, GcMetricsObserver, GcMetricsObserverError,
     InMemoryGcMetrics,
+};
+pub use reconcile::{
+    auto_fix_gate_fires, sev_level_for, AcMetaReconcileRow, BlobMetaRefcountStore,
+    BlobMetaReconcileRow, CountingReconcileClock, InMemoryBlobMetaRefcountStore,
+    InMemoryReconcilePhase, InMemoryRefcountSource, ReconcileClock, ReconcileConfig,
+    ReconcileDecision, ReconcileError, ReconcilePhase, ReconcileResult, RefcountSource,
+    SevLevel, AUTO_FIX_MAX_PERCENT, AUTO_FIX_MAX_RECORDS, CANONICAL_RECONCILE_PHASE_BUDGET_MS,
+    SEV1_PER_TENANT_DRIFT_PERCENT, SEV2_GLOBAL_DRIFT_PERCENT,
 };
 pub use region::{GcRegion, UnknownRegion, REGION_LIST};
 pub use run::{

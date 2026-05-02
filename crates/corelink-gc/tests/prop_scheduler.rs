@@ -371,8 +371,11 @@ fn metrics_observer_canonical_count_six() {
 #[test]
 fn audit_taxonomy_canonical_count_pinned() {
     // WI-S06-001 shipped 5 events; WI-S06-003 (sweep) extended to 7
-    // with `sweep.soft_deleted` + `sweep.protected_re_ref`.
-    assert_eq!(corelink_gc::canonical_audit_event_strings().len(), 7);
+    // with `sweep.soft_deleted` + `sweep.protected_re_ref`; WI-S06-004
+    // → 8 with `physical_deleted`; WI-S06-005 (reconcile) → 11 with
+    // `refcount_reconciled` + `refcount_auto_fixed` +
+    // `refcount_manual_review_required`.
+    assert_eq!(corelink_gc::canonical_audit_event_strings().len(), 11);
 }
 
 #[test]
