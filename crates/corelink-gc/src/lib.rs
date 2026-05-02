@@ -71,7 +71,8 @@
 
 #![forbid(unsafe_code)]
 
-/// Embedded canonical migration SQL (D1 Cloudflare SQLite).
+/// Embedded canonical migration SQL (D1 Cloudflare SQLite) for
+/// `gc_run` (WI-S06-001).
 ///
 /// The exact bytes ship to production via `scripts/migrate_d1.sh` /
 /// `wrangler d1 migrations apply`. The simulator does not parse this
@@ -84,6 +85,7 @@ pub mod admin;
 pub mod audit;
 pub mod degrade;
 pub mod error;
+pub mod mark;
 pub mod metrics;
 pub mod region;
 pub mod run;
@@ -98,6 +100,13 @@ pub use audit::{
 };
 pub use degrade::{DegradeKind, DegradeMode, DegradeProbe, DegradeProbeError, InMemoryDegradeProbe};
 pub use error::GcError;
+pub use mark::{
+    AcMetaRow, BlobDigest, BlobMetaRow, CandidateStatus, CountingMarkClock, GcCandidate,
+    GcCandidatesStore, InMemoryGcCandidatesStore, InMemoryMarkPhase, InMemoryReachableSetSource,
+    ManifestChunkRow, MarkClock, MarkConfig, MarkError, MarkPhase, MarkResult, ReachableSetSource,
+    CANONICAL_BATCH_SIZE, CANONICAL_JITTER_MS, CANONICAL_PHASE_BUDGET_MS,
+    MIGRATION_0007_GC_CANDIDATES,
+};
 pub use metrics::{
     canonical_metric_names, GcMetricKind, GcMetricsObserver, GcMetricsObserverError,
     InMemoryGcMetrics,
@@ -116,15 +125,19 @@ pub use scheduler::{
 };
 pub use worker::{GcWorker, InMemoryGcWorker, WorkerStepOutcome};
 
-/// Returns the canonical schema version recorded by migration 0006 in
-/// the D1 `gc` domain.
+/// Returns the canonical schema version recorded by the latest GC
+/// migration in the D1 `gc` domain.
 ///
 /// Version is sequential within the D1 domain; D1 (`blob_meta` =
 /// schema 1, `ac_meta` = schema 2, `multipart_chunks_manifest` =
-/// schema 3, …, `gc_run` = schema 6) and Postgres (`auth` schema)
-/// versioning are independent — a schema bump here does NOT increment
-/// the Postgres `schema_version` table.
+/// schema 3, …, `gc_run` = schema 6, `gc_candidates` = schema 7) and
+/// Postgres (`auth` schema) versioning are independent — a schema bump
+/// here does NOT increment the Postgres `schema_version` table.
+///
+/// WI-S06-002 advances the GC domain to schema 7 by adding the
+/// `gc_candidates` table embedded as
+/// [`crate::MIGRATION_0007_GC_CANDIDATES`].
 #[must_use]
 pub const fn gc_schema_version() -> u32 {
-    6
+    7
 }

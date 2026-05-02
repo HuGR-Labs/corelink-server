@@ -58,7 +58,8 @@ fn migration_sql_no_comments() -> String {
 fn migration_is_non_empty_and_versioned() {
     assert!(!MIGRATION_0006_GC_RUN.is_empty());
     assert!(MIGRATION_0006_GC_RUN.contains("migration 0006"));
-    assert_eq!(gc_schema_version(), 6);
+    // WI-S06-002 advances the GC domain to schema 7 (gc_candidates).
+    assert_eq!(gc_schema_version(), 7);
 }
 
 #[test]

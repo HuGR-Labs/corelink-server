@@ -1,12 +1,12 @@
 ---
 id: "WI-S06-002"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
-audit_status: "ACTIVE"
-version: "1.0.0"
+doc_status: "FROZEN"
+work_status: "DONE"
+audit_status: "AUDITED"
+version: "1.3.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-05-01"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-011", "FF-HR-005"]
 parent: "S-06"
@@ -26,7 +26,7 @@ tags: ["wi", "s06", "gc", "mark", "scan", "reachable-set", "mark-started-at", "h
 
 # WI-S06-002 — Mark Phase: Multi-Pass D1 Scan (`blob_meta` + `ac_meta` + `manifest_chunks`) + Batching 250 rows/iter + `mark_started_at_ms` Atomic Capture (INV-GC-004 Anchor) + Jitter 100ms + `gc_candidates` Output Table + Mark p99 ≤ 10 min @ 1M Blobs Benchmark
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** FROZEN · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-06](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -641,6 +641,8 @@ D+0 design (Architect + SRE); D+2 AppSec; D+4 code review; D+5 chaos suite; D+6 
 ## 31. Change Log
 
 1.0.0 / 2026-04-25 / Gustavo: Criação WI-S06-002 (Lote 10.6; SOTA pós-Lote 10.5bis lessons applied: CHECK inline; D1 batch 250; TenantCtx-only; mark_started_at_ms atomic capture; multi-pass 3-scan; jitter 100ms; phase budget enforcement; cargo-fuzz 1h × 1 target).
+
+1.3.0 / 2026-05-01 / Gustavo (via Claude Opus 4.7 1M): **WI-S06-002 SEALED — Mark phase + multi-pass scan + mark_started_at_ms atomic capture shipped against the canonical pure-logic skeleton.** New module `crates/corelink-gc/src/mark.rs` ships: (a) `BlobDigest` newtype validated to canonical 64-char lower-case hex BLAKE3-256; (b) `MarkConfig` with knobs pinned to canonical defaults (`CANONICAL_BATCH_SIZE = 250` per Lote 10.4bis D1 100KB envelope, `CANONICAL_JITTER_MS = 100`, `CANONICAL_PHASE_BUDGET_MS = 10 * 60 * 1000` per sprint contract §5.5 SLO); (c) `ReachableSetSource` trait surfacing the canonical 3-pass scan (`pass_blob_meta` + `pass_ac_meta` + `pass_manifest_chunks`) tenant-scoped + bounded batch + lower-bound snapshot filter; (d) `GcCandidatesStore` trait with idempotent composite-PK INSERT; (e) `MarkClock` seam for deterministic test wall-clock injection; (f) `MarkPhase` trait + `InMemoryMarkPhase` orchestrator that atomically captures `mark_started_at_ms` via the existing `GcRunStore::transition_phase` immutable-set guard (mirrors WI §1 SQL `UPDATE ... WHERE mark_started_at_ms IS NULL` semantics; idempotent re-run via `lookup` preceded by transition), runs the 3-pass scan, computes the reachable union (false-reachable acceptable; false-orphan catastrophic per WI §9.6), defensively constrains candidates to digests that physically exist in `blob_meta`, emits `corelink.gc.phase_transitioned` audit records (start + completion), records `phase_duration_ms` histogram, checkpoints `blobs_marked_count`, and surfaces `MarkResult` with `mark_started_at_ms` / `rows_scanned_count` / `reachable_blobs_count` / `candidates_count` / `mark_duration_ms` / `batches_processed`; (g) phase-budget enforcement (`PhaseBudgetExceeded` error if scan duration exceeds budget); (h) full taxonomy of `MarkError` `#[non_exhaustive]` (InvalidDigest / InvalidConfig / PhaseBudgetExceeded / RunStore / Audit / Metrics / Backend) with `From<MarkError> for GcError`. New canonical migration `migrations/d1/0007_gc_candidates.sql` — `gc_candidates` table composite-PK `(tenant_id, digest, mark_run_id)` tenant-leftmost; 6 inline CHECK constraints (status domain {candidate, swept, physically_deleted, protected_re_ref}; non-negative blob_size; mark-anchor tolerance ≥ -60s; lifecycle partial order swept ≥ created; physical_delete partial order ≥ swept); 3 indices (idx_run_status for sweep consumer; idx_tenant_status for analytics; PARTIAL idx_protected for INV-GC-004 forensics WHERE status='protected_re_ref'); idempotent `IF NOT EXISTS`; additive-only. New tests: 23 inline lib unit (mark.rs) + 17 migration_canonical_0007 (textual SQL pinning + status-literal cross-ref with Rust enum + lifecycle CHECK presence + no destructive token) + 9 prop_mark @ 10k iter (5 canonical: prop_mark_idempotent / prop_mark_started_at_atomic / prop_reachable_set_complete / prop_tenant_isolation_mark / prop_mark_d1_batch_bounded; + 4 sanity: schema version pin + canonical batch/jitter/budget pins). Real bug caught + fixed in property test fixture: snapshot lower bound = `mark_anchor - grace_ms`; with grace=0 the test would filter out fixture rows whose `created_at_ms` predates the start; fix sets canonical 24h grace matching production default. **Trait-abstraction-defer per charter**: real D1 `blob_meta`/`ac_meta`/`manifest_chunks` reader binding + real D1 `gc_candidates` writer + real wall-clock seam + 100k nightly property iter + cargo-fuzz target + criterion bench `bench_mark_1m_blobs` — all consolidated alongside WI-S06-007 PRR ship gate. New example `mark_phase_walk.rs` smoke. `gc_schema_version()` advanced 6 → 7. Quality gates verde: `cargo test -p corelink-gc --all-targets` 0 failures (143 tests); `cargo clippy --workspace --all-targets --features corelink-worker/tower-middleware -- -D warnings` clean; `validate_specs.py` clean; `validate_references.py` no new dangling refs; `check_migrations_additive.py` clean (7 migration files). No per-WI codex per 2026-04-30 protocol; sprint-close Sonnet review covers full S-06 corpus.
 
 ## 32. Anti-patterns evitados
 

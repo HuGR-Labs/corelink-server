@@ -36,8 +36,16 @@ name = "migration_canonical"
 path = "tests/migration_canonical.rs"
 
 [[test]]
+name = "migration_canonical_0007"
+path = "tests/migration_canonical_0007.rs"
+
+[[test]]
 name = "prop_scheduler"
 path = "tests/prop_scheduler.rs"
+
+[[test]]
+name = "prop_mark"
+path = "tests/prop_mark.rs"
 
 [[test]]
 name = "chaos_gc_scheduler"
@@ -58,3 +66,7 @@ path = "examples/manual_admin_trigger.rs"
 [[example]]
 name = "idempotent_resume"
 path = "examples/idempotent_resume.rs"
+
+[[example]]
+name = "mark_phase_walk"
+path = "examples/mark_phase_walk.rs"
