@@ -1,0 +1,222 @@
+# DASH-GC alert rules — WI-S06-007 §6.1 + §6.2 + sprint contract §11.
+#
+# Routing per WI §6.1.6: PagerDuty (SEV-0 + SEV-1) + Slack
+# (#corelink-alerts all severities). Tested via chaos experiment WI
+# §15.1 (dashboard noise calibration) before staging dry-run.
+#
+# Severity mapping per WI §2 4-tier incident classification (Lote
+# 10.4bis lesson — 4-tier classification with pause-clock semantics):
+#   P0 = SEV-0 (INV-GC-001/004 violation; refcount drift > 1% per
+#               tenant; TLC red sustained > 4h). Resets 30d sustained
+#               clock; SEV-0 incident response.
+#   P1 = SEV-1 (refcount drift > 0.1% global; phase budget exceeded
+#               sustained; degrade-mode `gc-pause` sustained > 1h sem
+#               ADR; sweeper cron stale > 1h). Resets clock.
+#   P2 = SEV-2 (orphan candidate count spike; reconcile auto-fix >
+#               threshold). Resets clock.
+#   P3 = SEV-3 (bytes_reclaimed metric anomaly; informational).
+#               Does NOT reset.
+
+groups:
+  - name: corelink-gc
+    interval: 30s
+    rules:
+
+      - alert: GC_InvGc004Violation
+        expr: sum(rate(corelink_gc_inv_gc_004_violations_total[1m])) > 0
+        for: 0m  # SEV-0; immediate fire
+        labels:
+          severity: sev0
+          runbook: RB-FM-404
+          sprint: S-06
+          gate: ship
+        annotations:
+          summary: "INV-GC-004 violation — mark-phase-aware re-ref protection failed"
+          description: |
+            corelink_gc_inv_gc_004_violations_total is non-zero. This is a
+            SEV-0 incident — INV-GC-004 (mark-phase-aware re-ref safe) is
+            a CRITICAL TLA+-verified invariant. A violation means a blob
+            was re-referenced via UpdateActionResult during the mark
+            window AND was deleted by sweep — RUN RB-FM-404 immediately.
+            Reset 30d sustained clock. Page Architect + Crypto SME +
+            Security Lead.
+          runbook_url: "../../specs/05_quality/runbooks/RB-FM-404-gc-write-race.md"
+
+      - alert: GC_InvGc001Violation
+        expr: sum(rate(corelink_gc_unexpected_delete_total[1m])) > 0
+        for: 0m  # SEV-0; immediate fire
+        labels:
+          severity: sev0
+          runbook: RB-FM-300
+          sprint: S-06
+          gate: ship
+        annotations:
+          summary: "INV-GC-001 violation — reachable blob deleted (catastrophic)"
+          description: |
+            corelink_gc_unexpected_delete_total is non-zero. This is a
+            SEV-0 incident — INV-GC-001 (reachable never deleted) is a
+            CRITICAL TLA+-verified invariant. A violation = customer data
+            loss. RUN RB-FM-300 immediately. Customer notification within
+            24h per RB. Reset 30d sustained clock. Page Architect + SRE
+            Lead + Security Lead.
+          runbook_url: "../../specs/05_quality/runbooks/RB-FM-300-gc-refcount-bug.md"
+
+      - alert: GC_RefcountDriftPerTenantHigh
+        expr: max(corelink_gc_refcount_drift_percent{scope="per_tenant"}) > 0.01
+        for: 1h
+        labels:
+          severity: sev1
+          runbook: RB-FM-300
+          sprint: S-06
+        annotations:
+          summary: "Per-tenant refcount drift > 1% sustained 1h"
+          description: |
+            Per-tenant drift > 1% sustained signals a systemic refcount-
+            write bug (UpdateAR / DeleteAR / Sweep). Reachable computation
+            is at risk; mark phase may produce false-orphan candidates.
+            Page SRE Lead + Engineer; freeze GC writes; trigger reconcile
+            manual review.
+
+      - alert: GC_RefcountDriftGlobalHigh
+        expr: corelink_gc_refcount_drift_percent{scope="global"} > 0.001
+        for: 1h
+        labels:
+          severity: sev2
+          runbook: RB-FM-300
+          sprint: S-06
+        annotations:
+          summary: "Global refcount drift > 0.1% sustained 1h"
+          description: |
+            Global drift > 0.1% sustained 1h indicates a slow drift in
+            either the refcount write path or the reconcile auto-fix
+            gate. Investigate via reconcile audit chain;
+            run cargo test -p corelink-gc --test prop_reconcile to verify
+            the canonical json_each idiom did not regress to LIKE-substring.
+
+      - alert: GC_SweeperCronStale
+        expr: sum by (region) (rate(corelink_gc_scheduler_cron_fired_total[2h])) < 0.000005
+        for: 1h
+        labels:
+          severity: sev1
+          runbook: RB-FM-305
+          sprint: S-06
+        annotations:
+          summary: "GC sweeper cron stale — alarm not re-armed"
+          description: |
+            Cron tick rate per region dropped below the canonical daily
+            cadence (~ 1 / 24h ≈ 1.16e-5 rate) sustained > 1h with no
+            firings observed in the prior 2h. RB-FM-305 chaos #1 (cron
+            not re-armed). Page SRE; check Cron DO `alarm()` re-arm path;
+            verify the DO is bound; re-deploy if needed.
+          runbook_url: "../../specs/05_quality/runbooks/RB-FM-305-tombstone-lost.md"
+
+      - alert: GC_DegradeModeGcPauseSustained
+        expr: max(corelink_gc_degrade_mode_active{kind="gc-pause"}) > 0
+        for: 1h
+        labels:
+          severity: sev2
+          sprint: S-06
+        annotations:
+          summary: "GC degrade-mode gc-pause sustained > 1h sem ADR"
+          description: |
+            corelink_gc_degrade_mode_active{kind="gc-pause"} = 1
+            sustained 1h. Long pause increases reclaim debt; storage
+            growth detectable via SLO-FRESH-GC. If sustained > 4h
+            without ADR-justification escalate to SEV-1. Page SRE;
+            confirm operator-initiated pause has documented ADR; if
+            not, suspect runaway error path keeping the flag set.
+
+      - alert: GC_PhaseBudgetExceededSustained
+        expr: sum by (phase) (rate(corelink_gc_phase_budget_exceeded_total[5m])) > 0
+        for: 30m
+        labels:
+          severity: sev2
+          sprint: S-06
+        annotations:
+          summary: "GC phase budget exceeded sustained 30 min"
+          description: |
+            Per-phase budget enforcement returning `PhaseBudgetExceeded`
+            errors sustained > 30 min. Mark p99 ≤ 10 min; sweep p99 ≤
+            5 min; physical-delete p99 ≤ 30 min; reconcile p99 ≤ 1h
+            (sprint contract §5). Page Architect; investigate D1
+            throttle / batch-size regression / blob-count growth beyond
+            tenant-tier cap; consider raising budget via ADR.
+
+      - alert: GC_TlcCiRedSustained
+        expr: corelink_ci_tla_30d_sustained_verde{spec="gc_correctness"} == 0
+        for: 4h
+        labels:
+          severity: sev1
+          sprint: S-06
+          gate: ga
+        annotations:
+          summary: "TLA+ CI 30d sustained verde gauge red sustained > 4h"
+          description: |
+            TLC nightly verification of `gc_correctness.tla` failed
+            sustained 4h. This resets the 30d sustained clock per WI §1.7
+            sustained-verification semantics. RB-FM-404 trigger if
+            invariant violation detected; else RB-FM-300 if model
+            divergence. Page Crypto SME + Architect.
+
+      - alert: GC_AuditEmitFailureSustained
+        expr: sum(rate(corelink_gc_audit_emit_failure_total[5m])) > 0
+        for: 5m
+        labels:
+          severity: sev1
+          sprint: S-06
+        annotations:
+          summary: "GC audit emit failure sustained — fail-closed envelope active"
+          description: |
+            Audit emission failure sustained 5 min. Sweep + reconcile
+            envelopes are fail-closed (audit BEFORE mutation; emit
+            failure preserves blob state). If sustained, GC is making no
+            progress — investigate audit_outbox writer / D1 batch
+            transaction / Cron DO health. Compliance gap risk if the
+            forensic trail is incomplete.
+
+      - alert: GC_ReclaimMetricBelowFloor
+        expr: |
+          sum (increase(corelink_gc_reclaimed_bytes_total[7d])) == 0
+        for: 7d
+        labels:
+          severity: sev3  # P3 — does NOT reset 30d sustained clock
+          sprint: S-06
+        annotations:
+          summary: "Zero bytes reclaimed sustained 7d (informational)"
+          description: |
+            corelink_gc_reclaimed_bytes_total flat at 0 across all
+            tiers sustained 7d. Could indicate workload mismatch (no
+            orphans being generated), GC misconfiguration, or sweeper
+            stall. P3 — informational; does not reset SLO clock. Cross-
+            check sweeper cron rate panel.
+
+      - alert: GC_OrphanCandidateBacklogPerTenantHigh
+        expr: max(corelink_gc_orphan_candidate_count) > 1000000
+        for: 1h
+        labels:
+          severity: sev2
+          sprint: S-06
+        annotations:
+          summary: "Per-tenant orphan candidate backlog > 1M sustained 1h"
+          description: |
+            One or more tenants have > 1M `gc_candidates` rows pending
+            sweep sustained 1h. Sweep p99 budget assumes ≤ 100k
+            candidates per tick; 1M backlog implies either mark phase
+            ran 10x larger than expected or sweep is stalled (check
+            phase-budget-exceeded panel). Page SRE; investigate
+            reconcile orphan detection.
+
+      - alert: GC_CostRegression
+        expr: corelink_gc_cost_per_op_usd{op="reconcile"} > 0.000011
+        for: 30m
+        labels:
+          severity: sev2
+          sprint: S-06
+        annotations:
+          summary: "GC reconcile per-op cost > 110% of $0.000010 target sustained 30 min"
+          description: |
+            Cost regression gate at +10% per WI §6.1 + sprint contract
+            §1.2.0 changelog OPUS-MISS-3 derivation. Run criterion
+            bench `bench_reconcile_1m_blobs` to drill down; could be a
+            regressed json_each plan, D1 batch undersized, or
+            audit_outbox INSERT amplification.

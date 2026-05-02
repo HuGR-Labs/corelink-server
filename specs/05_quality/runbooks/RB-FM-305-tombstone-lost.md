@@ -1,18 +1,20 @@
 ---
 id: "RB-FM-305"
 type: "runbook"
-doc_status: "DRAFT"
-audit_status: "ACTIVE"
-version: "0.1.0"
+doc_status: "FROZEN"
+audit_status: "AUDITED"
+version: "1.0.0"
 created: "2026-04-24"
-updated: "2026-04-24"
+updated: "2026-05-02"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
 supersedes: null
 superseded_by: null
-tags: ["runbook", "p1", "gc", "dedup", "data-integrity"]
+tags: ["runbook", "p1", "gc", "dedup", "data-integrity", "dry-run-executed"]
 ---
+
+> **Dry-run executed 2026-05-02** — host-side harness `scripts/rb_fm_305_dry_run.sh` (WI-S06-007) green; chaos magnitude pinned to 7d cron-disabled + 100 GiB orphan accumulation per Lote 10.6bis P0-W7-4. Detection signal cross-checked against SLO-FRESH-GC sustained metric (≤ 5min p95) NOT sweeper-tick-stale alert (> 1h). Audit trace: `specs/_audits/2026-05-02-rb-fm-305-dry-run.md`.
 
 # RB-FM-305 — Tombstone Lost (Eviction reverte com re-upload)
 

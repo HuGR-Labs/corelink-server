@@ -354,6 +354,7 @@ Invariantes que governam GC mark-sweep + refcount reconciliation + TLA+ formal v
 | **INV-GC-CI-GATE-ENFORCED** | TLA+ CI gate blocks merge se TLC red; override via ADR + Architect + Crypto SME | HIGH | GitHub branch protection required status check; PR fail logic | CI workflow `.github/workflows/tla_check.yml` (Lote 10.11.0-bis-prime cycle 3 canonical); integration test PR weakening obligation rejected | (planned `gc_correctness.tla` Lote 5.13 verified) |
 | **INV-GC-PROPERTY-TEST-CROSS-VALIDATED** | Rust property test 100k iter cross-validates TLA+ obligations (Mark + UpdateActionResult interleavings) | HIGH | `prop_gc_004_race_mark_update_ar_100k` em CI nightly; deterministic seeds; 0 violations sustained | CI nightly green sustained 30d (S-20 GA gate) | (cross-validation; gc_correctness.tla aligned) |
 | **INV-GC-30D-SUSTAINED-VERIFICATION** | 30d sustained TLA+ verde + chaos zero violations gate pre-S-20 GA | HIGH | CI workflow `tla-30d-sustained.yml` (PLANNED — WI-S06-006 deliverable; not yet in tree) daily aggregate; chaos test 30d staging continuous | Sprint contract DoD §10.s06.4 + Critério Promoção | (governance invariant; Lote 10.6 ship gate) |
+| **INV-GC-DEGRADE-CORRECT** | Worker preserves canonical correctness invariants (INV-GC-001 + INV-GC-004) under degrade-mode back-off ramp + overload-detector; alias for the cumulative degrade-mode contract aggregating `INV-GC-DEGRADE-MODE-PROBE-PER-BATCH` + `INV-GC-IDEMPOTENT-RERUN` + `INV-GC-PHASE-MONOTONIC` (WI-S06-007 §10.s06.007.7 cumulative INV §3.17 promotion + Lote 10.6bis P0-W7-2 count alignment 22→23) | HIGH | DO config-singleton probe + back-off ramp + per-instance overload detector; preserves correctness across mark/sweep/physical-delete/reconcile under load | Chaos test enable gc-pause mid-phase + property test 10k iter idempotent re-run + integration test back-off ramp boundary | N/A (architecture invariant; Lote 10.6 ship gate cumulative alias) |
 
 **Cross-references**:
 - `ADR-0042` documenta worker scheduler design + degrade-mode contract (vide `scripts/validate_references.py` whitelist).
@@ -362,7 +363,7 @@ Invariantes que governam GC mark-sweep + refcount reconciliation + TLA+ formal v
 - `security_model.md CTRL-GC-001/002` — control alignment.
 - `slo_catalog.md SLO-CORRECT-GC + SLO-FRESH-GC` — operational metrics.
 
-**Aliases históricos:** nenhum. Estes ~22 IDs introduzidos em Lote 10.6 (sprint S-06 spec) e **promovidos preemptivamente em Lote 10.6** (consistency com lesson Lote 10.4bis CI gate validate_inv_promotion.py + lesson Lote 10.5 §3.16 promovida preemptive); refinements possíveis em Lote 10.6bis pós-Agent R4 review.
+**Aliases históricos:** `INV-GC-DEGRADE-CORRECT` cumulative alias added in WI-S06-007 SEAL Lote 10.6 ship gate (§10.s06.007.7 cumulative INV §3.17 promotion + Lote 10.6bis P0-W7-2 count alignment 22→23). Estes 23 IDs (22 canonical + 1 cumulative alias) introduzidos em Lote 10.6 (sprint S-06 spec) e **promovidos preemptivamente em Lote 10.6** (consistency com lesson Lote 10.4bis CI gate validate_inv_promotion.py + lesson Lote 10.5 §3.16 promovida preemptive); refinements possíveis em Lote 10.6bis pós-Agent R4 review.
 
 ### 3.18 Dedup + Eviction + Quota domain — Lote 10.7 (S-07 sprint)
 

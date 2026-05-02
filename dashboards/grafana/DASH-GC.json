@@ -1,0 +1,316 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "CoreLink GC metrics datasource (Prometheus / VictoriaMetrics / Grafana Cloud)",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "uid": "DASH-GC",
+  "title": "CoreLink — Garbage Collection (DASH-GC)",
+  "description": "WI-S06-007 §6.1.1 canonical 10-panel GC dashboard. Mirrors DASH-AC + DASH-MULTIPART pattern. Panels: phase rates per region; reclaim bytes per tenant_tier (customer-visible CAP-GC-006); INV-GC-004 violations counter (CRITICAL alert >0); refcount drift global+per-tenant max; sweeper tick rate per region; orphan candidate count per tenant; phase-budget exceeded counter; degrade-mode `gc-pause` active gauge; TLA+ CI 30d sustained verde gauge (S-20 GA gate); SLO-CORRECT-GC + SLO-FRESH-GC sustained.",
+  "tags": ["corelink", "gc", "mark-sweep", "s06", "high-risk", "ship-gate"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "tenant_tier",
+        "type": "custom",
+        "label": "Tenant Tier",
+        "multi": true,
+        "includeAll": true,
+        "options": [
+          { "text": "Free", "value": "free" },
+          { "text": "Solo", "value": "solo" },
+          { "text": "Team", "value": "team" },
+          { "text": "Business", "value": "business" },
+          { "text": "Enterprise", "value": "enterprise" }
+        ],
+        "query": "free,solo,team,business,enterprise"
+      },
+      {
+        "name": "region",
+        "type": "custom",
+        "label": "Region",
+        "multi": true,
+        "includeAll": true,
+        "options": [
+          { "text": "SAM", "value": "sam" },
+          { "text": "IAD", "value": "iad" },
+          { "text": "LHR", "value": "lhr" },
+          { "text": "NRT", "value": "nrt" },
+          { "text": "SYD", "value": "syd" }
+        ],
+        "query": "sam,iad,lhr,nrt,syd"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Mark / Sweep / PhysicalDelete / Reconcile — phase rates per region (rolling 5-min)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 1. Each phase emits `phase_duration_ms` histogram + `run_completed_total` counter; rate of completed runs per region surfaces phase throughput. Mark p99 ≤ 10 min @ 1M blobs; sweep p99 ≤ 5 min @ 100k candidates; physical-delete p99 ≤ 30 min @ 100k; reconcile p99 ≤ 1h @ 1M (sprint contract §5.3 / §5.4 / §5.5).",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (region, status) (rate(corelink_gc_worker_run_completed_total{region=~\"$region\"}[5m]))",
+          "legendFormat": "{{region}} / {{status}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Reclaim bytes per tenant_tier (customer-visible CAP-GC-006)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 2 + sprint contract §14.s06.7 + DoD §10.s06.3. `corelink_gc_reclaimed_bytes_total{tenant_id, tier}` aggregated per tier. Surfaces customer-visible business metric `bytes_reclaimed_last_30d` (S-09 forward). > 0 in synthetic workload is canonical S-06 DoD gate.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "decbytes",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": 0 },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (tier) (increase(corelink_gc_reclaimed_bytes_total{tier=~\"$tenant_tier\"}[30d]))",
+          "legendFormat": "{{tier}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "INV-GC-004 violations counter (CRITICAL alert if > 0)",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 3 + sprint contract §6 DoD invariant. `corelink_gc_inv_gc_004_violations_total` MUST always = 0. `>0` sustained 1 min = SEV-0 PagerDuty page Architect + Crypto SME. Cross-validated by 100k race property test (`prop_inv_gc_004_race`) + TLA+ `gc_correctness.tla::InvGCReRefProtected` 30d sustained gate.",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 8 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum (increase(corelink_gc_inv_gc_004_violations_total[5m]))",
+          "legendFormat": "violations (5m)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Refcount drift % global + per-tenant max",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 4 + sprint contract §5.5 R-S06-10 + §10.s06.5. Global drift > 0.1% sustained = SEV-2; per-tenant drift > 1% sustained = SEV-1. Auto-fix gate fires when count ≤ 5 AND percent ≤ 0.01% (Lote 10.6bis P0-6 dual condition).",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 8 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 0.001 },
+              { "color": "red", "value": 0.01 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "corelink_gc_refcount_drift_percent{scope=\"global\"}",
+          "legendFormat": "global",
+          "refId": "A"
+        },
+        {
+          "expr": "max(corelink_gc_refcount_drift_percent{scope=\"per_tenant\"})",
+          "legendFormat": "per-tenant max",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Sweeper tick rate per region (alert if cron stale > 1h)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 5. Cron canonical cadence = daily 02:00 UTC + jitter ±10 min per region. Tick rate < 1/24h sustained > 1h = SEV-1 (RB-FM-305 chaos #1: cron not re-armed). Mirrors DASH-MULTIPART panel 5 pattern with different cadence.",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 8 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (region) (rate(corelink_gc_scheduler_cron_fired_total{region=~\"$region\"}[1h]))",
+          "legendFormat": "{{region}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Orphan candidate count per tenant (top 10)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 6. Per-tenant `gc_candidates` row count `WHERE status='candidate'`; high count signals slow mark phase or backlog. Top 10 surfaces investigation candidates without overwhelming the panel.",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 8 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "targets": [
+        {
+          "expr": "topk(10, corelink_gc_orphan_candidate_count{tier=~\"$tenant_tier\"})",
+          "legendFormat": "{{tenant_id}} / {{tier}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Phase budget exceeded counter (Mark / Sweep / PhysicalDelete / Reconcile)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 7 + sprint contract §5.3 R-S06-7.1 / §5.4 R-S06-9.1 / §5.5 R-S06-10.1. Per-phase budget enforced: mark 10 min, sweep 5 min, physical-delete 30 min, reconcile 1h. Budget exceeded = `PhaseBudgetExceeded` error returned + `RunFailed` audit. Sustained > 0 = SEV-2 page Architect + SRE.",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 14 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 5 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (phase) (rate(corelink_gc_phase_budget_exceeded_total[5m]))",
+          "legendFormat": "{{phase}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Degrade-mode `gc-pause` active gauge",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 8 + sprint contract §5.1 R-S06-3 + PAT-DEGRADE-001. Gauge `corelink_gc_degrade_mode_active{kind}` = 1 when non-Off, 0 otherwise. Sustained > 1h sem ADR = SEV-2 (operational risk; long pause increases reclaim debt).",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 14 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "max(corelink_gc_degrade_mode_active{kind=\"gc-pause\"})",
+          "legendFormat": "gc-pause",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "TLA+ CI 30d sustained verde gauge (S-20 GA promotion gate)",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 9 + sprint contract §6 DoD §10.s06.4 + Critério Promoção. `corelink_ci_tla_30d_sustained_verde{spec=\"gc_correctness\"}` = 1 when 30 consecutive nightly runs verde; 0 otherwise. Required pre-S-20 GA promotion. CI red sustained > 4h resets clock per WI §1.7 sustained-verification semantics.",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 14 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": 0 },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "corelink_ci_tla_30d_sustained_verde{spec=\"gc_correctness\"}",
+          "legendFormat": "tla 30d sustained",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "SLO-CORRECT-GC + SLO-FRESH-GC sustained",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 10 + slo_catalog. SLO-CORRECT-GC: zero blobs reachable deletados (binary; INV-GC-001 + INV-GC-004 sustained 0 violations). SLO-FRESH-GC: orphan reclaim p99 ≤ 14d (= grace 72h + reconcile cycle 24h + headroom). Both sustained 30d staging is the GA gate.",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 14 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0.99,
+          "max": 1
+        }
+      },
+      "targets": [
+        {
+          "expr": "corelink_gc_slo_correct_sustained",
+          "legendFormat": "SLO-CORRECT-GC",
+          "refId": "A"
+        },
+        {
+          "expr": "corelink_gc_slo_fresh_sustained",
+          "legendFormat": "SLO-FRESH-GC",
+          "refId": "B"
+        }
+      ]
+    }
+  ]
+}

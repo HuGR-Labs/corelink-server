@@ -1,18 +1,20 @@
 ---
 id: "RB-FM-300"
 type: "runbook"
-doc_status: "DRAFT"
-audit_status: "ACTIVE"
-version: "0.1.0"
+doc_status: "FROZEN"
+audit_status: "AUDITED"
+version: "1.0.0"
 created: "2026-04-24"
-updated: "2026-04-24"
+updated: "2026-05-02"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
 supersedes: null
 superseded_by: null
-tags: ["runbook", "p1", "gc", "data-integrity", "tla"]
+tags: ["runbook", "p1", "gc", "data-integrity", "tla", "dry-run-executed"]
 ---
+
+> **Dry-run executed 2026-05-02** — host-side harness `scripts/rb_fm_300_dry_run.sh` (WI-S06-007) green; chaos magnitude pinned to 0.5% per-tenant refcount drift per Lote 10.6bis P0-W7-4. Audit trace: `specs/_audits/2026-05-02-rb-fm-300-dry-run.md`.
 
 # RB-FM-300 — GC Deleta Blob Ainda Referenciado (Refcount Bug)
 
