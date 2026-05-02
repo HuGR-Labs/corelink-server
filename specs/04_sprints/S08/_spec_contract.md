@@ -3,9 +3,9 @@ id: "SPEC-CONTRACT-S08"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-04-24"
-updated: "2026-04-24"
+updated: "2026-05-02"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -204,6 +204,13 @@ Trigger post_mortem se:
 
 Nenhum waiver previsto. Rate limit / quota são enforcement primitives; waiver aqui é perigoso. Exceção custom: enterprise tier com contrato specific requer ADR + CAP-RATE-004.
 
+## 20. Change Log
+
+| Versão | Data | Autor | Mudança |
+|---|---|---|---|
+| 1.2.0 | 2026-04-24 | Gustavo (initial design) | Initial spec contract S-08 (Rate Limiting Multi-Camada + Quotas + Abuse Detection; HIGH_RISK lane; FF-HR-005 + FF-HR-002). |
+| 1.3.0 | 2026-05-02 | Gustavo (via Claude Opus 4.7 1M; autonomous WI-S08-001 SEAL) | **WI-S08-001 SEALED — `crates/corelink-ratelimit/` v0.1.0 shipped + `migrations/d1/0010_ratelimit_buckets.sql` (NEW table; durable mirror of DO singleton in-memory token-bucket state machine).** New crate ships 8 source modules (~1850 LOC + ~660 LOC tests): `key` (KeyDimension `#[non_exhaustive]` 3-canonical literal `per_tenant`/`per_ip`/`per_tenant_per_endpoint` + BucketKey composite tenant-leftmost), `tier` (5-tier refill ladder canonical free/solo/team/business/enterprise per Lote 10.7bis P0-7; refill_rate_for_tier resolver), `bucket` (TokenBucketState f64-precision + `try_acquire` lazy-refill canonical formula + monotonic clock clamp + Lote 10.8bis P1-1 division-by-zero guard for canceled tenants 7-day saturation), `audit` (3-event taxonomy `corelink.ratelimit.{allowed,denied_429,bucket_refilled}` fail-closed envelope per `INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER`), `metrics` (7-canonical metric ladder: check_total + tokens_remaining + refill_rate + plan_sync_lag_ms + do_cold_start_total + middleware_duration_us + cross_tenant_violation_total SEV-1), `error` (`#[non_exhaustive]` taxonomy with explicit TenantMismatch + CostExceedsCapacity arms), `config` (RFC 6585 §4 1s floor + 86400s live-tenant ceiling + 7d canceled-tenant retry; team-tier defaults), `limiter` (RateLimiter trait + InMemoryTokenBucketRateLimiter orchestrator with per-instance `Arc<Mutex<HashMap<BucketKey, TokenBucketState>>>` mirrors DO actor model serialisation; F-001 closure preserved). Migration `0010_ratelimit_buckets.sql`: composite PK `(tenant_id, key_dimension, scope_key)` tenant-leftmost; 8 inline CHECK constraints; idempotent + additive; 2 secondary indices. Tests: 73 inline lib unit + 18 prop_ratelimit @ 10k iter (100k via PROPTEST_CASES override) + 10 migration canonical = **101 tests across all targets, 0 failures, parallel-safe**. Property tests pin INV-AVAIL-ISOLATION (`prop_tenant_isolation` + `prop_concurrent_acquire_does_not_double_spend` — DO actor serialisation), INV-RATE-LIMIT-PROPORTIONALITY (`prop_token_bucket_proportionality` + `prop_token_bucket_never_exceeds_capacity`), token non-negativity, refill monotonicity in time, RFC 6585 §4 Retry-After lower bound, idempotent zero-cost acquire, audit emit per decision arm, monotonic clock clamp safety, < 3ms p99 hot path probe. **Trait-abstraction-defer per charter**: real CF DO singleton + real D1 atomic batch + real Tower layer (gated `corelink-worker/tower-middleware`) + 100k nightly + chaos 12 + RB-FM-401 dry-run — all consolidated alongside WI-S08-006 (DASH-RATE + alerts + PRR ship gate). Cross-module patches: workspace `Cargo.toml` adds `crates/corelink-ratelimit` member + workspace dep + reuses `corelink-eviction::Tier`. Quality gates verde. No per-WI codex per 2026-04-30 protocol; sprint-close Sonnet review covers full S-08 corpus. |
+
 ---
 
-**Fim de spec contract S-08 SOTA v1.1.**
+**Fim de spec contract S-08 SOTA v1.3.0** (Upgrade history: v1.2 initial design; v1.3 WI-S08-001 SEAL).

@@ -24,6 +24,7 @@ members = [
     "crates/corelink-eviction",
     "crates/corelink-quota",
     "crates/corelink-lru-tracker",
+    "crates/corelink-ratelimit",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
@@ -100,6 +101,7 @@ corelink-dedup = { path = "crates/corelink-dedup" }
 corelink-eviction = { path = "crates/corelink-eviction" }
 corelink-quota = { path = "crates/corelink-quota" }
 corelink-lru-tracker = { path = "crates/corelink-lru-tracker" }
+corelink-ratelimit = { path = "crates/corelink-ratelimit" }
 
 # Test / bench
 proptest = "1.5"

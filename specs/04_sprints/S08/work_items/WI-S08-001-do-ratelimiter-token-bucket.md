@@ -1,12 +1,12 @@
 ---
 id: "WI-S08-001"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
-audit_status: "ACTIVE"
-version: "1.0.0"
+doc_status: "FROZEN"
+work_status: "DONE"
+audit_status: "AUDITED"
+version: "1.3.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-05-02"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-005", "FF-HR-002"]
 parent: "S-08"
@@ -27,7 +27,7 @@ tags: ["wi", "s08", "rate-limit", "token-bucket", "do-actor", "ratelimiter", "hi
 
 # WI-S08-001 — Per-Tenant DO RateLimiter Token Bucket (`crates/corelink-rate-limiter`; DO `rate-limiter-<tenant_id>` resolved via `tenant.primary_region` Lote 10.7bis P0-9 lesson; refill_rate from Plan tier 5-arm match free/solo/team/business/enterprise per data_model.md §3 + slo_catalog §3.1; INV-RATE-LIMIT-PROPORTIONALITY enforcement; INV-AVAIL-ISOLATION inheritance via per-tenant DO singleton; race-free serialization via DO actor model; sub-ms latency via sticky placement)
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** FROZEN · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-08](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -554,6 +554,7 @@ D+0 design (Architect; race analysis + Crypto SME specialization); D+2 AppSec (T
 | 1.0.0 | 2026-04-25 | Gustavo (Lote 10.8) | Criação WI-S08-001; HIGH_RISK; SOTA pós-Lote 10.7bis lessons absorbed: TenantCtx-only; DO routing primary_region (P0-9); 5-tier canonical (P0-7); CF Workers Rust API worker::send_future (R5 P0-3); 100k nightly property test (P1-3); audit fail-closed (Lote 10.6bis); alarm re-arm AT START (Lote 10.4bis); D1 batch ≤250 (Lote 10.5bis); CHECK inline (Lote 10.5bis). NEW migrations rate_limiter_state + tenant_plan. |
 | 1.1.0 | 2026-04-25 | Gustavo (Lote 10.8bis) | R4+R5 review remediation: P1-1 INV §3.X → §3.12 (canonical reg line 163); P1-2 sign-off cap 13→12 (framework §33.5.4.3 cap; Crypto SME advisory consolidated em Architect race-correctness review per ADR-0034); R5 P1-1 division-by-zero guard em retry_after_secs for refill_rate=0 (canonical 7-day retry; previous f64::INFINITY.ceil() saturated to u64::MAX = HTTP client misinterpret); CI-2 NEW table `tenant_rate_override` shared schema com WI-S08-004 SilentDowngrade communication mechanism (effective_refill_rate = plan_refill * override_multiplier; 5min DO cache; auto-revert on expiry). Aggregate score post-bis target ≥ 8.5/10 (R4 8.4 + R5 7.5 baselines). |
 | 1.2.0 | 2026-04-25 | Gustavo (Lote 10.8-tris **SEALED**) | Sonnet R5 round-2 review remediation (8.1/10 → target ≥8.8 post-tris): P1-NEW-2 tenant_rate_override D1 read explicitly added to `check_and_consume` code spec §6.1.3 (was only documented em change log); migration artifact reference added em §13; cache_age > 600s SEV-3 alert documented for stale override during active downgrade window. **WI sealed pre-implementation**: spec contract complete; reviews applied; ready for implementation when staffing assigned. |
+| 1.3.0 | 2026-05-02 | Gustavo (Impl SEAL) | **WI-S08-001 implementation SEALED**. Crate `crates/corelink-ratelimit/` ships RateLimiter trait + InMemoryTokenBucketRateLimiter orchestrator (lazy-refill canonical formula; per-instance `Arc<Mutex<HashMap<BucketKey, TokenBucketState>>>` mirrors DO actor model; F-001 closure preserved). 8 modules: `key` (3-canonical KeyDimension `per_tenant`/`per_ip`/`per_tenant_per_endpoint`), `tier` (5-tier refill ladder canonical free/solo/team/business/enterprise), `bucket` (TokenBucketState f64 precision + `try_acquire` lazy-refill formula + monotonic clock clamp + canceled-tenant guard Lote 10.8bis P1-1), `audit` (3-event taxonomy `corelink.ratelimit.{allowed,denied_429,bucket_refilled}` fail-closed envelope), `metrics` (7-canonical metric ladder including SEV-1 cross-tenant violation canary), `error` (`#[non_exhaustive]` taxonomy), `config` (RFC 6585 §4 1s floor + 86400s ceiling + 7d canceled), `limiter` (orchestrator with audit-fail-closed envelope). Migration `migrations/d1/0010_ratelimit_buckets.sql` ships durable mirror (CHECK constraints inline per ADR-0036 Rule 1; tenant-leftmost PK; idempotent DDL). 73 inline lib unit + 18 prop tests at 10k iter (TIER 100k via PROPTEST_CASES override) + 10 migration tests = 101 total tests, all passing. Property tests pin INV-AVAIL-ISOLATION (`prop_tenant_isolation` + `prop_concurrent_acquire_does_not_double_spend`), INV-RATE-LIMIT-PROPORTIONALITY (`prop_token_bucket_proportionality` + `prop_token_bucket_never_exceeds_capacity`), token-bucket non-negativity, refill monotonicity in time, RFC 6585 §4 Retry-After lower bound, idempotent zero-cost acquire, audit emit per decision arm, monotonic clock clamp safety, < 3ms p99 hot path probe. Production CF DO singleton + real D1 binding deferred to WI-S08-006 PRR ship gate per `trait-abstraction-defer` charter pattern. Workspace `Cargo.toml` adds member + path dependency. No per-WI codex per 2026-04-30 protocol; sprint-close Sonnet review covers full S-08 corpus. |
 
 ## 32. Anti-patterns evitados
 
