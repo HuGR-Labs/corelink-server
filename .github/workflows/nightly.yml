@@ -130,6 +130,21 @@ jobs:
           cargo test --release --package corelink-reapi --test prop_cas
           cargo test --release --package corelink-reapi --test prop_idempotency
 
+      - name: proptest 100k iter — INV-GC-004 race (WI-S06-006 nightly tier)
+        env:
+          PROPTEST_CASES: '100000'
+          PROPTEST_MAX_LOCAL_REJECTS: '100000'
+          PROPTEST_MAX_GLOBAL_REJECTS: '500000'
+        # WI-S06-006 §6.1.2 + §1: the canonical 100k iter race
+        # property test cross-validates the TLA+ obligation
+        # `gc_correctness.tla::InvGCReRefProtected` against the real
+        # Rust impl. PR-gate runs at 10k; nightly tier runs at 100k
+        # per the dual-tier ceiling. ZERO violations sustained over
+        # 100k iter is the sprint contract DoD §6 gate.
+        run: |
+          set -euo pipefail
+          cargo test --release --package corelink-gc --test prop_inv_gc_004_race
+
   # ---------------------------------------------------------------------
   # 3. Fuzz matrix — all 9 targets across 5 SEALed crates, 1h each parallel.
   # ---------------------------------------------------------------------
