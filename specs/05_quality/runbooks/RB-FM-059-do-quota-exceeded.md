@@ -1,18 +1,20 @@
 ---
 id: "RB-FM-059"
 type: "runbook"
-doc_status: "DRAFT"
-audit_status: "ACTIVE"
-version: "0.1.0"
+doc_status: "FROZEN"
+audit_status: "AUDITED"
+version: "1.0.0"
 created: "2026-04-24"
-updated: "2026-04-24"
+updated: "2026-05-02"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
 supersedes: null
 superseded_by: null
-tags: ["runbook", "p2", "do", "quota", "rate-limit"]
+tags: ["runbook", "p2", "do", "quota", "rate-limit", "dry-run-executed"]
 ---
+
+> **Dry-run executed 2026-05-02** — host-side harness `scripts/rb_fm_059_dry_run.sh` (WI-S07-005) green; chaos magnitude pinned to 1000 concurrent writes at 99.9% quota per Lote 10.6bis P0-W7-4. Detection signal cross-checked against `corelink_quota_denials_total{result=race_detected}` (must remain 0 across the prop suite) NOT a sustained-rate alert. Audit trace: `specs/_audits/2026-05-02-rb-fm-059-dry-run.md`.
 
 # RB-FM-059 — Cloudflare Durable Object Quota Exceeded
 

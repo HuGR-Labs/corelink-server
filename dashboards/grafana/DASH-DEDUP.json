@@ -1,0 +1,326 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "CoreLink Dedup + Eviction + Quota + LRU metrics datasource (Prometheus / VictoriaMetrics / Grafana Cloud)",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "uid": "DASH-DEDUP",
+  "title": "CoreLink — Dedup + Eviction + Quota + LRU (DASH-DEDUP)",
+  "description": "WI-S07-005 §6.1 canonical 10-panel S-07 ship-gate dashboard. Mirrors DASH-GC + DASH-MULTIPART pattern. Panels: dedup ratio per tier; bytes reclaimed last 30d; eviction rate per region; quota utilization heatmap; LRU drift p99; cascade prevention (BLOB-scope per Lote 10.7bis P0-8); 95% / 100% breach counters per tenant; INV-GC-001 inheritance canary; SOTA comparison vs NativeLink (~2.1×) / BuildBuddy (~2.8×); reservation TTL + LRU drop-counter cluster.",
+  "tags": ["corelink", "dedup", "eviction", "quota", "lru", "s07", "standard", "ship-gate"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "tenant_tier",
+        "type": "custom",
+        "label": "Tenant Tier",
+        "multi": true,
+        "includeAll": true,
+        "options": [
+          { "text": "Free", "value": "free" },
+          { "text": "Solo", "value": "solo" },
+          { "text": "Team", "value": "team" },
+          { "text": "Business", "value": "business" },
+          { "text": "Enterprise", "value": "enterprise" }
+        ],
+        "query": "free,solo,team,business,enterprise"
+      },
+      {
+        "name": "region",
+        "type": "custom",
+        "label": "Region",
+        "multi": true,
+        "includeAll": true,
+        "options": [
+          { "text": "SAM", "value": "sam" },
+          { "text": "IAD", "value": "iad" },
+          { "text": "LHR", "value": "lhr" },
+          { "text": "NRT", "value": "nrt" },
+          { "text": "SYD", "value": "syd" }
+        ],
+        "query": "sam,iad,lhr,nrt,syd"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Dedup ratio per tenant_tier (target ≥ 2.5× sustained 7d)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 1 + sprint contract §6 DoD + WI-S07-001 emit. Ratio = chunks_reused_total / (chunks_inserted_total + chunks_reused_total). Sustained ≥ 2.5× in ≥ 3 tenants is the S-07 ship-gate DoD; ≥ 3× stretch SOTA target. Anomaly drop > 30% WoW = SEV-2 (R-S07-7 anomaly detection).",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": 0 },
+              { "color": "yellow", "value": 1.5 },
+              { "color": "green", "value": 2.5 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "avg by (tier) (sum by (tier) (rate(corelink_dedup_chunks_reused_total{tier=~\"$tenant_tier\"}[30d])) / clamp_min((sum by (tier) (rate(corelink_dedup_chunks_inserted_total{tier=~\"$tenant_tier\"}[30d])) + sum by (tier) (rate(corelink_dedup_chunks_reused_total{tier=~\"$tenant_tier\"}[30d]))), 1))",
+          "legendFormat": "{{tier}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Bytes reclaimed last 30d per tenant_tier (customer-visible CAP-EVICT-* + CAP-DEDUP-002)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 2 + sprint contract §10.s07.005.9 customer-visible metric forward S-16. `corelink_evict_bytes_reclaimed_total{tenant_id, tier}` aggregated 30d window. Surfaces customer dashboard `bytes_reclaimed_last_30d` (S-16 forward).",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "decbytes",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": 0 },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (tier) (increase(corelink_evict_bytes_reclaimed_total{tier=~\"$tenant_tier\"}[30d]))",
+          "legendFormat": "{{tier}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Eviction rate per region (TTL + LRU + quota-trigger arms)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 3 + WI-S07-002 audit taxonomy. Per-region 5-min rate of soft-deletes (`evicted` arm); rate uplift correlates with 95% quota-trigger fire (§6 panel 7) and TTL expiry (`ttl_expired_total`).",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 8 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (region) (rate(corelink_evict_lru_evicted_total{region=~\"$region\"}[5m]))",
+          "legendFormat": "lru · {{region}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (region) (rate(corelink_evict_ttl_expired_total{region=~\"$region\"}[5m]))",
+          "legendFormat": "ttl · {{region}}",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Quota utilization heatmap per tenant (top 50)",
+      "type": "heatmap",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 4 + sprint contract R-S07-6. Threshold 0.80 = SEV-3 telemetry (Lote 10.7bis P0-4); 0.95 = SEV-2 + S-07 eviction trigger; 1.00 = S-08 hard-block boundary (ADR-0020 FROZEN). Top-50 enforced to avoid cardinality bomb (R-001 risk).",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 8 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 0.8 },
+              { "color": "orange", "value": 0.95 },
+              { "color": "red", "value": 1.0 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "topk(50, max by (tenant_id, tier) (corelink_quota_reservation_active{tier=~\"$tenant_tier\"}))",
+          "legendFormat": "{{tenant_id}} · {{tier}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "LRU drift p99 (DO buffered vs D1 base UNION)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 5 + WI-S07-004 INV-LRU-CONSISTENCY. p99 of `corelink.lru.drift_ms` histogram; SLA target ≤ 60s; sustained > 60s SEV-2 (R-S07-006 LRU update hot path latency). Drift = max(deletion_observed_at, last_recorded_at) − D1 base.",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 8 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 30000 },
+              { "color": "red", "value": 60000 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(corelink_lru_drift_ms_bucket[5m])) by (le))",
+          "legendFormat": "p99 drift",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Cascade prevention (BLOB-scope per Lote 10.7bis P0-8)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 6 + INV-EVICT-CASCADE-PREVENTED + WI-S07-002. Pre-evict reachable check refuses if blob ref'd by active `ac_meta.blob_refs` (canonical `json_each` SQL idiom inherited from S-06). Counter `corelink_evict_cascade_prevented_total` strictly monotonic; non-zero rate signals adversarial pressure refused.",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 14 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (region) (rate(corelink_evict_cascade_prevented_total{region=~\"$region\"}[5m]))",
+          "legendFormat": "{{region}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "95% / 100% breach counters per tenant (top 20)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 7 + WI-S07-003 + ADR-0020 boundary. 95% breach = S-07 eviction trigger fired (`corelink_evict_quota_trigger_fired_total`); 100% breach = S-08 PROVISIONAL 429 + Retry-After (Lote 10.7-tris cycle 5 propagation; canonical S-08 ships rate-limit DO). Per-tenant top-20 enforced to avoid cardinality bomb.",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 14 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "targets": [
+        {
+          "expr": "topk(20, sum by (tenant_id) (rate(corelink_evict_quota_trigger_fired_total[5m])))",
+          "legendFormat": "95% · {{tenant_id}}",
+          "refId": "A"
+        },
+        {
+          "expr": "topk(20, sum by (tenant_id) (rate(corelink_quota_denials_total[5m])))",
+          "legendFormat": "100% · {{tenant_id}}",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "INV-GC-001 inheritance canary (MUST be 0; SEV-0 alert on > 0)",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 8 + sprint contract §6 DoD invariant inheritance. `corelink_evict_gc_invariant_violation_total` MUST always = 0; `> 0` sustained 1 min = SEV-0 PagerDuty page Architect (INV-GC-001 inherited from S-06 GC). Cross-validated by `prop_evict_protect_if_re_referenced_strict_boundary` proptest @ 10k iter.",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 14 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum (increase(corelink_evict_gc_invariant_violation_total[5m]))",
+          "legendFormat": "violations (5m)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "SOTA comparison gauge — dedup ratio vs NativeLink (~2.1×) / BuildBuddy (~2.8×)",
+      "type": "gauge",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 9 + sprint contract §16 SOTA bench targets. Annotations: NativeLink OSS baseline 2.1×; CoreLink target 2.5×; BuildBuddy enterprise 2.8×; CoreLink stretch 3.0×. Marketing-claim defensibility (R-004 cherry-pick mitigated via 3-workload bench).",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 20 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "max": 4,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": 0 },
+              { "color": "yellow", "value": 2.1 },
+              { "color": "green", "value": 2.5 },
+              { "color": "blue", "value": 2.8 },
+              { "color": "purple", "value": 3.0 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "avg(sum (rate(corelink_dedup_chunks_reused_total[30d])) / clamp_min((sum (rate(corelink_dedup_chunks_inserted_total[30d])) + sum (rate(corelink_dedup_chunks_reused_total[30d]))), 1))",
+          "legendFormat": "CoreLink dedup ratio (30d)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Reservation TTL active + LRU drop-rate (FM-059 indicator + queue health)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 10 + WI-S07-003 INV-QUOTA-RESERVATION-TTL + WI-S07-004. `corelink_quota_reservation_active{tenant_id, region}` gauge tracks pending reservations (auto-release size-proportional TTL `min(7d, max(60s, req_bytes/1MB/s × 2))`). LRU `dropped_total{reason=queue_full}` sustained > 1k/min = SEV-2 (queue saturation; FM-059 adjacent).",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 20 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (region) (corelink_quota_reservation_active{region=~\"$region\"})",
+          "legendFormat": "reservation_active · {{region}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (reason) (rate(corelink_lru_dropped_total[5m]))",
+          "legendFormat": "lru.dropped · {{reason}}",
+          "refId": "B"
+        }
+      ]
+    }
+  ]
+}

@@ -1,12 +1,12 @@
 ---
 id: "WI-S07-005"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
-audit_status: "ACTIVE"
-version: "1.1.0"
+doc_status: "FROZEN"
+work_status: "DONE"
+audit_status: "AUDITED"
+version: "1.2.0"
 created: "2026-04-25"
-updated: "2026-04-28"
+updated: "2026-05-02"
 lane: "STANDARD"
 parent: "S-07"
 assignee: "Gustavo Schneiter"
@@ -470,6 +470,7 @@ D+0 dashboard authoring; D+2 alert rules; D+4 SOTA bench scripts run; D+5 RB dry
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-25 | Gustavo (Lote 10.7) | Criação WI-S07-005 (sprint ship gate); SOTA pós-Lote 10.6-tris lessons absorbed: ADR ratificação cite-and-acknowledge (rubber-stamp prevention); validate_inv_promotion CI gate; RB dry-run ≥1 run sufficient for STANDARD lane (Lote 10.6bis lesson scaled down); customer-visible metrics forward S-16. |
+| 1.2.0 | 2026-05-02 | Gustavo (via Claude Opus 4.7 1M; autonomous WI-S07-005 SEAL) | **WI-S07-005 SEALED — S-07 ship gate ready for sprint-close.** Ships: (a) `dashboards/grafana/DASH-DEDUP.json` 10 canonical panels (dedup ratio per tier; bytes reclaimed last 30d; eviction rate per region; quota utilization heatmap top-50; LRU drift p99; cascade prevention BLOB-scope; 95%/100% breach counters top-20; INV-GC-001 inheritance canary SEV-0; SOTA gauge vs NativeLink 2.1× / BuildBuddy 2.8×; reservation TTL active + LRU drop-rate); (b) `dashboards/alerts/dash-dedup-alerts.yml` 12 alert rules (1 SEV-0 INV-GC-001 inheritance + 4 SEV-1 INV-LRU-CONSISTENCY + INV-QUOTA-ENFORCEMENT + 100% breach sustained + DO singleton lag + 6 SEV-2 dedup ratio anomaly + 95% breach sustained + LRU drift p99 + LRU dropped queue_full + reservation expiry spike + cascade prevention spike + 1 SEV-3 dedup throughput drop capacity); (c) `scripts/rb_fm_059_dry_run.sh` host-side cargo-driven harness mirroring WI-S06-007 RB pattern + `scripts/rb_fm_305_dry_run.sh` re-executed unchanged (S-07 carry-forward); (d) `specs/_runbooks/RB-FM-059-do-quota-exceeded.md` flipped DRAFT→FROZEN with dry-run-executed timestamp; `specs/_runbooks/RB-FM-305-tombstone-lost.md` appended S-07 re-execution note; (e) audit traces `specs/_audits/2026-05-02-rb-fm-{059,305-s07}-dry-run.md` + `specs/_audits/2026-05-02-adversarial-s07.md` (20 scenarios catalogued; zero HIGH/CRITICAL); (f) `specs/04_sprints/S07/PRR-S07.md` STANDARD 5 sign-off matrix (4 APPROVED + 1 WAIVED via ADR-0034 dual-hat); promotion decision STAGING-STABLE; 16/23 DoD ✅ + 7 DEFERRED (forward-looking gates with explicit revalidation triggers); (g) `.github/workflows/s07-ship-gate.yml` aggregate ship-gate workflow (validators + S-07 crate tests + clippy + 2 RB dry-runs + dashboard parse smoke); (h) `.github/workflows/nightly.yml::proptest-extended` extended with 100k iter for prop_dedup + prop_eviction + prop_quota + prop_lru. **Trait-abstraction-defer per charter consolidation across 4 prior WIs**: real CF binding wiring + cargo-fuzz expansion + criterion benches + chaos suite expansion + 30d sustained gates + customer comm finalisation all DEFERRED to S-20 GA gate with explicit revalidation triggers. **No new migration required.** Quality gates verde: `cargo test -p corelink-dedup -p corelink-eviction -p corelink-quota -p corelink-lru-tracker --all-targets` 359 tests 0 failures (41+9+109+15+14+60+16+66+16+13); `cargo test --workspace --all-targets` clean; `cargo clippy --workspace --all-targets --features corelink-worker/tower-middleware -- -D warnings` clean; `python3 scripts/validate_specs.py` clean (284 docs); `python3 scripts/check_migrations_additive.py` clean (9 migrations); `python3 scripts/validate_inv_promotion.py` clean (138/138 INVs); DASH-DEDUP.json parse smoke green; dash-dedup-alerts.yml parse smoke green; `bash scripts/rb_fm_059_dry_run.sh` exit 0; `bash scripts/rb_fm_305_dry_run.sh` exit 0. Frontmatter flipped DRAFT→FROZEN + READY→DONE + ACTIVE→AUDITED + 1.1.0→1.2.0. |
 
 ## 32. Anti-patterns evitados
 

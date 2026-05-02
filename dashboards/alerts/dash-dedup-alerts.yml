@@ -1,0 +1,292 @@
+# DASH-DEDUP alert rules — WI-S07-005 §6.1 + §6.2 + sprint contract §6 DoD.
+#
+# Routing per WI §6.1: PagerDuty (SEV-0 + SEV-1) + Slack
+# (#corelink-alerts all severities). Tested via chaos experiment WI
+# §15.1 (dashboard noise calibration) before staging dry-run; 2-week
+# tune-in per R-001 risk register.
+#
+# Severity mapping per WI §2 4-tier incident classification (Lote
+# 10.4bis lesson — 4-tier classification with pause-clock semantics):
+#   P0 = SEV-0 (INV-GC-001 inheritance violation; INV-DEDUP-CONSISTENCY
+#               violation; CTRL-ISO-005 cross-tenant existence-oracle
+#               attempt). Resets 30d sustained clock; SEV-0 incident
+#               response.
+#   P1 = SEV-1 (INV-QUOTA-ENFORCEMENT violation; INV-LRU-CONSISTENCY
+#               violation sustained > 5 min; quota 100% breach
+#               sustained per tenant; DO singleton lag > 30s sustained
+#               — S-07/S-08 boundary indicator). Resets clock.
+#   P2 = SEV-2 (dedup ratio drop > 30% WoW; quota 95% breach sustained
+#               per tenant; LRU drift p99 > 60s sustained; LRU
+#               dropped_total{reason=queue_full} > 1k/min sustained;
+#               reservation expiry rate spike — FM-059 indicator;
+#               cascade prevention spike — adversarial pressure).
+#               Resets clock.
+#   P3 = SEV-3 (dedup throughput drop > 50% WoW capacity signal;
+#               informational dedup ratio drift). Does NOT reset.
+
+groups:
+  - name: corelink-dedup-eviction-quota-lru
+    interval: 30s
+    rules:
+
+      # --------------------------------------------------------------
+      # SEV-0 — INV-GC-001 inheritance violation (catastrophic).
+      # --------------------------------------------------------------
+      - alert: Dedup_InvGc001Inheritance
+        expr: sum(rate(corelink_evict_gc_invariant_violation_total[1m])) > 0
+        for: 0m  # SEV-0; immediate fire
+        labels:
+          severity: sev0
+          runbook: RB-FM-300
+          sprint: S-07
+          gate: ship
+        annotations:
+          summary: "Eviction violated INV-GC-001 (inherited from S-06 GC) — reachable blob soft-deleted"
+          description: |
+            corelink_evict_gc_invariant_violation_total is non-zero. This
+            is a SEV-0 incident — INV-GC-001 (reachable never deleted)
+            is a CRITICAL TLA+-verified invariant inherited from S-06
+            GC; eviction is required to respect it via the race-aware
+            reachable check (canonical `<` evict / `>=` protect
+            predicate per WI-S07-002 §6.1.6). Run RB-FM-300 immediately.
+            Reset 30d sustained clock. Page Architect + SRE Lead +
+            Security Lead.
+          runbook_url: "../../specs/05_quality/runbooks/RB-FM-300-gc-refcount-bug.md"
+
+      # --------------------------------------------------------------
+      # SEV-1 — INV-LRU-CONSISTENCY violation sustained.
+      # --------------------------------------------------------------
+      - alert: Dedup_InvLruConsistencyViolation
+        expr: sum(rate(corelink_lru_consistency_violation_total[1m])) > 0
+        for: 5m
+        labels:
+          severity: sev1
+          runbook: RB-FM-059
+          sprint: S-07
+          gate: ship
+        annotations:
+          summary: "INV-LRU-CONSISTENCY violation sustained > 5 min"
+          description: |
+            corelink_lru_consistency_violation_total non-zero sustained
+            5 min. Eviction observed `last_accessed_at` newer than the
+            DO buffered + D1 base UNION authoritative set — race window
+            larger than the canonical drift threshold (WI-S07-004 §6).
+            Investigate DO singleton flush cadence + D1 batch UPDATE
+            atomicity; cross-check `Dedup_DoSingletonLagSustained`.
+            Page SRE + Engineer; freeze LRU recording until cause
+            isolated. Resets 30d sustained clock.
+          runbook_url: "../../specs/05_quality/runbooks/RB-FM-059-do-quota-exceeded.md"
+
+      # --------------------------------------------------------------
+      # SEV-1 — INV-QUOTA-ENFORCEMENT violation (FM-059 race).
+      # --------------------------------------------------------------
+      - alert: Dedup_InvQuotaEnforcementViolation
+        expr: sum(rate(corelink_quota_denials_total{result="race_detected"}[1m])) > 0
+        for: 0m
+        labels:
+          severity: sev1
+          runbook: RB-FM-059
+          sprint: S-07
+          gate: ship
+        annotations:
+          summary: "INV-QUOTA-ENFORCEMENT violation — DO atomic decision_lock leak"
+          description: |
+            corelink_quota_denials_total{result="race_detected"} non-
+            zero. The DO actor model `Mutex<()>` decision_lock
+            (WI-S07-003) failed to serialise — investigate DO binding
+            wiring, durable-object singleton recovery path, and any
+            recent change to the QuotaCheck pipeline. Run RB-FM-059
+            immediately. Page Architect + SRE Lead.
+          runbook_url: "../../specs/05_quality/runbooks/RB-FM-059-do-quota-exceeded.md"
+
+      # --------------------------------------------------------------
+      # SEV-1 — Quota 100% breach sustained per tenant (PROVISIONAL
+      # transitional alert — canonical S-08 owns rate-limit DO per
+      # ADR-0020 FROZEN; this fires while the eviction trigger drains).
+      # --------------------------------------------------------------
+      - alert: Dedup_Quota100PctBreachSustained
+        expr: max by (tenant_id) (rate(corelink_quota_denials_total{result="denied_429"}[5m])) > 0
+        for: 30m
+        labels:
+          severity: sev1
+          runbook: RB-FM-059
+          sprint: S-07
+        annotations:
+          summary: "Tenant quota 100% breach sustained 30 min — eviction trigger not draining"
+          description: |
+            One or more tenants observe a sustained 429 + Retry-After
+            response from the quota check (PROVISIONAL transitional per
+            ADR-0020 FROZEN). The S-07 95% eviction trigger should drop
+            `bytes_used` below 100% within the size-proportional
+            reservation TTL (WI-S07-002 §6 + WI-S07-003); sustained
+            non-drain implies the eviction path is throttled (D1
+            backlog?) or the reservation TTL formula is regressing.
+            Page SRE Lead; consider operator-initiated `degrade-mode`
+            until S-08 rate-limit DO ships.
+
+      # --------------------------------------------------------------
+      # SEV-1 — DO singleton lag > 30s sustained (S-07/S-08 boundary
+      # indicator + sprint task spec).
+      # --------------------------------------------------------------
+      - alert: Dedup_DoSingletonLagSustained
+        expr: histogram_quantile(0.99, sum(rate(corelink_quota_check_duration_ms_bucket[5m])) by (le)) > 30000
+        for: 10m
+        labels:
+          severity: sev1
+          sprint: S-07
+        annotations:
+          summary: "DO singleton lag p99 > 30s sustained (S-07 quota check + S-08 rate-limit boundary)"
+          description: |
+            QuotaCheck p99 latency > 30 s sustained 10 min. Targets
+            (WI-S07-003 §6.2): SLO < 3 ms p99. p99 > 30 s implies the
+            DO binding round-trip is failing or the in-process Mutex is
+            contended beyond the reservation TTL window. Cross-check
+            `Dedup_LruDriftP99High` and `Dedup_ReservationExpirySpike`
+            for FM-059 adjacency. Page SRE.
+
+      # --------------------------------------------------------------
+      # SEV-2 — Dedup ratio drop > 30% WoW (anomaly detection, R-S07-7).
+      # --------------------------------------------------------------
+      - alert: Dedup_RatioDropAnomaly
+        expr: |
+          (
+            sum(rate(corelink_dedup_chunks_reused_total[7d])) /
+            clamp_min(sum(rate(corelink_dedup_chunks_inserted_total[7d])) + sum(rate(corelink_dedup_chunks_reused_total[7d])), 1)
+          )
+          <
+          (
+            sum(rate(corelink_dedup_chunks_reused_total[7d] offset 7d)) /
+            clamp_min(sum(rate(corelink_dedup_chunks_inserted_total[7d] offset 7d)) + sum(rate(corelink_dedup_chunks_reused_total[7d] offset 7d)), 1)
+          ) * 0.7
+        for: 1h
+        labels:
+          severity: sev2
+          sprint: S-07
+        annotations:
+          summary: "Dedup ratio drop > 30% WoW sustained 1h (R-S07-7 anomaly)"
+          description: |
+            Trailing-7d dedup ratio fell below 70% of the prior-7d
+            reference. Likely workload change OR chunker regression OR
+            client retry storm inflating chunks_inserted_total. Cross-
+            check WI-S07-001 chunks index size + sprint review §28
+            R-005 alert noise threshold. 2-week tune-in window applies
+            (R-001 risk).
+
+      # --------------------------------------------------------------
+      # SEV-2 — Tenant quota 95% breach sustained per tenant.
+      # --------------------------------------------------------------
+      - alert: Dedup_Quota95PctBreachSustained
+        expr: rate(corelink_evict_quota_trigger_fired_total[1h]) > 0
+        for: 1h
+        labels:
+          severity: sev2
+          sprint: S-07
+        annotations:
+          summary: "Tenant 95% quota breach sustained 1h — eviction trigger fired"
+          description: |
+            corelink_evict_quota_trigger_fired_total non-zero
+            sustained 1h on one or more tenants. The trigger is
+            expected to fire intermittently (95% threshold per ADR-
+            0020 FROZEN); sustained 1h implies the tenant is at steady
+            state above 95% which is the customer-comm trigger (S-13
+            admin plane forward + S-16 customer dashboard). Notify
+            Customer Success.
+
+      # --------------------------------------------------------------
+      # SEV-2 — LRU drift p99 > 60s sustained.
+      # --------------------------------------------------------------
+      - alert: Dedup_LruDriftP99High
+        expr: histogram_quantile(0.99, sum(rate(corelink_lru_drift_ms_bucket[5m])) by (le)) > 60000
+        for: 30m
+        labels:
+          severity: sev2
+          sprint: S-07
+        annotations:
+          summary: "LRU drift p99 > 60s sustained 30 min"
+          description: |
+            corelink_lru_drift_ms p99 > 60 s sustained 30 min.
+            Investigate the DO singleton flush cadence
+            (`flush_interval_ms`), batch size pinning (≤ 250 per Lote
+            10.4bis), and any D1 throttle that's stalling the buffered
+            -> base UNION pipeline. Page Engineer; if drift
+            climbs > 5 min escalate to SEV-1 via
+            `Dedup_InvLruConsistencyViolation`.
+
+      # --------------------------------------------------------------
+      # SEV-2 — LRU dropped_total{reason=queue_full} > 1k/min sustained.
+      # --------------------------------------------------------------
+      - alert: Dedup_LruDroppedQueueFullSustained
+        expr: sum(rate(corelink_lru_dropped_total{reason="queue_full"}[5m])) > 1000 / 60
+        for: 10m
+        labels:
+          severity: sev2
+          sprint: S-07
+        annotations:
+          summary: "LRU dropped_total{reason=queue_full} > 1k/min sustained 10 min"
+          description: |
+            The fast-path queue is overflowing. WI-S07-004 trades a
+            small drop-rate for a hard latency bound on the GET hot
+            path; a sustained drop rate above 1k/min implies the
+            flush worker is starved. Investigate the DO actor cadence
+            + D1 batch UPDATE atomic sub-path.
+
+      # --------------------------------------------------------------
+      # SEV-2 — Reservation expiry rate spike (FM-059 indicator).
+      # --------------------------------------------------------------
+      - alert: Dedup_ReservationExpirySpike
+        expr: sum(rate(corelink_quota_reservation_active[5m])) - sum(rate(corelink_quota_reservation_active[5m] offset 5m)) > 50
+        for: 15m
+        labels:
+          severity: sev2
+          runbook: RB-FM-059
+          sprint: S-07
+        annotations:
+          summary: "Reservation expiry rate spike sustained 15 min (FM-059 adjacency)"
+          description: |
+            Pending reservations rose by > 50 sustained 15 min — the
+            size-proportional TTL pipeline (`min(7d, max(60s,
+            req_bytes/1MB/s × 2))`) is not draining. Cross-check
+            `Dedup_DoSingletonLagSustained` + `Dedup_LruDroppedQueueFullSustained`.
+            Page SRE; potential FM-059 DO-quota-exceeded precursor.
+          runbook_url: "../../specs/05_quality/runbooks/RB-FM-059-do-quota-exceeded.md"
+
+      # --------------------------------------------------------------
+      # SEV-2 — Cascade prevention spike (adversarial pressure refused).
+      # --------------------------------------------------------------
+      - alert: Dedup_CascadePreventedSpike
+        expr: sum(rate(corelink_evict_cascade_prevented_total[5m])) > 10
+        for: 30m
+        labels:
+          severity: sev2
+          sprint: S-07
+        annotations:
+          summary: "Cascade prevention spike sustained 30 min (> 10 refusals/sec)"
+          description: |
+            Pre-evict reachable check is refusing eviction at a rate
+            above 10 refusals/sec sustained 30 min. The check is
+            CORRECT (BLOB-scope per Lote 10.7bis P0-8); a sustained
+            high rate signals workload pressure on dedup-shared blobs.
+            Cross-check INV-EVICT-CASCADE-PREVENTED panel + WI-S07-002
+            chaos test #2; consider raising the eviction batch size
+            jitter to spread load.
+
+      # --------------------------------------------------------------
+      # SEV-3 — Dedup throughput drop > 50% WoW (capacity signal).
+      # --------------------------------------------------------------
+      - alert: Dedup_ThroughputDropCapacity
+        expr: |
+          (sum(rate(corelink_dedup_find_missing_blobs_total[24h])))
+          <
+          (sum(rate(corelink_dedup_find_missing_blobs_total[24h] offset 7d)) * 0.5)
+        for: 6h
+        labels:
+          severity: sev3  # P3 — does NOT reset 30d sustained clock
+          sprint: S-07
+        annotations:
+          summary: "Dedup throughput drop > 50% WoW sustained 6h (capacity / informational)"
+          description: |
+            FindMissingBlobs invocation rate fell below 50% of the
+            prior week sustained 6h. Could indicate workload shift
+            (fewer client uploads), a regression in the REAPI handler,
+            or an upstream client retry-disable. P3 — does not reset
+            SLO clock; cross-reference DASH-CAS PUT throughput.

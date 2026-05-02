@@ -145,6 +145,26 @@ jobs:
           set -euo pipefail
           cargo test --release --package corelink-gc --test prop_inv_gc_004_race
 
+      - name: proptest 100k iter — S-07 dedup + eviction + quota + lru (WI-S07-005 nightly tier)
+        env:
+          PROPTEST_CASES: '100000'
+          PROPTEST_MAX_LOCAL_REJECTS: '100000'
+          PROPTEST_MAX_GLOBAL_REJECTS: '500000'
+        # WI-S07-005 §F + sprint contract §6 DoD: S-07 ship gate
+        # consolidates the prior 4 WIs' deferred items by extending
+        # the nightly proptest tier to 100k iter for prop_dedup +
+        # prop_eviction + prop_quota + prop_lru. PR-gate runs at 10k;
+        # nightly tier runs at 100k per the dual-tier ceiling. ZERO
+        # INV-DEDUP-CONSISTENCY / INV-EVICT-* / INV-QUOTA-* / INV-LRU-*
+        # violations sustained over 100k iter is the spec contract
+        # DoD §6 gate.
+        run: |
+          set -euo pipefail
+          cargo test --release --package corelink-dedup --test prop_dedup
+          cargo test --release --package corelink-eviction --test prop_eviction
+          cargo test --release --package corelink-quota --test prop_quota
+          cargo test --release --package corelink-lru-tracker --test prop_lru
+
   # ---------------------------------------------------------------------
   # 3. Fuzz matrix — all 9 targets across 5 SEALed crates, 1h each parallel.
   # ---------------------------------------------------------------------

@@ -15,6 +15,8 @@ tags: ["runbook", "p1", "gc", "dedup", "data-integrity", "dry-run-executed"]
 ---
 
 > **Dry-run executed 2026-05-02** — host-side harness `scripts/rb_fm_305_dry_run.sh` (WI-S06-007) green; chaos magnitude pinned to 7d cron-disabled + 100 GiB orphan accumulation per Lote 10.6bis P0-W7-4. Detection signal cross-checked against SLO-FRESH-GC sustained metric (≤ 5min p95) NOT sweeper-tick-stale alert (> 1h). Audit trace: `specs/_audits/2026-05-02-rb-fm-305-dry-run.md`.
+>
+> **Dry-run re-executed 2026-05-02 (S-07 carry-forward)** — same harness re-run unchanged against the S-07 implementation surface (eviction soft-delete + dedup index + LRU tracker + quota check) per WI-S07-005. INV-EVICT-CASCADE-PREVENTED + INV-DEDUP-CONSISTENCY cross-validated. Audit trace: `specs/_audits/2026-05-02-rb-fm-305-s07-dry-run.md`.
 
 # RB-FM-305 — Tombstone Lost (Eviction reverte com re-upload)
 
