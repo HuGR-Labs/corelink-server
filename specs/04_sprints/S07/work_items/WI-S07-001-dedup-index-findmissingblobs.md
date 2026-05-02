@@ -1,12 +1,12 @@
 ---
 id: "WI-S07-001"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
-audit_status: "ACTIVE"
-version: "1.1.0"
+doc_status: "FROZEN"
+work_status: "DONE"
+audit_status: "AUDITED"
+version: "1.2.0"
 created: "2026-04-25"
-updated: "2026-04-28"
+updated: "2026-05-02"
 lane: "STANDARD"
 parent: "S-07"
 assignee: "Gustavo Schneiter"
@@ -461,6 +461,7 @@ D+0 design (Architect); D+2 AppSec (CTRL-ISO-005); D+5 code review (Engineer pee
 |---|---|---|---|
 | 1.0.0 | 2026-04-25 | Gustavo (Lote 10.7) | Criação WI-S07-001; SOTA pós-Lote 10.6-tris lessons absorbed: TenantCtx-only; D1 batch ≤250; CHECK inline; custom clippy lint para tenant_id enforcement; CTRL-ISO-005 cross-tenant gate default false. **DEFEITO INTRODUZIDO**: spec proposed UNIQUE INDEX em `manifest_chunks(tenant_id, chunk_digest)` — incorrect; would break dedup since same chunk_digest legitimately appears em multiple blobs' manifests. |
 | 1.1.0 | 2026-04-25 | Gustavo (Lote 10.7bis Agent R4 P0-1 + Sonnet R5 P0-1 fix) | **P0-1 corrected**: dedup table is `chunks` (S-05 WI-S05-004 §6.1; PK `(tenant_id, chunk_digest) + refcount` purpose-built); UNIQUE INDEX em `manifest_chunks` removed (would break dedup). Migration cancelled (NO new schema needed). `chunk_exists`/`find_missing` queries `chunks` table com `deleted_at IS NULL` predicate (S-06 grace window respect). Duplicate INSERT semantic corrected: PK ON CONFLICT increments refcount (não rejects). **P1-2 corrected**: clippy::disallowed_method claim replaced com CI grep gate (`! grep -rn -E 'FROM\s+chunks\s+WHERE\s+(?!.*tenant_id)' src/ tests/`) — clippy::disallowed_method is path-based not content-based; infeasible para SQL string inspection. Cross-WI consistency: usa same `chunks` table que S-05 + S-06 GC. |
+| 1.2.0 | 2026-05-02 | Gustavo (via Claude Opus 4.7 1M; orchestrator-finalized after agent rate-limit) | **WI-S07-001 SEALED — `crates/corelink-dedup/` v0.1.0 shipped; intra-tenant dedup index trait + REAPI v2 `FindMissingBlobs` orchestrator + dedup-on-write counters.** New crate `crates/corelink-dedup/` ships 5 sub-modules + 1 prop test file (~2151 LOC total): (a) `index` ships `DedupIndex` trait + `InMemoryDedupIndex` with byte-for-byte mirror of S-05 WI-S05-004 `chunks` table set-difference semantic (`SELECT chunk_digest FROM chunks WHERE tenant_id = ? AND chunk_digest IN (...) AND deleted_at IS NULL`) + `BlobDigest` newtype + `ChunksRowSummary` + `DedupConfig` + `MAX_FIND_MISSING_BATCH_SIZE` + `FindMissingBlobsOutcome`; (b) `audit` ships `DedupEventType` `#[non_exhaustive]` (canonical 1-event taxonomy `corelink.dedup.find_missing_blobs_executed`) + `DedupAuditRecord` + `DedupAuditSink` trait + `InMemoryDedupAuditSink` capture sink + canonical event-string list; (c) `metrics` ships `DedupMetricsObserver` trait + `InMemoryDedupMetrics` + `DedupMetricKind` (3 canonical metrics: `chunks_inserted_total`, `chunks_reused_total`, `find_missing_blobs_total`) + canonical metric-name list; (d) `error` ships `DedupError` `#[non_exhaustive]` taxonomy with explicit `CrossTenantBlocked` arm enforcing CTRL-ISO-005 cross-tenant existence-oracle gate (`dedup.cross_tenant.enabled = false` default); (e) `write` ships `record_chunk_write` helper invoked by production `BatchUpdateBlobs` / `WriteBlob` per WI §6.1.7 R-S07-2 (monotone counter accounting). Cross-module patches: workspace `Cargo.toml` adds `crates/corelink-dedup` member; `Cargo.lock` regenerated. Tests: 41 inline lib unit + 9 prop_dedup @ 10k iter (canonical: `prop_find_missing_returns_only_absent_digests` set-difference semantic; `prop_tenant_isolation` CTRL-ISO-005; `prop_idempotent` repeated query stability; `prop_dedup_ratio_monotone` counter accounting; + 5 sanity/boundary) — **50 tests across all targets, 0 failures, parallel-safe**. **Trait-abstraction-defer per charter**: real D1 `chunks` SELECT batch + real REAPI v2 `FindMissingBlobs` gRPC handler integration + 100k nightly property iter + cargo-fuzz target — all consolidated alongside WI-S07-005 (DASH-DEDUP + alerts + PRR ship gate). Quality gates verde: `cargo build -p corelink-dedup` clean; `cargo test -p corelink-dedup --all-targets` 0 failures (50 tests); `cargo clippy --workspace --all-targets --features corelink-worker/tower-middleware -- -D warnings` clean; `validate_specs.py` clean (283 docs); `check_migrations_additive.py` clean (7 migrations; **NO new migration** — dedup consumes existing S-05 `chunks` table per Lote 10.7bis P0-1). **Note**: agent hit Anthropic rate limit at 1.3M tokens / 53 tool uses post-quality-gates; orchestrator-finalized SEAL ceremony (frontmatter flip + spec_contract row + WI §31 changelog row + commit) per charter `Real bug detected; don't paper over` pattern. No per-WI codex per 2026-04-30 protocol; sprint-close Sonnet review covers full S-07 corpus. |
 
 ## 32. Anti-patterns evitados
 

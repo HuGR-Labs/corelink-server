@@ -1,0 +1,36 @@
+[package]
+name = "corelink-dedup"
+description = "CoreLink intra-tenant chunk deduplication trait + InMemory fake + REAPI v2 FindMissingBlobs orchestrator + dedup-on-write counters (WI-S07-001). Reuses S-05 `chunks` table PK `(tenant_id, chunk_digest)` + `refcount` (NO new migration per Lote 10.7bis P0-1). Production Cloudflare D1 binding deferred to WI-S07-005 PRR ship gate per `trait-abstraction-defer` charter pattern; in-memory fakes here exercise every load-bearing invariant: O(K log N) per-tenant `IN`-list lookup, tenant-scoped strict isolation (CTRL-ISO-005 cross-tenant existence-oracle gate), idempotent set-difference semantic, monotone dedup-on-write counters, audit fail-closed envelope on FindMissingBlobs."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+uuid = { workspace = true, features = ["v7"] }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[[test]]
+name = "prop_dedup"
+path = "tests/prop_dedup.rs"
