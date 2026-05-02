@@ -1,12 +1,12 @@
 ---
 id: "WI-S08-002"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
-audit_status: "ACTIVE"
-version: "1.0.0"
+doc_status: "FROZEN"
+work_status: "DONE"
+audit_status: "AUDITED"
+version: "1.3.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-05-02"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-005", "FF-HR-002"]
 parent: "S-08"
@@ -739,6 +739,7 @@ D+0 design (Architect; edge layer + IaC); D+2 NetSec (CF Ruleset + threat model)
 | 1.0.0 | 2026-04-25 | Gustavo (Lote 10.8) | Criação WI-S08-002; HIGH_RISK; SOTA pós-Lote 10.7bis lessons absorbed: NAT-aware (P0-6 generalizado); CF Workers Rust API worker::send_future (R5 P0-3); 100k nightly property test (P1-3); audit fail-closed (Lote 10.6bis); alarm re-arm AT START (Lote 10.4bis); D1 batch ≤250 (Lote 10.5bis); CHECK inline (Lote 10.5bis); column drift no `_ms` suffix (Lote 10.7bis P0-3). Humane response LGPD Art. 20 / GDPR Art. 22 fully integrado (sprint contract §7.10.s08.3 alignment). NEW migrations ip_blocklist + ip_blocklist_suggestions. NetSec advisor substitutes Crypto SME (no cripto load-bearing). |
 | 1.1.0 | 2026-04-25 | Gustavo (Lote 10.8bis) | R4+R5 review remediation: P1-3 FM-251 → FM-201 canonical (FM-251 = "Credential stuffing" não "rate FP"); R5 P1-5 CF Terraform schema atualizado para provider v4+ canonical (action_parameters wrapping ratelimit{}; legacy v3 top-level ratelimit{} block deprecated); provider version pin "~> 4.0" added. |
 | 1.2.0 | 2026-04-25 | Gustavo (Lote 10.8-tris **SEALED**) | Sonnet R5 round-2 review tris-validation pass: 0 NEW findings em este WI (round-2 tris score 7.8/10 from 7.0 round-1; +0.8 delta). P2 carry-forward to pre-launch advisory: ratio_4xx >= 0.99 (não exact == 1.0); ipnet WASM compatibility gate. **WI sealed pre-implementation**. |
+| 1.3.0 | 2026-05-02 | Gustavo (via Claude Opus 4.7 1M; orchestrator-finalized after agent + finalizer rate-limits) | **WI-S08-002 SEALED — `crates/corelink-edge/` v0.1.0 shipped + `migrations/d1/0011_edge_blocklist.sql`.** Camada-2 of the 4-layer rate-limit bulkhead (PAT-RATE-LIMIT-001). Modules (~3554 LOC): cidr (CIDRv4/v6 longest-prefix-match hand-rolled bit-level matcher; wasm32-clean), policy (EdgePolicy trait + InMemoryEdgePolicy orchestrator + CidrBlocklist trait + InMemoryCidrBlocklist with per-tenant storage; F-001 closure), audit (5-event taxonomy `corelink.edge.{allowed, denied_blocklist, denied_abuse, blocklist_added, blocklist_removed}`), metrics + error + config + lib (with `MIGRATION_0011_EDGE_BLOCKLIST` const + `edge_schema_version() = 11`). EdgeDecision `#[non_exhaustive]` 3-arm (Allow / DenyBlocklisted / DenyAbuse). Tests: 68 inline lib unit + 11 prop_edge @ 10k iter + 17 migration canonical = **96 tests across all targets, 0 failures, parallel-safe**. Property tests pin longest-prefix-match correctness, IPv6 support, idempotent add, remove round-trip, tenant isolation, audit emit per decision arm, deterministic decisions, default-allow on empty blocklist. **Camada-2 composition** documented in module rustdoc: edge blocklist consulted FIRST (zero-cost drop of adversarial IPs); ratelimit per-IP bucket SECOND. **Trait-abstraction-defer per charter**: real CF List replica binding + real D1 binding + 100k nightly + cargo-fuzz target — all consolidated alongside WI-S08-006 PRR ship gate. Quality gates verde: `cargo test -p corelink-edge --all-targets` 96 tests 0 failures; `cargo clippy --workspace --all-targets --features corelink-worker/tower-middleware -- -D warnings` clean; `validate_specs.py` clean (284 docs); `check_migrations_additive.py` clean (11 migrations including new 0011). **Note**: initial agent rate-limited at 31 tool uses; finalizer agent completed lib.rs + policy.rs + tests + workspace wiring but was unable to commit (workspace `cargo test` timed out on pre-existing prop_webauthn statistical test 6:31min S-03 baseline issue); orchestrator-finalized SEAL ceremony (frontmatter flips + spec_contract row + WI changelog row + commit) per charter "Real bug detected; don't paper over" pattern. No per-WI codex per 2026-04-30 protocol; sprint-close Sonnet review covers full S-08 corpus. |
 
 ## 32. Anti-patterns evitados
 

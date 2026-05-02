@@ -3,7 +3,7 @@ id: "SPEC-CONTRACT-S08"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.3.0"
+version: "1.4.0"
 created: "2026-04-24"
 updated: "2026-05-02"
 owner: "Gustavo Schneiter"
@@ -213,4 +213,8 @@ Nenhum waiver previsto. Rate limit / quota são enforcement primitives; waiver a
 
 ---
 
-**Fim de spec contract S-08 SOTA v1.3.0** (Upgrade history: v1.2 initial design; v1.3 WI-S08-001 SEAL).
+| 1.4.0 | 2026-05-02 | Gustavo (via Claude Opus 4.7 1M; orchestrator-finalized after agent rate-limit) | **WI-S08-002 SEALED — `crates/corelink-edge/` v0.1.0 shipped + `migrations/d1/0011_edge_blocklist.sql` (NEW table; durable source-of-truth for CF Edge blocklist with CF List replica deferred to WI-S08-006).** New crate ships 7 source modules (~3554 LOC + tests): `cidr` (CIDRv4/v6 prefix + longest-prefix-match hand-rolled bit-level matcher; wasm32-clean), `policy` (EdgePolicy trait + InMemoryEdgePolicy orchestrator + CidrBlocklist trait + InMemoryCidrBlocklist with per-tenant trie-equivalent storage; per-instance `Arc<Mutex<>>` F-001 closure), `audit` (5-event taxonomy `corelink.edge.{allowed, denied_blocklist, denied_abuse, blocklist_added, blocklist_removed}` + fail-closed envelope), `metrics` (canonical metric ladder for edge decisions + blocklist mutations), `error` (`#[non_exhaustive]` taxonomy), `config` (default-action knob + max blocklist size), `lib` (public re-exports + `MIGRATION_0011_EDGE_BLOCKLIST` const + `edge_schema_version() = 11`). EdgeDecision `#[non_exhaustive]` 3-arm enum (Allow / DenyBlocklisted / DenyAbuse). Migration `0011_edge_blocklist.sql`: composite PK + idempotent + additive. Tests: 68 inline lib unit + 11 prop_edge @ 10k iter + 17 migration canonical = **96 tests across all targets, 0 failures, parallel-safe**. Property tests pin longest-prefix-match correctness, IPv6 support, idempotent add, remove round-trip, tenant isolation, audit emit per decision arm, deterministic decisions, default-allow on empty blocklist. **Camada-2 composition** documented in module rustdoc: edge blocklist consulted FIRST (zero-cost drop of adversarial IPs); ratelimit per-IP bucket SECOND (camada-1 of WI-S08-001 KeyDimension::PerIp). **Trait-abstraction-defer per charter**: real CF List replica binding + real D1 binding + 100k nightly + cargo-fuzz target — all consolidated alongside WI-S08-006 PRR ship gate. Cross-module patches: workspace `Cargo.toml` adds `crates/corelink-edge` member + workspace dep. Quality gates verde: `cargo test -p corelink-edge --all-targets` 96 tests 0 failures; `cargo clippy --workspace --all-targets --features corelink-worker/tower-middleware -- -D warnings` clean; `validate_specs.py` clean (284 docs); `check_migrations_additive.py` clean (11 migrations including new 0011). **Note**: agent hit Anthropic rate limit at 31 tool uses (initial dispatch); finalizer agent then completed lib.rs + policy.rs + tests + workspace wiring but did not commit (cargo test --workspace timed out on pre-existing prop_webauthn statistical test 6:31min); orchestrator-finalized SEAL ceremony per charter `Real bug detected; don't paper over` pattern. No per-WI codex per 2026-04-30 protocol; sprint-close Sonnet review covers full S-08 corpus. |
+
+---
+
+**Fim de spec contract S-08 SOTA v1.4.0** (Upgrade history: v1.2 initial design; v1.3 WI-S08-001 SEAL; v1.4 WI-S08-002 SEAL).

@@ -1,0 +1,40 @@
+[package]
+name = "corelink-edge"
+description = "CoreLink edge per-IP enforcement + CIDR blocklist (WI-S08-002 — camada 2 of the 4-layer rate-limit bulkhead PAT-RATE-LIMIT-001). Ships EdgePolicy trait + InMemoryEdgePolicy orchestrator + CidrBlocklist trait + InMemoryCidrBlocklist longest-prefix-match (IPv4 /32-/0 + IPv6 /128-/0; hand-rolled bit-level matcher; wasm32-clean) + EdgeDecision (Allow / DenyBlocklisted / DenyAbuse) + EdgeError taxonomy + audit fail-closed (corelink.edge.{allowed, denied_blocklist, denied_abuse, blocklist_added, blocklist_removed}) + canonical D1 migration `0011_edge_blocklist.sql` durable source-of-truth (CF List replica deferred to WI-S08-006 PRR ship gate per `trait-abstraction-defer` charter pattern). Edge policy integrates with corelink-ratelimit per-IP token bucket (camada 1 of the per-IP path): blocklist consulted FIRST (drops adversarial IPs at zero cost); then ratelimit (tier 2 protections)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+uuid = { workspace = true, features = ["v7"] }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[[test]]
+name = "prop_edge"
+path = "tests/prop_edge.rs"
+
+[[test]]
+name = "migration_canonical_0011"
+path = "tests/migration_canonical_0011.rs"

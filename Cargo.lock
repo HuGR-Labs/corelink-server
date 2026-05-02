@@ -451,6 +451,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-edge"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "corelink-eviction"
 version = "0.1.0"
 dependencies = [
