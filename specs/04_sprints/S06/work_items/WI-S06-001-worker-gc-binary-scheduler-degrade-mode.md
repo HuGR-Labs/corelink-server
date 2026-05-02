@@ -1,12 +1,12 @@
 ---
 id: "WI-S06-001"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "FROZEN"
+work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-05-01"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-011", "FF-HR-005"]
 parent: "S-06"
@@ -638,6 +638,7 @@ D+0 design (Architect + SRE); D+1 AppSec; D+3 code review; D+4 chaos suite; D+5 
 | 1.0.0 | 2026-04-25 | Gustavo | Criação WI-S06-001 (Lote 10.6; SOTA pós-Lote 10.5bis lessons applied: partial UNIQUE WHERE status='running'; CHECK inline; BEGIN/COMMIT removidos; tenant_id NOT NULL; TenantCtx-only enforcement; ADR-0042 forward). |
 | 1.1.0 | 2026-04-25 | Gustavo | **Lote 10.6bis P0-4 fix**: GcStatus state-machine gap closure — variant `failed` added to enum (line 88) + migration CHECK constraint includes `'failed'` (line 209); `GcPhase::Failed { phase, error_message, failed_at }` carries error context; WI-S06-002 §6.1.10 sets `status='failed'` on `PhaseBudgetExceeded`. |
 | 1.2.0 | 2026-04-25 | Gustavo | **Lote 10.6-tris NEW-P1-4 fix**: documented P0-4 resolution in change log explicitly (Sonnet R5 flagged change log silence on P0-4 absorption). State-machine final: `pending → running → {succeeded, crashed (recoverable via checkpoint resume), aborted (manual stop via degrade-mode), failed (terminal: PhaseBudgetExceeded OR PhaseFailure non-recoverable)}`. Cross-referenced WI-S06-002 PhaseBudgetExceeded → status='failed' mapping. |
+| 1.3.0 | 2026-05-01 | Gustavo (via Claude Opus 4.7 1M; orchestrator-finalized after agent rate-limit) | **WI-S06-001 SEALED — `corelink-gc` v0.1.0 shipped; GC worker binary + scheduler + degrade-mode trait + InMemory fake.** New crate `crates/corelink-gc/` ships 11 sub-modules: `worker.rs` `GcWorker` orchestrator entry-point; `scheduler.rs` `GcScheduler` trait + `InMemoryGcScheduler` fake (cron-driven mark/sweep cycle; per-tenant per-phase scheduling); `schedule.rs` `Schedule` cron expression + `ScheduleClock` seam (test-FakeClock); `run.rs` `GcRun` PK `gc_run_id` + canonical `GcStatus` enum (pending/running/succeeded/crashed/aborted/failed) + `GcPhase` 6-variant taxonomy + checkpoint resume support; `degrade.rs` `DegradeMode` overload-detector + back-off ramp (preserves correctness invariants under high load — INV-GC-DEGRADE-CORRECT); `audit.rs` `GcEventType` 8 canonical event types + `AuditSink` trait + InMemoryFake; `metrics.rs` `MetricsObserver` trait + canonical 6 metrics (gc_runs / gc_phase_latency / gc_orphan_count / gc_degraded / gc_failed / gc_resumed); `region.rs` 5-region enum mirror; `error.rs` `GcError` `#[non_exhaustive]` + `audit_code()` short-id; `admin.rs` admin surfaces (manual abort + status query — gated trait for S-13 admin plane); `lib.rs` public re-exports. New migration `migrations/d1/0006_gc_run.sql` — `gc_run` table PK `gc_run_id` + tenant-leftmost composite secondary indices + partial UNIQUE WHERE `status='running'` (mirrors WI-S05-004 multipart_sessions partial-UNIQUE pattern); 7 inline CHECK constraints; idempotent `IF NOT EXISTS`; additive-only. Tests: 59 lib unit + 16 prop_scheduler @ 10k iter + 10 migration_canonical + 9 chaos_gc_scheduler = **94 tests, all parallel-safe**. F-001 closure preserved (every `GcWorker` instance owns its scheduler state; no global mutable state). wasm32-clean (no tokio in src/). **Trait-abstraction-defer per charter**: real Cloudflare Cron Durable Object binding shim (alongside WI-S06-007 PRR ship gate); real D1 binding (alongside WI-S06-007); 100k nightly property iter; cargo-fuzz target — all consolidated alongside WI-S06-007. Quality gates verde: `cargo test -p corelink-gc --all-targets` 0 failures (94 tests); `cargo clippy --workspace --all-targets --features corelink-worker/tower-middleware -- -D warnings` clean; `validate_specs.py` clean (275 schema-complete + 6 yaml = 281 total); `check_migrations_additive.py` clean (6 migration files). **Note**: agent hit Anthropic rate limit mid-flight post-quality-gates; orchestrator-finalized SEAL ceremony (frontmatter flip + spec_contract row + this changelog row + commit) per charter `Real bug detected; don't paper over` pattern. |
 
 ## 32. Anti-patterns evitados
 

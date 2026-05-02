@@ -1,0 +1,60 @@
+[package]
+name = "corelink-gc"
+description = "CoreLink Garbage Collection worker skeleton + per-region cron scheduler (jitter ±10 min) + degrade-mode `gc-pause` emergency stop + manual admin trigger stub + `gc_run` D1 checkpoint schema (WI-S06-001). Production Cloudflare Cron Durable Object binding deferred to WI-S06-006 conformance suite per the trait-abstraction-defer charter pattern; in-memory fakes here exercise every load-bearing invariant of the production wiring (single-running per (tenant,region) partial UNIQUE, idempotent resume from checkpoint, monotone phase transitions, degrade-mode probe ≤100ms next batch boundary, mark_started_at_ms anchor immutability for INV-GC-004 sweep-phase-aware re-ref protection)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+uuid = { workspace = true, features = ["v7"] }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[[test]]
+name = "migration_canonical"
+path = "tests/migration_canonical.rs"
+
+[[test]]
+name = "prop_scheduler"
+path = "tests/prop_scheduler.rs"
+
+[[test]]
+name = "chaos_gc_scheduler"
+path = "tests/chaos_gc_scheduler.rs"
+
+[[example]]
+name = "cron_tick_simulation"
+path = "examples/cron_tick_simulation.rs"
+
+[[example]]
+name = "degrade_mode_abort"
+path = "examples/degrade_mode_abort.rs"
+
+[[example]]
+name = "manual_admin_trigger"
+path = "examples/manual_admin_trigger.rs"
+
+[[example]]
+name = "idempotent_resume"
+path = "examples/idempotent_resume.rs"

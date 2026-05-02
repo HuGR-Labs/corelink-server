@@ -3,9 +3,9 @@ id: "SPEC-CONTRACT-S06"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.3.0"
+version: "1.4.0"
 created: "2026-04-24"
-updated: "2026-04-25"
+updated: "2026-05-01"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -329,4 +329,6 @@ Itens waivable com SRE lead + Architect + Security lead + ADR:
 
 ---
 
-**Fim spec contract S-06 v1.3.0 SOTA.**
+| 1.4.0 | 2026-05-01 | Gustavo (via Claude Opus 4.7 1M; orchestrator-finalized after agent rate-limit) | **WI-S06-001 SEALED — `corelink-gc` v0.1.0 shipped; GC worker binary + scheduler + degrade-mode trait + InMemory fake.** New crate `crates/corelink-gc/` ships 11 sub-modules (worker / scheduler + InMemory fake / schedule cron + ScheduleClock seam / run + GcRun PK + GcStatus 6-variant taxonomy + GcPhase 6-variant + checkpoint resume / degrade overload-detector + back-off ramp / audit GcEventType 8 canonical + AuditSink trait + InMemoryFake / metrics MetricsObserver + 6 canonical metrics / region 5-region enum mirror / error GcError #[non_exhaustive] + audit_code() / admin admin surfaces gated for S-13 admin plane / lib public re-exports). New migration `migrations/d1/0006_gc_run.sql` — `gc_run` table PK `gc_run_id` + tenant-leftmost composite secondary indices + partial UNIQUE WHERE `status='running'` (mirrors WI-S05-004 multipart_sessions partial-UNIQUE pattern); 7 inline CHECK constraints; idempotent `IF NOT EXISTS`; additive-only. Tests: 59 lib unit + 16 prop_scheduler @ 10k iter + 10 migration_canonical + 9 chaos_gc_scheduler = **94 tests, all parallel-safe**. F-001 closure preserved (every `GcWorker` instance owns its scheduler state; no global mutable state). wasm32-clean (no tokio in src/). **Trait-abstraction-defer per charter**: real Cloudflare Cron Durable Object binding shim + real D1 binding + 100k nightly property iter + cargo-fuzz target — all consolidated alongside WI-S06-007 PRR ship gate. Quality gates verde: `cargo test -p corelink-gc --all-targets` 0 failures (94 tests); `cargo clippy --workspace --all-targets --features corelink-worker/tower-middleware -- -D warnings` clean; `validate_specs.py` clean (275 schema-complete + 6 yaml = 281 total); `check_migrations_additive.py` clean (6 migration files). **Note**: agent hit Anthropic rate limit mid-flight post-quality-gates; orchestrator-finalized SEAL ceremony (frontmatter flip + spec_contract row + WI §31 changelog row + commit) per charter `Real bug detected; don't paper over` pattern. |
+
+**Fim spec contract S-06 v1.4.0 SOTA.**
