@@ -855,21 +855,30 @@ where
                 witness,
             });
         }
-        // SOFT-DELETE path. Lookup prev-state via the `RETURNING`
-        // semantic embedded in the in-memory fake; emit audit BEFORE
-        // flipping the row status (fail-closed envelope).
-        let Some(prev_state) =
+        // SOFT-DELETE path. Read prev-state via a non-mutating lookup,
+        // emit audit, then perform the conditional UPDATE. Audit emit
+        // failure leaves blob_meta unchanged (fail-closed envelope on
+        // the in-memory fake matches production D1 atomic batch
+        // ROLLBACK semantics).
+        let Some(row) =
             self.blob_meta
-                .soft_delete(candidate.tenant_id, &candidate.digest, now)?
+                .lookup(candidate.tenant_id, &candidate.digest)?
         else {
-            // blob_meta row already soft-deleted (CAS write handler may
-            // have hit a tombstone via a sibling code path) OR absent
-            // (defensive). Either way we surface AlreadyResolved
-            // without an audit — the original soft-delete already
-            // emitted its forensic record.
             return Ok(SweepDecision::AlreadyResolved {
                 observed_status: candidate.status,
             });
+        };
+        if row.deleted_at_ms.is_some() {
+            return Ok(SweepDecision::AlreadyResolved {
+                observed_status: candidate.status,
+            });
+        }
+        let prev_state = BlobState {
+            digest: row.digest.clone(),
+            size_bytes: row.size_bytes,
+            refcount: row.refcount,
+            last_referenced_at_ms: row.last_referenced_at_ms,
+            created_at_ms: row.created_at_ms,
         };
         self.audit.emit(GcAuditRecord {
             event_type: GcEventType::SweepSoftDeleted,
@@ -883,6 +892,15 @@ where
             reason: "sweep_soft_deleted",
             now_ms: now,
         })?;
+        if self
+            .blob_meta
+            .soft_delete(candidate.tenant_id, &candidate.digest, now)?
+            .is_none()
+        {
+            return Ok(SweepDecision::AlreadyResolved {
+                observed_status: candidate.status,
+            });
+        };
         let fired = self.candidates.transition_status(
             candidate.tenant_id,
             &candidate.digest,
@@ -893,8 +911,6 @@ where
             None,
         )?;
         if !fired {
-            // Concurrent winner; the soft-delete already fired so
-            // observe the row to surface accurate status.
             let observed = self
                 .candidates
                 .lookup(candidate.tenant_id, &candidate.digest, candidate.mark_run_id)?
@@ -1405,19 +1421,10 @@ mod tests {
 
         let err = sweep.execute(rid, tenant, GcRegion::Syd).unwrap_err();
         assert!(matches!(err, SweepError::AuditEmissionFailed(_)));
-        // gc_candidate row preserved as 'candidate' (sweep can retry).
         let cand = candidates.lookup(tenant, &d, rid).unwrap().unwrap();
         assert_eq!(cand.status, CandidateStatus::Candidate);
-        // blob_meta soft-delete fired BEFORE audit (in this skeleton),
-        // so the row IS soft-deleted; production wiring atomically
-        // ROLLBACKs the blob_meta UPDATE in the same D1 batch as the
-        // audit_outbox INSERT. The in-memory fake's lower fidelity is
-        // documented in §1 (skeleton vs production atomic batch).
-        // What MUST hold: candidate status preserved as 'candidate'
-        // so re-run after backoff retries the decision pipeline.
-        // The blob_meta row is restored by the CAS write handler
-        // (CAP-GC-002 undelete) on retry path or by reconcile job
-        // (WI-S06-005) detecting the orphan blob_meta tombstone.
+        let row = blob_meta.lookup(tenant, &d).unwrap().unwrap();
+        assert!(row.deleted_at_ms.is_none());
     }
 
     #[test]

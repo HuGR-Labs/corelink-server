@@ -824,6 +824,16 @@ impl ReconcileConfig {
 /// Compute SEV level from observed drift percentages per sprint
 /// contract §5.5 R-S06-10 + Lote 10.6bis P2-7 fix (per-tenant > 1% is
 /// SEV-1; global > 0.1% is SEV-2).
+///
+/// The two arguments are distinct scopes: `global_drift_percent` is the
+/// cross-tenant aggregate (computed by the caller after aggregating
+/// `ReconcileResult.drift_percent` across all per-tenant runs);
+/// `per_tenant_drift_percent` is this-tenant only. `execute()` itself
+/// is per-tenant-scoped and passes `0.0` for the global term — the
+/// orchestrator/worker layer is responsible for aggregating across
+/// tenants and re-evaluating SEV-2 with the true global value plus
+/// emitting the `corelink_gc_refcount_drift_percent{scope="global"}`
+/// metric.
 #[must_use]
 pub fn sev_level_for(
     global_drift_percent: f64,
@@ -1234,7 +1244,12 @@ where
         } else {
             drifts_detected as f64 / blobs_scanned as f64
         };
-        let sev_level = sev_level_for(drift_percent, drift_percent, &self.config);
+        // SEV-2 (global > 0.1%) cannot be computed at the per-tenant
+        // layer; the caller aggregates `drift_percent` across tenants
+        // and emits the `corelink_gc_refcount_drift_percent{scope="global"}`
+        // metric + SEV-2 alert. Pass 0.0 as the global term so this
+        // layer only surfaces SEV-1 (per-tenant > 1%) when applicable.
+        let sev_level = sev_level_for(0.0, drift_percent, &self.config);
 
         // 5. Checkpoint counters in gc_run.
         let phase_end = self.clock.now_ms();

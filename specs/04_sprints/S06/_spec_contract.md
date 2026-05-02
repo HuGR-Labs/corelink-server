@@ -1,8 +1,8 @@
 ---
 id: "SPEC-CONTRACT-S06"
 type: "spec_contract"
-doc_status: "DRAFT"
-audit_status: "ACTIVE"
+doc_status: "FROZEN"
+audit_status: "AUDITED"
 version: "2.0.0"
 created: "2026-04-24"
 updated: "2026-05-02"
