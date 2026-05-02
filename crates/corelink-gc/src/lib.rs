@@ -91,6 +91,7 @@ pub mod region;
 pub mod run;
 pub mod schedule;
 pub mod scheduler;
+pub mod sweep;
 pub mod worker;
 
 pub use admin::{admin_trigger, AdminTriggerOutcome};
@@ -122,6 +123,12 @@ pub use schedule::{
 };
 pub use scheduler::{
     CronTickOutcome, GcScheduler, GcSchedulerError, InMemoryGcScheduler, MAX_TENANTS_PER_TICK,
+};
+pub use sweep::{
+    AcReferenceIndex, AcReferenceWitness, BlobMetaRow as SweepBlobMetaRow, BlobMetaStore,
+    BlobState, CountingSweepClock, InMemoryAcReferenceIndex, InMemoryBlobMetaStore,
+    InMemorySweepPhase, SweepClock, SweepConfig, SweepDecision, SweepError, SweepPhase,
+    SweepResult, CANONICAL_SWEEP_PHASE_BUDGET_MS, GRACE_AC_MS, GRACE_CAS_MS,
 };
 pub use worker::{GcWorker, InMemoryGcWorker, WorkerStepOutcome};
 

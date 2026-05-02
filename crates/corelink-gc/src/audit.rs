@@ -23,10 +23,18 @@ use uuid::Uuid;
 use crate::region::GcRegion;
 use crate::run::{GcPhase, GcStatus, RunId};
 
-/// Canonical 4-event GC audit taxonomy per WI §6.1.8. The
-/// `#[non_exhaustive]` marker reserves additive growth for follow-on
-/// WIs (mark / sweep / physical-delete sub-events lift into S-09 with
-/// the chain processor).
+/// Canonical GC audit taxonomy. The `#[non_exhaustive]` marker reserves
+/// additive growth for follow-on WIs (mark / sweep / physical-delete
+/// sub-events lift into S-09 with the chain processor).
+///
+/// WI-S06-001 §6.1.8 froze the original 4-event run-lifecycle taxonomy
+/// (`RunStarted` / `RunCompleted` / `RunAborted` / `PhaseTransitioned`).
+/// WI-S06-001 polish added `RunFailed`. **WI-S06-003** extends the
+/// taxonomy with sweep-decision events `SweepSoftDeleted` +
+/// `SweepProtectedReRef` per §6.1.7 — sweep emits ONE event per
+/// candidate decision so the S-09 audit chain processor can reconstruct
+/// the soft-delete forensic trail (and the INV-GC-004 protect-if-`>=`
+/// catches) from the durable outbox.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum GcEventType {
@@ -43,6 +51,13 @@ pub enum GcEventType {
     /// `corelink.gc.run_failed` — terminal `Running → Failed`
     /// (PhaseBudgetExceeded / non-recoverable PhaseFailure).
     RunFailed,
+    /// `corelink.gc.sweep.soft_deleted` (WI-S06-003) — sweep phase
+    /// soft-deleted a confirmed orphan blob.
+    SweepSoftDeleted,
+    /// `corelink.gc.sweep.protected_re_ref` (WI-S06-003) — sweep phase
+    /// detected a re-reference fired during mark (canonical TLA
+    /// `gc_correctness.tla` L152-154 protect-if-`>=`); did NOT delete.
+    SweepProtectedReRef,
 }
 
 impl GcEventType {
@@ -55,6 +70,8 @@ impl GcEventType {
             Self::RunAborted => "corelink.gc.run_aborted",
             Self::PhaseTransitioned => "corelink.gc.phase_transitioned",
             Self::RunFailed => "corelink.gc.run_failed",
+            Self::SweepSoftDeleted => "corelink.gc.sweep.soft_deleted",
+            Self::SweepProtectedReRef => "corelink.gc.sweep.protected_re_ref",
         }
     }
 
@@ -62,7 +79,9 @@ impl GcEventType {
     /// addition to the outbox per `corelink-audit::Emitter`
     /// fan-out). `RunAborted` + `RunFailed` are SEV-1 because a
     /// degrade-mode abort or terminal failure both warrant operator
-    /// pager wake-up.
+    /// pager wake-up. Sweep events are NOT SEV-1 — alerts fire at the
+    /// metric layer (>5% sustained `protected_re_ref_total` per
+    /// WI §6.1.8).
     #[must_use]
     pub const fn is_sev1(self) -> bool {
         matches!(self, Self::RunAborted | Self::RunFailed)
@@ -75,16 +94,19 @@ impl core::fmt::Display for GcEventType {
     }
 }
 
-/// Canonical event-string list (5 entries) for cross-component
-/// regression tests + dashboard widget configuration.
+/// Canonical event-string list (7 entries) for cross-component
+/// regression tests + dashboard widget configuration. WI-S06-003
+/// extended the list from 5 → 7 with the sweep-decision events.
 #[must_use]
-pub const fn canonical_audit_event_strings() -> &'static [&'static str; 5] {
+pub const fn canonical_audit_event_strings() -> &'static [&'static str; 7] {
     &[
         "corelink.gc.run_started",
         "corelink.gc.run_completed",
         "corelink.gc.run_aborted",
         "corelink.gc.phase_transitioned",
         "corelink.gc.run_failed",
+        "corelink.gc.sweep.soft_deleted",
+        "corelink.gc.sweep.protected_re_ref",
     ]
 }
 
@@ -240,13 +262,15 @@ mod tests {
             GcEventType::RunAborted,
             GcEventType::PhaseTransitioned,
             GcEventType::RunFailed,
+            GcEventType::SweepSoftDeleted,
+            GcEventType::SweepProtectedReRef,
         ];
         let mut set = std::collections::HashSet::new();
         for t in v {
             assert!(t.as_str().starts_with("corelink.gc."));
             assert!(set.insert(t.as_str()), "duplicate canonical: {}", t);
         }
-        assert_eq!(set.len(), 5);
+        assert_eq!(set.len(), 7);
     }
 
     #[test]
@@ -271,9 +295,24 @@ mod tests {
     #[test]
     fn canonical_event_strings_cover_taxonomy() {
         let canonical = canonical_audit_event_strings();
-        assert_eq!(canonical.len(), 5);
+        assert_eq!(canonical.len(), 7);
         for s in canonical {
             assert!(s.starts_with("corelink.gc."));
         }
+    }
+
+    #[test]
+    fn sweep_event_strings_match_taxonomy() {
+        assert_eq!(
+            GcEventType::SweepSoftDeleted.as_str(),
+            "corelink.gc.sweep.soft_deleted"
+        );
+        assert_eq!(
+            GcEventType::SweepProtectedReRef.as_str(),
+            "corelink.gc.sweep.protected_re_ref"
+        );
+        // Sweep events are NOT SEV-1 — alerts fire at the metric layer.
+        assert!(!GcEventType::SweepSoftDeleted.is_sev1());
+        assert!(!GcEventType::SweepProtectedReRef.is_sev1());
     }
 }

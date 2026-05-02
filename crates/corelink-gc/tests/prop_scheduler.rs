@@ -369,8 +369,10 @@ fn metrics_observer_canonical_count_six() {
 }
 
 #[test]
-fn audit_taxonomy_canonical_count_five() {
-    assert_eq!(corelink_gc::canonical_audit_event_strings().len(), 5);
+fn audit_taxonomy_canonical_count_pinned() {
+    // WI-S06-001 shipped 5 events; WI-S06-003 (sweep) extended to 7
+    // with `sweep.soft_deleted` + `sweep.protected_re_ref`.
+    assert_eq!(corelink_gc::canonical_audit_event_strings().len(), 7);
 }
 
 #[test]

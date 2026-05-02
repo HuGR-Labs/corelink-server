@@ -48,6 +48,10 @@ name = "prop_mark"
 path = "tests/prop_mark.rs"
 
 [[test]]
+name = "prop_sweep"
+path = "tests/prop_sweep.rs"
+
+[[test]]
 name = "chaos_gc_scheduler"
 path = "tests/chaos_gc_scheduler.rs"
 

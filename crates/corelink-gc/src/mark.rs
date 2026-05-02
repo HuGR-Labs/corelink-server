@@ -353,6 +353,10 @@ impl CandidateStatus {
 }
 
 /// Materialised `gc_candidates` row.
+///
+/// WI-S06-003 added the `swept_at_ms` / `protected_at_ms` /
+/// `protected_reason` fields mirroring the SQL columns of the same
+/// name (set by sweep phase via [`GcCandidatesStore::transition_status`]).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GcCandidate {
     /// Tenant scope.
@@ -371,9 +375,25 @@ pub struct GcCandidate {
     pub status: CandidateStatus,
     /// Created wall-clock instant.
     pub created_at_ms: u64,
+    /// Set when sweep phase soft-deletes (`status = Swept`). WI-S06-003.
+    pub swept_at_ms: Option<u64>,
+    /// Set when sweep phase records protection (`status =
+    /// ProtectedReRef`). WI-S06-003.
+    pub protected_at_ms: Option<u64>,
+    /// Forensic trail set when status flips to `ProtectedReRef`
+    /// (e.g. `"ac.created_at = T+1; mark_started_at = T"`). WI-S06-003.
+    pub protected_reason: Option<String>,
 }
 
 /// Trait surfaced by every `gc_candidates` backend.
+///
+/// WI-S06-003 added the [`GcCandidatesStore::transition_status`] +
+/// [`GcCandidatesStore::lookup`] surfaces so the sweep phase can
+/// (a) atomically flip a row from `Candidate` → `Swept` /
+/// `ProtectedReRef` and (b) re-read the row to drive idempotent
+/// re-execution. The `transition_status` method enforces a monotone
+/// status graph at the in-memory seam mirroring the SQL `UPDATE …
+/// WHERE status = 'candidate'` idempotent semantic.
 pub trait GcCandidatesStore: Send + Sync + core::fmt::Debug {
     /// Insert a fresh candidate row. Idempotent on the composite PK
     /// `(tenant_id, digest, mark_run_id)` — re-inserting the same key
@@ -396,6 +416,55 @@ pub trait GcCandidatesStore: Send + Sync + core::fmt::Debug {
 
     /// Total candidate row count for `(tenant_id, mark_run_id)`.
     fn count_for_run(&self, tenant_id: Uuid, mark_run_id: RunId) -> Result<u64, MarkError>;
+
+    /// Lookup a single candidate row by composite PK (tenant-scoped).
+    /// Returns `Ok(None)` when the row does not exist or belongs to a
+    /// different tenant (Layer 4 envelope).
+    ///
+    /// # Errors
+    ///
+    /// Backend transport errors.
+    fn lookup(
+        &self,
+        tenant_id: Uuid,
+        digest: &BlobDigest,
+        mark_run_id: RunId,
+    ) -> Result<Option<GcCandidate>, MarkError>;
+
+    /// Atomically transition a candidate row's `status` field. The
+    /// transition fires only when the row's *current* status equals
+    /// `from_status` (mirrors the SQL `UPDATE … SET status = ? …
+    /// WHERE … AND status = ?` idempotent semantic).
+    ///
+    /// Returns `true` when the transition fired; `false` when the row
+    /// is absent OR the row's current status does not match
+    /// `from_status` (idempotent re-run path).
+    ///
+    /// `now_ms` populates the matching lifecycle timestamp column
+    /// (`swept_at_ms` for `Swept`; `protected_at_ms` for
+    /// `ProtectedReRef`); `protected_reason` is set on the
+    /// `ProtectedReRef` arm only.
+    ///
+    /// # Errors
+    ///
+    /// Backend transport errors.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "trait method mirrors the SQL UPDATE … SET … WHERE … shape \
+                  (composite PK 3 cols + from/to status + now_ms + protected_reason); \
+                  collapsing into a struct param hurts call-site readability + adds \
+                  a per-call allocation in the hot sweep loop."
+    )]
+    fn transition_status(
+        &self,
+        tenant_id: Uuid,
+        digest: &BlobDigest,
+        mark_run_id: RunId,
+        from_status: CandidateStatus,
+        to_status: CandidateStatus,
+        now_ms: u64,
+        protected_reason: Option<String>,
+    ) -> Result<bool, MarkError>;
 }
 
 // ============================================================================
@@ -824,6 +893,9 @@ where
                 blob_last_referenced_at_ms: row.last_referenced_at_ms,
                 status: CandidateStatus::Candidate,
                 created_at_ms: now_for_insert,
+                swept_at_ms: None,
+                protected_at_ms: None,
+                protected_reason: None,
             })?;
             candidates_count = candidates_count.saturating_add(1);
         }
@@ -1068,6 +1140,65 @@ impl GcCandidatesStore for InMemoryGcCandidatesStore {
         Ok(g.values()
             .filter(|c| c.tenant_id == tenant_id && c.mark_run_id == mark_run_id)
             .count() as u64)
+    }
+
+    fn lookup(
+        &self,
+        tenant_id: Uuid,
+        digest: &BlobDigest,
+        mark_run_id: RunId,
+    ) -> Result<Option<GcCandidate>, MarkError> {
+        let g = self
+            .inner
+            .lock()
+            .map_err(|_| MarkError::Backend("gc_candidates store mutex poisoned".to_owned()))?;
+        Ok(g.get(&(tenant_id, digest.clone(), mark_run_id)).cloned())
+    }
+
+    fn transition_status(
+        &self,
+        tenant_id: Uuid,
+        digest: &BlobDigest,
+        mark_run_id: RunId,
+        from_status: CandidateStatus,
+        to_status: CandidateStatus,
+        now_ms: u64,
+        protected_reason: Option<String>,
+    ) -> Result<bool, MarkError> {
+        let mut g = self
+            .inner
+            .lock()
+            .map_err(|_| MarkError::Backend("gc_candidates store mutex poisoned".to_owned()))?;
+        let Some(row) = g.get_mut(&(tenant_id, digest.clone(), mark_run_id)) else {
+            return Ok(false);
+        };
+        // Defense-in-depth Layer 4 envelope (composite PK already binds
+        // tenant_id, but a smuggled tenant_id should fail-closed).
+        if row.tenant_id != tenant_id {
+            return Err(MarkError::Backend(
+                "cross_tenant_candidate: row tenant_id mismatch".to_owned(),
+            ));
+        }
+        // Idempotent guard — only fire when current status matches.
+        if row.status != from_status {
+            return Ok(false);
+        }
+        row.status = to_status;
+        match to_status {
+            CandidateStatus::Swept => {
+                row.swept_at_ms = Some(now_ms);
+            }
+            CandidateStatus::ProtectedReRef => {
+                row.protected_at_ms = Some(now_ms);
+                row.protected_reason = protected_reason;
+            }
+            CandidateStatus::PhysicallyDeleted | CandidateStatus::Candidate => {
+                // PhysicallyDeleted is set by WI-S06-004; re-arming
+                // Candidate is a programmer error but the trait surface
+                // does not forbid it.
+            }
+        }
+        Ok(true)
     }
 }
 

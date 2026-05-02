@@ -1,0 +1,10 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc e5c198684758bc9d76b86dfbaea77a500a89b2112fb4ee800fb15a222581b86e # shrinks to tenant_seed = 1, region_idx = 0, mark_anchor = 10000, ac_offset = 0
+cc 883e32b45654b22c4c3d2f95b94392115ff62d0e89398318211778c83a37ba81 # shrinks to tenant_a_seed = 1, tenant_b_seed = 500001, region_idx = 0, a_orphans = 0, b_orphans = 0, a_protect_count = 0, b_protect_count = 0
+cc c9357e3328a371516280b2029bb8404fd8f837d87ff92a6560cb86c7f8144115 # shrinks to tenant_seed = 1, region_idx = 0, n = 1, protect_threshold = 0, mark_anchor = 1000
+cc d6b2e7f5d7a880f53b6cca44c73937e7c1aff207891e54286d0fedf551c05713 # shrinks to tenant_seed = 1, region_idx = 0, n_orphan = 0, n_protected = 0, mark_anchor = 1000

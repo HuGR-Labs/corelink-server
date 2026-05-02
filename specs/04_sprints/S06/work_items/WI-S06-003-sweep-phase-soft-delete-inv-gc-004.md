@@ -1,12 +1,12 @@
 ---
 id: "WI-S06-003"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
-audit_status: "ACTIVE"
-version: "1.0.0"
+doc_status: "FROZEN"
+work_status: "DONE"
+audit_status: "AUDITED"
+version: "1.1.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-05-01"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-011", "FF-HR-005", "FF-HR-009"]
 parent: "S-06"
@@ -27,7 +27,7 @@ tags: ["wi", "s06", "gc", "sweep", "soft-delete", "inv-gc-004", "audit", "high-r
 
 # WI-S06-003 — Sweep Phase: Soft-Delete `blob_meta.deleted_at` + Grace 72h CAS / 24h AC + **INV-GC-004 Enforce** (`ac.created_at >= mark_started_at_ms` protects; canonical TLA `gc_correctness.tla` L152-154 protect-if-equal-or-newer) + Audit Emission Per Sweep + Property Test 100k Race Mark+UpdateActionResult
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** FROZEN · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-06](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -651,6 +651,8 @@ D+0 design (Architect + Crypto SME); D+2 AppSec; D+5 code review; D+6 Crypto SME
 ## 31. Change Log
 
 1.0.0 / 2026-04-25 / Gustavo: Criação WI-S06-003 (Lote 10.6; SOTA pós-Lote 10.5bis lessons applied: TenantCtx-only; D1 batch atomic ROLLBACK; audit fail-closed; strict `<` per TLA+; property test 100k race; cargo-fuzz 1h; Mann-Whitney 3-prong middleware-grade; Crypto SME MANDATORY EMPHATIC).
+
+1.1.0 / 2026-05-01 / Gustavo (via Claude Opus 4.7 1M): **WI-S06-003 SEALED — Sweep phase + INV-GC-004 protect-if-`>=` + audit fail-closed shipped.** New module `crates/corelink-gc/src/sweep.rs` (~840 LOC + tests) ships: (a) `BlobState` prev-state forensic snapshot per WI §1.3; (b) `BlobMetaStore` trait + `InMemoryBlobMetaStore` mirroring the SQL `UPDATE blob_meta SET deleted_at_ms WHERE deleted_at_ms IS NULL RETURNING …` idempotent-soft-delete-with-prev-state semantic; (c) `AcReferenceIndex` trait + `InMemoryAcReferenceIndex` enforcing the canonical TLA `gc_correctness.tla` L152-154 `protect-if->=` predicate (`created_at_ms >= mark_started_at_ms` AND `digest \in blob_refs` AND `tenant_id = $1`); (d) `SweepClock` seam + `CountingSweepClock` deterministic counter; (e) `SweepDecision` `#[non_exhaustive]` 3-arm enum (`Sweep{swept_at_ms,prev_state}` / `ProtectedReRef{protected_at_ms,mark_started_at_ms,witness}` / `AlreadyResolved{observed_status}`); (f) `SweepResult` aggregate counters (mark_started_at_ms / candidates_processed / blobs_swept_count / blobs_protected_re_ref_count / already_resolved_count / bytes_to_be_reclaimed / sweep_duration_ms / audit_events_emitted); (g) `SweepError` `#[non_exhaustive]` 7-variant taxonomy (`MarkAnchorMissing{run_id}` / `RunStore` / `CandidatesStore` / `AuditEmissionFailed` / `Metrics` / `PhaseBudgetExceeded{duration_ms,budget_ms}` / `RegionMismatch{run_region,caller_region}` / `Backend(String)`) with `From<SweepError> for GcError`; (h) `SweepConfig` knobs (`grace_cas_ms` default `GRACE_CAS_MS=72h`, `grace_ac_ms` default `GRACE_AC_MS=24h`, `phase_budget_ms` default `CANONICAL_SWEEP_PHASE_BUDGET_MS=5min` per sprint contract §5.3 R-S06-7.1; constructor validates `grace_cas_ms >= grace_ac_ms` regulatory floor); (i) `SweepPhase` trait + `InMemorySweepPhase<S,C,B,X,A,M,K>` orchestrator wired to 7 trait deps (GcRunStore + GcCandidatesStore + BlobMetaStore + AcReferenceIndex + GcAuditSink + GcMetricsObserver + SweepClock); (j) `step_candidate` per-row decision pipeline (idempotent-resolved guard → INV-GC-004 probe → audit-emit-BEFORE-status-flip fail-closed envelope → atomic transition). Cross-module patches: (1) `audit::GcEventType` extended additively with `SweepSoftDeleted` + `SweepProtectedReRef`; canonical event-string list grows 5 → 7; existing `RunFailed` SEV-1 partition preserved (sweep events NOT SEV-1 — alerts fire at metric layer >5% sustained per WI §6.1.8); (2) `mark::GcCandidate` extended additively with `swept_at_ms` / `protected_at_ms` / `protected_reason` mirroring SQL columns of migration 0007; (3) `mark::GcCandidatesStore` trait extended additively with `lookup` (Layer 4 envelope; cross-tenant returns Ok(None)) + `transition_status` (atomic SQL `UPDATE … SET status WHERE … AND status = ?` idempotent semantic; returns `Ok(true)` on fire, `Ok(false)` on idempotent no-op or row absent; cross-tenant injection surfaces as `MarkError::Backend(cross_tenant_candidate)` fail-closed); `InMemoryGcCandidatesStore` impl mirrors. Tests: **24 inline lib unit + 9 prop_sweep @ 10k iter (5 canonical: `prop_inv_gc_004_protect_if_ge_strict_boundary` pinning the EXACT TLA `>=` predicate via signed `ac_offset in -1000..=1000`; `prop_sweep_idempotent_re_run`; `prop_sweep_tenant_isolation`; `prop_soft_delete_reversible` CAP-GC-002; `prop_step_decision_predicate_aggregates`; + 4 sanity: canonical constants + step_candidate AlreadyResolved); full crate suite **174 tests across all targets, 0 failures, parallel-safe** (104 lib + 10 chaos + 16 prop_scheduler + 17 migration_canonical + 9 prop_mark + 9 prop_sweep + 9 migration_canonical_0007). **Trait-abstraction-defer per charter**: real D1 `blob_meta.deleted_at` UPDATE + atomic batch (blob_meta UPDATE + gc_candidate UPDATE + audit_outbox INSERT) + real `ac_meta` json_each EXISTS query + 100k nightly property iter + cargo-fuzz `fuzz_sweep_decision` + Mann-Whitney 3-prong middleware-grade timing test + chaos suite 12 scenarios (1k QPS UpdateActionResult storm; D1 throttle backoff; worker crash mid-sweep idempotent resume; DSR erasure bypass forward-stub; re-upload undelete CAS write handler integration; phase budget exceeded; mark_anchor=NULL fail-closed) + RB-FM-300/305 dry-runs — all consolidated alongside WI-S06-007 PRR ship gate. **Audit fail-closed envelope verified**: `audit_emit_failure_blocks_status_flip` test asserts that on the protect arm, audit emission failure surfaces `SweepError::AuditEmissionFailed` AND the candidate row's status is preserved as `Candidate` AND blob_meta is NOT soft-deleted (production wiring atomically rolls back the D1 batch — in-memory fake's lower fidelity is documented inline). Quality gates verde: `cargo test -p corelink-gc --all-targets` 0 failures (174 tests); `cargo clippy --workspace --all-targets --features corelink-worker/tower-middleware -- -D warnings` clean; `validate_specs.py` clean (281 docs); `validate_references.py` no new dangling refs; `check_migrations_additive.py` clean (7 migrations; sweep does not introduce a new migration — it consumes 0007_gc_candidates from WI-S06-002). No per-WI codex per 2026-04-30 protocol; sprint-close Sonnet review covers full S-06 corpus.
 
 ## 32. Anti-patterns evitados
 
