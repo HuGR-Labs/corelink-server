@@ -485,6 +485,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-lru-tracker"
+version = "0.1.0"
+dependencies = [
+ "corelink-eviction",
+ "proptest",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "corelink-manifest"
 version = "0.1.0"
 dependencies = [

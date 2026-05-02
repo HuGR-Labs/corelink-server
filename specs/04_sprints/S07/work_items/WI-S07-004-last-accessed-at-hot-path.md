@@ -1,12 +1,12 @@
 ---
 id: "WI-S07-004"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
-audit_status: "ACTIVE"
-version: "1.2.0"
+doc_status: "FROZEN"
+work_status: "DONE"
+audit_status: "AUDITED"
+version: "1.3.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-05-02"
 lane: "STANDARD"
 parent: "S-07"
 assignee: "Gustavo Schneiter"
@@ -444,6 +444,7 @@ D+0 design (Architect; race analysis); D+2 AppSec; D+4 code review; D+5 chaos; D
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-25 | Gustavo (Lote 10.7) | Criação WI-S07-004; SOTA pós-Lote 10.6-tris lessons absorbed: DO batch coalescing (write amplification mitigation); authoritative UNION lookup (eviction race correctness); INV-AC-TTL-MONOTONIC pattern inheritance; conditional UPDATE; D1 batch ≤250; alarm re-arm at start; TenantCtx-only. |
+| 1.3.0 | 2026-05-02 | Gustavo (via Claude Opus 4.7 1M; orchestrator-finalized after agent rate-limit) | **WI-S07-004 SEALED — `crates/corelink-lru-tracker/` v0.1.0 shipped; DO-singleton async-batch + coalescing + drift detection.** New crate `crates/corelink-lru-tracker/` ships 7 src modules (~3243 LOC + 511 LOC tests = 3754 total): (a) `tracker` (LruTracker trait + InMemoryLruTracker orchestrator + record_access fast-path enqueue + flush_batch bounded ≤250 rows + coalescing per (tenant, digest) latest-wins); (b) `audit` (LruEventType `#[non_exhaustive]` + canonical 4-event taxonomy `corelink.lru.{access_recorded, batch_flushed, batch_failed, consistency_violation_detected}` + LruAuditSink + InMemoryLruAuditSink); (c) `metrics` (LruMetricsObserver + 6 canonical metrics: `corelink_lru_records_total` / `corelink_lru_coalesced_total` / `corelink_lru_dropped_total` / `corelink_lru_batch_flush_duration_ms` / `corelink_lru_drift_ms` / `corelink_lru_consistency_violation_total`); (d) `error` (LruError `#[non_exhaustive]` taxonomy); (e) `config` (LruConfig knobs pinned to canonical: queue_size_max, batch_size ≤250 per Lote 10.4bis, flush_interval_ms); (f) `clock` (LruClock seam + FrozenLruClock for deterministic tests); (g) `lib` (public re-exports). Cross-module additive extensions on `corelink-eviction`: `BlobMetaSoftDeleteStore` extended with `BlobLruRow` projection so the LRU tracker can flush via the existing eviction trait surface (round-trip integration). NO new migration — `blob_meta.last_accessed_at_ms` column already present from S-01. Tests: 60 inline lib unit + 16 prop_lru @ 10k iter (canonical: prop_record_then_flush_persists_latest; prop_coalescing_reduces_write_amplification; prop_tenant_isolation; prop_overflow_drops_oldest FIFO; prop_drift_metric_monotone_or_zero; prop_consistency_violation_detected_when_drift_exceeds_threshold; prop_audit_emit_per_decision_arm; prop_idempotent_flush; + 8 boundary/sanity) — **76 tests across all targets, 0 failures, parallel-safe**. **Trait-abstraction-defer per charter**: real CF DO singleton + real D1 batch UPDATE atomic + 100k nightly property iter + cargo-fuzz target — all consolidated alongside WI-S07-005 (DASH-DEDUP + alerts + PRR ship gate). Quality gates verde: `cargo test -p corelink-lru-tracker --all-targets` 0 failures (76 tests); `cargo clippy --workspace --all-targets --features corelink-worker/tower-middleware -- -D warnings` clean (after orchestrator P0 fix: 2 unused imports `BlobMetaSoftDeleteStore` + `LruDecision` in prop_lru.rs); `validate_specs.py` clean (283 docs); `check_migrations_additive.py` clean (9 migrations). **Note**: agent hit Anthropic rate limit at 50 tool uses; orchestrator-finalized 2 unused-import clippy fixes + SEAL ceremony per charter `Real bug detected; don't paper over` pattern. No per-WI codex per 2026-04-30 protocol; sprint-close Sonnet review covers full S-07 corpus. |
 
 ## 32. Anti-patterns evitados
 

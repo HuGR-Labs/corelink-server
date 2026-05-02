@@ -186,8 +186,8 @@ pub use audit::{
     InMemoryEvictionAuditSink,
 };
 pub use blob_meta::{
-    BlobLruRow, BlobMetaSoftDeleteStore, EvictionBlobDigest, InMemoryBlobMetaSoftDeleteStore,
-    SoftDeleteOutcome,
+    BlobLruRow, BlobMetaError, BlobMetaSoftDeleteStore, EvictionBlobDigest,
+    InMemoryBlobMetaSoftDeleteStore, LruUpdateOutcome, SoftDeleteOutcome,
 };
 pub use error::EvictionError;
 pub use metrics::{

@@ -140,6 +140,46 @@ pub enum SoftDeleteOutcome {
     AlreadyResolved,
 }
 
+/// Outcome surfaced by [`BlobMetaSoftDeleteStore::update_last_accessed_at_ms`].
+///
+/// Mirrors the canonical conditional UPDATE envelope (WI-S07-004 §6.1.6):
+///
+/// ```sql
+/// UPDATE blob_meta
+///   SET last_accessed_at = ?
+///   WHERE tenant_id = ?
+///     AND digest = ?
+///     AND deleted_at IS NULL
+///     AND last_accessed_at < ?
+/// ```
+///
+/// The `last_accessed_at < ?` predicate enforces strict monotonicity
+/// (INV-AC-TTL-MONOTONIC inheritance pattern): an out-of-order write
+/// with `new_value <= existing_value` is silently dropped — the SQL
+/// UPDATE returns 0 rows affected, the in-memory fake returns
+/// [`LruUpdateOutcome::Skipped`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum LruUpdateOutcome {
+    /// The conditional UPDATE fired — `last_accessed_at_ms` advanced
+    /// monotonically from `prev_ms` to `new_ms`.
+    Updated {
+        /// Prior `last_accessed_at_ms` value (pre-update).
+        prev_ms: u64,
+        /// New `last_accessed_at_ms` value (post-update).
+        new_ms: u64,
+    },
+    /// Conditional predicate failed — `new_ms <= existing.last_accessed_at_ms`
+    /// (out-of-order write); UPDATE skipped to preserve monotonicity.
+    Skipped {
+        /// Existing `last_accessed_at_ms` value that is `>= new_ms`.
+        existing_ms: u64,
+    },
+    /// Row absent OR soft-deleted (`deleted_at IS NOT NULL`); the UPDATE
+    /// is a no-op (LRU is best-effort; deleted rows are never updated).
+    AlreadyResolved,
+}
+
 /// Trait surfaced by every `blob_meta` soft-delete backend
 /// (production D1 row UPDATE / in-memory fake).
 pub trait BlobMetaSoftDeleteStore:
@@ -200,6 +240,38 @@ pub trait BlobMetaSoftDeleteStore:
         cutoff_ms: u64,
         limit: usize,
     ) -> Result<Vec<BlobLruRow>, BlobMetaError>;
+
+    /// Conditional monotone UPDATE of `blob_meta.last_accessed_at_ms`
+    /// driven by the WI-S07-004 LRU tracker batch flush. Mirrors the
+    /// canonical SQL:
+    ///
+    /// ```sql
+    /// UPDATE blob_meta
+    ///   SET last_accessed_at = ?
+    ///   WHERE tenant_id = ?
+    ///     AND digest = ?
+    ///     AND deleted_at IS NULL
+    ///     AND last_accessed_at < ?
+    /// ```
+    ///
+    /// The `last_accessed_at < new_ms` predicate enforces strict
+    /// monotonicity (INV-AC-TTL-MONOTONIC inheritance pattern). Returns:
+    ///
+    /// - [`LruUpdateOutcome::Updated`] on a successful write.
+    /// - [`LruUpdateOutcome::Skipped`] when `new_ms <= existing.last_accessed_at_ms`
+    ///   (out-of-order write).
+    /// - [`LruUpdateOutcome::AlreadyResolved`] when the row is absent
+    ///   OR `deleted_at IS NOT NULL`.
+    ///
+    /// # Errors
+    ///
+    /// Backend transport errors.
+    fn update_last_accessed_at_ms(
+        &self,
+        tenant_id: Uuid,
+        digest: &EvictionBlobDigest,
+        new_ms: u64,
+    ) -> Result<LruUpdateOutcome, BlobMetaError>;
 }
 
 /// In-memory `blob_meta` soft-delete store.
@@ -320,6 +392,33 @@ impl BlobMetaSoftDeleteStore for InMemoryBlobMetaSoftDeleteStore {
         candidates.sort_by_key(|r| r.last_accessed_at_ms);
         candidates.truncate(limit);
         Ok(candidates)
+    }
+
+    fn update_last_accessed_at_ms(
+        &self,
+        tenant_id: Uuid,
+        digest: &EvictionBlobDigest,
+        new_ms: u64,
+    ) -> Result<LruUpdateOutcome, BlobMetaError> {
+        let mut g = self.inner.lock().map_err(|_| {
+            BlobMetaError::Backend(
+                "blob_meta soft-delete store mutex poisoned".to_string(),
+            )
+        })?;
+        let Some(row) = g.get_mut(&(tenant_id, digest.clone())) else {
+            return Ok(LruUpdateOutcome::AlreadyResolved);
+        };
+        if row.deleted_at_ms.is_some() {
+            return Ok(LruUpdateOutcome::AlreadyResolved);
+        }
+        if new_ms <= row.last_accessed_at_ms {
+            return Ok(LruUpdateOutcome::Skipped {
+                existing_ms: row.last_accessed_at_ms,
+            });
+        }
+        let prev_ms = row.last_accessed_at_ms;
+        row.last_accessed_at_ms = new_ms;
+        Ok(LruUpdateOutcome::Updated { prev_ms, new_ms })
     }
 }
 
@@ -501,5 +600,84 @@ mod tests {
         assert_eq!(v_a.len(), 1);
         assert_eq!(v_b.len(), 1);
         assert_ne!(v_a[0].digest, v_b[0].digest);
+    }
+
+    // ---- update_last_accessed_at_ms (WI-S07-004) --------------------
+
+    #[test]
+    fn update_last_accessed_at_ms_advances_when_strictly_greater() {
+        let s = InMemoryBlobMetaSoftDeleteStore::new();
+        s.push_row(ten_a(), row(1, 100, 1)).unwrap();
+        let out = s
+            .update_last_accessed_at_ms(ten_a(), &dig(1), 200)
+            .unwrap();
+        assert!(matches!(
+            out,
+            LruUpdateOutcome::Updated {
+                prev_ms: 100,
+                new_ms: 200
+            }
+        ));
+        let r = s.lookup(ten_a(), &dig(1)).unwrap().unwrap();
+        assert_eq!(r.last_accessed_at_ms, 200);
+    }
+
+    #[test]
+    fn update_last_accessed_at_ms_skipped_when_equal() {
+        let s = InMemoryBlobMetaSoftDeleteStore::new();
+        s.push_row(ten_a(), row(1, 100, 1)).unwrap();
+        let out = s
+            .update_last_accessed_at_ms(ten_a(), &dig(1), 100)
+            .unwrap();
+        assert!(matches!(
+            out,
+            LruUpdateOutcome::Skipped { existing_ms: 100 }
+        ));
+        let r = s.lookup(ten_a(), &dig(1)).unwrap().unwrap();
+        assert_eq!(r.last_accessed_at_ms, 100);
+    }
+
+    #[test]
+    fn update_last_accessed_at_ms_skipped_when_less() {
+        let s = InMemoryBlobMetaSoftDeleteStore::new();
+        s.push_row(ten_a(), row(1, 100, 1)).unwrap();
+        let out = s
+            .update_last_accessed_at_ms(ten_a(), &dig(1), 50)
+            .unwrap();
+        assert!(matches!(
+            out,
+            LruUpdateOutcome::Skipped { existing_ms: 100 }
+        ));
+    }
+
+    #[test]
+    fn update_last_accessed_at_ms_no_op_when_row_absent() {
+        let s = InMemoryBlobMetaSoftDeleteStore::new();
+        let out = s
+            .update_last_accessed_at_ms(ten_a(), &dig(99), 200)
+            .unwrap();
+        assert!(matches!(out, LruUpdateOutcome::AlreadyResolved));
+    }
+
+    #[test]
+    fn update_last_accessed_at_ms_no_op_when_soft_deleted() {
+        let s = InMemoryBlobMetaSoftDeleteStore::new();
+        s.push_row(ten_a(), row(1, 100, 1)).unwrap();
+        s.soft_delete_for_eviction(ten_a(), &dig(1), 150).unwrap();
+        let out = s
+            .update_last_accessed_at_ms(ten_a(), &dig(1), 200)
+            .unwrap();
+        assert!(matches!(out, LruUpdateOutcome::AlreadyResolved));
+    }
+
+    #[test]
+    fn update_last_accessed_at_ms_tenant_scoped() {
+        let s = InMemoryBlobMetaSoftDeleteStore::new();
+        s.push_row(ten_a(), row(1, 100, 1)).unwrap();
+        s.push_row(ten_b(), row(1, 100, 1)).unwrap();
+        s.update_last_accessed_at_ms(ten_a(), &dig(1), 200).unwrap();
+        let r_b = s.lookup(ten_b(), &dig(1)).unwrap().unwrap();
+        // Tenant B's row is unaffected.
+        assert_eq!(r_b.last_accessed_at_ms, 100);
     }
 }
