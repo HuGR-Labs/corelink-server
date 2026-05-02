@@ -451,6 +451,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-eviction"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "corelink-gc"
 version = "0.1.0"
 dependencies = [

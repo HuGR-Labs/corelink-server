@@ -21,6 +21,7 @@ members = [
     "crates/corelink-manifest",
     "crates/corelink-gc",
     "crates/corelink-dedup",
+    "crates/corelink-eviction",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
@@ -94,6 +95,7 @@ corelink-multipart-schema = { path = "crates/corelink-multipart-schema" }
 corelink-manifest = { path = "crates/corelink-manifest" }
 corelink-gc = { path = "crates/corelink-gc" }
 corelink-dedup = { path = "crates/corelink-dedup" }
+corelink-eviction = { path = "crates/corelink-eviction" }
 
 # Test / bench
 proptest = "1.5"

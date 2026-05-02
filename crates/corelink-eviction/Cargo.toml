@@ -1,0 +1,40 @@
+[package]
+name = "corelink-eviction"
+description = "CoreLink eviction worker — LRU + per-tier TTL + 95% quota-trigger orchestrator (WI-S07-002). Ships EvictionPhase trait + InMemoryEvictionPhase orchestrator + race-aware reachable check (strict `<` evict / `>=` protect, canonical INV-GC-004 inheritance from S-06) + soft-delete-first via S-06 GC grace + size-proportional reservation TTL + tenant_storage_state STATE table (separate from tenant_quota POLICY per Lote 10.7bis P0-2 R4 option B). Production Cloudflare D1 binding deferred to WI-S07-005 PRR ship gate per `trait-abstraction-defer` charter pattern; in-memory fakes here exercise every load-bearing invariant: BLOB-only scope (chunks owned by S-06 GC; Lote 10.7bis P0-8), tenant-scoped strict isolation, idempotent re-run, race-aware reachable check off-by-one boundary, INV-GC-001 inheritance via soft-delete + grace, audit fail-closed envelope."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+uuid = { workspace = true, features = ["v7"] }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[[test]]
+name = "prop_eviction"
+path = "tests/prop_eviction.rs"
+
+[[test]]
+name = "migration_canonical_0008"
+path = "tests/migration_canonical_0008.rs"

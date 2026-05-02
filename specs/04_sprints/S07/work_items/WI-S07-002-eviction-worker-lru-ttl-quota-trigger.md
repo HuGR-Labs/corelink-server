@@ -1,12 +1,12 @@
 ---
 id: "WI-S07-002"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
-audit_status: "ACTIVE"
-version: "1.2.0"
+doc_status: "FROZEN"
+work_status: "DONE"
+audit_status: "AUDITED"
+version: "1.3.0"
 created: "2026-04-25"
-updated: "2026-04-28"
+updated: "2026-05-02"
 lane: "STANDARD"
 parent: "S-07"
 assignee: "Gustavo Schneiter"
@@ -26,7 +26,7 @@ tags: ["wi", "s07", "eviction", "lru", "ttl", "quota", "soft-delete-first", "sta
 
 # WI-S07-002 — Eviction Worker (`worker-evict` cron daily 02:00 UTC + jitter ±10min per region; ad-hoc trigger ≥95% quota; LRU per `blob_meta.last_accessed_at`; TTL per-tier free=7d/solo=30d/team=90d/business=365d/enterprise=365d default with admin override up to 730d max (canonical per ADR-0019; Lote 10.7-tris cycle 3 fix); soft-delete-first reusing S-06 GC grace 72h; cascade prevention; INV-GC-001 inheritance — NEVER deletes reachable blob)
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** STANDARD
+> **doc_status:** FROZEN · **work_status:** DONE · **lane:** STANDARD
 > **Parent:** [S-07](../_spec_contract.md) (sprint contract; sprint.md not yet authored — defer to S-07-bis if full sprint doc needed) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -563,6 +563,7 @@ D+0 design (Architect + Crypto SME advisory for INV-GC-001 inheritance review); 
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-25 | Gustavo (Lote 10.7) | Criação WI-S07-002; SOTA pós-Lote 10.6-tris lessons absorbed: json_each canonical idiom (P0-1 lesson); TenantCtx-only; D1 batch ≤250; CHECK inline; PAT-JITTER-001; alarm re-arm at start; audit fail-closed; soft-delete-first reusing S-06 grace; INV-GC-001 inheritance via cascade prevention; ADR-0019/0020 forward references. |
+| 1.3.0 | 2026-05-02 | Gustavo (via Claude Opus 4.7 1M; autonomous WI-S07-002 SEAL) | **WI-S07-002 SEALED — `crates/corelink-eviction/` v0.1.0 shipped + `migrations/d1/0008_tenant_storage_state.sql`.** New crate ships 11 sub-modules (~3170 LOC + tests; 132 tests all green): `lib` (canonical migration constant + 11 module re-exports + `eviction_schema_version() = 8`); `region` (canonical 5-region literal mirroring `gc_run.region`); `tier` (5-tier canonical TTL ladder + `ttl_for_tier_with_override` Enterprise hard cap 730d per ADR-0019; Lote 10.7bis P0-7 default 365d); `reservation` (size-proportional reservation TTL `max(60s, request_bytes/1024 × 2), capped 7d` per Lote 10.7bis R5 P0-2); `error` (canonical `EvictionError` `#[non_exhaustive]` taxonomy with `BlobReachable` + `TenantStorageStateMissing` + `PhaseBudgetExceeded`); `audit` (5-event canonical taxonomy `corelink.evict.{evicted,skipped_reachable,skipped_ttl,skipped_quota_ok,quota_trigger_fired}` + `EvictionAuditSink` + `InMemoryEvictionAuditSink` + `FailingEvictionAuditSink`); `metrics` (9 canonical metrics per WI §6.1.10 + `EvictionMetricsObserver` + `InMemoryEvictionMetrics`); `storage_state` (`TenantStorageStateRow` mirroring SQL byte-for-byte + `TenantStorageStateStore` trait + `InMemoryTenantStorageStateStore` with `apply_eviction_reclaim` + `touch_evict_watermark` + `at_or_above_trigger` 95% boundary); `blob_meta` (`EvictionBlobDigest` + `BlobLruRow` + `BlobMetaSoftDeleteStore` trait + `InMemoryBlobMetaSoftDeleteStore` with canonical `soft_delete_for_eviction` + `list_lru_candidates` ASC ordering); `reachable` (`AcReferenceProbe` trait + `InMemoryAcReferenceProbe` implementing the canonical race-aware `<` evict / `>=` protect predicate per Lote 10.7bis P0-6; mirrors S-06 INV-GC-004 protect-if-`>=` per `gc_correctness.tla` L152-154); `phase` (`EvictionPhase` trait + `InMemoryEvictionPhase` orchestrator + `EvictionDecision` `#[non_exhaustive]` + `EvictionResult` aggregate + `EvictionConfig` + `EvictionClock` seam); `trigger` (`should_fire_quota_trigger` exact 95% boundary + `target_bytes_to_reclaim` reclaim-to-90% + `spawn_quota_trigger_in_memory` simulator mirroring `worker::send_future()` fire-and-forget per Lote 10.7bis R5 P0-3). Migration `0008_tenant_storage_state.sql` (NEW; Lote 10.7bis P0-2): separates STATE (mutable `bytes_used` running counter) from POLICY (`tenant_quota.max_storage_bytes`); composite PK `(tenant_id, region)` tenant-leftmost; 7 inline CHECK constraints; idempotent `IF NOT EXISTS`; additive-only; 2 secondary indices (per-region eviction + bytes_used analytics). Tests: 103 inline lib unit + 15 migration canonical + 14 prop_eviction @ 10k iter — **132 tests across all targets, 0 failures, parallel-safe**. Property suite covers: `prop_evict_protect_if_re_referenced_strict_boundary` (off-by-one boundary at offsets 0/-1/+1; data-loss bug pinned), `prop_tenant_isolation` (CTRL-ISO-005), `prop_idempotent_re_run`, `prop_blob_only_scope` (Lote 10.7bis P0-8), `prop_ttl_size_proportional_reservation` + `prop_ttl_size_proportional_monotone`, `prop_quota_trigger_fires_at_95pct` (exact-boundary), `prop_ttl_enterprise_cap_respected` (730d hard cap), `prop_evict_dedup_byte_count_consistent`, `prop_storage_state_reclaim_monotone`. **Trait-abstraction-defer per charter**: real D1 `tenant_storage_state` UPSERT + real CF Cron DO + 100k nightly property iter + chaos suite (8 scenarios) — all consolidated alongside WI-S07-005 (DASH-DEDUP + alerts + PRR ship gate). **Cross-module patches**: workspace `Cargo.toml` adds `crates/corelink-eviction` member + `corelink-eviction = { path = ... }` workspace dep. Quality gates verde: `cargo test --workspace --all-targets` 0 failures (50+ test binaries; corelink-eviction 132 tests); `cargo clippy --workspace --all-targets --features corelink-worker/tower-middleware -- -D warnings` clean; `validate_specs.py` clean (283 docs); `check_migrations_additive.py` clean (8 migrations including new 0008). No per-WI codex per 2026-04-30 protocol; sprint-close Sonnet review covers full S-07 corpus. |
 
 ## 32. Anti-patterns evitados
 
