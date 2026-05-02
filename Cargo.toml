@@ -23,6 +23,7 @@ members = [
     "crates/corelink-dedup",
     "crates/corelink-eviction",
     "crates/corelink-quota",
+    "crates/corelink-quota-cas",
     "crates/corelink-lru-tracker",
     "crates/corelink-ratelimit",
     "crates/corelink-edge",
@@ -101,6 +102,7 @@ corelink-gc = { path = "crates/corelink-gc" }
 corelink-dedup = { path = "crates/corelink-dedup" }
 corelink-eviction = { path = "crates/corelink-eviction" }
 corelink-quota = { path = "crates/corelink-quota" }
+corelink-quota-cas = { path = "crates/corelink-quota-cas" }
 corelink-lru-tracker = { path = "crates/corelink-lru-tracker" }
 corelink-ratelimit = { path = "crates/corelink-ratelimit" }
 corelink-edge = { path = "crates/corelink-edge" }

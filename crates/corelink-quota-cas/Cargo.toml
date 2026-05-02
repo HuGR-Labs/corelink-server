@@ -1,0 +1,42 @@
+[package]
+name = "corelink-quota-cas"
+description = "CoreLink canonical quota checker — atomic CAS hard-block at 100% (CAP-QUOTA-001) + canonical days-until-month-reset Retry-After per ADR-0020 FROZEN (WI-S08-003 — supersedes the S-07 PROVISIONAL transitional 429 path). Ships AtomicQuotaChecker trait + InMemoryAtomicQuotaChecker orchestrator with CAS-versioned compare-and-swap on tenant_storage_state.bytes_used (race-aware strict-< predicate; mirrors DO actor model serialisation byte-for-byte) + QuotaCasDecision `#[non_exhaustive]` (Allow / Deny429) + canonical 6-event audit taxonomy (corelink.quota.cas_{check_passed, denied_429_hard_block, race_detected, commit_succeeded, release_idempotent, retry_after_emitted}) + canonical D1 migration `0012_quota_cas_attempts.sql` durable audit row (race-detected + retry-after lineage). Trait-abstraction-defer: real CF DO singleton + real D1 atomic batch + Tower-layer wiring (gated `corelink-worker/tower-middleware`) + 100k nightly + chaos 12 — all consolidated alongside WI-S08-006 PRR ship gate."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+uuid = { workspace = true, features = ["v7"] }
+corelink-eviction = { workspace = true }
+corelink-quota = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[[test]]
+name = "prop_quota_cas"
+path = "tests/prop_quota_cas.rs"
+
+[[test]]
+name = "migration_canonical_0012"
+path = "tests/migration_canonical_0012.rs"
