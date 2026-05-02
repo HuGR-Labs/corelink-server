@@ -1,12 +1,12 @@
 ---
 id: "WI-S07-003"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
-audit_status: "ACTIVE"
-version: "1.2.0"
+doc_status: "FROZEN"
+work_status: "DONE"
+audit_status: "AUDITED"
+version: "1.3.0"
 created: "2026-04-25"
-updated: "2026-04-28"
+updated: "2026-05-02"
 lane: "STANDARD"
 parent: "S-07"
 assignee: "Gustavo Schneiter"
@@ -26,7 +26,7 @@ tags: ["wi", "s07", "quota", "middleware", "tower", "do-atomic", "rate-limit", "
 
 # WI-S07-003 — Quota Enforcement Middleware (Tower layer; pre-write check `bytes_used + request_bytes ≤ tenant_quota.max_storage_bytes`; DO atomic counter via `quota-{tenant_id}` durable object pessimistic-check eliminating FM-059 race; 95% threshold triggers WI-S07-002 eviction; 100% emits PROVISIONAL `TENANT_QUOTA_EXCEEDED` 429 + Retry-After (transitional implementation; canonical S-08 CAP-QUOTA-001 ships rate-limit DO with `Retry-After: days-until-month-reset` per ADR-0020 FROZEN); latency adds ≤ 3ms p99 to write path)
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** STANDARD
+> **doc_status:** FROZEN · **work_status:** DONE · **lane:** STANDARD
 > **Parent:** [S-07](../_spec_contract.md) (sprint contract; sprint.md not yet authored — defer to S-07-bis if full sprint doc needed) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -529,6 +529,7 @@ D+0 design (Architect; race analysis FM-059); D+2 AppSec (TenantCtx + audit); D+
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-25 | Gustavo (Lote 10.7) | Criação WI-S07-003; SOTA pós-Lote 10.6-tris lessons absorbed: TenantCtx-only; audit fail-closed; alarm re-arm at start; DO actor + reservation pattern (FM-059 elimination); 95% trigger eviction (S-07) + 100% hard-block (S-08 boundary); error taxonomy COR_S07_QUOTA_EXCEEDED. |
+| 1.3.0 | 2026-05-02 | Gustavo (via Claude Opus 4.7 1M; autonomous WI-S07-003 SEAL) | **WI-S07-003 SEALED — `crates/corelink-quota/` v0.1.0 shipped + `migrations/d1/0009_quota_reservations.sql` (NEW table; durable mirror of DO singleton in-memory pending reservation map).** New crate ships 7 sub-modules (~2030 LOC + tests; 95 tests all green): `audit` (QuotaEventType `#[non_exhaustive]` + canonical 5-event taxonomy `corelink.quota.{check_passed, denied_429, reserved, reservation_expired, reservation_rolled_in}` + QuotaAuditSink + InMemoryQuotaAuditSink + FailingQuotaAuditSink); `metrics` (QuotaMetricsObserver + 4 canonical metrics: `check_total{result}` / `denials_total{tenant}` / `reservation_active{tenant,region}` / `check_duration_ms{result}`); `error` (QuotaError `#[non_exhaustive]` taxonomy with explicit `TenantStorageStateMissing` / `ReservationNotFound` / fail-closed `Audit` arm); `config` (QuotaConfig with canonical thresholds 95%/100% + Retry-After floor 60s + invariant validation in `with_overrides`); `reservation` (ReservationId newtype + ReservationRow + ReservationTracker trait + InMemoryReservationTracker fake byte-for-byte mirroring SQL `quota_reservations` table; tenant-leftmost PK; size-proportional TTL via `corelink-eviction::reservation_ttl_ms` reuse; sweep_expired auto-release); `retry_after` (PROVISIONAL `provisional_retry_after_secs` formula transitional per ADR-0020 FROZEN, hard-ceiling 86_400s; canonical S-08 CAP-QUOTA-001 ships `Retry-After: days-until-month-reset`); `check` (QuotaCheck trait + InMemoryQuotaCheck decision engine wired to TenantStorageStateStore + ReservationTracker + QuotaAuditSink + QuotaMetricsObserver; per-instance `Mutex<()>` decision_lock mirrors DO actor model serialisation eliminating FM-059 race; 5-step decision pipeline with audit-emit BEFORE state mutation; QuotaDecision `#[non_exhaustive]` (Allow/Deny429/Reserve) carries `trigger_eviction` flag from `corelink-eviction::should_fire_quota_trigger` projection over post-reservation state). Migration `0009_quota_reservations.sql`: composite PK `(tenant_id, reservation_id)` tenant-leftmost; 4 inline CHECK constraints; 2 secondary indices (tenant+region scan, expires_at TTL sweep); idempotent `IF NOT EXISTS`; additive-only. Tests: 66 inline lib unit + 16 migration canonical + 13 prop_quota (9 @ 10k iter + 4 surface pinning) — covering `prop_quota_check_under_limit_allows`, `prop_quota_check_at_100pct_denies_429` (PROVISIONAL boundary), `prop_reservation_ttl_size_proportional` (Lote 10.7bis R5 P0-2 reuse), `prop_reservation_expiry_releases_bytes` (INV-QUOTA-RESERVATION-TTL no leak), `prop_tenant_isolation` (CTRL-ISO-005), `prop_idempotent_reservation_lookup`, `prop_audit_emit_per_decision_arm`, `prop_quota_atomic_no_race` (FM-059 elimination via per-instance Mutex serialisation; sequential at boundary), and informational SLO probe `prop_check_duration_under_3ms_p99`. **Trait-abstraction-defer per charter**: real CF DO singleton + real D1 atomic batch + real Tower layer wiring (gated `corelink-worker/tower-middleware`) + 100k nightly property iter + chaos suite (8 scenarios) + RB-FM-059 dry-run + cost regression gate — all consolidated alongside WI-S07-005 (DASH-DEDUP + alerts + PRR ship gate). Cross-module patches: workspace `Cargo.toml` adds `crates/corelink-quota` member + workspace dep + uses `corelink-eviction` for canonical `reservation_ttl_ms` formula + `should_fire_quota_trigger` + `EvictionRegion` + `TenantStorageStateStore`. Quality gates verde: `cargo test -p corelink-quota --all-targets` 95 tests 0 failures; `cargo clippy --workspace --all-targets --features corelink-worker/tower-middleware -- -D warnings` clean; `validate_specs.py` clean (283 docs); `check_migrations_additive.py` clean (9 migrations including new 0009). No per-WI codex per 2026-04-30 protocol; sprint-close Sonnet review covers full S-07 corpus. |
 
 ## 32. Anti-patterns evitados
 

@@ -1,0 +1,41 @@
+[package]
+name = "corelink-quota"
+description = "CoreLink quota enforcement middleware engine — pre-write check + reservation lifecycle + size-proportional reservation TTL + 95% eviction trigger + 100% PROVISIONAL 429 + Retry-After (transitional per ADR-0020 FROZEN; canonical S-08 CAP-QUOTA-001 rate-limit DO ships hard-block) (WI-S07-003). Ships QuotaCheck trait + InMemoryQuotaCheck decision engine + ReservationTracker trait + InMemoryReservationTracker fake mirroring the SQL `quota_reservations` table; reuses corelink-eviction reservation_ttl_ms canonical formula. Production Cloudflare DO singleton + real D1 reservation table + Tower layer wiring deferred to WI-S07-005 PRR ship gate per `trait-abstraction-defer` charter pattern."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+uuid = { workspace = true, features = ["v7"] }
+corelink-eviction = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[[test]]
+name = "prop_quota"
+path = "tests/prop_quota.rs"
+
+[[test]]
+name = "migration_canonical_0009"
+path = "tests/migration_canonical_0009.rs"

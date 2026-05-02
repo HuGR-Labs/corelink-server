@@ -546,6 +546,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-quota"
+version = "0.1.0"
+dependencies = [
+ "corelink-eviction",
+ "proptest",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "corelink-r2-multipart"
 version = "0.1.0"
 dependencies = [
