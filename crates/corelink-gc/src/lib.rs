@@ -87,6 +87,7 @@ pub mod degrade;
 pub mod error;
 pub mod mark;
 pub mod metrics;
+pub mod physical_delete;
 pub mod region;
 pub mod run;
 pub mod schedule;

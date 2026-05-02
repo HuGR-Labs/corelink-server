@@ -58,6 +58,15 @@ pub enum GcEventType {
     /// detected a re-reference fired during mark (canonical TLA
     /// `gc_correctness.tla` L152-154 protect-if-`>=`); did NOT delete.
     SweepProtectedReRef,
+    /// `corelink.gc.physical_deleted` (WI-S06-004) — physical-delete
+    /// phase removed a soft-deleted blob from R2 + D1 after the grace
+    /// window expired. Emitted ONCE per confirmed purge (the
+    /// `Purged` decision arm); skipped/race-protected/idempotent
+    /// arms do NOT emit. NOT SEV-1 — alerts fire at the metric layer
+    /// (>5% sustained `r2_failed_total` per WI §6.1.11). Deletion is
+    /// irreversible, so the forensic trail per row is the load-bearing
+    /// observability invariant.
+    PhysicalDeleted,
 }
 
 impl GcEventType {
@@ -72,6 +81,7 @@ impl GcEventType {
             Self::RunFailed => "corelink.gc.run_failed",
             Self::SweepSoftDeleted => "corelink.gc.sweep.soft_deleted",
             Self::SweepProtectedReRef => "corelink.gc.sweep.protected_re_ref",
+            Self::PhysicalDeleted => "corelink.gc.physical_deleted",
         }
     }
 
