@@ -1,0 +1,43 @@
+[package]
+name = "corelink-billing-reconcile"
+description = "CoreLink 3-layer billing reconciliation orchestrator (WI-S10-004 — S-10 billing pipeline HIGH_RISK lane). Reconciles Layer 1 (R2 usage events emitted by `corelink-billing-emit`), Layer 2 (D1 aggregated counters from `corelink-billing-aggregator`), and Layer 3 (Stripe usage_records ledger from `corelink-billing-stripe`) per (tenant, billing_period); detects drift via the 4-tier canonical threshold ladder (Quiet < 0.01% / SEV-3 ticket 0.01%-0.1% / SEV-2 page 0.1%-1% / SEV-1 page + auto-pause-Stripe ≥ 1% canonical sprint contract §14.s10.1 zero tolerance); auto-fixes within the dual-condition gate (drift_count ≤ 5 AND drift_pct ≤ 0.01% per tenant — Lote 10.6bis P0-6 scale-invariant inheritance). BillingReconciler trait + InMemoryBillingReconciler orchestrator. ReconcileLayerKind `#[non_exhaustive]` 3-element taxonomy (Layer1Emit / Layer2Aggregate / Layer3Stripe). ReconcileDecision `#[non_exhaustive]` 5-element taxonomy (NoDrift / AutoFixed / TicketSev3 / PageSev2 / PageSev1AutoPaused). ReconcileError `#[non_exhaustive]` taxonomy. Per-instance `Arc<Mutex<>>` F-001 closure. Audit fail-CLOSED envelope BEFORE state mutation: `corelink.billing_reconcile.{run_started, no_drift, auto_fixed, ticket_filed, page_dispatched, stripe_paused}` audit fires BEFORE state advance / Stripe-submission pause / drift-history INSERT on every decision arm. Production CF Cron Durable Object (daily 02:00 UTC per region) + real D1 + real Stripe-pause API binding deferred to WI-S10-007 PRR ship gate per `trait-abstraction-defer` charter pattern."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true, features = ["v7", "serde"] }
+corelink-billing-emit = { workspace = true }
+corelink-billing-aggregator = { workspace = true }
+corelink-billing-stripe = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+rand = "0.9"
+rand_chacha = "0.9"
+
+[[test]]
+name = "prop_billing_reconcile"
+path = "tests/prop_billing_reconcile.rs"
