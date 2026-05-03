@@ -1,0 +1,41 @@
+[package]
+name = "corelink-analytics"
+description = "CoreLink Worker Analytics Engine RED metrics observer + cardinality validator + audit fail-closed envelope (WI-S09-001). Ships RedMetricsObserver trait + InMemoryRedMetrics fake + CardinalityValidator (per-metric label-set budget enforcement INV-OBS-CARDINALITY-BUDGET) + RedMetricKind / AnalyticsError #[non_exhaustive] taxonomies + AnalyticsConfig knobs (cardinality budgets, histogram bucket boundaries) + canonical D1 migration 0015_analytics_cardinality_budgets.sql durable mirror. Production Cloudflare Workers Analytics Engine binding + Prom remote write deferred to WI-S09-007 PRR ship gate per trait-abstraction-defer charter pattern."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+uuid = { workspace = true, features = ["v7"] }
+corelink-eviction = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[[test]]
+name = "prop_analytics"
+path = "tests/prop_analytics.rs"
+
+[[test]]
+name = "migration_canonical_0015"
+path = "tests/migration_canonical_0015.rs"

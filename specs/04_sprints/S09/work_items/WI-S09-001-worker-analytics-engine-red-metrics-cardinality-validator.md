@@ -1,12 +1,12 @@
 ---
 id: "WI-S09-001"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
-audit_status: "ACTIVE"
-version: "1.0.0"
+doc_status: "FROZEN"
+work_status: "DONE"
+audit_status: "AUDITED"
+version: "1.3.0"
 created: "2026-04-25"
-updated: "2026-04-25"
+updated: "2026-05-03"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-005"]
 parent: "S-09"
@@ -27,7 +27,7 @@ tags: ["wi", "s09", "metrics", "red-use", "cardinality-budget", "analytics-engin
 
 # WI-S09-001 — Worker Analytics Engine Bindings + RED Métricas + USE Métricas Cloudflare Infra + Cardinality Budget Validator (`crates/corelink-metrics`; CF Workers Analytics Engine binding emitindo 9 métricas RED canonical conforme `observability_model.md §4.2`; USE métricas Cloudflare runtime — cf.cpu_time, R2 ops/sec, D1 row scans, KV read/write, DO storage; cardinality budget validator `scripts/cardinality_check.py` CI gate enforcement INV-OBS-CARDINALITY-BUDGET ≤ 20k séries por métrica + ≤ 100k global; Prom remote write → Grafana Mimir tenant limit secondary defense; trace_id NUNCA em label — exemplar field separate Lote 10.8bis P0-9 race-aware applied to cardinality)
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** FROZEN · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-09](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -705,6 +705,7 @@ D+0 design (Architect; cardinality discipline); D+1 SRE (Mimir integration); D+2
 | 1.0.0 | 2026-04-25 | Gustavo (Lote 10.9) | Criação WI-S09-001; HIGH_RISK; SOTA pós-Lote 10.7bis + Lote 10.8bis/tris lessons absorbed: 5-tier canonical Tier (P0-7); CF Workers Rust API worker::send_future (R5 P0-3); 100k nightly property test (P1-3); audit fail-closed para cardinality violations (Lote 10.6bis adapted; metrics emit fail-OPEN distinct case); D1 N/A (Mimir backend); CHECK inline N/A (enum-typed); column drift no `_ms` suffix (P0-3); sign-off cap 12 (Lote 10.8bis P1-2 framework §33.5.4.3); INV §3.X → §3.13 (Lote 10.8bis P1-13 lesson). NEW INV-OBS-CARDINALITY-BUDGET (HIGH; registry §3.12). NEW Python validator scripts/cardinality_check.py CI gate. trace_id em Exemplar field NOT label (Lote 10.8bis cardinality discipline absorbed). |
 | 1.1.0 | 2026-04-25 | Gustavo (Lote 10.9bis) | R4+R5 review remediation: P0-B INV §3.13 → §3.12 (registry canonical position; Lote 10.8bis P1-13 regression direta corrigida); P0-E Prom métricas dots → underscores `corelink_X_Y_Z` canonical (Mimir ingest compatible; OpenTelemetry semantic conventions NOT Prometheus naming); P0-I histogram cardinality validator com bucket multiplier (HISTOGRAM_BUCKET_COUNT = 11 + _sum + _count = 13× per label combo; was 13× off-budget); 9 RED métricas list updated com correct cardinality (cas.put.duration = 1950 séries; Total RED 5400 baseline; ~5.4% of 100k global budget). Aggregate score post-bis target ≥ 8.5/10 (R4 7.5 + R5 6.5 baselines). |
 | 1.2.0 | 2026-04-26 | Gustavo (Lote 10.9-quaters **SEALED**) | Sonnet R5 quinquies validation 8.5/10 (target ≥8.5 reached; APPROVED ship gate). NEW-P1-4 fixed: completeness criterion §10.s09.001.5 ~1780 → ~5400 séries (histogram bucket multiplier already applied em P0-I; criterion now matches body claim). 5-cycle trajectory: 6.5 (R5 round-1) → 7.5 (bis) → 7.5 (tris) → ~8.0 (quaters) → 8.5 (quinquies validation). **WI sealed pre-implementation**. |
+| 1.3.0 | 2026-05-03 | Gustavo (S-09 implementation phase) | **WI IMPLEMENTED + SEALED**. Crate `crates/corelink-analytics` shipped (~3000 LOC across `lib.rs` + 7 modules: canonical/labels/config/error/audit/observer/validator); D1 migration `0015_analytics_cardinality_budgets.sql` (additive; per-metric + observed durable mirrors). 81 tests pass: 56 unit (canonical, labels, config, error, audit, observer, validator) + 8 migration canonical pins + 17 prop+integration tests including the 8 required prop tests (`prop_cardinality_budget_enforced`, `prop_cardinality_idempotent_repeat_label_set`, `prop_red_rate_monotone`, `prop_red_errors_monotone`, `prop_red_duration_histogram_bucket_correct`, `prop_tenant_isolation`, `prop_audit_emit_per_decision_arm`, `prop_idempotent_zero_value_emit`) at 10 k iter PR-gate (`PROPTEST_CASES` env var override at runtime per S-07 P1-2 fix). Trait + InMemory fake covers the algorithmic invariants; production CF Workers Analytics Engine binding + Prom remote write deferred to WI-S09-007 PRR ship gate per `trait-abstraction-defer` charter pattern. Audit fail-closed envelope (`metric_emitted` / `cardinality_rejected` / `budget_exceeded`) on every decision arm — emit BEFORE state mutation per Lote 10.6bis pattern + S-07 P1-1 fix. F-001 closure preserved (per-instance `Arc<Mutex<>>`; no process-global state). Forbidden labels (`trace_id`, `tenant_id`, `request_id`, `blob_digest`) not representable in `MetricLabelTuple` by construction (no `String` slot; type-system primary defense + `FORBIDDEN_LABEL_NAMES` const for CI lint secondary). 5-tier canonical Tier re-exported from `corelink-eviction` (Lote 10.7bis P0-7 vocabulary FROZEN at the data model layer; cross-component drift impossible by construction). 9 RED + 6 USE = 15 canonical metric kinds pinned in `RedMetricKind` `#[non_exhaustive]` enum. Quality gates green: `cargo test -p corelink-analytics --all-targets` (debug + release) + `cargo clippy --workspace --all-targets --features corelink-worker/tower-middleware -- -D warnings` + `python3 scripts/validate_specs.py` (279 docs OK) + `python3 scripts/check_migrations_additive.py` (15 migrations all additive). No per-WI codex per 2026-04-30 protocol; sprint-close Sonnet review covers. |
 
 ## 32. Anti-patterns evitados
 
