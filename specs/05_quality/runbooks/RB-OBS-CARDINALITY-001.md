@@ -1,17 +1,19 @@
 ---
 id: "RB-OBS-CARDINALITY-001"
 type: "runbook"
-doc_status: "DRAFT"
-audit_status: "ACTIVE"
-version: "0.1.0"
+doc_status: "FROZEN"
+audit_status: "AUDITED"
+version: "1.0.0"
 created: "2026-04-24"
-updated: "2026-04-24"
+updated: "2026-05-03"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
 supersedes: null
 superseded_by: null
-tags: ["runbook", "p2", "observability", "cardinality", "cost-control"]
+tags: ["runbook", "p2", "observability", "cardinality", "cost-control", "rb-obs-cardinality-001", "wi-s09-007", "dry-run-executed"]
+dry_run_executed: "2026-05-03"
+dry_run_evidence: "specs/_audits/2026-05-03-rb-obs-cardinality-001-dry-run.md"
 ---
 
 # RB-OBS-CARDINALITY-001 — Cardinality Explosion (Métrica → OOM Mimir / Cost Spike)

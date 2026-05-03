@@ -187,6 +187,29 @@ jobs:
           cargo test --release --package corelink-abuse --test prop_abuse
           cargo test --release --package corelink-rate-headers --test prop_rate_headers
 
+      - name: proptest 100k iter — S-09 analytics + logpush + tracing + audit-chain + slo + canary (WI-S09-007 nightly tier)
+        env:
+          PROPTEST_CASES: '100000'
+          PROPTEST_MAX_LOCAL_REJECTS: '100000'
+          PROPTEST_MAX_GLOBAL_REJECTS: '500000'
+        # WI-S09-007 §F + sprint contract §6 DoD: S-09 ship gate
+        # consolidates the prior 6 WIs' deferred items by extending
+        # the nightly proptest tier to 100k iter for prop_analytics +
+        # prop_logpush + prop_tracing + prop_audit_chain + prop_slo +
+        # prop_canary. PR-gate runs at 10k; nightly tier runs at 100k
+        # per the dual-tier ceiling. ZERO INV-OBS-CARDINALITY-BUDGET /
+        # INV-OBS-AUDIT-CHAIN-INTEGRITY / INV-AUDIT-EMIT-ATOMIC-WITH-
+        # HANDLER / INV-TENANT-ISOLATION violations sustained over
+        # 100k iter is the spec contract DoD §6 gate.
+        run: |
+          set -euo pipefail
+          cargo test --release --package corelink-analytics --test prop_analytics
+          cargo test --release --package corelink-logpush --test prop_logpush
+          cargo test --release --package corelink-tracing --test prop_tracing
+          cargo test --release --package corelink-audit-chain --test prop_audit_chain
+          cargo test --release --package corelink-slo --test prop_slo
+          cargo test --release --package corelink-canary --test prop_canary
+
   # ---------------------------------------------------------------------
   # 3. Fuzz matrix — all 9 targets across 5 SEALed crates, 1h each parallel.
   # ---------------------------------------------------------------------

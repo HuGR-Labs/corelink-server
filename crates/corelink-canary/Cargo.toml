@@ -1,0 +1,38 @@
+[package]
+name = "corelink-canary"
+description = "CoreLink synthetic canary 3-region probe orchestrator (WI-S09-007 — S-09 ship gate; HIGH_RISK lane). Ships CanaryRegion `#[non_exhaustive]` (Enam / Weur / Apac per data_model.md §2.1 R2 region hints; Lote 10.9bis P1 R4 P1-10 corrected from IATA colocodes) + CanaryAssertion (`cas_put_p99_ms ≤ 100` / `cas_get_p99_ms ≤ 50` / `ac_lookup_p99_ms ≤ 30` / BLAKE3 digest match correctness) + CanaryDecision `#[non_exhaustive]` 3-canonical (Pass / Degraded / FailedRegion) + ObservabilityHealthReport (Mimir ingest lag p99 ≤ 30s + Loki query p99 ≤ 5s + Tempo trace visibility lag p99 ≤ 30s + dashboard refresh p99 ≤ 3s) + CanaryProbe trait + InMemoryCanaryProbe orchestrator (per-instance `Arc<Mutex<>>` per-region ledger + tenant-isolated synthetic canary tenant + audit-emit-BEFORE-mutation fail-CLOSED envelope per Lote 10.6bis pattern + S-07 P1-1 fix + 60s cron interval canonical with > 90s drift SEV-3 alert source) + FailingCanaryProbe adversarial fixture + CanaryAuditEventType `#[non_exhaustive]` 5-canonical taxonomy (`corelink.canary.{loop_executed, assertion_failed, digest_mismatch, observability_unhealthy, dispatch_lag_exceeded}`) + CanaryError `#[non_exhaustive]` taxonomy. Production CF Workers cron-trigger 24/7 sustained 72h sem gap (12960 loops/72h target per Lote 10.9bis P0-A corrected from 38880 triple-counted) + worker::Fetch HTTP client + real R2 PUT + GET + AC lookup + BLAKE3 verify + observability stack health probe + RB-FM-153 (Grafana Cloud outage) + RB-OBS-CARDINALITY-001 (cardinality explosion) production wiring deferred to staging account provisioning per `trait-abstraction-defer` charter pattern."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+corelink-analytics = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+rand = "0.9"
+rand_chacha = "0.9"
+
+[[test]]
+name = "prop_canary"
+path = "tests/prop_canary.rs"
