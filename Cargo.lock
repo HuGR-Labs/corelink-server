@@ -480,6 +480,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-billing-replay"
+version = "0.1.0"
+dependencies = [
+ "corelink-billing-aggregator",
+ "corelink-billing-emit",
+ "corelink-billing-reconcile",
+ "corelink-billing-stripe",
+ "proptest",
+ "rand 0.9.4",
+ "rand_chacha 0.9.0",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "corelink-billing-stripe"
 version = "0.1.0"
 dependencies = [

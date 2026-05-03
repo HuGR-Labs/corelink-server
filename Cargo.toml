@@ -39,6 +39,7 @@ members = [
     "crates/corelink-billing-aggregator",
     "crates/corelink-billing-stripe",
     "crates/corelink-billing-reconcile",
+    "crates/corelink-billing-replay",
     "crates/corelink-quota-fsm",
 ]
 exclude = [
@@ -131,6 +132,7 @@ corelink-billing-emit = { path = "crates/corelink-billing-emit" }
 corelink-billing-aggregator = { path = "crates/corelink-billing-aggregator" }
 corelink-billing-stripe = { path = "crates/corelink-billing-stripe" }
 corelink-billing-reconcile = { path = "crates/corelink-billing-reconcile" }
+corelink-billing-replay = { path = "crates/corelink-billing-replay" }
 corelink-quota-fsm = { path = "crates/corelink-quota-fsm" }
 
 # Test / bench

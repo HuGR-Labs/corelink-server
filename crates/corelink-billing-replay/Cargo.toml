@@ -1,0 +1,44 @@
+[package]
+name = "corelink-billing-replay"
+description = "CoreLink billing replay forensic engine (WI-S10-006 — S-10 billing pipeline HIGH_RISK lane). Re-runs the billing pipeline (emit -> aggregator -> Stripe -> reconcile) for a given (tenant, billing_period) from the R2 NDJSON archive to produce forensic reconstruction outputs (deterministic re-derivation across all three layers). Authorization gate enforces `billing_forensics_admin` role per CTRL-AUTHZ-002 (separate role from regular admin so the audit-grade replay capability is least-privilege-bounded). Idempotency via UUIDv7 request_id (same request resubmitted reuses prior outcome; never double-executes; critical for forensic determinism). ReplayEngine trait + InMemoryReplayEngine orchestrator. ReplayReason `#[non_exhaustive]` 4-element taxonomy (DriftInvestigation / CustomerDispute / ComplianceAudit / DryRun). ReplayDecision `#[non_exhaustive]` 4-element taxonomy (Authorized / Denied403 / DryRunPlan / Executed). ReplayError `#[non_exhaustive]` taxonomy. Per-instance `Arc<Mutex<>>` F-001 closure. Audit fail-CLOSED envelope BEFORE state mutation: `corelink.billing_replay.{request_authorized, request_denied, dry_run_planned, executed, layer_diverged}` audit fires BEFORE state mutation on every decision arm. Replay audit chain feeds into the S-09 audit-chain (extends append-only ledger; tamper-detectable per S-09 INV-OBS-AUDIT-CHAIN-INTEGRITY pattern). Production CF Worker route POST /v1/billing/replay + R2 NDJSON archive read + admin RBAC binding deferred to WI-S10-007 PRR ship gate per `trait-abstraction-defer` charter pattern."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true, features = ["v7", "serde"] }
+corelink-billing-emit = { workspace = true }
+corelink-billing-aggregator = { workspace = true }
+corelink-billing-stripe = { workspace = true }
+corelink-billing-reconcile = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+rand = "0.9"
+rand_chacha = "0.9"
+
+[[test]]
+name = "prop_billing_replay"
+path = "tests/prop_billing_replay.rs"
