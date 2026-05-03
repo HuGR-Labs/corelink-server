@@ -658,15 +658,17 @@ proptest! {
     })]
 
     /// Trip threshold is `> 0.5` (strict greater-than) per WI §6.1.6;
-    /// 5xx_rate exactly at 0.5 does NOT breach signal A.
+    /// 5xx_rate at-or-below 0.5 does NOT breach signal A.
     #[test]
     fn prop_circuit_trip_at_50pct_strict_boundary(
         offset in 0_usize..50,
     ) {
         let mut buf = VecDeque::new();
         let total = 200;
-        // Exactly 100 / 200 = 0.5 (NOT > 0.5).
-        let five_xx_count = 100 + offset.min(0);
+        // Sweep at-or-below the strict boundary: 100/200 = 0.5 exact
+        // (offset=0); 51/200 < 0.5 (offset=49). Property: signal_a is
+        // false across the whole sub-/at-boundary range.
+        let five_xx_count = 100usize.saturating_sub(offset);
         for t in 0..total as u64 {
             let o = HealthObservation {
                 timestamp_ms: t,

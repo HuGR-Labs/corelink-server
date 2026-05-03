@@ -198,7 +198,7 @@ P1-2 alignment. The 11 canonical roles for HIGH_RISK lane:
 | 10 | Privacy Officer | Gustavo Schneiter (dual-hat per ADR-0034 + ADR-0017 DPO interim acceptable) | 2026-05-02 | ⚠️ WAIVED (ADR-0034 + ADR-0017) | INV-AUDIT-NO-RAW-PII holds at the rate-limit / quota / abuse audit boundary — `tenant_id` is pseudonymous UUID v7; `pat_id` is opaque token reference; abuse features are aggregate observations (cpu_wallclock_ratio + egress_bytes_per_min + action_digest_entropy_bits + concurrent_exec_count) without raw PII. NaN-safe AbuseFeatures constructor + score clamping [0.0, 1.0] structurally. Per-tenant labels in DASH-RATE redacted via Grafana datasource permissions (AdminCtx-gated). Revalidation trigger: Privacy Officer hired. |
 | 11 | AppSec advisor | Gustavo Schneiter (dual-hat per ADR-0034 — Architect + AppSec specialization acceptable) | 2026-05-02 | ⚠️ WAIVED (ADR-0034) | RFC 9331 grammar conformance (`prop_rate_headers` 23 tests); 5-arm canonical X-Rate-Limit-Type taxonomy structurally exhaustive per `#[non_exhaustive]` enum; CIDR longest-prefix-match canonical (NOT linear scan; hand-rolled bit-level matcher wasm32-clean); audit-emit-BEFORE-write fail-closed mirroring Lote 10.6bis + S-07 sprint-close P1-1 fix; multi-signal trip canonical (5xx_rate AND p99_latency) per R-S08-004 mitigation prevents single-signal false-positive trips. Revalidation trigger: AppSec advisor hired OR external advisor onboarded. |
 
-> **Sign-off totals:** 11 / 11 (3 ✅ APPROVED + 8 ⚠️ WAIVED via ADR-0034
+> **Sign-off totals:** 11 / 11 (4 ✅ APPROVED + 7 ⚠️ WAIVED via ADR-0034
 > dual-hat). Per framework §33.5.4.3 the HIGH_RISK matrix requires
 > 11 sign-offs canonical (Lote 10.8bis P1-2); the 11-canonical row is
 > met. ADR-0034 solo-tier waiver register entry required for each
@@ -473,12 +473,18 @@ LGPD Art. 20 humane response.
   zero SEV-1/SEV-2 + RB-FM-250 dry-run pass are the GA gate;
   external pentest closes ASVS WAIVED items.
 
-## 10. Cumulative INV §3.19 promotion (1 NEW)
+## 10. Cumulative INV §3.12 row promotion (1 NEW)
 
 Per WI-S08-006 §1 + Lote 10.7-tris cycle 4 canonical count alignment.
-The following 1 NEW INV ships promoted in `invariant_registry.md`
-§3.19 (canonical Lote 10.8 S-08 sprint NEW group), plus the
-existing §3.8 INV-AVAIL-ISOLATION + §3.11 INV-QUOTA-ENFORCEMENT:
+The following 1 NEW INV ships row-level promoted in
+`invariant_registry.md` **§3.12 sprint-driven invariants table**
+(S-08 row addition; canonical row-add convention since the registry
+last numbered section is §3.18 / S-07 lane and Lote 10.7-tris standardised
+S-08+ INVs as table-rows in §3.12 rather than new numbered sections);
+the §3.19 standalone section claim from earlier WI drafts was
+narrowed to the row-level claim before SEAL — see S-08 sprint-close
+adversarial review P1-3 rationale. Plus the existing §3.8
+INV-AVAIL-ISOLATION + §3.11 INV-QUOTA-ENFORCEMENT:
 
 **§3.8 (existing; HIGH; consumed by S-08):**
 - **INV-AVAIL-ISOLATION** — tenant DoS não afeta outros (bulkhead
