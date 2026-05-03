@@ -37,6 +37,7 @@ members = [
     "crates/corelink-canary",
     "crates/corelink-billing-emit",
     "crates/corelink-billing-aggregator",
+    "crates/corelink-billing-stripe",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
@@ -126,6 +127,7 @@ corelink-slo = { path = "crates/corelink-slo" }
 corelink-canary = { path = "crates/corelink-canary" }
 corelink-billing-emit = { path = "crates/corelink-billing-emit" }
 corelink-billing-aggregator = { path = "crates/corelink-billing-aggregator" }
+corelink-billing-stripe = { path = "crates/corelink-billing-stripe" }
 
 # Test / bench
 proptest = "1.5"

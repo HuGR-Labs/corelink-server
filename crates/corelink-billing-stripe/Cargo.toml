@@ -1,0 +1,49 @@
+[package]
+name = "corelink-billing-stripe"
+description = "CoreLink Stripe billing adapter — Idempotency-Key derived from BLAKE3-256 of the JCS-canonical AggregatedCounter bytes (WI-S10-002 input source) + HMAC-SHA256 webhook signature verification (5-min skew tolerance per Stripe spec) + constant-time signature comparison via `subtle::ConstantTimeEq` (WI-S10-003 — S-10 billing pipeline HIGH_RISK lane). Ships StripeBillingAdapter trait + InMemoryStripeBillingAdapter orchestrator (per-tenant subscription_item_id usage record emit; same canonical aggregate bytes → same Idempotency-Key → single Stripe charge regardless of retry storms). StripeWebhookHandler trait + InMemoryStripeWebhookHandler orchestrator (parses canonical `Stripe-Signature: t=<unix_ts>,v1=<hex>` header per Stripe webhook spec; verifies HMAC-SHA256(t.payload, secret) in constant time; rejects (now - t) > 300s replay window). WebhookEventKind `#[non_exhaustive]` 5-element taxonomy (InvoiceCreated / InvoicePaid / InvoiceFailed / SubscriptionUpdated / CustomerCreated). StripeAdapterDecision `#[non_exhaustive]` 4-element taxonomy (UsageRecorded / DuplicateRejected / WebhookProcessed / SignatureRejected). StripeError `#[non_exhaustive]` taxonomy. Per-instance `Arc<Mutex<>>` F-001 closure. Audit fail-CLOSED envelope BEFORE state mutation: `corelink.billing_stripe.{usage_recorded, duplicate_rejected, webhook_received, signature_rejected, signature_verified, signature_skew_rejected}` audit fires BEFORE Stripe API call / webhook event dispatch / state advance on every decision arm. Production HTTP client (reqwest / cf-worker fetch) + real Stripe API endpoint + Cloudflare Worker route registration deferred to WI-S10-007 PRR ship gate per `trait-abstraction-defer` charter pattern."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_jcs = "0.2"
+blake3 = { workspace = true }
+hex = { workspace = true }
+hmac = { workspace = true }
+sha2 = { workspace = true }
+subtle = { workspace = true }
+uuid = { workspace = true, features = ["v7", "serde"] }
+corelink-billing-emit = { workspace = true }
+corelink-billing-aggregator = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+rand = "0.9"
+rand_chacha = "0.9"
+corelink-analytics = { workspace = true }
+
+[[test]]
+name = "prop_billing_stripe"
+path = "tests/prop_billing_stripe.rs"
