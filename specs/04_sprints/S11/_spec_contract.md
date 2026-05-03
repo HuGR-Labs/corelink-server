@@ -3,9 +3,9 @@ id: "SPEC-CONTRACT-S11"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.4.0"
+version: "1.5.0"
 created: "2026-04-24"
-updated: "2026-04-28"
+updated: "2026-05-03"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -358,6 +358,23 @@ Itens waivable com sign-off Privacy Officer + Legal + Compliance Officer + ADR:
 
 ## 20. Change log
 
+### v1.5.0 (2026-05-03) — WI-S11-001 implementation phase SEALED
+
+Implementation phase landing (no spec changes; impl-only changelog row per charter §spec contract changelog discipline). WI-S11-001 SEALED at the canonical impl quality gates:
+
+- **`crates/corelink-dsr/`** new crate (~4447 LOC; 8 src modules + 1 prop test file). `DsrEndpoint` trait + `InMemoryDsrEndpoint` orchestrator wired to `JwtReceiptIssuer` + `MfaStepUpVerifier` + `DsrRequestStore` + `DsrAuditSink` (canonical 7-event taxonomy `corelink.dsr.{request_received, mfa_step_up_required, mfa_verified, request_accepted, receipt_issued, request_rejected, status_polled}`).
+- **MFA gate boundary canonical**: ONLY destructive arms (Erasure + Rectification) require step-up MFA per CTRL-AUTH-010 + ADR-S11-001; read arms (Access + Portability) and policy-only arms (Restriction + Objection) skip the gate. Pinned by `prop_mfa_required_for_erasure_rectification`.
+- **JWT receipt anti-replay**: 90d expiration cap per `RECEIPT_EXPIRY_DAYS` constant; `iss = corelink.dev/privacy`; alg = RS256 pinned. In-memory deterministic FNV-1a-based fake covers the canonical sign/verify roundtrip + cross-key reject + tampered + expired arms; production wiring at WI-S11-008 substitutes `jsonwebtoken = 9.3` (S-03 inheritance) + KMS-backed key rotation (HKDF info=`corelink/v1/dsr-receipt`).
+- **Audit fail-CLOSED envelope**: every decision arm fires its canonical audit BEFORE state mutation per ADR-S11-002 split-tier (DSR regulatory-grade NEVER tolerates silent loss; distinct from billing fail-OPEN at Lote 10.6bis). Pinned by `prop_audit_emit_per_decision_arm`.
+- **SLA timer canonical**: LGPD Art. 19 = 15d / GDPR Art. 12.3 = 30d / CCPA §1798.130 = 45d via `sla_for(jurisdiction, submitted_at)`; SEV-2 alert deferred to WI-S11-008 production wiring. Pinned by `prop_sla_deadline_correct`.
+- **Tenant isolation CTRL-ISO-004**: cross-tenant poll surfaces as RequestRejected with IdentityVerificationFailed (constant-time confidentiality — never disclose whether a `request_id` exists for a different tenant via 404 vs 403 distinction). Pinned by `prop_tenant_isolation`.
+- **Idempotency UNIQUE quad**: `(tenant_id, request_id)` keyed store with divergent-payload SEV-1 forensic anomaly surface; production Neon mirror uses canonical UNIQUE quad `(tenant_id, subject_user_id, request_kind, request_payload_hash)` per data_model.md §4.1.
+- **Quality gates verde**: `cargo test -p corelink-dsr --all-targets` 113/113 (94 inline unit + 8 sanity + 11 property at 10k iter); `cargo clippy --workspace --all-targets --features corelink-worker/tower-middleware -- -D warnings` zero warnings; `validate_specs.py` 288 docs schema clean; `check_migrations_additive.py` 21 migrations additive.
+- **Charter constraints** verified: no `unsafe`; no `unwrap`/`expect`/`panic`/indexing in lib code; F-001 `Arc<Mutex<()>>` per-instance closure; `#[non_exhaustive]` on every public enum; wasm32-clean (no tokio dep); PROPTEST_CASES env-var override; ChaCha20Rng pinned PRNG; no `prop_assert!(matches!(...))` anti-pattern (S-08 P1-1).
+- **Trait-abstraction-defer per charter**: production CF Worker route + real RS256 + WebAuthn step-up binding + Neon `dsr_tickets` schema migration + Cloudflare Email + S-08 rate-limit + S-09 chain fan-out + SLA-pause logic + RB-DSR-INTAKE-FAILURE runbook + OpenAPI 3.1 + Grafana dashboard all deferred to WI-S11-008 PRR ship gate.
+
+No per-WI codex per 2026-04-30 protocol; sprint-close Sonnet review covers full S-11 corpus once 8/8 WIs SEALED.
+
 ### v1.4.0 (2026-04-28) — Lote 10.11.0-bis-prime cycles 1-4 (post-codex SEAL push)
 
 Cycle 4 score trajectory após 4 codex review cycles: 5.18 (baseline) → 5.9 → 6.2 → 7.8 → 8.3 → 8.4 (target ≥9.0 SEAL).
@@ -445,4 +462,4 @@ Spec contract criado em ciclo de Sprint S-09→S-20 SOTA elevation (Lote 9.1) + 
 
 ---
 
-**Fim spec contract S-11 v1.4.0 SOTA — Lote 10.11.0-bis-prime cycles 1-4 SEAL-ready (corpus internamente consistente; codex score trajectory 5.18 → 8.4+; pending final ≥9.0 validation).**
+**Fim spec contract S-11 v1.5.0 SOTA — Lote 10.11.0-bis-prime cycles 1-4 SEAL-ready + WI-S11-001 IMPL SEALED (corpus internamente consistente; codex score trajectory 5.18 → 8.4+; pending final ≥9.0 validation).**

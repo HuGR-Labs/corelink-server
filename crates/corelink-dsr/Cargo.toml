@@ -1,0 +1,40 @@
+[package]
+name = "corelink-dsr"
+description = "CoreLink DSR Self-Service API (WI-S11-001 — S-11 Privacy Pipeline HIGH_RISK lane). LGPD Art. 18 / GDPR Art. 15-22 / CCPA §1798.105/115/120/125 7-right canonical surface — Access (read) + Portability (read) + Rectification (destructive) + Erasure (destructive) + Restriction (policy-only) + Objection (policy-only) + Status (poll). DsrEndpoint trait + InMemoryDsrEndpoint orchestrator. JwtReceiptIssuer trait (RS256-signed receipt with request_id UUIDv7 + data_subject_id + request_kind + submitted_at_ms + expires_at_ms = submitted + 90d per LGPD/GDPR compliance window). MfaStepUpVerifier trait (WebAuthn step-up gate ONLY for destructive arms — Erasure + Rectification — per CTRL-AUTH-010 + ADR-S11-001 friction-vs-security trade-off rationale). DsrRequestStore trait + InMemory (durable Neon mirror). DsrAuditSink (canonical 7-event taxonomy). DsrRequestKind `#[non_exhaustive]` 6-arm + DsrStatus `#[non_exhaustive]` 4-arm + DsrDecision `#[non_exhaustive]` 4-arm + DsrError `#[non_exhaustive]` taxonomy. Per-instance `Arc<Mutex<>>` F-001 closure. Audit fail-CLOSED envelope BEFORE state mutation: `corelink.dsr.{request_received, mfa_step_up_required, mfa_verified, request_accepted, receipt_issued, request_rejected, status_polled}` audit fires BEFORE state mutation on every decision arm — split-tier discipline per ADR-S11-002 (audit fail-CLOSED ≠ billing fail-OPEN; DSR is regulatory-grade NEVER tolerates silent loss). SLA timer per LGPD Art. 19 (15d) / GDPR Art. 12.3 (1mo extendable to 3 for complex). Production CF Worker route POST /v1/privacy/dsr/* + 7 endpoints + real RS256 key + WebAuthn TOTP binding + Neon dsr_tickets durable + Cloudflare Email transactional templates deferred to WI-S11-008 PRR ship gate per `trait-abstraction-defer` charter pattern."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true, features = ["v7", "serde"] }
+
+[dev-dependencies]
+proptest = { workspace = true }
+rand = "0.9"
+rand_chacha = "0.9"
+
+[[test]]
+name = "prop_dsr"
+path = "tests/prop_dsr.rs"
