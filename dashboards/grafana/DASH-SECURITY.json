@@ -1,0 +1,413 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "CoreLink security (auth + abuse + anomaly) datasource (Prometheus / VictoriaMetrics / Grafana Cloud Mimir tenant)",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "uid": "DASH-SECURITY",
+  "title": "CoreLink — Security (DASH-SECURITY)",
+  "description": "WI-S09-005 §6.1 canonical observability_model.md §10 Nível-3 security dashboard. Embedded PAT auth panels from S-03 + abuse panels from S-08 (AUTH→SECURITY refactor per Lote 10.9-quaters NEW-P0-1 corrected). AuthN failures + 401/403 rate + JWT verification + Argon2 latency + abuse signals. AppSec + Security Lead personas.",
+  "tags": ["corelink", "security", "auth", "abuse", "s09", "high-risk", "sota"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "annotations": {
+    "list": [
+      {
+        "name": "lastUpdated",
+        "datasource": "$DS_PROMETHEUS",
+        "enable": false,
+        "iconColor": "blue"
+      },
+      {
+        "name": "Security SEV-1+ incidents",
+        "datasource": "$DS_PROMETHEUS",
+        "enable": true,
+        "iconColor": "red",
+        "expr": "ALERTS{alertname=~\"Auth.*|Security.*\", severity=~\"sev0|sev1\"}"
+      }
+    ],
+    "lastUpdated": "2026-05-03T00:00:00Z",
+    "cardinality_budget_used": "6200/100000"
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "tenant_tier",
+        "type": "custom",
+        "label": "Tenant Tier",
+        "multi": true,
+        "includeAll": true,
+        "options": [
+          { "text": "All", "value": "all", "selected": true },
+          { "text": "Free", "value": "free" },
+          { "text": "Solo", "value": "solo" },
+          { "text": "Team", "value": "team" },
+          { "text": "Business", "value": "business" },
+          { "text": "Enterprise", "value": "enterprise" }
+        ],
+        "query": "all,free,solo,team,business,enterprise"
+      },
+      {
+        "name": "tenant",
+        "type": "query",
+        "label": "Tenant (AdminCtx only)",
+        "datasource": "$DS_PROMETHEUS",
+        "query": "label_values(corelink_auth_attempts_total, tenant_id)",
+        "multi": true,
+        "includeAll": true,
+        "current": { "text": "all", "value": "all" }
+      },
+      {
+        "name": "region",
+        "type": "custom",
+        "label": "Region",
+        "multi": true,
+        "includeAll": true,
+        "options": [
+          { "text": "All", "value": "all", "selected": true },
+          { "text": "SAM", "value": "sam" },
+          { "text": "IAD", "value": "iad" },
+          { "text": "LHR", "value": "lhr" },
+          { "text": "NRT", "value": "nrt" },
+          { "text": "SYD", "value": "syd" }
+        ],
+        "query": "all,sam,iad,lhr,nrt,syd"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Auth attempts rate per result (success / 401 / 403) per region",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 1 + Lote 10.9-quaters NEW-P0-1 AUTH→SECURITY refactor + S-03 PAT auth inheritance. RED.E breakdown per auth result per region.",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (region, result) (rate(corelink_auth_attempts_total{region=~\"$region\"}[5m]))",
+          "legendFormat": "{{result}} {{region}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "JWT / PAT verification latency p99 — exemplar deep-link to Tempo",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 2 + S-03 inheritance + CAP-OBS-009 exemplar inheritance. SLO-LAT-AUTH-VERIFY p99 ≤ 50ms; click exemplar → Tempo trace.",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 0.04 },
+              { "color": "red", "value": 0.05 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, mechanism) (rate(corelink_auth_verify_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{mechanism}} p99",
+          "refId": "A",
+          "exemplar": true
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Argon2 (PAT hash) latency p99 — DoS budget saturation signal",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 3 + S-03 PAT hash inheritance. Argon2id m=64MB t=3 SLO-LAT-AUTH-PAT p99 ≤ 200ms. Sustained > 200ms = SEV-3 saturation.",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 0.18 },
+              { "color": "red", "value": 0.2 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(corelink_auth_argon2_hash_duration_seconds_bucket[5m])))",
+          "legendFormat": "Argon2 p99",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "401 / 403 rate per region (anomaly detection)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 4 — sustained 401 spike > 3σ = brute-force signal; SEV-2 trigger sustained 5min.",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (region) (rate(corelink_auth_attempts_total{result=\"401\", region=~\"$region\"}[5m]))",
+          "legendFormat": "401 {{region}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (region) (rate(corelink_auth_attempts_total{result=\"403\", region=~\"$region\"}[5m]))",
+          "legendFormat": "403 {{region}}",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Embedded ABUSE panels — score distribution + tier counts (S-08 inheritance)",
+      "type": "heatmap",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 5 + Lote 10.9-quaters NEW-P0-1 ABUSE→SECURITY embed + WI-S08-004 inheritance. 4-feature weighted-sum score 3-arm Benign/Suspicious/Malicious at 0.5/0.8 thresholds. Calibration n=50/50 95% CI.",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 12 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "targets": [
+        {
+          "expr": "topk(50, max by (tenant_id, tier) (corelink_abuse_score{tier=~\"$tenant_tier\"}))",
+          "legendFormat": "{{tenant_id}} · {{tier}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (tier) (rate(corelink_abuse_tier_count_total[5m]))",
+          "legendFormat": "rate {{tier}}",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "INV-LGPD-AUTO-SUSPEND-FORBIDDEN canary (MUST = 0; SEV-1 alert; LGPD Art. 20 + GDPR Art. 22)",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 6 + sprint contract §7.10.s08.3 inheritance. AbuseError::AutoSuspendForbidden trap; humane response canonical (admin manual review only). Counter MUST always = 0; non-zero = SEV-1.",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 12 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(corelink_abuse_auto_suspend_attempts_total[5m]))",
+          "legendFormat": "auto-suspend attempts (5m)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "TenantCtx + AdminCtx escalation attempts (anomaly detection)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 7 + S-03 AdminCtx separation inheritance. Tenant trying admin endpoint = privilege escalation signal; sustained > 0 = SEV-2.",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 18 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "red", "value": 0.001 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(corelink_auth_privilege_escalation_attempts_total[5m]))",
+          "legendFormat": "privilege escalation attempts",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "PAT lifecycle — created / revoked / expired per region",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 8 + S-03 PAT lifecycle inheritance. PAT events for compliance + key rotation tracking.",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 18 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (event, region) (rate(corelink_auth_pat_lifecycle_total{region=~\"$region\"}[5m]))",
+          "legendFormat": "{{event}} {{region}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Edge per-IP block decisions + CIDR blocklist size (S-08 inheritance)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 9 + WI-S08-002 InMemoryCidrBlocklist longest-prefix-match inheritance. EdgeDecision 3-arm (Allow / DenyBlocklisted / DenyAbuse). Blocklist size IPv4 + IPv6 gauge.",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 24 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (result) (rate(corelink_edge_decision_total[5m]))",
+          "legendFormat": "edge {{result}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (family) (corelink_edge_cidr_blocklist_size)",
+          "legendFormat": "blocklist · ipv{{family}}",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Audit chain integrity (last verify status + sequence; WI-S09-004 inheritance)",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 10 + WI-S09-004 chain verifier inheritance. INV-OBS-AUDIT-CHAIN-INTEGRITY HIGH; > 0 chain breaks last 24h = SEV-0.",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 24 },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "1": { "text": "VERIFIED", "color": "green" } } },
+            { "type": "value", "options": { "0": { "text": "BREAK", "color": "red" } } }
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "min(corelink_audit_chain_verify_pass)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Cross-tenant violation aggregate (TenantIsolation; S-08 + S-09 inheritance)",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 11 + INV-AVAIL-ISOLATION + INV-TENANT-ISOLATION inheritance. corelink_ratelimit_cross_tenant_violation_total + corelink_abuse_cross_tenant_feature_leak_total + corelink_audit_tenant_isolation_violation_total. SEV-0 if > 0.",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 30 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(corelink_ratelimit_cross_tenant_violation_total[5m]) + increase(corelink_abuse_cross_tenant_feature_leak_total[5m]) + increase(corelink_audit_tenant_isolation_violation_total[5m]))",
+          "legendFormat": "cross-tenant violations (5m)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Pentest finding count (last quarterly run) by severity",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 12 + S-20 pentest hook. Internal pentest + S-20 external pentest finding count by severity. Critical/High = SEV-1 ship-block.",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 30 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (severity) (corelink_pentest_findings_count{severity=~\"critical|high\"})",
+          "legendFormat": "{{severity}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "links": [
+    {
+      "title": "Spec — WI-S09-005",
+      "url": "../../specs/04_sprints/S09/work_items/WI-S09-005-12-grafana-dashboards-as-code.md",
+      "type": "link",
+      "icon": "doc"
+    },
+    {
+      "title": "DASH-PRIVACY (privacy companion)",
+      "url": "/d/DASH-PRIVACY",
+      "type": "link",
+      "icon": "dashboard"
+    },
+    {
+      "title": "DASH-RATE (legacy rate-limit + abuse detail)",
+      "url": "/d/DASH-RATE",
+      "type": "link",
+      "icon": "dashboard"
+    }
+  ]
+}

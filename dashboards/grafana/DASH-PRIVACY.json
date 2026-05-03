@@ -1,0 +1,370 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "CoreLink privacy (PII redaction + DSR + audit chain) datasource (Prometheus / VictoriaMetrics / Grafana Cloud Mimir tenant)",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "uid": "DASH-PRIVACY",
+  "title": "CoreLink — Privacy (DASH-PRIVACY)",
+  "description": "WI-S09-005 §6.1 canonical observability_model.md §10 Nível-3 privacy dashboard. CTRL-PRIV-001 DLP scan results + log volume per region + GDPR Art. 17 erasure SLA + audit chain integrity (WI-S09-004 inheritance). Privacy Officer + Compliance Officer + DPO personas.",
+  "tags": ["corelink", "privacy", "pii", "dsr", "gdpr", "lgpd", "audit", "s09", "high-risk", "sota"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "annotations": {
+    "list": [
+      {
+        "name": "lastUpdated",
+        "datasource": "$DS_PROMETHEUS",
+        "enable": false,
+        "iconColor": "blue"
+      }
+    ],
+    "lastUpdated": "2026-05-03T00:00:00Z",
+    "cardinality_budget_used": "4800/100000"
+  },
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "tenant_tier",
+        "type": "custom",
+        "label": "Tenant Tier",
+        "multi": true,
+        "includeAll": true,
+        "options": [
+          { "text": "All", "value": "all", "selected": true },
+          { "text": "Free", "value": "free" },
+          { "text": "Solo", "value": "solo" },
+          { "text": "Team", "value": "team" },
+          { "text": "Business", "value": "business" },
+          { "text": "Enterprise", "value": "enterprise" }
+        ],
+        "query": "all,free,solo,team,business,enterprise"
+      },
+      {
+        "name": "tenant",
+        "type": "query",
+        "label": "Tenant (AdminCtx only)",
+        "datasource": "$DS_PROMETHEUS",
+        "query": "label_values(corelink_privacy_dsr_active_total, tenant_id)",
+        "multi": true,
+        "includeAll": true,
+        "current": { "text": "all", "value": "all" }
+      },
+      {
+        "name": "region",
+        "type": "custom",
+        "label": "Region",
+        "multi": true,
+        "includeAll": true,
+        "options": [
+          { "text": "All", "value": "all", "selected": true },
+          { "text": "SAM", "value": "sam" },
+          { "text": "IAD", "value": "iad" },
+          { "text": "LHR", "value": "lhr" },
+          { "text": "NRT", "value": "nrt" },
+          { "text": "SYD", "value": "syd" }
+        ],
+        "query": "all,sam,iad,lhr,nrt,syd"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "CTRL-PRIV-001 DLP scan — PII leakage rate (MUST = 0; SEV-1)",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 1 + CTRL-PRIV-001 enforcement + WI-S09-002 PiiRedactor inheritance. 5-pattern canonical email/ip/token/pan/cpf_cnpj DLP scanner; sustained > 0 sustained 30d staging = SEV-1 + post-mortem.",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(corelink_logpush_pii_leak_count[24h]))",
+          "legendFormat": "PII leak count (24h)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "PII redactions applied per pattern (5-canonical taxonomy)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 2 + WI-S09-002 PiiPatternKind inheritance. 5-arm canonical email/ip/token/pan/cpf_cnpj redaction rate. Volume signal for redaction effectiveness.",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (pattern) (rate(corelink_logpush_redactions_applied_total[5m]))",
+          "legendFormat": "{{pattern}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Log volume per region (1d rolling) — SLO ≤ 1 GB/d/tenant warning",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 3 + sprint contract §14.s09.5 + privacy_model §11.4 cost control. Sustained > 5 GB/d/tenant = SEV-3.",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (region) (increase(corelink_log_volume_bytes_total{region=~\"$region\"}[24h]))",
+          "legendFormat": "{{region}} (24h)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "GDPR Art. 17 / LGPD Art. 18 erasure DSR — pending count + age (30d SLA)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 4 + S-11 DSR inheritance. Sustained > 0 nearing 30d = SEV-2 SLA breach risk; sustained > 30d = SEV-1 + DPO escalation.",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 5 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(corelink_privacy_dsr_active_total{type=\"erasure\"})",
+          "legendFormat": "active erasure DSRs",
+          "refId": "A"
+        },
+        {
+          "expr": "max(corelink_privacy_dsr_max_age_days{type=\"erasure\"})",
+          "legendFormat": "max age (days)",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "DSR by type (5-canonical: erasure / portability / rectification / restriction / objection)",
+      "type": "piechart",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 5 + S-11 inheritance. DSR taxonomy distribution; product UX input for self-service portal (S-13 deferred).",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 12 },
+      "targets": [
+        {
+          "expr": "sum by (type) (corelink_privacy_dsr_active_total)",
+          "legendFormat": "{{type}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Consent state distribution (granted / withdrawn / pending)",
+      "type": "piechart",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 6 + S-11 consent ledger inheritance. Tenant consent state per LGPD Art. 8 + GDPR Art. 7 explicit consent.",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 12 },
+      "targets": [
+        {
+          "expr": "sum by (state) (corelink_privacy_consent_state_count)",
+          "legendFormat": "{{state}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Audit chain integrity (WI-S09-004 inheritance) — verify pass per region (MUST = 1)",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 7 + WI-S09-004 ChainVerifier inheritance. INV-OBS-AUDIT-CHAIN-INTEGRITY HIGH; daily verifier job; sustained 0 = SEV-0 + Compliance Officer notify within 48h.",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 18 },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "1": { "text": "VERIFIED", "color": "green" } } },
+            { "type": "value", "options": { "0": { "text": "BREAK", "color": "red" } } }
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "min by (region) (corelink_audit_chain_verify_pass{region=~\"$region\"})",
+          "legendFormat": "{{region}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Audit chain verify lag — daily job age (sustained > 24h = SEV-2)",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 8 + WI-S09-004 daily verifier job inheritance. Time since last successful chain verify; sustained > 25h = SEV-2 (cron miss).",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 18 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "h",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 24 },
+              { "color": "red", "value": 25 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "max(corelink_audit_chain_verify_age_hours)",
+          "legendFormat": "verify age (h)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "R2 audit Object Lock retention status — 7y Governance Mode (MUST = configured)",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 9 + WI-S09-004 Object Lock 7y inheritance. CTRL-AUDIT-001 + SOC 2 CC7.2 compliance gate; sustained = 0 = SEV-1 audit gap.",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 24 },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "1": { "text": "CONFIGURED", "color": "green" } } },
+            { "type": "value", "options": { "0": { "text": "MISSING", "color": "red" } } }
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "min(corelink_audit_r2_object_lock_configured)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Region residency violations (cross-region data egress; INV-RESIDENCY canary)",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 10 + S-14 region residency canary. Tenant data crossing residency boundary = LGPD/GDPR Art. 44 violation; > 0 = SEV-1.",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 24 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(corelink_residency_violation_total[5m]))",
+          "legendFormat": "residency violations (5m)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Per-tier log volume budget (sprint contract §14.s09.5) — % of warning cap",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 11 + sprint contract §14.s09.5 cost control. Per-tier 1 GB/d warn / 5 GB/d alert.",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 30 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "max": 100
+        }
+      },
+      "targets": [
+        {
+          "expr": "100 * sum by (tenant_tier) (rate(corelink_log_volume_bytes_total{tenant_tier=~\"$tenant_tier\"}[24h])) / 1073741824",
+          "legendFormat": "{{tenant_tier}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "DPA versioning live status — last DPA acknowledged per tenant",
+      "type": "table",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 12 + S-20 DPA versioning hook. Tenants with stale DPA acknowledgement > 90d = compliance flag.",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 30 },
+      "targets": [
+        {
+          "expr": "topk(20, max by (tenant_id) (corelink_privacy_dpa_acknowledged_age_days))",
+          "legendFormat": "{{tenant_id}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "links": [
+    {
+      "title": "Spec — WI-S09-005",
+      "url": "../../specs/04_sprints/S09/work_items/WI-S09-005-12-grafana-dashboards-as-code.md",
+      "type": "link",
+      "icon": "doc"
+    },
+    {
+      "title": "Spec — privacy_model.md",
+      "url": "../../specs/03_architecture/privacy_model.md",
+      "type": "link",
+      "icon": "doc"
+    },
+    {
+      "title": "DASH-SECURITY (security companion)",
+      "url": "/d/DASH-SECURITY",
+      "type": "link",
+      "icon": "dashboard"
+    }
+  ]
+}

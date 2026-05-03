@@ -1,0 +1,390 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "CoreLink per-tenant deep-dive datasource (Prometheus / VictoriaMetrics / Grafana Cloud Mimir tenant)",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "uid": "DASH-TENANT",
+  "title": "CoreLink — Tenant Deep-Dive (DASH-TENANT)",
+  "description": "WI-S09-005 §6.1 canonical observability_model.md §10 Nível-3 per-tenant deep-dive dashboard. Embedded rate-limit panels from S-08 inheritance (RATE-LIMIT→TENANT refactor per Lote 10.9-quaters NEW-P0-1 corrected). AdminCtx RBAC required for full tenant filter selection; corelink-viewer locked to own tenant.",
+  "tags": ["corelink", "tenant", "rate-limit", "s09", "high-risk", "sota"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "annotations": {
+    "list": [
+      {
+        "name": "lastUpdated",
+        "datasource": "$DS_PROMETHEUS",
+        "enable": false,
+        "iconColor": "blue"
+      }
+    ],
+    "lastUpdated": "2026-05-03T00:00:00Z",
+    "cardinality_budget_used": "8500/100000"
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "tenant",
+        "type": "query",
+        "label": "Tenant ID (AdminCtx required)",
+        "datasource": "$DS_PROMETHEUS",
+        "query": "label_values(corelink_cas_put_requests_total, tenant_id)",
+        "multi": false,
+        "includeAll": false,
+        "current": { "text": "select tenant", "value": "" }
+      },
+      {
+        "name": "tenant_tier",
+        "type": "custom",
+        "label": "Tenant Tier",
+        "multi": true,
+        "includeAll": true,
+        "options": [
+          { "text": "All", "value": "all", "selected": true },
+          { "text": "Free", "value": "free" },
+          { "text": "Solo", "value": "solo" },
+          { "text": "Team", "value": "team" },
+          { "text": "Business", "value": "business" },
+          { "text": "Enterprise", "value": "enterprise" }
+        ],
+        "query": "all,free,solo,team,business,enterprise"
+      },
+      {
+        "name": "region",
+        "type": "custom",
+        "label": "Region",
+        "multi": true,
+        "includeAll": true,
+        "options": [
+          { "text": "All", "value": "all", "selected": true },
+          { "text": "SAM", "value": "sam" },
+          { "text": "IAD", "value": "iad" },
+          { "text": "LHR", "value": "lhr" },
+          { "text": "NRT", "value": "nrt" },
+          { "text": "SYD", "value": "syd" }
+        ],
+        "query": "all,sam,iad,lhr,nrt,syd"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Tenant Identity — header banner",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 1 — current tenant id + tier + region distribution + onboarding age. Header context for downstream panels.",
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "targets": [
+        {
+          "expr": "max by (tenant_id, tenant_tier) (corelink_tenant_age_days{tenant_id=\"$tenant\"})",
+          "legendFormat": "{{tenant_id}} · {{tenant_tier}} (age days)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Per-tenant cache hit ratio (CAS + AC)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 2 — customer-visible business metric for this specific tenant. Drill from DASH-GLOBAL-PRODUCT pie click.",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 4 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        }
+      },
+      "targets": [
+        {
+          "expr": "avg by (type) (corelink_cache_hit_ratio{tenant_id=\"$tenant\", type=~\"cas|ac\"})",
+          "legendFormat": "{{type}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Per-tenant p99 latency (CAS PUT / GET / AC lookup) — exemplar deep-link",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 3 + CAP-OBS-009 exemplar inheritance from WI-S09-003. Per-tenant SLO compliance view; click exemplar → Tempo trace.",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 4 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(corelink_cas_put_duration_seconds_bucket{tenant_id=\"$tenant\"}[5m])))",
+          "legendFormat": "cas.put",
+          "refId": "A",
+          "exemplar": true
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(corelink_cas_get_duration_seconds_bucket{tenant_id=\"$tenant\"}[5m])))",
+          "legendFormat": "cas.get",
+          "refId": "B",
+          "exemplar": true
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(corelink_ac_lookup_duration_seconds_bucket{tenant_id=\"$tenant\"}[5m])))",
+          "legendFormat": "ac.lookup",
+          "refId": "C",
+          "exemplar": true
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Per-tenant top errors (4xx + 5xx by code)",
+      "type": "table",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 4 — top error breakdown by HTTP status code. Triage input for tenant-specific incidents.",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 10 },
+      "targets": [
+        {
+          "expr": "topk(10, sum by (status_code) (rate(corelink_cas_put_requests_total{tenant_id=\"$tenant\", result=~\"4xx|5xx\"}[1h])))",
+          "legendFormat": "{{status_code}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Per-tenant quota utilization (storage + bandwidth + ops)",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 5 — per-tenant tier quota gauge; storage_bytes vs tier_cap, bandwidth_egress vs tier_cap, ops_total vs tier_cap. SEV-3 alert at 80%.",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 10 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 70 },
+              { "color": "red", "value": 90 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "100 * corelink_storage_bytes_used{tenant_id=\"$tenant\"} / on(tenant_tier) group_left() corelink_tier_storage_cap_bytes",
+          "legendFormat": "storage % cap",
+          "refId": "A"
+        },
+        {
+          "expr": "100 * sum(rate(corelink_egress_bytes_total{tenant_id=\"$tenant\"}[1h])) / on(tenant_tier) group_left() corelink_tier_bandwidth_cap_bps",
+          "legendFormat": "bandwidth % cap",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Embedded RATE-LIMIT panels — token bucket utilization (S-08 inheritance)",
+      "type": "heatmap",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 6 + Lote 10.9-quaters NEW-P0-1 RATE-LIMIT→TENANT refactor + WI-S08-001 inheritance. Per-(dimension) token bucket remaining for this tenant. 5-tier refill ladder canonical.",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 16 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "targets": [
+        {
+          "expr": "max by (dimension) (corelink_ratelimit_tokens_remaining{tenant_id=\"$tenant\"})",
+          "legendFormat": "{{dimension}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Embedded RATE-LIMIT panels — 429 rate within-quota vs over-quota (S-08 inheritance)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 7 + WI-S08-006 SLI distinction inheritance. within-quota 429 (BUG; in SLO denominator) vs over-quota 429 (LEGITIMATE; excluded). Sprint contract §7.10.s08.1.",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 16 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(corelink_rate_limited_within_quota_total{tenant_id=\"$tenant\"}[5m]))",
+          "legendFormat": "within-quota",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(corelink_rate_limited_over_quota_total{tenant_id=\"$tenant\"}[5m]))",
+          "legendFormat": "over-quota",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Per-tenant request rate (RED.R)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 8 — RED.R rate per op. Sustained anomaly alert (delta > 3σ vs 7d avg) feeds anomaly detection.",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 22 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (op) (rate(corelink_cas_put_requests_total{tenant_id=\"$tenant\"}[5m]) + rate(corelink_cas_get_requests_total{tenant_id=\"$tenant\"}[5m]) + rate(corelink_ac_lookup_requests_total{tenant_id=\"$tenant\"}[5m]))",
+          "legendFormat": "{{op}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Per-tenant log volume (1h rolling) — SLO ≤ 1 GB/d warning",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 9 + sprint contract §14.s09.5 log volume budget. Sustained > 1 GB/d warning; > 5 GB/d alert per privacy_model §11.4 cost control.",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 22 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 1073741824 },
+              { "color": "red", "value": 5368709120 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(corelink_log_volume_bytes_total{tenant_id=\"$tenant\"}[24h]))",
+          "legendFormat": "log volume (24h)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Per-tenant abuse score (S-08 inheritance) — auto-quarantine signal",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 10 + S-08 abuse heuristic inheritance. 4-feature weighted-sum score; 3-arm Benign/Suspicious/Malicious at 0.5/0.8 thresholds. INV-LGPD-AUTO-SUSPEND-FORBIDDEN canary.",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 22 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 0.5 },
+              { "color": "red", "value": 0.8 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "max(corelink_abuse_score{tenant_id=\"$tenant\"})",
+          "legendFormat": "abuse score",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Per-tenant onboarding journey — first-PUT to first-cache-hit lag",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 11 — onboarding TTV (time to value) signal. p50/p99 of seconds from tenant first PUT to first AC hit. Product UX input.",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 28 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(corelink_tenant_first_cache_hit_lag_seconds_bucket{tenant_id=\"$tenant\"}[7d])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(corelink_tenant_first_cache_hit_lag_seconds_bucket{tenant_id=\"$tenant\"}[7d])))",
+          "legendFormat": "p99",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Per-tenant DSR pending (S-11 inheritance) — GDPR Art. 17 erasure SLA",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 12 + S-11 privacy DSR inheritance. Active DSR (data subject request) per type; 30d SLA per GDPR Art. 17. Sustained > 0 nearing SLA = SEV-2.",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 28 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (type) (corelink_privacy_dsr_active_total{tenant_id=\"$tenant\"})",
+          "legendFormat": "{{type}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "links": [
+    {
+      "title": "Spec — WI-S09-005",
+      "url": "../../specs/04_sprints/S09/work_items/WI-S09-005-12-grafana-dashboards-as-code.md",
+      "type": "link",
+      "icon": "doc"
+    },
+    {
+      "title": "DASH-RATE (legacy rate-limit detail)",
+      "url": "/d/DASH-RATE",
+      "type": "link",
+      "icon": "dashboard"
+    }
+  ]
+}

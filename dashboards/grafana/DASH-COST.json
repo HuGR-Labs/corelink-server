@@ -1,0 +1,358 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "CoreLink cost (per-region $USD/mo + cardinality + billing) datasource (Prometheus / VictoriaMetrics / Grafana Cloud Mimir tenant)",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "uid": "DASH-COST",
+  "title": "CoreLink — Cost (DASH-COST)",
+  "description": "WI-S09-005 §6.1 canonical observability_model.md §10 Nível-3 cost dashboard. Per-region $USD/mo Mimir + Loki + Tempo + R2 + Workers + cardinality budget tracking (WI-S09-001 inheritance) + embedded billing panels from S-10 inheritance (BILLING→COST refactor per Lote 10.9-quaters NEW-P0-1 corrected). DevOps + Compliance + Product personas.",
+  "tags": ["corelink", "cost", "billing", "cardinality", "s09", "high-risk", "sota"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5m",
+  "annotations": {
+    "list": [
+      {
+        "name": "lastUpdated",
+        "datasource": "$DS_PROMETHEUS",
+        "enable": false,
+        "iconColor": "blue"
+      }
+    ],
+    "lastUpdated": "2026-05-03T00:00:00Z",
+    "cardinality_budget_used": "5500/100000"
+  },
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "tenant_tier",
+        "type": "custom",
+        "label": "Tenant Tier",
+        "multi": true,
+        "includeAll": true,
+        "options": [
+          { "text": "All", "value": "all", "selected": true },
+          { "text": "Free", "value": "free" },
+          { "text": "Solo", "value": "solo" },
+          { "text": "Team", "value": "team" },
+          { "text": "Business", "value": "business" },
+          { "text": "Enterprise", "value": "enterprise" }
+        ],
+        "query": "all,free,solo,team,business,enterprise"
+      },
+      {
+        "name": "tenant",
+        "type": "query",
+        "label": "Tenant (AdminCtx only)",
+        "datasource": "$DS_PROMETHEUS",
+        "query": "label_values(corelink_billing_events_emitted_total, tenant_id)",
+        "multi": true,
+        "includeAll": true,
+        "current": { "text": "all", "value": "all" }
+      },
+      {
+        "name": "region",
+        "type": "custom",
+        "label": "Region",
+        "multi": true,
+        "includeAll": true,
+        "options": [
+          { "text": "All", "value": "all", "selected": true },
+          { "text": "SAM", "value": "sam" },
+          { "text": "IAD", "value": "iad" },
+          { "text": "LHR", "value": "lhr" },
+          { "text": "NRT", "value": "nrt" },
+          { "text": "SYD", "value": "syd" }
+        ],
+        "query": "all,sam,iad,lhr,nrt,syd"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Total cost USD/month per region (CF Workers + R2 + D1 + KV + Mimir + Loki + Tempo)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 1 — total cost per region per month. Cost regression gate sprint contract §14.s09.7; +10% delta blocks merge sem ADR.",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (region) (corelink_cost_usd_per_month{region=~\"$region\"})",
+          "legendFormat": "{{region}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Cost per tenant (top 30) — billing + observability cost attribution",
+      "type": "table",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 2 — per-tenant cost attribution (storage + bandwidth + ops + observability). AdminCtx required.",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        }
+      },
+      "targets": [
+        {
+          "expr": "topk(30, sum by (tenant_id) (corelink_cost_usd_per_tenant_month{tenant_tier=~\"$tenant_tier\"}))",
+          "legendFormat": "{{tenant_id}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "R2 storage cost per tier (GB-month × $0.015)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 3 — R2 storage line item per tier. Free/Solo/Team/Business/Enterprise canonical 5-tier (Lote 10.7bis P0-7).",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (tenant_tier) (corelink_r2_storage_cost_usd{tenant_tier=~\"$tenant_tier\"})",
+          "legendFormat": "{{tenant_tier}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Bandwidth egress cost per region (R2 free tier $0; CF Workers paid lookups)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 4 — R2 egress free in CF; quantifies bandwidth utilization for capacity planning.",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (region) (corelink_egress_cost_usd{region=~\"$region\"})",
+          "legendFormat": "{{region}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Log ingest cost (Loki tenant cost projection USD/month)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 5 + Lote 10.9-quaters NEW-P0-1 BILLING→COST embed + sprint contract §14.s09.7. Logpush volume × Loki ingest price.",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 12 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (tenant_tier) (corelink_loki_ingest_cost_usd{tenant_tier=~\"$tenant_tier\"})",
+          "legendFormat": "{{tenant_tier}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "DO singleton invocation count + cost (RateLimiter + AuditChainVerifier per region)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 6 — Durable Object invocation count × $0.15/M ops; CFR singleton class canonical per region.",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 12 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (do_class, region) (corelink_do_invocation_cost_usd{region=~\"$region\"})",
+          "legendFormat": "{{do_class}} {{region}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Cardinality budget utilization (% of 100k global cap; WI-S09-001 inheritance)",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 7 + INV-OBS-CARDINALITY-BUDGET inheritance. Cardinality drift = literal Prom cost; SEV-3 alert at 80%.",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 12 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 70 },
+              { "color": "red", "value": 80 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "100 * corelink_analytics_cardinality_global_total / 100000",
+          "legendFormat": "global cardinality %",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Per-metric cardinality top-10 (drift detection)",
+      "type": "table",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 8 + WI-S09-001 inheritance. Top-10 highest cardinality metrics; drift > 80% per-metric cap = SEV-3.",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 18 },
+      "targets": [
+        {
+          "expr": "topk(10, corelink_analytics_cardinality_per_metric)",
+          "legendFormat": "{{metric}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Embedded BILLING panels — billing events emitted per type (S-10 inheritance)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 9 + Lote 10.9-quaters NEW-P0-1 BILLING→COST embed + S-10 billing inheritance. 5-canonical billing event types (storage / bandwidth / ops / overage / credit).",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 18 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (type) (rate(corelink_billing_events_emitted_total[1h]))",
+          "legendFormat": "{{type}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Cost regression gate status — last PR delta vs baseline",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 10 + sprint contract §14.s09.7. PR-level cost regression gate: +10% delta blocks merge sem ADR.",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 24 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 5 },
+              { "color": "red", "value": 10 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "max(corelink_cost_pr_delta_pct)",
+          "legendFormat": "PR cost delta %",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "MRR proxy total (S-10 inheritance) — cost vs revenue ratio",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 11 + S-10 billing inheritance + DASH-GLOBAL-PRODUCT cross-link. Cost / MRR ratio target ≤ 0.4 (60% gross margin).",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 24 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 0.4 },
+              { "color": "red", "value": 0.6 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(corelink_cost_usd_per_month) / on() group_left() sum(corelink_billing_mrr_proxy_usd)",
+          "legendFormat": "cost / MRR",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Quarterly TCO projection — next 12mo run rate × 12",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 12 — annualized TCO projection from current run rate. Capacity planning + budget input for next year.",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 24 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        }
+      },
+      "targets": [
+        {
+          "expr": "12 * sum(corelink_cost_usd_per_month)",
+          "legendFormat": "12mo TCO",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "links": [
+    {
+      "title": "Spec — WI-S09-005",
+      "url": "../../specs/04_sprints/S09/work_items/WI-S09-005-12-grafana-dashboards-as-code.md",
+      "type": "link",
+      "icon": "doc"
+    },
+    {
+      "title": "DASH-GLOBAL-PRODUCT (revenue companion)",
+      "url": "/d/DASH-GLOBAL-PRODUCT",
+      "type": "link",
+      "icon": "dashboard"
+    }
+  ]
+}

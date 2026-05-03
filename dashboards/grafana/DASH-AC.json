@@ -12,7 +12,7 @@
   "uid": "DASH-AC",
   "title": "CoreLink — Action Cache (DASH-AC)",
   "description": "WI-S04-006 §6.1.2 canonical Action Cache dashboard. 8 panels per WI body §6.1.2: cache hit ratio (business metric); latency p99 GET/UPDATE warm/cold; tenant isolation alert; sig invalid rate; TTL eviction rate; negative cache rates; REAPI conformance status; cost per-op tracker.",
-  "tags": ["corelink", "action-cache", "s04", "high-risk", "ship-gate"],
+  "tags": ["corelink", "action-cache", "s04", "s09", "high-risk", "ship-gate", "sota"],
   "timezone": "utc",
   "schemaVersion": 39,
   "version": 1,
@@ -245,8 +245,16 @@
         "enable": true,
         "iconColor": "red",
         "expr": "ALERTS{alertname=~\"AC.*\", severity=~\"sev1|sev0\"}"
+      },
+      {
+        "name": "lastUpdated",
+        "datasource": "$DS_PROMETHEUS",
+        "enable": false,
+        "iconColor": "blue"
       }
-    ]
+    ],
+    "lastUpdated": "2026-05-03T00:00:00Z",
+    "cardinality_budget_used": "4200/100000"
   },
   "links": [
     {

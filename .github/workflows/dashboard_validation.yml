@@ -1,0 +1,56 @@
+name: Dashboard Validation (WI-S09-005)
+
+# Runs canonical-12 Grafana dashboard structural validation per WI-S09-005:
+# - JSON parses
+# - Canonical 12 count discipline (Lote 10.8-tris P1-NEW-1 lesson absorbed)
+# - Required template variables (region/tenant_tier/tenant)
+# - Datasource consistency ($DS_PROMETHEUS)
+# - lastUpdated annotation per sprint contract §14.s09.6
+# - cardinality_budget_used annotation per WI-S09-001 inheritance
+
+on:
+  pull_request:
+    paths:
+      - 'dashboards/grafana/**'
+      - 'scripts/validate_dashboards.py'
+      - '.github/workflows/dashboard_validation.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'dashboards/grafana/**'
+      - 'scripts/validate_dashboards.py'
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  dashboard-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Validate dashboards (canonical-12 + structural)
+        run: python3 scripts/validate_dashboards.py
+
+      - name: Verify all dashboards parse
+        run: |
+          python3 -c "
+          import json, glob, sys
+          ok = True
+          for f in sorted(glob.glob('dashboards/grafana/DASH-*.json')):
+              try:
+                  with open(f) as fh:
+                      json.load(fh)
+                  print(f'  [OK] {f}')
+              except Exception as e:
+                  print(f'  [FAIL] {f}: {e}')
+                  ok = False
+          sys.exit(0 if ok else 1)
+          "

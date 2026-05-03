@@ -1,0 +1,451 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "CoreLink global RED + USE overview datasource (Prometheus / VictoriaMetrics / Grafana Cloud Mimir tenant)",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "uid": "DASH-GLOBAL-HEALTH",
+  "title": "CoreLink — Global Health (DASH-GLOBAL-HEALTH)",
+  "description": "WI-S09-005 §6.1 canonical observability_model.md §10 Nível-3 RED + USE overview. SRE on-call entry point. Aggregates RED triple (rate / errors / duration) per CAP-OBS-001 + USE quartet (utilization / saturation / errors / latency) per Google SRE Workbook §6 across CAS / AC / GC / Auth / Rate-Limit / Multipart / Audit subsystems. AdminCtx RBAC enforces per-tenant drill-down ACL; corelink-viewer role sees aggregated only.",
+  "tags": ["corelink", "global-health", "red", "use", "s09", "high-risk", "sota", "ship-gate"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "annotations": {
+    "list": [
+      {
+        "name": "lastUpdated",
+        "datasource": "$DS_PROMETHEUS",
+        "enable": false,
+        "iconColor": "blue"
+      },
+      {
+        "name": "SEV-1 incidents",
+        "datasource": "$DS_PROMETHEUS",
+        "enable": true,
+        "iconColor": "red",
+        "expr": "ALERTS{severity=~\"sev0|sev1\"}"
+      }
+    ],
+    "lastUpdated": "2026-05-03T00:00:00Z",
+    "cardinality_budget_used": "5800/100000"
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "tenant_tier",
+        "type": "custom",
+        "label": "Tenant Tier",
+        "multi": true,
+        "includeAll": true,
+        "options": [
+          { "text": "All", "value": "all", "selected": true },
+          { "text": "Free", "value": "free" },
+          { "text": "Solo", "value": "solo" },
+          { "text": "Team", "value": "team" },
+          { "text": "Business", "value": "business" },
+          { "text": "Enterprise", "value": "enterprise" }
+        ],
+        "query": "all,free,solo,team,business,enterprise"
+      },
+      {
+        "name": "tenant",
+        "type": "query",
+        "label": "Tenant (AdminCtx only)",
+        "datasource": "$DS_PROMETHEUS",
+        "query": "label_values(corelink_cas_put_requests_total, tenant_id)",
+        "multi": true,
+        "includeAll": true,
+        "current": { "text": "all", "value": "all" }
+      },
+      {
+        "name": "region",
+        "type": "custom",
+        "label": "Region",
+        "multi": true,
+        "includeAll": true,
+        "options": [
+          { "text": "All", "value": "all", "selected": true },
+          { "text": "SAM", "value": "sam" },
+          { "text": "IAD", "value": "iad" },
+          { "text": "LHR", "value": "lhr" },
+          { "text": "NRT", "value": "nrt" },
+          { "text": "SYD", "value": "syd" }
+        ],
+        "query": "all,sam,iad,lhr,nrt,syd"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "RED — Global Request Rate (CAS PUT + GET + AC lookup) per region",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 1 — RED.R per Google SRE Workbook §6. Aggregate request rate across CAS PUT, CAS GET, AC lookup hot paths per region. Capacity planning + traffic anomaly detection input. Sustained > 80% region capacity = SEV-3 capacity ticket.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (region) (rate(corelink_cas_put_requests_total{region=~\"$region\"}[5m]) + rate(corelink_cas_get_requests_total{region=~\"$region\"}[5m]) + rate(corelink_ac_lookup_requests_total{region=~\"$region\"}[5m]))",
+          "legendFormat": "{{region}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "RED — Global p99 Latency (CAS PUT + GET + AC lookup) — exemplar deep-link to Tempo",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 2 — RED.D per Google SRE Workbook §6 + CAP-OBS-009 exemplar deep-link inheritance from WI-S09-003. Click exemplar dot → Tempo trace view. SLO-LAT-CAS-PUT p99 ≤ 200ms warm; SLO-LAT-AC-HIT p99 ≤ 150ms.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 0.15 },
+              { "color": "red", "value": 0.3 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, op) (rate(corelink_cas_put_duration_seconds_bucket{region=~\"$region\"}[5m])))",
+          "legendFormat": "cas.put p99",
+          "refId": "A",
+          "exemplar": true
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, op) (rate(corelink_cas_get_duration_seconds_bucket{region=~\"$region\"}[5m])))",
+          "legendFormat": "cas.get p99",
+          "refId": "B",
+          "exemplar": true
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, op) (rate(corelink_ac_lookup_duration_seconds_bucket{region=~\"$region\"}[5m])))",
+          "legendFormat": "ac.lookup p99",
+          "refId": "C",
+          "exemplar": true
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "RED — Global Error Rate per result class (Success / 4xx / 5xx)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 3 — RED.E per Google SRE Workbook §6. RedResultLabel canonical 3-arm Success/ClientError4xx/ServerError5xx per WI-S09-001 §labels. Sustained 5xx > 0.1% triggers multi-burn-rate alert (WI-S09-006).",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 8 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (result) (rate(corelink_cas_put_requests_total{result=~\"5xx|4xx\", region=~\"$region\"}[5m]) + rate(corelink_cas_get_requests_total{result=~\"5xx|4xx\", region=~\"$region\"}[5m]))",
+          "legendFormat": "{{result}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "USE — Worker CPU time utilization per region (cf.cpu_time histogram)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 4 — USE.U per Google SRE Workbook §6. Cloudflare Worker cf.cpu_time histogram p50/p99 per region. CF Workers Unbound 30s wallclock cap; sustained p99 > 5s = SEV-3 inefficient code path.",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 8 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, region) (rate(corelink_worker_cpu_time_ms_bucket{region=~\"$region\"}[5m])))",
+          "legendFormat": "p50 {{region}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, region) (rate(corelink_worker_cpu_time_ms_bucket{region=~\"$region\"}[5m])))",
+          "legendFormat": "p99 {{region}}",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "USE — R2 ops/sec + D1 row scans/sec per region",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 5 — USE.U for R2 + D1 backends. R2 ops/sec rate of GetObject + PutObject + HeadObject; D1 row scans/sec rate to detect query inefficiency. Sustained > 10× baseline = SEV-3 efficiency ticket.",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 14 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (region, op) (rate(corelink_r2_ops_total{region=~\"$region\"}[5m]))",
+          "legendFormat": "r2 {{op}} {{region}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (region) (rate(corelink_d1_rows_scanned_total{region=~\"$region\"}[5m]))",
+          "legendFormat": "d1 rows {{region}}",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "USE — KV read/write quota utilization (% of 10M/day cap)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 6 — USE.S saturation per Google SRE Workbook §6. CF Workers KV daily cap 10M reads + 1M writes free tier; saturation alert at 80% sustained 30min.",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 14 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 70 },
+              { "color": "red", "value": 90 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "100 * sum by (op) (rate(corelink_kv_ops_total[1h])) / on() group_left() corelink_kv_daily_cap",
+          "legendFormat": "kv {{op}} % cap",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Active tenants (last 5min) per tier",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 7 — business pulse cross-link with DASH-GLOBAL-PRODUCT. count of distinct tenant_id em RED triple last 5min per tier. AdminCtx redacts non-admin viewer to aggregated total.",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 14 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "targets": [
+        {
+          "expr": "count by (tenant_tier) (sum by (tenant_id, tenant_tier) (rate(corelink_cas_put_requests_total{tenant_tier=~\"$tenant_tier\"}[5m]) > 0))",
+          "legendFormat": "{{tenant_tier}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "INV-OBS-CARDINALITY-BUDGET utilization (% of 100k global cap)",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 8 + INV-OBS-CARDINALITY-BUDGET (HIGH; registry §3.12) inheritance from WI-S09-001. Global cardinality utilization counter; SEV-3 alert at 80% sustained 30min. Per-metric ≤ 20k + global ≤ 100k ratchet.",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 20 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 70 },
+              { "color": "red", "value": 80 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "100 * corelink_analytics_cardinality_global_total / on() group_left() 100000",
+          "legendFormat": "cardinality utilization %",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "INV-TENANT-ISOLATION canary across all subsystems (MUST = 0; SEV-0)",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 9 + INV-TENANT-ISOLATION (CRITICAL, TLA+; registry). Aggregate cross-tenant violation counters from corelink-cas + corelink-ac + corelink-ratelimit + corelink-abuse + corelink-audit-chain crates. MUST always = 0; > 0 = SEV-0 PagerDuty page Architect + Security Lead.",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 20 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(corelink_ac_cross_tenant_total[5m]) + increase(corelink_ratelimit_cross_tenant_violation_total[5m]) + increase(corelink_abuse_cross_tenant_feature_leak_total[5m]) + increase(corelink_audit_tenant_isolation_violation_total[5m]))",
+          "legendFormat": "cross-tenant violations (5m)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Global SLO Burn Rate — multi-window (1h / 6h / 5min / 30min) per Google SRE Workbook §5",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 10 + multi-burn-rate from WI-S09-006. Sloth-style 4-window canonical: page if burn(1h) > 14.4 AND burn(5min) > 14.4; ticket if burn(6h) > 6 AND burn(30min) > 6.",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 26 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 6 },
+              { "color": "red", "value": 14.4 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(corelink_cas_get_requests_total{result=~\"5xx\"}[1h])) / sum(rate(corelink_cas_get_requests_total[1h])) / 0.001",
+          "legendFormat": "burn(1h)",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(corelink_cas_get_requests_total{result=~\"5xx\"}[5m])) / sum(rate(corelink_cas_get_requests_total[5m])) / 0.001",
+          "legendFormat": "burn(5min)",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(rate(corelink_cas_get_requests_total{result=~\"5xx\"}[6h])) / sum(rate(corelink_cas_get_requests_total[6h])) / 0.001",
+          "legendFormat": "burn(6h)",
+          "refId": "C"
+        },
+        {
+          "expr": "sum(rate(corelink_cas_get_requests_total{result=~\"5xx\"}[30m])) / sum(rate(corelink_cas_get_requests_total[30m])) / 0.001",
+          "legendFormat": "burn(30min)",
+          "refId": "D"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Synthetic canary 3 regions (us-east + eu-west + ap-south) — health 24/7 sustained",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 11 + sprint contract §6 DoD synthetic canary 24/7 sustained 72h sem gap. Per-region canary success rate; gauge 1=healthy, 0=down. Sustained 0 > 5min = SEV-1.",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 26 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": 0 },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "min by (region) (corelink_synthetic_canary_health{region=~\"us-east|eu-west|ap-south\"})",
+          "legendFormat": "{{region}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "PagerDuty MTTA (synthetic page → ack) — SLO ≤ 5min sustained 7d",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 12 + sprint contract §7.10.s09.4 PagerDuty MTTA < 5min synthetic test sustained 7d. p99 of synthetic_page_to_ack_seconds; sustained > 300s = SEV-2 oncall responsiveness regression.",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 32 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 180 },
+              { "color": "red", "value": 300 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(corelink_pagerduty_synthetic_ack_seconds_bucket[7d])))",
+          "legendFormat": "MTTA p99 (7d)",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "links": [
+    {
+      "title": "Spec — WI-S09-005",
+      "url": "../../specs/04_sprints/S09/work_items/WI-S09-005-12-grafana-dashboards-as-code.md",
+      "type": "link",
+      "icon": "doc"
+    },
+    {
+      "title": "Spec — observability_model.md §10 (canonical 12 dashboards)",
+      "url": "../../specs/03_architecture/observability_model.md",
+      "type": "link",
+      "icon": "doc"
+    },
+    {
+      "title": "DASH-GLOBAL-PRODUCT (business pulse companion)",
+      "url": "/d/DASH-GLOBAL-PRODUCT",
+      "type": "link",
+      "icon": "dashboard"
+    },
+    {
+      "title": "DASH-SLO-CATALOG (SLO burn-rate detail)",
+      "url": "/d/DASH-SLO-CATALOG",
+      "type": "link",
+      "icon": "dashboard"
+    }
+  ]
+}

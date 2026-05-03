@@ -1,0 +1,274 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "CoreLink supply-chain (SBOM + vuln + release verify) datasource (Prometheus / VictoriaMetrics / Grafana Cloud Mimir tenant)",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "uid": "DASH-SUPPLY-CHAIN",
+  "title": "CoreLink — Supply Chain (DASH-SUPPLY-CHAIN)",
+  "description": "WI-S09-005 §6.1 canonical observability_model.md §10 Nível-3 supply-chain dashboard. Tracks SBOM drift, vuln counts (CVE/GHSA), release verify status (cosign), dependency freshness. SLSA Level 3 target. Compliance + Security personas.",
+  "tags": ["corelink", "supply-chain", "sbom", "slsa", "s09", "high-risk", "sota"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5m",
+  "annotations": {
+    "list": [
+      {
+        "name": "lastUpdated",
+        "datasource": "$DS_PROMETHEUS",
+        "enable": false,
+        "iconColor": "blue"
+      }
+    ],
+    "lastUpdated": "2026-05-03T00:00:00Z",
+    "cardinality_budget_used": "1800/100000"
+  },
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "severity",
+        "type": "custom",
+        "label": "CVE Severity",
+        "multi": true,
+        "includeAll": true,
+        "options": [
+          { "text": "All", "value": "all", "selected": true },
+          { "text": "Critical", "value": "critical" },
+          { "text": "High", "value": "high" },
+          { "text": "Medium", "value": "medium" },
+          { "text": "Low", "value": "low" }
+        ],
+        "query": "all,critical,high,medium,low"
+      },
+      {
+        "name": "region",
+        "type": "custom",
+        "label": "Region",
+        "multi": true,
+        "includeAll": true,
+        "options": [
+          { "text": "All", "value": "all", "selected": true },
+          { "text": "SAM", "value": "sam" },
+          { "text": "IAD", "value": "iad" },
+          { "text": "LHR", "value": "lhr" },
+          { "text": "NRT", "value": "nrt" },
+          { "text": "SYD", "value": "syd" }
+        ],
+        "query": "all,sam,iad,lhr,nrt,syd"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Active CVE count by severity (production deployment)",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 1 — current production CVE inventory. Critical > 0 = SEV-1 immediate patch obligation; High > 0 sustained 7d = SEV-2.",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 5 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (severity) (corelink_supply_chain_cve_active_count{severity=~\"$severity\"})",
+          "legendFormat": "{{severity}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "SBOM drift counter — unexpected dependencies (MUST = 0; SEV-2)",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 2 + S-19 SBOM diff CI gate inheritance. CycloneDX 1.5+ diff vs main; sustained > 0 = SEV-2 (unauthorized dep introduction).",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(corelink_supply_chain_sbom_drift_count)",
+          "legendFormat": "SBOM drift count",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Release verify status — cosign signature validation (per region)",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 3 — cosign keyless signature verify gauge per region. PASS = 1 / FAIL = 0; FAIL = SEV-1 ship-gate block.",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "1": { "text": "VERIFIED", "color": "green" } } },
+            { "type": "value", "options": { "0": { "text": "FAIL", "color": "red" } } }
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "min by (region) (corelink_release_cosign_verify_status{region=~\"$region\"})",
+          "legendFormat": "{{region}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Dependency freshness — % deps updated last 90d",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 4 — dep freshness signal; sustained < 70% = stale dep tree warning. Cargo + npm + pip ecosystem coverage.",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": 0 },
+              { "color": "yellow", "value": 50 },
+              { "color": "green", "value": 70 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "100 * corelink_supply_chain_deps_fresh_count / on() group_left() corelink_supply_chain_deps_total",
+          "legendFormat": "% deps fresh (90d)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "SLSA Level achievement — 1 / 2 / 3 / 4",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 5 — SLSA-spec.org level progression gauge. CoreLink target Level 3 (auditable, immutable build provenance).",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 12 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "max": 4,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": 0 },
+              { "color": "yellow", "value": 1 },
+              { "color": "blue", "value": 2 },
+              { "color": "green", "value": 3 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "max(corelink_slsa_level)",
+          "legendFormat": "SLSA level",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Vuln scan latency — last full Trivy scan duration (s)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 6 — Trivy scan job duration; sustained > 30min = CI bottleneck warning.",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 12 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(corelink_supply_chain_trivy_scan_duration_seconds_bucket[7d])))",
+          "legendFormat": "Trivy scan p99 (7d)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Build provenance — last 10 releases (in-toto attestation present)",
+      "type": "table",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 7 — in-toto attestation presence per release tag; SLSA Level 3 requirement.",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 12 },
+      "targets": [
+        {
+          "expr": "topk(10, max by (release_tag) (corelink_release_provenance_present))",
+          "legendFormat": "{{release_tag}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Top vulnerable deps (last 30d Trivy scan)",
+      "type": "table",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 8 — top-10 deps by aggregated CVSS score; remediation prioritization input.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 18 },
+      "targets": [
+        {
+          "expr": "topk(10, sum by (dep_name) (corelink_supply_chain_dep_cvss_score))",
+          "legendFormat": "{{dep_name}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "links": [
+    {
+      "title": "Spec — WI-S09-005",
+      "url": "../../specs/04_sprints/S09/work_items/WI-S09-005-12-grafana-dashboards-as-code.md",
+      "type": "link",
+      "icon": "doc"
+    },
+    {
+      "title": "Spec — observability_model.md §10",
+      "url": "../../specs/03_architecture/observability_model.md",
+      "type": "link",
+      "icon": "doc"
+    }
+  ]
+}

@@ -12,11 +12,23 @@
   "uid": "DASH-GC",
   "title": "CoreLink — Garbage Collection (DASH-GC)",
   "description": "WI-S06-007 §6.1.1 canonical 10-panel GC dashboard. Mirrors DASH-AC + DASH-MULTIPART pattern. Panels: phase rates per region; reclaim bytes per tenant_tier (customer-visible CAP-GC-006); INV-GC-004 violations counter (CRITICAL alert >0); refcount drift global+per-tenant max; sweeper tick rate per region; orphan candidate count per tenant; phase-budget exceeded counter; degrade-mode `gc-pause` active gauge; TLA+ CI 30d sustained verde gauge (S-20 GA gate); SLO-CORRECT-GC + SLO-FRESH-GC sustained.",
-  "tags": ["corelink", "gc", "mark-sweep", "s06", "high-risk", "ship-gate"],
+  "tags": ["corelink", "gc", "mark-sweep", "s06", "s09", "high-risk", "ship-gate", "sota"],
   "timezone": "utc",
   "schemaVersion": 39,
   "version": 1,
   "refresh": "30s",
+  "annotations": {
+    "list": [
+      {
+        "name": "lastUpdated",
+        "datasource": "$DS_PROMETHEUS",
+        "enable": false,
+        "iconColor": "blue"
+      }
+    ],
+    "lastUpdated": "2026-05-03T00:00:00Z",
+    "cardinality_budget_used": "3800/100000"
+  },
   "time": {
     "from": "now-6h",
     "to": "now"
