@@ -1,0 +1,45 @@
+[package]
+name = "corelink-billing-aggregator"
+description = "CoreLink counter aggregator + BLAKE3-256 hash chain over JCS-canonical aggregate bytes (WI-S10-002 — S-10 billing pipeline HIGH_RISK lane). Ships AggregatedCounter (CloudEvents 1.0 aligned + chain link slot prev_hash + monotonic sequence_number + period_start_ms / period_end_ms / total_qty / event_count / idem_keys_seen) keyed by (tenant_id, billing_period, event_kind); AggregationDecision `#[non_exhaustive]` 3-element taxonomy (Aggregated / SkippedNoEvents / SkippedDuplicateRun); AggregatorError `#[non_exhaustive]` taxonomy. CounterAggregator trait + InMemoryCounterAggregator orchestrator wires the deterministic-input-ordering primitive (sort by `(time_ms, idem_key)` lexicographic) + per-(tenant, billing_period) chain head builder + audit-fail-CLOSED envelope (S-07 P1-1 lift + Lote 10.6bis pattern: `corelink.billing_aggregator.{run_started, run_completed, chain_break_detected, sink_failure}` audit fires BEFORE state mutation on every decision arm). AggregatorAuditSink trait + InMemoryAggregatorAuditSink + FailingAggregatorAuditSink. AggregatedCounterStore trait + InMemoryAggregatedCounterStore (per-(tenant, billing_period, event_kind) UPSERT-safe append-only ledger; INV-BILLING-NO-LOSS Layer 1 + INV-BILLING-NO-DUP enforcement at the trait surface). Per-instance `Arc<Mutex<>>` F-001 closure. Production CF Cron Durable Object cron-trigger 1h interval drains usage_event_staging from WI-S10-001 + replays R2 hour bucket + atomic D1 transaction (counter + hash_chain_head) + late-arrival routing deferred to WI-S10-007 PRR ship gate per `trait-abstraction-defer` charter pattern."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_jcs = "0.2"
+blake3 = { workspace = true }
+hex = { workspace = true }
+uuid = { workspace = true, features = ["v7", "serde"] }
+corelink-billing-emit = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+rand = "0.9"
+rand_chacha = "0.9"
+corelink-analytics = { workspace = true }
+
+[[test]]
+name = "prop_billing_aggregator"
+path = "tests/prop_billing_aggregator.rs"
