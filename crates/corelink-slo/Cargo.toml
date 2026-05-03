@@ -1,0 +1,37 @@
+[package]
+name = "corelink-slo"
+description = "CoreLink multi-burn-rate SLO alerting + PagerDuty dispatcher primitive (WI-S09-006 — S-09 observability stack HIGH_RISK lane). Ships SloDefinition + Sli `#[non_exhaustive]` canonical SLI taxonomy (SLI-AVAIL-CAS-GET / SLI-AVAIL-CAS-PUT / SLI-AVAIL-AC-LOOKUP / SLI-AVAIL-AUTH / SLI-LATENCY-CAS-GET-P99 / SLO-DEDUP-RATIO / SLI-RATE-LIMIT-WITHIN-QUOTA per `slo_catalog.md`) + BurnRateWindow `#[non_exhaustive]` 4-canonical (Fast1h / Medium6h / Slow24h / Long3d per Google SRE Workbook Ch 5 Table 4 — multi-window-multi-burn-rate-alerting; reduces false-positive 100x vs threshold-based) + `error_budget_burn_threshold_multiplier` (14.4× / 6× / 3× / 1× per Google SRE canonical) + AlertDecision `#[non_exhaustive]` 5-canonical (Quiet / TicketSev3 / TicketSev2 / PageSev1 / PageSev0; SEV mapping per `observability_model.md §3.1`) + BurnRateCalculator (`error_rate_in_window`; `decide(SloDefinition × BurnRateSample)` → AlertDecision pure-logic) + MultiBurnRateAlert orchestrator (per-instance `Arc<Mutex<>>` state for tenant-scoped flapping ledger + dedup-key idempotency + audit-emit-BEFORE-mutation fail-CLOSED envelope per Lote 10.6bis pattern + S-07 P1-1 fix) + PagerDutyDispatcher trait + InMemoryPagerDutyDispatcher (dedup-key per PagerDuty Events API v2 §dedup_key — same key collapses to single incident) + FailingPagerDutyDispatcher adversarial fixture + SloAuditEventType `#[non_exhaustive]` 5-canonical taxonomy (`corelink.slo.{burn_rate_evaluated, alert_fired, alert_quiet, page_dispatched, ticket_filed}`) + SloError `#[non_exhaustive]` taxonomy. Production PagerDuty Events API v2 HTTPS POST + Prometheus rule ingestion (`promtool test rules`) + auto-quarantine flapping alerts > 3×/week + Twilio fallback + Terraform IaC for 3 PagerDuty services (staging / prod-us / prod-eu) deferred to WI-S09-007 PRR ship gate per `trait-abstraction-defer` charter pattern."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+rand = "0.9"
+rand_chacha = "0.9"
+
+[[test]]
+name = "prop_slo"
+path = "tests/prop_slo.rs"

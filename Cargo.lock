@@ -730,6 +730,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-slo"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "rand 0.9.4",
+ "rand_chacha 0.9.0",
+ "thiserror",
+]
+
+[[package]]
 name = "corelink-tenant-path"
 version = "0.1.0"
 dependencies = [
