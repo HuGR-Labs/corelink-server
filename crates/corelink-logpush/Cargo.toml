@@ -1,0 +1,49 @@
+[package]
+name = "corelink-logpush"
+description = "CoreLink structured logs + PII redaction (WI-S09-002 — S-09 observability stack HIGH_RISK lane). Ships LogRecord (CloudEvent-1.0-aligned canonical schema; id UUIDv7 + source + specversion + type + time_ms + tenant_id pseudonymous + region + data redacted) + LogEventType `#[non_exhaustive]` 4-event canonical taxonomy (RequestServed / AuthAttempt / AdminAction / BillingEvent) + PiiRedactor trait + InMemoryPiiRedactor (5-pattern redaction Email/Ip/Token/Pan/CpfCnpj LGPD Art. 5 §III + GDPR Art. 32 minimization) + LogSink trait + InMemoryLogSink + NDJSON serializer + LogpushError `#[non_exhaustive]` taxonomy + per-instance `Arc<Mutex<>>` F-001 closure + audit-emit-BEFORE-mutation fail-closed envelope on every emit arm. Migration `0016_log_schema.sql` durable canonical schema versioning + redaction pattern config mirror. **DoD §6 gate: zero PII leakage in 100k synthetic seeded ChaCha20Rng samples** (CTRL-PRIV-001 falsifiability target). Production CF Logpush + R2 + Loki binding deferred to WI-S09-007 PRR ship gate per `trait-abstraction-defer` charter pattern."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+uuid = { workspace = true, features = ["v7", "serde"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+corelink-analytics = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+rand = "0.9"
+rand_chacha = "0.9"
+
+[[test]]
+name = "prop_logpush"
+path = "tests/prop_logpush.rs"
+
+[[test]]
+name = "pii_redaction_100k_synthetic"
+path = "tests/pii_redaction_100k_synthetic.rs"
+
+[[test]]
+name = "migration_canonical_0016"
+path = "tests/migration_canonical_0016.rs"

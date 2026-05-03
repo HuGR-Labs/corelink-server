@@ -30,6 +30,7 @@ members = [
     "crates/corelink-abuse",
     "crates/corelink-rate-headers",
     "crates/corelink-analytics",
+    "crates/corelink-logpush",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
@@ -112,6 +113,7 @@ corelink-edge = { path = "crates/corelink-edge" }
 corelink-abuse = { path = "crates/corelink-abuse" }
 corelink-rate-headers = { path = "crates/corelink-rate-headers" }
 corelink-analytics = { path = "crates/corelink-analytics" }
+corelink-logpush = { path = "crates/corelink-logpush" }
 
 # Test / bench
 proptest = "1.5"
