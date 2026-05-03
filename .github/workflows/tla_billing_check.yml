@@ -1,0 +1,114 @@
+name: TLA+ billing_atomicity Model Check (WI-S10-007)
+
+# Runs TLC v1.8.0 SHA-256 pinned (ADR-0042 §A1) sobre
+# specs/tla/billing_atomicity.tla. Mirror of .github/workflows/tla_check.yml
+# (S-06 GC) scoped to the S-10 billing pipeline trigger surface per WI §6.1.2.
+#
+# Gates billing_atomicity.tla via scripts/run_tlc_corelink.sh which enforces:
+#   1. TLC binary SHA-256 supply-chain pin (mandatory por default; opt-out apenas local dev)
+#   2. .tla + .cfg presence
+#   3. TLC invariant + property check verde
+#
+# CI block on failure (exit code != 0). The 4 invariants checked are:
+#   - INV_BILLING_NO_LOSS              (HIGH; registry §3.9 line 136)
+#   - INV_BILLING_NO_DUP               (HIGH; registry §3.9 line 137)
+#   - INV_BILLING_CHAIN_INTEGRITY      (NEW; sprint contract §6 DoD)
+#   - INV_LAYER_1_RECONCILE            (Layer-1 sub-property of INV-BILLING-RECONCILE-3-LAYER)
+
+on:
+  pull_request:
+    paths:
+      - 'specs/tla/billing_atomicity.tla'
+      - 'specs/tla/billing_atomicity.cfg'
+      - 'specs/tla/billing_atomicity_nightly.cfg'
+      - 'scripts/run_tlc_corelink.sh'
+      - '.github/workflows/tla_billing_check.yml'
+      # S-10 contract trigger surface (WI-S10-007 §6.1.2):
+      - 'crates/corelink-billing-emit/**'
+      - 'crates/corelink-billing-aggregator/**'
+      - 'crates/corelink-billing-stripe/**'
+      - 'crates/corelink-billing-reconcile/**'
+      - 'crates/corelink-quota-fsm/**'
+      - 'crates/corelink-billing-replay/**'
+      # Schema migrations + canonical docs that the model abstracts:
+      - 'migrations/d1/0017_usage_event_idem.sql'
+      - 'migrations/d1/0018_stripe_idem_keys.sql'
+      - 'migrations/d1/0019_billing_reconciliation_drift.sql'
+      - 'migrations/d1/0020_quota_fsm_state.sql'
+      - 'migrations/d1/0021_billing_replay_audit.sql'
+      - 'specs/03_architecture/data_model.md'
+      - 'specs/03_architecture/invariant_registry.md'
+      - 'specs/04_sprints/S10/_spec_contract.md'
+  push:
+    branches: [main]
+    paths:
+      # Mirror PR trigger surface (Lote 10.6 cycle 4 fix CAP-GC-008): post-merge
+      # history must observe same surface as PR gate.
+      - 'specs/tla/billing_atomicity.tla'
+      - 'specs/tla/billing_atomicity.cfg'
+      - 'specs/tla/billing_atomicity_nightly.cfg'
+      - 'scripts/run_tlc_corelink.sh'
+      - '.github/workflows/tla_billing_check.yml'
+      - 'crates/corelink-billing-emit/**'
+      - 'crates/corelink-billing-aggregator/**'
+      - 'crates/corelink-billing-stripe/**'
+      - 'crates/corelink-billing-reconcile/**'
+      - 'crates/corelink-quota-fsm/**'
+      - 'crates/corelink-billing-replay/**'
+      - 'migrations/d1/0017_usage_event_idem.sql'
+      - 'migrations/d1/0018_stripe_idem_keys.sql'
+      - 'migrations/d1/0019_billing_reconciliation_drift.sql'
+      - 'migrations/d1/0020_quota_fsm_state.sql'
+      - 'migrations/d1/0021_billing_replay_audit.sql'
+      - 'specs/03_architecture/data_model.md'
+      - 'specs/03_architecture/invariant_registry.md'
+      - 'specs/04_sprints/S10/_spec_contract.md'
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  tla-billing-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Java (TLC requires JVM)
+        uses: actions/setup-java@3a4f6e1af504cf6a31855fa899c6aa5355ba6c12 # v4.7.0
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Install pinned TLC v1.8.0 (SHA-256 verified — ADR-0042 §A1)
+        env:
+          TLC_VERSION: '1.8.0'
+          TLC_SHA256_PINNED: 'd5d07d5dab38ddb840c91ec48fa02f28b37a608d5af9a73570018591dbc8ef7f'
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/tla"
+          curl -fsSL -o "$RUNNER_TEMP/tla/tla2tools.jar" \
+            "https://github.com/tlaplus/tlaplus/releases/download/v${TLC_VERSION}/tla2tools.jar"
+          ACTUAL_SHA="$(sha256sum "$RUNNER_TEMP/tla/tla2tools.jar" | awk '{print $1}')"
+          echo "TLC SHA-256 actual: ${ACTUAL_SHA}"
+          echo "TLC SHA-256 expect: ${TLC_SHA256_PINNED}"
+          if [[ "${ACTUAL_SHA}" != "${TLC_SHA256_PINNED}" ]]; then
+            echo "::error::TLC SHA-256 supply-chain pin violation (ADR-0042 §A1)" >&2
+            echo "::error::expected: ${TLC_SHA256_PINNED}" >&2
+            echo "::error::actual:   ${ACTUAL_SHA}" >&2
+            echo "::error::Re-pin requires Security review + ADR-0042 §A1 update" >&2
+            exit 1
+          fi
+          mkdir -p "$HOME/.local/bin"
+          cat > "$HOME/.local/bin/tlc" <<EOF
+          #!/usr/bin/env bash
+          exec java -cp "$RUNNER_TEMP/tla/tla2tools.jar" tlc2.TLC "\$@"
+          EOF
+          chmod +x "$HOME/.local/bin/tlc"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          echo "TLC_JAR=$RUNNER_TEMP/tla/tla2tools.jar" >> "$GITHUB_ENV"
+
+      - name: TLC verify billing_atomicity (S-10 WI-S10-007)
+        run: bash scripts/run_tlc_corelink.sh billing_atomicity

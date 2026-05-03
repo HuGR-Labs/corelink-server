@@ -1,0 +1,215 @@
+name: S-10 ship gate (WI-S10-007)
+
+# Sprint-level ship-gate workflow per WI-S10-007 §6.1 + sprint contract §6 DoD.
+# Drives the host-side cross-component prop suite + 3 RB dry-runs (RB-BILLING-001
+# replay forensic + RB-FM-151 Stripe outage + RB-FM-302 billing drift) +
+# TLA+ workflow YAML smoke + validators chain so a regression cannot land
+# without a CI failure.
+#
+# This workflow runs:
+#   1. Validators (specs + INV promotion + migration additivity).
+#   2. Cross-component property tests + clippy at 10k iter PR speed across the
+#      6 S-10 crates (billing-emit + billing-aggregator + billing-stripe +
+#      billing-reconcile + quota-fsm + billing-replay).
+#   3. RB-BILLING-001 + RB-FM-151 + RB-FM-302 host-side dry-run scripts.
+#   4. TLA+ workflow YAML + this workflow YAML parse smoke.
+#   5. Aggregate gate (fan-in for required-status-checks branch protection).
+#
+# All gates fail-closed (HIGH_RISK lane FF-HR-005 + FF-HR-009). Per sprint
+# contract §6 DoD prerequisite: WI-S10-001..006 SEALED is a hard prerequisite;
+# this workflow runs at WI-S10-007 SEAL + on every subsequent PR that touches
+# any of the 6 S-10 crates, the S-10 migrations 0017..0021, the TLA+ spec or
+# its workflow, the RB dry-run scripts, the Finance walkthrough, or the spec
+# contract.
+
+on:
+  pull_request:
+    paths:
+      - 'crates/corelink-billing-emit/**'
+      - 'crates/corelink-billing-aggregator/**'
+      - 'crates/corelink-billing-stripe/**'
+      - 'crates/corelink-billing-reconcile/**'
+      - 'crates/corelink-quota-fsm/**'
+      - 'crates/corelink-billing-replay/**'
+      - 'migrations/d1/0017_usage_event_idem.sql'
+      - 'migrations/d1/0018_stripe_idem_keys.sql'
+      - 'migrations/d1/0019_billing_reconciliation_drift.sql'
+      - 'migrations/d1/0020_quota_fsm_state.sql'
+      - 'migrations/d1/0021_billing_replay_audit.sql'
+      - 'specs/tla/billing_atomicity.tla'
+      - 'specs/tla/billing_atomicity.cfg'
+      - 'specs/tla/billing_atomicity_nightly.cfg'
+      - 'scripts/rb_billing_001_replay_forensic_dry_run.sh'
+      - 'scripts/rb_fm_151_stripe_outage_dry_run.sh'
+      - 'scripts/rb_fm_302_billing_drift_dry_run.sh'
+      - 'specs/04_sprints/S10/**'
+      - '.github/workflows/tla_billing_check.yml'
+      - '.github/workflows/s10-ship-gate.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'crates/corelink-billing-emit/**'
+      - 'crates/corelink-billing-aggregator/**'
+      - 'crates/corelink-billing-stripe/**'
+      - 'crates/corelink-billing-reconcile/**'
+      - 'crates/corelink-quota-fsm/**'
+      - 'crates/corelink-billing-replay/**'
+      - 'migrations/d1/0017_usage_event_idem.sql'
+      - 'migrations/d1/0018_stripe_idem_keys.sql'
+      - 'migrations/d1/0019_billing_reconciliation_drift.sql'
+      - 'migrations/d1/0020_quota_fsm_state.sql'
+      - 'migrations/d1/0021_billing_replay_audit.sql'
+      - 'specs/tla/billing_atomicity.tla'
+      - 'specs/tla/billing_atomicity.cfg'
+      - 'specs/tla/billing_atomicity_nightly.cfg'
+      - 'scripts/rb_billing_001_replay_forensic_dry_run.sh'
+      - 'scripts/rb_fm_151_stripe_outage_dry_run.sh'
+      - 'scripts/rb_fm_302_billing_drift_dry_run.sh'
+      - 'specs/04_sprints/S10/**'
+      - '.github/workflows/tla_billing_check.yml'
+      - '.github/workflows/s10-ship-gate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # --------------------------------------------------------------------
+  # 1. Validators chain (specs schema + INV promotion + migration additivity).
+  # --------------------------------------------------------------------
+  validators:
+    name: validators (specs + INV + migrations)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: '3.12'
+
+      - name: Install Python deps
+        run: pip install -r requirements-ci.txt
+
+      - name: validate_specs.py
+        run: python3 scripts/validate_specs.py
+
+      - name: validate_inv_promotion.py
+        run: python3 scripts/validate_inv_promotion.py
+
+      - name: validate_references.py
+        run: python3 scripts/validate_references.py
+
+      - name: check_migrations_additive.py
+        run: python3 scripts/check_migrations_additive.py
+
+  # --------------------------------------------------------------------
+  # 2. Cross-component property tests + lib unit at PR speed.
+  # --------------------------------------------------------------------
+  prop-and-tests:
+    name: corelink-billing-{emit,aggregator,stripe,reconcile,replay}+quota-fsm tests (lib + prop @ 10k iter)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
+
+      - uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
+        with:
+          workspaces: ". -> target"
+
+      - uses: arduino/setup-protoc@f4d5893b897028ff5739576ea0409746887fa536 # v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: cargo test -p corelink-billing-emit --all-targets
+        run: cargo test -p corelink-billing-emit --all-targets
+
+      - name: cargo test -p corelink-billing-aggregator --all-targets
+        run: cargo test -p corelink-billing-aggregator --all-targets
+
+      - name: cargo test -p corelink-billing-stripe --all-targets
+        run: cargo test -p corelink-billing-stripe --all-targets
+
+      - name: cargo test -p corelink-billing-reconcile --all-targets
+        run: cargo test -p corelink-billing-reconcile --all-targets
+
+      - name: cargo test -p corelink-quota-fsm --all-targets
+        run: cargo test -p corelink-quota-fsm --all-targets
+
+      - name: cargo test -p corelink-billing-replay --all-targets
+        run: cargo test -p corelink-billing-replay --all-targets
+
+      - name: cargo clippy -- -D warnings
+        run: cargo clippy --workspace --all-targets --features corelink-worker/tower-middleware -- -D warnings
+
+  # --------------------------------------------------------------------
+  # 3. RB-BILLING-001 + RB-FM-151 + RB-FM-302 host-side dry-run scripts.
+  # --------------------------------------------------------------------
+  rb-dry-runs:
+    name: RB-BILLING-001 + RB-FM-151 + RB-FM-302 host-side dry-runs
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: [prop-and-tests]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
+
+      - uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
+        with:
+          workspaces: ". -> target"
+
+      - uses: arduino/setup-protoc@f4d5893b897028ff5739576ea0409746887fa536 # v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: RB-BILLING-001 dry-run (replay forensic — Finance walkthrough exhibit)
+        run: bash scripts/rb_billing_001_replay_forensic_dry_run.sh
+
+      - name: RB-FM-151 dry-run (Stripe outage)
+        run: bash scripts/rb_fm_151_stripe_outage_dry_run.sh
+
+      - name: RB-FM-302 dry-run (billing drift)
+        run: bash scripts/rb_fm_302_billing_drift_dry_run.sh
+
+  # --------------------------------------------------------------------
+  # 4. TLA+ workflow YAML + this workflow YAML parse smoke.
+  # --------------------------------------------------------------------
+  workflow-yaml-smoke:
+    name: tla_billing_check.yml + s10-ship-gate.yml parse smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: '3.12'
+
+      - name: Install Python deps (yaml)
+        run: pip install pyyaml
+
+      - name: tla_billing_check.yml parse smoke
+        run: python3 -c "import yaml; yaml.safe_load(open('.github/workflows/tla_billing_check.yml'))"
+
+      - name: s10-ship-gate.yml parse smoke
+        run: python3 -c "import yaml; yaml.safe_load(open('.github/workflows/s10-ship-gate.yml'))"
+
+  # --------------------------------------------------------------------
+  # 5. Aggregate gate (fan-in for required-status-checks branch
+  #    protection rule).
+  # --------------------------------------------------------------------
+  s10-ship-gate:
+    name: S-10 ship gate (aggregate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    needs: [validators, prop-and-tests, rb-dry-runs, workflow-yaml-smoke]
+    steps:
+      - name: Aggregate
+        run: echo "S-10 ship gate green; all canonical sub-gates passed."

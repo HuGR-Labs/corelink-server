@@ -52,6 +52,7 @@ jobs:
           - cas_integrity
           - gc_correctness
           - audit_immutability
+          - billing_atomicity
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -209,6 +210,34 @@ jobs:
           cargo test --release --package corelink-audit-chain --test prop_audit_chain
           cargo test --release --package corelink-slo --test prop_slo
           cargo test --release --package corelink-canary --test prop_canary
+
+      - name: proptest 100k iter — S-10 billing-emit + aggregator + stripe + reconcile + quota-fsm + replay (WI-S10-007 nightly tier)
+        env:
+          PROPTEST_CASES: '100000'
+          PROPTEST_MAX_LOCAL_REJECTS: '100000'
+          PROPTEST_MAX_GLOBAL_REJECTS: '500000'
+        # WI-S10-007 §F + sprint contract §6 DoD: S-10 ship gate
+        # consolidates the prior 6 WIs' deferred items by extending
+        # the nightly proptest tier to 100k iter for prop_billing_emit +
+        # prop_billing_aggregator + prop_billing_stripe +
+        # prop_billing_reconcile + prop_quota_fsm + prop_billing_replay.
+        # PR-gate runs at 10k; nightly tier runs at 100k per the
+        # dual-tier ceiling. ZERO INV-BILLING-NO-LOSS / INV-BILLING-NO-DUP /
+        # INV-BILLING-RECONCILE-3-LAYER / INV-BILLING-REPLAYABLE-FROM-EVENTS /
+        # INV-AUDIT-APPEND-ONLY / INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER /
+        # INV-TENANT-ISOLATION violations sustained over 100k iter is
+        # the spec contract DoD §6 gate; per WI-S10-007 ADR-S10-007-tla-
+        # substitutes-proptest, TLA+ TLC model checking covers the
+        # WI-S10-007 atomicity contract while these 6 prior crates
+        # carry the runtime 100k coverage canonical.
+        run: |
+          set -euo pipefail
+          cargo test --release --package corelink-billing-emit --test prop_billing_emit
+          cargo test --release --package corelink-billing-aggregator --test prop_billing_aggregator
+          cargo test --release --package corelink-billing-stripe --test prop_billing_stripe
+          cargo test --release --package corelink-billing-reconcile --test prop_billing_reconcile
+          cargo test --release --package corelink-quota-fsm --test prop_quota_fsm
+          cargo test --release --package corelink-billing-replay --test prop_billing_replay
 
   # ---------------------------------------------------------------------
   # 3. Fuzz matrix — all 9 targets across 5 SEALed crates, 1h each parallel.
