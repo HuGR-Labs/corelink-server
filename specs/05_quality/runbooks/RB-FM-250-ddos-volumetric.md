@@ -1,18 +1,20 @@
 ---
 id: "RB-FM-250"
 type: "runbook"
-doc_status: "DRAFT"
-audit_status: "ACTIVE"
-version: "0.1.0"
+doc_status: "FROZEN"
+audit_status: "AUDITED"
+version: "1.0.0"
 created: "2026-04-24"
-updated: "2026-04-24"
+updated: "2026-05-02"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
 supersedes: null
 superseded_by: null
-tags: ["runbook", "p1", "ddos", "rate-limit", "availability"]
+tags: ["runbook", "p1", "ddos", "rate-limit", "availability", "wi-s08-006", "dry-run-executed"]
 ---
+
+> **Dry-run executed 2026-05-02** (host-side; harness `scripts/rb_fm_250_dry_run.sh`; audit trace `specs/_audits/2026-05-02-rb-fm-250-dry-run.md`). Per WI-S08-006 §6.1.3 + sprint contract §6 DoD EVT-017. Flipped DRAFT → FROZEN at S-08 PRR ship gate ceremony.
 
 # RB-FM-250 — DDoS Volumetric (single-tenant ou cross-tenant)
 

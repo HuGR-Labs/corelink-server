@@ -1,0 +1,296 @@
+# DASH-RATE alert rules — WI-S08-006 §6.1 + §6.2 + sprint contract §6 DoD.
+#
+# Routing per WI §6.1: PagerDuty (SEV-1 oncall) + admin notify (SEV-2)
+# + visibility channel (SEV-3). Tested via chaos experiment WI §6.1.11
+# scenario 4 (alert rule false-positive) before staging dry-run; 2-week
+# tune-in per R-001 risk register.
+#
+# Severity mapping per observability_model.md §3.1 (SEV taxonomy)
+# + sprint contract §6 DoD + Lote 10.8-tris P1-NEW-1 (15 canonical:
+# 4 SEV-1 + 6 SEV-2 + 5 SEV-3).
+#
+# SEV-1 (oncall pager; 5min response): catastrophic — user-facing outage
+#       OR LGPD violation OR cross-tenant breach OR SLI compromised.
+# SEV-2 (admin notification; 1h response): degraded but bounded; manual
+#       review needed.
+# SEV-3 (visibility; 24h response): trending OR SLA breach but not
+#       user-facing.
+
+groups:
+  - name: corelink-rate-quota-edge-abuse-circuit
+    interval: 30s
+    rules:
+
+      # --------------------------------------------------------------
+      # SEV-1 (4) — oncall pager, 5min response.
+      # --------------------------------------------------------------
+
+      - alert: Rate_GlobalCircuitOpenSustained
+        expr: max(corelink_global_circuit_state) == 2
+        for: 1m
+        labels:
+          severity: sev1
+          runbook: RB-FM-250
+          sprint: S-08
+          gate: ship
+        annotations:
+          summary: "Global circuit breaker tripped (Open) sustained > 1min"
+          description: |
+            corelink_global_circuit_state == 2 (Open) sustained 1min in
+            at least one region. All tenants in that region are 429ed
+            with X-Rate-Limit-Type: global_circuit_open. Multi-signal
+            trip canonical (5xx_rate + p99_latency); single-signal would
+            fire single_signal_alarm SEV-3 instead. Run RB-FM-250 (DDoS
+            volumetric) immediately. Page SRE Lead + Architect.
+          runbook_url: "../../specs/05_quality/runbooks/RB-FM-250-ddos-volumetric.md"
+
+      - alert: Rate_InvAvailIsolationViolation
+        expr: sum(rate(corelink_ratelimit_cross_tenant_violation_total[1m])) + sum(rate(corelink_abuse_cross_tenant_feature_leak_total[1m])) > 0
+        for: 0m
+        labels:
+          severity: sev1
+          sprint: S-08
+          gate: ship
+        annotations:
+          summary: "INV-AVAIL-ISOLATION violated — cross-tenant state contamination CRITICAL"
+          description: |
+            corelink_ratelimit_cross_tenant_violation_total OR
+            corelink_abuse_cross_tenant_feature_leak_total non-zero.
+            INV-AVAIL-ISOLATION (HIGH; registry §3.8) holds tenant state
+            isolation; non-zero counter means a per-tenant decision
+            (rate-limit OR abuse score) leaked across the tenant
+            boundary. SEV-1 immediate; freeze prod traffic if persistent.
+            Cross-validated by prop_tenant_isolation @ 10k iter on every
+            per-WI prop suite. Page Architect + Security Lead.
+
+      - alert: Rate_AutoSuspendAttemptLgpdCanary
+        expr: sum(rate(corelink_abuse_auto_suspend_attempts_total[1m])) > 0
+        for: 0m
+        labels:
+          severity: sev1
+          sprint: S-08
+          gate: ship
+        annotations:
+          summary: "Auto-suspend attempted programmatically — LGPD Art. 20 + GDPR Art. 22 violation canary"
+          description: |
+            corelink_abuse_auto_suspend_attempts_total non-zero. The
+            AbuseError::AutoSuspendForbidden trap fired — code attempted
+            to programmatically suspend a tenant (sprint contract
+            §7.10.s08.3 humane response canonical; admin manual review
+            only). LGPD Art. 20 + GDPR Art. 22 require human-in-the-loop
+            for automated decisions of legal effect. Page Compliance
+            Officer + Privacy Officer + Security Lead immediately.
+
+      - alert: Rate_SliDistinctionRegression
+        expr: |
+          abs(
+            sum(rate(corelink_rate_limited_within_quota_total[5m]))
+            -
+            sum(rate(corelink_rate_limited_within_quota_total[5m] offset 24h))
+          )
+          > 0.1 * clamp_min(sum(rate(corelink_rate_limited_within_quota_total[5m] offset 24h)), 1)
+        for: 5m
+        labels:
+          severity: sev1
+          sprint: S-08
+          gate: ship
+        annotations:
+          summary: "SLI within-quota counter regression > 10% over 5min — SLO accuracy compromised"
+          description: |
+            within_quota_total counter delta vs 24h-ago > 10%. The 5-arm
+            X-Rate-Limit-Type taxonomy (R-S08-8) splits the 429 stream
+            into within-quota (in SLI denominator) vs over-quota
+            (excluded). Sudden drop OR spike in within-quota counter
+            suggests the canonical 5-arm taxonomy regressed (e.g. an
+            over_quota event mis-classified as within-quota would inflate
+            denominator and hide a real bug). Property test
+            prop_x_rate_limit_type_5_arm_canonical pins the taxonomy at
+            10k iter. Page Architect; freeze SLI calculation until cause
+            isolated.
+
+      # --------------------------------------------------------------
+      # SEV-2 (6) — admin notification, 1h response.
+      # --------------------------------------------------------------
+
+      - alert: Rate_AbuseAdminReviewTriggered
+        expr: sum(rate(corelink_abuse_tier_count_total{tier="Suspicious"}[5m])) > 0
+        for: 1m
+        labels:
+          severity: sev2
+          sprint: S-08
+        annotations:
+          summary: "Tenant abuse score crossed Suspicious tier (≥ 0.5) — admin review required"
+          description: |
+            corelink_abuse_tier_count_total{tier="Suspicious"} non-zero.
+            One or more tenants crossed the canonical 0.5 SUSPICIOUS
+            threshold (4-feature weighted-sum scoring: cpu_wallclock_ratio
+            + egress_bytes_per_min + action_digest_entropy_bits +
+            concurrent_exec_count). Manual investigation per sprint
+            contract §7.10.s08.3 humane response. Notify admin reviewer
+            via S-13 admin plane (forward); resolution ≤ 24h SLA.
+
+      - alert: Rate_PatMisuseDetected
+        expr: sum(rate(corelink_quota_pat_misuse_detected_total[5m])) > 0
+        for: 1m
+        labels:
+          severity: sev2
+          sprint: S-08
+        annotations:
+          summary: "PAT consumed > 10× tenant refill rate — possible compromised credential"
+          description: |
+            corelink_quota_pat_misuse_detected_total non-zero. Per
+            sprint contract §5 R-S08-3 (Lote 10.8bis P0-C corrected):
+            PAT-scoped misuse DETECTION (NOT enforcement; aggregate
+            per-tenant rate-limit owns enforcement at camada 1). When
+            per-PAT observed rate > 10× tenant_refill, this signals a
+            possibly compromised credential. Investigate via S-13 admin
+            plane; rotate PAT if confirmed.
+
+      - alert: Rate_GlobalCircuitManualOverride
+        expr: sum(rate(corelink_global_circuit_manual_override_total[5m])) > 0
+        for: 0m
+        labels:
+          severity: sev2
+          sprint: S-08
+        annotations:
+          summary: "Global circuit manual override triggered — investigate planned drill or emergency"
+          description: |
+            corelink_global_circuit_manual_override_total non-zero. Admin
+            S-13 force-open or force-close issued via override. Verify
+            this matches a planned drill OR emergency response —
+            unplanned override is a SEV-2 incident requiring root-cause
+            analysis. Audit emit corelink.circuit.manual_override.
+
+      - alert: Rate_EdgeCidrBlocklistDrift
+        expr: sum(rate(corelink_edge_cf_api_error_total{operation="reconcile"}[5m])) > 0
+        for: 5m
+        labels:
+          severity: sev2
+          sprint: S-08
+        annotations:
+          summary: "CF Edge ↔ D1 CIDR blocklist reconcile drift sustained 5min"
+          description: |
+            corelink_edge_cf_api_error_total{operation="reconcile"} non-
+            zero sustained 5min. The D1 source-of-truth (per WI-S08-002)
+            is failing to reconcile against the CF List replica. CIDR
+            blocks may not be enforced at the edge. Investigate CF API
+            credentials + rate-limit headroom; manually re-trigger
+            reconcile cycle if needed.
+
+      - alert: Rate_AppealsQueueOverflow
+        expr: sum(corelink_abuse_appeal_pending) > 100
+        for: 1h
+        labels:
+          severity: sev2
+          sprint: S-08
+        annotations:
+          summary: "Abuse appeal queue depth > 100 sustained 1h — staffing escalation required"
+          description: |
+            corelink_abuse_appeal_pending > 100 sustained 1h. Per sprint
+            contract §7.10.s08.3 LGPD Art. 20 humane response: customer
+            self-service appeals MUST route to human reviewer ≤ 24h SLA.
+            Queue depth > 100 sustained signals reviewer staffing gap —
+            escalate to Compliance Officer + Customer Success.
+
+      - alert: Rate_QuotaHardBlock100PctSustained
+        expr: sum(rate(corelink_quota_cas_denials_total[5m])) > 0
+        for: 5m
+        labels:
+          severity: sev2
+          sprint: S-08
+        annotations:
+          summary: "Tenant quota 100% hard-block engaged sustained 5min — S-07 eviction lag investigation"
+          description: |
+            corelink_quota_cas_denials_total non-zero sustained 5min.
+            Per ADR-0020 FROZEN: S-07 owns eviction trigger at 95%
+            (soft); S-08 owns 100% hard-block (CAS-denied 429 with
+            Retry-After: days-until-month-reset). Sustained 100%
+            denial means the S-07 eviction trigger is not draining
+            below 100% — investigate D1 backlog OR reservation TTL
+            regression. Notify Customer Success.
+
+      # --------------------------------------------------------------
+      # SEV-3 (5) — visibility channel, 24h response.
+      # --------------------------------------------------------------
+
+      - alert: Rate_QuotaSoftPressure95Pct
+        expr: sum(rate(corelink_quota_cas_check_total{result="allow"}[1h])) > 0 and sum(rate(corelink_evict_quota_trigger_fired_total[1h])) > 0
+        for: 30m
+        labels:
+          severity: sev3
+          sprint: S-08
+        annotations:
+          summary: "Tenant storage 95% (S-07 eviction trigger boundary) — customer-comm trigger"
+          description: |
+            S-07 eviction trigger firing AND quota CAS allow path
+            sustained — tenant at 95% boundary per ADR-0020 FROZEN.
+            Customer notification triggered per sprint contract §6 DoD
+            (S-07 95% boundary; S-08 100% hard-block). Notify Customer
+            Success; surface to S-16 customer dashboard forward.
+
+      - alert: Rate_GlobalCircuitSingleSignalAlarm
+        expr: sum(rate(corelink_global_circuit_single_signal_alarm_total[5m])) > 0
+        for: 10m
+        labels:
+          severity: sev3
+          sprint: S-08
+        annotations:
+          summary: "Global circuit single-signal observed sustained 10min (multi-signal canonical; investigate trending)"
+          description: |
+            corelink_global_circuit_single_signal_alarm_total non-zero
+            sustained 10min. Multi-signal trip canonical per R-S08-004
+            (5xx_rate AND p99_latency must both breach to trip);
+            single-signal observed = trending alarm (NOT trip). If
+            single-signal sustained, second signal may follow —
+            investigate proactively.
+
+      - alert: Rate_AppealSlaBreach
+        expr: sum(corelink_abuse_appeal_pending{age_bucket=">24h"}) > 0
+        for: 0m
+        labels:
+          severity: sev3
+          sprint: S-08
+        annotations:
+          summary: "Customer abuse appeal pending > 24h — LGPD humane SLA breach"
+          description: |
+            corelink_abuse_appeal_pending{age_bucket=">24h"} non-zero.
+            Per sprint contract §7.10.s08.3 LGPD Art. 20 + GDPR Art. 22
+            humane response: customer appeals MUST be reviewed ≤ 24h
+            SLA. SEV-3 visibility; escalate to Compliance Officer.
+
+      - alert: Rate_RatelimitPlanSyncLag
+        expr: max(corelink_ratelimit_plan_sync_lag_ms) > 300000
+        for: 5m
+        labels:
+          severity: sev3
+          sprint: S-08
+        annotations:
+          summary: "RateLimit plan sync lag > 5min sustained — INV-RATE-LIMIT-PROPORTIONALITY drift"
+          description: |
+            corelink_ratelimit_plan_sync_lag_ms > 5 min sustained. Per
+            sprint contract §8 NEW INV-RATE-LIMIT-PROPORTIONALITY
+            (HIGH): refill_rate × window must reflect tenant plan
+            change ≤ 5 min via DO config sync. Sustained lag means
+            tenant rate-limit not honouring current plan tier.
+
+      - alert: Rate_AbuseCalibrationDrift
+        expr: |
+          abs(
+            avg(corelink_abuse_score)
+            -
+            avg(corelink_abuse_score offset 7d)
+          )
+          > 0.1
+        for: 1h
+        labels:
+          severity: sev3
+          sprint: S-08
+        annotations:
+          summary: "Abuse score baseline drifted > 0.1 vs 7d-ago — re-calibration trigger"
+          description: |
+            avg(corelink_abuse_score) shifted > 0.1 vs 7d-ago baseline
+            sustained 1h. Calibration sample (n=50 benign + n=50
+            abusive) acceptance bound established per Lote 10.8bis P0-E
+            corrected; periodic re-calibration trigger if drift exceeds
+            tolerance. Schedule shadow re-calibration workflow (S-20
+            forward).

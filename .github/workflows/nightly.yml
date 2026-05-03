@@ -165,6 +165,28 @@ jobs:
           cargo test --release --package corelink-quota --test prop_quota
           cargo test --release --package corelink-lru-tracker --test prop_lru
 
+      - name: proptest 100k iter — S-08 ratelimit + edge + quota-cas + abuse + rate-headers (WI-S08-006 nightly tier)
+        env:
+          PROPTEST_CASES: '100000'
+          PROPTEST_MAX_LOCAL_REJECTS: '100000'
+          PROPTEST_MAX_GLOBAL_REJECTS: '500000'
+        # WI-S08-006 §F + sprint contract §6 DoD: S-08 ship gate
+        # consolidates the prior 5 WIs' deferred items by extending
+        # the nightly proptest tier to 100k iter for prop_ratelimit +
+        # prop_edge + prop_quota_cas + prop_abuse + prop_rate_headers.
+        # PR-gate runs at 10k; nightly tier runs at 100k per the
+        # dual-tier ceiling. ZERO INV-AVAIL-ISOLATION /
+        # INV-RATE-LIMIT-PROPORTIONALITY / INV-QUOTA-ENFORCEMENT /
+        # INV-TENANT-ISOLATION violations sustained over 100k iter
+        # is the spec contract DoD §6 gate.
+        run: |
+          set -euo pipefail
+          cargo test --release --package corelink-ratelimit --test prop_ratelimit
+          cargo test --release --package corelink-edge --test prop_edge
+          cargo test --release --package corelink-quota-cas --test prop_quota_cas
+          cargo test --release --package corelink-abuse --test prop_abuse
+          cargo test --release --package corelink-rate-headers --test prop_rate_headers
+
   # ---------------------------------------------------------------------
   # 3. Fuzz matrix — all 9 targets across 5 SEALed crates, 1h each parallel.
   # ---------------------------------------------------------------------

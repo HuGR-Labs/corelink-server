@@ -1,0 +1,186 @@
+name: S-08 ship gate (WI-S08-006)
+
+# Sprint-level ship-gate workflow per WI-S08-006 §6.1.10. Drives the
+# host-side cross-component prop suite + RB-FM-250 dry-run + validators
+# chain so a regression cannot land without a CI failure.
+#
+# This workflow runs:
+#   1. Validators (specs + INV promotion + migration additivity).
+#   2. Cross-component property tests at 10k iter PR speed.
+#   3. RB-FM-250 host-side dry-run script.
+#   4. DASH-RATE dashboard JSON parse smoke.
+#   5. DASH-RATE alert rules YAML parse smoke.
+#   6. Aggregate gate (fan-in for required-status-checks branch
+#      protection rule).
+#
+# All gates fail-closed (HIGH_RISK lane FF-HR-005 + FF-HR-002).
+# Per WI §6.1.10 dependency chain: WI-S08-001..005 SEALED is a
+# prerequisite; this workflow runs at WI-S08-006 SEAL + on every
+# subsequent PR that touches ratelimit / edge / quota-cas / abuse /
+# rate-headers code, the canonical migration files, the runbooks,
+# the dashboard JSON, or the alert rules YAML.
+
+on:
+  pull_request:
+    paths:
+      - 'crates/corelink-ratelimit/**'
+      - 'crates/corelink-edge/**'
+      - 'crates/corelink-quota-cas/**'
+      - 'crates/corelink-abuse/**'
+      - 'crates/corelink-rate-headers/**'
+      - 'specs/05_quality/runbooks/RB-FM-250-ddos-volumetric.md'
+      - 'scripts/rb_fm_250_dry_run.sh'
+      - 'dashboards/grafana/DASH-RATE.json'
+      - 'dashboards/alerts/dash-rate-alerts.yml'
+      - 'specs/04_sprints/S08/**'
+      - '.github/workflows/s08-ship-gate.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'crates/corelink-ratelimit/**'
+      - 'crates/corelink-edge/**'
+      - 'crates/corelink-quota-cas/**'
+      - 'crates/corelink-abuse/**'
+      - 'crates/corelink-rate-headers/**'
+      - 'specs/05_quality/runbooks/RB-FM-250-ddos-volumetric.md'
+      - 'scripts/rb_fm_250_dry_run.sh'
+      - 'dashboards/grafana/DASH-RATE.json'
+      - 'dashboards/alerts/dash-rate-alerts.yml'
+      - 'specs/04_sprints/S08/**'
+      - '.github/workflows/s08-ship-gate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # --------------------------------------------------------------------
+  # 1. Validators chain (specs schema + INV promotion + migration additivity).
+  # --------------------------------------------------------------------
+  validators:
+    name: validators (specs + INV + migrations)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: '3.12'
+
+      - name: Install Python deps
+        run: pip install -r requirements-ci.txt
+
+      - name: validate_specs.py
+        run: python3 scripts/validate_specs.py
+
+      - name: validate_inv_promotion.py
+        run: python3 scripts/validate_inv_promotion.py
+
+      - name: validate_references.py
+        run: python3 scripts/validate_references.py
+
+      - name: check_migrations_additive.py
+        run: python3 scripts/check_migrations_additive.py
+
+  # --------------------------------------------------------------------
+  # 2. Cross-component property tests + lib unit at PR speed.
+  # --------------------------------------------------------------------
+  prop-and-tests:
+    name: corelink-{ratelimit,edge,quota-cas,abuse,rate-headers} tests (lib + prop @ 10k iter)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
+
+      - uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
+        with:
+          workspaces: ". -> target"
+
+      - uses: arduino/setup-protoc@f4d5893b897028ff5739576ea0409746887fa536 # v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: cargo test -p corelink-ratelimit --all-targets
+        run: cargo test -p corelink-ratelimit --all-targets
+
+      - name: cargo test -p corelink-edge --all-targets
+        run: cargo test -p corelink-edge --all-targets
+
+      - name: cargo test -p corelink-quota-cas --all-targets
+        run: cargo test -p corelink-quota-cas --all-targets
+
+      - name: cargo test -p corelink-abuse --all-targets
+        run: cargo test -p corelink-abuse --all-targets
+
+      - name: cargo test -p corelink-rate-headers --all-targets
+        run: cargo test -p corelink-rate-headers --all-targets
+
+      - name: cargo clippy -- -D warnings
+        run: cargo clippy --workspace --all-targets --features corelink-worker/tower-middleware -- -D warnings
+
+  # --------------------------------------------------------------------
+  # 3. RB-FM-250 host-side dry-run script.
+  # --------------------------------------------------------------------
+  rb-dry-runs:
+    name: RB-FM-250 host-side dry-run
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: [prop-and-tests]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
+
+      - uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
+        with:
+          workspaces: ". -> target"
+
+      - uses: arduino/setup-protoc@f4d5893b897028ff5739576ea0409746887fa536 # v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: RB-FM-250 dry-run (DDoS volumetric)
+        run: bash scripts/rb_fm_250_dry_run.sh
+
+  # --------------------------------------------------------------------
+  # 4. DASH-RATE dashboard JSON + alert rules YAML parse smoke.
+  # --------------------------------------------------------------------
+  dashboard-smoke:
+    name: DASH-RATE parse smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: '3.12'
+
+      - name: Install Python deps (yaml + json)
+        run: pip install pyyaml
+
+      - name: DASH-RATE.json parse smoke
+        run: python3 -c "import json; json.load(open('dashboards/grafana/DASH-RATE.json'))"
+
+      - name: dash-rate-alerts.yml parse smoke
+        run: python3 -c "import yaml; yaml.safe_load(open('dashboards/alerts/dash-rate-alerts.yml'))"
+
+  # --------------------------------------------------------------------
+  # 5. Aggregate gate (fan-in for required-status-checks branch
+  #    protection rule).
+  # --------------------------------------------------------------------
+  s08-ship-gate:
+    name: S-08 ship gate (aggregate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    needs: [validators, prop-and-tests, rb-dry-runs, dashboard-smoke]
+    steps:
+      - name: Aggregate
+        run: echo "S-08 ship gate green; all canonical sub-gates passed."
