@@ -1,0 +1,40 @@
+[package]
+name = "corelink-quota-fsm"
+description = "CoreLink 5-state quota state machine (WI-S10-005 — S-10 billing pipeline HIGH_RISK lane). Promotes the S-07 PROVISIONAL 429 quota check + S-08 atomic CAS quota into the canonical state machine: WithinPlan → SoftWarning80pct → SoftWarning95pct → OverQuota100pct (writes 429) → SuspendedForNonPayment (after 3 invoice failures from Stripe webhook). QuotaStateMachine trait + InMemoryQuotaStateMachine orchestrator. QuotaState `#[non_exhaustive]` 5-state taxonomy. QuotaTransition `#[non_exhaustive]` 6-element taxonomy (NoChange / TransitionedTo80pct / TransitionedTo95pct / TransitionedTo100pct / Suspended / Reinstated). QuotaFsmError `#[non_exhaustive]` taxonomy. Per-instance `Arc<Mutex<>>` F-001 closure. Audit fail-CLOSED envelope BEFORE state mutation: `corelink.billing_quota.{state_changed, overage_telemetry_recorded, suspended, reinstated}` audit fires BEFORE the typed state transition. Email send REJECTED in S-10 per ADR-0020 FROZEN — deferred to S-13 admin/notifications; THIS WI emits the canonical `corelink.billing_quota.overage_telemetry_recorded` audit ONLY (the actual email send is the S-13 admin plane consumer). Production CF Durable Object per-tenant + real Stripe webhook adapter integration deferred to WI-S10-007 PRR ship gate per `trait-abstraction-defer` charter pattern."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+uuid = { workspace = true, features = ["v7", "serde"] }
+
+[dev-dependencies]
+proptest = { workspace = true }
+rand = "0.9"
+rand_chacha = "0.9"
+serde_json = { workspace = true }
+
+[[test]]
+name = "prop_quota_fsm"
+path = "tests/prop_quota_fsm.rs"

@@ -39,6 +39,7 @@ members = [
     "crates/corelink-billing-aggregator",
     "crates/corelink-billing-stripe",
     "crates/corelink-billing-reconcile",
+    "crates/corelink-quota-fsm",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
@@ -130,6 +131,7 @@ corelink-billing-emit = { path = "crates/corelink-billing-emit" }
 corelink-billing-aggregator = { path = "crates/corelink-billing-aggregator" }
 corelink-billing-stripe = { path = "crates/corelink-billing-stripe" }
 corelink-billing-reconcile = { path = "crates/corelink-billing-reconcile" }
+corelink-quota-fsm = { path = "crates/corelink-quota-fsm" }
 
 # Test / bench
 proptest = "1.5"
