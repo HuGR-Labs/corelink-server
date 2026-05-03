@@ -41,12 +41,12 @@ groups:
     rules:
       - record: slo:cas_get_error_rate:1h
         expr: |
-          sum(rate(corelink_cas_get_errors_total[1h]))
+          sum(rate(corelink_cas_get_errors_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[1h]))
           /
-          sum(rate(corelink_cas_get_total[1h]))
+          sum(rate(corelink_cas_get_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[1h]))
 
       - alert: SloAvailCasGet_Fast1h_BurnRate_Sev0
-        expr: slo:cas_get_error_rate:1h > (14.4 * 0.001)
+        expr: slo:cas_get_error_rate:1h >= (14.4 * 0.001)
         for: 2m
         labels:
           severity: sev0
@@ -65,7 +65,7 @@ groups:
           runbook_url: "https://corelink.io/runbooks/RB-SLO-SLI-AVAIL-CAS-GET-fast_1h.md"
 
       - alert: SloAvailCasGet_Medium6h_BurnRate_Sev1
-        expr: sum(rate(corelink_cas_get_errors_total[6h])) / sum(rate(corelink_cas_get_total[6h])) > (6 * 0.001)
+        expr: sum(rate(corelink_cas_get_errors_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[6h])) / sum(rate(corelink_cas_get_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[6h])) >= (6 * 0.001)
         for: 15m
         labels:
           severity: sev1
@@ -83,7 +83,7 @@ groups:
           runbook_url: "https://corelink.io/runbooks/RB-SLO-SLI-AVAIL-CAS-GET-medium_6h.md"
 
       - alert: SloAvailCasGet_Slow24h_BurnRate_Sev2
-        expr: sum(rate(corelink_cas_get_errors_total[24h])) / sum(rate(corelink_cas_get_total[24h])) > (3 * 0.001)
+        expr: sum(rate(corelink_cas_get_errors_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[24h])) / sum(rate(corelink_cas_get_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[24h])) >= (3 * 0.001)
         for: 1h
         labels:
           severity: sev2
@@ -100,7 +100,7 @@ groups:
           runbook_url: "https://corelink.io/runbooks/RB-SLO-SLI-AVAIL-CAS-GET-slow_24h.md"
 
       - alert: SloAvailCasGet_Long3d_BurnRate_Sev3
-        expr: sum(rate(corelink_cas_get_errors_total[3d])) / sum(rate(corelink_cas_get_total[3d])) > (1 * 0.001)
+        expr: sum(rate(corelink_cas_get_errors_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[3d])) / sum(rate(corelink_cas_get_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[3d])) >= (1 * 0.001)
         for: 4h
         labels:
           severity: sev3
@@ -124,12 +124,12 @@ groups:
     rules:
       - record: slo:cas_put_error_rate:1h
         expr: |
-          sum(rate(corelink_cas_put_errors_total[1h]))
+          sum(rate(corelink_cas_put_errors_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[1h]))
           /
-          sum(rate(corelink_cas_put_total[1h]))
+          sum(rate(corelink_cas_put_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[1h]))
 
       - alert: SloAvailCasPut_Fast1h_BurnRate_Sev0
-        expr: slo:cas_put_error_rate:1h > (14.4 * 0.001)
+        expr: slo:cas_put_error_rate:1h >= (14.4 * 0.001)
         for: 2m
         labels:
           severity: sev0
@@ -145,7 +145,7 @@ groups:
           runbook_url: "https://corelink.io/runbooks/RB-SLO-SLI-AVAIL-CAS-PUT-fast_1h.md"
 
       - alert: SloAvailCasPut_Medium6h_BurnRate_Sev1
-        expr: sum(rate(corelink_cas_put_errors_total[6h])) / sum(rate(corelink_cas_put_total[6h])) > (6 * 0.001)
+        expr: sum(rate(corelink_cas_put_errors_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[6h])) / sum(rate(corelink_cas_put_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[6h])) >= (6 * 0.001)
         for: 15m
         labels:
           severity: sev1
@@ -161,7 +161,7 @@ groups:
           runbook_url: "https://corelink.io/runbooks/RB-SLO-SLI-AVAIL-CAS-PUT-medium_6h.md"
 
       - alert: SloAvailCasPut_Slow24h_BurnRate_Sev2
-        expr: sum(rate(corelink_cas_put_errors_total[24h])) / sum(rate(corelink_cas_put_total[24h])) > (3 * 0.001)
+        expr: sum(rate(corelink_cas_put_errors_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[24h])) / sum(rate(corelink_cas_put_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[24h])) >= (3 * 0.001)
         for: 1h
         labels:
           severity: sev2
@@ -176,7 +176,7 @@ groups:
           runbook_url: "https://corelink.io/runbooks/RB-SLO-SLI-AVAIL-CAS-PUT-slow_24h.md"
 
       - alert: SloAvailCasPut_Long3d_BurnRate_Sev3
-        expr: sum(rate(corelink_cas_put_errors_total[3d])) / sum(rate(corelink_cas_put_total[3d])) > (1 * 0.001)
+        expr: sum(rate(corelink_cas_put_errors_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[3d])) / sum(rate(corelink_cas_put_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[3d])) >= (1 * 0.001)
         for: 4h
         labels:
           severity: sev3
@@ -198,12 +198,12 @@ groups:
     rules:
       - record: slo:ac_lookup_error_rate:1h
         expr: |
-          sum(rate(corelink_ac_lookup_errors_total[1h]))
+          sum(rate(corelink_ac_lookup_errors_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[1h]))
           /
-          sum(rate(corelink_ac_lookup_total[1h]))
+          sum(rate(corelink_ac_lookup_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[1h]))
 
       - alert: SloAvailAcLookup_Fast1h_BurnRate_Sev0
-        expr: slo:ac_lookup_error_rate:1h > (14.4 * 0.001)
+        expr: slo:ac_lookup_error_rate:1h >= (14.4 * 0.001)
         for: 2m
         labels:
           severity: sev0
@@ -217,7 +217,7 @@ groups:
           runbook_url: "https://corelink.io/runbooks/RB-SLO-SLI-AVAIL-AC-LOOKUP-fast_1h.md"
 
       - alert: SloAvailAcLookup_Medium6h_BurnRate_Sev1
-        expr: sum(rate(corelink_ac_lookup_errors_total[6h])) / sum(rate(corelink_ac_lookup_total[6h])) > (6 * 0.001)
+        expr: sum(rate(corelink_ac_lookup_errors_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[6h])) / sum(rate(corelink_ac_lookup_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[6h])) >= (6 * 0.001)
         for: 15m
         labels:
           severity: sev1
@@ -231,7 +231,7 @@ groups:
           runbook_url: "https://corelink.io/runbooks/RB-SLO-SLI-AVAIL-AC-LOOKUP-medium_6h.md"
 
       - alert: SloAvailAcLookup_Slow24h_BurnRate_Sev2
-        expr: sum(rate(corelink_ac_lookup_errors_total[24h])) / sum(rate(corelink_ac_lookup_total[24h])) > (3 * 0.001)
+        expr: sum(rate(corelink_ac_lookup_errors_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[24h])) / sum(rate(corelink_ac_lookup_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[24h])) >= (3 * 0.001)
         for: 1h
         labels:
           severity: sev2
@@ -244,7 +244,7 @@ groups:
           runbook_url: "https://corelink.io/runbooks/RB-SLO-SLI-AVAIL-AC-LOOKUP-slow_24h.md"
 
       - alert: SloAvailAcLookup_Long3d_BurnRate_Sev3
-        expr: sum(rate(corelink_ac_lookup_errors_total[3d])) / sum(rate(corelink_ac_lookup_total[3d])) > (1 * 0.001)
+        expr: sum(rate(corelink_ac_lookup_errors_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[3d])) / sum(rate(corelink_ac_lookup_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[3d])) >= (1 * 0.001)
         for: 4h
         labels:
           severity: sev3
@@ -264,12 +264,12 @@ groups:
     rules:
       - record: slo:auth_error_rate:1h
         expr: |
-          sum(rate(corelink_auth_attempts_errors_total[1h]))
+          sum(rate(corelink_auth_attempts_errors_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[1h]))
           /
-          sum(rate(corelink_auth_attempts_total[1h]))
+          sum(rate(corelink_auth_attempts_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[1h]))
 
       - alert: SloAvailAuth_Fast1h_BurnRate_Sev0
-        expr: slo:auth_error_rate:1h > (14.4 * 0.001)
+        expr: slo:auth_error_rate:1h >= (14.4 * 0.001)
         for: 2m
         labels:
           severity: sev0
@@ -283,7 +283,7 @@ groups:
           runbook_url: "https://corelink.io/runbooks/RB-SLO-SLI-AVAIL-AUTH-fast_1h.md"
 
       - alert: SloAvailAuth_Medium6h_BurnRate_Sev1
-        expr: sum(rate(corelink_auth_attempts_errors_total[6h])) / sum(rate(corelink_auth_attempts_total[6h])) > (6 * 0.001)
+        expr: sum(rate(corelink_auth_attempts_errors_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[6h])) / sum(rate(corelink_auth_attempts_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[6h])) >= (6 * 0.001)
         for: 15m
         labels:
           severity: sev1
@@ -297,7 +297,7 @@ groups:
           runbook_url: "https://corelink.io/runbooks/RB-SLO-SLI-AVAIL-AUTH-medium_6h.md"
 
       - alert: SloAvailAuth_Slow24h_BurnRate_Sev2
-        expr: sum(rate(corelink_auth_attempts_errors_total[24h])) / sum(rate(corelink_auth_attempts_total[24h])) > (3 * 0.001)
+        expr: sum(rate(corelink_auth_attempts_errors_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[24h])) / sum(rate(corelink_auth_attempts_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[24h])) >= (3 * 0.001)
         for: 1h
         labels:
           severity: sev2
@@ -310,7 +310,7 @@ groups:
           runbook_url: "https://corelink.io/runbooks/RB-SLO-SLI-AVAIL-AUTH-slow_24h.md"
 
       - alert: SloAvailAuth_Long3d_BurnRate_Sev3
-        expr: sum(rate(corelink_auth_attempts_errors_total[3d])) / sum(rate(corelink_auth_attempts_total[3d])) > (1 * 0.001)
+        expr: sum(rate(corelink_auth_attempts_errors_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[3d])) / sum(rate(corelink_auth_attempts_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[3d])) >= (1 * 0.001)
         for: 4h
         labels:
           severity: sev3
@@ -331,12 +331,12 @@ groups:
     rules:
       - record: slo:cas_get_latency_violation_rate:1h
         expr: |
-          sum(rate(corelink_cas_get_latency_violations_total[1h]))
+          sum(rate(corelink_cas_get_latency_violations_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[1h]))
           /
-          sum(rate(corelink_cas_get_latency_total[1h]))
+          sum(rate(corelink_cas_get_latency_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[1h]))
 
       - alert: SloLatencyCasGetP99_Fast1h_BurnRate_Sev0
-        expr: slo:cas_get_latency_violation_rate:1h > (14.4 * 0.01)
+        expr: slo:cas_get_latency_violation_rate:1h >= (14.4 * 0.01)
         for: 2m
         labels:
           severity: sev0
@@ -350,7 +350,7 @@ groups:
           runbook_url: "https://corelink.io/runbooks/RB-SLO-SLI-LATENCY-CAS-GET-P99-fast_1h.md"
 
       - alert: SloLatencyCasGetP99_Medium6h_BurnRate_Sev1
-        expr: sum(rate(corelink_cas_get_latency_violations_total[6h])) / sum(rate(corelink_cas_get_latency_total[6h])) > (6 * 0.01)
+        expr: sum(rate(corelink_cas_get_latency_violations_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[6h])) / sum(rate(corelink_cas_get_latency_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[6h])) >= (6 * 0.01)
         for: 15m
         labels:
           severity: sev1
@@ -364,7 +364,7 @@ groups:
           runbook_url: "https://corelink.io/runbooks/RB-SLO-SLI-LATENCY-CAS-GET-P99-medium_6h.md"
 
       - alert: SloLatencyCasGetP99_Slow24h_BurnRate_Sev2
-        expr: sum(rate(corelink_cas_get_latency_violations_total[24h])) / sum(rate(corelink_cas_get_latency_total[24h])) > (3 * 0.01)
+        expr: sum(rate(corelink_cas_get_latency_violations_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[24h])) / sum(rate(corelink_cas_get_latency_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[24h])) >= (3 * 0.01)
         for: 1h
         labels:
           severity: sev2
@@ -377,7 +377,7 @@ groups:
           runbook_url: "https://corelink.io/runbooks/RB-SLO-SLI-LATENCY-CAS-GET-P99-slow_24h.md"
 
       - alert: SloLatencyCasGetP99_Long3d_BurnRate_Sev3
-        expr: sum(rate(corelink_cas_get_latency_violations_total[3d])) / sum(rate(corelink_cas_get_latency_total[3d])) > (1 * 0.01)
+        expr: sum(rate(corelink_cas_get_latency_violations_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[3d])) / sum(rate(corelink_cas_get_latency_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[3d])) >= (1 * 0.01)
         for: 4h
         labels:
           severity: sev3
@@ -398,12 +398,12 @@ groups:
     rules:
       - record: slo:dedup_ratio_violation_rate:1h
         expr: |
-          sum(rate(corelink_dedup_ratio_violations_total[1h]))
+          sum(rate(corelink_dedup_ratio_violations_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[1h]))
           /
-          sum(rate(corelink_dedup_ratio_total[1h]))
+          sum(rate(corelink_dedup_ratio_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[1h]))
 
       - alert: SloDedupRatio_Fast1h_BurnRate_Sev0
-        expr: slo:dedup_ratio_violation_rate:1h > (14.4 * 0.05)
+        expr: slo:dedup_ratio_violation_rate:1h >= (14.4 * 0.05)
         for: 2m
         labels:
           severity: sev0
@@ -417,7 +417,7 @@ groups:
           runbook_url: "https://corelink.io/runbooks/RB-SLO-SLO-DEDUP-RATIO-fast_1h.md"
 
       - alert: SloDedupRatio_Medium6h_BurnRate_Sev1
-        expr: sum(rate(corelink_dedup_ratio_violations_total[6h])) / sum(rate(corelink_dedup_ratio_total[6h])) > (6 * 0.05)
+        expr: sum(rate(corelink_dedup_ratio_violations_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[6h])) / sum(rate(corelink_dedup_ratio_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[6h])) >= (6 * 0.05)
         for: 15m
         labels:
           severity: sev1
@@ -431,7 +431,7 @@ groups:
           runbook_url: "https://corelink.io/runbooks/RB-SLO-SLO-DEDUP-RATIO-medium_6h.md"
 
       - alert: SloDedupRatio_Slow24h_BurnRate_Sev2
-        expr: sum(rate(corelink_dedup_ratio_violations_total[24h])) / sum(rate(corelink_dedup_ratio_total[24h])) > (3 * 0.05)
+        expr: sum(rate(corelink_dedup_ratio_violations_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[24h])) / sum(rate(corelink_dedup_ratio_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[24h])) >= (3 * 0.05)
         for: 1h
         labels:
           severity: sev2
@@ -444,7 +444,7 @@ groups:
           runbook_url: "https://corelink.io/runbooks/RB-SLO-SLO-DEDUP-RATIO-slow_24h.md"
 
       - alert: SloDedupRatio_Long3d_BurnRate_Sev3
-        expr: sum(rate(corelink_dedup_ratio_violations_total[3d])) / sum(rate(corelink_dedup_ratio_total[3d])) > (1 * 0.05)
+        expr: sum(rate(corelink_dedup_ratio_violations_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[3d])) / sum(rate(corelink_dedup_ratio_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[3d])) >= (1 * 0.05)
         for: 4h
         labels:
           severity: sev3
@@ -465,12 +465,12 @@ groups:
     rules:
       - record: slo:rate_limit_within_quota_error_rate:1h
         expr: |
-          sum(rate(corelink_rate_limited_within_quota_errors_total{trip_reason!="ManualOverride"}[1h]))
+          sum(rate(corelink_rate_limited_within_quota_errors_total{trip_reason!="ManualOverride",tenant_id!="00000000-0000-0000-0000-canary000000"}[1h]))
           /
-          sum(rate(corelink_rate_limited_within_quota_total{trip_reason!="ManualOverride"}[1h]))
+          sum(rate(corelink_rate_limited_within_quota_total{trip_reason!="ManualOverride",tenant_id!="00000000-0000-0000-0000-canary000000"}[1h]))
 
       - alert: SloRateLimitWithinQuota_Fast1h_BurnRate_Sev0
-        expr: slo:rate_limit_within_quota_error_rate:1h > (14.4 * 0.001)
+        expr: slo:rate_limit_within_quota_error_rate:1h >= (14.4 * 0.001)
         for: 2m
         labels:
           severity: sev0
@@ -484,7 +484,7 @@ groups:
           runbook_url: "https://corelink.io/runbooks/RB-SLO-SLI-RATE-LIMIT-WITHIN-QUOTA-fast_1h.md"
 
       - alert: SloRateLimitWithinQuota_Medium6h_BurnRate_Sev1
-        expr: sum(rate(corelink_rate_limited_within_quota_errors_total{trip_reason!="ManualOverride"}[6h])) / sum(rate(corelink_rate_limited_within_quota_total{trip_reason!="ManualOverride"}[6h])) > (6 * 0.001)
+        expr: sum(rate(corelink_rate_limited_within_quota_errors_total{trip_reason!="ManualOverride",tenant_id!="00000000-0000-0000-0000-canary000000"}[6h])) / sum(rate(corelink_rate_limited_within_quota_total{trip_reason!="ManualOverride",tenant_id!="00000000-0000-0000-0000-canary000000"}[6h])) >= (6 * 0.001)
         for: 15m
         labels:
           severity: sev1
@@ -498,7 +498,7 @@ groups:
           runbook_url: "https://corelink.io/runbooks/RB-SLO-SLI-RATE-LIMIT-WITHIN-QUOTA-medium_6h.md"
 
       - alert: SloRateLimitWithinQuota_Slow24h_BurnRate_Sev2
-        expr: sum(rate(corelink_rate_limited_within_quota_errors_total{trip_reason!="ManualOverride"}[24h])) / sum(rate(corelink_rate_limited_within_quota_total{trip_reason!="ManualOverride"}[24h])) > (3 * 0.001)
+        expr: sum(rate(corelink_rate_limited_within_quota_errors_total{trip_reason!="ManualOverride",tenant_id!="00000000-0000-0000-0000-canary000000"}[24h])) / sum(rate(corelink_rate_limited_within_quota_total{trip_reason!="ManualOverride",tenant_id!="00000000-0000-0000-0000-canary000000"}[24h])) >= (3 * 0.001)
         for: 1h
         labels:
           severity: sev2
@@ -511,7 +511,7 @@ groups:
           runbook_url: "https://corelink.io/runbooks/RB-SLO-SLI-RATE-LIMIT-WITHIN-QUOTA-slow_24h.md"
 
       - alert: SloRateLimitWithinQuota_Long3d_BurnRate_Sev3
-        expr: sum(rate(corelink_rate_limited_within_quota_errors_total{trip_reason!="ManualOverride"}[3d])) / sum(rate(corelink_rate_limited_within_quota_total{trip_reason!="ManualOverride"}[3d])) > (1 * 0.001)
+        expr: sum(rate(corelink_rate_limited_within_quota_errors_total{trip_reason!="ManualOverride",tenant_id!="00000000-0000-0000-0000-canary000000"}[3d])) / sum(rate(corelink_rate_limited_within_quota_total{trip_reason!="ManualOverride",tenant_id!="00000000-0000-0000-0000-canary000000"}[3d])) >= (1 * 0.001)
         for: 4h
         labels:
           severity: sev3

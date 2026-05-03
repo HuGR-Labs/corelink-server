@@ -28,16 +28,18 @@ pub const SUSTAINED_72H_LOOPS_PER_REGION: u32 = 4_320;
 /// 3 regions × 4_320 loops/72h/region = 12_960.
 pub const SUSTAINED_72H_LOOP_TARGET: u32 = 12_960;
 
-/// Canonical synthetic canary tenant identifier (canonical UUID
-/// format: 8-4-4-4-12 hex segments = 36 chars total) per WI-S09-007
-/// §6.1.6. The 12-char last segment encodes the literal `canary` +
-/// `000000` zero-padding to fit the canonical UUID grammar (the WI
-/// spec uses the prose shorthand `CANARY00000`; here we ship the
-/// 36-char UUID-conformant literal so production parsers accept the
-/// value via `Uuid::parse_str`). Excluded from SLI denominator
-/// computation via the WI-S09-006 recording rule filter (analogous to
-/// the ManualOverride exclusion in WI-S08-005 per Lote 10.8bis
-/// P1-NEW-3 inheritance).
+/// Canonical synthetic canary tenant identifier (UUID-shaped sentinel:
+/// 8-4-4-4-12 = 36 chars; the trailing 12-char segment encodes the
+/// literal `canary` + `000000` zero-padding) per WI-S09-007 §6.1.6.
+/// The WI spec uses the prose shorthand `CANARY00000`; the literal
+/// `canary` is intentionally **non-hex** so this value CANNOT be a
+/// real `Uuid::parse_str`-parseable UUID, by design — preventing
+/// accidental collision with any real tenant UUIDv7. All consumers
+/// MUST compare/store this as `&str`; never call `Uuid::parse_str` on
+/// it. Excluded from SLI denominator computation via the WI-S09-006
+/// recording rule `tenant_id!=` filter (analogous to the
+/// ManualOverride exclusion in WI-S08-005 per Lote 10.8bis P1-NEW-3
+/// inheritance).
 pub const SYNTHETIC_CANARY_TENANT_ID: &str = "00000000-0000-0000-0000-canary000000";
 
 #[cfg(test)]
