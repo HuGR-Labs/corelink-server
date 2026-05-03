@@ -1,0 +1,40 @@
+[package]
+name = "corelink-tracing"
+description = "CoreLink OTLP distributed tracing primitive (WI-S09-003 — S-09 observability stack HIGH_RISK lane). Ships TraceContext (W3C Trace Context Recommendation 2020-canonical 16-byte trace_id + 8-byte span_id + 1-byte trace flags) + parse_traceparent / format_traceparent strict ABNF compliance + RateBasedSampler (canonical head-based sampling at p%; deterministic per W3C trace_id ratio per OpenTelemetry SDK Sampler::TraceIdRatioBased) + OtlpExporter trait + InMemoryOtlpExporter capture sink + SpanRecord (CloudEvents-aligned with trace_id / span_id / parent_span_id / name / kind / status / start_time_ns / end_time_ns / attributes / exemplars; OTLP §5 ResourceSpans semantic) + SpanKind 5-canonical (UNSPECIFIED / INTERNAL / SERVER / CLIENT / PRODUCER / CONSUMER per OTLP spec) + Exemplar trait pinning OpenMetrics 1.0 metric ↔ trace correlation (CAP-OBS-009) + TracingError `#[non_exhaustive]` taxonomy + per-instance `Arc<Mutex<>>` F-001 closure + audit-emit-BEFORE-mutation fail-closed envelope on every decision arm. Production OTLP HTTP exporter (Tempo backend) + tail-based sampling + W3C tracestate vendor extensions deferred to WI-S09-007 PRR ship gate per `trait-abstraction-defer` charter pattern."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+corelink-analytics = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+rand = "0.9"
+rand_chacha = "0.9"
+
+[[test]]
+name = "prop_tracing"
+path = "tests/prop_tracing.rs"

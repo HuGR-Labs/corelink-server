@@ -727,6 +727,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-tracing"
+version = "0.1.0"
+dependencies = [
+ "corelink-analytics",
+ "proptest",
+ "rand 0.9.4",
+ "rand_chacha 0.9.0",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "corelink-webauthn"
 version = "0.1.0"
 dependencies = [
