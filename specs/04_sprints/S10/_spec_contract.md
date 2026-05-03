@@ -3,9 +3,9 @@ id: "SPEC-CONTRACT-S10"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.3.0"
+version: "1.4.0"
 created: "2026-04-24"
-updated: "2026-04-26"
+updated: "2026-05-03"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -306,4 +306,13 @@ Itens waivable com sign-off Finance + Legal + ADR:
 
 ---
 
-**Fim spec contract S-10 v1.3.0 SOTA SEALED (Lote 10.10-septies round-4 R4 9.2/10 + R5 9.5/10).**
+## 20. Change Log
+
+| Versão | Data | Autor | Mudança |
+|---|---|---|---|
+| 1.3.0 | 2026-04-26 | Gustavo (Lote 10.10-septies) | Initial spec contract S-10 v1.3.0 SOTA SEALED (Lote 10.10-septies round-4 R4 9.2/10 + R5 9.5/10). |
+| 1.4.0 | 2026-05-03 | Gustavo (via Claude Opus 4.7 1M; autonomous WI-S10-001 SEAL) | **WI-S10-001 IMPL SEALED** — `crates/corelink-billing-emit/` ships pure-logic skeleton per `trait-abstraction-defer` charter pattern (production CF R2 PutObject + Object Lock 7y + Cloudflare Queue retry drain + (tenant_id, request_id) UNIQUE D1 staging table production binding deferred to WI-S10-007 PRR ship gate). Six modules: `event` (UsageEvent CloudEvents 1.0 + IdemKey BLAKE3-256 newtype + 6-element UsageEventKind taxonomy + UsageUnit + validate_billing_period YYYY-MM guard); `idempotency` (derive_idem_key BLAKE3-of-JCS-with-slot-zeroed canonical formula + IdempotencyTracker trait + InMemoryIdempotencyTracker per-tenant set membership + IdempotencyDecision Accepted/DuplicateRejected + IdempotencyCollision SEV-1 surface); `sink` (R2UsageSink trait + InMemoryR2UsageSink append-only NDJSON layout `usage/{tenant_id}/{billing_period}/{seq:08}.usage.ndjson` + INV-BILLING-APPEND-ONLY trait-surface enforcement + per-(tenant, billing_period) sequence ledger + FailingR2UsageSink); `emitter` (UsageEventEmitter trait + InMemoryUsageEventEmitter orchestrator: canonicalize → derive idem_key → idempotency check → audit envelope BEFORE state mutation → R2 PutObject); `audit` (BillingAuditEventType `#[non_exhaustive]` 4-event taxonomy `corelink.billing.{usage_emitted, duplicate_rejected, sink_failure, idempotency_collision}` + BillingAuditSink + InMemoryBillingAuditSink + FailingBillingAuditSink); `error` (BillingEmitError + BillingAuditSinkError + R2UsageSinkError canonical `#[non_exhaustive]` taxonomies). Migration `migrations/d1/0017_usage_event_idem.sql` ships canonical `usage_event_staging` PRIMARY KEY (tenant_id, request_id) + 2 indexes + 7 inline CHECK constraints. Tests: 63 inline unit + 10 integration property tests at 10k iter PR-gate (PROPTEST_CASES env-var read at runtime). Quality gates green: cargo clippy --workspace --all-targets --features corelink-worker/tower-middleware -- -D warnings, cargo test -p corelink-billing-emit --all-targets (73/73), validate_specs.py (280/286), check_migrations_additive.py (17 files OK). Charter compliance: zero unsafe / unwrap / expect / panic / indexing in lib code; per-instance Arc<Mutex<>> F-001 closure; `#[non_exhaustive]` on every public enum; wasm32-clean (no tokio in src/); audit fail-CLOSED envelope on every decision arm; ChaCha20Rng PRNG pinned; BLAKE3-256 + JCS RFC 8785 canonical mirroring S-09 audit-chain. |
+
+---
+
+**Fim spec contract S-10 v1.4.0 (WI-S10-001 IMPL SEALED 2026-05-03; spec-baseline v1.3.0 SOTA SEALED Lote 10.10-septies round-4 R4 9.2/10 + R5 9.5/10).**

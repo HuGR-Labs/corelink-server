@@ -35,6 +35,7 @@ members = [
     "crates/corelink-audit-chain",
     "crates/corelink-slo",
     "crates/corelink-canary",
+    "crates/corelink-billing-emit",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
@@ -122,6 +123,7 @@ corelink-tracing = { path = "crates/corelink-tracing" }
 corelink-audit-chain = { path = "crates/corelink-audit-chain" }
 corelink-slo = { path = "crates/corelink-slo" }
 corelink-canary = { path = "crates/corelink-canary" }
+corelink-billing-emit = { path = "crates/corelink-billing-emit" }
 
 # Test / bench
 proptest = "1.5"
