@@ -96,10 +96,15 @@ inherits_from:
 
 ### 5.4 Reconciliation (CAP-BILLING-004)
 
-- **R-S10-8**: Daily reconciliation worker (cron 02:00 UTC):
-  1. **Layer 1**: Σ(events) (R2 raw) vs Σ(counters D1) — drift > 0.1% → SEV-2.
-  2. **Layer 2**: Σ(counters D1) vs Σ(invoice_line_item D1) — drift > 0.1% → SEV-2.
-  3. **Layer 3**: Σ(invoice_line_item) vs Σ(Stripe invoice) (pull via Stripe API) — drift > 0.1% → SEV-1.
+- **R-S10-8** (S-10 sprint-close P1-2 fix): Daily reconciliation worker (cron 02:00 UTC); **uniform 4-tier drift threshold ladder** for all 3 layers per §14.s10.1 (the earlier draft Layer-3-specific 0.1% SEV-1 threshold was rejected during sprint-close adversarial review — Sonnet 8.80/10 P1-2 — in favor of the §14.s10.1 uniform ladder; financial conservatism is preserved because 0.1% drift on ANY layer is already SEV-2 page, the 1% SEV-1 threshold only escalates the page severity + auto-pauses Stripe submission):
+  - **Quiet** (`drift ≤ 0.01%`): NoDrift / AutoFixed (within float-precision floor; auto-fix dual-condition gate `count ≤ 5 AND drift ≤ 0.01%` per Lote 10.6bis P0-6).
+  - **TicketSev3** (`0.01% < drift ≤ 0.1%`): SEV-3 ticket; investigate within 7 days.
+  - **PageSev2** (`0.1% < drift ≤ 1%`): SEV-2 page; investigate within 24h.
+  - **PageSev1AutoPaused** (`drift > 1%`): SEV-1 page **+ auto-pause Stripe submission** (`StripeSubmissionControl::pause` per (tenant, billing_period); idempotent re-pause); blocks close-of-month until resolution. Primary-layer routing prefers Layer 3 > Layer 2 > Layer 1 (Stripe API discrepancy = customer-facing invoice = highest legal exposure).
+  - **3 layers reconciled**:
+    1. **Layer 1**: Σ(events) (R2 raw) vs Σ(counters D1).
+    2. **Layer 2**: Σ(counters D1) vs Σ(invoice_line_item D1).
+    3. **Layer 3**: Σ(invoice_line_item) vs Σ(Stripe invoice) (pull via Stripe API).
 - **R-S10-9**: Reconciliation report em R2 `reconciliation-reports/YYYY-MM-DD.json` com per-tenant breakdown; retain 7y.
 
 ### 5.5 Overage / Quota (CAP-BILLING-005)
