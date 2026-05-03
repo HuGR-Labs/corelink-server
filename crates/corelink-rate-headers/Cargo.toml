@@ -1,0 +1,41 @@
+[package]
+name = "corelink-rate-headers"
+description = "CoreLink RFC 9331 rate-limit headers + 5-arm response-code taxonomy + 3-state global circuit-breaker (WI-S08-005 — camada-0 of the 4-layer rate-limit bulkhead PAT-RATE-LIMIT-001). Ships RateLimitHeaderBuilder composing canonical RFC 9331 `RateLimit: limit=N, remaining=M, reset=S` + `RateLimit-Policy: <limit>;w=<window>` headers (IETF stable; supersedes legacy custom `X-RateLimit-*` per sprint contract §14.s08.5) + XRateLimitTypeKind `#[non_exhaustive]` 5-arm enum mapping the per-camada response-code taxonomy (`tenant_quota` / `per_ip` / `per_pat` / `over_quota` / `global_circuit_open` per sprint contract §5 R-S08-8) + Retry-After RFC 6585 always present (§5 R-S08-9) + GlobalCircuitBreaker trait + InMemoryGlobalCircuitBreaker orchestrator with canonical 3-state lifecycle (Closed / Open / HalfOpen) + multi-signal trip evaluator (5xx-rate AND p99-latency AND DO-error-rate; ≥ 2 signals required per sprint contract §15 R-S08-004 + standard circuit-breaker hysteresis pattern (Netflix Hystrix / Resilience4j canonical)) + hysteresis recovery (90% threshold dwell 2min Open → HalfOpen; 50% + ≥ 90% sample success Closed; immediate revert on signal re-trip) + HalfOpen 10% deterministic sampling (no thundering herd) + ManualOverride admin S-13 escape hatch + audit fail-closed (corelink.circuit.{tripped, half_open_probe, closed_recovery, request_rejected, manual_override}) + canonical D1 migration `0014_global_circuit_state.sql` (durable per-region state + append-only trips_history; companion DASH-RATE widget deferred WI-S08-006 PRR ship gate per `trait-abstraction-defer` charter pattern)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+uuid = { workspace = true, features = ["v7"] }
+corelink-ratelimit = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[[test]]
+name = "prop_rate_headers"
+path = "tests/prop_rate_headers.rs"
+
+[[test]]
+name = "migration_canonical_0014"
+path = "tests/migration_canonical_0014.rs"

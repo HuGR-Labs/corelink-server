@@ -615,6 +615,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-rate-headers"
+version = "0.1.0"
+dependencies = [
+ "corelink-ratelimit",
+ "proptest",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "corelink-ratelimit"
 version = "0.1.0"
 dependencies = [

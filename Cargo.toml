@@ -28,6 +28,7 @@ members = [
     "crates/corelink-ratelimit",
     "crates/corelink-edge",
     "crates/corelink-abuse",
+    "crates/corelink-rate-headers",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
@@ -108,6 +109,7 @@ corelink-lru-tracker = { path = "crates/corelink-lru-tracker" }
 corelink-ratelimit = { path = "crates/corelink-ratelimit" }
 corelink-edge = { path = "crates/corelink-edge" }
 corelink-abuse = { path = "crates/corelink-abuse" }
+corelink-rate-headers = { path = "crates/corelink-rate-headers" }
 
 # Test / bench
 proptest = "1.5"
