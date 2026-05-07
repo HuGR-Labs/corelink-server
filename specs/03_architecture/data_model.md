@@ -421,7 +421,8 @@ audit-<region>/
 
 | ID                       | Descrição                                                                          | Enforcement           |
 |--------------------------|------------------------------------------------------------------------------------|-----------------------|
-| INV-DATA-BLOB-HASH       | Body em R2 satisfaz `hash(body) == digest do path`                                 | CI scrub + client verify |
+| INV-DATA-BLOB-HASH (→ INV-CAS-INTEGRITY canonical) | Body em R2 satisfaz `hash(body) == digest do path`                                 | CI scrub + client verify |
+| INV-DIGEST-VERIFICATION (canonical: `invariant_registry.md §3.11`) | Write path rejeita body se `hash(body) ≠ claimed_digest`; poisoning impossível | CTRL-CAS-001 + WI-S01-002 BLAKE3 verify-at-write |
 | INV-DATA-REFCOUNT        | `blob_meta.refcount ≥ 0` sempre; `= 0 ⇒ deletable`                                 | Check em transaction + GC |
 | INV-DATA-BLOB-NO-ZOMBIE  | Não existe body em R2 sem row em `blob_meta` (exceto durante multipart in-flight) | Reconcile diário       |
 | INV-DATA-AC-REFS-EXIST   | Todo `ac_meta.blob_refs[i]` tem `blob_meta` alive                                  | FK lógico + reconcile |

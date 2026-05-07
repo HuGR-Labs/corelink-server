@@ -3,9 +3,9 @@ id: "INVARIANT-REGISTRY"
 type: "invariant"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "0.2.0"
+version: "0.2.1"
 created: "2026-04-24"
-updated: "2026-04-28"
+updated: "2026-05-07"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -17,8 +17,8 @@ tags: ["architecture", "invariants", "registry", "tla"]
 # Invariant Registry — Catálogo Canônico de INV-XXX
 
 > **doc_status:** DRAFT
-> **Versão:** 0.2.0
-> **Última atualização:** 2026-04-28 (Lote 10.7-tris cycle 5: S-07 INVs added §3.18; cycle 6 banner sync)
+> **Versão:** 0.2.1
+> **Última atualização:** 2026-05-07 (Hardening sprint 2026-05-07: INV-LRU-CONSISTENCY race-window claim corrected (S-07 R5 P2-1); INV-OBS-CARDINALITY-BUDGET suspended-tier policy documented (S-09 R5 P2-3))
 > **Owner:** Gustavo Schneiter
 > **Aprovador Final:** Gustavo Schneiter
 > **Revisores:** ⚠️ **staffing-blocked** — promoção a `doc_status: FROZEN` bloqueada até ≥ 2 reviewers nomeados conforme roles indicados (endereça F-09 audit Lote 3+4)
@@ -161,7 +161,7 @@ Invariantes introduzidas via SOTA elevation dos sprint contracts S-07..S-19 (Lot
 |---|---|---|---|---|---|
 | **INV-DEDUP-CONSISTENCY** | Dedup chunk_body 1:1 dentro do tenant | HIGH | `(tenant_id, chunk_digest) → chunk_body` é 1:1; nenhum dup chunk_body para mesmo digest dentro de tenant | UNIQUE index D1 + property test (PAT-DEDUP-CHECK-001) | S-07 |
 | **INV-RATE-LIMIT-PROPORTIONALITY** | Rate limit refill_rate × window consistente com tenant plan | HIGH | `refill_rate × window` sempre consistente com tenant plan; mudança de plan reflete em ≤ 5 min via DO config sync | DO atomic update + sync test (CTRL-RATE-001) | S-08 |
-| **INV-OBS-CARDINALITY-BUDGET** | Cardinality de métrica respeita budget | HIGH | Nenhuma métrica excede 20k séries únicas; total ≤ 100k. Reference: `observability_model.md §11.2` | Cardinality validator CI + Grafana Mimir tenant limit | S-09 |
+| **INV-OBS-CARDINALITY-BUDGET** | Cardinality de métrica respeita budget | HIGH | Nenhuma métrica excede 20k séries únicas; total ≤ 100k. Reference: `observability_model.md §11.2`. Tier label canonical enum = `{Free, Solo, Team, Business, Enterprise}` 5-element (WI-S09-001 §1.7); **suspended/canceled tenant policy**: suspended tenants emit as `Free` tier label (deliberate choice — avoids adding a 6th Suspended variant that would increase cardinality 5→6 × 30 × 3 = 540 series baseline; documented per S-09 R5 P2-3; Architect sign-off recorded in sprint contract v1.3.0 SEAL). | Cardinality validator CI + Grafana Mimir tenant limit | S-09 |
 | **INV-OBS-AUDIT-CHAIN-INTEGRITY** | Audit events R2 hash chain unbroken | HIGH | Hash chain de audit events em R2 é unbroken; daily verifier alerta em break | Background daily job + INV-AUDIT-APPEND-ONLY | S-09 |
 | **INV-BILLING-APPEND-ONLY** | R2 usage event log append-only (mirror INV-AUDIT-APPEND-ONLY scoped to billing) | HIGH | UPDATE/DELETE em `usage/{tenant}/{period}/{seq}.usage.ndjson` rejeitado; idempotency_key BLAKE3-of-JCS estabelece dedup; R2 PutObject com If-None-Match: *; equivalente structurally a INV-AUDIT-APPEND-ONLY (S-06 lift) escopado ao billing event log (NÃO ao audit log geral) | R2 If-None-Match guard + IdempotencyTracker dedup at sink layer + ChainHash verify daily | S-10 |
 | **INV-BILLING-RECONCILE-3-LAYER** | 3-layer reconciliation diária events ↔ counters ↔ Stripe | HIGH | Drift > 0.1% em qualquer layer = SEV-2; drift > 1% = SEV-1 + auto-pause Stripe (uniform threshold ladder per spec_contract S-10 §14.s10.1; supersedes draft R-S10-8 Layer-3-specific 0.1% SEV-1 — see S-10 sprint-close P1-2 fix). Bloqueia close-of-month até resolution. Strengthens INV-DATA-BILLING-RECONCILE | Cron daily + 3-layer compare + alert escalation | S-10 |
@@ -375,7 +375,7 @@ INVs introduced by Sprint S-07 (Dedup + Eviction Policy; STANDARD lane). Promovi
 | **INV-EVICT-SOFT-DELETE-FIRST** | Eviction sets `blob_meta.deleted_at`; NEVER R2 DELETE direct (reuses S-06 GC grace 72h via WI-S06-004 physical-delete cron) | HIGH | WI-S07-002 §6.1.7 soft-delete batch; physical delete delegated to S-06 | Chaos test #1 + property `prop_evict_idempotent`; 30d sustained zero INV-GC-001 violations | N/A (architecture invariant; INV-GC-001 inheritance chain) |
 | **INV-EVICT-CASCADE-PREVENTED** | Pre-evict reachable check refuses if blob is referenced via `ac_meta.blob_refs` (S-07 BLOB-scope); chunk-level reachability owned by S-06 GC via `chunks.refcount` + sweep (Lote 10.7bis P0-8 scope-reduce); canonical `json_each` SQL idiom | HIGH | WI-S07-002 §6.1.6 reachable check; SQL `SELECT COUNT(*) FROM ac_meta a, json_each(a.blob_refs) j WHERE a.tenant_id = ? AND j.value = ? AND a.deleted_at IS NULL AND a.created_at < ?` (race-protection contrapositive of INV-GC-004 protect-if->=); chunks lifecycle = S-06 GC scope NOT S-07 | Chaos test #2 + property `prop_evict_cascade_prevention` | N/A (cascade prevention; INV-GC-003 + INV-DEDUP-CONSISTENCY combined) |
 | **INV-EVICT-TTL-CAP-RESPECTED** | Enterprise TTL ≤ 730d hard cap (CAP-EVICT-002 boundary); admin override > cap rejected by validator | MEDIUM | WI-S07-002 §6.1.3 `ttl_for_tier` hard cap em config validator | Chaos test #7 (override rejection) + integration test boundary | N/A (config invariant) |
-| **INV-LRU-CONSISTENCY** | Eviction respects authoritative `last_accessed_at` via DO buffered + D1 base UNION lookup; 0 race violations (eviction NEVER deletes blob accessed within tier_lru_window even sob race) | HIGH | WI-S07-004 §6.1.7 `last_accessed_at_authoritative` MAX(DO_buffered, D1_base); WI-S07-002 reachable check consumes | Property test 10k iter `prop_lru_eviction_race` (sprint contract §6 DoD GC+Evict race) + chaos test #1 | N/A (architecture invariant; race-free correctness) |
+| **INV-LRU-CONSISTENCY** | Eviction respects authoritative `last_accessed_at` via DO buffered + D1 base UNION lookup; eviction NEVER deletes blob accessed within tier_lru_window **modulo bounded DO fire-and-forget queue latency (≤ 100ms p99)**. Note: `record_access` DO buffer-add is fire-and-forget (non-awaited); a concurrent eviction worker that reads DO buffer within this window may see a stale value. The `evict_started_at_ms` watermark (INV-GC-004 inheritance pattern; WI-S07-002 §6.1.6) bounds the impact — blobs re-referenced after `evict_started_at_ms` are protected. Residual race window = DO actor queue latency (bounded; LRU drift acceptable per policy). Documented per S-07 R5 P2-1. | HIGH | WI-S07-004 §6.1.7 `last_accessed_at_authoritative` MAX(DO_buffered, D1_base); WI-S07-002 reachable check consumes with `evict_started_at_ms` watermark | Property test 10k iter `prop_lru_eviction_race` (sprint contract §6 DoD GC+Evict race) + chaos test #1 | N/A (architecture invariant; bounded-drift correctness) |
 | **INV-QUOTA-RESERVATION-TTL** | Pending reservations auto-release after size-proportional TTL `min(7d, max(60s, request_bytes / 1MB/s × 2))` (canonical Lote 10.7bis R5 P0-2; floor 60s, ceiling 7d); eliminates FM-059 race window (concurrent writes at quota boundary); no quota leak | HIGH | WI-S07-003 §6.2 reservation lifecycle + DO alarm cleanup; sprint contract §15 R-S07-001 mitigation | Chaos test #4 + property `prop_quota_ttl_release` | N/A (DO actor model; race-free serialization) |
 
 **Cross-references**:

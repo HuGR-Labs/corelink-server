@@ -16,7 +16,9 @@ tags: ["runbook", "p2", "auth", "credential-attack", "stub"]
 
 # RB-FM-160 — Auth Invalid Storm (Credential Attack ou PAT Mass Revocation Replay)
 
-> **FM:** FM-160 (S=4, O=3, D=2, RPN=24, P2) | **CTRL:** CTRL-AUTH-001..010, CTRL-CRED-004 | **SLA:** detect ≤ 5 min, mitigate ≤ 30 min
+> **FM:** FM-160 (S=4, O=3, D=2, RPN=24, P2) | **CTRL:** CTRL-AUTH-001..010, CTRL-CRED-004 | **INV:** **INV-AUTH-PAT-HMAC-SIG-VERIFIED** | **SLA:** detect ≤ 5 min, mitigate ≤ 30 min
+
+> **INV-AUTH-PAT-HMAC-SIG-VERIFIED**: PAT verify path step 3a (HMAC sig check fast-fail) MUST execute before token_id lookup — rejects 401 with NO DB hit + NO Argon2 cost if sig mismatch. During a credential-stuffing storm, this invariant is the primary DDoS defense: forged or malformed PATs are rejected in ≤ 100µs at the HMAC layer, preventing DB amplification. If this invariant is observed failing (DB queries spiking without Argon2 cost correlation), suspect HMAC bypass or middleware layer reordering (INV-AUTH-5-LAYER-ORDERING violation).
 
 ## Detecção
 

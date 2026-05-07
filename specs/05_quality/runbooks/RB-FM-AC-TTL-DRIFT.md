@@ -16,7 +16,9 @@ tags: ["runbook", "p2", "ac-ttl", "cron", "data-lifecycle"]
 
 # RB-FM-AC-TTL-DRIFT — AC TTL Cron Worker Stale / Misconfigured
 
-> **FM:** FM-AC-TTL-DRIFT (S=3, P2) | **CTRLs:** INV-AC-TTL-MONOTONIC + INV-AC-EVICT-CONSISTENCY | **SLA:** mitigate < 1h (eviction lag > 2× cron interval)
+> **FM:** FM-AC-TTL-DRIFT (S=3, P2) | **CTRLs:** INV-AC-TTL-MONOTONIC + INV-AC-EVICT-CONSISTENCY + **INV-AC-ORPHAN-R2-CLEANUP-EVENTUAL** | **SLA:** mitigate < 1h (eviction lag > 2× cron interval)
+
+> **INV-AC-ORPHAN-R2-CLEANUP-EVENTUAL**: Orphan R2 envelopes (R2 PUT succeeds, D1 INSERT fails mid-flight) are cleaned within 24h via S-06 reconcile cron. TTL cron drift > 24h directly threatens this invariant — orphan rate metric `corelink.ac.r2.orphan_rate` should be monitored alongside cron tick health.
 
 ## Detection
 

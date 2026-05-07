@@ -79,5 +79,8 @@ If FM-303 fires from the TTL eviction path, the assumption violated is that **th
 
 - WI-S04-005 — TTL infrastructure (refresh-on-hit + cron worker + tenant-scoped expiry).
 - ADR-0019 — TTL ownership boundary S-04 ↔ S-07.
+- ADR-0037 — canonical_bytes layout: `tenant_prefix BLOB(16)` materialized at INSERT (INV-AC-PATH-KEY-MATERIALIZED); cron worker reads the column directly without re-deriving from TDK — a cross-tenant path confusion here would manifest as FM-303.
 - `crates/corelink-worker/src/reapi/ac/ttl/evict.rs` — canonical eviction logic.
 - `RB-FM-AC-TTL-DRIFT.md` / `RB-FM-AC-TTL-STORM.md` — sibling cron operational runbooks.
+
+**Invariants enforced by this runbook**: INV-TENANT-ISOLATION · INV-AC-EVICT-TENANT-SCOPED · **INV-AC-PATH-KEY-MATERIALIZED** (tenant_prefix pre-computed at INSERT; cron does not re-derive — eliminates TDK access expansion race that would enable cross-tenant path confusion).
