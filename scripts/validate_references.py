@@ -47,7 +47,7 @@ ID_PATTERNS = {
     "INV": re.compile(r"\bINV-[A-Za-z][A-Za-z0-9_-]+\b"),  # v2 Lote 6.3: aceita CamelCase legados (G-04)
     "FF-HR": re.compile(r"\bFF-HR-\d{3}\b"),
     "SLO": re.compile(r"\bSLO-[A-Z][A-Z0-9-]+\b"),
-    "RB": re.compile(r"\bRB-[A-Z][A-Z0-9-]+\b"),
+    "RB": re.compile(r"\bRB-[A-Z][A-Z0-9-]*[A-Z0-9]\b"),
     "ADR": re.compile(r"\bADR-\d{4}\b"),
     "WAIVER": re.compile(r"\bWAIVER-\d{8}-\d{3}\b"),
     "FF-LR": re.compile(r"\bFF-LR-\d{3}\b"),
@@ -155,6 +155,11 @@ WHITELIST_IDS = {
     "INV-LIFECYCLE-001",  # framework-internal example
     "INV-GC",  # plural-form mention
     "INV-SUPPLY",  # plural-form mention em §4.3 ("INV-SUPPLY-*")
+    "INV-DEDUP",  # line-wrap artifact: "INV-DEDUP-\nCONSISTENCY" → captures short form (PRR-S07 §A)
+    "INV-EVICT",  # line-wrap artifact: "INV-EVICT-\nSOFT-DELETE-FIRST" → captures short form (PRR-S07 §3)
+    "INV-AUDIT-CHAIN",  # informal short-form reference to INV-AUDIT-APPEND-ONLY (PRR-S03; alias in §5)
+    "INV-OBS",  # plural-form mention (S20 sprint.md §8 "INV-OBS-* invariants")
+    "INV-RATE-LIMIT",  # plural-form mention; canonical IDs are INV-RATE-LIMIT-PROPORTIONALITY (PRR-S08)
     "INV-CAS-SIDE-CHANNEL",  # short-form mention em S-02 §6 (full ID INV-CAS-SIDE-CHANNEL-INDISTINGUISHABLE)
     "INV-AC",  # plural-form mention em S-04 §8 (registry §3.3 INV-AC-* pattern)
     "INV-AUTH",  # plural-form mention em registry §3.14 ("INV-AUTH-*" pattern intro)
