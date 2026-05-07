@@ -1,0 +1,78 @@
+[package]
+name = "corelink-privacy-erasure-worker"
+description = "CoreLink DSR erasure worker (WI-S11-002 — S-11 Privacy Pipeline HIGH_RISK lane). LGPD Art. 18 IV / GDPR Art. 17 / CCPA §1798.105 cross-backend erasure orchestrator. Consumes the canonical `dsr.queued.v1` payload from WI-S11-001 DSR API and fans out to **12 canonical backends pós Lote 10.11.0-bis** (privacy_model.md §6.2 source-of-truth): 8 effective slots — Neon multi-tabela (dsr_tickets/account/tenant/user_account/consent_ledger/subscription) + Neon billing fiscal exception + R2 CAS refcount-aware (subject_unaffiliated vs subject_dedicated) + R2 AC + D1 (blob_meta/ac_meta) + KV (sessions+metadata) + Stripe `Customer.update` (PII nullified, NOT delete — PCI scope GAAP ASC 606 + LGPD Art. 16 fiscal preservation) + Loki/Grafana log deletion API; 4 pseudonymized slots — R2 audit Object Lock 7y (HKDF info=`corelink/v1/audit-pseudonym`) + Neon PITR backup 30d + R2 CAS legal_hold partition governance mode + R2 evidence-* buckets 7y. Per-backend pseudonymization rule sha256(subject_id || erasure_salt) + marker pii_redacted=true (GDPR Recital 26 + Art. 11 + WP29 Op. 05/2014 endorsed by EDPB anonymization techniques escape valve). 24h verification cron sweep gates dsr.completed.v1; per-backend status enum erased|pseudonymized|partial_failure|failed|not_applicable; partial_failure → SEV-1 alert + RB-DSR-ERASURE-INCOMPLETE. BLAKE3-signed JCS-canonical erasure-report.json (consistent with S-09 audit chain + S-10 billing replay) uploaded to R2 evidence-dsr/<dsr_id>/erasure-report.json retain 7y. ErasureWorker trait + InMemoryErasureWorker orchestrator + 12 BackendErasureAdapter trait adapters + InMemoryReportSigner. BackendKind `#[non_exhaustive]` 12-arm enum + ErasureDecision `#[non_exhaustive]` 6-arm + ErasureWorkerError `#[non_exhaustive]` taxonomy. Per-instance `Arc<Mutex<>>` F-001 closure. Audit fail-CLOSED envelope BEFORE state mutation: 5 canonical CloudEvents `dev.hugr.corelink.dsr.erasure.{started, backend_completed, verification_passed, verification_failed, completed}.v1` per Lote 10.9bis P0-G prefix; split-tier discipline per ADR-S11-002 (DSR is regulatory-grade fail-CLOSED; distinct from billing fail-OPEN at customer hot path). Idempotency UNIQUE (dsr_id, backend) per dsr_erasure_log tombstones; replay-safe (PAT-RETRY-IDEMPOTENT-001). Per-DSR + per-tenant erasure_salt forward secrecy (ADR-S11-003 interim D1 vault encrypted; full BYOK KMS deferred to S-14). Cross-backend eventual consistency (ADR-S11-004 — 2PC inviável Stripe + Object Lock heterogeneity). Production CF Worker queue consumer + R2/D1/Neon/KV/DO/Stripe/Loki bindings + 24h cron worker + R2 evidence-dsr signed URL deferred to WI-S11-008 PRR ship gate per `trait-abstraction-defer` charter pattern. wasm32-unknown-unknown clean (no ring / no C toolchain dep)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_jcs = "0.2"
+blake3 = { workspace = true }
+hex = { workspace = true }
+sha2 = { workspace = true }
+# Note: no `v7` feature — that pulls a wasm32-incompatible RNG. We
+# accept UUIDs from upstream callers (DSR API enqueues `dsr.queued.v1`)
+# but never generate them inside this crate. Tests use deterministic
+# `Uuid::from_bytes(seed)` per S-07 P1-2 wasm32-clean discipline.
+uuid = { workspace = true, features = ["serde"] }
+corelink-privacy-pseudonymize = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+rand = "0.9"
+rand_chacha = "0.9"
+# corelink-dsr only available in tests (it pulls uuid v7 which is
+# wasm32-incompatible without rng-getrandom features). The integration
+# test exercises the real `dsr.queued.v1` shape; the trait surface
+# itself never imports the predecessor crate.
+corelink-dsr = { workspace = true }
+
+[[test]]
+name = "prop_idempotency_replay_100x"
+path = "tests/prop_idempotency_replay_100x.rs"
+
+[[test]]
+name = "prop_pseudonymization_correctness"
+path = "tests/prop_pseudonymization_correctness.rs"
+
+[[test]]
+name = "chaos_per_backend_failure"
+path = "tests/chaos_per_backend_failure.rs"
+
+[[test]]
+name = "regression_refcount_aware_scrub"
+path = "tests/regression_refcount_aware_scrub.rs"
+
+[[test]]
+name = "regression_stripe_invoice_preserved"
+path = "tests/regression_stripe_invoice_preserved.rs"
+
+[[test]]
+name = "verification_job_24h"
+path = "tests/verification_job_24h.rs"
+
+[[test]]
+name = "integration_erasure_lifecycle"
+path = "tests/integration_erasure_lifecycle.rs"

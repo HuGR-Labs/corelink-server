@@ -1,0 +1,41 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://corelink.hugr.dev/schemas/cloudevents/dsr-erasure-completed.v1.json",
+  "title": "dev.hugr.corelink.dsr.erasure.completed.v1",
+  "description": "Pipeline terminal: dsr_tickets.status → 'completed'. Audit fires BEFORE the canonical status transition + the customer-facing email notification with the BLAKE3-signed erasure-report.json signed URL (24h TTL). Only fires post a successful 24h verification sweep (`dsr.erasure.verification_passed.v1` precedes).",
+  "type": "object",
+  "required": ["specversion", "type", "source", "id", "time", "datacontenttype", "data"],
+  "properties": {
+    "specversion": { "type": "string", "const": "1.0" },
+    "type": { "type": "string", "const": "dev.hugr.corelink.dsr.erasure.completed.v1" },
+    "source": { "type": "string", "format": "uri-reference" },
+    "id": { "type": "string", "format": "uuid" },
+    "time": { "type": "string", "format": "date-time" },
+    "datacontenttype": { "type": "string", "const": "application/json" },
+    "subject": { "type": "string", "description": "tenant:<tenant_id>" },
+    "data": {
+      "type": "object",
+      "required": ["dsr_id", "tenant_id", "subject_id_hash", "completed_at_ms"],
+      "properties": {
+        "dsr_id": { "type": "string", "format": "uuid" },
+        "tenant_id": { "type": "string", "format": "uuid" },
+        "subject_id_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "completed_at_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Unix epoch ms; canonical clock_stop F-11 instant per privacy_model.md §6.1."
+        },
+        "report_signature_hex": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "BLAKE3-keyed MAC signature (32 bytes hex) over the canonical JCS-canonical erasure-report.json payload."
+        },
+        "report_signed_url_ttl_seconds": {
+          "type": "integer",
+          "const": 86400,
+          "description": "Canonical 24h TTL on the customer-facing R2 evidence-dsr signed URL."
+        }
+      }
+    }
+  }
+}

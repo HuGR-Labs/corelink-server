@@ -1,0 +1,40 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://corelink.hugr.dev/schemas/cloudevents/dsr-erasure-started.v1.json",
+  "title": "dev.hugr.corelink.dsr.erasure.started.v1",
+  "description": "DSR erasure pipeline started: orchestrator emitted a canonical 12-arm plan + dispatched the per-backend fan-out (8 effective + 4 pseudonymized canonical backends pós Lote 10.11.0-bis, privacy_model.md §6.2 source-of-truth). Audit fires BEFORE the first backend mutation per ADR-S11-002 split-tier fail-CLOSED envelope. Canonical CloudEvents 1.0 envelope + WI-S11-002 §1 5-event taxonomy.",
+  "type": "object",
+  "required": ["specversion", "type", "source", "id", "time", "datacontenttype", "data"],
+  "properties": {
+    "specversion": { "type": "string", "const": "1.0" },
+    "type": { "type": "string", "const": "dev.hugr.corelink.dsr.erasure.started.v1" },
+    "source": { "type": "string", "format": "uri-reference" },
+    "id": { "type": "string", "format": "uuid" },
+    "time": { "type": "string", "format": "date-time" },
+    "datacontenttype": { "type": "string", "const": "application/json" },
+    "subject": { "type": "string", "description": "tenant:<tenant_id>" },
+    "data": {
+      "type": "object",
+      "required": ["dsr_id", "tenant_id", "subject_id_hash", "plan_size", "queued_at_ms"],
+      "properties": {
+        "dsr_id": { "type": "string", "format": "uuid" },
+        "tenant_id": { "type": "string", "format": "uuid" },
+        "subject_id_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "sha256(subject_id || tenant_salt) per CTRL-PRIV-014 minimization (NOT raw subject_id)."
+        },
+        "plan_size": {
+          "type": "integer",
+          "const": 12,
+          "description": "Canonical 12-backend plan (8 effective + 4 pseudonymized)."
+        },
+        "queued_at_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Unix epoch ms; anchors the canonical 30d SLO-FRESH-DSR-ERASURE clock + the 24h verification SLA window."
+        }
+      }
+    }
+  }
+}

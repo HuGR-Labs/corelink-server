@@ -1,0 +1,41 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://corelink.hugr.dev/schemas/cloudevents/dsr-erasure-verification_passed.v1.json",
+  "title": "dev.hugr.corelink.dsr.erasure.verification_passed.v1",
+  "description": "24h verification cron sweep confirmed every canonical backend reports a successful outcome (8 effective at 0 rows + 4 pseudonymized at 100% pii_redacted=true marker presence). Audit fires BEFORE the canonical R2 evidence-dsr signed URL binding + the canonical `dsr.erasure.completed.v1` event.",
+  "type": "object",
+  "required": ["specversion", "type", "source", "id", "time", "datacontenttype", "data"],
+  "properties": {
+    "specversion": { "type": "string", "const": "1.0" },
+    "type": { "type": "string", "const": "dev.hugr.corelink.dsr.erasure.verification_passed.v1" },
+    "source": { "type": "string", "format": "uri-reference" },
+    "id": { "type": "string", "format": "uuid" },
+    "time": { "type": "string", "format": "date-time" },
+    "datacontenttype": { "type": "string", "const": "application/json" },
+    "subject": { "type": "string", "description": "tenant:<tenant_id>" },
+    "data": {
+      "type": "object",
+      "required": ["dsr_id", "tenant_id", "subject_id_hash", "backends_verified", "verified_at_ms"],
+      "properties": {
+        "dsr_id": { "type": "string", "format": "uuid" },
+        "tenant_id": { "type": "string", "format": "uuid" },
+        "subject_id_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "backends_verified": {
+          "type": "integer",
+          "const": 12,
+          "description": "Canonical 12-backend pipeline (8 effective + 4 pseudonymized) verified clean."
+        },
+        "verified_at_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Unix epoch ms; >= queued_at_ms + 24h."
+        },
+        "report_object_key": {
+          "type": "string",
+          "pattern": "^dsr-reports/[0-9a-f]{32}/[0-9a-f]{32}/erasure-report\\.json$",
+          "description": "Canonical R2 object key for the BLAKE3-signed JCS-canonical erasure-report.json (retained 7y per EVT-048)."
+        }
+      }
+    }
+  }
+}

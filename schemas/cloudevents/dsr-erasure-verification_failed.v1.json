@@ -1,0 +1,48 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://corelink.hugr.dev/schemas/cloudevents/dsr-erasure-verification_failed.v1.json",
+  "title": "dev.hugr.corelink.dsr.erasure.verification_failed.v1",
+  "description": "24h verification cron sweep detected at least one non-successful backend outcome OR the SLA window (24h) elapsed with unverified backends. Audit fires BEFORE the SEV-1 alert + RB-DSR-ERASURE-INCOMPLETE runbook activation per FM-450 P0 S=5 → upgrade FF-HR-010.",
+  "type": "object",
+  "required": ["specversion", "type", "source", "id", "time", "datacontenttype", "data"],
+  "properties": {
+    "specversion": { "type": "string", "const": "1.0" },
+    "type": { "type": "string", "const": "dev.hugr.corelink.dsr.erasure.verification_failed.v1" },
+    "source": { "type": "string", "format": "uri-reference" },
+    "id": { "type": "string", "format": "uuid" },
+    "time": { "type": "string", "format": "date-time" },
+    "datacontenttype": { "type": "string", "const": "application/json" },
+    "subject": { "type": "string", "description": "tenant:<tenant_id>" },
+    "data": {
+      "type": "object",
+      "required": ["dsr_id", "tenant_id", "subject_id_hash", "decision", "verified_at_ms"],
+      "properties": {
+        "dsr_id": { "type": "string", "format": "uuid" },
+        "tenant_id": { "type": "string", "format": "uuid" },
+        "subject_id_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "decision": {
+          "type": "string",
+          "enum": ["verified_partial", "sla_breached", "verification_failed", "rejected"],
+          "description": "Canonical 4-arm failure decision (mirrors ErasureDecision::{VerifiedPartial, SlaBreached, VerificationFailed, Rejected})."
+        },
+        "failed_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 12,
+          "description": "Number of canonical backends that reported a non-successful outcome (0-12)."
+        },
+        "elapsed_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Time elapsed since plan generation (Unix epoch ms delta). > 24h × 3_600_000 indicates SLA breach."
+        },
+        "error_classes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Canonical error class mnemonics (e.g. evidence_settle_delay, neon_timeout, stripe_rate_limit) for forensic re-correlation."
+        },
+        "verified_at_ms": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

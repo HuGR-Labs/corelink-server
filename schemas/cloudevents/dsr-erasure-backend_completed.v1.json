@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://corelink.hugr.dev/schemas/cloudevents/dsr-erasure-backend_completed.v1.json",
+  "title": "dev.hugr.corelink.dsr.erasure.backend_completed.v1",
+  "description": "Per-backend erasure step completed (1 of 12 canonical backends pós Lote 10.11.0-bis). Outcome arm is one of 5: erased | pseudonymized | partial_failure | failed | not_applicable (sprint contract §5.2 R-S11-6). Audit fires BEFORE the canonical D1 dsr_erasure_log tombstone insert per ADR-S11-002 split-tier fail-CLOSED envelope.",
+  "type": "object",
+  "required": ["specversion", "type", "source", "id", "time", "datacontenttype", "data"],
+  "properties": {
+    "specversion": { "type": "string", "const": "1.0" },
+    "type": { "type": "string", "const": "dev.hugr.corelink.dsr.erasure.backend_completed.v1" },
+    "source": { "type": "string", "format": "uri-reference" },
+    "id": { "type": "string", "format": "uuid" },
+    "time": { "type": "string", "format": "date-time" },
+    "datacontenttype": { "type": "string", "const": "application/json" },
+    "subject": { "type": "string", "description": "tenant:<tenant_id>" },
+    "data": {
+      "type": "object",
+      "required": ["dsr_id", "tenant_id", "subject_id_hash", "backend", "outcome", "idempotency_key"],
+      "properties": {
+        "dsr_id": { "type": "string", "format": "uuid" },
+        "tenant_id": { "type": "string", "format": "uuid" },
+        "subject_id_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "backend": {
+          "type": "string",
+          "enum": [
+            "neon_main",
+            "neon_billing",
+            "r2_cas",
+            "r2_ac",
+            "d1",
+            "kv",
+            "stripe",
+            "loki",
+            "r2_audit_pseudo",
+            "neon_pitr_pseudo",
+            "r2_cas_legalhold_pseudo",
+            "r2_evidence_pseudo"
+          ]
+        },
+        "outcome": {
+          "type": "string",
+          "enum": ["erased", "pseudonymized", "partial_failure", "failed", "not_applicable"]
+        },
+        "records_affected": { "type": "integer", "minimum": 0 },
+        "retry_count": { "type": "integer", "minimum": 0, "maximum": 5 },
+        "idempotency_key": {
+          "type": "string",
+          "pattern": "^corelink-[0-9a-f]{8}-[a-z_]+-[0-9]{3}$",
+          "description": "Canonical 35-char key per Lote 10.10-quaters: corelink-{dsr_id_short(8)}-{backend}-{retry_count(3)}."
+        },
+        "started_at_ms": { "type": "integer", "minimum": 0 },
+        "completed_at_ms": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}
