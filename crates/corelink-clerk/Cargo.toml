@@ -25,7 +25,15 @@ print_stderr = "deny"
 mod_module_files = "deny"
 
 [features]
-default = []
+# Default: full feature set including the JWT adapter (jsonwebtoken +
+# ring). This is what every native crate uses.
+default = ["jwt-adapter"]
+
+# JWT adapter: gates the `adapter` module and the `jsonwebtoken` dep.
+# Required for ClerkAdapter::validate. Depends on `ring` which does NOT
+# compile to wasm32-unknown-unknown without emscripten.
+jwt-adapter = ["dep:jsonwebtoken"]
+
 # Exposes `fakes::test_keys::TestRsaKey` (RSA keygen + PEM/JWKS
 # projection) so integration tests can craft signed JWTs without
 # requiring a live Clerk staging instance. NEVER enable this in
@@ -39,7 +47,9 @@ test-utils = ["dep:rsa", "dep:rand"]
 # (last CVE class 2018, fixed pre-2.0). WI-S03-001 §9.1 mandates this crate.
 # 9.3 is the canonical pin per WI; lock major-only to keep ALG-allowlist API
 # stability.
-jsonwebtoken = "9.3"
+# Gated by `jwt-adapter` feature so wasm32-unknown-unknown targets can
+# depend on this crate for the trait surfaces without pulling ring.
+jsonwebtoken = { version = "9.3", optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
@@ -58,9 +68,9 @@ tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time
 hmac = { workspace = true }
 sha2 = { workspace = true }
 tracing-subscriber = { workspace = true }
-# Pull our own crate with `test-utils` enabled so integration tests
-# in `tests/*.rs` can use the in-crate test-key helper.
-corelink-clerk = { path = ".", features = ["test-utils"] }
+# Pull our own crate with `test-utils` + `jwt-adapter` enabled so
+# integration tests in `tests/*.rs` can use ClerkAdapter + TestRsaKey.
+corelink-clerk = { path = ".", features = ["jwt-adapter", "test-utils"] }
 
 [[example]]
 name = "basic"

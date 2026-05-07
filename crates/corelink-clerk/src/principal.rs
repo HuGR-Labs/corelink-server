@@ -18,6 +18,8 @@ pub struct ClerkUserId(String);
 impl ClerkUserId {
     /// Internal constructor; the only path to a `ClerkUserId` is
     /// through a successful [`crate::ClerkAdapter::validate`] call.
+    /// Only available when the `jwt-adapter` feature is enabled.
+    #[cfg(feature = "jwt-adapter")]
     #[must_use]
     pub(crate) fn new(s: String) -> Self {
         Self(s)
@@ -42,6 +44,8 @@ impl fmt::Debug for ClerkUserId {
 pub struct ClerkOrgId(String);
 
 impl ClerkOrgId {
+    /// Internal constructor. Only available with `jwt-adapter` feature.
+    #[cfg(feature = "jwt-adapter")]
     #[must_use]
     pub(crate) fn new(s: String) -> Self {
         Self(s)
@@ -65,6 +69,8 @@ impl fmt::Debug for ClerkOrgId {
 pub struct ClerkSessionId(String);
 
 impl ClerkSessionId {
+    /// Internal constructor. Only available with `jwt-adapter` feature.
+    #[cfg(feature = "jwt-adapter")]
     #[must_use]
     pub(crate) fn new(s: String) -> Self {
         Self(s)

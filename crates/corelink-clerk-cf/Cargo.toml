@@ -1,0 +1,61 @@
+[package]
+name = "corelink-clerk-cf"
+description = "Production Cloudflare Worker bindings for corelink-clerk — KvJwksCache on CF KV + JwksFetcher on CF Fetch + GET /health proof-of-concept handler. Proves the trait-abstraction-defer pattern compiles to wasm32-unknown-unknown against real CF Worker D1 + KV bindings."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# wasm32-unknown-unknown is the only target this crate is intended for.
+# `cargo build --target wasm32-unknown-unknown -p corelink-clerk-cf` is
+# the canonical build command. Do NOT attempt to link this crate into a
+# native binary; it depends on worker-sys / wasm-bindgen JsValue types
+# that have no native shim.
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# CF Workers runtime — gated with the `d1` feature so D1Database is
+# available. The `http` feature enables the http::Request / http::Response
+# types that the event(fetch) macro needs on workers-rs 0.8.
+worker = { version = "0.8", features = ["d1", "http"] }
+
+# The clerk logic crate; we implement its traits here.
+# We use `default-features = false` to avoid pulling in `jsonwebtoken`
+# (which depends on `ring`, which requires a C toolchain for wasm32).
+# We only need the trait surfaces (JwksFetcher, KvJwksCache, Jwks, etc.)
+# which live in modules that have no ring dependency.
+corelink-clerk = { workspace = true, default-features = false }
+
+# Serde for the health response JSON body.
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling.
+thiserror = { workspace = true }
+
+# Tracing (console-based; no subscriber needed on CF Workers — logs go
+# to the CF Logs dashboard automatically via console_log!).
+tracing = { workspace = true }
+
+# wasm_bindgen_futures for async bridging inside the worker handler.
+wasm-bindgen-futures = "0.4"

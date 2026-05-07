@@ -73,6 +73,15 @@
 
 #![forbid(unsafe_code)]
 
+// The JWT adapter module (ClerkAdapter::validate) depends on
+// `jsonwebtoken` which pulls in `ring`. Ring requires a C toolchain
+// that supports wasm32-unknown-unknown, which is not available in
+// standard Rust toolchains (requires emscripten or a custom clang).
+// Gate the adapter behind the `jwt-adapter` feature so the trait
+// surface modules (jwks, jwks_cache, principal, config, error, fakes)
+// can compile to wasm32-unknown-unknown for production CF Worker
+// binding crates like `corelink-clerk-cf`.
+#[cfg(feature = "jwt-adapter")]
 pub mod adapter;
 pub mod config;
 pub mod error;
@@ -82,6 +91,7 @@ pub mod jwks_cache;
 pub mod principal;
 mod redact;
 
+#[cfg(feature = "jwt-adapter")]
 pub use adapter::ClerkAdapter;
 pub use config::{ClerkConfig, ClerkConfigBuilder, ClerkConfigError, JWKS_TTL_SECS, LEEWAY_SECS};
 pub use error::AuthError;

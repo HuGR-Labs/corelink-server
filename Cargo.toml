@@ -42,6 +42,7 @@ members = [
     "crates/corelink-billing-replay",
     "crates/corelink-quota-fsm",
     "crates/corelink-dsr",
+    "crates/corelink-clerk-cf",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
@@ -102,7 +103,12 @@ corelink-worker = { path = "crates/corelink-worker" }
 corelink-meta = { path = "crates/corelink-meta" }
 corelink-reapi = { path = "crates/corelink-reapi" }
 corelink-client-verify = { path = "crates/corelink-client-verify" }
-corelink-clerk = { path = "crates/corelink-clerk" }
+# default-features = false here so that per-crate overrides can choose
+# whether to enable `jwt-adapter` (which pulls ring, incompatible with
+# wasm32-unknown-unknown without emscripten). All native crates should
+# explicitly add `features = ["jwt-adapter"]` or rely on the re-export.
+# `corelink-clerk-cf` omits that feature to stay wasm32-clean.
+corelink-clerk = { path = "crates/corelink-clerk", default-features = false }
 corelink-pat = { path = "crates/corelink-pat" }
 corelink-auth-schema = { path = "crates/corelink-auth-schema" }
 corelink-webauthn = { path = "crates/corelink-webauthn" }
@@ -136,6 +142,7 @@ corelink-billing-reconcile = { path = "crates/corelink-billing-reconcile" }
 corelink-billing-replay = { path = "crates/corelink-billing-replay" }
 corelink-quota-fsm = { path = "crates/corelink-quota-fsm" }
 corelink-dsr = { path = "crates/corelink-dsr" }
+corelink-clerk-cf = { path = "crates/corelink-clerk-cf" }
 
 # Test / bench
 proptest = "1.5"

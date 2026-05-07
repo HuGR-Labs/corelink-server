@@ -1,0 +1,49 @@
+# Wrangler configuration for corelink-clerk-cf proof-of-concept.
+#
+# This file is intentionally separate from the root wrangler.toml which
+# configures the main CoreLink Worker (containers + gRPC). This POC
+# worker validates the trait binding surfaces; it is NOT a production
+# worker deployment. To deploy (future, not for this POC):
+#
+#   cd crates/corelink-clerk-cf
+#   wrangler deploy
+#
+# To run the local smoke test (future, requires wrangler dev support
+# for Rust workers):
+#
+#   wrangler dev
+#
+# Compile:
+#   cargo build --target wasm32-unknown-unknown -p corelink-clerk-cf
+#   (or `wrangler build` which calls cargo under the hood)
+
+name = "corelink-clerk-cf-poc"
+main = "build/worker/shim.mjs"
+compatibility_date = "2026-04-01"
+
+[build]
+command = "cargo build --target wasm32-unknown-unknown --release -p corelink-clerk-cf"
+
+# KV namespace binding — JWKS cache + health marker.
+# PLACEHOLDER IDs: replace with real IDs from `wrangler kv namespace create`
+# before deploying.
+[[kv_namespaces]]
+binding = "CLERK_JWKS_KV"
+id = "PLACEHOLDER_KV_NAMESPACE_ID"
+preview_id = "PLACEHOLDER_KV_PREVIEW_ID"
+
+# D1 database binding — audit log for health probe rows.
+# PLACEHOLDER ID: replace with real ID from `wrangler d1 create clerk-audit-db`
+# before deploying.
+[[d1_databases]]
+binding = "CLERK_DB"
+database_name = "clerk-audit-db"
+database_id = "PLACEHOLDER_D1_DATABASE_ID"
+
+[vars]
+ENVIRONMENT = "dev"
+
+# Production environment override (deploy with --env prod).
+[env.prod]
+name = "corelink-clerk-cf-poc-prod"
+vars = { ENVIRONMENT = "prod" }

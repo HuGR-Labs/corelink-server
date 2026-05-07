@@ -73,7 +73,9 @@ rand = { version = "0.9", default-features = false, features = ["std", "std_rng"
 rand_chacha = { version = "0.9", default-features = false, features = ["std"], optional = true }
 tracing = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
-corelink-clerk = { workspace = true, optional = true }
+# Needs `jwt-adapter` so ClerkAdapter is available in the middleware;
+# workspace entry now has `default-features = false` so we must be explicit.
+corelink-clerk = { workspace = true, optional = true, features = ["jwt-adapter"] }
 corelink-pat = { workspace = true, optional = true }
 subtle = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }
@@ -92,7 +94,9 @@ tower-layer = "0.3"
 tower-service = "0.3"
 criterion = { workspace = true }
 async-trait = "0.1"
-corelink-clerk = { workspace = true, features = ["test-utils"] }
+# Both `jwt-adapter` (for ClerkAdapter) and `test-utils` (for TestRsaKey)
+# are needed in tests; workspace entry now has default-features = false.
+corelink-clerk = { workspace = true, features = ["jwt-adapter", "test-utils"] }
 corelink-audit = { workspace = true }
 corelink-pat = { workspace = true }
 jsonwebtoken = "9.3"
