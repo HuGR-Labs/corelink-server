@@ -89,6 +89,9 @@ members = [
     "crates/corelink-py",
     "crates/corelink-go",
     "crates/corelink-wasm",
+    # WI-S17-001 chaos scheduler (8 experiment types + safe-mode auto-abort
+    # + deterministic seed + 7y archive). Foundation for WI-S17-002..006.
+    "crates/corelink-chaos-scheduler",
 ]
 exclude = [
     "crates/tenant-path/fuzz",

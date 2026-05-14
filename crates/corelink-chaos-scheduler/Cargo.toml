@@ -1,0 +1,42 @@
+[package]
+name = "corelink-chaos-scheduler"
+description = "CoreLink chaos engineering scheduler (WI-S17-001): 8 canonical chaos experiments (latency / failure / resource exhaustion / network partition) with deterministic-seed reproducibility, safe-mode auto-abort (staging-only enforcement, prod SEV-1 guard, staging error-rate guard), audit event lifecycle (started/completed/aborted), and chaos catalog ≥ 8 FMs covered. Foundation for WI-S17-002..006."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[[test]]
+name = "prop_chaos_scheduler"
+path = "tests/prop_chaos_scheduler.rs"
+
+[[test]]
+name = "adversarial_steady_state_breach"
+path = "tests/adversarial_steady_state_breach.rs"
+
+[[test]]
+name = "catalog_inventory"
+path = "tests/catalog_inventory.rs"

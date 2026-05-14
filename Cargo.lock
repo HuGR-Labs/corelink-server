@@ -1261,6 +1261,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-chaos-scheduler"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+]
+
+[[package]]
 name = "corelink-chunker"
 version = "0.1.0"
 dependencies = [
