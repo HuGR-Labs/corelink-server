@@ -831,6 +831,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-privacy-residency-enforcement"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "rand 0.9.4",
+ "rand_chacha 0.9.0",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "corelink-privacy-sub-processor-emit"
 version = "0.1.0"
 dependencies = [

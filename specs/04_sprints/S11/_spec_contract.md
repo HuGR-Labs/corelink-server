@@ -3,9 +3,9 @@ id: "SPEC-CONTRACT-S11"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.5.0"
+version: "1.7.0"
 created: "2026-04-24"
-updated: "2026-05-03"
+updated: "2026-05-13"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -357,6 +357,19 @@ Itens waivable com sign-off Privacy Officer + Legal + Compliance Officer + ADR:
 ---
 
 ## 20. Change log
+
+### v2.1.0 (2026-05-13) — WI-S11-007 implementation phase SEALED
+
+Implementation phase landing (no spec changes; impl-only changelog row per charter §spec contract changelog discipline). WI-S11-007 SEALED at the canonical impl quality gates:
+
+- **`crates/corelink-privacy-residency-enforcement/`** new crate (~800 LOC; 7 src modules + 3 test files). `ResidencyEnforcement` trait + `InMemoryResidencyEnforcement` orchestrator + `FailClosedResidencyEnforcement` (chaos testing). Per-instance `Arc<Mutex<()>>` F-001 closure. `Region` closed enum 6-region canonical (wnam/enam/weur/sam/apac/afr per privacy_model.md §7.1). `BackendKind` `#[non_exhaustive]` 7-arm (Cas/Ac/AuditEmit/BillingEvents/Manifest/D1Metadata/Kv). `TenantCtx` shape (tenant_id + primary_region from canonical `tenant.primary_region` D1 column, NOT `tenant_metadata.region_pinned` — legacy column correction sprint contract v1.2.0). `ResidencyViolation` `#[non_exhaustive]` 6-arm error taxonomy (RequestRegionMismatch/WriteRegionMismatch/AuditEmitFailure/TenantNotFound/MigrationCooldownNotElapsed/MigrationPendingReview). `InMemoryMigrationStore` with 30d cooldown enforcement (ADR-S11-011). `region_from_host` DNS custom domain parser (`<tenant_id>.<region>.corelink.dev` pattern, wasm32-clean).
+- **2 CloudEvents canonical types**: `dev.hugr.corelink.residency.{request_routed,write_rejected_cross_region}.v1` per Lote 10.9bis P0-G prefix. `ResidencyAuditSink` trait + `InMemoryResidencyAuditSink` + `FailingResidencyAuditSink`. Audit fail-CLOSED ordering canonical: `lookup → emit_audit → mutate_state`; fail-CLOSED chaos test verifies state UNCHANGED on audit emit failure (AC-007).
+- **20k property test** `tests/property_residency_20k.rs`: 5 proptest suites (10k weur correct, 10k enam correct, 5k weur cross-region injection rejected, 5k enam cross-region injection rejected, 5k cross-tenant isolation); PROPTEST_CASES=20000 CI verified in 1.46s; 0 cross-region leaks; balanced 50/50 generator (anti seed-bias chaos test 5); `corelink_residency_property_test_failures_total = 0` global counter.
+- **D1 migration `0023_residency_check_constraints.sql`**: region CHECK constraint on tenant table + BEFORE INSERT/UPDATE triggers on blob_meta/ac_meta/audit_outbox/billing_events_staging; `region_migration_request` table with 30d cooldown DDL + canonical region + status enums. RAISE(ABORT, 'residency_violation: ...') trigger fires on cross-region insert.
+- **ADRs landed**: ADR-S11-010 (TLA+ residency formal proof deferred to S-14; rationale: industry standard + S-14 BYOK overlap + sprint scope discipline + invariant_registry.md §4.2 L445 alignment) + ADR-S11-011 (region migration cooldown 30d rationale: LGPD Art. 33 §1º + TIA review window + data migration tooling window).
+- **FM-451 updated** in failure_modes.md: severity escalated to P0 (S=5 → upgrade FF-HR-010); description updated to "Residency leak (cross-region write detected; mismatched tenant.primary_region vs backend region)" with full mitigation chain.
+- **Quality gates verde**: `cargo test -p corelink-privacy-residency-enforcement` 36/36 (18 integration + 9 property + 9 regression); `PROPTEST_CASES=20000 cargo test ... --test property_residency_20k` 9/9 verde; `cargo clippy -p corelink-privacy-residency-enforcement --all-targets -- -D warnings` clean; `cargo build --target wasm32-unknown-unknown -p corelink-privacy-residency-enforcement` clean.
+- **Charter constraints** verified: no `unsafe`; no `unwrap`/`expect`/`panic`/indexing in lib code; F-001 `Arc<Mutex<()>>` per-instance closure; `#[non_exhaustive]` on every public enum; wasm32-clean (no ring / no C toolchain dep / no tokio); PROPTEST_CASES env-var at runtime (S-07 P1-2); no `prop_assert!(matches!(...))` anti-pattern (S-08 P1-1).
 
 ### v2.0.0 (2026-05-13) — WI-S11-006 implementation phase SEALED
 
