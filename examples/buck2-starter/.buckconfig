@@ -1,0 +1,54 @@
+# CoreLink Buck2 Remote Cache Configuration Reference
+#
+# SECURITY: Never hard-code your PAT here. Use the CORELINK_PAT environment
+# variable or store the token in a secrets manager and inject at build time.
+# Committing credentials = CTRL-CRED-001 violation.
+#
+# Quick start:
+#   export CORELINK_PAT=<your-token>
+#   buck2 build :hello
+
+[repository]
+    name = buck2-starter
+
+[buck2]
+    execution_platforms = //:platforms
+
+[build]
+    execution_platforms = //:platforms
+
+[remote_cache]
+    # CoreLink CAS HTTP endpoint (REAPI v2).
+    # Override per-environment by setting CORELINK_REMOTE_CACHE_URL.
+    url = https://corelink.dev/v1/cache
+
+    # PAT injected from environment — never hardcode.
+    http_headers = Authorization: Bearer ${CORELINK_PAT}
+
+    # Enable both reads and writes by default.
+    read = true
+    write = true
+
+    # Retry transient errors (FM-150 pattern).
+    retry_timeout_secs = 60
+    max_retries = 3
+
+    # Compress uploads to minimise network usage.
+    http_header_prefix = x-corelink-client-version: buck2
+
+[buck2_re_client]
+    # REAPI v2 endpoint — same CAS backing store as [remote_cache].
+    remote_cache_address = https://corelink.dev/v1/cache
+
+    # Auth header injected from environment.
+    http_headers = Authorization: Bearer ${CORELINK_PAT}
+
+    # TLS — required for production.
+    tls_cert_path =
+    tls_key_path =
+    tls_ca_cert_path =
+
+[client]
+    # Enable BLAKE3 digest verification on every downloaded artifact.
+    # Maps to CoreLink CTRL-CAS-002 (client-verify default-on).
+    hash_algorithm = BLAKE3

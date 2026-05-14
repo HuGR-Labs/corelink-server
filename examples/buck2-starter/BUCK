@@ -1,0 +1,30 @@
+# CoreLink Buck2 Starter — minimal hello-world with 1 transitive C++ dep.
+#
+# Parity: same logical scope as examples/bazel-starter (WI-S15-002):
+#   cxx_library(:greeter)  <--  cxx_binary(:hello)
+#
+# Build targets:
+#   buck2 build :hello     — builds the binary
+#   buck2 run   :hello     — builds + runs
+
+load("@prelude//cxx:cxx.bzl", "cxx_binary", "cxx_library")
+
+# Reusable greeter library — represents the "1 transitive dep" fixture.
+cxx_library(
+    name = "greeter",
+    srcs = ["greeter.cc"],
+    headers = ["greeter.h"],
+    # Public header so downstream targets can include it without listing
+    # the include path explicitly.
+    exported_headers = {"greeter.h": "greeter.h"},
+    visibility = ["PUBLIC"],
+)
+
+# Main binary — depends on :greeter; mirrors bazel-starter //:hello.
+cxx_binary(
+    name = "hello",
+    srcs = ["main.cc"],
+    deps = [":greeter"],
+    # Expose binary for run / test convenience.
+    visibility = ["PUBLIC"],
+)
