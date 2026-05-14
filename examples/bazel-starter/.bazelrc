@@ -1,0 +1,36 @@
+# CoreLink Bazel remote cache configuration.
+# CTRL-CRED-001 (Lote 10.15 codex P0 canonical fix): credentials are passed via
+# the Bazel 6+ credential helper protocol — the helper reads the CORELINK_PAT
+# environment variable and emits a JSON token response to stdout.  The PAT is
+# NEVER placed in argv (no --remote_header=Authorization:... which would expose
+# the secret in `ps aux` output).  See https://bazel.build/docs/credential-helper.
+
+# Remote cache endpoint.
+build --remote_cache=https://corelink.dev/v1/cache
+
+# Credential helper (Bazel 6+ protocol).
+# The helper script at .bazel/corelink-credential-helper.sh reads CORELINK_PAT
+# and emits:  {"headers": {"Authorization": ["Bearer <token>"]}}
+build --credential_helper=%workspace%/.bazel/corelink-credential-helper.sh
+
+# Network tuning.
+build --remote_timeout=30s
+build --remote_retries=3
+
+# Upload local results so subsequent builds by other engineers / CI runners
+# benefit from the cache immediately.
+build --remote_upload_local_results=true
+
+# Minimise download: only fetch outputs explicitly requested.
+# Speeds up CI where source artifacts are sufficient.
+build --remote_download_minimal
+
+# Zstandard compression over the wire (REAPI v2 standard).
+build --experimental_remote_cache_compression=true
+
+# --- CI-only overrides (applied via --config=ci in CI workflow) ---
+# In CI we enable full download so we can inspect + upload artifacts.
+build:ci --remote_download_outputs=all
+# In CI we pass --noremote_upload_local_results on the second (cache-hit) build
+# to avoid re-uploading what is already in the cache; the CI workflow overrides
+# this flag explicitly on the warm-cache invocation.

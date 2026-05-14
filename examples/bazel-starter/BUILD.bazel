@@ -1,0 +1,17 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+
+# cc_library: greeter — reusable component; validates cross-target dedup
+# (greeter.o is stored once in CAS; reused by any target that depends on it).
+cc_library(
+    name = "greeter",
+    srcs = ["greeter.cc"],
+    hdrs = ["greeter.h"],
+    visibility = ["//:__pkg__"],
+)
+
+# cc_binary: main entry point.
+cc_binary(
+    name = "hello",
+    srcs = ["main.cc"],
+    deps = [":greeter"],
+)
