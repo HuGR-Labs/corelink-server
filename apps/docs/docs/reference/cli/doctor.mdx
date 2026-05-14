@@ -1,0 +1,94 @@
+---
+id: cli-doctor
+title: corelink doctor
+sidebar_label: doctor
+description: Run the 8 diagnostic checks (network, auth, storage, BYOK, region, quota, client-verify).
+tags: [reference, cli, doctor]
+---
+
+# `corelink doctor`
+
+Run the 8 canonical diagnostic checks. Every non-`ok` check carries a
+`next_action_doc` URL pointing at the right fix in the error taxonomy.
+
+## Synopsis
+
+```bash
+corelink doctor [--json] [--output <FORMAT>]
+```
+
+## Flags
+
+| Flag | Required | Default | Description |
+|---|---|---|---|
+| `--json` | no | — | Shorthand for `--output=json`. |
+| `--output` | no | `text` | `text` or `json`. |
+
+## The 8 checks
+
+| # | Check | What it validates |
+|---|---|---|
+| 1 | `network`         | DNS + TCP + TLS handshake to the CoreLink API. |
+| 2 | `auth`            | PAT resolves, scopes are non-empty, tenant matches. |
+| 3 | `storage_write`   | 1 KB synthetic blob round-trip write. |
+| 4 | `storage_read`    | Read-back of the synthetic blob. |
+| 5 | `byok`            | BYOK key reachable (skipped if BYOK disabled). |
+| 6 | `region`          | Tenant home region matches resolved endpoint. |
+| 7 | `quota`           | Storage and bandwidth headroom > 10%. |
+| 8 | `client_verify`   | BLAKE3 WASM/native verifier loads + matches root. |
+
+## Examples
+
+```bash
+corelink doctor
+```
+
+```text
+✔ network          OK
+✔ auth             OK (scopes: cas:read, cas:write)
+✔ storage_write    OK (12ms)
+✔ storage_read     OK (8ms)
+○ byok             SKIP (disabled for tenant)
+✔ region           OK (iad1)
+⚠ quota            WARN — 92% storage used  →  docs/reference/error-taxonomy#COR_QUOTA_001
+✔ client_verify    OK
+```
+
+JSON:
+
+```bash
+corelink doctor --json
+```
+
+## JSON schema
+
+```json
+{
+  "ok": false,
+  "subcommand": "doctor",
+  "checks": [
+    {
+      "name": "quota",
+      "status": "warn",
+      "message": "92% storage used",
+      "next_action_doc": "docs/reference/error-taxonomy#COR_QUOTA_001"
+    }
+  ]
+}
+```
+
+`status` is one of `ok | warn | fail | skip`. The top-level `ok` is `false`
+if any check is `fail`; `warn` does not flip the overall flag.
+
+## Exit codes
+
+| Code | Meaning |
+|---|---|
+| `0` | All checks `ok` (or `warn` only). |
+| `1` | One or more checks `fail`. |
+| `2` | Argument error. |
+
+## See also
+
+- [`bench`](./bench.mdx)
+- [Troubleshooting (CLI)](../../how-to/sdk-cli/07-troubleshooting.mdx)

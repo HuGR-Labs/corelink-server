@@ -1,0 +1,20 @@
+{
+  "name": "@corelink/docs",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CoreLink documentation site (Docusaurus 3.x foundation per WI-S18-001; SDK how-to guides + CLI per-command reference per WI-S18-003).",
+  "type": "module",
+  "scripts": {
+    "dev": "echo 'docs dev server placeholder (Docusaurus wired in WI-S18-001)'",
+    "build": "node scripts/build.mjs",
+    "lint": "node scripts/lint.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "gray-matter": "^4.0.3",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}
