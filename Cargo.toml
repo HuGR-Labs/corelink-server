@@ -79,6 +79,8 @@ members = [
     "crates/corelink-byok-vault",
     "crates/corelink-byok-matrix-test",
     "crates/corelink-byok",
+    # WI-S14-007 erasure attestation
+    "crates/corelink-erasure-attestation",
     # S-14 follow-up: corelink-byok-revocation + corelink-customer-alerts
     # designed against WI-S14-006's local corelink-byok variant; trait
     # signatures diverge from canonical WI-S14-004 corelink-byok (Dek
@@ -154,6 +156,8 @@ subtle = "2"
 zeroize = { version = "1.8", features = ["derive"] }
 hkdf = "0.12"
 bytes = "1"
+# Ed25519 (FIPS 186-5 EdDSA) — erasure attestation signing (WI-S14-007)
+ed25519-dalek = { version = "2", features = ["rand_core"] }
 
 # Internal crates
 corelink-tenant-path = { path = "crates/tenant-path" }
@@ -233,6 +237,7 @@ corelink-byok-azure = { path = "crates/corelink-byok-azure" }
 corelink-byok-vault = { path = "crates/corelink-byok-vault" }
 corelink-byok-revocation = { path = "crates/corelink-byok-revocation" }
 corelink-customer-alerts = { path = "crates/corelink-customer-alerts" }
+corelink-erasure-attestation = { path = "crates/corelink-erasure-attestation" }
 
 # Test / bench
 proptest = "1.5"
