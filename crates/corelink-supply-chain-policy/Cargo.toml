@@ -1,0 +1,42 @@
+[package]
+name = "corelink-supply-chain-policy"
+description = "CoreLink supply-chain policy validation library: property tests for cargo-deny license/yanked/source rules, adversarial regression tests (GPL-leak, yanked auto-merge, typosquat, unmaintained, vendor-patch-sans-ADR), and E2E Dependabot flow stubs. Enforces INV-SUPPLY-NO-YANKED + INV-SUPPLY-LICENSE-ALLOWLIST (WI-S12-004 §6.1, §10, §11)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[[test]]
+name = "prop_cargo_deny"
+path = "tests/prop_cargo_deny.rs"
+
+[[test]]
+name = "adversarial_dep_policy"
+path = "tests/adversarial_dep_policy.rs"
+
+[[test]]
+name = "e2e_dependabot"
+path = "tests/e2e_dependabot.rs"

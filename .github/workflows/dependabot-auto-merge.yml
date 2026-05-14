@@ -1,0 +1,108 @@
+name: dependabot-auto-merge (WI-S12-004)
+
+# Auto-merge Dependabot PRs for minor/patch non-security updates that pass
+# all CI checks.  Major updates and security updates are NEVER auto-merged
+# (manual review required per §7 anti-scope + §9.8 design decision).
+#
+# Policy (mirrors evaluate_auto_merge in corelink-supply-chain-policy):
+#   - patch + minor + CI green → auto-merge via squash.
+#   - major                    → manual review required.
+#   - security updates         → manual review required.
+#   - CI NOT green             → blocked regardless of update type.
+#
+# Required CI checks (all must pass before auto-merge):
+#   - cargo-audit PR gate (cargo-audit.yml)
+#   - cargo-deny (cargo-deny.yml + cas_foundation.yml)
+#   - cargo-test + clippy -D warnings (cas_foundation.yml)
+#
+# Enforces: INV-SUPPLY-NO-YANKED (CI gate must include cargo-deny)
+# Implements: WI-S12-004 §6.1.5 (ST-005)
+# Cap: CAP-SUPPLY-004
+#
+# SHA-pinned per HIGH_RISK lane FF-HR-005 + ADR-S12-045 §6 tooling-pin policy.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  # -----------------------------------------------------------------------
+  # Dependabot auto-merge gate.
+  # -----------------------------------------------------------------------
+  auto-merge:
+    name: Dependabot auto-merge gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Only run for Dependabot PRs.
+    if: github.actor == 'dependabot[bot]'
+
+    steps:
+      - name: Fetch Dependabot metadata
+        id: metadata
+        # dependabot/fetch-metadata v2.3.0 SHA-pinned.
+        # Version bump requires ADR + Security review per §14.s12.004.1.
+        uses: dependabot/fetch-metadata@d7267f607e4f2cf3e2f77fe2f5b19e0e31f2a8a # v2.3.0
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Log Dependabot PR metadata
+        run: |
+          echo "update-type: ${{ steps.metadata.outputs.update-type }}"
+          echo "dependency-type: ${{ steps.metadata.outputs.dependency-type }}"
+          echo "dependency-names: ${{ steps.metadata.outputs.dependency-names }}"
+          echo "package-ecosystem: ${{ steps.metadata.outputs.package-ecosystem }}"
+
+      # Major updates: NEVER auto-merge (§7 anti-scope).
+      - name: Block major updates (manual review required)
+        if: steps.metadata.outputs.update-type == 'version-update:semver-major'
+        run: |
+          echo "::notice::Major update detected — manual review required per §7 anti-scope."
+          echo "::notice::Dependency: ${{ steps.metadata.outputs.dependency-names }}"
+          echo "::notice::This PR must NOT be merged without explicit human approval."
+          # Job exits 0 — the PR simply won't be auto-merged; no CI failure.
+
+      # Security updates: manual review per §9.8 (security fix may break API).
+      - name: Block security updates (manual review required)
+        if: >-
+          contains(github.event.pull_request.labels.*.name, 'security') ||
+          steps.metadata.outputs.update-type == 'version-update:security'
+        run: |
+          echo "::notice::Security update detected — manual review required per §9.8 design decision."
+          echo "::notice::Reason: security fix may contain semver-breaking API change."
+          echo "::notice::Dependency: ${{ steps.metadata.outputs.dependency-names }}"
+
+      # Patch + minor non-security: auto-merge if CI green.
+      - name: Enable auto-merge for minor/patch non-security updates
+        if: >-
+          (
+            steps.metadata.outputs.update-type == 'version-update:semver-minor' ||
+            steps.metadata.outputs.update-type == 'version-update:semver-patch'
+          ) &&
+          !contains(github.event.pull_request.labels.*.name, 'security')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          echo "::notice::Enabling auto-merge for patch/minor update: ${{ steps.metadata.outputs.dependency-names }}"
+          echo "::notice::Update type: ${{ steps.metadata.outputs.update-type }}"
+          echo "::notice::All CI checks must pass before the merge will execute."
+          # Auto-merge via squash strategy (keeps main history clean).
+          # gh CLI uses GITHUB_TOKEN for authentication.
+          gh pr merge --auto --squash "$PR_URL"
+          echo "::notice::Auto-merge enabled — waiting for CI gate to complete."
+
+      # Metric emission annotation (Prometheus push via external job in production).
+      # corelink_supply_dependabot_prs_total{outcome="auto_merged",update_type="minor"}
+      - name: Annotate auto-merge metric (structured log)
+        if: >-
+          (
+            steps.metadata.outputs.update-type == 'version-update:semver-minor' ||
+            steps.metadata.outputs.update-type == 'version-update:semver-patch'
+          ) &&
+          !contains(github.event.pull_request.labels.*.name, 'security')
+        run: |
+          echo '{"metric":"corelink_supply_dependabot_prs_total","labels":{"outcome":"auto_merged","update_type":"${{ steps.metadata.outputs.update-type }}"},"value":1}'

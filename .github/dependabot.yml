@@ -1,0 +1,78 @@
+version: 2
+# Dependabot weekly grouped PRs — WI-S12-004 §6.1.4 (ST-004) canonical config.
+#
+# Enforces: CAP-SUPPLY-004 Dependabot weekly cadence.
+# Schedule: Monday 08:00 BRT (America/Sao_Paulo) = Monday 11:00 UTC.
+# Rate limit: 10 open PRs max (DoS protection — §26 security STRIDE delta).
+#
+# Groups:
+#   - security-updates: all severity/type security advisories (batched weekly)
+#   - non-security-minor-patch: patch + minor version updates (auto-merge eligible)
+#   - non-security-major: major version updates (manual review required — §7 anti-scope)
+#
+# Reviewers: humangr-labs/security team (INV-SUPPLY-LICENSE-ALLOWLIST enforcement).
+# Labels: ["dependencies", "rust"] — used by dependabot-auto-merge.yml gate.
+
+updates:
+  # ---------------------------------------------------------------------------
+  # Cargo (Rust) ecosystem — workspace root.
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 10
+    groups:
+      # Security updates: ALL types batched together for prompt triage.
+      # Auto-merge is NOT enabled for security updates per §9.8 design decision
+      # (security fix may contain semver-breaking API change).
+      security-updates:
+        applies-to: security-updates
+        update-types: ["patch", "minor", "major"]
+      # Non-security patch + minor: auto-merge eligible via dependabot-auto-merge.yml
+      # when all CI checks pass (cargo-audit + cargo-deny + cargo-test + clippy).
+      non-security-minor-patch:
+        applies-to: version-updates
+        update-types: ["patch", "minor"]
+      # Non-security major: manual review required (never auto-merged per §7 anti-scope).
+      non-security-major:
+        applies-to: version-updates
+        update-types: ["major"]
+    labels:
+      - "dependencies"
+      - "rust"
+    commit-message:
+      prefix: "deps"
+      include: scope
+    reviewers:
+      - "humangr-labs/security"
+    # Rebase strategy: rebase on conflict (keeps lockfile diff minimal).
+    rebase-strategy: auto
+
+  # ---------------------------------------------------------------------------
+  # GitHub Actions — SHA-pin maintenance.
+  # Weekly Monday to keep action SHAs fresh per HIGH_RISK lane FF-HR-005.
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 5
+    groups:
+      actions-updates:
+        applies-to: version-updates
+        update-types: ["patch", "minor", "major"]
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "ci"
+      include: scope
+    reviewers:
+      - "humangr-labs/security"

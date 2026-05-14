@@ -3,9 +3,9 @@ id: "SPEC-CONTRACT-S12"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-04-24"
-updated: "2026-04-24"
+updated: "2026-05-13"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -312,6 +312,17 @@ Itens waivable com Security lead + Legal + ADR:
 - ⚠️ Reproducible build < 100% bit-identical aceitável com documented sources.
 - ⚠️ Yanked dep allowed se replacement não disponível AND vulnerability não applicable AND fix em < 7d.
 - ⚠️ Vendor patch via `[patch.crates-io]` permitido com ADR + Security review + 90d sunset clock.
+
+---
+
+## 20. Change log
+
+| Versão | Data | Autor | Mudança |
+|---|---|---|---|
+| 1.0.0 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | Criação spec contract S-12 v1.0.0. |
+| 1.1.0 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | SOTA v1.1 — Rekor fail-closed policy codex alignment. |
+| 1.2.0 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | WI list + PERT baseline sealed. |
+| 1.3.0 | 2026-05-13 | Gustavo (via Claude Sonnet 4.6) | WI-S12-004 SEALED: cargo-audit + cargo-deny + Dependabot artifacts committed (4 workflows + deny.toml + dependabot.yml + corelink-supply-chain-policy crate + dep-policy.md + ADR-S12-045/046/047). |
 
 ---
 

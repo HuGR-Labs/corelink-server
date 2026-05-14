@@ -50,6 +50,7 @@ members = [
     "crates/corelink-privacy-notice-emit",
     "crates/corelink-privacy-pseudonymize",
     "crates/corelink-privacy-residency-enforcement",
+    "crates/corelink-supply-chain-policy",
 ]
 exclude = [
     "crates/tenant-path/fuzz",

@@ -992,6 +992,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-supply-chain-policy"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+]
+
+[[package]]
 name = "corelink-tenant-path"
 version = "0.1.0"
 dependencies = [

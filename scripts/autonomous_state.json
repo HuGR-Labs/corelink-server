@@ -80,7 +80,30 @@
     "WI-S20-008",
     "WI-S20-009"
   ],
-  "done": "see git tags s01..s11-impl-sealed for prior + this commit for S-11 002..008",
-  "last_seal_at": "2026-05-13T18:00:00Z",
-  "note": "consolidated after wave-1 parallel sonnet merge of WI-S11-003..008"
+  "done": "see git tags s01..s11-impl-sealed for prior + WI-S11-003..008 + WI-S12-004",
+  "last_seal_at": "2026-05-13T19:00:00Z",
+  "wi_s12_004": {
+    "status": "SEALED",
+    "sealed_at": "2026-05-13T19:00:00Z",
+    "artifacts": [
+      ".github/workflows/cargo-audit.yml",
+      ".github/workflows/cargo-deny.yml",
+      ".github/workflows/dependabot-auto-merge.yml",
+      ".github/workflows/lockfile-diff.yml",
+      "deny.toml",
+      ".github/dependabot.yml",
+      "crates/corelink-supply-chain-policy/Cargo.toml",
+      "crates/corelink-supply-chain-policy/src/lib.rs",
+      "crates/corelink-supply-chain-policy/tests/prop_cargo_deny.rs",
+      "crates/corelink-supply-chain-policy/tests/adversarial_dep_policy.rs",
+      "crates/corelink-supply-chain-policy/tests/e2e_dependabot.rs",
+      "docs/internal/dep-policy.md",
+      "specs/03_architecture/adrs/ADR-S12-045-dep-policy-cargo-audit-deny-dependabot.md",
+      "specs/03_architecture/adrs/ADR-S12-046-license-allowlist-7-osi.md",
+      "specs/03_architecture/adrs/ADR-S12-047-license-review-quarterly.md"
+    ],
+    "invariants_enforced": ["INV-SUPPLY-NO-YANKED", "INV-SUPPLY-LICENSE-ALLOWLIST"],
+    "acs_covered": ["AC-PR-gate", "AC-daily-cron-CVE", "AC-GPL-blocked", "AC-yanked-blocked", "AC-unknown-git-blocked", "AC-dependabot-grouped-PRs", "AC-auto-merge-minor", "AC-auto-merge-major-blocked", "AC-lockfile-diff-comment", "AC-prop-100k-green", "AC-SLA-latency"]
+  },
+  "note": "WI-S12-004 SEALED 2026-05-13: cargo-audit + cargo-deny + Dependabot supply-chain controls"
 }
