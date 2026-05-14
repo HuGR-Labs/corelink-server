@@ -1,0 +1,147 @@
+{
+  "_comment": "WI-S13-004 Slack alert template for #infra-drift channel. Variables enclosed in {{}} are substituted at runtime by corelink-terraform-drift-consumer Worker.",
+  "_spec_ref": "WI-S13-004 §6.1.4 + §6.1.5",
+  "_runbook": "specs/05_quality/runbooks/RB-FM-206-terraform-drift.md",
+
+  "sev3_drift_detected": {
+    "channel": "{{SLACK_CHANNEL_ID}}",
+    "text": "[SEV-3] Terraform drift detected in region {{region}}: {{diff_count}} resource(s) changed. Runbook: RB-FM-206.",
+    "blocks": [
+      {
+        "type": "header",
+        "text": {
+          "type": "plain_text",
+          "text": ":rotating_light: SEV-3 — Terraform Drift Detected"
+        }
+      },
+      {
+        "type": "section",
+        "fields": [
+          { "type": "mrkdwn", "text": "*Region:*\n`{{region}}`" },
+          { "type": "mrkdwn", "text": "*Diff count:*\n`{{diff_count}}` resource(s)" },
+          { "type": "mrkdwn", "text": "*Severity:*\n`{{severity}}`" },
+          { "type": "mrkdwn", "text": "*Detected:*\n`{{detected_at_iso}}`" }
+        ]
+      },
+      {
+        "type": "section",
+        "text": {
+          "type": "mrkdwn",
+          "text": "*Top changed resources:*\n```{{top_resources_snippet}}```"
+        }
+      },
+      {
+        "type": "section",
+        "fields": [
+          { "type": "mrkdwn", "text": "*Plan artifact:*\n<{{artifact_url}}|View full plan>" },
+          { "type": "mrkdwn", "text": "*Finding ID:*\n`{{finding_id}}`" }
+        ]
+      },
+      {
+        "type": "section",
+        "text": {
+          "type": "mrkdwn",
+          "text": ":book: *Runbook:* <{{runbook_url}}|RB-FM-206 — Terraform Drift>\n:no_entry: *Auto-apply is FORBIDDEN.* Manual decision required per RB-FM-206 decision tree.\n:clock7: *SLA:* Remediate within 7 days or post-mortem opens automatically."
+        }
+      },
+      {
+        "type": "divider"
+      },
+      {
+        "type": "actions",
+        "elements": [
+          {
+            "type": "button",
+            "text": { "type": "plain_text", "text": "View Plan Artifact" },
+            "url": "{{artifact_url}}",
+            "style": "primary"
+          },
+          {
+            "type": "button",
+            "text": { "type": "plain_text", "text": "Open RB-FM-206" },
+            "url": "{{runbook_url}}"
+          }
+        ]
+      }
+    ]
+  },
+
+  "sev2_terraform_error": {
+    "channel": "{{SLACK_CHANNEL_ID}}",
+    "text": "[SEV-2] Terraform ERROR in region {{region}} — drift detection BLIND. Immediate action required.",
+    "blocks": [
+      {
+        "type": "header",
+        "text": {
+          "type": "plain_text",
+          "text": ":red_circle: SEV-2 — Terraform Error (Drift Detection Blind)"
+        }
+      },
+      {
+        "type": "section",
+        "fields": [
+          { "type": "mrkdwn", "text": "*Region:*\n`{{region}}`" },
+          { "type": "mrkdwn", "text": "*Severity:*\n`SEV-2`" },
+          { "type": "mrkdwn", "text": "*Run ID:*\n`{{github_run_id}}`" },
+          { "type": "mrkdwn", "text": "*Error:*\n`{{error_summary}}`" }
+        ]
+      },
+      {
+        "type": "section",
+        "text": {
+          "type": "mrkdwn",
+          "text": ":fire: Drift detection is *blind* for this region. Investigate terraform error immediately.\n*Logs:* <{{logs_url}}|View run logs>"
+        }
+      }
+    ]
+  },
+
+  "cron_skip_alert": {
+    "channel": "{{SLACK_CHANNEL_ID}}",
+    "text": "[SEV-3] Terraform drift cron SKIPPED > 24h — MTTD bound violated. Last run: {{last_run_at_iso}}.",
+    "blocks": [
+      {
+        "type": "header",
+        "text": {
+          "type": "plain_text",
+          "text": ":clock1: SEV-3 — Drift Cron Skipped > 24h"
+        }
+      },
+      {
+        "type": "section",
+        "text": {
+          "type": "mrkdwn",
+          "text": "The daily `terraform plan` cron has not run in > 24 hours. Drift detection MTTD bound of ≤ 24h is *violated*.\n\n*Last successful run:* `{{last_run_at_iso}}`\n*Action required:* Investigate GitHub Actions cron health + trigger `workflow_dispatch` manually."
+        }
+      }
+    ]
+  },
+
+  "multi_region_summary": {
+    "channel": "{{SLACK_CHANNEL_ID}}",
+    "text": "[SEV-3] MULTI-REGION drift detected — {{drifted_regions_count}} region(s) affected. Run {{github_run_id}}.",
+    "blocks": [
+      {
+        "type": "header",
+        "text": {
+          "type": "plain_text",
+          "text": ":world_map: SEV-3 — Multi-Region Terraform Drift"
+        }
+      },
+      {
+        "type": "section",
+        "fields": [
+          { "type": "mrkdwn", "text": "*Affected regions:*\n`{{drifted_regions_list}}`" },
+          { "type": "mrkdwn", "text": "*Total diff count:*\n`{{total_diff_count}}`" }
+        ]
+      },
+      {
+        "type": "section",
+        "text": {
+          "type": "mrkdwn",
+          "text": ":warning: Multi-region drift may indicate a shared module change or coordinated manual edit. Correlate findings before applying.\n*Runbook:* <{{runbook_url}}|RB-FM-206>"
+        }
+      }
+    ]
+  }
+}

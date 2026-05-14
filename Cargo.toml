@@ -57,6 +57,7 @@ members = [
     "crates/corelink-dt-webhook",
     "crates/corelink-dt-cli",
     "crates/corelink-dt-reconcile",
+    "crates/corelink-terraform-drift-consumer",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
