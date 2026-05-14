@@ -466,6 +466,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-admin-dry-run"
+version = "0.1.0"
+dependencies = [
+ "corelink-config-do",
+ "corelink-dual-approval",
+ "corelink-terraform-drift-consumer",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-test",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "corelink-analytics"
 version = "0.1.0"
 dependencies = [

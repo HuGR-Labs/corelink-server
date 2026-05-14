@@ -1,10 +1,10 @@
 ---
 id: "WI-S13-003"
 type: "work_item"
-doc_status: "FROZEN"
+doc_status: "SEALED"
 work_status: "DONE"
-audit_status: "ACTIVE"
-version: "1.1.0"
+audit_status: "AUDITED"
+version: "1.2.0"
 created: "2026-04-28"
 updated: "2026-05-14"
 lane: "HIGH_RISK"

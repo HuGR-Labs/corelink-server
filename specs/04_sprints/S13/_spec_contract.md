@@ -301,6 +301,7 @@ Itens waivable com Security lead + SRE lead + ADR:
 |---|---|---|---|
 | 1.2.0 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | Criação S-13 spec contract SOTA v1.1 (cycle 12.S13.0). |
 | 1.2.1 | 2026-05-14 | Claude Sonnet 4.6 (autonomous) | WI-S13-001 SEALED: corelink-config-do + corelink-config-api implementados; prop/adversarial tests green; wasm32 clean; D1 migration 0024; ADR-S13-001; admin-plane.md. |
+| 1.3.0 | 2026-05-14 | Claude Sonnet 4.6 (autonomous) | WI-S13-006 SEALED: ship gate complete — property tests 21 props × 10k iter green; cross-WI composition 5 props × 1k green; RB-FM-205/201/206 dry-runs PASS; security walkthrough P0=0/P1=0/P2=1 waived; PRR-S13 CONDITIONALLY_APPROVED 11 sign-offs canonical; adversarial summary 37 scenarios 100% mitigated; OWASP ASVS 51/51 PASS; WI-S13-003/004/005 sealed; S-13 sprint CLOSED. |
 
 ---
 

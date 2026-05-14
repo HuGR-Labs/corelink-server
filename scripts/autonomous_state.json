@@ -1,3 +1,47 @@
 {
-  "done_s13_wave3_pending_consolidation": "see post-merge"
+  "done_s13_wave3_pending_consolidation": "see post-merge",
+  "wi_s13_006": {
+    "status": "SEALED",
+    "sealed_at": "2026-05-14",
+    "codex_score": "9.0/10",
+    "branch": "wt/wi-s13-006",
+    "deliverables": {
+      "property_test_summary": "specs/_audits/2026-05-14-property-test-summary-s13.md",
+      "rb_fm_205_dry_run_report": "specs/_audits/2026-05-14-rb-fm-205-dry-run.md",
+      "rb_fm_201_dry_run_report": "specs/_audits/2026-05-14-rb-fm-201-dry-run.md",
+      "rb_fm_206_dry_run_report": "specs/_audits/2026-05-14-rb-fm-206-dry-run.md",
+      "security_walkthrough": "specs/_audits/2026-05-14-security-walkthrough-s13.md",
+      "adversarial_summary": "specs/_audits/2026-05-14-adversarial-summary-s13.md",
+      "asvs_checklist": "specs/04_sprints/S13/asvs-v4-v5-v6-v7-v14-ssdf-nist-checklist.md",
+      "prr": "specs/04_sprints/S13/PRR-S13.md",
+      "release_notes": "specs/04_sprints/S13/RELEASE_NOTES.md",
+      "cross_wi_integration_test": "crates/corelink-admin-api/tests/cross_wi_integration_s13.rs"
+    },
+    "clippy_regressions_fixed": 5,
+    "wi_sealed_as_precondition": ["WI-S13-001", "WI-S13-002", "WI-S13-003", "WI-S13-004", "WI-S13-005"],
+    "prr_decision": "CONDITIONALLY_APPROVED",
+    "prr_waivers": 4,
+    "property_tests": {
+      "properties": 21,
+      "pr_iterations": 10000,
+      "cross_wi_properties": 5,
+      "cross_wi_iterations": 1000
+    },
+    "adversarial_scenarios": 37,
+    "mitigation_rate_pct": 100,
+    "security_walkthrough_p0": 0,
+    "security_walkthrough_p1": 0,
+    "security_walkthrough_p2": 1,
+    "rb_dry_runs": {
+      "rb_fm_205": "PASS",
+      "rb_fm_201": "PASS",
+      "rb_fm_206": "PASS"
+    },
+    "asvs_checklist_items": 51,
+    "asvs_checklist_pass": 51,
+    "sign_offs_canonical": 11,
+    "s13_sprint_closed": true,
+    "downstream_unblocked": ["S-14", "S-16", "S-19"],
+    "ga_evidence_gate_d45_pending": true
+  }
 }

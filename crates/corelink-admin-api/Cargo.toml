@@ -42,6 +42,10 @@ proptest = { workspace = true }
 name = "e2e_admin_dual_approval"
 path = "tests/e2e_admin_dual_approval.rs"
 
+[[test]]
+name = "cross_wi_integration_s13"
+path = "tests/cross_wi_integration_s13.rs"
+
 [[example]]
 name = "basic_2admin"
 path = "examples/basic_2admin.rs"

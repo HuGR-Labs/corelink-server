@@ -61,6 +61,7 @@ members = [
     "crates/corelink-dt-webhook",
     "crates/corelink-dual-approval",
     "crates/corelink-admin-api",
+    "crates/corelink-admin-dry-run",
     "crates/corelink-rotation-adapters",
     "crates/corelink-rotation-worker",
     "crates/corelink-terraform-drift-consumer",
@@ -181,6 +182,7 @@ corelink-dt-cli = { path = "crates/corelink-dt-cli" }
 corelink-dt-reconcile = { path = "crates/corelink-dt-reconcile" }
 corelink-dual-approval = { path = "crates/corelink-dual-approval" }
 corelink-admin-api = { path = "crates/corelink-admin-api" }
+corelink-admin-dry-run = { path = "crates/corelink-admin-dry-run" }
 corelink-rotation-adapters = { path = "crates/corelink-rotation-adapters" }
 corelink-rotation-worker = { path = "crates/corelink-rotation-worker" }
 corelink-rollout-controller = { path = "crates/corelink-rollout-controller" }
