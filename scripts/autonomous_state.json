@@ -1,6 +1,5 @@
 {
   "queue": [
-    "WI-S13-001",
     "WI-S13-002",
     "WI-S13-003",
     "WI-S13-004",
@@ -73,7 +72,15 @@
     "WI-S20-008",
     "WI-S20-009"
   ],
-  "done": "see git tags s01..s12-impl-sealed for prior + this commit closes S-12",
-  "last_seal_at": "2026-05-14T03:00:00Z",
-  "note": "S-12 fully sealed; S-13 worktrees pre-staged"
+  "done": "see git tags s01..s12-impl-sealed for prior + WI-S13-001 SEALED 2026-05-14",
+  "last_seal_at": "2026-05-14T12:00:00Z",
+  "note": "S-13 in progress; WI-S13-001 SEALED (config-singleton + CAS + propagation + rollback); next: WI-S13-002 (admin API + dual-approval)",
+  "wi_s13_001": {
+    "sealed_at": "2026-05-14T12:00:00Z",
+    "branch": "wt/wi-s13-001",
+    "crates": ["corelink-config-do", "corelink-config-api"],
+    "tests": "10 prop + 8 adversarial + 6 unit + 2 doctests = 26 total",
+    "wasm32": "clean",
+    "clippy": "clean -D warnings"
+  }
 }
