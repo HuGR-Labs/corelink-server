@@ -1,4 +1,60 @@
 {
+  "onboarding": {
+    "wizard": {
+      "title": "Bem-vindo ao CoreLink",
+      "step": "Passo {current} de {total}",
+      "back": "Voltar",
+      "next": "Avançar",
+      "skip": "Pular"
+    },
+    "tenant": {
+      "title": "Crie seu tenant",
+      "name_label": "Nome do tenant",
+      "name_hint": "3-64 caracteres, letras, dígitos e hífens.",
+      "legal_label": "Razão social da organização",
+      "tax_label": "CNPJ/Tax ID (opcional)",
+      "submit": "Criar tenant",
+      "errors": {
+        "empty": "Nome do tenant é obrigatório.",
+        "too_short": "Nome deve ter pelo menos 3 caracteres.",
+        "too_long": "Nome deve ter no máximo 64 caracteres.",
+        "invalid_chars": "Use apenas letras, dígitos e hífens."
+      }
+    },
+    "dpa": {
+      "title": "Acordo de Processamento de Dados",
+      "scroll_hint": "Leia até o final para habilitar a aceitação.",
+      "accept": "Eu aceito",
+      "accepted_at": "Aceito em {ts}"
+    },
+    "region_plan": {
+      "title": "Escolha região e plano",
+      "region_label": "Região",
+      "plan_label": "Plano",
+      "submit": "Continuar"
+    },
+    "billing": {
+      "title": "Configurar cobrança",
+      "submit": "Salvar método de pagamento",
+      "skipped_free": "Plano Free: sem pagamento necessário."
+    },
+    "pat": {
+      "title": "Crie seu primeiro token de acesso pessoal",
+      "label_label": "Nome do token",
+      "scope_label": "Escopo",
+      "expiry_label": "Expiração",
+      "submit": "Gerar token",
+      "modal_title": "Salve este token agora",
+      "modal_warning": "Este token será exibido apenas uma vez. Guarde-o com segurança; não poderemos recuperá-lo novamente.",
+      "copy": "Copiar",
+      "confirm_saved": "Salvei este token com segurança",
+      "finish": "Continuar"
+    },
+    "done": {
+      "title": "Tudo pronto",
+      "cta": "Começar"
+    }
+  },
   "common": {
     "cancel": "Cancelar",
     "save": "Salvar",
