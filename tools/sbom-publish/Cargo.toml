@@ -1,0 +1,73 @@
+[package]
+name = "sbom-publish"
+description = "CoreLink SBOM CycloneDX 1.5+ publisher — generates SBOM via cargo-cyclonedx, validates NTIA minimum elements, attests RFC 3161 TSA timestamp via Sigstore TSA, and ingests into Dependency-Track v4.11+ API. Implements SbomPublisher trait with subcommands: generate, validate-ntia, attest-tsa, ingest-dt. Per-instance Arc<Mutex<>> F-001. Audit fail-CLOSED. CycloneDX 1.5+ canonical format. PURL normalization (workspace member discriminator + DT ecosystem alias). Retry policy 3×exponential-backoff (1s/4s/16s) with fallback queue. 5 Prometheus metrics. 4 trace spans. Property tests 10k PR / 100k nightly (PROPTEST_CASES env runtime). Adversarial regression tests (5 scenarios). INV-SUPPLY-SBOM-PRESENT enforced. WI-S12-002 SEALED."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[[bin]]
+name = "sbom-publish"
+path = "src/main.rs"
+
+[lib]
+name = "sbom_publish"
+path = "src/lib.rs"
+
+[dependencies]
+async-trait = "0.1"
+clap = { version = "4", features = ["derive"] }
+hex = { workspace = true }
+reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+url = "2"
+uuid = { workspace = true, features = ["v4", "serde"] }
+
+[dev-dependencies]
+proptest = { workspace = true }
+sha2 = { workspace = true }
+tokio = { workspace = true, features = ["rt", "macros"] }
+
+[[test]]
+name = "prop_sbom"
+path = "tests/prop_sbom.rs"
+
+[[test]]
+name = "adversarial"
+path = "tests/adversarial.rs"
+
+[[example]]
+name = "generate"
+path = "examples/generate.rs"
+
+[[example]]
+name = "validate_ntia"
+path = "examples/validate_ntia.rs"
+
+[[example]]
+name = "ingest_dt_retry"
+path = "examples/ingest_dt_retry.rs"

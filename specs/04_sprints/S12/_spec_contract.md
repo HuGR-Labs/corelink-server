@@ -5,7 +5,7 @@ doc_status: "DRAFT"
 audit_status: "ACTIVE"
 version: "1.2.0"
 created: "2026-04-24"
-updated: "2026-04-24"
+updated: "2026-05-14"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -314,6 +314,16 @@ Itens waivable com Security lead + Legal + ADR:
 - ⚠️ Vendor patch via `[patch.crates-io]` permitido com ADR + Security review + 90d sunset clock.
 
 ---
+
+## 20. Changelog
+
+| Versão | Data | Autor | Mudança |
+|---|---|---|---|
+| 1.0.0 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | Criação spec contract S-12. |
+| 1.1.0 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | SOTA v1.1 — INV-SUPPLY-PROVENANCE-IN-REKOR fail-closed hardening. |
+| 1.2.0 | 2026-05-14 | Gustavo (via Claude Sonnet 4.6) | WI-S12-002 SEALED: sbom-publish crate + sbom.yml workflow + ADR-S12-001. |
+
+**Fim spec contract S-12 v1.2.0 SOTA.**
 
 ## 20. Change Log (Implementation)
 

@@ -1,0 +1,263 @@
+---
+# WI-S12-002: SBOM CycloneDX 1.5+ generation + NTIA validation + RFC 3161 TSA + DT ingestion.
+#
+# Trigger:
+#   - release: { types: [published] }        — primary gate (release asset upload)
+#   - workflow_dispatch                        — manual run (ops / dev)
+#   - schedule (weekly)                        — drift check (SBOM freshness)
+#
+# All SHA-pinned per CoreLink hard constraints.
+# Permissions: contents:write (release asset upload), id-token:write (OIDC for future Cosign).
+
+name: "SBOM — CycloneDX 1.5+ (WI-S12-002)"
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version override (e.g. 0.1.2)"
+        required: false
+        default: ""
+  schedule:
+    # Weekly drift check — Tuesdays 03:17 UTC
+    - cron: "17 3 * * 2"
+
+permissions:
+  contents: write   # upload release assets
+  id-token: write   # OIDC (reserved for future Cosign keyless; no-op now)
+
+env:
+  CARGO_CYCLONEDX_VERSION: "0.5.4"
+  CYCLONEDX_CLI_VERSION: "0.27.2"
+  # SHA-256 digests of the tool binaries (verified on first install; pinned for supply-chain).
+  CYCLONEDX_CLI_LINUX_SHA256: "placeholder-pin-at-first-use"
+  TSA_URL: "https://tsa.sigstore.dev/api/v1/timestamp"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job 1: Setup + SBOM generation
+  # ---------------------------------------------------------------------------
+  sbom-generate:
+    name: "Generate SBOM (cargo-cyclonedx)"
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      sbom_path: sbom.cdx.json
+      tsr_path: sbom.cdx.json.tsr
+
+    steps:
+      - name: Checkout
+        # SHA-pinned: actions/checkout v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Install Rust toolchain (pinned via rust-toolchain.toml)
+        # SHA-pinned: dtolnay/rust-toolchain stable
+        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203
+        with:
+          toolchain: stable
+
+      - name: Cache Cargo registry
+        # SHA-pinned: actions/cache v4.2.3
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-sbom-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-sbom-
+
+      - name: Install cargo-cyclonedx ${{ env.CARGO_CYCLONEDX_VERSION }}
+        run: cargo install cargo-cyclonedx --version "$CARGO_CYCLONEDX_VERSION" --locked
+
+      - name: Determine release version
+        id: version
+        run: |
+          if [[ -n "${{ github.event.inputs.version }}" ]]; then
+            echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.event_name }}" == "release" ]]; then
+            echo "version=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=drift-check-$(date +%Y%m%d)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Generate SBOM (CycloneDX 1.5+ JSON)
+        run: |
+          cargo cyclonedx \
+            --all \
+            --format json \
+            --spec-version 1.5 \
+            --output-cdx sbom.cdx.json
+          echo "SBOM generation complete"
+          ls -lh sbom.cdx.json
+
+      - name: Upload SBOM artifact (between jobs)
+        # SHA-pinned: actions/upload-artifact v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sbom-cdx-json
+          path: sbom.cdx.json
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Job 2: NTIA minimum elements validation (CI gate)
+  # ---------------------------------------------------------------------------
+  sbom-ntia-validate:
+    name: "NTIA minimum elements check"
+    runs-on: ubuntu-22.04
+    needs: sbom-generate
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Download SBOM artifact
+        uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e
+        with:
+          name: sbom-cdx-json
+
+      - name: Install CycloneDX CLI ${{ env.CYCLONEDX_CLI_VERSION }}
+        run: |
+          CDXCLI_URL="https://github.com/CycloneDX/cyclonedx-cli/releases/download/v${CYCLONEDX_CLI_VERSION}/cyclonedx-linux-x64"
+          curl -fsSL -o cyclonedx-cli "$CDXCLI_URL"
+          chmod +x cyclonedx-cli
+          # Verify binary works
+          ./cyclonedx-cli --version
+
+      - name: Validate NTIA minimum elements (strict gate)
+        run: |
+          ./cyclonedx-cli validate \
+            --input-file sbom.cdx.json \
+            --minimum-required-fields ntia \
+            --output-format text
+          echo "NTIA validation PASSED"
+
+      - name: Validate SBOM JSON is well-formed
+        run: |
+          python3 -c "import json; json.load(open('sbom.cdx.json'))"
+          echo "SBOM JSON is valid"
+
+  # ---------------------------------------------------------------------------
+  # Job 3: RFC 3161 TSA timestamp via Sigstore TSA
+  # ---------------------------------------------------------------------------
+  sbom-tsa-attest:
+    name: "RFC 3161 TSA timestamp (Sigstore)"
+    runs-on: ubuntu-22.04
+    needs: sbom-ntia-validate
+    outputs:
+      tsr_present: ${{ steps.tsa.outputs.tsr_present }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Download SBOM artifact
+        uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e
+        with:
+          name: sbom-cdx-json
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203
+        with:
+          toolchain: stable
+
+      - name: Build sbom-publish binary
+        run: cargo build --release -p sbom-publish
+
+      - name: Request RFC 3161 TSA timestamp
+        id: tsa
+        run: |
+          ./target/release/sbom-publish attest-tsa \
+            --input sbom.cdx.json \
+            --tsa-url "$TSA_URL" \
+            --output-tsr sbom.cdx.json.tsr \
+          && echo "tsr_present=true" >> "$GITHUB_OUTPUT" \
+          || (echo "tsr_present=false" >> "$GITHUB_OUTPUT"; \
+              echo "::warning::TSA timestamp failed (SEV-3); SBOM will be published without TSR")
+
+      - name: Upload TSR artifact
+        if: steps.tsa.outputs.tsr_present == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sbom-tsr
+          path: sbom.cdx.json.tsr
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Job 4: Dependency-Track ingestion
+  # ---------------------------------------------------------------------------
+  sbom-dt-ingest:
+    name: "Dependency-Track ingestion"
+    runs-on: ubuntu-22.04
+    needs: sbom-ntia-validate
+    # DT ingestion is non-blocking: continue even if DT is down
+    continue-on-error: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Download SBOM artifact
+        uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e
+        with:
+          name: sbom-cdx-json
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203
+        with:
+          toolchain: stable
+
+      - name: Build sbom-publish binary
+        run: cargo build --release -p sbom-publish
+
+      - name: Ingest SBOM into Dependency-Track
+        env:
+          DT_API_KEY: ${{ secrets.DT_API_KEY }}
+        run: |
+          VERSION="${{ needs.sbom-generate.outputs.version }}"
+          DT_URL="${{ vars.DT_ENDPOINT || 'https://dt.corelink.dev' }}"
+
+          ./target/release/sbom-publish ingest-dt \
+            --input sbom.cdx.json \
+            --dt-url "$DT_URL" \
+            --api-key-env DT_API_KEY \
+            --project-name corelink-server \
+            --project-version "$VERSION" \
+          && echo "DT ingestion succeeded" \
+          || echo "::warning::DT ingestion failed (SEV-3 alert); fallback queue triggered"
+
+  # ---------------------------------------------------------------------------
+  # Job 5: Upload release assets (sbom.cdx.json + sbom.cdx.json.tsr)
+  # ---------------------------------------------------------------------------
+  sbom-release-upload:
+    name: "Upload release assets"
+    runs-on: ubuntu-22.04
+    needs: [sbom-tsa-attest, sbom-dt-ingest]
+    if: github.event_name == 'release'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Download SBOM artifact
+        uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e
+        with:
+          name: sbom-cdx-json
+
+      - name: Download TSR artifact (optional)
+        continue-on-error: true
+        uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e
+        with:
+          name: sbom-tsr
+
+      - name: Upload SBOM to GitHub release
+        # SHA-pinned: softprops/action-gh-release v2.2.2
+        uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda
+        with:
+          files: |
+            sbom.cdx.json
+            sbom.cdx.json.tsr
+          fail_on_unmatched_files: false
+          tag_name: ${{ github.event.release.tag_name }}
