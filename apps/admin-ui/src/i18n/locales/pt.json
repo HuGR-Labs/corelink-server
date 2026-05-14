@@ -1,0 +1,23 @@
+{
+  "brand": {
+    "name": "CoreLink",
+    "tagline": "Cache compartilhado endereçado por conteúdo para builds, pacotes e ML."
+  },
+  "nav": {
+    "dashboard": "Painel",
+    "settings": "Configurações",
+    "audit": "Auditoria",
+    "billing": "Cobrança",
+    "privacy": "Privacidade"
+  },
+  "auth": {
+    "signIn": "Entrar",
+    "signUp": "Criar conta",
+    "signOut": "Sair"
+  },
+  "landing": {
+    "heading": "CoreLink Admin",
+    "subheading": "Gerencie seu tenant, PATs e postura de conformidade.",
+    "cta": "Entre para continuar"
+  }
+}

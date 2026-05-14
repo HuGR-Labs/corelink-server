@@ -1,0 +1,18 @@
+{
+  "name": "corelink-monorepo",
+  "private": true,
+  "version": "0.0.0",
+  "description": "CoreLink monorepo root (Rust crates + JS/TS apps via pnpm).",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "packageManager": "pnpm@10.32.1",
+  "scripts": {
+    "admin-ui:dev": "pnpm --filter @corelink/admin-ui dev",
+    "admin-ui:build": "pnpm --filter @corelink/admin-ui build",
+    "admin-ui:test": "pnpm --filter @corelink/admin-ui test",
+    "admin-ui:lint": "pnpm --filter @corelink/admin-ui lint",
+    "admin-ui:typecheck": "pnpm --filter @corelink/admin-ui typecheck"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "brand": {
+    "name": "CoreLink",
+    "tagline": "Shared content-addressable cache for builds, packages, and ML."
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "settings": "Settings",
+    "audit": "Audit",
+    "billing": "Billing",
+    "privacy": "Privacy"
+  },
+  "auth": {
+    "signIn": "Sign in",
+    "signUp": "Sign up",
+    "signOut": "Sign out"
+  },
+  "landing": {
+    "heading": "CoreLink Admin",
+    "subheading": "Manage your tenant, PATs, and compliance posture.",
+    "cta": "Sign in to continue"
+  }
+}

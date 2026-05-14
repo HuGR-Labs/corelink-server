@@ -1,0 +1,10 @@
+{
+  "extends": ["next/core-web-vitals"],
+  "rules": {
+    "no-console": ["error", { "allow": ["warn", "error"] }],
+    "no-eval": "error",
+    "no-implied-eval": "error",
+    "react/no-danger": "error"
+  },
+  "ignorePatterns": [".next/", "node_modules/", "dist/", "coverage/"]
+}

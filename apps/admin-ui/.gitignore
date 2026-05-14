@@ -1,0 +1,16 @@
+node_modules/
+.next/
+.turbo/
+.vercel/
+.wrangler/
+.open-next/
+out/
+dist/
+coverage/
+*.log
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+.env
+.env.local
+.env.*.local
+next-env.d.ts.bak
