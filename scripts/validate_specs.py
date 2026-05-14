@@ -51,7 +51,9 @@ SPECS_DIR = REPO_ROOT / "specs"
 SCHEMA_PATH = SPECS_DIR / "_schemas" / "front_matter.schema.json"
 
 # Diretórios totalmente ignorados (não são specs normativos).
-SKIP_ALL = {"_audits", "_archive", "_schemas"}
+# _compliance/ contém evidence/attestation docs (gap analyses, roadmaps,
+# vendor shortlists) gerados pelos WIs de compliance — análogos a _audits/.
+SKIP_ALL = {"_audits", "_archive", "_schemas", "_compliance"}
 
 # Diretórios que passam apenas em yaml.safe_load (não em JSON Schema).
 # Motivo: templates têm placeholders intencionais (ex: "S-XX-REPLACE",
