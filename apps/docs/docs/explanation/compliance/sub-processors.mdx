@@ -1,0 +1,55 @@
+---
+title: "Sub-processors"
+slug: "/compliance/sub-processors"
+description: "Current list of CoreLink sub-processors and the 30-day change-notice policy."
+draft: true
+cross_functional_review: TBD
+pending_signoff:
+  - "DPO"
+  - "Procurement"
+  - "Legal"
+sources:
+  - "legal/sub-processors.md"
+last_updated: "2026-05-14"
+---
+
+import { DraftBanner } from "../../../src/components/DraftBanner";
+
+<DraftBanner pageType="compliance" />
+
+# Sub-processors
+
+> **DRAFT — pending Legal + Finance + Security review.** The authoritative
+> machine-readable source is `legal/sub-processors.md`. This page mirrors that
+> file for procurement teams who cannot pull from the repository.
+
+## Notification policy
+
+CoreLink commits to a **30-day prior notice** before any new sub-processor
+begins processing customer personal data. Notices are DKIM-signed and delivered
+to the account owner contact.
+
+## Active sub-processors
+
+| Provider | Role | Region | Certifications | DPA |
+| --- | --- | --- | --- | --- |
+| Cloudflare, Inc. | Infrastructure (Workers, R2, KV, DO, D1, Pages, Email) | Multi-region (tenant-pinned) | SOC 2 Type II, ISO 27001, ISO 27018, PCI-DSS L1, HIPAA-compliant infra | [DPA](https://www.cloudflare.com/cloudflare-customer-dpa/) |
+| Neon Inc. | Postgres hosting (control plane only) | US or EU (selectable) | SOC 2 Type II, ISO 27001, HIPAA-compliant | [DPA](https://neon.tech/dpa) |
+| Clerk | Authentication and user identity | US | SOC 2 Type II | TBD |
+| Stripe, Inc. | Billing and payment processing | US (PCI-DSS L1) | SOC 2 Type II, PCI-DSS L1 | TBD |
+
+> The full machine-readable list — including jurisdiction, data categories,
+> certifications, and contract dates — is maintained in
+> `legal/sub-processors.md` and published to the trust portal.
+
+## How to subscribe to change notices
+
+1. Open a support ticket of type **"Compliance / Sub-processor Notice"**.
+2. Provide the email address that should receive DKIM-signed notices.
+3. We confirm subscription within TBD business days.
+
+## Cross-functional review checklist
+
+- [ ] DPO — confirm GDPR and LGPD compliance of each provider.
+- [ ] Procurement — confirm DPA links and contract status.
+- [ ] Legal — confirm 30-day notice mechanism.

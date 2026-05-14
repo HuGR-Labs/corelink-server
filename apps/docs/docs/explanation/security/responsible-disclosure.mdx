@@ -1,0 +1,74 @@
+---
+title: "Responsible disclosure"
+slug: "/security/responsible-disclosure"
+description: "How to report a CoreLink security issue and what to expect in return."
+draft: true
+cross_functional_review: TBD
+pending_signoff:
+  - "Security Lead"
+  - "Legal"
+sources:
+  - "specs/03_architecture/security_model.md"
+last_updated: "2026-05-14"
+---
+
+import { DraftBanner } from "../../../src/components/DraftBanner";
+
+<DraftBanner pageType="security" />
+
+# Responsible disclosure
+
+> **DRAFT — pending Legal + Finance + Security review.** The reward amounts
+> and PGP key fingerprint below are placeholders until the program goes live.
+
+We believe coordinated disclosure protects users. If you have found a
+vulnerability in CoreLink, please contact us before discussing it publicly.
+
+## How to report
+
+- **Email:** `security@corelink.dev`
+- **PGP fingerprint:** `TBD` (key to be published on the trust portal)
+- **Subject prefix:** `[VULN]`
+
+Include, where possible:
+
+- A clear description of the issue and its impact.
+- Steps to reproduce, ideally as a self-contained script.
+- Your assessment of severity (CVSS or qualitative).
+- Whether you intend to disclose publicly and on what timeline.
+
+## What we commit to
+
+| Stage | Target |
+| --- | --- |
+| Acknowledge receipt | within TBD business days |
+| Initial triage | within TBD business days |
+| Status update cadence | every TBD business days |
+| Fix or mitigation | severity-dependent |
+| Public credit (if desired) | at coordinated disclosure |
+
+We will not pursue legal action against researchers who follow this policy in
+good faith.
+
+## Reward program (stub)
+
+A monetary bounty program is in scoping. Severity bands and award ranges are
+`$X` placeholders pending Finance and Legal sign-off.
+
+| Severity | Reward |
+| --- | --- |
+| CRITICAL | `$X` |
+| HIGH | `$X` |
+| MEDIUM | `$X` |
+| LOW | swag or hall-of-fame credit |
+
+## Out of scope
+
+- Denial-of-service attacks against production systems.
+- Social engineering of CoreLink staff.
+- Issues exclusively affecting outdated browsers or unsupported clients.
+
+## Cross-functional review checklist
+
+- [ ] Security Lead — confirm triage SLA targets.
+- [ ] Legal — confirm safe-harbour language and reward eligibility rules.
