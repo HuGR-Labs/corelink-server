@@ -53,6 +53,7 @@ members = [
     "crates/corelink-privacy-pseudonymize",
     "crates/corelink-privacy-residency-enforcement",
     "tools/sbom-publish",
+    "crates/corelink-supply-chain-policy",
 ]
 exclude = [
     "crates/tenant-path/fuzz",

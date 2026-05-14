@@ -1,0 +1,219 @@
+name: lockfile-diff (WI-S12-004)
+
+# Mandatory Cargo.lock diff comment on every PR that modifies the lockfile.
+#
+# When Cargo.lock changes in a PR, this workflow emits a structured PR comment
+# containing:
+#   - Added / removed / upgraded deps summary.
+#   - License check summary (cargo-deny output).
+#   - Instruction to run pair-review on new dep additions (typosquat mitigation).
+#
+# This implements the mandatory lockfile diff PR review from WI-S12-004 §6.1.6
+# (ST-006) and is required for ALL Cargo.lock-changing PRs (100% coverage per
+# §10.s12.004.12).
+#
+# Typosquat mitigation layer: lockfile diff makes ALL new deps visible to
+# reviewers; pair-review on new dep additions is mandatory per §2.
+#
+# SHA-pinned per HIGH_RISK lane FF-HR-005 + ADR-S12-045 §6 tooling-pin policy.
+# Implements: WI-S12-004 §6.1.6 (ST-006)
+# Cap: CAP-SUPPLY-007 (vendored deps audit + lockfile pinning)
+
+on:
+  pull_request:
+    paths:
+      - 'Cargo.lock'
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  lockfile-diff:
+    name: Cargo.lock diff comment
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout base ref
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.base_ref }}
+          path: base
+
+      - name: Checkout head ref
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: head
+
+      - name: Install Rust toolchain (stable, pinned)
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
+
+      - name: Install cargo-deny (pinned) for license check
+        run: |
+          # cargo-deny 0.16.x — pinned per §14.s12.004.1.
+          # Using the EmbarkStudios action in cargo-deny.yml; here we install
+          # the CLI directly for the license summary step.
+          cargo install cargo-deny --version "0.16.4" --locked --quiet
+
+      - name: Generate Cargo.lock diff
+        id: diff
+        run: |
+          python3 - <<'PYEOF'
+          import subprocess, sys, os, json
+
+          # Parse a Cargo.lock into a dict of {name: {version: ..., source: ...}}.
+          def parse_lockfile(path):
+              deps = {}
+              current = {}
+              try:
+                  with open(path) as f:
+                      for line in f:
+                          line = line.rstrip()
+                          if line == '[[package]]':
+                              if current.get('name'):
+                                  key = f"{current['name']}@{current.get('version','?')}"
+                                  deps[key] = current
+                              current = {}
+                          elif '=' in line and not line.startswith('#'):
+                              k, _, v = line.partition(' = ')
+                              current[k.strip()] = v.strip().strip('"')
+              except FileNotFoundError:
+                  pass
+              if current.get('name'):
+                  key = f"{current['name']}@{current.get('version','?')}"
+                  deps[key] = current
+              return deps
+
+          base_deps = parse_lockfile('base/Cargo.lock')
+          head_deps = parse_lockfile('head/Cargo.lock')
+
+          added   = {k: v for k, v in head_deps.items() if k not in base_deps}
+          removed = {k: v for k, v in base_deps.items() if k not in head_deps}
+
+          # Upgraded: same name, different version (remove old, add new).
+          base_names = {v['name']: k for k, v in base_deps.items() if 'name' in v}
+          head_names = {v['name']: k for k, v in head_deps.items() if 'name' in v}
+          upgraded = []
+          for name, head_key in head_names.items():
+              if name in base_names and base_names[name] != head_key:
+                  upgraded.append((base_names[name], head_key))
+
+          total_changed = len(added) + len(removed) + len(upgraded)
+
+          # Emit GITHUB_OUTPUT.
+          with open(os.environ.get('GITHUB_OUTPUT', '/dev/null'), 'a') as f:
+              f.write(f'total_changed={total_changed}\n')
+              f.write(f'added_count={len(added)}\n')
+              f.write(f'removed_count={len(removed)}\n')
+              f.write(f'upgraded_count={len(upgraded)}\n')
+
+          # Emit step summary.
+          summary_path = os.environ.get('GITHUB_STEP_SUMMARY', '/dev/null')
+          with open(summary_path, 'a') as f:
+              f.write('## Cargo.lock Diff Summary\n\n')
+              f.write(f'| Category | Count |\n|---|---|\n')
+              f.write(f'| Added    | {len(added)} |\n')
+              f.write(f'| Removed  | {len(removed)} |\n')
+              f.write(f'| Upgraded | {len(upgraded)} |\n\n')
+
+              if added:
+                  f.write('### Added dependencies\n\n')
+                  for k, v in sorted(added.items()):
+                      src = v.get('source', 'unknown')
+                      f.write(f'- `{k}` — source: `{src}`\n')
+                  f.write('\n')
+                  f.write('> **Review required**: pair-review all new dep additions ')
+                  f.write('for typosquatting risk (see dep-policy.md §6).\n\n')
+
+              if removed:
+                  f.write('### Removed dependencies\n\n')
+                  for k in sorted(removed.keys()):
+                      f.write(f'- `{k}`\n')
+                  f.write('\n')
+
+              if upgraded:
+                  f.write('### Upgraded dependencies\n\n')
+                  for old, new in sorted(upgraded):
+                      f.write(f'- `{old}` → `{new}`\n')
+                  f.write('\n')
+
+              if total_changed == 0:
+                  f.write('_No dependency changes detected._\n')
+
+          print(f"Cargo.lock diff: +{len(added)} added, -{len(removed)} removed, ~{len(upgraded)} upgraded")
+          PYEOF
+
+      - name: Run cargo-deny (license summary)
+        id: deny_check
+        working-directory: head
+        run: |
+          cargo deny check --hide-inclusion-graph 2>&1 | tee /tmp/deny-output.txt || true
+          exit_code=${PIPESTATUS[0]}
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+          echo "deny_output<<DENY_EOF" >> "$GITHUB_OUTPUT"
+          head -50 /tmp/deny-output.txt >> "$GITHUB_OUTPUT" || true
+          echo "DENY_EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Post PR comment with diff + cargo-deny summary
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          TOTAL_CHANGED: ${{ steps.diff.outputs.total_changed }}
+          DENY_EXIT: ${{ steps.deny_check.outputs.exit_code }}
+        run: |
+          python3 - <<'PYEOF'
+          import os, subprocess, sys
+
+          pr_number = os.environ['PR_NUMBER']
+          repo = os.environ['REPO']
+          total_changed = int(os.environ.get('TOTAL_CHANGED', '0'))
+          deny_exit = os.environ.get('DENY_EXIT', '0')
+
+          deny_status = "PASSED" if deny_exit == "0" else "FAILED"
+          deny_emoji = "green_circle" if deny_exit == "0" else "red_circle"
+
+          try:
+              with open('/tmp/deny-output.txt') as f:
+                  deny_snippet = '\n'.join(f.read().splitlines()[:30])
+          except FileNotFoundError:
+              deny_snippet = "(no output)"
+
+          body = f"""## Cargo.lock Diff — WI-S12-004 Lockfile Review
+
+          **{total_changed} dependency change(s)** detected in this PR.
+
+          See the [step summary](${{github.server_url}}/${{repo}}/actions/runs/${{github.run_id}}) for the full diff.
+
+          ### cargo-deny Policy Check: :{deny_emoji}: {deny_status}
+
+          <details>
+          <summary>cargo-deny output (first 30 lines)</summary>
+
+          ```
+          {deny_snippet}
+          ```
+
+          </details>
+
+          ---
+
+          > **INV-SUPPLY-LICENSE-ALLOWLIST** + **INV-SUPPLY-NO-YANKED** enforced via cargo-deny.
+          > Pair-review all **new** dep additions for typosquatting risk (dep-policy.md §6).
+          > See [dep-policy.md](docs/internal/dep-policy.md) for the full policy.
+          """
+
+          # Post comment via gh CLI.
+          import subprocess
+          result = subprocess.run(
+              ['gh', 'pr', 'comment', pr_number, '--repo', repo, '--body', body],
+              capture_output=True, text=True,
+              env={**os.environ, 'GITHUB_TOKEN': os.environ['GITHUB_TOKEN']}
+          )
+          if result.returncode != 0:
+              print(f"Warning: could not post PR comment: {result.stderr}", file=sys.stderr)
+          else:
+              print(f"Posted lockfile-diff comment on PR #{pr_number}")
+          PYEOF

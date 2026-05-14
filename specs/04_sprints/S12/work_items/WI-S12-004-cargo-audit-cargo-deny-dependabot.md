@@ -1,12 +1,12 @@
 ---
 id: "WI-S12-004"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
-audit_status: "ACTIVE"
-version: "1.0.0"
+doc_status: "SEALED"
+work_status: "DONE"
+audit_status: "AUDITED"
+version: "1.1.0"
 created: "2026-04-29"
-updated: "2026-04-29"
+updated: "2026-05-13"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-005"]
 parent: "S-12"
@@ -26,7 +26,7 @@ tags: ["wi", "s12", "supply-chain", "cargo-audit", "cargo-deny", "dependabot", "
 
 # WI-S12-004 — `cargo-audit` PR + Daily Cron + `cargo-deny` Policy (License Allowlist + Yanked + Sources + Advisories) + Dependabot Weekly Grouped + Auto-merge Minor
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** SEALED · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-12](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -745,6 +745,7 @@ Erro mapping:
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | Criação WI-S12-004 (cycle 11.S12.0). |
+| 1.1.0 | 2026-05-13 | Gustavo (via Claude Sonnet 4.6) | SEALED: all artifacts committed (cargo-audit.yml + cargo-deny.yml + dependabot-auto-merge.yml + lockfile-diff.yml + deny.toml + dependabot.yml + corelink-supply-chain-policy crate with 3 test files + docs/internal/dep-policy.md + ADR-S12-045/046/047). |
 
 ## 32. Anti-patterns evitados
 
