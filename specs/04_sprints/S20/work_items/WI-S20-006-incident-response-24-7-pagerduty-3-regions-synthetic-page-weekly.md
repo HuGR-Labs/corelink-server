@@ -1,12 +1,12 @@
 ---
 id: "WI-S20-006"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "SEALED"
+work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-29"
-updated: "2026-04-29"
+updated: "2026-05-14"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-005", "FF-HR-009", "FF-HR-010"]
 parent: "S-20"
@@ -21,12 +21,20 @@ inherits_from:
   - "FAILURE-MODES"
   - "SLO-CATALOG"
   - "OBSERVABILITY-MODEL"
-tags: ["wi", "s20", "ga", "incident-response", "24-7", "pagerduty", "synthetic-page", "high-risk"]
+tags: ["wi", "s20", "ga", "incident-response", "24-7", "pagerduty", "synthetic-page", "high-risk", "sealed"]
+sealed_artifacts:
+  rust_crate: "crates/corelink-synthetic-pager"
+  d1_migration: "migrations/d1/0042_synthetic_page_drills.sql"
+  runbook_extended: "specs/_runbooks/RB-ONCALL-POLICY.md (v1.1.0 — §11 added)"
+  runbook_new: "specs/_runbooks/RB-SYNTHETIC-PAGE-DRILL.md (v1.0.0)"
+  cron_trigger: "wrangler.toml [triggers] crons += '0 14 * * 1'"
+  dashboard: "dashboards/grafana/DASH-ONCALL-24-7.json"
+  readiness_audit: "specs/_audits/2026-05-14-s20-oncall-24-7-readiness.md"
 ---
 
 # WI-S20-006 — Incident Response 24/7 PagerDuty Schedule Live em 3 Regiões (US Pacific + US Eastern + EU; APAC Eventual Scaling Pós-GA Q1 Demand-Driven) + On-Call Manager Rotation (Owner + Final Approver Dual-Hat Solo-Tier per ADR-0034 Option A; OR Contract-Based Escalation Tier-1 SRE Engineering Pré-GA Hire) + Escalation Matrix `specs/05_runbooks/RB-INCIDENT-ESCALATION-MATRIX.md` (P0 → Page On-Call → Escalate Manager 5 min → Escalate CEO/Founder 15 min) + Response < 5 min Testadas via Synthetic Page Weekly (Cron Job Creates Synthetic SEV-2 Incident; On-Call Must Ack Within 5 min p99) + Synthetic Page Weekly < 5 min Response Sustained 30d (GA Evidence Gate D+60 Criterion) + DASH-INCIDENT-RESPONSE Embedded em DASH-GA-READINESS + EVT-026 Evidence
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** SEALED · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-20](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---

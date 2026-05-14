@@ -108,6 +108,8 @@ members = [
     "crates/corelink-tier-selection",
     # WI-S19-005 enterprise inquiry form + Slack/CRM atomic outbox + 24h auto-reply SLA
     "crates/corelink-enterprise-inquiry",
+    # WI-S20-006 synthetic page weekly drill — 3-region 24/7 follow-the-sun + MTTA budget
+    "crates/corelink-synthetic-pager",
 ]
 exclude = [
     "crates/tenant-path/fuzz",

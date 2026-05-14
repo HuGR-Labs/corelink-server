@@ -1,0 +1,289 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "CoreLink 24/7 oncall + synthetic drill datasource (Prometheus / VictoriaMetrics / Grafana Cloud Mimir tenant).",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "uid": "DASH-ONCALL-24-7",
+  "title": "CoreLink — 24/7 Oncall + Synthetic Drill (DASH-ONCALL-24-7)",
+  "description": "WI-S20-006 canonical 24/7 follow-the-sun 3-region oncall health + weekly synthetic page drill outcomes. Per-region MTTA + ack vector + drill streak vs GA Evidence Gate D+60 criterion. Tenant-agnostic per CTRL-PRIV-001 + INV-OBS-CARDINALITY-BUDGET-RESPECTED.",
+  "tags": ["corelink", "oncall", "24-7", "synthetic-drill", "follow-the-sun", "s20", "ga-evidence"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "annotations": {
+    "list": [
+      {
+        "name": "Synthetic drill emit",
+        "datasource": "$DS_PROMETHEUS",
+        "enable": true,
+        "iconColor": "blue",
+        "expr": "increase(corelink_synthetic_drill_emitted_total[1m]) > 0"
+      },
+      {
+        "name": "Drill outcome breach",
+        "datasource": "$DS_PROMETHEUS",
+        "enable": true,
+        "iconColor": "red",
+        "expr": "ALERTS{alertname=~\"SyntheticDrill.*\", severity=~\"sev1|sev2\"}"
+      }
+    ],
+    "lastUpdated": "2026-05-14T00:00:00Z",
+    "cardinality_budget_used": "2400/100000"
+  },
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "region",
+        "type": "custom",
+        "label": "Region",
+        "multi": true,
+        "includeAll": true,
+        "options": [
+          { "text": "All", "value": "all", "selected": true },
+          { "text": "Americas", "value": "americas" },
+          { "text": "EMEA", "value": "emea" },
+          { "text": "APAC", "value": "apac" }
+        ],
+        "query": "all,americas,emea,apac"
+      },
+      {
+        "name": "ack_vector",
+        "type": "custom",
+        "label": "Ack vector",
+        "multi": true,
+        "includeAll": true,
+        "options": [
+          { "text": "All", "value": "all", "selected": true },
+          { "text": "Mobile push", "value": "mobile_push" },
+          { "text": "SMS", "value": "sms" },
+          { "text": "Email", "value": "email" }
+        ],
+        "query": "all,mobile_push,sms,email"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Region rotation health — primary on-call assigned per region (green = all 3 covered)",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 4 },
+      "targets": [
+        {
+          "expr": "sum by (region) (corelink_oncall_active_primary_count{region=~\"$region\"})",
+          "legendFormat": "{{region}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "min": 0,
+          "max": 2
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "MTTA p99 per region — target < 5min (300_000 ms)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (region, le) (rate(corelink_synthetic_drill_mtta_ms_bucket{region=~\"$region\"}[7d])))",
+          "legendFormat": "p99 / {{region}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 240000 },
+              { "color": "red", "value": 300000 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "MTTA p50 per region — informational baseline",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (region, le) (rate(corelink_synthetic_drill_mtta_ms_bucket{region=~\"$region\"}[7d])))",
+          "legendFormat": "p50 / {{region}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Synthetic drill outcome — last 12 weeks (green=acked / amber=escalated / red=unacked)",
+      "type": "barchart",
+      "datasource": "$DS_PROMETHEUS",
+      "gridPos": { "x": 0, "y": 12, "w": 16, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum by (region, outcome) (increase(corelink_synthetic_drill_total{region=~\"$region\"}[12w]))",
+          "legendFormat": "{{region}} / {{outcome}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Drill streak (last 30d) — GA Evidence Gate D+60 criterion (target >= 4 consecutive 'acked' drills)",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "gridPos": { "x": 16, "y": 12, "w": 8, "h": 8 },
+      "targets": [
+        {
+          "expr": "corelink_synthetic_drill_acked_streak_weeks",
+          "legendFormat": "streak"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 2 },
+              { "color": "green", "value": 4 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Ack vector distribution — preferred mobile_push (fallback to sms/email flags rotation issue)",
+      "type": "piechart",
+      "datasource": "$DS_PROMETHEUS",
+      "gridPos": { "x": 0, "y": 20, "w": 8, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum by (ack_vector) (increase(corelink_synthetic_drill_total{ack_vector=~\"$ack_vector\", region=~\"$region\"}[30d]))",
+          "legendFormat": "{{ack_vector}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Region boundary handoff latency — target < 5 min async / 15 min sync if open incident",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "gridPos": { "x": 8, "y": 20, "w": 16, "h": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (boundary, le) (rate(corelink_oncall_handoff_seconds_bucket{boundary=~\"americas_to_emea|emea_to_apac|apac_to_americas\"}[14d])))",
+          "legendFormat": "p95 / {{boundary}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 300 },
+              { "color": "red", "value": 900 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "Drill emit failures (CF Cron / PagerDuty Events API 5xx) — should be 0",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "gridPos": { "x": 0, "y": 28, "w": 8, "h": 4 },
+      "targets": [
+        {
+          "expr": "sum(increase(corelink_synthetic_drill_emit_failure_total[30d]))",
+          "legendFormat": "emit failures (30d)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 9,
+      "title": "Drill recorder write failures (D1) — fail-CLOSED counter",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "gridPos": { "x": 8, "y": 28, "w": 8, "h": 4 },
+      "targets": [
+        {
+          "expr": "sum(increase(corelink_synthetic_drill_recorder_failure_total[30d]))",
+          "legendFormat": "recorder failures (30d)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 10,
+      "title": "Active rotation engineer count per region — target 1 primary + 1 backup per tier",
+      "type": "table",
+      "datasource": "$DS_PROMETHEUS",
+      "gridPos": { "x": 16, "y": 28, "w": 8, "h": 4 },
+      "targets": [
+        {
+          "expr": "sum by (region, tier) (corelink_oncall_rostered_engineers{region=~\"$region\"})",
+          "legendFormat": "{{region}} / {{tier}}"
+        }
+      ]
+    }
+  ]
+}

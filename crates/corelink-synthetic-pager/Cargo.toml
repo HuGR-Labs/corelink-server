@@ -1,0 +1,35 @@
+[package]
+name = "corelink-synthetic-pager"
+description = "WI-S20-006 synthetic page weekly drill — emits a synthetic SEV-2 incident to PagerDuty on a weekly cron, measures MTTA from the rotation engineer + ack vector (mobile/email/SMS), and records the drill to D1 `synthetic_page_drills`. Pure-logic library (no tokio in src, no I/O) following the WI-S17-005 `trait-abstraction-defer` charter pattern. Ships: SyntheticDrillId + AckVector (`#[non_exhaustive]` 3-canonical: mobile-push / sms / email) + DrillSeverity (canonical Sev2-synthetic) + Region (`#[non_exhaustive]` 3-canonical: Americas / EMEA / APAC) + SyntheticPageRequest + AckOutcome (`#[non_exhaustive]` 3-canonical: Acked / Unacked / Escalated) + MttaMs newtype + MTTA_BUDGET_MS canonical 5min cap + DrillRecord + DrillRecorder trait + SyntheticDrillError `#[non_exhaustive]` taxonomy + decide_drill_outcome pure helper + InMemoryDrillRecorder + FailingDrillRecorder adversarial fixture. Production CF Cron Worker trigger + PagerDuty Events API v2 wiring deferred to PRR ship gate."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[[test]]
+name = "prop_synthetic_pager"
+path = "tests/prop_synthetic_pager.rs"

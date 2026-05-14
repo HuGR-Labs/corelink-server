@@ -130,8 +130,24 @@ ENVIRONMENT = "dev"
 # so chaos NEVER fires in prod (HARD env check at code level is the
 # second line of defense; this cron-level omission is the first).
 # Catalog: specs/_runbooks/RB-CHAOS-CATALOG.md.
+#
+# WI-S20-006 — Synthetic page weekly drill (Mondays 14:00 UTC).
+# Triggers `corelink-synthetic-pager` to emit a synthetic SEV-2 page
+# through the dedicated PagerDuty `synthetic-drill` service routing
+# key. Region rotates across a 4-week cycle:
+#   - Week N % 4 == 0: target Americas
+#   - Week N % 4 == 1: target EMEA
+#   - Week N % 4 == 2: target APAC
+#   - Week N % 4 == 3: rotation-handoff drill (paged at 23:59 UTC
+#     Sunday so the boundary handoff is exercised)
+# Runbook: specs/_runbooks/RB-SYNTHETIC-PAGE-DRILL.md.
+# SHA-pinned image: ghcr.io/humangr-labs/corelink-synthetic-pager@sha256:
+#   <PIN_AT_RELEASE> — pinned at PRR ship gate per supply-chain canonical.
 [triggers]
-crons = ["0 6 * * 1"]
+crons = [
+    "0 6 * * 1",
+    "0 14 * * 1",
+]
 
 # Secrets: `wrangler secret put STRIPE_KEY` etc
 # - CLERK_SECRET_KEY

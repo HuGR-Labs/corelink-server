@@ -2066,6 +2066,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-synthetic-pager"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "corelink-tenant-path"
 version = "0.1.0"
 dependencies = [
