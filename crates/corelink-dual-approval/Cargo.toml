@@ -1,0 +1,64 @@
+[package]
+name = "corelink-dual-approval"
+description = "CoreLink dual-approval enforcement + collusion-rotation defense (WI-S13-002). Ships DualApprovalGate trait + DualApprovalGateImpl: HMAC-SHA256 signature verify (constant-time subtle::ConstantTimeEq), MFA freshness ≤ 30 min hard-check, separation-of-duties (caller ≠ approver), collusion-rotation 3-cycle NIST AC-2(7) oracle (Lote 10.13 canonical: proposed approver ∉ last 2 distinct destructive approvers in 24h window), nonce replay protection, clock-skew ≤ 60s. Hard-fail 403 on any violation; no advisory mode. CloudEvent audit emission rich (actor + mfa_ts + dual_approver + op_payload_hash + prev_state_hash + signature chain integrity). INV-ADMIN-DUAL-APPROVAL CRITICAL enforced. Property tests 7 props × 10k iter green."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_jcs = "0.2"
+hmac = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+subtle = { workspace = true }
+uuid = { workspace = true, features = ["v7", "serde"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+uuid = { workspace = true, features = ["v7", "serde", "js"] }
+
+[dev-dependencies]
+proptest = { workspace = true }
+rand = "0.9"
+rand_chacha = "0.9"
+
+[[test]]
+name = "prop_dual_approval"
+path = "tests/prop_dual_approval.rs"
+
+[[test]]
+name = "adversarial"
+path = "tests/adversarial.rs"
+
+[[example]]
+name = "basic_2admin"
+path = "examples/basic_2admin.rs"
+
+[[example]]
+name = "collusion_demo"
+path = "examples/collusion_demo.rs"
+
+[[example]]
+name = "audit_inspection"
+path = "examples/audit_inspection.rs"

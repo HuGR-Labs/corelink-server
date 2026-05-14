@@ -1,0 +1,45 @@
+//! Example: basic 2-admin pipeline (admin-api layer).
+#![allow(clippy::unwrap_used, clippy::print_stdout, clippy::expect_used)]
+use std::sync::Arc;
+use uuid::Uuid;
+use corelink_dual_approval::{
+    AdminOpAuditSink, AdminOpRequest, AdminOpType, AdminSigningKey, DualApprovalGateImpl,
+    InMemoryAdminOpAuditSink, InMemoryAdminRoleStore, InMemoryCollusionStore, InMemoryNonceStore,
+    compute_hmac,
+};
+use corelink_admin_api::middleware::AdminApiPipeline;
+
+fn main() {
+    let caller = Uuid::now_v7();
+    let approver = Uuid::now_v7();
+    let tenant = Uuid::now_v7();
+    let key = AdminSigningKey::test_zero();
+    let now_ms = 10_000_000u64;
+    let payload = b"{}".to_vec();
+    let nonce = [0u8; 16];
+    let sig = compute_hmac(&key, &payload, &nonce, now_ms);
+    let req = AdminOpRequest {
+        caller_user_id: caller,
+        approver_user_id: approver,
+        approver_signature: sig,
+        op_type: AdminOpType::ConfigRollback,
+        op_payload: payload,
+        nonce,
+        ts_ms: now_ms,
+        tenant_id: tenant,
+    };
+    let sink = Arc::new(InMemoryAdminOpAuditSink::new());
+    let role_store = Arc::new(InMemoryAdminRoleStore::new(vec![caller, approver]));
+    let gate = Arc::new(DualApprovalGateImpl::new(
+        key,
+        role_store,
+        InMemoryCollusionStore::new(),
+        InMemoryNonceStore::new(),
+        sink.clone(),
+        "enam",
+    ));
+    let pipeline = AdminApiPipeline::new(gate);
+    let result = pipeline.process(&req, now_ms - 5 * 60_000, now_ms).unwrap();
+    println!("Op dispatched: {}", result.op_result.message);
+    println!("Audit events: {}", sink.captured().len());
+}
