@@ -1,9 +1,9 @@
 ---
 id: "SPEC-CONTRACT-S15"
 type: "spec_contract"
-doc_status: "DRAFT"
+doc_status: "SEALED"
 audit_status: "ACTIVE"
-version: "1.3.0"
+version: "1.4.0"
 created: "2026-04-24"
 updated: "2026-05-14"
 owner: "Gustavo Schneiter"

@@ -1,7 +1,7 @@
 ---
 id: "PRR-S15"
 type: "prr"
-doc_status: "DRAFT"
+doc_status: "SEALED"
 work_status: "CONDITIONALLY_APPROVED"
 audit_status: "ACTIVE"
 version: "1.0.0"
