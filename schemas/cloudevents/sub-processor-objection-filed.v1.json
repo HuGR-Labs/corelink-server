@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.hugr.dev/cloudevents/sub-processor-objection-filed.v1.json",
+  "title": "dev.hugr.corelink.sub_processor.objection_filed.v1",
+  "description": "Emitted when a customer files a sub-processor objection, and re-emitted on resolution. Per INV-AUDIT-APPEND-ONLY, stored in R2 audit-<region> Object Lock 7y. GDPR Art. 28.2.b + LGPD Art. 39. WI-S11-005.",
+  "type": "object",
+  "required": ["specversion", "type", "source", "id", "time", "data"],
+  "properties": {
+    "specversion": { "const": "1.0" },
+    "type": { "const": "dev.hugr.corelink.sub_processor.objection_filed.v1" },
+    "source": { "type": "string" },
+    "id": { "type": "string", "description": "ULID event ID" },
+    "time": { "type": "string", "format": "date-time" },
+    "datacontenttype": { "const": "application/json" },
+    "data": {
+      "type": "object",
+      "required": ["objection_id", "tenant_id", "subject_id_hash", "sub_processor_id", "sub_processors_version", "filed_at"],
+      "properties": {
+        "objection_id": { "type": "string", "description": "ULID" },
+        "tenant_id": { "type": "string" },
+        "subject_id_hash": {
+          "type": "string",
+          "description": "SHA-256 of subject_id (CTRL-PRIV-014; raw subject_id NEVER in audit)"
+        },
+        "sub_processor_id": { "type": "string" },
+        "sub_processors_version": { "type": "string" },
+        "filed_at": { "type": "string", "format": "date-time" },
+        "outcome": {
+          "type": ["string", "null"],
+          "description": "null on initial filing; set to decision outcome on resolution (accept/terminate/workaround_offered)"
+        }
+      }
+    }
+  }
+}

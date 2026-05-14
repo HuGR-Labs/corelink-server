@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.hugr.dev/cloudevents/sub-processor-published.v1.json",
+  "title": "dev.hugr.corelink.sub_processor.published.v1",
+  "description": "Emitted when legal/sub-processors.md is published for the first time (initial version). Per INV-AUDIT-APPEND-ONLY, stored in R2 audit-<region> Object Lock 7y. WI-S11-005.",
+  "type": "object",
+  "required": ["specversion", "type", "source", "id", "time", "data"],
+  "properties": {
+    "specversion": { "const": "1.0" },
+    "type": { "const": "dev.hugr.corelink.sub_processor.published.v1" },
+    "source": { "type": "string", "description": "Event source URI, e.g. corelink/cd-pipeline" },
+    "id": { "type": "string", "description": "ULID event ID" },
+    "time": { "type": "string", "format": "date-time", "description": "ISO 8601 UTC" },
+    "datacontenttype": { "const": "application/json" },
+    "data": {
+      "type": "object",
+      "required": ["version", "published_at", "sub_processors"],
+      "properties": {
+        "version": { "type": "string", "description": "Semver of sub_processors.md" },
+        "published_at": { "type": "string", "format": "date-time" },
+        "sub_processors": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/SubProcessorInfo" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "SubProcessorInfo": {
+      "type": "object",
+      "required": ["id", "name", "role", "data_categories_processed", "region", "certifications", "dpa_url", "primary_jurisdiction", "contract_signed_at"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "data_categories_processed": { "type": "array", "items": { "type": "string" } },
+        "region": { "type": "string" },
+        "certifications": { "type": "array", "items": { "type": "string" } },
+        "dpa_url": { "type": "string", "format": "uri" },
+        "primary_jurisdiction": { "type": "string" },
+        "contract_signed_at": { "type": "string", "format": "date" }
+      }
+    }
+  }
+}
