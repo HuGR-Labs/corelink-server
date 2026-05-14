@@ -102,6 +102,8 @@ members = [
     "crates/corelink-dpa-acceptance",
     # WI-S19-001 signup orchestration backend + atomic D1 provisioning + chaos Stripe outage
     "crates/corelink-signup",
+    # WI-S19-003 DPA versioning + 30d grace + read-only degrade middleware
+    "crates/corelink-dpa-versioning",
 ]
 exclude = [
     "crates/tenant-path/fuzz",

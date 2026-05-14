@@ -1432,19 +1432,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "corelink-dpa-acceptance"
+name = "corelink-dpa-versioning"
 version = "0.1.0"
 dependencies = [
- "base64",
- "hex",
- "jsonwebtoken",
  "proptest",
- "rand 0.8.6",
- "rsa",
  "serde",
  "serde_json",
- "sha2 0.10.9",
- "subtle",
  "thiserror 2.0.18",
  "uuid",
 ]
@@ -2002,14 +1995,6 @@ dependencies = [
  "tonic-build",
  "tracing",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "corelink-signup"
-version = "0.1.0"
-dependencies = [
- "proptest",
- "thiserror 2.0.18",
 ]
 
 [[package]]
