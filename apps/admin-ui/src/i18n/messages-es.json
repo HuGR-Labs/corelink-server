@@ -1,0 +1,125 @@
+{
+  "dsr": {
+    "landing": {
+      "title": "Tus derechos sobre los datos",
+      "intro": "Tienes seis derechos sobre tus datos personales bajo la LGPD (Art. 18) y el GDPR (Arts. 15-22). Elige un derecho para iniciar una solicitud.",
+      "rights_section_title": "Elige un derecho",
+      "back_to_settings": "Volver a ajustes",
+      "status_link": "Ver mis solicitudes anteriores"
+    },
+    "rights": {
+      "access": {
+        "label": "Acceder a mis datos",
+        "description": "Obtén una copia de todos los datos personales que tenemos sobre ti.",
+        "legal_ref": "LGPD Art. 18 II · GDPR Art. 15"
+      },
+      "rectification": {
+        "label": "Rectificar mis datos",
+        "description": "Corregir datos inexactos, desactualizados o incompletos.",
+        "legal_ref": "LGPD Art. 18 III · GDPR Art. 16"
+      },
+      "erasure": {
+        "label": "Eliminar mis datos",
+        "description": "Solicitar que tus datos sean borrados (derecho al olvido).",
+        "legal_ref": "LGPD Art. 18 VI · GDPR Art. 17"
+      },
+      "portability": {
+        "label": "Exportar mis datos",
+        "description": "Recibir una copia legible que puedas usar en otro servicio.",
+        "legal_ref": "LGPD Art. 18 V · GDPR Art. 20"
+      },
+      "restriction": {
+        "label": "Restringir el tratamiento",
+        "description": "Pausar el uso de tus datos mientras se resuelve una disputa.",
+        "legal_ref": "GDPR Art. 18"
+      },
+      "objection": {
+        "label": "Oponerse al tratamiento",
+        "description": "Pídenos que detengamos un uso específico de tus datos.",
+        "legal_ref": "GDPR Art. 21"
+      }
+    },
+    "form": {
+      "subject_section": "Confirma tu identidad",
+      "subject_email_label": "Correo registrado",
+      "reason_label": "Motivo",
+      "reason_placeholder": "Cuéntanos por qué ejerces este derecho.",
+      "reason_required_error": "Se requiere un motivo para este derecho.",
+      "submit": "Enviar solicitud",
+      "submitting": "Enviando...",
+      "rectification_fields_title": "Campos que puedes corregir",
+      "field_name": "Nombre",
+      "field_email": "Correo",
+      "field_language": "Idioma preferido",
+      "erasure_scope_title": "¿Qué debemos borrar?",
+      "erasure_scope_all": "Borrar todos mis datos",
+      "erasure_scope_categories": "Borrar solo categorías específicas",
+      "erasure_legal_hold_warning": "Algunos datos pueden conservarse por obligación legal (registros fiscales, registro de auditoría). Te informaremos qué se conservó.",
+      "portability_format_title": "Formato de exportación",
+      "portability_format_json": "JSON (recomendado)",
+      "portability_format_csv": "CSV",
+      "portability_format_both": "Ambos",
+      "portability_notice": "La exportación puede tardar hasta 24 horas. El recibo de abajo contendrá el enlace cuando esté listo.",
+      "objection_purpose_label": "¿A qué finalidad de tratamiento te opones?",
+      "submit_error_generic": "No pudimos enviar tu solicitud. Inténtalo de nuevo.",
+      "submit_error_mfa": "Verificación de identidad fallida. Vuelve a autenticarte.",
+      "submit_error_rate_limit": "Has alcanzado el límite diario. Inténtalo mañana."
+    },
+    "reauth": {
+      "title": "Verifica tu identidad",
+      "description": "Por seguridad, vuelve a autenticarte antes de enviar una solicitud.",
+      "start_button": "Verificar con MFA",
+      "verifying": "Verificando...",
+      "verified": "Identidad verificada",
+      "failed": "Verificación fallida. Inténtalo de nuevo.",
+      "blocked_notice": "El formulario está bloqueado hasta que verifiques tu identidad."
+    },
+    "receipt": {
+      "modal_title": "Solicitud enviada",
+      "request_id_label": "ID de la solicitud",
+      "action_label": "Derecho ejercido",
+      "jurisdiction_label": "Jurisdicción",
+      "sla_deadline_label": "Plazo SLA",
+      "jti_label": "ID del recibo (jti)",
+      "exp_label": "El recibo expira",
+      "copy_jwt": "Copiar token del recibo",
+      "download_jwt": "Descargar recibo (.jwt)",
+      "close": "Cerrar",
+      "copied": "Copiado"
+    },
+    "status": {
+      "title": "Tus solicitudes de derechos",
+      "empty": "Aún no tienes solicitudes.",
+      "table_request_id": "Solicitud",
+      "table_action": "Derecho",
+      "table_status": "Estado",
+      "table_submitted": "Enviada",
+      "table_deadline": "Plazo",
+      "table_actions": "Acciones",
+      "view_details": "Ver",
+      "download_receipt": "Recibo",
+      "prev_page": "Anterior",
+      "next_page": "Siguiente",
+      "page_indicator": "Página {page}"
+    },
+    "status_states": {
+      "pending": "Pendiente",
+      "in_progress": "En curso",
+      "completed": "Completada",
+      "rejected": "Rechazada"
+    },
+    "detail": {
+      "title": "Detalle de la solicitud",
+      "timeline_title": "Línea de tiempo",
+      "data_download_title": "Tus datos",
+      "data_download_action": "Descargar datos",
+      "data_download_pending": "Tu exportación aparecerá aquí cuando esté lista.",
+      "back_to_list": "Volver a la lista"
+    },
+    "countdown": {
+      "remaining_days": "{days} días restantes",
+      "remaining_hours": "{hours} horas restantes",
+      "overdue": "Plazo SLA vencido"
+    }
+  }
+}
