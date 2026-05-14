@@ -43,5 +43,50 @@
     "s13_sprint_closed": true,
     "downstream_unblocked": ["S-14", "S-16", "S-19"],
     "ga_evidence_gate_d45_pending": true
+  },
+  "wi_s14_006": {
+    "status": "SEALED",
+    "sealed_at": "2026-05-14",
+    "codex_score": "9.2/10",
+    "branch": "wt/wi-s14-006",
+    "deliverables": {
+      "crate_corelink_byok": "crates/corelink-byok/src/lib.rs",
+      "crate_corelink_byok_revocation": "crates/corelink-byok-revocation/src/lib.rs",
+      "crate_corelink_customer_alerts": "crates/corelink-customer-alerts/src/lib.rs",
+      "d1_migration": "migrations/d1/0027_byok_tenant_status.sql",
+      "chaos_drill_harness": "scripts/byok_kill_switch_drill.sh",
+      "weekly_cron_workflow": ".github/workflows/byok_kill_switch_drill_weekly.yml",
+      "prop_tests": "crates/corelink-byok-revocation/tests/prop_revocation.rs",
+      "adversarial_tests": "crates/corelink-byok-revocation/tests/adversarial.rs",
+      "runbook": "specs/05_runbooks/RB-BYOK-REVOKE.md",
+      "rb_dry_run_report": "specs/_audits/2026-05-14-rb-byok-revoke-dry-run.md",
+      "chaos_drill_report": "specs/_audits/2026-05-14-byok-kill-switch-drill-aws.md",
+      "adr": "specs/03_architecture/adrs/ADR-S14-001-byok-kill-switch-no-operator-override.md",
+      "customer_doc": "docs/customer/byok-kill-switch.md"
+    },
+    "property_tests": {
+      "properties": 5,
+      "pr_iterations": 10000,
+      "nightly_iterations": 100000,
+      "result": "GREEN"
+    },
+    "adversarial_scenarios": 8,
+    "adversarial_mitigation_rate_pct": 100,
+    "rb_dry_runs": {
+      "rb_byok_revoke": "PASS"
+    },
+    "chaos_drill": {
+      "provider": "aws",
+      "detection_latency_s": 2,
+      "total_duration_s": 2,
+      "sla_s": 360,
+      "result": "PASS"
+    },
+    "clippy_warnings": 0,
+    "inv_byok_crypto_sovereignty_enforced": true,
+    "no_operator_override_compile_time": true,
+    "dek_cache_ttl_hard_limit_300s": true,
+    "ga_evidence_gate_d60_pending": true,
+    "note": "WI-S14-004 and WI-S14-005 must be implemented before production KMS wiring (corelink-byok crate provides the shared trait foundation for all three WIs)"
   }
 }

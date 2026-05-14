@@ -1,9 +1,9 @@
 ---
 id: "WI-S14-006"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
-audit_status: "ACTIVE"
+doc_status: "SEALED"
+work_status: "DONE"
+audit_status: "SEALED"
 version: "1.0.0"
 created: "2026-04-28"
 updated: "2026-04-28"
@@ -28,7 +28,7 @@ tags: ["wi", "s14", "byok", "kill-switch", "cmk-revocation", "chaos-drill", "inv
 
 # WI-S14-006 — CMK Revocation Detection (KMS Access Check Background Every 60s per Active BYOK Tenant) + Customer Kill Switch ≤ 5 min Global Hard-Fail (DEK Cache TTL 5 min Hard Expires All In-Flight Reads + KMS Access Check 60s Detect + Degrade Tenant Read-Only + Audit Emit `corelink.byok.cmk_revoked` + Alert Customer; Total p99 ≤ 5 min Global; INV-BYOK-CRYPTO-SOVEREIGNTY CRITICAL Hard-Fail No Operator Override) + Chaos Drill Weekly em Staging + Runbook RB-BYOK-REVOKE Dry-Run
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** SEALED · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-14](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
