@@ -389,6 +389,7 @@ fn context_to_aad(ctx: Option<&serde_json::Value>) -> Vec<u8> {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
     use corelink_byok::KmsProvider;

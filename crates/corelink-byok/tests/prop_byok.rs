@@ -13,7 +13,16 @@
 //! 7. `prop_zeroize_on_drop`               — Dek bytes overwritten on drop.
 
 #![forbid(unsafe_code)]
-#![allow(clippy::panic)] // proptest macros use panic internally
+#![allow(
+    clippy::panic,
+    clippy::uninlined_format_args,
+    clippy::format_in_format_args,
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::print_stdout,
+    clippy::print_stderr
+)]
 
 use proptest::prelude::*;
 use tokio::runtime::Runtime;
@@ -93,7 +102,6 @@ fn rt() -> Runtime {
 
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(10_000))]
-#![allow(clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::panic, clippy::print_stdout, clippy::print_stderr)]
 
     #[test]
     fn prop_aes_gcm_nonce_unique(_seed in 0u64..u64::MAX) {

@@ -326,6 +326,7 @@ pub fn is_mock_env() -> bool {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
     use corelink_byok::KmsProvider;

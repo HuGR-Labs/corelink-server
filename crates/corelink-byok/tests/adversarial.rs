@@ -11,8 +11,16 @@
 //! 7. DEK cache TTL 5 min hard bypass attempt.
 
 #![forbid(unsafe_code)]
-#![allow(clippy::panic)]
-#![allow(clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::panic, clippy::print_stdout, clippy::print_stderr)]
+#![allow(
+    clippy::panic,
+    clippy::uninlined_format_args,
+    clippy::format_in_format_args,
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::print_stdout,
+    clippy::print_stderr
+)]
 
 use async_trait::async_trait;
 use serde_json::Value;
@@ -106,7 +114,7 @@ impl KmsProvider for RevokedProvider {
             key_id: wrapped.key_id.key_arn_or_id.clone(),
         })
     }
-    async fn check_access(&self, key_id: &KmsKeyId) -> Result<KmsAccessStatus, BYOKError> {
+    async fn check_access(&self, _key_id: &KmsKeyId) -> Result<KmsAccessStatus, BYOKError> {
         Ok(KmsAccessStatus::Revoked)
     }
 }
