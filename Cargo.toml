@@ -98,6 +98,8 @@ members = [
     "crates/corelink-runbook-tracker",
     # WI-S17-005 oncall scheduler + fatigue tracking + PagerDuty integration trait
     "crates/corelink-oncall",
+    # WI-S19-003 DPA versioning + 30d grace + read-only degrade middleware
+    "crates/corelink-dpa-versioning",
 ]
 exclude = [
     "crates/tenant-path/fuzz",

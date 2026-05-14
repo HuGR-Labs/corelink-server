@@ -1432,6 +1432,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-dpa-versioning"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "uuid",
+]
+
+[[package]]
 name = "corelink-dr-drill"
 version = "0.1.0"
 dependencies = [
