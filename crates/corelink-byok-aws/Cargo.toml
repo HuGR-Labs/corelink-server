@@ -1,0 +1,59 @@
+[package]
+name = "corelink-byok-aws"
+description = "CoreLink BYOK AWS KMS adapter — AwsKmsProvider implements KmsProvider trait (WI-S14-004). FIPS 140-3 Level 1 (AWS KMS default). Envelope: wrap_dek (kms:Encrypt) + unwrap_dek (kms:Decrypt) + check_access (kms:DescribeKey). IAM minimal scope: kms:Encrypt + kms:Decrypt + kms:DescribeKey only. AAD encryption_context mandatory binding {tenant_id, blob_hash}. Latency SLO p99 ≤ 30 ms region-co-located."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+corelink-byok = { path = "../corelink-byok" }
+
+# AWS SDK — KMS only; minimal footprint.
+aws-config = { workspace = true }
+aws-sdk-kms = { workspace = true }
+
+# Async
+async-trait = { workspace = true }
+tokio = { workspace = true }
+
+# Serde
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+
+# Observability
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio-test = { workspace = true }
+tokio = { workspace = true }
+getrandom = { workspace = true }
+
+[[test]]
+name = "aws_unit"
+path = "tests/aws_unit.rs"
+
+[[test]]
+name = "e2e_byok_aws_kms"
+path = "tests/e2e_byok_aws_kms.rs"

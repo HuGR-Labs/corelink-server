@@ -1,0 +1,87 @@
+[package]
+name = "corelink-byok"
+description = "CoreLink BYOK (Bring Your Own Key) enterprise tier — KmsProvider trait + types (KmsKeyId, WrappedDek, Dek, KmsAccessStatus, BYOKError, FipsLevel) + DekCache with 5-min TTL hard limit (INV-BYOK-CRYPTO-SOVEREIGNTY) + EnvelopeEncryptor write/read paths (ephemeral DEK via CSPRNG getrandom; AES-256-GCM body encryption FIPS 197; AAD encryption_context binding mandatory; ZeroizeOnDrop on all key material). Foundation for WI-S14-004 AWS KMS adapter + WI-S14-005 GCP/Azure/Vault adapters + WI-S14-006 kill switch + WI-S14-007 erasure attestation."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+# Error handling
+thiserror = { workspace = true }
+
+# Serde
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Async
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# Crypto — AES-256-GCM body encryption
+aes-gcm = { workspace = true }
+getrandom = { workspace = true }
+
+# Crypto — memory safety
+zeroize = { workspace = true }
+subtle = { workspace = true }
+
+# Observability
+tracing = { workspace = true }
+
+# LRU cache for DEK cache
+lru = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+tokio-test = { workspace = true }
+tokio = { workspace = true }
+getrandom = { workspace = true }
+async-trait = { workspace = true }
+serde_json = { workspace = true }
+
+[[test]]
+name = "prop_byok"
+path = "tests/prop_byok.rs"
+
+[[test]]
+name = "adversarial"
+path = "tests/adversarial.rs"
+
+[[test]]
+name = "byok_matrix_framework"
+path = "tests/byok_matrix_framework.rs"
+
+[[example]]
+name = "write_aws"
+path = "examples/write_aws.rs"
+
+[[example]]
+name = "read_aws"
+path = "examples/read_aws.rs"
+
+[[example]]
+name = "wrap_dek"
+path = "examples/wrap_dek.rs"
+
+[[example]]
+name = "unwrap_dek"
+path = "examples/unwrap_dek.rs"

@@ -66,6 +66,8 @@ members = [
     "crates/corelink-rotation-worker",
     "crates/corelink-terraform-drift-consumer",
     "crates/corelink-rollout-controller",
+    "crates/corelink-byok",
+    "crates/corelink-byok-aws",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
@@ -106,6 +108,18 @@ thiserror = "2"
 # Serde
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# BYOK (S-14)
+async-trait = "0.1"
+aes-gcm = { version = "0.10", features = ["aes"] }
+getrandom = "0.2"
+lru = "0.12"
+# AWS SDK — requires Rust ≥ 1.91.1 per MSRV; workspace is pegged to 1.80 as floor.
+# The actual CI toolchain (1.88+) compiles these correctly.
+# `cargo check -p corelink-byok-aws --ignore-rust-version` is required until
+# the workspace rust-version floor is bumped (tracked as infra debt post-S-14).
+aws-config = { version = "1", features = ["behavior-version-latest"] }
+aws-sdk-kms = "1"
 
 # Crypto / encoding (S-01 foundation)
 hmac = "0.12"
@@ -186,6 +200,8 @@ corelink-admin-dry-run = { path = "crates/corelink-admin-dry-run" }
 corelink-rotation-adapters = { path = "crates/corelink-rotation-adapters" }
 corelink-rotation-worker = { path = "crates/corelink-rotation-worker" }
 corelink-rollout-controller = { path = "crates/corelink-rollout-controller" }
+corelink-byok = { path = "crates/corelink-byok" }
+corelink-byok-aws = { path = "crates/corelink-byok-aws" }
 
 # Test / bench
 proptest = "1.5"
