@@ -21,6 +21,7 @@ members = [
     "crates/corelink-manifest",
     "crates/corelink-gc",
     "crates/corelink-dedup",
+    "crates/corelink-deploy-verifier",
     "crates/corelink-eviction",
     "crates/corelink-quota",
     "crates/corelink-quota-cas",
@@ -130,6 +131,7 @@ corelink-multipart-schema = { path = "crates/corelink-multipart-schema" }
 corelink-manifest = { path = "crates/corelink-manifest" }
 corelink-gc = { path = "crates/corelink-gc" }
 corelink-dedup = { path = "crates/corelink-dedup" }
+corelink-deploy-verifier = { path = "crates/corelink-deploy-verifier" }
 corelink-eviction = { path = "crates/corelink-eviction" }
 corelink-quota = { path = "crates/corelink-quota" }
 corelink-quota-cas = { path = "crates/corelink-quota-cas" }

@@ -289,6 +289,7 @@ WHITELIST_IDS = {
     "ADR-0041",  # S-05 WI-S05-005: Manifest public API stability + sig domain separation policy
     "ADR-0042",  # S-06 WI-S06-001: GC worker scheduler design + degrade-mode contract
     "ADR-0043",  # S-01 WI-S01-001: HMAC tenant prefix algorithm choice (HMAC-SHA256 vs HMAC-BLAKE3; FIPS compliance)
+    "ADR-0044",  # S-12 WI-S12-003: Deploy gate hard non-bypassable + Cosign keyless OIDC (Fulcio chain + Rekor inclusion + fail-CLOSED audit)
     "FM-XXX",
     "ADR-XXXX",
     "ADR-YYYY",
