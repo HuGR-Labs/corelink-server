@@ -1,0 +1,25 @@
+# .pre-commit-config.yaml — CoreLink workspace pre-commit hooks.
+#
+# WI-S12-006: build.rs timestamp lint (reproducible builds — ADR-0015).
+#
+# Install: pip install pre-commit && pre-commit install
+# Run manually: pre-commit run --all-files
+#
+# SHA pins: bump via ADR amendment + reproducible-build test on the PR.
+
+repos:
+  # ── Local hooks ─────────────────────────────────────────────────────────────
+  - repo: local
+    hooks:
+      - id: build-rs-timestamp-lint
+        name: "build.rs timestamp lint (reproducible builds)"
+        language: script
+        entry: scripts/build_rs_lint.sh
+        pass_filenames: false
+        always_run: false
+        files: 'build\.rs$'
+        description: >
+          Scans build.rs files for banned non-deterministic timestamp patterns
+          (chrono::Local::now, SystemTime::now, UNIX_EPOCH). Violations break
+          reproducible build diff (ADR-0015). Use SOURCE_DATE_EPOCH pattern
+          instead — see docs/build/reproducible.md §6.

@@ -1,0 +1,15 @@
+# CoreLink pinned Rust toolchain — WI-S12-006 (reproducible builds).
+#
+# IMPORTANT: Bump requires ADR-0015 amendment + reproducible-build.yml
+# passing on the PR (2-runner diff ≤ 5% gate).  Never change the channel
+# here without running `cargo test --workspace` AND the reproducible-build
+# workflow first.
+#
+# Rationale: rustc minor upgrades can introduce LLVM non-determinism that
+# breaks reproducibility.  Pin to a known-good minor version so that every
+# runner produces the same codegen.  See docs/build/reproducible.md §3 and
+# ADR-0015 §Decision for full justification.
+[toolchain]
+channel = "1.88.0"
+components = ["rustc", "cargo", "rust-std", "rust-src", "rustfmt", "clippy"]
+targets   = ["wasm32-unknown-unknown", "x86_64-unknown-linux-musl"]
