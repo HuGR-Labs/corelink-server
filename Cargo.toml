@@ -94,6 +94,8 @@ members = [
     # WI-S17-001 chaos scheduler (8 experiment types + safe-mode auto-abort
     # + deterministic seed + 7y archive). Foundation for WI-S17-002..006.
     "crates/corelink-chaos-scheduler",
+    # WI-S17-003 runbook dry-run tracker (PAT-RUNBOOK-DRILL-001 + FM-202)
+    "crates/corelink-runbook-tracker",
 ]
 exclude = [
     "crates/tenant-path/fuzz",

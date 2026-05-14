@@ -6,5 +6,6 @@ pub mod doctor_cmd;
 pub mod get;
 pub mod ls;
 pub mod put;
+pub mod runbook_drill;
 pub mod stat;
 pub mod version;

@@ -1322,6 +1322,7 @@ dependencies = [
  "blake3",
  "bytes",
  "clap",
+ "corelink-runbook-tracker",
  "dirs",
  "proptest",
  "reqwest",
@@ -1946,6 +1947,17 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "corelink-runbook-tracker"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "uuid",
 ]
 
 [[package]]

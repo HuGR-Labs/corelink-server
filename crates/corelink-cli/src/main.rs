@@ -121,6 +121,49 @@ enum Commands {
         #[command(subcommand)]
         action: ConfigAction,
     },
+
+    /// Record a runbook dry-run drill (WI-S17-003 / PAT-RUNBOOK-DRILL-001).
+    ///
+    /// Builds + validates a `DrillRecord` (drift detection > 2x = FM-202
+    /// flag) and emits JSON on stdout. Offline: no PAT required. Pipe to
+    /// the admin runbook-drill API or `wrangler d1 execute` to persist in
+    /// the D1 `runbook_drills` table (migration 0033).
+    RunbookDrill {
+        #[command(subcommand)]
+        action: RunbookDrillAction,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+#[non_exhaustive]
+enum RunbookDrillAction {
+    /// Build + emit a drill record (no I/O; pipe to host adapter).
+    Record {
+        /// Runbook id (e.g. `RB-FM-051`).
+        #[arg(long, value_name = "RB_ID")]
+        runbook_id: String,
+        /// Operator id (e.g. `op_gschneiter`); zero PII per CTRL-PRIV-001.
+        #[arg(long, value_name = "OP_ID")]
+        executor: String,
+        /// EVT-017 evidence URL (asciinema cast in R2 evidence-runbooks/).
+        #[arg(long, value_name = "URL")]
+        evidence: String,
+        /// Actual duration in seconds.
+        #[arg(long, value_name = "SECS")]
+        duration_seconds: i64,
+        /// Expected duration in seconds (from runbook spec).
+        #[arg(long, value_name = "SECS")]
+        expected_seconds: i64,
+        /// Drill succeeded (default true; pass --no-success to record fail).
+        #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+        success: bool,
+        /// Optional override unix timestamp (defaults to now).
+        #[arg(long, value_name = "UNIX_SECS")]
+        executed_at: Option<i64>,
+        /// Optional sanitized notes (no PII / secrets per CTRL-PRIV-001).
+        #[arg(long, value_name = "TEXT")]
+        notes: Option<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -209,6 +252,9 @@ async fn run() -> (&'static str, Result<(), CliError>) {
         Commands::Config { action } => {
             return (label, run_config(action, format));
         }
+        Commands::RunbookDrill { action } => {
+            return (label, run_runbook_drill(action, format));
+        }
         _ => {}
     }
 
@@ -247,8 +293,10 @@ async fn run() -> (&'static str, Result<(), CliError>) {
         Commands::Doctor { json } => {
             commands::doctor_cmd::run(&client, json, format).await
         }
-        // Version + Config already handled above; this branch is unreachable.
-        Commands::Version | Commands::Config { .. } => unreachable!(),
+        // Version + Config + RunbookDrill already handled above; unreachable.
+        Commands::Version | Commands::Config { .. } | Commands::RunbookDrill { .. } => {
+            unreachable!()
+        }
     };
     (label, res)
 }
@@ -263,6 +311,32 @@ fn subcommand_label(cmd: &Commands) -> &'static str {
         Commands::Doctor { .. } => "doctor",
         Commands::Version => "version",
         Commands::Config { .. } => "config",
+        Commands::RunbookDrill { .. } => "runbook-drill",
+    }
+}
+
+fn run_runbook_drill(action: &RunbookDrillAction, format: OutputFormat) -> Result<(), CliError> {
+    match action {
+        RunbookDrillAction::Record {
+            runbook_id,
+            executor,
+            evidence,
+            duration_seconds,
+            expected_seconds,
+            success,
+            executed_at,
+            notes,
+        } => commands::runbook_drill::run(
+            runbook_id,
+            executor,
+            *duration_seconds,
+            *expected_seconds,
+            evidence,
+            *success,
+            *executed_at,
+            notes.as_deref(),
+            format,
+        ),
     }
 }
 
