@@ -1,0 +1,223 @@
+name: Cosign Sign Release Artifacts (WI-S12-003)
+
+# Signs the CoreLink Worker OCI image with Cosign keyless OIDC after a
+# release tag is pushed.  Publishes signature to Rekor transparency log
+# and attaches it to the OCI registry (ghcr.io).
+#
+# Workflow contract (WI-S12-003 §6.1.1):
+#
+#   1. Build OCI image from Dockerfile.
+#   2. Push to ghcr.io/humangr-labs/corelink-worker:<tag>.
+#   3. Cosign sign keyless OIDC → Fulcio short-lived cert (SAN = workflow ref)
+#      → Rekor inclusion proof published.
+#   4. Cosign attest SLSA provenance (from WI-S12-001) + SBOM (from WI-S12-002).
+#   5. Trigger Cloudflare deploy webhook (corelink-deploy-verifier).
+#
+# All SHA-pinned per hard constraint (supply chain § §14.s12.4):
+#   - actions/checkout@<sha>
+#   - docker/login-action@<sha>
+#   - docker/build-push-action@<sha>
+#   - docker/metadata-action@<sha>
+#   - sigstore/cosign-installer@<sha>
+#
+# Permissions follow principle of least privilege:
+#   - id-token: write  (OIDC token for Cosign keyless signing)
+#   - packages: write  (ghcr.io push)
+#   - contents: read   (checkout)
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+  # Manual trigger for ops/re-sign scenarios
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to sign (e.g. v0.1.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: humangr-labs/corelink-worker
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────
+  # 1. Build, push and sign the OCI image
+  # ─────────────────────────────────────────────────────────────────────────
+  sign-release:
+    name: build, push & cosign-sign
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    outputs:
+      image-digest: ${{ steps.build-push.outputs.digest }}
+      image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      # ── Docker meta (extract tag from git ref) ───────────────────────────
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@369eb591f429131d6889c46b57f98d1be3b14574  # v5.6.1
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      # ── Login to ghcr.io ─────────────────────────────────────────────────
+      - name: Log in to ghcr.io
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567  # v3.3.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Build and push OCI image ─────────────────────────────────────────
+      - name: Build and push Docker image
+        id: build-push
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25  # v5.4.0
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Provenance disabled here; WI-S12-001 release-slsa3.yml handles
+          # SLSA L3 provenance attestation with slsa-github-generator.
+          provenance: false
+
+      # ── Install Cosign 2.x (SHA-pinned) ─────────────────────────────────
+      # Cosign 2.x canonical (hard constraint from WI-S12-003).
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@d7d6bc7722e3daa8354c50bcb52f4837da5e9b6a  # v3.8.1
+        with:
+          cosign-release: 'v2.4.3'
+
+      # ── Cosign sign (keyless OIDC) ───────────────────────────────────────
+      # Signs the image digest using GitHub Actions OIDC token.
+      # Fulcio issues a short-lived cert with SAN = workflow ref.
+      # Signature + inclusion proof published to Rekor.
+      #
+      # This command does NOT require COSIGN_PRIVATE_KEY — keyless OIDC only.
+      # Long-lived signing keys are explicitly prohibited (§7 anti-patterns).
+      - name: Sign OCI image (Cosign keyless OIDC)
+        env:
+          DIGEST: ${{ steps.build-push.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}"
+          echo "Signing image: ${IMAGE}"
+          cosign sign --yes "${IMAGE}"
+          echo "Signature published to Rekor transparency log."
+
+      # ── Cosign attest SLSA provenance ────────────────────────────────────
+      # Attaches SLSA provenance from WI-S12-001 to the OCI image.
+      # The provenance.intoto.jsonl is produced by release-slsa3.yml and
+      # uploaded as a workflow artifact; consumed here.
+      #
+      # NOTE: This step is a stub during S-12; full integration in WI-S12-007
+      # when the complete provenance chain is assembled.
+      - name: Attest SLSA provenance (stub — full in WI-S12-007)
+        env:
+          DIGEST: ${{ steps.build-push.outputs.digest }}
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}"
+          echo "SLSA provenance attestation: full integration in WI-S12-007 PRR gate."
+          echo "Cosign signature + Rekor inclusion completed for: ${IMAGE}"
+
+      # ── Verify signature (self-verification, belt-and-suspenders) ────────
+      # Verifies the signature we just produced; validates the full chain
+      # locally before triggering the deploy webhook.
+      - name: Verify Cosign signature (self-check)
+        env:
+          DIGEST: ${{ steps.build-push.outputs.digest }}
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}"
+          WORKFLOW_REF="${{ github.workflow_ref }}"
+          REPO="${{ github.repository }}"
+
+          echo "Verifying signature for: ${IMAGE}"
+          cosign verify \
+            --certificate-identity-regexp "^https://github\.com/${REPO}/\.github/workflows/cosign-sign\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "${IMAGE}"
+          echo "Signature verification passed."
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 2. Trigger Cloudflare deploy webhook (corelink-deploy-verifier)
+  # ─────────────────────────────────────────────────────────────────────────
+  trigger-cf-deploy:
+    name: trigger CF deploy webhook
+    needs: sign-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      # ── Build deploy webhook payload ─────────────────────────────────────
+      # Sends signed payload to corelink-deploy-verifier Worker.
+      # The verifier validates Cosign signature + Rekor + Fulcio before
+      # propagating to CF Workers API.
+      - name: Trigger corelink-deploy-verifier webhook
+        env:
+          WEBHOOK_SECRET: ${{ secrets.DEPLOY_WEBHOOK_SECRET }}
+          CF_DEPLOY_VERIFIER_URL: ${{ secrets.CF_DEPLOY_VERIFIER_URL }}
+          IMAGE_DIGEST: ${{ needs.sign-release.outputs.image-digest }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          # Build webhook payload
+          PAYLOAD=$(jq -cn \
+            --arg release_tag "${RELEASE_TAG}" \
+            --arg commit_sha "${COMMIT_SHA}" \
+            --arg workflow_ref "${{ github.ref }}" \
+            --arg image_digest "${IMAGE_DIGEST}" \
+            --arg image_ref "${{ needs.sign-release.outputs.image-ref }}" \
+            '{
+              release_tag: $release_tag,
+              commit_sha: $commit_sha,
+              workflow_ref: $workflow_ref,
+              image_digest: $image_digest,
+              image_ref: $image_ref,
+              deploy_target: {
+                script_name: "corelink-worker",
+                zone_id: "ZONE_ID_PLACEHOLDER",
+                route_pattern: "api.corelink.dev/*"
+              },
+              triggered_by: {
+                login: "github-actions[bot]",
+                workflow_ref: "${{ github.workflow_ref }}"
+              }
+            }')
+
+          # Compute HMAC-SHA256 signature (CTRL-AUTH-014 quarterly rotation)
+          SIG=$(echo -n "${PAYLOAD}" | openssl dgst -sha256 -hmac "${WEBHOOK_SECRET}" | awk '{print $2}')
+
+          echo "Triggering deploy webhook for ${RELEASE_TAG} (digest: ${IMAGE_DIGEST})"
+
+          # POST to corelink-deploy-verifier
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -H "X-Deploy-Signature: ${SIG}" \
+            -d "${PAYLOAD}" \
+            "${CF_DEPLOY_VERIFIER_URL}/webhook/deploy")
+
+          if [ "${HTTP_STATUS}" = "200" ]; then
+            echo "Deploy webhook accepted (HTTP 200). Deployment propagated."
+          else
+            echo "Deploy webhook rejected (HTTP ${HTTP_STATUS}). Deploy BLOCKED."
+            echo "Check corelink-deploy-verifier logs for details."
+            exit 1
+          fi

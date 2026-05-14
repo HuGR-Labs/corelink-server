@@ -616,6 +616,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-deploy-verifier"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "hmac",
+ "proptest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "subtle",
+ "thiserror",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "corelink-dsr"
 version = "0.1.0"
 dependencies = [

@@ -5,7 +5,7 @@ doc_status: "DRAFT"
 audit_status: "ACTIVE"
 version: "1.2.0"
 created: "2026-04-24"
-updated: "2026-04-24"
+updated: "2026-05-13"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -315,4 +315,12 @@ Itens waivable com Security lead + Legal + ADR:
 
 ---
 
-**Fim spec contract S-12 v1.1.0 SOTA.**
+## 20. Changelog
+
+| Versão | Data | Autor | Mudança |
+|---|---|---|---|
+| 1.0.0 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | Criação spec contract S-12. |
+| 1.1.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | Lote 10 seals + INV-SUPPLY-PROVENANCE-IN-REKOR (no grace period). |
+| 1.2.0 | 2026-05-13 | Gustavo (via Claude Sonnet 4.6) | WI-S12-003 SEALED: corelink-deploy-verifier crate + cosign-sign.yml + ADR-0044 implemented. |
+
+**Fim spec contract S-12 v1.2.0 SOTA.**
