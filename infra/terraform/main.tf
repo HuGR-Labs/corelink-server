@@ -36,5 +36,8 @@ provider "cloudflare" {
 # incrementally as infrastructure expands.
 
 locals {
-  regions = ["us-east", "us-west", "eu-west", "ap-southeast", "sa-east"]
+  # WI-S14-001: canonical 4-region set (replaces S-13 placeholder geographic names).
+  # Maps: wnam=us-west, enam=us-east, weur=eu-west, sam=sa-east.
+  # Per-region resources defined in infra/terraform/regions/{wnam,enam,weur,sam}.tf
+  regions = ["wnam", "enam", "weur", "sam"]
 }

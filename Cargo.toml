@@ -66,6 +66,8 @@ members = [
     "crates/corelink-rotation-worker",
     "crates/corelink-terraform-drift-consumer",
     "crates/corelink-rollout-controller",
+    "crates/corelink-region",
+    "apps/migrate-single-to-multi-region",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
@@ -186,6 +188,7 @@ corelink-admin-dry-run = { path = "crates/corelink-admin-dry-run" }
 corelink-rotation-adapters = { path = "crates/corelink-rotation-adapters" }
 corelink-rotation-worker = { path = "crates/corelink-rotation-worker" }
 corelink-rollout-controller = { path = "crates/corelink-rollout-controller" }
+corelink-region = { path = "crates/corelink-region" }
 
 # Test / bench
 proptest = "1.5"

@@ -58,11 +58,11 @@ jobs:
       fail-fast: false
       matrix:
         region:
-          - us-east
-          - us-west
-          - eu-west
-          - ap-southeast
-          - sa-east
+          # WI-S14-001 S14 regions (canonical 4-region set)
+          - wnam   # us-west
+          - enam   # us-east
+          - weur   # eu-west (DO jurisdiction=eu mandatory; FF-HR-003 Schrems II)
+          - sam    # sa-east
 
     outputs:
       drift_detected: ${{ steps.plan.outputs.drift_detected }}
@@ -92,7 +92,8 @@ jobs:
       # 3. Terraform init (per-region backend config)
       # ----------------------------------------------------------------
       - name: Terraform init — ${{ matrix.region }}
-        working-directory: infra/terraform
+        # WI-S14-001: regions directory contains per-region module invocations.
+        working-directory: infra/terraform/regions
         env:
           CF_CLIENT_ID: ${{ secrets.CF_CLIENT_ID }}
           CF_CLIENT_SECRET: ${{ secrets.CF_CLIENT_SECRET }}
@@ -132,7 +133,7 @@ jobs:
       # ----------------------------------------------------------------
       - name: Terraform plan — ${{ matrix.region }}
         id: plan
-        working-directory: infra/terraform
+        working-directory: infra/terraform/regions
         env:
           CF_CLIENT_ID: ${{ secrets.CF_CLIENT_ID }}
           CF_CLIENT_SECRET: ${{ secrets.CF_CLIENT_SECRET }}
@@ -184,8 +185,8 @@ jobs:
         with:
           name: terraform-plan-${{ matrix.region }}-${{ github.run_id }}
           path: |
-            infra/terraform/plan-${{ matrix.region }}.log
-            infra/terraform/plan-${{ matrix.region }}.tfplan
+            infra/terraform/regions/plan-${{ matrix.region }}.log
+            infra/terraform/regions/plan-${{ matrix.region }}.tfplan
           retention-days: 30
           if-no-files-found: warn
 
