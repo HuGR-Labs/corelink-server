@@ -1,0 +1,39 @@
+[package]
+name = "corelink-tier-selection"
+description = "CoreLink tier selection orchestrator + Stripe Checkout activation + INV-ONBOARD-DPA-FIRST D1 row lock (WI-S19-004 — S-19 onboarding HIGH_RISK lane). Ships TierKind 5-canonical (Free / Starter / Team / Pro / Enterprise) + TierSelectionLedger orchestrator (per-tenant tier_selections + tier_selection_locks + stripe_checkout_sessions in-process mirror of D1) + StripeClient trait + InMemoryStripeClient (Checkout Session creation + webhook signature verify) + DpaAcceptanceGate trait (validates dpa_signed_ts NOT NULL BEFORE any Stripe API call — INV-ONBOARD-DPA-FIRST HARD-enforced fail-CLOSED) + TierSelectionAuditEventType `#[non_exhaustive]` 8-canonical taxonomy + TierError `#[non_exhaustive]` taxonomy. Property tests pinned at 10k iter cover INV-ONBOARD-DPA-FIRST (HIGH; never bypassed regardless of tier or concurrent flow), D1 row-lock pessimistic semantics (concurrent select_tier per tenant serialized via INSERT-OR-IGNORE on tier_selection_locks 60s window), webhook idempotency + signature replay rejection, audit-emit-BEFORE-mutation fail-CLOSED. Production HTTPS Stripe API client + Cloudflare Worker route registration (POST /v1/onboarding/tier-select + POST /v1/billing/stripe-webhook) + D1 binding deferred to PRR ship gate per `trait-abstraction-defer` charter pattern; this crate ships the pure-logic skeleton + fakes + migration."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+hmac = { workspace = true }
+sha2 = { workspace = true }
+subtle = { workspace = true }
+hex = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[[test]]
+name = "prop_tier_selection"
+path = "tests/prop_tier_selection.rs"
