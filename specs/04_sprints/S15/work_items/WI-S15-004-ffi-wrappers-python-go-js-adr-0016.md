@@ -2,7 +2,7 @@
 id: "WI-S15-004"
 type: "work_item"
 doc_status: "SEALED"
-work_status: "SEALED"
+work_status: "DONE"
 audit_status: "ACTIVE"
 version: "1.0.0"
 created: "2026-04-29"

@@ -1,5 +1,7 @@
 workspace(name = "corelink_bazel_starter")
-<<<<<<< HEAD
+
+# Bazel starter project for CoreLink remote cache integration (WI-S15-002 / WI-S15-005).
+# See .bazelrc for remote cache configuration.
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
@@ -18,7 +20,3 @@ http_archive(
 load("@rules_cc//cc:repositories.bzl", "rules_cc_dependencies")
 
 rules_cc_dependencies()
-=======
-# Bazel starter project for CoreLink remote cache integration (WI-S15-002 / WI-S15-005).
-# See .bazelrc for remote cache configuration.
->>>>>>> wt/wi-s15-005

@@ -1,12 +1,20 @@
-<<<<<<< HEAD
-# CoreLink Bazel remote cache configuration.
-# CTRL-CRED-001 (Lote 10.15 codex P0 canonical fix): credentials are passed via
-# the Bazel 6+ credential helper protocol — the helper reads the CORELINK_PAT
-# environment variable and emits a JSON token response to stdout.  The PAT is
-# NEVER placed in argv (no --remote_header=Authorization:... which would expose
-# the secret in `ps aux` output).  See https://bazel.build/docs/credential-helper.
+# CoreLink Bazel remote cache configuration (WI-S15-002 / WI-S15-005).
+#
+# SECURITY (CTRL-CRED-001 — Lote 10.15 codex P0 canonical fix):
+#   Credentials are passed via the Bazel 6+ credential helper protocol — the
+#   helper reads the CORELINK_PAT environment variable and emits a JSON token
+#   response to stdout.  The PAT is NEVER placed in argv (no
+#   --remote_header=Authorization:... which would expose the secret in
+#   `ps aux` output).
+#
+# Usage:
+#   export CORELINK_PAT=<your-pat>
+#   bazel build //...
+#
+# See https://bazel.build/docs/credential-helper for the full specification.
 
 # Remote cache endpoint.
+# Replace with your tenant URL, e.g. https://<YOUR_TENANT_ID>.corelink.dev/v1/cache
 build --remote_cache=https://corelink.dev/v1/cache
 
 # Credential helper (Bazel 6+ protocol).
@@ -29,30 +37,13 @@ build --remote_download_minimal
 # Zstandard compression over the wire (REAPI v2 standard).
 build --experimental_remote_cache_compression=true
 
+# Local defaults (always active).
+build --show_progress_rate_limit=5
+build --keep_going
+
 # --- CI-only overrides (applied via --config=ci in CI workflow) ---
 # In CI we enable full download so we can inspect + upload artifacts.
 build:ci --remote_download_outputs=all
 # In CI we pass --noremote_upload_local_results on the second (cache-hit) build
 # to avoid re-uploading what is already in the cache; the CI workflow overrides
 # this flag explicitly on the warm-cache invocation.
-=======
-# CoreLink remote cache configuration (WI-S15-002 / WI-S15-005).
-#
-# SECURITY (CTRL-CRED-001): credential helper protocol — Bazel 6+ returns token
-# via stdout (never in argv). PAT is read from CORELINK_PAT env var by the helper script.
-#
-# Usage:
-#   export CORELINK_PAT=<your-pat>
-#   bazel build //...
-#
-# Uncomment and replace <YOUR_TENANT_ID> with your CoreLink tenant slug:
-#
-# build --remote_cache=https://<YOUR_TENANT_ID>.corelink.dev/v1/cache
-# build --credential_helper=%workspace%/.bazel/corelink-credential-helper.sh
-# build --remote_timeout=30
-# build --remote_retries=2
-
-# Local defaults (always active):
-build --show_progress_rate_limit=5
-build --keep_going
->>>>>>> wt/wi-s15-005

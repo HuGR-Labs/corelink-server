@@ -1,8 +1,8 @@
 ---
 id: "WI-S15-002"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "SEALED"
+work_status: "DONE"
 audit_status: "ACTIVE"
 version: "1.0.0"
 created: "2026-04-29"
@@ -399,6 +399,7 @@ CI flake → retry policy + threshold tuning; persistent fail → revert .bazelr
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | Criação WI-S15-002 (cycle 12.S15.0; Bazel starter + CI integration test). |
+| 1.1.0 | 2026-05-14 | Gustavo (via Claude Opus 4.7) | SEAL: `examples/bazel-starter/` (WORKSPACE + .bazelrc + BUILD.bazel + credential helper) entregue; merge conflict markers resolvidos no sprint-close round-1 P0 remediation. work_status=DONE; doc_status=SEALED. |
 
 ## 30. Anti-patterns evitados
 
