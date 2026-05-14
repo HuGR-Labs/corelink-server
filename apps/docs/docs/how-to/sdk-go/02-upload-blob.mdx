@@ -1,0 +1,83 @@
+---
+id: sdk-go-upload-blob
+title: Upload a blob (Go)
+sidebar_label: Upload a blob
+description: Store a content-addressable blob using the corelink-go SDK.
+tags: [sdk, go, cas, how-to]
+---
+
+# Upload a blob
+
+## When to use this guide
+
+You have arbitrary bytes (a `[]byte` or `io.Reader`) and want them persisted
+into the CoreLink CAS. The SDK computes the BLAKE3 digest unless you pass
+one explicitly.
+
+## Prerequisites
+
+- Authentication configured ([01-authenticate](./01-authenticate.mdx)).
+
+## Minimal example
+
+```go
+import (
+    "context"
+    "os"
+
+    "github.com/humangr-labs/corelink-go/corelink"
+)
+
+func upload(ctx context.Context, cli *corelink.Client, path string) (string, error) {
+    data, err := os.ReadFile(path)
+    if err != nil {
+        return "", err
+    }
+    return cli.Put(ctx, data)
+}
+```
+
+## Streaming upload (large blobs)
+
+```go
+func uploadLarge(ctx context.Context, cli *corelink.Client, path string) (string, error) {
+    f, err := os.Open(path)
+    if err != nil {
+        return "", err
+    }
+    defer f.Close()
+    return cli.PutStream(ctx, f, corelink.WithChunkSize(4*1024*1024))
+}
+```
+
+`PutStream` is goroutine-safe and respects the `context.Context` deadline.
+
+## Idempotency
+
+`Put` deduplicates server-side. Two callers uploading identical bytes
+race-resolve to the same digest with no double-billing.
+
+## Context plumbing
+
+Always pass a request-scoped `context.Context`. Inside an HTTP handler, use
+`r.Context()`; inside a worker, derive a deadline:
+
+```go
+ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+defer cancel()
+```
+
+The SDK aborts in-flight uploads when the context is cancelled.
+
+## Errors
+
+| Error type | Cause | Action |
+|---|---|---|
+| `*corelink.AuthError` | PAT missing or revoked | Re-run [01-authenticate](./01-authenticate.mdx) |
+| `*corelink.QuotaError` | Tenant over quota | See [troubleshooting](./07-troubleshooting.mdx) |
+| `*corelink.DigestMismatchError` | Caller-supplied digest wrong | Recompute |
+
+## Next steps
+
+- [Download the blob](./03-download-blob.mdx)
+- [Batch many uploads](./05-batch-operations.mdx)

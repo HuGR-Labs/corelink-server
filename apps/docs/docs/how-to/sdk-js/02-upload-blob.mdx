@@ -1,0 +1,76 @@
+---
+id: sdk-js-upload-blob
+title: Upload a blob (JS/TS)
+sidebar_label: Upload a blob
+description: Store a content-addressable blob using @corelink/client.
+tags: [sdk, javascript, typescript, cas, how-to]
+---
+
+# Upload a blob
+
+## When to use this guide
+
+You have a `Uint8Array`, a Node `Buffer`, or a `ReadableStream` and want it
+persisted in the CoreLink CAS. The SDK computes the BLAKE3 digest unless you
+supply one explicitly.
+
+## Prerequisites
+
+- Authentication configured ([01-authenticate](./01-authenticate.mdx)).
+
+## Minimal example
+
+```typescript
+import { CoreLinkClient } from "@corelink/client";
+import { readFile } from "node:fs/promises";
+
+const client = new CoreLinkClient({ tenantId: "acme-corp" });
+const data = await readFile("./build/output.tar");
+const digest = await client.put(data);
+console.log("stored:", digest);
+await client.close();
+```
+
+`digest` is the 64-character BLAKE3 hex string.
+
+## Streaming upload (large blobs)
+
+```typescript
+import { createReadStream } from "node:fs";
+
+async function uploadLarge(path: string): Promise<string> {
+  const stream = createReadStream(path, { highWaterMark: 4 * 1024 * 1024 });
+  return client.putStream(stream);
+}
+```
+
+In a browser the same API accepts a `ReadableStream<Uint8Array>` (e.g. the
+body of a `Response`).
+
+## Idempotency
+
+`put` deduplicates server-side; two uploads of identical bytes resolve to
+the same digest without double-billing.
+
+## TypeScript types
+
+The package ships full `.d.ts` declarations:
+
+```typescript
+import type { BlobDigest, TenantId, PutOptions } from "@corelink/client";
+
+const opts: PutOptions = { expectedDigest: "..." satisfies BlobDigest };
+```
+
+## Errors
+
+| Class | Cause | Action |
+|---|---|---|
+| `AuthError` | PAT missing or revoked | [01-authenticate](./01-authenticate.mdx) |
+| `QuotaError` | Tenant over quota | [troubleshooting](./07-troubleshooting.mdx) |
+| `DigestMismatchError` | `expectedDigest` wrong | Recompute |
+
+## Next steps
+
+- [Download the blob](./03-download-blob.mdx)
+- [Batch many uploads](./05-batch-operations.mdx)

@@ -1,0 +1,76 @@
+---
+id: sdk-js-batch-operations
+title: Batch operations (JS/TS)
+sidebar_label: Batch operations
+description: Drive concurrent uploads with p-limit and rate-limit backoff.
+tags: [sdk, javascript, typescript, performance, how-to]
+---
+
+# Batch operations
+
+## When to use this guide
+
+You have many blobs to push or pull and want to saturate available
+bandwidth without exceeding the server-side per-PAT limit (256 concurrent).
+
+## Pattern: bounded `Promise.all`
+
+```typescript
+import pLimit from "p-limit";
+import { readFile } from "node:fs/promises";
+
+async function uploadMany(
+  paths: string[],
+  concurrency = 32,
+): Promise<string[]> {
+  const limit = pLimit(concurrency);
+  return Promise.all(
+    paths.map((p) =>
+      limit(async () => {
+        const data = await readFile(p);
+        return client.put(data);
+      }),
+    ),
+  );
+}
+```
+
+## Rate-limit handling
+
+`RateLimitError` is auto-retried with exponential backoff + jitter
+(3 attempts, capped at 30 s total). Customize:
+
+```typescript
+const client = new CoreLinkClient({
+  tenantId: "acme-corp",
+  retry: { maxAttempts: 5, baseDelayMs: 200, maxDelayMs: 10_000 },
+});
+```
+
+When attempts are exhausted, drain pending work and stop submitting.
+
+## Pattern: digest-keyed dedupe
+
+```typescript
+import { blake3 } from "@noble/hashes/blake3";
+
+async function uploadDedup(
+  paths: string[],
+): Promise<Record<string, string>> {
+  const seen: Record<string, string> = {};
+  for (const p of paths) {
+    const data = await readFile(p);
+    const hex = Buffer.from(blake3(data)).toString("hex");
+    if (hex in seen) continue;
+    seen[hex] = await client.put(data, { expectedDigest: hex });
+  }
+  return seen;
+}
+```
+
+Cuts upload count by 60-90% on typical build outputs.
+
+## Next steps
+
+- [CI integration](./06-ci-integration.mdx)
+- [Troubleshooting](./07-troubleshooting.mdx)
