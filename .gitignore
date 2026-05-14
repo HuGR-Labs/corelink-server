@@ -52,3 +52,9 @@ __pycache__/
 # Autonomous driver runtime state
 scripts/autonomous_state.json
 scripts/autonomous_driver.log
+
+# admin-ui workspace artifacts
+apps/admin-ui/node_modules/
+apps/admin-ui/.next/
+apps/admin-ui/pnpm-lock.yaml
+apps/admin-ui/tsconfig.tsbuildinfo

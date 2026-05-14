@@ -1,0 +1,41 @@
+import { describe, it, expect } from "vitest";
+import { t } from "@/i18n/messages";
+
+describe("i18n lookups", () => {
+  it("returns localized strings per locale", () => {
+    expect(t("en", "onboarding.tenant.title")).toMatch(/create your tenant/i);
+    expect(t("pt", "onboarding.tenant.title")).toMatch(/crie seu tenant/i);
+    expect(t("es", "onboarding.tenant.title")).toMatch(/crea tu tenant/i);
+  });
+
+  it("returns localized strings for every onboarding step", () => {
+    const keys = [
+      "onboarding.tenant.title",
+      "onboarding.dpa.title",
+      "onboarding.region_plan.title",
+      "onboarding.billing.title",
+      "onboarding.pat.title",
+      "onboarding.done.title",
+    ];
+    for (const k of keys) {
+      for (const locale of ["en", "pt", "es"] as const) {
+        const v = t(locale, k);
+        expect(v).not.toBe(k); // would mean key missing
+        expect(v.length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("returns the key itself when missing (no throw)", () => {
+    expect(t("en", "nonexistent.path")).toBe("nonexistent.path");
+  });
+
+  it("PAT modal warning string is present in all three locales", () => {
+    const en = t("en", "onboarding.pat.modal_warning");
+    const pt = t("pt", "onboarding.pat.modal_warning");
+    const es = t("es", "onboarding.pat.modal_warning");
+    for (const s of [en, pt, es]) {
+      expect(s.length).toBeGreaterThan(20);
+    }
+  });
+});

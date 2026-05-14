@@ -1,0 +1,58 @@
+{
+  "onboarding": {
+    "wizard": {
+      "title": "Welcome to CoreLink",
+      "step": "Step {current} of {total}",
+      "back": "Back",
+      "next": "Next",
+      "skip": "Skip"
+    },
+    "tenant": {
+      "title": "Create your tenant",
+      "name_label": "Tenant name",
+      "name_hint": "3-64 characters, letters, digits, and hyphens.",
+      "legal_label": "Organization legal name",
+      "tax_label": "Tax ID (optional)",
+      "submit": "Create tenant",
+      "errors": {
+        "empty": "Tenant name is required.",
+        "too_short": "Tenant name must be at least 3 characters.",
+        "too_long": "Tenant name must be at most 64 characters.",
+        "invalid_chars": "Use only letters, digits, and hyphens."
+      }
+    },
+    "dpa": {
+      "title": "Data Processing Agreement",
+      "scroll_hint": "Please read to the end to enable acceptance.",
+      "accept": "I accept",
+      "accepted_at": "Accepted at {ts}"
+    },
+    "region_plan": {
+      "title": "Choose region and plan",
+      "region_label": "Region",
+      "plan_label": "Plan",
+      "submit": "Continue"
+    },
+    "billing": {
+      "title": "Set up billing",
+      "submit": "Save payment method",
+      "skipped_free": "Free plan: no payment required."
+    },
+    "pat": {
+      "title": "Create your first personal access token",
+      "label_label": "Token name",
+      "scope_label": "Scope",
+      "expiry_label": "Expiry",
+      "submit": "Generate token",
+      "modal_title": "Save this token now",
+      "modal_warning": "This token will be shown only once. Store it securely; we cannot retrieve it again.",
+      "copy": "Copy to clipboard",
+      "confirm_saved": "I have saved this token securely",
+      "finish": "Continue"
+    },
+    "done": {
+      "title": "You're all set",
+      "cta": "Get started"
+    }
+  }
+}
