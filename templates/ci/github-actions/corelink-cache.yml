@@ -1,0 +1,120 @@
+# CoreLink Remote Cache — GitHub Actions Template
+# ─────────────────────────────────────────────────────────────────────────────
+# COPY THIS FILE to: .github/workflows/corelink-cache.yml
+#
+# Prerequisites:
+#   1. Add CORELINK_PAT to your repository secrets
+#      (Settings → Secrets and variables → Actions → New repository secret).
+#   2. Replace <YOUR_TENANT_ID> with your CoreLink tenant slug.
+#   3. For Buck2: uncomment the Buck2 block and comment out the Bazel block.
+#
+# Security (CTRL-CRED-001): CORELINK_PAT is passed via environment variable only.
+# It is NEVER placed in command-line arguments (prevents `ps aux` credential leak).
+# The credential helper reads CORELINK_PAT from the environment and emits a
+# Bazel JSON response to stdout per https://bazel.build/docs/credential-helper.
+#
+# Cache hit ratio: emitted to GitHub Actions step summary after the build.
+# Inspect: Actions → <workflow run> → Summary.
+#
+# References: WI-S15-005, CAP-SDK-004, R-S15-12, R-S15-13.
+# SHA-pins: see each `uses:` action below.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Bazel Build with CoreLink Remote Cache
+
+on:
+  push:
+    branches: [main, "release/**"]
+  pull_request:
+
+jobs:
+  build:
+    name: Build (Bazel + CoreLink)
+    runs-on: ubuntu-latest
+
+    # Permissions: read-only is sufficient for the build job.
+    permissions:
+      contents: read
+
+    steps:
+      # ── Checkout ────────────────────────────────────────────────────────────
+      - name: Checkout
+        # SHA-pin: actions/checkout@v4 (2026-05-14 canonical)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      # ── Bazelisk ────────────────────────────────────────────────────────────
+      - name: Set up Bazelisk
+        # SHA-pin: bazelbuild/setup-bazelisk@v3 (2026-05-14 canonical)
+        uses: bazelbuild/setup-bazelisk@95c9bf48d0c570d3552f43cdc1d4ecb62a0d2b52  # v3.0.0
+
+      # ── Credential helper ────────────────────────────────────────────────────
+      # The script reads CORELINK_PAT from env and writes a Bazel JSON credential
+      # response to stdout. No secrets in argv (CTRL-CRED-001).
+      - name: Install CoreLink credential helper
+        run: |
+          mkdir -p .bazel
+          cat > .bazel/corelink-credential-helper.sh << 'HELPER'
+          #!/usr/bin/env bash
+          # CoreLink Bazel credential helper (Bazel 6+ protocol).
+          # Reads CORELINK_PAT from environment; writes JSON to stdout.
+          # NEVER echoes PAT to stderr or accepts it via argv.
+          set -euo pipefail
+          if [[ -z "${CORELINK_PAT:-}" ]]; then
+            echo '{"headers":{}}' >&1
+            exit 0
+          fi
+          printf '{"headers":{"Authorization":["Bearer %s"]}}\n' "${CORELINK_PAT}"
+          HELPER
+          chmod +x .bazel/corelink-credential-helper.sh
+
+      # ── Bazel build with CoreLink remote cache ──────────────────────────────
+      - name: Bazel build with CoreLink remote cache
+        env:
+          # Secret injected via GitHub Actions encrypted secret — never in args.
+          CORELINK_PAT: ${{ secrets.CORELINK_PAT }}
+        run: |
+          bazel build //... \
+            --remote_cache=https://<YOUR_TENANT_ID>.corelink.dev/v1/cache \
+            --credential_helper=%workspace%/.bazel/corelink-credential-helper.sh \
+            --remote_timeout=30 \
+            --remote_retries=2 \
+            --build_event_json_file=bazel-out/bep.json
+
+      # ── Buck2 alternative (uncomment to use instead of Bazel) ───────────────
+      # - name: Buck2 build with CoreLink remote cache
+      #   env:
+      #     CORELINK_PAT: ${{ secrets.CORELINK_PAT }}
+      #   run: |
+      #     buck2 build //... \
+      #       --config repository.remote_cache_url=https://<YOUR_TENANT_ID>.corelink.dev/v1/cache \
+      #       --config repository.remote_cache_auth_header="Bearer ${CORELINK_PAT}"
+      #   # See: examples/buck2-starter (WI-S15-003)
+
+      # ── Cache hit ratio ──────────────────────────────────────────────────────
+      - name: Report CoreLink cache hit ratio
+        if: always()
+        run: |
+          BEP=bazel-out/bep.json
+          if [[ ! -f "${BEP}" ]]; then
+            echo "## CoreLink Cache: no BEP log found" >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+          TOTAL=$(jq -s '[.[] | select(.actionExecuted != null)] | length' "${BEP}")
+          HITS=$(jq -s '[.[] | select(.actionExecuted.cachedRemotely == true)] | length' "${BEP}")
+          if [[ "${TOTAL}" -gt 0 ]]; then
+            RATIO=$(awk "BEGIN { printf \"%.1f\", (${HITS}/${TOTAL})*100 }")
+          else
+            RATIO="N/A (no actions)"
+          fi
+          {
+            echo "## CoreLink Cache Hit Ratio"
+            echo ""
+            echo "| Metric | Value |"
+            echo "|--------|-------|"
+            echo "| Cache hits | ${HITS} |"
+            echo "| Total actions | ${TOTAL} |"
+            echo "| Hit ratio | ${RATIO}% |"
+            echo ""
+            echo "_Remote cache: \`https://<YOUR_TENANT_ID>.corelink.dev/v1/cache\`_"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          echo "cache_hit_ratio=${RATIO}" >> "${GITHUB_OUTPUT}"

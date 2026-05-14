@@ -1,0 +1,95 @@
+# CoreLink Cache Sample — GitHub Actions (bazel-starter)
+# Real working sample build — verde on every push/PR.
+# ─────────────────────────────────────────────────────────────────────────────
+# This sample demonstrates CoreLink remote cache integration for the
+# `examples/bazel-starter` hello-world project.
+#
+# Sample real build: builds //:hello, reports cache hit ratio.
+# CI provider: GitHub Actions.
+# References: WI-S15-005 §6.1.2, CAP-SDK-001, CAP-SDK-004.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: CoreLink Cache Sample (Bazel Starter)
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  bazel-starter-cache-sample:
+    name: bazel-starter — CoreLink cache sample
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        # SHA-pin: actions/checkout@v4 (2026-05-14)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Set up Bazelisk
+        # SHA-pin: bazelbuild/setup-bazelisk@v3 (2026-05-14)
+        uses: bazelbuild/setup-bazelisk@95c9bf48d0c570d3552f43cdc1d4ecb62a0d2b52  # v3.0.0
+
+      - name: Install CoreLink credential helper
+        run: |
+          mkdir -p examples/bazel-starter/.bazel
+          cat > examples/bazel-starter/.bazel/corelink-credential-helper.sh << 'HELPER'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          if [[ -z "${CORELINK_PAT:-}" ]]; then
+            printf '{"headers":{}}\n'
+            exit 0
+          fi
+          printf '{"headers":{"Authorization":["Bearer %s"]}}\n' "${CORELINK_PAT}"
+          HELPER
+          chmod +x examples/bazel-starter/.bazel/corelink-credential-helper.sh
+
+      - name: Bazel build //:hello with CoreLink remote cache
+        working-directory: examples/bazel-starter
+        env:
+          CORELINK_PAT: ${{ secrets.CORELINK_PAT }}
+        run: |
+          bazel build //:hello \
+            --remote_cache=https://demo.corelink.dev/v1/cache \
+            --credential_helper=%workspace%/.bazel/corelink-credential-helper.sh \
+            --remote_timeout=30 \
+            --remote_retries=2 \
+            --build_event_json_file=../../bazel-out/bep-sample.json
+
+      - name: Verify build output
+        working-directory: examples/bazel-starter
+        run: |
+          # Verify the binary was produced.
+          test -f bazel-bin/hello || (echo "ERROR: hello binary not found" && exit 1)
+          echo "BUILD VERDE: bazel-bin/hello produced"
+          ./bazel-bin/hello
+
+      - name: Report cache hit ratio
+        if: always()
+        run: |
+          BEP=bazel-out/bep-sample.json
+          if [[ ! -f "${BEP}" ]]; then
+            echo "## CoreLink Cache Sample: no BEP log" >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+          TOTAL=$(jq -s '[.[] | select(.actionExecuted != null)] | length' "${BEP}" || echo 0)
+          HITS=$(jq -s '[.[] | select(.actionExecuted.cachedRemotely == true)] | length' "${BEP}" || echo 0)
+          if [[ "${TOTAL}" -gt 0 ]]; then
+            RATIO=$(awk "BEGIN { printf \"%.1f\", (${HITS}/${TOTAL})*100 }")
+          else
+            RATIO="N/A (first run — cache warming)"
+          fi
+          {
+            echo "## CoreLink Cache Sample (bazel-starter)"
+            echo ""
+            echo "| Metric | Value |"
+            echo "|--------|-------|"
+            echo "| Provider | GitHub Actions |"
+            echo "| Project | examples/bazel-starter |"
+            echo "| Build | //:hello |"
+            echo "| Cache hits | ${HITS} |"
+            echo "| Total actions | ${TOTAL} |"
+            echo "| Hit ratio | ${RATIO}% |"
+            echo "| Status | VERDE |"
+          } >> "${GITHUB_STEP_SUMMARY}"

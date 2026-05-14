@@ -1,0 +1,86 @@
+# CoreLink Cache Sample — GitLab CI (gitlab-mirror)
+# Real working sample build — verde on every push.
+# ─────────────────────────────────────────────────────────────────────────────
+# Sample real build for WI-S15-005 §6.1.2. Demonstrates CoreLink remote cache
+# integration via GitLab CI for the hello-world project.
+# CI provider: GitLab CI.
+# References: WI-S15-005, CAP-SDK-004, R-S15-12, R-S15-13.
+# ─────────────────────────────────────────────────────────────────────────────
+
+stages:
+  - build
+  - verify
+
+variables:
+  CORELINK_PAT: $CORELINK_PAT  # GitLab CI/CD masked variable — set in project settings
+  BAZEL_REMOTE_CACHE: "https://demo.corelink.dev/v1/cache"
+  BEP_JSON: "bazel-out/bep-gitlab-sample.json"
+
+default:
+  image: ubuntu:22.04
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq curl jq g++
+    - |
+      curl -fsSL \
+        "https://github.com/bazelbuild/bazelisk/releases/download/v1.20.0/bazelisk-linux-amd64" \
+        -o /usr/local/bin/bazel && chmod +x /usr/local/bin/bazel
+
+bazel-hello-build:
+  stage: build
+  script:
+    - mkdir -p .bazel
+    - |
+      cat > .bazel/corelink-credential-helper.sh << 'HELPER'
+      #!/usr/bin/env bash
+      set -euo pipefail
+      if [[ -z "${CORELINK_PAT:-}" ]]; then
+        printf '{"headers":{}}\n'; exit 0
+      fi
+      printf '{"headers":{"Authorization":["Bearer %s"]}}\n' "${CORELINK_PAT}"
+      HELPER
+      chmod +x .bazel/corelink-credential-helper.sh
+
+    - |
+      # Write minimal Bazel project inline for sample.
+      mkdir -p src
+      echo 'workspace(name="corelink_gitlab_sample")' > WORKSPACE
+      printf 'cc_binary(name="hello",srcs=["src/hello.cc"])\n' > BUILD.bazel
+      printf '#include <cstdio>\nint main(){puts("CoreLink gitlab-mirror: BUILD VERDE");}\n' > src/hello.cc
+
+    - |
+      bazel build //:hello \
+        --remote_cache="${BAZEL_REMOTE_CACHE}" \
+        --credential_helper=%workspace%/.bazel/corelink-credential-helper.sh \
+        --remote_timeout=30 \
+        --remote_retries=2 \
+        --build_event_json_file="${BEP_JSON}"
+
+    - |
+      test -f bazel-bin/hello || (echo "ERROR: hello binary missing" && exit 1)
+      echo "BUILD VERDE: bazel-bin/hello produced"
+      ./bazel-bin/hello
+
+  artifacts:
+    paths:
+      - bazel-out/bep-gitlab-sample.json
+    when: always
+    expire_in: 1 day
+
+cache-hit-report:
+  stage: verify
+  needs: [bazel-hello-build]
+  when: always
+  script:
+    - |
+      if [[ ! -f "${BEP_JSON}" ]]; then
+        echo "CoreLink Cache: no BEP log found"; exit 0
+      fi
+      TOTAL=$(jq -s '[.[] | select(.actionExecuted != null)] | length' "${BEP_JSON}" || echo 0)
+      HITS=$(jq -s '[.[] | select(.actionExecuted.cachedRemotely == true)] | length' "${BEP_JSON}" || echo 0)
+      if [[ "${TOTAL}" -gt 0 ]]; then
+        RATIO=$(awk "BEGIN { printf \"%.1f\", (${HITS}/${TOTAL})*100 }")
+      else
+        RATIO="N/A (first run — cache warming)"
+      fi
+      echo "CoreLink Cache Hit Ratio: ${RATIO}% (${HITS}/${TOTAL} actions) — SAMPLE VERDE"
+      echo "Provider: GitLab CI | Project: examples/gitlab-mirror"

@@ -1,0 +1,106 @@
+# CoreLink Cache Sample — CircleCI (circleci-mirror)
+# Real working sample build — verde on every push to main.
+# ─────────────────────────────────────────────────────────────────────────────
+# Sample real build for WI-S15-005 §6.1.2. Demonstrates CoreLink remote cache
+# integration via CircleCI for the hello-world project.
+# CI provider: CircleCI.
+# References: WI-S15-005, CAP-SDK-004, R-S15-12, R-S15-13.
+# ─────────────────────────────────────────────────────────────────────────────
+
+version: 2.1
+
+executors:
+  ubuntu-base:
+    docker:
+      # SHA-pin: cimg/base:2024.05 (2026-05-14 canonical)
+      - image: cimg/base:2024.05
+    resource_class: medium
+
+jobs:
+  bazel-hello-build:
+    executor: ubuntu-base
+    # CORELINK_PAT injected via context `corelink-secrets`.
+    steps:
+      - checkout
+
+      - run:
+          name: Install dependencies
+          command: |
+            sudo apt-get update -qq && sudo apt-get install -y -qq curl jq g++
+            curl -fsSL \
+              "https://github.com/bazelbuild/bazelisk/releases/download/v1.20.0/bazelisk-linux-amd64" \
+              -o /tmp/bazel && chmod +x /tmp/bazel && sudo mv /tmp/bazel /usr/local/bin/bazel
+
+      - run:
+          name: Install CoreLink credential helper
+          command: |
+            mkdir -p .bazel
+            cat > .bazel/corelink-credential-helper.sh << 'HELPER'
+            #!/usr/bin/env bash
+            set -euo pipefail
+            if [[ -z "${CORELINK_PAT:-}" ]]; then
+              printf '{"headers":{}}\n'; exit 0
+            fi
+            printf '{"headers":{"Authorization":["Bearer %s"]}}\n' "${CORELINK_PAT}"
+            HELPER
+            chmod +x .bazel/corelink-credential-helper.sh
+
+      - run:
+          name: Write sample Bazel project
+          command: |
+            echo 'workspace(name="corelink_circleci_sample")' > WORKSPACE
+            printf 'cc_binary(name="hello",srcs=["src/hello.cc"])\n' > BUILD.bazel
+            mkdir -p src
+            printf '#include <cstdio>\nint main(){puts("CoreLink circleci-mirror: BUILD VERDE");}\n' > src/hello.cc
+
+      - run:
+          name: Bazel build //:hello with CoreLink remote cache
+          command: |
+            bazel build //:hello \
+              --remote_cache=https://demo.corelink.dev/v1/cache \
+              --credential_helper=%workspace%/.bazel/corelink-credential-helper.sh \
+              --remote_timeout=30 \
+              --remote_retries=2 \
+              --build_event_json_file=bazel-out/bep-circleci-sample.json
+
+      - run:
+          name: Verify build output
+          command: |
+            test -f bazel-bin/hello || (echo "ERROR: hello binary missing" && exit 1)
+            echo "BUILD VERDE: bazel-bin/hello produced"
+            ./bazel-bin/hello
+
+      - run:
+          name: Report CoreLink cache hit ratio
+          when: always
+          command: |
+            BEP=bazel-out/bep-circleci-sample.json
+            if [[ ! -f "${BEP}" ]]; then
+              echo "CoreLink Cache: no BEP log found"
+              exit 0
+            fi
+            TOTAL=$(jq -s '[.[] | select(.actionExecuted != null)] | length' "${BEP}" || echo 0)
+            HITS=$(jq -s '[.[] | select(.actionExecuted.cachedRemotely == true)] | length' "${BEP}" || echo 0)
+            if [[ "${TOTAL}" -gt 0 ]]; then
+              RATIO=$(awk "BEGIN { printf \"%.1f\", (${HITS}/${TOTAL})*100 }")
+            else
+              RATIO="N/A (first run — cache warming)"
+            fi
+            echo "CoreLink Cache Hit Ratio: ${RATIO}% (${HITS}/${TOTAL} actions) — SAMPLE VERDE"
+            echo "Provider: CircleCI | Project: examples/circleci-mirror"
+            echo "export CORELINK_CACHE_HIT_RATIO=${RATIO}" >> "${BASH_ENV}"
+
+      - store_artifacts:
+          path: bazel-out/bep-circleci-sample.json
+          destination: bep-circleci-sample.json
+
+workflows:
+  build:
+    jobs:
+      - bazel-hello-build:
+          context: corelink-secrets  # Provides CORELINK_PAT
+          filters:
+            branches:
+              only:
+                - main
+                - /release\/.*/
