@@ -2,10 +2,15 @@
 id: "ADR-0037"
 type: "adr"
 doc_status: "ACTIVE"
+audit_status: "ACTIVE"
 version: "1.0.0"
 created: "2026-05-13"
 updated: "2026-05-13"
 owner: "Gustavo Schneiter"
+final_approver: "Gustavo Schneiter"
+reviewers: []
+supersedes: null
+superseded_by: null
 tags: ["adr", "s12", "supply-chain", "dependency-track", "cve-alerts", "self-host", "neon-postgres", "webhook", "high-risk"]
 ---
 

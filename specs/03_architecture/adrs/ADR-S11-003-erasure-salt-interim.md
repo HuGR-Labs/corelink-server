@@ -1,16 +1,20 @@
 ---
 id: "ADR-S11-003"
 title: "Erasure salt management interim — per-tenant random salt em D1 vault encrypted (S-11 a S-13); BYOK KMS final solution deferred to S-14"
-status: "ACCEPTED"
-date: "2026-04-29"
-tags: ["adr", "s-11", "privacy", "erasure", "byok", "kms", "interim"]
-deciders:
-  - "Gustavo Schneiter (owner / final approver)"
-  - "Privacy Officer (interim Gustavo até hire)"
-  - "Compliance Officer"
-sup​ersedes: null
+type: "adr"
+doc_status: "SEALED"
+audit_status: "ACTIVE"
+version: "1.0.0"
+created: "2026-04-29"
+updated: "2026-04-29"
+owner: "Gustavo Schneiter"
+final_approver: "Gustavo Schneiter"
+reviewers:
+  - { role: "privacy_lead", name: "Privacy Officer (interim Gustavo até hire)" }
+  - { role: "compliance", name: "Compliance Officer" }
+supersedes: null
 superseded_by: null
-parent: "WI-S11-002"
+tags: ["adr", "s-11", "privacy", "erasure", "byok", "kms", "interim"]
 ---
 
 # ADR-S11-003 — Erasure salt management interim

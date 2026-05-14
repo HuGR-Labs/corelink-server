@@ -1,17 +1,21 @@
 ---
 id: "ADR-S11-004"
 title: "Cross-backend erasure pipeline is eventual-consistency (NOT atomic 2PC) with 24h verification window gating dsr.completed.v1"
-status: "ACCEPTED"
-date: "2026-04-29"
-tags: ["adr", "s-11", "privacy", "erasure", "eventual-consistency", "verification"]
-deciders:
-  - "Gustavo Schneiter (owner / final approver)"
-  - "Architect"
-  - "Privacy Officer (interim Gustavo até hire)"
-  - "Compliance Officer"
-sup​ersedes: null
+type: "adr"
+doc_status: "SEALED"
+audit_status: "ACTIVE"
+version: "1.0.0"
+created: "2026-04-29"
+updated: "2026-04-29"
+owner: "Gustavo Schneiter"
+final_approver: "Gustavo Schneiter"
+reviewers:
+  - { role: "architect", name: "Architect" }
+  - { role: "privacy_lead", name: "Privacy Officer (interim Gustavo até hire)" }
+  - { role: "compliance", name: "Compliance Officer" }
+supersedes: null
 superseded_by: null
-parent: "WI-S11-002"
+tags: ["adr", "s-11", "privacy", "erasure", "eventual-consistency", "verification"]
 ---
 
 # ADR-S11-004 — Cross-backend eventual consistency

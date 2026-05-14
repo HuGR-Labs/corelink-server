@@ -2,11 +2,15 @@
 id: "ADR-S11-007"
 type: "adr"
 doc_status: "ACTIVE"
+audit_status: "ACTIVE"
 version: "1.0.0"
 created: "2026-05-13"
 updated: "2026-05-13"
-parent: "WI-S11-004"
 owner: "Gustavo Schneiter"
+final_approver: "Gustavo Schneiter"
+reviewers: []
+supersedes: null
+superseded_by: null
 tags: ["adr", "s11", "privacy-notice", "semver", "material-change", "minor-change", "ctrl-priv-consent-005"]
 ---
 

@@ -1,16 +1,20 @@
 ---
 id: "ADR-S11-012"
 title: "TLA+ Scope Discipline S-11: dsr_erasure_atomicity covers erasure + consent + PARTIAL residency; FULL region_residency.tla deferred to S-14"
-status: "ACCEPTED"
-date: "2026-05-13"
-tags: ["adr", "s-11", "tla-plus", "formal-verification", "scope-discipline", "residency"]
-deciders:
-  - "Gustavo Schneiter (owner / final approver)"
-  - "Architect"
-  - "Privacy Officer (interim Gustavo até hire)"
+type: "adr"
+doc_status: "SEALED"
+audit_status: "ACTIVE"
+version: "1.0.0"
+created: "2026-05-13"
+updated: "2026-05-13"
+owner: "Gustavo Schneiter"
+final_approver: "Gustavo Schneiter"
+reviewers:
+  - { role: "architect", name: "Architect" }
+  - { role: "privacy_lead", name: "Privacy Officer (interim Gustavo até hire)" }
 supersedes: null
 superseded_by: null
-parent: "S-11"
+tags: ["adr", "s-11", "tla-plus", "formal-verification", "scope-discipline", "residency"]
 ---
 
 # ADR-S11-012 — TLA+ Scope Discipline: S-11 `dsr_erasure_atomicity.tla` (REVISED Lote 10.11.0-bis-prime cycle 3)

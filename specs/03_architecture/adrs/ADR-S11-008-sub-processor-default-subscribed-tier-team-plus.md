@@ -1,12 +1,16 @@
 ---
 id: "ADR-S11-008"
 type: "adr"
-doc_status: "ACCEPTED"
+doc_status: "SEALED"
+audit_status: "ACTIVE"
 version: "2.0.0"
 created: "2026-04-26"
 updated: "2026-05-13"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
+reviewers: []
+supersedes: null
+superseded_by: null
 tags: ["adr", "s11", "sub-processor", "notification", "gdpr", "lgpd", "legal-obligation"]
 ---
 
