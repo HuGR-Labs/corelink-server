@@ -1,11 +1,11 @@
 ---
 id: "SPEC-CONTRACT-S20"
 type: "spec_contract"
-doc_status: "DRAFT"
+doc_status: "SEALED"
 audit_status: "ACTIVE"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-04-24"
-updated: "2026-04-29"
+updated: "2026-05-14"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -327,6 +327,17 @@ Itens waivable com 14-canonical-source sign-off + ADR + CEO/Founder approval (Lo
 
 ---
 
+## 20. Changelog
+
+| Versão | Data | Autor | Mudança |
+|---|---|---|---|
+| 1.0.0 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | Criação spec contract S-20 — GA Readiness HIGH_RISK lane FF-HR-005/009/010; 8 WIs antecipados; PRR global + external pentest + SOC 2 gap + 3 lighthouse customers + 30d sustained staging + SLA + 24/7 oncall + TLA+ + SBOM + launch orchestration separated. |
+| 1.1.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | SOTA v1.1 — codex findings remediation (14 canonical sources count; CycloneDX 1.5+; 4-week sprint + 10d buffer; marketing separated). |
+| 1.2.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | Lote 10.20 codex P0 canonical fixes — 13 sign-offs canonical count alignment §5.1; lighthouse + SLA + SBOM waivers REMOVED from §19; P0/P1 priority subset ~25 of 47 runbooks math fix §6.1/§9; CAP-LAUNCH-001 explicit exclusion from §10.s20.3; engineering/launch separation §10.s20.9. |
+| 1.3.0 | 2026-05-14 | Gustavo (via Sonnet WI-S20-001 builder) | **WI-S20-001 SEALED** — PRR-S20-GA global PRR doc + 14 canonical sources verification matrix + 13 canonical sign-off slots (5 signed at Impl SEAL dual-hat per ADR-0034 Option A; 8 pending external advisor pool per ADR-0034 Option C — minimum 5 of 8 required for GA-go per WI §6.2 NP4); per-sprint S-00..S-19 SEAL status (20/20 impl-sealed tags); Engineering Gate DoD checklist; per-sprint waivers carried into GA + S-20 native waivers; GA-blocker registry; risk acceptance matrix; promotion gate decision binary CONDITIONALLY_APPROVED (= block GA per §10.s20). Coverage audit `specs/_audits/2026-05-14-s20-prr-global-coverage.md` annexed. doc_status DRAFT → SEALED; spec contract v1.2.0 → v1.3.0. Remaining 7 Engineering Gate WIs (WI-S20-002..007) enter parallel-wave staffing window; WI-S20-008 launch orchestration tracked separately per §6.2 soft-gate. |
+
+---
+
 **Post-GA:** Sprint S-21+ começam Fase 2 (Remote Execution — `execute-action`, executor identity, sandbox runtime), abrindo novo ciclo de 10+ sprints.
 
-**Fim spec contract S-20 v1.1.0 SOTA.**
+**Fim spec contract S-20 v1.3.0 SEALED.**
