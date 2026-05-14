@@ -87,13 +87,13 @@ export function clearState(storage?: StorageLike | null): void {
 export function nextStep(step: OnboardingStep): OnboardingStep {
   const idx = ALL_STEPS.indexOf(step);
   if (idx < 0 || idx === ALL_STEPS.length - 1) return step;
-  return ALL_STEPS[idx + 1];
+  return ALL_STEPS[idx + 1]!;
 }
 
 export function prevStep(step: OnboardingStep): OnboardingStep {
   const idx = ALL_STEPS.indexOf(step);
   if (idx <= 0) return step;
-  return ALL_STEPS[idx - 1];
+  return ALL_STEPS[idx - 1]!;
 }
 
 /**

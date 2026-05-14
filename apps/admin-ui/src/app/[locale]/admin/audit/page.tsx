@@ -7,7 +7,6 @@ import { adminClient } from "@/lib/admin-client";
 
 export default function AdminAuditPage(): React.ReactElement {
   return (
-    // @ts-expect-error — server component returning Promise<ReactElement>.
     <RbacGuard>
       <main aria-labelledby="audit-heading">
         <h1 id="audit-heading">Audit log</h1>

@@ -25,8 +25,9 @@ async function loadHtml2Canvas(): Promise<Html2CanvasFn> {
   if (html2canvasImpl) return html2canvasImpl;
   // Dynamic import keeps html2canvas out of the SSR bundle.
   const mod = await import("html2canvas");
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const fn = (mod as any).default ?? (mod as unknown as Html2CanvasFn);
+  const fn =
+    (mod as unknown as { default?: Html2CanvasFn }).default ??
+    (mod as unknown as Html2CanvasFn);
   html2canvasImpl = fn as Html2CanvasFn;
   return html2canvasImpl;
 }

@@ -36,11 +36,13 @@ describe("SubProcessorsPage", () => {
       .getAllByRole("button")
       .filter((b) => b.textContent?.toLowerCase().includes("name") || b.textContent?.toLowerCase().includes("region"));
     expect(sortBtns.length).toBeGreaterThan(0);
-    sortBtns[0].focus();
-    expect(sortBtns[0]).toHaveFocus();
+    const firstBtn = sortBtns[0];
+    if (!firstBtn) throw new Error("unreachable: no sort buttons matched");
+    firstBtn.focus();
+    expect(firstBtn).toHaveFocus();
     await userEvent.tab();
     // Some other focusable element should now have focus.
-    expect(document.activeElement).not.toBe(sortBtns[0]);
+    expect(document.activeElement).not.toBe(firstBtn);
   });
 
   it("produces valid CSV", () => {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import type { ConsentRow } from "@/lib/consent-types";
 import type { ConsentApi } from "@/lib/consent-api";
 import { defaultConsentApi } from "@/lib/consent-api";
@@ -69,8 +70,8 @@ export function ConsentDashboard({ api = defaultConsentApi }: ConsentDashboardPr
         </table>
       )}
       <p>
-        <a href="/consent/new">Grant a new consent</a> ·{" "}
-        <a href="/consent/history">View history</a>
+        <Link href="/consent/new">Grant a new consent</Link> ·{" "}
+        <Link href="/consent/history">View history</Link>
       </p>
     </section>
   );

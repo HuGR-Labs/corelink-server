@@ -36,8 +36,11 @@ function b64UrlToBytes(s: string): Uint8Array {
 export function decodeJwtReceipt(jwt: string): DecodedJwt {
   const parts = jwt.split(".");
   if (parts.length < 2) throw new Error("invalid_jwt");
-  const header = JSON.parse(b64UrlDecode(parts[0])) as Record<string, unknown>;
-  const payload = JSON.parse(b64UrlDecode(parts[1])) as JwtReceiptClaims;
+  const rawHeader = parts[0];
+  const rawPayload = parts[1];
+  if (rawHeader === undefined || rawPayload === undefined) throw new Error("invalid_jwt");
+  const header = JSON.parse(b64UrlDecode(rawHeader)) as Record<string, unknown>;
+  const payload = JSON.parse(b64UrlDecode(rawPayload)) as JwtReceiptClaims;
   return { header, payload };
 }
 
@@ -46,7 +49,9 @@ export function decodeJwtPayload(token: string): DsrReceiptPayload | null {
   try {
     const parts = token.split(".");
     if (parts.length !== 3) return null;
-    const bytes = b64UrlToBytes(parts[1]);
+    const rawPayload = parts[1];
+    if (rawPayload === undefined) return null;
+    const bytes = b64UrlToBytes(rawPayload);
     const json = new TextDecoder().decode(bytes);
     const obj = JSON.parse(json) as Partial<DsrReceiptPayload>;
     if (

@@ -15,7 +15,6 @@ export default async function AdminOpsPage(): Promise<React.ReactElement> {
   }
 
   return (
-    // @ts-expect-error — server component returning Promise<ReactElement>.
     <RbacGuard>
       <main aria-labelledby="ops-heading">
         <h1 id="ops-heading">Sensitive operations queue</h1>

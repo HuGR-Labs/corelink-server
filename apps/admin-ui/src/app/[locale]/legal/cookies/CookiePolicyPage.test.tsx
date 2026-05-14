@@ -31,7 +31,9 @@ describe("CookiePolicyPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "Save consent" }));
 
     await waitFor(() => expect(fetchImpl).toHaveBeenCalledOnce());
-    const [, init] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    const call = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    if (!call) throw new Error("unreachable: fetchImpl was not called");
+    const [, init] = call;
     expect(init.method).toBe("POST");
     const body = JSON.parse(init.body as string);
     expect(body).toEqual({ functional: true, analytics: true, marketing: false });

@@ -7,7 +7,7 @@ export async function sha256Hex(text: string): Promise<string> {
   const bytes = new Uint8Array(buf);
   let out = "";
   for (let i = 0; i < bytes.length; i += 1) {
-    out += bytes[i].toString(16).padStart(2, "0");
+    out += bytes[i]!.toString(16).padStart(2, "0");
   }
   return out;
 }

@@ -20,7 +20,6 @@ export default async function AdminTenantPage({
   }
 
   return (
-    // @ts-expect-error — server component returning Promise<ReactElement>.
     <RbacGuard>
       <main>
         <h1>Tenant {params.tenant_id}</h1>

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import userEvent from "@testing-library/user-event";
+import Link from "next/link";
 import { renderWithProviders, screen } from "@/test-utils/render";
 import { axe } from "@/test-utils/axe";
 import { Button } from "./Button";
@@ -29,7 +30,7 @@ describe("Button", () => {
   it("supports asChild slot composition", () => {
     renderWithProviders(
       <Button asChild>
-        <a href="/x">link</a>
+        <Link href="/x">link</Link>
       </Button>
     );
     expect(screen.getByRole("link", { name: "link" })).toHaveAttribute("href", "/x");

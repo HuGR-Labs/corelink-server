@@ -15,7 +15,7 @@ import {
 function makeStorage(): StorageLike & { dump: () => Record<string, string> } {
   const data: Record<string, string> = {};
   return {
-    getItem: (k) => (k in data ? data[k] : null),
+    getItem: (k) => (k in data ? (data[k] ?? null) : null),
     setItem: (k, v) => {
       data[k] = v;
     },

@@ -56,7 +56,7 @@ const LABELS: Record<string, Record<string, string>> = {
 };
 
 function labelsFor(locale: string): Record<string, string> {
-  return LABELS[locale] ?? LABELS["en-US"];
+  return LABELS[locale] ?? LABELS["en-US"]!;
 }
 
 export const ConsentForm = forwardRef<HTMLDivElement, ConsentFormProps>(

@@ -27,13 +27,13 @@ describe("Status list pagination (Test 10)", () => {
     expect(
       screen.getByTestId("dsr-status-page-indicator"),
     ).toHaveTextContent("Page 1");
-    expect(screen.getByTestId(`dsr-row-${page1.items[0].request_id}`)).toBeInTheDocument();
+    expect(screen.getByTestId(`dsr-row-${page1.items[0]!.request_id}`)).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("dsr-status-next"));
     expect(
       screen.getByTestId("dsr-status-page-indicator"),
     ).toHaveTextContent("Page 2");
     expect(
-      screen.getByTestId(`dsr-row-${page2.items[0].request_id}`),
+      screen.getByTestId(`dsr-row-${page2.items[0]!.request_id}`),
     ).toBeInTheDocument();
   });
 

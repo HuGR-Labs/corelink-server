@@ -57,6 +57,7 @@
     "axe-core": "^4.10.2",
     "eslint": "9.21.0",
     "eslint-config-next": "15.2.3",
+    "happy-dom": "^20.9.0",
     "jest-axe": "^9.0.0",
     "jsdom": "^26.0.0",
     "postcss": "8.5.3",

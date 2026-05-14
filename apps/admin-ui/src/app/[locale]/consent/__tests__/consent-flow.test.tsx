@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment happy-dom
+ */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ConsentCaptureFlow } from "@/components/consent/ConsentCaptureFlow";
@@ -39,11 +42,74 @@ function stubScreenshot(includeText: string[]): void {
   });
 }
 
-beforeEach(() => {
+// Snapshot the IntersectionObserver that may be provided by the active DOM
+// shim. The ScrollToBottomGuard tests below rely on a synthetic `scroll`
+// event firing the "reach bottom" callback — to make that deterministic in
+// happy-dom we install a stub that:
+//   1. lets next/link's prefetch hook obtain an IO instance (so <Link> doesn't
+//      crash with ReferenceError), and
+//   2. fires its callback with `intersectionRatio: 1` on a `scroll` event,
+//      which is what test code dispatches to simulate scroll-to-end.
+const ORIGINAL_IO: unknown = (globalThis as { IntersectionObserver?: unknown })
+  .IntersectionObserver;
+
+class ScrollDrivenIO {
+  callback: IntersectionObserverCallback;
+  targets: Element[] = [];
+  scrollHandler: () => void;
+  constructor(cb: IntersectionObserverCallback) {
+    this.callback = cb;
+    this.scrollHandler = () => {
+      const entries = this.targets.map(
+        (t) =>
+          ({
+            isIntersecting: true,
+            intersectionRatio: 1,
+            target: t,
+            boundingClientRect: t.getBoundingClientRect(),
+            intersectionRect: t.getBoundingClientRect(),
+            rootBounds: null,
+            time: 0,
+          }) as unknown as IntersectionObserverEntry,
+      );
+      this.callback(entries, this as unknown as IntersectionObserver);
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("scroll", this.scrollHandler);
+    }
+  }
+  observe(target: Element): void {
+    this.targets.push(target);
+  }
+  unobserve(target: Element): void {
+    this.targets = this.targets.filter((t) => t !== target);
+  }
+  disconnect(): void {
+    this.targets = [];
+    if (typeof window !== "undefined") {
+      window.removeEventListener("scroll", this.scrollHandler);
+    }
+  }
+  takeRecords(): IntersectionObserverEntry[] {
+    return [];
+  }
+  root: Element | Document | null = null;
+  rootMargin = "";
+  thresholds: ReadonlyArray<number> = [];
+}
+
+beforeEach(async () => {
   // Ensure Web Crypto subtle is available (happy-dom provides it; safety guard).
   if (typeof crypto === "undefined" || !crypto.subtle) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).crypto = require("node:crypto").webcrypto;
+    const nodeCrypto = await import("node:crypto");
+    (globalThis as unknown as { crypto: Crypto }).crypto =
+      nodeCrypto.webcrypto as unknown as Crypto;
+  }
+  (globalThis as { IntersectionObserver?: unknown }).IntersectionObserver =
+    ScrollDrivenIO;
+  if (typeof window !== "undefined") {
+    (window as unknown as { IntersectionObserver?: unknown }).IntersectionObserver =
+      ScrollDrivenIO;
   }
   clearCookies();
   setCookie("corelink_locale", LOCALE_PT);
@@ -53,6 +119,11 @@ beforeEach(() => {
 afterEach(() => {
   __setHtml2Canvas(null);
   vi.restoreAllMocks();
+  (globalThis as { IntersectionObserver?: unknown }).IntersectionObserver = ORIGINAL_IO;
+  if (typeof window !== "undefined") {
+    (window as unknown as { IntersectionObserver?: unknown }).IntersectionObserver =
+      ORIGINAL_IO;
+  }
 });
 
 describe("ConsentCaptureFlow — 6 fields + a11y", () => {
@@ -224,10 +295,9 @@ describe("Screenshot evidence (EVT-012)", () => {
 
     const payload = state.grantCalls[0] as { screenshot_evidence_base64: string };
     expect(payload.screenshot_evidence_base64).toMatch(/^data:image\/png;base64,/);
-    const flagsPayload = Buffer.from(
-      payload.screenshot_evidence_base64.split(",")[1],
-      "base64",
-    ).toString("utf8");
+    const base64Part = payload.screenshot_evidence_base64.split(",")[1];
+    if (!base64Part) throw new Error("unreachable: screenshot has no base64 payload");
+    const flagsPayload = Buffer.from(base64Part, "base64").toString("utf8");
     const flags = flagsPayload.replace("flags=", "");
     // All 7 tokens (6 fields + timestamp label) must have been present.
     expect(flags).toBe("1".repeat(tokens.length));

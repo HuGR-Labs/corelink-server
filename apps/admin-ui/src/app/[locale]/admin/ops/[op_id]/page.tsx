@@ -26,7 +26,6 @@ export default async function AdminOpDetailPage({
   const auth = await getAuthContext();
 
   return (
-    // @ts-expect-error — server component returning Promise<ReactElement>.
     <RbacGuard>
       <main aria-labelledby="op-heading">
         <h1 id="op-heading">Op {params.op_id}</h1>

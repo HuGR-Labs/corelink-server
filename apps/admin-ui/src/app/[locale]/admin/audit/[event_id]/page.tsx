@@ -25,7 +25,6 @@ export default async function AuditEventPage({
   const event = await loadEvent(params.event_id);
 
   return (
-    // @ts-expect-error — server component returning Promise<ReactElement>.
     <RbacGuard>
       <main aria-labelledby="event-heading">
         <h1 id="event-heading">Audit event {params.event_id}</h1>

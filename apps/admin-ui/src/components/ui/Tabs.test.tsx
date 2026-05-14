@@ -20,9 +20,12 @@ describe("Tabs", () => {
   it("arrow key switches focused tab", async () => {
     renderWithProviders(<Tabs label="Sections" items={items} />);
     const tabs = screen.getAllByRole("tab");
-    tabs[0].focus();
+    const first = tabs[0];
+    const second = tabs[1];
+    if (!first || !second) throw new Error("unreachable: expected at least 2 tabs");
+    first.focus();
     await userEvent.keyboard("{ArrowRight}");
-    expect(tabs[1]).toHaveFocus();
+    expect(second).toHaveFocus();
   });
 
   it("has no a11y violations", async () => {
