@@ -1,0 +1,77 @@
+[package]
+name = "corelink-erasure-attestation"
+description = "CoreLink erasure attestation — Ed25519 (FIPS 186-5 EdDSA) signing per-region for BYOK DSR erasure events. Per-region Ed25519 key 30d overlap canonical (key_management.md §3.2.1 + ADR-0018); JCS canonicalization (RFC 8785 serde_jcs); R2 7y retention; D1 index; verify endpoint support; NIST SP 800-88 Rev.1 §2.4 crypto-erase mode evidence_hash binding. INV-ERASURE-ATTESTATION-SIGNED HIGH ratified WI-S14-007. NOTE: NOT wasm32-clean by design — requires OS entropy (OsRng) for Ed25519 key generation; runs on Cloudflare Workers native runtime, not wasm32 micro-runtime."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+# Ed25519 FIPS 186-5 EdDSA signing (rand_core feature for key generation)
+ed25519-dalek = { workspace = true }
+# Random number generation for Ed25519 key material (CSPRNG)
+rand = "0.8"
+# JCS canonicalization RFC 8785 (deterministic JSON for signature stability)
+serde_jcs = "0.2"
+# Base64 encoding for signature + PEM
+base64 = { workspace = true }
+# SHA-256 for evidence_hash
+sha2 = { workspace = true }
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+# Error handling
+thiserror = { workspace = true }
+# Memory safety: ZeroizeOnDrop on signing key material
+zeroize = { workspace = true }
+# Hex encoding for evidence_hash
+hex = { workspace = true }
+# Observability
+tracing = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+rand = "0.8"
+ed25519-dalek = { workspace = true }
+
+[[test]]
+name = "prop_attestation"
+path = "tests/prop_attestation.rs"
+
+[[test]]
+name = "adversarial"
+path = "tests/adversarial.rs"
+
+[[example]]
+name = "sign_attestation"
+path = "examples/sign_attestation.rs"
+
+[[example]]
+name = "verify_offline"
+path = "examples/verify_offline.rs"
+
+[[example]]
+name = "lookup_attestation"
+path = "examples/lookup_attestation.rs"
+
+[[example]]
+name = "list_public_keys"
+path = "examples/list_public_keys.rs"

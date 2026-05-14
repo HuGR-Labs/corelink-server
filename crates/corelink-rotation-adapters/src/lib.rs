@@ -45,6 +45,9 @@
 //!    (24h overlap; per-region HMAC-SHA256; dual-approval; WI-S13-002).
 //! 8. The [`byok`] module ships [`ByokRotationAdapter`] stub (7d
 //!    overlap; customer-trigger; S-14 forward).
+//! 9. The [`erasure_attestation`] module ships
+//!    [`ErasureAttestationRotationAdapter`] (30d overlap; per-region;
+//!    Ed25519 attestation key rotation; WI-S14-007).
 //!
 //! # INV-KEY-OVERLAP enforcement
 //!
@@ -99,6 +102,7 @@ pub mod adapter;
 pub mod admin_signing;
 pub mod audit_chain;
 pub mod byok;
+pub mod erasure_attestation;
 pub mod error;
 pub mod pat_signing;
 pub mod tdk;
@@ -108,6 +112,7 @@ pub use adapter::{is_valid_read_state, is_valid_write_state, RotationAdapter};
 pub use admin_signing::AdminSigningRotationAdapter;
 pub use audit_chain::AuditChainRotationAdapter;
 pub use byok::ByokRotationAdapter;
+pub use erasure_attestation::ErasureAttestationRotationAdapter;
 pub use error::RotationError;
 pub use pat_signing::PatSigningRotationAdapter;
 pub use tdk::TdkRotationAdapter;

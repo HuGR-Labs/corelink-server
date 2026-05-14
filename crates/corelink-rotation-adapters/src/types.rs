@@ -36,6 +36,11 @@ pub enum AssetClass {
     /// BYOK customer CMK (S-14 forward; customer-trigger). Overlap 7d.
     /// CoreLink-side DEK cache invalidated 5 min hard on customer revoke.
     Byok,
+    /// Erasure attestation Ed25519 signing key (WI-S14-007; per-region).
+    /// Overlap 30d canonical (key_management.md §3.2.1 + ADR-0018):
+    /// long overlap preserves verifiability of attestations signed
+    /// pre-rotation; verify endpoint accepts both keys during window.
+    ErasureAttestationKey,
 }
 
 impl AssetClass {
@@ -48,6 +53,7 @@ impl AssetClass {
             Self::AuditChain => 24 * 3_600,    // 24h
             Self::AdminSigning => 24 * 3_600,  // 24h
             Self::Byok => 7 * 24 * 3_600,      // 7d
+            Self::ErasureAttestationKey => 30 * 24 * 3_600, // 30d canonical per key_management.md §3.2.1
         }
     }
 
@@ -69,6 +75,7 @@ impl AssetClass {
             Self::AuditChain => "audit_chain",
             Self::AdminSigning => "admin_signing",
             Self::Byok => "byok",
+            Self::ErasureAttestationKey => "erasure_attestation_key",
         }
     }
 }
