@@ -34,6 +34,14 @@ default = ["jwt-adapter"]
 # compile to wasm32-unknown-unknown without emscripten.
 jwt-adapter = ["dep:jsonwebtoken"]
 
+# R2-2 production HTTP JWKS fetcher (native targets only — pulls
+# `reqwest` + `rustls-tls`; incompatible with wasm32-unknown-unknown
+# without a JS-side polyfill, which is intentionally NOT shipped: the
+# CF Worker target uses `corelink-clerk-cf::CfJwksFetcher` instead).
+# Implies `jwt-adapter` because `HttpJwksFetcher` is only useful in a
+# context that also runs the validate path.
+http-fetcher = ["jwt-adapter", "dep:reqwest"]
+
 # Exposes `fakes::test_keys::TestRsaKey` (RSA keygen + PEM/JWKS
 # projection) so integration tests can craft signed JWTs without
 # requiring a live Clerk staging instance. NEVER enable this in
@@ -61,6 +69,9 @@ base64 = { workspace = true }
 # Optional, gated behind `test-utils`. Production crates leave this off.
 rsa = { version = "0.9", features = ["sha2"], optional = true }
 rand = { version = "0.8", optional = true }
+# R2-2: gated behind `http-fetcher`. Inherits the workspace pin
+# (`rustls-tls` + `json`, no openssl).
+reqwest = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
@@ -68,9 +79,12 @@ tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time
 hmac = { workspace = true }
 sha2 = { workspace = true }
 tracing-subscriber = { workspace = true }
-# Pull our own crate with `test-utils` + `jwt-adapter` enabled so
-# integration tests in `tests/*.rs` can use ClerkAdapter + TestRsaKey.
-corelink-clerk = { path = ".", features = ["jwt-adapter", "test-utils"] }
+# R2-2: mock HTTPS server for `HttpJwksFetcher` integration tests.
+wiremock = "0.6"
+# Pull our own crate with `test-utils` + `jwt-adapter` + `http-fetcher`
+# enabled so integration tests in `tests/*.rs` can use ClerkAdapter,
+# TestRsaKey, and HttpJwksFetcher.
+corelink-clerk = { path = ".", features = ["jwt-adapter", "test-utils", "http-fetcher"] }
 
 [[example]]
 name = "basic"
@@ -95,3 +109,7 @@ path = "tests/adversarial.rs"
 [[test]]
 name = "rotation"
 path = "tests/rotation.rs"
+
+[[test]]
+name = "http_fetcher"
+path = "tests/http_fetcher.rs"

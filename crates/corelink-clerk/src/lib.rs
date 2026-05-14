@@ -10,17 +10,46 @@
 //! # Architectural seam
 //!
 //! Two trait abstractions decouple the validate path from the
-//! Cloudflare-runtime concerns this crate intentionally does NOT
-//! depend on directly:
+//! runtime concerns this crate intentionally does NOT depend on
+//! directly. Two production fetcher implementations coexist on the
+//! same [`JwksFetcher`] trait; the outer crate picks one based on
+//! target:
 //!
-//! - [`JwksFetcher`]: HTTPS JWKS endpoint fetch. Real implementation
-//!   wraps `worker::Fetch` (Workers runtime) inside `corelink-worker`.
-//!   Tests use [`fakes::StaticJwksFetcher`] (in-memory; no network) +
+//! | Target | Fetcher | Crate / feature |
+//! |---|---|---|
+//! | Native (`apps/server`, CLI, CI) | [`HttpJwksFetcher`] (`reqwest` + `rustls-tls`) | `corelink-clerk` feature `http-fetcher` |
+//! | Cloudflare Workers (`wasm32-unknown-unknown`) | `CfJwksFetcher` (`worker::Fetch::Url`) | `corelink-clerk-cf` |
+//!
+//! - [`JwksFetcher`]: HTTPS JWKS endpoint fetch. Tests use
+//!   [`fakes::StaticJwksFetcher`] (in-memory; no network) +
 //!   [`fakes::ScriptedJwksFetcher`] (rotation simulation).
 //! - [`KvJwksCache`]: KV TTL-bound cache (CF KV in production; in-memory
 //!   `BTreeMap` for tests via [`fakes::InMemoryKvCache`]). Key
 //!   `clerk:jwks:<instance_hash>`. TTL canonical 86_400 seconds (24h)
 //!   per WI §1 / §9.2.
+//!
+//! # Environment-driven configuration (R2-2)
+//!
+//! [`ClerkConfig::from_env`] reads the canonical env-var matrix
+//! (`CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, optional
+//! `CLERK_JWKS_URL` / `CLERK_JWT_ISSUER`, required `CLERK_AUDIENCE`)
+//! and derives the JWKS URL + issuer allowlist from the publishable
+//! key's frontend-API host when overrides are unset. The secret key
+//! is surfaced separately via [`ClerkEnvSecrets`] so the
+//! `Debug`-printable [`ClerkConfig`] never carries it.
+//!
+//! # admin-ui middleware wiring
+//!
+//! The `apps/admin-ui` TypeScript middleware calls the CF Worker
+//! binding which in turn wires [`ClerkAdapter`] with
+//! `corelink-clerk-cf::CfJwksFetcher` + `CfKvJwksCache`. The wire
+//! contract is:
+//! - middleware extracts JWT from `Cookie: __session=…` (or
+//!   `Authorization: Bearer …`),
+//! - calls `validate_session(jwt, config, fetcher, cache)`,
+//! - on `Ok(principal)` injects `x-corelink-user-id` + `x-corelink-org-id`
+//!   headers into the downstream request,
+//! - on `Err(_)` returns a 401 `invalid_token` per WI-S03-003 §23.
 //!
 //! # Validate path
 //!
@@ -84,17 +113,28 @@
 #[cfg(feature = "jwt-adapter")]
 pub mod adapter;
 pub mod config;
+#[cfg(feature = "jwt-adapter")]
+pub mod env_config;
 pub mod error;
 pub mod fakes;
+#[cfg(feature = "http-fetcher")]
+pub mod http_fetcher;
 pub mod jwks;
 pub mod jwks_cache;
 pub mod principal;
 mod redact;
 
 #[cfg(feature = "jwt-adapter")]
-pub use adapter::ClerkAdapter;
+pub use adapter::{validate_session, ClerkAdapter};
 pub use config::{ClerkConfig, ClerkConfigBuilder, ClerkConfigError, JWKS_TTL_SECS, LEEWAY_SECS};
+#[cfg(feature = "jwt-adapter")]
+pub use env_config::{
+    ClerkEnvSecrets, EnvLoadError, SecretKey, ENV_AUDIENCE, ENV_JWKS_URL, ENV_JWT_ISSUER,
+    ENV_PUBLISHABLE_KEY, ENV_SECRET_KEY,
+};
 pub use error::AuthError;
+#[cfg(feature = "http-fetcher")]
+pub use http_fetcher::{HttpFetcherBuildError, HttpJwksFetcher};
 pub use jwks::{Jwks, JwksFetchError, JwksFetcher, JwksKey};
 pub use jwks_cache::{CachedJwks, KvJwksCache, KvJwksCacheError};
 pub use principal::{
