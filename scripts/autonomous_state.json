@@ -1,7 +1,6 @@
 {
   "queue": [
     "WI-S12-001",
-    "WI-S12-002",
     "WI-S12-003",
     "WI-S12-004",
     "WI-S12-005",
@@ -80,7 +79,31 @@
     "WI-S20-008",
     "WI-S20-009"
   ],
-  "done": "see git tags s01..s11-impl-sealed for prior + this commit for S-11 002..008",
-  "last_seal_at": "2026-05-13T18:00:00Z",
-  "note": "consolidated after wave-1 parallel sonnet merge of WI-S11-003..008"
+  "done": "see git tags s01..s11-impl-sealed for prior; WI-S12-002 SEALED 2026-05-14",
+  "last_seal_at": "2026-05-14T00:00:00Z",
+  "note": "WI-S12-002 SEALED: sbom-publish crate (7 modules, lib+bin), 4 proptest props (10k/100k), 6 adversarial scenarios, 3 examples, sbom.yml (5 jobs SHA-pinned), ADR-S12-001. Build+clippy clean.",
+  "wi_s12_002": {
+    "status": "SEALED",
+    "sealed_at": "2026-05-14T00:00:00Z",
+    "commit_branch": "wt/wi-s12-002",
+    "artifacts": [
+      ".github/workflows/sbom.yml",
+      "tools/sbom-publish/Cargo.toml",
+      "tools/sbom-publish/src/lib.rs",
+      "tools/sbom-publish/src/main.rs",
+      "tools/sbom-publish/src/publisher.rs",
+      "tools/sbom-publish/src/ntia.rs",
+      "tools/sbom-publish/src/purl.rs",
+      "tools/sbom-publish/src/tsa.rs",
+      "tools/sbom-publish/src/dt.rs",
+      "tools/sbom-publish/src/metrics.rs",
+      "tools/sbom-publish/src/error.rs",
+      "tools/sbom-publish/tests/prop_sbom.rs",
+      "tools/sbom-publish/tests/adversarial.rs",
+      "tools/sbom-publish/examples/generate.rs",
+      "tools/sbom-publish/examples/validate_ntia.rs",
+      "tools/sbom-publish/examples/ingest_dt_retry.rs",
+      "specs/03_architecture/adrs/ADR-S12-001-sbom-cyclonedx-ntia-tsa-dt.md"
+    ]
+  }
 }

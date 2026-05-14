@@ -1,12 +1,12 @@
 ---
 id: "WI-S12-002"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
-audit_status: "ACTIVE"
-version: "1.0.0"
+doc_status: "SEALED"
+work_status: "DONE"
+audit_status: "AUDITED"
+version: "1.1.0"
 created: "2026-04-29"
-updated: "2026-04-29"
+updated: "2026-05-14"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-005"]
 parent: "S-12"
@@ -26,7 +26,7 @@ tags: ["wi", "s12", "supply-chain", "sbom", "cyclonedx", "ntia", "rfc-3161", "ts
 
 # WI-S12-002 — SBOM CycloneDX 1.5+ Generation via `cargo-cyclonedx` + NTIA Minimum Elements Check + RFC 3161 TSA Timestamp + Dependency-Track Ingestion API
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** SEALED · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-12](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -696,6 +696,7 @@ CLI output JSON (machine-parseable) ou text (`--format`). Erro mapping:
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | Criação WI-S12-002 (cycle 11.S12.0). |
+| 1.1.0 | 2026-05-14 | Gustavo (via Claude Sonnet 4.6) | SEALED: `tools/sbom-publish/` Rust crate (lib + bin, 7 src modules), 4 property tests, 6 adversarial scenarios, 3 examples, `.github/workflows/sbom.yml` (5 jobs, SHA-pinned), ADR-S12-001. Build + clippy clean. |
 
 ## 32. Anti-patterns evitados
 
