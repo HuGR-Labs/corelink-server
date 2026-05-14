@@ -1,0 +1,46 @@
+[package]
+name = "corelink-cli"
+description = "CoreLink CLI — 7 subcommands (ls/get/put/stat/bench/doctor/version) with JSON output, auth via env var / config file, cross-OS reproducible builds (WI-S15-001)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "corelink"
+path = "src/main.rs"
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+# Allowed for CLI binary — these are intentional user-facing I/O.
+# print_stdout / print_stderr allowed globally via main.rs crate-level allow.
+
+[dependencies]
+clap = { version = "4", features = ["derive", "env"] }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+blake3 = { workspace = true }
+toml = "0.8"
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+reqwest = { version = "0.12", features = ["rustls-tls", "json", "stream"], default-features = false }
+bytes = { workspace = true }
+
+[dev-dependencies]
+tokio-test = { workspace = true }
+tempfile = "3"

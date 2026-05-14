@@ -1,0 +1,169 @@
+# CoreLink CLI cross-OS release pipeline (WI-S15-001).
+#
+# Triggers on version tags `v*`. Builds reproducible binaries for 5 targets:
+#   - macOS arm64   (macos-14 / Apple Silicon)
+#   - macOS x86_64  (macos-13 / Intel)
+#   - Linux x86_64  (ubuntu-22.04)
+#   - Linux arm64   (ubuntu-22.04-arm)
+#   - Windows x86_64 (windows-2022)
+#
+# Reproducible builds: SOURCE_DATE_EPOCH set to git commit timestamp +
+# cargo --frozen --locked (S-12 supply chain alignment).
+#
+# Signing placeholders:
+#   - Apple notarization (WI-S15-006 — cert acquisition deferred)
+#   - Linux GPG signing  (WI-S15-006 — key acquisition deferred)
+#   - Windows Authenticode (WI-S15-006 — cert acquisition deferred)
+
+name: release-cli
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write  # Needed to create GitHub Release assets.
+  id-token: write  # For SLSA attestation (future).
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  build:
+    name: build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            target: aarch64-apple-darwin
+            binary_name: corelink
+            asset_suffix: darwin-arm64
+          - os: macos-13
+            target: x86_64-apple-darwin
+            binary_name: corelink
+            asset_suffix: darwin-x86_64
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-musl
+            binary_name: corelink
+            asset_suffix: linux-x86_64
+          - os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-musl
+            binary_name: corelink
+            asset_suffix: linux-arm64
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
+            binary_name: corelink.exe
+            asset_suffix: windows-x86_64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # -----------------------------------------------------------------------
+      # Reproducible build: SOURCE_DATE_EPOCH from git commit timestamp.
+      # Aligns with S-12 supply chain baseline (WI-S12-006).
+      # -----------------------------------------------------------------------
+      - name: Set SOURCE_DATE_EPOCH
+        shell: bash
+        run: |
+          SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+          echo "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}" >> "$GITHUB_ENV"
+          echo "GIT_COMMIT_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Install Rust toolchain (pinned)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          # Pin to the workspace rust-toolchain.toml channel.
+          toolchain: "1.91.1"
+          targets: ${{ matrix.target }}
+
+      # Linux musl target needs musl-tools.
+      - name: Install musl-tools (Linux)
+        if: contains(matrix.target, 'linux-musl')
+        run: sudo apt-get install -y musl-tools
+
+      # -----------------------------------------------------------------------
+      # Reproducible build with --frozen --locked.
+      # -----------------------------------------------------------------------
+      - name: Build (release, frozen, locked)
+        env:
+          SOURCE_DATE_EPOCH: ${{ env.SOURCE_DATE_EPOCH }}
+          GIT_COMMIT_SHA: ${{ env.GIT_COMMIT_SHA }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          cargo build --release --frozen --locked -p corelink-cli --target ${{ matrix.target }}
+
+      - name: Strip binary (Linux / macOS)
+        if: runner.os != 'Windows'
+        run: |
+          strip "target/${{ matrix.target }}/release/${{ matrix.binary_name }}" || true
+
+      # -----------------------------------------------------------------------
+      # SHA256 checksum for reproducible build verification gate.
+      # -----------------------------------------------------------------------
+      - name: Compute SHA256
+        shell: bash
+        run: |
+          BINARY="target/${{ matrix.target }}/release/${{ matrix.binary_name }}"
+          if command -v sha256sum > /dev/null 2>&1; then
+            sha256sum "$BINARY" > "$BINARY.sha256"
+          else
+            shasum -a 256 "$BINARY" > "$BINARY.sha256"
+          fi
+
+      # -----------------------------------------------------------------------
+      # Signing PLACEHOLDERS — acquisition deferred to WI-S15-006.
+      # When certs are acquired, replace these echo steps with real signing.
+      # -----------------------------------------------------------------------
+      - name: "[PLACEHOLDER] Apple notarization"
+        if: runner.os == 'macOS'
+        run: |
+          echo "SIGNING PLACEHOLDER: Apple notarization not yet configured."
+          echo "Cert acquisition tracked in WI-S15-006."
+          echo "When ready: xcrun notarytool submit ... --apple-id ... --team-id ..."
+
+      - name: "[PLACEHOLDER] Linux GPG signing"
+        if: runner.os == 'Linux'
+        run: |
+          echo "SIGNING PLACEHOLDER: Linux GPG signing not yet configured."
+          echo "Key acquisition tracked in WI-S15-006."
+
+      - name: "[PLACEHOLDER] Windows Authenticode signing"
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          echo "SIGNING PLACEHOLDER: Windows Authenticode signing not yet configured."
+          echo "Cert acquisition tracked in WI-S15-006."
+
+      # -----------------------------------------------------------------------
+      # Rename binary to include OS/arch suffix for release asset.
+      # -----------------------------------------------------------------------
+      - name: Rename binary for release
+        shell: bash
+        run: |
+          BINARY="target/${{ matrix.target }}/release/${{ matrix.binary_name }}"
+          EXT="${{ matrix.binary_name == 'corelink.exe' && '.exe' || '' }}"
+          ASSET="corelink-${{ env.RELEASE_TAG }}-${{ matrix.asset_suffix }}${EXT}"
+          cp "$BINARY" "$ASSET"
+          cp "$BINARY.sha256" "$ASSET.sha256"
+          echo "ASSET_NAME=${ASSET}" >> "$GITHUB_ENV"
+          echo "ASSET_SHA256=${ASSET}.sha256" >> "$GITHUB_ENV"
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+
+      # -----------------------------------------------------------------------
+      # Upload artifacts to GitHub Release.
+      # -----------------------------------------------------------------------
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ env.ASSET_NAME }}
+            ${{ env.ASSET_SHA256 }}
+          generate_release_notes: true
