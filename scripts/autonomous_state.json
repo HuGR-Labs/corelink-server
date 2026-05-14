@@ -6,7 +6,7 @@
     {
       "wi": "WI-S11-008",
       "sealed_at": "2026-05-13T00:00:00Z",
-      "commit": "pending",
+      "commit": "8242c0832fa08b5030313ac3336ce0a91671bfbc",
       "artifacts": [
         "specs/_templates/dpia.md",
         "specs/_templates/lia.md",
