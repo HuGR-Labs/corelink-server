@@ -84,9 +84,9 @@ publish = false
 
 [workspace.dependencies]
 # gRPC stack
-tonic = "0.12"
-prost = "0.13"
-tonic-build = "0.12"
+tonic = "0.14"
+prost = "0.14"
+tonic-build = "0.14"
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -107,15 +107,15 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # Crypto / encoding (S-01 foundation)
-hmac = "0.12"
-sha2 = "0.10"
+hmac = "0.13"
+sha2 = "0.11"
 blake3 = { version = "1", features = ["traits-preview"] }
 base64 = "0.22"
 hex = "0.4"
 uuid = { version = "1" }
 subtle = "2"
 zeroize = { version = "1.8", features = ["derive"] }
-hkdf = "0.12"
+hkdf = "0.13"
 bytes = "1"
 
 # Internal crates
@@ -188,7 +188,7 @@ corelink-rollout-controller = { path = "crates/corelink-rollout-controller" }
 # Test / bench
 proptest = "1.5"
 tokio-test = "0.4"
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.8", features = ["html_reports"] }
 
 [profile.release]
 # Build otimizado pra Cloudflare Containers
