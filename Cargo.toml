@@ -106,6 +106,8 @@ members = [
     "crates/corelink-dpa-versioning",
     # WI-S19-004 tier selection + Stripe Checkout + INV-ONBOARD-DPA-FIRST D1 lock
     "crates/corelink-tier-selection",
+    # WI-S19-005 enterprise inquiry form + Slack/CRM atomic outbox + 24h auto-reply SLA
+    "crates/corelink-enterprise-inquiry",
 ]
 exclude = [
     "crates/tenant-path/fuzz",

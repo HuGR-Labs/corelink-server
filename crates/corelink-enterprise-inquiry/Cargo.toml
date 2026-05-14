@@ -1,0 +1,35 @@
+[package]
+name = "corelink-enterprise-inquiry"
+description = "CoreLink white-glove enterprise inquiry handler (WI-S19-005 — S-19 HIGH_RISK lane). Ships EnterpriseInquiryForm (company + role + email + phone_optional + expected_gb_per_month + byok_requirements + residency_requirements + additional_notes) + Role/ByokRequirementsKind/ResidencyKind/InquiryStatus (`#[non_exhaustive]` enums) + InquiryId + IdempotencyKey + InquiryReceipt + EnterpriseInquiryError canonical taxonomy + SlackClient/CrmClient/AutoReplyMailer/InquiryAuditSink traits + InMemory fakes + Failing adversarial fixtures + OutboxRecord/OutboxStatus + EnterpriseInquiryLedger orchestrator (in-memory inquiry store + outbox + Arc<Mutex<>> per Lote 10.6bis fail-CLOSED) implementing the saga PAT-SAGA-001 reuse S-10 atomic Slack+CRM dispatch (both succeed or both rollback via outbox-drain + compensating-transaction) + 24h auto-reply SLA detector (scans inquiries replied_at IS NULL AND created_at < NOW() - 24h → flag Sev2) + idempotency-key dedup + property tests pinning atomicity / idempotency / SLA breach detection. Production Slack webhook HTTPS POST + HubSpot/Salesforce CRM HTTPS POST + SES auto-reply email + Cloudflare Worker handler binding deferred to PRR ship gate per `trait-abstraction-defer` charter pattern."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[[test]]
+name = "prop_enterprise_inquiry"
+path = "tests/prop_enterprise_inquiry.rs"
