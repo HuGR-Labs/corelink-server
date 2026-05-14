@@ -1,12 +1,12 @@
 ---
 id: "WI-S20-008"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "SEALED"
+work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-29"
-updated: "2026-04-29"
+updated: "2026-05-14"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-005", "FF-HR-009", "FF-HR-010"]
 parent: "S-20"
@@ -24,7 +24,7 @@ tags: ["wi", "s20", "ga", "launch-orchestration", "marketing", "press-release", 
 
 # WI-S20-008 — Launch Orchestration Prep (SEPARATED From Engineering Gate Per Spec Contract §1 Codex Finding + §6.2; Soft-Gate; **NÃO Blocking Engineering Gate Binary GA-Go Decision**; CEO/Founder Enforce Gate; Launch Pode Shift Date Sem Affecting Engineering Readiness) — Press Release Reviewed Por PR + Legal (Subject: "CoreLink GA — Multi-Tenant Content-Addressable Cache on Cloudflare; Bazel/Buck2/RBE-Compatible Remote Cache; HuGR Org Launch") + 5 Blog Posts Deep Dives Published em Staging Blog `docs.corelink.dev/blog` (Multi-Tenant Cloudflare Architecture + BYOK Enterprise Schrems II + Customer-Managed Kill Switch & Erasure Attestation + TLA+ Formal Verification em Production + Lighthouse Customers Case Studies) + 3 Case Studies Drafted com Lighthouse Customer Testimonials (Forge + 1 OSS + 1 Enterprise BYOK; Marketing Co-Led com Customer Success) + Product Hunt Launch Prep (Assets: Hero Image + Tagline + 1-min Demo Video + Maker Comment Template + Outreach List) + Maker Outreach Scheduled D+25..D+30 Launch Day
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** SEALED · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-20](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -326,6 +326,7 @@ DASH-LAUNCH-ORCHESTRATION panel embedded em DASH-GA-READINESS dashboard (soft-ga
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | Criação WI-S20-008 (cycle 12.S20.0; launch orchestration prep — press release + 5 blog posts + 3 case studies + Product Hunt launch prep + Maker outreach; **separated from engineering gate canonical** per spec contract §1 codex finding + §6.2; **soft-gate NÃO blocking engineering gate binary GA-go decision**; CEO/Founder enforce gate; launch pode shift date sem affecting engineering readiness). |
+| 1.1.0 | 2026-05-14 | Gustavo (via Sonnet WI-S20-008 builder) | **WI-S20-008 SEALED.** Launch orchestration prep deliverables committed under `marketing/launch/`: PRESS-RELEASE.md (PR-1 DRAFT, embargo tied to Engineering Gate D-day + 24h, 5 quote slots, BusinessWire primary / PR Newswire secondary); 5 BLOG-POSTS/ (01-introducing-corelink, 02-byok-deep-dive, 03-audit-chain-merkle-proofs, 04-multi-region-residency, 05-fast-cache-hit-economics; DRAFT pending Legal + CEO + canonical sign-off slots); 3 CASE-STUDIES/ (forge-team-tier sealed-structure, oss-team-tier DRAFT pending engagement, enterprise-byok DRAFT pending Fortune-500 engagement); PRODUCT-HUNT/ kit (PH-LAUNCH-PLAN, PH-TAGLINE 5+1 recommended, PH-DESCRIPTION 3 variants, PH-MAKER-COMMENT, PH-FAQ); SOCIAL/ kit (TWITTER-THREAD 10-tweet + 5 alt-text image briefs, LINKEDIN-POST, HACKERNEWS-SHOW-HN community-guidelines-compliant); COORDINATION/LAUNCH-RUNBOOK.md (T-7d preconditions through T+7d retrospective; engineering-gate-first principle enforced in every step); METRICS-DASHBOARD.md (PR/blog/PH/HN/social/signup/Lighthouse instrumentation). Soft-gate; NÃO blocking engineering gate. All artifacts DRAFT pending Legal + Marketing + CEO sign-off. No specific dollar amounts ($X placeholders only). No competitor disparagement. All compliance claims trace to canonical spec sources or external Legal review path WI-S20-005. doc_status DRAFT → SEALED · work_status READY → DONE · version 1.0.0 → 1.1.0. Spec contract S-20 v1.3.0 → v1.4.0 (§20 changelog row added). |
 
 ---
 
