@@ -24,6 +24,7 @@ mod_module_files = "deny"
 
 [dependencies]
 corelink-byok = { path = "../corelink-byok" }
+corelink-byok-aws = { path = "../corelink-byok-aws" }
 corelink-byok-gcp = { path = "../corelink-byok-gcp" }
 corelink-byok-azure = { path = "../corelink-byok-azure" }
 corelink-byok-vault = { path = "../corelink-byok-vault" }

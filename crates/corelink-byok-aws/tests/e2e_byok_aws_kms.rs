@@ -38,7 +38,9 @@ mod e2e_aws_kms {
     use corelink_byok_aws::AwsKmsProvider;
 
     fn get_test_key_arn() -> Option<String> {
-        env::var("AWS_KMS_TEST_KEY_ARN").ok()
+        env::var("AWS_KMS_TEST_KEY_ARN")
+            .or_else(|_| env::var("AWS_TEST_KEY_ARN"))
+            .ok()
     }
 
     fn get_region() -> String {
