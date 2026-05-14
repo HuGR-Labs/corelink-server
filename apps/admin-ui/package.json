@@ -1,0 +1,37 @@
+{
+  "name": "@corelink/admin-ui",
+  "version": "0.1.0",
+  "description": "CoreLink admin operator UI — audit viewer + dual-approval workflows + tenant search (WI-S16-005)",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint src --max-warnings 0",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "next": "15.0.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "swr": "2.2.5"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "6.4.0",
+    "@testing-library/react": "16.0.0",
+    "@testing-library/user-event": "14.5.2",
+    "@types/node": "20.11.0",
+    "@types/react": "18.3.3",
+    "@types/react-dom": "18.3.0",
+    "@typescript-eslint/eslint-plugin": "7.18.0",
+    "@typescript-eslint/parser": "7.18.0",
+    "eslint": "8.57.0",
+    "eslint-config-next": "15.0.0",
+    "jsdom": "24.1.0",
+    "typescript": "5.9.3",
+    "vitest": "2.0.5"
+  }
+}
