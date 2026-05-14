@@ -156,6 +156,15 @@ pub enum BYOKError {
     #[error("AAD / encryption_context mismatch: cross-blob swap attempt rejected")]
     AadMismatch,
 
+    /// Vault mTLS certificate expiring within renewal SLA (≤30d). Used
+    /// by `corelink-byok-vault::check_cert_expiry`; surfaces from
+    /// `KmsProvider::check_access` to drive cert rotation alerts.
+    #[error("vault mTLS cert expiring soon: days_remaining={days_remaining}")]
+    MtlsCertExpiringSoon {
+        /// Days until the mTLS cert expires.
+        days_remaining: u64,
+    },
+
     /// The wrapped DEK payload is malformed or wrong length.
     #[error("DEK length invalid: got {got} bytes, expected 32")]
     DekLengthInvalid {
