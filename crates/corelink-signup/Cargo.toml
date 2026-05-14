@@ -1,0 +1,39 @@
+[package]
+name = "corelink-signup"
+description = "CoreLink signup orchestration backend (WI-S19-001 — S-19 onboarding HIGH_RISK lane FF-HR-009). Ships the atomic provisioning orchestrator (Clerk email-verified webhook → D1 single-transaction insert of tenant + dpa_acceptance + first PAT + usage_counter → eventually-consistent Stripe customer link via PAT-SAGA-001 saga compensation) per spec contract S-19 §5.1 R-S19-1..R-S19-3 + Lote 10.19 codex P0 canonical scope clarification on `INV-ONBOARD-ATOMIC-PROVISIONING` (atomic boundary covers tenant + DPA + first PAT only; Stripe customer ID is eventually-consistent via saga compensation degrading to `pending_billing_link` state on persistent outage). The crate is pure-logic: a Cloudflare Worker handler binds this to D1 / Clerk webhook signature verify / Stripe HTTPS in a follow-on PRR ship gate per `trait-abstraction-defer` charter pattern. The crate ships: `CorrelationId` (PAT-CORRELATION-ID-001) + `IdempotencyKey` (header `Idempotency-Key` enforced; duplicate → original signup_id) + `Bcp47Locale` + `PrimaryRegion` (`Enam` / `Sam` / `Eu`; `#[non_exhaustive]`; Lote 10.16 cookie-canonical map) + `TenantId` + `UserEmailHash` (sha256 hex; user_email NEVER stored plaintext) + `PatHash` + `ShownOnceToken` (UUID v7 invalidated after first GET) + `SignupRequest` carrying `clerk_event_id` + `email_hash` + `locale` + `idempotency_key` + `correlation_id` + `SignupOutcome` `#[non_exhaustive]` 4-canonical (`Provisioned` / `Deferred` / `Duplicate` / `Rejected`) + `OrchestrationError` `#[non_exhaustive]` taxonomy (`Audit` / `Storage` / `Billing` / `InvalidInput` / `Internal`) + `OrchestrationStep` 5-canonical staging marker for atomicity rollback debugging + `BillingIntent` `#[non_exhaustive]` 3-canonical (`Linked` / `PendingBillingLink` / `Deferred`) + `AtomicSignupStore` trait (`SignupTx` guard + BEGIN/COMMIT/ROLLBACK semantics; `InMemoryAtomicSignupStore` + `FailingAtomicSignupStore` fixtures) + `BillingClient` trait (`InMemoryBillingClient` + `StripeOutageBillingClient` chaos fixture) + `SignupAuditEventType` `#[non_exhaustive]` 4-canonical (`corelink.signup.{started, completed, failed, deferred}`) + `SignupAuditSink` trait + `InMemorySignupAuditSink` + `FailingSignupAuditSink` adversarial fixture + `SignupOrchestrator` orchestrator (audit-emit-BEFORE-mutation fail-CLOSED envelope per INV-AUDIT-APPEND-ONLY + Lote 10.6bis pattern; idempotency cache + atomic D1 tx + billing saga; chaos integration via `BillingClient` outage signalling → 503 + deferred billing flag without leaking partial state). Production wiring (deferred to PRR ship gate): Clerk-Signature HMAC-SHA256 verify + nonce + 5-min timestamp window; D1 `signup_orchestration` + `signup_attempts` migration `0037_signup_orchestration.sql`; Stripe customer create HTTPS via `worker::send_future` fire-and-forget (NEVER `tokio::spawn` per Lote 10.7bis R5 P0-3); Grafana dashboard `DASH-ONBOARDING`."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[[test]]
+name = "prop_signup_orchestration"
+path = "tests/prop_signup_orchestration.rs"
+
+[[test]]
+name = "chaos_stripe_outage"
+path = "tests/chaos_stripe_outage.rs"
