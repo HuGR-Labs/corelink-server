@@ -389,6 +389,30 @@ INVs introduced by Sprint S-07 (Dedup + Eviction Policy; STANDARD lane). Promovi
 
 ---
 
+### 3.19 Sub-Processor Transparency domain — Lote 10.11 (S-11 sprint WI-S11-005)
+
+INVs introduced by Sprint S-11 WI-S11-005 (Sub-Processor Register + 30d Broadcast + Objection Flow; HIGH_RISK lane). Promovidas preemptivamente em Lote 10.11 per lesson Lote 10.4bis CI gate + Lote 10.8bis P1-13 (INV §3.X positions canonical verified pre-merge).
+
+| INV | Description | Severity | Mechanism | Validation | TLA+ |
+|---|---|---|---|---|---|
+| **INV-SUB-PROCESSOR-BROADCAST-IDEMPOTENT** | UNIQUE constraint `(broadcast_id, tenant_id, recipient_email_hash, notification_type)` prevents duplicate 30d advance notice emails to the same recipient for the same broadcast event; idempotent retry safe | HIGH | D1 `sub_processor_broadcast_log` UNIQUE constraint (migration N+4); `InMemoryBroadcastStore` enforces at trait surface | Property test `prop_broadcast_idempotency_unique_constraint` 10k iter (PROPTEST_CASES=10000 verified); UNIQUE SQL constraint CI green | N/A (UNIQUE constraint; single-table idempotency; algorithmic) |
+| **INV-SUB-PROCESSOR-BROADCAST-ALL-PLANS** | ALL 5 canonical plans (free/solo/team/business/enterprise) receive mandatory sub-processor notifications; `sub_processor_notifications` purpose has `legal_obligation` basis (privacy_model.md §5.6.1); NOT opt-out-able via consent_revoke; tier-gating FORBIDDEN | HIGH | ADR-S11-008 v2 + broadcast cron worker seeds ALL subscribed tenants without tier filter; `legal_obligation` purpose basis enforced at consent_ledger level | Regression test `test_mandatory_all_plans_no_tier_gating` (5 canonical plans all seeded); ADR-S11-008 Privacy Officer + Legal sign-off | N/A (policy invariant; ADR enforcement) |
+| **INV-SUB-PROCESSOR-DKIM-TENANT-SCOPED** | DKIM signing key is derived per-tenant via HKDF-SHA256 (info=`corelink/v1/dkim-broadcast`); cross-tenant key isolation: tenant A's DKIM key NEVER equals tenant B's for any distinct tenant pair; prevents cross-tenant email spoofing | HIGH | `corelink-privacy-sub-processor-emit::dkim::derive_dkim_key` HKDF derivation with salt=tenant_id; security_model.md §374 inheritance | Property test `prop_dkim_cross_tenant_isolation` 10k random tenant pairs → 0 key collisions (PROPTEST_CASES=10000 verified) | N/A (HKDF algorithmic isolation; statistical property; non-distributed) |
+| **INV-SUB-PROCESSOR-OBJECTION-STATE-MACHINE** | Objection ticket state machine has 5 canonical states (Pending/InReview/Accepted/Terminated/Withdrawn); valid transitions enforced; terminal states (Accepted/Terminated/Withdrawn) NEVER transition to any other state; state machine is monotonically progressing | HIGH | `ObjectionTicketStatus::can_transition_to` at trait surface; `InMemoryObjectionStore::update_status` enforces via state check | Property test `prop_objection_state_machine_valid_transitions` 10k iter all valid + all invalid transitions verified | N/A (state machine; algorithmic) |
+| **INV-SUB-PROCESSOR-AUDIT-FAIL-CLOSED** | Sub-processor CloudEvent audit emission MUST succeed BEFORE any state mutation; if audit emit fails, operation aborts and state remains UNCHANGED; CD pipeline aborts on emit failure; aligns with INV-AUDIT-APPEND-ONLY §3.6 L116 | CRITICAL | `InMemorySubProcessorEmitter::publish/record_change/file_objection` audit-BEFORE-mutate ordering; `FailingSubProcessorAuditSink` test path verifies state unchanged | Regression tests `test_publish_fail_closed_on_audit_failure`, `test_change_fail_closed_on_audit_failure`, `test_objection_fail_closed_on_audit_failure` verify state UNCHANGED on audit failure; AC-007 covered | Covered by INV-AUDIT-APPEND-ONLY `audit_immutability.tla` ✅ GREEN inheritance |
+
+**Cross-references**:
+- `INV-AUDIT-APPEND-ONLY` (§3.6 L116): parent invariant — all 3 CloudEvents stored in R2 audit-`<region>` Object Lock 7y.
+- `failure_modes.md FM-453` — broadcast miss detection + RB-SUB-PROCESSOR-BROADCAST-MISS mapping.
+- `ADR-S11-008 v2` — mandatory all-plans rationale (GDPR Art. 28.2 + LGPD Art. 39).
+- `crates/corelink-privacy-sub-processor-emit/` — trait surface + property tests.
+- `legal/sub-processors.md` — source-of-truth YAML frontmatter.
+- `migrations/N4__sub_processor_tables.sql` — D1 UNIQUE constraint DDL.
+
+**Aliases históricos:** nenhum. Estes 5 IDs introduzidos em Lote 10.11 (sprint S-11 WI-S11-005) e **promovidos preemptivamente em Lote 10.11** (consistency com lesson Lote 10.4bis CI gate + Lote 10.8bis P1-13).
+
+---
+
 ## 4. TLA+ coverage matrix
 
 CRITICAL invariantes **DEVEM** ter TLA+ spec + model check verde no CI (CTRL-FORMAL-001 em `security_model.md §6.9`).

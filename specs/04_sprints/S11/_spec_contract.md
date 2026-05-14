@@ -358,6 +358,21 @@ Itens waivable com sign-off Privacy Officer + Legal + Compliance Officer + ADR:
 
 ## 20. Change log
 
+### v1.7.0 (2026-05-13) — WI-S11-005 implementation phase SEALED
+
+Implementation phase landing (no spec changes; impl-only changelog row per charter §spec contract changelog discipline). WI-S11-005 SEALED at the canonical impl quality gates:
+
+- **`crates/corelink-privacy-sub-processor-emit/`** new crate (~1150 LOC; 7 src modules + 1 prop test file). `SubProcessorEmitter` trait + `InMemorySubProcessorEmitter` orchestrator wired to `SubProcessorAuditSink` + `BroadcastStore` + `ObjectionStore` (canonical 3-event CloudEvents taxonomy `dev.hugr.corelink.sub_processor.{published,changed,objection_filed}.v1`). Per-instance `Arc<Mutex<()>>` F-001 closure. Audit fail-CLOSED ordering: `lookup → emit_audit → mutate_state`.
+- **DKIM tenant-scoped key derivation**: `derive_dkim_key(master_secret, tenant_id) → [u8; 32]` via HKDF-SHA256 info=`corelink/v1/dkim-broadcast`; cross-tenant isolation property test `prop_dkim_cross_tenant_isolation` 10k pairs → 0 key collisions.
+- **Broadcast idempotency**: UNIQUE constraint `(broadcast_id, tenant_id, recipient_email_hash, notification_type)` in `InMemoryBroadcastStore` mirrors D1 constraint; `prop_broadcast_idempotency_unique_constraint` 10k iter pinned.
+- **Mandatory all-plans**: `test_mandatory_all_plans_no_tier_gating` regression test verifies all 5 canonical plans seeded in broadcast log (GDPR Art. 28.2 + LGPD Art. 39 legal_obligation basis — NOT tier-gated).
+- **Objection state machine**: 5 canonical states (Pending/InReview/Accepted/Terminated/Withdrawn); `can_transition_to` enforced; `prop_objection_state_machine_valid_transitions` 10k iter covering all valid + all invalid transitions.
+- **Fail-CLOSED audit envelope**: 3 regression tests pin the canonical S-06 P0-2 / S-07 P1-1 lift — `test_*_fail_closed_on_audit_failure` verifies state UNCHANGED when audit sink fails (AC-007 covered).
+- **Recipient email hash**: `hash_recipient_email(email) → sha256 hex` (CTRL-PRIV-014; raw email NEVER in logs).
+- **Supporting artifacts committed**: `legal/sub-processors.md` v1.0.0 (7 canonical sub-processors); `scripts/validate_sub_processors.py` CI hook (4 validations a-d, Python 3.x, pyyaml); `migrations/N4__sub_processor_tables.sql` (2 tables DDL §6.1.7 with UNIQUE + 3 indexes each); 3 CloudEvent JSON schemas in `schemas/cloudevents/`; ADR-S11-008 v2.0.0 mandatory all-plans rationale; RB-SUB-PROCESSOR-BROADCAST-MISS upgraded from DRAFT stub to v1.0.0 full SOP; FM-453 updated in `failure_modes.md` (description + S/O/D/RPN updated per spec §6.1.8); 5 new INVs registered in `invariant_registry.md §3.19` (INV-SUB-PROCESSOR-{BROADCAST-IDEMPOTENT,BROADCAST-ALL-PLANS,DKIM-TENANT-SCOPED,OBJECTION-STATE-MACHINE,AUDIT-FAIL-CLOSED}); 9 MJML email template stubs (3 locales × 3 notification types).
+- **Quality gates verde**: 16 tests (3 inline unit + 13 regression + 3 property at PROPTEST_CASES=10000 verified); `cargo clippy -p corelink-privacy-sub-processor-emit --all-targets -- -D warnings` clean; `cargo build --target wasm32-unknown-unknown -p corelink-privacy-sub-processor-emit` clean.
+- **Charter constraints** verified: no `unsafe`; no `unwrap`/`expect`/`panic` in lib code; F-001 `Arc<Mutex<()>>` per-instance closure; `#[non_exhaustive]` on every public enum; wasm32-clean (no ring/C deps — sha2+hkdf+hmac are pure Rust); PROPTEST_CASES env-var runtime fn per S-07 P1-2; no `prop_assert!(matches!(...))` anti-pattern (S-08 P1-1); `#![allow(...)]` in test file only per prop_dsr.rs pattern.
+
 ### v1.6.0 (2026-05-07) — WI-S11-002 implementation phase SEALED
 
 Implementation phase landing (no spec changes; impl-only changelog row per charter §spec contract changelog discipline). WI-S11-002 SEALED at the canonical impl quality gates:

@@ -42,6 +42,7 @@ members = [
     "crates/corelink-billing-replay",
     "crates/corelink-quota-fsm",
     "crates/corelink-dsr",
+    "crates/corelink-privacy-sub-processor-emit",
     "crates/corelink-clerk-cf",
     "crates/corelink-privacy-erasure-worker",
     "crates/corelink-privacy-pseudonymize",
@@ -144,6 +145,7 @@ corelink-billing-reconcile = { path = "crates/corelink-billing-reconcile" }
 corelink-billing-replay = { path = "crates/corelink-billing-replay" }
 corelink-quota-fsm = { path = "crates/corelink-quota-fsm" }
 corelink-dsr = { path = "crates/corelink-dsr" }
+corelink-privacy-sub-processor-emit = { path = "crates/corelink-privacy-sub-processor-emit" }
 corelink-clerk-cf = { path = "crates/corelink-clerk-cf" }
 corelink-privacy-erasure-worker = { path = "crates/corelink-privacy-erasure-worker" }
 corelink-privacy-pseudonymize = { path = "crates/corelink-privacy-pseudonymize" }

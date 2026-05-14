@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.hugr.dev/cloudevents/sub-processor-changed.v1.json",
+  "title": "dev.hugr.corelink.sub_processor.changed.v1",
+  "description": "Emitted when legal/sub-processors.md is changed (add/remove/modify sub-processor). Triggers 30d advance notice broadcast. Per INV-AUDIT-APPEND-ONLY, stored in R2 audit-<region> Object Lock 7y. WI-S11-005.",
+  "type": "object",
+  "required": ["specversion", "type", "source", "id", "time", "data"],
+  "properties": {
+    "specversion": { "const": "1.0" },
+    "type": { "const": "dev.hugr.corelink.sub_processor.changed.v1" },
+    "source": { "type": "string" },
+    "id": { "type": "string", "description": "ULID event ID" },
+    "time": { "type": "string", "format": "date-time" },
+    "datacontenttype": { "const": "application/json" },
+    "data": {
+      "type": "object",
+      "required": ["old_version", "new_version", "changed_at", "diff", "broadcast_trigger_ts"],
+      "properties": {
+        "old_version": { "type": "string" },
+        "new_version": { "type": "string" },
+        "changed_at": { "type": "string", "format": "date-time" },
+        "diff": {
+          "type": "object",
+          "required": ["added", "removed", "modified"],
+          "properties": {
+            "added": { "type": "array", "items": { "type": "string" } },
+            "removed": { "type": "array", "items": { "type": "string" } },
+            "modified": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "broadcast_trigger_ts": {
+          "type": "string",
+          "format": "date-time",
+          "description": "30d countdown starts at this timestamp (calendar days, per EDPB 7/2020 §125)"
+        }
+      }
+    }
+  }
+}

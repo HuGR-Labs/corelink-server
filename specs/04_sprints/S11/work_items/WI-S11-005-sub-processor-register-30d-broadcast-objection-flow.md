@@ -1,12 +1,12 @@
 ---
 id: "WI-S11-005"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
-audit_status: "ACTIVE"
-version: "1.1.0"
+doc_status: "SEALED"
+work_status: "DONE"
+audit_status: "AUDITED"
+version: "1.2.0"
 created: "2026-04-26"
-updated: "2026-04-28"
+updated: "2026-05-13"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-003", "FF-HR-005", "FF-HR-010"]
 parent: "S-11"
@@ -27,7 +27,7 @@ tags: ["wi", "s11", "sub-processor", "register", "30d-broadcast", "objection-flo
 
 # WI-S11-005 — Sub-Processor Register Auto-Generated `legal/sub-processors.md` + Public Page `/privacy/sub-processors` + 30d Email Broadcast Cron Worker (CTRL-PRIV-021 + GDPR Art. 28.2 + LGPD Art. 39) + Customer Objection Flow → Legal Escalation Accept-or-Terminate + DKIM Email Authentication + Delivery Confirmation + FM-453 Broadcast Miss Declaration (`legal/sub-processors.md` source of truth com 7 canonical sub-processors compliance_matrix.md §7 inheritance — Cloudflare/Neon/Grafana Cloud/Stripe/GitHub/Sigstore/PagerDuty; auto-gen `/privacy/sub-processors` Cloudflare Pages static; mudança = email broadcast a customers ≥ 30d antes via Cloudflare Email transactional + DKIM signed + delivery confirmation; objection endpoint `POST /v1/privacy/sub-processor-objection` roteia ticket Privacy Officer + Legal review ≤14d → accept or terminate flow GDPR Art. 28.2; 2 CloudEvents canonical `dev.hugr.corelink.sub_processor.{published,changed,objection_filed}.v1` 3 types per Lote 10.9bis P0-G prefix em audit-`<region>` Object Lock 7y; FM-453 broadcast miss P1 S=4 declared em failure_modes.md NEW)
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** SEALED · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-11](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
