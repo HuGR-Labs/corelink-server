@@ -1,11 +1,11 @@
 ---
 id: "SPEC-CONTRACT-S19"
 type: "spec_contract"
-doc_status: "DRAFT"
+doc_status: "SEALED"
 audit_status: "ACTIVE"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-04-24"
-updated: "2026-04-29"
+updated: "2026-05-14"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -311,4 +311,13 @@ Itens waivable com Legal + Privacy Officer + Sales lead + ADR:
 
 ---
 
-**Fim spec contract S-19 v1.1.0 SOTA.**
+## 20. Changelog
+
+| Versão | Data | Autor | Mudança |
+|---|---|---|---|
+| 1.0.0 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | Criação spec contract S-19 — customer onboarding HIGH_RISK lane FF-HR-009; 6 WIs antecipados; self-service signup + DPA click-through + tier selection + first-run + enterprise inquiry + conversion funnel + DPA versioning. |
+| 1.1.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | SOTA elevation v1.1 — INV-ONBOARD-DPA-FIRST + INV-ONBOARD-ATOMIC-PROVISIONING introduced; 4 new SLOs codified; 12-canonical sign-off baseline per framework §33.5.4.3. |
+| 1.2.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | WI list confirmed (6 WIs) + closing WI two-phase SEAL D+15 Implementation + D+45 GA Evidence Gate; codex parallelism baseline. |
+| 1.3.0 | 2026-05-14 | Gustavo (via Sonnet WI-S19-006 builder) | WI-S19-001..006 SEALED via 6-builder parallel wave: signup orchestration atomic provisioning + Clerk + D1 TX + chaos Stripe outage (001); DPA click-through 6-field consent + JWT receipt + 3 locales + Legal local review (002); DPA versioning + re-acceptance + 30d grace + degrade read-only (003); tier selection + Stripe Checkout + INV-ONBOARD-DPA-FIRST D1 lock (004); enterprise inquiry form + Slack + CRM atomic + 24h auto-reply SLA (005); ship gate conversion funnel 105-cardinality safe + cohort dashboard DASH-ONBOARDING + property test summary 8 props × 10k iter green + RB-FM-SIGNUP-FAILED stub + adversarial summary cross-WI 27 scenarios + PRR-S19 HIGH_RISK CONDITIONALLY_APPROVED with 8 waiver rows (006). PRR-S19 7/12 signed at SEAL; 5/12 pending external advisor (Security Lead + Privacy Officer + Legal Counsel + Compliance Officer + Sales lead + DPO — ADR-0034 Option C). Two-phase SEAL D+15 Implementation done; D+45 GA Evidence Gate target 2026-06-28. |
+
+**Fim spec contract S-19 v1.3.0 SEALED.**

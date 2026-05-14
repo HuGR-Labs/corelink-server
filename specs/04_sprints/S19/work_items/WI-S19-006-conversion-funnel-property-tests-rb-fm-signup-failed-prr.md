@@ -1,12 +1,12 @@
 ---
 id: "WI-S19-006"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "SEALED"
+work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-29"
-updated: "2026-04-29"
+updated: "2026-05-14"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-009"]
 parent: "S-19"
@@ -661,6 +661,7 @@ Este WI emite o PRR; sign-off do PRR-S19.md doc é o sign-off final S-19 sprint.
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | Criação WI-S19-006 (cycle 12.S19.0; SOTA full ship gate — funnel + cohort dashboard + property tests aggregated + RB-FM-SIGNUP-FAILED stub + adversarial summary 25+ + PRR 11 sign-offs canonical + two-phase SEAL D+15/D+45). |
+| 1.1.0 | 2026-05-14 | Gustavo (via Sonnet WI-S19-006 builder) | SEALED — ship-gate deliverables committed: RB-FM-SIGNUP-FAILED stub (`specs/_runbooks/`), adversarial summary cross-WI 27 scenarios (`specs/_audits/2026-05-14-s19-adversarial-summary.md`), property test summary 8 props × 10k green (`specs/_audits/2026-05-14-property-test-summary-s19.md`), PRR-S19 12 canonical sign-off slots CONDITIONALLY_APPROVED w/ 8 waiver rows (`specs/04_sprints/S19/PRR-S19.md`), spec contract S-19 promoted to SEALED v1.3.0 with §20 changelog. Two-phase SEAL D+15 Implementation done; D+45 GA Evidence Gate target 2026-06-28. |
 
 ## 32. Anti-patterns evitados
 
