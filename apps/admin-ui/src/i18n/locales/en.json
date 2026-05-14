@@ -1,11 +1,20 @@
 {
-  "brand": {
-    "name": "CoreLink",
-    "tagline": "Shared content-addressable cache for builds, packages, and ML."
+  "common": {
+    "cancel": "Cancel",
+    "save": "Save",
+    "delete": "Delete",
+    "loading": "Loading…",
+    "error": "Error",
+    "success": "Success",
+    "confirm": "Confirm",
+    "close": "Close",
+    "skipToContent": "Skip to main content"
   },
   "nav": {
+    "home": "Home",
     "dashboard": "Dashboard",
     "settings": "Settings",
+    "signOut": "Sign out",
     "audit": "Audit",
     "billing": "Billing",
     "privacy": "Privacy"
@@ -13,7 +22,36 @@
   "auth": {
     "signIn": "Sign in",
     "signUp": "Sign up",
+    "email": "Email",
+    "password": "Password",
     "signOut": "Sign out"
+  },
+  "errors": {
+    "required": "This field is required.",
+    "invalidEmail": "Enter a valid email address.",
+    "generic": "Something went wrong. Please try again."
+  },
+  "privacy": {
+    "title": "Privacy notice",
+    "lastUpdated": "Last updated",
+    "version": "Version",
+    "subProcessors": "Sub-processors"
+  },
+  "legal": {
+    "dpa": "Data Processing Agreement",
+    "terms": "Terms of Service",
+    "cookies": "Cookie policy",
+    "acceptedOn": "Accepted on",
+    "saveConsent": "Save consent"
+  },
+  "cookies": {
+    "functional": "Strictly necessary",
+    "analytics": "Analytics",
+    "marketing": "Marketing"
+  },
+  "brand": {
+    "name": "CoreLink",
+    "tagline": "Shared content-addressable cache for builds, packages, and ML."
   },
   "landing": {
     "heading": "CoreLink Admin",

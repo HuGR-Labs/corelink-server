@@ -1,11 +1,20 @@
 {
-  "brand": {
-    "name": "CoreLink",
-    "tagline": "Cache compartilhado endereçado por conteúdo para builds, pacotes e ML."
+  "common": {
+    "cancel": "Cancelar",
+    "save": "Salvar",
+    "delete": "Excluir",
+    "loading": "Carregando…",
+    "error": "Erro",
+    "success": "Sucesso",
+    "confirm": "Confirmar",
+    "close": "Fechar",
+    "skipToContent": "Pular para o conteúdo principal"
   },
   "nav": {
+    "home": "Início",
     "dashboard": "Painel",
     "settings": "Configurações",
+    "signOut": "Sair",
     "audit": "Auditoria",
     "billing": "Cobrança",
     "privacy": "Privacidade"
@@ -13,7 +22,36 @@
   "auth": {
     "signIn": "Entrar",
     "signUp": "Criar conta",
+    "email": "E-mail",
+    "password": "Senha",
     "signOut": "Sair"
+  },
+  "errors": {
+    "required": "Este campo é obrigatório.",
+    "invalidEmail": "Insira um endereço de e-mail válido.",
+    "generic": "Algo deu errado. Tente novamente."
+  },
+  "privacy": {
+    "title": "Aviso de privacidade",
+    "lastUpdated": "Última atualização",
+    "version": "Versão",
+    "subProcessors": "Subprocessadores"
+  },
+  "legal": {
+    "dpa": "Acordo de Processamento de Dados",
+    "terms": "Termos de Uso",
+    "cookies": "Política de cookies",
+    "acceptedOn": "Aceito em",
+    "saveConsent": "Salvar consentimento"
+  },
+  "cookies": {
+    "functional": "Estritamente necessários",
+    "analytics": "Analítica",
+    "marketing": "Marketing"
+  },
+  "brand": {
+    "name": "CoreLink",
+    "tagline": "Cache compartilhado endereçado por conteúdo para builds, pacotes e ML."
   },
   "landing": {
     "heading": "CoreLink Admin",
