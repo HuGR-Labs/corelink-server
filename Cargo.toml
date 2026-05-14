@@ -64,6 +64,7 @@ members = [
     "crates/corelink-rotation-adapters",
     "crates/corelink-rotation-worker",
     "crates/corelink-terraform-drift-consumer",
+    "crates/corelink-rollout-controller",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
@@ -182,6 +183,7 @@ corelink-dual-approval = { path = "crates/corelink-dual-approval" }
 corelink-admin-api = { path = "crates/corelink-admin-api" }
 corelink-rotation-adapters = { path = "crates/corelink-rotation-adapters" }
 corelink-rotation-worker = { path = "crates/corelink-rotation-worker" }
+corelink-rollout-controller = { path = "crates/corelink-rollout-controller" }
 
 # Test / bench
 proptest = "1.5"
