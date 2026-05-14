@@ -629,6 +629,50 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-dt-cli"
+version = "0.1.0"
+dependencies = [
+ "corelink-dt-webhook",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "corelink-dt-reconcile"
+version = "0.1.0"
+dependencies = [
+ "corelink-dt-webhook",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "corelink-dt-webhook"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "hex",
+ "hmac",
+ "proptest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "subtle",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "corelink-edge"
 version = "0.1.0"
 dependencies = [

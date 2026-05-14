@@ -82,5 +82,21 @@
   ],
   "done": "see git tags s01..s11-impl-sealed for prior + this commit for S-11 002..008",
   "last_seal_at": "2026-05-13T18:00:00Z",
-  "note": "consolidated after wave-1 parallel sonnet merge of WI-S11-003..008"
+  "note": "consolidated after wave-1 parallel sonnet merge of WI-S11-003..008",
+  "wi_s12_005": {
+    "status": "SEALED",
+    "sealed_at": "2026-05-13T00:00:00Z",
+    "commit": "pending",
+    "tests": "41 passed (31 unit + 6 adversarial + 4 prop x10k)",
+    "artifacts": [
+      "crates/corelink-dt-webhook/src/{hmac,severity,handler,dlq,metrics}.rs",
+      "crates/corelink-dt-webhook/tests/{prop,adversarial}.rs",
+      "crates/corelink-dt-webhook/examples/{webhook_handle,mock_cve_inject,dlq_replay}.rs",
+      "crates/corelink-dt-cli/",
+      "crates/corelink-dt-reconcile/",
+      "infra/dependency-track/{docker-compose.yml,Caddyfile,.env.example}",
+      "docs/internal/dt-dr-runbook.md",
+      "specs/03_architecture/adrs/ADR-0037-dependency-track-self-host.md"
+    ]
+  }
 }

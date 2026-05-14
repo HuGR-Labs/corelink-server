@@ -1,0 +1,61 @@
+[package]
+name = "corelink-dt-webhook"
+description = "Dependency-Track webhook handler: HMAC verification, CVE severity classification, alert routing (Slack/Email/PagerDuty), dead-letter queue, and mock CVE injection for continuous supply-chain CVE alerting (WI-S12-005, HIGH_RISK lane FF-HR-005). Implements DtWebhookHandler trait with 15 min p99 alert SLA. Prometheus metrics: corelink_supply_dt_* family (6 metrics). Trace spans: dt.webhook.handle + dt.alert.deliver."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+hmac = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+tracing = { workspace = true }
+async-trait = "0.1"
+subtle = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+tokio = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[[test]]
+name = "prop_dt_webhook"
+path = "tests/prop.rs"
+
+[[test]]
+name = "adversarial_dt_webhook"
+path = "tests/adversarial.rs"
+
+[[example]]
+name = "webhook_handle"
+path = "examples/webhook_handle.rs"
+
+[[example]]
+name = "mock_cve_inject"
+path = "examples/mock_cve_inject.rs"
+
+[[example]]
+name = "dlq_replay"
+path = "examples/dlq_replay.rs"

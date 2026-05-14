@@ -50,6 +50,9 @@ members = [
     "crates/corelink-privacy-notice-emit",
     "crates/corelink-privacy-pseudonymize",
     "crates/corelink-privacy-residency-enforcement",
+    "crates/corelink-dt-webhook",
+    "crates/corelink-dt-cli",
+    "crates/corelink-dt-reconcile",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
@@ -157,6 +160,9 @@ corelink-privacy-erasure-worker = { path = "crates/corelink-privacy-erasure-work
 corelink-privacy-notice-emit = { path = "crates/corelink-privacy-notice-emit" }
 corelink-privacy-pseudonymize = { path = "crates/corelink-privacy-pseudonymize" }
 corelink-privacy-residency-enforcement = { path = "crates/corelink-privacy-residency-enforcement" }
+corelink-dt-webhook = { path = "crates/corelink-dt-webhook" }
+corelink-dt-cli = { path = "crates/corelink-dt-cli" }
+corelink-dt-reconcile = { path = "crates/corelink-dt-reconcile" }
 
 # Test / bench
 proptest = "1.5"
