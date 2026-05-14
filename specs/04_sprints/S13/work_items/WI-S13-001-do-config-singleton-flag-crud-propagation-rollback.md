@@ -1,10 +1,10 @@
 ---
 id: "WI-S13-001"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
-audit_status: "ACTIVE"
-version: "1.0.0"
+doc_status: "SEALED"
+work_status: "DONE"
+audit_status: "AUDITED"
+version: "1.0.1"
 created: "2026-04-28"
 updated: "2026-04-28"
 lane: "HIGH_RISK"
@@ -26,7 +26,7 @@ tags: ["wi", "s13", "admin-plane", "config-singleton", "feature-flags", "rollbac
 
 # WI-S13-001 — DO `config-singleton` per-region + Schema Versioned (Feature Flags + Tunables + Retention) + CAS Atomic Update + Propagation Pub-Sub ≤ 5s Edge Global + Rollback API ≤ 5 min + D1 `config_change_log` 90d Retention
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** SEALED · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-13](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -751,6 +751,7 @@ API semver stable post v1.0; breaking changes em payload schema = bump `schema_v
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-28 | Gustavo (via Claude Opus 4.7) | Criação WI-S13-001 (cycle 12.S13.0). |
+| 1.0.1 | 2026-05-14 | Claude Sonnet 4.6 (autonomous) | SEALED: corelink-config-do + corelink-config-api crates implemented; CAS + propagation + rollback + audit fail-CLOSED; 10 prop tests + 8 adversarial tests green; wasm32 clean; clippy -D warnings clean; D1 migration 0024; ADR-S13-001; admin-plane.md docs. |
 
 ## 32. Anti-patterns evitados
 

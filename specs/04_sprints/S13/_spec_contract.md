@@ -295,6 +295,13 @@ Itens waivable com Security lead + SRE lead + ADR:
 - ⚠️ Progressive rollout stages 4 → 3 (skip 50%) com explicit risk acceptance.
 - ⚠️ Auto-rollback false-positive threshold 1×/mês → 2×/mês com root-cause analysis.
 
+## 20. Changelog
+
+| Versão | Data | Autor | Mudança |
+|---|---|---|---|
+| 1.2.0 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | Criação S-13 spec contract SOTA v1.1 (cycle 12.S13.0). |
+| 1.2.1 | 2026-05-14 | Claude Sonnet 4.6 (autonomous) | WI-S13-001 SEALED: corelink-config-do + corelink-config-api implementados; prop/adversarial tests green; wasm32 clean; D1 migration 0024; ADR-S13-001; admin-plane.md. |
+
 ---
 
 **Fim spec contract S-13 v1.1.0 SOTA.**
