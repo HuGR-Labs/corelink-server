@@ -1,0 +1,48 @@
+[package]
+name = "corelink-stripe-real"
+description = "CoreLink Stripe HTTPS client — real implementation of corelink-tier-selection::StripeClient via reqwest (rustls). Ships endpoints for Checkout Sessions, Subscriptions, Customers, and Billing Portal sessions; idempotent POSTs via `Idempotency-Key`; exponential backoff retries on 5xx / 429 (respects `Retry-After`); pure-function HMAC-SHA256 webhook signature verify (constant-time via `subtle::ConstantTimeEq`; 5-min replay window). API key + webhook secret resolved from env (`STRIPE_SECRET_KEY` / `STRIPE_SECRET_KEY_TEST` / `STRIPE_WEBHOOK_SECRET`) — NEVER logged. `StripeError` `#[non_exhaustive]` taxonomy (RateLimited / Authentication / CardDeclined / InvalidRequest / ApiConnection / Idempotency / Generic). wasm32 gated out: production callers run in `apps/server` (native Rust, NOT CF Worker) per `trait-abstraction-defer` charter — R2-1."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[features]
+default = []
+# Gate live-network integration tests behind explicit feature flag so
+# default `cargo test -p corelink-stripe-real` never reaches the
+# network. CI sets `STRIPE_SECRET_KEY_TEST` + `--features live-integration`.
+live-integration = []
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+hmac = { workspace = true }
+sha2 = { workspace = true }
+subtle = { workspace = true }
+hex = { workspace = true }
+reqwest = { workspace = true, features = ["json", "rustls-tls", "blocking"], default-features = false }
+url = "2"
+corelink-tier-selection = { path = "../corelink-tier-selection" }
+
+[dev-dependencies]
+proptest = { workspace = true }
+tokio = { workspace = true }
