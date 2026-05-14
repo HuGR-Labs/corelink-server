@@ -201,7 +201,7 @@ mod tests {
 
     #[test]
     fn percentile_basic() {
-        let mut data = vec![10u64, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+        let data = vec![10u64, 20, 30, 40, 50, 60, 70, 80, 90, 100];
         assert_eq!(percentile(&data, 50), 50);
         assert_eq!(percentile(&data, 99), 100);
         assert_eq!(percentile(&data, 0), 10);

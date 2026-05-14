@@ -1,4 +1,6 @@
-<<<<<<< HEAD
+# CoreLink Bazel starter — root BUILD file.
+# Demonstrates a minimal cc_binary + cc_library to exercise the remote cache.
+
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
 
 # cc_library: greeter — reusable component; validates cross-target dedup
@@ -15,13 +17,5 @@ cc_binary(
     name = "hello",
     srcs = ["main.cc"],
     deps = [":greeter"],
-=======
-# CoreLink Bazel starter — root BUILD file.
-# Demonstrates a minimal cc_binary to exercise the remote cache.
-
-cc_binary(
-    name = "hello",
-    srcs = ["hello.cc"],
     visibility = ["//visibility:public"],
->>>>>>> wt/wi-s15-005
 )
