@@ -1987,6 +1987,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-signup"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "corelink-slo"
 version = "0.1.0"
 dependencies = [
