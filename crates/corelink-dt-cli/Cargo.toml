@@ -1,0 +1,38 @@
+[package]
+name = "corelink-dt-cli"
+description = "CLI for Dependency-Track operations: mock CVE injection (staging), OSS Index fallback trigger, and diagnostic commands for WI-S12-005 supply-chain alerting. Subcommands: inject-mock, ossindex-fallback. Gated: DT_MOCK_INJECTION_ENABLED=true required for inject-mock."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+corelink-dt-webhook = { path = "../corelink-dt-webhook" }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tokio = { workspace = true }
+
+[[bin]]
+name = "corelink-dt-cli"
+path = "src/main.rs"

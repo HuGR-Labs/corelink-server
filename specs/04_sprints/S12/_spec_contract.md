@@ -8,6 +8,7 @@ created: "2026-04-24"
 updated: "2026-05-13"
 
 
+
 updated: "2026-05-14"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
@@ -319,6 +320,7 @@ Itens waivable com Security lead + Legal + ADR:
 ---
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 ## 20. Changelog
 
 | Versão | Data | Autor | Mudança |
@@ -355,3 +357,14 @@ Itens waivable com Security lead + Legal + ADR:
 
 **Fim spec contract S-12 v1.2.0 SOTA.**
 >>>>>>> wt/wi-s12-003
+=======
+## Changelog
+
+| Versão | Data | Mudança |
+|--------|------|---------|
+| 1.0.0 | 2026-04-24 | Criação S-12 spec contract. |
+| 1.2.0 | 2026-04-24 | WIs antecipados confirmados (7). |
+| 1.3.0 | 2026-05-13 | WI-S12-005 SEALED: corelink-dt-webhook crate + CLI + reconcile + DT infra + ADR-0037 + DR runbook. |
+
+**Fim spec contract S-12 v1.3.0 SOTA.**
+>>>>>>> wt/wi-s12-005

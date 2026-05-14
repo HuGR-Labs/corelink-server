@@ -1,0 +1,53 @@
+# Caddyfile — Dependency-Track TLS reverse proxy (WI-S12-005)
+# Let's Encrypt automatic TLS + HSTS enforced.
+
+{
+    email ops@corelink.dev
+    # ACME HTTPS challenge (port 80 redirected, port 443 serves TLS).
+}
+
+dt.corelink.dev {
+    # HSTS: 1 year, includeSubDomains, preload-ready.
+    header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+    header X-Content-Type-Options nosniff
+    header X-Frame-Options DENY
+    header Referrer-Policy strict-origin-when-cross-origin
+
+    # API paths → DT API server.
+    handle /api/* {
+        reverse_proxy dt-apiserver:8080 {
+            header_up Host {upstream_hostport}
+        }
+    }
+
+    # All other paths → DT frontend SPA.
+    handle {
+        reverse_proxy dt-frontend:8080 {
+            header_up Host {upstream_hostport}
+        }
+    }
+
+    log {
+        output stdout
+        format json
+    }
+}
+
+dt-staging.corelink.dev {
+    header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    header X-Content-Type-Options nosniff
+    header X-Frame-Options DENY
+
+    handle /api/* {
+        reverse_proxy dt-apiserver:8080
+    }
+
+    handle {
+        reverse_proxy dt-frontend:8080
+    }
+
+    log {
+        output stdout
+        format json
+    }
+}

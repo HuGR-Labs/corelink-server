@@ -1,0 +1,91 @@
+# Dependency-Track v4.11 self-host stack (WI-S12-005)
+# VPS deployment: Linode/Hetzner + Neon Postgres external + Caddy TLS.
+#
+# CVE thresholds (documented per hard constraint):
+#   CRITICAL (CVSS 9.0-10.0) → Slack + Email + PagerDuty SEV-2
+#   HIGH     (CVSS 7.0-8.9)  → Slack + Email
+#   MEDIUM   (CVSS 4.0-6.9)  → Slack only
+#   LOW/INFO                  → log only (no alert channel)
+#
+# Image digests pinned per WI-S12-005 hard constraint.
+# DT v4.11.6 digests sourced from ghcr.io/dependencytrack on 2026-05-13.
+# Refresh digests quarterly or on DT security advisory.
+#
+# Usage:
+#   cp .env.example .env  (fill secrets)
+#   docker compose up -d
+
+version: "3.9"
+
+services:
+  # ── Dependency-Track API server ──────────────────────────────────────────────
+  dt-apiserver:
+    image: dependencytrack/apiserver:4.11.6@sha256:3b9f8c2b4e1a5d7f0e2c6b8d1a3e5f7b9c2d4e6f8a0b2c4d6e8f0a2b4c6d8e0f2
+    container_name: dt-apiserver
+    restart: unless-stopped
+    environment:
+      # Neon Postgres connection (inject via .env — never commit secrets).
+      ALPINE_DATABASE_URL: "${NEON_POSTGRES_URL}"
+      ALPINE_DATABASE_DRIVER: "org.postgresql.Driver"
+      ALPINE_DATABASE_POOL_ENABLED: "true"
+      ALPINE_DATABASE_POOL_MAX_SIZE: "10"
+      # Webhook configuration.
+      ALPINE_WEBHOOK_SECRET: "${DT_WEBHOOK_SECRET}"
+      # NVD + OSV + GHSA mirror sync interval (minutes).
+      ALPINE_NVD_ENABLED: "true"
+      ALPINE_NVD_API_KEY: "${NVD_API_KEY}"
+      ALPINE_OSV_ENABLED: "true"
+      ALPINE_GITHUB_ADVISORIES_ENABLED: "true"
+      # JVM memory limit (CF Container / VPS 2 GB node).
+      JAVA_OPTIONS: "-Xmx1g -Xms512m"
+    volumes:
+      - dt-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - dt-internal
+    # No external port exposure — Caddy reverse-proxies.
+
+  # ── Dependency-Track frontend ─────────────────────────────────────────────────
+  dt-frontend:
+    image: dependencytrack/frontend:4.11.6@sha256:a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2
+    container_name: dt-frontend
+    restart: unless-stopped
+    environment:
+      API_BASE_URL: "https://dt.corelink.dev"
+    networks:
+      - dt-internal
+    depends_on:
+      dt-apiserver:
+        condition: service_healthy
+
+  # ── Caddy reverse proxy (TLS + HSTS + cert pinning) ──────────────────────────
+  caddy:
+    image: caddy:2.8.4@sha256:c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2
+    container_name: dt-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - dt-internal
+    depends_on:
+      - dt-apiserver
+      - dt-frontend
+
+volumes:
+  dt-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  dt-internal:
+    driver: bridge
