@@ -1,0 +1,59 @@
+---
+id: python-write
+title: Python — ByteStream.Write
+sidebar_label: Python · Write
+---
+
+# Python — `ByteStream.Write`
+
+Stream a large blob to CAS in 1 MiB chunks. Use this whenever the blob exceeds `max_batch_total_size_bytes`.
+
+## Prerequisites
+
+- `pip install corelink-py`
+- `CORELINK_PAT` exported
+
+## Code
+
+```python
+import asyncio, hashlib, os
+from pathlib import Path
+from corelink import CoreLinkClient
+
+CHUNK = 1 * 1024 * 1024
+
+async def main() -> None:
+    path = Path("/tmp/big.bin")
+    size = path.stat().st_size
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+
+    async with CoreLinkClient(
+        endpoint="https://acme-dev.corelink.dev",
+        pat=os.environ["CORELINK_PAT"],
+    ) as client:
+        async def chunks():
+            with path.open("rb") as f:
+                while buf := f.read(CHUNK):
+                    yield buf
+        result = await client.bytestream.write(
+            digest=digest, size_bytes=size, chunks=chunks(),
+        )
+        assert result.committed_size == size
+        print(f"uploaded {size} B  sha256:{digest[:12]}...")
+
+asyncio.run(main())
+```
+
+## Expected output
+
+```text
+uploaded 41943040 B  sha256:bdd9ea4a8e6b...
+```
+
+## Common errors
+
+| Status | Error taxonomy | Cause |
+| --- | --- | --- |
+| `ABORTED` | `COR_CAS_DIGEST_MISMATCH` | Hash mismatch at commit. |
+| `RESOURCE_EXHAUSTED` | `COR_QUOTA_EXCEEDED` | Tenant CAS full. |
+| `FAILED_PRECONDITION` | `COR_CAS_RESUME_INVALID` | Resume offset does not match server state. Restart upload. |

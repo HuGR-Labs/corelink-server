@@ -1,0 +1,43 @@
+{
+  "name": "@corelink/docs",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CoreLink documentation site — Docusaurus + Diataxis (WI-S18-001 scaffold + WI-S18-002 content + REAPI auto-gen).",
+  "type": "module",
+  "scripts": {
+    "start": "docusaurus start",
+    "build": "docusaurus build",
+    "serve": "docusaurus serve",
+    "clear": "docusaurus clear",
+    "swizzle": "docusaurus swizzle",
+    "docs:gen": "tsx scripts/gen-reapi-docs.ts",
+    "docs:gen:check": "tsx scripts/gen-reapi-docs.ts --check",
+    "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@docusaurus/core": "3.5.2",
+    "@docusaurus/preset-classic": "3.5.2",
+    "@mdx-js/react": "^3.0.0",
+    "clsx": "^2.1.1",
+    "prism-react-renderer": "^2.4.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@docusaurus/module-type-aliases": "3.5.2",
+    "@docusaurus/tsconfig": "3.5.2",
+    "@docusaurus/types": "3.5.2",
+    "@types/node": "^20.16.0",
+    "@types/react": "^18.3.3",
+    "gray-matter": "^4.0.3",
+    "protobufjs": "^7.4.0",
+    "tsx": "^4.19.0",
+    "typescript": "~5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

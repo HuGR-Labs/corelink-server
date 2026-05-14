@@ -1,0 +1,41 @@
+---
+id: cli-stat-missing
+title: CLI — stat & detect missing blobs
+sidebar_label: CLI · stat / missing
+---
+
+# CLI — `corelink stat`
+
+Verify a blob is present without downloading it. Useful for CI prefetch checks.
+
+## Prerequisites
+
+- `corelink` CLI installed
+- `CORELINK_PAT` exported
+
+## Code
+
+```bash
+# Stat one digest (exits 0 if present, 4 if missing).
+corelink stat sha256:bdd9ea4a8e6b...:16
+
+# Bulk variant — feed digests on stdin.
+cat digests.txt | corelink stat --batch --format=json
+```
+
+## Expected output
+
+```json
+[
+  {"hash": "bdd9ea4a8e6b...", "size_bytes": 16, "present": true,  "last_seen": "2026-05-13T22:01:14Z"},
+  {"hash": "71c8b65b8b7e...", "size_bytes": 4,  "present": false, "last_seen": null}
+]
+```
+
+## Common errors
+
+| CLI exit code | Cause | Fix |
+| --- | --- | --- |
+| `4` | Blob not found | Upload via [`corelink put`](./cli-put-get.mdx) |
+| `3` | `COR_AUTH_PAT_INVALID` | Re-mint PAT |
+| `7` | Malformed digest string | Use `sha256:<hash_hex>:<size_bytes>` |

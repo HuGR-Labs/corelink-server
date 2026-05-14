@@ -1,0 +1,28 @@
+---
+id: cli-stream-put
+title: CLI — stream a large file via ByteStream
+sidebar_label: CLI · stream put
+---
+
+# CLI — `corelink put --stream`
+
+Force the CLI to use `ByteStream.Write` regardless of blob size.
+
+## Code
+
+```bash
+corelink put /tmp/big.bin --stream --format=digest
+```
+
+## Expected output
+
+```text
+sha256:bdd9ea4a8e6b...:41943040
+```
+
+## Common errors
+
+| CLI exit code | Cause | Fix |
+| --- | --- | --- |
+| `5` | Blob exceeds tenant quota | Free space or upgrade |
+| `6` | `COR_CAS_DIGEST_MISMATCH` | Disk corruption — rerun |

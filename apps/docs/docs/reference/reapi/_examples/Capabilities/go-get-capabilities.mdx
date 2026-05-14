@@ -1,0 +1,53 @@
+---
+id: go-get-capabilities
+title: Go — GetCapabilities
+sidebar_label: Go · GetCapabilities
+---
+
+# Go — `Capabilities.GetCapabilities`
+
+## Code
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "os"
+
+    corelink "go.corelink.dev/corelink-go"
+)
+
+func main() {
+    ctx := context.Background()
+    client, _ := corelink.NewClient(ctx, corelink.Config{
+        Endpoint: "https://acme-dev.corelink.dev",
+        PAT:      os.Getenv("CORELINK_PAT"),
+    })
+    defer client.Close()
+
+    caps, err := client.Capabilities.Get(ctx)
+    if err != nil {
+        panic(err)
+    }
+    fmt.Println("max_batch_total_size_bytes =", caps.CacheCapabilities.MaxBatchTotalSizeBytes)
+    fmt.Println("digest functions =", caps.CacheCapabilities.DigestFunctions)
+    fmt.Println("compressors =", caps.CacheCapabilities.SupportedCompressors)
+}
+```
+
+## Expected output
+
+```text
+max_batch_total_size_bytes = 4194304
+digest functions = [SHA256 BLAKE3]
+compressors = [IDENTITY ZSTD]
+```
+
+## Common errors
+
+| Status | Error taxonomy | Cause |
+| --- | --- | --- |
+| `UNAUTHENTICATED` | `COR_AUTH_PAT_INVALID` | PAT expired. |
+| `UNAVAILABLE` | `COR_NET_TRANSIENT` | Retry with exponential backoff. |

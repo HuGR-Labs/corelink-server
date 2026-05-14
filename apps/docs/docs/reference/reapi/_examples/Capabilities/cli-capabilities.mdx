@@ -1,0 +1,39 @@
+---
+id: cli-capabilities
+title: CLI — show server capabilities
+sidebar_label: CLI · capabilities
+---
+
+# CLI — `corelink doctor --capabilities`
+
+## Prerequisites
+
+- `corelink` CLI installed
+- `CORELINK_PAT` exported
+
+## Code
+
+```bash
+corelink doctor --capabilities --format=json | jq
+```
+
+## Expected output
+
+```json
+{
+  "cache_capabilities": {
+    "digest_functions": ["SHA256", "BLAKE3"],
+    "max_batch_total_size_bytes": 4194304,
+    "supported_compressors": ["IDENTITY", "ZSTD"]
+  },
+  "low_api_version":  {"major": 2, "minor": 0,  "patch": 0},
+  "high_api_version": {"major": 2, "minor": 12, "patch": 0}
+}
+```
+
+## Common errors
+
+| CLI exit code | Cause | Fix |
+| --- | --- | --- |
+| `3` | `COR_AUTH_PAT_INVALID` | Re-mint PAT |
+| `2` | Network unreachable | `corelink doctor --network` |

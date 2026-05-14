@@ -1,0 +1,46 @@
+---
+id: node-write
+title: Node — ByteStream.Write
+sidebar_label: Node · Write
+---
+
+# Node / TypeScript — `ByteStream.Write`
+
+## Code
+
+```ts
+import { createReadStream, statSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { CoreLinkClient } from "@corelink/client";
+
+const path = "/tmp/big.bin";
+const size = statSync(path).size;
+const hash = await new Promise<string>((resolve) => {
+  const h = createHash("sha256");
+  createReadStream(path).on("data", (c) => h.update(c)).on("end", () => resolve(h.digest("hex")));
+});
+
+const client = new CoreLinkClient({
+  endpoint: "https://acme-dev.corelink.dev",
+  pat: process.env.CORELINK_PAT!,
+});
+
+const result = await client.bytestream.write({
+  digest: { hash, sizeBytes: size },
+  stream: createReadStream(path),
+});
+console.log(`uploaded ${result.committedSize} B sha256:${hash.slice(0, 12)}...`);
+```
+
+## Expected output
+
+```text
+uploaded 41943040 B sha256:bdd9ea4a8e6b...
+```
+
+## Common errors
+
+| Status | Error taxonomy | Cause |
+| --- | --- | --- |
+| `ABORTED` | `COR_CAS_DIGEST_MISMATCH` | Hash mismatch at commit. |
+| `FAILED_PRECONDITION` | `COR_CAS_RESUME_INVALID` | Restart upload from offset 0. |

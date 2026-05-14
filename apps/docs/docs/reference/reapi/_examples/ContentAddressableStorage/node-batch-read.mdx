@@ -1,0 +1,48 @@
+---
+id: node-batch-read
+title: Node — BatchReadBlobs
+sidebar_label: Node · BatchReadBlobs
+---
+
+# Node / TypeScript — `BatchReadBlobs`
+
+## Prerequisites
+
+- `pnpm add @corelink/client`
+- `CORELINK_PAT` exported
+
+## Code
+
+```ts
+import { CoreLinkClient } from "@corelink/client";
+
+const client = new CoreLinkClient({
+  endpoint: "https://acme-dev.corelink.dev",
+  pat: process.env.CORELINK_PAT!,
+});
+
+const digests = [
+  { hash: "bdd9ea4a8e6b...", sizeBytes: 5 },
+  { hash: "71c8b65b8b7e...", sizeBytes: 4 },
+];
+
+const responses = await client.cas.batchReadBlobs(digests);
+for (const r of responses) {
+  const text = new TextDecoder().decode(r.data);
+  console.log(`OK ${r.digest.hash.slice(0, 12)} → ${JSON.stringify(text)}`);
+}
+```
+
+## Expected output
+
+```text
+OK bdd9ea4a8e6b → "alpha"
+OK 71c8b65b8b7e → "beta"
+```
+
+## Common errors
+
+| Status | Error taxonomy | Cause |
+| --- | --- | --- |
+| `NOT_FOUND` | `COR_CAS_BLOB_MISSING` | Digest evicted or never written. |
+| `ABORTED` | `COR_CAS_DIGEST_MISMATCH` | Client-verify rejected payload. |

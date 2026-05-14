@@ -1,0 +1,54 @@
+---
+id: python-batch-update
+title: Python — BatchUpdateBlobs
+sidebar_label: Python · BatchUpdateBlobs
+---
+
+# Python — `BatchUpdateBlobs`
+
+Upload many small blobs in one round-trip. Use this whenever the combined payload fits the server's `max_batch_total_size_bytes` (see [`Capabilities.GetCapabilities`](../Capabilities/python-get-capabilities.mdx)).
+
+## Prerequisites
+
+- `pip install corelink-py`
+- `CORELINK_PAT` exported
+- `python >= 3.10`
+
+## Code
+
+```python
+import asyncio
+import hashlib
+import os
+from corelink import CoreLinkClient
+
+async def main() -> None:
+    blobs = [b"alpha", b"beta", b"gamma"]
+    async with CoreLinkClient(
+        endpoint="https://acme-dev.corelink.dev",
+        pat=os.environ["CORELINK_PAT"],
+    ) as client:
+        responses = await client.cas.batch_update_blobs(blobs)
+        for blob, resp in zip(blobs, responses):
+            digest = hashlib.sha256(blob).hexdigest()
+            assert resp.status.code == 0, resp.status.message
+            print(f"OK  sha256:{digest[:12]}... ({len(blob)} B)")
+
+asyncio.run(main())
+```
+
+## Expected output
+
+```text
+OK  sha256:bdd9ea4a8e6b... (5 B)
+OK  sha256:71c8b65b8b7e... (4 B)
+OK  sha256:8da8b9d77a8e... (5 B)
+```
+
+## Common errors
+
+| Status | Error taxonomy | Cause |
+| --- | --- | --- |
+| `INVALID_ARGUMENT` | `COR_CAS_BATCH_TOO_LARGE` | Combined payload exceeds `max_batch_total_size_bytes`. Split or stream via [ByteStream.Write](../ByteStream/python-write.mdx). |
+| `ABORTED` | `COR_CAS_DIGEST_MISMATCH` | Hash supplied does not match bytes uploaded. |
+| `UNAUTHENTICATED` | `COR_AUTH_PAT_INVALID` | PAT expired / wrong env. Re-mint via the admin UI. |

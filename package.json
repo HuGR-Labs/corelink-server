@@ -13,6 +13,11 @@
     "admin-ui:build": "pnpm --filter @corelink/admin-ui build",
     "admin-ui:test": "pnpm --filter @corelink/admin-ui test",
     "admin-ui:lint": "pnpm --filter @corelink/admin-ui lint",
-    "admin-ui:typecheck": "pnpm --filter @corelink/admin-ui typecheck"
+    "admin-ui:typecheck": "pnpm --filter @corelink/admin-ui typecheck",
+    "docs:dev": "pnpm --filter @corelink/docs start",
+    "docs:build": "pnpm --filter @corelink/docs build",
+    "docs:test": "pnpm --filter @corelink/docs test",
+    "docs:gen": "pnpm --filter @corelink/docs docs:gen",
+    "docs:gen:check": "pnpm --filter @corelink/docs docs:gen:check"
   }
 }

@@ -1,0 +1,52 @@
+name: docs · REAPI auto-gen drift check
+
+# CTRL-DOC-AUTO-GEN canonical per Quality Standard 14.s18.8
+# Non-skippable per Waiver policy §19. Runs on every PR + push that touches
+# the vendored .proto files or the generator script.
+
+on:
+  pull_request:
+    paths:
+      - "crates/corelink-reapi/proto/**"
+      - "apps/server/proto/**"
+      - "apps/docs/scripts/gen-reapi-docs.ts"
+      - "apps/docs/docs/reference/reapi/_generated/**"
+      - ".github/workflows/docs-reapi-gen.yml"
+  push:
+    branches: [main]
+    paths:
+      - "crates/corelink-reapi/proto/**"
+      - "apps/server/proto/**"
+      - "apps/docs/scripts/gen-reapi-docs.ts"
+
+jobs:
+  drift-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Install docs deps
+        run: pnpm install --filter @corelink/docs --frozen-lockfile=false
+
+      - name: Typecheck
+        run: pnpm --filter @corelink/docs typecheck
+
+      - name: Tests
+        run: pnpm --filter @corelink/docs test
+
+      - name: Verify zero drift between .proto and generated MDX
+        run: pnpm --filter @corelink/docs docs:gen:check
+
+      - name: Auto-PR on drift (informational)
+        if: failure() && github.event_name == 'push'
+        run: |
+          echo "::warning::REAPI reference is out of date — run pnpm --filter @corelink/docs docs:gen and commit."
