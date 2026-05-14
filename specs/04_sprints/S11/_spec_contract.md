@@ -358,6 +358,21 @@ Itens waivable com sign-off Privacy Officer + Legal + Compliance Officer + ADR:
 
 ## 20. Change log
 
+### v1.7.0 (2026-05-13) — WI-S11-003 implementation phase SEALED
+
+Implementation phase landing (no spec changes; impl-only changelog row per charter §spec contract changelog discipline). WI-S11-003 SEALED at the canonical impl quality gates:
+
+- **`crates/corelink-privacy-consent-ledger/`** new crate (~1850 LOC; 7 src modules + 7 test files). `ConsentLedger` trait + `InMemoryConsentLedger` orchestrator with per-instance `Arc<Mutex<u64>>` F-001 closure + canonical fail-CLOSED `locale_enforce → notice_version_check → audit_emit → hmac_sign → store_insert` ordering (S-06 P0-2 / S-07 P1-1 lessons absorbed). `ConsentHmacSigner` trait + `InMemoryConsentHmacSigner` (HMAC-SHA256 via HKDF-SHA256; tenant-scoped salt; HKDF info=`corelink/v1/consent-hmac`; constant-time verify via `subtle::ConstantTimeEq`). `ConsentStore` trait + `InMemoryConsentStore` (idempotency UNIQUE 5-tuple: tenant_id + subject_id + purpose + notice_text_hash + ui_capture_ts — PAT-RETRY-IDEMPOTENT-001). `ConsentAuditSink` + `InMemoryConsentAuditSink` + `FailingConsentAuditSink`. `CascadeSink` + `InMemoryCascadeSink` (Cloudflare Queue fanout ≤24h SLA CTRL-PRIV-CONSENT-002). `LocaleEnforceError` + `enforce_locale` strict (CTRL-PRIV-CONSENT-005). `NoticeVersionCheckError` + `is_notice_version_stale` + `check_notice_version` (major bump force re-consent AC-006; NO fail-open swap to legitimate_interest — corrige GPT P0-1 round-1).
+- **Schema symmetric grant ↔ revoke (Lote 9.4 Opus H-05)**: `ConsentProofPayload` 6-field struct (notice_text_hash + notice_version + locale + wording_id + ui_capture_ts + submission_ts) used identically in `ConsentRecord` and `ConsentRevocationRecord`. Verified at Rust type level (same type) + runtime field equality in `regression_symmetric_schema` tests.
+- **12 canonical `ConsentPurpose` enum** closed (privacy_model.md §5.6.1; ADR-S11-006 cardinality discipline) + `LegalBasis` 4-arm enum; `legal_basis()` + `is_revocable()` mapping fixed per purpose. NO dynamic swap.
+- **2 CloudEvents canonical types pinned**: `dev.hugr.corelink.consent.{granted,revoked}.v1` per Lote 10.9bis P0-G prefix.
+- **Neon migration `N+3__consent_ledger_revocation.sql`**: 2-table DDL (`consent_ledger` + `consent_revocation`) with 12-arm purpose CHECK, 3-locale CHECK, cascade_status CHECK, UNIQUE 5-tuple constraints, and 4 indexes.
+- **`VerifyParams` + `HmacParams` structs** group preimage fields to satisfy `too_many_arguments` clippy lint — clean API surface for the stateless verify endpoints (AC-004).
+- **Quality gates verde**: 59 tests across 7 files all green (18 lib unit + 3 chaos + 13 integration + 3 prop_hmac_roundtrip at 10k iter + 2 prop_idempotency_replay at 10k iter + 10 regression_locale_enforce + 6 regression_notice_version + 4 regression_symmetric_schema); `cargo clippy --all-targets -- -D warnings` clean; `cargo build --target wasm32-unknown-unknown -p corelink-privacy-consent-ledger` clean.
+- **PROPTEST_CASES=10000 verified**: prop_hmac_roundtrip (3 tests × 10k) + prop_idempotency_replay (2 tests × 10k) all green.
+- **Charter constraints verified**: no `unsafe`; no `unwrap`/`expect`/`panic`/indexing in lib code; F-001 `Arc<Mutex<>>` per-instance closure; `#[non_exhaustive]` on every public enum; wasm32-clean (no ring / no C toolchain dep); PROPTEST_CASES env-var runtime override per S-07 P1-2; no `prop_assert!(matches!(...))` anti-pattern per S-08 P1-1.
+- **INV-CONSENT-PROOF-VERIFIABLE CRITICAL (§3.12 L168)** satisfied: 6-field proof + HMAC signature + stateless verify endpoint. **INV-AUDIT-APPEND-ONLY CRITICAL (§3.6 L116)** satisfied: `chaos_audit_emit_failure` pins state UNCHANGED on audit failure.
+
 ### v1.6.0 (2026-05-07) — WI-S11-002 implementation phase SEALED
 
 Implementation phase landing (no spec changes; impl-only changelog row per charter §spec contract changelog discipline). WI-S11-002 SEALED at the canonical impl quality gates:

@@ -1,0 +1,70 @@
+[package]
+name = "corelink-privacy-consent-ledger"
+description = "CoreLink Consent Ledger (WI-S11-003 — S-11 Privacy Pipeline HIGH_RISK lane). GDPR Art. 7 + LGPD Art. 8 proof-of-informed regulatory cornerstone. Neon schema 2-table canonical (consent_ledger + consent_revocation) with 6-field symmetric proof payload (notice_text_hash + notice_version + locale + wording_id + ui_capture_ts + submission_ts) per Lote 9.4 Opus H-05 schema-symmetric grant ↔ revoke. ConsentLedger trait + InMemoryConsentLedger orchestrator. 12 canonical ConsentPurpose enum closed (privacy_model.md §5.6.1; cardinality discipline ADR-S11-006); LegalBasis enum 4-arm. HMAC-SHA256 per-consent signature via tenant-scoped HKDF (security_model.md §374; HKDF info=`corelink/v1/consent-hmac`; key separation from JWT receipt key). Verify endpoint stateless público (no DB lookup; HMAC re-derive). Cascade unsubscribe ≤24h via Cloudflare Queue fanout (CTRL-PRIV-CONSENT-002). 2 CloudEvents canonical `dev.hugr.corelink.consent.{granted,revoked}.v1` per Lote 10.9bis P0-G prefix; audit fail-CLOSED envelope BEFORE state mutation (split-tier ADR-S11-002; INV-AUDIT-APPEND-ONLY CRITICAL §3.6 L116). Idempotency UNIQUE 5-tuple (tenant_id, subject_id, purpose, notice_text_hash, ui_capture_ts) replay-safe (PAT-RETRY-IDEMPOTENT-001). Notice version major-bump force re-consent (30d grace + 60d cap = 90d total; consent_lapsed state; NO fail-open swap to legitimate_interest — corrige GPT P0-1 round-1). Locale enforcement strict (Accept-Language must match payload.locale; mismatch → 422 CTRL-PRIV-CONSENT-005). INV-CONSENT-PROOF-VERIFIABLE CRITICAL (Lote 10.11.0-bis: HIGH→CRITICAL com TLA+ symmetry) §3.12 L168. CTRL-PRIV-CONSENT-001..006 wiring. Per-instance Arc<Mutex<>> F-001 closure. wasm32-unknown-unknown clean (no ring / no C toolchain dep). Production CF Worker + Neon + Cloudflare Queue + R2 audit + Cloudflare Email deferred to WI-S11-008 PRR ship gate per trait-abstraction-defer charter pattern."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+hmac = { workspace = true }
+sha2 = { workspace = true }
+hkdf = { workspace = true }
+hex = { workspace = true }
+subtle = { workspace = true }
+# uuid: no v7 feature — pulls wasm32-incompatible RNG; callers inject IDs
+uuid = { workspace = true, features = ["serde"] }
+
+[dev-dependencies]
+proptest = { workspace = true }
+rand = "0.9"
+rand_chacha = "0.9"
+
+[[test]]
+name = "prop_hmac_roundtrip"
+path = "tests/prop_hmac_roundtrip.rs"
+
+[[test]]
+name = "prop_idempotency_replay"
+path = "tests/prop_idempotency_replay.rs"
+
+[[test]]
+name = "integration_consent_lifecycle"
+path = "tests/integration_consent_lifecycle.rs"
+
+[[test]]
+name = "regression_symmetric_schema"
+path = "tests/regression_symmetric_schema.rs"
+
+[[test]]
+name = "chaos_audit_emit_failure"
+path = "tests/chaos_audit_emit_failure.rs"
+
+[[test]]
+name = "regression_locale_enforce"
+path = "tests/regression_locale_enforce.rs"
+
+[[test]]
+name = "regression_notice_version"
+path = "tests/regression_notice_version.rs"
