@@ -30,7 +30,7 @@ tags: ["audit", "s20", "oncall", "24-7", "follow-the-sun", "readiness", "wi-s20-
 | Per-region staffing identified     | AMBER    | Americas covered Owner dual-hat per ADR-0034 Option A; EMEA / APAC require contract closure pre-GA (ADR-0034 Option C parallel track engaged Q3-Q4). |
 | Escalation tree wired              | GREEN    | RB-INCIDENT-ESCALATION-MATRIX (T+0 → T+5 → T+15 → T+30) authored + cross-linked in RB-ONCALL-POLICY §11. |
 | Synthetic drill cron live          | GREEN    | CF Cron `0 14 * * 1` registered in `wrangler.toml`; `corelink-synthetic-pager` crate green (cargo build / clippy / test). |
-| D1 mirror schema                   | GREEN    | Migration `0042_synthetic_page_drills.sql` validated (sqlite syntax OK; CHECK constraints align with `corelink_synthetic_pager::AckOutcome`). |
+| D1 mirror schema                   | GREEN    | Migration `0043_synthetic_page_drills.sql` validated (sqlite syntax OK; CHECK constraints align with `corelink_synthetic_pager::AckOutcome`). |
 | Dashboard wired                    | GREEN    | `dashboards/grafana/DASH-ONCALL-24-7.json` validated (10 panels; 3-region split + drill streak panel). |
 | Holiday / parental-leave policy    | GREEN    | RB-ONCALL-POLICY §11.4 documents backup roster + 14-day return-ramp + force-majeure single-region degradation handling. |
 | GA Evidence Gate D+60 criterion    | PENDING  | Requires 30 consecutive days `acked` drills post-deploy. Tracked by `corelink_synthetic_drill_acked_streak_weeks` Prometheus counter. |
@@ -154,7 +154,7 @@ Per RB-ONCALL-POLICY §11.4 + WI-S17-005 protection-period invariant:
 | Ack-after-emit invariant                           | GREEN  | Pinned by `prop_ack_after_emit`                          |
 | Region UTC-hour coverage totality                  | GREEN  | Pinned by `prop_region_hour_coverage_total`              |
 | Fail-CLOSED on recorder failure                    | GREEN  | Pinned by `prop_failing_recorder_fail_closed`            |
-| D1 migration `0042_synthetic_page_drills.sql`      | GREEN  | sqlite3 syntax-validated; CHECK constraints encode `AckOutcome` |
+| D1 migration `0043_synthetic_page_drills.sql`      | GREEN  | sqlite3 syntax-validated; CHECK constraints encode `AckOutcome` |
 | CF Cron Worker trigger registered                  | GREEN  | `wrangler.toml` crons = `["0 6 * * 1", "0 14 * * 1"]`    |
 | Production PagerDuty Events API wiring             | DEFERRED | Per `trait-abstraction-defer` charter pattern; PRR ship gate |
 | Production webhook receiver                        | DEFERRED | `apps/server` route `/webhooks/pagerduty/synthetic`; PRR ship gate |

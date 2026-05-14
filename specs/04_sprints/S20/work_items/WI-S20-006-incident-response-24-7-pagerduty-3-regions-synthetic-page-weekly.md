@@ -24,7 +24,7 @@ inherits_from:
 tags: ["wi", "s20", "ga", "incident-response", "24-7", "pagerduty", "synthetic-page", "high-risk", "sealed"]
 sealed_artifacts:
   rust_crate: "crates/corelink-synthetic-pager"
-  d1_migration: "migrations/d1/0042_synthetic_page_drills.sql"
+  d1_migration: "migrations/d1/0043_synthetic_page_drills.sql"
   runbook_extended: "specs/_runbooks/RB-ONCALL-POLICY.md (v1.1.0 — §11 added)"
   runbook_new: "specs/_runbooks/RB-SYNTHETIC-PAGE-DRILL.md (v1.0.0)"
   cron_trigger: "wrangler.toml [triggers] crons += '0 14 * * 1'"

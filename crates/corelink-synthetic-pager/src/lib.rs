@@ -79,7 +79,7 @@
 //!   key → on-call dispatch.
 //! - PagerDuty webhook receiver: ingests ack event → records
 //!   `ack_ts_ms` + `ack_vector` to D1 `synthetic_page_drills`.
-//! - D1 migration `0042_synthetic_page_drills.sql` apply.
+//! - D1 migration `0043_synthetic_page_drills.sql` apply.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
