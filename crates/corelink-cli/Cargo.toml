@@ -1,23 +1,16 @@
 [package]
 name = "corelink-cli"
-<<<<<<< HEAD
-description = "CoreLink CLI — 7 subcommands (ls/get/put/stat/bench/doctor/version) with JSON output, auth via env var / config file, cross-OS reproducible builds (WI-S15-001)."
-=======
-description = "CoreLink CLI binary — 7 subcommands (ls, get, put, stat, bench, doctor, version) with JSON output, cross-OS distribution, and telemetry opt-in (WI-S15-001 + WI-S15-005)."
->>>>>>> wt/wi-s15-005
+description = "CoreLink CLI — 7 subcommands (ls/get/put/stat/bench/doctor/version) with JSON output, auth via env var / config file, cross-OS signed builds (WI-S15-001), and telemetry opt-IN (WI-S15-005)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
-<<<<<<< HEAD
 [[bin]]
 name = "corelink"
 path = "src/main.rs"
 
-=======
->>>>>>> wt/wi-s15-005
 [lints.rust]
 unsafe_code = "forbid"
 missing_docs = "deny"
@@ -31,9 +24,8 @@ indexing_slicing = "deny"
 todo = "deny"
 unimplemented = "deny"
 dbg_macro = "deny"
-<<<<<<< HEAD
-# Allowed for CLI binary — these are intentional user-facing I/O.
-# print_stdout / print_stderr allowed globally via main.rs crate-level allow.
+mod_module_files = "deny"
+# print_stdout/print_stderr allowed at crate level in main.rs (CLI binary is intentionally user-facing).
 
 [dependencies]
 clap = { version = "4", features = ["derive", "env"] }
@@ -48,36 +40,11 @@ thiserror = { workspace = true }
 anyhow = { workspace = true }
 reqwest = { version = "0.12", features = ["rustls-tls", "json", "stream"], default-features = false }
 bytes = { workspace = true }
+uuid = { workspace = true }
+# WI-S15-005 telemetry: platform-aware config path (~/.corelink)
+dirs = "5"
 
 [dev-dependencies]
 tokio-test = { workspace = true }
 tempfile = "3"
-=======
-print_stdout = "deny"
-print_stderr = "deny"
-mod_module_files = "deny"
-
-[dependencies]
-serde = { workspace = true }
-serde_json = { workspace = true }
-thiserror = { workspace = true }
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
-tokio = { workspace = true }
-uuid = { workspace = true }
-# config file parsing
-toml = { workspace = true }
-# platform-aware config path (~/.corelink)
-dirs = { workspace = true }
-# telemetry HTTP POST (non-blocking; timeout 1s)
-reqwest = { workspace = true }
-
-[dev-dependencies]
 proptest = { workspace = true }
-tokio-test = { workspace = true }
-tempfile = { workspace = true }
-
-[[bin]]
-name = "corelink"
-path = "src/main.rs"
->>>>>>> wt/wi-s15-005

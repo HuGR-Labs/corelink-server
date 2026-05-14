@@ -83,14 +83,12 @@ members = [
     "crates/corelink-customer-alerts",
     # WI-S14-007 Ed25519 erasure attestation
     "crates/corelink-erasure-attestation",
-    # WI-S15-001 CLI 7 subcommands
+    # WI-S15-001 CLI 7 subcommands + WI-S15-005 telemetry opt-in (same crate)
     "crates/corelink-cli",
     # WI-S15-004 FFI wrappers (Python pyO3 + Go cgo + JS/TS WASM)
     "crates/corelink-py",
     "crates/corelink-go",
     "crates/corelink-wasm",
-    # WI-S15-005 CLI + telemetry opt-in
-    "crates/corelink-cli",
 ]
 exclude = [
     "crates/tenant-path/fuzz",

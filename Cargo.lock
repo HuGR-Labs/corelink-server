@@ -1311,33 +1311,23 @@ dependencies = [
 name = "corelink-cli"
 version = "0.1.0"
 dependencies = [
-<<<<<<< HEAD
  "anyhow",
  "blake3",
  "bytes",
  "clap",
-=======
  "dirs",
  "proptest",
->>>>>>> wt/wi-s15-005
  "reqwest",
  "serde",
  "serde_json",
  "tempfile",
-<<<<<<< HEAD
- "thiserror",
-=======
  "thiserror 2.0.18",
->>>>>>> wt/wi-s15-005
  "tokio",
  "tokio-test",
  "toml",
  "tracing",
  "tracing-subscriber",
-<<<<<<< HEAD
-=======
  "uuid",
->>>>>>> wt/wi-s15-005
 ]
 
 [[package]]
