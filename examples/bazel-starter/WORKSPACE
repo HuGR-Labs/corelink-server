@@ -1,0 +1,3 @@
+workspace(name = "corelink_bazel_starter")
+# Bazel starter project for CoreLink remote cache integration (WI-S15-002 / WI-S15-005).
+# See .bazelrc for remote cache configuration.

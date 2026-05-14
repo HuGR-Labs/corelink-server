@@ -1,0 +1,106 @@
+# CoreLink Remote Cache — GitLab CI Template
+# ─────────────────────────────────────────────────────────────────────────────
+# COPY THIS FILE to: .gitlab-ci.yml  (or include via `include:`)
+#
+# Prerequisites:
+#   1. Add CORELINK_PAT to your project CI/CD variables
+#      (Settings → CI/CD → Variables → Add variable; check "Masked").
+#   2. Replace <YOUR_TENANT_ID> with your CoreLink tenant slug.
+#   3. For Buck2: uncomment the Buck2 stage.
+#
+# Security (CTRL-CRED-001): CORELINK_PAT is a GitLab masked variable — never
+# printed to job logs. It is passed to Bazel via --remote_header env expansion
+# using the GitLab variable interpolation, keeping it out of the script argv.
+# Note: GitLab CI expands ${CORELINK_PAT} at shell level (not argv level),
+# which is safe in this context. For extra safety the credential-helper approach
+# (same as GitHub Actions template) can be used by adding the helper script.
+#
+# Cache hit ratio: emitted to job log after the build.
+#
+# References: WI-S15-005, CAP-SDK-004, R-S15-12, R-S15-13.
+# ─────────────────────────────────────────────────────────────────────────────
+
+stages:
+  - build
+  - report
+
+# ── Variables ────────────────────────────────────────────────────────────────
+variables:
+  # CORELINK_PAT: set in GitLab CI/CD project variables (masked, protected).
+  # Do NOT hardcode here — anti-pattern per CTRL-CRED-001.
+  BAZEL_REMOTE_CACHE: "https://<YOUR_TENANT_ID>.corelink.dev/v1/cache"
+  BEP_JSON: "bazel-out/bep.json"
+
+# ── Default image ─────────────────────────────────────────────────────────────
+default:
+  image: ubuntu:22.04
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq curl jq
+    # Install Bazelisk
+    - |
+      curl -fsSL \
+        "https://github.com/bazelbuild/bazelisk/releases/download/v1.20.0/bazelisk-linux-amd64" \
+        -o /usr/local/bin/bazel
+      chmod +x /usr/local/bin/bazel
+
+# ── Bazel build with CoreLink remote cache ─────────────────────────────────────
+bazel-build:
+  stage: build
+  script:
+    # Install credential helper (reads CORELINK_PAT from env; outputs Bazel JSON to stdout).
+    - mkdir -p .bazel
+    - |
+      cat > .bazel/corelink-credential-helper.sh << 'HELPER'
+      #!/usr/bin/env bash
+      set -euo pipefail
+      if [[ -z "${CORELINK_PAT:-}" ]]; then
+        printf '{"headers":{}}\n'
+        exit 0
+      fi
+      printf '{"headers":{"Authorization":["Bearer %s"]}}\n' "${CORELINK_PAT}"
+      HELPER
+      chmod +x .bazel/corelink-credential-helper.sh
+
+    # Bazel build — CORELINK_PAT never in argv; credential helper protocol (CTRL-CRED-001).
+    - |
+      bazel build //... \
+        --remote_cache="${BAZEL_REMOTE_CACHE}" \
+        --credential_helper=%workspace%/.bazel/corelink-credential-helper.sh \
+        --remote_timeout=30 \
+        --remote_retries=2 \
+        --build_event_json_file="${BEP_JSON}"
+
+  # Buck2 alternative (uncomment to use):
+  # script:
+  #   - |
+  #     buck2 build //... \
+  #       --config repository.remote_cache_url="${BAZEL_REMOTE_CACHE}" \
+  #       --config repository.remote_cache_auth_header="Bearer ${CORELINK_PAT}"
+  # See: examples/buck2-starter (WI-S15-003)
+
+  artifacts:
+    paths:
+      - bazel-out/bep.json
+    when: always
+    expire_in: 1 day
+
+# ── Cache hit ratio report ─────────────────────────────────────────────────────
+cache-hit-report:
+  stage: report
+  needs: [bazel-build]
+  when: always
+  script:
+    - |
+      if [[ ! -f "${BEP_JSON}" ]]; then
+        echo "CoreLink Cache: no BEP log found"
+        exit 0
+      fi
+      TOTAL=$(jq -s '[.[] | select(.actionExecuted != null)] | length' "${BEP_JSON}")
+      HITS=$(jq -s '[.[] | select(.actionExecuted.cachedRemotely == true)] | length' "${BEP_JSON}")
+      if [[ "${TOTAL}" -gt 0 ]]; then
+        RATIO=$(awk "BEGIN { printf \"%.1f\", (${HITS}/${TOTAL})*100 }")
+      else
+        RATIO="N/A"
+      fi
+      echo "CoreLink Cache Hit Ratio: ${RATIO}% (${HITS}/${TOTAL} actions)"
+      echo "Remote cache: ${BAZEL_REMOTE_CACHE}"

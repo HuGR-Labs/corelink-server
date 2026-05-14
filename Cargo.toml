@@ -83,6 +83,8 @@ members = [
     "crates/corelink-customer-alerts",
     # WI-S14-007 Ed25519 erasure attestation
     "crates/corelink-erasure-attestation",
+    # WI-S15-005 CLI + telemetry opt-in
+    "crates/corelink-cli",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
@@ -146,7 +148,7 @@ sha2 = "0.10"
 blake3 = { version = "1", features = ["traits-preview"] }
 base64 = "0.22"
 hex = "0.4"
-uuid = { version = "1" }
+uuid = { version = "1", features = ["v4", "serde"] }
 subtle = "2"
 zeroize = { version = "1.8", features = ["derive"] }
 hkdf = "0.12"
@@ -234,9 +236,16 @@ corelink-byok-revocation = { path = "crates/corelink-byok-revocation" }
 corelink-customer-alerts = { path = "crates/corelink-customer-alerts" }
 corelink-erasure-attestation = { path = "crates/corelink-erasure-attestation" }
 
+# CLI tooling (WI-S15-001 / WI-S15-005)
+toml = "0.8"
+dirs = "5"
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+corelink-cli = { path = "crates/corelink-cli" }
+
 # Test / bench
 proptest = "1.5"
 tokio-test = { version = "0.4" }
+tempfile = "3"
 criterion = { version = "0.5", features = ["html_reports"] }
 
 [profile.release]

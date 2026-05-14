@@ -1,0 +1,135 @@
+# CoreLink Remote Cache — CircleCI Template
+# ─────────────────────────────────────────────────────────────────────────────
+# COPY THIS FILE to: .circleci/config.yml
+#
+# Prerequisites:
+#   1. Create a CircleCI context named `corelink-secrets`
+#      (Organization Settings → Contexts → Create Context → Add `CORELINK_PAT`).
+#   2. Replace <YOUR_TENANT_ID> with your CoreLink tenant slug.
+#   3. For Buck2: uncomment the Buck2 step and comment out the Bazel step.
+#
+# Security (CTRL-CRED-001): CORELINK_PAT is stored in a CircleCI context (encrypted).
+# It is injected into the build environment as an env var and consumed by the
+# credential helper — never passed in argv.
+#
+# Cache hit ratio: emitted to the job log and exported to BASH_ENV.
+#
+# References: WI-S15-005, CAP-SDK-004, R-S15-12, R-S15-13.
+# ─────────────────────────────────────────────────────────────────────────────
+
+version: 2.1
+
+# ── Executors ─────────────────────────────────────────────────────────────────
+executors:
+  ubuntu-base:
+    docker:
+      # SHA-pin: cimg/base:2024.05 (2026-05-14 canonical)
+      - image: cimg/base:2024.05
+    resource_class: medium
+
+# ── Commands ──────────────────────────────────────────────────────────────────
+commands:
+  install_bazelisk:
+    description: Install Bazelisk as `bazel`
+    steps:
+      - run:
+          name: Install Bazelisk
+          command: |
+            curl -fsSL \
+              "https://github.com/bazelbuild/bazelisk/releases/download/v1.20.0/bazelisk-linux-amd64" \
+              -o /tmp/bazel
+            chmod +x /tmp/bazel
+            sudo mv /tmp/bazel /usr/local/bin/bazel
+
+  install_credential_helper:
+    description: Install CoreLink Bazel credential helper
+    steps:
+      - run:
+          name: Install CoreLink credential helper
+          command: |
+            mkdir -p .bazel
+            cat > .bazel/corelink-credential-helper.sh << 'HELPER'
+            #!/usr/bin/env bash
+            # CoreLink Bazel credential helper — reads CORELINK_PAT from env.
+            # CTRL-CRED-001: PAT never in argv.
+            set -euo pipefail
+            if [[ -z "${CORELINK_PAT:-}" ]]; then
+              printf '{"headers":{}}\n'
+              exit 0
+            fi
+            printf '{"headers":{"Authorization":["Bearer %s"]}}\n' "${CORELINK_PAT}"
+            HELPER
+            chmod +x .bazel/corelink-credential-helper.sh
+
+  report_cache_hit:
+    description: Report CoreLink cache hit ratio from BEP log
+    steps:
+      - run:
+          name: Report CoreLink cache hit ratio
+          when: always
+          command: |
+            BEP=bazel-out/bep.json
+            if [[ ! -f "${BEP}" ]]; then
+              echo "CoreLink Cache: no BEP log found"
+              exit 0
+            fi
+            which jq || sudo apt-get install -y -qq jq
+            TOTAL=$(jq -s '[.[] | select(.actionExecuted != null)] | length' "${BEP}")
+            HITS=$(jq -s '[.[] | select(.actionExecuted.cachedRemotely == true)] | length' "${BEP}")
+            if [[ "${TOTAL}" -gt 0 ]]; then
+              RATIO=$(awk "BEGIN { printf \"%.1f\", (${HITS}/${TOTAL})*100 }")
+            else
+              RATIO="N/A"
+            fi
+            echo "CoreLink Cache Hit Ratio: ${RATIO}% (${HITS}/${TOTAL} actions)"
+            # Export for downstream steps.
+            echo "export CORELINK_CACHE_HIT_RATIO=${RATIO}" >> "${BASH_ENV}"
+
+# ── Jobs ──────────────────────────────────────────────────────────────────────
+jobs:
+  bazel-build:
+    executor: ubuntu-base
+    # CORELINK_PAT injected via CircleCI context `corelink-secrets`.
+    steps:
+      - checkout
+      - install_bazelisk
+      - install_credential_helper
+
+      # ── Bazel build with CoreLink remote cache ─────────────────────────────
+      - run:
+          name: Bazel build with CoreLink remote cache
+          command: |
+            bazel build //... \
+              --remote_cache=https://<YOUR_TENANT_ID>.corelink.dev/v1/cache \
+              --credential_helper=%workspace%/.bazel/corelink-credential-helper.sh \
+              --remote_timeout=30 \
+              --remote_retries=2 \
+              --build_event_json_file=bazel-out/bep.json
+          # CORELINK_PAT is available from context `corelink-secrets` (not in args).
+
+      # ── Buck2 alternative (uncomment to use) ────────────────────────────────
+      # - run:
+      #     name: Buck2 build with CoreLink remote cache
+      #     command: |
+      #       buck2 build //... \
+      #         --config repository.remote_cache_url=https://<YOUR_TENANT_ID>.corelink.dev/v1/cache \
+      #         --config repository.remote_cache_auth_header="Bearer ${CORELINK_PAT}"
+      #   # See: examples/buck2-starter (WI-S15-003)
+
+      - report_cache_hit
+
+      - store_artifacts:
+          path: bazel-out/bep.json
+          destination: bep.json
+
+# ── Workflows ─────────────────────────────────────────────────────────────────
+workflows:
+  build:
+    jobs:
+      - bazel-build:
+          context: corelink-secrets  # Injects CORELINK_PAT from CircleCI context.
+          filters:
+            branches:
+              only:
+                - main
+                - /release\/.*/

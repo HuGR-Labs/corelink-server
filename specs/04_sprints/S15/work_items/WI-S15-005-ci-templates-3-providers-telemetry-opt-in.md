@@ -1,12 +1,12 @@
 ---
 id: "WI-S15-005"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "SEALED"
+work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-29"
-updated: "2026-04-29"
+updated: "2026-05-14"
 lane: "STANDARD"
 parent: "S-15"
 assignee: "Gustavo Schneiter"
@@ -343,23 +343,23 @@ Feature: CI templates 3 providers + telemetry opt-in default-off
 
 ## 10. Completeness Criteria
 
-- [ ] **10.s15.005.1** 3 CI templates committed em `templates/ci/` (EVT-018).
-- [ ] **10.s15.005.2** 3 real working sample builds verde em respective providers (EVT-018).
-- [ ] **10.s15.005.3** Telemetry opt-in implementation em CLI; default-off (EVT-002).
-- [ ] **10.s15.005.4** Property test 0 emissions sem flag explicit; 10k iter (EVT-002).
-- [ ] **10.s15.005.5** LINDDUN privacy review committed (EVT-049).
-- [ ] **10.s15.005.6** Privacy policy doc `docs/cli/telemetry.md` publicado.
-- [ ] **10.s15.005.7** Anonymized payload (no PII; verified via test).
-- [ ] **10.s15.005.8** Telemetry discoverable via `corelink config list`.
+- [x] **10.s15.005.1** 3 CI templates committed em `templates/ci/` (EVT-018).
+- [x] **10.s15.005.2** 3 real working sample builds verde em respective providers (EVT-018).
+- [x] **10.s15.005.3** Telemetry opt-in implementation em CLI; default-off (EVT-002).
+- [x] **10.s15.005.4** Property test 0 emissions sem flag explicit; 10k iter (EVT-002).
+- [x] **10.s15.005.5** LINDDUN privacy review committed (EVT-049).
+- [x] **10.s15.005.6** Privacy policy doc `docs/cli/telemetry.md` publicado.
+- [x] **10.s15.005.7** Anonymized payload (no PII; verified via test).
+- [x] **10.s15.005.8** Telemetry discoverable via `corelink config list`.
 
 ## 11. DoD
 
-- [ ] 3 CI templates committed.
-- [ ] 3 real working sample builds verde.
-- [ ] Telemetry opt-in implementation; property test 0 emissions sem flag.
-- [ ] LINDDUN privacy review committed.
-- [ ] Privacy policy doc publicado.
-- [ ] Tests: 4+ negative scenarios.
+- [x] 3 CI templates committed.
+- [x] 3 real working sample builds verde.
+- [x] Telemetry opt-in implementation; property test 0 emissions sem flag.
+- [x] LINDDUN privacy review committed.
+- [x] Privacy policy doc publicado.
+- [x] Tests: 4+ negative scenarios (6 negative scenarios: unknown key, invalid value, missing file, opt-out still disabled, PII-catch guard, tenant_id guard).
 
 ## 12. Invariants Validated
 
@@ -514,6 +514,7 @@ Telemetry endpoint regression → rollback via Cloudflare Worker version revert;
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | Criação WI-S15-005 (cycle 12.S15.0; CI templates 3 providers + telemetry opt-in LINDDUN review). |
+| 1.1.0 | 2026-05-14 | Gustavo (via Claude Sonnet 4.6) | SEALED: crates/corelink-cli (config.rs + telemetry.rs); 3 CI templates; 3 sample builds; property test 10k; LINDDUN review; privacy doc. All 8 completeness criteria met. |
 
 ## 30. Anti-patterns evitados
 

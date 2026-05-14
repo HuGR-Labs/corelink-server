@@ -1,0 +1,49 @@
+[package]
+name = "corelink-cli"
+description = "CoreLink CLI binary — 7 subcommands (ls, get, put, stat, bench, doctor, version) with JSON output, cross-OS distribution, and telemetry opt-in (WI-S15-001 + WI-S15-005)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
+# config file parsing
+toml = { workspace = true }
+# platform-aware config path (~/.corelink)
+dirs = { workspace = true }
+# telemetry HTTP POST (non-blocking; timeout 1s)
+reqwest = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+tokio-test = { workspace = true }
+tempfile = { workspace = true }
+
+[[bin]]
+name = "corelink"
+path = "src/main.rs"

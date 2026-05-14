@@ -1,0 +1,19 @@
+# CoreLink remote cache configuration (WI-S15-002 / WI-S15-005).
+#
+# SECURITY (CTRL-CRED-001): credential helper protocol — Bazel 6+ returns token
+# via stdout (never in argv). PAT is read from CORELINK_PAT env var by the helper script.
+#
+# Usage:
+#   export CORELINK_PAT=<your-pat>
+#   bazel build //...
+#
+# Uncomment and replace <YOUR_TENANT_ID> with your CoreLink tenant slug:
+#
+# build --remote_cache=https://<YOUR_TENANT_ID>.corelink.dev/v1/cache
+# build --credential_helper=%workspace%/.bazel/corelink-credential-helper.sh
+# build --remote_timeout=30
+# build --remote_retries=2
+
+# Local defaults (always active):
+build --show_progress_rate_limit=5
+build --keep_going

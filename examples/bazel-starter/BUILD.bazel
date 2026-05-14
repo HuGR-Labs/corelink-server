@@ -1,0 +1,8 @@
+# CoreLink Bazel starter — root BUILD file.
+# Demonstrates a minimal cc_binary to exercise the remote cache.
+
+cc_binary(
+    name = "hello",
+    srcs = ["hello.cc"],
+    visibility = ["//visibility:public"],
+)
