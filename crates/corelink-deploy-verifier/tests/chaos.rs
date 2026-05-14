@@ -4,6 +4,7 @@
     clippy::expect_used,
     clippy::panic,
     clippy::indexing_slicing,
+    clippy::format_in_format_args,
 )]
 //!
 //! Validates INV-SUPPLY-SIGNED-DEPLOY enforcement under adversarial conditions

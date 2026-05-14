@@ -25,9 +25,6 @@ print_stderr = "deny"
 mod_module_files = "deny"
 
 [dependencies]
-# Async runtime
-tokio = { workspace = true }
-
 # Error handling
 thiserror = { workspace = true }
 anyhow = { workspace = true }
@@ -50,6 +47,13 @@ hex = { workspace = true }
 
 # Async trait
 async-trait = "0.1"
+
+# tokio is host-only (CLI binary requires runtime). S-12 sprint-close
+# P1-2: gating under cfg(not(wasm32)) keeps lib trait surface
+# wasm32-clean — production CF Worker wrapper can implement the
+# `Verifier` trait without pulling tokio/mio.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

@@ -131,6 +131,10 @@ enum OutputFormat {
     Yaml,
 }
 
+// CLI is host-only (requires tokio runtime). S-12 sprint-close P1-2:
+// gating prevents wasm32 from trying to compile this binary; the lib
+// trait surface remains wasm32-clean for future CF Worker integration.
+#[cfg(not(target_arch = "wasm32"))]
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
@@ -142,6 +146,12 @@ async fn main() {
     };
 
     process::exit(exit_code);
+}
+
+#[cfg(target_arch = "wasm32")]
+fn main() {
+    // CLI binary is intentionally a no-op on wasm32; use the library
+    // trait surfaces instead via the CF Worker wrapper.
 }
 
 /// Run the `verify` subcommand. Returns the process exit code.

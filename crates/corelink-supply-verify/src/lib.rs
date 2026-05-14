@@ -40,6 +40,11 @@
 //! ```
 
 #![forbid(unsafe_code)]
+// S-12 sprint-close P1 fix: format!() in format-args is a style preference,
+// not a correctness issue; the inline-variable rewrite hurts readability
+// for multi-line URL/error templates. Pinned with allow rather than fight
+// every error-path format!().
+#![allow(clippy::format_in_format_args)]
 
 pub mod error;
 pub mod metrics;

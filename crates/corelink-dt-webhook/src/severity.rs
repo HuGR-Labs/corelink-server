@@ -44,6 +44,7 @@ pub fn routing_channels(severity: &DtSeverity) -> Vec<AlertChannel> {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
 

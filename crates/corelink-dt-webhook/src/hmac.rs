@@ -62,6 +62,7 @@ pub fn sign(secret: &[u8], body: &[u8]) -> Result<String, DtWebhookError> {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
 
