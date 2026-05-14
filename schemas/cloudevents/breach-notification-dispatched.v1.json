@@ -1,0 +1,83 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://corelink.hugr.dev/schemas/cloudevents/breach-notification-dispatched.v1.json",
+  "title": "dev.hugr.corelink.breach.notification_dispatched.v1",
+  "description": "Breach notification dispatch event: Privacy Officer dispatched regulatory notifications (ANPD/DPC/AG) and/or customer notifications for a personal data breach. Emitted post-dispatch per RB-BREACH-NOTIF §4.1. R2 Object Lock 7y retention (INV-AUDIT-APPEND-ONLY §3.6 L116). Emit behavior: dispatch priority over audit (regulatory SLA priority per WI-S11-006 §9.3 DD audit failure trade-off). Retry-safe via breach_id idempotency anchor.",
+  "type": "object",
+  "required": ["specversion", "type", "source", "id", "time", "datacontenttype", "data"],
+  "properties": {
+    "specversion": { "type": "string", "const": "1.0" },
+    "type": { "type": "string", "const": "dev.hugr.corelink.breach.notification_dispatched.v1" },
+    "source": { "type": "string", "format": "uri-reference" },
+    "id": { "type": "string", "format": "uuid" },
+    "time": { "type": "string", "format": "date-time" },
+    "datacontenttype": { "type": "string", "const": "application/json" },
+    "subject": {
+      "type": "string",
+      "description": "breach:<breach_id> — canonical subject for breach events"
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "breach_id",
+        "severity",
+        "jurisdictions_notified",
+        "customer_notifications_sent",
+        "ts",
+        "retry_attempt"
+      ],
+      "properties": {
+        "breach_id": {
+          "type": "string",
+          "description": "ULID assigned at incident declaration — idempotency anchor for retry."
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["SEV-1", "SEV-2", "SEV-3"],
+          "description": "Breach severity classification per RB-BREACH-NOTIF §2."
+        },
+        "jurisdictions_notified": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["ANPD", "Irish DPC", "California AG"]
+          },
+          "description": "Regulatory authorities notified. Empty array for SEV-3 (internal only)."
+        },
+        "customer_notifications_sent": {
+          "type": "boolean",
+          "description": "Whether customer notifications were dispatched (3 locales mandatory for SEV-1/2)."
+        },
+        "customer_locales": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["pt-BR", "en-US", "es-MX"]
+          },
+          "description": "Customer notification locales dispatched. Mandatory 3 locales for SEV-1/2 per sprint contract §10.s11.7."
+        },
+        "ts": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 UTC timestamp of dispatch action."
+        },
+        "retry_attempt": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Idempotent retry counter. 0 = first emission. Incremented on re-emit post audit-failure recovery."
+        },
+        "breach_detected_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 UTC timestamp when breach was first detected. Anchors the 72h regulatory SLA clock."
+        },
+        "dispatch_to_notification_seconds": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Elapsed seconds from breach_detected_at to dispatch. Observable via corelink_breach_time_to_notification_seconds histogram."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

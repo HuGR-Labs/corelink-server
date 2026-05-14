@@ -45,6 +45,7 @@ members = [
     "crates/corelink-privacy-sub-processor-emit",
     "crates/corelink-clerk-cf",
     "crates/corelink-privacy-consent-ledger",
+    "crates/corelink-privacy-breach-emit",
     "crates/corelink-privacy-erasure-worker",
     "crates/corelink-privacy-notice-emit",
     "crates/corelink-privacy-pseudonymize",
@@ -150,6 +151,7 @@ corelink-dsr = { path = "crates/corelink-dsr" }
 corelink-privacy-sub-processor-emit = { path = "crates/corelink-privacy-sub-processor-emit" }
 corelink-clerk-cf = { path = "crates/corelink-clerk-cf" }
 corelink-privacy-consent-ledger = { path = "crates/corelink-privacy-consent-ledger" }
+corelink-privacy-breach-emit = { path = "crates/corelink-privacy-breach-emit" }
 corelink-privacy-erasure-worker = { path = "crates/corelink-privacy-erasure-worker" }
 corelink-privacy-notice-emit = { path = "crates/corelink-privacy-notice-emit" }
 corelink-privacy-pseudonymize = { path = "crates/corelink-privacy-pseudonymize" }
