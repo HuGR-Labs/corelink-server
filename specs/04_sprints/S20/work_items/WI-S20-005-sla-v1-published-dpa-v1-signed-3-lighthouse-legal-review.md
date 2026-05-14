@@ -1,12 +1,12 @@
 ---
 id: "WI-S20-005"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "SEALED"
+work_status: "DONE"
 audit_status: "ACTIVE"
 version: "1.0.0"
 created: "2026-04-29"
-updated: "2026-04-29"
+updated: "2026-05-14"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-005", "FF-HR-009", "FF-HR-010"]
 parent: "S-20"
@@ -26,7 +26,7 @@ tags: ["wi", "s20", "ga", "sla-v1", "dpa-v1", "legal-review", "lighthouse-signed
 
 # WI-S20-005 — SLA Contractual v1 Published (Covering Cumulative SLOs Canonical SLO-AVAIL-CAS-PUT/GET ≥ 99.9% + SLO-LAT-CAS-GET p99 < 300ms + SLO-FRESH-DSR-ERASURE ≤ 30d + SLO-FRESH-BILLING ≤ 24h Reconciliation < 0.1% Drift) Em `legal/sla/v1.md` + `docs.corelink.dev/sla` + DPA v1 Finalization + Legal Review Externo (Cooley/DLA Piper/Bird & Bird ~$15-30k 6-Week Lead Reuso S-14 Path) + 3 Lighthouse Customers Signing (DPA + Sub-Processor Agreement + Breach Notification SLA + Pricing Addendum Se Enterprise) + ADR If Waiver Needed + EVT-044 Evidence
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** SEALED · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-20](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -375,6 +375,7 @@ DASH-LEGAL-S20 panel embedded em DASH-GA-READINESS dashboard.
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | Criação WI-S20-005 (cycle 12.S20.0; SLA contractual v1 published + DPA v1 Legal externo reviewed Cooley/DLA Piper/Bird & Bird ~$15-30k 6-week lead reuso S-14 path + 3 lighthouse customers signing + ADR if waiver needed; coverage SLO-CATALOG cumulative + GDPR Art. 28 + LGPD Art. 39 + CCPA + EDPB SCCs). |
+| 1.0.0 | 2026-05-14 | Gustavo (via Sonnet builder) | SEALED — entregáveis: `legal/sla/v1.0.0.md` + `legal/sla/CHANGELOG.md` + `legal/dpa/v1.0.0.{en-US,pt-BR,es-419}.md` expandidos para Art. 28 GDPR + LGPD compliance + `legal/dpa/STANDARD-CONTRACTUAL-CLAUSES-EU.md` (Module 2 ref) + `legal/dpa/SUB-PROCESSOR-COMMITMENTS.md` (Cloudflare/Clerk/Stripe/Neon DPAs) + `specs/_legal/lighthouse-legal-review-tracker.md` (5-gate per customer; 3 lighthouse) + `.github/workflows/legal-changes-review.yml` SHA-pinned + CODEOWNERS expansão `/legal/**` + `/specs/_legal/`. Frontmatter SEALED/DONE. |
 
 ---
 
