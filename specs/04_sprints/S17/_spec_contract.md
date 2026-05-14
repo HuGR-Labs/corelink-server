@@ -93,7 +93,7 @@ inherits_from:
   - Monthly cadence: oncall executa 1 P0/P1 runbook (rotating which one).
   - Output em EVT-017 com timing + discrepancies + updates.
   - Runbook drift detection (FM-202 mitigation): if dry-run > 2× expected → flag for review.
-- **R-S17-8**: All 40 runbooks dry-run executed em últimos 90d (S-20 GA gate).
+- **R-S17-8**: Runbook dry-run coverage S-20 GA gate (REVISED — reconciled Lote 10.17 round-1 P0 #2): repo total is **62 runbooks** (verified via `find specs/_runbooks specs/05_runbooks specs/05_quality/runbooks -name 'RB-*.md' -not -name '*INDEX*'`); GA gate requires **P0/P1 priority subset (~33 of 62)** dry-run em últimos 90d; sustainable cadence 8 drills/month × 3 months = 24 covers subset (rotation tracked by WI-S17-003's `RB-RUNBOOK-DRILL-INDEX.md`). P2/P3 runbooks deferred pós-GA continuous coverage. Original "40 runbooks" baseline from sprint draft has been superseded — kept here as historical context: original 40 → S-13 admin (+1) → S-14 BYOK (+3) → S-11 privacy (+8) → S-17 ops (+6 RB-*-DRILL/CHAOS/POSTMORTEM/ONCALL/DR/TABLETOP) → **62 current total**.
 
 ### 5.4 Incident Template + Post-Mortem (CAP-OPS-004)
 
@@ -158,7 +158,12 @@ inherits_from:
 - **PAT-RUNBOOK-DRILL-001** executado monthly (resilience_patterns).
 - **PAT-CORRELATION-ID-001** in all incidents (facilita debugging).
 
-### Não cria invariants novas (sprint operational; invariants são em outros sprints).
+### Cross-WI invariants (S-17 operational discipline)
+
+- **INV-S17-OPS-EXCLUSIVITY** — at most one of {chaos experiment, DR drill, runbook drill} active at a time per region. Enforced by shared `ops_event_lock` D1 row checked by each scheduler's pre-flight; aborts with `LockHeld` if violated. Rationale: concurrent chaos + DR drill produces ambiguous SLO impact attribution.
+- **INV-S17-SEV1-DRILL-PAUSE** — runbook drills, chaos experiments, and DR drills are auto-deferred when a global SEV-1 incident is active. Enforced by `incident_active` flag check in scheduler `should_run()`; emits `corelink.ops.drill_deferred` audit event. Rationale: drills during real incidents starve oncall capacity.
+- **INV-S17-CHAOS-STAGING-ONLY** — chaos experiments must NEVER target production environment. Enforced by `DrillEnv::require_staging()` (corelink-chaos-scheduler) AND `[env.prod]` wrangler config omitting `[triggers]`. Audit fail-CLOSED with `Aborted{reason="prod_target"}` if attempted. Rationale: chaos in prod is GA-blocking by spec contract §10.
+- **INV-S17-ONCALL-FATIGUE-AUTOROTATE** — primary oncall hitting hard thresholds (Sev1>3/week, Sev2>8/week, total pages>15/non-rotation week) auto-handoff to backup via `PagerDutyClient::handoff_to_backup`. Enforced by `corelink-oncall::threshold` module; emits audit before rotation. Rationale: alerts alone are insufficient — observed fatigue without escape valve causes silent quality decline.
 
 ## 9. Quality Standards (delta local)
 
@@ -194,7 +199,7 @@ inherits_from:
 
 ### Outbound
 
-- S-20 (GA exige all 42 runbooks dry-run em 90d + 4-week chaos test sustained + DR drill done; count atual repo Lote 9.5c, vs 26 baseline original).
+- S-20 (GA exige P0/P1 runbook subset ~33 of 62 dry-run em 90d + 4-week chaos test sustained + DR drill done; count atual repo 62 reconciled Lote 10.17 round-1, vs 26 baseline original).
 
 ## 12. WIs antecipados (PERT)
 

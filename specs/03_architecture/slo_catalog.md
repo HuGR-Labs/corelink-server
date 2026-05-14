@@ -314,6 +314,46 @@ SLOs individuais (§4.x) podem override interpolation via linha explícita "Targ
 | Target             | ≤ 60s p99 sustentado 30d (auto-rollback triggers within 1 minute of error budget breach)         |
 | Notas              | INV-ROLLOUT-AUTO-ROLLBACK CRITICAL S-13. WI-S13-005. Breach → SEV-1 + post-mortem RB-ROLLOUT-STUCK |
 
+### 4.18 Disaster recovery — Region failover RTO (S-17)
+
+**SLO-RTO-REGION-FAILOVER** (interno; DR drill measurement; WI-S17-002)
+
+| Campo              | Valor                                                                                              |
+|--------------------|----------------------------------------------------------------------------------------------------|
+| SLI                | `dr_drill_runs.rto_seconds` = `t_first_request_served_by_failover_region − t_outage_declared`     |
+| Target             | ≤ 30 min (1800s) p99 medido em DR drill semestral (Jan 1 + Jul 1)                                  |
+| Notas              | Referenced by `corelink-dr-drill::outage::RTO_CEIL_SECONDS = 1800`. Breach → SEV-1 + GA gate fail. |
+
+### 4.19 Disaster recovery — Region failover RPO (S-17)
+
+**SLO-RPO-REGION** (interno; DR drill measurement; WI-S17-002)
+
+| Campo              | Valor                                                                                              |
+|--------------------|----------------------------------------------------------------------------------------------------|
+| SLI                | `dr_drill_runs.rpo_seconds` = `t_outage_declared − t_last_committed_write_replicated`              |
+| Target             | ≤ 60s p99 medido em DR drill semestral. Stricter than RTO because BYOK + audit chains can't gap.   |
+| Notas              | Referenced by `corelink-dr-drill::outage::RPO_CEIL_SECONDS = 60`. INV-AUDIT-APPEND-ONLY upholds.   |
+
+### 4.20 Ops — Oncall MTTA SEV-1 (S-17)
+
+**SLO-ONCALL-MTTA-SEV1** (interno; PagerDuty measurement; WI-S17-005)
+
+| Campo              | Valor                                                                                              |
+|--------------------|----------------------------------------------------------------------------------------------------|
+| SLI                | p95 `oncall_pages.acknowledged_at − triggered_at` filtered `severity = "sev1"`                     |
+| Target             | < 5 min p95 sustained 30d                                                                          |
+| Notas              | Enforced by `corelink-oncall::threshold::HARD_ACK_SEV1`. Breach 3 cycles → fatigue auto-rotation.  |
+
+### 4.21 Ops — Oncall MTTR SEV-1 (S-17)
+
+**SLO-ONCALL-MTTR-SEV1** (interno; PagerDuty measurement; WI-S17-005)
+
+| Campo              | Valor                                                                                              |
+|--------------------|----------------------------------------------------------------------------------------------------|
+| SLI                | p95 `oncall_pages.resolved_at − triggered_at` filtered `severity = "sev1"`                          |
+| Target             | < 30 min p95 sustained 30d                                                                         |
+| Notas              | RB-ONCALL-POLICY §4 escalation chain on breach. Breach → post-mortem via RB-POSTMORTEM-PROCESS.    |
+
 ---
 
 ## 5. Error budget policy
