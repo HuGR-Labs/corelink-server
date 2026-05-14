@@ -120,6 +120,9 @@ members = [
     # + idempotent POST retries with exponential backoff + Retry-After). Native-only
     # (wasm32 gated out — production callers run from apps/server, not CF Worker).
     "crates/corelink-stripe-real",
+    # R2-4 shared Slack incoming-webhook real client (Block Kit + per-channel
+    # routing + retry + audit envelope; bridges to enterprise-inquiry via adapter)
+    "crates/corelink-slack-real",
 ]
 exclude = [
     "crates/tenant-path/fuzz",

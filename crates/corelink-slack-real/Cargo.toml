@@ -1,0 +1,36 @@
+[package]
+name = "corelink-slack-real"
+description = "CoreLink shared Slack incoming-webhook real client (R2-4). Ships SharedSlackClient canonical trait + SlackChannel 6-variant routing enum (AlertsSev1/AlertsSev2/EnterpriseInquiries/BreachNotifications/OncallHandoff/LighthouseCustomers) + WebhookRegistry env-loader (`SLACK_WEBHOOK_URL_<CHANNEL>` per channel for routing isolation) + SlackMessage Block Kit builder (header/fields/footer+timestamp/optional actions) + MessageTemplate structured-payload enum (per channel, no untrusted-input string interpolation) + RetryPolicy (3 retries exponential backoff on 5xx + 429; give-up on 4xx) + InMemorySharedSlackClient fake + redact_webhook helper (`…/T0000/B0000/***` truncation; CTRL-PRIV-001 webhook URL NEVER logged plaintext) + audit envelope `corelink.notification.slack.sent` / `.failed` emit BEFORE retry exhaustion + InquirySlackAdapter bridge implementing `corelink_enterprise_inquiry::SlackClient` so the existing white-glove inquiry consumer wires through this real client without changing its trait surface. Mockable via `wiremock` in tests. No tokio in src (synchronous reqwest::blocking)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { version = "0.12", features = ["blocking", "json", "rustls-tls"], default-features = false }
+corelink-enterprise-inquiry = { path = "../corelink-enterprise-inquiry" }
+
+[dev-dependencies]
+wiremock = "0.6"
+tokio = { workspace = true }
