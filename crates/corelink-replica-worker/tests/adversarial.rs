@@ -17,6 +17,7 @@
     clippy::panic,
     reason = "adversarial tests use direct assertions"
 )]
+#![allow(clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::panic, clippy::default_constructed_unit_structs, clippy::assertions_on_constants)]
 
 use std::sync::Arc;
 

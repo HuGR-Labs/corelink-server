@@ -2,15 +2,20 @@
 id: "ADR-S14-006"
 type: "adr"
 doc_status: "ACTIVE"
+audit_status: "ACTIVE"
 version: "1.0.0"
 created: "2026-05-14"
 updated: "2026-05-14"
 wi: "WI-S14-006"
 owner: "Gustavo Schneiter"
+final_approver: "Gustavo Schneiter"
+reviewers: []
+supersedes: null
+superseded_by: null
 tags: ["adr", "byok", "kill-switch", "cmk-revocation", "inv-byok-crypto-sovereignty", "no-operator-override", "s14"]
 ---
 
-# ADR-S14-001 — BYOK CMK Revocation Kill Switch: Hard-Fail ≤ 5 min + INV-BYOK-CRYPTO-SOVEREIGNTY + NO Operator Override
+# ADR-S14-006 — BYOK CMK Revocation Kill Switch: Hard-Fail ≤ 5 min + INV-BYOK-CRYPTO-SOVEREIGNTY + NO Operator Override
 
 ## Status
 

@@ -78,6 +78,19 @@ impl std::fmt::Debug for Dek {
     }
 }
 
+impl Dek {
+    /// Generate a fresh 32-byte DEK via OS CSPRNG (NIST SP 800-90A DRBG).
+    ///
+    /// S-14 sprint-close P0: canonical constructor used by matrix tests
+    /// + revocation crate. Mirrors private `envelope::generate_dek()`.
+    pub fn generate() -> Result<Self, BYOKError> {
+        let mut bytes = [0u8; 32];
+        getrandom::getrandom(&mut bytes)
+            .map_err(|e| BYOKError::EnvelopeError(format!("getrandom: {e}")))?;
+        Ok(Self { bytes })
+    }
+}
+
 /// CMK access status returned by [`crate::KmsProvider::check_access`].
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[non_exhaustive]

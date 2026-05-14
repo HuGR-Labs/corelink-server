@@ -4,6 +4,7 @@
 //! (requires `AWS_KMS_TEST_KEY_ARN` + `AWS_REGION` env vars; skipped in CI without them).
 
 #![forbid(unsafe_code)]
+#![allow(clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
 
 use corelink_byok::types::{FipsLevel, KmsProviderKind};
 

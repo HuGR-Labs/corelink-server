@@ -1,13 +1,17 @@
 ---
-id: "ADR-S14-001"
-title: "BYOK adapter trait + envelope encryption flow + DEK cache 5-min hard limit + AAD binding + 16-combination matrix test"
-status: "ACCEPTED"
+id: "ADR-S14-004"
+type: "adr"
+doc_status: "ACTIVE"
+audit_status: "ACTIVE"
+version: "1.0.0"
 created: "2026-05-14"
 updated: "2026-05-14"
-authors: ["Gustavo Schneiter"]
+owner: "Gustavo Schneiter"
+final_approver: "Gustavo Schneiter"
+reviewers: []
 wi: "WI-S14-004"
 sprint: "S-14"
-tags: ["byok", "crypto", "kms", "envelope-encryption", "fips-140-3", "s14"]
+tags: ["adr", "byok", "crypto", "kms", "envelope-encryption", "fips-140-3", "s14"]
 supersedes: null
 superseded_by: null
 references:

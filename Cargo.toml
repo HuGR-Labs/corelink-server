@@ -70,17 +70,15 @@ members = [
     "apps/migrate-single-to-multi-region",
     "crates/corelink-replica-worker",
     "crates/corelink-failover-router",
+    # S-14 BYOK (WI-S14-004 trait canonical + WI-S14-005 adapters + matrix
+    # test + WI-S14-006 revocation/alerts ported to canonical per sprint-
+    # close P0-1 + P0-2 fixes)
     "crates/corelink-byok",
     "crates/corelink-byok-aws",
-    # S-14 BYOK (WI-S14-004 trait + WI-S14-005 adapters + matrix test)
-    "crates/corelink-byok",
     "crates/corelink-byok-gcp",
     "crates/corelink-byok-azure",
     "crates/corelink-byok-vault",
     "crates/corelink-byok-matrix-test",
-    "crates/corelink-byok",
-    # S-14 follow-up: corelink-byok-revocation + corelink-customer-alerts
-    # ported to canonical WI-S14-004 trait surface (P0-1 + P0-2 fixed).
     "crates/corelink-byok-revocation",
     "crates/corelink-customer-alerts",
 ]

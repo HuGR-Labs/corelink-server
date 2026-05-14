@@ -96,7 +96,7 @@ fn prop_failover_overhead_within_slo() {
 fn prop_failover_acyclic_graph() {
     let cases = proptest_cases();
     let config = ProptestConfig::with_cases(cases);
-    let graph = ResidencyGraph::default();
+    let graph = ResidencyGraph;
 
     proptest!(config, |(region in arb_region())| {
         prop_assert!(graph.is_acyclic(), "graph must be acyclic");
@@ -150,7 +150,7 @@ fn prop_healthy_region_primary_read() {
 fn prop_degraded_region_sibling_read() {
     let cases = proptest_cases();
     let config = ProptestConfig::with_cases(cases);
-    let graph = ResidencyGraph::default();
+    let graph = ResidencyGraph;
 
     proptest!(config, |(
         region in arb_region(),

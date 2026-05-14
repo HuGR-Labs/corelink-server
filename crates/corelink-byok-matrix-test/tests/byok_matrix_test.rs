@@ -23,6 +23,7 @@
 //! The AWS KMS provider is implemented via a minimal mock to complete the
 //! 16-cell matrix (WI-S14-004 not yet merged; AwsMockProvider fills the slot).
 
+#![allow(clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
 use corelink_byok::{
     BYOKError, DekCache, Dek, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind, FipsLevel,
     WrappedDek,

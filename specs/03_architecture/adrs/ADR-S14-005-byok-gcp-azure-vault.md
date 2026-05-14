@@ -2,17 +2,19 @@
 id: "ADR-S14-005"
 type: "adr"
 doc_status: "ACTIVE"
+audit_status: "ACTIVE"
 version: "1.0.0"
 created: "2026-05-14"
 updated: "2026-05-14"
 owner: "Gustavo Schneiter"
+final_approver: "Gustavo Schneiter"
 reviewers: []
 tags: ["adr", "s14", "byok", "azure", "aad", "vault", "mtls", "cross-provider", "fips"]
 supersedes: null
 superseded_by: null
 ---
 
-# ADR-S14-001 — BYOK 4-Provider Semantics: Azure Custom AAD Flow + Vault mTLS + Cross-Provider Matrix
+# ADR-S14-005 — BYOK 4-Provider Semantics: Azure Custom AAD Flow + Vault mTLS + Cross-Provider Matrix
 
 ## Status
 
