@@ -1,0 +1,18 @@
+{
+  "link.title.Product": { "message": "Product" },
+  "link.title.Trust": { "message": "Trust" },
+  "link.title.Community": { "message": "Community" },
+  "link.item.label.Tutorial": { "message": "Tutorial" },
+  "link.item.label.How-to": { "message": "How-to" },
+  "link.item.label.Reference": { "message": "Reference" },
+  "link.item.label.Pricing": { "message": "Pricing" },
+  "link.item.label.Security": { "message": "Security" },
+  "link.item.label.Privacy": { "message": "Privacy" },
+  "link.item.label.Terms": { "message": "Terms" },
+  "link.item.label.Sub-processors": { "message": "Sub-processors" },
+  "link.item.label.GitHub": { "message": "GitHub" },
+  "link.item.label.Edit this site": { "message": "Edit this site" },
+  "copyright": {
+    "message": "Copyright © {year} HuGR Labs. Built with Docusaurus."
+  }
+}

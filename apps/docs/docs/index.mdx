@@ -1,0 +1,50 @@
+---
+id: index
+title: CoreLink documentation
+slug: /
+description: CoreLink is a multi-tenant content-addressable cache for build, package, and ML workloads on Cloudflare. Start with the 5-minute quickstart, browse the REAPI v2 reference, or compare plans.
+---
+
+# CoreLink documentation
+
+CoreLink is a multi-tenant content-addressable cache for build, package,
+and ML workloads, deployed on Cloudflare. These docs follow the
+[Diátaxis](https://diataxis.fr/) framework — every page belongs to
+exactly one of **Tutorial**, **How-to**, **Reference**, or **Explanation**.
+
+<div className="u-grid u-grid-3 u-mt-8">
+  <a className="u-card" href="/tutorial/">
+    <h3>Quickstart</h3>
+    <p>Build your first cached project in 5 minutes — Bazel, Buck2, or the native CLI.</p>
+  </a>
+  <a className="u-card" href="/reference/api">
+    <h3>API reference</h3>
+    <p>REAPI v2 + REST endpoints, auto-generated from the canonical <code>.proto</code> files.</p>
+  </a>
+  <a className="u-card" href="/pricing">
+    <h3>Pricing</h3>
+    <p>Five tiers from free to enterprise — transparent storage, egress, and SLA terms.</p>
+  </a>
+</div>
+
+## New to CoreLink?
+
+Start with **[Tutorial → Build your first cached project](/tutorial/)**
+for a guided walkthrough, then dive into the **[How-to](/how-to/)**
+guides for task-oriented recipes (BYOK setup, Bazel CI integration, DSR
+exports, and more).
+
+## Looking for something specific?
+
+- **API and CLI reference**: [`/reference/`](/reference/) — REAPI v2,
+  Python/Go/JS SDKs, CLI commands.
+- **Architecture and design rationale**:
+  [`/explanation/architecture`](/explanation/architecture) — why
+  content-addressable, how dedup works, the multi-region model.
+- **Trust and compliance**: [`/security`](/security) — SBOM, pentest
+  summary, SOC 2 timeline, SLA.
+
+:::tip Edit on GitHub
+Every page has an **Edit this page** link in the footer. PRs welcome —
+see the [contribution guide](https://github.com/humangr-labs/corelink-server).
+:::

@@ -8,11 +8,22 @@
     "pnpm": ">=10.0.0"
   },
   "packageManager": "pnpm@10.32.1",
+  "pnpm": {
+    "patchedDependencies": {
+      "@docusaurus/core@3.10.1": "patches/@docusaurus__core@3.10.1.patch"
+    }
+  },
   "scripts": {
     "admin-ui:dev": "pnpm --filter @corelink/admin-ui dev",
     "admin-ui:build": "pnpm --filter @corelink/admin-ui build",
     "admin-ui:test": "pnpm --filter @corelink/admin-ui test",
     "admin-ui:lint": "pnpm --filter @corelink/admin-ui lint",
-    "admin-ui:typecheck": "pnpm --filter @corelink/admin-ui typecheck"
+    "admin-ui:typecheck": "pnpm --filter @corelink/admin-ui typecheck",
+    "docs:dev": "pnpm --filter @corelink/docs dev",
+    "docs:build": "pnpm --filter @corelink/docs build",
+    "docs:serve": "pnpm --filter @corelink/docs serve",
+    "docs:test": "pnpm --filter @corelink/docs test",
+    "docs:lint": "pnpm --filter @corelink/docs lint",
+    "docs:typecheck": "pnpm --filter @corelink/docs typecheck"
   }
 }

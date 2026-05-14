@@ -1,0 +1,154 @@
+import type { Config } from "@docusaurus/types";
+import type * as Preset from "@docusaurus/preset-classic";
+import { themes as prismThemes } from "prism-react-renderer";
+
+/**
+ * CoreLink public docs Docusaurus configuration.
+ *
+ * WI-S18-001 foundation deliverable. Deploys to Cloudflare Pages at
+ * `docs.corelink.dev` (custom domain via CNAME) with three locales
+ * (en-US default + pt-BR + es-419 per sprint contract R-S18-12) and a
+ * Diátaxis-organized sidebar (tutorial / how-to / reference / explanation).
+ *
+ * Algolia DocSearch is configured as a stub; production credentials are
+ * injected at D-day via environment variables (`ALGOLIA_APP_ID`,
+ * `ALGOLIA_SEARCH_API_KEY`, `ALGOLIA_INDEX_NAME`).
+ */
+const SITE_URL = "https://docs.corelink.dev";
+const ORG = "humangr-labs";
+const REPO = "corelink-server";
+const EDIT_BASE = `https://github.com/${ORG}/${REPO}/edit/main/apps/docs/`;
+
+const config: Config = {
+  title: "CoreLink",
+  tagline: "Multi-tenant content-addressable cache on Cloudflare",
+  favicon: "img/favicon.svg",
+  url: SITE_URL,
+  baseUrl: "/",
+  organizationName: ORG,
+  projectName: REPO,
+  trailingSlash: false,
+  onBrokenLinks: "throw",
+  onBrokenMarkdownLinks: "throw",
+  noIndex: false,
+
+  i18n: {
+    defaultLocale: "en-US",
+    locales: ["en-US", "pt-BR", "es-419"],
+    localeConfigs: {
+      "en-US": { label: "English", direction: "ltr", htmlLang: "en-US" },
+      "pt-BR": { label: "Português (Brasil)", direction: "ltr", htmlLang: "pt-BR" },
+      "es-419": { label: "Español (Latinoamérica)", direction: "ltr", htmlLang: "es-419" },
+    },
+  },
+
+  presets: [
+    [
+      "classic",
+      {
+        docs: {
+          sidebarPath: "./sidebars.ts",
+          routeBasePath: "/",
+          editUrl: EDIT_BASE,
+          showLastUpdateAuthor: true,
+          showLastUpdateTime: true,
+          versions: {
+            current: { label: "Latest", path: "" },
+          },
+        },
+        blog: false,
+        theme: {
+          customCss: "./src/css/custom.css",
+        },
+        sitemap: {
+          changefreq: "weekly",
+          priority: 0.5,
+          filename: "sitemap.xml",
+        },
+      } satisfies Preset.Options,
+    ],
+  ],
+
+  themeConfig: {
+    image: "img/og-image.png",
+    colorMode: {
+      defaultMode: "light",
+      disableSwitch: false,
+      respectPrefersColorScheme: true,
+    },
+    metadata: [
+      { name: "description", content: "CoreLink — multi-tenant content-addressable cache on Cloudflare." },
+      { name: "keywords", content: "corelink, cache, content-addressable, bazel, buck2, remote cache, REAPI" },
+    ],
+    navbar: {
+      title: "CoreLink",
+      logo: {
+        alt: "CoreLink",
+        src: "img/logo.svg",
+      },
+      items: [
+        { to: "/tutorial/", label: "Tutorial", position: "left" },
+        { to: "/how-to/", label: "How-to", position: "left" },
+        { to: "/reference/", label: "Reference", position: "left" },
+        { to: "/explanation/architecture", label: "Explanation", position: "left" },
+        { to: "/reference/api", label: "API", position: "left" },
+        { to: "/pricing", label: "Pricing", position: "left" },
+        { to: "/security", label: "Security", position: "left" },
+        {
+          href: `https://github.com/${ORG}/${REPO}`,
+          label: "GitHub",
+          position: "right",
+        },
+        { type: "localeDropdown", position: "right" },
+        { type: "search", position: "right" },
+      ],
+    },
+    footer: {
+      style: "dark",
+      links: [
+        {
+          title: "Product",
+          items: [
+            { label: "Tutorial", to: "/tutorial/" },
+            { label: "How-to", to: "/how-to/" },
+            { label: "Reference", to: "/reference/" },
+            { label: "Pricing", to: "/pricing" },
+          ],
+        },
+        {
+          title: "Trust",
+          items: [
+            { label: "Security", to: "/security" },
+            { label: "Privacy", to: "/legal/privacy" },
+            { label: "Terms", to: "/legal/terms" },
+            { label: "Sub-processors", to: "/legal/sub-processors" },
+          ],
+        },
+        {
+          title: "Community",
+          items: [
+            { label: "GitHub", href: `https://github.com/${ORG}/${REPO}` },
+            { label: "Edit this site", href: EDIT_BASE },
+          ],
+        },
+      ],
+      copyright: `Copyright © ${new Date().getFullYear()} HuGR Labs. Built with Docusaurus.`,
+    },
+    prism: {
+      theme: prismThemes.github,
+      darkTheme: prismThemes.dracula,
+      additionalLanguages: ["bash", "diff", "json", "rust", "toml", "yaml", "python", "go"],
+    },
+    algolia: {
+      // Production keys injected at D-day. These stubs allow the build to
+      // succeed locally and in CI without secrets.
+      appId: process.env.ALGOLIA_APP_ID ?? "STUB_APP_ID",
+      apiKey: process.env.ALGOLIA_SEARCH_API_KEY ?? "stub_search_only_api_key_replace_at_dday",
+      indexName: process.env.ALGOLIA_INDEX_NAME ?? "corelink",
+      contextualSearch: true,
+      searchPagePath: "search",
+    },
+  } satisfies Preset.ThemeConfig,
+};
+
+export default config;

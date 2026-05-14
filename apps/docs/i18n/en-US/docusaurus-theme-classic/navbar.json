@@ -1,0 +1,18 @@
+{
+  "title": {
+    "message": "CoreLink",
+    "description": "The title in the navbar"
+  },
+  "logo.alt": {
+    "message": "CoreLink",
+    "description": "The alt text of navbar logo"
+  },
+  "item.label.Tutorial": { "message": "Tutorial" },
+  "item.label.How-to": { "message": "How-to" },
+  "item.label.Reference": { "message": "Reference" },
+  "item.label.Explanation": { "message": "Explanation" },
+  "item.label.API": { "message": "API" },
+  "item.label.Pricing": { "message": "Pricing" },
+  "item.label.Security": { "message": "Security" },
+  "item.label.GitHub": { "message": "GitHub" }
+}

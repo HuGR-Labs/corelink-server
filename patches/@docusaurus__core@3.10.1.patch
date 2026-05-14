@@ -1,0 +1,31 @@
+diff --git a/lib/ssg/ssgNodeRequire.js b/lib/ssg/ssgNodeRequire.js
+index cfd85dbde0b9a52996b7321bef85eafb7b29ec17..8f1e321271d2e0e87da45227c80936a1ab1e8f5b 100644
+--- a/lib/ssg/ssgNodeRequire.js
++++ b/lib/ssg/ssgNodeRequire.js
+@@ -23,6 +23,15 @@ function createSSGRequire(serverBundlePath) {
+     const realRequire = (0, module_1.createRequire)(serverBundlePath);
+     const allRequiredIds = [];
+     const ssgRequireFunction = (id) => {
++        // CoreLink WI-S18-001 patch: webpack's server target in our
++        // pnpm-isolated monorepo externalizes CSS imports (infima,
++        // user customCss, theme stylesheets) instead of stripping
++        // them. At SSG time Node cannot interpret CSS as JS. Return
++        // an empty stub for stylesheet requires — they do nothing at
++        // SSR anyway (CSS is emitted as separate static assets).
++        if (typeof id === 'string' && /\.(css|scss|sass|less|styl)$/i.test(id)) {
++            return {};
++        }
+         const module = realRequire(id);
+         allRequiredIds.push(id);
+         return module;
+@@ -33,6 +42,10 @@ function createSSGRequire(serverBundlePath) {
+         });
+     };
+     ssgRequireFunction.resolve = realRequire.resolve;
++    // CoreLink WI-S18-001 patch: server.bundle.js contains literal
++    // `require.resolveWeak(...)` calls that webpack failed to rewrite.
++    // Polyfill returns the id, sufficient as a hydration map key.
++    ssgRequireFunction.resolveWeak = (id) => id;
+     ssgRequireFunction.cache = realRequire.cache;
+     ssgRequireFunction.extensions = realRequire.extensions;
+     ssgRequireFunction.main = realRequire.main;

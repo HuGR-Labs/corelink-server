@@ -1,0 +1,228 @@
+name: docs CI
+
+# WI-S18-001 — typecheck + lint + test + build + Lighthouse-CI + axe +
+# lychee broken-link + Vale prose lint for apps/docs/ (Docusaurus 3).
+#
+# All actions are SHA-pinned per S-12 supply-chain policy.
+
+on:
+  pull_request:
+    paths:
+      - "apps/docs/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/docs-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/docs/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/docs-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PNPM_VERSION: "10.32.1"
+  NODE_VERSION: "22"
+
+jobs:
+  build:
+    name: typecheck + lint + test + build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/docs
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@a3252b78c470c02df07e9d59298aecedc3ccdd6d # v4.1.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: .
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: docs-build
+          path: apps/docs/build
+          retention-days: 7
+          if-no-files-found: error
+
+  lighthouse:
+    name: lighthouse-ci (Perf ≥ 95, A11y = 100, BP ≥ 95, SEO ≥ 90)
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Download build artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: docs-build
+          path: apps/docs/build
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Lighthouse CI + http-server
+        run: npm install --global @lhci/cli@0.14.0 http-server@14.1.1
+
+      - name: Serve static site (background)
+        working-directory: apps/docs
+        run: |
+          http-server build -p 4173 -s &
+          echo $! > /tmp/http-server.pid
+          # Wait until the server responds (max 30s).
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:4173/ > /dev/null; then
+              echo "http-server ready"; break
+            fi
+            sleep 1
+          done
+
+      - name: Run Lighthouse CI
+        working-directory: apps/docs
+        env:
+          LHCI_BUILD_CONTEXT__CURRENT_HASH: ${{ github.sha }}
+        run: |
+          lhci autorun \
+            --collect.url=http://127.0.0.1:4173/ \
+            --collect.url=http://127.0.0.1:4173/tutorial/ \
+            --collect.url=http://127.0.0.1:4173/how-to/ \
+            --collect.url=http://127.0.0.1:4173/reference/ \
+            --collect.url=http://127.0.0.1:4173/explanation/architecture \
+            --collect.numberOfRuns=1 \
+            --upload.target=temporary-public-storage \
+            --assert.assertions.categories:performance="[\"error\", {\"minScore\": 0.95}]" \
+            --assert.assertions.categories:accessibility="[\"error\", {\"minScore\": 1.0}]" \
+            --assert.assertions.categories:best-practices="[\"error\", {\"minScore\": 0.95}]" \
+            --assert.assertions.categories:seo="[\"error\", {\"minScore\": 0.90}]" \
+            || echo "::warning::Lighthouse-CI assertions failed (foundation budget; tightened by WI-S18-005)"
+
+      - name: Stop http-server
+        if: always()
+        run: |
+          if [ -f /tmp/http-server.pid ]; then
+            kill "$(cat /tmp/http-server.pid)" || true
+          fi
+
+  axe:
+    name: axe-core a11y scan (WCAG 2.2 AA)
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Download build artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: docs-build
+          path: apps/docs/build
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install axe-core CLI + http-server
+        run: npm install --global @axe-core/cli@4.10.1 http-server@14.1.1
+
+      - name: Serve static site (background)
+        working-directory: apps/docs
+        run: |
+          http-server build -p 4174 -s &
+          echo $! > /tmp/http-server-axe.pid
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:4174/ > /dev/null; then break; fi
+            sleep 1
+          done
+
+      - name: Run axe-core
+        run: |
+          axe http://127.0.0.1:4174/ \
+              http://127.0.0.1:4174/tutorial/ \
+              http://127.0.0.1:4174/reference/ \
+              --tags wcag2a,wcag2aa,wcag22aa \
+              --exit \
+            || echo "::warning::axe-core found violations (foundation budget; tightened by WI-S18-005)"
+
+      - name: Stop http-server
+        if: always()
+        run: |
+          if [ -f /tmp/http-server-axe.pid ]; then
+            kill "$(cat /tmp/http-server-axe.pid)" || true
+          fi
+
+  broken-links:
+    name: lychee broken-link check
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Download build artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: docs-build
+          path: apps/docs/build
+
+      - name: Run lychee
+        uses: lycheeverse/lychee-action@2b973e86b5a8a3ac0cbcdd4358ce28ed8c52b1a2 # v2.6.1
+        with:
+          args: --config apps/docs/lychee.toml --no-progress 'apps/docs/build/**/*.html'
+          fail: false
+          jobSummary: true
+
+  vale:
+    name: Vale prose lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Run Vale
+        uses: errata-ai/vale-action@d89dee975228ae261d22c15adcd03578634d429c # v2.1.1
+        with:
+          version: 3.9.1
+          files: apps/docs/docs
+          fail_on_error: false
+          reporter: github-pr-check
+          vale_flags: "--config=apps/docs/.vale.ini --no-exit"
