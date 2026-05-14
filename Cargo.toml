@@ -108,6 +108,11 @@ members = [
     "crates/corelink-tier-selection",
     # WI-S19-005 enterprise inquiry form + Slack/CRM atomic outbox + 24h auto-reply SLA
     "crates/corelink-enterprise-inquiry",
+    # WI-S20-004 lighthouse customer state machine tracker (3 customers — 2 team
+    # + 1 enterprise BYOK — across recruiting → engaged → migrating → observing
+    # → attested → case-study-signed; 30d observation window canonical;
+    # GA Evidence Gate D+60 check)
+    "crates/corelink-lighthouse-tracker",
 ]
 exclude = [
     "crates/tenant-path/fuzz",

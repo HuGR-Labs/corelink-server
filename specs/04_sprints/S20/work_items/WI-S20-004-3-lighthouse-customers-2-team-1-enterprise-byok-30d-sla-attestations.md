@@ -1,12 +1,12 @@
 ---
 id: "WI-S20-004"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "SEALED"
+work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-29"
-updated: "2026-04-29"
+updated: "2026-05-14"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-005", "FF-HR-009", "FF-HR-010"]
 parent: "S-20"
@@ -335,6 +335,7 @@ SLO-CATALOG cumulative validated:
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | Criação WI-S20-004 (cycle 12.S20.0; 3 lighthouse customers migration — 2 team tier Forge customer-zero + 1 OSS Bazel/Buck2 + 1 enterprise BYOK + 30d observation post-migration + SLA claim met sustained 30d + customer attestations testimonial + case study Marketing co-led com Customer Success; GA Evidence Gate D+60 criterion). |
+| 1.1.0 | 2026-05-14 | Gustavo (via Claude Sonnet) | **SEALED**: lighthouse customer program framework + tracker crate (`crates/corelink-lighthouse-tracker`, 24 tests + 2 property tests passing — state machine 7 states, fail-CLOSED transitions, 30d observation window canonical, Tier::Team / Tier::EnterpriseByok with BYOK health gating, GA Evidence Gate D+60 helper) + D1 migration `0042_lighthouse_customers.sql` (2 tables: `lighthouse_customers` state-of-truth + `lighthouse_sla_samples` append-only daily evidence) + 4 spec docs in `specs/_lighthouse/` (program framework, recruitment shortlist with 7 OSS + 6 Enterprise candidates, SLA attestation template, 3 case-study templates — Forge customer-zero / OSS Bazel-Buck2 / Enterprise BYOK NDA-sanitized) + `RB-LIGHTHOUSE-CUSTOMER-INCIDENT.md` runbook (P0 priority, ≤ 5 min detect / ≤ 15 min Engineering Lead escalation / ≤ 1h customer phone call, with state-machine impact decision tree). Quality gates: `cargo build / clippy / test -p corelink-lighthouse-tracker` clean; `python3 scripts/validate_specs.py` no S-20 failures. |
 
 ---
 
