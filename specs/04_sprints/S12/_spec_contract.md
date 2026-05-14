@@ -315,4 +315,12 @@ Itens waivable com Security lead + Legal + ADR:
 
 ---
 
+## 20. Change Log (Implementation)
+
+| Versão | Data | Autor | Mudança |
+|--------|------|-------|---------|
+| 1.2.1 | 2026-05-13 | Gustavo (via Claude Sonnet 4.6) | WI-S12-001 SEALED: release-slsa3.yml + corelink-supply-verify crate (lib/CLI/tests/examples) + ADR-0045 + docs/internal/slsa-l3-pipeline.md. |
+
+---
+
 **Fim spec contract S-12 v1.1.0 SOTA.**

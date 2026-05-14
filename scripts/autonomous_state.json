@@ -82,5 +82,30 @@
   ],
   "done": "see git tags s01..s11-impl-sealed for prior + this commit for S-11 002..008",
   "last_seal_at": "2026-05-13T18:00:00Z",
-  "note": "consolidated after wave-1 parallel sonnet merge of WI-S11-003..008"
+  "note": "consolidated after wave-1 parallel sonnet merge of WI-S11-003..008",
+  "wi_s12_001": {
+    "sealed_at": "2026-05-13T20:00:00Z",
+    "sealed_by": "Claude Sonnet 4.6",
+    "commit_branch": "wt/wi-s12-001",
+    "artifacts": [
+      ".github/workflows/release-slsa3.yml",
+      "crates/corelink-supply-verify/src/lib.rs",
+      "crates/corelink-supply-verify/src/error.rs",
+      "crates/corelink-supply-verify/src/metrics.rs",
+      "crates/corelink-supply-verify/src/types.rs",
+      "crates/corelink-supply-verify/src/verifier.rs",
+      "crates/corelink-supply-verify/src/bin/cli.rs",
+      "crates/corelink-supply-verify/tests/adversarial.rs",
+      "crates/corelink-supply-verify/tests/prop_verify.rs",
+      "crates/corelink-supply-verify/examples/verify_basic.rs",
+      "crates/corelink-supply-verify/examples/paranoid_mode.rs",
+      "crates/corelink-supply-verify/examples/lookup.rs",
+      "specs/03_architecture/adrs/ADR-0045-slsa-l3-rekor-mandatory.md",
+      "docs/internal/slsa-l3-pipeline.md"
+    ],
+    "tests": "9 adversarial + 7 prop (10k iter) + 3 doc-tests = 19 green",
+    "clippy": "clean -D warnings",
+    "p0_self_id": "none",
+    "p1_self_id": "none — wasm32 target not tested for this pure-native crate (supply-verify is CLI; wasm32 not a deployment target)"
+  }
 }
