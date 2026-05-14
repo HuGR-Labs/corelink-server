@@ -1,0 +1,29 @@
+[package]
+name = "corelink-rotation-adapters"
+description = "CoreLink per-asset rotation adapters implementing the RotationAdapter trait — TdkRotationAdapter (7d overlap, envelope re-wrap), PatSigningRotationAdapter (24h overlap, multi-key signing_key_id column), AuditChainRotationAdapter (24h overlap, per-region daily verifier compatible), AdminSigningRotationAdapter (24h overlap, per-region HMAC-SHA256 for dual-approval WI-S13-002), ByokRotationAdapter stub (7d overlap, customer-trigger S-14 forward). Ships AssetClass, KeyHandle, KeyState, RotationAdapter trait, RotationError. INV-KEY-OVERLAP + INV-KEY-NO-SKIP + INV-KEY-AUDIT enforced runtime. wasm32-unknown-unknown clean. (WI-S13-003 — S-13 admin plane HIGH_RISK lane)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }

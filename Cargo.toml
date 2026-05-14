@@ -57,6 +57,8 @@ members = [
     "crates/corelink-dt-webhook",
     "crates/corelink-dt-cli",
     "crates/corelink-dt-reconcile",
+    "crates/corelink-rotation-adapters",
+    "crates/corelink-rotation-worker",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
@@ -169,6 +171,8 @@ corelink-privacy-residency-enforcement = { path = "crates/corelink-privacy-resid
 corelink-dt-webhook = { path = "crates/corelink-dt-webhook" }
 corelink-dt-cli = { path = "crates/corelink-dt-cli" }
 corelink-dt-reconcile = { path = "crates/corelink-dt-reconcile" }
+corelink-rotation-adapters = { path = "crates/corelink-rotation-adapters" }
+corelink-rotation-worker = { path = "crates/corelink-rotation-worker" }
 
 # Test / bench
 proptest = "1.5"

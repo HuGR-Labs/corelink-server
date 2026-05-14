@@ -1,0 +1,44 @@
+[package]
+name = "corelink-rotation-worker"
+description = "CoreLink secret rotation orchestrator — zero-downtime cross-asset rotation for 5 asset types (TDK 7d / PAT signing 24h / audit chain 24h / admin signing 24h / BYOK 7d) with per-asset adapter pattern, D1-backed state machine (pending→active→overlap→retired→destroyed), PAT-ROLL-FORWARD-001 auto-rollback on downstream errors >1% sustained 5 min, INV-KEY-OVERLAP + INV-KEY-NO-SKIP + INV-KEY-AUDIT enforcement, and 6 Prometheus metrics. (WI-S13-003 — S-13 admin plane HIGH_RISK lane)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+corelink-rotation-adapters = { path = "../corelink-rotation-adapters" }
+
+[dev-dependencies]
+proptest = { workspace = true }
+rand = "0.9"
+rand_chacha = "0.9"
+
+[[test]]
+name = "prop_rotation"
+path = "tests/prop_rotation.rs"
+
+[[test]]
+name = "adversarial"
+path = "tests/adversarial.rs"
