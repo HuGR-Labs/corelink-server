@@ -44,11 +44,27 @@ CoreLink admin UI enforces a hardened Content-Security-Policy with **no
   via Web Crypto, forwards it on `x-nonce` request header (so the layout
   can pass it to `<Script>` children), and attaches the CSP header to
   every response.
-- Staging emits `Content-Security-Policy-Report-Only`; production emits
-  the enforcing `Content-Security-Policy`. The switch is gated by
-  `NODE_ENV === "production"`.
+- Header mode is gated by `CSP_ENFORCEMENT` (WI-S16-007 deliverable 4):
+  - `CSP_ENFORCEMENT=report-only` → `Content-Security-Policy-Report-Only`
+    (staging baseline; collect violations for ≥ 30d, refine allowlist).
+  - `CSP_ENFORCEMENT=enforce` → `Content-Security-Policy` (production
+    default once baseline converges < 5 violations/dia).
+  - Unset → `enforce` when `NODE_ENV=production`, else `report-only`.
 - Violations are POSTed to `/api/csp-report` (rate-limited 100/min/IP,
   forwarded to `${NEXT_PUBLIC_CORELINK_API_URL}/v1/csp-violations`).
+
+### CSP rollout (S-16 → S-17)
+
+1. **Stage 1 — Report-only baseline.** Production deploys with
+   `CSP_ENFORCEMENT=report-only` for ≥ 1 week. Violations are aggregated;
+   any directive triggering > 5/day is investigated.
+2. **Stage 2 — Enforce.** Flip `CSP_ENFORCEMENT=enforce` (the production
+   default) once the violation rate is sustained < 5/day. Roll back via
+   the same env var if a false-positive surge appears.
+
+The Playwright e2e suite (`playwright/e2e/10-csp-violation.spec.ts`)
+asserts the header shape — `default-src`, no `unsafe-inline`, `nonce-`
+present, `report-uri` set — regardless of the mode in effect.
 
 ### Allowlist baseline
 

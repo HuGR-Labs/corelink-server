@@ -1,11 +1,11 @@
 ---
 id: "SPEC-CONTRACT-S16"
 type: "spec_contract"
-doc_status: "DRAFT"
+doc_status: "SEALED"
 audit_status: "ACTIVE"
-version: "1.2.0"
+version: "1.4.0"
 created: "2026-04-24"
-updated: "2026-04-29"
+updated: "2026-05-14"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -310,4 +310,14 @@ Itens waivable com Frontend lead + Privacy officer + ADR:
 
 ---
 
-**Fim spec contract S-16 v1.1.0 SOTA.**
+**Fim spec contract S-16 v1.4.0 SEALED.**
+
+## 20. Change log
+
+| Versão | Data | Autor | Mudança |
+|---|---|---|---|
+| 1.0.0 | 2026-04-24 | Gustavo | Initial S-16 spec contract — STANDARD lane; 7 WIs; admin UI scope. |
+| 1.1.0 | 2026-04-25 | Gustavo | Lote 10.16 codex P0 fixes — CAP-UI-002 deferred Grafana; WI mapping cycle 1 adjustments. |
+| 1.2.0 | 2026-04-29 | Gustavo | All 7 WIs DRAFT spec complete; PERT 18.7h closing WI; STANDARD 7-canonical sign-offs. |
+| 1.3.0 | 2026-05-10 | Gustavo | WI-S16-001..006 SEALED; merged into main admin-ui workspace; 244 vitest PASS baseline. |
+| 1.4.0 | 2026-05-14 | Gustavo (via Sonnet WI-S16-007 builder) | WI-S16-007 SEALED — Playwright e2e (23 tests, 9 PASS / 14 FIXME) + Lighthouse CI + axe-core sweep + CSP_ENFORCEMENT flag + UX workshop pack (DRAFT synthetic, real D+10) + PRR-S16 `CONDITIONALLY_APPROVED` (5 waivers) + adversarial summary (36 scenarios) + F1 nested-`<html>` hotfix HF-S17-001 queued. Doc status promoted DRAFT → SEALED. |
