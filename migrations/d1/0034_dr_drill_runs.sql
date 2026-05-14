@@ -1,4 +1,4 @@
--- Migration 0033: DR drill runs table (WI-S17-002)
+-- Migration 0034: DR drill runs table (WI-S17-002)
 --
 -- Tracks every DR drill execution (cycle 1 CF region outage; cycles 2/3 deferred
 -- annual at GA via waiver opt). One row per drill_id. Persists pre/post wall-clock,
