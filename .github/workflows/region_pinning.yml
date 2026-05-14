@@ -1,0 +1,223 @@
+name: Region pinning enforcement gate (WI-S14-002)
+
+# CI gate for WI-S14-002 — Tenant region pinning enforcement + 30k property test.
+#
+# Enforces INV-REGION-NO-CROSS-LEAK CRITICAL (Schrems II + LGPD Art. 33 §1º):
+#   - PR gate: 30k property test via PROPTEST_CASES=30000 (default in code).
+#   - Nightly: 100k property test via PROPTEST_CASES=100000.
+#   - Adversarial regression tests: 10 scenarios (subdomain spoof, header tamper,
+#     cache poison, replay, D1 mutation, KV namespace, etc.).
+#   - Migration additivity check (migration 0027 is additive-only).
+#   - Clippy -D warnings clean.
+#   - All tests fail-closed (HIGH_RISK lane FF-HR-002 + FF-HR-003).
+#
+# On PR: all jobs required.
+# Nightly (cron 02:17 UTC): 100k iter extended run + nightly aggregate.
+
+on:
+  pull_request:
+    paths:
+      - 'crates/corelink-privacy-residency-enforcement/**'
+      - 'migrations/d1/0027_tenant_primary_region.sql'
+      - 'specs/04_sprints/S14/**'
+      - 'specs/05_quality/runbooks/RB-region-leak.md'
+      - 'specs/03_architecture/adrs/ADR-S14-001-region-pinning-enforcement.md'
+      - '.github/workflows/region_pinning.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'crates/corelink-privacy-residency-enforcement/**'
+      - 'migrations/d1/0027_tenant_primary_region.sql'
+      - 'specs/04_sprints/S14/**'
+      - 'specs/05_quality/runbooks/RB-region-leak.md'
+      - 'specs/03_architecture/adrs/ADR-S14-001-region-pinning-enforcement.md'
+      - '.github/workflows/region_pinning.yml'
+  schedule:
+    # 02:17 UTC nightly — staggered from existing nightly crons (:04, :23).
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+    inputs:
+      proptest_cases:
+        description: 'PROPTEST_CASES override (default: 30000 PR / 100000 nightly)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ────────────────────────────────────────────────────────────────────────────
+  # 1. Migration additivity check — 0027 must be additive-only.
+  # ────────────────────────────────────────────────────────────────────────────
+  migration-check:
+    name: migration additivity check (0027_tenant_primary_region)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: '3.12'
+
+      - name: Install Python deps
+        run: pip install -r requirements-ci.txt
+
+      - name: check_migrations_additive.py
+        run: python3 scripts/check_migrations_additive.py
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # 2. Clippy + all existing tests (lib + integration + property_20k + regression).
+  # ────────────────────────────────────────────────────────────────────────────
+  clippy-and-existing-tests:
+    name: clippy -D warnings + corelink-privacy-residency-enforcement all tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
+
+      - uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
+        with:
+          workspaces: ". -> target"
+
+      - name: clippy -D warnings
+        run: >
+          cargo clippy
+          -p corelink-privacy-residency-enforcement
+          --all-targets
+          -- -D warnings
+
+      - name: cargo test -p corelink-privacy-residency-enforcement --all-targets
+        run: cargo test -p corelink-privacy-residency-enforcement --all-targets
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # 3. 30k property test (PR gate) — INV-REGION-NO-CROSS-LEAK.
+  # ────────────────────────────────────────────────────────────────────────────
+  proptest-30k:
+    name: 30k property test — INV-REGION-NO-CROSS-LEAK (PR gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+
+      - uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
+        with:
+          workspaces: ". -> target"
+
+      - name: 30k property test — property_region_pinning_30k
+        # PROPTEST_CASES defaults to 30_000 in code; CI env confirms it explicitly.
+        env:
+          PROPTEST_CASES: ${{ inputs.proptest_cases || '30000' }}
+        run: >
+          cargo test
+          -p corelink-privacy-residency-enforcement
+          --test property_region_pinning_30k
+          --release
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # 4. Adversarial regression tests — 10 scenarios.
+  # ────────────────────────────────────────────────────────────────────────────
+  adversarial-tests:
+    name: adversarial regression tests (10 scenarios)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+
+      - uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
+        with:
+          workspaces: ". -> target"
+
+      - name: adversarial regression tests — region_adversarial
+        run: >
+          cargo test
+          -p corelink-privacy-residency-enforcement
+          --test region_adversarial
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # 5. RB-region-leak dry-run script.
+  # ────────────────────────────────────────────────────────────────────────────
+  rb-region-leak-dry-run:
+    name: RB-region-leak dry-run (INV-REGION-NO-CROSS-LEAK forensic)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: RB-region-leak dry-run
+        run: bash scripts/rb_region_leak_dry_run.sh
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # 6. Workflow YAML parse smoke.
+  # ────────────────────────────────────────────────────────────────────────────
+  workflow-yaml-smoke:
+    name: region_pinning.yml YAML parse smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: '3.12'
+
+      - name: Install pyyaml
+        run: pip install pyyaml
+
+      - name: region_pinning.yml parse smoke
+        run: python3 -c "import yaml; yaml.safe_load(open('.github/workflows/region_pinning.yml'))"
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # 7. Aggregate gate (fan-in for required-status-checks branch protection).
+  # ────────────────────────────────────────────────────────────────────────────
+  region-pinning-gate:
+    name: region pinning gate (aggregate — INV-REGION-NO-CROSS-LEAK)
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    needs:
+      - migration-check
+      - clippy-and-existing-tests
+      - proptest-30k
+      - adversarial-tests
+      - rb-region-leak-dry-run
+      - workflow-yaml-smoke
+    steps:
+      - name: Aggregate
+        run: echo "region pinning gate green — INV-REGION-NO-CROSS-LEAK ratificada; 0 leaks."
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # 8. Nightly 100k iter (cron only — not required for PR gate).
+  # ────────────────────────────────────────────────────────────────────────────
+  proptest-100k-nightly:
+    name: 100k property test NIGHTLY — sustained INV-REGION-NO-CROSS-LEAK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # Only runs on schedule or manual dispatch with explicit override
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+
+      - uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
+        with:
+          workspaces: ". -> target"
+
+      - name: 100k property test NIGHTLY — property_region_pinning_30k
+        env:
+          PROPTEST_CASES: ${{ inputs.proptest_cases || '100000' }}
+        run: >
+          cargo test
+          -p corelink-privacy-residency-enforcement
+          --test property_region_pinning_30k
+          --release
