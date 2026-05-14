@@ -1,0 +1,28 @@
+---
+id: cli-query-write-status
+title: CLI — query an in-flight ByteStream write
+sidebar_label: CLI · query write status
+---
+
+# CLI — `corelink put --query-status`
+
+Inspect the committed offset of an in-flight upload (useful for resume / debugging).
+
+## Code
+
+```bash
+corelink put --query-status "uploads/abc-123" --format=json
+```
+
+## Expected output
+
+```json
+{"committed_size": 16777216, "complete": false}
+```
+
+## Common errors
+
+| CLI exit code | Cause | Fix |
+| --- | --- | --- |
+| `4` | Resource name not found | Upload session expired (TTL 24h) — restart |
+| `3` | `COR_AUTH_PAT_INVALID` | Re-mint PAT |

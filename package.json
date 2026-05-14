@@ -24,6 +24,8 @@
     "docs:serve": "pnpm --filter @corelink/docs serve",
     "docs:test": "pnpm --filter @corelink/docs test",
     "docs:lint": "pnpm --filter @corelink/docs lint",
-    "docs:typecheck": "pnpm --filter @corelink/docs typecheck"
+    "docs:typecheck": "pnpm --filter @corelink/docs typecheck",
+    "docs:gen": "pnpm --filter @corelink/docs docs:gen",
+    "docs:gen:check": "pnpm --filter @corelink/docs docs:gen:check"
   }
 }

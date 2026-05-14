@@ -1,0 +1,42 @@
+---
+id: index
+title: REAPI v2 reference
+sidebar_label: REAPI v2 reference
+slug: /reference/reapi
+description: Remote Execution API v2 — services, messages, and per-service code examples.
+---
+
+# REAPI v2 reference
+
+CoreLink implements a tenant-scoped, wire-compatible subset of [`bazelbuild/remote-apis @ v2.12.0`](https://github.com/bazelbuild/remote-apis/tree/v2.12.0). Bazel 6+, Buck2, and any other REAPI v2 client connect with **no code changes** — only the cache endpoint and PAT differ.
+
+## Authentication
+
+Every RPC carries a PAT in the `Authorization: Bearer <pat>` metadata header. The canonical token format is:
+
+```
+corelink_<env>_<token_id>.<random_secret>.<hmac_sig>
+```
+
+The placeholder used throughout this site — `corelink_dev_t_xxx.xxx.xxx` — is intentional and must never appear in production.
+
+## Auto-generated service pages
+
+The pages under this section are regenerated from the vendored `.proto` files by `pnpm docs:gen`. CI verifies zero drift between proto and rendered MDX (`pnpm docs:gen:check`) on every PR.
+
+Browse the [generated index](./_generated/index.mdx) for all services in the current build.
+
+## Manual code examples
+
+For each service, hand-written examples in four languages live under `_examples/<Service>/`:
+
+- **Python** (`corelink-py`)
+- **Go** (`corelink-go`)
+- **Node / TypeScript** (`@corelink/client`)
+- **CLI** (`corelink`)
+
+Examples cover the most common flows: PAT auth, `BatchUpdateBlobs`, `BatchReadBlobs`, `FindMissingBlobs`, `Capabilities.GetCapabilities`, `ByteStream.Read`, `ByteStream.Write`, and health probing.
+
+## Error model
+
+CoreLink maps every REAPI v2 status code to a stable `error_taxonomy` identifier (`COR_CAS_*`, `COR_AUTH_*`, `COR_QUOTA_*`). See [error taxonomy](../../tutorial/06-verify-cache-hit.mdx#troubleshooting) for the common cases.

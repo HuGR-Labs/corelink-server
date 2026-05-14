@@ -1,0 +1,34 @@
+---
+id: cli-bench-aware
+title: CLI — bench with capability-aware batching
+sidebar_label: CLI · bench (cap-aware)
+---
+
+# CLI — capability-aware `corelink bench`
+
+Auto-size the benchmark batch to the server's `max_batch_total_size_bytes`.
+
+## Code
+
+```bash
+MAX=$(corelink doctor --capabilities --format=json \
+  | jq -r .cache_capabilities.max_batch_total_size_bytes)
+BLOB_KB=64
+N=$((MAX / 1024 / BLOB_KB))
+
+corelink bench --put "$N" --get "$N" --blob-size "${BLOB_KB}KiB"
+```
+
+## Expected output
+
+```text
+put p50=9.4ms  p95=15.2ms  err=0/64
+get p50=2.7ms  p95= 4.9ms  err=0/64 hit_ratio=100%
+```
+
+## Common errors
+
+| CLI exit code | Cause | Fix |
+| --- | --- | --- |
+| `5` | Bench blob size > `max_batch_total_size_bytes` | Reduce `--blob-size` |
+| `3` | `COR_AUTH_PAT_INVALID` | Re-mint PAT |

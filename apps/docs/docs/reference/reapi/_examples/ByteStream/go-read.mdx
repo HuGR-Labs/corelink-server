@@ -1,0 +1,54 @@
+---
+id: go-read
+title: Go — ByteStream.Read
+sidebar_label: Go · Read
+---
+
+# Go — `ByteStream.Read`
+
+## Code
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "io"
+    "os"
+
+    corelink "go.corelink.dev/corelink-go"
+)
+
+func main() {
+    ctx := context.Background()
+    client, _ := corelink.NewClient(ctx, corelink.Config{
+        Endpoint: "https://acme-dev.corelink.dev",
+        PAT:      os.Getenv("CORELINK_PAT"),
+    })
+    defer client.Close()
+
+    digest := corelink.Digest{Hash: "bdd9ea4a8e6b...", SizeBytes: 41943040}
+    rc, err := client.ByteStream.Read(ctx, digest)
+    if err != nil { panic(err) }
+    defer rc.Close()
+    out, _ := os.Create("/tmp/big.bin")
+    defer out.Close()
+    n, err := io.Copy(out, rc)
+    if err != nil { panic(err) }
+    fmt.Printf("downloaded %d B\n", n)
+}
+```
+
+## Expected output
+
+```text
+downloaded 41943040 B
+```
+
+## Common errors
+
+| Status | Error taxonomy | Cause |
+| --- | --- | --- |
+| `NOT_FOUND` | `COR_CAS_BLOB_MISSING` | Digest evicted or never written. |
+| `ABORTED` | `COR_CAS_DIGEST_MISMATCH` | Client-verify rejected. |

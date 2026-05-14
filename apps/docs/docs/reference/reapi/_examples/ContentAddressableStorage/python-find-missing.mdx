@@ -1,0 +1,56 @@
+---
+id: python-find-missing
+title: Python — FindMissingBlobs
+sidebar_label: Python · FindMissingBlobs
+---
+
+# Python — `FindMissingBlobs`
+
+Short-circuit uploads: ask the server which digests are missing and only upload those.
+
+## Prerequisites
+
+- `pip install corelink-py`
+- `CORELINK_PAT` exported
+
+## Code
+
+```python
+import asyncio
+import hashlib
+import os
+from corelink import CoreLinkClient, Digest
+
+async def main() -> None:
+    candidate_bytes = [b"alpha", b"beta", b"gamma"]
+    digests = [
+        Digest(hash=hashlib.sha256(b).hexdigest(), size_bytes=len(b))
+        for b in candidate_bytes
+    ]
+    async with CoreLinkClient(
+        endpoint="https://acme-dev.corelink.dev",
+        pat=os.environ["CORELINK_PAT"],
+    ) as client:
+        missing = await client.cas.find_missing_blobs(digests)
+        print(f"{len(missing)}/{len(digests)} missing — only upload those")
+        if missing:
+            to_upload = [
+                b for b, d in zip(candidate_bytes, digests) if d in missing
+            ]
+            await client.cas.batch_update_blobs(to_upload)
+
+asyncio.run(main())
+```
+
+## Expected output
+
+```text
+2/3 missing — only upload those
+```
+
+## Common errors
+
+| Status | Error taxonomy | Cause |
+| --- | --- | --- |
+| `RESOURCE_EXHAUSTED` | `COR_QUOTA_EXCEEDED` | Tenant CAS quota full. Free space or upgrade. |
+| `UNAUTHENTICATED` | `COR_AUTH_PAT_INVALID` | PAT expired. |
