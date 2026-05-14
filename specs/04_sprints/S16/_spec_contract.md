@@ -1,9 +1,9 @@
 ---
 id: "SPEC-CONTRACT-S16"
 type: "spec_contract"
-doc_status: "DRAFT"
+doc_status: "SEALED"
 audit_status: "ACTIVE"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-04-24"
 updated: "2026-04-29"
 owner: "Gustavo Schneiter"
@@ -310,4 +310,13 @@ Itens waivable com Frontend lead + Privacy officer + ADR:
 
 ---
 
-**Fim spec contract S-16 v1.1.0 SOTA.**
+## 20. Changelog
+
+| Versão | Data | Autor | Mudança |
+|---|---|---|---|
+| 1.0.0 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | Criação spec contract S-16. |
+| 1.1.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | SOTA elevation v1.1 — 6-field consent + DSR receipt + dual approval + audit viewer Merkle proof + RBAC Operator. |
+| 1.2.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | WI list confirmed (7 WIs); pivot WI-S16-003 from "Usage Dashboard" para "Consent UI" para fechar CTRL-PRIV-CONSENT compliance gap; WI-S16-005 absorve audit viewer + dual approval. |
+| 1.3.0 | 2026-05-14 | Gustavo (via Claude Sonnet 4.6) | WI-S16-001..006 SEALED via 6-builder parallel wave: Next.js 15 skeleton + Clerk + hardened CSP + 3-locale i18n (001), tenant onboarding 5-step wizard + first PAT issuance (002), consent UI 6-field CTRL-PRIV-CONSENT-001..006 + screenshot evidence + withdraw MFA (003), DSR 6-direitos self-service + Clerk MFA re-auth + JWT receipt + SLA countdown (004), admin ops UI audit viewer + Merkle proof + dual-approval + tenant search (005), component library + WCAG 2.2 AA + i18n + privacy/legal pages (006). Post-merge gate cleanup: 244/244 vitest tests + typecheck + lint + build green; canonical scaffold unified; safe-log + jwt-decode dual APIs co-resident. WI-S16-007 (e2e ship gate + PRR-S16) pending. |
+
+**Fim spec contract S-16 v1.3.0 SOTA.**
