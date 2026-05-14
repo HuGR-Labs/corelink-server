@@ -7,6 +7,10 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[lib]
+name = "corelink_cli"
+path = "src/lib.rs"
+
 [[bin]]
 name = "corelink"
 path = "src/main.rs"

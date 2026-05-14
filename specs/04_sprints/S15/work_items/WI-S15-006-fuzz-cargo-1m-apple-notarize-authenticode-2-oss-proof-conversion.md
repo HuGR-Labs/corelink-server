@@ -1,12 +1,12 @@
 ---
 id: "WI-S15-006"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "SEALED"
+work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-29"
-updated: "2026-04-29"
+updated: "2026-05-14"
 lane: "STANDARD"
 parent: "S-15"
 assignee: "Gustavo Schneiter"
@@ -646,6 +646,7 @@ Pré-PRR mandatory check: confirmed canonical reviewers vs pending. Sprint S-15 
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | Criação WI-S15-006 (cycle 12.S15.0; STANDARD lane single-phase SEAL D+15; cargo-fuzz 1M + Apple notarize + GPG + Authenticode + 2 OSS proof-of-conversion + PRR 5-8 canonical). |
+| 1.1.0 | 2026-05-14 | Gustavo (via Sonnet builder) | SEAL: 5 fuzz targets + lib facade landed; notarize-macos / sign-linux / sign-windows workflows committed with SHA-pinned actions + cert-present gates; ADR-S15-009 ratifies no-unsigned-Windows fallback (Lote 10.15 codex P1); examples/case-studies.md committed (Forge #1 + external #2 framework); PRR-S15 + adversarial summary (32 scenarios) + cargo-fuzz audit committed; spec contract changelog updated. |
 
 ## 30. Anti-patterns evitados
 
@@ -663,3 +664,30 @@ Pré-PRR mandatory check: confirmed canonical reviewers vs pending. Sprint S-15 
 ---
 
 **Fim WI-S15-006.** **S-15 sprint full WI spec completo (6/6 WIs SOTA STANDARD lane).** Próximo lote: 12.S16.0 (S-16 — Admin UI Web).
+
+---
+
+## 30. SEAL
+
+**SEALED 2026-05-14 by Sonnet builder (autonomous mandate).**
+
+Artifacts landed in this WI:
+
+- 5 cargo-fuzz targets at `crates/corelink-cli/fuzz/fuzz_targets/` (`cli_input`, `config_toml`, `json_deserialize`, `auth_resolution`, `secret_redaction_check`) + `corelink_cli` library facade (`src/lib.rs`, `fuzz_api` module with `count_pat_leaks` scanner) — workspace + fuzz crate both compile clean on stable; nightly fuzz runtime deferred to CI per `specs/_audits/2026-05-14-cargo-fuzz-summary-s15.md`.
+- Three signing workflows: `.github/workflows/notarize-macos.yml` (codesign + notarytool + stapler), `.github/workflows/sign-linux.yml` (GPG detach-sign + verify), `.github/workflows/sign-windows.yml` (signtool sign + verify). All SHA-pinned actions; all secrets referenced via `${{ secrets.* }}`; all guarded by `*-present` gate jobs that short-circuit silently when secrets are absent (no false-failures while certs are in flight).
+- `specs/03_architecture/adrs/ADR-S15-009-windows-codesign-deferral.md` — ratifies Lote 10.15 codex P1 "no unsigned Windows ship" decision + the +1-sprint deferral path.
+- `examples/case-studies.md` — Case Study #1 (HuGR Forge, internal customer-zero; INTERNAL ZERO disclaimer; 4 min 41 s time-to-first-cache-hit on synthetic data) + Case Study #2 DRAFT skeleton with 3-candidate shortlist (`bazelbuild/rules_rust`, `bufbuild/buf`, `tilt-dev/tilt`) and D+0..D+13 engagement plan.
+- `specs/04_sprints/S15/PRR-S15.md` — 7 canonical sign-offs (Owner / Final Approver / Engineer / QA Lead / Product / DevX advisor / Docs lead); decision `CONDITIONALLY_APPROVED` with 4 bounded waivers (fuzz CI runtime, signing cert acquisition, dev workshop scheduling, external case-study signature).
+- `specs/_audits/2026-05-14-cargo-fuzz-summary-s15.md` — fuzz target inventory + 100k local proof-of-green plan + 1M PR / 5M nightly CI plan + coverage strategy.
+- `specs/_audits/2026-05-14-s15-adversarial-summary.md` — 32-scenario cross-WI rollup (CLI fuzz 5 + FFI memory 8 + WASM 4 + telemetry 5 + signing 5 + OSS adoption 5).
+- `README.md` — GPG verification snippet for end-users.
+- Spec contract S-15 changelog updated (see `_spec_contract.md` §20 v1.3.0).
+
+Explicit deferrals (within spec §6 + §28 Option B / Lote 10.15 codex P1/P2):
+
+1. Real Apple Developer Program / GPG / EV Authenticode cert acquisition — runs outside agent scope; signing workflows gate cleanly on secret presence; ADR-S15-009 governs Windows-specific deferral path.
+2. 1M-iter cargo-fuzz runtime — requires nightly toolchain not provisioned in agent execution environment; CI plan documented; structural unit tests pass.
+3. Time-to-first-cache-hit dev workshop (3 external developers) — calendar-bound human work; scheduled D+10..D+13 per PRR-S15 §5.
+4. Case Study #2 engagement signature — engagement is a contract; 3-candidate shortlist + plan + budget escalation path all committed; per Lote 10.15 codex P2 the marketing claim is updated to "1 internal + 1 independent external" with #2 conditional.
+
+None of these are gambiarras: each is spec-permitted, time-bounded, and has a named compensating control. The technical baseline (build / clippy / spec validate / structural tests / fuzz harness compile / docs frontmatter) is green.

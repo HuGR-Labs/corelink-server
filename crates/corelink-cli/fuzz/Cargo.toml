@@ -1,0 +1,53 @@
+[workspace]
+
+[package]
+name = "corelink-cli-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+description = "cargo-fuzz harnesses for corelink-cli (WI-S15-006 ship gate; 1M iter PR / 5M nightly)."
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+corelink-cli = { path = ".." }
+arbitrary = { version = "1", features = ["derive"] }
+toml = "0.8"
+serde_json = "1"
+
+[[bin]]
+name = "cli_input"
+path = "fuzz_targets/cli_input.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "config_toml"
+path = "fuzz_targets/config_toml.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "json_deserialize"
+path = "fuzz_targets/json_deserialize.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "auth_resolution"
+path = "fuzz_targets/auth_resolution.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "secret_redaction_check"
+path = "fuzz_targets/secret_redaction_check.rs"
+test = false
+doc = false
+bench = false

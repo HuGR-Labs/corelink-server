@@ -3,9 +3,9 @@ id: "SPEC-CONTRACT-S15"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-04-24"
-updated: "2026-04-29"
+updated: "2026-05-14"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -295,4 +295,15 @@ Itens waivable com Engineer lead + DevX advisor + ADR:
 
 ---
 
-**Fim spec contract S-15 v1.1.0 SOTA.**
+## 20. Change Log
+
+| Versão | Data | Autor | Mudança |
+|---|---|---|---|
+| 1.0.0 | 2026-04-24 | Gustavo | Initial spec contract S-15 (cycle 12.S15.0). |
+| 1.1.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | Lote 10.15 codex review pass (P1 + P2 fixes): Windows unsigned fallback removed; OSS marketing claim updated; telemetry cmdline flag rejected. |
+| 1.2.0 | 2026-04-29 | Gustavo | All 6 WIs spec'd + cross-referenced; SOTA v1.1 dimensions documented. |
+| 1.3.0 | 2026-05-14 | Gustavo (via Sonnet builder, WI-S15-006 SEAL) | WI-S15-006 closed: 5 fuzz targets landed; 3 signing workflows landed (gate-on-secret pattern); ADR-S15-009 ratified (no-unsigned-Windows); PRR-S15 + adversarial summary (32 scenarios) + cargo-fuzz audit committed; 2 OSS case studies (Forge committed + external skeleton); WI doc_status DRAFT → SEALED. |
+
+---
+
+**Fim spec contract S-15 v1.3.0 SOTA.**
