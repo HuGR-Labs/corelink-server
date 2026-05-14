@@ -1,0 +1,18 @@
+{
+  "name": "@corelink/client",
+  "version": "0.1.0",
+  "description": "CoreLink CAS client for JavaScript/TypeScript — wasm-bindgen WASM, client-verify default-on",
+  "license": "UNLICENSED",
+  "type": "module",
+  "files": [
+    "pkg/corelink_wasm_bg.wasm",
+    "pkg/corelink_wasm.js",
+    "pkg/corelink_wasm.d.ts",
+    "pkg/corelink_wasm_bg.js",
+    "pkg/corelink_wasm_bg.wasm.d.ts"
+  ],
+  "keywords": ["corelink", "cache", "blake3", "wasm", "remote-cache"],
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

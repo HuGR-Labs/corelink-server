@@ -1,0 +1,48 @@
+[package]
+name = "corelink-py"
+description = "CoreLink Python FFI wrapper via PyO3 — async/await native asyncio integration; client-verify default-on per CTRL-CAS-002 (reuses corelink-client-verify single Rust truth). Published to PyPI as corelink-py."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+# cdylib required for PyO3 to produce a native extension module (.so / .pyd).
+crate-type = ["cdylib"]
+name = "corelink_py"
+
+[features]
+default = []
+# Expose pyo3 extension module. Always enabled in practice; kept as a feature
+# so `cargo check` without pyo3 works on non-PyO3 CI runners.
+extension-module = ["pyo3/extension-module"]
+
+[lints.rust]
+unsafe_code = "deny"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+# PyO3 macro-generated code emits From<PyErr> conversions that clippy incorrectly
+# flags as useless. Suppressed at the crate level; all other useless_conversion
+# cases are caught by the fact that pyo3 functions already accept PyErr directly.
+useless_conversion = "allow"
+
+[dependencies]
+pyo3 = { workspace = true }
+corelink-client-verify = { path = "../corelink-client-verify" }
+tracing = { workspace = true }
+
+[dev-dependencies]
+pyo3 = { workspace = true }
