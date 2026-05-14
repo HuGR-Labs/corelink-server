@@ -1,0 +1,40 @@
+[package]
+name = "corelink-replica-worker"
+description = "CoreLink hot blob replica worker + offline batch aggregator (WI-S14-003 — PAT-REGION-FAILOVER-001; HIGH_RISK lane). Ships Region 4-canonical (Wnam/Enam/Weur/Sam; APAC/AFR phase 2) + HotBlob + ReplicaStatus `#[non_exhaustive]` + AggregationEntry + ResidencyGraph static acyclic + OfflineAggregator trait + ReplicationWorker trait + InMemoryOfflineAggregator + InMemoryReplicationWorker (per-instance Arc<Mutex<>>; F-001 closure; audit-emit-BEFORE-mutation fail-CLOSED per S-06 P0-2 pattern) + FailingReplicationWorker adversarial fixture + ReplicaAuditEventType `#[non_exhaustive]` 8-canonical taxonomy (corelink.region.replication.{started,completed,failed} + corelink.hot_blob.aggregation.{started,completed,failed} + corelink.region.failover.{detected,resolved}) + ReplicaError `#[non_exhaustive]` + cardinality validator constant NO_TENANT_ID_LABEL (CI enforcement that zero live Prometheus metrics carry tenant_id label per INV-OBS-CARDINALITY-BUDGET S-09) + offline aggregation 30d window constant + top-1% percentile gate. Production CF Worker cron every 10min + R2 GET+PUT cross-region + D1 hot_blobs table + hash verify post-copy (INV-CAS-INTEGRITY) + residency restriction WEUR↔SAM WNAM↔ENAM (INV-REGION-NO-CROSS-LEAK; Schrems II) + replication lag p99 ≤ 60s SLO sustained 7d wired in staging."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[[test]]
+name = "prop_replica"
+path = "tests/prop_replica.rs"
+
+[[test]]
+name = "adversarial"
+path = "tests/adversarial.rs"

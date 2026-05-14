@@ -1,0 +1,37 @@
+[package]
+name = "corelink-failover-router"
+description = "CoreLink read failover router middleware (WI-S14-003 — PAT-REGION-FAILOVER-001; HIGH_RISK lane). Ships FailoverTrigger `#[non_exhaustive]` 3-canonical (Rate5xx / LatencySloViolation / ConsecutiveFailures) + RegionHealth `#[non_exhaustive]` 3-canonical (Healthy / Degraded / Down) + FailoverDecision + HealthProbe trait + InMemoryHealthProbe (per-instance Arc<Mutex<>>; F-001 closure; audit-emit-BEFORE-mutation fail-CLOSED per S-06 P0-2 pattern) + FailoverRouter trait + InMemoryFailoverRouter (multi-signal detection: 5xx rate > 1% + latency p99 > SLO + 3 consecutive failures within 5s = degraded; read-only mode during failover; writes blocked + 503; failover overhead ≤ 50ms p99) + FailingHealthProbe adversarial fixture + FailoverAuditEventType `#[non_exhaustive]` + FailoverError `#[non_exhaustive]` + acyclic graph static config (WNAM↔ENAM, WEUR↔SAM; no loops; enforced in is_acyclic integration test). Production Tower middleware layer wired in CF Worker request handler (deferred to staging per trait-abstraction-defer charter)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+corelink-replica-worker = { path = "../corelink-replica-worker" }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[[test]]
+name = "prop_failover"
+path = "tests/prop_failover.rs"

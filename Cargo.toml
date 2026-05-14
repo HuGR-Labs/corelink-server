@@ -68,6 +68,8 @@ members = [
     "crates/corelink-rollout-controller",
     "crates/corelink-region",
     "apps/migrate-single-to-multi-region",
+    "crates/corelink-replica-worker",
+    "crates/corelink-failover-router",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
@@ -189,6 +191,8 @@ corelink-rotation-adapters = { path = "crates/corelink-rotation-adapters" }
 corelink-rotation-worker = { path = "crates/corelink-rotation-worker" }
 corelink-rollout-controller = { path = "crates/corelink-rollout-controller" }
 corelink-region = { path = "crates/corelink-region" }
+corelink-replica-worker = { path = "crates/corelink-replica-worker" }
+corelink-failover-router = { path = "crates/corelink-failover-router" }
 
 # Test / bench
 proptest = "1.5"
