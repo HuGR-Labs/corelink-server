@@ -1,0 +1,215 @@
+name: Reproducible Build (2-Runner Diff)
+# WI-S12-006 — CAP-SUPPLY-005 (reproducible builds best-effort).
+#
+# Triggers 2 independent GitHub Actions runners (matrix runner ×2) on the
+# SAME ubuntu-22.04 OS image, builds the corelink-worker WASM bundle with
+# hermetic flags (SOURCE_DATE_EPOCH + --remap-path-prefix + --frozen
+# --offline), computes SHA-256, and compares the two hashes.
+#
+#   • Bit-identical → outcome=bit_identical  (target state)
+#   • Diff ≤ 5 %    → outcome=within_threshold  (acceptable)
+#   • Diff > 5 %    → CI fails + outcome=exceeds_threshold  (gate)
+#
+# Non-determinism sources documented in docs/build/reproducible.md.
+# ADR-0015 ratifies the 5 % tolerance and the roadmap to 100 % post-GA Q3.
+#
+# SHA pins: bump via ADR amendment + reproducible-build test on the PR.
+
+on:
+  push:
+    tags: ['v*']
+  schedule:
+    - cron: '0 4 * * *'   # nightly 04:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"   # deterministic: no incremental state
+  RUST_BACKTRACE: "1"
+
+jobs:
+  # ── build ─────────────────────────────────────────────────────────────────
+  build:
+    name: Build (${{ matrix.runner }})
+    strategy:
+      matrix:
+        runner: [runner-1, runner-2]
+        os:     [ubuntu-22.04]    # pinned LTS — do NOT use ubuntu-latest
+      fail-fast: false            # collect both artefacts even on failure
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout (full history for SOURCE_DATE_EPOCH)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          fetch-depth: 0
+
+      # rust-toolchain.toml pins to 1.84.0; dtolnay action reads that file.
+      - name: Install Rust toolchain (from rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable as of 2026-04-29
+
+      # Cache keyed on Cargo.lock + toolchain; no incremental artefacts.
+      - name: Restore Cargo cache
+        uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c  # v2.7.7
+        with:
+          # Separate key per runner instance to avoid cross-contamination.
+          key: ${{ matrix.runner }}-reproducible-${{ hashFiles('Cargo.lock') }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # Standard reproducible-builds.org env-var: set from the latest commit
+      # time so each release has a unique but *deterministic* timestamp.
+      - name: Set SOURCE_DATE_EPOCH
+        run: |
+          EPOCH=$(git log -1 --pretty=%ct)
+          echo "SOURCE_DATE_EPOCH=${EPOCH}" >> "$GITHUB_ENV"
+          echo "SOURCE_DATE_EPOCH=${EPOCH}"
+
+      # Hermetic, deterministic build:
+      #   --remap-path-prefix  → strips absolute paths from LLVM debug info
+      #   --jobs 1             → eliminates link-order non-determinism
+      #   --frozen             → Cargo.lock must match; no resolution
+      #   --offline            → no network during compile (SLSA-hermetic)
+      - name: Build WASM (hermetic + deterministic)
+        env:
+          RUSTFLAGS: >-
+            --remap-path-prefix=${{ github.workspace }}=/SRC
+            --remap-path-prefix=$HOME/.cargo=/CARGO
+            -C codegen-units=1
+        run: |
+          cargo build \
+            --release \
+            --frozen \
+            --offline \
+            --jobs 1 \
+            --target wasm32-unknown-unknown \
+            -p corelink-worker
+
+      - name: Compute SHA-256
+        id: hash
+        run: |
+          WASM=target/wasm32-unknown-unknown/release/corelink_worker.wasm
+          sha256sum "$WASM" > artifact.sha256
+          echo "hash=$(awk '{print $1}' artifact.sha256)" >> "$GITHUB_OUTPUT"
+          cat artifact.sha256
+
+      - name: Upload artefact + hash
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b  # v4.5.0
+        with:
+          name: build-${{ matrix.runner }}
+          path: |
+            target/wasm32-unknown-unknown/release/corelink_worker.wasm
+            artifact.sha256
+          retention-days: 7
+
+  # ── diff-check ────────────────────────────────────────────────────────────
+  diff-check:
+    name: Diff check (2-runner compare)
+    needs: build
+    runs-on: ubuntu-22.04
+
+    outputs:
+      bit_identical:   ${{ steps.diff.outputs.BIT_IDENTICAL }}
+      diff_bytes:      ${{ steps.diff.outputs.DIFF_BYTES }}
+      diff_percentage: ${{ steps.diff.outputs.DIFF_PERCENTAGE }}
+      outcome:         ${{ steps.diff.outputs.OUTCOME }}
+
+    steps:
+      - name: Download runner-1 artefact
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16  # v4.1.8
+        with:
+          name: build-runner-1
+          path: runner-1/
+
+      - name: Download runner-2 artefact
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16  # v4.1.8
+        with:
+          name: build-runner-2
+          path: runner-2/
+
+      - name: Compare hashes + compute byte diff
+        id: diff
+        run: |
+          HASH_1=$(awk '{print $1}' runner-1/artifact.sha256)
+          HASH_2=$(awk '{print $1}' runner-2/artifact.sha256)
+          echo "runner-1 SHA-256: ${HASH_1}"
+          echo "runner-2 SHA-256: ${HASH_2}"
+
+          if [ "${HASH_1}" = "${HASH_2}" ]; then
+            echo "BIT_IDENTICAL=true"  >> "$GITHUB_OUTPUT"
+            echo "DIFF_BYTES=0"        >> "$GITHUB_OUTPUT"
+            echo "DIFF_PERCENTAGE=0"   >> "$GITHUB_OUTPUT"
+            echo "OUTCOME=bit_identical" >> "$GITHUB_OUTPUT"
+            echo "RESULT: bit-identical"
+          else
+            WASM_1=runner-1/corelink_worker.wasm
+            WASM_2=runner-2/corelink_worker.wasm
+            SIZE=$(stat -c %s "${WASM_1}")
+            DIFF=$(cmp -l "${WASM_1}" "${WASM_2}" 2>/dev/null | wc -l || true)
+            PERCENTAGE=$(awk "BEGIN {printf \"%.4f\", ${DIFF} / ${SIZE} * 100}")
+            echo "BIT_IDENTICAL=false"            >> "$GITHUB_OUTPUT"
+            echo "DIFF_BYTES=${DIFF}"              >> "$GITHUB_OUTPUT"
+            echo "DIFF_PERCENTAGE=${PERCENTAGE}"   >> "$GITHUB_OUTPUT"
+
+            # Determine outcome bucket
+            PCT_INT=$(awk "BEGIN {printf \"%d\", ${PERCENTAGE}}")
+            if [ "${PCT_INT}" -le 5 ]; then
+              echo "OUTCOME=within_threshold"   >> "$GITHUB_OUTPUT"
+              echo "RESULT: within_threshold (${PERCENTAGE}%)"
+            else
+              echo "OUTCOME=exceeds_threshold"  >> "$GITHUB_OUTPUT"
+              echo "RESULT: EXCEEDS THRESHOLD (${PERCENTAGE}%)"
+            fi
+          fi
+
+      - name: Enforce ≤ 5 % diff threshold
+        run: |
+          OUTCOME="${{ steps.diff.outputs.OUTCOME }}"
+          if [ "${OUTCOME}" = "exceeds_threshold" ]; then
+            echo "::error::Reproducible build diff > 5% (${OUTCOME})."
+            echo "::error::diff_bytes=${{ steps.diff.outputs.DIFF_BYTES }}"
+            echo "::error::diff_percentage=${{ steps.diff.outputs.DIFF_PERCENTAGE }}%"
+            echo "::error::See docs/build/reproducible.md for non-determinism sources."
+            exit 1
+          fi
+          echo "Gate passed: outcome=${OUTCOME}"
+
+      # Emit structured Prometheus-style line to the step summary so
+      # metrics can be scraped externally.  In production the metrics
+      # gateway URL + token are env secrets.
+      - name: Emit metrics (step summary + optional gateway)
+        if: always()
+        run: |
+          OUTCOME="${{ steps.diff.outputs.OUTCOME }}"
+          DIFF_BYTES="${{ steps.diff.outputs.DIFF_BYTES }}"
+          DIFF_PCT="${{ steps.diff.outputs.DIFF_PERCENTAGE }}"
+          BIT_ID="${{ steps.diff.outputs.BIT_IDENTICAL }}"
+
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## Reproducible Build Report
+
+          | Metric | Value |
+          |--------|-------|
+          | Outcome | \`${OUTCOME}\` |
+          | Bit-identical | \`${BIT_ID}\` |
+          | Diff bytes | \`${DIFF_BYTES}\` |
+          | Diff percentage | \`${DIFF_PCT}%\` |
+          | Threshold | \`≤ 5%\` |
+
+          **Non-determinism docs**: \`docs/build/reproducible.md\`
+          **ADR**: \`specs/03_architecture/adrs/ADR-0015-reproducible-build-best-effort.md\`
+          EOF
+
+          # Prometheus push-gateway (optional; skip if secrets not configured).
+          if [ -n "${METRICS_GATEWAY_URL:-}" ]; then
+            curl -sf -X POST "${METRICS_GATEWAY_URL}" \
+              -H "Authorization: Bearer ${METRICS_TOKEN}" \
+              --data-binary "corelink_supply_reproducible_diff_bytes_gauge{outcome=\"${OUTCOME}\"} ${DIFF_BYTES}
+          corelink_supply_reproducible_runs_total{outcome=\"${OUTCOME}\"} 1" \
+              || echo "::warning::Metrics push failed (non-blocking)"
+          fi
+        env:
+          METRICS_GATEWAY_URL: ${{ secrets.METRICS_GATEWAY_URL }}
+          METRICS_TOKEN: ${{ secrets.METRICS_TOKEN }}

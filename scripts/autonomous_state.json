@@ -5,7 +5,6 @@
     "WI-S12-003",
     "WI-S12-004",
     "WI-S12-005",
-    "WI-S12-006",
     "WI-S12-007",
     "WI-S13-001",
     "WI-S13-002",
@@ -81,6 +80,6 @@
     "WI-S20-009"
   ],
   "done": "see git tags s01..s11-impl-sealed for prior + this commit for S-11 002..008",
-  "last_seal_at": "2026-05-13T18:00:00Z",
-  "note": "consolidated after wave-1 parallel sonnet merge of WI-S11-003..008"
+  "last_seal_at": "2026-05-14T00:00:00Z",
+  "note": "WI-S12-006 SEALED: reproducible-build.yml 2-runner matrix + diff-check gate + rust-toolchain.toml 1.88.0 + docs/build/reproducible.md (6 sources) + ADR-0015 v1.0.0 FROZEN + build_rs_lint.sh + .pre-commit-config.yaml + prop_reproducible.rs (7 tests) + adversarial_reproducible.rs (5 tests); 12 tests green"
 }

@@ -3,9 +3,9 @@ id: "SPEC-CONTRACT-S12"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-04-24"
-updated: "2026-04-24"
+updated: "2026-05-14"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -314,5 +314,20 @@ Itens waivable com Security lead + Legal + ADR:
 - ⚠️ Vendor patch via `[patch.crates-io]` permitido com ADR + Security review + 90d sunset clock.
 
 ---
+
+### v1.3.0 (2026-05-14) — WI-S12-006 implementation phase SEALED
+
+Implementation phase landing (no spec changes; impl-only changelog row per charter §spec contract changelog discipline). WI-S12-006 SEALED at the canonical impl quality gates:
+
+- **`.github/workflows/reproducible-build.yml`** — 2-runner matrix (`runner: [runner-1, runner-2]` × `os: ubuntu-22.04`); SHA-pinned actions (checkout@11bd71901…, dtolnay/rust-toolchain@29eef336d…, Swatinem/rust-cache@400e7407c…, upload-artifact@6f51ac03b…, download-artifact@fa0a91b85d…); `SOURCE_DATE_EPOCH` from `git log -1 --pretty=%ct`; `RUSTFLAGS="--remap-path-prefix=…/SRC --remap-path-prefix=…/CARGO -C codegen-units=1"`; `--frozen --offline --jobs 1`; diff-check job via `cmp -l` (POSIX); threshold gate ≤ 5 %; metric emission to Prometheus push-gateway + GITHUB_STEP_SUMMARY; triggers: v* tag + nightly 04:00 UTC + manual.
+- **`rust-toolchain.toml`** — `channel = "1.88.0"` (minimum to support edition2024 deps in workspace); components + targets canonical; bump-procedure comment (ADR-0015 amendment + reproducible-build test pre-merge).
+- **`docs/build/reproducible.md`** — Architecture diagram (2-runner + diff-check); all 6 non-determinism sources documented with mitigations (Cargo build timestamp, LLVM debug info paths, rustc version drift, build.rs scripts, multi-thread compilation race, cross-runner CPU heterogeneity); hermetic build flag table; metrics + trace span table; build.rs lint quickstart; customer verification quickstart; roadmap 100 % post-GA Q3.
+- **`specs/03_architecture/adrs/ADR-0015-reproducible-build-best-effort.md`** — v0.1.0 stub promoted to v1.0.0 FROZEN; full ADR: context (industry SOTA 2026 Rust), decision (best-effort ≤ 5 %, 3 hermetic flags, nightly CI, quarterly review), 5 alternatives rejected, trade-offs table (8 dimensions), consequences (+/-), quarterly review process, roadmap 5-row table, STRIDE security analysis, compliance mapping (SSDF PS.1/PS.2, SOC 2 CC6.7, OWASP ASVS V14, EO 14028), sign-off table.
+- **`scripts/build_rs_lint.sh`** — pre-commit lint script; scans all `build.rs` in workspace; banned patterns: `chrono::Local::now()`, `chrono::Utc::now()`, `SystemTime::now()`, `UNIX_EPOCH` (without SOURCE_DATE_EPOCH); `--verbose` and `--fix` flags; exits 1 on violation; green against existing workspace (2 build.rs files, 0 violations).
+- **`.pre-commit-config.yaml`** — local hook `build-rs-timestamp-lint` wired to `scripts/build_rs_lint.sh`; triggers on `build\.rs$` file changes.
+- **`crates/corelink-worker/tests/prop_reproducible.rs`** — 7 property tests: `prop_source_date_epoch_banned_patterns_detected`, `prop_remap_path_prefix_applied`, `prop_diff_percentage_calculation`, `prop_diff_percentage_zero_total_is_none`, `prop_threshold_enforcement`, `prop_bit_identical_always_accepted`, `prop_reproducible_all_10k` (runtime PROPTEST_CASES driver); 10k PR / 100k nightly per S-07 P1-2.
+- **`crates/corelink-worker/tests/adversarial_reproducible.rs`** — 5 adversarial regression tests: compromised_builder_diff_exceeds_threshold, non_determinism_regression_detected, build_rs_timestamp_lint_catches_violations, cross_runner_cpu_heterogeneity_documented_limitation, rustc_minor_upgrade_regression_gate.
+- **Quality gates verde**: 12/12 tests (`cargo test -p corelink-worker --test prop_reproducible --test adversarial_reproducible`); `cargo clippy -p corelink-worker --tests -- -D warnings` clean; `python3 scripts/validate_specs.py` ADR-0015 + WI-S12-006 in 274 OK; YAML workflow valid.
+- **Charter constraints** verified: SHA-pinned every GitHub Action; rust-toolchain.toml pin enforced; SOURCE_DATE_EPOCH + --remap-path-prefix + --frozen --offline + --jobs 1; build.rs lint hook installed; wasm32 target in rust-toolchain.toml; no tokio in src (tests only); PROPTEST_CASES env-var runtime; no `prop_assert!(matches!(...))` anti-pattern; `#[allow(clippy::expect_used, ...)]` in test modules.
 
 **Fim spec contract S-12 v1.1.0 SOTA.**

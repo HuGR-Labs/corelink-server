@@ -165,6 +165,15 @@ name = "reapi_v2_split_splice_conformance"
 path = "tests/reapi_v2_split_splice_conformance.rs"
 required-features = ["tower-middleware"]
 
+# WI-S12-006 — reproducible builds (no feature gate; host-only logic).
+[[test]]
+name = "prop_reproducible"
+path = "tests/prop_reproducible.rs"
+
+[[test]]
+name = "adversarial_reproducible"
+path = "tests/adversarial_reproducible.rs"
+
 [[bench]]
 name = "side_channel"
 path = "benches/side_channel.rs"

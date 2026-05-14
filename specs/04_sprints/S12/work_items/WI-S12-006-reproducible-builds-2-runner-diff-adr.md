@@ -1,12 +1,12 @@
 ---
 id: "WI-S12-006"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
-audit_status: "ACTIVE"
-version: "1.0.0"
+doc_status: "SEALED"
+work_status: "DONE"
+audit_status: "AUDITED"
+version: "1.0.1"
 created: "2026-04-29"
-updated: "2026-04-29"
+updated: "2026-05-14"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-005"]
 parent: "S-12"
