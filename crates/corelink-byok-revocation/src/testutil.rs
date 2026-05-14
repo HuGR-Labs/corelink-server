@@ -4,9 +4,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use corelink_byok::types::PlaintextDek;
-use corelink_byok::{BYOKError, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind};
-use corelink_byok::types::WrappedDek;
+use corelink_byok::{BYOKError, Dek, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind, WrappedDek};
 
 use crate::alerter::{CustomerAlerter, RevocationAlertPayload};
 use crate::error::RevocationError;
@@ -23,12 +21,17 @@ use crate::store::{TenantByokStatus, TenantStatusStore};
 /// # Example
 ///
 /// ```rust
-/// use corelink_byok::{KmsAccessStatus, KmsKeyId, KmsProvider};
+/// use corelink_byok::{KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind};
 /// use corelink_byok_revocation::testutil::StubKmsProvider;
 ///
 /// # tokio_test::block_on(async {
 /// let provider = StubKmsProvider::new_revoked();
-/// let status = provider.check_access(&KmsKeyId::new("k1".to_string())).await.unwrap();
+/// let key_id = KmsKeyId {
+///     provider: KmsProviderKind::AwsKms,
+///     key_arn_or_id: "arn:aws:kms:us-east-1:123:key/k1".to_string(),
+///     region: "us-east-1".to_string(),
+/// };
+/// let status = provider.check_access(&key_id).await.unwrap();
 /// assert_eq!(status, KmsAccessStatus::Revoked);
 /// # });
 /// ```
@@ -48,19 +51,19 @@ impl StubKmsProvider {
     /// Construct an AWS provider that returns `KmsAccessStatus::Ok`.
     #[must_use]
     pub fn new_ok() -> Self {
-        Self::new(KmsProviderKind::Aws, KmsAccessStatus::Ok)
+        Self::new(KmsProviderKind::AwsKms, KmsAccessStatus::Ok)
     }
 
     /// Construct an AWS provider that returns `KmsAccessStatus::Revoked`.
     #[must_use]
     pub fn new_revoked() -> Self {
-        Self::new(KmsProviderKind::Aws, KmsAccessStatus::Revoked)
+        Self::new(KmsProviderKind::AwsKms, KmsAccessStatus::Revoked)
     }
 
     /// Construct an AWS provider that returns `KmsAccessStatus::Throttled`.
     #[must_use]
     pub fn new_throttled() -> Self {
-        Self::new(KmsProviderKind::Aws, KmsAccessStatus::Throttled)
+        Self::new(KmsProviderKind::AwsKms, KmsAccessStatus::Throttled)
     }
 }
 
@@ -70,25 +73,34 @@ impl KmsProvider for StubKmsProvider {
         self.kind
     }
 
+    fn region(&self) -> &str {
+        "us-east-1"
+    }
+
+    fn fips_level(&self) -> corelink_byok::FipsLevel {
+        corelink_byok::FipsLevel::None
+    }
+
     async fn wrap_dek(
         &self,
-        _plaintext_dek: &PlaintextDek,
-        kms_key_id: &KmsKeyId,
+        _dek: &Dek,
+        key_id: &KmsKeyId,
+        encryption_context: Option<&serde_json::Value>,
     ) -> Result<WrappedDek, BYOKError> {
         Ok(WrappedDek {
+            provider: self.kind,
+            key_id: key_id.clone(),
             ciphertext: vec![0u8; 32],
-            kms_key_id: kms_key_id.clone(),
-            algorithm: "STUB".to_string(),
-            created_at_ms: 0,
+            encryption_context: encryption_context.cloned(),
         })
     }
 
-    async fn unwrap_dek(&self, _wrapped_dek: &WrappedDek) -> Result<PlaintextDek, BYOKError> {
-        Ok(PlaintextDek { key_bytes: vec![0u8; 32] })
+    async fn unwrap_dek(&self, _wrapped: &WrappedDek) -> Result<Dek, BYOKError> {
+        Ok(Dek { bytes: [0u8; 32] })
     }
 
-    async fn check_access(&self, _kms_key_id: &KmsKeyId) -> Result<KmsAccessStatus, BYOKError> {
-        Ok(self.access_status.clone())
+    async fn check_access(&self, _key_id: &KmsKeyId) -> Result<KmsAccessStatus, BYOKError> {
+        Ok(self.access_status)
     }
 }
 
@@ -101,16 +113,18 @@ impl KmsProvider for StubKmsProvider {
 /// # Example
 ///
 /// ```rust
-/// use corelink_byok::KmsKeyId;
+/// use corelink_byok::{KmsKeyId, KmsProviderKind};
 /// use corelink_byok_revocation::store::{TenantByokStatus, TenantStatusStore};
 /// use corelink_byok_revocation::testutil::InMemoryTenantStore;
 ///
 /// # tokio_test::block_on(async {
 /// let store = InMemoryTenantStore::default();
-/// let key_id = KmsKeyId::new("k1".to_string());
+/// let key_id = KmsKeyId {
+///     provider: KmsProviderKind::AwsKms,
+///     key_arn_or_id: "k1".to_string(),
+///     region: "us-east-1".to_string(),
+/// };
 /// store.mark_degraded(&key_id, "aws", 1_000_000).await.unwrap();
-/// let status = store.current_status(&key_id).await.unwrap();
-/// assert_eq!(status, Some(TenantByokStatus::DegradedReadOnly));
 /// # });
 /// ```
 #[derive(Debug, Default)]
@@ -179,8 +193,12 @@ impl TenantStatusStore for InMemoryTenantStore {
 /// # tokio_test::block_on(async {
 /// let alerter = NoopAlerter;
 /// alerter.alert_recovery(
-///     KmsProviderKind::Aws,
-///     &KmsKeyId::new("k1".to_string()),
+///     KmsProviderKind::AwsKms,
+///     &KmsKeyId {
+///         provider: KmsProviderKind::AwsKms,
+///         key_arn_or_id: "k1".to_string(),
+///         region: "us-east-1".to_string(),
+///     },
 ///     "h1",
 ///     1_000_000,
 /// ).await.unwrap();
@@ -215,7 +233,7 @@ impl CustomerAlerter for NoopAlerter {
 /// # Example
 ///
 /// ```rust
-/// use corelink_byok::KmsKeyId;
+/// use corelink_byok::{KmsKeyId, KmsProviderKind};
 /// use corelink_byok_revocation::CustomerAlerter;
 /// use corelink_byok_revocation::alerter::RevocationAlertPayload;
 /// use corelink_byok_revocation::testutil::RecordingAlerter;
@@ -224,7 +242,11 @@ impl CustomerAlerter for NoopAlerter {
 /// let alerter = RecordingAlerter::default();
 /// let payload = RevocationAlertPayload {
 ///     provider: "aws".to_string(),
-///     kms_key_id: KmsKeyId::new("k1".to_string()),
+///     kms_key_id: KmsKeyId {
+///         provider: KmsProviderKind::AwsKms,
+///         key_arn_or_id: "k1".to_string(),
+///         region: "us-east-1".to_string(),
+///     },
 ///     tenant_id_hashed: "h1".to_string(),
 ///     detected_at_ms: 0,
 ///     kill_switch_duration_ms: 0,

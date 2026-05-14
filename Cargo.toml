@@ -80,12 +80,9 @@ members = [
     "crates/corelink-byok-matrix-test",
     "crates/corelink-byok",
     # S-14 follow-up: corelink-byok-revocation + corelink-customer-alerts
-    # designed against WI-S14-006's local corelink-byok variant; trait
-    # signatures diverge from canonical WI-S14-004 corelink-byok (Dek
-    # type, async signatures, error enum). Excluded from workspace
-    # build until integration WI ports them to canonical trait surface.
-    # "crates/corelink-byok-revocation",
-    # "crates/corelink-customer-alerts",
+    # ported to canonical WI-S14-004 trait surface (P0-1 + P0-2 fixed).
+    "crates/corelink-byok-revocation",
+    "crates/corelink-customer-alerts",
 ]
 exclude = [
     "crates/tenant-path/fuzz",

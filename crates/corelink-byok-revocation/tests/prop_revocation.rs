@@ -2,6 +2,9 @@
 //!
 //! 5 properties × 10k iterations (PR gate); 100k iterations nightly
 //! via `PROPTEST_CASES=100000 cargo test`.
+
+// S-13 P1 cascade: test helpers legitimately use expect/unwrap/assert! for clear failure messages.
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 //!
 //! Properties covered:
 //! 1. `prop_kill_switch_sla_5min` — kill switch path completes in bounded time.
@@ -13,8 +16,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use corelink_byok::{DekCache, KmsKeyId};
-use corelink_byok::types::PlaintextDek;
+use corelink_byok::{Dek, DekCache, KmsKeyId, KmsProviderKind, WrappedDek};
 use corelink_byok_revocation::{RevocationConfig, RevocationDetector};
 use corelink_byok_revocation::testutil::{
     InMemoryTenantStore, NoopAlerter, RecordingAlerter, StubKmsProvider,
@@ -22,6 +24,27 @@ use corelink_byok_revocation::testutil::{
 use corelink_byok_revocation::store::{TenantByokStatus, TenantStatusStore};
 use corelink_byok_revocation::CustomerAlerter;
 use proptest::prelude::*;
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+fn make_key_id(suffix: &str) -> KmsKeyId {
+    KmsKeyId {
+        provider: KmsProviderKind::AwsKms,
+        key_arn_or_id: format!("arn:aws:kms:us-east-1:123:key/{suffix}"),
+        region: "us-east-1".to_string(),
+    }
+}
+
+fn make_wrapped(key_id: &KmsKeyId) -> WrappedDek {
+    WrappedDek {
+        provider: KmsProviderKind::AwsKms,
+        key_id: key_id.clone(),
+        ciphertext: vec![0u8; 64],
+        encryption_context: None,
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Property 1: kill switch path execution completes in bounded local time.
@@ -46,15 +69,19 @@ proptest! {
             .expect("tokio runtime");
 
         let cache = Arc::new(DekCache::new(300).expect("valid TTL"));
-        let key_id = KmsKeyId::new(format!("arn:aws:kms:us-east-1:123:key/{key_suffix}"));
+        let key_id = make_key_id(&format!("test-{key_suffix}"));
+        let wrapped = make_wrapped(&key_id);
 
-        // Pre-populate cache.
+        // Pre-populate cache with distinct ciphertexts so each is a unique cache key.
         for i in 0..cache_entries {
-            cache.insert(
-                key_id.clone(),
-                format!("tenant-{i}"),
-                PlaintextDek { key_bytes: vec![0u8; 32] },
-            );
+            let mut w = wrapped.clone();
+            // Use different ciphertext prefix to create distinct cache entries.
+            let marker = (i % 256) as u8;
+            w.ciphertext = std::iter::once(marker)
+                .chain(std::iter::repeat(0u8).take(63))
+                .collect();
+            let dek = Dek { bytes: [0u8; 32] };
+            rt.block_on(cache.put(&w, dek)).expect("put ok");
         }
 
         let provider = Arc::new(StubKmsProvider::new_revoked());
@@ -79,9 +106,6 @@ proptest! {
             elapsed_ms < 5_000,
             "kill switch took {elapsed_ms}ms (local bound 5000ms)"
         );
-        // All cache entries evicted (run_one_cycle uses empty active key list,
-        // so eviction happens only if we directly tested evict_all_for_key;
-        // the cache may or may not be empty depending on provider active key list).
         // The invariant here is: no panic, no hang.
     }
 
@@ -94,26 +118,39 @@ proptest! {
         entries in 1usize..=20usize,
         key_suffix in "[a-z]{4,8}",
     ) {
-        let cache = DekCache::new(300).expect("valid TTL");
-        let key_id = KmsKeyId::new(format!("key/{key_suffix}"));
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("tokio runtime");
 
+        let cache = DekCache::new(300).expect("valid TTL");
+        let key_id = make_key_id(&format!("evict-{key_suffix}"));
+
+        let mut wrappeds = Vec::new();
         for i in 0..entries {
-            cache.insert(
-                key_id.clone(),
-                format!("t-{i}"),
-                PlaintextDek { key_bytes: vec![0u8; 32] },
-            );
+            let marker = (i % 256) as u8;
+            let w = WrappedDek {
+                provider: KmsProviderKind::AwsKms,
+                key_id: key_id.clone(),
+                ciphertext: std::iter::once(marker)
+                    .chain(std::iter::repeat(0u8).take(63))
+                    .collect(),
+                encryption_context: None,
+            };
+            let dek = Dek { bytes: [0u8; 32] };
+            rt.block_on(cache.put(&w, dek)).expect("put ok");
+            wrappeds.push(w);
         }
 
-        prop_assert_eq!(cache.len(), entries);
+        prop_assert_eq!(rt.block_on(cache.len()), entries);
 
-        let evicted = cache.evict_all_for_key(&key_id);
+        let evicted = rt.block_on(cache.evict_all_for_key(&key_id)).expect("evict ok");
         prop_assert_eq!(evicted, entries);
-        prop_assert_eq!(cache.len(), 0);
+        prop_assert_eq!(rt.block_on(cache.len()), 0);
 
         // No entry accessible post-eviction.
-        for i in 0..entries {
-            let result = cache.get(&key_id, &format!("t-{i}"));
+        for w in &wrappeds {
+            let result = rt.block_on(cache.get(w));
             prop_assert!(result.is_none(), "DEK still accessible after eviction");
         }
     }
@@ -155,7 +192,7 @@ proptest! {
             .expect("tokio runtime");
 
         let store = Arc::new(InMemoryTenantStore::default());
-        let key_id = KmsKeyId::new(format!("key/{key_suffix}"));
+        let key_id = make_key_id(&format!("audit-{key_suffix}"));
 
         // Pre-verify: no status initially.
         let initial = rt.block_on(store.current_status(&key_id)).expect("query ok");
@@ -183,7 +220,7 @@ proptest! {
             .expect("tokio runtime");
 
         let store = Arc::new(InMemoryTenantStore::default());
-        let key_id = KmsKeyId::new(format!("key/{key_suffix}"));
+        let key_id = make_key_id(&format!("recover-{key_suffix}"));
 
         // Simulate: CMK revoked → degraded.
         rt.block_on(store.mark_degraded(&key_id, "aws", 1_000))
@@ -228,12 +265,10 @@ fn dek_cache_ttl_hard_limit_enforced() {
 #[tokio::test]
 async fn throttled_does_not_trigger_kill_switch() {
     let cache = Arc::new(DekCache::new(300).expect("valid TTL"));
-    let key_id = KmsKeyId::new("k1".to_string());
-    cache.insert(
-        key_id.clone(),
-        "tenant-a".to_string(),
-        PlaintextDek { key_bytes: vec![0u8; 32] },
-    );
+    let key_id = make_key_id("throttle-unit");
+    let wrapped = make_wrapped(&key_id);
+    let dek = Dek { bytes: [0u8; 32] };
+    cache.put(&wrapped, dek).await.expect("put ok");
 
     let provider = Arc::new(StubKmsProvider::new_throttled());
     let store = Arc::new(InMemoryTenantStore::default());
@@ -254,7 +289,7 @@ async fn throttled_does_not_trigger_kill_switch() {
 
     // list_active_byok_keys returns empty in stub, so cache is untouched.
     // This validates that the Throttled path does NOT evict the cache.
-    assert!(cache.len() == 1, "cache must be untouched for throttled check (no active keys in stub)");
+    assert!(cache.len().await == 1, "cache must be untouched for throttled check (no active keys in stub)");
 }
 
 // ---------------------------------------------------------------------------
@@ -264,7 +299,7 @@ async fn throttled_does_not_trigger_kill_switch() {
 #[tokio::test]
 async fn recording_alerter_receives_alert() {
     let alerter = Arc::new(RecordingAlerter::default());
-    let key_id = KmsKeyId::new("k1".to_string());
+    let key_id = make_key_id("alert-unit");
     use corelink_byok_revocation::alerter::RevocationAlertPayload;
     alerter.alert(RevocationAlertPayload {
         provider: "aws".to_string(),

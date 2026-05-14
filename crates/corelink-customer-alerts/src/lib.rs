@@ -27,7 +27,11 @@
 //!
 //! let payload = RevocationAlertPayload {
 //!     provider: "aws".to_string(),
-//!     kms_key_id: KmsKeyId::new("k1".to_string()),
+//!     kms_key_id: KmsKeyId {
+//!         provider: corelink_byok::KmsProviderKind::AwsKms,
+//!         key_arn_or_id: "k1".to_string(),
+//!         region: "us-east-1".to_string(),
+//!     },
 //!     tenant_id_hashed: "h1".to_string(),
 //!     detected_at_ms: 0,
 //!     kill_switch_duration_ms: 0,

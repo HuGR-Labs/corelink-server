@@ -92,13 +92,21 @@ pub struct KillSwitchOutcome {
 /// detector.run_one_cycle().await.unwrap();
 /// # });
 /// ```
-#[derive(Debug)]
 pub struct RevocationDetector {
     providers: Vec<Arc<dyn KmsProvider>>,
     dek_cache: Arc<DekCache>,
     store: Arc<dyn TenantStatusStore>,
     alerter: Arc<dyn CustomerAlerter>,
     config: RevocationConfig,
+}
+
+impl std::fmt::Debug for RevocationDetector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RevocationDetector")
+            .field("providers_count", &self.providers.len())
+            .field("config", &self.config)
+            .finish_non_exhaustive()
+    }
 }
 
 impl RevocationDetector {
@@ -219,7 +227,7 @@ impl RevocationDetector {
                             provider = provider.provider_kind().as_str(),
                             kms_key_id = key_id.as_str(),
                             consecutive_failures = count,
-                            detail = detail.as_str(),
+                            detail = detail.to_string(),
                             "KMS access check API error"
                         );
                         if count >= self.config.sustained_failure_threshold {
@@ -278,7 +286,13 @@ impl RevocationDetector {
         );
 
         // Step 1: Atomic DEK cache eviction (ZeroizeOnDrop per entry).
-        let evicted_count = self.dek_cache.evict_all_for_key(key_id);
+        // CRITICAL: must `.await` — evict_all_for_key is async.
+        // Failure to await silently drops the Future (P0-2: INV-BYOK-CRYPTO-SOVEREIGNTY).
+        let evicted_count = self
+            .dek_cache
+            .evict_all_for_key(key_id)
+            .await
+            .map_err(|e| RevocationError::Internal(format!("DEK cache eviction failed: {e}")))?;
         let evicted_at_ms = now_ms();
         info!(
             provider = provider.provider_kind().as_str(),
@@ -429,6 +443,8 @@ impl RevocationDetector {
     /// In production: query D1 `byok_envelope` table for
     /// `SELECT DISTINCT kms_provider, kms_key_id WHERE byok_status != 'revoked'`.
     /// Here we return an empty list (production wiring is deployment-specific).
+    // WI-S14-009 follow-up: D1 query adapter injection
+    #[allow(unused)]
     async fn list_active_byok_keys(
         &self,
         _provider: &Arc<dyn KmsProvider>,

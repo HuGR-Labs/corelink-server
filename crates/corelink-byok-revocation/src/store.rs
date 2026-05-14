@@ -55,13 +55,17 @@ impl core::fmt::Display for TenantByokStatus {
 ///
 /// ```rust
 /// use std::sync::Arc;
-/// use corelink_byok::KmsKeyId;
+/// use corelink_byok::{KmsKeyId, KmsProviderKind};
 /// use corelink_byok_revocation::store::{TenantStatusStore, TenantByokStatus};
 /// use corelink_byok_revocation::testutil::InMemoryTenantStore;
 ///
 /// # tokio_test::block_on(async {
 /// let store = Arc::new(InMemoryTenantStore::default());
-/// let key_id = KmsKeyId::new("k1".to_string());
+/// let key_id = KmsKeyId {
+///     provider: KmsProviderKind::AwsKms,
+///     key_arn_or_id: "k1".to_string(),
+///     region: "us-east-1".to_string(),
+/// };
 /// store.mark_degraded(&key_id, "aws", 1_000_000).await.unwrap();
 /// # });
 /// ```

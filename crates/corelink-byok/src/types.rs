@@ -80,6 +80,7 @@ impl std::fmt::Debug for Dek {
 
 /// CMK access status returned by [`crate::KmsProvider::check_access`].
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[non_exhaustive]
 #[serde(rename_all = "snake_case")]
 pub enum KmsAccessStatus {
     /// CMK access confirmed.
@@ -92,6 +93,33 @@ pub enum KmsAccessStatus {
     ApiError(u16),
     /// CMK scheduled for deletion or already deleted.
     NotFound,
+}
+
+impl KmsKeyId {
+    /// Return the raw key ARN / ID string slice.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.key_arn_or_id
+    }
+}
+
+impl std::fmt::Display for KmsKeyId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.key_arn_or_id)
+    }
+}
+
+impl KmsProviderKind {
+    /// Canonical lowercase string label for logging / audit (e.g. `"aws"`, `"gcp"`).
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::AwsKms => "aws",
+            Self::GcpKms => "gcp",
+            Self::AzureKeyVault => "azure",
+            Self::HashicorpVault => "vault",
+        }
+    }
 }
 
 /// FIPS compliance level of a KMS provider instance.

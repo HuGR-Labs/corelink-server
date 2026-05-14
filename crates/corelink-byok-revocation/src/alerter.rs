@@ -9,12 +9,16 @@ use crate::error::RevocationError;
 /// # Example
 ///
 /// ```rust
-/// use corelink_byok::KmsKeyId;
+/// use corelink_byok::{KmsKeyId, KmsProviderKind};
 /// use corelink_byok_revocation::alerter::RevocationAlertPayload;
 ///
 /// let payload = RevocationAlertPayload {
 ///     provider: "aws".to_string(),
-///     kms_key_id: KmsKeyId::new("arn:aws:kms:us-east-1:123:key/abc".to_string()),
+///     kms_key_id: KmsKeyId {
+///         provider: KmsProviderKind::AwsKms,
+///         key_arn_or_id: "arn:aws:kms:us-east-1:123:key/abc".to_string(),
+///         region: "us-east-1".to_string(),
+///     },
 ///     tenant_id_hashed: "sha256:abc123".to_string(),
 ///     detected_at_ms: 1_000_000,
 ///     kill_switch_duration_ms: 42,
@@ -52,17 +56,20 @@ pub struct RevocationAlertPayload {
 /// # Example
 ///
 /// ```rust
-/// use corelink_byok::KmsProviderKind;
+/// use corelink_byok::{KmsKeyId, KmsProviderKind};
 /// use corelink_byok_revocation::CustomerAlerter;
 /// use corelink_byok_revocation::alerter::RevocationAlertPayload;
 /// use corelink_byok_revocation::testutil::NoopAlerter;
-/// use corelink_byok::KmsKeyId;
 ///
 /// # tokio_test::block_on(async {
 /// let alerter = NoopAlerter;
 /// let payload = RevocationAlertPayload {
 ///     provider: "aws".to_string(),
-///     kms_key_id: KmsKeyId::new("k1".to_string()),
+///     kms_key_id: KmsKeyId {
+///         provider: KmsProviderKind::AwsKms,
+///         key_arn_or_id: "k1".to_string(),
+///         region: "us-east-1".to_string(),
+///     },
 ///     tenant_id_hashed: "h1".to_string(),
 ///     detected_at_ms: 0,
 ///     kill_switch_duration_ms: 0,
