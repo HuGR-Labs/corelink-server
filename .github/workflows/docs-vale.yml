@@ -1,0 +1,49 @@
+name: docs vale (tone consistency lint)
+
+# WI-S18-005 deliverable 9 — Vale tone-consistency CI gate.
+# Microsoft style + custom CoreLink rules; PR fails on `error`-level Vale
+# alerts. Spec contract S-18 §5.6 R-S18-15 + Quality Standard 14.s18.3.
+
+on:
+  pull_request:
+    paths:
+      - "apps/docs/docs/**"
+      - "apps/docs/blog/**"
+      - "apps/docs/i18n/**"
+      - "apps/docs/.vale.ini"
+      - "apps/docs/styles/**"
+      - ".github/workflows/docs-vale.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/docs/docs/**"
+      - "apps/docs/blog/**"
+      - "apps/docs/.vale.ini"
+      - "apps/docs/styles/**"
+      - ".github/workflows/docs-vale.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: docs-vale-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  vale:
+    name: vale lint (error → fail)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Run Vale
+        uses: errata-ai/vale-action@d89dee975228ae261d22c15adcd03578634d429c # v2.1.1
+        with:
+          version: 3.9.1
+          fail_on_error: true
+          filter_mode: nofilter
+          files: apps/docs/docs apps/docs/blog
+          vale_flags: "--config=apps/docs/.vale.ini --minAlertLevel=error"

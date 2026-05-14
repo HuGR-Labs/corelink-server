@@ -1,11 +1,11 @@
 ---
 id: "SPEC-CONTRACT-S18"
 type: "spec_contract"
-doc_status: "DRAFT"
+doc_status: "SEALED"
 audit_status: "ACTIVE"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-04-24"
-updated: "2026-04-29"
+updated: "2026-05-14"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -302,6 +302,15 @@ Itens waivable com Docs lead + Product + ADR (Lote 10.18 codex P1 canonical tigh
 - ⚠️ 5-dev UX research passing → 3-dev sample com plan to expand (sustained baseline).
 - ❌ **SBOM download path NÃO waivable** (Lote 10.18 codex P1 fix — prior "SBOM via support email com NDA" allowance removida; SBOM canonical = public download via S-12 release artifacts; NDA-gated SBOM = enterprise procurement friction inaceitável + S-12 SLSA L3 transparency baseline).
 
+## 20. Changelog
+
+| Versão | Data | Autor | Mudança |
+|---|---|---|---|
+| 1.0.0 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | Criação spec contract S-18 — public docs Diátaxis + auto-gen REAPI + i18n + a11y + pricing + security; LOW_RISK lane com cross-functional gate; 5 WIs antecipados. |
+| 1.1.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | SOTA elevation v1.1 — Lighthouse ≥ 95 + WCAG 2.2 AA + Vale + lychee CI gates codified; Diátaxis discoverability test 5-dev sample. |
+| 1.2.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | Lote 10.18 codex P1 tightening — 3-locale i18n non-waivable (en-US + pt-BR + es-419 per S-11/S-15/S-16 alignment); SBOM canonical public download non-waivable (NDA-gated path removed); CF-1 / CF-2 / CF-3 cross-functional publish gate separate per spec contract §10 anti-scope (not main PRR). |
+| 1.3.0 | 2026-05-14 | Gustavo (via Sonnet WI-S18-005 builder) | WI-S18-001..005 SEALED via 5-builder parallel wave: Docusaurus 3.x + Diátaxis + i18n config + custom domain (001), getting started + REAPI auto-gen + 4-language code examples (002), 4 SDK guides + CLI per-command + client verify default-on (003), compliance + security + pricing + CF-1/2/3 CODEOWNERS gate (004), i18n coverage gate + WCAG 2.2 AA axe-core sweep + Lighthouse ≥ 95 on 5 routes + Vale + lychee + UX research 5-persona synthetic baseline + PRR-S18 LOW_RISK single-phase SEAL D+10 CONDITIONALLY_APPROVED with 4 waiver rows (W-1 UX real-participant re-run + W-2 Docs lead staffing + W-3 CF-1/2/3 collection + W-4 native-speaker review) + adversarial summary 28 scenarios cross-WI (005). PRR-S18 2/3 signed at SEAL; 1/3 WAIVED (W-2 Docs lead ADR-0034 Option C). doc_status DRAFT → SEALED. |
+
 ---
 
-**Fim spec contract S-18 v1.1.0 SOTA.**
+**Fim spec contract S-18 v1.3.0 SEALED.**

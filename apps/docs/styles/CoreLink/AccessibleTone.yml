@@ -1,0 +1,18 @@
+# CoreLink rule — AccessibleTone
+#
+# Bans dismissive / belittling words ("simply", "just", "easy", "obviously")
+# that hurt accessibility tone and discourage learners (per Microsoft style
+# guide + Diátaxis tutorial principles + Quality Standard 14.s18.3).
+extends: existence
+message: "Avoid '%s' — it dismisses reader effort (accessibility tone)."
+level: warning
+ignorecase: true
+tokens:
+  - simply
+  - just
+  - easily
+  - easy
+  - obvious(?:ly)?
+  - of course
+  - clearly
+  - merely

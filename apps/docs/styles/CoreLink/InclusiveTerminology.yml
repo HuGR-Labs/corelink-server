@@ -1,0 +1,20 @@
+# CoreLink rule — InclusiveTerminology
+#
+# Bans `blacklist` / `whitelist` (Quality Standard 14.s18.3 + IETF
+# draft-knodel-terminology-10 inclusive language). Use `blocklist` /
+# `allowlist` (or `denylist` / `safelist` for security contexts).
+extends: substitution
+message: "Use '%s' instead of '%s' (inclusive terminology — Quality Standard 14.s18.3)."
+level: error
+ignorecase: true
+swap:
+  blacklist: blocklist
+  blacklists: blocklists
+  blacklisted: blocklisted
+  blacklisting: blocklisting
+  whitelist: allowlist
+  whitelists: allowlists
+  whitelisted: allowlisted
+  whitelisting: allowlisting
+  master(?!card)( | branch| node)?: main
+  slave: replica
