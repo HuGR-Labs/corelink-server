@@ -49,6 +49,8 @@ tracing = { workspace = true }
 tokio-test = { workspace = true }
 tokio = { workspace = true }
 getrandom = { workspace = true }
+proptest = { workspace = true }
+serde_json = { workspace = true }
 
 [[test]]
 name = "aws_unit"

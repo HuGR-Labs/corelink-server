@@ -20,74 +20,51 @@
 //! aws_kms (mock)    |   ✓   |   ✓   |   ✓   |   ✓
 //! ```
 //!
-//! The AWS KMS provider is implemented via a minimal mock to complete the
-//! 16-cell matrix (WI-S14-004 not yet merged; AwsMockProvider fills the slot).
+//! The AWS KMS cell is wired to the real `AwsKmsProvider` (R2-6).  In CI
+//! (no `AWS_TEST_KEY_ARN`) it runs in `new_mock` mode — no network calls;
+//! the matrix still exercises AAD binding + provider/ARN validation.
+//! With `AWS_TEST_KEY_ARN` set in staging the same matrix exercises the
+//! real `aws-sdk-kms` client end-to-end.
 
 #![allow(clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
 use corelink_byok::{
     BYOKError, DekCache, Dek, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind, FipsLevel,
     WrappedDek,
 };
+use corelink_byok_aws::AwsKmsProvider;
 use corelink_byok_gcp::GcpKmsProvider;
 use corelink_byok_azure::AzureKeyVaultProvider;
 use corelink_byok_vault::VaultProvider;
-use async_trait::async_trait;
 use serde_json::json;
 
 // ──────────────────────────────────────────────────────────────────────────────
-// AWS mock provider (fills matrix slot until WI-S14-004 merges)
+// AWS provider selector (R2-6).
+//
+// - Default / CI path: `AwsKmsProvider::new_mock(region)` — no network calls,
+//   fills the AWS row in the 16-cell matrix.
+// - Real-API path: when `AWS_TEST_KEY_ARN` is set, `AwsKmsProvider::new(region)`
+//   is used so the matrix exercises the real `aws-sdk-kms` client against a
+//   staging CMK.  Latency SLO and AAD enforcement are then end-to-end.
+//
+// The KmsKeyId.key_arn_or_id is taken from `AWS_TEST_KEY_ARN` when set, else
+// a stub canonical ARN that passes `validate_aws_kms_key_arn` is used.
 // ──────────────────────────────────────────────────────────────────────────────
 
-#[derive(Debug)]
-struct AwsMockProvider {
-    region: String,
-}
-
-impl AwsMockProvider {
-    fn new(region: &str) -> Self {
-        Self { region: region.to_string() }
+async fn build_aws_provider(region: &str) -> AwsKmsProvider {
+    match std::env::var("AWS_TEST_KEY_ARN") {
+        Ok(_) => AwsKmsProvider::new(region)
+            .await
+            .expect("AwsKmsProvider::new (AWS_TEST_KEY_ARN set)"),
+        Err(_) => AwsKmsProvider::new_mock(region),
     }
 }
 
-#[async_trait]
-impl KmsProvider for AwsMockProvider {
-    fn provider_kind(&self) -> KmsProviderKind { KmsProviderKind::AwsKms }
-    fn region(&self) -> &str { &self.region }
-    fn fips_level(&self) -> FipsLevel { FipsLevel::Fips140_3_L1 }
-
-    async fn wrap_dek(
-        &self,
-        dek: &Dek,
-        key_id: &KmsKeyId,
-        encryption_context: Option<&serde_json::Value>,
-    ) -> Result<WrappedDek, BYOKError> {
-        let mut ct = dek.bytes.to_vec();
-        for b in &mut ct { *b ^= 0xBB; }
-        Ok(WrappedDek {
-            provider: KmsProviderKind::AwsKms,
-            key_id: key_id.clone(),
-            ciphertext: ct,
-            encryption_context: encryption_context.cloned(),
-        })
-    }
-
-    async fn unwrap_dek(&self, wrapped: &WrappedDek) -> Result<Dek, BYOKError> {
-        if wrapped.provider != KmsProviderKind::AwsKms {
-            return Err(BYOKError::EnvelopeError("wrong provider".to_string()));
-        }
-        if wrapped.ciphertext.len() != 32 {
-            return Err(BYOKError::EnvelopeError("bad len".to_string()));
-        }
-        let mut bytes = [0u8; 32];
-        for (i, &b) in wrapped.ciphertext.iter().enumerate() {
-            bytes[i] = b ^ 0xBB;
-        }
-        Ok(Dek { bytes })
-    }
-
-    async fn check_access(&self, _key_id: &KmsKeyId) -> Result<KmsAccessStatus, BYOKError> {
-        Ok(KmsAccessStatus::Ok)
-    }
+fn aws_test_key_arn() -> String {
+    std::env::var("AWS_TEST_KEY_ARN").unwrap_or_else(|_| {
+        // Canonical fixture ARN (passes validate_aws_kms_key_arn). Mock mode
+        // ignores the actual key; AAD binding is what we verify in CI.
+        "arn:aws:kms:us-east-1:000000000000:key/00000000-0000-0000-0000-000000000000".to_string()
+    })
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -262,11 +239,12 @@ async fn byok_matrix_16_combinations_all_green() {
     };
     let vault_cells = run_provider_matrix(&vault, "hashicorp_vault", vault_key_id, &ctx).await;
 
-    // AWS mock provider (4 cells — placeholder until WI-S14-004 merges)
-    let aws = AwsMockProvider::new("us-east-1");
+    // AWS provider (4 cells — R2-6: real `aws-sdk-kms` client wired; mock
+    // fallback when AWS_TEST_KEY_ARN is unset).
+    let aws = build_aws_provider("us-east-1").await;
     let aws_key_id = KmsKeyId {
         provider: KmsProviderKind::AwsKms,
-        key_arn_or_id: "arn:aws:kms:us-east-1:123456789012:key/matrix-key-uuid".to_string(),
+        key_arn_or_id: aws_test_key_arn(),
         region: "us-east-1".to_string(),
     };
     let aws_cells = run_provider_matrix(&aws, "aws_kms", aws_key_id, &ctx).await;
@@ -297,12 +275,12 @@ async fn byok_matrix_16_combinations_all_green() {
 // Per-provider FIPS level constant test (Acceptance Criteria §8 scenario 7)
 // ──────────────────────────────────────────────────────────────────────────────
 
-#[test]
-fn fips_level_const_per_provider() {
+#[tokio::test]
+async fn fips_level_const_per_provider() {
     let gcp = GcpKmsProvider::new_mock("us-east1");
     let azure = AzureKeyVaultProvider::new_mock("eastus");
     let vault = VaultProvider::new_mock("us-east-1");
-    let aws = AwsMockProvider::new("us-east-1");
+    let aws = build_aws_provider("us-east-1").await;
 
     assert_eq!(aws.fips_level(), FipsLevel::Fips140_3_L1, "AWS KMS: FIPS 140-3 L1");
     assert_eq!(gcp.fips_level(), FipsLevel::Fips140_2_L1, "GCP KMS: FIPS 140-2 L1");
