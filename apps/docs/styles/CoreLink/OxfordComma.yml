@@ -1,0 +1,10 @@
+# CoreLink rule — OxfordComma
+#
+# Require the Oxford (serial) comma — flags lists of three or more items
+# joined by "and"/"or" without a comma before the conjunction.
+extends: existence
+message: "Use the Oxford comma in lists of three or more items (Quality Standard 14.s18.3)."
+level: warning
+nonword: true
+tokens:
+  - '\b(?:\w+, ){1,}\w+ (?:and|or) \w+'

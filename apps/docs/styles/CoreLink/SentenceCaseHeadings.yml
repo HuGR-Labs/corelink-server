@@ -1,0 +1,68 @@
+# CoreLink rule — SentenceCaseHeadings
+#
+# Headings must be sentence case (only the first word + proper nouns
+# capitalised). Per Microsoft Style Guide + Quality Standard 14.s18.3.
+extends: capitalization
+message: "Use sentence case for headings ('%s' should be '%s')."
+level: warning
+match: $sentence
+indicators:
+  - ':'
+exceptions:
+  - API
+  - APIs
+  - REAPI
+  - Bazel
+  - Buck2
+  - CoreLink
+  - Docusaurus
+  - DSR
+  - GDPR
+  - LGPD
+  - CCPA
+  - CPRA
+  - SOC
+  - SSO
+  - SBOM
+  - SLA
+  - SLO
+  - SLSA
+  - WCAG
+  - Cosign
+  - Rekor
+  - JWT
+  - PAT
+  - PATs
+  - SDK
+  - SDKs
+  - CLI
+  - CI
+  - CD
+  - PR
+  - PRs
+  - HTTP
+  - HTTPS
+  - JSON
+  - YAML
+  - URL
+  - URLs
+  - macOS
+  - iOS
+  - Linux
+  - Windows
+  - Python
+  - Go
+  - JavaScript
+  - TypeScript
+  - Rust
+  - gRPC
+  - REST
+  - OpenAPI
+  - OAuth
+  - BYOK
+  - PII
+  - DPA
+  - NDA
+  - QPS
+  - RTO
+  - RPO

@@ -1,0 +1,14 @@
+# CoreLink rule — NoClickHere
+#
+# Bans "click here" / "here" / "this link" as link text (WCAG 2.4.4 +
+# 2.4.9 — link purpose). Link text must be descriptive.
+extends: existence
+message: "Avoid '%s' as link text — describe the destination instead (WCAG 2.4.4 link purpose; Quality Standard 14.s18.4)."
+level: error
+ignorecase: true
+tokens:
+  - '\[click here\]'
+  - '\[here\]'
+  - '\[this link\]'
+  - '\[read more\]'
+  - '\[learn more\]'

@@ -1,0 +1,65 @@
+# lychee broken-link checker — WI-S18-005 deliverable 10.
+#
+# Spec contract S-18 §5.6 R-S18-16 + Quality Standard 14.s18.4. Internal
+# links must always resolve; external links checked nightly via cron and
+# accepted with warning on transient failures.
+
+# ============================================================================
+# Behaviour
+# ============================================================================
+verbose = "info"
+no_progress = true
+cache = true
+max_cache_age = "1d"
+max_concurrency = 8
+max_redirects = 5
+retry_wait_time = 2
+max_retries = 2
+timeout = 20
+
+# Use a real UA so flaky CDNs do not 403 us.
+user_agent = "lychee/0.x CoreLink-docs-ci"
+
+# ============================================================================
+# Scope
+# ============================================================================
+# Include both external and internal; relative paths resolved against the
+# docs site root passed on the CLI.
+include_verbatim = false
+
+# Private/internal corp links — fail soft (warning only). All other URLs
+# must resolve.
+accept = [200, 201, 202, 203, 204, 206, 301, 302, 303, 307, 308, 999]
+
+# Skip fragments / mailto / tel / file schemes (false-positive sources).
+exclude_path = [
+  "node_modules",
+  "build",
+  ".docusaurus",
+  ".lighthouseci",
+  "playwright-report",
+  "i18n",
+]
+
+exclude = [
+  # Private internal targets — warn but do not block.
+  '^https?://internal\.corelink\.dev',
+  '^https?://([a-z0-9-]+\.)*corelink\.internal',
+  '^https?://localhost',
+  '^https?://127\.0\.0\.1',
+  # Stripe billing endpoints (auth-gated; intermittent 401/403 noise).
+  '^https?://billing\.stripe\.com',
+  # Linkedin (returns 999 even with UA spoof).
+  '^https?://([a-z]+\.)?linkedin\.com',
+  # GitHub PR/issue anchors are fine; pages can be private.
+  '^https?://github\.com/.*/(security|settings)/',
+]
+
+exclude_mail = true
+exclude_loopback = true
+exclude_private = true
+
+# ============================================================================
+# GitHub auth — picked up automatically from GITHUB_TOKEN env when present.
+# ============================================================================
+github_token = ""

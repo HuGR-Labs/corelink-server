@@ -1,0 +1,28 @@
+# CoreLink rule — Terminology
+#
+# Canonical product/term capitalisation. Bazel (cap B), Buck2 (cap B + 2),
+# CoreLink (one word, cap C + L), REAPI (all caps), pnpm (lowercase),
+# macOS (lowercase m). Per Quality Standard 14.s18.3.
+extends: substitution
+message: "Use '%s' instead of '%s' (canonical CoreLink terminology)."
+level: error
+ignorecase: false
+swap:
+  '\bbazel\b': Bazel
+  '\bBAZEL\b': Bazel
+  '\bbuck2\b': Buck2
+  '\bBUCK2\b': Buck2
+  '\bcorelink\b': CoreLink
+  '\bCorelink\b': CoreLink
+  '\bCORELINK\b': CoreLink
+  '\bcore-link\b': CoreLink
+  '\bcore link\b': CoreLink
+  '\bReapi\b': REAPI
+  '\breapi\b': REAPI
+  '\bPnpm\b': pnpm
+  '\bPNPM\b': pnpm
+  '\bMacos\b': macOS
+  '\bMacOS\b': macOS
+  '\bmac OS\b': macOS
+  '\bGithub\b': GitHub
+  '\bgithub\b': GitHub
