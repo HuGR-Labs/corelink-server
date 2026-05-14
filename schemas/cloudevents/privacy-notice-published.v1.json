@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12",
+  "$id": "dev.hugr.corelink.privacy_notice.published.v1",
+  "title": "PrivacyNoticePublished",
+  "description": "CloudEvent data payload for dev.hugr.corelink.privacy_notice.published.v1. Emitted on every notice publication (major + minor). Per WI-S11-004 §6.1 + Lote 10.9bis P0-G prefix.",
+  "type": "object",
+  "required": ["event_id", "version", "bump", "material_change", "notice_text_hashes", "emitted_at_ms"],
+  "additionalProperties": false,
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "UUIDv7 event id for idempotency + audit trail localization."
+    },
+    "version": {
+      "type": "object",
+      "required": ["major", "minor"],
+      "properties": {
+        "major": { "type": "integer", "minimum": 0 },
+        "minor": { "type": "integer", "minimum": 0 }
+      },
+      "description": "New notice version (semver M.m convention; patch omitted)."
+    },
+    "bump": {
+      "type": "string",
+      "enum": ["major", "minor"],
+      "description": "Bump type per ADR-S11-007. major = material change; minor = clarification."
+    },
+    "material_change": {
+      "type": "boolean",
+      "description": "Denormalized: true when bump = major (CTRL-PRIV-CONSENT-005 force re-consent trigger)."
+    },
+    "notice_text_hashes": {
+      "type": "object",
+      "description": "SHA-256 hex64 notice_text_hash per locale. INV-CONSENT-PROOF-VERIFIABLE anchor for WI-S11-003 ConsentProofPayload.",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      },
+      "minProperties": 3
+    },
+    "emitted_at_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Wall-clock Unix epoch ms of emission."
+    }
+  }
+}

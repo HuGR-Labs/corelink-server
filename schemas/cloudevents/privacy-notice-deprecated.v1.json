@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12",
+  "$id": "dev.hugr.corelink.privacy_notice.deprecated.v1",
+  "title": "PrivacyNoticeDeprecated",
+  "description": "CloudEvent data payload for dev.hugr.corelink.privacy_notice.deprecated.v1. Emitted only on major bump — previous version superseded. Per WI-S11-004 §6.1 + Lote 10.9bis P0-G prefix.",
+  "type": "object",
+  "required": ["event_id", "deprecated_version", "superseded_by", "emitted_at_ms"],
+  "additionalProperties": false,
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "UUIDv7 event id."
+    },
+    "deprecated_version": {
+      "type": "object",
+      "required": ["major", "minor"],
+      "properties": {
+        "major": { "type": "integer", "minimum": 0 },
+        "minor": { "type": "integer", "minimum": 0 }
+      },
+      "description": "The version being deprecated (previous version superseded)."
+    },
+    "superseded_by": {
+      "type": "object",
+      "required": ["major", "minor"],
+      "properties": {
+        "major": { "type": "integer", "minimum": 0 },
+        "minor": { "type": "integer", "minimum": 0 }
+      },
+      "description": "The new version that supersedes the deprecated one."
+    },
+    "emitted_at_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Wall-clock Unix epoch ms of emission."
+    }
+  }
+}
