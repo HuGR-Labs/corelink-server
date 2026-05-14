@@ -83,6 +83,10 @@ members = [
     "crates/corelink-customer-alerts",
     # WI-S14-007 Ed25519 erasure attestation
     "crates/corelink-erasure-attestation",
+    # WI-S15-004 FFI wrappers (Python pyO3 + Go cgo + JS/TS WASM)
+    "crates/corelink-py",
+    "crates/corelink-go",
+    "crates/corelink-wasm",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
@@ -128,6 +132,16 @@ thiserror = "2"
 # Serde
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# WI-S15-004 FFI wrappers
+# PyO3: Python extension module (Python 3.10+ ABI3)
+pyo3 = { version = "0.22", features = ["abi3-py310"] }
+# wasm-bindgen: Rust → WASM JS bridge
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+wasm-bindgen-futures = "0.4"
+wasm-bindgen-test = "0.3"
+serde-wasm-bindgen = "0.6"
 
 # BYOK (S-14)
 aes-gcm = { version = "0.10", features = ["aes"] }

@@ -1,0 +1,23 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "corelink-py"
+version = "0.1.0"
+description = "CoreLink CAS client for Python — async/await native, client-verify default-on (CTRL-CAS-002)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "UNLICENSED" }
+keywords = ["corelink", "cache", "bazel", "blake3", "remote-cache"]
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+]
+
+[tool.maturin]
+# Build the cdylib + strip debug symbols in release.
+features = ["extension-module"]
+module-name = "corelink_py"
+python-source = "."
+strip = true

@@ -1,0 +1,53 @@
+[package]
+name = "corelink-wasm"
+description = "CoreLink JS/TS WASM wrapper via wasm-bindgen — Promise-based API; client-verify default-on per CTRL-CAS-002 (reuses corelink-client-verify single Rust truth). Published to npm as @corelink/client."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+# cdylib required for wasm-pack to produce a .wasm module.
+crate-type = ["cdylib"]
+name = "corelink_wasm"
+
+[lints.rust]
+unsafe_code = "deny"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[features]
+default = []
+
+[dependencies]
+# wasm-bindgen: bridge Rust types to JS.
+wasm-bindgen = { workspace = true }
+# js-sys: access JS primitives (Uint8Array, Promise, etc.).
+js-sys = { workspace = true }
+# wasm-bindgen-futures: convert Rust futures to JS Promises.
+wasm-bindgen-futures = { workspace = true }
+# serde + serde-wasm-bindgen: serialize StatResult to/from JS objects.
+serde = { workspace = true }
+serde-wasm-bindgen = { workspace = true }
+# corelink-client-verify: single Rust truth (S-02 SEAL).
+# NOTE: do NOT enable the `ffi` feature here — wasm-bindgen uses a separate
+# pipeline (no cbindgen). The `stream` feature is also omitted for WASM
+# bundle size: async stream is handled at the JS layer.
+corelink-client-verify = { path = "../corelink-client-verify" }
+tracing = { workspace = true }
+
+[dev-dependencies]
+wasm-bindgen-test = { workspace = true }

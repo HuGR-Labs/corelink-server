@@ -1,0 +1,36 @@
+[package]
+name = "corelink-go"
+description = "CoreLink Go cgo bridge — exposes cdylib + staticlib consumed by the corelink-go Go module. Client-verify default-on per CTRL-CAS-002 (reuses corelink-client-verify single Rust truth)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+# cdylib + staticlib: cgo can link either depending on target.
+crate-type = ["cdylib", "staticlib"]
+name = "corelink_go"
+
+[lints.rust]
+unsafe_code = "deny"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+corelink-client-verify = { path = "../corelink-client-verify", features = ["ffi"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
