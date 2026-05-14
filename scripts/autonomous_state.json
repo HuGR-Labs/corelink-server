@@ -73,7 +73,7 @@
     "WI-S20-008",
     "WI-S20-009"
   ],
-  "done": "see git tags s01..s12-impl-sealed for prior + this commit closes S-12",
-  "last_seal_at": "2026-05-14T03:00:00Z",
-  "note": "S-12 fully sealed; S-13 worktrees pre-staged"
+  "done": "see git tags s01..s12-impl-sealed for prior; WI-S13-001 SEALED (on wt/wi-s13-001); WI-S13-002 SEALED 2026-05-14",
+  "last_seal_at": "2026-05-14T12:00:00Z",
+  "note": "WI-S13-002 SEALED: corelink-dual-approval + corelink-admin-api; collusion-rotation NIST AC-2(7); 7 props x 10k + 7 adversarial green; wasm32 clean; ADR-S13-001 filed"
 }
