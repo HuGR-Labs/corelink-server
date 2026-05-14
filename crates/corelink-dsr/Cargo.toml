@@ -30,6 +30,15 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true, features = ["v7", "serde"] }
 
+# wasm32 needs uuid's `js` feature so that `uuid::Uuid::now_v7()` has
+# a working RNG source (delegates to JS crypto.getRandomValues). Native
+# builds use the default getrandom backend (libc / WASI). Per WI-S11-002
+# SEAL regression cycle: corelink-dsr is required to compile to
+# wasm32-unknown-unknown so the production CF Worker wrapper at
+# WI-S11-008 PRR ship gate can depend on the trait surfaces.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+uuid = { workspace = true, features = ["v7", "serde", "js"] }
+
 [dev-dependencies]
 proptest = { workspace = true }
 rand = "0.9"

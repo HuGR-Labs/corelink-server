@@ -220,6 +220,10 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 #![deny(missing_debug_implementations)]
+// Crate-wide docs use continuation lines without leading indent
+// (canonical S-11 spec narrative style); silence lazy_continuation
+// per sprint-close P1-2 fix.
+#![allow(clippy::doc_lazy_continuation)]
 
 pub mod audit;
 pub mod endpoint;

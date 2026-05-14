@@ -482,6 +482,11 @@ Lote 9.5c expansion: catalogadas todas as invariantes HIGH cuja semantics não j
 | INV-CAS-SIDE-CHANNEL-INDISTINGUISHABLE | HIGH | Statistical algorithmic property (Mann-Whitney U); criterion benchmark + adversarial test 10k samples; não state-machine distributed |
 | INV-KEY-AUDIT | HIGH | Coberto por `audit_immutability.tla` |
 | INV-KEY-OVERLAP | HIGH | Per-asset table canonical em `key_management.md §3.2.1` + ADR-0018; covered by `key_lifecycle.tla` PLANNED (S-13 §4.2 entry) |
+| INV-SUB-PROCESSOR-AUDIT-FAIL-CLOSED | CRITICAL | Coberto por `audit_immutability.tla` ✅ GREEN inheritance + ADR-S11-002 split-tier; `FailingSubProcessorAuditSink` regression tests verify state UNCHANGED on audit failure (S-11 WI-S11-005) |
+| INV-SUB-PROCESSOR-BROADCAST-IDEMPOTENT | HIGH | UNIQUE constraint `(broadcast_id, tenant_id, recipient_email_hash, notification_type)` em D1 + property test 10k iter; algorithmic schema-level |
+| INV-SUB-PROCESSOR-BROADCAST-ALL-PLANS | HIGH | Policy invariant; ADR-S11-008 v2 + cron worker; regression test enforces no tier-gating |
+| INV-SUB-PROCESSOR-DKIM-TENANT-SCOPED | HIGH | HKDF-SHA256 algorithmic statistical property; per-tenant key derivation; cross-tenant 10k random pairs → 0 collisions property test |
+| INV-SUB-PROCESSOR-OBJECTION-STATE-MACHINE | HIGH | Algorithmic state machine; 5 states + valid transitions enforced at trait surface; covered by 10k iter property test |
 
 ### 4.4 CI obligation gate (Lote 9.4)
 

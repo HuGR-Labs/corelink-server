@@ -239,10 +239,15 @@ impl InMemoryErasureWorker {
             return Ok(prior);
         }
 
-        // Audit `backend_completed` audit BEFORE the backend mutation.
-        // The canonical S-07 P1-1 lift: the audit row precedes the
-        // mutation so that an audit failure aborts the pipeline before
-        // any backend state change.
+        // ADR-S11-002 split-tier: the DSR-level fail-CLOSED guarantee
+        // lives at `dsr.erasure.started.v1` (emitted at line 187 BEFORE
+        // any backend mutation). Per-backend `backend_completed.v1`
+        // necessarily reports outcome AFTER the adapter mutation; the
+        // fail-CLOSED envelope at this layer is "audit BEFORE the
+        // canonical D1 tombstone" — audit failure aborts the run before
+        // the replay-safe tombstone is inserted, so a re-run will
+        // re-fire and re-emit. Compare to S-07 P1-1 (reservation
+        // pre-emit) which IS reversible at the mutation site.
         let started_at_ms = now_ms;
 
         // Execute the backend mutation; transient transport failure

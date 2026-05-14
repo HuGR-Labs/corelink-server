@@ -149,22 +149,30 @@ pub enum DsrStatus {
     /// Successfully completed; for Access / Portability the canonical
     /// receipt URL is bound to the ticket.
     Completed,
-    /// Rejected (denied + failed at the durable state machine
+    /// Denied (denied + failed at the durable state machine
     /// granularity). The customer poll surface collapses these so the
     /// reason is exposed via the canonical `reject_reason` field on
-    /// the ticket rather than a separate status arm.
+    /// the ticket rather than a separate status arm. Canonical wire
+    /// name is `denied` (LGPD Art. 18 §1 / GDPR Art. 12.5(b) language
+    /// + matches D1 `dsr_tickets.status` CHECK constraint). Sprint-
+    /// close P1-3 fix: prior `rejected` serde rename diverged from
+    /// the canonical wire contract.
+    #[serde(rename = "denied")]
     Rejected,
 }
 
 impl DsrStatus {
-    /// Canonical lower-snake-case mnemonic.
+    /// Canonical lower-snake-case mnemonic. Wire name `denied` (not
+    /// `rejected`) per LGPD Art. 18 §1 / GDPR Art. 12.5(b) and D1
+    /// CHECK constraint. Variant name kept as `Rejected` for binary
+    /// API stability; wire output is `denied`.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Pending => "pending",
             Self::InProgress => "in_progress",
             Self::Completed => "completed",
-            Self::Rejected => "rejected",
+            Self::Rejected => "denied",
         }
     }
 

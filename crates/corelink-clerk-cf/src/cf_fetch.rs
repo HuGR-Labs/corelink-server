@@ -40,6 +40,12 @@ impl CfJwksFetcher {
     }
 }
 
+impl Default for CfJwksFetcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl JwksFetcher for CfJwksFetcher {
     /// Fetch a JWKS document from `url` via the CF Workers Fetch API.
     ///
@@ -59,7 +65,7 @@ impl JwksFetcher for CfJwksFetcher {
                 .await
                 .map_err(|e| JwksFetchError::Transport(format!("fetch: {e}")))?;
             let status = response.status_code();
-            if status < 200 || status >= 300 {
+            if !(200..300).contains(&status) {
                 return Err(JwksFetchError::HttpStatus { status });
             }
             let body = response
