@@ -1,3 +1,4 @@
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
 //! Adversarial regression tests for the DT webhook handler (WI-S12-005).
 //!
 //! # Scenarios

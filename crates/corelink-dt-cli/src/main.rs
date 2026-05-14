@@ -1,3 +1,4 @@
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::print_stdout, clippy::print_stderr, clippy::indexing_slicing, clippy::panic)]
 //! `corelink-dt-cli` — Dependency-Track CLI utility (WI-S12-005).
 //!
 //! # Subcommands

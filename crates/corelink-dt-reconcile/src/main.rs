@@ -1,3 +1,4 @@
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::print_stdout, clippy::print_stderr, clippy::indexing_slicing, clippy::panic)]
 //! `corelink-dt-reconcile` — Daily DT alert reconciliation job (WI-S12-005).
 //!
 //! Compares DT findings from the last 24 h (via DT REST API) against the

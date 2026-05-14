@@ -375,13 +375,13 @@ mod chrono_mini {
         ///
         /// Returns `Err(())` on any parse failure.
         pub fn parse_from_str(s: &str) -> Result<Self, ()> {
-            let parts: Vec<&str> = s.splitn(3, '-').collect();
-            if parts.len() != 3 {
+            let mut it = s.splitn(3, '-');
+            let year = it.next().ok_or(())?.parse::<i32>().map_err(|_| ())?;
+            let month = it.next().ok_or(())?.parse::<u8>().map_err(|_| ())?;
+            let day = it.next().ok_or(())?.parse::<u8>().map_err(|_| ())?;
+            if it.next().is_some() {
                 return Err(());
             }
-            let year = parts[0].parse::<i32>().map_err(|_| ())?;
-            let month = parts[1].parse::<u8>().map_err(|_| ())?;
-            let day = parts[2].parse::<u8>().map_err(|_| ())?;
             Ok(Self { year, month, day })
         }
 

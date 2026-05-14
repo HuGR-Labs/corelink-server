@@ -31,9 +31,15 @@ serde_json = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true, features = ["v7", "serde"] }
 hmac = { workspace = true }
+
+# wasm32 needs uuid `js` feature for `Uuid::now_v7()` RNG via JS crypto.
+# Sprint-close P1 (S-12 wave-2 merge fix) — same pattern as corelink-dsr.
 sha2 = { workspace = true }
 hex = { workspace = true }
 subtle = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+uuid = { workspace = true, features = ["v7", "serde", "js"] }
 
 [dev-dependencies]
 proptest = { workspace = true }

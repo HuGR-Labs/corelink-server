@@ -1,3 +1,4 @@
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
 //! Property tests for the DT webhook handler (WI-S12-005).
 //!
 //! # Coverage
@@ -53,7 +54,7 @@ fn dummy_event(cvss: f64) -> DtWebhookEvent {
 
 /// Expected severity for a given CVSS score (mirrors `classify_cvss`).
 fn expected_severity(score: f64) -> DtSeverity {
-    let score = score.max(0.0).min(10.0);
+    let score = score.clamp(0.0, 10.0);
     if score >= 9.0 {
         DtSeverity::Critical
     } else if score >= 7.0 {

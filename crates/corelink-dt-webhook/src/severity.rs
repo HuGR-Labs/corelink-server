@@ -17,7 +17,7 @@ use crate::types::{AlertChannel, DtSeverity};
 /// Score must be in the range `[0.0, 10.0]`. Scores outside that range are
 /// clamped to the nearest boundary before classification.
 pub fn classify_cvss(score: f64) -> DtSeverity {
-    let score = score.max(0.0_f64).min(10.0_f64);
+    let score = score.clamp(0.0_f64, 10.0_f64);
     if score >= 9.0 {
         DtSeverity::Critical
     } else if score >= 7.0 {

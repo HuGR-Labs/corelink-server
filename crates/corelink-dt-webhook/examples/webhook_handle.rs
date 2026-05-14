@@ -1,3 +1,4 @@
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::print_stdout, clippy::print_stderr, clippy::indexing_slicing, clippy::panic)]
 //! Example: handle a DT webhook event end-to-end.
 //!
 //! Run: `cargo run -p corelink-dt-webhook --example webhook_handle`

@@ -1,3 +1,4 @@
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::print_stdout, clippy::print_stderr, clippy::indexing_slicing, clippy::panic)]
 //! Example: DLQ replay — drain failed webhook events and re-process them.
 //!
 //! Simulates the daily reconciliation job re-driving the dead-letter queue.
