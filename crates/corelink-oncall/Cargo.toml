@@ -26,9 +26,27 @@ mod_module_files = "deny"
 
 [dependencies]
 thiserror = { workspace = true }
+# Optional — only pulled when the `production` feature is on. The
+# blocking reqwest client gives us a tokio-free HTTPS POST surface
+# (the crate-wide constraint forbids `tokio` in src/), while still
+# leveraging rustls for TLS termination.
+reqwest = { workspace = true, optional = true, features = ["blocking", "json", "rustls-tls"], default-features = false }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+
+[features]
+default = []
+# `production` enables the real PagerDuty Events API v2 HTTPS client +
+# Slack webhook fallback on retry exhaustion (R2-3). Gated behind a
+# feature so the pure-logic skeleton (WI-S17-005 default surface)
+# stays I/O-free.
+production = ["dep:reqwest", "dep:serde", "dep:serde_json"]
 
 [dev-dependencies]
 proptest = { workspace = true }
+mockito = "1"
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 [[test]]
 name = "prop_oncall"

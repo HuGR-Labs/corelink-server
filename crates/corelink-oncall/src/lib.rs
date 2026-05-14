@@ -108,6 +108,8 @@
 pub mod audit;
 pub mod engineer;
 pub mod error;
+#[cfg(feature = "production")]
+pub mod events;
 pub mod ledger;
 pub mod page;
 pub mod pagerduty;
@@ -127,6 +129,13 @@ pub use page::{FatigueScore, FatigueWindow, PageEvent};
 pub use pagerduty::{
     canonical_pagerduty_actions, FailingPagerDutyClient, InMemoryPagerDutyClient,
     PagerDutyAssignment, PagerDutyClient, PagerDutyEventAction, PagerDutyScheduleKey,
+};
+#[cfg(feature = "production")]
+pub use events::{
+    backoff_wait, map_severity, Clock, EventAction, HttpPagerDutyClient, HttpResponse,
+    HttpTransport, NoopClock, PageContext, PagerDutyAuditSink, PagerDutyEvent,
+    ReqwestBlockingTransport, RoutingKey, SendOutcome, StdClock, BACKOFF_BASE_MS, BACKOFF_CAP_MS,
+    MAX_RETRIES, PAGERDUTY_EVENTS_V2_URL, PAYLOAD_MAX_BYTES,
 };
 pub use rotation::{Rotation, Shift, ShiftId};
 pub use severity::{canonical_severities, Severity};
