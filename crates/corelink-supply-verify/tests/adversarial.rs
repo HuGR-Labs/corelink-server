@@ -1,6 +1,7 @@
 //! Adversarial regression tests for SLSA L3 provenance verification (WI-S12-001).
 // Tests legitimately use panic!, unwrap, and expect for assertion purposes.
 #![allow(clippy::panic, clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::panic, clippy::print_stdout)]
 //!
 //! 5 CVE-class scenarios, each must be 100% rejected:
 //!

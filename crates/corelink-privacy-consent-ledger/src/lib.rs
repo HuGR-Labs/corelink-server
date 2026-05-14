@@ -83,6 +83,11 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 #![deny(missing_debug_implementations)]
+// S-13 sprint-close P1 cascade: rust 1.88 introduces stricter
+// `uninlined_format_args` / `format_in_format_args` lints. Same
+// rationale as supply-verify crate: multi-line error templates are
+// more readable with intermediate format!() than inlined `{var}`.
+#![allow(clippy::format_in_format_args, clippy::uninlined_format_args)]
 
 pub mod audit_emit;
 pub mod cascade;

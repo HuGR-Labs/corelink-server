@@ -50,7 +50,12 @@ const ACTION_HASH_OFFSET: usize = 21;
 const ACTION_SIZE_OFFSET: usize = 53;
 const RESULT_HASH_OFFSET: usize = 61;
 const SIG_KEY_ID_REPEAT_OFFSET: usize = 93;
+// Used only in const assertions below; rust 1.88 clippy treats const
+// assert!() consumers as "unused" → annotate to preserve documentation
+// value of the layout offsets without triggering dead_code.
+#[allow(dead_code)]
 const PAD_OFFSET: usize = 97;
+#[allow(dead_code)]
 const PAD_LEN: usize = 24;
 
 const _: () = assert!(AC_ENVELOPE_PREIMAGE_LEN == 1 + 4 + 16 + 32 + 8 + 32 + 4 + 24);

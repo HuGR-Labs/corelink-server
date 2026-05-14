@@ -29,6 +29,7 @@
 //! parsing) so a future WI that adds new fields / event types is a
 //! compile-time ripple, not a silent envelope drift.
 
+#![allow(clippy::uninlined_format_args, clippy::format_in_format_args)]
 use core::fmt;
 use std::sync::{Arc, Mutex, MutexGuard};
 

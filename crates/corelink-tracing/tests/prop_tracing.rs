@@ -1,3 +1,6 @@
+// S-13 sprint-close P1: rust 1.88 stricter clippy on test format args.
+#![allow(clippy::uninlined_format_args, clippy::format_in_format_args)]
+
 //! Property tests pinning the load-bearing invariants of
 //! `corelink-tracing` at 10k iterations per check (PR-gate; nightly
 //! 100k via `PROPTEST_CASES` env var override per S-07 P1-2 fix).

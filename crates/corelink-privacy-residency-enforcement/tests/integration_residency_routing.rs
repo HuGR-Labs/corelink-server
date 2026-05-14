@@ -1,3 +1,4 @@
+#![allow(clippy::uninlined_format_args, clippy::format_in_format_args)]
 //! Integration test: signup → cross-region request → 451 (PAT-ROUTING-PINNED-001).
 //!
 //! Covers AC-001, AC-002, AC-003, AC-006, AC-007 scenarios.

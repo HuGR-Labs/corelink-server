@@ -323,7 +323,7 @@ See `specs/_audits/YYYY-MM-DD-rb-fm-206-dry-run.md` (committed by WI-S13-006).
 - **CTRL-AUDIT-002** — Cloudflare console audit logging.
 - **`.github/workflows/terraform-drift.yml`** — detection workflow.
 - **`infra/slack/terraform-drift-template.json`** — Slack alert template.
-- **`migrations/d1/0024_terraform_drift_findings.sql`** — D1 schema.
+- **`migrations/d1/0025_terraform_drift_findings.sql`** — D1 schema.
 
 ---
 

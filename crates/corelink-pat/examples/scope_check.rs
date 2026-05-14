@@ -7,6 +7,7 @@
     clippy::print_stdout,
     reason = "examples emit human-readable narration to stdout"
 )]
+#![allow(clippy::uninlined_format_args, clippy::format_in_format_args)]
 
 use corelink_pat::{
     PatScopes, SCOPE_ADMIN_AUDIT, SCOPE_ADMIN_TOKENS, SCOPE_CACHE_FIND, SCOPE_CACHE_R,

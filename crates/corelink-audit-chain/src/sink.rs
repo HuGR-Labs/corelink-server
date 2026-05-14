@@ -65,6 +65,7 @@
 //! `Result<_, AuditChainError>` where `Err` propagation is the
 //! transaction-abort signal.
 
+#![allow(clippy::uninlined_format_args, clippy::format_in_format_args)]
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 

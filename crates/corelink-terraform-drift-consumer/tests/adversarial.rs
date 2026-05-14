@@ -422,7 +422,21 @@ mod prop_tests {
     use super::*;
     use proptest::prelude::*;
 
+    /// PROPTEST_CASES runtime env-var per S-07 P1-2 fix. Defaults to 10k
+    /// at PR-gate; 100k nightly via `PROPTEST_CASES=100000`. S-13
+    /// sprint-close P1-5: prior default of 100 was insufficient.
+    fn proptest_cases() -> u32 {
+        std::env::var("PROPTEST_CASES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(10_000)
+    }
+
     proptest! {
+        #![proptest_config(ProptestConfig {
+            cases: proptest_cases(),
+            ..ProptestConfig::default()
+        })]
         #[test]
         fn prop_severity_monotone_with_diff_count(diff_count in 0u32..=1000) {
             let mut consumer = make_consumer();

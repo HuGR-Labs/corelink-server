@@ -1,3 +1,4 @@
+#![allow(clippy::uninlined_format_args, clippy::format_in_format_args)]
 //! Regression tests: D1 CHECK + trigger constraint enforcement.
 //!
 //! These tests verify that:

@@ -4,9 +4,13 @@
 //! starts at Stage1Pct → probe advances through all 4 stages.
 
 #![allow(
+    clippy::uninlined_format_args,
+    clippy::format_in_format_args,
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::print_stdout,
+    clippy::indexing_slicing,
+    clippy::panic,
     reason = "examples use println! for demonstration"
 )]
 

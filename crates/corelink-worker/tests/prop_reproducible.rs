@@ -1,3 +1,6 @@
+// S-13 sprint-close P1: rust 1.88 stricter clippy on test format args.
+#![allow(clippy::uninlined_format_args, clippy::format_in_format_args)]
+
 //! WI-S12-006 — reproducible builds property tests.
 //!
 //! Covers the four property requirements from §6.1.8:

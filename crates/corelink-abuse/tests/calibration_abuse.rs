@@ -1,3 +1,4 @@
+#![allow(clippy::uninlined_format_args, clippy::format_in_format_args)]
 //! Calibration test fixture for the heuristic abuse-detection scorer
 //! (WI-S08-004 §6.1.5 + sprint contract §6 DoD; Lote 10.8bis P0-E
 //! statistical methodology).

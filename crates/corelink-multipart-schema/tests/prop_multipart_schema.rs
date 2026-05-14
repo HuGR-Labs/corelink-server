@@ -28,6 +28,8 @@
 //!   block a fresh start (Lote 10.5bis P0 fix).
 
 #![allow(
+    clippy::uninlined_format_args,
+    clippy::format_in_format_args,
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,

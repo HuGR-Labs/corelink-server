@@ -1,3 +1,4 @@
+#![allow(clippy::uninlined_format_args, clippy::format_in_format_args)]
 //! Canonical-text regression tests for
 //! `migrations/d1/0003_multipart_chunks_manifest.sql`.
 //!

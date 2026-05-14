@@ -11,6 +11,7 @@
 //! We follow the same pattern: a small AC-flavor sink trait the
 //! production wiring composes on top of `audit_outbox` (WI-S01-004).
 
+#![allow(clippy::uninlined_format_args, clippy::format_in_format_args)]
 use core::fmt;
 use std::sync::{Arc, Mutex, MutexGuard};
 

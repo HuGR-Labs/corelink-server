@@ -1,5 +1,6 @@
 //! Example: Basic SLSA L3 provenance verification (WI-S12-001).
 #![allow(clippy::print_stdout, clippy::print_stderr)]
+#![allow(clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::panic, clippy::print_stdout)]
 //!
 //! Demonstrates verifying a `provenance.intoto.bundle` file using an org-scoped
 //! builder pattern (`humangr-labs/corelink-server`).

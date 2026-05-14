@@ -15,6 +15,7 @@
 //! metric to land in this file, which CODEOWNERS routes to the
 //! observability-discipline reviewer (sprint contract §6 DoD).
 
+#![allow(clippy::uninlined_format_args, clippy::format_in_format_args)]
 use core::fmt;
 
 /// Canonical 9-RED + 6-USE metric kind enum (15 total).

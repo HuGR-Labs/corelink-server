@@ -274,6 +274,46 @@ SLOs individuais (§4.x) podem override interpolation via linha explícita "Targ
 | Target             | ≥ 95%                                                        |
 | Notas              | < 95% → review do progressive rollout; FM-200                |
 
+### 4.14 Admin plane — Config propagation latency (S-13)
+
+**SLO-ADMIN-CONFIG-PROPAGATION** (interno; CTRL-ADMIN-006)
+
+| Campo              | Valor                                                                                       |
+|--------------------|---------------------------------------------------------------------------------------------|
+| SLI                | p99 `(version_advanced_at - version_published_at)` em `corelink_admin_config_propagation_ms` |
+| Target             | ≤ 5 min p99 sustentado 30d (admin singleton update visível em todos workers)               |
+| Notas              | Breach → SEV-2 + RB-ADMIN-CONFIG-STALE. INV-ADMIN-CONFIG-CAS S-13 §3.X. WI-S13-001          |
+
+### 4.15 Admin plane — Dual-approval gate latency (S-13)
+
+**SLO-ADMIN-DUAL-APPROVAL-LATENCY** (interno; CTRL-ADMIN-002)
+
+| Campo              | Valor                                                                                  |
+|--------------------|----------------------------------------------------------------------------------------|
+| SLI                | p95 dual-approval gate handling time (caller submit → approver sign → admin_op_log)    |
+| Target             | ≤ 30s p95 (gate inclui clock-skew + MFA freshness + HMAC verify + collusion oracle)   |
+| Notas              | INV-ADMIN-DUAL-APPROVAL CRITICAL S-13. WI-S13-002. Breach → SEV-2 + collusion review   |
+
+### 4.16 Admin plane — Rotation overlap window (S-13)
+
+**SLO-ADMIN-ROTATION-OVERLAP** (interno; CTRL-KEY-001)
+
+| Campo              | Valor                                                                                                                |
+|--------------------|----------------------------------------------------------------------------------------------------------------------|
+| SLI                | Per-asset-class overlap window adherence (`actual_overlap_seconds / target_overlap_seconds`)                          |
+| Target             | TDK 7d ±10%; PatSigning/AuditChain/AdminSigning 24h ±10%; BYOK 7d ±10% (key_management.md §3.2.1 canonical)         |
+| Notas              | INV-KEY-NO-SKIP + INV-KEY-OVERLAP CRITICAL S-13. WI-S13-003. Breach → SEV-1 (key continuity gap = signing outage)   |
+
+### 4.17 Admin plane — Rollback recovery latency (S-13)
+
+**SLO-ADMIN-ROLLBACK-RECOVERY** (interno; CTRL-ADMIN-007)
+
+| Campo              | Valor                                                                                              |
+|--------------------|----------------------------------------------------------------------------------------------------|
+| SLI                | p99 `(rollback_completed_at - error_budget_breach_at)` em `corelink_admin_rollback_recovery_ms`   |
+| Target             | ≤ 60s p99 sustentado 30d (auto-rollback triggers within 1 minute of error budget breach)         |
+| Notas              | INV-ROLLOUT-AUTO-ROLLBACK CRITICAL S-13. WI-S13-005. Breach → SEV-1 + post-mortem RB-ROLLOUT-STUCK |
+
 ---
 
 ## 5. Error budget policy

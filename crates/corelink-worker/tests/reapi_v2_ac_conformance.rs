@@ -48,6 +48,7 @@
     clippy::print_stderr,
     reason = "test harness — panics + stdout/stderr traces are themselves the assertion surface"
 )]
+#![allow(clippy::uninlined_format_args, clippy::format_in_format_args)]
 #![allow(missing_docs, reason = "test crate")]
 
 use std::sync::Arc;

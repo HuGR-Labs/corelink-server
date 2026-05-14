@@ -15,6 +15,7 @@
 //! - `corelink.gc.run_aborted` (degrade-mode)
 //! - `corelink.gc.phase_transitioned`
 
+#![allow(clippy::uninlined_format_args, clippy::format_in_format_args)]
 use std::sync::Mutex;
 
 use thiserror::Error;

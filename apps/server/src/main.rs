@@ -1,3 +1,4 @@
+#![allow(clippy::uninlined_format_args, clippy::format_in_format_args)]
 use std::net::SocketAddr;
 use tonic::{transport::Server, Request, Response, Status};
 use tracing::info;

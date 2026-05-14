@@ -115,7 +115,7 @@ pub use types::{
 };
 
 /// Crate schema version constant. Mirrors WI-S13-005 §6.1.5 D1
-/// migration slot (`migrations/d1/0024_rollout_state_and_budget.sql`).
+/// migration slot (`migrations/d1/0026_rollout_state_and_budget.sql`).
 #[must_use]
 pub const fn rollout_controller_schema_version() -> u32 {
     24
