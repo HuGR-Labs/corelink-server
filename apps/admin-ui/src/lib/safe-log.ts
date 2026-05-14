@@ -53,5 +53,10 @@ export function safeLog(
   msg: string,
   context: Readonly<Record<string, unknown>> = {},
 ): { level: LogLevel; msg: string; context: Record<string, unknown> } {
-  return { level, msg, context: sanitizeContext(context) };
+  const sanitized = sanitizeContext(context);
+  // Side-effect: emit to console with PII already scrubbed (CTRL-PRIV-001).
+  // eslint-disable-next-line no-console
+  const sink = level === "debug" ? console.log : console[level];
+  sink(`[${msg}]`, sanitized);
+  return { level, msg, context: sanitized };
 }
