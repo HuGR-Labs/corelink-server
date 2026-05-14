@@ -125,6 +125,14 @@ preview_id = "TODO_PREVIEW_KV_ID"
 [vars]
 ENVIRONMENT = "dev"
 
+# WI-S17-001 — Chaos scheduler weekly cron (Mondays 06:00 UTC).
+# Default = dev/staging only; production env intentionally omits [triggers]
+# so chaos NEVER fires in prod (HARD env check at code level is the
+# second line of defense; this cron-level omission is the first).
+# Catalog: specs/_runbooks/RB-CHAOS-CATALOG.md.
+[triggers]
+crons = ["0 6 * * 1"]
+
 # Secrets: `wrangler secret put STRIPE_KEY` etc
 # - CLERK_SECRET_KEY
 # - STRIPE_SECRET_KEY
