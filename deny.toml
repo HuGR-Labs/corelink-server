@@ -38,7 +38,15 @@ db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
 version = 2
 yanked = "deny"
-ignore = []
+# R1-9 emergency dep update: `rsa` Marvin timing sidechannel
+# (RUSTSEC-2023-0071) has NO upstream fix as of 2026-05-14. The CoreLink
+# usage is **signing-only** on operator-controlled inputs (RS256 receipt
+# generation in corelink-clerk / corelink-worker / corelink-dpa-acceptance);
+# none of the Marvin chosen-ciphertext oracle preconditions hold. Mitigated
+# via quarterly RS256 key rotation + signing-latency P99±3σ alerting +
+# per-tenant signing-process isolation. Full decision matrix +
+# auto-promotion triggers in ADR-S20-RSA-MARVIN-MITIGATION.
+ignore = ["RUSTSEC-2023-0071"]
 # CVSS threshold not applied: HIGH_RISK lane treats EVERY advisory as
 # blocking until explicitly waived via ADR.
 
@@ -64,6 +72,15 @@ allow = [
     "Zlib",
     "CC0-1.0",
     "0BSD",
+    # CDLA-Permissive-2.0 — Community Data License Agreement (Permissive).
+    # Functionally equivalent to MIT/Apache for software use (permissive, no
+    # copyleft, no patent traps). Added 2026-05-14 (R1-9 emergency dep
+    # update) to admit `webpki-roots` 1.0+ which the rustls/AWS-SDK stack
+    # now pulls transitively. Canonical fix used by every rustls consumer
+    # since webpki-roots was relicensed for data-distribution clarity.
+    # See AUDIT-R1-8-DEPENDENCY-SECURITY §3.2 and ADR-S20-RSA-MARVIN-MITIGATION
+    # for the broader R1-9 supply-chain decision record.
+    "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.93
 # Workspace's own crates carry `license = "UNLICENSED"` (closed-source per

@@ -133,7 +133,8 @@ impl PyCorelinkClient {
                     }
                 })?;
         }
-        Ok(PyBytes::new_bound(py, body))
+        // PyO3 0.24 renamed `PyBytes::new_bound` → `PyBytes::new` (R1-9 bump).
+        Ok(PyBytes::new(py, body))
     }
 
     /// Upload bytes to the CAS and return the BLAKE3 hex digest.

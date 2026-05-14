@@ -165,8 +165,12 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # WI-S15-004 FFI wrappers
-# PyO3: Python extension module (Python 3.10+ ABI3)
-pyo3 = { version = "0.22", features = ["abi3-py310"] }
+# PyO3: Python extension module (Python 3.10+ ABI3).
+# R1-9: bumped 0.22 → 0.24.1 to close RUSTSEC-2025-0020 (PyString::from_object
+# buffer overflow). 0.22→0.24 introduced `Py::extract_bound` and a deprecation
+# of `PyBytes::new_bound` (renamed to `PyBytes::new`); see corelink-py call
+# sites for migration shims.
+pyo3 = { version = "0.24.1", features = ["abi3-py310"] }
 # wasm-bindgen: Rust → WASM JS bridge
 wasm-bindgen = "0.2"
 js-sys = "0.3"
@@ -177,13 +181,22 @@ serde-wasm-bindgen = "0.6"
 # BYOK (S-14)
 aes-gcm = { version = "0.10", features = ["aes"] }
 getrandom = "0.2"
-lru = "0.12"
+# `lru` 0.14+ ships the IterMut soundness fix (RUSTSEC-2026-0002). Bumped to
+# 0.18 (latest) per R1-9 emergency dep update; CoreLink's only consumer is
+# `corelink-byok::dek_cache` which uses get/put/pop/iter/new — all stable
+# across the 0.12→0.18 major-version progression.
+lru = "0.18"
 # AWS SDK — requires Rust ≥ 1.91.1 per MSRV; workspace is pegged to 1.80 as floor.
 # The actual CI toolchain (1.88+) compiles these correctly.
 # `cargo check -p corelink-byok-aws --ignore-rust-version` is required until
 # the workspace rust-version floor is bumped (tracked as infra debt post-S-14).
-aws-config = { version = "1", features = ["behavior-version-latest"] }
-aws-sdk-kms = "1"
+#
+# R1-9: `default-features = false` + explicit `rustls-aws-lc-runtime` excludes
+# the `tls-rustls` legacy feature path (hyper 0.14 + rustls 0.21 +
+# rustls-webpki 0.101.7 vulnerable to RUSTSEC-2026-0098/0099/0104). The
+# modern `rustls-aws-lc` runtime pulls rustls 0.23 + rustls-webpki 0.103.
+aws-config = { version = "1", default-features = false, features = ["behavior-version-latest", "rt-tokio", "credentials-process", "sso", "default-https-client"] }
+aws-sdk-kms = { version = "1", default-features = false, features = ["rt-tokio", "default-https-client"] }
 
 # Crypto / encoding (S-01 foundation)
 hmac = "0.12"
