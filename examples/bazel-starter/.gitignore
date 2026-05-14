@@ -1,0 +1,8 @@
+# Bazel output symlinks (created at workspace root by Bazel)
+/bazel-*
+
+# Bazel execution log (written during CI cache-hit verification)
+/bazel-execution*.json
+
+# Local user overrides
+.bazelrc.user
