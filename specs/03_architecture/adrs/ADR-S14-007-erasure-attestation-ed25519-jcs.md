@@ -1,13 +1,18 @@
 ---
 id: "ADR-S14-007"
 type: "adr"
-doc_status: "ACCEPTED"
+doc_status: "ACTIVE"
+audit_status: "ACTIVE"
 version: "1.0.0"
 created: "2026-05-14"
 updated: "2026-05-14"
 sprint: "S-14"
 work_item: "WI-S14-007"
 owner: "Gustavo Schneiter"
+final_approver: "Gustavo Schneiter"
+reviewers: []
+supersedes: null
+superseded_by: null
 tags: ["adr", "s14", "ed25519", "fips-186-5", "erasure-attestation", "jcs", "nist-sp-800-88", "7y-retention"]
 ---
 

@@ -12,7 +12,8 @@
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::print_stdout,
-    reason = "examples use println"
+    clippy::print_stderr,
+    reason = "examples use println/eprintln for demo + error paths"
 )]
 
 use corelink_erasure_attestation::{

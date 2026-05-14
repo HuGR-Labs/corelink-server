@@ -15,9 +15,13 @@
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    reason = "adversarial tests use direct assertions"
+    clippy::uninlined_format_args,
+    clippy::format_in_format_args,
+    clippy::indexing_slicing,
+    clippy::default_constructed_unit_structs,
+    clippy::assertions_on_constants,
+    reason = "adversarial tests use direct assertions + rust 1.91 stricter clippy"
 )]
-#![allow(clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::panic, clippy::default_constructed_unit_structs, clippy::assertions_on_constants)]
 
 use std::sync::Arc;
 

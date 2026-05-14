@@ -25,9 +25,12 @@
     clippy::panic,
     clippy::indexing_slicing,
     clippy::doc_lazy_continuation,
-    reason = "tests are allowed to use these primitives"
+    clippy::uninlined_format_args,
+    clippy::format_in_format_args,
+    clippy::default_constructed_unit_structs,
+    clippy::assertions_on_constants,
+    reason = "tests are allowed to use these primitives + rust 1.91 stricter clippy"
 )]
-#![allow(clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::panic, clippy::default_constructed_unit_structs, clippy::assertions_on_constants)]
 
 use std::sync::Arc;
 

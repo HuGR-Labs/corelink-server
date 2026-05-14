@@ -22,7 +22,7 @@
 //! - Latency p99 ≤ 30 ms (asserted via 10 samples).
 
 #![forbid(unsafe_code)]
-#![allow(clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
+#![allow(clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::panic, clippy::print_stderr, clippy::print_stdout)]
 
 #[cfg(test)]
 mod e2e_aws_kms {

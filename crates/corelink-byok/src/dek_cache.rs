@@ -201,6 +201,7 @@ impl DekCache {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic, clippy::indexing_slicing, clippy::uninlined_format_args, clippy::format_in_format_args)]
 mod tests {
     use super::*;
 

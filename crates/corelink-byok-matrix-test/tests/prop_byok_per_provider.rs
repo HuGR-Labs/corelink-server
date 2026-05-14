@@ -1,3 +1,4 @@
+#![allow(clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::panic, dead_code)]
 //! Property tests: 4 props × all providers (10k iter PR gate; 100k nightly).
 //!
 //! Properties tested:

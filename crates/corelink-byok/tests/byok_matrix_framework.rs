@@ -16,7 +16,7 @@
 //! fail — enforces WI-S14-005 completion before S-14 can ship.
 
 #![forbid(unsafe_code)]
-#![allow(clippy::panic)]
+#![allow(clippy::panic, clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::print_stdout, clippy::print_stderr)]
 
 use async_trait::async_trait;
 use serde_json::Value;

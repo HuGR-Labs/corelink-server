@@ -3,10 +3,15 @@ id: "RB-BYOK-REVOKE"
 type: "runbook"
 wi: "WI-S14-006"
 doc_status: "ACTIVE"
+audit_status: "ACTIVE"
 version: "1.0.0"
 created: "2026-05-14"
 updated: "2026-05-14"
 owner: "SRE Lead"
+final_approver: "Gustavo Schneiter"
+reviewers: []
+supersedes: null
+superseded_by: null
 tags: ["runbook", "byok", "kill-switch", "cmk-revocation", "s14", "inv-byok-crypto-sovereignty"]
 ---
 

@@ -95,6 +95,7 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 #![deny(missing_debug_implementations)]
+#![allow(clippy::uninlined_format_args, clippy::format_in_format_args)]
 
 use async_trait::async_trait;
 use corelink_byok::{BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider,

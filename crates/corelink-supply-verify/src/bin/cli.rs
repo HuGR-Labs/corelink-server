@@ -17,8 +17,7 @@
 
 #![forbid(unsafe_code)]
 // CLI binary is explicitly allowed to print to stdout/stderr — this is its purpose.
-#![allow(clippy::print_stdout, clippy::print_stderr)]
-#![allow(clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::panic, clippy::print_stdout)]
+#![allow(clippy::print_stdout, clippy::print_stderr, clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
 
 use std::path::PathBuf;
 use std::process;

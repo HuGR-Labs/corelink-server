@@ -206,7 +206,7 @@ async fn run_provider_matrix<P: KmsProvider>(
                     unwrap_cell,
                 ],
             };
-            if let Err(e) = cache.put(&wrapped2, &dek2) {
+            if let Err(e) = cache.put(&wrapped2, dek2).await {
                 return [
                     write_cell,
                     MatrixResult::fail(provider_name, "read", format!("cache put: {e}")),
@@ -214,7 +214,7 @@ async fn run_provider_matrix<P: KmsProvider>(
                     unwrap_cell,
                 ];
             }
-            match cache.get(&wrapped2) {
+            match cache.get(&wrapped2).await {
                 Some(cached) if cached.bytes == dek2_bytes => MatrixResult::pass(provider_name, "read"),
                 Some(_) => MatrixResult::fail(provider_name, "read", "cached DEK bytes mismatch".to_string()),
                 None => MatrixResult::fail(provider_name, "read", "DEK cache miss immediately after put".to_string()),
@@ -318,11 +318,11 @@ fn fips_level_const_per_provider() {
 fn dek_cache_ttl_hard_limit_enforced() {
     assert!(DekCache::new(300).is_ok(), "300s is the max allowed TTL");
     assert!(
-        matches!(DekCache::new(301), Err(BYOKError::DekCacheTtlViolation)),
+        matches!(DekCache::new(301), Err(BYOKError::DekCacheTtlViolation { .. })),
         "301s violates INV-BYOK-CRYPTO-SOVEREIGNTY"
     );
     assert!(
-        matches!(DekCache::new(u64::MAX), Err(BYOKError::DekCacheTtlViolation)),
+        matches!(DekCache::new(u64::MAX), Err(BYOKError::DekCacheTtlViolation { .. })),
         "MAX TTL violates INV-BYOK-CRYPTO-SOVEREIGNTY"
     );
 }

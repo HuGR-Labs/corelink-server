@@ -96,6 +96,7 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 #![deny(missing_debug_implementations)]
+#![allow(clippy::uninlined_format_args, clippy::format_in_format_args)]
 
 use async_trait::async_trait;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
@@ -375,6 +376,7 @@ impl KmsProvider for VaultProvider {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic, clippy::indexing_slicing, clippy::uninlined_format_args)]
 mod tests {
     use super::*;
     use corelink_byok::KmsProvider;

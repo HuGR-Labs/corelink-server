@@ -1,3 +1,4 @@
+#![allow(clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::panic, dead_code)]
 //! Adversarial regression tests per provider (WI-S14-005 §6.1 item 10).
 //!
 //! Covers 12+ adversarial scenarios across 3 providers (+ AWS mock):
