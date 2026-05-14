@@ -25,3 +25,12 @@
 # locale; see specs/_runbooks/RB-DPA-CHANGE.md.
 /legal/dpa/                       @humangr-labs/legal @humangr-labs/privacy
 /.github/workflows/dpa-legal-review.yml  @humangr-labs/legal @humangr-labs/appsec
+
+# All other legal/** artifacts (WI-S20-005) — SLA, sub-processor commitments,
+# SCC reference, breach-notification, DPIA, LIA, residency amendments, etc.
+# Legal Counsel + DPO (privacy) sign-off required.
+/legal/                           @humangr-labs/legal @humangr-labs/privacy
+/.github/workflows/legal-changes-review.yml  @humangr-labs/legal @humangr-labs/privacy @humangr-labs/appsec
+
+# Lighthouse legal review tracker — Legal Counsel + DPO own
+/specs/_legal/                    @humangr-labs/legal @humangr-labs/privacy

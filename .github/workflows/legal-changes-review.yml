@@ -1,0 +1,87 @@
+name: legal-changes-review
+
+# WI-S20-005: legal-review hook (broader than WI-S19-002's dpa-only hook).
+#
+# Any PR that modifies legal/**/*.md MUST receive a Legal Counsel /
+# DPO sign-off. This workflow:
+#   1. Detects legal Markdown changes in the PR diff (paths filter).
+#   2. Adds the `legal-review-required` label.
+#   3. Posts (or updates) a sticky PR comment listing the gates.
+#
+# The merge block is enforced via:
+#   - the `legal-review-required` branch-protection rule on `main`
+#     (configured outside the repo); AND
+#   - `.github/CODEOWNERS` requiring `@humangr-labs/legal` and
+#     `@humangr-labs/privacy` (DPO) review for `/legal/**`.
+#
+# Note: This workflow extends, but does NOT replace, `dpa-legal-review.yml`
+# (legacy WI-S19-002 hook, DPA-specific). The two coexist; legal/dpa
+# paths trigger both, which is intentional.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "legal/**/*.md"
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  flag-legal-review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add legal-review-required label
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+            await github.rest.issues.addLabels({
+              owner,
+              repo,
+              issue_number,
+              labels: ["legal-review-required"],
+            });
+
+      - name: Post / update sticky comment
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+            const marker = "<!-- legal-changes-review-sticky -->";
+            const body = [
+              marker,
+              "## Legal Counsel + DPO review required",
+              "",
+              "This PR modifies `legal/**/*.md`. Per **WI-S20-005**:",
+              "",
+              "- [ ] Legal Counsel sign-off",
+              "- [ ] DPO (Privacy) sign-off",
+              "- [ ] If `legal/dpa/**`: 3-locale parity preserved (en-US / pt-BR / es-419)",
+              "- [ ] If `legal/sla/**`: `legal/sla/CHANGELOG.md` updated",
+              "- [ ] If sub-processor change: 30-day customer notice scheduled in `legal/sub-processors.md`",
+              "- [ ] Canonical compliance matrix linked: `specs/03_architecture/compliance_matrix.md`",
+              "- [ ] Audit evidence committed under `specs/_audits/YYYY-MM-DD-legal-review-<doc>.md`",
+              "",
+              "CODEOWNERS automatically requires `@humangr-labs/legal` ",
+              "and `@humangr-labs/privacy` review. Do **not** bypass.",
+            ].join("\n");
+            const comments = await github.rest.issues.listComments({
+              owner, repo, issue_number, per_page: 100,
+            });
+            const existing = comments.data.find((c) =>
+              c.body && c.body.startsWith(marker)
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner, repo, comment_id: existing.id, body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number, body,
+              });
+            }
