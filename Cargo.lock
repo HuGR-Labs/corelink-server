@@ -1142,6 +1142,7 @@ dependencies = [
  "aes-gcm",
  "async-trait",
  "getrandom 0.2.17",
+<<<<<<< HEAD
  "lru",
  "proptest",
  "serde",
@@ -1151,10 +1152,18 @@ dependencies = [
  "tokio",
  "tokio-test",
  "tracing",
+=======
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-test",
+>>>>>>> wt/wi-s14-005
  "zeroize",
 ]
 
 [[package]]
+<<<<<<< HEAD
 name = "corelink-byok-aws"
 version = "0.1.0"
 dependencies = [
@@ -1163,12 +1172,72 @@ dependencies = [
  "aws-sdk-kms",
  "corelink-byok",
  "getrandom 0.2.17",
+=======
+name = "corelink-byok-azure"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "async-trait",
+ "base64",
+ "corelink-byok",
+ "getrandom 0.2.17",
+ "proptest",
+>>>>>>> wt/wi-s14-005
  "serde",
  "serde_json",
  "thiserror",
  "tokio",
  "tokio-test",
+<<<<<<< HEAD
  "tracing",
+=======
+ "zeroize",
+]
+
+[[package]]
+name = "corelink-byok-gcp"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "corelink-byok",
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-test",
+ "zeroize",
+]
+
+[[package]]
+name = "corelink-byok-matrix-test"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "corelink-byok",
+ "corelink-byok-azure",
+ "corelink-byok-gcp",
+ "corelink-byok-vault",
+ "proptest",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "corelink-byok-vault"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64",
+ "corelink-byok",
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-test",
+ "zeroize",
+>>>>>>> wt/wi-s14-005
 ]
 
 [[package]]
@@ -2329,6 +2398,7 @@ dependencies = [
 ]
 
 [[package]]
+<<<<<<< HEAD
 name = "h2"
 version = "0.3.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2348,6 +2418,8 @@ dependencies = [
 ]
 
 [[package]]
+=======
+>>>>>>> wt/wi-s14-005
 name = "h2"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3092,6 +3164,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 
 [[package]]
+<<<<<<< HEAD
 name = "openssl-probe"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3104,6 +3177,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a80800c0488c3a21695ea981a54918fbb37abf04f4d0720c453632255e2ff0e"
 
 [[package]]
+=======
+>>>>>>> wt/wi-s14-005
 name = "parking_lot"
 version = "0.12.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"

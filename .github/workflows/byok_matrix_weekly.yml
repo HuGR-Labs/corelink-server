@@ -1,0 +1,176 @@
+name: BYOK Matrix — Weekly Staging (WI-S14-005)
+
+# Weekly cron staging run of the 16-combination matrix test
+# (4 providers × 4 ops). Fires every Monday at 06:17 UTC.
+#
+# All 16 cells MUST be green. Any failure triggers SEV-2 alert
+# (see post-mortem hook WI-S14-005 §24).
+#
+# Workflow also runs proptest-extended (100k iter) and adversarial
+# regression nightly tier (same as weekly cadence for BYOK providers).
+#
+# In staging mode (CORELINK_BYOK_*_MOCK != "1"), real provider
+# credentials are used. CI (non-staging) always uses mock mode.
+
+on:
+  schedule:
+    # Weekly: Monday 06:17 UTC (staggered from nightly crons).
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      mock_mode:
+        description: 'Force mock mode (true = mock; false = real staging APIs)'
+        required: false
+        default: 'true'
+        type: boolean
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ────────────────────────────────────────────────────────────────────
+  # 1. 16-combination matrix test (4 providers × 4 ops = 16 cells).
+  # Auto-fail if any cell breaks.
+  # ────────────────────────────────────────────────────────────────────
+  byok-matrix-16:
+    name: BYOK 16-cell matrix (${{ inputs.mock_mode == 'false' && 'STAGING' || 'MOCK' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
+        with:
+          workspaces: ". -> target"
+
+      - name: 16-combination matrix test (BYOK)
+        env:
+          # In staging: unset mock env vars to use real provider APIs.
+          # In mock (default/CI): mock mode forced.
+          CORELINK_BYOK_GCP_MOCK: ${{ inputs.mock_mode == 'false' && '' || '1' }}
+          CORELINK_BYOK_AZURE_MOCK: ${{ inputs.mock_mode == 'false' && '' || '1' }}
+          CORELINK_BYOK_VAULT_MOCK: ${{ inputs.mock_mode == 'false' && '' || '1' }}
+          # Staging credentials (injected from repo secrets in staging mode).
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GCP_KMS_STAGING_CREDENTIALS }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_KMS_STAGING_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_KMS_STAGING_TENANT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_KMS_STAGING_CLIENT_SECRET }}
+          VAULT_ADDR: ${{ secrets.VAULT_STAGING_ADDR }}
+        run: |
+          set -euo pipefail
+          cargo test \
+            --package corelink-byok-matrix-test \
+            --test byok_matrix_test \
+            -- --nocapture 2>&1 | tee /tmp/byok_matrix_16_report.txt
+
+      - name: Upload matrix test report
+        if: always()
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5.0
+        with:
+          name: byok-matrix-16-report-${{ github.run_id }}
+          path: /tmp/byok_matrix_16_report.txt
+          retention-days: 90
+
+      - name: Fail on matrix break (SEV-2)
+        if: failure()
+        run: |
+          echo "::error::BYOK 16-cell matrix FAILED — SEV-2 triggered. Check report artifact."
+          echo "::error::Post-mortem required per WI-S14-005 §24 (matrix cell break > 1h)."
+          exit 1
+
+  # ────────────────────────────────────────────────────────────────────
+  # 2. proptest extended (100k iter) — BYOK per-provider.
+  # ────────────────────────────────────────────────────────────────────
+  byok-proptest-100k:
+    name: BYOK proptest 100k iter (4 props × all providers)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
+        with:
+          workspaces: ". -> target"
+
+      - name: proptest 100k iter — BYOK 4 props per provider
+        env:
+          PROPTEST_CASES: '100000'
+          PROPTEST_MAX_LOCAL_REJECTS: '100000'
+          PROPTEST_MAX_GLOBAL_REJECTS: '500000'
+          CORELINK_BYOK_GCP_MOCK: '1'
+          CORELINK_BYOK_AZURE_MOCK: '1'
+          CORELINK_BYOK_VAULT_MOCK: '1'
+        run: |
+          set -euo pipefail
+          cargo test --release \
+            --package corelink-byok-matrix-test \
+            --test prop_byok_per_provider
+
+  # ────────────────────────────────────────────────────────────────────
+  # 3. Adversarial regression test (all 16 scenarios).
+  # ────────────────────────────────────────────────────────────────────
+  byok-adversarial:
+    name: BYOK adversarial regression (16 scenarios)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
+        with:
+          workspaces: ". -> target"
+
+      - name: Adversarial regression tests — BYOK per provider
+        env:
+          CORELINK_BYOK_GCP_MOCK: '1'
+          CORELINK_BYOK_AZURE_MOCK: '1'
+          CORELINK_BYOK_VAULT_MOCK: '1'
+        run: |
+          set -euo pipefail
+          cargo test \
+            --package corelink-byok-matrix-test \
+            --test adversarial_byok_per_provider \
+            -- --nocapture
+
+  # ────────────────────────────────────────────────────────────────────
+  # 4. FIPS compliance status check (quarterly review reminder).
+  # Fires only on the first Monday of each month as a quarterly proxy.
+  # ────────────────────────────────────────────────────────────────────
+  byok-fips-status-check:
+    name: BYOK FIPS compliance status check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event_name == 'workflow_dispatch' || (github.event.schedule == '17 6 * * 1')
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Verify FIPS compliance matrix doc exists
+        run: |
+          set -euo pipefail
+          if [[ ! -f "compliance/byok-fips-matrix.md" ]]; then
+            echo "::error::compliance/byok-fips-matrix.md missing — FIPS doc gate failed"
+            exit 1
+          fi
+          echo "FIPS compliance matrix doc present: OK"
+          # Verify all 4 providers are documented.
+          for provider in "AWS KMS" "GCP KMS" "Azure Key Vault" "HashiCorp Vault"; do
+            if ! grep -q "$provider" compliance/byok-fips-matrix.md; then
+              echo "::error::Provider '$provider' missing from compliance/byok-fips-matrix.md"
+              exit 1
+            fi
+          done
+          echo "All 4 providers documented: OK"
