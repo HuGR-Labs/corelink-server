@@ -1,0 +1,125 @@
+{
+  "dsr": {
+    "landing": {
+      "title": "Your data rights",
+      "intro": "You have six rights over your personal data under LGPD (Art. 18) and GDPR (Arts. 15-22). Pick a right below to start a request.",
+      "rights_section_title": "Choose a right",
+      "back_to_settings": "Back to settings",
+      "status_link": "View your previous requests"
+    },
+    "rights": {
+      "access": {
+        "label": "Access my data",
+        "description": "Get a copy of all personal data we hold about you.",
+        "legal_ref": "LGPD Art. 18 II · GDPR Art. 15"
+      },
+      "rectification": {
+        "label": "Correct my data",
+        "description": "Fix data that is wrong, outdated, or incomplete.",
+        "legal_ref": "LGPD Art. 18 III · GDPR Art. 16"
+      },
+      "erasure": {
+        "label": "Delete my data",
+        "description": "Ask us to erase your data (the right to be forgotten).",
+        "legal_ref": "LGPD Art. 18 VI · GDPR Art. 17"
+      },
+      "portability": {
+        "label": "Export my data",
+        "description": "Receive a machine-readable copy you can move elsewhere.",
+        "legal_ref": "LGPD Art. 18 V · GDPR Art. 20"
+      },
+      "restriction": {
+        "label": "Restrict processing",
+        "description": "Pause how we use your data while a dispute is resolved.",
+        "legal_ref": "GDPR Art. 18"
+      },
+      "objection": {
+        "label": "Object to processing",
+        "description": "Tell us to stop a specific use of your data.",
+        "legal_ref": "GDPR Art. 21"
+      }
+    },
+    "form": {
+      "subject_section": "Confirm your identity",
+      "subject_email_label": "Email on file",
+      "reason_label": "Reason",
+      "reason_placeholder": "Tell us why you are exercising this right.",
+      "reason_required_error": "A reason is required for this right.",
+      "submit": "Submit request",
+      "submitting": "Submitting...",
+      "rectification_fields_title": "Fields you can correct",
+      "field_name": "Name",
+      "field_email": "Email",
+      "field_language": "Language preference",
+      "erasure_scope_title": "What should we erase?",
+      "erasure_scope_all": "Erase all my data",
+      "erasure_scope_categories": "Only erase specific categories",
+      "erasure_legal_hold_warning": "Some data may be retained per legal hold (fiscal records, audit log). We will tell you what was kept.",
+      "portability_format_title": "Export format",
+      "portability_format_json": "JSON (recommended)",
+      "portability_format_csv": "CSV",
+      "portability_format_both": "Both",
+      "portability_notice": "Exports may take up to 24 hours. The receipt below will hold the download link when ready.",
+      "objection_purpose_label": "Which processing purpose do you object to?",
+      "submit_error_generic": "We could not submit your request. Please try again.",
+      "submit_error_mfa": "Identity verification failed. Please re-authenticate.",
+      "submit_error_rate_limit": "Daily limit reached. Please try again tomorrow."
+    },
+    "reauth": {
+      "title": "Verify your identity",
+      "description": "For your safety, please re-authenticate before submitting a data rights request.",
+      "start_button": "Verify with MFA",
+      "verifying": "Verifying...",
+      "verified": "Identity verified",
+      "failed": "Verification failed. Please try again.",
+      "blocked_notice": "Form is locked until identity is verified."
+    },
+    "receipt": {
+      "modal_title": "Request submitted",
+      "request_id_label": "Request ID",
+      "action_label": "Right exercised",
+      "jurisdiction_label": "Jurisdiction",
+      "sla_deadline_label": "SLA deadline",
+      "jti_label": "Receipt ID (jti)",
+      "exp_label": "Receipt expires",
+      "copy_jwt": "Copy receipt token",
+      "download_jwt": "Download receipt (.jwt)",
+      "close": "Close",
+      "copied": "Copied"
+    },
+    "status": {
+      "title": "Your data rights requests",
+      "empty": "You have no data rights requests yet.",
+      "table_request_id": "Request",
+      "table_action": "Right",
+      "table_status": "Status",
+      "table_submitted": "Submitted",
+      "table_deadline": "Deadline",
+      "table_actions": "Actions",
+      "view_details": "View",
+      "download_receipt": "Receipt",
+      "prev_page": "Previous",
+      "next_page": "Next",
+      "page_indicator": "Page {page}"
+    },
+    "status_states": {
+      "pending": "Pending",
+      "in_progress": "In progress",
+      "completed": "Completed",
+      "rejected": "Rejected"
+    },
+    "detail": {
+      "title": "Request detail",
+      "timeline_title": "Timeline",
+      "data_download_title": "Your data",
+      "data_download_action": "Download data",
+      "data_download_pending": "Your export will appear here when ready.",
+      "back_to_list": "Back to list"
+    },
+    "countdown": {
+      "remaining_days": "{days} days remaining",
+      "remaining_hours": "{hours} hours remaining",
+      "overdue": "SLA overdue"
+    }
+  }
+}

@@ -1,0 +1,125 @@
+{
+  "dsr": {
+    "landing": {
+      "title": "Seus direitos sobre dados",
+      "intro": "Você tem seis direitos sobre seus dados pessoais sob a LGPD (Art. 18) e o GDPR (Arts. 15-22). Escolha um direito abaixo para iniciar uma solicitação.",
+      "rights_section_title": "Escolha um direito",
+      "back_to_settings": "Voltar para configurações",
+      "status_link": "Ver minhas solicitações anteriores"
+    },
+    "rights": {
+      "access": {
+        "label": "Acessar meus dados",
+        "description": "Obtenha uma cópia de todos os dados pessoais que mantemos sobre você.",
+        "legal_ref": "LGPD Art. 18 II · GDPR Art. 15"
+      },
+      "rectification": {
+        "label": "Retificar meus dados",
+        "description": "Corrigir dados incorretos, desatualizados ou incompletos.",
+        "legal_ref": "LGPD Art. 18 III · GDPR Art. 16"
+      },
+      "erasure": {
+        "label": "Excluir meus dados",
+        "description": "Solicitar que seus dados sejam apagados (direito ao esquecimento).",
+        "legal_ref": "LGPD Art. 18 VI · GDPR Art. 17"
+      },
+      "portability": {
+        "label": "Exportar meus dados",
+        "description": "Receber uma cópia em formato legível que pode ser usada em outro serviço.",
+        "legal_ref": "LGPD Art. 18 V · GDPR Art. 20"
+      },
+      "restriction": {
+        "label": "Restringir o tratamento",
+        "description": "Pausar o uso dos seus dados enquanto uma disputa é resolvida.",
+        "legal_ref": "GDPR Art. 18"
+      },
+      "objection": {
+        "label": "Opor-se ao tratamento",
+        "description": "Solicitar que paremos um uso específico dos seus dados.",
+        "legal_ref": "GDPR Art. 21"
+      }
+    },
+    "form": {
+      "subject_section": "Confirme sua identidade",
+      "subject_email_label": "E-mail registrado",
+      "reason_label": "Motivo",
+      "reason_placeholder": "Diga por que você está exercendo este direito.",
+      "reason_required_error": "Um motivo é obrigatório para este direito.",
+      "submit": "Enviar solicitação",
+      "submitting": "Enviando...",
+      "rectification_fields_title": "Campos que você pode corrigir",
+      "field_name": "Nome",
+      "field_email": "E-mail",
+      "field_language": "Idioma preferido",
+      "erasure_scope_title": "O que devemos apagar?",
+      "erasure_scope_all": "Apagar todos os meus dados",
+      "erasure_scope_categories": "Apagar somente categorias específicas",
+      "erasure_legal_hold_warning": "Alguns dados podem ser retidos por obrigação legal (registros fiscais, log de auditoria). Informaremos o que foi mantido.",
+      "portability_format_title": "Formato de exportação",
+      "portability_format_json": "JSON (recomendado)",
+      "portability_format_csv": "CSV",
+      "portability_format_both": "Ambos",
+      "portability_notice": "A exportação pode levar até 24 horas. O recibo abaixo conterá o link de download quando estiver pronto.",
+      "objection_purpose_label": "A qual finalidade de tratamento você se opõe?",
+      "submit_error_generic": "Não conseguimos enviar sua solicitação. Tente novamente.",
+      "submit_error_mfa": "Falha na verificação de identidade. Autentique-se novamente.",
+      "submit_error_rate_limit": "Limite diário atingido. Tente novamente amanhã."
+    },
+    "reauth": {
+      "title": "Verifique sua identidade",
+      "description": "Por segurança, autentique-se novamente antes de enviar uma solicitação.",
+      "start_button": "Verificar com MFA",
+      "verifying": "Verificando...",
+      "verified": "Identidade verificada",
+      "failed": "Verificação falhou. Tente novamente.",
+      "blocked_notice": "O formulário está bloqueado até a verificação de identidade."
+    },
+    "receipt": {
+      "modal_title": "Solicitação enviada",
+      "request_id_label": "ID da solicitação",
+      "action_label": "Direito exercido",
+      "jurisdiction_label": "Jurisdição",
+      "sla_deadline_label": "Prazo SLA",
+      "jti_label": "ID do recibo (jti)",
+      "exp_label": "Recibo expira em",
+      "copy_jwt": "Copiar token do recibo",
+      "download_jwt": "Baixar recibo (.jwt)",
+      "close": "Fechar",
+      "copied": "Copiado"
+    },
+    "status": {
+      "title": "Suas solicitações de direitos",
+      "empty": "Você ainda não tem solicitações.",
+      "table_request_id": "Solicitação",
+      "table_action": "Direito",
+      "table_status": "Status",
+      "table_submitted": "Enviada",
+      "table_deadline": "Prazo",
+      "table_actions": "Ações",
+      "view_details": "Ver",
+      "download_receipt": "Recibo",
+      "prev_page": "Anterior",
+      "next_page": "Próxima",
+      "page_indicator": "Página {page}"
+    },
+    "status_states": {
+      "pending": "Pendente",
+      "in_progress": "Em andamento",
+      "completed": "Concluída",
+      "rejected": "Rejeitada"
+    },
+    "detail": {
+      "title": "Detalhe da solicitação",
+      "timeline_title": "Linha do tempo",
+      "data_download_title": "Seus dados",
+      "data_download_action": "Baixar dados",
+      "data_download_pending": "Sua exportação aparecerá aqui quando estiver pronta.",
+      "back_to_list": "Voltar para a lista"
+    },
+    "countdown": {
+      "remaining_days": "{days} dias restantes",
+      "remaining_hours": "{hours} horas restantes",
+      "overdue": "Prazo SLA expirado"
+    }
+  }
+}
