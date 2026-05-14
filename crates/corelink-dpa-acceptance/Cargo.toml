@@ -1,0 +1,61 @@
+[package]
+name = "corelink-dpa-acceptance"
+description = "CoreLink DPA acceptance service (WI-S19-002 — S-19 Onboarding HIGH_RISK lane). DPA click-through with 6-field consent capture (CTRL-PRIV-CONSENT-001..006), RS256 JWT receipt (per-tenant signing key separate from PAT format S-03), 3 locales (en-US, pt-BR, es-419) content-addressable, idempotent per signup_id, locale mismatch enforcement (Lote 10.16 canonical: corelink_locale cookie ≠ payload locale → 400 + audit dpa.locale_mismatch). Pure-logic skeleton; production wiring at PRR ship gate per trait-abstraction-defer charter. wasm32-clean (no ring; jsonwebtoken with `use_pem` for RS256)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+subtle = { workspace = true }
+uuid = { workspace = true, features = ["serde"] }
+jsonwebtoken = "9.3"
+base64 = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+rsa = { version = "0.9", features = ["pem"] }
+rand = "0.8"
+
+[[test]]
+name = "prop_locale_mismatch"
+path = "tests/prop_locale_mismatch.rs"
+
+[[test]]
+name = "prop_idempotency"
+path = "tests/prop_idempotency.rs"
+
+[[test]]
+name = "prop_jwt_signature"
+path = "tests/prop_jwt_signature.rs"
+
+[[test]]
+name = "prop_replay_protection"
+path = "tests/prop_replay_protection.rs"
+
+[[test]]
+name = "integration_acceptance_flow"
+path = "tests/integration_acceptance_flow.rs"

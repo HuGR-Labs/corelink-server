@@ -20,3 +20,8 @@
 
 # Slack alert templates — SRE Lead + AppSec
 /infra/slack/                     @humangr-labs/sre-leads @humangr-labs/appsec
+
+# DPA templates (WI-S19-002) — Legal Counsel sign-off mandatory per
+# locale; see specs/_runbooks/RB-DPA-CHANGE.md.
+/legal/dpa/                       @humangr-labs/legal @humangr-labs/privacy
+/.github/workflows/dpa-legal-review.yml  @humangr-labs/legal @humangr-labs/appsec
