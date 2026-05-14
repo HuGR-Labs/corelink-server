@@ -46,3 +46,11 @@ path = "tests/property_residency_20k.rs"
 [[test]]
 name = "regression_d1_check_constraints"
 path = "tests/regression_d1_check_constraints.rs"
+
+[[test]]
+name = "property_region_pinning_30k"
+path = "tests/property_region_pinning_30k.rs"
+
+[[test]]
+name = "region_adversarial"
+path = "tests/region_adversarial.rs"
