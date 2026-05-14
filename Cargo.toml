@@ -66,6 +66,12 @@ members = [
     "crates/corelink-rotation-worker",
     "crates/corelink-terraform-drift-consumer",
     "crates/corelink-rollout-controller",
+    # S-14 BYOK (WI-S14-004 trait + WI-S14-005 adapters + matrix test)
+    "crates/corelink-byok",
+    "crates/corelink-byok-gcp",
+    "crates/corelink-byok-azure",
+    "crates/corelink-byok-vault",
+    "crates/corelink-byok-matrix-test",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
@@ -186,10 +192,15 @@ corelink-admin-dry-run = { path = "crates/corelink-admin-dry-run" }
 corelink-rotation-adapters = { path = "crates/corelink-rotation-adapters" }
 corelink-rotation-worker = { path = "crates/corelink-rotation-worker" }
 corelink-rollout-controller = { path = "crates/corelink-rollout-controller" }
+# S-14 BYOK
+corelink-byok = { path = "crates/corelink-byok" }
+corelink-byok-gcp = { path = "crates/corelink-byok-gcp" }
+corelink-byok-azure = { path = "crates/corelink-byok-azure" }
+corelink-byok-vault = { path = "crates/corelink-byok-vault" }
 
 # Test / bench
 proptest = "1.5"
-tokio-test = "0.4"
+tokio-test = { version = "0.4" }
 criterion = { version = "0.5", features = ["html_reports"] }
 
 [profile.release]
