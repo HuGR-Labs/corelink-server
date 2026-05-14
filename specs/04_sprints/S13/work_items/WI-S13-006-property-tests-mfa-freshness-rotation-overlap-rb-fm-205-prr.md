@@ -1,12 +1,12 @@
 ---
 id: "WI-S13-006"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
-audit_status: "ACTIVE"
-version: "1.0.0"
+doc_status: "SEALED"
+work_status: "DONE"
+audit_status: "AUDITED"
+version: "1.1.0"
 created: "2026-04-28"
-updated: "2026-04-28"
+updated: "2026-05-14"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-005"]
 parent: "S-13"
@@ -29,7 +29,7 @@ tags: ["wi", "s13", "admin-plane", "property-tests", "rb-fm-205", "rb-fm-201", "
 
 # WI-S13-006 — Property Tests 10k Aggregated (Dual-Approval + Collusion-Rotation + MFA Freshness + Rotation Overlap per Asset Class) + RB-FM-205 (Admin Mistake) + RB-FM-201 (Config Rate-Limit Drop) + RB-FM-206 (Terraform Drift) Dry-Runs + Adversarial Summary 30+ Scenarios + PRR Doc S-13 11 Sign-offs Canonical Ship Gate
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** SEALED · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-13](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -817,6 +817,7 @@ Pré-PRR mandatory check: confirmed canonical reviewers vs pending. Sprint S-13 
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-28 | Gustavo (via Claude Opus 4.7) | Criação WI-S13-006 (cycle 12.S13.0); SOTA full ship gate (RB-FM-205 + RB-FM-201 + RB-FM-206 dry-runs + Security walkthrough + PRR doc 11 sign-offs canonical + property test summary 17+ properties + adversarial summary 31+ scenarios + OWASP ASVS V4 + V5 + V6 + V7 + V14 + SSDF + NIST AC-2 + NIST SP 800-57). |
+| 1.1.0 | 2026-05-14 | Claude Sonnet 4.6 (autonomous) | SEALED: clippy regressions fixed (5 errors in dry-run bins + cross-WI test doc comment); WI-S13-003/004/005 sealed; property test summary 21 props committed; RB-FM-205/201/206 dry-run reports committed (all PASS); security walkthrough P0=0/P1=0/P2=1; adversarial summary 37 scenarios 100% mitigated; OWASP ASVS 51/51 PASS; PRR-S13 CONDITIONALLY_APPROVED 11 sign-offs; RELEASE_NOTES.md; autonomous_state.json updated. |
 
 ## 32. Anti-patterns evitados
 
