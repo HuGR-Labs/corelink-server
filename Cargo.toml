@@ -115,6 +115,11 @@ members = [
     "crates/corelink-lighthouse-tracker",
     # WI-S20-006 synthetic page weekly drill — 3-region 24/7 follow-the-sun + MTTA budget
     "crates/corelink-synthetic-pager",
+    # R2-1 real HTTPS Stripe client implementing corelink-tier-selection::StripeClient
+    # (Checkout / Subscriptions / Customers / Billing Portal + webhook HMAC-SHA256 verify
+    # + idempotent POST retries with exponential backoff + Retry-After). Native-only
+    # (wasm32 gated out — production callers run from apps/server, not CF Worker).
+    "crates/corelink-stripe-real",
 ]
 exclude = [
     "crates/tenant-path/fuzz",

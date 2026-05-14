@@ -2047,6 +2047,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-stripe-real"
+version = "0.1.0"
+dependencies = [
+ "corelink-tier-selection",
+ "hex",
+ "hmac 0.12.1",
+ "proptest",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "subtle",
+ "thiserror 2.0.18",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "corelink-supply-chain-policy"
 version = "0.1.0"
 dependencies = [
@@ -4027,6 +4045,7 @@ checksum = "eddd3ca559203180a307f12d114c268abf583f59b03cb906fd0b3ff8646c1147"
 dependencies = [
  "base64",
  "bytes",
+ "futures-channel",
  "futures-core",
  "futures-util",
  "http 1.4.0",

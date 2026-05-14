@@ -53,6 +53,24 @@ pub struct CheckoutSessionResponse {
     pub url: String,
 }
 
+impl CheckoutSessionResponse {
+    /// Construct a [`CheckoutSessionResponse`] (downstream crates
+    /// cannot brace-init `#[non_exhaustive]` structs across the crate
+    /// boundary; R2-1 real Stripe client needs this).
+    #[must_use]
+    pub fn new(
+        session_id: impl Into<String>,
+        stripe_customer_id: StripeCustomerId,
+        url: impl Into<String>,
+    ) -> Self {
+        Self {
+            session_id: session_id.into(),
+            stripe_customer_id,
+            url: url.into(),
+        }
+    }
+}
+
 /// `checkout.session.completed` event payload (subset; production
 /// will parse the full Stripe event envelope).
 #[derive(Clone, Debug, PartialEq, Eq)]
