@@ -183,7 +183,18 @@ where
         let jwt = sign_receipt(&self.signing_key, &self.kid, &claims)?;
         let ip_hash = accepted_ip_hash(&ctx.client_ip, &self.ip_salt);
 
-        // (5) Persist.
+        // (5) Audit FIRST — charter audit fail-CLOSED ordering:
+        //     lookup → emit_audit → mutate_state (INV-AUDIT-APPEND-ONLY).
+        //     If audit emission fails, we MUST NOT persist (otherwise the
+        //     ledger would record an acceptance with no audit-chain proof).
+        self.audit.emit(DpaAuditEvent::Accepted {
+            tenant_id: ctx.tenant_id.clone(),
+            signup_id: ctx.signup_id.clone(),
+            jti: jti.clone(),
+            locale: stamped.locale,
+        })?;
+
+        // (6) Persist after audit succeeds.
         let record = DpaAcceptanceRecord {
             signup_id: ctx.signup_id.clone(),
             tenant_id: ctx.tenant_id.clone(),
@@ -194,14 +205,7 @@ where
         };
         let _persisted = self.store.insert_idempotent(record)?;
 
-        // (6) Audit + notify (audit is hard fail-CLOSED; notify is soft
-        // — record stays on Err).
-        self.audit.emit(DpaAuditEvent::Accepted {
-            tenant_id: ctx.tenant_id.clone(),
-            signup_id: ctx.signup_id.clone(),
-            jti: jti.clone(),
-            locale: stamped.locale,
-        })?;
+        // (7) Notify is soft — record stays on Err.
         self.notify.send(NotificationEnvelope {
             tenant_id: ctx.tenant_id.clone(),
             jwt_receipt: jwt.clone(),
