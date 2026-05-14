@@ -1,0 +1,82 @@
+---
+id: sdk-python-batch-operations
+title: Batch operations (Python)
+sidebar_label: Batch operations
+description: Run concurrent uploads with bounded parallelism and rate-limit backoff.
+tags: [sdk, python, performance, how-to]
+---
+
+<!-- i18n:TODO (pt-BR) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
+>
+> Canonical EN source: `sdk-python/05-batch-operations.mdx`
+
+# Batch operations
+
+## When to use this guide
+
+You have hundreds to millions of small blobs to upload or download in one
+pass (e.g. a remote-build worker draining its local cache). You want maximum
+throughput without tripping CoreLink's per-tenant rate limits.
+
+If you have a single large blob, prefer streaming
+([02-upload-blob](./02-upload-blob.mdx)).
+
+## Pattern: bounded `asyncio.gather`
+
+```python
+import asyncio
+from pathlib import Path
+from corelink import CoreLinkClient
+
+async def upload_many(paths: list[Path], concurrency: int = 32) -> list[str]:
+    sem = asyncio.Semaphore(concurrency)
+    async with CoreLinkClient(tenant_id="acme-corp") as client:
+        async def one(p: Path) -> str:
+            async with sem:
+                return await client.put(p.read_bytes())
+        return await asyncio.gather(*(one(p) for p in paths))
+```
+
+`concurrency=32` is a safe default; the server-side limit is `256` per PAT.
+
+## Rate-limit handling
+
+`RateLimitError` is automatically retried by the SDK with exponential backoff
++ jitter (3 attempts; capped at 30 s total). Customize:
+
+```python
+from corelink import CoreLinkClient, RetryPolicy
+
+policy = RetryPolicy(max_attempts=5, base_delay_ms=200, max_delay_ms=10_000)
+async with CoreLinkClient(tenant_id="acme-corp", retry=policy) as client:
+    ...
+```
+
+When attempts are exhausted the SDK raises `RateLimitError` — your code
+should drain the in-flight queue and stop submitting new work.
+
+## Pattern: digest-keyed dedupe before upload
+
+```python
+import blake3
+
+async def upload_dedup(paths: list[Path]) -> dict[str, str]:
+    seen: dict[str, str] = {}
+    async with CoreLinkClient(tenant_id="acme-corp") as client:
+        for p in paths:
+            data = p.read_bytes()
+            d = blake3.blake3(data).hexdigest()
+            if d in seen:
+                continue
+            seen[d] = await client.put(data, expected_digest=d)
+    return seen
+```
+
+This cuts upload count by 60-90% on typical build outputs.
+
+## Next steps
+
+- [CI integration](./06-ci-integration.mdx)
+- [Troubleshooting](./07-troubleshooting.mdx)

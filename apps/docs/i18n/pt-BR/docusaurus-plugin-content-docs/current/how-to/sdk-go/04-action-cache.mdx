@@ -1,0 +1,74 @@
+---
+id: sdk-go-action-cache
+title: Action Cache lookup & store (Go)
+sidebar_label: Action Cache
+description: Use the REAPI v2 Action Cache via the Go SDK.
+tags: [sdk, go, ac, reapi, how-to]
+---
+
+<!-- i18n:TODO (pt-BR) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
+>
+> Canonical EN source: `sdk-go/04-action-cache.mdx`
+
+# Action Cache lookup and store
+
+## When to use this guide
+
+You are integrating Bazel, Buck2, or Pants directly via the REAPI v2 Go
+stubs and need a typed wrapper around `ActionCache.GetActionResult` and
+`ActionCache.UpdateActionResult`.
+
+If you only need CAS get/put, see [02-upload-blob](./02-upload-blob.mdx) and
+[03-download-blob](./03-download-blob.mdx).
+
+## Lookup
+
+```go
+func getOrRun(ctx context.Context, cli *corelink.Client, actionDigest string) ([]byte, error) {
+    result, err := cli.ActionCache().Get(ctx, actionDigest)
+    if errors.Is(err, corelink.ErrActionCacheMiss) {
+        return runLocallyAndStore(ctx, cli, actionDigest)
+    }
+    if err != nil {
+        return nil, err
+    }
+    return cli.Get(ctx, result.StdoutDigest)
+}
+```
+
+## Store
+
+```go
+func storeResult(ctx context.Context, cli *corelink.Client,
+    actionDigest string, stdout []byte, exitCode int32,
+) error {
+    stdoutDigest, err := cli.Put(ctx, stdout)
+    if err != nil {
+        return err
+    }
+    return cli.ActionCache().Put(ctx, actionDigest, &corelink.ActionResult{
+        StdoutDigest: stdoutDigest,
+        ExitCode:     exitCode,
+    })
+}
+```
+
+## TTL and eviction
+
+```go
+err := cli.ActionCache().Put(ctx, actionDigest, result,
+    corelink.WithTTL(24*time.Hour),
+)
+```
+
+## Cache poisoning protection
+
+Server-side verification rejects any `ActionResult` whose declared
+`stdout_digest` does not match the bytes already stored under that digest.
+You cannot lie about what an action produced.
+
+## Next steps
+
+- [CI integration](./06-ci-integration.mdx)

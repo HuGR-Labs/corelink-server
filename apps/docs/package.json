@@ -15,6 +15,7 @@
     "write-heading-ids": "docusaurus write-heading-ids",
     "docs:gen": "tsx scripts/gen-reapi-docs.ts",
     "docs:gen:check": "tsx scripts/gen-reapi-docs.ts --check",
+    "i18n-coverage": "tsx scripts/i18n-coverage.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint --max-warnings=0 tests",
     "test": "vitest run",

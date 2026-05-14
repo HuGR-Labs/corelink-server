@@ -1,0 +1,55 @@
+---
+id: python-get-capabilities
+title: Python — GetCapabilities
+sidebar_label: Python · GetCapabilities
+---
+
+<!-- i18n:TODO (es-419) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
+>
+> Canonical EN source: `Capabilities/python-get-capabilities.mdx`
+
+# Python — `Capabilities.GetCapabilities`
+
+Discover server-side limits (max batch size, digest functions, compressors) before issuing CAS writes.
+
+## Prerequisites
+
+- `pip install corelink-py`
+- `CORELINK_PAT` exported
+
+## Code
+
+```python
+import asyncio, os
+from corelink import CoreLinkClient
+
+async def main() -> None:
+    async with CoreLinkClient(
+        endpoint="https://acme-dev.corelink.dev",
+        pat=os.environ["CORELINK_PAT"],
+    ) as client:
+        caps = await client.capabilities.get()
+        cc = caps.cache_capabilities
+        print(f"max_batch_total_size_bytes = {cc.max_batch_total_size_bytes}")
+        print(f"digest functions = {[df.name for df in cc.digest_functions]}")
+        print(f"compressors = {[c.name for c in cc.supported_compressors]}")
+
+asyncio.run(main())
+```
+
+## Expected output
+
+```text
+max_batch_total_size_bytes = 4194304
+digest functions = ['SHA256', 'BLAKE3']
+compressors = ['IDENTITY', 'ZSTD']
+```
+
+## Common errors
+
+| Status | Error taxonomy | Cause |
+| --- | --- | --- |
+| `UNAUTHENTICATED` | `COR_AUTH_PAT_INVALID` | PAT expired or scope mismatch. |
+| `UNAVAILABLE` | `COR_NET_TRANSIENT` | Server pod restarting; retry with backoff. |

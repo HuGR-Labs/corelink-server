@@ -152,11 +152,10 @@ Closing ship gate consolida 7 deliverables canonical para S-20 GA gate: docs pro
 PRR LOW_RISK 3 sign-offs canonical (Owner + Final Approver + Docs lead) + cross-functional publish gate separate (não main PRR per spec contract §10 anti-scope; non-skippable per Waiver policy §19). Cross-functional sign-offs (CF-1 pricing + CF-2 security + CF-3 compliance) collected em WI-S18-004; closing WI verifies + documenta em PRR.
 
 CONDITIONALLY_APPROVED waivers (typical em LOW_RISK lane S-18 per spec contract §19):
-- 3 locales → 2 locales GA (en-US + pt-BR; es-419 no Q1 pós-GA com plan) + ADR + Docs lead + Product.
-- 5-dev UX research passing → 3-dev sample com plan to expand + ADR.
-- SBOM download → SBOM via support email request com NDA (mais friction; less open) + ADR.
+- W-X — Native-speaker review of stub TODO-marked translations pending D+10 (D-day = first external user onboarding); severity LOW. 3-locale presence requirement (en-US + pt-BR + es-419) is satisfied and **never** waived (per spec contract §19 — non-waivable).
+- 5-dev UX research passing → 3-dev sample com plan to expand + ADR (per spec contract §19 — waivable).
 
-Note: Cross-functional review gate (Finance + Legal + Privacy + Security) em pages relevant + Lighthouse ≥ 95 + WCAG 2.2 AA + auto-gen REAPI reference são **non-waivable** per spec contract §19.
+Note: Cross-functional review gate (Finance + Legal + Privacy + Security) em pages relevant + Lighthouse ≥ 95 + WCAG 2.2 AA + auto-gen REAPI reference + 3-locale i18n (en-US + pt-BR + es-419, Lote 10.18 P1 tightening) + SBOM canonical public download (S-12 SLSA L3 release artifact; NDA-gated path NOT permitted) são **non-waivable** per spec contract §19.
 
 **Risk justification LOW_RISK lane (zero forcing factors)**:
 - Closing WI; LOW_RISK lane single-phase SEAL D+10.
@@ -238,9 +237,11 @@ Closing ship gate WI; LOW_RISK lane.
      - CF-3 `/compliance`: Legal + Privacy Officer sign-off.
    - **Promotion gate decision**: `APPROVED` | `CONDITIONALLY_APPROVED` (com waivers + ADR + expiry) | `REJECTED`.
    - **CONDITIONALLY_APPROVED waivers** (typical em LOW_RISK S-18 per spec contract §19):
-     - 3 locales → 2 locales GA (en-US + pt-BR; es-419 no Q1 pós-GA com plan) + ADR + Docs lead + Product.
-     - 5-dev UX research passing → 3-dev sample com plan to expand + ADR.
-     - SBOM download → SBOM via support email request com NDA (mais friction; less open) + ADR.
+     - W-X — Native-speaker review of stub TODO-marked translations pending D+10 (D-day = first external user onboarding); severity LOW. Never waives the 3-locale presence requirement (non-waivable per spec contract §19).
+     - 5-dev UX research passing → 3-dev sample com plan to expand + ADR (waivable per spec contract §19).
+   - **Non-waivable items** (per spec contract §19 — confirmed):
+     - 3-locale i18n presence (en-US + pt-BR + es-419) — Lote 10.18 P1 tightening; prior "3 → 2 locales" allowance removida.
+     - SBOM canonical public download (S-12 SLSA L3 release artifact) — Lote 10.18 P1 tightening; prior "SBOM via support email com NDA" allowance removida; this WI links to S-12 release artifacts (no duplicate SBOM publication path).
 
 8. **Evidence pack** committed em `specs/_audits/`:
    - i18n native speaker review report (`2026-XX-XX-i18n-native-speaker-review.md`).
@@ -348,11 +349,14 @@ Feature: S-18 closing ship gate single-phase SEAL D+10
   Scenario: CONDITIONALLY_APPROVED waiver (typical LOW_RISK)
     Given S-18 close attempts CONDITIONALLY_APPROVED com waiver
     When waiver attempted
-    Then 3 locales → 2 locales GA waivable (com ADR + Docs lead + Product) per spec contract §19
+    Then native-speaker review of stub TODO-marked translations pending D+10 waivable (LOW severity; never waives 3-locale presence) per spec contract §19
+    And 5-dev UX research → 3-dev sample com plan to expand waivable (com ADR) per spec contract §19
     And cross-functional review gate non-waivable (per spec contract §19)
     And Lighthouse ≥ 95 non-waivable
     And WCAG 2.2 AA non-waivable
     And auto-gen REAPI reference non-waivable
+    And 3-locale i18n presence (en-US + pt-BR + es-419) non-waivable (Lote 10.18 P1; per spec contract §19)
+    And SBOM canonical public download non-waivable (S-12 SLSA L3 release artifact; Lote 10.18 P1; per spec contract §19)
 ```
 
 ## 9. Design Decisions
@@ -376,19 +380,20 @@ Feature: S-18 closing ship gate single-phase SEAL D+10
 - Cross-functional sign-offs (Finance/Legal/Privacy Officer/Security lead per relevant page) count toward separate publish gate (não main PRR LOW_RISK).
 - Non-skippable per Waiver policy §19.
 
-### 9.4 Why Lighthouse ≥ 95 + WCAG 2.2 AA + auto-gen REAPI reference non-waivable
+### 9.4 Why Lighthouse ≥ 95 + WCAG 2.2 AA + auto-gen REAPI reference + 3-locale i18n + SBOM canonical public download non-waivable
 
-- Per spec contract §19 Waiver policy: Cross-functional review gate (Finance + Legal + Privacy + Security) em pages relevant + Lighthouse ≥ 95 + WCAG 2.2 AA + Auto-gen REAPI reference são non-waivable.
+- Per spec contract §19 Waiver policy: Cross-functional review gate (Finance + Legal + Privacy + Security) em pages relevant + Lighthouse ≥ 95 + WCAG 2.2 AA + Auto-gen REAPI reference + 3-locale i18n (en-US + pt-BR + es-419) + SBOM canonical public download são non-waivable.
 - UX baseline for dev tools (Lighthouse).
 - Accessibility regulatory baseline (WCAG 2.2 AA).
 - Drift prevention (auto-gen REAPI reference).
+- LGPD pt-BR canonical + LATAM es-419 alignment com S-11/S-15/S-16 mandatory (3-locale i18n; Lote 10.18 P1 tightening — prior "3 → 2 locales" allowance removida).
+- S-12 SLSA L3 transparency baseline (SBOM canonical public download; Lote 10.18 P1 tightening — prior "SBOM via support email com NDA" allowance removida; NDA-gated SBOM = enterprise procurement friction inaceitável).
 
-### 9.5 Why CONDITIONALLY_APPROVED waivers waivable (3 locales → 2 + 5-dev UX research → 3-dev + SBOM downloadable → email request com NDA)
+### 9.5 Why CONDITIONALLY_APPROVED waivers waivable (native-speaker review D+10 + 5-dev UX research → 3-dev)
 
 - Per spec contract §19 Waiver policy waivable items.
-- 3 locales → 2 locales GA (es-419 no Q1 pós-GA com plan) waivable com Docs lead + Product + ADR.
+- Native-speaker review of stub TODO-marked translations waivable until D+10 (D-day = first external user onboarding); severity LOW; never waives the 3-locale presence requirement (which is non-waivable per spec contract §19).
 - 5-dev UX research passing → 3-dev sample com plan to expand waivable com ADR.
-- SBOM download → SBOM via support email request com NDA (mais friction; less open) waivable com ADR.
 
 ### 9.6 Why UX research 5 dev sample (não 10 ou 3)
 

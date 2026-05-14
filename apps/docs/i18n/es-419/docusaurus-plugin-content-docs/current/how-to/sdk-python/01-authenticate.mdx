@@ -1,0 +1,100 @@
+---
+id: sdk-python-authenticate
+title: Authenticate (Python)
+sidebar_label: Authenticate
+description: Configure a Personal Access Token (PAT) for the corelink-py SDK.
+tags: [sdk, python, auth, how-to]
+---
+
+<!-- i18n:TODO (es-419) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
+>
+> Canonical EN source: `sdk-python/01-authenticate.mdx`
+
+# Authenticate the Python SDK
+
+## When to use this guide
+
+You have installed `corelink-py` and need to call any cache-mutating or
+cache-reading API. A PAT is required for every request except `corelink.ping`.
+
+If you only need to read the current SDK version, see
+[Troubleshooting](./07-troubleshooting.mdx).
+
+## Prerequisites
+
+- Python 3.10+ (`asyncio` is used by every example in this section).
+- `pip install corelink-py` (wheels published on PyPI; pyO3 bindings).
+- A CoreLink tenant. Issue a PAT at `https://app.corelink.dev/tokens`.
+
+## Recommended: env var
+
+The SDK reads `CORELINK_PAT` automatically:
+
+```bash
+export CORELINK_PAT="corelink_dev_t_xxx.xxx.xxx"
+```
+
+```python
+import asyncio
+from corelink import CoreLinkClient
+
+async def main() -> None:
+    async with CoreLinkClient(tenant_id="acme-corp") as client:
+        info = await client.whoami()
+        print(info.tenant_id, info.scopes)
+
+asyncio.run(main())
+```
+
+The `with` block ensures the underlying HTTP/2 pool is closed cleanly.
+
+## Alternative: config file
+
+For local development, write `~/.corelink/config.toml`:
+
+```toml
+[auth]
+pat = "corelink_dev_t_xxx.xxx.xxx"
+
+[defaults]
+tenant_id = "acme-corp"
+```
+
+The SDK falls back to this file if `CORELINK_PAT` is not set.
+
+## Forbidden: PAT as a function argument in shipped code
+
+Do not commit code that hard-codes a PAT:
+
+```python
+# DO NOT DO THIS
+client = CoreLinkClient(pat="corelink_dev_t_xxx.xxx.xxx", tenant_id="acme-corp")
+```
+
+This violates CTRL-CRED-001. Use env vars or config files only.
+
+## Verify
+
+```python
+import asyncio
+from corelink import CoreLinkClient, AuthError
+
+async def verify() -> None:
+    try:
+        async with CoreLinkClient() as client:
+            await client.whoami()
+            print("ok")
+    except AuthError as e:
+        print(f"auth failed: {e.code}")
+
+asyncio.run(verify())
+```
+
+Expected exit code `0` on success; `1` on `AuthError`.
+
+## Next steps
+
+- [Upload a blob](./02-upload-blob.mdx)
+- [Download a blob](./03-download-blob.mdx)

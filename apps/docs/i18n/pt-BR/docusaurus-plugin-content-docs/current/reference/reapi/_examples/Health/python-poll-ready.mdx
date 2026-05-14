@@ -1,0 +1,55 @@
+---
+id: python-poll-ready
+title: Python — poll until SERVING
+sidebar_label: Python · poll ready
+---
+
+<!-- i18n:TODO (pt-BR) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
+>
+> Canonical EN source: `Health/python-poll-ready.mdx`
+
+# Python — poll until `SERVING`
+
+Block until the server becomes ready (useful for integration tests).
+
+## Code
+
+```python
+import asyncio, os, time
+from corelink import CoreLinkClient
+
+DEADLINE_S = 30
+
+async def main() -> None:
+    async with CoreLinkClient(
+        endpoint="https://acme-dev.corelink.dev",
+        pat=os.environ["CORELINK_PAT"],
+    ) as client:
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < DEADLINE_S:
+            try:
+                s = await client.health.check()
+                if s.name == "SERVING":
+                    print(f"ready in {time.monotonic() - t0:.1f}s")
+                    return
+            except Exception:
+                pass
+            await asyncio.sleep(0.5)
+        raise TimeoutError(f"not ready within {DEADLINE_S}s")
+
+asyncio.run(main())
+```
+
+## Expected output
+
+```text
+ready in 1.4s
+```
+
+## Common errors
+
+| Failure | Cause | Fix |
+| --- | --- | --- |
+| `TimeoutError` | Server never reached `SERVING` | Inspect server logs; verify load balancer health checks |

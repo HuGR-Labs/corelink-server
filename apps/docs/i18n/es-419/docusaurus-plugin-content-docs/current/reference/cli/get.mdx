@@ -1,0 +1,84 @@
+---
+id: cli-get
+title: corelink get
+sidebar_label: get
+description: Download a blob by digest with client-side BLAKE3 verify.
+tags: [reference, cli, get]
+---
+
+<!-- i18n:TODO (es-419) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
+>
+> Canonical EN source: `cli/get.mdx`
+
+# `corelink get`
+
+Download a blob by digest. The CLI always performs client-side BLAKE3
+verification (CTRL-CAS-002); there is no `--no-verify` flag.
+
+## Synopsis
+
+```bash
+corelink get <DIGEST> [-o <FILE>] [--output <FORMAT>]
+```
+
+## Arguments
+
+| Arg | Required | Description |
+|---|---|---|
+| `<DIGEST>` | yes | 64-character BLAKE3 hex digest. |
+
+## Flags
+
+| Flag | Required | Default | Description |
+|---|---|---|---|
+| `-o`, `--output-file` | no | stdout | Destination file. If verify fails the partial file is deleted. |
+| `--output` | no | `text` | `text` or `json`. JSON is emitted on stderr; bytes go to stdout/`-o`. |
+
+## Examples
+
+To a file:
+
+```bash
+corelink get 0123...cdef -o ./restored.bin
+```
+
+To stdout (binary):
+
+```bash
+corelink get 0123...cdef > ./restored.bin
+```
+
+JSON status (bytes still go to `-o`):
+
+```bash
+corelink get 0123...cdef -o ./out.bin --output json
+```
+
+## JSON schema
+
+```json
+{
+  "ok": true,
+  "subcommand": "get",
+  "digest": "0123...cdef",
+  "size_bytes": 1048576,
+  "verify_ms": 23
+}
+```
+
+## Exit codes
+
+| Code | Meaning |
+|---|---|
+| `0` | Downloaded + verified. |
+| `1` | Network or auth failure. |
+| `2` | Argument error. |
+| `3` | Verify mismatch (`COR_VERIFY_001`). |
+| `4` | Not found (`COR_CAS_NOT_FOUND`). |
+
+## See also
+
+- [`put`](./put.mdx)
+- [`stat`](./stat.mdx)

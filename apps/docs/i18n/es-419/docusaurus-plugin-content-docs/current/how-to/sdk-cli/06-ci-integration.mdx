@@ -1,0 +1,89 @@
+---
+id: sdk-cli-ci-integration
+title: CI integration (CLI)
+sidebar_label: CI integration
+description: Run corelink commands inside GitHub Actions, GitLab CI, and CircleCI.
+tags: [sdk, cli, ci, how-to]
+---
+
+<!-- i18n:TODO (es-419) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
+>
+> Canonical EN source: `sdk-cli/06-ci-integration.mdx`
+
+# CI integration
+
+## When to use this guide
+
+You want CoreLink in your build pipeline but do not want to add a language
+runtime — your job just needs to call the `corelink` binary.
+
+## GitHub Actions
+
+```yaml
+# .github/workflows/build.yml
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      CORELINK_PAT: ${{ secrets.CORELINK_PAT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: humangr-labs/setup-corelink@v1
+        with:
+          version: "latest"
+      - run: corelink doctor --json
+      - run: corelink bench --read --output json
+```
+
+`humangr-labs/setup-corelink` installs the signed binary, verifies its
+SLSA attestation, and adds it to `$PATH`.
+
+## GitLab CI
+
+```yaml
+build:
+  image: ubuntu:24.04
+  variables:
+    CORELINK_PAT: $CORELINK_PAT  # masked CI variable
+  before_script:
+    - curl -sSL https://corelink.dev/install.sh | sh
+    - export PATH="$HOME/.corelink/bin:$PATH"
+  script:
+    - corelink doctor --output json
+```
+
+## CircleCI
+
+```yaml
+version: 2.1
+jobs:
+  build:
+    docker:
+      - image: cimg/base:current
+    environment:
+      CORELINK_PAT: $CORELINK_PAT
+    steps:
+      - checkout
+      - run: curl -sSL https://corelink.dev/install.sh | sh
+      - run: corelink doctor --output json
+```
+
+## Fail-on-regression gate
+
+```bash
+corelink bench --read --output json \
+  | jq -e '.p99_ms < 500' \
+  || { echo "p99 regressed"; exit 1; }
+```
+
+## Job-scoped PATs
+
+Mint a short-lived PAT per pipeline via the admin API and store as a CI
+secret. See [CLI reference](../../reference/cli/index.mdx).
+
+## Next steps
+
+- [Batch operations](./05-batch-operations.mdx)
+- [Troubleshooting](./07-troubleshooting.mdx)

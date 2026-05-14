@@ -1,0 +1,73 @@
+---
+id: cli-version
+title: corelink version
+sidebar_label: version
+description: Print version, git revision, and SLSA attestation URL.
+tags: [reference, cli, version]
+---
+
+<!-- i18n:TODO (pt-BR) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
+>
+> Canonical EN source: `cli/version.mdx`
+
+# `corelink version`
+
+Print precise build metadata: semver, git revision, and a link to the
+SLSA-3 attestation for the running binary.
+
+## Synopsis
+
+```bash
+corelink version [--output <FORMAT>]
+```
+
+## Flags
+
+| Flag | Required | Default | Description |
+|---|---|---|---|
+| `--output` | no | `text` | `text` or `json`. |
+
+## Examples
+
+```bash
+corelink version
+```
+
+```text
+corelink 1.4.2
+git_rev:  9c3f1ab
+built:    2026-04-30T11:02:33Z
+slsa:     https://attest.corelink.dev/9c3f1ab.intoto.jsonl
+```
+
+```bash
+corelink version --output json
+```
+
+```json
+{
+  "ok": true,
+  "subcommand": "version",
+  "version": "1.4.2",
+  "git_rev": "9c3f1ab",
+  "built_at": "2026-04-30T11:02:33Z",
+  "slsa_attestation_url": "https://attest.corelink.dev/9c3f1ab.intoto.jsonl"
+}
+```
+
+## Notes
+
+- This subcommand does **not** require a PAT.
+- The `slsa_attestation_url` is stable for the binary's lifetime and is the
+  authoritative provenance source — verify it before trusting an
+  out-of-band download.
+
+## Exit codes
+
+`0` success.
+
+## See also
+
+- [`doctor`](./doctor.mdx)

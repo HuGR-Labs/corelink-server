@@ -1,0 +1,64 @@
+---
+title: "Compliance overview"
+slug: "/compliance"
+description: "CoreLink stance on LGPD, GDPR, SOC 2, ISO 27001, and HIPAA."
+draft: true
+cross_functional_review: TBD
+pending_signoff:
+  - "Legal"
+  - "DPO"
+sources:
+  - "specs/03_architecture/compliance_matrix.md"
+last_updated: "2026-05-14"
+---
+
+<!-- i18n:TODO (es-419) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
+>
+> Canonical EN source: `compliance/index.mdx`
+
+import { DraftBanner } from "../../../src/components/DraftBanner";
+
+<DraftBanner pageType="compliance" />
+
+# Compliance overview
+
+> **DRAFT — pending Legal + Finance + Security review.** Nothing on this page is
+> a contractual commitment until each statement is signed off by the named
+> cross-functional reviewers and `draft: true` is removed.
+
+CoreLink is built so the compliance posture matches the operational truth on
+the day GA ships, not a marketing-only narrative. The control catalog,
+trust-boundary diagram, and STRIDE analysis that back every claim below live in
+the internal architecture corpus (`specs/03_architecture/compliance_matrix.md`
+and `security_model.md`).
+
+## Frameworks at a glance
+
+| Framework | Scope | State today | Target |
+| --- | --- | --- | --- |
+| SOC 2 Type I | Security + Availability + Confidentiality | Planned | 6 months post-GA |
+| SOC 2 Type II | Adds Privacy + Processing Integrity | Planned | 12–18 months post-Type I |
+| ISO/IEC 27001:2022 | ISMS — CoreLink CAS/AC scope | Planned | 18 months post-Type II |
+| LGPD (Brazil) | `sam` region operations | Compliance by design | Phase 1 (GA) |
+| GDPR (EU) | `weur` region operations | Compliance by design | Phase 1 (GA) |
+| HIPAA | US healthcare workloads | Conditional (BAA required) | On enterprise demand |
+| PCI-DSS | Out of scope (Stripe processes cards) | N/A | N/A |
+
+## Anchoring documents
+
+- [SOC 2 Type I → Type II timeline](./soc2-timeline)
+- [SBOM access for procurement](./sbom-access)
+- [Penetration testing — executive summary placeholder](./pentest-summary)
+- [Data Processing Addendum (DPA) and changelog](./dpa)
+- [Sub-processor list](./sub-processors)
+
+## Cross-functional review checklist
+
+- [ ] Legal — confirm every framework claim above is supported by current control evidence.
+- [ ] DPO — confirm LGPD and GDPR scoping language for EU and Brazilian customers.
+- [ ] Security Lead — confirm SOC 2 scope reflects current control catalog.
+
+Until the boxes above are signed off in `apps/docs/CONTENT-REVIEW.md`, treat
+this page as informational only.

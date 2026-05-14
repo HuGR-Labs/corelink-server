@@ -1,0 +1,41 @@
+---
+id: node-check
+title: Node — Health.Check
+sidebar_label: Node · Check
+---
+
+<!-- i18n:TODO (pt-BR) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
+>
+> Canonical EN source: `Health/node-check.mdx`
+
+# Node / TypeScript — `Health.Check`
+
+## Code
+
+```ts
+import { CoreLinkClient } from "@corelink/client";
+
+const client = new CoreLinkClient({
+  endpoint: "https://acme-dev.corelink.dev",
+  pat: process.env.CORELINK_PAT!,
+});
+
+const status = await client.health.check();
+console.log(`server status = ${status}`);
+if (status !== "SERVING") process.exit(1);
+```
+
+## Expected output
+
+```text
+server status = SERVING
+```
+
+## Common errors
+
+| Status | Error taxonomy | Cause |
+| --- | --- | --- |
+| `UNAVAILABLE` | `COR_NET_TRANSIENT` | Server restarting; retry. |
+| `NOT_SERVING` | `COR_HEALTH_NOT_SERVING` | Drain — reconnect to another region. |

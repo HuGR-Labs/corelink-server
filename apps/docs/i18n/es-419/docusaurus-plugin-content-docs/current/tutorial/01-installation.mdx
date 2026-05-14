@@ -1,0 +1,67 @@
+---
+id: 01-installation
+title: Install the CoreLink CLI
+sidebar_label: 1. Installation
+description: Install the CoreLink CLI on macOS, Linux, or Windows in under a minute.
+---
+
+<!-- i18n:TODO (es-419) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
+>
+> Canonical EN source: `tutorial/01-installation.mdx`
+
+# Install the CoreLink CLI
+
+The `corelink` CLI ships as a single statically-linked binary. Pick your platform.
+
+## macOS (Apple Silicon or Intel)
+
+```bash
+brew install humangr-labs/tap/corelink
+```
+
+Or download a release tarball:
+
+```bash
+curl -fsSL https://releases.corelink.dev/cli/latest/corelink-darwin-arm64.tar.gz \
+  | tar -xz -C /usr/local/bin
+```
+
+## Linux (x86_64, arm64)
+
+```bash
+curl -fsSL https://releases.corelink.dev/cli/latest/corelink-linux-amd64.tar.gz \
+  | sudo tar -xz -C /usr/local/bin
+```
+
+## Windows (PowerShell)
+
+```powershell
+winget install humangr-labs.corelink
+```
+
+Or download `corelink-windows-amd64.zip` from the releases page and place `corelink.exe` on your `PATH`.
+
+## Verify
+
+```bash
+corelink version
+# corelink 0.1.0 (build sha=...)
+corelink doctor
+# OK — config dir writable, network reachable, no PAT configured yet
+```
+
+`corelink doctor` confirms the binary works locally. The next step ([First PAT](./02-first-pat.mdx)) creates the personal access token the CLI needs to authenticate to your tenant.
+
+## Subcommand reference (quick map)
+
+| Command | Purpose |
+| --- | --- |
+| `corelink ls` | List blobs in your tenant CAS. |
+| `corelink get` | Download a blob by digest. |
+| `corelink put` | Upload a file as a blob (client-verify default on). |
+| `corelink stat` | Stat a blob (presence, size, last seen). |
+| `corelink bench` | Run the built-in put/get microbenchmark. |
+| `corelink doctor` | Diagnose local environment. |
+| `corelink version` | Print build version + commit SHA. |

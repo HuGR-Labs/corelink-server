@@ -1,0 +1,85 @@
+---
+id: sdk-go-download-blob
+title: Download a blob (Go)
+sidebar_label: Download a blob
+description: Fetch a blob by digest with default-on BLAKE3 client-side verify.
+tags: [sdk, go, cas, how-to]
+---
+
+<!-- i18n:TODO (es-419) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
+>
+> Canonical EN source: `sdk-go/03-download-blob.mdx`
+
+# Download a blob
+
+## When to use this guide
+
+You hold a BLAKE3 digest and need the materialized bytes. The Go SDK verifies
+the digest client-side by default (CTRL-CAS-002) — corrupted bytes never
+escape `Get`.
+
+## Prerequisites
+
+- A known BLAKE3 digest.
+- Authentication configured.
+
+## Minimal example
+
+```go
+func download(ctx context.Context, cli *corelink.Client, digest string) ([]byte, error) {
+    return cli.Get(ctx, digest)
+}
+```
+
+If verification fails, the SDK returns `*corelink.DigestMismatchError` and
+**no bytes** — you cannot accidentally use unverified data.
+
+## Streaming download
+
+```go
+func streamToFile(ctx context.Context, cli *corelink.Client, digest, dest string) error {
+    rc, err := cli.GetStream(ctx, digest)
+    if err != nil {
+        return err
+    }
+    defer rc.Close()
+
+    f, err := os.Create(dest)
+    if err != nil {
+        return err
+    }
+    defer f.Close()
+
+    if _, err := io.Copy(f, rc); err != nil {
+        return err
+    }
+    // rc.Close() validates the BLAKE3 root; an error here means the file is
+    // corrupt and must be deleted by the caller before swapping into place.
+    return rc.Close()
+}
+```
+
+## Opting out of verification
+
+**Strongly discouraged**. Use the `WithoutVerify` option only for transport
+latency benchmarks. The SDK emits a structured warning log
+`corelink.client.verify_disabled` per CTRL-CAS-002.
+
+```go
+data, err := cli.Get(ctx, digest, corelink.WithoutVerify())
+```
+
+## Errors
+
+| Error type | Meaning |
+|---|---|
+| `*corelink.NotFoundError` | Digest not in tenant CAS |
+| `*corelink.DigestMismatchError` | Bytes corrupted; do not use |
+| `*corelink.RegionError` | Blob lives elsewhere; inspect `corelink stat` |
+
+## Next steps
+
+- [Action Cache](./04-action-cache.mdx)
+- [Troubleshooting](./07-troubleshooting.mdx)

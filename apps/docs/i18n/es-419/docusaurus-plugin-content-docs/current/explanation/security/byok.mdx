@@ -1,0 +1,69 @@
+---
+title: "BYOK — customer-managed keys"
+slug: "/security/byok"
+description: "Bring-your-own-key support across AWS KMS, GCP KMS, Azure Key Vault, and HashiCorp Vault."
+draft: true
+cross_functional_review: TBD
+pending_signoff:
+  - "Security Lead"
+  - "Legal"
+sources:
+  - "specs/03_architecture/security_model.md#7-criptografia-algoritmos-chaves-rotação"
+  - "compliance/byok-fips-matrix.md"
+last_updated: "2026-05-14"
+---
+
+<!-- i18n:TODO (es-419) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
+>
+> Canonical EN source: `security/byok.mdx`
+
+import { DraftBanner } from "../../../src/components/DraftBanner";
+
+<DraftBanner pageType="security" />
+
+# BYOK — customer-managed keys
+
+> **DRAFT — pending Legal + Finance + Security review.** Provider availability
+> below tracks the engineering rollout in `compliance/byok-fips-matrix.md` and
+> may change before GA.
+
+CoreLink Enterprise tenants can supply their own root key in a KMS they own.
+CoreLink uses envelope encryption: a per-tenant data encryption key (DEK) is
+generated locally, used to encrypt blobs, and then wrapped by the customer's
+KMS root key. Without the customer's KMS, ciphertext is unrecoverable.
+
+## Supported KMS providers
+
+| Provider | FIPS posture | Status |
+| --- | --- | --- |
+| AWS KMS | FIPS 140-3 Level 1 (CMVP #4523) | Available |
+| GCP Cloud KMS | FIPS 140-2 Level 1 | Rollout in progress (WI-S14-005) |
+| Azure Key Vault Premium (HSM) | FIPS 140-2 Level 2 | Rollout in progress (WI-S14-005) |
+| HashiCorp Vault Enterprise (FIPS build) | FIPS 140-3 Level 1 | Rollout in progress (WI-S14-005) |
+
+Provider-by-provider validation evidence lives in `compliance/byok-fips-matrix.md`
+and is reviewed quarterly.
+
+## Operational guarantees
+
+- **Key revocation** — if the customer revokes our IAM grant on the root key,
+  CoreLink cannot decrypt new blob fetches within one DEK cache TTL (≤ 60s).
+- **Rotation** — Tenant Derivation Keys rotate annually; the customer can
+  rotate the underlying root key on any schedule and CoreLink re-wraps DEKs
+  during the next maintenance window.
+- **Break-glass** — `RB-KEY-COMPROMISE` runbook applies; on suspected
+  compromise CoreLink rotates DEKs and invalidates tokens emitted under the
+  compromised key.
+
+## Limitations
+
+- BYOK is available on the **Enterprise** tier (see [pricing](../../pricing)).
+- BYOK does not change the SOC 2 or ISO 27001 scope of CoreLink itself.
+- BYOK does not exempt the customer from RFC 6962 audit-log retention.
+
+## Cross-functional review checklist
+
+- [ ] Security Lead — confirm provider list matches current engineering state.
+- [ ] Legal — confirm public BYOK language is consistent with the DPA.

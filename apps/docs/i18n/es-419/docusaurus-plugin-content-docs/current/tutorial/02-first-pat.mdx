@@ -1,0 +1,67 @@
+---
+id: 02-first-pat
+title: Create your first PAT
+sidebar_label: 2. First PAT
+description: Sign up for a CoreLink tenant and mint your first personal access token.
+---
+
+<!-- i18n:TODO (es-419) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
+>
+> Canonical EN source: `tutorial/02-first-pat.mdx`
+
+# Create your first PAT
+
+CoreLink authenticates every cache read and write with a personal access token (PAT). PATs are tenant-scoped, never leave the admin UI in plaintext after creation, and use the canonical format documented in the [auth model](../reference/reapi/index.mdx).
+
+## 1. Sign up
+
+1. Open [https://app.corelink.dev/sign-up](https://app.corelink.dev/sign-up) and create an account (Clerk-backed; SSO available on the Team plan).
+2. Confirm your email; you land on the **Org overview** page.
+3. Pick a tenant slug — the slug becomes the subdomain `<slug>.corelink.dev`.
+
+## 2. Create the PAT
+
+1. In the admin UI sidebar, choose **Settings → Tokens**.
+2. Click **New PAT**.
+3. Pick:
+   - **Environment**: `dev`, `staging`, or `prod`.
+   - **Scope**: `cache:read`, `cache:write`, or both.
+   - **Expiry**: 30 / 90 / 365 days (or custom).
+4. Click **Create**. The token is shown **once** — copy it.
+
+## 3. Token format
+
+CoreLink PATs follow the canonical format defined in the spec:
+
+```
+corelink_<env>_<token_id>.<random_secret>.<hmac_sig>
+```
+
+Example placeholder used throughout this documentation:
+
+```
+corelink_dev_t_xxx.xxx.xxx
+```
+
+:::warning Never commit a real PAT
+The placeholder `corelink_dev_t_xxx.xxx.xxx` is intentional. Real PATs must live in environment variables, secret managers, or your CI provider's secret store — never in source code.
+:::
+
+## 4. Export it
+
+```bash
+export CORELINK_PAT="corelink_dev_t_xxx.xxx.xxx"  # replace with your real token
+```
+
+Add the line to your shell profile (`~/.zshrc`, `~/.bashrc`) for persistence, or load it through a secret manager (`direnv`, `1password`, `op`).
+
+## 5. Verify
+
+```bash
+corelink doctor --check-auth
+# OK — PAT valid, tenant=acme-dev, scopes=[cache:read,cache:write], expires in 90d
+```
+
+Next, wire it into your build system: [Bazel quickstart](./03-bazel-quickstart.mdx), [Buck2 quickstart](./04-buck2-quickstart.mdx), or the [native SDKs](./05-native-ffi-quickstart.mdx).

@@ -73,6 +73,28 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Bundle size assertion (≤ 250 KB main bundle)
+        run: |
+          # R-S18-X — main bundle ≤ 250 KB budget (S-18 perf target).
+          # Docusaurus emits the runtime/main chunk under build/assets/js/main.*.js.
+          main_file=$(find build/assets/js -maxdepth 1 -name "main.*.js" | head -1 || true)
+          if [ -z "$main_file" ]; then
+            # Fallback: largest single JS asset (Docusaurus chunk naming can vary).
+            main_file=$(find build/assets/js -maxdepth 1 -name "*.js" -print0 \
+              | xargs -0 du -k 2>/dev/null | sort -nr | head -1 | awk '{print $2}')
+          fi
+          if [ -z "$main_file" ] || [ ! -f "$main_file" ]; then
+            echo "::error::Bundle-size assertion could not locate main bundle under build/assets/js"
+            ls -lah build/assets/js || true
+            exit 1
+          fi
+          main_kb=$(du -k "$main_file" | awk '{print $1}')
+          echo "Main bundle: $main_file = ${main_kb} KB (budget: 250 KB)"
+          if [ "$main_kb" -gt 250 ]; then
+            echo "::error::Main bundle ${main_kb} KB exceeds 250 KB budget (R-S18-X)"
+            exit 1
+          fi
+
       - name: Upload build artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

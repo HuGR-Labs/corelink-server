@@ -1,0 +1,84 @@
+---
+id: sdk-cli-troubleshooting
+title: Troubleshooting (CLI)
+sidebar_label: Troubleshooting
+description: Diagnose corelink CLI failures with the built-in doctor command.
+tags: [sdk, cli, debug, how-to]
+---
+
+<!-- i18n:TODO (es-419) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
+>
+> Canonical EN source: `sdk-cli/07-troubleshooting.mdx`
+
+# Troubleshooting
+
+## When to use this guide
+
+A `corelink` invocation is failing with a non-zero exit code, hanging, or
+returning unexpected JSON. The eight `doctor` checks below cover every
+known failure class.
+
+## Run the doctor
+
+```bash
+corelink doctor --json | jq
+```
+
+```json
+{
+  "ok": false,
+  "subcommand": "doctor",
+  "checks": [
+    { "name": "network",        "status": "ok"   },
+    { "name": "auth",           "status": "ok"   },
+    { "name": "storage_write",  "status": "ok"   },
+    { "name": "storage_read",   "status": "ok"   },
+    { "name": "byok",           "status": "skip" },
+    { "name": "region",         "status": "ok"   },
+    { "name": "quota",          "status": "warn", "next_action_doc": "docs/reference/error-taxonomy#COR_QUOTA_001" },
+    { "name": "client_verify",  "status": "ok"   }
+  ]
+}
+```
+
+Every non-`ok` check carries a `next_action_doc` URL pointing at the
+canonical fix in `docs/reference/error-taxonomy`.
+
+## Common exit codes
+
+| Exit | Meaning | Next step |
+|---|---|---|
+| `1` | Generic failure | `corelink doctor --json` |
+| `2` | Argument error or `--pat` flag rejected | Re-read [01-authenticate](./01-authenticate.mdx) |
+| `3` | Verify mismatch (`COR_VERIFY_001`) | Retry; if persistent open Sev-2 |
+| `4` | Not found (`COR_CAS_NOT_FOUND`) | Confirm digest with `corelink stat` |
+| `5` | Rate limit (`COR_QUOTA_RATELIMIT`) | Back off + retry |
+
+## Hanging commands
+
+Set a hard timeout:
+
+```bash
+timeout 30s corelink get <digest>
+```
+
+If the binary hangs at startup, run with `RUST_LOG=debug` and capture
+stderr.
+
+## Verbose logging
+
+```bash
+RUST_LOG=debug corelink ls --tenant acme-corp 2>logs.json
+jq 'select(.level=="ERROR")' logs.json
+```
+
+## Reporting a bug
+
+Attach:
+1. `corelink version --output json`
+2. `corelink doctor --output json`
+3. The failing command + `RUST_LOG=debug` stderr.
+
+Never attach your PAT.

@@ -1,0 +1,53 @@
+---
+id: go-check
+title: Go — Health.Check
+sidebar_label: Go · Check
+---
+
+<!-- i18n:TODO (es-419) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
+>
+> Canonical EN source: `Health/go-check.mdx`
+
+# Go — `Health.Check`
+
+## Code
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "os"
+
+    corelink "go.corelink.dev/corelink-go"
+)
+
+func main() {
+    ctx := context.Background()
+    client, _ := corelink.NewClient(ctx, corelink.Config{
+        Endpoint: "https://acme-dev.corelink.dev",
+        PAT:      os.Getenv("CORELINK_PAT"),
+    })
+    defer client.Close()
+
+    status, err := client.Health.Check(ctx)
+    if err != nil { panic(err) }
+    fmt.Println("server status =", status)
+}
+```
+
+## Expected output
+
+```text
+server status = SERVING
+```
+
+## Common errors
+
+| Status | Error taxonomy | Cause |
+| --- | --- | --- |
+| `UNAVAILABLE` | `COR_NET_TRANSIENT` | Server restarting. Retry. |
+| `NOT_SERVING` | `COR_HEALTH_NOT_SERVING` | Draining. Reconnect to another region. |

@@ -1,0 +1,81 @@
+---
+title: "Compare CoreLink vs other remote caches"
+slug: "/pricing/comparison"
+description: "Facts-only comparison of CoreLink with alternative remote-cache offerings."
+draft: true
+cross_functional_review: TBD
+pending_signoff:
+  - "Finance"
+  - "Legal"
+  - "Product"
+sources:
+  - "specs/03_architecture/remote_cache_product_profile.md"
+last_updated: "2026-05-14"
+---
+
+<!-- i18n:TODO (pt-BR) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
+>
+> Canonical EN source: `pricing/comparison.mdx`
+
+import { DraftBanner } from "../../../src/components/DraftBanner";
+
+<DraftBanner pageType="pricing" />
+
+# Compare CoreLink vs other remote caches
+
+> **DRAFT — pending Legal + Finance + Security review.** This page reports
+> publicly documented capabilities of each project. We do not disparage
+> alternatives; correctness wins over rhetoric. If you find a factual error,
+> open an issue.
+
+## Scope
+
+The remote-cache space spans open-source self-hosted projects and managed
+services. The comparison below is limited to projects that implement the
+Bazel/REAPI **Remote Cache** profile (ContentAddressableStorage + ActionCache
++ Capabilities). Remote-execution-only projects are out of scope.
+
+## Capability matrix
+
+| Capability | CoreLink | BuildBuddy | NativeLink | EngFlow | Self-hosted bazel-remote |
+| --- | --- | --- | --- | --- | --- |
+| Managed multi-tenant SaaS | ✓ | ✓ | partial | ✓ | — |
+| Self-hosted option | — | ✓ | ✓ | — | ✓ |
+| REAPI CAS + AC | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Multi-region storage pinning | ✓ | varies | varies | ✓ | depends |
+| BYOK (customer-managed KMS) | ✓ (Enterprise) | varies | varies | varies | depends |
+| Append-only audit chain (RFC 6962) | ✓ | varies | varies | varies | — |
+| SLSA L3 provenance on releases | ✓ | varies | varies | varies | — |
+| Open source license | partial (CLI + SDK) | source-available | Apache-2.0 | proprietary | Apache-2.0 |
+| Public pricing | `$X` per [tier](./) | varies | n/a | contact sales | n/a |
+
+> "varies" means the project's public documentation does not commit to a
+> single answer at the time of writing. Open an issue if you have a
+> correction.
+
+## What CoreLink optimizes for
+
+- **Multi-tenant blast-radius control.** Tenant isolation is invariant-checked
+  with a TLA+ model and enforced at every trust boundary
+  (`security_model.md §3`).
+- **Audit-grade retention.** Seven-year append-only audit log with RFC 6962
+  inclusion proofs is on by default for Business and Enterprise tiers.
+- **Supply-chain visibility.** Every release ships a Sigstore provenance
+  attestation that can be verified against the public transparency log.
+
+## What CoreLink does not aim to do
+
+- We do not replace self-hosted remote-execution clusters. Remote execution
+  (RBE) is a roadmap item beyond GA Phase 1.
+- We do not undercut self-hosted operators on price for hobbyist workloads.
+  The Free tier is intentionally bounded.
+
+## Cross-functional review checklist
+
+- [ ] Product — confirm capability rows are accurate as of the publication
+      date.
+- [ ] Legal — confirm comparative claims do not require explicit substantiation
+      under FTC or analogous guidance.
+- [ ] Finance — confirm pricing row reflects the canonical rate card.

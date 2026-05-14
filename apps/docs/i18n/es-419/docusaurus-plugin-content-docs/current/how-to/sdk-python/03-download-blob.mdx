@@ -1,0 +1,83 @@
+---
+id: sdk-python-download-blob
+title: Download a blob (Python)
+sidebar_label: Download a blob
+description: Fetch a blob by digest with default-on BLAKE3 client-side verify.
+tags: [sdk, python, cas, how-to]
+---
+
+<!-- i18n:TODO (es-419) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
+>
+> Canonical EN source: `sdk-python/03-download-blob.mdx`
+
+# Download a blob
+
+## When to use this guide
+
+You have a BLAKE3 digest (from a previous `put`, an Action Cache result, or
+peer metadata) and need to materialize the bytes locally. The SDK verifies the
+hash on the client side by default (CTRL-CAS-002).
+
+## Prerequisites
+
+- A known BLAKE3 digest.
+- Authentication configured.
+
+## Minimal example
+
+```python
+import asyncio
+from corelink import CoreLinkClient
+
+async def main() -> None:
+    async with CoreLinkClient(tenant_id="acme-corp") as client:
+        digest = "0123456789abcdef" * 4
+        data = await client.get(digest)
+        # data is already BLAKE3-verified; if verify failed, get() raises.
+        with open("./out.bin", "wb") as f:
+            f.write(data)
+```
+
+## Streaming download
+
+```python
+async def stream_to_file(digest: str, dest: str) -> None:
+    async with CoreLinkClient(tenant_id="acme-corp") as client:
+        async with client.get_stream(digest) as stream:
+            with open(dest, "wb") as f:
+                async for chunk in stream:
+                    f.write(chunk)
+        # stream.__aexit__ raises if final verify fails.
+```
+
+The streaming verifier hashes incrementally and validates the BLAKE3 root once
+the last chunk arrives. If the root does not match, the SDK raises
+`DigestMismatchError` and deletes the partial file is the caller's
+responsibility (verify before swapping into place).
+
+## Opting out of verification
+
+**Strongly discouraged**. The opt-out exists only for benchmarks that need to
+measure raw transport latency. Setting `verify=False` emits a `WARNING` log
+line `corelink.client.verify_disabled` per CTRL-CAS-002.
+
+```python
+data = await client.get(digest, verify=False)
+```
+
+If you find yourself reaching for this flag, file an issue first.
+
+## Errors
+
+| Exception | Meaning |
+|---|---|
+| `NotFoundError` | Digest does not exist in tenant CAS |
+| `DigestMismatchError` | Bytes corrupted on the wire; do not use the data |
+| `RegionError` | Blob lives in another region; check `corelink stat <digest>` |
+
+## Next steps
+
+- [Action Cache lookup](./04-action-cache.mdx)
+- [Troubleshooting](./07-troubleshooting.mdx)

@@ -1,0 +1,50 @@
+---
+id: node-read-resume
+title: Node — ByteStream.Read with resume
+sidebar_label: Node · Read (resume)
+---
+
+<!-- i18n:TODO (es-419) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
+>
+> Canonical EN source: `ByteStream/node-read-resume.mdx`
+
+# Node / TypeScript — `ByteStream.Read` with resume
+
+Resume an interrupted download from the last byte written to disk.
+
+## Code
+
+```ts
+import { createWriteStream, statSync, existsSync } from "node:fs";
+import { CoreLinkClient } from "@corelink/client";
+
+const path = "/tmp/big.bin";
+const digest = { hash: "bdd9ea4a8e6b...", sizeBytes: 41943040 };
+const offset = existsSync(path) ? statSync(path).size : 0;
+
+const client = new CoreLinkClient({
+  endpoint: "https://acme-dev.corelink.dev",
+  pat: process.env.CORELINK_PAT!,
+});
+
+const reader = await client.bytestream.read({ digest, readOffset: offset });
+const sink = createWriteStream(path, { flags: "a" });
+for await (const chunk of reader) sink.write(chunk);
+sink.end();
+console.log(`resumed from ${offset} → done`);
+```
+
+## Expected output
+
+```text
+resumed from 16777216 → done
+```
+
+## Common errors
+
+| Status | Error taxonomy | Cause |
+| --- | --- | --- |
+| `OUT_OF_RANGE` | `COR_CAS_READ_OFFSET_OOR` | `readOffset > sizeBytes`. |
+| `NOT_FOUND` | `COR_CAS_BLOB_MISSING` | Blob evicted between attempts. |

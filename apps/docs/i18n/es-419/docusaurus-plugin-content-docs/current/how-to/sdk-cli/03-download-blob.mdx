@@ -1,0 +1,90 @@
+---
+id: sdk-cli-download-blob
+title: Download a blob (CLI)
+sidebar_label: Download a blob
+description: Fetch a blob by digest with default-on BLAKE3 client-side verify.
+tags: [sdk, cli, cas, how-to]
+---
+
+<!-- i18n:TODO (es-419) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
+>
+> Canonical EN source: `sdk-cli/03-download-blob.mdx`
+
+# Download a blob
+
+## When to use this guide
+
+You have a BLAKE3 digest and want to materialize the bytes on disk or pipe
+them into another command. The CLI verifies the digest client-side by
+default (CTRL-CAS-002).
+
+## Prerequisites
+
+- A known BLAKE3 digest.
+- Authentication configured.
+
+## To a file
+
+```bash
+corelink get 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+  -o ./restored.tar
+```
+
+If verification fails, the CLI exits `3` and **deletes the partial file**.
+
+## To stdout
+
+```bash
+corelink get <digest> > ./restored.tar
+```
+
+stdout is binary; do not redirect to a tty.
+
+## Streaming verification
+
+The CLI hashes the response incrementally as it arrives. At end-of-stream
+the BLAKE3 root is checked against the requested digest. A mismatch always
+results in:
+
+- Exit code `3`.
+- `COR_VERIFY_001` written to stderr.
+- Partial output removed (when `-o` is used).
+
+## JSON output
+
+```bash
+corelink get <digest> -o ./out.bin --output json
+```
+
+```json
+{
+  "ok": true,
+  "subcommand": "get",
+  "digest": "0123...cdef",
+  "size_bytes": 1048576,
+  "verify_ms": 23
+}
+```
+
+## Opting out of verification
+
+The CLI does **not** expose a `--no-verify` flag; opt-out is only available
+to SDK callers running benchmarks (and emits a warning log). For ad-hoc
+performance measurement use `corelink bench`.
+
+## Exit codes
+
+| Code | Meaning |
+|---|---|
+| `0` | Downloaded + verified |
+| `1` | Network or auth failure |
+| `2` | Argument error |
+| `3` | Verify failure (`COR_VERIFY_001`) |
+| `4` | Not found (`COR_CAS_NOT_FOUND`) |
+
+## Next steps
+
+- [Inspect metadata](../../reference/cli/stat.mdx)
+- [Troubleshooting](./07-troubleshooting.mdx)

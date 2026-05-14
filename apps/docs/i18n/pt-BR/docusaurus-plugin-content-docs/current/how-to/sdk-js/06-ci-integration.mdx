@@ -1,0 +1,90 @@
+---
+id: sdk-js-ci-integration
+title: CI integration (JS/TS)
+sidebar_label: CI integration
+description: Wire @corelink/client into GitHub Actions, GitLab CI, and CircleCI.
+tags: [sdk, javascript, typescript, ci, how-to]
+---
+
+<!-- i18n:TODO (pt-BR) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
+>
+> Canonical EN source: `sdk-js/06-ci-integration.mdx`
+
+# CI integration
+
+## When to use this guide
+
+Your build pipeline runs Node.js and you want CoreLink as a shared cache
+without invoking the CLI binary.
+
+## GitHub Actions
+
+```yaml
+# .github/workflows/build.yml
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      CORELINK_PAT: ${{ secrets.CORELINK_PAT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm ci
+      - run: node ./ci/warm-cache.mjs
+```
+
+```typescript
+// ci/warm-cache.mjs
+import { CoreLinkClient } from "@corelink/client";
+
+const client = new CoreLinkClient({ tenantId: process.env.CORELINK_TENANT });
+try {
+  const report = await client.bench({ read: true, samples: 10 });
+  console.log(`p50=${report.p50Ms}ms p99=${report.p99Ms}ms`);
+  if (report.p99Ms > 500) process.exit(1);
+} finally {
+  await client.close();
+}
+```
+
+## GitLab CI
+
+```yaml
+build:
+  image: node:20
+  variables:
+    CORELINK_PAT: $CORELINK_PAT  # masked CI variable
+  script:
+    - npm ci
+    - node ./ci/warm-cache.mjs
+```
+
+## CircleCI
+
+```yaml
+version: 2.1
+jobs:
+  build:
+    docker:
+      - image: cimg/node:20.11
+    environment:
+      CORELINK_PAT: $CORELINK_PAT
+    steps:
+      - checkout
+      - run: npm ci
+      - run: node ./ci/warm-cache.mjs
+```
+
+## Job-scoped PATs
+
+Mint a short-lived PAT per pipeline via the admin API. See
+[CLI reference](../../reference/cli/index.mdx).
+
+## Next steps
+
+- [Batch operations](./05-batch-operations.mdx)
+- [Troubleshooting](./07-troubleshooting.mdx)

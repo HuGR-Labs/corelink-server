@@ -1,0 +1,103 @@
+---
+id: sdk-go-batch-operations
+title: Batch operations (Go)
+sidebar_label: Batch operations
+description: Drive concurrent uploads with errgroup and rate-limit backoff.
+tags: [sdk, go, performance, how-to]
+---
+
+<!-- i18n:TODO (es-419) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
+>
+> Canonical EN source: `sdk-go/05-batch-operations.mdx`
+
+# Batch operations
+
+## When to use this guide
+
+You have many small blobs to push or pull and want to saturate available
+bandwidth without exceeding the server-side per-PAT concurrency limit.
+
+## Pattern: bounded `errgroup`
+
+```go
+import "golang.org/x/sync/errgroup"
+
+func uploadMany(ctx context.Context, cli *corelink.Client, paths []string,
+    concurrency int,
+) ([]string, error) {
+    g, gctx := errgroup.WithContext(ctx)
+    g.SetLimit(concurrency)
+    digests := make([]string, len(paths))
+    for i, p := range paths {
+        i, p := i, p
+        g.Go(func() error {
+            data, err := os.ReadFile(p)
+            if err != nil {
+                return err
+            }
+            d, err := cli.Put(gctx, data)
+            if err != nil {
+                return err
+            }
+            digests[i] = d
+            return nil
+        })
+    }
+    if err := g.Wait(); err != nil {
+        return nil, err
+    }
+    return digests, nil
+}
+```
+
+`concurrency=32` is a safe default; server allows up to `256` per PAT.
+
+## Rate-limit handling
+
+`*corelink.RateLimitError` is retried with exponential backoff + jitter
+(3 attempts, capped at 30 s total). Customize:
+
+```go
+cli, _ := corelink.NewClient(ctx,
+    corelink.WithTenantID("acme-corp"),
+    corelink.WithRetryPolicy(corelink.RetryPolicy{
+        MaxAttempts:  5,
+        BaseDelay:    200 * time.Millisecond,
+        MaxDelay:     10 * time.Second,
+    }),
+)
+```
+
+When attempts are exhausted, drain in-flight work and stop submitting new
+tasks.
+
+## Pattern: pre-digest dedupe
+
+```go
+func uploadDedup(ctx context.Context, cli *corelink.Client, paths []string) (map[string]string, error) {
+    seen := map[string]string{}
+    for _, p := range paths {
+        data, err := os.ReadFile(p)
+        if err != nil {
+            return nil, err
+        }
+        d := blake3.Sum256(data)
+        hex := fmt.Sprintf("%x", d)
+        if _, ok := seen[hex]; ok {
+            continue
+        }
+        if _, err := cli.Put(ctx, data, corelink.WithExpectedDigest(hex)); err != nil {
+            return nil, err
+        }
+        seen[hex] = hex
+    }
+    return seen, nil
+}
+```
+
+## Next steps
+
+- [CI integration](./06-ci-integration.mdx)
+- [Troubleshooting](./07-troubleshooting.mdx)

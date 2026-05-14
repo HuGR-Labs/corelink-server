@@ -1,0 +1,64 @@
+---
+title: "SOC 2 Type I → Type II timeline"
+slug: "/compliance/soc2-timeline"
+description: "Planned progression from SOC 2 Type I readiness through Type II observation."
+draft: true
+cross_functional_review: TBD
+pending_signoff:
+  - "Legal"
+  - "Security Lead"
+sources:
+  - "specs/03_architecture/compliance_matrix.md#1-estado-atual-e-roadmap-de-certificações"
+last_updated: "2026-05-14"
+---
+
+<!-- i18n:TODO (es-419) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
+>
+> Canonical EN source: `compliance/soc2-timeline.mdx`
+
+import { DraftBanner } from "../../../src/components/DraftBanner";
+
+<DraftBanner pageType="compliance" />
+
+# SOC 2 Type I → Type II timeline
+
+> **DRAFT — pending Legal + Finance + Security review.** All dates below are
+> synthetic placeholders (`TBD`) until the audit firm engagement letter is
+> signed and the readiness assessment confirms milestone alignment.
+
+## Phased plan
+
+| Phase | Milestone | Owner | Target window |
+| --- | --- | --- | --- |
+| 0 | Auditor selection + engagement letter | Finance + Security | TBD |
+| 1 | Gap analysis | Security Lead | TBD |
+| 2 | Remediation sprint | Engineering | TBD |
+| 3 | Type I observation window | Security Lead | TBD |
+| 4 | Type I report issuance | Auditor | TBD |
+| 5 | Type II observation (≥ 6 months) | Security Lead | TBD |
+| 6 | Type II report issuance | Auditor | TBD |
+
+## Trust Services Criteria in scope
+
+- Security (CC1–CC9) — mandatory
+- Availability (A1) — mandatory
+- Confidentiality (C1) — mandatory
+- Processing Integrity (PI1) — Type II only
+- Privacy (P1–P8) — Type II only
+
+The control mapping that backs every TSC criterion lives in the internal
+`compliance_matrix.md §2.2` and is regenerated on every release.
+
+## Customer-facing artefacts
+
+- SOC 2 Type I report — distributed under NDA once issued.
+- Trust portal access (Drata or Vanta — vendor TBD) for continuous monitoring.
+- Annual bridge letter between Type I and Type II observation windows.
+
+## Cross-functional review checklist
+
+- [ ] Legal — review NDA template gating report distribution.
+- [ ] Security Lead — confirm scope statement and TSC selection.
+- [ ] Finance — confirm budget allocation for auditor engagement.

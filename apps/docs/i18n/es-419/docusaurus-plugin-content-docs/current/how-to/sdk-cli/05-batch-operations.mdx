@@ -1,0 +1,81 @@
+---
+id: sdk-cli-batch-operations
+title: Batch operations (CLI)
+sidebar_label: Batch operations
+description: Drive many corelink puts and gets with bounded parallelism.
+tags: [sdk, cli, performance, how-to]
+---
+
+<!-- i18n:TODO (es-419) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
+>
+> Canonical EN source: `sdk-cli/05-batch-operations.mdx`
+
+# Batch operations
+
+## When to use this guide
+
+You need to push or pull many blobs from a shell script (e.g. CI bootstrap)
+and want maximum throughput without exceeding rate limits.
+
+## Bulk upload with `xargs -P`
+
+```bash
+find ./outputs -type f -print0 \
+  | xargs -0 -n1 -P 32 corelink put --output json \
+  | jq -r '.digest' > digests.txt
+```
+
+`-P 32` is a safe default; server allows up to `256` per PAT.
+
+## Bulk download
+
+```bash
+while read -r digest; do
+  corelink get "$digest" -o "blobs/$digest"
+done < digests.txt
+```
+
+For parallel downloads:
+
+```bash
+cat digests.txt \
+  | xargs -n1 -P 32 -I {} corelink get {} -o "blobs/{}"
+```
+
+## Rate-limit handling
+
+`corelink` exits `5` on `COR_QUOTA_RATELIMIT`. A back-off loop:
+
+```bash
+attempt=0
+until corelink put "$file"; do
+  rc=$?
+  [[ $rc -ne 5 ]] && exit $rc       # non-rate-limit failure: bail
+  attempt=$((attempt+1))
+  [[ $attempt -ge 5 ]] && exit 5    # give up
+  sleep $((2 ** attempt))           # 2s, 4s, 8s, 16s
+done
+```
+
+In real scripts use one of the SDKs which implement this loop natively.
+
+## Pre-dedupe with `b3sum`
+
+```bash
+declare -A seen
+while IFS= read -r file; do
+  digest=$(b3sum "$file" | awk '{print $1}')
+  [[ -n "${seen[$digest]:-}" ]] && continue
+  seen[$digest]=1
+  corelink put "$file" --digest "$digest"
+done < files.txt
+```
+
+Cuts upload count by 60-90% on typical build outputs.
+
+## Next steps
+
+- [CI integration](./06-ci-integration.mdx)
+- [Troubleshooting](./07-troubleshooting.mdx)

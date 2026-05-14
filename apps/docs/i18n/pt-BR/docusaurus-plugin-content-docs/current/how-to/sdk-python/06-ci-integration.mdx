@@ -1,0 +1,93 @@
+---
+id: sdk-python-ci-integration
+title: CI integration (Python)
+sidebar_label: CI integration
+description: Wire the Python SDK into GitHub Actions, GitLab CI, and CircleCI.
+tags: [sdk, python, ci, how-to]
+---
+
+<!-- i18n:TODO (pt-BR) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
+>
+> Canonical EN source: `sdk-python/06-ci-integration.mdx`
+
+# CI integration
+
+## When to use this guide
+
+Your test or build pipeline already uses Python and you want to use CoreLink
+as a build-output cache without rewriting steps in another language.
+
+## GitHub Actions
+
+```yaml
+# .github/workflows/build.yml
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      CORELINK_PAT: ${{ secrets.CORELINK_PAT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install corelink-py
+      - run: python ./ci/warm_cache.py
+```
+
+Store the PAT as a repository secret named `CORELINK_PAT`. Do not echo it.
+
+```python
+# ci/warm_cache.py
+import asyncio, os, sys
+from corelink import CoreLinkClient
+
+async def main() -> int:
+    async with CoreLinkClient(tenant_id=os.environ["CORELINK_TENANT"]) as c:
+        report = await c.bench(read=True, samples=10)
+        print(f"p50={report.p50_ms}ms p99={report.p99_ms}ms")
+        return 0 if report.p99_ms < 500 else 1
+
+sys.exit(asyncio.run(main()))
+```
+
+## GitLab CI
+
+```yaml
+build:
+  image: python:3.11
+  variables:
+    CORELINK_PAT: $CORELINK_PAT  # masked CI variable
+  script:
+    - pip install corelink-py
+    - python ./ci/warm_cache.py
+```
+
+## CircleCI
+
+```yaml
+version: 2.1
+jobs:
+  build:
+    docker:
+      - image: cimg/python:3.11
+    environment:
+      CORELINK_PAT: $CORELINK_PAT
+    steps:
+      - checkout
+      - run: pip install corelink-py
+      - run: python ./ci/warm_cache.py
+```
+
+## Job-scoped PATs (recommended)
+
+Issue a short-lived PAT per job via the admin API and pass it through the
+runner's env. See the [admin runbook for ephemeral
+credentials](../../reference/cli/index.mdx) for the full flow.
+
+## Next steps
+
+- [Batch operations](./05-batch-operations.mdx)
+- [Troubleshooting](./07-troubleshooting.mdx)

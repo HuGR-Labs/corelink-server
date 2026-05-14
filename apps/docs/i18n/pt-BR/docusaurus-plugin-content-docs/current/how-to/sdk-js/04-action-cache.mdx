@@ -1,0 +1,73 @@
+---
+id: sdk-js-action-cache
+title: Action Cache lookup & store (JS/TS)
+sidebar_label: Action Cache
+description: Use the REAPI v2 Action Cache via @corelink/client.
+tags: [sdk, javascript, typescript, ac, reapi, how-to]
+---
+
+<!-- i18n:TODO (pt-BR) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
+>
+> Canonical EN source: `sdk-js/04-action-cache.mdx`
+
+# Action Cache lookup and store
+
+## When to use this guide
+
+You wrap a JS-driven test runner (e.g. Jest, Vitest, Playwright) with a
+build-cache layer and want hit/miss semantics keyed by an Action digest.
+
+If you only need raw CAS, see
+[02-upload-blob](./02-upload-blob.mdx) and
+[03-download-blob](./03-download-blob.mdx).
+
+## Lookup
+
+```typescript
+import { ActionCacheMiss } from "@corelink/client";
+
+async function getOrRun(actionDigest: string): Promise<Uint8Array> {
+  try {
+    const result = await client.actionCache.get(actionDigest);
+    return client.get(result.stdoutDigest);
+  } catch (e) {
+    if (e instanceof ActionCacheMiss) {
+      return runLocallyAndStore(actionDigest);
+    }
+    throw e;
+  }
+}
+```
+
+## Store
+
+```typescript
+async function storeResult(
+  actionDigest: string,
+  stdout: Uint8Array,
+  exitCode: number,
+): Promise<void> {
+  const stdoutDigest = await client.put(stdout);
+  await client.actionCache.put(actionDigest, {
+    stdoutDigest,
+    exitCode,
+  });
+}
+```
+
+## TTL
+
+```typescript
+await client.actionCache.put(actionDigest, result, { ttlSeconds: 86_400 });
+```
+
+## Cache poisoning protection
+
+Server-side checks reject any `ActionResult` whose declared digest does not
+match the bytes already stored.
+
+## Next steps
+
+- [CI integration](./06-ci-integration.mdx)

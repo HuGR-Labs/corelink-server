@@ -1,0 +1,87 @@
+---
+id: cli-put
+title: corelink put
+sidebar_label: put
+description: Upload a file as a content-addressable blob.
+tags: [reference, cli, put]
+---
+
+<!-- i18n:TODO (es-419) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
+>
+> Canonical EN source: `cli/put.mdx`
+
+# `corelink put`
+
+Upload a file. BLAKE3 digest is computed locally unless `--digest` is
+supplied.
+
+## Synopsis
+
+```bash
+corelink put <FILE> [--digest <DIGEST>] [--output <FORMAT>]
+```
+
+## Arguments
+
+| Arg | Required | Description |
+|---|---|---|
+| `<FILE>` | yes | Path to the file to upload. |
+
+## Flags
+
+| Flag | Required | Default | Description |
+|---|---|---|---|
+| `--digest` | no | computed | Pre-computed BLAKE3 hex digest. Mismatch fails with exit `3`. |
+| `--output` | no | `text` | `text` or `json`. |
+
+## Examples
+
+```bash
+corelink put ./build/output.tar
+# stdout: 64-char hex digest
+```
+
+Pre-computed digest:
+
+```bash
+DIGEST=$(b3sum ./out.tar | awk '{print $1}')
+corelink put ./out.tar --digest "$DIGEST"
+```
+
+JSON output:
+
+```bash
+corelink put ./out.tar --output json
+```
+
+## JSON schema
+
+```json
+{
+  "ok": true,
+  "subcommand": "put",
+  "digest": "0123...cdef",
+  "size_bytes": 1048576,
+  "duplicate": false
+}
+```
+
+`duplicate=true` means the digest already existed server-side and the
+upload short-circuited (CTRL-CAS-001 dedupe).
+
+## Exit codes
+
+| Code | Meaning |
+|---|---|
+| `0` | Uploaded (or dedup hit). |
+| `1` | Network, auth, or quota failure. |
+| `2` | Argument error (e.g. unreadable file). |
+| `3` | Digest mismatch (`--digest` wrong). |
+| `5` | Rate limit (`COR_QUOTA_RATELIMIT`). |
+
+## See also
+
+- [`get`](./get.mdx)
+- [`stat`](./stat.mdx)

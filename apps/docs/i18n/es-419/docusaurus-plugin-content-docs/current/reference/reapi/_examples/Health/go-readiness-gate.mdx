@@ -1,0 +1,61 @@
+---
+id: go-readiness-gate
+title: Go — Kubernetes readiness gate
+sidebar_label: Go · readiness gate
+---
+
+<!-- i18n:TODO (es-419) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
+>
+> Canonical EN source: `Health/go-readiness-gate.mdx`
+
+# Go — Kubernetes readiness gate
+
+Wire `Health.Check` into a Kubernetes readiness probe handler.
+
+## Code
+
+```go
+package main
+
+import (
+    "context"
+    "net/http"
+    "os"
+    "time"
+
+    corelink "go.corelink.dev/corelink-go"
+)
+
+func main() {
+    client, _ := corelink.NewClient(context.Background(), corelink.Config{
+        Endpoint: "https://acme-dev.corelink.dev",
+        PAT:      os.Getenv("CORELINK_PAT"),
+    })
+    http.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
+        ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+        defer cancel()
+        s, err := client.Health.Check(ctx)
+        if err != nil || s.String() != "SERVING" {
+            http.Error(w, "not ready", http.StatusServiceUnavailable)
+            return
+        }
+        w.WriteHeader(http.StatusOK)
+    })
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+## Expected output
+
+```text
+$ curl -i http://localhost:8080/ready
+HTTP/1.1 200 OK
+```
+
+## Common errors
+
+| HTTP status | Cause | Fix |
+| --- | --- | --- |
+| `503` | Upstream `Health.Check` failed | Trigger pod restart via liveness probe |

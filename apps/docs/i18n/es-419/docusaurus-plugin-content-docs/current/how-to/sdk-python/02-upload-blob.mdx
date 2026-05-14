@@ -1,0 +1,72 @@
+---
+id: sdk-python-upload-blob
+title: Upload a blob (Python)
+sidebar_label: Upload a blob
+description: Store a content-addressable blob using the corelink-py SDK.
+tags: [sdk, python, cas, how-to]
+---
+
+<!-- i18n:TODO (es-419) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
+>
+> Canonical EN source: `sdk-python/02-upload-blob.mdx`
+
+# Upload a blob
+
+## When to use this guide
+
+Use this when you need to persist arbitrary bytes (a build output, a model
+weight, a packaged tarball) into the CoreLink CAS, and you want the SDK to
+compute the BLAKE3 digest for you.
+
+If you already have a digest and want to skip recomputation, supply it via
+`expected_digest=`.
+
+## Prerequisites
+
+- Authentication configured (see [01-authenticate](./01-authenticate.mdx)).
+
+## Minimal example
+
+```python
+import asyncio
+from pathlib import Path
+from corelink import CoreLinkClient
+
+async def main() -> None:
+    async with CoreLinkClient(tenant_id="acme-corp") as client:
+        data = Path("./build/output.tar").read_bytes()
+        digest = await client.put(data)
+        print(f"stored: {digest}")  # 64-char BLAKE3 hex
+```
+
+## Streaming upload (large blobs)
+
+For files larger than 16 MiB use the streaming overload to avoid loading the
+file fully into memory:
+
+```python
+async def upload_large(path: str) -> str:
+    async with CoreLinkClient(tenant_id="acme-corp") as client:
+        with open(path, "rb") as f:
+            return await client.put_stream(f, chunk_size=4 * 1024 * 1024)
+```
+
+## Idempotency
+
+`put` is idempotent on the digest. A second upload of identical bytes returns
+the same digest with no extra storage cost (CTRL-CAS-001 dedupe).
+
+## Errors
+
+| Exception | Cause | Action |
+|---|---|---|
+| `AuthError` | PAT missing or revoked | Re-run [01-authenticate](./01-authenticate.mdx) |
+| `QuotaError` | Tenant over quota | Inspect `corelink stat`; see [troubleshooting](./07-troubleshooting.mdx) |
+| `DigestMismatchError` | `expected_digest` did not match | Recompute locally; do not retry blindly |
+
+## Next steps
+
+- [Download the blob](./03-download-blob.mdx)
+- [Batch many uploads](./05-batch-operations.mdx)

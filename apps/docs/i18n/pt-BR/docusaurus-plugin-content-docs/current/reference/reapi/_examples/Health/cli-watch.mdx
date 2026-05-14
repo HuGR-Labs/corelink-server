@@ -1,0 +1,37 @@
+---
+id: cli-watch
+title: CLI — watch health for SLO dashboards
+sidebar_label: CLI · watch health
+---
+
+<!-- i18n:TODO (pt-BR) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
+>
+> Canonical EN source: `Health/cli-watch.mdx`
+
+# CLI — `corelink doctor --watch`
+
+Stream health transitions to stdout (one JSON line per probe). Pipe into Loki / Datadog / your logger of choice.
+
+## Code
+
+```bash
+corelink doctor --watch --interval=1s --format=jsonl | \
+  jq -c 'select(.health.status != "SERVING")'
+```
+
+## Expected output
+
+```json
+{"ts":"2026-05-14T22:02:01Z","health":{"ok":false,"status":"NOT_SERVING"}}
+```
+
+(Empty output when the server is healthy — `jq` filters out `SERVING` lines.)
+
+## Common errors
+
+| CLI exit code | Cause | Fix |
+| --- | --- | --- |
+| `2` | Network unreachable | Wrap in `until corelink doctor --watch; do sleep 5; done` |
+| `3` | `COR_AUTH_PAT_INVALID` | Re-mint PAT |

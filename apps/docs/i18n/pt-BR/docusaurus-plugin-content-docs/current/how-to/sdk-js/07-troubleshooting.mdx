@@ -1,0 +1,92 @@
+---
+id: sdk-js-troubleshooting
+title: Troubleshooting (JS/TS)
+sidebar_label: Troubleshooting
+description: Diagnose common @corelink/client errors with reproducible recipes.
+tags: [sdk, javascript, typescript, debug, how-to]
+---
+
+<!-- i18n:TODO (pt-BR) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
+>
+> Canonical EN source: `sdk-js/07-troubleshooting.mdx`
+
+# Troubleshooting
+
+## When to use this guide
+
+A `@corelink/client` call is throwing, hanging, or returning the wrong
+region. Use the table below to map errors to canonical fixes in
+`docs/reference/error-taxonomy`.
+
+## Diagnostic flow
+
+```typescript
+const rep = await client.doctor();
+for (const check of rep.checks) {
+  console.log(check.name, check.status, check.nextActionDoc);
+}
+```
+
+Same 8 checks as `corelink doctor --json`.
+
+## Common errors
+
+| Error code | Class | First action |
+|---|---|---|
+| `COR_AUTH_001` | `AuthError` | Re-export `CORELINK_PAT`; check `client.whoami()` |
+| `COR_AUTH_002` | `AuthError` | PAT revoked; mint a new one |
+| `COR_QUOTA_001` | `QuotaError` | Tenant over storage cap |
+| `COR_REGION_001` | `RegionError` | Use regional endpoint |
+| `COR_VERIFY_001` | `DigestMismatchError` | Discard bytes; retry |
+| `COR_NET_001` | `ConnectError` | `corelink doctor network` |
+
+## WASM init failure
+
+If you see `Error: failed to instantiate corelink-verify.wasm`, your bundler
+is stripping the WASM artifact. Add an explicit asset rule:
+
+```javascript
+// vite.config.js
+export default {
+  optimizeDeps: { exclude: ["@corelink/client/wasm"] },
+  assetsInclude: ["**/*.wasm"],
+};
+```
+
+For webpack 5, set `experiments.asyncWebAssembly = true`.
+
+## Promise leaks
+
+Every client must be closed:
+
+```typescript
+// WRONG — leaks the HTTP/2 session
+const client = new CoreLinkClient({ tenantId: "acme-corp" });
+await client.get(digest);
+
+// RIGHT
+const client = new CoreLinkClient({ tenantId: "acme-corp" });
+try {
+  await client.get(digest);
+} finally {
+  await client.close();
+}
+```
+
+## Verbose logging
+
+```bash
+export CORELINK_LOG=debug
+```
+
+Structured JSON logs go to `stderr`. Pipe through `jq`:
+
+```bash
+node ./script.mjs 2>&1 | jq 'select(.level=="error")'
+```
+
+## Filing a bug
+
+Include `corelink doctor --json` output. Never include your PAT.

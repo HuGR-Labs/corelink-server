@@ -1,0 +1,82 @@
+---
+id: sdk-go-troubleshooting
+title: Troubleshooting (Go)
+sidebar_label: Troubleshooting
+description: Diagnose common Go SDK errors with reproducible recipes.
+tags: [sdk, go, debug, how-to]
+---
+
+<!-- i18n:TODO (pt-BR) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
+>
+> Canonical EN source: `sdk-go/07-troubleshooting.mdx`
+
+# Troubleshooting
+
+## When to use this guide
+
+A `corelink-go` call is returning an unexpected error or stalling. Use the
+table below to map errors to the canonical fix in
+`docs/reference/error-taxonomy`.
+
+## Diagnostic flow
+
+```go
+rep, err := cli.Doctor(ctx)
+if err != nil {
+    log.Fatal(err)
+}
+for _, c := range rep.Checks {
+    log.Printf("%s %s %s", c.Name, c.Status, c.NextActionDoc)
+}
+```
+
+Same 8 checks as `corelink doctor --json`: network, auth, storage-write,
+storage-read, BYOK, region, quota, client-verify.
+
+## Common errors
+
+| Error code | Type | First action |
+|---|---|---|
+| `COR_AUTH_001` | `*AuthError` | Re-export `CORELINK_PAT`; check scopes via `cli.Whoami(ctx)` |
+| `COR_AUTH_002` | `*AuthError` | PAT revoked; mint a new one |
+| `COR_QUOTA_001` | `*QuotaError` | Tenant over storage cap |
+| `COR_REGION_001` | `*RegionError` | Use regional endpoint; `corelink stat` reveals home region |
+| `COR_VERIFY_001` | `*DigestMismatchError` | Discard bytes; retry; persistent → Sev-2 |
+| `COR_NET_001` | `*ConnectError` | `corelink doctor network` — egress filtering likely |
+
+## Goroutine leaks
+
+The most common Go-specific failure mode is dropping a streaming reader
+without `Close()`:
+
+```go
+// WRONG — leaks a connection and the verify goroutine
+rc, _ := cli.GetStream(ctx, digest)
+io.ReadAll(rc)
+
+// RIGHT
+rc, err := cli.GetStream(ctx, digest)
+if err != nil { ... }
+defer rc.Close()
+```
+
+`Close()` returns an error when the BLAKE3 root fails to verify — check it.
+
+## Verbose logging
+
+```bash
+export CORELINK_LOG=debug
+```
+
+The SDK writes structured JSON to `stderr`. Pipe through `jq`:
+
+```bash
+./build 2>&1 | jq 'select(.level=="error")'
+```
+
+## Filing a bug
+
+Include `corelink doctor --json` and `cli.Whoami(ctx)` output. Never include
+your PAT.

@@ -1,0 +1,62 @@
+---
+title: "Pricing calculator"
+slug: "/pricing/calculator"
+description: "Interactive cost estimator based on cache-hit ratio, storage, and egress."
+draft: true
+cross_functional_review: TBD
+pending_signoff:
+  - "Finance"
+  - "Legal"
+  - "Product"
+sources:
+  - "specs/03_architecture/remote_cache_product_profile.md"
+last_updated: "2026-05-14"
+---
+
+<!-- i18n:TODO (pt-BR) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
+>
+> Canonical EN source: `pricing/calculator.mdx`
+
+import { DraftBanner } from "../../../src/components/DraftBanner";
+import { PricingCalculator } from "../../src/components/PricingCalculator";
+
+<DraftBanner pageType="pricing" />
+
+# Pricing calculator
+
+> **DRAFT — pending Legal + Finance + Security review.** The interactive
+> widget below uses `$X` placeholders for every rate. It will only ship with
+> real numbers after Finance sign-off.
+
+## Estimate your CoreLink bill
+
+<PricingCalculator />
+
+## Inputs the calculator uses
+
+| Input | Default | Notes |
+| --- | --- | --- |
+| Average storage (GB-month) | 100 | Hot tier only; cold-tier overflow priced separately. |
+| Monthly cache hits | 1,000,000 | Hits are free; volume informs which tier fits best. |
+| Cache hit ratio | 0.85 | Used to derive expected origin pulls. |
+| Cross-region egress (GB / month) | 50 | Egress within a single region is not billed. |
+| Plan | Pro | Sets base fee and included quotas. |
+
+## Worked example (illustrative only)
+
+> Numbers below are placeholders; real rates apply once Finance signs off.
+
+```
+Plan: Pro (base = $X / month, 1 TB storage, 10 TB egress included)
+Storage used: 1.4 TB → 0.4 TB overage × $X = $X
+Egress used: 12 TB → 2 TB overage × $X = $X
+Estimated monthly bill: $X + $X + $X = $X
+```
+
+## Cross-functional review checklist
+
+- [ ] Finance — confirm calculator formulae match the rate card.
+- [ ] Legal — confirm "estimate only" disclaimer language.
+- [ ] Product — confirm input set covers the most common buyer questions.

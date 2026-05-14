@@ -1,0 +1,83 @@
+---
+id: cli-ls
+title: corelink ls
+sidebar_label: ls
+description: List CAS / AC entries for a tenant.
+tags: [reference, cli, ls]
+---
+
+<!-- i18n:TODO (pt-BR) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
+>
+> Canonical EN source: `cli/ls.mdx`
+
+# `corelink ls`
+
+List CAS / Action Cache entries for a tenant.
+
+## Synopsis
+
+```bash
+corelink ls --tenant <TENANT_ID> [--prefix <PREFIX>] [--limit <N>] [--cursor <CURSOR>] [--output <FORMAT>]
+```
+
+## Flags
+
+| Flag | Required | Default | Description |
+|---|---|---|---|
+| `--tenant` | yes | — | Tenant ID. |
+| `--prefix` | no  | — | Optional prefix filter (e.g. `ac/` to scope to Action Cache). |
+| `--limit`  | no  | `100` | Maximum entries to return (1..1000). |
+| `--cursor` | no  | — | Pagination cursor from a previous response. |
+| `--output` | no  | `text` | `text` or `json`. |
+
+## Examples
+
+List the first 50 CAS entries:
+
+```bash
+corelink ls --tenant acme-corp --limit 50
+```
+
+Paginate JSON:
+
+```bash
+corelink ls --tenant acme-corp --output json
+# → { "next_cursor": "abc123", "entries": [...] }
+corelink ls --tenant acme-corp --cursor abc123 --output json
+```
+
+Filter to Action Cache namespace:
+
+```bash
+corelink ls --tenant acme-corp --prefix ac/ --output json
+```
+
+## JSON schema
+
+```json
+{
+  "ok": true,
+  "subcommand": "ls",
+  "tenant_id": "acme-corp",
+  "entries": [
+    {
+      "digest": "0123...cdef",
+      "size_bytes": 1048576,
+      "kind": "blob",
+      "created_at_unix": 1715000000
+    }
+  ],
+  "next_cursor": "abc123"
+}
+```
+
+## Exit codes
+
+`0` success · `1` runtime failure · `2` argument error.
+
+## See also
+
+- [`get`](./get.mdx)
+- [`stat`](./stat.mdx)

@@ -1,0 +1,43 @@
+---
+id: node-get-capabilities
+title: Node — GetCapabilities
+sidebar_label: Node · GetCapabilities
+---
+
+<!-- i18n:TODO (es-419) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
+>
+> Canonical EN source: `Capabilities/node-get-capabilities.mdx`
+
+# Node / TypeScript — `Capabilities.GetCapabilities`
+
+## Code
+
+```ts
+import { CoreLinkClient } from "@corelink/client";
+
+const client = new CoreLinkClient({
+  endpoint: "https://acme-dev.corelink.dev",
+  pat: process.env.CORELINK_PAT!,
+});
+
+const caps = await client.capabilities.get();
+console.log("max_batch_total_size_bytes =", caps.cacheCapabilities.maxBatchTotalSizeBytes);
+console.log("digest functions =", caps.cacheCapabilities.digestFunctions);
+console.log("compressors =", caps.cacheCapabilities.supportedCompressors);
+```
+
+## Expected output
+
+```text
+max_batch_total_size_bytes = 4194304
+digest functions = [ 'SHA256', 'BLAKE3' ]
+compressors = [ 'IDENTITY', 'ZSTD' ]
+```
+
+## Common errors
+
+| Status | Error taxonomy | Cause |
+| --- | --- | --- |
+| `UNAUTHENTICATED` | `COR_AUTH_PAT_INVALID` | PAT expired. |

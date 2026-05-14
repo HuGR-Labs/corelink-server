@@ -1,0 +1,88 @@
+---
+id: sdk-cli-upload-blob
+title: Upload a blob (CLI)
+sidebar_label: Upload a blob
+description: Store a content-addressable blob with corelink put.
+tags: [sdk, cli, cas, how-to]
+---
+
+<!-- i18n:TODO (es-419) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
+>
+> Canonical EN source: `sdk-cli/02-upload-blob.mdx`
+
+# Upload a blob
+
+## When to use this guide
+
+You have a file on disk and want to push it into the tenant CAS from a
+shell — interactively or from a CI job script.
+
+## Prerequisites
+
+- Authentication configured ([01-authenticate](./01-authenticate.mdx)).
+
+## Minimal command
+
+```bash
+corelink put ./build/output.tar
+# stdout: 64-char BLAKE3 hex digest
+```
+
+The CLI computes the BLAKE3 digest locally before transmission. If a
+matching digest already exists server-side, the upload short-circuits.
+
+## Pre-computed digest
+
+```bash
+DIGEST=$(b3sum ./build/output.tar | awk '{print $1}')
+corelink put ./build/output.tar --digest "$DIGEST"
+```
+
+Mismatch fails with exit code `1` and `COR_VERIFY_001` — re-run the hash.
+
+## JSON output
+
+```bash
+corelink put ./out.tar --output json
+```
+
+```json
+{
+  "ok": true,
+  "subcommand": "put",
+  "digest": "0123...cdef",
+  "size_bytes": 1048576,
+  "duplicate": false
+}
+```
+
+Schema documented in [reference/cli/put](../../reference/cli/put.mdx).
+
+## Bulk uploads
+
+`put` is single-file by design. For batch loads, drive it from a shell loop
+with bounded concurrency:
+
+```bash
+find ./outputs -type f -print0 \
+  | xargs -0 -n1 -P 32 corelink put --output json \
+  | jq -r '.digest' > digests.txt
+```
+
+`-P 32` is a safe default; server allows up to `256` per PAT.
+
+## Exit codes
+
+| Code | Meaning |
+|---|---|
+| `0` | Uploaded (or dedup hit) |
+| `1` | Network, auth, or quota failure |
+| `2` | Argument error (e.g. unreadable file) |
+| `3` | Digest mismatch (`--digest` wrong) |
+
+## Next steps
+
+- [Download the blob](./03-download-blob.mdx)
+- [Batch via scripts](./05-batch-operations.mdx)

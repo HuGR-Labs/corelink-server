@@ -1,0 +1,79 @@
+---
+id: sdk-python-troubleshooting
+title: Troubleshooting (Python)
+sidebar_label: Troubleshooting
+description: Diagnose common Python SDK errors with reproducible recipes.
+tags: [sdk, python, debug, how-to]
+---
+
+<!-- i18n:TODO (pt-BR) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
+>
+> Canonical EN source: `sdk-python/07-troubleshooting.mdx`
+
+# Troubleshooting
+
+## When to use this guide
+
+A call is failing with an exception, a slow first-byte time, or wrong-region
+behaviour, and you need a deterministic next step. Each row below maps an
+error code to the canonical fix in `docs/reference/error-taxonomy`.
+
+## Diagnostic flow
+
+```python
+import asyncio
+from corelink import CoreLinkClient
+
+async def diagnose() -> None:
+    async with CoreLinkClient() as client:
+        rep = await client.doctor()
+        for check in rep.checks:
+            print(check.name, check.status, check.next_action_doc)
+```
+
+This is the same set of 8 checks as `corelink doctor --json` (network, auth,
+storage-write, storage-read, BYOK, region, quota, client-verify).
+
+## Common errors
+
+| Error code | Exception | First action |
+|---|---|---|
+| `COR_AUTH_001` | `AuthError` | Re-export `CORELINK_PAT`; confirm scopes via `await client.whoami()` |
+| `COR_AUTH_002` | `AuthError` | PAT revoked; mint a new one |
+| `COR_QUOTA_001` | `QuotaError` | Tenant over storage cap; raise quota or evict old digests |
+| `COR_REGION_001` | `RegionError` | Use the regional endpoint; `corelink stat` reveals home region |
+| `COR_VERIFY_001` | `DigestMismatchError` | Discard bytes; retry; if it persists open a Sev-2 incident |
+| `COR_NET_001` | `ConnectError` | Inspect `corelink doctor network` — likely egress filtering |
+
+## When the SDK hangs
+
+Most often this is a forgotten `async with`:
+
+```python
+# WRONG — leaks a connection pool
+client = CoreLinkClient()
+await client.get(digest)
+
+# RIGHT
+async with CoreLinkClient() as client:
+    await client.get(digest)
+```
+
+## Verbose logging
+
+```bash
+export CORELINK_LOG=debug
+```
+
+The SDK writes structured JSON logs to `stderr`; pipe through `jq`:
+
+```bash
+python ./script.py 2>&1 | jq 'select(.level=="error")'
+```
+
+## Filing a bug
+
+Include the output of `corelink doctor --json` and the redacted `whoami`
+response. Never include your PAT.

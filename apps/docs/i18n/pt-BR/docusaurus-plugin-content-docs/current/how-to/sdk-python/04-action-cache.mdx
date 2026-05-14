@@ -1,0 +1,77 @@
+---
+id: sdk-python-action-cache
+title: Action Cache lookup & store (Python)
+sidebar_label: Action Cache
+description: Use the REAPI v2 Action Cache via the Python SDK.
+tags: [sdk, python, ac, reapi, how-to]
+---
+
+<!-- i18n:TODO (pt-BR) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
+>
+> Canonical EN source: `sdk-python/04-action-cache.mdx`
+
+# Action Cache lookup and store
+
+## When to use this guide
+
+You are wiring a build tool (Bazel, Buck2, Pants) to CoreLink and need to read
+and write `ActionResult` entries keyed by an `Action` digest. If you only need
+raw CAS get/put, see [02-upload-blob](./02-upload-blob.mdx) and
+[03-download-blob](./03-download-blob.mdx).
+
+## Prerequisites
+
+- Authentication configured.
+- An `Action` proto already hashed to a BLAKE3 digest.
+
+## Lookup
+
+```python
+import asyncio
+from corelink import CoreLinkClient, ActionCacheMiss
+
+async def get_or_run(action_digest: str) -> bytes:
+    async with CoreLinkClient(tenant_id="acme-corp") as client:
+        try:
+            result = await client.action_cache.get(action_digest)
+            return await client.get(result.stdout_digest)
+        except ActionCacheMiss:
+            # Run the action locally, then store the result.
+            return await run_locally_and_store(client, action_digest)
+```
+
+## Store
+
+```python
+from corelink import ActionResult
+
+async def store_result(client: CoreLinkClient, action_digest: str,
+                       stdout: bytes, exit_code: int) -> None:
+    stdout_digest = await client.put(stdout)
+    await client.action_cache.put(
+        action_digest,
+        ActionResult(
+            stdout_digest=stdout_digest,
+            exit_code=exit_code,
+        ),
+    )
+```
+
+## TTL and eviction
+
+Action Cache entries inherit tenant TTL (default 30 days). Override per-entry:
+
+```python
+await client.action_cache.put(action_digest, result, ttl_seconds=86_400)
+```
+
+## Cache poisoning protection
+
+Every `ActionResult` payload is content-addressed and verified on read; you
+cannot insert a result for a digest that does not match the bytes you uploaded.
+
+## Next steps
+
+- [CI integration](./06-ci-integration.mdx) — wire build cache into CI.

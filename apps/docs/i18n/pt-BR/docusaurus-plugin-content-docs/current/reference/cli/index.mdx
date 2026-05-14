@@ -1,0 +1,83 @@
+---
+id: cli-reference-index
+title: corelink CLI reference
+sidebar_label: Overview
+description: Per-command reference for the corelink CLI (7 canonical subcommands plus config).
+tags: [reference, cli]
+---
+
+<!-- i18n:TODO (pt-BR) — auto-generated stub; replace with native-speaker translation by D+10 -->
+
+> Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
+>
+> Canonical EN source: `cli/index.mdx`
+
+# `corelink` CLI reference
+
+> Per-command reference. For task-oriented help see the
+> [CLI how-to guides](../../how-to/sdk-cli/01-authenticate.mdx).
+
+The `corelink` binary is a single signed executable for macOS, Linux, and
+Windows (cross-OS reproducible builds, SLSA-3 attestation per WI-S15-001).
+
+## Global flags
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--output` | `text \| json` | `text` | Output format. JSON is parsing-friendly for CI scripts and follows the schema documented per subcommand. |
+| `--help` | flag | — | Print contextual help and exit `0`. |
+| `--version` | flag | — | Print the binary version and exit `0`. Same as the [`version`](./version.mdx) subcommand. |
+
+## Subcommands
+
+| Command | Purpose | Page |
+|---|---|---|
+| `ls`      | List CAS / AC entries for a tenant.        | [ls](./ls.mdx) |
+| `get`     | Download a blob by digest (verified).      | [get](./get.mdx) |
+| `put`     | Upload a file as a blob.                   | [put](./put.mdx) |
+| `stat`    | Inspect metadata for a digest.             | [stat](./stat.mdx) |
+| `bench`   | Micro-benchmark vs the cluster.            | [bench](./bench.mdx) |
+| `doctor`  | Run the 8 diagnostic checks.               | [doctor](./doctor.mdx) |
+| `version` | Print version + git rev + SLSA URL.        | [version](./version.mdx) |
+| `config`  | Manage `~/.corelink/config.toml`.          | [config](./config.mdx) |
+
+## Authentication
+
+The CLI resolves the PAT in this order:
+
+1. Environment variable `CORELINK_PAT`.
+2. `auth.pat` in `~/.corelink/config.toml` (mode `0600`).
+
+The `--pat` flag is explicitly **rejected** before any other parsing
+(CTRL-CRED-001). The CLI exits `2` with an error directing you to the env
+var or config file.
+
+## Exit codes
+
+| Code | Meaning |
+|---|---|
+| `0`  | Success. |
+| `1`  | Generic runtime failure (network, auth, server error). |
+| `2`  | Argument error, or `--pat` rejected. |
+| `3`  | BLAKE3 verify mismatch (`COR_VERIFY_001`). |
+| `4`  | Not found (`COR_CAS_NOT_FOUND`). |
+| `5`  | Rate limit (`COR_QUOTA_RATELIMIT`). |
+
+## Telemetry
+
+Telemetry is **opt-in, default off** (R-S15-14). Enable with:
+
+```bash
+corelink config set telemetry.enabled true
+```
+
+The emitted event includes only the subcommand label, outcome
+(`ok`/`err`), duration, and an anonymised rotatable UUID. Rotate the ID
+any time with:
+
+```bash
+corelink config rotate telemetry-id
+```
+
+Emission is detached and non-blocking; CLI exit code is never affected by
+telemetry endpoint health (FM-150).
