@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0.0",
+  "sprint": "S-11",
+  "updated": "2026-05-13T00:00:00Z",
+  "done": [
+    {
+      "wi": "WI-S11-008",
+      "sealed_at": "2026-05-13T00:00:00Z",
+      "commit": "pending",
+      "artifacts": [
+        "specs/_templates/dpia.md",
+        "specs/_templates/lia.md",
+        "legal/dpia/s07-dedup-leakage.md",
+        "legal/dpia/s09-telemetry-aggregation.md",
+        "legal/dpia/s10-billing-cross-border.md",
+        "legal/dpia/REVIEW_PROCESS.md",
+        "legal/lia/s09-telemetry-aggregation.md",
+        ".github/workflows/tla_dsr_erasure_check.yml",
+        "scripts/validate_dpia.py",
+        "specs/03_architecture/adrs/ADR-S11-012-tla-scope-discipline-s11-erasure-only.md",
+        "specs/tla/dsr_erasure_atomicity.tla",
+        "specs/tla/dsr_erasure_atomicity.cfg"
+      ],
+      "tla_status": "spec_written_pending_ci_green",
+      "inv_data_erasure_complete_promotion": "HIGH_TO_CRITICAL_contingent_on_ci_green",
+      "notes": "GDPR Art. 35 + LGPD Art. 38 + ICO 3-part LIA + 3 DPIAs filled + TLA+ dsr_erasure_atomicity.tla (5 state invariants + 3 temporal properties + 10 actions) + dedicated CI workflow SHA-pinned TLC v1.8.0 (ADR-0042 §A1). INV-DATA-ERASURE-COMPLETE promotion HIGH→CRITICAL (Lote 10.11.0-bis) valid post-TLA+ spec commitment; TLC CI green required for PLANNED→GREEN status transition (honest-flag AC-008)."
+    }
+  ],
+  "in_progress": [],
+  "blocked": []
+}

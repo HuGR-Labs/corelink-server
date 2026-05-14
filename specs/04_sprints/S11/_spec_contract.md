@@ -358,6 +358,25 @@ Itens waivable com sign-off Privacy Officer + Legal + Compliance Officer + ADR:
 
 ## 20. Change log
 
+### v1.7.0 (2026-05-13) — WI-S11-008 SEALED: DPIA + LIA + 3 filled DPIAs + TLA+ dsr_erasure_atomicity + CI workflow
+
+WI-S11-008 SEALED: regulatory formal completion of CoreLink Privacy Pipeline. Artifacts landed:
+
+- **`specs/_templates/dpia.md`** — GDPR Art. 35 / LGPD Art. 38 (RIPD) unified DPIA template; 6 sections (Description, Necessity, Risk, Mitigation, Residual, Quarterly review); EVT-045 evidence path.
+- **`specs/_templates/lia.md`** — LGPD Art. 10 / GDPR Art. 6(1)(f) LIA template; ICO three-part test (Purpose, Necessity, Balance, Review); WP29 Opinion 06/2014 endorsed by EDPB 8 criteria; EVT-046 evidence path.
+- **3 DPIAs filled** in `legal/dpia/`: `s07-dedup-leakage.md` (cross-tenant inference attack risk; per-tenant dedup default + INV-TENANT-ISOLATION mitigation); `s09-telemetry-aggregation.md` (legitimate interest under LGPD Art. 10 / GDPR Art. 6(1)(f); pseudonymization + LIA companion); `s10-billing-cross-border.md` (Stripe US; Schrems II + SCC + TIA + DPF; WI-S11-007 residency pinning mitigation).
+- **`legal/lia/s09-telemetry-aggregation.md`** — filled LIA with ICO three-part test + WP29 Opinion 06/2014 endorsed by EDPB 8 balancing criteria.
+- **`legal/dpia/REVIEW_PROCESS.md`** — quarterly Privacy Officer review SOP; metrics; escalation procedure.
+- **`specs/tla/dsr_erasure_atomicity.tla`** (pre-existing spec; confirmed SEALED-compatible: 10 actions + 5 state invariants + 3 temporal properties + WF fairness + Theorem; ProofRecord typed; TypeOK bounds; Lote 10.11.0-bis-prime canonical).
+- **`specs/tla/dsr_erasure_atomicity.cfg`** (pre-existing cfg; 12-backend bound; 6-region; 3-locale; MaxConcurrentErasures=2; MaxAuditChainLen=30; MaxAttempts=5; CHECK_DEADLOCK FALSE; INVARIANTS + PROPERTIES sections correct).
+- **`.github/workflows/tla_dsr_erasure_check.yml`** — NEW dedicated CI workflow; SHA-pinned TLC v1.8.0 (ADR-0042 §A1 `d5d07d5dab38ddb840c91ec48fa02f28b37a608d5af9a73570018591dbc8ef7f`); DPIA presence check step; validate_dpia.py step; triggers on dsr_erasure_atomicity.tla/.cfg + privacy-erasure-worker + legal/dpia/** + legal/lia/**.
+- **`scripts/validate_dpia.py`** — NEW DPIA CI hook; conservative PII signal detection; DPIA presence check; override mechanism (Privacy Officer GitHub approval required); Prometheus metric emission.
+- **`specs/03_architecture/adrs/ADR-S11-012-tla-scope-discipline-s11-erasure-only.md`** — TLA+ scope discipline: `dsr_erasure_atomicity.tla` covers erasure + consent + PARTIAL residency (InvResidencyPinned + InvResidencyMonotonic); FULL `region_residency.tla` deferred to S-14. Architect + Privacy Officer sign-off.
+- **`invariant_registry.md §4.2 L414 + L452`** — status confirmed 🟡 spec written (WI-S11-008 SEALED); TLC verification pending CI green run (PLANNED → GREEN após first CI run verde — honest-flag per AC-008).
+- **`specs/tla/README.md`** updated with dedicated CI workflow reference.
+
+INV-DATA-ERASURE-COMPLETE promotion contract: TLA+ spec artifact committed; WI-S11-008 SEALED 2026-05-13; promotion HIGH→CRITICAL (Lote 10.11.0-bis) remains contingent on first CI run TLC verde sustained.
+
 ### v1.6.0 (2026-05-07) — WI-S11-002 implementation phase SEALED
 
 Implementation phase landing (no spec changes; impl-only changelog row per charter §spec contract changelog discipline). WI-S11-002 SEALED at the canonical impl quality gates:

@@ -1,12 +1,12 @@
 ---
 id: "WI-S11-008"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
-audit_status: "ACTIVE"
-version: "1.1.0"
+doc_status: "SEALED"
+work_status: "DONE"
+audit_status: "AUDITED"
+version: "1.2.0"
 created: "2026-04-26"
-updated: "2026-04-28"
+updated: "2026-05-13"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-003", "FF-HR-005", "FF-HR-010"]
 parent: "S-11"
@@ -26,7 +26,7 @@ tags: ["wi", "s11", "dpia", "lia", "gdpr-art-35", "lgpd-art-38", "tla-plus", "ds
 
 # WI-S11-008 — DPIA Template `_templates/dpia.md` (GDPR Art. 35 / LGPD Art. 38) + LIA Template (Legitimate Interest Assessment for Telemetry under LGPD Art. 10 / GDPR Art. 6(1)(f)) + 3 DPIAs Filled-In (S-07 Dedup Leakage Risk, S-09 Telemetry Aggregation, S-10 Billing Data Cross-Border) + TLA+ `specs/tla/dsr_erasure_atomicity.tla` Formal Spec (validates `INV-DATA-ERASURE-COMPLETE` + Action `InvConsentSymmetry` validates WI-S11-003 Schema Simétrico Lote 9.4 H-05) + TLC v1.8.0 SHA-256 Pinned (specs/tla/README.md inheritance + ADR-0042 §A1 bootstrap ceremony) — **CI gate pendente** (status PLANNED → 🟡 spec written → ✅ GREEN apenas após first CI run verde sustained; Lote 10.11.0-bis-prime cycle 4 honest-flag) + DPIA CI Hook (PR Mudando PII Handling sem DPIA → Fail; Quarterly Privacy Officer Review)
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** SEALED · **work_status:** DONE · **lane:** HIGH_RISK · **sealed:** 2026-05-13
 > **Parent:** [S-11](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
