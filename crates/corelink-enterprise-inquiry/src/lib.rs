@@ -56,12 +56,23 @@
 //! - Cloudflare Worker `POST /v1/enterprise/inquire` handler binding.
 //! - Slack webhook HTTPS POST via `worker::send_future` fire-and-
 //!   forget per Lote 10.7bis R5 P0-3 (NEVER `tokio::spawn`).
-//! - HubSpot CRM `/crm/v3/objects/contacts` + `/crm/v3/objects/deals`
-//!   HTTPS POST.
 //! - SES auto-reply email HTTPS POST.
 //! - D1 migration `0040_enterprise_inquiries.sql` apply in production
 //!   schema (this crate stores the table DDL alongside the in-memory
 //!   ledger so the migration can be regenerated mechanically).
+//!
+//! # HubSpot CRM real client (R2-5)
+//!
+//! The [`hubspot`] module ships [`hubspot::HubSpotCrmClient`] — a
+//! production-ready [`crm::CrmClient`] impl wired to the HubSpot REST
+//! API (`/crm/v3/objects/{contacts, companies, deals, tickets}`) with
+//! Private App token auth, EU/US region routing, residency
+//! enforcement, idempotent search-then-create, and exponential
+//! backoff retry. HTTP transport is abstracted via the
+//! [`hubspot::HubSpotHttp`] trait to preserve the "no tokio in src"
+//! rule; the production binary wires a sync transport (e.g. `ureq`)
+//! while tests use the in-crate [`hubspot::RecordingHubSpotHttp`]
+//! mock.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -71,6 +82,7 @@ pub mod audit;
 pub mod crm;
 pub mod error;
 pub mod form;
+pub mod hubspot;
 pub mod ledger;
 pub mod mailer;
 pub mod outbox;
@@ -81,6 +93,12 @@ pub use audit::{
     InquiryAuditEmitError, InquiryAuditEventType, InquiryAuditRecord, InquiryAuditSink,
 };
 pub use crm::{CrmClient, CrmEntryId, CrmError, FailingCrmClient, InMemoryCrmClient};
+pub use hubspot::{
+    classify_retry, is_residency_routable, HubSpotConfigError, HubSpotCrmClient, HubSpotHttp,
+    HubSpotHttpError, HubSpotMethod, HubSpotRegion, HubSpotRequest, HubSpotResponse, HubSpotSleeper,
+    HubSpotToken, NoopSleeper, RecordingHubSpotHttp, RetryDecision, BASE_BACKOFF_MS,
+    DEAL_STAGE_ENTERPRISE_INQUIRY, MAX_RETRIES, RETRY_AFTER_CAP_S,
+};
 pub use error::EnterpriseInquiryError;
 pub use form::{
     BYOKRequirementsKind, EnterpriseInquiryForm, IdempotencyKey, InquiryId, InquiryReceipt,
