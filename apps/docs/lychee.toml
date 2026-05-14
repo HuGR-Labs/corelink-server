@@ -1,0 +1,37 @@
+# lychee broken-link checker config for CoreLink docs.
+#
+# Used by `.github/workflows/docs-ci.yml` to fail the PR on broken links
+# in the generated `apps/docs/build/` static site.
+
+# Maximum number of concurrent requests.
+max_concurrency = 12
+
+# Retry policy for transient failures.
+max_retries = 2
+retry_wait_time = 2
+
+# Treat these schemes as links.
+include_verbatim = true
+
+# Skip mailto, tel, and known noisy hosts.
+exclude = [
+  "^mailto:",
+  "^tel:",
+  # Localhost variants for dev preview tooling.
+  "^https?://localhost",
+  "^https?://127\\.0\\.0\\.1",
+  # GitHub edit links are constructed from EDIT_BASE + path; not all
+  # paths exist in the source repo yet (placeholder docs).
+  "^https?://github\\.com/humangr-labs/corelink-server/edit/.+",
+  # Algolia stub URLs in the search modal.
+  "stub_search_only_api_key_replace_at_dday",
+]
+
+# Headers required by some doc hosts.
+headers = ["User-Agent: lychee-corelink-docs/1.0"]
+
+# Accept 2xx + 3xx.
+accept = ["200..=299", "301..=308"]
+
+# Where to scan.
+base = "./build"
