@@ -104,6 +104,8 @@ members = [
     "crates/corelink-signup",
     # WI-S19-003 DPA versioning + 30d grace + read-only degrade middleware
     "crates/corelink-dpa-versioning",
+    # WI-S19-004 tier selection + Stripe Checkout + INV-ONBOARD-DPA-FIRST D1 lock
+    "crates/corelink-tier-selection",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
