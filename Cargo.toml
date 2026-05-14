@@ -45,6 +45,7 @@ members = [
     "crates/corelink-clerk-cf",
     "crates/corelink-privacy-consent-ledger",
     "crates/corelink-privacy-erasure-worker",
+    "crates/corelink-privacy-notice-emit",
     "crates/corelink-privacy-pseudonymize",
 ]
 exclude = [
@@ -148,6 +149,7 @@ corelink-dsr = { path = "crates/corelink-dsr" }
 corelink-clerk-cf = { path = "crates/corelink-clerk-cf" }
 corelink-privacy-consent-ledger = { path = "crates/corelink-privacy-consent-ledger" }
 corelink-privacy-erasure-worker = { path = "crates/corelink-privacy-erasure-worker" }
+corelink-privacy-notice-emit = { path = "crates/corelink-privacy-notice-emit" }
 corelink-privacy-pseudonymize = { path = "crates/corelink-privacy-pseudonymize" }
 
 # Test / bench

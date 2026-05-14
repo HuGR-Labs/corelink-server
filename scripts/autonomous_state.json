@@ -1,9 +1,4 @@
 {
-  "done": [
-    {
-      "wi": "WI-S11-003",
-      "sealed_at": "2026-05-13T00:00:00Z",
-      "commit": "pending"
-    }
-  ]
+  "done_s11_wave1_pending_consolidation": "see post-merge",
+  "note": "Reconstruct full state at end of merge sequence"
 }

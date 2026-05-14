@@ -1,10 +1,10 @@
 ---
 id: "WI-S11-004"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
-audit_status: "ACTIVE"
-version: "1.1.0"
+doc_status: "SEALED"
+work_status: "DONE"
+audit_status: "AUDITED"
+version: "1.1.1"
 created: "2026-04-26"
 updated: "2026-04-28"
 lane: "HIGH_RISK"
@@ -26,7 +26,7 @@ tags: ["wi", "s11", "privacy-notice", "semver", "3-locales", "pt-br", "en", "es"
 
 # WI-S11-004 — Privacy Notice Versioning Semver + 3 Locales (PT-BR Primary LGPD + EN GDPR/CCPA + ES LATAM) + Diff Publication `/privacy/changelog` + CI Hook Force Re-Consent on Major Bump (CTRL-PRIV-CONSENT-005) + Native Speaker + Legal Local Review (`legal/privacy-notice/v<M.m>.md`; semver versioning; major bump = material change → force re-consent via WI-S11-003 stale_consent flag; minor bump = clarification/typo/contact update sem re-consent; diff diário publicado em `/privacy/changelog` rendered via static HTML; CI hook valida (a) semver bump em qualquer mudança; (b) 3 locales sync (PT-BR/EN/ES) — major bump em primary triggers re-translation obrigatória; (c) Legal Review evidence EVT-044 pre-merge; CTRL-PRIV-CONSENT-005 + P1.1 SOC 2 + GDPR Art. 13/14 + LGPD Art. 9 alignment; emit fail-CLOSED audit `dev.hugr.corelink.privacy_notice.{published,deprecated}.v1` 2 CloudEvents canonical; notice_text_hash SHA-256 deterministic per locale × version inputs WI-S11-003 ConsentProofPayload validation)
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** SEALED · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-11](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---

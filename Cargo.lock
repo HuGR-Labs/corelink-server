@@ -794,6 +794,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-privacy-notice-emit"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "proptest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "corelink-privacy-pseudonymize"
 version = "0.1.0"
 dependencies = [

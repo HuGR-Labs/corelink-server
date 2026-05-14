@@ -358,6 +358,21 @@ Itens waivable com sign-off Privacy Officer + Legal + Compliance Officer + ADR:
 
 ## 20. Change log
 
+### v1.8.0 (2026-05-13) — WI-S11-004 implementation phase SEALED
+
+Implementation phase landing (no spec changes; impl-only changelog row per charter §spec contract changelog discipline). WI-S11-004 SEALED at the canonical impl quality gates:
+
+- **`crates/corelink-privacy-notice-emit/`** new crate (~820 LOC; 5 src modules + 3 test files). `NoticeEmitter` trait + `InMemoryNoticeEmitter` orchestrator with canonical fail-CLOSED `lookup → emit_audit → mutate_state` ordering (AC-008 + INV-AUDIT-APPEND-ONLY). `NoticeLocale` `#[non_exhaustive]` 3-arm enum (PtBr/EnUs/EsMx — LGPD primary, GDPR/CCPA secondary, LATAM tertiary). `VersionBump` `#[non_exhaustive]` 2-arm enum (Major/Minor) per ADR-S11-007 material vs minor criteria. `NoticeAuditSink` trait + `InMemoryNoticeAuditSink` + `FailingNoticeAuditSink` (fail-CLOSED chaos fixture). `NoticeStateStore` trait + `InMemoryNoticeStateStore`. `notice_text_hash` deterministic SHA-256 (CRLF→LF + trim + SHA-256 per AC-006). 2 CloudEvents canonical envelopes: `dev.hugr.corelink.privacy_notice.published.v1` + `dev.hugr.corelink.privacy_notice.deprecated.v1` per Lote 10.9bis P0-G prefix. Per-instance `Arc<Mutex<>>` F-001 closure.
+- **`legal/privacy-notice/v1.0.0/`** initial notice content 3 locales (pt-BR.md ~1500 words / en-US.md ~1500 words / es-MX.md ~1500 words) + metadata.yaml schema. Content covers LGPD Art. 9 + GDPR Art. 13/14 + CCPA §1798.100(b) canonical fields (data categories, purposes, legal basis, sub-processors, DSR rights, DPO contact, retention, international transfers).
+- **`scripts/notice_text_hash_canonical.py`** Python cross-validation of Rust `notice_text_hash` (CRLF→LF + NFC + SHA-256). `scripts/validate_privacy_notice.py` CI hook (5 validations: semver bump / 3 locales sync / native speaker review / Legal Review EVT-044 / major bump CD flag). `scripts/publish_privacy_diff.py` daily diff HTML generator (Cloudflare Pages `/privacy/changelog/<date>.html`).
+- **`specs/03_architecture/adrs/ADR-S11-007-privacy-notice-material-vs-minor.md`** NEW. Material vs minor criteria table (M-1..M-7 major + m-1..m-5 minor + borderline Privacy Officer judgment). CTRL-PRIV-CONSENT-005 normative reference.
+- **`schemas/cloudevents/privacy-notice-{published,deprecated}.v1.json`** JSON Schema 2020-12 for both CloudEvents types.
+- **`legal/privacy-notice/REVIEW_PROCESS.md`** SOP for native speaker + Legal local review process (roles, steps, SLA targets).
+- **`specs/05_quality/runbooks/RB-PRIVACY-NOTICE-LATE-PUBLICATION.md`** NEW canonical runbook for diff publication SLA breach (SEV-MEDIUM + escalation path to SEV-HIGH on major bump stale_consent_check miss).
+- **Quality gates verde**: 42 tests across 3 files all green (27 lib + 2 prop_audit_fail_closed at 10k iter + 4 prop_notice_hash_determinism at 10k iter + 9 regression_3locale_sync); `cargo clippy --all-targets -- -D warnings` clean; `cargo build --target wasm32-unknown-unknown -p corelink-privacy-notice-emit` clean.
+- **8 ACs covered**: AC-001 (initial publication v1.0.0 happy path) / AC-002 (major bump force re-consent) / AC-003 (minor bump silent) / AC-004 (3 locales sync enforcement) / AC-005 (native speaker review checkbox enforcement) / AC-006 (notice_text_hash deterministic cross-platform) / AC-007 (diff publication scaffolding) / AC-008 (audit fail-CLOSED state unchanged).
+- **INV-AUDIT-APPEND-ONLY** + **INV-CONSENT-PROOF-VERIFIABLE** both covered: fail-CLOSED envelope pinned by `prop_audit_fail_closed` 10k iter; `notice_text_hashes` in `NoticeEmitDecision` is the direct INV-CONSENT-PROOF-VERIFIABLE cross-validation anchor for WI-S11-003 `ConsentProofPayload.notice_text_hash`.
+
 ### v1.7.0 (2026-05-13) — WI-S11-003 implementation phase SEALED
 
 Implementation phase landing (no spec changes; impl-only changelog row per charter §spec contract changelog discipline). WI-S11-003 SEALED at the canonical impl quality gates:
