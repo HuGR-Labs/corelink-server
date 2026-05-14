@@ -1432,6 +1432,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-dpa-acceptance"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "hex",
+ "jsonwebtoken",
+ "proptest",
+ "rand 0.8.6",
+ "rsa",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "subtle",
+ "thiserror 2.0.18",
+ "uuid",
+]
+
+[[package]]
 name = "corelink-dr-drill"
 version = "0.1.0"
 dependencies = [

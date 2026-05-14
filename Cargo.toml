@@ -98,6 +98,8 @@ members = [
     "crates/corelink-runbook-tracker",
     # WI-S17-005 oncall scheduler + fatigue tracking + PagerDuty integration trait
     "crates/corelink-oncall",
+    # WI-S19-002 DPA click-through 6-field consent + RS256 JWT receipt + 3 locales
+    "crates/corelink-dpa-acceptance",
     # WI-S19-001 signup orchestration backend + atomic D1 provisioning + chaos Stripe outage
     "crates/corelink-signup",
 ]

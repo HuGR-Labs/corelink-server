@@ -1,0 +1,83 @@
+name: dpa-legal-review
+
+# WI-S19-002: legal-review hook.
+#
+# Any PR that touches `legal/dpa/**` MUST receive a Legal Counsel
+# sign-off. This workflow:
+#   1. Detects DPA file changes in the PR diff.
+#   2. Adds the `legal-review-required` label.
+#   3. Posts (or updates) a sticky PR comment with the runbook link
+#      (`specs/_runbooks/RB-DPA-CHANGE.md`).
+#
+# The merge block itself is enforced via:
+#   - the `legal-review-required` branch protection rule on `main`
+#     (configured outside the repo), AND
+#   - `.github/CODEOWNERS` requiring `@humangr-labs/legal` review for
+#     `legal/dpa/` (see CODEOWNERS update in this WI).
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "legal/dpa/**"
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  flag-legal-review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add legal-review-required label
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+            await github.rest.issues.addLabels({
+              owner,
+              repo,
+              issue_number,
+              labels: ["legal-review-required"],
+            });
+
+      - name: Post / update sticky comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+            const marker = "<!-- dpa-legal-review-sticky -->";
+            const body = [
+              marker,
+              "## Legal review required",
+              "",
+              "This PR modifies `legal/dpa/**`. Per **WI-S19-002** + ",
+              "`specs/_runbooks/RB-DPA-CHANGE.md`:",
+              "",
+              "- [ ] Legal Counsel sign-off (en-US)",
+              "- [ ] Legal Counsel sign-off (pt-BR)",
+              "- [ ] Legal Counsel sign-off (es-419)",
+              "- [ ] `legal_review_status` frontmatter advanced to `approved`",
+              "- [ ] `specs/_audits/YYYY-MM-DD-legal-review-dpa-vX.Y.Z.md` committed",
+              "",
+              "CODEOWNERS automatically requires `@humangr-labs/legal` ",
+              "review. Do **not** bypass.",
+            ].join("\n");
+            const comments = await github.rest.issues.listComments({
+              owner, repo, issue_number, per_page: 100,
+            });
+            const existing = comments.data.find((c) =>
+              c.body && c.body.startsWith(marker)
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner, repo, comment_id: existing.id, body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number, body,
+              });
+            }
