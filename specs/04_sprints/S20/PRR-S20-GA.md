@@ -4,7 +4,7 @@ type: "prr"
 doc_status: "SEALED"
 work_status: "CONDITIONALLY_APPROVED"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.0.1"
 created: "2026-05-14"
 updated: "2026-05-14"
 lane: "HIGH_RISK"
@@ -16,10 +16,14 @@ owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
 # Note: the 13 canonical sign-off slots for this PRR live in §3 of the body
-# (Owner, Final Approver, Engineer Lead, QA Lead, Security Lead, Privacy
-# Officer, Legal Counsel, Compliance Officer, Product Lead, SRE Lead, CTO,
-# DPO, External Auditor). Schema `reviewers[].role` enum is limited to the
-# canonical short-form set (`eng`, `tech_lead`, `architect`,
+# per spec contract S-20 §5.1 R-S20-1 (Lote 11.21 round-1 P0-S20-001 fix):
+# (1) Owner, (2) Final Approver, (3) Engineer Lead, (4) QA Lead,
+# (5) Security Lead (AppSec advisor folded), (6) Privacy Officer (DPO-interim;
+# DPO folded), (7) Legal Counsel, (8) Compliance Officer, (9) Product Lead,
+# (10) SRE Lead, (11) CTO, (12) Architect (Crypto SME folded per ADR-0034),
+# (13) External Auditor (pentest firm rep). Finance is NOT in the canonical 13
+# (delegated to Compliance + Architect). Schema `reviewers[].role` enum is
+# limited to the canonical short-form set (`eng`, `tech_lead`, `architect`,
 # `security_lead`, `privacy_lead`, `sre_lead`, `qa`, `product_lead`,
 # `finance`, `legal`, `compliance`, ...); the 13-slot canonical labels for
 # GA gate sign-off are tracked in body §3 verbatim per spec contract §5.1.
@@ -112,7 +116,7 @@ All 14 canonical sources VERIFIED ACTIVE. Detailed evidence and provenance per r
 
 ## 3. 13 canonical sign-offs
 
-Per spec contract S-20 §5.1 + framework §33.5.4.3 (HIGH_RISK lane 10-12 sign-offs canonical; S-20 GA gate is the **largest of any sprint** at 13 canonical roles per spec contract §5.1 + WI-S20-001 §16). 13 slots: Owner, Final Approver, Engineer Lead, QA Lead, Security Lead, Privacy Officer, Legal Counsel, Compliance Officer, Product Lead, SRE Lead, CTO, DPO, External Auditor (pentest firm rep).
+Per spec contract S-20 §5.1 R-S20-1 (Lote 11.21 round-1 P0-S20-001 canonical fix — single roster supersedes prior divergent enumerations). The canonical 13 numbered 1..13 are: Owner, Final Approver, Engineer Lead, QA Lead, Security Lead, Privacy Officer (DPO-interim), Legal Counsel, Compliance Officer, Product Lead, SRE Lead, CTO, Architect (Crypto SME folded per ADR-0034), External Auditor (pentest firm rep). **AppSec advisor is folded into Security Lead (slot 5); Crypto SME is folded into Architect (slot 12); DPO is folded into Privacy Officer (slot 6); Finance is NOT in the canonical 13 (delegated to Compliance Officer + Architect).** See spec contract §5.1 verbatim for authoritative role enumeration.
 
 | # | Role | Name | Signed at | signature_method | Status |
 |---|---|---|---|---|---|
@@ -120,15 +124,15 @@ Per spec contract S-20 §5.1 + framework §33.5.4.3 (HIGH_RISK lane 10-12 sign-o
 | 2 | Final Approver | Gustavo Schneiter | 2026-05-14 (Impl SEAL dual-hat per ADR-0034 Option A) | manual | signed |
 | 3 | Engineer Lead (S-20 lead) | Gustavo Schneiter | 2026-05-14 (Impl SEAL solo-tier per ADR-0034) | manual | signed |
 | 4 | QA Lead | TBD via external advisor pool | TBD (target D+30) | DocuSign | pending (W-SO-QA) |
-| 5 | Security Lead | TBD via external advisor pool | TBD (target D+30) | DocuSign | pending (W-SO-SEC) |
-| 6 | Privacy Officer | TBD via external advisor pool | TBD (target D+30) | DocuSign | pending (W-SO-PRIV) |
+| 5 | Security Lead (AppSec advisor folded per Lote 11.21; pentest report review primary) | TBD via external advisor pool | TBD (target D+30) | DocuSign | pending (W-SO-SEC) |
+| 6 | Privacy Officer (DPO-interim; DPO role folded per Lote 11.21) | TBD via external advisor pool | TBD (target D+45) | DocuSign | pending (W-SO-PRIV / W-SO-DPO) |
 | 7 | Legal Counsel | TBD via Cooley / DLA Piper / Bird & Bird (~$15-30k, 6-week lead) | TBD (target D+45) | DocuSign | pending (W-SO-LEG) — carryover S-14 + S-19 |
-| 8 | Compliance Officer (SOC 2 Drata/Vanta + GAP-XX roadmap) | TBD via external advisor pool | TBD (target D+45) | DocuSign | pending (W-SO-COMP) |
+| 8 | Compliance Officer (SOC 2 Drata/Vanta + GAP-XX roadmap; billing reconciliation delegate) | TBD via external advisor pool | TBD (target D+45) | DocuSign | pending (W-SO-COMP) |
 | 9 | Product Lead | Gustavo Schneiter | 2026-05-14 (Impl SEAL dual-hat per ADR-0034 Option A) | manual | signed |
 | 10 | SRE Lead | TBD via external advisor pool | TBD (target D+30) | DocuSign | pending (W-SO-SRE) |
 | 11 | CTO | Gustavo Schneiter | 2026-05-14 (Impl SEAL dual-hat per ADR-0034 Option A) | manual | signed |
-| 12 | DPO | TBD via external advisor pool | TBD (target D+45) | DocuSign | pending (W-SO-DPO) |
-| 13 | External Auditor (pentest firm rep — Schellman or A-LIGN) | TBD (engaged in WI-S20-002 statement of work) | TBD (target D+60 post-retest) | DocuSign | pending (W-SO-AUD) — closes after WI-S20-002 retest passes |
+| 12 | Architect (Crypto SME folded per ADR-0034; cumulative architecture review across 14 canonical sources; BYOK + KMS envelope encryption review primary) | TBD via external advisor pool | TBD (target D+30) | DocuSign | pending (W-SO-ARCH) |
+| 13 | External Auditor (pentest firm rep — Schellman / A-LIGN / Bishop Fox) | TBD (engaged in WI-S20-002 statement of work) | TBD (target D+60 post-retest) | DocuSign | pending (W-SO-AUD) — closes after WI-S20-002 retest passes |
 
 **Sign-off count at Implementation SEAL (this doc, D+0):** 5/13 signed · 8/13 pending external advisor. Per WI-S20-001 §6.2 negative-path 4, this is **below the canonical GA-go threshold**; minimum 5 of 8 pending roles MUST sign before promotion-gate conversion to `APPROVED`. ADR-0034 Option A dual-hat is documented for the 5 internal signatures only; it does NOT cover the 8 external slots for the GA-go decision binary.
 
@@ -241,7 +245,7 @@ Per spec contract S-20 §19, the following items are **NOT waivable** at the GA 
 | W-SO-LEG | Legal Counsel sign-off slot 7 (Cooley/DLA/Bird&Bird) | 6-week external engagement lead time | D+45 | Spec contract §5.1 + WI-S20-005 |
 | W-SO-COMP | Compliance Officer sign-off slot 8 (SOC 2 Drata/Vanta) | Drata/Vanta gap analysis output dependency | D+45 | WI-S20-003 |
 | W-SO-SRE | SRE Lead sign-off slot 10 | Tier-1 external advisor recruiting in flight | D+30 | ADR-0034 Option C |
-| W-SO-DPO | DPO sign-off slot 12 | Tier-1 external advisor recruiting in flight | D+45 | ADR-0034 Option C |
+| W-SO-ARCH | Architect (Crypto SME folded per ADR-0034) sign-off slot 12 | Tier-1 external advisor recruiting in flight; BYOK + KMS envelope encryption review primary | D+30 | ADR-0034 Option C + spec contract §5.1 (Lote 11.21 P0-S20-001 canonical fix — supersedes prior W-SO-DPO entry; DPO function folded into Privacy Officer W-SO-PRIV slot 6) |
 | W-SO-AUD | External Auditor (pentest firm rep) sign-off slot 13 | Closes after WI-S20-002 retest passes | D+60 | WI-S20-002 |
 | W-DOC-SWEEP | Sprint `sprint.md` frontmatter doc_status sweep DRAFT → FROZEN (S-00, S-02, S-06, S-12..S-19 still `DRAFT` in tree despite impl-sealed tag) | Per-sprint close-ceremony doc hygiene queued | D+30 | §4 above + GA-blocker G-DOC-SWEEP §7 |
 
@@ -356,7 +360,8 @@ Per spec contract §19 + WI-S20-001 §6.2 NP3: a third proposed `CONDITIONALLY_A
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-05-14 | Gustavo (via Sonnet WI-S20-001 builder) | Initial PRR-S20-GA — global PRR for GA engineering gate; 14 canonical sources verified ACTIVE + cumulative INVs ratified; 13 canonical sign-off slots (5 signed at Impl SEAL dual-hat per ADR-0034 Option A; 8 pending external advisor pool per ADR-0034 Option C — minimum 5 of 8 required for GA-go per WI §6.2 NP4); per-sprint S-00..S-19 SEAL status by impl-sealed tag (G-DOC-SWEEP doc-hygiene blocker P1); Engineering Gate DoD checklist (1/7 WIs done; 8 P0 blockers tracked); waivers carried into GA (W-S14 conditional + W-S19-W1..W8 + S-20 native W-PT/W-30D-STAGING/W-LH/W-SO-*/W-DOC-SWEEP); GA-blocker registry; risk acceptance matrix; promotion gate decision binary CONDITIONALLY_APPROVED (= block GA per spec contract §10.s20). Convergence target D+30 Implementation SEAL → D+60 GA Evidence Gate. |
+| 1.0.1 | 2026-05-14 | Gustavo (via Claude Opus 4.7 P0 remediation agent) | **Lote 11.21 sprint-close round-1 P0-S20-001 fix** — §3 sign-off table updated to mirror spec contract S-20 §5.1 R-S20-1 canonical 13 verbatim: slot 5 Security Lead (AppSec advisor folded), slot 6 Privacy Officer (DPO-interim; DPO folded), slot 12 changed from DPO to Architect (Crypto SME folded per ADR-0034); §6.2 waiver W-SO-DPO superseded by W-SO-ARCH (BYOK + KMS envelope encryption review primary). Frontmatter sign-off comment block updated to enumerate canonical 13 numbered 1..13. Spec contract bumped v1.3.0 → v1.4.0 with §20 changelog row companion. |
 
 ---
 
-**Fim PRR-S20-GA v1.0.0 SEALED · CONDITIONALLY_APPROVED.**
+**Fim PRR-S20-GA v1.0.1 SEALED · CONDITIONALLY_APPROVED.**

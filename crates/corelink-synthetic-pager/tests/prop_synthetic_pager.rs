@@ -22,8 +22,19 @@ use corelink_synthetic_pager::{
     SyntheticDrillId, MTTA_BUDGET_MS, UNACK_HARD_WINDOW_MS,
 };
 
+/// Resolve PROPTEST_CASES at runtime per charter constraint #15 — the
+/// canonical reference is `corelink-lighthouse-tracker/src/lib.rs:984`.
+/// Nightly CI sets `PROPTEST_CASES=100000`; PR CI defaults to the per-block
+/// fallback (10_000 or 1_000).
+fn proptest_cases(default: u32) -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
+}
+
 proptest! {
-    #![proptest_config(ProptestConfig { cases: 10_000, .. ProptestConfig::default() })]
+    #![proptest_config(ProptestConfig::with_cases(proptest_cases(10_000)))]
 
     /// MTTA budget cap is enforced: any ack with `mtta <=
     /// MTTA_BUDGET_MS` is `Acked`; any ack `mtta > MTTA_BUDGET_MS` is
@@ -82,7 +93,7 @@ proptest! {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig { cases: 1_000, .. ProptestConfig::default() })]
+    #![proptest_config(ProptestConfig::with_cases(proptest_cases(1_000)))]
 
     /// In-memory recorder: per-region `latest_for_region` always
     /// returns the drill with the maximum `emit_ts_ms` for that

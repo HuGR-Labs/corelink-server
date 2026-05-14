@@ -314,7 +314,7 @@ DASH-COMPLIANCE-S20 panel embedded em DASH-GA-READINESS dashboard.
 
 ## 16. Sign-off canonical (HIGH_RISK 13)
 
-13 roles per spec contract §5.1.
+13 roles per spec contract §5.1 R-S20-1 (v1.4.0 canonical — Lote 11.21 round-1 P0-S20-001 fix). **Authoritative roster (see `_spec_contract.md §5.1` for full text):** (1) Owner, (2) Final Approver, (3) Engineer Lead, (4) QA Lead, (5) Security Lead (AppSec advisor folded), (6) Privacy Officer (DPO-interim; DPO folded), (7) Legal Counsel, (8) Compliance Officer, (9) Product Lead, (10) SRE Lead, (11) CTO, (12) Architect (Crypto SME folded per ADR-0034), (13) External Auditor (pentest firm rep). Finance is NOT in the canonical 13. Any role label below that diverges MUST be read as referring to its folded canonical slot per the mapping above.
 
 | # | Role | Name | Signed Date | Status |
 |---|---|---|---|---|

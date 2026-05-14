@@ -3,7 +3,7 @@ id: "SPEC-CONTRACT-S20"
 type: "spec_contract"
 doc_status: "SEALED"
 audit_status: "ACTIVE"
-version: "1.3.0"
+version: "1.4.0"
 created: "2026-04-24"
 updated: "2026-05-14"
 owner: "Gustavo Schneiter"
@@ -83,8 +83,22 @@ inherits_from:
 
 ### 5.1 Engineering Gate (CAP-GA-001..006)
 
-- **R-S20-1**: **Global PRR** (`PRR-GA-001`) seguindo `_templates/production_readiness_review.md` com lane HIGH_RISK; **13 sign-offs canonical (Lote 10.20 codex P0 canonical fix — count alignment)**:
-  - SRE lead + Security lead + Privacy officer + DPO interim + Compliance officer + Engineer + QA + Product + Architect + AppSec + Crypto SME (BYOK) + Finance (billing).
+- **R-S20-1**: **Global PRR** (`PRR-GA-001`) seguindo `_templates/production_readiness_review.md` com lane HIGH_RISK; **13 sign-offs canonical (Lote 11.21 round-1 P0-S20-001 fix — single canonical roster; supersedes the divergent enumerations previously in this file, in `PRR-S20-GA.md §3`, and across `work_items/WI-S20-00*.md §16` tables)**. The 13 canonical roles, numbered 1..13, are:
+  1. **Owner** (Gustavo Schneiter)
+  2. **Final Approver** (Gustavo Schneiter)
+  3. **Engineer Lead** (S-20 lead engineer)
+  4. **QA Lead**
+  5. **Security Lead** (AppSec advisor folded per Lote 11.21 — single security signature; pentest report review primary)
+  6. **Privacy Officer (DPO-interim)** (separate DPO role folded into Privacy Officer per Lote 11.21 canonical consolidation; if a dedicated DPO is later seated, the slot remains Privacy Officer with DPO function attached)
+  7. **Legal Counsel** (Cooley / DLA Piper / Bird & Bird ~$15-30k 6-week lead)
+  8. **Compliance Officer** (SOC 2 Drata/Vanta + GAP-XX roadmap owner)
+  9. **Product Lead**
+  10. **SRE Lead**
+  11. **CTO**
+  12. **Architect (Crypto SME folded per ADR-0034)** (cumulative architecture review across 14 canonical sources; BYOK + KMS envelope encryption review primary)
+  13. **External Auditor (pentest firm representative — Schellman / A-LIGN / Bishop Fox)**
+
+  All 13 are required APPROVED for GA-go binary decision; any 1 REJECTED → REJECTED gate → remediation cycle. ADR-0034 Option A dual-hat covers slots 1, 2, 3, 9, 11 only (5 internal); slots 4, 5, 6, 7, 8, 10, 12, 13 (8 external) MUST be filled by independent advisors per WI-S20-001 §6.2 negative-path 4 minimum-5-of-8 threshold. The previously enumerated "Finance (billing)" role is **NOT in the canonical 13** (Lote 11.21 fix — Finance review is delegated to Compliance Officer slot 8 for billing reconciliation evidence + Architect slot 12 for engagement-cost ADR-0034 sign-off; if Finance is later seated as a 14th independent role it requires a spec-contract version bump and §5.1 renumber). The previously enumerated "AppSec advisor" + "Crypto SME (BYOK)" roles are **folded** into Security Lead (slot 5) and Architect (slot 12) respectively per Lote 11.21 canonical consolidation. The previously enumerated "DPO interim" is folded into Privacy Officer (slot 6).
 - **R-S20-2**: External pentest engagement:
   - Hire Schellman ou A-LIGN (scope: full CoreLink production-equivalent staging environment).
   - Pentest duration: 2 semanas + retest 1 semana.
@@ -134,7 +148,8 @@ inherits_from:
 - [ ] **All SLOs sustained 30d** prod-like load (concurrent staging) (EVT-021).
 - [ ] **P0/P1 priority subset (~25 of 47) runbooks dry-run** executed em últimos 90d (cumulative S-17 + S-20; Lote 10.20 codex P1 canonical math fix per S-17 Lote 10.17 alignment; prior "all 40" era inconsistente; canonical scope = P0/P1 priority subset) (EVT-017).
 - [ ] **Zero active waivers em controles CRITICAL** (EVT-015 if exists; EVT-031 PRR).
-- [ ] **TLA+ all 4 specs verde em CI**: tenant_isolation + cas_integrity + audit_immutability + gc_correctness (EVT-022).
+- [ ] **TLA+ 4 INVARIANT-level specs verde em CI** (pre-existing INV-level specs at `specs/tla/*.tla`; Lote 11.21 round-1 P0-002 canonical fix — disambiguated from the runbook-level set): `tenant_isolation` + `cas_integrity` + `audit_immutability` + `gc_correctness` (EVT-022).
+- [ ] **TLA+ 4 RUNBOOK-level specs verde em CI** (S-20 new specs at `specs/03_architecture/tla+/runbooks/*.tla` shipped by WI-S20-007 per ADR-0042 §A1 TLC v1.8.0 SHA-256 pin; Lote 11.21 round-1 P0-002 canonical fix — disambiguated from the invariant-level set): `signup_atomic` + `dpa_versioning_grace` + `byok_kill_switch` + `residency_failover` (EVT-022).
 - [ ] **SBOM CycloneDX 1.5+ signed (alinhado S-12 R-S12-3) signed published** (alinhado S-12 R-S12-3) (EVT-010).
 - [ ] **Zero SEV-1 in prod in 30d prior to GA** (production-like staging observation).
 - [ ] **All TLA+ specs verdes** em CI sustained.
@@ -184,7 +199,8 @@ Todas as invariants CRITICAL (14 canonical sources contribute) **must be active*
 - **SBOM CycloneDX 1.5+ signed (alinhado S-12 R-S12-3) signed published** — alinhado S-12 R-S12-3.
 - **P0/P1 priority subset (~25 of 47) runbooks dry-run tested in 90d** (cumulative S-17 + S-20 cadence; Lote 10.20 codex P1 canonical math fix per S-17 Lote 10.17 alignment).
 - **Zero SEV-1 in prod in 30d prior to GA** (production-equivalent staging — não há prod até GA day).
-- **TLA+ all 4 specs verdes em CI** sustained.
+- **TLA+ 4 INVARIANT-level specs verdes em CI** sustained (`specs/tla/{tenant_isolation,cas_integrity,audit_immutability,gc_correctness}.tla`).
+- **TLA+ 4 RUNBOOK-level specs verdes em CI** sustained (`specs/03_architecture/tla+/runbooks/{signup_atomic,dpa_versioning_grace,byok_kill_switch,residency_failover}.tla`).
 - **External pentest retest passed** within 2 weeks of remediation submission.
 - **3 lighthouse customers**: feedback collected + iteração; testimonials approved; case studies drafted.
 - **Compliance posture**: Drata/Vanta dashboard verde > 95% controls; gaps documented com fix timeline.
@@ -315,7 +331,8 @@ S-20 **NÃO PODE** promover via waiver dos seguintes itens — todos são GA gat
 - ❌ **3 lighthouse customers SLA met sustained 30d (Lote 10.20 codex P0 fix — canonical NÃO waivable; prior \"3→2 customers / 30d→21d\" allowance REMOVIDA porque secretly violava binary GA gate)** — customer trust baseline + GA evidence.
 - ❌ PRR global APPROVED — process baseline.
 - ❌ **P0/P1 priority subset (~25 of 47) runbooks dry-run em 90d** (Lote 10.20 codex P1 canonical math fix per S-17 Lote 10.17 alignment; prior "all 40" inconsistente) — operational baseline.
-- ❌ TLA+ all 4 specs verde em CI — formal verification baseline.
+- ❌ **TLA+ 4 INVARIANT-level specs verde em CI** (`specs/tla/{tenant_isolation,cas_integrity,audit_immutability,gc_correctness}.tla`) — formal verification baseline (Lote 11.21 round-1 P0-002 canonical fix).
+- ❌ **TLA+ 4 RUNBOOK-level specs verde em CI** (`specs/03_architecture/tla+/runbooks/{signup_atomic,dpa_versioning_grace,byok_kill_switch,residency_failover}.tla`) — runbook-level formal verification baseline shipped by WI-S20-007 (Lote 11.21 round-1 P0-002 canonical fix).
 - ❌ **SBOM CycloneDX 1.5+ signed published (Lote 10.20 codex P1 fix — NÃO waivable; prior \"fallback to CycloneDX 1.4 via ADR\" allowance REMOVIDA per S-12 R-S12-3 alignment)** — supply chain baseline.
 - ❌ Zero active waivers em controles CRITICAL — security baseline.
 
@@ -336,9 +353,10 @@ Itens waivable com 14-canonical-source sign-off + ADR + CEO/Founder approval (Lo
 | 1.2.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | Lote 10.20 codex P0 canonical fixes — 13 sign-offs canonical count alignment §5.1; lighthouse + SLA + SBOM waivers REMOVED from §19; P0/P1 priority subset ~25 of 47 runbooks math fix §6.1/§9; CAP-LAUNCH-001 explicit exclusion from §10.s20.3; engineering/launch separation §10.s20.9. |
 | 1.3.0 | 2026-05-14 | Gustavo (via Sonnet WI-S20-001 builder) | **WI-S20-001 SEALED** — PRR-S20-GA global PRR doc + 14 canonical sources verification matrix + 13 canonical sign-off slots (5 signed at Impl SEAL dual-hat per ADR-0034 Option A; 8 pending external advisor pool per ADR-0034 Option C — minimum 5 of 8 required for GA-go per WI §6.2 NP4); per-sprint S-00..S-19 SEAL status (20/20 impl-sealed tags); Engineering Gate DoD checklist; per-sprint waivers carried into GA + S-20 native waivers; GA-blocker registry; risk acceptance matrix; promotion gate decision binary CONDITIONALLY_APPROVED (= block GA per §10.s20). Coverage audit `specs/_audits/2026-05-14-s20-prr-global-coverage.md` annexed. doc_status DRAFT → SEALED; spec contract v1.2.0 → v1.3.0. Remaining 7 Engineering Gate WIs (WI-S20-002..007) enter parallel-wave staffing window; WI-S20-008 launch orchestration tracked separately per §6.2 soft-gate. |
 | 1.3.0 | 2026-05-14 | Gustavo (via Claude Opus 4.7) | Engineering-gate SEAL bump for WI-S20-001..007 closing engineering gate. WI-S20-007 SEALED with: 4 TLA+ runbook specs verified GREEN (signup_atomic + dpa_versioning_grace + byok_kill_switch + residency_failover) per ADR-0042 §A1 TLC v1.8.0 SHA-256 pin; 30d staging evidence framework drafted (`AUDIT-S20-30D-STAGING-EVIDENCE` pending D+30..D+60 observation window); 90d SBOM retention proof SEALED (`AUDIT-S20-SBOM-90D-RETENTION`); closing PRR sub-doc of PRR-GA-001 SEALED (`PRR-S20-CLOSING` doc_status SEALED · work_status CONDITIONALLY_APPROVED per declared deferrals SOC 2 Type I 6m + APAC + Apache 2.0 + Launch soft-gate); cross-WI adversarial rollup SEALED 95 scenarios 100% mitigation (`AUDIT-S20-ADVERSARIAL-SUMMARY`). WIs 001..006 SEAL handled via parallel worktree merges to `main` per spec contract §5.1 + sprint timeline §13. |
+| 1.4.0 | 2026-05-14 | Gustavo (via Claude Opus 4.7 P0 remediation agent) | **Lote 11.21 sprint-close round-1 P0 remediation** (audit `AUDIT-S20-SPRINT-CLOSE-R1` 7.2/10 → target SEAL). **P0-002 — TLA+ 4 canonical specs ambiguity resolved**: §6.1 DoD now distinguishes 4 INVARIANT-level specs (`specs/tla/{tenant_isolation,cas_integrity,audit_immutability,gc_correctness}.tla` — pre-existing, INV-level) from 4 RUNBOOK-level specs (`specs/03_architecture/tla+/runbooks/{signup_atomic,dpa_versioning_grace,byok_kill_switch,residency_failover}.tla` — S-20 new, runbook-level per ADR-0042 §A1 TLC v1.8.0 SHA-256 pin); both sets non-waivable per §19. **P0-S20-001 — 13 sign-off roster reconciled**: §5.1 R-S20-1 now lists the canonical 13 numbered 1..13 (Owner, Final Approver, Engineer Lead, QA Lead, Security Lead, Privacy Officer (DPO-interim), Legal Counsel, Compliance Officer, Product Lead, SRE Lead, CTO, Architect (Crypto SME folded per ADR-0034), External Auditor); supersedes prior divergent enumerations across spec contract / PRR-S20-GA / WI-S20-001..007 tables; AppSec advisor folded into Security Lead; Crypto SME folded into Architect; Finance removed from canonical 13 (delegated to Compliance + Architect). Companion fixes in same Lote 11.21 commit: `corelink-synthetic-pager` PROPTEST_CASES runtime fn (P0-001); SOW-S20-EXTERNAL-PENTEST per-surface ASVS L1/L2/L3 mapping table (P0-S20-002); SOC2-GAP-ANALYSIS §12 CIS Controls v8 mapping (P0-S20-003); PRR-S20-GA §3 + WI-S20-001..008 §16 sign-off tables reference §5.1 verbatim. |
 
 ---
 
 **Post-GA:** Sprint S-21+ começam Fase 2 (Remote Execution — `execute-action`, executor identity, sandbox runtime), abrindo novo ciclo de 10+ sprints.
 
-**Fim spec contract S-20 v1.3.0 SEALED.**
+**Fim spec contract S-20 v1.4.0 SEALED.**
