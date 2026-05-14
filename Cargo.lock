@@ -860,6 +860,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-failover-router"
+version = "0.1.0"
+dependencies = [
+ "corelink-replica-worker",
+ "proptest",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
 name = "corelink-gc"
 version = "0.1.0"
 dependencies = [
@@ -1174,6 +1184,15 @@ dependencies = [
  "tracing",
  "uuid",
  "zeroize",
+]
+
+[[package]]
+name = "corelink-replica-worker"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "serde",
+ "thiserror",
 ]
 
 [[package]]

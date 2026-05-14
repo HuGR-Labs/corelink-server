@@ -132,6 +132,15 @@ Investigação:
 - Customer impact summary.
 - Network status correlation.
 
+## Dry-Run Record (WI-S14-003)
+
+**Date**: 2026-05-14 | **Script**: `scripts/rb_fm_105_dry_run.sh` | **Status**: PASS — 0 ERRORS
+
+All 3 steps (Quarantine / Authoritative version / Re-replication) are executable.
+Post-incident verification targets documented. Drift findings: none.
+
+See dry-run script for full procedure with parameterized `blob_hash`, `primary_region`, `replica_region` inputs.
+
 ## References
 
 - `failure_modes.md` FM-105.
