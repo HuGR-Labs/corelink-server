@@ -1,0 +1,32 @@
+[package]
+name = "corelink-runbook-tracker"
+description = "WI-S17-003 runbook dry-run tracker (PAT-RUNBOOK-DRILL-001 monthly cadence canonical + FM-202 drift detection). Pure-logic library: drill recording, cadence calculation (≥ 30d overdue flag), drift detection (duration_ratio > 2.0). No tokio, no I/O — host adapters bind to D1 / CF Cron / CLI."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true, features = ["v4", "serde"] }
+
+[dev-dependencies]
+proptest = { workspace = true }

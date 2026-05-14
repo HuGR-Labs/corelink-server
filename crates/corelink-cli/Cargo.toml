@@ -32,6 +32,8 @@ mod_module_files = "deny"
 # print_stdout/print_stderr allowed at crate level in main.rs (CLI binary is intentionally user-facing).
 
 [dependencies]
+# WI-S17-003: runbook dry-run tracker (pure-logic library — no I/O, no async).
+corelink-runbook-tracker = { path = "../corelink-runbook-tracker" }
 clap = { version = "4", features = ["derive", "env"] }
 tokio = { workspace = true }
 serde = { workspace = true }
