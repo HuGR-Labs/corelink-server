@@ -7,19 +7,11 @@ interface LayoutProps {
   params: Promise<{ locale: Locale }>;
 }
 
-const BCP47: Record<Locale, string> = {
-  en: "en-US",
-  pt: "pt-BR",
-  es: "es-419",
-};
-
+// HF-S17-001: root layout (`app/layout.tsx`) owns the single `<html lang>`
+// element via `getLocale()` (next-intl) which honours the `corelink_locale`
+// cookie + middleware header. Emitting another `<html>`/`<body>` here would
+// produce invalid HTML and shadow the root lang attribute.
 export default async function LocaleLayout({ children, params }: LayoutProps) {
   const { locale } = await params;
-  return (
-    <html lang={BCP47[locale] ?? "en-US"}>
-      <body>
-        <LocaleProvider initialLocale={locale}>{children}</LocaleProvider>
-      </body>
-    </html>
-  );
+  return <LocaleProvider initialLocale={locale}>{children}</LocaleProvider>;
 }
