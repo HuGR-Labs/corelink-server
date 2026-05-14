@@ -70,7 +70,7 @@ impl KmsProvider for AwsMockProvider {
 // ──────────────────────────────────────────────────────────────────────────────
 
 fn gcp_key() -> KmsKeyId {
-    KmsKeyId { provider: KmsProviderKind::GcpKms, key_arn_or_id: "projects/p/locations/us-east1/keyRings/r/cryptoKeys/k".to_string(), region: "us-east1".to_string() }
+    KmsKeyId { provider: KmsProviderKind::GcpKms, key_arn_or_id: "projects/example-project/locations/us-east1/keyRings/byok/cryptoKeys/customer-cmk".to_string(), region: "us-east1".to_string() }
 }
 fn azure_key() -> KmsKeyId {
     KmsKeyId { provider: KmsProviderKind::AzureKeyVault, key_arn_or_id: "https://v.vault.azure.net/keys/k".to_string(), region: "eastus".to_string() }

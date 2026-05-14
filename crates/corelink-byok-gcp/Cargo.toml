@@ -1,11 +1,17 @@
 [package]
 name = "corelink-byok-gcp"
-description = "CoreLink BYOK GCP Cloud KMS adapter (FIPS 140-2 Level 1; 140-3 when GCP certifies). Implements KmsProvider trait (WI-S14-005). additional_authenticated_data binding for encryption_context. IAM service account minimal scope. Used by 16-combination matrix test. HIGH_RISK FF-HR-005 FF-HR-008."
+description = "CoreLink BYOK GCP Cloud KMS adapter (FIPS 140-2 Level 1 default; HSM tier maps to FIPS 140-2 Level 3 — see compliance/byok-fips-matrix.md). Implements KmsProvider trait (WI-S14-005). additional_authenticated_data binding for encryption_context. IAM service account minimal scope (roles/cloudkms.cryptoKeyEncrypterDecrypter + roles/cloudkms.viewer). Used by 16-combination matrix test. Production REST client (feature = `production`) targets the Cloud KMS v1 API with Application Default Credentials (service-account JWT or Workload Identity). R2-7. HIGH_RISK FF-HR-005 FF-HR-008."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
+
+[features]
+# Default build = stub/mock only (no network deps, suitable for CI without GCP creds).
+default = []
+# Production = real Cloud KMS REST client with ADC (R2-7). Pulls in reqwest + jsonwebtoken + base64 + regex.
+production = ["dep:reqwest", "dep:jsonwebtoken", "dep:base64", "dep:regex"]
 
 [lints.rust]
 unsafe_code = "forbid"
@@ -31,8 +37,17 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 zeroize = { workspace = true }
 tokio = { workspace = true }
+tracing = { workspace = true }
+
+# Production-only deps (gated behind `production` feature).
+reqwest = { workspace = true, optional = true }
+jsonwebtoken = { version = "9.3", optional = true }
+base64 = { workspace = true, optional = true }
+regex = { version = "1", optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
 tokio-test = { workspace = true }
 proptest = { workspace = true }
+wiremock = "0.6"
+serde_json = { workspace = true }

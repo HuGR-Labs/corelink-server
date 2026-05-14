@@ -22,6 +22,13 @@ print_stdout = "deny"
 print_stderr = "deny"
 mod_module_files = "deny"
 
+[features]
+default = []
+# R2-7: enable the real `GcpKmsRealProvider` in the matrix when
+# `GCP_TEST_KEY_RESOURCE` is set in the environment. Without this feature
+# the matrix only runs against the mock GCP provider (CI default).
+production-gcp = ["corelink-byok-gcp/production"]
+
 [dependencies]
 corelink-byok = { path = "../corelink-byok" }
 corelink-byok-aws = { path = "../corelink-byok-aws" }
