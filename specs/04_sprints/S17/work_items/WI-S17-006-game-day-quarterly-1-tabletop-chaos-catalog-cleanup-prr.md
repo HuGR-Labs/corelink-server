@@ -1,12 +1,12 @@
 ---
 id: "WI-S17-006"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "SEALED"
+work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-29"
-updated: "2026-04-29"
+updated: "2026-05-14"
 lane: "STANDARD"
 parent: "S-17"
 assignee: "Gustavo Schneiter"
@@ -27,7 +27,7 @@ tags: ["wi", "s17", "ship-gate", "game-day", "tabletop-exercise", "chaos-catalog
 
 # WI-S17-006 — S-17 Ship Gate: Game Day Quarterly Cadence Start (4-hour Session per Quarter; Quarterly Cadence Sustained Pós-GA per Quality Standard 14.s17.5) + 1 Tabletop Exercise Executed (1 Cycle Initial; Pre-defined Scenario Library: Scenario A Region Outage CF / Scenario B BYOK Key Compromise Simulated / Scenario C Supply Chain Attack Typosquat / Scenario D Insider Exfil — 4 Scenarios; SRE Lead Facilitates; Team Works Through Response per Runbooks; Observe Gaps em Runbooks/process; Iterate; Outputs Action Items + Runbook Updates per Spec Contract §5.6 R-S17-15) + Chaos Catalog Cleanup Post-1st Run (Refine Seed Determinism; Refine Safe-mode Thresholds; Refine FM Mappings; Commit Refined Catalog) + Closing PRR Doc S-17 com 5-8 Sign-offs Canonical (7 Typical: SRE Lead + Engineer + Oncall Manager + Product + QA + Compliance Officer + Privacy Officer per Sprint Contract §14) + Evidence Pack: Chaos Test Reports 4 Weeks (Sustained Observation per DoD §6) + DR Drill Report Cycle 1 + 3 Runbook Dry-run EVT-017s + Incident/Post-mortem Templates Committed + 1 Synthetic Incident Report + PagerDuty Schedule Live Screenshot + Fadigue Dashboard Live Screenshot + 1 Game Day Report + Adversarial Summary 30+ Scenarios Cross-WI + Two-phase SEAL D+20/D+50 (Implementation D+20 + GA Evidence Gate D+50)
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** STANDARD
+> **doc_status:** SEALED · **work_status:** DONE · **lane:** STANDARD
 > **Parent:** [S-17](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -576,6 +576,7 @@ Pré-PRR mandatory check: confirmed canonical reviewers vs pending. Sprint S-17 
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | Criação WI-S17-006 (cycle 12.S17.0; STANDARD lane two-phase SEAL D+20/D+50; game day quarterly cadence start + 1 tabletop + chaos catalog cleanup + closing PRR 5-8 canonical). |
+| 1.1.0 | 2026-05-14 | Gustavo (via Sonnet WI-S17-006 builder) | SEALED — game day quarterly cadence scheduled (CF Cron `0 6 1 3,6,9,12 *`) + RB-TABLETOP-TEMPLATE.md v1.0.0 (60-min / 4-h template w/ scenario header + roles + decision tree + injects + observer grid + debrief + outputs) + 1 synthetic 60-min tabletop exercise (BYOK CMK revoke under load; 5 findings 100 % owner / due-date coverage; SYNTHETIC marker pending real Q3-2026) + RB-CHAOS-CATALOG.md v1.0.0 cleanup pass (8 experiments × FM × runbook cross-reference; seed determinism / safe-mode threshold / FM mapping refinements) + PRR-S17 STANDARD CONDITIONALLY_APPROVED with 8 waivers (W1 4-week chaos observation → D+50, W2 synthetic tabletop substitution → 2026-09-01, W3 PRR staffing 4/7 pending external → D+10, W4 DR cycle 3 → annual, W5 non-waiver quarterly maintained, W6 47-runbook subset → S-20, W7 APAC gap → post-S-20, W8 PD prod keys → first deploy) + adversarial summary 32 scenarios cross-WI 100 % mitigation coverage. Spec contract S-17 bumped 1.2.0 → 1.3.0; doc_status SEALED. Cargo build clean; spec validator no new failures (14 pre-existing S-11/S-12/S-13 ADR failures unchanged). |
 
 ## 30. Anti-patterns evitados
 

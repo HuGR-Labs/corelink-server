@@ -1,11 +1,11 @@
 ---
 id: "SPEC-CONTRACT-S17"
 type: "spec_contract"
-doc_status: "DRAFT"
+doc_status: "SEALED"
 audit_status: "ACTIVE"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-04-24"
-updated: "2026-04-29"
+updated: "2026-05-14"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -300,4 +300,13 @@ Itens waivable com SRE lead + ADR:
 
 ---
 
-**Fim spec contract S-17 v1.1.0 SOTA.**
+## 20. Changelog
+
+| Versão | Data | Autor | Mudança |
+|---|---|---|---|
+| 1.0.0 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | Criação spec contract S-17 — ops maturity STANDARD lane; 6 WIs antecipados; chaos automation + DR drill + runbook discipline + post-mortem + oncall + game day. |
+| 1.1.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | SOTA elevation v1.1 — 4-week chaos sustained + DR drill semestral + runbook drill monthly + post-mortem blameless + oncall fadigue tracking + game day quarterly. Two-phase SEAL D+20/D+50 codified. |
+| 1.2.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | WI list confirmed (6 WIs) + closing WI two-phase SEAL D+20 Implementation + D+50 GA Evidence Gate; codex parallelism baseline. |
+| 1.3.0 | 2026-05-14 | Gustavo (via Sonnet WI-S17-006 builder) | WI-S17-001..006 SEALED via 6-builder parallel wave: chaos scheduler + 8 chaos types + catalog (001), DR drill scheduler semestral + 1 cycle CF region outage (002), runbook dry-run tracker P0/P1 monthly + 3 dry-runs + FM-202 drift detection (003), incident + post-mortem templates blameless + 1 synthetic test + engineering all-hands training (004), oncall PagerDuty schedule + fadigue tracking dashboard (005), ship gate game day quarterly cadence start + 1 tabletop (BYOK revoke synthetic 60-min) + chaos catalog cleanup pass + PRR-S17 STANDARD CONDITIONALLY_APPROVED with 8 waiver rows + adversarial summary 32 scenarios cross-WI (006). PRR-S17 5/7 signed at SEAL; 2/7 pending external advisor (SRE Lead + Oncall Manager — ADR-0034 Option C). Two-phase SEAL D+20 Implementation done; D+50 GA Evidence Gate target 2026-07-03. |
+
+**Fim spec contract S-17 v1.3.0 SEALED.**
