@@ -9,9 +9,20 @@ Implements [WI-S03-001](../../specs/04_sprints/S03/work_items/WI-S03-001-clerk-a
 
 - `ClerkAdapter::validate(raw_jwt) -> Result<ClerkPrincipal, AuthError>`
 - `ClerkAdapter::refresh_jwks() -> Result<(), AuthError>` — manual JWKS refresh hook.
-- `JwksFetcher` + `KvJwksCache` traits — production wiring is layered in
-  `corelink-worker` (CF Workers `worker::Fetch` + `worker::kv::Store`),
-  tests use the in-memory fakes in [`fakes`](src/fakes.rs).
+- `validate_session(jwt, config, fetcher, cache)` — free-function convenience surface for cold-path / one-shot validation.
+- `JwksFetcher` + `KvJwksCache` traits — production fetcher implementations coexist:
+  - **Native** (R2-2): `HttpJwksFetcher` (feature `http-fetcher` → `reqwest` + `rustls-tls`).
+  - **CF Workers**: `corelink-clerk-cf::CfJwksFetcher` (`worker::Fetch::Url` on the wasm32 target).
+  - Tests use the in-memory fakes in [`fakes`](src/fakes.rs).
+- `ClerkConfig::from_env()` — load config from the canonical env-var matrix (`CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `CLERK_AUDIENCE`, optional `CLERK_JWKS_URL`, `CLERK_JWT_ISSUER`).
+
+## Feature flags
+
+| Feature | Pulls | Use case |
+|---|---|---|
+| `jwt-adapter` (default) | `jsonwebtoken` (ring) | Native JWT validate path. Required for `ClerkAdapter`. Incompatible with `wasm32-unknown-unknown`. |
+| `http-fetcher` (opt-in) | `reqwest` + `rustls-tls` | `HttpJwksFetcher` for native targets. Implies `jwt-adapter`. |
+| `test-utils` (opt-in) | `rsa` + `rand` | `TestRsaKey` keypair generator for integration tests. NEVER enable in production. |
 
 ## Canonical bounds (WI §9)
 

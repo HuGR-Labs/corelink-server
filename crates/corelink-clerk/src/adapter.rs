@@ -519,6 +519,33 @@ impl ClerkAdapter {
     }
 }
 
+/// One-shot session validation convenience surface (R2-2).
+///
+/// Equivalent to `ClerkAdapter::new(config, fetcher, cache).validate(jwt)`
+/// but as a free function so downstream HTTP middlewares (e.g. the
+/// `apps/server` axum bootstrap) can wire a validator without
+/// retaining the adapter handle. Cheap to call repeatedly because the
+/// `Arc`-backed inner state is rebuilt per call (the caller may
+/// reuse a single `ClerkAdapter` for hot-path validation; this surface
+/// is for cold-path tools — admin CLIs, doctor scripts, etc.).
+///
+/// # Errors
+///
+/// See [`AuthError`].
+pub async fn validate_session<F, C>(
+    jwt: &str,
+    config: ClerkConfig,
+    fetcher: F,
+    cache: C,
+) -> Result<ClerkPrincipal, AuthError>
+where
+    F: JwksFetcher,
+    C: KvJwksCache,
+{
+    let adapter = ClerkAdapter::new(config, fetcher, cache);
+    adapter.validate(jwt).await
+}
+
 /// Constant-time issuer allowlist membership check.
 fn issuer_allowed(got: &str, allowlist: &[String]) -> bool {
     let got_bytes = got.as_bytes();
