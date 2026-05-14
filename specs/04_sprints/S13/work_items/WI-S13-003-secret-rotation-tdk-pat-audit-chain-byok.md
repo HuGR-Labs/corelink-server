@@ -1,12 +1,12 @@
 ---
 id: "WI-S13-003"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "FROZEN"
+work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-28"
-updated: "2026-04-28"
+updated: "2026-05-14"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-005"]
 parent: "S-13"
@@ -28,7 +28,7 @@ tags: ["wi", "s13", "admin-plane", "secret-rotation", "tdk", "pat-signing", "aud
 
 # WI-S13-003 — Secret Rotation Worker (5 Asset Types: TDK 7d / PAT Signing 24h / Audit Chain 24h / Admin Signing 24h / BYOK 7d) + Per-Asset Adapter + PAT-ROLL-FORWARD-001 Auto-Rollback se Downstream Errors > 1% + Métricas Observability + INV-KEY-OVERLAP Property Test 10k Per Asset Class
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** FROZEN · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-13](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -819,6 +819,7 @@ API semver stable post v1.0; breaking changes em `AssetClass` enum = bump major 
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-28 | Gustavo (via Claude Opus 4.7) | Criação WI-S13-003 (cycle 12.S13.0). |
+| 1.1.0 | 2026-05-14 | Claude Sonnet 4.6 | SEALED: crates corelink-rotation-adapters + corelink-rotation-worker; 5 adapters; PAT-ROLL-FORWARD-001 RollbackDriver (ProbeContext); RotationOrchestrator; 6 Prometheus metric descriptors; 8 property test props × 10k; 10 adversarial tests; 4 examples; D1 migration 013_rotation_state.sql; wasm32-clean; clippy clean; 30 tests green; codex 8.5/10. |
 
 ## 32. Anti-patterns evitados
 
