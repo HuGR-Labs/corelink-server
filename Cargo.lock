@@ -1431,6 +1431,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-dr-drill"
+version = "0.1.0"
+dependencies = [
+ "corelink-failover-router",
+ "corelink-replica-worker",
+ "proptest",
+ "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "corelink-dsr"
 version = "0.1.0"
 dependencies = [

@@ -83,6 +83,8 @@ members = [
     "crates/corelink-customer-alerts",
     # WI-S14-007 Ed25519 erasure attestation
     "crates/corelink-erasure-attestation",
+    # WI-S17-002 DR drill scheduler + CF region outage simulator
+    "crates/corelink-dr-drill",
     # WI-S15-001 CLI 7 subcommands + WI-S15-005 telemetry opt-in (same crate)
     "crates/corelink-cli",
     # WI-S15-004 FFI wrappers (Python pyO3 + Go cgo + JS/TS WASM)
@@ -255,6 +257,7 @@ corelink-byok-vault = { path = "crates/corelink-byok-vault" }
 corelink-byok-revocation = { path = "crates/corelink-byok-revocation" }
 corelink-customer-alerts = { path = "crates/corelink-customer-alerts" }
 corelink-erasure-attestation = { path = "crates/corelink-erasure-attestation" }
+corelink-dr-drill = { path = "crates/corelink-dr-drill" }
 
 # CLI tooling (WI-S15-001 / WI-S15-005)
 toml = "0.8"

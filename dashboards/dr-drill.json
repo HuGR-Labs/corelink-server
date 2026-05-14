@@ -1,0 +1,226 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "CoreLink DR drill (WI-S17-002) Prometheus / VictoriaMetrics / Grafana Cloud Mimir datasource.",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "uid": "DASH-DR-DRILL",
+  "title": "CoreLink — DR Drill (DASH-DR-DRILL)",
+  "description": "WI-S17-002 §6.1 DR drill semestral cadence + cycle 1 CF region outage simulator. Tracks drill outcomes, measured RTO/RPO vs SLO ceilings (RTO ≤ 1800s, RPO ≤ 60s), SLO impact (error-budget consumption), cadence-missed alerts. SRE Lead + Final Approver + Compliance Officer personas. NUNCA per-tenant labels (INV-OBS-CARDINALITY-BUDGET).",
+  "tags": ["corelink", "dr-drill", "s17", "cf-region-outage", "rto", "rpo", "semestral", "standard"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "annotations": {
+    "list": [
+      {
+        "name": "lastUpdated",
+        "datasource": "$DS_PROMETHEUS",
+        "enable": false,
+        "iconColor": "blue"
+      },
+      {
+        "name": "DR drill completions",
+        "datasource": "$DS_PROMETHEUS",
+        "enable": true,
+        "iconColor": "green",
+        "expr": "increase(corelink_dr_drill_total{outcome=\"completed\"}[1d]) > 0"
+      },
+      {
+        "name": "DR drill failures",
+        "datasource": "$DS_PROMETHEUS",
+        "enable": true,
+        "iconColor": "red",
+        "expr": "increase(corelink_dr_drill_total{outcome=\"failed\"}[1d]) > 0"
+      }
+    ],
+    "lastUpdated": "2026-05-14T00:00:00Z",
+    "cardinality_budget_used": "9/100000"
+  },
+  "time": {
+    "from": "now-180d",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "cycle",
+        "type": "custom",
+        "label": "Cycle",
+        "multi": true,
+        "includeAll": true,
+        "options": [
+          { "text": "All", "value": "all", "selected": true },
+          { "text": "1 — CF region outage", "value": "1" },
+          { "text": "2 — D1 primary loss", "value": "2" },
+          { "text": "3 — BYOK key compromise", "value": "3" }
+        ],
+        "query": "all,1,2,3"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "DR drill total runs per outcome (180d)",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 1 — cumulative DR drill executions per outcome. Counter `corelink_dr_drill_total{cycle, outcome}`.",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (outcome) (increase(corelink_dr_drill_total{cycle=~\"$cycle\"}[180d]))",
+          "legendFormat": "{{outcome}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Latest measured RTO seconds (vs ceiling 1800s)",
+      "type": "gauge",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 2 — most-recent RTO measurement per cycle. SLO ceiling = 1800s (30min). `corelink_dr_drill_slo_impact_seconds{cycle, slo=\"rto\"}`.",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "max": 3600,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 900 },
+              { "color": "red", "value": 1800 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "max by (cycle) (corelink_dr_drill_slo_impact_seconds{cycle=~\"$cycle\", slo=\"rto\"})",
+          "legendFormat": "cycle {{cycle}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Latest measured RPO seconds (vs ceiling 60s)",
+      "type": "gauge",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 3 — most-recent RPO measurement per cycle. SLO ceiling = 60s (replication lag p99). `corelink_dr_drill_slo_impact_seconds{cycle, slo=\"rpo\"}`.",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "max": 120,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 30 },
+              { "color": "red", "value": 60 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "max by (cycle) (corelink_dr_drill_slo_impact_seconds{cycle=~\"$cycle\", slo=\"rpo\"})",
+          "legendFormat": "cycle {{cycle}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Drill outcomes over time (per cycle)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 4 — timeseries of cycle outcomes. Semestral cadence: 2 completions per year per cycle 1 expected.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "targets": [
+        {
+          "expr": "increase(corelink_dr_drill_total{cycle=~\"$cycle\"}[7d])",
+          "legendFormat": "cycle {{cycle}} — {{outcome}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Cadence-missed alert (semestral)",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 5 — alert when expected semestral cycle skipped. Alert from `corelink_dr_drill_cadence_missed_total`.",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 14 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (cycle) (increase(corelink_dr_drill_cadence_missed_total{cycle=~\"$cycle\"}[365d]))",
+          "legendFormat": "cycle {{cycle}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Error-budget impact (% consumed during drill window)",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "description": "WI §6.1 panel 6 — SLO error-budget percentage consumed during drill. From S-09 multi-burn-rate reuse.",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 14 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        }
+      },
+      "targets": [
+        {
+          "expr": "max by (cycle) (corelink_dr_drill_slo_budget_consumed_pct{cycle=~\"$cycle\"})",
+          "legendFormat": "cycle {{cycle}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}
