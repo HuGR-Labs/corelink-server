@@ -1,14 +1,10 @@
 ---
 id: "SPEC-CONTRACT-S12"
 type: "spec_contract"
-doc_status: "DRAFT"
-audit_status: "ACTIVE"
-version: "1.3.0"
+doc_status: "SEALED"
+audit_status: "AUDITED"
+version: "1.4.0"
 created: "2026-04-24"
-updated: "2026-05-13"
-
-
-
 updated: "2026-05-14"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
@@ -319,52 +315,18 @@ Itens waivable com Security lead + Legal + ADR:
 
 ---
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 ## 20. Changelog
 
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | Criação spec contract S-12. |
-<<<<<<< HEAD
-| 1.1.0 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | SOTA v1.1 — INV-SUPPLY-PROVENANCE-IN-REKOR fail-closed hardening. |
-| 1.2.0 | 2026-05-14 | Gustavo (via Claude Sonnet 4.6) | WI-S12-002 SEALED: sbom-publish crate + sbom.yml workflow + ADR-S12-001. |
+| 1.1.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | SOTA v1.1 — INV-SUPPLY-PROVENANCE-IN-REKOR fail-closed hardening (no grace period). |
+| 1.2.0 | 2026-05-13 | Gustavo (via Claude Sonnet 4.6) | WI-S12-001 SEALED: release-slsa3.yml + corelink-supply-verify + ADR-0045 + slsa-l3-pipeline.md. |
+| 1.2.1 | 2026-05-14 | Gustavo (via Claude Sonnet 4.6) | WI-S12-002 SEALED: sbom-publish crate + sbom.yml + ADR-S12-001. |
+| 1.2.2 | 2026-05-14 | Gustavo (via Claude Sonnet 4.6) | WI-S12-003 SEALED: corelink-deploy-verifier + cosign-sign.yml + ADR-0044. |
+| 1.3.0 | 2026-05-14 | Gustavo (via Claude Sonnet 4.6) | WI-S12-004 SEALED: cargo-audit/deny/Dependabot workflows + deny.toml + corelink-supply-chain-policy + dep-policy.md + ADR-S12-045/046/047. |
+| 1.3.1 | 2026-05-14 | Gustavo (via Claude Sonnet 4.6) | WI-S12-005 SEALED: corelink-dt-webhook + CLI + reconcile + DT infra + ADR-0037 + dt-dr-runbook.md. |
+| 1.3.2 | 2026-05-14 | Gustavo (via Claude Sonnet 4.6) | WI-S12-006 SEALED: reproducible builds 2-runner diff + SOURCE_DATE_EPOCH + rust-toolchain.toml + ADR-0015 ratified. |
+| 1.4.0 | 2026-05-14 | Gustavo (via Claude Sonnet 4.6) | WI-S12-007 SEALED: RB-FM-157 FROZEN + RB-FM-156/157 dry-run reports + PRR-S12 11 sign-offs CONDITIONALLY_APPROVED + security walkthrough P0=0 + adversarial summary 35 scenarios 100% + OWASP ASVS V14+V11.1+SSDF+EO14028 40/40. S-12 sprint SEALED. |
 
-**Fim spec contract S-12 v1.2.0 SOTA.**
-
-## 20. Change Log (Implementation)
-
-| Versão | Data | Autor | Mudança |
-|--------|------|-------|---------|
-| 1.2.1 | 2026-05-13 | Gustavo (via Claude Sonnet 4.6) | WI-S12-001 SEALED: release-slsa3.yml + corelink-supply-verify crate (lib/CLI/tests/examples) + ADR-0045 + docs/internal/slsa-l3-pipeline.md. |
-=======
-## 20. Change log
-
-| Versão | Data | Autor | Mudança |
-|---|---|---|---|
-| 1.0.0 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | Criação spec contract S-12 v1.0.0. |
-| 1.1.0 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | SOTA v1.1 — Rekor fail-closed policy codex alignment. |
-| 1.2.0 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | WI list + PERT baseline sealed. |
-| 1.3.0 | 2026-05-13 | Gustavo (via Claude Sonnet 4.6) | WI-S12-004 SEALED: cargo-audit + cargo-deny + Dependabot artifacts committed (4 workflows + deny.toml + dependabot.yml + corelink-supply-chain-policy crate + dep-policy.md + ADR-S12-045/046/047). |
->>>>>>> wt/wi-s12-004
-
----
-
-**Fim spec contract S-12 v1.1.0 SOTA.**
-=======
-| 1.1.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | Lote 10 seals + INV-SUPPLY-PROVENANCE-IN-REKOR (no grace period). |
-| 1.2.0 | 2026-05-13 | Gustavo (via Claude Sonnet 4.6) | WI-S12-003 SEALED: corelink-deploy-verifier crate + cosign-sign.yml + ADR-0044 implemented. |
-
-**Fim spec contract S-12 v1.2.0 SOTA.**
->>>>>>> wt/wi-s12-003
-=======
-## Changelog
-
-| Versão | Data | Mudança |
-|--------|------|---------|
-| 1.0.0 | 2026-04-24 | Criação S-12 spec contract. |
-| 1.2.0 | 2026-04-24 | WIs antecipados confirmados (7). |
-| 1.3.0 | 2026-05-13 | WI-S12-005 SEALED: corelink-dt-webhook crate + CLI + reconcile + DT infra + ADR-0037 + DR runbook. |
-
-**Fim spec contract S-12 v1.3.0 SOTA.**
->>>>>>> wt/wi-s12-005
+**Fim spec contract S-12 v1.4.0 SOTA.**
