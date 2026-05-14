@@ -1634,6 +1634,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-lighthouse-tracker"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "uuid",
+]
+
+[[package]]
 name = "corelink-logpush"
 version = "0.1.0"
 dependencies = [
