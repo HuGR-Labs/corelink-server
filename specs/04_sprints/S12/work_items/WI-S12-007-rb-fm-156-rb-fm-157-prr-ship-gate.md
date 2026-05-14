@@ -1,12 +1,12 @@
 ---
 id: "WI-S12-007"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
-audit_status: "ACTIVE"
-version: "1.0.0"
+doc_status: "SEALED"
+work_status: "DONE"
+audit_status: "AUDITED"
+version: "1.0.1"
 created: "2026-04-29"
-updated: "2026-04-29"
+updated: "2026-05-14"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-005"]
 parent: "S-12"
@@ -27,7 +27,7 @@ tags: ["wi", "s12", "supply-chain", "rb-fm-156", "rb-fm-157", "security-walkthro
 
 # WI-S12-007 — RB-FM-156 (dep maintainer malicioso) + RB-FM-157 (typosquatting) Dry-Runs + Security Walkthrough + PRR S-12 Ship Gate (11 Sign-offs Canonical)
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** SEALED · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-12](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -732,6 +732,7 @@ Pré-PRR mandatory check: confirmed canonical reviewers vs pending. Sprint S-12 
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | Criação WI-S12-007 (cycle 11.S12.0); SOTA full ship gate (RB-FM-156 + RB-FM-157 dry-runs + Security walkthrough + PRR doc 11 sign-offs canonical + adversarial summary 30+ scenarios + OWASP ASVS V14 + V11.1 + SSDF + EO 14028 + 12-row risk + 10 chaos). |
+| 1.0.1 | 2026-05-14 | Gustavo (via Claude Sonnet 4.6) | SEALED: RB-FM-157 upgraded from stub to FROZEN v1.0.0; RB-FM-156 + RB-FM-157 dry-run reports FROZEN; PRR-S12.md 11 sign-offs canonical CONDITIONALLY_APPROVED; security walkthrough P0=0 P1=0; adversarial summary 35 scenarios 100% mitigated; OWASP ASVS V14+V11.1+SSDF+EO14028 40/40 PASS. |
 
 ## 32. Anti-patterns evitados
 
