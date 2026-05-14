@@ -1,0 +1,23 @@
+{
+  "name": "@corelink/docs",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CoreLink public-facing documentation site source (compliance, security, pricing pages — DRAFT until cross-functional sign-off per WI-S18-004).",
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit && vitest run",
+    "dev": "echo 'docs site builder TBD (S-19 deliverable); content lives under ./docs/**/*.mdx'",
+    "start": "pnpm run dev",
+    "lint": "eslint --max-warnings=0 \"tests/**/*.ts\" \"src/**/*.ts\"",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "22.13.10",
+    "eslint": "9.21.0",
+    "gray-matter": "^4.0.3",
+    "typescript": "5.7.3",
+    "typescript-eslint": "^8.59.3",
+    "vitest": "3.0.7"
+  }
+}

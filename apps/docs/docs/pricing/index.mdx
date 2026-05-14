@@ -1,0 +1,80 @@
+---
+title: "Pricing"
+slug: "/pricing"
+description: "CoreLink plans: Free, Starter, Pro, Business, Enterprise."
+draft: true
+cross_functional_review: TBD
+pending_signoff:
+  - "Finance"
+  - "Legal"
+  - "Product"
+sources:
+  - "specs/03_architecture/remote_cache_product_profile.md"
+last_updated: "2026-05-14"
+---
+
+import { DraftBanner } from "../../../src/components/DraftBanner";
+
+<DraftBanner pageType="pricing" />
+
+# Pricing
+
+> **DRAFT — pending Legal + Finance + Security review.** Every monetary value
+> on this page is a `$X` placeholder. Specific prices ship only after Finance,
+> Legal, and Product sign off in `apps/docs/CONTENT-REVIEW.md`.
+
+## Plans
+
+| Plan | Monthly base | Included storage | Included egress | Best for |
+| --- | --- | --- | --- | --- |
+| **Free** | `$X` | 10 GB | 100 GB | Hobbyists, OSS maintainers |
+| **Starter** | `$X` | 100 GB | 1 TB | Small teams, single repo |
+| **Pro** | `$X` | 1 TB | 10 TB | Growing teams, multi-repo |
+| **Business** | `$X` | 10 TB | 100 TB | Mid-market, multi-region |
+| **Enterprise** | `$X` (custom) | Unlimited | Custom | Regulated, BYOK, custom SLA |
+
+Overage is billed at `$X` per additional GB-month of storage and `$X` per
+additional GB of egress.
+
+## Feature matrix
+
+| Capability | Free | Starter | Pro | Business | Enterprise |
+| --- | --- | --- | --- | --- | --- |
+| Content-addressable cache (CAS) | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Action cache (AC, REAPI compatible) | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Bazel / Buck2 / Pants integration | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Personal Access Tokens (PATs) | 1 | 5 | unlimited | unlimited | unlimited |
+| Audit log retention | 7 days | 30 days | 90 days | 1 year | 7 years |
+| Region pinning | — | single | single | multi | multi + custom |
+| BYOK (AWS / GCP / Azure / Vault KMS) | — | — | — | — | ✓ |
+| SSO (SAML / OIDC) | — | — | — | ✓ | ✓ |
+| SCIM provisioning | — | — | — | — | ✓ |
+| Dedicated support engineer | — | — | — | — | ✓ |
+| SLA (uptime) | none | 99.5% | 99.9% | 99.95% | custom |
+| Penetration test report (NDA) | — | — | — | ✓ | ✓ |
+| SOC 2 Type I report (when issued) | — | ✓ | ✓ | ✓ | ✓ |
+| DPA available | — | ✓ | ✓ | ✓ | ✓ |
+| HIPAA BAA | — | — | — | — | on request |
+
+## How billing works
+
+- **Storage** is measured in GB-hours and aggregated into GB-months on the
+  monthly invoice cycle.
+- **Egress** is measured per origin region; intra-CoreLink replication is not
+  billed.
+- **Cache hits** do not consume egress; only cross-region pulls do.
+
+Use the [pricing calculator](./calculator) to estimate cost based on your
+cache-hit ratio and storage volume.
+
+## Comparison
+
+See the [feature comparison page](./comparison) for a facts-only comparison
+versus alternative remote caches.
+
+## Cross-functional review checklist
+
+- [ ] Finance — confirm tier base prices and overage rates.
+- [ ] Legal — confirm SLA tier language is consistent with the master
+      agreement.
+- [ ] Product — confirm feature gating matches the engineering rollout plan.

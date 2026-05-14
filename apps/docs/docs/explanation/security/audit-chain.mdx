@@ -1,0 +1,69 @@
+---
+title: "Audit chain and Merkle proofs"
+slug: "/security/audit-chain"
+description: "Append-only audit log with RFC 6962 inclusion proofs and a 7-year retention window."
+draft: true
+cross_functional_review: TBD
+pending_signoff:
+  - "Security Lead"
+  - "Legal"
+sources:
+  - "specs/03_architecture/security_model.md#68-auditoria--forensics"
+last_updated: "2026-05-14"
+---
+
+import { DraftBanner } from "../../../src/components/DraftBanner";
+
+<DraftBanner pageType="security" />
+
+# Audit chain and Merkle proofs
+
+> **DRAFT — pending Legal + Finance + Security review.** The customer-facing
+> proof API is in active design; field names and endpoints below are
+> illustrative.
+
+CoreLink writes every administrative or data-plane mutation to an append-only
+audit log. The log is structured as a Merkle tree following **RFC 6962**
+(Certificate Transparency) so that any consumer can verify, with a small
+inclusion proof, that a specific event is part of the public log head without
+trusting CoreLink.
+
+## What each event records
+
+`{actor, tenant_id, token_hash, op, path_hash, timestamp, request_id, outcome}`
+
+Sensitive fields (`token_hash`, `path_hash`) are pseudonymized via tenant-scoped
+HMAC keys so the log can be retained without retaining the underlying secrets.
+
+## Retention and immutability
+
+- **Retention:** 7 years (aligned with SOC 2 Type II observation expectations).
+- **Backing store:** R2 bucket in Object Lock Governance mode.
+- **Reconciliation:** daily drift check against Cloudflare analytics; alerts
+  fire when drift exceeds 0.1 percent.
+- **Chain key rotation:** annual; rotation is forward-only and does not
+  invalidate prior inclusion proofs.
+
+## Customer-facing verification (planned)
+
+Enterprise tenants can request inclusion proofs for a specific event:
+
+```sh
+corelink audit prove --request-id <request_id>
+# returns: { tree_size, leaf_index, audit_path, signed_tree_head }
+```
+
+The Signed Tree Head (STH) is signed with the audit-chain key documented in
+`security_model.md §7.2`.
+
+## Privacy interaction with DSR erasure
+
+When a Data Subject Request causes erasure, the `subject_id` field is
+pseudonymized to `erased_<hash>` using the audit-pseudonym key so that the
+inclusion proof of the original event remains verifiable while the personal
+data itself is removed (`CTRL-PRIV-014`).
+
+## Cross-functional review checklist
+
+- [ ] Security Lead — confirm RFC 6962 mapping and key hierarchy.
+- [ ] Legal — confirm retention statement is consistent with the DPA.
