@@ -1,0 +1,22 @@
+# CODEOWNERS — WI-S13-004 §6.1 + §14.s13.004.12
+# Changes to infra/terraform/ MUST be reviewed by senior engineer + AppSec.
+# Changes to drift detection workflow require AppSec review.
+# No terraform apply step may be added to workflows (CI lint enforces; AppSec reviews).
+
+# Terraform IaC — requires Architect + AppSec review
+/infra/terraform/                 @humangr-labs/architects @humangr-labs/appsec
+
+# Drift detection workflow — AppSec must review (auto-apply forbidden enforcement)
+/.github/workflows/terraform-drift.yml  @humangr-labs/appsec @humangr-labs/sre-leads
+
+# CI lint gate — AppSec owns the no-apply lint
+/scripts/lint_no_terraform_apply.py  @humangr-labs/appsec
+
+# D1 schema migrations — Architect required (additive-only invariant)
+/migrations/d1/                   @humangr-labs/architects
+
+# RB-FM-206 runbook — SRE Lead owns
+/specs/05_quality/runbooks/RB-FM-206-terraform-drift.md  @humangr-labs/sre-leads
+
+# Slack alert templates — SRE Lead + AppSec
+/infra/slack/                     @humangr-labs/sre-leads @humangr-labs/appsec

@@ -63,6 +63,7 @@ members = [
     "crates/corelink-admin-api",
     "crates/corelink-rotation-adapters",
     "crates/corelink-rotation-worker",
+    "crates/corelink-terraform-drift-consumer",
 ]
 exclude = [
     "crates/tenant-path/fuzz",

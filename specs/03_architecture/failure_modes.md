@@ -166,7 +166,7 @@ Cada FM tem scores 1–5 em:
 | FM-203 | Oncall sobrecarregado (fadiga → missed alert)            | 4 | 2 | 3 | 24  | P2      | Pager discipline (§9 obs)     |
 | FM-204 | Secret rotation quebra serviço                            | 4 | 2 | 2 | 16  | P2      | PAT-ROLL-FORWARD-001 (overlap period) + CTRL-KEY-005 + CTRL-KEY-006 + CTRL-CRED-003 |
 | FM-205 | Manual intervention apaga dado (admin mistake)           | 5 | 2 | 3 | 30  | P1       | PAT-DUAL-APPROVAL-001 + soft-delete |
-| FM-206 | Terraform drift (estado real ≠ definido)                  | 3 | 3 | 4 | 36  | P1       | PAT-DRIFT-DETECTION-001       |
+| FM-206 | Terraform drift (estado real ≠ definido)                  | 3 | 3 | 4 | 36  | P1       | PAT-DRIFT-DETECTION-001 + RB-FM-206 + WI-S13-004 (GitHub Actions daily cron 03:00 UTC + D1 audit + Slack SEV-3 + manual gate) |
 
 ### 3.6 Adversarial
 

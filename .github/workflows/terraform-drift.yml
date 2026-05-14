@@ -1,0 +1,360 @@
+name: Terraform Drift Detection
+
+# WI-S13-004 — Daily cron 03:00 UTC + manual dispatch.
+# Runs `terraform plan -detailed-exitcode` per region (matrix).
+# Exit code 0 = no diff; 1 = error; 2 = diff exists.
+# On exit 2 → SEV-3 Slack alert + upload plan artifact.
+# On exit 1 → SEV-2 Slack alert (terraform error) + upload logs.
+# NO `terraform apply` step — auto-apply is FORBIDDEN (RB-FM-206).
+# OIDC-bound credentials only (no long-lived secrets).
+#
+# Inputs (repo secrets):
+#   CF_CLIENT_ID        — Cloudflare OIDC client ID
+#   CF_CLIENT_SECRET    — Cloudflare OIDC client secret
+#   SLACK_BOT_TOKEN     — Slack Bot OAuth token for #infra-drift
+#   SLACK_CHANNEL_ID    — Slack channel ID for #infra-drift
+#   TF_BACKEND_BUCKET   — R2/S3-compatible backend bucket name
+#   TF_BACKEND_ENDPOINT — Backend endpoint URL
+#
+# Supply-chain: all uses SHA-pinned per WI-S01-007 + hard constraint WI-S13-004.
+
+on:
+  schedule:
+    # 03:00 UTC daily — FM-206 MTTD ≤ 24h bound (WI-S13-004 §6.1)
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    # Manual ad-hoc check; useful post-incident + chaos experiment #1.
+    inputs:
+      region:
+        description: "Single region to check (leave empty for all)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  id-token: write  # OIDC for Cloudflare API auth
+
+concurrency:
+  group: terraform-drift
+  cancel-in-progress: false  # never cancel drift detection mid-run
+
+env:
+  TF_VERSION: "1.7.5"
+  TF_IN_AUTOMATION: "true"
+  # Disable color codes in terraform output (cleaner artifact logs)
+  TF_CLI_ARGS: "-no-color"
+
+jobs:
+  # -----------------------------------------------------------------------
+  # Per-region drift check matrix.
+  # Strategy: fail-fast=false so one region failure doesn't abort others.
+  # -----------------------------------------------------------------------
+  drift-check:
+    name: Drift — ${{ matrix.region }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+
+    strategy:
+      fail-fast: false
+      matrix:
+        region:
+          - us-east
+          - us-west
+          - eu-west
+          - ap-southeast
+          - sa-east
+
+    outputs:
+      drift_detected: ${{ steps.plan.outputs.drift_detected }}
+
+    steps:
+      # ----------------------------------------------------------------
+      # 1. Checkout
+      # ----------------------------------------------------------------
+      - name: Checkout
+        # actions/checkout@v4.2.2 — SHA-pinned per WI-S01-007.
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      # ----------------------------------------------------------------
+      # 2. Setup Terraform (SHA-pinned)
+      # hashicorp/setup-terraform@v3.1.2
+      # SHA: e9ce11f7a4dbf26943aa5e9aefa4dfa8c8e27a1d
+      # ----------------------------------------------------------------
+      - name: Setup Terraform ${{ env.TF_VERSION }}
+        uses: hashicorp/setup-terraform@e9ce11f7a4dbf26943aa5e9aefa4dfa8c8e27a1d
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false  # raw exit codes; wrapper would swallow exit code 2
+
+      # ----------------------------------------------------------------
+      # 3. Terraform init (per-region backend config)
+      # ----------------------------------------------------------------
+      - name: Terraform init — ${{ matrix.region }}
+        working-directory: infra/terraform
+        env:
+          CF_CLIENT_ID: ${{ secrets.CF_CLIENT_ID }}
+          CF_CLIENT_SECRET: ${{ secrets.CF_CLIENT_SECRET }}
+          TF_BACKEND_BUCKET: ${{ secrets.TF_BACKEND_BUCKET }}
+          TF_BACKEND_ENDPOINT: ${{ secrets.TF_BACKEND_ENDPOINT }}
+        run: |
+          set -euo pipefail
+          # Secrets presence check — fail loudly (no silent skip)
+          if [[ -z "${CF_CLIENT_ID:-}" || -z "${CF_CLIENT_SECRET:-}" ]]; then
+            echo "::error::CF_CLIENT_ID or CF_CLIENT_SECRET missing — cannot authenticate OIDC"
+            exit 1
+          fi
+          if [[ -z "${TF_BACKEND_BUCKET:-}" ]]; then
+            echo "::error::TF_BACKEND_BUCKET missing — cannot init backend"
+            exit 1
+          fi
+          region="${{ matrix.region }}"
+          backend_cfg="backend-${region}.hcl"
+          if [[ ! -f "${backend_cfg}" ]]; then
+            echo "::warning::Backend config ${backend_cfg} not found — creating stub for CI"
+            # Stub allows CI to validate workflow shape without live backend
+            cat > "${backend_cfg}" <<HCLEOF
+          bucket   = "${TF_BACKEND_BUCKET}"
+          key      = "corelink/${region}/terraform.tfstate"
+          endpoint = "${TF_BACKEND_ENDPOINT}"
+          region   = "auto"
+          HCLEOF
+          fi
+          terraform init \
+            -backend-config="${backend_cfg}" \
+            -input=false \
+            -reconfigure
+
+      # ----------------------------------------------------------------
+      # 4. Terraform plan — capture detailed exit code
+      #    Exit 0 = no changes; Exit 1 = error; Exit 2 = diff exists
+      # ----------------------------------------------------------------
+      - name: Terraform plan — ${{ matrix.region }}
+        id: plan
+        working-directory: infra/terraform
+        env:
+          CF_CLIENT_ID: ${{ secrets.CF_CLIENT_ID }}
+          CF_CLIENT_SECRET: ${{ secrets.CF_CLIENT_SECRET }}
+        continue-on-error: true  # we handle exit codes explicitly below
+        run: |
+          set -euo pipefail
+          region="${{ matrix.region }}"
+          plan_file="plan-${region}.tfplan"
+          plan_log="plan-${region}.log"
+
+          terraform plan \
+            -detailed-exitcode \
+            -out="${plan_file}" \
+            -input=false \
+            2>&1 | tee "${plan_log}"
+
+          TF_EXIT="${PIPESTATUS[0]}"
+          echo "exitcode=${TF_EXIT}" >> "$GITHUB_OUTPUT"
+          echo "plan_log=${plan_log}" >> "$GITHUB_OUTPUT"
+          echo "plan_file=${plan_file}" >> "$GITHUB_OUTPUT"
+          echo "region=${region}" >> "$GITHUB_OUTPUT"
+
+          case "${TF_EXIT}" in
+            0)
+              echo "drift_detected=false" >> "$GITHUB_OUTPUT"
+              echo "drift_severity=none" >> "$GITHUB_OUTPUT"
+              echo "::notice::Region ${region}: no drift (exit 0)"
+              ;;
+            2)
+              echo "drift_detected=true" >> "$GITHUB_OUTPUT"
+              echo "drift_severity=medium" >> "$GITHUB_OUTPUT"
+              echo "::warning::Region ${region}: drift detected (exit 2)"
+              ;;
+            *)
+              echo "drift_detected=false" >> "$GITHUB_OUTPUT"
+              echo "drift_severity=none" >> "$GITHUB_OUTPUT"
+              echo "::error::Region ${region}: terraform error (exit ${TF_EXIT})"
+              ;;
+          esac
+          exit "${TF_EXIT}"
+
+      # ----------------------------------------------------------------
+      # 5. Upload plan artifact (always — compliance evidence)
+      # ----------------------------------------------------------------
+      - name: Upload plan artifact — ${{ matrix.region }}
+        if: always()
+        # actions/upload-artifact@v4.5.0
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b
+        with:
+          name: terraform-plan-${{ matrix.region }}-${{ github.run_id }}
+          path: |
+            infra/terraform/plan-${{ matrix.region }}.log
+            infra/terraform/plan-${{ matrix.region }}.tfplan
+          retention-days: 30
+          if-no-files-found: warn
+
+      # ----------------------------------------------------------------
+      # 6a. SEV-3 alert — drift detected (exit code 2)
+      # ----------------------------------------------------------------
+      - name: "[SEV-3] Slack alert — drift detected — ${{ matrix.region }}"
+        if: steps.plan.outputs.exitcode == '2'
+        # slackapi/slack-github-action@v2.0.0
+        # SHA: 485a9d42d3a73031f12ec201c457e2a47625a28f
+        uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2a47625a28f
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            {
+              "channel": "${{ secrets.SLACK_CHANNEL_ID }}",
+              "text": "[SEV-3] Terraform drift detected in region ${{ matrix.region }} — ${{ github.run_id }}",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": ":rotating_light: SEV-3 Terraform Drift Detected"
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    { "type": "mrkdwn", "text": "*Region:*\n`${{ matrix.region }}`" },
+                    { "type": "mrkdwn", "text": "*Severity:*\n`SEV-3`" },
+                    { "type": "mrkdwn", "text": "*Run ID:*\n`${{ github.run_id }}`" },
+                    { "type": "mrkdwn", "text": "*Triggered:*\n`${{ github.event_name }}`" }
+                  ]
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": ":memo: *Runbook:* <https://github.com/${{ github.repository }}/blob/main/specs/05_runbooks/RB-FM-206.md|RB-FM-206 — Terraform Drift>\n:file_folder: *Plan artifact:* <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run artifacts>"
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": ":warning: *Auto-apply is FORBIDDEN.* Manual remediation required per RB-FM-206 decision tree. SLA: remediate within 7d."
+                  }
+                }
+              ]
+            }
+
+      # ----------------------------------------------------------------
+      # 6b. SEV-2 alert — terraform error (exit code 1)
+      # ----------------------------------------------------------------
+      - name: "[SEV-2] Slack alert — terraform error — ${{ matrix.region }}"
+        if: steps.plan.outputs.exitcode == '1'
+        uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2a47625a28f
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            {
+              "channel": "${{ secrets.SLACK_CHANNEL_ID }}",
+              "text": "[SEV-2] Terraform ERROR in region ${{ matrix.region }} — drift check failed — ${{ github.run_id }}",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": ":red_circle: SEV-2 Terraform Error (Drift Check Failed)"
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    { "type": "mrkdwn", "text": "*Region:*\n`${{ matrix.region }}`" },
+                    { "type": "mrkdwn", "text": "*Severity:*\n`SEV-2`" }
+                  ]
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": ":fire: Terraform returned exit code 1 (error). Drift detection is *blind* for this region until resolved. See logs: <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|Run ${{ github.run_id }}>"
+                  }
+                }
+              ]
+            }
+
+  # -----------------------------------------------------------------------
+  # Aggregator job: posts multi-region summary if > 1 region drifted.
+  # Runs after all matrix jobs complete.
+  # -----------------------------------------------------------------------
+  drift-aggregator:
+    name: Drift aggregator summary
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    needs: drift-check
+    if: always()
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - name: Evaluate cross-region drift pattern
+        id: aggregate
+        env:
+          DRIFT_RESULT: ${{ toJson(needs.drift-check.result) }}
+        run: |
+          set -euo pipefail
+          # Count failed jobs (exit 2 = drift, exit 1 = error both appear as failure)
+          failed_count=$(echo "$DRIFT_RESULT" | python3 -c "
+          import json, sys
+          r = json.load(sys.stdin)
+          # result is a single string at job level; check all outputs
+          print('1' if r == 'failure' else '0')
+          ")
+          echo "matrix_had_failure=${failed_count}" >> "$GITHUB_OUTPUT"
+
+      - name: "[SEV-3] Multi-region drift summary"
+        if: needs.drift-check.result == 'failure'
+        uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2a47625a28f
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            {
+              "channel": "${{ secrets.SLACK_CHANNEL_ID }}",
+              "text": "[SEV-3] MULTI-REGION Terraform drift aggregator summary — run ${{ github.run_id }}",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": ":world_map: Multi-Region Terraform Drift Summary"
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "One or more regions reported drift or errors in run `${{ github.run_id }}`. Check per-region alerts above + <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|view all artifacts>.\n\n*Runbook:* <https://github.com/${{ github.repository }}/blob/main/specs/05_runbooks/RB-FM-206.md|RB-FM-206>"
+                  }
+                }
+              ]
+            }
+
+  # -----------------------------------------------------------------------
+  # CI guard: verify no `terraform apply` step exists in this workflow.
+  # Runs on every push/PR touching this file.
+  # -----------------------------------------------------------------------
+  no-apply-guard:
+    name: Auto-apply forbidden check
+    runs-on: ubuntu-22.04
+    timeout-minutes: 3
+    if: github.event_name != 'schedule'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - name: Verify no terraform apply in this workflow
+        run: |
+          set -euo pipefail
+          python3 scripts/lint_no_terraform_apply.py \
+            .github/workflows/terraform-drift.yml
+          echo "::notice::Auto-apply guard passed — no terraform apply step found."

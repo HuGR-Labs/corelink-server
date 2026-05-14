@@ -1,0 +1,38 @@
+[package]
+name = "corelink-terraform-drift-consumer"
+description = "CoreLink terraform drift consumer Worker (WI-S13-004). Receives GitHub Actions webhook events for terraform plan runs, classifies drift severity, inserts findings into D1 terraform_drift_findings table, emits CloudEvent audit records (corelink.admin.terraform_drift.detected / remediated), and exposes Prometheus metrics (4 metrics: drift_findings_total, drift_age_hours_gauge, cron_runs_total, remediation_duration_hours_bucket). Implements PAT-DRIFT-DETECTION-001 + FM-206 mitigation. Auto-apply FORBIDDEN — no apply step anywhere in this crate."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true, features = ["v7", "serde"] }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[[test]]
+name = "adversarial"
+path = "tests/adversarial.rs"
