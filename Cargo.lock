@@ -1160,7 +1160,17 @@ dependencies = [
 ]
 
 [[package]]
-<<<<<<< HEAD
+name = "corelink-rollout-controller"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "corelink-rotation-adapters"
 version = "0.1.0"
 dependencies = [
@@ -1179,16 +1189,6 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
-=======
-name = "corelink-rollout-controller"
-version = "0.1.0"
-dependencies = [
- "proptest",
- "serde",
- "serde_json",
- "thiserror",
- "uuid",
->>>>>>> wt/wi-s13-005
 ]
 
 [[package]]
