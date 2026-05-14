@@ -1,12 +1,12 @@
 ---
 id: "WI-S16-007"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
+doc_status: "SEALED"
+work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-29"
-updated: "2026-04-29"
+updated: "2026-05-14"
 lane: "STANDARD"
 parent: "S-16"
 assignee: "Gustavo Schneiter"
@@ -637,6 +637,7 @@ Pré-PRR mandatory check: confirmed canonical reviewers vs pending. Sprint S-16 
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | Criação WI-S16-007 (cycle 12.S16.0; STANDARD lane single-phase SEAL D+18; Playwright E2E + Lighthouse CI ≥ 95 + cross-browser matrix + UX SUS ≥ 75 + CSP enforce + PRR 5-8 canonical). |
+| 1.1.0 | 2026-05-14 | Gustavo (via Sonnet builder) | SEAL — Playwright e2e suite (23 tests across 11 spec files; 9 PASS / 14 FIXME / 0 FAIL on local chromium); Lighthouse CI config + workflow SHA-pinned; @axe-core/playwright full-page sweep (public pages 0 serious/critical); CSP_ENFORCEMENT report-only→enforce env flag wired (next.config.ts + middleware.ts + README rollout doc); `specs/_audits/2026-05-14-s16-ux-workshop.md` + `2026-05-14-s16-adversarial-summary.md` committed; PRR-S16 `CONDITIONALLY_APPROVED` (5 waivers W1..W5); spec contract bumped to v1.4.0; ship-gate-discovered HIGH finding F1 (nested `<html>` in merged admin-ui) queued as HF-S17-001. |
 
 ## 30. Anti-patterns evitados
 
@@ -655,3 +656,19 @@ Pré-PRR mandatory check: confirmed canonical reviewers vs pending. Sprint S-16 
 ---
 
 **Fim WI-S16-007.** **S-16 sprint full WI spec completo (7/7 WIs SOTA STANDARD lane).**
+
+---
+
+## SEAL note (2026-05-14)
+
+Sealed at v1.1.0. PRR-S16 issued `CONDITIONALLY_APPROVED` with five
+waivers (UX synthetic, Lighthouse first-CI-run, Clerk/Stripe production
+keys, real-Clerk e2e execution, HF-S17-001 nested-`<html>` hotfix). All
+prerequisite gates green: `pnpm install --frozen-lockfile`, `typecheck`,
+`lint`, `test` (244 / 244), `build`, `e2e:list` (23 tests), `e2e`
+(9 PASS / 14 FIXME / 0 FAIL on local chromium). Evidence pack:
+`specs/_audits/2026-05-14-s16-ux-workshop.md`,
+`specs/_audits/2026-05-14-s16-adversarial-summary.md`,
+`specs/04_sprints/S16/PRR-S16.md`. Cross-WI 36 adversarial scenarios
+catalogued; 100% mitigation rate with one ship-gate-discovered HIGH
+finding (F1) queued for S-17 hotfix HF-S17-001.

@@ -18,7 +18,20 @@ import {
 import { isPublicPath } from "@/lib/route-matcher";
 
 function applySecurityHeaders(res: NextResponse, nonce: string): void {
-  const reportOnly = process.env["NODE_ENV"] !== "production";
+  // WI-S16-007 deliverable 4: CSP rollout flag.
+  //   CSP_ENFORCEMENT=enforce      → enforce mode (production default).
+  //   CSP_ENFORCEMENT=report-only  → report-only (staging baseline window).
+  //   unset                        → enforce in production, report-only elsewhere.
+  const rawMode = (process.env["CSP_ENFORCEMENT"] ?? "").toLowerCase();
+  const mode =
+    rawMode === "enforce"
+      ? "enforce"
+      : rawMode === "report-only"
+        ? "report-only"
+        : process.env["NODE_ENV"] === "production"
+          ? "enforce"
+          : "report-only";
+  const reportOnly = mode === "report-only";
   const csp = buildCspHeader({ nonce, reportOnly });
   res.headers.set(csp.name, csp.value);
   res.headers.set("x-nonce", nonce);

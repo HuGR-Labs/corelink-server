@@ -3,9 +3,9 @@ id: "SPEC-CONTRACT-S16"
 type: "spec_contract"
 doc_status: "SEALED"
 audit_status: "ACTIVE"
-version: "1.3.0"
+version: "1.4.0"
 created: "2026-04-24"
-updated: "2026-04-29"
+updated: "2026-05-14"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -317,6 +317,7 @@ Itens waivable com Frontend lead + Privacy officer + ADR:
 | 1.0.0 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | Criação spec contract S-16. |
 | 1.1.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | SOTA elevation v1.1 — 6-field consent + DSR receipt + dual approval + audit viewer Merkle proof + RBAC Operator. |
 | 1.2.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | WI list confirmed (7 WIs); pivot WI-S16-003 from "Usage Dashboard" para "Consent UI" para fechar CTRL-PRIV-CONSENT compliance gap; WI-S16-005 absorve audit viewer + dual approval. |
-| 1.3.0 | 2026-05-14 | Gustavo (via Claude Sonnet 4.6) | WI-S16-001..006 SEALED via 6-builder parallel wave: Next.js 15 skeleton + Clerk + hardened CSP + 3-locale i18n (001), tenant onboarding 5-step wizard + first PAT issuance (002), consent UI 6-field CTRL-PRIV-CONSENT-001..006 + screenshot evidence + withdraw MFA (003), DSR 6-direitos self-service + Clerk MFA re-auth + JWT receipt + SLA countdown (004), admin ops UI audit viewer + Merkle proof + dual-approval + tenant search (005), component library + WCAG 2.2 AA + i18n + privacy/legal pages (006). Post-merge gate cleanup: 244/244 vitest tests + typecheck + lint + build green; canonical scaffold unified; safe-log + jwt-decode dual APIs co-resident. WI-S16-007 (e2e ship gate + PRR-S16) pending. |
+| 1.3.0 | 2026-05-14 | Gustavo (via Claude Sonnet 4.6) | WI-S16-001..006 SEALED via 6-builder parallel wave: Next.js 15 skeleton + Clerk + hardened CSP + 3-locale i18n (001), tenant onboarding 5-step wizard + first PAT issuance (002), consent UI 6-field CTRL-PRIV-CONSENT-001..006 + screenshot evidence + withdraw MFA (003), DSR 6-direitos self-service + Clerk MFA re-auth + JWT receipt + SLA countdown (004), admin ops UI audit viewer + Merkle proof + dual-approval + tenant search (005), component library + WCAG 2.2 AA + i18n + privacy/legal pages (006). Post-merge gate cleanup: 244/244 vitest tests + typecheck + lint + build green; canonical scaffold unified; safe-log + jwt-decode dual APIs co-resident. |
+| 1.4.0 | 2026-05-14 | Gustavo (via Claude Sonnet 4.6) | WI-S16-007 SEALED — Playwright e2e suite (23 tests, 11 spec files; 9 PASS / 14 FIXME-skipped pending Clerk test-mode tokens) + Lighthouse CI thresholds (Perf ≥ 95 / A11y = 100 / BP ≥ 95 / SEO ≥ 90) + axe-core full-page a11y sweep + `CSP_ENFORCEMENT` env flag (report-only stage 1 → enforce stage 2) + UX workshop evidence pack (DRAFT synthetic personas; real D+10) + S-16 adversarial summary cross-WI rollup + PRR-S16 STANDARD CONDITIONALLY_APPROVED (5 waivers: UX workshop participants D+10, Lighthouse first CI run TBD, Clerk/Stripe prod keys TBD, real-Clerk e2e D+10, HF-S17-001 nested-`<html>` hotfix S-17 D+3). |
 
-**Fim spec contract S-16 v1.3.0 SOTA.**
+**Fim spec contract S-16 v1.4.0 SEALED.**

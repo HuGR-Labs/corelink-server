@@ -7,6 +7,9 @@ node_modules/
 out/
 dist/
 coverage/
+test-results/
+playwright-report/
+.lighthouseci/
 *.log
 *.tsbuildinfo
 tsconfig.tsbuildinfo
