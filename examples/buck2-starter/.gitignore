@@ -1,0 +1,19 @@
+# Buck2 build artefacts
+buck-out/
+
+# Buck2 generated symlinks (created in project root by `buck2 build`)
+buck-out
+.buck2
+
+# Buck2 daemon socket / PID files
+.buck2d
+.buckd
+.buckversion
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+*.swp
