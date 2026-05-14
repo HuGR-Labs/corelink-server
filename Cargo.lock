@@ -631,6 +631,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-byok"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "dashmap",
+ "serde",
+ "thiserror",
+ "tokio",
+ "zeroize",
+]
+
+[[package]]
+name = "corelink-byok-revocation"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "corelink-byok",
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-test",
+ "tracing",
+]
+
+[[package]]
 name = "corelink-canary"
 version = "0.1.0"
 dependencies = [
@@ -738,6 +765,21 @@ dependencies = [
  "tokio-test",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "corelink-customer-alerts"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "corelink-byok",
+ "corelink-byok-revocation",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-test",
+ "tracing",
 ]
 
 [[package]]
@@ -1472,6 +1514,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "dashmap"
+version = "6.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5041cc499144891f3790297212f32a74fb938e5136a14943f338ef9e0ae276cf"
+dependencies = [
+ "cfg-if",
+ "crossbeam-utils",
+ "hashbrown 0.14.5",
+ "lock_api",
+ "once_cell",
+ "parking_lot_core",
+]
+
+[[package]]
 name = "der"
 version = "0.7.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1759,6 +1815,12 @@ name = "hashbrown"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888"
+
+[[package]]
+name = "hashbrown"
+version = "0.14.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
 
 [[package]]
 name = "hashbrown"

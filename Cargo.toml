@@ -66,6 +66,9 @@ members = [
     "crates/corelink-rotation-worker",
     "crates/corelink-terraform-drift-consumer",
     "crates/corelink-rollout-controller",
+    "crates/corelink-byok",
+    "crates/corelink-byok-revocation",
+    "crates/corelink-customer-alerts",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
@@ -84,6 +87,11 @@ license = "UNLICENSED"
 publish = false
 
 [workspace.dependencies]
+# Async trait support
+async-trait = "0.1"
+# Concurrent maps
+dashmap = "6"
+
 # gRPC stack
 tonic = "0.12"
 prost = "0.13"
@@ -186,6 +194,9 @@ corelink-admin-dry-run = { path = "crates/corelink-admin-dry-run" }
 corelink-rotation-adapters = { path = "crates/corelink-rotation-adapters" }
 corelink-rotation-worker = { path = "crates/corelink-rotation-worker" }
 corelink-rollout-controller = { path = "crates/corelink-rollout-controller" }
+corelink-byok = { path = "crates/corelink-byok" }
+corelink-byok-revocation = { path = "crates/corelink-byok-revocation" }
+corelink-customer-alerts = { path = "crates/corelink-customer-alerts" }
 
 # Test / bench
 proptest = "1.5"

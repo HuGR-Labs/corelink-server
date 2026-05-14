@@ -1,0 +1,70 @@
+name: BYOK Kill Switch Chaos Drill (Weekly)
+
+on:
+  schedule:
+    # Every Sunday at 03:00 UTC (per-provider rotation: 4 providers / 4 weeks).
+    - cron: "0 3 * * 0"
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: "KMS provider to drill (aws|gcp|azure|vault; default: weekly rotation)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write  # to commit drill report
+
+jobs:
+  kill-switch-drill:
+    name: BYOK Kill Switch Drill
+    runs-on: ubuntu-latest
+    timeout-minutes: 20  # SLA ≤ 6 min + overhead
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determine provider (weekly rotation)
+        id: provider
+        run: |
+          if [[ -n "${{ github.event.inputs.provider }}" ]]; then
+            echo "provider=${{ github.event.inputs.provider }}" >> "$GITHUB_OUTPUT"
+          else
+            # Rotation: week of year mod 4 → provider index.
+            WEEK=$(date -u +%V)
+            IDX=$(( (10#${WEEK}) % 4 ))
+            PROVIDERS=(aws gcp azure vault)
+            echo "provider=${PROVIDERS[$IDX]}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run kill switch chaos drill
+        id: drill
+        env:
+          PROVIDER: ${{ steps.provider.outputs.provider }}
+          # Production: inject staging KMS credentials here.
+          # AWS_ACCESS_KEY_ID: ${{ secrets.STAGING_AWS_KEY_ID }}
+          # GCP_SERVICE_ACCOUNT: ${{ secrets.STAGING_GCP_SA }}
+          # AZURE_CLIENT_ID: ${{ secrets.STAGING_AZURE_CLIENT_ID }}
+          # VAULT_TOKEN: ${{ secrets.STAGING_VAULT_TOKEN }}
+        run: |
+          bash scripts/byok_kill_switch_drill.sh "${PROVIDER}"
+
+      - name: Commit drill report
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          DATE="$(date -u +%Y-%m-%d)"
+          PROVIDER="${{ steps.provider.outputs.provider }}"
+          REPORT="specs/_audits/${DATE}-byok-kill-switch-drill-${PROVIDER}.md"
+          if [[ -f "${REPORT}" ]]; then
+            git add "${REPORT}"
+            git diff --cached --quiet || git commit -m \
+              "chore(chaos-drill): BYOK kill switch drill ${PROVIDER} ${DATE}"
+          fi
+
+      - name: Fail on SLA miss
+        if: failure()
+        run: |
+          echo "::error::BYOK kill switch SLA MISS — SEV-1 alert required"
+          exit 1
