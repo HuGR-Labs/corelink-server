@@ -37,7 +37,7 @@ supported in CoreLink's BYOK enterprise tier.
 | Provider | FIPS Level | CMVP Certificate | Notes | WI |
 |---|---|---|---|---|
 | **AWS KMS** | **FIPS 140-3 Level 1** | `#4523` | Default; no extra config. | WI-S14-004 ✓ |
-| GCP Cloud KMS | FIPS 140-2 Level 1 | TBD (WI-S14-005) | 140-3 pending GCP certification. | WI-S14-005 |
+| GCP Cloud KMS (HSM tier — CoreLink production target) | **FIPS 140-2 Level 3** | `#3318` (Marvell LiquidSecurity HSM) | HSM tier mandatory for production; software tier (`#3978`, L1) staging-only. | WI-S14-005 + R2-7 ✓ |
 | Azure Key Vault Premium | FIPS 140-2 Level 2 | TBD (WI-S14-005) | HSM-backed; L2 validated. | WI-S14-005 |
 | HashiCorp Vault Enterprise | FIPS 140-3 Level 1 | TBD (WI-S14-005) | Vault Enterprise FIPS build. | WI-S14-005 |
 
@@ -79,13 +79,47 @@ supported in CoreLink's BYOK enterprise tier.
 
 ---
 
-## GCP Cloud KMS — FIPS 140-2 Level 1 (WI-S14-005)
+## GCP Cloud KMS — FIPS 140-2 Level 1 (default) / Level 3 (HSM tier) — WI-S14-005 + R2-7
 
-**Status:** PENDING — populated in WI-S14-005.
+**Status:** ACTIVE — populated in WI-S14-005 + R2-7.
 
-> GCP KMS is FIPS 140-2 Level 1 certified.  FIPS 140-3 certification is in progress
-> as of 2026-Q1.  This row will be updated when WI-S14-005 is sealed with verified
-> CMVP module ID.
+> GCP Cloud KMS exposes two `protectionLevel` values per CryptoKeyVersion:
+>
+> | `protectionLevel` | Backing module | FIPS standard |
+> |---|---|---|
+> | `SOFTWARE` (default) | Google Tink-backed AES module | **FIPS 140-2 Level 1** (NIST CMVP #3978) |
+> | `HSM` | Marvell LiquidSecurity HSM | **FIPS 140-2 Level 3** (NIST CMVP #3318) |
+> | `EXTERNAL` / `EXTERNAL_VPC` | Customer-supplied HSM | Per the external HSM's own certification |
+>
+> **CoreLink production BYOK customers MUST use `HSM` tier**. Software tier is
+> permitted only for staging / preview. The orchestrator enforces tier policy at
+> CMK onboarding; `GcpKmsRealProvider::check_access` does not currently parse
+> the protection level back (deferred to a follow-up WI), so policy enforcement
+> sits one layer up.
+>
+> FIPS 140-3 certification of the GCP Cloud KMS module is tracked quarterly by
+> the Crypto SME. This row will be updated when GCP publishes a 140-3 CMVP
+> certificate.
+
+| Field | Value (HSM tier — CoreLink production target) |
+|---|---|
+| FIPS Standard | FIPS 140-2 |
+| Security Level | **Level 3** (HSM tier) — physical tamper response, role-based identity-based auth |
+| NIST CMVP Certificate | `#3318` (Marvell LiquidSecurity HSM) |
+| Cryptographic Operations | AES-256 (FIPS 197), RSA-2048, EC P-256, HMAC-SHA-256 |
+| Key wrapping algorithm | AES-256 symmetric key wrap |
+| Region availability | All Cloud KMS regions supporting HSM tier (most commercial regions) |
+| Endpoint | `cloudkms.googleapis.com` (REST v1) |
+| AAD mechanism | `additionalAuthenticatedData` (raw bytes) — server-enforced |
+| IAM scope (minimal) | `roles/cloudkms.cryptoKeyEncrypterDecrypter` + `roles/cloudkms.viewer` on the specific key |
+| CoreLink configuration | `corelink-byok-gcp` with `production` feature; ADC via `GOOGLE_APPLICATION_CREDENTIALS`, Workload Identity, or `gcloud` user creds |
+
+### References
+
+- GCP Cloud KMS protection levels: <https://cloud.google.com/kms/docs/algorithms#protection_levels>
+- GCP Cloud KMS HSM FIPS 140-2 L3: <https://cloud.google.com/kms/docs/hsm>
+- NIST CMVP #3318 (Marvell LiquidSecurity HSM): <https://csrc.nist.gov/projects/cryptographic-module-validation-program/certificate/3318>
+- NIST CMVP #3978 (Google KMS module — software tier): <https://csrc.nist.gov/projects/cryptographic-module-validation-program/certificate/3978>
 
 ---
 
@@ -123,6 +157,7 @@ Per `_spec_contract.md §19`, the following cannot be waived:
 | Date | WI | Change |
 |---|---|---|
 | 2026-05-14 | WI-S14-004 | Initial creation — AWS KMS FIPS 140-3 L1 row added. |
+| 2026-05-14 | R2-7 (WI-S14-005 follow-up) | GCP Cloud KMS HSM-tier row promoted to FIPS 140-2 **Level 3** (CMVP #3318); `GcpKmsRealProvider` shipped with `production` feature. |
 reviewers: []
 tags: ["byok", "fips-140-2", "fips-140-3", "nist-cmvp", "compliance", "s14"]
 ---
@@ -144,7 +179,7 @@ tags: ["byok", "fips-140-2", "fips-140-3", "nist-cmvp", "compliance", "s14"]
 | Provider | FIPS Level | NIST CMVP Module ID | Tier Requirement | Notes |
 |---|---|---|---|---|
 | **AWS KMS** | FIPS 140-3 Level 1 | #4177 (AWS HSM; 2024) | Any KMS region | Verified FIPS 140-3 as of 2024-02. Default for enterprise. |
-| **GCP Cloud KMS** | FIPS 140-2 Level 1 | #3978 (Google KMS module) | Any KMS region | GCP committed to FIPS 140-3; quarterly review tracks. 140-3 will upgrade this row. |
+| **GCP Cloud KMS** | FIPS 140-2 Level 1 (software) / **Level 3 (HSM tier)** | #3978 (software) / **#3318 (HSM — Marvell LiquidSecurity)** | **HSM tier mandatory for production**; software permitted only for staging | GCP committed to FIPS 140-3 for the software module; quarterly review tracks. HSM tier is the CoreLink production target (R2-7). |
 | **Azure Key Vault** | FIPS 140-2 Level 2 | #3516 (Azure HSM; Premium) | **Premium HSM tier mandatory** | Standard tier = Level 1; CoreLink BYOK requires Premium HSM at provisioning. |
 | **HashiCorp Vault Enterprise** | FIPS 140-3 Level 1 | Pending CMVP (2026-Q2) | Vault Enterprise FIPS build | Customer-hosted. OSS Vault is NOT FIPS-certified. mTLS auth mandatory. |
 
@@ -156,7 +191,8 @@ FIPS 140-3 Level 1 > FIPS 140-2 Level 2 > FIPS 140-2 Level 1 > None
 
 - **FIPS 140-3 Level 1**: AWS KMS (#4177), HashiCorp Vault Enterprise (pending CMVP).
 - **FIPS 140-2 Level 2**: Azure Key Vault Premium HSM (#3516).
-- **FIPS 140-2 Level 1**: GCP Cloud KMS (#3978).
+- **FIPS 140-2 Level 1**: GCP Cloud KMS software tier (#3978; staging-only).
+- **FIPS 140-2 Level 3**: GCP Cloud KMS **HSM tier** (#3318 Marvell LiquidSecurity HSM; CoreLink production target).
 
 ## Compliance Assertions
 

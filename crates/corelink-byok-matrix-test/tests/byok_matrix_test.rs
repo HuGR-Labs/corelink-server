@@ -228,6 +228,42 @@ async fn run_provider_matrix<P: KmsProvider>(
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// GCP cell runner (R2-7: real provider opt-in via GCP_TEST_KEY_RESOURCE)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Run the 4 GCP matrix cells.
+///
+/// - If the `production-gcp` feature is enabled AND
+///   `GCP_TEST_KEY_RESOURCE` is set in the environment, exercise the real
+///   `GcpKmsRealProvider` (R2-7 wire). Failure falls through to mock.
+/// - Otherwise, use `GcpKmsProvider::new_mock` so the matrix stays green
+///   in CI without GCP credentials.
+async fn run_gcp_cells(ctx: &serde_json::Value) -> [MatrixResult; 4] {
+    #[cfg(feature = "production-gcp")]
+    {
+        if let Ok(resource) = std::env::var("GCP_TEST_KEY_RESOURCE") {
+            let region = std::env::var("GCP_TEST_REGION").unwrap_or_else(|_| "us-east1".to_string());
+            if let Ok(real) = corelink_byok_gcp::GcpKmsRealProvider::new(&region).await {
+                let key_id = KmsKeyId {
+                    provider: KmsProviderKind::GcpKms,
+                    key_arn_or_id: resource,
+                    region,
+                };
+                return run_provider_matrix(&real, "gcp_kms", key_id, ctx).await;
+            }
+        }
+    }
+
+    let gcp = GcpKmsProvider::new_mock("us-east1");
+    let key_id = KmsKeyId {
+        provider: KmsProviderKind::GcpKms,
+        key_arn_or_id: "projects/corelink-staging/locations/us-east1/keyRings/byok/cryptoKeys/matrix-key".to_string(),
+        region: "us-east1".to_string(),
+    };
+    run_provider_matrix(&gcp, "gcp_kms", key_id, ctx).await
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // 16-combination matrix test
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -235,14 +271,13 @@ async fn run_provider_matrix<P: KmsProvider>(
 async fn byok_matrix_16_combinations_all_green() {
     let ctx = json!({"tenant_id": "T-matrix-001", "blob_hash": "H-matrix-001", "sprint": "S14"});
 
-    // GCP provider (4 cells)
-    let gcp = GcpKmsProvider::new_mock("us-east1");
-    let gcp_key_id = KmsKeyId {
-        provider: KmsProviderKind::GcpKms,
-        key_arn_or_id: "projects/corelink-staging/locations/us-east1/keyRings/byok/cryptoKeys/matrix-key".to_string(),
-        region: "us-east1".to_string(),
-    };
-    let gcp_cells = run_provider_matrix(&gcp, "gcp_kms", gcp_key_id, &ctx).await;
+    // GCP provider (4 cells).
+    //
+    // R2-7: when `GCP_TEST_KEY_RESOURCE` is set and the `production-gcp`
+    // matrix feature is enabled, use `GcpKmsRealProvider` against real Cloud
+    // KMS. Otherwise fall back to the mock so the matrix stays green in CI
+    // without GCP credentials.
+    let gcp_cells = run_gcp_cells(&ctx).await;
 
     // Azure provider (4 cells)
     let azure = AzureKeyVaultProvider::new_mock("eastus");
@@ -339,7 +374,7 @@ async fn cross_provider_kms_provider_tampering_rejected() {
     let gcp = GcpKmsProvider::new_mock("us-east1");
     let gcp_key_id = KmsKeyId {
         provider: KmsProviderKind::GcpKms,
-        key_arn_or_id: "projects/p/locations/us-east1/keyRings/r/cryptoKeys/k".to_string(),
+        key_arn_or_id: "projects/example-project/locations/us-east1/keyRings/byok/cryptoKeys/customer-cmk".to_string(),
         region: "us-east1".to_string(),
     };
     let dek = Dek::generate().expect("entropy");
@@ -369,7 +404,7 @@ async fn cross_provider_kms_provider_tampering_rejected() {
             provider: KmsProviderKind::HashicorpVault,
             ..KmsKeyId {
                 provider: KmsProviderKind::GcpKms,
-                key_arn_or_id: "projects/p/locations/us-east1/keyRings/r/cryptoKeys/k".to_string(),
+                key_arn_or_id: "projects/example-project/locations/us-east1/keyRings/byok/cryptoKeys/customer-cmk".to_string(),
                 region: "us-east1".to_string(),
             }
         },

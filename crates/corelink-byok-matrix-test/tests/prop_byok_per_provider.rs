@@ -72,7 +72,7 @@ proptest! {
             let provider = GcpKmsProvider::new_mock("us-east1");
             let key_id = KmsKeyId {
                 provider: KmsProviderKind::GcpKms,
-                key_arn_or_id: "projects/p/locations/us-east1/keyRings/r/cryptoKeys/k".to_string(),
+                key_arn_or_id: "projects/example-project/locations/us-east1/keyRings/byok/cryptoKeys/customer-cmk".to_string(),
                 region: "us-east1".to_string(),
             };
             let dek = Dek { bytes: dek_bytes };
@@ -197,7 +197,7 @@ proptest! {
             let provider = GcpKmsProvider::new_mock("us-east1");
             let key_id = KmsKeyId {
                 provider: KmsProviderKind::GcpKms,
-                key_arn_or_id: "projects/p/locations/us-east1/keyRings/r/cryptoKeys/k".to_string(),
+                key_arn_or_id: "projects/example-project/locations/us-east1/keyRings/byok/cryptoKeys/customer-cmk".to_string(),
                 region: "us-east1".to_string(),
             };
             let dek = Dek { bytes: dek_bytes };
@@ -285,7 +285,7 @@ proptest! {
         let rt = tokio::runtime::Runtime::new().expect("rt");
         rt.block_on(async {
             let gcp = GcpKmsProvider::new_mock("us-east1");
-            let gcp_key = KmsKeyId { provider: KmsProviderKind::GcpKms, key_arn_or_id: "projects/p/locations/us-east1/keyRings/r/cryptoKeys/k".to_string(), region: "us-east1".to_string() };
+            let gcp_key = KmsKeyId { provider: KmsProviderKind::GcpKms, key_arn_or_id: "projects/example-project/locations/us-east1/keyRings/byok/cryptoKeys/customer-cmk".to_string(), region: "us-east1".to_string() };
             prop_assert_eq!(gcp.check_access(&gcp_key).await.expect("gcp check"), KmsAccessStatus::Ok);
 
             let azure = AzureKeyVaultProvider::new_mock("eastus");

@@ -53,7 +53,7 @@
 //! let provider = GcpKmsProvider::new_mock("us-east1");
 //! let key_id = KmsKeyId {
 //!     provider: KmsProviderKind::GcpKms,
-//!     key_arn_or_id: "projects/p/locations/us-east1/keyRings/r/cryptoKeys/k".to_string(),
+//!     key_arn_or_id: "projects/example-project/locations/us-east1/keyRings/byok/cryptoKeys/customer-cmk".to_string(),
 //!     region: "us-east1".to_string(),
 //! };
 //! let dek = Dek::generate().unwrap();
@@ -75,7 +75,7 @@
 //! let provider = GcpKmsProvider::new_mock("us-east1");
 //! let key_id = KmsKeyId {
 //!     provider: KmsProviderKind::GcpKms,
-//!     key_arn_or_id: "projects/p/locations/us-east1/keyRings/r/cryptoKeys/k".to_string(),
+//!     key_arn_or_id: "projects/example-project/locations/us-east1/keyRings/byok/cryptoKeys/customer-cmk".to_string(),
 //!     region: "us-east1".to_string(),
 //! };
 //! let dek = Dek::generate().unwrap();
@@ -100,6 +100,25 @@
 use async_trait::async_trait;
 use corelink_byok::{BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider,
                     KmsProviderKind, WrappedDek};
+
+pub(crate) mod key_resource;
+
+#[cfg(feature = "production")]
+mod adc;
+#[cfg(feature = "production")]
+mod real;
+
+#[cfg(feature = "production")]
+pub use real::GcpKmsRealProvider;
+
+/// Test-only utilities. Hidden from documentation; gated on the `production`
+/// feature. Used by the in-crate `tests/` integration suites to inject a
+/// static bearer token + custom endpoint.
+#[cfg(feature = "production")]
+#[doc(hidden)]
+pub mod __test_support {
+    pub use crate::adc::AdcCredentials;
+}
 
 /// GCP Cloud KMS adapter.
 ///
@@ -218,6 +237,13 @@ impl KmsProvider for GcpKmsProvider {
             return Err(BYOKError::EnvelopeError(format!(
                 "GcpKmsProvider received key_id with wrong provider: {:?}",
                 key_id.provider
+            )));
+        }
+
+        if !key_resource::is_valid_cloud_kms_resource(&key_id.key_arn_or_id) {
+            return Err(BYOKError::Provider(format!(
+                "malformed Cloud KMS key resource: '{}'",
+                key_id.key_arn_or_id
             )));
         }
 
@@ -354,7 +380,7 @@ mod tests {
         let p = GcpKmsProvider::new_mock("us-east1");
         let key_id = KmsKeyId {
             provider: KmsProviderKind::GcpKms,
-            key_arn_or_id: "projects/p/locations/us-east1/keyRings/r/cryptoKeys/k".to_string(),
+            key_arn_or_id: "projects/example-project/locations/us-east1/keyRings/byok/cryptoKeys/customer-cmk".to_string(),
             region: "us-east1".to_string(),
         };
         let dek = Dek::generate().expect("entropy");
@@ -370,7 +396,7 @@ mod tests {
         let p = GcpKmsProvider::new_mock("us-east1");
         let key_id = KmsKeyId {
             provider: KmsProviderKind::GcpKms,
-            key_arn_or_id: "projects/p/locations/us-east1/keyRings/r/cryptoKeys/k".to_string(),
+            key_arn_or_id: "projects/example-project/locations/us-east1/keyRings/byok/cryptoKeys/customer-cmk".to_string(),
             region: "us-east1".to_string(),
         };
         let status = p.check_access(&key_id).await.expect("check");
