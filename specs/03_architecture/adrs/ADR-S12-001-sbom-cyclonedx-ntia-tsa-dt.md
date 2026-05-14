@@ -1,17 +1,21 @@
 ---
 id: "ADR-S12-001"
 title: "SBOM CycloneDX 1.5+ NTIA strict + RFC 3161 TSA + Dependency-Track ingestion"
-status: "ACCEPTED"
-date: "2026-05-14"
-tags: ["adr", "s12", "sbom", "cyclonedx", "ntia", "tsa", "dependency-track", "supply-chain"]
-deciders:
-  - "Gustavo Schneiter (owner / final approver)"
-  - "Architect"
-  - "Compliance Officer (NTIA + EO 14028)"
-  - "AppSec advisor (TSA replay + DT API key threat model)"
+type: "adr"
+doc_status: "SEALED"
+audit_status: "ACTIVE"
+version: "1.0.0"
+created: "2026-05-14"
+updated: "2026-05-14"
+owner: "Gustavo Schneiter"
+final_approver: "Gustavo Schneiter"
+reviewers:
+  - { role: "architect", name: "Architect" }
+  - { role: "compliance", name: "Compliance Officer (NTIA + EO 14028)" }
+  - { role: "security", name: "AppSec advisor (TSA replay + DT API key threat model)" }
 supersedes: null
 superseded_by: null
-parent: "S-12"
+tags: ["adr", "s12", "sbom", "cyclonedx", "ntia", "tsa", "dependency-track", "supply-chain"]
 ---
 
 # ADR-S12-001 — SBOM CycloneDX 1.5+ NTIA strict + RFC 3161 TSA + Dependency-Track ingestion

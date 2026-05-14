@@ -1,12 +1,16 @@
 ---
 id: "ADR-S11-011"
 type: "adr"
-doc_status: "ACCEPTED"
+doc_status: "SEALED"
+audit_status: "ACTIVE"
 version: "1.0.0"
 created: "2026-05-13"
 updated: "2026-05-13"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
+reviewers: []
+supersedes: null
+superseded_by: null
 tags: ["adr", "s11", "region-migration", "cooldown", "privacy", "lgpd", "gdpr"]
 ---
 

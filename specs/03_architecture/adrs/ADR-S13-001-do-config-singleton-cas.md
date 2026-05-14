@@ -1,16 +1,20 @@
 ---
 id: "ADR-S13-001"
 title: "DO config-singleton single-instance per-region with CAS atomic update"
-status: "ACCEPTED"
-date: "2026-05-14"
-tags: ["adr", "s13", "config-singleton", "durable-object", "cas", "admin-plane"]
-deciders:
-  - "Gustavo Schneiter (owner / final approver)"
-  - "Architect (CAS semantics + audit chain integration)"
-  - "Security Lead (admin role + MFA gate)"
+type: "adr"
+doc_status: "SEALED"
+audit_status: "ACTIVE"
+version: "1.0.0"
+created: "2026-05-14"
+updated: "2026-05-14"
+owner: "Gustavo Schneiter"
+final_approver: "Gustavo Schneiter"
+reviewers:
+  - { role: "architect", name: "Architect (CAS semantics + audit chain integration)" }
+  - { role: "security_lead", name: "Security Lead (admin role + MFA gate)" }
 supersedes: null
 superseded_by: null
-parent: "S-13"
+tags: ["adr", "s13", "config-singleton", "durable-object", "cas", "admin-plane"]
 ---
 
 # ADR-S13-001 — DO config-singleton single-instance per-region with CAS atomic update

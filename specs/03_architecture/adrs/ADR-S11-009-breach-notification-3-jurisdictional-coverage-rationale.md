@@ -1,16 +1,20 @@
 ---
 id: "ADR-S11-009"
 title: "3 jurisdictional templates coverage rationale — BR (ANPD/LGPD) + EU (Irish DPC/GDPR) + US-CA (California AG/CCPA); UK ICO + other state AGs + India DPDPA + China PIPL deferred post-GA"
-status: "ACCEPTED"
-date: "2026-05-13"
-tags: ["adr", "s-11", "privacy", "breach-notification", "lgpd", "gdpr", "ccpa", "jurisdictional-coverage"]
-deciders:
-  - "Gustavo Schneiter (owner / final approver / Privacy Officer interim)"
-  - "DPO interim (Gustavo until hire)"
-  - "Compliance Officer (sign-off pending pre-GA hire)"
+type: "adr"
+doc_status: "SEALED"
+audit_status: "ACTIVE"
+version: "1.0.0"
+created: "2026-05-13"
+updated: "2026-05-13"
+owner: "Gustavo Schneiter"
+final_approver: "Gustavo Schneiter"
+reviewers:
+  - { role: "privacy_lead", name: "DPO interim (Gustavo until hire)" }
+  - { role: "compliance", name: "Compliance Officer (sign-off pending pre-GA hire)" }
 supersedes: null
 superseded_by: null
-assignee: "Gustavo Schneiter"
+tags: ["adr", "s-11", "privacy", "breach-notification", "lgpd", "gdpr", "ccpa", "jurisdictional-coverage"]
 review_schedule: "Quarterly — if enterprise customer materializes in UK/India/China/other US states, escalate immediately"
 ---
 
