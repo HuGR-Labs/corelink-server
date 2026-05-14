@@ -45,6 +45,7 @@ members = [
     "crates/corelink-clerk-cf",
     "crates/corelink-privacy-erasure-worker",
     "crates/corelink-privacy-pseudonymize",
+    "crates/corelink-privacy-residency-enforcement",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
@@ -147,6 +148,7 @@ corelink-dsr = { path = "crates/corelink-dsr" }
 corelink-clerk-cf = { path = "crates/corelink-clerk-cf" }
 corelink-privacy-erasure-worker = { path = "crates/corelink-privacy-erasure-worker" }
 corelink-privacy-pseudonymize = { path = "crates/corelink-privacy-pseudonymize" }
+corelink-privacy-residency-enforcement = { path = "crates/corelink-privacy-residency-enforcement" }
 
 # Test / bench
 proptest = "1.5"
