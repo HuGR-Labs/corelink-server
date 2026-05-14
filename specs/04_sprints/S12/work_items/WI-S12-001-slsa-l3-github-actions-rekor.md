@@ -1,12 +1,12 @@
 ---
 id: "WI-S12-001"
 type: "work_item"
-doc_status: "DRAFT"
-work_status: "READY"
-audit_status: "ACTIVE"
-version: "1.0.0"
+doc_status: "SEALED"
+work_status: "DONE"
+audit_status: "AUDITED"
+version: "1.0.1"
 created: "2026-04-29"
-updated: "2026-04-29"
+updated: "2026-05-13"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-005"]
 parent: "S-12"
@@ -27,7 +27,7 @@ tags: ["wi", "s12", "supply-chain", "slsa", "slsa-l3", "github-actions", "sigsto
 
 # WI-S12-001 — SLSA L3 GitHub Actions Workflow + Fulcio Keyless OIDC + Rekor Inclusion Proof + Verify CLI
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** SEALED · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-12](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -674,6 +674,7 @@ Fallback degradation: se Rekor down sustained, release publication blocked (inte
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | Criação WI-S12-001 (cycle 11.S12.0). |
+| 1.0.1 | 2026-05-13 | Gustavo (via Claude Sonnet 4.6) | Implementation SEALED: release-slsa3.yml + corelink-supply-verify crate + ADR-0045 + docs. |
 
 ## 32. Anti-patterns evitados
 

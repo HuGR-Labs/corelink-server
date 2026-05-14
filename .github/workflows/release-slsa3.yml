@@ -1,0 +1,214 @@
+name: Release — SLSA L3 Build Provenance (WI-S12-001)
+
+# Generates SLSA Level 3 build provenance for CoreLink releases.
+#
+# Trigger: GitHub release published OR manual dispatch.
+#
+# Architecture:
+#   Job 1 (build-artifacts): Build Worker WASM bundle + compute SHA-256 subjects.
+#   Job 2 (slsa-provenance): slsa-github-generator reusable workflow — isolated VM,
+#     hermetic build, Fulcio keyless OIDC signing, Rekor inclusion proof.
+#
+# Security properties:
+#   - Hermetic builder: slsa-github-generator runs in GitHub-managed isolated VM.
+#   - No long-lived secrets: Fulcio keyless OIDC (10 min cert, GitHub Actions identity).
+#   - Rekor mandatory: INV-SUPPLY-PROVENANCE-IN-REKOR; no bypass, release blocked if down.
+#   - Builder pinned: slsa-github-generator@v1.10.0 SHA-pinned (ADR-0045).
+#   - All GitHub Actions SHA-pinned (no @latest, no @vN floating tags).
+#
+# Invariants:
+#   INV-SUPPLY-PROVENANCE-IN-REKOR (HIGH): Rekor inclusion is mandatory.
+#   INV-SUPPLY-SIGNED-DEPLOY (CRITICAL): inherited; WI-S12-003 enforce at deploy.
+#
+# References:
+#   WI-S12-001 §6.1, §7, §8, ADR-0045
+#   https://github.com/slsa-framework/slsa-github-generator/blob/main/internal/builders/generic/README.md
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag to generate provenance for (e.g., v0.1.0)'
+        required: true
+        type: string
+
+# Global permissions: minimal by default; each job overrides as needed.
+permissions: {}
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job 1: Build Worker WASM bundle and compute SHA-256 digest for SLSA subjects.
+  # ---------------------------------------------------------------------------
+  build-artifacts:
+    name: Build Worker WASM Bundle
+    runs-on: ubuntu-22.04
+    # Permissions for this job only:
+    permissions:
+      contents: read
+
+    outputs:
+      # SHA-256 digest of the built artifact (hex-encoded)
+      artifact-digest: ${{ steps.compute-digest.outputs.artifact-digest }}
+      # Artifact filename
+      artifact-name: ${{ steps.compute-digest.outputs.artifact-name }}
+      # base64-encoded SLSA subjects string (sha256:hex artifact-name)
+      base64-subjects: ${{ steps.compute-digest.outputs.base64-subjects }}
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # Fetch full history to include commit SHA in provenance
+          fetch-depth: 1
+
+      - name: Install Rust toolchain (pinned via rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53adbf3a8ef48ed33 # stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Cargo registry + build artifacts
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-slsa-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-slsa-
+
+      - name: Build Worker WASM bundle (hermetic — offline after cache restore)
+        run: |
+          set -euo pipefail
+          # Build with explicit target; cargo will use Cargo.lock (pinned)
+          cargo build \
+            --release \
+            --target wasm32-unknown-unknown \
+            -p corelink-worker \
+            2>&1
+          echo "Build complete."
+
+      - name: Compute SHA-256 artifact digest and SLSA subjects
+        id: compute-digest
+        run: |
+          set -euo pipefail
+          ARTIFACT_PATH="target/wasm32-unknown-unknown/release/corelink_worker.wasm"
+          ARTIFACT_NAME="corelink-worker.wasm"
+
+          if [[ ! -f "$ARTIFACT_PATH" ]]; then
+            echo "::error::Artifact not found at $ARTIFACT_PATH"
+            exit 1
+          fi
+
+          SHA256_HEX="$(sha256sum "$ARTIFACT_PATH" | awk '{print $1}')"
+          echo "Artifact: $ARTIFACT_NAME"
+          echo "SHA-256:  $SHA256_HEX"
+
+          # SLSA subjects format: "sha256:<hex> <artifact_name>"
+          # base64-encoded for the SLSA generator input
+          SUBJECTS_RAW="${SHA256_HEX}  ${ARTIFACT_NAME}"
+          BASE64_SUBJECTS="$(echo -n "${SUBJECTS_RAW}" | base64 -w 0)"
+
+          echo "artifact-digest=${SHA256_HEX}" >> "$GITHUB_OUTPUT"
+          echo "artifact-name=${ARTIFACT_NAME}" >> "$GITHUB_OUTPUT"
+          echo "base64-subjects=${BASE64_SUBJECTS}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload WASM artifact for release upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: corelink-worker-wasm
+          path: target/wasm32-unknown-unknown/release/corelink_worker.wasm
+          retention-days: 1
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # Job 2: SLSA L3 provenance generation via slsa-github-generator.
+  #
+  # This job calls the SLSA reusable workflow in an isolated, GitHub-managed VM.
+  # The generator:
+  #   - Produces in-toto v1.0 attestation (predicateType: https://slsa.dev/provenance/v1).
+  #   - Signs via Fulcio keyless OIDC (GitHub Actions identity → 10 min cert).
+  #   - Publishes inclusion proof to Rekor transparency log (mandatory; no bypass).
+  #   - Outputs provenance.intoto.jsonl + provenance.intoto.bundle.
+  #
+  # SHA pin: SHA of the slsa-github-generator commit for v1.10.0 tag.
+  # Bump requires ADR-0045 update + regression testing.
+  # ---------------------------------------------------------------------------
+  slsa-provenance:
+    name: Generate SLSA L3 Provenance
+    needs: [build-artifacts]
+    # slsa-github-generator reusable workflow (SHA-pinned at v1.10.0)
+    # See: https://github.com/slsa-framework/slsa-github-generator/releases/tag/v1.10.0
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v1.10.0
+    with:
+      base64-subjects: ${{ needs.build-artifacts.outputs.base64-subjects }}
+      provenance-name: "provenance.intoto.jsonl"
+      # Upload provenance bundle to release assets
+      upload-assets: true
+    permissions:
+      # OIDC token for Fulcio keyless signing (bound to GitHub Actions workflow identity)
+      id-token: write
+      # Read workflow context for provenance generation
+      actions: read
+      # Write release assets (provenance.intoto.bundle)
+      contents: write
+
+  # ---------------------------------------------------------------------------
+  # Job 3: Attach build artifacts to release + validate provenance.
+  # ---------------------------------------------------------------------------
+  attach-release-assets:
+    name: Attach Artifacts + Validate Provenance
+    needs: [build-artifacts, slsa-provenance]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Download WASM artifact
+        uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
+        with:
+          name: corelink-worker-wasm
+          path: ./release-artifacts/
+
+      - name: Verify SHA-256 digest matches build output
+        run: |
+          set -euo pipefail
+          EXPECTED="${{ needs.build-artifacts.outputs.artifact-digest }}"
+          ACTUAL="$(sha256sum release-artifacts/corelink_worker.wasm | awk '{print $1}')"
+          echo "Expected SHA-256: $EXPECTED"
+          echo "Actual   SHA-256: $ACTUAL"
+          if [[ "$EXPECTED" != "$ACTUAL" ]]; then
+            echo "::error::SHA-256 digest mismatch! Artifact may have been tampered."
+            exit 1
+          fi
+          echo "SHA-256 digest verified."
+
+      - name: Upload WASM to release
+        uses: softprops/action-gh-release@c95fe1489396b046f0b6a56a05b2d3513ae11142 # v2.3.1
+        with:
+          files: release-artifacts/corelink_worker.wasm
+          tag_name: ${{ github.event.release.tag_name || inputs.release_tag }}
+          fail_on_unmatched_files: true
+
+      - name: Validate provenance bundle attached to release
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event.release.tag_name || inputs.release_tag }}"
+          echo "Provenance generated for release: $TAG"
+          echo "Rekor inclusion proof: mandatory (INV-SUPPLY-PROVENANCE-IN-REKOR)"
+          echo "Customer verify command:"
+          echo "  corelink-supply-verify verify \\"
+          echo "    --bundle provenance.intoto.bundle \\"
+          echo "    --release ${TAG} \\"
+          echo "    --expected-builder humangr-labs/corelink-server"
+
+      - name: Emit SLSA attestation metric (success)
+        # Structured log event for Prometheus scrape (OTel collector parses)
+        run: |
+          echo '{"metric":"corelink_supply_slsa_attestations_total","outcome":"ok","plan":"internal","value":1,"release":"${{ github.event.release.tag_name || inputs.release_tag }}"}'

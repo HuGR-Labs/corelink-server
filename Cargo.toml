@@ -34,6 +34,7 @@ members = [
     "crates/corelink-tracing",
     "crates/corelink-audit-chain",
     "crates/corelink-slo",
+    "crates/corelink-supply-verify",
     "crates/corelink-canary",
     "crates/corelink-billing-emit",
     "crates/corelink-billing-aggregator",
@@ -141,6 +142,7 @@ corelink-logpush = { path = "crates/corelink-logpush" }
 corelink-tracing = { path = "crates/corelink-tracing" }
 corelink-audit-chain = { path = "crates/corelink-audit-chain" }
 corelink-slo = { path = "crates/corelink-slo" }
+corelink-supply-verify = { path = "crates/corelink-supply-verify" }
 corelink-canary = { path = "crates/corelink-canary" }
 corelink-billing-emit = { path = "crates/corelink-billing-emit" }
 corelink-billing-aggregator = { path = "crates/corelink-billing-aggregator" }
