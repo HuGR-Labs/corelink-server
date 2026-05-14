@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "sprint": "S-11",
+  "done": [
+    {
+      "wi_id": "WI-S11-001",
+      "sealed_at": "2026-05-03T00:00:00Z",
+      "commit": "pending"
+    },
+    {
+      "wi_id": "WI-S11-002",
+      "sealed_at": "2026-05-07T00:00:00Z",
+      "commit": "f4846b8"
+    },
+    {
+      "wi_id": "WI-S11-006",
+      "sealed_at": "2026-05-13T00:00:00Z",
+      "commit": "pending"
+    }
+  ]
+}

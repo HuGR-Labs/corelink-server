@@ -757,6 +757,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-privacy-breach-emit"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "corelink-privacy-erasure-worker"
 version = "0.1.0"
 dependencies = [

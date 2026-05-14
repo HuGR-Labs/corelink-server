@@ -1,0 +1,140 @@
+# RB-BREACH-NOTIF Decision Tree — Canonical YAML
+# Source-of-truth: WI-S11-006 §1 + §6.1
+# Owner: Privacy Officer (Gustavo Schneiter interim)
+# Cadence: reviewed annually; update on regulatory change
+# Schema: schemas/yaml/breach-notification-decision-tree.json
+#
+# Variables referenced in templates (8 canonical):
+#   {{breach_id}}             — ULID assigned at incident declaration
+#   {{breach_detected_at}}    — ISO 8601 UTC
+#   {{data_categories_affected}} — enum from privacy_model.md §2
+#   {{count_subjects_affected}}  — approximate integer
+#   {{containment_actions}}   — free-text bullet list
+#   {{mitigation_offered}}    — free-text bullet list
+#   {{contact_email}}         — privacy@hugr.dev (canonical)
+#   {{breach_severity}}       — SEV-1 | SEV-2 | SEV-3
+
+severity_classification:
+  - severity: "SEV-1"
+    criteria: >
+      PII de > 1000 titulares afetados
+      OR sensitive data (Art. 5 II LGPD; webauthn pubkey; health data) leaked
+      OR cross-tenant data exposure (INV-TENANT-ISOLATION violation)
+      OR cryptographic key material exposed
+    notify:
+      - authority: "ANPD"
+        jurisdiction: "BR"
+        deadline_hours: 72
+        template: "lgpd-anpd-template.pt-br.md"
+        contact: "comunicacao@anpd.gov.br"
+        portal: "https://www.gov.br/anpd/pt-br/assuntos/comunicacao-de-incidente-de-seguranca"
+        legal_basis: "LGPD Art. 48 + ANPD Res. CD/ANPD nº 15/2024"
+      - authority: "Irish DPC"
+        jurisdiction: "EU"
+        deadline_hours: 72
+        template: "gdpr-irish-dpc-template.en.md"
+        contact: "dpo@hugr.dev (forwards to commissioners@dataprotection.ie)"
+        portal: "https://www.dataprotection.ie/en/organisations/data-security/personal-data-breaches"
+        legal_basis: "GDPR Art. 33 + EDPB Guidelines 9/2022"
+      - authority: "California AG"
+        jurisdiction: "US-CA"
+        deadline_hours: 72
+        template: "ccpa-state-ag-template.en.md"
+        contact: "privacy@hugr.dev"
+        portal: "https://oag.ca.gov/privacy/databreach/reporting"
+        legal_basis: "CCPA §1798.82"
+        caveat: "most_expedient_time_possible — California courts interpret ≤72h in majority of cases"
+    customer_notification:
+      deadline_hours: 72
+      templates:
+        - "customer-breach-notification.pt-BR.mjml"
+        - "customer-breach-notification.en-US.mjml"
+        - "customer-breach-notification.es-MX.mjml"
+      delivery: "Cloudflare Email transactional + status page banner"
+      status_page_banner: true
+    internal_escalation:
+      pagerduty_service: "corelink-breach-sev1"
+      escalation_policy:
+        - role: "Privacy Officer"
+          timeout_minutes: 15
+        - role: "Legal"
+          timeout_minutes: 30
+        - role: "Security Lead"
+          timeout_minutes: 45
+        - role: "CEO interim (Gustavo)"
+          timeout_minutes: 60
+      decision_owner: "Privacy Officer"
+      time_to_decision_slo_hours: 4
+
+  - severity: "SEV-2"
+    criteria: >
+      PII de 100–1000 titulares afetados
+      OR availability loss > 24h (GDPR Art. 33 includes loss of availability)
+      OR integrity compromise affecting data subset
+      OR single-tenant data exposure (no cross-tenant)
+    notify:
+      - authority: "ANPD"
+        jurisdiction: "BR"
+        deadline_hours: 72
+        template: "lgpd-anpd-template.pt-br.md"
+        contact: "comunicacao@anpd.gov.br"
+        legal_basis: "LGPD Art. 48 + ANPD Res. CD/ANPD nº 15/2024"
+      - authority: "Irish DPC"
+        jurisdiction: "EU"
+        deadline_hours: 72
+        template: "gdpr-irish-dpc-template.en.md"
+        contact: "dpo@hugr.dev"
+        legal_basis: "GDPR Art. 33 + EDPB Guidelines 9/2022"
+      # CCPA SEV-2: evaluated case-by-case; threshold may be below 1000 but
+      # avoid over-disclosure. Privacy Officer judgment required.
+    customer_notification:
+      deadline_hours: 72
+      templates:
+        - "customer-breach-notification.pt-BR.mjml"
+        - "customer-breach-notification.en-US.mjml"
+        - "customer-breach-notification.es-MX.mjml"
+      delivery: "Cloudflare Email transactional"
+      status_page_banner: false
+    internal_escalation:
+      pagerduty_service: "corelink-breach-sev2"
+      escalation_policy:
+        - role: "Privacy Officer"
+          timeout_minutes: 15
+        - role: "Legal"
+          timeout_minutes: 30
+        - role: "Security Lead"
+          timeout_minutes: 45
+      decision_owner: "Privacy Officer"
+      time_to_decision_slo_hours: 4
+
+  - severity: "SEV-3"
+    criteria: >
+      PII de < 100 titulares afetados
+      OR pseudonymized data exposure (no direct identifier)
+      OR confirmed-no-PII near-miss (system anomaly, no data exfiltration confirmed)
+    notify: []  # internal post-mortem only; Privacy Officer judgment for regulatory escalation
+    customer_notification:
+      deadline_hours: 168   # 7d if individual customer awareness needed
+      delivery: "case-by-case email"
+      status_page_banner: false
+    internal_escalation:
+      pagerduty_service: "corelink-breach-sev3"
+      escalation_policy:
+        - role: "Privacy Officer"
+          timeout_minutes: 60
+      decision_owner: "Privacy Officer"
+      time_to_decision_slo_hours: 4
+
+# Audit event emitted on dispatch (per WI-S11-006 §6.1 item 7):
+audit_event:
+  type: "dev.hugr.corelink.breach.notification_dispatched.v1"
+  storage: "R2 audit-<region>"
+  retention_years: 7
+  object_lock: true
+  emit_behavior: "dispatch_priority_over_audit"
+  # NOTE: Audit failure does NOT block regulatory notification dispatch.
+  # Regulatory SLA (72h) takes priority over audit completeness.
+  # On audit emit failure: dispatch proceeds + SEV-1 alert to SecLead +
+  # Compliance + manual re-emit post-recovery via breach_id idempotency.
+  # Distinct from billing fail-OPEN; this is documented-priority not silent skip.
+  retry_key: "breach_id"  # idempotent retry anchor

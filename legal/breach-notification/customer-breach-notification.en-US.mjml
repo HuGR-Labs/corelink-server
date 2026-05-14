@@ -1,0 +1,132 @@
+<mjml>
+  <!-- Customer Breach Notification — en-US locale
+       WI-S11-006 §6.1 item 3 — reuses WI-S11-004 mjml infra
+       Variables (8 canonical per RB-BREACH-NOTIF §4):
+         {{breach_id}}, {{breach_detected_at}}, {{data_categories_affected}},
+         {{count_subjects_affected}}, {{containment_actions}}, {{mitigation_offered}},
+         {{contact_email}}, {{breach_severity}}
+  -->
+  <mj-head>
+    <mj-title>Security Incident Notification — HuGR CoreLink</mj-title>
+    <mj-preview>Important information about the security of your CoreLink account</mj-preview>
+    <mj-attributes>
+      <mj-all font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" />
+      <mj-text font-size="15px" line-height="1.6" color="#1a1a2e" />
+      <mj-button background-color="#4f46e5" color="#ffffff" border-radius="6px" font-weight="600" />
+    </mj-attributes>
+  </mj-head>
+  <mj-body background-color="#f9fafb">
+    <!-- Header -->
+    <mj-section background-color="#1a1a2e" padding="24px 32px">
+      <mj-column>
+        <mj-text color="#ffffff" font-size="22px" font-weight="700">HuGR CoreLink</mj-text>
+        <mj-text color="#a5b4fc" font-size="13px">Security Notification — Important Notice</mj-text>
+      </mj-column>
+    </mj-section>
+
+    <!-- Severity Banner -->
+    <mj-section background-color="#fef2f2" padding="16px 32px">
+      <mj-column>
+        <mj-text font-size="14px" font-weight="700" color="#991b1b">
+          SECURITY INCIDENT — ACTION RECOMMENDED
+        </mj-text>
+        <mj-text font-size="13px" color="#7f1d1d">
+          Ref.: {{breach_id}} | Detected at: {{breach_detected_at}}
+        </mj-text>
+      </mj-column>
+    </mj-section>
+
+    <!-- Main Content -->
+    <mj-section background-color="#ffffff" padding="32px">
+      <mj-column>
+        <mj-text font-size="18px" font-weight="700" color="#1a1a2e" padding-bottom="16px">
+          Security Incident Notification
+        </mj-text>
+
+        <mj-text>Dear CoreLink user,</mj-text>
+        <mj-text>
+          HuGR Labs has identified a security incident that may have involved data associated with
+          your CoreLink account. We are committed to full transparency, and we are contacting
+          you immediately to keep you informed.
+        </mj-text>
+
+        <!-- What Happened -->
+        <mj-text font-size="15px" font-weight="700" color="#1a1a2e" padding-top="20px" padding-bottom="4px">
+          What happened
+        </mj-text>
+        <mj-text>
+          On {{breach_detected_at}} (UTC), we identified a <strong>{{breach_severity}}</strong> security
+          incident that may have resulted in unauthorized access to personal data associated with your account.
+        </mj-text>
+
+        <!-- What Data -->
+        <mj-text font-size="15px" font-weight="700" color="#1a1a2e" padding-top="20px" padding-bottom="4px">
+          What information may have been affected
+        </mj-text>
+        <mj-text>{{data_categories_affected}}</mj-text>
+
+        <!-- What We Did -->
+        <mj-text font-size="15px" font-weight="700" color="#1a1a2e" padding-top="20px" padding-bottom="4px">
+          What we have done
+        </mj-text>
+        <mj-text>{{containment_actions}}</mj-text>
+
+        <!-- What We Offer -->
+        <mj-text font-size="15px" font-weight="700" color="#1a1a2e" padding-top="20px" padding-bottom="4px">
+          What we are offering you
+        </mj-text>
+        <mj-text>{{mitigation_offered}}</mj-text>
+
+        <!-- What You Should Do -->
+        <mj-text font-size="15px" font-weight="700" color="#1a1a2e" padding-top="20px" padding-bottom="4px">
+          What we recommend you do
+        </mj-text>
+        <mj-text>
+          1. Change your password immediately.<br/>
+          2. Enable two-factor authentication (WebAuthn/passkey) if you have not already.<br/>
+          3. Review recent account activity in Settings → Security.<br/>
+          4. Contact us if you notice any suspicious activity.
+        </mj-text>
+
+        <!-- CTA -->
+        <mj-button href="https://app.hugr.dev/settings/security" padding-top="24px">
+          Review Account Security
+        </mj-button>
+
+        <!-- Regulatory Notice -->
+        <mj-text font-size="13px" color="#6b7280" padding-top="24px">
+          This notice is provided pursuant to the California Consumer Privacy Act (CCPA) §1798.82,
+          the EU General Data Protection Regulation (GDPR) Art. 34, and the Brazilian LGPD Art. 48.
+          We have notified the relevant data protection authorities (ANPD / Irish DPC / California AG)
+          within the required 72-hour window.
+        </mj-text>
+      </mj-column>
+    </mj-section>
+
+    <!-- Contact Section -->
+    <mj-section background-color="#f3f4f6" padding="24px 32px">
+      <mj-column>
+        <mj-text font-size="14px" font-weight="700" color="#1a1a2e" padding-bottom="8px">
+          Contact us
+        </mj-text>
+        <mj-text font-size="13px" color="#374151">
+          Questions? Our Data Protection Officer is available for clarifications:<br/>
+          Email: <a href="mailto:{{contact_email}}" style="color: #4f46e5;">{{contact_email}}</a><br/>
+          Incident reference: {{breach_id}}
+        </mj-text>
+      </mj-column>
+    </mj-section>
+
+    <!-- Footer -->
+    <mj-section background-color="#1a1a2e" padding="20px 32px">
+      <mj-column>
+        <mj-text font-size="11px" color="#9ca3af">
+          HuGR Labs<br/>
+          This message was sent because your CoreLink account may have been affected by incident {{breach_id}}.<br/>
+          <a href="https://hugr.dev/privacy" style="color: #a5b4fc;">Privacy Policy</a> |
+          <a href="https://status.hugr.dev" style="color: #a5b4fc;">Status Page</a>
+        </mj-text>
+      </mj-column>
+    </mj-section>
+  </mj-body>
+</mjml>

@@ -1,0 +1,46 @@
+[package]
+name = "corelink-privacy-breach-emit"
+description = "CoreLink breach notification audit event emitter (WI-S11-006 — S-11 Privacy Pipeline HIGH_RISK lane). Emits canonical `dev.hugr.corelink.breach.notification_dispatched.v1` CloudEvent per RB-BREACH-NOTIF §4.1 to R2 audit-<region> bucket (Object Lock 7y, INV-AUDIT-APPEND-ONLY §3.6 L116). 4 canonical Prometheus metrics: `corelink_breach_time_to_notification_seconds{jurisdiction,severity}` histogram + `corelink_breach_time_to_decision_seconds{severity,scenario}` histogram + `corelink_breach_dry_run_completion_total{outcome,scenario}` counter + `corelink_breach_customer_notification_delivery_total{outcome,locale,severity}` counter. BreachSeverity `#[non_exhaustive]` 3-arm enum (Sev1/Sev2/Sev3). NotificationJurisdiction `#[non_exhaustive]` 3-arm enum (Anpd/IrishDpc/CaliforniaAg). BreachNotificationDispatch payload (breach_id + severity + jurisdictions_notified + customer_notifications_sent + customer_locales + ts + retry_attempt + breach_detected_at). BreachAuditSink trait + InMemoryBreachAuditSink + FailingBreachAuditSink. Per-instance `Arc<Mutex<>>` F-001 closure. Audit fail behavior: dispatch priority over audit completeness per WI-S11-006 §9.3 DD audit failure trade-off (distinct from billing fail-OPEN; this is documented-priority with retry). wasm32-unknown-unknown clean: no ring / no C dep / no getrandom direct dep."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# uuid: NO v7 feature — v7 pulls getrandom which requires platform entropy
+# (wasm32-unknown-unknown incompatible without emscripten). We accept
+# breach_id as a string from the caller (Privacy Officer assigns ULID at
+# incident declaration). Tests use deterministic Uuid::from_bytes(seed).
+uuid = { workspace = true, features = ["serde"] }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[[test]]
+name = "prop_breach_emit_escalation_matrix"
+path = "tests/prop_breach_emit_escalation_matrix.rs"
+
+[[test]]
+name = "regression_audit_fail_closed_behavior"
+path = "tests/regression_audit_fail_closed_behavior.rs"
