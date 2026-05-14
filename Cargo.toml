@@ -115,6 +115,9 @@ members = [
     "crates/corelink-lighthouse-tracker",
     # WI-S20-006 synthetic page weekly drill — 3-region 24/7 follow-the-sun + MTTA budget
     "crates/corelink-synthetic-pager",
+    # R2-4 shared Slack incoming-webhook real client (Block Kit + per-channel
+    # routing + retry + audit envelope; bridges to enterprise-inquiry via adapter)
+    "crates/corelink-slack-real",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
