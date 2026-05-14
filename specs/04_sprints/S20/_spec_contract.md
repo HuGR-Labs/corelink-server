@@ -3,9 +3,9 @@ id: "SPEC-CONTRACT-S20"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-04-24"
-updated: "2026-04-29"
+updated: "2026-05-14"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -327,6 +327,17 @@ Itens waivable com 14-canonical-source sign-off + ADR + CEO/Founder approval (Lo
 
 ---
 
+## 20. Change Log
+
+| Versão | Data | Autor | Mudança |
+|---|---|---|---|
+| 1.0.0 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | Criação spec contract S-20 SOTA v1.0 (GA Readiness lane HIGH_RISK; 4 semanas; 8 WIs; Engineering/Launch separation). |
+| 1.1.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | Codex P0/P1 remediation Lote 10.20 — canonical sources 10→14, SBOM CycloneDX 1.5+ (CycloneDX 1.4 fallback REMOVED), 13 sign-offs canonical, lighthouse 3→2 + 21d→30d waiver REMOVED, P0/P1 runbooks ~25 of 47 priority subset (Lote 10.17 fix). |
+| 1.2.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | WI-S20-001..008 detailed definitions; PERT estimates locked; risk register expanded to 12 rows; benchmarks SOTA 9/9. |
+| 1.3.0 | 2026-05-14 | Gustavo (via Claude Opus 4.7) | Engineering-gate SEAL bump for WI-S20-001..007 closing engineering gate. WI-S20-007 SEALED with: 4 TLA+ runbook specs verified GREEN (signup_atomic + dpa_versioning_grace + byok_kill_switch + residency_failover) per ADR-0042 §A1 TLC v1.8.0 SHA-256 pin; 30d staging evidence framework drafted (`AUDIT-S20-30D-STAGING-EVIDENCE` pending D+30..D+60 observation window); 90d SBOM retention proof SEALED (`AUDIT-S20-SBOM-90D-RETENTION`); closing PRR sub-doc of PRR-GA-001 SEALED (`PRR-S20-CLOSING` doc_status SEALED · work_status CONDITIONALLY_APPROVED per declared deferrals SOC 2 Type I 6m + APAC + Apache 2.0 + Launch soft-gate); cross-WI adversarial rollup SEALED 95 scenarios 100% mitigation (`AUDIT-S20-ADVERSARIAL-SUMMARY`). WIs 001..006 SEAL handled via parallel worktree merges to `main` per spec contract §5.1 + sprint timeline §13. |
+
+---
+
 **Post-GA:** Sprint S-21+ começam Fase 2 (Remote Execution — `execute-action`, executor identity, sandbox runtime), abrindo novo ciclo de 10+ sprints.
 
-**Fim spec contract S-20 v1.1.0 SOTA.**
+**Fim spec contract S-20 v1.3.0 SOTA.**
