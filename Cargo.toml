@@ -89,6 +89,8 @@ members = [
     "crates/corelink-py",
     "crates/corelink-go",
     "crates/corelink-wasm",
+    # WI-S17-005 oncall scheduler + fatigue tracking + PagerDuty integration trait
+    "crates/corelink-oncall",
 ]
 exclude = [
     "crates/tenant-path/fuzz",

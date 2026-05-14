@@ -1,0 +1,224 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "CoreLink oncall fatigue tracking datasource (Prometheus / VictoriaMetrics / Grafana Cloud Mimir tenant).",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "uid": "DASH-ONCALL-FATIGUE",
+  "title": "CoreLink — Oncall Fatigue (DASH-ONCALL-FATIGUE)",
+  "description": "WI-S17-005 §6.1.4 canonical observability_model.md §10 Nível-3 oncall fatigue dashboard. Per-engineer page count + MTTA/MTTR + sleep-hour pages (00:00–06:00 UTC). Tenant-agnostic per CTRL-PRIV-001 + INV-OBS-CARDINALITY-BUDGET-RESPECTED. Oncall Manager + SRE Lead personas.",
+  "tags": ["corelink", "oncall", "fatigue", "burnout", "s17", "standard"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "annotations": {
+    "list": [
+      {
+        "name": "Fatigue threshold breach",
+        "datasource": "$DS_PROMETHEUS",
+        "enable": true,
+        "iconColor": "red",
+        "expr": "ALERTS{alertname=~\"OncallFatigue.*\", severity=~\"sev1|sev2\"}"
+      }
+    ],
+    "lastUpdated": "2026-05-14T00:00:00Z",
+    "cardinality_budget_used": "1800/100000"
+  },
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "tier",
+        "type": "custom",
+        "label": "Tier",
+        "multi": true,
+        "includeAll": true,
+        "options": [
+          { "text": "All", "value": "all", "selected": true },
+          { "text": "Tier 1", "value": "tier-1" },
+          { "text": "Tier 2", "value": "tier-2" },
+          { "text": "Tier 3", "value": "tier-3" }
+        ],
+        "query": "all,tier-1,tier-2,tier-3"
+      },
+      {
+        "name": "in_rotation",
+        "type": "custom",
+        "label": "In rotation",
+        "multi": false,
+        "includeAll": false,
+        "options": [
+          { "text": "Any", "value": "any", "selected": true },
+          { "text": "In rotation", "value": "true" },
+          { "text": "Non-rotation", "value": "false" }
+        ],
+        "query": "any,true,false"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Pages / shift (Sev1) per tier — soft >2 alert / HARD >3 auto-handoff",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "corelink_oncall_sev1_per_shift{tier=~\"$tier\"}",
+          "legendFormat": "{{tier}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 3 },
+              { "color": "red", "value": 4 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Pages / shift (Sev2) per tier — soft >5 alert / HARD >8 auto-handoff",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "corelink_oncall_sev2_per_shift{tier=~\"$tier\"}",
+          "legendFormat": "{{tier}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 6 },
+              { "color": "red", "value": 9 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Pages / 30d (in vs non-rotation) — soft >10 / HARD >15 1-month block",
+      "type": "barchart",
+      "datasource": "$DS_PROMETHEUS",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum by (tier, in_rotation) (increase(corelink_oncall_pages_per_month_total{tier=~\"$tier\"}[30d]))",
+          "legendFormat": "{{tier}} / in_rotation={{in_rotation}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "MTTA (Sev1) — target < 5min (300s)",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "gridPos": { "x": 12, "y": 8, "w": 6, "h": 4 },
+      "targets": [
+        {
+          "expr": "avg(corelink_incident_mtta_seconds{severity=\"sev1\", tier=~\"$tier\"})",
+          "legendFormat": "MTTA p50"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 240 },
+              { "color": "red", "value": 300 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "MTTR (Sev1) — target < 30min (1800s)",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "gridPos": { "x": 18, "y": 8, "w": 6, "h": 4 },
+      "targets": [
+        {
+          "expr": "avg(corelink_incident_mttr_seconds{severity=\"sev1\", tier=~\"$tier\"})",
+          "legendFormat": "MTTR p50"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 1500 },
+              { "color": "red", "value": 1800 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Sleep-hour pages (00:00–06:00 UTC) per tier",
+      "type": "timeseries",
+      "datasource": "$DS_PROMETHEUS",
+      "gridPos": { "x": 12, "y": 12, "w": 12, "h": 4 },
+      "targets": [
+        {
+          "expr": "sum by (tier) (rate(corelink_oncall_sleep_hour_pages_total{tier=~\"$tier\"}[1h]))",
+          "legendFormat": "{{tier}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Fatigue threshold breaches — rolling 7d (soft + HARD)",
+      "type": "table",
+      "datasource": "$DS_PROMETHEUS",
+      "gridPos": { "x": 0, "y": 16, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum by (tier, threshold) (increase(corelink_oncall_fatigue_threshold_breach_total{tier=~\"$tier\"}[7d]))",
+          "legendFormat": "{{tier}} / {{threshold}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Handoff events executed (rolling 30d)",
+      "type": "stat",
+      "datasource": "$DS_PROMETHEUS",
+      "gridPos": { "x": 12, "y": 16, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum by (decision) (increase(corelink_oncall_handoff_executed_total{tier=~\"$tier\"}[30d]))",
+          "legendFormat": "{{decision}}"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,72 @@
+# PagerDuty schedule + escalation policy config (WI-S17-005).
+#
+# This file is consumed by the PagerDuty Terraform provider
+# (`pagerduty_schedule` + `pagerduty_escalation_policy`) in the PRR
+# ship-gate IaC pipeline. The API token used by Terraform is bound
+# from `${{ secrets.PAGERDUTY_API_KEY }}` per the autonomous
+# execution charter (no secret materialises locally).
+#
+# Canonical refs:
+#   - WI-S17-005 §1
+#   - RB-ONCALL-POLICY (specs/_runbooks/RB-ONCALL-POLICY.md)
+#   - Google SRE Workbook Ch 8 (rotation cadence + protection period)
+
+schedules:
+  - name: corelink-oncall-tier-1
+    time_zone: UTC
+    layers:
+      - name: tier-1-primary
+        users: [eng-001, eng-002, eng-003]  # canonical 3-engineer rotation seed; real roster bound via Terraform var.
+        rotation_turn_length_seconds: 604800  # 7 days (hard cap per RB-ONCALL-POLICY §2)
+        rotation_virtual_start: 2026-05-01T09:00:00Z
+        restrictions:
+          - type: weekly_restriction
+            start_time_of_day: 09:00:00
+            duration_seconds: 28800  # 8h per shift segment
+
+  - name: corelink-oncall-tier-2
+    time_zone: UTC
+    layers:
+      - name: tier-2-escalate
+        users: [eng-004, eng-005, eng-006]
+        rotation_turn_length_seconds: 604800
+        rotation_virtual_start: 2026-05-01T09:00:00Z
+
+  - name: corelink-oncall-tier-3
+    time_zone: UTC
+    layers:
+      - name: tier-3-architect-security
+        users: [eng-007, eng-008]
+        rotation_turn_length_seconds: 604800
+        rotation_virtual_start: 2026-05-01T09:00:00Z
+
+# Per-shift protection period: outgoing oncall enters a 14d window
+# during which they cannot be re-rostered on any tier. Enforced
+# code-side by `corelink_oncall::rotation::Rotation::engineer_in_protection`
+# and mirrored in PagerDuty via per-user override exception list.
+protection_periods:
+  rule: "after_shift_end_no_oncall_2_weeks"
+  duration_seconds: 1209600  # 14 days
+
+# Regional coverage — APAC GA deferred per spec contract §5.5.
+regions_future_proof:
+  - us-east        # GA at S-17
+  - eu-central     # GA at S-17
+  - apac           # placeholder; APAC GA pós-S-20
+
+escalation_policies:
+  - name: corelink-incident-response
+    num_loops: 2
+    rules:
+      - escalation_delay_in_minutes: 5   # Tier 1 → Tier 2 unack
+        targets:
+          - type: schedule_reference
+            id: corelink-oncall-tier-1
+      - escalation_delay_in_minutes: 10  # Tier 2 → Tier 3 unack
+        targets:
+          - type: schedule_reference
+            id: corelink-oncall-tier-2
+      - escalation_delay_in_minutes: 30  # Manual page beyond Tier 3
+        targets:
+          - type: schedule_reference
+            id: corelink-oncall-tier-3
