@@ -135,9 +135,9 @@ async-trait = "0.1"
 dashmap = "6"
 
 # gRPC stack
-tonic = "0.12"
-prost = "0.13"
-tonic-build = "0.12"
+tonic = "0.14"
+prost = "0.14"
+tonic-build = "0.14"
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -159,7 +159,7 @@ serde_json = "1"
 
 # WI-S15-004 FFI wrappers
 # PyO3: Python extension module (Python 3.10+ ABI3)
-pyo3 = { version = "0.22", features = ["abi3-py310"] }
+pyo3 = { version = "0.28", features = ["abi3-py310"] }
 # wasm-bindgen: Rust → WASM JS bridge
 wasm-bindgen = "0.2"
 js-sys = "0.3"
@@ -169,8 +169,8 @@ serde-wasm-bindgen = "0.6"
 
 # BYOK (S-14)
 aes-gcm = { version = "0.10", features = ["aes"] }
-getrandom = "0.2"
-lru = "0.12"
+getrandom = "0.4"
+lru = "0.18"
 # AWS SDK — requires Rust ≥ 1.91.1 per MSRV; workspace is pegged to 1.80 as floor.
 # The actual CI toolchain (1.88+) compiles these correctly.
 # `cargo check -p corelink-byok-aws --ignore-rust-version` is required until
@@ -179,15 +179,15 @@ aws-config = { version = "1", features = ["behavior-version-latest"] }
 aws-sdk-kms = "1"
 
 # Crypto / encoding (S-01 foundation)
-hmac = "0.12"
-sha2 = "0.10"
+hmac = "0.13"
+sha2 = "0.11"
 blake3 = { version = "1", features = ["traits-preview"] }
 base64 = "0.22"
 hex = "0.4"
 uuid = { version = "1", features = ["v4", "serde"] }
 subtle = "2"
 zeroize = { version = "1.8", features = ["derive"] }
-hkdf = "0.12"
+hkdf = "0.13"
 bytes = "1"
 # Ed25519 (FIPS 186-5 EdDSA) — erasure attestation signing (WI-S14-007)
 ed25519-dalek = { version = "2", features = ["rand_core"] }
@@ -274,8 +274,8 @@ corelink-erasure-attestation = { path = "crates/corelink-erasure-attestation" }
 corelink-dr-drill = { path = "crates/corelink-dr-drill" }
 
 # CLI tooling (WI-S15-001 / WI-S15-005)
-toml = "0.8"
-dirs = "5"
+toml = "1.1"
+dirs = "6"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 corelink-cli = { path = "crates/corelink-cli" }
 
@@ -283,7 +283,7 @@ corelink-cli = { path = "crates/corelink-cli" }
 proptest = "1.5"
 tokio-test = { version = "0.4" }
 tempfile = "3"
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.8", features = ["html_reports"] }
 
 [profile.release]
 # Build otimizado pra Cloudflare Containers

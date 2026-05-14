@@ -41,7 +41,7 @@ uuid = { workspace = true, features = ["v7", "serde", "js"] }
 [dev-dependencies]
 proptest = { workspace = true }
 rand = "0.9"
-rand_chacha = "0.9"
+rand_chacha = "0.10"
 
 [[test]]
 name = "prop_dual_approval"

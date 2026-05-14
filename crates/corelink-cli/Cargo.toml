@@ -39,7 +39,7 @@ tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 blake3 = { workspace = true }
-toml = "0.8"
+toml = "1.1"
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 thiserror = { workspace = true }
@@ -48,7 +48,7 @@ reqwest = { version = "0.12", features = ["rustls-tls", "json", "stream"], defau
 bytes = { workspace = true }
 uuid = { workspace = true }
 # WI-S15-005 telemetry: platform-aware config path (~/.corelink)
-dirs = "5"
+dirs = "6"
 
 [dev-dependencies]
 tokio-test = { workspace = true }

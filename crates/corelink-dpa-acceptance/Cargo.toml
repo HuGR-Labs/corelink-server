@@ -32,13 +32,13 @@ sha2 = { workspace = true }
 hex = { workspace = true }
 subtle = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
-jsonwebtoken = "9.3"
+jsonwebtoken = "10.4"
 base64 = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
 rsa = { version = "0.9", features = ["pem"] }
-rand = "0.8"
+rand = "0.9"
 
 [[test]]
 name = "prop_locale_mismatch"
