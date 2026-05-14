@@ -1,0 +1,48 @@
+{
+  "common": {
+    "cancel": "Cancelar",
+    "save": "Guardar",
+    "delete": "Eliminar",
+    "loading": "Cargando…",
+    "error": "Error",
+    "success": "Éxito",
+    "confirm": "Confirmar",
+    "close": "Cerrar",
+    "skipToContent": "Saltar al contenido principal"
+  },
+  "nav": {
+    "home": "Inicio",
+    "dashboard": "Panel",
+    "settings": "Ajustes",
+    "signOut": "Cerrar sesión"
+  },
+  "auth": {
+    "signIn": "Iniciar sesión",
+    "signUp": "Registrarse",
+    "email": "Correo electrónico",
+    "password": "Contraseña"
+  },
+  "errors": {
+    "required": "Este campo es obligatorio.",
+    "invalidEmail": "Introduce un correo electrónico válido.",
+    "generic": "Algo salió mal. Inténtalo de nuevo."
+  },
+  "privacy": {
+    "title": "Aviso de privacidad",
+    "lastUpdated": "Última actualización",
+    "version": "Versión",
+    "subProcessors": "Subprocesadores"
+  },
+  "legal": {
+    "dpa": "Acuerdo de Procesamiento de Datos",
+    "terms": "Términos de servicio",
+    "cookies": "Política de cookies",
+    "acceptedOn": "Aceptado el",
+    "saveConsent": "Guardar consentimiento"
+  },
+  "cookies": {
+    "functional": "Estrictamente necesarios",
+    "analytics": "Análisis",
+    "marketing": "Marketing"
+  }
+}
