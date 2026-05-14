@@ -1,0 +1,38 @@
+[package]
+name = "corelink-dr-drill"
+description = "CoreLink DR drill scheduler + CF region outage simulator (WI-S17-002 — STANDARD lane). Ships DrillScheduler trait (semestral cadence; CF Cron `0 6 1 1,7 *`), DrillCycle `#[non_exhaustive]` 3-canonical (CfRegionOutage / D1PrimaryLoss / ByokKeyCompromise), DrillStatus `#[non_exhaustive]` (Scheduled / InProgress / Completed / Failed / Aborted), DrillRun record (drill_id + started_at + simulated_region + failover_target + rto_seconds + rpo_seconds + slo_impact + completed_at + status), RtoRpoMeasurement + SloImpact, CfRegionOutageSimulator trait + InMemoryCfRegionOutageSimulator (marks region synthetic_outage; routes read/write to sibling; measures RTO/RPO against SLO targets RTO ≤ 1800s + RPO ≤ 60s per WI §6 DoD), staging-env hard guard (DrillEnv `#[non_exhaustive]`; rejects Production at compile + runtime), DrillError `#[non_exhaustive]` taxonomy. Pure-logic skeleton; CF Worker handler invocation deferred to staging wiring (consume failover patterns reused from WI-S14-003 PAT-REGION-FAILOVER-001)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+corelink-failover-router = { path = "../corelink-failover-router" }
+corelink-replica-worker = { path = "../corelink-replica-worker" }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[[test]]
+name = "prop_dr_drill"
+path = "tests/prop_dr_drill.rs"
