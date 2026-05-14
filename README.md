@@ -68,6 +68,23 @@ corelink-server/
     └── 0001_init.sql        # schema Neon (tenants, CAS index, AC index, usage)
 ```
 
+## Verifying CLI release downloads (WI-S15-006)
+
+Linux release tarballs are GPG-signed; the matching public key is
+published at the canonical `.well-known` location:
+
+```bash
+# One-time: import the CoreLink release-signing pubkey.
+curl -fsSL https://corelink.dev/.well-known/gpg-pubkey.asc | gpg --import
+
+# Per download: verify the detached signature against the tarball.
+gpg --verify corelink-linux-x86_64.tar.gz.asc corelink-linux-x86_64.tar.gz
+```
+
+macOS binaries ship Apple-notarized (Gatekeeper accepts them without a
+right-click bypass); Windows binaries ship Authenticode-signed (see
+`ADR-S15-009` for the deferral-only policy if cert acquisition slips).
+
 ## Status
 
 MVP em construção. Ver [TODO.md](./TODO.md) pro roadmap semana 1–12.

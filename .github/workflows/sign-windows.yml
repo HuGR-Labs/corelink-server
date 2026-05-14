@@ -1,0 +1,155 @@
+# CoreLink CLI — Windows Authenticode signing workflow (WI-S15-006 §6.4).
+#
+# Activates on the same `v*` tag trigger as `release-cli.yml`. After the
+# release-cli pipeline produces the unsigned Windows binary
+# (`windows-x86_64`), this workflow:
+#
+#   1. Decodes a code-signing certificate (`.pfx`) from
+#      `WINDOWS_CODE_SIGNING_CERT` (base64-encoded) into a temp file.
+#   2. Invokes `signtool sign` with SHA-256 file + timestamp digests against
+#      DigiCert's RFC 3161 timestamp service.
+#   3. Verifies the resulting signature via `signtool verify /pa /v`.
+#   4. Re-packs and attaches the signed binary to the GitHub Release.
+#
+# Per WI-S15-006 §6.4 + Lote 10.15 codex P1: there is **no unsigned-with-warning
+# fallback**. If the EV cert acquisition slips beyond the sprint window,
+# Windows release is DEFERRED to the subsequent sprint (macOS + Linux still
+# ship at D+15 SEAL). This deferral path is documented in
+# `specs/03_architecture/adrs/ADR-S15-009-windows-codesign-deferral.md`.
+#
+# Secrets required:
+#   - WINDOWS_CODE_SIGNING_CERT       — base64-encoded .pfx
+#   - WINDOWS_CODE_SIGNING_PASSWORD   — passphrase for the .pfx
+#
+# The gate job (`windows-cert-present`) short-circuits cleanly when the
+# secret is absent; the rest of the pipeline is unaffected (no false-failure
+# on the release workflow).
+
+name: sign-windows
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to Authenticode-sign (e.g. v0.1.0)"
+        required: true
+        type: string
+  workflow_run:
+    workflows: ["release-cli"]
+    types: [completed]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  windows-cert-present:
+    name: gate — Windows cert present
+    runs-on: ubuntu-22.04
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - name: Check that WINDOWS_CODE_SIGNING_CERT secret is populated
+        id: check
+        env:
+          WINDOWS_CODE_SIGNING_CERT: ${{ secrets.WINDOWS_CODE_SIGNING_CERT }}
+        run: |
+          if [ -z "${WINDOWS_CODE_SIGNING_CERT}" ]; then
+            echo "ready=false" >> "${GITHUB_OUTPUT}"
+            echo "::notice ::WINDOWS_CODE_SIGNING_CERT secret not populated — Windows Authenticode signing skipped (DEFERRED per ADR-S15-009; NOT shipped unsigned)."
+          else
+            echo "ready=true" >> "${GITHUB_OUTPUT}"
+          fi
+
+  sign:
+    name: signtool authenticode (windows-x86_64)
+    needs: windows-cert-present
+    if: needs.windows-cert-present.outputs.ready == 'true'
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 1
+
+      - name: Resolve release tag
+        id: tag
+        shell: bash
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          if [ -n "${INPUT_TAG}" ]; then
+            echo "tag=${INPUT_TAG}" >> "${GITHUB_OUTPUT}"
+          else
+            echo "tag=${{ github.event.workflow_run.head_branch }}" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Download release asset
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          ASSET: corelink-windows-x86_64.zip
+        run: |
+          mkdir -p ./assets
+          gh release download "${TAG}" --pattern "${ASSET}" --dir ./assets
+          7z x "./assets/${ASSET}" -o./assets/extracted
+          ls -la ./assets/extracted
+
+      - name: Decode signing cert
+        shell: bash
+        env:
+          WINDOWS_CODE_SIGNING_CERT: ${{ secrets.WINDOWS_CODE_SIGNING_CERT }}
+        run: |
+          echo "${WINDOWS_CODE_SIGNING_CERT}" | base64 --decode > /tmp/cert.pfx
+          echo "CERT_PATH=/tmp/cert.pfx" >> "${GITHUB_ENV}"
+
+      - name: signtool sign
+        shell: powershell
+        env:
+          CERT_PATH: ${{ env.CERT_PATH }}
+          WINDOWS_CODE_SIGNING_PASSWORD: ${{ secrets.WINDOWS_CODE_SIGNING_PASSWORD }}
+        run: |
+          $signtool = (Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter "signtool.exe" | Where-Object { $_.FullName -match 'x64' } | Select-Object -First 1).FullName
+          Write-Host "Using signtool at: $signtool"
+          & "$signtool" sign `
+            /f "$env:CERT_PATH" `
+            /p "$env:WINDOWS_CODE_SIGNING_PASSWORD" `
+            /tr "http://timestamp.digicert.com" `
+            /td sha256 `
+            /fd sha256 `
+            ".\assets\extracted\corelink.exe"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: signtool verify
+        shell: powershell
+        run: |
+          $signtool = (Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter "signtool.exe" | Where-Object { $_.FullName -match 'x64' } | Select-Object -First 1).FullName
+          & "$signtool" verify /pa /v ".\assets\extracted\corelink.exe"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Re-pack signed binary
+        shell: bash
+        env:
+          ASSET: corelink-windows-x86_64.zip
+        run: |
+          rm -f "./assets/${ASSET}"
+          (cd ./assets/extracted && 7z a "../${ASSET}" corelink.exe)
+          ls -la ./assets
+
+      - name: Attach signed binary to release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          ASSET: corelink-windows-x86_64.zip
+        run: |
+          gh release upload "${TAG}" "./assets/${ASSET}" --clobber
+
+      - name: Wipe cert
+        if: always()
+        shell: bash
+        run: rm -f /tmp/cert.pfx || true

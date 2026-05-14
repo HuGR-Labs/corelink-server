@@ -1,0 +1,148 @@
+# CoreLink CLI — Linux GPG detached-signature workflow (WI-S15-006 §6.3).
+#
+# Activates on the same `v*` tag trigger as `release-cli.yml`. After the
+# release-cli pipeline produces unsigned Linux binaries (`linux-x86_64`,
+# `linux-arm64`), this workflow:
+#
+#   1. Imports a 4096-bit RSA GPG signing key from the `GPG_PRIVATE_KEY`
+#      secret into a fresh ephemeral keyring.
+#   2. Produces an ASCII-armored detached signature (`.asc`) for each
+#      Linux release tarball via `gpg --detach-sign --armor`.
+#   3. Uploads the `.asc` files as GitHub Release assets, alongside the
+#      corresponding tarballs.
+#
+# Public-key distribution:
+#   - Publish the matching public key at
+#     `https://corelink.dev/.well-known/gpg-pubkey.asc`.
+#   - End-users verify with:
+#       `curl -fsSL https://corelink.dev/.well-known/gpg-pubkey.asc | gpg --import`
+#       `gpg --verify corelink-linux-x86_64.tar.gz.asc corelink-linux-x86_64.tar.gz`
+#
+# Secrets required:
+#   - GPG_PRIVATE_KEY       — ASCII-armored private key block
+#   - GPG_PRIVATE_KEY_PASS  — passphrase for the private key
+#   - GPG_KEY_ID            — long key ID (e.g. 0xABCD1234EF567890)
+
+name: sign-linux
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to GPG-sign (e.g. v0.1.0)"
+        required: true
+        type: string
+  workflow_run:
+    workflows: ["release-cli"]
+    types: [completed]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  gpg-key-present:
+    name: gate — GPG key present
+    runs-on: ubuntu-22.04
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - name: Check that GPG_PRIVATE_KEY secret is populated
+        id: check
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          if [ -z "${GPG_PRIVATE_KEY}" ]; then
+            echo "ready=false" >> "${GITHUB_OUTPUT}"
+            echo "::notice ::GPG_PRIVATE_KEY secret not populated — Linux signing skipped (acquire 4096-bit RSA key + populate secret + publish pubkey at https://corelink.dev/.well-known/gpg-pubkey.asc)."
+          else
+            echo "ready=true" >> "${GITHUB_OUTPUT}"
+          fi
+
+  sign:
+    name: gpg detach-sign (${{ matrix.asset_suffix }})
+    needs: gpg-key-present
+    if: needs.gpg-key-present.outputs.ready == 'true'
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - asset_suffix: linux-x86_64
+          - asset_suffix: linux-arm64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 1
+
+      - name: Resolve release tag
+        id: tag
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          if [ -n "${INPUT_TAG}" ]; then
+            echo "tag=${INPUT_TAG}" >> "${GITHUB_OUTPUT}"
+          else
+            echo "tag=${{ github.event.workflow_run.head_branch }}" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Download release asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          ASSET: corelink-${{ matrix.asset_suffix }}.tar.gz
+        run: |
+          mkdir -p ./assets
+          gh release download "${TAG}" --pattern "${ASSET}" --dir ./assets
+          ls -la ./assets
+
+      - name: Import GPG signing key into ephemeral keyring
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PRIVATE_KEY_PASS: ${{ secrets.GPG_PRIVATE_KEY_PASS }}
+        run: |
+          mkdir -p "${RUNNER_TEMP}/gpg-home"
+          chmod 700 "${RUNNER_TEMP}/gpg-home"
+          export GNUPGHOME="${RUNNER_TEMP}/gpg-home"
+          echo "GNUPGHOME=${GNUPGHOME}" >> "${GITHUB_ENV}"
+          echo "${GPG_PRIVATE_KEY}" | gpg --batch --import
+          # Configure loopback pinentry so passphrase comes from env var.
+          echo "allow-loopback-pinentry" > "${GNUPGHOME}/gpg-agent.conf"
+          gpgconf --kill gpg-agent
+          gpg --list-secret-keys --keyid-format=long
+
+      - name: Produce detached ASCII-armored signature
+        env:
+          GPG_PRIVATE_KEY_PASS: ${{ secrets.GPG_PRIVATE_KEY_PASS }}
+          GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
+          ASSET: corelink-${{ matrix.asset_suffix }}.tar.gz
+        run: |
+          gpg --batch --yes \
+            --pinentry-mode loopback \
+            --passphrase "${GPG_PRIVATE_KEY_PASS}" \
+            --local-user "${GPG_KEY_ID}" \
+            --detach-sign --armor \
+            --output "./assets/${ASSET}.asc" \
+            "./assets/${ASSET}"
+
+      - name: Verify detached signature locally
+        env:
+          ASSET: corelink-${{ matrix.asset_suffix }}.tar.gz
+        run: |
+          gpg --verify "./assets/${ASSET}.asc" "./assets/${ASSET}"
+
+      - name: Attach `.asc` to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          ASSET: corelink-${{ matrix.asset_suffix }}.tar.gz
+        run: |
+          gh release upload "${TAG}" "./assets/${ASSET}.asc" --clobber
+
+      - name: Wipe GPG keyring
+        if: always()
+        run: rm -rf "${GNUPGHOME}" || true
