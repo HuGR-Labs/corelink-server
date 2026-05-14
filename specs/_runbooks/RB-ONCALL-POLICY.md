@@ -3,7 +3,7 @@ id: "RB-ONCALL-POLICY"
 type: "runbook"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-14"
 updated: "2026-05-14"
 owner: "Gustavo Schneiter"
@@ -11,7 +11,7 @@ final_approver: "Gustavo Schneiter"
 reviewers: []
 supersedes: null
 superseded_by: null
-tags: ["runbook", "oncall", "rotation", "fatigue", "burnout-prevention", "rb-oncall-policy", "wi-s17-005"]
+tags: ["runbook", "oncall", "rotation", "fatigue", "burnout-prevention", "rb-oncall-policy", "wi-s17-005", "wi-s20-006", "24-7", "follow-the-sun"]
 ---
 
 # RB-ONCALL-POLICY — Oncall Rotation, Fatigue, and Handoff Policy
@@ -175,8 +175,91 @@ PRR ship gate; matches S-09 invariant).
   one of the canonical 4 `HandoffDecision` arms — surface in the
   audit chain for audit review).
 
-## 11. Change log
+## 11. 24/7 follow-the-sun region split (WI-S20-006)
+
+WI-S20-006 extends the WI-S17-005 single-region rotation to **3
+regions × 8h shifts** for 24/7 coverage without on-call sleep-hour
+sacrifice. Region assignment is computed by
+`corelink_synthetic_pager::Region::for_utc_hour` and mirrored 1:1 in
+the PagerDuty Schedule API restriction layer.
+
+### 11.1 Region windows (UTC anchors)
+
+| Region   | UTC window      | Local anchor (timezone range)    | PagerDuty schedule slug          |
+| -------- | --------------- | -------------------------------- | -------------------------------- |
+| Americas | 16:00 → 00:00   | UTC-8 .. UTC-5 (PT/MT/CT/ET)     | `corelink-oncall-americas-{tier}` |
+| EMEA     | 00:00 → 08:00   | UTC+0 .. UTC+3 (GMT/CET/EET)     | `corelink-oncall-emea-{tier}`     |
+| APAC     | 08:00 → 16:00   | UTC+8 .. UTC+11 (HKT/JST/AEST)   | `corelink-oncall-apac-{tier}`     |
+
+The closed-loop 3 × 8h cycle covers a full UTC day exactly. The
+7-day shift cap from §2 applies **per region** (an engineer rotates
+out every 7 days within their region; they never cross regions).
+
+### 11.2 Handoff at region boundary
+
+At each region boundary (00:00 / 08:00 / 16:00 UTC) the outgoing
+region's primary executes the §3 handoff template against the
+incoming region's primary. Handoffs at region boundaries are
+expected to be ≤ 5 min on a quiet shift (no transit time; remote
+async via the handoff template in `specs/_templates/oncall_handoff.md`).
+Synchronous handoff (15 min sync) MUST occur when:
+
+- Any open SEV-0 / SEV-1 incident is in flight.
+- A planned change-window is active (per `specs/_runbooks/RB-CHANGE-WINDOW.md`).
+- The previous region's drill outcome was `Escalated` or `Unacked`
+  (see `RB-SYNTHETIC-PAGE-DRILL.md`).
+
+### 11.3 Staffing (GA target + ADR-0034 acceptance)
+
+| Region   | Tier 1 staffing             | Tier 2 staffing             | Tier 3 staffing                    |
+| -------- | --------------------------- | --------------------------- | ---------------------------------- |
+| Americas | Owner + Final Approver dual-hat (Gustavo) OR contracted SRE | External advisor pool (ADR-0034 Option C) | Same as Tier 2 |
+| EMEA     | Contracted SRE (engaged Q3-Q4) | External advisor pool       | Same as Tier 2                     |
+| APAC     | Contracted SRE (engaged Q3-Q4) | External advisor pool       | Same as Tier 2                     |
+
+At GA, the EMEA / APAC primaries MUST be contracted (Owner solo-tier
+dual-hat is regulatory-acceptable per ADR-0034 only for Americas
+because of the Owner's UTC-3 anchor). The audit
+`specs/_audits/2026-05-14-s20-oncall-24-7-readiness.md` captures the
+go/no-go staffing assessment.
+
+### 11.4 Holiday + parental-leave coverage
+
+- Each regional primary has a designated **backup primary** rostered
+  in PagerDuty's overrides layer; backup MUST be activated ≥ 14 days
+  in advance for planned absence (holiday, vacation).
+- Parental-leave coverage: the parental-leave engineer is removed
+  from all PagerDuty schedules for the full leave period + an
+  additional 14-day return-ramp window during which they are Tier 3
+  shadow only. This window is enforced by
+  `RotationLedger::start_shift` returning `OncallError::InvalidRotation`
+  if violated.
+- Force-majeure single-region degradation: if a region loses its
+  primary mid-shift (e.g. medical emergency), the adjacent region's
+  primary picks up the residual shift segment via PagerDuty's
+  override; the cap is the §2 7-day rolling limit (no engineer
+  exceeds 7 days even across an emergency-pickup).
+
+### 11.5 Synthetic page weekly drill
+
+`corelink-synthetic-pager` (WI-S20-006) emits a weekly synthetic
+SEV-2 page through the dedicated `synthetic-drill` PagerDuty service
+(severity = `sev2_synthetic`; production escalation rules MUST NOT
+match this severity). The drill rotates across regions on a 4-week
+cycle (Week N % 4 selects {Americas, EMEA, APAC, boundary-handoff}).
+The full procedure + escalation if MTTA breached lives in
+`specs/_runbooks/RB-SYNTHETIC-PAGE-DRILL.md`.
+
+### 11.6 APAC post-GA roll-forward
+
+Per WI §2.1, ADR-0034 explicitly defers APAC sub-splits (ANZ vs
+JP-KR vs IN) to post-GA Q1 demand-driven. The
+`corelink_synthetic_pager::Region` enum is `#[non_exhaustive]` so
+additive growth lands without a breaking change.
+
+## 12. Change log
 
 | Version | Date       | Author                          | Change                                   |
 | ------- | ---------- | ------------------------------- | ---------------------------------------- |
 | 1.0.0   | 2026-05-14 | Gustavo (via Claude Opus 4.7)   | Initial RB-ONCALL-POLICY for WI-S17-005. |
+| 1.1.0   | 2026-05-14 | Gustavo (via Claude Opus 4.7)   | Add §11 24/7 follow-the-sun 3-region split + holiday/parental-leave coverage + synthetic page weekly cross-reference (WI-S20-006). |

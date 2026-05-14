@@ -113,6 +113,8 @@ members = [
     # → attested → case-study-signed; 30d observation window canonical;
     # GA Evidence Gate D+60 check)
     "crates/corelink-lighthouse-tracker",
+    # WI-S20-006 synthetic page weekly drill — 3-region 24/7 follow-the-sun + MTTA budget
+    "crates/corelink-synthetic-pager",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
