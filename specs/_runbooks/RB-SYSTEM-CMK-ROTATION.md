@@ -1,3 +1,19 @@
+---
+id: "RB-SYSTEM-CMK-ROTATION"
+type: "runbook"
+doc_status: "ACTIVE"
+audit_status: "ACTIVE"
+version: "1.0.0"
+created: "2026-05-14"
+updated: "2026-05-14"
+owner: "Gustavo Schneiter"
+final_approver: "Gustavo Schneiter"
+reviewers: []
+supersedes: null
+superseded_by: null
+tags: ["runbook", "s19", "cmk", "rotation", "byok", "envelope-encryption", "enterprise-inquiry", "r2-11"]
+---
+
 # RB-SYSTEM-CMK-ROTATION — System CMK rotation & lifecycle
 
 **Scope.** Customer-managed key (CMK) used by CoreLink to envelope-encrypt
