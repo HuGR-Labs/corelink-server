@@ -2618,6 +2618,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "e2e-chaos"
+version = "0.1.0"
+dependencies = [
+ "corelink-chaos-scheduler",
+ "proptest",
+]
+
+[[package]]
 name = "e2e-dsr"
 version = "0.1.0"
 dependencies = [

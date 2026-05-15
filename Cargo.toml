@@ -158,6 +158,13 @@ members = [
     # happy DSR rights + five adversarial paths + 500-case property test. All
     # in-memory fakes; no network IO under default `cargo test -p e2e-dsr`.
     "tests/e2e-dsr",
+    # R3-4 end-to-end chaos drill harness: 8 canonical chaos experiments ×
+    # steady-state hypothesis + rollback ≤ 5 min + audit lifecycle +
+    # `corelink_chaos_slo_violation_total` recording; 3 adversarial
+    # cross-WI invariants (OPS-EXCLUSIVITY / SEV1-DRILL-PAUSE /
+    # CHAOS-STAGING-ONLY); 200-case property test on deterministic seed
+    # replay (FNV-1a bit-identical). In-memory fakes; no network IO.
+    "tests/e2e-chaos",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
@@ -344,6 +351,7 @@ corelink-byok-revocation = { path = "crates/corelink-byok-revocation" }
 corelink-customer-alerts = { path = "crates/corelink-customer-alerts" }
 corelink-erasure-attestation = { path = "crates/corelink-erasure-attestation" }
 corelink-dr-drill = { path = "crates/corelink-dr-drill" }
+corelink-chaos-scheduler = { path = "crates/corelink-chaos-scheduler" }
 corelink-tier-selection = { path = "crates/corelink-tier-selection" }
 corelink-stripe-real = { path = "crates/corelink-stripe-real" }
 corelink-drata-sync = { path = "crates/corelink-drata-sync" }
