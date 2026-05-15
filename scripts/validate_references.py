@@ -337,6 +337,7 @@ WHITELIST_IDS = {
     "RB-FM-GC-WORKER-STALL",         # S-06 WI-S06-001 forward
     "RB-EMAIL-HASH-KEY-ROTATION",    # S-03 WI-S03-005 Lote 10.3-tris P0-R5-003 forward stub
     "RB-PATH-TDK-RETENTION",         # S-04 WI-S04-004 Lote 10.4-tris P0-R5-006 forward stub
+    "RB-DRY-RUN-ASSERTION",          # wave-16 Lote 10.6 R5 review proposed PRINC-RB-DRY-RUN-ASSERTION citation; review-doc-only finding, not yet canonical
     # SLO forward-stubs (defined em sprint implementation; whitelisted at spec time):
     # SLO-DEDUP-RATIO promoted from forward-stub → canonical em slo_catalog.md §4.8.1 (Lote 10.7bis P1-1 fix)
     "RB-FM",                         # plural-form mention "RB-FM-*" em ADR-0042 + WI-S06-007
@@ -475,6 +476,8 @@ WHITELIST_IDS = {
     "INV-CRITICAL",                          # NOISE: "INV-CRITICAL" qualifier in GA-GATE-CRITERIA prose
     "INV-level",                             # NOISE: "INV-level specs" English in S20 spec contract
     "INV-AUTH-WEBAUTHN-ORIGIN-EXACT-style",  # NOISE: pentest narrative "ORIGIN-EXACT-style", not a real INV
+    "INV-BLAKE3-256-LOWER-HEX-64",           # wave-16 Lote 10.6 R4 review P3-002-1 proposed canonical citation (cross-ref recommendation; not yet promoted to registry)
+    "INV-GC-001-violation",                  # NOISE: wave-16 Lote 10.6 R5 review narrative "INV-GC-001 violation" parsed as compound; real ref is INV-GC-001
     # PLANNED SLOs — forward-looking from sprint catalogs (promoted in slo_catalog.md during impl):
     "SLO-ADMIN",                             # S-13 plural-form/PRR-S13
     "SLO-AVAIL",                             # S-20 plural-form (sprint.md "SLO-AVAIL-*")
