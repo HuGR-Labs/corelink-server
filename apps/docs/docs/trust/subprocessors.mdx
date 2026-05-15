@@ -1,0 +1,125 @@
+---
+title: "Sub-processors"
+slug: "/trust/subprocessors"
+description: "Public list of CoreLink sub-processors — vendor, service, region, DPA link, and the 30-day advance-notice mechanism for changes."
+draft: false
+cross_functional_review: TBD
+pending_signoff:
+  - "Security Lead"
+  - "Legal"
+  - "DPO"
+sources:
+  - "specs/_compliance/VENDOR-RISK-REGISTER.md"
+  - "legal/sub-processors.md"
+last_updated: "2026-05-15"
+---
+
+# Sub-processors
+
+CoreLink uses a small set of carefully selected sub-processors to operate
+the service. This page is the **public list** maintained per GDPR Art. 28
+§2 and LGPD Art. 39. It is a subset of our internal
+[Vendor Risk Register](https://github.com/humangr-labs/corelink/blob/main/specs/_compliance/VENDOR-RISK-REGISTER.md)
+(19 vendors total) — only those who *process customer personal data on
+CoreLink's behalf* appear here.
+
+> **Last refreshed:** 2026-05-15. Next scheduled refresh: 2026-08-15.
+
+## Notice of changes
+
+Per our DPA (`legal/dpa/v1.0.0` §6), we will give **at least 30 calendar
+days' written notice** before adding or replacing a sub-processor that
+processes customer personal data.
+
+Subscribe to change notices:
+
+- **Email digest** — register a `subprocessor-changes@` distribution
+  address inside your tenant settings. We send a digest the moment a
+  change is queued.
+- **Status page subscription** — sub-processor changes are also published
+  as a *Maintenance / Informational* item at
+  [status.corelink.dev](https://status.corelink.dev). Subscribe via RSS,
+  email, SMS, or webhook.
+- **RSS feed (sub-processor changes only):**
+  `https://corelink.dev/trust/subprocessors.rss` (post-GA).
+
+If you object to a proposed sub-processor change you have the rights set
+out in DPA §6.4 (objection window, escalation, termination-for-cause if
+unresolved).
+
+## Active sub-processors
+
+| # | Vendor | Service to CoreLink | Customer-data class | Region(s) | DPA |
+| --- | --- | --- | --- | --- | --- |
+| 1 | **Cloudflare, Inc.** | Workers, R2, D1, Durable Objects, KV, Pages — primary data plane and runtime | metadata + encrypted blobs + audit logs + telemetry | Global multi-region (per tenant `primary_region` pin) | [Cloudflare DPA](https://www.cloudflare.com/cloudflare-customer-dpa/) |
+| 2 | **Stripe, Inc.** | Payment processing, subscription billing | payment data + billing PII | US + EU (Stripe-controlled) | [Stripe DPA](https://stripe.com/legal/dpa) |
+| 3 | **Clerk, Inc.** | Authentication, identity provider, JWT issuance | account PII (email, name, MFA factors) | US (primary), EU (failover) | Clerk customer DPA (link on request) |
+| 4 | **Drata, Inc.** | Continuous compliance evidence collection, vendor risk module | service metadata + audit logs (no customer artefact content) | US | [Drata Trust Center](https://drata.com/trust) |
+| 5 | **PagerDuty, Inc.** | Incident management, on-call alerting | service audit metadata (no customer artefact content) | US (primary), EU (failover) | PagerDuty DPA (link on request) |
+| 6 | **GitHub, Inc.** (Microsoft) | Source code + CI/CD pipeline | service code + CI artefacts (CoreLink internal; no customer payloads) | US | [GitHub Trust Center](https://github.com/security) |
+| 7 | **Grafana Labs** | Observability (metrics, logs, dashboards) | aggregate telemetry only (no customer artefact content, no PII) | US (primary), EU (per-tenant on request) | Grafana DPA (link on request) |
+| 8 | **Neon, Inc.** | Control-plane Postgres (DSR tickets, account, tenant metadata, billing snapshots) | PII + control-plane metadata | US (primary), EU (per-tenant on request) | Neon DPA (link on request) |
+| 9 | **Twilio, Inc.** (SendGrid + Twilio SMS) | Transactional email + SMS (billing, security, incident comms) | recipient contact only (email / phone) | US (primary), EU (mail egress) | [Twilio DPA](https://www.twilio.com/legal/data-protection-addendum) |
+| 10 | **Atlassian** (Statuspage.io) | Public status-page hosting | incident metadata only (titles + impact statements) | US | [Atlassian DPA](https://www.atlassian.com/legal/data-processing-addendum) |
+| 11 | **Cybot A/S** (Cookiebot) | Cookie-consent management on admin UI | consent records only | EU | Cybot DPA (link on request) |
+| 12 | **Slack Technologies, LLC** (Salesforce) | Internal alerting + enterprise-inquiry intake (CoreLink-side; no customer-side communication) | notification metadata only (no customer artefact content, no customer PII) | US | [Salesforce DPA](https://www.salesforce.com/company/legal/agreements/) |
+| 13 | **HubSpot, Inc.** | CRM (enterprise-inquiry intake; CoreLink-side) | sales-prospect contact only (no production-customer PII) | US | [HubSpot DPA](https://legal.hubspot.com/dpa) |
+
+### BYOK key custodians (customer-side; not sub-processors)
+
+The four KMS providers below are listed for completeness. CoreLink does
+**not** process customer key material — keys remain inside the customer's
+KMS account at all times. These providers are sub-processors *to you*, not
+to us. CoreLink only holds wrapped DEKs.
+
+| Vendor | Service | Role |
+| --- | --- | --- |
+| **Amazon Web Services, Inc.** | AWS KMS | Customer-controlled CMK (BYOK option) |
+| **Google LLC** | GCP Cloud KMS | Customer-controlled CMK (BYOK option) |
+| **Microsoft Corporation** | Azure Key Vault | Customer-controlled CMK (BYOK option) |
+| **HashiCorp, Inc.** | Vault (customer-hosted) | Customer-controlled secret backend (BYOK option) |
+
+See [BYOK customer-managed keys](/security/byok) for the full provider
+matrix and key-flow diagram.
+
+### Internal LLM tooling (no customer data)
+
+The two providers below are used by CoreLink **internally** for engineering
+and operations tooling. **No customer data is sent to either provider.**
+Internal prompts are routed through enterprise zero-retention APIs.
+
+| Vendor | Service | Used for |
+| --- | --- | --- |
+| Anthropic, PBC | Claude API (zero-retention) | Internal CoreLink eng / ops tooling |
+| OpenAI, LLC | OpenAI API (zero-retention) | Internal CoreLink eng / ops tooling |
+
+If your DPO requires these to be listed as sub-processors despite the
+zero-retention guarantee and no-customer-data scope, please raise it via
+`privacy@corelink.dev` and we will update the table on a per-tenant basis.
+
+## Out-of-scope (referenced for completeness)
+
+The following appear in our internal registers but are **not**
+sub-processors:
+
+- **Sigstore (Linux Foundation)** — public transparency log; no PII is
+  written; treated as open-source infrastructure.
+- **Self-hosted Dependency-Track** — operated by CoreLink; no third party.
+- **Per-customer HashiCorp Vault instances** — customer-side infrastructure
+  outside CoreLink's processor relationship.
+
+## Auditing this list
+
+The internal sub-processor file (with the full DPA matrix and termination
+clauses) is at
+[`legal/sub-processors.md`](https://github.com/humangr-labs/corelink/blob/main/legal/sub-processors.md).
+The full vendor risk register (19 vendors with inherent risk scoring,
+control-effectiveness factors, and quarterly review cadence) is at
+[`specs/_compliance/VENDOR-RISK-REGISTER.md`](https://github.com/humangr-labs/corelink/blob/main/specs/_compliance/VENDOR-RISK-REGISTER.md).
+
+## Related
+
+- [Trust Center overview](./)
+- [Compliance](./compliance)
+- [Data handling](./data-handling)
+- [Incident response](./incident-response)
