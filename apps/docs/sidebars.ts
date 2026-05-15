@@ -43,7 +43,17 @@ const sidebars: SidebarsConfig = {
       label: "How-to",
       link: { type: "doc", id: "how-to/index" },
       collapsed: true,
-      items: [],
+      items: [
+        {
+          type: "category",
+          label: "RBAC",
+          collapsed: true,
+          items: [
+            "rbac-invite-team-member",
+            "rbac-audit-role-changes",
+          ],
+        },
+      ],
     },
     {
       type: "category",
@@ -69,6 +79,12 @@ const sidebars: SidebarsConfig = {
           collapsed: true,
           items: ["reference/api/openapi"],
         },
+        {
+          type: "category",
+          label: "RBAC",
+          collapsed: true,
+          items: ["rbac-permissions"],
+        },
       ],
     },
     {
@@ -83,6 +99,16 @@ const sidebars: SidebarsConfig = {
           label: "Residency",
           collapsed: true,
           items: ["explanation/residency/lgpd-brazil"],
+        },
+        {
+          type: "category",
+          label: "RBAC",
+          collapsed: true,
+          items: [
+            "rbac-overview",
+            "rbac-role-catalog",
+            "rbac-permission-matrix",
+          ],
         },
       ],
     },
