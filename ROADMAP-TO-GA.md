@@ -57,8 +57,9 @@ Pre-conditions: none (start now).
 | R1-6 | **Opus eyeball pass on ~70 Cargo.toml + lib.rs** — verify `#[non_exhaustive]`, audit-fail-CLOSED ordering, zero unsafe, PROPTEST_CASES runtime fn, no `prop_assert!(matches!(..., Variant { .. }))` anti-pattern | 1 Opus (this orchestrator can sample, OR delegate to 1 Opus subagent) | 4h | Charter constraint compliance matrix doc with per-crate pass/fail |
 | R1-7 | **Worktree cleanup** (S-18/S-19/S-20 = ~15GB after agents done) | 1 Sonnet | 30min | Disk space recovered; only active worktrees remain |
 | R1-8 | **Dependency audit** — `cargo audit` + `cargo deny check` + `pnpm audit` on `apps/{admin-ui,docs}` + dependabot PR backlog | 1 Sonnet | 2h | Zero HIGH/CRITICAL advisories; report doc |
+| R1-9 | **Engineering onboarding doc live** — Day-0..Day-30 path + 5 domain tracks + first-PR backlog + glossary + buddy protocol under `docs/internal/ENGINEERING-ONBOARDING.md` + `docs/internal/onboarding/` | 1 Sonnet | 3h | Doc set committed; README cross-linked; quarterly-refresh owner named |
 
-**Wave R-1 gate:** all 8 items complete; commit `r1-cleanup-complete`; tag `roadmap-r1-sealed`.
+**Wave R-1 gate:** all 9 items complete; commit `r1-cleanup-complete`; tag `roadmap-r1-sealed`.
 
 ---
 
