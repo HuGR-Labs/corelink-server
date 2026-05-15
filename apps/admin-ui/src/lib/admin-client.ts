@@ -32,8 +32,22 @@ export class AdminClientError extends Error {
   }
 }
 
-const DEFAULT_BASE_URL =
-  (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_CORELINK_API_URL) || "/api";
+function resolveDefaultBaseUrl(): string {
+  const explicit = typeof process !== "undefined"
+    ? process.env?.NEXT_PUBLIC_CORELINK_API_URL
+    : undefined;
+  // On the server side a relative `/api` is not a valid fetch URL — Next 15
+  // (Node runtime) requires absolute. When running in dev/test we synthesize
+  // an absolute origin from PORT so SSR calls land on our own catch-all
+  // mock. On the client side `window.fetch` happily accepts relative paths.
+  if (typeof window !== "undefined") return explicit ?? "/api";
+  if (explicit && !explicit.startsWith("/")) return explicit;
+  const port = (typeof process !== "undefined" && process.env?.PORT) || "3000";
+  const relPath = explicit ?? "/api";
+  return `http://127.0.0.1:${port}${relPath}`;
+}
+
+const DEFAULT_BASE_URL = resolveDefaultBaseUrl();
 
 function buildQuery(filter: AuditFilter): string {
   const params = new URLSearchParams();

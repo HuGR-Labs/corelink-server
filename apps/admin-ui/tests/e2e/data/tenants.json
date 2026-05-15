@@ -1,0 +1,17 @@
+{
+  "_comment": "Snapshot fixture for /v1/admin/tenants page 1 — used to assert pagination + search results. The live mock state in src/lib/e2e-mock-fixtures.ts is the source of truth; this file documents the expected wire shape and is consumed for visual regression assertions.",
+  "tenants": [
+    { "tenant_id": "tenant_001", "name": "Tenant 1", "plan": "free",       "region": "us-east", "byok_status": "active", "created_at": "2026-01-01T00:00:00Z" },
+    { "tenant_id": "tenant_002", "name": "Tenant 2", "plan": "starter",    "region": "us-west", "byok_status": "none",   "created_at": "2026-02-01T00:00:00Z" },
+    { "tenant_id": "tenant_003", "name": "Tenant 3", "plan": "team",       "region": "eu-west", "byok_status": "none",   "created_at": "2026-03-01T00:00:00Z" },
+    { "tenant_id": "tenant_004", "name": "Tenant 4", "plan": "enterprise", "region": "ap-south","byok_status": "none",   "created_at": "2026-04-01T00:00:00Z" },
+    { "tenant_id": "tenant_005", "name": "Tenant 5", "plan": "free",       "region": "us-east", "byok_status": "none",   "created_at": "2026-05-01T00:00:00Z" },
+    { "tenant_id": "tenant_006", "name": "Tenant 6", "plan": "starter",    "region": "us-west", "byok_status": "active", "created_at": "2026-01-01T00:00:00Z" },
+    { "tenant_id": "tenant_007", "name": "Tenant 7", "plan": "team",       "region": "eu-west", "byok_status": "none",   "created_at": "2026-02-01T00:00:00Z" },
+    { "tenant_id": "tenant_008", "name": "Tenant 8", "plan": "enterprise", "region": "ap-south","byok_status": "none",   "created_at": "2026-03-01T00:00:00Z" },
+    { "tenant_id": "tenant_009", "name": "Tenant 9", "plan": "free",       "region": "us-east", "byok_status": "none",   "created_at": "2026-04-01T00:00:00Z" },
+    { "tenant_id": "tenant_010", "name": "Tenant 10","plan": "starter",    "region": "us-west", "byok_status": "none",   "created_at": "2026-05-01T00:00:00Z" }
+  ],
+  "next_cursor": "10",
+  "total": 25
+}

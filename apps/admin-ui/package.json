@@ -18,6 +18,8 @@
     "e2e:ui": "playwright test --ui",
     "e2e:install": "playwright install --with-deps",
     "e2e:list": "playwright test --list",
+    "e2e:tests": "playwright test --config=playwright.tests.config.ts",
+    "e2e:tests:list": "playwright test --config=playwright.tests.config.ts --list",
     "lhci": "lhci autorun --config=./lighthouserc.cjs"
   },
   "dependencies": {

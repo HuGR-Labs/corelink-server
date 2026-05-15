@@ -2,7 +2,7 @@
 
 import React from "react";
 import RbacGuard from "@/components/admin/RbacGuard";
-import OpDetailView from "@/components/admin/OpDetailView";
+import OpDetailViewClient from "@/components/admin/OpDetailViewClient";
 import { adminClient } from "@/lib/admin-client";
 import { getAuthContext, mfaFresh } from "@/lib/auth";
 import type { AdminOp } from "@/lib/types";
@@ -31,11 +31,10 @@ export default async function AdminOpDetailPage({
         <h1 id="op-heading">Op {params.op_id}</h1>
         {!op && <p role="alert">Op not found.</p>}
         {op && (
-          <OpDetailView
+          <OpDetailViewClient
             initialOp={op}
             currentUserId={auth.user_id}
             mfaFresh={mfaFresh(auth)}
-            client={adminClient}
           />
         )}
       </main>

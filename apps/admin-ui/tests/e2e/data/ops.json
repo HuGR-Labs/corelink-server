@@ -1,0 +1,27 @@
+{
+  "_comment": "Pending dual-approval ops surface — used by byok-rotate.spec.ts and dsr-approve.spec.ts.",
+  "ops": [
+    {
+      "op_id": "op_byok_001",
+      "op_type": "byok_cmk_rotation",
+      "requestor": "user_e2e_admin",
+      "requested_at": "2026-05-13T08:00:00Z",
+      "status": "awaiting_approval",
+      "payload": { "tenant_id": "tenant_001", "new_cmk_id": "cmk_v2" },
+      "impact_summary": "Rotate CMK for tenant_001 (BYOK).",
+      "tenant_scope": ["tenant_001"],
+      "approvals": []
+    },
+    {
+      "op_id": "op_dsr_001",
+      "op_type": "tenant_data_export",
+      "requestor": "user_e2e_admin",
+      "requested_at": "2026-05-13T09:00:00Z",
+      "status": "awaiting_approval",
+      "payload": { "request_id": "dsr_001", "tenant_id": "tenant_001" },
+      "impact_summary": "Export tenant_001 personal data for DSR access request.",
+      "tenant_scope": ["tenant_001"],
+      "approvals": []
+    }
+  ]
+}
