@@ -121,3 +121,26 @@ jobs:
         # SLO-60S, INV-AUTH-MASS-REVOKE-ATOMIC) + 1 HIGH (INV-AUTH-PROPAGATION-
         # AT-LEAST-ONCE) per invariant_registry.md §3.14 obligation matrix.
         run: bash scripts/run_tlc_corelink.sh auth_revocation
+
+      - name: TLC verify auth_pat_hybrid (DEBT-014 FT-1)
+        # Added by DEBT-014 dispatch 2026-05-15 closing FT-1
+        # (`specs/_audits/tla-followup-tickets.md`): proves the PAT verify
+        # hybrid path short-circuits BEFORE DB hit on HMAC mismatch.
+        # Closes INV-AUTH-PAT-HMAC-SIG-VERIFIED (CRITICAL) +
+        # INV-AUTH-PAT-VERIFY-CONSTANT-TIME + INV-AUTH-PAT-HASH-ARGON2ID-2024.
+        run: bash scripts/run_tlc_corelink.sh auth_pat_hybrid
+
+      - name: TLC verify key_lifecycle (DEBT-014 FT-2)
+        # Added by DEBT-014 dispatch 2026-05-15 closing FT-2. Per-asset
+        # rotation state machine with overlap window. Closes INV-KEY-NO-SKIP,
+        # INV-KEY-OVERLAP, INV-ADMIN-DUAL-APPROVAL (HIGH × 3) +
+        # INV-KEY-AUDIT (inherited).
+        run: bash scripts/run_tlc_corelink.sh key_lifecycle
+
+      - name: TLC verify gc_lock_protocol (DEBT-014 FT-5)
+        # Added by DEBT-014 dispatch 2026-05-15 closing FT-5. Distributed
+        # lock protocol singleton-per-(tenant,region) under leader handoff
+        # + DO crash + reconcile sweep. Closes INV-GC-SINGLE-RUNNING-PER-
+        # TENANT-REGION (HIGH) + INV-GC-RECONCILE-AUDIT-FAIL-CLOSED
+        # (CRITICAL, inherited from audit_immutability append-only chain).
+        run: bash scripts/run_tlc_corelink.sh gc_lock_protocol
