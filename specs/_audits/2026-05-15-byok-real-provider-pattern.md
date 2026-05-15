@@ -45,7 +45,7 @@ tags: ["byok", "fips", "ga", "pattern", "canonical-reference", "aws-kms", "gcp-k
 | 7 | Constant-time fingerprint compare on AAD (mock-mode tamper detection) | yes (`subtle::ConstantTimeEq`) | yes (`subtle::ConstantTimeEq`) | yes (`subtle::ConstantTimeEq`; production path delegates to AES-GCM tag) | yes (`subtle::ConstantTimeEq` on validated key-name path; Vault server-side enforces AAD via `context`) |
 | 8 | Native-only `aws-sdk-kms` / equivalent gated by `[target.'cfg(not(target_arch = "wasm32"))'.dependencies]` | yes | yes (`reqwest`/`tokio`/`jsonwebtoken`/`base64`/`regex` all native-cfg-gated) | yes (`reqwest`/`regex`/`tokio` target-gated) | yes (`reqwest` + `tokio` + `regex` native-only) |
 | 9 | `*WasmStub` linked on `target_arch = "wasm32"` with explicit `BYOKError::Provider("... unsupported on wasm32 ...")` | yes (`AwsKmsWasmStub`) | yes (`GcpKmsWasmStub`) | yes (`AzureKeyVaultWasmStub`) | yes (`VaultWasmStub`) |
-| 13 | wasm32 build green (`cargo build --target wasm32-unknown-unknown`) | yes (R-prep BYOK-unblock 2026-05-15) | yes (R-prep BYOK-unblock 2026-05-15) | yes (R-prep BYOK-unblock 2026-05-15) | yes (R-prep BYOK-unblock 2026-05-15) |
+| 13 | wasm32 build green (`cargo build --target wasm32-unknown-unknown`) | yes (R-prep BYOK-unblock 2026-05-15 (commit `4323d1c`)) | yes (R-prep BYOK-unblock 2026-05-15 (commit `4323d1c`)) | yes (R-prep BYOK-unblock 2026-05-15 (commit `4323d1c`)) | yes (R-prep BYOK-unblock 2026-05-15 (commit `4323d1c`)) |
 | 10 | ≥ 8 unit tests + 1 prop test (deterministic AAD canonicalization roundtrip) | yes (14 + 1 prop) | yes (15 + 1 prop in `tests/real_unit.rs`) | yes (28 + 1 prop on JCS determinism) | yes (22 + 1 prop, AAD-as-`context`) |
 | 11 | Optional `#[ignore]` live test against `*_TEST_KEY_ARN` env (CI nightly) | yes (`e2e_byok_aws_kms.rs`) | yes | yes | yes |
 | 12 | Server feature flag `byok-<provider>-real` wires the real impl behind the `KmsProvider` trait object | yes (`byok-aws-real`) | yes (`byok-gcp-real` → `corelink-byok-gcp/production`) | yes (`byok-azure-real` → `corelink-byok-azure/real`) | yes (`byok-vault-real` → `corelink-byok-vault/real`) |
@@ -256,7 +256,7 @@ wasm32-unknown-unknown` — green. Stub smoke test landed at
       `BYOKError::Provider("Azure Key Vault real provider unsupported on
       wasm32 ...")` from every method. The wasm32 stub source code is
       target-shaped per §4. **Wasm32 toolchain blocker on `corelink-byok`
-      resolved 2026-05-15 (R-prep BYOK-unblock)** — `cargo build -p
+      resolved 2026-05-15 (R-prep BYOK-unblock, commit `4323d1c`)** — `cargo build -p
       corelink-byok-azure --target wasm32-unknown-unknown` is green;
       stub smoke test landed at `crates/corelink-byok-azure/tests/wasm32_stub.rs`.
 - [x] Server feature flag `byok-azure-real` (`apps/server/Cargo.toml`)
@@ -287,7 +287,7 @@ wasm32-unknown-unknown` — green. Stub smoke test landed at
 - [x] Four auth modes (token / AppRole / JWT / Kubernetes) plumbed via
       `auth::VaultAuth`; tokens never appear in error messages.
 - [x] **Wasm32 toolchain blocker on `corelink-byok` resolved 2026-05-15
-      (R-prep BYOK-unblock).** `cargo build -p corelink-byok-vault
+      (R-prep BYOK-unblock, commit `4323d1c`).** `cargo build -p corelink-byok-vault
       --target wasm32-unknown-unknown` is green (default features); the
       `feature = "real"` variant is also green after gating `mod
       key_name` to `cfg(all(feature = "real", not(target_arch =
