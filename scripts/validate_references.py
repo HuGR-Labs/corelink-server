@@ -166,6 +166,13 @@ WHITELIST_IDS = {
     "INV-AUTH-PAT",  # plural-form mention em registry §3.14 + §3.13 (PAT-related INVs)
     "INV-MULTIPART",  # plural-form mention em registry §3.16 intro ("INV-MULTIPART-* pattern")
     "INV-LRU",  # plural-form mention em S-07 §3.18 + WI-S07-004 narrative (registry §3.18 INV-LRU-* pattern)
+    "INV-BACKUP",  # plural-form mention em registry §3.20 intro ("INV-BACKUP-*" pattern) — DEBT-004 promotion
+    "INV-BILLING-PORTAL",  # plural-form mention em registry §3.21 intro ("INV-BILLING-PORTAL-*" pattern) — DEBT-004 promotion
+    "INV-BODY",  # plural-form mention em registry §3.22 intro ("INV-BODY-*" pattern) — DEBT-004 promotion
+    "INV-HANDLER-SLI",  # plural-form mention em registry §3.23 intro ("INV-HANDLER-SLI-*" pattern) — DEBT-004 promotion
+    "INV-OBS-EXPORT",  # plural-form mention em registry §3.24 intro ("INV-OBS-EXPORT-*" pattern) — DEBT-004 promotion
+    "INV-OFFBOARDING",  # plural-form mention em registry §3.25 intro ("INV-OFFBOARDING-*" pattern) — DEBT-004 promotion
+    "INV-ROLLOUT",  # plural-form mention em registry §3.26 intro ("INV-ROLLOUT-*" pattern) — DEBT-004 promotion
     # Forward-looking INVs introduced em sprint WIs; serão promovidas a invariant_registry.md em respective sprint implementation:
     "INV-AUTH-CLOCK-SKEW-BOUND",       # S-03 WI-S03-001
     "INV-AUTH-ISS-EXACT-MATCH",        # S-03 WI-S03-001

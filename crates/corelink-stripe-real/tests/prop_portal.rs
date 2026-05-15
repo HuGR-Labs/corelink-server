@@ -64,13 +64,13 @@ proptest! {
             urls.push(url);
         }
 
-        // INV-URL-SINGLE-USE: all distinct.
+        // INV-BILLING-PORTAL-URL-SINGLE-USE: all distinct.
         let mut seen = std::collections::HashSet::new();
         for u in &urls {
             prop_assert!(seen.insert(u.as_str().to_string()), "duplicate URL {}", u.as_str());
         }
 
-        // INV-AUDIT-FAIL-CLOSED happy path: exactly one event per Ok.
+        // INV-BILLING-PORTAL-AUDIT-FAIL-CLOSED happy path: exactly one event per Ok.
         let events = sink.events();
         prop_assert_eq!(events.len(), n);
         for e in &events {
