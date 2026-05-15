@@ -30,7 +30,15 @@ serde = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
+# Cross-crate SLI binding tests (DR-16 wave-14): assert that
+# `METRIC_BACKUP_VERIFICATION_STATUS` matches
+# `Sli::BackupVerification.prometheus_metric_base()`.
+corelink-slo = { path = "../corelink-slo" }
 
 [[test]]
 name = "prop_backup_verify"
 path = "tests/prop_backup_verify.rs"
+
+[[test]]
+name = "sli_binding"
+path = "tests/sli_binding.rs"

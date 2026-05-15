@@ -82,7 +82,12 @@ fn canonical_slis_count_pinned() {
     // (`specs/_audits/2026-05-14-slo-instrumentation-gaps.md §5`):
     // +AvailControlPlane, +LatencyCasPutP99, +LatencyAcHitP99,
     // +CorrectnessCas, +CorrectnessTenantIsolation.
-    assert_eq!(canonical_slis().len(), 12);
+    //
+    // Bumped 12 -> 17 by audit DR-16 wave-14 closures (pre-existing
+    // DEBT-011-vintage gaps):
+    // +BackupVerification, +ReplicationLagR2, +ReplicationLagD1,
+    // +ReplicationLagKv, +ReplicationLagNeon.
+    assert_eq!(canonical_slis().len(), 17);
 }
 
 #[test]

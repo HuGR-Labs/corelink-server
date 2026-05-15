@@ -252,6 +252,60 @@ proptests pin:
   to extend `RedMetricKind` past the canonical-15 cap, with explicit
   cardinality budget delta + dashboard count update.
 
+## 9. DR-16 wave-14 closures (5 pre-existing DEBT-011 gaps)
+
+Five SLOs that pre-date DEBT-011 and lacked `Sli` enum binding (the
+DEBT-011 P2 wave correctly used `trait-abstraction-defer` for newer
+SLOs but did NOT retroactively bind these). Closed 2026-05-15:
+
+- `Sli::BackupVerification` — slug `SLO-BACKUP-VERIFICATION`
+  (slo_catalog.md §4.22); prometheus base
+  `corelink_backup_verification_status`. Emit-site constant
+  `METRIC_BACKUP_VERIFICATION_STATUS` lives in
+  `crates/corelink-backup-verify/src/lib.rs`; emitted per-tier by
+  `scripts/backup-daily-verify.sh` daily cron.
+- `Sli::ReplicationLagR2` — slug `SLO-REPLICATION-LAG-R2`
+  (slo_catalog.md §4.23); prometheus base
+  `corelink_replication_lag_seconds`. Emit-site constant
+  `METRIC_REPLICATION_LAG_SECONDS` in
+  `crates/corelink-replica-worker/src/metrics.rs`; observed by the
+  `ReplicationLagSli::emit_lag` trait method on every replicated batch.
+- `Sli::ReplicationLagD1` — slug `SLO-REPLICATION-LAG-D1`
+  (slo_catalog.md §4.24); prometheus base
+  `corelink_d1_replica_lag_seconds`. Emit-site constant
+  `METRIC_D1_REPLICA_LAG_SECONDS` in
+  `crates/corelink-region/src/replica_lag.rs`; observed by the
+  `D1ReplicaLagProbe::probe` trait on every 30 s probe cycle.
+- `Sli::ReplicationLagKv` — slug `SLO-REPLICATION-LAG-KV`
+  (slo_catalog.md §4.25); prometheus base
+  `corelink_kv_propagation_lag_seconds`. Emit-site constant
+  `METRIC_KV_PROPAGATION_LAG_SECONDS` in
+  `crates/corelink-region/src/kv_propagation.rs`; observed by the
+  `KvPropagationProbe::probe` trait on every 30 s probe cycle.
+- `Sli::ReplicationLagNeon` — slug `SLO-REPLICATION-LAG-NEON`
+  (slo_catalog.md §4.27); prometheus base
+  `corelink_neon_replica_lag_seconds`. Emit-site constant
+  `METRIC_NEON_REPLICA_LAG_SECONDS` in
+  `crates/corelink-region/src/neon_replica_lag.rs`; observed by the
+  `NeonReplicaLagProbe::probe` trait on every 60 s probe cycle.
+  Soft / informational — no paging at GA.
+
+Cross-crate alignment (emit-site `METRIC_*` constants ↔
+`Sli::*::prometheus_metric_base()`) is asserted at `cargo test` time by:
+
+- `crates/corelink-backup-verify/tests/sli_binding.rs`
+- `crates/corelink-replica-worker/tests/sli_binding.rs`
+- `crates/corelink-region/tests/sli_binding.rs`
+
+A regression on either side fails the test before the validator
+script runs in CI.
+
+**Coverage delta:** 5 SLOs transition from MISSING to BOUND. After
+this closure the validator reports `BOUND: 15 / DEFERRED: 15 /
+MISSING: 0` against the 30-row catalog (DEFERRED set unchanged —
+the 15 entries are the documented Phase 2 / S-13 / S-17 / DEBT-011
+P2 handler-binding allowlist items).
+
 ---
 
 **End of audit.** Closures land in the same PR via
