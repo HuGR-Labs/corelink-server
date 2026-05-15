@@ -39,6 +39,7 @@ hmac = { workspace = true }
 sha2 = { workspace = true }
 subtle = { workspace = true }
 hex = { workspace = true }
+blake3 = { workspace = true }
 reqwest = { workspace = true, features = ["json", "rustls-tls", "blocking"], default-features = false }
 url = "2"
 corelink-tier-selection = { path = "../corelink-tier-selection" }
