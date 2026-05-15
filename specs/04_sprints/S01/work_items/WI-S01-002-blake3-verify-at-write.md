@@ -1,12 +1,12 @@
 ---
 id: "WI-S01-002"
 type: "work_item"
-doc_status: "FROZEN"
+doc_status: "SEALED"
 work_status: "DONE"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-04-25"
-updated: "2026-04-29"
+updated: "2026-05-15"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-005"]
 parent: "S-01"
@@ -27,8 +27,9 @@ tags: ["wi", "s01", "cas", "blake3", "integrity", "ctrl-cas-001", "tla-verified"
 
 # WI-S01-002 — BLAKE3 Hasher + Verify-at-Write (CTRL-CAS-001)
 
-> **doc_status:** FROZEN · **work_status:** DONE · **lane:** HIGH_RISK
+> **doc_status:** SEALED · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-01](../sprint.md) · **Assignee:** Gustavo Schneiter
+> **ADR:** [ADR-0044 (digest)](../../../03_architecture/adrs/ADR-0044-digest-pluggability.md) — BLAKE3 default; sealed newtype at GA; future SHA-256 path is a new type + schema migration.
 
 ---
 
@@ -244,9 +245,13 @@ Multipart (blobs > 5 MiB) vai em WI-S05-002 com Merkle tree decomposition. Singl
 - 256-bit: 2^128 collision; aligned com industry standard (SHA-256, BLAKE2s, Bitcoin).
 - 512-bit: overkill; doubles hash size em DB + R2 path → cost; defer pós-GA se needed.
 
-### 9.6 ADR potencial?
+### 9.6 ADR
 
-Não identificada decisão arquitetural disruptiva nova requerendo ADR. Patterns reused do ecosystem (BLAKE3 via crate, subtle via crate, type-newtype pattern já estabelecido em WI-S01-001).
+**[ADR-0044 (digest) — `corelink-hash::Digest`: BLAKE3 default, sealed-newtype at GA, future SHA-256 path](../../../03_architecture/adrs/ADR-0044-digest-pluggability.md)** (FROZEN 2026-05-15).
+
+Added at SEAL time (1.1.0 → 1.2.0). The original 1.0.0 draft of this section said no ADR was needed because the patterns were ecosystem-standard (BLAKE3 + subtle + sealed newtype). The SEAL review reversed that: the *combination* of (a) BLAKE3-only at GA, (b) sealed newtype rather than `#[non_exhaustive] enum`, (c) constant-time compare mandatory for adversarial paths, and (d) future SHA-256 / PQ migration being a *new type + schema migration* (never a transparent variant addition) is a load-bearing architectural commitment that downstream WIs (S-01-003 R2 adapter, S-01-005 REAPI handler, S-02-003 client verify, S-05-002 multipart Merkle) all consume. ADR-0044 records the rationale + decision matrix + migration path so a future contributor cannot accidentally relax any of those four points without an explicit supersede.
+
+Sister ADR: ADR-0043 (HMAC-SHA256 tenant prefix; `tenant-path` crate) — same type-driven private-field pattern on the isolation side.
 
 ## 10. Completeness Criteria SOTA (HIGH_RISK = TODAS aplicáveis)
 
@@ -481,6 +486,7 @@ Triggers:
 |---|---|---|---|
 | 1.0.0 | 2026-04-25 | Gustavo (via Claude Opus 4.7) | Criação WI-S01-002 — BLAKE3 + verify-at-write (Lote 10.1 — full WI spec series). |
 | 1.1.0 | 2026-04-29 | Gustavo (S-01 implementation Lote — codex 6.1 → 8.5+/10) | **doc_status DRAFT → FROZEN + work_status READY → DONE** após implementação completa em `crates/corelink-hash/`. Codex round-1 P0 surfaced architectural ambiguity: WI-S01-002 §6.1 originally bundled items 5-7 (R2 write integration, métricas emission, audit CloudEvent emission) which structurally live in WI-S01-003 (R2 adapter) and WI-S01-005 (REAPI handler). Resolution: introduce `BlobStoreWrite` trait in `corelink-hash` (signature mandates `&VerifiedBody`) — concrete in-repo evidence of type-driven CTRL-CAS-001 enforcement; defer real R2 + emit sites to their proper WIs. §6.1 split into "DELIVERED" (1-4) + "DEFERRED to WI-S01-003" (5-7) with cross-references. Implementation artifacts: `corelink-hash` crate with `Digest` + `VerifiedBody` + `BlobStoreWrite`; 22 tests verde (4 property at 10k iter + 10 cross-language regression vectors covering chunk boundaries 1023/1024/1025/2048/4096/65536 + perf gate release-only 5MiB <50ms + ct-variance gate release-only <5% delta + canonical taxonomy-code test + blob_store_contract integration test); criterion bench native ~3 GB/s; cargo-mutants verified; cargo-fuzz 60s smoke verde (17.6M runs digest_parse target zero crashes); CI workflow `.github/workflows/corelink-hash.yml` with PR (debug+release+wasm-build+fuzz-smoke) + nightly (1h fuzz + mutants + audit) lanes; WASM target build verified. Lints: `#![forbid(unsafe_code)]` literal + Cargo `[lints]` strict; zero strategic `#[allow(clippy::expect_used)]` em lib code (cleaner than tenant-path). |
+| 1.2.0 | 2026-05-15 | Gustavo (via Claude Opus 4.7 — S-01 SEAL phase) | **doc_status FROZEN → SEALED.** SEAL-time review re-evaluated §9.6 ("ADR potencial?") and landed [ADR-0044 (digest) — BLAKE3 default; sealed-newtype at GA; future SHA-256 path is a new type + schema migration](../../../03_architecture/adrs/ADR-0044-digest-pluggability.md). The ADR records four load-bearing commitments that downstream WIs (S-01-003 R2 adapter, S-01-005 REAPI handler, S-02-003 client verify, S-05-002 multipart Merkle) all consume: (i) BLAKE3-only at GA, (ii) sealed newtype rather than `#[non_exhaustive] enum`, (iii) constant-time compare mandatory for adversarial paths, (iv) future algorithm migration is a *new type + schema migration*, never a transparent variant addition. Quality gates re-verified at SEAL: `cargo build` green, `cargo clippy --tests -D warnings` zero findings, `cargo test` 22 active + 2 release-only-ignored, `cargo bench --no-run` 3 bench binaries compile (`blake3`, `blake3_bench`, `corelink-hash`), `python3 scripts/validate_specs.py` 418/418 docs valid. ADR cross-linked from §9.6 + WI header. Sister-ADR pattern (ADR-0043 + ADR-0044) now mirrors sister-crate pattern (`tenant-path` + `corelink-hash`). |
 
 ## 32. Apêndice: Anti-patterns evitados
 
