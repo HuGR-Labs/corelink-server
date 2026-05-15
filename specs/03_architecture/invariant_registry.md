@@ -128,6 +128,7 @@ Upgrade de severidade requer ADR.
 | ID | Nome | Severidade | Descrição | Enforcement |
 |---|---|---|---|---|
 | **INV-AVAIL-ISOLATION** | Tenant DoS não cascateia | HIGH | Abuse ou outage de Tenant A não degrada SLO de Tenant B além do ruído expected | Per-tenant bulkhead (PAT-BULKHEAD-001) + rate limits (CTRL-RATE-001); chaos test (EVT-023) |
+| **INV-AVAIL-DOS** | Log redaction regex hot-paths são DoS-resistant (no catastrophic backtracking) | HIGH | Falsifiability canary em `corelink-logpush::redaction`: every regex used in log shipping is constrained to linear-time semantics. Catastrophic backtracking on attacker-controlled log lines could brown out the worker and degrade availability. | Property test corpus de adversarial inputs + ad-hoc `regex` config audit + bounded-time CI fuzz (DEBT-004 promotion) |
 
 ### 3.9 Billing (domain BILLING)
 
@@ -135,6 +136,7 @@ Upgrade de severidade requer ADR.
 |---|---|---|---|---|
 | **INV-BILLING-NO-LOSS** | Todo billable event contabilizado | HIGH | Nenhum evento billable é perdido; at-least-once delivery + dedup | Queue com durável + reconciliation (PAT-RECONCILE-001) |
 | **INV-BILLING-NO-DUP** | Nenhum evento billable contabilizado 2x | HIGH | Idempotency key + dedup window 24h | PAT-IDEMPOTENCY-001 |
+| **INV-BILLING-CHAIN-INTEGRITY** | Per-`(tenant, billing_period)` BLAKE3 chain de aggregates é unbroken (analogous to `INV-OBS-AUDIT-CHAIN-INTEGRITY` S-09; Bitcoin block-header pattern inheritance from `corelink-audit-chain`) | HIGH | Verifier recomputes link from `(prev_hash, JCS(aggregate))` and rejects at first tampered sequence; tamper detection at any aggregate fails verify | Property test `prop_jcs_canonicalization_byte_stable` + chain reconstruction tests em `corelink-billing-aggregator`; daily verifier job (mirrors S-09 audit chain) |
 
 ### 3.10 Supply Chain (domain SUPPLY)
 
@@ -239,6 +241,7 @@ Invariantes que governam auth lifecycle: JWT validation (Clerk), PAT lifecycle (
 | **INV-NEG-CACHE-MONOTONIC** | Negative cache writes use monotonic version_stamp; older stamps rejected silently | HIGH | KV value envelope inclui version_stamp u64; put_miss compara antes write | Property test concurrent put_miss vs invalidate_on_write | N/A (KV invariant) |
 | **INV-NO-BODY-IN-LOGS** | Body bytes nunca em audit/logs/error messages | CRITICAL | `redact_pat!` + clippy custom lint + grep CI gate | Static analysis + CI gate | N/A (compile-time + CI lint) |
 | **INV-NO-PII-IN-LOGS** | Raw PII (email, principal_id) nunca em logs/traces; hashed prefix only | CRITICAL | `hash_principal_id` macro + tracing field redaction | Static analysis + CI gate | N/A (compile-time + CI lint) |
+| **INV-AUTH-CONSTANT-TIME-COLD-PAD** | PAT verify cold-path latency é indistinguishable from warm-path via dummy Argon2id pad on every failure branch (parse fail, sig mismatch, token_id absent, hash mismatch) | CRITICAL | Middleware in `corelink-worker::middleware::auth` calls `corelink_pat::dummy_verify_for_constant_time` on every cold-path failure; attacker observing latency envelope cannot distinguish "token doesn't exist" from "token exists but mismatch" | Mann-Whitney 3-prong timing test + adversarial regression (DEBT-004 promotion) | N/A (cripto invariant; covered by `INV-AUTH-PAT-VERIFY-CONSTANT-TIME` Mann-Whitney; sibling refinement for cold-path) |
 
 **Cross-references**:
 - `ADR-0024..ADR-0033` documentam decisões S-03 (vide `scripts/validate_references.py` whitelist).
@@ -278,6 +281,10 @@ Invariantes que governam Action Cache lifecycle: REAPI handlers + idempotency, M
 | **INV-AC-PATH-SIG-KEY-VERSION-INDEPENDENT** | `sig_key_id` and `path_key_id` MAY diverge per row (Lote 10.4-tris P0-R5-006); no atomic snapshot required across rotation; valid state, NOT invariant violation; handler INSERT uses current values at write time | HIGH | Two key-version columns in ac_meta (Lote 10.4bis WI-S04-002 schema); rotation procedures independent (WI-S04-004 §30.1); GET handler reads `tenant_prefix` from materialized column NOT recomputed from TDK | Property test `prop_path_sig_key_independent` simulates concurrent rotation between path-INSERT and sig-INSERT steps; integration test asserts no error on divergence | N/A (architecture invariant; ADR-0021 §RotationProcedures) |
 | **INV-AC-ORPHAN-R2-CLEANUP-EVENTUAL** | Orphan R2 envelopes (R2 PUT succeeds, D1 INSERT fails) cleaned within 24h via S-06 reconcile cron | HIGH (forward-dependency S-06) | S-06 reconcile cron diário cross-checks R2 vs D1; orphan rate alert metric `corelink.ac.r2.orphan_rate` (alert if >1% of UPDATE rate) | S-06 forward; chaos test handler crash mid-flight; metric monitoring | N/A (architecture invariant; eventual consistency) |
 | **INV-AC-OUTPUTS-VALID-EVENTUAL-CONSISTENCY** | INV-AC-OUTPUTS-VALID is point-in-time best-effort; TOCTOU race between handler outputs check and S-06 GC tombstone window accepted | HIGH (forward-dependency S-06) | SQLite/D1 has no row-level locking; Postgres `SELECT ... FOR SHARE` unavailable; reconcile diário (S-06 forward) é authoritative drift detection mechanism; orphan_rate metric monitors | S-06 forward reconcile cron; chaos test #8 (TTL eviction race + S-06 GC race); 24h SLA bound on drift correction | N/A (eventual consistency tier) |
+| **INV-AC-TTL-REFRESH-MONOTONIC** | TTL refresh em `corelink-ac` infrastructure preserves monotonicity: refresh-on-hit clamps `last_hit_at` and `expires_at` to never move backward (sibling refinement of `INV-AC-TTL-MONOTONIC` covering the schema/sim layer) | HIGH | `corelink-ac-schema::sim` + `corelink-worker::reapi::ac::meta` clamp `last_hit_at` and `expires_at` via `MAX(prev, now)`; property test asserts cross-call monotonicity | Property test `prop_ac_ttl_refresh_monotonic` (10k iter) em `corelink-worker/tests/prop_ac_handlers.rs`; sim layer mirrored em `corelink-ac-schema/src/sim.rs` (DEBT-004 promotion) | N/A (architecture invariant; sibling INV-AC-TTL-MONOTONIC) |
+| **INV-AC-REGION-PINNED** | AC handler rejects requests whose `region` mismatches the bound tenant region (handler-level region pinning before TTL/eviction execution) | HIGH | `corelink-worker::reapi::ac` handler checks `region == tenant.primary_region` strict; mismatch → 4xx + audit emit. Supports INV-DATA-RESIDENCY at the AC entry point. | Integration test `reapi_v2_ac_conformance::scenario region mismatch rejected` (DEBT-004 promotion) | N/A (architecture invariant; subsumed by INV-DATA-RESIDENCY) |
+| **INV-AC-EVICT-REGION-PINNED** | TTL-eviction cron workers are pinned to a single region; per-region shards never touch other regions' rows via `select_expired_for_region` + `delete_tenant_scoped` (cross-region pollution structurally impossible) | CRITICAL | `corelink-worker::reapi::ac::ttl` enforces `region` mandatory in every cron query; SQL `WHERE region = ?` strict; CI grep gate forbids eviction queries sem `region` clause | Property test cross-region cron isolation + integration test region mismatch (DEBT-004 promotion) | (subsumido por `tenant_isolation.tla` AC eviction variant; PLANNED) |
+| **INV-AC-EVICT-AUDIT-EMITTED** | Every successful AC TTL row eviction emits a typed audit record via `AuditSink` trait (`AcEventType::EvictTtlExpired`); audit emit failure surfaces as per-row error keeping the row alive | HIGH | `corelink-worker::reapi::ac::ttl` calls `AuditSink::emit` after each row delete; emit failure → row preserved + per-row error logged; next pass retries (PAT-RETRY-IDEMPOTENT-001) | Chaos test simulate audit sink failure + integration test re-eviction (DEBT-004 promotion) | N/A (architecture invariant; sibling INV-GC-SWEEP-AUDIT-FAIL-CLOSED for AC TTL scope) |
 
 **Cross-references**:
 - `ADR-0021, ADR-0035, ADR-0036, ADR-0037` documentam decisões S-04 (vide `scripts/validate_references.py` whitelist).
@@ -288,7 +295,7 @@ Invariantes que governam Action Cache lifecycle: REAPI handlers + idempotency, M
 - `error_taxonomy.md §3.2` mapeia AC errors (12 codes pós-Lote 10.4bis amendment).
 - `compliance_matrix.md` mapeia INV-AC-* para LGPD/GDPR/SLSA L3 alignment.
 
-**Aliases históricos:** nenhum. Estes 19 IDs introduzidos em Lote 10.4 (sprint S-04 spec) e promovidos ao registry em Lote 10.4bis (P0 fix Agent R4 review remediation r4-s04-part1+part2). **CI gate enforcement**: `scripts/validate_inv_promotion.py` valida que todo INV declarado em WI sob `specs/04_sprints/SXX/work_items/` existe nesta seção (closes 4-sprint persistent gap flagged em S-01/S-02/S-03 R4 reviews).
+**Aliases históricos:** nenhum. Estes 19 IDs introduzidos em Lote 10.4 (sprint S-04 spec) e promovidos ao registry em Lote 10.4bis (P0 fix Agent R4 review remediation r4-s04-part1+part2); 4 adicionais (INV-AC-TTL-REFRESH-MONOTONIC, INV-AC-REGION-PINNED, INV-AC-EVICT-REGION-PINNED, INV-AC-EVICT-AUDIT-EMITTED) promovidos em DEBT-004 closure (2026-05-15). **CI gate enforcement**: `scripts/validate_inv_promotion.py` valida que todo INV declarado em WI sob `specs/04_sprints/SXX/work_items/` existe nesta seção (closes 4-sprint persistent gap flagged em S-01/S-02/S-03 R4 reviews).
 
 ---
 
@@ -410,6 +417,146 @@ INVs introduced by Sprint S-11 WI-S11-005 (Sub-Processor Register + 30d Broadcas
 - `migrations/N4__sub_processor_tables.sql` — D1 UNIQUE constraint DDL.
 
 **Aliases históricos:** nenhum. Estes 5 IDs introduzidos em Lote 10.11 (sprint S-11 WI-S11-005) e **promovidos preemptivamente em Lote 10.11** (consistency com lesson Lote 10.4bis CI gate + Lote 10.8bis P1-13).
+
+---
+
+### 3.20 Backup verification domain (domain BACKUP) — DEBT-004 closure (2026-05-15)
+
+INVs introduced by the `corelink-backup-verify` crate (R-prep continuous-verification scaffold). Promoted to registry in DEBT-004 closure pass — code-referenced but previously orphan in registry. Cross-references `RB-BACKUP-VERIFICATION.md` (forward) for operator workflow.
+
+| ID | Nome | Severidade | Descrição | Enforcement | TLA+ file |
+|---|---|---|---|---|---|
+| **INV-BACKUP-FRESH** | Snapshot freshness gate: `verify_freshness` rejects any snapshot whose `age_seconds > rpo_seconds(tier)` | HIGH | `corelink-backup-verify::lib::verify_freshness` strict comparison; tier-driven RPO budget table; rejection emits typed error preserving the existing snapshot generation | Property test boundary at exact RPO; integration test stale-snapshot rejected (DEBT-004 promotion) | N/A (algorithmic invariant; tier-table-driven) |
+| **INV-BACKUP-INTEGRITY-SAMPLE-CAP** | Integrity sampler never exceeds `MAX_INTEGRITY_SAMPLES_PER_TENANT` per tenant per cycle (avoids accidental O(catalog) hot loops) | HIGH | `MAX_INTEGRITY_SAMPLES_PER_TENANT = 100` constant em `corelink-backup-verify::lib`; sampler iterator is bounded; cargo-deny pinned bounds | Property test sampler bound enforcement + chaos test very-large-catalog (DEBT-004 promotion) | N/A (parser/bound invariant) |
+| **INV-BACKUP-RESTORE-EPHEMERAL** | `sample_restore` always tags the restored namespace `ephemeral = true`; trait contract forbids restoring into a production-named namespace | CRITICAL | Real handler (production env) enforces ephemeral-namespace tag; trait contract type-state encodes ephemeral lifecycle; CI grep gate forbids restore-to-prod paths | Property test cross-namespace pollution rejection + integration test ephemeral-cleanup (DEBT-004 promotion) | (planned `backup_atomicity.tla`; PLANNED) |
+
+**Cross-references**:
+- `RB-BACKUP-VERIFICATION.md` (forward; operator runbook).
+- `failure_modes.md FM-BACKUP-*` (forward).
+- `compliance_matrix.md` mapeia INV-BACKUP-* para SOC 2 CC9.1 (recovery testing) + LGPD Art. 46.
+
+**Aliases históricos:** nenhum. Promoted in DEBT-004 closure pass (2026-05-15) from `corelink-backup-verify` crate orphan refs.
+
+---
+
+### 3.21 Billing portal domain (domain BILLING-PORTAL) — DEBT-004 closure (2026-05-15)
+
+INVs introduced by the `corelink-stripe-real::portal` module (Stripe Billing Portal session creation contract). Promoted to registry in DEBT-004 closure pass.
+
+| ID | Nome | Severidade | Descrição | Enforcement | TLA+ file |
+|---|---|---|---|---|---|
+| **INV-BILLING-PORTAL-URL-SINGLE-USE** | Every successful `create_session` call returns a `PortalSessionUrl` that has never been returned before, even for the same `(customer_id, return_url)` input | HIGH | Stripe issues a unique `bps_*` session id per call; the trait contract preserves this; in-memory test harness mirrors via HashSet uniqueness | Property test `portal_urls_unique_https_audit_consistent` (proptest 32 iterations per case; PROPTEST_CASES nightly) (DEBT-004 promotion) | N/A (algorithmic invariant; opacity guarantee) |
+| **INV-BILLING-PORTAL-URL-HTTPS** | Every portal URL is HTTPS and embeds an opaque session id (the URL is bearer-equivalent — leaking it implies leaking a session) | HIGH | Trait contract requires `https://` prefix + `/p/session/bps_` path component; constructor validates; bearer-equivalent treatment documented in callers | Property test URL shape enforcement + adversarial regression (DEBT-004 promotion) | N/A (cripto + URL hygiene invariant) |
+| **INV-BILLING-PORTAL-AUDIT** | Implementations MUST emit `corelink.billing.portal_session_created` to their bound audit sink before returning success | HIGH | `corelink-stripe-real::portal::BillingPortalSessionCreator` trait contract; audit emit BEFORE `Ok(url)` return; integration test asserts emit ordering | Integration test ordering + property test audit count = success count (DEBT-004 promotion) | N/A (architecture invariant; sibling of audit-fail-closed) |
+| **INV-BILLING-PORTAL-AUDIT-FAIL-CLOSED** | Any path that does NOT return `Ok(url)` MUST NOT have recorded an audit row; any path returning `Ok(url)` MUST have exactly one audit row | HIGH | Trait contract enforces audit-emit-BEFORE-mutation discipline; failing emit aborts session creation (no orphan audit row); successful emit precedes URL return | Property test `portal_urls_unique_https_audit_consistent` audit-count assertion (10k iter nightly) (DEBT-004 promotion) | Covered by `audit_immutability.tla` (split-tier ADR-S11-002 inheritance) |
+
+**Cross-references**:
+- `audit_immutability.tla` ✅ GREEN — INV-AUDIT-APPEND-ONLY parent.
+- `ADR-S11-002` split-tier fail-CLOSED discipline.
+- `compliance_matrix.md` mapeia INV-BILLING-PORTAL-* para SOC 2 CC6.1 (access control to billing self-service).
+
+**Aliases históricos:** nenhum. Promoted in DEBT-004 closure pass (2026-05-15) from `corelink-stripe-real` crate orphan refs.
+
+---
+
+### 3.22 Rate-limit response body domain (domain RATE-BODY) — DEBT-004 closure (2026-05-15)
+
+INVs introduced by the `corelink-rate-headers` crate (RFC 9331 rate-limit header / JSON-body envelope contract). Promoted to registry in DEBT-004 closure pass.
+
+| ID | Nome | Severidade | Descrição | Enforcement | TLA+ file |
+|---|---|---|---|---|---|
+| **INV-BODY-HEADER-MIRROR-1** | Rate-limit body `kind` discriminator equals the `x-rate-limit-type` header on every 429 response | HIGH | Renderer derives `body.kind` and `h.x_rate_limit_type` from the same internal `RateLimitKind`; serialization roundtrip preserves equality | Property test `prop_rate_headers` 10k iter asserts equality on every shape (DEBT-004 promotion) | N/A (algorithmic invariant; serializer mirror) |
+| **INV-BODY-HEADER-MIRROR-2** | Rate-limit body `retry_after_seconds` equals the `Retry-After` header on every 429 response | HIGH | Renderer derives both from the same internal duration; integer-second formatting deterministic | Property test `prop_rate_headers` retry-after equality (DEBT-004 promotion) | N/A (algorithmic invariant; serializer mirror) |
+| **INV-BODY-HEADER-MIRROR-3** | Body `limit`/`remaining`/`reset` mirror RFC 9331 `RateLimit` header fields exactly | HIGH | Single source of truth in `RateLimitHeaders` struct; renderer projects both views; RFC 9331 §2 conformance | Property test `prop_rate_headers` triple equality on RFC fields (DEBT-004 promotion) | N/A (algorithmic invariant; RFC conformance) |
+| **INV-BODY-HEADER-MIRROR-4** | Vendor-prefix fields (`corelink-tier`, `corelink-quota-reset-utc`) mirror exactly between body and header | HIGH | Vendor extension fields share the same `RateLimitHeaders` source; deterministic projection | Property test `prop_rate_headers` vendor-field equality (DEBT-004 promotion) | N/A (algorithmic invariant; vendor namespace mirror) |
+| **INV-BODY-FROZEN-URLS** | Rate-limit body `tier_upgrade_url` and `docs_url` are frozen constants (`TIER_UPGRADE_URL`, `DOCS_URL`) — GA contract stability | HIGH | Constants em `corelink-rate-headers`; renderer never templates; CI byte-equal test asserts | Property test `prop_rate_headers` constant-URL equality + GA stability commitment (DEBT-004 promotion) | N/A (architecture invariant; GA stability) |
+| **INV-BODY-STABLE-CODE** | At GA, the 429 error envelope has exactly one stable error code: `ERROR_CODE_RATE_LIMIT_EXCEEDED` | HIGH | `body.code` is a frozen constant; CI byte-equal test; error_taxonomy.md alignment | Property test `prop_rate_headers` code equality (DEBT-004 promotion) | N/A (error taxonomy invariant) |
+| **INV-BODY-RENDER-WELL-FORMED** | Rendered JSON envelope (`render_json()`) is well-formed: balanced braces, valid JSON, RFC 8259 conformance | HIGH | `serde_json` based renderer; envelope prefix `{"error":{` asserted; integration tests parse the output back | Property test `prop_rate_headers` parse-roundtrip (DEBT-004 promotion) | N/A (serializer invariant) |
+
+**Cross-references**:
+- `error_taxonomy.md §3.X` — 429 envelope canonical form.
+- RFC 9331 §2 — `RateLimit` header policy.
+- `compliance_matrix.md` mapeia INV-BODY-* para API stability commitment (GA gate L23 envelope-stability sub-row).
+
+**Aliases históricos:** nenhum. Promoted in DEBT-004 closure pass (2026-05-15) from `corelink-rate-headers` crate orphan refs.
+
+---
+
+### 3.23 CAS handler SLI domain (domain HANDLER-SLI) — DEBT-004 closure (2026-05-15)
+
+INVs introduced by the `corelink-handler-cas` crate (CAS handler entry/correctness + SLI emission). Promoted to registry in DEBT-004 closure pass.
+
+| ID | Nome | Severidade | Descrição | Enforcement | TLA+ file |
+|---|---|---|---|---|---|
+| **INV-HANDLER-SLI-EMIT-ENTRY** | Every CAS handler entry emits one `SliObserver::observe_*` call BEFORE returning (covers `Sli::AvailCasGet` / `Sli::AvailCasPut` availability counters regardless of outcome) so the multi-burn-rate alert evaluator never misses a request | HIGH | `corelink-handler-cas::handler` invokes observer in a guard at the top of the handler body; CI grep gate forbids early-return paths sem observer call; property test asserts observer-count = request-count even on error paths | Property test `prop_handler_cas` 10k iter request-count vs observe-count equality (DEBT-004 promotion) | N/A (architecture invariant; SLO-AVAIL-CAS measurement integrity) |
+| **INV-CAS-CORRECTNESS** | Every CAS read returns either bytes whose hash matches the requested key OR a hash-mismatch error (`Sli::CorrectnessCas` failure observation) — never silently returns wrong bytes | CRITICAL | `corelink-handler-cas::handler` verifies hash on read path; mismatch → `Sli::CorrectnessCas` failure observation + error return; fakes mirror this for proptest coverage | Property test 10k iter hash-mismatch injection + integration test correctness counter (DEBT-004 promotion) | (subsumido por `cas_integrity.tla` ✅ GREEN — InvPoisoningRejected) |
+
+**Cross-references**:
+- `cas_integrity.tla` ✅ GREEN — INV-CAS-INTEGRITY parent (poisoning rejection).
+- `slo_catalog.md SLO-AVAIL-CAS + SLO-CORRECT-CAS` — operational metrics.
+- `compliance_matrix.md` mapeia INV-HANDLER-SLI-* para SOC 2 CC7.1 (system monitoring) + multi-burn-rate alert canonical S-09.
+
+**Aliases históricos:** nenhum. Promoted in DEBT-004 closure pass (2026-05-15) from `corelink-handler-cas` crate orphan refs.
+
+---
+
+### 3.24 Observability export domain (domain OBS-EXPORT) — DEBT-004 closure (2026-05-15)
+
+INVs introduced by the `corelink-otel-export` crate (R-prep enterprise observability — Datadog/Grafana/AWS forward). Promoted to registry in DEBT-004 closure pass.
+
+| ID | Nome | Severidade | Descrição | Enforcement | TLA+ file |
+|---|---|---|---|---|---|
+| **INV-OBS-EXPORT-FAIL-OPEN** | Every exporter fails-OPEN — when the customer's observability stack is down (HTTP 5xx, network unreachable, auth failure), the worker continues serving requests and emits an audit-style event to the local sink rather than blocking the data path | HIGH | `corelink-otel-export::lib + ::audit + ::error` enforces fail-OPEN at every export call; integration test simulates vendor outage; audit emit on every failure path; CI grep gate forbids `?` operator on export error in handler-path | Property test `prop_otel_export` 10k iter handler-availability under vendor outage (DEBT-004 promotion) | N/A (architecture invariant; availability over consistency for forward-only telemetry) |
+| **INV-OBS-NO-PII** | Every metric / trace / log forwarded to a third-party MUST be PII-free (sprint contract §10.s09.6; cross-link `observability_model.md §10`) | CRITICAL | `corelink-otel-export::metric + ::lib` allowlist of label keys; PII patterns rejected at construction; `redact_*` macros + clippy custom lint; CI grep gate | Property test `prop_otel_export` 10k iter random labels asserts allowlist + adversarial PII injection rejection (DEBT-004 promotion) | N/A (compile-time + CI lint; subsumido por INV-NO-PII-IN-LOGS family) |
+| **INV-OBS-CT-SECRET-EQ** | API-key + password equality goes through `secret::constant_time_secret_eq` (constant-time over the underlying bytes, with a length-mismatch short-circuit that does NOT leak the secret length) | HIGH | `corelink-otel-export::secret` uses `subtle::ConstantTimeEq`; clippy custom lint forbids `==` on secret types; CI byte-equal gate | Mann-Whitney 3-prong timing test em `prop_otel_export` (DEBT-004 promotion) | N/A (cripto invariant; sibling of INV-AUTH-PAT-VERIFY-CONSTANT-TIME family) |
+| **INV-OBS-CONFIG-NON-EXHAUSTIVE** | Every per-vendor config struct is `#[non_exhaustive]` so adding a new auth field (mTLS, OAuth2 client credentials, AWS SigV4 for Datadog AWS) lands additively without breaking downstream consumers | HIGH | `#[non_exhaustive]` attribute on every public config struct em `corelink-otel-export`; CI grep gate; ADR documents additive evolution discipline | Compile-time enforcement + CI grep gate (DEBT-004 promotion) | N/A (architecture invariant; API stability) |
+
+**Cross-references**:
+- `observability_model.md §10` — PII policy parent.
+- `compliance_matrix.md` mapeia INV-OBS-EXPORT-* para SOC 2 CC7.1 + LGPD Art. 18 (transferência internacional via forward telemetry).
+- INV-NO-PII-IN-LOGS / INV-NO-BODY-IN-LOGS — sibling family in §3.14.
+
+**Aliases históricos:** nenhum. Promoted in DEBT-004 closure pass (2026-05-15) from `corelink-otel-export` crate orphan refs.
+
+---
+
+### 3.25 Tenant offboarding domain (domain OFFBOARDING) — DEBT-004 closure (2026-05-15)
+
+INVs introduced by the `corelink-tenant-offboarding` crate (R-prep tenant-offboarding orchestrator scaffold). Promoted to registry in DEBT-004 closure pass.
+
+| ID | Nome | Severidade | Descrição | Enforcement | TLA+ file |
+|---|---|---|---|---|---|
+| **INV-OFFBOARDING-GRACE-RESPECTED** | Every state advances only after the canonical timer threshold (or operator force-advance with audit trail); orchestrator validates the timer at the trait boundary; a request that asks for an advance before the threshold returns `TenantOffboardingError::IllegalTransition` | HIGH | `corelink-tenant-offboarding::orchestrator` enforces `now >= state_started_at + grace_for(state)` on every advance call; force-advance path required to emit a typed audit row | Property test `prop_tenant_offboarding` 10k iter boundary + integration test force-advance audit (DEBT-004 promotion) | N/A (architecture invariant; sibling of INV-GC-GRACE-RESPECTED) |
+| **INV-OFFBOARDING-AUDIT-COMPLETE** | Every state mutation is preceded by the canonical audit row (per ADR-S11-002 split-tier fail-CLOSED discipline); audit emit failure aborts the transition; durable store remains at pre-call state | CRITICAL | `corelink-tenant-offboarding::lib` audit-emit-BEFORE-mutate ordering; trait contract requires emit success precondition; `FailingAuditSink` test path verifies state unchanged | Property test `prop_tenant_offboarding` audit-mutation ordering 10k iter + chaos test simulate audit failure (DEBT-004 promotion) | Covered by `audit_immutability.tla` ✅ GREEN inheritance |
+
+**Cross-references**:
+- `audit_immutability.tla` ✅ GREEN — INV-AUDIT-APPEND-ONLY parent.
+- `ADR-S11-002` split-tier fail-CLOSED discipline.
+- `compliance_matrix.md` mapeia INV-OFFBOARDING-* para LGPD Art. 18 (DSR erasure) + GDPR Art. 17 (right to be forgotten).
+
+**Aliases históricos:** nenhum. Promoted in DEBT-004 closure pass (2026-05-15) from `corelink-tenant-offboarding` crate orphan refs.
+
+---
+
+### 3.26 Progressive rollout domain (domain ROLLOUT) — DEBT-004 closure (2026-05-15)
+
+INVs introduced by the `corelink-rollout-controller` crate (WI-S13-005 progressive rollout + 3-trigger auto-rollback). Promoted to registry in DEBT-004 closure pass.
+
+| ID | Nome | Severidade | Descrição | Enforcement | TLA+ file |
+|---|---|---|---|---|---|
+| **INV-ROLLOUT-SINGLE-ACTIVE** | At most one active rollout per env at any time; concurrent start returns `RolloutInFlight` | HIGH | D1 `UNIQUE (status='active')` partial index per `(env)`; controller checks pre-start; `RolloutInFlight` error on conflict | Property test `prop_rollout` 10k iter concurrent-start rejection + integration test (DEBT-004 promotion) | (planned `rollout_state_machine.tla`; PLANNED) |
+| **INV-ROLLOUT-NO-STAGE-SKIP** | Stage advance enforces `RolloutStage::next()`; skip → 403 + audit emit | HIGH | `corelink-rollout-controller::state_machine + ::controller + ::types` enforce monotonic `next()`; skip path returns typed `StageSkip` error + audit emit; CI grep gate | Property test `prop_rollout` 10k iter stage transitions + integration test (DEBT-004 promotion) | (planned `rollout_state_machine.tla`; PLANNED) |
+| **INV-ROLLOUT-COSIGN-GATE** | Deploy without a valid Cosign signature is rejected at `start()` (S-12 supply chain herdada) | CRITICAL | `corelink-rollout-controller::lib::start` verifies Cosign signature inclusion in deployable; failure → typed `CosignMissing` error + audit emit (subsumido por INV-SUPPLY-SIGNED-DEPLOY at the rollout entry point) | Integration test sig-missing rejection + adversarial test (DEBT-004 promotion) | (subsumido por INV-SUPPLY-SIGNED-DEPLOY) |
+| **INV-ROLLOUT-BUDGET-CAP** | Auto-rollback consumes ≤ 30% monthly error budget; exceedance → freeze + SEV-2 | HIGH | `corelink-rollout-controller::controller + ::lib` tracks budget consumption per rollback fire; exceedance → freeze state + SEV-2 alert + audit emit | Property test `prop_rollout` budget-cap boundary + integration test SEV escalation (DEBT-004 promotion) | N/A (architecture invariant; SLO budget invariant) |
+| **INV-ROLLOUT-AUTO-ROLLBACK-TRIGGERS** | 3-trigger auto-rollback (error-rate > baseline+3σ; SLO burn-rate > 14.4 1h window; p99 latency > baseline+50%) only fires after `SUSTAINED_THRESHOLD_SECS = 300s` continuous observation (filters transient variance); detection p99 ≤ 360s (6 probes × 60s) | HIGH | `corelink-rollout-controller::auto_rollback::SustainedTrigger` tracks per-trigger elapsed; reset to 0 on clear; fire only at ≥ 300s. Google SRE Workbook Ch 16 alignment. | Property test `prop_rollout` 10k iter sustained-threshold boundary + chaos test transient-spike-no-fire (DEBT-004 promotion) | (planned `rollout_state_machine.tla` auto-rollback variant; PLANNED) |
+
+**Cross-references**:
+- WI-S13-005 §6.1.3 (auto-rollback design).
+- Google SRE Workbook Ch 16 — multi-window multi-burn-rate alerting.
+- INV-SUPPLY-SIGNED-DEPLOY (§3.10) — parent of INV-ROLLOUT-COSIGN-GATE.
+- `compliance_matrix.md` mapeia INV-ROLLOUT-* para SOC 2 CC8.1 (change management) + SLSA L3 (provenance gate).
+
+**Aliases históricos:** nenhum. Promoted in DEBT-004 closure pass (2026-05-15) from `corelink-rollout-controller` crate orphan refs.
 
 ---
 
