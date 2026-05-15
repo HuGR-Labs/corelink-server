@@ -1,0 +1,275 @@
+# scripts/statuspage-webhook-receiver.example.yaml
+#
+# Spec (NOT executable) for the Cloudflare Worker (or AWS Lambda) that receives
+# PagerDuty incident webhooks and translates them into Statuspage.io incident
+# create / update / resolve API calls, with retry + dedup logic.
+#
+# Status:      SPEC ONLY — implementation tracked in a follow-up WI under wt-r8-1.
+# Parent:      marketing/launch/STATUS-PAGE-SPEC.md §7
+# Companion:   marketing/launch/STATUSPAGE-INIT.md §6.2
+# Cross-ref:   marketing/launch/CRISIS-COMMS-TEMPLATES.md §A.1 (SEV1 template),
+#              specs/_runbooks/ONCALL-ESCALATION-MATRIX.md.
+#
+# Why this exists in addition to the native PagerDuty -> Statuspage integration:
+#   * Native integration is single-service. It cannot express
+#       "BYOK is degraded for ONE vendor only -> partial outage (orange),
+#        not major outage (red)".
+#   * Native integration does not dedup across PagerDuty incident retriggers
+#     within a 5-minute window. We want one Statuspage incident with an
+#     updated timeline, not three side-by-side incidents.
+#   * Native integration cannot enforce the "Statuspage publish failed" SEV2
+#     internal page-out described in STATUS-PAGE-SPEC.md §7.3.
+#
+# This receiver runs ALONGSIDE the native integration. The native integration
+# is the authoritative path for SEV1 (auto-publish, instant). The receiver
+# governs SEV2 / SEV3 / cross-service correlation / dedup.
+
+metadata:
+  name: corelink-statuspage-bridge
+  runtime: cloudflare-worker          # AWS Lambda is equivalent; same logic
+  region:  workers-global             # CF Workers run at the edge
+  language: typescript
+  source:  apps/workers/statuspage-bridge/ (TBD — separate WI)
+
+# ---------------------------------------------------------------------------
+# Inputs
+# ---------------------------------------------------------------------------
+
+inbound_webhook:
+  endpoint: https://api.corelink.dev/internal/webhooks/pagerduty
+  http_method: POST
+  expected_content_type: application/json
+  signature_header: X-PagerDuty-Signature
+  signature_algorithm: HMAC-SHA256
+  signing_secret_env: PAGERDUTY_WEBHOOK_SECRET   # docs/internal/secrets-checklist.md row TBD
+  # Reject any request whose signature does not verify. Log signature failures
+  # to security event taxonomy auth.webhook.signature_invalid (per
+  # docs/internal/auth-event-taxonomy.md).
+
+inbound_event_filter:
+  # We subscribe to PagerDuty's v3 webhook events.
+  accept_event_types:
+    - incident.triggered
+    - incident.acknowledged
+    - incident.resolved
+    - incident.priority_updated
+    - incident.status_update_published
+  ignore_event_types:
+    - incident.annotated         # ops chatter -> no public effect
+    - incident.responder.added   # internal -> no public effect
+    - incident.responder.replied # internal -> no public effect
+
+# ---------------------------------------------------------------------------
+# Service -> component mapping
+# (mirrors STATUS-PAGE-SPEC.md §7.1)
+# ---------------------------------------------------------------------------
+
+service_to_component:
+  corelink-api-prod:        { component_env: STATUSPAGE_COMPONENT_API }
+  corelink-cas-read-prod:   { component_env: STATUSPAGE_COMPONENT_CAS_READ }
+  corelink-cas-write-prod:  { component_env: STATUSPAGE_COMPONENT_CAS_WRITE }
+  corelink-byok-prod:       { component_env: STATUSPAGE_COMPONENT_BYOK }
+  corelink-audit-prod:      { component_env: STATUSPAGE_COMPONENT_AUDIT }
+  corelink-billing-prod:    { component_env: STATUSPAGE_COMPONENT_BILLING }
+  corelink-docs-prod:       { component_env: STATUSPAGE_COMPONENT_DOCS }
+  corelink-admin-prod:      { component_env: STATUSPAGE_COMPONENT_ADMIN }
+
+# ---------------------------------------------------------------------------
+# Severity mapping (mirrors STATUS-PAGE-SPEC.md §5)
+# ---------------------------------------------------------------------------
+
+severity_to_status:
+  critical: major_outage         # SEV1
+  error:    partial_outage       # SEV2
+  warning:  degraded_performance # SEV3
+  info:     operational          # auto-resolve
+
+severity_to_notify:
+  critical: { email: true,  sms: true,  rss: true, slack: true }
+  error:    { email: true,  sms: false, rss: true, slack: true }
+  warning:  { email: false, sms: false, rss: true, slack: false }
+  info:     { email: false, sms: false, rss: false, slack: false }
+
+approval_bypass:
+  # Hard rule from STATUS-PAGE-SPEC.md §5: SEV1 publishes WITHOUT human gate.
+  critical: true
+  error:    false   # SRE-OC must press confirm in PagerDuty mobile
+  warning:  false   # SRE-OC discretion
+
+# ---------------------------------------------------------------------------
+# Dedup logic
+# ---------------------------------------------------------------------------
+
+dedup:
+  storage: cloudflare_kv         # namespace: STATUSPAGE_BRIDGE_DEDUP
+  # Key: pagerduty_incident_id ; Value: { statuspage_incident_id, last_seen_ts }
+  # TTL: 24h (KV auto-eviction). A PagerDuty incident reopening after 24h
+  # gets a NEW Statuspage incident, which is intentional — long-tail recurring
+  # issues deserve their own retro.
+  ttl_seconds: 86400
+
+  rules:
+    - on: incident.triggered
+      if_existing_in_kv: update_existing_statuspage_incident
+      if_not_in_kv:      create_new_statuspage_incident
+    - on: incident.acknowledged
+      if_existing_in_kv: post_update_identified
+      if_not_in_kv:      create_new_statuspage_incident   # late join — still publish
+    - on: incident.resolved
+      if_existing_in_kv: post_update_resolved + close_after_15min_clean_signal
+      if_not_in_kv:      ignore   # nothing to resolve
+
+  # Cross-service correlation example:
+  # If BYOK has 4 vendors and only 1 is failing, PagerDuty fires one incident
+  # tagged service=corelink-byok-prod, custom_detail.vendor=aws_kms. The
+  # receiver inspects custom_detail.vendor; if vendors_failing < total_vendors,
+  # status = partial_outage regardless of PagerDuty priority.
+  cross_service_rules:
+    - service: corelink-byok-prod
+      input_field: custom_details.vendor_health
+      logic: |
+        if vendors_failing >= total_vendors:
+          status = major_outage
+        elif vendors_failing > 0:
+          status = partial_outage
+        else:
+          status = operational
+
+# ---------------------------------------------------------------------------
+# Statuspage API call shape
+# ---------------------------------------------------------------------------
+
+outbound_statuspage_api:
+  base_url: https://api.statuspage.io/v1
+  auth_header: "OAuth ${STATUSPAGE_API_KEY}"
+  endpoints:
+    create_incident:
+      method: POST
+      path:   /pages/${STATUSPAGE_PAGE_ID}/incidents
+      body:
+        incident:
+          name:           "<title from template lookup>"
+          status:         "investigating"
+          impact_override: "<major | minor | none>"   # derived from severity_to_status
+          body:           "<auto-publish template body>"
+          components:     { "<component_id>": "<status>" }
+          deliver_notifications: "<derived from severity_to_notify>"
+    update_incident:
+      method: PATCH
+      path:   /pages/${STATUSPAGE_PAGE_ID}/incidents/${incident_id}
+      body:
+        incident:
+          status: "<identified|monitoring|resolved>"
+          body:   "<update text>"
+          components: { "<component_id>": "<status>" }
+          deliver_notifications: true
+    set_component_status:
+      method: PATCH
+      path:   /pages/${STATUSPAGE_PAGE_ID}/components/${component_id}
+      body:
+        component:
+          status: "<operational|degraded_performance|partial_outage|major_outage>"
+
+template_lookup:
+  source: marketing/launch/CRISIS-COMMS-TEMPLATES.md
+  templates:
+    sev1_auto_publish: "§A.1"   # default title + body for SEV1
+    sev1_identified:   "§A.2"
+    sev1_resolved:     "§A.3"
+    sev2_default:      "§A.1"   # reuse SEV1 wording; SRE-OC refines
+    sev3_default:      "§A.1"
+
+# ---------------------------------------------------------------------------
+# Retry logic
+# ---------------------------------------------------------------------------
+
+retry:
+  # Statuspage API rate limit: 1 req/sec per page (per Atlassian docs).
+  # Exponential backoff per STATUS-PAGE-SPEC.md §7.2 config snippet.
+  max_attempts: 3
+  backoff_seconds: [5, 15, 45]
+  retryable_status_codes:
+    - 408   # Request timeout
+    - 429   # Rate limited
+    - 500
+    - 502
+    - 503
+    - 504
+  non_retryable_status_codes:
+    - 401   # Auth -> rotate STATUSPAGE_API_KEY; do NOT retry
+    - 403
+    - 404   # incident_id or component_id wrong -> page DevOps immediately
+    - 422   # validation -> fix template; do not retry blindly
+
+  on_exhaustion:
+    # Mirrors STATUS-PAGE-SPEC.md §7.3 failure mode.
+    action: emit_pagerduty_sev2
+    pagerduty_service: corelink-sre-internal-prod
+    title: "Statuspage publish failed"
+    body: |
+      The PagerDuty -> Statuspage bridge could not publish incident
+      <pagerduty_incident_id> for service <pagerduty_service> after 3 retries.
+      Last error: <last_response_status_code> <last_response_body_excerpt>.
+      Manual action required:
+        1. Try the PagerDuty mobile app "Publish to Statuspage" button.
+        2. If still failing, manually create at https://manage.statuspage.io.
+        3. If Statuspage UI itself is down: update corelink.dev/status static
+           fallback and tweet from @corelinkdev.
+
+# ---------------------------------------------------------------------------
+# Observability
+# ---------------------------------------------------------------------------
+
+observability:
+  metrics_namespace: corelink.statuspage_bridge
+  metrics:
+    - bridge.webhook.received           # counter, by event_type, service
+    - bridge.statuspage.publish.success # counter, by service, severity
+    - bridge.statuspage.publish.failure # counter, by service, severity, http_status
+    - bridge.statuspage.publish.latency # histogram, by service
+    - bridge.dedup.hit                  # counter
+    - bridge.dedup.miss                 # counter
+  logs:
+    redact_fields:
+      # Webhooks include PagerDuty incident bodies which CAN include customer-tenant IDs.
+      # Tenant IDs ARE PII surface per docs/internal/privacy-classification.md; redact.
+      - body.tenant_id
+      - body.user_email
+      - custom_details.customer_name
+  alerts:
+    - name: statuspage_publish_failure_rate
+      condition: bridge.statuspage.publish.failure > 0 over 5m
+      severity: SEV2
+      route: corelink-sre-internal-prod
+    - name: statuspage_bridge_down
+      condition: bridge.webhook.received == 0 over 30m during business hours
+      severity: SEV3
+      route: corelink-sre-internal-prod
+
+# ---------------------------------------------------------------------------
+# Failure injection (used by STATUSPAGE-PRE-LAUNCH-TEST.md)
+# ---------------------------------------------------------------------------
+
+failure_injection:
+  # When env var BRIDGE_FAIL_NEXT_REQUEST is set to a count N, the next N
+  # outbound Statuspage API calls return a synthetic 503. Lets the pre-launch
+  # test exercise the retry + SEV2-fallback path without taking real Statuspage
+  # down. The variable is cleared after the test.
+  enabled_in: [staging]
+  forbidden_in: [prod]
+
+# ---------------------------------------------------------------------------
+# Deployment / promotion
+# ---------------------------------------------------------------------------
+
+deploy:
+  staging:
+    domain: bridge-staging.corelink.dev
+    pagerduty_service: corelink-sre-internal-staging
+  prod:
+    domain: bridge.corelink.dev (internal)
+    pagerduty_service: corelink-sre-internal-prod
+  promotion_gate:
+    - STATUSPAGE-PRE-LAUNCH-TEST.md passes in staging end-to-end
+    - 14 consecutive days of zero unexplained dedup misses
+    - SRE Lead + DevOps sign-off in PR
