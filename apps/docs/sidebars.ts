@@ -58,6 +58,12 @@ const sidebars: SidebarsConfig = {
             },
           ],
         },
+        {
+          type: "category",
+          label: "REST API",
+          collapsed: true,
+          items: ["reference/api/openapi"],
+        },
       ],
     },
     {

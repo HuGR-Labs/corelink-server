@@ -1,0 +1,1429 @@
+openapi: 3.1.0
+info:
+  title: CoreLink Customer & Privacy REST API
+  version: v1
+  summary: REST surface for CoreLink customer onboarding, privacy (DSR / consent / DPA),
+    billing webhooks, admin operations and health.
+  description: |
+    Hand-authored OpenAPI 3.1 contract for the **non-REAPI** surface of CoreLink.
+    The high-volume CAS / AC / ByteStream / Capabilities surface is gRPC
+    (Remote Execution API v2) and documented separately under
+    `docs/reference/reapi/`.
+
+    Endpoint canonical paths are sourced from the implementing crates' doc-comments:
+    `corelink-signup`, `corelink-dpa-acceptance`, `corelink-dpa-versioning`,
+    `corelink-tier-selection`, `corelink-pat`, `corelink-dsr`,
+    `corelink-privacy-consent-ledger`, `corelink-admin-api`,
+    `corelink-enterprise-inquiry`, plus `apps/server::webhook` (Stripe).
+
+    **Stability:** `v1` — public, semver-compatible. Breaking changes require a
+    new major path prefix (`/v2/...`).
+  termsOfService: https://corelink.dev/legal/terms
+  contact:
+    name: CoreLink Support
+    email: test-tenant@example.com
+    url: https://corelink.dev/support
+  license:
+    name: Proprietary
+    url: https://corelink.dev/legal/terms
+servers:
+  - url: https://api.corelink.dev
+    description: Production
+  - url: https://api.staging.corelink.dev
+    description: Staging
+tags:
+  - name: signup
+    description: Customer onboarding orchestration (atomic tenant + DPA + first PAT
+      provisioning).
+  - name: dpa
+    description: Data Processing Addendum click-through acceptance and re-acceptance.
+  - name: tier
+    description: Subscription tier selection + Stripe Checkout handoff.
+  - name: pat
+    description: Personal Access Token CRUD (token material shown once).
+  - name: billing
+    description: Stripe billing webhook ingestion.
+  - name: privacy-dsr
+    description: GDPR / LGPD / CCPA Data Subject Request self-service.
+  - name: privacy-consent
+    description: Consent ledger — symmetric grant / revoke with HMAC proof.
+  - name: admin
+    description: Admin operations (dual-approval gated, MFA-fresh, audit-emit-BEFORE-mutate).
+  - name: enterprise
+    description: Enterprise sales inquiry intake.
+  - name: users
+    description: Current-user profile (Clerk-authenticated).
+  - name: data-categories
+    description: Reference list of canonical data-category enums (privacy_model §5.6).
+  - name: ops
+    description: Operational health and browser CSP report intake.
+security:
+  - BearerPAT: []
+  - ClerkSessionCookie: []
+paths:
+  /v1/signup:
+    post:
+      tags: [signup]
+      summary: Provision a new tenant from a verified Clerk identity.
+      operationId: signup
+      description: |
+        Idempotent signup orchestration. The orchestrator wraps tenant row +
+        DPA acceptance row + first PAT issuance in a single atomic D1
+        transaction (`INV-ONBOARD-ATOMIC-PROVISIONING`). Stripe customer
+        creation is a best-effort saga step — Stripe outage degrades to
+        `Deferred` with `billing_intent="deferred"`; the tenant is still
+        provisioned and signed up.
+
+        Request body intentionally has **no PAT field** (`CTRL-CRED-001`);
+        the first PAT is returned in the response (shown-once token).
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignupRequest"
+            examples:
+              minimal:
+                $ref: "#/components/examples/SignupRequestMinimal"
+      responses:
+        "201":
+          description: Tenant provisioned (atomic D1 commit succeeded).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SignupResponse"
+        "202":
+          description: Tenant provisioned, billing deferred (Stripe outage / chaos).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SignupResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "503":
+          description: Transient backend outage (Stripe or D1); safe to retry with
+            same `Idempotency-Key`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /v1/dpa/accept:
+    post:
+      tags: [dpa]
+      summary: Record click-through acceptance of the current DPA version.
+      operationId: dpaAccept
+      description: |
+        Records 6-field consent proof (`notice_text_hash`, `notice_version`,
+        `locale`, `wording_id`, `ui_capture_ts`, `submission_ts` server-set)
+        and emits an RS256-signed JWT receipt. Idempotent on
+        `(tenant_id, notice_text_hash, ui_capture_ts)`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DpaAcceptanceRequest"
+      responses:
+        "201":
+          description: Acceptance recorded; JWT receipt returned and emailed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DpaAcceptanceReceipt"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409":
+          description: Idempotent replay — original receipt returned unchanged.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DpaAcceptanceReceipt"
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/dpa/re-accept:
+    post:
+      tags: [dpa]
+      summary: Re-accept a major-bumped DPA notice within the 30-day grace window.
+      operationId: dpaReAccept
+      description: |
+        When a new DPA version is published the tenant enters a 30-day grace
+        window; `corelink-dpa-versioning` middleware flips writes to read-only
+        until the customer self-recovers via this endpoint.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DpaAcceptanceRequest"
+      responses:
+        "201":
+          description: Re-acceptance recorded; tenant returns to read-write.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DpaAcceptanceReceipt"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Grace window expired; tenant is now read-only-frozen and
+            requires manual unfreeze via admin.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/onboarding/tier-select:
+    post:
+      tags: [tier]
+      summary: Select a subscription tier and receive a Stripe Checkout session URL.
+      operationId: tierSelect
+      description: |
+        Enforces `INV-ONBOARD-DPA-FIRST` via a D1 lock — tier selection is
+        rejected until a DPA acceptance row exists for the tenant.
+        Returns a Stripe Checkout session URL; final activation happens
+        when the corresponding `checkout.session.completed` event lands
+        on `/v1/billing/stripe-webhook`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TierSelectRequest"
+      responses:
+        "200":
+          description: Checkout session created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TierSelectResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: DPA-first lock — caller must accept current DPA before
+            selecting a tier.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/pats:
+    post:
+      tags: [pat]
+      summary: Issue a new Personal Access Token.
+      operationId: patIssue
+      description: |
+        Returns the raw token material **once** (`shown_once`). The token is
+        hashed (BLAKE3-keyed) before storage; subsequent reads only ever
+        return the hash prefix and metadata.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatIssueRequest"
+      responses:
+        "201":
+          description: PAT issued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PatIssueResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    get:
+      tags: [pat]
+      summary: List the caller's Personal Access Tokens.
+      operationId: patList
+      responses:
+        "200":
+          description: PAT list (metadata only — no raw token material).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PatMetadata"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/pats/{pat_id}:
+    delete:
+      tags: [pat]
+      summary: Revoke a Personal Access Token by id.
+      operationId: patRevoke
+      parameters:
+        - $ref: "#/components/parameters/PatId"
+      responses:
+        "204":
+          description: Revoked. Subsequent uses MUST fail closed (`INV-PAT-REVOKE-PROPAGATION`).
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/billing/stripe-webhook:
+    post:
+      tags: [billing]
+      summary: Receive a Stripe webhook event (HMAC-SHA256 signature required).
+      operationId: stripeWebhook
+      description: |
+        Implemented at `apps/server::webhook::stripe_webhook_handler`.
+        Validates the `Stripe-Signature` header (5-minute replay window),
+        deduplicates on `event.id`, then dispatches to the subscription
+        handler. Unknown / out-of-scope event types are acknowledged with
+        200 OK (fire-and-forget contract).
+
+        **NOT secured by BearerPAT / Clerk** — see `StripeSignature` scheme.
+      security:
+        - StripeSignature: []
+      parameters:
+        - name: Stripe-Signature
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Stripe HMAC-SHA256 signature header (`t=<unix>,v1=<sig>`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StripeWebhookEnvelope"
+      responses:
+        "200":
+          description: Event accepted (including idempotent replays and
+            acknowledged unknown event types).
+          content:
+            text/plain:
+              schema:
+                type: string
+                examples: ["ok"]
+        "400":
+          description: Missing or invalid signature, or malformed event body.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "500":
+          description: Transient backend error; Stripe will retry.
+          content:
+            text/plain:
+              schema:
+                type: string
+  /v1/privacy/dsr/{action}:
+    post:
+      tags: [privacy-dsr]
+      summary: Submit a Data Subject Request (GDPR / LGPD / CCPA).
+      operationId: dsrSubmit
+      description: |
+        6 supported actions per `corelink-dsr::event::DsrRequestKind`:
+        `access`, `portability`, `rectification`, `erasure`, `restriction`,
+        `objection`. Destructive arms (`erasure`, `rectification`) require
+        a fresh MFA step-up token via `X-MFA-Step-Up-Token`.
+
+        Returns an RS256-signed JWT receipt (90-day validity) on
+        acceptance. SLA deadline is jurisdiction-bound (GDPR 30d / LGPD
+        15d / CCPA 45d).
+      parameters:
+        - name: action
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/DsrAction"
+        - name: X-MFA-Step-Up-Token
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Required when `action` is `erasure` or `rectification`
+            (per `corelink-dsr::mfa`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DsrRequest"
+      responses:
+        "202":
+          description: Request accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DsrAcceptedReceipt"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: MFA step-up required (destructive arm) or token expired.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/privacy/dsr/{request_id}/status:
+    get:
+      tags: [privacy-dsr]
+      summary: Poll the status of a previously submitted DSR.
+      operationId: dsrStatus
+      parameters:
+        - name: request_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            description: UUIDv7 of the DSR request.
+      responses:
+        "200":
+          description: Current status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DsrTicket"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/consent/{purpose}:
+    post:
+      tags: [privacy-consent]
+      summary: Grant consent for one canonical purpose.
+      operationId: consentGrant
+      description: |
+        12 canonical purposes per `privacy_model.md §5.6.1`. Records 6-field
+        proof (`notice_text_hash`, `notice_version`, `locale`, `wording_id`,
+        `ui_capture_ts`, `submission_ts`) and HMAC-SHA256 signs with
+        tenant-scoped key (HKDF `corelink/v1/consent-hmac`).
+      parameters:
+        - $ref: "#/components/parameters/ConsentPurpose"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConsentGrantRequest"
+      responses:
+        "201":
+          description: Grant recorded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsentGrantResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    delete:
+      tags: [privacy-consent]
+      summary: Revoke consent for one canonical purpose (symmetric proof).
+      operationId: consentRevoke
+      description: |
+        Per Lote 9.4 H-05 the revocation row carries the **same 6-field
+        proof shape** as the grant. Cascade to downstream processing
+        within 24h (`CTRL-PRIV-CONSENT-002`).
+      parameters:
+        - $ref: "#/components/parameters/ConsentPurpose"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConsentRevokeRequest"
+      responses:
+        "200":
+          description: Revocation recorded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsentRevokeResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/consent:
+    get:
+      tags: [privacy-consent]
+      summary: List all grants + revocations for the calling subject.
+      operationId: consentHistory
+      responses:
+        "200":
+          description: Consent history.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsentHistoryResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/consent/verify:
+    get:
+      tags: [privacy-consent]
+      summary: Public stateless verify of a grant signature.
+      operationId: consentVerifyGrant
+      security: []
+      parameters:
+        - name: signature
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: consent_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: tenant_short
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Verification result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsentVerifyResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/consent/revocation/verify:
+    get:
+      tags: [privacy-consent]
+      summary: Public stateless verify of a revocation signature.
+      operationId: consentVerifyRevocation
+      security: []
+      parameters:
+        - name: revocation_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Verification result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsentVerifyResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/admin/ops:
+    post:
+      tags: [admin]
+      summary: Submit a dual-approval-gated admin operation.
+      operationId: adminOpsSubmit
+      description: |
+        Implemented by `corelink-admin-api::middleware::AdminApiPipeline`.
+        Enforces `INV-ADMIN-DUAL-APPROVAL` (caller + distinct approver
+        with fresh MFA) and audit-emit-BEFORE-handler atomically.
+        Op taxonomy: `ConfigRollback`, `SecretRotationStart`,
+        `TenantTombstone`, plus runbook-specific variants.
+      security:
+        - BearerPAT: [admin]
+      parameters:
+        - $ref: "#/components/parameters/AdminOperationReason"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminOpRequest"
+      responses:
+        "202":
+          description: Op accepted; result available at
+            `GET /v1/admin/ops/{op_id}`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminOpAccepted"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: Approver collision (caller == approver) or duplicate nonce.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/admin/ops/{op_id}:
+    get:
+      tags: [admin]
+      summary: Inspect an admin op (status + audit envelope).
+      operationId: adminOpGet
+      security:
+        - BearerPAT: [admin]
+      parameters:
+        - $ref: "#/components/parameters/AdminOpId"
+      responses:
+        "200":
+          description: Op result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminOpResult"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/admin/ops/{op_id}/approve:
+    post:
+      tags: [admin]
+      summary: Approve a pending admin op (second-approver step).
+      operationId: adminOpApprove
+      security:
+        - BearerPAT: [admin]
+      parameters:
+        - $ref: "#/components/parameters/AdminOpId"
+        - $ref: "#/components/parameters/AdminOperationReason"
+      responses:
+        "200":
+          description: Approved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminOpResult"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: Approver collision or op already approved/rejected.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /v1/admin/ops/{op_id}/reject:
+    post:
+      tags: [admin]
+      summary: Reject a pending admin op.
+      operationId: adminOpReject
+      security:
+        - BearerPAT: [admin]
+      parameters:
+        - $ref: "#/components/parameters/AdminOpId"
+        - $ref: "#/components/parameters/AdminOperationReason"
+      responses:
+        "200":
+          description: Rejected.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminOpResult"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: Op already terminal (approved or rejected).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /v1/admin/audit/events:
+    get:
+      tags: [admin]
+      summary: Search the canonical audit chain (read-only).
+      operationId: adminAuditEvents
+      security:
+        - BearerPAT: [admin]
+      parameters:
+        - name: tenant_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: event_type
+          in: query
+          schema: { type: string, examples: ["corelink.signup.completed"] }
+        - name: since_ms
+          in: query
+          schema: { type: integer, format: int64, minimum: 0 }
+        - name: until_ms
+          in: query
+          schema: { type: integer, format: int64, minimum: 0 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+      responses:
+        "200":
+          description: Filtered audit-event page.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditEventPage"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/admin/tenants:
+    get:
+      tags: [admin]
+      summary: Search tenants (admin read).
+      operationId: adminTenantsList
+      security:
+        - BearerPAT: [admin]
+      parameters:
+        - name: region
+          in: query
+          schema: { $ref: "#/components/schemas/PrimaryRegion" }
+        - name: tier
+          in: query
+          schema: { $ref: "#/components/schemas/SubscriptionTier" }
+        - name: state
+          in: query
+          schema:
+            type: string
+            enum: [active, deferred_billing, read_only_frozen, tombstoned]
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+      responses:
+        "200":
+          description: Tenant page.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantPage"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/enterprise/inquire:
+    post:
+      tags: [enterprise]
+      summary: Submit an enterprise sales / BYOK inquiry.
+      operationId: enterpriseInquire
+      description: |
+        Implemented by `corelink-enterprise-inquiry`. Atomic outbox to
+        Slack channel + CRM lead; 24h auto-reply SLA.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EnterpriseInquiryRequest"
+      responses:
+        "202":
+          description: Inquiry queued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnterpriseInquiryResponse"
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/users/me:
+    get:
+      tags: [users]
+      summary: Current user profile.
+      operationId: usersMeGet
+      responses:
+        "200":
+          description: Profile.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    patch:
+      tags: [users]
+      summary: Update mutable profile fields.
+      operationId: usersMePatch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserProfilePatch"
+      responses:
+        "200":
+          description: Updated profile.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+  /v1/data-categories:
+    get:
+      tags: [data-categories]
+      summary: List canonical data-category enums (privacy_model §5.6).
+      operationId: dataCategoriesList
+      security: []
+      responses:
+        "200":
+          description: Canonical list.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DataCategory"
+  /api/health:
+    get:
+      tags: [ops]
+      summary: Liveness / readiness probe.
+      operationId: apiHealth
+      security: []
+      responses:
+        "200":
+          description: Healthy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /api/csp-report:
+    post:
+      tags: [ops]
+      summary: Browser Content-Security-Policy violation report intake.
+      operationId: cspReport
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/csp-report:
+            schema:
+              $ref: "#/components/schemas/CspReport"
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CspReport"
+      responses:
+        "204":
+          description: Recorded.
+components:
+  securitySchemes:
+    BearerPAT:
+      type: http
+      scheme: bearer
+      bearerFormat: PAT
+      description: |
+        `Authorization: Bearer <PAT>` where PAT is a 32-byte UUIDv7-derived
+        opaque token (BLAKE3-keyed hash in DB). Tier 1 of the canonical
+        auth ladder per `corelink-pat`. Scopes encoded in PAT row.
+    ClerkSessionCookie:
+      type: apiKey
+      in: cookie
+      name: __session
+      description: Clerk browser session cookie (alternative to PAT for the
+        web onboarding flow).
+    StripeSignature:
+      type: apiKey
+      in: header
+      name: Stripe-Signature
+      description: HMAC-SHA256 webhook signature; verified by
+        `apps/server::webhook::stripe_webhook_handler` against the
+        secret in `STRIPE_WEBHOOK_SECRET` env var with a 5-minute
+        replay window.
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+      description: Client-generated idempotency token. Same key replays the
+        original response (no duplicate provisioning).
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      schema:
+        type: string
+      description: PAT-CORRELATION-ID-001 propagation token.
+    PatId:
+      name: pat_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ConsentPurpose:
+      name: purpose
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/ConsentPurpose"
+    AdminOperationReason:
+      name: X-Admin-Operation-Reason
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 4
+        maxLength: 512
+      description: Free-text justification recorded in the audit envelope for
+        every admin mutation. Required for all `/v1/admin/*` write endpoints.
+    AdminOpId:
+      name: op_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    BadRequest:
+      description: Malformed request.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    Unauthorized:
+      description: Missing or invalid credentials.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    Forbidden:
+      description: Authenticated but not authorized for this resource.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    Conflict:
+      description: Idempotency or uniqueness conflict.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    Unprocessable:
+      description: Schema-valid but semantically invalid payload.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    RateLimited:
+      description: Rate-limit exceeded.
+      headers:
+        Retry-After:
+          schema: { type: integer, minimum: 1 }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    InternalError:
+      description: Server error. Safe to retry idempotent operations.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+  examples:
+    SignupRequestMinimal:
+      summary: Minimal valid signup request.
+      value:
+        clerk_event_id: "evt_2NmPsl2HxqGq7BhM4VqW8Y3JxAa"
+        email_hash: "8a5b6f0e3e2c1d4b9a7c0e5d2b8a9f4e3c6d1a0b4e7c2f1d9a6b3e0c5d8a4b7e"
+        locale: "en-US"
+        idempotency_key: "idem-2026-05-14-1f3c"
+        correlation_id: "evt_2NmPsl2HxqGq7BhM4VqW8Y3JxAa"
+  schemas:
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Stable machine-readable code from the canonical
+                error taxonomy (`error_taxonomy.md`).
+              examples: ["COR_ABUSE_DETECTED", "COR_DPA_REQUIRED",
+                "COR_MFA_STEP_UP_REQUIRED", "COR_RATE_LIMITED"]
+            message:
+              type: string
+              description: Human-readable explanation (locale-neutral; do
+                NOT echo back PII).
+            request_id:
+              type: string
+              format: uuid
+              description: Server-assigned request id for support
+                correlation.
+            details:
+              type: object
+              additionalProperties: true
+    SignupRequest:
+      type: object
+      required: [clerk_event_id, email_hash, locale, idempotency_key, correlation_id]
+      properties:
+        clerk_event_id:
+          type: string
+          description: Clerk webhook event id (idempotency anchor at the
+            identity provider).
+        email_hash:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+          description: SHA-256 hex of normalized email. **Raw email is NEVER
+            transmitted to the server** (CTRL-PRIV-001).
+        locale:
+          $ref: "#/components/schemas/Bcp47Locale"
+        idempotency_key:
+          type: string
+        correlation_id:
+          type: string
+    SignupResponse:
+      type: object
+      required: [signup_id, tenant_id, outcome, first_pat]
+      properties:
+        signup_id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        outcome:
+          type: string
+          enum: [Provisioned, Deferred, Duplicate, Rejected]
+        billing_intent:
+          type: string
+          enum: [Linked, PendingBillingLink, Deferred]
+        first_pat:
+          $ref: "#/components/schemas/PatShownOnce"
+        primary_region:
+          $ref: "#/components/schemas/PrimaryRegion"
+    ConsentProofPayload:
+      type: object
+      required: [notice_text_hash, notice_version, locale, wording_id, ui_capture_ts]
+      properties:
+        notice_text_hash:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+          description: SHA-256 of the notice text the user saw.
+        notice_version:
+          type: string
+          examples: ["dpa.v3.2.0", "consent.analytics.v1.4.0"]
+        locale:
+          $ref: "#/components/schemas/Bcp47Locale"
+        wording_id:
+          type: string
+          format: uuid
+          description: UUIDv7 deterministically derived from `notice_version`.
+        ui_capture_ts:
+          type: integer
+          format: int64
+          description: Client-side `Date.now()` at click.
+        submission_ts:
+          type: integer
+          format: int64
+          description: Server-assigned (overwrites any client value).
+          readOnly: true
+    DpaAcceptanceRequest:
+      type: object
+      required: [proof]
+      properties:
+        proof:
+          $ref: "#/components/schemas/ConsentProofPayload"
+    DpaAcceptanceReceipt:
+      type: object
+      required: [jwt_receipt, jti, accepted_at_ms]
+      properties:
+        jwt_receipt:
+          type: string
+          description: RS256-signed compact JWT (header.payload.sig).
+        jti:
+          type: string
+          description: JWT id; primary key into `dpa_acceptances`.
+        accepted_at_ms:
+          type: integer
+          format: int64
+    SubscriptionTier:
+      type: string
+      enum: [free, team, business, enterprise]
+    TierSelectRequest:
+      type: object
+      required: [tier]
+      properties:
+        tier: { $ref: "#/components/schemas/SubscriptionTier" }
+        success_url:
+          type: string
+          format: uri
+          description: Stripe Checkout success redirect.
+        cancel_url:
+          type: string
+          format: uri
+    TierSelectResponse:
+      type: object
+      required: [checkout_session_url, checkout_session_id, tier]
+      properties:
+        checkout_session_url: { type: string, format: uri }
+        checkout_session_id: { type: string }
+        tier: { $ref: "#/components/schemas/SubscriptionTier" }
+    PatIssueRequest:
+      type: object
+      required: [label]
+      properties:
+        label:
+          type: string
+          minLength: 1
+          maxLength: 64
+          examples: ["ci-runner-build-cache"]
+        scopes:
+          type: array
+          items:
+            type: string
+            enum: [cas.read, cas.write, ac.read, ac.write, admin]
+          default: [cas.read, cas.write, ac.read, ac.write]
+        expires_at_ms:
+          type: integer
+          format: int64
+          nullable: true
+    PatIssueResponse:
+      allOf:
+        - $ref: "#/components/schemas/PatMetadata"
+        - type: object
+          required: [shown_once_token]
+          properties:
+            shown_once_token:
+              type: string
+              description: Raw PAT material — **shown exactly once**. Stored
+                BLAKE3-keyed; never retrievable again.
+    PatMetadata:
+      type: object
+      required: [pat_id, label, scopes, created_at_ms, prefix]
+      properties:
+        pat_id: { type: string, format: uuid }
+        label: { type: string }
+        scopes:
+          type: array
+          items: { type: string }
+        created_at_ms: { type: integer, format: int64 }
+        last_used_at_ms: { type: integer, format: int64, nullable: true }
+        expires_at_ms: { type: integer, format: int64, nullable: true }
+        revoked_at_ms: { type: integer, format: int64, nullable: true }
+        prefix:
+          type: string
+          description: First 8 chars of the raw token (display only).
+    PatShownOnce:
+      allOf:
+        - $ref: "#/components/schemas/PatMetadata"
+        - type: object
+          required: [shown_once_token]
+          properties:
+            shown_once_token: { type: string }
+    StripeWebhookEnvelope:
+      type: object
+      description: The Stripe-shaped event envelope; only fields the
+        handler reads are typed here.
+      required: [id, type]
+      properties:
+        id: { type: string, examples: ["evt_1NXYZabcDEFghi"] }
+        type:
+          type: string
+          examples: ["checkout.session.completed",
+            "customer.subscription.created",
+            "customer.subscription.updated",
+            "customer.subscription.deleted",
+            "invoice.payment_succeeded",
+            "invoice.payment_failed"]
+        created: { type: integer, format: int64 }
+        livemode: { type: boolean }
+        data:
+          type: object
+          additionalProperties: true
+        api_version: { type: string }
+    DsrAction:
+      type: string
+      enum: [access, portability, rectification, erasure, restriction, objection]
+    DsrJurisdiction:
+      type: string
+      enum: [Lgpd, Gdpr, Ccpa]
+    DsrStatus:
+      type: string
+      enum: [Pending, InProgress, Completed, Rejected]
+    DsrRequest:
+      type: object
+      required: [data_subject_id, jurisdiction]
+      properties:
+        data_subject_id:
+          type: string
+          description: Pseudonymized subject id (per `corelink-privacy-pseudonymize`).
+        jurisdiction: { $ref: "#/components/schemas/DsrJurisdiction" }
+        request_payload_hash:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+          description: SHA-256 of the rectification / portability payload (when
+            applicable). Used as part of the idempotency 4-tuple.
+        notes:
+          type: string
+          maxLength: 4096
+    DsrAcceptedReceipt:
+      type: object
+      required: [request_id, status, sla_deadline_ms, jwt_receipt]
+      properties:
+        request_id: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/DsrStatus" }
+        sla_deadline_ms: { type: integer, format: int64 }
+        jwt_receipt:
+          type: string
+          description: RS256-signed JWT (90-day validity per
+            `RECEIPT_EXPIRY_DAYS`).
+    DsrTicket:
+      type: object
+      required: [request_id, status, sla_deadline_ms]
+      properties:
+        request_id: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/DsrStatus" }
+        sla_deadline_ms: { type: integer, format: int64 }
+        rejected_reason:
+          type: string
+          nullable: true
+        receipt:
+          $ref: "#/components/schemas/DsrAcceptedReceipt"
+    ConsentPurpose:
+      type: string
+      description: 12 canonical purposes per `privacy_model.md §5.6.1`.
+      enum:
+        - service_provisioning
+        - billing_invoicing
+        - support_communication
+        - product_analytics
+        - security_telemetry
+        - marketing_email
+        - marketing_inapp
+        - third_party_research
+        - personalization
+        - regulatory_reporting
+        - law_enforcement_response
+        - subprocessor_share
+    ConsentGrantRequest:
+      type: object
+      required: [proof]
+      properties:
+        proof: { $ref: "#/components/schemas/ConsentProofPayload" }
+    ConsentRevokeRequest:
+      type: object
+      required: [proof]
+      properties:
+        proof: { $ref: "#/components/schemas/ConsentProofPayload" }
+    ConsentGrantResponse:
+      type: object
+      required: [consent_id, signature, granted_at_ms]
+      properties:
+        consent_id: { type: string, format: uuid }
+        signature:
+          type: string
+          description: HMAC-SHA256 hex; verifiable via `/v1/consent/verify`.
+        granted_at_ms: { type: integer, format: int64 }
+    ConsentRevokeResponse:
+      type: object
+      required: [revocation_id, signature, revoked_at_ms]
+      properties:
+        revocation_id: { type: string, format: uuid }
+        signature: { type: string }
+        revoked_at_ms: { type: integer, format: int64 }
+    ConsentVerifyResponse:
+      type: object
+      required: [valid]
+      properties:
+        valid: { type: boolean }
+        purpose: { $ref: "#/components/schemas/ConsentPurpose" }
+        notice_text_hash:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+        notice_version: { type: string }
+        signed_at_ms: { type: integer, format: int64 }
+    ConsentHistoryEntry:
+      type: object
+      required: [purpose, state, at_ms]
+      properties:
+        purpose: { $ref: "#/components/schemas/ConsentPurpose" }
+        state:
+          type: string
+          enum: [granted, revoked]
+        at_ms: { type: integer, format: int64 }
+        consent_id: { type: string, format: uuid, nullable: true }
+        revocation_id: { type: string, format: uuid, nullable: true }
+        notice_version: { type: string }
+    ConsentHistoryResponse:
+      type: object
+      required: [active, history]
+      properties:
+        active:
+          type: array
+          items: { $ref: "#/components/schemas/ConsentHistoryEntry" }
+        history:
+          type: array
+          items: { $ref: "#/components/schemas/ConsentHistoryEntry" }
+    AdminOpType:
+      type: string
+      enum:
+        - ConfigRollback
+        - SecretRotationStart
+        - TenantTombstone
+        - GlobalCircuitOverride
+        - RegionMigration
+        - PatRevokeAll
+        - AbuseAppeal
+    AdminOpRequest:
+      type: object
+      required: [op_type, op_payload, approver_user_id, approver_signature, nonce]
+      properties:
+        op_type: { $ref: "#/components/schemas/AdminOpType" }
+        op_payload:
+          type: object
+          additionalProperties: true
+        approver_user_id: { type: string, format: uuid }
+        approver_signature:
+          type: string
+          description: HMAC-SHA256 over `(payload || nonce || ts_ms)` with
+            the admin signing key.
+        nonce:
+          type: string
+          description: 16 random bytes hex-encoded (replay protection).
+    AdminOpAccepted:
+      type: object
+      required: [op_id, status]
+      properties:
+        op_id: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [pending_approval, approved, executed]
+    AdminOpResult:
+      type: object
+      required: [op_id, op_type, status]
+      properties:
+        op_id: { type: string, format: uuid }
+        op_type: { $ref: "#/components/schemas/AdminOpType" }
+        status:
+          type: string
+          enum: [pending_approval, approved, executed, rejected, failed]
+        caller_user_id: { type: string, format: uuid }
+        approver_user_id: { type: string, format: uuid }
+        executed_at_ms: { type: integer, format: int64, nullable: true }
+        result:
+          type: object
+          additionalProperties: true
+    AuditEvent:
+      type: object
+      required: [event_id, event_type, occurred_at_ms]
+      properties:
+        event_id: { type: string, format: uuid }
+        event_type:
+          type: string
+          examples: ["corelink.signup.completed",
+            "corelink.dsr.request_received",
+            "corelink.consent.granted",
+            "corelink.admin.op.approved"]
+        tenant_id: { type: string, format: uuid, nullable: true }
+        occurred_at_ms: { type: integer, format: int64 }
+        correlation_id: { type: string, nullable: true }
+        payload:
+          type: object
+          additionalProperties: true
+    AuditEventPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/AuditEvent" }
+        next_cursor:
+          type: string
+          nullable: true
+    TenantSummary:
+      type: object
+      required: [tenant_id, region, tier, state, created_at_ms]
+      properties:
+        tenant_id: { type: string, format: uuid }
+        region: { $ref: "#/components/schemas/PrimaryRegion" }
+        tier: { $ref: "#/components/schemas/SubscriptionTier" }
+        state:
+          type: string
+          enum: [active, deferred_billing, read_only_frozen, tombstoned]
+        created_at_ms: { type: integer, format: int64 }
+        primary_contact_email_hash:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+          description: SHA-256 hex; raw email NOT exposed.
+    TenantPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/TenantSummary" }
+        next_cursor:
+          type: string
+          nullable: true
+    EnterpriseInquiryRequest:
+      type: object
+      required: [name, work_email, company, message]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 128 }
+        work_email:
+          type: string
+          format: email
+          examples: ["test-tenant@example.com"]
+        company: { type: string, minLength: 1, maxLength: 128 }
+        message: { type: string, minLength: 10, maxLength: 4096 }
+        expected_egress_gb_month: { type: integer, minimum: 0, nullable: true }
+        byok_provider:
+          type: string
+          enum: [aws, gcp, azure, vault]
+          nullable: true
+    EnterpriseInquiryResponse:
+      type: object
+      required: [inquiry_id, received_at_ms]
+      properties:
+        inquiry_id: { type: string, format: uuid }
+        received_at_ms: { type: integer, format: int64 }
+        auto_reply_sla_hours:
+          type: integer
+          default: 24
+    UserProfile:
+      type: object
+      required: [user_id, email_hash, locale, created_at_ms]
+      properties:
+        user_id: { type: string, format: uuid }
+        email_hash:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+        locale: { $ref: "#/components/schemas/Bcp47Locale" }
+        display_name: { type: string, nullable: true }
+        created_at_ms: { type: integer, format: int64 }
+        active_tenants:
+          type: array
+          items: { type: string, format: uuid }
+    UserProfilePatch:
+      type: object
+      properties:
+        locale: { $ref: "#/components/schemas/Bcp47Locale" }
+        display_name: { type: string, nullable: true, maxLength: 128 }
+    DataCategory:
+      type: object
+      required: [id, name, legal_basis]
+      properties:
+        id:
+          type: string
+          examples: ["account_identity", "build_cache_artifact", "usage_telemetry"]
+        name:
+          type: string
+        legal_basis:
+          type: string
+          enum: [contract, consent, legitimate_interest, legal_obligation]
+        retention_days:
+          type: integer
+          minimum: 0
+        description:
+          type: string
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [SERVING, NOT_SERVING]
+        version: { type: string, examples: ["0.1.0"] }
+        commit: { type: string, examples: ["445e3cc"] }
+    CspReport:
+      type: object
+      description: Schema accepts the legacy `csp-report` envelope and the
+        new Reporting API `csp-violation` payload.
+      additionalProperties: true
+      properties:
+        csp-report:
+          type: object
+          additionalProperties: true
+    Bcp47Locale:
+      type: string
+      examples: ["en-US", "pt-BR", "fr-FR"]
+      description: BCP-47 locale (Lote 10.16 canonical 3-locale set
+        currently — en-US, pt-BR, fr-FR).
+    PrimaryRegion:
+      type: string
+      enum: [Enam, Sam, Eu]
+      description: 3-region canonical map per `corelink-region` / Lote
+        10.16 locale→region binding.

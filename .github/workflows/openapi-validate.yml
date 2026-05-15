@@ -1,0 +1,120 @@
+name: openapi validate (3.1 spec + breaking-change detection)
+
+# Quality gate for `openapi/corelink-v1.yaml` and its generated JSON sibling.
+# Steps:
+#   1. Redocly lint (0 errors, warnings ok).
+#   2. OpenAPI 3.1 meta-schema validation via openapi-spec-validator.
+#   3. Drift check: `scripts/openapi_sync.py --check` ensures the JSON
+#      sibling is kept in sync with the YAML.
+#   4. Breaking-change detection vs the base branch (PR only) via
+#      `oasdiff` — reports breaking changes as a job warning; fail
+#      only on PRs that toggle a `breaking-api-ok` label.
+
+on:
+  pull_request:
+    paths:
+      - "openapi/**"
+      - "crates/corelink-openapi/**"
+      - "scripts/openapi_sync.py"
+      - ".github/workflows/openapi-validate.yml"
+  push:
+    branches: [main]
+    paths:
+      - "openapi/**"
+      - "crates/corelink-openapi/**"
+      - "scripts/openapi_sync.py"
+      - ".github/workflows/openapi-validate.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: openapi-validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-validate:
+    name: lint + meta-schema + JSON sync
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Node (for Redocly CLI)
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "20"
+
+      - name: Install Redocly CLI
+        run: npm install --global @redocly/cli@1.25.11
+
+      - name: Set up Python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyyaml openapi-spec-validator
+
+      - name: Redocly lint (0 errors required)
+        run: redocly lint openapi/corelink-v1.yaml --format=stylish
+
+      - name: OpenAPI 3.1 meta-schema validation + JSON sync check
+        run: python3 scripts/openapi_sync.py --check
+
+  breaking-change-detection:
+    name: breaking-change detection (vs base branch)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Materialize base branch spec
+        id: base
+        run: |
+          set -e
+          BASE_REF="${{ github.event.pull_request.base.ref }}"
+          git fetch origin "$BASE_REF" --depth=1
+          mkdir -p /tmp/openapi-base
+          if git show "origin/${BASE_REF}:openapi/corelink-v1.yaml" \
+              > /tmp/openapi-base/corelink-v1.yaml 2>/dev/null; then
+            echo "has_base=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_base=false" >> "$GITHUB_OUTPUT"
+            echo "info: no spec on base branch — first introduction; skipping diff"
+          fi
+
+      - name: Install oasdiff
+        if: steps.base.outputs.has_base == 'true'
+        run: |
+          go install github.com/oasdiff/oasdiff@v1.10.27
+          echo "$HOME/go/bin" >> "$GITHUB_PATH"
+
+      - name: Run oasdiff breaking-change scan
+        if: steps.base.outputs.has_base == 'true'
+        id: diff
+        run: |
+          set +e
+          oasdiff breaking \
+              /tmp/openapi-base/corelink-v1.yaml \
+              openapi/corelink-v1.yaml \
+              --fail-on ERR \
+              | tee /tmp/oasdiff-report.txt
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Allow breaking change only with `breaking-api-ok` label
+        if: steps.base.outputs.has_base == 'true' && steps.diff.outputs.code != '0'
+        run: |
+          if echo '${{ toJson(github.event.pull_request.labels) }}' | grep -q '"breaking-api-ok"'; then
+            echo "::warning::breaking API change accepted (label: breaking-api-ok)"
+            exit 0
+          fi
+          echo "::error::breaking change detected — apply 'breaking-api-ok' label after sign-off"
+          exit 1
