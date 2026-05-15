@@ -45,6 +45,13 @@ worker = { version = "0.8", features = ["d1", "http"] }
 # Shared bytes type — used by R2Backend trait surface.
 bytes = { workspace = true }
 
+# Constant-time equality for tenant identifier comparisons across the
+# real bindings: D1's bind-time tenant_id check, KV's TenantPrefix::eq
+# and scoped_key prefix probe, R2's prefix-derivation path, DO's instance
+# routing tenant check. CTRL-PRIV-001 defense-in-depth — prevents
+# timing-side-channel leakage on cross-tenant probes.
+subtle = { workspace = true }
+
 # Trait surfaces we implement. `corelink-worker` is the canonical owner
 # of R2Backend / KvBackend / CounterDoBackend; we depend on it for
 # `default-features = false`-style compatibility (no native-only feature
@@ -56,12 +63,6 @@ thiserror = { workspace = true }
 
 # wasm bindgen futures for async bridging in the worker handler.
 wasm-bindgen-futures = { workspace = true }
-
-# Constant-time equality for tenant identifier comparisons across the
-# real bindings: D1's bind-time tenant_id check, KV's TenantPrefix::eq
-# and scoped_key prefix probe, R2's prefix-derivation path. Defense-in-
-# depth against timing-side-channel leakage on cross-tenant probes.
-subtle = { workspace = true }
 
 # Serde for D1 row deserialisation in `CfD1DatabaseReal::first` (the
 # wasm32 production path delegates to `worker::D1PreparedStatement::first`

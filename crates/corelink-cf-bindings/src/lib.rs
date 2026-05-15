@@ -83,6 +83,16 @@ pub mod d1_real;
 /// pattern (DO follow-up).
 pub mod kv_real;
 
+/// Real CF Durable Object binding with tenant-scoped naming
+/// (`tenant:<id>:<purpose>`) + audit fence (fail-CLOSED) on every stub
+/// fetch. Dual-target: wasm32 wires `worker::ObjectNamespace` /
+/// `worker::Stub`; native build provides a stub that returns
+/// `DoError::Backend("WasmOnly: …")` and a `FakeDoRouter` injection
+/// point so tests can exercise the full round-trip without the wasm32
+/// toolchain. See module docs and the pattern doc
+/// `specs/_audits/2026-05-15-cf-binding-real-pattern.md`.
+pub mod do_real;
+
 #[cfg(target_arch = "wasm32")]
 pub use cf_d1::CfD1DatabaseAdapter;
 #[cfg(target_arch = "wasm32")]
@@ -96,3 +106,4 @@ pub use d1_real::{CfD1DatabaseReal, D1Error, D1Op, TenantId, TenantScopedQuery};
 pub use r2_real::{CfR2BucketReal, R2Op, TenantPrefix, TenantScopedKey};
 
 pub use kv_real::CfKvNamespaceReal;
+pub use do_real::{CfDurableObjectReal, DoError, DoOp, DoTenantPrefix, TenantScopedName};

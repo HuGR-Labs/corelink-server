@@ -168,14 +168,18 @@ Each follow-up should land in its own worktree (`wt/r-prep-cf-{d1,kv,do}-real`) 
 
 Tracks which CF runtime surfaces have a real-impl binding shipped against the template above. Each row ticks once the full quality gate (native + wasm32 build + clippy + test + spec-validator) has been satisfied and the binding is wired into `crate::lib`.
 
-| Binding | Module                                          | Wave   | wasm32 build | native stub | clippy `-D warnings` | tests | Status      |
-|---------|-------------------------------------------------|--------|--------------|-------------|----------------------|-------|-------------|
-| R2      | `crates/corelink-cf-bindings/src/r2_real.rs`    | 13     | green        | green       | green                | 18    | **shipped** |
+| Binding | Module                                          | Wave   | wasm32 build | native stub | clippy `-D warnings` | tests           | Status      |
+|---------|-------------------------------------------------|--------|--------------|-------------|----------------------|-----------------|-------------|
+| R2      | `crates/corelink-cf-bindings/src/r2_real.rs`    | 13     | green        | green       | green                | 18              | **shipped** |
 | D1      | `crates/corelink-cf-bindings/src/d1_real.rs`    | 14     | green        | green       | green                | 18 (+13 inline) | **shipped** |
-| KV      | `crates/corelink-cf-bindings/src/kv_real.rs`    | 15 (pending) | —      | —           | —                    | —     | pending     |
-| DO      | `crates/corelink-cf-bindings/src/do_real.rs`    | 16 (pending) | —      | —           | —                    | —     | pending     |
+| KV      | `crates/corelink-cf-bindings/src/kv_real.rs`    | 14     | green        | green       | green                | 23 (+16 inline) | **shipped** |
+| DO      | `crates/corelink-cf-bindings/src/do_real.rs`    | 14     | green        | green       | green                | 25 (+5 inline)  | **shipped** |
 
 **D1 row notes (wave 14):** `CfD1DatabaseReal` wraps `worker::D1Database` with 5 core ops (`prepare`, `bind`, `first`, `all`, `run`). Tenant-prefix enforcement is two-layered: (1) `TenantScopedQuery` rejects SQL missing `WHERE tenant_id = ?` (SELECT/UPDATE/DELETE) or missing `tenant_id` in the column list (INSERT); (2) bind-time `subtle::ConstantTimeEq` check forces the first positional parameter to match the anchored `TenantId`. Audit fail-CLOSED on `run` mutations (pre-emission before dispatch + post-emission when `D1ResultMeta::changes > 0`).
+
+**KV row notes (wave 14):** `CfKvNamespaceReal` wraps `worker::kv::KvStore` with 6 ops (`get` / `get_bytes` / `put` (via `put_with_ttl`) / `put_bytes` / `list` / `delete`). Tenant prefix uses `:` separator (KV-idiomatic, distinct from R2's `/`); leading-prefix probe uses `subtle::ConstantTimeEq`. Audit fail-CLOSED on every mutation (`put`/`delete`/`list`).
+
+**DO row notes (wave 14):** `CfDurableObjectReal` wraps `worker::ObjectNamespace` / `worker::Stub`. Tenant-scoped naming `tenant:<id>:<purpose>` via `TenantScopedName` newtype; constant-time tenant-id cmp; audit fail-CLOSED on every `stub.fetch_*` and `stub.get_*`; `FakeDoRouter` injection lets native tests exercise the full round-trip without wasm32 toolchain.
 
 ## 6. Verification
 
