@@ -90,7 +90,7 @@ Format key:
 | TSC | CTRL ID | Evidence type | Artifact location | Cadence | Status | Last update |
 |---|---|---|---|---|---|---|
 | CC4.1 | CTRL-COMP-001 (continuous compliance) | audit_logs | Drata continuous monitoring + `specs/_audits/templates/byok-quarterly-review.md` + adversarial summaries | DAILY | I | f18acdc |
-| CC4.2 | process control (deficiency comms via GAP register) | audit_logs (`corelink.compliance.review_completed`) | GAP-XX log (this rollup + SOC2-GAP-ANALYSIS) · weekly compliance review (TBD) | WEEKLY | P (GAP-08 — cadence) | f18acdc |
+| CC4.2 | process control (deficiency comms via GAP register) | audit_logs (`corelink.compliance.review_completed`) | GAP-XX log (this rollup + SOC2-GAP-ANALYSIS) · **weekly compliance digest LANDED 2026-05-15** (`scripts/compliance-weekly-digest.py` + `.github/workflows/compliance-weekly.yml` Mon 09:00 UTC + `specs/_runbooks/RB-COMPLIANCE-WEEKLY-REVIEW.md` + `specs/_compliance/weekly-digests/`) | WEEKLY | **I (GAP-08 closed 2026-05-15)** | wt/r-prep-compliance-weekly |
 
 ### 2.5 CC5 Control Activities
 
@@ -265,7 +265,7 @@ For each Gap or Partial row, the following table assigns owner / effort / target
 | GAP-05 | CC1.4 | Compliance | S | T+2m | Owner attestation as solo-founder; advisor CVs collected at onboarding |
 | GAP-06 | CC2.3 + P-BREACH | Privacy Officer | M | T+1m | Internal tabletop in lieu of lighthouse-customer dry-run; reschedule lighthouse drill T+2m |
 | GAP-07 | CC3.3 | Security Lead | S | T+2m | STRIDE Spoofing/Repudiation rows in `matrix-stride-ctrl.csv` cover principal path; add fraud-specific addendum T+2m |
-| GAP-08 | CC4.2 | Compliance | XS | D+30 | Drata dashboard alerts substitute for formal meeting until cadence set |
+| GAP-08 | CC4.2 | Compliance | XS | **Implemented (2026-05-15)** | Automated weekly digest (`scripts/compliance-weekly-digest.py`) + Monday 09:00 UTC cron (`.github/workflows/compliance-weekly.yml`) + Compliance Lead triage runbook (`specs/_runbooks/RB-COMPLIANCE-WEEKLY-REVIEW.md`) + escalation triggers (8) + PagerDuty + PR-comment pipeline. Branch: `wt/r-prep-compliance-weekly`. |
 | GAP-09 | CC6.4 + CC9.2 | Compliance | S | T+3m | Last-known-good sub-processor reports referenced; refresh job kicked off T+3m |
 | GAP-10 | CC6.6 | Security Lead | M | D+60 | Current Cloudflare-managed ruleset baseline; OWASP CRS 4.0 import deferred 30d for FP tuning |
 | GAP-11 | CC6.8 | SRE Lead | L | T+6m | Immutable Cloudflare Workers + Cosign verification = compensating control documented em ADR |
