@@ -282,6 +282,96 @@ export function getFixtureResponse(req: MockRequest): MockResponse {
     return { status: 200, body: op };
   }
 
+  // ----- customer audit-chain visualization (wt/r-prep-audit-chain-viz) -----
+  if (path === "/v1/customer/audit/chain/head" && method === "GET") {
+    // Deterministic head digest so the Playwright assertion can lock it.
+    return {
+      status: 200,
+      body: {
+        head_digest: "ab".repeat(32),
+        total_events: 3,
+        last_updated: "2026-05-14T12:00:00Z",
+        algorithm: "blake3",
+      },
+    };
+  }
+  if (path === "/v1/customer/audit/events" && method === "GET") {
+    // Each leaf carries a 32-byte hex digest; tests use a single-leaf
+    // trivial proof (siblings=[], expected_root==leaf_hash) so the WASM
+    // verifier isn't required to assert the "valid" path.
+    return {
+      status: 200,
+      body: {
+        rows: [
+          {
+            event_id: "cevt_001",
+            ts: "2026-05-14T11:00:00Z",
+            event_type: "cas.put",
+            audit_chain_seq: 0,
+            leaf_digest: "aa".repeat(32),
+          },
+          {
+            event_id: "cevt_002",
+            ts: "2026-05-14T11:15:00Z",
+            event_type: "cas.get",
+            audit_chain_seq: 1,
+            leaf_digest: "bb".repeat(32),
+          },
+          {
+            event_id: "cevt_003",
+            ts: "2026-05-14T12:00:00Z",
+            event_type: "ac.lookup",
+            audit_chain_seq: 2,
+            leaf_digest: "cc".repeat(32),
+          },
+        ],
+        next_cursor: null,
+      },
+    };
+  }
+  if (
+    path.startsWith("/v1/customer/audit/events/") &&
+    path.endsWith("/proof") &&
+    method === "GET"
+  ) {
+    const parts = path.split("/");
+    const eventId = parts[parts.length - 2] ?? "cevt_001";
+    // Trivial single-leaf proof: leaf_hash == expected_root, no siblings.
+    // verify-proof.ts handles this without WASM (root == leaf for 1-leaf tree).
+    const leaf =
+      eventId === "cevt_001"
+        ? "aa".repeat(32)
+        : eventId === "cevt_002"
+          ? "bb".repeat(32)
+          : "cc".repeat(32);
+    const seq =
+      eventId === "cevt_001" ? 0 : eventId === "cevt_002" ? 1 : 2;
+    return {
+      status: 200,
+      body: {
+        event_id: eventId,
+        leaf_hash: leaf,
+        siblings: [],
+        expected_root: leaf,
+        algorithm: "blake3",
+        chain_seq: seq,
+      },
+    };
+  }
+  if (path === "/v1/customer/audit/chain/history" && method === "GET") {
+    // Strictly non-decreasing — no anomalies expected by default.
+    return {
+      status: 200,
+      body: {
+        snapshots: [
+          { ts: "2026-05-13T00:00:00Z", head_digest: "11".repeat(32), total_events: 1 },
+          { ts: "2026-05-13T12:00:00Z", head_digest: "22".repeat(32), total_events: 2 },
+          { ts: "2026-05-14T12:00:00Z", head_digest: "ab".repeat(32), total_events: 3 },
+        ],
+      },
+    };
+  }
+
   // ----- DSR (admin-facing list / approve) -----
   if (path === "/v1/admin/dsr/requests" && method === "GET") {
     return { status: 200, body: { items: state.dsrRequests } };
