@@ -2243,6 +2243,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-tenant-offboarding"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "corelink-tenant-path"
 version = "0.1.0"
 dependencies = [
