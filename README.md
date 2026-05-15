@@ -2,6 +2,8 @@
 
 Shared content-addressable cache pra developers. Implementação SOTA de REAPI (Remote Execution API) em Rust, deployada em Cloudflare Containers.
 
+> **New engineer?** Start with [`docs/internal/ENGINEERING-ONBOARDING.md`](./docs/internal/ENGINEERING-ONBOARDING.md) — Day-0 through Day-30 path, 5 domain tracks, curated first-PR backlog, glossary cheatsheet, buddy protocol.
+
 ## Stack
 
 - **Linguagem:** Rust
