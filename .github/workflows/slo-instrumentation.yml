@@ -1,0 +1,50 @@
+name: SLO Instrumentation Gate (audit 2026-05-14)
+
+# Enforces SLO catalog ↔ Sli enum binding per
+# `specs/_audits/2026-05-14-slo-instrumentation-gaps.md`. Every SLO
+# declared in `specs/03_architecture/slo_catalog.md §4.x` MUST either
+# - bind to an `Sli::*::slug()` in
+#   `crates/corelink-slo/src/definition.rs`, OR
+# - be allowlisted as deferred in
+#   `scripts/validate_slo_instrumentation.py::DEFERRED_SLOS` (with a
+#   one-line owning-sprint / WI rationale).
+#
+# Action SHA-pinning discipline (cargo-audit.yml pattern):
+#   actions/checkout      @11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+#   actions/setup-python  @0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+
+on:
+  pull_request:
+    paths:
+      - 'specs/03_architecture/slo_catalog.md'
+      - 'specs/_audits/2026-05-14-slo-instrumentation-gaps.md'
+      - 'crates/corelink-slo/src/definition.rs'
+      - 'scripts/validate_slo_instrumentation.py'
+      - '.github/workflows/slo-instrumentation.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'specs/03_architecture/slo_catalog.md'
+      - 'specs/_audits/2026-05-14-slo-instrumentation-gaps.md'
+      - 'crates/corelink-slo/src/definition.rs'
+      - 'scripts/validate_slo_instrumentation.py'
+      - '.github/workflows/slo-instrumentation.yml'
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  slo-instrumentation-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: '3.11'
+
+      - name: Validate SLO ↔ Sli binding (audit 2026-05-14 gate)
+        run: python3 scripts/validate_slo_instrumentation.py --verbose
