@@ -105,6 +105,19 @@ jobs:
           - digest_verification
           - gc_mark_started_at
           - multipart_determinism
+          # DEBT-005 batch 5 closure 2026-05-15 — 5 more specs (28/47 cumulative
+          # — drops critical_no_tla 16 → 6 INV-granularity; tla_verified
+          # 59 → 71). Closes INV-AUDIT-NO-RAW-PII + INV-NO-PII-IN-LOGS +
+          # INV-NO-BODY-IN-LOGS + INV-AUTH-PAT-PLAINTEXT-NEVER-PERSISTED +
+          # INV-AUTH-WEBAUTHN-UV-REQUIRED-ADMIN +
+          # INV-AUTH-WEBAUTHN-ATTESTATION-VERIFIED + INV-CAS-IMMUTABILITY +
+          # INV-CAS-IDEMPOTENCY + INV-CAS-CORRECTNESS +
+          # INV-AUTH-SCHEMA-RLS-DEFAULT-ON + INV-AUTH-PII-ENCRYPTED.
+          - audit_no_raw_pii
+          - auth_pat_plaintext_never_persisted
+          - auth_webauthn_uv_admin
+          - cas_immutability
+          - auth_schema_rls_default_on
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
