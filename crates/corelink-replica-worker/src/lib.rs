@@ -102,6 +102,7 @@ pub mod audit;
 pub mod cardinality;
 pub mod error;
 pub mod hot_blob;
+pub mod metrics;
 pub mod region;
 pub mod replication;
 
@@ -116,5 +117,10 @@ pub use audit::{
 pub use cardinality::{LIVE_METRIC_LABEL_CARDINALITY, NO_TENANT_ID_LABEL};
 pub use error::ReplicaError;
 pub use hot_blob::{AggregationEntry, HotBlob, ReplicaStatus};
+pub use metrics::{
+    BatchOutcome, BatchOutcomeObservation, FailingReplicationLagSli, InMemoryReplicationLagSli,
+    LagObservation, ReplicationDomain, ReplicationLagSli, METRIC_REPLICATION_BATCH_TOTAL,
+    METRIC_REPLICATION_LAG_SECONDS, REPLICATION_LAG_BUCKETS_SECONDS,
+};
 pub use region::{Region, ResidencyGraph, TenantTier, REPLICATION_LAG_P99_SLO_SECS};
 pub use replication::{FailingReplicationWorker, InMemoryReplicationWorker, ReplicationWorker};
