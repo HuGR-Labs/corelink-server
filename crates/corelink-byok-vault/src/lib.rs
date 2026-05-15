@@ -105,7 +105,13 @@ use corelink_byok::{BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsPro
 
 #[cfg(all(feature = "real", not(target_arch = "wasm32")))]
 pub mod auth;
-#[cfg(feature = "real")]
+// `key_name` regex-validation is only consumed by the native HTTPS
+// client (`real::VaultRealProvider`); the `VaultWasmStub` returns an
+// explicit error from every call and never touches key-name parsing.
+// Gating to `(feature = "real", not(target_arch = "wasm32"))` avoids
+// the dead-code warning that surfaces on wasm32 when only the stub is
+// wired in. R-prep BYOK unblock 2026-05-15.
+#[cfg(all(feature = "real", not(target_arch = "wasm32")))]
 mod key_name;
 #[cfg(feature = "real")]
 pub mod real;

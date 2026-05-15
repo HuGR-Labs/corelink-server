@@ -3,7 +3,7 @@ id: "AUDIT-2026-05-15-BYOK-REAL-PROVIDER-PATTERN"
 type: "audit"
 doc_status: "ACTIVE"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-05-15"
 updated: "2026-05-15"
 owner: "Gustavo Schneiter"
@@ -45,6 +45,7 @@ tags: ["byok", "fips", "ga", "pattern", "canonical-reference", "aws-kms", "gcp-k
 | 7 | Constant-time fingerprint compare on AAD (mock-mode tamper detection) | yes (`subtle::ConstantTimeEq`) | yes (`subtle::ConstantTimeEq`) | yes (`subtle::ConstantTimeEq`; production path delegates to AES-GCM tag) | yes (`subtle::ConstantTimeEq` on validated key-name path; Vault server-side enforces AAD via `context`) |
 | 8 | Native-only `aws-sdk-kms` / equivalent gated by `[target.'cfg(not(target_arch = "wasm32"))'.dependencies]` | yes | yes (`reqwest`/`tokio`/`jsonwebtoken`/`base64`/`regex` all native-cfg-gated) | yes (`reqwest`/`regex`/`tokio` target-gated) | yes (`reqwest` + `tokio` + `regex` native-only) |
 | 9 | `*WasmStub` linked on `target_arch = "wasm32"` with explicit `BYOKError::Provider("... unsupported on wasm32 ...")` | yes (`AwsKmsWasmStub`) | yes (`GcpKmsWasmStub`) | yes (`AzureKeyVaultWasmStub`) | yes (`VaultWasmStub`) |
+| 13 | wasm32 build green (`cargo build --target wasm32-unknown-unknown`) | yes (R-prep BYOK-unblock 2026-05-15) | yes (R-prep BYOK-unblock 2026-05-15) | yes (R-prep BYOK-unblock 2026-05-15) | yes (R-prep BYOK-unblock 2026-05-15) |
 | 10 | ≥ 8 unit tests + 1 prop test (deterministic AAD canonicalization roundtrip) | yes (14 + 1 prop) | yes (15 + 1 prop in `tests/real_unit.rs`) | yes (28 + 1 prop on JCS determinism) | yes (22 + 1 prop, AAD-as-`context`) |
 | 11 | Optional `#[ignore]` live test against `*_TEST_KEY_ARN` env (CI nightly) | yes (`e2e_byok_aws_kms.rs`) | yes | yes | yes |
 | 12 | Server feature flag `byok-<provider>-real` wires the real impl behind the `KmsProvider` trait object | yes (`byok-aws-real`) | yes (`byok-gcp-real` → `corelink-byok-gcp/production`) | yes (`byok-azure-real` → `corelink-byok-azure/real`) | yes (`byok-vault-real` → `corelink-byok-vault/real`) |
@@ -121,13 +122,43 @@ The pattern is:
    downstream code can name `AwsKmsRealProvider` on both targets — on
    wasm32 the call surfaces the explicit error above.
 
-**Known limitation (2026-05-15):** the underlying `corelink-byok` crate
-itself does not yet build for `wasm32-unknown-unknown` (uses `getrandom`
-without the `js` feature, `tokio` "full"). The wasm32 stub source code
-in this crate is *target-shaped* so once `corelink-byok` is made wasm32-
-compatible (a separate, larger PR), no further changes to the AWS
-adapter are needed. Tracked under the broader CF-Worker BYOK proxy work
-item.
+**Resolved 2026-05-15 (R-prep BYOK-unblock, branch
+`wt/r-prep-byok-wasm32-unblock`):** the underlying `corelink-byok` crate
+now builds for `wasm32-unknown-unknown`. Two surgical changes were
+required:
+
+1. `getrandom = { version = "0.2", features = ["js"] }` declared under
+   `[target.'cfg(target_arch = "wasm32")'.dependencies]` — without the
+   `js` feature, `getrandom 0.2` emits `compile_error!("the
+   wasm*-unknown-unknown targets are not supported by default ...")`.
+   On native the workspace-pinned `getrandom = "0.2"` is unchanged
+   (OS-level CSPRNG via `getrandom(2)` / `getentropy(3)` /
+   `BCryptGenRandom`).
+2. `tokio` split across `cfg(not(target_arch = "wasm32"))` (workspace
+   `full` features for the server / native paths) and
+   `cfg(target_arch = "wasm32")` (`default-features = false, features
+   = ["sync"]`). The lib only touches `tokio::sync::Mutex`, so the
+   wasm32 sync-only build is functionally complete; this excludes
+   `mio` + `rt-multi-thread` + `net` from the wasm32 dep graph.
+
+Verified by:
+
+```
+cargo build -p corelink-byok      --target wasm32-unknown-unknown    # green
+cargo build -p corelink-byok-aws  --target wasm32-unknown-unknown    # green
+cargo build -p corelink-byok-gcp  --target wasm32-unknown-unknown    # green
+cargo build -p corelink-byok-azure --target wasm32-unknown-unknown   # green
+cargo build -p corelink-byok-vault --target wasm32-unknown-unknown   # green (default features)
+cargo build -p corelink-byok-vault --target wasm32-unknown-unknown --features real # green
+```
+
+Each provider also gained a `tests/wasm32_stub.rs` integration test
+(gated `cfg(target_arch = "wasm32")`) that exercises the explicit-
+error contract: `*WasmStub::new(...)` constructible + `KmsProvider`
+trait satisfied + `wrap_dek(...).await` returns
+`BYOKError::Provider` whose message contains `"unsupported on wasm32"`.
+The async future is driven by `futures::executor::block_on` to avoid
+pulling tokio's runtime on wasm32.
 
 ---
 
@@ -195,11 +226,12 @@ Each provider gets a parallel R-prep work item. The diff from AWS KMS:
       pulls in `corelink-byok-gcp/production`).
 - [x] Add ≥ 14 unit + 1 prop test (`tests/real_unit.rs`).
 
-**Known wasm32 caveat (unchanged from §4):** `corelink-byok` itself does
-not build for `wasm32-unknown-unknown` due to `getrandom` lacking the
-`js` feature. The GCP wasm32 stub source is target-shaped exactly like
-the AWS adapter — once `corelink-byok` is made wasm32-compatible (a
-separate, larger PR), no further changes to the GCP adapter are needed.
+**Resolved 2026-05-15 (R-prep BYOK-unblock, branch
+`wt/r-prep-byok-wasm32-unblock`):** see §4 — `corelink-byok` now builds
+for `wasm32-unknown-unknown` (`getrandom` `js` feature + tokio sync-only
+gate). Confirmed via `cargo build -p corelink-byok-gcp --target
+wasm32-unknown-unknown` — green. Stub smoke test landed at
+`crates/corelink-byok-gcp/tests/wasm32_stub.rs`.
 
 ### 6.2 Azure Key Vault (`crates/corelink-byok-azure`) — LANDED 2026-05-15
 
@@ -223,9 +255,10 @@ separate, larger PR), no further changes to the GCP adapter are needed.
 - [x] `AzureKeyVaultWasmStub` linked on `target_arch = "wasm32"`; returns
       `BYOKError::Provider("Azure Key Vault real provider unsupported on
       wasm32 ...")` from every method. The wasm32 stub source code is
-      target-shaped per §4; the wasm32 toolchain blocker on
-      `corelink-byok` (getrandom + tokio "full") is shared with the AWS
-      stub.
+      target-shaped per §4. **Wasm32 toolchain blocker on `corelink-byok`
+      resolved 2026-05-15 (R-prep BYOK-unblock)** — `cargo build -p
+      corelink-byok-azure --target wasm32-unknown-unknown` is green;
+      stub smoke test landed at `crates/corelink-byok-azure/tests/wasm32_stub.rs`.
 - [x] Server feature flag `byok-azure-real` (`apps/server/Cargo.toml`)
       pulls in `corelink-byok-azure` with the `real` (alias for
       `production`) feature on.
@@ -253,6 +286,14 @@ separate, larger PR), no further changes to the GCP adapter are needed.
       `byok-vault-real` server feature flag — landed wave 14.
 - [x] Four auth modes (token / AppRole / JWT / Kubernetes) plumbed via
       `auth::VaultAuth`; tokens never appear in error messages.
+- [x] **Wasm32 toolchain blocker on `corelink-byok` resolved 2026-05-15
+      (R-prep BYOK-unblock).** `cargo build -p corelink-byok-vault
+      --target wasm32-unknown-unknown` is green (default features); the
+      `feature = "real"` variant is also green after gating `mod
+      key_name` to `cfg(all(feature = "real", not(target_arch =
+      "wasm32")))` (the wasm32 stub never touches regex-validated key
+      names). Stub smoke test landed at
+      `crates/corelink-byok-vault/tests/wasm32_stub.rs`.
 
 ---
 

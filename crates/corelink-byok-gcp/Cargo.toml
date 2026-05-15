@@ -59,8 +59,24 @@ base64 = { workspace = true, optional = true }
 regex = { version = "1", optional = true }
 
 [dev-dependencies]
+# Shared dev deps — `futures::executor::block_on` drives the wasm32
+# stub future (no full async runtime needed; wasm32-compatible).
+futures = { workspace = true }
+serde_json = { workspace = true }
+
+# Native-only dev deps — tokio "full" + proptest (threads) + wiremock
+# (hyper-based HTTP server) do not link on `wasm32-unknown-unknown`.
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tokio = { workspace = true }
 tokio-test = { workspace = true }
 proptest = { workspace = true }
 wiremock = "0.6"
-serde_json = { workspace = true }
+
+# wasm32 dev deps — `getrandom` with `js` feature to match the lib pin
+# so any transitive CSPRNG consumer links via WebCrypto.
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+
+[[test]]
+name = "wasm32_stub"
+path = "tests/wasm32_stub.rs"

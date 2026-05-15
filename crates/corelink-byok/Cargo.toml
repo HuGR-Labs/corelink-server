@@ -32,13 +32,11 @@ thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
-# Async
-tokio = { workspace = true }
+# Async (trait — wasm32-safe, header-only proc-macro)
 async-trait = { workspace = true }
 
 # Crypto — AES-256-GCM body encryption
 aes-gcm = { workspace = true }
-getrandom = { workspace = true }
 
 # Crypto — memory safety
 zeroize = { workspace = true }
@@ -49,6 +47,38 @@ tracing = { workspace = true }
 
 # LRU cache for DEK cache
 lru = { workspace = true }
+
+# ── Native (non-wasm32) deps ──────────────────────────────────────────────
+# Workspace `tokio = { features = ["full"] }` pulls in `mio` + `net` +
+# `rt-multi-thread` which do not compile for `wasm32-unknown-unknown`.
+# The corelink-byok lib only uses `tokio::sync::Mutex` (in `dek_cache.rs`)
+# and `#[tokio::test]` in unit tests — both are sync-feature only, but the
+# workspace pin is a single shared spec. Gating the workspace pin to native
+# preserves `tokio = "full"` behavior on all server / native paths while
+# letting wasm32 link a minimal `sync`-only tokio (below).
+#
+# Workspace `getrandom` is on this native block too — native uses OS-level
+# CSPRNG (getrandom(2) / getentropy(3) / BCryptGenRandom) with no `js`
+# feature; wasm32 routes through WebCrypto via the `js` feature (below).
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { workspace = true }
+getrandom = { workspace = true }
+
+# ── wasm32 enablement (R-prep BYOK unblock 2026-05-15) ────────────────────
+# `getrandom` 0.2 fails to compile on `wasm32-unknown-unknown` unless the
+# `js` feature is enabled (routes CSPRNG calls through WebCrypto via
+# `js-sys`). `tokio` is reduced to the `sync` feature only — the lib
+# touches `tokio::sync::Mutex` and nothing else from tokio at runtime
+# (no `net` / `rt-multi-thread` / `time`). This keeps mio + the
+# native-only async runtime out of the wasm32 dep graph.
+#
+# Unblocks downstream BYOK provider crates (corelink-byok-aws,
+# corelink-byok-gcp, corelink-byok-azure, corelink-byok-vault) which all
+# link `*WasmStub` types on wasm32 (see specs/_audits/
+# 2026-05-15-byok-real-provider-pattern.md §4).
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+tokio = { version = "1", default-features = false, features = ["sync"] }
 
 [dev-dependencies]
 proptest = { workspace = true }

@@ -50,7 +50,6 @@ serde_jcs = { workspace = true }
 subtle = { workspace = true }
 zeroize = { workspace = true }
 aes-gcm = "0.10"
-getrandom = "0.2"
 base64 = { workspace = true }
 tracing = { workspace = true }
 
@@ -58,14 +57,38 @@ tracing = { workspace = true }
 # because reqwest + regex pull in tokio/hyper/OS-level TLS and do not build
 # for `wasm32-unknown-unknown`. The wasm32 stub (see `src/real.rs`) returns
 # `BYOKError::Provider("... unsupported on wasm32 ...")` from every method.
+#
+# `getrandom` 0.2 is here on native (OS-level CSPRNG via syscalls). The
+# wasm32 target re-declares it with the `js` feature so `getrandom` routes
+# CSPRNG calls through WebCrypto when the crate is built into a Worker
+# wasm bundle (see `[target.'cfg(target_arch = "wasm32")'.dependencies]`).
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { workspace = true }
 reqwest = { workspace = true, optional = true }
 regex = { version = "1", optional = true }
+getrandom = "0.2"
+
+# wasm32 enablement — see `crates/corelink-byok/Cargo.toml` for the same
+# pattern + rationale. `getrandom`'s `js` feature is mandatory or builds
+# fail with `compile_error!("the wasm*-unknown-unknown targets are not
+# supported by default ...")`. R-prep BYOK unblock 2026-05-15.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
 
 [dev-dependencies]
+# Shared dev deps — `futures::executor::block_on` drives the wasm32
+# stub future (wasm32-compatible, no full async runtime needed).
+futures = { workspace = true }
+
+# Native-only dev deps — tokio "full" + proptest (threads) + wiremock
+# (hyper) + reqwest do not link on `wasm32-unknown-unknown`.
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tokio = { workspace = true }
 tokio-test = { workspace = true }
 proptest = { workspace = true }
 wiremock = "0.6"
 reqwest = { workspace = true }
+
+[[test]]
+name = "wasm32_stub"
+path = "tests/wasm32_stub.rs"
