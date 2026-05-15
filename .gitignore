@@ -61,3 +61,4 @@ apps/admin-ui/tsconfig.tsbuildinfo
 
 # Pentest evidence pack build output (regen via scripts/build-pentest-evidence-pack.sh)
 /dist/
+.claude/worktrees/
