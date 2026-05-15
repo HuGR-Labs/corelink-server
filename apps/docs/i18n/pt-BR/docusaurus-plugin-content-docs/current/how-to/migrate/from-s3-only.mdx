@@ -1,0 +1,379 @@
+---
+id: migrate-from-s3-only
+title: "Migrate from S3-only artifact storage"
+slug: "/how-to/migrate/from-s3-only"
+sidebar_label: "From S3-only artifact storage"
+description: "Move from a plain S3 bucket holding build artifacts, ML datasets, or release binaries to CoreLink's content-addressable CAS — with BLAKE3 integrity, a dual-write parallel-run, and a verified rollback."
+tags: [migration, s3, cas, artifacts, ml, how-to]
+last_updated: "2026-05-15"
+---
+
+<!-- i18n:MT (pt-BR) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
+>
+> Canonical EN source: `docs/how-to/migrate/from-s3-only.mdx`
+
+
+# Migrate from S3-only artifact storage to CoreLink
+
+**Source systems covered:** any plain object store used as
+"a place to put bytes by name" — AWS S3, GCS, Azure Blob, R2,
+MinIO, on-prem Ceph. The defining trait is that **keys are
+human-chosen paths**, not content digests.
+
+**Target:** CoreLink CAS, where the **BLAKE3 digest of the bytes is
+the storage key**. The same file at two different S3 paths
+deduplicates to one stored blob in CoreLink.
+
+**Why migrate:**
+- **Integrity by construction** — every read is BLAKE3-verified
+  client-side (CTRL-CAS-002). No silent corruption.
+- **Automatic dedup** — same bytes, one blob, regardless of how many
+  pipelines wrote it.
+- **Audit trail** — every PUT and GET is recorded with actor, tenant,
+  timestamp.
+- **No more "did someone overwrite that file?"** — CAS objects are
+  immutable (INV-CAS-IMMUTABILITY).
+
+---
+
+## Phase 0 — Pre-flight (2–4 h)
+
+### Inventory checklist
+
+- [ ] **Count objects + total size.**
+  ```bash
+  aws s3 ls --summarize --recursive --human-readable s3://your-bucket/ | tail -2
+  ```
+  Bring this to the pricing page to estimate stored-GiB-month delta.
+
+- [ ] **Identify the access pattern.** Three common cases:
+  - **Write-once, read-many** (release binaries, ML training datasets, golden images) — *ideal CAS fit*.
+  - **Append-only with versioned keys** (e.g. `artifacts/v1.2.3/...`) — *good fit; the version in the key is redundant once you have content digests*.
+  - **Mutable keys** (e.g. `latest.tar.gz` is overwritten on each release) — *don't migrate the mutable key directly; migrate the immutable artifact and add a digest-pointer file*. See [the `latest` pointer pattern](#the-latest-pointer-pattern) below.
+
+- [ ] **List producers + consumers.** Every script that does
+  `aws s3 cp` / `aws s3 sync` against this bucket. They all need a
+  CoreLink PAT and a one-line swap.
+
+- [ ] **Decide on retention.** S3 lifecycle rules drop objects after
+  N days; CoreLink retention is set per-tenant. Default for Team tier
+  is 90 days unaccessed; Lighthouse and Enterprise allow custom
+  retention policies.
+
+- [ ] **Region match.** If your bucket is `us-east-1`, pin your
+  CoreLink tenant to `enam` to avoid cross-region egress fees.
+
+### The `latest` pointer pattern
+
+If you rely on a stable key like `s3://bucket/latest.tar.gz`,
+**don't try to make CoreLink behave like a mutable bucket**. Instead:
+
+1. Store the immutable artifact in CoreLink and capture its digest.
+2. Keep a tiny pointer file (≤ 100 bytes) in S3, or in a config
+   service, that records `latest_digest: blake3:...`.
+3. Consumers read the pointer, then `corelink get <digest>`.
+
+This is the same pattern Docker uses for tags vs layers, and it's how
+Bazel's action cache works. Mutability moves out of the storage layer
+and into a tiny metadata layer where it's easy to reason about.
+
+### Cost-comparison table
+
+| Line item | S3-only | CoreLink (Team) |
+| --- | --- | --- |
+| Storage ($/GiB-month) | $0.023 (Standard) | $0.05 |
+| PUT ($/1k requests) | $0.005 | $0 (included) |
+| GET ($/1k requests) | $0.0004 | $0 (included) |
+| Cross-AZ egress ($/GiB) | $0.02 | $0 (included same-region) |
+| Internet egress ($/GiB) | $0.09 | $0.05 |
+| Integrity (BLAKE3 client-verify) | manual; you write the code | **default-on** |
+| Audit (who got what when) | CloudTrail (extra cost, separate UI) | **built-in, 90d** |
+| Dedup | no (every PUT writes new bytes) | **automatic** |
+| **Total for 1 TiB stored, 5 TiB/mo PUT+GET** | ≈ **$180/mo + CloudTrail** | ≈ **$50/mo** |
+
+The dedup effect is the biggest swing — most build-artifact and
+ML-dataset workloads see **2–5× effective storage reduction**.
+
+### Rollback plan (lock it now)
+
+```bash
+# 1. Take a manifest snapshot of every key you intend to migrate.
+aws s3 ls --recursive s3://your-bucket/ > /tmp/s3-manifest-$(date +%F).txt
+wc -l /tmp/s3-manifest-*.txt
+
+# 2. Tag the producer/consumer code commits.
+git tag pre-corelink-migration
+git push origin pre-corelink-migration
+
+# 3. Verify revert works.
+git checkout pre-corelink-migration -- scripts/upload.sh
+bash scripts/upload.sh --dry-run   # should still talk to S3
+git checkout main -- scripts/upload.sh
+```
+
+---
+
+## Phase 1 — Configure CoreLink + initial backfill (1–8 h depending on size)
+
+### Step 1 — Backfill existing artifacts into CoreLink
+
+This is a **one-shot batch upload**. CoreLink is content-addressed and
+idempotent, so safe to re-run on failure.
+
+```bash
+#!/usr/bin/env bash
+# scripts/s3-to-corelink-backfill.sh
+set -euo pipefail
+: "${CORELINK_PAT:?must be set}"
+: "${CORELINK_TENANT_ID:?must be set}"
+
+# Stream every key, fetch to /tmp, put to CoreLink, record digest mapping.
+aws s3 ls --recursive s3://your-bucket/ | awk '{print $4}' | while read -r KEY; do
+  [ -z "$KEY" ] && continue
+  TMP=$(mktemp)
+  aws s3 cp "s3://your-bucket/$KEY" "$TMP" --quiet
+  DIGEST=$(corelink put "$TMP" --output json | jq -r .digest)
+  echo "$KEY,$DIGEST" >> /tmp/s3-to-corelink-mapping.csv
+  rm -f "$TMP"
+done
+
+echo "Backfill complete. $(wc -l < /tmp/s3-to-corelink-mapping.csv) objects mapped."
+```
+
+The CSV `s3-to-corelink-mapping.csv` is **load-bearing** — it's how
+consumers translate "I wanted `releases/1.2.3/myapp.tar.gz`" into
+"`corelink get blake3:...`". Commit it to your config repo or store
+it in a database.
+
+For buckets over ~100 GiB, parallelize:
+
+```bash
+aws s3 ls --recursive s3://your-bucket/ | awk '{print $4}' | \
+  xargs -P 16 -I {} bash -c 'TMP=$(mktemp); aws s3 cp "s3://your-bucket/{}" "$TMP" --quiet && \
+    DIGEST=$(corelink put "$TMP" --output json | jq -r .digest) && \
+    echo "{}",$DIGEST; rm -f "$TMP"' >> /tmp/s3-to-corelink-mapping.csv
+```
+
+### Step 2 — Dual-write from producers
+
+Modify your upload scripts to write to **both** S3 and CoreLink. The
+existing S3 path stays primary; CoreLink is secondary.
+
+```bash
+# scripts/upload-artifact.sh — dual-write wrapper
+set -euo pipefail
+ARTIFACT="$1"
+S3_KEY="$2"
+
+# Primary: S3 (unchanged).
+aws s3 cp "$ARTIFACT" "s3://your-bucket/$S3_KEY"
+
+# Secondary: CoreLink. Captures the digest for later lookup.
+DIGEST=$(corelink put "$ARTIFACT" --output json | jq -r .digest)
+echo "$S3_KEY,$DIGEST" >> /var/log/s3-to-corelink-mapping.csv
+```
+
+### Step 3 — Verify integrity (the load-bearing check)
+
+For a random sample of 100 backfilled objects, confirm the bytes
+round-trip identically.
+
+```bash
+#!/usr/bin/env bash
+# scripts/verify-integrity.sh
+set -euo pipefail
+shuf -n 100 /tmp/s3-to-corelink-mapping.csv | while IFS=, read -r KEY DIGEST; do
+  S3_HASH=$(aws s3 cp "s3://your-bucket/$KEY" - | b3sum --no-names)
+  COR_HASH=$(corelink get "$DIGEST" | b3sum --no-names)
+  if [ "$S3_HASH" != "$COR_HASH" ]; then
+    echo "MISMATCH on $KEY: s3=$S3_HASH corelink=$COR_HASH" >&2
+    exit 1
+  fi
+done
+echo "100/100 integrity check PASS"
+```
+
+**Stop if even one mismatch.** A mismatch means either your backfill
+script had a bug or there's a layer-7 issue; file P1 to
+`support@corelink.dev` before going further.
+
+---
+
+## Phase 2 — Parallel-run (5–7 days)
+
+Both systems serve real traffic. Dual-writes keep them in sync. Reads
+still go to S3.
+
+### What to monitor daily
+
+| Metric | Where | Healthy range |
+| --- | --- | --- |
+| Dual-write success rate | your upload-script logs | ≥ 99.9% (both writes OK) |
+| Backfill drift | new S3 keys not yet in mapping CSV | 0 (or auto-mirrored within 5 min) |
+| Integrity sample | run `verify-integrity.sh` on 100 random objects/day | 100/100 |
+| CoreLink latency p99 | `corelink bench --read` | ≤ 300 ms |
+| Audit trail completeness | `corelink ls --tenant ... --limit 100` | matches your producers' write counts |
+
+### Daily 5-min check
+
+```bash
+#!/usr/bin/env bash
+echo "=== S3 → CoreLink migration health — $(date -u +%FT%TZ) ==="
+
+# Dual-write health: count CSV rows from last 24h vs S3 PUT count from CloudTrail.
+yesterday_csv=$(grep "$(date -u -d yesterday +%F)" /var/log/s3-to-corelink-mapping.csv | wc -l)
+echo "Dual-writes recorded (last 24h): $yesterday_csv"
+
+# CoreLink integrity
+bash scripts/verify-integrity.sh
+
+# CoreLink doctor
+corelink doctor --json | jq '.checks[] | select(.status != "PASS")'
+```
+
+### Red flags — pause the migration
+
+- Any integrity mismatch → **stop**, P1 to `support@corelink.dev`.
+- Dual-write success rate < 99% → debug the upload script before
+  cutover; you don't want consumers reading a digest that doesn't
+  exist yet.
+- Mapping CSV drift > 5 min behind S3 PUTs → consumers may race past
+  the digest; tighten the sync.
+
+---
+
+## Phase 3 — Cutover (30 min)
+
+### Step 1 — Flip consumers from S3 reads to CoreLink reads
+
+Pick the lowest-traffic window. Update every consumer script:
+
+```diff
+- aws s3 cp "s3://your-bucket/releases/1.2.3/myapp.tar.gz" /tmp/myapp.tar.gz
++ DIGEST=$(grep "releases/1.2.3/myapp.tar.gz" /etc/corelink/mapping.csv | cut -d, -f2)
++ corelink get "$DIGEST" --output /tmp/myapp.tar.gz
+```
+
+For consumers running on hosts that already had `corelink doctor`
+green, this is a one-line swap. For consumers that don't have the CLI
+yet, install it first (5 min on Linux per the
+[quickstart](../../tutorials/quickstart-10min.mdx)).
+
+### Step 2 — Keep dual-writes for 14 more days
+
+Producers continue writing to both systems. This is your rollback
+window. **Do not** disable S3 writes yet.
+
+### Step 3 — Watch the first day
+
+```bash
+# CoreLink reads should match what S3 reads were doing yesterday.
+corelink ls --tenant "$CORELINK_TENANT_ID" --output json | jq '.total'
+# Compare to your CloudWatch S3 GET request count for the previous day.
+```
+
+---
+
+## Phase 4 — Decommission (after 14 days of clean operation)
+
+### Decommission criteria
+
+All true for 14 consecutive days:
+
+- [ ] Zero integrity mismatches.
+- [ ] All consumers on `corelink get` (no `aws s3 cp` of migrated
+      keys; verify via CloudTrail).
+- [ ] Mapping CSV / pointer-file consumers have correct fallback
+      behavior (if a digest is missing, error loudly; don't silently
+      fall back to S3, which masks bugs).
+
+### Decommission steps
+
+```bash
+# 1. Stop dual-writes. Producers now only write to CoreLink.
+#    Update the upload script:
+sed -i '/aws s3 cp/d' scripts/upload-artifact.sh
+
+# 2. Set the S3 bucket to read-only (writes blocked, reads still work
+#    in case of rollback for +14 more days).
+aws s3api put-bucket-policy --bucket your-bucket --policy file://readonly-policy.json
+
+# 3. Snapshot the bucket to Glacier Deep Archive (cheap long-term).
+aws s3 cp --recursive s3://your-bucket/ s3://your-archive-bucket/ --storage-class DEEP_ARCHIVE
+
+# 4. After +30 more days with zero rollback events, delete the bucket.
+aws s3 rb s3://your-bucket --force
+```
+
+---
+
+## Rollback — any phase
+
+### Phase 1–2 rollback (during dual-write)
+
+Trivial. Consumers were never switched. Disable dual-write:
+
+```bash
+git checkout pre-corelink-migration -- scripts/upload-artifact.sh
+git commit -m "Rollback: stop dual-writing to CoreLink"
+git push
+```
+
+CoreLink's stored blobs stay there (you can delete via tombstone
+later). No customer-visible impact.
+
+### Phase 3 rollback (after consumer cutover)
+
+Slightly more involved, but still safe because S3 dual-writes are
+still happening.
+
+```bash
+git checkout pre-corelink-migration -- scripts/consume-artifact.sh
+git commit -m "Rollback: revert consumer reads to S3"
+git push
+```
+
+Consumers go back to S3. CoreLink stays warm in case you want to
+retry next week.
+
+### Phase 4 rollback (after decommission)
+
+This is the only case where rollback is **expensive** — you've
+stopped dual-writes and may have archived the S3 bucket. Recovery
+involves restoring the Glacier snapshot. **Don't decommission until
+your 14-day clean-operation window is genuinely clean.**
+
+---
+
+## Validation — final check before declaring done
+
+```bash
+# 1. All recent artifacts are in CoreLink:
+corelink ls --tenant "$CORELINK_TENANT_ID" --limit 10
+
+# 2. A round-trip integrity check on the most recent artifact:
+RECENT=$(corelink ls --tenant "$CORELINK_TENANT_ID" --limit 1 --output json | jq -r '.entries[0].digest')
+corelink get "$RECENT" --output /tmp/recent.bin
+corelink stat "$RECENT" --output json | jq '.size_bytes'
+wc -c < /tmp/recent.bin   # should match size_bytes
+
+# 3. Audit trail visible:
+# https://app.corelink.dev/tenants/$CORELINK_TENANT_ID/audit
+# Filter: event_type=cas.read, last 1h. One event per consumer fetch.
+
+# 4. No S3 PUT/GET on the old bucket in the last 24h (CloudTrail).
+```
+
+When all four pass, you're done.
+
+---
+
+## Cross-links
+
+- [Migration overview](./index.mdx) — decision matrix and shared pre-flight.
+- [From a Bazel remote cache](./from-bazel-remote-cache.mdx) — if Bazel/Buck2 is your producer.
+- [From a Docker registry](./from-docker-registry.mdx) — if your "artifacts" are container layers.
+- [10-minute quickstart](../../tutorials/quickstart-10min.mdx) — install the CLI.
+- [Lighthouse Customer Playbook](https://github.com/humangr-labs/corelink-server/blob/main/marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md) — if you want a dedicated engineer.

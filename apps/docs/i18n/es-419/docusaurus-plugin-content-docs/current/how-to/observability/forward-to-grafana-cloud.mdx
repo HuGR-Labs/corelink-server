@@ -1,0 +1,186 @@
+---
+id: forward-to-grafana-cloud
+title: "Forward CoreLink metrics + traces to Grafana Cloud"
+slug: "/how-to/observability/forward-to-grafana-cloud"
+sidebar_label: "Forward to Grafana Cloud"
+description: "Fan-out CoreLink's RED/USE metrics + traces to your Grafana Cloud tenant via Prometheus remote-write v1 and Tempo OTLP HTTP."
+tags: [observability, grafana, prometheus, tempo, metrics, traces, how-to]
+last_updated: "2026-05-15"
+---
+
+<!-- i18n:MT (es-419) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
+>
+> Canonical EN source: `docs/how-to/observability/forward-to-grafana-cloud.mdx`
+
+
+# Forward CoreLink metrics + traces to Grafana Cloud
+
+**Source:** CoreLink (any tenant, any tier).
+**Destination:** your Grafana Cloud tenant (Mimir for metrics, Tempo for
+traces).
+**Transport:**
+[Prometheus remote-write v1](https://prometheus.io/docs/concepts/remote_write_spec/)
+to `https://prometheus-prod-XX.grafana.net/api/prom/push` for metrics,
+OTLP/HTTP to `https://tempo-prod-XX.grafana.net/tempo/api/push` for
+traces.
+**Auth:** Basic auth — username = Grafana Cloud instance ID, password =
+HMAC API token.
+
+**Why pick Grafana Cloud:** native fit if you already run Grafana Cloud
+or want a turnkey hosted Prometheus + Tempo + Loki stack. Mimir handles
+high-cardinality metrics well; Tempo gives you trace-to-log correlation
+out of the box.
+
+---
+
+## Prerequisites
+
+- A Grafana Cloud account (Free tier works for proof-of-concept; Pro
+  tier or above for production cardinality).
+- A Grafana Cloud API token with the `metrics-publisher` + `traces-publisher`
+  roles. Create one at
+  [`https://grafana.com/orgs/<your-org>/api-keys`](https://grafana.com/profile/api-keys).
+- The Grafana Cloud instance details (Prometheus username + Tempo
+  username + endpoints). Find them at
+  **Connections → Data sources → Prometheus / Tempo → Details**.
+- CoreLink CLI ≥ 0.1.0 and a CoreLink tenant ID + admin PAT.
+
+## Step 1 — Find your Grafana Cloud endpoints
+
+In the Grafana Cloud UI:
+
+1. **My Account → Stack → Details**.
+2. Copy the four canonical values:
+   - **Prometheus remote-write URL** (e.g.,
+     `https://prometheus-prod-13-prod-us-east-0.grafana.net/api/prom/push`).
+   - **Prometheus instance ID** (a numeric string; serves as the Basic
+     auth username).
+   - **Tempo OTLP HTTP URL** (e.g.,
+     `https://tempo-prod-04-prod-us-east-0.grafana.net/tempo/api/push`).
+   - **Tempo instance ID** (often the same as the Prometheus instance
+     ID).
+
+:::note Region affinity
+Pick a Grafana Cloud region close to your CoreLink region for latency
+and to keep data-residency boundaries clean. EU CoreLink → EU Grafana
+Cloud. US CoreLink → US Grafana Cloud.
+:::
+
+## Step 2 — Create a CoreLink-scoped Grafana Cloud token
+
+In the Grafana Cloud UI:
+
+1. **My Account → Security → API Keys → Add API key**.
+2. Name: `corelink-export-prod`.
+3. Role: `metrics-publisher` **and** `traces-publisher` (you'll need
+   both — Grafana Cloud separates roles for least-privilege).
+4. Save the generated token. You will paste it into CoreLink's config in
+   step 3.
+
+:::warning Rotate quarterly
+Grafana Cloud tokens do not auto-rotate. Add a quarterly rotation task
+to your runbook. CoreLink's config supports atomic key swap via the
+Admin API.
+:::
+
+## Step 3 — Wire CoreLink to Grafana Cloud
+
+Edit your CoreLink tenant config:
+
+```toml
+[observability.export]
+variant = "grafana_cloud"
+
+[observability.export.grafana_cloud]
+prom_remote_write_url = "https://prometheus-prod-13-prod-us-east-0.grafana.net/api/prom/push"
+tempo_otlp_url        = "https://tempo-prod-04-prod-us-east-0.grafana.net/tempo/api/push"
+instance_id           = "1234567"
+api_key               = "${GRAFANA_CLOUD_TOKEN}"   # ≥ 16 ASCII chars
+timeout_ms            = 2000
+opt_out_low_value_metrics = false
+```
+
+Apply:
+
+```bash
+corelink config apply --file corelink.toml
+```
+
+The Admin API validates:
+
+- Both URLs are non-empty.
+- `instance_id` is non-empty.
+- `api_key` length ∈ `[16, 256]` and is pure ASCII (constant-time
+  compare on the wire — `subtle::ConstantTimeEq` — so a wrong token
+  doesn't leak its prefix length to a timing oracle).
+
+Real auth is verified on first export attempt; a failure becomes a
+`corelink.observability.export_failed` audit event but does not break
+CoreLink's request path.
+
+## Step 4 — Verify the wire
+
+```bash
+# 1) CoreLink-side: tail the audit log for the ready event
+corelink audit tail --filter "event_type=corelink.observability.export_ready"
+
+# 2) In Grafana Cloud, open Explore → Prometheus and query:
+#    sum by (region) (rate(corelink_cas_put_requests_total[5m]))
+#
+# 3) Open Explore → Tempo and search for spans with service.name = corelink.
+```
+
+If `corelink.observability.export_failed` shows up instead:
+
+| Failure reason | What it means | Fix |
+|---|---|---|
+| `auth reject from vendor: 401` | Wrong instance ID or token | Re-check step 1 + 2 |
+| `auth reject from vendor: 403` | Token missing role | Add `metrics-publisher` / `traces-publisher` |
+| `vendor rate-limit (HTTP 429)` | Cardinality / DPM quota exceeded | Upgrade tier or set `opt_out_low_value_metrics = true` |
+| `vendor rejected payload: 400` | Schema drift (rare) | Check `status.grafana.com`; open a CoreLink ticket |
+
+## Step 5 — Pre-built Grafana dashboards
+
+CoreLink ships a Grafana dashboard JSON at
+[`apps/docs/static/grafana/corelink-overview.json`](https://github.com/humangr-labs/corelink-server/tree/main/apps/docs/static/grafana)
+(deferred; lands alongside the GA dashboard catalog). Import via
+**Dashboards → New → Import → Upload JSON file**.
+
+Built-in panels:
+
+- RED rates per region (`corelink_cas_put_requests_total`,
+  `corelink_ac_lookup_requests_total`, ...).
+- p99 latency (`histogram_quantile(0.99, sum(rate(corelink_cas_put_duration_seconds_bucket[5m])) by (le, region))`).
+- USE for CF Workers (CPU time, R2 ops, D1 row scans).
+- SLO burn-rate panel wired to multi-window multi-burn-rate per Google
+  SRE Workbook Chapter 5 Table 4.
+
+## Cost expectation
+
+Grafana Cloud bills by **active-series-per-month (DPM)** for metrics
+and **GB ingested** for traces. Sizing for a typical CoreLink Pro
+tenant:
+
+| Tier | DPM cost | Trace cost |
+|---|---|---|
+| Free | 10k series included | 50 GB/mo included |
+| Pro | $8 per million DPM | $0.50 / GB |
+
+The default forwarded set (~9 RED + 6 USE metrics × ~30 active label
+combinations) lands well within the Free tier for solo customers and
+within the Pro tier baseline for most multi-region Pro tenants.
+
+## Cross-references
+
+- [Observability overview](./index.mdx)
+- [Forward to Datadog](./forward-to-datadog.mdx) (alternative).
+- [Forward to OTel Collector](./forward-to-otel-collector.mdx)
+  (most flexible; routes to Grafana Cloud + others simultaneously).
+- [Trust → Data handling](../../trust/data-handling.mdx) — PII hygiene
+  + constant-time API-key validation + fail-OPEN proof.
+- [`specs/_audits/2026-05-15-otel-export-spec.md`](https://github.com/humangr-labs/corelink-server/blob/main/specs/_audits/2026-05-15-otel-export-spec.md)
+  — full inventory of what we export.
+- [Prometheus remote-write spec](https://prometheus.io/docs/concepts/remote_write_spec/).
+- [Grafana Tempo OTLP ingest](https://grafana.com/docs/tempo/latest/api_docs/pushing-spans-with-http/).

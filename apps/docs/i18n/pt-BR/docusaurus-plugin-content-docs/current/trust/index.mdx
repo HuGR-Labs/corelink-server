@@ -1,0 +1,134 @@
+---
+title: "Trust Center"
+slug: "/trust"
+description: "CoreLink Trust Center — SOC 2 readiness, BYOK, audit chain, vulnerability disclosure, status page, and sub-processor disclosures in one place."
+draft: false
+cross_functional_review: TBD
+pending_signoff:
+  - "Security Lead"
+  - "Legal"
+  - "DPO"
+sources:
+  - "specs/_compliance/SOC2-EVIDENCE-ROLLUP-2026-05-15.md"
+  - "specs/_compliance/VENDOR-RISK-REGISTER.md"
+  - "specs/_compliance/LGPD-RESIDENCY-ATTESTATION-2026-05-15.md"
+  - "SECURITY.md"
+last_updated: "2026-05-15"
+---
+
+<!-- i18n:MT (pt-BR) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
+>
+> Canonical EN source: `docs/trust/index.mdx`
+
+
+# Trust Center
+
+CoreLink is a shared, content-addressable build cache that sees customer build
+artefacts, signed audit events, and (optionally) customer-managed key material.
+This Trust Center is the **single public-facing index** of how we secure that
+surface, who we share data with, and what we are willing to commit to in
+writing.
+
+> Looking for something specific? Auditors and procurement teams typically
+> jump straight to [Compliance](./compliance), [Sub-processors](./subprocessors),
+> or [Data handling](./data-handling). Customers running a vendor-risk review
+> usually want all three plus [Incident response](./incident-response).
+
+## Quick facts
+
+| Topic | Where it lives |
+| --- | --- |
+| SOC 2 status | [Compliance → SOC 2](./compliance#soc-2) — Type I target **Q4 2026**, Type II target **Q3 2027**, internal readiness **83.7%** as of 2026-05-15 |
+| ISO 27001 status | [ISO 27001:2022](./iso27001) — 98.9% Annex A coverage today, cert target **Q1-2027** stacked with SOC 2 Type I |
+| PCI DSS | [PCI DSS posture](./pci-dss) — **SAQ-A compliant** (self-attested 2026-05-15); CoreLink never sees card data — Stripe Elements tokenizes in browser |
+| FedRAMP | [FedRAMP posture](./fedramp-info) — **Not pursued** today (commercial-market focus); ~85% Moderate baseline covered via SOC 2 + ISO 27001 crosswalk; sponsorship path documented |
+| Where your data lives | [Data handling → Residency](./data-handling#residency) — BR / US / EU pinning per tenant |
+| Encryption | [Data handling → Encryption](./data-handling#encryption) — TLS 1.3 in flight, AES-256-GCM at rest, optional BYOK envelope encryption |
+| BYOK matrix | 4 providers: AWS KMS, GCP Cloud KMS, Azure Key Vault, HashiCorp Vault — see [BYOK explanation](/security/byok) |
+| Audit chain | Merkle-linked, RFC 6962 inclusion proofs, 7-year retention — see [Audit chain](/security/audit-chain) |
+| Sub-processors | [Sub-processors list](./subprocessors) — 30-day advance-notice mechanism |
+| Vulnerability disclosure | [Security policy](/security/policy) — coordinated VDP, safe-harbor, severity matrix |
+| Status page | [status.corelink.dev](https://status.corelink.dev) — RSS / email / webhook subscription |
+| Incident response | [Incident response](./incident-response) — 72h breach-notification commitment |
+| RFC 9116 contact card | [`/.well-known/security.txt`](/.well-known/security.txt) |
+
+## Posture at a glance
+
+CoreLink is engineered for a **cross-tenant blast radius of zero**. That
+shapes everything else on this page. The headline commitments are:
+
+1. **Tenant isolation is invariant-bound.** Tenant A cannot read, write, or
+   enumerate Tenant B's blobs. The invariant (`INV-TenantIsolation`) is
+   TLA+ model-checked and gated by CI.
+2. **Every artefact is hash-pinned.** No blob ever served diverges from the
+   requested digest (`INV-CAS-INTEGRITY`).
+3. **Every write produces an auditable, signed event.** The audit log is
+   append-only, Merkle-linked, and exportable as RFC 6962 inclusion proofs
+   that you can verify offline.
+4. **You can hold your own keys.** Enterprise tenants can wrap their data
+   encryption keys with their own KMS root — we never see plaintext key
+   material. Four KMS providers are supported on day one.
+5. **We commit to a 72-hour breach-notification window.** Aligned with
+   LGPD Art. 33 and GDPR Art. 33; communicated through the channels you
+   pre-register at onboarding.
+
+## What's verifiable vs. what's attested
+
+Compliance docs can be theatre. We try hard to make ours falsifiable:
+
+- **Verifiable by you, right now:**
+  audit-chain proofs ([how-to](/security/audit-chain)), the
+  [security.txt](/.well-known/security.txt) contact card, the
+  [SBOM](https://github.com/humangr-labs/corelink/releases) shipped with every
+  release, Sigstore / Rekor provenance entries for every binary, and our
+  public [status page](https://status.corelink.dev).
+- **Attested by us (with evidence on request):**
+  SOC 2 readiness rollup, BYOK FIPS attestation matrix per provider, vendor
+  risk register, LGPD Art. 33 residency attestation.
+- **Attested by sub-processors (inherited):**
+  Cloudflare, AWS, GCP, Azure, Clerk, Stripe, Drata SOC 2 Type II reports.
+
+If you need the attested or inherited evidence packs, email
+**trust@corelink.dev** with your DPA on file; we route DPA-gated NDA bundles
+back within 1 business day.
+
+## Pages in this Trust Center
+
+- [**Compliance**](./compliance) — SOC 2, LGPD, GDPR, HIPAA, PCI DSS posture
+  in plain English, with status and target dates.
+- [**ISO 27001:2022**](./iso27001) — Annex A crosswalk, 98.9% in-scope
+  coverage today, certification target Q1-2027 with Schellman.
+- [**PCI DSS**](./pci-dss) — SAQ-A compliance details, boundary diagram,
+  Stripe responsibility matrix.
+- [**FedRAMP posture**](./fedramp-info) — informational crosswalk only; not
+  pursued today; ~85% Moderate baseline substance covered via SOC 2 + ISO 27001;
+  sponsorship path documented.
+- [**Data handling**](./data-handling) — where data lives, residency pins,
+  encryption details, retention windows.
+- [**Sub-processors**](./subprocessors) — public list, 30-day notice mechanism.
+- [**Incident response**](./incident-response) — how we communicate during
+  SEV1, status-page subscription, breach-notification commitments.
+
+## Related (deeper / technical)
+
+- [Security overview](/security) — control model, cryptography baseline.
+- [BYOK customer-managed keys](/security/byok) — provider matrix and key flow.
+- [Audit chain and Merkle proofs](/security/audit-chain) — how to verify.
+- [Security policy](/security/policy) — coordinated VDP and safe harbor.
+- [Responsible disclosure](/security/responsible-disclosure) — how to report.
+- [Brazil residency & LGPD](/residency/lgpd-brazil) — Art. 33 §1º specifics.
+- [API stability & deprecation policy](/explanation/api-stability) — 3-tier
+  GA/Preview/Internal model, **24-month GA deprecation window**, CI-enforced
+  sunset-date floors.
+
+## Contact
+
+| What you need | Where to send it |
+| --- | --- |
+| Security vulnerability report | `security@corelink.dev` (see [policy](/security/policy)) |
+| Privacy / data-subject request | `privacy@corelink.dev` |
+| DPA, SOC 2 letter, pentest summary | `trust@corelink.dev` |
+| Procurement / vendor review forms | `trust@corelink.dev` |
+| Press / disclosure-coordination | `press@corelink.dev` |

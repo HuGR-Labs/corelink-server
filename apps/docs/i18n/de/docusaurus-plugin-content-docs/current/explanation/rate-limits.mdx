@@ -1,0 +1,201 @@
+---
+id: rate-limits
+title: Rate limits
+sidebar_label: Rate limits
+description: How CoreLink enforces per-tenant rate limits, the headers and JSON body you receive on a 429, how to back off correctly, and when to upgrade tier.
+---
+
+<!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
+>
+> Canonical EN source: `docs/explanation/rate-limits.mdx`
+
+
+# Rate limits
+
+**Understanding-oriented.** This page explains how CoreLink rate
+limits work, what your client sees when a request is denied with HTTP
+429, and how to react. For *how* to handle 429s in your SDK, see the
+[How-to → Retry & backoff](/how-to/retry-backoff) page; for the
+*reference* schema of the 429 body, see
+[Reference → Errors](/reference/errors).
+
+## The 5-arm taxonomy
+
+Every HTTP 429 response CoreLink emits carries an explicit
+discriminator (`X-Rate-Limit-Type` header + `error.kind` JSON body
+field) telling you **which protection layer denied the request**:
+
+| `X-Rate-Limit-Type` | Layer | What it means |
+|---------------------|-------|---------------|
+| `tenant_quota` | Per-tenant token bucket (per-DO) | Your project is hitting its sustained-RPS ceiling. Back off + retry. |
+| `per_ip` | Edge IP / CIDR throttle | A burst from a single IP exceeded the edge ceiling. Often a misbehaving CI runner or NAT egress. |
+| `per_pat` | Per-PAT (Personal Access Token) misuse | A single PAT is being used at a rate inconsistent with a legitimate workflow. Likely credential compromise. |
+| `over_quota` | Storage / bandwidth quota | Your plan's monthly storage or bandwidth ceiling was hit. Resets on the 1st UTC. |
+| `global_circuit_open` | System-wide circuit breaker | CoreLink is shedding load region-wide to protect availability. Retry in 60 seconds. |
+
+The taxonomy is **stable** — your SDK can pattern-match on
+`error.kind` and trust the 5 values will not silently change.
+
+## Per-tier rate-limit ladder
+
+Sustained throughput is controlled by your **rate-limit tier**
+(`X-CoreLink-Tier` header):
+
+| Tier | Sustained (RPS) | Burst capacity (tokens) | Notes |
+|------|----------------:|------------------------:|-------|
+| Free | 10 | 50 | Instant activation; no Stripe Checkout required. |
+| Solo | 50 | 200 | Single-engineer plan. |
+| Team | 200 | 1 000 | Standard small-team plan. |
+| Business | 1 000 | 5 000 | Mid-market plan. |
+| Enterprise | 10 000 (negotiable per contract) | 50 000 | Contract-negotiated; route through the inquiry form. |
+
+**Burst capacity** is the size of your token bucket — you can spend
+all tokens in a parallel burst, then the bucket refills at the
+sustained RPS. Burst is always **≥ 4× sustained** so a normal
+parallel-build spike does not 429 you.
+
+:::note Billing tier vs rate-limit tier
+The **billing** vocabulary (what you pay on) is *Free / Starter /
+Team / Pro / Enterprise*. The **rate-limit** vocabulary (what your
+bucket runs on) is *Free / Solo / Team / Business / Enterprise*.
+The two are FROZEN in different contracts; your `X-CoreLink-Tier`
+header carries the rate-limit name and your invoice carries the
+billing name. We are aware of the inconsistency; harmonisation is
+post-GA work.
+:::
+
+## Headers on every 429
+
+CoreLink emits the **IETF RFC 9331** canonical pair plus
+**RFC 6585 §4 / RFC 9110 §10.2.3** `Retry-After` and three
+informational `X-CoreLink-*` vendor headers:
+
+| Header | Format | Spec |
+|--------|--------|------|
+| `RateLimit` | `limit=N, remaining=M, reset=S` | RFC 9331 §2 |
+| `RateLimit-Policy` | `<limit>;w=<window>, …` | RFC 9331 §3 |
+| `Retry-After` | `<seconds>` | RFC 6585 §4 + RFC 9110 §10.2.3 |
+| `X-Rate-Limit-Type` | one of the 5 canonical arms | CoreLink-specific |
+| `X-CoreLink-Tier` | `free` / `solo` / `team` / `business` / `enterprise` | informational |
+| `X-CoreLink-Quota-Reset-UTC` | RFC 3339 absolute timestamp | informational |
+| `X-CoreLink-Tier-Upgrade-URL` | `https://corelink.dev/pricing` | informational |
+
+The canonical pair (`RateLimit` + `RateLimit-Policy`) is the
+**only** rate-limit header surface that ships in CoreLink — legacy
+custom `X-RateLimit-Limit` / `-Remaining` / `-Reset` are **not**
+emitted. Stripe, GitHub, Bazel, Buck2 all already consume RFC 9331;
+your SDK should too.
+
+Example response headers from a Free-tier project that burst past
+its 50-token bucket:
+
+```http
+HTTP/1.1 429 Too Many Requests
+RateLimit: limit=10, remaining=0, reset=5
+RateLimit-Policy: 10;w=1
+Retry-After: 5
+X-Rate-Limit-Type: tenant_quota
+X-CoreLink-Tier: free
+X-CoreLink-Quota-Reset-UTC: 2026-05-15T14:30:25Z
+X-CoreLink-Tier-Upgrade-URL: https://corelink.dev/pricing
+Content-Type: application/json
+```
+
+## The 429 JSON body
+
+The body is a stable, deterministically-ordered JSON envelope:
+
+```json
+{
+  "error": {
+    "code": "rate_limit_exceeded",
+    "kind": "tenant_quota",
+    "message": "Request rate exceeded the per-tenant ceiling. Back off and retry after the Retry-After interval.",
+    "retry_after_seconds": 5,
+    "tier": "free",
+    "tier_upgrade_url": "https://corelink.dev/pricing",
+    "docs_url": "https://docs.corelink.dev/explanation/rate-limits",
+    "request_id": "01HFXYZABCDEFGHJKMNPQRSTVW",
+    "limit": 10,
+    "remaining": 0,
+    "reset_seconds": 5,
+    "reset_utc": "2026-05-15T14:30:25Z"
+  }
+}
+```
+
+Field semantics:
+
+- `error.code` — stable string enum; the only value at GA is
+  `rate_limit_exceeded`. Discrimination is via `kind`.
+- `error.kind` — one of the 5 taxonomy arms (mirrors
+  `X-Rate-Limit-Type`).
+- `error.message` — human-readable English (localisation is post-GA).
+- `error.retry_after_seconds` — duplicates the `Retry-After` header
+  so body-only consumers do not need to re-parse.
+- `error.tier` — your current rate-limit tier (snake_case).
+- `error.tier_upgrade_url` — the canonical pricing surface; click to
+  upgrade.
+- `error.docs_url` — this page.
+- `error.request_id` — UUIDv7 you can hand to support
+  (`support@corelink.dev`) for forensic correlation.
+- `error.limit / remaining / reset_seconds` — mirror of the RFC 9331
+  `RateLimit:` header.
+- `error.reset_utc` — absolute reset timestamp (RFC 3339). Prefer
+  this over `reset_seconds` for long deferred retries — robust
+  against client-side clock skew.
+
+## How to back off
+
+1. **Honour `Retry-After` first.** If present, sleep for at least
+   that many seconds. This is the canonical signal CoreLink emits and
+   the only signal HTTP libraries reliably surface.
+2. **Add jitter** to your retry interval — full random jitter in
+   `[0, Retry-After * 1.5]` smooths thundering-herd patterns when
+   many clients sync on the same `reset`.
+3. **Fall back to exponential backoff** only if `Retry-After` is
+   absent (it shouldn't be — CoreLink always emits it on 429).
+   Canonical starting point: 250ms → 500ms → 1s → 2s → 4s → 8s.
+4. **For long deferred retries**, prefer `reset_utc` over
+   `reset_seconds` — your retry might run hours later (e.g. cron),
+   by which time the seconds value is stale.
+5. **Stop retrying on `over_quota`.** A storage-quota 429 will
+   persist until the 1st UTC of next month or until the tenant
+   admin upgrades plan. Retrying with exponential backoff just
+   wastes calls.
+6. **Treat `per_pat` as a security incident.** If a single PAT is
+   being throttled, the credential is likely compromised — rotate
+   it via the dashboard and audit your CI logs for exfiltration.
+
+## When to upgrade tier
+
+You should consider upgrading your tier when you see **sustained
+`tenant_quota` 429s** during legitimate workflow patterns:
+
+- Your CI parallel-build burst regularly exceeds your bucket
+  capacity.
+- Your `remaining` value (from the `RateLimit` header) is at zero
+  for ≥ 5 consecutive seconds on a hot workflow.
+- The `X-CoreLink-Tier-Upgrade-URL` header redirects to
+  `https://corelink.dev/pricing` — start there.
+
+You should **not** upgrade for:
+
+- `per_ip` 429s — fix your egress (split CI runners, IP-rotate, or
+  authenticate so we can rate-limit per-PAT instead).
+- `per_pat` 429s — rotate the credential.
+- `global_circuit_open` 429s — wait it out; the circuit recovers in
+  ≤ 2 minutes.
+
+## Reference: spec sources
+
+- `crates/corelink-rate-headers/src/headers.rs` — header builder
+  source of truth.
+- `crates/corelink-ratelimit/src/tier.rs` — per-tier rate ladder.
+- `specs/_audits/2026-05-15-ratelimit-ux-audit.md` — the audit that
+  introduced this surface.
+- IETF [RFC 9331](https://datatracker.ietf.org/doc/rfc9331/),
+  [RFC 6585 §4](https://datatracker.ietf.org/doc/html/rfc6585#section-4),
+  [RFC 9110 §10.2.3](https://datatracker.ietf.org/doc/html/rfc9110#section-10.2.3).

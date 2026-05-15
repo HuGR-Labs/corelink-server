@@ -1,0 +1,352 @@
+---
+id: migrate-from-bazel-remote-cache
+title: "Migrate from a Bazel remote cache (bazel-remote / BuildBuddy)"
+slug: "/how-to/migrate/from-bazel-remote-cache"
+sidebar_label: "From a Bazel remote cache"
+description: "Move your Bazel remote cache from bazel-remote or BuildBuddy to CoreLink REAPI v2 with a one-week parallel-run window and a zero-data-loss rollback."
+tags: [migration, bazel, remote-cache, reapi, how-to]
+last_updated: "2026-05-15"
+---
+
+<!-- i18n:MT (es-419) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
+>
+> Canonical EN source: `docs/how-to/migrate/from-bazel-remote-cache.mdx`
+
+
+# Migrate from a Bazel remote cache to CoreLink
+
+**Source systems covered:** `bazel-remote` (open-source HTTP cache),
+BuildBuddy (managed REAPI), or any other build-tool remote cache that
+speaks the REAPI v2 protocol (Buck2, Pants, reclient).
+
+**Target:** CoreLink REAPI v2 endpoint at
+`grpc://reapi.corelink.dev:443/<tenant-id>` (or `https://...` for
+HTTP/2). Surface is implemented by
+[`crates/corelink-reapi/`](https://github.com/humangr-labs/corelink-server/tree/main/crates/corelink-reapi)
+and exposes `ContentAddressableStorage`, `ActionCache`, `ByteStream`,
+and `Capabilities`.
+
+**Why this migration is low-risk:** Bazel remote caches are
+**content-addressed by definition**. The digest of an action's output
+is the storage key. That means rollback is *always* free of data
+loss — the worst case is a cold cache on the system you flipped back
+to.
+
+---
+
+## Phase 0 — Pre-flight (2–4 h)
+
+### Inventory checklist
+
+- [ ] **Estimate cache size.** Run on your current cache host:
+  ```bash
+  # bazel-remote
+  du -sh /var/lib/bazel-remote/cas
+  du -sh /var/lib/bazel-remote/ac
+
+  # BuildBuddy (look at S3 bucket holding the CAS)
+  aws s3 ls --summarize --recursive --human-readable s3://your-buildbuddy-cas/ | tail -2
+  ```
+  CoreLink charges by stored-GiB-month and egress; bring this number to
+  the pricing page to compute your monthly delta.
+
+- [ ] **Count tenants.** Most teams run a single namespace, but if you
+  segregate `dev` / `staging` / `prod` you'll want one CoreLink tenant
+  per namespace (RBAC + audit segregation).
+
+- [ ] **List CI users.** Who has the PAT or HTTP-basic creds for the
+  current cache?
+  ```bash
+  # bazel-remote with htpasswd
+  cat /etc/bazel-remote/htpasswd | cut -d: -f1
+  ```
+  Each of these identities needs a CoreLink PAT with the `cas:rw`
+  + `ac:rw` scopes. Issue them now via the admin UI; don't wait until
+  Phase 1.
+
+- [ ] **Identify the riskiest CI job.** Pick the build you're least
+  worried about breaking — that's your Phase 2 canary.
+
+- [ ] **Pin your CoreLink region.** `corelink config get defaults.region`.
+  Match it to your CI runners' AWS/GCP region to keep egress under
+  100 ms p50.
+
+### Cost-comparison table
+
+Fill in your numbers — these are real ratios from comparable customers,
+not marketing fiction.
+
+| Line item | bazel-remote self-host | BuildBuddy SaaS | CoreLink (Team tier) |
+| --- | --- | --- | --- |
+| Storage ($/GiB-month) | $0.023 (S3 std) + ops overhead | included up to plan cap, $0.10/GiB over | $0.05/GiB-month |
+| Egress (CI ↔ cache, $/GiB) | $0.09 (cross-AZ) | $0/included same-region | $0/included same-region |
+| Compute (cache server) | 1× m5.xlarge ≈ $140/mo + SRE oncall | $0 | $0 |
+| Audit retention | manual (S3 versioning) | 30 d | 90 d (Team) / 365 d (Lighthouse + Enterprise) |
+| BLAKE3 client verify | no (sha256 only) | no (sha256 only) | **yes, default-on** (CTRL-CAS-002) |
+| **Total for 500 GiB cache, 2 TiB/mo CI egress** | ≈ **$330/mo** + 0.25 FTE SRE | ≈ **$400/mo** | ≈ **$25/mo** |
+
+Numbers above assume same-region CI. Cross-region egress dominates
+*every* row; pin everything to the same region.
+
+### Rollback plan (lock it now)
+
+```bash
+# Commit the current .bazelrc with an explicit tag so revert is one command.
+git tag pre-corelink-migration
+git push origin pre-corelink-migration
+
+# Verify revert works *before* you start:
+git checkout pre-corelink-migration -- .bazelrc
+bazel build //... --config=ci  # should hit your existing cache
+git checkout main -- .bazelrc
+```
+
+If this drill fails, **stop**. Fix the rollback path before touching
+CoreLink.
+
+---
+
+## Phase 1 — Configure CoreLink as a secondary cache (2–4 h)
+
+Bazel does not natively dual-write to two remote caches behind a single
+flag. There are two supported patterns; pick one.
+
+### Pattern A — Build-Event-Protocol consumer (recommended for SaaS sources)
+
+Best when your current cache is BuildBuddy or any REAPI v2 SaaS that
+already speaks BEP. CoreLink ingests cache references asynchronously,
+**off the build's critical path** — your CI wall time is unchanged
+during the parallel-run.
+
+```bazel
+# .bazelrc — add these lines; do NOT remove your existing --remote_cache flag.
+build:ci --bes_backend=grpcs://bes.corelink.dev:443
+build:ci --bes_results_url=https://app.corelink.dev/tenants/$CORELINK_TENANT_ID/builds
+build:ci --bes_header=Authorization=Bearer\ $CORELINK_PAT
+build:ci --bes_upload_mode=fully_async
+```
+
+### Pattern B — Sidecar mirror (recommended for self-hosted sources)
+
+Best when you run `bazel-remote` on your own infra. The CoreLink CLI
+ships a mirror command that watches the source cache and replicates
+new blobs to CoreLink in the background.
+
+```bash
+# Run on each CI runner (or once, on a dedicated mirror host):
+corelink put $(find /var/lib/bazel-remote/cas -type f -newer /tmp/last-mirror) \
+  --tenant "$CORELINK_TENANT_ID"
+
+# In production, wrap in a systemd timer or cron every 5 minutes.
+```
+
+`corelink put` is content-addressed and idempotent: re-uploading the
+same blob is a no-op (returns `exists=true` with a 200, no bytes
+transferred). The orchestrator in
+[`crates/corelink-reapi/src/orchestrator.rs`](https://github.com/humangr-labs/corelink-server/blob/main/crates/corelink-reapi/src/orchestrator.rs)
+enforces `INV-CAS-IMMUTABILITY` via `If-None-Match: *`.
+
+:::warning Do not point Bazel's `--remote_cache` at *two* URLs
+Bazel only honors the last `--remote_cache` flag. If you set it twice,
+the first is silently ignored. Use Pattern A or Pattern B; do not try to
+overlap them.
+:::
+
+### Verify Phase 1 is live
+
+```bash
+# 1. Trigger a CI build that writes to the existing cache.
+bazel build //... --config=ci
+
+# 2. Confirm the blobs landed in CoreLink within ~60 s (Pattern A) or
+#    on the next mirror interval (Pattern B):
+corelink ls --tenant "$CORELINK_TENANT_ID" --limit 20
+
+# 3. Confirm at least one digest matches between systems:
+EXAMPLE_DIGEST=$(bazel-remote-admin list-recent | head -1 | awk '{print $1}')
+corelink stat "$EXAMPLE_DIGEST"
+# digest=...  size=...  exists=true   <-- same blob, both systems
+```
+
+If `exists=false` for a blob you know was just built, your replication
+isn't keeping up. Inspect logs from your mirror process or check
+`corelink doctor` for the `BES ingestion` check.
+
+---
+
+## Phase 2 — Parallel-run (5–7 days minimum)
+
+**Do not touch anything.** Both systems serve real CI traffic. The
+existing cache is still primary. You are collecting evidence.
+
+### What to monitor daily
+
+| Metric | Where | Healthy range |
+| --- | --- | --- |
+| Hit ratio on CoreLink | `corelink ls --tenant ... --limit 1` counts vs CI run count | climbs each day; > 30% by day 5 |
+| Latency p99 (GET) | `corelink bench --read` | ≤ 300 ms same-region |
+| Integrity failures | `corelink doctor` — `client-verify` check | 0 |
+| Digest match across systems | sample 10 blobs/day, compare `corelink stat` to `bazel-remote-admin show` | 10/10 match |
+
+### Red flags — pause the migration
+
+- Any `COR_CAS_DIGEST_MISMATCH` error in CI logs → **stop**, file a P1
+  via support@corelink.dev. Do not proceed to cutover.
+- Hit ratio on CoreLink that is *higher* than your existing cache by
+  > 20 percentage points → suspicious; usually means the existing
+  cache is silently evicting under pressure. Investigate before
+  cutover.
+- p99 latency on CoreLink > 500 ms sustained → check region pin first;
+  if region is correct, file a P1.
+
+### Daily 5-min check script
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+echo "=== CoreLink migration health — $(date -u +%FT%TZ) ==="
+corelink doctor --json | jq '.checks[] | select(.status != "PASS")'
+corelink bench --read --output json | jq '{p50: .latency_p50_ms, p99: .latency_p99_ms}'
+corelink ls --tenant "$CORELINK_TENANT_ID" --limit 1 --output json | jq '{total_blobs: .total}'
+```
+
+Run it every morning. Save the output. The 5 days of logs are your
+attestation that cutover is safe.
+
+---
+
+## Phase 3 — Cutover (30 min)
+
+Schedule it for the **lowest CI traffic window** of your week (typically
+Friday evening or Sunday morning in your CI runners' timezone).
+
+### Step 1 — Flip `.bazelrc`
+
+```bazel
+# .bazelrc — replace your existing --remote_cache line.
+# OLD:
+# build:ci --remote_cache=https://bazel-remote.your-domain.com
+
+# NEW:
+build:ci --remote_cache=grpcs://reapi.corelink.dev:443/$CORELINK_TENANT_ID
+build:ci --remote_header=Authorization=Bearer\ $CORELINK_PAT
+build:ci --remote_upload_local_results=true
+build:ci --remote_timeout=60s
+```
+
+Commit. Push. Wait for CI to pick up the new config.
+
+### Step 2 — Watch the first 3 builds
+
+```bash
+# In a terminal, tail recent activity:
+watch -n 5 'corelink ls --tenant "$CORELINK_TENANT_ID" --limit 5'
+```
+
+You should see new digests appearing in real time as CI hits run. Hit
+ratio on the first build will be low (cold). By the third build,
+ratio should be back where it was on the old system.
+
+### Step 3 — Keep the old cache **warm** for 2 weeks
+
+Do **not** decommission `bazel-remote` / BuildBuddy yet. Leave it
+running, leave its data in place. Your rollback in Phase 4 depends on
+this.
+
+---
+
+## Phase 4 — Decommission (after 2 weeks of clean operation)
+
+### Decommission criteria
+
+All of the following must be true for **14 consecutive days**:
+
+- [ ] Zero `COR_CAS_*` errors in CI logs.
+- [ ] Hit ratio on CoreLink within ±5 percentage points of the
+      pre-cutover baseline on the old system.
+- [ ] p99 GET latency ≤ 300 ms (same-region) every day.
+- [ ] No P0/P1 paged from CoreLink itself.
+
+### Decommission steps
+
+```bash
+# 1. Confirm no client reads from the old cache for 7 days.
+#    (Check bazel-remote /metrics for last_access timestamp.)
+
+# 2. Snapshot the old cache to long-term storage (optional but cheap).
+tar czf /backup/bazel-remote-final-$(date +%F).tar.gz /var/lib/bazel-remote
+aws s3 cp /backup/bazel-remote-final-$(date +%F).tar.gz s3://your-archive-bucket/
+
+# 3. Stop the service. Don't delete data for another 14 days.
+sudo systemctl stop bazel-remote
+sudo systemctl disable bazel-remote
+
+# 4. After +14 more days, free the disk:
+sudo rm -rf /var/lib/bazel-remote/{cas,ac}
+```
+
+---
+
+## Rollback — any phase, single command
+
+**Rollback is always safe** because every blob is content-addressed.
+The worst outcome is a cache miss; never a wrong byte.
+
+```bash
+# Revert .bazelrc to the pre-migration commit:
+git checkout pre-corelink-migration -- .bazelrc
+git commit -m "Rollback: revert to bazel-remote pre-CoreLink migration"
+git push
+
+# CI picks up the old config on the next run. The first few builds are
+# cold; warm-up takes ~1 day at typical CI volume.
+```
+
+There is **no data to migrate back** — Bazel only writes; it never
+mutates. Anything CoreLink stored stays in CoreLink (you can delete it
+later via `corelink ls` + a tombstone if you want a clean exit).
+
+### If rollback also fails
+
+Page support: `support@corelink.dev` with subject
+`P1 — Bazel migration rollback failure`. We can issue a one-line
+config helper that bypasses CoreLink entirely while you stabilize.
+
+---
+
+## Validation — final check before declaring done
+
+Run this after Phase 4:
+
+```bash
+# 1. Last 24h CI builds all hit CoreLink:
+bazel info --config=ci | grep remote_cache
+# remote_cache: grpcs://reapi.corelink.dev:443/...
+
+# 2. CoreLink is the only place new blobs land:
+corelink ls --tenant "$CORELINK_TENANT_ID" --limit 5
+
+# 3. Audit trail is populated:
+# Open https://app.corelink.dev/tenants/$CORELINK_TENANT_ID/audit
+# Filter: event_type=cas.write, last 24h. You should see one event per
+# CI action with a non-trivial output.
+
+# 4. (Optional) Compare your CI wall-time before/after.
+#    Most teams see 5–20% reduction from BLAKE3 vs sha256.
+```
+
+When all four pass, the migration is **done**. File a one-line note in
+your team's runbook archive (`/runbooks/`) with the date and any
+gotchas you hit; future-you will thank you.
+
+---
+
+## Cross-links
+
+- [Migration overview](./index.mdx) — pick a different starting point.
+- [From S3-only artifact storage](./from-s3-only.mdx) — for non-Bazel artifacts.
+- [10-minute quickstart](../../tutorials/quickstart-10min.mdx) — install + first put/get.
+- [REAPI v2 reference](../../reference/reapi/index.mdx) — the wire protocol Bazel speaks.
+- [Lighthouse Customer Playbook](https://github.com/humangr-labs/corelink-server/blob/main/marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md) — escalate to white-glove if you need a dedicated engineer.

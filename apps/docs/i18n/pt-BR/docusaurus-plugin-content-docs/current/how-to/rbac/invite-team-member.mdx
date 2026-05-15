@@ -1,0 +1,160 @@
+---
+id: rbac-invite-team-member
+title: "Invite a team member"
+slug: "/how-to/rbac/invite-team-member"
+sidebar_label: "Invite a team member"
+description: "Invite a teammate to your CoreLink tenant, pick the right role, and configure Clerk SSO."
+tags: [rbac, how-to, onboarding]
+last_updated: "2026-05-15"
+---
+
+<!-- i18n:MT (pt-BR) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
+>
+> Canonical EN source: `docs/how-to/rbac/invite-team-member.mdx`
+
+
+# Invite a team member
+
+## When to use this guide
+
+You're an `Owner` or `Admin` on a CoreLink tenant and you want to add a
+teammate. This guide walks through Clerk SSO setup, the invite flow, and
+which role to pick.
+
+## Prerequisites
+
+- You are signed in as `Owner` or `Admin` on the target tenant.
+- The invitee has (or can create) a Clerk-backed identity at the same SSO
+  domain your tenant uses.
+- You have decided which role to assign (see decision tree below).
+
+## Pick the right role
+
+| Their job                                                      | Role to assign   |
+|----------------------------------------------------------------|------------------|
+| Engineer who reads/writes the cache from CI or local dev       | `Developer`      |
+| Tech lead / SRE who needs to mint tokens or read audit log     | `Admin`          |
+| Co-founder / Head of Engineering who also owns billing         | `Owner`          |
+| External auditor or read-only dashboard consumer               | `Viewer`         |
+
+When in doubt, pick the **least-privileged** role that lets them do their
+job. You can always promote later. Demotion is also one click.
+
+> **A note on `Owner`:** Only assign `Owner` if the person should see the
+> invoice and be able to act as the second approver for destructive
+> operations. Most engineering hires should start as `Admin` or
+> `Developer`.
+
+## Step 1 — Confirm Clerk SSO is configured
+
+CoreLink delegates authentication to Clerk. Before inviting, make sure:
+
+1. Your Clerk application is wired to CoreLink (one-time tenant setup —
+   done at signup; if you skipped this, contact support).
+2. Your invitee's email domain is on your Clerk allowlist (if you use
+   domain-restricted sign-up).
+3. MFA is enforced for `Owner` and `Admin` roles. **The dual-approval gate
+   requires MFA freshness ≤ 30 minutes** for any approver
+   (`MFA_MAX_AGE_MS` in
+   `crates/corelink-dual-approval/src/gate.rs`). If MFA isn't enabled for
+   the user, they can sign in but they cannot approve destructive ops.
+
+## Step 2 — Send the invite
+
+From the tenant admin UI:
+
+```
+1. Settings → Members → "Invite member"
+2. Enter the invitee's email.
+3. Pick the role (defaults to Developer — see table above).
+4. Click "Send invite".
+```
+
+Behind the scenes:
+
+- A Clerk invitation email is sent.
+- A pending `membership` row is **not** yet written — it's created on
+  first successful sign-in. This means an unaccepted invite leaves no
+  membership row to revoke later.
+- An audit event is emitted: `corelink.admin.member.invited` (CloudEvent).
+
+### Equivalent CLI command
+
+```bash
+corelink admin members invite \
+  --email teammate@example.com \
+  --role developer
+```
+
+## Step 3 — Invitee accepts the invite
+
+1. They click the email link → land in Clerk → complete sign-in (or
+   sign-up + MFA setup if first time).
+2. Clerk redirects back to CoreLink.
+3. CoreLink writes the `membership` row binding their `user_id` to your
+   `tenant_id` with the role you assigned.
+4. Audit event: `corelink.admin.member.joined`.
+
+The invitee can now sign in directly to the CoreLink admin UI.
+
+## Step 4 — Verify the role
+
+```bash
+corelink admin members list --tenant <tenant_slug>
+```
+
+Sample output:
+
+```
+USER                                  EMAIL_HASH         ROLE        SINCE
+019095a3-...-3f4a                     a3f9...c821        developer   2026-05-15T14:02:00Z
+019095a3-...-7c1b                     b71d...e442        admin       2026-04-12T09:30:00Z
+019095a3-...-9d8e                     ee44...10c3        owner       2026-01-04T16:18:00Z
+```
+
+> Note `email_hash` — raw emails are not stored
+> (`INV-AUDIT-NO-RAW-PII`). The hash is the deterministic HMAC-SHA256 of
+> the canonical-form email; we use it for forensics and dedupe.
+
+## Step 5 — Mint their first PAT (Developer only)
+
+`Developer` users can mint their own PATs from the admin UI; `Viewer`
+cannot. If you want to pre-mint a CI service-account PAT for them:
+
+```bash
+corelink admin pat mint \
+  --tenant <tenant_slug> \
+  --issued-to-user 019095a3-...-3f4a \
+  --scopes cache:r,cache:w,cache:find-missing \
+  --ttl 90d
+```
+
+The PAT is displayed **once**. Hand it to the invitee through your secret
+manager (1Password, Doppler, your CI's secret store). The Argon2id hash
+is what we persist; the raw PAT is irrecoverable after this step.
+
+## Common pitfalls
+
+1. **"They got the invite but the link is expired."** Clerk invite emails
+   expire in 14 days. Re-issue from Settings → Members.
+2. **"They signed in but I don't see them in the member list."** Membership
+   rows are written on first successful sign-in. If they bounced off a
+   Clerk error, the membership wasn't created. Check Clerk's audit log.
+3. **"I want to invite a Developer but the role dropdown is grayed out."**
+   You're an `Admin`, not `Owner`, and the role you tried to assign is
+   above your level. Only `Owner` can grant `Owner`.
+4. **"The invitee complains they can't approve a destructive op."** Check:
+   (a) they're `Admin` or `Owner`; (b) MFA is enabled on their account;
+   (c) their last MFA challenge was within the last 30 minutes
+   (`MFA_MAX_AGE_MS`).
+
+## Related
+
+- [Role catalog](../../explanation/rbac/role-catalog.mdx) — full per-role
+  detail.
+- [Audit role changes](./audit-role-changes.mdx) — how to inspect
+  invite / demote / revoke events later.
+- [Permission matrix](../../explanation/rbac/permission-matrix.mdx) — see
+  what each role gets at a glance.

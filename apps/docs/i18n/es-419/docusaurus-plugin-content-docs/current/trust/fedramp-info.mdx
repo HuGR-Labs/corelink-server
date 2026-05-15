@@ -1,0 +1,172 @@
+---
+title: "FedRAMP posture"
+slug: "/trust/fedramp-info"
+description: "CoreLink does NOT pursue FedRAMP authorization today. Our SOC 2 + ISO 27001 crosswalks to ~85% of the FedRAMP Moderate baseline. If you need FedRAMP, contact enterprise@corelink.dev for a sponsorship discussion."
+draft: false
+cross_functional_review: TBD
+pending_signoff:
+  - "Security Lead"
+  - "Compliance Officer"
+  - "Owner"
+sources:
+  - "specs/_compliance/FEDRAMP-MODERATE-CROSSWALK-2026-05-15.md"
+  - "specs/_compliance/FEDRAMP-NOT-IN-SCOPE-RATIONALE.md"
+  - "specs/_compliance/SOC2-EVIDENCE-ROLLUP-2026-05-15.md"
+  - "specs/_compliance/ISO27001-CROSSWALK-2026-05-15.md"
+last_updated: "2026-05-15"
+---
+
+<!-- i18n:MT (es-419) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
+>
+> Canonical EN source: `docs/trust/fedramp-info.mdx`
+
+
+# FedRAMP posture
+
+> **TL;DR — CoreLink does NOT pursue FedRAMP authorization today.** Our
+> SOC 2 Type I (target Q1-2027) + ISO 27001:2022 (target Q1-2027) program
+> crosswalks to approximately **85% of the FedRAMP Rev 5 Moderate baseline
+> substance** across 17 of 18 NIST 800-53 control families. **If your
+> procurement requires a FedRAMP-authorized vendor, please contact
+> `enterprise@corelink.dev` for a sponsorship discussion** — we will
+> re-open the FedRAMP decision under named-customer sponsorship terms.
+
+## What this page tells you
+
+- We are **not on the FedRAMP Marketplace** and do not appear in
+  `marketplace.fedramp.gov`.
+- We do **not** hold a Joint Authorization Board P-ATO or an Agency ATO.
+- We are not pursuing one in the 2026-2027 GA window.
+- We **do** maintain an informational crosswalk so that you can ground-truth
+  our SOC 2 + ISO 27001 posture against the NIST 800-53 Rev 5 Moderate
+  baseline you may already know.
+
+## Why we are not pursuing FedRAMP today
+
+The full rationale (with cost / timeline numbers and trigger conditions) is
+in the internal companion document
+[`FEDRAMP-NOT-IN-SCOPE-RATIONALE.md`](https://github.com/humangr-labs/corelink/blob/main/specs/_compliance/FEDRAMP-NOT-IN-SCOPE-RATIONALE.md).
+Summary:
+
+| Reason | Detail |
+| --- | --- |
+| **Market** | Our GTM target is commercial SaaS engineering — not US federal. No federal pipeline as of 2026-05-15. |
+| **Cost** | $500-900k all-in first-year (3PAO + SSP authoring + FIPS module uplift + personnel screening + ConMon). |
+| **Timeline** | 12-18 months wall-clock to ATO (Agency path) or 24-36 months (JAB path). Incompatible with our Q4-2026 GA window. |
+| **Substance already covered** | ~85% of Moderate baseline substance is in place today via SOC 2 + ISO 27001 — the cert itself is the only delta, and it's a procurement gate, not a controls gate. |
+
+## What you can rely on instead
+
+For ~95% of commercial-regulated prospects who ask about FedRAMP **as a quality bar** (not as an actual procurement requirement), the following stack answers the question:
+
+| Artefact | Status / target | Where |
+| --- | --- | --- |
+| **FedRAMP Moderate informational crosswalk** | Current (refreshed 2026-05-15) | This page + internal companion doc (under NDA via `trust@corelink.dev`) |
+| **SOC 2 Type I report** | Target Q1-2027; readiness 83.7% internal / 96.4% Drata as of 2026-05-15 | [Compliance → SOC 2](./compliance#soc-2) |
+| **ISO 27001:2022 certificate** | Target Q1-2027; 98.9% in-scope coverage today | [ISO 27001:2022](./iso27001) |
+| **CSA STAR Level 1 (CAIQ) self-assessment** | Available on request (~2 person-weeks turnaround) | `trust@corelink.dev` |
+| **Pentest report (annual external)** | Schellman / Bishop Fox | `trust@corelink.dev` (NDA-gated) |
+| **Sub-processor SOC 2 + FedRAMP inheritance** | Inherited from Cloudflare, AWS, GCP, Azure, Drata, PagerDuty | [Sub-processors](./subprocessors) |
+
+## Coverage estimate vs. FedRAMP Moderate
+
+The full crosswalk is in
+[`FEDRAMP-MODERATE-CROSSWALK-2026-05-15.md`](https://github.com/humangr-labs/corelink/blob/main/specs/_compliance/FEDRAMP-MODERATE-CROSSWALK-2026-05-15.md).
+Headline at the family level (18 of 20 NIST 800-53 Rev 5 families included
+— Program Management `PM` and Privacy `PT` are excluded from the Moderate
+baseline as program / privacy out-of-baseline):
+
+| Bucket | Family count | Estimated substance coverage |
+| --- | --: | --: |
+| **Coverage** (full substance via SOC 2 + ISO 27001 + CTRL-*) | 10 / 18 | ~76.7% |
+| **Partial** (substance present; FedRAMP-formality / FIPS-validation gap) | 7 / 18 | ~19.5% |
+| **Not-in-Scope** (PS — US-citizen personnel screening) | 1 / 18 | ~3.7% |
+| **Gap** (no equivalent control) | 0 / 18 | 0% |
+| **Substance covered today (Coverage + Partial)** | **17 / 18** | **~85%** |
+
+### Families ≥ 80% covered via SOC 2 + ISO 27001 overlap
+
+| Family | Status | Why |
+| --- | --- | --- |
+| **AC** Access Control | Coverage | WebAuthn + Clerk SSO + MFA + per-tenant DO + RBAC |
+| **AU** Audit & Accountability | Coverage (exceeds) | Merkle audit chain + R2 Object Lock + 7y retention |
+| **CM** Configuration Management | Coverage (exceeds) | SLSA L3 + Cosign + Rekor + reproducible builds |
+| **MA** Maintenance | Coverage (inherited) | Sub-processor SOC 2 (cloud-only) |
+| **MP** Media Protection | Coverage | Logical erasure + sub-processor media destruction |
+| **PE** Physical & Environmental | Coverage (inherited) | Sub-processor SOC 2 Type II |
+| **RA** Risk Assessment | Coverage | STRIDE/LINDDUN + Dependency-Track + failure-mode taxonomy |
+| **SA** System & Services Acquisition | Coverage | SBOM + property tests + TLA+ + vendor risk register |
+| **SI** System & Information Integrity | Coverage (exceeds) | Rust memory safety + cargo-fuzz + immutable Workers |
+| **SR** Supply Chain Risk Management | Coverage (exceeds) | SLSA L3 + signed deploys + transparency logs + vendor register |
+| **AT** Awareness & Training | Partial (≥80% substance) | Training cadence informal; formality gap |
+| **CP** Contingency Planning | Partial (≥80% substance) | 14-drill BCP/DR cadence; first cycle scheduled |
+| **CA** Assessment, Authorization & Monitoring | Partial (≥80% substance) | CA-6 ATO process itself is FedRAMP-unique |
+
+### What's not covered
+
+- **PS — Personnel Security:** FedRAMP Moderate requires US-citizen background-investigated personnel for privileged access. We do not implement OPM-style screening; we implement SOC 2 / ISO 27001 personnel-security controls (Owner attestation + advisor pool CV review + NDAs).
+- **IA-7 + SC-13 cryptographic-module FIPS 140-3 validation:** substance is in place across our BYOK matrix; AWS KMS is FIPS 140-3 L3 attested today (per
+  [BYOK FIPS attestation matrix](https://github.com/humangr-labs/corelink/blob/main/specs/_compliance/BYOK-FIPS-ATTESTATION-MATRIX.md));
+  GCP CloudHSM, Azure Key Vault HSM Premium, and HashiCorp Vault Enterprise FIPS paths are mapped with RFIs in flight.
+- **IR-6 US-CERT reporting clause:** the FedRAMP-specific 1-hour reporting timeline to US-CERT is not part of our IR plan. We do commit to 72-hour breach notification under LGPD Art. 33 / GDPR Art. 33 to customers and supervisory authorities.
+- **PL-2 FedRAMP SSP template:** our security/privacy plan is documented exhaustively in
+  [`security_model.md`](https://github.com/humangr-labs/corelink/blob/main/specs/03_architecture/security_model.md)
+  and
+  [`privacy_model.md`](https://github.com/humangr-labs/corelink/blob/main/specs/03_architecture/privacy_model.md)
+  — not in the GSA SSP Word template.
+- **CA-6 ATO process:** by definition not in scope when we do not pursue authorization.
+
+## When the FedRAMP decision would re-open
+
+We re-evaluate the not-in-scope decision under any of the following **hard trigger** conditions (full list in
+[`FEDRAMP-NOT-IN-SCOPE-RATIONALE.md §4`](https://github.com/humangr-labs/corelink/blob/main/specs/_compliance/FEDRAMP-NOT-IN-SCOPE-RATIONALE.md)):
+
+1. **Named US federal customer with sponsorship.** A US federal agency, DoD component, or federal system integrator commits in writing to sponsor a FedRAMP authorization with one or more of: Agency ATO sponsorship, $1.5M+ ARR or $5M+ TCV contract, $400k+ co-funding of 3PAO + SSP costs, 12-18-month timeline acceptance.
+2. **Aggregate federal pipeline ≥ $5M ARR** across three or more opportunities each conditioned on FedRAMP authorization.
+3. **Industry partner co-investment** of ≥ $500k toward FedRAMP authorization as part of a partnership / OEM agreement.
+
+Soft triggers (revisited at quarterly compliance review):
+
+- $500k+ ACV commercial enterprise prospect explicitly making FedRAMP a procurement-blocking requirement.
+- Cloudflare Workers / R2 / D1 / DO obtains FedRAMP Moderate authorization on the Marketplace.
+- FedRAMP Rev 6 baseline release materially changes substance.
+- Adjacent certification needed (DoD CMMC, IRS Pub 1075, CJIS).
+
+## What to do if you need FedRAMP
+
+| Your situation | What to do |
+| --- | --- |
+| **You need FedRAMP-aware vendor (checkbox)** | Email `trust@corelink.dev`; we send the NDA-gated FedRAMP Moderate crosswalk + SOC 2 readiness rollup + ISO 27001 crosswalk + sub-processor inheritance pack within 1 business day. |
+| **You need an actual FedRAMP-authorized vendor today** | We are not that vendor today. Honest answer: look at Cloudflare's FedRAMP-authorized offerings, Snowflake on AWS GovCloud, or HashiCorp HCP federal-isolated. |
+| **You can sponsor a FedRAMP authorization** | Email `enterprise@corelink.dev` with subject "FedRAMP sponsorship discussion". We will respond with a sponsorship-terms one-pager and book a 30-minute scoping call. |
+| **You need a specific NIST 800-53 control verified** | Email `trust@corelink.dev` with the control ID (e.g., `AC-3`, `AU-2`, `SC-13`). We will respond with our SOC 2 + ISO 27001 evidence row and any FedRAMP-specific delta. |
+
+## Related
+
+- [Trust Center overview](./)
+- [Compliance — SOC 2 / LGPD / GDPR / HIPAA / PCI](./compliance)
+- [ISO 27001:2022](./iso27001)
+- [Sub-processors](./subprocessors)
+- [Data handling](./data-handling)
+- [Incident response](./incident-response)
+- [Security overview](/security)
+- [BYOK customer-managed keys](/security/byok)
+
+## Contact
+
+| What you need | Where to send it |
+| --- | --- |
+| FedRAMP Moderate crosswalk pack (NDA-gated) | `trust@corelink.dev` |
+| FedRAMP sponsorship discussion (hard trigger) | `enterprise@corelink.dev` |
+| Specific NIST 800-53 control evidence request | `trust@corelink.dev` |
+| Procurement / vendor review forms | `trust@corelink.dev` |
+| General compliance questions | `trust@corelink.dev` |
+
+> **Honesty commitment.** If you ask whether we are FedRAMP-authorized, the
+> answer is "no, and we are not pursuing it today." We will not
+> hand-wave a "FedRAMP-aligned" claim into "FedRAMP-ready" or
+> "FedRAMP-equivalent." The crosswalk above is the truthful answer at
+> the substance level; the certificate itself is the only thing that
+> equals a certificate.

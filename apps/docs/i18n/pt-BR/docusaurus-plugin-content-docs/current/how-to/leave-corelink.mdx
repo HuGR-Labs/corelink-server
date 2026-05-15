@@ -1,0 +1,213 @@
+---
+id: leave-corelink
+title: "Leave CoreLink — offboarding in 5 steps"
+slug: "/how-to/leave-corelink"
+sidebar_label: "Leave CoreLink"
+description: "Cancel your CoreLink tenant cleanly: export your data, revert if you change your mind, and have us cryptographically erase everything at T+90 with audit-grade evidence."
+tags: [offboarding, cancellation, export, byok, data-egress, how-to]
+last_updated: "2026-05-15"
+---
+
+<!-- i18n:MT (pt-BR) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
+>
+> Canonical EN source: `docs/how-to/leave-corelink.mdx`
+
+
+# Leave CoreLink — offboarding in 5 steps
+
+This guide walks you through cancelling your CoreLink tenant.
+We designed the flow so leaving is **as friction-free as joining**,
+with three guarantees:
+
+1. **Your data is portable.** From T+0 to T+30 you can run a single
+   CLI command and walk away with a content-addressed archive of
+   every blob, every audit row, and every RBAC artifact.
+2. **You can change your mind.** From T+0 to T+45 you can revert
+   to a fully-active tenant with one click. No support ticket
+   required.
+3. **At T+90 we cryptographically erase everything.** When BYOK
+   is enabled, we destroy the customer-managed encryption key —
+   meaning even our own engineers can't recover the data after that
+   point. You get a signed receipt.
+
+For the legal posture (refund mechanics, MSA §10, DPA v1.0.0 §11),
+see the [Sales FAQ entry P6](https://corelink.dev/faq#p6-refund)
+and our [Trust page](/trust/data-handling).
+
+:::note Individual data-subject rights are a different flow
+If you are a **natural person** whose data we process and you want
+to exercise your individual rights under LGPD Art. 18 / GDPR
+Art. 15-22 / CCPA §1798.105 — use the DSR self-service surface at
+`/privacy/dsr`, not this guide. This guide is for **whole-tenant
+commercial offboarding**.
+:::
+
+## The 5-state lifecycle
+
+When you cancel, your tenant moves through 5 canonical states:
+
+| State | When | What you can do |
+|---|---|---|
+| `CANCEL_REQUESTED` | T+0 | Everything (read / write / admin / export / revert). |
+| `GRACE_PERIOD` | T+1 to T+30 | Everything. **Export your data here.** |
+| `READ_ONLY` | T+30 to T+45 | Read + export + revert. Writes return HTTP 409. |
+| `SUSPENDED` | T+45 to T+90 | Nothing self-service. Contact support if you want back in. |
+| `ERASED` | T+90+ | Terminal. Cryptographic erasure committed. |
+
+## Step 1 — Initiate cancellation (T+0)
+
+In the dashboard, go to **Settings → Tenant → Cancel my tenant**.
+
+You will be asked to:
+
+- Confirm your account email.
+- Pass a fresh MFA step-up challenge (anti-fraud).
+- Optionally fill the cancellation survey (free-form text;
+  ≤ 4 KB; sent to product, not used against you in support).
+
+If you prefer the API:
+
+```bash
+curl -X POST https://api.corelink.dev/v1/tenant/$TENANT_ID/offboard \
+  -H "Authorization: Bearer $CORELINK_TOKEN" \
+  -H "X-Corelink-MFA-Step-Up: $STEP_UP_TOKEN" \
+  -d '{"reason": "switching to in-house solution"}'
+```
+
+The response contains your `cancel_requested_at_ms` anchor —
+this is your **T+0 timestamp**; every subsequent deadline is
+computed from this.
+
+You will receive a confirmation email within 60 seconds. If you
+**do not** receive it, your cancellation **did not land** — try
+again or email support (the system is designed to fail-CLOSED,
+so a missing email means a missing audit row).
+
+## Step 2 — Export your data (T+0..T+30)
+
+You have 30 days to export everything. The canonical CLI command:
+
+```bash
+corelink tenant export \
+  --tenant-id $TENANT_ID \
+  --output ./corelink-backup-$(date +%Y%m%d).tar.zst
+```
+
+The output archive contains:
+
+- **CAS blobs.** Every BLAKE3-addressed blob stored under your
+  tenant prefix. Content-addressed, so you can verify integrity
+  byte-by-byte against the digests in the manifest.
+- **Audit-chain slice.** Every audit row attributable to your
+  tenant. Merkle-linked + RFC 6962 inclusion proofs included
+  (so you can present this as evidence to your next vendor or
+  your auditor without us in the loop).
+- **RBAC roster.** Every user, every role, every API token
+  (rotated / revoked status preserved).
+- **DPA acceptance receipt.** Signed JWT of the DPA version you
+  accepted, with the canonical `corelink-dpa-acceptance`
+  envelope.
+
+Verification:
+
+```bash
+corelink tenant verify-export \
+  --archive ./corelink-backup-$(date +%Y%m%d).tar.zst
+```
+
+The export endpoint remains reachable through T+45 (READ_ONLY),
+but we recommend exporting in the T+0..T+30 window so you have
+buffer time if something goes wrong.
+
+## Step 3 — Change your mind (T+0..T+45)
+
+You can revert to ACTIVE at any time during the first 45 days,
+with full data:
+
+```bash
+curl -X POST https://api.corelink.dev/v1/tenant/$TENANT_ID/offboard/revert \
+  -H "Authorization: Bearer $CORELINK_TOKEN"
+```
+
+Or click **Settings → Tenant → Restore my tenant** in the
+dashboard. There is no penalty, no support call, no escalation.
+Your tenant immediately returns to a fully-active state.
+
+After T+45 (SUSPENDED), restoration requires a support call;
+email `support@corelink.dev` and we'll process a force-revert
+within one business day. After T+90 (ERASED), restoration is no
+longer possible — the data is cryptographically gone.
+
+## Step 4 — Watch the timeline (T+30, T+45)
+
+You will receive 3 transactional emails between T+0 and T+45:
+
+- **T+1 — "Your CoreLink tenant entered the grace period."**
+  Tells you the export command + the revert URL.
+- **T+30 — "Your CoreLink tenant is now read-only."**
+  Writes will start returning HTTP 409. You can still read +
+  export + revert.
+- **T+45 — "Your CoreLink tenant has been suspended."**
+  Last-chance email. Self-service revert is no longer available
+  after this point; contact support if you change your mind.
+
+If you stop receiving emails, check that
+`@corelink.dev` is not being blocked by your provider. The
+audit chain is the authoritative record of every notification
+that was attempted.
+
+## Step 5 — Receive the erasure receipt (T+90)
+
+At T+90, our operations team commits the final erasure with a
+dry-run preview (two-operator dual-approval; auditable). When the
+cascade completes you will receive:
+
+- A signed `corelink.tenant.offboarding.erased` envelope (JCS-
+  canonicalized; RS256-signed) listing the canonical erased
+  artifacts (blob count, audit row count, BYOK CMK destroy
+  receipt when applicable).
+- An `Ed25519` erasure attestation from `corelink-erasure-
+  attestation` (the canonical 7-year proof you can present to
+  your auditor; mirrors the existing per-record DSR erasure
+  attestation surface).
+
+**If you have BYOK enabled:** the customer-managed CMK in your
+KMS (AWS / GCP / Azure / Vault) is destroyed. This means even
+our own engineers cannot recover the data from this point on,
+because the envelope-encryption DEK that wrapped your blobs is
+mathematically unrecoverable.
+
+**If you do NOT have BYOK enabled:** we rely on our internal
+key rotation + R2/D1/KV tombstone-and-purge cascade. Same
+forensic outcome; weaker mathematical guarantee. (This is why
+we offer BYOK for free on the Enterprise tier — when you leave,
+you take the only copy of the key with you.)
+
+## What to expect about timing
+
+- **T+0**: cancellation confirmed; full capabilities retained.
+- **T+1**: grace period starts (no functional change yet).
+- **T+30**: writes start failing with HTTP 409 (`offboarding_read_only`).
+- **T+45**: full suspension; reads start failing with HTTP 410 (`offboarding_suspended`).
+- **T+90**: final erasure committed; receipts emailed.
+
+Edge cases:
+
+- **Force-advance** (skip ahead): if your jurisdiction issues a
+  takedown order, we may force-advance with an audit trail.
+  This is rare and we will contact you BEFORE acting unless
+  legally prohibited.
+- **Legal hold**: if your tenant is under a litigation hold,
+  the timer pauses. You will be notified; the hold is logged
+  in the audit chain.
+
+## Cross-references
+
+- [Sales FAQ P6 — refund posture](https://corelink.dev/faq#p6-refund)
+- [Sales FAQ M4 — data egress cost](https://corelink.dev/faq#m4-egress)
+- [Trust page — Data handling](/trust/data-handling)
+- [How-to — DSR export for individual data subjects](/how-to/dsr-export)
+  (separate flow for individual rights, not tenant offboarding)
+- [Reference — `corelink tenant export` CLI](/reference/cli/tenant-export)

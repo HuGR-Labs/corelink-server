@@ -1,0 +1,206 @@
+---
+title: "Data handling"
+slug: "/trust/data-handling"
+description: "Where CoreLink stores customer data, how data is encrypted at rest / in flight / in use, residency options (BR / US / EU), and retention windows."
+draft: false
+cross_functional_review: TBD
+pending_signoff:
+  - "Security Lead"
+  - "Legal"
+  - "DPO"
+sources:
+  - "specs/03_architecture/security_model.md"
+  - "specs/03_architecture/privacy_model.md"
+  - "specs/_compliance/LGPD-RESIDENCY-ATTESTATION-2026-05-15.md"
+last_updated: "2026-05-15"
+---
+
+<!-- i18n:MT (es-419) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
+>
+> Canonical EN source: `docs/trust/data-handling.mdx`
+
+
+# Data handling
+
+This page documents **where customer data physically lives**, **how it is
+protected**, and **how long we keep it**. Everything below is verifiable —
+either by reading the open-source code, by inspecting your tenant via the
+admin API, or by requesting the attestation pack at `trust@corelink.dev`.
+
+## What we store
+
+CoreLink's data surface is intentionally narrow:
+
+| Data class | What it is | Where it lives |
+| --- | --- | --- |
+| **Content-addressable blobs** | Build artefacts, action outputs, intermediate caches keyed by BLAKE3 / SHA-256 digest | Cloudflare R2 (per-tenant prefix) |
+| **Action cache metadata** | Action-result records, REAPI v2 metadata | Cloudflare D1 (per-tenant database) |
+| **Hot path / counters** | Short-TTL counters, idempotency keys, rate-limit windows | Cloudflare KV |
+| **Per-tenant coordination state** | Tenant-scoped Durable Object instances | Cloudflare Durable Objects |
+| **Identity records** | User identities, MFA, session tokens | Clerk (per CoreLink tenant) |
+| **Billing records** | Customer ID, subscription ID, invoice references | Stripe; mirrored summary in Neon control DB |
+| **Audit chain** | Append-only Merkle-linked audit events | Cloudflare R2 (audit prefix) + reconcile job in D1 |
+| **Telemetry & logs** | Latency histograms, error counts, aggregate metrics — **no customer artefact content** | Grafana Cloud (no PII / no payloads) |
+
+We do **not** store: PHI, cardholder data (Stripe holds it), customer email
+beyond what's needed for billing notifications, or copies of customer code
+outside the CAS surface.
+
+## Residency
+
+Every CoreLink tenant chooses a `primary_region` at signup. The values are
+a closed enum — there are no exceptions.
+
+| Pin | Region | Geography | Used for |
+| --- | --- | --- | --- |
+| `sam` | South America (São Paulo) | Brazil | LGPD-bound tenants |
+| `nam` | North America (Iowa / Virginia) | United States | Default for US customers |
+| `eur` | Europe (Frankfurt / Dublin) | EU | GDPR-bound tenants |
+| `oce` | Oceania (Sydney) | AU / NZ | Available on request |
+| `apc` | Asia-Pacific (Tokyo / Singapore) | JP / SG | Available on request |
+| `mea` | Middle East (Dubai) | UAE | Available on request |
+
+What `primary_region` controls:
+
+- **R2 object placement.** All blobs are pinned to the colo closest to the
+  region's anchor city. Reads are served from in-region colos.
+- **D1 placement.** Per-tenant D1 database is created in-region.
+- **DO placement.** Durable Object instance is colocated with D1.
+- **Failover semantics.** During a region outage, the failover path is
+  documented per region in
+  [`specs/_runbooks/RB-DR-DRILL.md`](https://github.com/humangr-labs/corelink/blob/main/specs/_runbooks/RB-DR-DRILL.md).
+  For Brazil specifically, see
+  [Brazil residency & LGPD](/residency/lgpd-brazil) — Art. 33 §1º allows
+  out-of-region temporary processing during a documented emergency.
+
+Residency is enforced by `crates/corelink-privacy-residency-enforcement/`
+and verified nightly by `scripts/verify-lgpd-residency.py`. You can also
+verify your own tenant via the admin API:
+
+```bash
+curl -H "Authorization: Bearer $PAT" \
+     https://api.corelink.dev/v1/tenant/me/residency-proof
+```
+
+The response is a signed attestation including the region pin, the last
+verification timestamp, and a Merkle inclusion proof against the audit chain.
+
+## Encryption
+
+### At rest
+
+All persistent storage is encrypted at rest with **AES-256-GCM**:
+
+- **R2 blobs** — Cloudflare-managed SSE (AES-256-GCM) by default.
+- **R2 blobs with BYOK** — additional customer-side envelope encryption per
+  blob (per-tenant DEK wrapped by the tenant's KMS root key). See
+  [BYOK customer-managed keys](/security/byok) for the four supported
+  providers (AWS KMS, GCP Cloud KMS, Azure Key Vault, HashiCorp Vault).
+- **D1 + KV + DO** — Cloudflare-managed encryption at rest.
+- **Backups** — encrypted at rest with the same envelope as the source.
+
+### In flight
+
+- **External traffic:** **TLS 1.3** mandatory, with HSTS
+  (`max-age=63072000; includeSubDomains; preload`). HTTP/2 + HTTP/3
+  available. Cipher suites limited to AEAD (AES-256-GCM, ChaCha20-Poly1305).
+- **Edge-to-origin:** mTLS between Cloudflare edge and backing data planes
+  per `CTRL-NET-002`.
+- **Service-to-service:** internal calls between Workers are routed through
+  Cloudflare's encrypted internal fabric.
+
+The full cryptography baseline is in the
+[Security overview](/security#cryptography-baseline).
+
+### In use
+
+Worker isolates provide per-request memory isolation (V8 isolate model).
+Customer artefact bytes are not held in long-lived memory between requests;
+each request gets a fresh isolate.
+
+When BYOK is enabled, **plaintext data encryption keys (DEKs) never leave
+the request scope**. They are decrypted from the customer's wrapped form,
+used to encrypt or decrypt the blob in-flight, and discarded before the
+isolate is recycled.
+
+## Retention
+
+Retention is **driven by data class**, not by a global default:
+
+| Data class | Default retention | Customer-controlled? |
+| --- | --- | --- |
+| Content-addressable blobs | Customer-configurable; default LRU 90 days | Yes — per-tenant TTL + manual purge |
+| Action cache metadata | Mirrors blob TTL | Yes — coupled to blob lifetime |
+| Audit chain | **7 years** | No — compliance-driven minimum |
+| Identity records (Clerk) | While account active + 30 days post-cancel | Yes — DSR erasure available |
+| Billing records (Stripe + control DB) | 7 years (tax / accounting) | No — regulatory requirement |
+| Telemetry aggregates (Grafana) | 13 months | No — operational retention |
+| Backup snapshots | 35 days rolling | No — operational retention |
+
+### Right to erasure
+
+CoreLink supports GDPR Art. 17 and LGPD Art. 18 erasure requests:
+
+- **Tenant-initiated erasure** via the admin API (`DELETE /v1/tenant/me`)
+  triggers a verifiable erasure workflow with cryptographic attestation
+  (`INV-DATA-ERASURE-COMPLETE`, `INV-ERASURE-ATTESTATION-SIGNED`).
+- **Audit-chain redaction** uses the salt-rotation pattern documented in
+  `ADR-S11-003` — the audit record remains for integrity, but the
+  PII-bearing claim becomes cryptographically unrecoverable.
+- **Backup tombstones** — erasure requests propagate to rolling backups
+  within 35 days (the backup window); a tombstone is recorded on day 0
+  so a Type II auditor can trace the chain.
+
+See the [DSR runbooks](https://github.com/humangr-labs/corelink/tree/main/specs/_runbooks)
+(`RB-DSR-INTAKE-FAILURE`, `RB-DSR-ERASURE-INCOMPLETE`) for the operational
+side.
+
+## Customer data flow (high-level)
+
+```
+                ┌─────────────────┐
+                │   Your CI / IDE │
+                └────────┬────────┘
+                         │ TLS 1.3
+                         ▼
+       ┌─────────────────────────────────┐
+       │ Cloudflare Edge (region-pinned) │
+       └────────┬────────────┬───────────┘
+                │            │
+        ┌───────┘            └─────────┐
+        ▼                              ▼
+  ┌────────────┐               ┌──────────────┐
+  │ Workers    │ in-region     │ Durable Obj  │
+  │ (isolate)  │◄──────────────┤ (per-tenant) │
+  └─────┬──────┘               └──────────────┘
+        │
+        ├──► R2 (per-tenant prefix, BYOK envelope if enabled)
+        ├──► D1 (per-tenant DB, region-pinned)
+        ├──► KV (per-tenant namespace, short-TTL only)
+        └──► Audit chain (append-only, Merkle-linked)
+```
+
+## Verifying it yourself
+
+You don't have to take our word for any of the above. Three options:
+
+1. **Read the code.** The repo is
+   [`humangr-labs/corelink`](https://github.com/humangr-labs/corelink).
+   Residency enforcement, BYOK envelope, audit chain are all open.
+2. **Hit the admin API.** Endpoints under `/v1/tenant/me/*` return signed
+   attestations of region pin, encryption status, and audit-chain head.
+3. **Audit your own data.** Audit-chain inclusion proofs are exportable as
+   RFC 6962 proofs you can verify offline. See
+   [Audit chain](/security/audit-chain).
+
+## Related
+
+- [Trust Center overview](./)
+- [Compliance](./compliance)
+- [Sub-processors](./subprocessors)
+- [Incident response](./incident-response)
+- [Brazil residency & LGPD (Art. 33 §1º)](/residency/lgpd-brazil)
+- [BYOK customer-managed keys](/security/byok)
+- [Audit chain and Merkle proofs](/security/audit-chain)

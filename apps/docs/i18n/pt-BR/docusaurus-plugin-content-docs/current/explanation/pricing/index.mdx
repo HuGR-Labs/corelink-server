@@ -1,0 +1,183 @@
+---
+title: "Pricing overview"
+slug: "/pricing/"
+description: "CoreLink pricing tiers: Free, Starter, Team, and Enterprise. Feature matrix, included quotas, and overage pricing."
+draft: true
+cross_functional_review: TBD
+pending_signoff:
+  - "Finance"
+  - "Marketing"
+  - "Product"
+sources:
+  - "marketing/launch/BLOG-POSTS/05-fast-cache-hit-economics.md"
+  - "crates/corelink-tier-selection/src/tier.rs"
+last_updated: "2026-05-15"
+---
+
+<!-- i18n:MT (pt-BR) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
+>
+> Canonical EN source: `docs/explanation/pricing/index.mdx`
+
+
+# Pricing overview
+
+**Understanding-oriented.** This page explains *what* each CoreLink tier
+includes, *why* the tier boundaries are where they are, and *how* the
+bill is computed. For interactive estimation, see the
+[cost calculator](./calculator). For head-to-head comparisons against
+self-hosted alternatives, see [vs. alternatives](./comparison).
+
+> **DRAFT — pending Finance + Marketing + Product sign-off.** List prices
+> below are launch-day targets and remain placeholder-eligible until the
+> Finance audit trail is closed. Customers running pre-GA pilots should
+> consider the numbers indicative, not contractual.
+
+## The four tiers
+
+CoreLink ships four customer-facing tiers. Three are self-serve via
+Stripe Checkout (Starter, Team); one is instant-activation (Free); one
+routes through an inquiry form (Enterprise).
+
+| Tier | Monthly price | Included CAS storage | Included read traffic | BYOK | Region pin | Activation |
+|---|---|---|---|---|---|---|
+| **Free** | $0 | 5 GB | 50 GB / mo | — | shared | Instant |
+| **Starter** | $29 | 50 GB | 500 GB / mo | — | 1 region | Stripe Checkout |
+| **Team** | $199 | 500 GB | 5 TB / mo | optional add-on | up to 2 regions | Stripe Checkout |
+| **Enterprise** | Custom | Custom | Custom | included | all 4 regions | Inquiry form |
+
+All tiers run on the same data plane, the same SLO catalog, and the
+same audit and residency model. The differences are quotas, BYOK
+inclusion, region count, and support tier — not capability.
+
+## Feature matrix
+
+| Capability | Free | Starter | Team | Enterprise |
+|---|---|---|---|---|
+| REAPI v2 (CAS + Action Cache) | ✓ | ✓ | ✓ | ✓ |
+| BLAKE3 content addressing | ✓ | ✓ | ✓ | ✓ |
+| Zero-egress on cache reads | ✓ | ✓ | ✓ | ✓ |
+| Audit chain (Merkle proofs) | ✓ | ✓ | ✓ | ✓ |
+| RBAC + invite teammates | ✓ (3 seats) | ✓ (10 seats) | ✓ (50 seats) | unlimited |
+| BYOK (customer-managed KEK) | — | — | add-on | included |
+| Region pin (residency) | shared | 1 of 4 | up to 2 | all 4 |
+| Multi-region failover | — | — | ✓ | ✓ |
+| DPA (Data Processing Addendum) | clickwrap | clickwrap | clickwrap | negotiated |
+| Support | community | email (2 biz day) | email (1 biz day) | dedicated (1 hr) |
+| Uptime SLO | best-effort | 99.5% | 99.9% | 99.95% |
+| Audit log retention | 7 days | 30 days | 90 days | 1 year+ |
+| Compliance reports (SOC 2, ISO) | — | — | summary | full + custom |
+
+## How the bill is computed
+
+The monthly invoice for paid tiers is:
+
+```
+invoice = base_fee
+        + max(0, observed_storage_gb - included_storage_gb) × overage_storage_per_gb
+        + max(0, observed_reads_gb   - included_reads_gb)   × overage_reads_per_gb
+        + optional_add_ons
+```
+
+Overage unit prices:
+
+| Tier | Storage overage ($/GB/mo) | Read overage ($/GB) |
+|---|---|---|
+| Starter | $0.20 | $0.04 |
+| Team | $0.15 | $0.03 |
+| Enterprise | negotiated | negotiated |
+
+Free tier has no overage line: it is hard-capped at the included quotas
+and returns `429 Too Many Requests` past the cap until the next
+calendar month. The cap is a feature, not a punishment — it is what
+keeps Free free.
+
+BYOK add-on for Team is a flat $99/month and provides per-tenant DEK
+wrapping by a customer-controlled KEK in AWS KMS, GCP KMS, or Azure
+Key Vault.
+
+## Why no per-egress line item
+
+Cloud egress is, on most managed cache vendors, the dominant line item
+on a heavy-CI bill. CoreLink stores cache content on Cloudflare R2,
+which charges zero for egress on reads to the public internet and to
+Cloudflare's network. CoreLink passes that property through to
+customers: paid tiers price storage and per-GB *read* operations (a
+per-operation amortization), not per-GB *bytes* leaving the cache.
+
+This is structurally why the CoreLink bill at heavy read volume is
+typically a multiple smaller than the S3-backed self-hosted equivalent
+at the same hit-rate and working-set. The [comparison page](./comparison)
+walks the arithmetic at three scale points.
+
+## Why no per-seat line item on Starter / Team
+
+CoreLink does not charge per developer seat. Cache load correlates with
+build volume and CI parallelism, not with seat count, and per-seat
+pricing creates a perverse incentive against onboarding the next
+engineer to the cache. Seats are capped per tier (above) as an
+anti-abuse measure; they are not a billing dimension.
+
+Enterprise removes the cap entirely.
+
+## Why no compute / CPU line item
+
+CoreLink is a cache, not a build runner. Customers run their own
+runners (GitHub Actions, BuildJet, self-hosted, etc.); CoreLink serves
+the cache. There is therefore no per-minute compute line item on the
+CoreLink invoice — the customer is already paying their CI vendor for
+compute.
+
+## What the Free tier is for
+
+The Free tier is designed for two cases:
+
+1. **Solo developers** running personal monorepos. 5 GB and 50 GB/mo of
+   reads is enough for a typical personal Bazel build with daily
+   incremental green builds.
+2. **Evaluation by larger teams** who want to wire CoreLink into a
+   single CI pipeline alongside their existing cache for a two-week
+   shadow comparison.
+
+Free is not a trial that expires. It is a permanent free tier with
+hard quotas. Most teams whose CI volume justifies a managed cache
+graduate to Starter or Team within a week of seriously using it.
+
+## What Enterprise gives you that Team does not
+
+- **BYOK inclusion** (Team can buy it as an add-on; Enterprise has it).
+- **All four regions** simultaneously, not just two.
+- **Negotiated DPA** rather than clickwrap, including custom data-handling
+  language for regulated industries (financial services, healthcare,
+  defense-adjacent).
+- **Custom retention** for audit logs and compliance reports — multi-year
+  retention is available on negotiated terms.
+- **Dedicated support** with a 1-hour SLO during business hours, with
+  named technical account manager assignments above a usage threshold.
+- **Custom quotas** for storage, reads, and seats.
+
+Enterprise is the right fit when at least one of the following is
+true: residency requirements exceed two regions; security review
+requires BYOK; the customer's auditors require multi-year retention;
+the customer's CI fleet exceeds Team's quotas during peak.
+
+## Trace
+
+- spec contract S-19 §6.1 (tier taxonomy)
+- spec contract S-19 §5.3 R-S19-7 (tier canonical set)
+- WI-S19-004 §6.1 (5-tier baseline; see caveat below)
+- WI-S19-005 (Enterprise inquiry form routing)
+- WI-S20-008 §2.1.2 Post 5 (economics framing)
+- REMOTE-CACHE-PRODUCT-PROFILE
+- SLO-LAT-CAS-GET (latency budget)
+
+### Caveat: 4 customer-facing tiers vs. 5 internal tiers
+
+The internal billing system models five tiers — Free, Starter, Team,
+Pro, Enterprise — to support an interim Pro SKU that Finance may or
+may not enable for GA-day depending on the customer mix at the time.
+The pages here describe the four customer-facing tiers that will be
+listed on the public marketing site at GA-day. If the Pro SKU is
+enabled before GA, this page and the calculator will be updated to
+include it before the public toggle flips.

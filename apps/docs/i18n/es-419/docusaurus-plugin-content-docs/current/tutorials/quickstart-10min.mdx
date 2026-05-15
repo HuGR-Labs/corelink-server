@@ -1,0 +1,372 @@
+---
+id: quickstart-10min
+title: Quickstart — store and retrieve in 10 minutes
+sidebar_label: 10-minute quickstart
+description: From zero to a stored + retrieved + audited CAS object in under 10 minutes. The fastest path from "never heard of CoreLink" to "it works on my box".
+---
+
+<!-- i18n:MT (es-419) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
+>
+> Canonical EN source: `docs/tutorials/quickstart-10min.mdx`
+
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Quickstart — store and retrieve in 10 minutes
+
+**Goal:** install the CLI, store an artifact, retrieve it as if from another
+machine, see it in the audit trail, and call CoreLink from your language
+of choice. **Total budget: ≤ 10 minutes for an experienced engineer.**
+
+Every command below is canonical and verified against the actual
+`corelink-cli` subcommand surface (see [`crates/corelink-cli/src/main.rs`](https://github.com/humangr-labs/corelink-server/blob/main/crates/corelink-cli/src/main.rs)).
+You can use a sandbox PAT against a 24-hour scratch tenant — no credit
+card required.
+
+:::tip Sandbox vs production
+A **sandbox** tenant is a free, 24h-TTL scratch namespace. Storage,
+egress, and audit retention work exactly like production but the tenant
+is garbage-collected automatically. You can convert to a real (paid)
+tenant any time — see [What's next](#step-7--whats-next-30s).
+:::
+
+---
+
+## Step 0 — Install the CLI <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~1 min)</span>
+
+The `corelink` CLI is a single statically-linked binary. Pick your platform.
+
+<Tabs groupId="install-os">
+<TabItem value="macos" label="macOS" default>
+
+```bash
+brew install humangr-labs/tap/corelink
+```
+
+Or, if you don't use Homebrew:
+
+```bash
+curl -fsSL https://releases.corelink.dev/cli/latest/corelink-darwin-arm64.tar.gz \
+  | tar -xz -C /usr/local/bin
+```
+
+</TabItem>
+<TabItem value="linux" label="Linux">
+
+```bash
+curl -fsSL https://releases.corelink.dev/cli/latest/corelink-linux-amd64.tar.gz \
+  | sudo tar -xz -C /usr/local/bin
+```
+
+</TabItem>
+<TabItem value="windows" label="Windows">
+
+```powershell
+winget install humangr-labs.corelink
+```
+
+</TabItem>
+</Tabs>
+
+Verify the install:
+
+```bash
+corelink version
+# corelink 1.0.0 (build sha=... slsa=https://...)
+```
+
+If you see a version string, you're good. If not, jump to the
+[FAQ](./quickstart-faq.mdx).
+
+---
+
+## Step 1 — Sandbox sign-in <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~1 min)</span>
+
+CoreLink authenticates every operation with a **Personal Access Token
+(PAT)**. For the quickstart we use a *sandbox* PAT that auto-creates a
+24h-TTL tenant on first use — no billing setup required.
+
+1. Visit **[https://app.corelink.dev/sandbox](https://app.corelink.dev/sandbox)** and sign in with Google, GitHub, or email (Clerk-backed; no credit card prompted).
+2. Click **Create sandbox PAT**. The PAT format is `corelink_sandbox_t_xxx.xxx.xxx`.
+3. Export it in your shell — the CLI reads from `CORELINK_PAT` by design (PAT flags are rejected per security control CTRL-CRED-001):
+
+```bash
+export CORELINK_PAT="corelink_sandbox_t_xxx.xxx.xxx"   # paste your token
+```
+
+:::warning Never paste a real PAT into shared docs, slack, or source code
+The placeholder `corelink_sandbox_t_xxx.xxx.xxx` is intentional. Real
+tokens belong in environment variables, a secret manager (`direnv`,
+`1password`, `op`), or your CI provider's secret store.
+:::
+
+Verify the token works:
+
+```bash
+corelink doctor
+# 8/8 checks PASS — net OK, auth OK (tenant=sandbox-xxxx, ttl=23h59m), …
+```
+
+---
+
+## Step 2 — Configure your project <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~30s)</span>
+
+The CLI stores its defaults in `~/.corelink/config.toml`. Set your
+sandbox tenant as the default — you'll get it from the previous
+`doctor` output:
+
+```bash
+corelink config set defaults.tenant_id sandbox-xxxx
+corelink config list
+# auth.pat     = ***REDACTED***
+# defaults.tenant_id = sandbox-xxxx
+# telemetry.enabled = false
+```
+
+That's it — no project-local file required for the quickstart. (Build
+systems like Bazel/Buck2 use their own remote-cache config; see the
+[Bazel quickstart](../tutorial/03-bazel-quickstart.mdx) and
+[Buck2 quickstart](../tutorial/04-buck2-quickstart.mdx).)
+
+---
+
+## Step 3 — Store your first artifact <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~1 min)</span>
+
+Pick any file. A release binary is a realistic example — substitute any
+local file you have handy.
+
+```bash
+# Make a sample artifact if you don't have one yet:
+echo "hello, corelink — $(date)" > /tmp/hello.txt
+
+# Upload it. corelink computes the BLAKE3 digest client-side
+# (the digest IS the storage key — that's what content-addressable means).
+corelink put /tmp/hello.txt
+# digest=af1c…3e9b  size=43 bytes  uploaded=ok
+```
+
+**Save the digest** for the next step — copy it to your clipboard or
+into an env var:
+
+```bash
+DIGEST=$(corelink put /tmp/hello.txt --output json | jq -r .digest)
+echo "stored as: $DIGEST"
+```
+
+You can confirm storage with `stat`:
+
+```bash
+corelink stat "$DIGEST"
+# digest=af1c…3e9b  size=43  exists=true  last_seen=2026-05-15T12:34:56Z
+```
+
+---
+
+## Step 4 — Retrieve it from "another machine" <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~1 min)</span>
+
+The whole point of content-addressable storage is that *anyone* who
+knows the digest can fetch the bytes — that's the cache-hit semantic on
+build farms and ML clusters.
+
+Simulate "another machine" by downloading to a fresh path and diffing:
+
+```bash
+corelink get "$DIGEST" --output /tmp/restored.txt
+# downloaded 43 bytes, blake3 verified ok
+
+diff -q /tmp/hello.txt /tmp/restored.txt
+# Files /tmp/hello.txt and /tmp/restored.txt are identical
+```
+
+The `get` subcommand performs a **client-side BLAKE3 re-hash** before
+handing you the bytes (security control CTRL-CAS-002). A mismatch
+raises `COR_CAS_DIGEST_MISMATCH` and exits non-zero — you never see
+silently-corrupted data.
+
+---
+
+## Step 5 — View the audit trail <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~2 min)</span>
+
+Every put + get against your tenant is recorded. List your tenant's
+recent CAS entries to confirm both events appear:
+
+```bash
+corelink ls --tenant "$(corelink config get defaults.tenant_id)" --limit 10
+# digest                                                            size  age      tags
+# af1c…3e9b                                                         43 B  47s ago  -
+# …
+```
+
+For the per-blob detail (size + age + first-seen + last-seen + access
+counts), use `stat`:
+
+```bash
+corelink stat "$DIGEST" --output json
+```
+
+That JSON includes the timestamps and counters that the admin UI
+surfaces in **Audit → Events**. For a full audit-trail dashboard with
+actor identity and IP, sign in to [app.corelink.dev](https://app.corelink.dev) and open
+your tenant → **Audit** tab. The same data is available via the
+[REST API `/v1/audit/events`](../reference/api/openapi.mdx) endpoint
+(see the FAQ for the exact filter syntax).
+
+:::note Audit retention
+Sandbox tenants retain audit events for the full 24h TTL. Production
+tenants retain for **365 days** (Lighthouse + Enterprise plans) or
+**90 days** (Team plan) — see [pricing](/pricing) for full SLA terms.
+:::
+
+---
+
+## Step 6 — Use CoreLink from your language <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~2 min)</span>
+
+The CLI is convenient for scripts, but most of you will call CoreLink
+from inside an application. All four official SDKs share the same
+canonical Rust verifier (`corelink-client-verify`) via FFI — there is
+zero per-language drift on BLAKE3 verify.
+
+<Tabs groupId="lang">
+<TabItem value="rust" label="Rust" default>
+
+```toml
+# Cargo.toml
+[dependencies]
+corelink-client-verify = "1.0"
+```
+
+```rust
+use corelink_client_verify::{ClientVerifier, Digest, VerifyConfig};
+
+fn main() -> anyhow::Result<()> {
+    let verifier = ClientVerifier::new(VerifyConfig::new());
+    let bytes = b"hello, corelink";
+    let digest = Digest::compute(bytes);
+    println!("digest={}", digest.to_hex());
+
+    // After a network GET, re-verify before trusting the body:
+    verifier.verify(bytes, &digest)?;
+    println!("verified OK");
+    Ok(())
+}
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```bash
+pip install corelink-py
+```
+
+```python
+import os
+from corelink import CoreLinkClient
+
+client = CoreLinkClient(
+    pat=os.environ["CORELINK_PAT"],
+    tenant_id=os.environ["CORELINK_TENANT_ID"],
+)
+digest = client.put(b"hello, corelink")
+print(f"digest={digest}")
+
+data = client.get(digest)             # client-verify default-on
+stat = client.stat(digest)            # -> StatResult{digest,size_bytes,exists}
+assert data == b"hello, corelink"
+print(f"size={stat.size_bytes} exists={stat.exists}")
+```
+
+</TabItem>
+<TabItem value="go" label="Go">
+
+```bash
+go get go.corelink.dev/corelink-go@latest
+```
+
+```go
+package main
+
+import (
+    "fmt"
+    "os"
+
+    corelink "go.corelink.dev/corelink-go"
+)
+
+func main() {
+    client, err := corelink.NewClient(corelink.Config{
+        PAT:      os.Getenv("CORELINK_PAT"),
+        TenantID: os.Getenv("CORELINK_TENANT_ID"),
+    })
+    if err != nil { panic(err) }
+    defer client.Close()
+
+    digest, err := client.Put([]byte("hello, corelink"))
+    if err != nil { panic(err) }
+    blob, err := client.Get(digest)       // client-verify default-on
+    if err != nil { panic(err) }
+    fmt.Printf("digest=%s size=%d\n", digest, len(blob))
+}
+```
+
+</TabItem>
+<TabItem value="wasm" label="JS / WASM">
+
+```bash
+pnpm add @corelink/client
+```
+
+```ts
+import { CoreLinkClient } from "@corelink/client";
+
+const client = new CoreLinkClient({
+  pat: process.env.CORELINK_PAT!,
+  tenantId: process.env.CORELINK_TENANT_ID!,
+});
+
+const digest = await client.put(new TextEncoder().encode("hello, corelink"));
+const data   = await client.get(digest);            // client-verify default-on
+const stat   = await client.stat(digest);           // { digest, sizeBytes, exists }
+console.log(`digest=${digest} size=${stat.sizeBytes}`);
+```
+
+</TabItem>
+</Tabs>
+
+All four snippets do the same thing: `put → get → stat`, with
+client-side BLAKE3 verification enabled by default.
+
+---
+
+## Step 7 — What's next <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~30s)</span>
+
+You've stored, retrieved, audited, and SDK-called against CoreLink in
+under 10 minutes. Pick the next path that matches your team:
+
+- **Wire it into your build system** — [Bazel](../tutorial/03-bazel-quickstart.mdx) or [Buck2](../tutorial/04-buck2-quickstart.mdx) quickstart (≈ 5 min each).
+- **Migrate from an existing cache or store** — [Migration overview](../how-to/migrate/index.mdx) → self-serve guides for `bazel-remote` / BuildBuddy, S3-only, and Harbor / Quay (1–3 engineer-days each).
+- **Verify your cache-hit ratio** — [Verify cache hit](../tutorial/06-verify-cache-hit.mdx) walks through the metrics endpoint.
+- **Move to production** — [Pricing](/pricing) for paid tier limits, [How-to: production setup](../how-to/index.mdx) for the full checklist (custom domain, BYOK, regions, SLA).
+- **BYOK (Bring Your Own Key)** — Enterprise plan only; see [BYOK setup](../how-to/index.mdx) for AWS/GCP/Azure/Vault provider matrix.
+- **Sandbox quirks + billing triggers** — read the [Quickstart FAQ](./quickstart-faq.mdx) (15 questions, ~3 minutes).
+
+---
+
+## Time budget recap
+
+| Step | Budget | Cumulative |
+| --- | --- | --- |
+| 0 — Install | 1 min | 1 min |
+| 1 — Sandbox sign-in | 1 min | 2 min |
+| 2 — Configure project | 30 s | 2 min 30 s |
+| 3 — Store first artifact | 1 min | 3 min 30 s |
+| 4 — Retrieve elsewhere | 1 min | 4 min 30 s |
+| 5 — View audit trail | 2 min | 6 min 30 s |
+| 6 — Language SDK | 2 min | 8 min 30 s |
+| 7 — What's next | 30 s | **9 min total** |
+
+**Built-in slack:** ~1 minute for terminal context-switching. The
+target — *first put + first get + audit visible* in under 10 minutes —
+holds even with a real network round-trip.

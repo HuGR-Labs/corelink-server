@@ -1,0 +1,231 @@
+---
+id: rbac-role-catalog
+title: "Role catalog"
+slug: "/explanation/rbac/role-catalog"
+sidebar_label: "Role catalog"
+description: "Detailed per-role page: what each CoreLink role can do, what it cannot do, common use cases, and example workflows."
+tags: [rbac, security, admin, explanation]
+last_updated: "2026-05-15"
+sources:
+  - "crates/corelink-auth-schema/src/sim.rs (Role enum)"
+  - "crates/corelink-pat/src/scopes.rs"
+  - "crates/corelink-dual-approval/src/types.rs (AdminOpType)"
+---
+
+<!-- i18n:MT (es-419) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
+>
+> Canonical EN source: `docs/explanation/rbac/role-catalog.mdx`
+
+
+# Role catalog
+
+The four canonical CoreLink roles and what each one is for. The role enum is
+defined in
+[`corelink-auth-schema/src/sim.rs`](https://github.com/humangr-labs/corelink-server/blob/main/crates/corelink-auth-schema/src/sim.rs)
+and the SQL `CHECK` constraint lives in `specs/03_architecture/data_model.md`
+§4.1 line 174.
+
+---
+
+## `Owner` — full access including billing
+
+> "I sign the contract, I see the invoice, I can do anything in this tenant."
+
+### Can do
+
+- Everything an `Admin` can do (see below), **plus**:
+  - View and mutate billing surface (`admin:billing`).
+  - Grant or revoke the `Owner` role on other users.
+  - Act as approver for destructive operations.
+  - Initiate Enterprise BYOK setup (KMS root key wrap).
+
+### Cannot do alone
+
+- Execute any of the 5 destructive admin ops without a second approver
+  (Owner or Admin). The dual-approval gate is bypass-proof — see
+  `INV-ADMIN-DUAL-APPROVAL` in
+  `specs/03_architecture/invariant_registry.md`.
+
+### Common use cases
+
+1. Initial tenant setup — first signup user is auto-`Owner`.
+2. Procurement / Finance escalations — Owner reads invoices, applies tax
+   exemption, downgrades / upgrades tier.
+3. BYOK setup — Owner configures customer-managed KMS root key for
+   Enterprise tenants.
+
+### Example workflow: roll back a config change
+
+```
+1. Owner-A: clicks "Rollback to version 17" in admin UI
+   → POST /v1/admin/ops with op_type=ConfigRollback
+2. UI prompts: "This requires a second approver. Send the approval link?"
+3. Owner-A: copies the link, sends to Admin-B in Slack
+4. Admin-B: clicks link → MFA challenge → HMAC-sign request
+5. Server: dual-approval gate verifies (clock-skew + MFA fresh + caller ≠
+   approver + signature + collusion-rotation + nonce + audit emit)
+6. Rollback executes. Audit chain entry written
+   (corelink.admin.op.executed CloudEvent).
+```
+
+---
+
+## `Admin` — tenant administrator
+
+> "I run the team's CoreLink setup. I invite people, mint tokens, read audit
+> logs. I don't see the invoice."
+
+### Can do
+
+- Read and mutate tenant config (`admin:tenant-read`, `admin:tenant-write`).
+- Mint and revoke PATs for any user in the tenant (`admin:tokens`).
+- Read tenant audit log (`admin:audit`).
+- Invite, demote, and revoke users below `Owner` (`admin:users`).
+- Act as approver for destructive operations (under
+  `INV-ADMIN-DUAL-APPROVAL`).
+- All CAS read/write (`cache:r`, `cache:w`, `cache:find-missing`).
+
+### Cannot do
+
+- View or mutate billing — `admin:billing` is `Owner`-only.
+- Grant or revoke the `Owner` role.
+- Single-handedly execute any destructive op
+  (`ConfigRollback`, `RetentionPolicyReduce`, `FeatureFlagDisable`,
+  `SecretRotationStart`, `TenantTombstone`) — requires a second Admin or
+  Owner via the dual-approval gate (see `INV-ADMIN-DUAL-APPROVAL`).
+
+### Common use cases
+
+1. Day-to-day admin: onboarding a new engineer (invite + assign Developer
+   role + mint their first PAT).
+2. Forensics: querying audit log after a suspected leak — see
+   [Audit role changes](../../how-to/rbac/audit-role-changes.mdx).
+3. Co-signing a config rollback or feature-flag disable initiated by
+   another Admin.
+
+### Example workflow: revoke a leaked PAT
+
+```
+1. Admin: receives alert "PAT tok_abc...XYZ used from unusual region".
+2. Admin: corelink pat revoke tok_abcXYZ --reason CompromiseSuspected
+   → POST /v1/admin/pat/{id}/revoke (single-actor; no approver required;
+     this is a non-destructive op).
+3. revocation_log row inserted with reason=CompromiseSuspected.
+4. Audit chain entry written.
+5. All running clients holding that PAT receive 401 on next request.
+```
+
+---
+
+## `Developer` — CAS read/write, no admin surface
+
+> "I build code and need to read/write the cache. I don't touch tenant
+> settings."
+
+### Can do
+
+- Read CAS blobs and AC results (`cache:r`).
+- Write CAS blobs and AC results (`cache:w`).
+- Execute `FindMissingBlobs` (`cache:find-missing`).
+- Mint **their own** PAT with subset of their granted scopes.
+- (Phase 2) Report action execution status (`execute:action`,
+  `report:result`).
+
+### Cannot do
+
+- Delete CAS blobs (`cache:delete` — admin-only).
+- Mint PATs for other users.
+- Read tenant config or audit log.
+- Invite, demote, or revoke users.
+- Act as approver for destructive operations (the dual-approval gate
+  requires the approver to hold `Admin` or `Owner` — see `AdminRoleStore`
+  in `crates/corelink-dual-approval/src/gate.rs`).
+
+### Common use cases
+
+1. CI service account: assign Developer role, mint a PAT with
+   `cache:r | cache:w | cache:find-missing` scope mask.
+2. Engineer on the team: same as above, but PAT is bound to
+   `issued_to_user = <their UUID>` for forensics.
+3. ML training pipeline writing intermediate artifacts to CAS.
+
+### Example workflow: mint a CI PAT for yourself
+
+```
+1. Developer: opens admin UI → "My tokens" → "Mint new token"
+2. Selects scopes: cache:r, cache:w, cache:find-missing
+3. UI displays the token once (Argon2id hash is stored; raw is gone after
+   close).
+4. Developer: copies the token into the CI secret store
+   (GitHub Actions, GitLab CI, etc).
+5. PAT used in Authorization: Bearer header on every cache request.
+```
+
+---
+
+## `Viewer` — read-only
+
+> "I look at dashboards and audit logs. I don't write anything."
+
+### Can do
+
+- Read CAS blobs and AC results (`cache:r`).
+- Read tenant audit log (`admin:audit`) — useful for SecOps observers.
+- View tenant config (`admin:tenant-read`).
+
+### Cannot do
+
+- Write or delete CAS blobs.
+- Mint any PAT.
+- Mutate any tenant config.
+- Invite, demote, or revoke users.
+- Act as approver for destructive operations.
+
+### Common use cases
+
+1. Auditor account — temporary `Viewer` granted to an external auditor for
+   SOC 2 evidence review. Revoked at end of audit.
+2. SecOps / compliance team member — needs to inspect the audit chain but
+   should never originate writes.
+3. Read-only dashboard consumer — internal metrics dashboard wired to a
+   `Viewer` PAT.
+
+### Example workflow: hand a SOC 2 auditor temporary access
+
+```
+1. Owner or Admin: invites auditor@firm.com with role=Viewer.
+2. Auditor signs in via Clerk SSO; membership row written.
+3. Auditor mints a PAT (forbidden — Viewer cannot mint).
+4. Admin: mints a PAT on the auditor's behalf with cache:r + admin:audit
+   scopes, time-boxed expiry (e.g. 14 days).
+5. After audit closes: Admin revokes the PAT
+   (reason=UserInitiated or AdminRevoked) and demotes the membership row
+   (deleted_at = now()).
+```
+
+---
+
+## Role transition matrix
+
+Who can change whom:
+
+| Initiator → target | → Owner            | → Admin     | → Developer | → Viewer    |
+|--------------------|--------------------|-------------|-------------|-------------|
+| `Owner`            | Grant / revoke     | Grant / revoke | Grant / revoke | Grant / revoke |
+| `Admin`            | ❌                  | ❌           | Grant / revoke | Grant / revoke |
+| `Developer`        | ❌                  | ❌           | ❌           | ❌           |
+| `Viewer`           | ❌                  | ❌           | ❌           | ❌           |
+
+> **Last-Owner safeguard:** A tenant must always retain at least one `Owner`.
+> The admin API rejects any operation that would demote the final Owner. This
+> is enforced by the membership soft-delete path, not by the dual-approval
+> gate (it's a single-actor invariant, not a destructive op).
+
+## Related reading
+
+- [Permission matrix](./permission-matrix.mdx) — role × permission grid.
+- [Invite a team member](../../how-to/rbac/invite-team-member.mdx)
+- [Audit role changes](../../how-to/rbac/audit-role-changes.mdx)
+- [Permissions reference](../../reference/rbac/permissions.mdx)

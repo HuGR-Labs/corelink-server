@@ -1,0 +1,68 @@
+---
+id: observability-index
+title: "Forward CoreLink observability to your stack"
+slug: "/how-to/observability"
+sidebar_label: "Observability overview"
+description: "Self-serve playbooks for fan-out of CoreLink metrics + traces to your own Datadog, OpenTelemetry Collector, or Grafana Cloud stack."
+tags: [observability, how-to, datadog, otel, grafana, metrics, traces]
+last_updated: "2026-05-15"
+---
+
+<!-- i18n:MT (es-419) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
+>
+> Canonical EN source: `docs/how-to/observability/index.mdx`
+
+
+# Forward CoreLink observability to your stack
+
+**Audience:** SRE / platform engineers who already operate a corporate
+observability stack (Datadog, OpenTelemetry Collector, Grafana Cloud,
+or any combination) and want CoreLink's metrics + traces fanned out
+into the dashboards their on-call already watches.
+
+**What gets forwarded:**
+
+- Every `corelink_*` RED + USE metric (the canonical 15-metric
+  taxonomy in
+  [`specs/03_architecture/observability_model.md §4`](https://github.com/humangr-labs/corelink-server/blob/main/specs/03_architecture/observability_model.md)).
+- Every request-scoped trace span (sampled per your CF Worker sampling
+  config; canonical 1% production / 100% staging).
+- Per-tenant labels (`tenant_tier`, `region`, `result`, ...) — but
+  never raw `tenant_id`. See
+  [Trust → Data handling](../../trust/data-handling.mdx) for the full
+  PII-hygiene posture; the per-metric forwarded-label inventory is in
+  [`specs/_audits/2026-05-15-otel-export-spec.md`](https://github.com/humangr-labs/corelink-server/blob/main/specs/_audits/2026-05-15-otel-export-spec.md).
+
+**Fail-OPEN guarantee.** If your observability stack is down (auth
+reject, network unreachable, rate-limit, 5xx), **CoreLink keeps
+serving requests**. We emit a
+`corelink.observability.export_failed` audit event into your tenant
+audit log; nothing reaches the request path. Your dashboard going
+dark is your incident — not ours.
+
+## Pick the guide that matches your stack
+
+- **[Forward to Datadog](./forward-to-datadog.mdx)** — Datadog HTTP API
+  (v2 series for metrics, APM intake for traces). Lowest setup cost if
+  you already have a Datadog tenant.
+
+- **[Forward to OpenTelemetry Collector](./forward-to-otel-collector.mdx)**
+  — OTLP gRPC/HTTP into a Collector you operate. **Most flexible**:
+  Collector can fan-out to any backend (Honeycomb, New Relic, Splunk,
+  AWS CloudWatch, self-hosted Prometheus + Tempo + Loki).
+
+- **[Forward to Grafana Cloud](./forward-to-grafana-cloud.mdx)** —
+  Prometheus remote-write v1 for metrics + Tempo OTLP HTTP for traces.
+  Native fit if you already use Grafana Cloud's Mimir + Tempo + Loki
+  stack.
+
+## Cross-references
+
+- Metric + label inventory: [`observability_model.md`](https://github.com/humangr-labs/corelink-server/blob/main/specs/03_architecture/observability_model.md)
+  §3 (labels) + §4 (metrics taxonomy).
+- Trust posture: [Trust → Data handling](../../trust/data-handling.mdx).
+- Dashboards we ship out-of-the-box: see the dashboards catalog in
+  [`observability_model.md §8`](https://github.com/humangr-labs/corelink-server/blob/main/specs/03_architecture/observability_model.md#8-dashboards--catálogo).
+- Audit of what we export and why: [`specs/_audits/2026-05-15-otel-export-spec.md`](https://github.com/humangr-labs/corelink-server/blob/main/specs/_audits/2026-05-15-otel-export-spec.md).

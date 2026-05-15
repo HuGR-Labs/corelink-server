@@ -1,0 +1,189 @@
+---
+id: billing-manage-subscription
+title: "Manage your subscription"
+slug: "/how-to/billing/manage-subscription"
+sidebar_label: "Manage subscription"
+description: "Open the Stripe Customer Portal from CoreLink admin UI to update payment methods, download invoices, change plan, or cancel."
+tags: [billing, stripe, how-to, customer]
+last_updated: "2026-05-15"
+---
+
+<!-- i18n:MT (pt-BR) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
+>
+> Canonical EN source: `docs/how-to/billing/manage-subscription.mdx`
+
+
+# Manage your subscription
+
+CoreLink uses **Stripe** to process payments. To update your payment
+method, download past invoices, change your plan, or cancel, you'll
+work inside the secure **Stripe Customer Portal** — a hosted UI we
+launch from inside the CoreLink admin UI.
+
+## When to use this guide
+
+You're an `Owner` on a CoreLink tenant with an active paid
+subscription, and you need to:
+
+- Update or replace the credit card on file (card expired, fraud
+  alert, switching cards).
+- Download a PDF copy of an invoice for finance / accounts payable.
+- Move between Free, Starter, Team, and Enterprise tiers.
+- Switch between monthly and annual billing.
+- Update your billing address or tax ID for invoice compliance.
+- Cancel your subscription.
+
+If you only need to **view** your current plan or read-only invoice
+metadata, the customer dashboard (`/en/customer/dashboard`) shows it
+without opening the portal.
+
+## Prerequisites
+
+- You are signed in as `Owner` on the tenant. (Admins can see the
+  billing page but cannot open the portal — Stripe's portal grants
+  destructive actions like cancellation, which only Owner can
+  approve.)
+- Your tenant has completed Checkout at least once. New tenants on
+  the free tier won't see the portal button until they upgrade.
+
+## Open the portal
+
+1. Sign in to CoreLink admin UI at
+   `https://app.corelink.dev`.
+2. Navigate to **Customer → Billing**
+   (`/en/customer/billing`).
+3. Click **Open Stripe Portal**.
+
+You'll be redirected to `billing.stripe.com` in the same browser
+window. The redirect is one-shot and signed — the URL is valid for
+about five minutes after you click. If you wait too long and the
+URL expires, just come back to the billing page and click the
+button again.
+
+## What you can do in the portal
+
+Inside `billing.stripe.com` you'll see four panels:
+
+### Invoices
+
+Past 24 months of invoices, sorted newest-first. Click any row to
+download the PDF. The PDF carries your billing address, our tax
+information, and a unique invoice number suitable for accounts
+payable.
+
+### Payment methods
+
+Add, remove, or update credit cards. Setting a new default takes
+effect on your next renewal automatically — there's no separate
+"save" step you need to make in CoreLink.
+
+> **Card data note.** Card numbers, CVCs, and expiry dates are
+> entered directly into Stripe's hosted form; CoreLink never sees
+> them. This keeps us inside **PCI-DSS SAQ-A** scope, which is one of
+> the reasons we use Stripe instead of building our own card form.
+
+### Subscription
+
+Switch tiers (Free ↔ Starter ↔ Team ↔ Enterprise) and switch
+between monthly and annual billing.
+
+- **Upgrades** take effect immediately and prorate the current
+  period.
+- **Downgrades** schedule at the end of the current billing period
+  (so you don't lose paid-for capacity early).
+- **Annual ↔ monthly switches** trigger a proration that Stripe
+  computes and shows you before you confirm.
+
+**Enterprise customers:** self-service downgrade out of Enterprise
+is disabled in the portal because Enterprise plans carry a paper
+contract + DPA. Click the **Contact sales** link in the portal
+instead — that opens an email to `sales@corelink.dev` so we can
+handle the contract amendment together.
+
+### Cancellation
+
+Click **Cancel subscription** to schedule a cancellation. Two
+options:
+
+- **Cancel at period end** (default). Your subscription stays
+  active through the end of the current billing period; no refund
+  for the unused portion of that period; auto-renew is OFF.
+- **Cancel immediately.** Subscription ends today. Stripe will
+  prorate the unused portion and refund automatically.
+
+Cancellation does NOT delete your tenant or your cached data.
+Your tenant drops to the **Free tier** at the cancellation effective
+date. To fully delete your tenant + all customer data, see
+[Submit a deletion request](/how-to/dsr/submit-deletion-request)
+(GDPR / LGPD compliant).
+
+## When you return to CoreLink
+
+When you click **Return to CoreLink** in the portal (or close the
+portal tab and reopen `https://app.corelink.dev`), you land back on
+`/en/customer/billing`. Any changes you made in the portal —
+plan changes, card updates, cancellations — are already reflected
+because Stripe pushes them to us as webhook events the moment they
+happen.
+
+If you see stale data on the CoreLink side (e.g. you upgraded but
+the dashboard still shows the old tier), wait 30 seconds and
+refresh. If the discrepancy persists past 5 minutes, file a ticket
+— it likely means a webhook delivery failed and our DLQ replay
+runbook needs to run (we'll handle it on our side).
+
+## What's separate from the CoreLink admin UI
+
+The Stripe Customer Portal is **only** for the billing surface.
+Everything below stays inside CoreLink admin UI and is NOT manageable
+in the Stripe Portal:
+
+| Topic                                | Where it lives                                    |
+|--------------------------------------|---------------------------------------------------|
+| Usage metering (bytes stored, hits)  | `/en/customer/dashboard`                          |
+| BYOK encryption key management       | `/en/customer/byok`                               |
+| Team / role / PAT management         | `/en/customer/team`                               |
+| API tokens (PAT issuance + revoke)   | `/en/customer/tokens`                             |
+| Region selection + DPA addendum      | `/en/customer/region` and `/en/legal/dpa`         |
+| Audit log of admin actions           | `/en/admin/audit` (Admins / Owners only)          |
+
+## Troubleshooting
+
+### "Open Stripe Portal" button does nothing
+
+Open your browser's developer console. If you see a 5xx response on
+`/api/v1/customer/billing/portal-session`, our portal endpoint is
+having trouble. Try again in a minute. If the failure persists,
+check our [status page](https://status.corelink.dev) and file a
+ticket.
+
+### Portal opens but shows "You haven't configured a customer portal yet"
+
+This is a CoreLink-side misconfiguration. File a ticket immediately
+with a screenshot — our on-call follows
+`RB-STRIPE-PORTAL-INCIDENT` to fix.
+
+### I'm asked to sign in to Stripe inside the portal
+
+That's expected for **high-risk actions** (like changing the
+default card or cancelling). Stripe sends a one-time code to your
+billing email — enter it to continue. The CoreLink admin UI session
+and the Stripe-side reauth are independent, by design.
+
+### Cancellation showed but my tenant is still on the paid tier
+
+Cancellations default to "at period end". You'll stay on your paid
+tier until the period ends, then drop to Free automatically. If you
+need to leave the paid tier immediately, choose **Cancel
+immediately** in the portal — Stripe will refund the prorated unused
+portion.
+
+## Related guides
+
+- [Pricing & comparison](/pricing/comparison)
+- [Cost calculator](/explanation/pricing/calculator)
+- [Sales FAQ](/explanation/pricing) (some answers also appear in
+  [our public sales FAQ](https://corelink.dev/sales/faq))
+- [Submit a deletion request (DSR)](/how-to/dsr/submit-deletion-request)

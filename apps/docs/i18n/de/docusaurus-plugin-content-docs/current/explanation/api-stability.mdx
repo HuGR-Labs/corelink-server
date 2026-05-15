@@ -1,0 +1,297 @@
+---
+id: api-stability
+title: API stability & deprecation policy
+sidebar_label: API stability
+description: CoreLink's public commitment on API stability tiers (GA / Preview / Internal), versioning, deprecation lifecycle, SDK breaking-change cadence, and the contract you can build against.
+slug: /explanation/api-stability
+last_updated: "2026-05-15"
+---
+
+<!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
+>
+> Canonical EN source: `docs/explanation/api-stability.mdx`
+
+
+# API stability & deprecation policy
+
+> **Audience.** Customers, platform engineers, and SDK maintainers integrating
+> against `api.corelink.dev` (REST) or `cas.corelink.dev` / `bytestream.corelink.dev` (gRPC REAPI v2).
+>
+> **Status.** Public policy. **Binding for GA endpoints** once promoted; subject to MSA §6.
+>
+> **Scope.** All HTTP REST endpoints under `/v1/*` and `/api/*`, plus the gRPC
+> REAPI v2 services (`build.bazel.remote.execution.v2.*`, `google.bytestream.*`,
+> `build.bazel.remote.execution.v2.Capabilities`).
+
+CoreLink commits to a **predictable, written API contract** so that customers
+can build CI/CD pipelines, SDKs, and downstream products against us with
+confidence. This page is the **single source of truth** for what that contract
+is — what we promise, what we don't, and what changes look like in practice.
+
+For the per-endpoint tier matrix, see
+[`specs/_audits/2026-05-15-api-stability-baseline.md`](https://github.com/humangr-labs/corelink-server/blob/main/specs/_audits/2026-05-15-api-stability-baseline.md).
+
+---
+
+## 1. Stability tiers
+
+Every endpoint, RPC, and SDK symbol is **explicitly classified** into one of
+three tiers. The tier appears in the OpenAPI spec under the `x-stability`
+extension and is mirrored in the per-endpoint reference docs.
+
+| Tier        | SLO?         | Deprecation notice | Versioning policy                            | Visible to       |
+|-------------|--------------|--------------------|----------------------------------------------|------------------|
+| **GA**      | Full SLO (per [SLO catalog](/reference/slos/)) | **≥ 24 months** before `410 Gone` | Semver under the URL major (`/v1`)            | All customers    |
+| **Preview** | No SLO, best-effort | **≥ 90 days** before removal     | May change shape **without semver bump**; opt-in via `X-CoreLink-Preview: 1` header | All customers (advertised as preview) |
+| **Internal**| No SLO        | **No notice**     | May change or disappear at any time           | CoreLink staff, system-to-system only |
+
+### 1.1 What promotion looks like
+
+A Preview endpoint is promoted to GA only when **all five gates** pass:
+
+1. ≥ 90 days in production with no major shape change.
+2. SLO instrumented and meeting target for ≥ 30 consecutive days.
+3. SDK coverage in **all** supported language SDKs (Rust, Go, Python, TypeScript).
+4. ADR approved by tech lead + security lead (dual-hat).
+5. CHANGELOG `[Unreleased]` entry under `### Stability`.
+
+The promotion commit flips `x-stability: preview` → `x-stability: ga` in
+`openapi/corelink-v1.yaml`. **This is the moment the 24-month deprecation
+clock starts being enforced.**
+
+### 1.2 What demotion looks like
+
+We **do not demote** a GA endpoint to Preview. Once GA, the only off-ramp is the
+deprecation lifecycle in §3. Demoting GA would be a breach of the customer
+contract.
+
+---
+
+## 2. Versioning
+
+### 2.1 Major version — URL path
+
+Breaking changes — including the removal of an endpoint, a field type change,
+a default-value change, or a new required input — require a **new major path
+prefix** (`/v2/...`). The old major remains available for the full GA
+deprecation window (§3).
+
+We will run **at most two major REST versions concurrently** (`v1` + `v2`).
+gRPC REAPI follows the upstream `build.bazel.remote.execution.v2` namespace
+and is **pinned to v2** for the foreseeable future; a v3 only ships if the
+upstream spec ships v3.
+
+### 2.2 Minor version — request header
+
+Non-breaking additive changes (a new optional response field, a new optional
+request parameter, a new endpoint) are exposed as **minor versions**. Clients
+opt in via:
+
+```
+X-CoreLink-API-Minor: 2026-05-15
+```
+
+The server defaults to the **latest minor** when the header is absent, except
+in two cases where we pin to **the minor active at the moment the PAT was
+issued**:
+
+- Service accounts created via `/v1/pats` (PAT-scoped pin).
+- Tenants with the `pin_api_minor` setting on (enterprise tier).
+
+This is the same model used by Stripe and GitHub: clients that don't care get
+the latest; clients that need determinism pin.
+
+### 2.3 Semver semantics — SDKs
+
+| Change                                    | SDK semver bump   | API change required?      |
+|-------------------------------------------|-------------------|---------------------------|
+| New optional argument                      | Minor (e.g. 1.4 → 1.5) | No                        |
+| New method                                 | Minor              | No                        |
+| Bug fix preserving signature               | Patch              | No                        |
+| Removed/renamed method                     | **Major**          | **Yes** (deprecation cycle) |
+| Required-argument added                    | **Major**          | **Yes** (deprecation cycle) |
+| Type change on existing field              | **Major**          | **Yes** (deprecation cycle) |
+
+**SDK breaking changes are always coupled to an API deprecation.** We will
+not ship `corelink-sdk-rust 2.0` purely for ergonomics; a major bump means an
+underlying API endpoint dropped.
+
+---
+
+## 3. Deprecation lifecycle
+
+The deprecation lifecycle is **identical across all tiers**, only the
+timeline differs. Times are measured from **T+0 = the deprecation announcement
+commit** landing on `main`.
+
+| Phase | Trigger | Customer signal | Time from T+0 (GA) | Time from T+0 (Preview) |
+|-------|---------|-----------------|--------------------|--------------------------|
+| 1. Announce | ADR proposing deprecation merged | `api-announce@` mailing list; status page banner; CHANGELOG entry | T+0d | T+0d |
+| 2. Docs marked `@deprecated` | Same commit | Reference doc renders red banner; OpenAPI `deprecated: true`; SDK type stub annotated | T+0d | T+0d |
+| 3. `Sunset:` response header | Server starts emitting RFC 8594 `Sunset:` header on every response | Clients see header in production; CI can detect via header-scrape | T+30d | T+30d |
+| 4. Email blast | DPO + Sales blasts all active tenants (`accounts.notification_email` from tenant table) | Email + ticket pinned in support portal | T+60d | T+30d |
+| 5. `Deprecation:` header (RFC 9745) | Server adds `Deprecation: @<timestamp>` alongside `Sunset:` | Standardised machine-readable signal | T+90d | T+60d |
+| 6. `410 Gone` | Endpoint removed; subsequent requests return `410 Gone` with link to replacement | Operational break for any client still on the endpoint | **T+24 months (GA)** | **T+90 days (Preview)** |
+
+Internal endpoints skip phases 1-5 and may flip directly to 410 Gone.
+
+### 3.1 Required metadata on every deprecation
+
+Every deprecated endpoint **must** carry the following OpenAPI extensions:
+
+```yaml
+deprecated: true
+x-sunset-date: "2028-05-15"        # ISO-8601; ≥ 730d future for GA, ≥ 90d for Preview
+x-deprecated-since: "2026-05-15"
+x-replaced-by: "/v2/pats"          # canonical successor, or "" if no successor
+x-deprecation-issue: "https://github.com/humangr-labs/corelink-server/issues/4321"
+```
+
+The CI gate (`.github/workflows/api-deprecation-check.yml`) **fails the PR**
+if any of these are missing or if the sunset-date is too close. See §6.
+
+### 3.2 Sunset extensions
+
+Sunset dates **can be extended** but **cannot be brought forward** without a
+new 24-month (or 90-day) clock. The extension policy:
+
+- A Sunset extension requires Tech Lead + DPO sign-off (dual-hat, ADR-required).
+- The extension is announced on the same channels as the original deprecation.
+- The OpenAPI `x-sunset-date` is updated; the original `x-deprecated-since`
+  is preserved.
+
+### 3.3 What 410 Gone looks like
+
+```http
+HTTP/1.1 410 Gone
+Content-Type: application/problem+json
+Link: </v2/pats>; rel="successor-version"
+
+{
+  "type": "https://corelink.dev/errors/endpoint-sunset",
+  "title": "Endpoint sunset",
+  "status": 410,
+  "detail": "POST /v1/pats was sunset on 2028-05-15. Use POST /v2/pats.",
+  "sunset_date": "2028-05-15",
+  "replaced_by": "/v2/pats",
+  "deprecation_issue": "https://github.com/humangr-labs/corelink-server/issues/4321"
+}
+```
+
+We deliberately **do not auto-redirect** sunset endpoints. The 410 is the
+contract; an automatic redirect would mask the breakage and defeat the point
+of the 24-month notice.
+
+---
+
+## 4. SDK breaking-change policy
+
+CoreLink ships first-party SDKs in Rust, Go, Python, and TypeScript. Each
+SDK is **bundled with API deprecation cycles** — we do not ship an SDK major
+version for ergonomics alone.
+
+### 4.1 SDK release cadence
+
+| Cadence            | What ships                                          | Semver impact |
+|--------------------|-----------------------------------------------------|---------------|
+| Weekly (Tuesday)   | Patch releases (bug fixes, regenerated bindings)    | Patch         |
+| Monthly            | Minor releases (new endpoints, new optional fields) | Minor         |
+| Coupled to API v(N+1) launch | Major release (drops sunset endpoints)            | **Major**     |
+
+A `corelink-sdk-rust 2.0` therefore ships **at the moment the matching API
+endpoints flip to `410 Gone`**, not before. The `1.x` line continues to
+receive **patches for 6 months** after the API sunset (security fixes only),
+then is end-of-life.
+
+### 4.2 Generated vs hand-written code
+
+Generated bindings (`crates/corelink-openapi`, `crates/corelink-reapi`) are
+regenerated **every PR** that touches the OpenAPI YAML or the REAPI proto.
+A diff in the generated code that is **not** explained by an OpenAPI/proto
+diff is a CI failure (`api-reference-sync.yml`).
+
+### 4.3 SDK stability annotations
+
+SDK symbols mirror the API tier:
+
+```rust
+// Rust
+#[stability::stable(feature = "v1", since = "2026-05-15")]
+pub fn issue_pat(&self, req: IssuePatRequest) -> Result<Pat, Error> { ... }
+
+#[stability::preview(feature = "byok-rotation")]
+pub fn rotate_byok_key(&self, req: RotateByokRequest) -> Result<RotationId, Error> { ... }
+```
+
+Removing a `#[stability::stable]` symbol from a 1.x SDK is **forbidden by CI**.
+Removing a `#[stability::preview]` symbol requires a 90-day deprecation note in
+the SDK CHANGELOG.
+
+---
+
+## 5. Customer responsibilities
+
+To benefit from the 24-month GA window you should:
+
+1. **Subscribe to `api-announce@corelink.dev`** (low-volume; ~6 messages/year).
+   This is the only mailing list whose subscription survives DPO/tenant rotation;
+   it is **not** unsubscribed by `data-erasure` DSRs.
+2. **Monitor for the `Sunset:` HTTP response header** in your client. Every
+   first-party SDK already emits a structured log line at WARN when it sees one.
+   Third-party clients should add a simple middleware:
+   ```python
+   if "sunset" in response.headers:
+       logger.warning("CoreLink endpoint %s sunset on %s; see %s",
+                      response.url, response.headers["sunset"],
+                      response.headers.get("link", "n/a"))
+   ```
+3. **Test against `/v1/*` minor pinning** before relying on it (set
+   `X-CoreLink-API-Minor: 2026-05-15` and verify your integration is stable).
+4. **Run Preview endpoints in non-production only**, or accept the 90-day
+   removal window as a load-bearing assumption.
+5. **Read the CHANGELOG `### Stability` section** every minor SDK release.
+
+---
+
+## 6. Enforcement — CI gate
+
+Every PR touching `openapi/corelink-v1.yaml` runs through
+`.github/workflows/api-deprecation-check.yml`. The gate enforces:
+
+- If `deprecated: true` is added to a **GA-tier** endpoint:
+  - `x-sunset-date` **must** be ≥ 730 days in the future
+  - `x-replaced-by` **must** be present (empty string allowed if no successor)
+  - `x-deprecation-issue` **must** link to an open GitHub issue
+  - The commit message **must** contain `Refs: #<issue>`
+- If `deprecated: true` is added to a **Preview-tier** endpoint:
+  - `x-sunset-date` **must** be ≥ 90 days in the future
+- If `x-sunset-date` is **brought forward** (made sooner): the PR is rejected
+  outright; sunset extensions only.
+
+The script `scripts/extract-api-deprecations.py` produces the daily diff
+report uploaded to `specs/_audits/api-deprecations.json`.
+
+---
+
+## 7. Cross-references
+
+- [Trust Center](/trust) — overall trust posture; this page links from "API contract".
+- [Roadmap §7 R-7 — Evidence Gate](https://github.com/humangr-labs/corelink-server/blob/main/ROADMAP-TO-GA.md#7-wave-r-7--evidence-gate-depends-on-r-5--r-6-sustained-7-days-2-agents) — promotes the GA tier as part of the GA gate.
+- [Per-endpoint stability baseline](https://github.com/humangr-labs/corelink-server/blob/main/specs/_audits/2026-05-15-api-stability-baseline.md) — current tier of every endpoint.
+- [API reference (REST)](/reference/api/).
+- [API reference (REAPI gRPC)](/reference/reapi/).
+- [Sales FAQ — API stability](https://github.com/humangr-labs/corelink-server/blob/main/marketing/sales/API-STABILITY-FAQ.md).
+
+---
+
+## 8. Change log of this policy
+
+| Date       | Version | Change                                                       | Author |
+|------------|---------|--------------------------------------------------------------|--------|
+| 2026-05-15 | 1.0.0   | Initial public policy — 3 tiers, 24mo GA window, 90d Preview | Gustavo Schneiter |
+
+*Material changes to this policy itself are announced on `api-announce@`
+**60 days before they take effect**. The policy version above is part of the
+public contract.*
