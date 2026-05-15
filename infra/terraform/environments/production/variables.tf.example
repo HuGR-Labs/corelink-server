@@ -1,0 +1,57 @@
+# environments/production — Variables TEMPLATE.
+# Copy to variables.tf when activating production. Mirror staging vars.
+
+variable "cf_account_id" {
+  type      = string
+  sensitive = true
+}
+
+variable "cf_zone_id" {
+  type      = string
+  sensitive = true
+}
+
+variable "zone_name" {
+  type    = string
+  default = "corelink.dev"
+}
+
+variable "dkim_records" {
+  type    = map(string)
+  default = {}
+}
+
+variable "tf_secret_stripe_live" {
+  type      = string
+  sensitive = true
+}
+
+variable "tf_secret_stripe_webhook" {
+  type      = string
+  sensitive = true
+}
+
+variable "tf_secret_clerk" {
+  type      = string
+  sensitive = true
+}
+
+variable "tf_secret_pagerduty_routing" {
+  type      = string
+  sensitive = true
+}
+
+variable "tf_secret_slack_sev1" {
+  type      = string
+  sensitive = true
+}
+
+variable "tf_secret_slack_sev2" {
+  type      = string
+  sensitive = true
+}
+
+variable "tf_secret_hubspot" {
+  type      = string
+  sensitive = true
+}

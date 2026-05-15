@@ -1,0 +1,22 @@
+# Local state — never commit.
+*.tfstate
+*.tfstate.backup
+*.tfstate.lock.info
+
+# Backend config with real bucket / DynamoDB lock table names.
+backend-staging.hcl
+backend-production.hcl
+
+# Crash logs.
+crash.log
+
+# Variable files with real secret values.
+*.tfvars
+!*.tfvars.example
+
+# Plan output captured during incident triage.
+*.tfplan
+
+# Provider mirrors / cache.
+.terraform/
+!.terraform.lock.hcl

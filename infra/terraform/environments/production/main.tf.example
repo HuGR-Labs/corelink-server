@@ -1,0 +1,78 @@
+# environments/production — Production composition TEMPLATE.
+#
+# DISABLED BY DEFAULT. Activate only after GA cutover by:
+#   1. Copy this file to `main.tf` in this directory.
+#   2. Verify backend-production.hcl is provisioned (separate state bucket,
+#      separate DynamoDB lock table, MFA-delete enabled on the state bucket).
+#   3. Run plan-vs-apply protocol per ../../README.md.
+#   4. Open the manual apply workflow with dual-approval (WI-S13-002).
+#
+# Keep this `.example` extension until activation.
+# CODEOWNERS path requires both SRE Lead + Security Lead approval.
+
+terraform {
+  required_version = ">= 1.7.0, < 2.0.0"
+
+  required_providers {
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = "~> 4.52.0"
+    }
+  }
+
+  backend "s3" {
+    # Injected at init:
+    #   bucket         = "corelink-tfstate-production"
+    #   key            = "infra/terraform/production.tfstate"
+    #   region         = "us-east-1"
+    #   dynamodb_table = "corelink-tfstate-lock-prod"
+    #   encrypt        = true
+    # MFA-delete + bucket-policy "deny s3:DeleteObject without MFA" enforced.
+  }
+}
+
+provider "cloudflare" {}
+
+module "cf_base" {
+  source = "../../modules/cloudflare-base"
+
+  cf_account_id = var.cf_account_id
+  cf_zone_id    = var.cf_zone_id
+  zone_name     = var.zone_name
+  environment   = "production"
+
+  create_email_records = true
+  dkim_records         = var.dkim_records
+}
+
+module "cf_storage" {
+  source = "../../modules/cloudflare-storage"
+
+  cf_account_id = var.cf_account_id
+  cf_zone_id    = var.cf_zone_id
+  environment   = "production"
+
+  regions = {
+    wnam = { r2_location_hint = "wnam", d1_location = "wnam", do_jurisdiction = "us" }
+    enam = { r2_location_hint = "enam", d1_location = "enam", do_jurisdiction = "none" }
+    weur = { r2_location_hint = "weur", d1_location = "weur", do_jurisdiction = "eu" }
+    sam  = { r2_location_hint = "sam", d1_location = "sam", do_jurisdiction = "none" }
+  }
+}
+
+module "cf_secrets" {
+  source = "../../modules/cloudflare-secrets"
+
+  worker_name = "corelink-server"
+  environment = "production"
+
+  secrets = {
+    STRIPE_SECRET_KEY             = var.tf_secret_stripe_live
+    STRIPE_WEBHOOK_SECRET         = var.tf_secret_stripe_webhook
+    CLERK_SECRET_KEY              = var.tf_secret_clerk
+    PAGERDUTY_ROUTING_KEY         = var.tf_secret_pagerduty_routing
+    SLACK_WEBHOOK_URL_ALERTS_SEV1 = var.tf_secret_slack_sev1
+    SLACK_WEBHOOK_URL_ALERTS_SEV2 = var.tf_secret_slack_sev2
+    HUBSPOT_PRIVATE_APP_TOKEN     = var.tf_secret_hubspot
+  }
+}

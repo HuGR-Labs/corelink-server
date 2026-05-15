@@ -1,0 +1,9 @@
+# Backend config template — copy to backend-staging.hcl and supply real
+# values via: terraform init -backend-config=backend-staging.hcl
+# The real backend-staging.hcl is GIT-IGNORED.
+
+bucket         = "corelink-tfstate-staging"
+key            = "infra/terraform/staging.tfstate"
+region         = "us-east-1"
+dynamodb_table = "corelink-tfstate-lock"
+encrypt        = true
