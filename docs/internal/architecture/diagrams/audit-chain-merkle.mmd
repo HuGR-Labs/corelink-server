@@ -1,0 +1,56 @@
+%% CoreLink — Audit chain (leaf -> root -> proof export)
+%% Source of truth: specs/03_architecture/security_model.md §6 (CTRL-AUDIT-*),
+%%                  ADR-0033-audit-events-cloudevents,
+%%                  crate corelink-audit-chain.
+flowchart LR
+    classDef leaf fill:#dbeafe,stroke:#1d4ed8,color:#000
+    classDef node fill:#dcfce7,stroke:#15803d,color:#000
+    classDef root fill:#fef3c7,stroke:#a16207,color:#000
+    classDef out  fill:#fee2e2,stroke:#b91c1c,color:#000
+
+    subgraph Sources["Event sources"]
+        E1["Write event<br/>(CloudEvents 1.0)"]:::leaf
+        E2["Auth event"]:::leaf
+        E3["Admin action<br/>(dual-approval)"]:::leaf
+        E4["BYOK rotation"]:::leaf
+    end
+
+    subgraph Leaves["Canonical leaves (JSON-canonicalize + BLAKE3)"]
+        L1["leaf_i = H(event_i)"]:::leaf
+        L2["leaf_i+1"]:::leaf
+        L3["leaf_i+2"]:::leaf
+        L4["leaf_i+3"]:::leaf
+    end
+
+    subgraph Tree["Merkle accumulator (per region, append-only)"]
+        N12["H(L1 || L2)"]:::node
+        N34["H(L3 || L4)"]:::node
+        Root["root_t = H(N12 || N34)"]:::root
+    end
+
+    subgraph Storage["Storage"]
+        R2A[("R2 audit-region<br/>(Object Lock, 7y)")]:::out
+        Anchor["Hourly anchor:<br/>root signed Ed25519<br/>+ external timestamp (RFC 3161)"]:::root
+    end
+
+    subgraph Consumers["Verification"]
+        Auditor["Auditor / customer<br/>requests inclusion proof"]:::out
+        Proof["Inclusion proof = sibling hashes<br/>from leaf to root"]:::out
+        Verify["Verify locally:<br/>recompute root, check signature"]:::out
+    end
+
+    E1 --> L1
+    E2 --> L2
+    E3 --> L3
+    E4 --> L4
+    L1 --> N12
+    L2 --> N12
+    L3 --> N34
+    L4 --> N34
+    N12 --> Root
+    N34 --> Root
+    Root --> R2A
+    Root --> Anchor
+    Auditor --> Proof
+    Proof --> Verify
+    Anchor --> Verify

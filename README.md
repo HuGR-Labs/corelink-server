@@ -2,6 +2,8 @@
 
 Shared content-addressable cache pra developers. Implementação SOTA de REAPI (Remote Execution API) em Rust, deployada em Cloudflare Containers.
 
+> **Architecture overview?** See [`ARCHITECTURE.md`](./ARCHITECTURE.md) — purpose + invariant guarantees, system context, 12 core crates, tenant model, data lifecycle, BYOK envelope, audit-chain Merkle, top-10 SLOs, failure-mode taxonomy, compliance posture (SOC 2 / LGPD / GDPR / ISO 27001 / PCI DSS), plus 8 companion Mermaid diagrams under [`docs/internal/architecture/diagrams/`](./docs/internal/architecture/diagrams/).
+>
 > **New engineer?** Start with [`docs/internal/ENGINEERING-ONBOARDING.md`](./docs/internal/ENGINEERING-ONBOARDING.md) — Day-0 through Day-30 path, 5 domain tracks, curated first-PR backlog, glossary cheatsheet, buddy protocol.
 
 ## Stack

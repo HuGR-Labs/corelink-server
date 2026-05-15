@@ -1,0 +1,45 @@
+%% CoreLink — Tenant prefix derivation + isolation boundary
+%% Source of truth: specs/03_architecture/security_model.md §3 (TB-3),
+%%                  specs/03_architecture/data_model.md §2.2 (R2 keys),
+%%                  TLA+ INV-TenantIsolation,
+%%                  crate tenant-path.
+flowchart TB
+    classDef in   fill:#dbeafe,stroke:#1d4ed8,color:#000
+    classDef der  fill:#dcfce7,stroke:#15803d,color:#000
+    classDef out  fill:#fef3c7,stroke:#a16207,color:#000
+    classDef bad  fill:#fee2e2,stroke:#b91c1c,color:#000
+
+    subgraph Inputs["Inputs (per request)"]
+        TID["tenant_id (UUIDv7)"]:::in
+        TK["AST-TENANT-KEY<br/>(HKDF salt, rotated annually,<br/>stored in CF Secrets)"]:::in
+        Op["operation = cas / ac / audit"]:::in
+    end
+
+    subgraph Derivation["Path derivation (corelink-tenant-path)"]
+        HKDF["HKDF-Extract(salt=TK, ikm=tenant_id)"]:::der
+        Expand["HKDF-Expand(prk, info=region||op)"]:::der
+        Prefix["prefix = base32(out[0..20])"]:::der
+        Path["R2 key = tenant/&lt;prefix&gt;/&lt;op&gt;/&lt;digest&gt;"]:::der
+    end
+
+    subgraph Enforce["Two-layer enforcement"]
+        L1Auth["Layer 1 — Worker authZ<br/>(PAT scope == tenant_id)"]:::out
+        L2Storage["Layer 2 — R2 binding policy<br/>(prefix match required)"]:::out
+        TLA["TLA+ INV-TenantIsolation<br/>checked in CI"]:::out
+    end
+
+    subgraph Adversary["Boundary attack (rejected)"]
+        AttackA["Tenant A token + tenant B prefix guess"]:::bad
+        Block["BLOCKED: HMAC infeasible to forge<br/>without TENANT-KEY (CTRL-AUTH-004)"]:::bad
+    end
+
+    TID --> HKDF
+    TK --> HKDF
+    HKDF --> Expand
+    Op --> Expand
+    Expand --> Prefix
+    Prefix --> Path
+    Path --> L1Auth
+    L1Auth --> L2Storage
+    L2Storage --> TLA
+    AttackA --> Block

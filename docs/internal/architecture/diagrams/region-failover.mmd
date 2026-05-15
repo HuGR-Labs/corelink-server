@@ -1,0 +1,48 @@
+%% CoreLink — Active/passive region failover with rollback
+%% Source of truth: specs/03_architecture/resilience_patterns.md,
+%%                  SLO-RTO-REGION-FAILOVER (§4.18), SLO-RPO-REGION (§4.19),
+%%                  crates: corelink-failover-router, corelink-replica-worker,
+%%                          corelink-region, corelink-dr-drill.
+stateDiagram-v2
+    [*] --> Healthy_Primary
+
+    state Healthy_Primary {
+        [*] --> Serving
+        Serving: Primary region serves 100%<br/>Replica region tails (RPO target <30s)
+    }
+
+    Healthy_Primary --> Degraded: Health probe red<br/>(>3 consecutive failures)
+    Healthy_Primary --> DrillMode: Scheduled DR drill (monthly)
+
+    state Degraded {
+        [*] --> AssessImpact
+        AssessImpact --> AutoFailoverEligible: SEV-1 + budget burn >2x
+        AssessImpact --> ManualHold: ambiguous signal
+        ManualHold --> AutoFailoverEligible: oncall confirms
+    }
+
+    Degraded --> Failover_In_Progress
+
+    state Failover_In_Progress {
+        [*] --> DrainPrimary
+        DrainPrimary --> PromoteReplica: stop writes to primary
+        PromoteReplica --> UpdateRouter: replica becomes new primary
+        UpdateRouter --> ValidateInvariants: corelink-failover-router cuts traffic
+        ValidateInvariants --> [*]: TLA+ INV-Replication holds
+    }
+
+    Failover_In_Progress --> Healthy_Failedover: RTO target met (<15 min p99)
+    Failover_In_Progress --> Rollback: invariant violation OR data divergence detected
+
+    state Rollback {
+        [*] --> RestoreOriginal
+        RestoreOriginal --> ReplayDelta
+        ReplayDelta --> [*]
+    }
+
+    Rollback --> Healthy_Primary
+
+    Healthy_Failedover --> Healthy_Primary: planned failback<br/>(after primary cold-restore + backup verify)
+
+    DrillMode --> Failover_In_Progress: simulate
+    DrillMode --> Healthy_Primary: drill complete<br/>(report archived per SLO §4.18)

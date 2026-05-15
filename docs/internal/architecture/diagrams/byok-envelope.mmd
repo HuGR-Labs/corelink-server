@@ -1,0 +1,45 @@
+%% CoreLink — BYOK envelope encryption (KEK / DEK / AAD lifecycle)
+%% Source of truth: specs/03_architecture/key_management.md,
+%%                  specs/03_architecture/security_model.md §7,
+%%                  crates: corelink-byok, corelink-byok-{aws,gcp,azure,vault},
+%%                          corelink-byok-revocation.
+flowchart TB
+    classDef cust fill:#fef3c7,stroke:#a16207,color:#000
+    classDef cl   fill:#dcfce7,stroke:#15803d,color:#000
+    classDef key  fill:#fee2e2,stroke:#b91c1c,color:#000
+    classDef data fill:#e9d5ff,stroke:#7c3aed,color:#000
+
+    subgraph CustomerCloud["Customer Cloud (KMS)"]
+        KEK["KEK — Key Encryption Key<br/>(non-exportable, customer-controlled)"]:::cust
+        KMS["AWS KMS / GCP KMS /<br/>Azure Key Vault / HashiCorp Vault"]:::cust
+    end
+
+    subgraph CoreLinkPlane["CoreLink Data Plane"]
+        Adapter["BYOK Adapter<br/>(corelink-byok-*)"]:::cl
+        DEKgen["DEK generator<br/>(per-tenant, AES-256)"]:::key
+        Encryptor["AEAD encryptor<br/>(AES-256-GCM)"]:::cl
+        AAD["AAD = tenant_id || digest<br/>|| key_version || region"]:::cl
+        Cipher["Ciphertext blob<br/>+ wrapped DEK + IV + tag"]:::data
+        R2[("R2 (cas-region)")]:::data
+        Cache["DEK in-memory cache<br/>(TTL = 5 min, never persisted)"]:::cl
+    end
+
+    subgraph Revocation["Revocation path"]
+        Rev["corelink-byok-revocation"]:::cl
+        Drain["Drain in-flight reads<br/>+ purge DEK cache"]:::cl
+    end
+
+    KEK --> KMS
+    KMS -- "wrap(DEK)" --> Adapter
+    DEKgen --> Encryptor
+    AAD --> Encryptor
+    Encryptor --> Cipher
+    Adapter -- "wrapped DEK" --> Cipher
+    Cipher --> R2
+    Adapter -.-> Cache
+
+    Rev -->|"KEK revoked / rotated"| Drain
+    Drain -->|"future reads must rewrap"| KMS
+
+    note1["Invariant: CoreLink never persists<br/>unwrapped DEK; restart loses cache<br/>and forces fresh KMS unwrap"]
+    Cache -.- note1

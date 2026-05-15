@@ -1,0 +1,39 @@
+%% CoreLink — Read path (auth -> CAS read -> audit)
+%% Source of truth: specs/03_architecture/data_model.md §9,
+%%                  specs/03_architecture/security_model.md §5 (STRIDE-I).
+sequenceDiagram
+    autonumber
+    participant C as Client (REAPI / CLI)
+    participant E as CF Edge (WAF + TLS)
+    participant W as Worker (auth)
+    participant K as KV (verify cache, hot path)
+    participant S as Container (REAPI)
+    participant R as R2 (cas-region)
+    participant H as Hash verify (BLAKE3)
+    participant A as Audit chain
+
+    C->>E: GET blob by digest + PAT
+    E->>W: forward
+    W->>K: verify PAT hash (KV hot cache, p99 <5ms)
+    K-->>W: tenant_id + scopes
+    W->>W: derive tenant prefix = HMAC(tenant_key, tenant_id)
+    W->>S: read intent (signed, scoped to prefix)
+    S->>R: GET tenant/<hmac>/cas/<digest>
+    alt object missing
+        R-->>S: 404
+        S-->>W: miss (uniform 404, ADR-0028)
+        W-->>C: 404 (no content-distinguishing signal)
+    else object present
+        R-->>S: bytes (zstd)
+        S->>H: re-verify digest (CTRL-INTEGRITY-001)
+        alt hash mismatch
+            H-->>S: corrupt
+            S->>A: emit IntegrityFailure (P0)
+            S-->>W: 503 (refuse poisoned read)
+        else hash ok
+            H-->>S: ok
+            S->>A: emit ReadEvent (sampled per privacy policy)
+            S-->>W: stream bytes
+            W-->>C: 200 OK + content-digest header
+        end
+    end
