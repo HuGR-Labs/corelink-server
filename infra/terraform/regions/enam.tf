@@ -7,7 +7,7 @@ module "enam" {
   region_name      = "enam"
   r2_location_hint = "enam"
   d1_location      = "enam"
-  do_jurisdiction  = "us"   # ENAM: US jurisdiction
+  do_jurisdiction  = "us" # ENAM: US jurisdiction
   cf_zone_id       = var.cf_zone_id
   cf_account_id    = var.cf_account_id
   environment      = var.environment

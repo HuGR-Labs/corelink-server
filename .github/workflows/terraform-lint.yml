@@ -1,0 +1,116 @@
+name: Terraform Lint
+
+# WI-R-PREP — Lint gate for infra/terraform/**.
+#
+# Runs:
+#   - terraform fmt -recursive -check  (whole tree)
+#   - terraform validate                (per environment)
+#   - tflint                            (with cloudflare ruleset)
+#   - tfsec                             (SARIF upload)
+#
+# Auto-apply is FORBIDDEN — this workflow only validates.
+# Supply-chain: all third-party actions SHA-pinned per WI-S01-007.
+
+on:
+  pull_request:
+    paths:
+      - "infra/terraform/**"
+      - ".github/workflows/terraform-lint.yml"
+  push:
+    branches: [main]
+    paths:
+      - "infra/terraform/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  security-events: write # for tfsec SARIF upload
+
+concurrency:
+  group: terraform-lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fmt:
+    name: terraform fmt
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@e9ce11f7a4dbf26943aa5e9aefa4dfa8c8e27a1d # v3.0.0
+        with:
+          terraform_version: "1.7.5"
+          terraform_wrapper: false
+
+      - name: terraform fmt -recursive -check
+        run: terraform -chdir=infra/terraform fmt -recursive -check -diff
+
+  validate:
+    name: terraform validate (${{ matrix.env }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env: [staging]
+        # production/ is .example-only until GA; add once activated.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@e9ce11f7a4dbf26943aa5e9aefa4dfa8c8e27a1d # v3.0.0
+        with:
+          terraform_version: "1.7.5"
+          terraform_wrapper: false
+
+      - name: terraform init -backend=false
+        working-directory: infra/terraform/environments/${{ matrix.env }}
+        run: terraform init -backend=false -input=false
+
+      - name: terraform validate
+        working-directory: infra/terraform/environments/${{ matrix.env }}
+        run: terraform validate -no-color
+
+  tflint:
+    name: tflint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup tflint
+        uses: terraform-linters/setup-tflint@90f302c255ef959cbfb4bd10581afecdb7ece3e6 # v4.1.1
+        with:
+          tflint_version: v0.55.1
+
+      - name: tflint --init
+        run: tflint --chdir=infra/terraform --init
+        env:
+          # GitHub token avoids tflint rate-limiting when fetching plugins.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: tflint --recursive
+        run: tflint --chdir=infra/terraform --recursive --format compact
+
+  tfsec:
+    name: tfsec
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: tfsec
+        uses: aquasecurity/tfsec-sarif-action@9a83b5c3524f825c020e356335855741fd02745f # v0.1.4
+        with:
+          working_directory: infra/terraform
+          sarif_file: tfsec.sarif
+
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@4e828ff8d448a8a6e532957b1811f387a63867e8 # v3.26.6
+        if: always()
+        with:
+          sarif_file: tfsec.sarif
+          category: tfsec

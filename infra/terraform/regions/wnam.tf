@@ -7,7 +7,7 @@ module "wnam" {
   region_name      = "wnam"
   r2_location_hint = "wnam"
   d1_location      = "wnam"
-  do_jurisdiction  = "us"   # WNAM: US jurisdiction
+  do_jurisdiction  = "us" # WNAM: US jurisdiction
   cf_zone_id       = var.cf_zone_id
   cf_account_id    = var.cf_account_id
   environment      = var.environment

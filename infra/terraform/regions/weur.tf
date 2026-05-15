@@ -13,7 +13,7 @@ module "weur" {
   region_name      = "weur"
   r2_location_hint = "weur"
   d1_location      = "weur"
-  do_jurisdiction  = "eu"   # MANDATORY: WEUR EU jurisdiction (Schrems II + GDPR Art. 46)
+  do_jurisdiction  = "eu" # MANDATORY: WEUR EU jurisdiction (Schrems II + GDPR Art. 46)
   cf_zone_id       = var.cf_zone_id
   cf_account_id    = var.cf_account_id
   environment      = var.environment
