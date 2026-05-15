@@ -58,3 +58,6 @@ apps/admin-ui/node_modules/
 apps/admin-ui/.next/
 apps/admin-ui/pnpm-lock.yaml
 apps/admin-ui/tsconfig.tsbuildinfo
+
+# Pentest evidence pack build output (regen via scripts/build-pentest-evidence-pack.sh)
+/dist/
