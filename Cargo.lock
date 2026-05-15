@@ -1830,6 +1830,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-otel-export"
+version = "0.1.0"
+dependencies = [
+ "corelink-analytics",
+ "corelink-tracing",
+ "proptest",
+ "serde",
+ "serde_json",
+ "subtle",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
 name = "corelink-pat"
 version = "0.1.0"
 dependencies = [

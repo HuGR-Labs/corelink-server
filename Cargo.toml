@@ -91,6 +91,12 @@ members = [
     # between drill cycles. Trait + InMemory fake only; real R2/D1/KV
     # handler deferred per autonomous-execution charter trait-abstraction-defer.
     "crates/corelink-backup-verify",
+    # R-prep enterprise observability forwarding — customers want metrics +
+    # traces fan-out to their own Datadog / OTel Collector / Grafana Cloud
+    # stack. Trait surface + per-vendor config schema + InMemoryFake + per-
+    # vendor deferred-real stubs. Real HTTP/gRPC wiring deferred to a
+    # follow-up WI per autonomous-execution charter trait-abstraction-defer.
+    "crates/corelink-otel-export",
     # WI-S15-001 CLI 7 subcommands + WI-S15-005 telemetry opt-in (same crate)
     "crates/corelink-cli",
     # WI-S15-004 FFI wrappers (Python pyO3 + Go cgo + JS/TS WASM)
@@ -395,6 +401,7 @@ corelink-customer-alerts = { path = "crates/corelink-customer-alerts" }
 corelink-erasure-attestation = { path = "crates/corelink-erasure-attestation" }
 corelink-dr-drill = { path = "crates/corelink-dr-drill" }
 corelink-backup-verify = { path = "crates/corelink-backup-verify" }
+corelink-otel-export = { path = "crates/corelink-otel-export" }
 corelink-chaos-scheduler = { path = "crates/corelink-chaos-scheduler" }
 corelink-tier-selection = { path = "crates/corelink-tier-selection" }
 corelink-stripe-real = { path = "crates/corelink-stripe-real" }

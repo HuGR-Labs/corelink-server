@@ -1,0 +1,166 @@
+---
+id: forward-to-datadog
+title: "Forward CoreLink metrics + traces to Datadog"
+slug: "/how-to/observability/forward-to-datadog"
+sidebar_label: "Forward to Datadog"
+description: "Fan-out CoreLink's RED/USE metrics + request-scoped traces to your Datadog tenant via the v2 series HTTP API and APM intake."
+tags: [observability, datadog, metrics, traces, how-to]
+last_updated: "2026-05-15"
+---
+
+# Forward CoreLink metrics + traces to Datadog
+
+**Source:** CoreLink (any tenant, any tier).
+**Destination:** your Datadog tenant on any canonical site (`us1` /
+`us3` / `us5` / `eu1` / `ap1` / `gov1`).
+**Transport:** HTTPS to `api.<site>.datadoghq.com` —
+[v2 series API](https://docs.datadoghq.com/api/latest/metrics/) for
+metrics, [APM intake](https://docs.datadoghq.com/tracing/) for traces.
+**Auth:** Datadog API key, scoped to a metric-ingest role.
+
+**Why pick Datadog over OTel Collector:** lowest setup cost if you
+already own a Datadog tenant. The Collector route gives you more fan-out
+optionality at the cost of operating one more service.
+
+---
+
+## Prerequisites
+
+- A Datadog tenant on a known site. Find your site at
+  `https://<your-org>.datadoghq.com/personal-settings/api-keys` — the URL
+  domain tells you the site (`datadoghq.com` = `us1`, `datadoghq.eu` =
+  `eu1`, etc.).
+- An API key with the `metrics_write` + `apm_write` permissions. We
+  recommend **a dedicated API key for CoreLink** (so you can rotate /
+  revoke without touching other Datadog integrations).
+- CoreLink CLI ≥ 0.1.0 (`corelink --version`) and a CoreLink tenant
+  ID + admin PAT.
+
+## Step 1 — Create a CoreLink-scoped Datadog API key
+
+In the Datadog UI:
+
+1. **Organization Settings → API Keys → New Key**.
+2. Name: `corelink-export-prod` (one key per CoreLink region — see step 4).
+3. Save the 32-character hex key somewhere secure. You will paste it
+   into CoreLink's config in step 3.
+
+:::warning Rotate quarterly
+Datadog API keys do not auto-rotate. Add a quarterly rotation task to
+your runbook; the CoreLink config supports atomic key swap via the
+`config-api` endpoint in step 5.
+:::
+
+## Step 2 — Decide what gets forwarded
+
+By default, CoreLink forwards **every top-level RED + USE metric** plus
+**every SLO-bound metric**. The full canonical inventory is in
+[`specs/_audits/2026-05-15-otel-export-spec.md`](https://github.com/humangr-labs/corelink-server/blob/main/specs/_audits/2026-05-15-otel-export-spec.md).
+Per-metric label sets are PII-free by construction (`tenant_tier` /
+`region` / `result` / etc.; never the raw `tenant_id`).
+
+If you want to opt out of low-value high-cost metrics (high-cardinality
+debug counters), set `opt_out_low_value_metrics = true` in step 3.
+
+## Step 3 — Wire CoreLink to Datadog
+
+Edit your CoreLink tenant config (via the Admin API or
+`corelink config set`):
+
+```toml
+[observability.export]
+variant = "datadog"
+
+[observability.export.datadog]
+# Paste the API key from step 1 (NEVER commit to git — use a secret store).
+api_key = "${DD_API_KEY}"  # 32-char hex
+site    = "us1"            # us1 / us3 / us5 / eu1 / ap1 / gov1
+timeout_ms = 2000          # per-request budget; fail-OPEN past this
+opt_out_low_value_metrics = false
+```
+
+Apply:
+
+```bash
+corelink config apply --file corelink.toml
+```
+
+The Admin API validates the API-key shape (length + ASCII) at submit
+time. Real auth is verified on first export attempt (Datadog returns
+401/403 if the key is wrong); a failure becomes a
+`corelink.observability.export_failed` audit event but **does not
+break CoreLink's request path** (fail-OPEN per
+`INV-OBS-EXPORT-FAIL-OPEN`).
+
+## Step 4 — Per-region scoping (multi-region tenants)
+
+If your tenant is multi-region, declare one export config per
+CoreLink region:
+
+```toml
+[observability.export.datadog.regions.us-east-1]
+api_key = "${DD_API_KEY_US}"
+site    = "us1"
+
+[observability.export.datadog.regions.eu-central-1]
+api_key = "${DD_API_KEY_EU}"
+site    = "eu1"
+```
+
+Each region uses its own Datadog site for data-residency reasons (EU
+data stays in EU; US data stays in US). This satisfies LGPD and GDPR
+data-residency constraints documented in
+[Trust → Data handling](../../trust/data-handling.mdx).
+
+## Step 5 — Verify the wire
+
+After applying the config:
+
+```bash
+# In your CoreLink tenant audit log, watch for:
+corelink audit tail --filter "event_type=corelink.observability.export_ready"
+
+# In Datadog, you should see (within 60 seconds):
+# Metrics Explorer → "corelink_cas_put_requests_total" → graph the
+# default rate per region.
+```
+
+If `corelink.observability.export_failed` shows up instead:
+
+| Failure reason | What it means | Fix |
+|---|---|---|
+| `auth reject from vendor: 401` | API key wrong / revoked | Regenerate in step 1, re-apply |
+| `auth reject from vendor: 403` | Key missing `metrics_write` scope | Add scope in Datadog UI |
+| `vendor rate-limit (HTTP 429)` | Your Datadog tier is at quota | Upgrade tier or set `opt_out_low_value_metrics = true` |
+| `transport failure: <network error>` | DNS / TLS / Datadog outage | Wait + check `status.datadoghq.com` |
+
+## Step 6 — Out-of-the-box Datadog dashboards
+
+CoreLink ships a Datadog dashboard JSON at
+[`apps/docs/static/datadog/corelink-overview.json`](https://github.com/humangr-labs/corelink-server/tree/main/apps/docs/static/datadog)
+(deferred; landing alongside the GA dashboard catalog). Import via
+**Datadog → Dashboards → New → Import JSON**.
+
+## Cost expectation
+
+Datadog bills by ingested-metric-points and custom-metric-cardinality.
+Forwarding the full top-level + SLO-bound inventory (~9 RED + 6 USE =
+15 metrics) at 1m resolution costs roughly:
+
+| Tenant size | Active labels | Approx Datadog $/mo |
+|---|---|---|
+| Solo / Team | ~30 series | $5–15 |
+| Pro | ~300 series | $50–150 |
+| Enterprise (multi-region) | ~3000 series | $500–1500 |
+
+Add APM trace ingest at ~$1.75 per million spans (sampled at 1%).
+
+## Cross-references
+
+- [Observability overview](./index.mdx)
+- [Trust → Data handling](../../trust/data-handling.mdx) — PII hygiene
+  in telemetry; constant-time API-key comparison; fail-OPEN proof.
+- [`specs/_audits/2026-05-15-otel-export-spec.md`](https://github.com/humangr-labs/corelink-server/blob/main/specs/_audits/2026-05-15-otel-export-spec.md)
+  — full inventory of what we export, per-metric data classification,
+  PII-free verification.
+- [Datadog API docs — metrics submit](https://docs.datadoghq.com/api/latest/metrics/#submit-metrics).

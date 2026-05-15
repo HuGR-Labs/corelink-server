@@ -69,7 +69,19 @@ const sidebars: SidebarsConfig = {
           label: "Billing",
           collapsed: true,
           items: [
-            "billing-manage-subscription",
+            "billing-manage-subscription",,
+          ],
+        },
+        // Observability sub-category — Datadog / OTel / Grafana Cloud
+        {
+          type: "category",
+          label: "Observability",
+          link: { type: "doc", id: "observability-index" },
+          collapsed: true,
+          items: [
+            "forward-to-datadog",
+            "forward-to-otel-collector",
+            "forward-to-grafana-cloud"
           ],
         },
       ],
