@@ -60,7 +60,7 @@ tags: ["architecture", "compliance", "soc2", "iso27001", "lgpd", "gdpr"]
 | GDPR                   | UE (operações weur region)             | **Compliance by design** | Fase 1 (GA)                                   |
 | HIPAA                  | Saúde US (opcional, plano enterprise)  | Conditional              | Sob demanda cliente (BAA + audit)             |
 | PCI-DSS v4.0 SAQ-A      | Card-not-present merchant, all CHD outsourced to Stripe | **Compliant (self-attested)** | SAQ-A signed 2026-05-15 · next 2027-05-15 · see `specs/_compliance/PCI-DSS-SAQ-A-2026-05-15.md`, `PCI-DSS-BOUNDARY-DIAGRAM.md`, `PCI-DSS-ANNUAL-RECERTIFY.md` |
-| FedRAMP                | US gov                                  | Sob demanda              | 36+ meses se demanda                           |
+| FedRAMP                | US gov                                  | **Not-in-scope** (informational crosswalk only) | Sob demanda + sponsorship (12-18 meses); ver `specs/_compliance/FEDRAMP-NOT-IN-SCOPE-RATIONALE.md` + `FEDRAMP-MODERATE-CROSSWALK-2026-05-15.md` (~85% Moderate baseline coberto via SOC 2 + ISO 27001) + `apps/docs/docs/trust/fedramp-info.mdx` |
 
 > **Princípio:** construir os controles **agora**, certificar quando houver demanda. Controles sem certificação ainda valem (clientes pedem SIG ou CAIQ para diligence).
 
