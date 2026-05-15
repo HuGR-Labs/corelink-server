@@ -19,9 +19,9 @@ tags: ["debt-register", "techlead", "ga-readiness", "must-close-before-tag"]
 > This file enumerates every known debt surfaced by the 8 R-wave dispatches. Each row has owner + plan + target close date. Nothing in this register is allowed to drift past its target without explicit waiver in this file. New debts surfaced in future waves append here, never to scattered audit docs.
 >
 > **Snapshot commit:** main HEAD `6d80530` + wave 7 + wave 8 in flight.
-> **Total debt rows:** 19 (P0:3 · P1:8 · P2:8).
+> **Total debt rows:** 20 (P0:3 · P1:8 · P2:9) — **DEBT-020 added 2026-05-15 (CLOSED same day)**.
 > **Closed:** 1 (DEBT-001 — 2026-05-15, commit `52624e7`).
-> **Total debt rows:** 19 (P0:3 · P1:8 · P2:8) — **1 closed (DEBT-004 on 2026-05-15)**; 18 open.
+> **Total debt rows:** 20 (P0:3 · P1:8 · P2:9) — **1 closed (DEBT-004 on 2026-05-15)**; 18 open; +DEBT-020 added & closed 2026-05-15.
 
 ---
 
@@ -69,6 +69,7 @@ tags: ["debt-register", "techlead", "ga-readiness", "must-close-before-tag"]
 | DEBT-017 | **5 followup proptest WIs** (3.5d total effort) for low-priority gap crates. | `specs/_audits/proptest-followup-tickets.md` | Orchestrator | T+30d (2026-06-14) | Bundle with DEBT-009 closure. |
 | DEBT-018 | **CodeQL/Semgrep upstream action SHAs are placeholder pins** (v3.27.0 / v1 tag references; need verified SHAs after first green run). | `wt/r-prep-codeql-semgrep` commit `a280fe1` CAVEATS | Orchestrator | T+7d (2026-05-22) | **CLOSED 2026-05-15** — All `uses:` lines in `.github/workflows/codeql.yml` + `semgrep.yml` (plus 12 other workflows) SHA-pinned via `gh api`. Verifier `scripts/verify-action-sha-pinning.py` + CI gate `.github/workflows/action-sha-audit.yml` prevent regression. Baseline: `specs/_audits/2026-05-15-action-sha-pinning-baseline.md`. |
 | DEBT-019 | **GitHub action SHAs not cross-verified against API** for wave 7/8 bot workflows. | `wt/r-prep-github-bots` commit `da4b473` CAVEATS | Orchestrator | T+7d (2026-05-22) | **CLOSED 2026-05-15** — All `uses:` in wave-7 bot workflows (`labeler.yml`, `welcome-first-pr.yml`, `stale.yml`, `size-label.yml`, `dependabot-auto-merge.yml`) were already SHA-pinned at wave-7 commit; full repo audit confirmed 100% coverage. One corrupted 39-char SHA (`dependabot/fetch-metadata`) corrected. See `specs/_audits/2026-05-15-action-sha-pinning-baseline.md`. |
+| DEBT-020 | **actionlint CI gate** — workflow drift (invalid syntax, deprecated `set-env`/`add-path`, shell quoting bugs, unknown runner labels like retired `macos-13`, undefined GHA expression contexts) had no static lint gate post-DEBT-018+019 (85+ workflows, all SHA-pinned, but no syntactic guard). | This register | Orchestrator | T+7d (2026-05-22) | **CLOSED 2026-05-15** — `rhysd/actionlint:1.7.12` wired as CI gate (`.github/workflows/actionlint.yml`) pinned to Docker image digest `sha256:b1934ee5…`. Pre-fix baseline: **35 actionlint errors** across 22 workflows (incl. 10 unresolved git merge-conflict markers in `corelink-*.yml`/`tenant-path.yml`/`spec_validation.yml`/`tla_check.yml`/`dashboard_validation.yml`/`byok_kill_switch_drill_weekly.yml` from the `cdf9458` debt-010 merge that landed broken). Post-fix: **0 errors**. Repo-root `.actionlint.yaml` carries the (empty) self-hosted-runner allowlist + the `DT_ENDPOINT` vars-context allowlist. Baseline: `specs/_audits/2026-05-15-actionlint-baseline.md`. |
 
 ---
 

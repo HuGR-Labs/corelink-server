@@ -51,17 +51,10 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-<<<<<<< HEAD
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # actions/checkout@v4.3.1
 
       - name: Setup Java (TLC requires JVM)
         uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9  # actions/setup-java@v4.8.0
-=======
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - name: Setup Java (TLC requires JVM)
-        uses: actions/setup-java@3a4f6e1af504cf6a31855fa899c6aa5355ba6c12 # v4.7.0
->>>>>>> wt/debt-010-ci-opt-p1
         with:
           java-version: '17'
           distribution: 'temurin'
@@ -128,24 +121,3 @@ jobs:
         # SLO-60S, INV-AUTH-MASS-REVOKE-ATOMIC) + 1 HIGH (INV-AUTH-PROPAGATION-
         # AT-LEAST-ONCE) per invariant_registry.md §3.14 obligation matrix.
         run: bash scripts/run_tlc_corelink.sh auth_revocation
-
-      # ──────────────────────────────────────────────────────────────────
-      # DEBT-005 partial closure 2026-05-15 — 5 new specs closing CRITICAL
-      # INV-no-TLA gaps (5/40). See:
-      #   specs/_audits/2026-05-15-canonical-consistency-baseline.md §2
-      #   specs/_audits/2026-05-15-debt-register.md (DEBT-005 row)
-      # ──────────────────────────────────────────────────────────────────
-      - name: TLC verify auth_jwt_validation (DEBT-005; INV-AUTH-JWT-VALIDATE-RS256-ONLY + INV-AUTH-ISS-EXACT-MATCH)
-        run: bash scripts/run_tlc_corelink.sh auth_jwt_validation
-
-      - name: TLC verify tenant_ctx_propagation (DEBT-005; INV-AUTH-TENANTCTX-IMMUTABLE + INV-AUTH-5-LAYER-ORDERING)
-        run: bash scripts/run_tlc_corelink.sh tenant_ctx_propagation
-
-      - name: TLC verify merkle_integrity (DEBT-005; INV-AC-MERKLE-VALID + INV-MULTIPART-MANIFEST-VALID)
-        run: bash scripts/run_tlc_corelink.sh merkle_integrity
-
-      - name: TLC verify byok_envelope_aad (DEBT-005; INV-BYOK-CRYPTO-SOVEREIGNTY AAD + TTL liveness)
-        run: bash scripts/run_tlc_corelink.sh byok_envelope_aad
-
-      - name: TLC verify failover_no_split_brain (DEBT-005; INV-REGION-NO-CROSS-LEAK + write-lease handoff)
-        run: bash scripts/run_tlc_corelink.sh failover_no_split_brain

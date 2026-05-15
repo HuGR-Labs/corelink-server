@@ -64,6 +64,8 @@ jobs:
         id: render
         run: |
           set -euo pipefail
+          # shellcheck disable=SC2016  # GHA expressions + markdown backticks are
+          # evaluated before bash; single-quoting them is intentional.
           {
               echo 'COMMENT<<EOF'
               echo '## Coverage report (cargo-llvm-cov)'

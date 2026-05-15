@@ -90,6 +90,8 @@ jobs:
         if: failure()
         run: |
           set -euo pipefail
+          # shellcheck disable=SC2016  # backticks inside single quotes are
+          # literal markdown, not shell command substitution.
           {
               echo '## License policy: FAILED'
               echo ''

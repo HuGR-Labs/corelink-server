@@ -1,0 +1,26 @@
+# actionlint configuration for corelink-server.
+#
+# Reference: https://github.com/rhysd/actionlint/blob/v1.7.12/docs/config.md
+#
+# Our policy:
+#   - SHA-pin verification of `uses:` is enforced by scripts/verify-action-sha-pinning.py
+#     (separate CI gate: action-sha-audit.yml). actionlint complements that by
+#     catching syntax / semantic / shellcheck drift.
+#   - We do NOT use self-hosted runners today. If that changes, list custom
+#     labels under `self-hosted-runner.labels` here.
+#   - We allow specific shellcheck rule disables inline (e.g. SC2016 false
+#     positives on GHA `${{ }}` inside single-quoted echo strings, SC2046 on
+#     intentional word-splitting in security/list-keychains). Document each
+#     disable with a `# shellcheck disable=...` comment immediately above
+#     the offending line.
+
+self-hosted-runner:
+  # We don't use self-hosted runners. Leave the list empty so actionlint
+  # flags any accidental references to non-standard labels (release-cli.yml
+  # macos-13 regression caught by this baseline is the canonical example).
+  labels: []
+
+config-variables:
+  # No vars-context variables used today. Add here only if a future workflow
+  # legitimately reads ${{ vars.X }} — otherwise actionlint will warn on typos.
+  - DT_ENDPOINT

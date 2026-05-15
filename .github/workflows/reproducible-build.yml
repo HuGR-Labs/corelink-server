@@ -138,10 +138,12 @@ jobs:
           echo "runner-2 SHA-256: ${HASH_2}"
 
           if [ "${HASH_1}" = "${HASH_2}" ]; then
-            echo "BIT_IDENTICAL=true"  >> "$GITHUB_OUTPUT"
-            echo "DIFF_BYTES=0"        >> "$GITHUB_OUTPUT"
-            echo "DIFF_PERCENTAGE=0"   >> "$GITHUB_OUTPUT"
-            echo "OUTCOME=bit_identical" >> "$GITHUB_OUTPUT"
+            {
+              echo "BIT_IDENTICAL=true"
+              echo "DIFF_BYTES=0"
+              echo "DIFF_PERCENTAGE=0"
+              echo "OUTCOME=bit_identical"
+            } >> "$GITHUB_OUTPUT"
             echo "RESULT: bit-identical"
           else
             WASM_1=runner-1/corelink_worker.wasm
@@ -149,17 +151,19 @@ jobs:
             SIZE=$(stat -c %s "${WASM_1}")
             DIFF=$(cmp -l "${WASM_1}" "${WASM_2}" 2>/dev/null | wc -l || true)
             PERCENTAGE=$(awk "BEGIN {printf \"%.4f\", ${DIFF} / ${SIZE} * 100}")
-            echo "BIT_IDENTICAL=false"            >> "$GITHUB_OUTPUT"
-            echo "DIFF_BYTES=${DIFF}"              >> "$GITHUB_OUTPUT"
-            echo "DIFF_PERCENTAGE=${PERCENTAGE}"   >> "$GITHUB_OUTPUT"
+            {
+              echo "BIT_IDENTICAL=false"
+              echo "DIFF_BYTES=${DIFF}"
+              echo "DIFF_PERCENTAGE=${PERCENTAGE}"
+            } >> "$GITHUB_OUTPUT"
 
             # Determine outcome bucket
             PCT_INT=$(awk "BEGIN {printf \"%d\", ${PERCENTAGE}}")
             if [ "${PCT_INT}" -le 5 ]; then
-              echo "OUTCOME=within_threshold"   >> "$GITHUB_OUTPUT"
+              echo "OUTCOME=within_threshold" >> "$GITHUB_OUTPUT"
               echo "RESULT: within_threshold (${PERCENTAGE}%)"
             else
-              echo "OUTCOME=exceeds_threshold"  >> "$GITHUB_OUTPUT"
+              echo "OUTCOME=exceeds_threshold" >> "$GITHUB_OUTPUT"
               echo "RESULT: EXCEEDS THRESHOLD (${PERCENTAGE}%)"
             fi
           fi

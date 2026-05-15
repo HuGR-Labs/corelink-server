@@ -123,17 +123,22 @@ jobs:
             --curr specs/_compliance/VENDOR-RISK-REGISTER.md \
             --out /tmp/subproc-notify/events.jsonl \
             --allow-empty
-          rc=$?
+          # --allow-empty forces exit 0; we read $? but don't act on it (event
+          # count from file size is the authoritative downstream signal).
           set -e
           # The `--allow-empty` flag forces exit 0; we surface the event
           # count from the file size for downstream gating.
           if [ -s /tmp/subproc-notify/events.jsonl ]; then
-            echo "events_present=true" >> "$GITHUB_OUTPUT"
             count=$(wc -l < /tmp/subproc-notify/events.jsonl | tr -d ' ')
-            echo "event_count=$count" >> "$GITHUB_OUTPUT"
+            {
+              echo "events_present=true"
+              echo "event_count=$count"
+            } >> "$GITHUB_OUTPUT"
           else
-            echo "events_present=false" >> "$GITHUB_OUTPUT"
-            echo "event_count=0" >> "$GITHUB_OUTPUT"
+            {
+              echo "events_present=false"
+              echo "event_count=0"
+            } >> "$GITHUB_OUTPUT"
           fi
 
       - name: Upload notify-required CloudEvents artifact

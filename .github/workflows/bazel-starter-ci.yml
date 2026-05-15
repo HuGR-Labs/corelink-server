@@ -165,12 +165,14 @@ jobs:
 
       - name: Summary
         run: |
-          echo "### Build Metrics" >> "${GITHUB_STEP_SUMMARY}"
-          echo "" >> "${GITHUB_STEP_SUMMARY}"
-          echo "| Metric | Value | SLA |" >> "${GITHUB_STEP_SUMMARY}"
-          echo "|---|---|---|" >> "${GITHUB_STEP_SUMMARY}"
-          echo "| Cold build | ${COLD_MS} ms | — |" >> "${GITHUB_STEP_SUMMARY}"
-          echo "| Warm build | ${WARM_MS} ms | ≤ 30 000 ms |" >> "${GITHUB_STEP_SUMMARY}"
+          {
+            echo "### Build Metrics"
+            echo ""
+            echo "| Metric | Value | SLA |"
+            echo "|---|---|---|"
+            echo "| Cold build | ${COLD_MS} ms | — |"
+            echo "| Warm build | ${WARM_MS} ms | ≤ 30 000 ms |"
+          } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Upload execution log
         if: always()

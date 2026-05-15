@@ -153,7 +153,7 @@ jobs:
           http-server build -p 4173 -s &
           echo $! > /tmp/http-server.pid
           # Wait until the server responds (max 30s).
-          for i in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             if curl -sf http://127.0.0.1:4173/ > /dev/null; then
               echo "http-server ready"; break
             fi
@@ -213,7 +213,7 @@ jobs:
         run: |
           http-server build -p 4174 -s &
           echo $! > /tmp/http-server-axe.pid
-          for i in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             if curl -sf http://127.0.0.1:4174/ > /dev/null; then break; fi
             sleep 1
           done
@@ -371,7 +371,7 @@ jobs:
         run: |
           pnpm serve --port 3000 --no-open > /tmp/docs-serve.log 2>&1 &
           echo $! > /tmp/docs-serve.pid
-          for i in $(seq 1 60); do
+          for _ in $(seq 1 60); do
             if curl -fsS -o /dev/null --max-time 2 http://localhost:3000/; then
               echo "docs server up"
               exit 0

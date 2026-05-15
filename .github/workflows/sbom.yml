@@ -169,13 +169,15 @@ jobs:
       - name: Request RFC 3161 TSA timestamp
         id: tsa
         run: |
-          ./target/release/sbom-publish attest-tsa \
-            --input sbom.cdx.json \
-            --tsa-url "$TSA_URL" \
-            --output-tsr sbom.cdx.json.tsr \
-          && echo "tsr_present=true" >> "$GITHUB_OUTPUT" \
-          || (echo "tsr_present=false" >> "$GITHUB_OUTPUT"; \
-              echo "::warning::TSA timestamp failed (SEV-3); SBOM will be published without TSR")
+          if ./target/release/sbom-publish attest-tsa \
+                --input sbom.cdx.json \
+                --tsa-url "$TSA_URL" \
+                --output-tsr sbom.cdx.json.tsr; then
+            echo "tsr_present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "tsr_present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::TSA timestamp failed (SEV-3); SBOM will be published without TSR"
+          fi
 
       - name: Upload TSR artifact
         if: steps.tsa.outputs.tsr_present == 'true'
@@ -191,7 +193,7 @@ jobs:
   sbom-dt-ingest:
     name: "Dependency-Track ingestion"
     runs-on: ubuntu-22.04
-    needs: sbom-ntia-validate
+    needs: [sbom-generate, sbom-ntia-validate]
     # DT ingestion is non-blocking: continue even if DT is down
     continue-on-error: true
 

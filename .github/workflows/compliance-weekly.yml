@@ -84,14 +84,14 @@ jobs:
           REFERENCE: ${{ github.event.inputs.reference_digest }}
         run: |
           set -euo pipefail
-          REF_ARG=""
+          REF_ARGS=()
           if [ -n "${REFERENCE:-}" ]; then
-            REF_ARG="--reference ${REFERENCE}"
+            REF_ARGS=(--reference "${REFERENCE}")
           fi
           # Run with --with-ci so we surface compliance-gate failures in last 7d.
           # Capture both exit code and JSON payload.
           set +e
-          python3 scripts/compliance-weekly-digest.py --with-ci ${REF_ARG} \
+          python3 scripts/compliance-weekly-digest.py --with-ci "${REF_ARGS[@]}" \
             > /tmp/digest.stdout 2> /tmp/digest.stderr
           RC=$?
           set -e
@@ -102,12 +102,14 @@ jobs:
           if [ "${RC}" -eq 1 ]; then
             echo "regression=true" >> "${GITHUB_OUTPUT}"
             # Extract regression reasons from JSON for downstream steps.
-            python3 scripts/compliance-weekly-digest.py --with-ci ${REF_ARG} --json \
+            python3 scripts/compliance-weekly-digest.py --with-ci "${REF_ARGS[@]}" --json \
               > /tmp/digest.json 2>/dev/null || true
             REASONS="$(python3 -c 'import json,sys; d=json.load(open("/tmp/digest.json")); print("|".join(d.get("regression_reasons", [])))' || echo '')"
-            echo "reasons<<JSONEOF" >> "${GITHUB_OUTPUT}"
-            echo "${REASONS}" >> "${GITHUB_OUTPUT}"
-            echo "JSONEOF" >> "${GITHUB_OUTPUT}"
+            {
+              echo "reasons<<JSONEOF"
+              echo "${REASONS}"
+              echo "JSONEOF"
+            } >> "${GITHUB_OUTPUT}"
           elif [ "${RC}" -eq 0 ]; then
             echo "regression=false" >> "${GITHUB_OUTPUT}"
             echo "reasons=" >> "${GITHUB_OUTPUT}"

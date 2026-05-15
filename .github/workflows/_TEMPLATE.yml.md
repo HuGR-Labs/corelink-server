@@ -16,6 +16,7 @@ Conformance checklist for every new workflow:
 - [ ] Secrets scoped to jobs that need them (declared in `env:` at job level, not workflow level, unless cross-job)
 - [ ] Job-level `if:` guards for release-only steps (e.g., cosign sign on push-to-main only)
 - [ ] Fan-out to matrix jobs where independence allows (TLC specs, OS × language, etc.)
+- [ ] **actionlint clean** — `actionlint -no-color .github/workflows/<name>.yml` exits 0 locally; CI gate `actionlint.yml` will re-verify on PR. Catches: invalid syntax, unknown runner labels (e.g. retired `macos-13`), undefined expression contexts, shellcheck violations in `run:` blocks, deprecated `set-env`/`add-path`. Disables for canonical false-positives (GHA `${{ }}` inside single-quoted echos, intentional word-splitting) MUST carry a `# shellcheck disable=SCxxxx` comment with a one-line rationale.
 
 Reference SHA pins (current as of 2026-05-15):
 
