@@ -373,6 +373,73 @@ SLOs individuais (§4.x) podem override interpolation via linha explícita "Targ
 | Related            | RB-BACKUP-VERIFICATION (monthly cycle), GAP-15 COLD-RESTORE-DRILL-SPEC (quarterly cycle 1)         |
 | Notas              | Complements cold-restore drill cadence — daily verification catches silent corruption / freshness regressions / restore-failures between drill cycles within 24h. Breach blocks GA Reliability Gate. |
 
+### 4.23 Reliability — Cross-region replication lag R2 (R-prep replication audit)
+
+**SLO-REPLICATION-LAG-R2** (internal; continuous SLI; complements `SLO-RPO-REGION` §4.19 which is *drill-only*)
+
+| Campo              | Valor                                                                                              |
+|--------------------|----------------------------------------------------------------------------------------------------|
+| SLI (hot blobs)    | p99 `corelink_replication_lag_seconds{domain="r2_hot"}` over rolling 1h window                     |
+| Target (hot)       | p99 ≤ **60 s** (matches `REPLICATION_LAG_P99_SLO_SECS = 60` in `crates/corelink-replica-worker/src/region.rs` L180) |
+| SLI (R2 platform CRR) | indirect via 5-min synthetic R2 probe (see `replication-followup-tickets.md` R-PREP-REPL-P1-004) |
+| Target (CRR)       | p99 ≤ **24 h** (per `SLO-BACKUP-VERIFICATION` row "R2 (RPO 24h)" §4.22; reused as the CRR ceiling) |
+| Window             | 30 days rolling                                                                                    |
+| Burn alert         | 1h fast-burn (10× violation rate; SEV-2) + 6h slow-burn (3× rate; SEV-3) per Google SRE Workbook   |
+| Owner              | SRE Lead; replica-worker maintainer (S-14 cluster)                                                 |
+| Verifier           | `scripts/verify-replication-lag.py --domain=r2_hot --domain=r2_crr` (daily cron alongside `backup-daily.sh`) |
+| Anchor             | `specs/_audits/2026-05-15-replication-audit.md §3.1 + §3.2`                                        |
+| Notas              | Closes audit gap GAP-R1 (hot) + GAP-R2 (CRR). Drives DR-16 active-failover §1.3 declaration check. |
+
+### 4.24 Reliability — Cross-region replication lag D1 (R-prep replication audit)
+
+**SLO-REPLICATION-LAG-D1** (internal; continuous SLI for D1 read-replica lag)
+
+| Campo              | Valor                                                                                              |
+|--------------------|----------------------------------------------------------------------------------------------------|
+| SLI                | p99 `corelink_d1_replica_lag_seconds{primary_region, replica_region}` over rolling 1h window      |
+| Target             | p99 ≤ **60 s** sustained 30d (DR-16 declaration trigger requires ≤ 5 min RPO budget — 60 s p99 SLO leaves 5× headroom) |
+| Backup-tier RPO    | ≤ 6 h via `scripts/backup-daily-verify.sh` (per `SLO-BACKUP-VERIFICATION` row "D1 (RPO 6h)")       |
+| Window             | 30 days rolling                                                                                    |
+| Burn alert         | 1h fast-burn (10× rate; SEV-2) + 6h slow-burn (3× rate; SEV-3); 5-min sustained lag > 60 s → SEV-2 |
+| Owner              | SRE Lead                                                                                           |
+| Verifier           | `scripts/verify-replication-lag.py --domain=d1`                                                    |
+| Anchor             | `specs/_audits/2026-05-15-replication-audit.md §3.3`                                               |
+| Notas              | Closes audit gap GAP-R3. Single-writer per region (no conflict resolution); replica is read-only. |
+
+### 4.25 Reliability — Cross-region replication lag KV (R-prep replication audit)
+
+**SLO-REPLICATION-LAG-KV** (internal; continuous SLI for KV global eventual propagation)
+
+| Campo              | Valor                                                                                              |
+|--------------------|----------------------------------------------------------------------------------------------------|
+| SLI                | p99 `corelink_kv_propagation_lag_seconds{write_region, read_region}` over rolling 1h window       |
+| Target (typical)   | p99 ≤ **60 s** in 95% of region-pair samples (CF KV docs claim; this SLO verifies it empirically) |
+| Target (ceiling)   | p99 ≤ **300 s** (matches KV max TTL upper bound per `PAT-KV-TTL-001`); never source-of-truth      |
+| Backup-tier RPO    | ≤ 12 h via `scripts/backup-daily-verify.sh` (per `SLO-BACKUP-VERIFICATION` row "KV (RPO 12h)")    |
+| Window             | 30 days rolling                                                                                    |
+| Burn alert         | Sustained 5 min > 60 s typical → SEV-3; > 300 s ceiling → SEV-2                                   |
+| Owner              | SRE Lead                                                                                           |
+| Verifier           | `scripts/verify-replication-lag.py --domain=kv`                                                    |
+| Anchor             | `specs/_audits/2026-05-15-replication-audit.md §3.4`                                               |
+| Notas              | Closes audit gap GAP-R4. KV is global eventual — every region pair is probed (12 pairs / 4×3).    |
+
+### 4.26 Reliability — DO state sync-age (R-prep replication audit)
+
+**SLO-REPLICATION-LAG-DO** (internal; continuous SLI for DO→D1 sync age as cross-region rebuild proxy)
+
+| Campo              | Valor                                                                                              |
+|--------------------|----------------------------------------------------------------------------------------------------|
+| SLI                | p99 `corelink_do_sync_age_seconds{do_class, region}` over rolling 1h window                       |
+| Target (TenantQuota) | p99 ≤ **300 s** (matches the 5-min DO sync cadence per `data_model.md §4.2 tenant_storage_state`) |
+| Target (ConfigSingleton) | p99 ≤ **60 s** (consent / kill-switch propagation per CTRL-PRIV-CONSENT-002 + SLO-ADMIN-CONFIG-PROPAGATION §4.14) |
+| RateLimiter        | **Excluded** — intentional reset on failover (graceful-degradation; audit §3.5 edge case (a))     |
+| Window             | 30 days rolling                                                                                    |
+| Burn alert         | Sustained 5 min sync-age over budget → SEV-3                                                       |
+| Owner              | SRE Lead                                                                                           |
+| Verifier           | `scripts/verify-replication-lag.py --domain=do`                                                    |
+| Anchor             | `specs/_audits/2026-05-15-replication-audit.md §3.5`                                               |
+| Notas              | Closes audit gap GAP-R5. DO is single-region; sync-age is the *proxy* for cross-region rebuild RPO. |
+
 ---
 
 ## 5. Error budget policy
