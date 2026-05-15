@@ -1,12 +1,18 @@
-name: mutation-nightly (S-01 R2 baseline)
+name: mutation-nightly (R2 baseline + 5-crate expansion 2026-05-15)
 
-# Nightly cargo-mutants gate on the 3 most security-critical crates:
-# - corelink-byok (envelope encryption + DEK cache)
-# - corelink-signup (atomic provisioning orchestrator)
-# - corelink-tier-selection (INV-ONBOARD-DPA-FIRST enforcement)
+# Nightly cargo-mutants gate on the 8 most security-critical crates:
+# - corelink-byok (envelope encryption + DEK cache)         [baseline 2026-05-14]
+# - corelink-signup (atomic provisioning orchestrator)      [baseline 2026-05-14]
+# - corelink-tier-selection (INV-ONBOARD-DPA-FIRST)         [baseline 2026-05-14]
+# - corelink-audit-chain (BLAKE3 chain integrity)           [expansion 2026-05-15]
+# - corelink-pat (PAT mint/verify + Argon2id)               [expansion 2026-05-15]
+# - corelink-clerk (SSO JWT validation + JWKS)              [expansion 2026-05-15]
+# - corelink-dual-approval (admin op gate + collusion)      [expansion 2026-05-15]
+# - corelink-ratelimit (token bucket + Retry-After)         [expansion 2026-05-15]
 #
-# Per `specs/_audits/2026-05-14-mutation-baseline.md` baseline:
-# kill rate ≥ 75% per crate; build fails if kill rate drops > 5% vs
+# Per `specs/_audits/2026-05-14-mutation-baseline.md` +
+# `specs/_audits/2026-05-15-mutation-expansion.md` baseline:
+# kill rate ≥ 75 % per crate; build fails if kill rate drops > 5 % vs
 # the recorded baseline so a PR cannot silently regress mutation
 # coverage on critical security paths.
 #
@@ -26,12 +32,17 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  # Baseline kill-rate thresholds (recorded 2026-05-14).
+  # Baseline kill-rate thresholds (recorded 2026-05-14 + 2026-05-15).
   # Build fails if observed kill rate drops below
   # (baseline - 5pp), per WI guard band.
   BYOK_BASELINE: 75
   SIGNUP_BASELINE: 75
   TIER_SELECTION_BASELINE: 75
+  AUDIT_CHAIN_BASELINE: 75
+  PAT_BASELINE: 75
+  CLERK_BASELINE: 75
+  DUAL_APPROVAL_BASELINE: 75
+  RATELIMIT_BASELINE: 75
   REGRESSION_TOLERANCE_PP: 5
 
 jobs:
@@ -45,6 +56,11 @@ jobs:
           - corelink-byok
           - corelink-signup
           - corelink-tier-selection
+          - corelink-audit-chain
+          - corelink-pat
+          - corelink-clerk
+          - corelink-dual-approval
+          - corelink-ratelimit
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -85,6 +101,11 @@ jobs:
             "corelink-byok": int(os.environ["BYOK_BASELINE"]),
             "corelink-signup": int(os.environ["SIGNUP_BASELINE"]),
             "corelink-tier-selection": int(os.environ["TIER_SELECTION_BASELINE"]),
+            "corelink-audit-chain": int(os.environ["AUDIT_CHAIN_BASELINE"]),
+            "corelink-pat": int(os.environ["PAT_BASELINE"]),
+            "corelink-clerk": int(os.environ["CLERK_BASELINE"]),
+            "corelink-dual-approval": int(os.environ["DUAL_APPROVAL_BASELINE"]),
+            "corelink-ratelimit": int(os.environ["RATELIMIT_BASELINE"]),
           }
           tolerance = int(os.environ["REGRESSION_TOLERANCE_PP"])
 
