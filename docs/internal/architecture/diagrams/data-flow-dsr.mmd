@@ -1,0 +1,32 @@
+%% CoreLink — DSR erasure flow (LGPD Art. 18 / GDPR Art. 17)
+%% Source of truth: specs/03_architecture/privacy_model.md §6, §8,
+%%                  crate corelink-privacy-erasure-worker,
+%%                  crate corelink-erasure-attestation.
+sequenceDiagram
+    autonumber
+    participant Sub as Data subject
+    participant Tn as Tenant admin
+    participant UI as Admin UI / DSR API
+    participant DPA as DPA + identity proof
+    participant DQ as DSR queue (DO)
+    participant EW as Erasure worker
+    participant R as R2 (cas/ac/audit)
+    participant N as Neon (account meta)
+    participant Att as Attestation signer
+
+    Sub->>Tn: erasure request (LGPD/GDPR right)
+    Tn->>UI: submit DSR ticket (subject scope, evidence)
+    UI->>DPA: verify identity + lawful basis
+    DPA-->>UI: verified
+    UI->>DQ: enqueue (ticket_id, SLA 30d EU / 15d BR)
+    DQ->>EW: dispatch
+    EW->>R: locate refs (tenant_id, digests, audit pointers)
+    EW->>R: tombstone CAS objects (no overwrite-in-place, refcount=0)
+    EW->>R: redact AC entries pointing to subject digests
+    EW->>N: pseudonymize / drop account row (per retention §8)
+    Note over R: Audit log entries are NOT erased<br/>(immutability invariant); subject IDs<br/>pseudonymized in-place per privacy_model §8
+    EW->>Att: request signed attestation (Ed25519)
+    Att-->>EW: attestation cert + Merkle inclusion proof
+    EW->>DQ: mark complete + persist attestation
+    UI-->>Tn: notify (signed PDF + JSON receipt)
+    Tn-->>Sub: deliver attestation

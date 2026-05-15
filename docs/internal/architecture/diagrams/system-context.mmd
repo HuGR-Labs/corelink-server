@@ -1,0 +1,72 @@
+%% CoreLink — System Context (C4 Level 1)
+%% Source of truth: specs/03_architecture/security_model.md §3 (trust boundaries),
+%%                  specs/03_architecture/data_model.md §3 (backends).
+%% Render: `mmdc --input system-context.mmd --output system-context.svg`
+flowchart LR
+    classDef actor fill:#fef3c7,stroke:#a16207,stroke-width:1px,color:#000
+    classDef edge  fill:#dbeafe,stroke:#1d4ed8,stroke-width:1px,color:#000
+    classDef plane fill:#dcfce7,stroke:#15803d,stroke-width:1px,color:#000
+    classDef store fill:#e9d5ff,stroke:#7c3aed,stroke-width:1px,color:#000
+    classDef ext   fill:#fee2e2,stroke:#b91c1c,stroke-width:1px,color:#000
+
+    subgraph Actors["Actors"]
+        Dev["Customer CI / Dev<br/>(REAPI client)"]:::actor
+        Admin["Customer Admin<br/>(Admin UI / CLI)"]:::actor
+        Auditor["Auditor / Compliance"]:::actor
+        Status["Status subscribers<br/>(status.corelink.dev)"]:::actor
+    end
+
+    subgraph CFEdge["Cloudflare Edge (TB-0 -> TB-1)"]
+        WAF["WAF + DDoS<br/>+ TLS 1.3 terminate"]:::edge
+    end
+
+    subgraph CLPlane["CoreLink Planes (TB-1 -> TB-2)"]
+        Worker["Control-plane Worker<br/>(corelink-worker)"]:::plane
+        Container["Data-plane Container<br/>(REAPI gRPC, apps/server)"]:::plane
+        AdminAPI["Admin API + Dry-run<br/>(corelink-admin-api)"]:::plane
+        DSR["DSR + Erasure worker<br/>(corelink-dsr)"]:::plane
+    end
+
+    subgraph Storage["Storage (CF bindings, TB-2 -> TB-3)"]
+        R2CAS[("R2: cas-region<br/>(blobs, immutable)")]:::store
+        R2AC[("R2: ac-region<br/>(action cache)")]:::store
+        R2Audit[("R2: audit-region<br/>(append-only, Object Lock)")]:::store
+        D1[("D1: meta + ac_meta<br/>+ multipart + quotas")]:::store
+        Neon[("Neon Postgres<br/>(accounts, tenants, billing)")]:::store
+        KV[("KV: hot config / verify cache")]:::store
+        DO[("Durable Objects<br/>(rate, config, replica)")]:::store
+    end
+
+    subgraph External["External (sub-processors)"]
+        Clerk["Clerk (auth)"]:::ext
+        Stripe["Stripe (billing)"]:::ext
+        BYOK["Customer KMS<br/>(AWS / GCP / Azure / Vault)"]:::ext
+        PD["PagerDuty"]:::ext
+    end
+
+    Dev -->|"gRPC / HTTPS"| WAF
+    Admin -->|"HTTPS + MFA + WebAuthn"| WAF
+    Auditor -->|"Signed audit export"| WAF
+    Status -.->|"SSE / RSS"| Worker
+
+    WAF --> Worker
+    WAF --> Container
+    Worker --> AdminAPI
+    Worker --> DSR
+    Worker --> Clerk
+    Worker --> Stripe
+
+    Container --> R2CAS
+    Container --> R2AC
+    Container --> D1
+    Container --> KV
+    Worker --> Neon
+    Worker --> DO
+    Worker --> R2Audit
+    AdminAPI --> R2Audit
+
+    Container -.->|"DEK unwrap<br/>(envelope encrypt)"| BYOK
+    DSR --> R2CAS
+    DSR --> R2Audit
+
+    Worker -.->|"SEV-1 page"| PD

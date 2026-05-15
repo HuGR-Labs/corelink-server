@@ -1,0 +1,42 @@
+%% CoreLink — Write path (signup -> tier -> CAS write -> audit)
+%% Source of truth: specs/03_architecture/data_model.md §9 (lifecycle),
+%%                  specs/03_architecture/security_model.md §6 (CTRLs),
+%%                  apps/docs/docs/explanation/architecture.mdx.
+sequenceDiagram
+    autonumber
+    participant C as Client (REAPI / CLI)
+    participant E as CF Edge (WAF + TLS)
+    participant W as Worker (auth + quota)
+    participant K as KV / D1 (token verify)
+    participant S as Container (REAPI server)
+    participant Ch as Chunker (FastCDC)
+    participant H as Hash (BLAKE3)
+    participant Q as Quota FSM
+    participant R as R2 (cas-region)
+    participant A as Audit chain
+
+    C->>E: PUT chunk + PAT bearer
+    E->>W: forward (TLS 1.3 mTLS service binding)
+    W->>K: verify PAT hash (constant-time, Argon2id)
+    K-->>W: tenant_id + plan_tier + scopes
+    W->>Q: reserve(write_bytes, tenant)
+    alt over quota
+        Q-->>W: deny (429 + Retry-After)
+        W-->>C: 429 tier_quota_exceeded
+    else under quota
+        Q-->>W: ok (reservation token)
+        W->>S: signed upload intent (HMAC tenant prefix)
+        C->>S: ByteStream upload (zstd-compressed)
+        S->>Ch: chunk (rolling-hash, 2MiB target)
+        Ch->>H: digest each chunk (BLAKE3 primary)
+        H->>S: digests
+        S->>R: PUT objects under tenant/<hmac>/cas/<digest>
+        Note over R: AES-256-GCM at rest (SSE) + BYOK wrap if enterprise
+        R-->>S: ETag
+        S->>S: dedup check (refcount D1)
+        S->>A: emit AuditEvent (CloudEvents 1.0, signed leaf)
+        A-->>A: Merkle root extension (append-only)
+        S-->>W: bytes_written + dedup_ratio
+        W->>Q: commit(actual_bytes)
+        W-->>C: 200 OK + digest
+    end
