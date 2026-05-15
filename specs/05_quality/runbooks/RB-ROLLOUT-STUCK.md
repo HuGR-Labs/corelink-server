@@ -81,11 +81,55 @@ curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
   "https://api.corelink.humangr-labs.io/v1/admin/rollout/probe?handle_id=$HANDLE_ID"
 ```
 
+## SLO-ADMIN-ROLLBACK-RECOVERY breach handling (≤ 60s p99)
+
+SLO-ADMIN-ROLLBACK-RECOVERY (`slo_catalog.md §4.17`) targets auto-rollback firing within 60s of error-budget breach. When this SLO is breached (auto-rollback fails or is delayed > 60s p99), the runbook applies:
+
+1. **Confirm auto-rollback eligibility**: error budget breach detected by `INV-ROLLOUT-AUTO-ROLLBACK` (S-13)?
+   ```promql
+   corelink_admin_rollback_recovery_ms{outcome="completed"} p99 > 60000
+   ```
+2. **If auto-rollback didn't fire**: manual rollback per §Opção B; investigate why CTRL-ADMIN-007 didn't trigger (controller stuck per §Opção A, OR signal not propagated per `RB-ADMIN-CONFIG-STALE`).
+3. **If auto-rollback fired but slow**: failover gateway (CF API) is the bottleneck; coordinate with `RB-FM-101` if CF degraded.
+4. **SEV-1 escalation**: breach of SLO-ADMIN-ROLLBACK-RECOVERY = SEV-1 per slo_catalog §4.17.
+
+## Escalation path
+
+| Time elapsed   | Who                                        | Criteria                                        |
+|----------------|--------------------------------------------|-------------------------------------------------|
+| 0              | Primary SRE (Slack `#oncall`)              | SEV-3 stage stuck > 1h                          |
+| 0              | Primary SRE + SRE Lead (PagerDuty)         | SEV-1 (SLO-ADMIN-ROLLBACK-RECOVERY breach)      |
+| 30 min         | Platform on-call + Architect               | CF API outage sustained OR auto-rollback failed |
+| 60 min         | VP Engineering + Comms Lead                | Customer impact (partial rollout traffic at stuck stage) |
+| 2h             | CEO                                        | Sustained stuck rollout impacting GA            |
+
+**Comms template (Slack `#oncall`):**
+
+```
+SEV-{1|3} — Progressive rollout stuck mid-stage
+Handle: {handle_id}; stage: {N}% traffic on new version.
+CF API status: {operational | degraded | outage}.
+Auto-rollback fired: {yes | no}; if no, root cause: {...}.
+Mitigation: {Opção A | B | C} in progress.
+Owner: @{handle}. Next update: +30 min.
+```
+
 ## Post-mortem
 
 - If stuck > 1h sustained: 5-Why post-mortem com SRE lead + platform team.
-- If CF API outage: check Cloudflare runbook RB-FM-101 (CF edge outage).
+- If CF API outage: check Cloudflare runbook `RB-FM-101` (CF edge outage).
 - D1 failure: check D1 replication status + metrics.
+- If SLO-ADMIN-ROLLBACK-RECOVERY breached: did CTRL-ADMIN-007 fire? What was the latency between budget breach and rollback completion? Capture in `dr_outage_log` even though this is a rollout (not a region) incident — RTO-style metric applies.
+
+## Related
+
+- **SLO:** SLO-ADMIN-ROLLBACK-RECOVERY (`slo_catalog.md §4.17`).
+- **Invariant:** INV-ROLLOUT-AUTO-ROLLBACK CRITICAL (S-13).
+- **CTRLs:** CTRL-ADMIN-007 (auto-rollback), CTRL-ADMIN-002 (dual-approval for abort).
+- **FMs:** FM-101 (CF edge), FM-200 (deploy regression), FM-201 (config change rate-limit drop).
+- **Patterns:** PAT-PROGRESSIVE-ROLLOUT-001, PAT-CIRCUIT-001.
+- **Sister runbooks:** `RB-FM-101`, `RB-FM-201`, `RB-ADMIN-CONFIG-STALE`, `RB-SLO-AVAIL-DATA-PLANE`.
+- **WI:** WI-S13-005.
 
 ## Prevenção
 
