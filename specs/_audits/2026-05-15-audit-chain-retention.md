@@ -80,6 +80,7 @@ Full proof + integration with `audit_immutability.tla` is a follow-on Lote (no P
 | Property test pinning chain continuity | Rust unit + property tests | `crates/corelink-audit-chain/src/archive_producer.rs::tests::chain_head_continuity_persists_across_two_chunks` |
 | Bypass dual-approval discipline | UI + audit emit | `WI-S16-005-admin-ops-ui-audit-viewer-dual-approval` |
 | TLA+ spec stub | This document §3 | `specs/_audits/2026-05-15-audit-chain-retention.md` |
+| Customer-facing audit-export endpoint (Wave-15.3) | axum route + integration test | `apps/server/src/routes/audit_export.rs` + `apps/server/tests/audit_export.rs` (7 tests: happy / cross-tenant reject / empty range / verify-failed SEV-0 / 401 / 429 / 503-audit-fail) |
 
 ## 5. SOC 2 CC7.2 mapping
 
@@ -87,6 +88,7 @@ Full proof + integration with `audit_immutability.tla` is a follow-on Lote (no P
 |---|---|---|
 | Detect security events / failures | INV-OBS-AUDIT-CHAIN-INTEGRITY daily-verify cron | `.github/workflows/audit-chain-daily-verify.yml` |
 | Respond to identified events | RB-AUDIT-CHAIN-VERIFY runbook + SEV-0 page | `specs/_runbooks/RB-AUDIT-CHAIN-VERIFY.md` (Lote 15.3 follow-on) |
+| Customer-initiated audit retrieval (SOC 2 CC7.2 + GDPR Art. 15+20 portability) | `GET /v1/audit/export` (Wave-15.3) | `apps/server/src/routes/audit_export.rs` |
 | Communicate disposition | dual-approval audit-viewer UI | WI-S16-005 |
 | Resume normal operations | resumable verifier via `verify_checkpoint` mirror | `crates/corelink-audit-chain/src/chain.rs::HashChainBuilder::resume` |
 

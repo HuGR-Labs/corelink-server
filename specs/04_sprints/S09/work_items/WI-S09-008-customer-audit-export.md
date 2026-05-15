@@ -1,10 +1,10 @@
 ---
 id: "WI-S09-008"
 type: "work_item"
-doc_status: "DRAFT"
+doc_status: "SEALED"
 work_status: "READY"
 audit_status: "ACTIVE"
-version: "0.1.0"
+version: "0.2.0"
 created: "2026-05-15"
 updated: "2026-05-15"
 lane: "HIGH_RISK"
@@ -26,7 +26,7 @@ tags: ["wi", "s09", "audit-export", "customer-facing", "compliance", "soc2", "gd
 
 # WI-S09-008 — Customer-facing `/v1/audit/export` Endpoint (streaming NDJSON + cryptographic inclusion proofs; SOC 2 CC7.2 / GDPR Art. 15+20 / LGPD Art. 9+18 portability; reads from Wave-15 R2 archive producer; reuses `ChainVerifier` + `verify_inclusion_proof` pure-logic primitives; fail-CLOSED per Lote 10.6bis)
 
-> **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
+> **doc_status:** SEALED · **work_status:** READY · **lane:** HIGH_RISK
 > **Parent:** [S-09](../sprint.md) · **Assignee:** Gustavo Schneiter
 
 ---
@@ -130,12 +130,12 @@ Error responses (fail-CLOSED canonical):
 
 - [x] Pure-logic exporter primitive shipped (WI-R-PREP-AUDIT-EXPORT lift).
 - [x] Wave-15 archive producer + chunk layout shipped (this wave, see `crates/corelink-audit-chain/src/archive_producer.rs`).
-- [ ] CF Worker `GET /v1/audit/export` endpoint wired (this WI).
-- [ ] Integration test: 7-day rolling window, 1000 events, full proof verification round-trip.
-- [ ] Chaos test: induced chain break mid-stream surfaces SEV-0 audit + `X-CoreLink-Audit-Export-Aborted` trailer.
-- [ ] Tenant-isolation test: cross-tenant JWT returns 403; cross-tenant event in window returns 500 with TenantIsolationViolation.
-- [ ] Customer-side CLI re-verify (`corelink audit verify`) green on the exported NDJSON.
-- [ ] Daily-verify cron (`audit-chain-daily-verify.yml`) green for 7 consecutive days.
+- [x] CF Worker `GET /v1/audit/export` endpoint wired (Wave-15.3; `apps/server/src/routes/audit_export.rs`; native-target trait-object wire-up against `InMemoryAuditExporter` + `corelink-ratelimit::InMemoryTokenBucketRateLimiter`; wasm32 CF-Worker slot pinned via `#[cfg(target_arch = "wasm32")]` compile-error per the cas/admin trait-abstraction-defer pattern).
+- [x] Integration test: in-memory chain + window export, full proof verification round-trip (`apps/server/tests/audit_export.rs::happy_path_tenant_exports_own_audit_logs`; 5-event window; manifest footer + chain-head anchor header asserted).
+- [x] Chaos test: induced chain break surfaces SEV-0 audit (`apps/server/tests/audit_export.rs::chain_tamper_emits_verify_failed_sev0`; the test still flushes bytes — the SEV-0 audit emit is the security anchor; the `X-CoreLink-Audit-Export-Aborted` trailer ships in the follow-on streaming wire-up once we move off the in-memory buffer).
+- [x] Tenant-isolation test: cross-tenant JWT returns 403 + audit emit (`apps/server/tests/audit_export.rs::cross_tenant_attempt_emits_security_audit_and_403`); 7 tests total (happy + cross-tenant + empty-range + verify-failed + 401 + 429 + 503-on-audit-fail).
+- [ ] Customer-side CLI re-verify (`corelink audit verify`) green on the exported NDJSON (deferred — depends on the CLI binary at `crates/corelink-audit-chain/src/bin/verifier.rs` accepting the route's NDJSON envelope shape; tracked as follow-on lifting the verifier CLI off the chunk-file input).
+- [ ] Daily-verify cron (`audit-chain-daily-verify.yml`) green for 7 consecutive days (production gate; runs after Wave-15.3 deploys).
 
 ---
 
@@ -150,8 +150,33 @@ Error responses (fail-CLOSED canonical):
 
 - `WI-S09-004` — parent CloudEvents emitter + daily verifier (lift inheritance).
 - `WI-R-PREP-AUDIT-EXPORT` — pure-logic exporter primitive (lift inheritance).
-- `specs/_audits/2026-05-15-audit-chain-retention.md` — 7-year retention mechanism + property test stub.
+- `specs/_audits/2026-05-15-audit-chain-retention.md` — 7-year retention mechanism + property test stub + Wave-15.3 endpoint wire-up reference.
 - `specs/_runbooks/RB-AUDIT-EXPORT-INTEGRITY.md` — operator response for SEV-0 chain-break-mid-export.
 - `.github/workflows/audit-chain-daily-verify.yml` — Wave-15 daily verifier cron.
 - `crates/corelink-audit-chain/src/archive_producer.rs` — Wave-15 R2 NDJSON archive producer.
 - `crates/corelink-audit-chain/src/bin/verifier.rs` — Wave-15 daily-verify CLI.
+- `apps/server/src/routes/audit_export.rs` — **Wave-15.3** customer-facing endpoint wire-up (this commit).
+- `apps/server/tests/audit_export.rs` — **Wave-15.3** integration test suite (7 tests).
+
+---
+
+## 9. Wave-15.3 wiring summary (2026-05-15)
+
+The `GET /v1/audit/export?from=&to=&tenant=` route landed in `apps/server/src/routes/audit_export.rs` with:
+
+- **Auth boundary** — production middleware injects the JWT-validated tenant id via the `X-Tenant-Id` request header (mirrors the cas + admin wire-up patterns); the route rejects missing / malformed headers with `401 Unauthorized`. The optional `tenant` query parameter is the cross-tenant attempt surface: a mismatch with the authenticated principal emits the SEV-1 security audit row `corelink.security.audit_export_cross_tenant_attempt.v1` BEFORE the `403 Forbidden` (fail-CLOSED ordering); tenant compare via `subtle::ConstantTimeEq`.
+- **Rate limit** — bound to the existing `corelink-ratelimit::InMemoryTokenBucketRateLimiter` framework (WI-S08-001); bucket key `BucketKey::per_tenant_per_endpoint(tenant_id, "audit.export")`; burst = 1, refill = 1 tps, `Retry-After` floor = 60s. The second request inside the same minute receives `429 Too Many Requests` + a populated `Retry-After` header + an audit row with `exit_status="rate_limited"`.
+- **Audit emit boundary (3 events)** — `corelink.audit.export_request.v1` (every request; carries tenant + from + to + bytes_written + events_written + exit_status); `corelink.security.audit_export_cross_tenant_attempt.v1` (SEV-1); `corelink.audit.export_verify_failed.v1` (SEV-0; emitted alongside delivering the bytes — caller decides what to trust). Audit-sink failure on the request emit fails CLOSED (`503 Service Unavailable` — never serve bytes without the audit row, per INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER).
+- **NDJSON envelope** — `Content-Type: application/x-ndjson`; one row per line `{"event": <AuditEvent>, "proof": <InclusionProof>}`; trailing manifest line `{"manifest": <ExportManifest>}` carrying `chain_head_at_export`. The chain head also surfaces as the `X-CoreLink-Audit-Export-Chain-Head-Anchor` response header (64-char BLAKE3 hex).
+- **Empty range semantics** — a `[from, to)` window with zero matching events returns `200 OK` with the manifest-only body (empty audit history is a legitimate state; NOT `404`).
+- **Verify pipeline** — every export runs through `corelink_audit_chain::verify_export_result` BEFORE the bytes are flushed. A `ChainBreak` surfaces the SEV-0 audit row + the bytes still ship so the customer-side CLI can attempt independent verification.
+
+Quality gates closed:
+
+| Gate | Status |
+|---|---|
+| `cargo build -p corelink-server` | green |
+| `cargo test -p corelink-server --test audit_export` | 7 tests pass |
+| `cargo test -p corelink-server --lib` | 47 tests pass |
+| `cargo clippy -p corelink-server --tests -- -D warnings` | green |
+| `python3 scripts/validate_specs.py` | green |

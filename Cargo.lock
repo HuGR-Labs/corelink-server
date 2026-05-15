@@ -625,6 +625,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_path_to_error",
+ "serde_urlencoded",
  "sync_wrapper",
  "tokio",
  "tower 0.5.3",
@@ -2226,6 +2227,8 @@ dependencies = [
  "async-trait",
  "axum",
  "bytes",
+ "corelink-analytics",
+ "corelink-audit-chain",
  "corelink-byok",
  "corelink-byok-aws",
  "corelink-byok-azure",
@@ -2235,6 +2238,7 @@ dependencies = [
  "corelink-handler-ac",
  "corelink-handler-admin",
  "corelink-handler-cas",
+ "corelink-ratelimit",
  "corelink-stripe-real",
  "corelink-tier-selection",
  "futures",
@@ -2247,6 +2251,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "subtle",
  "thiserror 2.0.18",
  "tokio",
  "tokio-stream",
@@ -2255,6 +2260,7 @@ dependencies = [
  "tower 0.5.3",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
