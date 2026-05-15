@@ -106,7 +106,7 @@ pub enum DsrRequest {
     Portability { format: PortabilityFormat /* json | csv | jsonl */ },
     /// GDPR Art. 21 — objection; SLA 15d úteis; **manual review path** (NÃO 100% self-service per privacy_model.md §6.1).
     Objection { processing_basis: LegitimateBasisCategory, reasoning: NonEmptyString },
-    /// LGPD Art. 18 VI / GDPR Art. 7.3 — consent revoke; SLA ≤5min; cascade unsubscribe via CTRL-PRIV-CONSENT-002.
+    /// LGPD Art. 18 IX (revogação do consentimento, c/c Art. 8 §5) + Art. 18 VI (eliminação consequente) / GDPR Art. 7.3 — consent revoke; SLA ≤5min; cascade unsubscribe via CTRL-PRIV-CONSENT-002. (Lote 10.11.0-ter legal-citation re-validation 2026-05-15 — Art. 18 IX é o direito de revogação per se; LGPD-FULL-AUDIT-2026-05-15.md §1.8 canonical.)
     ConsentRevoke { purpose: ConsentPurpose },
 }
 
@@ -522,7 +522,7 @@ And se requester não é tenant owner do dsr_id, response é 404 (não 403; CTRL
 
 - **DD-001 JWT signing HMAC-SHA256 vs Ed25519**: HMAC simpler + faster; tenant-scoped key derived via HKDF (security_model.md §374); migration path para Ed25519 em S-19 (BYOK enterprise). Tenant_short_id em `aud` claim permite scoping.
 - **DD-002 ULID vs UUID para dsr_id**: ULID time-ordered facilita audit chronological queries; 26 chars vs UUID 36; both work em D1 TEXT. Aligned com data_model.md §2.1 ULID for events.
-- **DD-003 D1 staging table com `request_payload_encrypted BLOB`**: AES-256-GCM via tenant key (CTRL-CRYPTO-002); request_payload pode conter PII (correction fields) — encrypted at rest per LGPD Art. 32 / GDPR Art. 32.
+- **DD-003 D1 staging table com `request_payload_encrypted BLOB`**: AES-256-GCM via tenant key (CTRL-CRYPTO-002); request_payload pode conter PII (correction fields) — encrypted at rest per LGPD Art. 46 (medidas de segurança técnicas e administrativas) / GDPR Art. 32 (security of processing). Lote 10.11.0-ter legal-citation re-validation 2026-05-15 corrigiu cite anterior "LGPD Art. 32" — LGPD Art. 32 trata de autoridade da ANPD sobre entidades públicas, não medidas de segurança; o análogo correto de GDPR Art. 32 em LGPD é Art. 46.
 - **DD-004 Status state machine 7 states (não 5)**: dropping `in_progress` collapses queued+failed retry semantics; mantendo separados melhora customer transparency. Aligned com privacy_model.md §6.1.
 - **DD-005 Rate limit bucket scope `dsr:<tenant>:<subject>:<day>`**: anti-cross-tenant leak; UTC midnight rollover por tenant.primary_region (BR holidays vs EU holidays).
 

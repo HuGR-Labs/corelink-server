@@ -81,7 +81,7 @@ As transferências para fora do Brasil são amparadas por: (a) países com níve
 | Logs de auditoria | 7 anos | R2 Object Lock (regulatório) |
 | Logs de build (artefatos) | Conforme configuração do titular | Contratual |
 | Dados de faturamento | 5 anos (fiscal) | LGPD Art. 16 |
-| Consentimentos | 7 anos | LGPD Art. 7 §5 + GDPR Art. 7 |
+| Consentimentos | 7 anos | LGPD Art. 8 (regime de consentimento) + GDPR Art. 7(1) (demonstrabilidade) |
 
 ---
 
@@ -93,8 +93,8 @@ Você tem os seguintes direitos:
 - **Correção** (Art. 18 III): solicitar correção de dados incompletos ou inexatos.
 - **Anonimização, Bloqueio ou Eliminação** (Art. 18 IV): solicitar eliminação de dados desnecessários.
 - **Portabilidade** (Art. 18 V): receber seus dados em formato estruturado (JSON).
-- **Revogação do Consentimento** (Art. 18 VI): revogar consentimento a qualquer momento.
-- **Oposição** (Art. 18 II): opor-se ao tratamento com base em legítimo interesse.
+- **Revogação do Consentimento** (Art. 18 IX, c/c Art. 8 §5): revogar consentimento a qualquer momento.
+- **Oposição** (Art. 18 §II — parágrafo de oposição, conforme Lei 13.853/2019): opor-se ao tratamento com base em legítimo interesse.
 - **Informação sobre compartilhamento** (Art. 18 VII): saber com quem compartilhamos seus dados.
 
 Para exercer seus direitos, acesse: **POST /v1/privacy/dsr/{direito}** (API self-service).

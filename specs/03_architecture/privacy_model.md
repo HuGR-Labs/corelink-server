@@ -301,7 +301,7 @@ Adicionado em Lote 5.5 endereçando audit F-07 (CTRL-PRIV-015 estava sendo usado
 | Correção (LGPD 18 III / GDPR 16)               | Self-service | 5 dias úteis | DSR `verified` | DSR `completed` (mutação aplicada) | EVT-048 (DSR_EVIDENCE) | Privacy Officer |
 | Anonimização/bloqueio/eliminação (LGPD 18 IV / GDPR 17) | Self-service | 30 dias corridos | DSR `verified` | DSR `completed` (todos backends purged) | EVT-042 + EVT-017 | Privacy Officer |
 | Portabilidade (LGPD 18 V / GDPR 20)            | Self-service | 15 dias úteis | DSR `verified` | DSR `completed` (export bundle disponível) | EVT-048 | Privacy Officer |
-| Revogação de consentimento (LGPD 18 VI / GDPR 7) | Self-service | Imediato (≤ 5min) | request submission | propagação confirmada | EVT-048 | Privacy Officer |
+| Revogação de consentimento (LGPD 18 IX, c/c Art. 8 §5 — revogação per se; LGPD 18 VI — eliminação consequente / GDPR Art. 7.3) | Self-service | Imediato (≤ 5min) | request submission | propagação confirmada | EVT-048 | Privacy Officer |
 | Oposição (LGPD 18 §II / GDPR 21)                | Self-service | 15 dias úteis | DSR `verified` | DSR `completed` (objection registered + processing paused) | EVT-048 + EVT-044 | Privacy Officer |
 
 ### 6.2 Pipeline de DSR (erasure exemplo)
@@ -313,7 +313,7 @@ Adicionado em Lote 5.5 endereçando audit F-07 (CTRL-PRIV-015 estava sendo usado
 4. Worker propaga (12 backends canonical, Lote 10.11.0-bis — 8 effective + 4 pseudonymized):
    **Effective erasure (8):**
    a. Neon `dsr_tickets` + `account` + `tenant` + `user_account` + `consent_ledger` + `subscription`: hard delete subject rows; preserve DSR ticket + audit refs
-   b. Neon billing detail (`invoice`, `usage_event`): retain dados fiscais sob legal_hold (LGPD Art. 16 §3º — fiscal/contábil 5y)
+   b. Neon billing detail (`invoice`, `usage_event`): retain dados fiscais sob legal_hold (LGPD Art. 16 I — cumprimento de obrigação legal; fiscal/contábil 5y per CTN Art. 173/174 + Decreto 3.000/1999; Lote 10.11.0-ter legal-citation re-validation 2026-05-15 corrigiu cite anterior "Art. 16 §3º" — Art. 16 LGPD tem caput + incisos I-IV, sem §3)
    c. R2 CAS: refcount-based eraser. **`subject_unaffiliated`**: blob compartilhado entre tenants ou referenciado por outros subjects → NÃO deleta físico, apenas remove o subject's reference; refcount decremented; blob mantido até refcount==0 + grace 72h. **`subject_dedicated`**: blob apenas referenciado pelo subject erased → tombstone imediato + GC sweep.
    d. R2 AC entries: invalidate todas as entradas onde `subject_user_id` aparece; cache evicted; downstream caches notified
    e. D1 `blob_meta` + `ac_meta`: delete subject-scoped rows; refcount sync com R2

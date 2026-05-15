@@ -91,7 +91,7 @@ Purpose enum (privacy_model.md §5.6.1): `service_delivery` (reliability/capacit
 | Truncated IP | 30 days | Minimum for abuse detection; shorter retention insufficient for meaningful pattern analysis |
 | Aggregate metrics (CF Analytics Engine) | 90 days | Operational necessity |
 | Abuse detection ephemeral state (KV) | 7 days | Minimum window for pattern detection |
-| Audit chain (EVT-022 + EVT-048) | 7 years | LGPD Art. 40; GDPR accountability principle |
+| Audit chain (EVT-022 + EVT-048) | 7 years | LGPD Art. 16 I (cumprimento de obrigação legal) + Art. 37 (RoPA); GDPR Art. 5(2) accountability principle (Lote 10.11.0-ter legal-citation re-validation 2026-05-15 corrigida cite anterior "LGPD Art. 40" — Art. 40 trata de padrões ANPD para anonimização) |
 
 ### 1.6 WP29 WP248rev01 high-risk criteria checklist
 
