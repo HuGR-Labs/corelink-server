@@ -8,6 +8,8 @@ const labels: Record<Locale, string> = {
   en: "English",
   pt: "Português",
   es: "Español",
+  // R-prep i18n-de — `de` joined as the fourth canonical locale.
+  de: "Deutsch",
 };
 
 export interface LocaleSwitcherProps {

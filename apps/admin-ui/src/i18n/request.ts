@@ -9,7 +9,8 @@
 import { getRequestConfig } from "next-intl/server";
 import type { AbstractIntlMessages } from "next-intl";
 
-export const LOCALES = ["en", "pt", "es"] as const;
+// R-prep i18n-de — `de` joined as the fourth canonical locale.
+export const LOCALES = ["en", "pt", "es", "de"] as const;
 export const DEFAULT_LOCALE: (typeof LOCALES)[number] = "en";
 export type Locale = (typeof LOCALES)[number];
 

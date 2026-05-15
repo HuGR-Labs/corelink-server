@@ -50,5 +50,11 @@ export default function DsrLandingPage({ params }: PageProps) {
 }
 
 export function generateStaticParams() {
-  return [{ locale: "en" }, { locale: "pt" }, { locale: "es" }];
+  // R-prep i18n-de — `de` joined as the fourth canonical locale.
+  return [
+    { locale: "en" },
+    { locale: "pt" },
+    { locale: "es" },
+    { locale: "de" },
+  ];
 }

@@ -1,0 +1,71 @@
+---
+id: sdk-cli-authenticate
+title: Authenticate (CLI)
+sidebar_label: Authenticate
+description: Configure the corelink CLI with a Personal Access Token (PAT).
+tags: [sdk, cli, auth, how-to]
+---
+
+<!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
+>
+> Canonical EN source: `docs/how-to/sdk-cli/01-authenticate.mdx`
+
+
+# Authenticate the CLI
+
+## When to use this guide
+
+You installed the `corelink` binary (single signed executable for macOS,
+Linux, and Windows) and need to run any command except `version`.
+
+## Prerequisites
+
+- `corelink` binary on `$PATH`. Install via your package manager or
+  download from the GitHub releases page. Verify the SLSA attestation
+  before first use.
+- A PAT minted at `https://app.corelink.dev/tokens`.
+
+## Recommended: env var
+
+```bash
+export CORELINK_PAT="corelink_dev_t_xxx.xxx.xxx"
+corelink ls --tenant acme-corp
+```
+
+## Alternative: config file
+
+```bash
+corelink config set auth.pat corelink_dev_t_xxx.xxx.xxx
+corelink config set defaults.tenant_id acme-corp
+```
+
+The file lives at `~/.corelink/config.toml` on macOS/Linux and
+`%APPDATA%\corelink\config.toml` on Windows. File mode is enforced to
+`0600` and the PAT is redacted by `corelink config list`.
+
+## Forbidden: PAT as a CLI flag
+
+```bash
+# DO NOT DO THIS — the CLI exits 2 with an explicit security error.
+corelink --pat=corelink_dev_t_xxx.xxx.xxx ls --tenant acme-corp
+```
+
+CTRL-CRED-001 forbids the `--pat` flag because process arguments leak via
+`ps`, shell history, and CI logs. The CLI rejects the flag before any other
+parsing.
+
+## Verify
+
+```bash
+corelink doctor --json | jq '.checks[] | select(.name=="auth")'
+```
+
+Expected `status: "ok"`. Any other status maps to a `COR_AUTH_*` code with a
+direct link to the right next-action doc.
+
+## Next steps
+
+- [Upload a blob](./02-upload-blob.mdx)
+- [Download a blob](./03-download-blob.mdx)

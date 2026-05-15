@@ -1,0 +1,125 @@
+{
+  "dsr": {
+    "landing": {
+      "title": "Ihre Datenschutzrechte",
+      "intro": "Sie haben sechs Rechte über Ihre personenbezogenen Daten nach LGPD (Art. 18) und DSGVO (Art. 15-22). Wählen Sie unten ein Recht aus, um einen Antrag zu starten.",
+      "rights_section_title": "Recht auswählen",
+      "back_to_settings": "Zurück zu den Einstellungen",
+      "status_link": "Frühere Anträge anzeigen"
+    },
+    "rights": {
+      "access": {
+        "label": "Auf meine Daten zugreifen",
+        "description": "Erhalten Sie eine Kopie aller personenbezogenen Daten, die wir über Sie gespeichert haben.",
+        "legal_ref": "LGPD Art. 18 II · DSGVO Art. 15"
+      },
+      "rectification": {
+        "label": "Meine Daten berichtigen",
+        "description": "Berichtigen Sie Daten, die falsch, veraltet oder unvollständig sind.",
+        "legal_ref": "LGPD Art. 18 III · DSGVO Art. 16"
+      },
+      "erasure": {
+        "label": "Meine Daten löschen",
+        "description": "Beantragen Sie die Löschung Ihrer Daten (Recht auf Vergessenwerden).",
+        "legal_ref": "LGPD Art. 18 VI · DSGVO Art. 17"
+      },
+      "portability": {
+        "label": "Meine Daten exportieren",
+        "description": "Erhalten Sie eine maschinenlesbare Kopie, die Sie an einen anderen Anbieter übertragen können.",
+        "legal_ref": "LGPD Art. 18 V · DSGVO Art. 20"
+      },
+      "restriction": {
+        "label": "Verarbeitung einschränken",
+        "description": "Pausieren Sie die Verarbeitung Ihrer Daten, solange eine Streitigkeit anhängig ist.",
+        "legal_ref": "DSGVO Art. 18"
+      },
+      "objection": {
+        "label": "Verarbeitung widersprechen",
+        "description": "Teilen Sie uns mit, dass wir eine bestimmte Datenverarbeitung beenden sollen.",
+        "legal_ref": "DSGVO Art. 21"
+      }
+    },
+    "form": {
+      "subject_section": "Identität bestätigen",
+      "subject_email_label": "Hinterlegte E-Mail-Adresse",
+      "reason_label": "Grund",
+      "reason_placeholder": "Bitte geben Sie an, warum Sie dieses Recht ausüben.",
+      "reason_required_error": "Für dieses Recht ist eine Begründung erforderlich.",
+      "submit": "Antrag absenden",
+      "submitting": "Wird gesendet...",
+      "rectification_fields_title": "Felder, die Sie berichtigen können",
+      "field_name": "Name",
+      "field_email": "E-Mail",
+      "field_language": "Spracheinstellung",
+      "erasure_scope_title": "Was sollen wir löschen?",
+      "erasure_scope_all": "Alle meine Daten löschen",
+      "erasure_scope_categories": "Nur bestimmte Kategorien löschen",
+      "erasure_legal_hold_warning": "Bestimmte Daten können aufgrund gesetzlicher Aufbewahrungspflichten gespeichert bleiben (Steuerunterlagen, Audit-Log). Wir informieren Sie über die einbehaltenen Daten.",
+      "portability_format_title": "Exportformat",
+      "portability_format_json": "JSON (empfohlen)",
+      "portability_format_csv": "CSV",
+      "portability_format_both": "Beide",
+      "portability_notice": "Exporte können bis zu 24 Stunden dauern. Der Download-Link erscheint anschließend in der untenstehenden Quittung.",
+      "objection_purpose_label": "Welcher Verarbeitungszweck soll widersprochen werden?",
+      "submit_error_generic": "Ihr Antrag konnte nicht übermittelt werden. Bitte versuchen Sie es erneut.",
+      "submit_error_mfa": "Identitätsprüfung fehlgeschlagen. Bitte erneut authentifizieren.",
+      "submit_error_rate_limit": "Tageslimit erreicht. Bitte versuchen Sie es morgen erneut."
+    },
+    "reauth": {
+      "title": "Identität verifizieren",
+      "description": "Aus Sicherheitsgründen authentifizieren Sie sich bitte erneut, bevor Sie einen Datenschutzantrag stellen.",
+      "start_button": "Mit MFA verifizieren",
+      "verifying": "Wird verifiziert...",
+      "verified": "Identität verifiziert",
+      "failed": "Verifizierung fehlgeschlagen. Bitte erneut versuchen.",
+      "blocked_notice": "Das Formular ist gesperrt, bis die Identität verifiziert ist."
+    },
+    "receipt": {
+      "modal_title": "Antrag eingereicht",
+      "request_id_label": "Antrags-ID",
+      "action_label": "Ausgeübtes Recht",
+      "jurisdiction_label": "Gerichtsbarkeit",
+      "sla_deadline_label": "SLA-Frist",
+      "jti_label": "Quittungs-ID (jti)",
+      "exp_label": "Quittung läuft ab",
+      "copy_jwt": "Quittungstoken kopieren",
+      "download_jwt": "Quittung herunterladen (.jwt)",
+      "close": "Schließen",
+      "copied": "Kopiert"
+    },
+    "status": {
+      "title": "Ihre Datenschutzanträge",
+      "empty": "Sie haben noch keine Datenschutzanträge gestellt.",
+      "table_request_id": "Antrag",
+      "table_action": "Recht",
+      "table_status": "Status",
+      "table_submitted": "Eingereicht",
+      "table_deadline": "Frist",
+      "table_actions": "Aktionen",
+      "view_details": "Ansehen",
+      "download_receipt": "Quittung",
+      "prev_page": "Zurück",
+      "next_page": "Weiter",
+      "page_indicator": "Seite {page}"
+    },
+    "status_states": {
+      "pending": "Ausstehend",
+      "in_progress": "In Bearbeitung",
+      "completed": "Abgeschlossen",
+      "rejected": "Abgelehnt"
+    },
+    "detail": {
+      "title": "Antragsdetails",
+      "timeline_title": "Verlauf",
+      "data_download_title": "Ihre Daten",
+      "data_download_action": "Daten herunterladen",
+      "data_download_pending": "Ihr Export erscheint hier, sobald er bereitsteht.",
+      "back_to_list": "Zurück zur Liste"
+    },
+    "countdown": {
+      "remaining_days": "Noch {days} Tage",
+      "remaining_hours": "Noch {hours} Stunden",
+      "overdue": "SLA überfällig"
+    }
+  }
+}

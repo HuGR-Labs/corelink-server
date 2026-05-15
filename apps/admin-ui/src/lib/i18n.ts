@@ -1,9 +1,10 @@
 // Minimal i18n shim. Real implementation provided by WI-S16-001 (next-intl wiring).
 // We only depend on a thin interface here so this WI compiles + tests in isolation.
 
-export type Locale = "en-US" | "pt-BR" | "es-419";
+// R-prep i18n-de — `de` joined as the fourth BCP-47 canonical locale (no region tag).
+export type Locale = "en-US" | "pt-BR" | "es-419" | "de";
 
-export const SUPPORTED_LOCALES: Locale[] = ["en-US", "pt-BR", "es-419"];
+export const SUPPORTED_LOCALES: Locale[] = ["en-US", "pt-BR", "es-419", "de"];
 
 export const DEFAULT_LOCALE: Locale = "en-US";
 

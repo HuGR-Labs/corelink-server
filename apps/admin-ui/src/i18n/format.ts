@@ -4,6 +4,8 @@ const BCP47: Record<Locale, string> = {
   en: "en-US",
   pt: "pt-BR",
   es: "es-419",
+  // R-prep i18n-de — DACH region; `de` (no region tag) covers DE/AT/CH-DE.
+  de: "de",
 };
 
 /**

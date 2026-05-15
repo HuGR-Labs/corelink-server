@@ -37,7 +37,8 @@ export function isFreeplan(plan: Plan): boolean {
   return plan === "free";
 }
 
-export const SUPPORTED_LOCALES = ["en", "pt", "es"] as const;
+// R-prep i18n-de — `de` joined as the fourth canonical locale.
+export const SUPPORTED_LOCALES = ["en", "pt", "es", "de"] as const;
 export type Locale = (typeof SUPPORTED_LOCALES)[number];
 
 export const PAT_EXPIRY_OPTIONS = [30, 90, 365] as const;

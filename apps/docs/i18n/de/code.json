@@ -1,0 +1,14 @@
+{
+  "theme.NotFound.title": {
+    "message": "Seite nicht gefunden",
+    "description": "The title of the 404 page"
+  },
+  "theme.NotFound.p1": {
+    "message": "Wir konnten die gesuchte Seite nicht finden.",
+    "description": "The first paragraph of the 404 page"
+  },
+  "homepage.tagline": {
+    "message": "Multi-Tenant Content-Addressable Cache auf Cloudflare",
+    "description": "Site tagline shown in the homepage hero"
+  }
+}

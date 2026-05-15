@@ -1,0 +1,68 @@
+---
+id: go-write
+title: Go — ByteStream.Write
+sidebar_label: Go · Write
+---
+
+<!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
+>
+> Canonical EN source: `docs/reference/reapi/_examples/ByteStream/go-write.mdx`
+
+
+# Go — `ByteStream.Write`
+
+## Code
+
+```go
+package main
+
+import (
+    "context"
+    "crypto/sha256"
+    "encoding/hex"
+    "fmt"
+    "io"
+    "os"
+
+    corelink "go.corelink.dev/corelink-go"
+)
+
+func main() {
+    ctx := context.Background()
+    client, _ := corelink.NewClient(ctx, corelink.Config{
+        Endpoint: "https://acme-dev.corelink.dev",
+        PAT:      os.Getenv("CORELINK_PAT"),
+    })
+    defer client.Close()
+
+    f, _ := os.Open("/tmp/big.bin")
+    defer f.Close()
+    h := sha256.New()
+    if _, err := io.Copy(h, f); err != nil { panic(err) }
+    digest := corelink.Digest{Hash: hex.EncodeToString(h.Sum(nil)), SizeBytes: fileSize(f)}
+    f.Seek(0, 0)
+
+    n, err := client.ByteStream.Write(ctx, digest, f)
+    if err != nil { panic(err) }
+    fmt.Printf("uploaded %d B sha256:%s...\n", n, digest.Hash[:12])
+}
+
+func fileSize(f *os.File) int64 {
+    st, _ := f.Stat(); return st.Size()
+}
+```
+
+## Expected output
+
+```text
+uploaded 41943040 B sha256:bdd9ea4a8e6b...
+```
+
+## Common errors
+
+| Status | Error taxonomy | Cause |
+| --- | --- | --- |
+| `ABORTED` | `COR_CAS_DIGEST_MISMATCH` | Hash mismatch at commit. |
+| `FAILED_PRECONDITION` | `COR_CAS_RESUME_INVALID` | Restart upload from offset 0. |

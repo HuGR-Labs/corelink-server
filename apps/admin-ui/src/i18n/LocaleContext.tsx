@@ -2,9 +2,10 @@
 
 import React from "react";
 
-export type Locale = "en" | "pt" | "es";
+// R-prep i18n-de — `de` joined as the fourth canonical locale (DACH enterprise).
+export type Locale = "en" | "pt" | "es" | "de";
 
-export const SUPPORTED_LOCALES: ReadonlyArray<Locale> = ["en", "pt", "es"];
+export const SUPPORTED_LOCALES: ReadonlyArray<Locale> = ["en", "pt", "es", "de"];
 
 export const LOCALE_COOKIE = "corelink_locale";
 

@@ -1,0 +1,200 @@
+---
+id: rbac-audit-role-changes
+title: "Audit role changes"
+slug: "/how-to/rbac/audit-role-changes"
+sidebar_label: "Audit role changes"
+description: "Query the CoreLink audit chain for role-grant and role-revoke events; sample queries and verification workflow."
+tags: [rbac, how-to, audit, security]
+last_updated: "2026-05-15"
+---
+
+<!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
+>
+> Canonical EN source: `docs/how-to/rbac/audit-role-changes.mdx`
+
+
+# Audit role changes
+
+## When to use this guide
+
+You need to answer questions like:
+
+- "Who promoted Alice from Developer to Admin, and when?"
+- "Show me every Owner-role grant in this tenant in the last 90 days."
+- "Did the dual-approval gate fire on the rollback we did last Tuesday?"
+
+This guide shows how to query the CoreLink audit chain for role changes
+and dual-approval events.
+
+## Prerequisites
+
+- You hold `admin:audit` scope (granted to `Owner`, `Admin`, `Viewer`).
+- A PAT with that scope, or you're signed into the admin UI.
+
+## The audit chain in one paragraph
+
+Every administrative or data-plane mutation is written to an append-only
+log structured as an RFC 6962 Merkle tree. Role-relevant events live in
+two streams:
+
+1. `admin_op_log` — the table-backed log of every dual-approval-gated
+   operation, with `outcome` ∈ `{approved, denied_missing, denied_sig,
+   denied_caller_eq, denied_collusion, denied_mfa_stale,
+   denied_approver_not_admin, denied_nonce_replay, denied_clock_skew}`
+   (`crates/corelink-dual-approval/src/types.rs::ApprovalOutcome`).
+
+2. `audit_chain` — the broader CloudEvent log, including
+   `corelink.admin.member.invited`,
+   `corelink.admin.member.joined`,
+   `corelink.admin.member.role_granted`,
+   `corelink.admin.member.role_revoked`,
+   `corelink.admin.op.executed`, and
+   `corelink.admin.op.denied`.
+
+Both are queryable via the admin API and CLI. The deeper
+[audit chain explainer](../../explanation/security/audit-chain.mdx) covers
+the underlying mechanism (Merkle proofs, retention, etc).
+
+## Query 1 — every role grant or revoke in the last 30 days
+
+```bash
+corelink admin audit query \
+  --tenant <tenant_slug> \
+  --event-type corelink.admin.member.role_granted,corelink.admin.member.role_revoked \
+  --since 30d
+```
+
+Sample output:
+
+```
+TIMESTAMP            EVENT                                     ACTOR_HASH      TARGET_HASH    DETAIL
+2026-05-13T14:02:11Z corelink.admin.member.role_granted        ee44...10c3     a3f9...c821    Developer → Admin
+2026-04-29T09:15:02Z corelink.admin.member.role_granted        ee44...10c3     b71d...e442    (new) Developer
+2026-04-22T18:31:55Z corelink.admin.member.role_revoked        ee44...10c3     71fc...3a08    Admin (deleted_at set)
+```
+
+The `actor` is the user who initiated the grant/revoke. The `target` is
+the user whose role changed.
+
+> Emails appear only as hashes (`email_hash`) per
+> `INV-AUDIT-NO-RAW-PII`. To resolve back to a human, cross-reference
+> with `Settings → Members` while the membership is still active.
+
+## Query 2 — every dual-approval event in the last 7 days
+
+```bash
+corelink admin audit query \
+  --tenant <tenant_slug> \
+  --event-type corelink.admin.op.executed,corelink.admin.op.denied \
+  --since 7d
+```
+
+Sample output (one approved + one denied):
+
+```
+TIMESTAMP            EVENT                          OP_TYPE                CALLER          APPROVER        OUTCOME
+2026-05-14T16:42:08Z corelink.admin.op.executed     ConfigRollback         ee44...10c3     b71d...e442     approved
+2026-05-13T10:11:54Z corelink.admin.op.denied       FeatureFlagDisable     ee44...10c3     ee44...10c3     denied_caller_eq
+```
+
+That second row shows the gate doing its job — the caller tried to
+self-approve, and `denied_caller_eq` rejected it.
+
+## Query 3 — verify a specific event with a Merkle inclusion proof
+
+For high-stakes audit evidence (SOC 2, legal, customer audit), request
+an RFC 6962 inclusion proof:
+
+```bash
+corelink admin audit prove \
+  --tenant <tenant_slug> \
+  --event-id 01H9XYZ-...-A4B7
+```
+
+The CLI returns:
+
+- The event payload (canonical JSON).
+- The Merkle path from the event to the current log head.
+- The log head signature + log version.
+
+You can verify the proof locally with any RFC 6962 client (e.g.
+`ct-tools`) without trusting CoreLink. See
+[audit chain](../../explanation/security/audit-chain.mdx) for the
+verification walkthrough.
+
+## Query 4 — REST API alternative
+
+If you prefer to drive this from a custom dashboard or SIEM, the same
+data is available via REST:
+
+```http
+GET /v1/admin/audit/events?tenant_id={uuid}
+  &event_type=corelink.admin.member.role_granted
+  &event_type=corelink.admin.member.role_revoked
+  &since=2026-04-15T00:00:00Z
+Authorization: Bearer <PAT with admin:audit scope>
+```
+
+Response:
+
+```json
+{
+  "events": [
+    {
+      "id": "01H9XYZ-...-A4B7",
+      "timestamp": "2026-05-13T14:02:11Z",
+      "type": "corelink.admin.member.role_granted",
+      "actor": { "user_id": "...", "email_hash": "ee44...10c3" },
+      "target": { "user_id": "...", "email_hash": "a3f9...c821" },
+      "previous_role": "developer",
+      "new_role": "admin",
+      "tenant_id": "..."
+    }
+  ],
+  "next_cursor": null
+}
+```
+
+## Common forensic patterns
+
+### "Did anyone bypass the dual-approval gate?"
+
+Short answer: **they cannot**. The gate is fail-CLOSED and every denied
+outcome is itself audited. If you see `corelink.admin.op.executed` with
+`op_type` in the destructive set, an approver UUID is present and an
+HMAC signature was verified server-side. If you suspect tampering, run
+the inclusion proof check (Query 3) to confirm the event is in the
+canonical log head.
+
+### "Who was Admin on 2026-04-22 at 18:31 UTC?"
+
+The audit chain is your point-in-time source of truth. Query the
+`role_granted`/`role_revoked` stream up to that timestamp and replay the
+state — the membership table only reflects the current snapshot.
+
+### "An ex-employee claims they were never granted Admin."
+
+Pull the inclusion proof for the `corelink.admin.member.role_granted`
+event with their `email_hash` as `target`. The proof is non-repudiable:
+HMAC-signed by the dual-approval signing key under a per-tenant region
+(`signed by region="enam"`, for example, per the gate constructor).
+
+## Retention
+
+Audit chain entries are retained 7 years (aligned with SOC 2 Type II).
+After tenant offboarding, customer-identifying fields are pseudonymized
+but the chain entries themselves persist for the regulatory window. See
+[audit chain](../../explanation/security/audit-chain.mdx) for the
+retention contract.
+
+## Related
+
+- [Audit chain](../../explanation/security/audit-chain.mdx) — underlying
+  Merkle log mechanism.
+- [RBAC overview](../../explanation/rbac/index.mdx) — the dual-approval
+  gate.
+- [Role catalog](../../explanation/rbac/role-catalog.mdx) — what each
+  role can do.
+- [Invite a team member](./invite-team-member.mdx)

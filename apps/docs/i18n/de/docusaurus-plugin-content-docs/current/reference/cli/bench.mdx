@@ -1,0 +1,75 @@
+---
+id: cli-bench
+title: corelink bench
+sidebar_label: bench
+description: Micro-benchmark write / read / round-trip against the cluster.
+tags: [reference, cli, bench]
+---
+
+<!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
+>
+> Canonical EN source: `docs/reference/cli/bench.mdx`
+
+
+# `corelink bench`
+
+Run a micro-benchmark against the cluster. Useful as a CI gate ("fail if
+p99 read exceeds 500 ms").
+
+## Synopsis
+
+```bash
+corelink bench [--write | --read | --full] [--output <FORMAT>]
+```
+
+## Flags
+
+| Flag | Required | Default | Description |
+|---|---|---|---|
+| `--write` | no | — | Write-only benchmark. |
+| `--read`  | no | — | Read-only benchmark. |
+| `--full`  | no | default | Full write+read round-trip (100 ops). |
+| `--output` | no | `text` | `text` or `json`. |
+
+`--write`, `--read`, and `--full` are mutually exclusive; omitting all
+three defaults to `--full`.
+
+## Examples
+
+Quick read latency check:
+
+```bash
+corelink bench --read --output json
+```
+
+CI gate:
+
+```bash
+corelink bench --read --output json \
+  | jq -e '.p99_ms < 500' \
+  || { echo "p99 regressed"; exit 1; }
+```
+
+## JSON schema
+
+```json
+{
+  "ok": true,
+  "subcommand": "bench",
+  "mode": "read",
+  "samples": 100,
+  "p50_ms": 12,
+  "p99_ms": 87,
+  "throughput_mb_s": 240.5
+}
+```
+
+## Exit codes
+
+`0` success · `1` runtime failure · `2` argument error.
+
+## See also
+
+- [`doctor`](./doctor.mdx)

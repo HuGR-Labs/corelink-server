@@ -1,0 +1,63 @@
+---
+id: go-pick-digest
+title: Go — pick a digest function
+sidebar_label: Go · pick digest function
+---
+
+<!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
+>
+> Canonical EN source: `docs/reference/reapi/_examples/Capabilities/go-pick-digest.mdx`
+
+
+# Go — pick a digest function
+
+Negotiate SHA256 vs BLAKE3 based on server support.
+
+## Code
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "os"
+    "slices"
+
+    corelink "go.corelink.dev/corelink-go"
+)
+
+func main() {
+    ctx := context.Background()
+    client, _ := corelink.NewClient(ctx, corelink.Config{
+        Endpoint: "https://acme-dev.corelink.dev",
+        PAT:      os.Getenv("CORELINK_PAT"),
+    })
+    defer client.Close()
+
+    caps, err := client.Capabilities.Get(ctx)
+    if err != nil {
+        panic(err)
+    }
+    df := corelink.DigestSHA256
+    if slices.Contains(caps.CacheCapabilities.DigestFunctions, corelink.DigestBLAKE3) {
+        df = corelink.DigestBLAKE3
+    }
+    client.SetDigestFunction(df)
+    fmt.Println("using", df)
+}
+```
+
+## Expected output
+
+```text
+using BLAKE3
+```
+
+## Common errors
+
+| Status | Error taxonomy | Cause |
+| --- | --- | --- |
+| `UNAUTHENTICATED` | `COR_AUTH_PAT_INVALID` | PAT expired. |

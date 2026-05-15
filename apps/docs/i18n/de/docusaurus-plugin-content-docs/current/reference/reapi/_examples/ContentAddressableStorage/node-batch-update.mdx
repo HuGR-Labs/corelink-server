@@ -1,0 +1,55 @@
+---
+id: node-batch-update
+title: Node — BatchUpdateBlobs
+sidebar_label: Node · BatchUpdateBlobs
+---
+
+<!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
+>
+> Canonical EN source: `docs/reference/reapi/_examples/ContentAddressableStorage/node-batch-update.mdx`
+
+
+# Node / TypeScript — `BatchUpdateBlobs`
+
+## Prerequisites
+
+- `pnpm add @corelink/client`
+- `CORELINK_PAT` exported
+- Node 20+
+
+## Code
+
+```ts
+import { CoreLinkClient } from "@corelink/client";
+
+const client = new CoreLinkClient({
+  endpoint: "https://acme-dev.corelink.dev",
+  pat: process.env.CORELINK_PAT!,
+});
+
+const blobs = ["alpha", "beta", "gamma"].map((s) =>
+  new TextEncoder().encode(s),
+);
+const responses = await client.cas.batchUpdateBlobs(blobs);
+for (const r of responses) {
+  if (r.status.code !== 0) throw new Error(r.status.message);
+  console.log(`OK sha256:${r.digest.hash.slice(0, 12)}... (${r.digest.sizeBytes} B)`);
+}
+```
+
+## Expected output
+
+```text
+OK sha256:bdd9ea4a8e6b... (5 B)
+OK sha256:71c8b65b8b7e... (4 B)
+OK sha256:8da8b9d77a8e... (5 B)
+```
+
+## Common errors
+
+| Status | Error taxonomy | Cause |
+| --- | --- | --- |
+| `INVALID_ARGUMENT` | `COR_CAS_BATCH_TOO_LARGE` | Batch exceeded server limit; switch to `ByteStream.Write`. |
+| `ABORTED` | `COR_CAS_DIGEST_MISMATCH` | Hash mismatch detected server-side. |

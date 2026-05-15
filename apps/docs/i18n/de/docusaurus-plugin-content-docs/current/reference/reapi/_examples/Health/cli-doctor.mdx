@@ -1,0 +1,44 @@
+---
+id: cli-doctor
+title: CLI — corelink doctor
+sidebar_label: CLI · doctor
+---
+
+<!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
+>
+> Canonical EN source: `docs/reference/reapi/_examples/Health/cli-doctor.mdx`
+
+
+# CLI — `corelink doctor`
+
+`doctor` aggregates `Health.Check`, PAT validity, DNS, TLS, and network reachability into a single command.
+
+## Code
+
+```bash
+corelink doctor --format=json | jq
+```
+
+## Expected output
+
+```json
+{
+  "binary":    {"ok": true, "version": "0.1.0"},
+  "network":   {"ok": true, "rtt_ms": 12},
+  "tls":       {"ok": true, "issuer": "Let's Encrypt"},
+  "auth":      {"ok": true, "tenant": "acme-dev", "scopes": ["cache:read", "cache:write"]},
+  "health":    {"ok": true, "status": "SERVING"},
+  "summary":   "all checks passed"
+}
+```
+
+## Common errors
+
+| `ok` field that flips false | Cause | Fix |
+| --- | --- | --- |
+| `network` | DNS / proxy / firewall | Verify `${HTTPS_PROXY}`, retry on a different network |
+| `tls` | Corporate root not trusted | Set `CORELINK_CA_BUNDLE=/path/to/ca.pem` |
+| `auth` | PAT expired | Re-mint PAT |
+| `health` | Server `NOT_SERVING` | Pick a different region in `~/.corelink/config.toml` |

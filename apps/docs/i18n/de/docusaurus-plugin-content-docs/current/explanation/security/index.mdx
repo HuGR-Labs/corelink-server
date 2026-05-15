@@ -1,0 +1,85 @@
+---
+title: "Security overview"
+slug: "/security"
+description: "CoreLink security model — BYOK, envelope encryption, audit chain, SLSA L3, RFC 8785 JCS canonicalization."
+draft: true
+cross_functional_review: TBD
+pending_signoff:
+  - "Security Lead"
+  - "Legal"
+sources:
+  - "specs/03_architecture/security_model.md"
+last_updated: "2026-05-14"
+---
+
+<!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
+>
+> Canonical EN source: `docs/explanation/security/index.mdx`
+
+
+import { DraftBanner } from "../../../src/components/DraftBanner";
+
+<DraftBanner pageType="security" />
+
+# Security overview
+
+> **DRAFT — pending Legal + Finance + Security review.** Every claim on this
+> page maps back to a control ID (`CTRL-XXX`) in
+> `specs/03_architecture/security_model.md`. Until cross-functional sign-off
+> lands, treat this page as informational.
+
+CoreLink is a multi-tenant shared cache. The blast radius of a compromise is
+*cross-tenant*, so the security objectives are ordered strictly:
+
+1. **Integrity of every artefact** — no blob served diverges from the
+   requested hash (`INV-CAS-INTEGRITY`).
+2. **Tenant isolation** — tenant A never reads, writes, or enumerates blobs
+   belonging to tenant B (`INV-TenantIsolation`, TLA+ model-checked).
+3. **Confidentiality** at rest (AES-256-GCM via R2 SSE) and in flight
+   (TLS 1.3 + mTLS between control and data planes).
+4. **Availability isolation** — a DoS aimed at one tenant must not consume
+   another tenant's SLO budget.
+5. **Auditability** — every write or admin operation produces an immutable
+   audit-log event (`INV-AUDIT-APPEND-ONLY`).
+
+## Defence-in-depth highlights
+
+- **BYOK** — bring your own KMS (AWS KMS, GCP KMS, Azure Key Vault, HashiCorp
+  Vault) for enterprise tenants. See [BYOK customer-managed keys](./byok).
+- **Envelope encryption** — every blob is encrypted with a per-tenant data
+  encryption key (DEK) wrapped by the tenant's KMS root key.
+- **Append-only audit chain** — Merkle-linked audit log with RFC 6962
+  inclusion proofs and a 7-year retention window. See
+  [Audit chain](./audit-chain).
+- **SLSA L3 supply chain** — every release binary carries a Sigstore
+  provenance attestation verifiable against the public transparency log.
+- **RFC 8785 JCS canonicalization** — every signed payload is canonicalized
+  before signing so signature verification is deterministic across runtimes.
+
+## Cryptography baseline
+
+| Use | Algorithm | Notes |
+| --- | --- | --- |
+| Content hashing (primary) | BLAKE3 | 32-byte digest |
+| Content hashing (REAPI legacy) | SHA-256 | Bazel/Buck compatibility |
+| HMAC (path, nonces) | HMAC-SHA256 | — |
+| Key derivation | HKDF-SHA256 | per-purpose `info` string |
+| At-rest encryption | AES-256-GCM | R2 SSE |
+| Transport | TLS 1.3 | AES-256-GCM / ChaCha20-Poly1305 |
+| Release signing | Ed25519 via Sigstore/cosign | offline HSM-backed key |
+
+Banned: MD5, SHA-1, DES/3DES, RC4, ECB, RSA < 2048, hand-rolled cryptography.
+
+## Where to go next
+
+- [BYOK customer-managed keys](./byok)
+- [Audit chain and Merkle proofs](./audit-chain)
+- [Responsible disclosure](./responsible-disclosure)
+- [Incident history](./incident-history)
+
+## Cross-functional review checklist
+
+- [ ] Security Lead — confirm every claim ties back to a control ID.
+- [ ] Legal — confirm public language does not over-commit beyond the SLA.

@@ -6,6 +6,8 @@ const TITLE: Record<Locale, string> = {
   en: "Terms of Service",
   pt: "Termos de Uso",
   es: "Términos de servicio",
+  // R-prep i18n-de — DACH market.
+  de: "Nutzungsbedingungen",
 };
 
 interface RouteParams {

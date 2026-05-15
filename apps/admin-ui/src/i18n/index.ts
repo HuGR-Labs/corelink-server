@@ -9,11 +9,13 @@
 import en from "./messages-en.json";
 import pt from "./messages-pt.json";
 import es from "./messages-es.json";
+import de from "./messages-de.json";
 
-export const SUPPORTED_LOCALES = ["en", "pt", "es"] as const;
+// R-prep i18n-de — `de` joined as the fourth canonical locale.
+export const SUPPORTED_LOCALES = ["en", "pt", "es", "de"] as const;
 export type Locale = (typeof SUPPORTED_LOCALES)[number];
 
-export const MESSAGES: Record<Locale, unknown> = { en, pt, es };
+export const MESSAGES: Record<Locale, unknown> = { en, pt, es, de };
 
 export function isLocale(value: string): value is Locale {
   return (SUPPORTED_LOCALES as readonly string[]).includes(value);

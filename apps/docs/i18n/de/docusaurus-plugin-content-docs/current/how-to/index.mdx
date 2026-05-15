@@ -1,0 +1,53 @@
+---
+id: index
+title: How-to guides
+sidebar_label: How-to
+description: Task-oriented recipes that solve a specific real-world problem. Assume the reader knows what they want to do and just needs the steps.
+---
+
+<!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
+>
+> Canonical EN source: `docs/how-to/index.mdx`
+
+
+# How-to guides
+
+**Task-oriented.** How-to guides assume competence and answer "how do I
+do X?". They are recipes, not lessons — they skip context and focus on
+the steps.
+
+## Available how-to guides
+
+### Migration
+
+If you have an existing cache or artifact store and want to move to
+CoreLink without a lighthouse-style white-glove engagement:
+
+- **[Migration overview](./migrate/index.mdx)** — decision matrix
+  + shared pre-flight checklist.
+- **[From a Bazel remote cache](./migrate/from-bazel-remote-cache.mdx)** — `bazel-remote`, BuildBuddy, Buck2, Pants.
+- **[From S3-only artifact storage](./migrate/from-s3-only.mdx)** — plain object stores; build artifacts, ML datasets, release binaries.
+- **[From a Docker registry](./migrate/from-docker-registry.mdx)** — self-hosted Harbor / Quay / `registry:2`.
+
+:::note WI-S18-002..004 will populate the rest of this section
+Planned how-tos: BYOK configuration, Bazel CI integration, Buck2 CI
+integration, DSR export, multi-region failover drill. Added by
+subsequent S-18 work items.
+:::
+
+## Planned how-to guides
+
+- **Configure BYOK (bring your own key)** — bind your KMS key to a
+  tenant.
+- **Integrate CoreLink with Bazel remote cache** — `.bazelrc`
+  + auth.
+- **Integrate CoreLink with Buck2 remote cache** — `.buckconfig`
+  + auth.
+- **Request a DSR export and verify it** — for LGPD / GDPR data subject
+  requests.
+- **Rotate a personal access token (PAT)** — without downtime.
+
+See the [Diátaxis how-to guide](https://diataxis.fr/how-to-guides/) for
+the authoring conventions PR review enforces.

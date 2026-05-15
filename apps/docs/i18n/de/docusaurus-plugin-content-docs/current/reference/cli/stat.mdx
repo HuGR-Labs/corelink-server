@@ -1,0 +1,78 @@
+---
+id: cli-stat
+title: corelink stat
+sidebar_label: stat
+description: Inspect metadata, size, and age for a digest.
+tags: [reference, cli, stat]
+---
+
+<!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
+>
+> Canonical EN source: `docs/reference/cli/stat.mdx`
+
+
+# `corelink stat`
+
+Inspect metadata for a digest without downloading the bytes.
+
+## Synopsis
+
+```bash
+corelink stat <DIGEST> [--output <FORMAT>]
+```
+
+## Arguments
+
+| Arg | Required | Description |
+|---|---|---|
+| `<DIGEST>` | yes | BLAKE3 hex digest to inspect. |
+
+## Flags
+
+| Flag | Required | Default | Description |
+|---|---|---|---|
+| `--output` | no | `text` | `text` or `json`. |
+
+## Examples
+
+```bash
+corelink stat 0123...cdef
+```
+
+```text
+digest:     0123...cdef
+size:       1048576 bytes
+kind:       blob
+created_at: 2026-04-12T13:22:01Z
+region:     iad1
+ttl_left:   29d 14h
+```
+
+For an Action Cache entry the `kind` is `action_result` and the output
+includes `exit_code`, `stdout_digest`, and `ttl_seconds_remaining`.
+
+## JSON schema
+
+```json
+{
+  "ok": true,
+  "subcommand": "stat",
+  "digest": "0123...cdef",
+  "size_bytes": 1048576,
+  "kind": "blob",
+  "created_at_unix": 1715000000,
+  "region": "iad1",
+  "ttl_seconds_remaining": 2551200
+}
+```
+
+## Exit codes
+
+`0` success · `1` runtime failure · `2` argument error · `4` not found.
+
+## See also
+
+- [`get`](./get.mdx)
+- [`ls`](./ls.mdx)

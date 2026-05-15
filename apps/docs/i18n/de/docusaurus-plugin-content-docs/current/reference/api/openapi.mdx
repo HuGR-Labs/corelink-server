@@ -1,0 +1,80 @@
+---
+id: openapi
+title: REST API (OpenAPI 3.1)
+sidebar_label: REST API spec
+description: Hand-authored OpenAPI 3.1 contract for the CoreLink customer, privacy (DSR + consent + DPA), billing-webhook, admin and ops REST surface. Generated from the canonical openapi/corelink-v1.yaml.
+---
+
+<!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
+>
+> Canonical EN source: `docs/reference/api/openapi.mdx`
+
+
+import CodeBlock from "@theme/CodeBlock";
+
+# REST API — OpenAPI 3.1
+
+CoreLink exposes two API surfaces:
+
+- **REAPI v2 (gRPC)** — high-throughput CAS / AC / ByteStream / Capabilities.
+  Documented under [REAPI v2 reference](../reapi/index).
+- **REST (this page)** — customer onboarding, privacy (DSR + consent + DPA),
+  Stripe billing webhook, admin operations, and ops endpoints.
+
+The canonical contract is
+[`openapi/corelink-v1.yaml`](https://github.com/humangr-labs/corelink-server/blob/main/openapi/corelink-v1.yaml)
+in the server monorepo. The static asset shipped with this docs site
+mirrors that file byte-for-byte and is gated by the
+`openapi-validate.yml` workflow on every PR.
+
+## Download
+
+- [OpenAPI 3.1 YAML](/openapi-corelink-v1.yaml)
+- Browse the source on GitHub:
+  [`openapi/corelink-v1.yaml`](https://github.com/humangr-labs/corelink-server/blob/main/openapi/corelink-v1.yaml)
+
+## Render with Redocly
+
+```bash
+npx @redocly/cli build-docs https://docs.corelink.dev/openapi-corelink-v1.yaml \
+    --output corelink-rest-api.html
+```
+
+## Endpoint coverage
+
+| Tag | Path |
+| --- | --- |
+| signup | `POST /v1/signup` |
+| dpa | `POST /v1/dpa/accept` |
+| dpa | `POST /v1/dpa/re-accept` |
+| tier | `POST /v1/onboarding/tier-select` |
+| pat | `POST /v1/pats`, `GET /v1/pats`, `DELETE /v1/pats/{pat_id}` |
+| billing | `POST /v1/billing/stripe-webhook` |
+| privacy-dsr | `POST /v1/privacy/dsr/{action}` (6 actions), `GET /v1/privacy/dsr/{request_id}/status` |
+| privacy-consent | `POST /v1/consent/{purpose}`, `DELETE /v1/consent/{purpose}`, `GET /v1/consent`, `GET /v1/consent/verify`, `GET /v1/consent/revocation/verify` |
+| admin | `POST /v1/admin/ops`, `GET /v1/admin/ops/{op_id}`, `POST /v1/admin/ops/{op_id}/approve`, `POST /v1/admin/ops/{op_id}/reject`, `GET /v1/admin/audit/events`, `GET /v1/admin/tenants` |
+| enterprise | `POST /v1/enterprise/inquire` |
+| users | `GET /v1/users/me`, `PATCH /v1/users/me` |
+| data-categories | `GET /v1/data-categories` |
+| ops | `GET /api/health`, `POST /api/csp-report` |
+
+## Authentication
+
+| Scheme | Where | Used for |
+| --- | --- | --- |
+| `BearerPAT` | `Authorization: Bearer <PAT>` | Programmatic API access (default). |
+| `ClerkSessionCookie` | `__session` cookie | Browser-driven onboarding flow. |
+| `StripeSignature` | `Stripe-Signature` header | The Stripe webhook ingestion route only. |
+
+Every admin mutation also requires an `X-Admin-Operation-Reason` header
+captured into the audit envelope.
+
+## Stability contract
+
+The `v1` prefix is **public and semver-compatible**. Breaking changes
+require a new path prefix (`/v2/...`); the CI gate
+(`openapi-validate.yml`) runs `oasdiff breaking` against the base
+branch on every pull request and fails unless a `breaking-api-ok`
+label is applied with reviewer sign-off.

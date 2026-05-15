@@ -1,0 +1,12 @@
+{
+  "title": { "message": "CoreLink" },
+  "logo.alt": { "message": "CoreLink" },
+  "item.label.Tutorial": { "message": "Tutorial" },
+  "item.label.How-to": { "message": "Anleitungen" },
+  "item.label.Reference": { "message": "Referenz" },
+  "item.label.Explanation": { "message": "Erklärung" },
+  "item.label.API": { "message": "API" },
+  "item.label.Pricing": { "message": "Preise" },
+  "item.label.Security": { "message": "Sicherheit" },
+  "item.label.GitHub": { "message": "GitHub" }
+}

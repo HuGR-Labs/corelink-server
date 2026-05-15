@@ -6,16 +6,19 @@ import { MarkdownView } from "@/components/content/MarkdownView";
 import { formatDate } from "@/i18n/format";
 import type { Locale } from "@/i18n/LocaleContext";
 
+// R-prep i18n-de — `de` joined as the fourth canonical locale.
 const ACCEPTED_LABEL: Record<Locale, string> = {
   en: "Accepted on",
   pt: "Aceito em",
   es: "Aceptado el",
+  de: "Akzeptiert am",
 };
 
 const VERSION_LABEL: Record<Locale, string> = {
   en: "Version",
   pt: "Versão",
   es: "Versión",
+  de: "Version",
 };
 
 export interface LegalDocPageProps {

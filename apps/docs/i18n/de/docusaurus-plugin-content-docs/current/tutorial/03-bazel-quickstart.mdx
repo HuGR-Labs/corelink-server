@@ -1,0 +1,95 @@
+---
+id: 03-bazel-quickstart
+title: Bazel remote cache in 5 minutes
+sidebar_label: 3. Bazel quickstart
+description: Wire Bazel 6+ to CoreLink remote cache with the credential helper protocol — no PAT in argv.
+---
+
+<!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
+>
+> Canonical EN source: `docs/tutorial/03-bazel-quickstart.mdx`
+
+
+# Bazel remote cache in 5 minutes
+
+This tutorial mirrors [`examples/bazel-starter/`](https://github.com/humangr-labs/corelink-server/tree/main/examples/bazel-starter) in the repo. Clone it directly or follow the steps below.
+
+## Prerequisites
+
+- `corelink` CLI installed ([step 1](./01-installation.mdx)).
+- `CORELINK_PAT` exported ([step 2](./02-first-pat.mdx)).
+- Bazel **6 or newer** (credential helper protocol is required).
+
+## 1. Clone the starter (optional)
+
+```bash
+git clone https://github.com/humangr-labs/corelink-server.git
+cd corelink-server/examples/bazel-starter
+```
+
+If you already have a Bazel workspace, skip to step 2.
+
+## 2. `WORKSPACE` (no extra rules needed)
+
+```python
+workspace(name = "corelink_bazel_starter")
+
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "rules_cc",
+    sha256 = "2037875b9a4456dce4a79d112a8ae885bbc4aad968e6587dca6e64f3a0900cdf",
+    strip_prefix = "rules_cc-0.0.9",
+    urls = [
+        "https://github.com/bazelbuild/rules_cc/releases/download/0.0.9/rules_cc-0.0.9.tar.gz",
+    ],
+)
+```
+
+## 3. `.bazelrc` (credential helper, never `--remote_header`)
+
+```ini
+# Remote cache endpoint (replace <YOUR_TENANT_ID>).
+build --remote_cache=https://<YOUR_TENANT_ID>.corelink.dev/v1/cache
+
+# Credential helper (Bazel 6+ protocol) — reads CORELINK_PAT and emits
+# {"headers": {"Authorization": ["Bearer <token>"]}} on stdout.
+# Never use --remote_header=Authorization:... — that exposes the PAT in `ps aux`.
+build --credential_helper=%workspace%/.bazel/corelink-credential-helper.sh
+
+build --remote_timeout=30s
+build --remote_retries=3
+build --remote_upload_local_results=true
+```
+
+## 4. Credential helper (`.bazel/corelink-credential-helper.sh`)
+
+```bash
+#!/usr/bin/env bash
+# CTRL-CRED-001 — PAT must NEVER appear in argv.
+set -euo pipefail
+: "${CORELINK_PAT:?CORELINK_PAT must be set}"
+printf '{"headers":{"Authorization":["Bearer %s"]}}\n' "$CORELINK_PAT"
+```
+
+```bash
+chmod +x .bazel/corelink-credential-helper.sh
+```
+
+## 5. Build twice and observe the cache hit
+
+```bash
+# First build — populates the cache.
+bazel build //:hello
+
+# Second build (clean local) — should hit remote cache.
+bazel clean
+bazel build //:hello 2>&1 | grep -E "remote cache hit|processes:"
+# INFO: 1 process: 1 remote cache hit.
+```
+
+If you see `remote cache hit`, you're done. If not, run `corelink doctor --check-auth` and double-check the `--remote_cache` URL.
+
+Next: [Buck2 quickstart](./04-buck2-quickstart.mdx) or [verify cache hit ratio](./06-verify-cache-hit.mdx).

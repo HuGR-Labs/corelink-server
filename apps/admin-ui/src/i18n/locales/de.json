@@ -1,0 +1,117 @@
+{
+  "onboarding": {
+    "wizard": {
+      "title": "Willkommen bei CoreLink",
+      "step": "Schritt {current} von {total}",
+      "back": "Zurück",
+      "next": "Weiter",
+      "skip": "Überspringen"
+    },
+    "tenant": {
+      "title": "Tenant anlegen",
+      "name_label": "Tenant-Name",
+      "name_hint": "3-64 Zeichen, Buchstaben, Ziffern und Bindestriche.",
+      "legal_label": "Vollständiger Firmenname",
+      "tax_label": "Steuer-ID (optional)",
+      "submit": "Tenant anlegen",
+      "errors": {
+        "empty": "Tenant-Name ist erforderlich.",
+        "too_short": "Tenant-Name muss mindestens 3 Zeichen lang sein.",
+        "too_long": "Tenant-Name darf höchstens 64 Zeichen lang sein.",
+        "invalid_chars": "Nur Buchstaben, Ziffern und Bindestriche erlaubt."
+      }
+    },
+    "dpa": {
+      "title": "Auftragsverarbeitungsvertrag",
+      "scroll_hint": "Bitte lesen Sie bis zum Ende, um die Annahme freizuschalten.",
+      "accept": "Ich akzeptiere",
+      "accepted_at": "Akzeptiert am {ts}"
+    },
+    "region_plan": {
+      "title": "Region und Tarif wählen",
+      "region_label": "Region",
+      "plan_label": "Tarif",
+      "submit": "Weiter"
+    },
+    "billing": {
+      "title": "Abrechnung einrichten",
+      "submit": "Zahlungsmethode speichern",
+      "skipped_free": "Free-Tarif: keine Zahlung erforderlich."
+    },
+    "pat": {
+      "title": "Erstes persönliches Zugangstoken erstellen",
+      "label_label": "Token-Name",
+      "scope_label": "Berechtigung",
+      "expiry_label": "Ablaufdatum",
+      "submit": "Token generieren",
+      "modal_title": "Speichern Sie dieses Token jetzt",
+      "modal_warning": "Dieses Token wird nur einmal angezeigt. Bewahren Sie es sicher auf; wir können es nicht erneut anzeigen.",
+      "copy": "In Zwischenablage kopieren",
+      "confirm_saved": "Ich habe das Token sicher gespeichert",
+      "finish": "Weiter"
+    },
+    "done": {
+      "title": "Sie sind startklar",
+      "cta": "Loslegen"
+    }
+  },
+  "common": {
+    "cancel": "Abbrechen",
+    "save": "Speichern",
+    "delete": "Löschen",
+    "loading": "Wird geladen…",
+    "error": "Fehler",
+    "success": "Erfolg",
+    "confirm": "Bestätigen",
+    "close": "Schließen",
+    "skipToContent": "Zum Hauptinhalt springen"
+  },
+  "nav": {
+    "home": "Start",
+    "dashboard": "Dashboard",
+    "settings": "Einstellungen",
+    "signOut": "Abmelden",
+    "audit": "Audit",
+    "billing": "Abrechnung",
+    "privacy": "Datenschutz"
+  },
+  "auth": {
+    "signIn": "Anmelden",
+    "signUp": "Registrieren",
+    "email": "E-Mail",
+    "password": "Passwort",
+    "signOut": "Abmelden"
+  },
+  "errors": {
+    "required": "Dieses Feld ist erforderlich.",
+    "invalidEmail": "Bitte geben Sie eine gültige E-Mail-Adresse ein.",
+    "generic": "Etwas ist schiefgelaufen. Bitte versuchen Sie es erneut."
+  },
+  "privacy": {
+    "title": "Datenschutzhinweis",
+    "lastUpdated": "Zuletzt aktualisiert",
+    "version": "Version",
+    "subProcessors": "Unterauftragsverarbeiter"
+  },
+  "legal": {
+    "dpa": "Auftragsverarbeitungsvertrag",
+    "terms": "Nutzungsbedingungen",
+    "cookies": "Cookie-Richtlinie",
+    "acceptedOn": "Akzeptiert am",
+    "saveConsent": "Einwilligung speichern"
+  },
+  "cookies": {
+    "functional": "Unbedingt erforderlich",
+    "analytics": "Analyse",
+    "marketing": "Marketing"
+  },
+  "brand": {
+    "name": "CoreLink",
+    "tagline": "Gemeinsamer, inhaltsadressierter Cache für Builds, Pakete und ML."
+  },
+  "landing": {
+    "heading": "CoreLink Admin",
+    "subheading": "Verwalten Sie Ihren Tenant, PATs und Ihre Compliance-Lage.",
+    "cta": "Anmelden, um fortzufahren"
+  }
+}

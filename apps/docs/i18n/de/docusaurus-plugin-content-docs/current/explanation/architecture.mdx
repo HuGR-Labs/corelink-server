@@ -1,0 +1,56 @@
+---
+id: architecture
+title: Architecture overview
+sidebar_label: Architecture
+description: Why CoreLink chose content-addressable storage, how dedup works at the chunk level, and the multi-region read-path model.
+---
+
+<!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
+>
+> Canonical EN source: `docs/explanation/architecture.mdx`
+
+
+# Architecture overview
+
+**Understanding-oriented.** This page explains *why* CoreLink is built
+the way it is. For *how* to use it, see [How-to](/how-to/); for the
+*API surface*, see [Reference](/reference/).
+
+:::note Placeholder explanation page
+Full architectural narratives — content-addressing rationale, dedup
+proof, multi-region read-path, BYOK envelope model — land in subsequent
+work items. This page anchors the Explanation quadrant of the Diátaxis
+sidebar.
+:::
+
+:::info Engineering-side master overview
+For the comprehensive engineering overview — invariant guarantees,
+twelve core crates, tenant-isolation derivation, audit-chain Merkle,
+SLO catalog, failure-mode taxonomy, compliance posture, plus eight
+Mermaid diagrams — see `ARCHITECTURE.md` at the repo root and the
+diagram set under `docs/internal/architecture/diagrams/`. This
+customer-facing page distills *why* (Diátaxis Explanation); the
+engineering doc covers *what* and *how it is enforced*.
+:::
+
+## Topics this page will cover
+
+1. **Why content-addressable?** Hash-keyed storage gives us trivial
+   dedup, free integrity verification, and tenant isolation by key
+   namespace rather than by encryption boundary.
+2. **How dedup works.** Chunking strategy (rolling hash + fixed-size
+   fallback), chunk-level reference counting, and tenant-isolated GC.
+3. **Multi-region read-path.** R2 region pinning, fail-open vs
+   fail-closed semantics, and the consistency model.
+4. **BYOK envelope model.** Per-tenant DEK wrapped by customer KEK in
+   their KMS — CoreLink never sees plaintext keys.
+
+## Where to go next
+
+- [Tutorial: build your first cached project](/tutorial/) — see the
+  ideas in this page running end-to-end.
+- [Reference: REAPI v2](/reference/) — the wire-level API.
+- [Security](/security) — how the architectural choices map to
+  customer trust signals.

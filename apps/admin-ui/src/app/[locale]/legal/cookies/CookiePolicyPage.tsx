@@ -59,6 +59,20 @@ const STRINGS: Record<Locale, {
     saved: "Su consentimiento fue guardado.",
     error: "No se pudo guardar. Inténtelo de nuevo.",
   },
+  // R-prep i18n-de — DACH market.
+  de: {
+    title: "Cookie-Richtlinie",
+    intro: "Wählen Sie aus, welche optionalen Cookies Sie zulassen. Unbedingt erforderliche Cookies sind immer aktiv und können nicht deaktiviert werden.",
+    functional: "Unbedingt erforderlich",
+    functionalHint: "Erforderlich für Authentifizierung, Sicherheit und Lastverteilung.",
+    analytics: "Analyse",
+    analyticsHint: "Hilft uns, die Produktnutzung im Aggregat zu verstehen.",
+    marketing: "Marketing",
+    marketingHint: "Wird zur Bereitstellung personalisierter Inhalte und zur Messung von Kampagnen verwendet.",
+    save: "Einwilligung speichern",
+    saved: "Ihre Einwilligung wurde gespeichert.",
+    error: "Ihre Einwilligung konnte nicht gespeichert werden. Bitte erneut versuchen.",
+  },
 };
 
 export interface CookiePolicyPageProps {

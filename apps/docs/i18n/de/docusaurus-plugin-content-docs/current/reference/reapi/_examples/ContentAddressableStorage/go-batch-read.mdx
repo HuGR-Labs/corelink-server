@@ -1,0 +1,74 @@
+---
+id: go-batch-read
+title: Go — BatchReadBlobs
+sidebar_label: Go · BatchReadBlobs
+---
+
+<!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
+>
+> Canonical EN source: `docs/reference/reapi/_examples/ContentAddressableStorage/go-batch-read.mdx`
+
+
+# Go — `BatchReadBlobs`
+
+Read many small blobs in one round-trip with client-verify default on.
+
+## Prerequisites
+
+- `go get go.corelink.dev/corelink-go@latest`
+- `CORELINK_PAT` exported
+
+## Code
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "os"
+
+    corelink "go.corelink.dev/corelink-go"
+)
+
+func main() {
+    ctx := context.Background()
+    client, err := corelink.NewClient(ctx, corelink.Config{
+        Endpoint: "https://acme-dev.corelink.dev",
+        PAT:      os.Getenv("CORELINK_PAT"),
+    })
+    if err != nil {
+        panic(err)
+    }
+    defer client.Close()
+
+    digests := []corelink.Digest{
+        {Hash: "bdd9ea4a8e6b...", SizeBytes: 5},
+        {Hash: "71c8b65b8b7e...", SizeBytes: 4},
+    }
+    resps, err := client.CAS.BatchReadBlobs(ctx, digests)
+    if err != nil {
+        panic(err)
+    }
+    for _, r := range resps {
+        fmt.Printf("OK %s (%d B)\n", r.Digest.Hash[:12], len(r.Data))
+    }
+}
+```
+
+## Expected output
+
+```text
+OK bdd9ea4a8e6b (5 B)
+OK 71c8b65b8b7e (4 B)
+```
+
+## Common errors
+
+| Status | Error taxonomy | Cause |
+| --- | --- | --- |
+| `NOT_FOUND` | `COR_CAS_BLOB_MISSING` | Digest not present (or evicted). |
+| `ABORTED` | `COR_CAS_DIGEST_MISMATCH` | Client-verify rejected returned bytes. |
+| `INVALID_ARGUMENT` | `COR_CAS_BATCH_TOO_LARGE` | Total response would exceed batch limit. |

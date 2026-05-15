@@ -1,0 +1,74 @@
+---
+id: sdk-js-download-blob
+title: Download a blob (JS/TS)
+sidebar_label: Download a blob
+description: Fetch a blob by digest with default-on BLAKE3 client-side verify.
+tags: [sdk, javascript, typescript, cas, how-to]
+---
+
+<!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
+>
+> Canonical EN source: `docs/how-to/sdk-js/03-download-blob.mdx`
+
+
+# Download a blob
+
+## When to use this guide
+
+You hold a BLAKE3 digest and need the bytes. The SDK verifies the digest
+client-side via WASM by default (CTRL-CAS-002).
+
+## Prerequisites
+
+- A known BLAKE3 digest.
+- Authentication configured.
+
+## Minimal example
+
+```typescript
+const data: Uint8Array = await client.get(digest);
+// Already BLAKE3-verified; if verify failed, get() threw.
+```
+
+## Streaming download
+
+```typescript
+import { writeFile } from "node:fs/promises";
+
+async function streamToFile(digest: string, dest: string): Promise<void> {
+  const stream = await client.getStream(digest);
+  const chunks: Uint8Array[] = [];
+  for await (const chunk of stream) chunks.push(chunk);
+  // stream completion validates the BLAKE3 root; an iteration error means
+  // the bytes are corrupt and must not be persisted.
+  await writeFile(dest, Buffer.concat(chunks));
+}
+```
+
+In a browser, pipe directly to a `FileSystemWritableFileStream` or to a
+`Blob` constructor.
+
+## Opting out of verification
+
+**Strongly discouraged**. The opt-out exists only for transport benchmarks.
+The SDK emits `console.warn("corelink.client.verify_disabled")` per
+CTRL-CAS-002.
+
+```typescript
+const data = await client.get(digest, { verify: false });
+```
+
+## Errors
+
+| Class | Meaning |
+|---|---|
+| `NotFoundError` | Digest not in tenant CAS |
+| `DigestMismatchError` | Bytes corrupted; do not use |
+| `RegionError` | Blob in another region; check `corelink stat` |
+
+## Next steps
+
+- [Action Cache](./04-action-cache.mdx)
+- [Troubleshooting](./07-troubleshooting.mdx)
