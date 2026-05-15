@@ -90,8 +90,33 @@ new_classes = ["ClerkHealthDo"]
 
 [vars]
 ENVIRONMENT = "dev"
+# Wave-17 DSR Statuspage 24h publish scheduler — see
+# `crates/corelink-clerk-cf/src/dsr_statuspage_cron.rs` + the
+# `[triggers]` block below. The page-ID + metric-ID are non-credential
+# config vars per `docs/internal/secrets-checklist.md` rows 116 / 117.
+# The Statuspage API key (row 42) is ALWAYS a `wrangler secret put`
+# (never a `[vars]` row); the `scheduled` handler resolves it via
+# `env.secret(...)`.
+STATUSPAGE_PAGE_ID = "PLACEHOLDER_STATUSPAGE_PAGE_ID"
+STATUSPAGE_METRIC_DSR_RESOLUTION_HOURS = "PLACEHOLDER_STATUSPAGE_METRIC_DSR_RESOLUTION_HOURS"
+
+# Wave-17 DSR Statuspage 24h publish scheduler — cron trigger.
+#
+# Cron expression `0 6 * * *` = 06:00 UTC daily. Scheduled AFTER the
+# audit-chain daily-verify at 02:00 UTC and BEFORE SF business start
+# (08:00 PT = 16:00 UTC; gives a 10-hour buffer for ops to react to
+# any `corelink.privacy.statuspage_publish_failed.v1` audit before
+# the customer-facing business day opens).
+#
+# Pinned verbatim against `corelink-dsr-statuspage-scheduler::
+# CRON_EXPRESSION` and `corelink-clerk-cf::dsr_statuspage_cron::
+# CRON_EXPRESSION` — both constants assert against `"0 6 * * *"` in
+# unit tests so drift between the wrangler row and the code-side
+# constants fails CI.
+[triggers]
+crons = ["0 6 * * *"]
 
 # Production environment override (deploy with --env prod).
 [env.prod]
 name = "corelink-clerk-cf-poc-prod"
-vars = { ENVIRONMENT = "prod" }
+vars = { ENVIRONMENT = "prod", STATUSPAGE_PAGE_ID = "PLACEHOLDER_STATUSPAGE_PAGE_ID_PROD", STATUSPAGE_METRIC_DSR_RESOLUTION_HOURS = "PLACEHOLDER_STATUSPAGE_METRIC_DSR_RESOLUTION_HOURS_PROD" }

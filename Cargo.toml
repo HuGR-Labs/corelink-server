@@ -156,6 +156,19 @@ members = [
     # + 1-per-5-min rate-limiter + 3-retry exp-backoff + fail-CLOSED audit
     # envelope (`statuspage_published.v1` / `_auth_failed.v1` / `_rate_limited.v1`).
     "crates/corelink-statuspage-real",
+    # Wave-17 DSR Statuspage 24h publish scheduler — closes the
+    # scheduler-binding deferred at wave-16 per
+    # `specs/_audits/2026-05-15-dsr-worker-production.md` §5.
+    # Composes `corelink-privacy-erasure-worker::aggregate_24h_window`
+    # + `corelink-statuspage-real::bridge_to_report` +
+    # `StatuspageBackend::publish_dsr_metric` into a 06:00 UTC daily
+    # cron-firable orchestration. Owns the `(date, metric_id)`
+    # idempotency dedupe (`CronRunLog`), the D1 row source trait
+    # (`D1RowSource`), and the four-event scheduler audit envelope
+    # (`scheduled` / `succeeded` / `failed` / `skipped`). Native-only —
+    # the wasm32 CF Worker `#[event(scheduled)]` entry point lives at
+    # `corelink-clerk-cf::dsr_statuspage_cron`.
+    "crates/corelink-dsr-statuspage-scheduler",
     # R2-13 D1 migration replay harness (rusqlite-backed; CI gate that every
     # migrations/d1/*.sql applies cleanly in numeric order against a fresh
     # in-memory SQLite. Catches ordering bugs + schema dependency hazards.)
@@ -458,6 +471,7 @@ corelink-chaos-scheduler = { path = "crates/corelink-chaos-scheduler" }
 corelink-tier-selection = { path = "crates/corelink-tier-selection" }
 corelink-stripe-real = { path = "crates/corelink-stripe-real" }
 corelink-statuspage-real = { path = "crates/corelink-statuspage-real" }
+corelink-dsr-statuspage-scheduler = { path = "crates/corelink-dsr-statuspage-scheduler" }
 corelink-drata-sync = { path = "crates/corelink-drata-sync" }
 corelink-openapi = { path = "crates/corelink-openapi" }
 # R-prep handler-crate skeletons (CAS / AC / Admin).
