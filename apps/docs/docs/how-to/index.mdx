@@ -11,7 +11,20 @@ description: Task-oriented recipes that solve a specific real-world problem. Ass
 do X?". They are recipes, not lessons — they skip context and focus on
 the steps.
 
-:::note WI-S18-002..004 will populate this section
+## Available how-to guides
+
+### Migration
+
+If you have an existing cache or artifact store and want to move to
+CoreLink without a lighthouse-style white-glove engagement:
+
+- **[Migration overview](./migrate/index.mdx)** — decision matrix
+  + shared pre-flight checklist.
+- **[From a Bazel remote cache](./migrate/from-bazel-remote-cache.mdx)** — `bazel-remote`, BuildBuddy, Buck2, Pants.
+- **[From S3-only artifact storage](./migrate/from-s3-only.mdx)** — plain object stores; build artifacts, ML datasets, release binaries.
+- **[From a Docker registry](./migrate/from-docker-registry.mdx)** — self-hosted Harbor / Quay / `registry:2`.
+
+:::note WI-S18-002..004 will populate the rest of this section
 Planned how-tos: BYOK configuration, Bazel CI integration, Buck2 CI
 integration, DSR export, multi-region failover drill. Added by
 subsequent S-18 work items.
