@@ -47,21 +47,21 @@ const sidebars: SidebarsConfig = {
         {
           type: "category",
           label: "Migration",
-          link: { type: "doc", id: "migrate-index" },
+          link: { type: "doc", id: "how-to/migrate/migrate-index" },
           collapsed: true,
           items: [
-            "migrate-from-bazel-remote-cache",
-            "migrate-from-s3-only",
-            "migrate-from-docker-registry",
+            "how-to/migrate/migrate-from-bazel-remote-cache",
+            "how-to/migrate/migrate-from-s3-only",
+            "how-to/migrate/migrate-from-docker-registry",
           ],
         },
         {
           type: "category",
-          label: "RBAC",
+          label: "RBAC how-to",
           collapsed: true,
           items: [
-            "rbac-invite-team-member",
-            "rbac-audit-role-changes",
+            "how-to/rbac/rbac-invite-team-member",
+            "how-to/rbac/rbac-audit-role-changes",
           ],
         },
         {
@@ -69,19 +69,19 @@ const sidebars: SidebarsConfig = {
           label: "Billing",
           collapsed: true,
           items: [
-            "billing-manage-subscription",,
+            "how-to/billing/billing-manage-subscription",
           ],
         },
         // Observability sub-category — Datadog / OTel / Grafana Cloud
         {
           type: "category",
           label: "Observability",
-          link: { type: "doc", id: "observability-index" },
+          link: { type: "doc", id: "how-to/observability/observability-index" },
           collapsed: true,
           items: [
-            "forward-to-datadog",
-            "forward-to-otel-collector",
-            "forward-to-grafana-cloud"
+            "how-to/observability/forward-to-datadog",
+            "how-to/observability/forward-to-otel-collector",
+            "how-to/observability/forward-to-grafana-cloud",
           ],
         },
       ],
@@ -132,9 +132,9 @@ const sidebars: SidebarsConfig = {
         },
         {
           type: "category",
-          label: "RBAC",
+          label: "RBAC reference",
           collapsed: true,
-          items: ["rbac-permissions"],
+          items: ["reference/rbac/rbac-permissions"],
         },
       ],
     },
@@ -164,12 +164,12 @@ const sidebars: SidebarsConfig = {
         },
         {
           type: "category",
-          label: "RBAC",
+          label: "RBAC concepts",
           collapsed: true,
           items: [
-            "rbac-overview",
-            "rbac-role-catalog",
-            "rbac-permission-matrix",
+            "explanation/rbac/rbac-overview",
+            "explanation/rbac/rbac-role-catalog",
+            "explanation/rbac/rbac-permission-matrix",
           ],
         },
       ],
