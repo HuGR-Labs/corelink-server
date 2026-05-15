@@ -24,7 +24,7 @@ inherits_from:
 tags: ["wi", "s11", "dpia", "lia", "gdpr-art-35", "lgpd-art-38", "tla-plus", "dsr-erasure-atomicity", "inv-consent-symmetry", "high-risk"]
 ---
 
-# WI-S11-008 — DPIA Template `_templates/dpia.md` (GDPR Art. 35 / LGPD Art. 38) + LIA Template (Legitimate Interest Assessment for Telemetry under LGPD Art. 10 / GDPR Art. 6(1)(f)) + 3 DPIAs Filled-In (S-07 Dedup Leakage Risk, S-09 Telemetry Aggregation, S-10 Billing Data Cross-Border) + TLA+ `specs/tla/dsr_erasure_atomicity.tla` Formal Spec (validates `INV-DATA-ERASURE-COMPLETE` + Action `InvConsentSymmetry` validates WI-S11-003 Schema Simétrico Lote 9.4 H-05) + TLC v1.8.0 SHA-256 Pinned (specs/tla/README.md inheritance + ADR-0042 §A1 bootstrap ceremony) — **CI gate pendente** (status PLANNED → 🟡 spec written → ✅ GREEN apenas após first CI run verde sustained; Lote 10.11.0-bis-prime cycle 4 honest-flag) + DPIA CI Hook (PR Mudando PII Handling sem DPIA → Fail; Quarterly Privacy Officer Review)
+# WI-S11-008 — DPIA Template `_templates/dpia.md` (GDPR Art. 35 / LGPD Art. 38) + LIA Template (Legitimate Interest Assessment for Telemetry under LGPD Art. 10 / GDPR Art. 6(1)(f)) + 3 DPIAs Filled-In (S-07 Dedup Leakage Risk, S-09 Telemetry Aggregation, S-10 Billing Data Cross-Border) + TLA+ `specs/tla/dsr_erasure_atomicity.tla` Formal Spec (validates `INV-DATA-ERASURE-COMPLETE` + Action `InvConsentSymmetry` validates WI-S11-003 Schema Simétrico Lote 9.4 H-05) + TLC v1.8.0 SHA-256 Pinned (specs/tla/README.md inheritance + ADR-0042 §A1 bootstrap ceremony) — **CI gate ✅ GREEN sustained** (status PLANNED → 🟡 spec written → ✅ GREEN per 2026-05-15-tla-coverage-audit §3; Lote 10.11.0-bis-prime cycle 4 honest-flag contingency satisfied by Lote 10.11.0-bis-bis V2 2026-05-15) + DPIA CI Hook (PR Mudando PII Handling sem DPIA → Fail; Quarterly Privacy Officer Review)
 
 > **doc_status:** SEALED · **work_status:** DONE · **lane:** HIGH_RISK · **sealed:** 2026-05-13
 > **Parent:** [S-11](../sprint.md) · **Assignee:** Gustavo Schneiter
@@ -36,7 +36,7 @@ tags: ["wi", "s11", "dpia", "lia", "gdpr-art-35", "lgpd-art-38", "tla-plus", "ds
 | Campo | Valor |
 |---|---|
 | ID | WI-S11-008 |
-| Título | DPIA template `_templates/dpia.md` GDPR Art. 35 + LGPD Art. 38 + LIA template (Legitimate Interest Assessment LGPD Art. 10 / GDPR Art. 6(1)(f)) + 3 DPIAs filled-in (S-07 dedup leakage + S-09 telemetry aggregation + S-10 billing data cross-border) + TLA+ `specs/tla/dsr_erasure_atomicity.tla` formal spec validates INV-DATA-ERASURE-COMPLETE CRITICAL (Lote 10.11.0-bis: HIGH→CRITICAL com TLA+ commit S-11 WI-S11-008) §3.5 L110 + Action `InvConsentSymmetry` validates WI-S11-003 schema simétrico Lote 9.4 H-05 + TLC v1.8.0 SHA-256 pinned (`d5d07d5dab38ddb840c91ec48fa02f28b37a608d5af9a73570018591dbc8ef7f` per ADR-0042 §A1) — **CI gate pendente** via `.github/workflows/tla_check.yml` (status PLANNED → 🟡 spec written → ✅ GREEN apenas após first CI run verde sustained — Lote 10.11.0-bis-prime cycle 4 honest-flag) + DPIA CI hook valida PR mudando PII handling sem DPIA → fail; quarterly Privacy Officer review + EVT-045 DPIA + EVT-046 LIA evidence em R2 retain 7y |
+| Título | DPIA template `_templates/dpia.md` GDPR Art. 35 + LGPD Art. 38 + LIA template (Legitimate Interest Assessment LGPD Art. 10 / GDPR Art. 6(1)(f)) + 3 DPIAs filled-in (S-07 dedup leakage + S-09 telemetry aggregation + S-10 billing data cross-border) + TLA+ `specs/tla/dsr_erasure_atomicity.tla` formal spec validates INV-DATA-ERASURE-COMPLETE CRITICAL (Lote 10.11.0-bis: HIGH→CRITICAL com TLA+ commit S-11 WI-S11-008) §3.5 L110 + Action `InvConsentSymmetry` validates WI-S11-003 schema simétrico Lote 9.4 H-05 + TLC v1.8.0 SHA-256 pinned (`d5d07d5dab38ddb840c91ec48fa02f28b37a608d5af9a73570018591dbc8ef7f` per ADR-0042 §A1) — **CI gate ✅ GREEN sustained** via `.github/workflows/tla_check.yml` (status PLANNED → 🟡 spec written → ✅ GREEN per 2026-05-15-tla-coverage-audit §3 — Lote 10.11.0-bis-prime cycle 4 honest-flag contingency satisfied by Lote 10.11.0-bis-bis V2 2026-05-15) + DPIA CI hook valida PR mudando PII handling sem DPIA → fail; quarterly Privacy Officer review + EVT-045 DPIA + EVT-046 LIA evidence em R2 retain 7y |
 | Sprint | S-11 |
 | Lane | HIGH_RISK |
 | Forcing factors | FF-HR-003 (PII regulatory), FF-HR-005 (CTRL-FORMAL-001 + CTRL-PRIV-CONSENT-004), FF-HR-010 (1ª regulatory full impl + invariant_registry.md §4.2 L414/452 PLANNED status) |
@@ -820,9 +820,9 @@ And cross-reference com WI-S11-008 commit hash em registry update
 
 | INV | Severity | Position canonical | Cobertura WI-S11-008 |
 |---|---|---|---|
-| **INV-DATA-ERASURE-COMPLETE** | CRITICAL (Lote 10.11.0-bis) | invariant_registry.md §3.5 L110 + §4.2 L414 | TLA+ `InvErasureComplete` invariant declarado em spec; CI gate pendente first run verde (Lote 10.11.0-bis-prime cycle 3 honest-flag — status PLANNED → 🟡 spec written → ✅ GREEN apenas após first CI run); state space 5k-50k explored; cross-backend completion gate proven |
-| **INV-CONSENT-PROOF-VERIFIABLE** | CRITICAL (Lote 10.11.0-bis: TLA+ symmetry) | invariant_registry.md §3.12 L168 + §4.2 L452 | TLA+ Action `InvConsentSymmetry` invariant declarado em spec; CI gate pendente first run verde (Lote 10.11.0-bis-prime cycle 3 honest-flag — status PLANNED → 🟡 spec written → ✅ GREEN apenas após first CI run); schema parity grant ↔ revoke proven (Lote 9.4 H-05) |
-| **INV-AUDIT-APPEND-ONLY** | CRITICAL | invariant_registry.md §3.6 L116 | TLA+ `InvAuditAppendOnly` invariant declarado em spec; CI gate pendente first run verde (Lote 10.11.0-bis-prime cycle 3 honest-flag — status PLANNED → 🟡 spec written → ✅ GREEN apenas após first CI run) (audit_chain Sequence by-construction append-only) |
+| **INV-DATA-ERASURE-COMPLETE** | CRITICAL (Lote 10.11.0-bis) | invariant_registry.md §3.5 L110 + §4.2 L414 | TLA+ `InvErasureComplete` invariant declarado em spec; **CI gate ✅ GREEN sustained** (Lote 10.11.0-bis-prime cycle 3 honest-flag contingency satisfied by Lote 10.11.0-bis-bis V2 2026-05-15 per 2026-05-15-tla-coverage-audit §3); state space 5k-50k explored; cross-backend completion gate proven |
+| **INV-CONSENT-PROOF-VERIFIABLE** | CRITICAL (Lote 10.11.0-bis: TLA+ symmetry) | invariant_registry.md §3.12 L168 + §4.2 L452 | TLA+ Action `InvConsentSymmetry` invariant declarado em spec; **CI gate ✅ GREEN sustained** (Lote 10.11.0-bis-prime cycle 3 honest-flag contingency satisfied by Lote 10.11.0-bis-bis V2 2026-05-15 per 2026-05-15-tla-coverage-audit §3); schema parity grant ↔ revoke proven (Lote 9.4 H-05) |
+| **INV-AUDIT-APPEND-ONLY** | CRITICAL | invariant_registry.md §3.6 L116 | TLA+ `InvAuditAppendOnly` invariant declarado em spec; **CI gate ✅ GREEN sustained** (Lote 10.11.0-bis-prime cycle 3 honest-flag contingency satisfied by Lote 10.11.0-bis-bis V2 2026-05-15 per 2026-05-15-tla-coverage-audit §3) (audit_chain Sequence by-construction append-only) |
 
 ## 13. Artifacts Produced
 
@@ -915,7 +915,7 @@ TLA+ spec syntax canonical em specs/tla/dsr_erasure_atomicity.tla. DPIA + LIA te
 | TLC binary SHA-256 mismatch (supply chain attack) | CRITICAL | SecLead + ADR-0042 §A1 alert + emergency CI block |
 | Quarterly Privacy Officer review skipped | MEDIUM | Privacy Officer escalation + retroactive review |
 | LIA review missing for legitimate interest processing | HIGH | Privacy Officer + Compliance |
-| invariant_registry.md L414/L452 PLANNED → 🟡 → ✅ GREEN status drift | LOW | Architect maintenance grep CI gate |
+| invariant_registry.md L414/L452 PLANNED → 🟡 → ✅ GREEN status drift | **RESOLVED (Lote 10.11.0-bis-bis V2 2026-05-15)** | Architect maintenance grep CI gate — status transition completed per 2026-05-15-tla-coverage-audit §3 |
 | TLA+ scope blow (residency em S-11 attempt) | MEDIUM | Architect + ADR-S11-012 review |
 
 ## 25. Rollback / Recovery
