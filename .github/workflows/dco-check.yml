@@ -1,0 +1,57 @@
+name: dco-check
+
+# DCO (Developer Certificate of Origin) sign-off enforcement.
+# Every commit in a PR must carry a `Signed-off-by: Name <email>` trailer
+# matching the commit author. See CONTRIBUTING.md for the rationale.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  dco:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Verify every commit has Signed-off-by trailer
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          fail=0
+          while IFS= read -r sha; do
+            author=$(git show -s --format='%an <%ae>' "$sha")
+            signoff=$(git show -s --format='%(trailers:key=Signed-off-by,valueonly)' "$sha")
+
+            if [ -z "$signoff" ]; then
+              echo "::error::commit $sha by $author is missing Signed-off-by trailer."
+              echo "::error::Sign with: git commit -s -m 'your message'"
+              fail=1
+              continue
+            fi
+
+            # Ensure at least one signoff matches the author email.
+            if ! echo "$signoff" | grep -q "<$(git show -s --format='%ae' "$sha")>"; then
+              echo "::warning::commit $sha signoff ($signoff) does not match author email ($author)."
+            fi
+          done < <(git rev-list "$BASE_SHA".."$HEAD_SHA")
+
+          if [ "$fail" = "1" ]; then
+            echo ""
+            echo "DCO check FAILED. Every commit must carry 'Signed-off-by: Your Name <you@example.com>'."
+            echo "See CONTRIBUTING.md §DCO for amendment instructions."
+            exit 1
+          fi
+
+          echo "DCO check passed for all commits in this PR."

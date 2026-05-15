@@ -68,3 +68,7 @@ apps/admin-ui/tsconfig.tsbuildinfo
 # Pentest evidence pack build output (regen via scripts/build-pentest-evidence-pack.sh)
 /dist/
 .claude/worktrees/
+
+# LICENSE full-text files materialized by scripts/fetch-license-texts.sh
+/LICENSE-APACHE-2.0.txt
+/LICENSE-MIT.txt

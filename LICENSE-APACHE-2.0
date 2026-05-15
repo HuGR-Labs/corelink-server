@@ -1,0 +1,44 @@
+SPDX-License-Identifier: Apache-2.0
+
+CoreLink (humangr-labs) is dual-licensed at the contributor's option under:
+  - Apache License, Version 2.0  (this file)
+  - MIT License                 (see ./LICENSE-MIT)
+
+Choose whichever fits your downstream needs.
+
+================================================================================
+Apache License, Version 2.0 (January 2004) — full text
+================================================================================
+
+The full text of the Apache License, Version 2.0, is identified
+canonically by the SPDX identifier `Apache-2.0` and is reproduced at:
+
+    https://www.apache.org/licenses/LICENSE-2.0.txt
+    https://spdx.org/licenses/Apache-2.0.html
+
+For licensing tooling and SBOM generators that require the full
+license text on disk, run the helper:
+
+    scripts/fetch-license-texts.sh
+
+which downloads the canonical Apache-2.0 and MIT text from the
+SPDX archive into LICENSE-APACHE-2.0.txt and LICENSE-MIT.txt
+respectively. The downloaded files are gitignored to keep the
+working tree small; CI provisions them automatically on cargo
+package / SBOM generation.
+
+================================================================================
+Copyright
+================================================================================
+
+Copyright 2026 HuGR Labs and CoreLink contributors.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may
+not use this software except in compliance with the License. You may
+obtain a copy of the License at the URL above.
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+implied. See the License for the specific language governing
+permissions and limitations under the License.
