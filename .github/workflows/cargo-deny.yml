@@ -60,7 +60,7 @@ jobs:
         # Version bump requires ADR + Security review per §14.s12.004.1.
         # `--all-features` ensures wasm32 + host-server features both audited.
         # `--hide-inclusion-graph` reduces noise on large dep trees.
-        uses: EmbarkStudios/cargo-deny-action@df3b2489a2ea6e663bae7ac3784afc3231452051 # v2.0.4
+        uses: EmbarkStudios/cargo-deny-action@e2f4ede4a4e60ea15ff31bc0647485d80c66cfba # v2.0.4
         with:
           command: check
           arguments: --all-features --hide-inclusion-graph
