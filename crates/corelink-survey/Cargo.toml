@@ -1,0 +1,49 @@
+[package]
+name = "corelink-survey"
+description = "CoreLink customer-health survey infrastructure (R-prep, retention lane). HMAC-SHA256-signed one-shot invite tokens (`SurveyLinkSigner::sign_invite`) → click-through → constant-time verify + TTL + replay-rejection → recorded response (`SurveyResponseRecorder::record`). Four canonical survey kinds: NPS (0-10), CSAT (1-5), free-text (sanitized + length-capped), multi-choice (bounded option set). Audit fail-CLOSED on every record path. `InMemoryFake` test sink; production D1 + outbox + abuse-throttle wiring deferred per autonomous-execution charter trait-abstraction-defer. Closes the retention-survey infra gap surfaced after `marketing/retention/customer-health/NPS-SURVEY-SCHEDULE` was sealed (the schedule documents when surveys go out; this crate provides the actual auth-without-password + storage + anti-spam primitives)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+hmac = { workspace = true }
+sha2 = { workspace = true }
+subtle = { workspace = true }
+base64 = { workspace = true }
+hex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+zeroize = { workspace = true }
+uuid = { workspace = true, features = ["v7", "rng-getrandom", "serde"] }
+corelink-audit = { path = "../corelink-audit" }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[[example]]
+name = "sign_and_record"
+path = "examples/sign_and_record.rs"
+
+[[test]]
+name = "prop_survey"
+path = "tests/prop_survey.rs"
