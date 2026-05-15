@@ -445,7 +445,7 @@ WHITELIST_IDS = {
     "INV-BYOK-CMK-ERASURE-ATOMICITY",        # S-14 BYOK erasure
     "INV-BYOK-CMK-NEVER-LEAVES-CUSTOMER",    # S-14 BYOK customer key (DD-AWS-KMS)
     "INV-CACHE-001",                         # legacy short-form (DD-CLOUDFLARE)
-    "INV-CAS-DIGEST-INTEGRITY",              # S-09 dashboards (WI-S09-005)
+    "INV-CAS-DIGEST-INTEGRITY",              # Lote 10.9bis wave 17 — renamed to canonical INV-CAS-INTEGRITY (registry §3.2); historical alias retained for review-doc references (R4/R5 closure footnotes)
     "INV-CONSENT-NO-FAIL-OPEN",              # S-11 consent (GDPR audit)
     "INV-DATA-CRYPTO-001",                   # legacy short-form (DD-CLOUDFLARE)
     "INV-DSR-AUDIT-FAIL-CLOSED",             # S-11/S-15 DSR
@@ -454,10 +454,10 @@ WHITELIST_IDS = {
     "INV-DSR-RECEIPT-90D",                   # S-15 DSR receipt
     "INV-DSR-TENANT-ISOLATION",              # S-15 DSR isolation
     "INV-DSR-VERIFIED-CLOCK",                # S-15 DSR clock
-    "INV-EXEC-IDEMPOTENT",                   # S-09 dashboards
+    # INV-EXEC-IDEMPOTENT: removed Lote 10.9bis wave 17 — promoted to registry §3.12 (S-09 row, HIGH)
     "INV-ISO-CONSTANT-TIME-404",             # S-09 isolation
     "INV-ISO-NO-CROSS-LEAK",                 # S-09 isolation
-    "INV-LGPD-AUTO-SUSPEND-FORBIDDEN",       # S-15 LGPD
+    # INV-LGPD-AUTO-SUSPEND-FORBIDDEN: removed Lote 10.9bis wave 17 — promoted to registry §3.12 (S-09 row, HIGH; LGPD Art. 20 + GDPR Art. 22)
     "INV-OFFBOARDING-AUDIT-COMPLETE",        # S-15 tenant offboarding
     "INV-OFFBOARDING-GRACE-RESPECTED",       # S-15 tenant offboarding
     "INV-PRIVACY-PSEUDONYMIZE-ON-ERASURE",   # S-15 privacy
