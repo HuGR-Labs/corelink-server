@@ -119,7 +119,7 @@ Format key:
 |---|---|---|---|---|---|---|
 | CC7.1 | CTRL-SUPPLY-004 + CTRL-SUPPLY-005 | vulnerability_management | ADR-0037 Dependency-Track + `deny.toml` cargo-deny + `specs/_audits/2026-05-14-cargo-fuzz-summary-s15.md` | DAILY | I | f18acdc |
 | CC7.2 | CTRL-META-001 | audit_logs | Prometheus catalog + DASH-GA-READINESS + DASH-COMPLIANCE-S20 + pentest summaries | DAILY | I | f18acdc |
-| CC7.3 | process control (PagerDuty + RB-BREACH-NOTIF) | incident_response | WI-S20-006 PagerDuty 24/7 + 3 regions + synthetic page weekly + RB-BREACH-NOTIF | AUTO | P (GAP-03 — IR tabletop end-to-end) | f18acdc |
+| CC7.3 | process control (PagerDuty + RB-BREACH-NOTIF + IR-TABLETOP-PLAYBOOK) | incident_response | WI-S20-006 PagerDuty 24/7 + 3 regions + synthetic page weekly + RB-BREACH-NOTIF + IR-TABLETOP-PLAYBOOK.md (6 scenarios; quarterly cadence; first session Q3-2026) | AUTO | P (GAP-03 — playbook + 6 scenarios + 2026 schedule landed; first execution pending Q3-2026) | f18acdc |
 | CC7.4 | process control (runbook RB-* suite) | incident_response | RB-BREACH-NOTIF + RB-CONSENT-TAMPERING + RB-DATA-RESIDENCY-LEAK + RB-DSR-ERASURE-INCOMPLETE + RB-BYOK-REVOKE | AUTO | P (GAP-12 — postmortem template) | f18acdc |
 | CC7.5 | process control (RB-DR-DRILL + chaos drills) | incident_response | RB-DR-DRILL + `specs/_audits/2026-05-14-region-outage-chaos-s14.md` + byok-kill-switch drill | QUARTERLY (target) | P (GAP-13 — DR cadence calendarized) | f18acdc |
 
@@ -197,7 +197,7 @@ Format key:
 | Rank | GAP ID | Title | Severity | Audit impact | Effort to close | ETA |
 |---|---|---|---|---|---|---|
 | 1 | **GAP-02** | BYOK FIPS attestation per provider (AWS L3 attested; GCP L1 + Azure pending) | **blocking-GA** | CC6.1 + C1.1 → would force qualified opinion if open at fieldwork | S (collect 2 signed letters; update `compliance/byok-fips-matrix.md`) | **D+30 hard cap** |
-| 2 | GAP-03 | IR plan documented but not tested end-to-end with paging + comms simulation | major | CC7.3 evidence-of-operation deficiency at Type II | M (90-min tabletop + 30d synthetic page sustained) | D+60 |
+| 2 | GAP-03 | IR plan documented but not tested end-to-end with paging + comms simulation | major | CC7.3 evidence-of-operation deficiency at Type II | M (playbook + 6 scenarios + 2026 schedule LANDED 2026-05-15 via wt/gap03-ir-tabletop; first session TT-01 Q3-2026 + TT-02 Q3-2026; full 6-scenario rotation completes Q1-2027) | D+60 (artefacts) · Q3-2026 (first execution) |
 | 3 | GAP-14 | Vendor risk register completion (10/14 sub-processors documented; Sentry / Stripe Atlas counsel / PostHog / LogRocket pending) | major | CC9.2 + LGPD Art. 33 cross-framework risk | M (4 sub-processor risk reviews) | D+60 |
 | 4 | GAP-15 | Quarterly cold restore drill end-to-end (region-failover tested; cold restore not yet) | major | A1.2 evidence gap; Type II operating-effectiveness blocker | L (full DR restore drill + attestation doc) | T+2m |
 | 5 | GAP-22 | LGPD Art. 33 §1º residency attestation per region | major | Cross-framework (SOC 2 + LGPD); EDPB SCCs touch-point | M (per-region attestation; Drata + DPA template) | D+60 |
@@ -260,7 +260,7 @@ For each Gap or Partial row, the following table assigns owner / effort / target
 |---|---|---|---|---|---|
 | GAP-01 | CC6.3 | Compliance Officer | M | D+30 | Manual quarterly review w/ Drata report exported; automation deferred to T+1m |
 | **GAP-02** | **CC6.1 + C1.1** | **Architect** | **S** | **D+30 hard cap** | **Fallback ADR per WI-S20-003 §5.2: reclassify as non-blocking; explicit waiver in `compliance/byok-fips-matrix.md` with expiry T+90d** |
-| GAP-03 | CC7.3 | SRE Lead | M | D+60 | Synthetic page sustained 30d covers operational evidence; full tabletop deferred to T+1m |
+| GAP-03 | CC7.3 | SRE Lead | M | D+60 (artefacts done 2026-05-15) · Q3-2026 first execution | Playbook + 6 scenarios + evidence template + 2026 schedule LANDED via wt/gap03-ir-tabletop. NIST 800-61 Rev.2 aligned. First sessions TT-01 (2026-07-22) + TT-02 (2026-09-09); full rotation completes Q1-2027. Synthetic page sustained 30d continues as parallel operational evidence stream. |
 | GAP-04 | CC1.2 | Owner | M | T+1m | Owner attestation as solo-founder + advisor-pool engagement letters by T+1m |
 | GAP-05 | CC1.4 | Compliance | S | T+2m | Owner attestation as solo-founder; advisor CVs collected at onboarding |
 | GAP-06 | CC2.3 + P-BREACH | Privacy Officer | M | T+1m | Internal tabletop in lieu of lighthouse-customer dry-run; reschedule lighthouse drill T+2m |

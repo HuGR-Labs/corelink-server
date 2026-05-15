@@ -112,6 +112,7 @@ tags: ["runbook", "index", "catalog", "r6-2"]
 
 - `specs/_runbooks/` — process / governance runbooks (RB-ONCALL-POLICY, RB-CHAOS-CATALOG, RB-POSTMORTEM-PROCESS, RB-PENTEST-FINDING-RESPONSE, RB-TABLETOP-TEMPLATE, RB-DRATA-SYNC-FAILURE, RB-BACKUP-VERIFICATION, RB-D1-MIGRATION-APPLY, RB-DPA-CHANGE, RB-LIGHTHOUSE-CUSTOMER-INCIDENT, RB-SYNTHETIC-PAGE-DRILL, RB-SYSTEM-CMK-ROTATION).
 - `specs/05_runbooks/` — RB-RUNBOOK-DRILL-INDEX (canonical drill catalog), RB-BYOK-REVOKE (sibling), RB-region (legacy).
+- `specs/_compliance/IR-TABLETOP-PLAYBOOK.md` — **Incident-Response tabletop master playbook** (NIST 800-61 Rev.2 aligned; quarterly cadence; 6 scenarios under `specs/_compliance/ir-scenarios/TT-01..TT-06`; auditor-ready evidence form at `specs/_compliance/templates/IR-TABLETOP-EVIDENCE.md`; 2026 schedule at `specs/_compliance/IR-TABLETOP-SCHEDULE-2026.md`). SOC 2 CC7.3 + CC7.4 + CC7.5. Closes GAP-03. Companion to BCP/DR cadence (operational rehearsal); IR tabletops focus on full human-IR program (IC + Legal + Comms + Privacy + Customer Comms seats).
 
 > `validate_references.py` indexes only `specs/05_quality/runbooks/` for canonical RB definitions; cross-refs to RBs in `_runbooks/` and `05_runbooks/` resolve via path-relative links but do not satisfy the registry. New canonical runbooks SHOULD live here.
 

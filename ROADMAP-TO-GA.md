@@ -181,6 +181,10 @@ Pre-conditions: R-2 wiring deployed to staging; R-4 apps deployed; chaos cron fi
 
 Canonical 90-day pre-GA BCP/DR rehearsal calendar (14 drills covering P1 single-region, P2 cross-region + BYOK CMK rotation, P3 full SEV1 simulations, X cross-cutting) lives in `specs/_compliance/BCP-DR-DRILL-CADENCE.md`. The companion 3-tier (L1/L2/L3) on-call escalation matrix with severity × tier × SLA + comms templates + conflict tie-breakers lives in `specs/_runbooks/ONCALL-ESCALATION-MATRIX.md`. Each drill emits an auditor-ready evidence doc per the template in `specs/_compliance/templates/DR-DRILL-EVIDENCE.md` (SOC 2 CC7.5 + CC9.1 + ISO 27031 §8.4 aligned).
 
+### IR tabletop playbook (Incident Response rehearsal — GAP-03)
+
+Companion to the BCP/DR drill cadence (which focuses on SRE-level operational recovery), the **IR tabletop playbook** lives in `specs/_compliance/IR-TABLETOP-PLAYBOOK.md` (NIST SP 800-61 Rev.2 aligned; quarterly cadence; 90–120 min/session). It exercises the end-to-end human IR program — IC, Scribe, Comms, Tech Lead, Legal Liaison, Privacy Officer, Customer Comms Lead, Security Lead. Six scenarios catalogued under `specs/_compliance/ir-scenarios/`: TT-01 SEV0 data breach (BYOK envelope leak), TT-02 SEV1 cascading failure (D1 replica lag + audit-chain head divergence), TT-03 Stripe webhook compromise, TT-04 insider threat (bulk PAT issuance), TT-05 supply-chain compromise (cargo-audit CRITICAL), TT-06 DDoS / abuse storm. 2026/Q1-2027 execution schedule in `specs/_compliance/IR-TABLETOP-SCHEDULE-2026.md`; auditor-ready evidence form in `specs/_compliance/templates/IR-TABLETOP-EVIDENCE.md`. SOC 2 CC7.3 + CC7.4 + CC7.5 operating-effectiveness evidence. **GAP-03 status:** artefacts landed 2026-05-15 via `wt/gap03-ir-tabletop`; first execution Q3-2026 (TT-01 + TT-02); full 6-scenario rotation completes Q1-2027.
+
 ### Agent work during R-6
 
 | # | Work item | Owner | Cadence |
