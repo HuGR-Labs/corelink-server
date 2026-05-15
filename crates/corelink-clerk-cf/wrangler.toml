@@ -24,6 +24,12 @@ compatibility_date = "2026-04-01"
 [build]
 command = "cargo build --target wasm32-unknown-unknown --release -p corelink-clerk-cf"
 
+# Wave 15 — Production wiring exercises all 4 CF runtime surfaces
+# through their real-binding wrappers in `corelink-cf-bindings`. The
+# `crates/corelink-clerk-cf/src/prod_wiring.rs` boot path resolves the
+# four bindings below and wraps each in its `Cf*Real` adapter (tenant-
+# prefix enforced + audit-fenced).
+
 # KV namespace binding — JWKS cache + health marker.
 # PLACEHOLDER IDs: replace with real IDs from `wrangler kv namespace create`
 # before deploying.
@@ -39,6 +45,33 @@ preview_id = "PLACEHOLDER_KV_PREVIEW_ID"
 binding = "CLERK_DB"
 database_name = "clerk-audit-db"
 database_id = "PLACEHOLDER_D1_DATABASE_ID"
+
+# R2 bucket binding — content-addressable store. The health probe
+# issues a `head` against `<tenant>/health/probe` so the binding chain
+# is exercised end-to-end even when CAS payloads are not in scope of
+# the clerk-cf Worker. Bound via `CfR2BucketReal` in `prod_wiring.rs`.
+[[r2_buckets]]
+binding = "CAS_BUCKET"
+bucket_name = "corelink-cas-bucket"
+preview_bucket_name = "corelink-cas-bucket-preview"
+
+# Durable Object namespace binding — per-tenant actors (counter,
+# ratelimit, lease). The health probe issues a `stub_by_name("health")`
+# resolution to exercise tenant-scoped naming + audit fence. The actor
+# class itself is wired in the main Worker (`apps/server`); this POC
+# only consumes the namespace handle. Bound via `CfDurableObjectReal`
+# in `prod_wiring.rs`.
+[[durable_objects.bindings]]
+name = "CLERK_DO"
+class_name = "ClerkHealthDo"
+script_name = "corelink-server"
+
+# When the main Worker introduces a new DO migration, mirror the tag
+# here. Empty for the PoC (the script_name above references the main
+# Worker's already-deployed DO class).
+[[migrations]]
+tag = "v1"
+new_classes = []
 
 [vars]
 ENVIRONMENT = "dev"

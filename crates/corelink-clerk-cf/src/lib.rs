@@ -33,9 +33,13 @@
 
 #![forbid(unsafe_code)]
 
+pub mod audit_sink;
 pub mod cf_fetch;
 pub mod cf_kv;
 pub mod health;
+pub mod prod_wiring;
 
+pub use audit_sink::{AuditEvent, AuditSink};
 pub use cf_fetch::CfJwksFetcher;
 pub use cf_kv::CfKvJwksCache;
+pub use prod_wiring::{CfRealBindings, TenantContext, WiringError};

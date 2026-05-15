@@ -61,9 +61,16 @@ tracing = { workspace = true }
 wasm-bindgen-futures = "0.4"
 
 # R2-10 — production CF binding adapters (R2/D1/KV/DO) implementing the
-# trait surfaces from corelink-worker. We pull this into the fetch
-# handler to demonstrate end-to-end adapter wiring and so the adapter
-# crate is not orphaned in the workspace dependency graph. wasm32-only:
-# the crate root carries `#![cfg(target_arch = "wasm32")]` so native
-# `cargo build --workspace` is unaffected.
+# trait surfaces from corelink-worker. Wave 15 promotes this from an
+# opportunistic surface-touch to the canonical binding-access path for
+# the CF Worker boot — see `src/prod_wiring.rs`. The cf-bindings crate
+# provides both the wasm32 production wrappers and host-side
+# `stub_for_native_tests` constructors used by `tests/prod_wiring.rs`
+# to exercise the boot path on native CI.
 corelink-cf-bindings = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+# Host-side integration tests in `tests/prod_wiring.rs` use tokio as
+# the async test runtime. The wasm32 build does not use tokio (the
+# canonical async surface there is the worker::* futures).
+tokio = { workspace = true, features = ["macros", "rt"] }
