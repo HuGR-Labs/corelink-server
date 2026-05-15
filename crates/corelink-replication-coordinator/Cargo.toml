@@ -1,0 +1,42 @@
+[package]
+name = "corelink-replication-coordinator"
+description = "CoreLink multi-region replication coordinator (R-PREP wave-15 follow-on to DEBT-011 wave 11+13). Orchestrates per-region health (heartbeat from each replica-worker), routes writes to the primary, monitors replica lag against SLO-REPLICATION-LAG-{R2,D1,KV,NEON} (bound from wave 14 DR-16), and executes the failover decision tree (`PRIMARY` / `HOT_STANDBY` / `REPLICA` 3-state per region) with INV-FAILOVER-NO-SPLIT-BRAIN singleton-promotion-lock guarantee. Failback after primary recovery applies the canonical 24h hot-standby cool-down (resilience_patterns.md). Emits `corelink.failover.region_promoted.v1` audit event fail-CLOSED before any state mutation (S-06 P0-2 audit-fail-CLOSED pattern). Exposes a pure-logic `replication_status()` API consumed by `/health` and customer dashboards. Pure-logic skeleton + InMemory orchestrator per autonomous-execution charter `trait-abstraction-defer`; real Cloudflare DO singleton-lock wiring is deferred."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+corelink-replica-worker = { path = "../corelink-replica-worker" }
+corelink-failover-router = { path = "../corelink-failover-router" }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[[test]]
+name = "prop_coordinator"
+path = "tests/prop_coordinator.rs"
+
+[[test]]
+name = "split_brain_reject"
+path = "tests/split_brain_reject.rs"

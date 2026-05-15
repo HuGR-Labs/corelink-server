@@ -75,6 +75,15 @@ members = [
     "apps/migrate-single-to-multi-region",
     "crates/corelink-replica-worker",
     "crates/corelink-failover-router",
+    # R-PREP wave-15 multi-region replication coordinator (production
+    # follow-on to DEBT-011 wave 11+13 SLI ticketsand DR-16 wave-14
+    # failover-router). Singleton DO-lock-modeled orchestrator: per-
+    # region health (heartbeat + 4-domain lag), failover decision tree
+    # (PRIMARY/HOT_STANDBY/REPLICA 3-state), audit-emit-BEFORE-mutation
+    # fail-CLOSED, 24h failback cool-down, replication_status() API for
+    # /health + customer dashboards. Pure-logic skeleton +
+    # trait-abstraction-defer per autonomous-execution charter.
+    "crates/corelink-replication-coordinator",
     # S-14 BYOK (WI-S14-004 trait canonical + WI-S14-005 adapters + matrix
     # test + WI-S14-006 revocation/alerts ported to canonical per sprint-
     # close P0-1 + P0-2 fixes)
@@ -222,6 +231,10 @@ members = [
     # deterministic logical clock + write-lease ledger so split-brain
     # absence is provable. Companion to RB-ACTIVE-FAILOVER + DR-16.
     "tests/e2e-failover-router",
+    # R-PREP wave-15 multi-region replication coordinator end-to-end
+    # harness (scenarios: primary fail → replica promoted → failback
+    # after 24h; split-brain rejection; replica-lag SLO breach reroute).
+    "tests/e2e-replication-failover",
     # R-prep survey infra (NPS / CSAT / free-text / multi-choice).
     # HMAC-SHA256-signed one-shot invite tokens + TTL + audit-fail-CLOSED
     # record path + in-memory fake. Anti-abuse runbook RB-SURVEY-ABUSE +

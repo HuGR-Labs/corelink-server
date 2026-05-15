@@ -680,6 +680,7 @@ Por 6 meses (até 2026-10-24), estes aliases continuam referenciáveis mas dispa
 | `INV-DATA-BLOB-NO-ZOMBIE` | INV-GC-002 |
 | `INV-DATA-AC-REFS-EXIST` | INV-AC-OUTPUTS-VALID |
 | `INV-DATA-TENANT-ISOLATION` | INV-TENANT-ISOLATION |
+| `INV-FAILOVER-NO-SPLIT-BRAIN` (sibling property to write-lease side; coined em `failover_no_split_brain.tla` wave-12 + reused em `replica_failover.tla` wave-15) | INV-REGION-NO-CROSS-LEAK |
 
 ---
 
