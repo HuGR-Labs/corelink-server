@@ -20,6 +20,9 @@ inherits_from:
 tags: ["runbook", "gdpr", "gdpr-art-12", "gdpr-art-15", "gdpr-art-16", "gdpr-art-17", "gdpr-art-18", "gdpr-art-19", "gdpr-art-20", "gdpr-art-21", "gdpr-art-22", "dsr", "data-subject-rights"]
 ---
 
+<!-- forensics-backlink -->
+> **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §4, §8.1.
+
 # RB-DSR-GDPR — Internal runbook for GDPR Art. 12-22 DSR processing
 
 > **Status:** DRAFT. Owner: interim Privacy Officer (Gustavo Schneiter); transferred to formal DPO post-appointment.

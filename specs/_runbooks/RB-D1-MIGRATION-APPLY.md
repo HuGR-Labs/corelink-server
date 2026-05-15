@@ -14,6 +14,9 @@ superseded_by: null
 tags: ["runbook", "r2-13", "d1", "migrations", "schema-change", "deploy"]
 ---
 
+<!-- forensics-backlink -->
+> **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §4.
+
 # RB-D1-MIGRATION-APPLY — D1 schema migration apply runbook
 
 > **Status:** ACTIVE. Owned by SRE Lead + DBA. Covers the canonical

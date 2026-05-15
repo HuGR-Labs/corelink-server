@@ -15,6 +15,9 @@ parent: "WI-R2-14"
 tags: ["runbook", "r-prep", "secrets", "drift", "soc2", "cc6.1", "supply-chain"]
 ---
 
+<!-- forensics-backlink -->
+> **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §5.4, §8.4.
+
 # RB-SECRETS-DRIFT — Secrets-matrix drift triage
 
 > **Owned by:** SRE Lead (co-owned with Security Lead).

@@ -14,6 +14,9 @@ superseded_by: null
 tags: ["runbook", "r6-prep", "backup-verification", "dr", "monthly-cadence"]
 ---
 
+<!-- forensics-backlink -->
+> **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §10.
+
 # RB-BACKUP-VERIFICATION — Monthly Backup Verification
 
 > **Status:** ACTIVE. Owned by SRE Lead. Cadence: monthly, first Monday

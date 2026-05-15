@@ -15,6 +15,9 @@ parent: "WI-S19-006"
 tags: ["runbook", "p1", "onboarding", "signup", "atomic-provisioning", "dpa-first", "stub", "s19"]
 ---
 
+<!-- forensics-backlink -->
+> **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §6.
+
 # RB-FM-SIGNUP-FAILED — Signup Atomicity Violation (Orphan Tenant / DPA-First Race / Stripe Outage Partial)
 
 > **FM:** FM-X-SIGNUP-FAILED (S=4, O=2, D=3, RPN=24, P1) | **CTRL:** CTRL-ONBOARD-001..006, CTRL-PRIV-CONSENT-001..006 | **INV:** **INV-ONBOARD-ATOMIC-PROVISIONING** + **INV-ONBOARD-DPA-FIRST** | **SLA:** detect ≤ 10 min, mitigate ≤ 60 min, customer-notify ≤ 24 h

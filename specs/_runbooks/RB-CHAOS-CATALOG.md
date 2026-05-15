@@ -14,6 +14,9 @@ superseded_by: null
 tags: ["runbook", "s17", "chaos", "chaos-engineering", "chaos-catalog", "chaos-automation", "deterministic-seed", "safe-mode", "staging", "ops-maturity", "fm-coverage", "cleanup-pass"]
 ---
 
+<!-- forensics-backlink -->
+> **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §8.
+
 # RB-CHAOS-CATALOG — Chaos experiment catalog & FM ↔ runbook cross-reference
 
 > **Status:** ACTIVE. This document is the canonical catalog of the 8

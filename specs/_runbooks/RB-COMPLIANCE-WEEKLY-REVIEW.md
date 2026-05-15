@@ -17,6 +17,9 @@ inherits_from: ["SOC2-EVIDENCE-ROLLUP-2026-05-15", "SOC2-GAP-ANALYSIS-2026-05-14
 tags: ["runbook", "compliance", "soc2", "cc4.2", "gap-08", "weekly", "drata"]
 ---
 
+<!-- forensics-backlink -->
+> **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §10.
+
 # RB-COMPLIANCE-WEEKLY-REVIEW — Monday compliance digest triage
 
 > **Status:** ACTIVE. Owned by the Compliance Lead (Gustavo Schneiter until external advisor pool retained per GAP-04). Triggered every Monday 09:00 UTC by `.github/workflows/compliance-weekly.yml`. Operating-effectiveness evidence for **SOC 2 CC4.2** ("Evaluates and communicates deficiencies"). Closes **GAP-08** of `specs/_compliance/SOC2-EVIDENCE-ROLLUP-2026-05-15.md`.

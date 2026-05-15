@@ -272,6 +272,14 @@ codebase.
 - Attend **one sprint-close review** if timing aligns. If not, read the
   most recent `specs/04_sprints/SXX/audit_*.md` to see what one looks
   like.
+- **Read the forensics guide.** `docs/internal/FORENSICS-GUIDE.md` is
+  the canonical first-responder reference for production incidents.
+  Read end-to-end at least once before your first on-call shadow week
+  — it cross-links every `RB-*` runbook and tells you which forensic
+  script to reach for. Bonus credit: run
+  `scripts/forensics/audit-gap-detector.py` against a sample export
+  from a past drill (`specs/_compliance/drill-evidence/`) so you've
+  exercised at least one tool before you need it for real.
 
 By end of Day 5, you should have **one PR merged to `main`**.
 

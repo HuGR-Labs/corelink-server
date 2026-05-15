@@ -14,6 +14,9 @@ superseded_by: null
 tags: ["runbook", "load-test", "endurance", "24h", "drill", "ga-evidence", "r-prep", "r-6"]
 ---
 
+<!-- forensics-backlink -->
+> **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §2, §10.
+
 # RB-ENDURANCE-24H-DRILL — Manual 24-Hour Endurance Drill
 
 > **Parent WI:** R-6 staging endurance (see `ROADMAP-TO-GA.md` §6).

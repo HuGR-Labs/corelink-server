@@ -15,6 +15,9 @@ parent: "WI-S20-004"
 tags: ["runbook", "p0", "lighthouse", "incident", "sla", "s20", "30d-observation"]
 ---
 
+<!-- forensics-backlink -->
+> **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §1, §6.
+
 # RB-LIGHTHOUSE-CUSTOMER-INCIDENT — Lighthouse Customer Incident Response (P0)
 
 > **Severity floor:** **P0** — lighthouse customers are GA Evidence Gate D+60 critical (WI-S20-004 §6.1.7).

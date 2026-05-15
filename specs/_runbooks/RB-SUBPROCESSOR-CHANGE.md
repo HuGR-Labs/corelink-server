@@ -17,6 +17,9 @@ inherits_from: ["VENDOR-RISK-REGISTER-2026-05-15", "RB-VENDOR-RISK-QUARTERLY-REV
 tags: ["runbook", "subprocessor", "lgpd", "gdpr", "privacy", "ctrl-priv-021", "legal-review"]
 ---
 
+<!-- forensics-backlink -->
+> **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §10.
+
 # RB-SUBPROCESSOR-CHANGE — Sub-processor add / change / remove runbook
 
 > **Status:** ACTIVE. Owned by VP-Sec (technical) + DPO (regulatory).

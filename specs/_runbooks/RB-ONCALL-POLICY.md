@@ -14,6 +14,9 @@ superseded_by: null
 tags: ["runbook", "oncall", "rotation", "fatigue", "burnout-prevention", "rb-oncall-policy", "wi-s17-005", "wi-s20-006", "24-7", "follow-the-sun"]
 ---
 
+<!-- forensics-backlink -->
+> **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §1.
+
 # RB-ONCALL-POLICY — Oncall Rotation, Fatigue, and Handoff Policy
 
 > **Parent WI:** [WI-S17-005](../04_sprints/S17/work_items/WI-S17-005-oncall-pagerduty-schedule-fadigue-tracking-dashboard.md)

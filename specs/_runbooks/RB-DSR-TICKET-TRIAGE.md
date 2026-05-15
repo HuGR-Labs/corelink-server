@@ -24,6 +24,9 @@ tags:
   - "wt-r-prep-support-runbook"
 ---
 
+<!-- forensics-backlink -->
+> **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §8.1.
+
 # RB-DSR-TICKET-TRIAGE — DSR Inbound Ticket Triage
 
 > **Purpose:** map inbound DSR (Data Subject Request) requests through the **existing DSR pipeline** (`crates/corelink-dsr/`) end-to-end: intake → identity verification → routing → fulfilment → legal escalation when unusual.

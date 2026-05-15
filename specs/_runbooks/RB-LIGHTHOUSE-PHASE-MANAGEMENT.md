@@ -15,6 +15,9 @@ parent: "WI-S20-004"
 tags: ["runbook", "lighthouse", "phase-management", "s20", "r5-2", "30d-observation", "state-machine", "operational"]
 ---
 
+<!-- forensics-backlink -->
+> **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §1.
+
 # RB-LIGHTHOUSE-PHASE-MANAGEMENT — Lighthouse Customer Phase Management (Internal)
 
 > **Sibling to** `RB-LIGHTHOUSE-CUSTOMER-INCIDENT.md`. That runbook handles **P0 fire**. This runbook handles the **steady-state lifecycle** — who owns each phase, when state machine transitions flip, the standard comms cadence, and what to do when a soft escalation happens (i.e. not a P0 page, but the engagement still needs intervention).

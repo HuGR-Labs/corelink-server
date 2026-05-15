@@ -17,6 +17,9 @@ inherits_from: ["VENDOR-RISK-REGISTER-2026-05-15", "VENDOR-RISK-METHODOLOGY-2026
 tags: ["runbook", "soc2", "cc9.2", "vendor-risk", "quarterly", "gap-14"]
 ---
 
+<!-- forensics-backlink -->
+> **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §10.
+
 # RB-VENDOR-RISK-QUARTERLY-REVIEW — 90-day vendor risk review cycle
 
 > **Status:** ACTIVE. Owned by VP-Sec. Triggered by the quarterly calendar reminder

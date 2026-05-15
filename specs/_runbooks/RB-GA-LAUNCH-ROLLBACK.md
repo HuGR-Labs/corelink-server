@@ -15,6 +15,9 @@ parent: "GA-GATE-CRITERIA"
 tags: ["runbook", "p0", "ga", "launch", "rollback", "private-preview", "r7", "r8", "decision-tree", "comms"]
 ---
 
+<!-- forensics-backlink -->
+> **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §2.2.
+
 # RB-GA-LAUNCH-ROLLBACK — GA Launch Rollback to Private Preview
 
 > **Severity floor:** **P0** — invoking this runbook means GA launch is being **reverted** (or threatened with revert) to a private-preview / closed-beta posture. This is the highest-stakes operational decision short of SEV-0 data loss.

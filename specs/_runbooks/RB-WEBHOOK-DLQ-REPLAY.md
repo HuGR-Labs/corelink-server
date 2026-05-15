@@ -14,6 +14,9 @@ superseded_by: null
 tags: ["runbook", "stripe", "webhook", "dlq", "replay", "billing", "r-prep"]
 ---
 
+<!-- forensics-backlink -->
+> **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §3, §4, §8.2, §8.3.
+
 # RB-WEBHOOK-DLQ-REPLAY — Stripe Webhook Dead-Letter Replay
 
 **Scope.** Operator runbook for the `stripe_webhook_events_dlq` D1

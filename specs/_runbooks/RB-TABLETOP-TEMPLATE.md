@@ -14,6 +14,9 @@ superseded_by: null
 tags: ["runbook", "template", "tabletop", "game-day", "s17", "ops-maturity", "sre"]
 ---
 
+<!-- forensics-backlink -->
+> **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §1.
+
 # RB-TABLETOP-TEMPLATE — Game Day Tabletop Exercise Template (60-min default; 4-hour quarterly)
 
 > **Purpose:** standardised facilitation template for CoreLink game day
