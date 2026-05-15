@@ -176,13 +176,17 @@ Pre-conditions: R-2 wiring deployed to staging; R-4 apps deployed; chaos cron fi
 - Zero data residency violations
 - 90d SBOM retention proof daily
 
+### BCP / DR drill cadence + on-call escalation (operational rehearsal)
+
+Canonical 90-day pre-GA BCP/DR rehearsal calendar (14 drills covering P1 single-region, P2 cross-region + BYOK CMK rotation, P3 full SEV1 simulations, X cross-cutting) lives in `specs/_compliance/BCP-DR-DRILL-CADENCE.md`. The companion 3-tier (L1/L2/L3) on-call escalation matrix with severity × tier × SLA + comms templates + conflict tie-breakers lives in `specs/_runbooks/ONCALL-ESCALATION-MATRIX.md`. Each drill emits an auditor-ready evidence doc per the template in `specs/_compliance/templates/DR-DRILL-EVIDENCE.md` (SOC 2 CC7.5 + CC9.1 + ISO 27031 §8.4 aligned).
+
 ### Agent work during R-6
 
 | # | Work item | Owner | Cadence |
 |---|---|---|---|
 | R6-1 | **Daily evidence digest** — Sonnet agent reads dashboards + audit chain + chaos results + pages, generates `specs/_audits/2026-MM-DD-daily-staging-evidence.md` | 1 Sonnet | Daily |
 | R6-2 | **Weekly chaos report** — aggregate weekly chaos drill outcomes + flag regressions | 1 Sonnet | Weekly |
-| R6-3 | **Incident response if SEV-1** — orchestrator emergency dispatch; root cause + postmortem within 24h | Orchestrator + 2 Sonnets if needed | Ad-hoc |
+| R6-3 | **Incident response if SEV-1** — orchestrator emergency dispatch per `specs/_runbooks/ONCALL-ESCALATION-MATRIX.md`; root cause + postmortem within 24h. **Drill cadence companion:** `specs/_compliance/BCP-DR-DRILL-CADENCE.md` rehearses the same path bi-weekly (DR-009/DR-010). | Orchestrator + 2 Sonnets if needed | Ad-hoc |
 
 **Wave R-6 gate:** 30 consecutive days of `daily-staging-evidence.md` showing all green; tag `roadmap-r6-sealed`.
 

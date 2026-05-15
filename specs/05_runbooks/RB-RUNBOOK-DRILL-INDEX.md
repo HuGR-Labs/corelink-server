@@ -217,6 +217,14 @@ runbooks:
 * `specs/05_quality/resilience_patterns.md` — PAT-RUNBOOK-DRILL-001 canonical.
 * `specs/05_quality/failure_modes.md` — FM-202 mitigation.
 
+## 8. Related catalogs (companion drill cadences)
+
+This index covers the **monthly P0/P1 runbook dry-run cadence** (FM-202 mitigation). For broader BCP/DR + on-call rehearsal cadences, see:
+
+* `specs/_compliance/BCP-DR-DRILL-CADENCE.md` — **90-day pre-GA BCP/DR drill calendar** (14 drills: P1 single-region, P2 cross-region + BYOK CMK rotation, P3 full SEV1 simulations, X cross-cutting). Drill DR-011 — random P0/P1 runbook drift drill — feeds back into this catalog's `last_drill_date` field.
+* `specs/_runbooks/ONCALL-ESCALATION-MATRIX.md` — **3-tier (L1/L2/L3) escalation matrix** with severity × tier × SLA, PD routing-key split (synthetic vs production), after-hours rules, comms templates, conflict tie-breakers. Canonical incident-response companion to the cadence doc.
+* `specs/_compliance/templates/DR-DRILL-EVIDENCE.md` — auditor-ready per-drill evidence template (SOC 2 CC7.5 + CC9.1 + ISO 27031 §8.4).
+
 ---
 
 **Fim RB-RUNBOOK-DRILL-INDEX.**
