@@ -1,0 +1,162 @@
+# CoreLink — Cloudflare Workers production deploy (WI-R2-14).
+#
+# Gates production deploys on:
+#   1. Secrets-checklist drift verification (scripts/secrets-checklist-verify.sh).
+#      Fails the deploy if the matrix is out of sync with the codebase.
+#   2. CF secrets population sanity check (wrangler secret list).
+#
+# Triggered manually (workflow_dispatch) or by an upstream release pipeline.
+# This workflow is the canonical entry point for `wrangler deploy --env prod`;
+# direct deploys from local machines are forbidden by policy.
+
+name: cf-deploy-prod
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "deploy-prod" to confirm production deploy'
+        required: true
+        type: string
+  workflow_run:
+    workflows: ["release-cli"]
+    types: [completed]
+
+permissions:
+  contents: read
+  id-token: write  # for OIDC if we move CF auth to OIDC in future
+
+env:
+  WRANGLER_ENV: prod
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Gate 1 — confirm input + secrets-checklist drift.
+  # ---------------------------------------------------------------------------
+  gate-secrets-checklist:
+    name: gate — secrets checklist drift
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Confirm intent (manual dispatch only)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          CONFIRM: ${{ github.event.inputs.confirm }}
+        run: |
+          if [ "${CONFIRM}" != "deploy-prod" ]; then
+            echo "ERROR: confirm input must be exactly 'deploy-prod'." >&2
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 1
+
+      - name: Run secrets-checklist drift verifier
+        run: |
+          chmod +x ./scripts/secrets-checklist-verify.sh
+          ./scripts/secrets-checklist-verify.sh
+
+  # ---------------------------------------------------------------------------
+  # Gate 2 — verify required CF secrets are populated.
+  # ---------------------------------------------------------------------------
+  gate-cf-secrets-populated:
+    name: gate — CF secrets populated
+    needs: gate-secrets-checklist
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+
+      - name: Install wrangler
+        run: npm install -g wrangler@3
+
+      - name: List CF Worker secrets (prod env)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+        run: |
+          wrangler secret list --env "${WRANGLER_ENV}" > /tmp/wrangler-secrets.json
+          cat /tmp/wrangler-secrets.json
+
+      - name: Verify required prod secrets are populated
+        run: |
+          # Hard-required secrets for prod. If any of these are missing in
+          # Cloudflare, fail before deploying — better to short-circuit than
+          # to ship a Worker that 5xx's on first request.
+          REQUIRED=(
+            STRIPE_SECRET_KEY
+            STRIPE_WEBHOOK_SECRET
+            CLERK_SECRET_KEY
+            PAGERDUTY_ROUTING_KEY
+            SLACK_WEBHOOK_URL_ALERTS_SEV1
+            SLACK_WEBHOOK_URL_ALERTS_SEV2
+            SLACK_WEBHOOK_URL_BREACH_NOTIFICATIONS
+          )
+          MISSING=0
+          for name in "${REQUIRED[@]}"; do
+            if ! grep -q "\"${name}\"" /tmp/wrangler-secrets.json; then
+              echo "::error ::Required prod secret not populated in Cloudflare: ${name}"
+              MISSING=$((MISSING+1))
+            fi
+          done
+          if [ "${MISSING}" -gt 0 ]; then
+            echo "::error ::${MISSING} required prod secrets are missing. Run 'wrangler secret put <NAME> --env prod' for each (see docs/internal/secrets-runbook.md §1)."
+            exit 1
+          fi
+          echo "All required prod secrets are populated."
+
+  # ---------------------------------------------------------------------------
+  # Deploy — only runs after both gates pass.
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: wrangler deploy --env prod
+    needs:
+      - gate-secrets-checklist
+      - gate-cf-secrets-populated
+    runs-on: ubuntu-22.04
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+
+      - name: Install wrangler
+        run: npm install -g wrangler@3
+
+      - name: Deploy Worker (prod)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+        run: |
+          wrangler deploy --env "${WRANGLER_ENV}"
+
+      - name: Emit deploy audit event
+        if: success()
+        env:
+          DEPLOY_WEBHOOK_SECRET: ${{ secrets.DEPLOY_WEBHOOK_SECRET }}
+          CF_DEPLOY_VERIFIER_URL: ${{ secrets.CF_DEPLOY_VERIFIER_URL }}
+        run: |
+          # Mirror to D1 audit_outbox via the deploy verifier service (see
+          # docs/internal/secrets-runbook.md §4.2). Soft-fail (|| true) so the
+          # deploy itself isn't reverted if the audit sink is briefly down.
+          if [ -n "${CF_DEPLOY_VERIFIER_URL:-}" ] && [ -n "${DEPLOY_WEBHOOK_SECRET:-}" ]; then
+            curl -fsS -X POST "${CF_DEPLOY_VERIFIER_URL}/audit" \
+              -H "Authorization: Bearer ${DEPLOY_WEBHOOK_SECRET}" \
+              -H "Content-Type: application/json" \
+              -d "{\"kind\":\"deploy.prod\",\"actor\":\"${GITHUB_ACTOR}\",\"commit\":\"${GITHUB_SHA}\",\"workflow\":\"cf-deploy-prod\"}" \
+              || echo "::warning ::Audit sink unreachable; deploy proceeded but audit event not recorded."
+          fi
