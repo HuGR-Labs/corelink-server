@@ -240,7 +240,7 @@ These are non-delegatable to agents. Track in `specs/04_sprints/S20/human-action
 | H-6 | **Slack workspace** + incoming webhook URL | R-2 start | free tier ok | R2-4 |
 | H-7 | **DNS provider** (Cloudflare Registrar recommended for unified CF) + DKIM/SPF/DMARC | R-4 start | ~$10/yr per domain | R4-3 |
 | H-8 | **SES + Twilio** accounts + verified sender domains | R-4 start | pay-per-use | R4-8 |
-| H-9 | **Pentest vendor RFP + contract** | R-5 day 0 | $70-150k | R5-1, R5-2 |
+| H-9 | **Pentest vendor RFP + contract** — engagement scoping pkg `specs/_pentest/PENTEST-EVIDENCE-PACKAGE.md` v2.0.0 finalized 2026-05-14 (R5-1). Engagement scheduled **2026-06-15** (D+0); retest letter due **2026-07-29** (D+44). | R-5 day 0 | $70-150k | R5-1, R5-2 |
 | H-10 | **SOC 2 audit firm contract** + Drata subscription | R-5 day 0 | $50-95k | R5-3 |
 | H-11 | **Law firm engagement** for DPA review | R-5 day 0 | $20-40k | R5-4, R4-5 |
 | H-12 | **Lighthouse customer outreach** (3 candidates) | R-5 day 0 | engagement cost (6mo free) | R5-5, R3-1..5 |
