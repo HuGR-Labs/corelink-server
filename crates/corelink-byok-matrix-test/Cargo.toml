@@ -28,6 +28,10 @@ default = []
 # `GCP_TEST_KEY_RESOURCE` is set in the environment. Without this feature
 # the matrix only runs against the mock GCP provider (CI default).
 production-gcp = ["corelink-byok-gcp/production"]
+# R2-8: enable the real `AzureKeyVaultRealProvider` in the matrix when
+# `AZURE_TEST_KEY_RESOURCE` is set in the environment. Without this feature
+# the matrix only runs against the mock Azure provider (CI default).
+production-azure = ["corelink-byok-azure/production"]
 
 [dependencies]
 corelink-byok = { path = "../corelink-byok" }

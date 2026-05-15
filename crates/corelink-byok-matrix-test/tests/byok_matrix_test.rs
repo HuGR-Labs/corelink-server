@@ -241,6 +241,43 @@ async fn run_gcp_cells(ctx: &serde_json::Value) -> [MatrixResult; 4] {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// Azure cell runner (R2-8: real provider opt-in via AZURE_TEST_KEY_RESOURCE)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Run the 4 Azure matrix cells.
+///
+/// - If the `production-azure` feature is enabled AND
+///   `AZURE_TEST_KEY_RESOURCE` is set in the environment, exercise the real
+///   `AzureKeyVaultRealProvider` (R2-8 wire). Failure falls through to the
+///   `AzureKeyVaultProvider::new_mock` PendingStub so the matrix stays green
+///   in CI without Azure credentials.
+async fn run_azure_cells(ctx: &serde_json::Value) -> [MatrixResult; 4] {
+    #[cfg(feature = "production-azure")]
+    {
+        if let Ok(resource) = std::env::var("AZURE_TEST_KEY_RESOURCE") {
+            let region =
+                std::env::var("AZURE_TEST_REGION").unwrap_or_else(|_| "eastus".to_string());
+            if let Ok(real) = corelink_byok_azure::AzureKeyVaultRealProvider::new(&region) {
+                let key_id = KmsKeyId {
+                    provider: KmsProviderKind::AzureKeyVault,
+                    key_arn_or_id: resource,
+                    region,
+                };
+                return run_provider_matrix(&real, "azure_key_vault", key_id, ctx).await;
+            }
+        }
+    }
+
+    let azure = AzureKeyVaultProvider::new_mock("eastus");
+    let key_id = KmsKeyId {
+        provider: KmsProviderKind::AzureKeyVault,
+        key_arn_or_id: "https://corelink-staging.vault.azure.net/keys/matrix-key".to_string(),
+        region: "eastus".to_string(),
+    };
+    run_provider_matrix(&azure, "azure_key_vault", key_id, ctx).await
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // 16-combination matrix test
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -256,14 +293,13 @@ async fn byok_matrix_16_combinations_all_green() {
     // without GCP credentials.
     let gcp_cells = run_gcp_cells(&ctx).await;
 
-    // Azure provider (4 cells)
-    let azure = AzureKeyVaultProvider::new_mock("eastus");
-    let azure_key_id = KmsKeyId {
-        provider: KmsProviderKind::AzureKeyVault,
-        key_arn_or_id: "https://corelink-staging.vault.azure.net/keys/matrix-key".to_string(),
-        region: "eastus".to_string(),
-    };
-    let azure_cells = run_provider_matrix(&azure, "azure_key_vault", azure_key_id, &ctx).await;
+    // Azure provider (4 cells).
+    //
+    // R2-8: when `AZURE_TEST_KEY_RESOURCE` is set and the `production-azure`
+    // matrix feature is enabled, use `AzureKeyVaultRealProvider` against real
+    // Azure Key Vault. Otherwise fall back to the mock PendingStub so the
+    // matrix stays green in CI without Azure credentials.
+    let azure_cells = run_azure_cells(&ctx).await;
 
     // Vault provider (4 cells)
     let vault = VaultProvider::new_mock("us-east-1");
