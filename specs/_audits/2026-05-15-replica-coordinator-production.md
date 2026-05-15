@@ -245,6 +245,32 @@ DR-16 active-failover drill rehearsal. Real production traffic still
 goes through the wave-14 `corelink-failover-router` for request-path
 failover; the coordinator drives the back-plane orchestration.
 
+### 6.1 Future work — DR-16 drill rehearsal closure (wave-16)
+
+The four `trait-abstraction-defer` bindings above are **exercised
+end-to-end and validated by the DR-16 quarterly drill rehearsal**
+spec'd at:
+
+- **Operator runbook**: `specs/_runbooks/RB-REPLICA-FAILOVER.md`
+  (wave-16; 8 sections: Detect → Pre-checks → Promote → Verify →
+  Failback after 24 h → Communication → Rollback → Post-incident
+  review). Companion to `RB-ACTIVE-FAILOVER.md`; both runbooks fire
+  together in real DR-16 incidents (ordering pinned in §1.4 of the
+  replica-failover runbook: coordinator-layer flip BEFORE
+  request-path flip — the reverse would create INV-FAILOVER-NO-SPLIT-BRAIN
+  violation at the coordinator layer).
+- **Drill spec WI**: `specs/04_sprints/S17/work_items/WI-S17-008-active-failover-drill.md`
+  (wave-16; quarterly cadence, ≥ 1 promote+failback round/quarter,
+  MTTA ≤ 5 min, MTTR ≤ 30 min, zero SEV-1 from drill, INV-FAILOVER-NO-SPLIT-BRAIN
+  + INV-REGION-NO-CROSS-LEAK assertions at every phase boundary,
+  full `BCP-DR-DRILL-CADENCE.md §DR-16` alignment). Tests: TLA+
+  `replica_failover.tla` nightly + `prop_coordinator::at_most_one_primary`
+  2000 cases + new E2E scenario 7 `scenario_7_quarterly_drill_dry_run`.
+
+Closure of the `trait-abstraction-defer` items above lands as part
+of WI-S17-008 execution (the drill rehearsal IS the integration test
+for those production wirings — see WI-S17-008 §21 Soft blockers).
+
 ## 7. Cross-links
 
 - Source audit (DEBT-011): `specs/_audits/2026-05-15-replication-audit.md`
