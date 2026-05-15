@@ -5,16 +5,16 @@ description: "Append-only audit log with RFC 6962 inclusion proofs and a 7-year 
 draft: true
 cross_functional_review: TBD
 pending_signoff:
-  - "Security Lead"
+  - "Segurança Lead"
   - "Legal"
 sources:
   - "specs/03_architecture/security_model.md#68-auditoria--forensics"
 last_updated: "2026-05-14"
 ---
 
-<!-- i18n:TODO (pt-BR) — auto-generated stub; replace with native-speaker translation by D+10 -->
+<!-- i18n:MT (pt-BR) — TMX-seeded machine-translation stub; replace with native-speaker translation before GA -->
 
-> Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
+> MT: Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
 >
 > Canonical EN source: `security/audit-chain.mdx`
 
@@ -24,7 +24,7 @@ import { DraftBanner } from "@site/src/components/DraftBanner";
 
 # Audit chain and Merkle proofs
 
-> **DRAFT — pending Legal + Finance + Security review.** The customer-facing
+> **DRAFT — pending Legal + Finance + Segurança review.** The customer-facing
 > proof API is in active design; field names and endpoints below are
 > illustrative.
 
@@ -62,7 +62,7 @@ corelink audit prove --request-id <request_id>
 The Signed Tree Head (STH) is signed with the audit-chain key documented in
 `security_model.md §7.2`.
 
-## Privacy interaction with DSR erasure
+## Privacidade interaction with DSR erasure
 
 When a Data Subject Request causes erasure, the `subject_id` field is
 pseudonymized to `erased_<hash>` using the audit-pseudonym key so that the
@@ -71,5 +71,5 @@ data itself is removed (`CTRL-PRIV-014`).
 
 ## Cross-functional review checklist
 
-- [ ] Security Lead — confirm RFC 6962 mapping and key hierarchy.
+- [ ] Segurança Lead — confirm RFC 6962 mapping and key hierarchy.
 - [ ] Legal — confirm retention statement is consistent with the DPA.
