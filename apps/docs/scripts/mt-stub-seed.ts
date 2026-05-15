@@ -18,32 +18,58 @@
  * Idempotent: re-running over an MT-stub file is a no-op.
  *
  * Usage:
- *   pnpm tsx scripts/mt-stub-seed.ts                   # all locales
+ *   pnpm tsx scripts/mt-stub-seed.ts                   # all locales, promote TODO -> MT
  *   pnpm tsx scripts/mt-stub-seed.ts --locale pt-BR
  *   pnpm tsx scripts/mt-stub-seed.ts --dry-run         # report only
+ *
+ *   # R-prep i18n-de: bootstrap mode — create MT-stub shadow tree directly
+ *   # from EN source files when no per-locale tree exists yet. Required for
+ *   # adding a new locale (e.g. `de` for DACH enterprise GA buyers).
+ *   pnpm tsx scripts/mt-stub-seed.ts --init --locale de
  */
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
-const LOCALES = ["pt-BR", "es-419"] as const;
+const LOCALES = ["pt-BR", "es-419", "de"] as const;
 type Locale = (typeof LOCALES)[number];
+
+// Per-locale source-of-truth notice (MT banner). When a translator delivers
+// a native pass, they remove the `<!-- i18n:MT -->` marker AND the banner.
+const SOT_BANNER: Record<Locale, string> = {
+  "pt-BR":
+    "> MT: Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).\n" +
+    ">\n" +
+    "> Canonical EN source: `docs/{REL}`",
+  "es-419":
+    "> MT: Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).\n" +
+    ">\n" +
+    "> Canonical EN source: `docs/{REL}`",
+  de:
+    "> MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).\n" +
+    ">\n" +
+    "> Canonical EN source: `docs/{REL}`",
+};
 
 const REPO_ROOT = path.resolve(new URL(".", import.meta.url).pathname, "..");
 const I18N_BASE = path.join(REPO_ROOT, "i18n");
+const SOURCE_DIR = path.join(REPO_ROOT, "docs");
 
 interface Args {
   dryRun: boolean;
   locales: Locale[];
+  init: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
   let dryRun = false;
+  let init = false;
   let locales: Locale[] = [...LOCALES];
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === "--dry-run") dryRun = true;
+    else if (a === "--init") init = true;
     else if (a === "--locale" && argv[i + 1]) {
       const v = argv[i + 1] as Locale;
       if (!LOCALES.includes(v)) {
@@ -53,7 +79,7 @@ function parseArgs(argv: string[]): Args {
       i += 1;
     }
   }
-  return { dryRun, locales };
+  return { dryRun, locales, init };
 }
 
 async function walk(dir: string, acc: string[] = []): Promise<string[]> {
@@ -164,11 +190,82 @@ function applyTmx(input: string, tmx: TmxEntry[]): string {
   return parts.join("");
 }
 
+/**
+ * Bootstrap a new locale's shadow tree by copying every EN source file under
+ * `docs/` to `i18n/<locale>/docusaurus-plugin-content-docs/current/`,
+ * inserting an `<!-- i18n:MT (<locale>) -->` marker after the front-matter
+ * and a localized source-of-truth banner. Idempotent: existing files are
+ * left untouched.
+ *
+ * Used when registering a new locale (e.g. `de` for DACH enterprise GA).
+ */
+async function initLocale(
+  locale: Locale,
+  dryRun: boolean,
+): Promise<{ created: number; existed: number; scanned: number }> {
+  const sourceFiles = await walk(SOURCE_DIR);
+  const localeRoot = path.join(
+    I18N_BASE,
+    locale,
+    "docusaurus-plugin-content-docs",
+    "current",
+  );
+  let created = 0;
+  let existed = 0;
+  for (const src of sourceFiles) {
+    const rel = path.relative(SOURCE_DIR, src);
+    const target = path.join(localeRoot, rel);
+    try {
+      await fs.access(target);
+      existed += 1;
+      continue;
+    } catch {
+      // missing — create
+    }
+    const raw = await fs.readFile(src, "utf8");
+    const stub = stubBody(raw, locale, rel);
+    if (!dryRun) {
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await fs.writeFile(target, stub);
+    }
+    created += 1;
+  }
+  return { created, existed, scanned: sourceFiles.length };
+}
+
+/** Insert MT marker + SoT banner after the YAML front-matter (if any). */
+function stubBody(raw: string, locale: Locale, rel: string): string {
+  const fmMatch = raw.match(/^---\n[\s\S]*?\n---\n/);
+  const banner = SOT_BANNER[locale].replaceAll("{REL}", rel);
+  const marker =
+    `<!-- i18n:MT (${locale}) — bootstrap MT-stub from EN source; ` +
+    `replace with native-speaker translation before GA -->`;
+  const block = `\n${marker}\n\n${banner}\n\n`;
+  if (fmMatch) {
+    return raw.slice(0, fmMatch[0].length) + block + raw.slice(fmMatch[0].length);
+  }
+  return block + raw;
+}
+
 async function main(): Promise<void> {
-  const { dryRun, locales } = parseArgs(process.argv.slice(2));
+  const { dryRun, locales, init } = parseArgs(process.argv.slice(2));
+
+  if (init) {
+    for (const locale of locales) {
+      const r = await initLocale(locale, dryRun);
+      console.log(
+        `[mt-stub-seed] init locale=${locale} scanned=${r.scanned} ` +
+          `created=${r.created} existed=${r.existed}` +
+          (dryRun ? " (dry-run)" : ""),
+      );
+    }
+    return;
+  }
+
   const totals: Record<Locale, Result> = {
     "pt-BR": { promoted: 0, alreadyMt: 0, skipped: 0, scanned: 0 },
     "es-419": { promoted: 0, alreadyMt: 0, skipped: 0, scanned: 0 },
+    de: { promoted: 0, alreadyMt: 0, skipped: 0, scanned: 0 },
   };
 
   for (const locale of locales) {

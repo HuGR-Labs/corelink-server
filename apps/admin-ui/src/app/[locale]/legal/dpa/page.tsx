@@ -6,6 +6,8 @@ const TITLE: Record<Locale, string> = {
   en: "Data Processing Agreement",
   pt: "Acordo de Processamento de Dados",
   es: "Acuerdo de Procesamiento de Datos",
+  // R-prep i18n-de — DACH market.
+  de: "Auftragsverarbeitungsvertrag",
 };
 
 interface RouteParams {

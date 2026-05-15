@@ -1,0 +1,51 @@
+---
+title: "Incident history"
+slug: "/security/incident-history"
+description: "Public history of CoreLink security incidents and post-mortems."
+draft: true
+cross_functional_review: TBD
+pending_signoff:
+  - "Security Lead"
+  - "Legal"
+sources:
+  - "specs/03_architecture/security_model.md"
+last_updated: "2026-05-14"
+---
+
+<!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
+>
+> Canonical EN source: `docs/explanation/security/incident-history.mdx`
+
+
+import { DraftBanner } from "../../../src/components/DraftBanner";
+
+<DraftBanner pageType="security" />
+
+# Incident history
+
+> **DRAFT — pending Legal + Finance + Security review.** This page exists so
+> the URL is stable on day one. There are no public incidents to report.
+
+## Incidents
+
+| Date | Severity | Summary | Post-mortem | Status |
+| --- | --- | --- | --- | --- |
+| _none reported_ | — | — | — | — |
+
+## How this page is updated
+
+When CoreLink declares a SEV-1 or SEV-2 security incident, the on-call
+incident commander adds a row to this table within TBD business days of
+incident resolution. The post-mortem link points to a public, blameless
+post-mortem authored from the internal template.
+
+We also publish customer-facing status updates on `status.corelink.dev`
+during active incidents.
+
+## Cross-functional review checklist
+
+- [ ] Security Lead — confirm SEV-1/SEV-2 inclusion threshold.
+- [ ] Legal — confirm disclosure timing aligns with regulatory obligations
+      (LGPD ANPD notice; GDPR 72-hour notice).

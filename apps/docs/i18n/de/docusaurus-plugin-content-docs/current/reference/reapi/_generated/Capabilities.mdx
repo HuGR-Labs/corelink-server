@@ -1,0 +1,150 @@
+---
+id: Capabilities
+title: Capabilities (REAPI v2)
+sidebar_label: Capabilities
+description: Auto-generated reference for the Capabilities gRPC service.
+---
+
+<!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
+>
+> Canonical EN source: `docs/reference/reapi/_generated/Capabilities.mdx`
+
+
+# Capabilities
+
+> Auto-generated from `crates/corelink-reapi/proto/build/bazel/remote/execution/v2/remote_execution.proto`. Do not edit by hand — run `pnpm docs:gen`.
+
+- Proto package: `build.bazel.remote.execution.v2`
+- Fully-qualified name: `build.bazel.remote.execution.v2.Capabilities`
+
+## Methods
+
+| Method | Request | Response | Streaming |
+| --- | --- | --- | --- |
+| `GetCapabilities` | `GetCapabilitiesRequest` | `ServerCapabilities` | unary |
+
+### GetCapabilities
+
+- **Request:** `GetCapabilitiesRequest`
+- **Response:** `ServerCapabilities`
+- **Streaming:** unary
+
+## Messages
+
+### Digest
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `hash` | `string` | 1 |
+| `size_bytes` | `int64` | 2 |
+
+### BatchUpdateBlobsRequest
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `instance_name` | `string` | 1 |
+| `requests` | `repeated Request` | 2 |
+| `digest_function` | `DigestFunction.Value` | 5 |
+
+### BatchUpdateBlobsResponse
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `responses` | `repeated Response` | 1 |
+
+### FindMissingBlobsRequest
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `instance_name` | `string` | 1 |
+| `blob_digests` | `repeated Digest` | 2 |
+| `digest_function` | `DigestFunction.Value` | 3 |
+
+### FindMissingBlobsResponse
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `missing_blob_digests` | `repeated Digest` | 1 |
+
+### BatchReadBlobsRequest
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `instance_name` | `string` | 1 |
+| `digests` | `repeated Digest` | 2 |
+| `acceptable_compressors` | `repeated Compressor.Value` | 3 |
+| `digest_function` | `DigestFunction.Value` | 4 |
+
+### BatchReadBlobsResponse
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `responses` | `repeated Response` | 1 |
+
+### GetCapabilitiesRequest
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `instance_name` | `string` | 1 |
+
+### ServerCapabilities
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `cache_capabilities` | `CacheCapabilities` | 1 |
+| `execution_capabilities` | `ExecutionCapabilities` | 2 |
+| `deprecated_api_version` | `build.bazel.semver.SemVer` | 3 |
+| `low_api_version` | `build.bazel.semver.SemVer` | 4 |
+| `high_api_version` | `build.bazel.semver.SemVer` | 5 |
+
+### DigestFunction
+
+### Compressor
+
+### PriorityCapabilities
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `priorities` | `repeated PriorityRange` | 1 |
+
+### ActionCacheUpdateCapabilities
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `update_enabled` | `bool` | 1 |
+
+### SymlinkAbsolutePathStrategy
+
+### CacheCapabilities
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `digest_functions` | `repeated DigestFunction.Value` | 1 |
+| `action_cache_update_capabilities` | `ActionCacheUpdateCapabilities` | 2 |
+| `cache_priority_capabilities` | `PriorityCapabilities` | 3 |
+| `max_batch_total_size_bytes` | `int64` | 4 |
+| `symlink_absolute_path_strategy` | `SymlinkAbsolutePathStrategy.Value` | 5 |
+| `supported_compressors` | `repeated Compressor.Value` | 6 |
+| `supported_batch_update_compressors` | `repeated Compressor.Value` | 7 |
+| `max_cas_blob_size_bytes` | `int64` | 8 |
+
+### ExecutionCapabilities
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `digest_function` | `DigestFunction.Value` | 1 |
+| `exec_enabled` | `bool` | 2 |
+| `execution_priority_capabilities` | `PriorityCapabilities` | 3 |
+| `supported_node_properties` | `repeated string` | 4 |
+| `digest_functions` | `repeated DigestFunction.Value` | 5 |
+
+## Examples
+
+See manual code examples under [`_examples/Capabilities/`](../_examples/Capabilities/):
+
+- Python
+- Go
+- Node / TypeScript
+- CLI (`corelink`)

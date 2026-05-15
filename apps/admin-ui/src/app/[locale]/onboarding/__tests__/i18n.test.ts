@@ -6,6 +6,8 @@ describe("i18n lookups", () => {
     expect(t("en", "onboarding.tenant.title")).toMatch(/create your tenant/i);
     expect(t("pt", "onboarding.tenant.title")).toMatch(/crie seu tenant/i);
     expect(t("es", "onboarding.tenant.title")).toMatch(/crea tu tenant/i);
+    // R-prep i18n-de — `de` joined as the fourth canonical locale.
+    expect(t("de", "onboarding.tenant.title")).toMatch(/tenant anlegen/i);
   });
 
   it("returns localized strings for every onboarding step", () => {
@@ -18,7 +20,7 @@ describe("i18n lookups", () => {
       "onboarding.done.title",
     ];
     for (const k of keys) {
-      for (const locale of ["en", "pt", "es"] as const) {
+      for (const locale of ["en", "pt", "es", "de"] as const) {
         const v = t(locale, k);
         expect(v).not.toBe(k); // would mean key missing
         expect(v.length).toBeGreaterThan(0);
@@ -30,11 +32,12 @@ describe("i18n lookups", () => {
     expect(t("en", "nonexistent.path")).toBe("nonexistent.path");
   });
 
-  it("PAT modal warning string is present in all three locales", () => {
+  it("PAT modal warning string is present in all four locales", () => {
     const en = t("en", "onboarding.pat.modal_warning");
     const pt = t("pt", "onboarding.pat.modal_warning");
     const es = t("es", "onboarding.pat.modal_warning");
-    for (const s of [en, pt, es]) {
+    const de = t("de", "onboarding.pat.modal_warning");
+    for (const s of [en, pt, es, de]) {
       expect(s.length).toBeGreaterThan(20);
     }
   });

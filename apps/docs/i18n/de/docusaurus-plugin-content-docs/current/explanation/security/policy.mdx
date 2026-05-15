@@ -1,0 +1,120 @@
+---
+title: "Security Policy"
+slug: "/security/policy"
+description: "CoreLink coordinated vulnerability disclosure policy: how to report, what response to expect, severity matrix (CVSS v3.1), safe-harbor language, out-of-scope items, and reward program."
+draft: false
+cross_functional_review: TBD
+pending_signoff:
+  - "Security Lead"
+  - "Legal"
+sources:
+  - "specs/_security/vulnerability-disclosure-policy.md"
+  - "SECURITY.md"
+last_updated: "2026-05-14"
+---
+
+<!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
+>
+> Canonical EN source: `docs/explanation/security/policy.mdx`
+
+
+# Security Policy
+
+CoreLink runs a **coordinated vulnerability disclosure program**. This page
+is the customer-facing summary; the legally-binding text lives at
+[`specs/_security/vulnerability-disclosure-policy.md`](https://github.com/humangr-labs/corelink/blob/main/specs/_security/vulnerability-disclosure-policy.md)
+(VDP-001).
+
+> **Quick links**
+> - RFC 9116 contact card: [`/.well-known/security.txt`](/.well-known/security.txt)
+> - Repository SECURITY.md: [GitHub](https://github.com/humangr-labs/corelink/blob/main/SECURITY.md)
+> - Hall of Fame: [`/security/hall-of-fame`](/security/hall-of-fame)
+
+## How to report
+
+Email `security@corelink.dev` with the subject prefix `[VULN]`. For
+high-impact issues, encrypt with our PGP key (fingerprint published at
+`/.well-known/security-pgp.asc`).
+
+Prefer a web form? Use
+[`/.well-known/security-report`](https://corelink.dev/.well-known/security-report).
+
+Please include:
+
+- A clear description of the issue and impact.
+- Reproduction steps (ideally a self-contained script).
+- Affected version(s) and component(s).
+- Your CVSS v3.1 self-assessment.
+- Whether you intend to disclose publicly, and on what timeline.
+- How you would like to be credited.
+
+## Response SLA
+
+| Stage                       | Target                              |
+| --------------------------- | ----------------------------------- |
+| Acknowledge receipt         | within **24 hours**                 |
+| Initial triage              | within **72 hours**                 |
+| Status update cadence       | every **7 days**                    |
+| Public credit (if desired)  | at coordinated disclosure           |
+
+## Severity matrix (CVSS v3.1 → patch SLA)
+
+| CVSS Base   | Severity   | Patch SLA   |
+| ----------- | ---------- | ----------- |
+| 9.0 – 10.0  | CRITICAL   | ≤ 24 hours  |
+| 7.0 – 8.9   | HIGH       | ≤ 7 days    |
+| 4.0 – 6.9   | MEDIUM     | ≤ 30 days   |
+| 0.1 – 3.9   | LOW        | ≤ 90 days   |
+
+Tenant-isolation violations (`INV-TenantIsolation`) auto-escalate to
+CRITICAL regardless of CVSS.
+
+## Coordinated disclosure
+
+Default window: **90 days from report**, aligned with Google Project Zero
+norms. Configurable 14–120 days by mutual agreement. 7-day window if
+already exploited in the wild.
+
+## Safe harbor
+
+CoreLink **will not pursue legal action** against researchers who:
+
+1. Make a good-faith effort to comply with this policy.
+2. Avoid privacy violations, data destruction, service interruption.
+3. Only interact with accounts they own or have permission for.
+4. Do not exploit beyond minimum proof-of-concept.
+5. Give reasonable time to fix before public disclosure.
+
+Full language at VDP-001 §6.
+
+## Out of scope
+
+- Denial-of-service against production.
+- Social engineering of staff, contractors, or customers.
+- Physical attacks.
+- Theoretical findings without a proof-of-concept.
+- Automated scanner reports with no human analysis.
+- Issues in third-party dependencies (report to vendor).
+
+Full list at VDP-001 §7.
+
+## Reward program
+
+**Pre-GA (current):**
+
+- Thank-you in the changelog and release notes.
+- Hall of Fame credit.
+- CoreLink swag for MEDIUM+ findings.
+
+**Post-GA (planned):** monetary bounty program. Bands TBD pending
+Finance + Legal sign-off. Retroactive eligibility for reports filed within
+12 months of program launch.
+
+## Related
+
+- [Responsible disclosure overview](/security/responsible-disclosure)
+- [Security overview](/security)
+- [Audit chain](/security/audit-chain)
+- [Hall of fame](/security/hall-of-fame)

@@ -251,6 +251,82 @@ const COPY: Record<Locale, Strings> = {
     hallOfFameHref: "/security/hall-of-fame",
     hallOfFameLabel: "Hall of Fame",
   },
+  // R-prep i18n-de — `de` joined as the fourth canonical locale (DACH enterprise GA).
+  // Native-speaker review pending; copy below is MT-quality bootstrap per
+  // TRANSLATION-WORKFLOW.md SLA (≤ 14 d of EN change).
+  de: {
+    title: "Sicherheitsrichtlinie",
+    intro:
+      "CoreLink betreibt ein Programm zur koordinierten Offenlegung von Sicherheitslücken. Diese Seite ist die kundenorientierte Zusammenfassung; der vollständige rechtsverbindliche Text liegt in unserem Spec-Repository (Link unten).",
+    reportHeading: "Wie melden",
+    reportBody: (
+      <>
+        <p>
+          E-Mail an <code>security@corelink.dev</code> mit dem Betreff-Präfix{" "}
+          <code>[VULN]</code>. Für Probleme mit hoher Auswirkung bitte mit
+          unserem PGP-Schlüssel verschlüsseln.
+        </p>
+        <p>
+          Lieber ein Webformular? Verwenden Sie{" "}
+          <a href="https://corelink.dev/.well-known/security-report">
+            /.well-known/security-report
+          </a>
+          .
+        </p>
+      </>
+    ),
+    slaHeading: "Antwort-SLA",
+    slaIntro:
+      "Zeiten in Kalenderstunden/-tagen ab Eingang eines korrekt formulierten Berichts.",
+    slaRows: [
+      { stage: "Empfangsbestätigung", target: "innerhalb von 24 Stunden" },
+      { stage: "Erste Triage", target: "innerhalb von 72 Stunden" },
+      { stage: "Statusupdates", target: "alle 7 Tage" },
+      { stage: "Öffentliche Würdigung (falls gewünscht)", target: "bei koordinierter Offenlegung" },
+    ],
+    severityHeading: "Schweregrad & Patch-SLA",
+    severityIntro:
+      "Schweregrad abgeleitet vom CVSS v3.1 Base Score, mit automatischer Eskalation bei Verletzungen der Tenant-Isolation.",
+    severityRows: [
+      { cvss: "9,0 – 10,0", severity: "KRITISCH", patch: "≤ 24 Stunden" },
+      { cvss: "7,0 – 8,9", severity: "HOCH", patch: "≤ 7 Tage" },
+      { cvss: "4,0 – 6,9", severity: "MITTEL", patch: "≤ 30 Tage" },
+      { cvss: "0,1 – 3,9", severity: "NIEDRIG", patch: "≤ 90 Tage" },
+    ],
+    safeHarborHeading: "Safe Harbor",
+    safeHarborBody: (
+      <p>
+        Wir leiten keine rechtlichen Schritte gegen Sicherheitsforscher ein,
+        die in gutem Glauben handeln, Datenschutzverletzungen vermeiden, nur
+        mit eigenen Konten interagieren, keine Ausnutzung über den
+        Proof-of-Concept hinaus betreiben und uns angemessene Zeit zur Behebung
+        vor der Offenlegung geben. Vollständiger Wortlaut im Spec.
+      </p>
+    ),
+    outOfScopeHeading: "Nicht im Geltungsbereich",
+    outOfScopeItems: [
+      "Denial-of-Service gegen die Produktivumgebung",
+      "Social Engineering von Mitarbeitenden oder Kunden",
+      "Physische Angriffe",
+      "Theoretische Befunde ohne Proof-of-Concept",
+      "Berichte von automatischen Scannern ohne menschliche Analyse",
+      "Probleme in Drittanbieter-Abhängigkeiten (an den Anbieter melden)",
+    ],
+    rewardHeading: "Belohnungsprogramm",
+    rewardBody: (
+      <p>
+        Vor GA: Dank im Changelog, Hall-of-Fame-Eintrag und CoreLink-Swag für
+        Befunde der Stufe MEDIUM+. Geldprämien sind nach GA geplant.
+      </p>
+    ),
+    morePolicyHref:
+      "https://github.com/humangr-labs/corelink/blob/main/specs/_security/vulnerability-disclosure-policy.md",
+    morePolicyLabel: "Vollständige Richtlinie lesen (VDP-001)",
+    securityTxtHref: "/.well-known/security.txt",
+    securityTxtLabel: "security.txt (RFC 9116)",
+    hallOfFameHref: "/security/hall-of-fame",
+    hallOfFameLabel: "Hall of Fame",
+  },
 };
 
 export interface SecurityPolicyPageProps {

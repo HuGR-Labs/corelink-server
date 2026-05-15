@@ -28,7 +28,8 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
-const LOCALES = ["pt-BR", "es-419"] as const;
+// R-prep i18n-de — `de` joined as the fourth canonical locale.
+const LOCALES = ["pt-BR", "es-419", "de"] as const;
 type Locale = (typeof LOCALES)[number];
 
 const REPO_ROOT = path.resolve(new URL(".", import.meta.url).pathname, "..");
@@ -98,6 +99,15 @@ const BANNED_BY_LOCALE: Record<Locale, RegExp[]> = {
     /\bordenador\b/i, // Castilian — prefer computadora
     /\bmóvil\b(?!\s*device)/i, // Castilian for phone
     /\bno obstante\b/i,
+  ],
+  // German (de): MT telltales + archaic / Swiss-only forms. The DACH market
+  // expects Standard German (Bundesdeutsch) with ß (not Swiss ss).
+  de: [
+    /\bdeine?\b/i, // informal `du` — formal `Sie` required for B2B docs
+    /\bdir\b/i,
+    /\bdich\b/i,
+    /\bgrüezi\b/i, // Swiss greeting
+    /\bemail\b/, // prefer `E-Mail`
   ],
 };
 

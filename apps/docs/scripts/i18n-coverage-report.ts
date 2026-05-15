@@ -30,7 +30,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
-const LOCALES = ["pt-BR", "es-419"] as const;
+const LOCALES = ["pt-BR", "es-419", "de"] as const;
 type Locale = (typeof LOCALES)[number];
 
 const REPO_ROOT = path.resolve(new URL(".", import.meta.url).pathname, "..");
@@ -149,11 +149,14 @@ async function main(): Promise<void> {
   sections.push("");
   sections.push(`- Generated: ${today}`);
   sections.push(`- Source locale: en-US (canonical, source of truth)`);
-  sections.push(`- Target locales: pt-BR (LGPD market), es-419 (LATAM market)`);
   sections.push(
-    "- Per spec contract S-18 §5.6 R-S18-12, three locales are canonical. " +
-      "Per WT-R4-1 acceptance, ≥ 80 % mt-stub-or-better coverage is required " +
-      "before native-speaker review can be scheduled.",
+    `- Target locales: pt-BR (LGPD/Brazil), es-419 (LATAM), de (DACH/EU enterprise)`,
+  );
+  sections.push(
+    "- Per spec contract S-18 §5.6 R-S18-12, three Tier-1 locales are canonical " +
+      "(pt-BR, es-419); `de` joins for R-prep i18n-de as the fourth EU enterprise " +
+      "locale. Per WT-R4-1 acceptance, ≥ 80 % mt-stub-or-better coverage is " +
+      "required before native-speaker review can be scheduled.",
   );
   sections.push("");
   sections.push("## Legend");
@@ -223,8 +226,12 @@ async function main(): Promise<void> {
   sections.push("");
   sections.push(
     "Per WT-R4-1 acceptance, coverage = `(translated + mt-stub) / total ≥ 80 %` " +
-      "for both pt-BR and es-419. CI gate `i18n-coverage.ts` enforces the same " +
-      "threshold at PR time (any new content without a stub fails the build).",
+      "for each Tier-1 locale (pt-BR, es-419, de). CI gate `i18n-coverage.ts` " +
+      "enforces the same threshold at PR time (any new content without a stub " +
+      "fails the build). Workflow + SLA per locale: " +
+      "[`TRANSLATION-WORKFLOW.md`](./TRANSLATION-WORKFLOW.md). " +
+      "Weekly stale check: `.github/workflows/i18n-stale.yml` " +
+      "(Tue 10:00 UTC, opens issue on stale).",
   );
 
   const md = sections.join("\n") + "\n";

@@ -6,28 +6,33 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { MarkdownView } from "@/components/content/MarkdownView";
 import type { Locale } from "@/i18n/LocaleContext";
 
+// R-prep i18n-de — `de` joined as the fourth canonical locale.
 const TITLE: Record<Locale, string> = {
   en: "Privacy notice",
   pt: "Aviso de privacidade",
   es: "Aviso de privacidad",
+  de: "Datenschutzhinweis",
 };
 
 const LAST_UPDATED_LABEL: Record<Locale, string> = {
   en: "Last updated",
   pt: "Última atualização",
   es: "Última actualización",
+  de: "Zuletzt aktualisiert",
 };
 
 const VERSION_LABEL: Record<Locale, string> = {
   en: "Version",
   pt: "Versão",
   es: "Versión",
+  de: "Version",
 };
 
 const SUBPROC_LABEL: Record<Locale, string> = {
   en: "Sub-processors",
   pt: "Subprocessadores",
   es: "Subprocesadores",
+  de: "Unterauftragsverarbeiter",
 };
 
 export interface PrivacyPageProps {

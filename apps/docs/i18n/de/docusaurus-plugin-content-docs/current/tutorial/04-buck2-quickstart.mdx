@@ -1,0 +1,87 @@
+---
+id: 04-buck2-quickstart
+title: Buck2 remote cache in 5 minutes
+sidebar_label: 4. Buck2 quickstart
+description: Wire Buck2 to CoreLink via the REAPI v2 endpoint.
+---
+
+<!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
+>
+> Canonical EN source: `docs/tutorial/04-buck2-quickstart.mdx`
+
+
+# Buck2 remote cache in 5 minutes
+
+Mirrors [`examples/buck2-starter/`](https://github.com/humangr-labs/corelink-server/tree/main/examples/buck2-starter) in the repo.
+
+## Prerequisites
+
+- `corelink` CLI installed ([step 1](./01-installation.mdx)).
+- `CORELINK_PAT` exported ([step 2](./02-first-pat.mdx)).
+- Buck2 (any recent nightly).
+
+## 1. Clone the starter (optional)
+
+```bash
+git clone https://github.com/humangr-labs/corelink-server.git
+cd corelink-server/examples/buck2-starter
+```
+
+## 2. `.buckconfig`
+
+```ini
+[buck2_re_client]
+engine_address       = grpcs://<YOUR_TENANT_ID>.corelink.dev:443
+action_cache_address = grpcs://<YOUR_TENANT_ID>.corelink.dev:443
+cas_address          = grpcs://<YOUR_TENANT_ID>.corelink.dev:443
+http_headers         = Authorization=Bearer ${CORELINK_PAT}
+
+[build]
+execution_platforms = prelude//platforms:default
+
+[buck2]
+materializations = deferred
+restarter = true
+```
+
+:::note PAT handling
+Buck2 expands `${CORELINK_PAT}` from the environment at load time. Do not paste the PAT inline; keep it in `CORELINK_PAT`.
+:::
+
+## 3. Minimal `BUCK` target (the starter has one)
+
+```python
+cxx_binary(
+    name = "hello",
+    srcs = ["main.cc", "greeter.cc"],
+    headers = ["greeter.h"],
+)
+```
+
+## 4. Build twice and observe the cache hit
+
+```bash
+# First build — populates the cache.
+buck2 build //:hello
+
+# Force a clean rebuild — should hit remote cache.
+buck2 clean
+buck2 build //:hello --show-output 2>&1 | grep -iE "remote|cache"
+# remote cache hits: 1
+```
+
+## 5. Inspect the action digest
+
+```bash
+buck2 log what-ran --show-cache-queries | head
+```
+
+Each `cache_query` line carries the REAPI v2 `Digest` Buck2 looked up. Cross-check it with the CLI:
+
+```bash
+corelink stat sha256:<digest_hex>:<size_bytes>
+```
+
+Next: [Native FFI quickstart](./05-native-ffi-quickstart.mdx) for Python / Go / Node SDKs.

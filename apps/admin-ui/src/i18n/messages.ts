@@ -8,13 +8,16 @@
 import en from "./locales/en.json";
 import pt from "./locales/pt.json";
 import es from "./locales/es.json";
+import de from "./locales/de.json";
 
-export type Locale = "en" | "pt" | "es";
+// R-prep i18n-de — `de` joined as the fourth canonical locale.
+export type Locale = "en" | "pt" | "es" | "de";
 
 const BUNDLES: Record<Locale, Record<string, unknown>> = {
   en: en as Record<string, unknown>,
   pt: pt as Record<string, unknown>,
   es: es as Record<string, unknown>,
+  de: de as Record<string, unknown>,
 };
 
 export function getMessages(locale: Locale): Record<string, unknown> {

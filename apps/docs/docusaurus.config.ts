@@ -34,11 +34,15 @@ const config: Config = {
 
   i18n: {
     defaultLocale: "en-US",
-    locales: ["en-US", "pt-BR", "es-419"],
+    locales: ["en-US", "pt-BR", "es-419", "de"],
     localeConfigs: {
       "en-US": { label: "English", direction: "ltr", htmlLang: "en-US" },
       "pt-BR": { label: "Português (Brasil)", direction: "ltr", htmlLang: "pt-BR" },
       "es-419": { label: "Español (Latinoamérica)", direction: "ltr", htmlLang: "es-419" },
+      // R-prep i18n-de — German added for EU enterprise GA buyers (DACH region).
+      // Native-speaker review pending; current shadow is MT-stub-seeded per
+      // TRANSLATION-WORKFLOW.md SLA (≤ 14 d of EN change).
+      de: { label: "Deutsch", direction: "ltr", htmlLang: "de" },
     },
   },
 

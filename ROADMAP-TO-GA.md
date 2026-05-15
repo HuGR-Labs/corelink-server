@@ -136,7 +136,7 @@ Pre-conditions: R-2 staging wiring functional.
 | R4-3 | **DNS setup**: corelink.dev apex + 3 subdomains + email DKIM/SPF/DMARC | Gustavo (registrar) | 24h propagation |
 | R4-4 | **Cookie consent UI live** — Cookiebot or equivalent + integration with consent ledger (WI-S11-003) | 1 Sonnet | LGPD + GDPR + ePrivacy |
 | R4-5 | **Privacy/legal pages real content** — replace `cross_functional_review: TBD` flags after Legal review (R-5 dependency) | 1 Sonnet | Block on R5-4 Legal sign-off |
-| R4-6 | **3-locale stub translations replaced with real translations** — pt-BR + es-419 native speakers (1-2 weeks effort by translators) | Translators (hired contractors) | 100 + 100 stubs |
+| R4-6 | **4-locale stub translations replaced with real translations** — pt-BR + es-419 + de native speakers (`de` added by R-prep i18n-de for DACH/EU enterprise GA; 2-3 weeks effort by translators across the three locales) | Translators (hired contractors) | 100 + 100 + 156 stubs · see `apps/docs/i18n/TRANSLATION-WORKFLOW.md` |
 | R4-7 | **Status page** at `status.corelink.dev` — Statuspage.io or self-hosted; subscribed to SLO breaches | 1 Sonnet + Gustavo (Statuspage account) | Customer-facing |
 | R4-8 | **Email + SMS providers** — SES (transactional) + Twilio (SMS) wired into notification path | 1 Sonnet + Gustavo (AWS/Twilio accounts) | DSR notifications, breach alerts |
 
@@ -324,7 +324,7 @@ These are non-delegatable to agents. Track in `specs/04_sprints/S20/human-action
 | H-13 | **Apple Developer Program** | R-5 day 0 | $99/yr | R5-6, S-15 Windows fallback |
 | H-14 | **Windows EV cert** vendor (DigiCert/Sectigo) | R-5 day 0 | $300-500/yr | R5-7 |
 | H-15 | **External advisor pool** — 5+ people (3 Security advisors, 2 Privacy/DPO interim, 1 SRE consultant per R5-8). **GAP-01 DPO formalization — IMPLEMENTED 2026-05-15** via `wt/gap01-dpo-formalization` → interim DPO formally designated (`specs/_compliance/DPO-APPOINTMENT-2026-05-15.md`, LGPD Art. 41 §1º + ANPD Resolução 18/2024 compliant) + responsibilities RACI (`DPO-RESPONSIBILITIES-MATRIX.md`, 30 rows) + escalation runbook (`specs/_runbooks/RB-DPO-ESCALATION.md`, 12 trigger families, 5-tier SLA matrix) + 90-day handoff plan to permanent DPO (`DPO-HANDOFF-PLAN.md`). Interim acceptable for SAM-only GA per conflict-of-interest analysis; permanent hire blocking for EU enterprise (GDPR Art. 37). Permanent DPO ceremony per `DPO-HANDOFF-PLAN.md §7`. | R-5 day 0 | $5-15k/quarter each (advisor pool) · $120-250k/yr (permanent DPO) | R5-8, R7-2 |
-| H-16 | **Translators** for pt-BR + es-419 (replace 200 TODO stubs) | R-4 day 0 | $4-8k flat | R4-6 |
+| H-16 | **Translators** for pt-BR + es-419 + de (replace ~356 MT-stubs; de added per R-prep i18n-de for DACH/EU enterprise GA) | R-4 day 0 | $6-12k flat | R4-6 |
 | H-17 | **Cookiebot or equivalent consent platform** | R-4 day 0 | ~$100/mo | R4-4 |
 | H-18 | **Statuspage.io** or self-host | R-4 day 0 | $29-99/mo | R4-7 |
 

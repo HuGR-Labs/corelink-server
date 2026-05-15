@@ -1,0 +1,38 @@
+---
+id: index
+title: Reference
+sidebar_label: Reference
+description: Information-oriented technical reference. Accurate, complete, and machine-checkable. Auto-generated from the canonical .proto and CLI sources where possible.
+---
+
+<!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
+>
+> Canonical EN source: `docs/reference/index.mdx`
+
+
+# Reference
+
+**Information-oriented.** Reference is the truth about the API surface
+— types, endpoints, error codes, defaults. Accurate and complete; not
+narrative.
+
+:::note WI-S18-002..003 will populate this section
+REAPI v2 reference is auto-generated from the canonical `.proto` files
+(`protoc-gen-doc`) in WI-S18-002; SDK and CLI reference land in
+WI-S18-003. CI gates against drift between source and rendered docs
+(R-S18-3, R-S18-4, completeness 10.s18.6).
+:::
+
+## Planned reference sections
+
+- **REAPI v2** — gRPC services and messages (auto-generated).
+- **REST endpoints** — Worker handlers (auto-generated).
+- **CLI reference** — `corelink` command catalogue.
+- **SDK reference** — Python (`corelink-py`), Go (`corelink-go`),
+  JS/TS (`@corelink/client`).
+- **Error codes** — canonical error enum + remediation hints.
+
+See the [Diátaxis reference guide](https://diataxis.fr/reference/) for
+the authoring conventions PR review enforces.

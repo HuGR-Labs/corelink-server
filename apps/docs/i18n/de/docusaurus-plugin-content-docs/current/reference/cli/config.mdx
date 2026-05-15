@@ -1,0 +1,104 @@
+---
+id: cli-config
+title: corelink config
+sidebar_label: config
+description: Manage the local CLI config file (~/.corelink/config.toml).
+tags: [reference, cli, config]
+---
+
+<!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
+>
+> Canonical EN source: `docs/reference/cli/config.mdx`
+
+
+# `corelink config`
+
+Manage the local config file. Located at `~/.corelink/config.toml`
+(macOS/Linux) or `%APPDATA%\corelink\config.toml` (Windows). File mode is
+enforced to `0600`.
+
+## Synopsis
+
+```bash
+corelink config set <KEY> <VALUE>
+corelink config get <KEY>
+corelink config list
+corelink config rotate <FIELD>
+```
+
+## Sub-actions
+
+### `set`
+
+```bash
+corelink config set auth.pat corelink_dev_t_xxx.xxx.xxx
+corelink config set defaults.tenant_id acme-corp
+corelink config set telemetry.enabled true
+```
+
+Keys are dotted: `auth.pat`, `defaults.tenant_id`, `telemetry.enabled`.
+
+### `get`
+
+```bash
+corelink config get defaults.tenant_id
+# stdout: acme-corp
+```
+
+`auth.pat` is **never** printed in plaintext by `get` or `list` — `get
+auth.pat` returns the literal string `<redacted>`.
+
+### `list`
+
+```bash
+corelink config list
+```
+
+```text
+auth.pat            = <redacted>
+defaults.tenant_id  = acme-corp
+telemetry.enabled   = true
+telemetry.anonymized_id = 3f9b1c...
+```
+
+### `rotate`
+
+Generates a fresh UUID v4 for an anonymisable field. Currently only
+`telemetry-id` is supported.
+
+```bash
+corelink config rotate telemetry-id
+# stdout: Rotated telemetry.anonymized_id
+```
+
+## Flags
+
+| Flag | Required | Default | Description |
+|---|---|---|---|
+| `--output` | no | `text` | `text` or `json` (applies to `get` and `list`). |
+
+## JSON schema (`list`)
+
+```json
+{
+  "ok": true,
+  "subcommand": "config",
+  "action": "list",
+  "values": {
+    "auth.pat": "<redacted>",
+    "defaults.tenant_id": "acme-corp",
+    "telemetry.enabled": true,
+    "telemetry.anonymized_id": "3f9b1c..."
+  }
+}
+```
+
+## Exit codes
+
+`0` success · `1` filesystem error · `2` argument error.
+
+## See also
+
+- [Authenticate (CLI)](../../how-to/sdk-cli/01-authenticate.mdx)

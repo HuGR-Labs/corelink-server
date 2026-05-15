@@ -8,10 +8,12 @@ import { formatDate } from "@/i18n/format";
 import type { Locale } from "@/i18n/LocaleContext";
 import type { SubProcessor } from "@/content/load";
 
+// R-prep i18n-de — `de` joined as the fourth canonical locale.
 const TITLE: Record<Locale, string> = {
   en: "Sub-processors",
   pt: "Subprocessadores",
   es: "Subprocesadores",
+  de: "Unterauftragsverarbeiter",
 };
 
 const HEADERS: Record<Locale, { name: string; role: string; region: string; certs: string; audit: string; download: string }> = {
@@ -38,6 +40,14 @@ const HEADERS: Record<Locale, { name: string; role: string; region: string; cert
     certs: "Certificaciones",
     audit: "Última auditoría",
     download: "Descargar CSV",
+  },
+  de: {
+    name: "Name",
+    role: "Rolle",
+    region: "Region",
+    certs: "Zertifizierungen",
+    audit: "Letztes Audit",
+    download: "CSV herunterladen",
   },
 };
 

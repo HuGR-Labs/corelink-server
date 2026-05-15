@@ -1,0 +1,53 @@
+---
+id: node-watch
+title: Node — watch health transitions
+sidebar_label: Node · watch
+---
+
+<!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
+>
+> Canonical EN source: `docs/reference/reapi/_examples/Health/node-watch.mdx`
+
+
+# Node / TypeScript — watch health transitions
+
+Poll the health endpoint on a short interval; log every state transition.
+
+## Code
+
+```ts
+import { CoreLinkClient } from "@corelink/client";
+
+const client = new CoreLinkClient({
+  endpoint: "https://acme-dev.corelink.dev",
+  pat: process.env.CORELINK_PAT!,
+});
+
+let last = "UNKNOWN";
+setInterval(async () => {
+  try {
+    const s = await client.health.check();
+    if (s !== last) {
+      console.log(`[${new Date().toISOString()}] ${last} → ${s}`);
+      last = s;
+    }
+  } catch (err) {
+    console.warn("probe failed:", (err as Error).message);
+  }
+}, 1000);
+```
+
+## Expected output
+
+```text
+[2026-05-14T22:01:14.000Z] UNKNOWN → SERVING
+[2026-05-14T22:02:01.000Z] SERVING → NOT_SERVING
+```
+
+## Common errors
+
+| Failure | Cause | Fix |
+| --- | --- | --- |
+| `probe failed: UNAVAILABLE` | Server transient | Probe loop keeps running; no action needed |

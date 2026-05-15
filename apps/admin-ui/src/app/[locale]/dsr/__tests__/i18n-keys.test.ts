@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import { tFor, MESSAGES, type Locale } from "@/i18n";
 import { DSR_ACTIONS } from "@/lib/dsr-types";
 
-const LOCALES: Locale[] = ["en", "pt", "es"];
+// R-prep i18n-de — `de` joined as the fourth canonical locale.
+const LOCALES: Locale[] = ["en", "pt", "es", "de"];
 
-describe("i18n DSR keys exist for all 6 rights × 3 locales (Test 12)", () => {
+describe("i18n DSR keys exist for all 6 rights × 4 locales (Test 12 + R-prep i18n-de)", () => {
   for (const locale of LOCALES) {
     for (const action of DSR_ACTIONS) {
       it(`has label + description + legal_ref for ${action} in ${locale}`, () => {

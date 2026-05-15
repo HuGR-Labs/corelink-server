@@ -1,0 +1,205 @@
+---
+id: rbac-permissions
+title: "Permissions reference"
+slug: "/reference/rbac/permissions"
+sidebar_label: "Permissions"
+description: "Every CoreLink permission ID, its canonical wire-form scope name, what it grants, and which endpoint(s) it gates."
+tags: [rbac, reference, security]
+last_updated: "2026-05-15"
+sources:
+  - "crates/corelink-pat/src/scopes.rs (12 canonical PAT scopes, bits 0..=11)"
+  - "crates/corelink-dual-approval/src/types.rs (AdminOpType — 7 variants)"
+---
+
+<!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
+>
+> Canonical EN source: `docs/reference/rbac/permissions.mdx`
+
+
+# Permissions reference
+
+The full canonical permission catalog. Two layers:
+
+1. **PAT scopes** — the 12 bits in the `PatScopes` u64 bitset. Each PAT
+   carries exactly the subset of bits granted at mint time. Middleware
+   enforces `(scopes & required) == required` per request.
+2. **Admin op types** — the 7 destructive/non-destructive operation
+   variants routed through `POST /v1/admin/ops` with the dual-approval
+   gate where applicable.
+
+> The wire-form scope strings are stable; bit positions are stable for
+> the lifetime of the u64 (ADR-0026 covers the u128 migration path when
+> we exceed 64 scopes). Reserved bits 12..=63 are masked off by
+> `PatScopes::from_u64`.
+
+---
+
+## PAT scopes (12 canonical bits)
+
+### `cache:r` — Read CAS blobs + AC results
+
+- **Bit position:** 0 (`SCOPE_CACHE_R = 1 << 0`).
+- **Granted to roles by default:** `Owner`, `Admin`, `Developer`,
+  `Viewer`.
+- **Gates endpoints:**
+  - `GET /v1/cas/blobs/{digest}` (REAPI Bytestream Read).
+  - `GET /v1/ac/{action_digest}` (Action Cache lookup).
+  - `BatchReadBlobs` gRPC.
+
+### `cache:w` — Write CAS blobs + AC results
+
+- **Bit position:** 1 (`SCOPE_CACHE_W`).
+- **Granted to roles by default:** `Owner`, `Admin`, `Developer`.
+- **Gates endpoints:**
+  - `PUT /v1/cas/blobs/{digest}` (REAPI Bytestream Write).
+  - `PUT /v1/ac/{action_digest}`.
+  - `BatchUpdateBlobs` gRPC.
+
+### `cache:find-missing` — Execute FindMissingBlobs
+
+- **Bit position:** 2 (`SCOPE_CACHE_FIND`).
+- **Granted to roles by default:** `Owner`, `Admin`, `Developer`.
+- **Gates endpoints:**
+  - `FindMissingBlobs` gRPC. (No implicit download.)
+
+### `cache:delete` — Admin blob deletion
+
+- **Bit position:** 3 (`SCOPE_CACHE_DELETE`).
+- **Granted to roles by default:** `Owner`, `Admin`.
+- **Gates endpoints:**
+  - `DELETE /v1/cas/blobs/{digest}` (rare; quota-bound).
+
+### `admin:tenant-read` — List tenant config
+
+- **Bit position:** 4 (`SCOPE_ADMIN_TENANT_R`).
+- **Granted to roles by default:** `Owner`, `Admin`, `Viewer`.
+- **Gates endpoints:**
+  - `GET /v1/admin/tenant/{tenant_id}`.
+  - `GET /v1/admin/tenant/{tenant_id}/config`.
+  - `GET /v1/admin/tenant/{tenant_id}/byok` (BYOK config view).
+
+### `admin:tenant-write` — Mutate tenant config
+
+- **Bit position:** 5 (`SCOPE_ADMIN_TENANT_W`).
+- **Granted to roles by default:** `Owner`, `Admin` (most ops); some
+  ops further restricted via dual-approval gate.
+- **Gates endpoints:**
+  - `PATCH /v1/admin/tenant/{tenant_id}/config`.
+  - `POST /v1/admin/ops` (with dual-approval headers for the 5
+    destructive `AdminOpType` variants — see below).
+  - `PUT /v1/admin/tenant/{tenant_id}/byok` (Owner-only flow).
+
+### `admin:tokens` — Mint / revoke PATs
+
+- **Bit position:** 6 (`SCOPE_ADMIN_TOKENS`).
+- **Granted to roles by default:** `Owner`, `Admin`. `Developer`
+  effectively holds this for self-mint only — see role catalog.
+- **Gates endpoints:**
+  - `POST /v1/admin/pat` (mint).
+  - `POST /v1/admin/pat/{id}/revoke` (revoke).
+  - `GET /v1/admin/pat` (list, redacted Argon2id hashes).
+
+### `admin:billing` — View / mutate billing surface
+
+- **Bit position:** 7 (`SCOPE_ADMIN_BILLING`).
+- **Granted to roles by default:** `Owner` only.
+- **Gates endpoints:**
+  - `GET /v1/admin/billing/invoices`.
+  - `PATCH /v1/admin/billing/payment-method`.
+  - `POST /v1/admin/billing/tier-change` (upgrade single-actor;
+    downgrade routes through dual-approval).
+
+### `admin:audit` — Read tenant audit logs
+
+- **Bit position:** 8 (`SCOPE_ADMIN_AUDIT`).
+- **Granted to roles by default:** `Owner`, `Admin`, `Viewer`.
+- **Gates endpoints:**
+  - `GET /v1/admin/audit/events`.
+  - `GET /v1/admin/audit/proof/{event_id}` (RFC 6962 inclusion proof).
+  - `GET /v1/admin/op-log` (dual-approval gated ops history).
+
+### `admin:users` — Manage tenant users
+
+- **Bit position:** 9 (`SCOPE_ADMIN_USERS`).
+- **Granted to roles by default:** `Owner`, `Admin`.
+- **Gates endpoints:**
+  - `POST /v1/admin/members/invite`.
+  - `PATCH /v1/admin/members/{user_id}` (role change).
+  - `DELETE /v1/admin/members/{user_id}` (soft-delete; last-Owner
+    safeguard enforced server-side).
+
+### `execute:action` — Phase 2 executor reports action start
+
+- **Bit position:** 10 (`SCOPE_EXECUTE_ACTION`).
+- **Granted to roles by default:** none (Phase 2 worker identity only).
+- **Gates endpoints:**
+  - `POST /v2/execution/action/start` *(planned for Phase 2)*.
+
+### `report:result` — Phase 2 executor reports result
+
+- **Bit position:** 11 (`SCOPE_REPORT_RESULT`).
+- **Granted to roles by default:** none (Phase 2 worker identity only).
+- **Gates endpoints:**
+  - `POST /v2/execution/result` *(planned for Phase 2)*.
+
+### Reserved bits 12..=63
+
+Masked off by `PatScopes::from_u64` so a forward-compatible row with an
+unknown bit silently degrades on a current-generation reader (per
+ADR-0026). Reserved for future scopes.
+
+---
+
+## Admin operation types (7 variants)
+
+Routed through `POST /v1/admin/ops`. Destructive variants require
+`X-Dual-Approver`, `X-Approver-Signature`, `X-Approver-Nonce`,
+`X-Request-Ts-Ms` headers and run through the 7-step gate.
+
+### Destructive (dual-approval required)
+
+| Op type                  | Spec WI    | What it does                                  |
+|--------------------------|------------|-----------------------------------------------|
+| `ConfigRollback`         | WI-S13-001 | Roll back a tenant config to a prior version. |
+| `RetentionPolicyReduce`  | (S-11)     | Shorten a retention TTL.                      |
+| `FeatureFlagDisable`     | (S-12)     | Disable a feature flag globally or per-tenant.|
+| `SecretRotationStart`    | WI-S13-003 | Kick off a secret / DEK rotation.             |
+| `TenantTombstone`        | (S-11)     | Tombstone a tenant (erasure pipeline entry).  |
+
+### Non-destructive (audited; approver optional but recommended)
+
+| Op type                   | What it does                                    |
+|---------------------------|-------------------------------------------------|
+| `FeatureFlagToggleSafe`   | Toggle a flag in the safe direction (enable / rollout %↑). |
+| `RateLimitAdjustUp`       | Increase a rate-limit bucket (conservative).    |
+
+See `crates/corelink-dual-approval/src/types.rs::AdminOpType::is_destructive`
+for the canonical classifier.
+
+---
+
+## Approval outcomes
+
+Every gate evaluation writes one of these strings to `admin_op_log.outcome`
+(CHECK constraint enforces the set):
+
+| Outcome string                | Meaning                                                  |
+|-------------------------------|----------------------------------------------------------|
+| `approved`                    | All 7 checks passed; op executed.                        |
+| `denied_missing`              | `X-Dual-Approver` header missing on a destructive op.    |
+| `denied_sig`                  | HMAC signature invalid.                                  |
+| `denied_caller_eq`            | Caller == approver (separation of duties).               |
+| `denied_collusion`            | Same approver co-signed within the 3-cycle window.       |
+| `denied_mfa_stale`            | Caller MFA assertion > 30 min old.                       |
+| `denied_approver_not_admin`   | Approver does not hold an active `Owner`/`Admin` role.   |
+| `denied_nonce_replay`         | Nonce already seen.                                      |
+| `denied_clock_skew`           | `ts_ms` differs from server now > 60s.                   |
+
+## Related
+
+- [RBAC overview](../../explanation/rbac/index.mdx)
+- [Role catalog](../../explanation/rbac/role-catalog.mdx)
+- [Permission matrix](../../explanation/rbac/permission-matrix.mdx)
+- [Audit chain](../../explanation/security/audit-chain.mdx)

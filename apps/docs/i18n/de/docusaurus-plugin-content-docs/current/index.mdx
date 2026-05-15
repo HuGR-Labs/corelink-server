@@ -1,0 +1,58 @@
+---
+id: index
+title: CoreLink documentation
+slug: /
+description: CoreLink is a multi-tenant content-addressable cache for build, package, and ML workloads on Cloudflare. Start with the 5-minute quickstart, browse the REAPI v2 reference, or compare plans.
+---
+
+<!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
+>
+> Canonical EN source: `docs/index.mdx`
+
+
+# CoreLink documentation
+
+CoreLink is a multi-tenant content-addressable cache for build, package,
+and ML workloads, deployed on Cloudflare. These docs follow the
+[Diátaxis](https://diataxis.fr/) framework — every page belongs to
+exactly one of **Tutorial**, **How-to**, **Reference**, or **Explanation**.
+
+<nav aria-label="Documentation quickstart" className="u-grid u-grid-3 u-mt-8">
+  <a className="u-card" href="/tutorials/quickstart-10min">
+    <h3>Get started in 10 min →</h3>
+    <p>Install → store → retrieve → audit, end-to-end against a sandbox. No credit card.</p>
+  </a>
+  <a className="u-card" href="/reference/api">
+    <h3>API reference</h3>
+    <p>REAPI v2 + REST endpoints, auto-generated from the canonical <code>.proto</code> files.</p>
+  </a>
+  <a className="u-card" href="/pricing">
+    <h3>Pricing</h3>
+    <p>Five tiers from free to enterprise — transparent storage, egress, and SLA terms.</p>
+  </a>
+</nav>
+
+## New to CoreLink?
+
+Start with the **[10-minute quickstart](/tutorials/quickstart-10min)** —
+install the CLI, store + retrieve a CAS object, and see the audit
+trail, all against a free 24h sandbox tenant (no credit card). Then
+dive into the **[How-to](/how-to/)** guides for task-oriented recipes
+(BYOK setup, Bazel CI integration, DSR exports, and more).
+
+## Looking for something specific?
+
+- **API and CLI reference**: [`/reference/`](/reference/) — REAPI v2,
+  Python/Go/JS SDKs, CLI commands.
+- **Architecture and design rationale**:
+  [`/explanation/architecture`](/explanation/architecture) — why
+  content-addressable, how dedup works, the multi-region model.
+- **Trust and compliance**: [`/security`](/security) — SBOM, pentest
+  summary, SOC 2 timeline, SLA.
+
+:::tip Edit on GitHub
+Every page has an **Edit this page** link in the footer. PRs welcome —
+see the [contribution guide](https://github.com/humangr-labs/corelink-server).
+:::

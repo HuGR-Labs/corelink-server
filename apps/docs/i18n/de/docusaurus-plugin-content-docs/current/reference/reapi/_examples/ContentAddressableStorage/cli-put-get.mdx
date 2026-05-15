@@ -1,0 +1,50 @@
+---
+id: cli-put-get
+title: CLI — put then get
+sidebar_label: CLI · put / get
+---
+
+<!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
+>
+> Canonical EN source: `docs/reference/reapi/_examples/ContentAddressableStorage/cli-put-get.mdx`
+
+
+# CLI — `corelink put` / `corelink get`
+
+End-to-end blob round-trip via the CLI. Useful for smoke-testing a fresh PAT.
+
+## Prerequisites
+
+- `corelink` CLI installed
+- `CORELINK_PAT` exported
+
+## Code
+
+```bash
+echo "hello, corelink" > /tmp/sample.txt
+
+# Upload — server returns the canonical digest.
+DIGEST=$(corelink put /tmp/sample.txt --format=digest)
+echo "digest = $DIGEST"
+
+# Download — client-verify default on.
+corelink get "$DIGEST" --output /tmp/roundtrip.txt
+diff /tmp/sample.txt /tmp/roundtrip.txt && echo "ROUNDTRIP OK"
+```
+
+## Expected output
+
+```text
+digest = sha256:bdd9ea4a8e6b...:16
+ROUNDTRIP OK
+```
+
+## Common errors
+
+| CLI exit code | Cause | Fix |
+| --- | --- | --- |
+| `3` | `COR_AUTH_PAT_INVALID` | Re-run `corelink doctor --check-auth` |
+| `6` | `COR_CAS_DIGEST_MISMATCH` | Disk corruption — re-upload |
+| `9` | `COR_QUOTA_EXCEEDED` | Free space or upgrade plan |

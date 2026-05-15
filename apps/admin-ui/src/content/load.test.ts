@@ -2,8 +2,9 @@ import { describe, it, expect } from "vitest";
 import { loadLocalizedMarkdown, loadSubProcessors, extractFrontMatterFromBody } from "./load";
 
 describe("content/load", () => {
-  it("loads localized privacy notice (en/pt/es)", () => {
-    for (const l of ["en", "pt", "es"] as const) {
+  it("loads localized privacy notice (en/pt/es/de)", () => {
+    // R-prep i18n-de — `de` joined as the fourth canonical locale.
+    for (const l of ["en", "pt", "es", "de"] as const) {
       const md = loadLocalizedMarkdown("privacy-notice", l);
       expect(md.length).toBeGreaterThan(100);
     }

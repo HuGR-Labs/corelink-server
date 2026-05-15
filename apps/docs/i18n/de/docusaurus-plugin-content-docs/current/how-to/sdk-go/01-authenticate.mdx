@@ -1,0 +1,100 @@
+---
+id: sdk-go-authenticate
+title: Authenticate (Go)
+sidebar_label: Authenticate
+description: Configure a Personal Access Token (PAT) for the corelink-go SDK.
+tags: [sdk, go, auth, how-to]
+---
+
+<!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
+>
+> Canonical EN source: `docs/how-to/sdk-go/01-authenticate.mdx`
+
+
+# Authenticate the Go SDK
+
+## When to use this guide
+
+You import `github.com/humangr-labs/corelink-go` and need to call any
+cache-mutating or cache-reading API. PAT auth is mandatory; the SDK refuses
+to construct a client without one.
+
+## Prerequisites
+
+- Go 1.22+ (`context` and generics are used throughout).
+- `go get github.com/humangr-labs/corelink-go@latest`
+- A CoreLink tenant; PAT minted at `https://app.corelink.dev/tokens`.
+
+## Recommended: env var
+
+```bash
+export CORELINK_PAT="corelink_dev_t_xxx.xxx.xxx"
+```
+
+```go
+package main
+
+import (
+    "context"
+    "log"
+
+    "github.com/humangr-labs/corelink-go/corelink"
+)
+
+func main() {
+    ctx := context.Background()
+    cli, err := corelink.NewClient(ctx, corelink.WithTenantID("acme-corp"))
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer cli.Close()
+
+    who, err := cli.Whoami(ctx)
+    if err != nil {
+        log.Fatal(err)
+    }
+    log.Printf("tenant=%s scopes=%v", who.TenantID, who.Scopes)
+}
+```
+
+## Alternative: config file
+
+```toml
+# ~/.corelink/config.toml
+[auth]
+pat = "corelink_dev_t_xxx.xxx.xxx"
+
+[defaults]
+tenant_id = "acme-corp"
+```
+
+`NewClient` reads the file if `CORELINK_PAT` is unset.
+
+## Forbidden: PAT in struct literal in committed code
+
+```go
+// DO NOT DO THIS
+cli, _ := corelink.NewClient(ctx, corelink.WithPAT("corelink_dev_t_xxx.xxx.xxx"))
+```
+
+Violates CTRL-CRED-001. Use env vars or config files only. CI lint flags
+calls to `WithPAT` outside of `*_test.go`.
+
+## Verify
+
+```go
+if _, err := cli.Whoami(ctx); err != nil {
+    var ae *corelink.AuthError
+    if errors.As(err, &ae) {
+        log.Fatalf("auth failed: %s", ae.Code)
+    }
+    log.Fatal(err)
+}
+```
+
+## Next steps
+
+- [Upload a blob](./02-upload-blob.mdx)
+- [Download a blob](./03-download-blob.mdx)

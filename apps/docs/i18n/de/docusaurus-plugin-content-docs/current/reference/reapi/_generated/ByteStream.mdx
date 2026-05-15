@@ -1,0 +1,99 @@
+---
+id: ByteStream
+title: ByteStream (REAPI v2)
+sidebar_label: ByteStream
+description: Auto-generated reference for the ByteStream gRPC service.
+---
+
+<!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
+>
+> Canonical EN source: `docs/reference/reapi/_generated/ByteStream.mdx`
+
+
+# ByteStream
+
+> Auto-generated from `crates/corelink-reapi/proto/google/bytestream/bytestream.proto`. Do not edit by hand — run `pnpm docs:gen`.
+
+- Proto package: `google.bytestream`
+- Fully-qualified name: `google.bytestream.ByteStream`
+
+## Methods
+
+| Method | Request | Response | Streaming |
+| --- | --- | --- | --- |
+| `Read` | `ReadRequest` | `ReadResponse` | server-streaming |
+| `Write` | `WriteRequest` | `WriteResponse` | client-streaming |
+| `QueryWriteStatus` | `QueryWriteStatusRequest` | `QueryWriteStatusResponse` | unary |
+
+### Read
+
+- **Request:** `ReadRequest`
+- **Response:** `ReadResponse`
+- **Streaming:** server-streaming
+
+### Write
+
+- **Request:** `WriteRequest`
+- **Response:** `WriteResponse`
+- **Streaming:** client-streaming
+
+### QueryWriteStatus
+
+- **Request:** `QueryWriteStatusRequest`
+- **Response:** `QueryWriteStatusResponse`
+- **Streaming:** unary
+
+## Messages
+
+### ReadRequest
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `resource_name` | `string` | 1 |
+| `read_offset` | `int64` | 2 |
+| `read_limit` | `int64` | 3 |
+
+### ReadResponse
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `data` | `bytes` | 1 |
+
+### WriteRequest
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `resource_name` | `string` | 1 |
+| `write_offset` | `int64` | 2 |
+| `finish_write` | `bool` | 3 |
+| `data` | `bytes` | 10 |
+
+### WriteResponse
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `committed_size` | `int64` | 1 |
+
+### QueryWriteStatusRequest
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `resource_name` | `string` | 1 |
+
+### QueryWriteStatusResponse
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `committed_size` | `int64` | 1 |
+| `complete` | `bool` | 2 |
+
+## Examples
+
+See manual code examples under [`_examples/ByteStream/`](../_examples/ByteStream/):
+
+- Python
+- Go
+- Node / TypeScript
+- CLI (`corelink`)

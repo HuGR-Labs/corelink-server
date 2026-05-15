@@ -1,0 +1,55 @@
+---
+id: Health
+title: Health (REAPI v2)
+sidebar_label: Health
+description: Auto-generated reference for the Health gRPC service.
+---
+
+<!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
+>
+> Canonical EN source: `docs/reference/reapi/_generated/Health.mdx`
+
+
+# Health
+
+> Auto-generated from `apps/server/proto/health.proto`. Do not edit by hand — run `pnpm docs:gen`.
+
+- Proto package: `corelink.health.v1`
+- Fully-qualified name: `corelink.health.v1.Health`
+
+## Methods
+
+| Method | Request | Response | Streaming |
+| --- | --- | --- | --- |
+| `Check` | `HealthCheckRequest` | `HealthCheckResponse` | unary |
+
+### Check
+
+- **Request:** `HealthCheckRequest`
+- **Response:** `HealthCheckResponse`
+- **Streaming:** unary
+
+## Messages
+
+### HealthCheckRequest
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `service` | `string` | 1 |
+
+### HealthCheckResponse
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `status` | `ServingStatus` | 1 |
+
+## Examples
+
+See manual code examples under [`_examples/Health/`](../_examples/Health/):
+
+- Python
+- Go
+- Node / TypeScript
+- CLI (`corelink`)

@@ -24,7 +24,9 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
-const LOCALES = ["pt-BR", "es-419"] as const;
+// R-prep i18n-de: `de` joined as the fourth canonical locale (DACH enterprise
+// GA). Coverage gate applies uniformly per-locale.
+const LOCALES = ["pt-BR", "es-419", "de"] as const;
 const DEFAULT_THRESHOLD = 0.8;
 
 const REPO_ROOT = path.resolve(new URL(".", import.meta.url).pathname, "..");
