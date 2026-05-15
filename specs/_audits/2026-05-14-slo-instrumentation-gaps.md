@@ -164,9 +164,9 @@ After this PR: **5 additional SLOs wire to the alert evaluator**
 | SLO-LAT-CAS-GET (p99) | Sli-bound deferred | **Sli emitted at handler layer** (`Sli::LatencyCasGetP99` on every entry) |
 | SLO-LAT-CAS-PUT (p99) | Sli-bound deferred (P0-2 closure) | **Sli emitted at handler layer** (`Sli::LatencyCasPutP99` on every entry) |
 | SLO-CORRECT-CAS | Sli-bound deferred (P0-4 closure) | **Sli emitted at handler layer** (`Sli::CorrectnessCas` on every read + write entry; hash-mismatch path drives `is_error=true`) |
-| SLO-AVAIL-AC | Sli-bound deferred | **Sli emitted at handler layer** (`corelink-handler-ac::AcLookupHandler::lookup` → `Sli::AvailAcLookup`) |
-| SLO-LAT-AC-HIT (p99) | Sli-bound deferred (P0-3 closure) | **Sli emitted at handler layer** (`Sli::LatencyAcHitP99` on every lookup entry) |
-| SLO-AVAIL-CP | Sli-bound deferred (P0-1 closure) | **Sli emitted at handler layer** (`corelink-handler-admin::Admin{Read,Mutate}Handler` → `Sli::AvailControlPlane`) |
+| SLO-AVAIL-AC | Sli-bound deferred | **Sli emitted at handler layer AND routed end-to-end** (`corelink-handler-ac::AcLookupHandler::lookup` → `Sli::AvailAcLookup`; `apps/server::routes::ac` wave-11 wire-up) |
+| SLO-LAT-AC-HIT (p99) | Sli-bound deferred (P0-3 closure) | **Sli emitted at handler layer AND routed end-to-end** (`Sli::LatencyAcHitP99` on every lookup entry; `apps/server::routes::ac` wave-11 wire-up) |
+| SLO-AVAIL-CP | Sli-bound deferred (P0-1 closure) | **Sli emitted at handler layer AND routed end-to-end** (`corelink-handler-admin::Admin{Read,Mutate}Handler` → `Sli::AvailControlPlane`; `apps/server::routes::admin` wave-11 wire-up; mutate path gated by dual-approval) |
 | SLO-CORRECT-ISO | Sli-bound deferred (P0-5 closure) | Cross-tenant denial path emits `Sli::AvailCasGet`/`AvailCasPut` with `is_error=true` + `ReadDenied`/`WriteDenied` audit row BEFORE the rejection; standalone `Sli::CorrectnessTenantIsolation` observer integration remains pending its dedicated probe (any cross-tenant audit row already classifies; explicit emit follows). |
 
 **Coverage delta:** 8 SLOs transition from "Sli-bound deferred" to
@@ -198,11 +198,19 @@ proptests pin:
   scheduled as `WI-S04-CF-WIRING` per the autonomous-execution
   charter `trait-abstraction-defer` rule. The wire-up shape is
   documented in the lib.rs ignore-block example.
-- **AC + Admin route registration** in `apps/server::routes` —
+- ~~**AC + Admin route registration** in `apps/server::routes` —
   the example end-to-end wire-up shipped only `cas-read`. AC
   lookup and Admin read/mutate routes follow the same pattern
   once their route shapes are agreed (handler crate + fakes are
-  already in place).
+  already in place).~~ **CLOSED 2026-05-15** by wave-11 wire-up
+  (`apps/server::routes::ac` + `apps/server::routes::admin`).
+  Both modules follow the cas-read trait-object pattern with
+  `Arc<dyn ...Handler>` route state, in-memory fakes on the native
+  target, and a `compile_error!` reserved slot for the wasm32
+  CF-Worker impl (also tracked under `WI-S04-CF-WIRING`). Routes:
+  `GET/PUT /v1/ac/{tenant}/{action_digest}`,
+  `GET /v1/admin/read/{resource}`, `POST /v1/admin/mutate`. The
+  composed router is built via `apps/server::routes::build()`.
 - **Standalone `Sli::CorrectnessTenantIsolation` probe** — the
   cross-tenant denial path is currently classified through the
   availability SLI error flag; a dedicated observer call for the
