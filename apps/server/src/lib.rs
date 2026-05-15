@@ -5,9 +5,11 @@
 //!
 //! # Modules
 //!
-//! - [`webhook`] — R2-12 Stripe webhook HTTP route. Signature verify,
-//!   idempotent dedup, and event-type dispatchers. See module docs
-//!   for the full request flow.
+//! - [`webhook`] — Stripe webhook HTTP shell (axum). Thin boundary
+//!   over the canonical
+//!   [`corelink_stripe_real::webhook_dispatch::WebhookDispatcher`]
+//!   pipeline (wave-16 unification, audit doc
+//!   `specs/_audits/2026-05-15-stripe-webhook-production.md`).
 //! - [`routes`] — HTTP route surface. Currently exposes the CAS read
 //!   end-to-end as the example wire-up for the R-prep handler-crate
 //!   skeleton (see
