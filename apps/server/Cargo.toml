@@ -46,12 +46,16 @@ bytes = { workspace = true }
 corelink-stripe-real = { workspace = true }
 corelink-tier-selection = { workspace = true }
 
-# R-prep: CAS handler crate wired into apps/server::routes::cas as the
-# example end-to-end SLO-instrumented handler (see audit
-# `specs/_audits/2026-05-14-slo-instrumentation-gaps.md`). AC + Admin
-# handlers are not yet routed here; they ride the same wire-up
-# pattern once their route surfaces are agreed.
+# R-prep: handler crates wired into apps/server::routes as the
+# end-to-end SLO-instrumented handler surface (see audit
+# `specs/_audits/2026-05-14-slo-instrumentation-gaps.md`). The CAS
+# wire-up landed in wave 8; the AC + Admin wire-ups land in wave 11
+# (this commit) — both follow the cas-read trait-object pattern with
+# `Arc<dyn HandlerTrait>` to keep route shape stable across the
+# native / wasm32 CF-Worker swap.
 corelink-handler-cas = { workspace = true }
+corelink-handler-ac = { workspace = true }
+corelink-handler-admin = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
