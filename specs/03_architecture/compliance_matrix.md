@@ -284,15 +284,17 @@ Ver `observability_model.md §7`. Imutabilidade: R2 Object Lock Governance Mode;
 
 Este doc é o acordo atual de roadmap. Gaps conhecidos:
 
-| Gap ID | Descrição                                                     | Plano                                         | Owner            |
-|--------|---------------------------------------------------------------|-----------------------------------------------|------------------|
-| GAP-01 | DPO formal vs. interim Privacy Officer                         | Contratar DPO antes de ingressar EU enterprise | Gustavo         |
-| GAP-02 | BCP/DRP documentado                                             | WI em fase "pré-GA hardening"                 | SRE Lead        |
-| GAP-03 | TIA template                                                    | Criar junto com primeiro tenant EU             | Legal           |
-| GAP-04 | SOC 2 readiness gap analysis                                    | Mês 3 pós GA                                  | Compliance Officer |
-| GAP-05 | ISO 27001 SoA                                                   | Depende de SOC 2 Type II                       | Compliance Officer |
-| GAP-06 | Legal hold process automation                                   | WI explícito pós GA                           | Legal + SRE      |
-| GAP-07 | Evidence collection automation end-to-end                       | Mês 6 pós GA (Drata/Vanta integração avaliada) | Compliance Officer |
+> **Status update 2026-05-15 (R5-3):** the original §9 rows below are now folded into the canonical 33-GAP register at `specs/_compliance/SOC2-GAP-ANALYSIS.md`. Status changes (no new controls): row GAP-04 (SOC 2 readiness gap analysis) → **DONE** (delivered 2026-05-14, sealed); row GAP-07 (evidence collection automation end-to-end) → **DONE** (Drata pipeline shipped via `crates/corelink-drata-sync/`; 90.7% strict / 95.3% effective auto-coverage; see `specs/_compliance/DRATA-INTEGRATION-COVERAGE.md`). Consolidated rollup snapshot: `specs/_compliance/SOC2-EVIDENCE-ROLLUP-2026-05-15.md` (83.7% internal / 96.4% Drata · 33 GAPs · 1 blocking-GA closing D+30).
+
+| Gap ID | Descrição                                                     | Plano                                         | Owner            | Status (2026-05-15) |
+|--------|---------------------------------------------------------------|-----------------------------------------------|------------------|----------------------|
+| GAP-01 | DPO formal vs. interim Privacy Officer                         | Contratar DPO antes de ingressar EU enterprise | Gustavo         | Open (T+1m) |
+| GAP-02 | BCP/DRP documentado                                             | WI em fase "pré-GA hardening"                 | SRE Lead        | Done (`BCP-DR-DRILL-CADENCE.md` + 14 drills) |
+| GAP-03 | TIA template                                                    | Criar junto com primeiro tenant EU             | Legal           | Done (`legal/tia/` template) |
+| GAP-04 | SOC 2 readiness gap analysis                                    | Mês 3 pós GA                                  | Compliance Officer | **Done** (delivered 2026-05-14; sealed) |
+| GAP-05 | ISO 27001 SoA                                                   | Depende de SOC 2 Type II                       | Compliance Officer | Partial (`specs/_audits/iso27001-soa.csv` 2022 baseline) |
+| GAP-06 | Legal hold process automation                                   | WI explícito pós GA                           | Legal + SRE      | Open (T+3m) |
+| GAP-07 | Evidence collection automation end-to-end                       | Mês 6 pós GA (Drata/Vanta integração avaliada) | Compliance Officer | **Done** (Drata pipeline live; 90.7% auto) |
 
 ---
 
