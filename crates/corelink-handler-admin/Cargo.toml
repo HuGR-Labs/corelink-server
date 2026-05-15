@@ -1,0 +1,36 @@
+[package]
+name = "corelink-handler-admin"
+description = "CoreLink Admin API HTTP handler skeleton (R-prep). Ships read-only `AdminReadHandler` trait surface + mutate-via-dual-approval `AdminMutateHandler` trait surface + `InMemoryAdminHandler` fake, the per-handler `SliObserver` integration emitting canonical `Sli::AvailControlPlane` observations on every entry, and the audit-fail-CLOSED ordering envelope. Mutations are gated on a dual-approval token (`approval_id` + distinct second-approver principal), per Lote-10 admin dual-approval discipline. Real CF-Worker wasm32 impl deferred per autonomous-execution charter trait-abstraction-defer rule."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+corelink-slo = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[[test]]
+name = "prop_handler_admin"
+path = "tests/prop_handler_admin.rs"

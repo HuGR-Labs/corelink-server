@@ -113,6 +113,18 @@ Pre-conditions: R-2 staging wiring functional.
 
 **Wave R-3 gate:** ≥ 5 of 10 E2E tests pass against staging; tag `roadmap-r3-sealed`.
 
+> **R-prep handler-crate skeletons (2026-05-15).** R-3 E2E flows
+> (R3-1 / R3-2 / R3-3) depend on a CAS / AC / Admin handler surface
+> being routable from `apps/server`. The skeletons land via
+> `crates/corelink-handler-cas`, `crates/corelink-handler-ac`,
+> `crates/corelink-handler-admin` (R-prep lane). The CAS read
+> handler is wired end-to-end at
+> [`apps/server::routes::cas`](apps/server/src/routes/cas.rs); AC
+> + Admin route registration trails the same shape. Closes the
+> handler-layer emit gap from
+> [`specs/_audits/2026-05-14-slo-instrumentation-gaps.md`](specs/_audits/2026-05-14-slo-instrumentation-gaps.md)
+> §6.1.
+
 ---
 
 ## 4. Wave R-4 — App Hardening + Deploy (depends on R-2 partial; 7 days; ≤8 agents)
@@ -129,6 +141,16 @@ Pre-conditions: R-2 staging wiring functional.
 | R4-8 | **Email + SMS providers** — SES (transactional) + Twilio (SMS) wired into notification path | 1 Sonnet + Gustavo (AWS/Twilio accounts) | DSR notifications, breach alerts |
 
 **Wave R-4 gate:** all 3 customer-facing URLs respond + return valid CSP + WCAG 2.2 AA axe sweep clean; tag `roadmap-r4-sealed`.
+
+> **R-prep handler-crate skeletons cross-link (2026-05-15).** The
+> `apps/server` binary that R-4 deploys will route the CF-Worker
+> CAS / AC / Admin handler impls behind the trait surfaces shipped
+> in `crates/corelink-handler-{cas,ac,admin}`. The wasm32 impl is
+> currently deferred per the `trait-abstraction-defer` charter
+> rule; the cfg-gate slot is documented at
+> [`apps/server::routes::cas::build_handler`](apps/server/src/routes/cas.rs).
+> R-4 deploy assumes the native (container) handler shape; wasm32
+> CF-Worker handler wiring is tracked as `WI-S04-CF-WIRING`.
 
 ---
 

@@ -158,6 +158,16 @@ members = [
     # gates drift between the YAML, the generated JSON sibling, and the path
     # constants exported by this crate.
     "crates/corelink-openapi",
+    # R-prep handler-crate skeletons (CAS / AC / Admin). Each crate ships the
+    # typed handler-surface trait + InMemoryFake + per-handler SliObserver
+    # integration emitting canonical Sli observations + audit-fail-CLOSED
+    # ordering envelope. Closes the handler-layer SLO emit gap from
+    # specs/_audits/2026-05-14-slo-instrumentation-gaps.md §6. Real
+    # wasm32 CF-Worker impls deferred per autonomous-execution charter
+    # trait-abstraction-defer.
+    "crates/corelink-handler-cas",
+    "crates/corelink-handler-ac",
+    "crates/corelink-handler-admin",
     # R3-2 BYOK CMK revoke → kill switch → audit E2E harness (WI-S14-006).
     # In-memory `KmsProvider` per provider kind + `RevocationDetector` cycle +
     # `MultiChannelAlerter` stub-mode by default; `AWS_TEST_KEY_ARN` /
@@ -407,6 +417,10 @@ corelink-tier-selection = { path = "crates/corelink-tier-selection" }
 corelink-stripe-real = { path = "crates/corelink-stripe-real" }
 corelink-drata-sync = { path = "crates/corelink-drata-sync" }
 corelink-openapi = { path = "crates/corelink-openapi" }
+# R-prep handler-crate skeletons (CAS / AC / Admin).
+corelink-handler-cas = { path = "crates/corelink-handler-cas" }
+corelink-handler-ac = { path = "crates/corelink-handler-ac" }
+corelink-handler-admin = { path = "crates/corelink-handler-admin" }
 
 # CLI tooling (WI-S15-001 / WI-S15-005)
 toml = "0.8"
