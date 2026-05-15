@@ -140,6 +140,7 @@ pub mod audit;
 pub mod chain;
 pub mod error;
 pub mod event;
+pub mod exporter;
 pub mod sink;
 pub mod verifier;
 
@@ -157,6 +158,11 @@ pub use event::{
     canonical_audit_event_kinds, AuditEvent, AuditEventKind, ChainHash,
     CLOUDEVENTS_DATACONTENTTYPE, CLOUDEVENTS_SPECVERSION, EVENT_TYPE_PREFIX, GENESIS_PREV_HASH,
     GENESIS_SEQUENCE_NUMBER,
+};
+pub use exporter::{
+    hashes_eq_ct, verify_export_result, verify_inclusion_proof, AuditExporter, ExportAuditRecord,
+    ExportManifest, ExportResult, ExportWindow, ExportedAuditEvent, InMemoryAuditExporter,
+    InclusionProof, ProofSibling,
 };
 pub use sink::{
     canonical_date_yyyy_mm_dd, canonical_r2_key, CapturedR2AuditSink, FailingR2AuditSink,

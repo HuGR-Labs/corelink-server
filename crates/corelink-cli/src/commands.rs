@@ -1,5 +1,6 @@
 //! CLI subcommand handlers for `corelink-cli` (WI-S15-001).
 
+pub mod audit;
 pub mod bench;
 pub mod config_cmd;
 pub mod doctor_cmd;
