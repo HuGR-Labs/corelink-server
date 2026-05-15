@@ -29,7 +29,7 @@ tags: ["lgpd", "lgpd-art-33", "residency", "attestation", "gap-22", "soc2-cross-
 >
 > **Observation period (this snapshot):** 2026-05-15 (cut date) → 2026-08-15 (90-day attestation window per ANPD guidance; renewable quarterly).
 >
-> **Companion docs (canonical, do not duplicate):** `specs/_compliance/SOC2-EVIDENCE-ROLLUP-2026-05-15.md` (GAP-22 row), `specs/03_architecture/privacy_model.md` (§7 residency model), `specs/03_architecture/compliance_matrix.md` (§4 LGPD crosswalk), `crates/corelink-privacy-residency-enforcement/` (runtime enforcement), `specs/_compliance/LGPD-DPO-MONTHLY-CHECKLIST.md` (operational cadence), `specs/_runbooks/RB-DATA-RESIDENCY-LEAK.md` (incident response).
+> **Companion docs (canonical, do not duplicate):** `specs/_compliance/SOC2-EVIDENCE-ROLLUP-2026-05-15.md` (GAP-22 row), `specs/03_architecture/privacy_model.md` (§7 residency model), `specs/03_architecture/compliance_matrix.md` (§4 LGPD crosswalk), `crates/corelink-privacy-residency-enforcement/` (runtime enforcement), `specs/_compliance/LGPD-DPO-MONTHLY-CHECKLIST.md` (operational cadence), `specs/_runbooks/RB-DATA-RESIDENCY-LEAK.md` (incident response), `specs/_compliance/LGPD-FULL-AUDIT-2026-05-15.md` (article-by-article audit beyond Art. 33 §1º — GAP-22 follow-up, 2026-05-15), `specs/_compliance/LGPD-ROPA-2026-05-15.md` (Record of Processing Activities — Art. 37 + 41), `specs/_runbooks/RB-DSR-LGPD-FULL.md` (internal DSR runbook — Art. 18 end-to-end).
 >
 > **GAP-22 closure pointer:** this bundle implements `Gap → Implemented` for SOC 2 cross-framework row 282 of `SOC2-EVIDENCE-ROLLUP-2026-05-15.md`. Status remains **DRAFT** until DPO + Security Lead countersign §7.
 
@@ -210,3 +210,7 @@ Source of truth: `legal/sub-processors.md` (14 entries; 10 documented, 4 pending
 - **Verifier script:** `scripts/verify-lgpd-residency.py`
 - **Residency-leak runbook:** `specs/_runbooks/RB-DATA-RESIDENCY-LEAK.md`
 - **Breach notification runbook + ANPD §48 escalation path:** `legal/breach-notification/`
+- **LGPD full audit (article-by-article — beyond Art. 33 §1º):** `specs/_compliance/LGPD-FULL-AUDIT-2026-05-15.md`
+- **Record of Processing Activities (Art. 37 + 41):** `specs/_compliance/LGPD-ROPA-2026-05-15.md`
+- **DSR runbook (Art. 18 end-to-end):** `specs/_runbooks/RB-DSR-LGPD-FULL.md`
+- **Customer-facing full-rights explainer:** `apps/docs/docs/explanation/privacy/lgpd-full.mdx`

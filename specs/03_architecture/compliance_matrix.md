@@ -160,6 +160,8 @@ Statement of Applicability (SoA) cobre os 93 controles Anexo A:2022. Mapping com
 
 ## 4. LGPD (Brasil)
 
+> **Full article-by-article audit (canonical, do not duplicate):** `specs/_compliance/LGPD-FULL-AUDIT-2026-05-15.md` (19 articles audited — Art. 5–48); `specs/_compliance/LGPD-ROPA-2026-05-15.md` (14-row RoPA — Art. 37 + 41); `specs/_runbooks/RB-DSR-LGPD-FULL.md` (Art. 18 end-to-end); `specs/_compliance/LGPD-RESIDENCY-ATTESTATION-2026-05-15.md` (Art. 33 §1º — GAP-22).
+
 ### 4.1 Bases principais
 
 | Art.   | Requisito                                             | Como atendemos                            | Evidence                         |
@@ -169,7 +171,8 @@ Statement of Applicability (SoA) cobre os 93 controles Anexo A:2022. Mapping com
 | Art. 11 | Dado sensível — não coletamos default                | §2 privacy_model                            | EVT-026            |
 | Art. 15 | Término do tratamento                                  | §8 privacy_model (retention)                | EVT-042                 |
 | Art. 17 | Titular tem direito                                    | §6 privacy_model (DSRs)                     | EVT-048 (DSR_EVIDENCE)     |
-| Art. 18 I–IX | Direitos específicos                              | §6 privacy_model                            | EVT-048 (DSR_EVIDENCE)     |
+| Art. 18 I–IX | Direitos específicos (9 rights + §II amendment objection) | §6 privacy_model + `crates/corelink-dsr/` (10k property test); end-to-end runbook `RB-DSR-LGPD-FULL.md`; article-by-article mapping `LGPD-FULL-AUDIT-2026-05-15.md §1.8` | EVT-048 (DSR_EVIDENCE) + EVT-049 (consent revoke) + EVT-042 (erasure pipeline 12-backend) |
+| Art. 37 | Registro de operações (RoPA)                        | `LGPD-ROPA-2026-05-15.md` (14 dataflows × purpose × legal basis × retention × recipients × cross-border × security) | EVT-026 + EVT-047 |
 | Art. 33 §1º | Transferência internacional + adequação              | §7 privacy_model + CTRL-PRIV-031 (residency pinning fail-CLOSED 451) + attestation bundle `specs/_compliance/LGPD-RESIDENCY-ATTESTATION-2026-05-15.md` (GAP-22 closed 2026-05-15) | EVT-044 + `dev.hugr.corelink.residency.{request_routed,write_rejected_cross_region}.v1` |
 | Art. 37 | Registro de operações                                  | Audit events CloudEvents                    | EVT-047 (AUDIT_EVENT)      |
 | Art. 38 | Relatório de impacto à proteção de dados (RIPD)       | DPIA por WI HIGH_RISK                       | EVT-045                         |

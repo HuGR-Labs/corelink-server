@@ -1,0 +1,320 @@
+---
+title: "Your LGPD rights at CoreLink (full menu)"
+slug: "/privacy/lgpd-full"
+description: "Plain-language summary of how CoreLink complies with LGPD beyond Art. 33 residency: every Art. 18 right you have, how to exercise it, response SLAs, and what data we actually hold."
+draft: true
+cross_functional_review: TBD
+pending_signoff:
+  - "Legal"
+  - "DPO"
+sources:
+  - "specs/_compliance/LGPD-FULL-AUDIT-2026-05-15.md"
+  - "specs/_compliance/LGPD-ROPA-2026-05-15.md"
+  - "specs/_compliance/LGPD-RESIDENCY-ATTESTATION-2026-05-15.md"
+  - "specs/_runbooks/RB-DSR-LGPD-FULL.md"
+  - "specs/03_architecture/privacy_model.md"
+  - "crates/corelink-dsr/"
+last_updated: "2026-05-15"
+---
+
+import { DraftBanner } from "../../../src/components/DraftBanner";
+
+<DraftBanner pageType="compliance" />
+
+# Your LGPD rights at CoreLink (full menu)
+
+> **DRAFT — pending Legal + DPO review.** Technical claims below are accurate as of 2026-05-15 and pinned to commit `fb9f56e`. The companion compliance docs (`LGPD-FULL-AUDIT-2026-05-15.md`, `LGPD-ROPA-2026-05-15.md`) are the source of truth; this page is the customer-facing summary.
+
+CoreLink is built in Brazil and our anchor customer (Forge) is Brazilian. We
+take LGPD (Lei 13.709/2018) seriously, not as a marketing checkbox. The
+sister page [Brazil residency & LGPD Art. 33 §1º](/residency/lgpd-brazil)
+covers *where* your data lives. **This page covers everything else**: what
+data we hold, what rights you have, how to use them, and what we will do for
+you (and how fast).
+
+## 1. The short version
+
+If you are a CoreLink user or your data is processed by CoreLink because a
+tenant uploaded a blob containing it, **LGPD gives you nine concrete rights**.
+We have built all nine into the platform as self-service APIs — no support
+ticket required, no waiting for a human to click a button (with one
+exception: revoking marketing consent is instantaneous, but deleting your
+whole account requires a confirmation step-up to make sure it's really you).
+
+The nine rights, our service level for each, and how to exercise them:
+
+| LGPD Art. 18 right | What it means | Our SLA | How to exercise |
+|---|---|---|---|
+| §I — Confirmação | Yes/no answer: are you processing my data? | 5 business days | `POST /v1/privacy/dsr/access` (subset query) or via the admin UI |
+| §II — Acesso | Give me a copy of everything you have on me | 15 business days | `POST /v1/privacy/dsr/access` |
+| §III — Correção | Fix incorrect, incomplete, or outdated data | 5 business days | `POST /v1/privacy/dsr/rectification` (requires MFA) |
+| §IV — Anonimização / bloqueio / eliminação | Delete unnecessary, excessive, or unlawfully-processed data | 30 calendar days | `POST /v1/privacy/dsr/erasure` (requires MFA) |
+| §V — Portabilidade | Give me my data in a structured format I can take elsewhere | 15 business days | `POST /v1/privacy/dsr/portability` |
+| §VI — Eliminação (consent-based) | Delete data we hold under your consent | 30 calendar days | Same erasure endpoint as §IV |
+| §VII — Compartilhamento | Tell me everyone you shared my data with | 15 business days | `GET /v1/privacy/dsr/shared-with` |
+| §VIII — Consequências de não consentir | Tell me what happens if I say no | Continuous (shown at consent capture) | Read the privacy notice §5 or look at the consent form before clicking |
+| §IX — Revogação do consentimento | Unsubscribe / withdraw consent | **Immediate (≤ 5 minutes)** | `DELETE /v1/consent/<purpose>` |
+
+Plus a bonus tenth right per the 2019 amendment:
+
+| Right | What it means | Our SLA | How to exercise |
+|---|---|---|---|
+| Art. 18 §II amendment — Oposição | I want you to stop processing under legitimate interest | 15 business days | `POST /v1/privacy/dsr/objection` |
+
+If you prefer talking to a human, email `privacy@hugr.com` and our DPO will
+process your request through the same pipeline (with the same SLA — we time
+it from the moment we verify your identity, not when you sent the email).
+
+## 2. What data do we actually hold?
+
+A short, honest answer.
+
+**About you as a CoreLink user:** your email address, your name, your billing
+address, your hashed password or WebAuthn public key, the IP address and
+user-agent class of your last few requests (truncated and pseudonymized),
+your DSR requests, your consent grants and revocations, and your support
+tickets.
+
+**About your data (blobs you upload):** we hold the bytes you upload, a
+content-addressable hash of those bytes (the digest), some metadata
+(size, timestamp, your tenant ID as a random UUID), and an audit record
+that says "this tenant uploaded this digest at this time" — **but we do
+not look at the content of your blobs**. Under LGPD, when your blob
+contains personal data of someone else (e.g., you uploaded a dataset for
+ML training that contains your customers' info), **you are the controller
+and we are the operator**. We do not read or use your data outside the
+contract.
+
+**What we don't hold:** we do not hold payment card data (Stripe does that;
+we never see it). We do not hold biometric templates (your WebAuthn key is
+a public cryptographic identifier, not a biometric — the actual biometric
+never leaves your device). We do not knowingly hold data on people under
+18, because CoreLink is a B2B platform and our Terms of Service require
+account holders to be adults representing a business entity.
+
+**The complete inventory:** 14 distinct dataflows are catalogued in our
+[Record of Processing Activities](/privacy/sub-processors) (Art. 37 +
+Art. 41). Each one specifies the data category, purpose, legal basis,
+retention period, recipients, and security measures.
+
+## 3. Why are we allowed to hold each piece?
+
+LGPD Art. 7 lists ten lawful bases for processing personal data. We use
+four of them, **fixed per purpose** — meaning we cannot quietly swap your
+data from "consent" to "legitimate interest" without forcing you to
+re-consent through a new version of our privacy notice. That immutability
+is enforced in code (`crates/corelink-privacy-consent-ledger/`) and tested
+with 10,000 property-test cases per CI run.
+
+| Why we hold the data | LGPD base | Example |
+|---|---|---|
+| To run the platform you signed up for | Art. 7 §V — contract | CAS uploads, AC entries, your account |
+| Because the law requires it | Art. 7 §II — legal obligation | Audit logs (SOC 2 + Art. 37), fiscal records (Art. 16 §3, 5 years), DSR fulfillment |
+| To prevent abuse and fraud | Art. 7 §IX — legitimate interest | Security monitoring, anomaly detection |
+| Because you said yes | Art. 7 §I — consent | Marketing emails, personalized analytics, opt-in ML training, beta features |
+
+If your data is held under consent, you can revoke at any time and we will
+stop processing within 5 minutes. **We will not silently fall back to
+"legitimate interest"** when your consent expires — processing pauses until
+you re-consent or delete the data. This is intentional and documented in
+our privacy model.
+
+## 4. How fast will we respond?
+
+The clock starts when we verify your identity (we ask for a step-up MFA
+re-auth on destructive requests — erasure and rectification — to make sure
+nobody hijacks your account to ask us to delete your data). The clock
+stops when we mark your request `completed`.
+
+We can pause the clock only in three narrow cases:
+
+- You are under a **legal hold** (court order, regulatory subpoena, ongoing
+  investigation). We will tell you the request is paused and why.
+- Your request is **ambiguous** and we asked you for clarification. The
+  clock resumes when you answer.
+- **Technical impossibility** documented in our incident records. Cap of 5
+  business days total per request.
+
+You will receive an email confirmation at every state transition
+(`verified`, `in_progress`, `completed`, or `rejected`). Receipts are
+cryptographically signed (RS256 JWT, KMS-rooted, 90-day anti-replay) so you
+can prove later that the request happened.
+
+## 5. The deletion ("eliminação") in detail
+
+When you ask us to delete your data under Art. 18 §IV, the deletion
+pipeline propagates the request across **12 backends** in a canonical
+order. Eight backends are **effectively erased** (rows hard-deleted); four
+are **pseudonymized retention** (the data stays because we are legally
+required to keep it — audit logs, billing records, point-in-time backups —
+but your identity is replaced with a one-way HKDF hash so we cannot
+re-identify you).
+
+**The 8 effective-erasure targets:**
+
+1. **Neon** (`dsr_tickets`, `account`, `tenant`, `user_account`,
+   `consent_ledger`, `subscription`) — hard delete of your rows, with the
+   DSR ticket itself preserved as proof of the deletion.
+2. **Neon billing detail** (`invoice`, `usage_event`) — retained under
+   legal hold per LGPD Art. 16 §3 (5-year fiscal/accounting retention).
+3. **R2 CAS** (content-addressable storage) — refcount-based eraser. If
+   your blob is shared with other subjects or referenced by other tenants,
+   we remove your reference but keep the blob until everyone has dropped
+   it (plus 72-hour grace). If your blob is only referenced by you, we
+   tombstone immediately and the garbage collector reclaims it.
+4. **R2 AC** (Action Cache) — every cached entry referencing your subject
+   ID is invalidated; downstream caches are notified.
+5. **D1 metadata** — subject-scoped rows deleted; refcount synced with R2.
+6. **KV** — session tokens and cached subject metadata invalidated.
+7. **Stripe** — your `Customer` record is updated with email/name/address
+   nullified (Stripe does not allow full deletion because it would break
+   invoice integrity under PCI rules — but we strip every piece of PII
+   they have on you).
+8. **Loki / Grafana** — log deletion API applied with retention compaction
+   triggered.
+
+**The 4 pseudonymized-retention targets:**
+
+9. **R2 audit log** (Object Lock 7y) — we cannot delete audit records, so
+   your subject ID is replaced with `erased_<HKDF-hash>` (one-way; the
+   info string is `corelink/v1/audit-pseudonym`).
+10. **Backup PITR** (Neon point-in-time recovery, 30-day retention) —
+    natural rotation expires it within 30 days; if anyone restores from a
+    backup during that window, a tombstone replay re-applies your erasure.
+11. **R2 CAS legal-hold partition** (governance mode) — content retained if
+    actively under hold; index references are pseudonymized.
+12. **Compliance evidence store** (LIA records, consent proof, DSR
+    evidence — 7y retention per framework) — your subject ID is
+    pseudonymized.
+
+You will receive a final `dsr.completed.v1` event with a hash of the entire
+deletion chain, and an email confirming we are done. Total SLA: 30
+calendar days.
+
+## 6. Who else sees your data?
+
+LGPD Art. 18 §VII gives you the right to know everyone we shared your data
+with. The full list is at
+[/privacy/sub-processors](/privacy/sub-processors). The short version, for
+a default Brazilian tenant configuration (no BYOK, no opt-in analytics):
+
+- **Cloudflare** — runs our infrastructure (Workers, R2, D1, KV, DO). Data
+  stays in São Paulo for `sam`-region tenants (see the
+  [residency page](/residency/lgpd-brazil)).
+- **Neon EU** — runs our control-plane Postgres. **This is an
+  international transfer**: Neon does not currently offer a Brazilian
+  region, so billing detail for Brazilian tenants is in Frankfurt. We rely
+  on LGPD Art. 33 §V (contractual necessity for billing) with SCC Modules
+  2/3 in the Neon DPA.
+- **Stripe** — processes payments. Another international transfer (US)
+  under Art. 33 §V + Stripe's DPA with Brazil addendum + PCI-DSS Level 1.
+  We send Stripe a pseudonymized customer ID, your email, and the amount.
+  No card data ever touches CoreLink.
+- **Clerk** — handles authentication tokens. US-hosted; Art. 33 §V; only
+  auth tokens + email cross the border.
+- **AWS São Paulo / GCP southamerica-east1 / Azure Brazil South** — host
+  your BYOK envelope key if you opt in to BYOK. Brazilian regions only for
+  Brazilian tenants. We never see the underlying key material.
+
+Four other sub-processors (Sentry, PostHog, LogRocket, Stripe Atlas
+counsel) are **disabled by default for Brazilian tenants** until we
+complete our enhanced review (tracked as GAP-14, ETA D+60). If you want
+them enabled, you would opt in with explicit consent under Art. 33 §I.
+
+If a new sub-processor would touch your data, we notify you 30 days in
+advance per CTRL-PRIV-021 (privacy_model.md §5.3).
+
+## 7. What about consent?
+
+You give consent at signup for `service_delivery` and `account_management`
+(both `Art. 7 §V` contract base — not consent, and not revocable without
+terminating the contract). You can give or withhold consent independently
+for each of the following:
+
+| Purpose | What we do with it | Default | Revoke time |
+|---|---|---|---|
+| `analytics_personalized` | Per-tenant dashboards with reidentifiable PII | OFF | ≤ 5 min |
+| `marketing_email` | Newsletter, product updates | OFF | ≤ 5 min |
+| `marketing_research` | Surveys, NPS | OFF | ≤ 5 min |
+| `beta_features` | Preview features with enriched telemetry | OFF | ≤ 5 min |
+| `third_party_integrations` | Stripe, GitHub, custom webhooks | OFF (per-integration) | ≤ 5 min |
+| `cross_tenant_benchmarks` | Aggregated leaderboards | OFF | ≤ 5 min |
+| `training_ml_models` | ML cache prediction with k-anonymity | OFF | ≤ 5 min |
+
+Each consent record we store carries: the **exact text** you saw (hashed
+with SHA-256), the **version** of the privacy notice (so we can re-check
+what you agreed to even years later), the **locale** of the form (Portuguese
+/ English / Spanish), the **wording ID** of the specific checkbox label, and
+two timestamps (when the UI rendered the notice and when you clicked). This
+is what LGPD Art. 8 calls "manifestação livre, informada e inequívoca" —
+demonstrably "informed" requires being able to prove what you actually saw.
+
+## 8. Special cases
+
+**You are a subject whose data was uploaded by a tenant.** You can file a
+DSR with us, and we will route the request to the tenant who controls that
+data (we are the operator under DPA Art. 7). The tenant has the same 30-day
+SLA. If the tenant does not respond, you can escalate to ANPD with a copy
+of our routing record.
+
+**You operate under legal hold.** We will tell you which of your data is on
+hold and why. The clock pauses on the affected scope but continues on
+everything else.
+
+**You request data that triggers another subject's privacy.** We will
+redact references to other subjects in your export bundle. This is
+mandatory under LGPD Art. 9 + Art. 10 (data minimization in disclosure).
+
+**Your child is a subject.** Out of scope for CoreLink. Per ToS, account
+holders must be ≥ 18 representing a business. If a tenant uploaded data
+about minors, the tenant is the controller (Art. 14 obligations are on
+the tenant, not on HuGR).
+
+## 9. Incidents and breach notification (Art. 46-48)
+
+If we suffer a personal data breach that creates relevant risk or damage
+to you, LGPD Art. 48 obliges us to notify ANPD and notify you. Our
+internal timeline (conservative versus ANPD Resolução 15/2024
+requirements):
+
+- Detection to internal SEV-1 declaration: ≤ 1 hour.
+- Declaration to triage and containment: ≤ 4 hours.
+- Triage to ANPD notification: ≤ 48 hours (ANPD allows 3 business days; we
+  commit 48h).
+- Notification to affected data subjects: ≤ 72 hours after ANPD.
+- Public post-mortem (if material): ≤ 14 days.
+
+We tabletop-exercise this twice a year (`specs/_compliance/IR-TABLETOP-PLAYBOOK.md`).
+You will receive the breach notification by email at the address on your
+account, plus an in-app banner if you have an active session.
+
+## 10. Who is responsible?
+
+Our Data Protection Officer (encarregado per LGPD Art. 41) handles all of
+this. Until our formal DPO appointment lands (tracked publicly in our
+roadmap), the interim Privacy Officer is Gustavo Schneiter
+(`gustavo@humangr.com` for direct contact, `privacy@hugr.com` for the DPO
+inbox that will route to the formal DPO post-appointment).
+
+ANPD contact information (the regulator) is in
+`legal/breach-notification/anpd-contacts.md`. If you believe we are not
+honoring your LGPD rights, you can file a complaint directly with ANPD.
+
+## 11. References
+
+- [LGPD Art. 33 §1º residency attestation (Art. 33)](/residency/lgpd-brazil)
+- [Sub-processors register (Art. 27, Art. 18 §VII)](/privacy/sub-processors)
+- [DPA (Data Processing Agreement)](/compliance/dpa)
+- [SOC 2 timeline (Art. 46 cross-framework)](/compliance/soc2-timeline)
+- Privacy notice canonical text: `legal/privacy-notice/v*.{pt-BR,en-US,es-MX}.md`
+- Internal compliance documents:
+  - `specs/_compliance/LGPD-FULL-AUDIT-2026-05-15.md` (article-by-article audit)
+  - `specs/_compliance/LGPD-ROPA-2026-05-15.md` (Record of Processing Activities)
+  - `specs/_compliance/LGPD-RESIDENCY-ATTESTATION-2026-05-15.md` (Art. 33 §1º)
+  - `specs/03_architecture/privacy_model.md` (LINDDUN threat model + DSR pipeline)
+  - `specs/_runbooks/RB-DSR-LGPD-FULL.md` (internal DSR processing runbook)
+
+If you need a custom Transfer Impact Assessment (TIA) for your specific
+regulatory situation, email `privacy@hugr.com` — the template is in
+`legal/tia-template.md` and we can fill it in for your tenant in 5
+business days.
