@@ -1,0 +1,12 @@
+{
+  "bench": "merkle_append",
+  "bench_id": "merkle_append",
+  "captured_at": "",
+  "commit": "pending",
+  "crate": "corelink-audit-chain",
+  "mean_ns": null,
+  "median_ns": null,
+  "notes": "Pending \u2014 record via scripts/refresh-perf-baseline.sh on a green CI run, then commit. See RB-PERF-REGRESSION.",
+  "p99_ns": null,
+  "sample_count": null
+}
