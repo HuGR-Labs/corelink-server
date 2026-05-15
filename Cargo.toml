@@ -141,6 +141,12 @@ members = [
     # Checkout → first PAT → R2 CAS write + BLAKE3 verify. In-memory fakes by
     # default; live `STRIPE_SECRET_KEY_TEST`-gated tests behind `--ignored`.
     "tests/e2e-signup-flow",
+    # R3-2 BYOK CMK revoke → kill switch → audit E2E harness (WI-S14-006).
+    # In-memory `KmsProvider` per provider kind + `RevocationDetector` cycle +
+    # `MultiChannelAlerter` stub-mode by default; `AWS_TEST_KEY_ARN` /
+    # `GCP_TEST_KEY_RESOURCE` / `AZURE_TEST_KEY_RESOURCE` /
+    # `VAULT_TEST_KEY_NAME` env-gated `#[ignore]` live-provider tests.
+    "tests/e2e-byok-revoke",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
