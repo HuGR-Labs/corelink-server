@@ -92,13 +92,24 @@ jobs:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
       - name: Log Dependabot PR metadata
+        env:
+          UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
+          DEPENDENCY_TYPE: ${{ steps.metadata.outputs.dependency-type }}
+          DEPENDENCY_NAMES: ${{ steps.metadata.outputs.dependency-names }}
+          PACKAGE_ECOSYSTEM: ${{ steps.metadata.outputs.package-ecosystem }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
         run: |
-          echo "update-type:       ${{ steps.metadata.outputs.update-type }}"
-          echo "dependency-type:   ${{ steps.metadata.outputs.dependency-type }}"
-          echo "dependency-names:  ${{ steps.metadata.outputs.dependency-names }}"
-          echo "package-ecosystem: ${{ steps.metadata.outputs.package-ecosystem }}"
-          echo "PR title:          ${{ github.event.pull_request.title }}"
-          echo "PR labels:         ${{ toJson(github.event.pull_request.labels.*.name) }}"
+          # SECURITY: pass via env to avoid shell injection on PR title
+          # (untrusted input — attacker-controllable). Found by actionlint
+          # baseline 2026-05-15 — `printf %s` neutralises any embedded
+          # shell metacharacters.
+          printf 'update-type:       %s\n' "$UPDATE_TYPE"
+          printf 'dependency-type:   %s\n' "$DEPENDENCY_TYPE"
+          printf 'dependency-names:  %s\n' "$DEPENDENCY_NAMES"
+          printf 'package-ecosystem: %s\n' "$PACKAGE_ECOSYSTEM"
+          printf 'PR title:          %s\n' "$PR_TITLE"
+          printf 'PR labels:         %s\n' "$PR_LABELS"
 
       # ---------------------------------------------------------------------
       # Step 3 — Decide eligibility.
