@@ -689,8 +689,15 @@ _MUTATION_ROW_RE = re.compile(
     # Matches table rows like:
     # | `corelink-audit-chain` | 201 | 139 | 26 | 0 | 28 | 165 | **84.24 %** |
     # | `corelink-byok`        | ... | ... | ... | ... | ... | ... | **96.8 %** |
-    r"^\|\s*`(corelink-[a-z0-9\-]+)`\s*\|[^|]*\|[^|]*\|[^|]*\|"
-    r"(?:[^|]*\|){0,4}\s*\*{0,2}(\d+(?:\.\d+)?)\s*%\s*\*{0,2}\s*\|",
+    #
+    # `[^|\n]*` (NOT `[^|]*`) anchors each column inside one line — the
+    # bare `[^|]*` previously matched across `\n` and could pull the
+    # rightmost `% |` from an unrelated table that followed the
+    # historical-baseline section, producing a cross-row swap that
+    # silently mis-attributed kill rates (e.g. `dual-approval` reading
+    # the `ratelimit` historical 86.6 % as if it were the current rate).
+    r"^\|\s*`(corelink-[a-z0-9\-]+)`\s*\|[^|\n]*\|[^|\n]*\|[^|\n]*\|"
+    r"(?:[^|\n]*\|){0,4}\s*\*{0,2}(\d+(?:\.\d+)?)\s*%\s*\*{0,2}\s*\|",
     re.MULTILINE,
 )
 
