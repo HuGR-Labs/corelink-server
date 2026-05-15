@@ -155,6 +155,7 @@ This phase runs **in parallel** with R-2..R-4 but progresses on calendar time, n
 | R5-A2 | **Pentest evidence package** — collect all `specs/_pentest/`, `specs/03_architecture/security_model.md`, audit chain proofs, BYOK matrix, threat model into a single PDF for vendor onboarding | 1 Sonnet | 6h |
 | R5-A3 | **SOC 2 evidence collection automation** — Drata API integration to auto-pull evidence from D1 (audit chain), R2 (SBOM), GitHub (PR reviews), PagerDuty (incident timeline) | 1 Sonnet | 8h |
 | R5-A4 | **Legal review delivery package** — DPA v1.0.0 3-locale + SCC + sub-processor commitments + privacy notice + 14 canonical compliance docs zipped + signed-PDF transmittal | 1 Sonnet | 4h |
+| R5-A5 | **Lighthouse customer playbook + phase-management runbook + 3 case-study templates** — Day1→Day30+ customer-facing playbook (`marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md`), internal phase-management runbook (`specs/_runbooks/RB-LIGHTHOUSE-PHASE-MANAGEMENT.md`), 3 marketing-ready case-study templates (`marketing/lighthouse-kit/case-study-template/`) with `corelink-lighthouse-tracker` D1 prefills. Commit: `wt/r5-2-lighthouse-playbook` (see §9 Human Track H-12). | 1 Sonnet (wt-r5-2-lighthouse-playbook) | 4h |
 
 **Wave R-5 gate:** evidence collected as each item completes; this wave does NOT block R-6 onwards — they run in parallel.
 
@@ -243,7 +244,7 @@ These are non-delegatable to agents. Track in `specs/04_sprints/S20/human-action
 | H-9 | **Pentest vendor RFP + contract** | R-5 day 0 | $70-150k | R5-1, R5-2 |
 | H-10 | **SOC 2 audit firm contract** + Drata subscription | R-5 day 0 | $50-95k | R5-3 |
 | H-11 | **Law firm engagement** for DPA review | R-5 day 0 | $20-40k | R5-4, R4-5 |
-| H-12 | **Lighthouse customer outreach** (3 candidates) | R-5 day 0 | engagement cost (6mo free) | R5-5, R3-1..5 |
+| H-12 | **Lighthouse customer outreach** (3 candidates) — hand `marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md` at kick-off; internal team works from `specs/_runbooks/RB-LIGHTHOUSE-PHASE-MANAGEMENT.md` (R5-A5) | R-5 day 0 | engagement cost (6mo free) | R5-5, R3-1..5 |
 | H-13 | **Apple Developer Program** | R-5 day 0 | $99/yr | R5-6, S-15 Windows fallback |
 | H-14 | **Windows EV cert** vendor (DigiCert/Sectigo) | R-5 day 0 | $300-500/yr | R5-7 |
 | H-15 | **External advisor pool** — 5+ people | R-5 day 0 | $5-15k/quarter each | R5-8, R7-2 |
