@@ -176,6 +176,8 @@ Statement of Applicability (SoA) cobre os 93 controles Anexo A:2022. Mapping com
 | Art. 33 §1º | Transferência internacional + adequação              | §7 privacy_model + CTRL-PRIV-031 (residency pinning fail-CLOSED 451) + attestation bundle `specs/_compliance/LGPD-RESIDENCY-ATTESTATION-2026-05-15.md` (GAP-22 closed 2026-05-15) | EVT-044 + `dev.hugr.corelink.residency.{request_routed,write_rejected_cross_region}.v1` |
 | Art. 37 | Registro de operações                                  | Audit events CloudEvents                    | EVT-047 (AUDIT_EVENT)      |
 | Art. 38 | Relatório de impacto à proteção de dados (RIPD)       | DPIA por WI HIGH_RISK                       | EVT-045                         |
+| Art. 27 §4º | Comunicação prévia ≥30 dias para mudança de sub-operador | Public sub-processor page auto-gerada de `VENDOR-RISK-REGISTER.md` + `scripts/subprocessor-change-notify.py` (30-day grace clock + CloudEvent `corelink.privacy.subprocessor.notify_required`) + runbook `RB-SUBPROCESSOR-CHANGE.md` + workflow `.github/workflows/subprocessors-sync.yml` | EVT-049 + audit-`<region>` Object Lock 7y |
+| Art. 39 | Lista pública de sub-operadores                        | `apps/docs/docs/trust/subprocessors.mdx` (auto-generated from §7 register) | — |
 | Art. 41 | Encarregado (DPO)                                      | Privacy Officer nomeado (Gustavo interim)   | EVT-032                  |
 | Art. 48 | Comunicação de incidente à ANPD                        | `RB-BREACH-NOTIF`                           | EVT-017           |
 
@@ -201,7 +203,7 @@ CoreLink pode armazenar blobs contendo dado pessoal do **cliente final do tenant
 | Art. 13/14 | Information to data subject                       | Privacy notice `/privacy`                  |
 | Art. 15–22 | Rights of data subject (DSRs)                    | §6 privacy                                  |
 | Art. 25   | Data protection by design/default                   | Todo este spec framework                    |
-| Art. 28   | Processor obligations                               | DPA + sub-processors mgmt                   |
+| Art. 28   | Processor obligations + ≥30-day notice of sub-processor change | DPA + auto-generated public list (`apps/docs/docs/trust/subprocessors.mdx` from `specs/_compliance/VENDOR-RISK-REGISTER.md`) + 30-day notify hook (`scripts/subprocessor-change-notify.py`) + runbook `RB-SUBPROCESSOR-CHANGE.md` + drift gate `.github/workflows/subprocessors-sync.yml` |
 | Art. 30   | Records of processing                               | Audit events                                |
 | Art. 32   | Security of processing                              | `security_model.md`                         |
 | Art. 33   | Breach notification to DPA (72h)                    | `RB-BREACH-NOTIF`                           |
@@ -247,7 +249,14 @@ Report público derivado de SOC 2 Type II. Distribuível livremente (marketing).
 | Sigstore               | Supply chain attestation            | OSS                                                          | —                        | US (public logs)      |
 | PagerDuty              | Oncall                              | SOC 2, ISO 27001                                             | PagerDuty DPA            | US/EU                |
 
-> Lista mantida em `/privacy/sub-processors` (público) + `legal/sub-processors.md` (source).
+> Lista mantida em `apps/docs/docs/trust/subprocessors.mdx` (público, **auto-gerada**
+> de `specs/_compliance/VENDOR-RISK-REGISTER.md` via
+> `scripts/gen-public-subprocessors.py` + drift gate
+> `.github/workflows/subprocessors-sync.yml`) e `legal/sub-processors.md`
+> (source). Mudanças disparam o broadcast de 30 dias (LGPD Art. 27 §4º +
+> GDPR Art. 28 §2) via `scripts/subprocessor-change-notify.py`
+> (CloudEvent `corelink.privacy.subprocessor.notify_required`) e o
+> runbook [`RB-SUBPROCESSOR-CHANGE.md`](../_runbooks/RB-SUBPROCESSOR-CHANGE.md).
 
 ---
 
