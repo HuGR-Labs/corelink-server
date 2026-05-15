@@ -21,7 +21,7 @@ tags: ["lgpd", "dpo", "checklist", "monthly", "gap-22", "operational-cadence", "
 
 # LGPD DPO Monthly Checklist
 
-> **doc_status:** DRAFT · **audit_status:** ACTIVE · **owner:** appointed Data Protection Officer (interim: Privacy Officer = Gustavo Schneiter).
+> **doc_status:** DRAFT · **audit_status:** ACTIVE · **owner:** appointed Data Protection Officer (interim DPO formally designated 2026-05-15: Gustavo Schneiter; see `specs/_compliance/DPO-APPOINTMENT-2026-05-15.md`).
 >
 > **Purpose:** monthly operational review of the LGPD-relevant control surface, executed in the first 5 business days of each calendar month. Each item has a sign-off box; the completed checklist is filed to `specs/_audits/lgpd-dpo-checklist-YYYY-MM.md` with the executing DPO's name + date.
 >
