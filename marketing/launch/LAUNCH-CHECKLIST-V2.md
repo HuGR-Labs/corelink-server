@@ -148,4 +148,8 @@ tags:
 - `specs/_runbooks/RB-LAUNCH-WAR-ROOM-COORDINATION.md` — companion: operator playbook for the war room itself.
 - `specs/_runbooks/ONCALL-ESCALATION-MATRIX.md` — companion: oncall escalation paths during launch window.
 - `specs/_runbooks/RB-POSTMORTEM-PROCESS.md` — referenced for blameless retros.
+- `specs/_runbooks/RB-CUSTOMER-SUPPORT-T-90.md` — companion: T+0..T+90 customer-support runbook (comms-side ticket triage + SLA + escalation).
+- `marketing/launch/SUPPORT-RESPONSE-TEMPLATES.md` — companion: 15 ticket-level response templates.
+- `specs/_runbooks/RB-DSR-TICKET-TRIAGE.md` — companion: DSR inbound triage + legal escalation.
+- `marketing/launch/SUPPORT-DASHBOARD-SPEC.md` — companion: support team's operational dashboard (T+0..T+90).
 - `ROADMAP-TO-GA.md` §8 — parent: R-8 Launch wave.

@@ -235,6 +235,10 @@ Per `marketing/launch/COORDINATION/LAUNCH-RUNBOOK.md` (shipped by WI-S20-008).
 | `marketing/launch/CRISIS-COMMS-TEMPLATES.md` | 5 crisis scenarios with ready-to-send templates (SEV1 outage, privacy incident w/ LGPD Art. 48 + GDPR Art. 33 72h notice, billing bug, BYOK CMK rumor, pentester early disclosure) + launch-defer comms. |
 | `marketing/launch/DAY-1-DASHBOARD-SPEC.md` | Single-screen war-room dashboard: signups, activation %, support tickets, top-5 SLO burn, press/social mentions. |
 | `specs/_runbooks/RB-LAUNCH-WAR-ROOM-COORDINATION.md` | Lightweight operator playbook for the war room coordinator. |
+| `specs/_runbooks/RB-CUSTOMER-SUPPORT-T-90.md` | T+0..T+90 customer-support runbook: 4-tier triage (P0/P1/P2/P3), per-severity SLA + escalation + comms cadence, ticket→incident conversion criteria. |
+| `marketing/launch/SUPPORT-RESPONSE-TEMPLATES.md` | 15 canonical ticket-level response templates (first-touch P0/P1/P2/P3, investigating-hold, root-cause, fix-deployed, resolved, DSR, billing, sandbox-expiry). |
+| `specs/_runbooks/RB-DSR-TICKET-TRIAGE.md` | DSR inbound triage mapping to `corelink-dsr` pipeline + DPO/Legal escalation for unusual requests. |
+| `marketing/launch/SUPPORT-DASHBOARD-SPEC.md` | Support team's operational dashboard: open by severity, SLA burn-down, top-10 categories, NPS sample, DSR + billing panels. |
 
 ### T-7 to T-1 (preparation)
 - T-7d: Pentest letter confirmed received; SOC 2 readiness confirmed; lighthouse SLAs attested
