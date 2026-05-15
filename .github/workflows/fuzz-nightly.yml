@@ -1,0 +1,93 @@
+name: Fuzz nightly (BYOK + tenant-path + audit-chain + HKDF)
+
+# Nightly fuzz lane for the pre-pentest hardening surface: BYOK
+# envelope encryption, tenant-path HMAC derivation (extended), audit-
+# chain hash-chain append + JCS canonicalization, HKDF-SHA256 expand.
+#
+# Runs every target for 30 min on a fresh Ubuntu runner. Corpus is
+# persisted via actions/cache so the corpus grows monotonically across
+# nightly runs (libfuzzer accelerates faster on a warm corpus).
+# Fail-closed: any libfuzzer-discovered crash uploads the offending
+# artifact + exits non-zero.
+
+on:
+  schedule:
+    # 03:17 UTC nightly — staggered before the 04:23 UTC main nightly
+    # (so failures here surface ~1h before the broader nightly gates
+    # run; ops gets a clean signal on which lane regressed).
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    # Manual trigger for ops/dev to re-run on demand (e.g. after landing
+    # a crypto-adjacent PR).
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  # 30 min per target (1800s) on GHA Linux runners. PR-gate runs at
+  # 300s via scripts/fuzz-all.sh; nightly runs at 1800s.
+  FUZZ_DURATION: '1800'
+
+jobs:
+  fuzz-matrix-expansion:
+    name: fuzz 30m (${{ matrix.crate }}::${{ matrix.target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { crate: corelink-byok, target: wrapped_dek_parse }
+          - { crate: corelink-byok, target: envelope_roundtrip }
+          - { crate: tenant-path, target: derive_prefix_extended }
+          - { crate: corelink-audit-chain, target: merkle_append }
+          - { crate: corelink-audit-chain, target: jcs_canonicalize }
+          - { crate: corelink-ac, target: hkdf_expand }
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Rust nightly
+        uses: dtolnay/rust-toolchain@5b842231ba77f5c045dba54ac5560fed2db780e2 # nightly as of 2026-04-29
+
+      - name: Install cargo-fuzz (pinned)
+        # Pin the exact cargo-fuzz version so future upstream changes
+        # (e.g. libfuzzer flag semantics) don't silently alter coverage.
+        # Matches the version pinned in .github/workflows/nightly.yml
+        # to keep PR-gate and nightly-lane fuzz harnesses on the same
+        # tool binary.
+        run: cargo install cargo-fuzz --locked --version =0.13.1
+
+      - name: Rust target cache
+        uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
+        with:
+          workspaces: "crates/${{ matrix.crate }}/fuzz -> target"
+
+      - name: Restore fuzz corpus (warm-start across nightly runs)
+        # Corpus persists across runs so libfuzzer accelerates faster
+        # on a known-good seed set. Keyed by crate::target so each
+        # target has an isolated corpus.
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: crates/${{ matrix.crate }}/fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.crate }}-${{ matrix.target }}-${{ github.run_id }}
+          restore-keys: |
+            fuzz-corpus-${{ matrix.crate }}-${{ matrix.target }}-
+
+      - name: Run fuzz target (${{ env.FUZZ_DURATION }}s)
+        working-directory: crates/${{ matrix.crate }}
+        run: cargo fuzz run ${{ matrix.target }} -- -max_total_time=${{ env.FUZZ_DURATION }}
+
+      - name: Upload fuzz artifacts on failure
+        # libfuzzer drops crash-* / leak-* / timeout-* artifacts here.
+        # Persist for 14 days so the on-call has time to root-cause
+        # before retention expires.
+        if: failure()
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5.0
+        with:
+          name: fuzz-artifacts-${{ matrix.crate }}-${{ matrix.target }}
+          path: crates/${{ matrix.crate }}/fuzz/artifacts/
+          if-no-files-found: ignore
+          retention-days: 14

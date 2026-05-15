@@ -21,3 +21,10 @@ path = "fuzz_targets/derive_prefix.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "derive_prefix_extended"
+path = "fuzz_targets/derive_prefix_extended.rs"
+test = false
+doc = false
+bench = false
