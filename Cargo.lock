@@ -1717,6 +1717,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-handler-ac"
+version = "0.1.0"
+dependencies = [
+ "corelink-slo",
+ "proptest",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "corelink-handler-admin"
+version = "0.1.0"
+dependencies = [
+ "corelink-slo",
+ "proptest",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "corelink-handler-cas"
+version = "0.1.0"
+dependencies = [
+ "corelink-slo",
+ "proptest",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "corelink-hash"
 version = "0.1.0"
 dependencies = [
@@ -2137,6 +2164,7 @@ dependencies = [
  "anyhow",
  "axum",
  "bytes",
+ "corelink-handler-cas",
  "corelink-stripe-real",
  "corelink-tier-selection",
  "futures",

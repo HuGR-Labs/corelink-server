@@ -3,9 +3,9 @@ id: "AUDIT-2026-05-14-SLO-INSTRUMENTATION"
 type: "audit"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "0.1.0"
+version: "0.2.0"
 created: "2026-05-14"
-updated: "2026-05-14"
+updated: "2026-05-15"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -134,7 +134,7 @@ After this PR: **5 additional SLOs wire to the alert evaluator**
 
 ## 6. Closures NOT shipped (deferred with rationale)
 
-- **Real prometheus emit-site** in a Cloudflare Worker handler:
+- ~~**Real prometheus emit-site** in a Cloudflare Worker handler:
   the `apps/server` binary currently exposes only a `webhook.rs`
   surface; there are no CAS/AC/admin/billing/DSR HTTP handlers in
   `apps/server/src/` yet (those are split across separate Worker
@@ -143,7 +143,72 @@ After this PR: **5 additional SLOs wire to the alert evaluator**
   audit closes) is the correct level of fix until the handler crates
   land. Per the autonomous execution charter `trait-abstraction-defer`
   pattern: ship the typed surface + canonical taxonomy here; the
-  emit-site lands in the handler crate's own WI.
+  emit-site lands in the handler crate's own WI.~~ **CLOSED
+  2026-05-15** by `crates/corelink-handler-cas`,
+  `crates/corelink-handler-ac`, `crates/corelink-handler-admin`
+  (R-prep handler-crate skeletons). Every handler entry emits one
+  `SliObservation` per relevant SLI through the per-handler
+  `SliObserver` trait (in-memory fake landed; real Prometheus-backed
+  sink follows the same shape). One end-to-end wire-up landed at
+  `apps/server::routes::cas::handle_read` demonstrating the
+  cfg-gated wasm32 CF-Worker slot; AC + Admin route surfaces
+  follow once their route shapes are agreed. See §6.1 below for the
+  per-SLO transition.
+
+### 6.1 SLO emit-site transitions (post handler-crate skeletons)
+
+| SLO ID | Pre | Post handler-skeleton |
+|---|---|---|
+| SLO-AVAIL-CAS-GET | Sli-bound deferred | **Sli emitted at handler layer** (`corelink-handler-cas::CasReadHandler::read` → `SliObserver::observe(Sli::AvailCasGet)`) |
+| SLO-AVAIL-CAS-PUT | Sli-bound deferred | **Sli emitted at handler layer** (`corelink-handler-cas::CasWriteHandler::write` → `Sli::AvailCasPut`) |
+| SLO-LAT-CAS-GET (p99) | Sli-bound deferred | **Sli emitted at handler layer** (`Sli::LatencyCasGetP99` on every entry) |
+| SLO-LAT-CAS-PUT (p99) | Sli-bound deferred (P0-2 closure) | **Sli emitted at handler layer** (`Sli::LatencyCasPutP99` on every entry) |
+| SLO-CORRECT-CAS | Sli-bound deferred (P0-4 closure) | **Sli emitted at handler layer** (`Sli::CorrectnessCas` on every read + write entry; hash-mismatch path drives `is_error=true`) |
+| SLO-AVAIL-AC | Sli-bound deferred | **Sli emitted at handler layer** (`corelink-handler-ac::AcLookupHandler::lookup` → `Sli::AvailAcLookup`) |
+| SLO-LAT-AC-HIT (p99) | Sli-bound deferred (P0-3 closure) | **Sli emitted at handler layer** (`Sli::LatencyAcHitP99` on every lookup entry) |
+| SLO-AVAIL-CP | Sli-bound deferred (P0-1 closure) | **Sli emitted at handler layer** (`corelink-handler-admin::Admin{Read,Mutate}Handler` → `Sli::AvailControlPlane`) |
+| SLO-CORRECT-ISO | Sli-bound deferred (P0-5 closure) | Cross-tenant denial path emits `Sli::AvailCasGet`/`AvailCasPut` with `is_error=true` + `ReadDenied`/`WriteDenied` audit row BEFORE the rejection; standalone `Sli::CorrectnessTenantIsolation` observer integration remains pending its dedicated probe (any cross-tenant audit row already classifies; explicit emit follows). |
+
+**Coverage delta:** 8 SLOs transition from "Sli-bound deferred" to
+"Sli emitted at handler layer". Combined with the 5 P0 closures
+from §5 (which wire the `Sli` enum surface), the **multi-burn-rate
+alert evaluator can now consume signal from handler-instrumented
+emit sites** for the full GA-hot-path SLO set
+(`SLO-AVAIL-CAS-GET/PUT`, `SLO-LAT-CAS-GET/PUT-P99`, `SLO-AVAIL-AC`,
+`SLO-LAT-AC-HIT-P99`, `SLO-CORRECT-CAS`, `SLO-AVAIL-CP`).
+
+### 6.2 Audit fail-CLOSED ordering pinned at handler layer
+
+Each handler crate's `InMemoryFake` enforces the canonical
+`INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER` ordering by emitting the
+relevant audit row BEFORE any state mutation or response. The
+proptests pin:
+
+- `prop_audit_fail_closed_no_mutation_on_write` (CAS) — audit
+  injection failure leaves storage untouched.
+- `prop_audit_fail_closed_no_state_change` (Admin) — audit
+  injection failure leaves the applied-mutation ledger empty.
+- `prop_audit_fail_closed_no_mutation_on_update` (AC) — audit
+  injection failure leaves the AC entry map untouched.
+
+### 6.3 Remaining gaps (post handler-crate skeletons)
+
+- **Real CF-Worker handler** wiring (`#[cfg(target_arch = "wasm32")]`
+  module placeholder reserved in `corelink-handler-cas` lib.rs) —
+  scheduled as `WI-S04-CF-WIRING` per the autonomous-execution
+  charter `trait-abstraction-defer` rule. The wire-up shape is
+  documented in the lib.rs ignore-block example.
+- **AC + Admin route registration** in `apps/server::routes` —
+  the example end-to-end wire-up shipped only `cas-read`. AC
+  lookup and Admin read/mutate routes follow the same pattern
+  once their route shapes are agreed (handler crate + fakes are
+  already in place).
+- **Standalone `Sli::CorrectnessTenantIsolation` probe** — the
+  cross-tenant denial path is currently classified through the
+  availability SLI error flag; a dedicated observer call for the
+  isolation SLI tracks as `WI-S03-ISO-PROBE`.
+- The `corelink-billing-*` / `corelink-dsr-*` handlers are not in
+  this skeleton lane (S-13 / S-17 admin-plane + DR scope).
 - **`RedMetricKind` enum extension** for the additional metric names
   (`corelink_cp_requests_total`, `corelink_cas_get_duration_seconds`,
   `corelink_billing_event_age_seconds`, etc.) is **deliberately not

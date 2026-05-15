@@ -1,0 +1,36 @@
+[package]
+name = "corelink-handler-ac"
+description = "CoreLink Action Cache (AC) HTTP handler skeleton (R-prep). Ships trait surface `AcLookupHandler` + `AcUpdateHandler` + `InMemoryAcHandler` fake, the per-handler `SliObserver` integration emitting canonical `Sli::AvailAcLookup` / `Sli::LatencyAcHitP99` observations on every entry, and the audit-fail-CLOSED ordering envelope (`AuditSink::emit BEFORE` mutate / response). Real CF-Worker wasm32 impl deferred per autonomous-execution charter trait-abstraction-defer rule."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+corelink-slo = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[[test]]
+name = "prop_handler_ac"
+path = "tests/prop_handler_ac.rs"

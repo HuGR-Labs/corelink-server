@@ -46,6 +46,13 @@ bytes = { workspace = true }
 corelink-stripe-real = { workspace = true }
 corelink-tier-selection = { workspace = true }
 
+# R-prep: CAS handler crate wired into apps/server::routes::cas as the
+# example end-to-end SLO-instrumented handler (see audit
+# `specs/_audits/2026-05-14-slo-instrumentation-gaps.md`). AC + Admin
+# handlers are not yet routed here; they ride the same wire-up
+# pattern once their route surfaces are agreed.
+corelink-handler-cas = { workspace = true }
+
 [dev-dependencies]
 proptest = { workspace = true }
 hmac = { workspace = true }
