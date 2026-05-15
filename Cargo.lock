@@ -1004,6 +1004,9 @@ dependencies = [
  "corelink-config-do",
  "corelink-dual-approval",
  "corelink-terraform-drift-consumer",
+ "proptest",
+ "rand 0.9.4",
+ "rand_chacha 0.9.0",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -1321,7 +1324,11 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "corelink-worker",
+ "proptest",
+ "rand 0.9.4",
+ "rand_chacha 0.9.0",
  "thiserror 2.0.18",
+ "tokio",
  "wasm-bindgen-futures",
  "worker",
 ]
@@ -1483,6 +1490,9 @@ dependencies = [
 name = "corelink-d1-migrations"
 version = "0.1.0"
 dependencies = [
+ "proptest",
+ "rand 0.9.4",
+ "rand_chacha 0.9.0",
  "rusqlite",
 ]
 
@@ -2219,6 +2229,9 @@ name = "corelink-slack-real"
 version = "0.1.0"
 dependencies = [
  "corelink-enterprise-inquiry",
+ "proptest",
+ "rand 0.9.4",
+ "rand_chacha 0.9.0",
  "reqwest",
  "serde",
  "serde_json",

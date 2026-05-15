@@ -47,14 +47,16 @@ alongside this audit).
 97 crates audited; 78 have at least one declared invariant; **4 gap crates**
 remain (ratio < 1) post-remediation (down from 7 at audit start).
 
-### 3.1 Gap crates (ratio < 1)
+### 3.1 Gap crates (ratio < 1) — **CLOSED 2026-05-15 via DEBT-009**
 
 | Crate | Proptest macros | Proptest tests | INV refs | Ratio | Criticality |
 |---|---:|---:|---:|---:|---|
-| `corelink-slack-real` | 0 | 0 | 2 | 0.00 | LOW (notification real-mode adapter) |
-| `corelink-admin-dry-run` | 0 | 0 | 1 | 0.00 | MEDIUM (binary-only crate; dual-approval dry-run) |
-| `corelink-cf-bindings` | 0 | 0 | 1 | 0.00 | MEDIUM (CAS idempotency contract) |
-| `corelink-d1-migrations` | 0 | 0 | 1 | 0.00 | MEDIUM (migration additivity) |
+| `corelink-slack-real` | ~~0~~ → 1 | ~~0~~ → 4 | 2 | ~~0.00~~ → 2.00 | LOW (notification real-mode adapter) — **CLOSED** |
+| `corelink-admin-dry-run` | ~~0~~ → 1 | ~~0~~ → 4 | 1 | ~~0.00~~ → 4.00 | MEDIUM (binary-only crate; dual-approval dry-run) — **CLOSED** |
+| `corelink-cf-bindings` | ~~0~~ → 1 | ~~0~~ → 3 | 1 | ~~0.00~~ → 3.00 | MEDIUM (CAS idempotency contract) — **CLOSED** |
+| `corelink-d1-migrations` | ~~0~~ → 1 | ~~0~~ → 3 | 1 | ~~0.00~~ → 3.00 | MEDIUM (migration additivity) — **CLOSED** |
+
+See §8 below for the closure details.
 
 ### 3.2 Top-3 gap crates CLOSED in this audit
 
@@ -188,6 +190,100 @@ Per orchestrator charter:
   moves the workspace from "uneven coverage" to "≥ 1.0 ratio for 92%
   of crates with INV refs". The remaining 4 gap crates are tracked
   in [`proptest-followup-tickets.md`](proptest-followup-tickets.md).
+
+## 8. DEBT-009 closure — all 4 remaining gap crates closed (2026-05-15)
+
+**Closure mandate:** SOTA standard, maximum rigor — close every
+declared proptest-density gap so the workspace ratio chart reaches
+≥ 1.0 for **every** crate with declared INV refs (no exceptions).
+
+**Branch:** `wt/debt-009-proptest-4-crates` · **Closure dispatch:** 1 Sonnet,
+parallel-implementation pattern across all 4 gap crates.
+
+### 8.1 `corelink-slack-real` — 4 new property tests (ratio 0/2 → 4/2)
+
+File: `crates/corelink-slack-real/tests/prop_slack_emit_atomic.rs`
+
+| Test | Invariant | Adversarial input |
+|---|---|---|
+| `prop_inv_audit_emit_atomic_pre_slack_post` | INV-AUDIT-EMIT-ATOMIC | random channel + hostile mrkdwn alphabet header/footer |
+| `prop_inv_audit_emit_atomic_with_handler_failclosed_blocks_slack` | INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER | `FailingSlackAuditSink` fixture rejects every emit |
+| `prop_inv_retry_backoff_bounded_by_max` | RetryPolicy bounded-backoff | attempt index sampled across [0, 64] (saturating-shift boundary) |
+| `prop_inv_block_kit_canonical_roundtrip` | Block Kit JSON canonical roundtrip | hostile-alphabet header + random channel |
+
+### 8.2 `corelink-admin-dry-run` — 4 new property tests (ratio 0/1 → 4/1)
+
+Added a `src/lib.rs` exposing the `dual_approval_preflight` pure
+predicate (5 unit tests) so the dry-run binaries plus a proptest suite
+share the same structural pre-flight check.
+
+File: `crates/corelink-admin-dry-run/tests/prop_dual_approval_invariants.rs`
+
+| Test | Invariant | Adversarial input |
+|---|---|---|
+| `prop_inv_admin_dual_approval_single_approver_rejected` | INV-ADMIN-DUAL-APPROVAL (n=1) | random (requester, approver) from 12-actor pool |
+| `prop_inv_admin_dual_approval_self_approval_rejected` | INV-ADMIN-DUAL-APPROVAL (self) | requester forced into slot 0 AND slot 1 |
+| `prop_inv_admin_dual_approval_distinct_approvers_required` | INV-ADMIN-DUAL-APPROVAL (distinct) | random pair from `pool \ {requester}` |
+| `prop_inv_admin_dry_run_short_circuit_on_rejection` | INV-ADMIN-DUAL-APPROVAL (read-only DR) | n_approvers ∈ [0, 4]; predicate ⇔ short-circuit |
+
+### 8.3 `corelink-cf-bindings` — 3 new property tests (ratio 0/1 → 3/1)
+
+File: `crates/corelink-cf-bindings/tests/prop_cas_idempotency.rs`
+
+`corelink-cf-bindings` is wasm32-only (`#![cfg(target_arch = "wasm32")]`
+at lib root). The proptest is host-only-runnable
+(`#![cfg(not(target_arch = "wasm32"))]`) and exercises the **same
+`R2Backend` trait surface** that `CfR2BucketAdapter` implements, against
+the `InMemoryR2` fake from `corelink-worker`. The wasm32 production
+adapter inherits the property via its trait impl; this is the canonical
+trait-abstraction-defer pattern in action.
+
+| Test | Invariant | Adversarial input |
+|---|---|---|
+| `prop_inv_cas_idempotency_repeated_put_observes_one_object` | INV-CAS-IDEMPOTENCY (idempotent PUT) | N ∈ [1, 16] PUTs; payloads from empty / single-byte / 4-KiB / 64-KiB / 1-KiB all-zero / 1-KiB all-0xFF buckets |
+| `prop_inv_cas_idempotency_get_returns_first_write` | INV-CAS-IDEMPOTENCY (immutable read) | second PUT carries different body → MUST still return first writer's body |
+| `prop_inv_cas_idempotency_different_keys_distinct_objects` | INV-CAS-IDEMPOTENCY (per-key isolation) | random distinct key pair; reflexivity + non-interference |
+
+### 8.4 `corelink-d1-migrations` — 3 new property tests (ratio 0/1 → 3/1)
+
+File: `crates/corelink-d1-migrations/tests/prop_migration_additivity.rs`
+
+| Test | Invariant | Adversarial input |
+|---|---|---|
+| `prop_inv_auth_migration_additive_no_drop_alter_rename` | INV-AUTH-MIGRATION-ADDITIVE (forbidden ops) | random migration file from corpus; case-insensitive + whitespace + comment-aware lexer |
+| `prop_inv_auth_migration_additive_filename_ordering` | INV-AUTH-MIGRATION-ADDITIVE (apply order) | random (i, j) with i < j; non-decreasing prefix + total-ordered filename |
+| `prop_inv_auth_migration_additive_idempotent_create` | INV-AUTH-MIGRATION-ADDITIVE (idempotent CREATE) | random migration; CREATE TABLE/INDEX/TRIGGER/VIEW MUST carry `IF NOT EXISTS` |
+
+### 8.5 Quality-gate compliance for DEBT-009 closure
+
+All four closure files pass the same orchestrator-charter gate as the
+top-3 closure (rotation-adapters / region / config-api):
+
+- [x] `PROPTEST_CASES` is a **runtime fn** (`proptest_cases()`) in every file.
+- [x] Real **adversarial inputs** — mrkdwn-hostile alphabets, comment-aware
+      SQL lexer, R2 chunk-boundary buffer sizes, 12-actor UUID pool.
+- [x] **Invariant ID in test name** (`prop_inv_<id>_<spec>` convention).
+- [x] **No `prop_assert!(matches!(..., Variant { .. }))` anti-pattern** —
+      every match outcome is bound to a `let is_x = matches!(...);`
+      first then asserted.
+- [x] **No allow attributes masking** — only the codebase-standard
+      `#![allow(clippy::unwrap_used, expect_used, panic, indexing_slicing,
+      reason = "test target")]`.
+- [x] **Fail-CLOSED ordering preserved** — slack-real's `FailingSlackAuditSink`
+      asserts no payload landed when audit emit failed.
+- [x] **Determinism canary** — `prng_seed_is_deterministic_across_invocations`
+      pinned per file.
+
+### 8.6 Coverage chart — final state
+
+Post-closure, the workspace ratio chart shows:
+- 0 gap crates (down from 4 pre-closure; down from 7 at audit start).
+- Every crate with declared INV refs has ratio ≥ 1.0.
+- 14 new property tests added (4 + 4 + 3 + 3), plus 5 unit canaries in
+  the new `corelink-admin-dry-run/src/lib.rs`.
+
+**DEBT-009 status:** CLOSED. Cross-reference:
+`specs/_audits/2026-05-15-debt-register.md` row updated.
 
 ## Appendix A — crates with no declared INV refs (excluded from gap analysis)
 

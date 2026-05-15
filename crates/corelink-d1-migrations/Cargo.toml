@@ -31,7 +31,14 @@ mod_module_files = "deny"
 rusqlite = { version = "0.32", features = ["bundled"] }
 
 [dev-dependencies]
+proptest = { workspace = true }
+rand = "0.9"
+rand_chacha = "0.9"
 
 [[test]]
 name = "d1_migration_integration"
 path = "tests/d1_migration_integration.rs"
+
+[[test]]
+name = "prop_migration_additivity"
+path = "tests/prop_migration_additivity.rs"
