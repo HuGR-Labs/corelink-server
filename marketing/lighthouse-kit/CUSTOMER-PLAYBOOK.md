@@ -45,6 +45,7 @@ If at any point the math stops working for you — concern about the product, in
 - **Audit chain access:** you can query the audit chain for your tenant via CLI. You'll exercise this during attestation.
 - **SLA dashboard:** per-customer Grafana embed showing your SLOs in real time.
 - **(Enterprise BYOK only)** Your KMS provider key wiring; the BYOK kill-switch; the weekly BYOK chaos drill.
+- **(Enterprise only)** Your procurement-side legal questionnaire path. CoreLink pre-stages SIG Lite (5 business days), CSA CAIQ v4 (7 business days), and custom vendor-questionnaire response packs (3–10 business days depending on size) under `marketing/sales/legal-questionnaires/`. Your DPO / vendor-management team can request the bundle via `trust@corelink.dev` with countersigned NDA on file — turnaround per `RESPONSE-SLA-POLICY.md`.
 
 ### You are NOT testing
 - **Public production at scale** — staging is its own environment; we're not asking you to redirect prod traffic.
