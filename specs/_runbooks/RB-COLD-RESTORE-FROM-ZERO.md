@@ -14,6 +14,9 @@ superseded_by: null
 tags: ["runbook", "dr", "cold-restore", "gap-15", "soc2-a1-2", "soc2-a1-3", "rto-4h-read", "rto-8h-write", "rpo-15m", "dr-15"]
 ---
 
+<!-- forensics-backlink -->
+> **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §3.3, §10.
+
 # RB-COLD-RESTORE-FROM-ZERO — Region Lost; Restore From N-1
 
 > **Status:** ACTIVE. Companion to `specs/_compliance/COLD-RESTORE-DRILL-SPEC.md` (drill spec) and `scripts/cold-restore-drill.sh` (orchestrator).

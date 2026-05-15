@@ -33,6 +33,9 @@ tags:
   - "gap-01"
 ---
 
+<!-- forensics-backlink -->
+> **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §8.1, §10.
+
 # RB-DPO-ESCALATION — DPO Consultation + Escalation
 
 > **Purpose:** define **when** internal CoreLink teams must consult or escalate to the interim DPO (Gustavo Schneiter), with **response SLAs** and **escalation tree** including external advisors, Legal, and ANPD as terminal endpoint.

@@ -25,6 +25,9 @@ references:
 tags: ["runbook", "byok", "fips", "gap-02", "soc2", "quarterly"]
 ---
 
+<!-- forensics-backlink -->
+> **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §7.
+
 # RB-FIPS-ATTESTATION-RENEWAL — quarterly attestation renewal protocol
 
 > **Status:** ACTIVE. Owner: Crypto SME. Cadence: quarterly

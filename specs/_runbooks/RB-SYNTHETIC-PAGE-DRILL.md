@@ -14,6 +14,9 @@ superseded_by: null
 tags: ["runbook", "oncall", "synthetic-page", "drill", "mtta", "rb-synthetic-page-drill", "wi-s20-006", "24-7"]
 ---
 
+<!-- forensics-backlink -->
+> **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §2.
+
 # RB-SYNTHETIC-PAGE-DRILL — Weekly Synthetic Page Drill Procedure
 
 > **Parent WI:** [WI-S20-006](../04_sprints/S20/work_items/WI-S20-006-incident-response-24-7-pagerduty-3-regions-synthetic-page-weekly.md)

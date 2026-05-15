@@ -14,6 +14,9 @@ superseded_by: null
 tags: ["runbook", "oncall", "escalation", "matrix", "3-tier", "sev1", "sev2", "sev3", "pagerduty", "wt-r6-3", "wi-s17-005", "bcp-dr"]
 ---
 
+<!-- forensics-backlink -->
+> **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §1.2.
+
 # RB-ONCALL-ESCALATION-MATRIX — 3-Tier Escalation Matrix (SEV1/2/3)
 
 > **Parent:** `specs/_compliance/BCP-DR-DRILL-CADENCE.md` (R-6 90-day cadence companion).

@@ -28,6 +28,9 @@ tags:
   - "wt-r-prep-support-runbook"
 ---
 
+<!-- forensics-backlink -->
+> **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §7.
+
 # RB-CUSTOMER-SUPPORT-T-90 — Customer Support Runbook (First 90 Days Post-GA)
 
 > **Purpose:** the comms-side playbook for inbound customer tickets in the **first 90 days post-GA** (T+0 .. T+90d). Engineering on-call handles incidents (`RB-ONCALL-POLICY.md` + `ONCALL-ESCALATION-MATRIX.md`); this runbook handles **tickets** — the customer-facing intake, triage, response, and escalation track that runs in parallel.

@@ -20,6 +20,9 @@ inherits_from:
 tags: ["runbook", "lgpd", "lgpd-art-18", "dsr", "data-subject-rights", "gap-22-followup", "anpd"]
 ---
 
+<!-- forensics-backlink -->
+> **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §4, §8.1.
+
 # RB-DSR-LGPD-FULL — Internal runbook for LGPD Art. 18 DSR processing
 
 > **Status:** DRAFT. Owner: interim Privacy Officer (Gustavo Schneiter); transferred to formal DPO post-appointment.

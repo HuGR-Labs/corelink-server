@@ -20,6 +20,9 @@ tags:
   - "wi-s17-004"
 ---
 
+<!-- forensics-backlink -->
+> **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §10.
+
 # RB-POSTMORTEM-PROCESS — Blameless Postmortem Process
 
 ## 1. Summary

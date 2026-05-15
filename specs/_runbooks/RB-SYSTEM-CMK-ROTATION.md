@@ -14,6 +14,9 @@ superseded_by: null
 tags: ["runbook", "s19", "cmk", "rotation", "byok", "envelope-encryption", "enterprise-inquiry", "r2-11"]
 ---
 
+<!-- forensics-backlink -->
+> **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §7.
+
 # RB-SYSTEM-CMK-ROTATION — System CMK rotation & lifecycle
 
 **Scope.** Customer-managed key (CMK) used by CoreLink to envelope-encrypt

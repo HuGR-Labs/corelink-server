@@ -15,6 +15,9 @@ parent: "WI-R5P-SOC2-DRATA"
 tags: ["runbook", "r5p", "soc2", "drata", "evidence-sync", "fail-open", "sla-24h"]
 ---
 
+<!-- forensics-backlink -->
+> **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §4, §9.1.
+
 # RB-DRATA-SYNC-FAILURE — Drata evidence sync failure response
 
 > **Owned by:** WI-R5P-SOC2-DRATA. **Triggered by:** any of (a) the CF Cron Worker `drata-evidence-sync` reports non-zero `failed` count for ≥ 1 consecutive run; (b) Prometheus alert `corelink_drata_evidence_backlog_seconds > 86400` (24h SLA breach); (c) Drata Trust Center shows "stale evidence" for any of the six streams.

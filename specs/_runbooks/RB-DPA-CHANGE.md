@@ -14,6 +14,9 @@ superseded_by: null
 tags: ["runbook", "s19", "dpa", "legal-review", "consent", "wi-s19-002"]
 ---
 
+<!-- forensics-backlink -->
+> **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §10.
+
 # RB-DPA-CHANGE — DPA template change runbook
 
 > **Status:** ACTIVE. Owned by WI-S19-002. Covers the Legal-review

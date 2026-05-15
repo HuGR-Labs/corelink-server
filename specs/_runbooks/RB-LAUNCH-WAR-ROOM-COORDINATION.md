@@ -21,6 +21,9 @@ tags:
   - "wt-r8-1"
 ---
 
+<!-- forensics-backlink -->
+> **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §1.
+
 # RB-LAUNCH-WAR-ROOM-COORDINATION — Operator playbook for the GA launch war room
 
 > **Lightweight** runbook for the war room coordinator (WR-COORD). The canonical content lives in `marketing/launch/LAUNCH-CHECKLIST-V2.md`. This runbook captures the **operator-level mechanics** of running the war room — what to set up, what to log, when to escalate, when to dissolve.

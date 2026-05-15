@@ -14,6 +14,9 @@ superseded_by: null
 tags: ["runbook", "dr", "active-failover", "warm-failover", "soc2-a1-2", "soc2-cc7-5", "rto-15m", "rpo-5m", "dr-16"]
 ---
 
+<!-- forensics-backlink -->
+> **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §6, §8.4.
+
 # RB-ACTIVE-FAILOVER — Warm Switch Active Region To Sibling
 
 > **Status:** ACTIVE. Companion to `specs/_compliance/ACTIVE-FAILOVER-DRILL-SPEC.md` (drill spec, DR-16) and `scripts/active-failover-drill.sh` (3-mode orchestrator).

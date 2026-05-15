@@ -14,6 +14,9 @@ superseded_by: null
 tags: ["runbook", "r-prep", "backup-verification", "dr", "daily-cadence", "slo-backup-verification"]
 ---
 
+<!-- forensics-backlink -->
+> **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §3, §10.
+
 # RB-BACKUP-VERIFICATION-FAILURE — Daily Backup Verification Alert Response
 
 > **Status:** ACTIVE. Owned by SRE Lead. Triggers from
