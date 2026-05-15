@@ -1432,6 +1432,8 @@ dependencies = [
  "async-trait",
  "corelink-config-do",
  "proptest",
+ "rand 0.9.4",
+ "rand_chacha 0.9.0",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -2065,6 +2067,8 @@ name = "corelink-region"
 version = "0.1.0"
 dependencies = [
  "proptest",
+ "rand 0.9.4",
+ "rand_chacha 0.9.0",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -2095,6 +2099,9 @@ dependencies = [
 name = "corelink-rotation-adapters"
 version = "0.1.0"
 dependencies = [
+ "proptest",
+ "rand 0.9.4",
+ "rand_chacha 0.9.0",
  "serde",
  "thiserror 2.0.18",
 ]
