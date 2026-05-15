@@ -101,7 +101,7 @@ fn run_in_memory() {
 
 #[test]
 fn r3_1_happy_path_starter_in_memory() {
-    let _ = tokio::runtime::Builder::new_current_thread()
+    tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .map(|rt| rt.block_on(async { run_in_memory() }))

@@ -108,7 +108,7 @@ fn r3_1_happy_path_free_tier() {
     // the R2 trait surface is async-by-design (BlobStoreWrite future).
     // Per WI we always cross the async boundary explicitly in case
     // follow-on tests need it.
-    let _ = tokio::runtime::Builder::new_current_thread()
+    tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .map(|rt| rt.block_on(async { run() }))

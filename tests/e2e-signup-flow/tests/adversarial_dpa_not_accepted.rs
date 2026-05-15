@@ -66,7 +66,7 @@ fn run() {
 
 #[test]
 fn r3_1_dpa_not_accepted_blocks_all_tiers() {
-    let _ = tokio::runtime::Builder::new_current_thread()
+    tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .map(|rt| rt.block_on(async { run() }))

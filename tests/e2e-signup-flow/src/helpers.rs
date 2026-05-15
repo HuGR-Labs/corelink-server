@@ -273,6 +273,7 @@ impl ProvisionedTenant {
     ///
     /// Returns the unhappy outcome verbatim if it is not `Provisioned`
     /// so callers can pattern-match on the variant they actually got.
+    #[allow(clippy::result_large_err)] // test-only harness; SignupOutcome is the canonical surface
     pub fn from_response(resp: SignupResponse) -> Result<Self, SignupOutcome> {
         match resp.outcome.clone() {
             SignupOutcome::Provisioned {
