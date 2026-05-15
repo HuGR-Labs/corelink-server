@@ -109,6 +109,7 @@ This is the SOTA invariant set. Failures here = regression.
 - [ ] **L6.3** `python3 scripts/validate_references.py` (if exists) — no new dangling references
 - [ ] **L6.4** Migration numbering: next-free; no collisions with sibling worktrees
 - [ ] **L6.5** Cross-reference INVs / CTRLs / FMs / EVTs / PATs to canonical registries
+- [ ] **L6.6** `python3 scripts/validate_canonical_consistency.py` — no new orphan `INV-*` refs in code and no regression vs baseline in `specs/_audits/2026-05-15-canonical-consistency-baseline.md` (triage flow: `specs/_runbooks/RB-CANONICAL-DRIFT.md`)
 
 ---
 

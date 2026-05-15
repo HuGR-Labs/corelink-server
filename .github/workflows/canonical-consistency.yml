@@ -1,0 +1,90 @@
+name: Canonical Consistency (R-PREP canonical-lint)
+
+# Cross-validates INV registry × TLA+ × code × tests against the locked
+# baseline in `specs/_audits/2026-05-15-canonical-consistency-baseline.md`.
+#
+# Fires on PRs that touch ANY of:
+# - `specs/**`              — registry / TLA / docs corpus drift
+# - `crates/*/src/**`       — production code INV-* comments
+# - `crates/*/tests/**`     — test references
+# - `specs/tla/**`          — formal proof corpus
+# - the validator script + the baseline itself
+#
+# Behaviour:
+# - Hard-fails the PR if any NEW orphan INV-* reference appears in code.
+# - Hard-fails the PR if code_referenced / test_referenced /
+#   critical_referenced drop below baseline floors.
+# - Uploads the JSON report as an artifact (30d) so the R-7 GA evidence
+#   pack assembly has direct access to historical snapshots.
+#
+# Pin policy (Lote 9.5b CI hardening): all third-party actions pinned to
+# 40-char SHA + version comment.
+
+on:
+  pull_request:
+    paths:
+      - 'specs/**'
+      - 'crates/*/src/**'
+      - 'crates/*/tests/**'
+      - 'specs/tla/**'
+      - 'scripts/validate_canonical_consistency.py'
+      - '.github/workflows/canonical-consistency.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'specs/03_architecture/invariant_registry.md'
+      - 'specs/_audits/2026-05-15-canonical-consistency-baseline.md'
+      - 'scripts/validate_canonical_consistency.py'
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  canonical-consistency:
+    name: Cross-validate INV registry × TLA × code × tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 1
+
+      - name: Setup Python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: '3.11'
+
+      - name: Run canonical consistency validator
+        id: validator
+        run: |
+          mkdir -p target/canonical-consistency
+          python3 scripts/validate_canonical_consistency.py \
+            --out target/canonical-consistency/report.json \
+            | tee target/canonical-consistency/report.txt
+        # The script exits 1 if orphan refs OR baseline regressions are
+        # detected. The pipefail-aware behaviour preserves that exit code.
+        shell: bash
+
+      - name: Summarize results in PR
+        if: always()
+        run: |
+          if [ -f target/canonical-consistency/report.txt ]; then
+            {
+              echo "## Canonical consistency report"
+              echo ""
+              echo '```'
+              head -20 target/canonical-consistency/report.txt
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+        shell: bash
+
+      - name: Upload JSON report (30-day retention)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: canonical-consistency-report
+          path: target/canonical-consistency/
+          retention-days: 30
+          if-no-files-found: warn
