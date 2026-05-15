@@ -35,6 +35,10 @@ use axum::Router;
 pub mod admin;
 /// AC HTTP routes (R-prep wire-up; wave-11).
 pub mod ac;
+/// Customer-facing audit-export route (Wave-15.3 wiring of
+/// WI-S09-008): `GET /v1/audit/export?from=&to=` streams NDJSON
+/// audit events + inclusion proofs.
+pub mod audit_export;
 /// CAS HTTP routes (R-prep example wire-up; wave-8).
 pub mod cas;
 
@@ -54,10 +58,12 @@ pub fn build() -> Router {
         read: admin_read,
         mutate: admin_mutate,
     };
+    let audit_export_state = audit_export::build_state();
     Router::new()
         .merge(cas::router(cas_state))
         .merge(ac::router(ac_state))
         .merge(admin::router(admin_state))
+        .merge(audit_export::router(audit_export_state))
 }
 
 #[cfg(test)]

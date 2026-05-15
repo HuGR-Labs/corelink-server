@@ -101,7 +101,9 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 
 # R2-12: Stripe webhook HTTP route + signature verify + idempotency
-axum = { workspace = true }
+# Wave-15.3 adds the `query` feature so `apps/server/src/routes/audit_export.rs`
+# can extract `?from=&to=&tenant=` via `axum::extract::Query`.
+axum = { workspace = true, features = ["query"] }
 tower = { workspace = true }
 http = { workspace = true }
 http-body-util = { workspace = true }
@@ -119,6 +121,16 @@ corelink-tier-selection = { workspace = true }
 corelink-handler-cas = { workspace = true }
 corelink-handler-ac = { workspace = true }
 corelink-handler-admin = { workspace = true }
+
+# Wave-15.3 — customer-facing `GET /v1/audit/export` route
+# (WI-S09-008 wiring). The route ships in
+# `apps/server/src/routes/audit_export.rs`; the trait-object surface
+# (`Arc<dyn AuditExporter>` + `Arc<dyn RateLimiter>`) preserves the
+# binary shape across the native / wasm32 CF-Worker swap.
+corelink-audit-chain = { workspace = true }
+corelink-ratelimit = { workspace = true }
+subtle = { workspace = true }
+uuid = { workspace = true }
 
 # BYOK foundation crate (KmsProvider trait + InMemoryFake used by
 # the orchestrator default path) — NOT optional: the orchestrator
@@ -141,6 +153,16 @@ proptest = { workspace = true }
 hmac = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
+# Wave-15.3 — integration test fixtures for the `audit_export` route.
+# `corelink-analytics` provides the canonical `Region` enum the
+# `AuditEvent` constructor uses; `tower` brings the `ServiceExt`
+# trait used to drive `axum::Router::oneshot` in async tests;
+# `serde_json` parses the NDJSON envelope; `tokio` runs the async
+# test functions; `axum` brings the `Request`/`Body` body shapes.
+corelink-analytics = { workspace = true }
+tower = { workspace = true, features = ["util"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+serde_json = { workspace = true }
 
 [build-dependencies]
 tonic-build = { workspace = true }
