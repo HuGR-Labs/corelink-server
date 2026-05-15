@@ -1,4 +1,14 @@
-//! R3-8 adversarial cross-tenant scenarios (12 tests).
+//! R3-8 adversarial cross-tenant scenarios (25 tests — pentest readiness).
+//!
+//! Inventory:
+//! - Scenarios 01..12: original R3-8 wave 5 (12 scenarios, see history).
+//! - Scenarios 13..25: pentest-readiness expansion (13 new scenarios)
+//!   covering timing oracles, cache poisoning, CMK rotation races,
+//!   PAT-revoke ToCToU, cross-tenant idempotency mixed-case paths,
+//!   audit-chain leaf forge, cross-region replay, cross-tenant DSR,
+//!   parent/child quota inheritance, R2 multipart forge, Stripe
+//!   webhook cross-account replay, KV replication under partition,
+//!   and audit query injection.
 //!
 //! Each test:
 //!
@@ -29,8 +39,10 @@ use corelink_byok::{
     KmsProvider, KmsProviderKind, WrappedDek,
 };
 use e2e_tenant_isolation::{
-    AuditCapture, CasStore, DenyKind, IdempotencyStore, PatStore, QuotaStore, RateLimiter,
-    StripeWebhookLedger, TenantCtx,
+    AuditCapture, AuditChain, AuditQueryEngine, CasStore, CmkRotationLedger,
+    ConstantTimeAuthProbe, DenyKind, DsrIntake, HierarchicalQuotaStore, IdempotencyStore,
+    KvReplicatedPatStore, MultipartBroker, PatRevokeLedger, PatStore, QuotaStore, RateLimiter,
+    RegionRouter, StripeWebhookLedger, TenantCtx,
 };
 use uuid::Uuid;
 
@@ -561,4 +573,502 @@ fn s12_pat_cross_tenant_use_rejected() {
         Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::PatSignatureInvalid))
     ));
     assert_eq!(audit.count(), 2);
+}
+
+// ── Pentest-readiness expansion (scenarios 13..25) ──────────────────────
+
+/// Scenario 13 — Timing oracle on auth resolve: an attacker probes
+/// existent vs non-existent tenant ids to infer directory contents.
+/// The constant-time auth probe MUST report the same padded deadline
+/// regardless of existence (`TimingPaddingLayer` invariant).
+///
+/// STRIDE: `STRIDE-corelink-tenant-path.md` §2.1 TB-tp-1 row I,
+/// THR-I-002, CTRL-ISO-004, ADR-0023+ADR-0028. INV-AUTH-TIMING-PARITY.
+#[test]
+fn s13_timing_oracle_constant_time_auth_probe() {
+    let probe = ConstantTimeAuthProbe::new();
+    let a = TenantCtx::tenant_a().unwrap();
+    probe.register(a.tenant_id()).unwrap();
+
+    // Probe an existing tenant.
+    let (existed, ns_existing) = probe.probe(a.tenant_id()).unwrap();
+    assert!(existed);
+    // Probe a non-existent tenant (random uuid not registered).
+    let ghost = uuid::Uuid::from_u128(0x1111_2222_3333_4444_5555_6666_7777_8888);
+    let (missing, ns_missing) = probe.probe(ghost).unwrap();
+    assert!(!missing);
+    // Padded deadlines MUST match — no timing oracle exposed.
+    assert_eq!(
+        ns_existing, ns_missing,
+        "auth resolve latency must not branch on existence"
+    );
+    assert_eq!(ns_existing, ConstantTimeAuthProbe::LATENCY_FLOOR_NS);
+}
+
+/// Scenario 14 — Cache-poisoning: Tenant A writes a CAS blob under a
+/// deliberately-incorrect digest. Tenant B looks up the same blob_key
+/// against B's own prefix and MUST NOT receive A's payload, even if
+/// the cache key collides via the (intentionally-wrong) digest.
+///
+/// STRIDE: `STRIDE-corelink-cas.md` cache-poisoning row, FM-CAS-002,
+/// INV-CAS-PREFIX-SCOPED.
+#[test]
+fn s14_cas_cache_poisoning_cross_tenant_isolated() {
+    let audit = AuditCapture::new();
+    let cas = CasStore::new(audit.clone());
+    let a = TenantCtx::tenant_a().unwrap();
+    let b = TenantCtx::tenant_b().unwrap();
+
+    // Tenant A writes under its own prefix with a deliberately
+    // attacker-chosen blob_key that collides with one B will use.
+    let blob_key = "sha256:deadbeef-DELIBERATELY-WRONG";
+    cas.seed(a.tenant_id(), a.prefix(), blob_key, b"A_POISON".to_vec())
+        .unwrap();
+    // Tenant B writes its own legitimate content under the SAME key
+    // name but against B's prefix.
+    cas.seed(b.tenant_id(), b.prefix(), blob_key, b"B_LEGIT".to_vec())
+        .unwrap();
+
+    // Tenant B reads against its own prefix — must get B's payload.
+    let r_b = cas.get(b.tenant_id(), b.prefix(), blob_key).unwrap();
+    assert_eq!(r_b, b"B_LEGIT");
+    // Adversarial: Tenant B reads against A's prefix → rejected.
+    let r_cross = cas.get(b.tenant_id(), a.prefix(), blob_key);
+    assert!(matches!(
+        r_cross,
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::AuthzTenantMismatch))
+    ));
+    assert_eq!(audit.count(), 1);
+}
+
+/// Scenario 15 — CMK rotation race: a read arrives during an in-flight
+/// rotation. Either the pre- or post-rotation version is acceptable
+/// (atomic switch), but a half-state envelope (third version) MUST
+/// be rejected — no half-state envelope is ever returned.
+///
+/// STRIDE: `STRIDE-corelink-byok.md` rotation row,
+/// INV-BYOK-CMK-ROTATION-ATOMIC, FM-BYOK-005.
+#[test]
+fn s15_cmk_rotation_race_no_half_state() {
+    let audit = AuditCapture::new();
+    let ledger = CmkRotationLedger::new(audit.clone());
+    let a = TenantCtx::tenant_a().unwrap();
+
+    ledger.init(a.tenant_id(), 7).unwrap();
+    // Read with the current version — ok.
+    ledger.read_with_version(a.tenant_id(), 7).unwrap();
+
+    // Begin rotation 7 → 8.
+    ledger.begin_rotation(a.tenant_id(), 8).unwrap();
+    // During in-flight: both 7 and 8 are accepted.
+    ledger.read_with_version(a.tenant_id(), 7).unwrap();
+    ledger.read_with_version(a.tenant_id(), 8).unwrap();
+    // A half-state probe (version 9 — never agreed on) must reject.
+    let r_half = ledger.read_with_version(a.tenant_id(), 9);
+    assert!(matches!(
+        r_half,
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::CmkRotationInFlight))
+    ));
+    assert_eq!(audit.count(), 1);
+
+    // Commit. After commit, only 8 is acceptable.
+    ledger.commit_rotation(a.tenant_id()).unwrap();
+    ledger.read_with_version(a.tenant_id(), 8).unwrap();
+    let r_old = ledger.read_with_version(a.tenant_id(), 7);
+    assert!(matches!(
+        r_old,
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::CmkRotationInFlight))
+    ));
+    assert_eq!(audit.count(), 2);
+}
+
+/// Scenario 16 — ToCToU on PAT revoke: PAT-A is used between the
+/// revoke decision (logical time T) and the revoke commit. Any
+/// authorize at `now >= T` MUST reject — the revoke is observed
+/// atomically on the read side (no ToCToU window).
+///
+/// STRIDE: `STRIDE-corelink-pat.md` revoke-toctou row,
+/// INV-PAT-REVOKE-TOCTOU-SAFE, FM-PAT-003.
+#[test]
+fn s16_pat_revoke_toctou_no_window() {
+    let audit = AuditCapture::new();
+    let ledger = PatRevokeLedger::new(audit.clone());
+    let a = TenantCtx::tenant_a().unwrap();
+
+    ledger.mint("pat_X", a.tenant_id()).unwrap();
+    // Before revoke: ok.
+    ledger.authorize_at("pat_X", a.tenant_id(), 100).unwrap();
+
+    // Revoke at logical time 200.
+    ledger.revoke_at("pat_X", 200).unwrap();
+
+    // Just before revoke commit (199): still ok.
+    ledger.authorize_at("pat_X", a.tenant_id(), 199).unwrap();
+    // At the revoke commit boundary (200): rejected.
+    let r_boundary = ledger.authorize_at("pat_X", a.tenant_id(), 200);
+    assert!(matches!(
+        r_boundary,
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::PatRevoked))
+    ));
+    // After (250): also rejected — closed forever.
+    let r_after = ledger.authorize_at("pat_X", a.tenant_id(), 250);
+    assert!(matches!(
+        r_after,
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::PatRevoked))
+    ));
+    assert_eq!(audit.count(), 2);
+}
+
+/// Scenario 17 — Idempotency key collision across tenants with
+/// mixed-case path: the canonicalisation layer MUST NOT confuse
+/// `Key-A` and `key-a` (the underlying ledger key is byte-exact, so
+/// case-mixed keys are independent rows; and cross-tenant they are
+/// independent regardless of casing).
+///
+/// STRIDE: idempotency-injection row,
+/// INV-IDEMPOTENCY-TENANT-SCOPED + INV-IDEMPOTENCY-BYTE-EXACT.
+#[test]
+fn s17_idempotency_collision_mixed_case_cross_tenant() {
+    let audit = AuditCapture::new();
+    let idem = IdempotencyStore::new(audit.clone());
+    let a = TenantCtx::tenant_a().unwrap();
+    let b = TenantCtx::tenant_b().unwrap();
+
+    // Tenant A claims "Key-1".
+    let r_a = idem.claim(a.tenant_id(), "Key-1", 0xAAAA).unwrap();
+    assert!(!r_a);
+    // Tenant B claims the lowercase variant "key-1" — must be independent
+    // (different bytes AND different tenant).
+    let r_b = idem.claim(b.tenant_id(), "key-1", 0xBBBB).unwrap();
+    assert!(!r_b);
+    // Tenant A claims the lowercase variant — different bytes from
+    // "Key-1", first-time claim under A.
+    let r_a_lower = idem.claim(a.tenant_id(), "key-1", 0xCCCC).unwrap();
+    assert!(!r_a_lower);
+
+    // Tenant B replays "Key-1" with mixed-case — first-time for B
+    // (cross-tenant scoping ensures no leakage from A's prior claim).
+    let r_b_upper = idem.claim(b.tenant_id(), "Key-1", 0xDDDD).unwrap();
+    assert!(!r_b_upper);
+    assert_eq!(audit.count(), 0);
+
+    // Same tenant + same case + different fingerprint = deny.
+    let r_collide = idem.claim(a.tenant_id(), "Key-1", 0xEEEE);
+    assert!(matches!(
+        r_collide,
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::IdempotencyConflict))
+    ));
+    assert_eq!(audit.count(), 1);
+}
+
+/// Scenario 18 — Audit chain leaf forge: Tenant A constructs a forged
+/// leaf claiming it belongs to Tenant B's chain. Chain verify under
+/// B's root MUST reject (no two chains share a root; membership
+/// check is constant-time over the claimed tenant's chain).
+///
+/// STRIDE: `STRIDE-corelink-audit-chain.md` non-forgeable row,
+/// INV-AUDIT-CHAIN-NON-FORGEABLE.
+#[test]
+fn s18_audit_chain_leaf_forge_rejected() {
+    let audit = AuditCapture::new();
+    let chain = AuditChain::new(audit.clone());
+    let a = TenantCtx::tenant_a().unwrap();
+    let b = TenantCtx::tenant_b().unwrap();
+
+    chain.append(a.tenant_id(), b"leaf_a_1".to_vec()).unwrap();
+    chain.append(b.tenant_id(), b"leaf_b_1".to_vec()).unwrap();
+
+    // Sanity: own-chain verify ok.
+    chain.verify(a.tenant_id(), a.tenant_id(), b"leaf_a_1").unwrap();
+    chain.verify(b.tenant_id(), b.tenant_id(), b"leaf_b_1").unwrap();
+
+    // Adversarial: A constructs a forged leaf claiming B's chain.
+    let forged = b"leaf_a_FORGED_AS_B".to_vec();
+    let r = chain.verify(a.tenant_id(), b.tenant_id(), &forged);
+    assert!(matches!(
+        r,
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::AuditChainForge))
+    ));
+    assert_eq!(audit.count(), 1);
+    let last = audit.last_deny().unwrap();
+    assert_eq!(last.requester, a.tenant_id());
+    assert_eq!(last.resource_owner, b.tenant_id());
+
+    // Adversarial: A presents A's *own* leaf bytes against B's chain —
+    // still rejected (leaf bytes don't belong to B's chain).
+    let r2 = chain.verify(a.tenant_id(), b.tenant_id(), b"leaf_a_1");
+    assert!(matches!(
+        r2,
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::AuditChainForge))
+    ));
+    assert_eq!(audit.count(), 2);
+}
+
+/// Scenario 19 — Cross-region replay: a request originally crafted
+/// for the BR region is replayed against the US region with the same
+/// tenant id. The region router MUST consult the tenant's residency
+/// pin and reject when `received_region != home_region`.
+///
+/// STRIDE: `STRIDE-corelink-residency.md` cross-region replay row,
+/// INV-RESIDENCY-REGION-PINNED, FM-RESIDENCY-001.
+#[test]
+fn s19_cross_region_replay_residency_enforced() {
+    let audit = AuditCapture::new();
+    let router = RegionRouter::new(audit.clone());
+    let a = TenantCtx::tenant_a().unwrap();
+
+    router.pin(a.tenant_id(), "br-sao").unwrap();
+
+    // Legit: request received in br-sao.
+    router.route(a.tenant_id(), "br-sao").unwrap();
+    assert_eq!(audit.count(), 0);
+
+    // Adversarial: same tenant id, replayed against us-east.
+    let r = router.route(a.tenant_id(), "us-east");
+    assert!(matches!(
+        r,
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::RegionResidencyViolation))
+    ));
+    assert_eq!(audit.count(), 1);
+    let deny = audit.last_deny().unwrap();
+    assert_eq!(deny.kind, DenyKind::RegionResidencyViolation);
+}
+
+/// Scenario 20 — Cross-tenant DSR submission: Tenant A submits a DSR
+/// for Tenant B's principal email. The DSR intake MUST require
+/// auth-context match (requester tenant == target tenant).
+///
+/// STRIDE: `STRIDE-corelink-dsr.md` §2.1,
+/// INV-DSR-TENANT-CONTEXT-MATCH.
+#[test]
+fn s20_dsr_cross_tenant_submission_rejected() {
+    let audit = AuditCapture::new();
+    let dsr = DsrIntake::new(audit.clone());
+    let a = TenantCtx::tenant_a().unwrap();
+    let b = TenantCtx::tenant_b().unwrap();
+
+    // Same-tenant DSR is allowed.
+    dsr.submit(a.tenant_id(), a.tenant_id(), "alice@example.com")
+        .unwrap();
+    assert_eq!(audit.count(), 0);
+
+    // Cross-tenant DSR: A submits for B's email → rejected.
+    let r = dsr.submit(a.tenant_id(), b.tenant_id(), "bob@example.com");
+    assert!(matches!(
+        r,
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::DsrAuthContextMismatch))
+    ));
+    assert_eq!(audit.count(), 1);
+    let deny = audit.last_deny().unwrap();
+    assert_eq!(deny.requester, a.tenant_id());
+    assert_eq!(deny.resource_owner, b.tenant_id());
+}
+
+/// Scenario 21 — Parent/child quota inheritance: two child tenants
+/// under the same parent. Exhausting child_A MUST NOT affect
+/// child_B's quota window (sibling isolation).
+///
+/// STRIDE: quota hierarchy row,
+/// INV-QUOTA-SIBLING-NON-INHERITED.
+#[test]
+fn s21_quota_inheritance_siblings_isolated() {
+    let audit = AuditCapture::new();
+    let quota = HierarchicalQuotaStore::new(audit.clone());
+    let parent = TenantCtx::tenant_a().unwrap().tenant_id();
+    let child_a = uuid::Uuid::from_u128(0xCCCC_AAAA);
+    let child_b = uuid::Uuid::from_u128(0xCCCC_BBBB);
+
+    quota.register_child(child_a, parent, 3).unwrap();
+    quota.register_child(child_b, parent, 3).unwrap();
+
+    // child_a exhausts.
+    for _ in 0..3 {
+        quota.try_consume(child_a).unwrap();
+    }
+    let r = quota.try_consume(child_a);
+    assert!(matches!(
+        r,
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::QuotaInheritanceLeak))
+    ));
+    assert_eq!(audit.count(), 1);
+    // child_b is unaffected.
+    assert_eq!(quota.used(child_b), 0);
+    for _ in 0..3 {
+        quota.try_consume(child_b).unwrap();
+    }
+    // Only one deny — child_a's.
+    assert_eq!(audit.count(), 1);
+}
+
+/// Scenario 22 — R2 multipart upload forge: Tenant A creates a
+/// multipart upload (bound to A's prefix). Tenant B forges the
+/// `upload_id` and attempts to upload parts. The broker MUST reject
+/// by tenant prefix at part-upload time.
+///
+/// STRIDE: `STRIDE-corelink-cas.md` multipart row,
+/// INV-MULTIPART-UPLOAD-TENANT-BOUND, FM-CAS-007.
+#[test]
+fn s22_multipart_upload_cross_tenant_forge_rejected() {
+    let audit = AuditCapture::new();
+    let broker = MultipartBroker::new(audit.clone());
+    let a = TenantCtx::tenant_a().unwrap();
+    let b = TenantCtx::tenant_b().unwrap();
+
+    broker.create(a.tenant_id(), a.prefix(), "upload-xyz").unwrap();
+    // Owner uploads part — ok.
+    broker
+        .upload_part(a.tenant_id(), a.prefix(), "upload-xyz", b"part1".to_vec())
+        .unwrap();
+    assert_eq!(audit.count(), 0);
+
+    // Tenant B forges the upload_id and tries to inject a part.
+    let r = broker.upload_part(b.tenant_id(), b.prefix(), "upload-xyz", b"evil".to_vec());
+    assert!(matches!(
+        r,
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::MultipartUploadForge))
+    ));
+    assert_eq!(audit.count(), 1);
+    let deny = audit.last_deny().unwrap();
+    assert_eq!(deny.requester, b.tenant_id());
+    assert_eq!(deny.resource_owner, a.tenant_id());
+
+    // Tenant B also tries to abort A's upload — same rejection.
+    let r2 = broker.abort(b.tenant_id(), "upload-xyz");
+    assert!(matches!(
+        r2,
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::MultipartUploadForge))
+    ));
+    assert_eq!(audit.count(), 2);
+}
+
+/// Scenario 23 — Stripe webhook cross-account spoofing: an attacker
+/// crafts a webhook with a Stripe `event_id` already consumed by
+/// another customer account (tenant). The ledger MUST reject the
+/// cross-tenant replay (extends Scenario 11 with a distinct
+/// adversarial framing: forged `event_id` re-use across accounts).
+///
+/// STRIDE: `STRIDE-corelink-billing.md` webhook-spoof row,
+/// INV-STRIPE-WEBHOOK-IDEMPOTENT-CROSS-TENANT.
+#[test]
+fn s23_stripe_webhook_cross_account_spoof_rejected() {
+    let audit = AuditCapture::new();
+    let ledger = StripeWebhookLedger::new(audit.clone());
+    let a = TenantCtx::tenant_a().unwrap();
+    let b = TenantCtx::tenant_b().unwrap();
+
+    // Tenant A's webhook is consumed.
+    ledger.process(a.tenant_id(), "evt_spoof_001").unwrap();
+
+    // Tenant B spoofs the same event_id — rejected.
+    let r = ledger.process(b.tenant_id(), "evt_spoof_001");
+    assert!(matches!(
+        r,
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::StripeReplay))
+    ));
+    assert_eq!(audit.count(), 1);
+
+    // Try a SECOND spoof attempt with a DIFFERENT event_id but B
+    // re-uses A's id pattern — independently rejected as a new
+    // cross-tenant replay.
+    ledger.process(a.tenant_id(), "evt_spoof_002").unwrap();
+    let r2 = ledger.process(b.tenant_id(), "evt_spoof_002");
+    assert!(matches!(
+        r2,
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::StripeReplay))
+    ));
+    assert_eq!(audit.count(), 2);
+    let deny = audit.last_deny().unwrap();
+    assert_eq!(deny.requester, b.tenant_id());
+    assert_eq!(deny.resource_owner, a.tenant_id());
+}
+
+/// Scenario 24 — KV propagation under partition: Tenant A's PAT is
+/// revoked in the home region during a network partition between
+/// home and the remote replica. Reads on the remote side MUST
+/// fail-CLOSED (cannot prove the token is live) — no stale-allow.
+///
+/// STRIDE: `STRIDE-corelink-kv-replication.md` partition row,
+/// INV-KV-REPLICATION-FAIL-CLOSED, FM-AUTH-013.
+#[test]
+fn s24_kv_partition_pat_revoke_fail_closed() {
+    let audit = AuditCapture::new();
+    let store = KvReplicatedPatStore::new(audit.clone());
+    let a = TenantCtx::tenant_a().unwrap();
+
+    store.mint("pat_P", a.tenant_id()).unwrap();
+    // Pre-partition, pre-revoke: ok in remote.
+    store
+        .authorize_remote("pat_P", a.tenant_id(), false)
+        .unwrap();
+    assert_eq!(audit.count(), 0);
+
+    // Home revokes during partition (remote does not yet know).
+    store.revoke_home("pat_P").unwrap();
+
+    // Read on remote DURING partition: cannot consult home, no local
+    // replication yet → fail-CLOSED.
+    let r = store.authorize_remote("pat_P", a.tenant_id(), true);
+    assert!(matches!(
+        r,
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::KvReplicationLag))
+    ));
+    assert_eq!(audit.count(), 1);
+
+    // Read on remote AFTER partition heals (no partition flag), home
+    // still has revoke → also rejected (home authoritative).
+    let r2 = store.authorize_remote("pat_P", a.tenant_id(), false);
+    assert!(matches!(
+        r2,
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::KvReplicationLag))
+    ));
+    assert_eq!(audit.count(), 2);
+
+    // After replication, local replica also knows: still rejected.
+    store.replicate_revoke("pat_P").unwrap();
+    let r3 = store.authorize_remote("pat_P", a.tenant_id(), false);
+    assert!(matches!(
+        r3,
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::KvReplicationLag))
+    ));
+    assert_eq!(audit.count(), 3);
+}
+
+/// Scenario 25 — Audit query injection: an attacker submits a crafted
+/// filter parameter (`tenant_id=B`) while authenticated as A. The
+/// query layer MUST enforce tenant scoping pre-filter — a
+/// caller-supplied `tenant_id` that disagrees with the JWT-bound
+/// tenant is an injection attempt and is rejected.
+///
+/// STRIDE: `STRIDE-corelink-audit-chain.md` query-injection row,
+/// INV-AUDIT-QUERY-TENANT-SCOPED.
+#[test]
+fn s25_audit_query_injection_rejected() {
+    let audit = AuditCapture::new();
+    let q = AuditQueryEngine::new(audit.clone());
+    let a = TenantCtx::tenant_a().unwrap();
+    let b = TenantCtx::tenant_b().unwrap();
+
+    q.seed(a.tenant_id(), "row_A_1").unwrap();
+    q.seed(a.tenant_id(), "row_A_2").unwrap();
+    q.seed(b.tenant_id(), "row_B_1").unwrap();
+
+    // No filter: tenant A sees only A's rows.
+    let rows = q.query(a.tenant_id(), None).unwrap();
+    assert_eq!(rows, vec!["row_A_1".to_string(), "row_A_2".to_string()]);
+
+    // Matching filter: also ok (A asks for tenant=A).
+    let rows2 = q.query(a.tenant_id(), Some(a.tenant_id())).unwrap();
+    assert_eq!(rows2.len(), 2);
+    assert_eq!(audit.count(), 0);
+
+    // Adversarial: A authenticates but supplies filter=B → rejected.
+    let r = q.query(a.tenant_id(), Some(b.tenant_id()));
+    assert!(matches!(
+        r,
+        Err(e2e_tenant_isolation::fakes::FakeError::Deny(DenyKind::AuditQueryInjection))
+    ));
+    assert_eq!(audit.count(), 1);
+    let deny = audit.last_deny().unwrap();
+    assert_eq!(deny.requester, a.tenant_id());
+    assert_eq!(deny.resource_owner, b.tenant_id());
 }
