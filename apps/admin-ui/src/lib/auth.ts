@@ -55,11 +55,15 @@ async function defaultProvider(): Promise<AuthContext> {
     };
     // Map fixture role → Clerk org role. Admin + approver both map to
     // `corelink-admin` for RbacGuard purposes (approver gets viewer-style
-    // access too in real Clerk org config); a plain `user` maps to null.
+    // access too in real Clerk org config); a plain `user` maps to
+    // `corelink-member` — sufficient for the customer self-serve dashboard
+    // (Viewer-minimum) but not for the operator surface (RbacGuard rejects).
     const role: ClerkOrgRole =
       decoded.role === "admin" || decoded.role === "approver"
         ? "corelink-admin"
-        : null;
+        : decoded.role === "user"
+          ? "corelink-member"
+          : null;
     return {
       user_id: decoded.sub ?? null,
       org_id: decoded.tenant_id ?? null,
@@ -85,6 +89,20 @@ export async function getAuthContext(): Promise<AuthContext> {
 
 export function hasAdminRole(ctx: AuthContext): boolean {
   return ctx.role === "corelink-admin";
+}
+
+/**
+ * Customer self-serve dashboard requires Viewer-minimum: any authenticated
+ * org member (admin/viewer/member) sees their tenant dashboard. Anonymous
+ * sessions are rejected. See specs/_audits/2026-05-15-customer-dashboard-spec.md
+ * §RBAC for the role mapping rationale.
+ */
+export function hasCustomerAccess(ctx: AuthContext): boolean {
+  return (
+    ctx.role === "corelink-admin" ||
+    ctx.role === "corelink-viewer" ||
+    ctx.role === "corelink-member"
+  );
 }
 
 /** Returns true if MFA was verified within `maxAgeMinutes` (CTRL-AUTH-010). */

@@ -1,0 +1,123 @@
+// Customer self-serve API client.
+//
+// Hits the `/v1/customer/*` surface — tenant-scoped, Viewer-minimum. The
+// scope is always the *caller's own* tenant; there is no `tenant_id` path
+// parameter (the backend infers tenant from the session). This is the key
+// boundary distinction vs. the operator `AdminClient` which can target any
+// tenant.
+//
+// In E2E mode every endpoint is mocked by `src/lib/e2e-mock-fixtures.ts`
+// behind the catch-all route at `src/app/api/v1/[...path]/route.ts`.
+
+import type {
+  CustomerAuditEvent,
+  CustomerAuditFilter,
+  CustomerBilling,
+  CustomerOverview,
+  CustomerPat,
+  CustomerTeamMember,
+  CustomerUsage,
+} from "./customer-types";
+
+export interface CustomerClientOptions {
+  baseUrl?: string;
+  fetchImpl?: typeof fetch;
+}
+
+export class CustomerClientError extends Error {
+  constructor(public readonly status: number, message: string) {
+    super(message);
+    this.name = "CustomerClientError";
+  }
+}
+
+function resolveBaseUrl(): string {
+  const explicit =
+    typeof process !== "undefined" ? process.env?.NEXT_PUBLIC_CORELINK_API_URL : undefined;
+  if (typeof window !== "undefined") return explicit ?? "/api";
+  if (explicit && !explicit.startsWith("/")) return explicit;
+  const port = (typeof process !== "undefined" && process.env?.PORT) || "3000";
+  const relPath = explicit ?? "/api";
+  return `http://127.0.0.1:${port}${relPath}`;
+}
+
+export class CustomerClient {
+  private readonly baseUrl: string;
+  private readonly fetchImpl: typeof fetch;
+
+  constructor(opts: CustomerClientOptions = {}) {
+    this.baseUrl = opts.baseUrl ?? resolveBaseUrl();
+    this.fetchImpl = opts.fetchImpl ?? globalThis.fetch.bind(globalThis);
+  }
+
+  private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+    const res = await this.fetchImpl(`${this.baseUrl}${path}`, {
+      ...init,
+      headers: { "content-type": "application/json", ...(init.headers ?? {}) },
+    });
+    if (!res.ok) {
+      throw new CustomerClientError(res.status, `customer api error (${res.status})`);
+    }
+    return (await res.json()) as T;
+  }
+
+  async getOverview(): Promise<CustomerOverview> {
+    return this.request<CustomerOverview>("/v1/customer/overview");
+  }
+
+  async getUsage(period?: string): Promise<CustomerUsage> {
+    const q = period ? `?period=${encodeURIComponent(period)}` : "";
+    return this.request<CustomerUsage>(`/v1/customer/usage${q}`);
+  }
+
+  async listAudit(filter: CustomerAuditFilter = {}): Promise<{ rows: CustomerAuditEvent[] }> {
+    const params = new URLSearchParams();
+    if (filter.since) params.set("since", filter.since);
+    if (filter.event_types?.length) params.set("event_types", filter.event_types.join(","));
+    const q = params.toString();
+    return this.request<{ rows: CustomerAuditEvent[] }>(
+      `/v1/customer/audit${q ? `?${q}` : ""}`,
+    );
+  }
+
+  async getBilling(): Promise<CustomerBilling> {
+    return this.request<CustomerBilling>("/v1/customer/billing");
+  }
+
+  async startBillingPortal(): Promise<{ portal_url: string }> {
+    return this.request<{ portal_url: string }>("/v1/customer/billing/portal", {
+      method: "POST",
+    });
+  }
+
+  async listKeys(): Promise<{ pats: CustomerPat[]; byok: CustomerOverview["byok"] }> {
+    return this.request<{ pats: CustomerPat[]; byok: CustomerOverview["byok"] }>(
+      "/v1/customer/keys",
+    );
+  }
+
+  async createPat(input: { name: string; scopes: string[] }): Promise<CustomerPat & { token?: string }> {
+    return this.request<CustomerPat & { token?: string }>("/v1/customer/keys", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  }
+
+  async revokePat(patId: string): Promise<CustomerPat> {
+    return this.request<CustomerPat>(`/v1/customer/keys/${patId}/revoke`, { method: "POST" });
+  }
+
+  async listTeam(): Promise<{ members: CustomerTeamMember[] }> {
+    return this.request<{ members: CustomerTeamMember[] }>("/v1/customer/team");
+  }
+
+  async inviteTeam(input: {
+    email: string;
+    role: CustomerTeamMember["role"];
+  }): Promise<CustomerTeamMember> {
+    return this.request<CustomerTeamMember>("/v1/customer/team/invite", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  }
+}
