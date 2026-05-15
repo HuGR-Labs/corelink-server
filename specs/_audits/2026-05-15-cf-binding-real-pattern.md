@@ -153,6 +153,15 @@ All five MUST pass before merge.
 
 Each follow-up should land in its own worktree (`wt/r-prep-cf-{d1,kv,do}-real`) and link back to this doc.
 
+### 5.1 Per-binding replication status
+
+| Binding | Module                       | Branch                    | Status   | Tests | Pattern delta                                                                                                                                          |
+|---------|------------------------------|---------------------------|----------|-------|--------------------------------------------------------------------------------------------------------------------------------------------------------|
+| R2      | `src/r2_real.rs`             | `wt/r-prep-cf-r2-real`    | [x] DONE | 18    | Reference impl. Defines `TenantPrefix` + `TenantScopedKey` + `R2Op` + `AuditFn` + dual-target stub.                                                    |
+| D1      | `src/d1_real.rs`             | `wt/r-prep-cf-d1-real`    | [ ] WIP  | —     | (Parallel agent.)                                                                                                                                      |
+| KV      | `src/kv_real.rs`             | `wt/r-prep-cf-kv-real`    | [ ] WIP  | —     | (Parallel agent.)                                                                                                                                      |
+| DO      | `src/do_real.rs`             | `wt/r-prep-cf-do-real`    | [x] DONE | 25    | Tenant-scoped naming `tenant:<id>:<purpose>` via `TenantScopedName`; constant-time tenant-id cmp (`subtle::ConstantTimeEq`); audit fail-CLOSED on every `stub.fetch_*` and `stub.get_*`; `FakeDoRouter` injection for native fetch round-trip tests (no wasm32 toolchain needed); `DoError` is `#[non_exhaustive]` (additive variant evolution). |
+
 ## 6. Verification
 
 - `CfR2BucketReal` wraps `worker::r2::Bucket` with: head / get / put / delete / list + multipart create/upload_part/complete/abort.

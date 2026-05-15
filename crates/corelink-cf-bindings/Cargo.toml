@@ -45,6 +45,11 @@ worker = { version = "0.8", features = ["d1", "http"] }
 # Shared bytes type — used by R2Backend trait surface.
 bytes = { workspace = true }
 
+# Constant-time comparison for tenant-id checks (CTRL-PRIV-001
+# defense-in-depth — prevents timing-channel leakage on tenant
+# membership/prefix verification across DO instance routing).
+subtle = { workspace = true }
+
 # Trait surfaces we implement. `corelink-worker` is the canonical owner
 # of R2Backend / KvBackend / CounterDoBackend; we depend on it for
 # `default-features = false`-style compatibility (no native-only feature
