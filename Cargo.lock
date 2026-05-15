@@ -2155,6 +2155,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-replication-coordinator"
+version = "0.1.0"
+dependencies = [
+ "corelink-failover-router",
+ "corelink-replica-worker",
+ "proptest",
+ "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "corelink-rollout-controller"
 version = "0.1.0"
 dependencies = [
@@ -2786,6 +2797,15 @@ version = "0.1.0"
 dependencies = [
  "corelink-failover-router",
  "corelink-replica-worker",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "e2e-replication-failover"
+version = "0.1.0"
+dependencies = [
+ "corelink-replica-worker",
+ "corelink-replication-coordinator",
  "thiserror 2.0.18",
 ]
 

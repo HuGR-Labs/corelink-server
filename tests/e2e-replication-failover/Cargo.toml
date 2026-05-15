@@ -1,0 +1,39 @@
+[package]
+name = "e2e-replication-failover"
+description = "R-PREP wave-15 multi-region replication coordinator end-to-end harness: drives the canonical `corelink-replication-coordinator::InMemoryReplicationCoordinator` + `InMemoryHeartbeatRegistry` + `InMemoryCoordinatorAuditSink` orchestrators under a deterministic logical clock so the suite is byte-for-byte reproducible. Three canonical scenarios pin the GA readiness gate: (1) primary fail → replica promoted → failback after 24h dry-run; (2) split-brain rejection when two regions claim primary simultaneously; (3) replica-lag SLO breach (R2/D1/KV) triggers re-route evaluation + write refusal. Every state transition asserts audit-emit-BEFORE-mutation (fail-CLOSED) and INV-FAILOVER-NO-SPLIT-BRAIN holds across the timeline. Companion to `specs/_audits/2026-05-15-replica-coordinator-production.md`."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+corelink-replication-coordinator = { path = "../../crates/corelink-replication-coordinator" }
+corelink-replica-worker = { path = "../../crates/corelink-replica-worker" }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+
+[[test]]
+name = "scenarios"
+path = "tests/scenarios.rs"
