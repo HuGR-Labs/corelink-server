@@ -141,8 +141,8 @@ Format key:
 | TSC | CTRL ID | Evidence type | Artifact location | Cadence | Status | Last update |
 |---|---|---|---|---|---|---|
 | A1.1 | CTRL-GC-001 + CTRL-GC-002 (capacity / quota) | audit_logs | SLO catalog + chaos region-outage drill + multi-region D1+DO+R2 | AUTO | I | f18acdc |
-| A1.2 | process control (RB-DR-DRILL + backup encryption) | incident_response | RB-DR-DRILL + backup encryption attested + cold restore (pending) | QUARTERLY (target) | P (GAP-15 — cold restore end-to-end) | f18acdc |
-| A1.3 | process control (recovery testing via chaos drills) | incident_response | `specs/_audits/2026-05-14-region-outage-chaos-s14.md` + byok-kill-switch + RB-FM-105 dry-run | QUARTERLY (target) | P (GAP-13 + GAP-15) | f18acdc |
+| A1.2 | process control (RB-DR-DRILL + backup encryption) | incident_response | RB-DR-DRILL + backup encryption attested + **cold-restore drill spec + runbook + orchestrator + verification gate sealed** (`COLD-RESTORE-DRILL-SPEC.md` + `RB-COLD-RESTORE-FROM-ZERO.md` + `scripts/cold-restore-drill.sh` + `scripts/verify-cold-restore.py`); first dry-run scheduled T-30d pre-GA | QUARTERLY (post-GA) | P → I-pending-first-drill (GAP-15 procedure GREEN; first cycle outstanding) | wt/gap15-cold-restore-drill |
+| A1.3 | process control (recovery testing via chaos drills) | incident_response | `specs/_audits/2026-05-14-region-outage-chaos-s14.md` + byok-kill-switch + RB-FM-105 dry-run + **DR-15 cold-restore drill (`BCP-DR-DRILL-CADENCE.md` row added 2026-05-15)** | QUARTERLY (target) | P (GAP-13 + GAP-15) | wt/gap15-cold-restore-drill |
 
 ### 2.11 C1 Confidentiality
 
@@ -199,7 +199,7 @@ Format key:
 | 1 | **GAP-02** | BYOK FIPS attestation per provider (AWS L3 attested; GCP L1 + Azure pending) | **blocking-GA** | CC6.1 + C1.1 → would force qualified opinion if open at fieldwork | S (collect 2 signed letters; update `compliance/byok-fips-matrix.md`) | **D+30 hard cap** |
 | 2 | GAP-03 | IR plan documented but not tested end-to-end with paging + comms simulation | major | CC7.3 evidence-of-operation deficiency at Type II | M (90-min tabletop + 30d synthetic page sustained) | D+60 |
 | 3 | GAP-14 | Vendor risk register completion (10/14 sub-processors documented; Sentry / Stripe Atlas counsel / PostHog / LogRocket pending) | major | CC9.2 + LGPD Art. 33 cross-framework risk | M (4 sub-processor risk reviews) | D+60 |
-| 4 | GAP-15 | Quarterly cold restore drill end-to-end (region-failover tested; cold restore not yet) | major | A1.2 evidence gap; Type II operating-effectiveness blocker | L (full DR restore drill + attestation doc) | T+2m |
+| 4 | GAP-15 | Quarterly cold restore drill end-to-end (region-failover tested; cold restore **procedure sealed 2026-05-15; first dry-run scheduled T-30d pre-GA**) | major | A1.2 evidence gap; Type II operating-effectiveness blocker | L (full DR restore drill + attestation doc — **procedure complete; awaiting first drill cycle**) | T+2m (first staging cycle) |
 | 5 | GAP-22 | LGPD Art. 33 §1º residency attestation per region | major | Cross-framework (SOC 2 + LGPD); EDPB SCCs touch-point | M (per-region attestation; Drata + DPA template) | D+60 |
 
 (Full 33-GAP register: `specs/_compliance/SOC2-GAP-ANALYSIS.md` §"GAP register summary".)
@@ -272,7 +272,7 @@ For each Gap or Partial row, the following table assigns owner / effort / target
 | GAP-12 | CC7.4 | SRE Lead | XS | D+30 | Existing `specs/_postmortems/` format; template harmonization deferred |
 | GAP-13 | CC7.5 + A1.3 | SRE Lead | S | T+3m | DR drill done ad-hoc S-14; calendar reminder set in Drata pre-T+3m |
 | GAP-14 | CC9.2 | Compliance | M | D+60 | 10/14 documented covers principal sub-processors; 4 pending classified as Tier-3 (low-risk) |
-| GAP-15 | A1.2 + A1.3 | SRE Lead | L | T+2m | Region-failover chaos drill covers warm-DR path; cold-restore acceptable as Type II prep |
+| GAP-15 | A1.2 + A1.3 | SRE Lead | L → **S residual** | T+2m (first staging cycle) | **Procedure sealed 2026-05-15** (`COLD-RESTORE-DRILL-SPEC.md` + `RB-COLD-RESTORE-FROM-ZERO.md` + orchestrator + verification gate); region-failover chaos drill covers warm-DR path; first DR-15 staging cycle scheduled T-30d pre-GA |
 | GAP-16 | PI1.3 | Compliance | S | T+3m | Audit-proof endpoint live (WI-S13-*); attestation procedure doc deferred |
 | GAP-17 | P-DSR | Privacy | S | T+3m | DSR export endpoint functional; GDPR Art. 20 schema validation doc deferred |
 | GAP-18 | CC6.8 | SRE | XS | D+30 | Doc compensating control: CF log streaming substitutes for runtime agent |

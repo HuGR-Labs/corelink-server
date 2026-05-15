@@ -38,7 +38,7 @@ The cadence ramps from individual-failure recovery drills to multi-stakeholder f
 | **P2 — Cross-region + BYOK rotation** | W5–W8 | Weekly (Wed 14:00 UTC) | Multi-region + key-mgmt | SRE + Security on-call + Customer Success notify |
 | **P3 — Full SEV1 simulation** | W9–W12 | Bi-weekly (Wed 14:00 UTC) | All-hands incident rehearsal | All tiers (L1+L2+L3) + Legal + Comms + 1 customer observer |
 
-**Total drills specified: 14** (4 + 4 + 2 + 4 cross-cutting → see §6 wrap-up & retest slots).
+**Total drills specified: 15** (4 + 4 + 2 + 5 cross-cutting → see §6 wrap-up & retest slots; DR-15 added 2026-05-15 to close GAP-15).
 
 > **Why Wednesday 14:00 UTC?** Maximises overlap of US-East + EU-West rotations per `RB-ONCALL-POLICY.md` §8. Avoids Mon (deploy day), Fri (recovery exhaustion), and weekend (off-rotation pages).
 
@@ -204,6 +204,20 @@ Goal: rehearse full multi-stakeholder incident response. Bi-weekly cadence (W9, 
 - **FM-IDs touched:** FM-051, FM-061, FM-062.
 - **Evidence captured:** Restore time; BLAKE3 pass rate; audit-chain checker report; snapshot-id pinned in evidence doc.
 
+### Drill DR-015 — Cold restore from zero (GAP-15; FM-105 full-interruption) — W10 + post-GA quarterly
+
+- **ID:** DR-15 (cycle suffix `-a` for first dry-run, `-b` for first staging, then quarterly `-c`..)
+- **Week:** W10, Wed (paired with DR-013b backup-verification W10 so cold-restore consumes a freshly-verified manifest)
+- **Scope:** Simulate **total loss** of one Cloudflare region (R2 + D1 + KV + DO all destroyed) and execute end-to-end cold restore per `specs/_runbooks/RB-COLD-RESTORE-FROM-ZERO.md`. Closes GAP-15 (A1.2 + A1.3 evidence gap from `specs/_compliance/SOC2-EVIDENCE-ROLLUP-2026-05-15.md`). RTO targets: read-path ≤ 4h, write-path ≤ 8h. RPO target: ≤ 15 min.
+- **Prerequisites:** DR-013 monthly warm-verification ran < 30d ago (proves backup artifacts decryptable); BYOK CMK accessible from surviving region; synthetic drill tenant `cold-restore-drill-tenant` fixture refreshed at T-24h; staging admin-write freeze pre-applied; war-room + IC + scribe + BYOK operator + compliance reviewer all confirmed on PD.
+- **Success criteria:** All 7 criteria from `COLD-RESTORE-DRILL-SPEC.md` §7 — RTO read ≤ 4h; RTO write ≤ 8h; RPO ≤ 15min; audit-chain Merkle root continuity; BYOK envelope DEK SHA-256 match; SLO histograms recovered ≤ 15min post-step-8; zero production-tenant impact.
+- **Runbook:** `specs/_runbooks/RB-COLD-RESTORE-FROM-ZERO.md` (9 steps).
+- **Orchestrator:** `scripts/cold-restore-drill.sh --staging`.
+- **Verification gate:** `scripts/verify-cold-restore.py`.
+- **FM-IDs touched:** FM-050, FM-051, FM-052, FM-055, FM-061, FM-062, FM-101, FM-105, FM-204.
+- **Evidence captured:** Drill log; verification gate JSON output; Grafana baseline + post-restore PDFs; Drata upload receipt; postmortem-lite if PARTIAL/FAIL; evidence doc at `specs/_compliance/drill-evidence/YYYY-QQ-cold-restore-{dry-run|staging}.md`.
+- **Cadence:** one mandatory `--dry-run` before GA staging cut (T-30d); one mandatory `--staging` execution before GA tag; quarterly post-GA (`--staging`, first Wed of Jan / Apr / Jul / Oct).
+
 ### Drill DR-014 — Terraform drift detection (FM-206) — W6
 
 - **ID:** DR-014
@@ -262,6 +276,8 @@ specs/_audits/2026-MM-DD-bcp-drill-<DRILL-ID>-<cycle>.md
 | FM-253 | DR-008, DR-009 |
 | FM-254 | DR-009 |
 | FM-258 | DR-008, DR-009 |
+| FM-105 | DR-005, **DR-015 (cold restore — full-interruption variant)** |
+| FM-204 | DR-007, DR-008, **DR-015 (cold-restore envelope re-bind verification)** |
 
 **FMs NOT covered by R-6 cadence (deferred to post-GA semestral cadence per `corelink-dr-drill::DrillCadence::Semestral`):** FM-007 (RCE — fuzz harness coverage), FM-100/102/103 (DNS / BGP / TLS — CF-managed), FM-150/151/153 (third-party APIs — vendor-managed), FM-205 (manual-delete — PAT-DUAL-APPROVAL-001 covers), FM-250..257 (edge security — pentest + WAF).
 

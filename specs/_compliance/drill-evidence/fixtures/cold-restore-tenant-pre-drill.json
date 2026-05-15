@@ -1,0 +1,58 @@
+{
+  "$comment": "Pre-drill fixture for the synthetic cold-restore drill tenant. Refreshed at T-24h before each drill execution per COLD-RESTORE-DRILL-SPEC §5.3. Real values are populated by the pre-drill checklist script; this file is a placeholder schema with safe defaults so verify-cold-restore.py --skip-network can validate format.",
+  "$schema_version": "1.0.0",
+  "$generated_at": "PRE_DRILL_TIMESTAMP_UTC",
+  "tenant_id": "cold-restore-drill-tenant",
+  "api_base": "https://staging-api.corelink.io",
+  "drill_tenant_pat": "REDACTED_SET_VIA_ENV",
+  "byok_operator_pat": "REDACTED_SET_VIA_ENV",
+  "cas_blobs": [
+    {
+      "label": "fixture-blob-1-small",
+      "size_bytes": 4096,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000001",
+      "residency_tag": "us-east-1"
+    },
+    {
+      "label": "fixture-blob-2-medium",
+      "size_bytes": 1048576,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000002",
+      "residency_tag": "us-east-1"
+    },
+    {
+      "label": "fixture-blob-3-large",
+      "size_bytes": 16777216,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000003",
+      "residency_tag": "us-east-1"
+    }
+  ],
+  "audit_events": [
+    {"event_id": "ae-001", "kind": "tenant.created"},
+    {"event_id": "ae-002", "kind": "byok.envelope.wrapped"},
+    {"event_id": "ae-003", "kind": "cas.blob.uploaded"},
+    {"event_id": "ae-004", "kind": "cas.blob.uploaded"},
+    {"event_id": "ae-005", "kind": "cas.blob.uploaded"}
+  ],
+  "byok_envelope": {
+    "kms_provider": "aws",
+    "cmk_arn": "arn:aws:kms:us-east-1:000000000000:key/PLACEHOLDER",
+    "wrapped_dek_b64": "PLACEHOLDER_WRAPPED_DEK",
+    "dek_sha256_for_verification": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "audit_chain_checkpoint": {
+    "epoch": "pre-drill",
+    "checkpoint_ts_utc": "PRE_DRILL_TIMESTAMP_UTC",
+    "merkle_root": "0000000000000000000000000000000000000000000000000000000000000000",
+    "leaf_count": 5
+  },
+  "slo_endpoints": {
+    "prometheus_query": "https://prometheus.corelink.io/api/v1/query",
+    "audit_chain_root": "https://staging-api.corelink.io/internal/audit-chain/root",
+    "byok_unwrap_test": "https://staging-api.corelink.io/internal/byok/unwrap-test"
+  },
+  "tenants": [
+    {"tenant_id": "cold-restore-drill-tenant", "residency_tag": "us-east-1"},
+    {"tenant_id": "cold-restore-drill-tenant-2", "residency_tag": "us-east-1"},
+    {"tenant_id": "cold-restore-drill-tenant-3", "residency_tag": "us-east-1"}
+  ]
+}
