@@ -1,0 +1,104 @@
+name: license-policy (R7-1 supply-quality rollup)
+
+# Dependency-license policy gate. Companion to cargo-deny: human-readable
+# license-audit on every PR. Fails the PR if any transitive dep lands
+# outside deny.toml [licenses].allow.
+#
+# Block-list (informational — anything outside allow-list is blocked):
+#   GPL-*, AGPL-*, SSPL-*, CDLA-Sharing-*, Commons-Clause, BUSL-*.
+#
+# SHA-pinned per HIGH_RISK lane FF-HR-005 + ADR-S12-045 §6 tooling-pin policy.
+#
+# Reference: scripts/license-audit.sh,
+#            specs/_audits/2026-05-14-license-audit.md
+
+on:
+  pull_request:
+    paths:
+      - 'crates/**'
+      - 'apps/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'deny.toml'
+      - 'scripts/license-audit.sh'
+      - '.github/workflows/license-policy.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'crates/**'
+      - 'apps/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'deny.toml'
+  schedule:
+    # Weekly Monday 07:00 UTC — catches upstream license changes that
+    # could shift a transitive dep out of the allow-list.
+    - cron: '0 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  license-policy:
+    name: cargo-license + allowlist policy gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
+
+      - name: Cache cargo registry
+        uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
+        with:
+          shared-key: license-policy
+          cache-targets: 'false'
+
+      - name: Install cargo-license
+        uses: taiki-e/install-action@daa3c1f1f9a9d46f686d9fc2f65773d0c293688b # v2.49.49
+        with:
+          tool: cargo-license@0.6.1
+
+      - name: Run license-audit
+        id: audit
+        run: bash scripts/license-audit.sh
+
+      - name: Upload license artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: license-audit-${{ github.event.pull_request.number || github.run_id }}
+          path: target/license-audit/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Emit step summary on success
+        if: success()
+        run: |
+          set -euo pipefail
+          {
+              echo '## License policy: PASSED'
+              echo ''
+              echo 'All workspace dependencies fall within the deny.toml allow-list.'
+              echo 'INV-SUPPLY-LICENSE-ALLOWLIST: ENFORCED'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Emit step summary on failure
+        if: failure()
+        run: |
+          set -euo pipefail
+          {
+              echo '## License policy: FAILED'
+              echo ''
+              echo 'One or more dependencies use a disallowed license.'
+              echo 'See artifact `license-audit-*` → `VIOLATIONS.txt` for details.'
+              echo ''
+              if [ -f target/license-audit/VIOLATIONS.txt ]; then
+                  echo '```'
+                  cat target/license-audit/VIOLATIONS.txt
+                  echo '```'
+              fi
+          } >> "$GITHUB_STEP_SUMMARY"
