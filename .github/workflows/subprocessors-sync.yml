@@ -1,0 +1,222 @@
+name: subprocessors sync (auto-regen public page from VENDOR-RISK-REGISTER + 30-day notify)
+
+# Drift gate + auto-regen + 30-day-notify pipeline for the public
+# sub-processor list.
+#
+# 1. On `pull_request` that touches the register, the generator, the
+#    public page, the notify script, or this workflow: runs the generator
+#    in `--check` mode and runs the change-notify script in dry-run.
+#    Fails the PR if the public MDX is stale relative to the internal
+#    register; comments instructions for regeneration.
+# 2. On `push` to `main`: regenerates the MDX; if the diff is non-empty,
+#    opens an auto-PR labelled `legal-review-required` and assigns the
+#    legal team. Also runs the notify script and uploads the resulting
+#    JSONL CloudEvents envelope as an artifact so the production
+#    `corelink-privacy-sub-processor-emit` consumer can pick it up
+#    (replicates the InMemorySubProcessorEmitter test-fake until the
+#    CD-pipeline fan-out lands).
+# 3. Nightly schedule: catches drift even when no human-authored PR has
+#    touched the register (e.g. attestation auto-refresh).
+#
+# Charter: all actions SHA-pinned (mirror of api-reference-sync.yml).
+
+on:
+  pull_request:
+    paths:
+      - "specs/_compliance/VENDOR-RISK-REGISTER.md"
+      - "apps/docs/docs/trust/subprocessors.mdx"
+      - "scripts/gen-public-subprocessors.py"
+      - "scripts/subprocessor-change-notify.py"
+      - ".github/workflows/subprocessors-sync.yml"
+  push:
+    branches: [main]
+    paths:
+      - "specs/_compliance/VENDOR-RISK-REGISTER.md"
+      - "scripts/gen-public-subprocessors.py"
+      - "scripts/subprocessor-change-notify.py"
+      - ".github/workflows/subprocessors-sync.yml"
+  schedule:
+    # Nightly drift catch at 06:13 UTC (≈ 03:13 BRT / 08:13 CEST).
+    - cron: "13 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: subprocessors-sync-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  drift-check:
+    name: drift check (PR-side)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Run generator in --check mode
+        run: |
+          set -euo pipefail
+          python3 scripts/gen-public-subprocessors.py --check
+
+      - name: Run change-notify in dry-run (PR diff against base)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          # `--allow-empty` keeps this informational on PR; the real
+          # 30-day clock is started by the post-merge job below.
+          python3 scripts/subprocessor-change-notify.py \
+            --prev "${BASE_SHA}:specs/_compliance/VENDOR-RISK-REGISTER.md" \
+            --curr specs/_compliance/VENDOR-RISK-REGISTER.md \
+            --allow-empty
+
+      - name: How to fix
+        if: failure()
+        run: |
+          echo "::error::Public sub-processors page is stale relative to VENDOR-RISK-REGISTER.md."
+          echo "::error::Run locally and commit:"
+          echo "::error::  python3 scripts/gen-public-subprocessors.py"
+
+  regenerate-and-pr:
+    name: regenerate + open PR (post-merge / nightly)
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Regenerate public MDX
+        run: |
+          set -euo pipefail
+          python3 scripts/gen-public-subprocessors.py
+
+      - name: Run change-notify (emit 30-day events JSONL)
+        id: notify
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/subproc-notify
+          # Diff HEAD~1..HEAD on the canonical register path.
+          set +e
+          python3 scripts/subprocessor-change-notify.py \
+            --prev "HEAD~1:specs/_compliance/VENDOR-RISK-REGISTER.md" \
+            --curr specs/_compliance/VENDOR-RISK-REGISTER.md \
+            --out /tmp/subproc-notify/events.jsonl \
+            --allow-empty
+          rc=$?
+          set -e
+          # The `--allow-empty` flag forces exit 0; we surface the event
+          # count from the file size for downstream gating.
+          if [ -s /tmp/subproc-notify/events.jsonl ]; then
+            echo "events_present=true" >> "$GITHUB_OUTPUT"
+            count=$(wc -l < /tmp/subproc-notify/events.jsonl | tr -d ' ')
+            echo "event_count=$count" >> "$GITHUB_OUTPUT"
+          else
+            echo "events_present=false" >> "$GITHUB_OUTPUT"
+            echo "event_count=0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload notify-required CloudEvents artifact
+        if: steps.notify.outputs.events_present == 'true'
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: subprocessor-notify-events-${{ github.sha }}
+          path: /tmp/subproc-notify/events.jsonl
+          retention-days: 90
+
+      - name: Detect MDX diff
+        id: diff
+        run: |
+          set -euo pipefail
+          if git diff --quiet apps/docs/docs/trust/subprocessors.mdx; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "info: public MDX is already up to date"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git diff --stat apps/docs/docs/trust/subprocessors.mdx
+          fi
+
+      - name: Configure git identity
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          git config user.name  "corelink-bot"
+          git config user.email "bot@corelink.dev"
+
+      - name: Open auto-sync PR with legal-review-required label
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          BRANCH="bot/subprocessors-sync-${GITHUB_SHA::7}"
+          git checkout -b "$BRANCH"
+          git add apps/docs/docs/trust/subprocessors.mdx
+          MSG_FILE="$(mktemp)"
+          {
+            echo "chore(trust): auto-regen public sub-processors page"
+            echo ""
+            echo "Triggered by ${GITHUB_SHA} on ${GITHUB_REF}."
+            echo "Source: specs/_compliance/VENDOR-RISK-REGISTER.md"
+            echo "Generator: scripts/gen-public-subprocessors.py"
+          } > "$MSG_FILE"
+          git commit -F "$MSG_FILE"
+          git push -u origin "$BRANCH"
+          BODY_FILE="$(mktemp)"
+          {
+            echo "## Auto-sync: public sub-processors page"
+            echo ""
+            echo "Regenerated by \`.github/workflows/subprocessors-sync.yml\` because the internal vendor register changed without an accompanying public-page regeneration, or because the nightly drift sweep detected a discrepancy."
+            echo ""
+            echo "### Legal-review checklist"
+            echo ""
+            echo "- [ ] Verify the active sub-processor list matches commitments in \`legal/dpa/v1.0.0\` §6."
+            echo "- [ ] Confirm the 30-day customer broadcast has been queued (see workflow artifact \`subprocessor-notify-events-${GITHUB_SHA}\` for the emitted CloudEvents)."
+            echo "- [ ] DPO sign-off recorded in the merge commit message."
+            echo ""
+            echo "### Regenerate locally"
+            echo ""
+            echo '```bash'
+            echo "python3 scripts/gen-public-subprocessors.py"
+            echo '```'
+            echo ""
+            echo "### References"
+            echo ""
+            echo "- Runbook: \`specs/_runbooks/RB-SUBPROCESSOR-CHANGE.md\`"
+            echo "- Generator: \`scripts/gen-public-subprocessors.py\`"
+            echo "- Notify: \`scripts/subprocessor-change-notify.py\`"
+            echo "- Triggered by commit \`${GITHUB_SHA}\`."
+          } > "$BODY_FILE"
+          gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "chore(trust): auto-regen public sub-processors page (drift from VENDOR-RISK-REGISTER.md)" \
+            --label "legal-review-required" \
+            --body-file "$BODY_FILE" || true
+          # Best-effort assign to legal team; ignore failure when the team
+          # slug is unavailable in fork-context runs.
+          gh pr edit "$BRANCH" --add-reviewer "humangr-labs/legal" || true
+
+      - name: Summary
+        run: |
+          echo "::notice::subprocessors-sync run complete: changed=${{ steps.diff.outputs.changed }} events=${{ steps.notify.outputs.event_count }}"
