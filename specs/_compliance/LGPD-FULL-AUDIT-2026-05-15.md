@@ -244,8 +244,8 @@ For Brazilian data subjects' data crossing international borders:
 | Receiving entity | International transfer? | Art. 33 base relied on | SCC? | Evidence |
 |---|---|---|---|---|
 | Cloudflare (sam region buckets) | No (data stays in `wnam-southamerica-east1`) | N/A — domestic | N/A | LGPD-RESIDENCY-ATTESTATION §4 |
-| Neon EU (billing detail for BR tenants — Neon does not offer BR region) | Yes (BR → EU) | **Art. 33 §V** — contractual necessity for billing + **Art. 16 §3** fiscal retention | Yes (Neon DPA Module 2/3) | `legal/sub-processors.md:27-58` |
-| Stripe (payment processing) | Yes (BR → US/global) | **Art. 33 §V** — contractual necessity for payment | Yes (Stripe DPA + BR addendum) | `legal/sub-processors.md:59-78` |
+| Neon EU (billing detail for BR tenants — Neon does not offer BR region) | Yes (BR → EU) | **Art. 33 IX (c/c Art. 7 V execução de contrato)** — contractual necessity for billing + **Art. 16 I** fiscal retention (CTN Art. 173/174) — Lote 10.11.0-ter legal-citation re-validation 2026-05-15 corrigiu cites anteriores "Art. 33 §V" (V = autorização ANPD, não contrato) e "Art. 16 §3" (Art. 16 LGPD não tem §3) | Yes (Neon DPA Module 2/3) | `legal/sub-processors.md:27-58` |
+| Stripe (payment processing) | Yes (BR → US/global) | **Art. 33 IX (c/c Art. 7 V execução de contrato)** — contractual necessity for payment (Lote 10.11.0-ter corrigida cite anterior "Art. 33 §V") | Yes (Stripe DPA + BR addendum) | `legal/sub-processors.md:59-78` |
 | AWS São Paulo (sa-east-1, BYOK envelope) | No (sa-east-1 = BR) | N/A — domestic | N/A | BYOK ADR |
 | GCP/Azure (BR region for BYOK) | No | N/A | N/A | BYOK ADR |
 | Grafana Labs (telemetry — pending GAP-14) | TBD — BR tenants opt-out by default until BR region ships | N/A (opt-out default) | LIA + future SCC | GAP-14 |
@@ -387,7 +387,7 @@ Art. 48: the controller shall **notify the national authority and data subject o
 | Art. 11 (sensitive data) | DONE | Not collected by default; WebAuthn LIA pending | §1.6 |
 | Art. 14 (children) | DONE (N/A) | B2B ToS ≥ 18 only | §1.7 |
 | Art. 15 (termination) | DONE | Retention table + 30d grace + erasure pipeline | `privacy_model.md §8` |
-| Art. 16 §3 (fiscal retention) | DONE | 5y billing legal hold | `privacy_model.md §8.1` |
+| Art. 16 I (fiscal retention via cumprimento de obrigação legal — CTN Art. 173/174) | DONE | 5y billing legal hold (Lote 10.11.0-ter legal-citation re-validation 2026-05-15 corrigida cite anterior "Art. 16 §3" — Art. 16 LGPD tem caput + incisos I-IV apenas, sem §) | `privacy_model.md §8.1` |
 | Art. 17 (subject's right exists) | DONE | DSR self-service | §1.8 |
 | Art. 18 §I–IX (9 rights) | DONE | 6 destructive arms + 3 informational; 10k property test | §1.8 |
 | Art. 18 §II amendment (objection) | DONE | `POST /v1/privacy/dsr/objection` | §1.8 |

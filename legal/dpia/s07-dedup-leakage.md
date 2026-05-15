@@ -84,7 +84,7 @@ Special-category data: not processed directly by CAS layer; however tenants may 
 | Blob content | Until explicitly deleted by tenant/user; DSR erasure within 30d | LGPD Art. 16 III; GDPR Art. 17 |
 | Content hash + refcount | Same as blob content | Co-terminous with blob |
 | Access metadata (ac_meta) | Until tenant account deleted; DSR erasure within 30d | GDPR Art. 17; LGPD Art. 18 IV |
-| Audit logs (Loki) | 7 years (legal hold) | LGPD Art. 40; GDPR Art. 5(2) accountability |
+| Audit logs (Loki) | 7 years (legal hold) | LGPD Art. 16 I (cumprimento de obrigação legal) + Art. 37 (RoPA); GDPR Art. 5(2) accountability (Lote 10.11.0-ter legal-citation re-validation 2026-05-15 corrigida cite anterior "LGPD Art. 40" — Art. 40 trata de padrões ANPD para anonimização, não retenção de audit log) |
 
 ### 1.6 WP29 WP248rev01 high-risk criteria checklist
 

@@ -179,7 +179,7 @@ Statement of Applicability (SoA) cobre os 93 controles Anexo A:2022. Mapping com
 | Art. 37 | Registro de operações                                  | Audit events CloudEvents                    | EVT-047 (AUDIT_EVENT)      |
 | Art. 38 | Relatório de impacto à proteção de dados (RIPD)       | DPIA por WI HIGH_RISK                       | EVT-045                         |
 
-| Art. 27 §4º | Comunicação prévia ≥30 dias para mudança de sub-operador | Public sub-processor page auto-gerada de `VENDOR-RISK-REGISTER.md` + `scripts/subprocessor-change-notify.py` (30-day grace clock + CloudEvent `corelink.privacy.subprocessor.notify_required`) + runbook `RB-SUBPROCESSOR-CHANGE.md` + workflow `.github/workflows/subprocessors-sync.yml` | EVT-049 + audit-`<region>` Object Lock 7y |
+| Art. 39 (operador) + DPA contratual | Comunicação prévia ≥30 dias para mudança de sub-operador (LGPD não codifica o prazo de 30d explicitamente; obrigação contratual via DPA + GDPR Art. 28(2) industry standard; Lote 10.11.0-ter legal-citation re-validation 2026-05-15 — corrigida atribuição anterior errada "LGPD Art. 27 §4º") | Public sub-processor page auto-gerada de `VENDOR-RISK-REGISTER.md` + `scripts/subprocessor-change-notify.py` (30-day grace clock + CloudEvent `corelink.privacy.subprocessor.notify_required`) + runbook `RB-SUBPROCESSOR-CHANGE.md` + workflow `.github/workflows/subprocessors-sync.yml` | EVT-049 + audit-`<region>` Object Lock 7y |
 | Art. 39 | Lista pública de sub-operadores                        | `apps/docs/docs/trust/subprocessors.mdx` (auto-generated from §7 register) | — |
 
 | Art. 41 | Encarregado (DPO)                                      | Interim DPO formally designated (Gustavo Schneiter) per `specs/_compliance/DPO-APPOINTMENT-2026-05-15.md` (LGPD Art. 41 §1º + ANPD Resolução 18/2024); RACI in `DPO-RESPONSIBILITIES-MATRIX.md`; escalation in `RB-DPO-ESCALATION.md`; handoff plan to permanent DPO in `DPO-HANDOFF-PLAN.md` | EVT-032 |
@@ -266,8 +266,10 @@ Report público derivado de SOC 2 Type II. Distribuível livremente (marketing).
 > de `specs/_compliance/VENDOR-RISK-REGISTER.md` via
 > `scripts/gen-public-subprocessors.py` + drift gate
 > `.github/workflows/subprocessors-sync.yml`) e `legal/sub-processors.md`
-> (source). Mudanças disparam o broadcast de 30 dias (LGPD Art. 27 §4º +
-> GDPR Art. 28 §2) via `scripts/subprocessor-change-notify.py`
+> (source). Mudanças disparam o broadcast de 30 dias (LGPD Art. 39 +
+> DPA contratual + GDPR Art. 28(2) industry standard; LGPD não codifica
+> o prazo de 30d explicitamente — Lote 10.11.0-ter legal-citation
+> re-validation 2026-05-15) via `scripts/subprocessor-change-notify.py`
 > (CloudEvent `corelink.privacy.subprocessor.notify_required`) e o
 > runbook [`RB-SUBPROCESSOR-CHANGE.md`](../_runbooks/RB-SUBPROCESSOR-CHANGE.md).
 

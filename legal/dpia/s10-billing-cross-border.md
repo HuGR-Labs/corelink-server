@@ -170,7 +170,7 @@ Payment processing via Stripe is necessary: CoreLink requires a PCI-DSS-complian
    | Stripe's security measures | Stripe is PCI-DSS Level 1 certified; SOC 2 Type II certified; ISO 27001 certified; employs encryption in transit (TLS 1.3) and at rest (AES-256). |
    | Supplementary measures (EDPB Rec. 01/2020) | (a) **Technical:** data transmitted via TLS 1.3 (encryption in transit); Stripe encrypts at rest; no unencrypted transfer. (b) **Contractual:** Stripe DPA includes government access notification obligation (where legally permissible); Stripe commits to challenging government orders. (c) **Organizational:** Stripe publishes transparency report on government data requests. |
    | EU-US Data Privacy Framework (DPF) | Stripe Inc. is certified under the EU-US Data Privacy Framework (DPF) as of 2023 (certification at dataprivacyframework.gov). This provides an Art. 45 adequacy-equivalent basis for EU→US transfers covered by DPF certification scope. |
-   | Brazil → US (LGPD Art. 33 IV) | LGPD permits cross-border transfer to countries providing adequate protection or where the controller provides adequate guarantees (SCCs per ANPD resolution). Stripe DPA SCCs satisfy this requirement. ANPD has not yet issued a formal adequacy decision for the US; SCCs are the operative instrument. |
+   | Brazil → US (LGPD Art. 33 II — controller demonstrates adequate guarantees via SCCs; complementarmente Art. 33 IX c/c Art. 7 V para o vínculo contratual) | LGPD permits cross-border transfer to countries providing adequate protection or where the controller provides adequate guarantees (SCCs per ANPD resolution). Stripe DPA SCCs satisfy this requirement. ANPD has not yet issued a formal adequacy decision for the US; SCCs are the operative instrument. (Lote 10.11.0-ter legal-citation re-validation 2026-05-15 corrigida cite anterior "Art. 33 IV" — IV é "proteção da vida ou da incolumidade física", não o instrumento de garantias adequadas; instrumento correto é Art. 33 II.) |
    | TIA conclusion | Transfer is permissible under GDPR (SCCs + DPF as supplementary basis) and LGPD (SCCs). The ordinary nature of the data (billing PII; not health/political/biometric) reduces the practical risk of government access. Supplementary technical measures (TLS 1.3 + at-rest encryption) further reduce risk. |
 
 3. **CoreLink–Stripe DPA status:** Stripe's DPA is accepted as part of Stripe's Terms of Service (enterprise customers may execute separate DPA); Module 2 SCCs incorporated.
@@ -221,7 +221,7 @@ Payment processing via Stripe is necessary: CoreLink requires a PCI-DSS-complian
 
 - **Stripe DPA** (Module 2 SCCs Controller-to-Processor): incorporated in Stripe TOS; covers EU and BR data subjects.
 - **DPF basis (EU → US):** Stripe DPF certification (dataprivacyframework.gov) as supplementary adequacy basis alongside SCCs.
-- **LGPD Art. 33 IV SCCs:** Stripe DPA SCCs satisfy ANPD requirements for cross-border transfer from Brazil.
+- **LGPD Art. 33 II SCCs:** Stripe DPA SCCs satisfy ANPD requirements for cross-border transfer from Brazil (controller demonstrates adequate guarantees). Lote 10.11.0-ter legal-citation re-validation 2026-05-15 corrigida cite anterior "Art. 33 IV" (IV trata de proteção da vida).
 - **Stripe government access notification commitment:** documented in Stripe DPA §7 (government requests).
 - **WI-S11-007 residency pinning:** Neon billing data stored in tenant.primary_region (weur for EU tenants); only invoice line items transmitted cross-border to Stripe.
 

@@ -81,7 +81,7 @@ International transfers outside the EU/EEA are governed by Standard Contractual 
 | Audit logs | 7 years | R2 Object Lock (regulatory) |
 | Build logs (artifacts) | As configured by data subject | Contractual |
 | Billing data | 5 years (fiscal) | Legal obligation |
-| Consent records | 7 years | GDPR Art. 7 + LGPD Art. 7 §5 |
+| Consent records | 7 years | GDPR Art. 7(1) (demonstrability) + LGPD Art. 8 (consent regime) |
 
 ---
 
