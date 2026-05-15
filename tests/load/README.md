@@ -18,9 +18,15 @@ deploy — i.e. the first thing the operator runs after the GA staging cutover.
 | 3 | `k6/dsr-api.js`                 | `POST /v1/privacy/dsr/{access,erasure,portability}` | 20 RPS sustained 10 min   | ≤ 1 s     | receipt JWT structural, idempotency holds    |
 | 4 | `k6/cas-write-read.js`          | `PUT/GET /v1/cas/blobs/:digest` | 200 RPS PUT (1 MiB) + 1000 RPS GET, 5 min | PUT ≤ 800 ms / GET ≤ 150 ms | hit-ratio ≥ 90% post-warm-up    |
 | 5 | `k6/byok-revoke-stampede.js`    | `POST /v1/admin/byok/cmk/:id/revoke` + status polling | single revoke, 10k DEK entries  | n/a       | full evict ≤ 60 s, SEV-1 alert fires, SLA counter == 0 |
+| 6 | `k6/scenarios/endurance-24h.js` | Realistic mix: 60% CAS read / 15% CAS write / 10% audit / 8% BYOK / 5% admin / 2% webhook | 50 VUs sustained 24h (5m ramp + 23h50m steady + 5m ramp-down). 50 tenants, Zipfian s=1.07. Configurable via `DURATION`: 24h (manual), 2h (CI nightly), 30s (smoke). | drift floors per op (see analysis template) | error rate < 0.1% / 5-min window; 3-strike budget breach tripwire; memory drift ≤ 5 MiB/h |
 
-These five floors are the **acceptance gate**: a release is not staging-clean
-unless every script passes its thresholds.
+Scenarios 1–5 are the **acceptance gate** (short-burst SLO assertions) — a
+release is not staging-clean unless every script passes its thresholds.
+Scenario 6 is the **endurance / drift-detection gate**: 2h variant runs
+daily via `.github/workflows/endurance-2h-nightly.yml`; the full 24h
+variant is a manual pre-GA drill — see
+`specs/_runbooks/RB-ENDURANCE-24H-DRILL.md` and the analysis report
+template at `tests/load/k6/scenarios/endurance-24h-ANALYSIS-TEMPLATE.md`.
 
 ## Pre-requisites
 

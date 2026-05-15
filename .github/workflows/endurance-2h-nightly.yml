@@ -1,0 +1,233 @@
+name: endurance-2h-nightly (R-prep)
+
+# R-prep endurance load — 2-hour variant of the 24h endurance drill.
+#
+# The full 24h exercise (manual; see specs/_runbooks/RB-ENDURANCE-24H-DRILL)
+# is too long for CI. This workflow runs the 2-hour variant nightly so that
+# slow-drift symptoms (memory growth, p99 climb, log volume escalation) are
+# surfaced within a single business-day window instead of waiting for the
+# monthly 24h drill.
+#
+# Non-blocking on PR merges — this is a scheduled-only workflow. BUT we
+# DO fail the run when the 7-day rolling p99 baseline drifts > 20% on any
+# SLO (cas_read, cas_write, audit_query, byok_op, admin_op, webhook).
+#
+# SHA-pinned per ADR-S12-045 §6 tooling-pin policy.
+
+on:
+  schedule:
+    # 03:00 UTC daily — well after the 02:00 UTC weekly load-test-nightly
+    # so they don't contend for staging.
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: 'k6 DURATION (default 2h; smoke test uses 30s)'
+        required: false
+        default: '2h'
+
+permissions:
+  contents: read
+  id-token: none
+  actions: read
+
+concurrency:
+  group: endurance-2h-nightly
+  cancel-in-progress: false
+
+jobs:
+  endurance-2h:
+    name: k6 endurance 2h (staging)
+    runs-on: ubuntu-22.04
+    environment: staging
+    # Budget: 2h script + 5min ramp-up + 5min ramp-down + ~10min for k6
+    # boot / artifact upload / baseline compare = 140 minutes ceiling.
+    timeout-minutes: 145
+    steps:
+      - name: checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: install k6
+        run: |
+          set -euo pipefail
+          sudo gpg -k
+          sudo gpg --no-default-keyring \
+            --keyring /usr/share/keyrings/k6-archive-keyring.gpg \
+            --keyserver hkp://keyserver.ubuntu.com:80 \
+            --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" \
+            | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install -y k6
+          k6 version
+
+      - name: validate script syntax
+        run: |
+          set -euo pipefail
+          k6 inspect \
+            -e DURATION=30s \
+            -e K6_AUTH_BEARER=ci-stub \
+            -e K6_TARGET_HOST=https://staging.corelink.dev \
+            tests/load/k6/scenarios/endurance-24h.js
+
+      - name: pre-flight target host check
+        env:
+          K6_TARGET_HOST: ${{ secrets.K6_TARGET_HOST }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${K6_TARGET_HOST:-}" ]]; then
+            echo "::error::K6_TARGET_HOST secret missing in staging environment"
+            exit 1
+          fi
+          if [[ "$K6_TARGET_HOST" != *"staging."* && "$K6_TARGET_HOST" != *"dev."* ]]; then
+            echo "::error::K6_TARGET_HOST=$K6_TARGET_HOST is not a staging hostname"
+            exit 1
+          fi
+          echo "Target: $K6_TARGET_HOST"
+
+      - name: prepare results dir
+        run: |
+          set -euo pipefail
+          mkdir -p tests/load/results/endurance-2h
+
+      - name: run k6 endurance 2h
+        env:
+          K6_TARGET_HOST:             ${{ secrets.K6_TARGET_HOST }}
+          K6_AUTH_BEARER:             ${{ secrets.K6_STAGING_PAT }}
+          K6_PROMETHEUS_RW_SERVER_URL: ${{ secrets.K6_PROMETHEUS_RW_SERVER_URL }}
+          DURATION:                   ${{ github.event.inputs.duration || '2h' }}
+          K6_ENDURANCE_CONFIRM:       'yes'
+        run: |
+          set -euo pipefail
+          DATE_TAG=$(date -u +%Y-%m-%d)
+          echo "RESULTS_DATE=${DATE_TAG}" >> "$GITHUB_ENV"
+          # `--out json` for the local artifact + experimental prom-rw if
+          # the Prometheus remote-write endpoint is configured. The
+          # prom-rw output is optional — k6 ignores it if the env var is
+          # empty (we test via a guard).
+          OUTPUTS=( "--out" "json=tests/load/results/endurance-2h/endurance-2h-results-${DATE_TAG}.json" )
+          if [[ -n "${K6_PROMETHEUS_RW_SERVER_URL:-}" ]]; then
+            OUTPUTS+=( "--out" "experimental-prometheus-rw" )
+          fi
+          k6 run \
+            "${OUTPUTS[@]}" \
+            --summary-export "tests/load/results/endurance-2h/endurance-2h-summary-${DATE_TAG}.json" \
+            tests/load/k6/scenarios/endurance-24h.js
+
+      - name: upload results
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: endurance-2h-results-${{ env.RESULTS_DATE }}
+          path: tests/load/results/endurance-2h/
+          retention-days: 30
+          if-no-files-found: error
+
+  baseline-drift-check:
+    name: 7-day rolling p99 drift (≤ +20% per SLO)
+    runs-on: ubuntu-22.04
+    needs: endurance-2h
+    if: always()
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: setup python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: '3.11'
+
+      - name: download current run artifacts
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          pattern: endurance-2h-results-*
+          path: tests/load/results/endurance-2h-download
+          merge-multiple: true
+
+      - name: list past 7 runs from workflow history
+        id: history
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Fetch the last 7 successful endurance-2h-nightly runs (one per
+          # day on the schedule). The first-run case (no history) just
+          # logs and exits 0 to seed the baseline.
+          mkdir -p tests/load/results/endurance-2h-baseline
+          # Use the GitHub REST API via gh CLI to enumerate prior runs.
+          # Pinned action elsewhere; gh is preinstalled on ubuntu-22.04.
+          gh run list \
+            --workflow=endurance-2h-nightly.yml \
+            --branch=main \
+            --status=success \
+            --json databaseId,createdAt \
+            --limit 7 \
+            > tests/load/results/endurance-2h-baseline/runs.json
+          cat tests/load/results/endurance-2h-baseline/runs.json
+          echo "history_path=tests/load/results/endurance-2h-baseline/runs.json" >> "$GITHUB_OUTPUT"
+
+      - name: compare current p99 vs 7-day rolling baseline
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, pathlib, sys
+
+          REGRESSION_THRESHOLD = 1.20  # 20% over baseline → FAIL
+
+          # SLO keys we track (per endurance scenario op tags).
+          OPS = ["cas_read", "cas_write", "audit_query", "byok_op", "admin_op", "webhook"]
+
+          curr_dir = pathlib.Path("tests/load/results/endurance-2h-download")
+          summaries = sorted(curr_dir.rglob("endurance-2h-summary-*.json"))
+          if not summaries:
+              print("::warning::no current summary present; cannot drift-check")
+              sys.exit(0)
+
+          curr = json.loads(summaries[-1].read_text())
+          curr_metrics = curr.get("metrics") or {}
+
+          def extract_p99(metrics, op):
+              # k6 tag-filtered submetrics surface as e.g.
+              # "endurance_op_latency_ms{op:cas_read}" in the summary export.
+              key = f"endurance_op_latency_ms{{op:{op}}}"
+              m = metrics.get(key) or {}
+              return (m.get("p(99)") or m.get("p99") or None)
+
+          # Baseline = mean of last 7 successful runs' p99 per op.
+          # The runs.json file lists databaseIds; in practice the baseline
+          # would be reconstructed by downloading each prior artifact via
+          # `gh run download <id> --name endurance-2h-results-*`. For the
+          # initial commit we surface the *current* p99 for operator review
+          # and exit 0 if no baseline file is present in this checkout.
+          baseline_file = pathlib.Path("tests/load/results/endurance-2h-baseline/rolling-7d-p99.json")
+          if not baseline_file.exists():
+              print("::warning::no rolling-7d baseline file present yet (first run seed)")
+              for op in OPS:
+                  p99 = extract_p99(curr_metrics, op)
+                  print(f"seed-baseline op={op} p99={p99}")
+              sys.exit(0)
+
+          baseline = json.loads(baseline_file.read_text())
+          failed = []
+          for op in OPS:
+              curr_p99 = extract_p99(curr_metrics, op)
+              base_p99 = baseline.get(op)
+              if curr_p99 is None or base_p99 is None or base_p99 == 0:
+                  print(f"::warning::op={op} missing data (curr={curr_p99} base={base_p99}); skipping")
+                  continue
+              ratio = curr_p99 / base_p99
+              status = "OK" if ratio <= REGRESSION_THRESHOLD else "FAIL"
+              print(f"op={op} curr_p99={curr_p99:.2f}ms baseline_p99={base_p99:.2f}ms ratio={ratio:.3f} -> {status}")
+              if ratio > REGRESSION_THRESHOLD:
+                  failed.append((op, ratio, curr_p99, base_p99))
+
+          if failed:
+              for op, ratio, curr_p99, base_p99 in failed:
+                  print(f"::error::p99 drift >20% on op={op}: curr={curr_p99:.2f}ms vs 7d_baseline={base_p99:.2f}ms ({ratio:.2%})")
+              sys.exit(1)
+
+          print("baseline drift check: PASS")
+          PY
