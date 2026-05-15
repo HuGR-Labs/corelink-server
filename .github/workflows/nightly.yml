@@ -118,6 +118,16 @@ jobs:
           - auth_webauthn_uv_admin
           - cas_immutability
           - auth_schema_rls_default_on
+          # DEBT-005 batch 6 FINAL closure 2026-05-15 — last 5 specs closing
+          # CRITICAL INV-no-TLA gaps; drops critical_no_tla 5 → 0 (DEBT-005
+          # SEALED); tla_verified 71 → 76. Closes INV-AUTH-AUDIT-PSEUDONYMIZATION
+          # + INV-AUTH-CONSTANT-TIME-COLD-PAD + INV-CONSENT-PROOF-VERIFIABLE +
+          # INV-GC-REACHABLE-SET-COMPLETE + INV-SUB-PROCESSOR-AUDIT-FAIL-CLOSED.
+          - auth_audit_pseudonymization
+          - auth_constant_time_cold_pad
+          - consent_proof_verifiable
+          - gc_reachable_set_complete
+          - sub_processor_audit_fail_closed
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

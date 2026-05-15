@@ -251,3 +251,24 @@ jobs:
 
       - name: TLC verify auth_schema_rls_default_on (DEBT-005 batch 5)
         run: bash scripts/run_tlc_corelink.sh auth_schema_rls_default_on
+
+      # DEBT-005 batch 6 FINAL (5 net-new TLA specs, 2026-05-15) — closes the
+      # last 5 CRITICAL INV-no-TLA gaps from canonical-consistency baseline
+      # §4 (critical_no_tla 5 → 0; tla_verified 71 → 76). DEBT-005 SEALED.
+      # Covers INV-AUTH-AUDIT-PSEUDONYMIZATION + INV-AUTH-CONSTANT-TIME-COLD-PAD +
+      # INV-CONSENT-PROOF-VERIFIABLE + INV-GC-REACHABLE-SET-COMPLETE +
+      # INV-SUB-PROCESSOR-AUDIT-FAIL-CLOSED.
+      - name: TLC verify auth_audit_pseudonymization (DEBT-005 batch 6 FINAL)
+        run: bash scripts/run_tlc_corelink.sh auth_audit_pseudonymization
+
+      - name: TLC verify auth_constant_time_cold_pad (DEBT-005 batch 6 FINAL)
+        run: bash scripts/run_tlc_corelink.sh auth_constant_time_cold_pad
+
+      - name: TLC verify consent_proof_verifiable (DEBT-005 batch 6 FINAL)
+        run: bash scripts/run_tlc_corelink.sh consent_proof_verifiable
+
+      - name: TLC verify gc_reachable_set_complete (DEBT-005 batch 6 FINAL)
+        run: bash scripts/run_tlc_corelink.sh gc_reachable_set_complete
+
+      - name: TLC verify sub_processor_audit_fail_closed (DEBT-005 batch 6 FINAL)
+        run: bash scripts/run_tlc_corelink.sh sub_processor_audit_fail_closed
