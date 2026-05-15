@@ -36,7 +36,9 @@
 use core::fmt;
 use core::future::Future;
 use std::collections::HashMap;
-use std::sync::Mutex;
+// DEBT-013 OPT-04 phase 1 — `parking_lot::Mutex` (infallible lock).
+// `ChunkStoreError::Backend("…mutex poisoned")` is unreachable here.
+use parking_lot::{Mutex, MutexGuard};
 
 use bytes::Bytes;
 use corelink_tenant_path::TenantPrefix;
@@ -206,10 +208,9 @@ impl InMemoryChunkStore {
         }
     }
 
-    fn lock(&self) -> Result<std::sync::MutexGuard<'_, HashMap<ChunkKey, ChunkRecord>>, ChunkStoreError> {
-        self.inner
-            .lock()
-            .map_err(|_| ChunkStoreError::Backend("chunk store mutex poisoned".to_string()))
+    fn lock(&self) -> Result<MutexGuard<'_, HashMap<ChunkKey, ChunkRecord>>, ChunkStoreError> {
+        // parking_lot lock is infallible; Err arm unreachable.
+        Ok(self.inner.lock())
     }
 }
 

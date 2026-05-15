@@ -27,7 +27,14 @@
 //! Stripe / S-11 DSR) can extend the taxonomy additively without
 //! breaking downstream sinks.
 
-use std::sync::Mutex;
+// DEBT-013 OPT-04 phase 1 — swapped `std::sync::Mutex` →
+// `parking_lot::Mutex` 2026-05-15. Infallible lock; the "audit sink
+// mutex poisoned" error string returned by the in-memory sink impl
+// below is now structurally unreachable. The `Store` variant remains
+// the canonical surface for transport-class failures on production
+// R2 / Cloudflare Queue sinks (and is still exercised by the
+// adversarial `FailingAuditChainAuditSink` test fixture).
+use parking_lot::Mutex;
 
 /// Canonical audit-chain meta-audit taxonomy. The `#[non_exhaustive]`
 /// marker reserves additive growth for follow-on WIs.
@@ -164,19 +171,14 @@ impl InMemoryAuditChainAuditSink {
     /// Snapshot every record captured so far.
     #[must_use]
     pub fn snapshot(&self) -> Vec<AuditChainAuditRecord> {
-        match self.inner.lock() {
-            Ok(g) => g.clone(),
-            Err(p) => p.into_inner().clone(),
-        }
+        // parking_lot lock is infallible — no PoisonError arm needed.
+        self.inner.lock().clone()
     }
 
     /// Number of records captured.
     #[must_use]
     pub fn len(&self) -> usize {
-        match self.inner.lock() {
-            Ok(g) => g.len(),
-            Err(p) => p.into_inner().len(),
-        }
+        self.inner.lock().len()
     }
 
     /// Whether the sink is empty.
@@ -200,9 +202,12 @@ impl InMemoryAuditChainAuditSink {
 
 impl AuditChainAuditSink for InMemoryAuditChainAuditSink {
     fn emit(&self, record: AuditChainAuditRecord) -> Result<(), AuditChainAuditEmitError> {
-        let mut guard = self.inner.lock().map_err(|_| {
-            AuditChainAuditEmitError::Store("audit sink mutex poisoned".to_string())
-        })?;
+        // parking_lot lock is infallible. The `Store("audit sink
+        // mutex poisoned")` arm is preserved on the trait surface
+        // (FailingAuditChainAuditSink uses Store for induced
+        // failures; production R2/Queue sinks need it for transport
+        // errors).
+        let mut guard = self.inner.lock();
         guard.push(record);
         Ok(())
     }

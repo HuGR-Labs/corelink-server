@@ -38,7 +38,12 @@
 use core::fmt;
 use core::future::Future;
 use std::collections::HashMap;
-use std::sync::Mutex;
+// DEBT-013 OPT-04 phase 1 — `parking_lot::Mutex` (infallible lock).
+// `KvError::Backend("mutex poisoned")` is now structurally unreachable
+// on this in-memory backend; the variant is retained on the trait
+// surface for transport-class failures from the production CF KV
+// binding.
+use parking_lot::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use thiserror::Error;
@@ -245,16 +250,9 @@ impl<C: Clock> InMemoryKv<C> {
     /// Number of stored (and not yet expired) entries. Test-only
     /// helper.
     #[must_use]
-    #[allow(
-        clippy::expect_used,
-        reason = "test fake: a poisoned mutex in test code is itself a test failure"
-    )]
     pub fn live_len(&self) -> usize {
         let now = self.clock.now_unix_secs();
-        let guard = self
-            .inner
-            .lock()
-            .expect("InMemoryKv mutex must not be poisoned in test code");
+        let guard = self.inner.lock();
         guard
             .values()
             .filter(|e| e.expires_at_unix_secs > now)
@@ -264,44 +262,23 @@ impl<C: Clock> InMemoryKv<C> {
     /// Total stored entries (including expired-but-not-yet-evicted).
     /// Test-only.
     #[must_use]
-    #[allow(
-        clippy::expect_used,
-        reason = "test fake: a poisoned mutex in test code is itself a test failure"
-    )]
     pub fn raw_len(&self) -> usize {
-        let guard = self
-            .inner
-            .lock()
-            .expect("InMemoryKv mutex must not be poisoned in test code");
+        let guard = self.inner.lock();
         guard.len()
     }
 
     /// Snapshot the current set of keys (live + expired). Test-only.
     #[must_use]
-    #[allow(
-        clippy::expect_used,
-        reason = "test fake: a poisoned mutex in test code is itself a test failure"
-    )]
     pub fn keys_snapshot(&self) -> Vec<String> {
-        let guard = self
-            .inner
-            .lock()
-            .expect("InMemoryKv mutex must not be poisoned in test code");
+        let guard = self.inner.lock();
         guard.keys().cloned().collect()
     }
 
     /// Test-only escape hatch: poison the value at `key` with arbitrary
     /// bytes, simulating a corrupted KV entry. Used by the corruption
     /// regression tests.
-    #[allow(
-        clippy::expect_used,
-        reason = "test fake: a poisoned mutex in test code is itself a test failure"
-    )]
     pub fn poison_for_test(&self, key: &str, raw: Vec<u8>, ttl_secs: u64) {
-        let mut guard = self
-            .inner
-            .lock()
-            .expect("InMemoryKv mutex must not be poisoned in test code");
+        let mut guard = self.inner.lock();
         let now = self.clock.now_unix_secs();
         guard.insert(
             key.to_owned(),
@@ -315,10 +292,10 @@ impl<C: Clock> InMemoryKv<C> {
 
 impl<C: Clock> KvBackend for InMemoryKv<C> {
     async fn get(&self, key: &str) -> Result<Option<Vec<u8>>, KvError> {
-        let mut guard = self
-            .inner
-            .lock()
-            .map_err(|_| KvError::Backend("in-memory KV mutex poisoned".to_owned()))?;
+        // parking_lot lock is infallible (no poisoning); the
+        // `KvError::Backend` mutex-poisoned mapping is preserved on
+        // the enum for production CF KV transport failures.
+        let mut guard = self.inner.lock();
         let now = self.clock.now_unix_secs();
         if let Some(entry) = guard.get(key) {
             if entry.expires_at_unix_secs <= now {
@@ -337,10 +314,10 @@ impl<C: Clock> KvBackend for InMemoryKv<C> {
         value: Vec<u8>,
         ttl_secs: u64,
     ) -> Result<(), KvError> {
-        let mut guard = self
-            .inner
-            .lock()
-            .map_err(|_| KvError::Backend("in-memory KV mutex poisoned".to_owned()))?;
+        // parking_lot lock is infallible (no poisoning); the
+        // `KvError::Backend` mutex-poisoned mapping is preserved on
+        // the enum for production CF KV transport failures.
+        let mut guard = self.inner.lock();
         let now = self.clock.now_unix_secs();
         let expires_at_unix_secs = now.saturating_add(ttl_secs);
         guard.insert(
@@ -354,10 +331,10 @@ impl<C: Clock> KvBackend for InMemoryKv<C> {
     }
 
     async fn delete(&self, key: &str) -> Result<(), KvError> {
-        let mut guard = self
-            .inner
-            .lock()
-            .map_err(|_| KvError::Backend("in-memory KV mutex poisoned".to_owned()))?;
+        // parking_lot lock is infallible (no poisoning); the
+        // `KvError::Backend` mutex-poisoned mapping is preserved on
+        // the enum for production CF KV transport failures.
+        let mut guard = self.inner.lock();
         guard.remove(key);
         Ok(())
     }

@@ -61,6 +61,9 @@ bytes = { workspace = true }
 thiserror = { workspace = true }
 uuid = { workspace = true }
 zeroize = { workspace = true }
+# DEBT-013 OPT-04 phase 1 — replace `std::sync::Mutex` on CAS / AC
+# in-memory backends with `parking_lot::Mutex` (no poisoning).
+parking_lot = { workspace = true }
 
 # Tower middleware (gated by `tower-middleware` feature).
 tower = { version = "0.5", default-features = false, optional = true }

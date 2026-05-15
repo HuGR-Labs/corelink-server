@@ -260,6 +260,11 @@ publish = false
 async-trait = "0.1"
 # Concurrent maps
 dashmap = "6"
+# DEBT-013 OPT-04 phase 1 — `parking_lot::Mutex` is the panic-free,
+# slightly faster drop-in for `std::sync::Mutex` on hot CAS / AC /
+# audit-chain in-memory stores. Audit ref:
+# `specs/_audits/2026-05-15-perf-optimization-audit.md` §2 OPT-04.
+parking_lot = "0.12"
 
 # gRPC stack
 tonic = "0.12"

@@ -45,7 +45,11 @@
 use core::fmt;
 use core::future::Future;
 use std::collections::HashMap;
-use std::sync::Mutex;
+// DEBT-013 OPT-04 phase 1 — `parking_lot::Mutex` (infallible lock).
+// `SessionStoreError::Backend("…mutex poisoned")` is structurally
+// unreachable on this in-memory backend; preserved on the error
+// surface for transport-class failures on non-in-memory bindings.
+use parking_lot::{Mutex, MutexGuard};
 
 use corelink_tenant_path::TenantPrefix;
 use thiserror::Error;
@@ -400,10 +404,11 @@ impl InMemorySessionStore {
         Ok(self.lock()?.by_session_id.is_empty())
     }
 
-    fn lock(&self) -> Result<std::sync::MutexGuard<'_, Inner>, SessionStoreError> {
-        self.inner
-            .lock()
-            .map_err(|_| SessionStoreError::Backend("session store mutex poisoned".to_string()))
+    fn lock(&self) -> Result<MutexGuard<'_, Inner>, SessionStoreError> {
+        // parking_lot lock is infallible (no poisoning). Signature
+        // kept as `Result` for callers; `Err` is structurally
+        // unreachable on this backend.
+        Ok(self.inner.lock())
     }
 
     fn mint_session_id(inner: &mut Inner) -> SessionId {

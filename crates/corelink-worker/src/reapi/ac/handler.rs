@@ -301,7 +301,11 @@ pub trait AcEnvelopeStore: Send + Sync {
 /// isolation is honored at the storage seam too (defense-in-depth
 /// against trait-surface bypass).
 pub struct InMemoryAcEnvelopeStore {
-    inner: std::sync::Mutex<std::collections::HashMap<String, AcEnvelope>>,
+    // DEBT-013 OPT-04 phase 1 — `parking_lot::Mutex` (no poisoning).
+    // The "envelope store mutex poisoned" error string returned by
+    // the trait impl below is now structurally unreachable on this
+    // backend; retained on the surface for transport-class failures.
+    inner: parking_lot::Mutex<std::collections::HashMap<String, AcEnvelope>>,
 }
 
 impl Default for InMemoryAcEnvelopeStore {
@@ -322,7 +326,7 @@ impl InMemoryAcEnvelopeStore {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            inner: std::sync::Mutex::new(std::collections::HashMap::new()),
+            inner: parking_lot::Mutex::new(std::collections::HashMap::new()),
         }
     }
 
@@ -332,10 +336,8 @@ impl InMemoryAcEnvelopeStore {
 
     /// Snapshot every persisted key (test diagnostics).
     pub fn keys(&self) -> Vec<String> {
-        match self.inner.lock() {
-            Ok(g) => g.keys().cloned().collect(),
-            Err(p) => p.into_inner().keys().cloned().collect(),
-        }
+        // parking_lot lock is infallible — no PoisonError arm.
+        self.inner.lock().keys().cloned().collect()
     }
 
     /// Test-only mutator: tamper an envelope's signature byte to
@@ -347,10 +349,7 @@ impl InMemoryAcEnvelopeStore {
         hex: &str,
     ) -> bool {
         let key = Self::key(region, prefix, hex);
-        let mut guard = match self.inner.lock() {
-            Ok(g) => g,
-            Err(_) => return false,
-        };
+        let mut guard = self.inner.lock();
         if let Some(env) = guard.get_mut(&key) {
             env.signature[0] ^= 0xFF;
             true
@@ -369,10 +368,10 @@ impl AcEnvelopeStore for InMemoryAcEnvelopeStore {
         envelope: AcEnvelope,
     ) -> impl Future<Output = Result<(), String>> + Send + 'a {
         async move {
-            let mut guard = self
-                .inner
-                .lock()
-                .map_err(|_| "envelope store mutex poisoned".to_string())?;
+            // parking_lot lock is infallible — the "envelope store
+            // mutex poisoned" error string is structurally
+            // unreachable here.
+            let mut guard = self.inner.lock();
             let key = Self::key(region, tenant_prefix, action_digest_hex);
             // Idempotent overwrite — the envelope shape is content-
             // stable for the same (tenant, action_digest, result_hash)
@@ -389,10 +388,7 @@ impl AcEnvelopeStore for InMemoryAcEnvelopeStore {
         action_digest_hex: &'a str,
     ) -> impl Future<Output = Result<Option<AcEnvelope>, String>> + Send + 'a {
         async move {
-            let guard = self
-                .inner
-                .lock()
-                .map_err(|_| "envelope store mutex poisoned".to_string())?;
+            let guard = self.inner.lock();
             let key = Self::key(region, tenant_prefix, action_digest_hex);
             Ok(guard.get(&key).cloned())
         }
