@@ -1,0 +1,23 @@
+[workspace]
+
+[package]
+name = "corelink-ac-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+description = "cargo-fuzz harness for HKDF-SHA256 expand (the AC envelope signature key derivation from ADR-0021 §1). Property: derived key always length-correct, never panics, deterministic across invocations, different salt/info produces different output."
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+hkdf = "0.12"
+sha2 = "0.10"
+
+[[bin]]
+name = "hkdf_expand"
+path = "fuzz_targets/hkdf_expand.rs"
+test = false
+doc = false
+bench = false

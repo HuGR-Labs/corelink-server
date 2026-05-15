@@ -176,6 +176,13 @@ exclude = [
     # WI-S15-006: CLI ship-gate fuzz targets (cli_input / config_toml /
     # json_deserialize / auth_resolution / secret_redaction_check).
     "crates/corelink-cli/fuzz",
+    # Fuzz expansion across BYOK envelope + tenant-path extended + audit-chain
+    # Merkle/JCS + HKDF (pre-pentest hardening lane). Each fuzz crate carries
+    # its own [workspace] inner toml so they are excluded from the outer
+    # workspace resolver and cargo-fuzz drives them stand-alone.
+    "crates/corelink-byok/fuzz",
+    "crates/corelink-audit-chain/fuzz",
+    "crates/corelink-ac/fuzz",
 ]
 
 [workspace.package]

@@ -1,0 +1,33 @@
+[workspace]
+
+[package]
+name = "corelink-audit-chain-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+description = "cargo-fuzz harnesses for corelink-audit-chain — BLAKE3 hash-chain append determinism (insertion-order dependence; recompute-from-head matches builder head) + JCS canonicalization idempotence (canonicalize(canonicalize(x)) == canonicalize(x))."
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+corelink-audit-chain = { path = ".." }
+corelink-analytics = { path = "../../corelink-analytics" }
+serde_json = "1"
+serde_jcs = "0.2"
+uuid = { version = "1", features = ["v4", "v7"] }
+
+[[bin]]
+name = "merkle_append"
+path = "fuzz_targets/merkle_append.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "jcs_canonicalize"
+path = "fuzz_targets/jcs_canonicalize.rs"
+test = false
+doc = false
+bench = false
