@@ -200,7 +200,7 @@ Format key:
 | 2 | GAP-03 | IR plan documented but not tested end-to-end with paging + comms simulation | major | CC7.3 evidence-of-operation deficiency at Type II | M (90-min tabletop + 30d synthetic page sustained) | D+60 |
 | 3 | GAP-14 | **IMPLEMENTED 2026-05-15** — Vendor risk register completed: 19 vendors registered (6 Critical / 8 Important / 5 Standard) with methodology + 5 Critical-vendor DD files + quarterly review runbook. Artefacts: `specs/_compliance/VENDOR-RISK-REGISTER.md`, `VENDOR-RISK-METHODOLOGY.md`, `vendor-dd/`, `specs/_runbooks/RB-VENDOR-RISK-QUARTERLY-REVIEW.md`. Branch: `wt/gap14-vendor-risk-register`. | major (now closed) | CC9.2 + LGPD Art. 33 cross-framework risk | M (was 4 sub-processor reviews → expanded to full register) | DONE |
 | 4 | GAP-15 | Quarterly cold restore drill end-to-end (region-failover tested; cold restore not yet) | major | A1.2 evidence gap; Type II operating-effectiveness blocker | L (full DR restore drill + attestation doc) | T+2m |
-| 5 | GAP-22 | LGPD Art. 33 §1º residency attestation per region | major | Cross-framework (SOC 2 + LGPD); EDPB SCCs touch-point | M (per-region attestation; Drata + DPA template) | D+60 |
+| 5 | GAP-22 | LGPD Art. 33 §1º residency attestation per region | major → **Implemented 2026-05-15** | Cross-framework (SOC 2 + LGPD); EDPB SCCs touch-point | M (delivered as attestation bundle + DPO checklist + verifier + customer explainer) | **D+0 (Implemented; DPO + Security Lead sign-off pending)** |
 
 (Full 33-GAP register: `specs/_compliance/SOC2-GAP-ANALYSIS.md` §"GAP register summary".)
 
@@ -279,7 +279,7 @@ For each Gap or Partial row, the following table assigns owner / effort / target
 | GAP-19 | CC2.3 | Product | XS | T+1m | Trust-page URL in privacy notice; app-shell link deferred 30d |
 | GAP-20 | CC7.4 (PenTest cadence) | Security | XS | T+1m | Post-GA Schellman engagement letter already in flight (R5-1) |
 | GAP-21 | CC9.2 | Compliance | S | T+3m | Manual email to known sub-processors; automation deferred |
-| GAP-22 | CC9.2 cross-framework (LGPD Art. 33 §1º) | Privacy | M | D+60 | DPA template clause covers contractual; per-region attestation deferred 30d |
+| GAP-22 | CC9.2 cross-framework (LGPD Art. 33 §1º) | Privacy | M | **Implemented (2026-05-15)** | Attestation bundle `specs/_compliance/LGPD-RESIDENCY-ATTESTATION-2026-05-15.md` (7 sections, DPO + Security Lead countersign pending); DPO monthly checklist `LGPD-DPO-MONTHLY-CHECKLIST.md` (25 items); customer-facing explainer `apps/docs/docs/explanation/residency/lgpd-brazil.mdx`; nightly verifier `scripts/verify-lgpd-residency.py` |
 | GAP-23 | CC9.2 cross-framework (EDPB SCCs) | Legal | M | T+1m | SCC Modules 2/3 already in DPA; supplementary measures doc refresh |
 | GAP-24 | NIST 800-53 Rev 5 mapping (87% → 100%) | Compliance | S | T+6m | Current 87% covers Moderate baseline; remainder is Low / informational |
 | GAP-25 | ISO 27001:2022 Annex A SoA refresh | Compliance | S | T+6m | 2022 SoA at `specs/_audits/iso27001-soa.csv` already refreshed; minor reword pending |
@@ -292,7 +292,7 @@ For each Gap or Partial row, the following table assigns owner / effort / target
 | GAP-32 | CC9.2 | Compliance | S | T+3m | Sub-processor offboarding checklist exists; execution evidence deferred |
 | GAP-33 | CC8.1 + customer comms | Product | S | T+3m | DPA contains change-notification clause; SLA formalization deferred |
 
-**Total residual remediation effort:** ~23.5 person-weeks across 33 gaps. Critical path = **GAP-02 (D+30 hard cap)** + **GAP-03 + GAP-14 + GAP-15 + GAP-22 (D+60..T+2m)**.
+**Total residual remediation effort:** ~22.5 person-weeks across 32 open gaps (GAP-22 implemented 2026-05-15 — attestation bundle + DPO checklist + verifier + customer explainer landed; DPO + Security Lead countersign pending). Critical path = **GAP-02 (D+30 hard cap)** + **GAP-03 + GAP-14 + GAP-15 (D+60..T+2m)**.
 
 ---
 

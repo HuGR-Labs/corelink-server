@@ -76,7 +76,15 @@ const sidebars: SidebarsConfig = {
       label: "Explanation",
       link: { type: "doc", id: "explanation/architecture" },
       collapsed: true,
-      items: ["explanation/architecture"],
+      items: [
+        "explanation/architecture",
+        {
+          type: "category",
+          label: "Residency",
+          collapsed: true,
+          items: ["explanation/residency/lgpd-brazil"],
+        },
+      ],
     },
   ],
 };
