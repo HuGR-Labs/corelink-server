@@ -2196,6 +2196,7 @@ dependencies = [
  "bytes",
  "corelink-byok",
  "corelink-byok-aws",
+ "corelink-cf-bindings",
  "corelink-handler-ac",
  "corelink-handler-admin",
  "corelink-handler-cas",

@@ -289,26 +289,21 @@ fn empty_and_single_byte_payloads_are_idempotent() {
     assert!(matches!(res4, BackendPutOutcome::AlreadyExists));
 }
 
-/// Canary: the cfg-gated native build invariant.
+/// Canary: the per-module cfg-gating invariant.
 ///
-/// `corelink-cf-bindings` is compiled as an empty crate on native via
-/// `#![cfg(target_arch = "wasm32")]` at the lib root. This test runs
-/// only on `not(target_arch = "wasm32")` (gated at the file level) and
-/// therefore proves the cfg gate is active: the test compiles and runs
-/// without pulling any `worker::*` symbol into the native binary.
+/// `corelink-cf-bindings` originally carried `#![cfg(target_arch =
+/// "wasm32")]` at its lib root, making the native build entirely
+/// empty. As of R-PREP-CF-R2-REAL the lib root no longer cfg-gates;
+/// `r2_real::CfR2BucketReal` is dual-target (wasm32 production + native
+/// stub) and each `worker::*`-dependent module (`cf_r2`, `cf_d1`,
+/// `cf_kv`, `cf_do`) carries its OWN `#[cfg(target_arch = "wasm32")]`.
 ///
-/// If a future regression were to land a non-wasm32 symbol from the
-/// lib, this test would surface it indirectly through link errors at
-/// `cargo test` time on host CI.
+/// This test pins the contract that no `worker::*` symbol leaks into
+/// the native build: if it did, linking this test binary on host CI
+/// would fail with a missing `js_sys` / `wasm_bindgen` symbol.
 #[test]
-fn cfg_gate_keeps_native_build_empty() {
-    // The constant below references nothing from `corelink-cf-bindings`
-    // proper — the trait surface comes from `corelink-worker`. If the
-    // `cfg` gate were removed, building this test alongside the native
-    // empty crate would still succeed (cargo is permissive); the
-    // wasm32-only build under `cargo build --target wasm32-...` is the
-    // canary that fails on regression. This test pins the contract at
-    // doc/intent level.
-    let _proof = "corelink-cf-bindings native build is empty by design";
+fn cfg_gate_keeps_native_build_worker_free() {
+    let _proof =
+        "corelink-cf-bindings: worker::* gated per-module; native build links no wasm-bindgen";
     assert!(!_proof.is_empty());
 }
