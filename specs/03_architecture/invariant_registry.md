@@ -430,6 +430,10 @@ CRITICAL invariantes **DEVEM** ter TLA+ spec + model check verde no CI (CTRL-FOR
 | INV-GC-004 | Coberto por `gc_correctness.tla` (InvGCReRefProtected) | ✅ GREEN |
 | INV-AUDIT-APPEND-ONLY | `specs/tla/audit_immutability.tla` + D1 schema + daily verify | ✅ GREEN (Lote 6.2) |
 | INV-DIGEST-VERIFICATION | Coberto por `cas_integrity.tla` (InvPoisoningRejected) | ✅ GREEN |
+| INV-AUTH-REVOCATION-IDEMPOTENT | `specs/tla/auth_revocation.tla` + `.cfg` (PR) + `_nightly.cfg` | ✅ GREEN (R-PREP 2026-05-15 audit `specs/_audits/2026-05-15-tla-coverage-audit.md`) — TLC: 6 785 distinct states, ~2 s local; `InvRevocationIdempotent`. |
+| INV-AUTH-REVOCATION-SLO-60S | Coberto por `auth_revocation.tla` (`RevokedEventuallyConverges` temporal property, WF on Deliver) | ✅ GREEN (R-PREP 2026-05-15) — topological convergence proved; 60s wall-clock budget enforced separately by chaos tests + SLO alerts. |
+| INV-AUTH-MASS-REVOKE-ATOMIC | Coberto por `auth_revocation.tla` (`InvMassRevokeAtomicOutbox` + atomic `MassRevoke` action) | ✅ GREEN (R-PREP 2026-05-15) — single Neon UPDATE flips all unrevoked PATs of tenant in one step. |
+| INV-AUTH-PROPAGATION-AT-LEAST-ONCE | Coberto por `auth_revocation.tla` (`InvRegionMonotonic` + WF Deliver) | ✅ GREEN (R-PREP 2026-05-15). |
 
 ### 4.2 Specs PLANNED (Lote 9.4 obligation matrix — pré-condição S-10/S-11/S-13/S-14/S-19 implementation)
 
