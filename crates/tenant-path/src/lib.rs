@@ -36,7 +36,9 @@
 
 pub mod error;
 
+mod cache;
 mod prefix;
 
+pub use cache::{TdkVersion, TenantPrefixCache, CACHE_CAPACITY};
 pub use error::DeriveError;
 pub use prefix::{derive_prefix, TenantDerivationKey, TenantPrefix, TENANT_PREFIX_LEN};
