@@ -244,7 +244,10 @@ pub use report::{
     InMemoryReportSigner, ReportSignature, ReportSigner, ReportSignerKey, REPORT_OBJECT_KEY_PREFIX,
     REPORT_SIGNATURE_LEN,
 };
-pub use verification_job::{elapsed_dsr_ids, VerificationJob, VerificationOutcome};
+pub use verification_job::{
+    dsr_resolution_hours, elapsed_dsr_ids, within_sla_window, VerificationJob, VerificationOutcome,
+    METRIC_DSR_RESOLUTION_HOURS, SLA_WINDOW_HOURS,
+};
 
 /// Crate canonical schema version constant. Pinned for the canonical
 /// D1 migration slot at WI-S11-008 (next slot after
