@@ -1629,6 +1629,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-dsr-statuspage-scheduler"
+version = "0.1.0"
+dependencies = [
+ "corelink-privacy-erasure-worker",
+ "corelink-statuspage-real",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
+ "wiremock",
+]
+
+[[package]]
 name = "corelink-dt-cli"
 version = "0.1.0"
 dependencies = [

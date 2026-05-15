@@ -37,6 +37,7 @@ pub mod audit_sink;
 pub mod cf_fetch;
 pub mod cf_kv;
 pub mod clerk_health_do;
+pub mod dsr_statuspage_cron;
 pub mod health;
 pub mod prod_wiring;
 

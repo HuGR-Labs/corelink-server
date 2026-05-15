@@ -1,0 +1,37 @@
+[package]
+name = "corelink-dsr-statuspage-scheduler"
+description = "Wave-17 DSR Statuspage 24h publish scheduler — composes `corelink-privacy-erasure-worker::aggregate_24h_window` + `corelink-statuspage-real::bridge_to_report` + `StatuspageBackend::publish_dsr_metric`. Owns the daily orchestration entry point (`run_once`), the `(date, metric_id)` idempotency dedupe (CronRunLog), the D1 row source trait (`D1RowSource`), and the scheduler audit envelope (`SchedulerAuditSink`) emitting four canonical events (`scheduled` / `succeeded` / `failed` / `skipped`). Native-only — the wasm32 CF Worker cron entry point lives in `corelink-clerk-cf::dsr_statuspage_cron` and binds the trait surfaces."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+corelink-privacy-erasure-worker = { workspace = true }
+corelink-statuspage-real = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
+wiremock = "0.6"
+serde_json = { workspace = true }
+uuid = { workspace = true }

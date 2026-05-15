@@ -229,6 +229,45 @@ the canonical matrix (`docs/internal/secrets-checklist.md`):
 matrix rows grow to 118 (drift only on the matrix-only side, never
 code-only).
 
+### 5.6 Wave-17 closure — scheduler binding shipped
+
+**Status (2026-05-15 wave-17, commit `49901da`):** SHIPPED. The publish scheduler that
+fires the wave-16 composition (`aggregate_24h_window → bridge_to_report
+→ publish_dsr_metric`) once per 24h is now wired. Wave-16 shipped the
+publish-path layers but the scheduler binding (cron tick + D1 row
+source + idempotency dedupe + scheduler-level audit envelope) was
+deferred under the `trait-abstraction-defer` charter (see §5.1
+historical rationale). Wave-17 closes that gap.
+
+| Layer | Crate / module | Notes |
+|---|---|---|
+| Scheduler (native, trait-driven) | `corelink-dsr-statuspage-scheduler` (NEW) | `DsrStatuspagePublishScheduler::run_once(now_unix_s)` composes the four trait-bound collaborators (`D1RowSource`, `CronRunLog`, `StatuspageBackend`, `SchedulerAuditSink`) into a single 24h-cron-firable orchestration. Native-only (the wave-16 `StatuspageHttpClient` uses `reqwest::blocking` which does not link on wasm32). |
+| CF Worker cron entry | `corelink-clerk-cf::dsr_statuspage_cron` | `#[event(scheduled)]` handler resolving the three `STATUSPAGE_*` bindings + emitting the canonical `corelink.privacy.statuspage_publish_scheduled.v1` NDJSON audit line BEFORE any work. The real D1 row source + `worker::Fetch`-backed `StatuspageBackend` impl remain trait-abstraction-deferred to a follow-up wave; the wasm32 handler short-circuits with the canonical `wasm32_real_binding_deferred` skip event so the cron firing is observable in the audit chain from wave-17 forward. |
+| Cron trigger | `crates/corelink-clerk-cf/wrangler.toml` `[triggers] crons = ["0 6 * * *"]` | 06:00 UTC daily — scheduled AFTER the audit-chain daily-verify at 02:00 UTC and BEFORE SF business start (gives 10h buffer for ops to react to `statuspage_publish_failed.v1` before customer business day). Pinned verbatim against `corelink-dsr-statuspage-scheduler::CRON_EXPRESSION` + `corelink-clerk-cf::dsr_statuspage_cron::CRON_EXPRESSION` — both constants assert `"0 6 * * *"` in unit tests so any drift fails CI. |
+| Idempotency dedupe | `corelink-dsr-statuspage-scheduler::cron_log::CronRunLog` | Trait surface for a D1-backed `(date_yyyymmdd, metric_id)` PRIMARY KEY ledger. The pre-flight `is_recorded` check + the post-publish `record` call together guarantee one publish per UTC day per metric (the CF runtime retrying a `scheduled` event in the same day short-circuits with the canonical `skipped / already_published_today` audit). `InMemoryCronRunLog` fake covers the algorithmic invariants. |
+| Scheduler audit envelope (fail-CLOSED) | `corelink-dsr-statuspage-scheduler::audit::SchedulerAuditSink` | 4 canonical event types: `statuspage_publish_scheduled.v1` / `statuspage_publish_succeeded.v1` / `statuspage_publish_failed.v1` / `statuspage_publish_skipped.v1`. Every transition emits BEFORE the caller-visible outcome (INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER); audit emit failure aborts the tick as `SchedulerError::Audit` (fail-CLOSED). |
+
+#### 5.6.1 Test surface (wave-17 net-new)
+
+| Crate / harness | Tests | Status |
+|---|---|---|
+| `corelink-dsr-statuspage-scheduler` (lib) | 14 (audit 3 + cron_log 5 + row_source 2 + scheduler 4) | green |
+| `corelink-dsr-statuspage-scheduler::tests::dsr_statuspage_cron` (integration; WireMock) | 6 (cron-expression pin + happy 201 + empty-window skip + auth 401 + rate-limit 429 retry-exhaustion + d1 read-fail) | green |
+| `corelink-clerk-cf` (lib; cron module unit tests) | +3 (binding-name pin + cron-expression pin + audit-type pin) | green |
+
+#### 5.6.2 Charter constraints (re-verified for wave-17)
+
+| Constraint | `corelink-dsr-statuspage-scheduler` | Evidence |
+|---|---|---|
+| `#![forbid(unsafe_code)]` | green | `src/lib.rs` |
+| no `unwrap` / `expect` / `panic` outside test | green | `cargo clippy --tests -- -D warnings` clean |
+| no `tokio` in `src/` | green | tokio is dev-only (WireMock host); `src/` is sync-blocking (mirrors wave-16 stance) |
+| audit fail-CLOSED on every transition | green | Audit emit BEFORE caller-visible outcome on each of Scheduled / Succeeded / Failed / Skipped; pinned by all 6 integration tests |
+| `#[non_exhaustive]` public enums | green | `SchedulerAuditOutcome` / `SkipReason` / `SchedulerAuditEvent` / `SchedulerAuditError` / `D1RowSourceError` / `CronRunLogError` / `RecordedRunStatus` / `RunOutcome` / `SchedulerError` all `#[non_exhaustive]` |
+| Credential never logged plaintext | green | wave-16 `redact_api_key` bottoms-out at `StatuspageHttpClient`; this crate's audit envelope never sees the plaintext key |
+| Idempotent composition (1 publish per UTC day) | green | `CronRunLog::record` enforces `(date_yyyymmdd, metric_id)` PRIMARY KEY; second tick short-circuits with `Skipped / AlreadyPublishedToday`; pinned by `already_recorded_short_circuits_with_already_published_today` lib test |
+| Worktree isolation | green | wave-17 work-tree `.claude/worktrees/agent-a6fa9fb8e5a49007f/`; branch `wt/r-prep-dsr-statuspage-cron-scheduler` |
+
 ## 6. Test surface re-verification (2026-05-15)
 
 | Crate / harness | Tests | Status |
@@ -275,14 +314,21 @@ charter `trait-abstraction-defer` pattern. This audit closes:
 3. **Jurisdictional report surface**: single `ErasureReport` +
    BLAKE3-signed MAC artifact serves LGPD / GDPR / CCPA; narrative
    layer wraps at WI-S11-004 (privacy notice 3-locale).
-4. **Status-page integration — shipped wave-16**: trait surface +
-   real Atlassian Statuspage HTTP wiring + worker aggregator + bridge
-   shipped under `corelink-statuspage-real` + `corelink-privacy-
-   erasure-worker::statuspage_publish`. Rate-limited 1-per-5-min,
-   fail-CLOSED audit envelope, credential never logged plaintext. See
-   §5.2 / §5.3 / §5.5 above. Production publish-job binding at
-   WI-S11-008 PRR ship gate composes the three layers
-   (`aggregate_24h_window → bridge_to_report → publish_dsr_metric`).
+4. **Status-page integration — shipped wave-16 + scheduler bound
+   wave-17**: trait surface + real Atlassian Statuspage HTTP wiring
+   + worker aggregator + bridge shipped under `corelink-statuspage-
+   real` + `corelink-privacy-erasure-worker::statuspage_publish` at
+   wave-16. The publish scheduler that fires the composition once per
+   24h (`aggregate_24h_window → bridge_to_report → publish_dsr_metric`
+   with `(date, metric_id)` idempotency dedupe) shipped wave-17 under
+   `corelink-dsr-statuspage-scheduler` + `corelink-clerk-cf::
+   dsr_statuspage_cron` + `wrangler.toml` `[triggers] crons =
+   ["0 6 * * *"]`. Rate-limited 1-per-5-min, fail-CLOSED audit envelope
+   on both the wave-16 publish layer (`statuspage_published.v1` /
+   `_auth_failed.v1` / `_rate_limited.v1` / `_failed.v1`) AND the
+   wave-17 scheduler layer (`statuspage_publish_scheduled.v1` /
+   `_succeeded.v1` / `_failed.v1` / `_skipped.v1`). Credential never
+   logged plaintext. See §5.2 / §5.3 / §5.5 / §5.6 above.
 
 ## 9. Open items deferred to WI-S11-008 (PRR ship gate)
 
@@ -298,8 +344,16 @@ charter `trait-abstraction-defer` pattern. This audit closes:
 - 24h cron worker bound to `VerificationJob::run_24h_sweep` with
   the canonical observation emit to
   `corelink_dsr_resolution_hours` histogram.
-- Status-page widget bridging the production Grafana panel to
-  `corelink.dev/status`.
+- ~~Status-page widget bridging the production Grafana panel to
+  `corelink.dev/status`.~~ **CLOSED wave-17 (see §5.6).** Scheduler
+  binding shipped under `corelink-dsr-statuspage-scheduler` +
+  `corelink-clerk-cf::dsr_statuspage_cron`; `[triggers] crons =
+  ["0 6 * * *"]` row added to `crates/corelink-clerk-cf/wrangler.toml`.
+  The real D1 row source + `worker::Fetch`-backed Statuspage HTTP
+  client remain trait-abstraction-deferred to a follow-up real-binding
+  wave (the wave-17 wasm32 handler short-circuits with the canonical
+  `wasm32_real_binding_deferred` skip event so the cron firing is
+  observable in the audit chain from wave-17 forward).
 
 None of these gaps invalidate the canonical INV-DATA-ERASURE-COMPLETE
 trait-level guarantees pinned by this audit; all are deferred
