@@ -81,6 +81,9 @@ sha2 = { workspace = true }
 tracing-subscriber = { workspace = true }
 # R2-2: mock HTTPS server for `HttpJwksFetcher` integration tests.
 wiremock = "0.6"
+# DEBT-013 OPT-07 — `principal_id_clone` micro-bench (post-vs-baseline
+# measurement for the `Arc<str>` migration).
+criterion = { workspace = true }
 # Pull our own crate with `test-utils` + `jwt-adapter` + `http-fetcher`
 # enabled so integration tests in `tests/*.rs` can use ClerkAdapter,
 # TestRsaKey, and HttpJwksFetcher.
@@ -113,3 +116,9 @@ path = "tests/rotation.rs"
 [[test]]
 name = "http_fetcher"
 path = "tests/http_fetcher.rs"
+
+# DEBT-013 OPT-07 — micro-bench for the `Arc<str>` clone migration.
+[[bench]]
+name = "principal_id_clone"
+path = "benches/principal_id_clone.rs"
+harness = false
