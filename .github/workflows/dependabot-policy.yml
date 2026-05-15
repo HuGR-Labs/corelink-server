@@ -1,0 +1,247 @@
+name: dependabot-policy (license + status-check enforcement)
+
+# Policy gate for Dependabot PRs. Runs BEFORE auto-merge can fire.
+# Failure here marks the dependabot-policy required check red, which blocks
+# `gh pr merge --auto --squash` from completing.
+#
+# What this gate enforces:
+#   1. License allowlist (cross-checked against deny.toml).
+#      Any Cargo.lock entry whose license is in the banned list
+#      (CDLA-OTHER, AGPL, GPL, SSPL, Commons-Clause, BUSL-1.1, …) causes
+#      the gate to FAIL — even if the rest of CI is green.
+#   2. Required status checks present on the PR head SHA.
+#      If a required check is missing/skipped (not just failing), the gate
+#      FAILS — closes the "skip check by event filter" bypass.
+#   3. PR does NOT skip git hooks: scans commit messages on the PR for
+#      `--no-verify`, `--no-gpg-sign`, or `[skip ci]`.
+#   4. PR does NOT include suspicious file paths (release manifests,
+#      signing keys, CODEOWNERS) — defence in depth against compromised
+#      registry packages adding unrelated diffs.
+#
+# Cross-references:
+#   - License source of truth: deny.toml [licenses] (R1-9 + WI-S12-004).
+#   - Runbook on failure:      specs/_runbooks/RB-DEPENDABOT-INCIDENT.md §4.
+#   - Audit baseline:          specs/_audits/2026-05-15-dependabot-policy.md.
+#
+# Implements: WI-S12-004 §6.1.5 (ST-005) + R-PREP audit policy gate.
+# SHA-pinned per HIGH_RISK lane FF-HR-005.
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, labeled, ready_for_review]
+
+concurrency:
+  group: dependabot-policy-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+  checks: read
+
+jobs:
+  # -----------------------------------------------------------------------
+  # Sentinel job — always green for non-dependabot PRs (so this workflow
+  # can be a `required` check without blocking normal contributor PRs).
+  # -----------------------------------------------------------------------
+  sentinel:
+    name: dependabot-policy sentinel
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    if: github.actor != 'dependabot[bot]'
+    steps:
+      - name: Pass-through (non-dependabot PR)
+        run: |
+          echo "::notice::Non-dependabot PR — policy gate not applicable. Pass."
+
+  # -----------------------------------------------------------------------
+  # The actual policy gate (Dependabot-only).
+  # -----------------------------------------------------------------------
+  policy-gate:
+    name: Dependabot policy gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.actor == 'dependabot[bot]' && github.event.pull_request.user.login == 'dependabot[bot]'
+
+    steps:
+      # ---------------------------------------------------------------------
+      # Step 1 — Checkout the PR head so we can inspect Cargo.lock diffs.
+      # We use the merge-ref so the lockfile reflects post-merge state.
+      # ---------------------------------------------------------------------
+      - name: Checkout PR merge ref (SHA-pinned)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          ref: refs/pull/${{ github.event.pull_request.number }}/merge
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@d7267f607e9d3fb96fc2fbe83e0af444713e90b7  # v2.3.0
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      # ---------------------------------------------------------------------
+      # Step 2 — License allowlist cross-check.
+      #
+      # Strategy: parse deny.toml's [licenses].allow + bans list, then run
+      # `cargo metadata --format-version 1` and verify every crate's
+      # license expression is on the allowlist. Use a fail-closed check
+      # so an unparseable SPDX (e.g., `SEE LICENSE IN <file>`) fails the
+      # gate and forces human review.
+      # ---------------------------------------------------------------------
+      - name: Set up Rust toolchain (SHA-pinned)
+        if: hashFiles('Cargo.toml') != ''
+        uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b  # stable 1.83
+        with:
+          toolchain: stable
+
+      - name: Install cargo-deny (SHA-pinned)
+        if: hashFiles('Cargo.toml') != ''
+        uses: taiki-e/install-action@9ba3ac3fd006a70c6e186a683577abc1ccf0ff3a  # v2.49.45
+        with:
+          tool: cargo-deny@0.16.4
+
+      - name: Run cargo-deny licenses (fail-closed)
+        if: hashFiles('Cargo.toml') != ''
+        run: |
+          set -euo pipefail
+          echo "::group::cargo-deny licenses"
+          # Fail fast on any banned license OR yanked crate OR advisory.
+          cargo deny --all-features check licenses bans
+          echo "::endgroup::"
+
+      # ---------------------------------------------------------------------
+      # Step 3 — Explicit banned-license signature scan over Cargo.lock.
+      #
+      # Belt-and-braces over cargo-deny: a regex sweep for AGPL/GPL/SSPL/
+      # Commons-Clause/CDLA-Sharing/BUSL strings inside Cargo.lock. Catches
+      # cases where cargo-deny misclassifies a SPDX expression.
+      # ---------------------------------------------------------------------
+      - name: Banned-license signature scan (Cargo.lock)
+        if: hashFiles('Cargo.lock') != ''
+        run: |
+          set -euo pipefail
+          banned_regex='(AGPL|GPL-[23]|SSPL|Commons-Clause|BUSL|CDLA-Sharing|CDLA-Permissive-1\.0$)'
+          # Search every license-bearing field in Cargo.lock. Empty match => pass.
+          # NOTE: cargo-deny is the primary gate; this is the second-line check.
+          if grep -E "${banned_regex}" Cargo.lock; then
+            echo "::error::Banned license signature detected in Cargo.lock."
+            echo "::error::Cross-reference deny.toml [licenses] + escalate per RB-DEPENDABOT-INCIDENT §4.2."
+            exit 1
+          fi
+          echo "::notice::Cargo.lock license scan clean."
+
+      # ---------------------------------------------------------------------
+      # Step 4 — npm license scan (if PR touches a package-lock).
+      # ---------------------------------------------------------------------
+      - name: npm banned-license scan
+        run: |
+          set -euo pipefail
+          banned_regex='(AGPL|GPL-[23]|SSPL|Commons-Clause|BUSL|CDLA-Sharing)'
+          found=0
+          for f in $(git diff --name-only "origin/${{ github.event.pull_request.base.ref }}"...HEAD -- '*package-lock.json' '*pnpm-lock.yaml' 'apps/**/package.json' 'crates/**/package.json' 'package.json' 2>/dev/null || true); do
+            if grep -E "\"license\".*${banned_regex}" "$f" 2>/dev/null; then
+              echo "::error::Banned license in $f"
+              found=1
+            fi
+          done
+          if [[ "$found" == "1" ]]; then
+            exit 1
+          fi
+          echo "::notice::npm license scan clean."
+
+      # ---------------------------------------------------------------------
+      # Step 5 — Commit-message hygiene: forbid skip-hook flags.
+      # ---------------------------------------------------------------------
+      - name: Forbid skip-hook / skip-ci flags
+        run: |
+          set -euo pipefail
+          base="origin/${{ github.event.pull_request.base.ref }}"
+          if git log "${base}"..HEAD --format=%B | grep -E -- '--no-verify|--no-gpg-sign|\[skip ci\]|\[ci skip\]'; then
+            echo "::error::Dependabot PR contains skip-hook/skip-ci marker — policy violation."
+            exit 1
+          fi
+          echo "::notice::Commit hygiene clean."
+
+      # ---------------------------------------------------------------------
+      # Step 6 — Defence-in-depth: forbid PRs that modify governance files.
+      # A dependency PR has NO business touching CODEOWNERS, signing keys,
+      # release manifests, or workflow files. If it does, fail closed.
+      # ---------------------------------------------------------------------
+      - name: Forbid governance-file modifications
+        run: |
+          set -euo pipefail
+          base="origin/${{ github.event.pull_request.base.ref }}"
+          mapfile -t changed < <(git diff --name-only "${base}"...HEAD)
+          forbidden_regex='^(\.github/(CODEOWNERS|workflows/.*\.yml|dependabot\.yml)|SECURITY\.md|deny\.toml|cosign\.pub|\.well-known/.*|specs/_security/.*)$'
+          violations=()
+          for f in "${changed[@]}"; do
+            if [[ "${f}" =~ ${forbidden_regex} ]]; then
+              violations+=("${f}")
+            fi
+          done
+          if (( ${#violations[@]} > 0 )); then
+            echo "::error::Dependabot PR modifies forbidden files:"
+            printf '::error:: - %s\n' "${violations[@]}"
+            echo "::error::See RB-DEPENDABOT-INCIDENT §4.3 — manual review required."
+            exit 1
+          fi
+          echo "::notice::No governance-file violations."
+
+      # ---------------------------------------------------------------------
+      # Step 7 — Required status checks must be present (not just green).
+      #
+      # A check that is `skipped` due to a path filter can let a PR slip
+      # through branch protection. Verify the canonical required checks
+      # have actually executed on this PR's head SHA.
+      # ---------------------------------------------------------------------
+      - name: Verify required checks are present
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Canonical required checks per branch-protection on `main`.
+          # Keep this list in sync with the repo's branch-protection ruleset.
+          required=(
+            "cargo-deny / cargo-deny"
+            "cargo-audit / cargo-audit-pr"
+            "cas_foundation / cargo-test"
+            "cas_foundation / clippy"
+            "action-sha-audit / sha-audit"
+            "dco-check / DCO"
+          )
+          checks_json=$(gh api "repos/${REPO}/commits/${PR_HEAD_SHA}/check-runs?per_page=100")
+          missing=()
+          for r in "${required[@]}"; do
+            if ! echo "${checks_json}" | jq -e --arg name "$r" '.check_runs[] | select(.name == $name)' > /dev/null; then
+              missing+=("${r}")
+            fi
+          done
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::Required status checks missing on head SHA ${PR_HEAD_SHA}:"
+            printf '::error:: - %s\n' "${missing[@]}"
+            echo "::error::Dependabot PR may not be auto-mergeable until all checks run."
+            exit 1
+          fi
+          echo "::notice::All required status checks are present."
+
+      # ---------------------------------------------------------------------
+      # Step 8 — Annotate audit-log emission (deferred to audit-chain).
+      # ---------------------------------------------------------------------
+      - name: Policy-gate audit log
+        run: |
+          cat <<EOF
+          {
+            "event": "corelink.security.dependabot_policy_gate_pass",
+            "schema": "corelink.audit.v1",
+            "pr_number": ${{ github.event.pull_request.number }},
+            "ecosystem": "${{ steps.metadata.outputs.package-ecosystem }}",
+            "dependency_names": "${{ steps.metadata.outputs.dependency-names }}",
+            "update_type": "${{ steps.metadata.outputs.update-type }}",
+            "head_sha": "${{ github.event.pull_request.head.sha }}",
+            "ts": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF

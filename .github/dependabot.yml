@@ -1,17 +1,26 @@
 version: 2
-# Dependabot weekly grouped PRs — WI-S12-004 §6.1.4 (ST-004) canonical config.
+# Dependabot weekly grouped PRs — WI-S12-004 §6.1.4 (ST-004) + R-PREP refinement.
 #
 # Enforces: CAP-SUPPLY-004 Dependabot weekly cadence.
 # Schedule: Monday 08:00 BRT (America/Sao_Paulo) = Monday 11:00 UTC.
-# Rate limit: 10 open PRs max (DoS protection — §26 security STRIDE delta).
+# Rate limit: per-ecosystem (DoS protection — §26 security STRIDE delta).
 #
-# Groups:
-#   - security-updates: all severity/type security advisories (batched weekly)
-#   - non-security-minor-patch: patch + minor version updates (auto-merge eligible)
-#   - non-security-major: major version updates (manual review required — §7 anti-scope)
+# Per-ecosystem policy:
+#   - security-updates: NEVER grouped. Always opened as separate PRs so the
+#     auto-merge gate can scope strictly to one advisory per merge event.
+#     (Grouping advisories together would force human review of unrelated
+#     CVEs in a single merge — anti-pattern for incident response.)
+#   - non-security-minor-patch: batched weekly per ecosystem (manual review).
+#   - non-security-major: batched weekly per ecosystem (manual review).
+#
+# Auto-merge eligibility (see .github/workflows/dependabot-auto-merge.yml):
+#   ONLY individual security PRs with update-type == version-update:semver-patch.
+#   Non-security updates of any size, and security minor/major, require manual
+#   review per §7 anti-scope + §9.8 design decision.
 #
 # Reviewers: humangr-labs/security team (INV-SUPPLY-LICENSE-ALLOWLIST enforcement).
-# Labels: ["dependencies", "rust"] — used by dependabot-auto-merge.yml gate.
+# Labels: ["dependencies", "<ecosystem>"] — consumed by dependabot-auto-merge.yml
+# and dependabot-policy.yml gates.
 
 updates:
   # ---------------------------------------------------------------------------
@@ -26,21 +35,16 @@ updates:
       timezone: America/Sao_Paulo
     open-pull-requests-limit: 10
     groups:
-      # Security updates: ALL types batched together for prompt triage.
-      # Auto-merge is NOT enabled for security updates per §9.8 design decision
-      # (security fix may contain semver-breaking API change).
-      security-updates:
-        applies-to: security-updates
-        update-types: ["patch", "minor", "major"]
-      # Non-security patch + minor: auto-merge eligible via dependabot-auto-merge.yml
-      # when all CI checks pass (cargo-audit + cargo-deny + cargo-test + clippy).
+      # Non-security patch + minor: batched weekly (manual review).
       non-security-minor-patch:
         applies-to: version-updates
         update-types: ["patch", "minor"]
-      # Non-security major: manual review required (never auto-merged per §7 anti-scope).
+      # Non-security major: batched weekly (manual review — never auto-merged).
       non-security-major:
         applies-to: version-updates
         update-types: ["major"]
+      # NOTE: NO security-updates group. Dependabot opens one PR per advisory
+      # so the auto-merge gate scopes to a single CVE per merge event.
     labels:
       - "dependencies"
       - "rust"
@@ -49,7 +53,6 @@ updates:
       include: scope
     reviewers:
       - "humangr-labs/security"
-    # Rebase strategy: rebase on conflict (keeps lockfile diff minimal).
     rebase-strategy: auto
 
   # ---------------------------------------------------------------------------
@@ -65,9 +68,12 @@ updates:
       timezone: America/Sao_Paulo
     open-pull-requests-limit: 5
     groups:
-      actions-updates:
+      actions-minor-patch:
         applies-to: version-updates
-        update-types: ["patch", "minor", "major"]
+        update-types: ["patch", "minor"]
+      actions-major:
+        applies-to: version-updates
+        update-types: ["major"]
     labels:
       - "dependencies"
       - "github-actions"
@@ -76,3 +82,184 @@ updates:
       include: scope
     reviewers:
       - "humangr-labs/security"
+    rebase-strategy: auto
+
+  # ---------------------------------------------------------------------------
+  # npm — admin-ui (Next.js dashboard).
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: npm
+    directory: "/apps/admin-ui"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-patch:
+        applies-to: version-updates
+        update-types: ["patch", "minor"]
+      npm-major:
+        applies-to: version-updates
+        update-types: ["major"]
+    labels:
+      - "dependencies"
+      - "javascript"
+      - "admin-ui"
+    commit-message:
+      prefix: "deps"
+      include: scope
+    reviewers:
+      - "humangr-labs/security"
+    rebase-strategy: auto
+    versioning-strategy: increase
+
+  # ---------------------------------------------------------------------------
+  # npm — docs site (Docusaurus).
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: npm
+    directory: "/apps/docs"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 5
+    groups:
+      docs-minor-patch:
+        applies-to: version-updates
+        update-types: ["patch", "minor"]
+      docs-major:
+        applies-to: version-updates
+        update-types: ["major"]
+    labels:
+      - "dependencies"
+      - "javascript"
+      - "docs"
+    commit-message:
+      prefix: "deps"
+      include: scope
+    reviewers:
+      - "humangr-labs/security"
+    rebase-strategy: auto
+    versioning-strategy: increase
+
+  # ---------------------------------------------------------------------------
+  # npm — root tooling (lint/test scripts).
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 3
+    groups:
+      root-tooling-minor-patch:
+        applies-to: version-updates
+        update-types: ["patch", "minor"]
+      root-tooling-major:
+        applies-to: version-updates
+        update-types: ["major"]
+    labels:
+      - "dependencies"
+      - "javascript"
+      - "tooling"
+    commit-message:
+      prefix: "deps"
+      include: scope
+    reviewers:
+      - "humangr-labs/security"
+    rebase-strategy: auto
+    versioning-strategy: increase
+
+  # ---------------------------------------------------------------------------
+  # npm — corelink-wasm (NPM-published WASM client).
+  # Tighter scope: wasm-bindgen toolchain only; manual review on majors
+  # because WASM ABI breakage can cause silent runtime failures.
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: npm
+    directory: "/crates/corelink-wasm"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 3
+    groups:
+      wasm-minor-patch:
+        applies-to: version-updates
+        update-types: ["patch", "minor"]
+      wasm-major:
+        applies-to: version-updates
+        update-types: ["major"]
+    labels:
+      - "dependencies"
+      - "javascript"
+      - "wasm-client"
+    commit-message:
+      prefix: "deps"
+      include: scope
+    reviewers:
+      - "humangr-labs/security"
+    rebase-strategy: auto
+    versioning-strategy: increase
+
+  # ---------------------------------------------------------------------------
+  # pip — CI tooling (requirements-ci.txt).
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 3
+    groups:
+      pip-ci-minor-patch:
+        applies-to: version-updates
+        update-types: ["patch", "minor"]
+      pip-ci-major:
+        applies-to: version-updates
+        update-types: ["major"]
+    labels:
+      - "dependencies"
+      - "python"
+      - "ci-tooling"
+    commit-message:
+      prefix: "deps"
+      include: scope
+    reviewers:
+      - "humangr-labs/security"
+    rebase-strategy: auto
+
+  # ---------------------------------------------------------------------------
+  # pip — corelink-py (Python SDK).
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: pip
+    directory: "/crates/corelink-py"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 3
+    groups:
+      py-sdk-minor-patch:
+        applies-to: version-updates
+        update-types: ["patch", "minor"]
+      py-sdk-major:
+        applies-to: version-updates
+        update-types: ["major"]
+    labels:
+      - "dependencies"
+      - "python"
+      - "sdk"
+    commit-message:
+      prefix: "deps"
+      include: scope
+    reviewers:
+      - "humangr-labs/security"
+    rebase-strategy: auto
