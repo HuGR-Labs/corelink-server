@@ -103,6 +103,24 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use corelink_byok::{BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider,
                     KmsProviderKind, WrappedDek};
 
+#[cfg(feature = "production")]
+pub mod auth;
+#[cfg(feature = "production")]
+mod key_name;
+#[cfg(feature = "production")]
+mod real;
+
+#[cfg(feature = "production")]
+pub use real::{VaultTransitProvider, DEFAULT_TRANSIT_MOUNT};
+
+/// Test-only utilities (production feature). Allows the in-crate `tests/`
+/// integration suites to inject a static auth backend + custom endpoint.
+#[cfg(feature = "production")]
+#[doc(hidden)]
+pub mod __test_support {
+    pub use crate::auth::VaultAuth;
+}
+
 /// Number of days before mTLS cert expiry that triggers a SEV-3 alert.
 pub const MTLS_CERT_ALERT_DAYS: u64 = 30;
 

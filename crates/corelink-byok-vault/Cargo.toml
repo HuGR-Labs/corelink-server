@@ -7,6 +7,12 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+# Default build = stub/mock only (no network deps, suitable for CI without Vault creds).
+default = []
+# Production = real Vault Transit REST client (R2-9). Pulls in reqwest + regex + tracing.
+production = ["dep:reqwest", "dep:regex"]
+
 [lints.rust]
 unsafe_code = "forbid"
 missing_docs = "deny"
@@ -32,8 +38,14 @@ serde_json = { workspace = true }
 zeroize = { workspace = true }
 base64 = { workspace = true }
 tokio = { workspace = true }
+tracing = { workspace = true }
+
+# Production-only deps (gated behind `production` feature).
+reqwest = { workspace = true, optional = true }
+regex = { version = "1", optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
 tokio-test = { workspace = true }
 proptest = { workspace = true }
+wiremock = "0.6"

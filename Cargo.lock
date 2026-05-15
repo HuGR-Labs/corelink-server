@@ -1262,11 +1262,15 @@ dependencies = [
  "base64",
  "corelink-byok",
  "proptest",
+ "regex",
+ "reqwest",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
  "tokio-test",
+ "tracing",
+ "wiremock",
  "zeroize",
 ]
 
