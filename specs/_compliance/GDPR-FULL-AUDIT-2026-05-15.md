@@ -275,7 +275,7 @@ Art. 33: **72 hours to supervisory authority** from awareness. Art. 34: notify s
 | Declaration → triage + containment | (operational) | (same) | ≤ 4h |
 | Awareness → SA notification | **72h** (Art. 33(1)) | "prazo razoável" + ANPD Res. 15/2024 3 BD | **48h internal SLA** (conservative versus both regimes) |
 | Awareness → subject notification (high risk) | "without undue delay" (Art. 34(1)) | 72h after authority (ANPD guidance) | 72h after SA notification |
-| Documentation (Art. 33(5)) | All breaches documented even when no SA notification | (parallel obligation) | `RB-BREACH` evidence binder; R2 `evidence-incident-<region>` Object Lock 7y |
+| Documentation (Art. 33(5)) | All breaches documented even when no SA notification | (parallel obligation) | `RB-BREACH-NOTIF` evidence binder; R2 `evidence-incident-<region>` Object Lock 7y |
 | Public post-mortem (if material) | (not statutory but standard practice) | (parallel) | ≤ 14 days |
 
 **SA contact registry:** `legal/breach-notification/eu-sa-contacts.md` (to populate at T+15) covers the lead SA (Brazil-based controller establishing service in EU → lead SA TBD; likely Irish DPC if EU sub-processor establishment in IE, or per Recital 36 main-establishment analysis). Interim: notify the SA of each affected member state (one-stop-shop simplification deferred until EU representative appointed).

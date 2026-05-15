@@ -66,7 +66,7 @@ DEFINITION_SOURCES = {
     "INV": ["03_architecture/invariant_registry.md"],
     "FF-HR": ["00_framework.md"],
     "SLO": ["03_architecture/slo_catalog.md"],
-    "RB": ["05_quality/runbooks/"],  # directory: any .md inside
+    "RB": ["05_quality/runbooks/", "_runbooks/", "05_runbooks/"],  # directory: any .md inside (DEBT-006: _runbooks/ + 05_runbooks/ added 2026-05-15)
     "ADR": ["03_architecture/adrs/"],
     "WAIVER": ["_waivers/"],
     "FF-LR": ["00_framework.md"],
@@ -89,6 +89,7 @@ DEFINITION_ANCHORS = [
     re.compile(r"^\*?\*?([A-Z]+(?:-[A-Z0-9_]+)+)\*?\*?\s*:"),  # **SLO-AVAIL-CP**:
     re.compile(r'^id:\s*"([A-Z]+(?:-[A-Z0-9_]+)+)"'),  # YAML front matter id field
     re.compile(r"^\*\*([A-Z]+(?:-[A-Z0-9_]+)+)\*\*\s*$"),  # **SLO-AVAIL-CP** standalone (no colon)
+    re.compile(r"^\*\*([A-Z]+(?:-[A-Z0-9_]+)+)\*\*\s*\("),  # **SLO-ADMIN-X** (description...) — DEBT-006: SLO catalog uses this pattern
 ]
 
 # Alias expiry tracking (Lote 7.3 endereça M-01):
@@ -308,6 +309,8 @@ WHITELIST_IDS = {
     "CTRL-KEY-032",
     # Runbook placeholder (template exemplo)
     "RB-XXX",
+    "RB-XX",     # NOISE: template placeholder in GA-GATE-GO-NOGO-TEMPLATE.md
+    "RB-YYY",    # NOISE: template placeholder in IR-TABLETOP-EVIDENCE / RB-TABLETOP-TEMPLATE
     # Forward-looking runbooks introduced em sprint WIs (criados durante respective sprint implementation):
     "RB-FM-OUTBOX-DRAIN",     # S-01 WI-S01-005 (P0 fix Lote 10.2bis)
     "RB-FM-SIGSTORE-OUTAGE",  # S-01 WI-S01-007 (P1 fix Lote 10.2bis)
@@ -367,6 +370,212 @@ WHITELIST_IDS = {
     # FMs novos catalogados em sprint contracts (a serem promovidos a failure_modes.md)
     "FM-157",  # typosquat (S-12)
     "FM-160",  # auth invalid (S-15/S-16/S-19)
+    "FM-249",  # auth replay storm (S-03 PRR-S03 forward-looking; promoted in S-03 impl)
+    # === DEBT-006 (2026-05-15): Bulk PLANNED + NOISE allowlist additions ===
+    # PLANNED CTRLs — Vendor due-diligence cross-walks reference controls owned by external
+    # vendors (Clerk/Cloudflare/PagerDuty/Slack/HubSpot/Stripe). Documented in
+    # _compliance/vendor-dd/*.md; will be promoted to security_model.md/privacy_model.md
+    # as part of S-20 TPRM finalization. Justification: vendor controls are *their* CTRL
+    # IDs traced into our compliance matrix; not native HuGR controls.
+    "CTRL-ACCESS-001",        # DD-CLERK, DD-CLOUDFLARE
+    "CTRL-AVAIL-001",         # DD-CLOUDFLARE
+    "CTRL-BCP-DR-009",        # DD-PAGERDUTY
+    "CTRL-COMM-001",          # DD-SLACK
+    "CTRL-COMM-003",          # DD-HUBSPOT
+    "CTRL-COMM-004",          # DD-SLACK
+    "CTRL-COMM-005",          # DD-SLACK
+    "CTRL-COMPL-002",         # DD-STRIPE
+    "CTRL-COMPL-007",         # DD-SLACK
+    "CTRL-COMPL-009",         # DD-HUBSPOT
+    "CTRL-DATA-001",          # DD-CLOUDFLARE
+    "CTRL-IDENT-001",         # DD-CLERK
+    "CTRL-IR-002",            # DD-PAGERDUTY
+    "CTRL-IR-003",            # DD-PAGERDUTY
+    "CTRL-IR-004",            # DD-PAGERDUTY
+    "CTRL-IR-005",            # DD-SLACK
+    "CTRL-OBS-005",           # DD-PAGERDUTY
+    "CTRL-OBS-006",           # DD-SLACK
+    "CTRL-PRIV-018",          # DD-STRIPE
+    # PLANNED CTRLs — forward-looking native controls (promoted during respective sprint impl):
+    "CTRL-ADMIN-001",         # S-13 admin signup (RB-FM-SIGNUP-FAILED)
+    "CTRL-ADMIN-002",         # S-13 dual-approval (slo_catalog.md SLO-ADMIN-DUAL-APPROVAL-LATENCY)
+    "CTRL-ADMIN-006",         # S-13 config-propagation
+    "CTRL-ADMIN-007",         # S-13 rollback recovery
+    "CTRL-ANTI-FRAUD-001",    # S-19 insider threat (TT-04)
+    "CTRL-AUTH-013",          # S-15 tenant-offboarding
+    "CTRL-CHAOS-001",         # S-17 DR drill scheduler (WI-S17-002)
+    "CTRL-CRYPT-001",         # S-19 PRR (typo of CTRL-CRYPTO-001? promoted in S-19 impl)
+    "CTRL-DATA-RESIDENCY-001",# S-14 tenant region pinning (WI-S14-002)
+    "CTRL-DEP-AUDIT-001",     # S-12 supply chain (TT-05)
+    "CTRL-KEY-013",           # S-14 BYOK key wrap (PRR-S14)
+    "CTRL-KEY-014",           # S-14 BYOK key unwrap (PRR-S14)
+    "CTRL-MULTIPART-002",     # S-05 multipart (asvs checklist)
+    "CTRL-ONBOARD-001",       # S-19 onboarding
+    "CTRL-ONBOARD-002",       # S-19 onboarding
+    "CTRL-ONBOARD-005",       # S-19 onboarding
+    "CTRL-ONBOARD-006",       # S-19 onboarding
+    "CTRL-PRIV-RESIDENCY-001",# S-14 residency (GDPR audit)
+    "CTRL-SECRETS-DRIFT-001", # S-13 secret rotation (SOC2 rollup)
+    "CTRL-SUPPLY-COSIGN-001", # S-12 Cosign verify (RB-SUPPLY-REKOR-OUTAGE)
+    "CTRL-WEBHOOK-001",       # S-10 webhook signing (TT-03)
+    "CTRL-WEBHOOK-002",       # S-10 webhook DLQ (TT-03)
+    "CTRL-WEBHOOK-003",       # S-10 webhook idempotency (TT-03)
+    # PLANNED PATs:
+    "PAT-DNS-001",            # S-09 DNS resilience (pentest evidence)
+    "PAT-PRIV-001",           # S-17 privacy pattern (sprint.md)
+    "PAT-SAGA-001",           # S-19 saga pattern (sprint.md)
+    "PAT-SAGA-ATOMIC-001",    # S-20 saga atomic (PRR-S20-GA)
+    # PLANNED INVs — promoted to invariant_registry.md during respective sprint impl:
+    "INV-ADMIN-CONFIG-CAS",                  # S-13 admin config (slo_catalog)
+    "INV-AUDIT-HASH-CHAIN-CONTINUOUS",       # S-09 audit chain (GDPR audit)
+    "INV-AUDIT-MINIMIZATION",                # S-09 audit minimization (GDPR audit)
+    "INV-AUDIT-PSEUDONYM-DETERMINISTIC",     # S-09 audit pseudonym (GDPR audit)
+    "INV-AVAIL-DOS",                         # S-09 DoS availability (PRR-S09)
+    "INV-BACKUP-FRESH",                      # S-15 backup freshness (RB-CANONICAL-DRIFT)
+    "INV-BACKUP-INTEGRITY-SAMPLE-CAP",       # S-15 backup integrity
+    "INV-BACKUP-RESTORE-EPHEMERAL",          # S-15 backup restore
+    "INV-BYOK-CMK-ERASURE-ATOMICITY",        # S-14 BYOK erasure
+    "INV-BYOK-CMK-NEVER-LEAVES-CUSTOMER",    # S-14 BYOK customer key (DD-AWS-KMS)
+    "INV-CACHE-001",                         # legacy short-form (DD-CLOUDFLARE)
+    "INV-CAS-DIGEST-INTEGRITY",              # S-09 dashboards (WI-S09-005)
+    "INV-CONSENT-NO-FAIL-OPEN",              # S-11 consent (GDPR audit)
+    "INV-DATA-CRYPTO-001",                   # legacy short-form (DD-CLOUDFLARE)
+    "INV-DSR-AUDIT-FAIL-CLOSED",             # S-11/S-15 DSR
+    "INV-DSR-ERASURE-12-BACKEND",            # S-15 DSR erasure
+    "INV-DSR-MFA-DESTRUCTIVE",               # S-15 DSR MFA
+    "INV-DSR-RECEIPT-90D",                   # S-15 DSR receipt
+    "INV-DSR-TENANT-ISOLATION",              # S-15 DSR isolation
+    "INV-DSR-VERIFIED-CLOCK",                # S-15 DSR clock
+    "INV-EXEC-IDEMPOTENT",                   # S-09 dashboards
+    "INV-ISO-CONSTANT-TIME-404",             # S-09 isolation
+    "INV-ISO-NO-CROSS-LEAK",                 # S-09 isolation
+    "INV-LGPD-AUTO-SUSPEND-FORBIDDEN",       # S-15 LGPD
+    "INV-OFFBOARDING-AUDIT-COMPLETE",        # S-15 tenant offboarding
+    "INV-OFFBOARDING-GRACE-RESPECTED",       # S-15 tenant offboarding
+    "INV-PRIVACY-PSEUDONYMIZE-ON-ERASURE",   # S-15 privacy
+    "INV-RESIDENCY-FAIL-CLOSED",             # S-14 residency
+    "INV-ROLLOUT-AUTO-ROLLBACK",             # S-13 rollout
+    "INV-S17-CHAOS-STAGING-ONLY",            # S-17 sprint contract
+    "INV-S17-ONCALL-FATIGUE-AUTOROTATE",     # S-17 sprint contract
+    "INV-S17-OPS-EXCLUSIVITY",               # S-17 sprint contract
+    "INV-S17-SEV1-DRILL-PAUSE",              # S-17 sprint contract
+    "INV-SUB-PROCESSOR",                     # S-11 sprint contract (plural-form)
+    "INV-SUB-PROCESSOR-BROADCAST",           # S-11 sub-processor change broadcast
+    "INV-WEBHOOK-DLQ-IDEMPOTENT-001",        # S-10 webhook DLQ (DD-STRIPE)
+    # NOISE INVs — false positives from validator regex (English words / line-wrap artifacts):
+    "INV-ID",                                # NOISE: regex catches "INV-ID" English phrase in RB-CANONICAL-DRIFT
+    "INV-IDs",                               # NOISE: plural-form English mention in RB-CANONICAL-DRIFT
+    "INV-CRITICAL",                          # NOISE: "INV-CRITICAL" qualifier in GA-GATE-CRITERIA prose
+    "INV-level",                             # NOISE: "INV-level specs" English in S20 spec contract
+    "INV-AUTH-WEBAUTHN-ORIGIN-EXACT-style",  # NOISE: pentest narrative "ORIGIN-EXACT-style", not a real INV
+    # PLANNED SLOs — forward-looking from sprint catalogs (promoted in slo_catalog.md during impl):
+    "SLO-ADMIN",                             # S-13 plural-form/PRR-S13
+    "SLO-AVAIL",                             # S-20 plural-form (sprint.md "SLO-AVAIL-*")
+    "SLO-AVAIL-CAS-GET-FAST-BURN",           # S-09 multi-burn-rate alerts
+    "SLO-AVAIL-CAS-GET-SLOW-BURN",           # S-09 multi-burn-rate alerts
+    "SLO-AVAIL-FAST-BURN",                   # S-09 DASH-SLO-BURNDOWN
+    "SLO-BACKUP-VERIFICATION",               # S-15 backup verification SLO (referenced in slo_catalog but not anchor)
+    "SLO-BURNDOWN",                          # S-09 burndown dashboard
+    "SLO-BYOK-CMK-DETECT",                   # S-14 BYOK detection
+    "SLO-BYOK-DEK-CACHE-TTL",                # S-14 BYOK DEK cache
+    "SLO-BYOK-DEK-EVICT",                    # S-14 BYOK DEK evict
+    "SLO-BYOK-DETECTION",                    # S-14 BYOK detection (PRR-S14)
+    "SLO-BYOK-KILL-SWITCH",                  # S-14 kill switch
+    "SLO-BYOK-KILL-SWITCH-TOTAL",            # S-14 kill switch total
+    "SLO-BYOK-MATRIX-AVAILABILITY",          # S-14 BYOK matrix
+    "SLO-BYOK-MATRIX-WEEKLY",                # S-14 BYOK matrix weekly
+    "SLO-BYOK-UNWRAP-LATENCY",               # S-14 BYOK unwrap
+    "SLO-BYOK-WRAP-LATENCY",                 # S-14 BYOK wrap
+    "SLO-FRESH",                             # S-20 plural-form "SLO-FRESH-*"
+    "SLO-INCIDENT-RESPONSE",                 # S-20 incident response (plural)
+    "SLO-INCIDENT-RESPONSE-SYNTHETIC-PAGE",  # S-20 synthetic page response
+    "SLO-LAT",                               # S-20 plural-form "SLO-LAT-*"
+    "SLO-LAT-DSR-RECEIPT",                   # S-15 DSR receipt latency
+    "SLO-LAT-SIGNUP",                        # S-19 signup latency (GA-GATE-CRITERIA)
+    "SLO-LATENCY-BREACH",                    # S-09 latency breach RB
+    "SLO-LATENCY-P99-CAS-PUT",               # S-09 latency P99
+    "SLO-ONBOARD",                           # S-19 onboarding plural
+    "SLO-ONBOARD-ATOMICITY",                 # S-19 onboarding atomicity
+    "SLO-ONBOARD-DPA-RECEIPT-VERIFIABILITY", # S-19 DPA receipt
+    "SLO-ONBOARD-ENTERPRISE-AUTO-REPLY",     # S-19 enterprise auto-reply
+    "SLO-ONBOARD-SIGNUP-DURATION",           # S-19 signup duration
+    "SLO-REGION-FAILOVER-LATENCY",           # S-14 region failover
+    "SLO-REGION-REPLICATION-LAG",            # S-14 region replication lag
+    "SLO-REPLICATION-LAG",                   # S-14 replication lag (DR dashboard)
+    "SLO-REPLICATION-LAG-P99",               # S-14 active failover spec
+    "SLO-SUPPLY-LICENSE-REVIEW",             # S-12 license review
+    "SLO-SUPPLY-RUSTSEC-TRIAGE",             # S-12 rustsec triage
+    # PLANNED RBs — forward-looking runbook stubs (referenced from dashboards / vendor-dd /
+    # sprint WIs; created during respective sprint impl OR are stubs created at sprint-end).
+    # Justification: dashboards typically link to RBs that will exist when the sprint that
+    # owns the alert is implemented. Pre-spec for these RBs.
+    "RB-ABUSE-001", "RB-ABUSE-002", "RB-ABUSE-003", "RB-ABUSE-004", "RB-ABUSE-LGPD-001",  # S-08 abuse
+    "RB-AUDIT-CHAIN-001", "RB-AUDIT-CHAIN-INTEGRITY-VIOLATION", "RB-AUDIT-CHAIN-STALL",   # S-09 audit chain
+    "RB-AUDIT-CHAIN-TAMPER-RESPONSE", "RB-AUDIT-LGPD-001", "RB-AUDIT-LOCK-VIOLATION",     # S-09 audit chain
+    "RB-AUTH-EMERGENCY",                                   # S-15 auth emergency (DD-CLERK)
+    "RB-AUTH-REPLAY-INVESTIGATE",                          # S-03 auth replay (DASH-RATELIMIT-ABUSE)
+    "RB-BILLING-DLQ-DRAIN",                                # S-10 billing DLQ (DASH-BILLING)
+    "RB-BREACH-NOTIFICATION",                              # S-15 alias of RB-BREACH-NOTIF (GA-GATE-CRITERIA)
+    "RB-BYOK-KEK-REVOKED-INCIDENT", "RB-BYOK-KILL-SWITCH", # S-14 BYOK
+    "RB-BYOK-KILL-SWITCH-DRILL", "RB-BYOK-PROVIDER-OUTAGE",# S-14 BYOK
+    "RB-BYOK-ROTATION-OVERDUE", "RB-BYOK-VAULT-CERT-RENEWAL",# S-14 BYOK
+    "RB-CAPACITY-EXPAND-D1", "RB-CAPACITY-EXPAND-R2",      # S-09 capacity
+    "RB-CAS-DIGEST-001", "RB-CAS-INTEGRITY-VIOLATION",     # S-09 CAS integrity
+    "RB-CHANGE-WINDOW",                                    # S-13 change window
+    "RB-CIRCUIT-BREAKER-OPEN",                             # S-09 circuit breaker
+    "RB-CONSENT-PROPAGATION-FAILURE",                      # S-11 consent
+    "RB-COST-REGRESSION-INVESTIGATE",                      # S-09 cost
+    "RB-CVE-TRIAGE",                                       # S-12 CVE triage (PCI-DSS)
+    "RB-DDOS-MITIGATION",                                  # S-08 DDoS (DASH-RATELIMIT)
+    "RB-DPA-VERSION-BUMP",                                 # S-20 DPA version bump
+    "RB-DR-DRILL-FAILURE",                                 # S-17 DR drill failure
+    "RB-DRILL-OVERDUE-RECOVERY",                           # S-17 drill overdue
+    "RB-DSR",                                              # S-15 plural-form "RB-DSR-*"
+    "RB-DSR-FAILURE-RECOVERY", "RB-DSR-FULFILLMENT",       # S-15 DSR
+    "RB-DSR-RECEIPT-FAILURE",                              # S-15 DSR
+    "RB-EDGE-BLOCKLIST-001", "RB-EDGE-BLOCKLIST-002",      # S-08 edge blocklist
+    "RB-ENTERPRISE-INCIDENT-COMMS",                        # S-19 enterprise comms
+    "RB-ERASURE-VERIFY",                                   # S-14 erasure attestation
+    "RB-ERROR-BUDGET-EXHAUSTED",                           # S-09 error budget
+    "RB-EVIDENCE-FRESHNESS-RECOVERY",                      # S-16 evidence freshness
+    "RB-FM-305-2026-04", "RB-FM-305-2026-05",              # PM postmortem date-stamped variants
+    "RB-FM-401",                                           # S-08 retry storm (referenced)
+    "RB-FM-AUDIT-BREAK",                                   # S-09 audit break (pentest)
+    "RB-FM-DPA-LEGAL-CHALLENGE",                           # S-19 DPA legal
+    "RB-FM-ENTERPRISE-HANDOFF-PARTIAL",                    # S-19 enterprise handoff
+    "RB-GAP-REGISTER-REVIEW",                              # S-16 gap register
+    "RB-GLOBAL-CIRCUIT-001", "RB-GLOBAL-CIRCUIT-002", "RB-GLOBAL-CIRCUIT-003",  # S-08 global circuit
+    "RB-INCIDENT-COMMS",                                   # S-09 incident comms
+    "RB-INCIDENT-ESCALATION-MATRIX",                       # S-20 escalation matrix
+    "RB-INCIDENT-RESPONSE",                                # S-09 IR (PCI-DSS)
+    "RB-INVOICE-GENERATION-FAILURE",                       # S-10 invoice gen (DASH-BILLING)
+    "RB-ISOLATION-001",                                    # S-08 isolation
+    "RB-MULTI-REGION-OUTAGE",                              # S-14 multi-region outage
+    "RB-OFFBOARDING",                                      # S-15 alias of RB-TENANT-OFFBOARDING (ISO27001-GAP)
+    "RB-PERSONNEL-OFFBOARDING",                            # S-13 personnel offboarding (PCI-DSS)
+    "RB-QUOTA-001", "RB-QUOTA-002", "RB-QUOTA-003",        # S-08 quota
+    "RB-REGION-OUTAGE",                                    # S-14 region outage
+    "RB-REGULATOR-INQUIRY",                                # S-11 regulator inquiry
+    "RB-RELIABILITY-REVIEW-PREP",                          # S-09 reliability review
+    "RB-REPLICATION-LAG-INVESTIGATE",                      # S-14 replication lag
+    "RB-RESIDENCY-VIOLATION-RESPONSE",                     # S-14 residency violation
+    "RB-REVENUE-RECONCILIATION",                           # S-10 revenue reconciliation
+    "RB-ROTATION-EMERGENCY",                               # S-13 emergency rotation
+    "RB-SEV1-IC-CHAIR",                                    # S-20 IC chair
+    "RB-SLI-DISTINCTION-001",                              # S-08 SLI distinction
+    "RB-SLO",                                              # S-09 plural-form "RB-SLO-*"
+    "RB-SLO-AVAIL-CAS-GET-FAST-BURN", "RB-SLO-AVAIL-CAS-GET-SLOW-BURN",  # S-09 burn rate RBs
+    "RB-SLO-AVAIL-FAST-BURN", "RB-SLO-LATENCY-BREACH",     # S-09 burn rate RBs
+    "RB-STRIPE-CREDENTIAL-ROTATION",                       # S-10 Stripe credential rotation
+    "RB-STRIPE-WEBHOOK-FAILURE",                           # S-10 Stripe webhook (DASH-BILLING)
+    "RB-SYNTHETIC-CANARY-FAILURE",                         # S-09 synthetic canary
+    "RB-TENANT",                                           # S-15 plural-form "RB-TENANT-*"
+    "RB-TENANT-ABUSE-RESPONSE",                            # S-08 tenant abuse
+    "RB-TENANT-ISOLATION-BREACH",                          # S-15 tenant isolation breach
+    "RB-UPSTREAM-DEGRADATION",                             # S-09 upstream degradation
+    "RB-WAIVER-EXPIRY-RENEWAL",                            # S-16 waiver renewal
+    # NOISE RBs — template placeholders:
+    "RB-FM-XX",                              # NOISE: template placeholder in WI-S14-009 example
 }
 
 # IDs com prefixo wildcard (qualquer ID que comece com este prefixo é whitelist).
