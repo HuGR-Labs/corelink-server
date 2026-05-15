@@ -3,7 +3,7 @@ id: "AUDIT-2026-05-15-CF-BINDING-REAL-PATTERN"
 type: "audit_report"
 doc_status: "FROZEN"
 audit_status: "SEALED"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-05-15"
 updated: "2026-05-15"
 owner: "Gustavo Schneiter"
@@ -292,6 +292,81 @@ adapter is silently re-prefixed under A); D1 and DO use hard CT-eq
 rejection at the bind / name-validate gate. Both modes satisfy the
 fail-CLOSED contract — under no path does an A-anchored adapter
 return data from tenant B's namespace.
+
+### 7.5 Wave 16 — DO actor class wire-up
+
+Wave 15 (`bc14b49`) wired the `CLERK_DO` namespace binding but the actor
+class itself was deferred — the binding declared
+`script_name = "corelink-server"`, forwarding the resolve to the main
+Worker's already-deployed DO class. Wave 16 ships the actor class IN
+this Worker so the binding is operationally complete; the
+`script_name` indirection is removed.
+
+| Module                                                       | Role                                                                                  |
+|--------------------------------------------------------------|---------------------------------------------------------------------------------------|
+| `crates/corelink-clerk-cf/src/clerk_health_do.rs`            | `ClerkHealthDo` Durable Object actor class (`#[worker::durable_object]`) + pure-logic surface `ClerkHealthLogic` for native testing. |
+| `crates/corelink-clerk-cf/wrangler.toml` (`[[migrations]]`)  | Appended migration `tag = "v2"` with `new_classes = ["ClerkHealthDo"]`. v1 left untouched (DO migration rows MUST never be mutated in-place per Workers semantics). |
+
+**Routes (3):**
+
+| Method | Path                          | Effect                                            |
+|--------|-------------------------------|---------------------------------------------------|
+| GET    | `/record/{tenant}/{cid}`      | Return record or 404 (advisory audit emitted)     |
+| POST   | `/record/{tenant}/{cid}`      | Upsert; audit-emit-BEFORE; fail-CLOSED on audit Err |
+| DELETE | `/record/{tenant}/{cid}`      | Tombstone; audit-emit-BEFORE; fail-CLOSED         |
+
+The `alarm()` handler performs a TTL sweep on records older than
+`ClerkHealthState::ttl_ms` (default 1 h) and re-arms itself for the next
+TTL/4 interval; each sweep removal emits a `HealthDoOp::Sweep` audit
+event (fail-CLOSED).
+
+**Tenant scope enforcement** — every `ParsedRoute` runs
+`assert_tenant(actor_tenant_id)` via `subtle::ConstantTimeEq` BEFORE the
+audit hook is called. A mismatch returns `HealthDoError::TenantScope`
+(HTTP 403 at the actor's response layer); the storage is not touched
+and no audit event is emitted (the assertion fires pre-audit).
+
+**Audit emission count = mutation count** — the integration test
+`audit_emission_count_equals_mutation_count` pins that exactly N audit
+events are emitted for N mutations (3 mutations → 3 events).
+
+**Tests (6 integration + 7 unit, 13 new):**
+
+`crates/corelink-clerk-cf/tests/clerk_health_do.rs`:
+
+| Test                                          | What it pins                                                  |
+|-----------------------------------------------|---------------------------------------------------------------|
+| `happy_path_get_post_delete_round_trip`       | POST→GET→DELETE→GET; 4 audit events; final state empty.       |
+| `cross_tenant_post_rejected_close`            | Tenant-B URL on tenant-A actor → `TenantScope` (HTTP 403); no audit. |
+| `ttl_alarm_sweep_removes_expired_records`     | Sweep removes only expired entries; one Sweep audit per removal. |
+| `audit_emission_count_equals_mutation_count`  | 3 mutations → 3 audit events (exact count).                   |
+| `audit_fail_closed_blocks_every_mutation`     | Deny-audit hook blocks every mutation; state stays empty.     |
+| `route_parser_rejects_malformed_paths`        | Path/method validation; bad inputs rejected with `ValidationFailed`. |
+
+Inline `mod tests`: `parsed_route_happy_path`,
+`parsed_route_rejects_missing_segments`, `parsed_route_rejects_bad_method`,
+`tenant_assertion_constant_time_path`, `upsert_get_delete_roundtrip`,
+`cross_tenant_upsert_rejected_close`, `audit_fail_closed_blocks_mutation`,
+`sweep_removes_expired_records`, `record_size_limits_enforced` (7
+behaviour tests + 2 parser tests).
+
+**Quality gate (wave 16):**
+
+```bash
+cargo build  -p corelink-clerk-cf --target wasm32-unknown-unknown    # green
+cargo build  -p corelink-clerk-cf                                     # green
+cargo clippy -p corelink-clerk-cf --target wasm32-unknown-unknown -- -D warnings   # green
+cargo clippy -p corelink-clerk-cf --tests -- -D warnings              # green
+cargo test   -p corelink-clerk-cf                                     # 29/29 (17 unit + 12 integration)
+python3 scripts/validate_specs.py                                     # green
+```
+
+**DO migration semantics (Workers).** The CF Workers runtime stores the
+applied migration tag per-script and REFUSES any retroactive change to
+an existing migration row. Wave 16's `wrangler.toml` therefore
+APPENDS `tag = "v2"` rather than mutating `v1`. Future class changes
+(rename / delete / add) MUST do the same: append a new row, never
+mutate.
 
 ## 8. Out of scope
 
