@@ -12,11 +12,15 @@
 //!   end-to-end as the example wire-up for the R-prep handler-crate
 //!   skeleton (see
 //!   `specs/_audits/2026-05-14-slo-instrumentation-gaps.md §6`).
-//! - [`byok`] — feature-gated BYOK provider factory (only built when
-//!   `--features byok-aws-real`). Returns
-//!   `Arc<dyn corelink_byok::KmsProvider>` so future GCP / Azure /
-//!   Vault providers swap in behind the same trait object. See
-//!   `specs/_audits/2026-05-15-byok-real-provider-pattern.md`.
+//! - [`byok`] — feature-gated AWS-only BYOK provider factory (built
+//!   when `--features byok-aws-real`). Preserved as a thin convenience
+//!   wrapper; new code should use [`byok_orchestrator`].
+//! - [`byok_orchestrator`] — singleton trait-object dispatch over the
+//!   four production BYOK providers (AWS / GCP / Azure / Vault),
+//!   feature-flag-selected at compile time. Default (no flag) returns
+//!   an `InMemoryFake`. Multiple `byok-*-real` flags is a HARD
+//!   compile error. See
+//!   `specs/_audits/2026-05-15-byok-real-provider-pattern.md §7`.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -25,5 +29,6 @@
 #[cfg(feature = "byok-aws-real")]
 pub mod byok;
 
+pub mod byok_orchestrator;
 pub mod routes;
 pub mod webhook;
