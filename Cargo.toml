@@ -171,6 +171,13 @@ members = [
     # Composes corelink-ratelimit (camada 1) + corelink-rate-headers
     # (camada 0) under a logical clock; no real network.
     "tests/e2e-resilience",
+    # R3-5 end-to-end billing-flow harness: signup → tier_select(Starter)
+    # → Stripe Checkout → subscription activation → cancel-while-active
+    # → refund webhook → DSR-erasure-while-subscribed gate. In-memory
+    # fakes wire every collaborator (corelink-signup +
+    # corelink-tier-selection + corelink-billing-stripe + corelink-dsr)
+    # so the full customer billing journey runs without network IO.
+    "tests/e2e-billing-flow",
 ]
 exclude = [
     "crates/tenant-path/fuzz",

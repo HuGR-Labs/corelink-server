@@ -1,0 +1,44 @@
+[package]
+name = "e2e-billing-flow"
+description = "R3-5 end-to-end billing-flow harness: signup → tier_select(Starter) → Stripe Checkout → subscription activation → cancel-while-active → refund webhook → DSR-erasure-while-subscribed gate. Composes the in-memory `corelink-signup` + `corelink-tier-selection` + `corelink-billing-stripe` + `corelink-dsr` ledgers behind a single `BillingHarness` fixture so the full customer billing journey can be exercised in a single `cargo test -p e2e-billing-flow` run without any network IO. Fail-CLOSED audit ordering is asserted at every state mutation; constant-time HMAC verify via `corelink-billing-stripe::verify_stripe_signature` (which uses `subtle::ConstantTimeEq`). Charter `trait-abstraction-defer` applies: NO production HTTPS Stripe endpoints reached by default `cargo test -p e2e-billing-flow`."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+corelink-signup = { path = "../../crates/corelink-signup" }
+corelink-tier-selection = { path = "../../crates/corelink-tier-selection" }
+corelink-billing-stripe = { path = "../../crates/corelink-billing-stripe" }
+corelink-dsr = { path = "../../crates/corelink-dsr" }
+hex = { workspace = true }
+sha2 = { workspace = true }
+uuid = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+
+[[test]]
+name = "end_to_end"
+path = "tests/end_to_end.rs"
