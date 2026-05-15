@@ -1,0 +1,249 @@
+name: Compliance Weekly Digest (CC4.2 / GAP-08)
+
+# Monday 09:00 UTC weekly compliance review cadence — closes GAP-08 of
+# specs/_compliance/SOC2-EVIDENCE-ROLLUP-2026-05-15.md (CC4.2 deficiency
+# evaluation + communication). Aggregates SOC 2 readiness delta, GAP register
+# delta, vendor SLA breaches, drill cadence flags, IR tabletop readiness, and
+# compliance-gate CI failures into a markdown digest committed to
+# specs/_compliance/weekly-digests/YYYY-MM-DD.md.
+#
+# If the digest detects a regression (severity upgrade, GAP count up, drill
+# missed, vendor 2x SLA breach, or CI gate failure), this workflow:
+#   1. Exits the digest step with code 1.
+#   2. Posts the digest body as a comment on the auto-opened PR.
+#   3. Triggers a PagerDuty event (severity = warning) to the
+#      `corelink-compliance` service via secrets.PAGERDUTY_COMPLIANCE_KEY.
+#
+# Triage runbook for the Compliance Lead: specs/_runbooks/RB-COMPLIANCE-WEEKLY-REVIEW.md
+#
+# Actions are SHA-pinned per supply-chain policy (CC8.1 / CTRL-SUPPLY-002).
+
+on:
+  schedule:
+    # Monday 09:00 UTC — chosen to avoid 03:00 UTC Drata sync window and to land
+    # before the EU-West / US-East Compliance Lead working day starts.
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+    inputs:
+      reference_digest:
+        description: 'Force previous-digest reference date (YYYY-MM-DD); blank = auto-detect latest'
+        required: false
+        default: ''
+        type: string
+      dry_run:
+        description: 'Preview only (no commit, no PD page); for manual testing'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: compliance-weekly-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: '3.12'
+
+jobs:
+  digest:
+    name: Generate weekly compliance digest
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      regression: ${{ steps.digest.outputs.regression }}
+      digest_path: ${{ steps.digest.outputs.digest_path }}
+      digest_date: ${{ steps.digest.outputs.digest_date }}
+      reasons: ${{ steps.digest.outputs.reasons }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Compute digest date
+        id: date
+        run: |
+          set -euo pipefail
+          DIGEST_DATE="$(date -u +%Y-%m-%d)"
+          echo "digest_date=${DIGEST_DATE}" >> "${GITHUB_OUTPUT}"
+
+      - name: Run digest (with-ci enabled)
+        id: digest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REFERENCE: ${{ github.event.inputs.reference_digest }}
+        run: |
+          set -euo pipefail
+          REF_ARG=""
+          if [ -n "${REFERENCE:-}" ]; then
+            REF_ARG="--reference ${REFERENCE}"
+          fi
+          # Run with --with-ci so we surface compliance-gate failures in last 7d.
+          # Capture both exit code and JSON payload.
+          set +e
+          python3 scripts/compliance-weekly-digest.py --with-ci ${REF_ARG} \
+            > /tmp/digest.stdout 2> /tmp/digest.stderr
+          RC=$?
+          set -e
+          cat /tmp/digest.stderr
+          DIGEST_PATH="specs/_compliance/weekly-digests/${{ steps.date.outputs.digest_date }}.md"
+          echo "digest_path=${DIGEST_PATH}" >> "${GITHUB_OUTPUT}"
+          echo "digest_date=${{ steps.date.outputs.digest_date }}" >> "${GITHUB_OUTPUT}"
+          if [ "${RC}" -eq 1 ]; then
+            echo "regression=true" >> "${GITHUB_OUTPUT}"
+            # Extract regression reasons from JSON for downstream steps.
+            python3 scripts/compliance-weekly-digest.py --with-ci ${REF_ARG} --json \
+              > /tmp/digest.json 2>/dev/null || true
+            REASONS="$(python3 -c 'import json,sys; d=json.load(open("/tmp/digest.json")); print("|".join(d.get("regression_reasons", [])))' || echo '')"
+            echo "reasons<<JSONEOF" >> "${GITHUB_OUTPUT}"
+            echo "${REASONS}" >> "${GITHUB_OUTPUT}"
+            echo "JSONEOF" >> "${GITHUB_OUTPUT}"
+          elif [ "${RC}" -eq 0 ]; then
+            echo "regression=false" >> "${GITHUB_OUTPUT}"
+            echo "reasons=" >> "${GITHUB_OUTPUT}"
+          else
+            echo "::error::digest script returned configuration error (rc=${RC})"
+            exit "${RC}"
+          fi
+          # Sanity: digest file must exist.
+          test -f "${DIGEST_PATH}"
+
+      - name: Upload digest artefact
+        if: always()
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5.0
+        with:
+          name: compliance-digest-${{ steps.date.outputs.digest_date }}
+          path: |
+            specs/_compliance/weekly-digests/${{ steps.date.outputs.digest_date }}.md
+          retention-days: 365  # CC4.2 evidence retention = 1y minimum.
+
+      - name: Configure git identity
+        if: github.event.inputs.dry_run != 'true'
+        run: |
+          git config user.name  "compliance-bot"
+          git config user.email "compliance-bot@users.noreply.github.com"
+
+      - name: Commit digest + open PR
+        if: github.event.inputs.dry_run != 'true'
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          BRANCH="auto/compliance-digest-${{ steps.date.outputs.digest_date }}"
+          git checkout -b "${BRANCH}"
+          git add specs/_compliance/weekly-digests/${{ steps.date.outputs.digest_date }}.md
+          if git diff --cached --quiet; then
+            echo "No changes to commit (digest already up to date)."
+            echo "pr_created=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          git commit -m "chore(compliance): weekly digest ${{ steps.date.outputs.digest_date }} (CC4.2)"
+          git push origin "${BRANCH}"
+          REGRESSION_LABEL=""
+          if [ "${{ steps.digest.outputs.regression }}" = "true" ]; then
+            REGRESSION_LABEL=",compliance-regression"
+          fi
+          PR_URL="$(gh pr create \
+            --title "compliance: weekly digest ${{ steps.date.outputs.digest_date }}" \
+            --body-file specs/_compliance/weekly-digests/${{ steps.date.outputs.digest_date }}.md \
+            --label "compliance${REGRESSION_LABEL}" \
+            --base main \
+            --head "${BRANCH}")"
+          echo "pr_url=${PR_URL}" >> "${GITHUB_OUTPUT}"
+          echo "pr_created=true" >> "${GITHUB_OUTPUT}"
+
+      - name: Comment digest summary on PR (regression only)
+        if: |
+          steps.digest.outputs.regression == 'true' &&
+          steps.pr.outputs.pr_created == 'true' &&
+          github.event.inputs.dry_run != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ steps.pr.outputs.pr_url }}
+          REASONS: ${{ steps.digest.outputs.reasons }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## :rotating_light: Compliance regression detected"
+            echo ""
+            echo "Triage runbook: \`specs/_runbooks/RB-COMPLIANCE-WEEKLY-REVIEW.md\` §4."
+            echo ""
+            echo "**Regression reasons:**"
+            echo ""
+            IFS='|' read -r -a R <<< "${REASONS}"
+            for r in "${R[@]}"; do
+              [ -n "${r}" ] && echo "- ${r}"
+            done
+            echo ""
+            echo "PagerDuty event dispatched to \`corelink-compliance\` (severity = warning)."
+          } > /tmp/comment.md
+          gh pr comment "${PR_URL}" --body-file /tmp/comment.md
+
+      - name: Trigger PagerDuty (regression only)
+        if: |
+          steps.digest.outputs.regression == 'true' &&
+          github.event.inputs.dry_run != 'true'
+        env:
+          PD_KEY: ${{ secrets.PAGERDUTY_COMPLIANCE_KEY }}
+          REASONS: ${{ steps.digest.outputs.reasons }}
+          DIGEST_PATH: ${{ steps.digest.outputs.digest_path }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PD_KEY:-}" ]; then
+            echo "::warning::PAGERDUTY_COMPLIANCE_KEY not configured — skipping PD event."
+            exit 0
+          fi
+          python3 - <<'PYEOF'
+          import json, os, urllib.request
+          payload = {
+              "routing_key": os.environ["PD_KEY"],
+              "event_action": "trigger",
+              "dedup_key": f"compliance-weekly-{os.environ.get('DIGEST_PATH','')}",
+              "payload": {
+                  "summary": "CoreLink compliance regression — weekly digest",
+                  "source": "github-actions/compliance-weekly",
+                  "severity": "warning",
+                  "class": "compliance",
+                  "component": "soc2-cc4.2",
+                  "group": "corelink-compliance",
+                  "custom_details": {
+                      "digest_path": os.environ.get("DIGEST_PATH", ""),
+                      "reasons": os.environ.get("REASONS", "").split("|"),
+                      "runbook": "specs/_runbooks/RB-COMPLIANCE-WEEKLY-REVIEW.md",
+                  },
+              },
+          }
+          req = urllib.request.Request(
+              "https://events.pagerduty.com/v2/enqueue",
+              data=json.dumps(payload).encode(),
+              headers={"Content-Type": "application/json"},
+              method="POST",
+          )
+          with urllib.request.urlopen(req, timeout=10) as resp:
+              body = resp.read().decode()
+              print(f"PD response: {resp.status} {body}")
+          PYEOF
+
+      - name: Step summary
+        if: always()
+        run: |
+          {
+            echo "## Compliance Weekly Digest — ${{ steps.date.outputs.digest_date }}"
+            echo ""
+            echo "- Regression: \`${{ steps.digest.outputs.regression }}\`"
+            echo "- Digest path: \`${{ steps.digest.outputs.digest_path }}\`"
+            echo "- Runbook: \`specs/_runbooks/RB-COMPLIANCE-WEEKLY-REVIEW.md\`"
+            echo "- SOC 2 mapping: CC4.2 (Evaluates and communicates deficiencies)"
+            echo "- Closes: GAP-08 of SOC2-EVIDENCE-ROLLUP-2026-05-15.md"
+          } >> "${GITHUB_STEP_SUMMARY}"

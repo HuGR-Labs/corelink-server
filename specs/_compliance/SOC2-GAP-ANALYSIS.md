@@ -155,7 +155,7 @@ tags: ["soc2", "tsc-2017", "tsc-2022", "gap-analysis", "drata", "vanta", "type-i
 - **Severity:** minor.
 - **Remediation:** schedule recurring 30-min weekly compliance review (Owner + Compliance Officer) starting T+0; document em `specs/_governance/compliance-review-cadence.md`.
 - **Owner:** Compliance Officer. **ETA:** D+30.
-- **Status:** YELLOW.
+- **Status:** ~~YELLOW~~ → **IMPLEMENTED 2026-05-15** via `wt/r-prep-compliance-weekly` — automated digest (`scripts/compliance-weekly-digest.py`) + Monday 09:00 UTC cron (`.github/workflows/compliance-weekly.yml`) + Compliance Lead triage runbook (`specs/_runbooks/RB-COMPLIANCE-WEEKLY-REVIEW.md`) + 8 escalation triggers + PagerDuty + PR-comment pipeline. Index + methodology: `specs/_compliance/weekly-digests/README.md`.
 
 ---
 
@@ -434,7 +434,7 @@ tags: ["soc2", "tsc-2017", "tsc-2022", "gap-analysis", "drata", "vanta", "type-i
 | 5 | GAP-05 | Competence attestations | minor | Compliance | T+2m |
 | 6 | GAP-06 | Breach-notif tabletop with lighthouses | major | Privacy | T+1m |
 | 7 | GAP-07 | Fraud-specific threat model | minor | Security | T+2m |
-| 8 | GAP-08 | Weekly compliance review cadence | minor | Compliance | D+30 |
+| 8 | GAP-08 | Weekly compliance review cadence — **IMPLEMENTED 2026-05-15** (auto digest + Mon 09:00 UTC cron + triage runbook + 8 escalation triggers) | minor | Compliance | DONE |
 | 9 | GAP-09 | Sub-processor SOC 2 refresh | minor | Compliance | T+3m |
 | 10 | GAP-10 | WAF rule baseline OWASP CRS 4.0 | minor | Security | D+60 |
 | 11 | GAP-11 | Runtime binary integrity drift | minor | SRE | T+6m |
