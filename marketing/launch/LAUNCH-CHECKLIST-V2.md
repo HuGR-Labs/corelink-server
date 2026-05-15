@@ -58,7 +58,7 @@ tags:
 | L5 | T-24h 11:00 PT | Press kit final lock | PR + VPMkt | Freeze press kit; no edits past this point. Re-confirm embargo with journalist list. | Embargo confirmations received from ≥ 80% of journalist list. | Below 80% → ping holdouts directly; tolerate down to 50% before flagging risk. |
 | L6 | T-24h 13:00 PT | Lighthouse customer pre-notification | CS-OC | Email 3 lighthouse customers: "we're launching at 06:00 PT tomorrow; expect press; your case studies go live; account contact reachable 24/7 launch window". | All 3 acknowledgments received. | Missing ack: phone call escalation; if still silent, exclude that customer's case study from T-0 publish set. |
 | L7 | T-24h 14:00 PT | Internal all-hands brief | CEO | 30-min company-wide stand-up: confirm posture, brief on crisis comms, remind on social media discipline. | Recorded; attendance ≥ 90% of FTE. | Skip is acceptable if war room is intact; brief is shipped async via Loom. |
-| L8 | T-12h 18:00 PT | Status page set to "Preparing for launch" | SRE-OC | Push status page banner: "CoreLink GA launches tomorrow at 06:00 PT. Subscribe for updates." (See `STATUS-PAGE-SPEC.md` §6 maintenance template.) | Banner live; subscriber count snapshot captured. | Statuspage.io outage → fallback to `corelink.dev/status` static page (pre-staged HTML). |
+| L8 | T-12h 18:00 PT | Status page live | SRE-OC | Push status page banner: "CoreLink GA launches tomorrow at 06:00 PT. Subscribe for updates." (See `STATUS-PAGE-SPEC.md` §6 maintenance template; provisioning playbook `STATUSPAGE-INIT.md`; T-7d acceptance evidence `STATUSPAGE-PRE-LAUNCH-TEST.md`; lighthouse subscribers imported per `STATUSPAGE-SUBSCRIBER-IMPORT.md`.) | Banner live; subscriber count snapshot captured. | Statuspage.io outage → fallback to `corelink.dev/status` static page (pre-staged HTML). |
 | L9 | T-12h 19:00 PT | Ops team holiday cancellations confirmed | SRE Lead | Verify no SRE-OC, CTO, VPSec on PTO during T-24h..T+72h window; PagerDuty rotation locked. | Rotation locked; secondary coverage explicit. | Any gap → cover with paid on-call from advisor pool (`H-15`) or DEFER. |
 | L10 | T-12h 20:00 PT | Scheduled content draft staged | VPMkt | All 5 blog posts staged in CF Pages preview; press release queued in BusinessWire; LinkedIn + Twitter drafts in Buffer; Show HN body in CEO clipboard. | Preview URLs valid; scheduled-post UIs show queued. | Manual fallback: VPMkt + CEO publish from local clipboards at T-0 with stopwatch. |
 | L11 | T-12h 21:00 PT | Final go/no-go check | CEO | Live 15-min sync: SRE-OC, CTO, VPMkt, VPSec, WR-COORD. Engineering gate APPROVED? On-call staffed? No new SEV-1? | Written **GO** in war room log. | **DEFER** — invoke `CRISIS-COMMS-TEMPLATES.md` §F. |
@@ -143,6 +143,9 @@ tags:
 
 - `marketing/launch/COORDINATION/LAUNCH-RUNBOOK.md` — full T-7d..T+7d superset (this checklist is the T-24h..T+72h zoom).
 - `marketing/launch/STATUS-PAGE-SPEC.md` — companion: status page configuration and severity mapping.
+- `marketing/launch/STATUSPAGE-INIT.md` — companion: Statuspage.io provisioning playbook (click-through, secrets, components).
+- `marketing/launch/STATUSPAGE-SUBSCRIBER-IMPORT.md` — companion: lighthouse + internal bulk-subscribe with opt-in evidence.
+- `marketing/launch/STATUSPAGE-PRE-LAUNCH-TEST.md` — companion: T-7d acceptance test plan + rollback for the status page.
 - `marketing/launch/CRISIS-COMMS-TEMPLATES.md` — companion: ready-to-send incident comms for 5 scenarios.
 - `marketing/launch/DAY-1-DASHBOARD-SPEC.md` — companion: launch-day metrics.
 - `specs/_runbooks/RB-LAUNCH-WAR-ROOM-COORDINATION.md` — companion: operator playbook for the war room itself.
