@@ -56,6 +56,16 @@ corelink audit prove --request-id <request_id>
 The Signed Tree Head (STH) is signed with the audit-chain key documented in
 `security_model.md §7.2`.
 
+### See it in your browser
+
+The customer dashboard ships an in-browser audit-chain visualization at
+`/customer/audit/visualization`. The page renders the chain head, your
+tenant's leaves, and an inclusion-proof modal where each sibling-hash step
+is verifiable client-side via the `@corelink/client` WASM bundle (which
+reuses the canonical Rust `corelink-client-verify` truth per ADR-0016).
+
+Spec: `specs/_audits/2026-05-15-audit-viz-spec.md`.
+
 ## Privacy interaction with DSR erasure
 
 When a Data Subject Request causes erasure, the `subject_id` field is
