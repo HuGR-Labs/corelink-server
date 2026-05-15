@@ -1,6 +1,6 @@
 [package]
 name = "corelink-byok-vault"
-description = "CoreLink BYOK HashiCorp Vault Transit adapter (FIPS 140-3 Level 1, Vault Enterprise FIPS build; customer-hosted; mTLS auth; transit secrets engine). mTLS cert pinning + 30d expiry alert. context = base64(JSON-encoded encryption_context). Implements KmsProvider trait (WI-S14-005). HIGH_RISK FF-HR-005 FF-HR-008."
+description = "CoreLink BYOK HashiCorp Vault Transit adapter (FIPS 140-3 Level 1, Vault Enterprise FIPS build; customer-hosted; mTLS auth; transit secrets engine). mTLS cert pinning + 30d expiry alert. AAD canonicalized via RFC 8785 JCS and bound to Vault Transit `context` field. Implements KmsProvider trait (WI-S14-005). HIGH_RISK FF-HR-005 FF-HR-008."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,8 +10,15 @@ publish.workspace = true
 [features]
 # Default build = stub/mock only (no network deps, suitable for CI without Vault creds).
 default = []
-# Production = real Vault Transit REST client (R2-9). Pulls in reqwest + regex + tracing.
-production = ["dep:reqwest", "dep:regex"]
+# `real` opts in to the live Vault Transit HTTPS path (`VaultRealProvider`).
+# Without this feature the crate exposes only the mock-mode `VaultProvider`
+# (AAD canonicalization helpers + key-name validation). The server crate
+# exposes `byok-vault-real` which forwards to this feature. The `real`
+# feature has no effect on `wasm32-unknown-unknown` — wasm32 always links
+# the `VaultWasmStub`.
+real = []
+# Legacy alias retained for backwards compatibility with R2-9 callers.
+production = ["real"]
 
 [lints.rust]
 unsafe_code = "forbid"
@@ -35,17 +42,35 @@ async-trait = "0.1"
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+# RFC 8785 JCS canonical JSON — used for AAD canonicalization per
+# INV-BYOK-CRYPTO-SOVEREIGNTY (same canonical bytes must be reproducible
+# across architectures including wasm32 so AAD-bound ciphertext can be
+# verified anywhere). The bytes are then base64-encoded and passed to
+# Vault Transit's native AAD slot (`context` parameter).
+serde_jcs = { workspace = true }
+# Constant-time byte comparison for sensitive identifier comparisons.
+subtle = { workspace = true }
 zeroize = { workspace = true }
 base64 = { workspace = true }
-tokio = { workspace = true }
 tracing = { workspace = true }
 
-# Production-only deps (gated behind `production` feature).
-reqwest = { workspace = true, optional = true }
-regex = { version = "1", optional = true }
+# ── Native-only Vault HTTP stack ──────────────────────────────────────────
+# `reqwest` (and its tokio runtime) does not target `wasm32-unknown-unknown`
+# from the CoreLink workspace profile. On wasm32 (Cloudflare Worker) we
+# link `VaultWasmStub` instead; production CF Worker deployments proxy
+# Vault Transit calls to the native server process. See
+# `specs/_audits/2026-05-15-byok-real-provider-pattern.md`.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { workspace = true }
+reqwest = { workspace = true }
+regex = "1"
 
 [dev-dependencies]
 tokio = { workspace = true }
 tokio-test = { workspace = true }
 proptest = { workspace = true }
 wiremock = "0.6"
+
+[[test]]
+name = "real_unit"
+path = "tests/real_unit.rs"

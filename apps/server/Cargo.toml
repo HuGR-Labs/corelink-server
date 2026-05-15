@@ -58,6 +58,14 @@ byok-gcp-real = ["dep:corelink-byok", "dep:corelink-byok-gcp", "corelink-byok-gc
 # Pattern reference: `specs/_audits/2026-05-15-byok-real-provider-pattern.md`.
 byok-azure-real = ["dep:corelink-byok", "dep:corelink-byok-azure", "corelink-byok-azure/real"]
 
+# Wire the production HashiCorp Vault Transit provider
+# (`corelink_byok_vault::VaultRealProvider`) instead of the in-memory fake.
+# Off by default — enable in production deployments where customer CMKs
+# live in a customer-hosted Vault Enterprise (FIPS-mode) cluster.
+#
+# Pattern reference: `specs/_audits/2026-05-15-byok-real-provider-pattern.md`.
+byok-vault-real = ["dep:corelink-byok", "dep:corelink-byok-vault", "corelink-byok-vault/real"]
+
 # R-PREP-CF-R2-REAL — opt into the real Cloudflare R2 binding adapter
 # (`corelink_cf_bindings::CfR2BucketReal`). On `target_arch = "wasm32"`
 # this swaps in the production binding; on native it links the
@@ -118,6 +126,7 @@ corelink-byok = { path = "../../crates/corelink-byok", optional = true }
 corelink-byok-aws = { path = "../../crates/corelink-byok-aws", optional = true }
 corelink-byok-gcp = { path = "../../crates/corelink-byok-gcp", optional = true }
 corelink-byok-azure = { path = "../../crates/corelink-byok-azure", optional = true }
+corelink-byok-vault = { path = "../../crates/corelink-byok-vault", optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

@@ -103,19 +103,31 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use corelink_byok::{BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider,
                     KmsProviderKind, WrappedDek};
 
-#[cfg(feature = "production")]
+#[cfg(all(feature = "real", not(target_arch = "wasm32")))]
 pub mod auth;
-#[cfg(feature = "production")]
+#[cfg(feature = "real")]
 mod key_name;
-#[cfg(feature = "production")]
-mod real;
+#[cfg(feature = "real")]
+pub mod real;
 
-#[cfg(feature = "production")]
-pub use real::{VaultTransitProvider, DEFAULT_TRANSIT_MOUNT};
+// Native real provider — exposes the production HTTPS client.
+#[cfg(all(feature = "real", not(target_arch = "wasm32")))]
+pub use real::{VaultRealProvider, VaultTransitProvider, DEFAULT_TRANSIT_MOUNT};
 
-/// Test-only utilities (production feature). Allows the in-crate `tests/`
+// wasm32 stub — exposes the explicit-error stub plus a type alias so
+// downstream code can name `VaultRealProvider` unconditionally.
+#[cfg(all(feature = "real", target_arch = "wasm32"))]
+pub use real::{VaultRealProvider, VaultWasmStub, DEFAULT_TRANSIT_MOUNT};
+
+// Arch-agnostic AAD canonicalization helper — exposed even when `real`
+// is enabled on wasm32 so spec validation can cross-reference the
+// canonical bytes shape from any target.
+#[cfg(feature = "real")]
+pub use real::canonicalize_aad_to_string_map;
+
+/// Test-only utilities (real feature). Allows the in-crate `tests/`
 /// integration suites to inject a static auth backend + custom endpoint.
-#[cfg(feature = "production")]
+#[cfg(all(feature = "real", not(target_arch = "wasm32")))]
 #[doc(hidden)]
 pub mod __test_support {
     pub use crate::auth::VaultAuth;
