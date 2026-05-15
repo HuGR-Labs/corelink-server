@@ -1,0 +1,174 @@
+name: DR Drill Monthly (Cycle 1 Quarterly)
+
+# Runs DR drill cycle 1 (CF region failover) quarterly against STAGING ONLY.
+# Cycle 2 + 3 are not auto-scheduled here — they are operator-triggered
+# via workflow_dispatch (cycle 2: D1 corruption; cycle 3: BYOK compromise).
+# The "monthly" name reflects the workflow's cadence of running a check
+# every first Monday of the month; only every third run executes a full
+# cycle 1 drill (quarterly cadence), the other two emit a heartbeat
+# artifact.
+#
+# Constraint: never runs against production from CI (each script
+# enforces require_staging via CORELINK_ENV check).
+
+on:
+  schedule:
+    # First Monday of every month at 09:00 UTC (cron approximation: every
+    # Monday at 09:00 UTC; the job body guards "is first Monday").
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+    inputs:
+      cycle:
+        description: "DR drill cycle to run (1 | 2 | 3)"
+        required: true
+        default: "1"
+      region:
+        description: "Region to fail over (cycle 1 only)"
+        required: false
+        default: "weur"
+      snapshot:
+        description: "Snapshot date YYYY-MM-DD (cycle 2 only)"
+        required: false
+        default: ""
+      provider:
+        description: "BYOK provider (cycle 3 only): aws|gcp|azure|vault"
+        required: false
+        default: "aws"
+
+permissions:
+  contents: write   # commit drill report
+  issues: write     # SEV-1 alert via issue if RTO/RPO breached
+
+jobs:
+  dr-drill:
+    name: DR Drill (staging-only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      CORELINK_ENV: staging
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Resolve cycle + cadence
+        id: cadence
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            CYCLE="${{ github.event.inputs.cycle }}"
+            RUN_REASON="manual"
+          else
+            DOM=$(date -u +%d)
+            MONTH=$(date -u +%m)
+            # First Monday guard: only proceed if day of month <= 7.
+            if [[ ${DOM} -gt 7 ]]; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              echo "Not first Monday of month (DOM=${DOM}) — skipping"
+              exit 0
+            fi
+            # Quarterly cadence for cycle 1: Jan / Apr / Jul / Oct.
+            case "${MONTH}" in
+              01|04|07|10) CYCLE="1"; RUN_REASON="quarterly" ;;
+              *)           CYCLE="heartbeat"; RUN_REASON="monthly-heartbeat" ;;
+            esac
+          fi
+          echo "cycle=${CYCLE}" >> "$GITHUB_OUTPUT"
+          echo "reason=${RUN_REASON}" >> "$GITHUB_OUTPUT"
+          echo "Resolved cycle=${CYCLE} reason=${RUN_REASON}"
+
+      - name: Heartbeat (non-drill months)
+        if: steps.cadence.outputs.cycle == 'heartbeat'
+        run: |
+          set -euo pipefail
+          mkdir -p .dr-drill-artifacts
+          DATE_UTC=$(date -u +%Y-%m-%d)
+          cat > ".dr-drill-artifacts/heartbeat-${DATE_UTC}.txt" <<EOF
+          DR drill monthly heartbeat
+          date: ${DATE_UTC}
+          next quarterly cycle 1: per cron (Jan/Apr/Jul/Oct)
+          EOF
+
+      - name: Skip notice
+        if: steps.cadence.outputs.skip == 'true'
+        run: echo "Skipped (not first Monday)"
+
+      - name: Setup Rust toolchain (for cycle 1 cargo check)
+        if: steps.cadence.outputs.cycle == '1'
+        run: |
+          rustup show active-toolchain || rustup default stable
+
+      - name: Run DR drill cycle 1 (CF region failover)
+        if: steps.cadence.outputs.cycle == '1'
+        run: |
+          set -euo pipefail
+          REGION="${{ github.event.inputs.region }}"
+          REGION="${REGION:-weur}"
+          bash tests/dr/dr-drill-cycle-1.sh --region "${REGION}"
+
+      - name: Run DR drill cycle 2 (D1 corruption)
+        if: steps.cadence.outputs.cycle == '2'
+        run: |
+          set -euo pipefail
+          SNAPSHOT="${{ github.event.inputs.snapshot }}"
+          if [[ -z "${SNAPSHOT}" ]]; then
+            SNAPSHOT=$(date -u -d 'yesterday' +%Y-%m-%d 2>/dev/null \
+              || date -u -v-1d +%Y-%m-%d)
+          fi
+          bash tests/dr/dr-drill-cycle-2.sh --snapshot "${SNAPSHOT}" --dry-run
+
+      - name: Run DR drill cycle 3 (BYOK CMK compromise)
+        if: steps.cadence.outputs.cycle == '3'
+        run: |
+          set -euo pipefail
+          PROVIDER="${{ github.event.inputs.provider }}"
+          PROVIDER="${PROVIDER:-aws}"
+          bash tests/dr/dr-drill-cycle-3.sh --provider "${PROVIDER}" --dry-run
+
+      - name: Upload drill report
+        if: always() && steps.cadence.outputs.cycle != ''
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: dr-drill-report-${{ steps.cadence.outputs.cycle }}-${{ github.run_id }}
+          path: |
+            specs/_audits/dr-drill-*.md
+            .dr-drill-artifacts/
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Commit drill report (if any)
+        if: success() && steps.cadence.outputs.cycle != 'heartbeat' && steps.cadence.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          DATE_UTC=$(date -u +%Y-%m-%d)
+          REPORT="specs/_audits/dr-drill-${DATE_UTC}-cycle-${{ steps.cadence.outputs.cycle }}.md"
+          if [[ -f "${REPORT}" ]]; then
+            git add "${REPORT}"
+            git diff --cached --quiet || git commit -m \
+              "chore(dr-drill): cycle ${{ steps.cadence.outputs.cycle }} report ${DATE_UTC} (${{ steps.cadence.outputs.reason }})"
+          fi
+
+      - name: SEV-1 on SLA breach
+        if: failure()
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const cycle = '${{ steps.cadence.outputs.cycle }}';
+            const reason = '${{ steps.cadence.outputs.reason }}';
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `SEV-1: DR drill cycle ${cycle} breached RTO/RPO SLA`,
+              labels: ['sev-1', 'dr-drill', 'r6-prep'],
+              body: [
+                `DR drill cycle ${cycle} failed in workflow run ${context.runId} (${reason}).`,
+                ``,
+                `**Action required:**`,
+                `- SRE Lead reviews drill report artifact within 4h.`,
+                `- If RTO/RPO breached, file post-mortem within 24h.`,
+                `- Update RB-DR-DRILL.md with lessons learned.`,
+              ].join('\n'),
+            });
