@@ -105,11 +105,21 @@ pub(crate) mod key_resource;
 
 #[cfg(feature = "production")]
 mod adc;
-#[cfg(feature = "production")]
-mod real;
 
-#[cfg(feature = "production")]
+/// Canonical BYOK GCP KMS real-mode entry point — see
+/// `specs/_audits/2026-05-15-byok-real-provider-pattern.md`.
+///
+/// The module ships JCS-canonicalization helpers + wasm32 stub
+/// unconditionally; the native HTTPS / ADC client is gated by the
+/// `production` feature (which pulls in `reqwest`, `base64`,
+/// `jsonwebtoken`).
+pub mod real;
+
+#[cfg(all(not(target_arch = "wasm32"), feature = "production"))]
 pub use real::GcpKmsRealProvider;
+
+#[cfg(target_arch = "wasm32")]
+pub use real::{GcpKmsRealProvider, GcpKmsWasmStub};
 
 /// Test-only utilities. Hidden from documentation; gated on the `production`
 /// feature. Used by the in-crate `tests/` integration suites to inject a
