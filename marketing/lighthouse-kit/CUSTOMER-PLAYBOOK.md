@@ -99,6 +99,7 @@ Print this. Tick it. Bring questions to the D+0 call or to your Slack Connect ch
 - [ ] Eng lead skims `marketing/lighthouse-kit/03-integration-timeline.md` (the full schedule contract).
 - [ ] Ops/SRE skims this playbook §"Phase 2" so they know what they're sampling.
 - [ ] One question filed in the Slack Connect channel (even just "got it, no questions" — we want to confirm the channel works).
+- [ ] Eng lead skims the RBAC docs (`apps/docs/docs/explanation/rbac/`) — overview, role catalog, permission matrix, and the two how-tos (invite team member; audit role changes). Owners/Admins should also note the dual-approval gate that fires on the 5 destructive admin ops (`ConfigRollback`, `RetentionPolicyReduce`, `FeatureFlagDisable`, `SecretRotationStart`, `TenantTombstone`).
 
 ---
 
