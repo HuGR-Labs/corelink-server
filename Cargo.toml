@@ -165,6 +165,16 @@ members = [
     # CHAOS-STAGING-ONLY); 200-case property test on deterministic seed
     # replay (FNV-1a bit-identical). In-memory fakes; no network IO.
     "tests/e2e-chaos",
+    # R3-8 end-to-end tenant isolation adversarial harness: 12 scenarios
+    # spanning CAS read/write cross-tenant, list enumeration, BYOK AAD
+    # tamper, audit cross-tenant query, D1 row spoofing, idempotency
+    # collision, quota / rate-limit crosstalk, Stripe webhook replay,
+    # PAT cross-tenant. Exercises real `corelink-tenant-path`,
+    # `corelink-byok`, and `corelink-audit` primitives behind in-memory
+    # fakes for CAS / D1 / quota / ratelimit / Stripe / PAT. Every
+    # rejection asserts an audit event was emitted BEFORE the reject
+    # (fail-CLOSED ordering, INV-TENANT-ISOLATION layer 6).
+    "tests/e2e-tenant-isolation",
 ]
 exclude = [
     "crates/tenant-path/fuzz",

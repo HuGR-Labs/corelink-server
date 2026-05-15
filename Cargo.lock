@@ -2660,6 +2660,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "e2e-tenant-isolation"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "corelink-audit",
+ "corelink-byok",
+ "corelink-tenant-path",
+ "serde_json",
+ "subtle",
+ "thiserror 2.0.18",
+ "tokio",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
 name = "ed25519"
 version = "2.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

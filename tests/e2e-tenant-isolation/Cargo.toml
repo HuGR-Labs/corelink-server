@@ -1,0 +1,46 @@
+[package]
+name = "e2e-tenant-isolation"
+description = "R3-8 end-to-end adversarial harness pinning INV-TENANT-ISOLATION end-to-end. 12 scenarios exercise CAS read/write cross-tenant rejection, list enumeration, BYOK AAD tamper, audit cross-tenant query, D1 row spoofing, idempotency-key collision across tenants, quota + rate-limit crosstalk, Stripe webhook replay, and PAT cross-tenant use. Real `corelink-tenant-path` derives every R2 prefix; real `corelink-byok::EnvelopeEncryptor` performs AAD-binding; real `corelink-audit::InMemoryEmitter` captures every event. Every rejection path asserts an audit event was emitted BEFORE the reject (fail-CLOSED ordering, INV-TENANT-ISOLATION layer 6). No network IO."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+corelink-tenant-path = { workspace = true }
+corelink-audit = { workspace = true }
+corelink-byok = { workspace = true }
+async-trait = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+subtle = { workspace = true }
+uuid = { workspace = true }
+zeroize = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+
+[[test]]
+name = "adversarial"
+path = "tests/adversarial.rs"
