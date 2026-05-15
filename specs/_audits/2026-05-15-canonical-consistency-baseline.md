@@ -165,36 +165,26 @@ The validator reads the BASELINE comments below; reducing any of
 these floors fails CI. The `orphan_refs` floor is the count we accept at
 baseline; the next PR that adds another orphan fails CI.
 
-<<<<<<< HEAD
 <!-- BASELINE declared=188 -->
-<!-- BASELINE tla_verified=19 -->
+<!-- BASELINE tla_verified=23 -->
 <!-- BASELINE code_referenced=101 -->
 <!-- BASELINE test_referenced=88 -->
 <!-- BASELINE critical_referenced=36 -->
 <!-- BASELINE orphan_refs=0 -->
 <!-- BASELINE declared_no_code=68 -->
-<!-- BASELINE critical_no_tla=47 -->
+<!-- BASELINE critical_no_tla=35 -->
 
-**Ratchet floor update note (DEBT-004 closure 2026-05-15):** Floors raised
-post-closure: `declared` 154→188 (net +34 promotions), `code_referenced`
+**Ratchet floor update note (DEBT-004 + DEBT-005 batch-1 closure 2026-05-15):** Floors raised
+post-closure: `declared` 154→188 (net +34 promotions from DEBT-004), `code_referenced`
 77→101, `test_referenced` 65→88, `critical_referenced` 29→36 (new
 CRITICAL: INV-AUTH-CONSTANT-TIME-COLD-PAD, INV-AC-EVICT-REGION-PINNED,
 INV-BACKUP-RESTORE-EPHEMERAL, INV-CAS-CORRECTNESS, INV-OBS-NO-PII,
 INV-OFFBOARDING-AUDIT-COMPLETE, INV-ROLLOUT-COSIGN-GATE),
-`critical_no_tla` 40→47 (the new CRITICAL promotions inherit subsumption
-from existing TLA proofs OR have explicit `PLANNED` slots in §4.2 to be
-filed under DEBT-005). `orphan_refs` 15→0 — HARD FLOOR; any future
-orphan ref fails CI immediately per `RB-CANONICAL-DRIFT.md §6`.
-=======
-<!-- BASELINE declared=154 -->
-<!-- BASELINE tla_verified=23 -->
-<!-- BASELINE code_referenced=77 -->
-<!-- BASELINE test_referenced=65 -->
-<!-- BASELINE critical_referenced=29 -->
-<!-- BASELINE orphan_refs=15 -->
-<!-- BASELINE declared_no_code=68 -->
-<!-- BASELINE critical_no_tla=35 -->
->>>>>>> wt/debt-005-tla-critical-inv
+`tla_verified` 18→23 (DEBT-005 batch 1: auth_jwt_validation, tenant_ctx_propagation,
+merkle_integrity, byok_envelope_aad, failover_no_split_brain),
+`critical_no_tla` 40→35 (8 closures + 7 new CRITICALs promoted; net delta tracked in
+DEBT-005 cumulative). `orphan_refs` 15→0 — HARD FLOOR; any future orphan ref fails CI
+immediately per `RB-CANONICAL-DRIFT.md §6`.
 
 ## 5. Forward burn-down expectation
 
