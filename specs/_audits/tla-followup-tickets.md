@@ -288,3 +288,49 @@ rollout / backup / GC-audit / AC-eviction / audit-emit clusters that
 were listed under registry §3 with `(planned ...)` or "Coberto parcial"
 status but not yet on the FT backlog.
 
+---
+
+## Addendum 2026-05-15 — DEBT-005 batch 3 closure (18 / 47 cumulative)
+
+Third dispatch in the DEBT-005 series. Closes **5 additional** TLA+
+specs, bringing cumulative `tla_verified` to **49** (was 33 after batch
+2) and `critical_no_tla` to **26** (was 34).
+
+| Spec (new) | Invariants closed (severity §) | Status |
+|---|---|---|
+| `specs/tla/obs_no_pii.tla` | INV-OBS-NO-PII (CRITICAL §3.24) | **CLOSED** — PR + nightly cfg + CI matrix |
+| `specs/tla/offboarding_audit_complete.tla` | INV-OFFBOARDING-AUDIT-COMPLETE (CRITICAL §3.25) + INV-OFFBOARDING-GRACE-RESPECTED (HIGH §3.25) | **CLOSED** — PR + nightly cfg + CI matrix; strengthens prior "Coberto por audit_immutability.tla inheritance" to direct state-machine pairing |
+| `specs/tla/billing_chain_integrity.tla` | INV-BILLING-CHAIN-INTEGRITY (HIGH §3.9; Bitcoin block-header pattern inheritance from corelink-audit-chain S-09) | **CLOSED** — PR + nightly cfg + CI matrix |
+| `specs/tla/gc_grace_boundary.tla` | INV-GC-GRACE-BOUNDARY-STRICT + INV-GC-MARK-TENANT-SCOPED + INV-GC-SWEEP-TENANT-SCOPED (CRITICAL × 3 §3.6) | **CLOSED** — PR + nightly cfg + CI matrix |
+| `specs/tla/backup_fresh.tla` | INV-BACKUP-FRESH + INV-BACKUP-INTEGRITY-SAMPLE-CAP (HIGH × 2 §3.20) | **CLOSED** — PR + nightly cfg + CI matrix |
+
+Net effect on the audit counters (cumulative, three batches):
+
+- `tla_verified` floor: 18 → 23 → 28 → 33 → **49** (canonical-consistency-baseline §4
+  BASELINE ratchet updated in same commit; INV-granularity count
+  jumped beyond spec count because batch 3 specs cover multiple INVs
+  each).
+- `critical_no_tla` floor: 40 → 35 → 30 → **26**.
+
+DEBT-005 progress: **18 / 47 closed** (was 13/47 after batch 2; net +5
+from batch 3 — 8 INV-granularity hits in 5 specs). Quality gate per
+wave-9 DEBT-005 standard preserved: deterministic TLC, no implicit
+FAIL paths, every adversarial action explicitly exhibited with FALSE
+guard (`AttemptRejectedReachSink`, `AttemptAdvanceSkipAudit`,
+`AttemptForkChain`, `Tamper`, `AttemptMarkCrossTenant`,
+`AttemptSweepCrossTenant`, `AttemptSweepAtBoundary`,
+`AttemptSampleOverCap`, `AttemptStaleSwap`). Owner functions lifted
+to TLA-level VARIABLES with Init-enumeration (`Owner \in [Blobs ->
+Tenants]`) — avoids FT-4 `.cfg` function-literal brittleness.
+
+PR/nightly bound budget: per `audit_emit_atomic` and `ac_eviction_isolation`
+prior benchmarks (local TLC < 30 s, CI < 5 min), all 5 batch-3 specs
+are sized below those thresholds (≤ 3 abstract entities × ≤ 8 ops
+per PR-lane state-space; ≤ 5 × ≤ 14 per nightly).
+
+The FT-1..FT-9 backlog above remains unchanged. Batch 3 selections
+were distinct from FT-1..FT-9 — batch 3 closed CRITICAL+HIGH gaps in
+obs-export / offboarding / billing-chain / GC-grace / backup-freshness
+clusters that were listed under registry §3 with no TLA+ status or
+"Coberto parcial" via inheritance.
+

@@ -588,6 +588,15 @@ CRITICAL invariantes **DEVEM** ter TLA+ spec + model check verde no CI (CTRL-FOR
 | INV-AC-EVICT-REGION-PINNED | `specs/tla/ac_eviction_isolation.tla` + `.cfg` (PR) + `_nightly.cfg` | ✅ GREEN (DEBT-005 batch 2 — 2026-05-15) — `InvDeletesRegionScoped` proves every logged delete uses the row's region; adversarial cross-region action explicitly enumerated and unreachable. |
 | INV-AC-EVICT-TENANT-SCOPED | `specs/tla/ac_eviction_isolation.tla` (twin tenant scoping) | ✅ GREEN (DEBT-005 batch 2 — 2026-05-15) — `InvDeletesTenantScoped`. |
 | INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER | `specs/tla/audit_emit_atomic.tla` + `.cfg` (PR) + `_nightly.cfg` | ✅ GREEN (DEBT-005 batch 2 — 2026-05-15) — strengthens prior partial coverage via `audit_immutability.tla` to a direct batch-pairing biconditional `InvAtomicPairing` plus `InvNoOrphanOutbox` + `InvNoOrphanDomain`. |
+| INV-OBS-NO-PII | `specs/tla/obs_no_pii.tla` + `.cfg` (PR) + `_nightly.cfg` | ✅ GREEN (DEBT-005 batch 3 — 2026-05-15) — `InvNoPiiInSink` + `InvSinkEqAdmitted` + `InvPendingNotInSink`. Adversarial `AttemptRejectedReachSink` (guard FALSE) exhibits unreachability. |
+| INV-OFFBOARDING-AUDIT-COMPLETE | `specs/tla/offboarding_audit_complete.tla` + `.cfg` (PR) + `_nightly.cfg` | ✅ GREEN (DEBT-005 batch 3 — 2026-05-15) — strengthens prior "audit_immutability inheritance" to direct state-machine pairing: `InvAuditPairsTransition` + `InvAuditRowsAreValidTransitions`. |
+| INV-OFFBOARDING-GRACE-RESPECTED | `specs/tla/offboarding_audit_complete.tla` (twin grace path) | ✅ GREEN (DEBT-005 batch 3 — 2026-05-15) — `InvGraceRespected`; `AttemptEarlyAdvance` rejected by grace gate. |
+| INV-BILLING-CHAIN-INTEGRITY | `specs/tla/billing_chain_integrity.tla` + `.cfg` (PR) + `_nightly.cfg` | ✅ GREEN (DEBT-005 batch 3 — 2026-05-15) — Bitcoin block-header pattern; `InvChainExtendOnly` + `InvChainHeadVerifiable` + `InvNoFork`. `Tamper` + `AttemptForkChain` guards FALSE. |
+| INV-GC-GRACE-BOUNDARY-STRICT | `specs/tla/gc_grace_boundary.tla` + `.cfg` (PR) + `_nightly.cfg` | ✅ GREEN (DEBT-005 batch 3 — 2026-05-15) — `InvGraceBoundaryStrict` enforces `age > GraceWindow` (strict). `AttemptSweepAtBoundary` (guard FALSE) exhibits unreachability. |
+| INV-GC-MARK-TENANT-SCOPED | `specs/tla/gc_grace_boundary.tla` (twin mark path) | ✅ GREEN (DEBT-005 batch 3 — 2026-05-15) — `InvMarkTenantScoped`; `AttemptMarkCrossTenant` guard FALSE. Owner function enumerated by TLC across `[Blobs -> Tenants]`. |
+| INV-GC-SWEEP-TENANT-SCOPED | `specs/tla/gc_grace_boundary.tla` (twin sweep path) | ✅ GREEN (DEBT-005 batch 3 — 2026-05-15) — `InvSweepTenantScoped`; `AttemptSweepCrossTenant` guard FALSE. |
+| INV-BACKUP-FRESH | `specs/tla/backup_fresh.tla` + `.cfg` (PR) + `_nightly.cfg` | ✅ GREEN (DEBT-005 batch 3 — 2026-05-15) — `InvLatestAcceptedFresh`; `AttemptStaleSwap` (guard FALSE) exhibits no-swap-to-stale. |
+| INV-BACKUP-INTEGRITY-SAMPLE-CAP | `specs/tla/backup_fresh.tla` (twin sampler cap) | ✅ GREEN (DEBT-005 batch 3 — 2026-05-15) — `InvSampleCapPerCycle`; `AttemptSampleOverCap` guard FALSE. |
 
 ### 4.2 Specs PLANNED (Lote 9.4 obligation matrix — pré-condição S-10/S-11/S-13/S-14/S-19 implementation)
 

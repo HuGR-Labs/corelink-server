@@ -81,6 +81,18 @@ jobs:
           - gc_sweep_audit_fail_closed
           - ac_eviction_isolation
           - audit_emit_atomic
+          # DEBT-005 batch 3 closure 2026-05-15 — 5 more specs (18/47 cumulative
+          # — drops critical_no_tla 34 → 26 INV-granularity; tla_verified
+          # 33 → 49). Closes INV-OBS-NO-PII + INV-OFFBOARDING-AUDIT-COMPLETE +
+          # INV-OFFBOARDING-GRACE-RESPECTED + INV-BILLING-CHAIN-INTEGRITY +
+          # INV-GC-GRACE-BOUNDARY-STRICT + INV-GC-MARK-TENANT-SCOPED +
+          # INV-GC-SWEEP-TENANT-SCOPED + INV-BACKUP-FRESH +
+          # INV-BACKUP-INTEGRITY-SAMPLE-CAP.
+          - obs_no_pii
+          - offboarding_audit_complete
+          - billing_chain_integrity
+          - gc_grace_boundary
+          - backup_fresh
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
