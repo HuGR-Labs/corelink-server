@@ -13,7 +13,11 @@
 //! The route handler accepts `Arc<dyn CasReadHandler>` so the route
 //! table stays binary-shape stable as we swap the in-memory fake for
 //! the wasm32 CF-Worker impl. The same shape is used for the
-//! webhook route's `SubscriptionStateHandler` collaborator.
+//! Stripe webhook route's
+//! [`corelink_stripe_real::webhook_dispatch::StateMaterializer`]
+//! collaborator (wave 16 unification —
+//! `specs/_audits/2026-05-15-stripe-webhook-production.md`
+//! §unification).
 //!
 //! # SLO emit
 //!

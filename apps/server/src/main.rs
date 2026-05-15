@@ -20,9 +20,10 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use corelink_server::webhook::{
-    router as webhook_router, InMemoryIdempotencyStore, InMemoryWebhookAuditSink,
-    RecordingSubscriptionHandler, SystemTimeProvider, WebhookState,
+use corelink_server::webhook::{router as webhook_router, WebhookState};
+use corelink_stripe_real::webhook_dispatch::{
+    InMemoryIdempotencyStore, RecordingAuditEmitter, RecordingSliRecorder,
+    RecordingStateMaterializer, SystemClock, WebhookDispatcher,
 };
 use tonic::{transport::Server, Request, Response, Status};
 use tracing::{info, warn};
@@ -75,18 +76,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             .unwrap_or(50052u16);
         let http_addr: SocketAddr = format!("0.0.0.0:{}", http_port).parse()?;
 
-        // NOTE: the in-memory store / recording handler shipped here
-        // are placeholders to keep the binary buildable. Production
-        // wiring (Lote 11+) replaces them with the D1-backed
-        // idempotency store + the `corelink-tier-selection` ledger
-        // adapter + the `corelink-audit-chain` sink.
-        let state = Arc::new(WebhookState::new(
+        // Wave 16: the HTTP shell now binds the canonical
+        // `WebhookDispatcher` from `corelink-stripe-real`. The
+        // in-memory store / recording materializer / recording audit
+        // emitter shipped here are still placeholders for native dev
+        // / CI runs — production wiring (S-13+) replaces them with the
+        // D1-backed idempotency store, the
+        // `corelink-tier-selection`/`corelink-billing-*` ledger
+        // adapters, and the `corelink-audit-chain` sink. The
+        // dispatcher shape (`WebhookDispatcher::new`) is the single
+        // canonical seam used everywhere (axum, CF Worker, replay
+        // crons).
+        let dispatcher = Arc::new(WebhookDispatcher::new(
             secret.into_bytes(),
             Arc::new(InMemoryIdempotencyStore::new()),
-            Arc::new(InMemoryWebhookAuditSink::new()),
-            Arc::new(RecordingSubscriptionHandler::new()),
-            Arc::new(SystemTimeProvider),
+            Arc::new(RecordingStateMaterializer::new()),
+            Arc::new(RecordingAuditEmitter::new()),
+            Arc::new(RecordingSliRecorder::new()),
+            Arc::new(SystemClock),
         ));
+        let state = Arc::new(WebhookState::new(dispatcher));
         info!(%http_addr, route = corelink_server::webhook::STRIPE_WEBHOOK_ROUTE,
             "CoreLink HTTP listener starting (Stripe webhook)");
         let app = webhook_router(state);

@@ -3,7 +3,7 @@ id: "AUDIT-2026-05-15-STRIPE-WEBHOOK-PRODUCTION"
 type: "audit_report"
 doc_status: "FROZEN"
 audit_status: "AUDITED"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-15"
 updated: "2026-05-15"
 owner: "Gustavo Schneiter"
@@ -11,7 +11,7 @@ final_approver: "Gustavo Schneiter"
 reviewers: []
 supersedes: null
 superseded_by: null
-tags: ["audit", "s10", "billing", "stripe", "webhook", "production", "wave-15"]
+tags: ["audit", "s10", "billing", "stripe", "webhook", "production", "wave-15", "wave-16", "unification"]
 ---
 
 # Stripe webhook production handler wire-up
@@ -226,14 +226,8 @@ Status-code shape per `compliance_matrix.md` PCI-DSS v4.0 SAQ-A row
 
 ---
 
-## What deliberately did NOT change
+## What deliberately did NOT change (wave 15 baseline)
 
-- `apps/server/src/webhook.rs` retains its own trait surface used by
-  the axum route. That layer remains the HTTP boundary; the new
-  `webhook_dispatch` module is the canonical **business** pipeline
-  that the route can adopt in a follow-on refactor. The split
-  preserves backward compatibility with the in-process trait
-  consumers already wired in S-10.
 - No D1 migration changes. The dedup table from
   `0018_stripe_idem_keys.sql` already pins INV-BILLING-NO-DUP at the
   storage layer; this module mirrors the same `INSERT OR IGNORE`
@@ -241,10 +235,123 @@ Status-code shape per `compliance_matrix.md` PCI-DSS v4.0 SAQ-A row
 
 ---
 
-## Follow-ups (non-blocking)
+## Unification (wave 16 — v1.1.0 follow-on)
 
-- Bind the `WebhookDispatcher` in `apps/server` as a feature-gated
-  swap-in (wave 16+) once the canonical D1 materialiser writers ship.
-- Cloudflare Worker route adoption (Worker context, `wasm32` is gated
-  out of this crate by design; the trait shapes carry through a thin
-  wasm-side adapter).
+> **Branch:** `wt/r-prep-stripe-dispatcher-unify`
+> **Disposition:** the axum HTTP shell in `apps/server/src/webhook.rs`
+> now binds the canonical `WebhookDispatcher` end-to-end. The parallel
+> trait surface previously retained for S-10 backward compatibility
+> has been removed; there is exactly one canonical business pipeline
+> in the codebase.
+
+### Trait surface removed from `apps/server/src/webhook.rs`
+
+The following types and traits — previously a parallel trait surface
+in the apps/server crate — have been deleted. Their canonical
+equivalents live in `corelink_stripe_real::webhook_dispatch`.
+
+| Removed (apps/server)              | Canonical replacement (corelink-stripe-real)             |
+|------------------------------------|----------------------------------------------------------|
+| `trait SubscriptionStateHandler`   | `trait StateMaterializer`                                |
+| `trait WebhookAuditSink`           | `trait AuditEmitter`                                     |
+| `trait WebhookIdempotencyStore`    | `trait IdempotencyStore`                                 |
+| `trait TimeProvider`               | `trait Clock`                                            |
+| `enum CanonicalEventType` (7)      | `enum CanonicalWebhookEventType` (10 — SLA taxonomy)     |
+| `enum WebhookAuditEventType` (6)   | `enum AuditOutcome` (7 — canonical)                      |
+| `struct WebhookAuditRecord`        | `struct AuditRecord`                                     |
+| `struct WebhookEnvelope`           | `struct StripeWebhookEnvelope`                           |
+| `struct InMemoryWebhookAuditSink`  | `struct RecordingAuditEmitter`                           |
+| `struct InMemoryIdempotencyStore`  | `struct InMemoryIdempotencyStore` (canonical, dispatcher)|
+| `struct RecordingSubscriptionHandler` | `struct RecordingStateMaterializer`                   |
+| `struct SystemTimeProvider`        | `struct SystemClock`                                     |
+| `struct FixedTimeProvider`         | `struct FixedClock`                                      |
+| `fn process_webhook(...)`          | `WebhookDispatcher::process(...)`                        |
+
+**Eight removed trait/struct items** (the four traits plus four no-longer-needed
+support enums/structs) — every event-type dispatch decision now flows
+through the wave-15 canonical pipeline.
+
+### What `apps/server/src/webhook.rs` still owns
+
+Exactly the axum HTTP shell:
+
+- `pub const STRIPE_WEBHOOK_ROUTE` — route path.
+- `pub struct WebhookState { dispatcher: Arc<WebhookDispatcher> }` —
+  thin wrapper holding the dispatcher constructed at server boot.
+- `pub fn router(state) -> axum::Router` — mounts the route.
+- `pub async fn stripe_webhook_handler(...)` — extracts the
+  `Stripe-Signature` header + raw body, hands to
+  `dispatcher.process(...)`, maps `DispatchResponse` to a
+  `(StatusCode, &'static str)` via `dispatch_response_to_axum`.
+- `pub fn dispatch_response_to_axum(...)` — canonical PCI DSS SAQ-A
+  status-code mapping (200 / 400 / 401 / 422 / 500).
+
+### Integration test
+
+`apps/server/tests/webhook_unified.rs` exercises the end-to-end HTTP
+shell via `tower::ServiceExt::oneshot`:
+
+1. **`ten_canonical_event_types_round_trip_to_200`** — drives all 10
+   SLA event types HTTP → dispatcher → 200, audit row carries
+   `corelink.billing.stripe_event_processed.v1` + correct
+   `canonical_event_type`.
+2. **`idempotent_event_id_dispatches_once_audits_duplicate`** — POSTs
+   the same event twice; HTTP returns 200, 200; materializer fires
+   once; audit emits `Dispatched` then `Duplicate`; SLI observed on
+   both deliveries.
+3. **`bad_signature_returns_401_and_emits_signature_invalid_audit`** —
+   HMAC-bogus header → HTTP 401 + audit `outcome=SignatureInvalid`
+   carrying the canonical `event_name`.
+4. **`missing_signature_header_returns_400`** — header absent → 400.
+5. **`malformed_envelope_returns_422`** — signed garbage → 422 +
+   `EnvelopeInvalid` audit.
+6. **`state_mutators_route_to_correct_materializer_methods`** — the
+   five state-mutators dispatch to their typed materializer method.
+7. **`observability_echoes_audit_without_state_mutation`** — the five
+   forward-compat echoes ack 200 + emit Dispatched without calling
+   the materializer.
+
+### Quality gates (wave 16)
+
+| Gate | Command | Result |
+|------|---------|--------|
+| server build | `cargo build -p corelink-server` | green |
+| server clippy | `cargo clippy -p corelink-server --tests -- -D warnings` | green |
+| unified e2e | `cargo test -p corelink-server --test webhook_unified` | 7 / 7 |
+| server total | `cargo test -p corelink-server` | 36 / 36 (23 lib unit + 6 byok orchestrator + 7 webhook_unified) |
+| stripe-real preserved | `cargo test -p corelink-stripe-real` | 73 / 73 (unchanged from v1.0.0 baseline) |
+| spec validate | `python3 scripts/validate_specs.py` | green |
+
+### Wave-16 invariants reaffirmed
+
+- **INV-BILLING-NO-DUP** — single dedup gate (BLAKE3 token) lives in
+  the dispatcher; the HTTP shell carries no parallel dedup logic.
+- **INV-BILLING-NO-LOSS** — the dispatcher is the sole entry point;
+  audit emit happens on every code path including 401 / 422 / 500.
+- **INV-AUDIT-APPEND-ONLY** — `corelink.billing.stripe_event_processed.v1`
+  is emitted exactly once per delivery, fail-CLOSED. (Verified
+  end-to-end by the unified integration suite.)
+
+### Cloudflare Worker symmetry
+
+The dispatcher is `tokio`-free, sync at the trait boundary, and
+constructed from `Arc<dyn …>` collaborators. The CF Worker route
+adapter (S-13+) instantiates the same `WebhookDispatcher` with
+Worker-side `IdempotencyStore` / `StateMaterializer` / `AuditEmitter`
+implementations — there is no parallel "axum vs Worker" classification
+path to keep in sync.
+
+---
+
+## Follow-ups (non-blocking, post-unification)
+
+- Bind the production D1-backed `IdempotencyStore` (replace the
+  in-memory placeholder in `main.rs`).
+- Bind the production `corelink-tier-selection` /
+  `corelink-billing-*` writers as the `StateMaterializer` impl.
+- Bind the production `corelink-audit-chain` sink as the
+  `AuditEmitter` impl (currently uses `RecordingAuditEmitter` for
+  dev/CI).
+- Cloudflare Worker route adoption — the dispatcher is wasm-friendly
+  (no tokio in `src/`); wire `WebhookDispatcher` into the
+  `corelink-clerk-cf` crate as the Worker-side handler.
