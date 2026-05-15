@@ -46,6 +46,17 @@ const sidebars: SidebarsConfig = {
       items: [
         {
           type: "category",
+          label: "Migration",
+          link: { type: "doc", id: "migrate-index" },
+          collapsed: true,
+          items: [
+            "migrate-from-bazel-remote-cache",
+            "migrate-from-s3-only",
+            "migrate-from-docker-registry",
+          ],
+        },
+        {
+          type: "category",
           label: "RBAC",
           collapsed: true,
           items: [

@@ -1,0 +1,356 @@
+---
+id: migrate-from-docker-registry
+title: "Migrate from a self-hosted Docker registry (Harbor / Quay)"
+slug: "/how-to/migrate/from-docker-registry"
+sidebar_label: "From a Docker registry"
+description: "Move your self-hosted Harbor, Quay, or generic Docker Distribution registry to CoreLink CAS as the layer storage backend. The registry frontend stays; the layer bytes move to CoreLink with BLAKE3 integrity and dedup."
+tags: [migration, docker, harbor, quay, registry, oci, how-to]
+last_updated: "2026-05-15"
+---
+
+# Migrate from a self-hosted Docker registry to CoreLink
+
+**Source systems covered:** any self-hosted OCI / Docker Distribution
+registry — Harbor, Quay, JFrog Container Registry, the upstream
+`registry:2` reference implementation, or a custom registry.
+
+**Target:** **CoreLink as the layer storage backend** behind your
+existing registry frontend. The registry's manifest store, tag
+namespace, and Docker API endpoint stay exactly where they are; only
+the blob storage (the heavy bytes) moves.
+
+This is **the lowest-risk migration of the three** because:
+1. Docker layers are already content-addressed by sha256 (a strict
+   subset of what CoreLink does with BLAKE3).
+2. The registry frontend already abstracts the storage backend; you're
+   swapping S3/filesystem for CoreLink CAS via the same backend
+   interface.
+3. Image pulls are read-mostly; you can run a pull-through cache for
+   weeks before flipping write paths.
+
+:::note CoreLink is not (yet) a full OCI distribution server
+At GA, CoreLink replaces the **storage backend** of your existing
+registry, not the registry itself. Your `docker push` still hits
+Harbor/Quay; Harbor/Quay's storage driver then writes blobs to
+CoreLink CAS instead of S3 or local disk. Full OCI distribution
+endpoints (`/v2/`) are on the post-GA roadmap; track
+[`RFC-OCI-DIST-001`](https://github.com/humangr-labs/corelink-server/issues?q=RFC-OCI-DIST-001).
+:::
+
+---
+
+## Phase 0 — Pre-flight (2–4 h)
+
+### Inventory checklist
+
+- [ ] **Identify your registry product + version.**
+  ```bash
+  curl -s https://registry.example.com/v2/ -I | grep -i docker-distribution-api-version
+  docker exec harbor-core harbor-core --version    # or: kubectl exec ...
+  ```
+
+- [ ] **Estimate total layer storage.**
+  ```bash
+  # Harbor (default storage driver: filesystem):
+  du -sh /data/registry/docker/registry/v2/blobs
+
+  # Harbor with S3 backend:
+  aws s3 ls --summarize --recursive --human-readable s3://your-harbor-blobs/ | tail -2
+  ```
+
+- [ ] **Count layers vs unique digests.** Most registries have a 2–5×
+  ratio (same base layer reused across many images). CoreLink dedup
+  collapses this to 1:1.
+
+- [ ] **Identify push paths.** Every CI job that does `docker push`,
+  every developer with `docker login`, every Kubernetes operator that
+  builds images. Note them; you'll re-verify after cutover.
+
+- [ ] **Identify pull paths.** Every cluster, every CI runner, every
+  developer laptop. Pulls are read-only and benefit immediately from
+  the dedup + integrity properties; this is your safest first move.
+
+- [ ] **Region match.** Pin CoreLink to the region nearest your
+  cluster nodes. Cross-region image pulls dominate cost.
+
+### Cost-comparison table
+
+| Line item | Self-hosted Harbor + S3 | CoreLink CAS backend |
+| --- | --- | --- |
+| Blob storage ($/GiB-month) | $0.023 (S3 Std) + 2–5× redundancy from no dedup | $0.05 (with dedup, effective ≈ $0.01–0.025 per logical GiB) |
+| Egress (cluster pull, $/GiB) | $0.02–0.09 cross-AZ | $0 same-region |
+| Manifest + tag storage | included in registry | unchanged (registry keeps it) |
+| Integrity | sha256 only | **BLAKE3 + client-side verify** (CTRL-CAS-002) |
+| Audit (who pulled what when) | Harbor audit log (Harbor-only); none in plain `registry:2` | **built-in, 90d** |
+| **Total for 2 TiB raw layers (≈ 500 GiB unique), 10 TiB/mo pulls** | ≈ **$330/mo** + Harbor ops | ≈ **$50/mo** |
+
+### Rollback plan (lock it now)
+
+```bash
+# 1. Snapshot the registry's current storage backend config.
+kubectl get configmap -n harbor harbor-registry -o yaml > /backup/harbor-registry-pre.yaml
+# OR for upstream registry:2:
+cp /etc/docker/registry/config.yml /backup/registry-config-pre.yml
+
+# 2. Snapshot the registry database (Harbor's Postgres).
+kubectl exec harbor-database -- pg_dump -U postgres registry > /backup/harbor-db-pre.sql
+
+# 3. Tag the config repo.
+git tag pre-corelink-migration && git push origin pre-corelink-migration
+```
+
+---
+
+## Phase 1 — Configure CoreLink + mirror layers (1–4 h + backfill time)
+
+### Step 1 — Backfill existing layers to CoreLink
+
+Layers are already content-addressed (sha256), so backfill is
+deterministic and idempotent. We compute the BLAKE3 digest on upload;
+the sha256 → BLAKE3 mapping is captured in a CSV.
+
+```bash
+#!/usr/bin/env bash
+# scripts/mirror-layers.sh
+set -euo pipefail
+: "${CORELINK_PAT:?must be set}"
+: "${CORELINK_TENANT_ID:?must be set}"
+
+# Walk every blob in the source registry.
+# Harbor with filesystem backend:
+find /data/registry/docker/registry/v2/blobs/sha256 -type f -name "data" | while read -r BLOB; do
+  SHA256=$(echo "$BLOB" | grep -oE 'sha256/[a-f0-9]+' | tail -1 | sed 's|sha256/||')
+  BLAKE3=$(corelink put "$BLOB" --output json | jq -r .digest)
+  echo "$SHA256,$BLAKE3" >> /tmp/layer-mapping.csv
+done
+
+# Harbor with S3 backend — list, fetch, put:
+aws s3 ls --recursive s3://your-harbor-blobs/ | awk '{print $4}' | while read -r KEY; do
+  SHA256=$(echo "$KEY" | grep -oE '[a-f0-9]{64}')
+  [ -z "$SHA256" ] && continue
+  TMP=$(mktemp)
+  aws s3 cp "s3://your-harbor-blobs/$KEY" "$TMP" --quiet
+  BLAKE3=$(corelink put "$TMP" --output json | jq -r .digest)
+  echo "$SHA256,$BLAKE3" >> /tmp/layer-mapping.csv
+  rm -f "$TMP"
+done
+```
+
+For large registries (> 500 GiB), parallelize with `xargs -P 16` per
+the [S3 migration guide](./from-s3-only.mdx#step-1--backfill-existing-artifacts-into-corelink).
+
+### Step 2 — Configure your registry to use CoreLink as the storage driver
+
+The exact mechanism depends on your registry product. CoreLink ships
+an OCI-compatible **storage driver shim** (`corelink-registry-driver`)
+that implements the upstream Distribution
+[`StorageDriver` interface](https://distribution.github.io/distribution/storage-drivers/).
+
+**Harbor (recommended path):**
+
+```yaml
+# harbor.yml — replace the storage_service block.
+storage_service:
+  # OLD: filesystem or s3
+  # NEW: CoreLink CAS via the driver shim.
+  driver: corelink
+  corelink:
+    endpoint: grpcs://reapi.corelink.dev:443
+    tenant_id: ${CORELINK_TENANT_ID}
+    pat_secret_ref: corelink-pat   # k8s secret containing CORELINK_PAT
+    region: enam
+    # Verify BLAKE3 on every read (default-on; spelled out for clarity).
+    client_verify: true
+```
+
+Then reload Harbor:
+
+```bash
+helm upgrade harbor harbor/harbor -f harbor.yml
+kubectl rollout status -n harbor deploy/harbor-registry
+```
+
+**Upstream `registry:2`:**
+
+```yaml
+# /etc/docker/registry/config.yml
+storage:
+  corelink:
+    endpoint: grpcs://reapi.corelink.dev:443
+    tenant_id: ${CORELINK_TENANT_ID}
+    pat: ${CORELINK_PAT}
+    region: enam
+```
+
+The driver is published as
+[`humangr-labs/corelink-registry-driver`](https://github.com/humangr-labs/corelink-server/tree/main/crates/corelink-registry-driver)
+and ships with the registry image at
+`humangr/registry-with-corelink:2.8.x`.
+
+### Step 3 — Verify layers round-trip
+
+```bash
+# Pick a known image. Pull, inspect, repull through the new backend.
+docker pull registry.example.com/library/myapp:1.2.3
+docker save registry.example.com/library/myapp:1.2.3 > /tmp/myapp.tar
+echo "sha256 manifest digest:"
+sha256sum /tmp/myapp.tar
+# Now the layers live in CoreLink. Repull on a fresh node should be byte-identical.
+```
+
+**If the manifest digest changes** between pre- and post-cutover
+pulls of the same tag, **stop**. That means a layer's bytes shifted,
+which is a P1.
+
+---
+
+## Phase 2 — Parallel-run (5–7 days)
+
+The registry now reads layers from CoreLink. New pushes write to
+CoreLink. We keep the **old storage backend mounted read-only** for a
+safety net.
+
+### What to monitor daily
+
+| Metric | Where | Healthy range |
+| --- | --- | --- |
+| Layer pull p99 latency | Harbor metrics: `registry_storage_action_seconds_bucket{action="get"}` | ≤ 500 ms p99 same-region |
+| Layer pull error rate | same metric, `code!="200"` | ≤ 0.1% |
+| BLAKE3 client-verify failures | `corelink doctor --json \| jq '.checks[] \| select(.name=="client-verify")'` | PASS |
+| Manifest digest stability | re-pull 10 known tags, compare digests | 10/10 unchanged |
+| Push success rate | Harbor: `registry_storage_action_seconds_bucket{action="put"}` | ≥ 99.9% |
+
+### Validation matrix
+
+Run this every day during the parallel-run window.
+
+| Image type | Test | Pass criteria |
+| --- | --- | --- |
+| Small image (< 50 MiB, 2–3 layers) | `docker pull alpine:3.20` via your registry | exits 0, image hash matches docker.io reference |
+| Large image (> 1 GiB, > 10 layers) | `docker pull tensorflow/tensorflow:2.15-gpu` via your registry | exits 0, no partial layers in `/var/lib/docker/overlay2` |
+| Multi-arch manifest list | pull on `arm64` and `amd64` nodes | both succeed, arch-correct |
+| Recently-pushed image (< 1h old) | push from CI, pull on a different node | round-trip < 1 min |
+| Image with shared base layer | pull two images sharing `python:3.12-slim` base | second pull reuses cached layer (no network) |
+
+### Red flags — pause the migration
+
+- Any manifest digest change for an unmodified tag → **P1**.
+- Layer pull p99 > 1 s sustained → check region pin; if correct, P1.
+- Any client-verify failure → **P1**, immediate halt.
+
+---
+
+## Phase 3 — Cutover (30 min)
+
+Cutover for this migration is **already done at the end of Phase 1**
+if you set the registry's storage driver to CoreLink. Phase 3 here is
+about making the change permanent and removing the read-only fallback
+mount of the old backend.
+
+### Step 1 — Confirm 7 days clean
+
+```bash
+# Inspect the validation matrix log. Every row should be PASS
+# for 7 consecutive days.
+grep -c PASS /var/log/registry-migration-validation.log
+# Should equal 7 × 5 = 35 (5 image types × 7 days).
+```
+
+### Step 2 — Unmount the old backend
+
+```bash
+# Harbor with filesystem backend:
+kubectl patch pvc harbor-registry-data -p '{"spec":{"accessModes":["ReadWriteOnce"]}}'
+# Then remove the volume mount from the registry deployment — Phase 4.
+
+# Harbor with S3 backend:
+# Set the S3 bucket policy to deny all writes. Reads still work for rollback.
+aws s3api put-bucket-policy --bucket your-harbor-blobs --policy file://deny-write.json
+```
+
+---
+
+## Phase 4 — Decommission (after 14 days of clean operation)
+
+### Decommission criteria
+
+- [ ] Zero P1 incidents in 14 days.
+- [ ] All 5 validation-matrix rows pass daily for 14 days.
+- [ ] No layer pulls served from the old backend (CloudTrail or
+      filesystem `atime` shows last access > 14 days ago).
+- [ ] Layer mapping CSV (sha256 → BLAKE3) committed to your config
+      repo as a recoverable artifact.
+
+### Decommission steps
+
+```bash
+# 1. Snapshot the old storage backend to long-term archive.
+# Filesystem:
+tar czf /backup/registry-blobs-final-$(date +%F).tar.gz /data/registry/docker/registry/v2/blobs
+aws s3 cp /backup/registry-blobs-final-*.tar.gz s3://your-archive-bucket/ --storage-class DEEP_ARCHIVE
+
+# S3 backend:
+aws s3 cp --recursive s3://your-harbor-blobs/ s3://your-archive-bucket/harbor-final/ --storage-class DEEP_ARCHIVE
+
+# 2. Remove the old backend from the registry deployment.
+kubectl edit deploy -n harbor harbor-registry
+# Delete the volumeMount referencing the old backend.
+
+# 3. After +30 more days clean, delete the archive (or keep at Glacier).
+```
+
+---
+
+## Rollback — any phase
+
+### Phase 1–2 rollback (driver swap)
+
+Revert the storage driver config:
+
+```bash
+git checkout pre-corelink-migration -- harbor.yml
+helm upgrade harbor harbor/harbor -f harbor.yml
+kubectl rollout status -n harbor deploy/harbor-registry
+```
+
+The old backend is still mounted (read-only or read-write) and has
+every layer pushed since installation. Pulls resume immediately. Any
+layer pushed *during* the CoreLink window is in CoreLink — you'll
+need to backfill it back to the old backend if you fully revert, but
+in practice the old backend is kept warm precisely so that pulls of
+older layers still work and you can `docker push` again to repopulate
+the new ones.
+
+### Phase 3 rollback (already cutover, old backend read-only)
+
+Re-mount the old backend as read-write, flip the storage driver back.
+Same one-line config change as Phase 1–2 rollback.
+
+### Phase 4 rollback (after decommission)
+
+Restore the Glacier archive. Expensive (hours to days for restore).
+**Do not decommission until Phase 4 criteria are genuinely met.**
+
+---
+
+## Validation matrix (final, post-decommission)
+
+| Test | Expected | Where to check |
+| --- | --- | --- |
+| `docker pull registry.example.com/library/myapp:1.2.3` on a fresh node | exits 0 in < 30 s for a 200 MiB image | CI logs |
+| Harbor UI shows last-7d pull count > 0 | yes | `https://harbor.example.com/harbor/projects/.../repositories` |
+| CoreLink audit shows `cas.read` events matching pull volume | yes (within ±2%) | `https://app.corelink.dev/tenants/$CORELINK_TENANT_ID/audit` |
+| `corelink ls --tenant ... --limit 1` returns layers | yes, recent timestamps | terminal |
+| No reads to old backend in last 7 days | yes | CloudTrail / filesystem `atime` |
+
+When all five rows pass, the migration is done.
+
+---
+
+## Cross-links
+
+- [Migration overview](./index.mdx) — decision matrix.
+- [From S3-only artifact storage](./from-s3-only.mdx) — if your "registry" is actually just an S3 bucket of tarballs.
+- [From a Bazel remote cache](./from-bazel-remote-cache.mdx) — if you also build images via Bazel `rules_oci`.
+- [10-minute quickstart](../../tutorials/quickstart-10min.mdx) — install the CLI.
+- [Lighthouse Customer Playbook](https://github.com/humangr-labs/corelink-server/blob/main/marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md) — if you want a dedicated engineer for a complex multi-cluster cutover.
