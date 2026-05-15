@@ -214,6 +214,7 @@ Per `marketing/launch/COORDINATION/LAUNCH-RUNBOOK.md` (shipped by WI-S20-008).
 
 ### T-7 to T-1 (preparation)
 - T-7d: Pentest letter confirmed received; SOC 2 readiness confirmed; lighthouse SLAs attested
+- T-7d: **10-min quickstart sealed** — [`apps/docs/docs/tutorials/quickstart-10min.mdx`](apps/docs/docs/tutorials/quickstart-10min.mdx) + [FAQ](apps/docs/docs/tutorials/quickstart-faq.mdx) live, CI validator `quickstart-validate.yml` green, sidebar CTA promoted to top of Get Started, home-page card refreshed (R-prep launch checklist)
 - T-3d: Press kit to journalists under embargo (Gustavo + PR firm if hired)
 - T-1d: Dry-run system load test (1 Sonnet runs `tests/load/launch-day-projection.rs`)
 
