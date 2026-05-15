@@ -231,7 +231,7 @@ code-only).
 
 ### 5.6 Wave-17 closure — scheduler binding shipped
 
-**Status (2026-05-15 wave-17):** SHIPPED. The publish scheduler that
+**Status (2026-05-15 wave-17, commit `49901da`):** SHIPPED. The publish scheduler that
 fires the wave-16 composition (`aggregate_24h_window → bridge_to_report
 → publish_dsr_metric`) once per 24h is now wired. Wave-16 shipped the
 publish-path layers but the scheduler binding (cron tick + D1 row
