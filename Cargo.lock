@@ -2302,6 +2302,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-statuspage-real"
+version = "0.1.0"
+dependencies = [
+ "corelink-privacy-erasure-worker",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "wiremock",
+]
+
+[[package]]
 name = "corelink-stripe-real"
 version = "0.1.0"
 dependencies = [
