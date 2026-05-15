@@ -44,6 +44,11 @@ members = [
     "crates/corelink-billing-replay",
     "crates/corelink-quota-fsm",
     "crates/corelink-dsr",
+    # R-prep tenant offboarding state machine (R-prep; complements DSR
+    # individual-erasure surface with the canonical tenant-level
+    # ACTIVE→CANCEL_REQUESTED→GRACE_PERIOD→READ_ONLY→SUSPENDED→ERASED
+    # 5-state machine + 30d grace export + 90d cryptographic erasure).
+    "crates/corelink-tenant-offboarding",
     "crates/corelink-privacy-sub-processor-emit",
     "crates/corelink-clerk-cf",
     "crates/corelink-privacy-consent-ledger",
@@ -376,6 +381,8 @@ corelink-billing-reconcile = { path = "crates/corelink-billing-reconcile" }
 corelink-billing-replay = { path = "crates/corelink-billing-replay" }
 corelink-quota-fsm = { path = "crates/corelink-quota-fsm" }
 corelink-dsr = { path = "crates/corelink-dsr" }
+# R-prep tenant offboarding state machine.
+corelink-tenant-offboarding = { path = "crates/corelink-tenant-offboarding" }
 corelink-privacy-sub-processor-emit = { path = "crates/corelink-privacy-sub-processor-emit" }
 corelink-clerk-cf = { path = "crates/corelink-clerk-cf" }
 # R2-10 CF Worker R2/D1/KV/DO binding adapters (wasm32 only).
