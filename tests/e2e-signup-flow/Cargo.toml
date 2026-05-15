@@ -1,0 +1,70 @@
+[package]
+name = "e2e-signup-flow"
+description = "R3-1 end-to-end signup happy-path harness: signup orchestrator → DPA acceptance → tier selection → first PAT issuance → R2 CAS blob put/get → BLAKE3 verify. In-memory fakes wire every external collaborator for default `cargo test`; `STRIPE_SECRET_KEY_TEST`-gated `#[ignore]` variants exercise the real HTTPS Stripe Checkout client (corelink-stripe-real) when CI provides live test-mode credentials. Property test pins atomic + idempotency invariants over 1k randomized signup payloads. Charter charter-trait-abstraction-defer applies: no production HTTPS endpoints reached by default `cargo test -p e2e-signup-flow`."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+corelink-signup = { path = "../../crates/corelink-signup" }
+corelink-dpa-acceptance = { path = "../../crates/corelink-dpa-acceptance" }
+corelink-tier-selection = { path = "../../crates/corelink-tier-selection" }
+corelink-stripe-real = { path = "../../crates/corelink-stripe-real" }
+corelink-hash = { path = "../../crates/corelink-hash" }
+bytes = { workspace = true }
+blake3 = { workspace = true }
+hex = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+rsa = { version = "0.9", features = ["pem"] }
+rand = "0.8"
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[[test]]
+name = "happy_path_free"
+path = "tests/happy_path_free.rs"
+
+[[test]]
+name = "happy_path_starter_stripe_test_mode"
+path = "tests/happy_path_starter_stripe_test_mode.rs"
+
+[[test]]
+name = "adversarial_dpa_not_accepted"
+path = "tests/adversarial_dpa_not_accepted.rs"
+
+[[test]]
+name = "adversarial_webhook_signature_invalid"
+path = "tests/adversarial_webhook_signature_invalid.rs"
+
+[[test]]
+name = "idempotency_replay"
+path = "tests/idempotency_replay.rs"
+
+[[test]]
+name = "prop_atomic_invariants"
+path = "tests/prop_atomic_invariants.rs"

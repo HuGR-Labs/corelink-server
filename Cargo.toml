@@ -123,6 +123,10 @@ members = [
     # R2-4 shared Slack incoming-webhook real client (Block Kit + per-channel
     # routing + retry + audit envelope; bridges to enterprise-inquiry via adapter)
     "crates/corelink-slack-real",
+    # R3-1 end-to-end signup happy-path harness: signup → DPA → tier → Stripe
+    # Checkout → first PAT → R2 CAS write + BLAKE3 verify. In-memory fakes by
+    # default; live `STRIPE_SECRET_KEY_TEST`-gated tests behind `--ignored`.
+    "tests/e2e-signup-flow",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
