@@ -1,0 +1,165 @@
+# DASH-AUDIT-EXPORT alert rules — Wave-17 PagerDuty wiring for the
+# wave-16 customer audit-export endpoint (WI-S09-008 §closure PD
+# wiring AC).
+#
+# Source-of-truth (event-type constants are pinned by Rust tests
+# `event_type_constants_match_spec` in `apps/server/src/routes/audit_export.rs`):
+#
+#   1. corelink.audit.export_request.v1
+#        — info; dashboard-only; NOT paged (wave-17 scope decision).
+#   2. corelink.security.audit_export_cross_tenant_attempt.v1
+#        — SEV-1 security incident (this file: rule
+#          `AuditExport_CrossTenantAttempt`).
+#   3. corelink.audit.export_verify_failed.v1
+#        — SEV-0 data-integrity incident (this file: rule
+#          `AuditExport_VerifyFailed`).
+#
+# Routing per `specs/03_architecture/observability_model.md` §9:
+# Alertmanager → PagerDuty Events API v2 via `routing_key` bound to
+# the `PAGERDUTY_ROUTING_KEY` secret (row #11 of
+# `docs/internal/secrets-checklist.md`). Slack mirror via
+# `#corelink-alerts`; SEV-0 also mirrors to `#sev-0-audit-integrity`.
+#
+# Severity mapping per observability_model §9.2:
+#   SEV-0 → PagerDuty `severity: critical` + secondary escalation
+#           policy `corelink-incident-response`; 5-min response SLA
+#           24/7 (1h MTTA cap); 4h MTTR target.
+#   SEV-1 → PagerDuty `severity: critical` + primary escalation policy
+#           `corelink-incident-response`; 5-min response SLA 24/7;
+#           24h MTTR target per S-17 ops maturity baseline.
+#
+# Privacy / tenant-id pseudonymisation (INV-AUTH-AUDIT-PSEUDONYMIZATION):
+# the PD `payload.custom_details` MUST NOT carry the raw tenant_id.
+# The corelink emitter shipping the metric label hashes the tenant
+# via BLAKE3 (`tenant_id_hex8` = first 8 hex chars of BLAKE3) before
+# the metric reaches the alertmanager pipeline; CTRL-PRIV-001 +
+# INV-OBS-CARDINALITY-BUDGET enforce this server-side.
+#
+# Metric contract (counters incremented inside the route on every
+# emit; tenant labels carry the BLAKE3-pseudonymised hex8 ONLY,
+# never the raw UUID):
+#   corelink_audit_export_cross_tenant_attempts_total{tenant_id_hex8}
+#   corelink_audit_export_verify_failed_total{tenant_id_hex8}
+#   corelink_audit_export_requests_total{tenant_id_hex8, exit_status}
+#
+# CI gate: `promtool test rules` on PR (wired via the existing
+# `dashboards/alerts/*.yml` validator; same pattern as
+# `dash-multipart-alerts.yml`).
+
+groups:
+  - name: corelink-audit-export
+    interval: 30s
+    rules:
+
+      # ----------------------------------------------------------------
+      # Rule A — SEV-1: cross-tenant audit-export attempt.
+      # ----------------------------------------------------------------
+      # Fires when ANY cross-tenant attempt is observed in a 5-min
+      # rolling window. Even a single attempt is a security incident
+      # (the route already rejected the request with 403; the alert
+      # exists to page the security team so the source IP can be
+      # blocked and the offending JWT suspended before the attacker
+      # pivots).
+      #
+      # Routing key: PAGERDUTY_ROUTING_KEY (prod; row #11 secrets
+      # matrix). dedup_key = "audit-export-cross-tenant:{tenant_id_hex8}"
+      # so repeats inside the same incident collapse.
+      - alert: AuditExport_CrossTenantAttempt
+        expr: sum by (tenant_id_hex8) (
+                increase(corelink_audit_export_cross_tenant_attempts_total[5m])
+              ) > 0
+        for: 0m  # SEV-1; immediate fire on any non-zero observation.
+        labels:
+          severity: sev1
+          pagerduty_severity: critical
+          pagerduty_routing_key_env: PAGERDUTY_ROUTING_KEY
+          escalation_policy: corelink-incident-response
+          runbook: RB-AUDIT-EXPORT-CROSS-TENANT-ATTEMPT
+          owner_team: security
+          sprint: S-17
+          wave: wave-17
+          gate: ship
+          incident_type: security
+        annotations:
+          summary: "Cross-tenant audit-export attempt — SEV-1 security incident"
+          description: |
+            One or more `corelink.security.audit_export_cross_tenant_attempt.v1`
+            events were emitted in the last 5 minutes against the audit-
+            export endpoint. The endpoint already rejected the request
+            with 403 Forbidden; this page exists to lock down the
+            source before a pivot.
+
+            First-3-actions: see runbook §1 Detect → §2 Containment.
+
+            Pseudonymised tenant: {{ $labels.tenant_id_hex8 }}.
+            DO NOT log the raw tenant_id from the dashboard — pull it
+            via the admin audit-viewer with dual-approval.
+          runbook_url: "../../specs/_runbooks/RB-AUDIT-EXPORT-CROSS-TENANT-ATTEMPT.md"
+          dedup_key: "audit-export-cross-tenant:{{ $labels.tenant_id_hex8 }}"
+
+      # ----------------------------------------------------------------
+      # Rule B — SEV-0: audit-export verify failure (chain break).
+      # ----------------------------------------------------------------
+      # Fires immediately on ANY emit of
+      # `corelink.audit.export_verify_failed.v1`. A single emit is a
+      # confirmed chain break OR tampering signal — the route still
+      # ships the bytes (customer decides what to trust) but the
+      # server-side detection anchor MUST page the security team
+      # within 1h MTTA.
+      #
+      # Routing key: PAGERDUTY_ROUTING_KEY (prod). Secondary
+      # escalation policy fans out to Tier-3 architect/security
+      # immediately (no 5-min delay) per
+      # `infra/pagerduty/schedule.yaml` escalation_policies.
+      # dedup_key = "audit-export-verify-failed:{tenant_id_hex8}" so
+      # repeated chain breaks against the same tenant collapse into
+      # the open incident.
+      - alert: AuditExport_VerifyFailed
+        expr: sum by (tenant_id_hex8) (
+                increase(corelink_audit_export_verify_failed_total[5m])
+              ) > 0
+        for: 0m  # SEV-0; immediate fire (no flapping suppression — chain breaks are non-negotiable).
+        labels:
+          severity: sev0
+          pagerduty_severity: critical
+          pagerduty_routing_key_env: PAGERDUTY_ROUTING_KEY
+          escalation_policy: corelink-incident-response
+          escalation_policy_secondary: corelink-incident-response-tier-3-direct
+          runbook: RB-AUDIT-EXPORT-VERIFY-FAILED
+          owner_team: security
+          sprint: S-17
+          wave: wave-17
+          gate: ship
+          incident_type: data-integrity
+          regulatory_clock: gdpr-art33-72h
+        annotations:
+          summary: "Audit-export chain-break verify failure — SEV-0 data-integrity incident"
+          description: |
+            The audit-export server-side verifier surfaced a chain
+            break (`AuditChainError::ChainBreak`) while serving an
+            export request. The route already flushed bytes to the
+            customer (caller decides what to trust); this page is
+            the server-side detection anchor.
+
+            First-3-actions: see runbook §1 Detect → §2 Triage →
+            §3 Immediate freeze.
+
+            Regulatory clock: LGPD Art. 46 / GDPR Art. 33 72h breach
+            notification clock starts on SEV-0 confirm (runbook §5).
+            MTTA target ≤ 1h; MTTR target ≤ 4h.
+
+            Pseudonymised tenant: {{ $labels.tenant_id_hex8 }}.
+          runbook_url: "../../specs/_runbooks/RB-AUDIT-EXPORT-VERIFY-FAILED.md"
+          dedup_key: "audit-export-verify-failed:{{ $labels.tenant_id_hex8 }}"
+
+      # ----------------------------------------------------------------
+      # Rule C — informational: export-request volume (NOT paged).
+      # ----------------------------------------------------------------
+      # Tracked here so the dashboard query stays co-located with the
+      # paged rules; this rule emits NO PagerDuty event. Wave-17 scope
+      # decision: event #1 (`corelink.audit.export_request.v1`) is
+      # info-only — dashboard tile is enough.
+      - record: corelink_audit_export_request_rate_5m
+        expr: sum by (exit_status) (
+                rate(corelink_audit_export_requests_total[5m])
+              )
