@@ -141,6 +141,11 @@ members = [
     # Checkout → first PAT → R2 CAS write + BLAKE3 verify. In-memory fakes by
     # default; live `STRIPE_SECRET_KEY_TEST`-gated tests behind `--ignored`.
     "tests/e2e-signup-flow",
+    # OpenAPI 3.1 contract for the customer / privacy / admin REST surface.
+    # Hand-authored YAML + embedded constants; spec_roundtrip integration test
+    # gates drift between the YAML, the generated JSON sibling, and the path
+    # constants exported by this crate.
+    "crates/corelink-openapi",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
@@ -330,6 +335,7 @@ corelink-dr-drill = { path = "crates/corelink-dr-drill" }
 corelink-tier-selection = { path = "crates/corelink-tier-selection" }
 corelink-stripe-real = { path = "crates/corelink-stripe-real" }
 corelink-drata-sync = { path = "crates/corelink-drata-sync" }
+corelink-openapi = { path = "crates/corelink-openapi" }
 
 # CLI tooling (WI-S15-001 / WI-S15-005)
 toml = "0.8"

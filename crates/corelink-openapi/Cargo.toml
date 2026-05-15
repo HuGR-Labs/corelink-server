@@ -1,0 +1,32 @@
+[package]
+name = "corelink-openapi"
+description = "OpenAPI 3.1 contract for the CoreLink customer + privacy + admin REST surface. Hand-authored YAML at `openapi/corelink-v1.yaml` (sibling JSON `corelink-v1.json` is generated from the YAML). This crate ships the constants + an embedded copy of the spec so build-time and runtime consumers can resolve the canonical document without filesystem lookups, plus an integration test that round-trips both spec encodings through `serde_yaml` and `serde_json` to catch drift between them."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
