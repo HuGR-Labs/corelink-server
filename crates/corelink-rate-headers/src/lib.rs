@@ -157,6 +157,37 @@
 //! - **SLI distinction canonical**: pinned by
 //!   `prop_sli_distinction_canonical_5_arm`.
 //!
+//! # Customer-facing 429 UX (audit 2026-05-15)
+//!
+//! The audit `specs/_audits/2026-05-15-ratelimit-ux-audit.md` closed
+//! the 429 customer-UX gap; this crate now additionally ships:
+//!
+//! - Three CoreLink-vendor informational headers alongside the
+//!   IETF RFC 9331 canonical pair: `X-CoreLink-Tier`,
+//!   `X-CoreLink-Quota-Reset-UTC`, `X-CoreLink-Tier-Upgrade-URL`
+//!   (frozen [`headers::TIER_UPGRADE_URL`]). Composed via
+//!   [`headers::RateLimitHeaderBuilder::build_with_vendor`]; the legacy
+//!   [`headers::RateLimitHeaderBuilder::build`] entrypoint defaults the
+//!   vendor fields to empty strings + the frozen upgrade URL.
+//! - The canonical 429 JSON body schema
+//!   [`headers::RateLimitErrorBody`] with frozen `error.code` =
+//!   [`headers::ERROR_CODE_RATE_LIMIT_EXCEEDED`] + every header field
+//!   mirrored byte-for-byte (pinned by
+//!   `prop_rate_limit_body_always_consistent_with_headers` at 10k
+//!   iterations PR-gate; 100k nightly).
+//! - The canonical customer-facing docs URL
+//!   [`headers::DOCS_URL`] = `https://docs.corelink.dev/explanation/rate-limits`
+//!   (matches `apps/docs/docs/explanation/rate-limits.mdx`).
+//!
+//! Customer SDKs pattern-match on `error.kind` (5-arm taxonomy) +
+//! honour `error.retry_after_seconds` (mirrors `Retry-After`) + click
+//! through `error.tier_upgrade_url`. Long deferred retries use
+//! `error.reset_utc` (RFC 3339, robust against clock skew) over
+//! `error.reset_seconds`. See
+//! `apps/docs/docs/explanation/rate-limits.mdx` for the customer
+//! narrative + `marketing/sales/RATE-LIMIT-FAQ.md` for the sales-facing
+//! 9-question subset.
+//!
 //! # Forbidden surface
 //!
 //! - **No `unsafe`** anywhere in the crate.
@@ -221,10 +252,11 @@ pub use circuit::{
 };
 pub use error::CircuitError;
 pub use headers::{
-    canonical_kind_list, RateLimitHeaderBuilder, RateLimitHeaders,
-    RateLimitPolicy, XRateLimitTypeKind,
-    GLOBAL_CIRCUIT_RETRY_AFTER_SECS, PER_IP_RETRY_AFTER_SECS,
-    RETRY_AFTER_HARD_CEILING_SECS,
+    canonical_kind_list, RateLimitErrorBody, RateLimitHeaderBuilder,
+    RateLimitHeaders, RateLimitPolicy, XRateLimitTypeKind, DOCS_URL,
+    ERROR_CODE_RATE_LIMIT_EXCEEDED, GLOBAL_CIRCUIT_RETRY_AFTER_SECS,
+    PER_IP_RETRY_AFTER_SECS, RETRY_AFTER_HARD_CEILING_SECS,
+    TIER_UPGRADE_URL,
 };
 pub use metrics::{
     canonical_metric_names, CircuitMetricKind, CircuitMetricsObserver,

@@ -158,12 +158,36 @@ impl RateLimitPolicy {
     }
 }
 
-/// Typed RFC 9331 + Retry-After + X-Rate-Limit-Type header payload.
+/// Canonical CoreLink customer-facing pricing URL — value of the
+/// `X-CoreLink-Tier-Upgrade-URL` header and the `tier_upgrade_url`
+/// field of the canonical 429 JSON body (`RateLimitErrorBody`).
+///
+/// Frozen at `https://corelink.dev/pricing` per the audit
+/// `specs/_audits/2026-05-15-ratelimit-ux-audit.md` §2.
+pub const TIER_UPGRADE_URL: &str = "https://corelink.dev/pricing";
+
+/// Canonical customer-facing rate-limit docs URL — value of the
+/// `docs_url` field of the canonical 429 JSON body (`RateLimitErrorBody`).
+///
+/// Frozen at `https://docs.corelink.dev/explanation/rate-limits` per the
+/// audit `specs/_audits/2026-05-15-ratelimit-ux-audit.md` §2; matches the
+/// Diátaxis Explanation quadrant doc at
+/// `apps/docs/docs/explanation/rate-limits.mdx`.
+pub const DOCS_URL: &str = "https://docs.corelink.dev/explanation/rate-limits";
+
+/// Typed RFC 9331 + Retry-After + X-Rate-Limit-Type +
+/// CoreLink-vendor-extension header payload.
 ///
 /// The production Tower middleware writes these onto the `http::Response`
 /// builder; the in-memory crate exposes the typed shape so tests can
 /// assert against fields rather than string-grep across the rendered
 /// header bytes.
+///
+/// Vendor-extension headers (`X-CoreLink-Tier`,
+/// `X-CoreLink-Quota-Reset-UTC`, `X-CoreLink-Tier-Upgrade-URL`) are
+/// **informational additions** alongside (NOT replacements for) the
+/// IETF canonical RFC 9331 + RFC 6585 pair per the audit
+/// `specs/_audits/2026-05-15-ratelimit-ux-audit.md` §3.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct RateLimitHeaders {
     /// RFC 9331 `RateLimit: limit=…` field.
@@ -181,6 +205,23 @@ pub struct RateLimitHeaders {
     pub retry_after_secs: u64,
     /// CoreLink-specific `X-Rate-Limit-Type` discriminator (5-arm).
     pub x_rate_limit_type: XRateLimitTypeKind,
+    /// CoreLink-vendor `X-CoreLink-Tier` informational header — the
+    /// customer's current rate-limit tier in snake_case (e.g. `free`,
+    /// `solo`, `team`, `business`, `enterprise`). Empty string is the
+    /// degraded fallback when the camada that emitted the 429 cannot
+    /// resolve the tier (e.g. `per_ip` adversarial drop pre-auth).
+    pub corelink_tier: String,
+    /// CoreLink-vendor `X-CoreLink-Quota-Reset-UTC` informational header
+    /// — absolute RFC 3339 timestamp companion to the RFC 9331 `reset=`
+    /// seconds-form. Empty string is the degraded fallback when the
+    /// camada cannot resolve the absolute reset (e.g. global circuit
+    /// hysteresis sample interval).
+    pub corelink_quota_reset_utc: String,
+    /// CoreLink-vendor `X-CoreLink-Tier-Upgrade-URL` informational
+    /// header — frozen at [`TIER_UPGRADE_URL`] for SDK CTA convenience.
+    /// SDKs that want to print "click here to upgrade" read this header
+    /// rather than hard-coding the URL.
+    pub corelink_tier_upgrade_url: &'static str,
 }
 
 impl RateLimitHeaders {
@@ -288,6 +329,52 @@ impl RateLimitHeaderBuilder {
         retry_after_secs: u64,
         kind: XRateLimitTypeKind,
     ) -> RateLimitHeaders {
+        Self::build_with_vendor(
+            limit,
+            remaining,
+            reset_secs,
+            policies,
+            retry_after_secs,
+            kind,
+            String::new(),
+            String::new(),
+        )
+    }
+
+    /// Build a typed [`RateLimitHeaders`] payload including the
+    /// CoreLink-vendor extension headers (`X-CoreLink-Tier`,
+    /// `X-CoreLink-Quota-Reset-UTC`, `X-CoreLink-Tier-Upgrade-URL`).
+    ///
+    /// `tier` is the customer's rate-limit tier (snake_case;
+    /// `corelink-ratelimit` vocabulary — `free` / `solo` / `team` /
+    /// `business` / `enterprise`); empty string is the degraded
+    /// fallback for camadas that cannot resolve a tier (e.g. `per_ip`
+    /// pre-auth adversarial drop).
+    ///
+    /// `quota_reset_utc` is an absolute RFC 3339 timestamp companion
+    /// to the RFC 9331 `reset=` seconds form; empty string is the
+    /// degraded fallback when the camada cannot resolve an absolute
+    /// reset (e.g. `global_circuit_open` hysteresis sample interval).
+    ///
+    /// The tier-upgrade URL is always [`TIER_UPGRADE_URL`].
+    #[must_use]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "8-tuple mirrors the canonical RFC 9331 + RFC 6585 + \
+                  CoreLink-vendor header set per audit §2-3; refactoring \
+                  into a builder is deferred to the production Tower \
+                  middleware (trait-abstraction-defer charter)"
+    )]
+    pub fn build_with_vendor(
+        limit: u64,
+        remaining: u64,
+        reset_secs: u64,
+        policies: Vec<RateLimitPolicy>,
+        retry_after_secs: u64,
+        kind: XRateLimitTypeKind,
+        tier: String,
+        quota_reset_utc: String,
+    ) -> RateLimitHeaders {
         let clamped_retry_after =
             retry_after_secs.min(RETRY_AFTER_HARD_CEILING_SECS);
         // remaining is structurally clamped to ≤ limit per RFC 9331 §2.
@@ -299,6 +386,9 @@ impl RateLimitHeaderBuilder {
             policies,
             retry_after_secs: clamped_retry_after,
             x_rate_limit_type: kind,
+            corelink_tier: tier,
+            corelink_quota_reset_utc: quota_reset_utc,
+            corelink_tier_upgrade_url: TIER_UPGRADE_URL,
         }
     }
 
@@ -318,6 +408,190 @@ impl RateLimitHeaderBuilder {
             XRateLimitTypeKind::GlobalCircuitOpen,
         )
     }
+}
+
+/// Canonical 429 response JSON body schema (per audit
+/// `specs/_audits/2026-05-15-ratelimit-ux-audit.md` §2).
+///
+/// Customer SDKs pattern-match against `error.code` (the 5-arm stable
+/// taxonomy mirroring [`XRateLimitTypeKind`]); humans read
+/// `error.message`; retry loops honour
+/// `error.retry_after_seconds`; upgrade CTAs link to
+/// `error.tier_upgrade_url`; long-deferred retries use
+/// `error.reset_utc` (absolute RFC 3339 timestamp robust against
+/// clock skew).
+///
+/// The crate ships the typed shape + a deterministic JSON renderer
+/// without taking a `serde` dependency — the production Tower
+/// middleware (deferred) is the only consumer and prefers to render
+/// directly via the minimal serialiser here to keep the wasm32-clean
+/// dependency closure tight.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct RateLimitErrorBody {
+    /// Stable string enum — one of `rate_limit_exceeded` (the only
+    /// value at GA; reserved as a single point of stability for SDKs
+    /// that pattern-match `error.code`). Discrimination between
+    /// camadas is via `kind`.
+    pub code: &'static str,
+    /// 5-arm taxonomy mirror — copy of the `X-Rate-Limit-Type` header.
+    pub kind: XRateLimitTypeKind,
+    /// Human-readable English sentence (localisation deferred S-22).
+    pub message: String,
+    /// Mirror of the `Retry-After` header.
+    pub retry_after_seconds: u64,
+    /// Customer's current rate-limit tier (snake_case; empty when
+    /// pre-auth `per_ip` cannot resolve).
+    pub tier: String,
+    /// Frozen [`TIER_UPGRADE_URL`].
+    pub tier_upgrade_url: &'static str,
+    /// Frozen [`DOCS_URL`].
+    pub docs_url: &'static str,
+    /// UUIDv7 request-id (empty when caller doesn't have one to stamp).
+    pub request_id: String,
+    /// Mirror of RFC 9331 `RateLimit: limit=…`.
+    pub limit: u64,
+    /// Mirror of RFC 9331 `RateLimit: remaining=…`.
+    pub remaining: u64,
+    /// Mirror of RFC 9331 `RateLimit: reset=…` (seconds).
+    pub reset_seconds: u64,
+    /// Absolute reset (RFC 3339); empty when the camada cannot resolve.
+    pub reset_utc: String,
+}
+
+/// Stable `error.code` value at GA (the only value SDKs see; the
+/// camada discriminator is carried by `kind`).
+pub const ERROR_CODE_RATE_LIMIT_EXCEEDED: &str = "rate_limit_exceeded";
+
+impl RateLimitErrorBody {
+    /// Compose a canonical body from a [`RateLimitHeaders`] payload +
+    /// the per-request `message` + `request_id`.
+    ///
+    /// The body's `code` is always [`ERROR_CODE_RATE_LIMIT_EXCEEDED`];
+    /// `kind / retry_after_seconds / tier / limit / remaining /
+    /// reset_seconds / reset_utc` mirror the headers byte-for-byte;
+    /// `tier_upgrade_url / docs_url` are the frozen canonical URLs.
+    #[must_use]
+    pub fn from_headers(
+        headers: &RateLimitHeaders,
+        message: String,
+        request_id: String,
+    ) -> Self {
+        Self {
+            code: ERROR_CODE_RATE_LIMIT_EXCEEDED,
+            kind: headers.x_rate_limit_type,
+            message,
+            retry_after_seconds: headers.retry_after_secs,
+            tier: headers.corelink_tier.clone(),
+            tier_upgrade_url: TIER_UPGRADE_URL,
+            docs_url: DOCS_URL,
+            request_id,
+            limit: headers.limit,
+            remaining: headers.remaining,
+            reset_seconds: headers.reset_secs,
+            reset_utc: headers.corelink_quota_reset_utc.clone(),
+        }
+    }
+
+    /// Render the canonical JSON envelope per audit §2.
+    ///
+    /// Deterministic field order (matches the audit document table).
+    /// No `serde` dependency — keeps the wasm32 closure tight; the
+    /// production Tower middleware writes these bytes verbatim.
+    #[must_use]
+    pub fn render_json(&self) -> String {
+        let mut out = String::with_capacity(512);
+        out.push_str("{\"error\":{");
+        push_json_string_field(&mut out, "code", self.code, true);
+        push_json_string_field(&mut out, "kind", self.kind.as_str(), false);
+        push_json_string_field(&mut out, "message", &self.message, false);
+        push_json_u64_field(
+            &mut out,
+            "retry_after_seconds",
+            self.retry_after_seconds,
+            false,
+        );
+        push_json_string_field(&mut out, "tier", &self.tier, false);
+        push_json_string_field(
+            &mut out,
+            "tier_upgrade_url",
+            self.tier_upgrade_url,
+            false,
+        );
+        push_json_string_field(&mut out, "docs_url", self.docs_url, false);
+        push_json_string_field(
+            &mut out,
+            "request_id",
+            &self.request_id,
+            false,
+        );
+        push_json_u64_field(&mut out, "limit", self.limit, false);
+        push_json_u64_field(&mut out, "remaining", self.remaining, false);
+        push_json_u64_field(
+            &mut out,
+            "reset_seconds",
+            self.reset_seconds,
+            false,
+        );
+        push_json_string_field(&mut out, "reset_utc", &self.reset_utc, false);
+        out.push_str("}}");
+        out
+    }
+}
+
+/// Append a `"key":"value"` JSON field with optional leading comma.
+/// Performs the minimal RFC 8259 escaping required for the value:
+/// `"` `\` `\n` `\r` `\t` and control chars < 0x20.
+fn push_json_string_field(
+    out: &mut String,
+    key: &str,
+    value: &str,
+    first: bool,
+) {
+    if !first {
+        out.push(',');
+    }
+    out.push('"');
+    out.push_str(key);
+    out.push_str("\":\"");
+    for ch in value.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => {
+                // Canonical 6-char `\u00XX` escape for control chars.
+                let code = c as u32;
+                let hi = ((code >> 4) & 0xF) as u8;
+                let lo = (code & 0xF) as u8;
+                let to_hex = |n: u8| -> char {
+                    if n < 10 {
+                        (b'0' + n) as char
+                    } else {
+                        (b'a' + (n - 10)) as char
+                    }
+                };
+                out.push_str("\\u00");
+                out.push(to_hex(hi));
+                out.push(to_hex(lo));
+            }
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+}
+
+/// Append a `"key":N` JSON numeric field with optional leading comma.
+fn push_json_u64_field(out: &mut String, key: &str, value: u64, first: bool) {
+    if !first {
+        out.push(',');
+    }
+    out.push('"');
+    out.push_str(key);
+    out.push_str("\":");
+    // u64 -> decimal via `format!` is sound + non-allocating-on-stack.
+    out.push_str(&value.to_string());
 }
 
 #[cfg(test)]
@@ -507,5 +781,202 @@ mod tests {
             format!("{}", XRateLimitTypeKind::TenantQuota),
             "tenant_quota"
         );
+    }
+
+    // ---- Vendor-extension header coverage (audit §3) -----------------
+
+    #[test]
+    fn build_default_vendor_fields_empty() {
+        // `build` (legacy entrypoint) defaults the vendor fields to
+        // empty strings + the frozen upgrade URL.
+        let h = RateLimitHeaderBuilder::build(
+            100,
+            0,
+            60,
+            vec![],
+            5,
+            XRateLimitTypeKind::TenantQuota,
+        );
+        assert_eq!(h.corelink_tier, "");
+        assert_eq!(h.corelink_quota_reset_utc, "");
+        assert_eq!(h.corelink_tier_upgrade_url, TIER_UPGRADE_URL);
+    }
+
+    #[test]
+    fn build_with_vendor_populates_all_three_vendor_headers() {
+        let h = RateLimitHeaderBuilder::build_with_vendor(
+            10,
+            0,
+            5,
+            vec![RateLimitPolicy::new(10, 1)],
+            5,
+            XRateLimitTypeKind::TenantQuota,
+            String::from("free"),
+            String::from("2026-05-15T14:30:25Z"),
+        );
+        assert_eq!(h.corelink_tier, "free");
+        assert_eq!(h.corelink_quota_reset_utc, "2026-05-15T14:30:25Z");
+        assert_eq!(
+            h.corelink_tier_upgrade_url,
+            "https://corelink.dev/pricing"
+        );
+    }
+
+    #[test]
+    fn tier_upgrade_url_frozen_canonical_value() {
+        assert_eq!(TIER_UPGRADE_URL, "https://corelink.dev/pricing");
+    }
+
+    #[test]
+    fn docs_url_frozen_canonical_value() {
+        assert_eq!(
+            DOCS_URL,
+            "https://docs.corelink.dev/explanation/rate-limits"
+        );
+    }
+
+    // ---- 429 JSON body coverage (audit §2) ---------------------------
+
+    #[test]
+    fn body_from_headers_mirrors_every_field() {
+        let h = RateLimitHeaderBuilder::build_with_vendor(
+            10,
+            0,
+            5,
+            vec![RateLimitPolicy::new(10, 1)],
+            5,
+            XRateLimitTypeKind::TenantQuota,
+            String::from("free"),
+            String::from("2026-05-15T14:30:25Z"),
+        );
+        let body = RateLimitErrorBody::from_headers(
+            &h,
+            String::from("Request rate exceeded"),
+            String::from("01HFXYZABC"),
+        );
+        assert_eq!(body.code, "rate_limit_exceeded");
+        assert_eq!(body.kind, XRateLimitTypeKind::TenantQuota);
+        assert_eq!(body.message, "Request rate exceeded");
+        assert_eq!(body.retry_after_seconds, h.retry_after_secs);
+        assert_eq!(body.tier, "free");
+        assert_eq!(body.tier_upgrade_url, TIER_UPGRADE_URL);
+        assert_eq!(body.docs_url, DOCS_URL);
+        assert_eq!(body.request_id, "01HFXYZABC");
+        assert_eq!(body.limit, h.limit);
+        assert_eq!(body.remaining, h.remaining);
+        assert_eq!(body.reset_seconds, h.reset_secs);
+        assert_eq!(body.reset_utc, "2026-05-15T14:30:25Z");
+    }
+
+    #[test]
+    fn body_render_json_canonical_shape() {
+        let h = RateLimitHeaderBuilder::build_with_vendor(
+            10,
+            0,
+            5,
+            vec![],
+            5,
+            XRateLimitTypeKind::TenantQuota,
+            String::from("free"),
+            String::from("2026-05-15T14:30:25Z"),
+        );
+        let body = RateLimitErrorBody::from_headers(
+            &h,
+            String::from("Request rate exceeded"),
+            String::from("01HFXYZABC"),
+        );
+        let json = body.render_json();
+        // Structural assertions (the audit document §2 pins shape;
+        // ordering is canonical: code → kind → message → retry_after
+        // → tier → upgrade → docs → request_id → limit → remaining
+        // → reset_seconds → reset_utc).
+        assert!(json.starts_with("{\"error\":{\"code\":\"rate_limit_exceeded\""));
+        assert!(json.ends_with("}}"));
+        assert!(json.contains("\"kind\":\"tenant_quota\""));
+        assert!(json.contains("\"retry_after_seconds\":5"));
+        assert!(json.contains("\"tier\":\"free\""));
+        assert!(json.contains(
+            "\"tier_upgrade_url\":\"https://corelink.dev/pricing\""
+        ));
+        assert!(json.contains(
+            "\"docs_url\":\"https://docs.corelink.dev/explanation/rate-limits\""
+        ));
+        assert!(json.contains("\"request_id\":\"01HFXYZABC\""));
+        assert!(json.contains("\"limit\":10"));
+        assert!(json.contains("\"remaining\":0"));
+        assert!(json.contains("\"reset_seconds\":5"));
+        assert!(json.contains("\"reset_utc\":\"2026-05-15T14:30:25Z\""));
+    }
+
+    #[test]
+    fn body_render_json_escapes_user_message() {
+        // Audit §2: `message` is human-readable; an adversarial message
+        // containing `"` `\` `\n` MUST NOT break the JSON envelope.
+        let h = RateLimitHeaderBuilder::build(
+            10,
+            0,
+            5,
+            vec![],
+            5,
+            XRateLimitTypeKind::TenantQuota,
+        );
+        let body = RateLimitErrorBody::from_headers(
+            &h,
+            String::from("oops \"quotes\" and \\ and \nnewlines"),
+            String::new(),
+        );
+        let json = body.render_json();
+        assert!(json.contains("\"message\":\"oops \\\"quotes\\\" and \\\\ and \\nnewlines\""));
+        // Envelope still parses-shaped.
+        assert!(json.starts_with("{\"error\":{"));
+        assert!(json.ends_with("}}"));
+    }
+
+    #[test]
+    fn body_per_ip_arm_has_empty_tier_acceptable() {
+        // `per_ip` is pre-auth; tier may legitimately be empty.
+        let h = RateLimitHeaderBuilder::build(
+            0,
+            0,
+            60,
+            vec![],
+            60,
+            XRateLimitTypeKind::PerIp,
+        );
+        let body = RateLimitErrorBody::from_headers(
+            &h,
+            String::from("IP rate limit exceeded"),
+            String::new(),
+        );
+        assert_eq!(body.tier, "");
+        assert_eq!(body.kind, XRateLimitTypeKind::PerIp);
+        // Still emits the upgrade URL — useful for legit users behind
+        // a corporate NAT who hit per_ip; clicking through gets them
+        // to an authed Starter+ tier with a higher per-PAT ceiling.
+        assert_eq!(body.tier_upgrade_url, TIER_UPGRADE_URL);
+    }
+
+    #[test]
+    fn body_kind_matches_x_rate_limit_type_header() {
+        // The body's `kind` MUST mirror the header's discriminator,
+        // for ALL 5 arms (the audit §6 property test pins this at
+        // 10k iterations; here we pin the 5 deterministic cases).
+        for kind in canonical_kind_list() {
+            let h = RateLimitHeaderBuilder::build(
+                10,
+                0,
+                5,
+                vec![],
+                5,
+                kind,
+            );
+            let body = RateLimitErrorBody::from_headers(
+                &h,
+                String::from("denied"),
+                String::new(),
+            );
+            assert_eq!(body.kind, kind);
+            assert_eq!(body.kind.as_str(), h.render_x_rate_limit_type());
+        }
     }
 }
