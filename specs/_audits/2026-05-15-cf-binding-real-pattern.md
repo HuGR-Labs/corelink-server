@@ -145,10 +145,21 @@ python3 scripts/validate_specs.py
 
 All five MUST pass before merge.
 
+## 4.1 Per-binding replication checklist
+
+| Binding | Module                                              | Wraps                              | Audit-fenced | Tenant prefix | Native stub | Tests | Status   |
+|---------|-----------------------------------------------------|------------------------------------|--------------|---------------|-------------|-------|----------|
+| R2      | `crates/corelink-cf-bindings/src/r2_real.rs`        | `worker::r2::Bucket`               | yes          | `<tnt>/`      | yes         | 18    | DONE     |
+| KV      | `crates/corelink-cf-bindings/src/kv_real.rs`        | `worker::kv::KvStore`              | yes          | `<tnt>:`      | yes         | 18+   | DONE     |
+| D1      | `crates/corelink-cf-bindings/src/d1_real.rs`        | `worker::D1Database`               | yes          | per-row col   | yes         | TBD   | parallel |
+| DO      | `crates/corelink-cf-bindings/src/do_real.rs`        | `worker::durable::ObjectNamespace` | yes          | name-derived  | yes         | TBD   | pending  |
+
+KV separator is `:` (not `/`) — KV keys have no path-tree semantics; the `:` collation surfaces nicely in the Cloudflare dashboard prefix browser and avoids a parity-confusion with R2 paths.
+
 ## 5. Follow-ups
 
 - **R-PREP-CF-D1-REAL** — Apply the template to D1 (`worker::D1Database`). Trait surface is owned by the D1-using crates (no canonical `D1Backend` trait yet — define one as part of the follow-up).
-- **R-PREP-CF-KV-REAL** — Apply to KV (`worker::kv::KvStore`). `corelink_worker::cache::kv::KvBackend` is the canonical trait.
+- **R-PREP-CF-KV-REAL** — `CfKvNamespaceReal` lands on branch `wt/r-prep-cf-kv-real` (`crates/corelink-cf-bindings/src/kv_real.rs`). Wraps `worker::kv::KvStore`; implements `corelink_worker::cache::kv::KvBackend`. Tenant prefix uses `:` separator (KV-idiomatic). Tenant-prefix equality uses `subtle::ConstantTimeEq` for the leading-segment probe. **DONE.**
 - **R-PREP-CF-DO-REAL** — Apply to Durable Objects (`worker::durable::ObjectNamespace`). Counter-style stubs at `crates/corelink-cf-bindings/src/cf_do.rs` are the starting point.
 
 Each follow-up should land in its own worktree (`wt/r-prep-cf-{d1,kv,do}-real`) and link back to this doc.

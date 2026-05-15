@@ -57,6 +57,11 @@ thiserror = { workspace = true }
 # wasm bindgen futures for async bridging in the worker handler.
 wasm-bindgen-futures = { workspace = true }
 
+# Constant-time byte comparison for the tenant-prefix equality check on
+# the KV binding (kv_real::TenantPrefix::eq + scoped_key prefix probe).
+# Neutralizes timing side-channels for cross-tenant probe attempts.
+subtle = { workspace = true }
+
 # Host-side native tests for INV-CAS-IDEMPOTENCY exercise the
 # `corelink-worker::storage::r2::InMemoryR2` fake (same trait surface as
 # the wasm32-only `CfR2BucketAdapter`). The native build of this crate is
