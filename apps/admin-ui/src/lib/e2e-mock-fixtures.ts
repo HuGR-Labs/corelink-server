@@ -677,5 +677,39 @@ export function getFixtureResponse(req: MockRequest): MockResponse {
     return { status: 201, body: m };
   }
 
+
+  // ----- Customer Billing Portal session (wt/r-prep-stripe-portal) -----
+  // POST /v1/customer/billing/portal-session — mirrors Stripe Billing
+  // Portal API. Returns a fresh single-use HTTPS URL on every call so
+  // E2E can assert no-cache behaviour.
+  if (path === "/v1/customer/billing/portal-session" && method === "POST") {
+    const rb =
+      typeof body === "object" && body !== null
+        ? (body as { return_url?: string; tenant_id?: string })
+        : {};
+    if (!rb.return_url || !rb.return_url.startsWith("https://")) {
+      return rfc7807(400, "Bad Request", "return_url must be HTTPS");
+    }
+    if (!rb.tenant_id) {
+      return rfc7807(400, "Bad Request", "tenant_id required");
+    }
+    // Monotonic counter so the URL changes per call.
+    portalSessionSeq += 1;
+    const id = `bps_e2e_${portalSessionSeq.toString(16).padStart(8, "0")}`;
+    return {
+      status: 200,
+      body: {
+        portal_url: `https://billing.stripe.com/p/session/${id}`,
+        session_id: id,
+        // 5-minute expiry matches Stripe's documented contract.
+        expires_at_unix: Math.floor(Date.now() / 1000) + 300,
+      },
+    };
+  }
+
   return rfc7807(404, "Not Found", `unmocked ${method} ${path}`);
 }
+
+// Module-level counter so each portal-session call returns a unique
+// URL — Stripe's portal URLs are single-use, the fake mirrors that.
+let portalSessionSeq = 0;

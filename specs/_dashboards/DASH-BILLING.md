@@ -48,7 +48,13 @@ SLO-FRESH-BILLING.
 `billing-freshness-burn`, `stripe-webhook-error-rate`, `billing-dlq-growth`, `billing-aggregation-lag`, `invoice-generation-failure`, `revenue-reconciliation-drift`.
 
 ## Runbook IDs linked
-RB-BILLING-DLQ-DRAIN, RB-STRIPE-WEBHOOK-FAILURE, RB-REVENUE-RECONCILIATION, RB-INVOICE-GENERATION-FAILURE.
+RB-BILLING-DLQ-DRAIN, RB-STRIPE-WEBHOOK-FAILURE, RB-REVENUE-RECONCILIATION, RB-INVOICE-GENERATION-FAILURE, RB-STRIPE-PORTAL-INCIDENT.
+
+## Customer-facing surfaces linked
+- Stripe Customer Portal config + redirect flow:
+  `specs/_audits/2026-05-15-stripe-customer-portal-spec.md`.
+- Customer guide:
+  `apps/docs/docs/how-to/billing/manage-subscription.mdx`.
 
 ## Compliance hooks
 - SOC 2 CC4.1 (monitoring), CC9.1 (data integrity for financial reporting), PI1.4 (input completeness).
