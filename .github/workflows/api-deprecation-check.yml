@@ -1,0 +1,210 @@
+name: api deprecation check (stability policy enforcement)
+
+# Enforces the public commitments in
+# apps/docs/docs/explanation/api-stability.mdx:
+#
+#   - GA-tier endpoint flipped to `deprecated: true` must carry
+#     `x-sunset-date` >= today + 730 days (24 months).
+#   - Preview-tier endpoint flipped to `deprecated: true` must carry
+#     `x-sunset-date` >= today + 90 days.
+#   - Every deprecation must include `x-replaced-by` and
+#     `x-deprecation-issue` keys.
+#   - The commit message (or PR body) must reference the deprecation issue
+#     as `Refs: #<num>` or contain the issue URL from `x-deprecation-issue`.
+#   - `x-sunset-date` cannot be brought forward (only extended). The base-ref
+#     spec is compared against the head-ref spec to detect bring-forward.
+#
+# The gate runs on every PR that touches `openapi/corelink-v1.yaml` (the
+# canonical contract) or this workflow file. Pinned to SHA per
+# ADR-S12-045 §6 tooling-pin policy.
+#
+# Companion script: scripts/extract-api-deprecations.py
+# Companion policy: apps/docs/docs/explanation/api-stability.mdx §6
+# Companion baseline: specs/_audits/2026-05-15-api-stability-baseline.md
+
+on:
+  pull_request:
+    paths:
+      - "openapi/corelink-v1.yaml"
+      - "scripts/extract-api-deprecations.py"
+      - ".github/workflows/api-deprecation-check.yml"
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: api-deprecation-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-deprecations:
+    name: validate deprecation lead-times + required metadata
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout (full history; needed to diff base vs head)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Install Python deps
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install pyyaml
+
+      - name: Run extractor + invariant gate on HEAD
+        id: extract
+        run: |
+          set -euo pipefail
+          python3 scripts/extract-api-deprecations.py \
+            --spec openapi/corelink-v1.yaml \
+            --format text
+          # If we reached here, invariants pass on HEAD.
+          echo "head_ok=true" >> "$GITHUB_OUTPUT"
+
+      - name: Emit machine-readable report (PR artifact)
+        if: always()
+        run: |
+          set -euo pipefail
+          python3 scripts/extract-api-deprecations.py \
+            --spec openapi/corelink-v1.yaml \
+            --format json \
+            --no-check-lead-time \
+            > api-deprecations.json
+          cat api-deprecations.json
+
+      - name: Upload report artifact
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: api-deprecations
+          path: api-deprecations.json
+          retention-days: 30
+
+      - name: Detect sunset-date bring-forward (base vs head)
+        run: |
+          set -euo pipefail
+          BASE_REF="${{ github.event.pull_request.base.sha }}"
+          if [ -z "$BASE_REF" ]; then
+            echo "No base SHA; skipping bring-forward check."
+            exit 0
+          fi
+          # Extract base-side report (allow failure on base since base may itself
+          # have legacy violations; we only care about sunset-date regressions).
+          git show "$BASE_REF:openapi/corelink-v1.yaml" > /tmp/base-spec.yaml || {
+            echo "Base spec not readable; skipping bring-forward check."
+            exit 0
+          }
+          python3 scripts/extract-api-deprecations.py \
+            --spec /tmp/base-spec.yaml \
+            --format json \
+            --no-check-lead-time \
+            > /tmp/base-deprecations.json
+          python3 - <<'PY'
+          import json, sys
+          base = json.load(open("/tmp/base-deprecations.json"))
+          head = json.load(open("api-deprecations.json"))
+          base_by_op = {d["operationId"]: d for d in base["deprecated"]}
+          head_by_op = {d["operationId"]: d for d in head["deprecated"]}
+          violations = []
+          for op, h in head_by_op.items():
+              b = base_by_op.get(op)
+              if not b:
+                  continue  # newly deprecated; lead-time gate already covered it
+              if b["x-sunset-date"] == "<missing>" or h["x-sunset-date"] == "<missing>":
+                  continue
+              if h["x-sunset-date"] < b["x-sunset-date"]:
+                  violations.append(
+                      f"{op}: sunset-date moved earlier ({b['x-sunset-date']} -> {h['x-sunset-date']}). "
+                      f"Sunset dates can only be extended."
+                  )
+          if violations:
+              print("::error::sunset-date bring-forward detected:")
+              for v in violations:
+                  print(f"::error::  {v}")
+              sys.exit(1)
+          print("No sunset-date regressions detected.")
+          PY
+
+      - name: Validate commit messages reference deprecation issue
+        if: steps.extract.outputs.head_ok == 'true'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          # Pull the list of newly deprecated operations (present in HEAD but
+          # not in BASE) and require each one's x-deprecation-issue to be
+          # referenced somewhere in either the PR body or the commit messages
+          # on this PR.
+          BASE_REF="${{ github.event.pull_request.base.sha }}"
+          HEAD_REF="${{ github.event.pull_request.head.sha }}"
+          if [ -z "$BASE_REF" ] || [ -z "$HEAD_REF" ]; then
+            echo "Missing base/head SHA; skipping issue-link check."
+            exit 0
+          fi
+          # Reuse base extraction from prior step if available.
+          if [ ! -f /tmp/base-deprecations.json ]; then
+            git show "$BASE_REF:openapi/corelink-v1.yaml" > /tmp/base-spec.yaml || true
+            if [ -f /tmp/base-spec.yaml ]; then
+              python3 scripts/extract-api-deprecations.py \
+                --spec /tmp/base-spec.yaml \
+                --format json \
+                --no-check-lead-time \
+                > /tmp/base-deprecations.json
+            else
+              echo '{"deprecated": []}' > /tmp/base-deprecations.json
+            fi
+          fi
+          NEW_OPS=$(python3 - <<'PY'
+          import json
+          base = {d["operationId"] for d in json.load(open("/tmp/base-deprecations.json"))["deprecated"]}
+          head = json.load(open("api-deprecations.json"))["deprecated"]
+          new = [d for d in head if d["operationId"] not in base]
+          for d in new:
+              print(f"{d['operationId']}\t{d['x-deprecation-issue']}")
+          PY
+          )
+          if [ -z "$NEW_OPS" ]; then
+            echo "No newly deprecated operations on this PR."
+            exit 0
+          fi
+          # Collect commit messages on the PR.
+          COMMIT_MSGS=$(git log --format=%B "$BASE_REF..$HEAD_REF")
+          SEARCH_HAYSTACK="${PR_TITLE}"$'\n'"${PR_BODY}"$'\n'"${COMMIT_MSGS}"
+          FAIL=0
+          while IFS=$'\t' read -r op issue; do
+            [ -z "$op" ] && continue
+            if [ "$issue" = "<missing>" ] || [ -z "$issue" ]; then
+              echo "::error::Operation $op is newly deprecated but has no x-deprecation-issue. See policy §3.1."
+              FAIL=1
+              continue
+            fi
+            # Accept either the full URL or a `Refs: #<num>` mention derived from it.
+            ISSUE_NUM=$(echo "$issue" | sed -nE 's#.*issues/([0-9]+).*#\1#p')
+            if echo "$SEARCH_HAYSTACK" | grep -qF "$issue"; then
+              echo "OK: $op references $issue"
+            elif [ -n "$ISSUE_NUM" ] && echo "$SEARCH_HAYSTACK" | grep -qE "Refs?:[[:space:]]+#${ISSUE_NUM}\b"; then
+              echo "OK: $op references issue #$ISSUE_NUM via Refs:"
+            else
+              echo "::error::Operation $op was deprecated but its issue ($issue) is not referenced in PR title/body or commit messages. Add 'Refs: #${ISSUE_NUM}'."
+              FAIL=1
+            fi
+          done <<< "$NEW_OPS"
+          exit $FAIL
+
+      - name: How to fix
+        if: failure()
+        run: |
+          echo "::error::API deprecation gate failed. See:"
+          echo "::error::  apps/docs/docs/explanation/api-stability.mdx §3.1 and §6"
+          echo "::error::  Required: x-stability, x-sunset-date (>= 730d GA / 90d Preview),"
+          echo "::error::            x-replaced-by, x-deprecation-issue, and Refs: #<num> in commit."

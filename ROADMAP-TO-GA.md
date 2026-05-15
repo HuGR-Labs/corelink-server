@@ -224,6 +224,19 @@ The Go/No-Go meeting consumes three formal canonical documents (R-7-2 cluster, w
 
 **Wave R-7 gate:** PRR-S20-GA `work_status: APPROVED`; tag `ga-approved`; **GA-go decision locked** per `GA-GATE-GO-NOGO-TEMPLATE.md` §3 decision matrix.
 
+### 7.2 API stability commitment (R-7 GA Gate input)
+
+The GA promotion vote also commits CoreLink to the public API stability policy
+([`apps/docs/docs/explanation/api-stability.mdx`](apps/docs/docs/explanation/api-stability.mdx)):
+
+- **3-tier model:** GA (full SLO + **24-month** deprecation window) / Preview (no SLO; **90-day** notice) / Internal (no notice).
+- **Per-endpoint baseline:** [`specs/_audits/2026-05-15-api-stability-baseline.md`](specs/_audits/2026-05-15-api-stability-baseline.md) — 35 endpoints classified (23 GA / 2 Preview / 10 Internal).
+- **CI enforcement:** [`.github/workflows/api-deprecation-check.yml`](.github/workflows/api-deprecation-check.yml) rejects any PR that adds `deprecated: true` to a GA endpoint without `x-sunset-date >= today + 730d`, `x-replaced-by`, and `Refs: #<issue>` in the commit. Sunset bring-forward also rejected.
+- **Extractor:** [`scripts/extract-api-deprecations.py`](scripts/extract-api-deprecations.py) emits daily JSON for dashboards + drives the CI gate.
+- **Sales delta:** [`marketing/sales/API-STABILITY-FAQ.md`](marketing/sales/API-STABILITY-FAQ.md) — 10-question enterprise FAQ for the buy-side platform team.
+
+Materialising `x-stability` on every operation in `openapi/corelink-v1.yaml` (today inferred in the audit) is a R-7-2 cluster follow-up; the policy stands regardless because the audit is the legally-binding tier reference.
+
 ---
 
 ## 8. Wave R-8 — GA Launch (depends on R-7 APPROVED; 14 days T-7..T+7; ≤4 agents)
