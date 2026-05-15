@@ -58,7 +58,7 @@ jobs:
           # + INV-AUTH-PROPAGATION-AT-LEAST-ONCE). See
           # `specs/_audits/2026-05-15-tla-coverage-audit.md`.
           - auth_revocation
-          # DEBT-005 partial closure 2026-05-15 — 5 new specs (5/40 critical
+          # DEBT-005 batch 1 closure 2026-05-15 — 5 new specs (5/40 critical
           # INV-no-TLA gaps). See specs/_audits/2026-05-15-debt-register.md.
           - auth_jwt_validation
           - tenant_ctx_propagation
@@ -70,6 +70,17 @@ jobs:
           - auth_pat_hybrid
           - key_lifecycle
           - gc_lock_protocol
+          # DEBT-005 batch 2 closure 2026-05-15 — 5 more specs (10/47 cumulative
+          # — drops critical_no_tla 35 → 30). Closes INV-ROLLOUT-COSIGN-GATE +
+          # INV-SUPPLY-SIGNED-DEPLOY (runtime) + INV-BACKUP-RESTORE-EPHEMERAL +
+          # INV-GC-SWEEP-AUDIT-FAIL-CLOSED + INV-GC-RECONCILE-AUDIT-FAIL-CLOSED
+          # + INV-AC-EVICT-REGION-PINNED + INV-AC-EVICT-TENANT-SCOPED +
+          # INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER.
+          - rollout_cosign_gate
+          - backup_restore_ephemeral
+          - gc_sweep_audit_fail_closed
+          - ac_eviction_isolation
+          - audit_emit_atomic
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
