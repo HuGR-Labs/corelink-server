@@ -162,4 +162,5 @@ tags:
 - `marketing/launch/SUPPORT-RESPONSE-TEMPLATES.md` — companion: 15 ticket-level response templates.
 - `specs/_runbooks/RB-DSR-TICKET-TRIAGE.md` — companion: DSR inbound triage + legal escalation.
 - `marketing/launch/SUPPORT-DASHBOARD-SPEC.md` — companion: support team's operational dashboard (T+0..T+90).
+- `marketing/launch/RELEASE-NOTES-EDITORIAL-GUIDE.md` — companion: customer-facing release-notes editorial workflow (auto-generator at `scripts/generate-release-notes.py`; CI at `.github/workflows/release-notes.yml`; template at `releases/TEMPLATE.md`).
 - `ROADMAP-TO-GA.md` §8 — parent: R-8 Launch wave.

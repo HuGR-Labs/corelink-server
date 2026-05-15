@@ -26,6 +26,13 @@ Each entry cross-references:
 
 - Customer-facing CHANGELOG generation tooling (`scripts/generate-changelog.sh`)
   and PR-level enforcement workflow (`.github/workflows/changelog-validate.yml`).
+- Customer-facing **release-notes auto-generator** (`scripts/generate-release-notes.py`)
+  with `--from / --to / --dry-run` flags, tag-trigger CI
+  (`.github/workflows/release-notes.yml`), polish template
+  (`releases/TEMPLATE.md`), and operator editorial guide
+  (`marketing/launch/RELEASE-NOTES-EDITORIAL-GUIDE.md`). On every `v*` tag
+  push, CI generates `releases/RELEASE-<version>.md`, opens an editorial PR,
+  and creates a draft GitHub Release.
 
 ### Changed
 
