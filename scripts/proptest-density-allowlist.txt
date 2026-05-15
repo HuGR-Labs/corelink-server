@@ -1,0 +1,21 @@
+# proptest-density-allowlist.txt — pre-existing density gaps the gate
+# tolerates without failing CI. New gaps below 1.0 ratio are HARD FAILS.
+#
+# Format: one crate per line. Comment lines start with `#`. Each entry
+# carries the closing WI ID (so the allowlist shrinks as WIs land).
+#
+# Source audit: specs/_audits/2026-05-15-proptest-density.md
+# Gate script: scripts/check_proptest_density_gate.sh
+# Backlog:    specs/_audits/proptest-followup-tickets.md
+#
+# Resolved (via DEBT-009 / DEBT-017):
+#   corelink-slack-real         → WI-PROPTEST-FU-001 (CLOSED 2026-05-15)
+#   corelink-admin-dry-run      → WI-PROPTEST-FU-002 (CLOSED 2026-05-15)
+#   corelink-cf-bindings        → WI-PROPTEST-FU-003 (CLOSED 2026-05-15)
+#   corelink-d1-migrations      → WI-PROPTEST-FU-004 (CLOSED 2026-05-15)
+#
+# Remaining post-DEBT-009 gaps (regression-tolerated; track in
+# follow-up WIs before GA):
+corelink-handler-cas         # follow-up WI: cover INV-CAS-* in handler
+corelink-otel-export         # follow-up WI: OTEL export INV coverage
+corelink-tenant-offboarding  # follow-up WI: offboarding state-machine INVs

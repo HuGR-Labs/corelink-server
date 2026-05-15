@@ -97,6 +97,31 @@ suggested partitioning strategies.
 
 ---
 
+## 4.1 Property test density gate
+
+Every crate with `INV-*` references in `src/` or `tests/` MUST carry at
+least 1 proptest `#[test]` per distinct `INV-*` reference (ratio ≥ 1.0).
+The PR-gate workflow `.github/workflows/proptest-density-gate.yml`
+enforces this.
+
+How to run locally:
+
+```bash
+bash scripts/audit_proptest_density.sh           # full density report
+bash scripts/check_proptest_density_gate.sh      # PR gate (exit 1 on fail)
+```
+
+If a crate must temporarily land below 1.0 (e.g. an INV is referenced
+but the matching proptest is in a follow-up WI), add the crate to
+`scripts/proptest-density-allowlist.txt` with a closing WI ID. The
+allowlist is review-gated by an `@code-owner` so silent regressions
+don't accumulate; the list shrinks as follow-up WIs land.
+
+Audit baseline: `specs/_audits/2026-05-15-proptest-density.md`.
+Followup tickets: `specs/_audits/proptest-followup-tickets.md`.
+
+---
+
 ## 5. What we are unlikely to accept
 
 Saying "no" is part of maintaining a stable product. Common rejection
