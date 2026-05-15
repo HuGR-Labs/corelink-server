@@ -30,11 +30,13 @@ use std::sync::Arc;
 use corelink_audit_chain::{
     audit_chain_schema_version, canonical_audit_event_kinds,
     canonical_audit_event_strings, canonical_date_yyyy_mm_dd, canonical_r2_key,
-    link_chain_hash_from_canonical, AuditChainAuditEventType, AuditEventKind, ChainHash,
-    FailingAuditChainAuditSink, HashChainBuilder, InMemoryAuditChainAuditSink,
+    link_chain_hash_from_canonical, AuditChainAuditEventType, AuditEvent, AuditEventKind,
+    AuditExporter, ChainHash, ExportWindow, FailingAuditChainAuditSink, HashChainBuilder,
+    InMemoryAuditChainAuditSink, InMemoryAuditExporter, InMemoryR2AuditSink,
     AuditChainAuditSink, GENESIS_PREV_HASH, GENESIS_SEQUENCE_NUMBER,
     CLOUDEVENTS_DATACONTENTTYPE, CLOUDEVENTS_SPECVERSION, EVENT_TYPE_PREFIX,
 };
+use corelink_analytics::Region;
 use uuid::Uuid;
 
 // =====================================================================
@@ -385,4 +387,225 @@ fn failing_meta_audit_sink_returns_store_error_with_message() {
     // Kills `emit -> Ok(())` mutation.
     let s = format!("{err}");
     assert!(s.contains("induced") || s.contains("audit"), "diagnostic must mention induced/audit: {s}");
+}
+
+// =====================================================================
+// 2026-05-15 follow-on: kills the 26 missed mutants surfaced by the
+// empirical `cargo mutants -p corelink-audit-chain` measured sweep
+// (see specs/_audits/2026-05-15-mutation-full-sweep.md). 22 of the 26
+// were `delete match arm` mutations on `event::region_from_str`
+// (private serde helper) — covered indirectly via the public
+// `AuditEvent::to_ndjson_line` → `from_ndjson_line` round-trip path
+// for every Region variant. The remaining 4 target observable
+// constant-return mutations on the exporter + sink + the
+// `days_since_epoch_to_ymd` `(mp - 9)` arithmetic mutation.
+// =====================================================================
+
+/// Sweep every `Region` variant through the canonical NDJSON
+/// round-trip. Kills 22 `delete match arm` mutations on
+/// `event::region_from_str` (deserialize side): for each region, the
+/// emitted line must round-trip back to the SAME enum variant; a
+/// deleted match arm would cause that specific region to fail
+/// deserialization (`unknown Region` serde error), which the round-
+/// trip equality assertion catches.
+#[test]
+fn region_ndjson_round_trip_covers_every_variant() {
+    // The 22 canonical regions (must mirror Region as_str list).
+    let regions: [(Region, &str); 22] = [
+        (Region::Iad, "iad"),
+        (Region::Sjc, "sjc"),
+        (Region::Dfw, "dfw"),
+        (Region::Sea, "sea"),
+        (Region::Ord, "ord"),
+        (Region::Lhr, "lhr"),
+        (Region::Fra, "fra"),
+        (Region::Ams, "ams"),
+        (Region::Cdg, "cdg"),
+        (Region::Mad, "mad"),
+        (Region::Gru, "gru"),
+        (Region::Eze, "eze"),
+        (Region::Bog, "bog"),
+        (Region::Nrt, "nrt"),
+        (Region::Sin, "sin"),
+        (Region::Syd, "syd"),
+        (Region::Hkg, "hkg"),
+        (Region::Bom, "bom"),
+        (Region::Icn, "icn"),
+        (Region::Jnb, "jnb"),
+        (Region::Cpt, "cpt"),
+        (Region::Dxb, "dxb"),
+    ];
+    let tenant = Uuid::from_u128(0xDEAD_BEEF);
+    let id = Uuid::from_u128(0xCAFE_BABE);
+    for (region, code) in regions {
+        let ev = AuditEvent::genesis(
+            AuditEventKind::Tenant,
+            "test-source",
+            id,
+            1_000,
+            tenant,
+            region,
+            serde_json::json!({}),
+        );
+        let line = ev.to_ndjson_line().expect("serialize");
+        // The wire payload must carry the canonical 3-letter code.
+        assert!(
+            line.contains(&format!("\"{code}\"")),
+            "ndjson missing canonical code {code}: {line}"
+        );
+        // Round-trip yields the SAME variant; a deleted match arm in
+        // `region_from_str` would surface here as a serde
+        // "unknown Region" deserialization error or wrong-variant.
+        let back = AuditEvent::from_ndjson_line(&line)
+            .expect("deserialize must succeed for canonical region");
+        assert_eq!(back.region, region, "round-trip preserves Region::{code}");
+    }
+}
+
+/// Distinguishes every Region variant: 22 round-trips, 22 distinct
+/// enums. A `delete match arm` collapsing two regions to the same
+/// post-deserialization variant (e.g. all → first) would surface as a
+/// duplicate; the sorted-dedup invariant catches that.
+#[test]
+fn region_ndjson_round_trip_distinguishes_all_22_variants() {
+    let regions = [
+        Region::Iad, Region::Sjc, Region::Dfw, Region::Sea, Region::Ord,
+        Region::Lhr, Region::Fra, Region::Ams, Region::Cdg, Region::Mad,
+        Region::Gru, Region::Eze, Region::Bog, Region::Nrt, Region::Sin,
+        Region::Syd, Region::Hkg, Region::Bom, Region::Icn, Region::Jnb,
+        Region::Cpt, Region::Dxb,
+    ];
+    let tenant = Uuid::from_u128(1);
+    let id = Uuid::from_u128(2);
+    let mut round_tripped: Vec<Region> = Vec::with_capacity(22);
+    for region in regions {
+        let ev = AuditEvent::genesis(
+            AuditEventKind::Tenant,
+            "src",
+            id,
+            1_000,
+            tenant,
+            region,
+            serde_json::json!({}),
+        );
+        let line = ev.to_ndjson_line().expect("ser");
+        let back = AuditEvent::from_ndjson_line(&line).expect("deser");
+        round_tripped.push(back.region);
+    }
+    // Distinctness — kills a single-arm survivor collapsing variants.
+    let mut sorted = round_tripped.clone();
+    sorted.sort();
+    sorted.dedup();
+    assert_eq!(sorted.len(), 22, "22 distinct regions after round-trip");
+}
+
+// =====================================================================
+// `InMemoryAuditExporter::audit_emitted_count` — kills `-> Ok(0)` and
+// `-> Ok(1)` constant-return mutations. After two distinct
+// `export_window` calls the count MUST equal 2 (≠ 0 and ≠ 1).
+// =====================================================================
+
+#[test]
+fn exporter_audit_emitted_count_reflects_real_emit_count() {
+    let exp = InMemoryAuditExporter::new();
+    // Pre-state: zero.
+    assert_eq!(exp.audit_emitted_count().expect("guard"), 0);
+    // Two distinct export_window calls on an empty tenant — each emits
+    // one audit-of-audit record per the CTRL-AUDIT-001 fail-closed
+    // envelope (export still completes for an empty tenant per
+    // `empty_tenant_yields_empty_export`).
+    exp.export_window("tenant-a", ExportWindow::new(0, 1_000).expect("window"))
+        .expect("export");
+    exp.export_window("tenant-b", ExportWindow::new(0, 2_000).expect("window"))
+        .expect("export");
+    // Kills `-> Ok(0)` AND `-> Ok(1)`: actual count is exactly 2.
+    let count = exp.audit_emitted_count().expect("guard");
+    assert_eq!(count, 2, "two export_window calls => two audit-of-audit records");
+    // Cross-check via the snapshot path.
+    let snap = exp.audit_emitted_snapshot().expect("snap");
+    assert_eq!(snap.len(), 2);
+}
+
+// =====================================================================
+// `days_since_epoch_to_ymd` arithmetic — kills `(mp - 9) -> (mp / 9)`
+// at sink.rs:145:55. For January `mp == 10` (10-9 == 10/9 == 1, blind
+// spot); for February `mp == 11` (11-9 == 2 ≠ 11/9 == 1). Existing
+// `canonical_date_yyyy_mm_dd_pins_canonical_vectors` covers Jan only;
+// this test adds a February vector to break the algebraic collision.
+// =====================================================================
+
+#[test]
+fn canonical_date_february_kills_minus_to_divide_mutation() {
+    // 2024-02-01 UTC = 1_706_745_600_000 ms (Feb has mp == 11; 11-9 == 2,
+    // 11/9 == 1 — distinguishes the mutation).
+    assert_eq!(canonical_date_yyyy_mm_dd(1_706_745_600_000), "2024-02-01");
+    // 2026-02-15 UTC = 1_771_113_600_000 ms (second February vector).
+    assert_eq!(canonical_date_yyyy_mm_dd(1_771_113_600_000), "2026-02-15");
+    // March (mp == 12; 12-9 == 3 ≠ 12/9 == 1) — second-order check.
+    // 2024-03-01 UTC = 1_709_251_200_000 ms.
+    assert_eq!(canonical_date_yyyy_mm_dd(1_709_251_200_000), "2024-03-01");
+    // November (mp == 8; 8-9 underflows on integer; never hit because
+    // `mp < 10` branch takes over — defensive cross-check on the
+    // OTHER arm of the if).
+    // 2024-11-01 UTC = 1_730_419_200_000 ms.
+    assert_eq!(canonical_date_yyyy_mm_dd(1_730_419_200_000), "2024-11-01");
+}
+
+// =====================================================================
+// `InMemoryR2AuditSink::snapshot` + `::is_empty` — kills `-> vec![]`
+// and `-> true` constant-return mutations.
+// =====================================================================
+
+#[test]
+fn in_memory_r2_audit_sink_snapshot_and_is_empty_reflect_real_state() {
+    let audit = Arc::new(InMemoryAuditChainAuditSink::new());
+    let sink = InMemoryR2AuditSink::new(Arc::clone(&audit));
+    // Fresh sink: snapshot is empty + is_empty true + len 0.
+    assert!(sink.snapshot().is_empty());
+    assert!(sink.is_empty());
+    assert_eq!(sink.len(), 0);
+
+    // Emit one genesis event; the R2 buffer must observe it.
+    let tenant = Uuid::from_u128(0x1234);
+    let id = Uuid::from_u128(0x5678);
+    let ev = AuditEvent::genesis(
+        AuditEventKind::Tenant,
+        "src",
+        id,
+        1_000,
+        tenant,
+        Region::Iad,
+        serde_json::json!({"k": "v"}),
+    );
+    sink.emit(ev, "req-1", 2_000).expect("emit");
+
+    // Kills `snapshot -> vec![]`: snapshot now contains exactly 1 line.
+    let snap = sink.snapshot();
+    assert_eq!(snap.len(), 1, "snapshot must reflect the one emitted event");
+    assert_eq!(snap[0].tenant_id, tenant);
+    assert_eq!(snap[0].sequence_number, 0);
+    assert!(snap[0].ndjson.contains("\"iad\""));
+
+    // Kills `is_empty -> true`: post-emit, sink is non-empty + len 1.
+    assert!(!sink.is_empty(), "sink must be non-empty after emit");
+    assert_eq!(sink.len(), 1);
+
+    // Second emit advances the chain; snapshot grows; still non-empty.
+    let head = sink.chain_head(tenant).expect("chain head");
+    let next_seq = sink.next_sequence(tenant);
+    let ev2 = AuditEvent::new(
+        AuditEventKind::CasPut,
+        "src",
+        Uuid::from_u128(0x9999),
+        3_000,
+        tenant,
+        Region::Gru,
+        next_seq,
+        head,
+        serde_json::json!({"k": "v2"}),
+    );
+    sink.emit(ev2, "req-2", 4_000).expect("emit2");
+    assert_eq!(sink.snapshot().len(), 2);
+    assert_eq!(sink.len(), 2);
+    assert!(!sink.is_empty());
 }
