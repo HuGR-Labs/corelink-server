@@ -61,6 +61,7 @@
 
 pub mod audit;
 pub mod error;
+pub mod failback;
 pub mod health;
 pub mod probe;
 pub mod router;
@@ -72,6 +73,12 @@ pub use audit::{
     InMemoryFailoverAuditSink,
 };
 pub use error::FailoverError;
+pub use failback::{
+    assert_outbox_drained_or_block, AuditOutboxRepository, FailbackBlockedCounter,
+    FailingAuditOutbox, FailingFailbackBlockedCounter, InMemoryAuditOutbox,
+    InMemoryFailbackBlockedCounter, FAILBACK_BLOCKED_REASON_AUDIT_OUTBOX_DIRTY,
+    METRIC_FAILBACK_BLOCKED_TOTAL,
+};
 pub use health::{
     FailoverTrigger, RegionHealth, RegionHealthSnapshot, CONSECUTIVE_FAILURES_THRESHOLD,
     LATENCY_SLO_CEIL_MS, RATE_5XX_THRESHOLD_PCT, SLO_FAILOVER_OVERHEAD_MS, SUSTAINED_WINDOW_SECS,

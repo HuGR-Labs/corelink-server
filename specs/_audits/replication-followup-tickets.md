@@ -133,6 +133,17 @@ Each ticket below uses the canonical form:
 
 ### R-PREP-REPL-P1-001 — KV cross-region propagation-lag SLI
 
+- **Status:** **CLOSED 2026-05-15** (wt/debt-011-replication-p1-v2)
+- **Closure summary:** `KvPropagationProbe` trait + `InMemoryKvPropagationProbe`
+  added in `crates/corelink-region/src/kv_propagation.rs`. Canonical metric
+  name `corelink_kv_propagation_lag_seconds` + 30 s cadence + 60 s typical /
+  300 s pessimistic ceilings + 95% sample fraction target exported as
+  constants and asserted against `slo_catalog.md §4.25`. Helper
+  `fraction_within_typical()` ships the verifier-aligned SLO check. Real
+  Cloudflare KV probe-worker production wiring (write `kv_probe:<region>:<ts>`
+  + cross-region read sweep every 30 s) remains `trait-abstraction-defer`
+  per charter. Tests: `crates/corelink-region/tests/kv_propagation_sli.rs`
+  (7 unit + 1 proptest).
 - **ID:** R-PREP-REPL-P1-001
 - **Priority:** P1
 - **Domain:** KV
@@ -147,6 +158,22 @@ Each ticket below uses the canonical form:
 
 ### R-PREP-REPL-P1-002 — `audit_outbox` failback drain test
 
+- **Status:** **CLOSED 2026-05-15** (wt/debt-011-replication-p1-v2)
+- **Closure summary:** New module
+  `crates/corelink-failover-router/src/failback.rs` ships
+  `AuditOutboxRepository` trait + `InMemoryAuditOutbox` + the canonical gate
+  function `assert_outbox_drained_or_block()` that the failback orchestrator
+  (RB-ACTIVE-FAILOVER §7) calls before re-engaging writes. Refusal emits
+  `corelink_failback_blocked_total{reason="audit_outbox_dirty"}` counter +
+  a `failover.resolved`-class audit record with detail
+  `"audit_outbox_dirty undrained=N"` BEFORE returning
+  `FailoverError::WriteBlockedDuringFailover` (audit fail-CLOSED preserved;
+  observability emit is best-effort). Fail-CLOSED extensions: outbox query
+  failure → `FailoverError::Internal` with forensic audit trace; audit emit
+  failure on dirty outbox → `FailoverError::Audit` (never silently allow
+  re-engagement). Tests: `crates/corelink-failover-router/tests/failback_outbox_drain.rs`
+  (8 integration + 9 in-module unit) covering the drill-matrix scenario
+  (seed dirty → refuse → drain → unblock) and per-region isolation.
 - **ID:** R-PREP-REPL-P1-002
 - **Priority:** P1
 - **Domain:** D1 / audit chain
@@ -160,6 +187,20 @@ Each ticket below uses the canonical form:
 
 ### R-PREP-REPL-P1-003 — DO-to-D1 sync-age SLI for TenantQuota + RateLimiter
 
+- **Status:** **CLOSED 2026-05-15** (wt/debt-011-replication-p1-v2)
+- **Closure summary:** `DoSyncAgeProbe` trait + `InMemoryDoSyncAgeProbe`
+  added in `crates/corelink-region/src/do_sync_age.rs`. `DoClass`
+  `#[non_exhaustive]` 3-canonical (`TenantQuota` / `ConfigSingleton` /
+  `RateLimiter`); `RateLimiter` budget is `None` (excluded from SLO per
+  audit §3.5 edge case (a)). Canonical metric name
+  `corelink_do_sync_age_seconds` + per-class budgets (300 s / 60 s / excluded)
+  exported as constants and asserted against `slo_catalog.md §4.26`.
+  `DoSyncAgeSample::within_budget()` ships the verifier-aligned check with
+  strict `<=` boundary semantics. Real CF Worker DO-tick wiring (read
+  `tenant_storage_state.last_synced_at` from D1) remains
+  `trait-abstraction-defer` per charter. Tests:
+  `crates/corelink-region/tests/do_sync_age_sli.rs` (9 integration +
+  13 in-module unit).
 - **ID:** R-PREP-REPL-P1-003
 - **Priority:** P1
 - **Domain:** DO state
@@ -173,6 +214,19 @@ Each ticket below uses the canonical form:
 
 ### R-PREP-REPL-P1-004 — R2 platform CRR (cold/AC/audit) lag indirect SLI
 
+- **Status:** **CLOSED 2026-05-15** (wt/debt-011-replication-p1-v2)
+- **Closure summary:** `R2CrrProbe` trait + `InMemoryR2CrrProbe` added in
+  `crates/corelink-region/src/r2_crr.rs`. Canonical metric name
+  `corelink_r2_crr_lag_seconds` + 5 min cadence + 24 h ceiling exported as
+  constants and asserted against `slo_catalog.md §4.23 "Target (CRR)"`.
+  `R2CrrSample` carries an `object_present` flag; `within_ceiling()` requires
+  BOTH presence AND `lag <= 24h`. `is_missing_incident()` discriminates the
+  "object missing after 24h" SEV-2 paging threshold (§4.23 burn alert table).
+  Real CF Worker R2 probe wiring (write `r2_probe/<region>/<ts>.bin` to
+  primary → HEAD on replica bucket retry loop) remains
+  `trait-abstraction-defer` per charter. Tests:
+  `crates/corelink-region/tests/r2_crr_sli.rs` (9 integration + 14 in-module
+  unit).
 - **ID:** R-PREP-REPL-P1-004
 - **Priority:** P1
 - **Domain:** R2 (cold + AC + audit buckets — platform CRR)
@@ -234,9 +288,9 @@ Each ticket below uses the canonical form:
 | Priority | Count | Status | Description |
 |---|---|---|---|
 | P0 | 3 | **CLOSED 2026-05-15** (wt/debt-011-replication-p0) | Hard blockers for DR-16 prod-mode dry-run (SLI + verifier coverage of R2-hot + D1 + daily aggregate). |
-| P1 | 4 | open | Required before GA; covers KV + audit_outbox + DO + R2-CRR. |
+| P1 | 4 | **CLOSED 2026-05-15** (wt/debt-011-replication-p1-v2) | KV propagation SLI + audit_outbox failback drain gate + DO sync-age SLI + R2-CRR indirect SLI. |
 | P2 | 3 | open | Post-GA polish (Neon SLI + replica-worker coverage + multipart-failover inventory). |
-| **Total** | **10** | **3 / 10 CLOSED** | |
+| **Total** | **10** | **7 / 10 CLOSED** | |
 
 All 10 tickets reference back to the canonical audit (`2026-05-15-replication-audit.md`) and the four new SLOs (`SLO-REPLICATION-LAG-{R2,D1,KV,DO}`) added to `slo_catalog.md` in the same commit.
 

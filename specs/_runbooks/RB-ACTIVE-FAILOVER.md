@@ -77,6 +77,10 @@ The following alerts MUST fire (or be synthetically fired in `--simulate`/`--sta
 | `ReplicationLagR2HotSli` | `corelink_replication_lag_seconds{domain="r2_hot",primary_region,replica_region}` (continuous SLI; closes DEBT-011 P0-001 — `SLO-REPLICATION-LAG-R2`, `slo_catalog.md §4.23`) | `histogram_quantile(0.99, rate({metric}_bucket[1h])) <= 60` |
 | `ReplicationLagD1Sli` | `corelink_d1_replica_lag_seconds{primary_region,replica_region}` (continuous SLI; closes DEBT-011 P0-002 — `SLO-REPLICATION-LAG-D1`, `slo_catalog.md §4.24`) | `quantile_over_time(0.99, metric[1h]) <= 60`; **read this instead of the CF dashboard** when sequencing step 1.3 below (was the GAP-R3 hazard pre-2026-05-15) |
 | `ReplicationVerifierStatus` | `scripts/verify-replication-lag.py --mode=prod` (daily cron; closes DEBT-011 P0-003) | exit 0 = all domains within RPO; exit 1 = SEV ladder applies; exit 2 = inconclusive (do NOT page) |
+| `KvPropagationLagSli` | `corelink_kv_propagation_lag_seconds{write_region,read_region}` (continuous SLI; closes DEBT-011 P1-001 — `SLO-REPLICATION-LAG-KV`, `slo_catalog.md §4.25`) | `histogram_quantile(0.99, rate({metric}_bucket[1h])) <= 60` in 95% of region-pair samples |
+| `DoSyncAgeSli` | `corelink_do_sync_age_seconds{do_class,region}` (continuous SLI; closes DEBT-011 P1-003 — `SLO-REPLICATION-LAG-DO`, `slo_catalog.md §4.26`) | TenantQuota `<= 300`, ConfigSingleton `<= 60`, RateLimiter excluded |
+| `R2CrrLagSli` | `corelink_r2_crr_lag_seconds{primary_region,replica_region}` (continuous SLI; closes DEBT-011 P1-004 — `SLO-REPLICATION-LAG-R2` Target (CRR), `slo_catalog.md §4.23`) | `quantile_over_time(0.99, metric[1d]) <= 86400` AND zero "object missing after 24h" incidents |
+| `FailbackBlocked` | `corelink_failback_blocked_total{reason="audit_outbox_dirty"}` counter (closes DEBT-011 P1-002 — `RB §7.2` gate; `crates/corelink-failover-router::failback::assert_outbox_drained_or_block`) | `increase(metric[1h]) == 0` during stable ops; non-zero in a failback window = drain incomplete, refer §7.2 |
 
 ### 1.2 Commands
 
@@ -332,6 +336,7 @@ bash scripts/active-failover-drill.sh --staging --emit-audit "failover.resolved"
 - [ ] Reverse-replication report: zero diverged rows (sibling-only writes all present in primary).
 - [ ] BLAKE3 + audit-chain Merkle walk passes against primary.
 - [ ] Replication-lag ≤ 5s sustained 60s.
+- [ ] **`audit_outbox` drain gate (DEBT-011 P1-002):** `assert_outbox_drained_or_block` returns `Ok(())` for `old_primary = ${PRIMARY}` before §7.2 step 4 (lease flip back). If it returns `FailoverError::WriteBlockedDuringFailover`, the orchestrator MUST loop on `mark_all_drained` checks; if `FailoverError::Audit` or `FailoverError::Internal`, escalate SEV-2 — never bypass the gate. The refusal also emits `corelink_failback_blocked_total{reason="audit_outbox_dirty"}` for dashboard visibility (see §1.1 `FailbackBlocked`).
 
 ### 7.4 Exit gate
 
