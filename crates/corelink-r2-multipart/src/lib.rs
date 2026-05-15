@@ -75,12 +75,19 @@ pub mod adapter;
 pub mod bounds;
 pub mod concurrency;
 pub mod error;
+pub mod failover;
 pub mod in_memory;
 pub mod object_key;
 pub mod types;
 
 pub use adapter::{InitiateRequest, MultipartAdapter};
 pub use error::MultipartError;
+pub use failover::{
+    AbortedSessionRow, FailingMultipartAuditSink, InMemoryMultipartAuditSink,
+    InMemoryMultipartFailoverInventory, MultipartAbortedEvent, MultipartAuditSink,
+    MultipartFailoverError, MultipartFailoverInventory, MultipartFailoverReport,
+    CLOUDEVENT_TYPE_MULTIPART_ABORTED, METRIC_FAILOVER_MULTIPART_ABORTED_TOTAL,
+};
 pub use in_memory::{AlwaysFailingMultipartAdapter, InMemoryMultipartAdapter};
 pub use types::{
     Bucket, CompletedObject, MultipartUpload, OrphanedUpload, PartETag, PartNumber, SessionState,

@@ -423,6 +423,51 @@ SLOs individuais (§4.x) podem override interpolation via linha explícita "Targ
 | Anchor             | `specs/_audits/2026-05-15-replication-audit.md §3.4`                                               |
 | Notas              | Closes audit gap GAP-R4. KV is global eventual — every region pair is probed (12 pairs / 4×3).    |
 
+### 4.27 Reliability — Neon read-replica lag (R-prep replication audit, soft)
+
+**SLO-REPLICATION-LAG-NEON** (internal; **soft / informational** — no alerting at GA)
+
+| Campo              | Valor                                                                                              |
+|--------------------|----------------------------------------------------------------------------------------------------|
+| SLI                | p99 `corelink_neon_replica_lag_seconds{primary_region, replica_region}` over rolling 1h window     |
+| Target (soft)      | p99 ≤ **5 s** — informational only; **no paging at GA**                                            |
+| Window             | 30 days rolling                                                                                    |
+| Burn alert         | **None at GA** — dashboard trend + quarterly review with Neon platform team                        |
+| Owner              | SRE Lead                                                                                           |
+| Verifier           | `scripts/verify-replication-lag.py --domain=neon`                                                  |
+| Anchor             | `specs/_audits/2026-05-15-replication-audit.md §3.6` (GAP-R6)                                      |
+| Notas              | Closes audit gap GAP-R6. CoreLink-side probe complements Neon platform SLA — catches silent regressions. Toggling to paging requires ADR. |
+
+### 4.28 Reliability — Hot-blob replication coverage (R-prep replication audit, polish)
+
+**SLO-HOT-BLOB-COVERAGE** (internal; post-GA observation to inform aggregation-window ADR)
+
+| Campo              | Valor                                                                                              |
+|--------------------|----------------------------------------------------------------------------------------------------|
+| SLI                | `corelink_hot_blob_replication_coverage_ratio{region}` gauge per aggregation window                |
+| Target             | ratio ≥ **0.90** (≥ 90% of newly-hot blobs replicated within 24 h of qualification)                |
+| Window             | 90 days rolling post-GA observation                                                                |
+| Burn alert         | None at GA — if sustained < 0.90 for 30 d, propose ADR to shorten `AGGREGATION_WINDOW_DAYS`        |
+| Owner              | SRE Lead + Replica-Worker owner                                                                    |
+| Verifier           | dashboard panel; ratio surfaced via `corelink-replica-worker::coverage` module                     |
+| Anchor             | `specs/_audits/2026-05-15-replication-audit.md §3.1 edge case (c)`                                 |
+| Notas              | Closes ticket P2-002. Empty-window vacuous truth = 1.0; inversion clamped to 1.0 defensively.      |
+
+### 4.29 Reliability — Multipart in-flight inventory at failover (R-prep replication audit, polish)
+
+**SLO-MULTIPART-FAILOVER-INVENTORY** (internal; 100% accounting of in-flight uploads aborted at failover)
+
+| Campo              | Valor                                                                                              |
+|--------------------|----------------------------------------------------------------------------------------------------|
+| SLI                | `corelink_failover_multipart_aborted_total{region, tenant_tier}` counter; per-session audit emit via `corelink.failover.multipart_aborted.v1` |
+| Target             | **100%** of in-flight `multipart_sessions WHERE state='in_progress'` rows at drain time emit one CloudEvent per session |
+| Window             | per failover incident                                                                              |
+| Burn alert         | Any session count > 0 not matched by a CloudEvent within drain window → SEV-2                      |
+| Owner              | SRE Lead + Enterprise Support                                                                      |
+| Verifier           | drill matrix in `ACTIVE-FAILOVER-DRILL-SPEC.md` step 3 (Drain); seed 3 synthetic in-flight uploads; assert 3 CloudEvents |
+| Anchor             | `specs/_audits/2026-05-15-replication-audit.md §3.5 edge case (b)`                                 |
+| Notas              | Closes ticket P2-003. Audit fail-CLOSED: any per-session emit error halts the drain. Per-tenant grouping (`by_tenant()`) drives the on-call comms template. |
+
 ### 4.26 Reliability — DO state sync-age (R-prep replication audit)
 
 **SLO-REPLICATION-LAG-DO** (internal; continuous SLI for DO→D1 sync age as cross-region rebuild proxy)
