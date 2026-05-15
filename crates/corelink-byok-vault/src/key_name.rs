@@ -18,6 +18,7 @@ fn key_name_re() -> &'static Regex {
     RE.get_or_init(|| {
         Regex::new(r"^[A-Za-z0-9_-]+$").unwrap_or_else(|_| {
             #[allow(clippy::expect_used)]
+            // nosemgrep: corelink.rust.no-expect-in-byok-src  # reason: fallback for an impossible static-literal compile failure ("$^" is a trivial regex that always parses); panic here is unreachable in practice and not on the runtime key path. Owner-approved per R-prep static-analysis triage 2026-05-15.
             Regex::new("$^").expect("trivial regex must compile")
         })
     })

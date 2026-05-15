@@ -32,6 +32,7 @@ fn full_regex() -> &'static regex::Regex {
         regex::Regex::new(
             r"^projects/[a-z][a-z0-9-]{4,28}[a-z0-9]/locations/[A-Za-z0-9_-]{1,63}/keyRings/[A-Za-z0-9_-]{1,63}/cryptoKeys/[A-Za-z0-9_-]{1,63}(/cryptoKeyVersions/[1-9][0-9]*)?$",
         )
+        // nosemgrep: corelink.rust.no-expect-in-byok-src  # reason: compile-time-constant regex literal; failure here would be a build-time bug (caught by tests), not a runtime key-path panic. Owner-approved per R-prep static-analysis triage 2026-05-15.
         .expect("static regex compiles")
     })
 }

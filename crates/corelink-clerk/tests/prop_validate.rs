@@ -180,8 +180,17 @@ proptest! {
         claims.iss = bogus.clone();
         let jwt = sign(shared_key(), &claims);
         let result = futures_executor_blocking(adapter.validate(&jwt));
-        prop_assert!(matches!(result, Err(AuthError::IssuerMismatch { .. })),
-            "expected IssuerMismatch, got {:?}", result);
+        match result {
+            Err(AuthError::IssuerMismatch { got, expected }) => {
+                // S-08 P1-1 anti-pattern fix: destructure + assert payload
+                // fields rather than relying on `matches!(.., { .. })` which
+                // would pass on a tag-only match with wrong payload.
+                prop_assert_eq!(&got, &bogus);
+                prop_assert!(!expected.contains(&bogus),
+                    "expected allowlist should not contain the bogus iss: {expected:?}");
+            }
+            other => prop_assert!(false, "expected IssuerMismatch, got {other:?}"),
+        }
     }
 
     /// Audience-mismatch regression: any `aud` ≠ configured audience

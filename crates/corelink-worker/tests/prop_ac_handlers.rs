@@ -311,7 +311,14 @@ proptest! {
             let dead = outputs.get(dead_idx as usize).unwrap();
             w.outputs.insert_tombstoned(tenant, dead.digest);
             let r = w.handler.update_action_result(&ctx, &ad, ar, "req-up").await;
-            prop_assert!(matches!(r, Err(AcError::OutputsMissing { .. })), "expected OutputsMissing; got {r:?}");
+            // S-08 P1-1 anti-pattern fix: destructure + assert payload
+            // (count must be ≥ 1 — at least the tombstoned dead_idx output).
+            match &r {
+                Err(AcError::OutputsMissing { count }) => {
+                    prop_assert!(*count >= 1, "OutputsMissing.count must be ≥ 1; got {count}");
+                }
+                _ => prop_assert!(false, "expected OutputsMissing; got {r:?}"),
+            }
             // No row.
             prop_assert!(w.meta.is_empty().unwrap());
             // Audit emitted.
