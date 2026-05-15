@@ -3,7 +3,7 @@ id: "AUDIT-2026-05-15-CF-BINDING-REAL-PATTERN"
 type: "audit_report"
 doc_status: "FROZEN"
 audit_status: "SEALED"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-15"
 updated: "2026-05-15"
 owner: "Gustavo Schneiter"
@@ -153,7 +153,22 @@ All five MUST pass before merge.
 
 Each follow-up should land in its own worktree (`wt/r-prep-cf-{d1,kv,do}-real`) and link back to this doc.
 
+### 5.1 Per-binding replication checklist
+
+Tracks which CF runtime surfaces have a real-impl binding shipped against the template above. Each row ticks once the full quality gate (native + wasm32 build + clippy + test + spec-validator) has been satisfied and the binding is wired into `crate::lib`.
+
+| Binding | Module                                          | Wave   | wasm32 build | native stub | clippy `-D warnings` | tests | Status      |
+|---------|-------------------------------------------------|--------|--------------|-------------|----------------------|-------|-------------|
+| R2      | `crates/corelink-cf-bindings/src/r2_real.rs`    | 13     | green        | green       | green                | 18    | **shipped** |
+| D1      | `crates/corelink-cf-bindings/src/d1_real.rs`    | 14     | green        | green       | green                | 18 (+13 inline) | **shipped** |
+| KV      | `crates/corelink-cf-bindings/src/kv_real.rs`    | 15 (pending) | —      | —           | —                    | —     | pending     |
+| DO      | `crates/corelink-cf-bindings/src/do_real.rs`    | 16 (pending) | —      | —           | —                    | —     | pending     |
+
+**D1 row notes (wave 14):** `CfD1DatabaseReal` wraps `worker::D1Database` with 5 core ops (`prepare`, `bind`, `first`, `all`, `run`). Tenant-prefix enforcement is two-layered: (1) `TenantScopedQuery` rejects SQL missing `WHERE tenant_id = ?` (SELECT/UPDATE/DELETE) or missing `tenant_id` in the column list (INSERT); (2) bind-time `subtle::ConstantTimeEq` check forces the first positional parameter to match the anchored `TenantId`. Audit fail-CLOSED on `run` mutations (pre-emission before dispatch + post-emission when `D1ResultMeta::changes > 0`).
+
 ## 6. Verification
+
+### 6.1 R2 (wave 13)
 
 - `CfR2BucketReal` wraps `worker::r2::Bucket` with: head / get / put / delete / list + multipart create/upload_part/complete/abort.
 - Tenant prefix enforced (`TenantPrefix::new` + `scoped_key`).
@@ -162,6 +177,17 @@ Each follow-up should land in its own worktree (`wt/r-prep-cf-{d1,kv,do}-real`) 
 - wasm32-unknown-unknown build green.
 - Native build green.
 - clippy `-D warnings` green on `--tests`.
+
+### 6.2 D1 (wave 14)
+
+- `CfD1DatabaseReal` wraps `worker::D1Database` with: `prepare` / `bind` / `first` / `all` / `run` (5 core ops).
+- Tenant scope enforced (`TenantId::new` + `TenantScopedQuery` + bind-time `subtle::ConstantTimeEq` on the first positional parameter).
+- Native stub returns `D1Error::Backend("WasmOnly: …")` after validation + audit pre-emission.
+- 18 integration tests in `tests/d1_real.rs` (+ 13 inline tests in `d1_real::tests`).
+- wasm32-unknown-unknown build green.
+- Native build green.
+- clippy `-D warnings` green on `--tests`.
+- Charter compliance: `#![forbid(unsafe_code)]`, no `unwrap`/`expect`/`panic` outside test, `D1Error` and `D1Op` are `#[non_exhaustive]`, audit fail-CLOSED on every mutation, no tokio runtime in src (the wasm32 async surface uses `worker`'s native futures).
 
 ## 7. Out of scope
 

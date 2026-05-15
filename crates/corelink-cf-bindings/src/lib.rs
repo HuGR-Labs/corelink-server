@@ -67,6 +67,15 @@ pub mod cf_r2;
 /// pattern (D1/KV/DO follow-ups).
 pub mod r2_real;
 
+/// Real CF D1 binding with tenant-scoped query primitives
+/// (prepare/bind/first/all/run) and audit-fenced mutations. Dual-target:
+/// wasm32 wires `worker::D1Database`; native build provides a stub that
+/// returns `D1Error::Backend("WasmOnly: …")` so callers can construct the
+/// type on the host without conditional compilation. Bind-time tenant-id
+/// equality uses `subtle::ConstantTimeEq`. See module docs for the wrapper
+/// contract; replicates the pattern landed in [`r2_real`].
+pub mod d1_real;
+
 #[cfg(target_arch = "wasm32")]
 pub use cf_d1::CfD1DatabaseAdapter;
 #[cfg(target_arch = "wasm32")]
@@ -76,4 +85,5 @@ pub use cf_kv::CfKvNamespaceAdapter;
 #[cfg(target_arch = "wasm32")]
 pub use cf_r2::CfR2BucketAdapter;
 
+pub use d1_real::{CfD1DatabaseReal, D1Error, D1Op, TenantId, TenantScopedQuery};
 pub use r2_real::{CfR2BucketReal, R2Op, TenantPrefix, TenantScopedKey};

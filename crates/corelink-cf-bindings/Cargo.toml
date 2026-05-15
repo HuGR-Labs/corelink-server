@@ -57,6 +57,19 @@ thiserror = { workspace = true }
 # wasm bindgen futures for async bridging in the worker handler.
 wasm-bindgen-futures = { workspace = true }
 
+# Constant-time equality for tenant_id comparison in the D1 real binding
+# (defense-in-depth against timing-side-channel leakage on a hot-path
+# multi-tenant query route). See r2_real for the parallel rationale on
+# the prefix-derivation code path.
+subtle = { workspace = true }
+
+# Serde for D1 row deserialisation in `CfD1DatabaseReal::first` (the
+# wasm32 production path delegates to `worker::D1PreparedStatement::first`
+# which is generic over `for<'a> Deserialize<'a>`). The native stub does
+# not exercise this surface but the trait bound still requires `serde`
+# at the type-system layer.
+serde = { workspace = true }
+
 # Host-side native tests for INV-CAS-IDEMPOTENCY exercise the
 # `corelink-worker::storage::r2::InMemoryR2` fake (same trait surface as
 # the wasm32-only `CfR2BucketAdapter`). The native build of this crate is
