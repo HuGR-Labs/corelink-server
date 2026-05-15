@@ -1,0 +1,164 @@
+# DASH-DSR-STATUSPAGE alert rules — Wave-18 PagerDuty wiring for the
+# wave-17 DSR Statuspage publish scheduler (WI-S11-002 §6 closure note
+# wave-18 PD wiring AC).
+#
+# Source-of-truth (event-type constants are pinned by Rust tests
+# `canonical_event_types_pinned` in
+# `crates/corelink-dsr-statuspage-scheduler/src/audit.rs`):
+#
+#   1. corelink.privacy.statuspage_publish_scheduled.v1
+#        — info; dashboard-only; NOT paged (every tick start).
+#   2. corelink.privacy.statuspage_publish_succeeded.v1
+#        — info; dashboard-only; NOT paged (happy path).
+#   3. corelink.privacy.statuspage_publish_failed.v1
+#        — SEV-1 transparency incident (this file: rule
+#          `DsrStatuspagePublishFailed`).
+#   4. corelink.privacy.statuspage_publish_skipped.v1
+#        — info; dashboard-only; NOT paged (idempotency dedupe).
+#
+# Routing per `specs/03_architecture/observability_model.md` §9:
+# Alertmanager → PagerDuty Events API v2 via `routing_key` bound to
+# the `PAGERDUTY_ROUTING_KEY` secret (row #11 of
+# `docs/internal/secrets-checklist.md`; same secret as
+# `dash-audit-export-alerts.yml`). Slack mirror via
+# `#corelink-alerts`.
+#
+# Severity mapping per observability_model §9.2:
+#   SEV-1 → PagerDuty `severity: critical` + primary escalation policy
+#           `corelink-incident-response`; 4h MTTA cap; 24h MTTR target
+#           per S-17 ops maturity baseline. The MTTA budget here is
+#           wider than the audit-export SEV-1 (5 min) because the
+#           DSR worker (full erasure processing) is unaffected — this
+#           alert is a customer-visible transparency surface, not a
+#           DSR-blocking failure. See `RB-DSR-STATUSPAGE-PUBLISH-FAILED`
+#           opening note for the rationale.
+#
+# Privacy / pseudonymisation (INV-AUTH-AUDIT-PSEUDONYMIZATION +
+# CTRL-PRIV-001 + INV-OBS-CARDINALITY-BUDGET): the DSR Statuspage
+# publish path is system-scoped (one publish per UTC day per
+# (page_id, metric_id)) — there is NO tenant_id in the path. The PD
+# `payload.custom_details` carries the BLAKE3-pseudonymised
+# `page_id_hex8` + `metric_id_hex8` ONLY (first 8 hex chars of BLAKE3)
+# — never the raw Atlassian Statuspage identifiers, and NEVER the
+# `STATUSPAGE_API_KEY` bytes. The wave-16 `redact_api_key` helper
+# (last-4 only) bottoms-out at `StatuspageHttpClient`; this alert
+# pipeline never sees the plaintext key. CTRL-PRIV-001 +
+# INV-OBS-CARDINALITY-BUDGET enforce this server-side at the metric
+# emitter (the scheduler `audit::SchedulerAuditSink`).
+#
+# Metric contract (counters incremented inside the scheduler on every
+# emit; labels carry the BLAKE3-pseudonymised hex8 ONLY, never the
+# raw Atlassian identifiers):
+#   corelink_dsr_statuspage_publish_failed_total{page_id_hex8, metric_id_hex8, reason_class}
+#   corelink_dsr_statuspage_publish_succeeded_total{page_id_hex8, metric_id_hex8}
+#   corelink_dsr_statuspage_publish_skipped_total{page_id_hex8, metric_id_hex8, skip_reason}
+#   corelink_dsr_statuspage_publish_scheduled_total{page_id_hex8, metric_id_hex8}
+#
+# `reason_class` is a low-cardinality bucket
+# (`auth|vendor_5xx|rate_limit|transport|d1_read|other`) derived from
+# the audit envelope `reason` token at emit time — the raw reason
+# string is NOT a label (it would exceed the
+# INV-OBS-CARDINALITY-BUDGET 20k-series ceiling).
+#
+# CI gate: `promtool test rules` on PR (wired via the existing
+# `dashboards/alerts/*.yml` validator; same pattern as
+# `dash-audit-export-alerts.yml`).
+
+groups:
+  - name: corelink-dsr-statuspage
+    interval: 30s
+    rules:
+
+      # ----------------------------------------------------------------
+      # Recording rule A — failure counter rollup (5-min burn).
+      # ----------------------------------------------------------------
+      # Pre-aggregates the SEV-1 input so the alert expr stays cheap
+      # and the dashboard tile reads from the same series.
+      - record: corelink_dsr_statuspage_publish_failed_5m
+        expr: sum (
+                increase(corelink_dsr_statuspage_publish_failed_total[5m])
+              )
+
+      # ----------------------------------------------------------------
+      # Recording rule B — success-rate dashboard tile.
+      # ----------------------------------------------------------------
+      # Read by the DSR overview Grafana dashboard. Stable narrative:
+      # one publish per UTC day → over a rolling 5m window this is
+      # 0 or 1 almost always; the rule exists so the dashboard and
+      # the alert read the same denominator.
+      - record: corelink_dsr_statuspage_publish_success_rate_5m
+        expr: |
+          (
+            sum(rate(corelink_dsr_statuspage_publish_succeeded_total[5m]))
+          )
+          /
+          clamp_min(
+            sum(rate(corelink_dsr_statuspage_publish_succeeded_total[5m]))
+            +
+            sum(rate(corelink_dsr_statuspage_publish_failed_total[5m])),
+            1
+          )
+
+      # ----------------------------------------------------------------
+      # Rule — SEV-1: DSR Statuspage publish failure.
+      # ----------------------------------------------------------------
+      # Fires when ANY emit of `corelink.privacy.statuspage_publish_failed.v1`
+      # is observed in a 5-min rolling window. The 5-min burn is an
+      # early-detection window: the cron fires daily at 06:00 UTC and
+      # the wave-17 retry policy is 3 attempts exp-backoff within a
+      # single tick, so a 5-min window catches every failure inside a
+      # single cron firing before the operator's next-business-day
+      # mailbox notice.
+      #
+      # Routing key: PAGERDUTY_ROUTING_KEY (prod; row #11 secrets
+      # matrix). dedup_key =
+      # "dsr-statuspage-publish-failed:{page_id_hex8}:{metric_id_hex8}"
+      # so consecutive failures against the same metric collapse into
+      # the open incident.
+      - alert: DsrStatuspagePublishFailed
+        expr: corelink_dsr_statuspage_publish_failed_5m > 0
+        for: 0m  # SEV-1; immediate fire on any non-zero observation in the burn window.
+        labels:
+          severity: sev1
+          pagerduty_severity: critical
+          pagerduty_routing_key_env: PAGERDUTY_ROUTING_KEY
+          escalation_policy: corelink-incident-response
+          runbook: RB-DSR-STATUSPAGE-PUBLISH-FAILED
+          owner_team: privacy
+          sprint: S-17
+          wave: wave-18
+          gate: ship
+          incident_type: privacy-transparency
+        annotations:
+          summary: "DSR Statuspage daily publish failed — SEV-1 transparency incident"
+          description: |
+            One or more `corelink.privacy.statuspage_publish_failed.v1`
+            events were emitted in the last 5 minutes by the wave-17
+            DSR Statuspage publish scheduler
+            (`crates/corelink-dsr-statuspage-scheduler`; cron
+            `0 6 * * *` UTC). The DSR worker itself (full erasure
+            processing per RB-DSR-GDPR / RB-DSR-LGPD-FULL) is
+            UNAFFECTED — this is a customer-visible transparency
+            metric only.
+
+            First-3-actions: see runbook §1 Detect → §2 Triage →
+            §3 Containment.
+
+            Regulatory posture: GDPR Art. 30 / LGPD Art. 37
+            records-of-processing public-facing transparency. Outage
+            <= 7d is documented in the post-incident memo; outage > 7d
+            requires outside-counsel notification per runbook §5.2.
+            72h breach-notification clocks (GDPR Art. 33 / LGPD Art.
+            46) do NOT apply — no personal data is disclosed by this
+            failure.
+
+            MTTA target <= 4h; MTTR target <= 24h.
+
+            Pseudonymised page: {{ $labels.page_id_hex8 }}
+            Pseudonymised metric: {{ $labels.metric_id_hex8 }}
+            Reason class: {{ $labels.reason_class }}
+            DO NOT log the raw Statuspage identifiers from the
+            dashboard or the STATUSPAGE_API_KEY bytes — pull them via
+            the admin secrets viewer with dual-approval.
+          runbook_url: "../../specs/_runbooks/RB-DSR-STATUSPAGE-PUBLISH-FAILED.md"
+          dedup_key: "dsr-statuspage-publish-failed:{{ $labels.page_id_hex8 }}:{{ $labels.metric_id_hex8 }}"
