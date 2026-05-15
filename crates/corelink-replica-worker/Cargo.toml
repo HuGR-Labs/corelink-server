@@ -30,6 +30,10 @@ serde = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
+# Cross-crate SLI binding tests (DR-16 wave-14): assert
+# `METRIC_REPLICATION_LAG_SECONDS` matches
+# `Sli::ReplicationLagR2.prometheus_metric_base()`.
+corelink-slo = { path = "../corelink-slo" }
 
 [[test]]
 name = "prop_replica"
@@ -42,3 +46,7 @@ path = "tests/adversarial.rs"
 [[test]]
 name = "sli_emit"
 path = "tests/sli_emit.rs"
+
+[[test]]
+name = "sli_binding"
+path = "tests/sli_binding.rs"

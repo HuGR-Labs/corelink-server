@@ -1082,6 +1082,7 @@ dependencies = [
 name = "corelink-backup-verify"
 version = "0.1.0"
 dependencies = [
+ "corelink-slo",
  "proptest",
  "serde",
  "thiserror 2.0.18",
@@ -2124,6 +2125,7 @@ dependencies = [
 name = "corelink-region"
 version = "0.1.0"
 dependencies = [
+ "corelink-slo",
  "proptest",
  "rand 0.9.4",
  "rand_chacha 0.9.0",
@@ -2137,6 +2139,7 @@ dependencies = [
 name = "corelink-replica-worker"
 version = "0.1.0"
 dependencies = [
+ "corelink-slo",
  "proptest",
  "serde",
  "thiserror 2.0.18",

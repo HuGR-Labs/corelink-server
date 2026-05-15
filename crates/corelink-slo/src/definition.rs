@@ -56,6 +56,27 @@ pub enum Sli {
     /// correctness (100% target, zero-budget; any violation = SEV-1
     /// + TLA+ re-check). Closure from audit P0-5.
     CorrectnessTenantIsolation,
+    /// `SLO-BACKUP-VERIFICATION` per `slo_catalog.md §4.22` — daily
+    /// backup verification pass rate (≥ 99.5 % rolling 30d; daily cron
+    /// cycle covers R2 / D1 / KV tiers; complements GAP-15 cold-restore
+    /// drill). Closure from DR-16 wave-14 audit (pre-existing DEBT-011
+    /// gap).
+    BackupVerification,
+    /// `SLO-REPLICATION-LAG-R2` per `slo_catalog.md §4.23` — cross-region
+    /// R2 replication lag (p99 ≤ 60 s hot blobs / p99 ≤ 24 h CRR). Closure
+    /// from DR-16 wave-14 audit.
+    ReplicationLagR2,
+    /// `SLO-REPLICATION-LAG-D1` per `slo_catalog.md §4.24` — D1
+    /// read-replica lag (p99 ≤ 60 s). Closure from DR-16 wave-14 audit.
+    ReplicationLagD1,
+    /// `SLO-REPLICATION-LAG-KV` per `slo_catalog.md §4.25` — KV global
+    /// eventual propagation lag (p99 ≤ 60 s typical / ≤ 300 s pessimistic).
+    /// Closure from DR-16 wave-14 audit.
+    ReplicationLagKv,
+    /// `SLO-REPLICATION-LAG-NEON` per `slo_catalog.md §4.27` — Neon
+    /// read-replica lag (soft / informational; p99 ≤ 5 s, no paging at
+    /// GA). Closure from DR-16 wave-14 audit.
+    ReplicationLagNeon,
 }
 
 impl Sli {
@@ -77,6 +98,11 @@ impl Sli {
             Self::LatencyAcHitP99 => "SLI-LATENCY-AC-HIT-P99",
             Self::CorrectnessCas => "SLO-CORRECT-CAS",
             Self::CorrectnessTenantIsolation => "SLO-CORRECT-ISO",
+            Self::BackupVerification => "SLO-BACKUP-VERIFICATION",
+            Self::ReplicationLagR2 => "SLO-REPLICATION-LAG-R2",
+            Self::ReplicationLagD1 => "SLO-REPLICATION-LAG-D1",
+            Self::ReplicationLagKv => "SLO-REPLICATION-LAG-KV",
+            Self::ReplicationLagNeon => "SLO-REPLICATION-LAG-NEON",
         }
     }
 
@@ -97,6 +123,11 @@ impl Sli {
             Self::LatencyAcHitP99 => "corelink_ac_get_latency",
             Self::CorrectnessCas => "corelink_cas_client_verify",
             Self::CorrectnessTenantIsolation => "corelink_isolation_assertion",
+            Self::BackupVerification => "corelink_backup_verification_status",
+            Self::ReplicationLagR2 => "corelink_replication_lag_seconds",
+            Self::ReplicationLagD1 => "corelink_d1_replica_lag_seconds",
+            Self::ReplicationLagKv => "corelink_kv_propagation_lag_seconds",
+            Self::ReplicationLagNeon => "corelink_neon_replica_lag_seconds",
         }
     }
 }
@@ -107,13 +138,16 @@ impl core::fmt::Display for Sli {
     }
 }
 
-/// Canonical 12-element SLI list per `slo_catalog.md §4.x` and WI
+/// Canonical 17-element SLI list per `slo_catalog.md §4.x` and WI
 /// §6.1.1, extended by audit 2026-05-14 P0 closures (+5 SLIs:
 /// AvailControlPlane, LatencyCasPutP99, LatencyAcHitP99,
-/// CorrectnessCas, CorrectnessTenantIsolation). Pinned at the type
-/// system layer for surface-stability regression tests.
+/// CorrectnessCas, CorrectnessTenantIsolation) and audit DR-16
+/// wave-14 closures (+5 SLIs: BackupVerification, ReplicationLagR2,
+/// ReplicationLagD1, ReplicationLagKv, ReplicationLagNeon — pre-existing
+/// DEBT-011 gaps now bound). Pinned at the type system layer for
+/// surface-stability regression tests.
 #[must_use]
-pub const fn canonical_slis() -> &'static [Sli; 12] {
+pub const fn canonical_slis() -> &'static [Sli; 17] {
     &[
         Sli::AvailCasGet,
         Sli::AvailCasPut,
@@ -127,6 +161,11 @@ pub const fn canonical_slis() -> &'static [Sli; 12] {
         Sli::LatencyAcHitP99,
         Sli::CorrectnessCas,
         Sli::CorrectnessTenantIsolation,
+        Sli::BackupVerification,
+        Sli::ReplicationLagR2,
+        Sli::ReplicationLagD1,
+        Sli::ReplicationLagKv,
+        Sli::ReplicationLagNeon,
     ]
 }
 
@@ -219,12 +258,69 @@ mod tests {
     #[test]
     fn canonical_slis_unique_slugs_pinned() {
         let v = canonical_slis();
-        assert_eq!(v.len(), 12);
+        assert_eq!(v.len(), 17);
         let mut set = std::collections::HashSet::new();
         for s in v {
             assert!(s.slug().starts_with("SLI-") || s.slug().starts_with("SLO-"));
             assert!(set.insert(s.slug()), "duplicate sli slug: {s}");
         }
+    }
+
+    #[test]
+    fn audit_dr_16_wave_14_closures_present() {
+        // Five DEBT-011-vintage gaps closed by DR-16 wave-14:
+        // backup-verification + 4 replication-lag domains. Pre-existing
+        // SLOs that lacked Sli enum binding; now bound with canonical
+        // slugs matching `slo_catalog.md §4.22, §4.23, §4.24, §4.25, §4.27`.
+        let v = canonical_slis();
+        let slugs: std::collections::HashSet<&str> =
+            v.iter().map(|s| s.slug()).collect();
+        assert!(slugs.contains("SLO-BACKUP-VERIFICATION"));
+        assert!(slugs.contains("SLO-REPLICATION-LAG-R2"));
+        assert!(slugs.contains("SLO-REPLICATION-LAG-D1"));
+        assert!(slugs.contains("SLO-REPLICATION-LAG-KV"));
+        assert!(slugs.contains("SLO-REPLICATION-LAG-NEON"));
+    }
+
+    #[test]
+    fn audit_dr_16_wave_14_closures_prometheus_bases_pinned() {
+        // Prometheus base names are LOAD-BEARING: they must match the
+        // canonical metric-name constants in the emit-site crates
+        // (corelink-backup-verify, corelink-region, corelink-replica-worker).
+        // Cross-crate alignment tests live in each emit-site crate's
+        // `tests/sli_binding.rs`.
+        assert_eq!(
+            Sli::BackupVerification.prometheus_metric_base(),
+            "corelink_backup_verification_status"
+        );
+        assert_eq!(
+            Sli::ReplicationLagR2.prometheus_metric_base(),
+            "corelink_replication_lag_seconds"
+        );
+        assert_eq!(
+            Sli::ReplicationLagD1.prometheus_metric_base(),
+            "corelink_d1_replica_lag_seconds"
+        );
+        assert_eq!(
+            Sli::ReplicationLagKv.prometheus_metric_base(),
+            "corelink_kv_propagation_lag_seconds"
+        );
+        assert_eq!(
+            Sli::ReplicationLagNeon.prometheus_metric_base(),
+            "corelink_neon_replica_lag_seconds"
+        );
+    }
+
+    #[test]
+    fn audit_dr_16_wave_14_closures_display_matches_slug() {
+        assert_eq!(format!("{}", Sli::BackupVerification), "SLO-BACKUP-VERIFICATION");
+        assert_eq!(format!("{}", Sli::ReplicationLagR2), "SLO-REPLICATION-LAG-R2");
+        assert_eq!(format!("{}", Sli::ReplicationLagD1), "SLO-REPLICATION-LAG-D1");
+        assert_eq!(format!("{}", Sli::ReplicationLagKv), "SLO-REPLICATION-LAG-KV");
+        assert_eq!(
+            format!("{}", Sli::ReplicationLagNeon),
+            "SLO-REPLICATION-LAG-NEON"
+        );
     }
 
     #[test]
@@ -313,10 +409,25 @@ mod tests {
 
     #[test]
     fn prometheus_metric_base_lowercase_underscore() {
+        // Prometheus / OpenMetrics 1.0 naming permits `[a-zA-Z_:][a-zA-Z0-9_:]*`.
+        // We restrict the first byte to lowercase + underscore (no colons —
+        // colons are reserved for recording-rule outputs), and the remainder
+        // to lowercase / underscore / ASCII digits. Digits are required by
+        // the DR-16 wave-14 closures (`corelink_d1_replica_lag_seconds` etc.).
         for s in canonical_slis() {
             let base = s.prometheus_metric_base();
             assert!(base.starts_with("corelink_"));
-            assert!(base.bytes().all(|b| b == b'_' || b.is_ascii_lowercase()));
+            let mut bytes = base.bytes();
+            let first = bytes.next().expect("non-empty base");
+            assert!(
+                first == b'_' || first.is_ascii_lowercase(),
+                "first byte must be lowercase or _: {base}"
+            );
+            assert!(
+                bytes
+                    .all(|b| b == b'_' || b.is_ascii_lowercase() || b.is_ascii_digit()),
+                "non-canonical char in {base}"
+            );
         }
     }
 

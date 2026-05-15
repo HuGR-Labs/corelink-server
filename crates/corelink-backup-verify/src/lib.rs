@@ -89,3 +89,17 @@ pub const MAX_INTEGRITY_SAMPLES_PER_TENANT: usize = 100;
 /// real restore is O(byte transfer) and the daily cycle has a 30-minute
 /// wall-clock SLA.
 pub const MAX_SAMPLE_RESTORE_OBJECTS: usize = 5;
+
+/// Canonical Prometheus metric name emitted by each daily verification
+/// cycle, satisfying `SLO-BACKUP-VERIFICATION` (`slo_catalog.md §4.22`).
+///
+/// LOAD-BEARING:
+///   - `scripts/backup-daily-verify.sh` emits gauge rows under this name.
+///   - `corelink-slo::Sli::BackupVerification::prometheus_metric_base()`
+///     returns this exact string (cross-crate alignment tested in
+///     `tests/sli_binding.rs`).
+///
+/// Labels: `{tier, result}` (canonical four-value `result` discriminator
+/// per [`crate::outcome::VerificationStatus::as_str`]). Renaming requires
+/// touching both this constant and the SLI taxonomy in `corelink-slo`.
+pub const METRIC_BACKUP_VERIFICATION_STATUS: &str = "corelink_backup_verification_status";
