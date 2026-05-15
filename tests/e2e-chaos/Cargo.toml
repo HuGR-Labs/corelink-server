@@ -1,0 +1,82 @@
+[package]
+name = "e2e-chaos"
+description = "R3-4 end-to-end chaos drill harness: ChaosScheduler runs each of the 8 canonical chaos experiment types (+ 3 post-GA kinds — cpu pressure, memory pressure, dns failure, clerk outage, kv/d1 cold start), asserts steady-state hypothesis holds, rollback fires within blast-radius ≤ 5 min, audit lifecycle emits `corelink.chaos.run.started` → `.completed`|`.aborted`, and `corelink_chaos_slo_violation_total` is recorded. Three cross-WI invariants pinned: INV-S17-OPS-EXCLUSIVITY (concurrent chaos + DR drill rejected via shared mutex), INV-S17-SEV1-DRILL-PAUSE (SEV-1 active → auto-defer), INV-S17-CHAOS-STAGING-ONLY (prod target → pre-flight reject). 200-case property test pins deterministic-seed replay (FNV-1a hash bit-identical across replays). All in-memory fakes; no network IO; charter charter-trait-abstraction-defer applies — no production HTTPS endpoints reached by default `cargo test -p e2e-chaos`."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+corelink-chaos-scheduler = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[[test]]
+name = "chaos_network_partition_recovers"
+path = "tests/chaos_network_partition_recovers.rs"
+
+[[test]]
+name = "chaos_cpu_pressure_sustained"
+path = "tests/chaos_cpu_pressure_sustained.rs"
+
+[[test]]
+name = "chaos_memory_pressure_oomk_avoided"
+path = "tests/chaos_memory_pressure_oomk_avoided.rs"
+
+[[test]]
+name = "chaos_r2_disk_fill_quarantine"
+path = "tests/chaos_r2_disk_fill_quarantine.rs"
+
+[[test]]
+name = "chaos_latency_injection_p99_bounded"
+path = "tests/chaos_latency_injection_p99_bounded.rs"
+
+[[test]]
+name = "chaos_dns_failure_dual_resolver_failover"
+path = "tests/chaos_dns_failure_dual_resolver_failover.rs"
+
+[[test]]
+name = "chaos_clerk_outage_grace_period"
+path = "tests/chaos_clerk_outage_grace_period.rs"
+
+[[test]]
+name = "chaos_kv_d1_cold_start_below_sla"
+path = "tests/chaos_kv_d1_cold_start_below_sla.rs"
+
+[[test]]
+name = "adversarial_ops_exclusivity"
+path = "tests/adversarial_ops_exclusivity.rs"
+
+[[test]]
+name = "adversarial_sev1_drill_pause"
+path = "tests/adversarial_sev1_drill_pause.rs"
+
+[[test]]
+name = "adversarial_chaos_staging_only"
+path = "tests/adversarial_chaos_staging_only.rs"
+
+[[test]]
+name = "prop_seed_replay_identical"
+path = "tests/prop_seed_replay_identical.rs"
