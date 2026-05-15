@@ -96,7 +96,7 @@ Higher score = bigger reward per unit of optimization effort. We
 present the five highest-scoring hot spots; everything below the cut
 goes into the followup backlog as P3.
 
-### OPT-01 — `derive_prefix` HMAC-SHA256 not cached per (tdk_version, tenant_id)
+### OPT-01 — `derive_prefix` HMAC-SHA256 not cached per (tdk_version, tenant_id) — **LANDED 2026-05-15**
 
 | Field | Value |
 |-------|-------|
@@ -111,7 +111,7 @@ goes into the followup backlog as P3.
 | Risk | **Low.** Cache is per-isolate, no cross-tenant leak possible (key is keyed by tenant_id itself). Rotation-correctness is the one trap → mandatory property test `cache_invalidates_on_tdk_version_bump` (kill-rate ≥ 75% required, per mutation baseline). |
 | SLO it tightens | SLO-LAT-CAS-GET (enterprise) p99 200ms → projected ~198ms (post-rollout). Minor on its own; multiplicative with OPT-03. |
 
-### OPT-02 — `serde_jcs::to_vec` allocates a fresh `Vec<u8>` per audit event
+### OPT-02 — `serde_jcs::to_vec` allocates a fresh `Vec<u8>` per audit event — **LANDED 2026-05-15**
 
 | Field | Value |
 |-------|-------|
@@ -156,7 +156,7 @@ goes into the followup backlog as P3.
 | Risk | **Low** — `parking_lot` API is a near-drop-in. Watch: (a) `parking_lot::Mutex` doesn't poison → callers must not rely on `Result<Guard>` for cross-thread error signaling (none of our sites do); (b) `wasm32-unknown-unknown` (CF Worker target) — parking_lot supports wasm32 since 0.12 but `_unknown` triple is the right one to confirm. |
 | SLO it tightens | SLO-LAT-CAS-GET (tail-latency reduction); SLO-AVAIL-CAS-GET (no more poison-induced 5xx on panic-in-critical-section). |
 
-### OPT-05 — Repeated `blake3::Hasher::new()` per request (no hasher-state reuse on streaming uploads)
+### OPT-05 — Repeated `blake3::Hasher::new()` per request (no hasher-state reuse on streaming uploads) — **LANDED 2026-05-15 (substituted for OPT-03(a) in DEBT-013 PARTIAL batch)**
 
 | Field | Value |
 |-------|-------|

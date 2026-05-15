@@ -80,6 +80,12 @@ pub fn compute_canonical_bytes(event: &AuditEvent) -> Result<Vec<u8>, AuditChain
 /// The output is the 32-byte BLAKE3-256 digest the NEXT event in the
 /// chain MUST carry as its `prev_hash` slot.
 ///
+/// **Producer path:** uses [`link_chain_hash_streaming`] internally to
+/// avoid materializing the intermediate canonical bytes as a `Vec<u8>`.
+/// Verifiers that need the canonical bytes on the wire (e.g., the R2
+/// NDJSON archive) should call [`compute_canonical_bytes`] +
+/// [`link_chain_hash_from_canonical`] explicitly.
+///
 /// # Errors
 ///
 /// - [`AuditChainError::Canonicalization`] when JCS canonicalization
@@ -88,24 +94,81 @@ pub fn link_chain_hash(
     prev_hash: &ChainHash,
     event: &AuditEvent,
 ) -> Result<ChainHash, AuditChainError> {
-    let canonical = compute_canonical_bytes(event)?;
-    Ok(link_chain_hash_from_canonical(prev_hash, &canonical))
+    link_chain_hash_streaming(prev_hash, event)
+}
+
+/// Streaming variant of [`link_chain_hash`] — feeds the JCS-canonical
+/// bytes of `event` directly into a [`blake3::Hasher`] (which implements
+/// [`std::io::Write`]) without materializing an intermediate
+/// `Vec<u8>`.
+///
+/// This eliminates **one heap allocation + one free** per audit event
+/// vs the historic `serde_jcs::to_vec` → `Hasher::update` flow,
+/// reclaiming an estimated 25-35% of SLO-LATENCY-AUDIT-EMIT p99 budget
+/// (`2026-05-15-perf-optimization-audit.md §2 OPT-02`).
+///
+/// # Determinism contract
+///
+/// MUST produce byte-identical output to [`link_chain_hash`]'s historic
+/// `to_vec` path for every input. Enforced by:
+/// - the unit test `streaming_matches_to_vec_path` in this module;
+/// - the property test
+///   `prop_streaming_equivalent_to_to_vec` in
+///   `tests/prop_audit_chain.rs` (10k cases).
+///
+/// `serde_jcs::to_writer` and `serde_jcs::to_vec` share the same
+/// canonicalization core; the only difference is the sink (writer vs
+/// `Vec<u8>`). Both produce the RFC 8785-canonical UTF-8 byte stream.
+///
+/// # Errors
+///
+/// - [`AuditChainError::Canonicalization`] when JCS canonicalization
+///   of `event` fails.
+pub fn link_chain_hash_streaming(
+    prev_hash: &ChainHash,
+    event: &AuditEvent,
+) -> Result<ChainHash, AuditChainError> {
+    let mut hasher = Hasher::new();
+    hasher.update(prev_hash.as_bytes());
+    serde_jcs::to_writer(&mut hasher, event)
+        .map_err(|e| AuditChainError::Canonicalization(format!("{e}")))?;
+    let digest = hasher.finalize();
+    Ok(ChainHash(*digest.as_bytes()))
+}
+
+// Thread-local BLAKE3 hasher template, cloned per call to elide the
+// per-invocation `Hasher::new()` initialization cost on tight hot loops
+// like the daily-verify routine (`2026-05-15-perf-optimization-audit.md
+// §2 OPT-05`). `Hasher::clone()` is a documented public API; the cloned
+// state is byte-identical to a freshly-`new`'d Hasher (asserted by the
+// unit test `cloned_hasher_matches_fresh`).
+thread_local! {
+    static HASHER_TEMPLATE: Hasher = Hasher::new();
 }
 
 /// Compute the chain link hash from `(prev_hash, canonical_bytes)`.
 ///
 /// Used by the verifier when the canonical bytes were already computed
 /// (or read off the persisted NDJSON archive) so we don't re-run JCS.
+///
+/// Uses a thread-local [`Hasher`] template, cloned per call, to elide
+/// the per-invocation `Hasher::new()` initialization on tight hot loops
+/// (e.g. daily verify walking 10⁵+ events). `Hasher::clone()` copies
+/// the fixed-size internal `[u32; 16]` state with no heap traffic; the
+/// output is byte-identical to a freshly `new`'d Hasher (asserted by
+/// the unit test `cloned_hasher_matches_fresh`).
 #[must_use]
 pub fn link_chain_hash_from_canonical(
     prev_hash: &ChainHash,
     canonical_bytes: &[u8],
 ) -> ChainHash {
-    let mut h = Hasher::new();
-    h.update(prev_hash.as_bytes());
-    h.update(canonical_bytes);
-    let digest = h.finalize();
-    ChainHash(*digest.as_bytes())
+    HASHER_TEMPLATE.with(|template| {
+        let mut h = template.clone();
+        h.update(prev_hash.as_bytes());
+        h.update(canonical_bytes);
+        let digest = h.finalize();
+        ChainHash(*digest.as_bytes())
+    })
 }
 
 /// Verify a chain link — given the previous chain hash, the event, and
@@ -380,6 +443,48 @@ mod tests {
         assert_ne!(h1, h2);
         assert_ne!(h0, h2);
         assert_eq!(b.next_sequence(), 3);
+    }
+
+    #[test]
+    fn streaming_matches_to_vec_path() {
+        // OPT-02 cross-equivalence: link_chain_hash_streaming must
+        // produce byte-identical output to the historic to_vec ->
+        // hasher path for every event shape.
+        let tenant = Uuid::now_v7();
+        for (seq, kind) in [
+            (0, AuditEventKind::Tenant),
+            (1, AuditEventKind::CasPut),
+            (2, AuditEventKind::CasGet),
+            (3, AuditEventKind::AcLookup),
+        ] {
+            let e = fresh_event(seq, ChainHash::genesis(), tenant, kind);
+            let canonical = compute_canonical_bytes(&e).unwrap();
+            let h_to_vec = link_chain_hash_from_canonical(&ChainHash::genesis(), &canonical);
+            let h_streaming = link_chain_hash_streaming(&ChainHash::genesis(), &e).unwrap();
+            assert_eq!(
+                h_to_vec, h_streaming,
+                "streaming path diverged from to_vec path for kind {kind:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn cloned_hasher_matches_fresh() {
+        // OPT-05 invariant: a cloned thread-local Hasher template MUST
+        // produce byte-identical digest output to a fresh Hasher::new()
+        // when fed the same update sequence.
+        let input = b"corelink-audit-chain-opt05-witness";
+        let prev = ChainHash([0xAB; 32]);
+
+        // Fresh hasher.
+        let mut fresh = Hasher::new();
+        fresh.update(prev.as_bytes());
+        fresh.update(input);
+        let fresh_digest = *fresh.finalize().as_bytes();
+
+        // Cloned template.
+        let cloned_digest = link_chain_hash_from_canonical(&prev, input);
+        assert_eq!(&fresh_digest, cloned_digest.as_bytes());
     }
 
     #[test]

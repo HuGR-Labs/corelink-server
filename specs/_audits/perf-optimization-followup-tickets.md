@@ -45,6 +45,22 @@ Each ticket follows the WI template:
 
 ## OPT-01 — Cache `derive_prefix` output keyed by `(tdk_version, tenant_id)`
 
+- **Status:** **CLOSED (2026-05-15)** — landed in
+  `wt/debt-013-perf-opt-01-03-v2`. `TenantPrefixCache` backed by
+  `std::sync::RwLock<HashMap<(TdkVersion, Uuid), TenantPrefix>>`
+  (substituted for `parking_lot::RwLock` — see below); cap = 4096
+  entries with iterator-first eviction; 6 unit tests including
+  `cache_invalidates_on_tdk_version_bump` and
+  `cache_correctness_across_many_tenants_and_versions`. Cache hit
+  path elides HMAC-SHA256 + base64 encode (~1.4 µs/req) per the
+  audit's projection.
+- **Substitution rationale (std::sync::RwLock vs parking_lot):** the
+  workspace had no `parking_lot` dep at the time of landing and the
+  cache wins come from elided crypto (~1.4 µs saved per hit), not
+  from per-lock micro-savings (~50 ns). Adding a new workspace dep
+  for a 50 ns/call effect would be a poor trade against the GA
+  freeze profile. OPT-04 phase 1 can revisit the lock choice
+  globally when it lands.
 - **Source:** `2026-05-15-perf-optimization-audit.md §2 OPT-01`.
 - **Effort:** S.
 - **Estimated p99 win:** -1.4 µs per request × ~3-5% effective worker
@@ -86,6 +102,20 @@ Each ticket follows the WI template:
 
 ## OPT-02 — Stream `serde_jcs` directly into `blake3::Hasher` on audit chain producer
 
+- **Status:** **CLOSED (2026-05-15)** — landed in
+  `wt/debt-013-perf-opt-01-03-v2`. New
+  `link_chain_hash_streaming(prev_hash, event)` in
+  `crates/corelink-audit-chain/src/chain.rs` feeds
+  `serde_jcs::to_writer` directly into the `blake3::Hasher` (which
+  implements `std::io::Write`), eliminating the intermediate
+  `Vec<u8>` heap allocation per audit event. `link_chain_hash`
+  delegates to the streaming variant so all producer call sites
+  benefit transparently; `link_chain_hash_from_canonical` remains
+  for the verifier path that reads canonical bytes off the R2
+  NDJSON archive. Cross-equivalence unit test
+  `streaming_matches_to_vec_path` covers 4 event kinds; the
+  property test surface in `tests/prop_audit_chain.rs` continues
+  to assert determinism.
 - **Source:** `2026-05-15-perf-optimization-audit.md §2 OPT-02`.
 - **Effort:** M.
 - **Estimated p99 win:** SLO-LATENCY-AUDIT-EMIT 200 µs → 130-150 µs
@@ -124,6 +154,24 @@ Each ticket follows the WI template:
 
 ## OPT-03(a) — `#[serde(borrow)]` on AC envelope deserialization
 
+- **Status (2026-05-15):** **DEFERRED — INFEASIBLE AGAINST CURRENT CODE.**
+  The audit's OPT-03 spec referenced `serde_json::from_slice` on the AC
+  read path (`handler.rs:304`, `meta.rs`), but a grep against
+  `crates/corelink-worker/src/` shows the production AC path has zero
+  `serde_json::from_*` call sites: `AcEnvelope` is a `[u8; 121]`
+  canonical preimage (per ADR-0021), not a JSON-deserialized struct,
+  and the AC meta path is in-memory typed Rust state with no JSON
+  wire. The spec describes a future state (post-`postcard` migration
+  or a hypothetical D1 JSON-blob schema) — landing it against the
+  current code would be a "gambiarra" that fabricates a deserialization
+  call site to optimize. Per the autonomous-execution charter ("no
+  loose ends, no gambiarras"), this WI is deferred until the AC path
+  actually grows a JSON-deserialization hot spot, OR until OPT-03(b)
+  proposes the `postcard` migration that creates one.
+- **Substituted in DEBT-013 PARTIAL closure by:** OPT-05 below
+  (thread-local `blake3::Hasher` template at
+  `link_chain_hash_from_canonical`) — same audit, also "S/XS",
+  cumulative with OPT-02 on the audit-chain hot loop.
 - **Source:** `2026-05-15-perf-optimization-audit.md §2 OPT-03`.
 - **Effort:** S.
 - **Estimated p99 win:** ~20-40 µs per AC GET (allocation pressure
@@ -228,6 +276,17 @@ Each ticket follows the WI template:
 
 ## OPT-05 — Thread-local `blake3::Hasher` template (clone over re-init)
 
+- **Status:** **CLOSED (2026-05-15)** — landed in
+  `wt/debt-013-perf-opt-01-03-v2` as the substitute for the
+  infeasible OPT-03(a) on the DEBT-013 PARTIAL (3/10) batch.
+  `chain.rs:link_chain_hash_from_canonical` now clones a
+  `thread_local!` `Hasher` template per call (instead of
+  `Hasher::new()`); unit test `cloned_hasher_matches_fresh` asserts
+  byte-identical digest output between cloned and fresh hashers,
+  preserving the BLAKE3 determinism contract. Win is small per call
+  (~50 ns saved) but cumulative on the daily-verify hot loop
+  (`append_10k/sequential` projected -2 to -4%) and is one of the
+  only places where the cryptographic floor can be moved at all.
 - **Source:** `2026-05-15-perf-optimization-audit.md §2 OPT-05`.
 - **Effort:** XS.
 - **Estimated p99 win:** -2 to -4% on `append_10k/sequential`; ~50 ns
