@@ -182,6 +182,7 @@ SLOs individuais (§4.x) podem override interpolation via linha explícita "Targ
 | SLI                | `corelink_cas_get_duration_seconds_bucket{le≤0.3} / total`   |
 | Target (team)      | 99% < 300ms                                                   |
 | Target (enterprise)| 99% < 200ms                                                   |
+| Projected (post-OPT-01..05) | team 99% < 294-298ms; enterprise 99% < 195-198ms (projection only — `2026-05-15-perf-optimization-audit.md §3`; committed targets unchanged) |
 | Window             | 30 dias                                                      |
 | Notas              | Medido na edge (CF Worker), inclui R2 get + egress           |
 
@@ -194,6 +195,7 @@ SLOs individuais (§4.x) podem override interpolation via linha explícita "Targ
 | SLI                | `bucket{le≤1.0} / total`  (blobs ≤ 16 MiB)                   |
 | Target (team)      | 99% < 1s  (para blobs ≤ 16 MiB)                              |
 | Target (enterprise)| 99% < 600ms                                                  |
+| Projected (post-OPT-01..05) | enterprise 99% < 580-595ms (audit-emit + hasher-clone wins; projection only — `2026-05-15-perf-optimization-audit.md §3`) |
 | Notas              | Blobs maiores → multipart; SLO separado opcional (SLO-LAT-CAS-PUT-MULTIPART). |
 
 ### 4.8 Latency — AC hit
@@ -204,6 +206,7 @@ SLOs individuais (§4.x) podem override interpolation via linha explícita "Targ
 |--------------------|--------------------------------------------------------------|
 | SLI                | `corelink_ac_get_duration_seconds_bucket{outcome="hit", le≤0.15} / total` |
 | Target             | 99% < 150ms                                                  |
+| Projected (post-OPT-03a) | 99% < 148-150ms (marginal customer-facing win; ~3% worker CPU recovered under sustained AC load; projection only — `2026-05-15-perf-optimization-audit.md §3`) |
 
 ### 4.8.1 Efficiency — Dedup Ratio (S-07)
 
