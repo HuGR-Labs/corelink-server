@@ -33,7 +33,12 @@ hex = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
+criterion = { workspace = true }
 
 [[test]]
 name = "prop_tier_selection"
 path = "tests/prop_tier_selection.rs"
+
+[[bench]]
+name = "select"
+harness = false

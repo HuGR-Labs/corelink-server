@@ -29,6 +29,7 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
+criterion = { workspace = true }
 
 [[test]]
 name = "prop_signup_orchestration"
@@ -37,3 +38,7 @@ path = "tests/prop_signup_orchestration.rs"
 [[test]]
 name = "chaos_stripe_outage"
 path = "tests/chaos_stripe_outage.rs"
+
+[[bench]]
+name = "orchestrator"
+harness = false

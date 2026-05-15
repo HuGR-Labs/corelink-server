@@ -1,0 +1,134 @@
+name: Performance nightly (criterion baseline)
+
+# Nightly criterion bench run across the 8 hot paths covered by the
+# perf-benchmark-suite WI:
+#
+#   - tenant-path::derive_prefix (+ batch + rotation rebuild)
+#   - BLAKE3 hash (1B / 1KiB / 1MiB / 100MiB)
+#   - BYOK envelope wrap/unwrap
+#   - audit-chain BLAKE3 link append + 10k chain head
+#   - audit-chain RFC 8785 JCS canonicalize (100B / 1KB / 10KB)
+#   - signup orchestrator happy path + idempotent replay
+#   - tier-selection Free + Starter
+#   - DPA-acceptance RS256 sign (accept) + RS256 verify
+#   - Stripe webhook HMAC-SHA256 verify (256B / 1KiB / 4KiB / 16KiB)
+#
+# The run uploads criterion HTML + JSON reports as a workflow artifact
+# (90-day retention) and runs `scripts/run-perf-baseline.sh` to gate
+# against the persisted `reports/perf/baseline.json` with a 20%
+# regression threshold (fail-CLOSED).
+#
+# Trend tracking: the workflow commits the latest baseline.json back to
+# `main` only when invoked with `workflow_dispatch` + `update_baseline: true`
+# (manual rotation; never auto-bumped to avoid silent drift).
+
+on:
+  schedule:
+    # 03:17 UTC — early enough to settle before the SLO nightly digest at
+    # 06:00 UTC. Staggered relative to the WI-S01-007 nightly extended
+    # gates that fire at 04:23 UTC.
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      update_baseline:
+        description: 'Commit the run as the new baseline (manual rotation)'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  bench:
+    name: Run criterion benches + regression gate
+    # The benches are CPU-bound; default ubuntu-latest sees ~2x variance
+    # on shared runners. Upgrade to a larger runner when org-policy allows
+    # (the spec calls for `ubuntu-latest-large`; we soft-fall-back to the
+    # default to keep the workflow runnable on standard plans).
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install Rust toolchain (pinned)
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
+
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
+        with:
+          workspaces: ". -> target"
+          key: perf-nightly
+
+      - name: Compile benches (no-run)
+        run: |
+          cargo bench --no-run \
+            -p corelink-tenant-path \
+            -p corelink-hash \
+            -p corelink-byok \
+            -p corelink-audit-chain \
+            -p corelink-signup \
+            -p corelink-tier-selection \
+            -p corelink-dpa-acceptance \
+            -p corelink-stripe-real
+
+      - name: Run baseline (compare + gate at 20%)
+        env:
+          REGRESS_PCT: '20'
+        run: bash scripts/run-perf-baseline.sh
+
+      - name: Upload criterion reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: criterion-reports
+          path: target/criterion/
+          retention-days: 90
+
+      - name: Upload baseline JSON
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: perf-baseline-json
+          path: reports/perf/baseline.json
+          retention-days: 365
+          if-no-files-found: warn
+
+  rotate-baseline:
+    name: Rotate baseline (manual)
+    needs: bench
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.update_baseline == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install Rust toolchain (pinned)
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
+
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
+        with:
+          workspaces: ". -> target"
+          key: perf-nightly
+
+      - name: Run with --update
+        run: bash scripts/run-perf-baseline.sh --update
+
+      - name: Commit baseline
+        run: |
+          git config user.name 'corelink-perf-bot'
+          git config user.email 'corelink-perf-bot@users.noreply.github.com'
+          git add reports/perf/baseline.json
+          if git diff --cached --quiet; then
+            echo "Baseline unchanged; skipping commit."
+            exit 0
+          fi
+          git commit -m "chore(perf): rotate criterion baseline ($(date -u +%Y-%m-%d))"
+          git push

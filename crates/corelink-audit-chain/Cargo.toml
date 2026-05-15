@@ -38,7 +38,16 @@ corelink-analytics = { workspace = true }
 proptest = { workspace = true }
 rand = "0.9"
 rand_chacha = "0.9"
+criterion = { workspace = true }
 
 [[test]]
 name = "prop_audit_chain"
 path = "tests/prop_audit_chain.rs"
+
+[[bench]]
+name = "merkle_append"
+harness = false
+
+[[bench]]
+name = "jcs_canonicalize"
+harness = false

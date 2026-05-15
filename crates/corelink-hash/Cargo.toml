@@ -40,3 +40,7 @@ thiserror = { workspace = true }
 [[bench]]
 name = "blake3_bench"
 harness = false
+
+[[bench]]
+name = "blake3"
+harness = false
