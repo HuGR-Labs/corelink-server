@@ -342,6 +342,12 @@ WHITELIST_IDS = {
     "SLO-AVAIL-AUTH",  # S-03 v1.1 forward-looking SLO (auth path availability)
     "SLO-SUPPLY-CVE-DETECTION",  # S-12 forward-looking SLO (CVE alert delivery ≤ 15 min p99)
     "SLO-SUPPLY-DEPLOY-VERIFY-LATENCY",  # S-12 forward-looking SLO (Cosign deploy verify ≤ 5s p99)
+    # R6-2 runbook title fragments (not real SLO IDs; extracted from RB-SLO-* names via regex)
+    "SLO-AVAIL-DATA-PLANE",   # fragment of RB-SLO-AVAIL-DATA-PLANE
+    "SLO-CORRECT-VIOLATION",  # fragment of RB-SLO-CORRECT-VIOLATION
+    "SLO-DEDUP-DEGRADATION",  # fragment of RB-SLO-DEDUP-DEGRADATION
+    "SLO-LATENCY-INVESTIGATION",  # fragment of RB-SLO-LATENCY-INVESTIGATION
+    "SLO-ID",                 # generic placeholder in escalation template
     "CTRL-AUTH-014",  # S-12 forward-looking CTRL (quarterly secret rotation; canonical in security_model.md)
     "RB-AUTH-014",  # S-12 forward-looking RB (CF API token emergency rotation)
     "RB-FM-156",  # S-12 dep maintainer malicious (criado durante WI-S12-007)
