@@ -369,17 +369,116 @@ Before merging a PR that touches CAS / AC / audit / BYOK / auth:
 
 ---
 
+## How regression gates work
+
+This section documents the **`perf-regression` CI workflow** — the
+automated counterpart to the patterns above. The patterns tell you
+how to write fast code; the gate makes sure fast code stays fast.
+
+### What it does
+
+On every PR that touches a perf-critical crate (or carries the
+`perf-sensitive` label), GitHub Actions:
+
+1. Runs the criterion bench suite for the tracked
+   `(crate, bench)` pairs (see `reports/perf/README.md` for the list).
+2. Reads criterion's `target/criterion/<bench>/new/` output —
+   `estimates.json` (median, mean) and `sample.json` (per-iter timings,
+   from which **p99** is computed).
+3. Compares each current metric against the **committed** baseline
+   at `reports/perf/baseline-<crate>-<bench>.json`.
+4. Fails the PR check if **any** bench regresses by more than the
+   configured threshold (default: **10% on p99**, configurable via
+   the `PERF_REGRESS_THRESHOLD_PCT` env var or
+   `--threshold-pct` CLI flag).
+
+The criterion HTML report and `perf-regression-report.json` are
+uploaded as a workflow artifact (`criterion-report-<run_id>`,
+14d retention) for offline triage.
+
+### Why p99 (not median)
+
+The patterns in this playbook target tail latency. Median regressions
+are easy to spot in production dashboards; p99 regressions hide in the
+noise until a customer hits a slow request. The gate optimizes for
+catching the regressions that matter — which is exactly what the
+mutation-baseline philosophy demands at the perf layer.
+
+When `sample.json` is unavailable for a given bench (older criterion
+versions, or sample storage disabled), the gate falls back to median
+automatically — the failure mode is **"warn, do not block"**.
+
+### Why 10%
+
+CI environments produce ~3-7% p99 jitter run-to-run. A 10% floor sits
+comfortably above noise while still catching real regressions — the
+DEBT-013 wins are mostly 15-40% improvements, so a 10% floor protects
+~80% of the headroom. Tighter floors (5%) are appropriate for very
+stable benches (e.g. pure crypto kernels with no allocator); the
+threshold is per-run configurable via `workflow_dispatch`.
+
+### The baseline manifest
+
+Baselines live in `reports/perf/` as one JSON file per tracked bench.
+They are **committed** — the gate is git-versioned, not stored in
+CI cache, so the threshold for any given PR is the baseline at its
+merge-base. See `reports/perf/README.md` for the schema.
+
+The initial baselines are **pending** (median_ns=null) on the first
+merge of this workflow. The script tolerates pending baselines as
+"record one" and does **not** fail on them. The Engineering Lead
+records real baselines via:
+
+```bash
+scripts/refresh-perf-baseline.sh
+git diff reports/perf/    # inspect
+git add reports/perf
+git commit -m "chore(perf): record initial baselines"
+```
+
+Each subsequent baseline refresh follows the same pattern, with the
+rationale captured in the commit message (e.g. "refresh after merging
+WI-S07-014 BYOK envelope batching — expected −18% p99").
+
+### When the gate fails
+
+Triage flow lives in `specs/_runbooks/RB-PERF-REGRESSION.md`. Summary:
+
+1. **Diagnose:** is the regression real (median moved with p99,
+   reproduces locally, touches the bench's hot path)?
+2. **Decide:** optimize (preferred), revert, or accept-with-sign-off.
+3. **Cross-link:** every regression maps to a DEBT-013 follow-up WI.
+
+Accept-with-sign-off is gated by **two approvals** (Engineering Lead +
+Quality Lead) AND a follow-up WI committing to restore the baseline by
+a named date. There is no "just bump the baseline" path.
+
+### Cost
+
+The workflow caches `target/criterion` keyed on `Cargo.lock`, which
+keeps end-to-end runtime around 8–12 minutes for the full tracked
+suite. The cache hit ratio is high for typical PRs (Cargo.lock
+unchanged), so most PRs see a fast bench run plus the regression
+check.
+
+---
+
 ## References
 
 - `specs/_audits/2026-05-14-perf-baseline.md` — criterion baseline numbers.
 - `specs/_audits/2026-05-15-perf-optimization-audit.md` — audit identifying these patterns.
 - `specs/_audits/perf-optimization-followup-tickets.md` — Sprint-ready optimization WIs.
 - `specs/_audits/2026-05-14-mutation-baseline.md` — kill-rate floor preserved by every optimization.
+- `specs/_runbooks/RB-PERF-REGRESSION.md` — triage when the gate fails.
 - `specs/03_architecture/slo_catalog.md` — SLO targets.
 - `specs/03_architecture/storage_semantics_matrix.md` — storage write-batching guarantees.
 - `crates/corelink-worker/src/reapi/cas/sweeper.rs` — canonical `MAX_BATCH_SIZE = 250` pattern.
 - `crates/corelink-hash` — the BLAKE3 / VerifiedBody primitives.
+- `scripts/perf-regression-check.py` — gate implementation.
+- `scripts/refresh-perf-baseline.sh` — operator refresh script.
+- `reports/perf/README.md` — baseline manifest schema.
+- `.github/workflows/perf-regression.yml` — CI workflow.
 
 ---
 
-**Fim de PERFORMANCE-PLAYBOOK (v1.0, 2026-05-15).**
+**Fim de PERFORMANCE-PLAYBOOK (v1.1, 2026-05-15) — regression gate section added.**
