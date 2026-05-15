@@ -1,0 +1,294 @@
+---
+title: "Cost calculator"
+slug: "/pricing/calculator"
+description: "Self-serve cost estimate for CoreLink given CAS volume, read traffic, BYOK, hit rate, and region pin. Transparent math, copy-pasteable."
+draft: true
+cross_functional_review: TBD
+pending_signoff:
+  - "Finance"
+  - "Marketing"
+  - "Product"
+sources:
+  - "apps/docs/docs/explanation/pricing/index.mdx"
+  - "marketing/launch/BLOG-POSTS/05-fast-cache-hit-economics.md"
+last_updated: "2026-05-15"
+---
+
+# Cost calculator
+
+**Understanding-oriented.** This page shows the exact arithmetic
+CoreLink uses to compute a customer's monthly bill, and walks three
+worked examples at small / medium / large scale. For tier definitions,
+see [pricing overview](./). For comparisons against self-hosted
+alternatives, see [vs. alternatives](./comparison).
+
+> **DRAFT — pending Finance + Marketing + Product sign-off.** The
+> arithmetic is canonical; the constants are launch-day targets and
+> may shift inside the placeholder window until Finance signs the
+> audit trail. Customers in a procurement cycle should ask Sales for
+> the contractual rate card.
+
+## Inputs
+
+The calculator takes six inputs. All of them are observable from any
+existing cache (you do not need to run CoreLink first to estimate the
+bill).
+
+| Symbol | Input | Units | Typical range |
+|---|---|---|---|
+| `T` | Tenants | count | 1–50 |
+| `S_w` | Monthly CAS write volume | GB / mo | 5–5000 |
+| `S_r` | Monthly CAS read volume | TB / mo | 0.05–50 |
+| `byok` | BYOK provider | `none` / `aws` / `gcp` / `azure` | — |
+| `h` | Cache hit rate | fraction `[0, 1]` | 0.5–0.95 |
+| `R` | Region pin | count of regions | 1–4 |
+
+- `T` is the number of distinct tenants under one billing account.
+  Solo developers and most small teams have `T = 1`. Multi-product
+  orgs that want billing isolation per product have `T > 1`.
+- `S_w` is monthly **net** CAS storage growth after dedup and eviction.
+  Bazel monorepos at steady state are typically 10–200 GB; large
+  Buck2 monorepos run 500 GB to a few TB.
+- `S_r` is monthly **read** volume (TB), which scales with CI run
+  volume × per-run cache lookup × per-lookup blob size. Hit rate
+  matters here because misses do not generate reads.
+- `byok` toggles the BYOK add-on on Team. Free / Starter do not
+  support BYOK; Enterprise includes BYOK at no extra charge.
+- `h` is the hit rate. The calculator does **not** charge for cache
+  misses (a miss is a `404` and the customer's runner builds locally),
+  but `h` is included so the calculator can also report inner-loop
+  savings (the "cache tax" model from the
+  [economics blog post](/blog/05-fast-cache-hit-economics/)).
+- `R` is the count of distinct R2 regions the tenant pins to. Free /
+  Starter pin to 1; Team pins to up to 2; Enterprise pins to all 4.
+  Extra regions on Team and Enterprise replicate writes (a `2×`
+  multiplier on `S_w` for billable storage).
+
+## Formula
+
+The exact monthly invoice is:
+
+```
+# 1. Resolve effective storage and reads after replication and dedup.
+S_w_billable = S_w × replication_factor(R, tier)
+S_r_billable = S_r × 1024                  # convert TB → GB for billing
+
+# 2. Resolve included quotas by tier (see table below).
+S_w_included = INCLUDED_STORAGE_GB[tier] × T
+S_r_included = INCLUDED_READS_GB[tier]   × T
+
+# 3. Compute overage on storage and reads.
+overage_storage = max(0, S_w_billable - S_w_included) × STORAGE_RATE[tier]
+overage_reads   = max(0, S_r_billable - S_r_included) × READ_RATE[tier]
+
+# 4. Resolve add-ons (BYOK on Team only; included on Enterprise).
+addon_byok = (BYOK_FEE[tier] if byok != "none" else 0)
+
+# 5. Resolve base fee. Free is $0; Starter / Team are flat;
+#    Enterprise is negotiated (calculator returns a quote-request CTA).
+invoice = BASE_FEE[tier] × T + overage_storage + overage_reads + addon_byok
+```
+
+`replication_factor(R, tier)` is:
+
+| `R` regions | Free | Starter | Team | Enterprise |
+|---|---|---|---|---|
+| 1 | 1.0 | 1.0 | 1.0 | 1.0 |
+| 2 | n/a | n/a | 2.0 | 2.0 |
+| 3 | n/a | n/a | n/a | 3.0 |
+| 4 | n/a | n/a | n/a | 4.0 |
+
+Reads are not replicated for billing (a read serves one runner, not
+all regions).
+
+## Constants
+
+These are the rate-card constants the formula references.
+
+| Tier | `BASE_FEE` ($/mo) | `INCLUDED_STORAGE_GB` | `INCLUDED_READS_GB` | `STORAGE_RATE` ($/GB/mo) | `READ_RATE` ($/GB) | `BYOK_FEE` ($/mo) |
+|---|---|---|---|---|---|---|
+| Free | 0 | 5 | 50 | hard-capped | hard-capped | n/a |
+| Starter | 29 | 50 | 500 | 0.20 | 0.04 | n/a |
+| Team | 199 | 500 | 5,120 | 0.15 | 0.03 | 99 |
+| Enterprise | quote | quote | quote | quote | quote | included |
+
+"hard-capped" means Free returns `429` past the included quota until
+the next calendar month resets. Free does not generate an invoice.
+
+## Tier indicator
+
+The calculator picks the indicated tier as the cheapest tier that
+covers the customer's inputs without overage, falling back to overage
+on the next-larger tier if needed:
+
+```
+indicated_tier =
+  Free        if S_w ≤ 5  AND S_r × 1024 ≤ 50  AND T = 1 AND byok = "none" AND R ≤ 1
+  Starter     if S_w ≤ 50 AND S_r × 1024 ≤ 500 AND T ≤ 5 AND byok = "none" AND R ≤ 1
+  Team        if S_w ≤ 500 AND S_r ≤ 5         AND T ≤ 10                  AND R ≤ 2
+  Enterprise  otherwise
+```
+
+If the customer overshoots a tier on one dimension but is otherwise
+fine, the calculator picks that tier and reports the overage; if they
+overshoot on three or more dimensions or trigger BYOK / 3+ regions /
+`T > 10`, the calculator routes to the Enterprise inquiry form.
+
+## Per-tier price table (worked)
+
+For a representative input — `T = 1`, `S_w = 100 GB/mo`, `S_r = 2 TB/mo`,
+`byok = none`, `h = 0.8`, `R = 1` — the per-tier price is:
+
+| Tier | Base | Storage overage | Read overage | BYOK | Total | Notes |
+|---|---|---|---|---|---|---|
+| Free | $0 | hard-cap (over) | hard-cap (over) | n/a | n/a | exceeds Free cap |
+| Starter | $29 | (100−50) × $0.20 = $10 | (2048−500) × $0.04 = $61.92 | n/a | **$100.92** | indicated tier candidate |
+| Team | $199 | $0 (100 ≤ 500) | $0 (2048 ≤ 5120) | $0 | **$199.00** | no overage |
+| Enterprise | quote | quote | quote | included | **quote** | overkill at this scale |
+
+The calculator surfaces all four lines so the customer sees the
+break-even tier (Team is cheaper than Starter-with-overage above ~120 GB
+storage or ~3 TB reads, depending on the mix).
+
+## Three worked scale points
+
+### Small: solo dev on Bazel
+
+`T = 1`, `S_w = 4 GB/mo`, `S_r = 40 GB/mo`, `byok = none`, `h = 0.75`, `R = 1`.
+
+| Tier | Total | Notes |
+|---|---|---|
+| Free | **$0** | fits within Free cap |
+| Starter | $29 | over-served |
+| Team | $199 | over-served |
+| Enterprise | quote | wildly over-served |
+
+Indicated tier: **Free**.
+
+### Medium: 200-engineer Bazel monorepo, single region
+
+`T = 1`, `S_w = 180 GB/mo`, `S_r = 4 TB/mo`, `byok = none`, `h = 0.82`, `R = 1`.
+
+| Tier | Total | Notes |
+|---|---|---|
+| Free | n/a | exceeds cap |
+| Starter | $29 + (130 × $0.20) + ((4096 − 500) × $0.04) = $29 + $26 + $143.84 = **$198.84** | overage on both axes |
+| Team | $199 + $0 + $0 = **$199.00** | included quotas cover it |
+| Enterprise | quote | overkill |
+
+Indicated tier: **Team** (effectively tied with Starter at this size,
+which is by design — Team is priced as the natural graduation
+threshold).
+
+### Large: multi-region enterprise, BYOK, 5 tenants
+
+`T = 5`, `S_w = 800 GB/mo`, `S_r = 12 TB/mo`, `byok = aws`, `h = 0.88`, `R = 3`.
+
+| Tier | Total | Notes |
+|---|---|---|
+| Free | n/a | exceeds cap |
+| Starter | n/a | exceeds tenant + region cap |
+| Team | n/a | exceeds region cap (`R = 3 > 2`) |
+| Enterprise | **quote** | required (3 regions, BYOK, multi-tenant) |
+
+Indicated tier: **Enterprise**. The calculator routes to the inquiry
+form with a pre-filled quote-request payload containing the inputs
+above. Per WI-S19-005, Enterprise customers cannot self-serve through
+Stripe Checkout; they must complete the inquiry form and receive a
+contractual rate from Sales.
+
+## Inner-loop savings (informational)
+
+For each set of inputs, the calculator also reports the annualized
+inner-loop cache-tax savings using the model from
+[the economics post](/blog/05-fast-cache-hit-economics/):
+
+```
+annual_cache_tax_saved
+  ≈ engineers
+  × builds_per_engineer_per_day
+  × jobs_per_build
+  × cache_lookups_per_job
+  × (h × (baseline_hit_latency_s - corelink_hit_latency_s))
+  × loaded_engineer_hourly_rate
+  × working_days_per_year
+  / 3600
+```
+
+This is *not* part of the bill (it is the customer's avoided cost on
+their existing cache, not a CoreLink line item) but is the
+break-even-relevant number when comparing CoreLink to a self-hosted
+baseline. The [comparison page](./comparison) walks this arithmetic
+explicitly at three scale points.
+
+## What the calculator deliberately does not do
+
+- It does not assume a specific hit-rate improvement from migrating
+  to CoreLink. We do not promise a specific hit-rate delta because it
+  depends on the customer's build graph. The customer enters their
+  current observed hit rate; CoreLink's hit-rate budget is
+  policy-pinned but the absolute number is the customer's.
+- It does not assume a specific developer-hour-saved-per-build
+  number. The economics model exposes that input; the customer enters
+  their loaded-cost-per-hour. We don't pick it for them.
+- It does not give Enterprise an estimated price. Enterprise is
+  always quote-routed because the dimensions that push a customer to
+  Enterprise (BYOK, multi-region, multi-tenant, custom DPA) are not
+  uniform across customers and the rate card varies. The calculator
+  emits a pre-filled quote-request, not a number.
+
+## Copy-pasteable formula (for spreadsheets)
+
+This is the same arithmetic in spreadsheet-friendly form. Paste each
+line into a cell of your favorite spreadsheet (Excel, Google Sheets,
+Numbers, LibreOffice) and replace the named-range references with
+cell coordinates.
+
+```
+# Inputs
+T                = 1
+S_w_gb           = 180
+S_r_tb           = 4
+byok             = "none"      # "none" | "aws" | "gcp" | "azure"
+h                = 0.82
+R                = 1
+
+# Tier rate-card (Starter / Team — Free is $0, Enterprise is quote)
+base_starter     = 29
+incl_storage_starter = 50
+incl_reads_starter   = 500
+rate_storage_starter = 0.20
+rate_reads_starter   = 0.04
+
+base_team        = 199
+incl_storage_team    = 500
+incl_reads_team      = 5120
+rate_storage_team    = 0.15
+rate_reads_team      = 0.03
+byok_fee_team        = 99
+
+# Derived
+S_w_billable     = S_w_gb * IF(R<=1, 1, IF(R=2, 2, IF(R=3, 3, 4)))
+S_r_billable_gb  = S_r_tb * 1024
+
+# Per-tier totals
+total_starter    = base_starter * T
+                 + MAX(0, S_w_billable - incl_storage_starter * T) * rate_storage_starter
+                 + MAX(0, S_r_billable_gb - incl_reads_starter * T) * rate_reads_starter
+
+total_team       = base_team * T
+                 + MAX(0, S_w_billable - incl_storage_team * T) * rate_storage_team
+                 + MAX(0, S_r_billable_gb - incl_reads_team * T) * rate_reads_team
+                 + IF(byok = "none", 0, byok_fee_team)
+```
+
+The internal version of this calculator with margin analysis (vendor
+cost / sale price / gross margin per tier) lives at
+`marketing/sales/PRICING-WORKSHEET.md` and is not customer-visible.
+
+## Trace
+
+- WI-S19-004 §6.1 (tier taxonomy)
+- WI-S19-005 (Enterprise inquiry form)
+- WI-S20-008 §2.1.2 Post 5 (economics framing)
+- WI-S20-007 (SLO budget for latency term in inner-loop model)

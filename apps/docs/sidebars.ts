@@ -127,6 +127,17 @@ const sidebars: SidebarsConfig = {
         "explanation/architecture",
         {
           type: "category",
+          label: "Pricing",
+          link: { type: "doc", id: "explanation/pricing/index" },
+          collapsed: true,
+          items: [
+            "explanation/pricing/index",
+            "explanation/pricing/calculator",
+            "explanation/pricing/comparison",
+          ],
+        },
+        {
+          type: "category",
           label: "Residency",
           collapsed: true,
           items: ["explanation/residency/lgpd-brazil"],
