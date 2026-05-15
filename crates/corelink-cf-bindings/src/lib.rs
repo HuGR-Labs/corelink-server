@@ -76,6 +76,13 @@ pub mod r2_real;
 /// contract; replicates the pattern landed in [`r2_real`].
 pub mod d1_real;
 
+/// Real CF KV binding with extended operations (get/put_bytes/delete/list)
+/// and tenant-prefix enforcement. Dual-target: wasm32 wires
+/// `worker::kv::KvStore`; native build provides a stub returning
+/// `KvError::Backend("WasmOnly: …")`. See module docs for the replication
+/// pattern (DO follow-up).
+pub mod kv_real;
+
 #[cfg(target_arch = "wasm32")]
 pub use cf_d1::CfD1DatabaseAdapter;
 #[cfg(target_arch = "wasm32")]
@@ -87,3 +94,5 @@ pub use cf_r2::CfR2BucketAdapter;
 
 pub use d1_real::{CfD1DatabaseReal, D1Error, D1Op, TenantId, TenantScopedQuery};
 pub use r2_real::{CfR2BucketReal, R2Op, TenantPrefix, TenantScopedKey};
+
+pub use kv_real::CfKvNamespaceReal;

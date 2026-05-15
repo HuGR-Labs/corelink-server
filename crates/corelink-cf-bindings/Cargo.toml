@@ -57,10 +57,10 @@ thiserror = { workspace = true }
 # wasm bindgen futures for async bridging in the worker handler.
 wasm-bindgen-futures = { workspace = true }
 
-# Constant-time equality for tenant_id comparison in the D1 real binding
-# (defense-in-depth against timing-side-channel leakage on a hot-path
-# multi-tenant query route). See r2_real for the parallel rationale on
-# the prefix-derivation code path.
+# Constant-time equality for tenant identifier comparisons across the
+# real bindings: D1's bind-time tenant_id check, KV's TenantPrefix::eq
+# and scoped_key prefix probe, R2's prefix-derivation path. Defense-in-
+# depth against timing-side-channel leakage on cross-tenant probes.
 subtle = { workspace = true }
 
 # Serde for D1 row deserialisation in `CfD1DatabaseReal::first` (the
@@ -69,6 +69,7 @@ subtle = { workspace = true }
 # not exercise this surface but the trait bound still requires `serde`
 # at the type-system layer.
 serde = { workspace = true }
+
 
 # Host-side native tests for INV-CAS-IDEMPOTENCY exercise the
 # `corelink-worker::storage::r2::InMemoryR2` fake (same trait surface as
