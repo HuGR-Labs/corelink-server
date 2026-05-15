@@ -20,6 +20,7 @@ tags: ["debt-register", "techlead", "ga-readiness", "must-close-before-tag"]
 >
 > **Snapshot commit:** main HEAD `6d80530` + wave 7 + wave 8 in flight.
 > **Total debt rows:** 19 (P0:3 · P1:8 · P2:8).
+> **Closed:** 1 (DEBT-001 — 2026-05-15, commit `52624e7`).
 
 ---
 
@@ -27,7 +28,7 @@ tags: ["debt-register", "techlead", "ga-readiness", "must-close-before-tag"]
 
 | ID | Title | Source | Owner | Target | Plan |
 |---|---|---|---|---|---|
-| **DEBT-001** | **19 code-only secrets drift entries** (k6 load-test env vars, Vault auth-modes `VAULT_KUBERNETES_*`, Drata onboarding `DRATA_INVITE_*`, Azure federation `AZURE_FEDERATION_*`) — all reference real env vars in code but not in `docs/internal/secrets-checklist.md`. | `specs/_audits/2026-05-15-secrets-coverage-baseline.md` (commit `c000dd8`) | Orchestrator | T+3d (2026-05-18) | Dispatch 1 Sonnet to extend secrets-checklist.md with the 19 missing entries (category, owner, rotation cadence, where consumed). Re-run validator → 0 code-only. |
+| ~~**DEBT-001**~~ **CLOSED 2026-05-15 (`52624e7`)** | **19 code-only secrets drift entries** (k6 load-test env vars, Vault auth-modes `VAULT_KUBERNETES_*`, Drata onboarding `DRATA_INVITE_*`, Azure federation `AZURE_FEDERATION_*`) — all reference real env vars in code but not in `docs/internal/secrets-checklist.md`. | `specs/_audits/2026-05-15-secrets-coverage-baseline.md` (commit `c000dd8`) | Orchestrator | ~~T+3d (2026-05-18)~~ **Closed 2026-05-15** | Rows #90-#108 added to `docs/internal/secrets-checklist.md` (commit `52624e7`). Validator now reports `code_only=0` (matrix=109, code=89, in_both=89, matrix_only=20). Deploy gate `cf-deploy-prod.yml` no longer blocks on DEBT-001. |
 | **DEBT-002** | **OSS release prep blocked** — content-filter blocked twice on standard Apache 2.0 / MIT / Contributor Covenant text (agents `abcaa7d43f0040ca4`, agent v2). LICENSE files + per-crate `license =` tags + CONTRIBUTING + CoC + DCO CI all still missing. Blocks public-launch (LAUNCH-CHECKLIST-V2 L23 "OSS repos public"). | Wave 6 + Wave 7 OSS prep agents | Orchestrator (inline; no agent) | T+5d (2026-05-20) | Orchestrator writes LICENSE-APACHE-2.0 + LICENSE-MIT + CONTRIBUTING.md + CODE_OF_CONDUCT.md + DCO CI workflow + per-crate Cargo.toml `license = "MIT OR Apache-2.0"` directly — no agent dispatch (no agent can produce verbatim legal text without filter). |
 | **DEBT-003** | **AWS attestation doc hash placeholder** — `BYOK-FIPS-ATTESTATION-MATRIX.md` row for AWS KMS shows `TBD-on-receipt` for the attestation PDF SHA-256. Must be filled when AWS Artifact PDF is downloaded. Blocks GAP-02 closure. | `specs/_compliance/BYOK-FIPS-ATTESTATION-MATRIX.md` (commit `eed34ab`) | Gustavo (Human) | T+30d (2026-06-14, per GAP-02 hard cap) | Human downloads AWS Artifact SOC 2 + FIPS attestation PDF, runs `sha256sum`, updates matrix row. |
 
@@ -69,6 +70,12 @@ This register IS the source of truth. The compliance weekly digest (`scripts/com
 
 Waivers are NOT silent. If a target slips, append a row to `Section 5 — Waivers` below with justification + new target + sign-off (`Gustavo Schneiter` for P0/P1; for P2 a senior engineer suffices).
 
+### 4.1 Closures
+
+| ID | Closure date | Closure commit | Closure summary | Verifier |
+|---|---|---|---|---|
+| **DEBT-001** | 2026-05-15 | `52624e7` (branch `wt/debt-001-secrets-drift`) | Added rows #90-#108 to `docs/internal/secrets-checklist.md` covering all 19 code-only env vars (Azure federation, Drata, k6 load-test, Vault auth-modes, HTTP_PORT, Stripe price ID, PagerDuty compliance integration). | `python3 scripts/validate_secrets_matrix.py` → `code_only=0` (was 19); `python3 scripts/validate_specs.py` → no regression (428 docs validated). |
+
 ---
 
 ## 5. Waivers
@@ -89,3 +96,4 @@ Waivers are NOT silent. If a target slips, append a row to `Section 5 — Waiver
 | Date | Change | Author |
 |---|---|---|
 | 2026-05-15 | v1.0.0 — Register created post wave-7+wave-8 dispatch; 19 debts catalogued (P0:3 / P1:8 / P2:8). | Gustavo (via Claude Opus 4.7 orchestrator) |
+| 2026-05-15 | v1.0.1 — DEBT-001 closed (commit `52624e7`, branch `wt/debt-001-secrets-drift`). 19 code-only secrets matrix drift entries added; validator drift 19 → 0. Remaining open: 18 (P0:2 / P1:8 / P2:8). | Claude Opus 4.7 (DEBT-001 closure agent) |
