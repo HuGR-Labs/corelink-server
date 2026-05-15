@@ -128,18 +128,29 @@ use corelink_byok::{BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsPro
 
 pub(crate) mod key_resource;
 
-#[cfg(feature = "production")]
+// The native real provider is gated on `production` AND non-wasm32. On
+// `wasm32-unknown-unknown` we always expose the `AzureKeyVaultWasmStub`
+// regardless of feature flags (the underlying `reqwest` / `regex` / `tokio`
+// stack does not target wasm32). See
+// `specs/_audits/2026-05-15-byok-real-provider-pattern.md` §4.
+#[cfg(all(feature = "production", not(target_arch = "wasm32")))]
 mod entra;
-#[cfg(feature = "production")]
-mod real;
+#[cfg(any(
+    all(feature = "production", not(target_arch = "wasm32")),
+    target_arch = "wasm32"
+))]
+pub mod real;
 
-#[cfg(feature = "production")]
+#[cfg(all(feature = "production", not(target_arch = "wasm32")))]
 pub use real::AzureKeyVaultRealProvider;
+
+#[cfg(target_arch = "wasm32")]
+pub use real::{AzureKeyVaultRealProvider, AzureKeyVaultWasmStub};
 
 /// Test-only utilities. Hidden from documentation; gated on the `production`
 /// feature. Used by the in-crate `tests/` integration suites to inject a
 /// static bearer token or wiremock endpoint.
-#[cfg(feature = "production")]
+#[cfg(all(feature = "production", not(target_arch = "wasm32")))]
 #[doc(hidden)]
 pub mod __test_support {
     pub use crate::entra::EntraCredentials;

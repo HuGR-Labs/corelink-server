@@ -10,8 +10,14 @@ publish.workspace = true
 [features]
 # Default build = stub/mock only (no network deps, suitable for CI without Azure creds).
 default = []
-# Production = real Key Vault REST client + Entra ID OAuth2 (R2-8). Pulls in reqwest + regex + tracing.
-production = ["dep:reqwest", "dep:regex", "dep:tracing"]
+# Production = real Key Vault REST client + Entra ID OAuth2 (R2-8). Pulls in
+# reqwest + regex. The `tracing` crate is now an unconditional dependency
+# (audit-emit fail-CLOSED is required per the BYOK real-provider pattern;
+# see `specs/_audits/2026-05-15-byok-real-provider-pattern.md`).
+production = ["dep:reqwest", "dep:regex"]
+# `real` is the GA-pattern alias for `production`. The server crate exposes
+# `byok-azure-real` which forwards here.
+real = ["production"]
 
 [lints.rust]
 unsafe_code = "forbid"
@@ -35,16 +41,27 @@ async-trait = "0.1"
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+# RFC 8785 JCS canonical JSON — used for AAD / encryption_context
+# canonicalization per INV-BYOK-CRYPTO-SOVEREIGNTY (the same canonical bytes
+# must be reproducible across architectures including wasm32 so that
+# AAD-bound ciphertext can be verified anywhere).
+serde_jcs = { workspace = true }
+# Constant-time byte comparison for AAD fingerprint / digest checks.
+subtle = { workspace = true }
 zeroize = { workspace = true }
 aes-gcm = "0.10"
 getrandom = "0.2"
 base64 = { workspace = true }
-tokio = { workspace = true }
+tracing = { workspace = true }
 
-# Production-only deps (gated behind `production` feature).
+# Production-only deps (gated behind `production` feature). Native-only
+# because reqwest + regex pull in tokio/hyper/OS-level TLS and do not build
+# for `wasm32-unknown-unknown`. The wasm32 stub (see `src/real.rs`) returns
+# `BYOKError::Provider("... unsupported on wasm32 ...")` from every method.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { workspace = true }
 reqwest = { workspace = true, optional = true }
 regex = { version = "1", optional = true }
-tracing = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
