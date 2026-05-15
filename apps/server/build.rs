@@ -1,3 +1,6 @@
+//! Build script — compiles the placeholder Health gRPC proto via
+//! tonic-build until the canonical REAPI protos are vendored.
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Health service (placeholder até REAPI protos serem vendados)
     tonic_build::compile_protos("proto/health.proto")?;
