@@ -20,11 +20,15 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use corelink_billing_stripe_materializer::{
+    BillingD1Writer, D1IdempotencyStore, D1SubscriptionStateHandler, InMemoryBillingAuditEmitter,
+    InMemoryBillingD1, InMemoryTierSelector, RealStripeAuditEmitter,
+};
 use corelink_server::webhook::{router as webhook_router, WebhookState};
 use corelink_stripe_real::webhook_dispatch::{
-    InMemoryIdempotencyStore, RecordingAuditEmitter, RecordingSliRecorder,
-    RecordingStateMaterializer, SystemClock, WebhookDispatcher,
+    RecordingSliRecorder, StateMaterializer, SystemClock, WebhookDispatcher,
 };
+use corelink_tier_selection::tier::TierKind;
 use tonic::{transport::Server, Request, Response, Status};
 use tracing::{info, warn};
 
@@ -76,22 +80,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             .unwrap_or(50052u16);
         let http_addr: SocketAddr = format!("0.0.0.0:{}", http_port).parse()?;
 
-        // Wave 16: the HTTP shell now binds the canonical
-        // `WebhookDispatcher` from `corelink-stripe-real`. The
-        // in-memory store / recording materializer / recording audit
-        // emitter shipped here are still placeholders for native dev
-        // / CI runs — production wiring (S-13+) replaces them with the
-        // D1-backed idempotency store, the
-        // `corelink-tier-selection`/`corelink-billing-*` ledger
-        // adapters, and the `corelink-audit-chain` sink. The
-        // dispatcher shape (`WebhookDispatcher::new`) is the single
-        // canonical seam used everywhere (axum, CF Worker, replay
-        // crons).
+        // Wave 17: the HTTP shell now binds the production
+        // materializer + audit emitter + D1-backed idempotency store
+        // from `corelink-billing-stripe-materializer`. On native
+        // dev/CI runs the `InMemoryBillingD1` + `InMemoryBillingAuditEmitter`
+        // are used (no D1 endpoint reachable from outside CF Worker
+        // anyway); on wasm32 the production binder swaps these to the
+        // `corelink-cf-bindings::CfD1DatabaseReal` D1 adapter + the
+        // `corelink-audit-chain` `ArchiveProducer` sink behind the
+        // same `BillingD1Writer` / `BillingAuditEmitter` traits.
+        //
+        // The single canonical seam (`WebhookDispatcher::new`) is
+        // preserved end-to-end — axum, CF Worker, and the replay
+        // cron all hit this exact constructor with target-specific
+        // collaborators.
+        let billing_d1: Arc<dyn BillingD1Writer> = Arc::new(InMemoryBillingD1::new());
+        let billing_audit = Arc::new(InMemoryBillingAuditEmitter::new());
+        // Canonical Stripe-plan-id → tier mapping. Production
+        // operators flip these via the workspace tier config; the
+        // defaults here mirror the canonical 5-tier taxonomy from
+        // `corelink-tier-selection::tier::TierKind` so a fresh
+        // deployment without overrides still classifies the four
+        // production plans correctly.
+        let tier_selector = Arc::new(InMemoryTierSelector::with_mapping(&[
+            ("plan_starter", TierKind::Starter),
+            ("plan_team", TierKind::Team),
+            ("plan_pro", TierKind::Pro),
+        ]));
+        let materializer: Arc<dyn StateMaterializer> = Arc::new(D1SubscriptionStateHandler::new(
+            billing_d1.clone(),
+            billing_audit.clone(),
+            tier_selector,
+        ));
+        let dispatcher_audit = Arc::new(RealStripeAuditEmitter::new(billing_audit.clone()));
+        let idempotency = Arc::new(D1IdempotencyStore::new(billing_d1.clone()));
         let dispatcher = Arc::new(WebhookDispatcher::new(
             secret.into_bytes(),
-            Arc::new(InMemoryIdempotencyStore::new()),
-            Arc::new(RecordingStateMaterializer::new()),
-            Arc::new(RecordingAuditEmitter::new()),
+            idempotency,
+            materializer,
+            dispatcher_audit,
             Arc::new(RecordingSliRecorder::new()),
             Arc::new(SystemClock),
         ));

@@ -1,0 +1,37 @@
+[package]
+name = "corelink-billing-stripe-materializer"
+description = "CoreLink Stripe webhook state materializers — wave-17 follow-on to corelink-stripe-real WebhookDispatcher. Ships the production `StateMaterializer` impl (`D1SubscriptionStateHandler`) that writes Stripe-derived rows into the D1 billing tables (stripe_customers / stripe_subscriptions / stripe_invoices / stripe_disputes / stripe_refunds), plus a `RealStripeAuditEmitter` bridging to corelink-audit-chain, a D1-backed `IdempotencyStore`, and tier-selection re-computation on subscription.updated. Decoupled from the wasm32-only `corelink-cf-bindings::CfD1DatabaseReal` via a thin `BillingD1Writer` trait so the surface tests on native CI; production binders wire the wasm32 D1 trait through the same seam. No tokio in src (sync trait boundary preserved from the dispatcher contract); audit emit is fail-CLOSED before every state mutation."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+subtle = { workspace = true }
+hex = { workspace = true }
+blake3 = { workspace = true }
+corelink-stripe-real = { path = "../corelink-stripe-real" }
+corelink-tier-selection = { path = "../corelink-tier-selection" }
+
+[dev-dependencies]
+proptest = { workspace = true }

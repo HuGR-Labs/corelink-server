@@ -248,6 +248,14 @@ members = [
     # additive migration 0046_survey_responses + analyst protocol live
     # under marketing/retention/customer-health/.
     "crates/corelink-survey",
+    # Wave-17 follow-on to corelink-stripe-real WebhookDispatcher: ships the
+    # production `StateMaterializer` impl (`D1SubscriptionStateHandler`) that
+    # writes Stripe-derived rows into the canonical D1 billing tables, plus
+    # a `RealStripeAuditEmitter` bridging to corelink-audit-chain, a D1-backed
+    # `IdempotencyStore`, and tier-selection re-computation on subscription.updated.
+    # Decoupled from the wasm32-only `corelink-cf-bindings::CfD1DatabaseReal`
+    # via a thin `BillingD1Writer` trait so the surface tests on native CI.
+    "crates/corelink-billing-stripe-materializer",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
@@ -457,6 +465,7 @@ corelink-otel-export = { path = "crates/corelink-otel-export" }
 corelink-chaos-scheduler = { path = "crates/corelink-chaos-scheduler" }
 corelink-tier-selection = { path = "crates/corelink-tier-selection" }
 corelink-stripe-real = { path = "crates/corelink-stripe-real" }
+corelink-billing-stripe-materializer = { path = "crates/corelink-billing-stripe-materializer" }
 corelink-statuspage-real = { path = "crates/corelink-statuspage-real" }
 corelink-drata-sync = { path = "crates/corelink-drata-sync" }
 corelink-openapi = { path = "crates/corelink-openapi" }

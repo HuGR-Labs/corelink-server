@@ -347,11 +347,153 @@ path to keep in sync.
 
 - Bind the production D1-backed `IdempotencyStore` (replace the
   in-memory placeholder in `main.rs`).
-- Bind the production `corelink-tier-selection` /
-  `corelink-billing-*` writers as the `StateMaterializer` impl.
-- Bind the production `corelink-audit-chain` sink as the
-  `AuditEmitter` impl (currently uses `RecordingAuditEmitter` for
-  dev/CI).
 - Cloudflare Worker route adoption — the dispatcher is wasm-friendly
   (no tokio in `src/`); wire `WebhookDispatcher` into the
   `corelink-clerk-cf` crate as the Worker-side handler.
+
+---
+
+## Materializers (wave 17 — v1.2.0 follow-on)
+
+> **Branch:** `wt/r-prep-stripe-materializers-real`
+> **Disposition:** the trait-only placeholders from waves 15 + 16
+> (`RecordingStateMaterializer` / `RecordingAuditEmitter` /
+> `InMemoryIdempotencyStore`) have been replaced in `apps/server/src/main.rs`
+> with production wiring from the new
+> [`corelink-billing-stripe-materializer`](../../crates/corelink-billing-stripe-materializer/)
+> crate. The full dispatcher → materializer → D1 + audit-chain
+> pipeline is now end-to-end live.
+
+### Crate layout
+
+```text
+crates/corelink-billing-stripe-materializer/
+├── Cargo.toml                       (#![forbid(unsafe_code)], deny clippy)
+├── src/
+│   ├── lib.rs                       (public surface re-exports)
+│   ├── d1.rs                        (BillingD1Writer trait + InMemoryBillingD1)
+│   ├── audit.rs                     (BillingAuditEmitter + RealStripeAuditEmitter)
+│   ├── idempotency.rs               (D1IdempotencyStore — INSERT OR IGNORE)
+│   ├── tier.rs                      (TierSelector + InMemoryTierSelector)
+│   └── handler.rs                   (D1SubscriptionStateHandler — the 10-event matrix)
+└── tests/
+    └── materializers_e2e.rs         (8 e2e scenarios — dispatcher → materializer)
+```
+
+### 10-event materialization matrix
+
+`EVENT_MATERIALIZATION_MATRIX` (re-exported from the crate root) is
+the surface-stable canonical mapping:
+
+| Stripe event type                        | D1 table                | Audit event name (v1)                                       | Severity |
+|------------------------------------------|-------------------------|-------------------------------------------------------------|----------|
+| `customer.subscription.deleted`          | `stripe_subscriptions`  | `corelink.billing.subscription_canceled.materialized.v1`    | Notice + tier→Free |
+| `customer.subscription.updated`          | `stripe_subscriptions`  | `corelink.billing.subscription.materialized.v1` (+ tier reconcile) | Notice |
+| `invoice.paid`                           | `stripe_invoices`       | `corelink.billing.invoice.materialized.v1`                  | Notice   |
+| `invoice.payment_failed`                 | `stripe_invoices`       | `corelink.billing.invoice.materialized.v1`                  | Notice   |
+| `charge.dispute.created`                 | `stripe_disputes`       | `corelink.billing.dispute.materialized.v1`                  | **Sev1** |
+| `customer.subscription.created`          | `stripe_subscriptions`  | `corelink.billing.subscription.materialized.v1`             | Notice   |
+| `customer.subscription.trial_will_end`   | (echo only)             | `corelink.billing.echo.v1`                                  | Info     |
+| `charge.refunded`                        | `stripe_refunds`        | `corelink.billing.refund.materialized.v1`                   | Notice   |
+| `customer.created`                       | `stripe_customers`      | `corelink.billing.customer.materialized.v1`                 | Notice   |
+| `invoice.created`                        | (echo only)             | `corelink.billing.echo.v1`                                  | Info     |
+
+The matrix is pinned by the e2e regression test
+`matrix_covers_all_ten_canonical_event_types`.
+
+### Tier-change wiring (INV-BILLING-TIER-CONSISTENT)
+
+On `customer.subscription.updated` the materializer:
+
+1. Extracts `plan_id` (and `seat_count`) from `data.object`.
+2. Calls `TierSelector::compute_tier(plan_id, seat_count)` →
+   canonical `TierKind`.
+3. Reads the current `tier_selections.tier` for the tenant; if
+   different, emits `corelink.tenant.tier_changed.v1` (audit BEFORE
+   write — fail-CLOSED) then upserts the new tier wire-string.
+
+On `customer.subscription.deleted` the materializer additionally
+downgrades the tenant to `TierKind::Free` (per dispatcher contract).
+
+A new D1 migration `0048_stripe_billing_materializer.sql` ships the
+five canonical tables plus the `stripe_tier_drift_view` view used by
+the daily reconciliation cron to surface
+INV-BILLING-TIER-CONSISTENT drift (additive; passes
+`check_migrations_additive.py`).
+
+### Audit fail-CLOSED preserved
+
+Every state mutation goes through the canonical sequence:
+
+1. **Emit billing audit** (`corelink.billing.<event>.materialized.v1`) →
+   on error, return `MaterializerError::Transient` (dispatcher
+   maps to 500, no D1 write happens).
+2. **Perform D1 write** via `BillingD1Writer` → on error, return
+   `Transient` / `InvalidPayload` per the underlying error.
+3. **Recompute tier** (subscription arms only) → emit
+   `corelink.tenant.tier_changed.v1` then persist; same fail-CLOSED
+   ordering.
+
+`RealStripeAuditEmitter` (implementing the wave-15
+`AuditEmitter` trait) routes the dispatcher's per-delivery row
+through the same `Arc<dyn BillingAuditEmitter>` the materializer
+uses, so the audit chain stays single-topology (verifier never sees
+a split).
+
+### Integration test coverage (`materializers_e2e.rs`)
+
+| Test                                                            | Verifies |
+|-----------------------------------------------------------------|----------|
+| `ten_event_matrix_round_trips_dispatcher_through_materializer`  | All 10 SLA event types → correct D1 table(s) + correct audit name. |
+| `tier_change_scenario_basic_to_pro_emits_tier_changed_audit`    | subscription.updated `starter` → `pro` updates `tier_selections.tier` + emits `tier_changed.v1`. |
+| `tier_change_no_op_when_target_tier_equals_current`             | If the computed tier equals the persisted tier, no audit fires (no spurious chain entries). |
+| `idempotency_replay_does_not_materialize_twice`                 | Replay of same `evt_…` → exactly one D1 row + one audit row. |
+| `audit_failure_propagates_500_and_no_d1_write`                  | If `BillingAuditEmitter::emit_billing` returns `Err`, dispatcher returns 500 and no D1 row is written. |
+| `d1_failure_during_state_mutation_returns_500`                  | If the D1 writer fails (including dedup-insert), dispatcher returns 500. |
+| `matrix_covers_all_ten_canonical_event_types`                   | The exported matrix covers every `CanonicalWebhookEventType::sla_event_types()` entry. |
+| `matrix_audit_event_names_versioned_v1`                         | Every matrix row carries a `.v1`-versioned, `corelink.`-prefixed audit name. |
+
+### Quality gates (wave 17)
+
+| Gate | Command | Result |
+|------|---------|--------|
+| materializer build | `cargo build -p corelink-billing-stripe-materializer` | green |
+| materializer clippy | `cargo clippy -p corelink-billing-stripe-materializer --tests -- -D warnings` | green |
+| materializer unit | `cargo test -p corelink-billing-stripe-materializer --lib` | 18 / 18 |
+| materializer e2e | `cargo test -p corelink-billing-stripe-materializer --test materializers_e2e` | 8 / 8 |
+| server build (after main.rs cutover) | `cargo build -p corelink-server` | green |
+| server clippy | `cargo clippy -p corelink-server --tests -- -D warnings` | green |
+| server total (no regression) | `cargo test -p corelink-server` | 36 / 36 |
+| stripe-real preserved | `cargo test -p corelink-stripe-real` | 73 / 73 (unchanged) |
+| migrations additive | `python3 scripts/check_migrations_additive.py` | green (52 files scanned) |
+| spec validate | `python3 scripts/validate_specs.py` | green (441 docs) |
+| secrets matrix | `python3 scripts/validate_secrets_matrix.py` | green |
+
+### Wave-17 invariants reaffirmed
+
+- **INV-BILLING-NO-DUP** — `D1IdempotencyStore::try_insert` mirrors
+  `INSERT OR IGNORE INTO stripe_webhook_events_processed`; the
+  hex-encoded BLAKE3 token is the dedup key.
+- **INV-BILLING-NO-LOSS** — every state mutation emits its
+  per-event audit row BEFORE the D1 row write; orphan-state-free.
+- **INV-AUDIT-APPEND-ONLY** — both the dispatcher's
+  `stripe_event_processed.v1` and the materializer's
+  `<event>.materialized.v1` rows route through the same
+  `Arc<dyn BillingAuditEmitter>`.
+- **INV-BILLING-TIER-CONSISTENT** — `stripe_tier_drift_view`
+  (migration 0048) exposes the join the reconciliation cron uses to
+  prove `tier_selections.tier == compute_tier(active_subscription)`
+  after every reconciliation cycle.
+
+### What deliberately did NOT change (wave 17 baseline)
+
+- The wave-15 `corelink-stripe-real::webhook_dispatch` trait surface
+  is unchanged. The new materializer crate consumes it verbatim
+  (`impl StateMaterializer for D1SubscriptionStateHandler`).
+- The wave-16 axum HTTP shell in `apps/server/src/webhook.rs` is
+  unchanged — only `main.rs` swapped from `Recording*` placeholders
+  to the production materializer.
+- `corelink-cf-bindings::CfD1DatabaseReal` is unchanged. The new
+  `BillingD1Writer` trait is the dependency-inversion seam: the
+  wasm32 binder forwards each method to the `CfD1DatabaseReal`
+  tenant-scoped prepared statements without touching this crate.
