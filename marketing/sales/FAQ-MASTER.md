@@ -20,7 +20,7 @@ tags: ["sales", "faq", "objection-handling", "r-prep", "ga", "customer-facing-so
 > **Audience:** anyone running a CoreLink pre-purchase conversation — Founder, Customer Success, partner SE. Each answer is the **canonical phrasing**. Use it as-is in a doc; paraphrase in conversation.
 > **Tone:** factual, falsifiable, no marketing varnish. Every numeric claim has a source pointer in `PROOF-POINTS.md`.
 > **What this is not:** a contract. The DPA, MSA, and order form override anything here.
-> **Companion docs:** `marketing/sales/OBJECTION-HANDLING.md` · `marketing/sales/COMPETITIVE-MATRIX.md` · `marketing/sales/PROOF-POINTS.md` · `apps/docs/docs/trust/` · `marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md` · `marketing/launch/LAUNCH-CHECKLIST-V2.md`.
+> **Companion docs:** `marketing/sales/OBJECTION-HANDLING.md` · `marketing/sales/COMPETITIVE-MATRIX.md` · `marketing/sales/PROOF-POINTS.md` · `apps/docs/docs/trust/` · `marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md` · `marketing/launch/LAUNCH-CHECKLIST-V2.md` · `marketing/sales/legal-questionnaires/` (SIG Lite + CAIQ v4 + vendor template + evidence index + response SLA).
 
 ---
 
@@ -283,6 +283,8 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 **A:** Whichever of the four GA regions you select at provisioning: `wnam` (Western NA), `enam` (Eastern NA), `weur` (Western EU — Frankfurt / Dublin), `sam` (South America — São Paulo). Three additional regions are available on request: `oce` (Sydney), `apc` (Tokyo / Singapore), `mea` (Dubai). Region binding is structural — `INV-REGION-NO-CROSS-LEAK` is a CRITICAL invariant. Every R2 blob, every D1 database, every DO instance is pinned to your region's colos. A request that reaches a region different from the tenant binding is refused at the boundary — not load-balanced, not falling back. You can verify your own tenant's residency via `GET /v1/tenant/me/residency-proof` — signed attestation with Merkle inclusion proof against the audit chain.
 
 **Sources:** `apps/docs/docs/trust/data-handling.mdx#residency`; `marketing/launch/BLOG-POSTS/04-multi-region-residency.md`.
+
+> **Pre-sales legal questionnaire toolkit:** for SIG Lite / CAIQ v4 / custom vendor-form responses, see `marketing/sales/legal-questionnaires/` — pre-filled SIG Lite (114 question-rows mapped to canonical evidence), CAIQ v4 (197 questions across 17 CCM v4 domains), generic vendor response template, evidence pack index, and response SLA policy (5d SIG Lite / 10d SIG Full / 7d CAIQ).
 
 ---
 
