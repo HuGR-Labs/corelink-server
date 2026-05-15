@@ -110,6 +110,40 @@ pub enum PhysicalDeleteError {
      - **(a.ii) Fail-closed runtime check**: if no valid (non-expired, non-revoked) pubkey exists for DPO authority, DSR path returns `DsrBypassError::NoValidPubkey` + SEV-1 alert + audit emit `corelink.gc.physical_delete.dsr_bypass_no_valid_pubkey` (NOT silent pass; bypass refused; grace continues to apply).
      - **(a.iii) Revocation propagation**: cross-region invalidation via per-region D1 row `UPDATE dsr_dpo_pubkeys SET revoked_at_ms = now()`. Propagation latency bound ≤15min via S-14 forward (BYOK + multi-region replication); pre-S-14 era requires manual per-region DPO key operation tracked em `dsr_dpo_pubkey_revocations` audit table. Cross-region replication SLA documented as P1 dependency on S-14.
      - **(a.iv) Rotation reminder CI gate**: `validate_dsr_pubkey_expiry.py` (NEW; weekly cron via GitHub Actions) — warns 14d before expiry; FAILS new DSR signal verification at 0d expiry; emits `corelink.dsr.pubkey_expiry_warning` metric (gauge: days_until_expiry).
+     - **(a.v) Runtime verifier signature pin (R4-P1-004-1 absorption, 2026-05-15)**: per R4-Opus-Part1 §3.4 P1-004-1 (`PRINC-CHARTER-TRAIT-DEFER`), the load-bearing crypto check is the runtime fail-closed verifier at signal-receipt. Canonical Rust signature pinned below (S-11 forward-signal placeholder; **fail-closed-by-default if absent**):
+       ```rust
+       /// Verifies a DSR DPO signature against the active (non-expired,
+       /// non-revoked) pubkey set for the issuing tenant + region.
+       /// Returns `Ok(verified_key_id)` on success.
+       /// Returns `Err(DsrPubkeyError::NoValidPubkey)` if no valid pubkey
+       /// exists OR if `now_ms > expires_at_ms` for the matched `key_id`.
+       /// Returns `Err(DsrPubkeyError::SignatureInvalid)` if signature
+       /// verify fails. **Fail-closed default**: if the verifier trait is
+       /// absent at runtime (S-11 wiring not yet deployed), the
+       /// physical-delete DSR-bypass arm SHALL refuse the bypass and
+       /// continue applying the grace period (silent-pass forbidden;
+       /// `PhysicalDeleteDecision::SkipGracePending` arm fires; audit
+       /// emit `corelink.gc.physical_delete.dsr_bypass_verifier_absent`).
+       pub trait DsrDpoPubkeyVerifier: Send + Sync {
+           fn verify_signal(
+               &self,
+               tenant_id: &TenantId,
+               digest: &BlobDigest,
+               signal_id: &Uuid,
+               signed_payload: &[u8],
+               signature_bytes: &[u8; 64],
+               now_ms: u64,
+           ) -> Result<KeyId, DsrPubkeyError>;
+       }
+       ```
+       Implementation surface: S-11 DSR signal-receipt path wires the
+       trait (with D1 binding for `dsr_dpo_pubkeys` table); pre-S-11
+       the WI-S06-004 physical-delete consumer ships with
+       `Option<Arc<dyn DsrDpoPubkeyVerifier>>` field on the orchestrator
+       — `None` ⇒ bypass arm refuses (fail-closed). Cross-ref:
+       `2026-05-15-debt-register.md` DEBT-S06-P1-004-1 (S-20 GA gate
+       cumulative-track row for the runtime verifier production wiring
+       + cross-region replication SLA pin per S-14 forward dependency).
    - **(b) Authorized scope**: `(tenant_id, digest)` pair specifically; `(tenant_id, '*')` and `('*', '*')` REJECTED. Wildcard scope = SEV-1 + audit alert.
    - **(c) Pre-execution audit**: emit `corelink.gc.physical_delete.dsr_bypass_received` with full provenance (signal_id, dpo_authority_id, signed_payload_digest, tenant_id, digest, received_at_ms, dpo_pubkey_id) BEFORE bypass executes — forensic trail even if subsequent bypass succeeds maliciously.
    - **(d) Replay-protected**: DSR signal IDs persisted em `dsr_signals_processed(signal_id PRIMARY KEY, processed_at_ms, region)`; UNIQUE constraint rejects replay. Cross-region replay protection: signal_id is globally unique (UUIDv7 + region prefix); cross-region check via S-14 forward.

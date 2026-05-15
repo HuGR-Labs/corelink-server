@@ -199,6 +199,14 @@ async fn execute_gc_scenario(scenario: Scenario) -> ScenarioResult {
    - **Output**: emit `corelink.ci.tla.30d_sustained_verde` (gauge boolean) + `corelink.ci.tla.30d_window_days` (gauge int = days since last clock reset).
    - **S-20 GA promotion gate**: requires gauge == TRUE for ≥ 30d before sprint promotion.
    - Workflow yaml inline em §13 artifacts.
+   - **Queryable per-day counter (R4-P1-006-1 absorption, 2026-05-15)**: per R4-Opus-Part2 §3.2 P1-006-1 (`PRINC-PROMOTION-001`), the S-20 GA gate requires a *queryable* sustained-counter (not a manual visual check on the CI history). Canonical emission:
+     - **Metric**: `tla_check_pass{date}` (counter; per-day boolean; emitted by the `tla_check.yml` workflow as the last step on `success` conclusion). The metric is the **daily aggregator source** for the 30d rolling sustained-counter.
+     - **Daily aggregator**: a separate daily-cron workflow `.github/workflows/tla-30d-sustained.yml` (forward-deferred to S-20 via debt register cumulative-track row DEBT-S06-P1-006-1) queries the last 30 daily values of `tla_check_pass{date}`, aggregates into the canonical sprint-contract counter `gc_30d_sustained_observation_count{window="tla_verde", scope="global"}`, and emits the rolling sum.
+     - **Consumer**: S-20 GA gate validator `validate_30d_sustained_gates.py` (forward-deferred via the same debt register row); requires `gc_30d_sustained_observation_count{window="tla_verde"} >= 30` before authorizing GA promotion.
+     - **DASH-GC consumption**: panel 9 (`corelink_ci_tla_30d_sustained_verde{spec="gc_correctness"}` — already shipped per PRR-S06 §7) is augmented additively with the per-day counter tile per `window` label in the S-20 GA gate cumulative track.
+     - **Window start-date binding**: pinned canonical in `_spec_contract.md §13.1` + `PRR-S06.md §10.1` (`STAGING-STABLE promotion timestamp + 1d (UTC) = 2026-05-03 00:00:00 UTC`).
+     - **Reset triggers**: same as §1.4 P0/P1 incident clock reset (pause-clock-on-P0/P1; Lote 10.4bis lesson).
+     - Cross-ref: R4-Opus-Part2 §3.2 P1-006-1; `PRINC-PROMOTION-001`; `2026-05-15-debt-register.md` DEBT-S06-P1-006-1.
 
 5. **CI cost**: TLC model check ~2-5 min per PR; property test 100k ~30-60 min CI nightly (não per-PR; weight too high). Note: GitHub Actions billing for **private repo** at $0.008/min × 5 min × 50 PRs/day ≈ $2/day = $730/yr (Lote 10.6bis P2-W6-2 cost re-derivation; previous $18/yr estimate assumed free-tier minutes).
 
