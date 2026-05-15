@@ -1,4 +1,4 @@
-name: audit-chain-daily-verify (Wave 15)
+name: audit-chain-daily-verify (Wave 15 / Wave 17 R2-list cutover)
 
 # Daily-verify cron: runs `cargo run -p corelink-audit-chain --bin verifier`
 # against the most recent 7 days of R2 archive chunks per
@@ -7,9 +7,14 @@ name: audit-chain-daily-verify (Wave 15)
 # Trigger:   cron 02:00 UTC daily (low-traffic window per WI-S09-004 §6.1.5)
 #            + manual workflow_dispatch for ad-hoc verify after incidents.
 #
-# Behaviour: parses every NDJSON chunk in the 7-day window, groups by
-#            tenant, walks chain links via `ChainVerifier`, asserts no
-#            break. ANY break = SEV-0 page (chain integrity tamper).
+# Behaviour: lists today's NDJSON chunks in the audit-archive R2 bucket via
+#            Cloudflare API v4 `r2/buckets/{bucket}/objects?prefix=audit/...`,
+#            downloads each chunk via the per-object GET, hands the local
+#            filesystem paths to the verifier binary, parses every NDJSON
+#            chunk, groups by tenant, walks chain links via `ChainVerifier`,
+#            asserts no break. ANY break = SEV-0 page (chain integrity
+#            tamper) via PagerDuty Events API v2 with marker
+#            `AUDIT_CHAIN_BREAK_DETECTED::<date>::<chunk-key>`.
 #
 # Enforces:  INV-OBS-AUDIT-CHAIN-INTEGRITY (HIGH), INV-AUDIT-APPEND-ONLY
 #            (CRITICAL — verifier surface the only audit-time tamper
@@ -17,10 +22,32 @@ name: audit-chain-daily-verify (Wave 15)
 #            partitioning re-asserted).
 #
 # Implements: WI-S09-008 §6 daily-verify cron acceptance criterion;
-#             specs/_audits/2026-05-15-audit-chain-retention.md §2.2.
+#             specs/_audits/2026-05-15-audit-chain-retention.md §2.2;
+#             Wave 17 R2-list cutover (production CF_API_TOKEN binding,
+#             replaces wave-15 smoke placeholder).
 #
 # SHA-pinned per HIGH_RISK lane FF-HR-005 + ADR-S12-045 §6 tooling-pin
 # policy. Version bump requires ADR + Security review.
+#
+# Secrets consumed (rows in docs/internal/secrets-checklist.md):
+#   - CF_ACCOUNT_ID            (#49) — CF account id
+#   - CF_API_TOKEN             (#50) — Cloudflare API token; for THIS
+#                                       workflow MUST be scoped to
+#                                       `Workers R2 Storage:Read` on the
+#                                       audit-archive bucket ONLY (no
+#                                       other CF resources). The production
+#                                       token row in #50 covers the deploy
+#                                       lane (R2 Storage:Edit). For the
+#                                       audit-archive read lane, the SRE
+#                                       Lead provisions a SECOND token
+#                                       (#118) scoped narrower (R2:read on
+#                                       `corelink-audit-archive` only).
+#   - AUDIT_R2_BUCKET          (#118 companion var, optional override) —
+#                                       defaults to `corelink-audit-archive`
+#   - PAGERDUTY_ROUTING_KEY    (#11) — SEV-0 page on chain break
+#
+# Fail-CLOSED: any R2 list failure (auth / 5xx / partial / network) fails
+# the job — NOT silent "no chunks found".
 
 on:
   schedule:
@@ -29,76 +56,306 @@ on:
   workflow_dispatch:
     inputs:
       window_days:
-        description: "Verify window in days (default 7)"
+        description: "Verify window in days (default 1; the cron walks today UTC)"
         required: false
-        default: "7"
+        default: "1"
+      override_date:
+        description: "Override verification date (YYYY-MM-DD UTC); empty = today"
+        required: false
+        default: ""
 
 permissions:
   contents: read
+
+concurrency:
+  group: audit-chain-daily-verify
+  cancel-in-progress: false
 
 jobs:
   daily-verify:
     name: daily-verify
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      AUDIT_R2_BUCKET_DEFAULT: corelink-audit-archive
     steps:
       - name: Checkout repo
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # actions/checkout@v4.2.2
+        with:
+          persist-credentials: false
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # dtolnay/rust-toolchain@stable (pinned 2026-04-29)
         with:
           toolchain: stable
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
+        uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # Swatinem/rust-cache@v2.7.7
         with:
           shared-key: audit-chain-daily-verify
 
       - name: Build verifier binary
         run: cargo build -p corelink-audit-chain --bin verifier --release
 
+      - name: Resolve verify window (date, bucket, prefix)
+        id: window
+        env:
+          OVERRIDE_DATE: ${{ github.event.inputs.override_date }}
+          AUDIT_R2_BUCKET: ${{ secrets.AUDIT_R2_BUCKET }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${OVERRIDE_DATE:-}" ]]; then
+            # Validate YYYY-MM-DD shape; reject anything else (fail-CLOSED).
+            if ! [[ "${OVERRIDE_DATE}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+              echo "::error::override_date '${OVERRIDE_DATE}' is not YYYY-MM-DD"
+              exit 1
+            fi
+            verify_date="${OVERRIDE_DATE}"
+          else
+            verify_date="$(date -u +%Y-%m-%d)"
+          fi
+          y="${verify_date:0:4}"
+          m="${verify_date:5:2}"
+          d="${verify_date:8:2}"
+          prefix="audit/${y}/${m}/${d}/"
+          bucket="${AUDIT_R2_BUCKET:-${AUDIT_R2_BUCKET_DEFAULT}}"
+          {
+            echo "verify_date=${verify_date}"
+            echo "prefix=${prefix}"
+            echo "bucket=${bucket}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Window resolved: bucket=${bucket} prefix=${prefix}"
+
       - name: Smoke-test verifier on empty input (no chunks)
-        # The verifier MUST be a no-op on zero input (cron-safe). This
-        # guards against a regression where the binary panics on missing
-        # R2 list output.
+        # The verifier MUST be a no-op on zero input (cron-safe, ensures
+        # the binary itself didn't regress). Kept across the Wave 17
+        # cutover as a defense-in-depth pre-flight.
         run: |
           set -euo pipefail
-          cargo run -p corelink-audit-chain --bin verifier --release -- 2>&1 | tee verifier-out.log
-          grep -q "AUDIT_CHAIN_VERIFY_OK" verifier-out.log
+          cargo run -p corelink-audit-chain --bin verifier --release -- 2>&1 \
+            | tee verifier-smoke.log
+          grep -q "AUDIT_CHAIN_VERIFY_OK" verifier-smoke.log
 
-      - name: Download last-7d audit chunks from R2 (production wiring placeholder)
-        # Production wiring (Wave 15.3 follow-on) replaces this step with
-        # a wrangler r2 object list + download loop. For the SEAL gate
-        # this step constructs a synthetic 1-chunk NDJSON file from a
-        # known-good chain emit + verifies the binary's verify path on
-        # real input (smoke-only; the chaos / integration test in
-        # `crates/corelink-audit-chain/tests/prop_audit_chain.rs` covers
-        # the algorithmic correctness via 10k-iter property tests).
+      - name: List today's audit chunks from R2 (Cloudflare API v4)
+        id: r2list
+        env:
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          BUCKET: ${{ steps.window.outputs.bucket }}
+          PREFIX: ${{ steps.window.outputs.prefix }}
+        # Wave 17 cutover: real R2 list via Cloudflare API v4.
+        #
+        # Endpoint:
+        #   GET /accounts/{account_id}/r2/buckets/{bucket}/objects?prefix={prefix}&per_page=1000&cursor={...}
+        # Auth:  Bearer ${CF_API_TOKEN} (R2:read scope on the audit bucket
+        #         ONLY; see secrets matrix row #118 + workflow header).
+        # Pagination:  follows `result_info.cursor` until empty.
+        # Failure mode: ANY non-2xx, network failure, JSON parse failure,
+        #               or empty result_info.cursor handling error -> job
+        #               fails (fail-CLOSED; not "no chunks found" silent
+        #               pass).
         run: |
           set -euo pipefail
-          echo "Production R2 list step lives behind CF_API_TOKEN secret;"
-          echo "this step is the public-CI smoke harness."
-          # No-op for the public CI lane; the cron's load-bearing path
-          # runs against real R2 with the CF_API_TOKEN secret bound at
-          # the production environment level (deferred to Wave 15.3 per
-          # autonomous execution charter's `trait-abstraction-defer`).
+          : "${CF_ACCOUNT_ID:?CF_ACCOUNT_ID secret not set (fail-CLOSED)}"
+          : "${CF_API_TOKEN:?CF_API_TOKEN secret not set (fail-CLOSED)}"
+          # Defense-in-depth: explicitly add the token to the GHA log mask
+          # (GHA masks secrets by default; this catches sub-shell echos
+          # that some `set -x` paths could otherwise expose).
+          echo "::add-mask::${CF_API_TOKEN}"
+          mkdir -p chunks
+          : > chunk-keys.txt
+          cursor=""
+          page=0
+          while :; do
+            page=$((page + 1))
+            if [[ -n "${cursor}" ]]; then
+              url="https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/r2/buckets/${BUCKET}/objects?prefix=${PREFIX}&per_page=1000&cursor=${cursor}"
+            else
+              url="https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/r2/buckets/${BUCKET}/objects?prefix=${PREFIX}&per_page=1000"
+            fi
+            http_code=$(curl --silent --show-error \
+              -o page-${page}.json -w "%{http_code}" \
+              -H "Authorization: Bearer ${CF_API_TOKEN}" \
+              -H "Accept: application/json" \
+              "${url}" || echo "000")
+            if [[ "${http_code}" != "200" ]]; then
+              echo "::error::R2 list page=${page} returned HTTP ${http_code} (bucket=${BUCKET} prefix=${PREFIX}) — fail-CLOSED"
+              # Surface body for triage WITHOUT leaking the bearer token.
+              echo "--- response body (page=${page}) ---"
+              cat page-${page}.json || true
+              echo "--- end ---"
+              exit 1
+            fi
+            # Extract keys + cursor via single-shot python invocations.
+            # `success` MUST be true; otherwise fail-CLOSED.
+            ok=$(PAGE_JSON="page-${page}.json" python3 -c 'import json,os; d=json.load(open(os.environ["PAGE_JSON"])); print("1" if d.get("success") is True else "0")')
+            if [[ "${ok}" != "1" ]]; then
+              echo "::error::R2 list page=${page}: success != true — fail-CLOSED"
+              PAGE_JSON="page-${page}.json" python3 -c 'import json,os; d=json.load(open(os.environ["PAGE_JSON"])); print("errors=", d.get("errors"))'
+              exit 1
+            fi
+            PAGE_JSON="page-${page}.json" python3 -c 'import json,os; d=json.load(open(os.environ["PAGE_JSON"])); [print(o["key"]) for o in (d.get("result") or []) if o.get("key")]' >> chunk-keys.txt
+            cursor=$(PAGE_JSON="page-${page}.json" python3 -c 'import json,os; d=json.load(open(os.environ["PAGE_JSON"])); ri=d.get("result_info") or {}; print(ri.get("cursor") or "")')
+            if [[ -z "${cursor}" ]]; then
+              break
+            fi
+            if (( page > 100 )); then
+              echo "::error::R2 list pagination exceeded 100 pages (100k keys) — fail-CLOSED (unexpected fanout)"
+              exit 1
+            fi
+          done
+          n_keys=$(wc -l < chunk-keys.txt | tr -d ' ')
+          echo "n_keys=${n_keys}" >> "$GITHUB_OUTPUT"
+          echo "Listed ${n_keys} chunk key(s) for ${PREFIX} from bucket ${BUCKET}"
 
-      - name: Assert verifier exit code is 0 (no chain break detected)
-        # If the previous step had downloaded real chunks + the verifier
-        # detected a break, this step would surface the SEV-0 marker.
+      - name: Download today's audit chunks from R2
+        if: ${{ steps.r2list.outputs.n_keys != '0' }}
+        env:
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          BUCKET: ${{ steps.window.outputs.bucket }}
+        # Per-object GET via the CF API v4 R2 `objects/{key}` endpoint.
+        # The endpoint returns the raw object body when `Accept` is omitted
+        # (or `*/*`). Auth same as the list call (R2:read scope).
+        #
+        # Fail-CLOSED on any non-2xx; do NOT silently fall through with a
+        # partial chunk set.
         run: |
           set -euo pipefail
-          if grep -q "AUDIT_CHAIN_BREAK_DETECTED" verifier-out.log; then
-            echo "::error::SEV-0 AUDIT CHAIN BREAK DETECTED — page Security Lead immediately"
+          echo "::add-mask::${CF_API_TOKEN}"
+          : "${CF_ACCOUNT_ID:?CF_ACCOUNT_ID secret not set (fail-CLOSED)}"
+          : "${CF_API_TOKEN:?CF_API_TOKEN secret not set (fail-CLOSED)}"
+          : > chunk-paths.txt
+          n=0
+          while IFS= read -r key; do
+            [[ -z "${key}" ]] && continue
+            # Construct a local filesystem path mirroring the R2 key
+            # (chunks/audit/<YYYY>/<MM>/<DD>/<seq>.ndjson).
+            local_path="chunks/${key}"
+            mkdir -p "$(dirname "${local_path}")"
+            # URL-encode the key path segments minimally — the key shape is
+            # `audit/YYYY/MM/DD/<8digit>.ndjson` (no spaces or special
+            # chars), so a literal substitution is safe.
+            url="https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/r2/buckets/${BUCKET}/objects/${key}"
+            http_code=$(curl --silent --show-error \
+              -o "${local_path}" -w "%{http_code}" \
+              -H "Authorization: Bearer ${CF_API_TOKEN}" \
+              "${url}" || echo "000")
+            if [[ "${http_code}" != "200" ]]; then
+              echo "::error::R2 GET key='${key}' returned HTTP ${http_code} — fail-CLOSED"
+              exit 1
+            fi
+            echo "${local_path}" >> chunk-paths.txt
+            n=$((n + 1))
+          done < chunk-keys.txt
+          echo "Downloaded ${n} chunk file(s)"
+
+      - name: Verify chain integrity across today's chunks
+        id: verify
+        if: ${{ steps.r2list.outputs.n_keys != '0' }}
+        env:
+          VERIFY_DATE: ${{ steps.window.outputs.verify_date }}
+        run: |
+          set -euo pipefail
+          # Build the argv from the per-chunk local paths.
+          paths=()
+          while IFS= read -r p; do
+            [[ -z "${p}" ]] && continue
+            paths+=("${p}")
+          done < chunk-paths.txt
+          if (( ${#paths[@]} == 0 )); then
+            echo "::error::chunk-paths.txt empty after non-zero n_keys — fail-CLOSED"
             exit 1
           fi
-          echo "Audit chain verify: clean for the window."
+          # Run the verifier. Fail-CLOSED on non-zero exit (the verifier
+          # writes `AUDIT_CHAIN_BREAK_DETECTED: ...` on stderr and exits 1).
+          if ! cargo run -p corelink-audit-chain --bin verifier --release -- \
+              "${paths[@]}" 2>&1 | tee verifier-out.log
+          then
+            # Identify the first chunk-key implicated (best-effort grep of
+            # the verifier diagnostic line for a path that matches our
+            # downloaded layout).
+            first_bad=$(grep -m1 -oE 'chunks/audit/[0-9/]+/[0-9]+\.ndjson' verifier-out.log || true)
+            if [[ -z "${first_bad}" ]]; then
+              first_bad="unknown"
+            fi
+            # Strip the local `chunks/` prefix to recover the R2 key.
+            chunk_key="${first_bad#chunks/}"
+            echo "::error::SEV-0 AUDIT_CHAIN_BREAK_DETECTED::${VERIFY_DATE}::${chunk_key}"
+            echo "chain_break=1"            >> "$GITHUB_OUTPUT"
+            echo "chunk_key=${chunk_key}"   >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          echo "chain_break=0" >> "$GITHUB_OUTPUT"
+          echo "Audit chain verify: clean for ${VERIFY_DATE}"
+
+      - name: Page SEV-0 via PagerDuty Events API v2 on chain break
+        if: ${{ failure() && steps.verify.outputs.chain_break == '1' }}
+        env:
+          PAGERDUTY_ROUTING_KEY: ${{ secrets.PAGERDUTY_ROUTING_KEY }}
+          VERIFY_DATE: ${{ steps.window.outputs.verify_date }}
+          CHUNK_KEY: ${{ steps.verify.outputs.chunk_key }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        # PD Events API v2 trigger (no `uses:`, pure curl — keeps the
+        # action SHA-pin audit clean). Routes to the SRE pager via
+        # secrets.PAGERDUTY_ROUTING_KEY (#11). Dedup key includes the
+        # date + chunk so the PD incident dedups per-day.
+        run: |
+          set -euo pipefail
+          : "${PAGERDUTY_ROUTING_KEY:?PAGERDUTY_ROUTING_KEY not set — cannot page (fail-CLOSED)}"
+          echo "::add-mask::${PAGERDUTY_ROUTING_KEY}"
+          marker="AUDIT_CHAIN_BREAK_DETECTED::${VERIFY_DATE}::${CHUNK_KEY}"
+          # Build the PD Events v2 payload via python with env-only IO to
+          # avoid shell-quoting hazards.
+          MARKER="${marker}" python3 > pd-payload.json <<'PY'
+          import json, os, sys
+          event = {
+              "routing_key": os.environ["PAGERDUTY_ROUTING_KEY"],
+              "event_action": "trigger",
+              "dedup_key": "audit-chain-break-" + os.environ["VERIFY_DATE"] + "-" + os.environ["CHUNK_KEY"],
+              "payload": {
+                  "summary": "SEV-0 " + os.environ["VERIFY_DATE"] + ": audit chain break detected (chunk " + os.environ["CHUNK_KEY"] + ")",
+                  "source": "audit-chain-daily-verify cron (GHA)",
+                  "severity": "critical",
+                  "component": "corelink-audit-chain",
+                  "group": "audit",
+                  "class": "integrity-break",
+                  "custom_details": {
+                      "marker": os.environ.get("MARKER", ""),
+                      "verify_date": os.environ["VERIFY_DATE"],
+                      "chunk_key": os.environ["CHUNK_KEY"],
+                      "run_url": os.environ["RUN_URL"],
+                      "runbook": "specs/_runbooks/RB-AUDIT-CHAIN-VERIFY.md",
+                  },
+              },
+              "links": [
+                  {"href": os.environ["RUN_URL"], "text": "GHA run"},
+              ],
+          }
+          sys.stdout.write(json.dumps(event))
+          PY
+          http_code=$(curl --silent --show-error \
+            -o pd-resp.json -w "%{http_code}" \
+            -X POST \
+            -H "Content-Type: application/json" \
+            --data @pd-payload.json \
+            "https://events.pagerduty.com/v2/enqueue" || echo "000")
+          if [[ "${http_code}" != "202" ]]; then
+            echo "::error::PagerDuty enqueue returned HTTP ${http_code} — chain-break alert FAILED to dispatch; manual page Security Lead immediately"
+            cat pd-resp.json || true
+            exit 1
+          fi
+          echo "PagerDuty SEV-0 dispatched (marker=${marker})"
 
       - name: Upload verifier log artifact
         if: always()
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # actions/upload-artifact@v4.6.0
         with:
           name: verifier-out-${{ github.run_id }}
-          path: verifier-out.log
+          path: |
+            verifier-out.log
+            verifier-smoke.log
+            chunk-keys.txt
+            chunk-paths.txt
           retention-days: 30
+          if-no-files-found: ignore

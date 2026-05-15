@@ -36,6 +36,8 @@ The `corelink-audit-chain::archive_producer` module + the daily-verify CLI asser
 
 Negative delta = SEV-0 alert `RB-AUDIT-CHAIN-RETENTION-VIOLATION`. The page-out wakes Security Lead immediately.
 
+**Production cutover note (Wave 17, 2026-05-15):** the wave-15 daily-verify cron shipped with an OK-marker smoke placeholder for the R2 list step pending `CF_API_TOKEN` binding. Wave 17 replaces that placeholder with a real Cloudflare API v4 `GET /accounts/{account_id}/r2/buckets/{bucket}/objects?prefix=audit/<YYYY>/<MM>/<DD>/` paginated list (per-page `1000`, cursor-walked; cap 100 pages → 100k keys) + a per-object `GET /accounts/{account_id}/r2/buckets/{bucket}/objects/{key}` download loop. The verifier binary receives every downloaded chunk path on argv and asserts chain integrity tenant-by-tenant. Any non-2xx from list or GET fails the job (fail-CLOSED — no silent "no chunks found"). A chain break triggers a SEV-0 PagerDuty Events API v2 dispatch with `dedup_key=audit-chain-break-<YYYY-MM-DD>-<chunk-key>` and marker `AUDIT_CHAIN_BREAK_DETECTED::<date>::<chunk-key>`. The audit-archive lane uses a `CF_API_TOKEN` scoped to **`Workers R2 Storage:Read` on the `corelink-audit-archive` bucket ONLY** (secrets-checklist.md #50 audit-read variant; #118 documents the bucket-name override `AUDIT_R2_BUCKET`). Workflow extension shipped on branch `wt/r-prep-r2-list-cf-token` (commit see `.github/workflows/audit-chain-daily-verify.yml` `git log`).
+
 **Property test stub (lives in `crates/corelink-audit-chain/src/archive_producer.rs::tests` — see `chunk_keys_are_lexicographically_sortable_by_sequence` and the chain-head continuity tests):**
 
 ```text
