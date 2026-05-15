@@ -57,3 +57,9 @@ path = "examples/rollback_drill.rs"
 proptest = { workspace = true }
 tokio-test = { workspace = true }
 tokio = { workspace = true }
+rand = "0.9"
+rand_chacha = "0.9"
+
+[[test]]
+name = "prop_mfa_freshness"
+path = "tests/prop_mfa_freshness.rs"

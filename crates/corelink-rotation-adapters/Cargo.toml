@@ -27,3 +27,12 @@ mod_module_files = "deny"
 [dependencies]
 thiserror = { workspace = true }
 serde = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+rand = "0.9"
+rand_chacha = "0.9"
+
+[[test]]
+name = "prop_rotation_invariants"
+path = "tests/prop_rotation_invariants.rs"
