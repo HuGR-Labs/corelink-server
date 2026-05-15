@@ -227,3 +227,27 @@ jobs:
 
       - name: TLC verify multipart_determinism (DEBT-005 batch 4)
         run: bash scripts/run_tlc_corelink.sh multipart_determinism
+
+      # DEBT-005 batch 5 (5 net-new TLA specs, 2026-05-15) — close further
+      # CRITICAL INV-granularity gaps from canonical-consistency baseline
+      # §4 (critical_no_tla 16 → 6; tla_verified 59 → 71).
+      # Covers INV-AUDIT-NO-RAW-PII + INV-NO-PII-IN-LOGS +
+      # INV-NO-BODY-IN-LOGS + INV-AUTH-PAT-PLAINTEXT-NEVER-PERSISTED +
+      # INV-AUTH-WEBAUTHN-UV-REQUIRED-ADMIN +
+      # INV-AUTH-WEBAUTHN-ATTESTATION-VERIFIED + INV-CAS-IMMUTABILITY +
+      # INV-CAS-IDEMPOTENCY + INV-CAS-CORRECTNESS +
+      # INV-AUTH-SCHEMA-RLS-DEFAULT-ON + INV-AUTH-PII-ENCRYPTED.
+      - name: TLC verify audit_no_raw_pii (DEBT-005 batch 5)
+        run: bash scripts/run_tlc_corelink.sh audit_no_raw_pii
+
+      - name: TLC verify auth_pat_plaintext_never_persisted (DEBT-005 batch 5)
+        run: bash scripts/run_tlc_corelink.sh auth_pat_plaintext_never_persisted
+
+      - name: TLC verify auth_webauthn_uv_admin (DEBT-005 batch 5)
+        run: bash scripts/run_tlc_corelink.sh auth_webauthn_uv_admin
+
+      - name: TLC verify cas_immutability (DEBT-005 batch 5)
+        run: bash scripts/run_tlc_corelink.sh cas_immutability
+
+      - name: TLC verify auth_schema_rls_default_on (DEBT-005 batch 5)
+        run: bash scripts/run_tlc_corelink.sh auth_schema_rls_default_on
