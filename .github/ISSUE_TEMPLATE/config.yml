@@ -1,0 +1,21 @@
+# Issue picker chrome.
+# -----------------------------------------------------------------------------
+# `blank_issues_enabled: false` forces users through one of the structured
+# templates (bug / feature / security-redirect). Free-form issues bypass
+# triage labels and waste maintainer time during high-volume periods.
+
+blank_issues_enabled: false
+
+contact_links:
+  - name: "Security vulnerability (private)"
+    url: https://github.com/humangr-labs/corelink-server/security/advisories/new
+    about: "Report a vulnerability privately via GitHub Security Advisories. See SECURITY.md."
+  - name: "Security vulnerability (email)"
+    url: mailto:security@corelink.dev
+    about: "Email the security team. PGP key + RFC 9116 contact card at /.well-known/security.txt."
+  - name: "Customer support (paid plans)"
+    url: https://corelink.dev/support
+    about: "Production-affecting issues on a paid plan — file via the support portal for SLA-backed response."
+  - name: "Discussions"
+    url: https://github.com/humangr-labs/corelink-server/discussions
+    about: "Open-ended questions, design ideas, and community chat live in Discussions, not Issues."

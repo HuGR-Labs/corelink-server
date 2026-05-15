@@ -1,0 +1,109 @@
+# Stale issue / PR closer.
+# -----------------------------------------------------------------------------
+# Policy:
+#   - 60 days of inactivity → mark `stale` + post grace-period warning.
+#   - +14 days of additional inactivity → close.
+#   - Any new comment / commit resets the clock.
+#
+# Exemptions (never marked stale, never closed):
+#   - Labels: `bug`, `security`, `triage`, `pinned`, `roadmap`, `good first issue`
+#   - Milestones: anything with an assigned milestone
+#   - Assigned issues / PRs
+#
+# Draft PRs are NOT exempt — we want stale drafts to surface.
+#
+# Cross-link: docs/internal/CODE-REVIEW-CHECKLIST.md (L7 merge hygiene).
+
+name: Close Stale Issues and PRs
+
+on:
+  schedule:
+    # Daily at 09:00 UTC — quiet hours for both US east-coast and EU.
+    - cron: "0 9 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: stale-${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  stale:
+    name: Apply stale + close policy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mark + close stale items
+        uses: actions/stale@5bef64f19d7facfb25b37b414482c7164d639639 # v9.1.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+          # Inactivity thresholds (days).
+          days-before-stale: 60
+          days-before-close: 14
+
+          # Labels applied when marked stale.
+          stale-issue-label: "stale"
+          stale-pr-label: "stale"
+
+          # Exempt anything tagged actionable / mission-critical / under-triage.
+          exempt-issue-labels: "bug,security,triage,pinned,roadmap,good first issue"
+          exempt-pr-labels: "bug,security,triage,pinned,roadmap,wip,blocked"
+
+          # Assigned / milestoned items are presumed active.
+          exempt-all-issue-assignees: true
+          exempt-all-pr-assignees: true
+          exempt-all-issue-milestones: true
+          exempt-all-pr-milestones: true
+
+          # Draft PRs ARE eligible — surface zombie drafts.
+          exempt-draft-pr: false
+
+          stale-issue-message: |
+            This issue has had no activity for **60 days**. To keep the
+            tracker actionable, it will be closed in **14 days** unless one
+            of the following happens:
+
+            - A maintainer or reporter adds a comment with an update.
+            - The issue is labelled `bug`, `security`, `triage`, `pinned`,
+              `roadmap`, or `good first issue` (any of these exempts it).
+            - The issue is assigned or attached to a milestone.
+
+            If this is a real bug, please add reproduction steps with an
+            `audit_id` (see `.github/ISSUE_TEMPLATE/bug_report.yml`). If this
+            is a security report, do NOT continue here — see `SECURITY.md`
+            and email `security@corelink.dev`.
+          stale-pr-message: |
+            This pull request has had no activity for **60 days**. It will
+            be closed in **14 days** unless:
+
+            - A new commit is pushed, or
+            - A reviewer / author leaves a comment, or
+            - The PR receives one of the exempt labels (`bug`, `security`,
+              `triage`, `pinned`, `roadmap`, `wip`, `blocked`), or
+            - The PR is assigned or has a milestone.
+
+            If you intend to resume this work, please rebase onto `main`,
+            re-run the PR template's Author Pre-PR Checklist, and request
+            review. Otherwise, feel free to close manually — we can always
+            reopen if you come back to it.
+          close-issue-message: |
+            Closed automatically after 60 + 14 days of inactivity. If this
+            is still a real problem, please reopen with fresh reproduction
+            steps and the missing fields from the bug-report template.
+          close-pr-message: |
+            Closed automatically after 60 + 14 days of inactivity. Feel free
+            to reopen once you're ready to push fresh commits and rerun the
+            PR checklist.
+
+          # Operate on oldest-first; cap each run so a backlog blowup
+          # doesn't hammer the API.
+          ascending: true
+          operations-per-run: 100
+
+          # Don't remove the `stale` label just because someone replied —
+          # we want a maintainer to acknowledge before resetting.
+          remove-stale-when-updated: false
+          remove-pr-stale-when-updated: false

@@ -1,0 +1,73 @@
+# Welcome bot for first-time contributors.
+# -----------------------------------------------------------------------------
+# Greets new contributors on their first issue/PR with pointers to:
+#  - CONTRIBUTING.md (build + test + lint expectations)
+#  - .github/PULL_REQUEST_TEMPLATE.md (author checklist)
+#  - SECURITY.md (NEVER file security via public issue)
+#  - DCO / signed-off-by reminder (we require `git commit -s`)
+#
+# Uses actions/first-interaction. Runs only when the actor has zero prior
+# contributions to the repo (the action filters internally).
+#
+# Cross-link: CONTRIBUTING.md, SECURITY.md, .github/PULL_REQUEST_TEMPLATE.md.
+
+name: Welcome First-Time Contributor
+
+on:
+  issues:
+    types: [opened]
+  pull_request_target:
+    types: [opened]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  welcome:
+    name: Post welcome comment
+    runs-on: ubuntu-latest
+    steps:
+      - name: Greet first-time contributor
+        uses: actions/first-interaction@34f15e814fe48ac9312ccf29db4e74fa767cbab7 # v1.3.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          issue-message: |
+            Thanks for opening your first issue on **CoreLink**! A maintainer
+            will triage shortly.
+
+            A few quick pointers:
+
+            - **Bug?** Please make sure you used the *Bug Report* template
+              (`.github/ISSUE_TEMPLATE/bug_report.yml`) — it asks for the
+              `audit_id` and environment that maintainers need to reproduce.
+            - **Feature request?** Use the *Feature Request* template — the
+              "problem / alternatives" framing makes triage 10x faster.
+            - **Security finding?** Please DO NOT post details in a public
+              issue. See `SECURITY.md` and email `security@corelink.dev` (or
+              use the GitHub *Report a vulnerability* private advisory flow).
+
+            Welcome aboard!
+          pr-message: |
+            Welcome — and thank you for your first pull request to
+            **CoreLink**! Here is what reviewers will look for:
+
+            1. **Read `CONTRIBUTING.md`** for build + test + lint expectations
+               (`cargo build --workspace`, `cargo clippy --workspace --tests
+               -- -D warnings`, `cargo test --workspace`). CI runs all three.
+            2. **Walk the PR template** (`.github/PULL_REQUEST_TEMPLATE.md`) —
+               every Author Pre-PR Checklist row should be ticked before
+               review.
+            3. **Sign every commit.** We require [DCO](https://developercertificate.org/)
+               sign-off. Use `git commit -s` (or amend with `git commit
+               --amend -s` if you forgot). The CI DCO check will block merge
+               otherwise.
+            4. **Security-sensitive change?** Do not include exploitation
+               details in this public PR. Coordinate with `security@corelink.dev`
+               first — see `SECURITY.md`.
+            5. **Be patient.** CoreLink ships under a strict GA-Gate process;
+               maintainer review can take a few business days, especially for
+               BYOK / audit-chain / billing surfaces.
+
+            A maintainer (auto-assigned via `CODEOWNERS`) will be in touch.
+            Thank you for contributing!

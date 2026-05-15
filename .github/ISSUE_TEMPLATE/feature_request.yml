@@ -1,0 +1,85 @@
+# Structured feature-request template.
+# -----------------------------------------------------------------------------
+# We deliberately ask "what problem" before "what solution" — a well-framed
+# problem often unlocks a smaller / cheaper solution than the one originally
+# proposed.
+
+name: "Feature Request"
+description: "Suggest a new capability, surface, or workflow for CoreLink."
+title: "[feat] <short summary>"
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to propose a feature. Please answer all
+        sections — feature requests without a clear *problem statement* are
+        usually closed unactioned during triage.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: "Problem"
+      description: |
+        What user-facing problem does this solve? Who has it? How often?
+        Include concrete examples — a single real workflow is more useful
+        than three hypothetical ones.
+      placeholder: |
+        "When I run CI across 12 parallel jobs, each job re-downloads the
+        same 800MB dependency tarball, costing roughly $X/month in egress
+        and ~3 minutes per job."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: "Proposed solution"
+      description: |
+        What you would like to see happen. API shape, UX, CLI surface,
+        config knob — as concrete as you can. It is fine to leave engineering
+        details ambiguous; the more the maintainers know about the *desired
+        experience*, the better.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: "Alternatives considered"
+      description: |
+        What other solutions did you consider, and why did you discard them?
+        This section is the highest-signal part of the report — it tells
+        maintainers what NOT to suggest.
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: "Scope guess"
+      description: "(Optional) Which crates / surfaces would change? `apps/server`? a new `crates/corelink-*` crate? `apps/admin-ui`? docs only?"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: who-uses
+    attributes:
+      label: "Primary user"
+      options:
+        - "End-user / developer (CLI, SDK)"
+        - "Platform / SRE operator (self-hosted)"
+        - "Tenant administrator (admin UI / admin API)"
+        - "Compliance / auditor"
+        - "CoreLink maintainer (internal)"
+        - "Other (explain in problem section)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: "Additional context"
+      description: "Screenshots, mockups, prior-art links (Bazel / Pants / sccache / Bazel-remote / etc), benchmarks."
+    validations:
+      required: false
