@@ -2,9 +2,17 @@
 
 > **Last sealed:** 2026-05-14
 > **Owner of this document:** SRE Lead (co-owned with Security Lead)
-> **Validation:** `scripts/secrets-checklist-verify.sh` (run on every CF deploy via
-> `.github/workflows/cf-deploy-prod.yml`). Drift between this matrix and the
-> codebase fails the deploy gate.
+> **Validation (deploy gate, fail-closed):** `scripts/secrets-checklist-verify.sh`
+> via `.github/workflows/cf-deploy-prod.yml`. Drift between this matrix and
+> the codebase fails the deploy gate.
+> **Validation (daily cron + PR gate, structured JSON):**
+> `scripts/validate_secrets_matrix.py` via
+> `.github/workflows/secrets-drift.yml` (04:00 UTC daily + PRs touching
+> `Cargo.toml`/`wrangler.toml`/`.github/workflows/`). Produces a
+> `secrets-drift-report.json` artifact (90d retention) for SOC 2 CC6.1
+> evidence sampling.
+> **Triage on drift:** `specs/_runbooks/RB-SECRETS-DRIFT.md`.
+> **Baseline snapshot:** `specs/_audits/2026-05-15-secrets-coverage-baseline.md`.
 
 This is the **single source of truth** for every external secret that CoreLink
 production requires. Every row maps a logical secret → the canonical env var

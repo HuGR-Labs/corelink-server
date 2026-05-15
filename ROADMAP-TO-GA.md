@@ -292,6 +292,17 @@ These are non-delegatable to agents. Track in `specs/04_sprints/S20/human-action
 
 **Estimated total Human Track spend to GA: $200-400k** (pentest + SOC 2 + Legal dominate). Plus $1-3k/mo recurring ops (Clerk + PagerDuty + HubSpot + Statuspage + Drata).
 
+**Secrets drift gate (added 2026-05-15):** every credential acquired via
+H-1..H-18 must be reflected in `docs/internal/secrets-checklist.md` (89
+rows, sealed 2026-05-14). Drift between the matrix and the codebase is
+enforced by a daily 04:00 UTC cron + PR gate
+(`.github/workflows/secrets-drift.yml` driving
+`scripts/validate_secrets_matrix.py`) and the production deploy gate
+(`scripts/secrets-checklist-verify.sh`). Triage runbook:
+`specs/_runbooks/RB-SECRETS-DRIFT.md`. Baseline coverage snapshot
+(70/89 in-both, 19 code-only drift entries to close before GA):
+`specs/_audits/2026-05-15-secrets-coverage-baseline.md`.
+
 ---
 
 ## 10. Risk register
