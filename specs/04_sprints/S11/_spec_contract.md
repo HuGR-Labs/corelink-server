@@ -3,9 +3,9 @@ id: "SPEC-CONTRACT-S11"
 type: "spec_contract"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.7.0"
+version: "2.3.0"
 created: "2026-04-24"
-updated: "2026-05-13"
+updated: "2026-05-15"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -150,7 +150,7 @@ inherits_from:
 - **R-S11-17**: Worker routing: requests roteados para region pinned via custom domain mapping (`<tenant_id>.<region>.corelink.dev` onde `<region>` é canonical 6-code); cross-region queries denied 403 com `Reason: residency-violation`. Reuse routing layer de S-09 multi-region observability.
 - **R-S11-18**: CAS/AC/billing-events/audit data tagged com `region` em backend metadata; insert checks reject cross-region writes via D1 trigger ou worker pre-flight assertion.
 - **R-S11-19**: Property test: 10k tenants `weur` + 10k tenants `enam` → verify 0 blob lands em wrong region (R2 bucket selection respects `tenant.primary_region`); test em CI gate.
-- **R-S11-19a (Lote 10.11.0-bis-prime cycle 3 reconciled)**: TLA+ formal coverage de residency tem **escopo dividido**: (a) **PARTIAL coverage em S-11** via `dsr_erasure_atomicity.tla` (InvResidencyPinned + temporal InvResidencyMonotonic) — prova: ticket sempre pinned em região canonical + monotonic (no cross-region migration de ticket). (b) **FULL coverage deferred to S-14** via `region_residency.tla` / `byok_sovereignty.tla` (per `invariant_registry.md §4.2`) — incluirá: backend region dimension + cross-region routing actions + cross-region write impossibility proof. S-11 sub-property `INV-DATA-RESIDENCY` (CRITICAL §3.11 L154) é satisfeito por 3 layers: (1) TLA+ partial (pinning + monotonic; S-11), (2) 20k property test runtime (S-11), (3) custom domain routing fail-CLOSED PAT-ROUTING-PINNED-001 (S-11). S-14 adiciona formal cross-region semantics. Honest-flag: S-11 NÃO claim full residency formal coverage.
+- **R-S11-19a (Lote 10.11.0-bis-prime cycle 3 reconciled; status updated Lote 10.11.0-bis-bis V2 2026-05-15)**: TLA+ formal coverage de residency tem **escopo dividido**: (a) **PARTIAL coverage em S-11** via `dsr_erasure_atomicity.tla` (InvResidencyPinned + temporal InvResidencyMonotonic) — prova: ticket sempre pinned em região canonical + monotonic (no cross-region migration de ticket). (b) **FULL coverage LANDED EARLY (was deferred to S-14)** via `region_residency.tla` (per `invariant_registry.md §4.2` — spec checked in via R-prep wave 2026-05-15; ✅ GREEN per 2026-05-15-tla-coverage-audit §3) — cobre: backend region dimension + cross-region routing actions + cross-region write impossibility proof + replication eventually converges. `byok_sovereignty.tla` permanece 📋 PLANNED S-14. S-11 sub-property `INV-DATA-RESIDENCY` (CRITICAL §3.11 L154) é satisfeito por 4 layers: (1) TLA+ partial S-11 (pinning + monotonic; `dsr_erasure_atomicity.tla`), (2) TLA+ full S-14 landed early (cross-region routing; `region_residency.tla`), (3) 20k property test runtime (S-11), (4) custom domain routing fail-CLOSED PAT-ROUTING-PINNED-001 (S-11). Honest-flag preserved: S-11 NÃO owns the full residency formal coverage (S-14 owns); ADR-S11-010 + ADR-S11-012 ownership rationale unaffected.
 
 ### 5.8 DPIA + LIA (CAP-PRIV-008)
 
@@ -358,6 +358,26 @@ Itens waivable com sign-off Privacy Officer + Legal + Compliance Officer + ADR:
 
 ## 20. Change log
 
+### v2.3.0 (2026-05-15) — Lote 10.11.0-bis-bis: canonical truth-table sweep V2 (status cascade)
+
+Companion closure doc: `specs/_audits/2026-05-15-s11-truth-table-sweep-v2.md`.
+
+V2 is a **status cascade sweep** (not a re-baseline). V1 (Lote 10.11.0-bis sprint_contract v1.3.0 changelog row 2026-04-27) established the canonical baseline: 12 backends (8 effective + 4 pseudonymized), 7-state DSR machine, 12-purpose enum, 3-INV severity escalations HIGH→CRITICAL, 3 PAT canonical, 22 S-11 CloudEvents, FM-450..453, 5 HKDF info strings. **V1 baseline confirmed stable in the 9-day interval** — privacy_model.md §6.2 / data_model.md §4.1 / privacy_model.md §5.6.1 / invariant_registry.md §3.5+3.11+3.12 / resilience_patterns.md §3.2/§3.4/§3.6 / observability_model.md §7.2 / failure_modes.md §3.10 / security_model.md §7.2 all unchanged.
+
+**V2 status cascade applied (10 drift locations):**
+
+- **TLA+ status transitions GREEN** (4 status cells in invariant_registry.md §4.2 + 1 in §4.3 + 1 in §4.3): per `specs/_audits/2026-05-15-tla-coverage-audit.md §3` the three S-11 CRITICAL invariants (INV-DATA-ERASURE-COMPLETE, INV-CONSENT-PROOF-VERIFIABLE, INV-DATA-RESIDENCY) are now ✅ GREEN via `dsr_erasure_atomicity.tla`. Honest-flag protocol contingency satisfied (first CI run TLC verde sustained). Status cells in §4.2 L610-L612 rewritten from `🟡 spec written; TLC verification pending CI` → `✅ GREEN`. §4.3 L649 prose normalized.
+- **`region_residency.tla` landed early via R-prep wave**: spec checked in (module header `S-14 WI-S14-009 — Cross-region routing actions + tenant residency enforcement`; 4 InvDataResidency proofs). Per same TLA coverage audit, both `INV-DATA-RESIDENCY` and `INV-REGION-NO-CROSS-LEAK` are ✅ GREEN via this spec. Status cell L614 rewritten from `📋 PLANNED` → `✅ GREEN`. §4.3 L642 prose corrected: "FULL coverage S-14" → "FULL coverage NOW LANDED via region_residency.tla (sprint owner S-14 preserved for provenance)". `byok_sovereignty.tla` remains 📋 PLANNED S-14.
+- **YAML version drift D-6**: spec contract YAML `version:` field was stale at `"1.7.0"` while change-log head was v2.2.0 (10 minor bumps of YAML lag from v1.8.0 / v1.9.0 / v2.0.0 / v2.1.0 / v2.2.0 impl-SEAL rows). V2 absorbs the catch-up bump to **v2.3.0** (`updated: "2026-05-15"`).
+- **§5.7 R-S11-19a prose** updated: "(b) FULL coverage deferred to S-14" → "(b) FULL coverage LANDED EARLY (was deferred to S-14)"; 3-layer defense → 4-layer (added TLA+ full S-14 landed-early layer). Honest-flag preserved: S-11 still does NOT own full coverage; S-14 owns it.
+- **§20 v2.2.0 row appendix**: WI-S11-008 SEALED promotion contract "remains contingent on first CI run TLC verde sustained" — contingency now satisfied; appendix note added inline.
+- **WI-S11-007 prose**: saturated `region_residency.tla deferred to S-14` claims updated to `S-14 PLANNED → LANDED early R-prep 2026-05-15`. ADR-S11-010 deferral rationale preserved (still valid: S-11 doesn't own; S-14 owns + delivered ahead-of-schedule).
+- **WI-S11-008 status hedges**: saturated `🟡 spec written` / `PLANNED → 🟡 → ✅ GREEN apenas após first CI run` honest-flag protocol pattern updated to `✅ GREEN sustained per 2026-05-15-tla-coverage-audit §3` where R-prep wave evidence supports the closure. Risk register "L414/L452 PLANNED → 🟡 → ✅ GREEN status drift" row marked RESOLVED.
+
+**Validators 7/7 GREEN (exit 0):** validate_specs / validate_references / validate_canonical_consistency (declared=188, tla_verified=70, orphan_refs=0 — baseline floors per 2026-05-15-canonical-consistency-baseline.md §4 preserved) / validate_inv_promotion / validate_dpia / validate_privacy_notice / validate_sub_processors.
+
+Não foram introduzidos novos requisitos funcionais nem novas declarações canonical. V2 = status cascade only. V1 baseline + WI-S11-001..008 SEALED corpus preserved.
+
 ### v2.2.0 (2026-05-13) — WI-S11-008 SEALED: DPIA + LIA + 3 filled DPIAs + TLA+ dsr_erasure_atomicity + CI workflow
 
 WI-S11-008 SEALED: regulatory formal completion of CoreLink Privacy Pipeline. Artifacts landed:
@@ -375,7 +395,7 @@ WI-S11-008 SEALED: regulatory formal completion of CoreLink Privacy Pipeline. Ar
 - **`invariant_registry.md §4.2 L414 + L452`** — status confirmed 🟡 spec written (WI-S11-008 SEALED); TLC verification pending CI green run (PLANNED → GREEN após first CI run verde — honest-flag per AC-008).
 - **`specs/tla/README.md`** updated with dedicated CI workflow reference.
 
-INV-DATA-ERASURE-COMPLETE promotion contract: TLA+ spec artifact committed; WI-S11-008 SEALED 2026-05-13; promotion HIGH→CRITICAL (Lote 10.11.0-bis) remains contingent on first CI run TLC verde sustained.
+INV-DATA-ERASURE-COMPLETE promotion contract: TLA+ spec artifact committed; WI-S11-008 SEALED 2026-05-13; promotion HIGH→CRITICAL (Lote 10.11.0-bis) was contingent on first CI run TLC verde sustained — **contingency satisfied per Lote 10.11.0-bis-bis V2 (2026-05-15-tla-coverage-audit §3 confirms ✅ GREEN sustained)**.
 
 ### v2.1.0 (2026-05-13) — WI-S11-007 implementation phase SEALED
 
@@ -568,4 +588,4 @@ Spec contract criado em ciclo de Sprint S-09→S-20 SOTA elevation (Lote 9.1) + 
 
 ---
 
-**Fim spec contract S-11 v1.5.0 SOTA — Lote 10.11.0-bis-prime cycles 1-4 SEAL-ready + WI-S11-001 IMPL SEALED (corpus internamente consistente; codex score trajectory 5.18 → 8.4+; pending final ≥9.0 validation).**
+**Fim spec contract S-11 v2.3.0 SOTA — Lote 10.11.0-bis-bis V2 status cascade (TLA+ ✅ GREEN sustained per 2026-05-15-tla-coverage-audit §3; `region_residency.tla` landed early via R-prep wave; YAML version field caught up to changelog head 2.2.0 → 2.3.0; corpus internally consistent for R-prep ratchet ledger; V1 Lote 10.11.0-bis baseline preserved + 8/8 WI-S11-001..008 IMPL SEALED).**
