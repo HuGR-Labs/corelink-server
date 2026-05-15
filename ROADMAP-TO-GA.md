@@ -58,8 +58,9 @@ Pre-conditions: none (start now).
 | R1-7 | **Worktree cleanup** (S-18/S-19/S-20 = ~15GB after agents done) | 1 Sonnet | 30min | Disk space recovered; only active worktrees remain |
 | R1-8 | **Dependency audit** — `cargo audit` + `cargo deny check` + `pnpm audit` on `apps/{admin-ui,docs}` + dependabot PR backlog | 1 Sonnet | 2h | Zero HIGH/CRITICAL advisories; report doc |
 | R1-9 | **Engineering onboarding doc live** — Day-0..Day-30 path + 5 domain tracks + first-PR backlog + glossary + buddy protocol under `docs/internal/ENGINEERING-ONBOARDING.md` + `docs/internal/onboarding/` | 1 Sonnet | 3h | Doc set committed; README cross-linked; quarterly-refresh owner named |
+| R1-10 | **CI workflow optimization audit** — 71 GHA workflows audited; 11 P1/P2/P3 followup tickets filed; best-practice template `.github/workflows/_TEMPLATE.yml.md` authored; projected ~52 billable-min + ~24 wall-clock min savings per PR p50 once tickets land; zero quality gate weakened. Docs: `specs/_audits/2026-05-15-ci-workflow-optimization.md` + `specs/_audits/ci-optimization-followup-tickets.md`. | 1 Opus orchestrator (delivered 2026-05-15) | 2h | Audit + tickets + template committed; followup tickets queued for R-prep next wave |
 
-**Wave R-1 gate:** all 9 items complete; commit `r1-cleanup-complete`; tag `roadmap-r1-sealed`.
+**Wave R-1 gate:** all 10 items complete; commit `r1-cleanup-complete`; tag `roadmap-r1-sealed`.
 
 ---
 
