@@ -35,7 +35,10 @@
 use core::fmt;
 use core::future::Future;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+// DEBT-013 OPT-04 phase 1 — `parking_lot::Mutex` (infallible lock).
+// `AssemblerError::Backend("…mutex poisoned")` is unreachable here.
+use parking_lot::{Mutex, MutexGuard};
 
 use bytes::Bytes;
 use corelink_hash::Digest;
@@ -316,10 +319,9 @@ impl<C: ChunkStore> InMemoryBlobAssembler<C> {
         }
     }
 
-    fn lock(&self) -> Result<std::sync::MutexGuard<'_, AssemblerInner>, AssemblerError> {
-        self.inner
-            .lock()
-            .map_err(|_| AssemblerError::Backend("assembler mutex poisoned".to_string()))
+    fn lock(&self) -> Result<MutexGuard<'_, AssemblerInner>, AssemblerError> {
+        // parking_lot lock is infallible; Err arm unreachable.
+        Ok(self.inner.lock())
     }
 
     /// Compute the canonical manifest digest as BLAKE3 over the

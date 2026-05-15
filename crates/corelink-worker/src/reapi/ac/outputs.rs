@@ -33,7 +33,9 @@
 
 use core::future::Future;
 use std::collections::{HashMap, HashSet};
-use std::sync::Mutex;
+// DEBT-013 OPT-04 phase 1 — `parking_lot::Mutex` (infallible lock).
+// `OutputsCheckError::Backend("mutex poisoned")` is unreachable here.
+use parking_lot::Mutex;
 
 use corelink_hash::Digest;
 use thiserror::Error;
@@ -160,17 +162,15 @@ impl InMemoryOutputsCheck {
 
     /// Mark `digest` as alive under `tenant_id`.
     pub fn insert_alive(&self, tenant_id: Uuid, digest: Digest) {
-        if let Ok(mut guard) = self.inner.lock() {
-            guard.rows.insert((tenant_id, digest), true);
-        }
+        let mut guard = self.inner.lock();
+        guard.rows.insert((tenant_id, digest), true);
     }
 
     /// Mark `digest` as tombstoned (alive in blob_meta but with
     /// `deleted_at IS NOT NULL`).
     pub fn insert_tombstoned(&self, tenant_id: Uuid, digest: Digest) {
-        if let Ok(mut guard) = self.inner.lock() {
-            guard.rows.insert((tenant_id, digest), false);
-        }
+        let mut guard = self.inner.lock();
+        guard.rows.insert((tenant_id, digest), false);
     }
 
     /// Bulk-mark every digest in `result.iter_output_digests()` as
@@ -186,10 +186,9 @@ impl InMemoryOutputsCheck {
         tenant_id: Uuid,
         result: &ActionResult,
     ) -> Result<OutputsCheckOutcome, OutputsCheckError> {
-        let guard = self
-            .inner
-            .lock()
-            .map_err(|_| OutputsCheckError::Backend("mutex poisoned".to_string()))?;
+        // parking_lot lock is infallible — Backend mutex-poisoned arm
+        // is preserved on the enum for non-in-memory implementations.
+        let guard = self.inner.lock();
         let mut missing: Vec<Digest> = Vec::new();
         let mut seen = HashSet::new();
         for d in result.iter_output_digests() {

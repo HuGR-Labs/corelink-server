@@ -34,6 +34,9 @@ hex = { workspace = true }
 subtle = { workspace = true }
 uuid = { workspace = true, features = ["v7", "serde"] }
 corelink-analytics = { workspace = true }
+# DEBT-013 OPT-04 phase 1 — `parking_lot::Mutex` on the in-memory
+# audit sink record buffer (no poisoning, smaller guard).
+parking_lot = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

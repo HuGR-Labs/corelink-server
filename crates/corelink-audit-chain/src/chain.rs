@@ -78,9 +78,13 @@ use crate::event::{AuditEvent, ChainHash};
 // Memory: one `Hasher` per OS thread, ~1 KiB resident, freed on thread
 // teardown. Worker threads are pinned and reused (tokio multi-thread
 // runtime), so the amortized memory cost is negligible.
-thread_local! {
-    static HASHER_TEMPLATE: Hasher = Hasher::new();
-}
+//
+// DEBT-013 OPT-04 phase 1 tail (2026-05-15): the canonical
+// `thread_local!` `HASHER_TEMPLATE` definition is co-located with its
+// sole consumer `link_chain_hash_from_canonical` below. The earlier
+// duplicate declaration that lived here was removed (E0428 duplicate
+// definition was a pre-existing merge artefact from the OPT-05
+// landing).
 
 /// Compute the JCS-canonical UTF-8 bytes of an audit event per RFC 8785.
 ///
@@ -188,11 +192,6 @@ pub fn link_chain_hash_from_canonical(
     // See module-level `HASHER_TEMPLATE` doc-comment for the correctness
     // and memory justification. Property test
     // `prop_cloned_hasher_matches_fresh` (10k cases) gates determinism.
-    let mut h = HASHER_TEMPLATE.with(Hasher::clone);
-    h.update(prev_hash.as_bytes());
-    h.update(canonical_bytes);
-    let digest = h.finalize();
-    ChainHash(*digest.as_bytes())
     HASHER_TEMPLATE.with(|template| {
         let mut h = template.clone();
         h.update(prev_hash.as_bytes());

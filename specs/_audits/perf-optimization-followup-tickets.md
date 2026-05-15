@@ -223,6 +223,27 @@ Each ticket follows the WI template:
 
 ## OPT-04 — `std::sync::Mutex` → `parking_lot::Mutex` / `RwLock` migration
 
+- **Phase 1 status:** **CLOSED (2026-05-15)** — landed in
+  `wt/debt-013-perf-opt-tail`. `parking_lot = "0.12"` added at
+  workspace `[workspace.dependencies]`; `parking_lot` is now a
+  per-crate dep of `corelink-worker` and `corelink-audit-chain`. All
+  9 in-memory Mutex sites swapped (`cache/kv.rs`, `storage/r2.rs`,
+  `reapi/cas/{session,assembler,chunk_store}.rs`,
+  `reapi/ac/{handler,outputs,meta}.rs`,
+  `corelink-audit-chain/src/audit.rs`). Each call-site carries an
+  inline comment justifying that parking_lot's lock is infallible
+  (no poisoning); the pre-existing `*::Backend("…mutex poisoned")`
+  / `AcMetaError::MutexPoisoned` error-enum variants are preserved
+  on the public trait surface (API stability — non-in-memory
+  implementations may still emit them for transport-class
+  failures). 36 corelink-worker lib tests + 90 corelink-audit-chain
+  lib tests pass. As a side-fix, the pre-existing E0428
+  duplicate-`HASHER_TEMPLATE` merge artefact in
+  `corelink-audit-chain/src/chain.rs` (from the OPT-05 landing) was
+  removed.
+- **Phase 2 status:** **DEFERRED** — read/write ratio audit + RwLock
+  classification is a separate Sprint-(N+1) WI; phase-1 is a
+  drop-in win on every site so phase-2 ROI is incremental.
 - **Source:** `2026-05-15-perf-optimization-audit.md §2 OPT-04`.
 - **Effort:** Phase 1 S, Phase 2 M.
 - **Estimated p99 win:** 0.5-2% (conservative) to 5% (heavy load)
@@ -398,7 +419,7 @@ Each ticket follows the WI template:
 | OPT-02 | M | -25 to -35% AUDIT-EMIT p99 | Sprint-(N+1) | Medium |
 | OPT-03(a) | S | -20 to -40 µs/AC-GET | Sprint-(N+1) | Low |
 | OPT-03(b) | L | -30 to -80 µs/AC-GET | Post-GA | High |
-| OPT-04 ph1 | S | 0.5-2% p99 | Sprint-N | Low |
+| OPT-04 ph1 | S | 0.5-2% p99 | Sprint-N | Low | **CLOSED 2026-05-15** |
 | OPT-04 ph2 | M | 1-5% p99 (under load) | Sprint-(N+1) | Low |
 | OPT-05 | XS | -2 to -4% audit chain | Sprint-N | Very low |
 | OPT-06 | M | (validation only — no direct p99 win) | Sprint-N | Medium |

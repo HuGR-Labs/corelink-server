@@ -40,7 +40,11 @@
 use core::future::Future;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::Mutex;
+// DEBT-013 OPT-04 phase 1 — `parking_lot::Mutex` for InMemoryR2 fake
+// (infallible lock; no poisoning). `R2Error::Backend` mutex-poisoned
+// path is structurally unreachable on this backend but retained for
+// transport-class failures on the production R2 binding.
+use parking_lot::Mutex;
 
 use bytes::Bytes;
 use corelink_hash::{BlobStoreWrite, Digest, VerifiedBody};
@@ -378,15 +382,8 @@ impl InMemoryR2 {
 
     /// Number of objects currently stored. Test-only helper.
     #[must_use]
-    #[allow(
-        clippy::expect_used,
-        reason = "test fake: a poisoned mutex in test code is itself a test failure"
-    )]
     pub fn len(&self) -> usize {
-        self.inner
-            .lock()
-            .expect("InMemoryR2 mutex must not be poisoned in test code")
-            .len()
+        self.inner.lock().len()
     }
 
     /// True iff no objects are stored.
@@ -398,15 +395,8 @@ impl InMemoryR2 {
     /// Snapshot the current set of keys. Test-only helper used by integration
     /// tests to assert key-construction grammar.
     #[must_use]
-    #[allow(
-        clippy::expect_used,
-        reason = "test fake: a poisoned mutex in test code is itself a test failure"
-    )]
     pub fn keys_snapshot(&self) -> Vec<String> {
-        let guard = self
-            .inner
-            .lock()
-            .expect("InMemoryR2 mutex must not be poisoned in test code");
+        let guard = self.inner.lock();
         guard.keys().cloned().collect()
     }
 
@@ -433,15 +423,8 @@ impl InMemoryR2 {
     /// unambiguous; tests compute the canonical key via the
     /// `keys_snapshot()` helper paired with their own
     /// (tenant, region) state.
-    #[allow(
-        clippy::expect_used,
-        reason = "test fake: a poisoned mutex in test code is itself a test failure"
-    )]
     pub fn evict_key_for_test(&self, key: &str) -> bool {
-        let mut guard = self
-            .inner
-            .lock()
-            .expect("InMemoryR2 mutex must not be poisoned in test code");
+        let mut guard = self.inner.lock();
         guard.remove(key).is_some()
     }
 
@@ -455,15 +438,8 @@ impl InMemoryR2 {
     /// Returns `true` iff a value was overwritten (the key existed
     /// pre-call). Tests should assert the return value to avoid
     /// false-passing scenarios where the key never existed.
-    #[allow(
-        clippy::expect_used,
-        reason = "test fake: a poisoned mutex in test code is itself a test failure"
-    )]
     pub fn inject_corrupt_for_test(&self, key: &str, corrupt_body: Bytes) -> bool {
-        let mut guard = self
-            .inner
-            .lock()
-            .expect("InMemoryR2 mutex must not be poisoned in test code");
+        let mut guard = self.inner.lock();
         guard.insert(key.to_owned(), corrupt_body).is_some()
     }
 }
@@ -474,10 +450,10 @@ impl R2Backend for InMemoryR2 {
         key: &str,
         body: Bytes,
     ) -> Result<BackendPutOutcome, R2Error> {
-        let mut guard = self
-            .inner
-            .lock()
-            .map_err(|_| R2Error::Backend("in-memory R2 mutex poisoned".to_owned()))?;
+        // parking_lot lock is infallible — R2Error::Backend mutex-
+        // poisoned mapping unreachable here; retained for production
+        // transport-class failures.
+        let mut guard = self.inner.lock();
         if guard.contains_key(key) {
             return Ok(BackendPutOutcome::AlreadyExists);
         }
@@ -486,18 +462,12 @@ impl R2Backend for InMemoryR2 {
     }
 
     async fn get(&self, key: &str) -> Result<Bytes, R2Error> {
-        let guard = self
-            .inner
-            .lock()
-            .map_err(|_| R2Error::Backend("in-memory R2 mutex poisoned".to_owned()))?;
+        let guard = self.inner.lock();
         guard.get(key).cloned().ok_or(R2Error::NotFound)
     }
 
     async fn head(&self, key: &str) -> Result<bool, R2Error> {
-        let guard = self
-            .inner
-            .lock()
-            .map_err(|_| R2Error::Backend("in-memory R2 mutex poisoned".to_owned()))?;
+        let guard = self.inner.lock();
         Ok(guard.contains_key(key))
     }
 }

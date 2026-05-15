@@ -41,7 +41,11 @@
 use core::fmt;
 use core::future::Future;
 use std::collections::HashMap;
-use std::sync::Mutex;
+// DEBT-013 OPT-04 phase 1 — `parking_lot::Mutex` (infallible lock).
+// `AcMetaError::MutexPoisoned` is now structurally unreachable on
+// this in-memory backend; the variant is retained on the enum for
+// API stability and may be returned by non-in-memory implementations.
+use parking_lot::Mutex;
 
 use corelink_hash::Digest;
 use corelink_tenant_path::TenantPrefix;
@@ -361,13 +365,13 @@ impl InMemoryAcMetaStore {
 
     /// Snapshot every row (test diagnostics).
     pub fn snapshot(&self) -> Result<Vec<AcMetaRow>, AcMetaError> {
-        let guard = self.inner.lock().map_err(|_| AcMetaError::MutexPoisoned)?;
+        let guard = self.inner.lock();
         Ok(guard.values().cloned().collect())
     }
 
     /// Test-only: count rows currently materialized.
     pub fn len(&self) -> Result<usize, AcMetaError> {
-        let guard = self.inner.lock().map_err(|_| AcMetaError::MutexPoisoned)?;
+        let guard = self.inner.lock();
         Ok(guard.len())
     }
 
@@ -383,7 +387,7 @@ impl AcMetaStore for InMemoryAcMetaStore {
         request: AcUpsertRequest,
     ) -> impl Future<Output = Result<AcMetaUpsertOutcome, AcMetaError>> + Send + 'a {
         async move {
-            let mut guard = self.inner.lock().map_err(|_| AcMetaError::MutexPoisoned)?;
+            let mut guard = self.inner.lock();
             match guard.get(&request.key).cloned() {
                 None => {
                     let row = AcMetaRow {
@@ -427,7 +431,7 @@ impl AcMetaStore for InMemoryAcMetaStore {
         key: &'a AcKey,
     ) -> impl Future<Output = Result<Option<AcMetaRow>, AcMetaError>> + Send + 'a {
         async move {
-            let guard = self.inner.lock().map_err(|_| AcMetaError::MutexPoisoned)?;
+            let guard = self.inner.lock();
             Ok(guard.get(key).cloned())
         }
     }
@@ -448,7 +452,7 @@ impl AcMetaStore for InMemoryAcMetaStore {
         request: AcRefreshRequest,
     ) -> impl Future<Output = Result<bool, AcMetaError>> + Send + 'a {
         async move {
-            let mut guard = self.inner.lock().map_err(|_| AcMetaError::MutexPoisoned)?;
+            let mut guard = self.inner.lock();
             let Some(row) = guard.get_mut(&request.key) else {
                 return Ok(false);
             };
@@ -472,7 +476,7 @@ impl AcMetaStore for InMemoryAcMetaStore {
         limit: usize,
     ) -> impl Future<Output = Result<Vec<AcExpiredCandidate>, AcMetaError>> + Send + 'a {
         async move {
-            let guard = self.inner.lock().map_err(|_| AcMetaError::MutexPoisoned)?;
+            let guard = self.inner.lock();
             // Tenant-scoped + region-scoped filter; mirrors the SQL
             // `WHERE region = ? AND tenant_id = ? AND expires_at < ?`.
             // Sorted ASC by expires_at so the oldest rows drain first.
@@ -507,7 +511,7 @@ impl AcMetaStore for InMemoryAcMetaStore {
         now_ms: u64,
     ) -> impl Future<Output = Result<Vec<Uuid>, AcMetaError>> + Send + 'a {
         async move {
-            let guard = self.inner.lock().map_err(|_| AcMetaError::MutexPoisoned)?;
+            let guard = self.inner.lock();
             let mut tenants: std::collections::BTreeSet<Uuid> = std::collections::BTreeSet::new();
             for row in guard.values() {
                 if row.region == region
@@ -527,7 +531,7 @@ impl AcMetaStore for InMemoryAcMetaStore {
         region: Region,
     ) -> impl Future<Output = Result<bool, AcMetaError>> + Send + 'a {
         async move {
-            let mut guard = self.inner.lock().map_err(|_| AcMetaError::MutexPoisoned)?;
+            let mut guard = self.inner.lock();
             let key = AcKey::new(tenant_id, *action_digest);
             // Defense-in-depth: re-assert region match before deletion
             // (mirrors the production `AND region = ?` clause). A
