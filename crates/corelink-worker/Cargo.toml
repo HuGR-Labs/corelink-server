@@ -83,6 +83,24 @@ hmac = { workspace = true, optional = true }
 async-trait = { version = "0.1", optional = true }
 serde = { workspace = true, optional = true }
 
+# R2-10 wasm32 enablement.
+#
+# The crate's default profile is intended to compile to
+# `wasm32-unknown-unknown` (see the lib-level doc comment) so that
+# `corelink-cf-bindings` can `impl R2Backend` / `impl KvBackend` over
+# real `worker::r2::Bucket` / `worker::kv::KvStore` types. uuid v4 and
+# both `getrandom` major versions need their `js` / `wasm_js` features
+# gated by `cfg(target_arch = "wasm32")` so the browser/Worker CSPRNG
+# is used instead of the host syscall (which has no wasm32 shim).
+#
+# This section only affects wasm32 builds — native `cargo test` is
+# unchanged because cargo never resolves these entries for the host
+# target. INV: native test count preserved at ≥ 314.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+uuid = { workspace = true, features = ["js"] }
+getrandom = { version = "0.2", features = ["js"] }
+getrandom_03 = { package = "getrandom", version = "0.3", features = ["wasm_js"] }
+
 [dev-dependencies]
 proptest = { workspace = true }
 tokio = { workspace = true, features = ["full", "test-util"] }

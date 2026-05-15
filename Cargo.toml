@@ -123,6 +123,11 @@ members = [
     # R2-4 shared Slack incoming-webhook real client (Block Kit + per-channel
     # routing + retry + audit envelope; bridges to enterprise-inquiry via adapter)
     "crates/corelink-slack-real",
+    # R2-10 CF Worker binding adapters (R2 / D1 / KV / DO) implementing the
+    # trait surfaces from corelink-worker. wasm32-unknown-unknown ONLY —
+    # the crate root carries `#![cfg(target_arch = "wasm32")]` so native
+    # `cargo build --workspace` produces an empty rlib.
+    "crates/corelink-cf-bindings",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
@@ -270,6 +275,8 @@ corelink-quota-fsm = { path = "crates/corelink-quota-fsm" }
 corelink-dsr = { path = "crates/corelink-dsr" }
 corelink-privacy-sub-processor-emit = { path = "crates/corelink-privacy-sub-processor-emit" }
 corelink-clerk-cf = { path = "crates/corelink-clerk-cf" }
+# R2-10 CF Worker R2/D1/KV/DO binding adapters (wasm32 only).
+corelink-cf-bindings = { path = "crates/corelink-cf-bindings" }
 corelink-privacy-consent-ledger = { path = "crates/corelink-privacy-consent-ledger" }
 corelink-privacy-breach-emit = { path = "crates/corelink-privacy-breach-emit" }
 corelink-privacy-erasure-worker = { path = "crates/corelink-privacy-erasure-worker" }

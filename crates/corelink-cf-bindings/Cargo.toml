@@ -1,0 +1,58 @@
+[package]
+name = "corelink-cf-bindings"
+description = "Production Cloudflare Worker binding adapters (R2 / D1 / KV / Durable Object) implementing the trait surfaces declared in corelink-worker. wasm32-unknown-unknown ONLY — these adapters wrap `worker::*` types that depend on js-sys / wasm-bindgen JsValue and have no native shim. The trait-abstraction-defer pattern keeps `InMemoryR2 / InMemoryKv / ...` fakes intact for native unit tests; this crate provides the production-side wiring for R2-10."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# wasm32-unknown-unknown is the only target this crate is intended for.
+# `cargo build --target wasm32-unknown-unknown -p corelink-cf-bindings` is
+# the canonical build command. Do NOT attempt to link this crate into a
+# native binary; it depends on worker-sys / wasm-bindgen JsValue types
+# that have no native shim. The lib root carries
+# `#![cfg(target_arch = "wasm32")]` so an accidental native build
+# yields an empty crate (not a hard link error — by design, this keeps
+# `cargo build --workspace` green on the host without per-crate
+# `[target.'cfg(...)']` plumbing in every consumer's Cargo.toml).
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# CF Workers runtime — `d1` feature gates D1Database; `http` enables the
+# http::Request / http::Response types used by event(fetch).
+worker = { version = "0.8", features = ["d1", "http"] }
+
+# Shared bytes type — used by R2Backend trait surface.
+bytes = { workspace = true }
+
+# Trait surfaces we implement. `corelink-worker` is the canonical owner
+# of R2Backend / KvBackend / CounterDoBackend; we depend on it for
+# `default-features = false`-style compatibility (no native-only feature
+# bleeds into the wasm32 build).
+corelink-worker = { workspace = true }
+
+# Error types.
+thiserror = { workspace = true }
+
+# wasm bindgen futures for async bridging in the worker handler.
+wasm-bindgen-futures = { workspace = true }
