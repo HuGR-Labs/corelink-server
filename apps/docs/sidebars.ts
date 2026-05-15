@@ -21,10 +21,15 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: "category",
-      label: "Tutorial",
+      label: "Get Started",
       link: { type: "doc", id: "tutorial/index" },
       collapsed: false,
       items: [
+        // 10-minute quickstart — promoted to the top of Get Started
+        // per R-8 GA launch checklist (single most-clicked post-launch
+        // doc; validated by .github/workflows/quickstart-validate.yml).
+        "tutorials/quickstart-10min",
+        "tutorials/quickstart-faq",
         "tutorial/01-installation",
         "tutorial/02-first-pat",
         "tutorial/03-bazel-quickstart",

@@ -1,0 +1,47 @@
+name: quickstart-validate
+
+# Cross-checks the 10-minute quickstart MDX against the actual
+# corelink-cli subcommand surface so the single most-clicked post-launch
+# doc never drifts from reality.
+#
+# Implements: R-prep launch checklist (R-8 GA wave) — quickstart canonicality.
+# Failure mode: surfaces drift as a CI annotation; does NOT block merges
+# (continue-on-error: docs drift is fixable post-merge and we'd rather
+# ship than block on a typo).
+#
+# SHA-pinned actions per ADR-S12-045 §6 tooling-pin policy.
+
+on:
+  pull_request:
+    paths:
+      - "apps/docs/docs/tutorials/quickstart-10min.mdx"
+      - "apps/docs/scripts/validate-quickstart.sh"
+      - "crates/corelink-cli/src/main.rs"
+      - ".github/workflows/quickstart-validate.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/docs/docs/tutorials/quickstart-10min.mdx"
+      - "apps/docs/scripts/validate-quickstart.sh"
+      - "crates/corelink-cli/src/main.rs"
+
+permissions:
+  contents: read
+
+jobs:
+  validate-quickstart:
+    name: validate quickstart MDX vs CLI surface
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Soft-fail: surface as a warning annotation, do not block merges.
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 1
+
+      - name: Run validator
+        shell: bash
+        run: |
+          bash apps/docs/scripts/validate-quickstart.sh
