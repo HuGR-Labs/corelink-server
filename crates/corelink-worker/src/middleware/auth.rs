@@ -591,6 +591,10 @@ async fn orchestrate_auth<ReqBody>(
         DetectedAuth::Jwt(jwt) => {
             let principal = state.jwt_verifier.validate(jwt).await?;
             let binding = state.jwt_resolver.resolve(&principal).await?;
+            // DEBT-013 OPT-07: each of these three clones is an
+            // `Arc<str>` refcount bump (~5 ns), not a `String::clone`
+            // heap allocation (~50-100 ns) — see
+            // `corelink-clerk::principal` newtype docs.
             let auth_method = AuthMethod::Jwt {
                 clerk_session_id: ClerkSessionId_clone(&principal.session_id),
                 user_id: ClerkUserId_clone(&principal.user_id),
@@ -627,6 +631,14 @@ async fn orchestrate_auth<ReqBody>(
 // the `corelink-clerk` crate so we cannot re-instantiate them from
 // outside; the `Clone` impl is the canonical projection. Wrap in
 // helper fns so the call site reads cleanly.
+//
+// **DEBT-013 OPT-07 (2026-05-15)** — the underlying newtype inner
+// storage is now `Arc<str>` (see `corelink-clerk::principal`), so
+// these helpers compile down to a refcount bump (~5 ns) instead of
+// a fresh `String` heap allocation (~50-100 ns). On the JWT auth
+// hot path this is called once per request for `clerk_session_id`
+// and once for `user_id` — the win is ~100-200 ns/req saved off
+// `orchestrate_auth` plus reduced allocator pressure.
 #[allow(non_snake_case, reason = "pseudo-import alias for legibility at call site")]
 fn ClerkSessionId_clone(id: &ClerkSessionId) -> ClerkSessionId {
     id.clone()

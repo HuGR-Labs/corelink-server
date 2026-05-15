@@ -8,12 +8,22 @@
 //! [`crate::ClerkAdapter::validate`] — caller cannot forge.
 
 use std::fmt;
+use std::sync::Arc;
 use std::time::SystemTime;
 use thiserror::Error;
 
 /// Opaque Clerk user identifier (the `sub` claim).
+///
+/// **DEBT-013 OPT-07** — the inner storage is `Arc<str>` (not
+/// `String`) so cloning a `ClerkUserId` is a refcount bump (~5 ns)
+/// rather than a heap allocation (~50-100 ns). Every authenticated
+/// JWT request constructs and clones at least one of these into the
+/// per-request `AuthCtx::AuthMethod::Jwt` arm — `Arc<str>` here
+/// eliminates the per-request `String::clone` heap traffic on the
+/// JWT auth hot path called out in
+/// `specs/_audits/2026-05-15-perf-optimization-audit.md §4 #1`.
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub struct ClerkUserId(String);
+pub struct ClerkUserId(Arc<str>);
 
 impl ClerkUserId {
     /// Internal constructor; the only path to a `ClerkUserId` is
@@ -22,7 +32,11 @@ impl ClerkUserId {
     #[cfg(feature = "jwt-adapter")]
     #[must_use]
     pub(crate) fn new(s: String) -> Self {
-        Self(s)
+        // `Arc::<str>::from(String)` consumes the existing heap
+        // allocation rather than copying — no extra alloc compared
+        // to the previous `Self(s)` form. Subsequent `Clone` only
+        // bumps the refcount.
+        Self(Arc::from(s))
     }
 
     /// Canonical string form for audit-log emission downstream.
@@ -40,15 +54,23 @@ impl fmt::Debug for ClerkUserId {
 }
 
 /// Opaque Clerk organisation identifier (the `org_id` custom claim).
+///
+/// **DEBT-013 OPT-07** — `Arc<str>` inner storage for the same
+/// per-request clone-cost reason as [`ClerkUserId`]. The JWT auth
+/// path constructs an `Option<ClerkOrgId>` into
+/// `AuthMethod::Jwt { org_id, .. }` per request; refcount-bump
+/// clone (~5 ns) vs the prior `String::clone` (~50-100 ns).
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub struct ClerkOrgId(String);
+pub struct ClerkOrgId(Arc<str>);
 
 impl ClerkOrgId {
     /// Internal constructor. Only available with `jwt-adapter` feature.
     #[cfg(feature = "jwt-adapter")]
     #[must_use]
     pub(crate) fn new(s: String) -> Self {
-        Self(s)
+        // See `ClerkUserId::new` — `Arc::from(String)` reuses the
+        // existing heap allocation; clone is now a refcount bump.
+        Self(Arc::from(s))
     }
 
     /// Canonical string form for audit-log emission.
@@ -65,15 +87,23 @@ impl fmt::Debug for ClerkOrgId {
 }
 
 /// Opaque Clerk session identifier (the `sid` claim).
+///
+/// **DEBT-013 OPT-07** — `Arc<str>` inner storage to make per-request
+/// clone a refcount bump rather than a heap allocation. The auth
+/// middleware (`crates/corelink-worker/src/middleware/auth.rs:595`)
+/// clones a `ClerkSessionId` into every authenticated JWT request's
+/// `AuthMethod::Jwt` arm — `Arc<str>` removes the heap traffic from
+/// that path entirely.
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub struct ClerkSessionId(String);
+pub struct ClerkSessionId(Arc<str>);
 
 impl ClerkSessionId {
     /// Internal constructor. Only available with `jwt-adapter` feature.
     #[cfg(feature = "jwt-adapter")]
     #[must_use]
     pub(crate) fn new(s: String) -> Self {
-        Self(s)
+        // See `ClerkUserId::new` for the rationale.
+        Self(Arc::from(s))
     }
 
     /// Canonical string form.
@@ -206,4 +236,98 @@ pub struct ClerkPrincipal {
     pub issued_at: SystemTime,
     /// Expires-at timestamp (`exp`).
     pub expires_at: SystemTime,
+}
+
+/// DEBT-013 OPT-07 — test/bench constructors for the principal-id
+/// newtypes. Gated by the `test-utils` feature; production callers
+/// MUST go through [`crate::ClerkAdapter::validate`].
+///
+/// These constructors are intentionally not part of the production
+/// API: every production `ClerkUserId` / `ClerkOrgId` / `ClerkSessionId`
+/// must originate from a verified JWT claim. The benches under
+/// `benches/principal_id_clone.rs` and integration tests that need
+/// to synthesise an id without round-tripping a JWT enable
+/// `test-utils` to access this surface.
+#[cfg(feature = "test-utils")]
+#[doc(hidden)]
+pub mod test_principal_helpers {
+    use super::{ClerkOrgId, ClerkSessionId, ClerkUserId};
+    use std::sync::Arc;
+
+    /// Test/bench-only constructor for [`ClerkUserId`].
+    #[must_use]
+    pub fn make_user_id(s: &str) -> ClerkUserId {
+        ClerkUserId(Arc::from(s))
+    }
+    /// Test/bench-only constructor for [`ClerkOrgId`].
+    #[must_use]
+    pub fn make_org_id(s: &str) -> ClerkOrgId {
+        ClerkOrgId(Arc::from(s))
+    }
+    /// Test/bench-only constructor for [`ClerkSessionId`].
+    #[must_use]
+    pub fn make_session_id(s: &str) -> ClerkSessionId {
+        ClerkSessionId(Arc::from(s))
+    }
+}
+
+#[cfg(all(test, feature = "jwt-adapter"))]
+mod opt07_clone_tests {
+    //! DEBT-013 OPT-07 — `Arc<str>` clone is a refcount bump, not a
+    //! heap allocation. These tests assert that the post-OPT-07
+    //! storage is structurally an `Arc` (clone shares the same
+    //! heap-allocated buffer pointer) so the hot-path savings the
+    //! audit projected are guaranteed by the type, not by hope.
+    use super::*;
+
+    #[test]
+    fn clerk_user_id_clone_shares_heap_buffer() {
+        let id = ClerkUserId::new("user_2abc123".to_owned());
+        let cloned = id.clone();
+        // Same pointer => clone was a refcount bump, not a `String`
+        // duplication. If this ever fails, OPT-07's projected hot-path
+        // savings have regressed back to a `String::clone`.
+        assert!(std::ptr::eq(id.as_str().as_ptr(), cloned.as_str().as_ptr()));
+        assert_eq!(id.as_str(), "user_2abc123");
+        assert_eq!(cloned.as_str(), "user_2abc123");
+    }
+
+    #[test]
+    fn clerk_org_id_clone_shares_heap_buffer() {
+        let id = ClerkOrgId::new("org_2xyz789".to_owned());
+        let cloned = id.clone();
+        assert!(std::ptr::eq(id.as_str().as_ptr(), cloned.as_str().as_ptr()));
+    }
+
+    #[test]
+    fn clerk_session_id_clone_shares_heap_buffer() {
+        let id = ClerkSessionId::new("sess_2foo456".to_owned());
+        let cloned = id.clone();
+        assert!(std::ptr::eq(id.as_str().as_ptr(), cloned.as_str().as_ptr()));
+    }
+
+    #[test]
+    fn clerk_user_id_debug_still_redacts_pii() {
+        // OPT-07 must NOT regress the PII-redaction Debug impl.
+        let id = ClerkUserId::new("user_secretvalue".to_owned());
+        let s = format!("{id:?}");
+        assert!(s.starts_with("ClerkUserId(<redacted len="));
+        assert!(!s.contains("secretvalue"));
+    }
+
+    #[test]
+    fn clerk_org_id_debug_still_redacts_pii() {
+        let id = ClerkOrgId::new("org_secretvalue".to_owned());
+        let s = format!("{id:?}");
+        assert!(s.starts_with("ClerkOrgId(<redacted len="));
+        assert!(!s.contains("secretvalue"));
+    }
+
+    #[test]
+    fn clerk_session_id_debug_still_redacts_pii() {
+        let id = ClerkSessionId::new("sess_secretvalue".to_owned());
+        let s = format!("{id:?}");
+        assert!(s.starts_with("ClerkSessionId(<redacted len="));
+        assert!(!s.contains("secretvalue"));
+    }
 }

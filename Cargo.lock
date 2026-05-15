@@ -1362,6 +1362,7 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "corelink-clerk",
+ "criterion",
  "hex",
  "hmac 0.12.1",
  "jsonwebtoken",

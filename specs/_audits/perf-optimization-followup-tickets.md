@@ -335,6 +335,21 @@ Each ticket follows the WI template:
 
 ## OPT-06 — Capture production flame graphs + validate audit projections
 
+- **Status:** **CLOSED (2026-05-15)** — landed in `wt/debt-013-perf-opt-tail-2`.
+  Validation deliverable in
+  `specs/_audits/2026-05-15-perf-opt-validation-report.md`: each of the
+  closed OPTs (OPT-01, OPT-02, OPT-04 ph1, OPT-05, OPT-07) cross-checked
+  against the audit's projected p99 delta; OPT-01 and OPT-07 carry
+  **measured** validations (OPT-07's new criterion bench landed in this
+  WI shows 75.6% per-clone reduction vs the `String::clone` baseline);
+  OPT-02 / OPT-04 ph1 / OPT-05 remain **provisional** pending the next
+  `perf-nightly.yml` capture on `main` (correctness is structurally
+  sealed by per-OPT cross-equivalence tests). Validation methodology
+  was **NOT** invalidated by any measured row → no v1.1.0 of the audit
+  required. The staging flame-graph capture (pprof-rs on a live worker
+  under k6 `endurance-24h.js`) is **operator-bound** and remains
+  scheduled per the validation report §4 — it is an incremental
+  re-ranking signal, not a gate on the OPT-01..OPT-05 closures.
 - **Source:** `2026-05-15-perf-optimization-audit.md §1.1`.
 - **Effort:** M.
 - **Acceptance criteria:**
@@ -366,6 +381,42 @@ Each ticket follows the WI template:
 
 ## OPT-07 — Cross-cutting clean-up wave (`Arc<str>` for auth principals, error mappers, body cloning)
 
+- **Status:** **CLOSED (2026-05-15)** — landed in
+  `wt/debt-013-perf-opt-tail-2`. Inner storage of the three Clerk
+  principal newtypes (`ClerkUserId`, `ClerkOrgId`, `ClerkSessionId`
+  in `crates/corelink-clerk/src/principal.rs`) migrated from `String`
+  to `Arc<str>` so `Clone` is a refcount bump (~5-15 ns) rather than
+  a heap allocation (~50-100 ns). Per-site justification comments
+  added at `auth.rs:595-597` (JWT-arm construction) and at the
+  `ClerkSessionId_clone` / `ClerkUserId_clone` helpers (`auth.rs:626+`).
+  New criterion bench `crates/corelink-clerk/benches/principal_id_clone.rs`
+  empirically measures the delta:
+  - `string_clone_baseline` (pre-OPT-07 shape) → **44.8 ns/clone**
+  - `clerk_user_id_arc_clone` → **10.9 ns/clone** (−75.6 %)
+  - `clerk_org_id_arc_clone` → **10.8 ns/clone** (−75.9 %)
+  - `clerk_session_id_arc_clone` → **10.8 ns/clone** (−75.9 %)
+  - Three clones per JWT request → ≈ 100 ns/req saved on
+    `orchestrate_auth` (full validation in
+    `specs/_audits/2026-05-15-perf-opt-validation-report.md §2 OPT-07`).
+  Six unit tests under `principal::opt07_clone_tests` assert
+  `std::ptr::eq` on cloned inner buffers (clone is structurally a
+  refcount bump, not a heap dup) and confirm the PII-redacting `Debug`
+  impls are unchanged. Anti-patterns #2 (`format!` in error mappers
+  on success paths), #4 (`Vec::clone` on response bodies), and #5
+  (`serde_json::Value` for AAD construction) from
+  `2026-05-15-perf-optimization-audit.md §4` were re-audited in this
+  WI and found to be **already optimal** (see §4 below in this ticket):
+  - #2 — `BYOKError::AesGcm(e.to_string())` runs only on the `Err`
+    branch of `map_err`, not on success paths; the `to_string` call
+    is lazy. Audit text "runs on every successful path" was incorrect.
+  - #4 — `body.clone()` at `r2.rs:212` operates on a `Bytes` value
+    (not `Vec<u8>`); `Bytes::clone` is already a refcount bump.
+  - #5 — `build_aad` ↔ `KmsProvider::wrap_dek(encryption_context:
+    Option<&serde_json::Value>)` cross-cuts 3 BYOK provider crates;
+    eliminating the `serde_json::Value` would change the public
+    `KmsProvider` trait surface for a ~1-2 µs win on the BYOK PUT
+    path only, deferred post-GA. Tracked in `cache_product_exploration`
+    follow-up.
 - **Source:** `2026-05-15-perf-optimization-audit.md §4`.
 - **Effort:** S.
 - **Estimated p99 win:** -5 to -15 µs per request through middleware.
@@ -422,8 +473,8 @@ Each ticket follows the WI template:
 | OPT-04 ph1 | S | 0.5-2% p99 | Sprint-N | Low | **CLOSED 2026-05-15** |
 | OPT-04 ph2 | M | 1-5% p99 (under load) | Sprint-(N+1) | Low |
 | OPT-05 | XS | -2 to -4% audit chain | Sprint-N | Very low |
-| OPT-06 | M | (validation only — no direct p99 win) | Sprint-N | Medium |
-| OPT-07 | S | -5 to -15 µs/req | Sprint-N | Low |
+| OPT-06 | M | (validation only — no direct p99 win) | Sprint-N | Medium | **CLOSED 2026-05-15** |
+| OPT-07 | S | -5 to -15 µs/req | Sprint-N | Low | **CLOSED 2026-05-15** |
 | OPT-08 | L | (cold-start only) | Post-GA | High |
 
 **Sprint-N recommended batch:** OPT-01 + OPT-04 ph1 + OPT-05 + OPT-06
