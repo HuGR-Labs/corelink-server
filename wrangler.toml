@@ -121,6 +121,45 @@ binding = "METADATA_KV"
 id = "TODO_KV_NAMESPACE_ID"
 preview_id = "TODO_PREVIEW_KV_ID"
 
+# R2-10 — Clerk JWKS cache KV namespace (consumed by
+# `corelink-cf-bindings::CfKvNamespaceAdapter` and `corelink-clerk-cf::CfKvJwksCache`).
+# Separate namespace from METADATA_KV so the JWKS cache TTL eviction
+# does not pollute the metadata hot-lookup hit rate.
+[[kv_namespaces]]
+binding = "CLERK_JWKS_KV"
+id = "PLACEHOLDER_CLERK_JWKS_KV_ID"
+preview_id = "PLACEHOLDER_CLERK_JWKS_KV_PREVIEW_ID"
+
+# R2-10 — Negative-cache KV namespace (S-02 negative cache hit path,
+# consumed by `corelink-cf-bindings::CfKvNamespaceAdapter`). Per-region
+# is NOT required — negative cache is global by digest. Separate from
+# METADATA_KV so the 300s TTL churn does not evict metadata entries.
+[[kv_namespaces]]
+binding = "NEGATIVE_CACHE_KV"
+id = "PLACEHOLDER_NEG_CACHE_KV_ID"
+preview_id = "PLACEHOLDER_NEG_CACHE_KV_PREVIEW_ID"
+
+# R2-10 — D1 database for control-plane config + audit rows.
+# Consumed by `corelink-cf-bindings::CfD1DatabaseAdapter` and the
+# `corelink-clerk-cf::handle_health` smoke-test handler.
+[[d1_databases]]
+binding = "CONFIG_DB"
+database_name = "corelink-config-dev"
+database_id = "PLACEHOLDER_D1_CONFIG_DB_ID"
+preview_database_id = "PLACEHOLDER_D1_CONFIG_DB_PREVIEW_ID"
+
+# R2-10 — Rollout-controller Durable Object namespace (WI-S13-*),
+# consumed by `corelink-cf-bindings::CfDurableObjectAdapter`. Single
+# DO instance per rollout_id; CF hashes id_from_name into a 256-bit
+# ObjectId. The class itself is declared via `[[migrations]]` below.
+[[durable_objects.bindings]]
+name = "ROLLOUT_DO"
+class_name = "RolloutController"
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["RolloutController"]
+
 # Vars não-secretas
 [vars]
 ENVIRONMENT = "dev"
@@ -230,3 +269,148 @@ class_name = "CoreLinkServer"
 image = "./Dockerfile"
 max_instances = 20
 instance_type = "standard"
+
+# R2-10 — prod KV / D1 / DO bindings. IDs are placeholders pending
+# the `wrangler kv namespace create --env prod` / `wrangler d1 create
+# --env prod` operations gated by the PRR ship checklist.
+[[env.prod.kv_namespaces]]
+binding = "METADATA_KV"
+id = "PLACEHOLDER_PROD_METADATA_KV_ID"
+
+[[env.prod.kv_namespaces]]
+binding = "CLERK_JWKS_KV"
+id = "PLACEHOLDER_PROD_CLERK_JWKS_KV_ID"
+
+[[env.prod.kv_namespaces]]
+binding = "NEGATIVE_CACHE_KV"
+id = "PLACEHOLDER_PROD_NEG_CACHE_KV_ID"
+
+[[env.prod.d1_databases]]
+binding = "CONFIG_DB"
+database_name = "corelink-config-prod"
+database_id = "PLACEHOLDER_PROD_D1_CONFIG_DB_ID"
+
+[[env.prod.durable_objects.bindings]]
+name = "CORELINK_SERVER"
+class_name = "CoreLinkServer"
+
+[[env.prod.durable_objects.bindings]]
+name = "ROLLOUT_DO"
+class_name = "RolloutController"
+
+# ============================================================================
+# R2-10 — Staging environment (`wrangler deploy --env staging`).
+#
+# Staging is a 1:1 mirror of prod topology with reduced container max
+# instances and a separate bucket / KV / D1 namespace per binding. The
+# canary + rollout flows promote artifacts staging -> prod, so all
+# binding NAMES must match prod exactly — only the underlying
+# `bucket_name` / `database_id` / `id` values change.
+# ============================================================================
+
+[env.staging]
+name = "corelink-staging"
+vars = { ENVIRONMENT = "staging" }
+
+[[env.staging.r2_buckets]]
+binding = "CAS_BUCKET"
+bucket_name = "corelink-cas-staging"
+
+[[env.staging.r2_buckets]]
+binding = "AC_BUCKET_SAM"
+bucket_name = "corelink-ac-sam-staging"
+
+[[env.staging.r2_buckets]]
+binding = "AC_BUCKET_IAD"
+bucket_name = "corelink-ac-iad-staging"
+
+[[env.staging.r2_buckets]]
+binding = "AC_BUCKET_LHR"
+bucket_name = "corelink-ac-lhr-staging"
+
+[[env.staging.r2_buckets]]
+binding = "AC_BUCKET_NRT"
+bucket_name = "corelink-ac-nrt-staging"
+
+[[env.staging.r2_buckets]]
+binding = "AC_BUCKET_SYD"
+bucket_name = "corelink-ac-syd-staging"
+
+[[env.staging.r2_buckets]]
+binding = "CHUNK_BUCKET_SAM"
+bucket_name = "corelink-chunk-sam-staging"
+
+[[env.staging.r2_buckets]]
+binding = "CHUNK_BUCKET_IAD"
+bucket_name = "corelink-chunk-iad-staging"
+
+[[env.staging.r2_buckets]]
+binding = "CHUNK_BUCKET_LHR"
+bucket_name = "corelink-chunk-lhr-staging"
+
+[[env.staging.r2_buckets]]
+binding = "CHUNK_BUCKET_NRT"
+bucket_name = "corelink-chunk-nrt-staging"
+
+[[env.staging.r2_buckets]]
+binding = "CHUNK_BUCKET_SYD"
+bucket_name = "corelink-chunk-syd-staging"
+
+[[env.staging.r2_buckets]]
+binding = "MANIFEST_BUCKET_SAM"
+bucket_name = "corelink-manifest-sam-staging"
+
+[[env.staging.r2_buckets]]
+binding = "MANIFEST_BUCKET_IAD"
+bucket_name = "corelink-manifest-iad-staging"
+
+[[env.staging.r2_buckets]]
+binding = "MANIFEST_BUCKET_LHR"
+bucket_name = "corelink-manifest-lhr-staging"
+
+[[env.staging.r2_buckets]]
+binding = "MANIFEST_BUCKET_NRT"
+bucket_name = "corelink-manifest-nrt-staging"
+
+[[env.staging.r2_buckets]]
+binding = "MANIFEST_BUCKET_SYD"
+bucket_name = "corelink-manifest-syd-staging"
+
+[[env.staging.kv_namespaces]]
+binding = "METADATA_KV"
+id = "PLACEHOLDER_STAGING_METADATA_KV_ID"
+
+[[env.staging.kv_namespaces]]
+binding = "CLERK_JWKS_KV"
+id = "PLACEHOLDER_STAGING_CLERK_JWKS_KV_ID"
+
+[[env.staging.kv_namespaces]]
+binding = "NEGATIVE_CACHE_KV"
+id = "PLACEHOLDER_STAGING_NEG_CACHE_KV_ID"
+
+[[env.staging.d1_databases]]
+binding = "CONFIG_DB"
+database_name = "corelink-config-staging"
+database_id = "PLACEHOLDER_STAGING_D1_CONFIG_DB_ID"
+
+[[env.staging.durable_objects.bindings]]
+name = "CORELINK_SERVER"
+class_name = "CoreLinkServer"
+
+[[env.staging.durable_objects.bindings]]
+name = "ROLLOUT_DO"
+class_name = "RolloutController"
+
+[[env.staging.containers]]
+class_name = "CoreLinkServer"
+image = "./Dockerfile"
+max_instances = 10
+instance_type = "standard"
+
+# Staging crons — chaos + synthetic-pager fire here too (per WI-S17/S20
+# default = dev/staging only). Prod remains crons-omitted.
+[env.staging.triggers]
+crons = [
+    "0 6 * * 1",
+    "0 14 * * 1",
+]

@@ -141,6 +141,32 @@ pub async fn main(
     if path == "/health" && matches!(req.method(), worker::Method::Get) {
         let kv = env.kv("CLERK_JWKS_KV")?;
         let d1 = env.d1("CLERK_DB")?;
+        // R2-10 — instantiate canonical adapters from `corelink-cf-bindings`
+        // so the production binding wiring is exercised end-to-end. The
+        // adapters wrap the same `worker::*` types we already pulled from
+        // `env`, so this is zero-cost (no extra binding lookups). The
+        // `corelink-cf-bindings` crate root carries
+        // `#![cfg(target_arch = "wasm32")]` so this block is unreachable
+        // (and the symbols invisible) on a native build — which is
+        // correct because the enclosing `#[worker::event(fetch)]` only
+        // runs on wasm32 anyway. We mirror that cfg gate on the use
+        // sites so native `cargo build --workspace` does not see the
+        // (empty) `corelink_cf_bindings::*` paths.
+        //
+        // Why no R2 binding in the clerk-cf wrangler.toml: this PoC
+        // worker is scoped to JWKS cache + audit. The CAS_BUCKET binding
+        // lives in the root `wrangler.toml` (main Worker). The adapter
+        // types are still constructible from `env.bucket(...)` there
+        // when the main Worker is wired in the next phase.
+        #[cfg(target_arch = "wasm32")]
+        let _kv_adapter = corelink_cf_bindings::CfKvNamespaceAdapter::new(kv.clone());
+        #[cfg(target_arch = "wasm32")]
+        let _d1_adapter = corelink_cf_bindings::CfD1DatabaseAdapter::new(
+            // D1Database is !Clone — the adapter owns it. We rebuild
+            // a second binding handle (cheap) for the adapter so the
+            // raw `d1` ref remains usable by `handle_health` below.
+            env.d1("CLERK_DB")?,
+        );
         // Timestamp: use ISO-8601 from js_sys::Date on wasm, or a
         // placeholder string when running in native tests (not
         // applicable here — this handler only runs on wasm32).

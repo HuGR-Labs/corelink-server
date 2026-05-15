@@ -59,3 +59,11 @@ tracing = { workspace = true }
 
 # wasm_bindgen_futures for async bridging inside the worker handler.
 wasm-bindgen-futures = "0.4"
+
+# R2-10 — production CF binding adapters (R2/D1/KV/DO) implementing the
+# trait surfaces from corelink-worker. We pull this into the fetch
+# handler to demonstrate end-to-end adapter wiring and so the adapter
+# crate is not orphaned in the workspace dependency graph. wasm32-only:
+# the crate root carries `#![cfg(target_arch = "wasm32")]` so native
+# `cargo build --workspace` is unaffected.
+corelink-cf-bindings = { workspace = true }

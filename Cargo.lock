@@ -1304,6 +1304,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-cf-bindings"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "corelink-worker",
+ "thiserror 2.0.18",
+ "wasm-bindgen-futures",
+ "worker",
+]
+
+[[package]]
 name = "corelink-chaos-scheduler"
 version = "0.1.0"
 dependencies = [
@@ -1350,6 +1361,7 @@ dependencies = [
 name = "corelink-clerk-cf"
 version = "0.1.0"
 dependencies = [
+ "corelink-cf-bindings",
  "corelink-clerk",
  "serde",
  "serde_json",
@@ -2286,6 +2298,8 @@ dependencies = [
  "corelink-tenant-path",
  "criterion",
  "futures",
+ "getrandom 0.2.17",
+ "getrandom 0.3.4",
  "hmac 0.12.1",
  "http 1.4.0",
  "http-body-util",
