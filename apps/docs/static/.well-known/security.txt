@@ -10,6 +10,7 @@
 
 Contact: mailto:security@corelink.dev
 Contact: https://corelink.dev/.well-known/security-report
+Contact: mailto:trust@corelink.dev
 Expires: 2027-05-14T00:00:00.000Z
 Encryption: https://corelink.dev/.well-known/security-pgp.asc
 Acknowledgments: https://corelink.dev/security/hall-of-fame
@@ -17,6 +18,11 @@ Preferred-Languages: en, pt-BR, es
 Canonical: https://corelink.dev/.well-known/security.txt
 Policy: https://corelink.dev/security/policy
 Hiring: https://corelink.dev/careers
+
+# Trust Center — public-facing compliance / data-handling / sub-processors /
+# incident-response posture. trust@ is the procurement + DPA + auditor
+# contact; security@ remains the vulnerability-disclosure contact.
+# https://corelink.dev/trust
 
 # Notes for parsers:
 #  - Expires MUST be a single ISO 8601 timestamp in UTC ("Z"). One year out

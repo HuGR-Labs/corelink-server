@@ -1,0 +1,73 @@
+# CoreLink Do Not Track (DNT) Policy
+# RFC 5785 well-known resource; format per EFF DNT Policy v1.0.
+#
+# This file is served at https://corelink.dev/.well-known/dnt-policy.txt
+# Last updated: 2026-05-15
+# Canonical: https://corelink.dev/.well-known/dnt-policy.txt
+
+CoreLink ("we") commits to the following behaviour for any HTTP request
+where the user agent sends the `DNT: 1` header (RFC 6797 §5, W3C TPE).
+
+## 1. Honoring DNT
+
+When `DNT: 1` is present on any request to:
+
+  - corelink.dev
+  - *.corelink.dev (including api.corelink.dev, admin.corelink.dev,
+    docs.corelink.dev, status.corelink.dev)
+
+we will not:
+
+  - Set, read, or augment any cross-site tracking cookie.
+  - Forward request metadata to any third-party analytics, advertising,
+    or attribution vendor.
+  - Build, refine, or sell behavioural profiles of the user.
+  - Share IP-address-derived geolocation with any third party for
+    advertising or attribution purposes.
+
+## 2. What we still do, regardless of DNT
+
+Some processing is strictly necessary to serve the request safely. With or
+without `DNT: 1`, we may:
+
+  - Keep short-lived (≤ 30 day) request logs for security, abuse
+    prevention, and operational debugging.
+  - Apply rate limiting and DDoS protection (Cloudflare-managed).
+  - Set strictly-necessary first-party session cookies (auth, CSRF,
+    consent state) — these are not used for tracking.
+  - Process API authentication tokens and audit-log writes — operating
+    the service requires this.
+
+## 3. Sub-processors and DNT
+
+Where a vendor in our [public sub-processor list](https://corelink.dev/trust/subprocessors)
+honours DNT independently (e.g., Cloudflare's privacy posture), the DNT
+signal is propagated unmodified. Where a vendor does not honour DNT, we
+do not enable behavioural-tracking features in that vendor's product,
+regardless of the DNT signal.
+
+## 4. Retention
+
+  - Request logs subject to DNT-conformant handling: ≤ 30 days.
+  - Aggregate, non-identifying counts: up to 13 months (operational
+    capacity planning).
+  - Audit-chain events (security / compliance): 7 years, per LGPD /
+    SOC 2 retention requirements; these are tenant-scoped, not user-
+    behaviour records.
+
+## 5. Reporting non-conformance
+
+If you observe a violation of this policy:
+
+  Email:  privacy@corelink.dev
+  Subject prefix: [DNT]
+  Trust Center: https://corelink.dev/trust
+
+We will acknowledge within 5 business days and remediate any confirmed
+violation within 30 days.
+
+## 6. Updates
+
+Material changes to this policy will be announced on the status page and
+listed under "Sub-processor and policy changes" on the Trust Center, with
+at least 30 days' advance notice.

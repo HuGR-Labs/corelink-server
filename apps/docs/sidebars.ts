@@ -86,6 +86,22 @@ const sidebars: SidebarsConfig = {
         },
       ],
     },
+    // Customer-facing Trust Center — top-level category alongside the
+    // Diátaxis quadrants so procurement / DPO traffic can find compliance
+    // posture, sub-processors, and IR in one place per R-8 launch checklist
+    // (LAUNCH-CHECKLIST-V2.md row L23: "Trust center unlock").
+    {
+      type: "category",
+      label: "Trust",
+      link: { type: "doc", id: "trust/index" },
+      collapsed: true,
+      items: [
+        "trust/compliance",
+        "trust/data-handling",
+        "trust/subprocessors",
+        "trust/incident-response",
+      ],
+    },
   ],
 };
 
