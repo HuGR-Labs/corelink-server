@@ -1,0 +1,63 @@
+# Semgrep ignore — paths excluded from .github/workflows/semgrep.yml and
+# from local `semgrep ci` runs. Keep in sync with `.gitignore` for any
+# generated / vendored content.
+#
+# This file is consumed by Semgrep automatically (it follows .gitignore
+# syntax — see https://semgrep.dev/docs/ignoring-files-folders-code/).
+
+# Vendored deps (Cargo vendor, Bazel external, pnpm store, etc.)
+vendor/
+.vendor/
+third_party/
+external/
+
+# Build outputs (Rust target, Bazel/Buck out, JS dist, Python build)
+target/
+**/target/
+bazel-*/
+buck-out/
+node_modules/
+**/node_modules/
+dist/
+build/
+.next/
+out/
+
+# Generated code (protobuf, OpenAPI clients, codegen)
+**/*.pb.go
+**/*_pb2.py
+**/*_pb2.pyi
+**/*_pb.rs
+**/generated/
+**/__generated__/
+openapi/generated/
+proto/generated/
+
+# Test fixtures / corpus (treat as data, not source)
+**/fuzz/corpus/
+**/fuzz/artifacts/
+**/testdata/
+**/fixtures/
+
+# Editor / OS clutter
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Lock files (manifest-managed; not source)
+Cargo.lock
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+
+# Specs/docs — Markdown / YAML metadata not in Semgrep's scope.
+specs/
+docs/
+_archive/
+CHANGELOG.md
+README.md
+ROADMAP-TO-GA.md
+ARCHITECTURE.md
+SECURITY.md
+TODO.md

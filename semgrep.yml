@@ -1,0 +1,153 @@
+# CoreLink-specific Semgrep rule pack
+# ====================================
+#
+# Pre-pentest engagement (cutoff 2026-06-15) R-prep wave. These rules
+# encode CoreLink charter conventions that the bundled OSS rulepacks do
+# not catch. Each rule MUST be cross-referenced to:
+#   - A charter / ADR / RUNBOOK line that justifies it.
+#   - The remediation guidance in
+#     `specs/_runbooks/RB-STATIC-ANALYSIS-TRIAGE.md`.
+#
+# Naming convention: `corelink.<area>.<short-id>`. The `corelink.` prefix
+# is leveraged by `.github/workflows/semgrep.yml` to tally custom-rule
+# hits separately from the bundled OSS rulesets.
+#
+# Suppression policy: a finding may be suppressed only with an inline
+# `# nosemgrep: <rule-id>  # reason: <one-line>; ADR-XXXX` comment on
+# the offending line. The triage runbook enforces ADR linkage in PR
+# review.
+#
+# ROADMAP-TO-GA.md §7 Wave R-7 (Evidence Gate) — this file is referenced
+# by the GA evidence package consumed by PRR-S20-GA.
+# SOC2 rollup: CC8.1 (change-management gate).
+
+rules:
+
+  # -----------------------------------------------------------------
+  # R1 — Forbid `.unwrap()` in non-test Rust source.
+  #
+  # Rationale: charter "no panic-on-unwrap" — every fallible op must
+  # propagate via `?` or an explicit `match`. Clippy's
+  # `clippy::unwrap_used` is set on most crates but historically slips
+  # past macro-generated code; Semgrep catches it as a backstop.
+  # Test files (`tests/`, `*/tests/*`, `*_test.rs`, `*/src/**/tests.rs`)
+  # are exempt — assertions in tests routinely use `.unwrap()` and that
+  # is acceptable because a panicked test is a failed test.
+  # -----------------------------------------------------------------
+  - id: corelink.rust.no-unwrap-in-src
+    message: |
+      `.unwrap()` is forbidden in non-test Rust source. Use `?` to
+      propagate or `match` with an explicit error arm. If unavoidable,
+      annotate with `# nosemgrep: corelink.rust.no-unwrap-in-src  # reason: <...>; ADR-XXXX`.
+    severity: ERROR
+    languages: [rust]
+    pattern: $X.unwrap()
+    paths:
+      include:
+        - "crates/*/src/**/*.rs"
+        - "apps/**/src/**/*.rs"
+      exclude:
+        - "**/tests/**"
+        - "**/tests.rs"
+        - "**/*_test.rs"
+        - "**/test_*.rs"
+        - "**/benches/**"
+        - "**/examples/**"
+        - "**/build.rs"
+
+  # -----------------------------------------------------------------
+  # R2 — Forbid `tokio::` imports / paths inside `crates/*/src/`.
+  #
+  # Rationale: CoreLink autonomous-execution charter §"runtime-agnostic
+  # core" — no-tokio rule. Async runtime selection belongs in the
+  # binary / app layer (apps/ or test harnesses), never in library
+  # crates. Violations make the crate non-portable to wasm32 / Workers
+  # and break the BYOK enclave runtime budget.
+  # -----------------------------------------------------------------
+  - id: corelink.rust.no-tokio-in-lib-crates
+    message: |
+      `tokio::` is forbidden inside `crates/*/src/`. Library crates
+      must remain runtime-agnostic (charter no-tokio rule). Move the
+      runtime dependency to an `apps/*` or `tests/*` consumer, or wrap
+      the spawn behind a generic executor trait.
+    severity: ERROR
+    languages: [rust]
+    pattern-either:
+      - pattern: tokio::$X
+      - pattern: |
+          use tokio::$X;
+      - pattern: |
+          use tokio;
+    paths:
+      include:
+        - "crates/*/src/**/*.rs"
+      exclude:
+        - "**/tests/**"
+        - "**/tests.rs"
+        - "**/*_test.rs"
+        - "**/test_*.rs"
+        - "**/benches/**"
+        - "**/examples/**"
+
+  # -----------------------------------------------------------------
+  # R3 — Forbid the proptest anti-pattern flagged in S-08 P1-1.
+  #
+  # Background: S-08 adversarial audit P1-1 caught
+  #   prop_assert!(matches!(err, Error::Variant { .. }));
+  # which silently swallows mismatched payload fields — the test
+  # passes whenever the variant tag matches, regardless of payload
+  # content.  Correct form is to destructure and `prop_assert_eq!` on
+  # the inner fields.
+  # -----------------------------------------------------------------
+  - id: corelink.rust.prop-assert-matches-struct-variant
+    message: |
+      `prop_assert!(matches!(..., Variant { .. }))` is the S-08 P1-1
+      anti-pattern: it passes whenever the variant tag matches even if
+      payload fields are wrong. Destructure the variant explicitly and
+      `prop_assert_eq!` (or `prop_assert!`) on each field.
+    severity: ERROR
+    languages: [rust]
+    pattern-either:
+      - pattern: "prop_assert!(matches!($X, $V { .. }))"
+      - pattern: "prop_assert!(matches!($X, $E :: $V { .. }))"
+      - pattern: "prop_assert!(matches!($X, $E :: $V { .. }), $...REST)"
+      - pattern: "prop_assert!(matches!($X, $V { .. }), $...REST)"
+    paths:
+      include:
+        - "crates/**/*.rs"
+        - "apps/**/*.rs"
+        - "tests/**/*.rs"
+
+  # -----------------------------------------------------------------
+  # R4 — Forbid `.expect()` in BYOK-* crate src/ (extra strict).
+  #
+  # Rationale: BYOK crates handle customer key material and run inside
+  # tenant-isolated enclaves. A panic in the BYOK path leaks an entire
+  # tenant session; the charter mandates structured error propagation
+  # ONLY (no `expect`, no `unwrap` — the latter is already covered by
+  # R1 but R4 is the BYOK-strict variant that additionally bans
+  # `.expect()` regardless of the static-string argument).
+  # -----------------------------------------------------------------
+  - id: corelink.rust.no-expect-in-byok-src
+    message: |
+      `.expect()` is forbidden in BYOK crate source (extra-strict per
+      BYOK charter — panics in this layer leak tenant key material).
+      Propagate the error via `?` and emit a structured `BYOK*Error`
+      variant with a redacted message.
+    severity: ERROR
+    languages: [rust]
+    pattern: $X.expect($MSG)
+    paths:
+      include:
+        - "crates/corelink-byok/src/**/*.rs"
+        - "crates/corelink-byok-aws/src/**/*.rs"
+        - "crates/corelink-byok-azure/src/**/*.rs"
+        - "crates/corelink-byok-gcp/src/**/*.rs"
+        - "crates/corelink-byok-vault/src/**/*.rs"
+        - "crates/corelink-byok-revocation/src/**/*.rs"
+        - "crates/corelink-byok-matrix-test/src/**/*.rs"
+      exclude:
+        - "**/tests/**"
+        - "**/tests.rs"
+        - "**/*_test.rs"
+        - "**/test_*.rs"
