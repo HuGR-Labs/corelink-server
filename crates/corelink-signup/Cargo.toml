@@ -37,3 +37,7 @@ path = "tests/prop_signup_orchestration.rs"
 [[test]]
 name = "chaos_stripe_outage"
 path = "tests/chaos_stripe_outage.rs"
+
+[[test]]
+name = "mutation_kills"
+path = "tests/mutation_kills.rs"

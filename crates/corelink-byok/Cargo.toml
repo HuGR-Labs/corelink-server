@@ -70,6 +70,10 @@ path = "tests/adversarial.rs"
 name = "byok_matrix_framework"
 path = "tests/byok_matrix_framework.rs"
 
+[[test]]
+name = "mutation_kills"
+path = "tests/mutation_kills.rs"
+
 [[example]]
 name = "write_aws"
 path = "examples/write_aws.rs"

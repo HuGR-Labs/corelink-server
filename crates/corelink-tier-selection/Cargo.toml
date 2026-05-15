@@ -37,3 +37,7 @@ proptest = { workspace = true }
 [[test]]
 name = "prop_tier_selection"
 path = "tests/prop_tier_selection.rs"
+
+[[test]]
+name = "mutation_kills"
+path = "tests/mutation_kills.rs"
