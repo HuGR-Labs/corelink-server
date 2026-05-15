@@ -181,3 +181,26 @@ jobs:
 
       - name: TLC verify audit_emit_atomic (DEBT-005 batch 2)
         run: bash scripts/run_tlc_corelink.sh audit_emit_atomic
+
+      # DEBT-005 batch 3 (5 net-new TLA specs, 2026-05-15) — close 8 more
+      # CRITICAL/HIGH INV-granularity gaps from canonical-consistency
+      # baseline §4 (critical_no_tla 34 → 26; tla_verified 33 → 49).
+      # Covers INV-OBS-NO-PII + INV-OFFBOARDING-AUDIT-COMPLETE +
+      # INV-OFFBOARDING-GRACE-RESPECTED + INV-BILLING-CHAIN-INTEGRITY +
+      # INV-GC-GRACE-BOUNDARY-STRICT + INV-GC-MARK-TENANT-SCOPED +
+      # INV-GC-SWEEP-TENANT-SCOPED + INV-BACKUP-FRESH +
+      # INV-BACKUP-INTEGRITY-SAMPLE-CAP.
+      - name: TLC verify obs_no_pii (DEBT-005 batch 3)
+        run: bash scripts/run_tlc_corelink.sh obs_no_pii
+
+      - name: TLC verify offboarding_audit_complete (DEBT-005 batch 3)
+        run: bash scripts/run_tlc_corelink.sh offboarding_audit_complete
+
+      - name: TLC verify billing_chain_integrity (DEBT-005 batch 3)
+        run: bash scripts/run_tlc_corelink.sh billing_chain_integrity
+
+      - name: TLC verify gc_grace_boundary (DEBT-005 batch 3)
+        run: bash scripts/run_tlc_corelink.sh gc_grace_boundary
+
+      - name: TLC verify backup_fresh (DEBT-005 batch 3)
+        run: bash scripts/run_tlc_corelink.sh backup_fresh
