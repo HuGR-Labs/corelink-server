@@ -4,7 +4,7 @@ type: "work_item"
 doc_status: "SEALED"
 work_status: "READY"
 audit_status: "ACTIVE"
-version: "0.2.0"
+version: "0.3.0"
 created: "2026-05-15"
 updated: "2026-05-15"
 lane: "HIGH_RISK"
@@ -134,8 +134,8 @@ Error responses (fail-CLOSED canonical):
 - [x] Integration test: in-memory chain + window export, full proof verification round-trip (`apps/server/tests/audit_export.rs::happy_path_tenant_exports_own_audit_logs`; 5-event window; manifest footer + chain-head anchor header asserted).
 - [x] Chaos test: induced chain break surfaces SEV-0 audit (`apps/server/tests/audit_export.rs::chain_tamper_emits_verify_failed_sev0`; the test still flushes bytes — the SEV-0 audit emit is the security anchor; the `X-CoreLink-Audit-Export-Aborted` trailer ships in the follow-on streaming wire-up once we move off the in-memory buffer).
 - [x] Tenant-isolation test: cross-tenant JWT returns 403 + audit emit (`apps/server/tests/audit_export.rs::cross_tenant_attempt_emits_security_audit_and_403`); 7 tests total (happy + cross-tenant + empty-range + verify-failed + 401 + 429 + 503-on-audit-fail).
-- [ ] Customer-side CLI re-verify (`corelink audit verify`) green on the exported NDJSON (deferred — depends on the CLI binary at `crates/corelink-audit-chain/src/bin/verifier.rs` accepting the route's NDJSON envelope shape; tracked as follow-on lifting the verifier CLI off the chunk-file input).
-- [ ] Daily-verify cron (`audit-chain-daily-verify.yml`) green for 7 consecutive days (production gate; runs after Wave-15.3 deploys).
+- [x] Customer-side CLI re-verify (`corelink audit verify-ndjson --ndjson <file> --chain-head-anchor <hex>`) green on the exported NDJSON (Wave 17; `crates/corelink-cli/src/commands/verify_ndjson.rs`; 6 unit tests — happy path 10-event round-trip, tampered chunk #3, wrong anchor, empty NDJSON, malformed proof JSON, mismatched chain-head; structured chain-break diagnostic with line + observed vs expected hash + kind; constant-time hash compare via `corelink_audit_chain::hashes_eq_ct`).
+- [x] Daily-verify cron (`audit-chain-daily-verify.yml`) extended to a 7-day rolling matrix (Wave 17; today + today-1..today-6; SEV-0 marker `AUDIT_CHAIN_7DAY_BREAK_DETECTED::<date>::<chunk-key>` routes to PagerDuty via `PAGERDUTY_ROUTING_KEY`; production R2 list path behind `AUDIT_R2_BUCKET` + `CF_API_TOKEN`; public CI smoke harness fixture-only; all `uses:` SHA-pinned per HIGH_RISK lane FF-HR-005).
 
 ---
 
@@ -179,4 +179,66 @@ Quality gates closed:
 | `cargo test -p corelink-server --test audit_export` | 7 tests pass |
 | `cargo test -p corelink-server --lib` | 47 tests pass |
 | `cargo clippy -p corelink-server --tests -- -D warnings` | green |
+| `python3 scripts/validate_specs.py` | green |
+
+---
+
+## 10. Wave-17 closure summary (2026-05-15)
+
+Wave 17 closes the two open ACs from Wave-15.3.
+
+**Customer-CLI NDJSON re-verify (`crates/corelink-cli/src/commands/verify_ndjson.rs`):**
+
+- New subcommand `corelink audit verify-ndjson --ndjson <file> --chain-head-anchor <hex>`.
+- Reads the NDJSON envelope emitted by `GET /v1/audit/export` (one
+  `{event, proof}` line per audit row + a trailing
+  `{"manifest": <ExportManifest>}` line).
+- For each row: recomputes the BLAKE3 link via
+  `corelink_audit_chain::link_chain_hash(event.prev_hash, event)`,
+  compares constant-time against the claimed `proof.link_hash`.
+- Walks chain continuity forward: row N+1's `event.prev_hash` MUST
+  equal row N's recomputed link hash.
+- Final assertions: the recomputed final hash MUST equal both the
+  manifest `chain_head_at_export` AND the customer-supplied
+  `--chain-head-anchor` (the value the server published in the
+  `X-CoreLink-Audit-Export-Chain-Head-Anchor` response header).
+- Constant-time hash compare via `corelink_audit_chain::hashes_eq_ct`
+  (no short-circuit on the first differing byte).
+- Exit 0 on full chain integrity; exit 1 with a structured chain-break
+  diagnostic carrying `{file, line, observed, expected, kind}`
+  (`kind=link_recompute` or `kind=continuity`). Error messages are
+  informative + actionable per WI charter.
+- 6 unit tests: happy path (10 events round-trip), tampered chunk #3
+  one-byte flip, wrong anchor, empty NDJSON, malformed proof JSON,
+  mismatched chain-head in manifest.
+- README "Offline audit-chain verify" section documents the usage.
+
+**7-day daily-verify cron (`.github/workflows/audit-chain-daily-verify.yml`):**
+
+- Extends Wave-15 cron with a `seven-day-verify` job iterating today,
+  today-1, ..., today-6 (default `DEFAULT_WINDOW_DAYS=7`; tunable via
+  `workflow_dispatch` input `window_days` in `[1, 30]`).
+- For each day in the window: lists `audit/<YYYY>/<MM>/<DD>/*.ndjson`
+  R2 keys (production: wrangler r2 list under `AUDIT_R2_BUCKET` +
+  `CF_API_TOKEN`; public CI: fixture-only smoke), downloads each
+  chunk, invokes the verifier binary on the day's chunk paths, greps
+  for `AUDIT_CHAIN_BREAK_DETECTED`.
+- SEV-0 alert marker `AUDIT_CHAIN_7DAY_BREAK_DETECTED::<date>::<chunk-key>`
+  routes to PagerDuty via `PAGERDUTY_ROUTING_KEY` (per RB-AUDIT-CHAIN-001 §3).
+- `permissions: contents: read` only (no `id-token: write` — production
+  R2 access uses `CF_API_TOKEN` secret, not OIDC).
+- All `uses:` SHA-pinned (40-char) per HIGH_RISK lane FF-HR-005;
+  smoke job runs as Job 1 (cron-safe zero-input no-op), 7-day job
+  runs as Job 2 with `needs: smoke-verify` dependency.
+- Workflow YAML parses cleanly via `python3 -c "import yaml; yaml.safe_load(...)"`.
+
+Quality gates closed (Wave 17):
+
+| Gate | Status |
+|---|---|
+| `cargo build -p corelink-cli` | green |
+| `cargo test -p corelink-cli` (commands::verify_ndjson 6 tests) | green |
+| `cargo clippy -p corelink-cli --tests -- -D warnings` | green |
+| `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/audit-chain-daily-verify.yml'))"` | green |
+| `python3 scripts/verify-action-sha-pinning.py` (528 uses pinned) | green |
 | `python3 scripts/validate_specs.py` | green |

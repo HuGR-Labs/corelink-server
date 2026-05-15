@@ -187,6 +187,25 @@ enum AuditAction {
         /// Path to the JSON-LD export file.
         path: PathBuf,
     },
+
+    /// Offline re-verify of a streaming NDJSON envelope produced by
+    /// `GET /v1/audit/export` (WI-S09-008 customer-CLI AC).
+    ///
+    /// The NDJSON file carries one `{event, proof}` line per audit
+    /// row plus a trailing `{"manifest": ...}` line. The
+    /// `--chain-head-anchor` MUST be the value the server published in
+    /// the `X-CoreLink-Audit-Export-Chain-Head-Anchor` response header
+    /// at export time. Exit 0 on full chain integrity verified; exit
+    /// 1 with a structured chain-break error on any divergence.
+    VerifyNdjson {
+        /// Path to the NDJSON envelope file.
+        #[arg(long = "ndjson", value_name = "FILE")]
+        ndjson: PathBuf,
+        /// 64-char BLAKE3 chain-head anchor (from response header
+        /// `X-CoreLink-Audit-Export-Chain-Head-Anchor`).
+        #[arg(long = "chain-head-anchor", value_name = "HEX")]
+        chain_head_anchor: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -427,6 +446,13 @@ fn run_audit(action: &AuditAction, format: OutputFormat) -> Result<(), CliError>
         }
         AuditAction::Verify { path } => {
             commands::audit::run_verify(path, format)?;
+            Ok(())
+        }
+        AuditAction::VerifyNdjson {
+            ndjson,
+            chain_head_anchor,
+        } => {
+            commands::verify_ndjson::run_verify_ndjson(ndjson, chain_head_anchor, format)?;
             Ok(())
         }
     }

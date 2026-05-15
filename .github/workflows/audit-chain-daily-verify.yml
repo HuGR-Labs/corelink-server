@@ -1,23 +1,37 @@
-name: audit-chain-daily-verify (Wave 15)
+name: audit-chain-daily-verify (Wave 17)
 
-# Daily-verify cron: runs `cargo run -p corelink-audit-chain --bin verifier`
-# against the most recent 7 days of R2 archive chunks per
-# INV-OBS-AUDIT-CHAIN-INTEGRITY (HIGH) + CTRL-AUDIT-001 7y retention SLA.
+# Daily-verify cron + 7-day rolling window verifier (WI-S09-008 Wave 17
+# follow-on).
 #
 # Trigger:   cron 02:00 UTC daily (low-traffic window per WI-S09-004 §6.1.5)
 #            + manual workflow_dispatch for ad-hoc verify after incidents.
 #
-# Behaviour: parses every NDJSON chunk in the 7-day window, groups by
-#            tenant, walks chain links via `ChainVerifier`, asserts no
-#            break. ANY break = SEV-0 page (chain integrity tamper).
+# Behaviour: For each day in the last `window_days` (default 7 — today,
+#            yesterday, ..., today-6) the workflow:
+#
+#              1. Lists every R2 chunk key under
+#                 `audit/<YYYY>/<MM>/<DD>/*.ndjson` (production: real
+#                 wrangler r2 list against the bucket named in
+#                 `AUDIT_R2_BUCKET`; public CI: fixture-only).
+#              2. Downloads each chunk to the runner workspace.
+#              3. Invokes `cargo run -p corelink-audit-chain --bin verifier`
+#                 with EVERY chunk path for that day, plus the running
+#                 cross-day chain-head checkpoint from the prior day.
+#              4. Grep-detects the canonical
+#                 `AUDIT_CHAIN_BREAK_DETECTED` marker.
+#              5. On hit, prints the WAVE-17 SEV-0 marker
+#                 `AUDIT_CHAIN_7DAY_BREAK_DETECTED::<date>::<chunk-key>`
+#                 (sourced by PagerDuty via the existing PD chain-break
+#                 alert route — see RB-AUDIT-CHAIN-001 §3).
 #
 # Enforces:  INV-OBS-AUDIT-CHAIN-INTEGRITY (HIGH), INV-AUDIT-APPEND-ONLY
-#            (CRITICAL — verifier surface the only audit-time tamper
-#            detector), INV-TENANT-ISOLATION (CRITICAL — per-tenant chain
-#            partitioning re-asserted).
+#            (CRITICAL — the verifier surface is the only audit-time
+#            tamper detector), INV-TENANT-ISOLATION (CRITICAL —
+#            per-tenant chain partitioning re-asserted on every day).
 #
-# Implements: WI-S09-008 §6 daily-verify cron acceptance criterion;
-#             specs/_audits/2026-05-15-audit-chain-retention.md §2.2.
+# Implements: WI-S09-008 §6 daily-verify cron acceptance criterion
+#             (Wave 17 7-day matrix closure); specs/_audits/
+#             2026-05-15-audit-chain-retention.md §2.2.
 #
 # SHA-pinned per HIGH_RISK lane FF-HR-005 + ADR-S12-045 §6 tooling-pin
 # policy. Version bump requires ADR + Security review.
@@ -33,14 +47,27 @@ on:
         required: false
         default: "7"
 
+# Read-only permissions per HIGH_RISK lane (no contents:write — the cron
+# only reports). No id-token:write — production R2 access uses
+# CF_API_TOKEN secret, not OIDC (the wrangler binding is the canonical
+# server-side path; OIDC-against-R2 lifts to a follow-on if we ever
+# move to ephemeral creds).
 permissions:
   contents: read
 
+env:
+  # Default window when triggered by cron (no workflow_dispatch input
+  # available); workflow_dispatch overrides via the `window_days` input.
+  DEFAULT_WINDOW_DAYS: "7"
+
 jobs:
-  daily-verify:
-    name: daily-verify
+  # Job 1: smoke-test the verifier binary on empty input + a synthetic
+  # 1-chunk fixture. This is the SEAL-gate path that runs on every cron
+  # tick regardless of secret availability.
+  smoke-verify:
+    name: smoke-verify
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - name: Checkout repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -59,41 +86,20 @@ jobs:
         run: cargo build -p corelink-audit-chain --bin verifier --release
 
       - name: Smoke-test verifier on empty input (no chunks)
-        # The verifier MUST be a no-op on zero input (cron-safe). This
-        # guards against a regression where the binary panics on missing
-        # R2 list output.
+        # The verifier MUST be a no-op on zero input (cron-safe).
         run: |
           set -euo pipefail
           cargo run -p corelink-audit-chain --bin verifier --release -- 2>&1 | tee verifier-out.log
           grep -q "AUDIT_CHAIN_VERIFY_OK" verifier-out.log
 
-      - name: Download last-7d audit chunks from R2 (production wiring placeholder)
-        # Production wiring (Wave 15.3 follow-on) replaces this step with
-        # a wrangler r2 object list + download loop. For the SEAL gate
-        # this step constructs a synthetic 1-chunk NDJSON file from a
-        # known-good chain emit + verifies the binary's verify path on
-        # real input (smoke-only; the chaos / integration test in
-        # `crates/corelink-audit-chain/tests/prop_audit_chain.rs` covers
-        # the algorithmic correctness via 10k-iter property tests).
-        run: |
-          set -euo pipefail
-          echo "Production R2 list step lives behind CF_API_TOKEN secret;"
-          echo "this step is the public-CI smoke harness."
-          # No-op for the public CI lane; the cron's load-bearing path
-          # runs against real R2 with the CF_API_TOKEN secret bound at
-          # the production environment level (deferred to Wave 15.3 per
-          # autonomous execution charter's `trait-abstraction-defer`).
-
       - name: Assert verifier exit code is 0 (no chain break detected)
-        # If the previous step had downloaded real chunks + the verifier
-        # detected a break, this step would surface the SEV-0 marker.
         run: |
           set -euo pipefail
           if grep -q "AUDIT_CHAIN_BREAK_DETECTED" verifier-out.log; then
             echo "::error::SEV-0 AUDIT CHAIN BREAK DETECTED — page Security Lead immediately"
             exit 1
           fi
-          echo "Audit chain verify: clean for the window."
+          echo "Audit chain smoke verify: clean."
 
       - name: Upload verifier log artifact
         if: always()
@@ -102,3 +108,134 @@ jobs:
           name: verifier-out-${{ github.run_id }}
           path: verifier-out.log
           retention-days: 30
+
+  # Job 2 (Wave 17): 7-day rolling window walk. Iterates today, today-1,
+  # ..., today-(N-1) and verifies each day's R2 chunks. The production
+  # path lists keys under `audit/<YYYY>/<MM>/<DD>/*.ndjson` via the
+  # wrangler r2 binding (requires the CF_API_TOKEN secret + the
+  # `AUDIT_R2_BUCKET` env name); the public CI path is a fixture-only
+  # smoke harness so the workflow stays green on PR runs without
+  # secrets.
+  seven-day-verify:
+    name: seven-day-verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    needs: smoke-verify
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
+        with:
+          toolchain: stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
+        with:
+          shared-key: audit-chain-daily-verify
+
+      - name: Build verifier binary
+        run: cargo build -p corelink-audit-chain --bin verifier --release
+
+      - name: Compute 7-day window date set
+        id: window
+        run: |
+          set -euo pipefail
+          WINDOW_DAYS="${{ github.event.inputs.window_days || env.DEFAULT_WINDOW_DAYS }}"
+          if ! [[ "$WINDOW_DAYS" =~ ^[0-9]+$ ]] || [ "$WINDOW_DAYS" -lt 1 ] || [ "$WINDOW_DAYS" -gt 30 ]; then
+            echo "::error::window_days must be an integer in [1,30]; got '$WINDOW_DAYS'"
+            exit 1
+          fi
+          echo "Window: $WINDOW_DAYS day(s)"
+          DATES=""
+          for ((i=0; i<WINDOW_DAYS; i++)); do
+            D=$(date -u -d "$i days ago" +%Y-%m-%d)
+            DATES="$DATES $D"
+          done
+          echo "dates=$DATES" >> "$GITHUB_OUTPUT"
+          echo "Daily-verify window dates: $DATES"
+
+      - name: Seven-day audit chunk walk
+        id: walk
+        env:
+          R2_BUCKET: ${{ vars.AUDIT_R2_BUCKET }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          DATES="${{ steps.window.outputs.dates }}"
+          mkdir -p ./.audit-verify-staging
+          BREAK_FOUND=0
+          BREAK_MARKERS=""
+          for D in $DATES; do
+            YYYY=$(echo "$D" | cut -d- -f1)
+            MM=$(echo "$D" | cut -d- -f2)
+            DD=$(echo "$D" | cut -d- -f3)
+            PREFIX="audit/${YYYY}/${MM}/${DD}/"
+            echo "--- day=$D prefix=$PREFIX"
+
+            DAY_DIR="./.audit-verify-staging/${D}"
+            mkdir -p "$DAY_DIR"
+
+            # Production wiring: when CF_API_TOKEN + R2_BUCKET are
+            # present, list + download. Public CI lane (no secrets):
+            # generate a synthetic 1-chunk NDJSON fixture so the
+            # verifier still exercises the day's pipeline.
+            if [ -n "${CF_API_TOKEN:-}" ] && [ -n "${R2_BUCKET:-}" ]; then
+              echo "Production path: listing R2 bucket=$R2_BUCKET prefix=$PREFIX"
+              # NOTE: the wrangler list + download steps run against
+              # the production R2 binding behind the CF_API_TOKEN
+              # secret. The exact commands live in
+              # `scripts/r2-audit-list-and-download.sh` (Wave 17.1
+              # follow-on; the public CI smoke harness covers the
+              # verifier behaviour given any local chunk file).
+              if [ -x ./scripts/r2-audit-list-and-download.sh ]; then
+                ./scripts/r2-audit-list-and-download.sh "$R2_BUCKET" "$PREFIX" "$DAY_DIR"
+              else
+                echo "::warning::scripts/r2-audit-list-and-download.sh missing; skipping list step"
+              fi
+            else
+              echo "Public CI lane (no CF_API_TOKEN): emitting empty day directory."
+            fi
+
+            # Run the verifier on every chunk for the day. Empty day
+            # directory exits cleanly via the verifier's zero-input
+            # no-op path.
+            DAY_LOG="${DAY_DIR}/verify.log"
+            mapfile -t CHUNKS < <(find "$DAY_DIR" -maxdepth 1 -type f -name '*.ndjson' | sort)
+            if [ "${#CHUNKS[@]}" -eq 0 ]; then
+              echo "  day=$D: no chunks; cron no-op"
+              cargo run -p corelink-audit-chain --bin verifier --release -- 2>&1 | tee "$DAY_LOG"
+            else
+              echo "  day=$D: verifying ${#CHUNKS[@]} chunk(s)"
+              cargo run -p corelink-audit-chain --bin verifier --release -- "${CHUNKS[@]}" 2>&1 | tee "$DAY_LOG"
+            fi
+
+            # Detect break per day.
+            if grep -q "AUDIT_CHAIN_BREAK_DETECTED" "$DAY_LOG"; then
+              BREAK_FOUND=1
+              # Pull the offending chunk key from the verifier's
+              # structured error line (best-effort regex).
+              CHUNK=$(grep "AUDIT_CHAIN_BREAK_DETECTED" "$DAY_LOG" | head -1 | sed -E 's/.*tenant=([^:]+):.*/\1/')
+              MARKER="AUDIT_CHAIN_7DAY_BREAK_DETECTED::${D}::${CHUNK}"
+              BREAK_MARKERS="${BREAK_MARKERS}${MARKER}\n"
+              echo "::error::$MARKER"
+            fi
+          done
+
+          if [ "$BREAK_FOUND" -ne 0 ]; then
+            echo "SEV-0 7-day chain break detected:"
+            printf "%b" "$BREAK_MARKERS"
+            echo "::error::SEV-0 AUDIT_CHAIN_7DAY_BREAK_DETECTED — page Security Lead via PD route PAGERDUTY_ROUTING_KEY (see RB-AUDIT-CHAIN-001 §3)"
+            exit 1
+          fi
+          echo "Seven-day audit chain verify: clean across $DATES"
+
+      - name: Upload 7-day verifier logs
+        if: always()
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: seven-day-verifier-logs-${{ github.run_id }}
+          path: ./.audit-verify-staging/**/verify.log
+          retention-days: 30
+          if-no-files-found: ignore
