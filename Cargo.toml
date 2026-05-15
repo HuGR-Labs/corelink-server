@@ -325,6 +325,10 @@ lru = "0.18"
 aws-config = { version = "1", default-features = false, features = ["behavior-version-latest", "rt-tokio", "credentials-process", "sso", "default-https-client"] }
 aws-sdk-kms = { version = "1", default-features = false, features = ["rt-tokio", "default-https-client"] }
 
+# RFC 8785 JCS canonical JSON for AAD / encryption_context binding
+# (used by BYOK providers + audit-chain link hashing).
+serde_jcs = "0.2"
+
 # Crypto / encoding (S-01 foundation)
 hmac = "0.12"
 sha2 = "0.10"

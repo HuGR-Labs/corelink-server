@@ -24,26 +24,51 @@ print_stdout = "deny"
 print_stderr = "deny"
 mod_module_files = "deny"
 
+[features]
+default = []
+# `real` opts in to the live AWS KMS path (`AwsKmsRealProvider`); without
+# it the crate only exposes `AwsKmsProvider` (mock + ARN validation +
+# constants). The server crate exposes `byok-aws-real` which forwards
+# here. The `real` feature has no effect on `wasm32-unknown-unknown` —
+# wasm32 always links the `AwsKmsWasmStub`.
+real = []
+
 [dependencies]
 corelink-byok = { path = "../corelink-byok" }
 
-# AWS SDK — KMS only; minimal footprint.
-aws-config = { workspace = true }
-aws-sdk-kms = { workspace = true }
-
 # Async
 async-trait = { workspace = true }
-tokio = { workspace = true }
 
 # Serde
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+# RFC 8785 JCS canonical JSON — used for AAD / encryption_context
+# canonicalization per INV-BYOK-CRYPTO-SOVEREIGNTY (the same canonical
+# bytes must be reproducible across architectures including wasm32 so
+# that AAD-bound ciphertext can be verified anywhere).
+serde_jcs = { workspace = true }
+
+# Constant-time byte comparison for AAD fingerprint / digest checks.
+subtle = { workspace = true }
 
 # Error handling
 thiserror = { workspace = true }
 
 # Observability
 tracing = { workspace = true }
+
+# ── Native-only AWS SDK stack ─────────────────────────────────────────────
+# The official `aws-sdk-kms` crate uses tokio + hyper + OS-level TLS and
+# does not build for `wasm32-unknown-unknown`. On wasm32 (Cloudflare
+# Worker) we instead link `AwsKmsWasmStub` (see `src/real.rs`) which
+# returns an explicit `BYOKError::Provider` from every call; the
+# production wasm path uses the Workers-side AWS SDK binding via fetch.
+# See `specs/_audits/2026-05-15-byok-real-provider-pattern.md`.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+aws-config = { workspace = true }
+aws-sdk-kms = { workspace = true }
+tokio = { workspace = true }
 
 [dev-dependencies]
 tokio-test = { workspace = true }
@@ -55,6 +80,10 @@ serde_json = { workspace = true }
 [[test]]
 name = "aws_unit"
 path = "tests/aws_unit.rs"
+
+[[test]]
+name = "real_unit"
+path = "tests/real_unit.rs"
 
 [[test]]
 name = "e2e_byok_aws_kms"
