@@ -2640,6 +2640,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "e2e-resilience"
+version = "0.1.0"
+dependencies = [
+ "corelink-rate-headers",
+ "corelink-ratelimit",
+ "thiserror 2.0.18",
+ "uuid",
+]
+
+[[package]]
 name = "e2e-signup-flow"
 version = "0.1.0"
 dependencies = [

@@ -1,0 +1,40 @@
+[package]
+name = "e2e-resilience"
+description = "R3-6 end-to-end resilience harness: rate-limit burst + token-bucket refill + 3-state circuit breaker (multi-signal trip, hysteresis recovery, HalfOpen 10% probe) + back-pressure queue + audit fail-CLOSED ordering. Pure-logic deterministic E2E that composes the canonical orchestrators in `corelink-ratelimit` (camada 1) and `corelink-rate-headers::circuit` (camada 0) under a logical clock + seeded RNG. No real network; no SystemTime; the back-pressure adjudicator is a minimal in-test helper that exercises the same audit-before-reject envelope the production Tower layer enforces."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+corelink-ratelimit = { path = "../../crates/corelink-ratelimit" }
+corelink-rate-headers = { path = "../../crates/corelink-rate-headers" }
+uuid = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+
+[[test]]
+name = "scenarios"
+path = "tests/scenarios.rs"

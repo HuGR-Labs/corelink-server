@@ -165,6 +165,12 @@ members = [
     # CHAOS-STAGING-ONLY); 200-case property test on deterministic seed
     # replay (FNV-1a bit-identical). In-memory fakes; no network IO.
     "tests/e2e-chaos",
+    # R3-6 end-to-end resilience harness: rate-limit burst + token-bucket
+    # refill + 3-state circuit breaker (multi-signal trip + hysteresis +
+    # HalfOpen 10% probe) + back-pressure queue + audit fail-CLOSED.
+    # Composes corelink-ratelimit (camada 1) + corelink-rate-headers
+    # (camada 0) under a logical clock; no real network.
+    "tests/e2e-resilience",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
