@@ -56,3 +56,17 @@ thiserror = { workspace = true }
 
 # wasm bindgen futures for async bridging in the worker handler.
 wasm-bindgen-futures = { workspace = true }
+
+# Host-side native tests for INV-CAS-IDEMPOTENCY exercise the
+# `corelink-worker::storage::r2::InMemoryR2` fake (same trait surface as
+# the wasm32-only `CfR2BucketAdapter`). The native build of this crate is
+# empty (cfg-gated at `target_arch = "wasm32"`), so the proptest under
+# `tests/` runs against the trait-abstraction-defer fake and asserts the
+# CAS contract that the production adapter MUST also satisfy.
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+proptest = { workspace = true }
+rand = "0.9"
+rand_chacha = "0.9"
+bytes = { workspace = true }
+tokio = { workspace = true }
+corelink-worker = { workspace = true }
