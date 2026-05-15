@@ -170,7 +170,7 @@ Statement of Applicability (SoA) cobre os 93 controles Anexo A:2022. Mapping com
 | Art. 15 | Término do tratamento                                  | §8 privacy_model (retention)                | EVT-042                 |
 | Art. 17 | Titular tem direito                                    | §6 privacy_model (DSRs)                     | EVT-048 (DSR_EVIDENCE)     |
 | Art. 18 I–IX | Direitos específicos                              | §6 privacy_model                            | EVT-048 (DSR_EVIDENCE)     |
-| Art. 33 | Transferência internacional                           | §7 privacy_model (SCC, residency)          | EVT-044                 |
+| Art. 33 §1º | Transferência internacional + adequação              | §7 privacy_model + CTRL-PRIV-031 (residency pinning fail-CLOSED 451) + attestation bundle `specs/_compliance/LGPD-RESIDENCY-ATTESTATION-2026-05-15.md` (GAP-22 closed 2026-05-15) | EVT-044 + `dev.hugr.corelink.residency.{request_routed,write_rejected_cross_region}.v1` |
 | Art. 37 | Registro de operações                                  | Audit events CloudEvents                    | EVT-047 (AUDIT_EVENT)      |
 | Art. 38 | Relatório de impacto à proteção de dados (RIPD)       | DPIA por WI HIGH_RISK                       | EVT-045                         |
 | Art. 41 | Encarregado (DPO)                                      | Privacy Officer nomeado (Gustavo interim)   | EVT-032                  |
