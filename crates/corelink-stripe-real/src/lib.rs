@@ -51,10 +51,16 @@
 pub mod client;
 pub mod dlq;
 pub mod error;
+pub mod portal;
 pub mod retry;
 pub mod webhook;
 
 pub use client::{StripeRealClient, StripeRealClientBuilder};
+pub use portal::{
+    BillingPortalSessionCreator, InMemoryPortalAuditSink, InMemoryPortalSessionCreator,
+    PortalAuditEvent, PortalAuditSink, PortalSessionError, PortalSessionUrl,
+    RecordedPortalEvent,
+};
 pub use dlq::{
     DlqError, DlqQuarantineOutcome, DlqReplayOutcome, InMemoryWebhookDlqStore,
     WebhookDlqRow, WebhookDlqStore, DEFAULT_DLQ_TTL_MS, DLQ_DEPTH_GAUGE,

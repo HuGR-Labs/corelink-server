@@ -64,6 +64,14 @@ const sidebars: SidebarsConfig = {
             "rbac-audit-role-changes",
           ],
         },
+        {
+          type: "category",
+          label: "Billing",
+          collapsed: true,
+          items: [
+            "billing-manage-subscription",
+          ],
+        },
       ],
     },
     {
