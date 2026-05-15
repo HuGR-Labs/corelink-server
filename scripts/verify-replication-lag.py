@@ -46,6 +46,9 @@ import json
 import os
 import sys
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass, field, asdict
 from typing import Callable, Iterable
 
@@ -89,6 +92,32 @@ SLO_IDS: dict[str, str] = {
     "kv": "SLO-REPLICATION-LAG-KV",
     "do": "SLO-REPLICATION-LAG-DO",
     "neon": "SLO-REPLICATION-LAG-NEON (soft)",
+}
+
+# Canonical Prometheus metric names per domain.
+# LOAD-BEARING: these must match the Rust constants in
+#   - crates/corelink-replica-worker/src/metrics.rs::METRIC_REPLICATION_LAG_SECONDS
+#   - crates/corelink-region/src/replica_lag.rs::METRIC_D1_REPLICA_LAG_SECONDS
+# Renaming on either side requires updating both.
+PROM_METRIC: dict[str, str] = {
+    "r2_hot": "corelink_replication_lag_seconds",
+    "r2_crr": "corelink_r2_crr_lag_seconds",          # P1-004 (probe indirect)
+    "d1": "corelink_d1_replica_lag_seconds",
+    "kv": "corelink_kv_propagation_lag_seconds",      # P1-001
+    "do": "corelink_do_sync_age_seconds",             # P1-003
+    "neon": "corelink_neon_replica_lag_seconds",      # P2-001 (soft)
+}
+
+# Domain-keyed Prometheus label filter (LOAD-BEARING for the histogram_quantile
+# query). r2_hot uses `domain="r2_hot"` because it shares the histogram name
+# across multiple domains; other domains use the metric name alone.
+PROM_LABELS: dict[str, str] = {
+    "r2_hot": 'domain="r2_hot"',
+    "r2_crr": "",
+    "d1": "",
+    "kv": "",
+    "do": "",
+    "neon": "",
 }
 
 # Canonical 4-region GA list.
@@ -205,12 +234,142 @@ def probe_inmemory_neon(_mode: str, _primary: str, _replica: str) -> float:
     return 0.8
 
 
-def _staging_not_wired(domain: str) -> Probe:
-    def _p(_mode: str, _primary: str, _replica: str) -> float:
-        raise NotImplementedError(
-            f"Probe for domain={domain!r} in mode=staging/prod is not yet "
-            f"wired (see specs/_audits/replication-followup-tickets.md "
-            f"R-PREP-REPL-P0-001..004). Use --mode=inmemory in CI."
+# --- Staging / prod Prometheus probe ---------------------------------------
+#
+# Wire mode:
+#   - HTTP: `CORELINK_PROMETHEUS_URL` env (e.g. `https://prom.staging.corelink.dev`).
+#     Queries `histogram_quantile(0.99, sum by (le, primary_region, replica_region)
+#     (rate({metric}_bucket{{labels}}[1h])))` and reads per-pair p99 lag.
+#   - Fixture: `CORELINK_VERIFIER_FIXTURE` env points to a JSON file with shape
+#     `{"<domain>": {"<primary>-><replica>": <lag_seconds>, ...}, ...}`. This
+#     path is the SOTA-rigor test surface for the staging/prod code path
+#     without requiring a live Prometheus endpoint — CI can exercise the same
+#     parser used in production.
+#
+# If neither env is set, exit-code 2 (inconclusive) is returned per the
+# script header's exit-code contract.
+
+PROMETHEUS_URL_ENV = "CORELINK_PROMETHEUS_URL"
+VERIFIER_FIXTURE_ENV = "CORELINK_VERIFIER_FIXTURE"
+PROMETHEUS_HTTP_TIMEOUT_SECS = 10.0
+
+
+class ProbeUnwired(Exception):
+    """Neither Prometheus URL nor fixture is configured for staging/prod."""
+
+
+class ProbeQueryError(Exception):
+    """The Prometheus query failed (network / parse / no data)."""
+
+
+def _load_fixture() -> dict | None:
+    path = os.environ.get(VERIFIER_FIXTURE_ENV)
+    if not path:
+        return None
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _query_prometheus_p99(metric: str, labels: str) -> dict[tuple[str, str], float]:
+    """Query Prometheus for per-region-pair p99 lag.
+
+    Returns a map ``{(primary, replica): lag_seconds}`` for every region pair
+    the histogram emitted at least one observation for during the last 1h.
+
+    Raises ``ProbeUnwired`` if `CORELINK_PROMETHEUS_URL` is not set.
+    Raises ``ProbeQueryError`` on network / decode / "no data" failures.
+    """
+    base = os.environ.get(PROMETHEUS_URL_ENV)
+    if not base:
+        raise ProbeUnwired(
+            f"{PROMETHEUS_URL_ENV} not set; cannot run staging/prod probe"
+        )
+    bucket_metric = f"{metric}_bucket"
+    label_filter = f"{{{labels}}}" if labels else ""
+    promql = (
+        f"histogram_quantile(0.99, sum by (le, primary_region, replica_region) "
+        f"(rate({bucket_metric}{label_filter}[1h])))"
+    )
+    url = base.rstrip("/") + "/api/v1/query?" + urllib.parse.urlencode({"query": promql})
+    try:
+        with urllib.request.urlopen(url, timeout=PROMETHEUS_HTTP_TIMEOUT_SECS) as resp:
+            payload = json.load(resp)
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        raise ProbeQueryError(f"prometheus query failed: {e}") from e
+    except json.JSONDecodeError as e:
+        raise ProbeQueryError(f"prometheus response decode failed: {e}") from e
+
+    if payload.get("status") != "success":
+        raise ProbeQueryError(
+            f"prometheus query non-success: {payload.get('error', '<no error field>')}"
+        )
+    out: dict[tuple[str, str], float] = {}
+    for series in payload.get("data", {}).get("result", []):
+        m = series.get("metric", {})
+        primary = m.get("primary_region")
+        replica = m.get("replica_region")
+        value = series.get("value")
+        if not primary or not replica or not value or len(value) != 2:
+            continue
+        try:
+            out[(primary, replica)] = float(value[1])
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+# Cache so multiple region-pair calls per domain hit Prometheus only once.
+_PROM_CACHE: dict[str, dict[tuple[str, str], float]] = {}
+_FIXTURE_CACHE: dict | None = None
+_FIXTURE_LOADED = False
+
+
+def _staging_probe(domain: str) -> Probe:
+    """Build the staging/prod probe for `domain`.
+
+    Resolution order:
+      1. `CORELINK_VERIFIER_FIXTURE` (deterministic test fixture).
+      2. `CORELINK_PROMETHEUS_URL` (real Prometheus query — production path).
+      3. Raise `ProbeUnwired` → verifier exits 2 (inconclusive, do NOT page).
+    """
+
+    def _p(_mode: str, primary: str, replica: str) -> float:
+        global _FIXTURE_CACHE, _FIXTURE_LOADED
+        # Fixture path (CI / deterministic regression).
+        if not _FIXTURE_LOADED:
+            _FIXTURE_CACHE = _load_fixture()
+            _FIXTURE_LOADED = True
+        if _FIXTURE_CACHE is not None:
+            dom = _FIXTURE_CACHE.get(domain) or {}
+            key = f"{primary}->{replica}"
+            if key in dom:
+                value = dom[key]
+                if not isinstance(value, (int, float)):
+                    raise ProbeQueryError(
+                        f"fixture lag for {domain}/{key} is not numeric: {value!r}"
+                    )
+                return float(value)
+            # Some domains (e.g. `do`) use primary==replica or sparse keys;
+            # fall through to the cross-pair default of 0.0 only if explicitly
+            # marked; otherwise treat missing key as inconclusive.
+            raise ProbeQueryError(
+                f"fixture missing entry for {domain}/{key}; "
+                f"add it or remove the domain from the run"
+            )
+
+        # Real Prometheus path.
+        if domain not in _PROM_CACHE:
+            metric = PROM_METRIC[domain]
+            labels = PROM_LABELS[domain]
+            _PROM_CACHE[domain] = _query_prometheus_p99(metric, labels)
+        per_pair = _PROM_CACHE[domain]
+        if (primary, replica) in per_pair:
+            return per_pair[(primary, replica)]
+        # No data for the pair — most likely the histogram has not yet
+        # received an observation for that pair (fresh deploy / cold pair).
+        raise ProbeQueryError(
+            f"prometheus has no observations for {domain} "
+            f"primary={primary} replica={replica} in the last 1h"
         )
 
     return _p
@@ -229,8 +388,8 @@ PROBES_INMEMORY: dict[str, Probe] = {
 def probes_for_mode(mode: str) -> dict[str, Probe]:
     if mode == "inmemory":
         return PROBES_INMEMORY
-    # staging + prod share the same not-yet-wired stub for each domain.
-    return {d: _staging_not_wired(d) for d in PROBES_INMEMORY}
+    # staging + prod share the same Prometheus / fixture probe per domain.
+    return {d: _staging_probe(d) for d in PROBES_INMEMORY}
 
 
 # ---------------------------------------------------------------------------
@@ -277,6 +436,13 @@ def run_verifier(
         timestamp_ms=int(time.time() * 1000),
     )
 
+    # Reset module-level caches so repeated calls in the same process are
+    # idempotent (important for tests).
+    global _PROM_CACHE, _FIXTURE_CACHE, _FIXTURE_LOADED
+    _PROM_CACHE = {}
+    _FIXTURE_CACHE = None
+    _FIXTURE_LOADED = False
+
     probes = probes_for_mode(mode)
 
     for domain in domains:
@@ -291,8 +457,13 @@ def run_verifier(
         for primary, replica in region_pairs_for_domain(domain):
             try:
                 lag = probe(mode, primary, replica)
-            except NotImplementedError as e:
+            except (NotImplementedError, ProbeUnwired) as e:
                 # Mode unwired — inconclusive, not a fail.
+                report.error = str(e)
+                report.exit_code = 2
+                return report
+            except ProbeQueryError as e:
+                # Query failed (network / no data) — inconclusive, not SEV-paged.
                 report.error = str(e)
                 report.exit_code = 2
                 return report

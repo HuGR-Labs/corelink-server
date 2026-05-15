@@ -16,6 +16,9 @@ use std::sync::{Arc, Mutex};
 use crate::audit::{ReplicaAuditEventType, ReplicaAuditRecord, ReplicaAuditSink};
 use crate::error::ReplicaError;
 use crate::hot_blob::{HotBlob, ReplicaStatus};
+use crate::metrics::{
+    BatchOutcome, InMemoryReplicationLagSli, ReplicationDomain, ReplicationLagSli,
+};
 use crate::region::ResidencyGraph;
 
 /// Maximum retry attempts before emitting `RetryExhausted` + SEV-2 alert.
@@ -74,6 +77,8 @@ pub struct InMemoryReplicationWorker {
     r2: R2Store,
     audit: Arc<dyn ReplicaAuditSink>,
     residency: ResidencyGraph,
+    /// Lag SLI emit point (closes DEBT-011 R-PREP-REPL-P0-001).
+    sli: Arc<dyn ReplicationLagSli>,
 }
 
 impl InMemoryReplicationWorker {
@@ -97,7 +102,34 @@ impl InMemoryReplicationWorker {
             r2: Arc::new(Mutex::new(HashMap::new())),
             audit,
             residency: ResidencyGraph,
+            sli: Arc::new(InMemoryReplicationLagSli::new()),
         }
+    }
+
+    /// Create a worker with a caller-supplied [`ReplicationLagSli`].
+    ///
+    /// Production wiring (CF Worker cron) passes a Prometheus-backed impl;
+    /// tests can pass [`crate::metrics::InMemoryReplicationLagSli`] for
+    /// deterministic assertion or [`crate::metrics::FailingReplicationLagSli`]
+    /// to verify that SLI emit failure does NOT block replication completion
+    /// (best-effort observability per S-06 P0-2 — audit chain is canonical).
+    pub fn with_sli(
+        audit: Arc<dyn ReplicaAuditSink>,
+        sli: Arc<dyn ReplicationLagSli>,
+    ) -> Self {
+        InMemoryReplicationWorker {
+            r2: Arc::new(Mutex::new(HashMap::new())),
+            audit,
+            residency: ResidencyGraph,
+            sli,
+        }
+    }
+
+    /// Accessor for the underlying SLI (useful when the worker owns the
+    /// default `InMemoryReplicationLagSli` — tests can read observations
+    /// without holding a separate `Arc`).
+    pub fn sli(&self) -> Arc<dyn ReplicationLagSli> {
+        Arc::clone(&self.sli)
     }
 
     /// Seed a blob into the simulated primary R2 store.
@@ -159,7 +191,7 @@ impl InMemoryReplicationWorker {
                     .unwrap_or_default()
             };
             if actual_hash == expected_hash {
-                // 5. Emit completed.
+                // 5. Emit completed audit BEFORE Sli (audit is canonical).
                 self.audit
                     .emit(ReplicaAuditRecord {
                         event_type: ReplicaAuditEventType::ReplicationCompleted,
@@ -171,6 +203,32 @@ impl InMemoryReplicationWorker {
                         detail: format!("attempt={attempt}"),
                     })
                     .map_err(ReplicaError::Audit)?;
+
+                // 6. Emit lag SLI (best-effort; failure logged via audit,
+                //    NEVER blocks replication completion — see
+                //    `crates/corelink-replica-worker/src/metrics.rs` module
+                //    docs and DEBT-011 R-PREP-REPL-P0-001).
+                let lag_secs = compute_lag_seconds(ts_ms, blob.last_access_ms);
+                if let Err(sli_err) = self.sli.emit_lag(
+                    ReplicationDomain::R2Hot,
+                    blob.primary_region,
+                    blob.replica_region,
+                    lag_secs,
+                    ts_ms,
+                ) {
+                    // Audit-log SLI emit failure for forensic trace; do NOT
+                    // propagate as replication failure (audit is canonical,
+                    // SLI is best-effort observability).
+                    let _ = self.audit.emit(ReplicaAuditRecord {
+                        event_type: ReplicaAuditEventType::ReplicationCompleted,
+                        tenant_id_hash: sha256_hex(&blob.tenant_id),
+                        blob_hash: blob.blob_hash.clone(),
+                        primary_region: blob.primary_region.as_str().to_owned(),
+                        replica_region: blob.replica_region.as_str().to_owned(),
+                        timestamp_ms: ts_ms,
+                        detail: format!("sli_emit_failed: {sli_err}"),
+                    });
+                }
                 return Ok(());
             }
             last_err = Some(ReplicaError::HashMismatch {
@@ -204,26 +262,51 @@ impl InMemoryReplicationWorker {
 impl ReplicationWorker for InMemoryReplicationWorker {
     fn replicate_batch(&self, blobs: &[HotBlob]) -> Result<u32, ReplicaError> {
         let mut replicated = 0u32;
+        let mut attempted = 0u32;
+        let batch_ts_ms: u64 = 0;
         for blob in blobs {
             if blob.replication_status != ReplicaStatus::Pending
                 && blob.replication_status != ReplicaStatus::Failed
             {
                 continue;
             }
-            match self.replicate_one(blob, 0) {
+            attempted += 1;
+            match self.replicate_one(blob, batch_ts_ms) {
                 Ok(()) => replicated += 1,
                 Err(ReplicaError::ResidencyViolation { .. }) => {
-                    // Residency violations are hard errors; propagate.
+                    // Residency violations are hard errors; emit `failed`
+                    // batch outcome BEFORE propagating (silent-skip hazard
+                    // mitigation per audit §5.2).
+                    let _ = self.sli.emit_batch_outcome(
+                        ReplicationDomain::R2Hot,
+                        BatchOutcome::Failed,
+                        batch_ts_ms,
+                    );
                     return Err(ReplicaError::ResidencyViolation {
                         primary: blob.primary_region,
                         replica: blob.replica_region,
                     });
                 }
                 Err(_) => {
-                    // RetryExhausted / hash mismatch: log and continue batch.
+                    // RetryExhausted / hash mismatch: continue batch.
+                    // Outcome discrimination happens after the loop.
                 }
             }
         }
+        // Emit batch outcome counter — closes audit §5.2 silent-skip hazard.
+        let outcome = if attempted == 0 {
+            // Empty batch: no observation needed.
+            return Ok(replicated);
+        } else if replicated == attempted {
+            BatchOutcome::Ok
+        } else if replicated == 0 {
+            BatchOutcome::Failed
+        } else {
+            BatchOutcome::Partial
+        };
+        let _ = self
+            .sli
+            .emit_batch_outcome(ReplicationDomain::R2Hot, outcome, batch_ts_ms);
         Ok(replicated)
     }
 }
@@ -306,4 +389,23 @@ fn sha256_hex(s: &str) -> String {
 #[inline]
 fn u64(b: u8) -> u64 {
     b as u64
+}
+
+/// Compute replication lag in seconds between two millisecond timestamps.
+///
+/// `completed_ms` = wall-clock at the `replication.completed` audit emit.
+/// `last_access_ms` = `HotBlob::last_access_ms` (proxy for blob freshness;
+/// in production CF Worker wiring this is the `blob.created_ts` per the
+/// acceptance criterion in `replication-followup-tickets.md
+/// R-PREP-REPL-P0-001 §1`).
+///
+/// Clock-skew defensive: clamps negative deltas to `0.0` (replica may briefly
+/// observe a "future" `last_access_ms` if the source DB clock is ahead; the
+/// SLI must never emit a negative observation per
+/// `corelink-replica-worker::metrics::InMemoryReplicationLagSli::emit_lag`
+/// guard).
+#[inline]
+fn compute_lag_seconds(completed_ms: u64, last_access_ms: u64) -> f64 {
+    let delta_ms = completed_ms.saturating_sub(last_access_ms);
+    (delta_ms as f64) / 1000.0
 }

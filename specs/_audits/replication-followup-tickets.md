@@ -48,6 +48,15 @@ Each ticket below uses the canonical form:
 
 ### R-PREP-REPL-P0-001 — R2-hot replication lag continuous SLI
 
+- **Status:** **CLOSED 2026-05-15** (wt/debt-011-replication-p0)
+- **Closure summary:** `ReplicationLagSli` trait + `InMemoryReplicationLagSli`
+  added in `crates/corelink-replica-worker/src/metrics.rs`; SLI emit wired
+  into `InMemoryReplicationWorker::replicate_one` AFTER the
+  `replication.completed` audit (audit canonical / SLI best-effort).
+  Batch outcome counter (`ok`/`partial`/`failed`) closes the silent-skip
+  hazard from audit §5.2. Real Cloudflare Workers production wiring
+  remains `trait-abstraction-defer` per charter. Tests:
+  `crates/corelink-replica-worker/tests/sli_emit.rs` (6 unit + 1 proptest).
 - **ID:** R-PREP-REPL-P0-001
 - **Priority:** P0
 - **Domain:** R2 (hot blobs via replica-worker)
@@ -68,6 +77,15 @@ Each ticket below uses the canonical form:
 
 ### R-PREP-REPL-P0-002 — D1 read-replica lag continuous SLI
 
+- **Status:** **CLOSED 2026-05-15** (wt/debt-011-replication-p0)
+- **Closure summary:** `D1ReplicaLagProbe` trait + `InMemoryD1ReplicaLagProbe`
+  added in `crates/corelink-region/src/replica_lag.rs`; canonical metric
+  name `corelink_d1_replica_lag_seconds` + 30 s cadence + 60 s p99 ceiling
+  exported as constants. DR-16 §1 Detect step now has a stable trait
+  boundary to consume in lieu of CF dashboard polling. Real Cloudflare
+  Workers production wiring (D1 SDK `SELECT MAX(...)` cross-region query)
+  remains `trait-abstraction-defer` per charter. Tests:
+  `crates/corelink-region/tests/d1_replica_lag_sli.rs` (9 unit).
 - **ID:** R-PREP-REPL-P0-002
 - **Priority:** P0
 - **Domain:** D1 (cross-region read replica)
@@ -85,6 +103,16 @@ Each ticket below uses the canonical form:
 
 ### R-PREP-REPL-P0-003 — Cross-region replication-lag verifier in daily cron
 
+- **Status:** **CLOSED 2026-05-15** (wt/debt-011-replication-p0)
+- **Closure summary:** `scripts/verify-replication-lag.py` `--mode=staging`
+  and `--mode=prod` no longer raise `NotImplementedError`. Two wiring paths:
+  (a) `CORELINK_PROMETHEUS_URL` env → `histogram_quantile(0.99,
+  rate({metric}_bucket{labels}[1h]))` HTTP query against Prometheus
+  `/api/v1/query`; (b) `CORELINK_VERIFIER_FIXTURE` env → deterministic JSON
+  fixture (CI / regression path). Canonical metric names matched against
+  the Rust constants (`METRIC_REPLICATION_LAG_SECONDS` /
+  `METRIC_D1_REPLICA_LAG_SECONDS`). Exit-code contract preserved: 0 = pass,
+  1 = at least one pair over RPO, 2 = inconclusive (no env / no data).
 - **ID:** R-PREP-REPL-P0-003
 - **Priority:** P0
 - **Domain:** Cross-domain (orchestration)
@@ -203,12 +231,12 @@ Each ticket below uses the canonical form:
 
 ## Summary
 
-| Priority | Count | Description |
-|---|---|---|
-| P0 | 3 | Hard blockers for DR-16 prod-mode dry-run (SLI + verifier coverage of R2-hot + D1 + daily aggregate). |
-| P1 | 4 | Required before GA; covers KV + audit_outbox + DO + R2-CRR. |
-| P2 | 3 | Post-GA polish (Neon SLI + replica-worker coverage + multipart-failover inventory). |
-| **Total** | **10** | |
+| Priority | Count | Status | Description |
+|---|---|---|---|
+| P0 | 3 | **CLOSED 2026-05-15** (wt/debt-011-replication-p0) | Hard blockers for DR-16 prod-mode dry-run (SLI + verifier coverage of R2-hot + D1 + daily aggregate). |
+| P1 | 4 | open | Required before GA; covers KV + audit_outbox + DO + R2-CRR. |
+| P2 | 3 | open | Post-GA polish (Neon SLI + replica-worker coverage + multipart-failover inventory). |
+| **Total** | **10** | **3 / 10 CLOSED** | |
 
 All 10 tickets reference back to the canonical audit (`2026-05-15-replication-audit.md`) and the four new SLOs (`SLO-REPLICATION-LAG-{R2,D1,KV,DO}`) added to `slo_catalog.md` in the same commit.
 

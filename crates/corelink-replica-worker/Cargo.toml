@@ -38,3 +38,7 @@ path = "tests/prop_replica.rs"
 [[test]]
 name = "adversarial"
 path = "tests/adversarial.rs"
+
+[[test]]
+name = "sli_emit"
+path = "tests/sli_emit.rs"

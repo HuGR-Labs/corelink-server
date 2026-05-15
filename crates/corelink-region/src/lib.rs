@@ -22,3 +22,10 @@ pub mod event;
 pub mod metrics;
 pub mod migration;
 pub mod region;
+pub mod replica_lag;
+
+pub use region::Region;
+pub use replica_lag::{
+    D1LagSample, D1ReplicaLagProbe, FailingD1ReplicaLagProbe, InMemoryD1ReplicaLagProbe,
+    D1_PROBE_CADENCE_SECONDS, D1_REPLICA_LAG_P99_CEILING_SECONDS, METRIC_D1_REPLICA_LAG_SECONDS,
+};

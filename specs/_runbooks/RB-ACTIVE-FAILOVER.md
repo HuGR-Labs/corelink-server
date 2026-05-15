@@ -74,6 +74,9 @@ The following alerts MUST fire (or be synthetically fired in `--simulate`/`--sta
 | `Slo5xxBurnRate-{region}` | gateway error-rate panel | `sum(rate(gw_request_error_rate_5xx[5m])) > 0.05` for ≥ 5 min |
 | `LatencyP95Breach-{region}` | gateway latency histogram | `histogram_quantile(0.95, gw_request_latency_p95) > 5.0` for ≥ 5 min |
 | `ReplicationLagWithinBudget-{sibling}` | replica-worker checkpoint | `replication_lag_seconds_p99{region="<sibling>"} <= 300` (gate, not alert) |
+| `ReplicationLagR2HotSli` | `corelink_replication_lag_seconds{domain="r2_hot",primary_region,replica_region}` (continuous SLI; closes DEBT-011 P0-001 — `SLO-REPLICATION-LAG-R2`, `slo_catalog.md §4.23`) | `histogram_quantile(0.99, rate({metric}_bucket[1h])) <= 60` |
+| `ReplicationLagD1Sli` | `corelink_d1_replica_lag_seconds{primary_region,replica_region}` (continuous SLI; closes DEBT-011 P0-002 — `SLO-REPLICATION-LAG-D1`, `slo_catalog.md §4.24`) | `quantile_over_time(0.99, metric[1h]) <= 60`; **read this instead of the CF dashboard** when sequencing step 1.3 below (was the GAP-R3 hazard pre-2026-05-15) |
+| `ReplicationVerifierStatus` | `scripts/verify-replication-lag.py --mode=prod` (daily cron; closes DEBT-011 P0-003) | exit 0 = all domains within RPO; exit 1 = SEV ladder applies; exit 2 = inconclusive (do NOT page) |
 
 ### 1.2 Commands
 
