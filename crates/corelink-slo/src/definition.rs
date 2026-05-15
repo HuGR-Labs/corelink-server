@@ -77,6 +77,16 @@ pub enum Sli {
     /// read-replica lag (soft / informational; p99 ≤ 5 s, no paging at
     /// GA). Closure from DR-16 wave-14 audit.
     ReplicationLagNeon,
+    /// `SLO-FRESH-DSR-ERASURE` per `slo_catalog.md §4.12` — DSR
+    /// erasure resolution freshness target (≥ 99 % of erasure tickets
+    /// resolve within 30 days; LGPD Art. 19 + GDPR Art. 12.3 + CCPA
+    /// §1798.130 SLA). Bound from
+    /// `specs/_audits/2026-05-15-dsr-worker-production.md §3`
+    /// closure of WI-S11-002 SLI binding gap. The emit point is the
+    /// `corelink-privacy-erasure-worker` 24h verification job which
+    /// observes `corelink_dsr_resolution_hours` once per completed
+    /// DSR ticket (S-11 / WI-S11-002 §10.4 O-4.1 metric).
+    FreshDsrErasure,
 }
 
 impl Sli {
@@ -103,6 +113,7 @@ impl Sli {
             Self::ReplicationLagD1 => "SLO-REPLICATION-LAG-D1",
             Self::ReplicationLagKv => "SLO-REPLICATION-LAG-KV",
             Self::ReplicationLagNeon => "SLO-REPLICATION-LAG-NEON",
+            Self::FreshDsrErasure => "SLO-FRESH-DSR-ERASURE",
         }
     }
 
@@ -128,6 +139,7 @@ impl Sli {
             Self::ReplicationLagD1 => "corelink_d1_replica_lag_seconds",
             Self::ReplicationLagKv => "corelink_kv_propagation_lag_seconds",
             Self::ReplicationLagNeon => "corelink_neon_replica_lag_seconds",
+            Self::FreshDsrErasure => "corelink_dsr_resolution_hours",
         }
     }
 }
@@ -138,16 +150,19 @@ impl core::fmt::Display for Sli {
     }
 }
 
-/// Canonical 17-element SLI list per `slo_catalog.md §4.x` and WI
+/// Canonical 18-element SLI list per `slo_catalog.md §4.x` and WI
 /// §6.1.1, extended by audit 2026-05-14 P0 closures (+5 SLIs:
 /// AvailControlPlane, LatencyCasPutP99, LatencyAcHitP99,
-/// CorrectnessCas, CorrectnessTenantIsolation) and audit DR-16
-/// wave-14 closures (+5 SLIs: BackupVerification, ReplicationLagR2,
-/// ReplicationLagD1, ReplicationLagKv, ReplicationLagNeon — pre-existing
-/// DEBT-011 gaps now bound). Pinned at the type system layer for
-/// surface-stability regression tests.
+/// CorrectnessCas, CorrectnessTenantIsolation), audit DR-16 wave-14
+/// closures (+5 SLIs: BackupVerification, ReplicationLagR2,
+/// ReplicationLagD1, ReplicationLagKv, ReplicationLagNeon —
+/// pre-existing DEBT-011 gaps now bound), and audit
+/// `2026-05-15-dsr-worker-production.md` closure (+1 SLI:
+/// FreshDsrErasure — DSR erasure SLA freshness target per
+/// `slo_catalog.md §4.12` / WI-S11-002 §10.4 O-4.1). Pinned at the
+/// type system layer for surface-stability regression tests.
 #[must_use]
-pub const fn canonical_slis() -> &'static [Sli; 17] {
+pub const fn canonical_slis() -> &'static [Sli; 18] {
     &[
         Sli::AvailCasGet,
         Sli::AvailCasPut,
@@ -166,6 +181,7 @@ pub const fn canonical_slis() -> &'static [Sli; 17] {
         Sli::ReplicationLagD1,
         Sli::ReplicationLagKv,
         Sli::ReplicationLagNeon,
+        Sli::FreshDsrErasure,
     ]
 }
 
@@ -258,7 +274,7 @@ mod tests {
     #[test]
     fn canonical_slis_unique_slugs_pinned() {
         let v = canonical_slis();
-        assert_eq!(v.len(), 17);
+        assert_eq!(v.len(), 18);
         let mut set = std::collections::HashSet::new();
         for s in v {
             assert!(s.slug().starts_with("SLI-") || s.slug().starts_with("SLO-"));
@@ -320,6 +336,24 @@ mod tests {
         assert_eq!(
             format!("{}", Sli::ReplicationLagNeon),
             "SLO-REPLICATION-LAG-NEON"
+        );
+    }
+
+    #[test]
+    fn audit_2026_05_15_dsr_worker_closure_present() {
+        // S-11 / WI-S11-002 SLI binding closure shipped per
+        // `specs/_audits/2026-05-15-dsr-worker-production.md §3`.
+        let v = canonical_slis();
+        let slugs: std::collections::HashSet<&str> =
+            v.iter().map(|s| s.slug()).collect();
+        assert!(slugs.contains("SLO-FRESH-DSR-ERASURE"));
+        assert_eq!(
+            Sli::FreshDsrErasure.prometheus_metric_base(),
+            "corelink_dsr_resolution_hours"
+        );
+        assert_eq!(
+            format!("{}", Sli::FreshDsrErasure),
+            "SLO-FRESH-DSR-ERASURE"
         );
     }
 

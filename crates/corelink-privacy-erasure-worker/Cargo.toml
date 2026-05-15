@@ -48,6 +48,11 @@ rand_chacha = "0.9"
 # test exercises the real `dsr.queued.v1` shape; the trait surface
 # itself never imports the predecessor crate.
 corelink-dsr = { workspace = true }
+# corelink-slo is dev-only for SLI binding regression
+# (`tests/sli_binding.rs` pins `METRIC_DSR_RESOLUTION_HOURS` to
+# `Sli::FreshDsrErasure.prometheus_metric_base()`). Closure from
+# `specs/_audits/2026-05-15-dsr-worker-production.md §3`.
+corelink-slo = { workspace = true }
 
 [[test]]
 name = "prop_idempotency_replay_100x"
@@ -76,3 +81,7 @@ path = "tests/verification_job_24h.rs"
 [[test]]
 name = "integration_erasure_lifecycle"
 path = "tests/integration_erasure_lifecycle.rs"
+
+[[test]]
+name = "sli_binding"
+path = "tests/sli_binding.rs"

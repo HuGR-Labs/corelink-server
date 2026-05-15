@@ -27,6 +27,47 @@ use crate::report::{
     canonical_report_key, ErasureReport, InMemoryReportSigner, ReportSignature, ReportSigner,
 };
 
+/// Canonical Prometheus metric base name for the DSR erasure freshness
+/// SLI per `slo_catalog.md §4.12` (SLO-FRESH-DSR-ERASURE). The cron
+/// worker observes this histogram once per completed DSR ticket
+/// (`request="erasure"` label). Bound from
+/// `corelink-slo::Sli::FreshDsrErasure.prometheus_metric_base()` —
+/// alignment regression-pinned in `tests/sli_binding.rs`.
+///
+/// Production wiring at WI-S11-008 emits a histogram `_bucket`
+/// observation with `le ≤ 720` (720h = 30d SLA window per LGPD Art. 19
+/// + GDPR Art. 12.3 + CCPA §1798.130 canonical bounds).
+pub const METRIC_DSR_RESOLUTION_HOURS: &str = "corelink_dsr_resolution_hours";
+
+/// Canonical SLI SLA window in hours (30 days canonical). Aligned with
+/// the `slo_catalog.md §4.12` bucket bound `le=720`.
+pub const SLA_WINDOW_HOURS: u64 = 720;
+
+/// Compute the canonical SLI observation in hours for a DSR ticket
+/// resolved at `verified_at_ms` relative to its `queued_at_ms`. The
+/// production cron worker invokes this once per
+/// [`ErasureDecision::VerifiedComplete`] / `VerifiedPartial` outcome
+/// and emits the value as a histogram observation under
+/// [`METRIC_DSR_RESOLUTION_HOURS`].
+///
+/// Returns `None` when `verified_at_ms < queued_at_ms` (clock skew
+/// guard — never emit negative SLI observations).
+#[must_use]
+pub const fn dsr_resolution_hours(queued_at_ms: u64, verified_at_ms: u64) -> Option<u64> {
+    if verified_at_ms < queued_at_ms {
+        return None;
+    }
+    let elapsed_ms = verified_at_ms - queued_at_ms;
+    Some(elapsed_ms / (60 * 60 * 1000))
+}
+
+/// Whether the canonical observation is within the SLA window
+/// (le ≤ 720h numerator per `slo_catalog.md §4.12`).
+#[must_use]
+pub const fn within_sla_window(hours: u64) -> bool {
+    hours <= SLA_WINDOW_HOURS
+}
+
 /// Canonical 24h verification sweep result. Bundles the canonical
 /// [`ErasureDecision`] + the canonical
 /// [`crate::report::ErasureReport`] + the BLAKE3-keyed MAC signature
@@ -48,6 +89,31 @@ pub struct VerificationOutcome {
     /// (production wiring at WI-S11-008 invokes the canonical
     /// signed URL 24h TTL surface).
     pub object_key: Option<String>,
+}
+
+impl VerificationOutcome {
+    /// Canonical SLO-FRESH-DSR-ERASURE observation per
+    /// `slo_catalog.md §4.12`. Returns the elapsed hours from
+    /// `plan.generated_at_ms` (set to `request.queued_at_ms` at plan
+    /// emission per [`ErasurePlan::canonical`]) to the verification
+    /// timestamp baked into the signed report — the value the
+    /// production cron worker emits to the
+    /// [`METRIC_DSR_RESOLUTION_HOURS`] histogram. `None` on the
+    /// `SlaBreached` / `Started` / `Rejected` / `VerificationFailed`
+    /// arms (no completed report to anchor the observation).
+    #[must_use]
+    pub fn sli_resolution_hours(&self) -> Option<u64> {
+        let report = self.report.as_ref()?;
+        dsr_resolution_hours(report.plan.generated_at_ms, report.verified_at_ms)
+    }
+
+    /// Whether the canonical observation is within the SLA window
+    /// (LGPD Art. 19 + GDPR Art. 12.3 + CCPA §1798.130 → 30 days).
+    /// `None` when no observation is available.
+    #[must_use]
+    pub fn sli_within_sla(&self) -> Option<bool> {
+        self.sli_resolution_hours().map(within_sla_window)
+    }
 }
 
 /// Canonical 24h verification cron worker entry point. Wraps the
@@ -272,6 +338,61 @@ mod tests {
         assert!(outcome.report.is_none());
         assert!(outcome.signature.is_none());
         assert!(outcome.object_key.is_none());
+    }
+
+    #[test]
+    fn sli_resolution_hours_within_sla_on_happy_path() {
+        // SLO-FRESH-DSR-ERASURE per `slo_catalog.md §4.12`: a happy-path
+        // 24h-deadline verification falls well within the 720h (30d)
+        // SLA window. The cron worker emits this observation to the
+        // canonical `corelink_dsr_resolution_hours` histogram.
+        let job = fresh_job();
+        let req = fresh_request();
+        job.worker().process_erasure(&req, 1_000).unwrap();
+        // Verification 25 hours after queue → resolution_hours ≈ 25.
+        let verified_at = req.queued_at_ms.saturating_add(25 * 60 * 60 * 1000);
+        let outcome = job.run_24h_sweep(&req, verified_at).unwrap();
+        assert!(matches!(
+            outcome.decision,
+            ErasureDecision::VerifiedComplete { .. }
+        ));
+        let hours = outcome.sli_resolution_hours().unwrap();
+        assert_eq!(hours, 25);
+        assert_eq!(outcome.sli_within_sla(), Some(true));
+        assert!(within_sla_window(hours));
+    }
+
+    #[test]
+    fn sli_resolution_hours_none_on_sla_breach() {
+        // SlaBreached → no signed report → no SLI observation.
+        let job = fresh_job();
+        let req = fresh_request();
+        // Skip process_erasure; sweep post-deadline.
+        let outcome = job
+            .run_24h_sweep(&req, req.verification_deadline_ms().saturating_add(1))
+            .unwrap();
+        assert!(matches!(outcome.decision, ErasureDecision::SlaBreached { .. }));
+        assert!(outcome.sli_resolution_hours().is_none());
+        assert!(outcome.sli_within_sla().is_none());
+    }
+
+    #[test]
+    fn sli_helper_handles_clock_skew() {
+        // Guards against negative observations from upstream clock skew.
+        assert_eq!(dsr_resolution_hours(2_000, 1_000), None);
+        assert_eq!(dsr_resolution_hours(0, 3_600_000), Some(1));
+        assert_eq!(dsr_resolution_hours(0, 720 * 3_600_000), Some(720));
+        // Boundary: exactly 720h is within SLA (le ≤ 720 canonical).
+        assert!(within_sla_window(720));
+        assert!(!within_sla_window(721));
+    }
+
+    #[test]
+    fn metric_base_pinned() {
+        // Pinned to catch accidental rename. Cross-crate SLI binding
+        // test lives in `tests/sli_binding.rs`.
+        assert_eq!(METRIC_DSR_RESOLUTION_HOURS, "corelink_dsr_resolution_hours");
+        assert_eq!(SLA_WINDOW_HOURS, 720);
     }
 
     #[test]

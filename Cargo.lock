@@ -1950,6 +1950,7 @@ dependencies = [
  "blake3",
  "corelink-dsr",
  "corelink-privacy-pseudonymize",
+ "corelink-slo",
  "hex",
  "proptest",
  "rand 0.9.4",

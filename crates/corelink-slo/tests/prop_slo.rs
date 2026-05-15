@@ -87,7 +87,12 @@ fn canonical_slis_count_pinned() {
     // DEBT-011-vintage gaps):
     // +BackupVerification, +ReplicationLagR2, +ReplicationLagD1,
     // +ReplicationLagKv, +ReplicationLagNeon.
-    assert_eq!(canonical_slis().len(), 17);
+    //
+    // Bumped 17 -> 18 by audit
+    // `specs/_audits/2026-05-15-dsr-worker-production.md §3`
+    // (S-11 / WI-S11-002 SLI binding closure):
+    // +FreshDsrErasure (`slo_catalog.md §4.12`).
+    assert_eq!(canonical_slis().len(), 18);
 }
 
 #[test]
