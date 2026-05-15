@@ -135,6 +135,8 @@ Planejamento: **Security + Availability + Confidentiality + Privacy + Processing
 
 Statement of Applicability (SoA) cobre os 93 controles Anexo A:2022. Mapping compacto (full SoA em `_audits/iso27001-soa.csv`).
 
+> **Preliminary crosswalk (2026-05-15):** the full 93-control mapping (Annex A → SOC 2 → CTRL-* → evidence → status) lives at `specs/_compliance/ISO27001-CROSSWALK-2026-05-15.md` (98.9% in-scope coverage; 91% SOC 2 overlap). ISO-unique gaps (7 active + 1 informational): `specs/_compliance/ISO27001-GAP-ANALYSIS.md`. Phased roadmap to Q1-2027 certification: `specs/_compliance/ISO27001-ROADMAP.md`. Customer-facing one-pager: `apps/docs/docs/trust/iso27001.mdx`.
+
 ### 3.2 Temas críticos (seleção)
 
 | Anexo A (2022) | Tema                                      | CTRLs internos                          | Notas                                 |
