@@ -37,6 +37,25 @@ pub enum Sli {
     /// fraction of within-quota requests that are NOT rate-limited
     /// (S-08 inheritance; rate-limiter false-positive bound).
     RateLimitWithinQuota,
+    /// `SLI-AVAIL-CP` per `slo_catalog.md §4.1` — control-plane
+    /// (auth + admin + non-storage) availability. Closure from
+    /// `specs/_audits/2026-05-14-slo-instrumentation-gaps.md` P0-1.
+    AvailControlPlane,
+    /// `SLI-LATENCY-CAS-PUT-P99` per `slo_catalog.md §4.7` — CAS PUT
+    /// p99 latency target (1s team / 600ms enterprise, blobs ≤ 16 MiB).
+    /// Closure from audit P0-2.
+    LatencyCasPutP99,
+    /// `SLI-LATENCY-AC-HIT-P99` per `slo_catalog.md §4.8` — Action
+    /// Cache hit p99 latency target (150ms). Closure from audit P0-3.
+    LatencyAcHitP99,
+    /// `SLO-CORRECT-CAS` per `slo_catalog.md §4.9` — CAS integrity
+    /// correctness (100% target, zero-budget; any client-side
+    /// verify mismatch = SEV-1). Closure from audit P0-4.
+    CorrectnessCas,
+    /// `SLO-CORRECT-ISO` per `slo_catalog.md §4.10` — tenant isolation
+    /// correctness (100% target, zero-budget; any violation = SEV-1
+    /// + TLA+ re-check). Closure from audit P0-5.
+    CorrectnessTenantIsolation,
 }
 
 impl Sli {
@@ -53,6 +72,11 @@ impl Sli {
             Self::LatencyCasGetP99 => "SLI-LATENCY-CAS-GET-P99",
             Self::DedupRatio => "SLO-DEDUP-RATIO",
             Self::RateLimitWithinQuota => "SLI-RATE-LIMIT-WITHIN-QUOTA",
+            Self::AvailControlPlane => "SLI-AVAIL-CP",
+            Self::LatencyCasPutP99 => "SLI-LATENCY-CAS-PUT-P99",
+            Self::LatencyAcHitP99 => "SLI-LATENCY-AC-HIT-P99",
+            Self::CorrectnessCas => "SLO-CORRECT-CAS",
+            Self::CorrectnessTenantIsolation => "SLO-CORRECT-ISO",
         }
     }
 
@@ -68,6 +92,11 @@ impl Sli {
             Self::LatencyCasGetP99 => "corelink_cas_get_latency",
             Self::DedupRatio => "corelink_dedup_ratio",
             Self::RateLimitWithinQuota => "corelink_rate_limited_within_quota",
+            Self::AvailControlPlane => "corelink_cp_requests",
+            Self::LatencyCasPutP99 => "corelink_cas_put_latency",
+            Self::LatencyAcHitP99 => "corelink_ac_get_latency",
+            Self::CorrectnessCas => "corelink_cas_client_verify",
+            Self::CorrectnessTenantIsolation => "corelink_isolation_assertion",
         }
     }
 }
@@ -78,11 +107,13 @@ impl core::fmt::Display for Sli {
     }
 }
 
-/// Canonical 7-element SLI list per `slo_catalog.md §4.x` and WI
-/// §6.1.1. Pinned at the type system layer for surface-stability
-/// regression tests.
+/// Canonical 12-element SLI list per `slo_catalog.md §4.x` and WI
+/// §6.1.1, extended by audit 2026-05-14 P0 closures (+5 SLIs:
+/// AvailControlPlane, LatencyCasPutP99, LatencyAcHitP99,
+/// CorrectnessCas, CorrectnessTenantIsolation). Pinned at the type
+/// system layer for surface-stability regression tests.
 #[must_use]
-pub const fn canonical_slis() -> &'static [Sli; 7] {
+pub const fn canonical_slis() -> &'static [Sli; 12] {
     &[
         Sli::AvailCasGet,
         Sli::AvailCasPut,
@@ -91,6 +122,11 @@ pub const fn canonical_slis() -> &'static [Sli; 7] {
         Sli::LatencyCasGetP99,
         Sli::DedupRatio,
         Sli::RateLimitWithinQuota,
+        Sli::AvailControlPlane,
+        Sli::LatencyCasPutP99,
+        Sli::LatencyAcHitP99,
+        Sli::CorrectnessCas,
+        Sli::CorrectnessTenantIsolation,
     ]
 }
 
@@ -183,12 +219,96 @@ mod tests {
     #[test]
     fn canonical_slis_unique_slugs_pinned() {
         let v = canonical_slis();
-        assert_eq!(v.len(), 7);
+        assert_eq!(v.len(), 12);
         let mut set = std::collections::HashSet::new();
         for s in v {
             assert!(s.slug().starts_with("SLI-") || s.slug().starts_with("SLO-"));
             assert!(set.insert(s.slug()), "duplicate sli slug: {s}");
         }
+    }
+
+    #[test]
+    fn audit_2026_05_14_p0_closures_present() {
+        // Five P0 closures shipped per
+        // `specs/_audits/2026-05-14-slo-instrumentation-gaps.md §5`.
+        let v = canonical_slis();
+        let slugs: std::collections::HashSet<&str> =
+            v.iter().map(|s| s.slug()).collect();
+        assert!(slugs.contains("SLI-AVAIL-CP"));
+        assert!(slugs.contains("SLI-LATENCY-CAS-PUT-P99"));
+        assert!(slugs.contains("SLI-LATENCY-AC-HIT-P99"));
+        assert!(slugs.contains("SLO-CORRECT-CAS"));
+        assert!(slugs.contains("SLO-CORRECT-ISO"));
+    }
+
+    #[test]
+    fn audit_2026_05_14_p0_closures_prometheus_bases_pinned() {
+        // Prometheus base names canonical per audit §5 closure list;
+        // these slugs flow into `corelink-slo::alert` PromQL rule
+        // construction in the multi-burn-rate alert path.
+        assert_eq!(
+            Sli::AvailControlPlane.prometheus_metric_base(),
+            "corelink_cp_requests"
+        );
+        assert_eq!(
+            Sli::LatencyCasPutP99.prometheus_metric_base(),
+            "corelink_cas_put_latency"
+        );
+        assert_eq!(
+            Sli::LatencyAcHitP99.prometheus_metric_base(),
+            "corelink_ac_get_latency"
+        );
+        assert_eq!(
+            Sli::CorrectnessCas.prometheus_metric_base(),
+            "corelink_cas_client_verify"
+        );
+        assert_eq!(
+            Sli::CorrectnessTenantIsolation.prometheus_metric_base(),
+            "corelink_isolation_assertion"
+        );
+    }
+
+    #[test]
+    fn correctness_slos_accept_100pct_target() {
+        // SLO-CORRECT-CAS and SLO-CORRECT-ISO are 100% / zero-budget
+        // SLOs per `slo_catalog.md §4.9` + §4.10. Constructing the
+        // SloDefinition at target_pct=1.0 must succeed (per §3.1
+        // correctness SLI semantics).
+        let s_cas = SloDefinition::new(Sli::CorrectnessCas, 1.0).unwrap();
+        assert_eq!(s_cas.target_pct, 1.0);
+        assert_eq!(s_cas.error_budget_pct, 0.0);
+        let s_iso =
+            SloDefinition::new(Sli::CorrectnessTenantIsolation, 1.0)
+                .unwrap();
+        assert_eq!(s_iso.target_pct, 1.0);
+        assert_eq!(s_iso.error_budget_pct, 0.0);
+    }
+
+    #[test]
+    fn audit_p0_slis_display_matches_slug() {
+        // Display path is used in audit records + alert
+        // annotations + PagerDuty dedup-key construction; pinning
+        // here so a typo in `slug()` would break Display too.
+        assert_eq!(
+            format!("{}", Sli::AvailControlPlane),
+            "SLI-AVAIL-CP"
+        );
+        assert_eq!(
+            format!("{}", Sli::LatencyCasPutP99),
+            "SLI-LATENCY-CAS-PUT-P99"
+        );
+        assert_eq!(
+            format!("{}", Sli::LatencyAcHitP99),
+            "SLI-LATENCY-AC-HIT-P99"
+        );
+        assert_eq!(
+            format!("{}", Sli::CorrectnessCas),
+            "SLO-CORRECT-CAS"
+        );
+        assert_eq!(
+            format!("{}", Sli::CorrectnessTenantIsolation),
+            "SLO-CORRECT-ISO"
+        );
     }
 
     #[test]

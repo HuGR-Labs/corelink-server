@@ -78,7 +78,11 @@ const ALL_WINDOWS: &[BurnRateWindow] = &[
 
 #[test]
 fn canonical_slis_count_pinned() {
-    assert_eq!(canonical_slis().len(), 7);
+    // Bumped 7 -> 12 by audit 2026-05-14 P0 closures
+    // (`specs/_audits/2026-05-14-slo-instrumentation-gaps.md §5`):
+    // +AvailControlPlane, +LatencyCasPutP99, +LatencyAcHitP99,
+    // +CorrectnessCas, +CorrectnessTenantIsolation.
+    assert_eq!(canonical_slis().len(), 12);
 }
 
 #[test]
