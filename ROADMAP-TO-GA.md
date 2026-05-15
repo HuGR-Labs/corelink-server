@@ -202,9 +202,17 @@ Pre-conditions: pentest retest letter received; 3 lighthouse SLA attestations si
 | R7-1 | **Aggregate D+60 evidence pack** — single archive with: pentest retest letter, SOC 2 readiness scorecard, 3 lighthouse SLA attestations, 30d staging report, all sprint impl-sealed tags, 13 canonical sign-offs signed | 1 Sonnet | Output: `specs/_audits/D60-GA-EVIDENCE-PACK.tar.gz` |
 | R7-2 | **PRR-S20-GA promotion vote** — collect 13 canonical signatures (5 dual-hat at SEAL + 5-8 external) via DocuSign or equivalent | Gustavo + 13 signers | Async over 7 days |
 | R7-3 | **CONDITIONALLY_APPROVED → APPROVED transition commit** — `specs/04_sprints/S20/PRR-S20-GA.md` work_status update + spec contract bump + tag `ga-approved` | Orchestrator | Final commit |
-| R7-4 | **Go/No-Go review meeting** — all 13 sign-offs reviewed in real-time; veto from any single sign-off = blocked | Gustavo + 13 signers | Live meeting |
+| R7-4 | **Go/No-Go review meeting** — all 13 sign-offs reviewed in real-time; veto from any single sign-off = blocked | Gustavo + 13 signers | Live meeting — driven by `specs/_compliance/GA-GATE-GO-NOGO-TEMPLATE.md` (60 min agenda; 4-signer veto unanimous) against `specs/_compliance/GA-GATE-CRITERIA.md` (59-criteria checklist across 6 tracks) |
 
-**Wave R-7 gate:** PRR-S20-GA `work_status: APPROVED`; tag `ga-approved`; **GA-go decision locked**.
+### 7.1 GA Gate canonical artefacts (R-7-2 cluster)
+
+The Go/No-Go meeting consumes three formal canonical documents (R-7-2 cluster, worktree `wt/r7-2-ga-gate`):
+
+- **`specs/_compliance/GA-GATE-CRITERIA.md`** — 59-criteria checklist across 6 tracks (Engineering 15 · Security 12 · Operations 10 · Customer 8 · Legal 8 · Marketing 6); each criterion has a concrete pass/fail success metric + evidence link + owner + status; populated at T-24 h pre-launch. Non-waivable floor (GA-GATE-O01, C01, L01, S01-HIGH/CRITICAL) flagged.
+- **`specs/_compliance/GA-GATE-GO-NOGO-TEMPLATE.md`** — 60 min meeting template + 12 PRE-X pre-flight checklist + 3-decision matrix (**GO** / **GO-WITH-WAIVER** / **DEFER**) + 4-signer veto (CEO + CTO + VPSec + VPProduct unanimous required) + waiver discipline (4 requirements; ≤ 5 cumulative; ≤ 30 d expiry; VP+ sign-off) + D+1/D+7/D+30 rollback trigger forward refs.
+- **`specs/_runbooks/RB-GA-LAUNCH-ROLLBACK.md`** — failure-mode runbook with 18 trigger conditions across 3 post-launch windows (D+1 / D+7 / D+30); 3-decision tree (**HOLD** / **REVERT** / **ESCALATE**); full REVERT sequence (5 steps; ≤ 4 h target); SEV-0 ESCALATE path with 72 h GDPR breach notification clock; re-attestation criteria (8 items; min 14 d / 90 d gap between attempts); quarterly tabletop cadence.
+
+**Wave R-7 gate:** PRR-S20-GA `work_status: APPROVED`; tag `ga-approved`; **GA-go decision locked** per `GA-GATE-GO-NOGO-TEMPLATE.md` §3 decision matrix.
 
 ---
 
