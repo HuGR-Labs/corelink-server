@@ -1,0 +1,189 @@
+name: release-notes
+
+# Customer-facing release notes auto-generator.
+#
+# Trigger: any `v*` tag push (semver tags). On `workflow_dispatch` an operator
+# may regenerate for an explicit (from, to) window for editorial iteration.
+#
+# Flow:
+#   1. Checkout full history (need previous-tag diff).
+#   2. Determine PREV_TAG = `git describe --tags --abbrev=0 <tag>^` (the tag
+#      immediately before the one we're cutting). Fallback: the initial
+#      commit if no prior tag.
+#   3. Run `scripts/generate-release-notes.py --from <prev> --to <tag>`.
+#   4. Commit the generated `releases/RELEASE-*.md` to branch
+#      `releases/<tag>` (orphan if not present) and open a PR for editorial
+#      polish per `marketing/launch/RELEASE-NOTES-EDITORIAL-GUIDE.md`.
+#   5. Create a *draft* GitHub Release whose body is the auto-generated
+#      markdown so a human can polish and publish.
+#
+# Charter:
+#   - SHA-pinned actions only (ADR-S12-045 §6 tooling-pin policy).
+#   - No invention beyond `generate-release-notes.py` outputs.
+#   - Draft release only — never auto-publishes (operator polish gate).
+#
+# Cross-refs:
+#   - scripts/generate-release-notes.py
+#   - releases/TEMPLATE.md
+#   - marketing/launch/RELEASE-NOTES-EDITORIAL-GUIDE.md
+#   - marketing/launch/LAUNCH-CHECKLIST-V2.md  (R-8 launch readiness)
+#   - ROADMAP-TO-GA.md §8 (R-8 launch wave)
+#   - CHANGELOG.md (authoritative)
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      from_ref:
+        description: "Lower bound git ref (exclusive). E.g. v1.0.0."
+        required: true
+        type: string
+      to_ref:
+        description: "Upper bound git ref (inclusive). Default HEAD."
+        required: false
+        default: "HEAD"
+        type: string
+      version:
+        description: "Version label override (else derived from to_ref)."
+        required: false
+        type: string
+
+permissions:
+  contents: write       # commit notes branch + create draft release
+  pull-requests: write  # open editorial PR
+
+jobs:
+  generate:
+    name: Generate release notes draft
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Resolve refs
+        id: refs
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            FROM="${{ inputs.from_ref }}"
+            TO="${{ inputs.to_ref }}"
+            VERSION_FLAG=""
+            if [[ -n "${{ inputs.version }}" ]]; then
+              VERSION_FLAG="--version ${{ inputs.version }}"
+            fi
+          else
+            TAG="${GITHUB_REF##refs/tags/}"
+            TO="$TAG"
+            # Previous semver tag (immediately preceding the cut tag).
+            PREV="$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)"
+            if [[ -z "$PREV" ]]; then
+              # Fallback to repo root commit.
+              PREV="$(git rev-list --max-parents=0 HEAD | head -1)"
+            fi
+            FROM="$PREV"
+            VERSION_FLAG="--version ${TAG#v}"
+          fi
+          echo "from=$FROM"   >> "$GITHUB_OUTPUT"
+          echo "to=$TO"       >> "$GITHUB_OUTPUT"
+          echo "version_flag=$VERSION_FLAG" >> "$GITHUB_OUTPUT"
+          # Resolve the version literal for output-path use.
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VLITERAL="${{ inputs.version }}"
+            if [[ -z "$VLITERAL" ]]; then
+              VLITERAL="$(git rev-parse --short "$TO")"
+              VLITERAL="dev-$VLITERAL"
+            fi
+          else
+            VLITERAL="${TAG#v}"
+          fi
+          echo "version=$VLITERAL" >> "$GITHUB_OUTPUT"
+
+      - name: Generate release notes
+        id: gen
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/generate-release-notes.py \
+            --from "${{ steps.refs.outputs.from }}" \
+            --to   "${{ steps.refs.outputs.to }}" \
+            ${{ steps.refs.outputs.version_flag }}
+          OUTPATH="releases/RELEASE-${{ steps.refs.outputs.version }}.md"
+          if [[ ! -f "$OUTPATH" ]]; then
+            echo "error: expected $OUTPATH not produced" >&2
+            exit 1
+          fi
+          echo "outpath=$OUTPATH" >> "$GITHUB_OUTPUT"
+
+      - name: Upload notes as artifact
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: release-notes-${{ steps.refs.outputs.version }}
+          path: ${{ steps.gen.outputs.outpath }}
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Commit notes to releases branch
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NOTES_PATH: ${{ steps.gen.outputs.outpath }}
+          VERSION: ${{ steps.refs.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Use a per-tag branch so editorial PRs don't collide.
+          BRANCH="releases/v${VERSION}"
+          git config user.name  "corelink-release-bot"
+          git config user.email "release-bot@humangr.com"
+          git checkout -b "$BRANCH"
+          git add "$NOTES_PATH"
+          git commit -m "docs(release): auto-generated notes for v${VERSION}
+
+          Trigger:    tag push (${GITHUB_REF})
+          From/To:    ${{ steps.refs.outputs.from }}..${{ steps.refs.outputs.to }}
+          Generator:  scripts/generate-release-notes.py
+          Editorial:  marketing/launch/RELEASE-NOTES-EDITORIAL-GUIDE.md
+          "
+          git push -u origin "$BRANCH"
+
+      - name: Open editorial PR
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.refs.outputs.version }}
+        run: |
+          set -euo pipefail
+          gh pr create \
+            --base main \
+            --head "releases/v${VERSION}" \
+            --title "docs(release): editorial polish for v${VERSION}" \
+            --label "release-notes,customer-visible" \
+            --body "Auto-generated release notes draft for **v${VERSION}**.
+
+          Editorial workflow: \`marketing/launch/RELEASE-NOTES-EDITORIAL-GUIDE.md\`.
+
+          Hand-polish sections marked *needs manual* per the guide, then merge to main."
+
+      - name: Create draft GitHub Release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@c95fe1489396b046f0b6a56a05b2d3513ae11142 # v2.3.1
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "CoreLink ${{ steps.refs.outputs.version }}"
+          body_path: ${{ steps.gen.outputs.outpath }}
+          draft: true
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
+          fail_on_unmatched_files: true

@@ -278,6 +278,7 @@ Per `marketing/launch/COORDINATION/LAUNCH-RUNBOOK.md` (shipped by WI-S20-008).
 | `marketing/launch/SUPPORT-RESPONSE-TEMPLATES.md` | 15 canonical ticket-level response templates (first-touch P0/P1/P2/P3, investigating-hold, root-cause, fix-deployed, resolved, DSR, billing, sandbox-expiry). |
 | `specs/_runbooks/RB-DSR-TICKET-TRIAGE.md` | DSR inbound triage mapping to `corelink-dsr` pipeline + DPO/Legal escalation for unusual requests. |
 | `marketing/launch/SUPPORT-DASHBOARD-SPEC.md` | Support team's operational dashboard: open by severity, SLA burn-down, top-10 categories, NPS sample, DSR + billing panels. |
+| `marketing/launch/RELEASE-NOTES-EDITORIAL-GUIDE.md` | Operator editorial workflow for customer-facing release notes (auto-OK vs needs-manual per section; tone; 3-layer approval). Generator: [`scripts/generate-release-notes.py`](scripts/generate-release-notes.py); CI: [`.github/workflows/release-notes.yml`](.github/workflows/release-notes.yml); template: [`releases/TEMPLATE.md`](releases/TEMPLATE.md). |
 
 ### T-7 to T-1 (preparation)
 - T-7d: Pentest letter confirmed received; SOC 2 readiness confirmed; lighthouse SLAs attested
