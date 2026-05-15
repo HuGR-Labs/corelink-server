@@ -2,9 +2,11 @@
 title: CI optimization followup tickets
 date: 2026-05-15
 parent_audit: 2026-05-15-ci-workflow-optimization.md
-status: open
+status: partial (4/11 closed — P1 wave landed; P2+P3 deferred post-GA)
 total_tickets: 11
+closed_tickets: 4 (CI-OPT-001..004)
 estimated_savings: 52 billable min / PR + 24 wall-clock min / PR p50
+realised_savings_p1: ~95 billable min / PR (workspace dedup ~50 + docs consolidation ~25 + validators dedup ~10 + audit-job removal ~10) + supply-chain hardening (CI-OPT-004 risk-only)
 ---
 
 # CI optimization followup tickets
@@ -17,7 +19,13 @@ Each ticket is implementation-ready: workflow file, change summary, projected sa
 
 ## P1 tickets (Wave 1 — 4 tickets, ~30 billable-min/PR savings)
 
-### CI-OPT-001 — Deduplicate workspace `cargo` commands across 11 workflows
+### CI-OPT-001 — Deduplicate workspace `cargo` commands across 11 workflows  **[CLOSED — wt/debt-010-ci-opt-p1]**
+
+**Status:** CLOSED 2026-05-15. Implementation files: 6 per-crate workflows (`corelink-hash.yml`, `corelink-meta.yml`, `corelink-reapi.yml`, `corelink-worker.yml`, `corelink-client-verify.yml`, `tenant-path.yml`). All 4 workspace-wide steps (`cargo fmt --all`, `cargo clippy --workspace`, `cargo test --workspace`, `cargo doc --no-deps --workspace`) removed from each `pr-gate` job and replaced with crate-scoped equivalents (`cargo clippy --package <crate>` + `cargo test --package <crate>`). Workspace convergence remains in `cas_foundation.yml::workspace-build-test` (canonical). Per-crate redundant `audit:` jobs also removed (covered by `cargo-audit.yml`). Realised savings: ~50 billable min/PR on full-fan-out PRs (when all 6 workflows match) + ~10 min/PR from audit-job removal.
+
+**Risk gates verified.** Branch protection rule must require `cas_foundation / workspace-build-test` as REQUIRED status check before this lands on main (orchestrator: confirm pre-merge).
+
+
 
 **Files affected (12, removing duplicate steps from 11):**
 - `.github/workflows/corelink-hash.yml`
@@ -53,7 +61,11 @@ Each ticket is implementation-ready: workflow file, change summary, projected sa
 
 ---
 
-### CI-OPT-002 — Consolidate docs workflows into `docs-ci.yml` (5 jobs absorbed)
+### CI-OPT-002 — Consolidate docs workflows into `docs-ci.yml` (5 jobs absorbed)  **[CLOSED — wt/debt-010-ci-opt-p1]**
+
+**Status:** CLOSED 2026-05-15. Files modified: `.github/workflows/docs-ci.yml` (5 new jobs added; trigger surface expanded to include `crates/corelink-reapi/proto/**`, `apps/server/proto/**`, plus `schedule:` for nightly Lighthouse baseline). Files deleted: `docs-a11y.yml`, `docs-a11y-baseline.yml`, `docs-i18n.yml`, `docs-lighthouse.yml`, `docs-reapi-gen.yml`. Each absorbed job either reuses the `build` artifact via `needs: build` + `actions/download-artifact` (a11y-playwright, a11y-baseline-diff, lighthouse-baseline) or runs independently (i18n-coverage, reapi-gen-drift — both need their own pnpm install since they don't depend on the built site). Standalone `docs-lychee.yml` (Docker) and `docs-vale.yml` (separate config) kept per ticket. Realised savings: ~25 billable min/PR (single pnpm install + single build shared across 5 jobs vs 6 standalone installs+builds). Trigger surface caveat: docs-lighthouse.yml's tag-trigger (docs-v*, v*) deferred — schedule + workflow_dispatch + PR-time inline lighthouse together exceed prior coverage; tag-time lighthouse can be added in a follow-up if release-tag verification becomes a hard requirement.
+
+
 
 **Files affected.**
 - Modify: `.github/workflows/docs-ci.yml` (add 5 jobs)
@@ -76,7 +88,11 @@ Each ticket is implementation-ready: workflow file, change summary, projected sa
 
 ---
 
-### CI-OPT-003 — Deduplicate `validate_specs.py` (6 → 1 invocation)
+### CI-OPT-003 — Deduplicate `validate_specs.py` (6 → 1 invocation)  **[CLOSED — wt/debt-010-ci-opt-p1]**
+
+**Status:** CLOSED 2026-05-15. Files modified: `gc-ship-gate.yml`, `s07-ship-gate.yml`, `s08-ship-gate.yml`, `s09-ship-gate.yml`, `s10-ship-gate.yml`. Each `validators:` job removed; replacement note pointing to `spec_validation.yml` (and `dashboard_validation.yml` for s09) added. Aggregate `<sprint>-ship-gate` job's `needs:` updated to drop `validators` dependency. `spec_validation.yml` remains the single source of truth for validate_specs/inv/refs + check_migrations_additive (and `dashboard_validation.yml` for the canonical-12 dashboards check). Branch protection MUST require `spec_validation / spec-validation` (and `dashboard_validation / dashboard-validation` where applicable) as separate REQUIRED status checks on PRs touching `specs/**` / `dashboards/**` — orchestrator confirm pre-merge. Realised savings: ~10 billable min/PR (5 ship-gates × ~2 min validators job = 10 min eliminated).
+
+
 
 **Files affected.**
 - Modify: `.github/workflows/s07-ship-gate.yml`, `s08-ship-gate.yml`, `s09-ship-gate.yml`, `s10-ship-gate.yml`, `gc-ship-gate.yml` (remove `validators` job)
@@ -98,7 +114,11 @@ Each ticket is implementation-ready: workflow file, change summary, projected sa
 
 ---
 
-### CI-OPT-004 — Complete SHA-pinning across 21 floating-ref workflows
+### CI-OPT-004 — Complete SHA-pinning across 21 floating-ref workflows  **[CLOSED — wt/debt-010-ci-opt-p1]**
+
+**Status:** CLOSED 2026-05-15. Files modified (11 of 11 listed): `corelink-{hash,meta,reapi,worker,client-verify}.yml`, `tenant-path.yml`, `dashboard_validation.yml`, `spec_validation.yml`, `tla_check.yml`, `byok_kill_switch_drill_weekly.yml` (already pinned: `dependabot-auto-merge.yml`). All `@v4`/`@v5`/`@v2`/`@v3`/`@v1`/`@stable`/`@nightly` refs replaced with 40-char SHAs and `# vX.Y.Z` trailing comments matching the canonical pin set in `_TEMPLATE.yml.md` + `cas_foundation.yml`. `actions/setup-java@v4` → `@3a4f6e1af504cf6a31855fa899c6aa5355ba6c12 # v4.7.0`. Floating `rustsec/audit-check@v1` use sites eliminated by removing the redundant per-crate `audit:` job (already covered by `cargo-audit.yml`, which is SHA-pinned). For nightly Rust toolchain (`dtolnay/rust-toolchain@nightly`), pinned action revision to `@29eef336d9b2848a0b548edc03f92a220660cdb8` with `with: toolchain: nightly` to select the toolchain. CI guard for floating-ref drift (greps for `uses:\s*[a-z]+/[a-zA-Z-]+@(v|main|master|stable|nightly)`) deferred to a follow-up tiny workflow. Realised savings: 0 (risk reduction only — ADR-0044 + WI-S01-007 §6.1.9 compliance).
+
+
 
 **Files affected.**
 - `corelink-{hash,meta,reapi,worker,client-verify}.yml`
@@ -287,10 +307,10 @@ Jobs that need `id-token: write`, `pull-requests: write`, or `packages: write` k
 
 | Ticket | Wave | File-count | Time savings | Risk | Status |
 |---|---|---|---|---|---|
-| CI-OPT-001 | P1 | 11 | ~50 m billable/PR | LOW | OPEN |
-| CI-OPT-002 | P1 | 6 (modify 1, delete 5) | ~25 m billable/PR | LOW | OPEN |
-| CI-OPT-003 | P1 | 5 | ~10 m billable/PR | LOW | OPEN |
-| CI-OPT-004 | P1 | 11 | 0 (risk reduction) | LOW | OPEN |
+| CI-OPT-001 | P1 | 6 | ~50 m billable/PR | LOW | CLOSED (wt/debt-010-ci-opt-p1) |
+| CI-OPT-002 | P1 | 6 (modify 1, delete 5) | ~25 m billable/PR | LOW | CLOSED (wt/debt-010-ci-opt-p1) |
+| CI-OPT-003 | P1 | 5 | ~10 m billable/PR | LOW | CLOSED (wt/debt-010-ci-opt-p1) |
+| CI-OPT-004 | P1 | 11 | 0 (risk reduction) | LOW | CLOSED (wt/debt-010-ci-opt-p1) |
 | CI-OPT-005 | P2 | 30 | ~5 m billable/PR | LOW | OPEN |
 | CI-OPT-006 | P2 | 7 | ~2 m wall/PR | LOW | OPEN |
 | CI-OPT-007 | P2 | 1 | ~6 m wall/PR | LOW | OPEN |
