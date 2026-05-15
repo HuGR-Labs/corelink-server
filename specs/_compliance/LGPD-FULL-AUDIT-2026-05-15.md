@@ -305,18 +305,22 @@ Art. 38: the national authority may require the controller to prepare a **Relat�
 
 Art. 41: controller appoints an `encarregado` (DPO) responsible for communication between controller, data subjects, and ANPD.
 
-**CoreLink position (interim):**
+**CoreLink position (interim, formalized 2026-05-15 via GAP-01 closure track):**
 
-- **DPO (formal appointment pending):** to be appointed before EU enterprise tenant onboarding (tracked in ROADMAP-TO-GA §9 Human Track row H-15 + GAP-01 in `compliance_matrix.md §9`).
-- **Privacy Officer (interim, until formal DPO):** Gustavo Schneiter (`gustavo@humangr.com`).
-- **Public contact:** `privacy@hugr.com` (aliased to interim Privacy Officer; will route to DPO post-appointment).
-- **ANPD contact:** documented in `legal/breach-notification/anpd-contacts.md`.
+- **Interim DPO formally designated:** Gustavo Schneiter (`gustavo@humangr.com` internal / `privacy@hugr.com` public) per `specs/_compliance/DPO-APPOINTMENT-2026-05-15.md` (LGPD Art. 41 §1º + ANPD Resolução 18/2024 compliant; ANPD registration template in §7 of appointment doc, filing pending H-1 CNPJ assignment).
+- **Reporting line:** direct to HuGR Labs Board (bypasses operational chain; satisfies GDPR Art. 38(3) + LGPD Art. 41 §2º interpretive requirement).
+- **Independence safeguards:** no operational role on `crates/corelink-privacy-*` or `crates/corelink-dsr/` code authoring without external advisor countersign; veto rights over `purpose_tag`, `legal_basis`, sub-processor onboarding, cross-border flows (see `DPO-RESPONSIBILITIES-MATRIX.md §2.2`).
+- **Term:** interim until permanent DPO appointment (target Q3-2026, hard cap T+1m of GA per `compliance_matrix.md §9` GAP-01); 90-day handoff plan in `DPO-HANDOFF-PLAN.md`.
+- **Public contact:** `privacy@hugr.com` (canonical; routes to DPO inbox).
+- **ANPD contact:** documented in `legal/breach-notification/anpd-contacts.md`; escalation runbook `specs/_runbooks/RB-DPO-ESCALATION.md §5`.
+- **RACI for DPO-touched activities:** `specs/_compliance/DPO-RESPONSIBILITIES-MATRIX.md` (30 rows covering DSR, consent, sub-processors, DPIA, breach, ANPD comms, training, SOC2/ISO cross-framework).
+- **Escalation triggers + SLAs:** `specs/_runbooks/RB-DPO-ESCALATION.md` (12 trigger families, 5-tier SLA matrix).
 
 **Segregation-of-duties caveat:** all 3 sign-off roles (DPO, Security Lead, Compliance/Final approver) currently held by Gustavo Schneiter. Mitigation: external advisor pool (R5-8) provides countersign during the interim window. Post-DPO appointment, all attestations (residency, full audit, SOC2-evidence-rollup) re-signed with distinct individuals.
 
 **Operational cadence:** monthly checklist `LGPD-DPO-MONTHLY-CHECKLIST.md` — 14 items today; this audit adds item 15 (WebAuthn-biometric LIA classification follow-up) and item 16 (RoPA quarterly refresh).
 
-**Gap:** formal DPO appointment (GAP-01, ROADMAP §9 row H-15). **Not GA-blocking for SAM-only launch**; **blocking for EU enterprise** (parallel GDPR Art. 37 obligation).
+**Gap:** formal DPO appointment (GAP-01, ROADMAP §9 row H-15). **Interim formalization landed 2026-05-15** via `DPO-APPOINTMENT-2026-05-15.md` + `DPO-RESPONSIBILITIES-MATRIX.md` + `RB-DPO-ESCALATION.md` + `DPO-HANDOFF-PLAN.md`. **Not GA-blocking for SAM-only launch** (interim acceptable per ANPD Resolução 18/2024 §4 conflict-of-interest analysis); **blocking for EU enterprise** until permanent DPO ceremony per `DPO-HANDOFF-PLAN.md §7` (parallel GDPR Art. 37 obligation).
 
 ---
 

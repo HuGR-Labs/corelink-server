@@ -176,7 +176,7 @@ Statement of Applicability (SoA) cobre os 93 controles Anexo A:2022. Mapping com
 | Art. 33 §1º | Transferência internacional + adequação              | §7 privacy_model + CTRL-PRIV-031 (residency pinning fail-CLOSED 451) + attestation bundle `specs/_compliance/LGPD-RESIDENCY-ATTESTATION-2026-05-15.md` (GAP-22 closed 2026-05-15) | EVT-044 + `dev.hugr.corelink.residency.{request_routed,write_rejected_cross_region}.v1` |
 | Art. 37 | Registro de operações                                  | Audit events CloudEvents                    | EVT-047 (AUDIT_EVENT)      |
 | Art. 38 | Relatório de impacto à proteção de dados (RIPD)       | DPIA por WI HIGH_RISK                       | EVT-045                         |
-| Art. 41 | Encarregado (DPO)                                      | Privacy Officer nomeado (Gustavo interim)   | EVT-032                  |
+| Art. 41 | Encarregado (DPO)                                      | Interim DPO formally designated (Gustavo Schneiter) per `specs/_compliance/DPO-APPOINTMENT-2026-05-15.md` (LGPD Art. 41 §1º + ANPD Resolução 18/2024); RACI in `DPO-RESPONSIBILITIES-MATRIX.md`; escalation in `RB-DPO-ESCALATION.md`; handoff plan to permanent DPO in `DPO-HANDOFF-PLAN.md` | EVT-032 |
 | Art. 48 | Comunicação de incidente à ANPD                        | `RB-BREACH-NOTIF`                           | EVT-017           |
 
 ### 4.2 Ponto crítico: tenants que usam CoreLink para dados pessoais
@@ -291,7 +291,7 @@ Este doc é o acordo atual de roadmap. Gaps conhecidos:
 
 | Gap ID | Descrição                                                     | Plano                                         | Owner            | Status (2026-05-15) |
 |--------|---------------------------------------------------------------|-----------------------------------------------|------------------|----------------------|
-| GAP-01 | DPO formal vs. interim Privacy Officer                         | Contratar DPO antes de ingressar EU enterprise | Gustavo         | Open (T+1m) |
+| GAP-01 | DPO formal vs. interim Privacy Officer                         | Contratar DPO antes de ingressar EU enterprise | Gustavo         | **In progress (2026-05-15)** — interim DPO formally designated via `specs/_compliance/DPO-APPOINTMENT-2026-05-15.md` (LGPD Art. 41 + ANPD Resolução 18/2024); RACI in `DPO-RESPONSIBILITIES-MATRIX.md`; escalation in `RB-DPO-ESCALATION.md`; 90-day handoff plan to permanent DPO in `DPO-HANDOFF-PLAN.md`; closes on permanent appointment ceremony per handoff plan §7 |
 | GAP-02 | BCP/DRP documentado                                             | WI em fase "pré-GA hardening"                 | SRE Lead        | Done (`BCP-DR-DRILL-CADENCE.md` + 14 drills) |
 | GAP-03 | TIA template                                                    | Criar junto com primeiro tenant EU             | Legal           | Done (`legal/tia/` template) |
 | GAP-04 | SOC 2 readiness gap analysis                                    | Mês 3 pós GA                                  | Compliance Officer | **Done** (delivered 2026-05-14; sealed) |
