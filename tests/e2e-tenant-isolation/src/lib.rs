@@ -22,8 +22,15 @@
 //!
 //! # Invariant pinned (INV-TENANT-ISOLATION)
 //!
-//! The 12 scenarios in `tests/adversarial.rs` together pin the
-//! cross-tenant isolation invariant across the six canonical layers:
+//! The 25 scenarios in `tests/adversarial.rs` together pin the
+//! cross-tenant isolation invariant across the six canonical layers.
+//! The first 12 scenarios are the wave-5 baseline; scenarios 13..25
+//! are the pentest-readiness expansion (timing oracle, cache
+//! poisoning, CMK rotation race, PAT-revoke ToCToU, mixed-case
+//! idempotency, audit-chain leaf forge, cross-region replay,
+//! cross-tenant DSR, sibling quota inheritance, multipart upload
+//! forge, Stripe webhook cross-account spoofing, KV partition
+//! fail-CLOSED, audit query injection):
 //!
 //! | Layer | Mechanism | Scenario coverage |
 //! |---|---|---|
@@ -72,7 +79,9 @@ pub mod fakes;
 pub mod tenants;
 
 pub use fakes::{
-    AuditAttempt, AuditCapture, CasStore, DenyKind, IdempotencyStore, PatStore, QuotaStore,
-    RateLimiter, StripeWebhookLedger,
+    AuditAttempt, AuditCapture, AuditChain, AuditQueryEngine, CasStore, CmkRotationLedger,
+    ConstantTimeAuthProbe, DenyKind, DsrIntake, HierarchicalQuotaStore, IdempotencyStore,
+    KvReplicatedPatStore, MultipartBroker, PatRevokeLedger, PatStore, QuotaStore, RateLimiter,
+    RegionRouter, StripeWebhookLedger,
 };
 pub use tenants::TenantCtx;
