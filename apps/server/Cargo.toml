@@ -24,6 +24,18 @@ print_stdout = "deny"
 print_stderr = "deny"
 mod_module_files = "deny"
 
+[features]
+default = []
+
+# Wire the production AWS KMS provider (`corelink_byok_aws::AwsKmsRealProvider`)
+# instead of the in-memory fake. Off by default — enable in production
+# deployments where customer CMKs live in AWS KMS. The flag is GA-prep
+# scaffolding; the server BYOK orchestrator wiring lands incrementally.
+#
+# Pattern reference (replicated for GCP/Azure/Vault):
+# `specs/_audits/2026-05-15-byok-real-provider-pattern.md`.
+byok-aws-real = ["dep:corelink-byok", "dep:corelink-byok-aws"]
+
 [dependencies]
 tonic = { workspace = true }
 prost = { workspace = true }
@@ -56,6 +68,12 @@ corelink-tier-selection = { workspace = true }
 corelink-handler-cas = { workspace = true }
 corelink-handler-ac = { workspace = true }
 corelink-handler-admin = { workspace = true }
+
+# Optional BYOK dependencies — only linked when `byok-aws-real` is enabled.
+# See features section above and
+# `specs/_audits/2026-05-15-byok-real-provider-pattern.md`.
+corelink-byok = { path = "../../crates/corelink-byok", optional = true }
+corelink-byok-aws = { path = "../../crates/corelink-byok-aws", optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
