@@ -142,7 +142,6 @@ jobs:
           DIGEST: ${{ steps.build-push.outputs.digest }}
         run: |
           IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}"
-          WORKFLOW_REF="${{ github.workflow_ref }}"
           REPO="${{ github.repository }}"
 
           echo "Verifying signature for: ${IMAGE}"

@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: actionlint
+
+# Static lint of every workflow file in .github/workflows. Catches:
+#   - invalid YAML syntax
+#   - unknown contexts / undefined expression variables
+#   - shellcheck violations in `run:` blocks
+#   - unknown runner labels (e.g. retired `macos-13`)
+#   - deprecated set-env / add-path commands
+#   - unused step IDs, wrong job-needs references, etc.
+#
+# DEBT-020 closure: gate workflow drift before merge.
+# Sprint / WI link: WI-R-PREP §workflows
+# Quality lane: STANDARD
+# Fail-closed: YES (any actionlint violation fails the PR)
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+      - '.actionlint.yaml'
+      - '.github/workflows/actionlint.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/**'
+      - '.actionlint.yaml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  actionlint:
+    name: actionlint (rhysd/actionlint, Docker SHA-pinned)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # actions/checkout@v4.3.1
+
+      # Docker action pinned to image digest (not floating tag) per
+      # ADR-0044 supply-chain SHA-pin policy. The :1.7.12 tag is the
+      # human-readable comment; the digest is the immutable identifier.
+      # When bumping: re-resolve via Docker Hub API and update both refs.
+      - name: Run actionlint
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667  # rhysd/actionlint:1.7.12
+        with:
+          args: -color -verbose

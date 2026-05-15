@@ -112,9 +112,11 @@ jobs:
           SUBJECTS_RAW="${SHA256_HEX}  ${ARTIFACT_NAME}"
           BASE64_SUBJECTS="$(echo -n "${SUBJECTS_RAW}" | base64 -w 0)"
 
-          echo "artifact-digest=${SHA256_HEX}" >> "$GITHUB_OUTPUT"
-          echo "artifact-name=${ARTIFACT_NAME}" >> "$GITHUB_OUTPUT"
-          echo "base64-subjects=${BASE64_SUBJECTS}" >> "$GITHUB_OUTPUT"
+          {
+            echo "artifact-digest=${SHA256_HEX}"
+            echo "artifact-name=${ARTIFACT_NAME}"
+            echo "base64-subjects=${BASE64_SUBJECTS}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Upload WASM artifact for release upload
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

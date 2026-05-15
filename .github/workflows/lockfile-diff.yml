@@ -185,7 +185,7 @@ jobs:
 
           **{total_changed} dependency change(s)** detected in this PR.
 
-          See the [step summary](${{github.server_url}}/${{repo}}/actions/runs/${{github.run_id}}) for the full diff.
+          See the [step summary](${{github.server_url}}/{repo}/actions/runs/${{github.run_id}}) for the full diff.
 
           ### cargo-deny Policy Check: :{deny_emoji}: {deny_status}
 

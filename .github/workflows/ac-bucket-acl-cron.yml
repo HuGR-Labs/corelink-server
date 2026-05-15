@@ -73,12 +73,7 @@ jobs:
                 ERRORS=$((ERRORS+1))
                 continue
               }
-            if ! python3 -c "
-import json, sys
-data = json.loads(sys.stdin.read())
-rules = data.get('result', data).get('rules', None)
-sys.exit(0 if rules == [] else 1)
-" <<<"$body"; then
+            if ! python3 -c 'import json, sys; data = json.loads(sys.stdin.read()); rules = data.get("result", data).get("rules", None); sys.exit(0 if rules == [] else 1)' <<<"$body"; then
               echo "::error::Bucket $bucket CORS rules NOT empty — RB-FM-AC-BUCKET-LEAK"
               ERRORS=$((ERRORS+1))
             else

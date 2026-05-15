@@ -151,25 +151,33 @@ jobs:
             2>&1 | tee "${plan_log}"
 
           TF_EXIT="${PIPESTATUS[0]}"
-          echo "exitcode=${TF_EXIT}" >> "$GITHUB_OUTPUT"
-          echo "plan_log=${plan_log}" >> "$GITHUB_OUTPUT"
-          echo "plan_file=${plan_file}" >> "$GITHUB_OUTPUT"
-          echo "region=${region}" >> "$GITHUB_OUTPUT"
+          {
+            echo "exitcode=${TF_EXIT}"
+            echo "plan_log=${plan_log}"
+            echo "plan_file=${plan_file}"
+            echo "region=${region}"
+          } >> "$GITHUB_OUTPUT"
 
           case "${TF_EXIT}" in
             0)
-              echo "drift_detected=false" >> "$GITHUB_OUTPUT"
-              echo "drift_severity=none" >> "$GITHUB_OUTPUT"
+              {
+                echo "drift_detected=false"
+                echo "drift_severity=none"
+              } >> "$GITHUB_OUTPUT"
               echo "::notice::Region ${region}: no drift (exit 0)"
               ;;
             2)
-              echo "drift_detected=true" >> "$GITHUB_OUTPUT"
-              echo "drift_severity=medium" >> "$GITHUB_OUTPUT"
+              {
+                echo "drift_detected=true"
+                echo "drift_severity=medium"
+              } >> "$GITHUB_OUTPUT"
               echo "::warning::Region ${region}: drift detected (exit 2)"
               ;;
             *)
-              echo "drift_detected=false" >> "$GITHUB_OUTPUT"
-              echo "drift_severity=none" >> "$GITHUB_OUTPUT"
+              {
+                echo "drift_detected=false"
+                echo "drift_severity=none"
+              } >> "$GITHUB_OUTPUT"
               echo "::error::Region ${region}: terraform error (exit ${TF_EXIT})"
               ;;
           esac

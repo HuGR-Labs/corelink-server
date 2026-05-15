@@ -229,7 +229,8 @@ jobs:
         working-directory: examples/buck2-starter
         run: |
           set -euo pipefail
-          export CORELINK_PAT="invalid_pat_$(date +%s)"
+          CORELINK_PAT="invalid_pat_$(date +%s)"
+          export CORELINK_PAT
           # Buck2 will attempt remote cache write/read; expect 401 in stderr.
           if buck2 build :hello 2>&1 | grep -qiE "401|unauthorized|forbidden|auth"; then
             echo "OK: 401 surfaced as expected with invalid PAT."

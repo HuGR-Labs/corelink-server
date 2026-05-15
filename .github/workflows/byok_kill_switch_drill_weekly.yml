@@ -22,11 +22,7 @@ jobs:
 
     steps:
       - name: Checkout
-<<<<<<< HEAD
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # actions/checkout@v4.3.1
-=======
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
->>>>>>> wt/debt-010-ci-opt-p1
 
       - name: Determine provider (weekly rotation)
         id: provider
