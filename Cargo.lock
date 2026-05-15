@@ -2654,6 +2654,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "e2e-failover-router"
+version = "0.1.0"
+dependencies = [
+ "corelink-failover-router",
+ "corelink-replica-worker",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "e2e-resilience"
 version = "0.1.0"
 dependencies = [
