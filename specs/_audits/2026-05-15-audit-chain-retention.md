@@ -81,6 +81,7 @@ Full proof + integration with `audit_immutability.tla` is a follow-on Lote (no P
 | Bypass dual-approval discipline | UI + audit emit | `WI-S16-005-admin-ops-ui-audit-viewer-dual-approval` |
 | TLA+ spec stub | This document §3 | `specs/_audits/2026-05-15-audit-chain-retention.md` |
 | Customer-facing audit-export endpoint (Wave-15.3) | axum route + integration test | `apps/server/src/routes/audit_export.rs` + `apps/server/tests/audit_export.rs` (7 tests: happy / cross-tenant reject / empty range / verify-failed SEV-0 / 401 / 429 / 503-audit-fail) |
+| Wave-17 PagerDuty alert wiring for the 2 paged emits | Alert rules + 2 SEV runbooks | `dashboards/alerts/dash-audit-export-alerts.yml` (`AuditExport_CrossTenantAttempt` SEV-1, `AuditExport_VerifyFailed` SEV-0) + `specs/_runbooks/RB-AUDIT-EXPORT-CROSS-TENANT-ATTEMPT.md` + `specs/_runbooks/RB-AUDIT-EXPORT-VERIFY-FAILED.md`. Routing: `PAGERDUTY_ROUTING_KEY` (secrets-matrix row #11). SEV-0 starts LGPD Art. 46 / GDPR Art. 33 72h clock on confirm. |
 
 ## 5. SOC 2 CC7.2 mapping
 

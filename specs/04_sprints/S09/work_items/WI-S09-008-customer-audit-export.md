@@ -4,7 +4,7 @@ type: "work_item"
 doc_status: "SEALED"
 work_status: "READY"
 audit_status: "ACTIVE"
-version: "0.2.0"
+version: "0.3.0"
 created: "2026-05-15"
 updated: "2026-05-15"
 lane: "HIGH_RISK"
@@ -21,7 +21,7 @@ inherits_from:
   - "SECURITY-MODEL"
   - "INVARIANT-REGISTRY"
   - "PRIVACY-MODEL"
-tags: ["wi", "s09", "audit-export", "customer-facing", "compliance", "soc2", "gdpr-art-15", "high-risk"]
+tags: ["wi", "s09", "audit-export", "customer-facing", "compliance", "soc2", "gdpr-art-15", "high-risk", "wave-17-pd-wired"]
 ---
 
 # WI-S09-008 — Customer-facing `/v1/audit/export` Endpoint (streaming NDJSON + cryptographic inclusion proofs; SOC 2 CC7.2 / GDPR Art. 15+20 / LGPD Art. 9+18 portability; reads from Wave-15 R2 archive producer; reuses `ChainVerifier` + `verify_inclusion_proof` pure-logic primitives; fail-CLOSED per Lote 10.6bis)
@@ -134,6 +134,7 @@ Error responses (fail-CLOSED canonical):
 - [x] Integration test: in-memory chain + window export, full proof verification round-trip (`apps/server/tests/audit_export.rs::happy_path_tenant_exports_own_audit_logs`; 5-event window; manifest footer + chain-head anchor header asserted).
 - [x] Chaos test: induced chain break surfaces SEV-0 audit (`apps/server/tests/audit_export.rs::chain_tamper_emits_verify_failed_sev0`; the test still flushes bytes — the SEV-0 audit emit is the security anchor; the `X-CoreLink-Audit-Export-Aborted` trailer ships in the follow-on streaming wire-up once we move off the in-memory buffer).
 - [x] Tenant-isolation test: cross-tenant JWT returns 403 + audit emit (`apps/server/tests/audit_export.rs::cross_tenant_attempt_emits_security_audit_and_403`); 7 tests total (happy + cross-tenant + empty-range + verify-failed + 401 + 429 + 503-on-audit-fail).
+- [x] **PagerDuty alert wiring for the 2 security/integrity emits (Wave-17, 2026-05-15)** — `dashboards/alerts/dash-audit-export-alerts.yml` ships rule `AuditExport_CrossTenantAttempt` (SEV-1 → PagerDuty critical → `PAGERDUTY_ROUTING_KEY` row #11 secrets matrix, escalation policy `corelink-incident-response`) and rule `AuditExport_VerifyFailed` (SEV-0 → PagerDuty critical → secondary direct-to-Tier-3 escalation; 1h MTTA / 4h MTTR; LGPD Art. 46 + GDPR Art. 33 72h regulatory clock on confirm). Tenant ids in PD payloads are BLAKE3-pseudonymised (INV-AUTH-AUDIT-PSEUDONYMIZATION + CTRL-PRIV-001). Event #1 (`corelink.audit.export_request.v1`) is info-only — dashboard recording rule `corelink_audit_export_request_rate_5m`, NOT paged. New runbooks `specs/_runbooks/RB-AUDIT-EXPORT-CROSS-TENANT-ATTEMPT.md` (SEV-1; 6 ops sections + customer-comm decision tree) and `specs/_runbooks/RB-AUDIT-EXPORT-VERIFY-FAILED.md` (SEV-0; 7 ops sections incl. R2 chunk pull forensics + audit-chain rebuild). Wave-17 follow-on flagged at wave-16 L9 risk register §6 is **CLOSED**.
 - [ ] Customer-side CLI re-verify (`corelink audit verify`) green on the exported NDJSON (deferred — depends on the CLI binary at `crates/corelink-audit-chain/src/bin/verifier.rs` accepting the route's NDJSON envelope shape; tracked as follow-on lifting the verifier CLI off the chunk-file input).
 - [ ] Daily-verify cron (`audit-chain-daily-verify.yml`) green for 7 consecutive days (production gate; runs after Wave-15.3 deploys).
 
@@ -180,3 +181,37 @@ Quality gates closed:
 | `cargo test -p corelink-server --lib` | 47 tests pass |
 | `cargo clippy -p corelink-server --tests -- -D warnings` | green |
 | `python3 scripts/validate_specs.py` | green |
+
+---
+
+## 10. Wave-17 PagerDuty wiring closure (2026-05-15)
+
+The wave-16 commit `9eaacd8` (audit-export endpoint) introduced 3
+audit event types but deferred the PagerDuty alert wiring to wave-17
+(flagged in the wave-16 L9 risk register §6). This wave-17 closure
+ships:
+
+| Audit event type | Severity | Routing | Rule | Runbook |
+|---|---|---|---|---|
+| `corelink.audit.export_request.v1` | info | dashboard only | recording rule `corelink_audit_export_request_rate_5m` | n/a (info) |
+| `corelink.security.audit_export_cross_tenant_attempt.v1` | SEV-1 | PagerDuty critical via `PAGERDUTY_ROUTING_KEY` (row #11 secrets matrix); escalation policy `corelink-incident-response` | `AuditExport_CrossTenantAttempt` in `dashboards/alerts/dash-audit-export-alerts.yml` | `specs/_runbooks/RB-AUDIT-EXPORT-CROSS-TENANT-ATTEMPT.md` |
+| `corelink.audit.export_verify_failed.v1` | SEV-0 | PagerDuty critical via `PAGERDUTY_ROUTING_KEY` + secondary `corelink-incident-response-tier-3-direct` escalation; 1h MTTA / 4h MTTR; LGPD Art. 46 + GDPR Art. 33 72h regulatory clock starts on confirm | `AuditExport_VerifyFailed` in `dashboards/alerts/dash-audit-export-alerts.yml` | `specs/_runbooks/RB-AUDIT-EXPORT-VERIFY-FAILED.md` |
+
+**Privacy guarantee:** PagerDuty payloads use the BLAKE3-pseudonymised
+`tenant_id_hex8` (first 8 hex of BLAKE3(tenant_id)) for the metric
+label per INV-AUTH-AUDIT-PSEUDONYMIZATION + CTRL-PRIV-001 +
+INV-OBS-CARDINALITY-BUDGET. The raw tenant_id is resolvable
+only from the admin audit-viewer with dual-approval (`WI-S16-005`).
+
+**Secrets matrix:** no new secrets — `PAGERDUTY_ROUTING_KEY` at row
+#11 (`docs/internal/secrets-checklist.md`) is reused unchanged.
+
+**Quality gates (wave-17):**
+
+| Gate | Status |
+|---|---|
+| `python3 scripts/validate_specs.py` (2 new runbooks parse with frontmatter) | green |
+| `python3 scripts/validate_references.py` (no new dangling refs) | green |
+| `python3 scripts/validate_secrets_matrix.py` (row #11 unchanged) | green |
+| `cargo build` / `clippy` / `test` | n/a (no Rust changes — alert rules are dashboard-side; the route already emits the 3 events from wave-16) |
+
