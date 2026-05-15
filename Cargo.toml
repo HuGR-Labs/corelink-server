@@ -141,6 +141,13 @@ members = [
     # Checkout → first PAT → R2 CAS write + BLAKE3 verify. In-memory fakes by
     # default; live `STRIPE_SECRET_KEY_TEST`-gated tests behind `--ignored`.
     "tests/e2e-signup-flow",
+    # R3-5 end-to-end billing-flow harness: signup → tier_select(Starter)
+    # → Stripe Checkout → subscription activation → cancel-while-active
+    # → refund webhook → DSR-erasure-while-subscribed gate. In-memory
+    # fakes wire every collaborator (corelink-signup +
+    # corelink-tier-selection + corelink-billing-stripe + corelink-dsr)
+    # so the full customer billing journey runs without network IO.
+    "tests/e2e-billing-flow",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
