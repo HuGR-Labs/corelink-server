@@ -34,30 +34,31 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
+  # PR gate is crate-scoped only. Workspace-wide gates (fmt, clippy --workspace,
+  # test --workspace, doc --workspace) live in cas_foundation.yml::workspace-build-test
+  # per CI-OPT-001. cargo-audit advisory DB scan lives in cargo-audit.yml
+  # per CI-OPT-004 (removes floating rustsec/audit-check@v1 ref).
   pr-gate:
-    name: PR gate (build + clippy + tests + canonical vectors)
+    name: PR gate (crate-scoped clippy + tests + canonical vectors)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
         with:
           components: clippy, rustfmt
 
       - name: Cargo cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
         with:
           workspaces: ". -> target"
 
-      - name: cargo fmt --check
-        run: cargo fmt --all -- --check
+      - name: cargo clippy (corelink-meta, -D warnings)
+        run: cargo clippy --package corelink-meta --all-targets -- -D warnings
 
-      - name: cargo clippy (workspace, -D warnings)
-        run: cargo clippy --workspace --all-targets -- -D warnings
-
-      - name: cargo test (workspace, debug)
-        run: cargo test --workspace --all-targets
+      - name: cargo test (corelink-meta, debug)
+        run: cargo test --package corelink-meta --all-targets
 
       - name: cargo test (release — perf + property gates)
         run: cargo test --release --package corelink-meta
@@ -65,44 +66,31 @@ jobs:
       - name: cargo test (canonical schema vectors — fast smoke)
         run: cargo test --package corelink-meta --test schema_canonical
 
-      - name: cargo doc (deny broken intra-doc links)
-        env:
-          RUSTDOCFLAGS: "-D warnings"
-        run: cargo doc --no-deps --workspace
-
   wasm-build:
     name: WASM target build (CF Workers compile compatibility)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
         with:
           targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
         with:
           workspaces: ". -> target"
       - name: cargo check (corelink-meta on wasm32-unknown-unknown)
         run: cargo check --package corelink-meta --target wasm32-unknown-unknown
-
-  audit:
-    name: cargo-audit (advisory DB)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: rustsec/audit-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
   fuzz-smoke:
     name: cargo-fuzz smoke (60s, both targets)
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
+        with:
+          toolchain: nightly
       - run: cargo install cargo-fuzz --locked
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
         with:
           workspaces: "crates/corelink-meta/fuzz -> target"
       - name: commit_put_roundtrip 60s
@@ -117,10 +105,12 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule'
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
+        with:
+          toolchain: nightly
       - run: cargo install cargo-fuzz --locked
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
         with:
           workspaces: "crates/corelink-meta/fuzz -> target"
       - name: commit_put_roundtrip 3600s
@@ -135,9 +125,9 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule'
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
+      - uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
         with:
           workspaces: ". -> target"
       - run: cargo install cargo-mutants --locked

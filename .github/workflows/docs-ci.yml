@@ -1,9 +1,18 @@
 name: docs CI
 
-# WI-S18-001 — typecheck + lint + test + build + Lighthouse-CI + axe +
-# lychee broken-link + Vale prose lint for apps/docs/ (Docusaurus 3).
+# WI-S18-001 + CI-OPT-002 consolidation — typecheck + lint + test + build +
+# Lighthouse-CI + axe + lychee broken-link + Vale prose lint + Playwright
+# a11y sweep (WCAG 2.2 AA) + axe-core/cli baseline diff + i18n coverage +
+# REAPI auto-gen drift check for apps/docs/ (Docusaurus 3).
 #
 # All actions are SHA-pinned per S-12 supply-chain policy.
+#
+# Trigger surface expanded by CI-OPT-002 to absorb formerly-standalone
+# workflows: includes proto paths (for REAPI drift) and a schedule trigger
+# (for nightly Lighthouse baseline). Standalone `docs-a11y.yml`,
+# `docs-a11y-baseline.yml`, `docs-i18n.yml`, `docs-lighthouse.yml`, and
+# `docs-reapi-gen.yml` have been deleted; their jobs are absorbed below
+# and share the single `build` artifact (saves ~25 billable-min/PR).
 
 on:
   pull_request:
@@ -13,6 +22,9 @@ on:
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
       - ".github/workflows/docs-ci.yml"
+      # REAPI drift surface (absorbed from docs-reapi-gen.yml per CI-OPT-002):
+      - "crates/corelink-reapi/proto/**"
+      - "apps/server/proto/**"
   push:
     branches: [main]
     paths:
@@ -21,6 +33,16 @@ on:
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
       - ".github/workflows/docs-ci.yml"
+      - "crates/corelink-reapi/proto/**"
+      - "apps/server/proto/**"
+  schedule:
+    # Nightly Lighthouse baseline at 08:00 UTC (absorbed from docs-lighthouse.yml).
+    # Tag-trigger surface from old docs-lighthouse.yml (docs-v*, v*) is
+    # deferred: PR-time `lighthouse` job covers every PR; nightly
+    # `lighthouse-baseline` covers regression detection. Add a tag-time
+    # lighthouse job in a follow-up if release verification becomes a hard
+    # requirement.
+    - cron: "0 8 * * *"
   workflow_dispatch:
 
 permissions:
@@ -248,3 +270,249 @@ jobs:
           fail_on_error: false
           reporter: github-pr-check
           vale_flags: "--config=apps/docs/.vale.ini --no-exit"
+
+  # ===================================================================
+  # CI-OPT-002 absorbed jobs (from former standalone workflows)
+  # Each reuses the `build` artifact uploaded by the `build` job above.
+  # ===================================================================
+
+  # ---- Absorbed from docs-a11y.yml (WI-S18-005 D4) ----
+  # Playwright + @axe-core/playwright WCAG 2.2 AA sweep; zero
+  # serious/critical violations allowed. Per S-18 §5.6 R-S18-14.
+  a11y-playwright:
+    name: axe-core WCAG 2.2 AA sweep (0 serious/critical)
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/docs
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@a3252b78c470c02df07e9d59298aecedc3ccdd6d # v4.1.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: .
+        run: pnpm install --frozen-lockfile
+
+      - name: Download build artifact (reuse from `build` job)
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: docs-build
+          path: apps/docs/build
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run a11y sweep
+        run: pnpm exec playwright test --config playwright-a11y.config.ts
+
+      - name: Upload a11y report on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: docs-a11y-report
+          path: apps/docs/playwright-report/
+          retention-days: 14
+
+  # ---- Absorbed from docs-a11y-baseline.yml (WT-R4-1 Goal C) ----
+  # @axe-core/cli diff-vs-baseline regression check. Fails on NEW
+  # CRITICAL violations vs A11Y-BASELINE-2026-05-14.json.
+  a11y-baseline-diff:
+    name: axe-core/cli diff vs A11Y-BASELINE
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: apps/docs
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@a3252b78c470c02df07e9d59298aecedc3ccdd6d # v4.1.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies (workspace root)
+        working-directory: .
+        run: pnpm install --frozen-lockfile
+
+      - name: Download build artifact (reuse from `build` job)
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: docs-build
+          path: apps/docs/build
+
+      - name: Install Chromium for axe-core/cli
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends chromium-browser
+
+      - name: Serve built site (background)
+        run: |
+          pnpm serve --port 3000 --no-open > /tmp/docs-serve.log 2>&1 &
+          echo $! > /tmp/docs-serve.pid
+          for i in $(seq 1 60); do
+            if curl -fsS -o /dev/null --max-time 2 http://localhost:3000/; then
+              echo "docs server up"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "docs server failed to come up" >&2
+          tail -50 /tmp/docs-serve.log >&2 || true
+          exit 1
+
+      - name: Run a11y baseline diff
+        env:
+          DOCS_BASE_URL: http://localhost:3000
+        run: bash scripts/a11y-audit.sh --against=baseline
+
+      - name: Stop docs server
+        if: always()
+        run: |
+          if [[ -f /tmp/docs-serve.pid ]]; then
+            kill "$(cat /tmp/docs-serve.pid)" || true
+          fi
+
+      - name: Upload a11y reports on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: docs-a11y-baseline-report
+          path: apps/docs/dist/a11y/
+          retention-days: 14
+
+  # ---- Absorbed from docs-i18n.yml (WI-S18-005 D2) ----
+  # i18n coverage ≥ 80 % en → {pt-BR, es-419}. Per S-18 §5.6 R-S18-12.
+  i18n-coverage:
+    name: i18n coverage (>=80% en -> {pt-BR, es-419})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@a3252b78c470c02df07e9d59298aecedc3ccdd6d # v4.1.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run i18n coverage script
+        working-directory: apps/docs
+        run: pnpm i18n-coverage --threshold 0.8
+
+  # ---- Absorbed from docs-reapi-gen.yml (CTRL-DOC-AUTO-GEN) ----
+  # Zero-drift gate between .proto vendored copies and generated MDX.
+  # Independent of docs-build artifact (uses pnpm directly per
+  # docs-gen-check script).
+  reapi-gen-drift:
+    name: REAPI .proto -> MDX zero-drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: pnpm/action-setup@a3252b78c470c02df07e9d59298aecedc3ccdd6d # v4.1.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install docs deps
+        run: pnpm install --filter @corelink/docs --frozen-lockfile=false
+
+      - name: Typecheck
+        run: pnpm --filter @corelink/docs typecheck
+
+      - name: Tests
+        run: pnpm --filter @corelink/docs test
+
+      - name: Verify zero drift between .proto and generated MDX
+        run: pnpm --filter @corelink/docs docs:gen:check
+
+      - name: Auto-PR on drift (informational)
+        if: failure() && github.event_name == 'push'
+        run: |
+          echo "::warning::REAPI reference is out of date — run pnpm --filter @corelink/docs docs:gen and commit."
+
+  # ---- Absorbed from docs-lighthouse.yml (WI-S18-005 D6) ----
+  # Lighthouse baseline (lighthouserc.cjs) — perf >= 95, a11y = 100,
+  # best-practices >= 95, SEO >= 90. Runs on schedule + workflow_dispatch
+  # only (PR-time lighthouse runs in the `lighthouse` job above with
+  # inline assertions; baseline runs the curated lighthouserc.cjs).
+  lighthouse-baseline:
+    name: lighthouse-ci baseline (lighthouserc.cjs)
+    needs: build
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/docs
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@a3252b78c470c02df07e9d59298aecedc3ccdd6d # v4.1.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: .
+        run: pnpm install --frozen-lockfile
+
+      - name: Download build artifact (reuse from `build` job)
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: docs-build
+          path: apps/docs/build
+
+      - name: Run Lighthouse CI (lighthouserc.cjs baseline)
+        run: pnpm exec lhci autorun --config=lighthouserc.cjs
+
+      - name: Upload LHCI report on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: docs-lhci-report
+          path: apps/docs/.lighthouseci/
+          retention-days: 14
