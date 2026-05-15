@@ -40,7 +40,7 @@ production-code mentions is the canonical drift surface we now ratchet.
 | └ MEDIUM | 4 | Unit test mandatory |
 | └ UNKNOWN severity | 0 | (parser would flag UNKNOWN if any) |
 | **Aliases declared** (registry §5) | 12 | Legacy CamelCase + cross-domain redirects |
-| **TLA+ verified** (declared INVs proved in `specs/tla/*.tla`) | 70 | INV-granularity count from `validate_canonical_consistency.py` (counts each declared INV mentioned in a TLA spec, not spec files). Spec-file count: 7 canonical + 4 runbook + 5 DEBT-005 batch-1 + 5 DEBT-005 batch-2 + 5 DEBT-005 batch-3 + 5 DEBT-005 batch-4 + 5 DEBT-005 batch-5 = 36 specs, 70 declared INVs covered (was 59 after batch 4; +11 from batch 5 which covers multiple INVs per spec via `audit_no_raw_pii` (INV-AUDIT-NO-RAW-PII + INV-NO-PII-IN-LOGS + INV-NO-BODY-IN-LOGS), `auth_pat_plaintext_never_persisted` (INV-AUTH-PAT-PLAINTEXT-NEVER-PERSISTED), `auth_webauthn_uv_admin` (INV-AUTH-WEBAUTHN-UV-REQUIRED-ADMIN + INV-AUTH-WEBAUTHN-ATTESTATION-VERIFIED), `cas_immutability` (INV-CAS-IMMUTABILITY + INV-CAS-IDEMPOTENCY + INV-CAS-CORRECTNESS), `auth_schema_rls_default_on` (INV-AUTH-SCHEMA-RLS-DEFAULT-ON + INV-AUTH-PII-ENCRYPTED)). |
+| **TLA+ verified** (declared INVs proved in `specs/tla/*.tla`) | 76 | INV-granularity count from `validate_canonical_consistency.py` (counts each declared INV mentioned in a TLA spec, not spec files). Spec-file count: 7 canonical + 4 runbook + 5 DEBT-005 batch-1 + 5 DEBT-005 batch-2 + 5 DEBT-005 batch-3 + 5 DEBT-005 batch-4 + 5 DEBT-005 batch-5 + 5 DEBT-005 batch-6 FINAL = 41 specs, 76 declared INVs covered (was 71 after batch 5; +5 from batch 6 FINAL: `auth_audit_pseudonymization` (INV-AUTH-AUDIT-PSEUDONYMIZATION), `auth_constant_time_cold_pad` (INV-AUTH-CONSTANT-TIME-COLD-PAD), `consent_proof_verifiable` (INV-CONSENT-PROOF-VERIFIABLE), `gc_reachable_set_complete` (INV-GC-REACHABLE-SET-COMPLETE), `sub_processor_audit_fail_closed` (INV-SUB-PROCESSOR-AUDIT-FAIL-CLOSED)). |
 | **Code-referenced** (declared INVs cited in `crates/*/src/`) | 77 | 50% of declared corpus has src/ pointer |
 | **Test-referenced** (declared INVs cited in `crates/*/tests/`) | 65 | 42% of declared corpus has test pointer |
 
@@ -51,7 +51,7 @@ production-code mentions is the canonical drift surface we now ratchet.
 | **orphan-ref** (INV in code, NOT in registry+aliases) | 15 | **HARD FAIL** at GA — every entry is either a typo or a forward-looking INV that must be promoted to registry §3 |
 | **declared-no-code-or-test** (in registry; no src/ or test reference) | 68 | Warns; ratcheted in §4 (per-sprint impl WIs absorb these as they ship) |
 | **declared-test-only** (test references it but no src/ reference) | 9 | Warns; expected for assertions about absent-behaviour |
-| **CRITICAL-no-TLA** (CRITICAL severity but no .tla proof yet) | 5 | Tracked by `check_tla_obligations.py` against registry §4.2 PLANNED matrix; this validator surfaces the same count as a sanity backstop. DEBT-005 partial closure 2026-05-15: batch 1 dropped 40 → 35 via `auth_jwt_validation`, `tenant_ctx_propagation`, `merkle_integrity`, `byok_envelope_aad`, `failover_no_split_brain`; batch 2 dropped 35 → 34 (validator INV-granularity) via `rollout_cosign_gate` (covers INV-ROLLOUT-COSIGN-GATE + runtime INV-SUPPLY-SIGNED-DEPLOY), `backup_restore_ephemeral`, `gc_sweep_audit_fail_closed` (covers INV-GC-SWEEP-AUDIT-FAIL-CLOSED + INV-GC-RECONCILE-AUDIT-FAIL-CLOSED), `ac_eviction_isolation` (covers INV-AC-EVICT-REGION-PINNED + INV-AC-EVICT-TENANT-SCOPED), `audit_emit_atomic` (covers INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER); batch 3 dropped 34 → 26 (validator INV-granularity) via `obs_no_pii` (INV-OBS-NO-PII), `offboarding_audit_complete` (INV-OFFBOARDING-AUDIT-COMPLETE + INV-OFFBOARDING-GRACE-RESPECTED), `billing_chain_integrity` (INV-BILLING-CHAIN-INTEGRITY), `gc_grace_boundary` (INV-GC-GRACE-BOUNDARY-STRICT + INV-GC-MARK-TENANT-SCOPED + INV-GC-SWEEP-TENANT-SCOPED), `backup_fresh` (INV-BACKUP-FRESH + INV-BACKUP-INTEGRITY-SAMPLE-CAP); batch 4 dropped 26 → 16 (validator INV-granularity) via `ac_integrity` (INV-AC-DIGEST-SIGNED + INV-AC-MERKLE-DETERMINISTIC + INV-AC-TENANT-SCOPED), `webauthn_origin` (INV-AUTH-WEBAUTHN-ORIGIN-EXACT + INV-AUTH-WEBAUTHN-RP-ID-CANONICAL), `digest_verification` (INV-DIGEST-VERIFICATION), `gc_mark_started_at` (INV-GC-MARK-STARTED-AT-ATOMIC + INV-GC-MARK-STARTED-AT-IMMUTABLE), `multipart_determinism` (INV-MULTIPART-CHUNK-DETERMINISTIC + INV-MULTIPART-PATH-TENANT-SCOPED); batch 5 dropped 16 → 5 (validator INV-granularity) via `audit_no_raw_pii` (INV-AUDIT-NO-RAW-PII + INV-NO-PII-IN-LOGS + INV-NO-BODY-IN-LOGS), `auth_pat_plaintext_never_persisted` (INV-AUTH-PAT-PLAINTEXT-NEVER-PERSISTED), `auth_webauthn_uv_admin` (INV-AUTH-WEBAUTHN-UV-REQUIRED-ADMIN + INV-AUTH-WEBAUTHN-ATTESTATION-VERIFIED), `cas_immutability` (INV-CAS-IMMUTABILITY + INV-CAS-IDEMPOTENCY + INV-CAS-CORRECTNESS), `auth_schema_rls_default_on` (INV-AUTH-SCHEMA-RLS-DEFAULT-ON + INV-AUTH-PII-ENCRYPTED). Net validator floor moved 35 → 34 → 26 → 16 → 5; spec count moved 16 → 21 → 26 → 31 → 36 (batch 1 + 2 + 3 + 4 + 5 = 25 specs added). |
+| **CRITICAL-no-TLA** (CRITICAL severity but no .tla proof yet) | 5 | Tracked by `check_tla_obligations.py` against registry §4.2 PLANNED matrix; this validator surfaces the same count as a sanity backstop. DEBT-005 partial closure 2026-05-15: batch 1 dropped 40 → 35 via `auth_jwt_validation`, `tenant_ctx_propagation`, `merkle_integrity`, `byok_envelope_aad`, `failover_no_split_brain`; batch 2 dropped 35 → 34 (validator INV-granularity) via `rollout_cosign_gate` (covers INV-ROLLOUT-COSIGN-GATE + runtime INV-SUPPLY-SIGNED-DEPLOY), `backup_restore_ephemeral`, `gc_sweep_audit_fail_closed` (covers INV-GC-SWEEP-AUDIT-FAIL-CLOSED + INV-GC-RECONCILE-AUDIT-FAIL-CLOSED), `ac_eviction_isolation` (covers INV-AC-EVICT-REGION-PINNED + INV-AC-EVICT-TENANT-SCOPED), `audit_emit_atomic` (covers INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER); batch 3 dropped 34 → 26 (validator INV-granularity) via `obs_no_pii` (INV-OBS-NO-PII), `offboarding_audit_complete` (INV-OFFBOARDING-AUDIT-COMPLETE + INV-OFFBOARDING-GRACE-RESPECTED), `billing_chain_integrity` (INV-BILLING-CHAIN-INTEGRITY), `gc_grace_boundary` (INV-GC-GRACE-BOUNDARY-STRICT + INV-GC-MARK-TENANT-SCOPED + INV-GC-SWEEP-TENANT-SCOPED), `backup_fresh` (INV-BACKUP-FRESH + INV-BACKUP-INTEGRITY-SAMPLE-CAP); batch 4 dropped 26 → 16 (validator INV-granularity) via `ac_integrity` (INV-AC-DIGEST-SIGNED + INV-AC-MERKLE-DETERMINISTIC + INV-AC-TENANT-SCOPED), `webauthn_origin` (INV-AUTH-WEBAUTHN-ORIGIN-EXACT + INV-AUTH-WEBAUTHN-RP-ID-CANONICAL), `digest_verification` (INV-DIGEST-VERIFICATION), `gc_mark_started_at` (INV-GC-MARK-STARTED-AT-ATOMIC + INV-GC-MARK-STARTED-AT-IMMUTABLE), `multipart_determinism` (INV-MULTIPART-CHUNK-DETERMINISTIC + INV-MULTIPART-PATH-TENANT-SCOPED); batch 5 dropped 16 → 5 (validator INV-granularity) via `audit_no_raw_pii` (INV-AUDIT-NO-RAW-PII + INV-NO-PII-IN-LOGS + INV-NO-BODY-IN-LOGS), `auth_pat_plaintext_never_persisted` (INV-AUTH-PAT-PLAINTEXT-NEVER-PERSISTED), `auth_webauthn_uv_admin` (INV-AUTH-WEBAUTHN-UV-REQUIRED-ADMIN + INV-AUTH-WEBAUTHN-ATTESTATION-VERIFIED), `cas_immutability` (INV-CAS-IMMUTABILITY + INV-CAS-IDEMPOTENCY + INV-CAS-CORRECTNESS), `auth_schema_rls_default_on` (INV-AUTH-SCHEMA-RLS-DEFAULT-ON + INV-AUTH-PII-ENCRYPTED). batch 6 FINAL dropped 5 → 0 (validator INV-granularity) via `auth_audit_pseudonymization` (INV-AUTH-AUDIT-PSEUDONYMIZATION), `auth_constant_time_cold_pad` (INV-AUTH-CONSTANT-TIME-COLD-PAD), `consent_proof_verifiable` (INV-CONSENT-PROOF-VERIFIABLE), `gc_reachable_set_complete` (INV-GC-REACHABLE-SET-COMPLETE), `sub_processor_audit_fail_closed` (INV-SUB-PROCESSOR-AUDIT-FAIL-CLOSED). Net validator floor moved 35 → 34 → 26 → 16 → 5 → **0** (DEBT-005 SEALED); spec count moved 16 → 21 → 26 → 31 → 36 → 41 (batch 1 + 2 + 3 + 4 + 5 + 6 FINAL = 30 specs added). |
 
 ## 3. Orphan references inventory (15)
 
@@ -166,21 +166,21 @@ these floors fails CI. The `orphan_refs` floor is the count we accept at
 baseline; the next PR that adds another orphan fails CI.
 
 <!-- BASELINE declared=188 -->
-<!-- BASELINE tla_verified=70 -->
+<!-- BASELINE tla_verified=76 -->
 <!-- BASELINE code_referenced=101 -->
 <!-- BASELINE test_referenced=88 -->
 <!-- BASELINE critical_referenced=36 -->
 <!-- BASELINE orphan_refs=0 -->
 <!-- BASELINE declared_no_code=68 -->
-<!-- BASELINE critical_no_tla=5 -->
+<!-- BASELINE critical_no_tla=0 -->
 
-**Ratchet floor update note (DEBT-004 + DEBT-005 batch-1 + batch-2 + batch-3 + batch-4 + batch-5 closure 2026-05-15):** Floors raised
+**Ratchet floor update note (DEBT-004 + DEBT-005 batch-1 + batch-2 + batch-3 + batch-4 + batch-5 + batch-6 FINAL closure 2026-05-15):** Floors raised
 post-closure: `declared` 154→188 (net +34 promotions from DEBT-004), `code_referenced`
 77→101, `test_referenced` 65→88, `critical_referenced` 29→36 (new
 CRITICAL: INV-AUTH-CONSTANT-TIME-COLD-PAD, INV-AC-EVICT-REGION-PINNED,
 INV-BACKUP-RESTORE-EPHEMERAL, INV-CAS-CORRECTNESS, INV-OBS-NO-PII,
 INV-OFFBOARDING-AUDIT-COMPLETE, INV-ROLLOUT-COSIGN-GATE),
-`tla_verified` 18→23→28→33→49→59→70 (DEBT-005 batch 1: auth_jwt_validation,
+`tla_verified` 18→23→28→33→49→59→71→76 (DEBT-005 batch 1: auth_jwt_validation,
 tenant_ctx_propagation, merkle_integrity, byok_envelope_aad,
 failover_no_split_brain; DEBT-005 batch 2: rollout_cosign_gate,
 backup_restore_ephemeral, gc_sweep_audit_fail_closed,
@@ -190,10 +190,35 @@ gc_grace_boundary, backup_fresh; DEBT-005 batch 4:
 ac_integrity, webauthn_origin, digest_verification,
 gc_mark_started_at, multipart_determinism; DEBT-005 batch 5:
 audit_no_raw_pii, auth_pat_plaintext_never_persisted,
-auth_webauthn_uv_admin, cas_immutability, auth_schema_rls_default_on),
-`critical_no_tla` 40→35→30→26→16→5 (cumulative DEBT-005 progress; net delta tracked in
-DEBT-005 cumulative). `orphan_refs` 15→0 — HARD FLOOR; any future orphan ref fails CI
+auth_webauthn_uv_admin, cas_immutability, auth_schema_rls_default_on;
+DEBT-005 batch 6 FINAL: auth_audit_pseudonymization,
+auth_constant_time_cold_pad, consent_proof_verifiable,
+gc_reachable_set_complete, sub_processor_audit_fail_closed),
+`critical_no_tla` 40→35→30→26→16→5→**0** (DEBT-005 SEALED; net delta tracked in
+DEBT-005 cumulative; batch 6 FINAL closes the last 5 CRITICAL INVs:
+INV-AUTH-AUDIT-PSEUDONYMIZATION + INV-AUTH-CONSTANT-TIME-COLD-PAD +
+INV-CONSENT-PROOF-VERIFIABLE + INV-GC-REACHABLE-SET-COMPLETE +
+INV-SUB-PROCESSOR-AUDIT-FAIL-CLOSED). `orphan_refs` 15→0 — HARD FLOOR; any future orphan ref fails CI
 immediately per `RB-CANONICAL-DRIFT.md §6`.
+
+**DEBT-005 CLOSED 2026-05-15 (batch 6 FINAL):** The `critical_no_tla` floor is
+now **0** — every CRITICAL-severity invariant declared in registry §3 has
+at least one TLA+ spec citing its ID. The validator confirms exit 0 with
+zero CRITICAL INVs uncovered. The 6-batch closure narrative spans 30 net-new
+specs (5 batches × 5 specs + 5 final-batch specs) plus the original
+auth_revocation cluster. INV-granularity floor moved 40 → 0 across the
+sprint. Note: INV-CONSENT-PROOF-VERIFIABLE retains its parent reference to
+`dsr_erasure_atomicity.tla` (InvConsentSymmetry, S-11 WI-S11-008) as a
+co-proof; the standalone `consent_proof_verifiable.tla` proves the
+hash/HMAC verifier soundness independently. INV-AUTH-AUDIT-PSEUDONYMIZATION
+and INV-SUB-PROCESSOR-AUDIT-FAIL-CLOSED retain their parent references to
+`audit_immutability.tla` (append-only chain) — the standalone specs make
+the INV citation literal so the validator surfaces GREEN coverage.
+INV-GC-REACHABLE-SET-COMPLETE complements `gc_correctness.tla`'s
+InvGCReachableNeverDeleted by proving the marker's 3-pass union is
+superset-safe. INV-AUTH-CONSTANT-TIME-COLD-PAD complements
+INV-AUTH-PAT-VERIFY-CONSTANT-TIME (sibling Mann-Whitney) by proving every
+cold-path branch invokes the dummy pad.
 
 ## 5. Forward burn-down expectation
 
