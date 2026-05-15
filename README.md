@@ -136,6 +136,32 @@ Audit-chain inclusion proofs are obtainable per event via
 the [audit-chain diagram](./docs/internal/architecture/diagrams/audit-chain-merkle.mmd)
 shows the leaf → root path.
 
+#### Offline audit-chain verify (WI-S09-008)
+
+Customers download a streaming NDJSON dump of their audit log via
+`GET /v1/audit/export?since=<rfc3339>&until=<rfc3339>` (one
+`{event, proof}` line per audit row + a trailing
+`{"manifest": <ExportManifest>}` line). The response header
+`X-CoreLink-Audit-Export-Chain-Head-Anchor` carries the 64-char
+BLAKE3 chain-head anchor observed at export time.
+
+To re-verify the dump offline (no network, no CoreLink trust):
+
+```sh
+corelink audit verify-ndjson \
+  --ndjson ./export.ndjson \
+  --chain-head-anchor <64-hex from X-CoreLink-Audit-Export-Chain-Head-Anchor>
+```
+
+The CLI recomputes every chain link from canonical bytes, walks the
+chain forward asserting continuity, and asserts the final
+recomputed hash matches both the manifest `chain_head_at_export`
+AND the customer-supplied anchor (constant-time compare). Exit
+code is `0` on success and `1` on any divergence, with a
+structured chain-break diagnostic carrying the offending line
+number, observed hash, expected hash, and failure kind
+(`continuity` vs `link_recompute`).
+
 ### I want to contribute
 
 Read [`CONTRIBUTING.md`](./CONTRIBUTING.md) first — DCO sign-off

@@ -9,4 +9,5 @@ pub mod ls;
 pub mod put;
 pub mod runbook_drill;
 pub mod stat;
+pub mod verify_ndjson;
 pub mod version;
