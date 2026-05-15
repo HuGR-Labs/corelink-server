@@ -45,17 +45,20 @@
 //! is the only point where the inquiry handoff fails closed for
 //! residency policy.
 //!
-//! # PII boundary
+//! # PII boundary (R2-11; S-19 P1-NEW-3 CLOSED)
 //!
-//! The [`crate::ledger::EnterpriseInquiryLedger`] in-memory mirror
-//! holds the plaintext form (S-19 P1-NEW-3 documented gap; the
-//! production worker boundary will hold the BYOK envelope). The
-//! [`HubSpotCrmClient::create_entry`] call expects the form already
-//! decrypted: the worker MUST decrypt the `encrypted_payload_b64`
-//! envelope before invoking this client. Cross-border transfer of the
-//! plaintext PII to HubSpot is permitted ONLY under the HubSpot DPA;
-//! the `HUBSPOT_REGION=eu1` constraint ensures EU resident PII does
-//! not transit the US Hub.
+//! As of R2-11, the [`crate::ledger::EnterpriseInquiryLedger`] in-
+//! memory mirror holds ONLY the BYOK-sealed [`SealedInquiry`] — never
+//! plaintext PII. The [`HubSpotCrmClient`] is the permitted decryption
+//! boundary on the dispatch path: [`HubSpotCrmClient::create_entry`]
+//! verifies the tenant AAD binding, unseals the payload via the
+//! supplied [`InquiryPayloadEncryptor`], constructs the HubSpot REST
+//! request from the unsealed PII, and lets the unsealed value go out
+//! of scope as soon as the wire request returns. Cross-border transfer
+//! of the plaintext PII to HubSpot is permitted ONLY under the HubSpot
+//! DPA; the `HUBSPOT_REGION=eu1` constraint ensures EU-resident PII
+//! does not transit the US Hub. Plaintext PII is NEVER logged at this
+//! boundary (CTRL-PRIV-001).
 //!
 //! # Retry policy
 //!
@@ -83,7 +86,8 @@
 use std::sync::{Arc, Mutex};
 
 use crate::crm::{CrmClient, CrmEntryId, CrmError};
-use crate::form::{EnterpriseInquiryForm, InquiryId, ResidencyKind};
+use crate::encryption::{InquiryPayloadEncryptor, SealedInquiry, UnsealedInquiryPii};
+use crate::form::{InquiryId, ResidencyKind};
 
 // ----------------------------------------------------------------------
 // HubSpot region + token + URL helpers
@@ -736,32 +740,54 @@ where
     T: HubSpotHttp + Clone,
     S: HubSpotSleeper + Clone,
 {
+    /// Decryption boundary (R2-11 / S-19 P1-NEW-3): unseals the
+    /// [`SealedInquiry`] via the supplied
+    /// [`InquiryPayloadEncryptor`] right before issuing the HubSpot
+    /// REST requests. The unsealed PII is held in a local
+    /// [`UnsealedInquiryPii`] for the duration of the three HTTP calls
+    /// (contact + company + deal) and dropped on return. Plaintext PII
+    /// is NEVER logged here (CTRL-PRIV-001).
     fn create_entry(
         &self,
         inquiry_id: &InquiryId,
-        form: &EnterpriseInquiryForm,
+        sealed: &SealedInquiry,
+        tenant_id: &str,
+        encryptor: &dyn InquiryPayloadEncryptor,
         _lead_score: u32,
     ) -> Result<CrmEntryId, CrmError> {
-        // Residency hard-check FIRST — before any wire request.
-        if !is_residency_routable(form.residency_requirements, self.region) {
+        // Residency hard-check FIRST — before any wire request. Uses
+        // the sanitised surrogate (no decryption needed for this gate).
+        if !is_residency_routable(sealed.sanitized.residency_requirements, self.region) {
             return Err(CrmError::Rejected(format!(
                 "residency-mismatch: inquiry residency `{}` rejected on region `{}` per CTRL-PRIV-RES-001",
-                form.residency_requirements.as_str(),
+                sealed.sanitized.residency_requirements.as_str(),
                 self.region.as_str()
             )));
         }
+        // Tenant binding check — fail-CLOSED on AAD swap BEFORE
+        // materialising plaintext.
+        if sealed.payload.aad.tenant_id != tenant_id {
+            return Err(CrmError::Encryption(
+                "tenant_id disagrees with payload AAD (cross-tenant push rejected)".to_string(),
+            ));
+        }
+        // ──── Decryption boundary START — DO NOT log fields of `unsealed` ────
+        let unsealed: UnsealedInquiryPii = encryptor
+            .unseal(&sealed.payload, &sealed.payload.aad)
+            .map_err(CrmError::from)?;
         // Best-effort name split (HubSpot expects first/last; the
         // canonical form has no name field so we use the company as
         // the first-name fallback per the CRM ops runbook).
-        let (first, last) = split_name(&form.company);
+        let (first, last) = split_name(&unsealed.company);
         let contact_id = self.create_contact(
-            &form.email,
+            &unsealed.email,
             &first,
             &last,
-            &form.company,
+            &unsealed.company,
             inquiry_id,
         )?;
-        let company_id = self.find_or_create_company(&form.company, None, inquiry_id)?;
+        let company_id =
+            self.find_or_create_company(&unsealed.company, None, inquiry_id)?;
         let deal_id = self.create_deal(
             &contact_id,
             &company_id,
@@ -769,7 +795,12 @@ where
             0,
             inquiry_id,
         )?;
+        // `unsealed` is dropped here — out of scope. The heap
+        // allocations are released by stdlib; the keyed memory zeroize
+        // path lives in `corelink-byok` for the wrapped DEK.
+        drop(unsealed);
         Ok(CrmEntryId::new(deal_id))
+        // ──── Decryption boundary END ────
     }
 
     fn compensate(&self, inquiry_id: &InquiryId, entry_id: &CrmEntryId) -> Result<(), CrmError> {
@@ -988,7 +1019,8 @@ fn split_name(full: &str) -> (String, String) {
 )]
 mod tests {
     use super::*;
-    use crate::form::{BYOKRequirementsKind, ResidencyKind, Role};
+    use crate::encryption::{seal_inquiry, InMemoryInquiryPayloadEncryptor};
+    use crate::form::{BYOKRequirementsKind, EnterpriseInquiryForm, ResidencyKind, Role};
 
     fn token() -> HubSpotToken {
         HubSpotToken::new("pat-na1-AAAAAAAAAAAAAAAA-deadbeef").unwrap()
@@ -1053,8 +1085,16 @@ mod tests {
     fn eu_inquiry_against_us_region_rejected_pre_flight() {
         let http = RecordingHubSpotHttp::new();
         let c = client_us(http.clone());
+        let enc = InMemoryInquiryPayloadEncryptor::new();
+        let sealed = seal_inquiry(&eu_form(), "tenant-1", b"k", &enc).unwrap();
         let err = c
-            .create_entry(&InquiryId::new("inq-eu-on-us"), &eu_form(), 100)
+            .create_entry(
+                &InquiryId::new("inq-eu-on-us"),
+                &sealed,
+                "tenant-1",
+                &enc,
+                100,
+            )
             .unwrap_err();
         assert!(matches!(err, CrmError::Rejected(ref m) if m.contains("residency-mismatch")));
         // No wire request was issued.
@@ -1066,8 +1106,16 @@ mod tests {
     fn us_inquiry_against_eu_region_rejected_pre_flight() {
         let http = RecordingHubSpotHttp::new();
         let c = client_eu(http.clone());
+        let enc = InMemoryInquiryPayloadEncryptor::new();
+        let sealed = seal_inquiry(&us_form(), "tenant-1", b"k", &enc).unwrap();
         let err = c
-            .create_entry(&InquiryId::new("inq-us-on-eu"), &us_form(), 50)
+            .create_entry(
+                &InquiryId::new("inq-us-on-eu"),
+                &sealed,
+                "tenant-1",
+                &enc,
+                50,
+            )
             .unwrap_err();
         assert!(matches!(err, CrmError::Rejected(ref m) if m.contains("residency-mismatch")));
         assert_eq!(http.request_count(), 0);
@@ -1169,14 +1217,37 @@ mod tests {
         // deal
         http.push_response(201, "{\"id\":\"3001\"}");
         let c = client_eu(http.clone());
+        let enc = InMemoryInquiryPayloadEncryptor::new();
+        let sealed = seal_inquiry(&eu_form(), "tenant-1", b"k", &enc).unwrap();
         let entry = c
-            .create_entry(&InquiryId::new("inq-e2e"), &eu_form(), 100)
+            .create_entry(&InquiryId::new("inq-e2e"), &sealed, "tenant-1", &enc, 100)
             .unwrap();
         assert_eq!(entry.as_str(), "3001");
         assert_eq!(http.request_count(), 4);
         for r in http.requests() {
             assert!(r.url.starts_with("https://api.hubapi.eu"));
         }
+        // Plaintext PII reached the HubSpot wire (this IS the
+        // permitted decryption boundary).
+        let bodies: Vec<String> = http.requests().iter().map(|r| r.body.clone()).collect();
+        let joined = bodies.join("\n");
+        assert!(joined.contains("ciso@acme.example"));
+        assert!(joined.contains("Acme GmbH"));
+    }
+
+    // -------- T-r2-11 a: AAD tenant swap rejected at HubSpot boundary --------
+    #[test]
+    fn r2_11_hubspot_rejects_cross_tenant_push() {
+        let http = RecordingHubSpotHttp::new();
+        let c = client_eu(http.clone());
+        let enc = InMemoryInquiryPayloadEncryptor::new();
+        let sealed = seal_inquiry(&eu_form(), "tenant-A", b"k", &enc).unwrap();
+        let err = c
+            .create_entry(&InquiryId::new("inq-x"), &sealed, "tenant-B", &enc, 100)
+            .unwrap_err();
+        assert!(matches!(err, CrmError::Encryption(_)));
+        // Zero wire requests issued — fail closed BEFORE wire egress.
+        assert_eq!(http.request_count(), 0);
     }
 
     // -------- T10 retry on 5xx with backoff --------

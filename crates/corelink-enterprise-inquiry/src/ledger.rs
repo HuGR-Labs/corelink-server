@@ -11,6 +11,23 @@
 //! ledger is `Send + Sync` and may be shared across worker tasks;
 //! the production wiring serialises mutations behind a Durable
 //! Object so the mutex contention floor is bounded.
+//!
+//! ## Encryption at ingress (R2-11; S-19 P1-NEW-3)
+//!
+//! The plaintext [`EnterpriseInquiryForm`] arrives at the HTTP handler
+//! boundary and is passed into [`EnterpriseInquiryLedger::submit_inquiry`]
+//! ONCE. Inside `submit_inquiry`, the form is sealed via the
+//! configured [`InquiryPayloadEncryptor`] BEFORE any persistence /
+//! outbox row insert, and the [`LedgerState`] mirror only ever holds
+//! the [`SealedInquiry`] (sealed payload + non-PII sanitised
+//! surrogates). The plaintext form is dropped at the end of the
+//! `submit_inquiry` stack frame. The Slack adapter receives an
+//! anonymised summary derived from the sanitised surrogates. The CRM
+//! adapter receives the [`SealedInquiry`] + an
+//! [`InquiryPayloadEncryptor`] handle and decrypts at its OWN
+//! boundary (the HubSpot adapter is the only permitted decryption
+//! boundary on the dispatch path; the auto-reply mailer is the
+//! secondary permitted boundary, restricted to email + locale).
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -19,6 +36,10 @@ use crate::audit::{
     InquiryAuditEventType, InquiryAuditRecord, InquiryAuditSink,
 };
 use crate::crm::{CrmClient, CrmEntryId};
+use crate::encryption::{
+    anonymised_slack_summary, seal_inquiry, InquiryPayloadEncryptor, SealedInquiry,
+    SYSTEM_CMK_TENANT_TAG,
+};
 use crate::error::EnterpriseInquiryError;
 use crate::form::{
     EnterpriseInquiryForm, IdempotencyKey, InquiryId, InquiryReceipt, InquiryStatus,
@@ -29,6 +50,11 @@ use crate::slack::{SlackClient, SlackMessageId, SlackPostKind};
 use crate::SLA_RESPONSE_MS;
 
 /// Inquiry record persisted in the in-memory store (D1 mirror).
+///
+/// Per CTRL-PRIV-001 + R2-11 / S-19 P1-NEW-3: this struct holds the
+/// BYOK-sealed payload + non-PII sanitised surrogates, NEVER plaintext
+/// PII. A `Debug` print of this struct cannot surface the plaintext
+/// email / phone / company / use_case / additional_notes.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct InquiryRecord {
@@ -36,8 +62,13 @@ pub struct InquiryRecord {
     pub inquiry_id: InquiryId,
     /// Idempotency key (the original caller-supplied dedup token).
     pub idempotency_key: IdempotencyKey,
-    /// Form snapshot at submission time.
-    pub form: EnterpriseInquiryForm,
+    /// Sealed inquiry payload + sanitised surrogates. Plaintext PII is
+    /// NEVER held in this struct — see the [`SealedInquiry`] docstring.
+    pub sealed: SealedInquiry,
+    /// Tenant id under which the payload was sealed (binds to the
+    /// payload AAD; equals [`crate::encryption::SYSTEM_CMK_TENANT_TAG`]
+    /// for un-authenticated prospect inquiries).
+    pub tenant_id: String,
     /// Computed lead score.
     pub lead_score: u32,
     /// Lifecycle status.
@@ -62,20 +93,64 @@ pub struct SlaBreach {
     pub elapsed_ms: u64,
 }
 
+/// Encryption configuration bound to the ledger at construction time.
+///
+/// Carries the tenant identifier + the HMAC search-domain key used to
+/// derive the AAD `company_hash_hex`. For un-authenticated prospect
+/// inquiries the `tenant_id` is set to
+/// [`crate::encryption::SYSTEM_CMK_TENANT_TAG`] and the production
+/// wiring binds the system CMK at `CORELINK_SYSTEM_CMK_ARN`
+/// (or `CORELINK_SYSTEM_CMK_RESOURCE` for GCP) per
+/// `specs/_runbooks/RB-SYSTEM-CMK-ROTATION.md`.
+#[derive(Clone, Debug)]
+#[non_exhaustive]
+pub struct LedgerEncryptionConfig {
+    /// Tenant id bound into the AAD context. For prospect inquiries
+    /// (no tenant yet), set to [`crate::encryption::SYSTEM_CMK_TENANT_TAG`].
+    pub tenant_id: String,
+    /// HMAC-SHA256 search-domain key (per-deployment static secret,
+    /// rotated annually per `RB-SYSTEM-CMK-ROTATION.md`).
+    pub search_domain_key: Vec<u8>,
+}
+
+impl LedgerEncryptionConfig {
+    /// Construct a config bound to a specific tenant.
+    #[must_use]
+    pub fn for_tenant(tenant_id: impl Into<String>, search_domain_key: Vec<u8>) -> Self {
+        Self {
+            tenant_id: tenant_id.into(),
+            search_domain_key,
+        }
+    }
+
+    /// Construct a config bound to the system CMK (un-authenticated
+    /// prospect-side submissions).
+    #[must_use]
+    pub fn system_prospect(search_domain_key: Vec<u8>) -> Self {
+        Self {
+            tenant_id: SYSTEM_CMK_TENANT_TAG.to_string(),
+            search_domain_key,
+        }
+    }
+}
+
 /// Enterprise inquiry ledger orchestrator.
 #[derive(Clone, Debug)]
-pub struct EnterpriseInquiryLedger<A, S, C, M>
+pub struct EnterpriseInquiryLedger<A, S, C, M, E>
 where
     A: InquiryAuditSink + Clone,
     S: SlackClient + Clone,
     C: CrmClient + Clone,
     M: AutoReplyMailer + Clone,
+    E: InquiryPayloadEncryptor + Clone,
 {
     state: Arc<Mutex<LedgerState>>,
     audit: A,
     slack: S,
     crm: C,
     mailer: M,
+    encryptor: E,
+    encryption_config: LedgerEncryptionConfig,
 }
 
 #[derive(Debug, Default)]
@@ -86,22 +161,33 @@ struct LedgerState {
     by_idempotency: HashMap<IdempotencyKey, InquiryId>,
 }
 
-impl<A, S, C, M> EnterpriseInquiryLedger<A, S, C, M>
+impl<A, S, C, M, E> EnterpriseInquiryLedger<A, S, C, M, E>
 where
     A: InquiryAuditSink + Clone,
     S: SlackClient + Clone,
     C: CrmClient + Clone,
     M: AutoReplyMailer + Clone,
+    E: InquiryPayloadEncryptor + Clone,
 {
-    /// Construct a new ledger backed by the four collaborators.
+    /// Construct a new ledger backed by the five collaborators + the
+    /// encryption config.
     #[must_use]
-    pub fn new(audit: A, slack: S, crm: C, mailer: M) -> Self {
+    pub fn new(
+        audit: A,
+        slack: S,
+        crm: C,
+        mailer: M,
+        encryptor: E,
+        encryption_config: LedgerEncryptionConfig,
+    ) -> Self {
         Self {
             state: Arc::new(Mutex::new(LedgerState::default())),
             audit,
             slack,
             crm,
             mailer,
+            encryptor,
+            encryption_config,
         }
     }
 
@@ -114,6 +200,18 @@ where
     /// Submit an inquiry — runs validation + the PAT-SAGA-001 atomic
     /// Slack + CRM saga + the auto-reply mail send. Returns the
     /// receipt the caller hands back to the form submitter.
+    ///
+    /// # Encryption at ingress (R2-11; S-19 P1-NEW-3)
+    ///
+    /// The plaintext [`EnterpriseInquiryForm`] is sealed via the
+    /// configured [`InquiryPayloadEncryptor`] BEFORE any persistence
+    /// step. If the encryptor rejects (revoked CMK, throttled,
+    /// transport failure), `submit_inquiry` returns
+    /// [`EnterpriseInquiryError::Encryption`] and NO D1 row +
+    /// NO outbox entry are created — atomic rollback at ingress.
+    /// The in-memory [`LedgerState`] mirror only ever holds the
+    /// sealed payload + sanitised surrogates; the plaintext form is
+    /// dropped at the end of this stack frame.
     ///
     /// Idempotency: a second invocation with the same `idempotency_key`
     /// is a no-op that returns the original receipt without re-firing
@@ -128,6 +226,8 @@ where
     ///
     /// - [`EnterpriseInquiryError::InvalidForm`] when the form fails
     ///   schema validation.
+    /// - [`EnterpriseInquiryError::Encryption`] when the BYOK seal
+    ///   rejects at ingress (atomic rollback: no D1 row, no outbox).
     /// - [`EnterpriseInquiryError::Audit`] when the audit sink
     ///   rejects the pre-mutation emit (fail-CLOSED).
     /// - [`EnterpriseInquiryError::Slack`] when the Slack leg rejects.
@@ -170,6 +270,19 @@ where
 
         let lead_score = form.lead_score();
 
+        // ============================================================
+        // R2-11 / S-19 P1-NEW-3 — ENCRYPT AT INGRESS.
+        // Seal BEFORE any audit emit / state mutation. If the seal
+        // rejects, return the typed error and exit — NO D1 row, NO
+        // outbox entry, NO Slack post, NO CRM call.
+        // ============================================================
+        let sealed = seal_inquiry(
+            &form,
+            &self.encryption_config.tenant_id,
+            &self.encryption_config.search_domain_key,
+            &self.encryptor,
+        )?;
+
         // Audit BEFORE the mutation (INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER).
         self.audit.emit(
             &InquiryAuditRecord::new(
@@ -181,13 +294,14 @@ where
             .with_status(InquiryStatus::Pending),
         )?;
 
-        // Persist inquiry + outbox row in `Pending` state.
+        // Persist sealed inquiry + outbox row in `Pending` state.
         {
             let mut g = self.lock_state()?;
             let record = InquiryRecord {
                 inquiry_id: inquiry_id.clone(),
                 idempotency_key: idempotency_key.clone(),
-                form: form.clone(),
+                sealed: sealed.clone(),
+                tenant_id: self.encryption_config.tenant_id.clone(),
                 lead_score,
                 status: InquiryStatus::Pending,
                 created_ms: ts_ms,
@@ -206,18 +320,9 @@ where
         // Saga PAT-SAGA-001 — atomic Slack + CRM dispatch.
         // ============================================================
 
-        // Leg 1: Slack notification.
-        let slack_body = format!(
-            "New enterprise inquiry from {} ({}); BYOK: {}; residency: {}; expected GB: {}; \
-             score: {}; inquiry_id: {}",
-            form.company,
-            form.role.as_str(),
-            form.byok_requirements.as_str(),
-            form.residency_requirements.as_str(),
-            form.expected_gb_per_month,
-            lead_score,
-            inquiry_id,
-        );
+        // Leg 1: Slack notification — ANONYMISED summary; no PII.
+        let slack_body =
+            anonymised_slack_summary(&inquiry_id, &sealed.sanitized, lead_score);
         let slack_message_id =
             match self
                 .slack
@@ -238,8 +343,15 @@ where
                 }
             };
 
-        // Leg 2: CRM entry.
-        let crm_entry_id = match self.crm.create_entry(&inquiry_id, &form, lead_score) {
+        // Leg 2: CRM entry. The HubSpot adapter is the permitted
+        // decryption boundary — it unseals at its own wire boundary.
+        let crm_entry_id = match self.crm.create_entry(
+            &inquiry_id,
+            &sealed,
+            &self.encryption_config.tenant_id,
+            &self.encryptor,
+            lead_score,
+        ) {
             Ok(id) => id,
             Err(e) => {
                 // CRM failed → dispatch compensating Slack ROLLBACK
@@ -298,8 +410,11 @@ where
             }
         }
 
-        // Auto-reply email (best-effort; recorded as Sev3 if it
-        // fails, but does NOT roll back the committed saga).
+        // Auto-reply email (permitted decryption boundary; restricted
+        // to email + locale, no other PII fields surfaced).  This call
+        // uses the IN-SCOPE plaintext form variable (still alive on
+        // the stack); the mailer adapter never reads from the ledger
+        // mirror, which only holds the sealed payload.
         match self.mailer.send(&inquiry_id, &form.email, &form.locale) {
             Ok(()) => {
                 self.audit.emit(&InquiryAuditRecord::new(
@@ -317,6 +432,12 @@ where
                 return Err(EnterpriseInquiryError::AutoReply(e));
             }
         }
+
+        // `form` goes out of scope here — plaintext PII is dropped.
+        drop(form);
+        // `sealed` is the same value already cloned into the ledger
+        // state; the local clone is dropped too.
+        drop(sealed);
 
         Ok(InquiryReceipt {
             inquiry_id,
@@ -516,6 +637,7 @@ mod tests {
     use super::*;
     use crate::audit::{FailingInquiryAuditSink, InMemoryInquiryAuditSink};
     use crate::crm::{FailingCrmClient, InMemoryCrmClient};
+    use crate::encryption::{FailingInquiryPayloadEncryptor, InMemoryInquiryPayloadEncryptor};
     use crate::form::{BYOKRequirementsKind, ResidencyKind, Role};
     use crate::mailer::InMemoryAutoReplyMailer;
     use crate::slack::{FailingSlackClient, InMemorySlackClient};
@@ -525,14 +647,18 @@ mod tests {
             company: "Acme Corp".to_string(),
             role: Role::Ciso,
             email: "ciso@acme.example".to_string(),
-            phone_optional: None,
+            phone_optional: Some("+15555550100".to_string()),
             expected_gb_per_month: 5_000,
             byok_requirements: BYOKRequirementsKind::AwsKms,
             residency_requirements: ResidencyKind::Eu,
-            additional_notes: None,
+            additional_notes: Some("multi-region read-through".to_string()),
             locale: "en-US".to_string(),
             use_case: "cache".to_string(),
         }
+    }
+
+    fn enc_config() -> LedgerEncryptionConfig {
+        LedgerEncryptionConfig::for_tenant("tenant-1", b"search-key-v1".to_vec())
     }
 
     fn happy_ledger() -> EnterpriseInquiryLedger<
@@ -540,12 +666,15 @@ mod tests {
         InMemorySlackClient,
         InMemoryCrmClient,
         InMemoryAutoReplyMailer,
+        InMemoryInquiryPayloadEncryptor,
     > {
         EnterpriseInquiryLedger::new(
             InMemoryInquiryAuditSink::new(),
             InMemorySlackClient::new(),
             InMemoryCrmClient::new(),
             InMemoryAutoReplyMailer::new(),
+            InMemoryInquiryPayloadEncryptor::new(),
+            enc_config(),
         )
     }
 
@@ -569,6 +698,162 @@ mod tests {
     }
 
     #[test]
+    fn r2_11_plaintext_pii_never_reaches_ledger_state() {
+        let l = happy_ledger();
+        let _ = l
+            .submit_inquiry(
+                form(),
+                IdempotencyKey::new("k-1"),
+                InquiryId::new("inq-1"),
+                1_000,
+                "cid-1",
+            )
+            .unwrap();
+        // Inspect the in-memory mirror — no PII may appear in any
+        // Debug-rendered field.
+        let rec = l.get_inquiry(&InquiryId::new("inq-1")).unwrap();
+        let dbg = format!("{rec:?}");
+        assert!(!dbg.contains("ciso@acme.example"), "email leaked: {dbg}");
+        assert!(!dbg.contains("+15555550100"), "phone leaked: {dbg}");
+        assert!(!dbg.contains("multi-region read-through"), "notes leaked");
+        // Acme Corp should NOT appear — only the surrogate AC.
+        assert!(!dbg.contains("Acme Corp"), "company leaked: {dbg}");
+        // Sanitised surrogates ARE expected to appear.
+        assert!(dbg.contains("AC")); // company initials
+        assert!(dbg.contains("acme.example")); // email domain
+    }
+
+    #[test]
+    fn r2_11_slack_payload_contains_no_pii() {
+        let slack = InMemorySlackClient::new();
+        let l = EnterpriseInquiryLedger::new(
+            InMemoryInquiryAuditSink::new(),
+            slack.clone(),
+            InMemoryCrmClient::new(),
+            InMemoryAutoReplyMailer::new(),
+            InMemoryInquiryPayloadEncryptor::new(),
+            enc_config(),
+        );
+        let _ = l
+            .submit_inquiry(
+                form(),
+                IdempotencyKey::new("k-1"),
+                InquiryId::new("inq-1"),
+                1_000,
+                "cid-1",
+            )
+            .unwrap();
+        let posts = slack.snapshot();
+        assert_eq!(posts.len(), 1);
+        let body = &posts[0].body;
+        assert!(!body.contains("ciso@acme.example"), "email in slack: {body}");
+        assert!(!body.contains("+15555550100"), "phone in slack: {body}");
+        assert!(!body.contains("Acme Corp"), "company in slack: {body}");
+        assert!(!body.contains("multi-region read-through"), "notes in slack");
+        // Surrogates present.
+        assert!(body.contains("AC"));
+        assert!(body.contains("acme.example"));
+        assert!(body.contains("ciso"));
+    }
+
+    #[test]
+    fn r2_11_hubspot_boundary_decrypts_pii() {
+        let crm = InMemoryCrmClient::new();
+        let l = EnterpriseInquiryLedger::new(
+            InMemoryInquiryAuditSink::new(),
+            InMemorySlackClient::new(),
+            crm.clone(),
+            InMemoryAutoReplyMailer::new(),
+            InMemoryInquiryPayloadEncryptor::new(),
+            enc_config(),
+        );
+        let _ = l
+            .submit_inquiry(
+                form(),
+                IdempotencyKey::new("k-1"),
+                InquiryId::new("inq-1"),
+                1_000,
+                "cid-1",
+            )
+            .unwrap();
+        // The CRM fake unsealed the payload at its boundary; the
+        // recovered email is what the HubSpot adapter would push.
+        assert_eq!(
+            crm.last_unsealed_email().as_deref(),
+            Some("ciso@acme.example")
+        );
+    }
+
+    #[test]
+    fn r2_11_system_cmk_fallback_for_prospect() {
+        let l = EnterpriseInquiryLedger::new(
+            InMemoryInquiryAuditSink::new(),
+            InMemorySlackClient::new(),
+            InMemoryCrmClient::new(),
+            InMemoryAutoReplyMailer::new(),
+            InMemoryInquiryPayloadEncryptor::new(),
+            LedgerEncryptionConfig::system_prospect(b"k".to_vec()),
+        );
+        let _ = l
+            .submit_inquiry(
+                form(),
+                IdempotencyKey::new("k-1"),
+                InquiryId::new("inq-1"),
+                1_000,
+                "cid-1",
+            )
+            .unwrap();
+        let rec = l.get_inquiry(&InquiryId::new("inq-1")).unwrap();
+        assert_eq!(rec.tenant_id, SYSTEM_CMK_TENANT_TAG);
+        assert_eq!(rec.sealed.payload.aad.tenant_id, SYSTEM_CMK_TENANT_TAG);
+    }
+
+    #[test]
+    fn r2_11_byok_tenant_happy_path_aad_binding() {
+        let l = happy_ledger();
+        let _ = l
+            .submit_inquiry(
+                form(),
+                IdempotencyKey::new("k-1"),
+                InquiryId::new("inq-1"),
+                1_000,
+                "cid-1",
+            )
+            .unwrap();
+        let rec = l.get_inquiry(&InquiryId::new("inq-1")).unwrap();
+        assert_eq!(rec.tenant_id, "tenant-1");
+        assert_eq!(rec.sealed.payload.aad.tenant_id, "tenant-1");
+        // Payload hash + company hash are non-empty hex blobs.
+        assert_eq!(rec.sealed.payload.aad.payload_hash_blake3_hex.len(), 64);
+        assert_eq!(rec.sealed.payload.aad.company_hash_hex.len(), 64);
+    }
+
+    #[test]
+    fn r2_11_encryption_failure_rolls_back_atomically() {
+        let l = EnterpriseInquiryLedger::new(
+            InMemoryInquiryAuditSink::new(),
+            InMemorySlackClient::new(),
+            InMemoryCrmClient::new(),
+            InMemoryAutoReplyMailer::new(),
+            FailingInquiryPayloadEncryptor,
+            enc_config(),
+        );
+        let err = l
+            .submit_inquiry(
+                form(),
+                IdempotencyKey::new("k-1"),
+                InquiryId::new("inq-1"),
+                1_000,
+                "cid-1",
+            )
+            .unwrap_err();
+        assert!(matches!(err, EnterpriseInquiryError::Encryption(_)));
+        // No D1 row, no outbox entry.
+        assert!(l.get_inquiry(&InquiryId::new("inq-1")).is_none());
+        assert!(l.get_outbox(&InquiryId::new("inq-1")).is_none());
+    }
+
+    #[test]
     fn slack_failure_rolls_back_no_crm() {
         let crm = InMemoryCrmClient::new();
         let l = EnterpriseInquiryLedger::new(
@@ -576,6 +861,8 @@ mod tests {
             FailingSlackClient,
             crm.clone(),
             InMemoryAutoReplyMailer::new(),
+            InMemoryInquiryPayloadEncryptor::new(),
+            enc_config(),
         );
         let err = l
             .submit_inquiry(
@@ -601,6 +888,8 @@ mod tests {
             slack.clone(),
             FailingCrmClient,
             InMemoryAutoReplyMailer::new(),
+            InMemoryInquiryPayloadEncryptor::new(),
+            enc_config(),
         );
         let err = l
             .submit_inquiry(
@@ -628,6 +917,8 @@ mod tests {
             InMemorySlackClient::new(),
             InMemoryCrmClient::new(),
             InMemoryAutoReplyMailer::new(),
+            InMemoryInquiryPayloadEncryptor::new(),
+            enc_config(),
         );
         let err = l
             .submit_inquiry(
@@ -679,6 +970,8 @@ mod tests {
             InMemorySlackClient::new(),
             InMemoryCrmClient::new(),
             crate::mailer::FailingAutoReplyMailer,
+            InMemoryInquiryPayloadEncryptor::new(),
+            enc_config(),
         );
         let _ = l.submit_inquiry(
             form(),
@@ -699,18 +992,6 @@ mod tests {
 
     #[test]
     fn drain_partial_escalates_pending_rows() {
-        // Build a ledger where the saga gets stuck in Pending: Slack
-        // succeeds, CRM rejects, AND compensating Slack also rejects
-        // → outbox stays RolledBack actually. To exercise the partial-
-        // state path we instead simulate a manual pending row by
-        // submitting on a happy ledger then mutating outbox status
-        // externally is not exposed — so we drive `drain` against a
-        // synthetic pending row inserted via the audit-failing path
-        // is not possible either. Instead exercise the function over
-        // a Pending row by submitting and then immediately draining
-        // BEFORE the saga finishes — which we can't do since this is
-        // synchronous. Validate the algorithmic path: empty ledger
-        // returns empty; a manually-inserted Pending row escalates.
         let l = happy_ledger();
         let _ = l.submit_inquiry(
             form(),
@@ -747,6 +1028,8 @@ mod tests {
             InMemorySlackClient::new(),
             InMemoryCrmClient::new(),
             InMemoryAutoReplyMailer::new(),
+            InMemoryInquiryPayloadEncryptor::new(),
+            enc_config(),
         );
         l.record_spam_blocked(InquiryId::new("inq-1"), 1_000, "cid-1")
             .unwrap();

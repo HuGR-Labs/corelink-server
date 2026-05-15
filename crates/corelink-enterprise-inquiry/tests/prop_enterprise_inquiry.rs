@@ -1,4 +1,4 @@
-//! Property tests for `corelink-enterprise-inquiry` (WI-S19-005).
+//! Property tests for `corelink-enterprise-inquiry` (WI-S19-005 + R2-11).
 //!
 //! Pinned invariants:
 //!   - `prop_saga_atomic_commit_or_rollback` — Slack+CRM dispatch
@@ -12,6 +12,10 @@
 //!     breach.
 //!   - `prop_audit_emit_before_mutation` — the failing audit sink
 //!     short-circuits every mutation path; no ledger state changes.
+//!   - **R2-11 / S-19 P1-NEW-3**: `prop_sealed_payload_unreadable_without_correct_aad`
+//!     ratifies that every random `InquiryForm` seals to a payload
+//!     that fails-CLOSED when unsealed under any tenant_id other than
+//!     the one bound at seal time.
 
 #![allow(
     clippy::unwrap_used,
@@ -21,10 +25,12 @@
 )]
 
 use corelink_enterprise_inquiry::{
-    BYOKRequirementsKind, EnterpriseInquiryError, EnterpriseInquiryForm, EnterpriseInquiryLedger,
-    FailingCrmClient, FailingInquiryAuditSink, FailingSlackClient, IdempotencyKey,
-    InMemoryAutoReplyMailer, InMemoryCrmClient, InMemoryInquiryAuditSink, InMemorySlackClient,
-    InquiryId, InquiryStatus, OutboxStatus, ResidencyKind, Role, SlackPostKind, SLA_RESPONSE_MS,
+    seal_inquiry, unseal_inquiry, BYOKRequirementsKind, EnterpriseInquiryError,
+    EnterpriseInquiryForm, EnterpriseInquiryLedger, FailingCrmClient, FailingInquiryAuditSink,
+    FailingSlackClient, IdempotencyKey, InMemoryAutoReplyMailer, InMemoryCrmClient,
+    InMemoryInquiryAuditSink, InMemoryInquiryPayloadEncryptor, InMemorySlackClient, InquiryId,
+    InquiryStatus, LedgerEncryptionConfig, OutboxStatus, ResidencyKind, Role, SlackPostKind,
+    SLA_RESPONSE_MS,
 };
 use proptest::prelude::*;
 
@@ -41,6 +47,10 @@ fn form(company: &str, gb: u64, byok: BYOKRequirementsKind) -> EnterpriseInquiry
         "en-US",
         "cache",
     )
+}
+
+fn enc_config() -> LedgerEncryptionConfig {
+    LedgerEncryptionConfig::for_tenant("tenant-prop", b"prop-key".to_vec())
 }
 
 fn byok_strat() -> impl Strategy<Value = BYOKRequirementsKind> {
@@ -80,6 +90,8 @@ proptest! {
                     InMemorySlackClient::new(),
                     InMemoryCrmClient::new(),
                     InMemoryAutoReplyMailer::new(),
+                    InMemoryInquiryPayloadEncryptor::new(),
+                    enc_config(),
                 );
                 let r = l.submit_inquiry(f, key, inquiry_id.clone(), 1_000, "cid").unwrap();
                 prop_assert_eq!(r.status, InquiryStatus::Committed);
@@ -91,6 +103,8 @@ proptest! {
                     FailingSlackClient,
                     InMemoryCrmClient::new(),
                     InMemoryAutoReplyMailer::new(),
+                    InMemoryInquiryPayloadEncryptor::new(),
+                    enc_config(),
                 );
                 let err = l.submit_inquiry(f, key, inquiry_id.clone(), 1_000, "cid").unwrap_err();
                 prop_assert!(matches!(err, EnterpriseInquiryError::Slack(_)));
@@ -102,6 +116,8 @@ proptest! {
                     InMemorySlackClient::new(),
                     FailingCrmClient,
                     InMemoryAutoReplyMailer::new(),
+                    InMemoryInquiryPayloadEncryptor::new(),
+                    enc_config(),
                 );
                 let err = l.submit_inquiry(f, key, inquiry_id.clone(), 1_000, "cid").unwrap_err();
                 prop_assert!(matches!(err, EnterpriseInquiryError::Crm(_)));
@@ -129,6 +145,8 @@ proptest! {
             slack.clone(),
             crm.clone(),
             mailer.clone(),
+            InMemoryInquiryPayloadEncryptor::new(),
+            enc_config(),
         );
 
         let key = IdempotencyKey::new("k-dedup");
@@ -162,6 +180,8 @@ proptest! {
             InMemorySlackClient::new(),
             InMemoryCrmClient::new(),
             corelink_enterprise_inquiry::FailingAutoReplyMailer,
+            InMemoryInquiryPayloadEncryptor::new(),
+            enc_config(),
         );
         let _ = l.submit_inquiry(
             form("Acme", 100, BYOKRequirementsKind::AwsKms),
@@ -189,6 +209,8 @@ proptest! {
             InMemorySlackClient::new(),
             InMemoryCrmClient::new(),
             InMemoryAutoReplyMailer::new(),
+            InMemoryInquiryPayloadEncryptor::new(),
+            enc_config(),
         );
         let inquiry_id = InquiryId::new("inq-1");
         let err = l.submit_inquiry(
@@ -213,6 +235,8 @@ proptest! {
             slack.clone(),
             FailingCrmClient,
             InMemoryAutoReplyMailer::new(),
+            InMemoryInquiryPayloadEncryptor::new(),
+            enc_config(),
         );
         let err = l.submit_inquiry(
             form("Acme", gb, BYOKRequirementsKind::AwsKms),
@@ -226,5 +250,31 @@ proptest! {
         prop_assert_eq!(posts.len(), 2);
         prop_assert_eq!(posts[0].kind, SlackPostKind::NewInquiry);
         prop_assert_eq!(posts[1].kind, SlackPostKind::Rollback);
+    }
+
+    /// R2-11 / S-19 P1-NEW-3: every random `InquiryForm` seals to a
+    /// payload that fails-CLOSED when unsealed under any tenant_id
+    /// other than the one bound at seal time (AAD binding cannot be
+    /// spoofed by ciphertext substitution).
+    #[test]
+    fn prop_sealed_payload_unreadable_without_correct_aad(
+        company in "[A-Za-z][A-Za-z0-9 ]{0,40}",
+        gb in 0u64..10_000,
+        byok in byok_strat(),
+        seed_byte in any::<u8>(),
+    ) {
+        let f = form(&company, gb, byok);
+        // Validate so we skip degenerate companies.
+        prop_assume!(f.validate().is_ok());
+        let mut seed = [0u8; 32];
+        seed[0] = seed_byte;
+        let enc = InMemoryInquiryPayloadEncryptor::with_seed(seed);
+        let sealed = seal_inquiry(&f, "tenant-correct", b"k", &enc).unwrap();
+        // Correct tenant id → unseal works.
+        let recovered = unseal_inquiry(&sealed, "tenant-correct", &enc).unwrap();
+        prop_assert_eq!(&recovered.company, &f.company);
+        // Any other tenant id → fail-CLOSED.
+        let result = unseal_inquiry(&sealed, "tenant-attacker", &enc);
+        prop_assert!(result.is_err());
     }
 }

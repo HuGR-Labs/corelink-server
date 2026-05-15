@@ -1582,7 +1582,11 @@ dependencies = [
 name = "corelink-enterprise-inquiry"
 version = "0.1.0"
 dependencies = [
+ "base64",
+ "blake3",
+ "hmac 0.12.1",
  "proptest",
+ "sha2 0.10.9",
  "thiserror 2.0.18",
 ]
 
