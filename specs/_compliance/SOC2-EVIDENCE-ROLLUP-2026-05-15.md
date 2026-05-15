@@ -127,7 +127,7 @@ Format key:
 
 | TSC | CTRL ID | Evidence type | Artifact location | Cadence | Status | Last update |
 |---|---|---|---|---|---|---|
-| CC8.1 | PAT-DUAL-APPROVAL-001 + CTRL-SUPPLY-001 | change_management | GitHub branch protection + PAT-DUAL-APPROVAL-001 + signed-deploy + Rekor + sprint contracts §5.1 + preflight reviews | AUTO | I | f18acdc |
+| CC8.1 | PAT-DUAL-APPROVAL-001 + CTRL-SUPPLY-001 | change_management | GitHub branch protection + PAT-DUAL-APPROVAL-001 + signed-deploy + Rekor + sprint contracts §5.1 + preflight reviews + static-analysis gate (`.github/workflows/codeql.yml` + `.github/workflows/semgrep.yml` + `semgrep.yml` custom rules + `specs/_audits/2026-05-15-static-analysis-baseline.md` + `specs/_runbooks/RB-STATIC-ANALYSIS-TRIAGE.md`) | AUTO | I | f18acdc + wt/r-prep-codeql-semgrep |
 
 ### 2.9 CC9 Risk Mitigation
 

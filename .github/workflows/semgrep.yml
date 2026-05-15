@@ -1,0 +1,150 @@
+name: Semgrep (R-prep static analysis)
+
+# Semgrep CI gate — pre-pentest engagement R-prep wave companion to CodeQL.
+#
+# Why both Semgrep + CodeQL?
+#   - CodeQL is excellent at dataflow/taint queries but has experimental
+#     Rust support and slower run-time (~30 min).
+#   - Semgrep gives us syntactic + lightweight semantic scanning across
+#     all CoreLink languages (Rust, TS, Python, YAML/Dockerfile/Terraform)
+#     in < 5 min, plus the ability to run custom CoreLink-specific rules
+#     (see `semgrep.yml` at the repo root for the project-local rulepack).
+#
+# Triggers:
+#   - pull_request: every PR.
+#   - push to main: full sweep on default branch.
+#   - schedule: weekly Mon 03:00 UTC (1h after CodeQL cron — staggered to
+#     avoid runner contention).
+#   - workflow_dispatch: manual trigger for ops re-run.
+#
+# Fail policy:
+#   PR mode → fail-closed on any ERROR-severity finding from the bundled
+#   rulesets OR any of the custom CoreLink rules in `semgrep.yml`. Lower
+#   severities are surfaced as PR comments + SARIF upload but do not block.
+#
+# SARIF uploaded to GHA Security tab via github/codeql-action/upload-sarif
+# (SAME action CodeQL uses for SARIF upload — only the upload step, not
+# the init/analyze pair).
+#
+# SHA-pinned per HIGH_RISK lane FF-HR-005 + ADR-S12-045 §6.
+#
+# Cross-refs:
+#   - SOC2 rollup: CC8.1 (change management — static-analysis gate evidence).
+#   - ROADMAP-TO-GA.md §7 Wave R-7 (Evidence Gate).
+#   - Pre-pentest cutoff 2026-06-15.
+#   - Custom rule pack: `semgrep.yml` (repo root).
+#   - Runbook: specs/_runbooks/RB-STATIC-ANALYSIS-TRIAGE.md.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  # Required by codeql-action/upload-sarif.
+  security-events: write
+  contents: read
+  actions: read
+  # Required to leave the PR comment with finding summary.
+  pull-requests: write
+
+concurrency:
+  group: semgrep-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  semgrep:
+    name: Semgrep scan
+    # Use the official Semgrep container — avoids host-level Python deps
+    # and pins the rule-engine binary alongside the action.
+    runs-on: ubuntu-latest
+    container:
+      # returntocorp/semgrep:1.x — pin via the action below; image tag is
+      # informational only (action controls the actual binary version).
+      image: returntocorp/semgrep@sha256:0000000000000000000000000000000000000000000000000000000000000000 # TBD-SHA replace post-baseline
+    timeout-minutes: 20
+
+    # Skip duplicate runs on dependabot push events (PR already covers them).
+    if: (github.actor != 'dependabot[bot]')
+
+    steps:
+      - name: Checkout
+        # actions/checkout v4.2.2 — SHA-pinned (matches cargo-audit.yml).
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Run Semgrep (bundled rulesets + CoreLink custom pack)
+        id: semgrep
+        # returntocorp/semgrep-action v1 — SHA TBD pin (replace after the
+        # first green run on main; ADR + Security review required for any
+        # subsequent bump per §14.s12.004.1).
+        uses: returntocorp/semgrep-action@v1 # TBD-SHA replace post-baseline
+        env:
+          # SEMGREP_RULES = space-separated list of bundled rulepacks +
+          # the local custom pack.  Order matters only for tie-break on
+          # duplicate rule IDs — local pack wins via being listed last.
+          SEMGREP_RULES: >-
+            p/security-audit
+            p/rust
+            p/typescript
+            p/python
+            p/owasp-top-ten
+            p/cwe-top-25
+            ./semgrep.yml
+          # Generate SARIF for upload to the GHA Security tab.
+          SEMGREP_SARIF_OUTPUT: semgrep.sarif
+          # PR comment with findings (action posts via GH API using
+          # SEMGREP_GITHUB_TOKEN — granted via the workflow `permissions`
+          # block above; semgrep-action picks it up from GITHUB_TOKEN).
+          SEMGREP_PR_COMMENT: "true"
+          # Fail the job on ERROR-severity findings (default in v1 action).
+          SEMGREP_FAIL_OPEN: "false"
+
+      - name: Upload SARIF to GitHub Security tab
+        # github/codeql-action/upload-sarif@v3.27.0 — TBD-SHA (same pin as
+        # codeql.yml init/analyze; bump together via single ADR).
+        if: always() && steps.semgrep.outputs.sarif != ''
+        uses: github/codeql-action/upload-sarif@v3.27.0 # TBD-SHA replace post-baseline
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+      - name: Summarise findings in step output
+        if: always()
+        run: |
+          if [ -f semgrep.sarif ]; then
+            python3 - <<'PYEOF'
+          import json
+          import os
+          import sys
+
+          try:
+              with open("semgrep.sarif") as f:
+                  sarif = json.load(f)
+          except (FileNotFoundError, json.JSONDecodeError):
+              print("No SARIF emitted.")
+              sys.exit(0)
+
+          totals = {"error": 0, "warning": 0, "note": 0, "none": 0}
+          custom_corelink = 0
+          for run in sarif.get("runs", []):
+              for r in run.get("results", []):
+                  lvl = r.get("level", "warning")
+                  totals[lvl] = totals.get(lvl, 0) + 1
+                  rid = r.get("ruleId", "")
+                  if rid.startswith("corelink."):
+                      custom_corelink += 1
+
+          summary = os.environ.get("GITHUB_STEP_SUMMARY", "/dev/null")
+          with open(summary, "a") as f:
+              f.write("## Semgrep findings\n\n")
+              for k, v in totals.items():
+                  f.write(f"- {k}: {v}\n")
+              f.write(f"\nCoreLink custom-rule hits: **{custom_corelink}**\n")
+          print(json.dumps({"totals": totals, "custom_corelink": custom_corelink}))
+          PYEOF
+          else
+            echo "::warning::No semgrep.sarif emitted — check run logs."
+          fi
