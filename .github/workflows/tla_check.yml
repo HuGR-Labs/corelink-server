@@ -121,3 +121,24 @@ jobs:
         # SLO-60S, INV-AUTH-MASS-REVOKE-ATOMIC) + 1 HIGH (INV-AUTH-PROPAGATION-
         # AT-LEAST-ONCE) per invariant_registry.md §3.14 obligation matrix.
         run: bash scripts/run_tlc_corelink.sh auth_revocation
+
+      # ──────────────────────────────────────────────────────────────────
+      # DEBT-005 partial closure 2026-05-15 — 5 new specs closing CRITICAL
+      # INV-no-TLA gaps (5/40). See:
+      #   specs/_audits/2026-05-15-canonical-consistency-baseline.md §2
+      #   specs/_audits/2026-05-15-debt-register.md (DEBT-005 row)
+      # ──────────────────────────────────────────────────────────────────
+      - name: TLC verify auth_jwt_validation (DEBT-005; INV-AUTH-JWT-VALIDATE-RS256-ONLY + INV-AUTH-ISS-EXACT-MATCH)
+        run: bash scripts/run_tlc_corelink.sh auth_jwt_validation
+
+      - name: TLC verify tenant_ctx_propagation (DEBT-005; INV-AUTH-TENANTCTX-IMMUTABLE + INV-AUTH-5-LAYER-ORDERING)
+        run: bash scripts/run_tlc_corelink.sh tenant_ctx_propagation
+
+      - name: TLC verify merkle_integrity (DEBT-005; INV-AC-MERKLE-VALID + INV-MULTIPART-MANIFEST-VALID)
+        run: bash scripts/run_tlc_corelink.sh merkle_integrity
+
+      - name: TLC verify byok_envelope_aad (DEBT-005; INV-BYOK-CRYPTO-SOVEREIGNTY AAD + TTL liveness)
+        run: bash scripts/run_tlc_corelink.sh byok_envelope_aad
+
+      - name: TLC verify failover_no_split_brain (DEBT-005; INV-REGION-NO-CROSS-LEAK + write-lease handoff)
+        run: bash scripts/run_tlc_corelink.sh failover_no_split_brain

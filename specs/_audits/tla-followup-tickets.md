@@ -159,3 +159,33 @@ infrastructure follow-up.
 Total followup count: **9** (1 CRITICAL net-new + 1 CRITICAL upgrade + 5 HIGH
 + 2 infra/medium). Tracks the gaps from §4 of the parent audit
 (`2026-05-15-tla-coverage-audit.md`).
+
+---
+
+## Addendum 2026-05-15 — DEBT-005 partial closure (5 / 40)
+
+A separate dispatch (DEBT-005 row in
+`specs/_audits/2026-05-15-debt-register.md`) targeted the canonical-
+consistency-baseline `critical_no_tla` counter (40 → 35) by writing **5
+net-new TLA+ specs**. These are not the FT-1..FT-9 backlog above; they
+close CRITICAL INVs registered as `(planned ...)` in
+`invariant_registry.md §3.x` but distinct from the auth-revocation +
+backlog clusters tracked here.
+
+| Spec (new) | Invariants closed (CRITICAL) | Status |
+|---|---|---|
+| `specs/tla/auth_jwt_validation.tla` | INV-AUTH-JWT-VALIDATE-RS256-ONLY, INV-AUTH-ISS-EXACT-MATCH | **CLOSED** — PR + nightly cfg + CI matrix |
+| `specs/tla/tenant_ctx_propagation.tla` | INV-AUTH-TENANTCTX-IMMUTABLE, INV-AUTH-5-LAYER-ORDERING | **CLOSED** — PR + nightly cfg + CI matrix |
+| `specs/tla/merkle_integrity.tla` | INV-AC-MERKLE-VALID, INV-MULTIPART-MANIFEST-VALID | **CLOSED** — PR + nightly cfg + CI matrix |
+| `specs/tla/byok_envelope_aad.tla` | INV-BYOK-CRYPTO-SOVEREIGNTY (AAD-binding + cache-TTL liveness) | **CLOSED** — PR + nightly cfg + CI matrix |
+| `specs/tla/failover_no_split_brain.tla` | INV-REGION-NO-CROSS-LEAK (write-lease handoff side) | **CLOSED** — PR + nightly cfg + CI matrix |
+
+Net effect on the audit counters:
+
+- `tla_verified` floor: 18 → **23** (canonical-consistency-baseline §4
+  BASELINE ratchet updated in same commit).
+- `critical_no_tla` floor: 40 → **35**.
+
+The FT-1..FT-9 backlog above is unchanged — its 9 tickets remain open
+and tracked under DEBT-014 in the debt register.
+
