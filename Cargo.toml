@@ -123,6 +123,11 @@ members = [
     # R2-4 shared Slack incoming-webhook real client (Block Kit + per-channel
     # routing + retry + audit envelope; bridges to enterprise-inquiry via adapter)
     "crates/corelink-slack-real",
+    # R5-prep SOC 2 Drata evidence collection pipeline: pulls evidence from
+    # audit_outbox / tenants RBAC / PAT issuance / GH PR-merge / PD incident
+    # timeline / pentest findings → POSTs to Drata REST API with Bearer auth,
+    # SHA-256 idempotency dedup, retry, fail-CLOSED audit emit.
+    "crates/corelink-drata-sync",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
@@ -300,6 +305,7 @@ corelink-byok-revocation = { path = "crates/corelink-byok-revocation" }
 corelink-customer-alerts = { path = "crates/corelink-customer-alerts" }
 corelink-erasure-attestation = { path = "crates/corelink-erasure-attestation" }
 corelink-dr-drill = { path = "crates/corelink-dr-drill" }
+corelink-drata-sync = { path = "crates/corelink-drata-sync" }
 
 # CLI tooling (WI-S15-001 / WI-S15-005)
 toml = "0.8"
