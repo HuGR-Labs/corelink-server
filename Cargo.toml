@@ -194,6 +194,13 @@ members = [
     # rejection asserts an audit event was emitted BEFORE the reject
     # (fail-CLOSED ordering, INV-TENANT-ISOLATION layer 6).
     "tests/e2e-tenant-isolation",
+    # DR-16 end-to-end active-failover harness: 5 canonical scenarios
+    # pinning the warm-failover lifecycle (primary-up, primary-degraded,
+    # split-brain prevention, failback after recovery, partial-region).
+    # Drives `corelink-failover-router::InMemoryFailoverRouter` under a
+    # deterministic logical clock + write-lease ledger so split-brain
+    # absence is provable. Companion to RB-ACTIVE-FAILOVER + DR-16.
+    "tests/e2e-failover-router",
 ]
 exclude = [
     "crates/tenant-path/fuzz",

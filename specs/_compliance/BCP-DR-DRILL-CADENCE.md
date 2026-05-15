@@ -5,7 +5,7 @@ doc_status: "DRAFT"
 audit_status: "ACTIVE"
 version: "1.0.0"
 created: "2026-05-14"
-updated: "2026-05-14"
+updated: "2026-05-15"
 sprint: "R-6"
 parent_wi: "WT-R6-3"
 owner: "Gustavo Schneiter"
@@ -38,7 +38,7 @@ The cadence ramps from individual-failure recovery drills to multi-stakeholder f
 | **P2 — Cross-region + BYOK rotation** | W5–W8 | Weekly (Wed 14:00 UTC) | Multi-region + key-mgmt | SRE + Security on-call + Customer Success notify |
 | **P3 — Full SEV1 simulation** | W9–W12 | Bi-weekly (Wed 14:00 UTC) | All-hands incident rehearsal | All tiers (L1+L2+L3) + Legal + Comms + 1 customer observer |
 
-**Total drills specified: 15** (4 + 4 + 2 + 5 cross-cutting → see §6 wrap-up & retest slots; DR-15 added 2026-05-15 to close GAP-15).
+**Total drills specified: 16** (4 + 4 + 2 + 6 cross-cutting → see §6 wrap-up & retest slots; DR-15 added 2026-05-15 to close GAP-15; DR-16 added 2026-05-15 for active-region warm failover, complement to DR-15 cold-restore).
 
 > **Why Wednesday 14:00 UTC?** Maximises overlap of US-East + EU-West rotations per `RB-ONCALL-POLICY.md` §8. Avoids Mon (deploy day), Fri (recovery exhaustion), and weekend (off-rotation pages).
 
@@ -218,6 +218,20 @@ Goal: rehearse full multi-stakeholder incident response. Bi-weekly cadence (W9, 
 - **Evidence captured:** Drill log; verification gate JSON output; Grafana baseline + post-restore PDFs; Drata upload receipt; postmortem-lite if PARTIAL/FAIL; evidence doc at `specs/_compliance/drill-evidence/YYYY-QQ-cold-restore-{dry-run|staging}.md`.
 - **Cadence:** one mandatory `--dry-run` before GA staging cut (T-30d); one mandatory `--staging` execution before GA tag; quarterly post-GA (`--staging`, first Wed of Jan / Apr / Jul / Oct).
 
+### Drill DR-016 — Active-region warm failover (FM-101 partial-outage variant) — W8 + monthly post-GA
+
+- **ID:** DR-16 (cycle suffix `-a` for first simulate, `-b` for first staging, then monthly `-c`..)
+- **Week:** W8, Wed (paired with DR-008 BYOK-compromise to exercise cross-stack incident realism)
+- **Scope:** Simulate a **degraded** primary region (p95 > 5s sustained OR error rate > 5% sustained, but **not** zero) and flip the active write lease to the sibling per `ResidencyGraph` (WNAM↔ENAM, WEUR↔SAM) per `specs/_runbooks/RB-ACTIVE-FAILOVER.md` (7 steps). Complements DR-15 cold-restore (DR-15 = total destruction → rebuild; DR-16 = degraded → warm switch). RTO target: ≤ 15 min (write-lease flip). RPO target: ≤ 5 min. Failback (Reverse step) RTO: ≤ 30 min.
+- **Prerequisites:** `crates/corelink-failover-router` deployed at current `main` SHA; `tests/e2e-failover-router` green in last 24h (5 scenarios); cross-region replication lag p99 ≤ 60s sustained 24h; sibling region Healthy at T-2h; DNS TTL on failover hostnames ≤ 60s; Privacy Lead review of residency graph < 30d.
+- **Success criteria:** All 8 criteria from `ACTIVE-FAILOVER-DRILL-SPEC.md` §7 — RTO write-flip ≤ 15min; RPO ≤ 5min; failover overhead p99 ≤ 50ms; audit-chain Merkle continuity; **zero split-brain** (no overlapping writes accepted by both regions); residency invariants preserved; failback ≤ 30min; zero production-tenant impact.
+- **Runbook:** `specs/_runbooks/RB-ACTIVE-FAILOVER.md` (7 steps: Detect → Decide → Drain → Promote → Reroute → Verify → Reverse).
+- **Orchestrator:** `scripts/active-failover-drill.sh --staging` (3 modes: `--simulate` / `--staging` / `--prod`).
+- **E2E harness:** `tests/e2e-failover-router/` — 5 scenarios (primary-up / primary-degraded / split-brain-prevention / failback-after-recovery / partial-region).
+- **FM-IDs touched:** FM-050, FM-052, FM-101, FM-105 (partial-outage variant; complement to DR-15's full-interruption variant).
+- **Evidence captured:** Drill log (`drill-active-failover-YYYY-MM-DD-HH-MM.log`); Grafana baseline + post-flip PDFs; split-brain audit dump (DO write-lease log); Drata upload receipt; postmortem-lite if PARTIAL/FAIL; evidence doc at `specs/_compliance/drill-evidence/YYYY-MM-active-failover-{simulate|staging}.md`.
+- **Cadence:** weekly `--simulate` in CI (cron `0 14 * * 3`); one mandatory `--staging` before GA tag; monthly `--staging` post-GA (first Wed of every month, 14:00 UTC).
+
 ### Drill DR-014 — Terraform drift detection (FM-206) — W6
 
 - **ID:** DR-014
@@ -276,8 +290,9 @@ specs/_audits/2026-MM-DD-bcp-drill-<DRILL-ID>-<cycle>.md
 | FM-253 | DR-008, DR-009 |
 | FM-254 | DR-009 |
 | FM-258 | DR-008, DR-009 |
-| FM-105 | DR-005, **DR-015 (cold restore — full-interruption variant)** |
+| FM-105 | DR-005, **DR-015 (cold restore — full-interruption variant)**, **DR-016 (active failover — partial-outage variant)** |
 | FM-204 | DR-007, DR-008, **DR-015 (cold-restore envelope re-bind verification)** |
+| FM-101 | DR-005, **DR-016 (warm switch + split-brain prevention)** |
 
 **FMs NOT covered by R-6 cadence (deferred to post-GA semestral cadence per `corelink-dr-drill::DrillCadence::Semestral`):** FM-007 (RCE — fuzz harness coverage), FM-100/102/103 (DNS / BGP / TLS — CF-managed), FM-150/151/153 (third-party APIs — vendor-managed), FM-205 (manual-delete — PAT-DUAL-APPROVAL-001 covers), FM-250..257 (edge security — pentest + WAF).
 
@@ -312,6 +327,11 @@ Cancellation MUST be logged in the evidence doc (`status: cancelled`, reason cit
 - `crates/corelink-dr-drill/src/lib.rs` — drill scheduler invariants + RTO/RPO ceilings
 - `crates/corelink-oncall/src/lib.rs` — PD schedule + fatigue tracking
 - `crates/corelink-failover-router/` — residency graph for cross-region routing
+- `specs/_compliance/ACTIVE-FAILOVER-DRILL-SPEC.md` — DR-16 warm-failover drill spec
+- `specs/_compliance/COLD-RESTORE-DRILL-SPEC.md` — DR-15 cold-restore drill spec
+- `specs/_runbooks/RB-ACTIVE-FAILOVER.md` — 7-step active-failover runbook
+- `scripts/active-failover-drill.sh` — DR-16 3-mode orchestrator
+- `tests/e2e-failover-router/` — DR-16 5-scenario E2E harness
 - `specs/03_architecture/failure_modes.md` — FM-table (75 FMs)
 - `specs/_runbooks/RB-ONCALL-POLICY.md` — rotation + fatigue policy
 - `specs/_runbooks/RB-POSTMORTEM-PROCESS.md` — postmortem template
