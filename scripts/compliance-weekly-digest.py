@@ -703,14 +703,45 @@ _MUTATION_ROW_RE = re.compile(
 
 
 def parse_mutation_trend() -> MutationTrend:
-    """Aggregate per-crate kill-rate from `specs/_audits/*-mutation-*.md`.
+    """Aggregate per-crate kill-rate.
 
-    The newest file per crate wins (later audits supersede earlier).
-    Best-effort: empirical CI artefact ingestion (via `gh run download
-    mutation-nightly`) is wired in `assemble(..., with_ci=True)` and
-    falls back here when the workflow run is not accessible.
+    Precedence (highest first):
+      1. `reports/mutation/latest.json` — CI-nightly empirical artifact
+         (committed by `.github/workflows/mutation-nightly.yml` aggregate
+         job). One row per crate; this is the SOTA source of truth.
+      2. `specs/_audits/*-mutation-*.md` audit-doc tables — projections /
+         locally-measured rows; used as fallback for crates not yet seen
+         in the CI artifact.
+
+    Per crate, the CI artifact wins over audit-doc rows (file precedence:
+    newest-wins). For audit-doc rows, the newest file per crate wins
+    (later audits supersede earlier).
     """
     crates: dict[str, MutationCrate] = {}
+
+    # (1) CI artifact ingestion — newest wins per crate.
+    ci_artifact = REPO_ROOT / "reports" / "mutation" / "latest.json"
+    if ci_artifact.exists():
+        try:
+            payload = json.loads(ci_artifact.read_text(encoding="utf-8"))
+            for row in payload.get("crates", []):
+                if not isinstance(row, dict):
+                    continue
+                crate = row.get("crate")
+                rate = row.get("kill_rate_pct")
+                if not crate or not isinstance(rate, (int, float)):
+                    continue
+                if not (0.0 <= rate <= 100.0):
+                    continue
+                crates[crate] = MutationCrate(
+                    crate=crate, kill_rate_pct=float(rate),
+                    source=str(ci_artifact.relative_to(REPO_ROOT)),
+                    below_floor=rate < 75.0,
+                )
+        except (OSError, json.JSONDecodeError):
+            pass
+
+    # (2) Audit-doc fallback — only for crates not present in (1).
     files = sorted(AUDITS_DIR.glob("*-mutation-*.md"))  # date-sortable
     for f in files:
         try:
@@ -726,7 +757,10 @@ def parse_mutation_trend() -> MutationTrend:
             # Sanity: kill rates outside 0..100 are noise (column drift).
             if not (0.0 <= rate <= 100.0):
                 continue
-            # Newest file wins.
+            # CI artifact takes precedence: do not overwrite.
+            if crate in crates and crates[crate].source.endswith("latest.json"):
+                continue
+            # Among audit-doc rows, newest file wins.
             crates[crate] = MutationCrate(
                 crate=crate, kill_rate_pct=rate,
                 source=str(f.relative_to(REPO_ROOT)),

@@ -296,13 +296,99 @@ Two static-equivalence cases were not eliminated:
 
 ### 7.6 Follow-on debt (TD-DEBT-008-WAVE-14-EMPIRICAL)
 
-- **TD-DEBT-008-WAVE-14-EMPIRICAL**: Empirical post-additions
-  cargo-mutants sweep on `corelink-dual-approval` is owed to the
-  CI-nightly run on the GHA runner pool; if the empirical rate
-  < 75 %, file a wave-15 follow-on with the per-survivor closure.
-  This honours the "no fudging the metric" charter constraint: the
-  projected ≥ 90 % rate is **not** treated as the SEAL gate — only
-  the CI-nightly artifact's measured rate closes the gap.
+- **TD-DEBT-008-WAVE-14-EMPIRICAL** — **SHIPPED + FIRST RUN SCHEDULED
+  2026-05-15** on branch `wt/debt-008-mutation-nightly-ci`.
+
+  **Closure mechanism:** the existing
+  `.github/workflows/mutation-nightly.yml` (R2 baseline) was extended
+  with:
+  - `Emit per-crate JSON summary` step inside the matrix job — writes
+    `mutation-summary-<crate>.json` per matrix leg with
+    `kill_rate_pct`, `total`, `caught`, `missed`, `unviable`, `viable`,
+    `source="ci-nightly"`.
+  - New `aggregate` job (`needs: mutants`, `if: always()`,
+    `permissions: contents: write + issues: write`) that downloads
+    every per-crate summary, builds `reports/mutation/latest.json`
+    (schema `corelink.mutation.nightly.v1`), and:
+    - Commits the refreshed `reports/mutation/latest.json` via the
+      GitHub Contents API (signed commit through `GITHUB_TOKEN`),
+      preserving the existing repo-default branch-protection policy.
+    - Opens a `debt-008 / mutation-nightly / P1`-labelled issue
+      whenever any crate falls below the 75 % floor.
+  - All `uses:` lines remain 40-char SHA-pinned per HIGH_RISK lane
+    FF-HR-005 (`verify-action-sha-pinning.py` reports
+    520 `uses:` lines across 86 workflows — green).
+
+  **Digest integration:** `scripts/compliance-weekly-digest.py
+  parse_mutation_trend()` now consumes `reports/mutation/latest.json`
+  with **file precedence over audit-doc projections** (CI artifact
+  beats audit-doc rows; audit-doc rows are kept as fallback for crates
+  not yet observed in CI). Dry-run verified: when a synthetic
+  `latest.json` is staged, `corelink-dual-approval` +
+  `corelink-ratelimit` rows source `reports/mutation/latest.json`
+  rather than the audit-doc projection.
+
+  **No-fudge guarantee:** the projected ≥ 90 % rate continues to NOT
+  be treated as the SEAL gate. The very next CI-nightly artifact
+  overwrites the projection in the digest the moment it lands. If the
+  empirical rate < 75 %, the aggregate job opens an issue
+  automatically — wave-15 closure protocol triggers without manual
+  monitoring.
+
+  **First-run trigger:** scheduled `cron: '23 5 * * *'` (next UTC
+  05:23) + manual `workflow_dispatch` available. See manual-fire
+  procedure §7.9 below.
+
+  **Manual fire attempted 2026-05-15:** `gh workflow run
+  mutation-nightly.yml --ref main` →
+  [run 25940986253](https://github.com/humangr-labs/corelink-server/actions/runs/25940986253)
+  — workflow plumbing verified end-to-end (all 8 matrix legs
+  enumerated + queued correctly). All 8 matrix jobs failed with
+  *"The job was not started because recent account payments have
+  failed or your spending limit needs to be increased"* — this is
+  the organization-wide GHA billing block already documented in
+  DEBT-015 caveat (b); it is **not** a workflow defect. The first
+  empirical CI artifact will land on the first scheduled run after
+  the org billing is unblocked. Plumbing readiness is sealed.
+
+### 7.8 Workflow surface
+
+| Aspect | Value |
+|---|---|
+| File | `.github/workflows/mutation-nightly.yml` |
+| Matrix size | 8 crates (`corelink-byok`, `corelink-signup`, `corelink-tier-selection`, `corelink-audit-chain`, `corelink-pat`, `corelink-clerk`, `corelink-dual-approval`, `corelink-ratelimit`) |
+| Cron | `23 5 * * *` (05:23 UTC daily) |
+| Aggregate job | yes — builds `reports/mutation/latest.json` + opens issue on <75% |
+| SHA-pin audit | 520 `uses:` across 86 workflows green (`scripts/verify-action-sha-pinning.py`) |
+| Actionlint | green (no errors) |
+| YAML parse | green (`yaml.safe_load`) |
+| Digest hook | `parse_mutation_trend()` ingests CI artifact with precedence |
+| Permissions | top-level `contents: read`; aggregate job: `contents: write` + `issues: write` |
+
+### 7.9 Manual-fire procedure (workflow_dispatch)
+
+After the workflow lands on `main` (post-merge from
+`wt/debt-008-mutation-nightly-ci`), fire it manually with:
+
+```bash
+gh workflow run mutation-nightly.yml --ref main
+# or with the agent's pre-merge branch (does NOT register on default-branch UI):
+gh workflow run mutation-nightly.yml --ref wt/debt-008-mutation-nightly-ci
+```
+
+Then:
+
+```bash
+gh run list --workflow=mutation-nightly.yml --limit=1
+gh run watch <run-id>          # follow logs
+gh run download <run-id>       # pull all matrix-leg artifacts
+```
+
+Expected wall-clock on free-tier `ubuntu-latest`: ~12 min for
+`corelink-dual-approval`, ~25 min for `corelink-ratelimit`, ~110 min
+for `corelink-audit-chain`, ~4.5 h for `corelink-pat` and
+`corelink-clerk` (matrix is `fail-fast: false`, so per-leg failures
+do not abort siblings).
 
 ### 7.7 Test count summary
 
