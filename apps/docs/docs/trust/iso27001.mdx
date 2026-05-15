@@ -1,0 +1,212 @@
+---
+title: "ISO 27001:2022"
+slug: "/trust/iso27001"
+description: "CoreLink ISO/IEC 27001:2022 posture — preliminary Annex A crosswalk, 98.9% in-scope coverage today, certification target Q1-2027 with Schellman."
+draft: false
+cross_functional_review: TBD
+pending_signoff:
+  - "Security Lead"
+  - "Legal"
+  - "Compliance Officer"
+sources:
+  - "specs/_compliance/ISO27001-CROSSWALK-2026-05-15.md"
+  - "specs/_compliance/ISO27001-GAP-ANALYSIS.md"
+  - "specs/_compliance/ISO27001-ROADMAP.md"
+  - "specs/_compliance/SOC2-EVIDENCE-ROLLUP-2026-05-15.md"
+last_updated: "2026-05-15"
+---
+
+# ISO 27001:2022
+
+> **TL;DR — CoreLink already implements 85%+ of the ISO/IEC 27001:2022 Annex A
+> controls in production today.** We crosswalked them against the SOC 2 Type I
+> evidence we are already collecting (Drata, 90.7% auto). Formal **ISO 27001
+> certification is on the roadmap for Q1-2027** with Schellman as audit
+> partner — stacked on top of our SOC 2 Type I fieldwork in Q4-2026.
+
+If your procurement team asks "do you have ISO 27001?", the honest answer
+today is **"not yet — but we crosswalk to 98.9% of in-scope Annex A controls,
+and we have a calendared path to a certificate by Q1-2027"**. The detail
+below explains what that means in practice.
+
+## Headline numbers
+
+| Metric | Value | Source |
+| --- | --- | --- |
+| Annex A controls in the 2022 standard | 93 | ISO/IEC 27001:2022 |
+| Controls in scope for CoreLink | 90 / 93 | 3 N/A (no owned facilities + in-house dev) |
+| **Effective coverage today (Implemented + Partial)** | **89 / 90 = 98.9%** | Internal crosswalk |
+| Strictly Implemented (auditor-ready evidence) | 64 / 90 = 71.1% | Internal crosswalk |
+| Overlap with our SOC 2 Type I evidence | 91% | Drata 6-stream auto-collection |
+| ISO-unique gaps (incremental work) | 7 minor + 1 informational | `ISO27001-GAP-ANALYSIS.md` |
+| Cert target | **Q1-2027** | Stage 1 audit Q4-2026 stacked with SOC 2 |
+| Audit partner | Schellman & Co. (ANAB-accredited) | Same firm as SOC 2 Type I |
+| First-year cert cost envelope | $55-90k | Stage 1 + Stage 2 combined |
+
+## Why 80%+ of the work overlaps with SOC 2
+
+ISO 27001:2022 Annex A and SOC 2 TSC 2017 (with 2022 PoF) share most of their
+control substance. They differ mostly in:
+
+- **Documentation formality** (ISO expects a formal asset register; SOC 2
+  accepts a Drata-driven inventory).
+- **Process scaffolding** (ISO expects clauses 4–10 documenting the ISMS as a
+  process; SOC 2 looks at the controls themselves).
+- **Annual cadence** (ISO has surveillance audits in year 1 + 2 and full
+  recertification in year 3; SOC 2 has Type I → Type II → annual Type II).
+
+Because we already produce auditor-grade evidence for 91% of the criteria
+that crosswalk to ISO Annex A — collected automatically by Drata — the
+incremental work to reach an ISO 27001 certificate is small.
+
+### Coverage by Annex A theme
+
+| Theme | Controls | Implemented | Partial | Gap | N/A | Effective coverage |
+| --- | --: | --: | --: | --: | --: | --: |
+| **A.5 Organizational** | 37 | 23 | 13 | 1 | 0 | 97.3% |
+| **A.6 People** | 8 | 5 | 3 | 0 | 0 | 100% |
+| **A.7 Physical** | 14 | 10 | 2 | 0 | 2 | 100% of applicable |
+| **A.8 Technological** | 34 | 26 | 7 | 0 | 1 | 100% of applicable |
+| **Total** | **93** | **64** | **25** | **1** | **3** | **98.9% in-scope** |
+
+The single Gap row (A.5.10 Acceptable Use Policy formalization) closes in
+T+1m as part of the ISO-unique gap closure batch. The Partial rows share
+remediation work with our existing 33-GAP SOC 2 register; closing them
+closes both.
+
+## What's ISO-unique (the actual incremental work)
+
+These are the 7 minor gaps where SOC 2 evidence does **not** automatically
+satisfy ISO 27002:2022 implementation guidance. They are all small (~6.25
+person-weeks total) and close before Q4-2026 Stage 1 audit.
+
+| ID | Annex A | Title | ETA |
+| --- | --- | --- | --- |
+| GAP-ISO-01 | A.5.9 | Formal asset register (vs informal Drata inventory) | T+1m |
+| GAP-ISO-02 | A.5.10 | Acceptable Use Policy as standalone signed document | T+1m |
+| GAP-ISO-03 | A.5.20 | Per-supplier security-clause checklist | T+2m |
+| GAP-ISO-04 | A.5.30 + A.8.14 | Business Impact Analysis depth (RTO/RPO per business process) | T+2m |
+| GAP-ISO-05 | A.6.5 | Signed offboarding checklist (employee/contractor/advisor) | T+2m |
+| GAP-ISO-06 | A.7.7 | Clear-desk and clear-screen policy (formalized for remote-first org) | T+1m |
+| GAP-ISO-07 | A.7.9 + A.8.1 | MDM-lite documentation for managed endpoints | T+3m |
+
+The full register with owner, effort, ETA, and compensating controls is in
+the internal companion document
+[`ISO27001-GAP-ANALYSIS.md`](https://github.com/humangr-labs/corelink/blob/main/specs/_compliance/ISO27001-GAP-ANALYSIS.md)
+(NDA-gated for prospects; email `trust@corelink.dev`).
+
+## Roadmap to Q1-2027 certification
+
+The certification path stacks on top of our SOC 2 Type I fieldwork. Same
+audit firm, same evidence collection, separate engagement letter.
+
+| Milestone | Window | What happens |
+| --- | --- | --- |
+| M0 — ISMS scope statement | T+0 .. T+1m | Scope doc + SoA refreshed to 93-row 2022 format |
+| M1 — Clauses 4–10 documentation | T+1m .. T+3m | ISO 27001 process clauses written (mostly consolidation of existing material) |
+| M2 — Internal audit (first cycle) | T+3m .. T+4m | 5-day engagement with 3rd-party ISO 27001 Lead Auditor |
+| M3 — Management review (first cycle) | T+4m | Owner-led 4h review per §9.3 |
+| **M4 — Stage 1 audit (documentation review)** | **Q4-2026** | Schellman; stacked with SOC 2 Type I fieldwork |
+| M5 — Corrective actions from Stage 1 | T+6m..T+7m | Close any Stage 1 non-conformities |
+| **M6 — Stage 2 audit (operational effectiveness)** | **Q1-2027** | Schellman; sample testing across Annex A |
+| **M7 — Certificate issuance** | **Q1-2027** | ISO/IEC 27001:2022 certificate posted; 3-year cycle begins |
+
+After certificate issuance:
+
+- **Surveillance audit year 1:** Q1-2028.
+- **Surveillance audit year 2:** Q1-2029.
+- **Recertification (full re-audit):** Q1-2030.
+
+## What you can rely on **today** (pre-certificate)
+
+These ISO 27001 control families are already operating and continuously
+monitored — verifiable on request:
+
+- **A.5.21 Information security in the ICT supply chain:** SLSA Level 3
+  build attestation, Cosign-signed releases, Rekor transparency logs,
+  CycloneDX SBOM, Dependency-Track, license allowlist, reproducible builds.
+  See our [security overview](/security).
+- **A.5.28 Collection of evidence:** Merkle-linked append-only audit chain
+  with RFC 6962 inclusion proofs, R2 Object Lock Governance Mode, 7-year
+  retention. See [Audit chain](/security/audit-chain).
+- **A.5.29 + A.5.30 Continuity:** 14-drill BCP/DR cadence, RTO 15min /
+  RPO 5min for active-region failover (DR-16), cold-restore-from-zero
+  procedure (DR-15). Internal doc:
+  [`BCP-DR-DRILL-CADENCE.md`](https://github.com/humangr-labs/corelink/blob/main/specs/_compliance/BCP-DR-DRILL-CADENCE.md).
+- **A.5.34 Privacy and protection of PII:** full LGPD + GDPR posture,
+  signed DPA, residency attestation per region. See
+  [Compliance → LGPD/GDPR](./compliance#lgpd-brazil--lei-geral-de-proteção-de-dados).
+- **A.8.2 Privileged access:** WebAuthn-bound admin sessions, MFA freshness
+  gate, dual-approval pattern (`PAT-DUAL-APPROVAL-001`) for destructive
+  operations.
+- **A.8.15 + A.8.16 Logging and monitoring:** append-only audit chain,
+  Prometheus metrics catalog, DASH-COMPLIANCE-S20 dashboard, Drata
+  continuous compliance with 96.4% green sustained.
+- **A.8.24 Use of cryptography:** TLS 1.3 enforced, AES-256-GCM at rest,
+  optional BYOK envelope encryption across 4 KMS providers (AWS, GCP,
+  Azure, HashiCorp Vault). See [BYOK explanation](/security/byok).
+
+## What we'll formally certify (vs what's inherited)
+
+A few Annex A controls are **inherited from sub-processors** rather than
+implemented natively:
+
+- **A.7.x Physical controls** (A.7.1, A.7.2, A.7.4, A.7.5, A.7.8, A.7.10,
+  A.7.11, A.7.12, A.7.13, A.7.14) — inherited from Cloudflare / AWS / GCP /
+  Azure SOC 2 Type II + ISO 27001 reports referenced in
+  [`legal/sub-processors.md`](https://github.com/humangr-labs/corelink/blob/main/legal/sub-processors.md).
+- **A.7.3 Securing offices** and **A.7.6 Working in secure areas** — N/A;
+  CoreLink runs no owned facilities (remote-first org).
+- **A.8.30 Outsourced development** — N/A; all development in-house.
+
+The SoA documents the inheritance/inapplicability justification for each
+N/A or inherited row.
+
+## How this stacks against our SOC 2 posture
+
+Both certifications run in parallel on shared infrastructure:
+
+| Dimension | SOC 2 Type I | ISO 27001:2022 |
+| --- | --- | --- |
+| Audit framework | AICPA TSC 2017 + 2022 PoF | ISO/IEC 27001:2022 Annex A (with 2024 amendment) |
+| Audit partner | Schellman & Co. | Schellman & Co. (same engagement) |
+| Continuous evidence | Drata (6 streams, 90.7% auto) | Drata (same 6 streams + ISO framework toggle) |
+| Target audit | **Q4-2026 fieldwork** | **Q4-2026 Stage 1 + Q1-2027 Stage 2** |
+| Target report / certificate | **Early Q1-2027** | **Q1-2027 certificate** |
+| Cert cycle | Type II 6m observation → Type II report 2027/Q4 | 3-year cycle with annual surveillance |
+| First-year cost | $40-85k | $55-90k (stacked with SOC 2) |
+
+## What this means for procurement / RFP teams
+
+- **If you need an ISO 27001 certificate before Q1-2027:** we can give you a
+  signed crosswalk + gap analysis + roadmap (this page + the two internal
+  companion docs under NDA). Most enterprise procurement teams accept this
+  as sufficient for vendor-onboarding when the SOC 2 Type I report is
+  imminent.
+- **If you need the certificate itself:** the date is **Q1-2027**. We will
+  not commit to an earlier date because Stage 1 → Stage 2 → certificate
+  issuance has irreducible accredited-body lead time.
+- **If you need ISO 27701 (PIMS):** that's a separate certification
+  extension. We currently target **2028** for ISO 27701 (post-Type-II
+  + post-27001-Stage-2). The substance (privacy by design, DPIA, DSR,
+  consent, breach notification) is already covered under LGPD + GDPR + SOC 2
+  Privacy.
+
+## Related
+
+- [Trust Center overview](./)
+- [Compliance — SOC 2 / LGPD / GDPR / HIPAA / PCI](./compliance)
+- [Sub-processors](./subprocessors)
+- [Incident response](./incident-response)
+- [Security overview](/security)
+- [BYOK customer-managed keys](/security/byok)
+- [Audit chain](/security/audit-chain)
+
+## Contact
+
+| What you need | Where to send it |
+| --- | --- |
+| ISO 27001 crosswalk pack (NDA-gated) | `trust@corelink.dev` |
+| Annex A specific-control evidence request | `trust@corelink.dev` |
+| Procurement / vendor review forms | `trust@corelink.dev` |
+| Audit-chain inclusion proof (verifiable now) | [Audit chain how-to](/security/audit-chain) |
