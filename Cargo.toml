@@ -152,6 +152,12 @@ members = [
     # `GCP_TEST_KEY_RESOURCE` / `AZURE_TEST_KEY_RESOURCE` /
     # `VAULT_TEST_KEY_NAME` env-gated `#[ignore]` live-provider tests.
     "tests/e2e-byok-revoke",
+    # R3-3 end-to-end DSR rights harness: access / portability / rectification /
+    # erasure / restriction / objection submit → MFA stub → JWT receipt → status
+    # poll → 12-backend erasure worker → 24h verification + signed report. Six
+    # happy DSR rights + five adversarial paths + 500-case property test. All
+    # in-memory fakes; no network IO under default `cargo test -p e2e-dsr`.
+    "tests/e2e-dsr",
 ]
 exclude = [
     "crates/tenant-path/fuzz",

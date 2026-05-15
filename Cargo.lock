@@ -2618,6 +2618,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "e2e-dsr"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "corelink-dsr",
+ "corelink-privacy-erasure-worker",
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "uuid",
+]
+
+[[package]]
 name = "e2e-signup-flow"
 version = "0.1.0"
 dependencies = [
