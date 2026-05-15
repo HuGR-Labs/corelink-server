@@ -1,0 +1,53 @@
+# =============================================================================
+# action-sha-audit — DEBT-018+019 CI gate
+# -----------------------------------------------------------------------------
+# Runs scripts/verify-action-sha-pinning.py on every PR touching workflow files
+# or the verifier itself. Fails the PR if any `uses:` line references an action
+# by tag/branch instead of a 40-char commit SHA.
+#
+# Policy reference: supply-chain security (SOC2 CC7.1 rollup) — mutable refs
+# (`@v4`, `@stable`) are forbidden because a compromised maintainer (or
+# compromised CI of the upstream action) can re-point them at malicious code.
+# =============================================================================
+name: action-sha-audit
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/**"
+      - "scripts/verify-action-sha-pinning.py"
+      - ".github/workflows/action-sha-audit.yml"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/**"
+      - "scripts/verify-action-sha-pinning.py"
+
+# Cancel superseded runs on the same branch to save CI minutes.
+concurrency:
+  group: action-sha-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify-sha-pinning:
+    name: Verify all GHA actions SHA-pinned
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # actions/checkout@v4.3.1
+        with:
+          # Shallow clone is fine — we only read .github/workflows tree.
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # actions/setup-python@v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Run SHA pinning verifier
+        run: |
+          python3 scripts/verify-action-sha-pinning.py
