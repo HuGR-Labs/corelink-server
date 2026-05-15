@@ -1,0 +1,85 @@
+# Auto-labeler rules for pull requests.
+# -----------------------------------------------------------------------------
+# Consumed by `.github/workflows/labeler.yml` (actions/labeler@v5). Each top-
+# level key is a label that GitHub MUST already exist (create via
+# `gh label create <name> --color <hex> --description "<text>"` before merge).
+#
+# Conventions:
+# - `changed-files: any-glob-to-any-file` — label fires when any matching path
+#   appears in the PR diff. This matches v5 schema (NOT v4 plain-glob list).
+# - Globs are repo-root relative.
+# - A PR may receive multiple `area:*` labels — that's intentional (helps
+#   reviewer routing + dashboard slicing).
+# - Cross-link: .github/CODEOWNERS (review routing), docs/internal/CODE-REVIEW-CHECKLIST.md.
+
+"area:byok":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "crates/corelink-byok/**"
+          - "crates/corelink-byok-aws/**"
+          - "crates/corelink-byok-azure/**"
+          - "crates/corelink-byok-gcp/**"
+          - "crates/corelink-byok-matrix-test/**"
+          - "crates/corelink-crypto-*/**"
+
+"area:audit-chain":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "crates/corelink-audit/**"
+          - "crates/corelink-audit-chain/**"
+
+"area:billing":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "crates/corelink-billing-*/**"
+          - "specs/tla/billing/**"
+
+"area:docs":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "docs/**"
+          - "**/*.md"
+          - "README.md"
+          - "CHANGELOG.md"
+
+"area:apps-server":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "apps/server/**"
+
+"area:apps-admin-ui":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "apps/admin-ui/**"
+
+"area:apps-docs":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "apps/docs/**"
+
+"area:infra":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "infra/**"
+          - "Dockerfile"
+          - "docker-compose*.yml"
+          - ".github/workflows/**"
+          - "migrations/**"
+
+"area:compliance":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "compliance/**"
+          - "legal/**"
+          - "specs/_legal/**"
+          - "specs/_security/**"
+          - "SECURITY.md"
+          - ".github/SECURITY/**"
+
+"area:tests":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/tests/**"
+          - "**/*_test.rs"
+          - "**/proptest-regressions/**"
+          - "crates/corelink-test-utils/**"

@@ -1,0 +1,66 @@
+# Security report router.
+# -----------------------------------------------------------------------------
+# Security findings MUST NOT be filed on the public tracker. This "template"
+# exists solely to surface the right private channels in the issue picker —
+# users who attempt to open it are prompted to confirm they understand the
+# VDP, then redirected to `SECURITY.md` and `security@corelink.dev`.
+#
+# Cross-link:
+#   - SECURITY.md (top-level policy, GitHub auto-detects)
+#   - specs/_security/vulnerability-disclosure-policy.md (canonical spec)
+#   - .github/SECURITY/intake-issue-template.md (maintainer-internal intake)
+
+name: "Security Vulnerability — DO NOT FILE HERE"
+description: "Report a vulnerability. Read the instructions before filing — public issues are NOT the right channel."
+title: "[security] Please redirect — see SECURITY.md"
+labels: ["security", "needs-redirect"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        # STOP — Do not file this issue.
+
+        CoreLink operates a coordinated Vulnerability Disclosure Policy
+        ([VDP](../../SECURITY.md)). Filing a security finding on the public
+        issue tracker:
+
+        - exposes affected users before a fix is available,
+        - voids any safe-harbor commitments we make to good-faith researchers,
+        - violates our VDP.
+
+        ## Use these channels instead
+
+        1. **Private GitHub Security Advisory** (preferred for finders with
+           a GitHub account): click *Security* → *Report a vulnerability*
+           on the repo. This opens a private thread with maintainers.
+
+        2. **Email** [`security@corelink.dev`](mailto:security@corelink.dev).
+           PGP key + RFC 9116 contact card at
+           <https://corelink.dev/.well-known/security.txt>.
+
+        We acknowledge within **3 business days** and aim for resolution
+        within the timelines in `SECURITY.md`. Good-faith researchers are
+        eligible for safe-harbor and public credit.
+
+        ## What about non-security bugs?
+
+        If you arrived here by accident and your report is a regular bug,
+        please close this template and use
+        [*Bug Report*](./bug_report.yml) instead.
+
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: "Acknowledgement"
+      description: "Tick the box ONLY if you have read the above and intend to file the security report via the private channel. This issue will be closed by maintainers without action."
+      options:
+        - label: "I understand this is the wrong channel and I will use the private security advisory flow or `security@corelink.dev`."
+          required: true
+
+  - type: textarea
+    id: nothing
+    attributes:
+      label: "Do not include vulnerability details here"
+      description: "Leave this field blank. Any detail posted publicly here may need to be redacted by maintainers; act through the private channels above instead."
+    validations:
+      required: false

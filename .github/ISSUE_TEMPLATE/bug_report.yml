@@ -1,0 +1,115 @@
+# Structured bug-report template.
+# -----------------------------------------------------------------------------
+# Cross-link: .github/ISSUE_TEMPLATE/security.yml — security findings route
+# privately, NOT through this template.
+
+name: "Bug Report"
+description: "Report a defect in CoreLink (NOT a security vulnerability)."
+title: "[bug] <short summary>"
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug.
+
+        **Stop and read first:** if this report concerns a security
+        vulnerability, do NOT continue here. Close this tab and use the
+        [Security template](./security.yml) (or email
+        `security@corelink.dev`). Filing security findings on a public
+        issue is a violation of our Vulnerability Disclosure Policy.
+
+  - type: checkboxes
+    id: not-security
+    attributes:
+      label: This is not a security finding
+      options:
+        - label: "I confirm this report does NOT contain exploit details, credentials, or any data covered by the VDP."
+          required: true
+
+  - type: input
+    id: audit-id
+    attributes:
+      label: "Audit ID (if you have one)"
+      description: |
+        From any API error response, the `audit_id` (UUID) or the
+        `x-corelink-request-id` response header. This is the fastest way for
+        us to find the failing request in our logs.
+      placeholder: "e.g. 4a8e9c2b-7f10-4d3a-9c81-7b6f3a2e1d09"
+    validations:
+      required: false
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: "Steps to reproduce"
+      description: "Minimal, copy-pasteable sequence. Include exact commands and config (with secrets redacted)."
+      placeholder: |
+        1. `corelink-cli put --tenant acme --bucket runs ./build.tar`
+        2. `corelink-cli get --tenant acme --bucket runs --digest <hash>`
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: "Expected behaviour"
+      description: "What you expected to happen, and where this expectation is documented (URL / spec ref / runbook)."
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: "Actual behaviour"
+      description: "What happened instead. Paste exact error messages, stack traces, or HTTP status codes."
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: "Environment"
+      description: "OS, architecture, CoreLink server version (`corelink-server --version`), client version, runtime."
+      value: |
+        - OS / arch:
+        - CoreLink server version:
+        - CoreLink client / SDK version:
+        - Deployment shape: (self-hosted single-region / self-hosted multi-region / SaaS)
+        - BYOK provider (if relevant): (none / AWS-KMS / Azure-KV / GCP-KMS)
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: "Relevant logs / audit excerpts"
+      description: |
+        Paste short log snippets here (REDACTING any secrets, tokens, PAT
+        prefixes, customer identifiers). For longer logs, attach a file —
+        but never attach raw production data.
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: "Workaround (if any)"
+      description: "Did you find a way to work around the issue? Include it here so other users searching this tracker can use it."
+    validations:
+      required: false
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: "Severity (your best guess)"
+      description: "Maintainer triage may revise this."
+      options:
+        - "S4 — cosmetic / docs"
+        - "S3 — annoying but workaroundable"
+        - "S2 — significant functionality broken"
+        - "S1 — production impacting, no workaround"
+    validations:
+      required: true
