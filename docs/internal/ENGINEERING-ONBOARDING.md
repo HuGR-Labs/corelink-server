@@ -411,6 +411,17 @@ PRs *into this document* are an excellent first PR.
   list (refreshed quarterly).
 - `docs/internal/onboarding/GLOSSARY-CHEATSHEET.md` — 50 terms.
 - `docs/internal/onboarding/domains/*.md` — 5 domain learning paths.
-- `docs/internal/TECHLEAD-CHECKLIST.md` — PR merge protocol.
+- `docs/internal/AUTHOR-PRE-PR-CHECKLIST.md` — **run before opening
+  your first PR** (30 rows, ~15 min). Mirrors the gates `/techlead`
+  will check.
+- `docs/internal/CODE-REVIEW-CHECKLIST.md` — what you walk through
+  when reviewing other engineers' PRs (Week-2 deliverable: review ≥ 5
+  PRs). Reviewer-side L0-L7.
+- `docs/internal/TECHLEAD-CHECKLIST.md` — orchestrator-side L0-L10 PR
+  merge protocol.
+- `.github/PULL_REQUEST_TEMPLATE.md` — the template auto-loaded when
+  you `gh pr create`; pre-populates the author checklist.
+- `.github/CODEOWNERS` — review-routing; tells you which team must
+  approve a PR touching a given path.
 - `ROADMAP-TO-GA.md` — where the product is in its lifecycle.
 - `specs/_runbooks/INDEX.md`-equivalent: just `ls specs/_runbooks/`.

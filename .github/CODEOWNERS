@@ -1,7 +1,70 @@
-# CODEOWNERS — WI-S13-004 §6.1 + §14.s13.004.12
-# Changes to infra/terraform/ MUST be reviewed by senior engineer + AppSec.
-# Changes to drift detection workflow require AppSec review.
-# No terraform apply step may be added to workflows (CI lint enforces; AppSec reviews).
+# CODEOWNERS — CoreLink server
+# -----------------------------
+# Source of truth for "every PR reviewed" GA-Gate criterion. GitHub auto-
+# requests review from the listed teams when a PR touches matching paths.
+#
+# Conventions:
+# - Last matching pattern wins per GitHub's CODEOWNERS rules — order matters.
+# - Placeholder team handles (humangr-labs/*) — replace with concrete reviewer
+#   names per team once the GitHub org has the teams provisioned.
+# - Cross-link: docs/internal/CODE-REVIEW-CHECKLIST.md (reviewer-side process).
+# - Cross-link: docs/internal/AUTHOR-PRE-PR-CHECKLIST.md (author-side process).
+# - Cross-link: docs/internal/TECHLEAD-CHECKLIST.md (orchestrator L0-L10).
+# - WI provenance: WI-S13-004 §6.1, §14.s13.004.12 (terraform); WI-S19-002,
+#   WI-S20-005 (legal). Other rows added 2026-05-15 for GA-Gate completeness.
+
+# ============================================================================
+# Default owner — catch-all so nothing merges unreviewed.
+# ============================================================================
+*                                 @humangr-labs/engineering
+
+# ============================================================================
+# Core Rust crates — engineering owns; domain leads listed where applicable.
+# ============================================================================
+
+# Workspace manifest / lock — Architect must review (dep + version policy).
+/Cargo.toml                       @humangr-labs/architects
+/Cargo.lock                       @humangr-labs/architects
+
+# Tooling crates and shared test utils — engineering + architects.
+/crates/corelink-test-utils/      @humangr-labs/engineering @humangr-labs/architects
+
+# BYOK / crypto family — AppSec + Architect mandatory.
+/crates/corelink-byok/            @humangr-labs/appsec @humangr-labs/architects
+/crates/corelink-byok-aws/        @humangr-labs/appsec @humangr-labs/architects
+/crates/corelink-byok-azure/      @humangr-labs/appsec @humangr-labs/architects
+/crates/corelink-byok-gcp/        @humangr-labs/appsec @humangr-labs/architects
+/crates/corelink-byok-matrix-test/ @humangr-labs/appsec @humangr-labs/architects
+/crates/corelink-crypto-*/        @humangr-labs/appsec @humangr-labs/architects
+
+# Audit chain — Privacy + AppSec sign-off (RFC 6962 / RFC 8785 invariants).
+/crates/corelink-audit/           @humangr-labs/appsec @humangr-labs/privacy
+/crates/corelink-audit-chain/     @humangr-labs/appsec @humangr-labs/privacy
+
+# Auth / Clerk integration — AppSec required.
+/crates/corelink-auth-schema/     @humangr-labs/appsec
+/crates/corelink-clerk*/          @humangr-labs/appsec
+
+# Billing / Stripe — Architect + Finance liaison (replace with team handle).
+/crates/corelink-billing-*/       @humangr-labs/architects @humangr-labs/finance
+
+# Admin plane — Architect + AppSec (privileged surface).
+/crates/corelink-admin-*/         @humangr-labs/architects @humangr-labs/appsec
+
+# Privacy / DSR — Privacy + Legal.
+/crates/corelink-privacy*/        @humangr-labs/privacy @humangr-labs/legal
+/crates/corelink-dsr*/            @humangr-labs/privacy @humangr-labs/legal
+
+# Rate-limit / abuse — AppSec.
+/crates/corelink-abuse/           @humangr-labs/appsec
+/crates/corelink-rate-limit*/     @humangr-labs/appsec
+
+# Server / gRPC entrypoint — Architect (cross-cutting).
+/apps/server/                     @humangr-labs/architects @humangr-labs/engineering
+
+# ============================================================================
+# Infra / Terraform / IaC — Architect + AppSec (WI-S13-004 §6.1).
+# ============================================================================
 
 # Terraform IaC — requires Architect + AppSec review
 /infra/terraform/                 @humangr-labs/architects @humangr-labs/appsec
@@ -34,3 +97,75 @@
 
 # Lighthouse legal review tracker — Legal Counsel + DPO own
 /specs/_legal/                    @humangr-labs/legal @humangr-labs/privacy
+
+# ============================================================================
+# Specs corpus — Architect for architecture; SRE for runbooks; specialists
+# for their domains.
+# ============================================================================
+
+# Architecture canon — Architects.
+/specs/03_architecture/           @humangr-labs/architects
+
+# ADRs — Architects (cross-functional; expand reviewers as needed).
+/specs/03_architecture/adrs/      @humangr-labs/architects
+
+# Runbooks — SRE Leads own; AppSec for security-class FMs.
+/specs/_runbooks/                 @humangr-labs/sre-leads
+/specs/05_quality/runbooks/       @humangr-labs/sre-leads
+
+# Sprint contracts — Architects + Engineering.
+/specs/04_sprints/                @humangr-labs/architects @humangr-labs/engineering
+
+# TLA+ specifications — Architects (formal-methods rotation).
+/specs/tla/                       @humangr-labs/architects
+
+# ============================================================================
+# .github / CI / workflows — AppSec must review (supply-chain surface).
+# ============================================================================
+
+/.github/                         @humangr-labs/appsec @humangr-labs/sre-leads
+/.github/workflows/               @humangr-labs/appsec @humangr-labs/sre-leads
+/.github/CODEOWNERS               @humangr-labs/architects @humangr-labs/appsec
+/.github/PULL_REQUEST_TEMPLATE.md @humangr-labs/architects @humangr-labs/engineering
+/.github/dependabot.yml           @humangr-labs/appsec
+/.github/SECURITY                 @humangr-labs/appsec
+
+# ============================================================================
+# Validation scripts — AppSec + Architects (these gates protect the codebase).
+# ============================================================================
+
+/scripts/                         @humangr-labs/engineering
+/scripts/validate_specs.py        @humangr-labs/architects
+/scripts/validate_references.py   @humangr-labs/architects
+/scripts/check_migrations_additive.py @humangr-labs/architects @humangr-labs/appsec
+
+# ============================================================================
+# Internal engineering docs — process owners.
+# ============================================================================
+
+/docs/internal/                   @humangr-labs/architects @humangr-labs/engineering
+/docs/internal/TECHLEAD-CHECKLIST.md          @humangr-labs/architects
+/docs/internal/CODE-REVIEW-CHECKLIST.md       @humangr-labs/architects
+/docs/internal/AUTHOR-PRE-PR-CHECKLIST.md     @humangr-labs/architects
+/docs/internal/ENGINEERING-ONBOARDING.md      @humangr-labs/architects
+/docs/internal/PERFORMANCE-PLAYBOOK.md        @humangr-labs/architects
+/docs/internal/dep-policy.md                  @humangr-labs/architects @humangr-labs/appsec
+/docs/internal/secrets-*.md                   @humangr-labs/appsec
+/docs/internal/side-channel-defense.md        @humangr-labs/appsec
+/docs/internal/slsa-l3-pipeline.md            @humangr-labs/appsec
+/docs/internal/legal-review-process.md        @humangr-labs/legal
+/docs/internal/dt-dr-runbook.md               @humangr-labs/sre-leads
+/docs/internal/admin-plane.md                 @humangr-labs/appsec @humangr-labs/architects
+/docs/internal/onboarding/                    @humangr-labs/engineering
+
+# Customer-facing docs — DocOps + Architects.
+/docs/customer/                   @humangr-labs/architects @humangr-labs/docops
+
+# Marketing — Marketing + Legal.
+/marketing/                       @humangr-labs/marketing @humangr-labs/legal
+
+# Roadmap — final approver only.
+/ROADMAP-TO-GA.md                 @humangr-labs/architects @humangr-labs/founders
+
+# README / repo-root — Architects.
+/README.md                        @humangr-labs/architects

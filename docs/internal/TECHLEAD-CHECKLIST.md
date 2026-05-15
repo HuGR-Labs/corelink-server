@@ -189,8 +189,21 @@ For batched merges (5+ branches at once): one L0-L7 pass per branch + one L9 pas
 
 ---
 
+## Cross-links
+
+- `docs/internal/CODE-REVIEW-CHECKLIST.md` — reviewer-side L0-L7 (human reviewers walk this on every PR).
+- `docs/internal/AUTHOR-PRE-PR-CHECKLIST.md` — author-side 30-row self-check BEFORE opening PR.
+- `.github/PULL_REQUEST_TEMPLATE.md` — embeds the author + reviewer checklists into every PR.
+- `.github/CODEOWNERS` — review-routing for "every PR reviewed" GA-Gate.
+- `.claude/skills/techlead/SKILL.md` — orchestrator skill that automates this.
+- `docs/internal/ENGINEERING-ONBOARDING.md` — Day 4-5 first-PR flow points here.
+- `ROADMAP-TO-GA.md` — GA-Gate criteria reference this doc.
+
+---
+
 ## Change log
 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 1.0.0 | 2026-05-14 | Gustavo (via Claude Opus 4.7) | Initial checklist post-user-mandate "voce e o techlead". 11 L-levels + cycle time budgets + anti-pattern acknowledgements. |
+| 1.1.0 | 2026-05-15 | Gustavo (via Claude Opus 4.7) | Added cross-link section pointing to new CODE-REVIEW-CHECKLIST.md, AUTHOR-PRE-PR-CHECKLIST.md, PR template, CODEOWNERS. GA-Gate "every PR reviewed" prerequisite. |
