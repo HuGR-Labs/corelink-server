@@ -47,6 +47,7 @@ fn full_regex() -> &'static regex::Regex {
         regex::Regex::new(
             r"^https://(?P<vault>[a-zA-Z][a-zA-Z0-9-]{1,22}[a-zA-Z0-9])\.(?P<svc>vault\.azure\.net|managedhsm\.azure\.net|vault\.azure\.cn|managedhsm\.azure\.cn|vault\.usgovcloudapi\.net|managedhsm\.usgovcloudapi\.net|vault\.microsoftazure\.de)/keys/(?P<key>[a-zA-Z0-9-]{1,127})(?:/(?P<ver>[a-f0-9]{32}))?$",
         )
+        // nosemgrep: corelink.rust.no-expect-in-byok-src  # reason: compile-time-constant regex literal; failure here would be a build-time bug (caught by tests), not a runtime key-path panic. Owner-approved per R-prep static-analysis triage 2026-05-15.
         .expect("static regex compiles")
     })
 }

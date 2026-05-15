@@ -33,6 +33,20 @@ rules:
   # Test files (`tests/`, `*/tests/*`, `*_test.rs`, `*/src/**/tests.rs`)
   # are exempt — assertions in tests routinely use `.unwrap()` and that
   # is acceptable because a panicked test is a failed test.
+  #
+  # NOTE on inline `#[cfg(test)] mod tests { ... }` modules: Semgrep's
+  # path-based exclusion cannot scope by Rust attribute, so this rule
+  # WILL fire on `.unwrap()` inside inline test modules in src/ files.
+  # That is intentional and accepted: clippy's `unwrap_used` lint with
+  # the `#[allow(clippy::unwrap_used)]` annotation at the test-module
+  # boundary already documents the test-only intent (see e.g.
+  # `crates/corelink-ac/src/codec.rs:72-79`). For the R-prep baseline
+  # the project standard is: any inline test module that needs
+  # `.unwrap()` MUST carry `#[cfg(test)] #[allow(clippy::unwrap_used)]`
+  # together; the audit baseline §7.b row R1 documents this convention
+  # and the cron-time cross-check.
+  # `**/bin/**` is excluded — binary setup/startup code is the
+  # legitimate runtime layer (CLI arg parsing, env init).
   # -----------------------------------------------------------------
   - id: corelink.rust.no-unwrap-in-src
     message: |
@@ -54,22 +68,38 @@ rules:
         - "**/benches/**"
         - "**/examples/**"
         - "**/build.rs"
+        - "**/bin/**"
 
   # -----------------------------------------------------------------
-  # R2 — Forbid `tokio::` imports / paths inside `crates/*/src/`.
+  # R2 — Forbid `tokio::` inside the CF-Workers / WASM target lib crates.
   #
-  # Rationale: CoreLink autonomous-execution charter §"runtime-agnostic
-  # core" — no-tokio rule. Async runtime selection belongs in the
-  # binary / app layer (apps/ or test harnesses), never in library
-  # crates. Violations make the crate non-portable to wasm32 / Workers
-  # and break the BYOK enclave runtime budget.
+  # Rationale: CoreLink charter §"runtime-agnostic core" — only the
+  # crates that target the CF Workers / WASM runtime (V8 isolates, no
+  # tokio executor available) must remain tokio-free. The S20 sprint-
+  # close review (`specs/_audits/2026-05-14-s20-sprint-close-review-round1.md`
+  # rows 13–14) explicitly lists `corelink-lighthouse-tracker` and
+  # `corelink-synthetic-pager` as the charter-bound runtime-agnostic
+  # surface; other workspace crates (`corelink-worker`, `corelink-byok-*`,
+  # `corelink-r2-multipart`, `corelink-client-verify`) legitimately
+  # depend on tokio in their `Cargo.toml` and are runtime-bound by
+  # design (audit row 14 reference).
+  #
+  # The R2 scope is therefore the union of:
+  #   - crates flagged runtime-agnostic in audit AUDIT-2026-05-14-S20.
+  #   - any future crate that declares `# runtime-agnostic` in its
+  #     `Cargo.toml` header (TODO: extend rule when the marker lands).
+  # `apps/*` and `**/bin/**` / `**/main.rs` are excluded because the
+  # binary layer is the legitimate runtime-selection surface.
+  # Tuned 2026-05-15 (R-prep baseline triage): pre-tuning the rule
+  # would have fired on 27 legitimate uses (binary entrypoints +
+  # tokio-bound lib crates) — see audit baseline §3.3 row R2.
   # -----------------------------------------------------------------
   - id: corelink.rust.no-tokio-in-lib-crates
     message: |
-      `tokio::` is forbidden inside `crates/*/src/`. Library crates
-      must remain runtime-agnostic (charter no-tokio rule). Move the
-      runtime dependency to an `apps/*` or `tests/*` consumer, or wrap
-      the spawn behind a generic executor trait.
+      `tokio::` is forbidden inside CF-Workers / WASM-target lib crates
+      (charter no-tokio rule — V8 isolates have no tokio executor).
+      Use `async-lock`, `futures::*` primitives, or a `cfg(target_arch
+      = "wasm32")` branch. Suppression requires Owner approval + ADR.
     severity: ERROR
     languages: [rust]
     pattern-either:
@@ -80,7 +110,8 @@ rules:
           use tokio;
     paths:
       include:
-        - "crates/*/src/**/*.rs"
+        - "crates/corelink-lighthouse-tracker/src/**/*.rs"
+        - "crates/corelink-synthetic-pager/src/**/*.rs"
       exclude:
         - "**/tests/**"
         - "**/tests.rs"
@@ -88,6 +119,8 @@ rules:
         - "**/test_*.rs"
         - "**/benches/**"
         - "**/examples/**"
+        - "**/bin/**"
+        - "**/main.rs"
 
   # -----------------------------------------------------------------
   # R3 — Forbid the proptest anti-pattern flagged in S-08 P1-1.
@@ -127,6 +160,15 @@ rules:
   # ONLY (no `expect`, no `unwrap` — the latter is already covered by
   # R1 but R4 is the BYOK-strict variant that additionally bans
   # `.expect()` regardless of the static-string argument).
+  #
+  # Baseline triage 2026-05-15: 3 legitimate static-regex compile
+  # sites in `crates/corelink-byok-{vault,azure,gcp}/src/key_*.rs`
+  # carry inline `# nosemgrep` annotations because the regex literal
+  # is a compile-time constant whose failure is impossible at runtime
+  # (caught by tests). All three already carry
+  # `#[allow(clippy::expect_used)]` as the project's idiomatic
+  # justification; the `nosemgrep` comment cross-references the
+  # R-prep static-analysis triage decision. No rule pattern change.
   # -----------------------------------------------------------------
   - id: corelink.rust.no-expect-in-byok-src
     message: |
