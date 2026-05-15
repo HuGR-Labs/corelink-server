@@ -145,7 +145,7 @@ A formal ISO 27001 certification is on the roadmap **post-Type-II** (target
 
 ## PCI DSS
 
-- **Status:** **No card data stored.** CoreLink itself is *not* in PCI scope.
+- **Status:** **SAQ-A compliant (self-attested 2026-05-15)** — CoreLink itself is *not* in the PCI cardholder data environment (CDE). See the dedicated [PCI DSS posture page](./pci-dss) for the full breakdown.
 - **How payments are handled:** All cardholder data is tokenized at the
   edge via Stripe Elements; CoreLink never sees a PAN. Our billing
   integration follows the **SAQ-A** path (merchant outsourcing all card
@@ -155,6 +155,8 @@ A formal ISO 27001 certification is on the roadmap **post-Type-II** (target
 - **What's stored on our side:** Stripe customer IDs and subscription IDs
   only. Last-four digits and brand are surfaced through Stripe's APIs at
   read time; never persisted on our control plane.
+- **Evidence on file (request via `trust@corelink.dev`):** signed SAQ-A questionnaire (`specs/_compliance/PCI-DSS-SAQ-A-2026-05-15.md`), boundary + data-flow diagram (`specs/_compliance/PCI-DSS-BOUNDARY-DIAGRAM.md`), annual recertification checklist (`specs/_compliance/PCI-DSS-ANNUAL-RECERTIFY.md`).
+- **Next recertification:** 2027-05-15 (annual cadence).
 
 ## Quick scope map
 
@@ -165,7 +167,7 @@ A formal ISO 27001 certification is on the roadmap **post-Type-II** (target
 | LGPD | Compliant | Self-attested + DPO sign-off | DPO monthly checklist |
 | GDPR | Compliant | Self-attested + DPA-bound | SCC supplementary refresh T+1m |
 | HIPAA | Out of scope by design | — | No plans |
-| PCI DSS | No card data — SAQ-A path via Stripe | Inherited | Stripe AOC refresh annual |
+| PCI DSS v4.0 SAQ-A | Compliant (self-attested 2026-05-15) | Self-attested + Stripe AOC inherited | Annual recert 2027-05-15 |
 | ISO 27001:2022 | Crosswalk 87% (informational) | — | Post-Type-II (2028) |
 | NIST 800-53 Rev 5 Moderate | Crosswalk 87% (informational) | — | Closure T+6m |
 
