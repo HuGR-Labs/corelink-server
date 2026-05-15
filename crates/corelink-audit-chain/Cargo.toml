@@ -44,6 +44,10 @@ rand = "0.9"
 rand_chacha = "0.9"
 criterion = { workspace = true }
 
+[[bin]]
+name = "verifier"
+path = "src/bin/verifier.rs"
+
 [[test]]
 name = "prop_audit_chain"
 path = "tests/prop_audit_chain.rs"
