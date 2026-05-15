@@ -132,6 +132,11 @@ members = [
     # the crate root carries `#![cfg(target_arch = "wasm32")]` so native
     # `cargo build --workspace` produces an empty rlib.
     "crates/corelink-cf-bindings",
+    # R5-prep SOC 2 Drata evidence collection pipeline: pulls evidence from
+    # audit_outbox / tenants RBAC / PAT issuance / GH PR-merge / PD incident
+    # timeline / pentest findings → POSTs to Drata REST API with Bearer auth,
+    # SHA-256 idempotency dedup, retry, fail-CLOSED audit emit.
+    "crates/corelink-drata-sync",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
@@ -320,6 +325,7 @@ corelink-erasure-attestation = { path = "crates/corelink-erasure-attestation" }
 corelink-dr-drill = { path = "crates/corelink-dr-drill" }
 corelink-tier-selection = { path = "crates/corelink-tier-selection" }
 corelink-stripe-real = { path = "crates/corelink-stripe-real" }
+corelink-drata-sync = { path = "crates/corelink-drata-sync" }
 
 # CLI tooling (WI-S15-001 / WI-S15-005)
 toml = "0.8"

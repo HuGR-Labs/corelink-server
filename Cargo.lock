@@ -1536,6 +1536,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-drata-sync"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "proptest",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror 2.0.18",
+ "tokio",
+ "wiremock",
+]
+
+[[package]]
 name = "corelink-dsr"
 version = "0.1.0"
 dependencies = [
