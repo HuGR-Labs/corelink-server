@@ -42,3 +42,7 @@ path = "tests/prop_tier_selection.rs"
 [[bench]]
 name = "select"
 harness = false
+
+[[test]]
+name = "mutation_kills"
+path = "tests/mutation_kills.rs"

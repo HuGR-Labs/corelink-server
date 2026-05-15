@@ -42,3 +42,7 @@ path = "tests/chaos_stripe_outage.rs"
 [[bench]]
 name = "orchestrator"
 harness = false
+
+[[test]]
+name = "mutation_kills"
+path = "tests/mutation_kills.rs"

@@ -1,0 +1,117 @@
+name: mutation-nightly (S-01 R2 baseline)
+
+# Nightly cargo-mutants gate on the 3 most security-critical crates:
+# - corelink-byok (envelope encryption + DEK cache)
+# - corelink-signup (atomic provisioning orchestrator)
+# - corelink-tier-selection (INV-ONBOARD-DPA-FIRST enforcement)
+#
+# Per `specs/_audits/2026-05-14-mutation-baseline.md` baseline:
+# kill rate ≥ 75% per crate; build fails if kill rate drops > 5% vs
+# the recorded baseline so a PR cannot silently regress mutation
+# coverage on critical security paths.
+#
+# Reference: tenant-path nightly mutants lane (WI-S01-001 §17).
+
+on:
+  schedule:
+    # Nightly at 05:23 UTC (offset from tenant-path 04:17 to avoid
+    # resource contention on the shared GHA runner pool).
+    - cron: '23 5 * * *'
+  workflow_dispatch:
+    # Manual trigger for baseline re-record after a deliberate refactor.
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  # Baseline kill-rate thresholds (recorded 2026-05-14).
+  # Build fails if observed kill rate drops below
+  # (baseline - 5pp), per WI guard band.
+  BYOK_BASELINE: 75
+  SIGNUP_BASELINE: 75
+  TIER_SELECTION_BASELINE: 75
+  REGRESSION_TOLERANCE_PP: 5
+
+jobs:
+  mutants:
+    name: cargo-mutants kill-rate gate
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        crate:
+          - corelink-byok
+          - corelink-signup
+          - corelink-tier-selection
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
+
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
+        with:
+          workspaces: ". -> target"
+          key: mutants-${{ matrix.crate }}
+
+      - name: Install cargo-mutants
+        run: cargo install cargo-mutants --locked --version 25.0.1
+
+      - name: Run cargo-mutants on ${{ matrix.crate }}
+        run: |
+          set -euo pipefail
+          mkdir -p mutants.out
+          cargo mutants \
+            --package ${{ matrix.crate }} \
+            --no-shuffle \
+            --in-place \
+            --output ./mutants.out \
+            --timeout 180 \
+            || true   # We compute the gate ourselves from the JSON
+
+      - name: Compute kill rate + enforce gate
+        id: gate
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, pathlib, sys
+
+          crate = "${{ matrix.crate }}"
+          baseline_map = {
+            "corelink-byok": int(os.environ["BYOK_BASELINE"]),
+            "corelink-signup": int(os.environ["SIGNUP_BASELINE"]),
+            "corelink-tier-selection": int(os.environ["TIER_SELECTION_BASELINE"]),
+          }
+          tolerance = int(os.environ["REGRESSION_TOLERANCE_PP"])
+
+          out = pathlib.Path("mutants.out/mutants.out")
+          mutants = json.loads((out / "mutants.json").read_text())
+          total = len(mutants)
+          caught = len((out / "caught.txt").read_text().strip().splitlines()) if (out / "caught.txt").exists() else 0
+          missed = len((out / "missed.txt").read_text().strip().splitlines()) if (out / "missed.txt").exists() else 0
+          unviable = len((out / "unviable.txt").read_text().strip().splitlines()) if (out / "unviable.txt").exists() else 0
+          viable = total - unviable
+          kill_rate = (caught / viable * 100) if viable > 0 else 0.0
+
+          baseline = baseline_map[crate]
+          floor = baseline - tolerance
+          print(f"crate={crate} total={total} caught={caught} missed={missed} unviable={unviable}")
+          print(f"kill_rate={kill_rate:.1f}% baseline={baseline}% floor={floor}%")
+
+          if kill_rate < floor:
+              print(f"::error::Kill rate regression: {kill_rate:.1f}% < floor {floor}% (baseline {baseline}% - tolerance {tolerance}pp)")
+              sys.exit(1)
+          print(f"::notice::Kill rate OK: {kill_rate:.1f}% ≥ floor {floor}%")
+          PY
+
+      - name: Upload mutants artifact
+        if: always()
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: mutants-${{ matrix.crate }}
+          path: mutants.out/
+          retention-days: 30
