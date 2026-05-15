@@ -1,98 +1,278 @@
-# HuGR CoreLink — Server
+# CoreLink
 
-Shared content-addressable cache pra developers. Implementação SOTA de REAPI (Remote Execution API) em Rust, deployada em Cloudflare Containers.
+> Cross-tenant safe content-addressable cache. Engineered as if you were the auditor.
 
-> **Architecture overview?** See [`ARCHITECTURE.md`](./ARCHITECTURE.md) — purpose + invariant guarantees, system context, 12 core crates, tenant model, data lifecycle, BYOK envelope, audit-chain Merkle, top-10 SLOs, failure-mode taxonomy, compliance posture (SOC 2 / LGPD / GDPR / ISO 27001 / PCI DSS), plus 8 companion Mermaid diagrams under [`docs/internal/architecture/diagrams/`](./docs/internal/architecture/diagrams/).
->
-> **New engineer?** Start with [`docs/internal/ENGINEERING-ONBOARDING.md`](./docs/internal/ENGINEERING-ONBOARDING.md) — Day-0 through Day-30 path, 5 domain tracks, curated first-PR backlog, glossary cheatsheet, buddy protocol.
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
+[![Build](https://img.shields.io/badge/build-pending--public--ci-lightgrey.svg)](./.github/workflows/)
+[![SOC 2 Readiness](https://img.shields.io/badge/SOC%202%20Type%20I-target%20GA%2B6mo-orange.svg)](./specs/03_architecture/compliance_matrix.md)
+[![OpenAPI v1](https://img.shields.io/badge/OpenAPI-v1-green.svg)](./openapi/corelink-v1.yaml)
+[![security.txt](https://img.shields.io/badge/security.txt-RFC%209116-informational.svg)](./apps/docs/static/.well-known/security.txt)
 
-## Stack
+---
 
-- **Linguagem:** Rust
-- **gRPC:** tonic
-- **Protocolo:** REAPI (Remote Execution API v2, Bazel spec)
-- **Hashing:** BLAKE3 (primary) + SHA-256 (fallback)
-- **CAS:** Merkle-decomposed, 2MiB chunks, cross-file dedup
-- **Compression:** Zstandard no ByteStream
-- **Storage:** Cloudflare R2
-- **Deploy:** Cloudflare Containers (gRPC) + Workers (control plane) + Durable Objects (event bus)
-- **DB:** Neon Postgres (migrar pra D1 se latência pedir)
-- **Auth:** Clerk
-- **Billing:** Stripe (meter-based usage)
+## TL;DR
 
-## Run localmente
+CoreLink is a multi-tenant, content-addressable cache for software builds, package indices, container layers, and ML artifacts — a [Remote Execution API v2 (REAPI)](./specs/03_architecture/) implementation in Rust on Cloudflare's edge. It commits to four invariant guarantees (integrity, tenant isolation, confidentiality, append-only audit) verified by TLA+ model checking, property-based tests, and runtime assertions. The same managed service ships BYOK envelope encryption across four KMS providers, RFC 6962 Merkle-chained audit logs, residency-honest multi-region storage, and a published OpenAPI contract — so customers do not have to choose between operational simplicity and the controls a regulated business actually needs.
 
-Pré-requisitos:
+## 30-second demo
 
-- Rust 1.80+
-- `protoc` instalado (`brew install protobuf`)
+Install, store, retrieve, and audit in under a minute. The full
+[10-minute quickstart](./apps/docs/docs/tutorials/quickstart-10min.mdx)
+walks each step in detail.
 
 ```bash
-cargo build
-cargo run
+# 1. Install the CLI (macOS shown; Linux/Windows in the quickstart).
+brew install humangr-labs/tap/corelink
+
+# 2. Sign in to the sandbox (24h scratch tenant; no credit card).
+#    Visit https://app.corelink.dev/sandbox, copy the PAT, then:
+export CORELINK_PAT="corelink_sandbox_t_xxx.xxx.xxx"
+corelink doctor                    # 8/8 checks PASS
+
+# 3. Store an artifact. BLAKE3 digest IS the storage key.
+echo "hello, corelink — $(date)" > /tmp/hello.txt
+DIGEST=$(corelink put /tmp/hello.txt --output json | jq -r .digest)
+
+# 4. Retrieve as if from another machine. Client-side BLAKE3 re-verify.
+corelink get "$DIGEST" --output /tmp/restored.txt
+diff -q /tmp/hello.txt /tmp/restored.txt    # identical
+
+# 5. Confirm the audit trail saw both events.
+corelink ls --limit 5
 ```
 
-Server sobe em `0.0.0.0:50051` (override via `PORT`).
+Every byte returned by `get` is re-hashed client-side against the
+requested digest before it leaves the verifier (`CTRL-CAS-002`); a
+mismatch refuses the read and emits a P0 integrity event.
 
-Teste o health check com `grpcurl`:
+## Why CoreLink
+
+Five invariant-grounded commitments. Each maps to a verifiable
+artifact, not a marketing claim.
+
+- **Integrity is unconditional.** Every CAS GET is BLAKE3-re-hashed
+  client-side before bytes leave the verifier. `INV-CAS-INTEGRITY` is
+  enforced in code and asserted in `debug_assert!`; the SLO
+  (`SLO-CORRECT-CAS`) has zero budget. See
+  [ARCHITECTURE.md §1](./ARCHITECTURE.md#1-purpose).
+
+- **Tenant isolation is a TLA+ invariant, not a marketing word.**
+  `INV-TenantIsolation` is modeled in
+  [`specs/03_architecture/tla+/`](./specs/03_architecture/) and the
+  model checker runs in CI on every change to `tenant-path`,
+  `corelink-worker`, or `corelink-reapi`. Counterexamples block merge.
+  See [ARCHITECTURE.md §4](./ARCHITECTURE.md#4-tenant-model).
+
+- **BYOK is real across four KMS providers.** AWS KMS, GCP KMS, Azure
+  Key Vault, and HashiCorp Vault. Customer-held KEKs, 5-minute
+  in-memory DEK cap, AAD-bound ciphertext, signed Ed25519 erasure
+  attestation. Disable the KEK and CoreLink cannot read your data.
+  See [ARCHITECTURE.md §6.1](./ARCHITECTURE.md#6-trust-and-security-model).
+
+- **The audit chain is a primary artifact.** Every state-changing
+  operation lands in an append-only Merkle log (BLAKE3 leaves,
+  Ed25519-signed hourly roots, RFC 3161 timestamped); customers and
+  auditors re-derive the root from raw events. See
+  [ARCHITECTURE.md §6.2](./ARCHITECTURE.md#6-trust-and-security-model).
+
+- **Residency is honest.** Four enumerated regions (`wnam`, `enam`,
+  `weur`, `sam`). Blobs stay in-region by structural invariant; the
+  metadata cross-border story is documented per sub-processor, not
+  glossed. See
+  [ARCHITECTURE.md §9 — Compliance posture](./ARCHITECTURE.md#9-compliance-posture).
+
+## Getting started
+
+Pick the route that matches what you came here for.
+
+### I want to test it (~10 min)
+
+The [10-minute quickstart](./apps/docs/docs/tutorials/quickstart-10min.mdx)
+takes you from install to a stored + retrieved + audited artifact.
+Sandbox tenants are free, 24h-TTL, and require no credit card.
 
 ```bash
-grpcurl -plaintext localhost:50051 corelink.health.v1.Health/Check
+brew install humangr-labs/tap/corelink   # see quickstart for Linux/Windows
+corelink doctor
 ```
 
-## Deploy (Cloudflare Containers)
+### I want to read the code
 
-```bash
-# Uma vez
-wrangler login
-wrangler secret put CLERK_SECRET_KEY
-wrangler secret put STRIPE_SECRET_KEY
-wrangler secret put DATABASE_URL
+Start with [`ARCHITECTURE.md`](./ARCHITECTURE.md) — 10 sections, 8
+companion diagrams, 12 core crates explained in one paragraph each.
+Then drop into the crate that owns your domain:
 
-# Dev
-wrangler deploy
+- [`crates/corelink-reapi/`](./crates/corelink-reapi/) — REAPI v2 wire surface.
+- [`crates/corelink-hash/`](./crates/corelink-hash/) — BLAKE3-primary integrity.
+- [`crates/tenant-path/`](./crates/tenant-path/) — HMAC tenant prefix; sole owner of `INV-TenantIsolation`.
+- [`crates/corelink-audit-chain/`](./crates/corelink-audit-chain/) — Merkle append + Ed25519 roots.
+- [`crates/corelink-byok/`](./crates/corelink-byok/) — envelope encryption core.
 
-# Prod
-wrangler deploy --env prod
+Workspace conventions are in
+[`docs/internal/ENGINEERING-ONBOARDING.md`](./docs/internal/ENGINEERING-ONBOARDING.md)
+(Day-0 through Day-30 path; first PR merged in ≤ 5 working days is
+the target).
+
+### I want to understand the security model
+
+The audit chain is the substrate every compliance and forensic claim
+rests on. Read in this order:
+
+1. [Trust Center pages](./apps/docs/docs/trust/) — public-facing
+   compliance, sub-processors, incident response posture.
+2. [`SECURITY.md`](./SECURITY.md) — vulnerability disclosure policy,
+   bounty scope, response SLA. Coordinated reports go to
+   `security@corelink.dev`; the canonical contact card is the
+   [RFC 9116 security.txt](./apps/docs/static/.well-known/security.txt).
+3. [`specs/03_architecture/security_model.md`](./specs/03_architecture/security_model.md)
+   — STRIDE rows per trust boundary, `CTRL-*` catalog.
+4. [`specs/03_architecture/key_management.md`](./specs/03_architecture/key_management.md)
+   — envelope encryption, DEK lifecycle, BYOK rewrap path.
+5. [`specs/03_architecture/compliance_matrix.md`](./specs/03_architecture/compliance_matrix.md)
+   — `CTRL-*` ↔ SOC 2 / LGPD / GDPR / ISO 27001 / PCI DSS mapping.
+
+Audit-chain inclusion proofs are obtainable per event via
+[`crates/corelink-audit-chain/`](./crates/corelink-audit-chain/);
+the [audit-chain diagram](./docs/internal/architecture/diagrams/audit-chain-merkle.mmd)
+shows the leaf → root path.
+
+### I want to contribute
+
+Read [`CONTRIBUTING.md`](./CONTRIBUTING.md) first — DCO sign-off
+required, two-person review on release scripts, conventional commits.
+Then:
+
+- Code of conduct: [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md)
+  (Contributor Covenant v2.1).
+- First-PR backlog: GitHub issues labeled
+  [`good first issue`](https://github.com/humangr-labs/corelink-server/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+  — each scoped to roughly half a day.
+- OSS vs closed boundary:
+  [`docs/internal/OSS-VS-CLOSED-MATRIX.md`](./docs/internal/OSS-VS-CLOSED-MATRIX.md)
+  — 13 crates dual-licensed MIT/Apache, ~60 stay server-side.
+
+## Workspace layout
+
+The Cargo workspace ships 107 crates plus the apps, docs, specs, and
+launch surfaces. Top-level directories, one line each:
+
+- [`apps/`](./apps/) — Cloudflare Worker (`apps/server`), admin UI
+  (`apps/admin-ui`), and Docusaurus docs site (`apps/docs`).
+- [`crates/`](./crates/) — 107-crate Cargo workspace; the 12 core
+  crates are listed in
+  [ARCHITECTURE.md §3](./ARCHITECTURE.md#3-core-building-blocks).
+- [`specs/`](./specs/) — canonical specs (Level 0 → Level 5), TLA+
+  models, ADRs, runbooks, compliance matrix, invariant registry.
+- [`marketing/`](./marketing/) — launch surface: blog posts, press
+  kit, landing-page copy. Embargoed until GA-day per the launch
+  charter.
+- [`docs/`](./docs/) — internal engineering docs: onboarding,
+  architecture diagrams, OSS-vs-closed matrix, tech-lead checklist.
+- [`scripts/`](./scripts/) — validators, drills, migrations, CI
+  helpers. `validate_specs.py` and `validate_references.py` run on
+  every PR.
+- [`infra/`](./infra/) — Terraform, Cloudflare config, K6 load
+  harnesses, observability dashboards.
+- [`tests/`](./tests/) — end-to-end suites (9 e2e crates),
+  cross-crate property tests, chaos drills, region-failover rehearsal.
+
+The [`openapi/`](./openapi/) directory holds the published API
+contract ([v1 YAML](./openapi/corelink-v1.yaml),
+[v1 JSON](./openapi/corelink-v1.json)) — regenerated by the
+`corelink-openapi` crate from in-crate types so the docs site and
+SDK generators never lag the server.
+
+## Architecture diagram
+
+See [`docs/internal/architecture/diagrams/system-context.mmd`](./docs/internal/architecture/diagrams/system-context.mmd)
+for the C4-L1 system-context diagram (72 lines, renders cleanly in
+GitHub Mermaid). The full diagram set —
+[`audit-chain-merkle`](./docs/internal/architecture/diagrams/audit-chain-merkle.mmd),
+[`byok-envelope`](./docs/internal/architecture/diagrams/byok-envelope.mmd),
+[`data-flow-read`](./docs/internal/architecture/diagrams/data-flow-read.mmd),
+[`data-flow-write`](./docs/internal/architecture/diagrams/data-flow-write.mmd),
+[`data-flow-dsr`](./docs/internal/architecture/diagrams/data-flow-dsr.mmd),
+[`region-failover`](./docs/internal/architecture/diagrams/region-failover.mmd),
+[`tenant-isolation`](./docs/internal/architecture/diagrams/tenant-isolation.mmd) —
+lives under
+[`docs/internal/architecture/diagrams/`](./docs/internal/architecture/diagrams/).
+
+A minimal request-flow sketch:
+
+```mermaid
+flowchart LR
+    client[REAPI client<br/>Bazel / Buck2 / sccache] -->|TLS 1.3| edge[Cloudflare edge<br/>WAF + rate limit]
+    edge -->|service binding| cp[Control plane<br/>corelink-worker]
+    cp -->|signed intent| dp[Data plane<br/>Rust REAPI gRPC]
+    dp -->|BLAKE3 + dedup| r2[(R2<br/>blobs + AC + audit)]
+    dp -->|hot meta| d1[(D1)]
+    dp -->|event| ac[corelink-audit-chain<br/>Merkle append-only]
+    cp -->|usage| billing[Stripe meter]
 ```
 
-## Estrutura
+## License
 
-```
-corelink-server/
-├── Cargo.toml               # Deps mínimas pro scaffold
-├── build.rs                 # compila .proto via tonic-build
-├── Dockerfile               # multi-stage pra CF Containers
-├── wrangler.toml            # Cloudflare Workers + Containers config
-├── proto/
-│   └── health.proto         # health check (placeholder até REAPI vendored)
-├── src/
-│   └── main.rs              # gRPC server bootstrap
-└── migrations/
-    └── 0001_init.sql        # schema Neon (tenants, CAS index, AC index, usage)
-```
+Dual-licensed under your choice of:
 
-## Verifying CLI release downloads (WI-S15-006)
+- [Apache License, Version 2.0](./LICENSE-APACHE-2.0)
+- [MIT License](./LICENSE-MIT)
 
-Linux release tarballs are GPG-signed; the matching public key is
-published at the canonical `.well-known` location:
+The per-crate boundary — which crates are OSS-published vs which stay
+server-side — is documented in
+[`docs/internal/OSS-VS-CLOSED-MATRIX.md`](./docs/internal/OSS-VS-CLOSED-MATRIX.md).
+At time of writing, 13 customer-facing crates (CLI, schema crates,
+verifier primitives, FFI wrappers) are dual MIT/Apache and intended
+for `crates.io`; ~60 server-side crates remain in the closed
+deployment repo.
 
-```bash
-# One-time: import the CoreLink release-signing pubkey.
-curl -fsSL https://corelink.dev/.well-known/gpg-pubkey.asc | gpg --import
+## Contact
 
-# Per download: verify the detached signature against the tarball.
-gpg --verify corelink-linux-x86_64.tar.gz.asc corelink-linux-x86_64.tar.gz
-```
+| Concern | Address |
+|---|---|
+| Vulnerability disclosure | `security@corelink.dev` |
+| Privacy / DSR / DPO | `privacy@corelink.dev` |
+| Press / launch / analyst | `press@corelink.dev` |
+| Procurement / DPA / auditor | `trust@corelink.dev` |
+| Code of conduct reports | `conduct@corelink.dev` |
 
-macOS binaries ship Apple-notarized (Gatekeeper accepts them without a
-right-click bypass); Windows binaries ship Authenticode-signed (see
-`ADR-S15-009` for the deferral-only policy if cert acquisition slips).
+The canonical security contact card lives at
+[`/.well-known/security.txt`](./apps/docs/static/.well-known/security.txt)
+(RFC 9116). PGP key + acknowledgments page referenced inline there.
 
-## Status
+## References
 
-MVP em construção. Ver [TODO.md](./TODO.md) pro roadmap semana 1–12.
+- [`ARCHITECTURE.md`](./ARCHITECTURE.md) — invariant guarantees,
+  system context, 12 core crates, tenant model, data lifecycle, BYOK
+  envelope, audit chain, top-10 SLOs, failure-mode taxonomy,
+  compliance posture.
+- [`ROADMAP-TO-GA.md`](./ROADMAP-TO-GA.md) — 21-sprint plan from
+  scaffold to GA, with per-sprint exit criteria and audit trail.
+- [`SECURITY.md`](./SECURITY.md) — vulnerability disclosure policy
+  and response SLA.
+- [`CONTRIBUTING.md`](./CONTRIBUTING.md) — DCO, review process,
+  first-PR walkthrough.
+- [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md) — Contributor
+  Covenant v2.1.
+- [`CHANGELOG.md`](./CHANGELOG.md) — Keep-a-Changelog format,
+  per-sprint releases.
+- [Trust Center](./apps/docs/docs/trust/) — public-facing compliance,
+  sub-processors, incident response, FedRAMP/PCI/ISO/SOC posture.
+- [Launch blog posts](./marketing/launch/BLOG-POSTS/) — five posts
+  covering the product story, BYOK deep-dive, audit chain proofs,
+  multi-region residency, cache-hit economics. Embargoed until
+  Engineering Gate D-day.
+- [OpenAPI v1 (YAML)](./openapi/corelink-v1.yaml) /
+  [OpenAPI v1 (JSON)](./openapi/corelink-v1.json) — published API
+  contract.
+- [10-minute quickstart](./apps/docs/docs/tutorials/quickstart-10min.mdx)
+  — install → store → retrieve → audit → SDK in under 10 minutes.
+- [Engineering onboarding](./docs/internal/ENGINEERING-ONBOARDING.md)
+  — Day-0 through Day-30 path, 5 domain tracks, curated first-PR
+  backlog.
 
-## Licença
+---
 
-Proprietária (HuGR). Discussão sobre open-sourcing parcial pendente.
+CoreLink is a HuGR Labs product. The engineering gate is binary and
+unappealable; the launch orchestration communicates what the
+engineering gate has already proven. The customers we want are
+customers who care about that separation.
