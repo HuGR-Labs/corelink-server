@@ -259,6 +259,7 @@ Per `marketing/launch/COORDINATION/LAUNCH-RUNBOOK.md` (shipped by WI-S20-008).
 
 ### T+1d..T+7d (post-launch)
 - T+1d: Media response coordination (1 Sonnet drafts replies; Gustavo approves)
+- T+1d: **Churn-risk + retention motion activates** — 15-signal heuristic catalog `marketing/retention/CHURN-RISK-SIGNALS.md` + per-signal plays `marketing/retention/RETENTION-PLAYBOOK.md` (CEO touch ≤24h high / AE touch ≤72h med / educational comms ≤7d low) + customer-facing 5-step cancellation flow `marketing/retention/CANCELLATION-FLOW.md` (Free→Starter $0 upgrade / Starter→Team 50% 3mo / Team→Enterprise custom) + internal RACI runbook `specs/_runbooks/RB-CHURN-RISK-RESPONSE.md` + quarterly KPI review template `marketing/retention/quarterly-review-template.md` (first instance 2026-Q3). Signal alerting wired before T+30d (5w data window for S-01).
 - T+7d: Retrospective + metrics report (1 Sonnet aggregates from METRICS-DASHBOARD.md)
 
 **Wave R-8 gate:** GA tag `corelink-ga-v1.0.0` + retrospective committed; **CoreLink production-launched**.
