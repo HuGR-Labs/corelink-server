@@ -137,6 +137,10 @@ members = [
     # timeline / pentest findings → POSTs to Drata REST API with Bearer auth,
     # SHA-256 idempotency dedup, retry, fail-CLOSED audit emit.
     "crates/corelink-drata-sync",
+    # R3-1 end-to-end signup happy-path harness: signup → DPA → tier → Stripe
+    # Checkout → first PAT → R2 CAS write + BLAKE3 verify. In-memory fakes by
+    # default; live `STRIPE_SECRET_KEY_TEST`-gated tests behind `--ignored`.
+    "tests/e2e-signup-flow",
 ]
 exclude = [
     "crates/tenant-path/fuzz",

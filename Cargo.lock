@@ -2590,6 +2590,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
+name = "e2e-signup-flow"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "bytes",
+ "corelink-dpa-acceptance",
+ "corelink-hash",
+ "corelink-signup",
+ "corelink-stripe-real",
+ "corelink-tier-selection",
+ "hex",
+ "proptest",
+ "rand 0.8.6",
+ "rsa",
+ "sha2 0.10.9",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
 name = "ed25519"
 version = "2.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
