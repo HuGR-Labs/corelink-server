@@ -1,0 +1,156 @@
+name: changelog-validate
+
+# Enforces that every PR carrying a `feat:` or `fix:` Conventional Commit
+# touches `CHANGELOG.md` under the `[Unreleased]` section. Prevents the
+# common drift where the changelog falls behind the actual feature/bug
+# trajectory.
+#
+# Implements: WI-S20-008 (release engineering) + Keep-A-Changelog v1.1.0
+# Reference : https://keepachangelog.com/en/1.1.0/
+#
+# SHA-pinned per ADR-S12-045 §6 tooling-pin policy.
+# Version bump requires Security review (sibling of cargo-audit policy).
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  changelog-required:
+    name: CHANGELOG.md updated when feat/fix present
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout (full history; needed to diff against base ref)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Detect feat/fix commits in PR range
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          echo "diff range: ${BASE}..${HEAD}"
+
+          # Look for Conventional Commit prefixes in the subject lines.
+          # `feat:` and `fix:` (with optional scope `(...)` and breaking `!`)
+          # are the two prefixes that REQUIRE a CHANGELOG entry per
+          # Keep-A-Changelog v1.1.0.
+          FEAT_FIX_COMMITS=$(git log --format='%s' "${BASE}..${HEAD}" \
+            | grep -E '^(feat|fix)(\([^)]+\))?!?:' || true)
+
+          if [[ -z "$FEAT_FIX_COMMITS" ]]; then
+            echo "no feat:/fix: commits — CHANGELOG update not required"
+            echo "required=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "feat:/fix: commits detected:"
+          echo "$FEAT_FIX_COMMITS"
+          echo "required=true" >> "$GITHUB_OUTPUT"
+
+      - name: Verify CHANGELOG.md is touched under [Unreleased]
+        if: steps.detect.outputs.required == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+
+          # 1. CHANGELOG.md must appear in the PR diff.
+          if ! git diff --name-only "${BASE}..${HEAD}" | grep -qx 'CHANGELOG.md'; then
+            echo "::error file=CHANGELOG.md::PR contains feat:/fix: commits but CHANGELOG.md is not modified. Add an entry under '## [Unreleased]'."
+            exit 1
+          fi
+
+          # 2. Inspect the diff for CHANGELOG.md; require that at least one
+          #    added line (prefix '+ ') lives inside the `[Unreleased]`
+          #    section (lines between '## [Unreleased]' and the next
+          #    `^## \[` boundary).
+          DIFF=$(git diff "${BASE}..${HEAD}" -- CHANGELOG.md)
+          if [[ -z "$DIFF" ]]; then
+            echo "::error file=CHANGELOG.md::CHANGELOG.md diff is empty."
+            exit 1
+          fi
+
+          # Apply the diff and grep the resulting file. Simpler: parse the
+          # checked-out (HEAD) CHANGELOG.md and confirm the Unreleased
+          # section is non-empty AND that the diff added something within it.
+          python3 - <<'PY'
+          import re, subprocess, sys
+          diff = subprocess.check_output(
+              ["git", "diff", "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}", "--", "CHANGELOG.md"],
+              text=True,
+          )
+          # Identify hunks whose `@@ ... @@` context falls within the
+          # `[Unreleased]` section. Naive but adequate: look for any added
+          # line ('^\+ ' but not '^\+\+\+ ') whose nearest preceding section
+          # heading in the post-image is `## [Unreleased]`.
+          # We re-read HEAD's CHANGELOG.md and use line numbers from the
+          # `+++ b/CHANGELOG.md` hunk headers.
+          with open("CHANGELOG.md", encoding="utf-8") as fh:
+              file_lines = fh.read().splitlines()
+          unreleased_start = None
+          unreleased_end = len(file_lines)
+          for i, ln in enumerate(file_lines):
+              if ln.strip() == "## [Unreleased]":
+                  unreleased_start = i
+              elif unreleased_start is not None and re.match(r"^## \[", ln):
+                  unreleased_end = i
+                  break
+          if unreleased_start is None:
+              print("::error file=CHANGELOG.md::missing '## [Unreleased]' heading")
+              sys.exit(1)
+          # Scan diff hunks for added lines whose POST-image line number
+          # falls in (unreleased_start, unreleased_end).
+          touched_unreleased = False
+          post_line = None
+          for line in diff.splitlines():
+              m = re.match(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@", line)
+              if m:
+                  post_line = int(m.group(1))
+                  continue
+              if post_line is None:
+                  continue
+              if line.startswith("+++"):
+                  continue
+              if line.startswith("+"):
+                  # +1-indexed; convert to 0-indexed for comparison
+                  if unreleased_start < (post_line - 1) < unreleased_end:
+                      touched_unreleased = True
+                      break
+                  post_line += 1
+              elif line.startswith("-"):
+                  pass  # removal doesn't advance post-line
+              else:
+                  post_line += 1
+          if not touched_unreleased:
+              print("::error file=CHANGELOG.md::CHANGELOG.md was modified but no addition fell under '## [Unreleased]'. feat:/fix: PRs must add an entry there.")
+              sys.exit(1)
+          print("OK: CHANGELOG.md [Unreleased] section was updated.")
+          PY
+
+      - name: Verify Keep-A-Changelog header is intact
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Defensive check: PR cannot remove the canonical header lines.
+          for needle in \
+            "^# Changelog" \
+            "Keep a Changelog" \
+            "Semantic Versioning" \
+            "## \[Unreleased\]"
+          do
+            if ! grep -qE "$needle" CHANGELOG.md; then
+              echo "::error file=CHANGELOG.md::missing canonical header pattern: $needle"
+              exit 1
+            fi
+          done
