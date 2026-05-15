@@ -63,9 +63,21 @@ tracing = { workspace = true }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { workspace = true }
 reqwest = { workspace = true }
+# `regex` is only used by `src/key_name.rs`, which is gated to
+# `cfg(all(feature = "real", not(target_arch = "wasm32")))` — see
+# `src/lib.rs`. Keeping it native-only avoids dragging the regex DFA
+# builder into the wasm32 bundle when only the stub is linked.
 regex = "1"
 
 [dev-dependencies]
+# Shared dev deps — `futures::executor::block_on` drives the wasm32
+# stub future (wasm32-compatible, no full async runtime needed).
+futures = { workspace = true }
+serde_json = { workspace = true }
+
+# Native-only dev deps — tokio "full" + proptest (threads) + wiremock
+# (hyper) do not link on `wasm32-unknown-unknown`.
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tokio = { workspace = true }
 tokio-test = { workspace = true }
 proptest = { workspace = true }
@@ -74,3 +86,7 @@ wiremock = "0.6"
 [[test]]
 name = "real_unit"
 path = "tests/real_unit.rs"
+
+[[test]]
+name = "wasm32_stub"
+path = "tests/wasm32_stub.rs"

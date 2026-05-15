@@ -71,11 +71,28 @@ aws-sdk-kms = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]
+# wasm32 stub smoke test uses `futures::executor::block_on` to drive the
+# non-yielding stub future to completion without a full async runtime
+# (tokio's native runtime does not link on wasm32-unknown-unknown). The
+# `futures` crate is wasm32-compatible.
+futures = { workspace = true }
+serde_json = { workspace = true }
+
+# Native-only dev deps — tokio with `full` features pulls `mio` which
+# does not compile for `wasm32-unknown-unknown`. `tokio-test` and
+# `proptest` are similarly native-only (`proptest` uses threads).
+# `getrandom` here matches the native crate dep (no `js` feature on
+# native; wasm32 dev-dep below mirrors the lib's `js`-enabled pin).
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tokio-test = { workspace = true }
 tokio = { workspace = true }
 getrandom = { workspace = true }
 proptest = { workspace = true }
-serde_json = { workspace = true }
+
+# wasm32-only dev deps — `getrandom` with `js` feature so the stub test
+# binary can link CSPRNG via WebCrypto if any transitive dep needs it.
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+getrandom = { version = "0.2", features = ["js"] }
 
 [[test]]
 name = "aws_unit"
@@ -88,3 +105,7 @@ path = "tests/real_unit.rs"
 [[test]]
 name = "e2e_byok_aws_kms"
 path = "tests/e2e_byok_aws_kms.rs"
+
+[[test]]
+name = "wasm32_stub"
+path = "tests/wasm32_stub.rs"
