@@ -134,7 +134,7 @@ Format key:
 | TSC | CTRL ID | Evidence type | Artifact location | Cadence | Status | Last update |
 |---|---|---|---|---|---|---|
 | CC9.1 | CTRL-BACKOFF-001 + CTRL-QUOTA-001 + CTRL-RATE-001 | vulnerability_management | SLO catalog + failure-mode taxonomy + resilience patterns + chaos summaries | AUTO | I | f18acdc |
-| CC9.2 | process control (sub-processor mgmt + Drata vendor module) | MANUAL_UPLOAD | `legal/sub-processors.md` (10/14 documented) + Drata vendor module | ANNUAL | P (GAP-14 + GAP-21 + GAP-32) | f18acdc |
+| CC9.2 | process control (vendor risk register + Drata vendor module) | MANUAL_UPLOAD | `specs/_compliance/VENDOR-RISK-REGISTER.md` (19 vendors: 6 Critical + 8 Important + 5 Standard) + `specs/_compliance/VENDOR-RISK-METHODOLOGY.md` + `specs/_compliance/vendor-dd/` (5 Critical DD files) + `specs/_runbooks/RB-VENDOR-RISK-QUARTERLY-REVIEW.md` + `legal/sub-processors.md` + Drata vendor module | QUARTERLY (Critical) / BIANNUAL (Important) / ANNUAL (Standard) | I (GAP-14 closed; GAP-21 + GAP-32 still pending) | wt/gap14-vendor-risk-register |
 
 ### 2.10 A1 Availability
 
@@ -198,7 +198,7 @@ Format key:
 |---|---|---|---|---|---|---|
 | 1 | **GAP-02** | BYOK FIPS attestation per provider (AWS L3 attested; GCP L1 + Azure pending) | **blocking-GA** | CC6.1 + C1.1 → would force qualified opinion if open at fieldwork | S (collect 2 signed letters; update `compliance/byok-fips-matrix.md`) | **D+30 hard cap** |
 | 2 | GAP-03 | IR plan documented but not tested end-to-end with paging + comms simulation | major | CC7.3 evidence-of-operation deficiency at Type II | M (90-min tabletop + 30d synthetic page sustained) | D+60 |
-| 3 | GAP-14 | Vendor risk register completion (10/14 sub-processors documented; Sentry / Stripe Atlas counsel / PostHog / LogRocket pending) | major | CC9.2 + LGPD Art. 33 cross-framework risk | M (4 sub-processor risk reviews) | D+60 |
+| 3 | GAP-14 | **IMPLEMENTED 2026-05-15** — Vendor risk register completed: 19 vendors registered (6 Critical / 8 Important / 5 Standard) with methodology + 5 Critical-vendor DD files + quarterly review runbook. Artefacts: `specs/_compliance/VENDOR-RISK-REGISTER.md`, `VENDOR-RISK-METHODOLOGY.md`, `vendor-dd/`, `specs/_runbooks/RB-VENDOR-RISK-QUARTERLY-REVIEW.md`. Branch: `wt/gap14-vendor-risk-register`. | major (now closed) | CC9.2 + LGPD Art. 33 cross-framework risk | M (was 4 sub-processor reviews → expanded to full register) | DONE |
 | 4 | GAP-15 | Quarterly cold restore drill end-to-end (region-failover tested; cold restore not yet) | major | A1.2 evidence gap; Type II operating-effectiveness blocker | L (full DR restore drill + attestation doc) | T+2m |
 | 5 | GAP-22 | LGPD Art. 33 §1º residency attestation per region | major | Cross-framework (SOC 2 + LGPD); EDPB SCCs touch-point | M (per-region attestation; Drata + DPA template) | D+60 |
 
@@ -239,7 +239,7 @@ Person-week sizing convention: XS ≤ 0.25 pw · S ≤ 1 pw · M ≤ 2 pw · L �
 | CC1.1 | Owner-signed code-of-conduct PDF | ONE-TIME (re-sign on org change) | Owner | — |
 | CC1.2 | Advisor pool sign-off letters | ANNUAL | Owner | GAP-04 |
 | CC1.4 | Advisor CVs + certs (CISA / CIPP/E / OSCP) | ANNUAL | Compliance | GAP-05 |
-| CC9.2 | Sub-processor SOC 2 reports (10/14 documented) | ANNUAL | Compliance | GAP-09 + GAP-14 + GAP-32 |
+| CC9.2 | Sub-processor SOC 2 reports + vendor risk register quarterly review packets (19 vendors per `VENDOR-RISK-REGISTER.md`) | QUARTERLY (Critical) / BIANNUAL (Important) / ANNUAL (Standard) | Compliance + VP-Sec | GAP-09 + GAP-32 (GAP-14 closed 2026-05-15) |
 
 After one-time uploads land, they fold into the `corelink.compliance.drata_evidence_out_of_band` envelope and become persistent evidence → effective auto-coverage climbs to **95.3%**.
 
