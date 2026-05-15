@@ -150,31 +150,84 @@ legal_hold partition / R2 evidence-* buckets 7y) where physical
 erasure conflicts with another regulatory retention obligation
 (audit immutability per SOC 2, fiscal retention per LGPD Art. 16).
 
-## 5. Status-page integration deferral
+## 5. Status-page integration — wave-16 shipped
+
+**Status (2026-05-15 wave-16):** SHIPPED. WI-S11-002 §6 mandate
+"DSR completion stats published to corelink.dev/status" is now
+satisfied at the trait surface + real HTTP wiring + bridge from the
+worker aggregator. The wave-15 deferral rationale below is preserved
+for historical context; the closing follow-on is captured immediately
+under it.
+
+### 5.1 Wave-15 deferral rationale (historical)
 
 WI-S11-002 §6 mandates publication of aggregated DSR completion
 stats to `corelink.dev/status`. The canonical aggregation surface
 (per-tenant + per-jurisdiction completion rate + p95 resolution-hours
-histogram) requires:
+histogram) required, at the wave-15 cycle, a production Grafana data
+source bound to the `corelink_dsr_resolution_hours` histogram + a
+status-page render path. Both were deferred under the canonical
+`trait-abstraction-defer` charter pattern; the SLI emit-point was
+already pinned at the trait surface (this audit §3); the status-page
+render binding was scheduled for WI-S11-008 alongside production
+Cloudflare Queue / Neon / R2 / KV / DO / Stripe / Loki adapter
+bindings.
 
-- A production Grafana data source bound to the
-  `corelink_dsr_resolution_hours` histogram (sink wired only at
-  WI-S11-008 PRR ship gate per the `trait-abstraction-defer` charter
-  pattern — no Cloudflare Analytics Engine staging cluster wired in
-  pre-GA CI).
-- A status-page render path
-  (`apps/docs/docs/trust/data-handling.mdx` already declares the
-  DSR commitment narrative; the live widget requires the production
-  Grafana → status-page bridge configured at the deploy-time wiring
-  layer).
+### 5.2 Wave-16 closure surface
 
-**Decision:** documented here as a **deferred binding** per the
-canonical `trait-abstraction-defer` pattern. The SLI emit-point is
-pinned at the trait surface (this audit §3); the status-page render
-binding lands at WI-S11-008 alongside the production Cloudflare
-Queue / Neon / R2 / KV / DO / Stripe / Loki adapter bindings. No
-trait drift risk because the SLI metric name is regression-pinned
-across the SLO catalog ↔ erasure-worker boundary.
+Wave-16 ships the canonical Atlassian Statuspage integration:
+
+| Layer | Crate / module | Notes |
+|---|---|---|
+| Aggregator (pure, wasm32-clean) | `corelink-privacy-erasure-worker::statuspage_publish` | `DsrCompletionStats` + `aggregate_24h_window(&[VerificationOutcome], window_start_unix_s)` + canonical p95 (nearest-rank) over `dsr_resolution_hours` observations. |
+| Publish payload + trait | `corelink-statuspage-real::report` + `::backend` | `DsrCompletionReport` 24h-rolling payload (validated: 24h window invariant + 7_200h p95 clock-skew ceiling) + `StatuspageBackend` trait surface (real HTTP + in-memory fake share). |
+| Real HTTP wiring | `corelink-statuspage-real::http::StatuspageHttpClient` | `reqwest::blocking` POST `https://api.statuspage.io/v1/pages/{page_id}/metrics/{metric_id}/data.json` with `Authorization: OAuth <STATUSPAGE_API_KEY>`; body `{"data":{"timestamp":<unix_s>,"value":<p95_hours>}}`. |
+| Rate-limiter | `corelink-statuspage-real::rate_limit::StatuspageRateLimiter` | 1 publish per 5 min per `(page_id, metric_id)` (monotonic-clock-driven); denies emit `corelink.privacy.statuspage_rate_limited.v1` + return `RateLimited { retry_after_ms, jitter_ms = retry_after_ms / 8 }`. |
+| Audit envelope (fail-CLOSED) | `corelink-statuspage-real::audit::StatuspageAuditSink` | 4 canonical event types: `statuspage_published.v1` / `statuspage_auth_failed.v1` / `statuspage_rate_limited.v1` / `statuspage_failed.v1`. Audit emit fires BEFORE caller-visible outcome (INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER). Credential redacted via `redact_api_key` (last-4 only). |
+| Retry | `corelink-statuspage-real::retry::RetryPolicy` | 3 retries exp-backoff on 5xx + 429; 401 / 403 distinct `GiveUpAuth` (drives auth audit type); other 4xx fatal. |
+| Bridge | `corelink-statuspage-real::dsr_bridge::bridge_to_report` | Pure converter: worker `DsrCompletionStats` → `DsrCompletionReport`; the publish job at WI-S11-008 PRR ship gate composes `aggregate_24h_window → bridge_to_report → publish_dsr_metric`. |
+
+### 5.3 Test surface (wave-16 net-new)
+
+| Crate / harness | Tests | Status |
+|---|---|---|
+| `corelink-statuspage-real` (lib) | 29 (audit 2 + memory 3 + rate_limit 5 + redact 4 + report 5 + retry 7 + dsr_bridge 3) | green |
+| `corelink-statuspage-real::tests::dsr_publish` (integration; WireMock) | 4 (happy 201 + auth 401 + rate-limit deny-with-jitter + worker-bridge end-to-end) | green |
+| `corelink-privacy-erasure-worker::statuspage_publish` (worker aggregator) | 8 (p95 algorithm 4 + 24h aggregator 4) | green |
+
+Worker lib total grows from 87 → 95 (wave-16 +8). Integration test
+count for the worker is unchanged (8 files; the statuspage publish
+path is intentionally NOT a worker integration test — the trait
+boundary keeps the worker wasm32-clean).
+
+### 5.4 Charter constraints (re-verified for wave-16 crates)
+
+| Constraint | `corelink-statuspage-real` | Evidence |
+|---|---|---|
+| `#![forbid(unsafe_code)]` | green | `src/lib.rs` |
+| no `unwrap` / `expect` / `panic` outside test | green | `cargo clippy --tests -- -D warnings` clean |
+| no `tokio` in `src/` | green | `reqwest::blocking` only; tokio is dev-only (WireMock host) |
+| audit fail-CLOSED on every publish path | green | Audit emit BEFORE caller-visible outcome on each of Published / AuthFailed / RateLimited / Failed |
+| `#[non_exhaustive]` public enums | green | `StatuspageAuditOutcome` / `StatuspageClientError` / `RateLimitDecision` / `RetryDecision` / `StatuspageAuditError` / `StatuspageAuditEvent` / `DsrCompletionReportError` all `#[non_exhaustive]` |
+| Credential never logged plaintext | green | `redact_api_key` last-4 only; pinned by `redact::tests::redact_never_contains_full_key` + `tests::dsr_publish::*` audit-envelope assertion |
+| Rate-limit framework | green | `StatuspageRateLimiter` 5-min canonical window; pinned by 5 unit + 1 integration test |
+| Worktree isolation | green | wave-16 work-tree `.claude/worktrees/agent-abf9bd4a905788d4a/`; branch `wt/r-prep-dsr-statuspage-wire` |
+
+### 5.5 Production secrets surface
+
+The wave-16 wiring consumes three production secrets, all already in
+the canonical matrix (`docs/internal/secrets-checklist.md`):
+
+- Row 42 — `STATUSPAGE_API_KEY` (existing; status-sync path).
+- Row 116 — `STATUSPAGE_PAGE_ID` (wave-16 net-new — Atlassian
+  Statuspage page identifier; config, not credential).
+- Row 117 — `STATUSPAGE_METRIC_DSR_RESOLUTION_HOURS` (wave-16
+  net-new — Atlassian Statuspage Public-Metric ID for DSR resolution
+  hours p95 publication; config, not credential).
+
+`python3 scripts/validate_secrets_matrix.py` remains green; the 116
+matrix rows grow to 118 (drift only on the matrix-only side, never
+code-only).
 
 ## 6. Test surface re-verification (2026-05-15)
 
@@ -222,10 +275,14 @@ charter `trait-abstraction-defer` pattern. This audit closes:
 3. **Jurisdictional report surface**: single `ErasureReport` +
    BLAKE3-signed MAC artifact serves LGPD / GDPR / CCPA; narrative
    layer wraps at WI-S11-004 (privacy notice 3-locale).
-4. **Status-page deferral rationale**: documented per
-   `trait-abstraction-defer`; production binding lands at WI-S11-008
-   alongside the Cloudflare Queue / Neon / R2 / KV / DO / Stripe /
-   Loki adapter bindings.
+4. **Status-page integration — shipped wave-16**: trait surface +
+   real Atlassian Statuspage HTTP wiring + worker aggregator + bridge
+   shipped under `corelink-statuspage-real` + `corelink-privacy-
+   erasure-worker::statuspage_publish`. Rate-limited 1-per-5-min,
+   fail-CLOSED audit envelope, credential never logged plaintext. See
+   §5.2 / §5.3 / §5.5 above. Production publish-job binding at
+   WI-S11-008 PRR ship gate composes the three layers
+   (`aggregate_24h_window → bridge_to_report → publish_dsr_metric`).
 
 ## 9. Open items deferred to WI-S11-008 (PRR ship gate)
 

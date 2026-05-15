@@ -296,6 +296,22 @@ Não — regulatory feature, sem A/B (multi-arm = compliance risk).
 
 ## 6. Escopo
 
+> **Wave-16 closure note (2026-05-15):** the customer-facing
+> `corelink.dev/status` publish path mandated by this WI is **shipped**
+> via `crates/corelink-statuspage-real` (canonical Atlassian Statuspage
+> Public-Metric client, 1-per-5-min rate-limited, fail-CLOSED audit
+> envelope) + `corelink-privacy-erasure-worker::statuspage_publish`
+> (pure 24h-rolling aggregator over `VerificationOutcome` slice +
+> nearest-rank p95 of `dsr_resolution_hours` observations) + the
+> `dsr_bridge` converter between the two. Closes wave-15 deferral
+> documented in `specs/_audits/2026-05-15-dsr-worker-production.md`
+> §5; see that audit §5.2 / §5.3 / §5.5 for the canonical surface
+> map + test counts + secrets-matrix rows. Production publish-job
+> binding (cron / DO-alarm trigger + secrets read from CF Workers
+> `env.STATUSPAGE_*`) lands at WI-S11-008 PRR ship gate; the trait
+> surface + wire client + worker aggregator + bridge are sealed
+> under wave-16.
+
 ### 6.1 Em escopo (exaustivo)
 
 1. NEW crate `crates/corelink-privacy-erasure-worker` (queue consumer + per-backend erase + verification).

@@ -1,0 +1,36 @@
+[package]
+name = "corelink-statuspage-real"
+description = "CoreLink Atlassian Statuspage real client (wave-16). Ships StatuspageBackend canonical trait + DsrCompletionReport canonical 24h-rolling DSR aggregation payload + StatuspageHttpClient real wiring (reqwest::blocking POST `/v1/pages/{page_id}/metrics/{metric_id}/data.json`) + Authorization header auth (`OAuth <STATUSPAGE_API_KEY>`) + StatuspageRateLimiter (1 publish per 5 min per metric, monotonic-clock-driven, jitter on backoff) + RetryPolicy (3 retries exponential on 5xx + 429) + StatuspageAuditSink fail-CLOSED emit (`corelink.privacy.statuspage_published.v1` / `corelink.privacy.statuspage_auth_failed.v1` / `.rate_limited.v1` / `.failed.v1`) + redact_api_key helper (CTRL-PRIV-001 — credential NEVER logged plaintext) + InMemoryStatuspageBackend fake. WireMock-mockable. No tokio in src (reqwest::blocking)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { version = "0.12", features = ["blocking", "json", "rustls-tls"], default-features = false }
+corelink-privacy-erasure-worker = { path = "../corelink-privacy-erasure-worker" }
+
+[dev-dependencies]
+wiremock = "0.6"
+tokio = { workspace = true }

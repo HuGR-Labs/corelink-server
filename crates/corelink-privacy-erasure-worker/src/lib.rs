@@ -215,6 +215,7 @@ pub mod idempotency;
 pub mod orchestrator;
 pub mod pseudonymize;
 pub mod report;
+pub mod statuspage_publish;
 pub mod verification_job;
 
 pub use audit_emit::{
@@ -243,6 +244,9 @@ pub use report::{
     canonical_bytes as canonical_report_bytes, canonical_report_key, ErasureReport,
     InMemoryReportSigner, ReportSignature, ReportSigner, ReportSignerKey, REPORT_OBJECT_KEY_PREFIX,
     REPORT_SIGNATURE_LEN,
+};
+pub use statuspage_publish::{
+    aggregate_24h_window, p95_of_observations, DsrCompletionStats,
 };
 pub use verification_job::{
     dsr_resolution_hours, elapsed_dsr_ids, within_sla_window, VerificationJob, VerificationOutcome,
