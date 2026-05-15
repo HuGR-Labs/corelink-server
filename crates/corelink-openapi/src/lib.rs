@@ -149,6 +149,10 @@ pub fn parse_json() -> Result<serde_json::Value, serde_json::Error> {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    reason = "test module: assertion failures via expect() are the intended panic path"
+)]
 mod tests {
     use super::*;
 
