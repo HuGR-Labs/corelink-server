@@ -132,7 +132,7 @@ jobs:
         # the `# TBD` comment with the verified SHA from
         # https://github.com/github/codeql-action/releases/tag/v3.27.0).
         # Version bumps require ADR + Security review per §14.
-        uses: github/codeql-action/init@v3.27.0 # TBD-SHA replace post-baseline
+        uses: github/codeql-action/init@662472033e021d55d94146f66f6058822b0b39fd  # github/codeql-action/init@v3.27.0
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
@@ -154,7 +154,7 @@ jobs:
       - name: Perform CodeQL Analysis
         id: analyze
         # github/codeql-action/analyze v3.27.0 — TBD-SHA replace.
-        uses: github/codeql-action/analyze@v3.27.0 # TBD-SHA replace post-baseline
+        uses: github/codeql-action/analyze@662472033e021d55d94146f66f6058822b0b39fd  # github/codeql-action/analyze@v3.27.0
         with:
           category: "/language:${{ matrix.language }}"
           # Upload SARIF to GHA Security tab (default behaviour); we also
