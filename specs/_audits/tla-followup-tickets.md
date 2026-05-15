@@ -189,3 +189,43 @@ Net effect on the audit counters:
 The FT-1..FT-9 backlog above is unchanged — its 9 tickets remain open
 and tracked under DEBT-014 in the debt register.
 
+---
+
+## Addendum 2026-05-15 — DEBT-005 batch 2 closure (10 / 47 cumulative)
+
+Second dispatch in the DEBT-005 series (re-run of the wave-11 agent that
+hit the Anthropic rate limit). Closes **5 additional** TLA+ specs,
+bringing cumulative `tla_verified` to 28 (was 23 after batch 1) and
+`critical_no_tla` to 30 (was 35).
+
+| Spec (new) | Invariants closed (CRITICAL) | Status |
+|---|---|---|
+| `specs/tla/rollout_cosign_gate.tla` | INV-ROLLOUT-COSIGN-GATE (CRITICAL §3.26), runtime side of INV-SUPPLY-SIGNED-DEPLOY (HIGH §3.10) | **CLOSED** — PR + nightly cfg + CI matrix; local TLC 852 distinct states |
+| `specs/tla/backup_restore_ephemeral.tla` | INV-BACKUP-RESTORE-EPHEMERAL (CRITICAL §3.20) + EphemeralEventuallyTornDown liveness | **CLOSED** — PR + nightly cfg + CI matrix; local TLC 72 distinct states + 2 temporal branches |
+| `specs/tla/gc_sweep_audit_fail_closed.tla` | INV-GC-SWEEP-AUDIT-FAIL-CLOSED + INV-GC-RECONCILE-AUDIT-FAIL-CLOSED (CRITICAL × 2 §3.6) | **CLOSED** — PR + nightly cfg + CI matrix; local TLC 81 distinct states |
+| `specs/tla/ac_eviction_isolation.tla` | INV-AC-EVICT-REGION-PINNED + INV-AC-EVICT-TENANT-SCOPED (CRITICAL × 2 §3.15) | **CLOSED** — PR + nightly cfg + CI matrix; local TLC 160 distinct states (16 initial-state enumeration) |
+| `specs/tla/audit_emit_atomic.tla` | INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER (CRITICAL §3.6) — strengthens prior "partial coverage via audit_immutability.tla" to direct batch-pairing proof | **CLOSED** — PR + nightly cfg + CI matrix; local TLC 27 distinct states |
+
+Net effect on the audit counters (cumulative, both batches):
+
+- `tla_verified` floor: 18 → 23 → **28** (canonical-consistency-baseline §4
+  BASELINE ratchet updated in same commit).
+- `critical_no_tla` floor: 40 → 35 → **30**.
+
+DEBT-005 progress: **10 / 47 closed** (was 5/47 after batch 1; net +5
+from batch 2). Quality gate per wave-9 DEBT-005 standard: deterministic
+TLC, no implicit FAIL paths, every adversarial action explicitly
+exhibited with FALSE guard (`AttemptUnsignedActivate`,
+`AttemptCrossRegionEvict`, `AttemptOrphanDomain`, etc.) so the model
+trace shows the unreachability premise. Both PR and nightly cfg lanes
+run < 15 s wall clock on a 12-core dev laptop; CI budget (30 min hard
+timeout per spec under nightly tier) has ample headroom.
+
+The FT-1..FT-9 backlog above remains unchanged. Batch 2 selections were
+distinct from FT-1..FT-9 (which target auth-PAT hybrid, key-lifecycle,
+GC lock protocol, multipart finalize, BYOK DEK race, runbook CI
+exposure, signup atomic re-signup) — batch 2 closed CRITICAL gaps in
+rollout / backup / GC-audit / AC-eviction / audit-emit clusters that
+were listed under registry §3 with `(planned ...)` or "Coberto parcial"
+status but not yet on the FT backlog.
+

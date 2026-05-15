@@ -121,3 +121,41 @@ jobs:
         # SLO-60S, INV-AUTH-MASS-REVOKE-ATOMIC) + 1 HIGH (INV-AUTH-PROPAGATION-
         # AT-LEAST-ONCE) per invariant_registry.md §3.14 obligation matrix.
         run: bash scripts/run_tlc_corelink.sh auth_revocation
+
+      # DEBT-005 batch 1 (5 net-new TLA specs, 2026-05-15) — close 5 CRITICAL
+      # gaps from canonical-consistency baseline §4 (critical_no_tla 40 → 35).
+      - name: TLC verify auth_jwt_validation (DEBT-005 batch 1)
+        run: bash scripts/run_tlc_corelink.sh auth_jwt_validation
+
+      - name: TLC verify tenant_ctx_propagation (DEBT-005 batch 1)
+        run: bash scripts/run_tlc_corelink.sh tenant_ctx_propagation
+
+      - name: TLC verify merkle_integrity (DEBT-005 batch 1)
+        run: bash scripts/run_tlc_corelink.sh merkle_integrity
+
+      - name: TLC verify byok_envelope_aad (DEBT-005 batch 1)
+        run: bash scripts/run_tlc_corelink.sh byok_envelope_aad
+
+      - name: TLC verify failover_no_split_brain (DEBT-005 batch 1)
+        run: bash scripts/run_tlc_corelink.sh failover_no_split_brain
+
+      # DEBT-005 batch 2 (5 net-new TLA specs, 2026-05-15) — close 5 more
+      # CRITICAL gaps from canonical-consistency baseline §4 (critical_no_tla
+      # 35 → 30). Covers INV-ROLLOUT-COSIGN-GATE + INV-SUPPLY-SIGNED-DEPLOY +
+      # INV-BACKUP-RESTORE-EPHEMERAL + INV-GC-SWEEP-AUDIT-FAIL-CLOSED +
+      # INV-GC-RECONCILE-AUDIT-FAIL-CLOSED + INV-AC-EVICT-REGION-PINNED +
+      # INV-AC-EVICT-TENANT-SCOPED + INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER.
+      - name: TLC verify rollout_cosign_gate (DEBT-005 batch 2)
+        run: bash scripts/run_tlc_corelink.sh rollout_cosign_gate
+
+      - name: TLC verify backup_restore_ephemeral (DEBT-005 batch 2)
+        run: bash scripts/run_tlc_corelink.sh backup_restore_ephemeral
+
+      - name: TLC verify gc_sweep_audit_fail_closed (DEBT-005 batch 2)
+        run: bash scripts/run_tlc_corelink.sh gc_sweep_audit_fail_closed
+
+      - name: TLC verify ac_eviction_isolation (DEBT-005 batch 2)
+        run: bash scripts/run_tlc_corelink.sh ac_eviction_isolation
+
+      - name: TLC verify audit_emit_atomic (DEBT-005 batch 2)
+        run: bash scripts/run_tlc_corelink.sh audit_emit_atomic

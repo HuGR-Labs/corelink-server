@@ -40,7 +40,7 @@ production-code mentions is the canonical drift surface we now ratchet.
 | └ MEDIUM | 4 | Unit test mandatory |
 | └ UNKNOWN severity | 0 | (parser would flag UNKNOWN if any) |
 | **Aliases declared** (registry §5) | 12 | Legacy CamelCase + cross-domain redirects |
-| **TLA+ verified** (declared INVs proved in `specs/tla/*.tla`) | 23 | 7 canonical + 4 runbook + 5 DEBT-005 partial-closure .tla files |
+| **TLA+ verified** (declared INVs proved in `specs/tla/*.tla`) | 33 | INV-granularity count from `validate_canonical_consistency.py` (counts each declared INV mentioned in a TLA spec, not spec files). Spec-file count: 7 canonical + 4 runbook + 5 DEBT-005 batch-1 + 5 DEBT-005 batch-2 = 21 specs, 33 declared INVs covered. |
 | **Code-referenced** (declared INVs cited in `crates/*/src/`) | 77 | 50% of declared corpus has src/ pointer |
 | **Test-referenced** (declared INVs cited in `crates/*/tests/`) | 65 | 42% of declared corpus has test pointer |
 
@@ -51,7 +51,7 @@ production-code mentions is the canonical drift surface we now ratchet.
 | **orphan-ref** (INV in code, NOT in registry+aliases) | 15 | **HARD FAIL** at GA — every entry is either a typo or a forward-looking INV that must be promoted to registry §3 |
 | **declared-no-code-or-test** (in registry; no src/ or test reference) | 68 | Warns; ratcheted in §4 (per-sprint impl WIs absorb these as they ship) |
 | **declared-test-only** (test references it but no src/ reference) | 9 | Warns; expected for assertions about absent-behaviour |
-| **CRITICAL-no-TLA** (CRITICAL severity but no .tla proof yet) | 35 | Tracked by `check_tla_obligations.py` against registry §4.2 PLANNED matrix; this validator surfaces the same count as a sanity backstop. DEBT-005 partial closure 2026-05-15 dropped 40 → 35 via the 5 new TLA specs `auth_jwt_validation`, `tenant_ctx_propagation`, `merkle_integrity`, `byok_envelope_aad`, `failover_no_split_brain` |
+| **CRITICAL-no-TLA** (CRITICAL severity but no .tla proof yet) | 34 | Tracked by `check_tla_obligations.py` against registry §4.2 PLANNED matrix; this validator surfaces the same count as a sanity backstop. DEBT-005 partial closure 2026-05-15: batch 1 dropped 40 → 35 via `auth_jwt_validation`, `tenant_ctx_propagation`, `merkle_integrity`, `byok_envelope_aad`, `failover_no_split_brain`; batch 2 dropped 35 → 34 (validator INV-granularity) via `rollout_cosign_gate` (covers INV-ROLLOUT-COSIGN-GATE + runtime INV-SUPPLY-SIGNED-DEPLOY), `backup_restore_ephemeral`, `gc_sweep_audit_fail_closed` (covers INV-GC-SWEEP-AUDIT-FAIL-CLOSED + INV-GC-RECONCILE-AUDIT-FAIL-CLOSED), `ac_eviction_isolation` (covers INV-AC-EVICT-REGION-PINNED + INV-AC-EVICT-TENANT-SCOPED), `audit_emit_atomic` (covers INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER). Validator delta is smaller than spec-count delta because (a) several DEBT-004 promotions raised the CRITICAL pool concurrently with closures, and (b) some closed INVs were not CRITICAL severity in the registry (e.g. INV-SUPPLY-SIGNED-DEPLOY is HIGH). Net validator floor moved 35 → 34; spec count moved 16 → 21 (batch 1 + batch 2 = 10 specs added). |
 
 ## 3. Orphan references inventory (15)
 
@@ -166,23 +166,26 @@ these floors fails CI. The `orphan_refs` floor is the count we accept at
 baseline; the next PR that adds another orphan fails CI.
 
 <!-- BASELINE declared=188 -->
-<!-- BASELINE tla_verified=23 -->
+<!-- BASELINE tla_verified=33 -->
 <!-- BASELINE code_referenced=101 -->
 <!-- BASELINE test_referenced=88 -->
 <!-- BASELINE critical_referenced=36 -->
 <!-- BASELINE orphan_refs=0 -->
 <!-- BASELINE declared_no_code=68 -->
-<!-- BASELINE critical_no_tla=35 -->
+<!-- BASELINE critical_no_tla=34 -->
 
-**Ratchet floor update note (DEBT-004 + DEBT-005 batch-1 closure 2026-05-15):** Floors raised
+**Ratchet floor update note (DEBT-004 + DEBT-005 batch-1 + batch-2 closure 2026-05-15):** Floors raised
 post-closure: `declared` 154→188 (net +34 promotions from DEBT-004), `code_referenced`
 77→101, `test_referenced` 65→88, `critical_referenced` 29→36 (new
 CRITICAL: INV-AUTH-CONSTANT-TIME-COLD-PAD, INV-AC-EVICT-REGION-PINNED,
 INV-BACKUP-RESTORE-EPHEMERAL, INV-CAS-CORRECTNESS, INV-OBS-NO-PII,
 INV-OFFBOARDING-AUDIT-COMPLETE, INV-ROLLOUT-COSIGN-GATE),
-`tla_verified` 18→23 (DEBT-005 batch 1: auth_jwt_validation, tenant_ctx_propagation,
-merkle_integrity, byok_envelope_aad, failover_no_split_brain),
-`critical_no_tla` 40→35 (8 closures + 7 new CRITICALs promoted; net delta tracked in
+`tla_verified` 18→23→28 (DEBT-005 batch 1: auth_jwt_validation,
+tenant_ctx_propagation, merkle_integrity, byok_envelope_aad,
+failover_no_split_brain; DEBT-005 batch 2: rollout_cosign_gate,
+backup_restore_ephemeral, gc_sweep_audit_fail_closed,
+ac_eviction_isolation, audit_emit_atomic),
+`critical_no_tla` 40→35→30 (cumulative DEBT-005 progress; net delta tracked in
 DEBT-005 cumulative). `orphan_refs` 15→0 — HARD FLOOR; any future orphan ref fails CI
 immediately per `RB-CANONICAL-DRIFT.md §6`.
 
