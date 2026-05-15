@@ -31,12 +31,13 @@ default = []
 
 # Wire the production AWS KMS provider (`corelink_byok_aws::AwsKmsRealProvider`)
 # instead of the in-memory fake. Off by default — enable in production
-# deployments where customer CMKs live in AWS KMS. The flag is GA-prep
-# scaffolding; the server BYOK orchestrator wiring lands incrementally.
+# deployments where customer CMKs live in AWS KMS. The BYOK orchestrator
+# (`apps/server/src/byok_orchestrator.rs`) dispatches the trait-object
+# construction based on which (single) `byok-*-real` flag is set.
 #
 # Pattern reference (replicated for GCP/Azure/Vault):
-# `specs/_audits/2026-05-15-byok-real-provider-pattern.md`.
-byok-aws-real = ["dep:corelink-byok", "dep:corelink-byok-aws"]
+# `specs/_audits/2026-05-15-byok-real-provider-pattern.md` §7.
+byok-aws-real = ["dep:corelink-byok-aws"]
 
 # Wire the production GCP Cloud KMS provider
 # (`corelink_byok_gcp::GcpKmsRealProvider`) instead of the in-memory fake.
@@ -48,7 +49,7 @@ byok-aws-real = ["dep:corelink-byok", "dep:corelink-byok-aws"]
 # "unsupported on wasm32" error (Workers proxy to the native server).
 #
 # Pattern reference: `specs/_audits/2026-05-15-byok-real-provider-pattern.md`.
-byok-gcp-real = ["dep:corelink-byok", "dep:corelink-byok-gcp", "corelink-byok-gcp/production"]
+byok-gcp-real = ["dep:corelink-byok-gcp", "corelink-byok-gcp/production"]
 
 # Wire the production Azure Key Vault provider
 # (`corelink_byok_azure::AzureKeyVaultRealProvider`) instead of the
@@ -56,7 +57,7 @@ byok-gcp-real = ["dep:corelink-byok", "dep:corelink-byok-gcp", "corelink-byok-gc
 # customer CMKs live in Azure Key Vault Premium HSM / Managed HSM.
 #
 # Pattern reference: `specs/_audits/2026-05-15-byok-real-provider-pattern.md`.
-byok-azure-real = ["dep:corelink-byok", "dep:corelink-byok-azure", "corelink-byok-azure/real"]
+byok-azure-real = ["dep:corelink-byok-azure", "corelink-byok-azure/real"]
 
 # Wire the production HashiCorp Vault Transit provider
 # (`corelink_byok_vault::VaultRealProvider`) instead of the in-memory fake.
@@ -64,7 +65,7 @@ byok-azure-real = ["dep:corelink-byok", "dep:corelink-byok-azure", "corelink-byo
 # live in a customer-hosted Vault Enterprise (FIPS-mode) cluster.
 #
 # Pattern reference: `specs/_audits/2026-05-15-byok-real-provider-pattern.md`.
-byok-vault-real = ["dep:corelink-byok", "dep:corelink-byok-vault", "corelink-byok-vault/real"]
+byok-vault-real = ["dep:corelink-byok-vault", "corelink-byok-vault/real"]
 
 # R-PREP-CF-R2-REAL — opt into the real Cloudflare R2 binding adapter
 # (`corelink_cf_bindings::CfR2BucketReal`). On `target_arch = "wasm32"`
@@ -119,14 +120,21 @@ corelink-handler-cas = { workspace = true }
 corelink-handler-ac = { workspace = true }
 corelink-handler-admin = { workspace = true }
 
-# Optional BYOK dependencies — only linked when `byok-aws-real` or
-# `byok-gcp-real` is enabled. See features section above and
-# `specs/_audits/2026-05-15-byok-real-provider-pattern.md`.
-corelink-byok = { path = "../../crates/corelink-byok", optional = true }
+# BYOK foundation crate (KmsProvider trait + InMemoryFake used by
+# the orchestrator default path) — NOT optional: the orchestrator
+# must compile in the default `cargo build -p corelink-server`
+# configuration and return `Arc<dyn KmsProvider>` backed by a local
+# in-memory fake when no `byok-*-real` flag is active.
+# Pattern: `specs/_audits/2026-05-15-byok-real-provider-pattern.md` §7.
+corelink-byok = { path = "../../crates/corelink-byok" }
+# Optional BYOK adapter crates — only linked when the matching
+# `byok-<provider>-real` feature is enabled. See features section
+# above and `specs/_audits/2026-05-15-byok-real-provider-pattern.md`.
 corelink-byok-aws = { path = "../../crates/corelink-byok-aws", optional = true }
 corelink-byok-gcp = { path = "../../crates/corelink-byok-gcp", optional = true }
 corelink-byok-azure = { path = "../../crates/corelink-byok-azure", optional = true }
 corelink-byok-vault = { path = "../../crates/corelink-byok-vault", optional = true }
+async-trait = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

@@ -3,7 +3,7 @@ id: "AUDIT-2026-05-15-BYOK-REAL-PROVIDER-PATTERN"
 type: "audit"
 doc_status: "ACTIVE"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-05-15"
 updated: "2026-05-15"
 owner: "Gustavo Schneiter"
@@ -256,7 +256,141 @@ separate, larger PR), no further changes to the GCP adapter are needed.
 
 ---
 
-## 7. Acceptance gate
+## 7. Server orchestrator wiring (production singleton)
+
+**Status:** LANDED 2026-05-15 (wave 15 — Server BYOK orchestrator
+production wiring). Module path:
+`apps/server/src/byok_orchestrator.rs`.
+
+The orchestrator is the canonical entrypoint the server boot path
+calls to obtain the singleton `Arc<dyn KmsProvider>` threaded through
+every BYOK-aware code path (envelope encrypt / decrypt, kill-switch
+poller, erasure attestation).
+
+### 7.1 Dispatch table
+
+| `byok-*-real` flag | Concrete type | Active-provider label | Audit target |
+|---|---|---|---|
+| (none) | `byok_orchestrator::InMemoryFake` | `in_memory_fake` | `corelink.byok.in_memory.audit` |
+| `byok-aws-real` | `corelink_byok_aws::AwsKmsRealProvider` | `aws` | `corelink.byok.aws.audit` |
+| `byok-gcp-real` | `corelink_byok_gcp::GcpKmsRealProvider` | `gcp` | `corelink.byok.gcp.audit` |
+| `byok-azure-real` | `corelink_byok_azure::AzureKeyVaultRealProvider` | `azure` | `corelink.byok.azure.audit` |
+| `byok-vault-real` | `corelink_byok_vault::VaultRealProvider` | `vault` | `corelink.byok.vault.audit` |
+
+`corelink-byok` (the trait + foundation crate) is a **non-optional**
+dependency of `corelink-server` so the orchestrator always compiles —
+the default `cargo build -p corelink-server` produces the
+`InMemoryFake` path with zero KMS network deps linked. Real provider
+adapter crates remain optional and gated by the respective feature.
+
+### 7.2 Multi-flag mutual-exclusion guard
+
+Enabling two or more `byok-*-real` flags simultaneously is a **HARD
+compile error** — the orchestrator is a singleton trait object and
+having two production providers in one binary is not a supported
+deployment shape. The guard expands one `compile_error!` per pairwise
+overlap (6 macro invocations total) so the diagnostic names the exact
+two flags in conflict, e.g.:
+
+```
+error: BYOK orchestrator: features `byok-aws-real` AND `byok-gcp-real`
+       are mutually exclusive — only one BYOK real provider may be
+       enabled at a time (the orchestrator is a singleton trait
+       object). See specs/_audits/2026-05-15-byok-real-provider-pattern.md §7.
+```
+
+### 7.3 Configuration via environment
+
+Provider constructors read the following environment variables when
+the matching feature is enabled. Missing required vars fail CLOSED
+with `BYOKError::Provider` (audit-emit before the error returns).
+
+| Feature | Variable | Required? | Default | Purpose |
+|---|---|---|---|---|
+| `byok-aws-real` | `AWS_REGION` | optional | `us-east-1` | KMS region |
+| `byok-gcp-real` | `GCP_REGION` | optional | `us-east1` | Cloud KMS region |
+| `byok-azure-real` | `CORELINK_BYOK_AZURE_VAULT_URL` | **required** | — | Premium / Managed HSM base URL |
+| `byok-azure-real` | `CORELINK_BYOK_AZURE_REGION` | optional | `eastus2` | Azure region |
+| `byok-vault-real` | `VAULT_ADDR` | **required** | — | Vault cluster URL (consumed by `VaultRealProvider::from_env`) |
+| `byok-vault-real` | `CORELINK_BYOK_VAULT_REGION` | optional | `customer-hosted` | Logical region label |
+
+Provider-specific credentials (AWS SDK chain, GCP ADC, Entra ID,
+Vault auth methods) are resolved by each provider's native
+credential layer — see the provider crate docs. Every variable
+listed above is mirrored in `docs/internal/secrets-checklist.md`
+(rows 25 — `AWS_REGION` —, plus new rows 109–112 for the four
+orchestrator-level configuration vars).
+
+### 7.4 Audit emission
+
+The orchestrator emits ONE structured `tracing` event at boot:
+
+```
+target = "corelink.byok.orchestrator.audit"
+audit  = true
+op     = "boot"
+provider = <label>     // "aws" | "gcp" | "azure" | "vault" | "in_memory_fake"
+```
+
+Per-operation audit events (`wrap_dek`, `unwrap_dek`, `check_access`)
+are emitted by the concrete provider crates with
+`target = "corelink.byok.<provider>.audit"` and the closed `reason`
+vocabulary documented in §5. The orchestrator does NOT transform
+those events — they flow through the server's global `tracing`
+subscriber to the audit sink.
+
+### 7.5 InMemoryFake (dev / test path)
+
+`InMemoryFake` is the default-path provider used when no
+`byok-*-real` feature is enabled. It:
+
+- Reports `provider_kind() == KmsProviderKind::AwsKms` so downstream
+  code (which validates `key_id.provider == self.provider_kind()`)
+  works uniformly in dev.
+- Reports `fips_level() == FipsLevel::None` — the load-bearing
+  assertion that distinguishes the fake from any real provider.
+- Wraps the DEK by XOR-masking with a module-private 32-byte
+  constant; ciphertext is NOT byte-identical to plaintext, which
+  guards against regressions in the matrix tests that round-trip
+  via the orchestrator.
+- Enforces the AAD-mandatory contract: `wrap_dek` and `unwrap_dek`
+  both reject `encryption_context: None`. This mirrors the
+  production providers' contract so handler code that targets the
+  fake in CI catches AAD-omission bugs before they reach a real
+  provider.
+
+`InMemoryFake` is **NOT for production**. Any deployment that ships
+the default `cargo build` configuration MUST explicitly opt out of
+BYOK at the customer / tenant level — the orchestrator does not
+attempt to gate this at runtime (cargo features are the gate).
+
+### 7.6 Integration tests
+
+`apps/server/tests/byok_orchestrator.rs` covers:
+
+- Default-path dispatch returns `InMemoryFake` (assertions on
+  `region()`, `fips_level()`, and `active_provider()`).
+- Each `byok-*-real` flag wires the matching concrete type
+  (`provider_kind()` discriminator + `Arc::strong_count` reachability
+  check). The AWS path constructs the real provider in CI because
+  `AwsKmsRealProvider::new` does not require live credentials at
+  construction time; GCP / Azure / Vault paths skip when their
+  staging-credential env vars are absent.
+- `InMemoryFake` `wrap_dek` → `unwrap_dek` round-trip preserves the
+  32-byte DEK exactly.
+- `InMemoryFake` rejects `wrap_dek` / `unwrap_dek` without
+  `encryption_context` (AAD-mandatory contract).
+- `check_access` returns `Ok`.
+- Trait-object reachability via `Arc<dyn KmsProvider>`.
+
+Six tests total, plus the four `#[cfg(feature = ...)]`-gated
+real-provider dispatch tests (one per feature). Quality gate:
+`cargo test -p corelink-server --test byok_orchestrator` passes
+under all five build configurations (default + 4 flags).
+
+---
+
+## 8. Acceptance gate
 
 A provider crate is **GA-ready** only when:
 
@@ -268,7 +402,10 @@ A provider crate is **GA-ready** only when:
 4. `python3 scripts/validate_specs.py` reports zero diagnostics for the
    crate's referenced INVs.
 5. The server feature flag builds with the rest of the workspace
-   (`cargo build -p corelink-server --features byok-<provider>-real`).
+   (`cargo build -p corelink-server --features byok-<provider>-real`)
+   AND the orchestrator integration test passes
+   (`cargo test -p corelink-server --features byok-<provider>-real
+   --test byok_orchestrator`).
 
 GA goal: 4/4 providers GA-ready by **2026-06-14** (D+30 cap from
 `BYOK-FIPS-ATTESTATION-MATRIX.md`).
