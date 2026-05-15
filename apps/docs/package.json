@@ -16,9 +16,14 @@
     "docs:gen": "tsx scripts/gen-reapi-docs.ts",
     "docs:gen:check": "tsx scripts/gen-reapi-docs.ts --check",
     "i18n-coverage": "tsx scripts/i18n-coverage.ts",
+    "i18n-coverage:report": "tsx scripts/i18n-coverage-report.ts",
+    "i18n:mt-stub": "tsx scripts/mt-stub-seed.ts",
     "i18n:export": "tsx scripts/export-xliff.ts",
     "i18n:import": "tsx scripts/import-xliff.ts",
     "i18n:qc": "tsx scripts/translation-quality-check.ts",
+    "a11y-audit": "bash scripts/a11y-audit.sh",
+    "a11y-audit:baseline": "bash scripts/a11y-audit.sh --baseline",
+    "a11y-audit:diff": "bash scripts/a11y-audit.sh --against=baseline",
     "typecheck": "tsc --noEmit",
     "lint": "eslint --max-warnings=0 tests",
     "test": "vitest run",
@@ -36,6 +41,7 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@axe-core/cli": "^4.11.3",
     "@docusaurus/module-type-aliases": "3.10.1",
     "@docusaurus/tsconfig": "3.10.1",
     "@docusaurus/types": "3.10.1",

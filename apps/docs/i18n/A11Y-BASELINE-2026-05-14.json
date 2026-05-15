@@ -1,0 +1,12 @@
+[
+  { "route": "/", "url": "http://localhost:3000/", "violations": [] },
+  { "route": "/tutorial/", "url": "http://localhost:3000/tutorial/", "violations": [] },
+  { "route": "/tutorial/01-installation", "url": "http://localhost:3000/tutorial/01-installation", "violations": [] },
+  { "route": "/tutorial/02-first-pat", "url": "http://localhost:3000/tutorial/02-first-pat", "violations": [] },
+  { "route": "/tutorial/03-bazel-quickstart", "url": "http://localhost:3000/tutorial/03-bazel-quickstart", "violations": [] },
+  { "route": "/how-to/", "url": "http://localhost:3000/how-to/", "violations": [] },
+  { "route": "/reference/", "url": "http://localhost:3000/reference/", "violations": [] },
+  { "route": "/reference/reapi/", "url": "http://localhost:3000/reference/reapi/", "violations": [] },
+  { "route": "/explanation/architecture", "url": "http://localhost:3000/explanation/architecture", "violations": [] },
+  { "route": "/pricing/", "url": "http://localhost:3000/pricing/", "violations": [] }
+]

@@ -1,0 +1,193 @@
+#!/usr/bin/env bash
+# WCAG 2.2 AA axe-core audit — R-4 / WT-R4-1 deliverable (Goal B).
+#
+# Runs `@axe-core/cli` against the 10 most-visited docs pages and writes a
+# baseline JSON + Markdown summary. Intended for local diff-vs-baseline work
+# and as the engine behind `.github/workflows/docs-a11y-baseline.yml`
+# (companion to the existing Playwright sweep in `docs-a11y.yml`).
+#
+# Page list is derived from the first-tier sidebar entries in
+# `apps/docs/sidebars.ts` plus the homepage and pricing/reference landings —
+# representing ~80 % of expected traffic per the launch plan.
+#
+# Usage:
+#   bash scripts/a11y-audit.sh                       # boot dev server, audit
+#   bash scripts/a11y-audit.sh --baseline            # write/refresh baseline
+#   bash scripts/a11y-audit.sh --against=baseline    # diff vs baseline
+#   DOCS_BASE_URL=https://docs.corelink.dev bash scripts/a11y-audit.sh
+#                                                    # audit a live URL
+#
+# Exit codes:
+#   0 — no new CRITICAL violations vs baseline
+#   1 — at least one new CRITICAL violation
+#   2 — runtime error (server didn't start, axe missing, etc.)
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DOCS_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+cd "${DOCS_DIR}"
+
+DOCS_BASE_URL="${DOCS_BASE_URL:-http://localhost:3000}"
+OUTPUT_DIR="${DOCS_DIR}/dist/a11y"
+BASELINE_FILE="${DOCS_DIR}/i18n/A11Y-BASELINE-2026-05-14.json"
+mkdir -p "${OUTPUT_DIR}"
+
+ROUTES=(
+  "/"
+  "/tutorial/"
+  "/tutorial/01-installation"
+  "/tutorial/02-first-pat"
+  "/tutorial/03-bazel-quickstart"
+  "/how-to/"
+  "/reference/"
+  "/reference/reapi/"
+  "/explanation/architecture"
+  "/pricing/"
+)
+
+WRITE_BASELINE=0
+DIFF_BASELINE=0
+for arg in "$@"; do
+  case "${arg}" in
+    --baseline) WRITE_BASELINE=1 ;;
+    --against=baseline) DIFF_BASELINE=1 ;;
+    *) echo "[a11y-audit] unknown arg: ${arg}" >&2 ; exit 2 ;;
+  esac
+done
+
+# Locate axe CLI (devDependency).
+AXE="${DOCS_DIR}/node_modules/.bin/axe"
+if [[ ! -x "${AXE}" ]]; then
+  echo "[a11y-audit] axe-core CLI not found at ${AXE}; run 'pnpm install'." >&2
+  exit 2
+fi
+
+# Start dev server if DOCS_BASE_URL points at localhost and nothing is listening.
+SERVER_PID=""
+cleanup() {
+  if [[ -n "${SERVER_PID}" ]]; then
+    kill "${SERVER_PID}" 2>/dev/null || true
+    wait "${SERVER_PID}" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT INT TERM
+
+if [[ "${DOCS_BASE_URL}" == http://localhost:* ]]; then
+  if ! curl -fsS -o /dev/null --max-time 2 "${DOCS_BASE_URL}/" 2>/dev/null; then
+    echo "[a11y-audit] no server at ${DOCS_BASE_URL}; booting 'pnpm start'..."
+    pnpm start --no-open --port 3000 > "${OUTPUT_DIR}/server.log" 2>&1 &
+    SERVER_PID=$!
+    for _ in $(seq 1 60); do
+      if curl -fsS -o /dev/null --max-time 2 "${DOCS_BASE_URL}/" 2>/dev/null; then
+        break
+      fi
+      sleep 2
+    done
+    if ! curl -fsS -o /dev/null --max-time 2 "${DOCS_BASE_URL}/" 2>/dev/null; then
+      echo "[a11y-audit] dev server failed to come up after 120s." >&2
+      tail -20 "${OUTPUT_DIR}/server.log" >&2 || true
+      exit 2
+    fi
+  fi
+fi
+
+REPORT_JSON="${OUTPUT_DIR}/report.json"
+REPORT_MD="${OUTPUT_DIR}/report.md"
+: > "${REPORT_JSON}.tmp"
+echo "[" >> "${REPORT_JSON}.tmp"
+
+FIRST=1
+for route in "${ROUTES[@]}"; do
+  url="${DOCS_BASE_URL}${route}"
+  out="${OUTPUT_DIR}/$(echo "${route}" | tr '/' '_' | sed 's/^_//' | sed 's/_$//').json"
+  [[ -z "${out##*.json}" ]] || out="${out}.json"
+  echo "[a11y-audit] scanning ${url}"
+  # Tag set matches the Playwright sweep (WCAG 2.0/2.1/2.2 AA + best practice).
+  set +e
+  "${AXE}" "${url}" \
+    --tags wcag2a,wcag2aa,wcag21a,wcag21aa,wcag22aa,best-practice \
+    --save "${out}" \
+    --exit \
+    --timeout 60 > "${OUTPUT_DIR}/$(basename "${out}" .json).log" 2>&1
+  set -e
+  if [[ ${FIRST} -eq 0 ]]; then echo "," >> "${REPORT_JSON}.tmp"; fi
+  FIRST=0
+  if [[ -f "${out}" ]]; then
+    # axe --save emits an array of one element; unwrap and tag with route.
+    node -e "
+      const fs = require('fs');
+      const raw = JSON.parse(fs.readFileSync('${out}', 'utf8'));
+      const result = Array.isArray(raw) ? raw[0] : raw;
+      const out = {
+        route: '${route}',
+        url: '${url}',
+        violations: (result.violations || []).map(v => ({
+          id: v.id,
+          impact: v.impact,
+          help: v.help,
+          helpUrl: v.helpUrl,
+          nodes: v.nodes.length,
+          tags: v.tags,
+        })),
+      };
+      process.stdout.write(JSON.stringify(out, null, 2));
+    " >> "${REPORT_JSON}.tmp"
+  else
+    echo "{\"route\":\"${route}\",\"url\":\"${url}\",\"error\":\"axe failed; see log\",\"violations\":[]}" >> "${REPORT_JSON}.tmp"
+  fi
+done
+echo "]" >> "${REPORT_JSON}.tmp"
+mv "${REPORT_JSON}.tmp" "${REPORT_JSON}"
+
+# Markdown summary.
+node -e "
+  const fs = require('fs');
+  const data = JSON.parse(fs.readFileSync('${REPORT_JSON}', 'utf8'));
+  let md = '# WCAG 2.2 AA — axe-core audit\\n\\n';
+  md += 'Generated by \`scripts/a11y-audit.sh\` against base \`${DOCS_BASE_URL}\`.\\n\\n';
+  md += '| Route | Total | Critical | Serious | Moderate | Minor |\\n';
+  md += '| --- | ---: | ---: | ---: | ---: | ---: |\\n';
+  const totals = { critical: 0, serious: 0, moderate: 0, minor: 0 };
+  for (const r of data) {
+    const c = r.violations.filter(v => v.impact === 'critical').length;
+    const s = r.violations.filter(v => v.impact === 'serious').length;
+    const m = r.violations.filter(v => v.impact === 'moderate').length;
+    const mi = r.violations.filter(v => v.impact === 'minor').length;
+    totals.critical += c; totals.serious += s; totals.moderate += m; totals.minor += mi;
+    md += '| \`' + r.route + '\` | ' + r.violations.length + ' | ' + c + ' | ' + s + ' | ' + m + ' | ' + mi + ' |\\n';
+  }
+  md += '| **TOTAL** | **' + data.reduce((a, r) => a + r.violations.length, 0) + '** | **' + totals.critical + '** | **' + totals.serious + '** | **' + totals.moderate + '** | **' + totals.minor + '** |\\n';
+  fs.writeFileSync('${REPORT_MD}', md);
+" || true
+
+if [[ ${WRITE_BASELINE} -eq 1 ]]; then
+  cp "${REPORT_JSON}" "${BASELINE_FILE}"
+  echo "[a11y-audit] wrote baseline -> ${BASELINE_FILE}"
+fi
+
+if [[ ${DIFF_BASELINE} -eq 1 ]]; then
+  if [[ ! -f "${BASELINE_FILE}" ]]; then
+    echo "[a11y-audit] no baseline at ${BASELINE_FILE}; run with --baseline first." >&2
+    exit 2
+  fi
+  node -e "
+    const fs = require('fs');
+    const cur = JSON.parse(fs.readFileSync('${REPORT_JSON}', 'utf8'));
+    const base = JSON.parse(fs.readFileSync('${BASELINE_FILE}', 'utf8'));
+    const key = (r, v) => r.route + '|' + v.id;
+    const baseline = new Set();
+    for (const r of base) for (const v of r.violations) if (v.impact === 'critical') baseline.add(key(r, v));
+    const regressions = [];
+    for (const r of cur) for (const v of r.violations) if (v.impact === 'critical' && !baseline.has(key(r, v))) regressions.push(r.route + ' :: ' + v.id + ' (' + v.help + ')');
+    if (regressions.length > 0) {
+      console.error('[a11y-audit] NEW CRITICAL violations vs baseline:');
+      for (const r of regressions) console.error('  - ' + r);
+      process.exit(1);
+    }
+    console.log('[a11y-audit] no new CRITICAL violations vs baseline.');
+  "
+fi
+
+echo "[a11y-audit] report -> ${REPORT_JSON}"
+echo "[a11y-audit] summary -> ${REPORT_MD}"

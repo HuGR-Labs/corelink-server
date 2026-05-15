@@ -30,8 +30,10 @@ export const DEFAULT_PRICING_INPUTS: PricingCalculatorInputs = {
 
 export function PricingCalculator(): ReactElement {
   return (
-    <div
+    <section
       data-testid="pricing-calculator-stub"
+      role="region"
+      aria-label="Pricing calculator stub — placeholder values pending Finance sign-off"
       style={{
         border: "1px dashed #6b7280",
         padding: "1rem",
@@ -52,6 +54,6 @@ export function PricingCalculator(): ReactElement {
         <dt>Estimated total</dt>
         <dd>$X / month</dd>
       </dl>
-    </div>
+    </section>
   );
 }
