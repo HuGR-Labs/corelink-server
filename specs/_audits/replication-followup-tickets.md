@@ -244,6 +244,16 @@ Each ticket below uses the canonical form:
 
 ### R-PREP-REPL-P2-001 — Neon read-replica lag CoreLink-side SLI
 
+- **Status:** **CLOSED 2026-05-15** (wt/debt-011-replication-p2)
+- **Closure summary:** `NeonReplicaLagProbe` trait + `InMemoryNeonReplicaLagProbe`
+  added in `crates/corelink-region/src/neon_replica_lag.rs`. Canonical metric
+  name `corelink_neon_replica_lag_seconds` + 60 s cadence + 5 s soft p99
+  ceiling exported as constants and asserted against `slo_catalog.md §4.27`
+  (soft / informational; no alerting at GA — `NEON_SLO_IS_INFORMATIONAL = true`).
+  Real CF Worker probe wiring (Neon serverless driver INSERT primary → SELECT
+  cross-region replica every 60 s) remains `trait-abstraction-defer` per
+  charter. Tests: `crates/corelink-region/tests/neon_replica_lag_sli.rs`
+  (6 integration + 9 in-module unit).
 - **ID:** R-PREP-REPL-P2-001
 - **Priority:** P2
 - **Domain:** Neon
@@ -257,6 +267,18 @@ Each ticket below uses the canonical form:
 
 ### R-PREP-REPL-P2-002 — Replica-worker hot-blob coverage SLI
 
+- **Status:** **CLOSED 2026-05-15** (wt/debt-011-replication-p2)
+- **Closure summary:** `HotBlobCoverageSli` trait + `InMemoryHotBlobCoverageSli`
+  added in `crates/corelink-replica-worker/src/coverage.rs`. Canonical metric
+  name `corelink_hot_blob_replication_coverage_ratio` + 0.90 target ratio +
+  24 h deadline exported as constants and asserted against `slo_catalog.md §4.28`.
+  Pure helper `compute_coverage_ratio(num, den)` handles empty-window vacuous
+  truth (returns 1.0) and inversion clamp (caps at 1.0). SLI emit happens
+  AFTER `aggregation.completed` audit (best-effort observability; audit
+  fail-CLOSED preserved — emit failure → audit detail line, never blocks
+  aggregation outcome). Tests:
+  `crates/corelink-replica-worker/tests/coverage_sli.rs` (7 integration +
+  12 in-module unit).
 - **ID:** R-PREP-REPL-P2-002
 - **Priority:** P2
 - **Domain:** R2 (hot blobs)
@@ -270,6 +292,21 @@ Each ticket below uses the canonical form:
 
 ### R-PREP-REPL-P2-003 — MultipartSession in-flight inventory at failover
 
+- **Status:** **CLOSED 2026-05-15** (wt/debt-011-replication-p2)
+- **Closure summary:** New module `crates/corelink-r2-multipart/src/failover.rs`
+  ships `MultipartFailoverInventory` trait + `InMemoryMultipartFailoverInventory`
+  + `MultipartAuditSink` trait + canonical CloudEvent type
+  `corelink.failover.multipart_aborted.v1` + Prometheus counter
+  `corelink_failover_multipart_aborted_total{region, tenant_tier}`. Drain step
+  enumerates all `InProgress` multipart sessions, emits ONE CloudEvent per row
+  BEFORE returning the report (audit fail-CLOSED — any emit error halts the
+  drain with `MultipartFailoverError::AuditEmitFailed`). Per-tenant grouping
+  (`MultipartFailoverReport::by_tenant()`) drives the enterprise on-call comms
+  template; `total_bytes_aborted()` informs post-failover review.
+  Real CF Worker wiring (R2 `AbortMultipartUpload` + D1 `multipart_sessions`
+  mark-aborted + audit bus emit) remains `trait-abstraction-defer` per charter.
+  Tests: `crates/corelink-r2-multipart/tests/failover_inventory.rs`
+  (6 integration + 11 in-module unit).
 - **ID:** R-PREP-REPL-P2-003
 - **Priority:** P2
 - **Domain:** DO state (MultipartSession)
@@ -289,8 +326,8 @@ Each ticket below uses the canonical form:
 |---|---|---|---|
 | P0 | 3 | **CLOSED 2026-05-15** (wt/debt-011-replication-p0) | Hard blockers for DR-16 prod-mode dry-run (SLI + verifier coverage of R2-hot + D1 + daily aggregate). |
 | P1 | 4 | **CLOSED 2026-05-15** (wt/debt-011-replication-p1-v2) | KV propagation SLI + audit_outbox failback drain gate + DO sync-age SLI + R2-CRR indirect SLI. |
-| P2 | 3 | open | Post-GA polish (Neon SLI + replica-worker coverage + multipart-failover inventory). |
-| **Total** | **10** | **7 / 10 CLOSED** | |
+| P2 | 3 | **CLOSED 2026-05-15** (wt/debt-011-replication-p2) | Post-GA polish (Neon SLI + replica-worker coverage + multipart-failover inventory). |
+| **Total** | **10** | **10 / 10 CLOSED** | |
 
 All 10 tickets reference back to the canonical audit (`2026-05-15-replication-audit.md`) and the four new SLOs (`SLO-REPLICATION-LAG-{R2,D1,KV,DO}`) added to `slo_catalog.md` in the same commit.
 
