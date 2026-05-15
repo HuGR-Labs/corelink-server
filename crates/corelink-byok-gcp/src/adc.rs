@@ -318,11 +318,22 @@ fn current_unix_seconds() -> i64 {
 
 /// Base64 (standard, no-padding) encoder used by both the ciphertext payload
 /// shape and the AAD field of Cloud KMS REST `Encrypt` / `Decrypt` requests.
+///
+/// Retained as a `pub(crate)` helper to keep the ADC module
+/// self-contained for downstream call sites that may not pull `base64`
+/// directly. `real::native` now owns its own b64 helpers (gated to the
+/// production feature), so this is currently dead in the dependency
+/// graph — kept under `#[allow(dead_code)]` to avoid breaking the
+/// crate-level `dead_code = "deny"` lint while preserving the helper
+/// for future wire-format work.
+#[allow(dead_code)]
 pub(crate) fn b64_encode(bytes: &[u8]) -> String {
     base64::engine::general_purpose::STANDARD.encode(bytes)
 }
 
-/// Base64 (standard, padded) decoder.
+/// Base64 (standard, padded) decoder. See [`b64_encode`] for the
+/// retention rationale.
+#[allow(dead_code)]
 pub(crate) fn b64_decode(s: &str) -> Result<Vec<u8>, BYOKError> {
     base64::engine::general_purpose::STANDARD
         .decode(s)

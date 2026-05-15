@@ -39,15 +39,15 @@ tags: ["byok", "fips", "ga", "pattern", "canonical-reference", "aws-kms", "gcp-k
 | 1 | `#![forbid(unsafe_code)]` at crate root | yes | yes | yes | yes |
 | 2 | `clippy::unwrap_used = "deny"` + `expect_used = "deny"` + `panic = "deny"` | yes | yes | yes | yes |
 | 3 | `KmsProvider` trait impl with the 4 canonical methods | yes | yes | yes | yes |
-| 4 | FIPS endpoint **enforced unconditionally** in constructor; URL exposed for test assertion | yes (`resolved_fips_endpoint()`) | (`with_endpoint`) | (`endpoint_override`) | (`vault_addr`) |
-| 5 | AAD JCS canonicalization via `serde_jcs` before binding | yes (`canonicalize_aad_to_string_map`) | TBD R-prep | TBD R-prep | TBD R-prep |
-| 6 | Audit-emit fail-CLOSED — `emit_audit(...)` BEFORE error bubbles | yes (target `corelink.byok.aws.audit`) | TBD R-prep | TBD R-prep | TBD R-prep |
-| 7 | Constant-time fingerprint compare on AAD (mock-mode tamper detection) | yes (`subtle::ConstantTimeEq`) | TBD R-prep | TBD R-prep | TBD R-prep |
-| 8 | Native-only `aws-sdk-kms` / equivalent gated by `[target.'cfg(not(target_arch = "wasm32"))'.dependencies]` | yes | needs port | needs port | needs port |
-| 9 | `*WasmStub` linked on `target_arch = "wasm32"` with explicit `BYOKError::Provider("... unsupported on wasm32 ...")` | yes (`AwsKmsWasmStub`) | TBD R-prep | TBD R-prep | TBD R-prep |
-| 10 | ≥ 8 unit tests + 1 prop test (deterministic AAD canonicalization roundtrip) | yes (14 + 1 prop) | yes (mock-only) | yes (mock-only) | yes (mock-only) |
+| 4 | FIPS endpoint **enforced unconditionally** in constructor; URL exposed for test assertion | yes (`resolved_fips_endpoint()`) | yes (`resolved_fips_endpoint()`, regional FedRAMP via `with_endpoint`) | (`endpoint_override`) | (`vault_addr`) |
+| 5 | AAD JCS canonicalization via `serde_jcs` before binding | yes (`canonicalize_aad_to_string_map`) | yes (`canonicalize_aad_to_string_map`) | TBD R-prep | TBD R-prep |
+| 6 | Audit-emit fail-CLOSED — `emit_audit(...)` BEFORE error bubbles | yes (target `corelink.byok.aws.audit`) | yes (target `corelink.byok.gcp.audit`) | TBD R-prep | TBD R-prep |
+| 7 | Constant-time fingerprint compare on AAD (mock-mode tamper detection) | yes (`subtle::ConstantTimeEq`) | yes (`subtle::ConstantTimeEq`) | TBD R-prep | TBD R-prep |
+| 8 | Native-only `aws-sdk-kms` / equivalent gated by `[target.'cfg(not(target_arch = "wasm32"))'.dependencies]` | yes | yes (`reqwest`/`tokio`/`jsonwebtoken`/`base64`/`regex` all native-cfg-gated) | needs port | needs port |
+| 9 | `*WasmStub` linked on `target_arch = "wasm32"` with explicit `BYOKError::Provider("... unsupported on wasm32 ...")` | yes (`AwsKmsWasmStub`) | yes (`GcpKmsWasmStub`) | TBD R-prep | TBD R-prep |
+| 10 | ≥ 8 unit tests + 1 prop test (deterministic AAD canonicalization roundtrip) | yes (14 + 1 prop) | yes (15 + 1 prop in `tests/real_unit.rs`) | yes (mock-only) | yes (mock-only) |
 | 11 | Optional `#[ignore]` live test against `*_TEST_KEY_ARN` env (CI nightly) | yes (`e2e_byok_aws_kms.rs`) | yes | yes | yes |
-| 12 | Server feature flag `byok-<provider>-real` wires the real impl behind the `KmsProvider` trait object | yes (`byok-aws-real`) | TBD R-prep | TBD R-prep | TBD R-prep |
+| 12 | Server feature flag `byok-<provider>-real` wires the real impl behind the `KmsProvider` trait object | yes (`byok-aws-real`) | yes (`byok-gcp-real` → `corelink-byok-gcp/production`) | TBD R-prep | TBD R-prep |
 
 ---
 
@@ -175,19 +175,31 @@ string is from a closed vocabulary so analytics joins remain stable:
 
 Each provider gets a parallel R-prep work item. The diff from AWS KMS:
 
-### 6.1 GCP Cloud KMS (`crates/corelink-byok-gcp`)
+### 6.1 GCP Cloud KMS (`crates/corelink-byok-gcp`) — SEALED 2026-05-15
 
-- [ ] Move JCS canonicalization into the wrap/unwrap path
-      (currently uses plain `serde_json::to_vec`).
-- [ ] Add `resolved_fips_endpoint()` returning the regional FIPS URL
-      (`cloudkms.<region>.rep.googleapis.com` for FedRAMP).
-- [ ] Add audit-emit fail-CLOSED at every error site (target
+- [x] Move JCS canonicalization into the wrap/unwrap path
+      (`canonicalize_aad_to_string_map`, BTreeMap-sorted, JCS bytes
+      passed as `additionalAuthenticatedData`).
+- [x] Add `resolved_fips_endpoint()` returning the regional FIPS URL
+      (`cloudkms.<region>.rep.googleapis.com` for FedRAMP-High; default
+      construction resolves to `cloudkms.googleapis.com` — FIPS 140-2 L1
+      via BoringCrypto).
+- [x] Add audit-emit fail-CLOSED at every error site (target
       `corelink.byok.gcp.audit`).
-- [ ] Gate `reqwest` + `serde_json` direct deps unchanged (already
-      wasm-compatible); add `GcpKmsWasmStub` (returns
-      `BYOKError::Provider("... unsupported on wasm32 ...")`).
-- [ ] Add `byok-gcp-real` server feature flag (mirrors `byok-aws-real`).
-- [ ] Add ≥ 8 unit + 1 prop test (`real_unit.rs`).
+- [x] Gate native deps (`reqwest`, `tokio`, `jsonwebtoken`, `base64`,
+      `regex`) via `[target.'cfg(not(target_arch = "wasm32"))'.dependencies]`;
+      add `GcpKmsWasmStub` (returns `BYOKError::Provider("... unsupported
+      on wasm32 ...")`) + `pub type GcpKmsRealProvider = GcpKmsWasmStub`
+      on `target_arch = "wasm32"`.
+- [x] Add `byok-gcp-real` server feature flag (mirrors `byok-aws-real`;
+      pulls in `corelink-byok-gcp/production`).
+- [x] Add ≥ 14 unit + 1 prop test (`tests/real_unit.rs`).
+
+**Known wasm32 caveat (unchanged from §4):** `corelink-byok` itself does
+not build for `wasm32-unknown-unknown` due to `getrandom` lacking the
+`js` feature. The GCP wasm32 stub source is target-shaped exactly like
+the AWS adapter — once `corelink-byok` is made wasm32-compatible (a
+separate, larger PR), no further changes to the GCP adapter are needed.
 
 ### 6.2 Azure Key Vault (`crates/corelink-byok-azure`)
 

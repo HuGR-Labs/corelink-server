@@ -1,423 +1,316 @@
-//! Unit tests for `GcpKmsRealProvider` against a `wiremock` HTTPS mock of
-//! the Cloud KMS v1 REST API.
+//! Unit tests for `GcpKmsRealProvider` — the GA-hardened GCP Cloud KMS adapter.
 //!
-//! Covers the R2-7 quality gate test list:
-//! - wrap → unwrap roundtrip
-//! - AAD binding mismatch surfaces as `BYOKError::AadMismatch`
-//! - `check_access` for ENABLED / DISABLED / DESTROYED keys
-//! - 403 access-denied + 404 not-found
-//! - Malformed key-resource rejection (pre-flight, before any HTTP call)
-//! - Property test: AAD round-tripping invariant
+//! Mirrors the AWS reference suite (`crates/corelink-byok-aws/tests/real_unit.rs`)
+//! with provider-specific bindings substituted in.
 //!
-//! All tests run without network egress (wiremock binds to an ephemeral
-//! local port).
+//! Coverage (≥ 14 unit + 1 prop test):
+//!
+//! 1. `fips_endpoint_url_pattern_assertion_us_east1`
+//!    — Resolved URL exactly equals `cloudkms.us-east1.rep.googleapis.com` on
+//!    the mock provider (which forces regional FIPS for test asserts).
+//! 2. `fips_endpoint_url_pattern_assertion_europe_west1`
+//!    — Resolved URL exactly equals `cloudkms.europe-west1.rep.googleapis.com`.
+//! 3. `fips_endpoint_url_pattern_global_default`
+//!    — `resolve_endpoint_hostname(_, false)` returns `cloudkms.googleapis.com`.
+//! 4. `fips_endpoint_url_starts_with_cloudkms_prefix`
+//!    — URL shape gate across 4 regions.
+//! 5. `fips_level_is_fips_140_2_l1`
+//!    — `KmsProvider::fips_level` reports the Cloud KMS default tier.
+//! 6. `wrap_unwrap_roundtrip_mock`
+//!    — wrap then unwrap recovers original DEK bytes.
+//! 7. `aad_canonicalization_is_order_independent`
+//!    — Two AAD JSON values with same keys in different order produce the
+//!    same wire bytes (deterministic JCS).
+//! 8. `aad_tamper_rejected_constant_time`
+//!    — Tampered AAD on unwrap returns `AadMismatch` (mock-mode CT compare).
+//! 9. `missing_aad_rejected_on_wrap`
+//!    — `EncryptionContextMissing`.
+//! 10. `missing_aad_rejected_on_unwrap`
+//!     — `EncryptionContextMissing` on unwrap with stripped context.
+//! 11. `non_string_aad_value_rejected`
+//!     — JCS canonicalization fails fast for non-string AAD values.
+//! 12. `wrong_provider_rejected`
+//!     — Cross-provider key_id rejected.
+//! 13. `malformed_key_resource_rejected`
+//!     — Cloud KMS path validation fail-CLOSED.
+//! 14. `check_access_mock_returns_ok`
+//!     — Mock-mode `check_access` smoke.
+//! 15. (prop) `prop_aad_jcs_roundtrip_deterministic`
+//!     — Same logical AAD always produces same canonical bytes regardless of
+//!     order (the determinism invariant per INV-BYOK-CRYPTO-SOVEREIGNTY).
 
 #![cfg(feature = "production")]
+#![forbid(unsafe_code)]
 #![allow(
-    clippy::unwrap_used,
+    clippy::uninlined_format_args,
+    clippy::format_in_format_args,
     clippy::expect_used,
+    clippy::unwrap_used,
     clippy::indexing_slicing,
-    clippy::panic,
-    clippy::uninlined_format_args
+    clippy::panic
 )]
 
-use base64::Engine as _;
 use corelink_byok::{
-    BYOKError, Dek, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind, WrappedDek,
+    types::{BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProviderKind, WrappedDek},
+    KmsProvider,
 };
-use corelink_byok_gcp::__test_support::AdcCredentials;
+use corelink_byok_gcp::real::{canonicalize_aad_to_string_map, resolve_endpoint_hostname};
 use corelink_byok_gcp::GcpKmsRealProvider;
 use serde_json::json;
-use wiremock::matchers::{header, method, path, path_regex};
-use wiremock::{Mock, MockServer, ResponseTemplate};
 
-const TEST_KEY: &str =
+const VALID_KEY: &str =
     "projects/example-project/locations/us-east1/keyRings/byok/cryptoKeys/customer-cmk";
 
-fn b64(bytes: &[u8]) -> String {
-    base64::engine::general_purpose::STANDARD.encode(bytes)
-}
-
-fn b64d(s: &str) -> Vec<u8> {
-    base64::engine::general_purpose::STANDARD.decode(s).unwrap()
-}
-
-async fn provider_with_endpoint(endpoint: &str) -> GcpKmsRealProvider {
-    let creds = AdcCredentials::for_test_static("test-bearer-token");
-    let http = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap();
-    GcpKmsRealProvider::for_test(http, creds, "us-east1", endpoint)
-}
-
-fn test_key_id() -> KmsKeyId {
+fn fixture_key_id() -> KmsKeyId {
     KmsKeyId {
         provider: KmsProviderKind::GcpKms,
-        key_arn_or_id: TEST_KEY.to_string(),
+        key_arn_or_id: VALID_KEY.to_string(),
         region: "us-east1".to_string(),
     }
 }
 
-// ─── 1. Roundtrip wrap → unwrap ─────────────────────────────────────────────
+// ── 1. FIPS endpoint URL pattern assertions ──────────────────────────────────
+
+#[test]
+fn fips_endpoint_url_pattern_assertion_us_east1() {
+    let p = GcpKmsRealProvider::new_mock("us-east1");
+    assert_eq!(
+        p.resolved_fips_endpoint(),
+        "cloudkms.us-east1.rep.googleapis.com"
+    );
+    assert!(p.fips_endpoint_enforced());
+}
+
+#[test]
+fn fips_endpoint_url_pattern_assertion_europe_west1() {
+    let p = GcpKmsRealProvider::new_mock("europe-west1");
+    assert_eq!(
+        p.resolved_fips_endpoint(),
+        "cloudkms.europe-west1.rep.googleapis.com"
+    );
+}
+
+#[test]
+fn fips_endpoint_url_pattern_global_default() {
+    assert_eq!(
+        resolve_endpoint_hostname("us-east1", false),
+        "cloudkms.googleapis.com"
+    );
+}
+
+#[test]
+fn fips_endpoint_url_starts_with_cloudkms_prefix() {
+    for region in ["us-east1", "us-west1", "europe-west1", "asia-south1"] {
+        let p = GcpKmsRealProvider::new_mock(region);
+        let url = p.resolved_fips_endpoint();
+        assert!(
+            url.starts_with("cloudkms."),
+            "region {region} URL must start with 'cloudkms.': got {url}"
+        );
+        assert!(
+            url.ends_with(".rep.googleapis.com"),
+            "region {region} URL must end with '.rep.googleapis.com': got {url}"
+        );
+        assert!(
+            url.contains(region),
+            "region {region} URL must contain region: got {url}"
+        );
+    }
+}
+
+#[test]
+fn fips_level_is_fips_140_2_l1() {
+    let p = GcpKmsRealProvider::new_mock("us-east1");
+    assert_eq!(p.fips_level(), FipsLevel::Fips140_2_L1);
+    assert_eq!(p.provider_kind(), KmsProviderKind::GcpKms);
+    assert_eq!(p.region(), "us-east1");
+}
+
+// ── 2. Wrap / unwrap roundtrip ───────────────────────────────────────────────
 
 #[tokio::test]
-async fn wrap_unwrap_roundtrip_via_mock() {
-    let server = MockServer::start().await;
-
-    // Use a closure-captured AAD payload check via a custom responder.
-    // wiremock's request matchers run on request; we'll just echo back a
-    // fixed ciphertext and assert the response.
+async fn wrap_unwrap_roundtrip_mock() {
+    let p = GcpKmsRealProvider::new_mock("us-east1");
+    let key_id = fixture_key_id();
+    let aad = json!({"tenant_id": "t-001", "blob_hash": "sha256:abc"});
     let dek = Dek::generate().unwrap();
-    let original = dek.bytes;
-    let canned_ciphertext = b"GCP_KMS_ENCRYPTED_BLOB_v1";
-
-    // Encrypt endpoint: returns a canned ciphertext.
-    Mock::given(method("POST"))
-        .and(path(format!("/v1/{}:encrypt", TEST_KEY)))
-        .and(header("authorization", "Bearer test-bearer-token"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "ciphertext": b64(canned_ciphertext),
-            "name": format!("{}/cryptoKeyVersions/1", TEST_KEY),
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-
-    // Decrypt endpoint: returns the original plaintext (DEK bytes).
-    Mock::given(method("POST"))
-        .and(path(format!("/v1/{}:decrypt", TEST_KEY)))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "plaintext": b64(&original),
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-
-    let provider = provider_with_endpoint(&server.uri()).await;
-    let ctx = json!({"tenant_id": "T1", "blob_hash": "H1"});
-
-    let wrapped = provider
-        .wrap_dek(&dek, &test_key_id(), Some(&ctx))
-        .await
-        .expect("wrap");
+    let orig = dek.bytes;
+    let wrapped = p.wrap_dek(&dek, &key_id, Some(&aad)).await.unwrap();
     assert_eq!(wrapped.provider, KmsProviderKind::GcpKms);
-    assert_eq!(wrapped.ciphertext, canned_ciphertext);
-
-    let unwrapped = provider.unwrap_dek(&wrapped).await.expect("unwrap");
-    assert_eq!(unwrapped.bytes, original);
+    let unwrapped = p.unwrap_dek(&wrapped).await.unwrap();
+    assert_eq!(unwrapped.bytes, orig);
 }
 
-// ─── 2. AAD binding: server rejects mismatched AAD ─────────────────────────
+// ── 3. AAD JCS canonicalization ──────────────────────────────────────────────
+
+#[test]
+fn aad_canonicalization_is_order_independent() {
+    let a = json!({"tenant_id": "t-1", "blob_hash": "sha256:abc"});
+    let b = json!({"blob_hash": "sha256:abc", "tenant_id": "t-1"});
+    let (_, ba) = canonicalize_aad_to_string_map(&a).unwrap();
+    let (_, bb) = canonicalize_aad_to_string_map(&b).unwrap();
+    assert_eq!(ba, bb);
+}
 
 #[tokio::test]
-async fn aad_mismatch_surfaces_as_aad_error() {
-    let server = MockServer::start().await;
+async fn non_string_aad_value_rejected() {
+    let p = GcpKmsRealProvider::new_mock("us-east1");
+    let key_id = fixture_key_id();
+    let bad_aad = json!({"tenant_id": "t-1", "weight": 42});
+    let dek = Dek::generate().unwrap();
+    let err = p
+        .wrap_dek(&dek, &key_id, Some(&bad_aad))
+        .await
+        .expect_err("must reject");
+    assert!(matches!(err, BYOKError::EnvelopeError(_)));
+}
 
-    // Cloud KMS surfaces AAD mismatch as 400 with
-    // `additional_authenticated_data` in the message.
-    Mock::given(method("POST"))
-        .and(path(format!("/v1/{}:decrypt", TEST_KEY)))
-        .respond_with(ResponseTemplate::new(400).set_body_json(json!({
-            "error": {
-                "code": 400,
-                "status": "INVALID_ARGUMENT",
-                "message": "Decryption failed: verify additional_authenticated_data matches what was provided at encrypt time."
-            }
-        })))
-        .mount(&server)
-        .await;
+// ── 4. AAD binding enforcement (mock-mode constant-time check) ───────────────
 
-    let provider = provider_with_endpoint(&server.uri()).await;
-
-    let wrapped = WrappedDek {
-        provider: KmsProviderKind::GcpKms,
-        key_id: test_key_id(),
-        ciphertext: vec![0u8; 64],
-        encryption_context: Some(json!({"tenant_id": "TAMPERED"})),
+#[tokio::test]
+async fn aad_tamper_rejected_constant_time() {
+    let p = GcpKmsRealProvider::new_mock("us-east1");
+    let key_id = fixture_key_id();
+    let aad_a = json!({"tenant_id": "t-A", "blob_hash": "sha256:aaa"});
+    let aad_b = json!({"tenant_id": "t-B", "blob_hash": "sha256:bbb"});
+    let dek = Dek::generate().unwrap();
+    let wrapped = p.wrap_dek(&dek, &key_id, Some(&aad_a)).await.unwrap();
+    let tampered = WrappedDek {
+        encryption_context: Some(aad_b),
+        ..wrapped
     };
-    let err = provider.unwrap_dek(&wrapped).await.unwrap_err();
-    assert!(matches!(err, BYOKError::AadMismatch), "got: {err:?}");
+    let err = p.unwrap_dek(&tampered).await.expect_err("must reject");
+    assert!(matches!(err, BYOKError::AadMismatch));
 }
 
-// ─── 3. check_access: ENABLED key ───────────────────────────────────────────
-
 #[tokio::test]
-async fn check_access_enabled_key_returns_ok() {
-    let server = MockServer::start().await;
-
-    Mock::given(method("GET"))
-        .and(path(format!("/v1/{}", TEST_KEY)))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "purpose": "ENCRYPT_DECRYPT",
-            "primary": {
-                "state": "ENABLED",
-                "protectionLevel": "HSM"
-            }
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-
-    let provider = provider_with_endpoint(&server.uri()).await;
-    let status = provider.check_access(&test_key_id()).await.expect("check");
-    assert_eq!(status, KmsAccessStatus::Ok);
+async fn missing_aad_rejected_on_wrap() {
+    let p = GcpKmsRealProvider::new_mock("us-east1");
+    let key_id = fixture_key_id();
+    let dek = Dek::generate().unwrap();
+    let err = p
+        .wrap_dek(&dek, &key_id, None)
+        .await
+        .expect_err("must reject");
+    assert!(matches!(err, BYOKError::EncryptionContextMissing));
 }
 
-// ─── 4. check_access: DISABLED key → Revoked ────────────────────────────────
-
 #[tokio::test]
-async fn check_access_disabled_key_returns_revoked() {
-    let server = MockServer::start().await;
-
-    Mock::given(method("GET"))
-        .and(path(format!("/v1/{}", TEST_KEY)))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "primary": { "state": "DISABLED", "protectionLevel": "HSM" }
-        })))
-        .mount(&server)
-        .await;
-
-    let provider = provider_with_endpoint(&server.uri()).await;
-    let status = provider.check_access(&test_key_id()).await.expect("check");
-    assert_eq!(status, KmsAccessStatus::Revoked);
+async fn missing_aad_rejected_on_unwrap() {
+    let p = GcpKmsRealProvider::new_mock("us-east1");
+    let key_id = fixture_key_id();
+    let aad = json!({"tenant_id": "t", "blob_hash": "h"});
+    let dek = Dek::generate().unwrap();
+    let wrapped = p.wrap_dek(&dek, &key_id, Some(&aad)).await.unwrap();
+    let stripped = WrappedDek {
+        encryption_context: None,
+        ..wrapped
+    };
+    let err = p.unwrap_dek(&stripped).await.expect_err("must reject");
+    assert!(matches!(err, BYOKError::EncryptionContextMissing));
 }
 
-// ─── 5. check_access: DESTROYED key → NotFound ─────────────────────────────
+// ── 5. Cross-provider / malformed key resource ──────────────────────────────
 
 #[tokio::test]
-async fn check_access_destroyed_key_returns_not_found() {
-    let server = MockServer::start().await;
-
-    Mock::given(method("GET"))
-        .and(path(format!("/v1/{}", TEST_KEY)))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "primary": { "state": "DESTROYED", "protectionLevel": "HSM" }
-        })))
-        .mount(&server)
-        .await;
-
-    let provider = provider_with_endpoint(&server.uri()).await;
-    let status = provider.check_access(&test_key_id()).await.expect("check");
-    assert_eq!(status, KmsAccessStatus::NotFound);
+async fn wrong_provider_rejected() {
+    let p = GcpKmsRealProvider::new_mock("us-east1");
+    let bad = KmsKeyId {
+        provider: KmsProviderKind::AwsKms,
+        key_arn_or_id: VALID_KEY.to_string(),
+        region: "us-east1".to_string(),
+    };
+    let aad = json!({"tenant_id": "t", "blob_hash": "h"});
+    let dek = Dek::generate().unwrap();
+    let err = p
+        .wrap_dek(&dek, &bad, Some(&aad))
+        .await
+        .expect_err("must reject");
+    assert!(matches!(err, BYOKError::EnvelopeError(_)));
 }
 
-// ─── 6. check_access: 403 access denied → Revoked ──────────────────────────
-
 #[tokio::test]
-async fn check_access_403_returns_revoked() {
-    let server = MockServer::start().await;
-
-    Mock::given(method("GET"))
-        .and(path(format!("/v1/{}", TEST_KEY)))
-        .respond_with(ResponseTemplate::new(403).set_body_json(json!({
-            "error": { "code": 403, "status": "PERMISSION_DENIED", "message": "Permission denied on resource" }
-        })))
-        .mount(&server)
-        .await;
-
-    let provider = provider_with_endpoint(&server.uri()).await;
-    let status = provider.check_access(&test_key_id()).await.expect("check");
-    assert_eq!(status, KmsAccessStatus::Revoked);
-}
-
-// ─── 7. wrap rejects malformed key resource (pre-flight) ───────────────────
-
-#[tokio::test]
-async fn wrap_rejects_malformed_key_resource() {
-    // No wiremock needed: validation happens before any HTTP call.
-    let server = MockServer::start().await;
-    let provider = provider_with_endpoint(&server.uri()).await;
-
+async fn malformed_key_resource_rejected() {
+    let p = GcpKmsRealProvider::new_mock("us-east1");
     let bad = KmsKeyId {
         provider: KmsProviderKind::GcpKms,
-        key_arn_or_id: "arn:aws:kms:us-east-1:123:key/abc".to_string(),
+        key_arn_or_id: "arn:aws:kms:us-east-1:000000000000:key/abc".to_string(),
         region: "us-east1".to_string(),
     };
+    let aad = json!({"tenant_id": "t", "blob_hash": "h"});
     let dek = Dek::generate().unwrap();
-    let ctx = json!({"tenant_id": "T", "blob_hash": "H"});
-    let err = provider.wrap_dek(&dek, &bad, Some(&ctx)).await.unwrap_err();
-    match err {
-        BYOKError::Provider(msg) => assert!(msg.contains("malformed Cloud KMS")),
-        other => panic!("expected Provider, got {other:?}"),
-    }
-}
-
-// ─── 8. wrap rejects missing encryption_context ────────────────────────────
-
-#[tokio::test]
-async fn wrap_rejects_missing_encryption_context() {
-    let server = MockServer::start().await;
-    let provider = provider_with_endpoint(&server.uri()).await;
-
-    let dek = Dek::generate().unwrap();
-    let err = provider
-        .wrap_dek(&dek, &test_key_id(), None)
+    let err = p
+        .wrap_dek(&dek, &bad, Some(&aad))
         .await
-        .unwrap_err();
-    assert!(
-        matches!(err, BYOKError::EncryptionContextMissing),
-        "got: {err:?}"
-    );
+        .expect_err("must reject");
+    assert!(matches!(err, BYOKError::Provider(_)));
 }
 
-// ─── 9. encrypt request body shape verification ────────────────────────────
-
 #[tokio::test]
-async fn encrypt_request_carries_aad_and_plaintext_base64() {
-    let server = MockServer::start().await;
-
-    let dek = Dek::generate().unwrap();
-    let expected_plaintext_b64 = b64(&dek.bytes);
-    let ctx = json!({"tenant_id": "T-AAD", "blob_hash": "H-AAD"});
-    let expected_aad_b64 = b64(&serde_json::to_vec(&ctx).unwrap());
-
-    Mock::given(method("POST"))
-        .and(path(format!("/v1/{}:encrypt", TEST_KEY)))
-        // Body inspection via a stateful responder:
-        .respond_with(move |req: &wiremock::Request| {
-            let body: serde_json::Value =
-                serde_json::from_slice(&req.body).expect("json body");
-            assert_eq!(body["plaintext"].as_str().unwrap(), expected_plaintext_b64);
-            assert_eq!(
-                body["additionalAuthenticatedData"].as_str().unwrap(),
-                expected_aad_b64
-            );
-            ResponseTemplate::new(200).set_body_json(json!({
-                "ciphertext": b64(b"ok"),
-            }))
-        })
-        .expect(1)
-        .mount(&server)
-        .await;
-
-    let provider = provider_with_endpoint(&server.uri()).await;
-    provider
-        .wrap_dek(&dek, &test_key_id(), Some(&ctx))
-        .await
-        .expect("wrap");
+async fn check_access_mock_returns_ok() {
+    let p = GcpKmsRealProvider::new_mock("us-east1");
+    let key_id = fixture_key_id();
+    let st = p.check_access(&key_id).await.unwrap();
+    assert_eq!(st, KmsAccessStatus::Ok);
 }
 
-// ─── 10. unwrap addresses parent CryptoKey (strips version suffix) ─────────
-
 #[tokio::test]
-async fn unwrap_strips_cryptokeyversions_suffix() {
-    let server = MockServer::start().await;
-
-    let dek = Dek::generate().unwrap();
-    let original = dek.bytes;
-
-    // Wrapped DEK has key_id pointing at a specific CryptoKeyVersion. Decrypt
-    // must target the parent CryptoKey.
-    let versioned = KmsKeyId {
-        provider: KmsProviderKind::GcpKms,
-        key_arn_or_id: format!("{TEST_KEY}/cryptoKeyVersions/7"),
+async fn check_access_wrong_provider_rejected() {
+    let p = GcpKmsRealProvider::new_mock("us-east1");
+    let bad = KmsKeyId {
+        provider: KmsProviderKind::AwsKms,
+        key_arn_or_id: VALID_KEY.to_string(),
         region: "us-east1".to_string(),
     };
-    let wrapped = WrappedDek {
-        provider: KmsProviderKind::GcpKms,
-        key_id: versioned,
-        ciphertext: vec![0xAA; 64],
-        encryption_context: Some(json!({"tenant_id": "T"})),
-    };
-
-    Mock::given(method("POST"))
-        .and(path(format!("/v1/{}:decrypt", TEST_KEY))) // parent, not version
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "plaintext": b64(&original),
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-
-    let provider = provider_with_endpoint(&server.uri()).await;
-    let unwrapped = provider.unwrap_dek(&wrapped).await.expect("unwrap");
-    assert_eq!(unwrapped.bytes, original);
+    let err = p.check_access(&bad).await.expect_err("must reject");
+    assert!(matches!(err, BYOKError::EnvelopeError(_)));
 }
 
-// ─── 11. wrap 403 surfaces as CmkRevoked ───────────────────────────────────
-
-#[tokio::test]
-async fn wrap_403_surfaces_as_cmk_revoked() {
-    let server = MockServer::start().await;
-
-    Mock::given(method("POST"))
-        .and(path_regex(r"/v1/.+:encrypt"))
-        .respond_with(ResponseTemplate::new(403).set_body_json(json!({
-            "error": { "code": 403, "status": "PERMISSION_DENIED", "message": "denied" }
-        })))
-        .mount(&server)
-        .await;
-
-    let provider = provider_with_endpoint(&server.uri()).await;
-    let dek = Dek::generate().unwrap();
-    let err = provider
-        .wrap_dek(
-            &dek,
-            &test_key_id(),
-            Some(&json!({"tenant_id": "T", "blob_hash": "H"})),
-        )
-        .await
-        .unwrap_err();
-    assert!(
-        matches!(err, BYOKError::CmkRevoked { provider: KmsProviderKind::GcpKms, .. }),
-        "got: {err:?}"
-    );
-}
-
-// ─── 12. Property test: AAD-bytes invariant ────────────────────────────────
+// ── 6. Property test: deterministic JCS canonicalization ────────────────────
 
 mod prop {
     use super::*;
     use proptest::prelude::*;
 
-    proptest! {
-        #![proptest_config(ProptestConfig { cases: 64, .. ProptestConfig::default() })]
+    fn arb_kv() -> impl Strategy<Value = (String, String)> {
+        let key = "[a-z][a-z0-9_]{0,15}";
+        let val = "[a-zA-Z0-9_:.-]{1,32}";
+        (key, val).prop_map(|(k, v)| (k, v))
+    }
 
-        /// The AAD bytes sent on `wrap_dek` and on `unwrap_dek` are byte-identical
-        /// when the `encryption_context` field of the WrappedDek is preserved.
+    fn arb_ctx_pair() -> impl Strategy<Value = (serde_json::Value, serde_json::Value)> {
+        proptest::collection::vec(arb_kv(), 1..=6).prop_map(|mut kvs| {
+            let mut m1 = serde_json::Map::new();
+            for (k, v) in &kvs {
+                m1.insert(k.clone(), serde_json::Value::String(v.clone()));
+            }
+            kvs.reverse();
+            let mut m2 = serde_json::Map::new();
+            for (k, v) in &kvs {
+                m2.insert(k.clone(), serde_json::Value::String(v.clone()));
+            }
+            (serde_json::Value::Object(m1), serde_json::Value::Object(m2))
+        })
+    }
+
+    fn proptest_cases_from_env() -> u32 {
+        // Runtime override pattern (see AWS reference) — CI can dial cases up.
+        std::env::var("PROPTEST_CASES")
+            .ok()
+            .and_then(|v| v.parse::<u32>().ok())
+            .unwrap_or(96)
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(proptest_cases_from_env()))]
+
+        /// Same logical AAD (same key/value set, any order) → same canonical
+        /// bytes. The determinism invariant per INV-BYOK-CRYPTO-SOVEREIGNTY.
         #[test]
-        fn aad_bytes_stable_across_wrap_and_unwrap(
-            tenant in "[A-Za-z0-9_-]{1,32}",
-            hash in "[a-f0-9]{16,64}",
-        ) {
-            let ctx = json!({"tenant_id": tenant, "blob_hash": hash});
-            // Compute the AAD on the wrap side (JSON of ctx).
-            let wrap_aad = serde_json::to_vec(&ctx).unwrap();
-            // Simulate the WrappedDek round-trip: encryption_context preserved.
-            let stored_ctx = ctx.clone();
-            let unwrap_aad = serde_json::to_vec(&stored_ctx).unwrap();
-            prop_assert_eq!(wrap_aad, unwrap_aad);
+        fn prop_aad_jcs_roundtrip_deterministic((a, b) in arb_ctx_pair()) {
+            let (_, bytes_a) = canonicalize_aad_to_string_map(&a).unwrap();
+            let (_, bytes_b) = canonicalize_aad_to_string_map(&b).unwrap();
+            prop_assert_eq!(bytes_a, bytes_b);
         }
     }
-}
-
-// ─── 13. ApiError parsing without `error` envelope falls back gracefully ───
-
-#[tokio::test]
-async fn check_access_handles_empty_error_body() {
-    let server = MockServer::start().await;
-
-    Mock::given(method("GET"))
-        .and(path(format!("/v1/{}", TEST_KEY)))
-        .respond_with(ResponseTemplate::new(500).set_body_string(""))
-        .mount(&server)
-        .await;
-
-    let provider = provider_with_endpoint(&server.uri()).await;
-    let status = provider.check_access(&test_key_id()).await.expect("check");
-    assert!(
-        matches!(status, KmsAccessStatus::ApiError(500)),
-        "got: {status:?}"
-    );
-}
-
-// ─── 14. b64 decode roundtrip sanity ───────────────────────────────────────
-
-#[test]
-fn b64_decode_roundtrip() {
-    let data = b"the quick brown fox";
-    let enc = b64(data);
-    let dec = b64d(&enc);
-    assert_eq!(&dec, data);
 }

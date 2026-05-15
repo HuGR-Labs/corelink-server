@@ -36,10 +36,23 @@ thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 zeroize = { workspace = true }
-tokio = { workspace = true }
 tracing = { workspace = true }
 
-# Production-only deps (gated behind `production` feature).
+# RFC 8785 JCS canonical JSON — used for AAD / encryption_context
+# canonicalization per INV-BYOK-CRYPTO-SOVEREIGNTY. Same canonical bytes
+# reproducible across architectures (native, wasm32) so AAD-bound
+# ciphertext can be verified anywhere.
+serde_jcs = { workspace = true }
+
+# Constant-time byte comparison for AAD fingerprint / digest checks
+# (mock-mode tamper detection; production GCP path delegates to
+# server-side AEAD verification which is itself constant-time).
+subtle = { workspace = true }
+
+# Production-only deps (gated behind `production` feature). Pulled in
+# only on native targets — wasm32 always links the `GcpKmsWasmStub`.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { workspace = true }
 reqwest = { workspace = true, optional = true }
 jsonwebtoken = { version = "9.3", optional = true }
 base64 = { workspace = true, optional = true }
