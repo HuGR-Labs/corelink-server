@@ -1,0 +1,88 @@
+[package]
+name = "e2e-dsr"
+description = "R3-3 end-to-end DSR (Data Subject Rights) self-service harness wiring the WI-S11-001 corelink-dsr endpoint (Access / Portability / Rectification / Erasure / Restriction / Objection submit + JWT receipt + status poll) + the WI-S11-002 corelink-privacy-erasure-worker cross-backend 12-fanout (8 effective + 4 pseudonymized) + 24h verification sweep + BLAKE3-signed report + R2 evidence-dsr signed URL stub + per-tenant restriction/objection policy ledger + WebAuthn step-up MFA stub + audit fail-CLOSED envelope per ADR-S11-002. Six happy DSR rights, five adversarial paths (MFA reject, JWT tamper/expiry, partial backend failure, SLA breach), and a 500-case proptest pinning idempotency, atomicity, and audit-chain integrity across random DSR sequences. All in-memory fakes; no network IO under default `cargo test -p e2e-dsr`. Charter charter-trait-abstraction-defer applies."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+corelink-dsr = { path = "../../crates/corelink-dsr" }
+corelink-privacy-erasure-worker = { path = "../../crates/corelink-privacy-erasure-worker" }
+thiserror = { workspace = true }
+uuid = { workspace = true, features = ["v7", "serde"] }
+blake3 = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[[test]]
+name = "happy_access"
+path = "tests/happy_access.rs"
+
+[[test]]
+name = "happy_erasure"
+path = "tests/happy_erasure.rs"
+
+[[test]]
+name = "happy_portability"
+path = "tests/happy_portability.rs"
+
+[[test]]
+name = "happy_rectification"
+path = "tests/happy_rectification.rs"
+
+[[test]]
+name = "happy_restriction"
+path = "tests/happy_restriction.rs"
+
+[[test]]
+name = "happy_objection"
+path = "tests/happy_objection.rs"
+
+[[test]]
+name = "adversarial_mfa_failed"
+path = "tests/adversarial_mfa_failed.rs"
+
+[[test]]
+name = "adversarial_receipt_signature_invalid"
+path = "tests/adversarial_receipt_signature_invalid.rs"
+
+[[test]]
+name = "adversarial_erasure_partial_failure"
+path = "tests/adversarial_erasure_partial_failure.rs"
+
+[[test]]
+name = "adversarial_sla_breach"
+path = "tests/adversarial_sla_breach.rs"
+
+[[test]]
+name = "adversarial_receipt_replay_after_expiry"
+path = "tests/adversarial_receipt_replay_after_expiry.rs"
+
+[[test]]
+name = "prop_dsr_invariants"
+path = "tests/prop_dsr_invariants.rs"

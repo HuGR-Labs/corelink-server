@@ -141,6 +141,12 @@ members = [
     # Checkout → first PAT → R2 CAS write + BLAKE3 verify. In-memory fakes by
     # default; live `STRIPE_SECRET_KEY_TEST`-gated tests behind `--ignored`.
     "tests/e2e-signup-flow",
+    # R3-3 end-to-end DSR rights harness: access / portability / rectification /
+    # erasure / restriction / objection submit → MFA stub → JWT receipt → status
+    # poll → 12-backend erasure worker → 24h verification + signed report. Six
+    # happy DSR rights + five adversarial paths + 500-case property test. All
+    # in-memory fakes; no network IO under default `cargo test -p e2e-dsr`.
+    "tests/e2e-dsr",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
