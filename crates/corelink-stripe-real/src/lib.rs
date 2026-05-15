@@ -49,11 +49,18 @@
 #![deny(missing_debug_implementations)]
 
 pub mod client;
+pub mod dlq;
 pub mod error;
 pub mod retry;
 pub mod webhook;
 
 pub use client::{StripeRealClient, StripeRealClientBuilder};
+pub use dlq::{
+    DlqError, DlqQuarantineOutcome, DlqReplayOutcome, InMemoryWebhookDlqStore,
+    WebhookDlqRow, WebhookDlqStore, DEFAULT_DLQ_TTL_MS, DLQ_DEPTH_GAUGE,
+    DLQ_OLDEST_AGE_SECONDS_GAUGE, DLQ_PAGE_OLDEST_AGE_SECONDS, DLQ_PRUNED_TOTAL,
+    DLQ_QUARANTINED_TOTAL, DLQ_REPLAYED_TOTAL, DLQ_WARN_DEPTH,
+};
 pub use error::{StripeError, WebhookVerifyError};
 pub use retry::{RetryPolicy, DEFAULT_MAX_RETRIES};
 pub use webhook::{verify_webhook_signature, DEFAULT_TOLERANCE_SECONDS};
