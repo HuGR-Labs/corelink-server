@@ -91,7 +91,7 @@ Planejamento: **Security + Availability + Confidentiality + Privacy + Processing
 | CC7.1..7.5    | Detection + incident response                        | Observability + runbooks + incident template   | EVT-019               |
 | CC8.1         | Change management                                    | PR review, progressive rollout, dual-approval  | EVT-001 + EVT-038           |
 | CC9.1         | Risk mitigation                                      | Compensating controls via `waiver.md`          | EVT-039                     |
-| CC9.2         | Vendor management                                    | `§7 sub-processors`                            | EVT-040                     |
+| CC9.2         | Vendor management                                    | `§7 sub-processors` + `specs/_compliance/VENDOR-RISK-REGISTER.md` (19 vendors; methodology + DD files + quarterly review runbook) | EVT-040                     |
 
 ### 2.3 Mapping — Availability (A series)
 
