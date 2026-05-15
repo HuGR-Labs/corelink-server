@@ -176,6 +176,7 @@ Invariantes introduzidas via SOTA elevation dos sprint contracts S-07..S-19 (Lot
 | **INV-ADMIN-MFA-FRESHNESS** | Admin op exige MFA timestamp ≤ 30 min | HIGH | Stale MFA = 401 + force re-MFA (CTRL-AUTH-010) | Middleware check + signed timestamp + clock-skew tolerance ≤ 60s | S-13 |
 | **INV-BYOK-CRYPTO-SOVEREIGNTY** | Customer revoga CMK → cache inacessível ≤ 5 min | CRITICAL | Nenhum bypass via cached unwrapped DEK > 5 min; customer real control | DEK cache TTL 5 min hard + KMS access check 60s + INV propagation + **TLA+ em `specs/tla/byok_envelope_aad.tla`** (DEBT-005 closure 2026-05-15; AAD binding + cache-TTL liveness; full per-region race tracked separately in FT-7 `byok_dek_race.tla`) | S-14 |
 | **INV-REGION-NO-CROSS-LEAK** | Blob/AC/billing tagged com region; cross-region read = 403 | CRITICAL | Schrems II + LGPD Art. 33 baseline; 30k property test 0 leaks | Insert checks + property test + custom domain routing + **TLA+ em `specs/tla/failover_no_split_brain.tla`** (DEBT-005 closure 2026-05-15; write-lease handoff side) | S-14 |
+| **INV-FAILOVER-NO-SPLIT-BRAIN** | Coordinator NEVER allows two regions to claim `Primary` simultaneously; promotion sequence holds singleton DO lock, asserts (a) source==current primary, (b) no other region in Primary state, (c) target was in Replica state | CRITICAL | `corelink-replication-coordinator::Coordinator::promote` holds Mutex; rejects with `SplitBrainAttempted` if any other region is already Primary; audit-emit-BEFORE-state-mutation fail-CLOSED so a denied promotion leaves the cluster unchanged | Property test `prop_coordinator::at_most_one_primary` (2000 cases) + 3 e2e scenarios (`split_brain_reject::*` covering registration-time + promote-time + audit-fail-closed paths) | **`replica_failover.tla` ✅ GREEN** (Wave 15 — 2026-05-15) — `InvAtMostOnePrimary` proves the singleton-primary invariant; complements `failover_no_split_brain.tla` (write-lease side) |
 | **INV-ERASURE-ATTESTATION-SIGNED** | Erasure de BYOK tenant produz attestation Ed25519-signed verifiable | HIGH | Customer + auditor exigem proof; NIST SP 800-88 Rev.1 compliant | Per-erasure attestation + 7y retention + verify endpoint | S-14 |
 | **INV-ONBOARD-DPA-FIRST** | Subscription activation requires DPA signed primeiro | HIGH | Race condition prevented; nenhum customer billed sem DPA | D1 lock + transactional check + property test 10k concurrent | S-19 |
 | **INV-ONBOARD-ATOMIC-PROVISIONING** | Tenant provisioning atomic | HIGH | Tenant + DPA + Stripe customer ID em single tx; failure rollback all | D1 transaction + chaos test Stripe outage | S-19 |
@@ -680,7 +681,6 @@ Por 6 meses (até 2026-10-24), estes aliases continuam referenciáveis mas dispa
 | `INV-DATA-BLOB-NO-ZOMBIE` | INV-GC-002 |
 | `INV-DATA-AC-REFS-EXIST` | INV-AC-OUTPUTS-VALID |
 | `INV-DATA-TENANT-ISOLATION` | INV-TENANT-ISOLATION |
-| `INV-FAILOVER-NO-SPLIT-BRAIN` (sibling property to write-lease side; coined em `failover_no_split_brain.tla` wave-12 + reused em `replica_failover.tla` wave-15) | INV-REGION-NO-CROSS-LEAK |
 
 ---
 
