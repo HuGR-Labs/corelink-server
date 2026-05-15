@@ -80,6 +80,7 @@
 
 pub mod audit;
 pub mod crm;
+pub mod encryption;
 pub mod error;
 pub mod form;
 pub mod hubspot;
@@ -93,6 +94,13 @@ pub use audit::{
     InquiryAuditEmitError, InquiryAuditEventType, InquiryAuditRecord, InquiryAuditSink,
 };
 pub use crm::{CrmClient, CrmEntryId, CrmError, FailingCrmClient, InMemoryCrmClient};
+pub use encryption::{
+    anonymised_slack_summary, build_aad, company_hash_hex, company_initials, email_domain,
+    payload_hash_hex, seal_inquiry, unseal_inquiry, EncryptedInquiryPayload,
+    FailingInquiryPayloadEncryptor, InMemoryInquiryPayloadEncryptor, InquiryAadContext,
+    InquiryEncryptionError, InquiryPayloadEncryptor, SanitizedInquiryMetadata, SealedInquiry,
+    UnsealedInquiryPii, SYSTEM_CMK_TENANT_TAG,
+};
 pub use hubspot::{
     classify_retry, is_residency_routable, HubSpotConfigError, HubSpotCrmClient, HubSpotHttp,
     HubSpotHttpError, HubSpotMethod, HubSpotRegion, HubSpotRequest, HubSpotResponse, HubSpotSleeper,
@@ -104,7 +112,7 @@ pub use form::{
     BYOKRequirementsKind, EnterpriseInquiryForm, IdempotencyKey, InquiryId, InquiryReceipt,
     InquiryStatus, ResidencyKind, Role,
 };
-pub use ledger::{EnterpriseInquiryLedger, InquiryRecord, SlaBreach};
+pub use ledger::{EnterpriseInquiryLedger, InquiryRecord, LedgerEncryptionConfig, SlaBreach};
 pub use mailer::{AutoReplyError, AutoReplyMailer, FailingAutoReplyMailer, InMemoryAutoReplyMailer};
 pub use outbox::{OutboxRecord, OutboxStatus};
 pub use slack::{

@@ -4,6 +4,7 @@ use thiserror::Error;
 
 use crate::audit::InquiryAuditEmitError;
 use crate::crm::CrmError;
+use crate::encryption::InquiryEncryptionError;
 use crate::mailer::AutoReplyError;
 use crate::slack::SlackError;
 
@@ -44,6 +45,15 @@ pub enum EnterpriseInquiryError {
     /// `RB-FM-ENTERPRISE-HANDOFF-PARTIAL`.
     #[error("compensation failed: {0}")]
     Compensation(String),
+    /// Inquiry payload envelope encryption / decryption failure (R2-11).
+    /// Surfaces when the BYOK seal at ledger ingress rejects (revoked
+    /// CMK, throttled, transport) or when the HubSpot adapter's unseal
+    /// at the decryption boundary rejects (AAD mismatch, AES-GCM tag
+    /// mismatch). When raised on the seal path the ledger does NOT
+    /// persist any D1 row or outbox entry (atomic rollback per
+    /// CTRL-PRIV-001).
+    #[error("inquiry payload encryption failed: {0}")]
+    Encryption(#[from] InquiryEncryptionError),
     /// Internal invariant violation surfaced via `Mutex` poisoning or
     /// state corruption. Treat as a non-recoverable fault: the caller
     /// MUST tear down the ledger instance + reconstruct from the
