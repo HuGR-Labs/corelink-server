@@ -1,0 +1,109 @@
+name: Backup Daily Verify
+
+# Continuous (daily) backup-verification harness. Complements the
+# quarterly cold-restore drill (GAP-15) and the monthly first-Monday
+# verification cycle (RB-BACKUP-VERIFICATION). Runs every day at 05:00
+# UTC; alerts on any tier returning stale / corrupt / restore_failed.
+
+on:
+  schedule:
+    # Daily at 05:00 UTC.
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+    inputs:
+      env:
+        description: "CoreLink env (staging | production)"
+        required: false
+        default: "staging"
+      dry_run:
+        description: "If true, run in fake/in-memory mode (no live calls)"
+        required: false
+        default: "true"
+
+permissions:
+  contents: read
+  issues: write   # SEV-2 / SEV-1 alerts via GitHub issue
+  actions: read
+
+concurrency:
+  group: backup-daily-verify
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify backups (daily)
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    env:
+      CORELINK_ENV: ${{ github.event.inputs.env || 'staging' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Resolve dry-run flag
+        id: mode
+        run: |
+          set -euo pipefail
+          DRY="${{ github.event.inputs.dry_run }}"
+          # Scheduled runs default to dry-run UNTIL the CF Worker handler
+          # is wired (charter trait-abstraction-defer). Flip to "false"
+          # post-handler-ship via workflow_dispatch.
+          DRY="${DRY:-true}"
+          echo "dry=${DRY}" >> "$GITHUB_OUTPUT"
+
+      - name: Run daily verification
+        id: verify
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          ARGS=("--env" "${CORELINK_ENV}")
+          if [[ "${{ steps.mode.outputs.dry }}" == "true" ]]; then
+            ARGS+=("--dry-run")
+          fi
+          bash scripts/backup-daily-verify.sh "${ARGS[@]}"
+          echo "exit=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Upload verification log + metrics
+        if: always()
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: backup-verification-${{ github.run_id }}
+          path: |
+            .backup-verify-logs/
+            .backup-verify-metrics/
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Alert on verification failure
+        if: steps.verify.outcome == 'failure'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const dry = '${{ steps.mode.outputs.dry }}';
+            const severity = dry === 'true' ? 'SEV-3' : 'SEV-2';
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `${severity}: daily backup verification failed (run ${context.runId})`,
+              labels: ['backup-verify', 'r-prep', severity.toLowerCase()],
+              body: [
+                `Daily backup verification harness reported a failure.`,
+                ``,
+                `**Mode:** dry_run=${dry}`,
+                `**Env:** ${process.env.CORELINK_ENV}`,
+                `**Workflow run:** ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+                ``,
+                `**Action required:**`,
+                `- Follow specs/_runbooks/RB-BACKUP-VERIFICATION-FAILURE.md`,
+                `- Triage tier (R2 / D1 / KV) from artifact JSON log`,
+                `- If two consecutive daily cycles fail → escalate to SEV-1`,
+              ].join('\n'),
+            });
+
+      - name: Fail job to propagate exit code
+        if: steps.verify.outcome == 'failure'
+        run: |
+          echo "Daily backup verification failed; see uploaded artifact." >&2
+          exit 1

@@ -1074,6 +1074,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-backup-verify"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "corelink-billing-aggregator"
 version = "0.1.0"
 dependencies = [
