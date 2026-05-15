@@ -1,0 +1,37 @@
+[package]
+name = "corelink-d1-migrations"
+description = "CoreLink R2-13: D1 migration replay harness — runs every migrations/d1/*.sql in numeric order against an in-memory rusqlite database to catch migration ordering bugs (e.g. CREATE TABLE referencing a table not yet declared) and schema dependency hazards before they hit Cloudflare D1."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+# `bundled` ships a static libsqlite3 so CI doesn't depend on the host
+# libsqlite version. rusqlite 0.32 supports SQLite 3.45+ which has the
+# bulk of D1's SQL dialect (CHECK / triggers / WHERE-clause indexes).
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+[dev-dependencies]
+
+[[test]]
+name = "d1_migration_integration"
+path = "tests/d1_migration_integration.rs"

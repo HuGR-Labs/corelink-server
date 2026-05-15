@@ -123,6 +123,10 @@ members = [
     # R2-4 shared Slack incoming-webhook real client (Block Kit + per-channel
     # routing + retry + audit envelope; bridges to enterprise-inquiry via adapter)
     "crates/corelink-slack-real",
+    # R2-13 D1 migration replay harness (rusqlite-backed; CI gate that every
+    # migrations/d1/*.sql applies cleanly in numeric order against a fresh
+    # in-memory SQLite. Catches ordering bugs + schema dependency hazards.)
+    "crates/corelink-d1-migrations",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
