@@ -1,0 +1,288 @@
+---
+title: "Your GDPR rights at CoreLink"
+slug: "/privacy/gdpr"
+description: "Plain-language summary of how CoreLink complies with the EU General Data Protection Regulation (Regulation 2016/679): every right under Articles 12-22, our response SLAs, and how data flows out of the EU under SCCs and the EU-US DPF."
+draft: true
+cross_functional_review: TBD
+pending_signoff:
+  - "Legal"
+  - "DPO"
+sources:
+  - "specs/_compliance/GDPR-FULL-AUDIT-2026-05-15.md"
+  - "specs/_compliance/GDPR-SCC-EXECUTION-2026-05-15.md"
+  - "specs/_compliance/GDPR-DPIA-LIBRARY.md"
+  - "specs/_compliance/LGPD-ROPA-2026-05-15.md"
+  - "specs/_runbooks/RB-DSR-GDPR.md"
+  - "specs/03_architecture/privacy_model.md"
+  - "crates/corelink-dsr/"
+last_updated: "2026-05-15"
+---
+
+import { DraftBanner } from "../../../src/components/DraftBanner";
+
+<DraftBanner pageType="compliance" />
+
+# Your GDPR rights at CoreLink
+
+> **DRAFT — pending Legal + DPO review.** Technical claims below are accurate as of 2026-05-15 and pinned to commit `de84b9d`. The companion compliance docs (`GDPR-FULL-AUDIT-2026-05-15.md`, `GDPR-SCC-EXECUTION-2026-05-15.md`, `GDPR-DPIA-LIBRARY.md`) are the source of truth; this page is the customer-facing summary. The sister page [LGPD rights](/privacy/lgpd-full) covers the parallel Brazilian regime; both regimes share most of the underlying machinery.
+
+CoreLink is a Brazilian company building infrastructure used by European
+developers, ML teams, and EU enterprises. Because we offer services to
+people in the EU (Art. 3(2)(a)) and we run a sub-processor leg through
+Neon's Frankfurt cluster (Art. 3(1)), **GDPR applies to us**. We treat
+that obligation as a design constraint, not a compliance overlay.
+
+## 1. The eight rights, our service level, how to exercise
+
+GDPR Chapter III gives you eight concrete rights plus the right to
+withdraw consent. We have implemented every one as a self-service API
+endpoint. No support ticket needed; no human gate. The only friction is
+WebAuthn step-up multifactor on destructive actions (Erasure and
+Rectification) so nobody can hijack your account to delete your data.
+
+| GDPR Art. | Right | Our SLA | How to exercise |
+|---|---|---|---|
+| **Art. 15** | Right of access (confirmation + copy of your data) | 5 business days (confirmation) / 15 business days (full export) — both inside the 1-month statutory cap | `POST /v1/privacy/dsr/access` |
+| **Art. 16** | Right to rectification | 5 business days | `POST /v1/privacy/dsr/rectification` (MFA required) |
+| **Art. 17** | Right to erasure ("right to be forgotten") | 30 calendar days | `POST /v1/privacy/dsr/erasure` (MFA required) |
+| **Art. 18** | Right to restriction of processing | 5 business days | `POST /v1/privacy/dsr/restriction` |
+| **Art. 19** | Notification of rectification/erasure/restriction to recipients | Automatic — same SLA as the triggering right | Triggered by Art. 16/17/18 endpoints; recipient manifest in your audit |
+| **Art. 20** | Right to data portability | 15 business days | `POST /v1/privacy/dsr/portability` |
+| **Art. 21** | Right to object | 15 business days (Art. 21(1)) / **immediate** for direct marketing (Art. 21(2)) | `POST /v1/privacy/dsr/objection` + `DELETE /v1/consent/marketing_email` |
+| **Art. 22** | Right not to be subject to automated decisions with legal/significant effect | N/A — **we do not run Art. 22 processing** (see §7) | — |
+| **Art. 7(3)** | Right to withdraw consent (as easy as giving) | ≤ 5 minutes | `DELETE /v1/consent/<purpose>` |
+
+If you prefer email, write to `privacy@hugr.com`. Our DPO will process
+your request through the same pipeline with the same SLA. The clock
+starts when we verify your identity, not when you sent the email — a
+nuance that EDPB Guidelines 01/2022 §63 explicitly permits.
+
+## 2. What data we hold
+
+A short, honest answer.
+
+**About you as a CoreLink user:** your email address, your name, your
+billing address, your hashed password or WebAuthn public key, the IP
+address and user-agent class of your recent requests (truncated and
+pseudonymised), your DSR requests, your consent grants and revocations,
+and your support tickets.
+
+**About data your tenant uploads (blobs):** we hold the bytes you upload,
+a content-addressable hash of those bytes (the digest), some metadata
+(size, timestamp, your tenant ID as a random UUID), and an audit record
+that says "this tenant uploaded this digest at this time" — **but we do
+not look at the content of your blobs**. When your blob contains personal
+data of someone else (e.g., your customers' info embedded in a dataset),
+**you are the controller and we are the processor** under our DPA
+(Art. 28). We do not read or repurpose your data.
+
+**What we don't hold:** payment card data (Stripe processes that, we
+never see it); biometric templates (WebAuthn keys are public cryptographic
+identifiers, not biometrics — the actual biometric never leaves your
+device); data about children (CoreLink is a B2B platform; our Terms of
+Service require account holders to be adults representing a business
+entity).
+
+The complete inventory of 14 dataflows is catalogued in our
+[Record of Processing Activities](/privacy/sub-processors) (Art. 30).
+Each one specifies the data category, purpose, legal basis, retention,
+recipients, and security measures.
+
+## 3. Why we are allowed to hold each piece (legal bases)
+
+GDPR Art. 6(1) lists six lawful bases. We use four — **fixed per purpose**
+so we cannot quietly swap your data from "consent" to "legitimate
+interest" mid-flight. The immutability is enforced in code
+(`crates/corelink-privacy-consent-ledger/`) and verified by 10,000
+property-test cases per CI run plus a TLA+ specification of the
+grant/revoke ledger symmetry (`InvConsentSymmetry`).
+
+| Why we hold the data | GDPR base | Example |
+|---|---|---|
+| To run the platform you signed up for | Art. 6(1)(b) — contract | CAS uploads, AC entries, your account |
+| Because the law requires it | Art. 6(1)(c) — legal obligation | Audit logs (SOC 2 + Art. 30), fiscal records (member-state-specific 6–10y), DSR fulfillment |
+| To prevent abuse and fraud | Art. 6(1)(f) — legitimate interest | Security monitoring, anomaly detection |
+| Because you said yes | Art. 6(1)(a) — consent | Marketing emails, personalised analytics, opt-in ML training, beta features |
+
+If your data is held under consent, you can withdraw at any time and we
+stop processing within 5 minutes. **We do not silently fall back to
+"legitimate interest"** when your consent lapses — processing pauses
+until you re-consent or we delete the data. This is intentional and
+verifiable.
+
+## 4. How fast we respond
+
+The clock starts when we verify your identity (WebAuthn step-up for
+Erasure and Rectification; session re-auth for Access and Portability).
+Art. 12(3) gives us up to one month, extendable by two further months
+for complex requests — we have committed to faster SLAs than the
+statutory cap for every right.
+
+We can pause the clock in three narrow cases:
+
+- You are under a **legal hold** (court order, regulatory subpoena,
+  ongoing investigation). We tell you the request is paused and why.
+- Your request is **ambiguous** and we asked for clarification.
+- **Technical impossibility** documented in our incident records. Cap of
+  5 business days per request before customer notification.
+
+Every state transition (`verified`, `in_progress`, `completed`,
+`rejected`) sends you a confirmation email. Receipts are RS256 JWTs
+signed with our KMS-rooted key (90-day anti-replay) so you can prove
+later that the request happened.
+
+If we reject a request as "manifestly unfounded or excessive" (Art. 12(5)
+— a high bar we rarely use), we explain why and you have the right to
+lodge a complaint with your local supervisory authority and/or seek a
+judicial remedy.
+
+## 5. The deletion ("erasure") in detail
+
+When you exercise Art. 17, the erasure pipeline propagates across **12
+backends** in a canonical order. Eight are **effectively erased** (rows
+hard-deleted); four are **pseudonymised retention** — the data is kept
+because we are legally required to keep it (audit logs, billing records,
+point-in-time backups, compliance evidence), but your identity is
+replaced with a one-way HKDF hash so we cannot re-identify you.
+
+The 12 targets, in order: Neon control plane → Neon billing detail
+(legal-hold retention) → R2 CAS (refcount eraser) → R2 AC → D1 metadata
+→ KV → Stripe (PII nullified) → Loki/Grafana → R2 audit (pseudonymised)
+→ backup PITR (tombstone replay; natural 30-day rotation) → R2 CAS
+legal-hold partition (pseudonymised) → compliance evidence store
+(pseudonymised).
+
+You receive a `dsr.completed.v1` event with a Merkle root over the
+twelve audit hashes, plus a confirmation email. Total SLA: 30 calendar
+days.
+
+## 6. Where your data goes (international transfers)
+
+Most of your data stays in the EU. CoreLink defaults to residency-pinned
+EU edges for EU-tenant blob workloads, EU audit chain, EU telemetry, and
+EU-region BYOK. The exceptions cross the Atlantic and are governed by
+either the **EU-US Data Privacy Framework (DPF)** adequacy decision (10
+July 2023) or the **EU Standard Contractual Clauses 2021/914 Module 2**
+with a Schrems II Transfer Impact Assessment (TIA) on file.
+
+| Recipient | Country | Mechanism | What's transferred |
+|---|---|---|---|
+| Cloudflare | EU edges by default | Intra-EU (adequacy) | Workers / R2 / D1 / KV / DO for EU subjects |
+| Neon | EU (DE) for EU subjects | Intra-EU (adequacy) | Account, billing, consent, DSR ticket rows |
+| Stripe | US | **EU-US DPF (primary)** + SCC Module 2 (fallback) + Art. 49(1)(b) (belt-and-suspenders) | Email, pseudonymised customer ID, amount — **no card data ever touches CoreLink** |
+| Clerk | US | EU-US DPF (primary) + SCC Module 2 (fallback) | Auth tokens + email only |
+| AWS / GCP / Azure (BYOK) | EU regions for EU tenants | Intra-EU (adequacy) | Envelope key URI only; HuGR never sees key material |
+| Grafana Labs | EU (Frankfurt) | Intra-EU (adequacy) | Pseudonymised metrics for EU tenants |
+| PagerDuty / GitHub / Sigstore | US | DPF + SCC + sub-processor-specific posture | Operational metadata; no end-user PII |
+
+Sentry, PostHog, and LogRocket are **disabled by default for EU
+subjects** pending a sub-processor review (tracked as GAP-14). To enable
+them for your data, you would opt in with explicit consent and we would
+publish the corresponding TIA.
+
+Our full SCC execution status, Schrems II TIA register, and the
+contingency plan for a hypothetical "Schrems-III" challenge to the DPF
+are documented in the [Transfer Impact Assessment register](/privacy/sub-processors).
+We pre-staged SCC Module 2 in every US sub-processor DPA so a DPF
+challenge would not require renegotiation — only an activation switch.
+
+## 7. Automated decisions and profiling (Art. 22)
+
+We do not run any automated decision-making with legal or similarly
+significant effect on you. The closest activity is the
+`training_ml_models` opt-in purpose (a backend optimisation that predicts
+cache hit probability for build artifacts) which:
+
+- Is opt-in only with default `false`.
+- Uses a k≥50 anonymity floor.
+- Has no decision arm that affects you (the prediction is invisible to
+  you and changes only internal cache pre-warming).
+
+If we ever ship a feature that crosses the Art. 22 threshold, our DPIA
+trigger catalogue forces a Data Protection Impact Assessment before
+launch, and you would receive the Art. 13(2)(f) disclosure in a new
+version of our privacy notice (which would re-prompt you for consent
+under the rules of our [consent ledger](/privacy/lgpd-full#7-what-about-consent)).
+
+## 8. Special situations
+
+**You are an EU subject whose data was uploaded by a tenant.** You can
+file a DSR with us. We route the request to the tenant who controls that
+data under our DPA (Art. 28) and notify you within 5 business days.
+The tenant has a 30-day SLA. If they do not respond, you can escalate to
+your supervisory authority with our routing record.
+
+**Joint controllership (Art. 26).** We currently do not operate any
+Art. 26 joint controllership arrangement. If a future co-branded EU
+launch creates one, we publish the arrangement transparently and offer
+each subject a single point of contact (per Art. 26(2)).
+
+**Children's data (Art. 8).** Out of scope. CoreLink is B2B; our Terms
+of Service require account holders to be ≥ 18 representing a business.
+If a tenant uploads data about minors, the tenant is the controller and
+the Art. 8 obligations sit with them, not with us.
+
+**Data triggering another subject's privacy.** We redact references to
+other subjects in your export bundle. This is mandatory under Art. 5(1)(c)
+data minimisation in disclosure.
+
+## 9. Incidents and breach notification
+
+GDPR Art. 33 gives us **72 hours** to notify the supervisory authority
+from awareness of a personal data breach. Art. 34 obliges us to notify
+you "without undue delay" when the breach is likely to result in high
+risk to your rights and freedoms. Our internal timeline is conservative
+versus both:
+
+- Detection → internal SEV-1 declaration: ≤ 1 hour.
+- Declaration → triage and containment: ≤ 4 hours.
+- Awareness → supervisory authority notification: **≤ 48 hours** (beating
+  the 72h statutory cap).
+- SA notification → notification to affected subjects: ≤ 72 hours.
+- Public post-mortem (if material): ≤ 14 days.
+
+We tabletop-exercise this twice a year. Notifications reach you by email
+plus an in-app banner if you have an active session, with a structured
+disclosure of breach type, categories of data, likely consequences, and
+mitigations under way (Art. 33(3) content list).
+
+## 10. Who is responsible (DPO and EU representative)
+
+Our Data Protection Officer (Art. 37) handles all of this. Formal DPO
+appointment lands before EU enterprise customer onboarding; until then,
+the interim Privacy Officer is Gustavo Schneiter (`gustavo@humangr.com`
+direct, `privacy@hugr.com` for the DPO inbox).
+
+We appoint an EU representative under Art. 27 before our first
+EU-established Lighthouse customer goes live. The representative
+candidate firms are documented in `legal/legal-externo-engagement-contract.md`
+and the appointment is tracked in our public roadmap.
+
+Your supervisory authority is the data-protection regulator in your EU
+member state of residence. If you believe we are not honouring your
+GDPR rights, you have the right to lodge a complaint with them
+(Art. 77) and the right to a judicial remedy (Art. 79). Once our EU
+representative is appointed, we operate under the one-stop-shop
+mechanism (Art. 56) with a single lead supervisory authority for
+cross-border complaints.
+
+## 11. References
+
+- [LGPD rights (Brazilian parallel)](/privacy/lgpd-full)
+- [Sub-processors register (Art. 30, Art. 15 right to know recipients)](/privacy/sub-processors)
+- [Brazil residency attestation (LGPD Art. 33 §1º; mirror posture for Art. 44)](/residency/lgpd-brazil)
+- [DPA (Data Processing Agreement)](/compliance/dpa)
+- [SOC 2 timeline (Art. 32 cross-framework)](/compliance/soc2-timeline)
+- Privacy notice canonical text: `legal/privacy-notice/v*.{pt-BR,en-US,es-MX}.md`
+- Internal compliance documents:
+  - `specs/_compliance/GDPR-FULL-AUDIT-2026-05-15.md` (article-by-article audit)
+  - `specs/_compliance/GDPR-SCC-EXECUTION-2026-05-15.md` (SCC module + TIA)
+  - `specs/_compliance/GDPR-DPIA-LIBRARY.md` (DPIA register + Lighthouse triggers)
+  - `specs/_compliance/LGPD-ROPA-2026-05-15.md` (RoPA, Art. 30)
+  - `specs/_runbooks/RB-DSR-GDPR.md` (internal DSR processing runbook)
+
+If you need a Transfer Impact Assessment specific to your regulatory
+situation (e.g., regulated-vertical EU tenant with onward processing in
+a non-adequate country), email `privacy@hugr.com` — we use the template
+in `legal/tia-template.md` and fill it in for your tenant within 5
+business days.

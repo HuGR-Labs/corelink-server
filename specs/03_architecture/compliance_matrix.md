@@ -214,6 +214,14 @@ CoreLink pode armazenar blobs contendo dado pessoal do **cliente final do tenant
 - TIA (Transfer Impact Assessment) template em `legal/tia/`.
 - Sob demanda cliente EU, entregamos TIA + SCC + lista sub-processores.
 
+### 5.3 Full audit rollup (2026-05-15)
+
+- **`specs/_compliance/GDPR-FULL-AUDIT-2026-05-15.md`** — article-by-article audit (Art. 5–49; 25 articles); mirrors LGPD-FULL-AUDIT for the EU regime; pending DPO + Legal sign-off.
+- **`specs/_compliance/GDPR-SCC-EXECUTION-2026-05-15.md`** — SCC 2021/914 module selection per data flow (P2P / C2C / P2C / C2P); Schrems II TIA register; EU-US DPF status; Schrems-III contingency plan.
+- **`specs/_compliance/GDPR-DPIA-LIBRARY.md`** — Art. 35 DPIA index; trigger criteria (WI metadata + EDPB WP248 nine-criteria + Lighthouse customer triggers); 5 completed DPIAs + per-tenant template.
+- **`specs/_runbooks/RB-DSR-GDPR.md`** — internal runbook for Art. 12–22 + Art. 7(3); sister to RB-DSR-LGPD-FULL with GDPR-specific deltas (Art. 19 notification obligation; Art. 21(2) marketing absolute right; Art. 22 N/A declaration; EU SA escalation).
+- **`apps/docs/docs/explanation/privacy/gdpr.mdx`** — customer-facing GDPR summary (~1500 words; 11 sections).
+
 ---
 
 ## 6. Outras regulamentações relevantes
