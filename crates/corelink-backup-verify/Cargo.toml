@@ -1,0 +1,36 @@
+[package]
+name = "corelink-backup-verify"
+description = "CoreLink continuous (daily) backup-verification harness (R-prep). Ships the pure-logic skeleton of the daily verification cycle that runs between cold-restore drills: BackupVerifier trait (verify_freshness / verify_integrity / sample_restore) + BackupTier #[non_exhaustive] (R2 / D1 / KV) + RPO ceilings per tier + BackupSnapshot + BlobSample + VerificationOutcome + VerificationStatus #[non_exhaustive] (Ok / Stale / Corrupt / RestoreFailed) + IntegrityVerdict + RestoreVerdict + InMemoryBackupVerifier fake (deterministic in-process backup store used by every test + by the script harness in --dry-run mode) + BackupVerifyError #[non_exhaustive] taxonomy. Real CF Worker / wrangler-driven implementations are deferred to a handler crate per the autonomous-execution charter trait-abstraction-defer rule."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[[test]]
+name = "prop_backup_verify"
+path = "tests/prop_backup_verify.rs"

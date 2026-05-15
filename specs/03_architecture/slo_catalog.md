@@ -357,6 +357,22 @@ SLOs individuais (§4.x) podem override interpolation via linha explícita "Targ
 | Target             | < 30 min p95 sustained 30d                                                                         |
 | Notas              | RB-ONCALL-POLICY §4 escalation chain on breach. Breach → post-mortem via RB-POSTMORTEM-PROCESS.    |
 
+### 4.22 Reliability — Continuous backup verification pass rate (R-prep)
+
+**SLO-BACKUP-VERIFICATION** (interno; daily cron measurement; complements GAP-15 cold-restore drill)
+
+| Campo              | Valor                                                                                              |
+|--------------------|----------------------------------------------------------------------------------------------------|
+| SLI                | `# daily verification cycles passing all tiers / # daily verification cycles attempted` rolling 30d |
+| Target             | ≥ 99.5% rolling 30d (i.e. ≤ 1 failed cycle per 200-day window; ≤ ~0.15 fails per 30d window)        |
+| Janela             | 30d rolling; reporting also at 7d and 1d for early warning                                          |
+| Burn alert         | 2 consecutive daily fails → SEV-2; 3 consecutive daily fails → SEV-1 (backups unrestorable)         |
+| SLI source         | Prometheus `corelink_backup_verification_status{result="ok"}` emitted by `scripts/backup-daily-verify.sh` |
+| Tiers covered      | R2 (RPO 24h) / D1 (RPO 6h) / KV (RPO 12h); per-tier failure also counts against this SLO            |
+| Runbook            | [`RB-BACKUP-VERIFICATION-FAILURE`](../_runbooks/RB-BACKUP-VERIFICATION-FAILURE.md)                  |
+| Related            | RB-BACKUP-VERIFICATION (monthly cycle), GAP-15 COLD-RESTORE-DRILL-SPEC (quarterly cycle 1)         |
+| Notas              | Complements cold-restore drill cadence — daily verification catches silent corruption / freshness regressions / restore-failures between drill cycles within 24h. Breach blocks GA Reliability Gate. |
+
 ---
 
 ## 5. Error budget policy

@@ -43,6 +43,12 @@ node_modules/
 # Dados locais de dev
 /local-data/
 
+# R-prep backup daily verification harness outputs (artifacts uploaded to
+# GHA workflow per `.github/workflows/backup-daily-verify.yml`; local runs
+# regen these every invocation).
+/.backup-verify-logs/
+/.backup-verify-metrics/
+
 # Python venv para scripts de validação
 .venv-specs/
 .venv/

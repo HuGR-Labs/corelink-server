@@ -85,6 +85,12 @@ members = [
     "crates/corelink-erasure-attestation",
     # WI-S17-002 DR drill scheduler + CF region outage simulator
     "crates/corelink-dr-drill",
+    # R-prep continuous (daily) backup verification harness — complements
+    # GAP-15 cold-restore drill (which runs only on schedule). Catches
+    # silent backup corruption / freshness regressions / restore-failures
+    # between drill cycles. Trait + InMemory fake only; real R2/D1/KV
+    # handler deferred per autonomous-execution charter trait-abstraction-defer.
+    "crates/corelink-backup-verify",
     # WI-S15-001 CLI 7 subcommands + WI-S15-005 telemetry opt-in (same crate)
     "crates/corelink-cli",
     # WI-S15-004 FFI wrappers (Python pyO3 + Go cgo + JS/TS WASM)
@@ -381,6 +387,7 @@ corelink-byok-revocation = { path = "crates/corelink-byok-revocation" }
 corelink-customer-alerts = { path = "crates/corelink-customer-alerts" }
 corelink-erasure-attestation = { path = "crates/corelink-erasure-attestation" }
 corelink-dr-drill = { path = "crates/corelink-dr-drill" }
+corelink-backup-verify = { path = "crates/corelink-backup-verify" }
 corelink-chaos-scheduler = { path = "crates/corelink-chaos-scheduler" }
 corelink-tier-selection = { path = "crates/corelink-tier-selection" }
 corelink-stripe-real = { path = "crates/corelink-stripe-real" }
