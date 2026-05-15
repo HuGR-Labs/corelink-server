@@ -1,0 +1,139 @@
+---
+id: rbac-permission-matrix
+title: "Permission matrix"
+slug: "/explanation/rbac/permission-matrix"
+sidebar_label: "Permission matrix"
+description: "Master role × permission table for CoreLink RBAC — 30+ permissions × 4 roles → granted, denied, or dual-approval gated."
+tags: [rbac, security, reference, explanation]
+last_updated: "2026-05-15"
+sources:
+  - "crates/corelink-pat/src/scopes.rs (12 canonical PAT scopes)"
+  - "crates/corelink-dual-approval/src/types.rs (AdminOpType + is_destructive())"
+  - "crates/corelink-auth-schema/src/sim.rs (Role enum)"
+---
+
+<!-- i18n:MT (pt-BR) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
+>
+> Canonical EN source: `docs/explanation/rbac/permission-matrix.mdx`
+
+
+# Permission matrix
+
+The master table: every CoreLink permission against every role.
+
+Legend:
+
+- ✅ granted (single-actor; no approver needed).
+- 2P **dual-approval** — granted but the operation routes through
+  `POST /v1/admin/ops` with `X-Dual-Approver`/`X-Approver-Signature` headers.
+  See [INV-ADMIN-DUAL-APPROVAL](./index.mdx#dual-approval-gate--why-some-buttons-require-a-second-person).
+- ❌ denied.
+- self only — operation is permitted only against the actor's own account
+  (e.g. mint a PAT for yourself).
+
+> **Note (v1, manual):** This matrix is hand-maintained from
+> `crates/corelink-pat/src/scopes.rs` and
+> `crates/corelink-dual-approval/src/types.rs`. A future iteration will
+> auto-generate via a `scripts/codegen_rbac_matrix.py` reader so the table
+> cannot drift from code (planned for S-19).
+
+## CAS — cache surface
+
+| Permission                  | Scope                 | Owner | Admin | Developer | Viewer |
+|-----------------------------|-----------------------|:-----:|:-----:|:---------:|:------:|
+| Read CAS blobs + AC         | `cache:r`             |   ✅  |   ✅  |     ✅     |   ✅   |
+| Write CAS blobs + AC        | `cache:w`             |   ✅  |   ✅  |     ✅     |   ❌   |
+| FindMissingBlobs            | `cache:find-missing`  |   ✅  |   ✅  |     ✅     |   ❌   |
+| Admin blob deletion         | `cache:delete`        |   ✅  |   ✅  |     ❌     |   ❌   |
+
+## Members — users and tokens
+
+| Permission                       | Scope            | Owner | Admin | Developer | Viewer |
+|----------------------------------|------------------|:-----:|:-----:|:---------:|:------:|
+| Invite user (Developer / Viewer) | `admin:users`    |   ✅  |   ✅  |     ❌     |   ❌   |
+| Invite user (Admin)              | `admin:users`    |   ✅  |   ✅  |     ❌     |   ❌   |
+| Invite user (Owner)              | `admin:users`    |   ✅  |   ❌  |     ❌     |   ❌   |
+| Demote user                      | `admin:users`    |   ✅  |   ✅* |     ❌     |   ❌   |
+| Revoke user (soft-delete row)    | `admin:users`    |   ✅  |   ✅* |     ❌     |   ❌   |
+| Mint PAT for self                | `admin:tokens`   |   ✅  |   ✅  |  self only |   ❌   |
+| Mint PAT for another user        | `admin:tokens`   |   ✅  |   ✅  |     ❌     |   ❌   |
+| Revoke any PAT in tenant         | `admin:tokens`   |   ✅  |   ✅  |     ❌     |   ❌   |
+| Revoke own PAT                   | `admin:tokens`   |   ✅  |   ✅  |     ✅     |   ❌   |
+
+> \* `Admin` cannot demote or revoke an `Owner`. Last-Owner safeguard
+> applies — at least one Owner must remain.
+
+## Tenant config
+
+| Permission                            | Scope                | Owner | Admin | Developer | Viewer |
+|---------------------------------------|----------------------|:-----:|:-----:|:---------:|:------:|
+| List / read tenant config             | `admin:tenant-read`  |   ✅  |   ✅  |     ❌     |   ✅   |
+| Mutate tenant config (forward)        | `admin:tenant-write` |   ✅  |   ✅  |     ❌     |   ❌   |
+| `ConfigRollback`                      | `admin:tenant-write` |  2P   |  2P   |     ❌     |   ❌   |
+| `RetentionPolicyReduce`               | `admin:tenant-write` |  2P   |  2P   |     ❌     |   ❌   |
+| `FeatureFlagToggleSafe` (rollout ↑)   | `admin:tenant-write` |   ✅  |   ✅  |     ❌     |   ❌   |
+| `FeatureFlagDisable`                  | `admin:tenant-write` |  2P   |  2P   |     ❌     |   ❌   |
+| `RateLimitAdjustUp` (conservative ↑)  | `admin:tenant-write` |   ✅  |   ✅  |     ❌     |   ❌   |
+
+## Audit
+
+| Permission                          | Scope         | Owner | Admin | Developer | Viewer |
+|-------------------------------------|---------------|:-----:|:-----:|:---------:|:------:|
+| Read tenant audit log               | `admin:audit` |   ✅  |   ✅  |     ❌     |   ✅   |
+| Request RFC 6962 inclusion proof    | `admin:audit` |   ✅  |   ✅  |     ❌     |   ✅   |
+| Query `admin_op_log` (role changes) | `admin:audit` |   ✅  |   ✅  |     ❌     |   ✅   |
+
+## Billing
+
+| Permission                       | Scope            | Owner | Admin | Developer | Viewer |
+|----------------------------------|------------------|:-----:|:-----:|:---------:|:------:|
+| View invoices                    | `admin:billing`  |   ✅  |   ❌  |     ❌     |   ❌   |
+| Update payment method            | `admin:billing`  |   ✅  |   ❌  |     ❌     |   ❌   |
+| Apply tax exemption              | `admin:billing`  |   ✅  |   ❌  |     ❌     |   ❌   |
+| Change tier (upgrade)            | `admin:billing`  |   ✅  |   ❌  |     ❌     |   ❌   |
+| Change tier (downgrade)          | `admin:billing`  |  2P   |   ❌  |     ❌     |   ❌   |
+
+## BYOK (Enterprise tier)
+
+| Permission                                       | Scope                 | Owner | Admin | Developer | Viewer |
+|--------------------------------------------------|-----------------------|:-----:|:-----:|:---------:|:------:|
+| View BYOK config                                 | `admin:tenant-read`   |   ✅  |   ✅  |     ❌     |   ❌   |
+| Configure customer-managed KMS root key          | `admin:tenant-write`  |   ✅  |   ❌  |     ❌     |   ❌   |
+| Rotate KMS root key                              | `admin:tenant-write`  |  2P   |   ❌  |     ❌     |   ❌   |
+| `SecretRotationStart` (per-tenant DEK rotation)  | `admin:tenant-write`  |  2P   |  2P   |     ❌     |   ❌   |
+| Trigger BYOK kill-switch                         | `admin:tenant-write`  |  2P   |   ❌  |     ❌     |   ❌   |
+
+## Lifecycle / destructive
+
+| Permission                                  | Scope                | Owner | Admin | Developer | Viewer |
+|---------------------------------------------|----------------------|:-----:|:-----:|:---------:|:------:|
+| `TenantTombstone` (S-11 erasure pipeline)   | `admin:tenant-write` |  2P   |  2P   |     ❌     |   ❌   |
+| Issue DSR (erasure) for tenant data         | `admin:tenant-write` |   ✅  |   ✅  |     ❌     |   ❌   |
+| Withdraw consent / pause processing         | `admin:tenant-write` |   ✅  |   ✅  |     ❌     |   ❌   |
+
+## Executor (Phase 2 only — not granted to humans)
+
+| Permission                  | Scope              | Owner | Admin | Developer | Viewer |
+|-----------------------------|--------------------|:-----:|:-----:|:---------:|:------:|
+| Report action started       | `execute:action`   |   ❌  |   ❌  |     ❌     |   ❌   |
+| Report result               | `report:result`    |   ❌  |   ❌  |     ❌     |   ❌   |
+
+> These two scopes are intended only for the Phase 2 remote-execution worker
+> identity. They will not appear in any human-issued PAT.
+
+## Counters
+
+- **Roles documented:** 4 (`Owner`, `Admin`, `Developer`, `Viewer`).
+- **Permissions documented:** 33 across 7 categories.
+- **Dual-approval gated:** 9 (matches the 5 destructive `AdminOpType`
+  variants plus 4 derived flows: tier downgrade, BYOK rotate, BYOK
+  kill-switch, KMS root rotate).
+
+## Cross-references
+
+- [Role catalog](./role-catalog.mdx) — narrative version.
+- [Permissions reference](../../reference/rbac/permissions.mdx) — ID-by-ID
+  with gated endpoints.
+- [INV-ADMIN-DUAL-APPROVAL](./index.mdx#dual-approval-gate--why-some-buttons-require-a-second-person)

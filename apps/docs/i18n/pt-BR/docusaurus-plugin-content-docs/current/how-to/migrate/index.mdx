@@ -1,0 +1,102 @@
+---
+id: migrate-index
+title: "Migrate to CoreLink"
+slug: "/how-to/migrate"
+sidebar_label: "Migration overview"
+description: "Self-serve playbooks for moving your existing cache or artifact storage to CoreLink. Pick the guide that matches where your bytes live today."
+tags: [migration, how-to, bazel, s3, docker, cas]
+last_updated: "2026-05-15"
+---
+
+<!-- i18n:MT (pt-BR) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
+>
+> Canonical EN source: `docs/how-to/migrate/index.mdx`
+
+
+# Migrate to CoreLink
+
+**Audience:** engineering, SRE, or platform teams who already have a
+cache or artifact store and want to switch to CoreLink without a
+lighthouse-style white-glove engagement. If you want a dedicated
+engineer to co-pilot the move, read the
+[Lighthouse Customer Playbook](https://github.com/humangr-labs/corelink-server/blob/main/marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md)
+instead.
+
+**Goal:** these are **self-serve** guides. The full migration — including
+a one-week parallel-run window and a documented rollback — takes
+**1–3 engineer-days** of effort spread over **2 calendar weeks** for a
+typical team.
+
+:::tip You already did the 10-minute quickstart, right?
+Every guide here assumes you have a working `corelink` CLI, a valid
+`CORELINK_PAT`, and a tenant id. If you don't, do the
+[10-minute quickstart](../../tutorials/quickstart-10min.mdx) first —
+it's a hard prerequisite.
+:::
+
+## Decision matrix — which guide do I use?
+
+| What you have today | What you want | Guide |
+| --- | --- | --- |
+| `bazel-remote` (open source) or BuildBuddy as your Bazel remote cache | CoreLink REAPI v2 (CAS + Action Cache) | [From a Bazel remote cache](./from-bazel-remote-cache.mdx) |
+| S3 bucket holding build artifacts, ML datasets, or release binaries (no CAS semantics) | Content-addressable storage with audit trail and BLAKE3 integrity | [From S3-only artifact storage](./from-s3-only.mdx) |
+| Self-hosted Harbor, Quay, or generic Docker registry holding image layers | CoreLink CAS as the layer backend (registry stays in front) | [From a Docker registry](./from-docker-registry.mdx) |
+| Pants, Buck2, or custom REAPI cache | Read the [Bazel guide](./from-bazel-remote-cache.mdx) — the REAPI v2 wire protocol is identical; just swap `.bazelrc` flags for your build tool's equivalent. | — |
+| **Mixed** (e.g. S3 + Docker registry, or bazel-remote + S3) | Run all three migrations in sequence, lowest-blast-radius first (S3 → Docker → Bazel). | — |
+
+If your situation doesn't fit any row above, file an issue against
+[`humangr-labs/corelink-server`](https://github.com/humangr-labs/corelink-server/issues)
+with the `migration-help` label. The lighthouse program is one option;
+self-serve with async support on the community Slack is another.
+
+## The migration pattern (shared across all 3 guides)
+
+Every guide follows the same five phases. We name them up-front so you
+can plan the calendar.
+
+| Phase | What happens | Typical duration | Engineer-time |
+| --- | --- | --- | --- |
+| **0. Pre-flight** | Inventory current state (size, tenants, users, dependencies). Estimate cost delta. Lock the rollback path. | 2–4 h | 1 engineer |
+| **1. Configure** | Provision your CoreLink tenant + PAT. Wire CoreLink as a **secondary** destination (writes go to both old + new; reads stay on old). | 2–4 h | 1 engineer |
+| **2. Parallel-run** | Both systems live. Compare hit ratios + latency + integrity. **One week minimum.** | 5–7 days wall-clock | < 1 h/day monitoring |
+| **3. Cutover** | Flip primary/secondary. Reads now come from CoreLink. Old system stays warm as fallback. | 30 min | 1 engineer |
+| **4. Decommission** | After 2 weeks of clean operation, retire the old system. | 1–2 h | 1 engineer |
+
+**Rollback at any phase** is the same single action: revert the
+config change that pointed clients at CoreLink. Because everything is
+content-addressed, no data is lost in the swap direction; the only cost
+is cache-warm-up time on the old system.
+
+## What the 3 guides share — pre-flight checklist
+
+Before you read any specific guide, run this once.
+
+- [ ] **CLI installed** — `corelink version` prints `1.0.0` or newer.
+- [ ] **PAT exported** — `echo $CORELINK_PAT` is non-empty (or it's in `~/.corelink/config.toml`).
+- [ ] **`corelink doctor`** — all 8 checks PASS (net, auth, storage, BYOK, region, quota, client verify, time-skew).
+- [ ] **Tenant id known** — `corelink config get defaults.tenant_id` returns your production tenant (not `sandbox-xxxx`).
+- [ ] **Region pin chosen** — `wnam` / `enam` / `weur` / `sam` (data residency; see the [residency explainer](../../explanation/residency/lgpd-brazil.mdx)).
+- [ ] **CI users identified** — who else (humans + service accounts) writes to the existing system today? They need a CoreLink PAT scoped appropriately.
+- [ ] **Backup of existing config committed** — `git stash` is not enough; tag the commit (`pre-corelink-migration`).
+- [ ] **30-min rollback drill scheduled** — book the calendar slot now, not when you need it.
+
+## Cross-links you'll want during the migration
+
+- [10-minute quickstart](../../tutorials/quickstart-10min.mdx) — install + first put/get.
+- [Quickstart FAQ](../../tutorials/quickstart-faq.mdx) — sandbox vs production, billing triggers.
+- [How-to: production setup](../index.mdx) — custom domain, BYOK, region pinning.
+- [Lighthouse Customer Playbook](https://github.com/humangr-labs/corelink-server/blob/main/marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md) — if you decide partway through that you want a dedicated engineer.
+
+## Support during a self-serve migration
+
+| Channel | What it's for | SLA |
+| --- | --- | --- |
+| `#corelink-migration` on community Slack | Async questions, pattern advice, parallel-run interpretation | Best-effort; usually < 1 business day |
+| GitHub Issues (`migration-help` label) | Reproducible bugs, missing CLI flags, doc gaps | 2 business days for triage |
+| `support@corelink.dev` | P1 — your production is degraded by CoreLink itself | < 4 business hours during your region's business day |
+
+Self-serve does **not** mean unsupported — it means we don't put a named
+engineer on your calendar weekly. The product itself, the docs, and
+async support are exactly the same as the lighthouse path.

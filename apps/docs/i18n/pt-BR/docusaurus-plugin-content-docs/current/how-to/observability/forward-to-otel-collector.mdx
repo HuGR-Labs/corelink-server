@@ -1,0 +1,247 @@
+---
+id: forward-to-otel-collector
+title: "Forward CoreLink metrics + traces to an OpenTelemetry Collector"
+slug: "/how-to/observability/forward-to-otel-collector"
+sidebar_label: "Forward to OTel Collector"
+description: "Stream CoreLink's RED/USE metrics + traces to an OpenTelemetry Collector via OTLP gRPC or HTTP — the most flexible fan-out option."
+tags: [observability, opentelemetry, otel, otlp, metrics, traces, how-to]
+last_updated: "2026-05-15"
+---
+
+<!-- i18n:MT (pt-BR) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
+>
+> Canonical EN source: `docs/how-to/observability/forward-to-otel-collector.mdx`
+
+
+# Forward CoreLink metrics + traces to an OpenTelemetry Collector
+
+**Source:** CoreLink (any tenant, any tier).
+**Destination:** an [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/)
+deployment you operate (sidecar, daemonset, or central pipeline).
+**Transport:** OTLP/gRPC (`grpcs://collector:4317`) or OTLP/HTTP
+(`https://collector:4318`).
+**Auth:** bearer token (`Authorization: Bearer <token>`) or IP allow-list
+on a private endpoint.
+
+**Why pick OTel Collector over Datadog or Grafana Cloud directly:** the
+Collector is a vendor-neutral router. Once CoreLink streams to it, you
+can fan-out to **any backend** (Honeycomb, New Relic, Splunk
+Observability, AWS CloudWatch, self-hosted Prometheus + Tempo + Loki,
+multiple destinations simultaneously). This is the **most flexible**
+option and the one we recommend for enterprise customers who don't want
+vendor lock-in.
+
+---
+
+## Prerequisites
+
+- An OpenTelemetry Collector reachable from CoreLink's egress IP range.
+  We publish CoreLink's egress IP allow-list at
+  [Trust → Data handling](../../trust/data-handling.mdx#corelink-egress-ip-ranges).
+- TLS enabled on the Collector endpoint (CoreLink rejects plaintext
+  `http://` / `grpc://` for non-localhost endpoints).
+- A bearer token rotated quarterly. The Collector validates it via the
+  `bearertokenauth` extension.
+- CoreLink CLI ≥ 0.1.0 and a CoreLink tenant ID + admin PAT.
+
+## Step 1 — Configure the Collector to accept OTLP from CoreLink
+
+Sample Collector config (`otel-collector-config.yaml`):
+
+```yaml
+extensions:
+  bearertokenauth:
+    scheme: "Bearer"
+    tokens:
+      # SHA-256 of the canonical token (the Collector validates against
+      # this hash; never store the raw token in config).
+      - "${COLLECTOR_BEARER_TOKEN_SHA256}"
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+        tls:
+          cert_file: /etc/otel/cert.pem
+          key_file:  /etc/otel/key.pem
+        auth:
+          authenticator: bearertokenauth
+      http:
+        endpoint: 0.0.0.0:4318
+        tls:
+          cert_file: /etc/otel/cert.pem
+          key_file:  /etc/otel/key.pem
+        auth:
+          authenticator: bearertokenauth
+
+processors:
+  # Drop CoreLink's pseudonymous tenant_tier label only if your
+  # privacy posture requires it (default: keep — it's already PII-free).
+  # attributes:
+  #   actions:
+  #     - key: tenant_tier
+  #       action: delete
+
+  batch:
+    timeout: 5s
+    send_batch_size: 1000
+
+exporters:
+  # Pick one or more downstream backends:
+  # otlphttp:                # → another OTLP backend (Honeycomb, NR, ...)
+  # prometheusremotewrite:   # → Prometheus / Mimir / Grafana Cloud
+  # awscloudwatch:           # → AWS CloudWatch Metrics
+  # ...
+  logging:
+    verbosity: detailed
+
+service:
+  extensions: [bearertokenauth]
+  pipelines:
+    metrics:
+      receivers:  [otlp]
+      processors: [batch]
+      exporters:  [logging]
+    traces:
+      receivers:  [otlp]
+      processors: [batch]
+      exporters:  [logging]
+```
+
+Deploy and verify the Collector is healthy:
+
+```bash
+curl -sf -H "Authorization: Bearer ${TOKEN}" \
+  https://collector.example.com:13133/health
+```
+
+## Step 2 — Wire CoreLink to the Collector
+
+Edit your CoreLink tenant config:
+
+```toml
+[observability.export]
+variant = "otel_collector"
+
+[observability.export.otel_collector]
+endpoint     = "https://collector.example.com:4318"   # HTTP — CF Workers-friendly
+protocol     = "http"                                  # "grpc" | "http"
+bearer_token = "${OTEL_BEARER_TOKEN}"                  # ≥ 8 ASCII chars
+timeout_ms   = 2000
+opt_out_low_value_metrics = false
+```
+
+**Why we recommend HTTP over gRPC on CF Workers.** CoreLink's edge runs
+on Cloudflare Workers, and `worker::send_future` plays better with
+HTTP/1.1 + HTTP/2 than with bidirectional gRPC streaming. If your
+Collector is reachable on the same private network with gRPC, prefer
+`protocol = "grpc"`; otherwise stick with HTTP.
+
+Apply:
+
+```bash
+corelink config apply --file corelink.toml
+```
+
+The Admin API validates:
+
+- `endpoint` starts with `https://` / `http://` / `grpcs://` / `grpc://`.
+- `bearer_token` length ∈ `[8, 4096]` and is pure ASCII.
+- `timeout_ms` ≥ 100.
+
+Real auth is verified on first export attempt; a failure becomes a
+`corelink.observability.export_failed` audit event but does not break
+CoreLink's request path.
+
+## Step 3 — Verify the wire
+
+```bash
+# 1) CoreLink-side: tail the audit log
+corelink audit tail --filter "event_type=corelink.observability.export_ready"
+
+# 2) Collector-side: with exporters: [logging], you should see batches
+#    arriving every 5s. Sample log line:
+#    {"corelink_cas_put_requests_total":{...,"labels":{"tenant_tier":"pro","region":"us-east-1","result":"ok"}}}
+
+# 3) End-to-end: fire a known request against CoreLink, then look for
+#    its trace span in the Collector log:
+corelink cas put --tenant t1 --file /tmp/probe.bin
+```
+
+If `corelink.observability.export_failed` shows up instead:
+
+| Failure reason | What it means | Fix |
+|---|---|---|
+| `auth reject from vendor: 401` | Bearer token wrong | Re-issue in step 1, re-apply CoreLink config |
+| `transport failure: tls handshake` | Cert chain wrong on Collector | Check Collector logs; verify intermediates |
+| `transport failure: connection refused` | Collector down or wrong port | Verify `4317` (gRPC) vs `4318` (HTTP) |
+| `vendor rejected payload: 400` | Collector / OTLP version mismatch | Upgrade Collector to ≥ 0.95 (canonical OTLP/1.0) |
+
+## Step 4 — Fan-out to multiple backends
+
+This is where the Collector shines. Add exporters to your Collector
+config and update the `service.pipelines.metrics.exporters` /
+`service.pipelines.traces.exporters` lists. CoreLink only knows about
+the Collector; the Collector handles fan-out:
+
+```yaml
+exporters:
+  otlphttp/honeycomb:
+    endpoint: https://api.honeycomb.io
+    headers:
+      x-honeycomb-team: "${HONEYCOMB_KEY}"
+
+  prometheusremotewrite/mimir:
+    endpoint: https://mimir.example.com/api/v1/push
+
+service:
+  pipelines:
+    metrics:
+      receivers:  [otlp]
+      processors: [batch]
+      exporters:  [otlphttp/honeycomb, prometheusremotewrite/mimir]
+    traces:
+      receivers:  [otlp]
+      processors: [batch]
+      exporters:  [otlphttp/honeycomb]
+```
+
+## Step 5 — Sampling
+
+By default CoreLink samples request-scoped traces at **1% in production
+/ 100% in staging** (per
+[`observability_model.md §6.3`](https://github.com/humangr-labs/corelink-server/blob/main/specs/03_architecture/observability_model.md#63-sampling)).
+You can override via the Worker sampling config; lowering to 0.1%
+reduces APM cost by ~10×.
+
+Errors + p99 SLO breaches are **always sampled** regardless of the base
+rate (tail-based sampling decision; canonical Google SRE Workbook
+Chapter 6).
+
+## Cost expectation
+
+The Collector is **free software**; you pay only for the compute that
+runs it + the downstream backend's ingest. Sizing for a typical
+CoreLink Pro tenant:
+
+| Resource | Size |
+|---|---|
+| Collector CPU | 0.25 vCPU steady, 1 vCPU peak |
+| Collector RAM | 256 MiB steady |
+| Throughput | ~10k samples/min metrics + ~100 spans/min traces |
+
+## Cross-references
+
+- [Observability overview](./index.mdx)
+- [Forward to Datadog](./forward-to-datadog.mdx) (alternative, lower
+  setup cost if you already own Datadog).
+- [Forward to Grafana Cloud](./forward-to-grafana-cloud.mdx)
+  (alternative; Prom remote-write + Tempo OTLP HTTP).
+- [Trust → Data handling](../../trust/data-handling.mdx) — PII hygiene
+  + egress IP ranges.
+- [`specs/_audits/2026-05-15-otel-export-spec.md`](https://github.com/humangr-labs/corelink-server/blob/main/specs/_audits/2026-05-15-otel-export-spec.md)
+  — full inventory of what we export.
+- [OpenTelemetry Collector docs](https://opentelemetry.io/docs/collector/configuration/).

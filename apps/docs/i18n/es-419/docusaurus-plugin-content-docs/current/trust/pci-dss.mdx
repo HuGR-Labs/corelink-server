@@ -1,0 +1,188 @@
+---
+title: "PCI DSS"
+slug: "/trust/pci-dss"
+description: "CoreLink is PCI DSS SAQ-A compliant. We never see your card data — Stripe Elements tokenizes it in your browser and CoreLink only ever stores opaque Stripe tokens."
+draft: false
+cross_functional_review: TBD
+pending_signoff:
+  - "Security Lead"
+  - "Legal"
+sources:
+  - "specs/_compliance/PCI-DSS-SAQ-A-2026-05-15.md"
+  - "specs/_compliance/PCI-DSS-BOUNDARY-DIAGRAM.md"
+  - "specs/_compliance/PCI-DSS-ANNUAL-RECERTIFY.md"
+  - "specs/03_architecture/compliance_matrix.md"
+last_updated: "2026-05-15"
+---
+
+<!-- i18n:MT (es-419) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
+>
+> Canonical EN source: `docs/trust/pci-dss.mdx`
+
+
+# PCI DSS
+
+> **The short version:** **CoreLink is PCI DSS SAQ-A compliant. We never
+> see your card data.** When you enter a card, it goes straight from your
+> browser into Stripe's PCI-validated infrastructure; CoreLink only ever
+> stores opaque Stripe tokens (`pm_…`, `cus_…`, `sub_…`).
+
+## Posture at a glance
+
+| Field | Value |
+| --- | --- |
+| Compliance level | **SAQ-A** (the simplest PCI-DSS self-assessment, for merchants who outsource 100% of cardholder-data handling) |
+| PCI DSS version | **v4.0** |
+| Latest self-assessment | **2026-05-15** (validity: 2026-05-15 → 2027-05-14) |
+| Next recertification | **2027-05-15** (annual cadence) |
+| Card data stored on CoreLink? | **No.** Zero. Never. |
+| Card data transmitted by CoreLink? | **No.** All card capture is direct-to-Stripe via Stripe Elements. |
+| Card data processed by CoreLink? | **No.** Stripe handles authorization, capture, settlement, recurring billing, disputes. |
+| What CoreLink does store | Opaque Stripe identifiers only: `customer_id` (`cus_…`), `subscription_id` (`sub_…`), `payment_method_id` (`pm_…`), `invoice_id` (`in_…`), and the audit-log event IDs (`evt_…`). Plus last-4 + brand for display purposes (not CHD per PCI DSS §3.3.1.1). |
+| Payment service provider | **Stripe, Inc.** — PCI DSS Level 1 Service Provider (SAQ-D-SP), on Visa Global Registry of Service Providers and Mastercard Compliant Service Provider List. |
+
+## Why SAQ-A is the right scoping
+
+PCI DSS v4.0 defines nine "SAQ" (Self-Assessment Questionnaire) variants
+depending on how much of the cardholder-data environment (CDE) a merchant
+operates itself. SAQ-A is the *simplest* — it applies when:
+
+1. The merchant accepts only card-not-present transactions.
+2. **All** cardholder-data functions are outsourced to a PCI-validated
+   third-party service provider.
+3. The merchant never electronically stores, processes, or transmits
+   cardholder data.
+4. The payment page is served by (or iframed from) the validated TPSP.
+
+CoreLink meets all four. We deliberately engineered our billing surface so
+that cardholder data never crosses our network boundary.
+
+## How payments work — in one diagram
+
+```
+   ┌──── your browser ────┐                ┌──── Stripe (PCI CDE) ────┐
+   │                       │                │                          │
+   │  CoreLink billing     │                │  Stripe Elements         │
+   │  page (no card        │ ◀── iframe ──▶ │  captures PAN/CVV/expiry │
+   │  inputs)              │                │  → tokenizes →           │
+   │                       │                │  → stores in vault       │
+   └─────────│─────────────┘                └─────────│────────────────┘
+             │                                        │
+             │ HTTPS POST { pm_xxx }                  │
+             ▼                                        │
+   ┌──── CoreLink (SAQ-A scope) ──┐  ◀── API ──────  ┘
+   │                               │
+   │  Stores only:                 │
+   │   • cus_xxx (Stripe customer) │
+   │   • sub_xxx (subscription)    │
+   │   • pm_xxx  (payment method)  │
+   │   • in_xxx  (invoice)         │
+   │   • evt_xxx (webhook event)   │
+   │                               │
+   │  Never sees: PAN, CVV, expiry │
+   └───────────────────────────────┘
+```
+
+The detailed boundary diagram (Mermaid + ASCII + Stripe-vs-CoreLink
+responsibility matrix + storage map) lives in
+[`specs/_compliance/PCI-DSS-BOUNDARY-DIAGRAM.md`](https://github.com/humangr-labs/corelink/blob/main/specs/_compliance/PCI-DSS-BOUNDARY-DIAGRAM.md).
+Procurement teams can request the signed PDF via `trust@corelink.dev`.
+
+## What you can verify yourself
+
+You don't have to take our word for it. Anyone can run the following
+checks against the public repo to verify the zero-cardholder-data claim:
+
+```bash
+# 1. Grep the codebase for card-data field names outside test/spec docs.
+grep -rEn 'card_number|cvv|cvc|\bpan\b' \
+  --include='*.rs' --include='*.ts' --include='*.tsx' --include='*.py' \
+  --include='*.go' --include='*.js' \
+  | grep -vE '/tests/|/test/|/specs/|_test\.|\.test\.'
+
+# Expected: hits only in crates/corelink-logpush/src/redaction.rs
+# (a defense-in-depth log-redactor that detects and scrubs accidentally
+#  leaked card numbers before logs leave our infrastructure — see the
+#  note in the SAQ-A doc).
+
+# 2. Inspect the live checkout page's Content-Security-Policy header.
+curl -sI https://billing.corelink.dev/checkout | grep -i content-security-policy
+
+# Expected: script-src 'self' https://js.stripe.com
+# (no analytics, no tag managers, no chat widgets on the payment page)
+```
+
+## What we share with auditors and procurement
+
+On request to `trust@corelink.dev` (DPA on file required):
+
+- The signed SAQ-A questionnaire (24 questions, PCI DSS v4.0).
+- The full boundary diagram (Mermaid + ASCII + storage map).
+- Stripe's current AOC (Attestation of Compliance).
+- The annual recertification checklist + last completed recert evidence.
+
+## What about Stripe?
+
+Stripe is the single sub-processor in our PCI scope. Their compliance posture:
+
+- **PCI DSS Level 1 Service Provider** (the highest tier; > 6M transactions/yr).
+- **SAQ-D for Service Providers** (the most rigorous self-assessment).
+- Listed on Visa Global Registry of Service Providers.
+- Listed on Mastercard Compliant Service Provider List.
+- Stripe AOC tracked annually in our vendor risk register
+  ([see Sub-processors](./subprocessors)).
+
+If Stripe's AOC ever lapses, our boundary claim doesn't change — but our
+upstream coverage does, and we would publish a notice on this page within
+24 hours.
+
+## Frequently asked
+
+**Do you take card-present (in-person) payments?**
+No. CoreLink is a SaaS billed via card-not-present transactions only.
+
+**Do you do MOTO (mail-order / telephone-order)?**
+No.
+
+**Do you run a Stripe Connect platform?**
+No — we are a direct merchant, not a Stripe Connect platform. (If we ever
+add Connect, we will re-scope to the appropriate SAQ variant, likely
+SAQ-A-EP, and re-publish this page.)
+
+**Can I get a copy of your AOC / SAQ-A?**
+Yes — email `trust@corelink.dev` with your DPA on file; we route signed
+PDFs back within 1 business day.
+
+**You store `last4` and `brand`. Isn't that CHD?**
+No. Per PCI DSS v4.0 §3.3.1.1, the first-6 and last-4 digits of a PAN may
+be displayed in clear; storing **only** last-4 + brand (with no middle
+digits) is not CHD storage. We store it so we can show "Visa ending in
+4242" in your customer portal.
+
+**What about the logpush redaction module — why does it know what a PAN is?**
+That module is *defense-in-depth*. It exists to detect and redact card
+numbers from operational logs in case a misconfigured upstream client
+ever POSTs a PAN to a wrong endpoint. It pattern-matches PANs, redacts
+them with a salted-hash placeholder, and counts the redactions so we know
+if a leak happened upstream. It never stores the original value. Property
+test (100k synthetic PANs, zero leaks):
+[`crates/corelink-logpush/tests/pii_redaction_100k_synthetic.rs`](https://github.com/humangr-labs/corelink/blob/main/crates/corelink-logpush/tests/pii_redaction_100k_synthetic.rs).
+
+## Related
+
+- [Trust Center overview](./)
+- [Compliance posture (all frameworks)](./compliance)
+- [Data handling](./data-handling)
+- [Sub-processors](./subprocessors) — Stripe row
+- [Incident response](./incident-response) — TT-03 (Stripe webhook compromise) scenario
+- [SOC 2](./compliance#soc-2)
+
+## Contact
+
+| What you need | Where to send it |
+| --- | --- |
+| SAQ-A, AOC, boundary diagram | `trust@corelink.dev` |
+| Procurement / vendor review forms | `trust@corelink.dev` |
+| Security vulnerability report | `security@corelink.dev` (see [policy](/security/policy)) |

@@ -1,0 +1,245 @@
+---
+title: "Brazil residency & LGPD (Art. 33 §1º)"
+slug: "/residency/lgpd-brazil"
+description: "How CoreLink pins data of Brazilian tenants to the `sam` region, how to verify it, and what we do during failover."
+draft: true
+cross_functional_review: TBD
+pending_signoff:
+  - "Legal"
+  - "DPO"
+sources:
+  - "specs/_compliance/LGPD-RESIDENCY-ATTESTATION-2026-05-15.md"
+  - "specs/03_architecture/privacy_model.md"
+  - "crates/corelink-privacy-residency-enforcement/"
+last_updated: "2026-05-15"
+---
+
+<!-- i18n:MT (pt-BR) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
+>
+> Canonical EN source: `docs/explanation/residency/lgpd-brazil.mdx`
+
+
+import { DraftBanner } from "../../../src/components/DraftBanner";
+
+<DraftBanner pageType="compliance" />
+
+# Brazil residency & LGPD (Art. 33 §1º)
+
+> **DRAFT — pending Legal + DPO review.** Technical claims below are
+> accurate as of 2026-05-15 and pinned to commit `fb9f56e`. The compliance
+> bundle (`specs/_compliance/LGPD-RESIDENCY-ATTESTATION-2026-05-15.md`)
+> is the source of truth; this page is the public-facing summary.
+
+Brazilian customers and customers processing data of Brazilian data subjects
+need to know two things about CoreLink:
+
+1. **Where the data physically lives.**
+2. **What happens when something goes wrong with the region the data lives in.**
+
+This page answers both, in operator language. It also explains how you can
+*verify* the answers — not just trust us.
+
+## 1. The flag
+
+Every CoreLink tenant has a `primary_region` value, chosen at signup. The
+six possible values are a closed enum (you cannot pass an arbitrary string
+— the system rejects open-string drift):
+
+| Value | Geographic area | Primary regulatory framework |
+|---|---|---|
+| `wnam` | Western North America (CA) | PIPEDA, CCPA |
+| `enam` | Eastern North America (US) | CCPA, HIPAA-opt-in |
+| `weur` | Western Europe (NL/DE) | GDPR |
+| `sam` | South America (BR) | LGPD |
+| `apac` | Asia-Pacific (SG) | PDPA, APPI |
+| `afr` | Africa (ZA) | POPIA |
+
+For Brazilian residency, the canonical value is `sam`. The closed-enum
+discipline is deliberate: it makes the system inspectable, makes audit
+trails parsable, and makes the legal posture provable rather than asserted.
+
+## 2. What "data stays in `sam`" actually means
+
+When your tenant is pinned to `sam`, the following are physically located
+in the South America (São Paulo) region:
+
+- **Content-addressable storage (CAS)** — the actual blobs you push. R2 bucket
+  `cas-sam` with locationHint `wnam-southamerica-east1`. Cloudflare R2
+  enforces the placement.
+- **Action cache (AC) entries** — the build-graph metadata. R2 bucket
+  `ac-sam`.
+- **Audit trail** — every action your tenant takes, stored in R2 bucket
+  `audit-sam` with Object Lock 7 years (immutable; we cannot delete an
+  audit event even if a court ordered us to — the lock is enforced by
+  Cloudflare).
+- **D1 metadata** — tenant config, ACLs, residency configuration itself.
+  Primary in `sam`, replicas in `sam`.
+
+The following are **not** pinned to `sam` by default, and are subject to
+contractual / SCC-based international transfer:
+
+- **Billing detail** (Neon EU, Frankfurt) — under Art. 33, V LGPD
+  (contractual necessity for billing) and SCC Modules 2/3 in the DPA.
+- **Payment processing** (Stripe) — under Art. 33, V and PCI-DSS-scoped
+  handling. CoreLink never sees card data; only pseudonymised customer IDs
+  and amounts.
+- **Auth tokens** (Clerk) — under Art. 33, V. Email and PAT identifiers
+  only; not workload content.
+
+If your contractual obligations to Brazilian data subjects require that
+*even billing detail* stays in Brazil, contact us — this is an enterprise
+DPA amendment, not a default. (We can route billing detail through the
+São Paulo subset of our Postgres surface once Neon ships BR region;
+in the interim, we can manually run billing detail in `sa-east-1` AWS.)
+
+## 3. How to set the flag
+
+At signup, the admin UI presents the six regions with the regulatory note
+shown above. Pick `sam` for Brazilian residency. After signup, changing the
+region requires:
+
+- A formal **region-migration request** (POST `/v1/admin/tenant/region-migration`).
+- **30-day cooldown** between successive migrations.
+- **Dual approval**: Privacy Officer + Compliance review.
+
+The cooldown is enforced at the API level, not just procedurally. The dual
+approval is enforced at the API level too. There is no admin-bypass.
+
+## 4. How to verify the flag actually works
+
+Three independent layers, all of which are auditable:
+
+### 4.1 DNS-level routing
+
+Every request to your tenant lands at `<tenant_id>.<region>.corelink.dev`.
+For a `sam` tenant, that is `<tenant_id>.sam.corelink.dev`. If you point
+your client at a different region's hostname (say,
+`<tenant_id>.weur.corelink.dev`), the server **rejects the request with
+HTTP 451 `Unavailable for Legal Reasons`** and a body like:
+
+```json
+{
+  "error": "legal_residency_violation",
+  "tenant_region": "sam",
+  "request_region": "weur"
+}
+```
+
+This is fail-CLOSED. There is no silent passthrough. There is no "warning"
+header. The request does not execute.
+
+### 4.2 Insert-level checks
+
+Even if a routing layer were misconfigured, every write operation
+(CAS PUT, AC PUT, audit emit, billing-events emit) performs a pre-flight
+check comparing the bucket region to the tenant's pinned region. Mismatch
+→ rejection + a `dev.hugr.corelink.residency.write_rejected_cross_region.v1`
+CloudEvent in the `audit-<region>` bucket. The D1 schema also enforces
+this via `CHECK` constraints (defense-in-depth).
+
+### 4.3 The 20k property test
+
+The runtime crate `corelink-privacy-residency-enforcement` ships with a
+20,000-case property test that generates random tenant configurations,
+random request patterns, and random failover scenarios — and asserts that
+**zero cross-region leaks** occur. The test runs in CI on every commit and
+in the nightly attestation job. The current pass rate is, mathematically,
+100% (0 leaks across 20,000 × 5 = 100,000 operations).
+
+You can re-run it yourself if you fork:
+
+```bash
+cargo test -p corelink-privacy-residency-enforcement --all-features
+```
+
+### 4.4 Production verifier
+
+The script `scripts/verify-lgpd-residency.py` queries R2 + D1 directly
+for a sample of test tenant IDs and confirms that every BR-residency
+tenant's stored object metadata carries only `sam` region tags. It exits
+non-zero with diagnostic output if a violation is found. We run it
+nightly. The output is summarised in the monthly DPO checklist.
+
+## 5. What happens during failover
+
+This is where most "residency-pinned" stories quietly break. Here is ours.
+
+**Within-region failover (default):** if a D1 primary in `sam` fails,
+failover goes to a `sam` replica. If an R2 origin in São Paulo fails,
+Cloudflare's multi-AZ R2 handles it within the same region. No
+cross-region action occurs.
+
+**Catastrophic regional outage:** if the entire `sam` region goes down
+(São Paulo offline, no replicas available), CoreLink does *not*
+automatically fail over to another region. Instead, the customer-facing
+surface returns **HTTP 503 — Regional Residency Constraint**. We hold
+availability hostage to residency, not the other way round.
+
+A cross-region failover is **possible only with dual approval** (Privacy
+Officer + Compliance) and triggers a logged `legal_emergency` event. This
+is identical to the region-migration approval surface — same code path,
+same audit trail. The 30-day cooldown can be waived under `legal_emergency`
+but only with the dual signature.
+
+The 503 default + dual-approval-to-bypass model is by design. LGPD
+Art. 33 §1º violations carry penalties up to 2% of the controller's
+Brazil revenue or BRL 50M per offence; our availability SLO does not.
+
+## 6. What we hold + where (the short version)
+
+| Data category | Region for `sam` tenant | Legal basis |
+|---|---|---|
+| Tenant workload content (CAS, AC) | `sam` only | Art. 33 caput (no international transfer) |
+| Audit trail | `audit-sam` Object Lock 7y | Art. 33 caput |
+| Tenant config (D1) | `sam` only | Art. 33 caput |
+| Telemetry (Grafana metrics, traces, logs — pseudonymised) | Currently US/EU; pseudonymisation per LIA | Art. 7 IX (legitimate interest, LIA in `legal/lia/`) |
+| Billing detail | Neon EU (Frankfurt) | Art. 33, V (contractual) + SCC Modules 2/3 |
+| Payment processing | Stripe (global) | Art. 33, V (contractual) + PCI-DSS handling |
+| Auth tokens | Clerk (US) | Art. 33, V (contractual) |
+
+The full sub-processor analysis (with LGPD posture per vendor) is at
+[sub-processors](/compliance/sub-processors). The compliance bundle that
+attests to all of this — including signed sign-off — is referenced from
+the [DPA](/compliance/dpa) page.
+
+## 7. If you have stricter requirements
+
+If your contract with Brazilian data subjects requires:
+
+- billing detail in Brazil,
+- telemetry suppression for `sam` tenants,
+- bring-your-own-key (BYOK) with AWS São Paulo / GCP São Paulo / Azure
+  Brazil South / self-hosted HashiCorp Vault in `sam`,
+- a per-tenant residency attestation extract on a recurring cadence,
+
+these are all available as enterprise DPA amendments. Contact your
+account manager; the legal turnaround for these amendments is currently
+~5 business days.
+
+## 8. What we are still building
+
+In the interest of honesty (LGPD Art. 6 III — transparency), here are
+the residency-adjacent things that are currently *not* in the customer-facing
+surface but that exist as compliance commitments:
+
+- **Admin-UI residency tile** — a dashboard panel showing your tenant's
+  `primary_region`, last 24h request-routing summary, and any 451
+  rejections. Coming in the S-13 admin plane track. Until it ships,
+  request the same data via support (SLA 5 business days).
+- **Self-service residency attestation download** — currently manual
+  via support. Automation tracked at WI-S13-*.
+
+Both are tracked in `specs/_compliance/LGPD-RESIDENCY-ATTESTATION-2026-05-15.md`
+§6.2 (mitigation roadmap).
+
+---
+
+**Source-of-truth pointers** (commit-pinned):
+
+- Compliance bundle: `specs/_compliance/LGPD-RESIDENCY-ATTESTATION-2026-05-15.md`
+- Privacy model §7 (residency): `specs/03_architecture/privacy_model.md`
+- Runtime enforcement: `crates/corelink-privacy-residency-enforcement/`
+- Residency-leak runbook: `specs/_runbooks/RB-DATA-RESIDENCY-LEAK.md`
+- Sub-processor register: `legal/sub-processors.md`

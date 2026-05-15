@@ -1,0 +1,141 @@
+---
+id: rbac-overview
+title: "RBAC overview"
+slug: "/explanation/rbac"
+sidebar_label: "Overview"
+description: "Role-based access control in CoreLink — canonical roles, permission categories, and the dual-approval gate for destructive admin operations."
+tags: [rbac, security, admin, explanation]
+last_updated: "2026-05-15"
+sources:
+  - "crates/corelink-auth-schema/src/sim.rs (Role enum)"
+  - "crates/corelink-pat/src/scopes.rs (12 canonical PAT scopes)"
+  - "crates/corelink-dual-approval/src/types.rs (AdminOpType taxonomy)"
+  - "specs/03_architecture/data_model.md §4.1 (membership.role CHECK constraint)"
+  - "specs/03_architecture/invariant_registry.md (INV-ADMIN-DUAL-APPROVAL)"
+---
+
+<!-- i18n:MT (pt-BR) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
+>
+> Canonical EN source: `docs/explanation/rbac/index.mdx`
+
+
+# RBAC overview
+
+CoreLink uses a **4-role** membership model scoped to each tenant, layered with
+**12 canonical permission scopes** carried by Personal Access Tokens (PATs), and
+gated by a **dual-approval requirement** on destructive admin operations.
+
+This page is the customer-facing map from the roles you see in the tenant admin
+UI to the permissions they grant and the operations they cannot perform alone.
+
+## The 4 canonical roles
+
+The `membership.role` column is constrained to exactly four values
+(`data_model.md` §4.1, line 174):
+
+| Role        | Tier              | Purpose                                                                 |
+|-------------|-------------------|-------------------------------------------------------------------------|
+| `Owner`     | Tenant-wide       | Full access including billing, role grants, BYOK; can act as approver. |
+| `Admin`     | Tenant-wide       | All operations except billing; can act as approver.                     |
+| `Developer` | Per-user surface  | CAS read/write, PAT mint for self; no admin surface.                    |
+| `Viewer`    | Per-user surface  | Read-only CAS + audit-log read; cannot mint PATs.                       |
+
+> **The "Billing" role is NOT a separate membership role.** Billing is a
+> permission scope (`admin:billing`) granted exclusively to the `Owner` role.
+> A tenant may have multiple Owners, all of whom see the billing surface.
+
+See [Role catalog](./role-catalog.mdx) for the per-role detail page.
+
+## Permission categories
+
+The 12 canonical PAT scopes
+(`crates/corelink-pat/src/scopes.rs`) fall into five customer-facing
+categories:
+
+| Category    | Scopes                                                                                          | Notes                                                |
+|-------------|-------------------------------------------------------------------------------------------------|------------------------------------------------------|
+| **CAS**     | `cache:r`, `cache:w`, `cache:find-missing`, `cache:delete`                                      | Read/write content-addressable storage + AC results. |
+| **BYOK**    | `admin:tenant-read`, `admin:tenant-write` (KMS config subset)                                   | Bring-your-own-key root config (Enterprise tier).    |
+| **Audit**   | `admin:audit`                                                                                   | Tenant audit-log read.                               |
+| **Billing** | `admin:billing`                                                                                 | View / mutate billing surface.                       |
+| **Members** | `admin:users`, `admin:tokens`                                                                   | Invite / demote users; mint / revoke PATs.           |
+| **Executor**| `execute:action`, `report:result`                                                               | Phase-2 executor only; not granted to humans.        |
+
+For the full ID-by-ID reference see [`permissions.mdx`](../../reference/rbac/permissions.mdx).
+For the role × permission matrix see [`permission-matrix.mdx`](./permission-matrix.mdx).
+
+## Dual-approval gate — why some buttons require a second person
+
+Five admin operations are classified **destructive** and require a separate
+**approver** (a second user, also `Owner` or `Admin`) to co-sign the request
+before it executes. This enforces the **INV-ADMIN-DUAL-APPROVAL** invariant
+(see `invariant_registry.md`).
+
+The 5 destructive operations
+(`AdminOpType::is_destructive()` in
+`crates/corelink-dual-approval/src/types.rs`):
+
+1. `ConfigRollback` — roll back a tenant config version.
+2. `RetentionPolicyReduce` — shorten a retention TTL.
+3. `FeatureFlagDisable` — disable a flag globally or per-tenant.
+4. `SecretRotationStart` — kick off a secret rotation.
+5. `TenantTombstone` — tombstone a tenant for erasure.
+
+The two non-destructive variants (`FeatureFlagToggleSafe`,
+`RateLimitAdjustUp`) are audited but the approver header is optional.
+
+### What the gate enforces
+
+Every destructive op runs through a 7-step defense-in-depth pipeline
+(`DualApprovalGateImpl::verify`):
+
+1. Clock-skew check (≤ 60s — `CLOCK_SKEW_MAX_MS`).
+2. MFA freshness check (≤ 30 min — `MFA_MAX_AGE_MS`).
+3. Caller ≠ approver (separation of duties).
+4. HMAC-SHA256 signature verify (constant-time).
+5. **Collusion rotation**: the same approver may not co-sign two destructive
+   ops back-to-back without an unrelated approver in between (3-cycle
+   NIST AC-2(7) oracle).
+6. Nonce replay guard.
+7. Audit emit (fail-CLOSED — `corelink.admin.op.executed` /
+   `corelink.admin.op.denied` CloudEvent before the result is committed).
+
+Every outcome is recorded in `admin_op_log` with one of these strings:
+`approved`, `denied_missing`, `denied_sig`, `denied_caller_eq`,
+`denied_collusion`, `denied_mfa_stale`, `denied_approver_not_admin`,
+`denied_nonce_replay`, `denied_clock_skew`.
+
+## Where roles are assigned
+
+- **Clerk SSO**: identity comes from Clerk; CoreLink maps the Clerk user to a
+  `user_account.user_id` via the stable `clerk_user_id`
+  (`auth-schema/src/sim.rs`).
+- **Tenant invite**: Owner or Admin invites a teammate by email; the invitee
+  authenticates through Clerk; on first sign-in CoreLink writes a
+  `membership` row binding `(user_id, tenant_id, role)`.
+
+See [Invite a team member](../../how-to/rbac/invite-team-member.mdx) for the
+walkthrough.
+
+## What changes when someone is demoted or revoked
+
+Role changes propagate immediately to the dual-approval gate: the
+`admin_role` D1 table is the source of truth and the gate reads it on every
+request (no caching beyond a single request span). A revoked admin cannot
+co-sign a destructive op on the very next request after revocation
+(`tests/adversarial.rs::adversarial_approver_role_revoked_rejected`).
+
+Demote and revoke events are themselves audited — see
+[Audit role changes](../../how-to/rbac/audit-role-changes.mdx).
+
+## Related reading
+
+- [Role catalog](./role-catalog.mdx) — per-role detail.
+- [Permission matrix](./permission-matrix.mdx) — full table.
+- [Permissions reference](../../reference/rbac/permissions.mdx) — every
+  permission ID + which endpoint(s) it gates.
+- [Audit chain](../security/audit-chain.mdx) — how the underlying log
+  works.
+- [BYOK](../security/byok.mdx) — Enterprise customer-managed keys.

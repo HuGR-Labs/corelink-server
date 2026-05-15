@@ -1,0 +1,100 @@
+---
+id: survey-response
+title: Responding to a CoreLink customer-health survey
+sidebar_label: Survey response
+description: Privacy + handling notes for the click-through landing page recipients reach after clicking an HMAC-signed CoreLink survey invite.
+---
+
+<!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
+>
+> Canonical EN source: `docs/how-to/survey-response.mdx`
+
+
+# Responding to a CoreLink customer-health survey
+
+You're here because you clicked a link from a CoreLink customer-health
+survey email (NPS, CSAT, free-text, or multi-choice). This page
+explains how your response is handled, what we store, and what we
+don't.
+
+## What we store
+
+When you submit a response, we record exactly four things:
+
+1. **Your numeric score or text answer** — the actual content of your
+   response, kept verbatim.
+2. **A salted hash of your email address** (`recipient_hash`) — a
+   one-way fingerprint we use to deduplicate replies and to tie a
+   response to a tenant for trend analysis. **We do not store your
+   raw email** in the survey table.
+3. **The tenant ID** the survey was issued against — this is your
+   organization's CoreLink workspace identifier.
+4. **A salted hash of your IP address and user-agent string** — used
+   only for abuse detection (see [our abuse
+   runbook](https://github.com/humangr-labs/corelink-server/blob/main/specs/_runbooks/RB-SURVEY-ABUSE.md))
+   and never displayed in any analyst dashboard.
+
+We do **not** store your raw IP address, your raw user-agent string,
+or your email body or name in this table.
+
+## How your response is used
+
+Your response is **anonymous in aggregate but tied to your tenant_id
+for trend analysis.** Concretely:
+
+- The CS team reads survey data through weekly **aggregates** (NPS
+  per tier, CSAT per surface, free-text top themes) — see the [CS
+  team's analysis protocol](https://github.com/humangr-labs/corelink-server/blob/main/marketing/retention/customer-health/SURVEY-ANALYSIS-PROTOCOL.md).
+- Lighthouse-customer accounts (those who agreed to deeper engagement
+  via the [lighthouse program](https://github.com/humangr-labs/corelink-server/blob/main/marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md))
+  get a **per-tenant pulse view** so the CS lead can spot drift
+  inside an individual customer.
+- **Your individual score is never tied back to your name or email
+  on any internal dashboard.** The CS team sees `recipient_hash` (a
+  64-char hex digest), not the raw email.
+
+## Token security
+
+The link in your invite email carries an HMAC-SHA256 signature over a
+payload that includes your `recipient_hash`, the survey ID, and an
+expiry timestamp. We verify the signature in constant time before
+recording your response. This means:
+
+- The link **authenticates you without a password** — the HMAC stands
+  in for credentials.
+- The link **expires** (typically after 7-14 days from issuance —
+  the exact TTL is set by the wave; see
+  [NPS-SURVEY-SCHEDULE](https://github.com/humangr-labs/corelink-server/blob/main/marketing/retention/customer-health/NPS-SURVEY-SCHEDULE.md)).
+- The link **works once.** A second submission on the same link is
+  rejected (replay protection).
+- If someone forwards your link, they can submit a response **once**
+  on your behalf, but they cannot reuse it after that. If you
+  suspect your email was compromised, please contact
+  [security@hugr.dev](mailto:security@hugr.dev).
+
+## Deleting your response
+
+If you want a response deleted, use the standard CoreLink Data
+Subject Request (DSR) flow — see the
+[Privacy Center](/trust/privacy-center) → "Erasure request". The
+survey response table is included in the canonical 12-backend erasure
+worker (`corelink-privacy-erasure-worker`); your `recipient_hash` is
+the join key.
+
+## Audit trail
+
+Every successful and rejected survey response is recorded in the
+CoreLink audit chain
+(`corelink-audit`). The CS team's read access to survey data is
+itself audited via the same outbox — so we have a tamper-evident
+record of who looked at what, when.
+
+## Cross-links
+
+- [Survey schedule](https://github.com/humangr-labs/corelink-server/blob/main/marketing/retention/customer-health/NPS-SURVEY-SCHEDULE.md)
+- [CS team analysis protocol](https://github.com/humangr-labs/corelink-server/blob/main/marketing/retention/customer-health/SURVEY-ANALYSIS-PROTOCOL.md)
+- [Abuse runbook](https://github.com/humangr-labs/corelink-server/blob/main/specs/_runbooks/RB-SURVEY-ABUSE.md)
+- [Privacy Center](/trust/privacy-center)
+- [Lighthouse customer playbook](https://github.com/humangr-labs/corelink-server/blob/main/marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md)

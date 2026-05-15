@@ -1,0 +1,168 @@
+---
+title: "Incident response"
+slug: "/trust/incident-response"
+description: "How CoreLink communicates during incidents, status-page subscription, breach-notification commitments (72h LGPD + GDPR), and the public incident history."
+draft: false
+cross_functional_review: TBD
+pending_signoff:
+  - "Security Lead"
+  - "Legal"
+  - "DPO"
+sources:
+  - "specs/_runbooks/RB-BREACH-NOTIF.md"
+  - "specs/_compliance/IR-TABLETOP-PLAYBOOK.md"
+  - "specs/_compliance/IR-TABLETOP-SCHEDULE-2026.md"
+  - "marketing/launch/STATUS-PAGE-SPEC.md"
+  - "marketing/launch/CRISIS-COMMS-TEMPLATES.md"
+last_updated: "2026-05-15"
+---
+
+<!-- i18n:MT (pt-BR) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
+>
+> Canonical EN source: `docs/trust/incident-response.mdx`
+
+
+# Incident response
+
+This page covers the **customer-visible** side of CoreLink's incident
+response: how you find out, how fast we tell you, what channels we use, and
+where to read the post-mortem.
+
+The internal side — playbooks, runbooks, tabletop schedule, NIST 800-61
+alignment — is documented in
+[`specs/_compliance/IR-TABLETOP-PLAYBOOK.md`](https://github.com/humangr-labs/corelink/blob/main/specs/_compliance/IR-TABLETOP-PLAYBOOK.md).
+
+## Severity definitions
+
+| Severity | Definition | Public communication |
+| --- | --- | --- |
+| **SEV1** | Customer-impacting outage of a critical surface (API ingress, cache reads, audit chain write path) or a confirmed security incident affecting customer data | Status page within **5 minutes**; email to affected tenants within **30 minutes** |
+| **SEV2** | Partial impairment, degraded performance, single-region issue with failover holding | Status page within **15 minutes** if customer-facing; otherwise internal only |
+| **SEV3** | Internal issue with no customer impact (e.g., observability blind spot, internal CI break) | Internal only |
+
+## Status page
+
+[status.corelink.dev](https://status.corelink.dev) is the **single source of
+truth** during an incident. It is operated by Atlassian Statuspage and is
+isolated from the CoreLink production fabric — if CoreLink is down, the
+status page is up.
+
+Eight components are tracked:
+
+1. **API ingress** — `api.corelink.dev` egress.
+2. **CAS read path** — content-addressable read operations.
+3. **CAS write path** — content-addressable write operations.
+4. **Action cache** — REAPI v2 action-result reads/writes.
+5. **Audit chain** — append + read + Merkle proof endpoints.
+6. **Admin plane** — `admin.corelink.dev`, dashboard, billing.
+7. **Identity (Clerk)** — sign-in, MFA, token refresh.
+8. **BYOK envelope** — KMS round-trip per provider.
+
+Per-region status is shown for each component (where applicable).
+
+### Subscribe
+
+You can subscribe to status updates by:
+
+- **Email** — sign up at [status.corelink.dev](https://status.corelink.dev).
+- **SMS** — text the keyword from the status page (US / EU numbers
+  supported).
+- **RSS** — `https://status.corelink.dev/history.rss`
+  / `https://status.corelink.dev/history.atom`.
+- **Webhook** — Slack and Microsoft Teams integrations available;
+  PagerDuty webhook supported.
+- **JSON API** — `https://status.corelink.dev/api/v2/summary.json` for
+  programmatic monitoring.
+
+Enterprise tenants can also pre-register a dedicated incident-comms
+distribution address inside tenant settings; SEV1 events are pushed there
+in parallel with the public status page.
+
+## Communicating during a SEV1
+
+We follow a deliberate cadence so you can plan around it:
+
+| Time after detection | What you'll see |
+| --- | --- |
+| ≤ 5 min | Status page flips affected components; initial "Investigating" post |
+| ≤ 30 min | Email to affected tenants (security@ + registered tech contact + incident-comms address); initial scope statement |
+| Every 30 min | Status page update with the *change since last update* — even if "no change" |
+| Until resolved | Continuous updates; on-call commander identified by name in updates |
+| ≤ 72h | Public post-mortem **published** on the status page and linked from this Trust Center |
+| T+14d | Internal post-mortem review with corrective-action register; summary delta added to the public post-mortem if material |
+
+We follow the templates in
+[`marketing/launch/CRISIS-COMMS-TEMPLATES.md`](https://github.com/humangr-labs/corelink/blob/main/marketing/launch/CRISIS-COMMS-TEMPLATES.md):
+SEV1 outage, privacy incident, billing bug, BYOK CMK rumor, pentester early
+disclosure. The templates exist so we can communicate quickly under
+pressure without writing prose from scratch.
+
+## Breach notification
+
+If we confirm a **personal-data breach** under LGPD Art. 46 / GDPR Art. 4(12),
+we commit to:
+
+| Authority / party | Window | Reference |
+| --- | --- | --- |
+| ANPD (Brazil) | **within 72 hours** of awareness | LGPD Art. 33 |
+| EU supervisory authority | **within 72 hours** of awareness | GDPR Art. 33 |
+| Affected data subjects (high-risk) | **without undue delay** | GDPR Art. 34 |
+| Affected enterprise tenant (any incident) | **within 24 hours** of confirmation | DPA §7 |
+
+The 72-hour clock starts at *awareness* — the moment we have a
+reasonable degree of certainty that a breach occurred. We have a documented
+internal escalation that puts the decision in front of the DPO and Security
+Lead within 4 hours of suspicion, well inside the regulatory window.
+
+The breach-notification runbook is
+[`specs/_runbooks/RB-BREACH-NOTIF.md`](https://github.com/humangr-labs/corelink/blob/main/specs/_runbooks/RB-BREACH-NOTIF.md);
+the tabletop playbook (NIST 800-61 Rev. 2 aligned, six scenarios) is
+[`specs/_compliance/IR-TABLETOP-PLAYBOOK.md`](https://github.com/humangr-labs/corelink/blob/main/specs/_compliance/IR-TABLETOP-PLAYBOOK.md).
+
+## Past incidents
+
+> **No customer-impacting incidents to date.** CoreLink has not declared a
+> customer-impacting SEV1 since the platform's first paid traffic.
+>
+> This section will be populated as needed. When an incident is closed and
+> the public post-mortem is published, it will be listed here with a link
+> to the post-mortem on the status page.
+
+Format we'll use:
+
+| Date | Title | Severity | Status-page link | Customer impact summary |
+| --- | --- | --- | --- | --- |
+| _(none yet)_ | | | | |
+
+For internal-only events (drills, tabletop exercises), see
+[`specs/_compliance/IR-TABLETOP-SCHEDULE-2026.md`](https://github.com/humangr-labs/corelink/blob/main/specs/_compliance/IR-TABLETOP-SCHEDULE-2026.md).
+First live tabletop session **TT-01 is scheduled 2026-07-22**.
+
+## Reporting an incident *to* us
+
+If you suspect an incident **affecting CoreLink** that we haven't
+acknowledged:
+
+| What you saw | Where to send it |
+| --- | --- |
+| Security vulnerability or active exploit | `security@corelink.dev` — see [Security policy](/security/policy) |
+| Service outage or degradation not on status page | `support@corelink.dev` — we'll page on-call |
+| Privacy incident or data-subject concern | `privacy@corelink.dev` |
+| Pentest finding under coordinated disclosure | `security@corelink.dev` — PGP key at [`/.well-known/security-pgp.asc`](https://corelink.dev/.well-known/security-pgp.asc) |
+
+24/7 paging is in place across three regions per PagerDuty rotation. A
+weekly synthetic page (sent every Monday 14:00 UTC, sustained for 30 days
+pre-GA) verifies the rotation actually pages — see
+[`marketing/launch/STATUS-PAGE-SPEC.md`](https://github.com/humangr-labs/corelink/blob/main/marketing/launch/STATUS-PAGE-SPEC.md).
+
+## Related
+
+- [Trust Center overview](./)
+- [Compliance](./compliance)
+- [Data handling](./data-handling)
+- [Sub-processors](./subprocessors)
+- [Security policy (VDP)](/security/policy)
+- [Responsible disclosure](/security/responsible-disclosure)
+- [Status page](https://status.corelink.dev)
