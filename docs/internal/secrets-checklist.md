@@ -164,8 +164,11 @@ rotation owner → compromise response → storage location.
 | 106 | Vault Kubernetes SA projected token | `VAULT_K8S_SERVICE_ACCOUNT_TOKEN` | corelink-byok-vault (`crates/corelink-byok-vault/src/auth.rs:111`) | (customer Vault) | (customer-side) | Kubernetes projects a short-lived SA token into the pod; consumer reads and POSTs to `/v1/auth/kubernetes/login` | per pod (≤ 1h projected TTL) | Customer | Pod restart re-projects; on compromise customer revokes the SA + recreates | customer-side |
 | 107 | Vault TLS skip-verify flag (dev/test only) | `VAULT_SKIP_VERIFY` | corelink-byok-vault (`crates/corelink-byok-vault/src/real.rs:152`) | (internal) | n/a | Set `true` in dev/test only — production build HARD-rejects this value (mirrors `CORELINK_BYOK_VAULT_MOCK` #36 pattern) | rotate-on-compromise | Security Lead | N/A (test flag; production fails closed) | dev only |
 | 108 | Vault direct-token auth credential | `VAULT_TOKEN` | corelink-byok-vault (`crates/corelink-byok-vault/src/auth.rs:102`, `src/real.rs`) + .github/workflows/byok_kill_switch_drill_weekly.yml | (customer Vault) | (customer-side) | Customer Vault issues a direct token (developer-mode auth); pairs with #33..#35 AppRole as alternative auth path; staging GHA variant is #88 | ≤ 30d | Customer | Customer revokes token via `vault token revoke`; we re-bind | customer-side |
+| 109 | CoreLink API base URL (customer-facing CLI/SDK config; not a secret) | `CORELINK_API_URL` | `crates/corelink-cli/examples/quickstart_*.rs` (40 SDK quickstart examples × 4 languages, Wave 13 SEAL) | (customer config) | n/a (public URL) | Customer points SDK at e.g. `https://api.corelink.dev` or self-hosted; documented in `examples/README.md` quickstart. No rotation — config knob, not credential. | n/a | Customer | n/a | customer-side |
+| 110 | DSR (Data Subject Request) action verb — CLI param ("export"/"erase"/"rectify"), not a secret | `DSR_ACTION` | `crates/corelink-cli/examples/quickstart_dsr_submit.rs` | (customer CLI input) | n/a | Example input parameter for DSR submit quickstart; legal-required action verb per LGPD/GDPR Article 15-22. No rotation — input value, not credential. | n/a | Customer | n/a | customer-side |
+| 111 | Team-invite recipient email — CLI param, not a secret | `INVITEE_EMAIL` | `crates/corelink-cli/examples/quickstart_team_invite.rs` | (customer CLI input) | n/a | Example input parameter for team-invite quickstart. No rotation — input value, not credential. | n/a | Customer | n/a | customer-side |
 
-**Total rows: 108**
+**Total rows: 111**
 
 ## Notes
 

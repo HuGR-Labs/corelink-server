@@ -77,6 +77,12 @@ LEGACY = [
     "DASH-DEDUP",
     "DASH-RATE",
     "DASH-MULTIPART",
+    # Ops-internal dashboards (not part of the canonical-12 customer
+    # observability surface). Added by S-17 WI-S17-005 (PagerDuty 24/7
+    # incident response). Kept in `dashboards/grafana/` for the oncall
+    # team; not referenced from `observability_model.md §10 Nível-3`.
+    "DASH-ONCALL-24-7",
+    "DASH-ONCALL-FATIGUE",
 ]
 
 # Per-dashboard required template variables.

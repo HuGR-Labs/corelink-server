@@ -66,6 +66,9 @@ DEFERRED_SLOS: dict[str, str] = {
     "SLO-RPO-REGION": "S-17 (DR drill); WI-S17-002",
     "SLO-ONCALL-MTTA-SEV1": "S-17 (PagerDuty ingest); WI-S17-005",
     "SLO-ONCALL-MTTR-SEV1": "S-17 (PagerDuty ingest); WI-S17-005",
+    "SLO-HOT-BLOB-COVERAGE": "DEBT-011 P2 + DR-16 (prod-mode dry-run handler-crate WI); trait-abstraction-defer per charter — SLI emit point lives in `crates/corelink-replica-worker/src/coverage.rs`, handler binding lands with CF Worker production wiring",
+    "SLO-MULTIPART-FAILOVER-INVENTORY": "DEBT-011 P2 + DR-16; trait-abstraction-defer — SLI emit point in `crates/corelink-r2-multipart/src/failover.rs`, handler binding deferred to CF Worker prod wiring",
+    "SLO-REPLICATION-LAG-DO": "DEBT-011 P2 + DR-16; trait-abstraction-defer — SLI emit point in `crates/corelink-region/src/neon_replica_lag.rs` (covers DO replicas via shared scaffold), handler binding deferred to CF Worker prod wiring",
 }
 
 # Some SLOs map to an SLI slug that differs in the prefix (SLO-AVAIL-X

@@ -488,12 +488,12 @@ INVs introduced by the `corelink-handler-cas` crate (CAS handler entry/correctne
 
 | ID | Nome | Severidade | Descrição | Enforcement | TLA+ file |
 |---|---|---|---|---|---|
-| **INV-HANDLER-SLI-EMIT-ENTRY** | Every CAS handler entry emits one `SliObserver::observe_*` call BEFORE returning (covers `Sli::AvailCasGet` / `Sli::AvailCasPut` availability counters regardless of outcome) so the multi-burn-rate alert evaluator never misses a request | HIGH | `corelink-handler-cas::handler` invokes observer in a guard at the top of the handler body; CI grep gate forbids early-return paths sem observer call; property test asserts observer-count = request-count even on error paths | Property test `prop_handler_cas` 10k iter request-count vs observe-count equality (DEBT-004 promotion) | N/A (architecture invariant; SLO-AVAIL-CAS measurement integrity) |
+| **INV-HANDLER-SLI-EMIT-ENTRY** | Every CAS handler entry emits one `SliObserver::observe_*` call BEFORE returning (covers `Sli::AvailCasGet` / `Sli::AvailCasPut` availability counters regardless of outcome) so the multi-burn-rate alert evaluator never misses a request | HIGH | `corelink-handler-cas::handler` invokes observer in a guard at the top of the handler body; CI grep gate forbids early-return paths sem observer call; property test asserts observer-count = request-count even on error paths | Property test `prop_handler_cas` 10k iter request-count vs observe-count equality (DEBT-004 promotion) | N/A (architecture invariant; SLO-AVAIL-CAS-GET / SLO-AVAIL-CAS-PUT measurement integrity) |
 | **INV-CAS-CORRECTNESS** | Every CAS read returns either bytes whose hash matches the requested key OR a hash-mismatch error (`Sli::CorrectnessCas` failure observation) — never silently returns wrong bytes | CRITICAL | `corelink-handler-cas::handler` verifies hash on read path; mismatch → `Sli::CorrectnessCas` failure observation + error return; fakes mirror this for proptest coverage | Property test 10k iter hash-mismatch injection + integration test correctness counter (DEBT-004 promotion) | (subsumido por `cas_integrity.tla` ✅ GREEN — InvPoisoningRejected) |
 
 **Cross-references**:
 - `cas_integrity.tla` ✅ GREEN — INV-CAS-INTEGRITY parent (poisoning rejection).
-- `slo_catalog.md SLO-AVAIL-CAS + SLO-CORRECT-CAS` — operational metrics.
+- `slo_catalog.md SLO-AVAIL-CAS-GET + SLO-AVAIL-CAS-PUT + SLO-CORRECT-CAS` — operational metrics.
 - `compliance_matrix.md` mapeia INV-HANDLER-SLI-* para SOC 2 CC7.1 (system monitoring) + multi-burn-rate alert canonical S-09.
 
 **Aliases históricos:** nenhum. Promoted in DEBT-004 closure pass (2026-05-15) from `corelink-handler-cas` crate orphan refs.
