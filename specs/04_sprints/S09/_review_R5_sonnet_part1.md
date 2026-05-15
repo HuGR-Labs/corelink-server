@@ -335,3 +335,15 @@ which is fixable in a small Lote.
 ---
 
 **End R5 Sonnet Part 1 v1.0.0.**
+
+---
+
+## Closure footnote (Lote 10.9bis wave 17 — 2026-05-15)
+
+**P1-S1 INV drift triple — CLOSED.** Remediation matrix applied (reciprocal of R4-P1-1):
+
+- `INV-CAS-DIGEST-INTEGRITY` renamed to canonical `INV-CAS-INTEGRITY` (alias drift fixed in `dashboards/grafana/DASH-CAS.json` panel 10 + WI-S09-005-12 SEAL row).
+- `INV-EXEC-IDEMPOTENT` promoted to `invariant_registry.md §3.12` (S-09 row, HIGH; runtime enforcement S-17 PLANNED).
+- `INV-LGPD-AUTO-SUSPEND-FORBIDDEN` promoted to `invariant_registry.md §3.12` (S-09 row, HIGH; LGPD Art. 20 + GDPR Art. 22).
+
+`validate_inv_promotion.py` drift 3 → 0; `validate_specs.py`, `validate_references.py`, `validate_canonical_consistency.py`, `validate_dashboards.py` all exit 0.

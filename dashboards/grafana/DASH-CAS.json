@@ -304,10 +304,10 @@
     },
     {
       "id": 10,
-      "title": "INV-CAS-DIGEST-INTEGRITY canary — digest mismatch counter (MUST = 0; SEV-0)",
+      "title": "INV-CAS-INTEGRITY canary — digest mismatch counter (MUST = 0; SEV-0)",
       "type": "stat",
       "datasource": "$DS_PROMETHEUS",
-      "description": "WI §6.1 panel 10 + INV-CAS-DIGEST-INTEGRITY canary. SHA-256 digest mismatch on read = corruption signal; > 0 = SEV-0 PagerDuty page Architect + Security.",
+      "description": "WI §6.1 panel 10 + INV-CAS-INTEGRITY canary (registry §3.2). SHA-256 digest mismatch on read = corruption signal; > 0 = SEV-0 PagerDuty page Architect + Security.",
       "gridPos": { "h": 6, "w": 12, "x": 12, "y": 24 },
       "fieldConfig": {
         "defaults": {

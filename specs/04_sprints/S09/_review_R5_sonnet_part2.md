@@ -351,3 +351,15 @@ a S-17 forward-looking dependency.
 ---
 
 **End R5 Sonnet Part 2 v1.0.0.**
+
+---
+
+## Closure footnote (Lote 10.9bis wave 17 — 2026-05-15)
+
+**P1-S8 INV drift triple — CLOSED.** Remediation matrix applied:
+
+- `INV-CAS-DIGEST-INTEGRITY` → renamed to canonical `INV-CAS-INTEGRITY` (registry §3.2; alias drift).
+- `INV-EXEC-IDEMPOTENT` → promoted to registry §3.12 (S-09 row, HIGH).
+- `INV-LGPD-AUTO-SUSPEND-FORBIDDEN` → promoted to registry §3.12 (S-09 row, HIGH; LGPD Art. 20 + GDPR Art. 22).
+
+`validate_inv_promotion.py` drift 3 → 0; 4 quality-gate validators exit 0.
