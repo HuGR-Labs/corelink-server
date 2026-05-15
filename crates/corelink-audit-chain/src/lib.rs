@@ -136,6 +136,7 @@
 #![deny(missing_docs)]
 #![deny(missing_debug_implementations)]
 
+pub mod archive_producer;
 pub mod audit;
 pub mod chain;
 pub mod error;
@@ -144,6 +145,11 @@ pub mod exporter;
 pub mod sink;
 pub mod verifier;
 
+pub use archive_producer::{
+    archive_chunk_key, chain_hashes_eq_ct, ArchiveProducer, ArchiveProducerError, ArchiveReceipt,
+    ArchiveSink, CapturedChunk, FailingArchiveSink, FlushPolicy, InMemoryArchiveSink,
+    DEFAULT_FLUSH_AFTER_MS, DEFAULT_MAX_BYTES_PER_CHUNK, DEFAULT_MAX_EVENTS_PER_CHUNK,
+};
 pub use audit::{
     canonical_audit_event_strings, AuditChainAuditEmitError, AuditChainAuditEventType,
     AuditChainAuditRecord, AuditChainAuditSink, FailingAuditChainAuditSink,
