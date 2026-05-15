@@ -38,7 +38,8 @@ supported in CoreLink's BYOK enterprise tier.
 |---|---|---|---|---|
 | **AWS KMS** | **FIPS 140-3 Level 1** | `#4523` | Default; no extra config. | WI-S14-004 ✓ |
 | GCP Cloud KMS (HSM tier — CoreLink production target) | **FIPS 140-2 Level 3** | `#3318` (Marvell LiquidSecurity HSM) | HSM tier mandatory for production; software tier (`#3978`, L1) staging-only. | WI-S14-005 + R2-7 ✓ |
-| Azure Key Vault Premium | FIPS 140-2 Level 2 | TBD (WI-S14-005) | HSM-backed; L2 validated. | WI-S14-005 |
+| Azure Key Vault Premium | FIPS 140-2 Level 2 | `#3516` (Azure Premium HSM) | HSM-backed; L2 validated. | WI-S14-005 + R2-8 ✓ |
+| Azure Managed HSM / Dedicated HSM | FIPS 140-2 Level 3 | `#4332` (Marvell LiquidSecurity, Azure-deployed) | Mandatory for customers requiring L3; selected by `*.managedhsm.azure.net` host suffix. | WI-S14-005 + R2-8 ✓ |
 | HashiCorp Vault Enterprise | FIPS 140-3 Level 1 | TBD (WI-S14-005) | Vault Enterprise FIPS build. | WI-S14-005 |
 
 ---

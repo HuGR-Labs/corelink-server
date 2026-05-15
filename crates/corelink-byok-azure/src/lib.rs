@@ -126,6 +126,25 @@ use aes_gcm::{
 use corelink_byok::{BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider,
                     KmsProviderKind, WrappedDek};
 
+pub(crate) mod key_resource;
+
+#[cfg(feature = "production")]
+mod entra;
+#[cfg(feature = "production")]
+mod real;
+
+#[cfg(feature = "production")]
+pub use real::AzureKeyVaultRealProvider;
+
+/// Test-only utilities. Hidden from documentation; gated on the `production`
+/// feature. Used by the in-crate `tests/` integration suites to inject a
+/// static bearer token or wiremock endpoint.
+#[cfg(feature = "production")]
+#[doc(hidden)]
+pub mod __test_support {
+    pub use crate::entra::EntraCredentials;
+}
+
 /// Number of bytes in the Azure RSA-wrapped inner key (mock: 32 bytes identity).
 const MOCK_KEY_WRAP_LEN: usize = 32;
 /// AES-GCM nonce length (96-bit = 12 bytes).
