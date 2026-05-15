@@ -89,7 +89,7 @@ Format key:
 
 | TSC | CTRL ID | Evidence type | Artifact location | Cadence | Status | Last update |
 |---|---|---|---|---|---|---|
-| CC4.1 | CTRL-COMP-001 (continuous compliance) | audit_logs | Drata continuous monitoring + `specs/_audits/templates/byok-quarterly-review.md` + adversarial summaries | DAILY | I | f18acdc |
+| CC4.1 | CTRL-COMP-001 (continuous compliance) | audit_logs | Drata continuous monitoring + `specs/_audits/templates/byok-quarterly-review.md` + adversarial summaries + **canonical-consistency validator** (`scripts/validate_canonical_consistency.py` + `.github/workflows/canonical-consistency.yml` on every PR; baseline `specs/_audits/2026-05-15-canonical-consistency-baseline.md`; triage `specs/_runbooks/RB-CANONICAL-DRIFT.md`) — cross-validates INV registry × TLA+ × code × tests for spec-corpus drift | DAILY (Drata) + PER-PR (canonical-consistency) | I | wt/r-prep-canonical-lint |
 | CC4.2 | process control (deficiency comms via GAP register) | audit_logs (`corelink.compliance.review_completed`) | GAP-XX log (this rollup + SOC2-GAP-ANALYSIS) · **weekly compliance digest LANDED 2026-05-15** (`scripts/compliance-weekly-digest.py` + `.github/workflows/compliance-weekly.yml` Mon 09:00 UTC + `specs/_runbooks/RB-COMPLIANCE-WEEKLY-REVIEW.md` + `specs/_compliance/weekly-digests/`) | WEEKLY | **I (GAP-08 closed 2026-05-15)** | wt/r-prep-compliance-weekly |
 
 ### 2.5 CC5 Control Activities

@@ -209,7 +209,7 @@ Pre-conditions: pentest retest letter received; 3 lighthouse SLA attestations si
 
 | # | Work item | Owner | Notes |
 |---|---|---|---|
-| R7-1 | **Aggregate D+60 evidence pack** — single archive with: pentest retest letter, SOC 2 readiness scorecard, 3 lighthouse SLA attestations, 30d staging report, all sprint impl-sealed tags, 13 canonical sign-offs signed | 1 Sonnet | Output: `specs/_audits/D60-GA-EVIDENCE-PACK.tar.gz` |
+| R7-1 | **Aggregate D+60 evidence pack** — single archive with: pentest retest letter, SOC 2 readiness scorecard, 3 lighthouse SLA attestations, 30d staging report, all sprint impl-sealed tags, 13 canonical sign-offs signed, **latest canonical-consistency JSON report** (CI artifact from `.github/workflows/canonical-consistency.yml`; cross-validates INV registry × TLA+ × code × tests; baseline `specs/_audits/2026-05-15-canonical-consistency-baseline.md`; pre-GA requirement: `orphan_refs=0`) | 1 Sonnet | Output: `specs/_audits/D60-GA-EVIDENCE-PACK.tar.gz` |
 | R7-2 | **PRR-S20-GA promotion vote** — collect 13 canonical signatures (5 dual-hat at SEAL + 5-8 external) via DocuSign or equivalent | Gustavo + 13 signers | Async over 7 days |
 | R7-3 | **CONDITIONALLY_APPROVED → APPROVED transition commit** — `specs/04_sprints/S20/PRR-S20-GA.md` work_status update + spec contract bump + tag `ga-approved` | Orchestrator | Final commit |
 | R7-4 | **Go/No-Go review meeting** — all 13 sign-offs reviewed in real-time; veto from any single sign-off = blocked | Gustavo + 13 signers | Live meeting — driven by `specs/_compliance/GA-GATE-GO-NOGO-TEMPLATE.md` (60 min agenda; 4-signer veto unanimous) against `specs/_compliance/GA-GATE-CRITERIA.md` (59-criteria checklist across 6 tracks) |
