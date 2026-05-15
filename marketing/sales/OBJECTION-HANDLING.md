@@ -20,7 +20,7 @@ tags: ["sales", "objection-handling", "r-prep", "ga", "playbook"]
 > **Audience:** anyone running a pre-purchase or renewal conversation. **Not** a script — these are reference patterns.
 > **Structure per objection:** Objection → Why it matters to the customer → Our position → Evidence → Counter-question.
 > **Tone rule:** acknowledge the legitimacy of every objection before pushing back. Customers can tell when they're being deflected.
-> **Companion docs:** `marketing/sales/FAQ-MASTER.md`, `marketing/sales/COMPETITIVE-MATRIX.md`, `marketing/sales/PROOF-POINTS.md`.
+> **Companion docs:** `marketing/sales/FAQ-MASTER.md`, `marketing/sales/COMPETITIVE-MATRIX.md`, `marketing/sales/PROOF-POINTS.md`, `marketing/retention/RETENTION-PLAYBOOK.md` (renewal-save plays), `marketing/retention/CHURN-RISK-SIGNALS.md` (heuristic catalog backing the save motion), `marketing/retention/CANCELLATION-FLOW.md` (in-product cancel UX).
 
 ---
 

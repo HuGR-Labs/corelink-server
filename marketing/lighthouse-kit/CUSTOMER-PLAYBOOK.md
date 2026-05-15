@@ -20,7 +20,7 @@ tags: ["lighthouse", "marketing", "playbook", "customer-facing", "onboarding", "
 > **Audience:** YOU — the engineering, SRE, or platform leader at the customer who has agreed to be a CoreLink lighthouse customer.
 > **What this is:** the single document your CoreLink account contact hands you on Day 1. It walks you through everything: the first 60 minutes, the first week, the 30-day observation, the attestation, and the case-study handoff.
 > **What this isn't:** a sales pitch (you already said yes), a legal contract (your DPA + LOI are separate), or a product manual (CLI docs are at `docs/cli/`).
-> **Internal companion:** our team works the other side of this playbook from `specs/_runbooks/RB-LIGHTHOUSE-PHASE-MANAGEMENT.md`.
+> **Internal companion:** our team works the other side of this playbook from `specs/_runbooks/RB-LIGHTHOUSE-PHASE-MANAGEMENT.md`. Post-attestation retention motion (when lighthouse alumni become paid tenants) is governed by `marketing/retention/CHURN-RISK-SIGNALS.md` + `marketing/retention/RETENTION-PLAYBOOK.md` + `marketing/retention/CANCELLATION-FLOW.md`; internal RACI in `specs/_runbooks/RB-CHURN-RISK-RESPONSE.md`.
 > **Self-serve alternative:** if you're not in the lighthouse program but want to migrate, see the self-serve migration guides at `apps/docs/docs/how-to/migrate/` (Bazel / S3 / Docker registry). They cover the same phase structure (pre-flight → parallel-run → cutover → rollback) without the dedicated-engineer commitment.
 
 ---
