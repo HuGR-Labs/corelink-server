@@ -1,8 +1,33 @@
-#![allow(clippy::uninlined_format_args, clippy::format_in_format_args)]
-use std::net::SocketAddr;
-use tonic::{transport::Server, Request, Response, Status};
-use tracing::info;
+//! CoreLink server binary entry point.
+//!
+//! Hosts:
+//! - gRPC stack on `PORT` (default 50051): Health + (TODO) CAS / AC /
+//!   ByteStream / Capabilities.
+//! - HTTP stack on `HTTP_PORT` (default 50052): R2-12 Stripe webhook
+//!   route at `/v1/billing/stripe-webhook` (only mounted when
+//!   `STRIPE_WEBHOOK_SECRET` is set; absent → HTTP listener is not
+//!   started so dev/CI runs without billing wiring stay green).
+#![forbid(unsafe_code)]
+// The tonic-generated proto module emits structs without docstrings;
+// allow at the crate root since the lint is `deny` workspace-wide.
+#![allow(missing_docs)]
+#![allow(
+    clippy::uninlined_format_args,
+    clippy::format_in_format_args,
+    reason = "scaffolding lints — main.rs is the binary entry"
+)]
 
+use std::net::SocketAddr;
+use std::sync::Arc;
+
+use corelink_server::webhook::{
+    router as webhook_router, InMemoryIdempotencyStore, InMemoryWebhookAuditSink,
+    RecordingSubscriptionHandler, SystemTimeProvider, WebhookState,
+};
+use tonic::{transport::Server, Request, Response, Status};
+use tracing::{info, warn};
+
+#[allow(missing_docs, reason = "tonic-generated code does not emit docstrings")]
 pub mod health {
     tonic::include_proto!("corelink.health.v1");
 }
@@ -33,22 +58,53 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         )
         .init();
 
-    let port = std::env::var("PORT")
+    let port: u16 = std::env::var("PORT")
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(50051u16);
 
-    let addr: SocketAddr = format!("0.0.0.0:{}", port).parse()?;
+    let grpc_addr: SocketAddr = format!("0.0.0.0:{}", port).parse()?;
 
-    info!(%addr, "CoreLink server starting");
+    // R2-12: HTTP server with Stripe webhook route. Only started when
+    // STRIPE_WEBHOOK_SECRET is present; otherwise we log and skip so
+    // local dev / CI don't fail without billing config.
+    if let Ok(secret) = std::env::var("STRIPE_WEBHOOK_SECRET") {
+        let http_port: u16 = std::env::var("HTTP_PORT")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(50052u16);
+        let http_addr: SocketAddr = format!("0.0.0.0:{}", http_port).parse()?;
+
+        // NOTE: the in-memory store / recording handler shipped here
+        // are placeholders to keep the binary buildable. Production
+        // wiring (Lote 11+) replaces them with the D1-backed
+        // idempotency store + the `corelink-tier-selection` ledger
+        // adapter + the `corelink-audit-chain` sink.
+        let state = Arc::new(WebhookState::new(
+            secret.into_bytes(),
+            Arc::new(InMemoryIdempotencyStore::new()),
+            Arc::new(InMemoryWebhookAuditSink::new()),
+            Arc::new(RecordingSubscriptionHandler::new()),
+            Arc::new(SystemTimeProvider),
+        ));
+        info!(%http_addr, route = corelink_server::webhook::STRIPE_WEBHOOK_ROUTE,
+            "CoreLink HTTP listener starting (Stripe webhook)");
+        let app = webhook_router(state);
+        let listener = tokio::net::TcpListener::bind(http_addr).await?;
+        tokio::spawn(async move {
+            if let Err(e) = axum::serve(listener, app).await {
+                tracing::error!(error = %e, "HTTP listener exited");
+            }
+        });
+    } else {
+        warn!("STRIPE_WEBHOOK_SECRET unset; Stripe webhook route NOT mounted (dev/CI mode)");
+    }
+
+    info!(%grpc_addr, "CoreLink gRPC server starting");
 
     Server::builder()
         .add_service(HealthServer::new(HealthService))
-        // TODO semana 1: add_service(CasServer::new(CasService::new(...)))
-        // TODO semana 1: add_service(ActionCacheServer::new(...))
-        // TODO semana 1: add_service(ByteStreamServer::new(...))
-        // TODO semana 1: add_service(CapabilitiesServer::new(...))
-        .serve(addr)
+        .serve(grpc_addr)
         .await?;
 
     Ok(())

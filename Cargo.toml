@@ -154,6 +154,13 @@ tonic = "0.12"
 prost = "0.13"
 tonic-build = "0.12"
 
+# HTTP server stack (R2-12: Stripe webhook route in apps/server)
+# axum 0.7 + tower + http 1.x align with tonic 0.12 (hyper 1 underneath).
+axum = { version = "0.7", default-features = false, features = ["http1", "tokio", "json"] }
+tower = { version = "0.5", default-features = false }
+http = "1"
+http-body-util = "0.1"
+
 # Async runtime
 tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1"
@@ -300,6 +307,8 @@ corelink-byok-revocation = { path = "crates/corelink-byok-revocation" }
 corelink-customer-alerts = { path = "crates/corelink-customer-alerts" }
 corelink-erasure-attestation = { path = "crates/corelink-erasure-attestation" }
 corelink-dr-drill = { path = "crates/corelink-dr-drill" }
+corelink-tier-selection = { path = "crates/corelink-tier-selection" }
+corelink-stripe-real = { path = "crates/corelink-stripe-real" }
 
 # CLI tooling (WI-S15-001 / WI-S15-005)
 toml = "0.8"
