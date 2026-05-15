@@ -212,6 +212,16 @@ Pre-conditions: pentest retest letter received; 3 lighthouse SLA attestations si
 
 Per `marketing/launch/COORDINATION/LAUNCH-RUNBOOK.md` (shipped by WI-S20-008).
 
+### R-8 artifact links (T-24h..T+72h moment-of-truth window)
+
+| Artifact | Purpose |
+|---|---|
+| `marketing/launch/LAUNCH-CHECKLIST-V2.md` | 46-row T-24h..T+72h master checklist (owner / action / success metric / fallback). |
+| `marketing/launch/STATUS-PAGE-SPEC.md` | Public status page spec (Statuspage.io for GA; 8 components; severity mapping; PagerDuty auto-publish; approval workflow; 7d maintenance template). |
+| `marketing/launch/CRISIS-COMMS-TEMPLATES.md` | 5 crisis scenarios with ready-to-send templates (SEV1 outage, privacy incident w/ LGPD Art. 48 + GDPR Art. 33 72h notice, billing bug, BYOK CMK rumor, pentester early disclosure) + launch-defer comms. |
+| `marketing/launch/DAY-1-DASHBOARD-SPEC.md` | Single-screen war-room dashboard: signups, activation %, support tickets, top-5 SLO burn, press/social mentions. |
+| `specs/_runbooks/RB-LAUNCH-WAR-ROOM-COORDINATION.md` | Lightweight operator playbook for the war room coordinator. |
+
 ### T-7 to T-1 (preparation)
 - T-7d: Pentest letter confirmed received; SOC 2 readiness confirmed; lighthouse SLAs attested
 - T-7d: **10-min quickstart sealed** — [`apps/docs/docs/tutorials/quickstart-10min.mdx`](apps/docs/docs/tutorials/quickstart-10min.mdx) + [FAQ](apps/docs/docs/tutorials/quickstart-faq.mdx) live, CI validator `quickstart-validate.yml` green, sidebar CTA promoted to top of Get Started, home-page card refreshed (R-prep launch checklist)
