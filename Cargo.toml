@@ -201,6 +201,12 @@ members = [
     # deterministic logical clock + write-lease ledger so split-brain
     # absence is provable. Companion to RB-ACTIVE-FAILOVER + DR-16.
     "tests/e2e-failover-router",
+    # R-prep survey infra (NPS / CSAT / free-text / multi-choice).
+    # HMAC-SHA256-signed one-shot invite tokens + TTL + audit-fail-CLOSED
+    # record path + in-memory fake. Anti-abuse runbook RB-SURVEY-ABUSE +
+    # additive migration 0046_survey_responses + analyst protocol live
+    # under marketing/retention/customer-health/.
+    "crates/corelink-survey",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
