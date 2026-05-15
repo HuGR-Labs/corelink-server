@@ -19,6 +19,14 @@
  */
 
 import type { AdminOp, AuditEventDetail, AuditPage, Tenant } from "./types";
+import type {
+  CustomerAuditEvent,
+  CustomerBilling,
+  CustomerOverview,
+  CustomerPat,
+  CustomerTeamMember,
+  CustomerUsage,
+} from "./customer-types";
 
 export interface MockRequest {
   method: string;
@@ -46,6 +54,16 @@ interface MockState {
     status: "pending" | "review" | "approved" | "rejected";
     actor: string;
   }>;
+  customer: {
+    tenant_id: string;
+    tenant_name: string;
+    plan: CustomerOverview["plan"];
+    audit: CustomerAuditEvent[];
+    pats: CustomerPat[];
+    team: CustomerTeamMember[];
+    byok: CustomerOverview["byok"];
+    billing: CustomerBilling;
+  };
 }
 
 function rfc7807(status: number, title: string, detail: string): MockResponse {
@@ -158,6 +176,108 @@ function makeOps(): AdminOp[] {
   ];
 }
 
+function makeCustomerAudit(): CustomerAuditEvent[] {
+  return [
+    {
+      event_id: "cevt_001",
+      ts: "2026-05-10T10:00:00Z",
+      event_type: "auth.login",
+      severity: "info",
+      actor: "user_e2e_admin",
+      summary: "signin from 10.0.0.1",
+    },
+    {
+      event_id: "cevt_002",
+      ts: "2026-05-12T11:30:00Z",
+      event_type: "pat.created",
+      severity: "info",
+      actor: "user_e2e_admin",
+      summary: "created PAT 'ci-runner'",
+    },
+    {
+      event_id: "cevt_003",
+      ts: "2026-05-13T09:00:00Z",
+      event_type: "byok.cmk_rotated",
+      severity: "warn",
+      actor: "user_e2e_admin",
+      summary: "CMK rotated to cmk_v2",
+    },
+  ];
+}
+
+function makeCustomerPats(): CustomerPat[] {
+  return [
+    {
+      pat_id: "pat_001",
+      name: "ci-runner",
+      scopes: ["cache:r", "cache:w", "cache:find-missing"],
+      created_at: "2026-04-15T09:00:00Z",
+      last_used_at: "2026-05-14T22:01:00Z",
+    },
+    {
+      pat_id: "pat_002",
+      name: "dashboard-readonly",
+      scopes: ["cache:r", "admin:audit"],
+      created_at: "2026-03-20T12:00:00Z",
+      last_used_at: "2026-05-13T18:42:00Z",
+    },
+  ];
+}
+
+function makeCustomerTeam(): CustomerTeamMember[] {
+  return [
+    {
+      user_id: "user_e2e_admin",
+      email: "admin@acme.example",
+      role: "Owner",
+      joined_at: "2026-01-15T09:00:00Z",
+      status: "active",
+    },
+    {
+      user_id: "user_e2e_approver",
+      email: "approver@acme.example",
+      role: "Admin",
+      joined_at: "2026-02-01T09:00:00Z",
+      status: "active",
+    },
+    {
+      user_id: "user_e2e_member",
+      email: "member@acme.example",
+      role: "Developer",
+      joined_at: "2026-03-10T09:00:00Z",
+      status: "active",
+    },
+  ];
+}
+
+function makeCustomerBilling(): CustomerBilling {
+  return {
+    status: "active",
+    plan: "team",
+    current_period_start: "2026-05-01T00:00:00Z",
+    current_period_end: "2026-05-31T23:59:59Z",
+    amount_due_cents: 19900,
+    currency: "usd",
+    payment_method: { brand: "visa", last4: "4242", exp_month: 12, exp_year: 2028 },
+    invoices: [
+      {
+        invoice_id: "inv_2026_04",
+        issued_at: "2026-04-30T23:00:00Z",
+        amount_cents: 19900,
+        status: "paid",
+        hosted_url: "https://billing.example.invalid/inv_2026_04",
+      },
+      {
+        invoice_id: "inv_2026_03",
+        issued_at: "2026-03-30T23:00:00Z",
+        amount_cents: 19900,
+        status: "paid",
+        hosted_url: "https://billing.example.invalid/inv_2026_03",
+      },
+    ],
+  };
+}
+
 function freshState(): MockState {
   const events = makeAuditEvents();
   return {
@@ -174,6 +294,20 @@ function freshState(): MockState {
         actor: "data_subject_001@example.invalid",
       },
     ],
+    customer: {
+      tenant_id: "tenant_acme",
+      tenant_name: "Acme Inc.",
+      plan: "team",
+      audit: makeCustomerAudit(),
+      pats: makeCustomerPats(),
+      team: makeCustomerTeam(),
+      byok: {
+        status: "active",
+        cmk_id: "cmk_v2",
+        last_rotated_at: "2026-05-13T09:00:00Z",
+      },
+      billing: makeCustomerBilling(),
+    },
   };
 }
 
@@ -311,6 +445,146 @@ export function getFixtureResponse(req: MockRequest): MockResponse {
     const r = state.dsrRequests.find((x) => x.request_id === id);
     if (!r) return rfc7807(404, "Not Found", "DSR not found");
     return { status: 200, body: r };
+  }
+
+  // ----- customer self-serve (Viewer-minimum, tenant-scoped) -----
+  if (path === "/v1/customer/overview" && method === "GET") {
+    const c = state.customer;
+    const overview: CustomerOverview = {
+      tenant_id: c.tenant_id,
+      tenant_name: c.tenant_name,
+      plan: c.plan,
+      usage: {
+        period: "2026-05",
+        cas_bytes: 4_812_344_321,
+        reads: 124_502,
+        writes: 8_712,
+        quota_bytes: 10_737_418_240,
+      },
+      billing: {
+        status: c.billing.status,
+        next_invoice_at: c.billing.current_period_end,
+        amount_due_cents: c.billing.amount_due_cents,
+        currency: c.billing.currency,
+      },
+      byok: c.byok,
+      recent_activity: c.audit.slice(0, 5),
+    };
+    return { status: 200, body: overview };
+  }
+
+  if (path === "/v1/customer/usage" && method === "GET") {
+    const usage: CustomerUsage = {
+      period: query["period"] ?? "2026-05",
+      cas_bytes: 4_812_344_321,
+      reads: 124_502,
+      writes: 8_712,
+      quota_bytes: 10_737_418_240,
+      daily: Array.from({ length: 7 }, (_, i) => ({
+        day: `2026-05-${String(8 + i).padStart(2, "0")}`,
+        reads: 14_000 + i * 1_200,
+        writes: 800 + i * 90,
+        cas_bytes: 600_000_000 + i * 30_000_000,
+      })),
+    };
+    return { status: 200, body: usage };
+  }
+
+  if (path === "/v1/customer/audit" && method === "GET") {
+    let rows = state.customer.audit;
+    const sinceParam = query["since"];
+    if (sinceParam) {
+      const since = Date.parse(sinceParam);
+      if (!Number.isNaN(since)) {
+        rows = rows.filter((r) => Date.parse(r.ts) >= since);
+      }
+    }
+    const eventTypes = query["event_types"];
+    if (eventTypes) {
+      const types = new Set(eventTypes.split(","));
+      rows = rows.filter((r) => types.has(r.event_type));
+    }
+    return { status: 200, body: { rows } };
+  }
+
+  if (path === "/v1/customer/billing" && method === "GET") {
+    return { status: 200, body: state.customer.billing };
+  }
+  if (path === "/v1/customer/billing/portal" && method === "POST") {
+    return {
+      status: 200,
+      body: { portal_url: "https://billing.example.invalid/portal/session_test" },
+    };
+  }
+
+  if (path === "/v1/customer/keys" && method === "GET") {
+    return {
+      status: 200,
+      body: { pats: state.customer.pats, byok: state.customer.byok },
+    };
+  }
+  if (path === "/v1/customer/keys" && method === "POST") {
+    const b = (body ?? {}) as { name?: string; scopes?: string[] };
+    const pat: CustomerPat = {
+      pat_id: `pat_${String(state.customer.pats.length + 1).padStart(3, "0")}`,
+      name: b.name ?? "unnamed",
+      scopes: b.scopes ?? ["cache:r"],
+      created_at: new Date().toISOString(),
+    };
+    state.customer.pats.unshift(pat);
+    state.customer.audit.unshift({
+      event_id: `cevt_pat_${pat.pat_id}`,
+      ts: pat.created_at,
+      event_type: "pat.created",
+      severity: "info",
+      actor: "user_e2e_admin",
+      summary: `created PAT '${pat.name}'`,
+    });
+    return {
+      status: 201,
+      body: { ...pat, token: `crl_pat_${pat.pat_id}_secret_shown_once` },
+    };
+  }
+  if (path.startsWith("/v1/customer/keys/") && path.endsWith("/revoke") && method === "POST") {
+    const segs = path.split("/");
+    const id = segs[4]!;
+    const pat = state.customer.pats.find((p) => p.pat_id === id);
+    if (!pat) return rfc7807(404, "Not Found", `pat ${id} not found`);
+    pat.revoked_at = new Date().toISOString();
+    state.customer.audit.unshift({
+      event_id: `cevt_pat_rev_${pat.pat_id}`,
+      ts: pat.revoked_at,
+      event_type: "pat.revoked",
+      severity: "warn",
+      actor: "user_e2e_admin",
+      summary: `revoked PAT '${pat.name}'`,
+    });
+    return { status: 200, body: pat };
+  }
+
+  if (path === "/v1/customer/team" && method === "GET") {
+    return { status: 200, body: { members: state.customer.team } };
+  }
+  if (path === "/v1/customer/team/invite" && method === "POST") {
+    const b = (body ?? {}) as { email?: string; role?: CustomerTeamMember["role"] };
+    if (!b.email) return rfc7807(400, "Bad Request", "email required");
+    const m: CustomerTeamMember = {
+      user_id: `user_invite_${state.customer.team.length + 1}`,
+      email: b.email,
+      role: b.role ?? "Developer",
+      joined_at: new Date().toISOString(),
+      status: "invited",
+    };
+    state.customer.team.push(m);
+    state.customer.audit.unshift({
+      event_id: `cevt_invite_${m.user_id}`,
+      ts: m.joined_at,
+      event_type: "team.invited",
+      severity: "info",
+      actor: "user_e2e_admin",
+      summary: `invited ${b.email} as ${m.role}`,
+    });
+    return { status: 201, body: m };
   }
 
   return rfc7807(404, "Not Found", `unmocked ${method} ${path}`);
