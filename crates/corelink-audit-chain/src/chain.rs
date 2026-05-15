@@ -157,16 +157,6 @@ pub fn link_chain_hash_streaming(
     Ok(ChainHash(*digest.as_bytes()))
 }
 
-// Thread-local BLAKE3 hasher template, cloned per call to elide the
-// per-invocation `Hasher::new()` initialization cost on tight hot loops
-// like the daily-verify routine (`2026-05-15-perf-optimization-audit.md
-// §2 OPT-05`). `Hasher::clone()` is a documented public API; the cloned
-// state is byte-identical to a freshly-`new`'d Hasher (asserted by the
-// unit test `cloned_hasher_matches_fresh`).
-thread_local! {
-    static HASHER_TEMPLATE: Hasher = Hasher::new();
-}
-
 /// Compute the chain link hash from `(prev_hash, canonical_bytes)`.
 ///
 /// Used by the verifier when the canonical bytes were already computed
@@ -193,13 +183,6 @@ pub fn link_chain_hash_from_canonical(
     h.update(canonical_bytes);
     let digest = h.finalize();
     ChainHash(*digest.as_bytes())
-    HASHER_TEMPLATE.with(|template| {
-        let mut h = template.clone();
-        h.update(prev_hash.as_bytes());
-        h.update(canonical_bytes);
-        let digest = h.finalize();
-        ChainHash(*digest.as_bytes())
-    })
 }
 
 /// Verify a chain link — given the previous chain hash, the event, and
