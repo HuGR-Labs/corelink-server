@@ -65,6 +65,11 @@ jobs:
           - merkle_integrity
           - byok_envelope_aad
           - failover_no_split_brain
+          # DEBT-014 partial closure 2026-05-15 — 3 new specs closing FT-1,
+          # FT-2, FT-5 from `specs/_audits/tla-followup-tickets.md`.
+          - auth_pat_hybrid
+          - key_lifecycle
+          - gc_lock_protocol
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
