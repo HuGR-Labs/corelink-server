@@ -37,7 +37,7 @@ corelink-analytics = { workspace = true }
 [dev-dependencies]
 proptest = { workspace = true }
 rand = "0.9"
-rand_chacha = "0.9"
+rand_chacha = "0.10"
 
 [[test]]
 name = "prop_audit_chain"
