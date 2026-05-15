@@ -2288,6 +2288,7 @@ dependencies = [
 name = "corelink-stripe-real"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "corelink-tier-selection",
  "criterion",
  "hex",

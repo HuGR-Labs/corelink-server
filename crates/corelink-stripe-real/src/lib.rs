@@ -54,6 +54,7 @@ pub mod error;
 pub mod portal;
 pub mod retry;
 pub mod webhook;
+pub mod webhook_dispatch;
 
 pub use client::{StripeRealClient, StripeRealClientBuilder};
 pub use portal::{
@@ -70,3 +71,10 @@ pub use dlq::{
 pub use error::{StripeError, WebhookVerifyError};
 pub use retry::{RetryPolicy, DEFAULT_MAX_RETRIES};
 pub use webhook::{verify_webhook_signature, DEFAULT_TOLERANCE_SECONDS};
+pub use webhook_dispatch::{
+    AuditEmitter, AuditOutcome, AuditRecord, CanonicalWebhookEventType, Clock,
+    DispatchResponse, FixedClock, IdempotencyOutcome, IdempotencyStore, IdempotencyToken,
+    InMemoryIdempotencyStore, MaterializerError, RecordingAuditEmitter, RecordingSliRecorder,
+    RecordingStateMaterializer, SliObservation, SliRecorder, StateMaterializer,
+    StripeWebhookEnvelope, SystemClock, WebhookDispatcher, SLI_BILLING_STRIPE_EVENT_SECONDS,
+};
