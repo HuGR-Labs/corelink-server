@@ -3,9 +3,9 @@ id: "SPEC-CONTRACT-S06"
 type: "spec_contract"
 doc_status: "FROZEN"
 audit_status: "AUDITED"
-version: "2.0.0"
+version: "2.1.0"
 created: "2026-04-24"
-updated: "2026-05-02"
+updated: "2026-05-15"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -235,6 +235,59 @@ inherits_from:
   - **D+27:** Sprint review + sign-offs.
   - **Post-sprint** observation: 30d concurrent S-07+ — gate liberation pré-S-20 GA.
 
+### 13.1 30d post-sprint observation window — canonical binding (R4-P1-007-2 + R4-P1-006-1 absorption, 2026-05-15)
+
+Per R4-Opus-Part2 §3.3 P1-007-2 + §3.2 P1-006-1 (`PRINC-PROMOTION-001`).
+The S-20 GA gate consumes 3 sustained windows from S-06; until the
+Lote 10.6 P1 cumulative-track absorption these were declared as
+post-sprint timelines without a pinned start-date and without
+queryable sustained-counters. The canonical bindings below close
+the ambiguity:
+
+- **`observation_window_start_date`** = `STAGING-STABLE promotion timestamp + 1d (UTC)`.
+  The promotion timestamp is the `updated` field of `PRR-S06.md` at
+  version 1.0.0 = `2026-05-02 00:00:00 UTC`; therefore the canonical
+  start-date is `2026-05-03 00:00:00 UTC`. **Timezone canonical: UTC**
+  (no DST / no local-time drift; aligned with `tla_check.yml` cron
+  schedule UTC + DASH-GC counter emission UTC). **+1d boundary**: the
+  day AFTER promotion to avoid double-counting the promotion-day
+  boundary (partial-bullet pattern §6).
+- **30d TLA+ verde gate window-end:** `2026-06-02 00:00:00 UTC`
+  (start + 30d). Consumer: `validate_30d_sustained_gates.py` (S-20
+  GA gate validator; deferred via debt register cumulative-track
+  row). Emitter: `tla_check_pass{date}` daily aggregator wired into
+  `.github/workflows/tla_check.yml` (forward; deferred to S-20).
+- **7d refcount drift sustained gate window-end:** `2026-05-10 00:00:00 UTC`
+  (start + 7d). Emitter: `gc_refcount_drift_under_threshold_pass{date}`
+  daily aggregator wired into reconcile metric publishing (forward;
+  deferred to S-20). Threshold: drift < 0.1% per the §6.s06.5
+  promotion gate.
+- **30d chaos sustained window-end:** `2026-06-02 00:00:00 UTC`
+  (start + 30d). Emitter: `gc_chaos_run_pass{date}` daily aggregator
+  per chaos suite execution.
+- **Queryable sustained-counter:** `gc_30d_sustained_observation_count{window, scope}`
+  (counter). Labels: `window` ∈ `{tla_verde, refcount_drift, chaos_sustained}`;
+  `scope` ∈ `{global, per_tenant, per_region}`. Increment on each
+  successful 24h sustained slice; **reset triggers:** any SEV-0 OR
+  SEV-1 GC family incident during the window resets the start-date
+  to `incident_resolution_timestamp + 1d` and zeroes the counter
+  (pause-clock-on-P0/P1 incidents per 4-tier classification — Lote
+  10.4bis lesson; aligned with WI-007 §29 review checkpoints). DASH-GC
+  panel 9 surface — already shipped — is augmented additively with
+  per-window count tiles in the S-20 GA gate cumulative track.
+- **Cross-reference:** `PRR-S06.md §10.1`; `WI-S06-006 §1` queryable
+  counter emission text; `WI-S06-007 §1` observation window start-date
+  cross-cite; `2026-05-15-debt-register.md` DEBT-S06-P1-RC (S-20
+  cumulative track row pinning the consumer validator deferral).
+- **Charter constraint:** SPEC-level closure only at this Lote (the
+  three emitter daily aggregators + the consumer validator are
+  forward-looking S-20 GA gate impl work; spec contract pins the
+  contract — implementations track in the debt register cumulative
+  row). The 30d clock starts canonically `2026-05-03 UTC` regardless
+  of the impl-side counter being live; CI history can be aggregated
+  retroactively per the manual `validate_30d_sustained_gates.py`
+  trigger.
+
 ## 14. Critérios de promoção
 
 - DoD complete + TLA+ verde sustained.
@@ -337,4 +390,6 @@ Itens waivable com SRE lead + Architect + Security lead + ADR:
 | 1.9.0 | 2026-05-02 | Gustavo (via Claude Opus 4.7 1M) | **WI-S06-006 SEALED — TLA+ CI gate + INV-GC-004 race property test (PR-gate 10k / nightly 100k) shipped.** New file `crates/corelink-gc/tests/prop_inv_gc_004_race.rs` (~530 LOC) ships the canonical 100k race property test cross-validating the TLA+ obligation `gc_correctness.tla::InvGCReRefProtected` against the real Rust impl (WI-S06-002 mark + WI-S06-003 sweep). Dual-tier ceiling: PR gate at 10k iter (default `PROPTEST_CASES`), nightly tier at 100k iter (`PROPTEST_CASES=100000` in `.github/workflows/nightly.yml::proptest-extended`). Per iter: `ChaCha20Rng::seed_from_u64(seed)` deterministic PRNG (Lote 10.6-tris OPUS-MISS-2); fresh per-iter fixture (F-001 closure; no static globals); random `mark_anchor` ∈ [1M, 10M] ms; `ac_offset_ms` ∈ [-100, +100] straddles boundary (off-by-one cases sampled exhaustively); ±70% iters fire genuine UpdateActionResult, 30% are negative-control orphan path. Adversarial fixture inputs per WI §1.7 + Lote 10.6bis P0-W6-1: (a) envelope mutation (`action_digest` STRING references target as substring; `blob_refs` references different digest); (b) short-digest substring (16-char prefix in unrelated `action_digest`); (c) schema-evolution (`action_digest` mentions target; `blob_refs` empty). Asserts ZERO INV-GC-004 violations across 100k iter; PROTECT iff `ac.created_at_ms >= mark_started_at_ms` AND `blob_refs.contains(target)`; SWEEP otherwise; negative-control SWEEP regardless of offset (validates regressed LIKE-substring impl would fail). 5 tests in module: 1 proptest (10k/100k) + 4 sanity (canonical TLC SHA literal pin verifying drift between Rust suite + `tla_check.yml` + `run_tlc_corelink.sh` + `ADR-0042 §A1`; PRNG determinism cross-invocation; smoke at offset=0 protect-arm boundary; smoke at offset=-1 sweep-arm boundary). Cross-module patches: `crates/corelink-gc/Cargo.toml` adds `rand = "0.9"` + `rand_chacha = "0.9"` to `[dev-dependencies]`. CI integration: `.github/workflows/nightly.yml::proptest-extended` adds step `proptest 100k iter — INV-GC-004 race (WI-S06-006 nightly tier)`. **TLA+ CI gate workflow** `.github/workflows/tla_check.yml` (canonical filename pós Lote 10.6 cycle 4 + Lote 10.11.0-bis-prime cycle 5) is already shipped from earlier sprint cycles; the SHA-pinning literal `d5d07d5dab38ddb840c91ec48fa02f28b37a608d5af9a73570018591dbc8ef7f` matches ADR-0042 §A1 + the property test fixture's canonical-SHA sanity check; PR paths cover `crates/corelink-gc/**`, `specs/tla/gc_correctness.tla`, `migrations/**`, `specs/03_architecture/data_model.md`, `specs/03_architecture/invariant_registry.md`, the workflow itself, and ADR-0042 — fail-closed on SHA mismatch (Lote 10.6-tris NEW-P0-1 fix). Out-of-scope (deferred to WI-S06-007 PRR ship gate per trait-abstraction-defer charter): `tla-30d-sustained.yml` workflow + `tla_override_validate.yml` + CODEOWNERS rules + cargo-fuzz `fuzz_gc_correctness` target — all consolidated alongside the sprint-close ship gate. **Full crate suite 248 tests across all targets, 0 failures, parallel-safe** (159 lib + 10 chaos + 14 prop_reconcile + 16 prop_scheduler + 17 migration_canonical + 5 prop_inv_gc_004_race + 9 prop_mark + 9 prop_sweep + 9 migration_canonical_0007). Quality gates verde: `cargo test -p corelink-gc --all-targets` 0 failures; `cargo clippy --workspace --all-targets --features corelink-worker/tower-middleware -- -D warnings` clean; `validate_specs.py` clean (281 docs); `check_migrations_additive.py` clean (no new migration). 100k iter local validation: `PROPTEST_CASES=100000 cargo test -p corelink-gc --test prop_inv_gc_004_race --release prop_inv_gc_004_race_mark_update_ar` GREEN in 0.6s (zero violations). Nightly workflow YAML validated. No per-WI codex per 2026-04-30 protocol; sprint-close Sonnet review covers full S-06 corpus. |
 | 1.8.0 | 2026-05-02 | Gustavo (via Claude Opus 4.7 1M) | **WI-S06-005 SEALED — Reconcile phase + canonical `json_each` JSON-aware membership idiom + dual-condition auto-fix gate (count ≤ 5 AND percent ≤ 0.01%) + conditional UPDATE anti-ping-pong predicate + audit fail-closed envelope + orphan-R2 detection shipped.** New module `crates/corelink-gc/src/reconcile.rs` (~1700 LOC + tests) ships: (a) `ReconcilePhase` trait + `InMemoryReconcilePhase` orchestrator wired to GcRunStore + `RefcountSource` (json_each-equivalent in-memory) + `BlobMetaRefcountStore` + GcAuditSink + GcMetricsObserver + `ReconcileClock`; (b) **canonical `json_each` JSON-aware membership** per Part 2a P0-1 (`expected_refcount` scan iterates `blob_refs: Vec<BlobDigest>` exact-match — substring collisions structurally impossible; pinned by `prop_json_each_semantics_not_like` 10k iter); (c) **dual-condition auto-fix gate** `drift_count ≤ 5 AND drift_percent ≤ 0.0001` per Part 2a P0-6 scale-invariant (`auto_fix_gate_fires(count, percent, &cfg)` predicate + boundary tests count=5 fires/count=6 rejects/percent=0.0001 fires/percent=0.000_101 rejects); (d) **conditional UPDATE anti-ping-pong predicate** `WHERE refcount = stored_refcount` per P0-7 chaos #11 (`conditional_set_refcount` returns false on concurrent UpdateAR winner → no overwrite); (e) **snapshot bound** `created_at_ms < snapshot_at_ms` per P1-6 fix (`snapshot_at_ms = phase_start + 1`); (f) **audit fail-closed envelope**: emit BEFORE refcount mutation; emit failure → `ReconcileError::AuditEmissionFailed` + refcount preserved (production wiring atomically rolls back D1 batch UPDATE blob_meta + INSERT audit_outbox); (g) `ReconcileDecision` `#[non_exhaustive]` 5-arm enum (NoDrift / AutoFixed / PausedForManualReview / SkippedSoftDeleted / OrphanR2Detected); (h) `ReconcileResult` aggregate counters (blobs_scanned / no_drift_count / auto_fixed_count / manual_review_count / skipped_soft_deleted_count / orphan_r2_count / drifts_detected / drift_percent / sev_level / reconcile_duration_ms / audit_events_emitted / reconcile_started_at_ms); (i) `SevLevel` `#[non_exhaustive]` 3-arm (None / Sev2 / Sev1; sprint contract §5.5 R-S06-10 Lote 10.6bis P2-7 fix per-tenant > 1% = SEV-1, global > 0.1% = SEV-2); (j) `ReconcileError` `#[non_exhaustive]` 6-variant taxonomy with `From<ReconcileError> for GcError`; (k) `ReconcileConfig` knobs pinned to canonical values (`AUTO_FIX_MAX_RECORDS = 5`, `AUTO_FIX_MAX_PERCENT = 0.0001`, `SEV1_PER_TENANT_DRIFT_PERCENT = 0.01`, `SEV2_GLOBAL_DRIFT_PERCENT = 0.001`, `CANONICAL_RECONCILE_PHASE_BUDGET_MS = 60 * 60 * 1000` per §5.5 R-S06-10.1); validator rejects zero budget / non-finite / inverted SEV thresholds (SEV-1 must be > SEV-2) / negative auto-fix percent; (l) **orphan-R2 detection** per WI §1.4 cross-reference WI-S06-004 R2→D1 ordering: `r2_present=false AND deleted_at_ms.is_none()` → `OrphanR2Detected` arm; refcount NEVER mutated (would amplify inconsistency); audit emit deferred to S-09 reclaim task. Cross-module patches: `audit::GcEventType` extended additively with `RefcountReconciled` + `RefcountAutoFixed` + `RefcountManualReviewRequired` (canonical event-string list 7 → 8 → 11; `RefcountManualReviewRequired` IS SEV-1, the other two are NOT — alerts fire at metric layer); `lib.rs::pub mod reconcile` wired between `physical_delete` and `region`; `lib.rs::pub use reconcile::{...}` re-exports the public surface. Tests: 30 inline lib unit + 14 prop_reconcile (9 canonical proptest + 5 sanity) covering `prop_no_drift_no_mutation` 10k iter / `prop_auto_fix_bounded_dual_condition` 10k iter / `prop_json_each_semantics_not_like` 10k iter (LIKE-defect regression pin) / `prop_tenant_isolation` 10k iter / `prop_step_decision_aggregates` 10k iter / `prop_audit_emit_per_decision_arm` 10k iter / `prop_snapshot_bound_excludes_post_snapshot_writes` 10k iter / `prop_auto_fix_scale_invariant` 256 iter (10/100/1k/10k blobs) / `prop_idempotent_re_run` 256 iter (10k blobs × 2 runs); the heavy-scale tests cap at 256 iter to keep PR-gate runtime ≤ 30 s; the 100k nightly variant is wired alongside WI-S06-006. **Full crate suite 243 tests across all targets, 0 failures, parallel-safe** (159 lib + 10 chaos_gc_scheduler + 16 prop_scheduler + 17 migration_canonical + 9 migration_canonical_0007 + 14 prop_reconcile + 9 prop_mark + 9 prop_sweep). Quality gates verde: `cargo test -p corelink-gc --all-targets` 0 failures; `cargo clippy --workspace --all-targets --features corelink-worker/tower-middleware -- -D warnings` clean; `validate_specs.py` clean (281 docs); `check_migrations_additive.py` clean (no new migration — reconcile reads existing `blob_meta` + `ac_meta` schemas). **Trait-abstraction-defer per charter**: real D1 `json_each` SQL aggregate + atomic batch (UPDATE blob_meta + INSERT audit_outbox) + `gc_drift_pending` retry table + `dsr_signals_processed` JOIN + production Cron Durable Object alarm wiring + 100k nightly property iter + cargo-fuzz target — all consolidated alongside WI-S06-007 PRR ship gate. No per-WI codex per 2026-04-30 protocol; sprint-close Sonnet review covers full S-06 corpus. |
 
-**Fim spec contract S-06 v2.0.0 SOTA.**
+| 2.1.0 | 2026-05-15 | Gustavo Schneiter (via Claude Opus 4.7 1M) | **Lote 10.6 S-06 P1 cumulative-track absorption — non-SEAL-blocker; pre-S-20 GA gate consumption hardening.** §13.1 added: 30d post-sprint observation window canonical binding per R4-Opus-Part2 P1-007-2 + P1-006-1 (`PRINC-PROMOTION-001`). `observation_window_start_date = STAGING-STABLE promotion timestamp + 1d (UTC) = 2026-05-03 00:00:00 UTC`; canonical timezone UTC; reset triggers on SEV-0/SEV-1 GC family incidents (pause-clock-on-P0/P1; Lote 10.4bis lesson). Queryable sustained-counter `gc_30d_sustained_observation_count{window, scope}` specified with 3 emitter sources (`tla_check_pass`, `gc_chaos_run_pass`, `gc_refcount_drift_under_threshold_pass`). S-20 consumer `validate_30d_sustained_gates.py` forward-deferred via debt register row DEBT-S06-P1-RC. Cross-ref: `PRR-S06.md §10.1` (same Lote); WI-S06-006 §1 (R4-Opus-Part2 P1-006-1 absorption text); WI-S06-007 §1 (start-date cross-cite); `_review_R4_opus_part2.md §3.3 P1-007-2 + §3.2 P1-006-1`; `2026-05-15-debt-register.md` DEBT-S06-P1-* rows. No CI gate impact (validator forward-deferred); no migration; no Rust code edit. |
+
+**Fim spec contract S-06 v2.1.0 SOTA — Lote 10.6 P1 cumulative-track absorption applied.**

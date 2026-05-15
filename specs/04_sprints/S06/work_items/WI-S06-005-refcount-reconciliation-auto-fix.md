@@ -120,6 +120,12 @@ pub enum ReconcileError {
    - **Auto-fix gate**: `drift_count ≤ 5 AND drift_percent ≤ 0.01%` per tenant. Both conditions required; either fails → manual review.
    - **Boundary**: `=5` auto-fixed (operative bound `≤5`); `=6` manual review.
    - **Why two-floor**: 10-blob tenant with 5 drifts = 50% drift (catastrophic; manual); 1M-blob tenant with 5 drifts = 0.0005% (negligible; auto-fix). Single absolute-floor of 5 mis-fires across scale.
+   - **Asymptotic dominance regime (R4-P1-005-1 absorption, 2026-05-15)**: per R4-Opus-Part2 §3.1 P1-005-1 (`PRINC-INV-001`), the percent floor `0.0001` (0.01%) and the absolute floor `5` cross over at `tenant_blob_count ≈ 50_000` (since 0.01% × 50k = 5). Three regimes:
+     - **Small-tenant regime (`< 50k blobs`)**: percent floor is the binding constraint; absolute floor vacuous. Example: tenant with 1k blobs → 0.01% percent ceiling = 0.1 drifts; any drift ≥ 1 trips manual review via percent floor.
+     - **Cross-over (`~50k blobs`)**: both floors fire equivalently; auto-fix accepts up to 5 drifts.
+     - **Large-tenant regime (`> 50k blobs`)**: absolute floor `5` is the binding constraint; percent floor degenerates to vacuous safety net. Example: 10M-blob tenant has 0.01% percent ceiling = 1000 drifts but absolute floor `5` binds; auto-fix accepts ≤ 5 drifts only.
+     - **Defensive correctness**: the asymptotic dominance shift to absolute-floor at scale is the **correct defensive behavior** — we want the tighter floor at scale; the percent floor remains as the small-tenant safety net. **Operator tuning note**: a future operator increasing the percent floor (e.g., to 0.1%) thinking it loosens the gate would observe NO change at scale ≥ 50k blobs (absolute floor still binds at 5). The percent floor tuning ONLY moves the gate for tenants below the ~50k cross-over.
+     - Cross-ref: R4-Opus-Part2 §4.4 cross-cutting observation 4; `PRINC-INV-001`.
    - **Auto-fix UPDATE**: `UPDATE blob_meta SET refcount = expected_refcount WHERE tenant_id = ? AND digest = ?` (sqlx prepared; D1 batch ≤250).
    - **Auto-fix failure mode**: D1 throttle → exponential backoff retry 3 attempts (100ms, 500ms, 2s) → on persistent fail, downgrade to "drift detected, fix pending" + persist em `gc_drift_pending(tenant_id, digest, expected, observed, attempted_at_ms)` table + emit SEV-2 (NOT SEV-1; auto-fix-failure ≠ refcount-integrity-broken). Next reconcile cron tick re-attempts from `gc_drift_pending`.
    - All auto-fixes audit-emitted (forensic trail) — pre-execution audit BEFORE UPDATE per fail-closed pattern.
@@ -288,6 +294,43 @@ Feature: Reconciliation daily + drift detection + auto-fix
   Scenario: Audit emit fail-closed
     Given audit_outbox INSERT fails
     Then reconcile ROLLBACK; SEV-1 alert; no auto-fix persisted
+
+  # R5-P1-005-1 absorption, 2026-05-15 — cross-WI integration test AC
+  # (PRINC-INTEGRATION-CROSS-WI per _review_R5_sonnet_part2.md §3.1).
+  # Test crate: tests/integration_orphan_r2_detection.rs (forward-deferred
+  # to S-20 GA gate per debt register DEBT-S06-P1-005-1; AC pinned here
+  # at SPEC level + fixture spec below for implementation reference).
+  Scenario: WI-S06-004 R2→D1 mid-flight crash detected by WI-S06-005 orphan-R2 reconcile
+    Given a swept candidate ready for physical-delete (post-grace, refcount=0)
+    And the WI-S06-004 PhysicalDeletePhase orchestrator
+    And the WI-S06-005 ReconcilePhase orchestrator
+    When PhysicalDeletePhase invokes R2.delete_object_idempotent and succeeds
+    And the worker process crashes BEFORE the D1 row purge commit
+    And ReconcilePhase fires its next scheduled run
+    Then ReconcilePhase observes blob_meta row with deleted_at_ms set + r2_present=false
+    And ReconcilePhase emits ReconcileDecision::OrphanR2Detected
+    And refcount is NEVER mutated (would amplify inconsistency)
+    And audit emit corelink.gc.reconcile.orphan_r2_detected fires with full provenance
+    And the S-09 reclaim follow-up task is enqueued (forward; deferred per WI-S06-004 §4.2 + 2026-05-15-debt-register.md DEBT-S06-P1-RC)
+
+  # Fixture spec (for impl reference):
+  # - Setup: seed gc_run row in 'physical_delete' phase; seed gc_candidate
+  #   in 'swept' status; seed blob_meta row with refcount=0 + deleted_at_ms < now - grace_cas_ms;
+  #   seed R2 store WITH the object present.
+  # - Step 1: invoke PhysicalDeletePhase::execute_one_candidate;
+  #   intercept R2.delete_object_idempotent → return Ok(); but inject
+  #   crash IMMEDIATELY BEFORE blob_meta D1 row purge (simulate via
+  #   harness `crash_after_r2_before_d1`).
+  # - Step 2: assert R2 store no longer has the object (R2 delete succeeded);
+  #   assert blob_meta row still present with refcount=0 + deleted_at_ms set.
+  # - Step 3: invoke ReconcilePhase::execute on the same (tenant_id, region);
+  #   assert ReconcileResult.orphan_r2_count == 1; assert blob_meta
+  #   refcount unchanged.
+  # - Step 4: assert audit_sink captured one event with type =
+  #   GcEventType::OrphanR2Detected and provenance fields (tenant_id,
+  #   digest, deleted_at_ms, r2_check_at_ms).
+  # - PRNG seed: ChaCha20Rng::seed_from_u64(0xC0EE_DECA_F)  // canonical
+  #   cross-WI fixture seed; pinned in tests/prop_seed_registry.rs.
 ```
 
 ## 9-32 (compact)

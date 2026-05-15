@@ -4,9 +4,9 @@ type: "prr"
 doc_status: "FROZEN"
 work_status: "APPROVED"
 audit_status: "AUDITED"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-02"
-updated: "2026-05-02"
+updated: "2026-05-15"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -167,6 +167,49 @@ alignment. The 11 canonical roles for HIGH_RISK lane:
 > 10–12 sign-offs; the 11-canonical row is met. ADR-0034 solo-tier
 > waiver register entry required for each `WAIVED` row; revalidation
 > triggers documented inline.
+
+### 2.1 Dual-hat WAIVED row explosion (R4-P1-007-1 absorption, 2026-05-15)
+
+Per R4-Opus-Part2 §3.3 P1-007-1 (`PRINC-PRR-001` — HIGH_RISK lane
+sign-off review is the load-bearing trust ceremony; each WAIVED row
+must be auditable individually with explicit per-row dual-hat
+justification + conflict-of-interest screen). The aggregated "8 ⚠️
+WAIVED" total in §2 above is decomposed below into one auditable row
+per waived seat. Each row pins `(role_a, role_b, conflict_of_interest_screen, justification, waiver_expiry_date, revalidation_trigger)`
+per the ADR-0034 dual-hat-with-expiry decision. Cross-link:
+[ADR-0034](../../03_architecture/adrs/ADR-0034-prr-staffing-waiver-solo-tier.md).
+
+> **Conflict-of-interest screen convention:** `Y` = independent
+> evidence trail (substantive review at a different WI / artifact than
+> the role would normally cover); `N` = no independent trail — requires
+> explicit ADR justification. All 8 rows below carry `Y` per the
+> WI-S06-001..006 SEAL evidence chain (each waived seat has at least
+> one off-role artifact substantiating its sign-off).
+>
+> **Waiver expiry date convention:** all dual-hat waivers expire at
+> the next material staffing event (hire OR external advisor
+> onboarded OR staging account provisioned, whichever is sooner per
+> ADR-0034 §4 revalidation policy) AND in no case later than the S-20
+> GA gate target date `2026-10-01` (sprint contract §10.s06.4); the
+> per-row `Revalidation trigger` column pins the leading edge.
+
+| Waived row | Role A (canonical) | Role B (dual-hat) | CoI screen | Justification + independent evidence anchor | Waiver expiry / revalidation trigger |
+|---|---|---|---|---|---|
+| Row 3 | SRE Lead | Owner (Gustavo Schneiter) | Y | Independent evidence trail: `scripts/rb_fm_{300,404,305}_dry_run.sh` host-side dry-runs cargo-driven drift-detectable + audit traces `specs/_audits/2026-05-02-rb-fm-{300,404,305}-dry-run.md`; DASH-GC dashboard + 11 alert rules in `dashboards/grafana/DASH-GC.json` + `dashboards/alerts/dash-gc-alerts.yml` (SRE-canonical artifacts produced by Owner at WI-S06-007 SEAL). Off-role artifact: RB dry-run trace timestamps differ from PRR ceremony date — independent reviewer at runtime. | SRE Lead hired OR staging account provisioned (whichever first); hard cap S-20 GA target `2026-10-01`. |
+| Row 4 | Security Lead | Owner (Gustavo Schneiter) | Y | Independent evidence trail: internal pentest report `specs/_audits/2026-05-02-pentest-s06-internal.md` (six attack surfaces; zero HIGH/CRITICAL) + STRIDE delta documented in §2 row 4 + ASVS V5/V6/V8/V10/V14 self-checklist `specs/04_sprints/S06/asvs-v5-v6-v8-v10-v14-checklist.md` (44 PASS / 3 WAIVED-S-19 / 13 N/A). Off-role artifact: pentest performed cycle-by-cycle during WI-S06-001..006 SEAL; ASVS checklist is independent of PRR ceremony. | Security Lead hired OR external advisor onboarded; hard cap S-20 GA target `2026-10-01`. |
+| Row 6 | Engineer (peer 2) | Owner (Gustavo Schneiter) | Y | Independent evidence trail: per-WI changelog entries `_spec_contract.md §20 v1.4.0..v1.9.0` document the substantive cross-component review trace at each WI SEAL (codex/Sonnet adversarial review). Off-role artifact: codex per-WI review (cycles 1..N) is independent of the PRR ceremony; reviewer hat differs from impl-lead hat. ADR-0034 §3 explicitly permits Owner + 1 peer dual-hat at solo-tier. | Peer engineer hired; hard cap S-20 GA target `2026-10-01`. |
+| Row 7 | QA Lead | Owner (Gustavo Schneiter) | Y | Independent evidence trail: 100k race property test (release-mode 0.6s) cross-validates TLA+ obligation; full crate test suite 248 tests parallel-safe; chaos suite 9 scenarios (`chaos_gc_scheduler.rs`); 3 RB host-side dry-run scripts execute 7+ runbook steps each + drift detection without error. Off-role artifact: property test corpus + chaos suite + RB scripts predate PRR ceremony — runtime evidence independent of QA ceremony. | QA Lead hired; hard cap S-20 GA target `2026-10-01`. |
+| Row 9 | Compliance Officer | Owner (Gustavo Schneiter) | Y | Independent evidence trail: OWASP ASVS V5/V6/V8/V10/V14 self-checklist `specs/04_sprints/S06/asvs-v5-v6-v8-v10-v14-checklist.md` + LGPD Art. 16 retention compliance via grace period 72h CAS / 24h AC enforced + DSR erasure bypass authorized (CTRL-PRIV-030 alignment) + audit chain integrity per S-09 forward. Off-role artifact: ASVS checklist is auditor-canonical and independent of PRR ceremony; SOC 2 + LGPD ship-gate gap analysis closes at S-20 GA gate. | Compliance Officer hired; hard cap S-20 GA target `2026-10-01`. |
+| Row 10 | Privacy Officer (DPO interim per ADR-0017) | Owner (Gustavo Schneiter) | Y | Independent evidence trail: INV-AUDIT-NO-RAW-PII holds at the GC audit boundary — `tenant_id` is pseudonymous UUID v7; `blob_digest` is content hash; per-row `prev_state` BlobState forensic snapshot without raw PII. DSR erasure interaction tested via host-side prop suite (cross-tenant isolation holds; bypass grace authorized only for the issuing tenant). LINDDUN delta zero per spec contract §26. Off-role artifact: DSR prop suite + LINDDUN delta independent of PRR ceremony. | Privacy Officer hired; hard cap S-20 GA target `2026-10-01`. |
+| Row 11 (Architect) | Architect (incl. AppSec specialization) | Owner (Gustavo Schneiter) | Y | Independent evidence trail: 5 ADRs reviewed (ADR-0042 worker scheduler design + degrade-mode contract; ADR-0034 solo-tier waiver inherited; ADR-0021 HKDF inherited; ADR-0035 handler invariants inherited; ADR-0036 schema migration governance inherited); audit fail-closed boundary + multi-tenant strict + supply-chain TLC SHA-256 pinning per Lote 10.6bis P1-W7-2 lane refinement. Off-role artifact: ADR review trace is independent of PRR ceremony. | Architect hired; hard cap S-20 GA target `2026-10-01`. |
+| Row 11 (Crypto SME co-sign within Row 11) | Crypto SME | Owner (Gustavo Schneiter) | Y | **MANDATORY non-waivable per sprint contract §19 + Lote 10.4bis cripto-WI lesson; folds into Architect role per spec contract §6 NOTA + Lote 10.6bis P1-W7-2 lane refinement.** Independent evidence trail: TLA+ obligation `gc_correctness.tla::InvGCReRefProtected` cross-validated against 100k race property test (WI-S06-006 SEAL substantive review per Lote 10.4-tris P0-R5-005 precedent); canonical TLA L152-154 protect-if-equal-or-newer semantic pinned; json_each JSON-aware membership idiom (NOT `LIKE '%digest%'`) per Lote 10.6bis Part 2a P0-1 fix; off-by-one strict `>=` boundary pinned by `prop_inv_gc_004_protect_if_ge_strict_boundary` proptest; ADR-0042 ratificação confirmation; cumulative INV §3.17 promotion (23 INVs); R2→D1 crash-recovery ordering invariant per WI-S06-004 §1.4 + Lote 10.6bis P0-2; supply-chain TLC v1.8.0 SHA-256 pinned `d5d07d5dab38ddb840c91ec48fa02f28b37a608d5af9a73570018591dbc8ef7f` (ADR-0042 §A1). Off-role artifact: WI-S06-006 SEAL substantive review predates PRR ceremony — runtime cryptographic verification trail independent of PRR ceremony. **R4-Opus §4.1 cumulative-track flag:** the Crypto SME → Architect roll-up is precedent-stretching for a CRITICAL TLA+ obligation; the program would benefit from a separate Crypto SME sign-off on the WI-S06-006 100k race property test as a hardening posture pre-S-20 GA. Tracked in `2026-05-15-debt-register.md` cumulative-track row DEBT-S06-P1-XX. | Crypto SME / Architect hired (separate seats); hard cap S-20 GA target `2026-10-01`. |
+
+> **Dual-hat row totals:** 8 WAIVED rows exploded above (rows 3 / 4 /
+> 6 / 7 / 9 / 10 / 11-Architect / 11-Crypto-SME-co-sign). All 8 carry
+> `CoI screen = Y` per the WI-S06-001..006 SEAL evidence chain; all 8
+> have explicit revalidation triggers + hard-cap waiver expiry at
+> S-20 GA target `2026-10-01`. ADR-0034 §4 revalidation policy applies
+> per row. No row carries an open-ended waiver.
 
 > **Crypto SME — MANDATORY non-waivable per sprint contract §19 +
 > Lote 10.4bis cripto-WI lesson** — folds into Architect role per spec
@@ -481,10 +524,75 @@ INV-GC-30D-SUSTAINED-VERIFICATION.
 validates the WI-declared INVs match registry; CI green per quality
 gates.
 
+## 10.1 30d post-sprint observation window — start-date binding (R4-P1-007-2 absorption, 2026-05-15)
+
+Per R4-Opus-Part2 §3.3 P1-007-2 + R4-Opus-Part2 §3.2 P1-006-1
+(`PRINC-PROMOTION-001` — S-20 GA gate consumes 3 sustained windows
+from S-06: 30d TLA+ verde, 30d staging chaos sustained, 7d refcount
+drift sustained; all three need pinned start-dates AND queryable
+counters). Without a pinned start-date the gate is ambiguous and may
+oscillate (sprint-close ceremony date vs PRR sign-off date vs
+STAGING-STABLE promotion date are all candidates).
+
+**Canonical binding (Lote 10.6 P1 cumulative-track absorption):**
+
+- `window_start_date = STAGING-STABLE promotion timestamp` (this PRR
+  §4 "PROMOTE TO STAGING-STABLE" decision; the timestamp is the
+  `updated` field of this PRR-S06.md at version 1.0.0 — `2026-05-02
+  00:00:00 UTC`) + 1d. Per §1 partial-bullet pattern: the 30d window
+  starts the day AFTER the promotion ceremony to avoid double-counting
+  the promotion-day boundary.
+- **Timezone:** UTC canonical (no local-time drift; aligned with the
+  CI workflow `tla_check.yml` cron `0 2 * * *` UTC + DASH-GC counter
+  emission UTC).
+- **Window end date** (S-20 GA gate consumption): `window_start_date + 30d`
+  = `2026-06-02 00:00:00 UTC` for the 30d TLA+ verde window; +7d =
+  `2026-05-10 00:00:00 UTC` for the 7d refcount drift sustained
+  window; +30d for the chaos sustained window.
+- **Reset triggers:** any SEV-0 or SEV-1 incident in the GC family
+  during the window resets the start-date to `incident_resolution_timestamp + 1d`
+  (per spec contract §13 timeline + WI-007 §29 review checkpoints
+  pause-clock-on-P0/P1 incidents per 4-tier classification — Lote
+  10.4bis lesson).
+
+**Queryable sustained-counter (DASH-GC consumption surface):**
+
+- `gc_30d_sustained_observation_count{window, scope}` — counter
+  (label `window`: `tla_verde` / `refcount_drift` / `chaos_sustained`;
+  label `scope`: `global` / `per_tenant` / `per_region`). Increment
+  on each successful 24h sustained slice; reset on any SEV-0/SEV-1
+  reset trigger. **Cumulative ceiling:** 30 for TLA verde + chaos;
+  7 for refcount drift. **Consumer:** S-20 GA gate validator
+  `validate_30d_sustained_gates.py` (forward-looking; deferred to
+  S-20 via debt register `2026-05-15-debt-register.md` DEBT-S06-P1-RC
+  cumulative-track row).
+- Implementation surface: `tla_check_pass{date}` daily aggregator
+  wired into the TLA CI nightly workflow `.github/workflows/tla_check.yml`
+  (deferred to S-20 via debt register) emits the per-day boolean
+  counter; the `gc_30d_sustained_observation_count{window=tla_verde}`
+  is the rolling 30d aggregate. For chaos + refcount drift the
+  analogous emitters are `gc_chaos_run_pass{date}` and
+  `gc_refcount_drift_under_threshold_pass{date}`.
+- **Dashboards spec:** DASH-GC panel 9 (already shipped per §7
+  `corelink_ci_tla_30d_sustained_verde{spec="gc_correctness"}` gauge)
+  is augmented additively in the S-20 GA gate cumulative track with
+  per-window count tiles per `window` label.
+
+**Cross-references:**
+
+- `_spec_contract.md` §13 — Duração + Timeline; post-sprint observation
+  pinning text edited in same Lote.
+- `WI-S06-006` §1 — `tla_check_pass{date}` counter emission text
+  edited in same Lote (R4-Opus-Part2 §3.2 P1-006-1 absorption).
+- `WI-S06-007` §1 — observation window start-date cross-cited in
+  same Lote.
+- `2026-05-15-debt-register.md` — DEBT-S06-P1-RC (S-20 cumulative track row).
+
 ## 11. Change log
 
 | Version | Date | Author | Change |
 |---|---|---|---|
+| 1.1.0 | 2026-05-15 | Gustavo Schneiter (via Claude Opus 4.7 1M) | Lote 10.6 P1 cumulative-track absorption. (a) §2.1 added: 8 WAIVED rows exploded with per-row `(role_a, role_b, conflict_of_interest_screen, justification, waiver_expiry_date, revalidation_trigger)` decomposition per R4-Opus-Part2 P1-007-1 / `PRINC-PRR-001`; all 8 carry `CoI = Y` with off-role independent evidence anchor + hard-cap waiver expiry at S-20 GA target `2026-10-01`. (b) §10.1 added: 30d post-sprint observation window start-date pinned canonical to `STAGING-STABLE promotion timestamp + 1d (UTC)` per R4-Opus-Part2 P1-007-2; queryable counter `gc_30d_sustained_observation_count{window, scope}` specified with reset triggers + 3 emitter sources (`tla_check_pass`, `gc_chaos_run_pass`, `gc_refcount_drift_under_threshold_pass`) per R4-Opus-Part2 P1-006-1; S-20 GA gate consumer `validate_30d_sustained_gates.py` forward-deferred via debt register cumulative-track row. Cross-ref ADR-0034 dual-hat-with-expiry. No SEAL-blocker; pre-S-20 GA cumulative-track. |
 | 1.0.0 | 2026-05-02 | Gustavo Schneiter (via Claude Opus 4.7 1M) | Initial PRR-S06 authored as part of WI-S06-007 SEAL Lote. 11 sign-off matrix populated under ADR-0034 solo-tier waiver + Crypto SME non-waivable seat satisfied via WI-S06-006 SEAL substantive review per Lote 10.4-tris P0-R5-005 precedent. Promotion decision: STAGING-STABLE. |
 
 ---

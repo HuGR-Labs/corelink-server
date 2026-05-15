@@ -237,6 +237,23 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_gc_run_running
 4. **mark_started_at_ms é INV-GC-004 anchor**: persisted at Mark phase start; sweep phase enforces `ac.created_at >= mark_started_at_ms` protects (canonical TLA `gc_correctness.tla` L152-154 — protect-if-equal-or-newer; equivalent: sweep only deletes if all AC `ac.created_at < mark_started_at_ms`).
 5. **Degrade-mode `gc-pause` global stop**: DO config-singleton; PAT-DEGRADE-001; emergency abort.
 
+### 1.1 Trait-abstraction-defer inventory (R4-P1-001-1 absorption, 2026-05-15)
+
+Per R4-Opus-Part1 §3.1 P1-001-1 (`PRINC-CHARTER-TRAIT-DEFER`). The
+§1 narrative ships InMemory scheduler fake + ScheduleClock seam at
+SEAL time but the deferred bindings are consolidated at WI-S06-007
+PRR ship gate. Canonical 3-line `Trait-abstraction-defer inventory`
+table per cumulative-track recommendation:
+
+| Deferred binding | Consolidation point | Charter rationale |
+|---|---|---|
+| Cloudflare Cron Durable Object shim wiring (alarm-based scheduler) | `WI-S06-007 §1` trait-defer consolidation table | `trait-abstraction-defer` — pure-logic core ships at SEAL with `ScheduleClock` seam; production CF Cron DO binding lands alongside staging account provisioning (CF charter pattern) |
+| Real D1 binding for `gc_run` table (replacing `InMemoryGcRunStore`) | `WI-S06-007 §1` trait-defer consolidation table | `trait-abstraction-defer` — InMemory fake mirrors SQL CHECK domain at canonical operation granularity; production D1 binding lands alongside staging account provisioning |
+| 100k nightly proptest tier expansion (currently 100k only for INV-GC-004 race; scheduler/migration/canonical tiers at 10k PR) | `WI-S06-007 §1` + `.github/workflows/nightly.yml::proptest-extended` | `trait-abstraction-defer` — PR gate at 10k iter keeps runtime ≤ 30s; 100k nightly via `PROPTEST_CASES=100000` |
+
+Cross-link `WI-S06-007 §1.1 trait-defer consolidation table` for the
+full S-06 deferral roll-up. None blocks WI-S06-001 SEAL per charter.
+
 ## 2. Narrative (HIGH_RISK ≥ 300 palavras)
 
 GC worker é **single point of failure** for INV-GC-001 (reachable never deleted). Bug em scheduler / checkpoint / phase orchestration cascades para mark / sweep / physical-delete:
