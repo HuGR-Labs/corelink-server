@@ -1180,6 +1180,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-billing-stripe-materializer"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "corelink-stripe-real",
+ "corelink-tier-selection",
+ "hex",
+ "proptest",
+ "serde",
+ "serde_json",
+ "subtle",
+]
+
+[[package]]
 name = "corelink-byok"
 version = "0.1.0"
 dependencies = [
@@ -2232,6 +2246,7 @@ dependencies = [
  "bytes",
  "corelink-analytics",
  "corelink-audit-chain",
+ "corelink-billing-stripe-materializer",
  "corelink-byok",
  "corelink-byok-aws",
  "corelink-byok-azure",
