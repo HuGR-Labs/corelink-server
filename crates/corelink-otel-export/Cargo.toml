@@ -1,0 +1,41 @@
+[package]
+name = "corelink-otel-export"
+description = "CoreLink customer-facing observability export primitive (R-prep — enterprise observability forwarding lane). Ships the pure-logic skeleton of the per-vendor metric + trace forwarder behind a single MetricsExporter trait surface: Datadog (HTTP API v1/v2 series + APM intake), OtelCollector (OTLP gRPC/HTTP /v1/metrics + /v1/traces), GrafanaCloud (Prometheus remote-write v1 + Tempo OTLP), and Disabled (no-op). Each variant carries its own #[non_exhaustive] config struct (ApiKey + endpoint + timeout_ms + per-vendor auth shape), an InMemoryFake for tests, and a vendor-specific deferred-real stub (DatadogExporter / OtelCollectorExporter / GrafanaCloudExporter; trait-abstraction-defer charter pattern — stub returns Ok(()) with tracing::debug! so end-to-end behavior is testable). Trait surface includes export_batch(metrics) + export_trace(span) + canonical export_failed audit event + fail-OPEN sink semantics (customer's observability stack down ≠ our system down; we emit `corelink.observability.export_failed` audit event but never propagate the failure into request path). Constant-time HMAC comparison for Datadog/Grafana API key validation via `subtle::ConstantTimeEq`. Real HTTP/gRPC wiring (reqwest / tonic + per-region Tempo OTLP HTTP exporter) deferred to a future WI per `trait-abstraction-defer` charter pattern."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+subtle = { workspace = true }
+tracing = { workspace = true }
+corelink-analytics = { workspace = true }
+corelink-tracing = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[[test]]
+name = "prop_otel_export"
+path = "tests/prop_otel_export.rs"

@@ -64,6 +64,23 @@ const sidebars: SidebarsConfig = {
             "rbac-audit-role-changes",
           ],
         },
+        // Observability sub-category — customer-facing fan-out guides
+        // for Datadog / OpenTelemetry Collector / Grafana Cloud. Landed
+        // R-prep alongside `crates/corelink-otel-export/`. The
+        // observability_model.md canonical source ships the metric +
+        // label inventory; these guides are the customer-facing
+        // task-oriented recipes.
+        {
+          type: "category",
+          label: "Observability",
+          link: { type: "doc", id: "observability-index" },
+          collapsed: true,
+          items: [
+            "forward-to-datadog",
+            "forward-to-otel-collector",
+            "forward-to-grafana-cloud",
+          ],
+        },
       ],
     },
     {
