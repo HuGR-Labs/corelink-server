@@ -2,10 +2,11 @@
 id: "AUDIT-PROPTEST-FOLLOWUP-TICKETS"
 type: "audit_followup_backlog"
 doc_status: "ACTIVE"
-audit_status: "OPEN"
-version: "1.0.0"
+audit_status: "CLOSED"
+version: "1.1.0"
 created: "2026-05-15"
 updated: "2026-05-15"
+closed: "2026-05-15"
 owner: "Gustavo Schneiter"
 final_approver: null
 reviewers: []
@@ -17,7 +18,8 @@ tags: ["audit", "followup", "proptest", "test-density", "backlog", "wi-pipeline"
 # Property Test Density — Follow-up Ticket Backlog
 
 > **Source audit:** [`2026-05-15-proptest-density.md`](2026-05-15-proptest-density.md)
-> **Total gap crates remaining:** 4
+> **Total gap crates remaining:** 0 — all 5 follow-up WIs CLOSED 2026-05-15
+> **Closure refs:** DEBT-009 (FU-001..FU-004) + DEBT-017 (FU-005 CI gate)
 > **Sprint placement:** opportunistic; pre-GA quality gate.
 
 Each follow-up is sprint-ready: a single WI with concrete acceptance
@@ -26,7 +28,7 @@ houses the invariant logic.
 
 ---
 
-## WI-PROPTEST-FU-001 — `corelink-slack-real` — Slack notify fail-CLOSED proptest
+## WI-PROPTEST-FU-001 — `corelink-slack-real` — Slack notify fail-CLOSED proptest — **CLOSED 2026-05-15 (DEBT-009)**
 
 **Lane:** OBSERVABILITY · **Estimated effort:** 0.5d · **Priority:** P2
 
@@ -59,7 +61,7 @@ property.
 
 ---
 
-## WI-PROPTEST-FU-002 — `corelink-admin-dry-run` — Dual-approval simulator proptest
+## WI-PROPTEST-FU-002 — `corelink-admin-dry-run` — Dual-approval simulator proptest — **CLOSED 2026-05-15 (DEBT-009)**
 
 **Lane:** ADMIN_PLANE · **Estimated effort:** 1.0d · **Priority:** P1
 
@@ -98,7 +100,7 @@ guard for high-risk admin ops; a regression here is a P1 security gap.
 
 ---
 
-## WI-PROPTEST-FU-003 — `corelink-cf-bindings` — CAS idempotency proptest
+## WI-PROPTEST-FU-003 — `corelink-cf-bindings` — CAS idempotency proptest — **CLOSED 2026-05-15 (DEBT-009)**
 
 **Lane:** STORAGE · **Estimated effort:** 1.0d · **Priority:** P1
 
@@ -137,7 +139,7 @@ storage cost AND breaks dedupe contracts.
 
 ---
 
-## WI-PROPTEST-FU-004 — `corelink-d1-migrations` — Migration additivity proptest
+## WI-PROPTEST-FU-004 — `corelink-d1-migrations` — Migration additivity proptest — **CLOSED 2026-05-15 (DEBT-009)**
 
 **Lane:** STORAGE · **Estimated effort:** 0.5d · **Priority:** P2
 
@@ -175,7 +177,7 @@ landmine; production cutover blocked on this property in S-14.
 
 ## Cross-cutting WI — Density-tracking CI workflow
 
-## WI-PROPTEST-FU-005 — CI density-gate workflow
+## WI-PROPTEST-FU-005 — CI density-gate workflow — **CLOSED 2026-05-15 (DEBT-017)**
 
 **Lane:** TOOLING · **Estimated effort:** 0.5d · **Priority:** P3
 
@@ -204,14 +206,30 @@ as new crates land; the audit becomes stale within 2 sprints.
 
 ## Summary
 
-| WI | Crate | Effort | Priority | INV |
-|---|---|---|---|---|
-| WI-PROPTEST-FU-001 | `corelink-slack-real` | 0.5d | P2 | INV-AUDIT-EMIT-ATOMIC |
-| WI-PROPTEST-FU-002 | `corelink-admin-dry-run` | 1.0d | P1 | INV-ADMIN-DUAL-APPROVAL |
-| WI-PROPTEST-FU-003 | `corelink-cf-bindings` | 1.0d | P1 | INV-CAS-IDEMPOTENCY |
-| WI-PROPTEST-FU-004 | `corelink-d1-migrations` | 0.5d | P2 | INV-AUTH-MIGRATION-ADDITIVE |
-| WI-PROPTEST-FU-005 | CI density gate | 0.5d | P3 | — (tooling) |
+| WI | Crate | Effort | Priority | INV | Status |
+|---|---|---|---|---|---|
+| WI-PROPTEST-FU-001 | `corelink-slack-real` | 0.5d | P2 | INV-AUDIT-EMIT-ATOMIC | **CLOSED 2026-05-15 (DEBT-009)** |
+| WI-PROPTEST-FU-002 | `corelink-admin-dry-run` | 1.0d | P1 | INV-ADMIN-DUAL-APPROVAL | **CLOSED 2026-05-15 (DEBT-009)** |
+| WI-PROPTEST-FU-003 | `corelink-cf-bindings` | 1.0d | P1 | INV-CAS-IDEMPOTENCY | **CLOSED 2026-05-15 (DEBT-009)** |
+| WI-PROPTEST-FU-004 | `corelink-d1-migrations` | 0.5d | P2 | INV-AUTH-MIGRATION-ADDITIVE | **CLOSED 2026-05-15 (DEBT-009)** |
+| WI-PROPTEST-FU-005 | CI density gate | 0.5d | P3 | — (tooling) | **CLOSED 2026-05-15 (DEBT-017)** |
 
 **Total effort:** 3.5d. **GA-blocker:** WI-PROPTEST-FU-002 + WI-PROPTEST-FU-003
 (dual-approval + CAS idempotency). The rest are post-GA quality
 hardening.
+
+## Closure summary (2026-05-15)
+
+All 5 follow-up WIs are CLOSED. Proptests (FU-001..FU-004) landed in
+DEBT-009. The CI density gate (FU-005) lands here in DEBT-017:
+
+- `scripts/audit_proptest_density.sh` — canonical audit script (already in tree pre-DEBT-017).
+- `scripts/check_proptest_density_gate.sh` — PR-gate enforcer; non-zero
+  exit on any new < 1.0 ratio crate not in the allowlist.
+- `scripts/proptest-density-allowlist.txt` — tolerated baseline gaps,
+  each tagged with a closing follow-up WI ID. The allowlist shrinks
+  as WIs land. The 4 DEBT-009 crates are RESOLVED and removed; the
+  3 newly-surfaced gaps (`corelink-handler-cas`, `corelink-otel-export`,
+  `corelink-tenant-offboarding`) are listed as pre-GA follow-ups.
+- `.github/workflows/proptest-density-gate.yml` — PR-gate workflow.
+- `CONTRIBUTING.md §"Property test density gate"` — contributor docs.
