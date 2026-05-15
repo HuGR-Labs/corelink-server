@@ -146,6 +146,12 @@ members = [
     # gates drift between the YAML, the generated JSON sibling, and the path
     # constants exported by this crate.
     "crates/corelink-openapi",
+    # R3-2 BYOK CMK revoke → kill switch → audit E2E harness (WI-S14-006).
+    # In-memory `KmsProvider` per provider kind + `RevocationDetector` cycle +
+    # `MultiChannelAlerter` stub-mode by default; `AWS_TEST_KEY_ARN` /
+    # `GCP_TEST_KEY_RESOURCE` / `AZURE_TEST_KEY_RESOURCE` /
+    # `VAULT_TEST_KEY_NAME` env-gated `#[ignore]` live-provider tests.
+    "tests/e2e-byok-revoke",
 ]
 exclude = [
     "crates/tenant-path/fuzz",

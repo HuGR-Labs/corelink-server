@@ -1,0 +1,72 @@
+[package]
+name = "e2e-byok-revoke"
+description = "R3-2 BYOK CMK revoke → kill switch → audit E2E harness (WI-S14-006). Drives the full revocation path end-to-end across crates: customer revokes CMK in BYOK provider → `RevocationDetector` polls `KmsProvider::check_access` → returns `KmsAccessStatus::KeyDisabled/Revoked` → atomic DEK cache eviction → tenant `byok_status = 'degraded_read_only'` → CloudEvent `corelink.byok.cmk_revoked` emitted → customer alerter (`MultiChannelAlerter`) dispatches multi-channel alert. Recovery path: CMK re-enabled → `KmsAccessStatus::Ok` → `byok_status = 'active'` → `corelink.byok.cmk_restored`. Adversarial coverage: 10k cache stampede (no plaintext post-revoke), mid-revoke encrypt/decrypt race (fail-CLOSED), transient `ApiError` over 3 cycles (must not trigger kill switch — Lote 10.14 codex P0). Property test pins INV-BYOK-CRYPTO-SOVEREIGNTY over 1k random timings. Multi-provider matrix: in-memory adapters across AWS / GCP / Azure / Vault by default; `AWS_TEST_KEY_ARN` / `GCP_TEST_KEY_RESOURCE` / `AZURE_TEST_KEY_RESOURCE` / `VAULT_TEST_KEY_NAME` env vars enable `#[ignore]`-gated live-provider runs. Charter `live-only-behind-env-gate` honoured."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+corelink-byok = { path = "../../crates/corelink-byok" }
+corelink-byok-revocation = { path = "../../crates/corelink-byok-revocation" }
+corelink-customer-alerts = { path = "../../crates/corelink-customer-alerts" }
+async-trait = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[[test]]
+name = "happy_revoke_flow"
+path = "tests/happy_revoke_flow.rs"
+
+[[test]]
+name = "recovery_flow"
+path = "tests/recovery_flow.rs"
+
+[[test]]
+name = "adversarial_stampede"
+path = "tests/adversarial_stampede.rs"
+
+[[test]]
+name = "adversarial_race_condition"
+path = "tests/adversarial_race_condition.rs"
+
+[[test]]
+name = "adversarial_transient_api_error"
+path = "tests/adversarial_transient_api_error.rs"
+
+[[test]]
+name = "prop_fail_closed"
+path = "tests/prop_fail_closed.rs"
+
+[[test]]
+name = "multi_provider_matrix"
+path = "tests/multi_provider_matrix.rs"
+
+[[test]]
+name = "live_provider_gated"
+path = "tests/live_provider_gated.rs"
