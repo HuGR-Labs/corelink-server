@@ -3,7 +3,7 @@ id: "RB-COMPLIANCE-WEEKLY-REVIEW"
 type: "runbook"
 doc_status: "ACTIVE"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-15"
 updated: "2026-05-15"
 sprint: "R5-3"
@@ -36,6 +36,18 @@ The Monday weekly cadence is the **deficiency-communication loop** required by S
 - DR / BCP drill cadence misses.
 - IR tabletop readiness flags.
 - Compliance-gate CI workflow failures in the last 7d.
+- **(R5-3 expansion, §10..§14 of the digest)**
+  - TLA ratchet floor regression (`tla_verified`, `code_referenced`,
+    `test_referenced`, `critical_referenced`, `orphan_refs > 0`).
+  - Mutation kill rate per-crate trend (75% floor; sourced from
+    `specs/_audits/*-mutation-*.md` newest entries, falls back to
+    `mutation-nightly.yml` artifacts when `gh` accessible).
+  - Replication SLO rolling-30d compliance (consecutive weekly breach
+    streak ≥ 3).
+  - Customer dashboard P0/P1 incident count (last 7d > 0 P0, OR
+    rolling-30d ≥ 2 P0).
+  - Debt register burn-down (any P0 row past Target without `CLOSED`
+    strike-through or §5 waiver).
 
 **Out of scope** (other cadences own these):
 
@@ -94,10 +106,15 @@ When the digest exit code = 1, the workflow has already paged. The runbook cover
 | Vendor 2× SLA breach | SEV-3 | VP-Sec (vendor owner) | 4h | 30d (review packet) |
 | Compliance-gate CI failure (cargo-audit / cargo-deny / cosign-sign / verify-fips / verify-lgpd / dr-drill / backup-daily) | SEV-3 | Workflow owner | 4h | 48h |
 | Two or more concurrent regression classes | bump severity up one level | as above | as above | as above |
+| **TLA ratchet floor regressed** (any of `tla_verified` / `code_referenced` / `test_referenced` / `critical_referenced` / `orphan_refs > 0`) — R5-3 expansion §10 | SEV-2 | Architect + Compliance Lead | 1h | 7d (restore floor or land §3 waiver in `RB-CANONICAL-DRIFT.md`) |
+| **Mutation kill rate < 75 %** on any tracked crate — R5-3 expansion §11 | SEV-3 | Crate owner (audit-chain → Audit SRE; byok → Crypto SRE; signup → Auth SRE) | 4h | 14d (targeted tests for missed mutants land) |
+| **Replication SLO rolling-30d violation** (streak ≥ 3) — R5-3 expansion §12 | SEV-2 | Replication SRE Lead | 1h | 7d (RPO restored OR formal SLO re-baseline) |
+| **P0 incident in last 7d** OR **≥ 2 P0 in rolling 30d** — R5-3 expansion §13 | SEV-2 | Incident Commander + Compliance Lead | 1h | 7d (post-incident retro filed) |
+| **P0 debt row past Target** without `CLOSED` strike-through and no §5 waiver — R5-3 expansion §14 | SEV-2 | Owner (Gustavo) | 1h | 7d (close row OR waive in `<latest>-debt-register.md §5`) |
 
-### Escalation triggers (the eight conditions that page PD)
+### Escalation triggers (the thirteen conditions that page PD)
 
-The workflow triggers a PagerDuty event when **any** of the following is true (these are the canonical escalation triggers):
+The workflow triggers a PagerDuty event when **any** of the following is true (these are the canonical escalation triggers — all binary YES/NO, no fuzzy thresholds):
 
 1. GAP severity upgrade detected (any direction `minor → major`, `major → blocking-GA`).
 2. Open GAP count increased week-over-week (after first-week baseline).
@@ -107,8 +124,13 @@ The workflow triggers a PagerDuty event when **any** of the following is true (t
 6. Any vendor in `VENDOR-RISK-REGISTER.md` past 2× its cadence window.
 7. Any compliance-tagged GitHub Actions workflow with conclusion `failure` / `timed_out` / `cancelled` / `startup_failure` in the last 7d.
 8. Two or more of (1)..(7) co-occur (severity escalates one tier).
+9. **(R5-3 §10) TLA ratchet floor regressed** — any of `tla_verified` / `code_referenced` / `test_referenced` / `critical_referenced` is strictly less than the prior digest snapshot, OR `orphan_refs` > 0.
+10. **(R5-3 §11) Mutation kill rate < 75 %** on any tracked crate (newest audit file per crate wins; `mutation-nightly.yml` artifact ingestion overrides when `gh` accessible).
+11. **(R5-3 §12) Replication SLO rolling-30d violation** — `verify-replication-lag.py` reported any-domain breach for ≥ 3 consecutive weekly digests.
+12. **(R5-3 §13) Customer dashboard P0/P1 incident pressure** — `git log --grep='^incident:'` shows P0 in last 7d (any) OR ≥ 2 P0 in rolling 30d.
+13. **(R5-3 §14) P0 debt-register row past Target** without `CLOSED` strike-through and no §5 waiver — auto-detected by parsing §1 of the newest `*-debt-register.md` under `specs/_audits/`.
 
-(Total escalation triggers: 8 — also tracked in §3 of `specs/_compliance/weekly-digests/README.md`.)
+(Total escalation triggers: 13 — also tracked in §3 of `specs/_compliance/weekly-digests/README.md`.)
 
 ### Steps when paged
 
@@ -205,6 +227,7 @@ PD page <PD-incident-id> acknowledged at <UTC timestamp>.
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-05-15 | Gustavo (via Claude Opus 4.7 r-prep-compliance-weekly) | Initial runbook — closes GAP-08 (CC4.2 weekly cadence); 8 escalation triggers + severity matrix + Monday clean template + 7.x failure modes. |
+| 1.1.0 | 2026-05-15 | Gustavo (via Claude Opus 4.7 r-prep-compliance-digest-expand / DEBT-024) | R5-3 expansion — digest 9 → 14 sections; 5 new triggers (§10 TLA / §11 Mutation / §12 Replication / §13 Incidents / §14 Debt). Total escalation triggers: 8 → 13. Severity matrix extended with 5 new rows. DEBT-024 closed in same commit. |
 
 ---
 

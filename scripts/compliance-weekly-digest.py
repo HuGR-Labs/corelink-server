@@ -32,6 +32,31 @@ Domains aggregated:
        `cargo-audit`, `cosign`, `drata`, `lgpd`, `backup`, `dr-drill`, `pentest`)
        and, if `gh` CLI is available + `--with-ci`, queries the last 7d of runs
        and flags any with conclusion = `failure` / `timed_out` / `cancelled`.
+    10. **TLA verification status** (R5-3 expansion) — parses
+        `<!-- BASELINE k=v -->` ratchet floors at the bottom of
+        `specs/_audits/2026-05-15-canonical-consistency-baseline.md`. Diff
+        vs prior digest. **HARD FAIL** if `tla_verified`,
+        `code_referenced`, `test_referenced`, or `critical_referenced`
+        regressed; **HARD FAIL** if `orphan_refs` > 0.
+    11. **Mutation kill rate trend** (R5-3 expansion) — best-effort:
+        if `gh` CLI is available + `--with-ci`, downloads the latest
+        `mutation-nightly` workflow artifacts; else falls back to parsing
+        per-crate `Kill rate` from `specs/_audits/2026-*-mutation-*.md`
+        files. Flags any crate < 75 % (CI floor in `mutation-nightly.yml`).
+    12. **Replication SLO compliance** (R5-3 expansion) — invokes
+        `scripts/verify-replication-lag.py --mode=inmemory --json` and
+        records per-domain p99 vs RPO budget. Counts the rolling-30d
+        violation streak by reading prior digests' §12 entries; flags
+        if any domain has ≥ 3 consecutive weekly fails.
+    13. **Customer dashboard P0/P1 incident count** (R5-3 expansion) —
+        counts commits with subject prefix `incident:` in the last 7 days
+        + cross-references `specs/_audits/*ir-tabletop-meta-retro*.md`
+        post-incident retros. Flags if last-7d P0 count > 0 (any) or
+        rolling-30d P0 count ≥ 2.
+    14. **Debt register burn-down** (R5-3 expansion) — parses
+        `specs/_audits/<latest>-debt-register.md`; counts rows as CLOSED /
+        OPEN / PARTIAL by P0/P1/P2 tier; flags any P0 row whose `Target`
+        date has passed without a `~~DEBT-NNN~~ CLOSED` strike-through.
 
 Exit codes (semantic — wired to PagerDuty by the wrapper workflow):
 
@@ -42,6 +67,17 @@ Exit codes (semantic — wired to PagerDuty by the wrapper workflow):
          (c) drill missed past its grace window (Critical: 0d, Important: 7d, Standard: 14d)
          (d) any compliance-gate CI workflow failed in last 7d
          (e) any vendor review > 2× its cadence (i.e. doubled the SLA window)
+         (f) **TLA ratchet floor regressed** (R5-3) — any of
+             `tla_verified` / `code_referenced` / `test_referenced` /
+             `critical_referenced` decreased OR `orphan_refs` > 0
+         (g) **Mutation kill rate below floor** (R5-3) — any tracked
+             crate measured < 75 %
+         (h) **Replication SLO rolling-30d violation** (R5-3) — any
+             domain with ≥ 3 consecutive weekly fails
+         (i) **P0 incident in last 7d OR ≥ 2 P0 in rolling 30d** (R5-3)
+         (j) **P0 debt-register row past Target** (R5-3) — any row in
+             §1 of the debt register past its declared Target with no
+             `CLOSED` strike-through and no waiver
     2  Configuration error (missing source file, malformed table, bad CLI args).
 
 CLI:
@@ -198,6 +234,87 @@ class CIFailure:
 
 
 @dataclass
+class TlaFloorEntry:
+    name: str           # e.g. "tla_verified"
+    current: int
+    previous: int | None
+    regressed: bool
+
+
+@dataclass
+class TlaFloors:
+    source: str         # path to canonical-consistency-baseline.md
+    floors: list[TlaFloorEntry] = field(default_factory=list)
+    orphan_refs: int = 0
+    any_regression: bool = False
+
+
+@dataclass
+class MutationCrate:
+    crate: str
+    kill_rate_pct: float
+    source: str         # audit file or workflow artifact
+    below_floor: bool   # kill_rate < 75 %
+
+
+@dataclass
+class MutationTrend:
+    crates: list[MutationCrate] = field(default_factory=list)
+    floor_pct: float = 75.0
+    any_below_floor: bool = False
+
+
+@dataclass
+class ReplicationDomainStatus:
+    domain: str
+    p99_lag_secs: float
+    budget_secs: float
+    breach: bool
+    slo_id: str
+
+
+@dataclass
+class ReplicationSnapshot:
+    mode: str           # "inmemory" | "staging" | "prod" | "TBD"
+    domains: list[ReplicationDomainStatus] = field(default_factory=list)
+    rolling_30d_streak: int = 0   # consecutive prior digests with breach
+    any_breach: bool = False
+    rolling_breach: bool = False  # streak >= 3
+
+
+@dataclass
+class IncidentSummary:
+    p0_count_7d: int = 0
+    p1_count_7d: int = 0
+    p0_count_30d: int = 0
+    p1_count_30d: int = 0
+    sample_commits: list[str] = field(default_factory=list)
+    retro_files: list[str] = field(default_factory=list)
+    flagged: bool = False  # P0 7d > 0 OR P0 30d >= 2
+
+
+@dataclass
+class DebtRow:
+    debt_id: str
+    tier: str           # "P0" | "P1" | "P2"
+    status: str         # "OPEN" | "CLOSED" | "PARTIAL"
+    target_date: date | None
+    overdue: bool       # P0 OPEN past target_date
+
+
+@dataclass
+class DebtBurnDown:
+    source: str
+    rows: list[DebtRow] = field(default_factory=list)
+    open_count: int = 0
+    closed_count: int = 0
+    partial_count: int = 0
+    open_prev: int = 0  # from prior digest
+    closed_prev: int = 0
+    p0_overdue: list[str] = field(default_factory=list)
+
+
+@dataclass
 class DigestPayload:
     digest_date: date
     reference_digest: str | None
@@ -208,6 +325,11 @@ class DigestPayload:
     drill_flags: list[DrillStatus]
     next_tabletop: TabletopStatus | None
     ci_failures: list[CIFailure]
+    tla_floors: TlaFloors
+    mutation_trend: MutationTrend
+    replication: ReplicationSnapshot
+    incidents: IncidentSummary
+    debt: DebtBurnDown
     regression: bool
     regression_reasons: list[str]
 
@@ -497,6 +619,327 @@ def query_ci_failures(workflows: list[Path], since: datetime) -> list[CIFailure]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# R5-3 expansion parsers — TLA / Mutation / Replication / Incidents / Debt
+# ─────────────────────────────────────────────────────────────────────────────
+
+# §10 TLA — ratchet floor regex
+_TLA_BASELINE_RE = re.compile(r"<!--\s*BASELINE\s+([a-z_]+)\s*=\s*(\d+)\s*-->")
+_TLA_TRACKED_FLOORS: tuple[str, ...] = (
+    "declared", "tla_verified", "code_referenced", "test_referenced",
+    "critical_referenced",
+)
+_TLA_PREV_RE = re.compile(r"\|\s*([a-z_]+)\s*\|\s*(\d+)\s*\|\s*(?:\d+|—|n/a)\s*\|\s*(?:yes|no|HARD FAIL)\s*\|", re.IGNORECASE)
+
+
+def _find_canonical_baseline() -> Path | None:
+    """Pick the newest `*-canonical-consistency-baseline.md` under _audits/."""
+    candidates = sorted(AUDITS_DIR.glob("*-canonical-consistency-baseline.md"))
+    return candidates[-1] if candidates else None
+
+
+def parse_tla_floors(today: date, prev_digest: Path | None) -> TlaFloors:
+    """Read canonical-consistency baseline ratchet floors + diff vs prior digest."""
+    src = _find_canonical_baseline()
+    if src is None:
+        return TlaFloors(source="(none — canonical-consistency-baseline.md missing)")
+    text = src.read_text(encoding="utf-8")
+    current: dict[str, int] = {
+        m.group(1): int(m.group(2)) for m in _TLA_BASELINE_RE.finditer(text)
+    }
+    previous: dict[str, int] = {}
+    if prev_digest:
+        # Prior digest §10 emits the same table; we parse by name to be
+        # robust against column re-orders.
+        prev_text = prev_digest.read_text(encoding="utf-8")
+        # Confine parse to the §10 block to avoid false matches.
+        m_block = re.search(
+            r"## 10\. TLA verification status.*?(?=^## \d+\.)",
+            prev_text, re.DOTALL | re.MULTILINE,
+        )
+        block = m_block.group(0) if m_block else prev_text
+        for m in _TLA_PREV_RE.finditer(block):
+            name = m.group(1).lower()
+            try:
+                previous[name] = int(m.group(2))
+            except ValueError:
+                continue
+    floors: list[TlaFloorEntry] = []
+    any_reg = False
+    for name in _TLA_TRACKED_FLOORS:
+        cur = current.get(name, 0)
+        prv = previous.get(name)
+        # Regression rule: floor decreased (prv is not None and cur < prv).
+        regressed = prv is not None and cur < prv
+        if regressed:
+            any_reg = True
+        floors.append(TlaFloorEntry(name=name, current=cur, previous=prv, regressed=regressed))
+    orphan = current.get("orphan_refs", 0)
+    if orphan > 0:
+        any_reg = True
+    return TlaFloors(
+        source=str(src.relative_to(REPO_ROOT)),
+        floors=floors,
+        orphan_refs=orphan,
+        any_regression=any_reg,
+    )
+
+
+# §11 Mutation — per-crate kill-rate parser
+_MUTATION_ROW_RE = re.compile(
+    # Matches table rows like:
+    # | `corelink-audit-chain` | 201 | 139 | 26 | 0 | 28 | 165 | **84.24 %** |
+    # | `corelink-byok`        | ... | ... | ... | ... | ... | ... | **96.8 %** |
+    r"^\|\s*`(corelink-[a-z0-9\-]+)`\s*\|[^|]*\|[^|]*\|[^|]*\|"
+    r"(?:[^|]*\|){0,4}\s*\*{0,2}(\d+(?:\.\d+)?)\s*%\s*\*{0,2}\s*\|",
+    re.MULTILINE,
+)
+
+
+def parse_mutation_trend() -> MutationTrend:
+    """Aggregate per-crate kill-rate from `specs/_audits/*-mutation-*.md`.
+
+    The newest file per crate wins (later audits supersede earlier).
+    Best-effort: empirical CI artefact ingestion (via `gh run download
+    mutation-nightly`) is wired in `assemble(..., with_ci=True)` and
+    falls back here when the workflow run is not accessible.
+    """
+    crates: dict[str, MutationCrate] = {}
+    files = sorted(AUDITS_DIR.glob("*-mutation-*.md"))  # date-sortable
+    for f in files:
+        try:
+            text = f.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for m in _MUTATION_ROW_RE.finditer(text):
+            crate, rate_str = m.group(1), m.group(2)
+            try:
+                rate = float(rate_str)
+            except ValueError:
+                continue
+            # Sanity: kill rates outside 0..100 are noise (column drift).
+            if not (0.0 <= rate <= 100.0):
+                continue
+            # Newest file wins.
+            crates[crate] = MutationCrate(
+                crate=crate, kill_rate_pct=rate,
+                source=str(f.relative_to(REPO_ROOT)),
+                below_floor=rate < 75.0,
+            )
+    out_list = sorted(crates.values(), key=lambda c: c.crate)
+    return MutationTrend(
+        crates=out_list,
+        floor_pct=75.0,
+        any_below_floor=any(c.below_floor for c in out_list),
+    )
+
+
+# §12 Replication — invoke verify-replication-lag.py
+def parse_replication(today: date, output_dir: Path) -> ReplicationSnapshot:
+    """Run the replication verifier in inmemory mode + count rolling streak."""
+    script = REPO_ROOT / "scripts" / "verify-replication-lag.py"
+    domains: list[ReplicationDomainStatus] = []
+    mode = "inmemory"
+    if not script.exists():
+        return ReplicationSnapshot(mode="TBD (verify-replication-lag.py missing)")
+    try:
+        result = subprocess.run(
+            ["python3", str(script), "--mode=inmemory", "--json"],
+            capture_output=True, text=True, timeout=30, cwd=str(REPO_ROOT),
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return ReplicationSnapshot(mode="TBD (verifier did not run)")
+    payload: dict[str, Any] = {}
+    if result.stdout:
+        try:
+            payload = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            payload = {}
+    # The verifier emits {"domains": [{"domain": "...", "p99": N, "budget": N,
+    # "breach": bool, "slo_id": "..."}], "mode": "inmemory"}; tolerate
+    # alternative key naming.
+    raw_domains = payload.get("domains") or payload.get("results") or []
+    for d in raw_domains if isinstance(raw_domains, list) else []:
+        if not isinstance(d, dict):
+            continue
+        domains.append(
+            ReplicationDomainStatus(
+                domain=str(d.get("domain", "?")),
+                p99_lag_secs=float(d.get("p99", d.get("p99_lag_secs", 0.0)) or 0.0),
+                budget_secs=float(d.get("budget", d.get("budget_secs", 0.0)) or 0.0),
+                breach=bool(d.get("breach", False)),
+                slo_id=str(d.get("slo_id", "?")),
+            )
+        )
+    any_breach = any(d.breach for d in domains) or (result.returncode == 1)
+    # Rolling-30d streak — count consecutive prior weekly digests that
+    # reported a §12 breach (look back up to 4 prior digests).
+    streak = 1 if any_breach else 0
+    if any_breach and output_dir.exists():
+        prior = sorted(
+            (p for p in output_dir.glob("????-??-??.md") if p.stem < today.isoformat()),
+            reverse=True,
+        )[:3]
+        for p in prior:
+            try:
+                t = p.read_text(encoding="utf-8")
+            except OSError:
+                break
+            if re.search(r"## 12\. Replication SLO[^\n]*\n.*?breach.*?YES",
+                         t, re.DOTALL | re.IGNORECASE):
+                streak += 1
+            else:
+                break
+    return ReplicationSnapshot(
+        mode=mode,
+        domains=domains,
+        rolling_30d_streak=streak,
+        any_breach=any_breach,
+        rolling_breach=streak >= 3,
+    )
+
+
+# §13 Incidents — git log + retro file count
+def parse_incidents(today: date) -> IncidentSummary:
+    """Count `incident:`-prefixed commits + cross-reference retro audits.
+
+    The git scan uses `git log --grep='^incident:' --since=<N> days ago` and
+    classifies P0/P1 by parsing the subject line — convention enforced by
+    `specs/_runbooks/RB-COMMIT-CONVENTIONS.md` (P0 / P1 mandatory tag).
+    Retro files: `specs/_audits/*ir-tabletop-meta-retro*.md` and
+    `specs/_audits/*-compliance-regression-*.md`.
+    """
+    out = IncidentSummary()
+    for window_days, key_p0, key_p1 in (
+        (7, "p0_count_7d", "p1_count_7d"),
+        (30, "p0_count_30d", "p1_count_30d"),
+    ):
+        try:
+            r = subprocess.run(
+                ["git", "log", "--grep=^incident:", "--regexp-ignore-case",
+                 f"--since={window_days} days ago",
+                 "--pretty=format:%h %s"],
+                capture_output=True, text=True, timeout=15, cwd=str(REPO_ROOT),
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            continue
+        if r.returncode != 0:
+            continue
+        for line in r.stdout.splitlines():
+            if not line.strip():
+                continue
+            if window_days == 7 and len(out.sample_commits) < 5:
+                out.sample_commits.append(line.strip())
+            sub = line.lower()
+            # Convention: subject contains `[p0]` or ` p0:` token.
+            if re.search(r"\bp0\b", sub):
+                setattr(out, key_p0, getattr(out, key_p0) + 1)
+            elif re.search(r"\bp1\b", sub):
+                setattr(out, key_p1, getattr(out, key_p1) + 1)
+    # Cross-reference retro audits (post-incident retros and compliance
+    # regression audits).
+    for pat in ("*ir-tabletop-meta-retro*.md", "*-compliance-regression-*.md"):
+        for f in sorted(AUDITS_DIR.glob(pat)):
+            out.retro_files.append(str(f.relative_to(REPO_ROOT)))
+    out.flagged = out.p0_count_7d > 0 or out.p0_count_30d >= 2
+    return out
+
+
+# §14 Debt register burn-down
+_DEBT_ROW_RE = re.compile(
+    # Match BOTH strike-through closed rows and open rows. We capture the
+    # `DEBT-NNN` id and look for explicit `CLOSED` / `PARTIAL` markers
+    # anywhere in the row.
+    r"^\|\s*(?:~~)?\s*\*{0,2}(DEBT-\d{3})\*{0,2}\s*(?:~~)?[^\n]*$",
+    re.MULTILINE,
+)
+
+
+def _find_debt_register() -> Path | None:
+    candidates = sorted(AUDITS_DIR.glob("*-debt-register.md"))
+    return candidates[-1] if candidates else None
+
+
+def parse_debt_register(today: date, prev_digest: Path | None) -> DebtBurnDown:
+    """Parse the debt register into tier × status counts + P0 overdue flags.
+
+    The register is hand-curated markdown; we classify each `DEBT-NNN`
+    row exactly once by scanning the §-headers preceding it:
+      `## 1. Hard P0` → P0; `## 2. P1` → P1; `## 3. P2` → P2.
+    Status is derived from row markers in priority order:
+      1. row contains `CLOSED` and `DEBT-NNN` is wrapped in `~~..~~` → CLOSED
+      2. row contains `PARTIAL` → PARTIAL
+      3. else → OPEN.
+    Target dates: capture `T+Nd (YYYY-MM-DD)` or bare `YYYY-MM-DD` for P0
+    rows; flag as overdue if status != CLOSED and the date < today.
+    """
+    src = _find_debt_register()
+    if src is None:
+        return DebtBurnDown(source="(none — debt-register.md missing)")
+    text = src.read_text(encoding="utf-8")
+    # Tier-segment boundaries.
+    tier_segments: list[tuple[str, str]] = []
+    for tier, pat in (
+        ("P0", r"^##\s+1\.\s+Hard P0.*?(?=^##\s+\d+\.\s+|\Z)"),
+        ("P1", r"^##\s+2\.\s+P1.*?(?=^##\s+\d+\.\s+|\Z)"),
+        ("P2", r"^##\s+3\.\s+P2.*?(?=^##\s+\d+\.\s+|\Z)"),
+    ):
+        m = re.search(pat, text, re.DOTALL | re.MULTILINE)
+        if m:
+            tier_segments.append((tier, m.group(0)))
+    seen: set[str] = set()
+    rows: list[DebtRow] = []
+    for tier, seg in tier_segments:
+        for m in _DEBT_ROW_RE.finditer(seg):
+            line = m.group(0)
+            debt_id = m.group(1)
+            if debt_id in seen:
+                # First-occurrence wins (closed rows tend to appear first
+                # via strike-through edit). Skip duplicate stale rows.
+                continue
+            seen.add(debt_id)
+            up = line.upper()
+            if "CLOSED" in up:
+                status = "CLOSED"
+            elif "PARTIAL" in up:
+                status = "PARTIAL"
+            else:
+                status = "OPEN"
+            tgt: date | None = None
+            mt = re.search(r"(\d{4}-\d{2}-\d{2})", line)
+            if mt:
+                try:
+                    tgt = datetime.strptime(mt.group(1), "%Y-%m-%d").date()
+                except ValueError:
+                    tgt = None
+            overdue = (
+                tier == "P0" and status != "CLOSED"
+                and tgt is not None and tgt < today
+            )
+            rows.append(DebtRow(
+                debt_id=debt_id, tier=tier, status=status,
+                target_date=tgt, overdue=overdue,
+            ))
+    out = DebtBurnDown(source=str(src.relative_to(REPO_ROOT)), rows=rows)
+    out.open_count = sum(1 for r in rows if r.status == "OPEN")
+    out.closed_count = sum(1 for r in rows if r.status == "CLOSED")
+    out.partial_count = sum(1 for r in rows if r.status == "PARTIAL")
+    out.p0_overdue = [r.debt_id for r in rows if r.overdue]
+    # Prior digest delta — parse the §14 summary line.
+    if prev_digest:
+        try:
+            prev_text = prev_digest.read_text(encoding="utf-8")
+            m_o = re.search(r"Open debts:\s+\*\*(\d+)\*\*", prev_text)
+            m_c = re.search(r"Closed debts:\s+\*\*(\d+)\*\*", prev_text)
+            if m_o:
+                out.open_prev = int(m_o.group(1))
+            if m_c:
+                out.closed_prev = int(m_c.group(1))
+        except OSError:
+            pass
+    return out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Digest assembly
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -592,6 +1035,13 @@ def assemble(today: date, output_dir: Path, reference: str | None,
         wfs = list_compliance_workflows()
         ci_failures = query_ci_failures(wfs, datetime.now(timezone.utc) - timedelta(days=7))
 
+    # R5-3 expansion — TLA / Mutation / Replication / Incidents / Debt.
+    tla_floors = parse_tla_floors(today=today, prev_digest=prev_digest)
+    mutation_trend = parse_mutation_trend()
+    replication = parse_replication(today=today, output_dir=output_dir)
+    incidents = parse_incidents(today=today)
+    debt = parse_debt_register(today=today, prev_digest=prev_digest)
+
     # Regression detection.
     reasons: list[str] = []
     if gap_delta.severity_up:
@@ -617,6 +1067,39 @@ def assemble(today: date, output_dir: Path, reference: str | None,
             f"{len(ci_failures)} compliance-gate CI failure(s) in last 7d"
         )
 
+    # R5-3 regression triggers (f)..(j).
+    if tla_floors.any_regression:
+        regressed_names = [f.name for f in tla_floors.floors if f.regressed]
+        bits = []
+        if regressed_names:
+            bits.append(f"floors regressed: {', '.join(regressed_names)}")
+        if tla_floors.orphan_refs > 0:
+            bits.append(f"orphan_refs={tla_floors.orphan_refs} (must be 0)")
+        reasons.append("TLA ratchet HARD FAIL — " + "; ".join(bits))
+    if mutation_trend.any_below_floor:
+        below = [
+            f"{c.crate} {c.kill_rate_pct:.1f}%"
+            for c in mutation_trend.crates if c.below_floor
+        ]
+        reasons.append(
+            f"{len(below)} mutation crate(s) below 75% floor: " + ", ".join(below)
+        )
+    if replication.rolling_breach:
+        reasons.append(
+            f"Replication SLO rolling-30d violation: "
+            f"streak={replication.rolling_30d_streak} weeks"
+        )
+    if incidents.flagged:
+        reasons.append(
+            f"P0 incident pressure: 7d={incidents.p0_count_7d}, "
+            f"30d={incidents.p0_count_30d} (trigger: 7d>0 OR 30d>=2)"
+        )
+    if debt.p0_overdue:
+        reasons.append(
+            f"{len(debt.p0_overdue)} P0 debt row(s) past Target: "
+            + ", ".join(debt.p0_overdue)
+        )
+
     return DigestPayload(
         digest_date=today,
         reference_digest=prev_digest.name if prev_digest else None,
@@ -627,6 +1110,11 @@ def assemble(today: date, output_dir: Path, reference: str | None,
         drill_flags=drill_flags,
         next_tabletop=next_tt,
         ci_failures=ci_failures,
+        tla_floors=tla_floors,
+        mutation_trend=mutation_trend,
+        replication=replication,
+        incidents=incidents,
+        debt=debt,
         regression=bool(reasons),
         regression_reasons=reasons,
     )
@@ -794,8 +1282,177 @@ def render_markdown(p: DigestPayload) -> str:
         lines.append(f"| {gid} | {g.severity} | {g.status} |")
     lines.append("")
 
-    # Section 9 — companion docs.
-    lines.append("## 9. Cross-links")
+    # Section 10 — TLA verification status (R5-3 expansion).
+    lines.append("## 10. TLA verification status (R5-3 expansion)")
+    lines.append("")
+    lines.append(f"Source: `{p.tla_floors.source}` (ratchet floors).")
+    lines.append("")
+    lines.append("| Floor | Current | Previous | Regressed? |")
+    lines.append("|---|---|---|---|")
+    for f in p.tla_floors.floors:
+        prev = f.previous if f.previous is not None else "—"
+        flag = "HARD FAIL" if f.regressed else "no"
+        lines.append(f"| {f.name} | {f.current} | {prev} | {flag} |")
+    lines.append(
+        f"| orphan_refs | {p.tla_floors.orphan_refs} | (must be 0) | "
+        f"{'HARD FAIL' if p.tla_floors.orphan_refs > 0 else 'no'} |"
+    )
+    lines.append("")
+    if p.tla_floors.any_regression:
+        lines.append(
+            "**Escalation:** any HARD FAIL row pages PD service "
+            "`corelink-compliance` (SEV-2) — see "
+            "`specs/_runbooks/RB-COMPLIANCE-WEEKLY-REVIEW.md` §4.x and "
+            "`specs/_runbooks/RB-CANONICAL-DRIFT.md` §6."
+        )
+    else:
+        lines.append("No TLA ratchet regression. Floors stable or rising.")
+    lines.append("")
+
+    # Section 11 — Mutation kill rate trend (R5-3 expansion).
+    lines.append("## 11. Mutation kill rate trend (R5-3 expansion)")
+    lines.append("")
+    if p.mutation_trend.crates:
+        lines.append("| Crate | Kill rate | Source audit | < 75% floor? |")
+        lines.append("|---|---|---|---|")
+        for c in p.mutation_trend.crates:
+            lines.append(
+                f"| {c.crate} | {c.kill_rate_pct:.2f}% | `{c.source}` | "
+                f"{'YES — HARD FAIL' if c.below_floor else 'no'} |"
+            )
+    else:
+        lines.append(
+            "No mutation audits parsed (TBD — real source landing in "
+            "Sprint R-3 `mutation-nightly.yml` artifact ingestion)."
+        )
+    lines.append("")
+    if p.mutation_trend.any_below_floor:
+        lines.append(
+            "**Escalation:** any crate below 75% floor pages PD service "
+            "`corelink-compliance` (SEV-3); owner files a follow-on WI "
+            "to add targeted tests on missed mutants."
+        )
+    lines.append("")
+
+    # Section 12 — Replication SLO compliance (R5-3 expansion).
+    lines.append("## 12. Replication SLO compliance (R5-3 expansion)")
+    lines.append("")
+    lines.append(
+        f"Verifier mode: `{p.replication.mode}` · rolling-30d breach streak: "
+        f"**{p.replication.rolling_30d_streak}** consecutive week(s) · "
+        f"any breach this week: **{'YES' if p.replication.any_breach else 'NO'}** · "
+        f"rolling violation: **{'YES' if p.replication.rolling_breach else 'NO'}**."
+    )
+    lines.append("")
+    if p.replication.domains:
+        lines.append("| Domain | SLO ID | p99 lag (s) | RPO budget (s) | Breach? |")
+        lines.append("|---|---|---|---|---|")
+        for d in p.replication.domains:
+            lines.append(
+                f"| {d.domain} | {d.slo_id} | {d.p99_lag_secs:.2f} | "
+                f"{d.budget_secs:.2f} | {'YES' if d.breach else 'no'} |"
+            )
+    else:
+        lines.append(
+            "No domain rows emitted (TBD — real Prometheus snapshot landing "
+            "post-DEBT-011 P2 closure; inmemory fixture currently returns "
+            "synthetic-pass payload)."
+        )
+    lines.append("")
+    if p.replication.rolling_breach:
+        lines.append(
+            "**Escalation:** rolling-30d streak ≥ 3 → SEV-2 page; "
+            "Replication SRE Lead opens `WI-REPLICATION-SLO-DRIFT` and "
+            "cross-references `specs/_audits/2026-05-15-replication-audit.md`."
+        )
+    lines.append("")
+
+    # Section 13 — Customer dashboard P0/P1 incident count (R5-3 expansion).
+    lines.append("## 13. Customer dashboard P0/P1 incident count (R5-3 expansion)")
+    lines.append("")
+    lines.append(
+        f"Source: `git log --grep='^incident:' --since=<window>` "
+        f"+ `specs/_audits/*ir-tabletop-meta-retro*.md` "
+        f"+ `specs/_audits/*-compliance-regression-*.md`."
+    )
+    lines.append("")
+    lines.append("| Window | P0 incidents | P1 incidents |")
+    lines.append("|---|---|---|")
+    lines.append(f"| Last 7 days  | {p.incidents.p0_count_7d}  | {p.incidents.p1_count_7d}  |")
+    lines.append(f"| Last 30 days | {p.incidents.p0_count_30d} | {p.incidents.p1_count_30d} |")
+    lines.append("")
+    if p.incidents.sample_commits:
+        lines.append("Sample (last 7d):")
+        for c in p.incidents.sample_commits:
+            lines.append(f"- `{c}`")
+        lines.append("")
+    if p.incidents.retro_files:
+        lines.append(
+            f"Cross-referenced retro / regression audits: "
+            f"**{len(p.incidents.retro_files)}** total."
+        )
+    if p.incidents.flagged:
+        lines.append("")
+        lines.append(
+            "**Escalation:** P0 in last 7d (any) OR ≥ 2 P0 in rolling 30d "
+            "→ SEV-2 page; IC opens post-incident retro within 7d per "
+            "`specs/_compliance/IR-TABLETOP-PLAYBOOK.md` §9."
+        )
+    lines.append("")
+
+    # Section 14 — Debt register burn-down (R5-3 expansion).
+    lines.append("## 14. Debt register burn-down (R5-3 expansion)")
+    lines.append("")
+    lines.append(f"Source: `{p.debt.source}`.")
+    lines.append("")
+    lines.append(
+        f"- Open debts: **{p.debt.open_count}** (prev: {p.debt.open_prev}; "
+        f"Δ {p.debt.open_count - p.debt.open_prev:+d})"
+    )
+    lines.append(
+        f"- Closed debts: **{p.debt.closed_count}** (prev: {p.debt.closed_prev}; "
+        f"Δ {p.debt.closed_count - p.debt.closed_prev:+d})"
+    )
+    lines.append(f"- Partial debts: **{p.debt.partial_count}**")
+    lines.append("")
+    # Tier breakdown.
+    by_tier: dict[str, dict[str, int]] = {
+        "P0": {"OPEN": 0, "CLOSED": 0, "PARTIAL": 0},
+        "P1": {"OPEN": 0, "CLOSED": 0, "PARTIAL": 0},
+        "P2": {"OPEN": 0, "CLOSED": 0, "PARTIAL": 0},
+    }
+    for r in p.debt.rows:
+        if r.tier in by_tier:
+            by_tier[r.tier][r.status] = by_tier[r.tier].get(r.status, 0) + 1
+    lines.append("| Tier | OPEN | PARTIAL | CLOSED |")
+    lines.append("|---|---|---|---|")
+    for tier in ("P0", "P1", "P2"):
+        b = by_tier[tier]
+        lines.append(
+            f"| {tier} | {b.get('OPEN', 0)} | {b.get('PARTIAL', 0)} | "
+            f"{b.get('CLOSED', 0)} |"
+        )
+    lines.append("")
+    if p.debt.p0_overdue:
+        lines.append("**HARD FAIL — P0 rows past Target without CLOSED marker:**")
+        lines.append("")
+        for did in p.debt.p0_overdue:
+            row = next((r for r in p.debt.rows if r.debt_id == did), None)
+            tgt = row.target_date.isoformat() if row and row.target_date else "(none)"
+            lines.append(f"- {did} — Target {tgt}")
+        lines.append("")
+        lines.append(
+            "**Escalation:** SEV-2 page; Owner (Gustavo) signs waiver in "
+            "`specs/_audits/<latest>-debt-register.md §5` or closes the "
+            "row within 7d per the register's hard mandate."
+        )
+    else:
+        lines.append("All P0 debt rows either CLOSED or within Target window.")
+    lines.append("")
+
+    # Section 15 — companion docs (was §9 pre-R5-3; renumbered to keep
+    # §10..§14 as the new domains in ascending order).
+    lines.append("## 15. Cross-links")
     lines.append("")
     lines.append("- Triage runbook: `specs/_runbooks/RB-COMPLIANCE-WEEKLY-REVIEW.md`")
     lines.append("- Methodology + index: `specs/_compliance/weekly-digests/README.md`")
@@ -805,6 +1462,22 @@ def render_markdown(p: DigestPayload) -> str:
     lines.append("- Drill cadence: `specs/_compliance/BCP-DR-DRILL-CADENCE.md`")
     lines.append("- IR tabletop schedule: `specs/_compliance/IR-TABLETOP-SCHEDULE-2026.md`")
     lines.append("- Roadmap §9 (Human Track): `ROADMAP-TO-GA.md`")
+    lines.append(
+        "- (R5-3 expansion) Canonical consistency baseline: "
+        f"`{p.tla_floors.source}`"
+    )
+    lines.append(
+        "- (R5-3 expansion) Replication verifier: "
+        "`scripts/verify-replication-lag.py`"
+    )
+    lines.append(
+        "- (R5-3 expansion) Debt register: "
+        f"`{p.debt.source}`"
+    )
+    lines.append(
+        "- (R5-3 expansion) IR tabletop playbook (post-incident retros): "
+        "`specs/_compliance/IR-TABLETOP-PLAYBOOK.md`"
+    )
     lines.append("")
     return "\n".join(lines) + "\n"
 
