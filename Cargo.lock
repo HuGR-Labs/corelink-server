@@ -1047,6 +1047,7 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "corelink-analytics",
+ "criterion",
  "hex",
  "proptest",
  "rand 0.9.4",
@@ -1168,6 +1169,7 @@ version = "0.1.0"
 dependencies = [
  "aes-gcm",
  "async-trait",
+ "criterion",
  "getrandom 0.2.17",
  "lru",
  "proptest",
@@ -1500,6 +1502,7 @@ name = "corelink-dpa-acceptance"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "criterion",
  "hex",
  "jsonwebtoken",
  "proptest",
@@ -2144,6 +2147,7 @@ dependencies = [
 name = "corelink-signup"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "proptest",
  "thiserror 2.0.18",
 ]
@@ -2176,6 +2180,7 @@ name = "corelink-stripe-real"
 version = "0.1.0"
 dependencies = [
  "corelink-tier-selection",
+ "criterion",
  "hex",
  "hmac 0.12.1",
  "proptest",
@@ -2250,6 +2255,7 @@ dependencies = [
 name = "corelink-tier-selection"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "hex",
  "hmac 0.12.1",
  "proptest",

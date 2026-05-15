@@ -39,3 +39,7 @@ criterion = { workspace = true }
 [[bench]]
 name = "derive"
 harness = false
+
+[[bench]]
+name = "derive_prefix_v2"
+harness = false

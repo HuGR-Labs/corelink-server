@@ -46,3 +46,8 @@ corelink-tier-selection = { path = "../corelink-tier-selection" }
 [dev-dependencies]
 proptest = { workspace = true }
 tokio = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "webhook_verify"
+harness = false
