@@ -34,7 +34,18 @@ tags: ["lighthouse", "marketing", "kit", "onboarding", "index", "r5p"]
 | 05 | `05-sla-attestation-instructions.md` | How to sign the 30d SLA attestation form | Customer-facing |
 | 06 | `06-case-study-interview-script.md` | 60-min interview agenda for case study | Customer-facing |
 | 07 | `07-pricing-comparison-internal.md` | Lighthouse-vs-paid-tier value sizing | **INTERNAL ONLY** |
+| -- | `CUSTOMER-PLAYBOOK.md` | **R5-2:** Day 1 → Day 30 walkthrough — the single document handed to the customer at kick-off. Consolidates 01..06 into one narrative. | Customer-facing |
+| -- | `case-study-template/team-A-forge.md` | **R5-2:** Marketing-ready Forge (customer-zero) case-study template with `{{db:...}}` prefills | Internal authoring |
+| -- | `case-study-template/team-B-oss.md` | **R5-2:** Marketing-ready external OSS team-tier case-study template | Internal authoring |
+| -- | `case-study-template/enterprise-byok.md` | **R5-2:** Marketing-ready Enterprise BYOK case-study template — dual NDA-internal + public-sanitized versions | Internal authoring |
 | -- | `INDEX.md` | This file | Internal navigation |
+
+**Internal companion (not in this folder):**
+
+| File | Use |
+|---|---|
+| `specs/_runbooks/RB-LIGHTHOUSE-PHASE-MANAGEMENT.md` | **R5-2:** Internal runbook — per-phase responsibilities, state transitions, P1 triage, escalation comms templates, 30d retro template. Pairs 1:1 with `CUSTOMER-PLAYBOOK.md`. |
+| `specs/_runbooks/RB-LIGHTHOUSE-CUSTOMER-INCIDENT.md` | Existing P0 incident response runbook (different scope: live fire). |
 
 ---
 
