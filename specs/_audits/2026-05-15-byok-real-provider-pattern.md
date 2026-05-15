@@ -39,15 +39,15 @@ tags: ["byok", "fips", "ga", "pattern", "canonical-reference", "aws-kms", "gcp-k
 | 1 | `#![forbid(unsafe_code)]` at crate root | yes | yes | yes | yes |
 | 2 | `clippy::unwrap_used = "deny"` + `expect_used = "deny"` + `panic = "deny"` | yes | yes | yes | yes |
 | 3 | `KmsProvider` trait impl with the 4 canonical methods | yes | yes | yes | yes |
-| 4 | FIPS endpoint **enforced unconditionally** in constructor; URL exposed for test assertion | yes (`resolved_fips_endpoint()`) | (`with_endpoint`) | (`endpoint_override`) | (`vault_addr`) |
-| 5 | AAD JCS canonicalization via `serde_jcs` before binding | yes (`canonicalize_aad_to_string_map`) | TBD R-prep | TBD R-prep | TBD R-prep |
-| 6 | Audit-emit fail-CLOSED — `emit_audit(...)` BEFORE error bubbles | yes (target `corelink.byok.aws.audit`) | TBD R-prep | TBD R-prep | TBD R-prep |
-| 7 | Constant-time fingerprint compare on AAD (mock-mode tamper detection) | yes (`subtle::ConstantTimeEq`) | TBD R-prep | TBD R-prep | TBD R-prep |
-| 8 | Native-only `aws-sdk-kms` / equivalent gated by `[target.'cfg(not(target_arch = "wasm32"))'.dependencies]` | yes | needs port | needs port | needs port |
-| 9 | `*WasmStub` linked on `target_arch = "wasm32"` with explicit `BYOKError::Provider("... unsupported on wasm32 ...")` | yes (`AwsKmsWasmStub`) | TBD R-prep | TBD R-prep | TBD R-prep |
-| 10 | ≥ 8 unit tests + 1 prop test (deterministic AAD canonicalization roundtrip) | yes (14 + 1 prop) | yes (mock-only) | yes (mock-only) | yes (mock-only) |
+| 4 | FIPS endpoint **enforced unconditionally** in constructor; URL exposed for test assertion | yes (`resolved_fips_endpoint()`) | (`with_endpoint`) | yes (`resolved_fips_endpoint()` + `resolve_fips_host` host allowlist) | (`vault_addr`) |
+| 5 | AAD JCS canonicalization via `serde_jcs` before binding | yes (`canonicalize_aad_to_string_map`) | TBD R-prep | yes (`canonicalize_aad_to_string_map`, JCS bytes are AAD into inner AES-GCM) | TBD R-prep |
+| 6 | Audit-emit fail-CLOSED — `emit_audit(...)` BEFORE error bubbles | yes (target `corelink.byok.aws.audit`) | TBD R-prep | yes (target `corelink.byok.azure.audit`) | TBD R-prep |
+| 7 | Constant-time fingerprint compare on AAD (mock-mode tamper detection) | yes (`subtle::ConstantTimeEq`) | TBD R-prep | yes (`subtle::ConstantTimeEq`; production path delegates to AES-GCM tag) | TBD R-prep |
+| 8 | Native-only `aws-sdk-kms` / equivalent gated by `[target.'cfg(not(target_arch = "wasm32"))'.dependencies]` | yes | needs port | yes (`reqwest`/`regex`/`tokio` target-gated) | needs port |
+| 9 | `*WasmStub` linked on `target_arch = "wasm32"` with explicit `BYOKError::Provider("... unsupported on wasm32 ...")` | yes (`AwsKmsWasmStub`) | TBD R-prep | yes (`AzureKeyVaultWasmStub`) | TBD R-prep |
+| 10 | ≥ 8 unit tests + 1 prop test (deterministic AAD canonicalization roundtrip) | yes (14 + 1 prop) | yes (mock-only) | yes (28 + 1 prop on JCS determinism) | yes (mock-only) |
 | 11 | Optional `#[ignore]` live test against `*_TEST_KEY_ARN` env (CI nightly) | yes (`e2e_byok_aws_kms.rs`) | yes | yes | yes |
-| 12 | Server feature flag `byok-<provider>-real` wires the real impl behind the `KmsProvider` trait object | yes (`byok-aws-real`) | TBD R-prep | TBD R-prep | TBD R-prep |
+| 12 | Server feature flag `byok-<provider>-real` wires the real impl behind the `KmsProvider` trait object | yes (`byok-aws-real`) | TBD R-prep | yes (`byok-azure-real`) | TBD R-prep |
 
 ---
 
@@ -189,13 +189,43 @@ Each provider gets a parallel R-prep work item. The diff from AWS KMS:
 - [ ] Add `byok-gcp-real` server feature flag (mirrors `byok-aws-real`).
 - [ ] Add ≥ 8 unit + 1 prop test (`real_unit.rs`).
 
-### 6.2 Azure Key Vault (`crates/corelink-byok-azure`)
+### 6.2 Azure Key Vault (`crates/corelink-byok-azure`) — LANDED 2026-05-15
 
-- [ ] Same canonicalization migration as GCP.
-- [ ] FIPS endpoint = Managed HSM URL (`*.managedhsm.azure.net`).
-      Premium tier (vault.azure.net) is FIPS 140-2 Level 2; Managed HSM
-      is Level 3. Constructor MUST accept only Managed HSM URLs for GA.
-- [ ] Audit-emit + wasm stub + feature flag — same as GCP.
+- [x] JCS canonicalization (`canonicalize_aad_to_string_map`) lands the
+      same `(BTreeMap, Vec<u8>)` contract as AWS; the JCS bytes are passed
+      into the inner AES-256-GCM cipher as AAD so the composite-key
+      binding is byte-stable across architectures.
+- [x] FIPS endpoint enforced via `resolve_fips_host` allowlist
+      (`*.vault.azure.net`, `*.managedhsm.azure.net`, plus US-Gov, China,
+      and Germany sovereign-cloud TLDs). `resolved_fips_endpoint()` and
+      `fips_tier_suffix()` accessors exposed for test assertion. Premium
+      HSM = FIPS 140-2 L2 (CMVP #3516); Managed HSM = logical L3 in the
+      compliance matrix — the orchestrator owns tier policy.
+- [x] Audit-emit fail-CLOSED at every error site (target
+      `corelink.byok.azure.audit`, `audit = true`).
+- [x] Constant-time AAD fingerprint compare in mock mode
+      (`subtle::ConstantTimeEq`). Production path delegates to the inner
+      AES-GCM authentication tag.
+- [x] Native-only `reqwest`/`regex`/`tokio` deps target-gated via
+      `[target.'cfg(not(target_arch = "wasm32"))'.dependencies]`.
+- [x] `AzureKeyVaultWasmStub` linked on `target_arch = "wasm32"`; returns
+      `BYOKError::Provider("Azure Key Vault real provider unsupported on
+      wasm32 ...")` from every method. The wasm32 stub source code is
+      target-shaped per §4; the wasm32 toolchain blocker on
+      `corelink-byok` (getrandom + tokio "full") is shared with the AWS
+      stub.
+- [x] Server feature flag `byok-azure-real` (`apps/server/Cargo.toml`)
+      pulls in `corelink-byok-azure` with the `real` (alias for
+      `production`) feature on.
+- [x] 28 unit + 1 prop test in `tests/real_unit.rs`: FIPS-host pattern
+      assertions for Premium HSM / Managed HSM / US-Gov, wrap/unwrap
+      roundtrip (mock + wiremock), AAD JCS order-independence, mock-mode
+      constant-time tamper detection, missing-AAD rejection, wrong-
+      provider rejection, malformed-URI rejection, Entra ID token cache
+      (1 POST across 5 wraps), workload-identity federated-token-file
+      flow, 401/403/404/429 mapping, `RSA-OAEP-256` wire-shape pin, API
+      version `7.4` pin, prop-test on JCS determinism (96 cases by
+      default; `PROPTEST_CASES` env override).
 
 ### 6.3 HashiCorp Vault (`crates/corelink-byok-vault`)
 

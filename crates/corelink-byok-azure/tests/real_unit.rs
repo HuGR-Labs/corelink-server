@@ -596,29 +596,229 @@ fn b64url_roundtrip() {
     assert_eq!(&dec, data);
 }
 
-// ─── 16. Property: composite-key AAD bytes stable across wrap/unwrap ──────
+// ─── 16. Mock-mode pattern tests (no HTTP) ─────────────────────────────────
+
+const PROD_VAULT_URL: &str = "https://myvault.vault.azure.net";
+
+#[test]
+fn fips_endpoint_url_pattern_assertion_premium_hsm() {
+    let p = AzureKeyVaultRealProvider::new_mock("eastus", PROD_VAULT_URL).unwrap();
+    assert_eq!(p.resolved_fips_endpoint(), "myvault.vault.azure.net");
+    assert_eq!(p.fips_tier_suffix(), "vault.azure.net");
+    assert!(p.fips_endpoint_enforced());
+}
+
+#[test]
+fn fips_endpoint_url_pattern_assertion_managed_hsm() {
+    let p = AzureKeyVaultRealProvider::new_mock(
+        "eastus",
+        "https://corp-hsm.managedhsm.azure.net",
+    )
+    .unwrap();
+    assert_eq!(p.resolved_fips_endpoint(), "corp-hsm.managedhsm.azure.net");
+    assert_eq!(p.fips_tier_suffix(), "managedhsm.azure.net");
+}
+
+#[test]
+fn fips_endpoint_url_pattern_assertion_us_gov() {
+    let p = AzureKeyVaultRealProvider::new_mock(
+        "usgovvirginia",
+        "https://gov-vault.vault.usgovcloudapi.net",
+    )
+    .unwrap();
+    assert_eq!(
+        p.resolved_fips_endpoint(),
+        "gov-vault.vault.usgovcloudapi.net"
+    );
+    assert_eq!(p.fips_tier_suffix(), "vault.usgovcloudapi.net");
+}
+
+#[test]
+fn fips_endpoint_rejects_non_fips_host() {
+    let err = AzureKeyVaultRealProvider::new_mock(
+        "eastus",
+        "https://attacker.example.com",
+    )
+    .unwrap_err();
+    assert!(matches!(err, BYOKError::Provider(_)));
+}
+
+#[test]
+fn fips_level_is_140_2_l2() {
+    let p = AzureKeyVaultRealProvider::new_mock("eastus", PROD_VAULT_URL).unwrap();
+    assert_eq!(
+        p.fips_level(),
+        corelink_byok::FipsLevel::Fips140_2_L2
+    );
+    assert_eq!(p.provider_kind(), KmsProviderKind::AzureKeyVault);
+    assert_eq!(p.region(), "eastus");
+}
+
+#[tokio::test]
+async fn wrap_unwrap_roundtrip_mock_mode() {
+    let p = AzureKeyVaultRealProvider::new_mock("eastus", PROD_VAULT_URL).unwrap();
+    let dek = Dek::generate().unwrap();
+    let orig = dek.bytes;
+    let ctx = json!({"tenant_id": "t-001", "blob_hash": "sha256:abc"});
+    let wrapped = p.wrap_dek(&dek, &test_key_id(), Some(&ctx)).await.unwrap();
+    assert_eq!(wrapped.provider, KmsProviderKind::AzureKeyVault);
+    let unwrapped = p.unwrap_dek(&wrapped).await.unwrap();
+    assert_eq!(unwrapped.bytes, orig);
+}
+
+#[tokio::test]
+async fn aad_canonicalization_order_independent_mock_mode() {
+    // Same logical AAD, different insertion order ⇒ identical canonical
+    // bytes ⇒ wrapping with one order and unwrapping with another succeeds.
+    let p = AzureKeyVaultRealProvider::new_mock("eastus", PROD_VAULT_URL).unwrap();
+    let dek = Dek::generate().unwrap();
+    let aad_a = json!({"tenant_id": "t-1", "blob_hash": "h-1"});
+    let aad_b = json!({"blob_hash": "h-1", "tenant_id": "t-1"});
+    let wrapped = p
+        .wrap_dek(&dek, &test_key_id(), Some(&aad_a))
+        .await
+        .unwrap();
+    let swapped = WrappedDek {
+        encryption_context: Some(aad_b),
+        ..wrapped
+    };
+    let unwrapped = p.unwrap_dek(&swapped).await.unwrap();
+    assert_eq!(unwrapped.bytes, dek.bytes);
+}
+
+#[tokio::test]
+async fn aad_tamper_rejected_constant_time_mock_mode() {
+    let p = AzureKeyVaultRealProvider::new_mock("eastus", PROD_VAULT_URL).unwrap();
+    let dek = Dek::generate().unwrap();
+    let aad_a = json!({"tenant_id": "t-A", "blob_hash": "sha256:aaa"});
+    let aad_b = json!({"tenant_id": "t-B", "blob_hash": "sha256:bbb"});
+    let wrapped = p
+        .wrap_dek(&dek, &test_key_id(), Some(&aad_a))
+        .await
+        .unwrap();
+    let tampered = WrappedDek {
+        encryption_context: Some(aad_b),
+        ..wrapped
+    };
+    let err = p.unwrap_dek(&tampered).await.unwrap_err();
+    assert!(matches!(err, BYOKError::AadMismatch), "got {err:?}");
+}
+
+#[tokio::test]
+async fn non_string_aad_value_rejected_mock_mode() {
+    let p = AzureKeyVaultRealProvider::new_mock("eastus", PROD_VAULT_URL).unwrap();
+    let dek = Dek::generate().unwrap();
+    let bad_aad = json!({"tenant_id": "t-1", "weight": 42});
+    let err = p
+        .wrap_dek(&dek, &test_key_id(), Some(&bad_aad))
+        .await
+        .unwrap_err();
+    assert!(matches!(err, BYOKError::EnvelopeError(_)), "got {err:?}");
+}
+
+#[tokio::test]
+async fn missing_aad_rejected_on_wrap_mock_mode() {
+    let p = AzureKeyVaultRealProvider::new_mock("eastus", PROD_VAULT_URL).unwrap();
+    let dek = Dek::generate().unwrap();
+    let err = p
+        .wrap_dek(&dek, &test_key_id(), None)
+        .await
+        .unwrap_err();
+    assert!(matches!(err, BYOKError::EncryptionContextMissing));
+}
+
+#[tokio::test]
+async fn missing_aad_rejected_on_unwrap_mock_mode() {
+    let p = AzureKeyVaultRealProvider::new_mock("eastus", PROD_VAULT_URL).unwrap();
+    let dek = Dek::generate().unwrap();
+    let aad = json!({"tenant_id": "t", "blob_hash": "h"});
+    let wrapped = p
+        .wrap_dek(&dek, &test_key_id(), Some(&aad))
+        .await
+        .unwrap();
+    let stripped = WrappedDek {
+        encryption_context: None,
+        ..wrapped
+    };
+    let err = p.unwrap_dek(&stripped).await.unwrap_err();
+    assert!(matches!(err, BYOKError::EncryptionContextMissing));
+}
+
+#[tokio::test]
+async fn wrong_provider_rejected_mock_mode() {
+    let p = AzureKeyVaultRealProvider::new_mock("eastus", PROD_VAULT_URL).unwrap();
+    let bad_key_id = KmsKeyId {
+        provider: KmsProviderKind::AwsKms,
+        key_arn_or_id: test_key_uri(),
+        region: "eastus".to_string(),
+    };
+    let dek = Dek::generate().unwrap();
+    let aad = json!({"tenant_id": "t", "blob_hash": "h"});
+    let err = p
+        .wrap_dek(&dek, &bad_key_id, Some(&aad))
+        .await
+        .unwrap_err();
+    assert!(matches!(err, BYOKError::EnvelopeError(_)));
+}
+
+#[tokio::test]
+async fn check_access_mock_returns_ok() {
+    let p = AzureKeyVaultRealProvider::new_mock("eastus", PROD_VAULT_URL).unwrap();
+    let st = p.check_access(&test_key_id()).await.unwrap();
+    assert_eq!(st, KmsAccessStatus::Ok);
+}
+
+// ─── 17. Property: AAD JCS canonicalization is order-independent ──────────
 
 mod prop {
+    use corelink_byok_azure::real::canonicalize_aad_to_string_map;
     use proptest::prelude::*;
-    use serde_json::json;
+
+    /// Allow runtime override of proptest cases via `PROPTEST_CASES`. The
+    /// charter requires a runtime-config function on prop tests.
+    fn proptest_cases() -> u32 {
+        std::env::var("PROPTEST_CASES")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(96)
+    }
+
+    fn arb_kv() -> impl Strategy<Value = (String, String)> {
+        let key = "[a-z][a-z0-9_]{0,15}";
+        let val = "[a-zA-Z0-9_:.-]{1,32}";
+        (key, val).prop_map(|(k, v)| (k, v))
+    }
+
+    fn arb_ctx_pair() -> impl Strategy<Value = (serde_json::Value, serde_json::Value)> {
+        proptest::collection::vec(arb_kv(), 1..=6).prop_map(|mut kvs| {
+            let mut m1 = serde_json::Map::new();
+            for (k, v) in &kvs {
+                m1.insert(k.clone(), serde_json::Value::String(v.clone()));
+            }
+            kvs.reverse();
+            let mut m2 = serde_json::Map::new();
+            for (k, v) in &kvs {
+                m2.insert(k.clone(), serde_json::Value::String(v.clone()));
+            }
+            (
+                serde_json::Value::Object(m1),
+                serde_json::Value::Object(m2),
+            )
+        })
+    }
 
     proptest! {
-        #![proptest_config(ProptestConfig { cases: 64, .. ProptestConfig::default() })]
+        #![proptest_config(ProptestConfig::with_cases(proptest_cases()))]
 
-        /// JSON serialization of `encryption_context` is byte-stable when
-        /// the same field order is used at wrap and unwrap. CoreLink stores
-        /// the `encryption_context: Value` verbatim on the `WrappedDek`, so
-        /// the AAD bytes match by construction (`serde_json::to_vec(&v)` is
-        /// deterministic for a given `Value` shape).
+        /// Same logical AAD (same key/value set, any order) → same JCS
+        /// canonical bytes. This is the determinism invariant per
+        /// INV-BYOK-CRYPTO-SOVEREIGNTY enforcing AAD wire-shape portability
+        /// across native / wasm32.
         #[test]
-        fn aad_bytes_stable(
-            tenant in "[A-Za-z0-9_-]{1,32}",
-            hash in "[a-f0-9]{16,64}",
-        ) {
-            let ctx = json!({"tenant_id": tenant, "blob_hash": hash});
-            let wrap_aad = serde_json::to_vec(&ctx).unwrap();
-            let unwrap_aad = serde_json::to_vec(&ctx).unwrap();
-            prop_assert_eq!(wrap_aad, unwrap_aad);
+        fn prop_aad_jcs_roundtrip_deterministic((a, b) in arb_ctx_pair()) {
+            let (_, bytes_a) = canonicalize_aad_to_string_map(&a).unwrap();
+            let (_, bytes_b) = canonicalize_aad_to_string_map(&b).unwrap();
+            prop_assert_eq!(bytes_a, bytes_b);
         }
     }
 }
