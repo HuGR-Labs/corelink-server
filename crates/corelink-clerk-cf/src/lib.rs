@@ -36,10 +36,20 @@
 pub mod audit_sink;
 pub mod cf_fetch;
 pub mod cf_kv;
+pub mod clerk_health_do;
 pub mod health;
 pub mod prod_wiring;
 
 pub use audit_sink::{AuditEvent, AuditSink};
 pub use cf_fetch::CfJwksFetcher;
 pub use cf_kv::CfKvJwksCache;
+pub use clerk_health_do::{
+    ClerkHealthLogic, ClerkHealthState, HealthDoError, HealthDoOp, HealthMethod,
+    HealthRecord, ParsedRoute, RecordResponse, UpsertRequest, DEFAULT_TTL_MS,
+};
+// The `#[durable_object]` actor class is the wasm32 binding entry that
+// the CF Workers runtime instantiates by name (matched to wrangler.toml
+// `class_name = "ClerkHealthDo"`).
+#[cfg(target_arch = "wasm32")]
+pub use clerk_health_do::ClerkHealthDo;
 pub use prod_wiring::{CfRealBindings, TenantContext, WiringError};

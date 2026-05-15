@@ -56,22 +56,37 @@ bucket_name = "corelink-cas-bucket"
 preview_bucket_name = "corelink-cas-bucket-preview"
 
 # Durable Object namespace binding — per-tenant actors (counter,
-# ratelimit, lease). The health probe issues a `stub_by_name("health")`
-# resolution to exercise tenant-scoped naming + audit fence. The actor
-# class itself is wired in the main Worker (`apps/server`); this POC
-# only consumes the namespace handle. Bound via `CfDurableObjectReal`
-# in `prod_wiring.rs`.
+# ratelimit, lease, health-record). Wave 16 wires the `ClerkHealthDo`
+# actor class IN THIS worker (`corelink-clerk-cf-poc`) — `script_name`
+# is now omitted so the DO is co-located with the consumer Worker.
+# Bound via `CfDurableObjectReal` in `prod_wiring.rs` and consumed via
+# `stub_by_name("health")` from `handle_health_real`.
+#
+# Wave 15 routed via `script_name = "corelink-server"` (the main Worker
+# was assumed to own the class). Wave 16 reverses that: the class is
+# defined here in `clerk_health_do.rs`, registered by the `worker-rs`
+# `#[durable_object]` macro at module load time.
 [[durable_objects.bindings]]
 name = "CLERK_DO"
 class_name = "ClerkHealthDo"
-script_name = "corelink-server"
 
-# When the main Worker introduces a new DO migration, mirror the tag
-# here. Empty for the PoC (the script_name above references the main
-# Worker's already-deployed DO class).
+# Workers DO migrations: rows are NEVER mutated in-place once deployed
+# (the CF Workers runtime stores the applied migration tag per script
+# and refuses any retroactive change). New classes get APPENDED rows;
+# class deletions / renames get APPENDED `deleted_classes` /
+# `renamed_classes` rows.
+#
+# v1 (wave 15): no DO classes in this Worker — the `CLERK_DO` binding
+# referenced the main Worker via `script_name = "corelink-server"`.
 [[migrations]]
 tag = "v1"
 new_classes = []
+
+# v2 (wave 16): introduce the `ClerkHealthDo` actor class in this
+# Worker. Append-only; v1 stays untouched.
+[[migrations]]
+tag = "v2"
+new_classes = ["ClerkHealthDo"]
 
 [vars]
 ENVIRONMENT = "dev"
