@@ -24,7 +24,32 @@ print_stdout = "deny"
 print_stderr = "deny"
 mod_module_files = "deny"
 
+[features]
+# Default: native gRPC server uses `InMemoryR2` as the CAS backend for
+# host-side integration tests + local dev.
+default = []
+
+# R-PREP-CF-R2-REAL — opt into the real Cloudflare R2 binding adapter
+# (`corelink_cf_bindings::CfR2BucketReal`). On `target_arch = "wasm32"`
+# this swaps in the production binding; on native it links the
+# `CfR2BucketReal::stub_for_native_tests` stub, which fails CLOSED with
+# `R2Error::Backend("WasmOnly: …")` if a code path attempts an R2
+# operation. The flag is a **build-config witness** that the consumer
+# expects the real binding to be wired by the CF Worker boot layer
+# (`crates/corelink-clerk-cf`); native gRPC server behavior is
+# unchanged when the flag is off.
+#
+# Cutover plan: enable on the CF Worker build (`wrangler deploy
+# --features cf-r2-real`) once `corelink-clerk-cf` adopts the
+# `CfR2BucketReal` adapter end-to-end. The native server binary may
+# enable the flag to assert at boot that R2 calls are routed to the
+# (stub) adapter — this surfaces wiring mistakes immediately rather
+# than at first R2 access in a staging Worker.
+cf-r2-real = ["dep:corelink-cf-bindings"]
+
 [dependencies]
+# R-PREP-CF-R2-REAL — gated by the `cf-r2-real` feature (see [features]).
+corelink-cf-bindings = { workspace = true, optional = true }
 tonic = { workspace = true }
 prost = { workspace = true }
 tokio = { workspace = true }

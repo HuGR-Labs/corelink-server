@@ -3,24 +3,33 @@
 //! This crate wires the trait-abstraction-defer pattern (used across
 //! ~70 CoreLink crates) onto real `worker::*` types:
 //!
-//! | Trait surface (host)               | Adapter (CF wasm32)       | `worker::*` type                |
-//! |------------------------------------|---------------------------|---------------------------------|
-//! | `corelink_worker::storage::r2::R2Backend` | [`CfR2BucketAdapter`] | `worker::r2::Bucket`            |
-//! | `corelink_worker::cache::kv::KvBackend`   | [`CfKvNamespaceAdapter`] | `worker::kv::KvStore`         |
-//! | (D1 — no canonical trait yet; raw accessor) | [`CfD1DatabaseAdapter`]  | `worker::D1Database`           |
-//! | (DO stub access)                   | [`CfDurableObjectAdapter`] | `worker::durable::ObjectNamespace` |
+//! | Trait surface (host)                          | Adapter (CF wasm32)       | `worker::*` type                   |
+//! |-----------------------------------------------|---------------------------|------------------------------------|
+//! | `corelink_worker::storage::r2::R2Backend`     | [`CfR2BucketAdapter`]     | `worker::r2::Bucket`               |
+//! | `corelink_worker::storage::r2::R2Backend` (+ extended ops) | [`r2_real::CfR2BucketReal`] | `worker::r2::Bucket`     |
+//! | `corelink_worker::cache::kv::KvBackend`       | [`CfKvNamespaceAdapter`]  | `worker::kv::KvStore`              |
+//! | (D1 — no canonical trait yet; raw accessor)   | [`CfD1DatabaseAdapter`]   | `worker::D1Database`               |
+//! | (DO stub access)                              | [`CfDurableObjectAdapter`] | `worker::durable::ObjectNamespace` |
 //!
 //! ## Compile target
 //!
-//! `wasm32-unknown-unknown` ONLY. The crate root carries
-//! `#![cfg(target_arch = "wasm32")]` so a native build (`cargo build
-//! --workspace`) produces an empty rlib with no symbols — this allows
-//! the workspace to compile on a developer host that does not have the
-//! wasm32 target installed without per-crate target gates leaking into
-//! every consumer.
+//! Most adapters in this crate are `wasm32-unknown-unknown` only — they
+//! depend on `worker::*` types that wrap `js-sys` / `wasm-bindgen`
+//! `JsValue` and have no native shim. Per-module `#[cfg(target_arch =
+//! "wasm32")]` gating keeps the crate buildable on native targets
+//! (developer host, CI workspace build, native unit tests) while
+//! preserving the wasm32 production code path.
+//!
+//! [`r2_real::CfR2BucketReal`] is the canonical exception: it provides a
+//! **native stub** (returning `R2Error::Backend("WasmOnly: ...")`) so
+//! callers can construct the type on the host for trait-bound testing
+//! without conditional compilation in every consumer crate. See the
+//! crate-level `cf-binding-real-pattern` doc for the replication recipe
+//! used by D1/KV/DO follow-ups.
 //!
 //! ```sh
 //! cargo build --target wasm32-unknown-unknown -p corelink-cf-bindings
+//! cargo build -p corelink-cf-bindings   # native stub build
 //! ```
 //!
 //! ## CTRL-PRIV-001 (logging)
@@ -39,15 +48,32 @@
 //! `Cf*Adapter` once per request and injects them into the same call
 //! sites that accept any `R2Backend` / `KvBackend` impl in tests.
 
-#![cfg(target_arch = "wasm32")]
 #![forbid(unsafe_code)]
 
+#[cfg(target_arch = "wasm32")]
 pub mod cf_d1;
+#[cfg(target_arch = "wasm32")]
 pub mod cf_do;
+#[cfg(target_arch = "wasm32")]
 pub mod cf_kv;
+#[cfg(target_arch = "wasm32")]
 pub mod cf_r2;
 
+/// Real CF R2 binding with extended operations (head/get/put/delete/list +
+/// multipart) and tenant-prefix enforcement. Dual-target: wasm32 wires
+/// `worker::r2::Bucket`; native build provides a stub that returns
+/// `R2Error::Backend("WasmOnly: …")` so callers can construct the type on the
+/// host without conditional compilation. See module docs for the replication
+/// pattern (D1/KV/DO follow-ups).
+pub mod r2_real;
+
+#[cfg(target_arch = "wasm32")]
 pub use cf_d1::CfD1DatabaseAdapter;
+#[cfg(target_arch = "wasm32")]
 pub use cf_do::CfDurableObjectAdapter;
+#[cfg(target_arch = "wasm32")]
 pub use cf_kv::CfKvNamespaceAdapter;
+#[cfg(target_arch = "wasm32")]
 pub use cf_r2::CfR2BucketAdapter;
+
+pub use r2_real::{CfR2BucketReal, R2Op, TenantPrefix, TenantScopedKey};

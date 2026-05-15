@@ -2192,6 +2192,7 @@ dependencies = [
  "anyhow",
  "axum",
  "bytes",
+ "corelink-cf-bindings",
  "corelink-handler-ac",
  "corelink-handler-admin",
  "corelink-handler-cas",
