@@ -132,6 +132,61 @@ enum Commands {
         #[command(subcommand)]
         action: RunbookDrillAction,
     },
+
+    /// Audit log export + verify (SOC 2 / GDPR / LGPD evidence).
+    ///
+    /// Emits a tamper-proof export (JSON-LD CloudEvents + Merkle proofs)
+    /// for a given time window, content-addressed by BLAKE3. Offline
+    /// re-verify with `corelink audit verify <export>`.
+    Audit {
+        #[command(subcommand)]
+        action: AuditAction,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+#[non_exhaustive]
+enum AuditAction {
+    /// Export the audit log for `--tenant` over `[since, until)`.
+    Export {
+        /// Tenant id (pseudonymous UUIDv7).
+        #[arg(long, value_name = "TENANT_ID")]
+        tenant: String,
+        /// Window lower bound (Unix epoch ms; inclusive).
+        #[arg(long, value_name = "MS")]
+        since: u64,
+        /// Window upper bound (Unix epoch ms; exclusive).
+        #[arg(long, value_name = "MS")]
+        until: u64,
+        /// Serialization format. Default: `json-ld`.
+        #[arg(long, value_name = "FORMAT", default_value = "json-ld")]
+        format: commands::audit::ExportFormat,
+        /// Output directory (file name is content-addressed). Defaults to cwd.
+        #[arg(long = "output", value_name = "DIR")]
+        output: Option<PathBuf>,
+        /// Embed Merkle inclusion proofs in each event row.
+        #[arg(long = "include-merkle-proofs")]
+        include_merkle_proofs: bool,
+        /// Re-validate every proof BEFORE writing (fail-CLOSED).
+        #[arg(long)]
+        verify: bool,
+        /// Use a deterministic fixture transport (offline mode; no PAT).
+        /// Generates `--fixture-events` synthetic events for the tenant.
+        #[arg(long)]
+        fixture: bool,
+        /// Number of fixture events (only with `--fixture`).
+        #[arg(long, value_name = "N", default_value_t = 10)]
+        fixture_events: u32,
+        /// Start time for fixture events (Unix epoch ms; only with `--fixture`).
+        #[arg(long, value_name = "MS", default_value_t = 0)]
+        fixture_start_ms: u64,
+    },
+
+    /// Re-validate a previously exported JSON-LD audit log file.
+    Verify {
+        /// Path to the JSON-LD export file.
+        path: PathBuf,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -255,6 +310,9 @@ async fn run() -> (&'static str, Result<(), CliError>) {
         Commands::RunbookDrill { action } => {
             return (label, run_runbook_drill(action, format));
         }
+        Commands::Audit { action } => {
+            return (label, run_audit(action, format));
+        }
         _ => {}
     }
 
@@ -293,10 +351,11 @@ async fn run() -> (&'static str, Result<(), CliError>) {
         Commands::Doctor { json } => {
             commands::doctor_cmd::run(&client, json, format).await
         }
-        // Version + Config + RunbookDrill already handled above; unreachable.
-        Commands::Version | Commands::Config { .. } | Commands::RunbookDrill { .. } => {
-            unreachable!()
-        }
+        // Version + Config + RunbookDrill + Audit already handled above; unreachable.
+        Commands::Version
+        | Commands::Config { .. }
+        | Commands::RunbookDrill { .. }
+        | Commands::Audit { .. } => unreachable!(),
     };
     (label, res)
 }
@@ -312,6 +371,64 @@ fn subcommand_label(cmd: &Commands) -> &'static str {
         Commands::Version => "version",
         Commands::Config { .. } => "config",
         Commands::RunbookDrill { .. } => "runbook-drill",
+        Commands::Audit { .. } => "audit",
+    }
+}
+
+fn run_audit(action: &AuditAction, format: OutputFormat) -> Result<(), CliError> {
+    match action {
+        AuditAction::Export {
+            tenant,
+            since,
+            until,
+            format: export_format,
+            output,
+            include_merkle_proofs,
+            verify,
+            fixture,
+            fixture_events,
+            fixture_start_ms,
+        } => {
+            let out_dir = output.clone().unwrap_or_else(commands::audit::default_output_dir);
+            if *fixture {
+                // Offline fixture transport — no PAT required, fully deterministic.
+                let tenant_uuid: uuid::Uuid = tenant.parse().map_err(|e| {
+                    CliError::Other(format!("--tenant must be a valid UUIDv7: {e}"))
+                })?;
+                let exporter = commands::audit::build_fixture_exporter(
+                    tenant_uuid,
+                    *fixture_events,
+                    *fixture_start_ms,
+                )?;
+                commands::audit::run_export(
+                    &exporter,
+                    tenant,
+                    *since,
+                    *until,
+                    *export_format,
+                    &out_dir,
+                    *include_merkle_proofs,
+                    *verify,
+                    format,
+                )?;
+                Ok(())
+            } else {
+                // Production wiring deferred: the CF Worker
+                // `GET /v1/audit/export/window` impl + the
+                // `CorelinkClient`-backed `AuditExporter` adapter land
+                // alongside the audit-export-worker. Today the CLI
+                // returns a clear pointer to `--fixture` for offline use.
+                Err(CliError::Other(
+                    "audit export: production server-side endpoint not yet wired; \
+                     use --fixture for offline/regression testing"
+                        .into(),
+                ))
+            }
+        }
+        AuditAction::Verify { path } => {
+            commands::audit::run_verify(path, format)?;
+            Ok(())
+        }
     }
 }
 

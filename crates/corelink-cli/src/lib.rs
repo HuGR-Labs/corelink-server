@@ -24,6 +24,15 @@
 pub mod auth;
 pub mod config;
 pub mod error;
+pub mod output;
+
+/// Audit log export / verify surface (WI-R-PREP-AUDIT-EXPORT).
+///
+/// Re-exported from the binary's `commands::audit` module so integration
+/// tests + downstream consumers can exercise the pure-logic export
+/// pipeline without spawning the CLI process.
+#[path = "commands/audit.rs"]
+pub mod audit_export;
 
 /// Pure helpers exposed for fuzz harnesses. None of these perform network I/O
 /// or touch the filesystem; they are deterministic transformations of

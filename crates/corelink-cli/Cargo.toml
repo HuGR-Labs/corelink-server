@@ -34,11 +34,16 @@ mod_module_files = "deny"
 [dependencies]
 # WI-S17-003: runbook dry-run tracker (pure-logic library — no I/O, no async).
 corelink-runbook-tracker = { path = "../corelink-runbook-tracker" }
+# WI-R-PREP-AUDIT-EXPORT: audit log export CLI (json-ld/csv/parquet + Merkle proofs).
+corelink-audit-chain = { workspace = true }
+corelink-analytics = { workspace = true }
 clap = { version = "4", features = ["derive", "env"] }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 blake3 = { workspace = true }
+hex = { workspace = true }
+uuid = { workspace = true, features = ["v7", "serde"] }
 toml = "0.8"
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
@@ -46,7 +51,6 @@ thiserror = { workspace = true }
 anyhow = { workspace = true }
 reqwest = { version = "0.12", features = ["rustls-tls", "json", "stream"], default-features = false }
 bytes = { workspace = true }
-uuid = { workspace = true }
 # WI-S15-005 telemetry: platform-aware config path (~/.corelink)
 dirs = "5"
 
