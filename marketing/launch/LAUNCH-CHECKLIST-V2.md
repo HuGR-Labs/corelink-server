@@ -3,7 +3,7 @@ id: "LAUNCH-CHECKLIST-V2"
 type: "marketing"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "2.0.0"
+version: "2.1.0"
 created: "2026-05-15"
 updated: "2026-05-15"
 owner: "Gustavo Schneiter"
@@ -22,9 +22,9 @@ tags:
   - "wt-r8-1"
 ---
 
-# CoreLink Launch Checklist V2 — T-24h to T+72h
+# CoreLink Launch Checklist V2 — T-7d to T+72h
 
-> **Scope:** the 24-hour-before through 72-hour-after window around the GA announcement. This is the executable extract of `marketing/launch/COORDINATION/LAUNCH-RUNBOOK.md`, zoomed into the moment-of-truth window, with explicit **owner / action / success metric / fallback** columns so the war room can drive from a single page.
+> **Scope:** the 7-day-before through 72-hour-after window around the GA announcement (v2.1.0 expanded the upstream edge to T-7d to cover the demo-asset pre-stage row L0). This is the executable extract of `marketing/launch/COORDINATION/LAUNCH-RUNBOOK.md`, zoomed into the moment-of-truth window, with explicit **owner / action / success metric / fallback** columns so the war room can drive from a single page.
 > **Cross-references:** `STATUS-PAGE-SPEC.md` (status page operations), `CRISIS-COMMS-TEMPLATES.md` (incident comms), `DAY-1-DASHBOARD-SPEC.md` (metrics), `specs/_runbooks/RB-LAUNCH-WAR-ROOM-COORDINATION.md` (operator playbook), `specs/_runbooks/ONCALL-ESCALATION-MATRIX.md` (escalation).
 > **Time zone:** all times Pacific Time (PT). T-0 is the moment the press release wire releases at 06:00 PT on launch day.
 > **Hard rule:** **Engineering Gate** (see `ROADMAP-TO-GA.md` §R-7) must already be APPROVED before any row in this checklist executes. If gate is not APPROVED at T-24h, the launch is **deferred** — see fallback row at T-24h L1.
@@ -47,7 +47,13 @@ tags:
 
 ---
 
-## 2. T-24h to T-1h — Pre-launch (Wednesday eve through Thursday 05:00 PT)
+## 2. T-7d to T-24h — Demo-asset pre-stage
+
+| Row | Time | Phase | Owner | Action | Success metric | Fallback if action fails |
+|---|---|---|---|---|---|---|
+| L0 | T-7d 09:00 PT | Demos recorded | VPMkt + CTO | Record 5 demo assets per `marketing/launch/demos/`: 60-sec elevator, 5-min deep dive, BYOK 7-min, competitive 3-min, plus asciinema cast from `cli-asciinema-script.sh`. Capture 15 admin-UI screenshots per `admin-ui-screenshot-guide.md` with redaction checklist applied. | All 5 demo videos uploaded to CF Stream + 15 screenshots committed under `marketing/launch/demos/screenshots/` (light + dark variants for shots #06, #07, #10, #15). | Slip 24h max; below 4 of 5 demos shippable → escalate to CEO for go/no-go on launch posture (demos are not Engineering Gate blockers but are press-asset blockers). |
+
+## 3. T-24h to T-1h — Pre-launch (Wednesday eve through Thursday 05:00 PT)
 
 | Row | Time | Phase | Owner | Action | Success metric | Fallback if action fails |
 |---|---|---|---|---|---|---|
@@ -72,7 +78,7 @@ tags:
 
 ---
 
-## 3. T-0 — Announce (Thursday 06:00 PT)
+## 4. T-0 — Announce (Thursday 06:00 PT)
 
 | Row | Time | Phase | Owner | Action | Success metric | Fallback if action fails |
 |---|---|---|---|---|---|---|
@@ -88,7 +94,7 @@ tags:
 
 ---
 
-## 4. T+15min to T+1h — Stabilization
+## 5. T+15min to T+1h — Stabilization
 
 | Row | Time | Phase | Owner | Action | Success metric | Fallback if action fails |
 |---|---|---|---|---|---|---|
@@ -102,7 +108,7 @@ tags:
 
 ---
 
-## 5. T+6h to T+24h — Sustaining
+## 6. T+6h to T+24h — Sustaining
 
 | Row | Time | Phase | Owner | Action | Success metric | Fallback if action fails |
 |---|---|---|---|---|---|---|
@@ -116,7 +122,7 @@ tags:
 
 ---
 
-## 6. T+48h to T+72h — Wind-down
+## 7. T+48h to T+72h — Wind-down
 
 | Row | Time | Phase | Owner | Action | Success metric | Fallback if action fails |
 |---|---|---|---|---|---|---|
@@ -128,7 +134,7 @@ tags:
 
 ---
 
-## 7. Hard rules
+## 8. Hard rules
 
 1. **Engineering Gate veto.** Any row above is voidable by the Engineering Gate. Marketing never pressures engineering to proceed.
 2. **No retry-spam.** Show HN, BusinessWire, Product Hunt are one-shot. Failed submissions are not re-submitted within 24h.
@@ -139,9 +145,10 @@ tags:
 
 ---
 
-## 8. Cross-references
+## 9. Cross-references
 
 - `marketing/launch/COORDINATION/LAUNCH-RUNBOOK.md` — full T-7d..T+7d superset (this checklist is the T-24h..T+72h zoom).
+- `marketing/launch/demos/` — demo asset bundle (5 scripts + asciinema + 15 screenshot targets); recorded per L0 above.
 - `marketing/launch/STATUS-PAGE-SPEC.md` — companion: status page configuration and severity mapping.
 - `marketing/launch/STATUSPAGE-INIT.md` — companion: Statuspage.io provisioning playbook (click-through, secrets, components).
 - `marketing/launch/STATUSPAGE-SUBSCRIBER-IMPORT.md` — companion: lighthouse + internal bulk-subscribe with opt-in evidence.
