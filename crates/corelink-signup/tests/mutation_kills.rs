@@ -28,7 +28,7 @@ use corelink_signup::{
     outcome::{canonical_orchestration_steps, OrchestrationStep},
     region::{canonical_regions, Bcp47Locale, PrimaryRegion},
     store::{
-        AtomicSignupStore, DpaPendingRow, FailingAtomicSignupStore, PatRow, SignupTx,
+        AtomicSignupStore, DpaPendingRow, FailingAtomicSignupStore, PatRow,
         StorageError, TenantRow, UsageCounterRow,
     },
     tenant::{SignupId, TenantId, UserEmailHash},
@@ -326,8 +326,11 @@ fn first_pat_expiry_seconds_canonical_90_days() {
     assert_eq!(FIRST_PAT_EXPIRY_SECONDS, 90 * 24 * 60 * 60);
     assert_eq!(FIRST_PAT_EXPIRY_SECONDS, 7_776_000);
     // The constant must be more than a day and less than a year.
-    assert!(FIRST_PAT_EXPIRY_SECONDS > 60 * 60 * 24);
-    assert!(FIRST_PAT_EXPIRY_SECONDS < 60 * 60 * 24 * 365);
+    // Use `const _: () = assert!(...)` so the bound check is a true
+    // compile-time invariant rather than a runtime no-op that clippy
+    // (rightly) flags as `assert!(true)` on a literal-vs-const compare.
+    const _: () = assert!(FIRST_PAT_EXPIRY_SECONDS > 60 * 60 * 24);
+    const _: () = assert!(FIRST_PAT_EXPIRY_SECONDS < 60 * 60 * 24 * 365);
     // Each mutated arithmetic produces a distinctly wrong value:
     //   90 + 24 + 60 + 60 = 234           (way too small)
     //   90 * 24 + 60 * 60 = 5_760          (way too small)
@@ -341,9 +344,9 @@ fn webhook_timestamp_tolerance_seconds_canonical_5_minutes() {
     // Kills mutations on `5 * 60`.
     assert_eq!(WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS, 5 * 60);
     assert_eq!(WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS, 300);
-    // Sanity: greater than 1 min, less than 1 day.
-    assert!(WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS > 60);
-    assert!(WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS < 60 * 60 * 24);
+    // Sanity: greater than 1 min, less than 1 day. Compile-time invariant.
+    const _: () = assert!(WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS > 60);
+    const _: () = assert!(WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS < 60 * 60 * 24);
 }
 
 // =====================================================================

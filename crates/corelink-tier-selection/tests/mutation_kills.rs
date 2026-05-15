@@ -375,17 +375,18 @@ fn in_memory_stripe_client_arm_failure_is_one_shot_via_ledger() {
 #[test]
 fn lock_window_canonical_value() {
     assert_eq!(TIER_SELECTION_LOCK_WINDOW_MS, 60_000);
-    // 60s sanity bounds: > 1s, < 1h.
-    assert!(TIER_SELECTION_LOCK_WINDOW_MS > 1_000);
-    assert!(TIER_SELECTION_LOCK_WINDOW_MS < 60 * 60 * 1_000);
+    // 60s sanity bounds: > 1s, < 1h. Compile-time invariant so clippy
+    // does not flag a literal-vs-const compare as `assert!(true)`.
+    const _: () = assert!(TIER_SELECTION_LOCK_WINDOW_MS > 1_000);
+    const _: () = assert!(TIER_SELECTION_LOCK_WINDOW_MS < 60 * 60 * 1_000);
 }
 
 #[test]
 fn replay_window_canonical_value() {
     assert_eq!(STRIPE_REPLAY_WINDOW_MS, 300_000);
-    // 5-min sanity bounds.
-    assert!(STRIPE_REPLAY_WINDOW_MS > 60_000);
-    assert!(STRIPE_REPLAY_WINDOW_MS < 60 * 60 * 1_000);
+    // 5-min sanity bounds. Compile-time invariant.
+    const _: () = assert!(STRIPE_REPLAY_WINDOW_MS > 60_000);
+    const _: () = assert!(STRIPE_REPLAY_WINDOW_MS < 60 * 60 * 1_000);
 }
 
 #[test]
