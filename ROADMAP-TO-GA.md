@@ -188,6 +188,7 @@ Canonical 90-day pre-GA BCP/DR rehearsal calendar (14 drills covering P1 single-
 | R6-1 | **Daily evidence digest** — Sonnet agent reads dashboards + audit chain + chaos results + pages, generates `specs/_audits/2026-MM-DD-daily-staging-evidence.md` | 1 Sonnet | Daily |
 | R6-2 | **Weekly chaos report** — aggregate weekly chaos drill outcomes + flag regressions | 1 Sonnet | Weekly |
 | R6-3 | **Incident response if SEV-1** — orchestrator emergency dispatch per `specs/_runbooks/ONCALL-ESCALATION-MATRIX.md`; root cause + postmortem within 24h. **Drill cadence companion:** `specs/_compliance/BCP-DR-DRILL-CADENCE.md` rehearses the same path bi-weekly (DR-009/DR-010). | Orchestrator + 2 Sonnets if needed | Ad-hoc |
+| R6-4 | **24h endurance drill (manual) + 2h endurance CI (nightly)** — sustained realistic-mix load against staging surfaces slow-drift (memory, p99 creep, audit lag, log volume). Manual 24h cadence: monthly while pre-GA, bi-annually post-GA. CI 2h variant: daily at 03:00 UTC. Drill runbook: `specs/_runbooks/RB-ENDURANCE-24H-DRILL.md`. Script: `tests/load/k6/scenarios/endurance-24h.js`. CI: `.github/workflows/endurance-2h-nightly.yml`. Report template: `tests/load/k6/scenarios/endurance-24h-ANALYSIS-TEMPLATE.md` (SOC 2 CC7.5 + ISO 27031 §8.4 aligned). | 1 Sonnet (CI) + Gustavo + on-call rotation (24h manual) | Monthly (manual) / daily (CI 2h) |
 
 **Wave R-6 gate:** 30 consecutive days of `daily-staging-evidence.md` showing all green; tag `roadmap-r6-sealed`.
 

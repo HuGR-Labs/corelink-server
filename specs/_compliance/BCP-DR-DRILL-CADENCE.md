@@ -310,3 +310,4 @@ Cancellation MUST be logged in the evidence doc (`status: cancelled`, reason cit
 - `specs/_compliance/templates/DR-DRILL-EVIDENCE.md` — evidence template
 - `specs/_compliance/SOC2-GAP-ANALYSIS.md` — controls coverage
 - `ROADMAP-TO-GA.md` §6 — R-6 Wave context
+- `specs/_runbooks/RB-ENDURANCE-24H-DRILL.md` — **companion 24h endurance load drill** (NOT a BCP/DR drill itself; load-test exercise interleaved with this cadence to avoid contention. The endurance runbook explicitly checks this calendar before scheduling and pauses synthetic-page during its 24h window.)
