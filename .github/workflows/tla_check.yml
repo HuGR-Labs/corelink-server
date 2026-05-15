@@ -204,3 +204,26 @@ jobs:
 
       - name: TLC verify backup_fresh (DEBT-005 batch 3)
         run: bash scripts/run_tlc_corelink.sh backup_fresh
+
+      # DEBT-005 batch 4 (5 net-new TLA specs, 2026-05-15) — close 10 more
+      # CRITICAL INV-granularity gaps from canonical-consistency baseline
+      # §4 (critical_no_tla 26 → 16; tla_verified 49 → 59).
+      # Covers INV-AC-DIGEST-SIGNED + INV-AC-MERKLE-DETERMINISTIC +
+      # INV-AC-TENANT-SCOPED + INV-AUTH-WEBAUTHN-ORIGIN-EXACT +
+      # INV-AUTH-WEBAUTHN-RP-ID-CANONICAL + INV-DIGEST-VERIFICATION +
+      # INV-GC-MARK-STARTED-AT-ATOMIC + INV-GC-MARK-STARTED-AT-IMMUTABLE +
+      # INV-MULTIPART-CHUNK-DETERMINISTIC + INV-MULTIPART-PATH-TENANT-SCOPED.
+      - name: TLC verify ac_integrity (DEBT-005 batch 4)
+        run: bash scripts/run_tlc_corelink.sh ac_integrity
+
+      - name: TLC verify webauthn_origin (DEBT-005 batch 4)
+        run: bash scripts/run_tlc_corelink.sh webauthn_origin
+
+      - name: TLC verify digest_verification (DEBT-005 batch 4)
+        run: bash scripts/run_tlc_corelink.sh digest_verification
+
+      - name: TLC verify gc_mark_started_at (DEBT-005 batch 4)
+        run: bash scripts/run_tlc_corelink.sh gc_mark_started_at
+
+      - name: TLC verify multipart_determinism (DEBT-005 batch 4)
+        run: bash scripts/run_tlc_corelink.sh multipart_determinism
