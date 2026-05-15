@@ -169,6 +169,42 @@ Para cada SLO em `slo_catalog.md`:
 
 Alerting via multi-window multi-burn-rate (Google SRE Workbook §5).
 
+### 4.6 Concrete metric registry (R-prep dashboards catalog)
+
+Beyond the **patterns** in §4.2/§4.3/§4.4/§4.5, the following concrete metric names are emitted in CoreLink GA and consumed by `specs/_dashboards/DASH-*.md` (validated by `scripts/gen-grafana-provision.py --validate`):
+
+**Core RED expansions (per `op`):**
+`corelink_cas_requests_total`, `corelink_cas_errors_total`, `corelink_cas_get_duration_seconds_bucket`, `corelink_ac_requests_total`, `corelink_ac_errors_total`, `corelink_auth_errors_total`, `corelink_ratelimit_requests_total`.
+
+**Capacity / resource gauges (extends §4.3):**
+`corelink_d1_row_count`, `corelink_kv_key_count`, `corelink_do_storage_bytes`, `corelink_workers_cpu_ms_total`.
+
+**Audit chain (CTRL-AUDIT-APPEND-ONLY surface):**
+`corelink_audit_chain_appends_total`, `corelink_audit_chain_head_depth`, `corelink_audit_chain_head_timestamp`, `corelink_audit_chain_append_duration_seconds_bucket`, `corelink_audit_chain_integrity_verify_outcome`, `corelink_audit_chain_sink_errors_total`, `corelink_audit_chain_tamper_attempts_total`, `corelink_audit_chain_tla_check_pass`.
+
+**BYOK (4-provider envelope):**
+`corelink_byok_envelope_ops_total`, `corelink_byok_envelope_op_duration_seconds_bucket`, `corelink_byok_active_kek_id`, `corelink_byok_kek_rotation_age_seconds`, `corelink_byok_kek_rotation_overlap`, `corelink_byok_kill_switch_drill_last_run_timestamp`, `corelink_byok_dek_cache_hit_ratio`, `corelink_byok_provider_circuit_state`, `corelink_byok_kek_revoked_total`.
+
+**Rate-limit / abuse:**
+`corelink_ratelimit_circuit_state`, `corelink_ratelimit_global_bucket_util_ratio`, `corelink_auth_replay_blocked_total`.
+
+**Billing pipeline:**
+`corelink_billing_events_total`, `corelink_billing_aggregation_lag_seconds_bucket`, `corelink_stripe_webhook_total`, `corelink_stripe_webhook_duration_seconds_bucket`, `corelink_billing_dlq_depth`, `corelink_billing_event_errors_total`, `corelink_invoice_generated_total`, `corelink_invoice_amount_usd_total`, `corelink_revenue_internal_usd_total`, `corelink_revenue_stripe_usd_total`, `corelink_tenant_past_due_amount_usd`.
+
+**DR / replication:**
+`corelink_replication_lag_seconds`, `corelink_dr_failover_ready`, `corelink_failover_events_total`, `corelink_active_write_lease_region`, `corelink_dr_drill_last_run_timestamp`, `corelink_dr_drill_rto_seconds`, `corelink_dr_drill_rpo_seconds`, `corelink_backup_verification_outcome`, `corelink_backup_verification_last_run_timestamp`, `corelink_region_synthetic_health_ratio`.
+
+**S-11 privacy / DSR / consent:**
+`corelink_dsr_submitted_total`, `corelink_dsr_open_count`, `corelink_dsr_age_seconds_bucket`, `corelink_dsr_state_transitions_total`, `corelink_dsr_backend_ack_duration_seconds_bucket`, `corelink_dsr_denied_total`, `corelink_dsr_failed_total`, `corelink_dsr_completed_total`, `corelink_dsr_receipt_issued_total`, `corelink_consent_events_total`, `corelink_consent_lapse_propagation_seconds_bucket`, `corelink_privacy_notice_active_version`, `corelink_residency_violations_total`.
+
+**Ops / oncall / deploys:**
+`corelink_deploy_events_total`, `corelink_deploy_event_total` (legacy alias), `corelink_incidents_declared_total`, `corelink_oncall_mtta_seconds`, `corelink_oncall_mttr_seconds`, `corelink_synthetic_uptime_ratio`, `corelink_pentest_active`, `corelink_pentest_last_run_timestamp`, `corelink_chaos_drill_executed_total`, `corelink_rca_actions_open`.
+
+**Compliance / GAP register:**
+`corelink_gap_register_count`, `corelink_gap_age_seconds`, `corelink_gap_age_seconds_bucket`, `corelink_drill_cadence_compliance`, `corelink_evidence_last_collected_timestamp`, `corelink_soc2_control_coverage_ratio`, `corelink_iso27001_control_coverage_ratio`, `corelink_active_waivers`, `corelink_waiver_expiry_timestamp`.
+
+> **Rule:** new metric names introduced by a WI MUST be appended to this registry in the same PR. CI gate `scripts/gen-grafana-provision.py --validate` will fail if any `DASH-*.md` references a metric absent here.
+
 ---
 
 ## 5. Logs estruturados — schema
