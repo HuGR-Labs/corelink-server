@@ -3,7 +3,7 @@ id: "AUDIT-2026-05-15-BYOK-REAL-PROVIDER-PATTERN"
 type: "audit"
 doc_status: "ACTIVE"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-15"
 updated: "2026-05-15"
 owner: "Gustavo Schneiter"
@@ -39,15 +39,15 @@ tags: ["byok", "fips", "ga", "pattern", "canonical-reference", "aws-kms", "gcp-k
 | 1 | `#![forbid(unsafe_code)]` at crate root | yes | yes | yes | yes |
 | 2 | `clippy::unwrap_used = "deny"` + `expect_used = "deny"` + `panic = "deny"` | yes | yes | yes | yes |
 | 3 | `KmsProvider` trait impl with the 4 canonical methods | yes | yes | yes | yes |
-| 4 | FIPS endpoint **enforced unconditionally** in constructor; URL exposed for test assertion | yes (`resolved_fips_endpoint()`) | (`with_endpoint`) | (`endpoint_override`) | (`vault_addr`) |
-| 5 | AAD JCS canonicalization via `serde_jcs` before binding | yes (`canonicalize_aad_to_string_map`) | TBD R-prep | TBD R-prep | TBD R-prep |
-| 6 | Audit-emit fail-CLOSED — `emit_audit(...)` BEFORE error bubbles | yes (target `corelink.byok.aws.audit`) | TBD R-prep | TBD R-prep | TBD R-prep |
-| 7 | Constant-time fingerprint compare on AAD (mock-mode tamper detection) | yes (`subtle::ConstantTimeEq`) | TBD R-prep | TBD R-prep | TBD R-prep |
-| 8 | Native-only `aws-sdk-kms` / equivalent gated by `[target.'cfg(not(target_arch = "wasm32"))'.dependencies]` | yes | needs port | needs port | needs port |
-| 9 | `*WasmStub` linked on `target_arch = "wasm32"` with explicit `BYOKError::Provider("... unsupported on wasm32 ...")` | yes (`AwsKmsWasmStub`) | TBD R-prep | TBD R-prep | TBD R-prep |
-| 10 | ≥ 8 unit tests + 1 prop test (deterministic AAD canonicalization roundtrip) | yes (14 + 1 prop) | yes (mock-only) | yes (mock-only) | yes (mock-only) |
+| 4 | FIPS endpoint **enforced unconditionally** in constructor; URL exposed for test assertion | yes (`resolved_fips_endpoint()`) | (`with_endpoint`) | (`endpoint_override`) | yes (operator-config; `resolved_fips_endpoint()` returns `VAULT_ADDR`; TLS 1.3 enforced) |
+| 5 | AAD JCS canonicalization via `serde_jcs` before binding | yes (`canonicalize_aad_to_string_map`) | TBD R-prep | TBD R-prep | yes (`canonicalize_aad_to_string_map` → base64 → Vault `context`) |
+| 6 | Audit-emit fail-CLOSED — `emit_audit(...)` BEFORE error bubbles | yes (target `corelink.byok.aws.audit`) | TBD R-prep | TBD R-prep | yes (target `corelink.byok.vault.audit`) |
+| 7 | Constant-time fingerprint compare on AAD (mock-mode tamper detection) | yes (`subtle::ConstantTimeEq`) | TBD R-prep | TBD R-prep | yes (`subtle::ConstantTimeEq` on validated key-name path; Vault server-side enforces AAD via `context`) |
+| 8 | Native-only `aws-sdk-kms` / equivalent gated by `[target.'cfg(not(target_arch = "wasm32"))'.dependencies]` | yes | needs port | needs port | yes (`reqwest` + `tokio` + `regex` native-only) |
+| 9 | `*WasmStub` linked on `target_arch = "wasm32"` with explicit `BYOKError::Provider("... unsupported on wasm32 ...")` | yes (`AwsKmsWasmStub`) | TBD R-prep | TBD R-prep | yes (`VaultWasmStub`) |
+| 10 | ≥ 8 unit tests + 1 prop test (deterministic AAD canonicalization roundtrip) | yes (14 + 1 prop) | yes (mock-only) | yes (mock-only) | yes (22 + 1 prop, AAD-as-`context`) |
 | 11 | Optional `#[ignore]` live test against `*_TEST_KEY_ARN` env (CI nightly) | yes (`e2e_byok_aws_kms.rs`) | yes | yes | yes |
-| 12 | Server feature flag `byok-<provider>-real` wires the real impl behind the `KmsProvider` trait object | yes (`byok-aws-real`) | TBD R-prep | TBD R-prep | TBD R-prep |
+| 12 | Server feature flag `byok-<provider>-real` wires the real impl behind the `KmsProvider` trait object | yes (`byok-aws-real`) | TBD R-prep | TBD R-prep | yes (`byok-vault-real`) |
 
 ---
 
@@ -93,7 +93,7 @@ threads the result through provider-specific binding.
 | AWS KMS | `kms-fips.<region>.amazonaws.com` | `AwsKmsRealProvider::new` always sets `use_fips(true)` | `resolved_fips_endpoint()` exposed; tests assert exact URL pattern + `starts_with("kms-fips.")` + `ends_with(".amazonaws.com")` for 4 regions |
 | GCP KMS | `cloudkms.<region>.rep.googleapis.com` (FedRAMP regions) | `GcpKmsRealProvider::with_endpoint` accepts FIPS regional URL | TBD R-prep — same assertion shape |
 | Azure KV | `<vault>.managedhsm.azure.net` (Managed HSM Level 3) | `endpoint_override` resolves Managed HSM | TBD R-prep — same assertion shape |
-| Vault | customer-hosted; TLS 1.3 + mTLS enforced | `vault_addr` validated; TLS profile pinned | TBD R-prep — assert TLS profile shape |
+| Vault | customer-hosted; TLS 1.3 + server X.509 verify enforced (FIPS = operator-config, NOT endpoint-routable — Vault Enterprise FIPS build + `seal_type=pkcs11`) | `VaultRealProvider::from_env` rejects `VAULT_SKIP_VERIFY` + sets `min_tls_version(TLS_1_3)`; `resolved_fips_endpoint()` returns operator-supplied `VAULT_ADDR` | `resolved_fips_endpoint_returns_vault_addr` + `tls_strict_enforced_is_true` |
 
 **Rule:** every provider crate MUST expose a `resolved_fips_endpoint() -> &str`
 (or equivalent name) so the test suite can pin the exact URL string the
@@ -199,12 +199,18 @@ Each provider gets a parallel R-prep work item. The diff from AWS KMS:
 
 ### 6.3 HashiCorp Vault (`crates/corelink-byok-vault`)
 
-- [ ] Same canonicalization migration; Vault Transit `context` field is
-      base64-encoded so the AAD path passes the JCS bytes through b64.
-- [ ] FIPS endpoint = customer-hosted `$VAULT_ADDR`; the adapter MUST
-      verify TLS 1.3 + mTLS profile at handshake (see
-      `crates/corelink-byok-vault/src/auth.rs`).
-- [ ] Audit-emit + wasm stub + feature flag — same as GCP.
+- [x] Same canonicalization migration; Vault Transit `context` field is
+      base64-encoded so the AAD path passes the JCS bytes through b64
+      (`real::canonicalize_aad_to_string_map` → `encode_context_for_vault`).
+- [x] FIPS handling = customer-hosted `$VAULT_ADDR` (operator-config, not
+      endpoint-routable like AWS/GCP); the adapter enforces TLS 1.3
+      minimum + server X.509 verification and rejects `VAULT_SKIP_VERIFY`
+      at construction. FIPS attestation is operator-supplied metadata
+      (Vault Enterprise FIPS build + `seal_type=pkcs11`).
+- [x] Audit-emit (target `corelink.byok.vault.audit`) + `VaultWasmStub` +
+      `byok-vault-real` server feature flag — landed wave 14.
+- [x] Four auth modes (token / AppRole / JWT / Kubernetes) plumbed via
+      `auth::VaultAuth`; tokens never appear in error messages.
 
 ---
 
