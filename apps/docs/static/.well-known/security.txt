@@ -1,0 +1,28 @@
+# CoreLink security.txt — RFC 9116 compliant
+# Validate at: https://securitytxt.org/  and  https://www.rfc-editor.org/rfc/rfc9116
+#
+# This file is served at https://corelink.dev/.well-known/security.txt
+# (Docusaurus copies /static/.well-known/* as-is during build.)
+#
+# PGP-signed variant is at /.well-known/security.txt.sig once the signing
+# key is published. The unsigned plain-text form below remains canonical
+# per RFC 9116 §2.3 (Canonical field).
+
+Contact: mailto:security@corelink.dev
+Contact: https://corelink.dev/.well-known/security-report
+Expires: 2027-05-14T00:00:00.000Z
+Encryption: https://corelink.dev/.well-known/security-pgp.asc
+Acknowledgments: https://corelink.dev/security/hall-of-fame
+Preferred-Languages: en, pt-BR, es
+Canonical: https://corelink.dev/.well-known/security.txt
+Policy: https://corelink.dev/security/policy
+Hiring: https://corelink.dev/careers
+
+# Notes for parsers:
+#  - Expires MUST be a single ISO 8601 timestamp in UTC ("Z"). One year out
+#    is the recommended cadence (RFC 9116 §2.5.5). Renew before expiry.
+#  - Multiple Contact lines are allowed and listed in priority order.
+#  - Preferred-Languages uses BCP 47 tags; "pt-BR" is the canonical Brazilian
+#    Portuguese subtag.
+#  - The plain-text file MUST be served with Content-Type: text/plain;
+#    charset=utf-8 (handled by Docusaurus default static asset middleware).
