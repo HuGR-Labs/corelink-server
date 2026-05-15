@@ -3,7 +3,7 @@ id: "AUDIT-2026-05-15-CF-BINDING-REAL-PATTERN"
 type: "audit_report"
 doc_status: "FROZEN"
 audit_status: "SEALED"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-05-15"
 updated: "2026-05-15"
 owner: "Gustavo Schneiter"
@@ -204,7 +204,96 @@ Tracks which CF runtime surfaces have a real-impl binding shipped against the te
 - clippy `-D warnings` green on `--tests`.
 - Charter compliance: `#![forbid(unsafe_code)]`, no `unwrap`/`expect`/`panic` outside test, `D1Error` and `D1Op` are `#[non_exhaustive]`, audit fail-CLOSED on every mutation, no tokio runtime in src (the wasm32 async surface uses `worker`'s native futures).
 
-## 7. Out of scope
+## 7. CF Worker production adoption
+
+Wave 15 promotes the four real-binding wrappers from "shipped & tested in
+isolation" (waves 13 + 14) to the canonical binding-access path for the
+clerk-cf Cloudflare Worker. Every binding-access site in the request
+handler chain now flows through a `Cf*Real` adapter; no raw
+`worker::*` binding lookup remains outside the centralised boot path.
+
+### 7.1 Wiring sites
+
+The boot path lives in `crates/corelink-clerk-cf` and is split across
+three modules so the adapter construction, audit fan-out, and handler
+logic stay testable on native CI:
+
+| Module                                                   | Role                                                                              |
+|----------------------------------------------------------|-----------------------------------------------------------------------------------|
+| `crates/corelink-clerk-cf/src/prod_wiring.rs`            | Boot — reads `env.bucket / env.d1 / env.kv / env.durable_object` once per request, wraps each in its `Cf*Real` adapter, attaches the shared `AuditSink`. |
+| `crates/corelink-clerk-cf/src/audit_sink.rs`             | Audit fan-out — one `AuditSink` per request adapts to R2/D1/KV/DO `AuditFn` shapes. Emits one canonical NDJSON line per call via `worker::console_log!` on wasm32; in-memory recorder on native for tests. |
+| `crates/corelink-clerk-cf/src/health.rs`                 | `GET /health` handler — exercises all four bindings (KV get/put, R2 head, D1 INSERT, DO stub_by_name) using the wrappers exclusively. |
+
+The binding-name map registered in `crates/corelink-clerk-cf/wrangler.toml`:
+
+| Binding name      | CF surface      | Adapter                  | Tenant anchor                      |
+|-------------------|-----------------|--------------------------|------------------------------------|
+| `CAS_BUCKET`      | R2 bucket       | `CfR2BucketReal`         | `TenantPrefix` (separator `/`)     |
+| `CLERK_DB`        | D1 database     | `CfD1DatabaseReal`       | `TenantId` (CT-eq on first bind)   |
+| `CLERK_JWKS_KV`   | KV namespace    | `CfKvNamespaceReal`      | `KvTenantPrefix` (separator `:`)   |
+| `CLERK_DO`        | DO namespace    | `CfDurableObjectReal`    | `DoTenantPrefix` (`tenant:<id>:`)  |
+
+The CF Worker entry point (`#[worker::event(fetch)]`) reads the
+JWT-validated tenant from the `x-corelink-tenant` request header,
+constructs a `TenantContext` (re-validating shape per binding anchor),
+and threads the resulting `CfRealBindings` bundle to `handle_health_real`.
+
+### 7.2 Audit sink wire-up
+
+A single `AuditSink` is built at request entry (`AuditSink::console_ndjson(tenant_label)`) and adapted four times into the per-binding
+`AuditFn` shape via:
+
+- `sink.r2()`  → `Arc<dyn Fn(R2Op, &str) -> Result<(), R2Error> + Send + Sync>`
+- `sink.d1()`  → `Arc<dyn Fn(D1Op, &str) -> Result<(), D1Error> + Send + Sync>`
+- `sink.kv()`  → `Arc<dyn Fn(KvOp, &str) -> Result<(), KvError> + Send + Sync>`
+- `sink.do_()` → `Arc<dyn Fn(DoOp, &str) -> Result<(), DoError> + Send + Sync>`
+
+Each binding wrapper is then equipped via `.with_audit(...)`. The emitted
+events fan into `worker::console_log!` on wasm32 (CF Logpush ingest);
+the in-memory recorder variant is used for native `tests/prod_wiring.rs`.
+
+Canonical NDJSON shape (one line per call):
+
+```json
+{"surface":"r2","op":"head","tenant":"<tenant-label>","subject":"<scoped-key>"}
+```
+
+CTRL-PRIV-001: the `subject` field is the validated scoped key / SQL
+preview / DO name — never raw blob bytes, JWT secrets, or D1 row
+payloads. The pre-mutation audit is fail-CLOSED on every binding: if
+the sink errors (recorder mutex poisoned in tests; production console
+emission is infallible), the binding op is NOT performed.
+
+### 7.3 Quality gate (wave 15)
+
+```bash
+cargo build  -p corelink-clerk-cf --target wasm32-unknown-unknown    # green
+cargo build  -p corelink-clerk-cf                                     # green
+cargo clippy -p corelink-clerk-cf --target wasm32-unknown-unknown -- -D warnings   # green
+cargo clippy -p corelink-clerk-cf --tests -- -D warnings              # green
+cargo test   -p corelink-clerk-cf                                     # 14/14 (8 unit + 6 integration)
+python3 scripts/validate_specs.py                                     # green
+```
+
+### 7.4 Cross-tenant defenses verified
+
+`crates/corelink-clerk-cf/tests/prod_wiring.rs` pins the cross-tenant
+defenses on native CI (the same wrapper code path executes on wasm32):
+
+| Surface | Defense                                                       | Test                                              |
+|---------|---------------------------------------------------------------|---------------------------------------------------|
+| KV      | Silent re-namespacing under the anchored tenant prefix        | `cross_tenant_kv_isolation_silent_renamespace`    |
+| R2      | Silent re-namespacing under the anchored tenant prefix        | `cross_tenant_r2_isolation_silent_renamespace`    |
+| D1      | Hard `tenant_bind:` rejection (CT-eq on first positional)     | `cross_tenant_d1_bind_rejected_close`             |
+| DO      | Hard `tenant_scope:` rejection (CT-eq on tenant-id segment)   | `cross_tenant_do_resolve_rejected_close`          |
+
+KV and R2 use namespace isolation (any access from an A-anchored
+adapter is silently re-prefixed under A); D1 and DO use hard CT-eq
+rejection at the bind / name-validate gate. Both modes satisfy the
+fail-CLOSED contract — under no path does an A-anchored adapter
+return data from tenant B's namespace.
+
+## 8. Out of scope
 
 - Full `MultipartAdapter` trait implementation for the multipart surface — `corelink-r2-multipart` owns that contract; `CfR2BucketReal::create_multipart_upload` / `upload_part` / `complete_multipart_upload` / `abort_multipart_upload` are the verbs that adapter will wire onto.
 - Cross-tenant key collision detection beyond the prefix check — the canonical tenant prefix is a 16-hex HMAC produced by `corelink_tenant_path::TenantPrefix` (collision probability ≈ 2^-96 per pair); this crate trusts the upstream derivation.

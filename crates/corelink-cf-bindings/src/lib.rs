@@ -107,3 +107,27 @@ pub use r2_real::{CfR2BucketReal, R2Op, TenantPrefix, TenantScopedKey};
 
 pub use kv_real::CfKvNamespaceReal;
 pub use do_real::{CfDurableObjectReal, DoError, DoOp, DoTenantPrefix, TenantScopedName};
+
+// Audit hook type aliases for each binding. Re-exported so consumers can
+// build a single `AuditSink` and adapt it to all 4 surfaces without
+// pulling the per-module paths into their own use statements. Each alias
+// is `Arc<dyn Fn(*Op, &str) -> Result<(), *Error> + Send + Sync + 'static>`.
+pub use d1_real::AuditFn as D1AuditFn;
+pub use do_real::AuditFn as DoAuditFn;
+pub use kv_real::AuditFn as KvAuditFn;
+pub use r2_real::AuditFn as R2AuditFn;
+
+// KV uses its own per-module `TenantPrefix` and `KvOp` types. The KV
+// `TenantPrefix` is distinct from `r2_real::TenantPrefix` (KV separator
+// is `:`, R2's is `/`). Re-export under a disambiguated alias so the
+// `pub use r2_real::TenantPrefix` above remains the canonical
+// crate-level `TenantPrefix` for the prefix-style (R2) surface.
+pub use kv_real::{KvOp, TenantPrefix as KvTenantPrefix};
+
+// `R2Error` and `KvError` live in `corelink_worker` (the trait-surface
+// crate). Re-export them here so consumers wiring the real bindings have
+// a single import path (`corelink_cf_bindings::*`) for both the adapter
+// types AND their error variants. This keeps `apps/server` / the CF
+// Worker boot path free of `corelink_worker::storage::error::*` paths.
+pub use corelink_worker::cache::kv::KvError;
+pub use corelink_worker::storage::error::R2Error;
