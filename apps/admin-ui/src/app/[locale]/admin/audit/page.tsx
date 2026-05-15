@@ -2,8 +2,7 @@
 
 import React from "react";
 import RbacGuard from "@/components/admin/RbacGuard";
-import AuditViewer from "@/components/admin/AuditViewer";
-import { adminClient } from "@/lib/admin-client";
+import AuditViewerClient from "@/components/admin/AuditViewerClient";
 
 export default function AdminAuditPage(): React.ReactElement {
   return (
@@ -14,7 +13,7 @@ export default function AdminAuditPage(): React.ReactElement {
           Per-tenant operator audit viewer. Filter, inspect CloudEvent envelope, verify
           Merkle proof, and export sanitized snapshots.
         </p>
-        <AuditViewer client={adminClient} />
+        <AuditViewerClient />
       </main>
     </RbacGuard>
   );

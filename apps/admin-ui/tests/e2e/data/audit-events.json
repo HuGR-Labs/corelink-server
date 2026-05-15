@@ -1,0 +1,36 @@
+{
+  "_comment": "Snapshot of the audit log shape returned by /v1/admin/audit. Source of truth is src/lib/e2e-mock-fixtures.ts.",
+  "rows": [
+    {
+      "event_id": "evt_001",
+      "ts": "2026-05-10T10:00:00Z",
+      "tenant_id": "tenant_001",
+      "event_type": "auth.login",
+      "severity": "info",
+      "actor": "user_e2e_admin",
+      "summary": "operator login from 10.0.0.1",
+      "correlation_id": "corr-001"
+    },
+    {
+      "event_id": "evt_002",
+      "ts": "2026-05-12T11:30:00Z",
+      "tenant_id": "tenant_002",
+      "event_type": "byok.cmk_rotated",
+      "severity": "warn",
+      "actor": "user_e2e_approver",
+      "summary": "CMK rotated for tenant_002",
+      "correlation_id": "corr-002"
+    },
+    {
+      "event_id": "evt_003",
+      "ts": "2026-05-13T09:00:00Z",
+      "tenant_id": "tenant_001",
+      "event_type": "dsr.request",
+      "severity": "info",
+      "actor": "user_e2e_admin",
+      "summary": "DSR access submitted",
+      "correlation_id": "corr-003"
+    }
+  ],
+  "next_cursor": null
+}
