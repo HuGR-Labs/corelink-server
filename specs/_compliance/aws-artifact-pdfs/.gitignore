@@ -1,0 +1,12 @@
+# DEBT-003 — AWS Artifact PDF binaries must NEVER be committed.
+#
+# AWS Artifact terms-of-use restrict redistribution of the PDF; the repo
+# tracks only the SHA-256 hash in SHA256SUMS (the evidence-chain anchor).
+# See specs/_compliance/aws-artifact-placeholder.md §4.1 for the full
+# rationale.
+#
+# Ignore every file in this directory by default…
+*
+# …then re-allow only the SHA256SUMS ledger and this .gitignore itself.
+!.gitignore
+!SHA256SUMS
