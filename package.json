@@ -10,7 +10,8 @@
   "packageManager": "pnpm@10.32.1",
   "pnpm": {
     "patchedDependencies": {
-      "@docusaurus/core@3.10.1": "patches/@docusaurus__core@3.10.1.patch"
+      "@docusaurus/core@3.10.1": "patches/@docusaurus__core@3.10.1.patch",
+      "@docusaurus/babel@3.10.1": "patches/@docusaurus__babel@3.10.1.patch"
     }
   },
   "scripts": {

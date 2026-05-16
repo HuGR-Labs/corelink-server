@@ -1,0 +1,39 @@
+diff --git a/lib/preset.js b/lib/preset.js
+index c1e23239d1677523b625f073f1466f5d6003460d..f59b807df7b9e562e90cd8080ea86912a1c8343f 100644
+--- a/lib/preset.js
++++ b/lib/preset.js
+@@ -23,6 +23,12 @@ function getTransformOptions(isServer) {
+                         targets: {
+                             node: 'current',
+                         },
++                        // DEBT-015-BUILD wave-24: prevent preset-env from
++                        // transforming ESM imports (including dynamic import())
++                        // to CJS require() before webpack sees them.
++                        // Without this, modules:'auto' on server target rewrites
++                        // import() to require(), breaking ESM-only deps on Node 22.
++                        modules: false,
+                     },
+                 ]
+                 : [
+@@ -68,9 +74,18 @@ function getTransformOptions(isServer) {
+                 },
+             ],
+             // Adds syntax support for import()
+-            isServer
+-                ? require.resolve('babel-plugin-dynamic-import-node')
+-                : require.resolve('@babel/plugin-syntax-dynamic-import'),
++            // DEBT-015-BUILD wave-24: previously the server branch used
++            // `babel-plugin-dynamic-import-node`, which rewrites every
++            // `import('@site/...')` call into `Promise.resolve().then(() =>
++            // require('@site/...'))`. Because `@site/...` is a webpack
++            // alias (no Node resolution), the resulting server bundle
++            // contains ~226 literal `require("@site/...")` calls that
++            // Node 22's CJS loader cannot resolve at SSG time. Using
++            // the syntax-only plugin (same as client) lets webpack
++            // handle dynamic `import()` natively via its own
++            // code-splitting runtime, preserving the alias resolution
++            // and keeping all chunks inside the bundle.
++            require.resolve('@babel/plugin-syntax-dynamic-import'),
+         ],
+     };
+ }
