@@ -1,0 +1,112 @@
+name: TLA+ Model Check — Runbooks (DEBT-014 FT-8)
+
+# Runs TLC v1.8.0 SHA-256 pinned (ADR-0042 §A1) over the runbook TLA+ specs
+# under `specs/03_architecture/tla+/runbooks/`. These specs cover CRITICAL
+# invariants (INV-ONBOARD-DPA-FIRST via `signup_atomic.tla`,
+# INV-DATA-RESIDENCY failover side via `residency_failover.tla`,
+# INV-BYOK-CRYPTO-SOVEREIGNTY via `byok_kill_switch.tla`, consent
+# proof-per-version via `dpa_versioning_grace.tla`) and previously had NO
+# PR-gate CI exposure — see `specs/_audits/tla-followup-tickets.md` FT-8.
+#
+# CI block on any spec failure (exit code != 0).
+
+on:
+  pull_request:
+    paths:
+      - 'specs/03_architecture/tla+/runbooks/**'
+      - '.github/workflows/tla_runbooks_check.yml'
+      # Mirror trigger surface for the invariants these runbooks cover:
+      - 'specs/03_architecture/invariant_registry.md'
+      - 'specs/03_architecture/adrs/ADR-0042-gc-worker-scheduler.md'
+  push:
+    branches: [main]
+    paths:
+      - 'specs/03_architecture/tla+/runbooks/**'
+      - '.github/workflows/tla_runbooks_check.yml'
+      - 'specs/03_architecture/invariant_registry.md'
+      - 'specs/03_architecture/adrs/ADR-0042-gc-worker-scheduler.md'
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  tla-runbooks-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # actions/checkout@v4.3.1
+
+      - name: Setup Java (TLC requires JVM)
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9  # actions/setup-java@v4.8.0
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Install pinned TLC v1.8.0 (SHA-256 verified — ADR-0042 §A1)
+        env:
+          TLC_VERSION: '1.8.0'
+          TLC_SHA256_PINNED: 'd5d07d5dab38ddb840c91ec48fa02f28b37a608d5af9a73570018591dbc8ef7f'
+        run: |
+          set -euo pipefail
+          # Download tla2tools.jar from GitHub Releases per pinned version + verify SHA-256.
+          # SHA pin governance per ADR-0042 §A1 — re-pin requires Security review + Architect.
+          mkdir -p "$RUNNER_TEMP/tla"
+          curl -fsSL -o "$RUNNER_TEMP/tla/tla2tools.jar" \
+            "https://github.com/tlaplus/tlaplus/releases/download/v${TLC_VERSION}/tla2tools.jar"
+          ACTUAL_SHA="$(sha256sum "$RUNNER_TEMP/tla/tla2tools.jar" | awk '{print $1}')"
+          echo "TLC SHA-256 actual: ${ACTUAL_SHA}"
+          echo "TLC SHA-256 expect: ${TLC_SHA256_PINNED}"
+          if [[ "${ACTUAL_SHA}" != "${TLC_SHA256_PINNED}" ]]; then
+            echo "::error::TLC SHA-256 supply-chain pin violation (ADR-0042 §A1)" >&2
+            echo "::error::expected: ${TLC_SHA256_PINNED}" >&2
+            echo "::error::actual:   ${ACTUAL_SHA}" >&2
+            echo "::error::Re-pin requires Security review + ADR-0042 §A1 update" >&2
+            exit 1
+          fi
+          mkdir -p "$HOME/.local/bin"
+          cat > "$HOME/.local/bin/tlc" <<'EOF'
+          #!/usr/bin/env bash
+          exec java -cp "${RUNNER_TEMP}/tla/tla2tools.jar" tlc2.TLC "$@"
+          EOF
+          # The wrapper above uses ${RUNNER_TEMP} from env at run time.
+          sed -i "s|\${RUNNER_TEMP}|${RUNNER_TEMP}|g" "$HOME/.local/bin/tlc"
+          chmod +x "$HOME/.local/bin/tlc"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          echo "TLC_JAR=$RUNNER_TEMP/tla/tla2tools.jar" >> "$GITHUB_ENV"
+
+      # The runbook specs live under specs/03_architecture/tla+/runbooks/
+      # rather than specs/tla/, so we invoke `tlc` directly with explicit
+      # spec + cfg paths. Each step enforces the same supply-chain pin
+      # validated above (the jar referenced by ${TLC_JAR} is the only
+      # artifact the wrapper executes).
+
+      - name: TLC verify signup_atomic (WI-S20-007 runbook 1/4)
+        # INV-ONBOARD-DPA-FIRST + atomic-provisioning saga.
+        working-directory: specs/03_architecture/tla+/runbooks
+        run: |
+          set -euo pipefail
+          tlc -config signup_atomic.cfg signup_atomic.tla
+
+      - name: TLC verify byok_kill_switch (WI-S20-007 runbook 3/4)
+        # INV-BYOK-CRYPTO-SOVEREIGNTY (runbook side; per-region race is
+        # covered separately in specs/tla/byok_dek_race.tla — FT-7).
+        working-directory: specs/03_architecture/tla+/runbooks
+        run: |
+          set -euo pipefail
+          tlc -config byok_kill_switch.cfg byok_kill_switch.tla
+
+      - name: TLC verify residency_failover (WI-S20-007 runbook 2/4)
+        # INV-DATA-RESIDENCY failover side; no split-brain on handoff.
+        working-directory: specs/03_architecture/tla+/runbooks
+        run: |
+          set -euo pipefail
+          tlc -config residency_failover.cfg residency_failover.tla
+
+      - name: TLC verify dpa_versioning_grace (WI-S20-007 runbook 4/4)
+        # Consent proof per dpa_version; grace window correctness.
+        working-directory: specs/03_architecture/tla+/runbooks
+        run: |
+          set -euo pipefail
+          tlc -config dpa_versioning_grace.cfg dpa_versioning_grace.tla

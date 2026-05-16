@@ -144,6 +144,29 @@ jobs:
         # TENANT-REGION (HIGH) + INV-GC-RECONCILE-AUDIT-FAIL-CLOSED
         # (CRITICAL, inherited from audit_immutability append-only chain).
         run: bash scripts/run_tlc_corelink.sh gc_lock_protocol
+
+      - name: TLC verify multipart_finalize (DEBT-014 FT-6)
+        # Added by DEBT-014 dispatch 2026-05-16 closing FT-6. Multipart
+        # session state machine live -> {finalized, aborted} with
+        # concurrent abort+finalize race + idempotent re-finalize.
+        # Closes INV-MULTIPART-FINALIZE-IRREVOCABLE,
+        # INV-MULTIPART-STATE-MONOTONIC,
+        # INV-MULTIPART-CONCURRENCY-BOUNDED (HIGH × 3).
+        run: bash scripts/run_tlc_corelink.sh multipart_finalize
+
+      - name: TLC verify byok_dek_race (DEBT-014 FT-7)
+        # Added by DEBT-014 dispatch 2026-05-16 closing FT-7 (CRITICAL
+        # upgrade). Per-region DEK cache eviction race across regions
+        # when KMS is revoked — lifts the runbook spec's single-cache
+        # abstraction. Closes INV-BYOK-CRYPTO-SOVEREIGNTY (CRITICAL).
+        run: bash scripts/run_tlc_corelink.sh byok_dek_race
+
+      - name: TLC verify signup_resignup (DEBT-014 FT-9)
+        # Added by DEBT-014 dispatch 2026-05-16 closing FT-9. Extends the
+        # signup_atomic runbook with explicit ReSignupSameEmail action +
+        # late Stripe webhook arrival. Closes INV-SIGNUP-RESIGNUP-
+        # IDEMPOTENT (HIGH) + inherits INV-ONBOARD-DPA-FIRST.
+        run: bash scripts/run_tlc_corelink.sh signup_resignup
       # DEBT-005 batch 1 (5 net-new TLA specs, 2026-05-15) — close 5 CRITICAL
       # gaps from canonical-consistency baseline §4 (critical_no_tla 40 → 35).
       - name: TLC verify auth_jwt_validation (DEBT-005 batch 1)
