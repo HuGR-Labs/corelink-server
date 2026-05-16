@@ -1,0 +1,184 @@
+# config/statuspage/incident-templates.yml — Wave-28 R-prep step-5
+#
+# Pre-drafted Atlassian Statuspage incident templates. The bootstrap
+# script pushes these via the `pages/{page_id}/incident_templates` API
+# so the on-call SRE can pick a templated incident in <30 seconds
+# without composing copy under SEV-0/1 pressure.
+#
+# Templates are **idle** (not live) until a SRE selects one and the
+# associated component(s) flip to a non-operational status.
+#
+# Cadence guarantees the templates encode (per
+# `apps/docs/docs/trust/incident-response.mdx §Communicating during a SEV1`):
+#   - First post within 5 min of acknowledgement
+#   - Update every 30 min until mitigated
+#   - Post-incident follow-up within 1 hour of resolution
+#
+# Per-SEV body copy follows the structure:
+#   - "What happened" (one sentence, plain language)
+#   - "Customer impact" (concrete: which API / which region / which tenant cohort)
+#   - "What we're doing" (current mitigation)
+#   - "Next update" (deadline)
+#
+# Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+
+schema_version: "1.0.0"
+generated_by: "wave-28 R-prep step-5"
+
+templates:
+  - id: "tpl-sev0-audit-chain-integrity-break"
+    name: "SEV-0 — Audit chain integrity break"
+    severity: "critical"
+    impact_override: "critical"
+    update_status: "investigating"
+    affected_components:
+      - "cmp-audit-export"
+    body: |
+      A tamper-evidence verification on the audit chain has failed.
+      We are treating this as the highest-severity compliance event.
+
+      **Customer impact.** Audit-log export bundles for affected
+      tenants are paused until the chain is re-anchored. Read APIs
+      (CAS, builds, ML) are unaffected. Write APIs continue to
+      append; the affected segment will be re-signed once
+      mitigation completes.
+
+      **What we're doing.** SRE + Compliance are working from
+      `RB-AUDIT-CHAIN-INTEGRITY-BREAK.md`: isolating the affected
+      anchor window, freezing distributor output, and validating
+      neighbouring anchors against the redundant Neon shadow.
+
+      **Next update.** In 30 minutes, or sooner if scope changes.
+
+  - id: "tpl-sev1-cross-region-failover-triggered"
+    name: "SEV-1 — Cross-region failover triggered"
+    severity: "major"
+    impact_override: "major"
+    update_status: "identified"
+    affected_components:
+      - "cmp-cas-api"
+      - "cmp-audit-export"
+    body: |
+      A cross-region failover has been triggered. The primary
+      region is degraded and traffic is being shifted to the
+      designated DR region per
+      `specs/_runbooks/RB-DR-CROSS-REGION-FAILOVER.md`.
+
+      **Customer impact.** Brief (≤ 5 min) elevated latency on
+      CAS read/write while DNS + anycast settle. Build outcomes
+      are not affected. Audit export windows may roll over to the
+      DR region's distributor — bundle hashes remain stable.
+
+      **What we're doing.** Promoting the DR region to primary,
+      validating replication lag is ≤ RPO target, and watching
+      the canary cohort dashboards.
+
+      **Next update.** In 30 minutes.
+
+  - id: "tpl-sev1-dsr-pipeline-degraded"
+    name: "SEV-1 — DSR pipeline degraded"
+    severity: "major"
+    impact_override: "major"
+    update_status: "investigating"
+    affected_components:
+      - "cmp-dsr-pipeline"
+    body: |
+      The data-subject-request (DSR) pipeline is processing
+      requests with elevated lag. New DSR intake remains open;
+      erasure-worker throughput is reduced.
+
+      **Customer impact.** Per-tenant DSR completion may exceed
+      the documented 24h SLA window for requests admitted in the
+      last 2 hours. No data has been lost or exposed.
+
+      **What we're doing.** SRE is tracing the
+      `corelink-privacy-erasure-worker` queue, validating shadow
+      Neon sync, and re-running the
+      `RB-DSR-STATUSPAGE-PUBLISH-FAILED.md` recovery loop.
+
+      **Next update.** In 30 minutes.
+
+  - id: "tpl-sev2-audit-export-latency-spike"
+    name: "SEV-2 — Audit export latency spike"
+    severity: "minor"
+    impact_override: "minor"
+    update_status: "monitoring"
+    affected_components:
+      - "cmp-audit-export"
+    body: |
+      Audit-export bundle generation is running 2–4× normal
+      latency. Bundles are still being produced and signed; the
+      chain is intact.
+
+      **Customer impact.** Customers polling for a fresh bundle
+      may see a delay of up to 15 minutes beyond the documented
+      cadence. Streaming consumers (websocket / push) are
+      unaffected.
+
+      **What we're doing.** Investigating distributor queue
+      pressure and scaling the export worker pool.
+
+      **Next update.** In 1 hour, or sooner if latency clears.
+
+  - id: "tpl-sev2-neon-shadow-sync-lag"
+    name: "SEV-2 — Neon shadow sync lag"
+    severity: "minor"
+    impact_override: "minor"
+    update_status: "monitoring"
+    affected_components:
+      - "cmp-audit-export"
+      - "cmp-dsr-pipeline"
+    body: |
+      The Neon shadow database is replicating with elevated lag
+      relative to the primary D1 tenant store. Reads served from
+      the primary remain authoritative; redundant audit-chain
+      verification is temporarily single-sourced.
+
+      **Customer impact.** None visible to API consumers. Audit
+      bundle distribution continues from the primary anchor.
+      Internal redundancy is degraded — we are tracking this
+      transparently per our trust commitments.
+
+      **What we're doing.** Investigating the shadow-sync
+      consumer (wave-27 deliverable) and validating replication
+      lag against the documented SLO.
+
+      **Next update.** In 1 hour.
+
+  - id: "tpl-maintenance-byok-key-rotation"
+    name: "Maintenance — Scheduled BYOK key rotation"
+    severity: "maintenance"
+    impact_override: "none"
+    update_status: "scheduled"
+    affected_components:
+      - "cmp-byok-provider-matrix"
+    body: |
+      A scheduled BYOK (Bring-Your-Own-Key) envelope-key
+      rotation is in progress. Per-provider matrices (AWS KMS,
+      GCP KMS, Azure Key Vault) are being rotated on a rolling
+      schedule per the
+      `RB-BYOK-KEY-ROTATION.md` runbook.
+
+      **Customer impact.** None expected. CAS read/write APIs
+      remain online. Customers using BYOK MAY observe a one-time
+      re-envelope event in their audit log corresponding to the
+      rotation timestamp.
+
+      **What we're doing.** Rotating per-region in 15-minute
+      windows with shadow-decrypt validation between each step.
+
+      **Next update.** On completion of the rotation window.
+
+# Cadence configuration (mirrored from the customer-facing trust corpus
+# at `apps/docs/docs/trust/incident-response.mdx`). The bootstrap script
+# applies these as page-level defaults.
+cadence:
+  first_post_minutes: 5
+  update_interval_minutes: 30
+  post_incident_minutes: 60
+
+# Cross-references:
+#   - Trust-corpus contract: `apps/docs/docs/trust/incident-response.mdx`
+#   - DSR-channel runbook: `specs/_runbooks/RB-DSR-STATUSPAGE-PUBLISH-FAILED.md`
+#   - DR runbook: `specs/_runbooks/RB-DR-CROSS-REGION-FAILOVER.md`
+#   - Bootstrap consumer: `scripts/admin/statuspage-bootstrap.sh`

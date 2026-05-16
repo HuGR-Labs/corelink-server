@@ -3,7 +3,7 @@ id: "RB-STATUSPAGE-INIT"
 type: "runbook"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-05-16"
 updated: "2026-05-16"
 sprint: "R-prep"
@@ -16,7 +16,7 @@ superseded_by: null
 inherits_from:
   - "RB-DSR-STATUSPAGE-PUBLISH-FAILED"
   - "ONCALL-ESCALATION-MATRIX"
-tags: ["runbook", "statuspage", "operator", "ga-cutover", "provisioning", "debt-016", "wave-24", "wave-27"]
+tags: ["runbook", "statuspage", "operator", "ga-cutover", "provisioning", "debt-016", "wave-24", "wave-27", "wave-28"]
 escalation: "SRE Lead → Incident Commander → CTO"
 review_cadence: "annual + post-incident"
 related:
@@ -148,9 +148,50 @@ defers by **≥ 7 days minimum** because the gate is binary and the
 window does not auto-extend. See dependency map §9 for the slip-window
 matrix.
 
+### 2.6 Wave-28 automation (Option A only)
+
+Wave-28 R-prep step-5 lands AS-IF-AUTOMATED Option A artifacts that
+collapse the §2 steps 1–4 + 6 into **2 browser clicks + 1 shell
+command**. The artifacts are:
+
+| Artifact | Purpose |
+|---|---|
+| `docs/internal/statuspage-tenant-signup-quickstart.md` | 7-step Owner quickstart (browser signup + bootstrap CLI + DNS click) |
+| `config/statuspage/components.yml` | Declarative 4-group / 5-component config (drives bootstrap) |
+| `config/statuspage/incident-templates.yml` | 6 pre-drafted SEV templates (SEV-0 audit-chain · SEV-1 failover · SEV-1 DSR · SEV-2 audit-latency · SEV-2 shadow-lag · maintenance BYOK rotation) |
+| `config/statuspage/dns-cname-record.txt` | Exact Cloudflare CNAME record (proxy=OFF, TTL=Auto) |
+| `scripts/admin/statuspage-bootstrap.sh` | Idempotent post-signup CLI (component groups + components + templates + branding + notifications) |
+
+The two operator-bound surfaces that remain manual are:
+
+1. **Browser signup at `statuspage.atlassian.com`** — Atlassian does
+   not expose tenant-creation via API.
+2. **DNS CNAME save in Cloudflare** — DNS-provider login is
+   operator-bound; the record content is the canonical
+   `dns-cname-record.txt` above.
+
+Everything else (component tree, branding, templates, notifications)
+is driven by the bootstrap script from signed-off YAML, runs in ~2
+minutes, and is safe to re-run on failure.
+
+For the §2 8-internal-component view, the components.yml file
+preserves the wave-24 mapping via the `internal_subsystems:` block on
+each customer-facing component — see the file header for the
+5-vs-8 reconciliation note.
+
 ---
 
 ## 3. Option B — `STATUSPAGE_URL` env-var override (rebuild required)
+
+> **Wave-28 automation cross-ref.** The wave-28 R-prep step-5
+> artifacts (see §2.6) target Option A only. Option B operators
+> can still consume `config/statuspage/components.yml`,
+> `config/statuspage/incident-templates.yml`, and
+> `scripts/admin/statuspage-bootstrap.sh` against their own
+> tenant + page-id — only the DNS-record file
+> (`config/statuspage/dns-cname-record.txt`) is Option A specific
+> (Cloudflare + `status.corelink.dev`). Substitute your own
+> domain + DNS provider before applying.
 
 **Use when:** the operator wants to host the statuspage under a different
 domain (e.g. `https://status.example-corp.com`) because of an existing
@@ -254,6 +295,12 @@ review.
 - Engineering-side closure audit: `specs/_audits/2026-05-16-debt-016-statuspage-urls.md`
 - Dress-run audit (wave-25): `specs/_audits/2026-05-16-statuspage-init-dressrun.md`
 - Cutover dependency map (wave-27): `specs/_audits/2026-05-16-cutover-dependency-map.md`
+- Wave-28 Option A automation bundle (§2.6):
+  - Quickstart: `docs/internal/statuspage-tenant-signup-quickstart.md`
+  - Components config: `config/statuspage/components.yml`
+  - Incident templates: `config/statuspage/incident-templates.yml`
+  - DNS record: `config/statuspage/dns-cname-record.txt`
+  - Bootstrap CLI: `scripts/admin/statuspage-bootstrap.sh`
 - GA cutover runbook: `specs/_runbooks/RB-GA-CUTOVER.md` §0 + §3 + §9
 - Reverse runbook (slip-window): `specs/_runbooks/RB-GA-LAUNCH-ROLLBACK.md` §7 RA-3
 - Build-time accessor: `apps/docs/src/statuspage-url.ts`
