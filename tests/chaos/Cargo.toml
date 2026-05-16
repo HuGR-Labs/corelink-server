@@ -1,0 +1,65 @@
+[package]
+name = "chaos-campaign"
+description = "Wave-22 chaos engineering campaign harness — 8 fail-CLOSED scenarios spanning network partitions, region failover, RLS GUC dropout, audit-sink failure injection, BYOK provider unavailable, Stripe webhook clock skew, Clerk JWKS rotation, and CAS multipart abort. Each scenario injects a failure mode and asserts the canonical observable triplet: (1) the operation fails CLOSED (no silent success), (2) an audit event is emitted with the documented taxonomy, and (3) the documented alert / SLO counter fires. Opt-in via `chaos` feature flag — `cargo test --features chaos` runs the campaign. Default-off so the everyday CI surface stays fast (charter chaos-opt-in)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[features]
+default = []
+# Opt-in chaos campaign. Default-off so `cargo test --workspace` stays fast.
+chaos = []
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[lib]
+path = "src/lib.rs"
+
+[[test]]
+name = "campaign_network_partition_failover"
+path = "tests/campaign_network_partition_failover.rs"
+
+[[test]]
+name = "campaign_d1_pool_exhaustion_degrades_gracefully"
+path = "tests/campaign_d1_pool_exhaustion_degrades_gracefully.rs"
+
+[[test]]
+name = "campaign_neon_shadow_silent_failure_alerts"
+path = "tests/campaign_neon_shadow_silent_failure_alerts.rs"
+
+[[test]]
+name = "campaign_rls_guc_dropout_rejects_insert"
+path = "tests/campaign_rls_guc_dropout_rejects_insert.rs"
+
+[[test]]
+name = "campaign_byok_provider_503_fails_closed"
+path = "tests/campaign_byok_provider_503_fails_closed.rs"
+
+[[test]]
+name = "campaign_stripe_webhook_timestamp_drift_rejected"
+path = "tests/campaign_stripe_webhook_timestamp_drift_rejected.rs"
+
+[[test]]
+name = "campaign_clerk_jwks_rotation_recovers"
+path = "tests/campaign_clerk_jwks_rotation_recovers.rs"
+
+[[test]]
+name = "campaign_cas_multipart_abort_cleanup"
+path = "tests/campaign_cas_multipart_abort_cleanup.rs"
