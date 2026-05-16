@@ -218,6 +218,17 @@ proptest = { workspace = true }
 tower = { workspace = true, features = ["util"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 serde_json = { workspace = true }
+# Wave-30 stream-9 — live-D1 signup integration tests
+# (`tests/signup_pilot_live_d1.rs` + `tests/harness/d1_container.rs`).
+# D1 is SQLite at storage level, so locally we back the surrogate
+# with rusqlite. `bundled` ships a static libsqlite3 so CI does not
+# depend on the host libsqlite version — mirrors the
+# `corelink-d1-migrations` replay harness (R2-13) which uses the
+# same `rusqlite 0.32 + bundled` pin. `tempfile` gives us a
+# per-test on-disk database file so the harness exercises the
+# transaction + WAL surface a real D1 would.
+rusqlite = { version = "0.32", features = ["bundled"] }
+tempfile = { workspace = true }
 
 [build-dependencies]
 tonic-build = { workspace = true }
