@@ -1,0 +1,138 @@
+CoreLink v1.0.0-GA — General Availability release
+
+This is the canonical GA release of CoreLink, the HuGR Human-Guardrail
+shared content-addressable cache server (build artifacts, packages,
+container layers, ML weights — single content-addressed substrate).
+
+This tag was applied at wave-27 via `scripts/cut-v1-0-0-ga-tag.sh` after
+both 2-key sign-off signatures were filed per RB-GA-CUTOVER §8 and
+ADR-0034b dual-hat fallback policy. The Owner replaced the
+`__OWNER_SHA__` and `__SREL_SHA__` placeholders below with DocuSign
+envelope IDs (or signed-commit SHAs) before running the script.
+
+================================================================
+Spec corpus state at GA freeze
+================================================================
+- 21 sprints SEALED (S01..S21) — wave-19 SEAL landed; wave-25 closure
+  audited.
+- 197 invariants in the canonical registry (CL-INV-* + cross-spec
+  invariants), of which 81+ are TLA+-mechanically-verified.
+- 262 specification documents in `specs/` corpus.
+- 136 INV-* leaf records linked to TLA proofs, runbooks, and PRR
+  acceptance criteria.
+- `scripts/validate_specs.py` exit 0 + `scripts/validate_references.py`
+  exit 0 at base SHA.
+
+================================================================
+Production wiring
+================================================================
+- BYOK (Bring-Your-Own-Key) orchestrator with 4 providers wired:
+  AWS KMS, GCP KMS, Azure Key Vault, HashiCorp Vault (per-tenant
+  cipher key isolation per SPEC-S04-CRYPTO-BYOK).
+- Cloudflare binding 4-target production wiring:
+    - D1 (5 regions: us-east, us-west, eu-west, ap-southeast, sa-east)
+    - R2 (25 buckets: 5 regions x 5 purposes — audit, ac, main,
+          staging-1, staging-2)
+    - KV (config + rate-limit posture + feature flags)
+    - Durable Objects (per-tenant coordination + audit-chain head)
+- Audit chain (append-only, hash-chained) with Logpush -> R2 +
+  Neon shadow sync at integrity invariant `corelink_audit_chain_
+  integrity_violation_total == 0`.
+- DSR (Data Subject Rights) Statuspage cron — 24 runs / 24h baseline,
+  0 failures.
+- Stripe live-mode billing with DLQ consumer (RB-WEBHOOK-DLQ-REPLAY).
+- Clerk JWT issuer + WebAuthn admin enrollment in production posture.
+
+================================================================
+Quality bar
+================================================================
+- Adversarial review mean across last 5 waves (wave-21..wave-25): 9.41/10
+  - wave-21 closure: 9.3, wave-22: 9.4, wave-23: 9.4, wave-24: 9.5,
+    wave-25: 9.45 (per `specs/_audits/2026-05-16-wave2{1..5}-
+    adversarial-review.md`).
+- Chaos campaign harness (`specs/_audits/2026-05-16-chaos-campaign-
+  harness.md` + `2026-05-16-chaos-combined-failures.md`):
+  zone-loss / DO-restart / R2-throttle / audit-chain-tear scenarios
+  all exit GREEN with post-recovery invariant re-attestation.
+- 24h endurance harness (`2026-05-16-24h-endurance-harness.md`):
+  endurance run analyzer GREEN at 10min dress-run; 24h slot scheduled
+  for T-7d ± 2h per RB-GA-CUTOVER §2.3.
+- Perf-regression CI tightened (`2026-05-16-perf-regression-ci-
+  tightened.md`): p99 budget burn alarms < 0.01 violation rate across
+  5 regions, sustained 30min, before any wave merge.
+- 10k-iter property tests + mutation campaigns wave-22..wave-24
+  (DEBT-008) all kill-ratio above SEAL threshold.
+
+================================================================
+Compliance posture (frameworks attested as of GA freeze)
+================================================================
+- SOC 2 Type 2 (Trust Service Criteria CC1..CC9 + A1).
+- ISO 27001:2022 (114 Annex A controls; SoA at `specs/_audits/
+  iso27001-soa.csv`).
+- GDPR (EU Regulation 2016/679) — DPA + RoPA + Art. 33/35 procedures.
+- LGPD (Brazil Lei 13.709/2018) — ANPD 72h breach-notification
+  procedure documented; cutover is explicitly NOT a breach event
+  per RB-GA-CUTOVER regulatory note.
+- LFPDPPP (Mexico) — legal review package filed per `2026-05-16-
+  lfpdppp-mx-legal-review-package.md`.
+- PCI DSS v4.0 (SAQ A-EP scope via Stripe integration; CoreLink does
+  not store PAN — only Stripe customer IDs).
+- CCPA / CPRA (California) — DSR pipeline + opt-out endpoints live.
+
+================================================================
+Open carve-outs (acknowledged at GA, tracked for closure)
+================================================================
+- DEBT-003 AWS Artifact subscription pending IAM-Identity-Center
+  enablement; SOC 2 Type 2 attestation downloaded via interim manual
+  path. Target: T+30d post-GA.
+- DEBT-026 external penetration test — vendor engaged per
+  `2026-05-16-pentest-engagement-scope-freeze.md`; scope-frozen but
+  field-work begins post-GA (T+0 to T+14d). Findings feed wave-27+.
+- Framework Reviewer Role FW-H (Compliance / Privacy second-pair)
+  staffing pending nomination. ADR-0034b 2-key mechanism in place;
+  FW-H role required for wave-27+ continuous-attestation cadence.
+
+================================================================
+Dress-rehearsal evidence
+================================================================
+- wave-24 GA-cutover dry-run (in-process simulation):
+  `specs/_audits/2026-05-16-ga-cutover-dryrun.md` — 11/11 §3 steps
+  PASS, 6/6 greenlights GREEN, 0/6 rollback triggers fired,
+  GA-readiness 8.9/10, recommendation PROCEED.
+- wave-26 production-tier dress-run (ga-cutover-prep ring, parallel
+  to staging): `specs/_audits/2026-05-16-prod-deploy-dressrun.md` —
+  13/13 steps PASS (S0 prep-ring provision + 11x §3 + S12 cleanup),
+  6/6 greenlights GREEN, 0/6 rollback triggers fired.
+
+================================================================
+Sign-off (per RB-GA-CUTOVER §8 + ADR-0034b 2-key)
+================================================================
+Signer 1 (Orchestrator / Owner — or ADR-0034b Pairing-Alpha dual-hat
+holder of FW-H-1 Architecture + FW-H-3 Security):
+    Name:      Gustavo Schneiter
+    Role:      Owner / CEO / Final GA Go decision authority
+    Method:    DocuSign on GA-GATE Go/No-Go meeting minutes +
+               sealed audit at `specs/_audits/2026-MM-DD-ga-cutover-
+               execution-attestation.md`.
+    Signed at: __OWNER_TIMESTAMP__   (filled by Owner D-day)
+    Signature: __OWNER_SHA__         (filled by Owner D-day —
+                                      DocuSign envelope ID or
+                                      signed-commit SHA per
+                                      ADR-0034b §Eligibility)
+
+Signer 2 (On-call SRE Lead — or ADR-0034b Pairing-Alpha external
+holder of FW-H-2 Compliance/Privacy + FW-H-4 Production Ops):
+    Name:      __SREL_NAME__         (filled by Owner D-day)
+    Role:      Operational readiness authority
+    Method:    DocuSign on §0 + §1 + §2 GREEN attestation.
+    Signed at: __SREL_TIMESTAMP__    (filled by Owner D-day)
+    Signature: __SREL_SHA__          (filled by Owner D-day —
+                                      DocuSign envelope ID or
+                                      signed-commit SHA per
+                                      ADR-0034b §Eligibility)
+
+================================================================
+DCO + provenance
+================================================================
+Signed-off-by: Gustavo Schneiter <gustavo@humangr.com>
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
