@@ -3,7 +3,7 @@ id: "PROPOSAL-2026-05-16-FRAMEWORK-REVIEWER-ROLES-ADDENDUM"
 type: "governance"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "0.1.1"
+version: "0.1.2"
 created: "2026-05-16"
 updated: "2026-05-16"
 owner: "Gustavo Schneiter"
@@ -11,7 +11,7 @@ final_approver: "Gustavo Schneiter"
 reviewers: []
 supersedes: null
 superseded_by: null
-tags: ["governance", "reviewers", "staffing", "proposal", "framework-freeze", "wave-22", "lote-7", "ga", "addendum", "dual-hat"]
+tags: ["governance", "reviewers", "staffing", "proposal", "framework-freeze", "wave-22", "wave-24", "wave-25", "lote-7", "ga", "addendum", "dual-hat", "raci"]
 references:
   - "specs/00_framework.md"
   - "specs/_proposals/2026-05-16-framework-reviewer-roles.md"
@@ -211,18 +211,87 @@ The 4th quarterly review (T+360 days) is the **anchor for the annual deep review
 
 ---
 
-## §6 Conflict-of-interest declaration
+## §6 RACI matrix detail (per major framework decision)
+
+The original proposal §6 contains a 13-row RACI summary scoped to framework-level decisions (PRINC additions, new invariant classes, regulatory regime additions, BYOK changes, SLO methodology changes, etc.). The wave-22 addendum §1.2 (`FW-H-3+FW-H-4` forbidden dual-hat pairing) and wave-24 `ADR-0034b` (§Forbidden pairings + §Cross-veto rights) both reference "the addendum proposal §6 RACI" as the canonical source of joint-R-status reasoning. This §6 of the addendum **expands** the proposal's coarse-grained 13-row table to a per-decision-class detailed matrix covering 15 framework decision rows plus an explicit **dual-hat fallback row** showing how RACI cells migrate when the Owner takes Pairing-Alpha (FW-H-1 + FW-H-3) or Pairing-Beta (FW-H-2 + FW-H-4) per ADR-0034b §Permitted pairings.
+
+> **Relationship to original proposal §6.** The original proposal §6 RACI is the **summary view**; this §6 of the addendum is the **detailed view**. They are intentionally redundant: the summary lives in the proposal so a reviewer reading only the proposal sees the core staffing intent; the detail lives here so the operating-policy machinery (veto, SLA, quorum, COI, dual-hat) has a concrete per-row staffing target to bind against.
+>
+> **Single-A discipline.** Every row has **exactly one A (Accountable)** cell. Gustavo (Owner / Final Approver) is **A** on every row by `00_framework.md §43.1` (Final Approver authority) — the FW-H-* slots are **R / C / I** under the Owner. This mirrors the original proposal §6 footer rule ("Gustavo = Final Approver, always **A**") and avoids the multi-A failure mode that RACI literature flags as the most common matrix bug.
+
+### §6.1 Legend
+
+- **R** — *Responsible*: does the work of producing the artifact / drafting the change / authoring the finding.
+- **A** — *Accountable*: single sign-off authority; one A per row (Owner-as-Final-Approver is **A** on all framework-tier rows).
+- **C** — *Consulted*: input solicited **before** the decision is finalized; required to be reachable in the SLA window (addendum §3.2).
+- **I** — *Informed*: notified **after** the decision is finalized; no input expected but transcript-of-record receives the notification (addendum §4.4 + §5.2 quarterly review).
+
+### §6.2 Detailed RACI matrix — 15 framework decision rows
+
+| # | Decision | Owner (Gustavo) | FW-H-1 Architecture | FW-H-2 Compliance | FW-H-3 Security | FW-H-4 Production Ops |
+|---|---|---|---|---|---|---|
+| 1 | **ADR creation** (new ADR authored against framework §-content) | A | R if architecture; C otherwise | C if compliance-touching | C if security-touching | C if ops-touching |
+| 2 | **ADR approval** (status DRAFT → ACCEPTED transition) | A | C | C | C | C |
+| 3 | **INV registry promotion** (DRAFT → PROVEN / tla_verified status flip) | A | R (architecture-of-record co-signs) | I | C if security invariant; else I | C if SLI / SLO invariant; else I |
+| 4 | **Sprint impl sign-off** (S-NN PRR gate close per `_governance/reviewer_staffing_strategy.md §2.5`) | A | C | C | C | R |
+| 5 | **DEBT register entry** (new DEBT-NNN authored or waived per §35.6) | A | C | C if compliance-DEBT | C if security-DEBT | R (operational reality check) |
+| 6 | **Runbook approval** (new runbook authored / existing materially edited per §25) | A | I | I | C if security-runbook | R |
+| 7 | **TLA+ spec addition** (new formal spec landed in `specs/_proofs/`) | A | R | I | C if security-property | I |
+| 8 | **BYOK provider addition** (§28 — new KMS / HSM provider integrated) | A | C | C (DPA review) | R (key-custody architecture co-signs) | C (operational SLO impact) |
+| 9 | **Region addition** (new deployment region / data-residency expansion) | A | C | R (regulatory mapping per §21) | C (tenant-isolation INVs cross-region) | C (latency SLO + on-call coverage) |
+| 10 | **Schema migration** (canonical-source schema or DB migration touching framework §-binding fields) | A | R (architecture-of-record) | C if PII-schema | C if security-schema | C (rollout posture) |
+| 11 | **Customer breach response** (SEV-1 breach, regulatory notification per §27 + §30) | A | I | R (notification timeline + DPA invocation) | C (forensics + IR coordination) | C (status-page + comms cadence) |
+| 12 | **Pentest finding triage** (external pentest report intake per `_audits/2026-05-16-pre-ga-pentest-scope.md`) | A | C (architectural remediation) | I | R (severity classification + remediation owner assignment) | C (operational mitigations) |
+| 13 | **GA cutover sign-off** (v1.0.0 FROZEN cut + product GA gate close) | A | R | R | R | R |
+| 14 | **Quarterly framework review** (addendum §5 delta-doc cadence) | A | R if Q1; C otherwise | R if Q2; C otherwise | R if Q3; C otherwise | R if Q4; C otherwise |
+| 15 | **Annual deep review** (addendum §5.5 — T+360 days from v1.0.0 cut) | A | R | R | R | R |
+
+### §6.3 Dual-hat fallback row (per ADR-0034b §Permitted pairings)
+
+When the Owner invokes the dual-hat fallback per ADR-0034b, the **A cells migrate accordingly** because the Owner-as-dual-hatter is simultaneously Final Approver (always A) AND occupies two FW-H-* seats whose addendum §1.3 sign-off mechanics require **per-slot comments docs** (two distinct authorship trails even though one person authors both). The R/C/I cells in the §6.2 matrix do NOT change — only the **interpretation** of the dual-hat slots' R/C status shifts to "Owner acting in capacity X" for traceability.
+
+The table below shows the **net effect on the §6.2 R column** for each pairing. Rows where the Owner already held A are unchanged; the dual-hat columns absorb R-status as "Owner-in-role-X" for the §43.1 sign-off block.
+
+| Pairing | Owner takes (dual-hat) | External advisors fill | Effect on §6.2 R-cells under Owner-as-dual-hat |
+|---|---|---|---|
+| **None** (4-distinct staffing) | — | All 4 FW-H-* externally / independently staffed | §6.2 matrix applies as written; Owner is A on all rows; FW-H-* slots are R/C/I per their primary coverage. |
+| **Pairing-Alpha** (ADR-0034b recommended) | FW-H-1 (Architecture) + FW-H-3 (Security) | FW-H-2 (Compliance/Privacy) + FW-H-4 (Production Ops) | Row 1 (ADR creation): Owner-as-FW-H-1 holds R if architecture-touching. Row 3 (INV promotion): Owner-as-FW-H-1 holds R; Owner-as-FW-H-3 holds C on security-INVs. Row 7 (TLA+ spec): Owner-as-FW-H-1 holds R. Row 8 (BYOK): Owner-as-FW-H-3 holds R; Owner-as-FW-H-1 in C. Row 10 (Schema migration): Owner-as-FW-H-1 holds R. Row 12 (Pentest triage): Owner-as-FW-H-3 holds R. Row 13 + Row 15 (GA cutover + annual deep review): both Owner-held slots are R; the two external advisors (FW-H-2 + FW-H-4) hold the remaining R cells. Sign-off block per addendum §1.3 records Owner's commit SHA twice with role IDs labeled. |
+| **Pairing-Beta** (ADR-0034b alternative) | FW-H-2 (Compliance/Privacy) + FW-H-4 (Production Ops) | FW-H-1 (Architecture) + FW-H-3 (Security) | Row 4 (Sprint impl sign-off): Owner-as-FW-H-4 holds R. Row 5 (DEBT register): Owner-as-FW-H-4 holds R. Row 6 (Runbook approval): Owner-as-FW-H-4 holds R. Row 9 (Region addition): Owner-as-FW-H-2 holds R. Row 11 (Customer breach response): Owner-as-FW-H-2 holds R. Row 13 + Row 15: both Owner-held slots are R; the two external advisors (FW-H-1 + FW-H-3) hold the remaining R cells. Same §1.3 sign-off mechanics apply. |
+| **Forbidden pairings** | — | — | Per ADR-0034b §Forbidden pairings: FW-H-1+FW-H-2 (collapses Row 9/11 R-cells onto a COI-conflicted single person); FW-H-3+FW-H-4 (collapses Row 4/6/12 joint R-status with no adjudication signal); FW-H-1+FW-H-3 under non-Owner dual-hatting (only Owner may take Pairing-Alpha per Final-Approver-accountability rule). |
+
+**Cross-veto preservation under dual-hat.** Addendum §2 cross-veto rights are preserved row-by-row. Specifically, under Pairing-Alpha, the external advisors (FW-H-2 + FW-H-4) retain `vote: BLOCK` authority on **any** row in §6.2 — including rows where the R-cell is held by an Owner-dual-hat slot. This is the addendum §2.2 cross-domain veto operating at the per-decision granularity.
+
+### §6.4 Disambiguating rules (matrix-edge cases)
+
+1. **Multi-domain decisions.** If a decision row crosses two or more FW-H-* slots' primary §-coverage (e.g., a BYOK change that also touches a regulatory regime), the slot whose primary coverage contains the **canonical §-section authoring the rule under change** is R; the others are C. This mirrors the original proposal §6 "Disambiguating rule".
+2. **C-cell SLA.** A reviewer marked C on a decision row inherits the addendum §3.2 SLA: STANDARD lane = 1 BD initial response, 3 BD sign-off; HIGH_RISK lane = 2 BD initial response, 7 BD sign-off. Silent C is a procedural defect logged in the quarterly review (addendum §3.4 SLA conformance line).
+3. **I-cell receipt confirmation.** I-cells require no input but the chair of the trimestral review confirms receipt-of-notification was logged (e.g., a comment in the change-log entry, a Slack thread message ID, or equivalent). Missing receipt confirmation is a low-severity audit finding (does not block the cut, but accumulates in the §5.2 quarterly delta-doc).
+4. **Tie-break.** Conflicts between R / C reviewers on a row escalate to Owner (A) per addendum §2.3. Under dual-hat, conflicts between Owner-held-slot and external advisor on the same row follow the addendum §2.3 external-advisor-as-tie-breaker rule (ADR-0034b §Cross-veto rights under dual-hat last bullet).
+5. **Recusal interaction.** A reviewer who declared a §7 conflict-of-interest (this addendum, post-renumber) on a given row recuses by shifting their R/C cell to ABSTAIN; their backup (per original proposal §7) absorbs the R if they hold one, else the quorum drops by one effective seat (addendum §2.4 + this addendum §7.3 recusal mechanics).
+6. **Decision-row provenance.** Each row in §6.2 maps to a `00_framework.md` section. Future framework versions may add rows; new rows MUST cite the framework §-section they bind to and MUST declare the R/A/C/I cells explicitly (no "TBD" cells permitted — single-A discipline includes "single-A-or-explicit-deferral").
+
+### §6.5 Cross-references
+
+- `specs/_proposals/2026-05-16-framework-reviewer-roles.md §6` — the summary view (13 rows; same staffing intent, coarser grain).
+- `specs/03_architecture/adrs/ADR-0034b-framework-reviewer-dual-hat-fallback.md §Permitted pairings + §Forbidden pairings + §Cross-veto rights under dual-hat` — authorization for the §6.3 dual-hat row of this matrix.
+- `specs/00_framework.md §43.1` — sign-off block where R / A cell holders record commit SHAs.
+- `specs/_audits/2026-05-16-lote-7-raci-detail.md` — audit doc explaining the per-row rationale (e.g., why Row 4 sprint impl sign-off is FW-H-4 R rather than FW-H-1 R; why Row 8 BYOK is FW-H-3 R rather than FW-H-1 R).
+- This addendum §1 (dual-hat policy) + §2 (cross-veto) + §3 (SLA) + §7 (COI / recusal — post-renumber) — the operating-policy clauses that bind against the §6.2 matrix.
+
+---
+
+## §7 Conflict-of-interest declaration
 
 The original proposal does not address the case where a FW-H-* reviewer is also the author of a framework section, ADR, or canonical source under review. This section closes that gap.
 
-### §6.1 Declaration requirement
+### §7.1 Declaration requirement
 
 At onboarding, each nominated FW-H-* reviewer declares (in the §3 acceptance deliverable comments doc, frontmatter section labeled `conflicts_declared:`) the framework §-sections, ADRs, or canonical sources they personally authored or substantively co-authored. Examples:
 
 - "I co-authored ADR-0017 in 2026-Q2; I will RECUSE on any decision row in §6 RACI that touches ADR-0017's subject matter."
 - "I authored §22 SLO methodology in framework v0.7.0; I do NOT recuse on §22 because authorship is > 12 months old and ≥ 2 subsequent maintenance edits by others have superseded my contribution."
 
-### §6.2 Recusal scope
+### §7.2 Recusal scope
 
 A reviewer MUST recuse from approving (i.e., shift their RACI status from R/A to ABSTAIN with `recusal_reason: <text>`) on any framework decision that:
 
@@ -230,7 +299,7 @@ A reviewer MUST recuse from approving (i.e., shift their RACI status from R/A to
 2. Adjudicates a dispute where they are also a stakeholder (e.g., they authored an ADR that another reviewer is BLOCKing).
 3. Modifies a section they wrote IF the modification is non-trivial (more than typo/link-fix) and authored within the last 6 months.
 
-### §6.3 Recusal mechanics
+### §7.3 Recusal mechanics
 
 A recused reviewer:
 
@@ -238,21 +307,21 @@ A recused reviewer:
 - May still participate as **C** (Consulted) in the original proposal §6 RACI rows, contributing factual input but NOT signing.
 - Their slot's quorum requirement (§2.4 of this addendum) is satisfied by their backup (§7 of the original proposal) if the backup is available; otherwise the quorum drops to "2 of 3 effective seats" for that decision only.
 
-### §6.4 Owner conflict of interest
+### §7.4 Owner conflict of interest
 
 Because the Owner is always Final Approver (always **A**), Owner recusal is structurally impossible at the framework freeze tier (there is no escalation above Final Approver). The dual-hat fallback (§1 of this addendum) intensifies this — when Owner holds 2 slots, conflicts are correspondingly more likely.
 
 Mitigation: when the Owner has a personal conflict on a decision (e.g., the Owner authored the section under review AND is one of the dual-hat slots signing off), the §42 change-log entry MUST disclose the conflict explicitly with `owner_conflict_disclosed: <reason>`. This is an audit-trail requirement, not a recusal — the Owner does NOT recuse, but the conflict is on-record for future external auditors (e.g., during the SOC2 readiness exercise referenced in `specs/_audits/2026-05-14-soc2-readiness-score.md`).
 
-### §6.5 Auditor review on conflicts
+### §7.5 Auditor review on conflicts
 
 The quarterly framework review (§5 of this addendum) inspects the list of `conflicts_declared:` and `owner_conflict_disclosed:` entries from the prior 90 days and flags any patterns (e.g., a single reviewer consistently recusing on a high-traffic §-section, suggesting a different reviewer should take the slot). Persistent patterns are an agenda item for the annual deep review.
 
 ---
 
-## §7 Operating-policy summary table
+## §8 Operating-policy summary table
 
-For quick reference, the six clauses of this addendum collapse to:
+For quick reference, the seven clauses of this addendum collapse to:
 
 | § | Clause | What it adds | Pre-existing in original proposal? |
 |---|---|---|---|
@@ -261,11 +330,12 @@ For quick reference, the six clauses of this addendum collapse to:
 | §3 | Sign-off SLA | STANDARD = 3 BD / HIGH_RISK = 7 BD; lane routing; exception types; tracking | Not in original |
 | §4 | Reviewer training pack | 10-hour floor on existing §4 onboarding read order | Read order pre-existed; budget number is new |
 | §5 | Quarterly cadence (90-day rolling) | Anchor on FROZEN cut date; first-review scope; chair rotation | Original §5.2 said "Q1/Q2/Q3/Q4"; this anchors to commit date |
-| §6 | Conflict-of-interest | Declaration at onboarding; recusal scope + mechanics; Owner disclosure | Not in original |
+| §6 | RACI matrix detail | 15 framework decision rows × 5 cells; single-A discipline; dual-hat fallback row migrating A/R cells per ADR-0034b | Original §6 has 13-row summary; this expands to 15-row detail bound to ADR-0034b pairings |
+| §7 | Conflict-of-interest | Declaration at onboarding; recusal scope + mechanics; Owner disclosure | Not in original |
 
 ---
 
-## §8 Acceptance of this addendum
+## §9 Acceptance of this addendum
 
 This addendum, like the original proposal it extends, does NOT change `00_framework.md` semantics. Acceptance pathway:
 
@@ -278,12 +348,13 @@ Until then, the addendum sits as DRAFT alongside the original proposal and `revi
 
 ---
 
-## §9 Change log
+## §10 Change log
 
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 0.1.0 | 2026-05-16 | Gustavo Schneiter (via Claude Opus 4.7, wave-22 Lote 7 absorption) | Initial addendum. Extends `specs/_proposals/2026-05-16-framework-reviewer-roles.md` v0.1.0 with §1 dual-hat fallback policy (Pairing-Alpha / Pairing-Beta), §2 cross-veto rule + 3-of-4 quorum, §3 sign-off SLA (STANDARD 3 BD / HIGH_RISK 7 BD), §4 Reviewer Training Pack 10-hour floor, §5 90-day rolling quarterly cadence anchored on FROZEN cut, §6 conflict-of-interest declaration + recusal. Does not modify FW-H-* role scopes; specifies operating mechanics for small-org case. |
 | 0.1.1 | 2026-05-16 | Claude Opus 4.7 (wave-24 ADR-0034b cross-ref) | Adds §1 wave-24 cross-ref callout pointing at the newly-authored `specs/03_architecture/adrs/ADR-0034b-framework-reviewer-dual-hat-fallback.md` (the §1.1 item-4-required authorization artifact). Adds ADR-0034b to the closing cross-references list. No semantic change to operating policy. |
+| 0.1.2 | 2026-05-16 | Claude Opus 4.7 (wave-25 Lote 7 RACI detail) | Adds **§6 RACI matrix detail** authoring the 15-row per-decision matrix (ADR creation, ADR approval, INV registry promotions, sprint impl sign-off, DEBT register entries, runbook approvals, TLA+ spec additions, BYOK provider additions, region additions, schema migrations, customer breach response, pentest finding triage, GA cutover, quarterly review, annual deep review) with explicit R/A/C/I cells per FW-H-* slot, single-A discipline enforced (Owner = A always), and a dedicated **§6.3 dual-hat fallback row** showing per-pairing A/R-cell migration under ADR-0034b Pairing-Alpha (FW-H-1+FW-H-3) and Pairing-Beta (FW-H-2+FW-H-4). Renumbers existing §6 (COI) → §7, §7 (summary table) → §8, §8 (acceptance) → §9, §9 (changelog) → §10. The §8 summary table is updated to reflect the seven (was six) clauses. Cross-veto preservation under dual-hat is reasserted in §6.3 last paragraph. Closes the wave-22 / wave-24 forward reference where both documents pointed at "the addendum proposal §6 RACI" without an authored detail. ADR-0034b cross-refs `addendum §6.2 / §6.4` (COI subsections) are migrated to `§7.2 / §7.4` in the same wave-25 commit. |
 
 ---
 
