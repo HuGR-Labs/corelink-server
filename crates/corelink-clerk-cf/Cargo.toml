@@ -103,7 +103,15 @@ corelink-audit-chain = { workspace = true, optional = true }
 # `CfD1DatabaseReal` against the `tenant_config.region` column added
 # by migration `0052_tenant_config_region.sql`. `uuid` is needed for
 # the per-tenant cache key.
-uuid = { workspace = true, optional = true }
+#
+# Wave-26 prefetch wire: the `v5` feature enables the deterministic
+# tenant-label → `Uuid` namespace derivation used in the CF Worker
+# fetch-handler request-prelude (`prod_wiring::tenant_uuid_for_label`).
+# The v5 derivation is pure — no I/O, no clock — so the per-request
+# cache key matches across the prefetch (D1 SELECT) and the synchronous
+# `D1TenantConfigStore::region_label` lookup at
+# `ShadowSinkFactory::for_tenant` dispatch time.
+uuid = { workspace = true, optional = true, features = ["v5"] }
 
 # Wave-18 DSR Statuspage real binding deps (wasm32 only). The cron
 # entry point in `dsr_statuspage_cron.rs` hand-composes

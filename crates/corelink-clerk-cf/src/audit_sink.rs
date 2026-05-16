@@ -200,6 +200,43 @@ impl AuditSink {
         }
     }
 
+    /// Emit a synthetic [`AuditEvent`] directly through the configured
+    /// backend, bypassing the per-binding `AuditFn` adapter layer.
+    ///
+    /// Used by the wave-26 CF Worker request-prelude prefetch wire
+    /// (`prod_wiring::prefetch_request_prelude`) to surface a
+    /// `tenant_region_unresolved` row when the
+    /// `TenantRegionResolver::resolve_region` chain fails. The per-binding
+    /// `D1Op` / `R2Op` / `KvOp` / `DoOp` enums intentionally do not
+    /// include the `tenant_region_unresolved` op label (their variants
+    /// gate the hot-path wrapper ops, not orchestration-level audit
+    /// events); the synthetic path lets the prefetch wire emit through
+    /// the same NDJSON canonical sink without expanding those enums.
+    ///
+    /// Infallible by design — the recorder backend's mutex-poison case
+    /// degrades to a silent drop (the prefetch wire is already on the
+    /// fail-CLOSED path; an additional log line failing is not actionable
+    /// and must not double-fault the 503 response).
+    pub fn emit_synthetic(&self, event: AuditEvent) {
+        match &self.backend {
+            SinkBackend::ConsoleNdjson => {
+                #[cfg(target_arch = "wasm32")]
+                {
+                    worker::console_log!("{}", event.to_ndjson());
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    let _ = event;
+                }
+            }
+            SinkBackend::Recorder(buf) => {
+                if let Ok(mut guard) = buf.lock() {
+                    guard.push(event);
+                }
+            }
+        }
+    }
+
     /// Build an [`R2AuditFn`] adapter routing R2 events to this sink.
     #[must_use]
     pub fn r2(&self) -> R2AuditFn {

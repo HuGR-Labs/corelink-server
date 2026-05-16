@@ -63,3 +63,11 @@ pub use clerk_health_do::{
 #[cfg(target_arch = "wasm32")]
 pub use clerk_health_do::ClerkHealthDo;
 pub use prod_wiring::{CfRealBindings, TenantContext, WiringError};
+// Wave-26: CF Worker fetch-handler prefetch wire — orchestration glue
+// between `D1TenantConfigStore::prefetch` (async) and
+// `TenantRegionResolver::resolve_region` (sync). See
+// `specs/_audits/2026-05-16-cf-worker-prefetch-wire.md`.
+#[cfg(feature = "tenant-region-real")]
+pub use prod_wiring::{
+    prefetch_request_prelude, tenant_uuid_for_label, PrefetchWireError, RequestPrelude,
+};

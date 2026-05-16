@@ -382,6 +382,273 @@ pub fn build_tenant_region_resolver(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Wave-26 follow-on: CF Worker fetch-handler prefetch wire.
+//
+// Wave-25 shipped `D1TenantConfigStore` + `build_tenant_region_resolver`
+// but the CF Worker fetch handler did NOT yet call the async `prefetch`
+// helper in the request-prelude (wave-25 audit doc §8 caveat: "CF
+// Worker fetch-handler prefetch wiring [...] non-trivial restructure
+// deferred to a future wave"). This wave (26) closes that caveat by
+// providing:
+//
+//   - [`tenant_uuid_for_label`] — deterministic v5 namespace derivation
+//     `tenant_label → Uuid` so the per-request cache key matches across
+//     the async prefetch (D1 SELECT) and the synchronous
+//     `D1TenantConfigStore::region_label` lookup at `ShadowSinkFactory::
+//     for_tenant` dispatch time.
+//   - [`RequestPrelude`] — bundle of the per-request `CfRealBindings`
+//     plus the resolved [`corelink_audit_chain::Region`] so handler-chain
+//     code can branch on the region without re-resolving.
+//   - [`PrefetchWireError`] — fail-CLOSED error variant emitted when the
+//     resolver fails. The fetch handler maps this to HTTP 503 and emits
+//     a `tenant_region_unresolved` audit row via the canonical
+//     `AuditSink` console NDJSON path (Logpush ingest) — explicit, NOT a
+//     silent fallback to `Region::Iad`.
+//   - [`prefetch_request_prelude`] — orchestration glue that resolves
+//     the sync/async boundary: build wrappers → async prefetch →
+//     synchronous resolver lookup → bundle into `RequestPrelude`.
+// ---------------------------------------------------------------------------
+
+/// Deterministic `tenant_label → Uuid` derivation used by the wave-26
+/// prefetch wire as the per-request cache key.
+///
+/// Uses `Uuid::new_v5` with `Uuid::NAMESPACE_OID` so the mapping is:
+///
+/// - **Pure** — no I/O, no clock, no thread state. The same `label`
+///   always derives the same `Uuid`.
+/// - **Collision-resistant** — v5 is SHA-1 of `namespace || label`; the
+///   16-hex tenant prefix space (256 bits) maps injectively into the
+///   128-bit v5 output for the cardinalities we care about.
+/// - **Free of cross-tenant probing risk** — the derivation is one-way:
+///   knowing the `Uuid` does not reveal the source `label`.
+///
+/// The same derivation is applied at the prefetch site (where the
+/// `D1TenantConfigStore::insert` call writes the cache entry) AND at
+/// the `region_label` lookup site (where `D1TenantRegionResolver::
+/// resolve_region` reads it) so the two sides agree on the cache key
+/// without round-tripping a separate UUID through the request.
+#[cfg(feature = "tenant-region-real")]
+#[must_use]
+pub fn tenant_uuid_for_label(label: &str) -> uuid::Uuid {
+    uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, label.as_bytes())
+}
+
+/// Fail-CLOSED error returned by [`prefetch_request_prelude`].
+///
+/// The CF Worker fetch handler MUST translate this to an HTTP 503
+/// response and emit a `tenant_region_unresolved` audit row via the
+/// canonical [`crate::audit_sink::AuditSink`] console NDJSON path
+/// (Logpush ingest) — explicit operator-visible signal, NOT a silent
+/// fallback to `Region::Iad`.
+///
+/// `#[non_exhaustive]` so future failure modes (e.g. `MutexPoisoned`)
+/// can extend the variant set without breaking pattern matches.
+#[cfg(feature = "tenant-region-real")]
+#[non_exhaustive]
+#[derive(Debug)]
+pub enum PrefetchWireError {
+    /// `D1TenantConfigStore::prefetch` rejected the SELECT — D1 backend
+    /// unavailable, tenant-scope violation, audit-fence failure.
+    /// Carries the diagnostic for the 503 response body.
+    PrefetchBackend(String),
+    /// `TenantRegionResolver::resolve_region` returned `Unresolved` or
+    /// `BackendUnavailable` after the prefetch landed. The
+    /// `tenant_id_label` is the audit-emission subject; the
+    /// `diagnostic` is the per-variant message.
+    Unresolved {
+        /// Validated tenant header value (label, not raw bytes).
+        tenant_id_label: String,
+        /// Human-readable diagnostic for the 503 response body.
+        diagnostic: String,
+    },
+}
+
+#[cfg(feature = "tenant-region-real")]
+impl std::fmt::Display for PrefetchWireError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::PrefetchBackend(msg) => write!(f, "prefetch backend: {msg}"),
+            Self::Unresolved {
+                tenant_id_label,
+                diagnostic,
+            } => write!(
+                f,
+                "tenant_region_unresolved tenant={tenant_id_label} diagnostic={diagnostic}"
+            ),
+        }
+    }
+}
+
+#[cfg(feature = "tenant-region-real")]
+impl std::error::Error for PrefetchWireError {}
+
+/// Validated request-prelude bundle returned by
+/// [`prefetch_request_prelude`].
+///
+/// Holds the per-request `CfRealBindings` (binding wrappers + audit
+/// sink) PLUS the resolved `Region` from the wave-25
+/// `TenantRegionResolver`. Handler-chain code receives this struct and
+/// branches on the region without ever re-issuing the prefetch — the
+/// synchronous `ShadowSinkFactory::for_tenant` dispatch site re-uses
+/// the same cached `D1TenantConfigStore` for any further lookups
+/// (cache-hit; no additional D1 round-trips per request).
+///
+/// The `tenant_uuid` field is the deterministic v5 derivation of the
+/// tenant label; it is bundled here so downstream sites that need the
+/// `Uuid` key (e.g. the shadow factory's resolver call) do not have to
+/// re-derive it.
+#[cfg(feature = "tenant-region-real")]
+#[derive(Debug)]
+pub struct RequestPrelude {
+    /// Validated tenant context (4 binding-anchor prefixes).
+    pub tenant: TenantContext,
+    /// Deterministic v5 `Uuid` derived from the tenant label. Used as
+    /// the cache key in [`crate::tenant_region_real::D1TenantConfigStore`].
+    pub tenant_uuid: uuid::Uuid,
+    /// Resolved analytics-shadow region for the current tenant. Cached
+    /// at request-prelude time so handler-chain code does not
+    /// re-resolve.
+    pub region: corelink_audit_chain::Region,
+    /// The wave-25 D1-backed `TenantConfigStore` — kept alive in the
+    /// prelude so the synchronous `ShadowSinkFactory::for_tenant`
+    /// dispatch site can re-use it (the cache entry written by the
+    /// prefetch survives for the duration of the request).
+    pub store: std::sync::Arc<crate::tenant_region_real::D1TenantConfigStore>,
+    /// The wave-25 `TenantRegionResolver` trait object — handed to any
+    /// downstream binder that needs the resolver surface (e.g. the
+    /// neon-shadow `TokioPgShadowSinkFactory` mirror on the CF Worker
+    /// side).
+    pub resolver: std::sync::Arc<dyn corelink_audit_chain::TenantRegionResolver>,
+}
+
+/// Orchestrate the request-prelude prefetch wire.
+///
+/// Resolves the sync/async boundary between [`D1TenantConfigStore::
+/// prefetch`] (async — runs the `worker::D1Database::first` future) and
+/// the synchronous [`corelink_audit_chain::TenantRegionResolver::
+/// resolve_region`] trait surface that the wave-25
+/// `D1TenantRegionResolver` exposes.
+///
+/// Sequence (canonical order — DO NOT reorder):
+///
+/// 1. Derive the deterministic v5 cache key from the tenant label.
+/// 2. Build an empty [`crate::tenant_region_real::D1TenantConfigStore`].
+/// 3. Run the async `D1TenantConfigStore::prefetch` against the supplied
+///    `CfD1DatabaseReal`. On failure → emit `tenant_region_unresolved`
+///    audit row via `audit_sink` and return
+///    `PrefetchWireError::PrefetchBackend`. NO silent fallback.
+/// 4. Build the wave-25 `D1TenantRegionResolver` over the populated
+///    store + the supplied `fallback_region`.
+/// 5. Synchronously resolve the region via `resolver.resolve_region`.
+///    On failure → emit `tenant_region_unresolved` audit row and
+///    return `PrefetchWireError::Unresolved`.
+/// 6. Return the [`RequestPrelude`] bundle.
+///
+/// # Audit emission
+///
+/// On EITHER failure mode the function emits a single NDJSON line via
+/// the supplied [`crate::audit_sink::AuditSink`] using the `d1`
+/// surface (mirrors the wave-25 prefetch's binding surface) with
+/// `op = "tenant_region_unresolved"`. The audit row carries the
+/// tenant label + the diagnostic — operators correlate against
+/// Logpush dashboards for SEV-2 alerting.
+///
+/// # Errors
+///
+/// Returns [`PrefetchWireError::PrefetchBackend`] on D1 prefetch
+/// failure; returns [`PrefetchWireError::Unresolved`] on resolver
+/// failure (Unresolved or BackendUnavailable). NEVER falls back to
+/// `Region::Iad` silently — that was the wave-21 IAD-default
+/// behaviour this wire explicitly replaces.
+#[cfg(feature = "tenant-region-real")]
+pub async fn prefetch_request_prelude(
+    tenant: TenantContext,
+    d1: &corelink_cf_bindings::CfD1DatabaseReal,
+    audit_sink: &crate::audit_sink::AuditSink,
+    fallback_region: corelink_audit_chain::Region,
+) -> Result<RequestPrelude, PrefetchWireError> {
+    use crate::tenant_region_real::{D1TenantConfigStore, PrefetchError};
+
+    // 1. Derive the deterministic cache key.
+    let tenant_uuid = tenant_uuid_for_label(&tenant.label);
+
+    // 2. Empty store; the prefetch populates the single per-request
+    //    entry for `tenant_uuid`.
+    let store = std::sync::Arc::new(D1TenantConfigStore::new());
+
+    // 3. Async prefetch — runs the canonical SELECT through the
+    //    audit-fenced + tenant-scoped D1 wrapper.
+    let tenant_label = tenant.label.clone();
+    match store.prefetch(d1, tenant_uuid, &tenant_label).await {
+        Ok(()) => {}
+        Err(PrefetchError::Backend(diagnostic)) => {
+            emit_tenant_region_unresolved(audit_sink, &tenant_label, &diagnostic);
+            return Err(PrefetchWireError::PrefetchBackend(diagnostic));
+        }
+    }
+
+    // 4. Build the wave-25 resolver atop the populated store. The
+    //    `fallback_region` is the wave-21 §7 production pin
+    //    (`Region::Iad`) preserved here — but cache MISS still routes
+    //    through the resolver, which is fine because the prefetch
+    //    just populated the entry (cache-hit guaranteed for this
+    //    request's tenant).
+    let resolver = build_tenant_region_resolver(Some(store.clone()), fallback_region);
+
+    // 5. Synchronous resolve. The wave-25 `D1TenantRegionResolver`
+    //    consults `store.region_label(&uuid)` which reads the cache
+    //    entry the prefetch just wrote. NEVER call `block_on` —
+    //    `resolve_region` is sync by construction.
+    let region = match resolver.resolve_region(&tenant_uuid) {
+        Ok(r) => r,
+        Err(err) => {
+            let diagnostic = err.to_string();
+            emit_tenant_region_unresolved(audit_sink, &tenant_label, &diagnostic);
+            return Err(PrefetchWireError::Unresolved {
+                tenant_id_label: tenant_label,
+                diagnostic,
+            });
+        }
+    };
+
+    Ok(RequestPrelude {
+        tenant,
+        tenant_uuid,
+        region,
+        store,
+        resolver,
+    })
+}
+
+/// Emit a single `tenant_region_unresolved` audit row via the
+/// canonical [`crate::audit_sink::AuditSink`] using the `d1` surface
+/// label. The op label is the stable string operators key on in the
+/// Logpush dashboard. CTRL-PRIV-001: payload carries only the
+/// (already-validated, non-secret) tenant label + a backend
+/// diagnostic — never raw query rows or JWT bytes.
+#[cfg(feature = "tenant-region-real")]
+fn emit_tenant_region_unresolved(
+    audit_sink: &crate::audit_sink::AuditSink,
+    tenant_label: &str,
+    diagnostic: &str,
+) {
+    // Build the synthetic event manually rather than through the
+    // `d1()` adapter — the binding `AuditFn` adapters take a
+    // [`corelink_cf_bindings::D1Op`] enum that does not include a
+    // `tenant_region_unresolved` variant (those enum variants gate the
+    // hot-path wrapper ops). The console NDJSON line still goes through
+    // the canonical sink so Logpush ingest sees one consistent row
+    // shape per audit emission.
+    let event = crate::audit_sink::AuditEvent {
+        surface: "d1",
+        op: "tenant_region_unresolved",
+        tenant: tenant_label.to_owned(),
+        subject: diagnostic.to_owned(),
+    };
+    audit_sink.emit_synthetic(event);
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,
