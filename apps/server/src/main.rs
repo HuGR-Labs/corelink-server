@@ -24,6 +24,8 @@ use corelink_billing_stripe_materializer::{
     BillingD1Writer, D1IdempotencyStore, D1SubscriptionStateHandler, InMemoryBillingAuditEmitter,
     InMemoryBillingD1, InMemoryTierSelector, RealStripeAuditEmitter,
 };
+use corelink_server::routes;
+use corelink_server::routes::audit_analytics::ShadowSinkFactory;
 use corelink_server::webhook::{router as webhook_router, WebhookState};
 use corelink_stripe_real::webhook_dispatch::{
     RecordingSliRecorder, StateMaterializer, SystemClock, WebhookDispatcher,
@@ -70,7 +72,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let grpc_addr: SocketAddr = format!("0.0.0.0:{}", port).parse()?;
 
-    // Wave-19: Neon analytics shadow per-region project resolution.
+    // Wave-19 + Wave-20: Neon analytics shadow per-region project
+    // resolution + `TokioPostgresExecutor` binder.
     //
     // `corelink-audit-chain::neon_shadow::real::RealNeonShadowSink` is
     // bound at the binary boot path against the per-region Neon
@@ -79,17 +82,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // resolve so a misconfigured rollout is observable at boot, not
     // at first customer query.
     //
-    // The `RealNeonShadowSink` trait-object construction itself
-    // requires a `TokioPostgresExecutor` binder (deferred follow-on —
-    // see `specs/_audits/2026-05-16-neon-shadow-real-driver.md` §7).
-    // Until the binder ships, the customer-facing
-    // `/v1/audit/analytics/*` endpoints stay behind the wave-18
-    // `InMemoryNeonShadowSink` factory (the route module is
-    // module-level present but not merged into `routes::build()` for
-    // the same reason). The `--feature neon-real` flag is the
-    // build-time witness; flipping it on plus shipping the binder
-    // hot-swaps the production wiring without further code changes.
-    {
+    // Wave-20 (this commit) closes the deferred `TokioPostgresExecutor`
+    // binder caveat: with `--feature neon-real` + per-region DSN env
+    // vars present, the boot path constructs a
+    // `TokioPostgresExecutor` per region (deadpool-postgres pool +
+    // tokio-postgres-rustls TLS) and feeds it to a
+    // `TokioPgShadowSinkFactory` that resolves per-tenant
+    // `RealNeonShadowSink`s. Without `--feature neon-real` or with
+    // every DSN env var unset, the `/v1/audit/analytics/*` routes stay
+    // on the in-memory factory (dev/CI friendly).
+    let shadow_factory: Arc<dyn ShadowSinkFactory> = {
         use corelink_analytics::Region;
         use corelink_audit_chain::{EnvVarResolver, NeonProjectResolver};
         let resolver = EnvVarResolver::new();
@@ -100,15 +102,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             Region::Nrt,
             Region::Syd,
         ];
-        let mut resolved = 0usize;
+        let mut resolved_dsns: Vec<(Region, String)> = Vec::new();
         for region in active_regions {
             match resolver.resolve(region) {
-                Ok(_) => {
-                    resolved += 1;
+                Ok(dsn) => {
                     info!(
                         region = region.as_str(),
                         "wave-19 neon shadow: project DSN resolved"
                     );
+                    resolved_dsns.push((region, dsn));
                 }
                 Err(_) => {
                     info!(
@@ -119,29 +121,125 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 }
             }
         }
-        if resolved == 0 {
+        if resolved_dsns.is_empty() {
             warn!(
                 "wave-19 neon shadow: NO per-region Neon DSN configured; \
                  analytics endpoints stay on InMemoryNeonShadowSink"
             );
         } else {
             info!(
-                resolved_regions = resolved,
+                resolved_regions = resolved_dsns.len(),
                 "wave-19 neon shadow: per-region project resolver ready"
             );
         }
+
         #[cfg(feature = "neon-real")]
         {
-            // Build-time witness: the `RealNeonShadowSink`
-            // orchestration surface (trait, executor, SQL constants,
-            // resolver) IS compiled in. The actual `tokio-postgres`
-            // binder is the deferred follow-on.
-            info!(
-                "wave-19 neon shadow: --feature neon-real build-time witness OK \
-                 (RealNeonShadowSink + NeonExecutor + EnvVarResolver linked)"
-            );
+            use corelink_audit_chain::neon_shadow::real_tokio_pg::TokioPostgresExecutor;
+            use corelink_audit_chain::{InMemoryShadowSyncAuditSink, NeonExecutor, RealNeonShadowSink, ShadowSyncAuditSink};
+            use corelink_audit_chain::NeonShadowSink;
+            use std::collections::BTreeMap;
+            use uuid::Uuid;
+
+            // Build a per-region executor map. Each Neon project gets
+            // its own pool (`DEFAULT_POOL_MAX_SIZE = 4`) so a region's
+            // back-pressure does NOT cross-pollute other regions'
+            // capacity headroom.
+            let mut executors: BTreeMap<&'static str, Arc<dyn NeonExecutor>> = BTreeMap::new();
+            for (region, dsn) in &resolved_dsns {
+                match TokioPostgresExecutor::connect(dsn).await {
+                    Ok(exec) => {
+                        info!(
+                            region = region.as_str(),
+                            "wave-20 neon shadow: TokioPostgresExecutor pool ready"
+                        );
+                        executors.insert(region.as_str(), exec.into_arc());
+                    }
+                    Err(e) => {
+                        // SEV-2 — the per-region DSN was set but the pool
+                        // refused to build (bad DSN, TLS handshake fail,
+                        // pool capacity refused). We continue boot —
+                        // other regions may still be wired — and the
+                        // `for_tenant` resolver surfaces the typed error
+                        // per request for the affected region.
+                        warn!(
+                            region = region.as_str(),
+                            error = %e,
+                            "wave-20 neon shadow: TokioPostgresExecutor build FAILED — region marked unavailable"
+                        );
+                    }
+                }
+            }
+
+            if executors.is_empty() {
+                info!(
+                    "wave-20 neon shadow: --feature neon-real on but no executor pools came up; \
+                     falling back to InMemoryShadowSinkFactory"
+                );
+                Arc::new(routes::InMemoryShadowSinkFactory::new()) as Arc<dyn ShadowSinkFactory>
+            } else {
+                info!(
+                    pool_count = executors.len(),
+                    "wave-20 neon shadow: --feature neon-real witness OK — TokioPgShadowSinkFactory wired"
+                );
+
+                /// Production factory: resolves `(tenant_id) -> Arc<dyn NeonShadowSink>`
+                /// by picking the tenant's pinned region (default IAD until the
+                /// tenant-config store is wired) and feeding the per-region
+                /// executor through `RealNeonShadowSink`. Each `for_tenant`
+                /// allocates a fresh `RealNeonShadowSink` so the tenant pin
+                /// stays per-request.
+                #[derive(Debug)]
+                struct TokioPgShadowSinkFactory {
+                    executors: BTreeMap<&'static str, Arc<dyn NeonExecutor>>,
+                    audit_sink: Arc<dyn ShadowSyncAuditSink>,
+                }
+                impl ShadowSinkFactory for TokioPgShadowSinkFactory {
+                    fn for_tenant(
+                        &self,
+                        tenant_id: Uuid,
+                    ) -> Result<Arc<dyn NeonShadowSink>, &'static str> {
+                        // TODO(wave-21): pull the pinned region from the
+                        // tenant-config store. Default to IAD so a tenant
+                        // without an explicit pin still resolves a sink.
+                        let region = corelink_analytics::Region::Iad;
+                        let exec = self
+                            .executors
+                            .get(region.as_str())
+                            .ok_or("region has no executor pool")?
+                            .clone();
+                        Ok(Arc::new(RealNeonShadowSink::new(
+                            tenant_id,
+                            region,
+                            exec,
+                            self.audit_sink.clone(),
+                        )))
+                    }
+                }
+                Arc::new(TokioPgShadowSinkFactory {
+                    executors,
+                    audit_sink: Arc::new(InMemoryShadowSyncAuditSink::new()),
+                }) as Arc<dyn ShadowSinkFactory>
+            }
         }
-    }
+        #[cfg(not(feature = "neon-real"))]
+        {
+            // Bring-up friendly default — in-memory factory satisfies
+            // the `/v1/audit/analytics/*` route surface in dev/CI.
+            let _ = resolved_dsns;
+            Arc::new(routes::InMemoryShadowSinkFactory::new()) as Arc<dyn ShadowSinkFactory>
+        }
+    };
+
+    info!(
+        "wave-20 routes: building composed router (CAS + AC + Admin + audit-export + audit-analytics)"
+    );
+    // The composed router is constructed but not yet bound to an
+    // HTTP listener — the gRPC server is the canonical surface; the
+    // axum router is wired into the future HTTP listener (the same
+    // HTTP listener that hosts the Stripe webhook below when the
+    // secret is present).
+    let _composed_router = routes::build_with_factory(shadow_factory);
 
     // R2-12: HTTP server with Stripe webhook route. Only started when
     // STRIPE_WEBHOOK_SECRET is present; otherwise we log and skip so

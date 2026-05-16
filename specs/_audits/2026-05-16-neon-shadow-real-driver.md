@@ -100,3 +100,92 @@ The 5 `#[ignore]`-by-default Neon-staging integration tests are deferred to the 
 - `actionlint`: target — green on the new `neon-shadow-reconcile-daily.yml`.
 
 DCO sign-off: Gustavo Schneiter <gustavo@humangr.com>.
+
+---
+
+## Wave-20 closure-note (2026-05-16)
+
+Closes the three "Caveats / follow-ons" in §7:
+
+1. **`TokioPostgresExecutor` binder shipped** — lives at
+   `crates/corelink-audit-chain/src/neon_shadow/real_tokio_pg.rs`
+   (gated by `cfg(all(feature = "neon-real", not(target_arch = "wasm32")))`
+   on native; wasm32 stub always linked so `Arc<dyn NeonExecutor>`
+   wiring type-checks on both targets and a misrouted call surfaces
+   `NeonError::WasmOnly` instead of silently no-op-ing). Wraps
+   `deadpool_postgres::Pool` with `max_size = 4` per region +
+   `recycle = Fast`; TLS via `tokio-postgres-rustls` with
+   `rustls-native-certs` (system trust store) and `webpki-roots`
+   fallback so a fresh container without `/etc/ssl/certs` still
+   validates Neon's cert. The sync `NeonExecutor` trait dispatches
+   to the async tokio-postgres calls via
+   `tokio::task::block_in_place(|| handle.block_on(fut))` — the
+   wrapper requires the multi-thread tokio runtime (which
+   `#[tokio::main]` in `apps/server` provides by default), and a
+   single-thread runtime triggers an explicit panic in
+   `block_in_place` at first call rather than dead-locking.
+
+2. **5 `#[ignore]`-by-default integration tests shipped** — live
+   at `crates/corelink-audit-chain/tests/neon_shadow_real.rs`. Cover
+   `sync_chunk` persistence, idempotent replay, `aggregate_event_count`
+   + `aggregate_timeline` decoding through the live driver, and the
+   RLS policy isolating two tenants in the same project. Run with
+   `cargo test --features neon-real --test neon_shadow_real -- --ignored`
+   against a live Postgres (Neon staging or a local
+   `testcontainers` harness — see the test file's header docs for the
+   step-by-step harness). The 6th test (`env_var_resolver_canonical_names_match_secrets_matrix`)
+   runs unconditionally on every PR to pin the secrets-matrix rows
+   120–124 alignment.
+
+3. **`audit_analytics` router merged into `routes::build()`** —
+   `apps/server::routes::build()` now mounts the audit-analytics
+   sub-router unconditionally. The default `build()` injects the new
+   `InMemoryShadowSinkFactory` (dev/CI friendly — every `for_tenant`
+   call yields a fresh `InMemoryNeonShadowSink`). The `build_with_factory`
+   variant lets the boot path swap in the production
+   `TokioPgShadowSinkFactory` (constructed in `apps/server/src/main.rs`
+   when `--feature neon-real` is on AND at least one
+   `NEON_DB_URL_<REGION>` env var resolves). With every DSN env var
+   unset the boot path falls back to the in-memory factory — no
+   silent failure mode, every transition is logged.
+
+### Wave-20 deliverables
+
+| Deliverable | Loc | LOC |
+|---|---|---|
+| `TokioPostgresExecutor` (native impl) | `crates/corelink-audit-chain/src/neon_shadow/real_tokio_pg.rs` (`native` mod) | ~280 |
+| `TokioPostgresExecutor` (wasm32 stub) | same file (`wasm_stub` mod) | ~45 |
+| Integration test harness | `crates/corelink-audit-chain/tests/neon_shadow_real.rs` | ~250 |
+| Route merge + `InMemoryShadowSinkFactory` | `apps/server/src/routes.rs` | +75 |
+| Boot path `TokioPgShadowSinkFactory` wire | `apps/server/src/main.rs` (replaces wave-19 log-only block) | +90 |
+
+### Wave-20 net-new tests
+
+- `tokio_postgres_executor_set_local_runs_before_insert` (lib unit)
+- `owned_params_collapses_hexbytes_and_jsonb_to_text` (lib unit)
+- `build_tls_loads_a_non_empty_root_store` (lib unit)
+- `env_var_resolver_canonical_names_match_secrets_matrix` (integration, active)
+- `sync_chunk_persists_rows_against_live_postgres` (integration, `#[ignore]`)
+- `sync_chunk_is_idempotent_on_replay` (integration, `#[ignore]`)
+- `aggregate_event_count_against_live_postgres` (integration, `#[ignore]`)
+- `aggregate_timeline_against_live_postgres` (integration, `#[ignore]`)
+- `rls_policy_isolates_tenants_against_live_postgres` (integration, `#[ignore]`)
+
+Wave-19 baseline 180/180 preserved (139 lib + 27 + 3 + 11 + 0 = 180);
+wave-20 lib total is 142 (139 + 3 new unit tests in `real_tokio_pg::native::tests`)
++ 6 new integration tests (1 active, 5 `#[ignore]`) = 189 total native
+tests under `--features neon-real`.
+
+### Wave-20 gates
+
+- `cargo build --workspace --features neon-real`: green.
+- `cargo test -p corelink-audit-chain --features neon-real`: 183 passing
+  + 6 ignored (5 `#[ignore]` integration + 1 mutation_kills `#[ignore]`-pinned).
+- `cargo clippy --workspace --all-targets --features neon-real -- -D warnings`: clean.
+- `validate_specs.py`, `validate_references.py`: green.
+- `validate_secrets_matrix.py`: green (no new production rows; `NEON_TEST_DSN`
+  is the test-only DSN — added to the allowlist's `r"|NEON_TEST_DSN$"` arm
+  per the wave-20 closure pattern, mirroring `GCP_TEST_KEY_RESOURCE`).
+
+DCO sign-off (wave-20 closure-note): Gustavo Schneiter <gustavo@humangr.com>.
+
