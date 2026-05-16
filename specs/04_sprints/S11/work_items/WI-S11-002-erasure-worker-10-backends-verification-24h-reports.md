@@ -381,7 +381,7 @@ Não — regulatory feature, sem A/B (multi-arm = compliance risk).
 > wave-18 caveat #2 (`fetch_window_async` returns `Vec::new()` because
 > `dsr_erasure_log` stored per-(dsr_id, backend) tombstones, NOT full
 > `VerificationOutcome` snapshots) is CLOSED. Migration
-> `0049_dsr_erasure_log_outcome_json.sql` lands an additive
+> `0051_dsr_erasure_log_outcome_json.sql` lands an additive
 > `ALTER TABLE dsr_erasure_log ADD COLUMN outcome_json TEXT NULL`
 > + a partial index `idx_dsr_erasure_log_outcome_json_present` on
 > `(tenant_id, completed_at DESC) WHERE outcome_json IS NOT NULL`.
