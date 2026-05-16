@@ -173,6 +173,13 @@ corelink-ratelimit = { workspace = true }
 subtle = { workspace = true }
 uuid = { workspace = true }
 
+# Wave-29 stream-1 — pilot signup HMAC-SHA256 token verify (route
+# `apps/server/src/routes/signup.rs`). Promoted from dev-deps so the
+# native server binary links the HMAC + hex codec used by the route.
+hmac = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+
 # BYOK foundation crate (KmsProvider trait + InMemoryFake used by
 # the orchestrator default path) — NOT optional: the orchestrator
 # must compile in the default `cargo build -p corelink-server`
@@ -196,9 +203,9 @@ corelink-analytics = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
-hmac = { workspace = true }
-sha2 = { workspace = true }
-hex = { workspace = true }
+# Wave-29 stream-1 — `hmac` / `sha2` / `hex` promoted to main deps
+# above so the pilot-signup route can verify token HMAC-SHA256
+# signatures at runtime. Tests inherit them automatically.
 # Wave-15.3 — integration test fixtures for the `audit_export` route.
 # `corelink-analytics` is promoted to a main dep above (wave-19 needs
 # `Region` at the binary boot path for the Neon shadow project

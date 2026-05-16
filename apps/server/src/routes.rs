@@ -57,6 +57,11 @@ pub mod audit_analytics;
 pub mod audit_export;
 /// CAS HTTP routes (R-prep example wire-up; wave-8).
 pub mod cas;
+/// Pilot signup route (wave-29 stream-1; closes DEBT-027 engineering-side).
+/// Surfaces `POST /v1/signup/pilot/{token}` over an HMAC-SHA256
+/// signed token + per-IP rate-limit + fail-CLOSED audit emit. See
+/// `specs/_audits/2026-05-16-signup-corelink-dev-backend.md`.
+pub mod signup;
 
 /// Per-tenant in-memory shadow-sink factory. Production wiring
 /// replaces this with a Neon-backed factory (see
@@ -132,12 +137,14 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
     };
     let audit_export_state = audit_export::build_state();
     let audit_analytics_state = audit_analytics::build_state(shadow_factory);
+    let signup_state = signup::build_state();
     Router::new()
         .merge(cas::router(cas_state))
         .merge(ac::router(ac_state))
         .merge(admin::router(admin_state))
         .merge(audit_export::router(audit_export_state))
         .merge(audit_analytics::router(audit_analytics_state))
+        .merge(signup::router(signup_state))
 }
 
 #[cfg(test)]
