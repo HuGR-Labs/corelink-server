@@ -3,7 +3,7 @@ id: "ADR-0034b"
 type: "adr"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "0.1.0"
+version: "0.1.1"
 created: "2026-05-16"
 updated: "2026-05-16"
 title: "Framework Reviewer Dual-Hat Fallback Policy (FW-H-1..4 small-org operating mode)"
@@ -16,11 +16,12 @@ deciders: ["Gustavo Schneiter (Owner / Final Approver)"]
 context_links:
   - "specs/_proposals/2026-05-16-framework-reviewer-roles.md §8 OQ-1 (org size / dual-hatting)"
   - "specs/_proposals/2026-05-16-framework-reviewer-roles-addendum.md §1 (dual-hat fallback policy)"
+  - "specs/_proposals/2026-05-16-framework-reviewer-roles-addendum.md §6 (detailed RACI matrix — wave-25)"
   - "specs/03_architecture/adrs/ADR-0034-prr-staffing-waiver-solo-tier.md (prior-art at PRR tier)"
   - "specs/00_framework.md §43.1 (Revisores requeridos para freeze)"
   - "specs/_governance/reviewer_staffing_strategy.md §7.2 (Founder-only-sign-off fallback prior art)"
   - "specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md §11 (unblock-path-C-progress)"
-tags: ["adr", "governance", "reviewers", "staffing", "framework-freeze", "dual-hat", "small-org", "ga", "wave-22", "wave-24"]
+tags: ["adr", "governance", "reviewers", "staffing", "framework-freeze", "dual-hat", "small-org", "ga", "wave-22", "wave-24", "wave-25", "raci"]
 ---
 
 # ADR-0034b — Framework Reviewer Dual-Hat Fallback Policy
@@ -85,11 +86,11 @@ Only two pairings are permitted. Both preserve cross-domain coverage (one struct
 
 ### §Forbidden pairings
 
-Three pairings are explicitly forbidden, with rationale rooted in conflict-of-interest theory and the addendum §6 recusal mechanics:
+Three pairings are explicitly forbidden, with rationale rooted in conflict-of-interest theory and the addendum §7 recusal mechanics (renumbered from §6 in addendum v0.1.2 / wave-25 RACI detail; the recusal scope rows are now in §7.2):
 
 | Forbidden pairing | Owner would take | Why forbidden |
 |---|---|---|
-| **FW-H-1 + FW-H-2** | Architecture + Compliance | Architecture **writes** the canonical sections that Compliance **reviews** for regulatory fit. Collapsing both into one person creates a conflict of interest (COI) — the author validates their own work against compliance criteria. Mirrors `_proposals/...-addendum.md §1.2` first forbidden row + §6.2 recusal trigger #1. |
+| **FW-H-1 + FW-H-2** | Architecture + Compliance | Architecture **writes** the canonical sections that Compliance **reviews** for regulatory fit. Collapsing both into one person creates a conflict of interest (COI) — the author validates their own work against compliance criteria. Mirrors `_proposals/...-addendum.md §1.2` first forbidden row + §7.2 recusal trigger #1 (renumbered from §6.2 in addendum v0.1.2 / wave-25 RACI detail). |
 | **FW-H-3 + FW-H-4** | Security + Production Ops | These two slots most frequently show **joint R-status** in the addendum proposal §6 RACI (security + ops are co-Responsible on incident response, on-call posture, runbook discipline). Collapsing them loses adjudication signal on incident-driven re-attestation rows. Mirrors addendum §1.2 second forbidden row. |
 | **FW-H-1 + FW-H-3** under non-Owner dual-hatting | Architecture + Security (taken by an external advisor, not the Owner) | Only the Owner may take Pairing-Alpha because the addendum §1.3 sign-off mechanics + framework §43.1 imply Final-Approver-level accountability for both seats; an external advisor cannot bind Final-Approver authority across both. (Pairing-Alpha is permitted ONLY when the Owner is the dual-hatter.) |
 
@@ -112,7 +113,7 @@ Per the addendum §1.3:
 
 - The framework §43.1 sign-off block records the Owner's name + commit SHA **twice** (once per slot), with role IDs labeled (e.g., `FW-H-1 / FW-H-3 — Gustavo Schneiter — 2026-MM-DD — sha:<7-char>`).
 - The §3 acceptance deliverable (separate comments documents per role) is still required — **two distinct comments docs** even when one person authors both, to preserve PRINC-005 rastreabilidade and avoid single-doc rubber-stamp collapse.
-- The §42 change-log entry MUST disclose the conflict explicitly per the addendum §6.4 (`owner_conflict_disclosed: dual-hat under ADR-0034b Pairing-<Alpha|Beta>`).
+- The §42 change-log entry MUST disclose the conflict explicitly per the addendum §7.4 (`owner_conflict_disclosed: dual-hat under ADR-0034b Pairing-<Alpha|Beta>`; addendum subsection renumbered from §6.4 in v0.1.2 / wave-25 RACI detail).
 
 ### §Auto-expiration triggers
 
@@ -178,14 +179,14 @@ Triggers are monitored by the **trimestral framework review** (addendum §5.2) �
 ### Positive
 
 - **Small-org GA viable.** With Pairing-Alpha or Pairing-Beta invocable, the framework v1.0.0 FROZEN cut becomes achievable without waiting for the goal-state 4-distinct hire — closing the audit §6.3 Path A engineering-side-READY gap that wave-20 Lote 7 and wave-22 Lote 7 narrowed but did not eliminate.
-- **Audit trail preserved.** Owner conflict disclosure (addendum §6.4), per-slot comments docs (addendum §1.3), and explicit pairing-name + authorizing-ADR reference in the §42 change-log entry produce a SOC2-readable trail of WHO signed WHAT under WHICH waiver.
+- **Audit trail preserved.** Owner conflict disclosure (addendum §7.4 — renumbered from §6.4 in wave-25), per-slot comments docs (addendum §1.3), and explicit pairing-name + authorizing-ADR reference in the §42 change-log entry produce a SOC2-readable trail of WHO signed WHAT under WHICH waiver.
 - **Hysteresis band prevents oscillation.** Eligibility ceiling (N=12) above auto-expiration trigger (≥10) gives the Owner a 2-engineer buffer to plan a graceful transition to 4-distinct staffing rather than thrashing on the threshold.
 - **Pattern reuse.** This ADR mirrors ADR-0034's structure at a different tier; future framework-tier waiver decisions can follow the same pattern (named pairings + forbidden pairings + auto-expiration + cross-veto preservation).
 
 ### Negative
 
 - **More single-points-of-failure on dual-hat slots.** The two slots the Owner holds carry bus-factor 1 (the Owner). If the Owner is unavailable for an incident-driven re-attestation, those two §-coverages have no backup. (Addendum §7 backup policy applies to the externally-staffed slots, not the Owner-held slots.)
-- **Conflict of interest concentrated on the Owner.** The addendum §6.4 acknowledges this is structural (Final Approver cannot recuse). The disclosure requirement mitigates the audit-trail risk but does not eliminate the substantive COI risk.
+- **Conflict of interest concentrated on the Owner.** The addendum §7.4 (renumbered from §6.4 in wave-25) acknowledges this is structural (Final Approver cannot recuse). The disclosure requirement mitigates the audit-trail risk but does not eliminate the substantive COI risk.
 - **Cross-veto effectiveness depends on external advisor courage.** External advisors hired on retainer face a structural incentive to APPROVE rather than BLOCK (preserving the engagement). The addendum §2.1 + §2.3 cannot fully neutralize this. Mitigation: written engagement scope MUST include explicit BLOCK authority (per `_governance/reviewer_staffing_strategy.md` retainer-template).
 - **Auto-expiration to 4-distinct may be late.** At org-size 10–12 (the hysteresis band), the Owner has limited time to hire and onboard 4 distinct reviewers before the next framework cut (90-day quarterly cadence). Mitigation: the quarterly review chair flags approaching expiration triggers at least one quarter in advance.
 
@@ -215,3 +216,4 @@ Forward-looking: when a framework v1.0.0 FROZEN cut is authored under this ADR, 
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 0.1.0 | 2026-05-16 | Claude Opus 4.7 (wave-24 ADR-0034b authoring agent) | Initial ADR. Formalizes the dual-hat fallback policy at the framework-freeze tier (analog of ADR-0034 at PRR tier). §Eligibility (5 conditions; N=12 ceiling with 10-engineer auto-expiration hysteresis); §Permitted pairings (Alpha + Beta) and §Forbidden pairings (FW-H-1+FW-H-2 COI; FW-H-3+FW-H-4 RACI collapse; non-Owner Alpha); §Cross-veto under dual-hat preserves addendum §2 rights; §Quorum 3-of-3-effective seats; §Sign-off mechanics per addendum §1.3 (two-comments-docs + Owner conflict disclosure); §Auto-expiration ladder mirroring addendum §1.4; §Status PROPOSED (DRAFT in schema) → ACCEPTED on Owner invocation. §Alternatives 1–4 documented (4-distinct hire / rotating / single-reviewer simple-majority / indefinite DEFER) with explicit-cost rejection rationale. |
+| 0.1.1 | 2026-05-16 | Claude Opus 4.7 (wave-25 Lote 7 RACI detail cross-ref sync) | Updates addendum cross-refs from `§6.2 / §6.4` (COI subsections) to `§7.2 / §7.4` after the wave-25 addendum v0.1.2 renumber that inserted detailed RACI matrix as new §6. Adds context_links pointer to addendum §6 (RACI detail). No semantic change to this ADR's decision content (eligibility / pairings / quorum / auto-expiration unchanged); cross-ref hygiene only. |
