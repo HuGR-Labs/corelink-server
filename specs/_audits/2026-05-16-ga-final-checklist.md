@@ -9,7 +9,7 @@
 > - `[ ] false` — gate red; **must** resolve before §13 signature.
 > - `[!] defer: <link to §11 row OR documented waiver>` — explicit, traced DEFER.
 >
-> **Rule.** Signature §13.2 + §13.3 require **zero `false` rows**. Every `defer:` must point to either `specs/_audits/2026-05-16-ga-readiness-final.md §11` (the 8 external DEFER items) OR a documented waiver in `specs/_compliance/GA-GATE-GO-NOGO-TEMPLATE.md §3`.
+> **Rule.** Signature §13.2 + §13.3 require **zero `false` rows**. Every `defer:` must point to either `specs/_audits/2026-05-16-ga-readiness-final.md §11` (the 7 external DEFER items, scrubbed wave-25) OR a documented waiver in `specs/_compliance/GA-GATE-GO-NOGO-TEMPLATE.md §3`.
 
 ---
 
@@ -105,8 +105,7 @@
 - [ ] G-04 — DEBT-003 AWS Artifact PDF download + sha256 (§11#4).
 - [ ] G-05 — DEBT-016 Statuspage `status.corelink.dev` go-live (§11#5).
 - [ ] G-06 — Pilot signups ≥ 3 design-partners (§11#6).
-- [ ] G-07 — Docs CI billing reinstatement (§11#7).
-- [ ] G-08 — Owner sign-off (ADR-0034b 2-key) executed in §13.2 + §13.3 of `2026-05-16-ga-readiness-final.md` (§11#8).
+- [ ] G-07 — Owner sign-off (ADR-0034b 2-key) executed in §13.2 + §13.3 of `2026-05-16-ga-readiness-final.md` (§11#7). _(Wave-25 scrub: prior G-07 "Docs CI billing reinstatement" removed as stale — CI runs locally per `feedback_ci_local`; GHA infra not used. Former G-08 promoted to G-07.)_
 
 ## H. Adversarial review (cross-cutting; mirrors `2026-05-16-ga-readiness-final.md` §3)
 
@@ -140,9 +139,9 @@
 
 ## Roll-up
 
-- **Total rows:** 95 (A:15 + B:12 + C:16 + D:9 + E:8 + F:6 + G:8 + H:7 + I:8 + J:4 + 2 buffer).
-- **Decision rule:** signature §13.2 + §13.3 require **zero `false` rows**; every `defer:` traces to `2026-05-16-ga-readiness-final.md §11` (8 max) or `GA-GATE-GO-NOGO-TEMPLATE.md §3` waiver register.
-- **Expected DEFER count at signature:** 8 (the §11 external DEFER items). Any DEFER above 8 requires Owner-approved waiver per `GA-GATE-GO-NOGO-TEMPLATE.md §3`.
+- **Total rows:** 94 (A:15 + B:12 + C:16 + D:9 + E:8 + F:6 + G:7 + H:7 + I:8 + J:4 + 2 buffer).
+- **Decision rule:** signature §13.2 + §13.3 require **zero `false` rows**; every `defer:` traces to `2026-05-16-ga-readiness-final.md §11` (7 max post wave-25 scrub) or `GA-GATE-GO-NOGO-TEMPLATE.md §3` waiver register.
+- **Expected DEFER count at signature:** 7 (the §11 external DEFER items, post wave-25 scrub). Any DEFER above 7 requires Owner-approved waiver per `GA-GATE-GO-NOGO-TEMPLATE.md §3`.
 
 ---
 

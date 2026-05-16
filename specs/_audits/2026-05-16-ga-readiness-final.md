@@ -19,7 +19,7 @@
 
 ### §1.1 Recommendation
 
-**CONDITIONAL GO** — engineering-side is **GA-READY** post-wave-23 SEAL; the conditional bar is the **5 user-bound** and **3 vendor-bound external dependencies** that no agent can close (attorney sign-off, FW-H role nominations, pentest vendor engagement, AWS Artifact PDF download, Statuspage go-live). Once those 8 external items resolve, the runbook `RB-GA-CUTOVER.md` §0 checklist is fully unblocked. **No structural code, spec, or invariant blocker remains.**
+**CONDITIONAL GO** — engineering-side is **GA-READY** post-wave-23 SEAL; the conditional bar is the **5 user-bound** and **1 vendor-bound** + **1 mixed** external dependencies that no agent can close (attorney sign-off, FW-H role nominations, pentest vendor engagement, AWS Artifact PDF download, Statuspage go-live). Once those 7 external items resolve, the runbook `RB-GA-CUTOVER.md` §0 checklist is fully unblocked. **No structural code, spec, or invariant blocker remains.** (Wave-25 scrub: removed stale "Docs CI billing reinstatement" DEFER row — CI runs locally per `feedback_ci_local` memory; GHA infra is not the canonical CI surface.)
 
 ### §1.2 One-page state of the world
 
@@ -35,9 +35,9 @@
 | Security posture | BYOK 4-provider matrix + RLS WITH CHECK + audit fail-CLOSED + WallClock cross-route + chaos combined-failure (wave-23 stream #4) all in flight or SEALED | ✅ GREEN |
 | Customer-facing readiness | CLI verify-ndjson HTTP / SDK examples / pilot onboarding E2E (wave-23 stream #5) / CS playbook (wave-23 stream #7) / beta-feedback triage (wave-23 stream #8) | 🟡 YELLOW pending wave-23 SEAL streams |
 | Operational readiness | RB-GA-CUTOVER + 50+ RB-* runbooks cross-ref; 24h endurance harness built wave-22; chaos campaign 8 fail-CLOSED scenarios SEALED wave-22; chaos combined-failure (wave-23) in flight | 🟡 YELLOW pending dry-run rehearsal |
-| External dependencies | 8 DEFER (5 user-bound + 3 vendor-bound) | 🟡 YELLOW (counter §11) |
+| External dependencies | 7 DEFER (5 user-bound + 1 vendor-bound + 1 mixed) | 🟡 YELLOW (counter §11) |
 
-**Net:** **CONDITIONAL GO**. Owner sign-off via ADR-0034b 2-key (Owner + on-call SRE) unlocks `RB-GA-CUTOVER.md` §0 checklist run. The 8 external DEFER items are the *only* gate remaining; engineering-side has no in-house blocker.
+**Net:** **CONDITIONAL GO**. Owner sign-off via ADR-0034b 2-key (Owner + on-call SRE) unlocks `RB-GA-CUTOVER.md` §0 checklist run. The 7 external DEFER items are the *only* gate remaining; engineering-side has no in-house blocker.
 
 ---
 
@@ -268,7 +268,7 @@ Per `specs/_audits/2026-05-16-wave23-closure.md` §3.4 dry-run readiness assessm
 
 ## §11. External dependency state — DEFER counter
 
-The 8 items below are **agent-impossible** under the autonomous-execution charter. They are tracked here to provide a single counter for the go/no-go board.
+The 7 items below are **agent-impossible** under the autonomous-execution charter. They are tracked here to provide a single counter for the go/no-go board. (Wave-25 scrub: prior row #7 "Docs CI billing reinstatement" removed as stale — CI is locally executed per `feedback_ci_local` memory; GHA billing reinstatement is not on the GA-blocker path. See `specs/_audits/2026-05-16-ga-readiness-defer-scrub.md`.)
 
 | # | Item | Class | Owner | Wave-23 unblock vector | ETA |
 |---|---|---|---|---|---|
@@ -278,10 +278,9 @@ The 8 items below are **agent-impossible** under the autonomous-execution charte
 | 4 | **DEBT-003 AWS Artifact PDF download + sha256** | User-bound | Gustavo | None — agent cannot download Artifact PDFs | Pre-GA-Gate (T+30d) |
 | 5 | **DEBT-016 Statuspage `status.corelink.dev` go-live** | User-bound (ops) | Gustavo | `STATUSPAGE-INIT.md` runbook ready | T-7d pre-launch |
 | 6 | **Pilot signups ≥ 3 design-partners (G4 greenlight)** | User-bound (sales) | Gustavo | wave-23 streams #5 + #7 + #8 build post-signup machinery; signups themselves remain external | Pre-T-24h (G4 snapshot window) |
-| 7 | **Docs CI billing reinstatement** | User-bound (ops) | Gustavo (GitHub-billing acct issue) | None — out-of-stream resolution; local `pnpm build` used until resolved | Anytime before GA |
-| 8 | **Owner sign-off (ADR-0034b 2-key)** | User-bound (governance) | Gustavo + on-call SRE | This audit ↓§13 unlocks 2-key signature block; ADR-0034b 2-key path codifies the waiver | T-0h (signature block) |
+| 7 | **Owner sign-off (ADR-0034b 2-key)** | User-bound (governance) | Gustavo + on-call SRE | This audit ↓§13 unlocks 2-key signature block; ADR-0034b 2-key path codifies the waiver | T-0h (signature block) |
 
-**Total DEFER counter:** **8** (5 user-bound + 2 vendor-bound + 1 mixed). **No agent-closable items remain in the DEFER queue.**
+**Total DEFER counter:** **7** (5 user-bound + 1 vendor-bound + 1 mixed). **No agent-closable items remain in the DEFER queue.** (Wave-25 scrub: previous count was 8; removed stale "Docs CI billing reinstatement" row — CI runs locally per `feedback_ci_local`; GHA infra is not used.)
 
 ---
 
@@ -407,4 +406,4 @@ This document plus `specs/_audits/2026-05-16-ga-final-checklist.md` plus the sig
 
 ---
 
-**End of GA Readiness Final Audit. Recommendation: CONDITIONAL GO pending the 8 external DEFER items in §11 and the §13.1 pre-condition gate. Engineering-side is GA-READY.**
+**End of GA Readiness Final Audit. Recommendation: CONDITIONAL GO pending the 7 external DEFER items in §11 and the §13.1 pre-condition gate. Engineering-side is GA-READY.**
