@@ -130,6 +130,18 @@ jobs:
         # INV-AUTH-PAT-VERIFY-CONSTANT-TIME + INV-AUTH-PAT-HASH-ARGON2ID-2024.
         run: bash scripts/run_tlc_corelink.sh auth_pat_hybrid
 
+      - name: TLC verify auth_pat_revoke (Wave-24 R-PREP — INV-PAT-REVOKE-PROPAGATION)
+        # Added by Wave-24 R-PREP dispatch 2026-05-16
+        # (`specs/_audits/2026-05-16-auth-pat-revoke-tla.md`): closes the
+        # Wave-23 INV-DRAFT sweep CRITICAL PLANNED obligation
+        # INV-PAT-REVOKE-PROPAGATION (registry §3.28). Proves the verify
+        # path short-circuits to 401 on a revoked SoT regardless of region
+        # cache propagation lag ("no edge cache lookahead") + audit row
+        # durable BEFORE 204 response + idempotent retry collapse.
+        # Sibling of auth_pat_hybrid.tla (mint side); disjoint from
+        # auth_revocation.tla (queue side).
+        run: bash scripts/run_tlc_corelink.sh auth_pat_revoke
+
       - name: TLC verify key_lifecycle (DEBT-014 FT-2)
         # Added by DEBT-014 dispatch 2026-05-15 closing FT-2. Per-asset
         # rotation state machine with overlap window. Closes INV-KEY-NO-SKIP,

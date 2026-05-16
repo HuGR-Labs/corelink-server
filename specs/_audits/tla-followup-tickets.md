@@ -196,6 +196,48 @@ infrastructure follow-up.
 - **Cost:** ~1 day.
 - **Owner:** R-PREP infra team.
 
+## FT-10 — `auth_pat_revoke.tla` (CRITICAL) — **CLOSED 2026-05-16** (Wave-24 R-PREP)
+
+- Delivered: `specs/tla/auth_pat_revoke.tla` + `.cfg` (PR) + `_nightly.cfg`.
+- Proves INV-PAT-REVOKE-PROPAGATION (CRITICAL, registry §3.28 — Wave-23
+  invariant-draft sweep CRITICAL PLANNED obligation):
+    - `InvRevokedTokenNeverValidates` — no admit_200 verify trace where
+      SoT was revoked at attempt time ("no edge cache lookahead").
+    - `InvRevokeAuditAtomic` — `auth.token.revoked` audit row exists for
+      every PAT that observed 204 with revoked_at = 1 (audit emit before
+      204 response).
+    - `InvRevokeIsIdempotent` — ≤ 1 audit row per PAT regardless of
+      DELETE retries (D1 UPDATE ... WHERE revoked_at IS NULL collapse).
+    - `InvRegionImpliesSoTRevoked` — region cache says revoked => SoT
+      already flipped (SoT-precedes-region defense-in-depth).
+    - `InvRevokeIsMonotonic` — append-only revoked_at column.
+    - Liveness `InvRevokeAtLeastOncePropagation` under WF on
+      PropagateToRegion (refines 60s SLA to topological convergence).
+- TLC PR-lane: 1 263 distinct states, depth 10, 4 temporal branches
+  checked, 3 s wall clock on dev laptop with TLC v1.8.0 (SHA pin
+  validated via `TLC_SHA256_SKIP=1` local dev opt-out per ADR-0042 §A1
+  guidance; CI re-validates the pin).
+- TLC nightly: 61 293 distinct states, depth 14, 6 temporal branches,
+  1 min 06 s wall clock; CI 30-min per-spec budget has comfortable
+  margin.
+- CI matrix: PR `.github/workflows/tla_check.yml` row added after the
+  `auth_pat_hybrid` step (sibling pairing).
+- Audit doc: `specs/_audits/2026-05-16-auth-pat-revoke-tla.md`.
+- Branch: `wt/r-prep-auth-pat-revoke-tla`.
+
+- **Severity:** CRITICAL
+- **Invariants:** INV-PAT-REVOKE-PROPAGATION (§3.28).
+- **Domain:** AUTH — PAT revoke endpoint state machine (DELETE
+  `/v1/pats/{pat_id}`) + verify-path interaction across multi-region cache.
+- **Why TLA+:** verify-path `revoked_at` check bypasses regional cache to
+  consult D1 directly. State machine over (handler atomic UPDATE +
+  audit emit) × (multi-region propagation lag) × (adversarial verify
+  probes) — invariant claim: NO admit_200 on a SoT-revoked PAT regardless
+  of cache staleness.
+- **Cost:** ~1 day. Sibling pattern to `auth_pat_hybrid.tla` + reuse of
+  `auth_revocation.tla` propagation abstraction.
+- **Owner:** Auth working group (Wave-24 R-PREP closure).
+
 ## FT-9 — re-signup idempotency in `signup_atomic.tla` — **CLOSED 2026-05-16** (DEBT-014)
 
 - Delivered: `specs/tla/signup_resignup.tla` + PR cfg + nightly cfg.
@@ -245,6 +287,7 @@ infrastructure follow-up.
 | FT-7 | CRITICAL | `byok_dek_race.tla` | S-14 | **CLOSED** 2026-05-16 (DEBT-014) |
 | FT-8 | medium | runbook CI exposure | R-PREP | **CLOSED** 2026-05-16 (DEBT-014) |
 | FT-9 | HIGH | `signup_resignup.tla` (companion to runbook) | S-19 | **CLOSED** 2026-05-16 (DEBT-014) |
+| FT-10 | CRITICAL | `auth_pat_revoke.tla` | Auth WG | **CLOSED** 2026-05-16 (Wave-24 R-PREP) |
 
 Total followup count: **9** (1 CRITICAL net-new + 1 CRITICAL upgrade + 5 HIGH
 + 2 infra/medium). Tracks the gaps from §4 of the parent audit
