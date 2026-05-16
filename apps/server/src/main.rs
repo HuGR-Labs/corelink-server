@@ -136,7 +136,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         #[cfg(feature = "neon-real")]
         {
             use corelink_audit_chain::neon_shadow::real_tokio_pg::TokioPostgresExecutor;
-            use corelink_audit_chain::{InMemoryShadowSyncAuditSink, NeonExecutor, RealNeonShadowSink, ShadowSyncAuditSink};
+            use corelink_audit_chain::{
+                InMemoryShadowSyncAuditSink, InMemoryTenantRegionResolver, NeonExecutor,
+                RealNeonShadowSink, ShadowSyncAuditSink, TenantRegionError, TenantRegionResolver,
+            };
             use corelink_audit_chain::NeonShadowSink;
             use std::collections::BTreeMap;
             use uuid::Uuid;
@@ -183,26 +186,75 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     "wave-20 neon shadow: --feature neon-real witness OK — TokioPgShadowSinkFactory wired"
                 );
 
+                // Wave-21 closure: build the per-tenant region
+                // resolver that replaces the wave-20 hard-coded
+                // `Region::Iad` default. Native binaries cannot reach
+                // the `worker::D1Database` binding directly (the same
+                // constraint pinned `InMemoryBillingD1` in the
+                // wave-18 Stripe-materializer wire). So the native
+                // gRPC boot path falls back to an
+                // `InMemoryTenantRegionResolver` with an explicit
+                // fallback to IAD; the CF Worker production boot path
+                // (`corelink-clerk-cf::prod_wiring`) is what swaps in
+                // a `D1TenantRegionResolver` against the
+                // `tenant_config` D1 table.
+                //
+                // The dev pin `[("tenant-id-zero", Region::Iad)]`
+                // matches the in-process integration tests' seed
+                // (which use a known `Uuid::nil()`-derived tenant id
+                // when exercising the analytics routes against the
+                // real factory).
+                let tenant_region_resolver: Arc<dyn TenantRegionResolver> = {
+                    warn!(
+                        "wave-21 neon shadow: native boot path — installing \
+                         InMemoryTenantRegionResolver with Region::Iad fallback \
+                         (D1TenantRegionResolver is the CF Worker production wire)"
+                    );
+                    Arc::new(
+                        InMemoryTenantRegionResolver::new()
+                            .with(Uuid::nil(), corelink_analytics::Region::Iad)
+                            .with_fallback(corelink_analytics::Region::Iad),
+                    )
+                };
+
                 /// Production factory: resolves `(tenant_id) -> Arc<dyn NeonShadowSink>`
-                /// by picking the tenant's pinned region (default IAD until the
-                /// tenant-config store is wired) and feeding the per-region
-                /// executor through `RealNeonShadowSink`. Each `for_tenant`
-                /// allocates a fresh `RealNeonShadowSink` so the tenant pin
-                /// stays per-request.
+                /// by routing through the wave-21
+                /// `TenantRegionResolver` (replacing the wave-20
+                /// hard-coded `Region::Iad` default) and feeding the
+                /// per-region executor through `RealNeonShadowSink`.
+                /// Each `for_tenant` allocates a fresh
+                /// `RealNeonShadowSink` so the tenant pin stays
+                /// per-request.
                 #[derive(Debug)]
                 struct TokioPgShadowSinkFactory {
                     executors: BTreeMap<&'static str, Arc<dyn NeonExecutor>>,
                     audit_sink: Arc<dyn ShadowSyncAuditSink>,
+                    region_resolver: Arc<dyn TenantRegionResolver>,
                 }
                 impl ShadowSinkFactory for TokioPgShadowSinkFactory {
                     fn for_tenant(
                         &self,
                         tenant_id: Uuid,
                     ) -> Result<Arc<dyn NeonShadowSink>, &'static str> {
-                        // TODO(wave-21): pull the pinned region from the
-                        // tenant-config store. Default to IAD so a tenant
-                        // without an explicit pin still resolves a sink.
-                        let region = corelink_analytics::Region::Iad;
+                        // Wave-21: route through the
+                        // `TenantRegionResolver`. The two error
+                        // variants surface as stable `&'static str`s
+                        // that the `audit_analytics` route layer
+                        // maps to 503 SERVICE_UNAVAILABLE.
+                        let region = match self.region_resolver.resolve_region(&tenant_id) {
+                            Ok(r) => r,
+                            Err(TenantRegionError::Unresolved { .. }) => {
+                                return Err("tenant_region: unresolved");
+                            }
+                            Err(TenantRegionError::BackendUnavailable { .. }) => {
+                                return Err("tenant_region: backend_unavailable");
+                            }
+                            // `TenantRegionError` is `#[non_exhaustive]`;
+                            // a future variant defaults to the same
+                            // 503-equivalent terminal state until the
+                            // route layer is taught the new branch.
+                            Err(_) => return Err("tenant_region: unknown"),
+                        };
                         let exec = self
                             .executors
                             .get(region.as_str())
@@ -219,6 +271,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 Arc::new(TokioPgShadowSinkFactory {
                     executors,
                     audit_sink: Arc::new(InMemoryShadowSyncAuditSink::new()),
+                    region_resolver: tenant_region_resolver,
                 }) as Arc<dyn ShadowSinkFactory>
             }
         }

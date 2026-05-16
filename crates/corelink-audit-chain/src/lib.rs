@@ -178,6 +178,10 @@ pub use neon_shadow::real::{
     SQL_INSERT_SHADOW_ROW, SQL_QUERY_EVENT_COUNT, SQL_QUERY_EVENT_COUNT_FILTERED,
     SQL_QUERY_TIMELINE, SQL_RECONCILE_COUNT, SQL_SET_RLS_TENANT_GUC,
 };
+pub use neon_shadow::tenant_region::{
+    parse_region_label, D1TenantRegionResolver, InMemoryTenantRegionResolver,
+    TenantConfigStore, TenantRegionError, TenantRegionResolver,
+};
 pub use exporter::{
     hashes_eq_ct, verify_export_result, verify_inclusion_proof, AuditExporter, ExportAuditRecord,
     ExportManifest, ExportResult, ExportWindow, ExportedAuditEvent, InMemoryAuditExporter,

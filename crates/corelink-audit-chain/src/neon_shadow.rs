@@ -107,6 +107,18 @@ pub mod real;
 /// §7 (wave-20 closure-note appended).
 pub mod real_tokio_pg;
 
+/// Wave-21 closure: per-tenant pinned-region resolver replacing the
+/// hard-coded `Region::Iad` default in `apps/server/src/main.rs`
+/// (`TokioPgShadowSinkFactory::for_tenant`). Ships the trait surface
+/// + an in-memory map impl (dev / staging / tests) + a D1-backed
+/// production impl that delegates to a [`tenant_region::TenantConfigStore`]
+/// wrapping the new `tenant_config` D1 table (migration
+/// `0052_tenant_config_region.sql`).
+///
+/// Pattern reference: `specs/_audits/2026-05-16-neon-shadow-real-driver.md`
+/// §7 (wave-21 closure-note appended).
+pub mod tenant_region;
+
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
