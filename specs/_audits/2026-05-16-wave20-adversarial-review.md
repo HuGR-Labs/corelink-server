@@ -196,3 +196,30 @@ TIME: ~38min
 
 Signed-off-by: Gustavo Schneiter <gustavo@humangr.com>
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+
+---
+
+## 7. Closure (wave-22 follow-up absorption)
+
+All three P2 follow-ups have been absorbed in wave-22 on branch
+`wt/r-prep-w21-followups-p2` (base `bccdd97`):
+
+- **W21-FOLLOWUP-01 — CLOSED.** `migrations/neon/0002_audit_events_shadow_with_check.sql`
+  now emits `RAISE NOTICE 'tenant_isolation_<table> policy already exists'`
+  in both `EXCEPTION WHEN undefined_object` arms instead of swallowing
+  with `NULL`. Idempotency preserved; operator-visible logging restored.
+- **W21-FOLLOWUP-02 — CLOSED.** `crates/corelink-audit-chain/src/neon_shadow/real_tokio_pg.rs::TokioPostgresExecutor::connect`
+  and `::from_pool` now `debug_assert!` that
+  `Handle::current().runtime_flavor() == RuntimeFlavor::MultiThread`,
+  failing-fast in test/debug builds and no-op in release. (The audit
+  prose suggested `metrics().num_workers() > 1`, but `Handle::metrics`
+  is `tokio_unstable`-gated; `runtime_flavor()` is the stable equivalent
+  and matches the audit's actual recommendation in §3.1 W20-P2-02.)
+- **W21-FOLLOWUP-03 — CLOSED.** `crates/corelink-audit-chain/tests/harness/pg_container.rs::Drop`
+  now wraps the testcontainers async-drop in a `tokio::time::timeout`
+  bound at 30s; on elapsed timeout it logs to stderr (Drop must never
+  panic). The runtime guard via `runtime.block_on` preserves the
+  `Handle::current()` requirement.
+
+Status roll-up: **3 P2 CLOSED.** No P0/P1 remained; the remaining P3
+entries are cosmetic/no-op and tracked in the issue backlog.
