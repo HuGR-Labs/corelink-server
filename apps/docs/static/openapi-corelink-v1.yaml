@@ -114,6 +114,73 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /v1/signup/pilot/{token}:
+    post:
+      tags: [signup]
+      summary: Redeem a pilot signup token (wave-29 stream-1).
+      operationId: pilotSignup
+      description: |
+        Token-gated pilot slot reservation (closes DEBT-027 engineering-side).
+        The `token` path segment is `pilot_<env>_<unix_ms>_<16-hex>.<hmac-hex>`
+        where `<hmac-hex>` = `HMAC-SHA256(SIGNUP_TOKEN_KEY, body)`. The route
+        verifies in constant time via `subtle::ConstantTimeEq`. TTL = 14 days.
+
+        Rate-limited at 5 requests / IP / hour (`X-Forwarded-For` anchored).
+        Audit emit fail-CLOSED per `INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER`.
+
+        Operator mints tokens via `scripts/admin/mint-pilot-token.sh`.
+
+        Reference: `apps/server/src/routes/signup.rs` +
+        `specs/_audits/2026-05-16-signup-corelink-dev-backend.md`.
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema: { type: string }
+          description: HMAC-signed pilot signup token (see description above).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, company_name, tier_hint, expected_use_case]
+              properties:
+                email:
+                  type: string
+                  maxLength: 256
+                  description: Pilot contact email.
+                company_name:
+                  type: string
+                  maxLength: 256
+                tier_hint:
+                  type: string
+                  maxLength: 256
+                  description: Preferred tier (free/pro/enterprise — non-binding).
+                expected_use_case:
+                  type: string
+                  maxLength: 256
+      responses:
+        "201":
+          description: Pilot slot reserved.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tenant_id, activation_url, state]
+                properties:
+                  tenant_id: { type: string, format: uuid }
+                  activation_url: { type: string, format: uri }
+                  state:
+                    type: string
+                    enum: [RESERVED]
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401":
+          description: Token forged / expired / malformed.
+        "429":
+          description: Rate-limit hit (5/IP/hour); see Retry-After header.
+        "503":
+          description: Audit pipeline closed (fail-CLOSED) or signup store unavailable.
   /v1/dpa/accept:
     post:
       tags: [dpa]
