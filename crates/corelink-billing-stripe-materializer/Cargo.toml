@@ -24,6 +24,23 @@ print_stdout = "deny"
 print_stderr = "deny"
 mod_module_files = "deny"
 
+[features]
+# Default: native build wires `InMemoryBillingD1` + `InMemoryBillingAuditEmitter`
+# (apps/server `main.rs` consumes these directly).
+default = []
+
+# Wave-18 follow-on: opt into the wasm32 production binders that route
+# `BillingD1Writer` → `corelink-cf-bindings::CfD1DatabaseReal` and
+# `BillingAuditEmitter` → `corelink-audit-chain::ArchiveProducer`.
+#
+# Compiles the optional dependencies on every target (so the `Arc<dyn>`
+# wiring at `apps/server::main.rs` can construct the wasm32 wrappers
+# behind a `#[cfg(target_arch = "wasm32")]` gate without conditional
+# Cargo dependency arms). On native targets the wrapper module is gated
+# out entirely; the validation contract is exercised via the native stub
+# (`CfD1DatabaseReal::stub_for_native_tests`) in the integration test.
+cf-billing-real = ["dep:corelink-cf-bindings", "dep:corelink-audit-chain"]
+
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -33,5 +50,13 @@ blake3 = { workspace = true }
 corelink-stripe-real = { path = "../corelink-stripe-real" }
 corelink-tier-selection = { path = "../corelink-tier-selection" }
 
+# Wave-18: optional wasm32 binder deps. Off by default so native dev/CI
+# keeps `cargo build -p corelink-billing-stripe-materializer` slim.
+corelink-cf-bindings = { workspace = true, optional = true }
+corelink-audit-chain = { workspace = true, optional = true }
+
 [dev-dependencies]
 proptest = { workspace = true }
+corelink-cf-bindings = { workspace = true }
+corelink-audit-chain = { workspace = true }
+uuid = { workspace = true, features = ["v7"] }

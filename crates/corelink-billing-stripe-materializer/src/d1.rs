@@ -48,6 +48,11 @@ impl std::error::Error for BillingD1Error {}
 /// Snapshot of a materialized D1 row. The materializer test suite
 /// inspects this; the production binder discards it (the row lives in
 /// D1 only).
+///
+/// The struct is `#[non_exhaustive]` so future column additions can
+/// extend the canonical shape without breaking out-of-crate consumers.
+/// Use [`MaterializedRow::new`] for constructing instances outside the
+/// canonical materializer (e.g. wasm32 binder integration tests).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct MaterializedRow {
@@ -67,6 +72,30 @@ pub struct MaterializedRow {
     pub payload: serde_json::Value,
     /// Unix-ms when this row was materialized (writer-side clock).
     pub materialized_at_ms: u64,
+}
+
+impl MaterializedRow {
+    /// Construct a row from its canonical column set. The constructor
+    /// is the out-of-crate seam for [`MaterializedRow`] (the struct is
+    /// `#[non_exhaustive]`, so consumers can't use brace-init).
+    #[must_use]
+    pub fn new(
+        table: impl Into<String>,
+        tenant_id: impl Into<String>,
+        stripe_id: impl Into<String>,
+        stripe_event_id: impl Into<String>,
+        payload: serde_json::Value,
+        materialized_at_ms: u64,
+    ) -> Self {
+        Self {
+            table: table.into(),
+            tenant_id: tenant_id.into(),
+            stripe_id: stripe_id.into(),
+            stripe_event_id: stripe_event_id.into(),
+            payload,
+            materialized_at_ms,
+        }
+    }
 }
 
 /// Canonical billing-D1 writer trait.

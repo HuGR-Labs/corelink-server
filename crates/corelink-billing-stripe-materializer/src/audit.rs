@@ -76,6 +76,37 @@ pub struct BillingAuditRecord {
     pub payload: serde_json::Value,
 }
 
+impl BillingAuditRecord {
+    /// Construct a record from its canonical column set. The
+    /// constructor is the out-of-crate seam (the struct is
+    /// `#[non_exhaustive]`, so consumers can't use brace-init).
+    /// Eight parameters reflect the canonical audit-record shape — every
+    /// field is load-bearing at the audit data model.
+    #[allow(clippy::too_many_arguments)]
+    #[must_use]
+    pub fn new(
+        event_name: &'static str,
+        stripe_event_id: impl Into<String>,
+        stripe_event_type: impl Into<String>,
+        tenant_id: impl Into<String>,
+        stripe_object_id: Option<String>,
+        severity: AuditSeverity,
+        ts_ms: u64,
+        payload: serde_json::Value,
+    ) -> Self {
+        Self {
+            event_name,
+            stripe_event_id: stripe_event_id.into(),
+            stripe_event_type: stripe_event_type.into(),
+            tenant_id: tenant_id.into(),
+            stripe_object_id,
+            severity,
+            ts_ms,
+            payload,
+        }
+    }
+}
+
 /// Severity bucket emitted alongside each audit row.
 ///
 /// Maps to the operator-facing pager: `Sev1` pages Finance, others

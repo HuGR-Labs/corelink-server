@@ -80,20 +80,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             .unwrap_or(50052u16);
         let http_addr: SocketAddr = format!("0.0.0.0:{}", http_port).parse()?;
 
-        // Wave 17: the HTTP shell now binds the production
+        // Wave 17 + 18: the HTTP shell binds the production
         // materializer + audit emitter + D1-backed idempotency store
-        // from `corelink-billing-stripe-materializer`. On native
-        // dev/CI runs the `InMemoryBillingD1` + `InMemoryBillingAuditEmitter`
-        // are used (no D1 endpoint reachable from outside CF Worker
-        // anyway); on wasm32 the production binder swaps these to the
-        // `corelink-cf-bindings::CfD1DatabaseReal` D1 adapter + the
-        // `corelink-audit-chain` `ArchiveProducer` sink behind the
-        // same `BillingD1Writer` / `BillingAuditEmitter` traits.
+        // from `corelink-billing-stripe-materializer`. The native
+        // gRPC server (this binary) ALWAYS uses
+        // `InMemoryBillingD1` + `InMemoryBillingAuditEmitter` —
+        // D1 is a CF Worker binding (`worker::D1Database`) not
+        // reachable from outside the Worker isolate, so even with
+        // `--features cf-billing-real` the native binary stays on
+        // the in-memory mirrors. The `cf-billing-real` feature is
+        // a **build-time witness** that the wasm32 binder module
+        // (`corelink_billing_stripe_materializer::wasm32_binders`)
+        // is compiled in; the actual production cutover happens at
+        // the CF Worker boot layer in `corelink-clerk-cf::prod_wiring`
+        // which constructs `CfD1BillingWriter` +
+        // `ArchiveProducerBillingEmitter` behind the same
+        // `BillingD1Writer` / `BillingAuditEmitter` trait objects.
         //
         // The single canonical seam (`WebhookDispatcher::new`) is
         // preserved end-to-end — axum, CF Worker, and the replay
         // cron all hit this exact constructor with target-specific
         // collaborators.
+        #[cfg(feature = "cf-billing-real")]
+        {
+            // Build-time witness: compile-check the wasm32 binder
+            // re-exports are reachable. The actual `CfD1BillingWriter`
+            // construction requires a `CfD1DatabaseReal` which is only
+            // built at the CF Worker boot path; on native we keep the
+            // InMemory* wiring and rely on the per-crate integration
+            // test (`tests/wasm32_binders.rs`) to pin the binder
+            // contract via the `stub_for_native_tests` path.
+            #[allow(unused_imports)]
+            use corelink_billing_stripe_materializer::{
+                ArchiveProducerBillingEmitter as _, CfD1BillingWriter as _,
+            };
+        }
         let billing_d1: Arc<dyn BillingD1Writer> = Arc::new(InMemoryBillingD1::new());
         let billing_audit = Arc::new(InMemoryBillingAuditEmitter::new());
         // Canonical Stripe-plan-id → tier mapping. Production
