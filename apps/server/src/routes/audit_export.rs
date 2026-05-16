@@ -141,6 +141,21 @@ pub const HEADER_EXPORT_ABORTED: &str =
 /// Audit emit record captured by the route. Carries the canonical
 /// CloudEvents `type` + the load-bearing tenant + window + byte
 /// count + exit status fields per WI-S09-008 §4 (DELIVERABLES).
+///
+/// **Wave-19 schema lift (2026-05-15) — closes wave-18 caveat #4:**
+/// the mid-stream chain-break SEV-0 used to encode the canonical
+/// `{break_at_seq, break_at_chunk, observed, expected}` JSON object
+/// inside `exit_status` with a `verify_failed_mid_stream:` prefix
+/// because the row shape lacked a structured payload column. Wave-19
+/// lifts the payload into a first-class `payload: Option<serde_json::Value>`
+/// field. The mid-stream emit now carries `exit_status =
+/// "verify_failed_mid_stream"` (stable enum, no colon-prefixed JSON)
+/// and the structured `{break_at_seq, break_at_chunk, observed,
+/// expected}` map rides in `payload`. The migration is
+/// **backwards-compatible** — rows persisted by wave-18 (no `payload`
+/// field) still parse via `#[serde(default)]`; the wave-18 colon-
+/// prefix encoding is no longer emitted but the wave-19 mid-stream
+/// integration test verifies the new structured shape end-to-end.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExportAuditRow {
     /// Canonical CloudEvents `type` (one of `EVENT_TYPE_*` constants).
@@ -162,9 +177,27 @@ pub struct ExportAuditRow {
     /// on the happy path; `0` on reject / empty range).
     pub events_written: u64,
     /// Canonical exit status: `"ok"` / `"empty"` / `"cross_tenant_reject"` /
-    /// `"verify_failed"` / `"unauthorized"` / `"rate_limited"` /
-    /// `"bad_request"` / `"audit_failed"`.
+    /// `"verify_failed"` / `"verify_failed_mid_stream"` / `"unauthorized"`
+    /// / `"rate_limited"` / `"bad_request"` / `"audit_failed"`.
+    ///
+    /// Wave-19: `"verify_failed_mid_stream"` is the canonical enum
+    /// value for the mid-stream chain-break arm; the structured
+    /// payload rides in the `payload` column rather than being
+    /// colon-prefix-encoded into this string.
     pub exit_status: String,
+    /// Structured CloudEvents `data` payload — wave-19 lift. Carries
+    /// arm-specific JSON when the audit emit needs more shape than
+    /// the load-bearing fields above. Today populated on the
+    /// `verify_failed_mid_stream` arm with the canonical
+    /// `{"break_at_seq":<u64>,"break_at_chunk":<u64>,"observed":"<hex>","expected":"<hex>"}`
+    /// map; every other arm leaves it `None`.
+    ///
+    /// `#[serde(default)]` keeps wave-18 row JSON (no `payload` key)
+    /// parseable without migration; `skip_serializing_if = "Option::is_none"`
+    /// keeps the on-wire/on-disk shape unchanged for every arm that
+    /// doesn't populate the column.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub payload: Option<serde_json::Value>,
 }
 
 /// Audit sink trait — the route's audit-emit boundary. Production
@@ -429,6 +462,7 @@ async fn handle_export(
                 bytes_written: 0,
                 events_written: 0,
                 exit_status: "cross_tenant_reject".to_string(),
+                payload: None,
             });
             return (StatusCode::FORBIDDEN, "cross-tenant audit-export denied")
                 .into_response();
@@ -467,6 +501,7 @@ async fn handle_export(
                     bytes_written: 0,
                     events_written: 0,
                     exit_status: "rate_limited".to_string(),
+                    payload: None,
                 });
                 let body = format!("rate-limited; retry after {retry_after_secs}s");
                 let mut resp = (StatusCode::TOO_MANY_REQUESTS, body).into_response();
@@ -586,6 +621,7 @@ async fn handle_export(
         bytes_written: body_bytes_len,
         events_written: ndjson_line_count,
         exit_status: exit_status.to_string(),
+        payload: None,
     };
     if state.audit_sink.emit(request_row).is_err() {
         return (
@@ -609,6 +645,7 @@ async fn handle_export(
             bytes_written: body_bytes_len,
             events_written: ndjson_line_count,
             exit_status: "verify_failed".to_string(),
+            payload: None,
         });
     }
 
@@ -771,15 +808,56 @@ fn build_audit_export_stream_frames(
     frames
 }
 
-/// Emit the SEV-0 mid-stream chain-break audit row. The audit
-/// payload is the canonical
-/// `{break_at_seq, break_at_chunk, observed, expected}` JSON
-/// fragment encoded into `exit_status` (the `ExportAuditRow` shape
-/// lacks a dedicated payload field — we piggy-back on `exit_status`
-/// so the structured payload survives capture by every
-/// `ExportAuditSink` implementor; production durable sinks lift the
-/// row into the standard CloudEvents envelope where the payload
-/// lands in `data`).
+/// Canonical stable enum value for the mid-stream chain-break arm of
+/// `exit_status`. Wave-19 schema lift — the structured
+/// `{break_at_seq, break_at_chunk, observed, expected}` map is no
+/// longer colon-prefix-encoded into `exit_status`; it now rides in
+/// the first-class `ExportAuditRow::payload` column. This constant
+/// pins the stable enum string so SIEM rules + the durable-sink
+/// production lift key off a known token.
+pub const EXIT_STATUS_VERIFY_FAILED_MID_STREAM: &str = "verify_failed_mid_stream";
+
+/// Build the canonical mid-stream chain-break payload as a structured
+/// `serde_json::Value`. Wave-19 — public so the wave-19 integration
+/// test can assert byte-identity between the audit-row payload and
+/// the HTTP trailer JSON without re-implementing the formatter.
+///
+/// The shape is the canonical
+/// `{"break_at_seq":<u64>,"break_at_chunk":<u64>,"observed":"<hex>","expected":"<hex>"}`
+/// object. Serializing this `Value` produces byte-identical JSON to
+/// [`mid_stream_abort_trailer_value`] (the field-order, integer
+/// rendering, and string escaping all match because
+/// `serde_json::Value::Object` is a `BTreeMap` rendered in insertion
+/// order via `serde_json::Map`; we insert in the canonical order).
+#[must_use]
+pub fn mid_stream_break_payload(
+    break_at_seq: u64,
+    break_at_chunk: u64,
+    observed_hex: &str,
+    expected_hex: &str,
+) -> serde_json::Value {
+    let mut map = serde_json::Map::with_capacity(4);
+    map.insert("break_at_seq".to_string(), serde_json::Value::from(break_at_seq));
+    map.insert("break_at_chunk".to_string(), serde_json::Value::from(break_at_chunk));
+    map.insert(
+        "observed".to_string(),
+        serde_json::Value::String(observed_hex.to_string()),
+    );
+    map.insert(
+        "expected".to_string(),
+        serde_json::Value::String(expected_hex.to_string()),
+    );
+    serde_json::Value::Object(map)
+}
+
+/// Emit the SEV-0 mid-stream chain-break audit row. Wave-19 lift —
+/// the canonical `{break_at_seq, break_at_chunk, observed, expected}`
+/// JSON object now rides in the first-class
+/// [`ExportAuditRow::payload`] column rather than being colon-prefix-
+/// encoded into `exit_status`. `exit_status` carries the stable enum
+/// `EXIT_STATUS_VERIFY_FAILED_MID_STREAM`; durable production sinks
+/// lift the row into the CloudEvents envelope where `payload` lands
+/// in `data` (matches the standard audit-chain envelope shape).
 #[allow(clippy::too_many_arguments, reason = "audit row shape")]
 fn emit_mid_stream_break_audit(
     sink: &Arc<dyn ExportAuditSink>,
@@ -793,8 +871,11 @@ fn emit_mid_stream_break_audit(
     bytes_written: u64,
     events_written: u64,
 ) {
-    let payload = format!(
-        "{{\"break_at_seq\":{break_at_seq},\"break_at_chunk\":{break_at_chunk},\"observed\":\"{observed_hex}\",\"expected\":\"{expected_hex}\"}}"
+    let payload = mid_stream_break_payload(
+        break_at_seq,
+        break_at_chunk,
+        observed_hex,
+        expected_hex,
     );
     let _ = sink.emit(ExportAuditRow {
         event_type: EVENT_TYPE_VERIFY_FAILED.to_string(),
@@ -804,7 +885,8 @@ fn emit_mid_stream_break_audit(
         to_ms,
         bytes_written,
         events_written,
-        exit_status: format!("verify_failed_mid_stream:{payload}"),
+        exit_status: EXIT_STATUS_VERIFY_FAILED_MID_STREAM.to_string(),
+        payload: Some(payload),
     });
 }
 
@@ -1048,6 +1130,7 @@ mod tests {
             bytes_written: 0,
             events_written: 0,
             exit_status: "empty".to_string(),
+            payload: None,
         };
         s.emit(row.clone()).expect("emit");
         let snap = s.snapshot().expect("snap");
@@ -1068,6 +1151,7 @@ mod tests {
             bytes_written: 0,
             events_written: 0,
             exit_status: "audit_failed".to_string(),
+            payload: None,
         };
         let err = s.emit(row).expect_err("inject");
         assert_eq!(err, "pipeline down");
@@ -1098,5 +1182,91 @@ mod tests {
     #[test]
     fn export_aborted_header_constant_matches_canonical_name() {
         assert_eq!(HEADER_EXPORT_ABORTED, "x-corelink-audit-export-aborted");
+    }
+
+    /// Wave-19 — closes wave-18 caveat #4: `emit_mid_stream_break_audit`
+    /// now populates the first-class `ExportAuditRow::payload` column
+    /// with the canonical
+    /// `{break_at_seq, break_at_chunk, observed, expected}` JSON
+    /// object. `exit_status` carries the stable enum
+    /// `EXIT_STATUS_VERIFY_FAILED_MID_STREAM` (no colon-prefix-encoded
+    /// payload). Asserts the column shape end-to-end via the in-memory
+    /// sink capture.
+    #[test]
+    fn payload_column_populated_on_mid_stream_break() {
+        let sink_concrete = Arc::new(InMemoryExportAuditSink::new());
+        let sink: Arc<dyn ExportAuditSink> = sink_concrete.clone();
+        let tenant = Uuid::from_u128(7);
+        let observed = "aa".repeat(32);
+        let expected = "bb".repeat(32);
+        emit_mid_stream_break_audit(
+            &sink,
+            tenant,
+            42,
+            1,
+            &observed,
+            &expected,
+            0,
+            1_000,
+            123,
+            5,
+        );
+        let snap = sink_concrete.snapshot().expect("snap");
+        assert_eq!(snap.len(), 1, "exactly one mid-stream emit captured");
+        let row = &snap[0];
+        // Stable-enum exit_status (no colon-prefixed JSON).
+        assert_eq!(row.exit_status, EXIT_STATUS_VERIFY_FAILED_MID_STREAM);
+        assert!(
+            !row.exit_status.contains(':'),
+            "wave-19 lifts the JSON payload out of exit_status; got {}",
+            row.exit_status
+        );
+        // Structured payload populated with the canonical 4 keys.
+        let payload = row
+            .payload
+            .as_ref()
+            .expect("wave-19 payload column populated on mid-stream break");
+        assert_eq!(payload.get("break_at_seq").and_then(|v| v.as_u64()), Some(42));
+        assert_eq!(payload.get("break_at_chunk").and_then(|v| v.as_u64()), Some(1));
+        assert_eq!(
+            payload.get("observed").and_then(|v| v.as_str()),
+            Some(observed.as_str())
+        );
+        assert_eq!(
+            payload.get("expected").and_then(|v| v.as_str()),
+            Some(expected.as_str())
+        );
+        // Tenant + window + counters still ride on their columns.
+        assert_eq!(row.event_type, EVENT_TYPE_VERIFY_FAILED);
+        assert_eq!(row.authenticated_tenant, Some(tenant));
+        assert_eq!(row.from_ms, 0);
+        assert_eq!(row.to_ms, 1_000);
+        assert_eq!(row.bytes_written, 123);
+        assert_eq!(row.events_written, 5);
+    }
+
+    /// Wave-19 — wave-18 row JSON (serialized BEFORE the schema lift,
+    /// no `payload` field) MUST still parse. Pins the
+    /// `#[serde(default)]` migration on `ExportAuditRow::payload`.
+    #[test]
+    fn wave18_row_without_payload_field_still_parses() {
+        // The exact on-wire shape wave-18 produced (no `payload` key).
+        let wave18_row = r#"{
+            "event_type":"corelink.audit.export_request.v1",
+            "authenticated_tenant":"00000000-0000-0000-0000-000000000001",
+            "attempted_tenant":null,
+            "from_ms":0,
+            "to_ms":1000,
+            "bytes_written":42,
+            "events_written":1,
+            "exit_status":"ok"
+        }"#;
+        let parsed: ExportAuditRow =
+            serde_json::from_str(wave18_row).expect("wave-18 row parses post-lift");
+        assert_eq!(parsed.exit_status, "ok");
+        assert!(
+            parsed.payload.is_none(),
+            "missing payload field deserializes to None via #[serde(default)]"
+        );
     }
 }

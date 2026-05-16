@@ -302,3 +302,77 @@ Quality gates closed (Wave 17):
 | `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/audit-chain-daily-verify.yml'))"` | green |
 | `python3 scripts/verify-action-sha-pinning.py` (528 uses pinned) | green |
 | `python3 scripts/validate_specs.py` | green |
+
+**Wave-19 schema lift — closes wave-18 caveat #4 (2026-05-15)** —
+the wave-18 mid-stream chain-break SEV-0 audit emit colon-prefix-
+encoded the canonical `{break_at_seq, break_at_chunk, observed,
+expected}` payload into `ExportAuditRow::exit_status` because the
+row shape lacked a structured payload column. Wave-19 lifts the
+payload into a first-class `payload: Option<serde_json::Value>` field:
+
+- **Schema:** `ExportAuditRow` in
+  `apps/server/src/routes/audit_export.rs` gains
+  `#[serde(default, skip_serializing_if = "Option::is_none")] pub
+  payload: Option<serde_json::Value>`. The `#[serde(default)]`
+  migration keeps wave-18 row JSON (no `payload` field) parseable
+  without a forklift; `skip_serializing_if = "Option::is_none"`
+  keeps the on-wire/on-disk shape unchanged for every arm that
+  doesn't populate the column. Stable enum
+  `EXIT_STATUS_VERIFY_FAILED_MID_STREAM = "verify_failed_mid_stream"`
+  replaces the colon-prefix encoding in `exit_status` on the
+  mid-stream arm.
+- **D1 migrations:** `migrations/d1/0049_export_audit_log.sql`
+  ships the canonical baseline shape (`payload TEXT` column on a
+  fresh database). `migrations/d1/0050_export_audit_log_add_payload.sql`
+  is the additive `ALTER TABLE ADD COLUMN payload TEXT` for
+  pre-wave-19 databases. Both pass
+  `scripts/check_migrations_additive.py` (INV-AUTH-MIGRATION-ADDITIVE).
+- **NDJSON wire shape:** unchanged. `payload` is a top-level JSON
+  field that round-trips natively through `serde_json::to_string` →
+  D1 `TEXT` → `serde_json::from_str`. The customer-facing
+  `/v1/audit/export` row envelope is unaffected (the audit row is
+  the route's INTERNAL emit shape, not the customer NDJSON stream).
+- **CLI compat:** `corelink-cli verify-ndjson` ignores unknown
+  fields by default (no `#[serde(deny_unknown_fields)]` on
+  `RowEnvelope`/`ManifestEnvelope`). The new wave-19 CLI test
+  `unknown_row_envelope_fields_ignored_for_forwards_compat`
+  exercises both arms: rows WITHOUT extra fields parse cleanly
+  (baseline wave-17 wire shape) AND rows WITH an extra `payload`
+  field parse + verify cleanly (forwards-compat with any future
+  server-side schema lift).
+- **Audit-anchor-BEFORE-trailer invariant preserved.** The wave-18
+  ordering contract (SEV-0 audit emit lands BEFORE the
+  `Frame::trailers` frame on the wire) is byte-identical to wave-19
+  — the lift only changed WHICH field of `ExportAuditRow` carries
+  the structured payload, not the synchronous frame-plan
+  pre-materialization in `build_audit_export_stream_frames`.
+
+Wave-19 net-new tests:
+
+- `apps/server/src/routes/audit_export.rs::tests::payload_column_populated_on_mid_stream_break`
+  (unit) — asserts the mid-stream emit populates `payload` with the
+  canonical 4-key JSON map AND `exit_status =
+  EXIT_STATUS_VERIFY_FAILED_MID_STREAM` (no colon, no prefix).
+- `apps/server/src/routes/audit_export.rs::tests::wave18_row_without_payload_field_still_parses`
+  (unit) — pins the `#[serde(default)]` migration: wave-18 row JSON
+  without a `payload` field still deserializes cleanly.
+- `apps/server/tests/audit_export.rs::wave19_audit_row_payload_and_trailer_payload_byte_identical`
+  (integration) — asserts the structured payload captured in the
+  audit row and the JSON encoded in the HTTP trailer are
+  **byte-identical** via `subtle::ConstantTimeEq` (defence-in-depth
+  on the security-critical chain-break diagnostic).
+- `crates/corelink-cli/src/commands/verify_ndjson.rs::tests::unknown_row_envelope_fields_ignored_for_forwards_compat`
+  (CLI) — round-trips a row envelope with AND without an extra
+  `payload` field; both verify cleanly.
+
+Quality gates closed (Wave 19):
+
+| Gate | Status |
+|---|---|
+| `cargo build -p corelink-server -p corelink-cli` | green |
+| `cargo test -p corelink-server --test audit_export` (wave-18 10 + wave-19 +1 = 11) | green |
+| `cargo test -p corelink-cli` (verify_ndjson wave-18 7 + wave-19 +1 = 8) | green |
+| `cargo clippy -p corelink-server -p corelink-cli --tests -- -D warnings` | green |
+| `python3 scripts/check_migrations_additive.py` (additive lift) | green |
+| `python3 scripts/validate_specs.py` | green |
+| `python3 scripts/validate_references.py` | green |

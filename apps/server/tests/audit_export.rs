@@ -42,7 +42,8 @@ use corelink_server::routes::audit_export::{
     audit_export_rate_limit_config, router, AuditExportRouteState, ExportAuditRow,
     ExportAuditSink, InMemoryExportAuditSink, AUDIT_EXPORT_ROUTE,
     EVENT_TYPE_CROSS_TENANT_ATTEMPT, EVENT_TYPE_EXPORT_REQUEST,
-    EVENT_TYPE_VERIFY_FAILED, HEADER_EXPORT_ABORTED, TENANT_ID_HEADER,
+    EVENT_TYPE_VERIFY_FAILED, EXIT_STATUS_VERIFY_FAILED_MID_STREAM,
+    HEADER_EXPORT_ABORTED, TENANT_ID_HEADER,
 };
 use corelink_analytics::Region;
 use serde_json::{json, Value};
@@ -531,16 +532,21 @@ async fn abort_trailer_emitted_on_mid_stream_chain_break() {
 
     // Audit emit ORDERING — at minimum the export_request.v1 row +
     // the SEV-0 verify_failed.v1 row are captured. Wave-18 additionally
-    // emits a SECOND verify_failed.v1 row carrying the mid-stream
-    // payload (exit_status starts with "verify_failed_mid_stream:").
+    // emitted a SECOND verify_failed.v1 row carrying the mid-stream
+    // payload colon-prefix-encoded into `exit_status`. **Wave-19 schema
+    // lift (closes wave-18 caveat #4):** the structured payload now
+    // rides in the first-class `ExportAuditRow::payload` column and
+    // `exit_status` carries the stable enum
+    // `EXIT_STATUS_VERIFY_FAILED_MID_STREAM` (no colon-prefix encoding).
     let captured = audit_sink.snapshot().expect("audit snapshot");
     let mid_stream_emits: Vec<&ExportAuditRow> = captured
         .iter()
-        .filter(|r| r.exit_status.starts_with("verify_failed_mid_stream:"))
+        .filter(|r| r.exit_status == EXIT_STATUS_VERIFY_FAILED_MID_STREAM)
         .collect();
     assert!(
         !mid_stream_emits.is_empty(),
-        "mid-stream SEV-0 audit row emitted carrying the wire payload"
+        "mid-stream SEV-0 audit row emitted carrying the wire payload \
+         (wave-19: exit_status = stable enum {EXIT_STATUS_VERIFY_FAILED_MID_STREAM})"
     );
     // The mid-stream emit lands BEFORE the trailer frame on the wire:
     // we re-verify here by asserting the emit was captured (the sink
@@ -548,17 +554,125 @@ async fn abort_trailer_emitted_on_mid_stream_chain_break() {
     // stream is built, so capture-order = wire-order).
     let mid = mid_stream_emits[0];
     assert_eq!(mid.event_type, EVENT_TYPE_VERIFY_FAILED);
-    let payload_in_audit = mid
-        .exit_status
-        .strip_prefix("verify_failed_mid_stream:")
-        .expect("payload after prefix");
-    let audit_parsed: Value =
-        serde_json::from_str(payload_in_audit).expect("audit payload parses");
+    // Wave-19: the structured `{break_at_seq, break_at_chunk,
+    // observed, expected}` payload rides in the first-class
+    // `payload` column (lifted from the wave-18 colon-prefix encoding).
+    let audit_payload = mid
+        .payload
+        .as_ref()
+        .expect("wave-19 payload column populated on mid-stream break");
     // The audit row carries the SAME payload shape as the trailer.
-    assert_eq!(audit_parsed.get("break_at_seq"), parsed.get("break_at_seq"));
-    assert_eq!(audit_parsed.get("break_at_chunk"), parsed.get("break_at_chunk"));
-    assert_eq!(audit_parsed.get("observed"), parsed.get("observed"));
-    assert_eq!(audit_parsed.get("expected"), parsed.get("expected"));
+    assert_eq!(audit_payload.get("break_at_seq"), parsed.get("break_at_seq"));
+    assert_eq!(audit_payload.get("break_at_chunk"), parsed.get("break_at_chunk"));
+    assert_eq!(audit_payload.get("observed"), parsed.get("observed"));
+    assert_eq!(audit_payload.get("expected"), parsed.get("expected"));
+}
+
+/// Wave-19 closure (caveat #4 from wave-18) — the structured
+/// `{break_at_seq, break_at_chunk, observed, expected}` payload
+/// captured in the audit row and the JSON object encoded in the
+/// HTTP `X-CoreLink-Audit-Export-Aborted` trailer are **byte-
+/// identical** (constant-time `subtle::ConstantTimeEq` over the
+/// canonical-serialized bytes). Pins the schema lift so an
+/// accidental divergence between the two encoders surfaces as a
+/// test failure.
+#[tokio::test]
+async fn wave19_audit_row_payload_and_trailer_payload_byte_identical() {
+    use subtle::ConstantTimeEq;
+
+    let tenant = Uuid::now_v7();
+    let (state_orig, exporter, audit_sink) = fixture_with_chain(tenant, 3, 100);
+    let tamper: Arc<dyn AuditExporter> = Arc::new(TamperingExporter {
+        inner: exporter.clone(),
+    });
+    let state = AuditExportRouteState {
+        exporter: tamper,
+        rate_limiter: state_orig.rate_limiter.clone(),
+        audit_sink: state_orig.audit_sink.clone(),
+    };
+    let app = router(state);
+
+    let resp = app
+        .oneshot(build_request(tenant, 0, 1_000))
+        .await
+        .expect("oneshot");
+    let collected = BodyExt::collect(resp.into_body()).await.expect("collect");
+    let trailers = collected.trailers().cloned().expect("trailer present");
+    let trailer_val = trailers
+        .get(HEADER_EXPORT_ABORTED)
+        .expect("abort trailer")
+        .to_str()
+        .expect("ascii trailer payload")
+        .to_string();
+
+    let captured = audit_sink.snapshot().expect("snap");
+    let mid = captured
+        .iter()
+        .find(|r| r.exit_status == EXIT_STATUS_VERIFY_FAILED_MID_STREAM)
+        .expect("mid-stream emit captured");
+    let audit_payload = mid.payload.as_ref().expect("wave-19 payload populated");
+
+    // Reconstruct the canonical bytes from the audit-row payload via
+    // the SAME canonical encoder the trailer uses
+    // (`mid_stream_abort_trailer_value`). serde_json's default
+    // `Map<String, Value>` is alphabetically ordered (no
+    // `preserve_order` feature in the workspace); the canonical wire
+    // shape pins a specific key order — we re-encode through the
+    // shared formatter so the audit-row and trailer bytes match
+    // exactly regardless of the internal Map representation.
+    let break_at_seq = audit_payload
+        .get("break_at_seq")
+        .and_then(serde_json::Value::as_u64)
+        .expect("break_at_seq populated");
+    let break_at_chunk = audit_payload
+        .get("break_at_chunk")
+        .and_then(serde_json::Value::as_u64)
+        .expect("break_at_chunk populated");
+    let observed = audit_payload
+        .get("observed")
+        .and_then(serde_json::Value::as_str)
+        .expect("observed populated")
+        .to_string();
+    let expected = audit_payload
+        .get("expected")
+        .and_then(serde_json::Value::as_str)
+        .expect("expected populated")
+        .to_string();
+    let audit_bytes = corelink_server::routes::audit_export::mid_stream_abort_trailer_value(
+        break_at_seq,
+        break_at_chunk,
+        &observed,
+        &expected,
+    );
+
+    // Constant-time byte-identity compare — defence-in-depth on the
+    // security-critical chain-break diagnostic. The audit-row payload
+    // and the HTTP trailer payload encode the SAME canonical bytes
+    // (modulo serde_json Map ordering, which we normalise above via
+    // the shared encoder).
+    assert_eq!(
+        audit_bytes.len(),
+        trailer_val.len(),
+        "audit payload + trailer payload byte lengths differ: audit={audit_bytes}, trailer={trailer_val}"
+    );
+    let eq: bool = audit_bytes
+        .as_bytes()
+        .ct_eq(trailer_val.as_bytes())
+        .into();
+    assert!(
+        eq,
+        "wave-19: audit-row payload bytes (re-encoded via the canonical formatter) and HTTP trailer payload bytes must be byte-identical; \
+         audit={audit_bytes}, trailer={trailer_val}"
+    );
+    // Additionally pin the structured field equality so the test
+    // catches a regression where the formatter and the audit-row
+    // payload disagree on the SHAPE (not just the byte ordering).
+    let trailer_parsed: Value =
+        serde_json::from_str(&trailer_val).expect("trailer payload parses as JSON");
+    assert_eq!(audit_payload.get("break_at_seq"), trailer_parsed.get("break_at_seq"));
+    assert_eq!(audit_payload.get("break_at_chunk"), trailer_parsed.get("break_at_chunk"));
+    assert_eq!(audit_payload.get("observed"), trailer_parsed.get("observed"));
+    assert_eq!(audit_payload.get("expected"), trailer_parsed.get("expected"));
 }
 
 /// Wave-18 AC-3 — round-trip the streaming response through the
