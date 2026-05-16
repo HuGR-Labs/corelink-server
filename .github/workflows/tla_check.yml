@@ -179,6 +179,20 @@ jobs:
         # late Stripe webhook arrival. Closes INV-SIGNUP-RESIGNUP-
         # IDEMPOTENT (HIGH) + inherits INV-ONBOARD-DPA-FIRST.
         run: bash scripts/run_tlc_corelink.sh signup_resignup
+
+      - name: TLC verify signup_token_idempotent (Wave-30 R-PREP — INV-SIGNUP-TOKEN-IDEMPOTENT)
+        # Added by Wave-30 stream-4 R-PREP dispatch 2026-05-16
+        # (`specs/_audits/2026-05-16-inv-signup-token-tla.md`): promotes the
+        # wave-29 stream-10 closure §6.2 DRAFT candidate to PROMOTED +
+        # TLA-VERIFIED. Proves the pilot signup route (POST /v1/signup/
+        # pilot/{token}, wave-29 stream-1 commit b3c359f) exhibits
+        # exactly-once tenant allocation per email AND per token (any
+        # replay returns the original tenant_id + emits a `duplicate`-
+        # tagged audit row, never a second `reserved`). Sibling of
+        # signup_resignup.tla (production-onboarding path with Stripe
+        # webhook + DPA-first) and disjoint from it; inherits the
+        # audit_emit_atomic.tla atomic-pairing pattern.
+        run: bash scripts/run_tlc_corelink.sh signup_token_idempotent
       # DEBT-005 batch 1 (5 net-new TLA specs, 2026-05-15) — close 5 CRITICAL
       # gaps from canonical-consistency baseline §4 (critical_no_tla 40 → 35).
       - name: TLC verify auth_jwt_validation (DEBT-005 batch 1)

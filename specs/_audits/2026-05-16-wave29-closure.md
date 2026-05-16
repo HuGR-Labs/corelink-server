@@ -191,6 +191,8 @@ Wave-29 stream #1 (signup backend) introduces an exactly-once consumption semant
 
 **Net: 0 promotions warranted from this audit stream.** Wave-30 absorbs the DRAFT promotion.
 
+**Update (Wave-30 stream-4 R-PREP — 2026-05-16):** **Net flipped to 1 promotion absorbed by wave-30**. The Wave-30 stream-4 dispatch authored `specs/tla/signup_token_idempotent.tla` + PR/nightly cfgs + CI matrix wiring + registry §3.29 + §4.1 coverage-table row, promoting `INV-SIGNUP-TOKEN-IDEMPOTENT` from DRAFT → PROMOTED + **TLA-VERIFIED**. PR lane: 1 017 distinct states / 5 s; nightly: 37 273 distinct states / 33 s — both green. Despite the §6.2 forward-looking note that TLA+ was "likely not required at HIGH" the dispatch elected to author the spec anyway to (a) tighten the audit-emit-atomic contract beyond what the integration tests assert (Len(audit_log) = request_count atomicity bijection) and (b) prove the cross-branch SoT coherence (token_tenant ↔ email_tenant agreement) that the in-memory store's iter-find-first-match semantics relies on. See `specs/_audits/2026-05-16-inv-signup-token-tla.md` for the full dispatch ledger + counterexample-driven refinement history (the initial `InvSignupIdempotentByEmail` formulation was found over-tight by TLC and reformulated to the per-`reserved`-row granularity that matches the prod `insert_or_existing` semantics).
+
 ### 6.3 Registry severity-breakdown snapshot (canonical; wave-29 base = wave-28 close = wave-27 close)
 
 For the GA-cutover D-day execution meeting (preserved cite):
