@@ -42,6 +42,11 @@ use crate::routes::audit_analytics::ShadowSinkFactory;
 
 /// Admin HTTP routes (R-prep wire-up; wave-11).
 pub mod admin;
+/// Pilot-admin HTTP routes (Wave-29 stream-3): replaces the wave-27
+/// placeholder scripts (`grant-pilot-tier.sh`, `list-pilot-tenants.sh`,
+/// `pilot-24h-checkin.sh`) with proper endpoints + audit-emit
+/// fail-CLOSED ordering + 5-Layer Defense scope gating.
+pub mod admin_pilot;
 /// AC HTTP routes (R-prep wire-up; wave-11).
 pub mod ac;
 /// Customer-facing audit-analytics routes (Wave-18 wiring of the
@@ -135,6 +140,12 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         read: admin_read,
         mutate: admin_mutate,
     };
+    let (pilot_store, pilot_audit) = admin_pilot::build_handlers();
+    let pilot_admin_state = admin_pilot::PilotAdminRouteState {
+        store: pilot_store,
+        audit_sink: pilot_audit,
+        wall_clock: crate::wall_clock::default_wall_clock(),
+    };
     let audit_export_state = audit_export::build_state();
     let audit_analytics_state = audit_analytics::build_state(shadow_factory);
     let signup_state = signup::build_state();
@@ -142,6 +153,7 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         .merge(cas::router(cas_state))
         .merge(ac::router(ac_state))
         .merge(admin::router(admin_state))
+        .merge(admin_pilot::router(pilot_admin_state))
         .merge(audit_export::router(audit_export_state))
         .merge(audit_analytics::router(audit_analytics_state))
         .merge(signup::router(signup_state))

@@ -195,3 +195,25 @@ tracking "pilot signups ≥ 3" GA readiness.
 See `specs/_audits/2026-05-16-pilot-signup-pipeline.md` for the full
 wave-27 deliverables and `DEBT-027` in
 `specs/_audits/2026-05-15-debt-register.md` for the gate-tracking row.
+
+### 8.1 Wave-29 stream-3 closure — admin endpoints + web UI
+
+The wave-27 placeholder scripts above are SUPERSEDED for the
+operator-on-browser path by wave-29 stream-3:
+
+- `GET  /v1/admin/pilots?state=<S>` — replaces `list-pilot-tenants.sh`.
+- `POST /v1/admin/pilots/{tenant_id}/grant-tier` — replaces `grant-pilot-tier.sh`.
+- `POST /v1/admin/pilots/{tenant_id}/checkin` — replaces `pilot-24h-checkin.sh`.
+- `apps/docs/src/pages/admin/pilots.tsx` — operator-facing web UI
+  (auto-polls every 30s, Clerk-JWT-gated by the
+  `corelink:admin:pilots` scope claim).
+
+Routes are gated by 5-Layer Defense + fail-CLOSED audit emit
+ordering (matches the wave-15 admin handler discipline). Test
+coverage: `apps/server/tests/admin_pilot.rs` — 12 async integration
+tests; full audit + closure note in
+`specs/_audits/2026-05-16-pilot-admin-web-ui.md`.
+
+The wave-27 shell scripts remain in-tree as the operator-shell
+escape hatch until the Clerk admin instance is provisioned end-to-
+end (Phase 2 swap — see wave-29 stream-3 audit §8).
