@@ -72,7 +72,15 @@ pub const fn within_sla_window(hours: u64) -> bool {
 /// [`ErasureDecision`] + the canonical
 /// [`crate::report::ErasureReport`] + the BLAKE3-keyed MAC signature
 /// for a complete forensic evidence trail.
-#[derive(Clone, Debug)]
+///
+/// # Wave-19 — `Serialize` / `Deserialize`
+///
+/// Serde derives land at wave-19 so the canonical
+/// `dsr_erasure_log.outcome_json` snapshot column (migration `0049`)
+/// can round-trip the bundle. Every field is already
+/// `Serialize + Deserialize` (`ErasureDecision`, `ErasureReport`,
+/// `ReportSignature`, `String`) so the derive is purely additive.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct VerificationOutcome {
     /// Canonical 24h verification decision.
     pub decision: ErasureDecision,
@@ -175,12 +183,36 @@ impl VerificationJob {
             | ErasureDecision::Rejected { .. } => (None, None, None),
         };
 
-        Ok(VerificationOutcome {
+        let outcome = VerificationOutcome {
             decision,
             report,
             signature,
             object_key,
-        })
+        };
+
+        // Wave-19: persist the canonical `outcome_json` snapshot
+        // against the canonical D1 `dsr_erasure_log.outcome_json`
+        // column (migration `0049`) — same JSON the cron
+        // `D1Wasm32RowSource::fetch_window_async` rehydrates on the
+        // 06:00 UTC sweep.
+        //
+        // Serialization is best-effort: a serde_json failure here
+        // does NOT abort the verification (the typed decision +
+        // report are still emitted to the audit envelope) — the
+        // snapshot is a denormalized read-side optimisation, NOT a
+        // forensic source-of-truth. Fail-CLOSED applies on the
+        // reader side (parse-error → publish abort).
+        if let Ok(json) = serde_json::to_string(&outcome) {
+            // Silent on ledger failure: the verification decision is
+            // already final; a follow-up cron tick will re-attempt
+            // the snapshot persistence on the next 24h sweep.
+            let _ = self
+                .worker
+                .ledger()
+                .set_outcome_snapshot(request.dsr_id, &json);
+        }
+
+        Ok(outcome)
     }
 
     /// Verify a previously-signed report against the canonical signer

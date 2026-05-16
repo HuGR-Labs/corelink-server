@@ -1643,6 +1643,7 @@ dependencies = [
  "corelink-cf-bindings",
  "corelink-privacy-erasure-worker",
  "corelink-statuspage-real",
+ "proptest",
  "serde",
  "serde_json",
  "thiserror 2.0.18",

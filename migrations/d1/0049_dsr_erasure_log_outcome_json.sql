@@ -1,0 +1,75 @@
+-- D1 migration: dsr_erasure_log.outcome_json — VerificationOutcome snapshot
+--
+-- Wave-19 follow-up to wave-18 commit `26f86b1` which shipped
+-- `D1Wasm32RowSource::fetch_window_async` with the canonical
+-- `CRON_OUTCOME_QUERY` but returned `Vec::new()` because the canonical
+-- `dsr_erasure_log` (migration 0022) stores per-(dsr_id, backend)
+-- tombstones — NOT full `VerificationOutcome` snapshots. The cron
+-- aggregator (`aggregate_24h_window → bridge_to_report`) requires
+-- fully-hydrated `VerificationOutcome` rows, so wave-18 shipped the
+-- wired binding with the caveat that wave-19 land a snapshot column.
+--
+-- # Why a snapshot column (NOT a derived projection)
+--
+-- The canonical `VerificationOutcome` is the bundle
+-- {decision, report, signature, object_key} produced by the 24h
+-- verification job (`VerificationJob::run_24h_sweep`). The decision
+-- alone collapses 12 per-backend tombstones into one of
+-- {VerifiedComplete, VerifiedPartial, SlaBreached, VerificationFailed,
+-- Started, Rejected}. Reconstructing this from per-(dsr_id, backend)
+-- rows requires an aggregation pass at every cron tick — a
+-- denormalized snapshot is canonical (the verification job is the
+-- source-of-truth; the cron is a read-only consumer).
+--
+-- # Schema
+--
+-- - `outcome_json TEXT NULL` — serde_json::to_string(&VerificationOutcome).
+--   NULL on rows written before the verification-job snapshot lands
+--   (transitional fallback per the wave-19 charter; the verification
+--   job writes this column on every `VerifiedComplete` /
+--   `VerifiedPartial` / `SlaBreached` decision from wave-19 forward).
+--
+-- # Why not CHECK(LENGTH(outcome_json) > 1)
+--
+-- D1 / SQLite ALTER TABLE ADD COLUMN with a CHECK constraint on an
+-- existing table requires the column be NULL-default-compatible; any
+-- non-NULL CHECK would fail-CLOSED on legacy rows (which carry no
+-- snapshot). We rely on the reader-side parse (serde_json::from_str
+-- inside `D1Wasm32RowSource::fetch_window_async`) to fail-CLOSED on
+-- malformed bytes — that path emits `D1RowSourceError::Parse` and
+-- aborts the publish per the wave-17 trait contract.
+--
+-- # Idempotency
+--
+-- SQLite (D1's underlying engine) does NOT support
+-- `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`. Running this migration
+-- twice fails with `duplicate column name: outcome_json` — the
+-- canonical D1 migration runner enforces single-execution via the
+-- ledger table; this matches the additive-only discipline
+-- (`scripts/check_migrations_additive.py`).
+--
+-- # Retention / lifecycle
+--
+-- The snapshot column inherits the 7y forensic retention from migration
+-- 0022 — deletion only on the canonical 7y expiry sweep + ANPD / Irish
+-- DPC investigation hold release.
+--
+-- # References
+--
+-- - WI-S11-002 §6.1.7 (canonical DDL baseline).
+-- - Wave-18 closure note (audit doc §5.6).
+-- - Wave-19 closure note (this migration + the reader-side rehydration
+--   path in `corelink-dsr-statuspage-scheduler::D1Wasm32RowSource`).
+
+ALTER TABLE dsr_erasure_log
+  ADD COLUMN outcome_json TEXT NULL;
+
+-- Index: per-tenant snapshot scan over the 24h cron window. Pairs with
+-- `idx_dsr_erasure_log_tenant_outcome` on (tenant_id, outcome,
+-- completed_at DESC); the cron `CRON_OUTCOME_QUERY` filters on
+-- `tenant_id` + `completed_at` then projects `outcome_json`. The
+-- partial-index `WHERE outcome_json IS NOT NULL` keeps the index
+-- compact across legacy rows that carry NULL snapshots.
+CREATE INDEX IF NOT EXISTS idx_dsr_erasure_log_outcome_json_present
+  ON dsr_erasure_log(tenant_id, completed_at DESC)
+  WHERE outcome_json IS NOT NULL;
