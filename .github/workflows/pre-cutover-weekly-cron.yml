@@ -1,0 +1,298 @@
+name: Pre-Cutover Weekly Verification (wave-28 step-10)
+
+# Weekly verification cron that runs every Monday at 09:00 Bahia (UTC-3 →
+# 12:00 UTC) until the GA D-day cutover. Validates the canonical 8
+# GA-readiness DEFER items, re-runs cheap validator + cargo subsets, and
+# emits a markdown digest at reports/pre-cutover-weekly/<YYYY-MM-DD>-digest.md.
+#
+# Companion script: scripts/pre-cutover-weekly-verify.sh.
+# Diff script: scripts/pre-cutover-state-diff.py.
+# Audit doc: specs/_audits/2026-05-16-pre-cutover-weekly-verify.md.
+#
+# Sources of truth for the 8 DEFER items:
+#   - specs/_audits/2026-05-16-ga-readiness-final.md §11
+#   - specs/_audits/2026-05-16-final-cutover-readiness.md §1
+#   - specs/_audits/2026-05-16-ga-final-checklist.md §G
+#   - specs/_audits/2026-05-16-pre-cutover-state-snapshot.md §L
+#
+# Charter:
+#   - Actions SHA-pinned per supply-chain policy (CC8.1 / CTRL-SUPPLY-002).
+#   - Synchronous bash + python only; no asyncio.
+#   - Digest contains zero PII (tenant_ids BLAKE3-pseudonymized).
+#   - Secrets allowlist: STATUSPAGE_API_KEY, PAGERDUTY_TOKEN (both optional).
+#   - DCO sign-off + Co-Authored-By in the auto-PR commit.
+
+on:
+  schedule:
+    # Monday 12:00 UTC = Monday 09:00 America/Bahia (UTC-3, no DST).
+    - cron: '0 12 * * 1'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Preview only (no commit, no PD page)'
+        required: false
+        default: false
+        type: boolean
+      no_tests:
+        description: 'Skip cargo subset re-runs'
+        required: false
+        default: false
+        type: boolean
+  push:
+    branches:
+      - main
+    paths:
+      - 'scripts/pre-cutover-weekly-verify.sh'
+      - 'scripts/pre-cutover-state-diff.py'
+      - '.github/workflows/pre-cutover-weekly-cron.yml'
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: pre-cutover-weekly-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: '3.12'
+  RUST_TOOLCHAIN: '1.83.0'
+
+jobs:
+  verify:
+    name: Pre-cutover weekly verify + digest
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      regression: ${{ steps.verify.outputs.regression }}
+      digest_path: ${{ steps.verify.outputs.digest_path }}
+      digest_date: ${{ steps.date.outputs.digest_date }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Setup Rust toolchain
+        if: github.event.inputs.no_tests != 'true' && github.event.inputs.dry_run != 'true' && github.event_name != 'push'
+        uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b # 1.83.0
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: clippy,rustfmt
+
+      - name: Compute digest date (Bahia)
+        id: date
+        run: |
+          set -euo pipefail
+          DIGEST_DATE="$(TZ=America/Bahia date +%Y-%m-%d)"
+          echo "digest_date=${DIGEST_DATE}" >> "${GITHUB_OUTPUT}"
+
+      - name: Run pre-cutover weekly verify
+        id: verify
+        env:
+          STATUSPAGE_API_KEY: ${{ secrets.STATUSPAGE_API_KEY }}
+          PAGERDUTY_TOKEN: ${{ secrets.PAGERDUTY_TOKEN }}
+          DRY_RUN_INPUT: ${{ github.event.inputs.dry_run }}
+          NO_TESTS_INPUT: ${{ github.event.inputs.no_tests }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          FLAGS=("--date" "${{ steps.date.outputs.digest_date }}")
+          if [ "${DRY_RUN_INPUT:-false}" = "true" ] || [ "${EVENT_NAME}" = "push" ]; then
+            FLAGS+=("--dry-run")
+          elif [ "${NO_TESTS_INPUT:-false}" = "true" ]; then
+            FLAGS+=("--no-tests")
+          fi
+          set +e
+          bash scripts/pre-cutover-weekly-verify.sh "${FLAGS[@]}"
+          RC=$?
+          set -e
+          DIGEST_PATH="reports/pre-cutover-weekly/${{ steps.date.outputs.digest_date }}-digest.md"
+          echo "digest_path=${DIGEST_PATH}" >> "${GITHUB_OUTPUT}"
+          if [ "${RC}" -eq 0 ]; then
+            echo "regression=false" >> "${GITHUB_OUTPUT}"
+          elif [ "${RC}" -eq 1 ]; then
+            echo "regression=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "::error::verify script returned setup error (rc=${RC})"
+            exit "${RC}"
+          fi
+          test -f "${DIGEST_PATH}"
+
+      - name: Run state diff (prior → current)
+        id: diff
+        if: github.event_name != 'push'
+        run: |
+          set -euo pipefail
+          set +e
+          python3 scripts/pre-cutover-state-diff.py > /tmp/state-diff.md 2> /tmp/state-diff.err
+          DRC=$?
+          set -e
+          cat /tmp/state-diff.err || true
+          if [ "${DRC}" -eq 2 ]; then
+            echo "regression_via_diff=skip" >> "${GITHUB_OUTPUT}"
+          elif [ "${DRC}" -eq 1 ]; then
+            echo "regression_via_diff=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "regression_via_diff=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Upload digest artefact
+        if: always()
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: pre-cutover-digest-${{ steps.date.outputs.digest_date }}
+          path: |
+            reports/pre-cutover-weekly/${{ steps.date.outputs.digest_date }}-digest.md
+          retention-days: 365
+
+      - name: Configure git identity
+        if: |
+          github.event.inputs.dry_run != 'true' &&
+          github.event_name != 'push'
+        run: |
+          git config user.name  "pre-cutover-bot"
+          git config user.email "pre-cutover-bot@users.noreply.github.com"
+
+      - name: Commit digest + open PR
+        if: |
+          github.event.inputs.dry_run != 'true' &&
+          github.event_name != 'push'
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          BRANCH="auto/pre-cutover-digest-${{ steps.date.outputs.digest_date }}"
+          git checkout -b "${BRANCH}"
+          git add "reports/pre-cutover-weekly/${{ steps.date.outputs.digest_date }}-digest.md"
+          if git diff --cached --quiet; then
+            echo "pr_created=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          git commit \
+            --signoff \
+            -m "chore(pre-cutover): weekly digest ${{ steps.date.outputs.digest_date }}" \
+            -m "" \
+            -m "Co-Authored-By: pre-cutover-bot <pre-cutover-bot@users.noreply.github.com>"
+          git push origin "${BRANCH}"
+          REGRESSION_LABEL=""
+          if [ "${{ steps.verify.outputs.regression }}" = "true" ]; then
+            REGRESSION_LABEL=",pre-cutover-regression"
+          fi
+          PR_URL="$(gh pr create \
+            --title "pre-cutover: weekly digest ${{ steps.date.outputs.digest_date }}" \
+            --body-file "reports/pre-cutover-weekly/${{ steps.date.outputs.digest_date }}-digest.md" \
+            --label "pre-cutover${REGRESSION_LABEL}" \
+            --base main \
+            --head "${BRANCH}")"
+          echo "pr_url=${PR_URL}" >> "${GITHUB_OUTPUT}"
+          echo "pr_created=true" >> "${GITHUB_OUTPUT}"
+
+      - name: Trigger PagerDuty (regression only)
+        if: |
+          steps.verify.outputs.regression == 'true' &&
+          github.event.inputs.dry_run != 'true' &&
+          github.event_name != 'push'
+        env:
+          PD_KEY: ${{ secrets.PAGERDUTY_TOKEN }}
+          DIGEST_PATH: ${{ steps.verify.outputs.digest_path }}
+          DIGEST_DATE: ${{ steps.date.outputs.digest_date }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PD_KEY:-}" ]; then
+            echo "::warning::PAGERDUTY_TOKEN not configured — skipping PD event."
+            exit 0
+          fi
+          python3 - <<'PYEOF'
+          import json, os, urllib.request
+          payload = {
+              "routing_key": os.environ["PD_KEY"],
+              "event_action": "trigger",
+              "dedup_key": f"pre-cutover-weekly-{os.environ.get('DIGEST_DATE','')}",
+              "payload": {
+                  "summary": "CoreLink pre-cutover weekly regression",
+                  "source": "github-actions/pre-cutover-weekly-cron",
+                  "severity": "warning",
+                  "class": "ga-readiness",
+                  "component": "pre-cutover-weekly-verify",
+                  "group": "corelink-ga-cutover",
+                  "custom_details": {
+                      "digest_path": os.environ.get("DIGEST_PATH", ""),
+                      "digest_date": os.environ.get("DIGEST_DATE", ""),
+                      "audit_doc": "specs/_audits/2026-05-16-pre-cutover-weekly-verify.md",
+                  },
+              },
+          }
+          req = urllib.request.Request(
+              "https://events.pagerduty.com/v2/enqueue",
+              data=json.dumps(payload).encode(),
+              headers={"Content-Type": "application/json"},
+              method="POST",
+          )
+          with urllib.request.urlopen(req, timeout=10) as resp:
+              print(f"PD response: {resp.status} {resp.read().decode()}")
+          PYEOF
+
+      - name: Probe Statuspage live state (advisory)
+        if: |
+          github.event.inputs.dry_run != 'true' &&
+          github.event_name != 'push'
+        env:
+          SP_KEY: ${{ secrets.STATUSPAGE_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SP_KEY:-}" ]; then
+            echo "::warning::STATUSPAGE_API_KEY not configured — probe skipped."
+            exit 0
+          fi
+          # Advisory only: probe status.corelink.dev v1 API and log the
+          # aggregated component status. The verify script picks up the
+          # resulting reports/statuspage-live-state.json on the next run.
+          mkdir -p reports
+          set +e
+          curl -fsSL \
+            -H "Authorization: OAuth ${SP_KEY}" \
+            "https://api.statuspage.io/v1/pages.json" \
+            -o /tmp/statuspage.json
+          CRC=$?
+          set -e
+          if [ "${CRC}" -ne 0 ]; then
+            echo "::warning::Statuspage probe failed (curl rc=${CRC}); deferring to operator runbook STATUSPAGE-INIT.md."
+            exit 0
+          fi
+          python3 - <<'PYEOF'
+          import json, pathlib
+          data = json.load(open("/tmp/statuspage.json"))
+          pages = data if isinstance(data, list) else [data]
+          status = "unknown"
+          for p in pages:
+              if isinstance(p, dict) and p.get("subdomain", "").endswith("corelink"):
+                  status = p.get("status_indicator", "unknown")
+                  break
+          pathlib.Path("reports/statuspage-live-state.json").write_text(
+              json.dumps({"status": status, "source": "api.statuspage.io/v1/pages"}, indent=2)
+          )
+          print(f"Statuspage live state: {status}")
+          PYEOF
+
+      - name: Step summary
+        if: always()
+        run: |
+          {
+            echo "## Pre-Cutover Weekly Verification — ${{ steps.date.outputs.digest_date }}"
+            echo ""
+            echo "- Regression: \`${{ steps.verify.outputs.regression }}\`"
+            echo "- Diff-vs-prior: \`${{ steps.diff.outputs.regression_via_diff }}\`"
+            echo "- Digest path: \`${{ steps.verify.outputs.digest_path }}\`"
+            echo "- Audit doc: \`specs/_audits/2026-05-16-pre-cutover-weekly-verify.md\`"
+            echo "- Cron: Monday 09:00 Bahia (UTC-3 = 12:00 UTC)"
+            echo "- Charter: synchronous bash/python only; no PII in digest"
+          } >> "${GITHUB_STEP_SUMMARY}"
