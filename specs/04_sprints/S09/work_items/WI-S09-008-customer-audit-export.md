@@ -257,6 +257,34 @@ Wave 17 closes the two open ACs from Wave-15.3.
   for `AUDIT_CHAIN_BREAK_DETECTED`.
 - SEV-0 alert marker `AUDIT_CHAIN_7DAY_BREAK_DETECTED::<date>::<chunk-key>`
   routes to PagerDuty via `PAGERDUTY_ROUTING_KEY` (per RB-AUDIT-CHAIN-001 §3).
+
+**Wave-18 lift (2026-05-15) — paginated CF API v4 inside each matrix day:**
+
+- Lifted the paginated Cloudflare API v4 R2 list step from
+  `wt/r-prep-r2-list-cf-token` (commit `275281e`) INSIDE the
+  `seven-day-verify` job's per-day loop. Each of the 7 matrix days now
+  performs the full production list/GET/verify/page cycle independently:
+  - `GET /accounts/{account_id}/r2/buckets/{bucket}/objects?prefix=audit/<YYYY>/<MM>/<DD>/`
+    paginated (per_page=1000, `result_info.cursor` walk, cap 100 pages
+    = 100k keys / fanout-guard).
+  - Per-object `GET /accounts/{account_id}/r2/buckets/{bucket}/objects/{key}`
+    download to `./.audit-verify-staging/<date>/chunks/<r2-key>`.
+  - Verifier on argv; on `AUDIT_CHAIN_BREAK_DETECTED` emit the
+    `AUDIT_CHAIN_7DAY_BREAK_DETECTED::<date>::<chunk-key>` marker AND
+    dispatch PagerDuty Events API v2 trigger (dedup
+    `audit-chain-break-<date>-<chunk>` — per-day dedup so N bad days
+    surface as N distinct PD pages).
+- **Per-day fail-CLOSED + continue matrix** contract: list 5xx/auth/JSON
+  parse/cursor errors, per-object GET non-2xx, and verifier non-zero
+  exit all mark the day BROKEN, page PD, and continue to the next day
+  (one bad day does NOT short-circuit the remaining 6). Job exits
+  non-zero IFF ≥1 day surfaced a break.
+- SHA-pin audit: 528 `uses:` lines pinned, no new actions introduced
+  (CF + PD dispatch are pure curl).
+- `permissions: contents: read` preserved (no `id-token: write` —
+  production R2 access stays on `CF_API_TOKEN`).
+- `concurrency: audit-chain-daily-verify` group added to prevent
+  overlapping cron + workflow_dispatch runs.
 - `permissions: contents: read` only (no `id-token: write` — production
   R2 access uses `CF_API_TOKEN` secret, not OIDC).
 - All `uses:` SHA-pinned (40-char) per HIGH_RISK lane FF-HR-005;

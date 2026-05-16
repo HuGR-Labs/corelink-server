@@ -1,7 +1,7 @@
-name: audit-chain-daily-verify (Wave 17)
+name: audit-chain-daily-verify (Wave 18)
 
 # Daily-verify cron + 7-day rolling window verifier (WI-S09-008 Wave 17
-# follow-on).
+# 7-day matrix + Wave 18 paginated CF API v4 R2-list lift).
 #
 # Trigger:   cron 02:00 UTC daily (low-traffic window per WI-S09-004 §6.1.5)
 #            + manual workflow_dispatch for ad-hoc verify after incidents.
@@ -10,19 +10,37 @@ name: audit-chain-daily-verify (Wave 17)
 #            yesterday, ..., today-6) the workflow:
 #
 #              1. Lists every R2 chunk key under
-#                 `audit/<YYYY>/<MM>/<DD>/*.ndjson` (production: real
-#                 wrangler r2 list against the bucket named in
-#                 `AUDIT_R2_BUCKET`; public CI: fixture-only).
-#              2. Downloads each chunk to the runner workspace.
+#                 `audit/<YYYY>/<MM>/<DD>/` via Cloudflare API v4
+#                 `GET /accounts/{account_id}/r2/buckets/{bucket}/objects?prefix=...`
+#                 paginated (per_page=1000) with `result_info.cursor` walk
+#                 (cap 100 pages = 100k keys; fanout-guard).
+#              2. Downloads every chunk via the per-object CF API v4
+#                 `GET /accounts/{account_id}/r2/buckets/{bucket}/objects/{key}`
+#                 to `./.audit-verify-staging/<date>/chunks/<r2-key>`.
 #              3. Invokes `cargo run -p corelink-audit-chain --bin verifier`
 #                 with EVERY chunk path for that day, plus the running
 #                 cross-day chain-head checkpoint from the prior day.
 #              4. Grep-detects the canonical
 #                 `AUDIT_CHAIN_BREAK_DETECTED` marker.
-#              5. On hit, prints the WAVE-17 SEV-0 marker
+#              5. On hit, prints the SEV-0 marker
 #                 `AUDIT_CHAIN_7DAY_BREAK_DETECTED::<date>::<chunk-key>`
-#                 (sourced by PagerDuty via the existing PD chain-break
-#                 alert route — see RB-AUDIT-CHAIN-001 §3).
+#                 AND dispatches PagerDuty Events API v2 trigger with
+#                 `dedup_key=audit-chain-break-<date>-<chunk>` (per-day
+#                 dedup — multiple breaks across the 7-day window surface
+#                 as N distinct PD pages, one per affected day).
+#              6. Continues to the next day in the matrix on a per-day
+#                 break (each day's verify is independent; one bad day
+#                 does NOT short-circuit the remaining 6 days).
+#
+# Fail-CLOSED contract (per-day, surface at job end):
+#   - any non-2xx from list or per-object GET
+#   - any JSON parse failure on a list page
+#   - any `success != true` payload from the CF API
+#   - any pagination cursor-empty handling error
+#   - any verifier non-zero exit
+# Per-day fail-CLOSED -> per-day PD page -> continue matrix.
+# Job ends with non-zero exit IFF any day surfaced a break (so the
+# workflow run itself signals "investigate the day-level errors").
 #
 # Enforces:  INV-OBS-AUDIT-CHAIN-INTEGRITY (HIGH), INV-AUDIT-APPEND-ONLY
 #            (CRITICAL — the verifier surface is the only audit-time
@@ -30,8 +48,18 @@ name: audit-chain-daily-verify (Wave 17)
 #            per-tenant chain partitioning re-asserted on every day).
 #
 # Implements: WI-S09-008 §6 daily-verify cron acceptance criterion
-#             (Wave 17 7-day matrix closure); specs/_audits/
-#             2026-05-15-audit-chain-retention.md §2.2.
+#             (Wave 17 7-day matrix closure + Wave 18 paginated CF API
+#             v4 R2-list lift inside each matrix day);
+#             specs/_audits/2026-05-15-audit-chain-retention.md §2.2.
+#
+# Secrets consumed (rows in docs/internal/secrets-checklist.md):
+#   - CF_ACCOUNT_ID            (#49) — CF account id
+#   - CF_API_TOKEN             (#50, audit-read variant) — `Workers R2
+#                                       Storage:Read` on
+#                                       `corelink-audit-archive` ONLY
+#   - AUDIT_R2_BUCKET          (#118 var, optional override) — defaults
+#                                       to `corelink-audit-archive`
+#   - PAGERDUTY_ROUTING_KEY    (#11) — SEV-0 page on per-day chain break
 #
 # SHA-pinned per HIGH_RISK lane FF-HR-005 + ADR-S12-045 §6 tooling-pin
 # policy. Version bump requires ADR + Security review.
@@ -49,16 +77,24 @@ on:
 
 # Read-only permissions per HIGH_RISK lane (no contents:write — the cron
 # only reports). No id-token:write — production R2 access uses
-# CF_API_TOKEN secret, not OIDC (the wrangler binding is the canonical
+# CF_API_TOKEN secret, not OIDC (the CF API v4 Bearer is the canonical
 # server-side path; OIDC-against-R2 lifts to a follow-on if we ever
 # move to ephemeral creds).
 permissions:
   contents: read
 
+concurrency:
+  group: audit-chain-daily-verify
+  cancel-in-progress: false
+
 env:
   # Default window when triggered by cron (no workflow_dispatch input
   # available); workflow_dispatch overrides via the `window_days` input.
   DEFAULT_WINDOW_DAYS: "7"
+  # Bucket default — overridable via the `AUDIT_R2_BUCKET` repo/env var
+  # (secrets-checklist row #118). The cron is fail-safe on rename:
+  # absent var falls through to the literal below.
+  AUDIT_R2_BUCKET_DEFAULT: "corelink-audit-archive"
 
 jobs:
   # Job 1: smoke-test the verifier binary on empty input + a synthetic
@@ -71,6 +107,8 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
@@ -109,21 +147,24 @@ jobs:
           path: verifier-out.log
           retention-days: 30
 
-  # Job 2 (Wave 17): 7-day rolling window walk. Iterates today, today-1,
-  # ..., today-(N-1) and verifies each day's R2 chunks. The production
-  # path lists keys under `audit/<YYYY>/<MM>/<DD>/*.ndjson` via the
-  # wrangler r2 binding (requires the CF_API_TOKEN secret + the
-  # `AUDIT_R2_BUCKET` env name); the public CI path is a fixture-only
-  # smoke harness so the workflow stays green on PR runs without
-  # secrets.
+  # Job 2 (Wave 17 7-day matrix + Wave 18 paginated CF API v4 R2 list
+  # lift): 7-day rolling window walk. Iterates today, today-1, ...,
+  # today-(N-1) and verifies each day's R2 chunks. The production path
+  # lists keys under `audit/<YYYY>/<MM>/<DD>/` via the paginated
+  # Cloudflare API v4 `r2/buckets/{bucket}/objects` endpoint (requires
+  # CF_API_TOKEN + CF_ACCOUNT_ID secrets + the `AUDIT_R2_BUCKET` env
+  # name); the public CI path is a fixture-only smoke harness so the
+  # workflow stays green on PR runs without secrets.
   seven-day-verify:
     name: seven-day-verify
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     needs: smoke-verify
     steps:
       - name: Checkout repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
@@ -156,77 +197,244 @@ jobs:
           echo "dates=$DATES" >> "$GITHUB_OUTPUT"
           echo "Daily-verify window dates: $DATES"
 
-      - name: Seven-day audit chunk walk
+      - name: Seven-day audit chunk walk (paginated CF API v4 R2 list per matrix day)
         id: walk
         env:
           R2_BUCKET: ${{ vars.AUDIT_R2_BUCKET }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          PAGERDUTY_ROUTING_KEY: ${{ secrets.PAGERDUTY_ROUTING_KEY }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        # Wave 18 cutover: paginated CF API v4 R2 list INSIDE each
+        # matrix day. Per-day contract:
+        #   - List `audit/<YYYY>/<MM>/<DD>/` via paginated GET
+        #     (per_page=1000, cursor-walked, cap 100 pages = 100k keys).
+        #   - Per-object GET each key to `chunks/<r2-key>` under the
+        #     day's staging dir.
+        #   - Run the verifier on the day's chunks; grep for
+        #     `AUDIT_CHAIN_BREAK_DETECTED`.
+        #   - On per-day break: emit the SEV-0 marker
+        #     `AUDIT_CHAIN_7DAY_BREAK_DETECTED::<date>::<chunk-key>`,
+        #     dispatch PagerDuty Events API v2 (dedup per-day +
+        #     per-chunk), and CONTINUE the matrix (each day independent).
+        #   - On per-day list/GET failure (auth, 5xx, JSON parse, cursor
+        #     handling): mark the day as BROKEN, dispatch a SEV-0 PD
+        #     page with the failure category, and CONTINUE the matrix.
+        # Job exits non-zero IFF any day broke.
         run: |
           set -euo pipefail
+          : "${PAGERDUTY_ROUTING_KEY:?PAGERDUTY_ROUTING_KEY not set — cannot page on per-day chain break (fail-CLOSED)}"
+          echo "::add-mask::${CF_API_TOKEN:-}"
+          echo "::add-mask::${PAGERDUTY_ROUTING_KEY}"
+
           DATES="${{ steps.window.outputs.dates }}"
+          BUCKET="${R2_BUCKET:-${AUDIT_R2_BUCKET_DEFAULT}}"
           mkdir -p ./.audit-verify-staging
           BREAK_FOUND=0
           BREAK_MARKERS=""
+
+          # Emit a PD SEV-0 page for a single day's chain break / list
+          # failure. Continues the outer loop on completion (the matrix
+          # MUST survive a single-day failure per Wave-18 contract).
+          page_pd_sev0() {
+            local verify_date="$1"
+            local chunk_key="$2"
+            local failure_kind="$3"   # chain_break | list_failure | get_failure | json_parse
+            local marker="AUDIT_CHAIN_BREAK_DETECTED::${verify_date}::${chunk_key}"
+            echo "::error::SEV-0 ${marker} kind=${failure_kind}"
+            VERIFY_DATE="${verify_date}" \
+            CHUNK_KEY="${chunk_key}" \
+            FAILURE_KIND="${failure_kind}" \
+            MARKER="${marker}" \
+            RUN_URL="${RUN_URL}" \
+            PAGERDUTY_ROUTING_KEY="${PAGERDUTY_ROUTING_KEY}" \
+            python3 > pd-payload.json <<'PY'
+          import json, os, sys
+          event = {
+              "routing_key": os.environ["PAGERDUTY_ROUTING_KEY"],
+              "event_action": "trigger",
+              "dedup_key": "audit-chain-break-" + os.environ["VERIFY_DATE"] + "-" + os.environ["CHUNK_KEY"],
+              "payload": {
+                  "summary": "SEV-0 " + os.environ["VERIFY_DATE"] + ": audit chain break (" + os.environ["FAILURE_KIND"] + ") chunk=" + os.environ["CHUNK_KEY"],
+                  "source": "audit-chain-daily-verify cron (GHA) — 7-day matrix",
+                  "severity": "critical",
+                  "component": "corelink-audit-chain",
+                  "group": "audit",
+                  "class": "integrity-break",
+                  "custom_details": {
+                      "marker": os.environ.get("MARKER", ""),
+                      "verify_date": os.environ["VERIFY_DATE"],
+                      "chunk_key": os.environ["CHUNK_KEY"],
+                      "failure_kind": os.environ["FAILURE_KIND"],
+                      "run_url": os.environ["RUN_URL"],
+                      "runbook": "specs/_runbooks/RB-AUDIT-CHAIN-VERIFY.md",
+                  },
+              },
+              "links": [
+                  {"href": os.environ["RUN_URL"], "text": "GHA run"},
+              ],
+          }
+          sys.stdout.write(json.dumps(event))
+          PY
+            local http_code
+            http_code=$(curl --silent --show-error \
+              -o "pd-resp-${verify_date}.json" -w "%{http_code}" \
+              -X POST \
+              -H "Content-Type: application/json" \
+              --data @pd-payload.json \
+              "https://events.pagerduty.com/v2/enqueue" || echo "000")
+            if [[ "${http_code}" != "202" ]]; then
+              echo "::error::PagerDuty enqueue for ${verify_date} returned HTTP ${http_code} — manual page Security Lead immediately"
+              cat "pd-resp-${verify_date}.json" || true
+            else
+              echo "PagerDuty SEV-0 dispatched for ${verify_date} (kind=${failure_kind}, chunk=${chunk_key})"
+            fi
+          }
+
           for D in $DATES; do
             YYYY=$(echo "$D" | cut -d- -f1)
             MM=$(echo "$D" | cut -d- -f2)
             DD=$(echo "$D" | cut -d- -f3)
             PREFIX="audit/${YYYY}/${MM}/${DD}/"
-            echo "--- day=$D prefix=$PREFIX"
+            echo "--- day=$D prefix=$PREFIX bucket=$BUCKET"
 
             DAY_DIR="./.audit-verify-staging/${D}"
-            mkdir -p "$DAY_DIR"
+            CHUNKS_DIR="${DAY_DIR}/chunks"
+            mkdir -p "${CHUNKS_DIR}"
+            : > "${DAY_DIR}/chunk-keys.txt"
+            : > "${DAY_DIR}/chunk-paths.txt"
 
-            # Production wiring: when CF_API_TOKEN + R2_BUCKET are
-            # present, list + download. Public CI lane (no secrets):
-            # generate a synthetic 1-chunk NDJSON fixture so the
-            # verifier still exercises the day's pipeline.
-            if [ -n "${CF_API_TOKEN:-}" ] && [ -n "${R2_BUCKET:-}" ]; then
-              echo "Production path: listing R2 bucket=$R2_BUCKET prefix=$PREFIX"
-              # NOTE: the wrangler list + download steps run against
-              # the production R2 binding behind the CF_API_TOKEN
-              # secret. The exact commands live in
-              # `scripts/r2-audit-list-and-download.sh` (Wave 17.1
-              # follow-on; the public CI smoke harness covers the
-              # verifier behaviour given any local chunk file).
-              if [ -x ./scripts/r2-audit-list-and-download.sh ]; then
-                ./scripts/r2-audit-list-and-download.sh "$R2_BUCKET" "$PREFIX" "$DAY_DIR"
-              else
-                echo "::warning::scripts/r2-audit-list-and-download.sh missing; skipping list step"
+            # ---------------- LIST (production / public-CI fork) ----------------
+            if [ -n "${CF_API_TOKEN:-}" ] && [ -n "${CF_ACCOUNT_ID:-}" ] && [ -n "${BUCKET:-}" ]; then
+              echo "Production path: listing R2 bucket=$BUCKET prefix=$PREFIX (paginated CF API v4)"
+              cursor=""
+              page=0
+              list_failed=0
+              while :; do
+                page=$((page + 1))
+                if [[ -n "${cursor}" ]]; then
+                  url="https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/r2/buckets/${BUCKET}/objects?prefix=${PREFIX}&per_page=1000&cursor=${cursor}"
+                else
+                  url="https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/r2/buckets/${BUCKET}/objects?prefix=${PREFIX}&per_page=1000"
+                fi
+                page_file="${DAY_DIR}/page-${page}.json"
+                http_code=$(curl --silent --show-error \
+                  -o "${page_file}" -w "%{http_code}" \
+                  -H "Authorization: Bearer ${CF_API_TOKEN}" \
+                  -H "Accept: application/json" \
+                  "${url}" || echo "000")
+                if [[ "${http_code}" != "200" ]]; then
+                  echo "::error::day=${D} R2 list page=${page} HTTP ${http_code} (bucket=${BUCKET} prefix=${PREFIX}) — fail-CLOSED for this day"
+                  echo "--- response body (page=${page}) ---"
+                  cat "${page_file}" || true
+                  echo "--- end ---"
+                  list_failed=1
+                  break
+                fi
+                ok=$(PAGE_JSON="${page_file}" python3 -c 'import json,os; d=json.load(open(os.environ["PAGE_JSON"])); print("1" if d.get("success") is True else "0")' 2>/dev/null || echo "PARSE_ERR")
+                if [[ "${ok}" == "PARSE_ERR" ]]; then
+                  echo "::error::day=${D} R2 list page=${page}: JSON parse failure — fail-CLOSED for this day"
+                  list_failed=2
+                  break
+                fi
+                if [[ "${ok}" != "1" ]]; then
+                  echo "::error::day=${D} R2 list page=${page}: success != true — fail-CLOSED for this day"
+                  PAGE_JSON="${page_file}" python3 -c 'import json,os; d=json.load(open(os.environ["PAGE_JSON"])); print("errors=", d.get("errors"))' || true
+                  list_failed=1
+                  break
+                fi
+                PAGE_JSON="${page_file}" python3 -c 'import json,os; d=json.load(open(os.environ["PAGE_JSON"])); [print(o["key"]) for o in (d.get("result") or []) if o.get("key")]' >> "${DAY_DIR}/chunk-keys.txt"
+                cursor=$(PAGE_JSON="${page_file}" python3 -c 'import json,os; d=json.load(open(os.environ["PAGE_JSON"])); ri=d.get("result_info") or {}; print(ri.get("cursor") or "")')
+                if [[ -z "${cursor}" ]]; then
+                  break
+                fi
+                if (( page > 100 )); then
+                  echo "::error::day=${D} R2 list pagination exceeded 100 pages (100k keys) — fail-CLOSED for this day (unexpected fanout)"
+                  list_failed=1
+                  break
+                fi
+              done
+
+              if [[ "${list_failed}" != "0" ]]; then
+                BREAK_FOUND=1
+                kind="list_failure"
+                if [[ "${list_failed}" == "2" ]]; then kind="json_parse"; fi
+                page_pd_sev0 "${D}" "list-${PREFIX}" "${kind}"
+                BREAK_MARKERS="${BREAK_MARKERS}AUDIT_CHAIN_7DAY_BREAK_DETECTED::${D}::list-${PREFIX}\n"
+                continue
+              fi
+
+              n_keys=$(wc -l < "${DAY_DIR}/chunk-keys.txt" | tr -d ' ')
+              echo "  day=${D}: listed ${n_keys} chunk key(s)"
+
+              # -------------- GET each chunk (fail-CLOSED per day) --------------
+              get_failed=""
+              while IFS= read -r key; do
+                [[ -z "${key}" ]] && continue
+                local_path="${CHUNKS_DIR}/${key}"
+                mkdir -p "$(dirname "${local_path}")"
+                obj_url="https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/r2/buckets/${BUCKET}/objects/${key}"
+                http_code=$(curl --silent --show-error \
+                  -o "${local_path}" -w "%{http_code}" \
+                  -H "Authorization: Bearer ${CF_API_TOKEN}" \
+                  "${obj_url}" || echo "000")
+                if [[ "${http_code}" != "200" ]]; then
+                  echo "::error::day=${D} R2 GET key='${key}' HTTP ${http_code} — fail-CLOSED for this day"
+                  get_failed="${key}"
+                  break
+                fi
+                echo "${local_path}" >> "${DAY_DIR}/chunk-paths.txt"
+              done < "${DAY_DIR}/chunk-keys.txt"
+
+              if [[ -n "${get_failed}" ]]; then
+                BREAK_FOUND=1
+                page_pd_sev0 "${D}" "${get_failed}" "get_failure"
+                BREAK_MARKERS="${BREAK_MARKERS}AUDIT_CHAIN_7DAY_BREAK_DETECTED::${D}::${get_failed}\n"
+                continue
               fi
             else
-              echo "Public CI lane (no CF_API_TOKEN): emitting empty day directory."
+              echo "Public CI lane (no CF_API_TOKEN / CF_ACCOUNT_ID / bucket): emitting empty day directory."
             fi
 
-            # Run the verifier on every chunk for the day. Empty day
-            # directory exits cleanly via the verifier's zero-input
-            # no-op path.
+            # ---------------- VERIFY (per-day, on argv) ----------------
             DAY_LOG="${DAY_DIR}/verify.log"
-            mapfile -t CHUNKS < <(find "$DAY_DIR" -maxdepth 1 -type f -name '*.ndjson' | sort)
+            mapfile -t CHUNKS < <(find "${CHUNKS_DIR}" -type f -name '*.ndjson' | sort)
             if [ "${#CHUNKS[@]}" -eq 0 ]; then
-              echo "  day=$D: no chunks; cron no-op"
-              cargo run -p corelink-audit-chain --bin verifier --release -- 2>&1 | tee "$DAY_LOG"
+              echo "  day=${D}: no chunks; cron no-op"
+              cargo run -p corelink-audit-chain --bin verifier --release -- 2>&1 | tee "${DAY_LOG}"
             else
-              echo "  day=$D: verifying ${#CHUNKS[@]} chunk(s)"
-              cargo run -p corelink-audit-chain --bin verifier --release -- "${CHUNKS[@]}" 2>&1 | tee "$DAY_LOG"
+              echo "  day=${D}: verifying ${#CHUNKS[@]} chunk(s)"
+              # Per-day verifier MUST NOT fail the script — we want to
+              # continue the matrix to surface ALL bad days as distinct
+              # PD pages. Capture exit + grep for the marker below.
+              if ! cargo run -p corelink-audit-chain --bin verifier --release -- "${CHUNKS[@]}" 2>&1 | tee "${DAY_LOG}"; then
+                echo "  day=${D}: verifier exited non-zero (will surface below if marker present)"
+              fi
             fi
 
-            # Detect break per day.
-            if grep -q "AUDIT_CHAIN_BREAK_DETECTED" "$DAY_LOG"; then
+            # ---------------- DETECT + PAGE (per day) ----------------
+            if grep -q "AUDIT_CHAIN_BREAK_DETECTED" "${DAY_LOG}"; then
               BREAK_FOUND=1
-              # Pull the offending chunk key from the verifier's
-              # structured error line (best-effort regex).
-              CHUNK=$(grep "AUDIT_CHAIN_BREAK_DETECTED" "$DAY_LOG" | head -1 | sed -E 's/.*tenant=([^:]+):.*/\1/')
-              MARKER="AUDIT_CHAIN_7DAY_BREAK_DETECTED::${D}::${CHUNK}"
-              BREAK_MARKERS="${BREAK_MARKERS}${MARKER}\n"
-              echo "::error::$MARKER"
+              # Pull the offending chunk key from the verifier diagnostic.
+              CHUNK=$(grep -m1 -oE 'chunks/audit/[0-9/]+/[0-9]+\.ndjson' "${DAY_LOG}" || true)
+              if [[ -z "${CHUNK}" ]]; then
+                # Fall back to the verifier's tenant=<id> structured line.
+                CHUNK=$(grep "AUDIT_CHAIN_BREAK_DETECTED" "${DAY_LOG}" | head -1 | sed -E 's/.*tenant=([^:]+):.*/\1/' || echo "unknown")
+              else
+                CHUNK="${CHUNK#${CHUNKS_DIR}/}"
+              fi
+              MARKER_7D="AUDIT_CHAIN_7DAY_BREAK_DETECTED::${D}::${CHUNK}"
+              BREAK_MARKERS="${BREAK_MARKERS}${MARKER_7D}\n"
+              echo "::error::${MARKER_7D}"
+              page_pd_sev0 "${D}" "${CHUNK}" "chain_break"
+              # Continue matrix — do NOT exit here.
             fi
           done
 
           if [ "$BREAK_FOUND" -ne 0 ]; then
-            echo "SEV-0 7-day chain break detected:"
+            echo "SEV-0 7-day chain break(s) detected across matrix:"
             printf "%b" "$BREAK_MARKERS"
-            echo "::error::SEV-0 AUDIT_CHAIN_7DAY_BREAK_DETECTED — page Security Lead via PD route PAGERDUTY_ROUTING_KEY (see RB-AUDIT-CHAIN-001 §3)"
+            echo "::error::SEV-0 AUDIT_CHAIN_7DAY_BREAK_DETECTED — see per-day PagerDuty pages dispatched above (route PAGERDUTY_ROUTING_KEY, RB-AUDIT-CHAIN-001 §3)"
             exit 1
           fi
           echo "Seven-day audit chain verify: clean across $DATES"
@@ -236,6 +444,10 @@ jobs:
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         with:
           name: seven-day-verifier-logs-${{ github.run_id }}
-          path: ./.audit-verify-staging/**/verify.log
+          path: |
+            ./.audit-verify-staging/**/verify.log
+            ./.audit-verify-staging/**/chunk-keys.txt
+            ./.audit-verify-staging/**/chunk-paths.txt
+            ./.audit-verify-staging/**/page-*.json
           retention-days: 30
           if-no-files-found: ignore
