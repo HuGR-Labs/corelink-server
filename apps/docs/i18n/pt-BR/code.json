@@ -10,5 +10,149 @@
   "homepage.tagline": {
     "message": "Cache endereçável por conteúdo multi-tenant na Cloudflare",
     "description": "Site tagline shown in the homepage hero"
+  },
+  "trust.landing.headline": {
+    "message": "Segurança, conformidade e transparência operacional",
+    "description": "Trust Center landing page headline"
+  },
+  "trust.landing.subhead": {
+    "message": "A CoreLink é um cache endereçável por conteúdo multi-tenant que vê artefatos de build dos clientes, eventos de auditoria assinados e (opcionalmente) material de chave gerenciado pelo cliente. Esta página é o único ponto de entrada público sobre como protegemos essa superfície — postura de conformidade, controles de segurança, compromissos de privacidade, evidências de confiabilidade e a mecânica operacional que mantém toda a stack de pé.",
+    "description": "Trust Center landing page subheadline"
+  },
+  "trust.landing.legend.title": {
+    "message": "Como ler esta página",
+    "description": "Status badge legend section title"
+  },
+  "trust.landing.legend.intro": {
+    "message": "Cada afirmação de conformidade abaixo é marcada com um de três selos de honestidade. Não alegamos certificações que ainda não obtivemos. SOC 2 Type II está EM AUDITORIA (janela de observação aberta em 2026-05-15), não \"certificado\".",
+    "description": "Status badge legend intro paragraph"
+  },
+  "trust.landing.legend.live": {
+    "message": "O artefato existe, está atualizado e é contratualmente vinculante para a CoreLink (ex.: autoatestado SAQ-A, ROPA LGPD, registro de sub-processadores, status page, security.txt).",
+    "description": "LIVE-ATTESTATION badge meaning"
+  },
+  "trust.landing.legend.inaudit": {
+    "message": "Verificação independente em andamento, mas ainda não concluída (ex.: relatório SOC 2 Type I em redação, preparação Stage-1 ISO 27001, engajamento de pentest externo).",
+    "description": "IN-AUDIT badge meaning"
+  },
+  "trust.landing.legend.postga": {
+    "message": "Item de roadmap ainda não iniciado ou com escopo apenas interno (ex.: janela de observação de 6 meses do SOC 2 Type II, auditoria de surveillance Stage-2 ISO 27001, caminho de patrocínio FedRAMP).",
+    "description": "POST-GA badge meaning"
+  },
+  "trust.landing.contact.title": {
+    "message": "Fale com a gente",
+    "description": "Contact section title"
+  },
+  "trust.landing.contact.body": {
+    "message": "Para procurement, conformidade ou avaliação de risco de fornecedor, envie um e-mail para",
+    "description": "Contact section body"
+  },
+  "trust.landing.contact.privacy": {
+    "message": "Para solicitações de acesso de titular de dados e execução de DPA / SCC, envie um e-mail para",
+    "description": "Contact privacy line"
+  },
+  "trust.landing.contact.disclosure": {
+    "message": "Para reportar uma vulnerabilidade de segurança, siga nossa",
+    "description": "Security disclosure pointer"
+  },
+  "trust.landing.contact.disclosure.linktext": {
+    "message": "política de divulgação coordenada",
+    "description": "Security disclosure link text"
+  },
+  "trust.landing.contact.disclosure.suffix": {
+    "message": "(intake criptografado por PGP, janela de divulgação de 90 dias, safe-harbor).",
+    "description": "Security disclosure suffix"
+  },
+  "trust.subprocessor.title": {
+    "message": "Registro de sub-processadores",
+    "description": "Sub-processor register page title"
+  },
+  "trust.subprocessor.subhead": {
+    "message": "Lista pública dos sub-processadores da CoreLink — os terceiros que processam dados pessoais de clientes em nosso nome. Mantida conforme GDPR Art. 28 §2 e LGPD Art. 39 + Art. 27 §4º.",
+    "description": "Sub-processor register subheadline"
+  },
+  "trust.subprocessor.refreshed": {
+    "message": "Última atualização:",
+    "description": "Last refreshed label"
+  },
+  "trust.subprocessor.cadence": {
+    "message": "Cadência de atualização: mensal, com atualização imediata em qualquer adição ou substituição.",
+    "description": "Refresh cadence note"
+  },
+  "trust.subprocessor.source": {
+    "message": "Fonte da verdade:",
+    "description": "Source-of-truth pointer"
+  },
+  "trust.subprocessor.source.full": {
+    "message": "(registro completo de 19 fornecedores; apenas os 11 que processam dados pessoais de clientes em nome da CoreLink aparecem abaixo).",
+    "description": "Source of truth size context"
+  },
+  "trust.subprocessor.notice.title": {
+    "message": "Mecanismo de aviso prévio de 30 dias",
+    "description": "Notice section title"
+  },
+  "trust.subprocessor.notice.body": {
+    "message": "Conforme nosso DPA §6 e LGPD Art. 27 §4º + GDPR Art. 28 §2, daremos aviso por escrito com no mínimo 30 dias corridos antes de adicionar ou substituir um sub-processador que processe dados pessoais de clientes. Assine via digest por e-mail no tenant, status page ou feed RSS pós-GA.",
+    "description": "Notice section body"
+  },
+  "trust.subprocessor.active.title": {
+    "message": "Sub-processadores ativos ({count})",
+    "description": "Active sub-processors section title"
+  },
+  "trust.subprocessor.related.title": {
+    "message": "Relacionado",
+    "description": "Related section title"
+  },
+  "trust.incident.title": {
+    "message": "Histórico de incidentes",
+    "description": "Incident history page title"
+  },
+  "trust.incident.subhead": {
+    "message": "Postmortems públicos de todos os incidentes que afetam clientes e exercícios internos. Comprometemo-nos a publicar um postmortem redatado em 14 dias após a resolução para qualquer incidente SEV-2 ou superior.",
+    "description": "Incident history subheadline"
+  },
+  "trust.incident.preGA.title": {
+    "message": "Divulgação pré-GA",
+    "description": "Pre-GA banner title"
+  },
+  "trust.incident.preGA.body": {
+    "message": "A CoreLink não teve nenhum incidente com impacto a clientes até hoje — o serviço está pré-GA, operando em beta. As entradas abaixo são postmortems de exercícios internos (active failover + cold restore) já executados contra a frota pré-produção. O auto-pull do corpus de postmortems entra em T+30d pós-GA; esta página é, fora isso, honesta por construção (nenhum incidente sintético é listado).",
+    "description": "Pre-GA banner body"
+  },
+  "trust.incident.entries.title": {
+    "message": "Entradas recentes",
+    "description": "Entries section title"
+  },
+  "trust.incident.policy.title": {
+    "message": "Política de publicação",
+    "description": "Policy section title"
+  },
+  "trust.incident.policy.sev12": {
+    "message": "Postmortem redatado publicado em até 14 dias após a resolução. Inclui linha do tempo, fatores contribuintes, impacto ao cliente, remediação e itens de follow-up com donos + datas.",
+    "description": "SEV-1/2 publication policy"
+  },
+  "trust.incident.policy.sev3": {
+    "message": "Resumo publicado na status page; postmortem completo sob demanda.",
+    "description": "SEV-3 publication policy"
+  },
+  "trust.incident.policy.drill": {
+    "message": "Publicado em base best-effort após redação por razões de segurança operacional.",
+    "description": "Drill publication policy"
+  },
+  "trust.incident.policy.notification": {
+    "message": "Compromissos de notificação a clientes detalhados em",
+    "description": "Notification policy"
+  },
+  "trust.incident.policy.ir.linktext": {
+    "message": "Resposta a incidentes",
+    "description": "Incident response link text"
+  },
+  "trust.incident.policy.notification.suffix": {
+    "message": "(compromisso de notificação de violação em 72 horas conforme DPA §8).",
+    "description": "Notification policy suffix"
+  },
+  "trust.incident.related.title": {
+    "message": "Relacionado",
+    "description": "Related section title"
   }
 }
