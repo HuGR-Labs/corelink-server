@@ -72,4 +72,7 @@ apps/admin-ui/tsconfig.tsbuildinfo
 # LICENSE full-text files materialized by scripts/fetch-license-texts.sh
 /LICENSE-APACHE-2.0.txt
 /LICENSE-MIT.txt
+
+# Endurance load test results — never commit (regen via scripts/run_24h_endurance.sh)
+tests/load/results/
 target-isolated
