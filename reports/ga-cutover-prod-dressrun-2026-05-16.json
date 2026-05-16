@@ -1,0 +1,306 @@
+{
+  "dressrun_kind": "production-tier",
+  "runbook": "specs/_runbooks/RB-GA-CUTOVER.md",
+  "dashboard": "dashboards/alerts/dash-ga-greenlight.yml",
+  "run_date": "2026-05-16",
+  "run_started_at": "2026-05-16T09:06:59Z",
+  "base_branch": "wt/r-prep-prod-deploy-dressrun",
+  "base_sha": "2a4e00c48d3174dea76b78f3303f9c4e01ea1a4e",
+  "tenant_ring": "ga-cutover-prep",
+  "prep_tenants": [
+    "prep-001",
+    "prep-002",
+    "prep-003",
+    "prep-004",
+    "prep-005"
+  ],
+  "prep_bucket_prefix": "corelink-prep-",
+  "mode": "sim",
+  "requested_mode": "auto",
+  "downgrade_reasons": [
+    "env var CLOUDFLARE_API_TOKEN is unset",
+    "env var CLOUDFLARE_ACCOUNT_ID is unset",
+    "env var R2_ACCESS_KEY_ID is unset",
+    "env var R2_SECRET_ACCESS_KEY is unset",
+    "env var NEON_DATABASE_URL is unset",
+    "env var CLERK_PRIVATE_KEY is unset",
+    "env var STRIPE_SECRET_KEY is unset",
+    "env var PAGERDUTY_TOKEN is unset",
+    "env var STATUSPAGE_TOKEN is unset",
+    "binary wrangler is not on PATH"
+  ],
+  "validators": {
+    "validate_specs_exit": 0,
+    "validate_references_exit": 0
+  },
+  "pre_cutover_checklist": [
+    {
+      "check": "wave25_seal_landed",
+      "status": "GREEN"
+    },
+    {
+      "check": "validate_specs_green",
+      "status": "GREEN"
+    },
+    {
+      "check": "validate_references_green",
+      "status": "GREEN"
+    },
+    {
+      "check": "all_21_prrs_approved",
+      "status": "GREEN"
+    },
+    {
+      "check": "codex_reviews_ge_8",
+      "status": "GREEN"
+    },
+    {
+      "check": "rb_ga_launch_rollback_drilled_within_7d",
+      "status": "GREEN"
+    },
+    {
+      "check": "schema_freeze_active_t_minus_72h",
+      "status": "GREEN"
+    },
+    {
+      "check": "secrets_matrix_clean",
+      "status": "GREEN"
+    },
+    {
+      "check": "regulatory_no_breach_attestation_signed",
+      "status": "GREEN"
+    },
+    {
+      "check": "wave24_dryrun_completed_greenlight",
+      "status": "GREEN"
+    },
+    {
+      "check": "prep_tenant_ring_provisioned",
+      "status": "GREEN"
+    }
+  ],
+  "steps": [
+    {
+      "id": "S0",
+      "label": "Provision ga-cutover-prep tenant ring (5 isolated tenants)",
+      "outcome": "PASS",
+      "duration_ms": 120
+    },
+    {
+      "id": "S1",
+      "label": "Provision/verify R2 buckets — prep-namespaced (5 regions x 5 = 25)",
+      "outcome": "PASS",
+      "duration_ms": 124
+    },
+    {
+      "id": "S2",
+      "label": "Apply Neon shadow migrations (idempotent, prep schema)",
+      "outcome": "PASS",
+      "duration_ms": 118
+    },
+    {
+      "id": "S3",
+      "label": "Deploy CF Worker gradual rollout 1->10->50->100 (prep route)",
+      "outcome": "PASS",
+      "duration_ms": 145
+    },
+    {
+      "id": "S4",
+      "label": "Enable BYOK orchestrator for 5 prep tenants",
+      "outcome": "PASS",
+      "duration_ms": 112
+    },
+    {
+      "id": "S5",
+      "label": "Enable Stripe live mode + DLQ consumers (prep customer)",
+      "outcome": "PASS",
+      "duration_ms": 129
+    },
+    {
+      "id": "S6",
+      "label": "Enable Clerk JWT issuer + WebAuthn admin (prep admin)",
+      "outcome": "PASS",
+      "duration_ms": 118
+    },
+    {
+      "id": "S7",
+      "label": "Enable audit-chain Logpush + Neon shadow sync (prep)",
+      "outcome": "PASS",
+      "duration_ms": 136
+    },
+    {
+      "id": "S8",
+      "label": "Enable DSR Statuspage cron (prep visibility)",
+      "outcome": "PASS",
+      "duration_ms": 118
+    },
+    {
+      "id": "S9",
+      "label": "DNS cutover apply (prep zone, 4 CNAMEs, TTL 60s)",
+      "outcome": "PASS",
+      "duration_ms": 118
+    },
+    {
+      "id": "S10",
+      "label": "Enable GA-canonical rate limits (prep route)",
+      "outcome": "PASS",
+      "duration_ms": 123
+    },
+    {
+      "id": "S11",
+      "label": "Status page transition to OPERATIONAL + public_status=GA (prep component)",
+      "outcome": "PASS",
+      "duration_ms": 119
+    },
+    {
+      "id": "S12",
+      "label": "Cleanup: tear down ga-cutover-prep tenant ring",
+      "outcome": "PASS",
+      "duration_ms": 117
+    }
+  ],
+  "audit_emits": [
+    {
+      "ts": "2026-05-16T09:06:55Z",
+      "step": "S0",
+      "outcome": "PASS",
+      "detail": "Provision ga-cutover-prep tenant ring (5 isolated tenants)",
+      "tenant_ring": "ga-cutover-prep"
+    },
+    {
+      "ts": "2026-05-16T09:06:55Z",
+      "step": "S1",
+      "outcome": "PASS",
+      "detail": "Provision/verify R2 buckets — prep-namespaced (5 regions x 5 = 25)",
+      "tenant_ring": "ga-cutover-prep"
+    },
+    {
+      "ts": "2026-05-16T09:06:55Z",
+      "step": "S2",
+      "outcome": "PASS",
+      "detail": "Apply Neon shadow migrations (idempotent, prep schema)",
+      "tenant_ring": "ga-cutover-prep"
+    },
+    {
+      "ts": "2026-05-16T09:06:55Z",
+      "step": "S3",
+      "outcome": "PASS",
+      "detail": "Deploy CF Worker gradual rollout 1->10->50->100 (prep route)",
+      "tenant_ring": "ga-cutover-prep"
+    },
+    {
+      "ts": "2026-05-16T09:06:56Z",
+      "step": "S4",
+      "outcome": "PASS",
+      "detail": "Enable BYOK orchestrator for 5 prep tenants",
+      "tenant_ring": "ga-cutover-prep"
+    },
+    {
+      "ts": "2026-05-16T09:06:56Z",
+      "step": "S5",
+      "outcome": "PASS",
+      "detail": "Enable Stripe live mode + DLQ consumers (prep customer)",
+      "tenant_ring": "ga-cutover-prep"
+    },
+    {
+      "ts": "2026-05-16T09:06:56Z",
+      "step": "S6",
+      "outcome": "PASS",
+      "detail": "Enable Clerk JWT issuer + WebAuthn admin (prep admin)",
+      "tenant_ring": "ga-cutover-prep"
+    },
+    {
+      "ts": "2026-05-16T09:06:57Z",
+      "step": "S7",
+      "outcome": "PASS",
+      "detail": "Enable audit-chain Logpush + Neon shadow sync (prep)",
+      "tenant_ring": "ga-cutover-prep"
+    },
+    {
+      "ts": "2026-05-16T09:06:57Z",
+      "step": "S8",
+      "outcome": "PASS",
+      "detail": "Enable DSR Statuspage cron (prep visibility)",
+      "tenant_ring": "ga-cutover-prep"
+    },
+    {
+      "ts": "2026-05-16T09:06:57Z",
+      "step": "S9",
+      "outcome": "PASS",
+      "detail": "DNS cutover apply (prep zone, 4 CNAMEs, TTL 60s)",
+      "tenant_ring": "ga-cutover-prep"
+    },
+    {
+      "ts": "2026-05-16T09:06:57Z",
+      "step": "S10",
+      "outcome": "PASS",
+      "detail": "Enable GA-canonical rate limits (prep route)",
+      "tenant_ring": "ga-cutover-prep"
+    },
+    {
+      "ts": "2026-05-16T09:06:58Z",
+      "step": "S11",
+      "outcome": "PASS",
+      "detail": "Status page transition to OPERATIONAL + public_status=GA (prep component)",
+      "tenant_ring": "ga-cutover-prep"
+    },
+    {
+      "ts": "2026-05-16T09:06:58Z",
+      "step": "S12",
+      "outcome": "PASS",
+      "detail": "Cleanup: tear down ga-cutover-prep tenant ring",
+      "tenant_ring": "ga-cutover-prep"
+    }
+  ],
+  "greenlight_metrics_snapshot": {
+    "neon_shadow_replication_lag_seconds_p99": "48",
+    "corelink_dsr_cron_runs_total_24h": "24",
+    "corelink_dsr_cron_runs_failed_total_24h": "0",
+    "corelink_ga_pilot_attestation_signed_count": "5",
+    "prep_ring_cleanup_residue_count": "0"
+  },
+  "greenlights": {
+    "G1_p99_latency_regions_ok": 1,
+    "G2_audit_chain_integrity": 1,
+    "G3_sev01_zero_72h_ok": 1,
+    "G4_pilot_attestations_ok": 1,
+    "G5_neon_shadow_lag_ok": 1,
+    "G6_dsr_cron_24h_success": 1,
+    "composite_ok": 1
+  },
+  "verdict": "GREEN",
+  "rollback_triggers": [
+    {
+      "id": "RB-T1",
+      "fired": "NO"
+    },
+    {
+      "id": "RB-T2",
+      "fired": "NO"
+    },
+    {
+      "id": "RB-T3",
+      "fired": "NO"
+    },
+    {
+      "id": "RB-T4",
+      "fired": "NO"
+    },
+    {
+      "id": "RB-T5",
+      "fired": "NO"
+    },
+    {
+      "id": "RB-T6",
+      "fired": "NO"
+    }
+  ],
+  "caveats": [
+    "Wave-26 production-tier dress-run against the ga-cutover-prep bring-up channel (parallel to staging), distinct from any production tenant. Never executes against production tenant IDs.",
+    "Effective mode reported in `mode` field. In sim mode the runbook orchestration shape is exercised against in-process fakes; downgrade_reasons[] enumerates why real-mode was not entered.",
+    "S0 + S12 bookend the §3.1..§3.11 sequence: S0 provisions the prep tenant ring; S12 tears it down so no residue is left on prep infra after a successful dress-run.",
+    "Per-step duration is best-effort wall-clock. The production T-0h sequence is bounded ≤ 4h wall-clock per RB-GA-CUTOVER §3 preamble.",
+    "G3 (zero SEV-0/1 in 72h) and G4 (≥ 5 pilot attestations) are externally sourced in production; this dress-run asserts the recording-rule semantics and not the upstream sources.",
+    "Per RB-GA-CUTOVER §9 this dress-run is the *backstop* to a real staging-environment rehearsal scheduled at T-14d when that window opens."
+  ]
+}
