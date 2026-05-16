@@ -57,7 +57,7 @@ test-utils = ["dep:rsa", "dep:rand"]
 # stability.
 # Gated by `jwt-adapter` feature so wasm32-unknown-unknown targets can
 # depend on this crate for the trait surfaces without pulling ring.
-jsonwebtoken = { version = "9.3", optional = true }
+jsonwebtoken = { version = "10.4", optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }

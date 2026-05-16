@@ -227,7 +227,7 @@ serde_json = { workspace = true }
 # same `rusqlite 0.32 + bundled` pin. `tempfile` gives us a
 # per-test on-disk database file so the harness exercises the
 # transaction + WAL surface a real D1 would.
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.39", features = ["bundled"] }
 tempfile = { workspace = true }
 
 [build-dependencies]
