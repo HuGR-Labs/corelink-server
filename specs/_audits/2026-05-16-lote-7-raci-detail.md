@@ -3,7 +3,7 @@ id: "AUDIT-2026-05-16-LOTE-7-RACI-DETAIL"
 type: "audit"
 doc_status: "ACTIVE"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.0.1"
 created: "2026-05-16"
 updated: "2026-05-16"
 owner: "Gustavo Schneiter"
@@ -21,7 +21,7 @@ references:
   - "specs/03_architecture/adrs/ADR-0034-prr-staffing-waiver-solo-tier.md"
   - "specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md"
   - "specs/_governance/reviewer_staffing_strategy.md"
-tags: ["audit", "lote-7", "wave-25", "governance", "reviewers", "raci", "framework-freeze", "ga", "dual-hat"]
+tags: ["audit", "lote-7", "wave-25", "wave-26", "governance", "reviewers", "raci", "framework-freeze", "ga", "dual-hat"]
 ---
 
 # Lote 7 RACI matrix detail — wave-25 audit (FW-H-1..4 × 15 framework decisions)
@@ -230,11 +230,13 @@ Both gates run as part of the wave-25 commit pre-merge check.
 
 ---
 
-## §8 Open items (forward to wave-26+)
+## §8 Open items (forward to wave-26+) — CLOSED wave-26
 
-1. **Wire RACI per-row SLA into a CI gate?** The addendum §3.4 says SLA conformance is reported as a single line in the quarterly review delta-doc. Wave-26 may consider authoring a script that auto-extracts SLA hits/misses from change-log entries (out of scope for wave-25).
-2. **Per-row INV binding?** Each row in §6.2 could be bound to a specific invariant in the registry (e.g., Row 3 INV promotion bound to a meta-invariant covering promotion criteria). Wave-25 leaves this as an open extension; doing so would tighten the RACI from "decision class" to "invariant-bound contract".
-3. **Pairing-Alpha vs Pairing-Beta selection heuristics.** ADR-0034b §Permitted pairings already provides "when to choose" guidance. Wave-26 may consider a scored-decision artifact (e.g., a small TLA+ spec or a markdown table) that the Owner uses to pick the pairing at invocation time. Out of scope for wave-25.
+All three items below are CLOSED by wave-26. See `specs/_audits/2026-05-16-lote-7-followons-closure.md` for the per-item closure rationale + deliverables.
+
+1. **Wire RACI per-row SLA into a CI gate?** **CLOSED wave-26.** `scripts/check-raci-sla.py` lands as advisory CI gate in `.github/workflows/spec_validation.yml`. Parses §6.2 + lanes (addendum §3.1); emits one-line conformance summary consumable by the quarterly review delta-doc (addendum §3.4). `--dry-run` is the CI default; `--since <iso-date>` mode scans git log for candidate stalls and emits non-blocking WARN lines. Closure doc §2.
+2. **Per-row INV binding?** **CLOSED wave-26.** §6.2 matrix extended with trailing `INV binding` column. 6 of 15 rows bind to concrete INVs (rows 3, 8, 9, 10, 11, 13 → `INV-OBS-AUDIT-CHAIN-INTEGRITY`, `INV-BYOK-CRYPTO-SOVEREIGNTY`, `INV-REGION-NO-CROSS-LEAK`, `INV-AUTH-MIGRATION-ADDITIVE`, `INV-AUDIT-APPEND-ONLY`, `INV-ROLLOUT-COSIGN-GATE`). The other 9 rows carry `—` (decision class not pin-down-able to a single invariant; binding is implicit via §-coverage). Closure doc §3.
+3. **Pairing-Alpha vs Pairing-Beta selection heuristics.** **CLOSED wave-26.** New §6.4 in addendum with decision tree (4-step scoring over Architecture / Security / Compliance / ProdOps pressure dimensions from the trailing 90-day work mix), default for SaaS pre-GA (Pairing-Beta — compliance-heavy phase), re-pairing criteria post-GA (5-condition AND-gate), anti-patterns, and audit-trail format for the §10 change-log. §6.4 renumbers prior §6.4 → §6.5 (disambiguating rules) and §6.5 → §6.6 (cross-refs). ADR-0034b §Permitted pairings remains the normative source; §6.4 is advisory operating policy. Closure doc §4.
 
 ---
 
@@ -243,3 +245,4 @@ Both gates run as part of the wave-25 commit pre-merge check.
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-05-16 | Claude Opus 4.7 (wave-25 Lote 7 RACI detail authoring agent) | Initial audit doc documenting the wave-25 addendum v0.1.2 §6 RACI matrix detail authoring. §2 explains why a detailed matrix was needed beyond the original 13-row summary. §3 documents per-row rationale for all 15 decision rows. §4 explains the dual-hat fallback row design and per-pairing affected rows. §5 verifies single-A discipline across all rows. §6 enumerates the cross-reference graph changes (addendum 0.1.1→0.1.2; ADR-0034b 0.1.0→0.1.1; this audit doc 1.0.0). §7 names quality gates. §8 forward-references wave-26 open items (CI SLA wire-up, INV binding, pairing selection heuristics). |
+| 1.0.1 | 2026-05-16 | Claude Opus 4.7 (wave-26 Lote 7 follow-ons closure) | Update §8 to mark all three deferred items CLOSED by wave-26 with pointer to `specs/_audits/2026-05-16-lote-7-followons-closure.md`. Add `wave-26` tag. No semantic change to §1–§7 (the wave-25 baseline). |
