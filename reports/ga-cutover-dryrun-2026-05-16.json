@@ -1,0 +1,239 @@
+{
+  "runbook": "specs/_runbooks/RB-GA-CUTOVER.md",
+  "dashboard": "dashboards/alerts/dash-ga-greenlight.yml",
+  "run_date": "2026-05-16",
+  "run_started_at": "2026-05-16T07:15:23Z",
+  "base_branch": "wt/r-prep-ga-cutover-dryrun",
+  "base_sha": "33138b586b0251ace895bb0bcfd62d5f28d3c5e8",
+  "environment": "simulated-staging (in-process fakes)",
+  "validators": {
+    "validate_specs_exit": 0,
+    "validate_references_exit": 0
+  },
+  "pre_cutover_checklist": [
+    {
+      "check": "wave18_seal_landed",
+      "status": "GREEN"
+    },
+    {
+      "check": "validate_specs_green",
+      "status": "GREEN"
+    },
+    {
+      "check": "validate_references_green",
+      "status": "GREEN"
+    },
+    {
+      "check": "all_21_prrs_approved",
+      "status": "GREEN"
+    },
+    {
+      "check": "codex_reviews_ge_8",
+      "status": "GREEN"
+    },
+    {
+      "check": "rb_ga_launch_rollback_drilled_within_7d",
+      "status": "GREEN"
+    },
+    {
+      "check": "schema_freeze_active_t_minus_72h",
+      "status": "GREEN"
+    },
+    {
+      "check": "secrets_matrix_clean",
+      "status": "GREEN"
+    },
+    {
+      "check": "regulatory_no_breach_attestation_signed",
+      "status": "GREEN"
+    },
+    {
+      "check": "rb_dress_rehearsal_completed_at_t_minus_14d",
+      "status": "GREEN"
+    }
+  ],
+  "steps": [
+    {
+      "id": "S1",
+      "label": "Provision/verify R2 buckets (5 regions x 5 purposes = 25)",
+      "outcome": "PASS",
+      "duration_ms": 132
+    },
+    {
+      "id": "S2",
+      "label": "Apply Neon shadow migrations (idempotent)",
+      "outcome": "PASS",
+      "duration_ms": 131
+    },
+    {
+      "id": "S3",
+      "label": "Deploy CF Worker gradual rollout (1->10->50->100)",
+      "outcome": "PASS",
+      "duration_ms": 149
+    },
+    {
+      "id": "S4",
+      "label": "Enable BYOK orchestrator (singleton-fake -> real)",
+      "outcome": "PASS",
+      "duration_ms": 124
+    },
+    {
+      "id": "S5",
+      "label": "Enable Stripe live mode + DLQ consumers",
+      "outcome": "PASS",
+      "duration_ms": 121
+    },
+    {
+      "id": "S6",
+      "label": "Enable Clerk JWT issuer + WebAuthn admin",
+      "outcome": "PASS",
+      "duration_ms": 120
+    },
+    {
+      "id": "S7",
+      "label": "Enable audit-chain Logpush + Neon shadow sync",
+      "outcome": "PASS",
+      "duration_ms": 119
+    },
+    {
+      "id": "S8",
+      "label": "Enable DSR Statuspage cron",
+      "outcome": "PASS",
+      "duration_ms": 121
+    },
+    {
+      "id": "S9",
+      "label": "DNS cutover apply (4 CNAMEs, TTL 60s)",
+      "outcome": "PASS",
+      "duration_ms": 125
+    },
+    {
+      "id": "S10",
+      "label": "Enable GA-canonical rate limits",
+      "outcome": "PASS",
+      "duration_ms": 125
+    },
+    {
+      "id": "S11",
+      "label": "Status page transition to OPERATIONAL + public_status=GA",
+      "outcome": "PASS",
+      "duration_ms": 125
+    }
+  ],
+  "audit_emits": [
+    {
+      "ts": "2026-05-16T07:15:19Z",
+      "step": "S1",
+      "outcome": "PASS",
+      "detail": "Provision/verify R2 buckets (5 regions x 5 purposes = 25)"
+    },
+    {
+      "ts": "2026-05-16T07:15:19Z",
+      "step": "S2",
+      "outcome": "PASS",
+      "detail": "Apply Neon shadow migrations (idempotent)"
+    },
+    {
+      "ts": "2026-05-16T07:15:20Z",
+      "step": "S3",
+      "outcome": "PASS",
+      "detail": "Deploy CF Worker gradual rollout (1->10->50->100)"
+    },
+    {
+      "ts": "2026-05-16T07:15:20Z",
+      "step": "S4",
+      "outcome": "PASS",
+      "detail": "Enable BYOK orchestrator (singleton-fake -> real)"
+    },
+    {
+      "ts": "2026-05-16T07:15:20Z",
+      "step": "S5",
+      "outcome": "PASS",
+      "detail": "Enable Stripe live mode + DLQ consumers"
+    },
+    {
+      "ts": "2026-05-16T07:15:20Z",
+      "step": "S6",
+      "outcome": "PASS",
+      "detail": "Enable Clerk JWT issuer + WebAuthn admin"
+    },
+    {
+      "ts": "2026-05-16T07:15:21Z",
+      "step": "S7",
+      "outcome": "PASS",
+      "detail": "Enable audit-chain Logpush + Neon shadow sync"
+    },
+    {
+      "ts": "2026-05-16T07:15:21Z",
+      "step": "S8",
+      "outcome": "PASS",
+      "detail": "Enable DSR Statuspage cron"
+    },
+    {
+      "ts": "2026-05-16T07:15:21Z",
+      "step": "S9",
+      "outcome": "PASS",
+      "detail": "DNS cutover apply (4 CNAMEs, TTL 60s)"
+    },
+    {
+      "ts": "2026-05-16T07:15:22Z",
+      "step": "S10",
+      "outcome": "PASS",
+      "detail": "Enable GA-canonical rate limits"
+    },
+    {
+      "ts": "2026-05-16T07:15:22Z",
+      "step": "S11",
+      "outcome": "PASS",
+      "detail": "Status page transition to OPERATIONAL + public_status=GA"
+    }
+  ],
+  "greenlight_metrics_snapshot": {
+    "neon_shadow_replication_lag_seconds_p99": "42",
+    "corelink_dsr_cron_runs_total_24h": "24",
+    "corelink_dsr_cron_runs_failed_total_24h": "0",
+    "corelink_ga_pilot_attestation_signed_count": "5"
+  },
+  "greenlights": {
+    "G1_p99_latency_regions_ok": 1,
+    "G2_audit_chain_integrity": 1,
+    "G3_sev01_zero_72h_ok": 1,
+    "G4_pilot_attestations_ok": 1,
+    "G5_neon_shadow_lag_ok": 1,
+    "G6_dsr_cron_24h_success": 1,
+    "composite_ok": 1
+  },
+  "verdict": "GREEN",
+  "rollback_triggers": [
+    {
+      "id": "RB-T1",
+      "fired": "NO"
+    },
+    {
+      "id": "RB-T2",
+      "fired": "NO"
+    },
+    {
+      "id": "RB-T3",
+      "fired": "NO"
+    },
+    {
+      "id": "RB-T4",
+      "fired": "NO"
+    },
+    {
+      "id": "RB-T5",
+      "fired": "NO"
+    },
+    {
+      "id": "RB-T6",
+      "fired": "NO"
+    }
+  ],
+  "caveats": [
+    "All §3 actions are simulated against in-process fakes; no real CF/R2/Neon/Clerk/Stripe/Statuspage call is made.",
+    "Per-step duration is best-effort wall-clock; production T-0h sequence is bounded ≤ 4h wall-clock per RB-GA-CUTOVER §3.",
+    "G3 (zero SEV-0/SEV-1 72h) and G4 (≥ 5 pilot attestations) are externally sourced in production; this dry-run asserts the recording-rule semantics not the upstream sources.",
+    "Dry-run does NOT satisfy the §9 dress-rehearsal mandate (which requires the §3 sequence against a real staging environment)."
+  ]
+}
