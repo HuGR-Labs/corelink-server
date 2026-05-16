@@ -96,6 +96,17 @@ corelink-cf-bindings = { workspace = true }
 corelink-billing-stripe-materializer = { workspace = true, optional = true }
 corelink-audit-chain = { workspace = true, optional = true }
 
+# Wave-18 DSR Statuspage real binding deps (wasm32 only). The cron
+# entry point in `dsr_statuspage_cron.rs` hand-composes
+# `aggregate_24h_window → bridge_to_report → publish_dsr_metric_async`
+# from these three crates (the wave-17 native scheduler crate is sync
+# and cannot be reused on wasm32; the orchestration is replicated
+# inline here).
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+corelink-privacy-erasure-worker = { workspace = true }
+corelink-statuspage-real = { workspace = true }
+corelink-dsr-statuspage-scheduler = { workspace = true }
+
 [features]
 default = []
 

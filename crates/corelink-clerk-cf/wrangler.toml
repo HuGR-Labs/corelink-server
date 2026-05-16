@@ -46,6 +46,18 @@ binding = "CLERK_DB"
 database_name = "clerk-audit-db"
 database_id = "PLACEHOLDER_D1_DATABASE_ID"
 
+# Wave-18 DSR Statuspage 24h publish cron — `dsr_erasure_log` D1
+# binding. The wave-18 wasm32 cron handler in
+# `src/dsr_statuspage_cron.rs` reads the canonical 24h slice of
+# `dsr_erasure_log` rows through this binding (via the wave-14
+# `CfD1DatabaseReal` tenant-scoped wrapper). The database is shared
+# with the canonical DSR worker that writes per-backend tombstones —
+# the cron is a read-only consumer.
+[[d1_databases]]
+binding = "DSR_LOG_DB"
+database_name = "corelink-dsr-erasure-log"
+database_id = "PLACEHOLDER_DSR_LOG_DATABASE_ID"
+
 # R2 bucket binding — content-addressable store. The health probe
 # issues a `head` against `<tenant>/health/probe` so the binding chain
 # is exercised end-to-end even when CAS payloads are not in scope of
@@ -99,6 +111,14 @@ ENVIRONMENT = "dev"
 # `env.secret(...)`.
 STATUSPAGE_PAGE_ID = "PLACEHOLDER_STATUSPAGE_PAGE_ID"
 STATUSPAGE_METRIC_DSR_RESOLUTION_HOURS = "PLACEHOLDER_STATUSPAGE_METRIC_DSR_RESOLUTION_HOURS"
+# Wave-18 DSR Statuspage wasm32 real backend — tenant the cron read
+# scopes against. CTRL-PRIV-001 / INV-TENANT-ISOLATION: every D1
+# read flows through `CfD1DatabaseReal` which constant-time-checks
+# the first bound parameter against this anchored tenant-id. The
+# value is a 16-hex tenant prefix per `corelink-tenant-path`; in
+# production set this via `wrangler.toml` `[vars]` per-environment
+# to the operations-tenant that owns the cron job.
+STATUSPAGE_TENANT_ID = "PLACEHOLDER_STATUSPAGE_TENANT_ID"
 
 # Wave-17 DSR Statuspage 24h publish scheduler — cron trigger.
 #
@@ -119,4 +139,4 @@ crons = ["0 6 * * *"]
 # Production environment override (deploy with --env prod).
 [env.prod]
 name = "corelink-clerk-cf-poc-prod"
-vars = { ENVIRONMENT = "prod", STATUSPAGE_PAGE_ID = "PLACEHOLDER_STATUSPAGE_PAGE_ID_PROD", STATUSPAGE_METRIC_DSR_RESOLUTION_HOURS = "PLACEHOLDER_STATUSPAGE_METRIC_DSR_RESOLUTION_HOURS_PROD" }
+vars = { ENVIRONMENT = "prod", STATUSPAGE_PAGE_ID = "PLACEHOLDER_STATUSPAGE_PAGE_ID_PROD", STATUSPAGE_METRIC_DSR_RESOLUTION_HOURS = "PLACEHOLDER_STATUSPAGE_METRIC_DSR_RESOLUTION_HOURS_PROD", STATUSPAGE_TENANT_ID = "PLACEHOLDER_STATUSPAGE_TENANT_ID_PROD" }

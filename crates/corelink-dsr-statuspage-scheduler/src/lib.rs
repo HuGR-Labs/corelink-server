@@ -69,6 +69,13 @@ pub mod audit;
 pub mod cron_log;
 pub mod row_source;
 pub mod scheduler;
+// Wave-18 wasm32 real D1 row source. The native build also compiles
+// the module (so the canonical SQL constant + the tenant-scope
+// validator smoke test run on host CI), but the `D1Wasm32RowSource`
+// struct itself is gated `#[cfg(target_arch = "wasm32")]` (it carries
+// a `CfD1DatabaseReal` field whose inner `worker::D1Database` only
+// exists on wasm32).
+pub mod wasm32_row_source;
 
 pub use audit::{
     InMemorySchedulerAuditSink, SchedulerAuditError, SchedulerAuditEvent, SchedulerAuditOutcome,
@@ -80,3 +87,6 @@ pub use scheduler::{
     DsrStatuspagePublishScheduler, RunOutcome, SchedulerError, CRON_EXPRESSION,
     PUBLISH_WINDOW_SECONDS,
 };
+pub use wasm32_row_source::CRON_OUTCOME_QUERY;
+#[cfg(target_arch = "wasm32")]
+pub use wasm32_row_source::D1Wasm32RowSource;

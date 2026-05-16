@@ -28,8 +28,24 @@ mod_module_files = "deny"
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-reqwest = { version = "0.12", features = ["blocking", "json", "rustls-tls"], default-features = false }
 corelink-privacy-erasure-worker = { path = "../corelink-privacy-erasure-worker" }
+
+# Native target (apps/server, native CI, scheduler crate): reqwest::blocking
+# powers the wave-16 `StatuspageHttpClient`. Gated out on wasm32 because
+# reqwest::blocking requires the host TCP stack and cannot link against
+# the workers-rs / wasm-bindgen runtime. The wasm32 publish path is
+# served by `wasm32_backend.rs` (wave-18) which uses `worker::Fetch`.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+reqwest = { version = "0.12", features = ["blocking", "json", "rustls-tls"], default-features = false }
+
+# wasm32 target (CF Worker cron): `worker::Fetch`-backed client lives in
+# `wasm32_backend.rs`. Pulls in the workers-rs runtime + wasm-bindgen
+# bridging types. Wave-18 follow-on to the wave-17 scheduler binding.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+worker = { version = "0.8", features = ["http"] }
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = "0.4"
+js-sys = { workspace = true }
 
 [dev-dependencies]
 wiremock = "0.6"

@@ -52,12 +52,28 @@
 pub mod audit;
 pub mod backend;
 pub mod dsr_bridge;
+// `http.rs` (wave-16 reqwest::blocking client) is native-only: reqwest's
+// blocking flavour does not link against wasm32-unknown-unknown. The
+// wasm32 target uses `wasm32_backend.rs` (wave-18 follow-on) which wires
+// `worker::Fetch` instead.
+#[cfg(not(target_arch = "wasm32"))]
 pub mod http;
 pub mod memory;
 pub mod rate_limit;
 pub mod redact;
 pub mod report;
 pub mod retry;
+/// wave-18 wasm32 real backend — `worker::Fetch`-driven Statuspage
+/// Public-Metric publisher. Mirrors the wave-16 native `StatuspageHttpClient`
+/// semantics (auth header, redaction, rate-limit gate, retry policy, audit
+/// emit fail-CLOSED) but uses the async CF Workers Fetch API so the
+/// `#[event(scheduled)]` cron handler in `corelink-clerk-cf::dsr_statuspage_cron`
+/// can actually publish on the wasm32 target. The trait surface
+/// (`StatuspageBackend`) is sync; the wasm32 backend therefore exposes an
+/// async `publish_dsr_metric_async` method (the trait cannot be implemented
+/// directly without a sync→async bridge that workers-rs does not provide).
+#[cfg(target_arch = "wasm32")]
+pub mod wasm32_backend;
 
 pub use audit::{
     InMemoryStatuspageAuditSink, StatuspageAuditError, StatuspageAuditEvent,
@@ -65,9 +81,12 @@ pub use audit::{
 };
 pub use backend::{PublishOutcome, StatuspageBackend, StatuspageClientError};
 pub use dsr_bridge::bridge_to_report;
+#[cfg(not(target_arch = "wasm32"))]
 pub use http::StatuspageHttpClient;
 pub use memory::{InMemoryStatuspageBackend, RecordedPublish};
 pub use rate_limit::{RateLimitDecision, StatuspageRateLimiter};
 pub use redact::redact_api_key;
 pub use report::{DsrCompletionReport, DsrCompletionReportError};
 pub use retry::{RetryDecision, RetryPolicy};
+#[cfg(target_arch = "wasm32")]
+pub use wasm32_backend::{StatuspageWasm32Client, Wasm32BackendError};

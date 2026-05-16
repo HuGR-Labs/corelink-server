@@ -1420,6 +1420,9 @@ dependencies = [
  "corelink-billing-stripe-materializer",
  "corelink-cf-bindings",
  "corelink-clerk",
+ "corelink-dsr-statuspage-scheduler",
+ "corelink-privacy-erasure-worker",
+ "corelink-statuspage-real",
  "js-sys",
  "serde",
  "serde_json",
@@ -1637,14 +1640,17 @@ dependencies = [
 name = "corelink-dsr-statuspage-scheduler"
 version = "0.1.0"
 dependencies = [
+ "corelink-cf-bindings",
  "corelink-privacy-erasure-worker",
  "corelink-statuspage-real",
+ "serde",
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
  "uuid",
  "wiremock",
+ "worker",
 ]
 
 [[package]]
@@ -2341,12 +2347,16 @@ name = "corelink-statuspage-real"
 version = "0.1.0"
 dependencies = [
  "corelink-privacy-erasure-worker",
+ "js-sys",
  "reqwest",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
  "wiremock",
+ "worker",
 ]
 
 [[package]]

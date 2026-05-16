@@ -323,11 +323,18 @@ Não — regulatory feature, sem A/B (multi-arm = compliance risk).
 > PRIMARY-KEY ledger; fail-CLOSED scheduler audit envelope with 4
 > canonical event types
 > (`corelink.privacy.statuspage_publish_{scheduled,succeeded,failed,skipped}.v1`).
+> Wired via commits `49901da` + `dd58b27`. The wave-17 wasm32
+> `#[event(scheduled)]` handler short-circuited with the canonical
+> `wasm32_real_binding_deferred` skip event because the wave-16
+> `StatuspageHttpClient` uses `reqwest::blocking` which does not
+> link on wasm32 — the cron firing is observable in the audit chain
+> from wave-17 forward but the actual publish round-trip awaits the
+> real `worker::Fetch`-backed adapter shipped wave-18.
 > See `specs/_audits/2026-05-15-dsr-worker-production.md` §5.6 for the
 > canonical surface map.
 >
-> **Wave-18 closure note (2026-05-15):** PD wiring for DSR Statuspage
-> cron failures DONE wave-18. PagerDuty alert rule
+> **Wave-18 closure note (2026-05-15) — observability:** PD wiring for
+> DSR Statuspage cron failures DONE wave-18. PagerDuty alert rule
 > `DsrStatuspagePublishFailed` (severity=critical / SEV-1 / routing_key
 > `PAGERDUTY_ROUTING_KEY` / escalation_policy
 > `corelink-incident-response`) + recording rules
@@ -344,6 +351,31 @@ Não — regulatory feature, sem A/B (multi-arm = compliance risk).
 > `StatuspageHttpClient`). See
 > `specs/_audits/2026-05-15-dsr-worker-production.md` §5.7 for the
 > canonical surface map + regulatory posture rationale.
+>
+> **Wave-18 closure note (2026-05-15) — wasm32 real binding:**
+> scheduler-binding fully wired wave-18 (commit `26f86b1`). The real
+> `worker::Fetch`-backed
+> [`corelink_statuspage_real::StatuspageWasm32Client`] +
+> `worker::D1Database`-backed
+> [`corelink_dsr_statuspage_scheduler::D1Wasm32RowSource`] are
+> wired into `corelink-clerk-cf::dsr_statuspage_cron`; the
+> `wasm32_real_binding_deferred` skip event is REMOVED. The cron
+> handler hand-composes
+> `D1Wasm32RowSource::fetch_window_async →
+> aggregate_24h_window → bridge_to_report →
+> StatuspageWasm32Client::publish_dsr_metric_async` (the native
+> [`DsrStatuspagePublishScheduler`] uses sync trait surfaces
+> incompatible with the async wasm32 worker::* runtime). Net-new
+> bindings: `STATUSPAGE_TENANT_ID` (var, secrets-matrix row 119) +
+> `DSR_LOG_DB` (D1 binding). Canonical D1 SELECT
+> (`CRON_OUTCOME_QUERY`) carries the wave-14 tenant-scope clause
+> `WHERE tenant_id = ?` — every read flows through
+> `CfD1DatabaseReal::scoped_query` (validator) +
+> `CfD1DatabaseReal::bind` (constant-time tenant-id check). The
+> credential redaction (`OAuth ***<last4>` via
+> `redact_api_key`) is preserved verbatim across the wasm32 audit
+> envelope. See `specs/_audits/2026-05-15-dsr-worker-production.md`
+> §5.6 for the canonical surface map.
 
 ### 6.1 Em escopo (exaustivo)
 

@@ -229,20 +229,32 @@ the canonical matrix (`docs/internal/secrets-checklist.md`):
 matrix rows grow to 118 (drift only on the matrix-only side, never
 code-only).
 
-### 5.6 Wave-17 closure — scheduler binding shipped
+### 5.6 Wave-17 closure — scheduler binding shipped; wave-18 closure — wasm32 real backend wired
 
-**Status (2026-05-15 wave-17, commit `49901da`):** SHIPPED. The publish scheduler that
-fires the wave-16 composition (`aggregate_24h_window → bridge_to_report
-→ publish_dsr_metric`) once per 24h is now wired. Wave-16 shipped the
-publish-path layers but the scheduler binding (cron tick + D1 row
-source + idempotency dedupe + scheduler-level audit envelope) was
-deferred under the `trait-abstraction-defer` charter (see §5.1
-historical rationale). Wave-17 closes that gap.
+**Status (2026-05-15 wave-18):** scheduler real backend wired wave-18.
+Wave-17 (commit `49901da` + `dd58b27`) shipped the publish scheduler
+composition (`aggregate_24h_window → bridge_to_report →
+publish_dsr_metric`) on native + the wasm32 `#[event(scheduled)]`
+firing surface. The wasm32 path short-circuited with the canonical
+`wasm32_real_binding_deferred` skip event because the wave-16
+`StatuspageHttpClient` uses `reqwest::blocking` which does not link
+on wasm32. Wave-18 lands the real `worker::Fetch`-backed
+[`corelink_statuspage_real::StatuspageWasm32Client`] +
+`worker::D1Database`-backed
+[`corelink_dsr_statuspage_scheduler::D1Wasm32RowSource`] and wires
+them into the cron handler — the skip event is REMOVED; the cron
+publishes on wasm32 from wave-18 forward.
+
+Wave-16 shipped the publish-path layers but the scheduler binding
+(cron tick + D1 row source + idempotency dedupe + scheduler-level
+audit envelope) was deferred under the `trait-abstraction-defer`
+charter (see §5.1 historical rationale). Wave-17 closed that gap on
+native; wave-18 closes it on wasm32.
 
 | Layer | Crate / module | Notes |
 |---|---|---|
 | Scheduler (native, trait-driven) | `corelink-dsr-statuspage-scheduler` (NEW) | `DsrStatuspagePublishScheduler::run_once(now_unix_s)` composes the four trait-bound collaborators (`D1RowSource`, `CronRunLog`, `StatuspageBackend`, `SchedulerAuditSink`) into a single 24h-cron-firable orchestration. Native-only (the wave-16 `StatuspageHttpClient` uses `reqwest::blocking` which does not link on wasm32). |
-| CF Worker cron entry | `corelink-clerk-cf::dsr_statuspage_cron` | `#[event(scheduled)]` handler resolving the three `STATUSPAGE_*` bindings + emitting the canonical `corelink.privacy.statuspage_publish_scheduled.v1` NDJSON audit line BEFORE any work. The real D1 row source + `worker::Fetch`-backed `StatuspageBackend` impl remain trait-abstraction-deferred to a follow-up wave; the wasm32 handler short-circuits with the canonical `wasm32_real_binding_deferred` skip event so the cron firing is observable in the audit chain from wave-17 forward. |
+| CF Worker cron entry | `corelink-clerk-cf::dsr_statuspage_cron` | wave-17: `#[event(scheduled)]` handler resolving the three `STATUSPAGE_*` bindings + emitting the canonical `corelink.privacy.statuspage_publish_scheduled.v1` NDJSON audit line BEFORE any work; short-circuited with `wasm32_real_binding_deferred` skip event because wave-16 `StatuspageHttpClient` (reqwest::blocking) does not link on wasm32. **wave-18:** real `worker::Fetch`-backed `StatuspageWasm32Client` + `worker::D1Database`-backed `D1Wasm32RowSource` wired inline; skip event REMOVED. Cron handler hand-composes `D1Wasm32RowSource::fetch_window_async → aggregate_24h_window → bridge_to_report → StatuspageWasm32Client::publish_dsr_metric_async` (the native [`DsrStatuspagePublishScheduler`] uses sync trait surfaces incompatible with the async wasm32 worker::* runtime). New bindings: `STATUSPAGE_TENANT_ID` (var) + `DSR_LOG_DB` (D1 binding). |
 | Cron trigger | `crates/corelink-clerk-cf/wrangler.toml` `[triggers] crons = ["0 6 * * *"]` | 06:00 UTC daily — scheduled AFTER the audit-chain daily-verify at 02:00 UTC and BEFORE SF business start (gives 10h buffer for ops to react to `statuspage_publish_failed.v1` before customer business day). Pinned verbatim against `corelink-dsr-statuspage-scheduler::CRON_EXPRESSION` + `corelink-clerk-cf::dsr_statuspage_cron::CRON_EXPRESSION` — both constants assert `"0 6 * * *"` in unit tests so any drift fails CI. |
 | Idempotency dedupe | `corelink-dsr-statuspage-scheduler::cron_log::CronRunLog` | Trait surface for a D1-backed `(date_yyyymmdd, metric_id)` PRIMARY KEY ledger. The pre-flight `is_recorded` check + the post-publish `record` call together guarantee one publish per UTC day per metric (the CF runtime retrying a `scheduled` event in the same day short-circuits with the canonical `skipped / already_published_today` audit). `InMemoryCronRunLog` fake covers the algorithmic invariants. |
 | Scheduler audit envelope (fail-CLOSED) | `corelink-dsr-statuspage-scheduler::audit::SchedulerAuditSink` | 4 canonical event types: `statuspage_publish_scheduled.v1` / `statuspage_publish_succeeded.v1` / `statuspage_publish_failed.v1` / `statuspage_publish_skipped.v1`. Every transition emits BEFORE the caller-visible outcome (INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER); audit emit failure aborts the tick as `SchedulerError::Audit` (fail-CLOSED). |
@@ -251,9 +263,10 @@ historical rationale). Wave-17 closes that gap.
 
 | Crate / harness | Tests | Status |
 |---|---|---|
-| `corelink-dsr-statuspage-scheduler` (lib) | 14 (audit 3 + cron_log 5 + row_source 2 + scheduler 4) | green |
+| `corelink-dsr-statuspage-scheduler` (lib) | wave-17: 14 (audit 3 + cron_log 5 + row_source 2 + scheduler 4); **wave-18: +2** (`canonical_outcome_query_is_pinned` + `canonical_outcome_query_passes_tenant_scope_validator`) = 16 total | green |
 | `corelink-dsr-statuspage-scheduler::tests::dsr_statuspage_cron` (integration; WireMock) | 6 (cron-expression pin + happy 201 + empty-window skip + auth 401 + rate-limit 429 retry-exhaustion + d1 read-fail) | green |
-| `corelink-clerk-cf` (lib; cron module unit tests) | +3 (binding-name pin + cron-expression pin + audit-type pin) | green |
+| `corelink-clerk-cf` (lib; cron module unit tests) | wave-17: 3 (binding-name pin + cron-expression pin + audit-type pin); **wave-18 closure**: 3 (binding-name pin extends with `STATUSPAGE_TENANT_ID` + `DSR_LOG_DB`; audit-type pin extends with the four canonical `statuspage_publish_{scheduled,succeeded,failed,skipped}.v1` strings) | green |
+| `corelink-statuspage-real::tests::wasm32_backend` (integration; native composition equivalence) | **wave-18 net-new**: 2 (`in_memory_backend_published_audit_shape_matches_wasm32_contract` + `rate_limit_audit_shape_pinned_for_wasm32_parity`) | green |
 
 #### 5.6.2 Charter constraints (re-verified for wave-17)
 

@@ -29,9 +29,23 @@ corelink-privacy-erasure-worker = { workspace = true }
 corelink-statuspage-real = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Wave-18 D1-backed row source. The `wasm32_row_source` module uses
+# `corelink-cf-bindings::CfD1DatabaseReal` (`worker::D1Database` async API
+# on wasm32; `stub_for_native_tests` on native) + the canonical
+# `TenantScopedQuery` tenant-prefix guard so the production cron handler
+# queries the `dsr_erasure_log` table without bypassing tenant isolation.
+# `corelink-cf-bindings` itself is dual-target by design (see its crate
+# docs); we depend on it on every target so the wave-14 tenant-scope
+# validator exercises on native CI as well as wasm32 production.
+corelink-cf-bindings = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+worker = { version = "0.8", features = ["d1", "http"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt"] }
 wiremock = "0.6"
-serde_json = { workspace = true }
 uuid = { workspace = true }
