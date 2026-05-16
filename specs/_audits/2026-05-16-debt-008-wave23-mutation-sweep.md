@@ -3,17 +3,34 @@ id: "AUDIT-DEBT-008-MUTATION-SWEEP-WAVE23-2026-05-16"
 type: "audit"
 doc_status: "REVIEW"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-16"
 updated: "2026-05-16"
 sprint: "Wave-23 (post-043428a DEBT-008 dispatch)"
 parent_wi: "WI-DEBT-008-MUTATION-FULL-SWEEP"
 parent_audit: "specs/_audits/2026-05-16-debt-008-wave22-mutation-sweep.md"
+superseded_by: "specs/_audits/2026-05-16-debt-008-wave24-mutation-sweep.md"
 owner: "Gustavo Schneiter"
 tags: ["audit", "mutation-testing", "cargo-mutants", "debt-008", "wave-23"]
 ---
 
 # Wave-23 DEBT-008 mutation sweep — re-sweep verifications + first sweeps on `chunker` + `multipart-schema`
+
+> **Wave-25 reconciliation note (2026-05-16)** — the projected
+> figures in this doc (chunker ~97.9 %, multipart-schema ≥ 90.6 %
+> in §1 / §5.2 / §7 / §9; and the secondary projection figure
+> "≥ 84.6 %" used in the wave-23 commit message + §1 table-cell
+> short-form) are **superseded by the wave-24 empirical re-sweep**:
+> chunker **95.79 % raw / 100 % of killable** (91/95 viable;
+> hardened post mask-selection digest pin); multipart-schema
+> **97.44 % raw / 100 % of killable** (114/117 viable; +10
+> lifecycle kills landed). See
+> `specs/_audits/2026-05-16-debt-008-wave24-mutation-sweep.md` for
+> the canonical figures. The pre-additions empirical numbers in
+> this doc (chunker 79.79 % pre, multipart-schema 77.78 % pre)
+> remain canonical for the wave-23 snapshot. This reconciliation
+> closes finding P2-04 of
+> `specs/_audits/2026-05-16-wave23-adversarial-review.md`.
 
 > **doc_status:** REVIEW · **scope:** Continue the per-crate
 > mutation sweep launched in waves 21 and 22. Wave-23 dispatch was:
@@ -39,8 +56,8 @@ tags: ["audit", "mutation-testing", "cargo-mutants", "debt-008", "wave-23"]
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | `corelink-handler-cas` | **re-sweep** | 30 | 26 | 0 | 0 | 4 | 26 | **100.00 %** | (none — wave-22 closure) | unchanged |
 | `corelink-auth-schema` | **re-sweep** | 85 | 77 | 0 | 0 | 8 | 77 | **100.00 %** | (none — wave-22 closure) | unchanged |
-| `corelink-chunker` | first sweep | 121 | 75 | 19 | 1 | 26 | 94 | **79.79 %** | 13 | **100 %** projected |
-| `corelink-multipart-schema` | first sweep | 133 | 91 | 26 | 0 | 16 | 117 | **77.78 %** | 9 | **≥ 84.6 %** projected (15/26 missed targeted) |
+| `corelink-chunker` | first sweep | 121 | 75 | 19 | 1 | 26 | 94 | **79.79 %** | 13 | **100 %** projected (wave-24 empirical: **95.79 % raw / 100 % of killable**) |
+| `corelink-multipart-schema` | first sweep | 133 | 91 | 26 | 0 | 16 | 117 | **77.78 %** | 9 | **≥ 84.6 %** projected (15/26 missed targeted; wave-24 empirical: **97.44 % raw / 100 % of killable**) |
 
 - **Wave-23 empirical re-sweep mean:** (100 + 100) / 2 = **100 %**
   (both wave-22 projections empirically confirmed).
@@ -51,6 +68,9 @@ tags: ["audit", "mutation-testing", "cargo-mutants", "debt-008", "wave-23"]
   guards documented §4.3); multipart-schema ≥ 84.6 % (15/26
   missed targeted; remaining 11 are arithmetic-on-large-constant
   patterns + Display/format mutations of lower load).
+  **Wave-24 empirical (canonical, see wave-24 re-sweep audit):**
+  chunker **95.79 % raw / 100 % of killable**; multipart-schema
+  **97.44 % raw / 100 % of killable**.
 - **Crates lifted from <80 % to ≥80 %:** 2 of 2 first sweeps
   (chunker, multipart-schema).
 - **Crates remaining in the queue:** 3 (`corelink-r2-multipart`
@@ -207,6 +227,10 @@ Projected kill rate after additions: (91 caught + 20 killed) /
 117 viable = 111 / 117 = **94.87 %**. Conservative floor
 (assuming 5 of the 20 don't kill on re-sweep): 106/117 = **90.6 %**.
 
+**Wave-24 empirical re-sweep (canonical):** **97.44 % raw**
+(114/117 viable) / **100 % of killable** after exclusion of 3
+structurally-equivalent mutants. See wave-24 audit §3.2.
+
 ### 5.3 Test design conventions (unchanged from wave-22)
 
 - Every test reproduces the EXACT substitution the surviving mutant
@@ -253,8 +277,8 @@ remain candidates for the CI-nightly lane (75 % floor).
 | `corelink-tenant-path` | CLOSED (wave-22) | unchanged | 100.00 % |
 | **`corelink-handler-cas`** | PARTIAL (projected 100 %) | **CLOSED** (re-sweep) | **100.00 %** |
 | **`corelink-auth-schema`** | PARTIAL (projected 100 %) | **CLOSED** (re-sweep) | **100.00 %** |
-| **`corelink-chunker`** | not in matrix | **PARTIAL (tests added; re-sweep pending)** | 79.79 % pre / projected 97.9 % (97.9 % of killable) |
-| **`corelink-multipart-schema`** | not in matrix | **PARTIAL (tests added; re-sweep pending)** | 77.78 % pre / projected ≥ 90.6 % |
+| **`corelink-chunker`** | not in matrix | **PARTIAL (tests added; re-sweep pending)** | 79.79 % pre / projected 97.9 % (97.9 % of killable) — **wave-24 empirical: 95.79 % raw / 100 % of killable** |
+| **`corelink-multipart-schema`** | not in matrix | **PARTIAL (tests added; re-sweep pending)** | 77.78 % pre / projected ≥ 90.6 % — **wave-24 empirical: 97.44 % raw / 100 % of killable** |
 | `corelink-pat` | PARTIAL (CI-nightly) | unchanged | pending |
 | `corelink-clerk` | PARTIAL (CI-nightly) | unchanged | pending |
 | `corelink-dual-approval` | PARTIAL (CI-nightly) | unchanged | pending |
@@ -322,6 +346,27 @@ verification) adds `{chunker, multipart-schema}` (2 crates).
   (`r2-multipart`, `quota-cas`, `webauthn`) + 2 re-sweep
   verifications (`chunker`, `multipart-schema`) dispatched to
   wave-24.
+- **2026-05-16 (wave-24 empirical re-sweep, canonical)** —
+  `corelink-chunker` empirical post-additions kill rate:
+  **95.79 % raw / 100 % of killable** (91/95 viable). The
+  wave-23 projection of **97.9 % of killable** was equivalence-
+  vulnerable in `fastcdc_scan_boundary_mask_selection_is_deterministic`
+  (reference-vs-mutant comparison); wave-24 hardened the test
+  with a literal canonical first-chunk digest pin and re-ran the
+  fastcdc.rs surface to confirm 37/38 of killable = 100 %.
+  `corelink-multipart-schema` empirical post-additions kill rate:
+  **97.44 % raw / 100 % of killable** (114/117 viable; +10
+  lifecycle-bound kills landed). Both crates transition
+  PARTIAL → **CLOSED**. See wave-24 audit §3.
+- **2026-05-16 (wave-25 reconciliation)** — Adversarial review
+  finding **P2-04** (commit message claims chunker projected ≥ 90.6 %
+  / multipart-schema projected ≥ 90.6 %; audit doc table here
+  showed ≥ 84.6 % for multipart-schema; secondary chunker
+  projection figure 97.9 % of killable) closed by reconciling
+  this doc against the wave-24 empirical canonical figures. The
+  pre-additions empirical numbers (79.79 % / 77.78 %) remain
+  canonical for the wave-23 snapshot. See
+  `specs/_audits/2026-05-16-debt-008-number-discrepancy-fix.md`.
 
 ## 10. Test count summary
 
