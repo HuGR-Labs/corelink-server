@@ -308,6 +308,23 @@ pending the wave-28 pilot-comms package send. The DEBT-027 row in
 `specs/_audits/2026-05-15-debt-register.md` is updated to reflect
 the engineering-side closure with the wave-29 stream-1 commit ref.
 
+## 15. Closure note — live-D1 tests added wave-30
+
+Wave-30 stream-9 (`wt/r-prep-signup-live-d1-test`) lifted the 8
+in-memory tests in `apps/server/tests/signup_pilot.rs` onto a real
+SQLite-backed D1 surrogate in
+`apps/server/tests/signup_pilot_live_d1.rs`, with the harness
+shipping as `apps/server/tests/harness/d1_container.rs`. The
+in-memory suite is preserved unchanged (it remains the latency-
+cheap canonical regression); the new suite catches schema drift
+between the Rust struct shape and `migrations/d1/0053_pilot_signups.sql`,
+exercises the SQLite UNIQUE INDEX duplicate-email contract, pins
+the wave-29 fail-CLOSED ordering (§6) against a durable backing
+store, and asserts migration idempotency under
+`INV-AUTH-MIGRATION-ADDITIVE`. See
+`specs/_audits/2026-05-16-signup-live-d1-tests.md` for the full
+design rationale and test matrix.
+
 ---
 
 Signed-off-by: Gustavo Schneiter <gustavo@humangr.com>
