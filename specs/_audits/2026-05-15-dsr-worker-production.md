@@ -268,6 +268,33 @@ historical rationale). Wave-17 closes that gap.
 | Idempotent composition (1 publish per UTC day) | green | `CronRunLog::record` enforces `(date_yyyymmdd, metric_id)` PRIMARY KEY; second tick short-circuits with `Skipped / AlreadyPublishedToday`; pinned by `already_recorded_short_circuits_with_already_published_today` lib test |
 | Worktree isolation | green | wave-17 work-tree `.claude/worktrees/agent-a6fa9fb8e5a49007f/`; branch `wt/r-prep-dsr-statuspage-cron-scheduler` |
 
+### 5.7 Wave-18 closure — PagerDuty alert wiring for the SEV-1 failed emit
+
+**Status (2026-05-15 wave-18):** SHIPPED. The wave-17 scheduler emits
+4 canonical audit event types per tick; wave-18 wires the SEV-1 event
+(`corelink.privacy.statuspage_publish_failed.v1`) into PagerDuty +
+ships the operator runbook. The other three events
+(`statuspage_publish_scheduled.v1` / `_succeeded.v1` / `_skipped.v1`)
+remain info-only dashboard-tile surfaces (NOT paged) per the wave-18
+scope decision documented in `dashboards/alerts/dash-dsr-statuspage-alerts.yml`
+header.
+
+| Layer | Artefact | Notes |
+|---|---|---|
+| PD alert rule | `dashboards/alerts/dash-dsr-statuspage-alerts.yml` rule `DsrStatuspagePublishFailed` | severity=critical (SEV-1) → `routing_key=PAGERDUTY_ROUTING_KEY` (existing row 11) → escalation_policy `corelink-incident-response`; 5-min burn for early detection (catches all retries inside one cron firing). |
+| Recording rules | `corelink_dsr_statuspage_publish_failed_5m` + `corelink_dsr_statuspage_publish_success_rate_5m` | First feeds the alert expr (cheap rollup); second feeds the DSR overview dashboard tile. Both share the metric contract with the alert so the dashboard and the page read the same series. |
+| Runbook | `specs/_runbooks/RB-DSR-STATUSPAGE-PUBLISH-FAILED.md` | SEV-1 runbook §1 Detect → §2 Triage (4xx auth / 5xx vendor / network / D1 read) → §3 Containment (vendor outage > 24h customer email) → §4 Mitigation (manual one-shot retry + cron auto-reconcile; do-NOT-thunder backoff discipline) → §5 Compliance impact (GDPR Art. 30 / LGPD Art. 37; outside-counsel notification > 7d) → §6 Resolution (3 consecutive successful publishes) → §7 MTTA ≤ 4h / MTTR ≤ 24h. |
+| Pseudonymization | PD payload carries `page_id_hex8` + `metric_id_hex8` ONLY (BLAKE3 first-8-hex per INV-AUTH-AUDIT-PSEUDONYMIZATION + CTRL-PRIV-001 + INV-OBS-CARDINALITY-BUDGET) | The DSR Statuspage publish is system-scoped (no tenant_id in path); the alert pipeline never sees the raw Atlassian identifiers and never sees the `STATUSPAGE_API_KEY` bytes (wave-16 `redact_api_key` last-4 semantics bottom out at `StatuspageHttpClient`). |
+| Regulatory posture | GDPR Art. 30 / LGPD Art. 37 records-of-processing transparency | 72h breach-notification clocks (GDPR Art. 33 / LGPD Art. 46) do NOT apply — no personal data is disclosed. Outage ≤ 7d is documented in the post-incident memo; outage > 7d triggers outside-counsel notification per runbook §5.2. |
+| MTTA / MTTR target | 4h MTTA / 24h MTTR | Wider than the audit-export SEV-1 (5 min MTTA / 24h MTTR; `dash-audit-export-alerts.yml` rule `AuditExport_CrossTenantAttempt`) because the DSR worker (full erasure processing) is UNAFFECTED by this failure — the cron will reconcile naturally on the next 06:00 UTC tick. |
+
+The wave-18 closure satisfies the WI-S11-002 §6 wave-18 closure-note
+mandate "PD wiring for DSR Statuspage cron failures DONE wave-18"
+and supersedes the wave-17 audit-doc §5.6 implicit "no PD wiring
+yet" status without further code change to the wave-17 scheduler
+crate (the audit emit-point + metric counter contract were
+pre-staged at wave-17).
+
 ## 6. Test surface re-verification (2026-05-15)
 
 | Crate / harness | Tests | Status |

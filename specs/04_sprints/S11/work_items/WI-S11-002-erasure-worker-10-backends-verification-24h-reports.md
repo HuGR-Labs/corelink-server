@@ -311,6 +311,39 @@ Não — regulatory feature, sem A/B (multi-arm = compliance risk).
 > `env.STATUSPAGE_*`) lands at WI-S11-008 PRR ship gate; the trait
 > surface + wire client + worker aggregator + bridge are sealed
 > under wave-16.
+>
+> **Wave-17 closure note (2026-05-15):** the production cron-firable
+> publish scheduler is **shipped** under
+> `crates/corelink-dsr-statuspage-scheduler` (native, trait-driven —
+> composes `D1RowSource` + `CronRunLog` + `StatuspageBackend` +
+> `SchedulerAuditSink` into a single 24h-cron-firable orchestration)
+> plus the CF Worker cron entry `corelink-clerk-cf::dsr_statuspage_cron`
+> and `wrangler.toml` `[triggers] crons = ["0 6 * * *"]` (06:00 UTC
+> daily). Idempotency dedupe via `(date_yyyymmdd, metric_id)`
+> PRIMARY-KEY ledger; fail-CLOSED scheduler audit envelope with 4
+> canonical event types
+> (`corelink.privacy.statuspage_publish_{scheduled,succeeded,failed,skipped}.v1`).
+> See `specs/_audits/2026-05-15-dsr-worker-production.md` §5.6 for the
+> canonical surface map.
+>
+> **Wave-18 closure note (2026-05-15):** PD wiring for DSR Statuspage
+> cron failures DONE wave-18. PagerDuty alert rule
+> `DsrStatuspagePublishFailed` (severity=critical / SEV-1 / routing_key
+> `PAGERDUTY_ROUTING_KEY` / escalation_policy
+> `corelink-incident-response`) + recording rules
+> `corelink_dsr_statuspage_publish_failed_5m` +
+> `corelink_dsr_statuspage_publish_success_rate_5m` ship in
+> `dashboards/alerts/dash-dsr-statuspage-alerts.yml`. Operator
+> runbook ships at `specs/_runbooks/RB-DSR-STATUSPAGE-PUBLISH-FAILED.md`
+> (MTTA ≤ 4h / MTTR ≤ 24h; GDPR Art. 30 / LGPD Art. 37
+> records-of-processing transparency posture; outside-counsel
+> notification on outage > 7d). PD payload BLAKE3-pseudonymised
+> (`page_id_hex8` + `metric_id_hex8` ONLY; never the raw Atlassian
+> identifiers; never the `STATUSPAGE_API_KEY` bytes — wave-16
+> `redact_api_key` last-4 semantics bottom out at
+> `StatuspageHttpClient`). See
+> `specs/_audits/2026-05-15-dsr-worker-production.md` §5.7 for the
+> canonical surface map + regulatory posture rationale.
 
 ### 6.1 Em escopo (exaustivo)
 
