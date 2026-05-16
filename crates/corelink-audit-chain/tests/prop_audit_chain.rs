@@ -35,9 +35,10 @@ use std::sync::Arc;
 use corelink_analytics::Region;
 use corelink_audit_chain::{
     canonical_audit_event_kinds, canonical_audit_event_strings, compute_canonical_bytes,
-    AuditChainAuditEventType, AuditChainError, AuditEvent, AuditEventKind, ChainHash,
-    ChainVerifier, HashChainBuilder, InMemoryAuditChainAuditSink, InMemoryR2AuditSink,
-    GENESIS_PREV_HASH, GENESIS_SEQUENCE_NUMBER,
+    ArchiveReceipt, AuditChainAuditEventType, AuditChainError, AuditEvent, AuditEventKind,
+    ChainHash, ChainVerifier, HashChainBuilder, InMemoryAuditChainAuditSink,
+    InMemoryNeonShadowSink, InMemoryR2AuditSink, InMemoryShadowSyncAuditSink, NeonShadowError,
+    NeonShadowSink, ShadowEventRow, GENESIS_PREV_HASH, GENESIS_SEQUENCE_NUMBER,
 };
 use proptest::prelude::*;
 use rand::{RngCore, SeedableRng};
@@ -425,5 +426,84 @@ proptest! {
         prop_assert!(!audit
             .snapshot_of(AuditChainAuditEventType::ChainBreakDetected)
             .is_empty());
+    }
+
+    /// INV-AUTH-SCHEMA-RLS-DEFAULT-ON + INV-TENANT-ISOLATION canary
+    /// (Wave-20 fix-stream, finding B-P1-01).
+    ///
+    /// Models the SQL-layer RLS `WITH CHECK` gate added in
+    /// `migrations/neon/0002_audit_events_shadow_with_check.sql`. The
+    /// `InMemoryNeonShadowSink` is the test substrate for the production
+    /// `RealNeonShadowSink` + Postgres RLS pair; this proptest fixes the
+    /// sink's bound tenant as `tenant_a` (≡ `app.current_tenant = A` in
+    /// SQL) but submits a chunk whose `tenant_id` is the distinct
+    /// `tenant_b` (≡ INSERT carrying `tenant_id = B`). The defence-in-
+    /// depth invariant: every such cross-tenant INSERT MUST be rejected
+    /// fail-CLOSED — neither the app-layer pin (this sink) nor the
+    /// SQL-layer `WITH CHECK` gate may admit the row. 10k iterations.
+    #[test]
+    fn prop_cross_tenant_insert_rejected_by_rls_with_check_or_app_pin(
+        seed in any::<u64>(),
+        seq_offset in 0u64..1000u64,
+        event_time_offset in 0u64..1000u64,
+    ) {
+        let mut rng = ChaCha20Rng::seed_from_u64(seed);
+        let _ = rng.next_u64();
+        // Deterministic distinct tenants (drawn from rng so the
+        // shrinker can collapse to a minimal failing pair if any).
+        let tenant_a = Uuid::now_v7();
+        let mut tenant_b_bytes = [0u8; 16];
+        rng.fill_bytes(&mut tenant_b_bytes);
+        // Ensure tenant_b ≠ tenant_a (clear collision in the unlikely
+        // case the v7 timestamp + rng path collide). If equal, flip
+        // a high byte — Uuid::now_v7 monotonic + per-process so the
+        // collision space is effectively empty.
+        let tenant_b = Uuid::from_bytes(tenant_b_bytes);
+        prop_assume!(tenant_b != tenant_a);
+
+        let region = corelink_analytics::Region::Iad;
+        let audit_emit = Arc::new(InMemoryShadowSyncAuditSink::new());
+        // Sink bound to tenant_a (SQL equivalent: SET LOCAL
+        // app.current_tenant = '<tenant_a uuid>').
+        let shadow_a = InMemoryNeonShadowSink::new(tenant_a, region, audit_emit.clone());
+
+        let base_ms = 1_700_000_000_000u64;
+        // Cross-tenant INSERT attempt: row carries tenant_b.
+        let cross_row = ShadowEventRow::new(
+            tenant_b, // <-- cross-tenant; RLS WITH CHECK + app pin MUST reject.
+            seq_offset,
+            base_ms.saturating_add(event_time_offset),
+            "corelink.cas.put.v1".to_string(),
+            ChainHash::genesis(),
+            ChainHash([0xAB; 32]),
+            region,
+            "{}".to_string(),
+        );
+        // The receipt carries tenant_b — exercises the receipt-level
+        // pre-check arm (the FIRST defence layer).
+        let receipt_cross = ArchiveReceipt {
+            r2_key: "audit/2023/11/14/00000000.ndjson".to_string(),
+            tenant_id: tenant_b,
+            first_event_time_ms: base_ms.saturating_add(event_time_offset),
+            last_event_time_ms: base_ms.saturating_add(event_time_offset),
+            first_sequence_number: seq_offset,
+            last_sequence_number: seq_offset,
+            prev_hash_anchor: ChainHash::genesis(),
+            chain_head_after: ChainHash([0xAB; 32]),
+            bytes_written: 1,
+            events_written: 1,
+        };
+        let err = shadow_a
+            .sync_chunk(&receipt_cross, &[cross_row], base_ms.saturating_add(event_time_offset))
+            .expect_err("cross-tenant INSERT must be rejected");
+        let is_tenant_iso = matches!(err, NeonShadowError::TenantIsolationViolation { .. });
+        prop_assert!(is_tenant_iso);
+        // The shadow must remain empty — no cross-tenant row landed.
+        prop_assert_eq!(shadow_a.row_count(), 0);
+        // tenant_a's aggregate query must see zero rows.
+        let buckets = shadow_a
+            .aggregate_event_count(0, u64::MAX, None)
+            .expect("aggregate ok");
+        prop_assert!(buckets.is_empty());
     }
 }

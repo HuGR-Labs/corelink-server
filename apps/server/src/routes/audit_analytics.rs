@@ -317,6 +317,28 @@ impl From<TimelineBucket> for TimelineEntry {
     }
 }
 
+/// Emit an audit row and return a response. If the emit fails the
+/// caller-supplied `success_resp` is dropped and a `503 Service
+/// Unavailable` is returned instead — preserving the
+/// `audit_emit ⇔ handler` atomicity contract (an emit failure on
+/// ANY error arm — including tenant-isolation violations, bad-request,
+/// backend-error, etc. — must surface as 503 so the security team's
+/// SEV-2 anchor is never silently lost).
+///
+/// Mirrors the `audit_export` wave-20 fix-stream pattern; see
+/// `specs/_audits/2026-05-16-wave18-adversarial-review-streamB-neon-shadow.md`
+/// findings B-P1-02 + B-P1-03 for the discipline drift this closes.
+fn emit_or_503(
+    state: &AuditAnalyticsRouteState,
+    row: AnalyticsAuditRow,
+    success_resp: axum::response::Response,
+) -> axum::response::Response {
+    if state.audit_sink.emit(row).is_err() {
+        return (StatusCode::SERVICE_UNAVAILABLE, "audit pipeline closed").into_response();
+    }
+    success_resp
+}
+
 /// Internal handler for `/event-count`.
 async fn handle_event_count(
     State(state): State<AuditAnalyticsRouteState>,
@@ -328,16 +350,19 @@ async fn handle_event_count(
         Err(resp) => return resp,
     };
     if query.from >= query.to {
-        let _ = state.audit_sink.emit(AnalyticsAuditRow::new(
-            EVENT_TYPE_ANALYTICS_QUERY.to_string(),
-            Some(tenant),
-            "event_count".to_string(),
-            query.from,
-            query.to,
-            0,
-            "bad_request".to_string(),
-        ));
-        return (StatusCode::BAD_REQUEST, "from must be < to").into_response();
+        return emit_or_503(
+            &state,
+            AnalyticsAuditRow::new(
+                EVENT_TYPE_ANALYTICS_QUERY.to_string(),
+                Some(tenant),
+                "event_count".to_string(),
+                query.from,
+                query.to,
+                0,
+                "bad_request".to_string(),
+            ),
+            (StatusCode::BAD_REQUEST, "from must be < to").into_response(),
+        );
     }
     if let Some(resp) = rate_limit_check(&state, tenant, "event_count", query.from, query.to) {
         return resp;
@@ -345,7 +370,30 @@ async fn handle_event_count(
     let shadow = match state.shadow_factory.for_tenant(tenant) {
         Ok(s) => s,
         Err(msg) => {
-            let _ = state.audit_sink.emit(AnalyticsAuditRow::new(
+            return emit_or_503(
+                &state,
+                AnalyticsAuditRow::new(
+                    EVENT_TYPE_ANALYTICS_QUERY.to_string(),
+                    Some(tenant),
+                    "event_count".to_string(),
+                    query.from,
+                    query.to,
+                    0,
+                    "backend_error".to_string(),
+                ),
+                (StatusCode::INTERNAL_SERVER_ERROR, msg).into_response(),
+            );
+        }
+    };
+    // Verify the shadow sink is bound to this tenant (defense in
+    // depth — the SQL-layer RLS is the authoritative gate, the trait
+    // pin is the wiring-bug catch). Emit failure here surfaces as 503
+    // per the fail-CLOSED contract — a silently-dropped tenant-isolation
+    // violation row is a SEV-1 observability hole (B-P1-02 / B-P1-03).
+    if shadow.tenant_id() != tenant {
+        return emit_or_503(
+            &state,
+            AnalyticsAuditRow::new(
                 EVENT_TYPE_ANALYTICS_QUERY.to_string(),
                 Some(tenant),
                 "event_count".to_string(),
@@ -353,28 +401,13 @@ async fn handle_event_count(
                 query.to,
                 0,
                 "backend_error".to_string(),
-            ));
-            return (StatusCode::INTERNAL_SERVER_ERROR, msg).into_response();
-        }
-    };
-    // Verify the shadow sink is bound to this tenant (defense in
-    // depth — the SQL-layer RLS is the authoritative gate, the trait
-    // pin is the wiring-bug catch).
-    if shadow.tenant_id() != tenant {
-        let _ = state.audit_sink.emit(AnalyticsAuditRow::new(
-            EVENT_TYPE_ANALYTICS_QUERY.to_string(),
-            Some(tenant),
-            "event_count".to_string(),
-            query.from,
-            query.to,
-            0,
-            "backend_error".to_string(),
-        ));
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "shadow sink tenant mismatch",
-        )
-            .into_response();
+            ),
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "shadow sink tenant mismatch",
+            )
+                .into_response(),
+        );
     }
     let buckets = match shadow.aggregate_event_count(
         query.from,
@@ -383,17 +416,19 @@ async fn handle_event_count(
     ) {
         Ok(v) => v,
         Err(_) => {
-            let _ = state.audit_sink.emit(AnalyticsAuditRow::new(
-                EVENT_TYPE_ANALYTICS_QUERY.to_string(),
-                Some(tenant),
-                "event_count".to_string(),
-                query.from,
-                query.to,
-                0,
-                "backend_error".to_string(),
-            ));
-            return (StatusCode::INTERNAL_SERVER_ERROR, "shadow aggregate failed")
-                .into_response();
+            return emit_or_503(
+                &state,
+                AnalyticsAuditRow::new(
+                    EVENT_TYPE_ANALYTICS_QUERY.to_string(),
+                    Some(tenant),
+                    "event_count".to_string(),
+                    query.from,
+                    query.to,
+                    0,
+                    "backend_error".to_string(),
+                ),
+                (StatusCode::INTERNAL_SERVER_ERROR, "shadow aggregate failed").into_response(),
+            );
         }
     };
     let response = EventCountResponse {
@@ -406,9 +441,9 @@ async fn handle_event_count(
             .collect(),
     };
     let buckets_returned = response.buckets.len() as u64;
-    if state
-        .audit_sink
-        .emit(AnalyticsAuditRow::new(
+    emit_or_503(
+        &state,
+        AnalyticsAuditRow::new(
             EVENT_TYPE_ANALYTICS_QUERY.to_string(),
             Some(tenant),
             "event_count".to_string(),
@@ -416,12 +451,9 @@ async fn handle_event_count(
             query.to,
             buckets_returned,
             "ok".to_string(),
-        ))
-        .is_err()
-    {
-        return (StatusCode::SERVICE_UNAVAILABLE, "audit pipeline closed").into_response();
-    }
-    (StatusCode::OK, axum::Json(response)).into_response()
+        ),
+        (StatusCode::OK, axum::Json(response)).into_response(),
+    )
 }
 
 /// Internal handler for `/timeline`.
@@ -435,53 +467,117 @@ async fn handle_timeline(
         Err(resp) => return resp,
     };
     if query.from >= query.to {
-        let _ = state.audit_sink.emit(AnalyticsAuditRow::new(
-            EVENT_TYPE_ANALYTICS_QUERY.to_string(),
-            Some(tenant),
-            "timeline".to_string(),
-            query.from,
-            query.to,
-            0,
-            "bad_request".to_string(),
-        ));
-        return (StatusCode::BAD_REQUEST, "from must be < to").into_response();
+        return emit_or_503(
+            &state,
+            AnalyticsAuditRow::new(
+                EVENT_TYPE_ANALYTICS_QUERY.to_string(),
+                Some(tenant),
+                "timeline".to_string(),
+                query.from,
+                query.to,
+                0,
+                "bad_request".to_string(),
+            ),
+            (StatusCode::BAD_REQUEST, "from must be < to").into_response(),
+        );
     }
     let granularity_ms = query.granularity.unwrap_or(3_600_000);
     if granularity_ms == 0 || granularity_ms > MAX_GRANULARITY_MS {
-        return (
-            StatusCode::BAD_REQUEST,
-            "granularity must be in (0, 86_400_000]",
-        )
-            .into_response();
+        return emit_or_503(
+            &state,
+            AnalyticsAuditRow::new(
+                EVENT_TYPE_ANALYTICS_QUERY.to_string(),
+                Some(tenant),
+                "timeline".to_string(),
+                query.from,
+                query.to,
+                0,
+                "bad_request".to_string(),
+            ),
+            (
+                StatusCode::BAD_REQUEST,
+                "granularity must be in (0, 86_400_000]",
+            )
+                .into_response(),
+        );
     }
     let span = query.to.saturating_sub(query.from);
     let bucket_count_estimate = span.div_ceil(granularity_ms);
     if bucket_count_estimate > MAX_TIMELINE_BUCKETS {
-        return (
-            StatusCode::BAD_REQUEST,
-            "(to - from) / granularity exceeds MAX_TIMELINE_BUCKETS",
-        )
-            .into_response();
+        return emit_or_503(
+            &state,
+            AnalyticsAuditRow::new(
+                EVENT_TYPE_ANALYTICS_QUERY.to_string(),
+                Some(tenant),
+                "timeline".to_string(),
+                query.from,
+                query.to,
+                0,
+                "bad_request".to_string(),
+            ),
+            (
+                StatusCode::BAD_REQUEST,
+                "(to - from) / granularity exceeds MAX_TIMELINE_BUCKETS",
+            )
+                .into_response(),
+        );
     }
     if let Some(resp) = rate_limit_check(&state, tenant, "timeline", query.from, query.to) {
         return resp;
     }
     let shadow = match state.shadow_factory.for_tenant(tenant) {
         Ok(s) => s,
-        Err(msg) => return (StatusCode::INTERNAL_SERVER_ERROR, msg).into_response(),
+        Err(msg) => {
+            return emit_or_503(
+                &state,
+                AnalyticsAuditRow::new(
+                    EVENT_TYPE_ANALYTICS_QUERY.to_string(),
+                    Some(tenant),
+                    "timeline".to_string(),
+                    query.from,
+                    query.to,
+                    0,
+                    "backend_error".to_string(),
+                ),
+                (StatusCode::INTERNAL_SERVER_ERROR, msg).into_response(),
+            );
+        }
     };
     if shadow.tenant_id() != tenant {
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "shadow sink tenant mismatch",
-        )
-            .into_response();
+        return emit_or_503(
+            &state,
+            AnalyticsAuditRow::new(
+                EVENT_TYPE_ANALYTICS_QUERY.to_string(),
+                Some(tenant),
+                "timeline".to_string(),
+                query.from,
+                query.to,
+                0,
+                "backend_error".to_string(),
+            ),
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "shadow sink tenant mismatch",
+            )
+                .into_response(),
+        );
     }
     let buckets = match shadow.aggregate_timeline(query.from, query.to, granularity_ms) {
         Ok(v) => v,
         Err(_) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, "shadow aggregate failed")
-                .into_response();
+            return emit_or_503(
+                &state,
+                AnalyticsAuditRow::new(
+                    EVENT_TYPE_ANALYTICS_QUERY.to_string(),
+                    Some(tenant),
+                    "timeline".to_string(),
+                    query.from,
+                    query.to,
+                    0,
+                    "backend_error".to_string(),
+                ),
+                (StatusCode::INTERNAL_SERVER_ERROR, "shadow aggregate failed").into_response(),
+            );
         }
     };
     let response = TimelineResponse {
@@ -489,9 +585,9 @@ async fn handle_timeline(
         granularity_ms,
     };
     let buckets_returned = response.buckets.len() as u64;
-    if state
-        .audit_sink
-        .emit(AnalyticsAuditRow::new(
+    emit_or_503(
+        &state,
+        AnalyticsAuditRow::new(
             EVENT_TYPE_ANALYTICS_QUERY.to_string(),
             Some(tenant),
             "timeline".to_string(),
@@ -499,12 +595,9 @@ async fn handle_timeline(
             query.to,
             buckets_returned,
             "ok".to_string(),
-        ))
-        .is_err()
-    {
-        return (StatusCode::SERVICE_UNAVAILABLE, "audit pipeline closed").into_response();
-    }
-    (StatusCode::OK, axum::Json(response)).into_response()
+        ),
+        (StatusCode::OK, axum::Json(response)).into_response(),
+    )
 }
 
 /// Extract + validate the `X-Tenant-Id` header.
@@ -543,22 +636,25 @@ fn rate_limit_check(
             RateLimitDecision::Deny429 {
                 retry_after_secs, ..
             } => {
-                let _ = state.audit_sink.emit(AnalyticsAuditRow::new(
-                    EVENT_TYPE_ANALYTICS_QUERY.to_string(),
-                    Some(tenant),
-                    endpoint.to_string(),
-                    from_ms,
-                    to_ms,
-                    0,
-                    "rate_limited".to_string(),
-                ));
                 let body = format!("rate-limited; retry after {retry_after_secs}s");
                 let mut resp = (StatusCode::TOO_MANY_REQUESTS, body).into_response();
                 if let Ok(val) = format!("{retry_after_secs}").parse() {
                     resp.headers_mut()
                         .insert(axum::http::header::RETRY_AFTER, val);
                 }
-                Some(resp)
+                Some(emit_or_503(
+                    state,
+                    AnalyticsAuditRow::new(
+                        EVENT_TYPE_ANALYTICS_QUERY.to_string(),
+                        Some(tenant),
+                        endpoint.to_string(),
+                        from_ms,
+                        to_ms,
+                        0,
+                        "rate_limited".to_string(),
+                    ),
+                    resp,
+                ))
             }
             // `RateLimitDecision` is `#[non_exhaustive]`; any future
             // non-Allow variant fail-CLOSED to 429.
@@ -612,8 +708,107 @@ pub fn build_state(shadow_factory: Arc<dyn ShadowSinkFactory>) -> AuditAnalytics
 )]
 mod tests {
     use super::*;
+    use axum::body::to_bytes;
     use corelink_analytics::Region;
-    use corelink_audit_chain::{InMemoryNeonShadowSink, InMemoryShadowSyncAuditSink};
+    use corelink_audit_chain::{
+        ArchiveReceipt, EventCountBucket, InMemoryNeonShadowSink, InMemoryShadowSyncAuditSink,
+        NeonShadowError, ShadowEventRow, TimelineBucket,
+    };
+
+    /// Audit sink that always errors on `emit` — drives the
+    /// `audit pipeline closed → 503` fail-CLOSED tests.
+    #[derive(Debug, Default)]
+    struct FailingAnalyticsAuditSink;
+
+    impl AnalyticsAuditSink for FailingAnalyticsAuditSink {
+        fn emit(&self, _row: AnalyticsAuditRow) -> Result<(), &'static str> {
+            Err("injected analytics audit emit failure")
+        }
+    }
+
+    /// Shadow sink that returns the bound tenant id BUT always errors
+    /// on `aggregate_timeline` — drives the `handle_timeline` error
+    /// arm test.
+    #[derive(Debug)]
+    struct AggregateTimelineFailsShadow {
+        tenant_id: Uuid,
+        region: Region,
+    }
+
+    impl NeonShadowSink for AggregateTimelineFailsShadow {
+        fn tenant_id(&self) -> Uuid {
+            self.tenant_id
+        }
+        fn region(&self) -> Region {
+            self.region
+        }
+        fn sync_chunk(
+            &self,
+            _receipt: &ArchiveReceipt,
+            _rows: &[ShadowEventRow],
+            _now_ms: u64,
+        ) -> Result<corelink_audit_chain::ShadowSyncReceipt, NeonShadowError> {
+            Err(NeonShadowError::Backend("not used in test".to_string()))
+        }
+        fn aggregate_event_count(
+            &self,
+            _from_ms: u64,
+            _to_ms: u64,
+            _filter: Option<&str>,
+        ) -> Result<Vec<EventCountBucket>, NeonShadowError> {
+            Err(NeonShadowError::Backend("injected".to_string()))
+        }
+        fn aggregate_timeline(
+            &self,
+            _from_ms: u64,
+            _to_ms: u64,
+            _granularity_ms: u64,
+        ) -> Result<Vec<TimelineBucket>, NeonShadowError> {
+            Err(NeonShadowError::Backend("injected aggregate_timeline failure".to_string()))
+        }
+    }
+
+    /// Build route state with a tenant-mismatch shadow sink (the
+    /// factory returns a sink whose `tenant_id()` is DIFFERENT from
+    /// the resolved tenant) + a `FailingAnalyticsAuditSink`. Used by
+    /// `tenant_isolation_violation_returns_503_on_audit_sink_failure`.
+    fn state_with_tenant_mismatch_and_failing_audit(
+        requested_tenant: Uuid,
+        bound_tenant: Uuid,
+    ) -> AuditAnalyticsRouteState {
+        let audit = Arc::new(InMemoryShadowSyncAuditSink::new());
+        let shadow: Arc<dyn NeonShadowSink> = Arc::new(InMemoryNeonShadowSink::new(
+            bound_tenant,
+            Region::Iad,
+            audit,
+        ));
+        // Factory returns the wrongly-bound sink for the requested tenant.
+        #[derive(Debug)]
+        struct WrongBoundFactory {
+            wanted: Uuid,
+            shadow: Arc<dyn NeonShadowSink>,
+        }
+        impl ShadowSinkFactory for WrongBoundFactory {
+            fn for_tenant(
+                &self,
+                tenant_id: Uuid,
+            ) -> Result<Arc<dyn NeonShadowSink>, &'static str> {
+                if tenant_id == self.wanted {
+                    Ok(self.shadow.clone())
+                } else {
+                    Err("not bound")
+                }
+            }
+        }
+        let factory: Arc<dyn ShadowSinkFactory> = Arc::new(WrongBoundFactory {
+            wanted: requested_tenant,
+            shadow,
+        });
+        let mut state = build_state(factory);
+        // Swap the audit sink for the failing one.
+        state.audit_sink = Arc::new(FailingAnalyticsAuditSink);
+        state
+    }
 
     #[derive(Debug)]
     struct OneTenantFactory {
@@ -685,5 +880,106 @@ mod tests {
     fn max_timeline_buckets_pinned_to_canonical() {
         assert_eq!(MAX_TIMELINE_BUCKETS, 1_000);
         assert_eq!(MAX_GRANULARITY_MS, 24 * 60 * 60 * 1_000);
+    }
+
+    /// Wave-20 fix-stream (finding B-P1-02 + B-P1-03 closure).
+    ///
+    /// Drives the `handle_event_count` shadow-tenant-mismatch arm and
+    /// verifies that, when the audit sink is wedged, the handler
+    /// surfaces a 503 (NOT the original 500). The pre-fix code path
+    /// emitted the SEV-1 audit row via `let _ = ...` and returned 500,
+    /// silently dropping the security row. The `emit_or_503` helper
+    /// now enforces the `audit_emit ⇔ handler` atomicity contract.
+    #[tokio::test]
+    async fn tenant_isolation_violation_returns_503_on_audit_sink_failure() {
+        let requested = Uuid::now_v7();
+        let mut bound = Uuid::now_v7();
+        // Make sure bound ≠ requested (now_v7 is monotonic per-process
+        // so two successive calls return distinct uuids, but pin
+        // explicitly).
+        while bound == requested {
+            bound = Uuid::now_v7();
+        }
+        let state = state_with_tenant_mismatch_and_failing_audit(requested, bound);
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            TENANT_ID_HEADER,
+            requested.to_string().parse().expect("header parse"),
+        );
+        let query = EventCountQuery {
+            from: 0,
+            to: 1_000,
+            event_type: None,
+        };
+        let resp = handle_event_count(State(state.clone()), headers.clone(), Query(query))
+            .await
+            .into_response();
+        assert_eq!(
+            resp.status(),
+            StatusCode::SERVICE_UNAVAILABLE,
+            "tenant-mismatch arm + failing audit sink MUST surface 503",
+        );
+        let body = to_bytes(resp.into_body(), 1024).await.expect("body");
+        assert_eq!(&body[..], b"audit pipeline closed");
+
+        // Same arm via the timeline handler — also surfaces 503.
+        let tq = TimelineQuery {
+            from: 0,
+            to: 1_000,
+            granularity: Some(100),
+        };
+        let resp2 = handle_timeline(State(state), headers, Query(tq))
+            .await
+            .into_response();
+        assert_eq!(
+            resp2.status(),
+            StatusCode::SERVICE_UNAVAILABLE,
+            "timeline tenant-mismatch arm + failing audit sink MUST surface 503",
+        );
+    }
+
+    /// Wave-20 fix-stream (finding B-P1-03 closure).
+    ///
+    /// Drives the `handle_timeline` shadow-aggregate-error arm under
+    /// a failing audit sink. The pre-fix code path did NOT emit any
+    /// audit row on this arm AND swallowed any emit failure had it
+    /// emitted — both modes regress the analytics-dashboard parity
+    /// with `handle_event_count`. The fix now emits + surfaces 503.
+    #[tokio::test]
+    async fn handle_timeline_error_arm_returns_503_on_audit_sink_failure() {
+        let tenant = Uuid::now_v7();
+        let region = Region::Iad;
+        let shadow: Arc<dyn NeonShadowSink> = Arc::new(AggregateTimelineFailsShadow {
+            tenant_id: tenant,
+            region,
+        });
+        let factory: Arc<dyn ShadowSinkFactory> = Arc::new(OneTenantFactory {
+            tenant,
+            shadow,
+        });
+        let mut state = build_state(factory);
+        state.audit_sink = Arc::new(FailingAnalyticsAuditSink);
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            TENANT_ID_HEADER,
+            tenant.to_string().parse().expect("header parse"),
+        );
+        let tq = TimelineQuery {
+            from: 0,
+            to: 1_000,
+            granularity: Some(100),
+        };
+        let resp = handle_timeline(State(state), headers, Query(tq))
+            .await
+            .into_response();
+        assert_eq!(
+            resp.status(),
+            StatusCode::SERVICE_UNAVAILABLE,
+            "shadow aggregate_timeline failure + failing audit sink MUST surface 503",
+        );
+        let body = to_bytes(resp.into_body(), 1024).await.expect("body");
+        assert_eq!(&body[..], b"audit pipeline closed");
     }
 }
