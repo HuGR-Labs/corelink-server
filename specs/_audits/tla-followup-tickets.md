@@ -126,7 +126,16 @@ infrastructure follow-up.
   adversarial actions.
 - **Owner:** S-06 GC owner.
 
-## FT-6 — `multipart_finalize.tla` (HIGH)
+## FT-6 — `multipart_finalize.tla` (HIGH) — **CLOSED 2026-05-16** (DEBT-014)
+
+- Delivered: `specs/tla/multipart_finalize.tla` + PR cfg + nightly cfg.
+- Proves INV-MULTIPART-FINALIZE-IRREVOCABLE + INV-MULTIPART-STATE-MONOTONIC
+  + INV-MULTIPART-CONCURRENCY-BOUNDED (HIGH × 3) + InvNoDoubleTerminal +
+  InvFinalizedDigestStable.
+- TLC PR-lane: 869 distinct states, depth 6, finished < 1s on dev laptop
+  with TLC v1.8.0 SHA-pinned (ADR-0042 §A1).
+- CI matrix: PR `.github/workflows/tla_check.yml` row added.
+- Branch: `wt/r-prep-debt-014-tla-specs`.
 
 - **Severity:** HIGH
 - **Invariants:** INV-MULTIPART-FINALIZE-IRREVOCABLE,
@@ -140,7 +149,16 @@ infrastructure follow-up.
   arriving simultaneously).
 - **Owner:** S-05 multipart owner.
 
-## FT-7 — `byok_dek_race.tla` (CRITICAL upgrade)
+## FT-7 — `byok_dek_race.tla` (CRITICAL upgrade) — **CLOSED 2026-05-16** (DEBT-014)
+
+- Delivered: `specs/tla/byok_dek_race.tla` + PR cfg + nightly cfg.
+- Proves INV-BYOK-CRYPTO-SOVEREIGNTY (CRITICAL) at per-region cache
+  granularity. InvNoCrossRegionDekCopy proves no inter-region DEK
+  leakage when region r1 cache evicted but region r2 still holds DEK.
+- TLC PR-lane: 3906 distinct states, 2 temporal branches checked,
+  finished < 1s on dev laptop with TLC v1.8.0 SHA-pinned (ADR-0042 §A1).
+- CI matrix: PR `.github/workflows/tla_check.yml` row added.
+- Branch: `wt/r-prep-debt-014-tla-specs`.
 
 - **Severity:** CRITICAL upgrade (currently runbook-level only)
 - **Invariants:** INV-BYOK-CRYPTO-SOVEREIGNTY (CRITICAL).
@@ -152,7 +170,19 @@ infrastructure follow-up.
 - **Cost:** ~4 days. Add per-region cache + region-local KMS check.
 - **Owner:** S-14 BYOK owner.
 
-## FT-8 — CI matrix exposure for runbook specs
+## FT-8 — CI matrix exposure for runbook specs — **CLOSED 2026-05-16** (DEBT-014)
+
+- Delivered: `.github/workflows/tla_runbooks_check.yml` — mirrors
+  `tla_check.yml` structure with the same TLC v1.8.0 SHA-pinned
+  (ADR-0042 §A1) install ceremony. Pinned to the runbook directory
+  via path filter `specs/03_architecture/tla+/runbooks/**`.
+- Wires all 4 runbook specs into the PR gate:
+  `signup_atomic`, `byok_kill_switch`, `residency_failover`,
+  `dpa_versioning_grace`.
+- Smoke-verified during dispatch: each runbook spec TLC-checked clean
+  (signup_atomic 57 distinct states, byok_kill_switch 570 distinct,
+  dpa_versioning_grace 174 distinct, residency_failover 800 distinct).
+- Branch: `wt/r-prep-debt-014-tla-specs`.
 
 - **Severity:** medium (governance)
 - **Issue:** the 4 runbook specs under
@@ -166,7 +196,29 @@ infrastructure follow-up.
 - **Cost:** ~1 day.
 - **Owner:** R-PREP infra team.
 
-## FT-9 — re-signup idempotency in `signup_atomic.tla`
+## FT-9 — re-signup idempotency in `signup_atomic.tla` — **CLOSED 2026-05-16** (DEBT-014)
+
+- Delivered: `specs/tla/signup_resignup.tla` + PR cfg + nightly cfg.
+  (Companion to the runbook spec — lives under `specs/tla/` so the
+  PR-gate matrix in `.github/workflows/tla_check.yml` exercises it.
+  The original `signup_atomic.tla` runbook is wired into the new
+  `tla_runbooks_check.yml` workflow via FT-8.)
+- Proves INV-SIGNUP-RESIGNUP-IDEMPOTENT (new HIGH registered same day in
+  `specs/03_architecture/invariant_registry.md §3 onboard rows`) +
+  inherits INV-ONBOARD-DPA-FIRST + INV-ONBOARD-ATOMIC-PROVISIONING.
+  Models the bug class explicitly via `LateStripeWebhook(a)` action.
+- TLC PR-lane: 561 distinct states, 3 temporal branches checked,
+  finished < 1s on dev laptop with TLC v1.8.0 SHA-pinned (ADR-0042 §A1).
+- **Counterexample found and fixed during dispatch:** first TLC run
+  surfaced a violation of `InvAtMostOneSuccessPerEmail` — the model
+  permitted 2 successful signups for the same email. Fix: tightened
+  `StartAttempt(e)` guard to reject when a prior attempt with the same
+  email is `in_progress` OR `success`. This matches the production
+  handler-side uniqueness contract on the email column and is the
+  intended barrier between re-signup-after-failure (admitted) and
+  re-signup-after-success (rejected). After fix, all invariants pass.
+- CI matrix: PR `.github/workflows/tla_check.yml` row added.
+- Branch: `wt/r-prep-debt-014-tla-specs`.
 
 - **Severity:** HIGH
 - **Issue:** the existing runbook spec covers crash-and-compensate but does
@@ -189,10 +241,10 @@ infrastructure follow-up.
 | FT-3 | infra | TLC SHA pin drift | Security + Architect | **CLOSED (WAIVER)** 2026-05-15 (DEBT-014) |
 | FT-4 | infra | .cfg function literal | S-14 | **CLOSED (WAIVER)** 2026-05-15 (DEBT-014) |
 | FT-5 | HIGH | `gc_lock_protocol.tla` | S-06 | **CLOSED** 2026-05-15 (DEBT-014) |
-| FT-6 | HIGH | `multipart_finalize.tla` | S-05 | OPEN |
-| FT-7 | CRITICAL | `byok_dek_race.tla` | S-14 | OPEN |
-| FT-8 | medium | runbook CI exposure | R-PREP | OPEN |
-| FT-9 | HIGH | `signup_atomic.tla` extension | S-19 | OPEN |
+| FT-6 | HIGH | `multipart_finalize.tla` | S-05 | **CLOSED** 2026-05-16 (DEBT-014) |
+| FT-7 | CRITICAL | `byok_dek_race.tla` | S-14 | **CLOSED** 2026-05-16 (DEBT-014) |
+| FT-8 | medium | runbook CI exposure | R-PREP | **CLOSED** 2026-05-16 (DEBT-014) |
+| FT-9 | HIGH | `signup_resignup.tla` (companion to runbook) | S-19 | **CLOSED** 2026-05-16 (DEBT-014) |
 
 Total followup count: **9** (1 CRITICAL net-new + 1 CRITICAL upgrade + 5 HIGH
 + 2 infra/medium). Tracks the gaps from §4 of the parent audit
@@ -333,4 +385,51 @@ were distinct from FT-1..FT-9 — batch 3 closed CRITICAL+HIGH gaps in
 obs-export / offboarding / billing-chain / GC-grace / backup-freshness
 clusters that were listed under registry §3 with no TLA+ status or
 "Coberto parcial" via inheritance.
+
+---
+
+## Addendum 2026-05-16 — DEBT-014 wave-21 closure (9 / 9 FINAL)
+
+A wave-21 dispatch on branch `wt/r-prep-debt-014-tla-specs` closes
+FT-6..FT-9, flipping DEBT-014 from PARTIAL (5/9) to **CLOSED (9/9)**:
+
+| Ticket | Resolution | Artefacts |
+|---|---|---|
+| FT-6 | New TLA+ spec | `specs/tla/multipart_finalize.tla` + 2 cfgs |
+| FT-7 | New TLA+ spec | `specs/tla/byok_dek_race.tla` + 2 cfgs |
+| FT-8 | New CI workflow | `.github/workflows/tla_runbooks_check.yml` |
+| FT-9 | New TLA+ spec (companion) | `specs/tla/signup_resignup.tla` + 2 cfgs |
+
+Net effect:
+
+- **+3 net-new TLA+ specs** under `specs/tla/` (multipart_finalize,
+  byok_dek_race, signup_resignup) — all PR-lane TLC-verified locally
+  with TLC v1.8.0 SHA-pinned (ADR-0042 §A1) before SEAL.
+- **+1 new CI workflow** (`tla_runbooks_check.yml`) wires 4 previously
+  un-gated runbook specs into the PR matrix (FT-8 governance gap closed).
+- **+1 new HIGH invariant** registered: `INV-SIGNUP-RESIGNUP-IDEMPOTENT`
+  in `specs/03_architecture/invariant_registry.md §3` (onboard rows).
+- **CRITICAL invariant lift:** `INV-BYOK-CRYPTO-SOVEREIGNTY` now has
+  per-region cache race coverage via `byok_dek_race.tla` —
+  `InvNoCrossRegionDekCopy` proves no inter-region DEK leakage when
+  region r1 evicts ahead of region r2.
+
+TLC state-space summary (PR-lane bounds):
+
+| Spec | Distinct states | Depth | Temporal branches | Wall clock |
+|---|---|---|---|---|
+| `multipart_finalize` | 869 | 6 | n/a | < 1 s |
+| `byok_dek_race` | 3 906 | 16 | 2 | < 1 s |
+| `signup_resignup` | 561 | 15 | 3 | < 1 s |
+
+Quality gate per wave-9 DEBT-005 standard: deterministic TLC, every
+adversarial action explicitly exhibited (e.g. `LateStripeWebhook`,
+`ReFinalizeMismatch`, `FinalizeOnAborted`), counterexample-driven
+refinement when found (FT-9 added `StartAttempt` uniqueness guard
+after first TLC run surfaced `InvAtMostOneSuccessPerEmail` violation).
+
+DEBT-014 status: **CLOSED 9/9** (5 wave-1 + 4 wave-21). All 9 FT-*
+tickets have either a verified TLA+ spec or an issued waiver with
+fail-CLOSED monitoring compensation. The R-PREP backlog from
+`2026-05-15-tla-coverage-audit.md §4` is now FULLY drained.
 
