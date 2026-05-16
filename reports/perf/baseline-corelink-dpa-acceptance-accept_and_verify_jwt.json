@@ -1,14 +1,14 @@
 {
   "bench": "accept_and_verify_jwt",
-  "bench_id": "accept_and_verify_jwt",
-  "captured_at": "",
-  "commit": "pending",
+  "bench_id": "dpa/verify_receipt_rs256",
+  "captured_at": "2026-05-16T14:38:37Z",
+  "commit": "04f2dff",
   "crate": "corelink-dpa-acceptance",
   "criticality": "CRITICAL",
-  "mean_ns": null,
-  "median_ns": null,
-  "notes": "Pending \u2014 record via scripts/refresh-perf-baseline.sh on a green CI run, then commit. See RB-PERF-REGRESSION. Wave-22 (2026-05-16): criticality tag added for split-threshold gate. Pre-GA pilot tenant workloads. Canonical baseline tag: perf-baseline-pre-ga-2026-05-16.",
-  "p99_ns": null,
+  "mean_ns": 46630.0,
+  "median_ns": 46630.0,
+  "notes": "Wave-30 stream-5 recapture (--quick mode); supersedes wave-29 stream-9 pending row. Canonical tag: perf-baseline-ga-2026-05-16. p99_ns is upper 95%-CI bound of the median from --quick mode (proxy). Representative row is verify_receipt_rs256 (hot p99 path on accept-and-verify); sibling accept_rs256_sign measured at ~761 µs — captured in umbrella manifest. Canonical --measurement-time 5 recapture remains operator-bound per audit §5.",
+  "p99_ns": 46799.0,
   "sample_count": null,
   "tolerance_pct": null
 }

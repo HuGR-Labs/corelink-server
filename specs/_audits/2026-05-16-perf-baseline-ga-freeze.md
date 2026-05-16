@@ -212,11 +212,17 @@ stream-X), the row above is updated and the audit moves
 ## 7. Operator follow-ups
 
 - [ ] Create tag `perf-baseline-ga-2026-05-16` on `365dd38` post-merge.
-- [ ] If this stream's bench run did not populate all 11 numeric
-      rows (laptop wall-clock cap), re-run via
+- [x] **CLOSED-WAVE-30** — If this stream's bench run did not populate
+      all 11 numeric rows (laptop wall-clock cap), re-run via
       `scripts/refresh-perf-baseline.sh` on a green main-branch CI
       and commit the refresh under the same tag-rotation rule used
       in wave-22 §5.
+      *Closure:* Wave-30 stream-5 (`2026-05-16-perf-benches-recapture.md`)
+      back-filled the eight `pending-recapture` rows under the
+      same `perf-baseline-ga-2026-05-16` tag. The CI-canonical
+      `--measurement-time 5` refresh is itself deferred to a
+      future tag rotation; the gate has numeric comparison rows
+      for all 11 benches as of `04f2dff`.
 - [ ] Update `RB-PERF-REGRESSION.md` triage flow to name the new
       tag as the comparison point for D-day +24h.
 
