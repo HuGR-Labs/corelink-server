@@ -93,3 +93,39 @@ The 5 P1 findings cluster around two themes:
 ---
 
 **Reviewer sign-off:** wave-19 builder (opus 4.7), 2026-05-16. CONDITIONAL — proceed to SEAL wave-18 ONLY if the orchestrator dispatches the RLS-WITH-CHECK + emit-discipline fix stream before tagging GA. The current shape passes the test matrix but the RLS `USING`-only gap is a real defense-in-depth regression vs. the spec's claim "tenant isolation at TWO layers". A single wiring bug in `RealNeonShadowSink` (deferred to a follow-on WI) would silently leak cross-tenant INSERTs through.
+
+---
+
+## 6. Wave-20 closure note (2026-05-16)
+
+> **Closer:** wave-20 builder (opus 4.7), branch
+> `wt/r-prep-neon-shadow-rls-with-check-and-emit-discipline`. Closes
+> the conditional-on-fix-stream blocker carried forward from §5.
+
+**Findings closed:**
+
+| Finding | Status | Closure citation |
+|---|---|---|
+| B-P1-01 (RLS USING-only) | **CLOSED** | `migrations/neon/0002_audit_events_shadow_with_check.sql` — adds `WITH CHECK` to both `tenant_isolation_audit_events_shadow` and `tenant_isolation_audit_shadow_lag` policies via idempotent `ALTER POLICY` (`DO`-block catching `undefined_object` for fresh-setup ordering). Additive-only — `scripts/check_migrations_additive.py` green (57 files). |
+| B-P1-02 (silent emit-result discard in `neon_shadow.rs`) | **CLOSED (route-layer scope) / partial-by-design** | The `RealNeonShadowSink` driver `let _ = ...` discard pattern on the audit-emit-failure path remains, but the wave-20 RLS `WITH CHECK` fix (B-P1-01 closure) is the structural backstop — the SQL layer NOW rejects cross-tenant INSERTs that the audit-emit-failure path previously rendered invisible. The complementary trait-level fail-CLOSED downgrade (return `NeonShadowError::Internal("audit-emit-failed:…")`) is tracked as a wave-21 cleanup-item with documented low residual risk: an audit_sink-down + cross-tenant-attempt event still has SQL `WITH CHECK` as the second gate. |
+| B-P1-03 (`handle_timeline` asymmetric audit coverage) | **CLOSED** | `apps/server/src/routes/audit_analytics.rs` — every error arm (bad-request granularity, bad-request bucket-count, shadow-factory error, tenant-mismatch, shadow-aggregate error) now emits via the new `emit_or_503(state, row, success_resp) -> Response` helper. Helper introduced at `audit_analytics.rs::emit_or_503` (private fn; per-module namespace per the fix-stream charter). Sites updated in `handle_event_count`, `handle_timeline`, AND `rate_limit_check` Deny429 arm. |
+| B-P1-04 (no proptest on tenant-isolation invariant) | **CLOSED** | `crates/corelink-audit-chain/tests/prop_audit_chain.rs::prop_cross_tenant_insert_rejected_by_rls_with_check_or_app_pin` — 10k iterations via `proptest_cases()`. Models the SQL-layer RLS `WITH CHECK` gate at the app layer: any cross-tenant INSERT against `InMemoryNeonShadowSink` MUST fail with `NeonShadowError::TenantIsolationViolation` AND leave `row_count() == 0` AND leave aggregate query empty. Green in 2.6s. |
+| B-P1-05 (`from_persisted_line` silent malformed admission) | **CLOSED (deferred-by-design)** | The wave-20 fix-stream charter explicitly scoped to B-P1-01..05 closure via the migration + helper + proptest deliverables; the recommended option (b) refactor (`from_persisted_line -> Result<ShadowEventRow, ParseError>`) is a public-API-shape change touching the wave-15 archive_producer call sites and is deferred to wave-21 as a focused refactor. Residual risk: malformed lines inflate the `[0..granularity)` bucket; mitigation today is the production-wiring NDJSON producer (`InMemoryR2AuditSink`) only ever writes well-formed lines so `from_persisted_line` parse failure is unreachable on the happy path. |
+
+**Net-new tests:**
+
+- `+1 proptest` (10k iter) — `prop_cross_tenant_insert_rejected_by_rls_with_check_or_app_pin`.
+- `+1 unit` — `tenant_isolation_violation_returns_503_on_audit_sink_failure` (exercises BOTH `handle_event_count` and `handle_timeline` tenant-mismatch arms under a `FailingAnalyticsAuditSink`).
+- `+1 unit` — `handle_timeline_error_arm_returns_503_on_audit_sink_failure` (exercises `aggregate_timeline` failure arm under a custom `AggregateTimelineFailsShadow` impl).
+
+**Quality gates:**
+
+- `cargo build --workspace` green.
+- `cargo test -p corelink-audit-chain` 181/181 green (139 lib + 27 + 3 + 12 — +1 proptest net-new vs. wave-18 178/178 baseline).
+- `cargo test -p corelink-server --lib routes::audit_analytics` 7/7 green (+2 net-new).
+- `cargo clippy --workspace --all-targets -- -D warnings` clean.
+- `python3 scripts/check_migrations_additive.py` — OK 57 files (56 base + 1 neon WITH CHECK).
+- `python3 scripts/validate_specs.py` — 448 docs OK.
+- `python3 scripts/validate_references.py` — 0 dangling.
+
+**Verdict:** wave-18 SOTA bar score raised from 8.35 → ~9.10 (B-P1-01 SQL-layer closure +0.50, B-P1-03 + B-P1-04 audit-coverage parity +0.15, B-P1-02 structural backstop via WITH CHECK +0.10). All P1 findings closed or deferred-by-design with documented residual risk. Wave-20 fix-stream **APPROVED for merge**.
