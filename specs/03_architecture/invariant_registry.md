@@ -600,6 +600,24 @@ INV introduced in `apps/docs/static/openapi-corelink-v1.yaml` + 4 i18n MDX endpo
 
 **Aliases históricos:** nenhum. Declared in public OpenAPI + 4 i18n MDX endpoint docs (apps/docs) and promoted to registry in Wave-23 invariant-draft sweep (2026-05-16).
 
+### 3.29 Pilot signup token idempotency domain (domain SIGNUP-TOKEN) — Wave-30 stream-4 R-PREP (2026-05-16)
+
+INV introduced in `apps/server/src/routes/signup.rs` `insert_or_existing` (wave-29 stream-1 commit `b3c359f`) for the `POST /v1/signup/pilot/{token}` pilot-slot reservation endpoint. Promoted here from DRAFT → PROMOTED + TLA-VERIFIED as part of the Wave-30 stream-4 R-PREP audit, closing the wave-29 stream-10 closure §6.2 deferred candidate. Sibling of `INV-SIGNUP-RESIGNUP-IDEMPOTENT` (§4.2 row, covered by `signup_resignup.tla` DEBT-014 FT-9) which models the **production tenant-provisioning** path with Stripe webhook + DPA-first; THIS INV covers the **pilot pre-Stripe RESERVED** path with HMAC-verified mint tokens + insert-or-existing SoT.
+
+| ID | Nome | Severidade | Descrição | Enforcement | TLA+ file |
+|---|---|---|---|---|---|
+| **INV-SIGNUP-TOKEN-IDEMPOTENT** | Consumption of a pilot signup token MUST be exactly-once across replays | HIGH | A successful tenant allocation per email or per token fires at most ONCE; subsequent replays (same email with fresh token, or same token regardless of email) MUST return the original tenant_id and emit `exit_status="duplicate"` audit row, never a second `reserved` allocation. Failed audit emit fails CLOSED (503; INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER inheritance). Failure mode: a single pilot email forks into two tenants and consumes two pilot slots from the cohort cap | Integration tests `apps/server/tests/signup_pilot.rs::{duplicate_email_returns_original_tenant_id, happy_path_valid_token_returns_201, audit_emit_failure_returns_503_fail_closed}` + unit test `signup::tests::in_memory_store_dedupes_on_email` + property at the SoT level via `insert_or_existing` iter-find-first-match semantics | `specs/tla/signup_token_idempotent.tla` + `.cfg` (PR) + `_nightly.cfg` — **TLA-VERIFIED** (Wave-30 R-PREP 2026-05-16) — `InvSignupIdempotentByEmail` + `InvSignupTokenSingleUse` + `InvAuditEmitAtomic` + `InvAuditTenantIsAllocated` + `InvSotCoherent`; liveness `InvInFlightDrains` under WF |
+
+**Cross-references**:
+- `apps/server/src/routes/signup.rs` — wave-29 stream-1 commit `b3c359f`, `insert_or_existing` (line 585-610) canonical SoT.
+- `apps/server/tests/signup_pilot.rs::duplicate_email_returns_original_tenant_id` — wire-level integration test for the idempotency claim.
+- `specs/tla/signup_resignup.tla` (DEBT-014 FT-9) — disjoint sibling covering the S-19 production-tenant onboarding path.
+- `specs/tla/audit_emit_atomic.tla` (DEBT-005 batch 2) — inherits INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER pattern; THIS spec proves the signup-route-specific binding (`reserved` vs `duplicate` exit_status pairing).
+- `specs/_audits/2026-05-16-wave29-closure.md §6.2` — DRAFT candidate text + deferral rationale.
+- `specs/_audits/2026-05-16-inv-signup-token-tla.md` — Wave-30 R-PREP dispatch audit (TLC verification ledger).
+
+**Aliases históricos:** nenhum. Declared inline in `signup.rs` `insert_or_existing` doc comment + wave-29 stream-10 closure §6.2 candidate registration, promoted to registry in Wave-30 stream-4 R-PREP (2026-05-16).
+
 ---
 
 ## 4. TLA+ coverage matrix
@@ -645,6 +663,7 @@ CRITICAL invariantes **DEVEM** ter TLA+ spec + model check verde no CI (CTRL-FOR
 | INV-GC-REACHABLE-SET-COMPLETE | `specs/tla/gc_reachable_set_complete.tla` + `.cfg` (PR) + `_nightly.cfg` | ✅ GREEN (DEBT-005 batch 6 FINAL — 2026-05-15) — `InvGcReachableSetComplete` + `InvReachableSetMonotone`; 3-pass marker (blob_meta + ac_meta + manifest_chunks) is superset-safe. Parent: `gc_correctness.tla` (InvGCReachableNeverDeleted). |
 | INV-SUB-PROCESSOR-AUDIT-FAIL-CLOSED | `specs/tla/sub_processor_audit_fail_closed.tla` + `.cfg` (PR) + `_nightly.cfg` | ✅ GREEN (DEBT-005 batch 6 FINAL — 2026-05-15) — `InvSubProcessorAuditFailClosed` + `InvAuditBeforeMutate`; every (publish / record_change / file_objection) op emits audit BEFORE state mutation; audit failure leaves state UNCHANGED. Parent: `audit_immutability.tla`; sibling: `audit_emit_atomic.tla`. |
 | INV-PAT-REVOKE-PROPAGATION | `specs/tla/auth_pat_revoke.tla` + `.cfg` (PR) + `_nightly.cfg` | ✅ GREEN (Wave-24 R-PREP — 2026-05-16; promoted from §3.28 PLANNED via Wave-23 invariant-draft sweep) — `InvRevokedTokenNeverValidates` proves "no edge cache lookahead" (admit_200 + sot_at_attempt=1 trace unreachable) + `InvRevokeAuditAtomic` (audit row durable before 204 response) + `InvRevokeIsIdempotent` (≤ 1 `auth.token.revoked` audit row per PAT regardless of retry count) + `InvRegionImpliesSoTRevoked` (SoT precedes region cache) + temporal `InvRevokeAtLeastOncePropagation` under WF on PropagateToRegion. Sibling of `auth_pat_hybrid.tla` (mint-path) and disjoint from `auth_revocation.tla` (queue-side). |
+| INV-SIGNUP-TOKEN-IDEMPOTENT | `specs/tla/signup_token_idempotent.tla` + `.cfg` (PR) + `_nightly.cfg` | ✅ GREEN (Wave-30 R-PREP — 2026-05-16; promoted from §3.29 DRAFT via Wave-29 stream-10 closure §6.2 deferral) — `InvSignupIdempotentByEmail` proves ≤ 1 `reserved` audit row per email (per-email exactly-once allocation) + `InvSignupTokenSingleUse` proves ≤ 1 `reserved` audit row per token (token single-use claim) + `InvAuditEmitAtomic` proves audit-row-per-request bijection (`Len(audit_log) = request_count`) + `InvAuditTenantIsAllocated` proves no synthesised tenant_id in audit (defense-in-depth) + `InvSotCoherent` proves token_tenant ↔ email_tenant slice agreement + liveness `InvInFlightDrains` under WF on RouteCompletion. PR-lane TLC: 1 017 distinct states, depth 9, 5 s wall-clock. Sibling of `signup_resignup.tla` (DEBT-014 FT-9, production-onboarding path) and disjoint from it (pilot pre-Stripe path); inherits `audit_emit_atomic.tla` (DEBT-005 batch 2) atomic-pairing pattern. |
 
 ### 4.2 Specs PLANNED (Lote 9.4 obligation matrix — pré-condição S-10/S-11/S-13/S-14/S-19 implementation)
 
