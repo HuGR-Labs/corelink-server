@@ -134,7 +134,7 @@ Tag draft contents (summarized — full text in the file):
 - **Compliance posture**: SOC 2 Type 2, ISO 27001:2022 (114 Annex A), GDPR, LGPD, LFPDPPP (Mexico legal review package filed), PCI DSS v4.0 SAQ A-EP, CCPA / CPRA.
 - **Open carve-outs** (acknowledged at GA, not blocking):
   - DEBT-003 — AWS Artifact subscription pending IAM-Identity-Center enablement; SOC 2 attestation via interim manual path. Target T+30d post-GA.
-  - DEBT-026 — external pentest vendor engaged + scope-frozen; field-work begins post-GA (T+0..T+14d).
+  - DEBT-026 — external pentest engagement scope frozen; vendor RFP send pending Owner action (5-vendor shortlist NOT_CONTACTED per `reports/pentest-rfp-tracker.json`); engagement window contracted for 2026-Q3 (forward-looking); field-work begins post-vendor-selection.
   - FW-H — Compliance / Privacy second-pair reviewer role staffing pending nomination; ADR-0034b 2-key mechanism in place to bridge.
 - **Sign-off** (per RB-GA-CUTOVER §8 + ADR-0034b 2-key):
   - Signer 1: Gustavo Schneiter (Owner / CEO)
