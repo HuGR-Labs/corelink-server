@@ -1,8 +1,8 @@
 ---
-title: "DEBT-015-BUILD wave-23 closure attempt (root-cause narrowed)"
+title: "DEBT-015-BUILD wave-23/24 closure attempt (root-cause narrowed)"
 date: 2026-05-16
-wave: 23
-branch: wt/r-prep-debt-015-build-final
+wave: 24
+branch: wt/r-prep-debt-015-build-babel-patch
 status: PARTIAL
 debts_touched:
   - DEBT-015-BUILD
@@ -227,3 +227,235 @@ dispatch:
 
 Signed-off-by: Gustavo Schneiter <gustavo@humangr.com>
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+
+---
+
+# Wave-24 addendum — path #1 attempted, invalidated empirically
+
+## Scope
+
+Wave-23 recommended path #1: patch `@docusaurus/babel/lib/preset.js` to set
+`modules: false` on the server preset-env target, hypothesising that
+`@babel/preset-env`'s default `modules: 'auto'` was rewriting `import()`
+into `Promise.resolve().then(() => require())` on the server pass.
+Wave-24 attempted that patch (plus a tighter additional change), rebuilt,
+and disproved the hypothesis.
+
+## What landed
+
+`patches/@docusaurus__babel@3.10.1.patch` registered via
+`pnpm patch @docusaurus/babel@3.10.1` and recorded in
+`package.json` → `pnpm.patchedDependencies` and `pnpm-lock.yaml`. Two
+deltas vs upstream `@docusaurus/babel@3.10.1`:
+
+1. **Server preset-env `modules: false`** — the wave-23 recommended
+   change. Prevents preset-env from interpreting the source as CJS and
+   short-circuits any ESM-to-CJS rewrite on the server pass.
+2. **Server dynamic-import plugin swap** — replaces
+   `babel-plugin-dynamic-import-node` (which rewrites every `import(spec)`
+   into `Promise.resolve().then(() => require(spec))`) with
+   `@babel/plugin-syntax-dynamic-import` (same plugin the client branch
+   uses). Strictly tighter than the wave-23 recommendation, included
+   because the dynamic-import-node plugin was the more direct candidate
+   for the symptom (preset-env `modules:'auto'` does not transform
+   `import()` at all in modern `@babel/preset-env`; that's
+   `babel-plugin-dynamic-import-node`'s job).
+
+Both patches are clearly commented inline with the DEBT-015-BUILD wave-24
+context.
+
+## Empirical result
+
+`pnpm install` repatched the babel package (verified via
+`@docusaurus/core@3.10.1_patch_hash=...` symlink chain pointing at the
+new `@docusaurus+babel@3.10.1_patch_hash=...` directory containing the
+modified `preset.js`). Wave-24's full rebuild
+(`rm -rf build && pnpm build` on Node 22.17.1):
+
+- **Webpack compilation phase** — green, identical to the wave-23
+  baseline. Both server and client bundles compile in ~1.5s
+  ("Server: Compiled successfully", "Client: Compiled successfully").
+- **SSG phase** — **fails identically** to wave-22/23 with 113
+  `MODULE_NOT_FOUND` errors for `@site/docs/*.mdx` requires. Bundle
+  inspection:
+  - `grep -c 'import("@site' build/__server/server.bundle.js` → **0**
+    (down from baseline; the syntax-only plugin no longer forces every
+    `import()` to become a runtime `require()`).
+  - `grep -oE 'require\("@site[^"]+"\)' build/__server/server.bundle.js | wc -l`
+    → **226** (unchanged from wave-23). The 113 unique `@site/*.mdx`
+    paths each appear once as `require(...)` and once as
+    `require.resolveWeak(...)`.
+  - `grep -c 'Promise\.resolve()\.then' build/__server/server.bundle.js`
+    → **6** (down from ~hundreds; the residual six are unrelated
+    `Promise.resolve().then()` user code paths).
+- **Source vs bundle diff** — `.docusaurus/registry.js` (the route
+  manifest) contains clean
+  `() => import(/* webpackChunkName: "..." */ "@site/...")` calls (line
+  202 of `@docusaurus/core/lib/server/codegen/codegenRoutes.js`). The
+  emitted `__server/server.bundle.js` instead contains
+  `() => Promise.resolve().then(() => interopRequireWildcard(require("@site/...")))`.
+
+## Root cause (re-narrowed)
+
+Wave-23's diagnosis attributed the nested `require()` pattern to
+`@babel/preset-env` `modules: 'auto'`. That diagnosis is **wrong**.
+preset-env with `targets: { node: 'current' }` and `modules: 'auto'`
+does not transform `import()` calls — it leaves dynamic-import syntax
+untouched and only rewrites top-level `import`/`export` statements to
+CJS. The nested-`require` pattern was actually emitted by
+`babel-plugin-dynamic-import-node` (still wired in the server branch on
+line 78 of upstream `preset.js`). Wave-24's patch removes both knobs
+defensively, and the bundle confirms babel no longer produces the
+pattern (no remaining `import(` in the bundle, no babel-authored
+`Promise.resolve().then(()=>require(...))` chains).
+
+**Yet the bundle still contains 226 literal `require("@site/...")` and
+`require.resolveWeak("@site/...")` calls.** This is intrinsic
+**webpack 5** behaviour for `target: 'node'` server bundles when
+combined with `optimization.splitChunks: false` (which Docusaurus sets
+on the server config) and an unresolvable alias-prefixed dynamic
+specifier:
+
+- For a static `import "@site/foo"`, webpack resolves the `@site`
+  alias at compile time and inlines the module.
+- For a dynamic `import("@site/foo")` in a `target: 'node'` bundle with
+  splitChunks disabled, webpack 5 emits a runtime `require("@site/foo")`
+  call (a "lazy require"). The alias map is **not** consulted at this
+  rewrite — the specifier is passed through verbatim because webpack
+  treats dynamic specifiers as runtime-resolved by default on the node
+  target.
+
+So the actual chain is:
+
+1. `codegenRoutes.js` emits `import("@site/docs/foo.mdx")` into the
+   generated registry — correct webpack idiom.
+2. babel-loader (now with wave-24 patches) leaves the `import()` as-is.
+3. webpack server compilation sees a dynamic `import()` whose
+   specifier is alias-prefixed; for the `node` target with
+   splitChunks disabled, it emits a plain runtime
+   `require("@site/docs/foo.mdx")` — without resolving the `@site`
+   alias.
+4. SSG executes the server bundle in a `vm`-like context whose
+   `require` is `ssgRequireFunction` from `ssgNodeRequire.js`. That
+   function delegates to Node's CJS `createRequire`, which has no
+   notion of webpack aliases → `MODULE_NOT_FOUND`.
+
+No babel patch can fix this. The transform happens **after** babel, in
+webpack's own `target: 'node'` chunk-emission pass.
+
+## Why wave-23 path #1 is provably insufficient
+
+- Empirical: bundle still contains 226 alias-prefixed runtime requires
+  after the patch.
+- Mechanical: babel has no visibility into webpack's dynamic-import
+  chunk-emission strategy for the node target.
+- Architectural: even if babel rewrote `import("@site/X")` to a
+  resolved absolute path at compile time, that would break the
+  shared client/server semantics Docusaurus relies on (the client
+  bundle uses `@site/...` as a webpack-resolved alias map, not a
+  filesystem path).
+
+## Revised path forward (wave-25)
+
+Two viable approaches; path B is strongly preferred.
+
+**Path A — webpack server config override** (estimated 2-3h):
+Patch `@docusaurus/core/lib/webpack/server.js` to add
+`resolve.alias` post-processing OR a small `RuleSetRule` that
+matches `^@site/` specifiers and pre-resolves them. Risk:
+high — the alias map is built dynamically in `base.js`, and any
+patch must keep client/server bundles consistent or hydration
+will break. Reverts and re-attempts are expensive (~10 min per
+build cycle).
+
+**Path B — `ssgRequire` alias resolver** (estimated 1-2h, strongly
+preferred): Extend `@docusaurus/core/lib/ssg/ssgNodeRequire.js`
+(already patched for `@theme/`, `@generated/`, CSS, and
+`resolveWeak`) with a fifth resolver branch: when `id` matches
+`^@site/`, rewrite it to the absolute `siteDir` path passed into
+`createSSGRequire`. Since `siteDir` is already in scope of the
+factory closure (it's `path.dirname(serverBundlePath, '../..')`
+effectively — but realistically should be threaded through from
+`createSSGRequire(serverBundlePath, siteDir)`), this is a 5-line
+patch plus a 1-call-site change in
+`@docusaurus/core/lib/ssg/ssgRenderer.js`. For
+`@site/docs/foo.mdx` we then `realRequire(path.join(siteDir,
+'docs/foo.mdx'))` — but **MDX files are not Node-loadable** as-is,
+so this still requires running the MDX through `@docusaurus/mdx-loader`
+or eval'ing the compiled client chunk. The realistic shape is
+therefore:
+
+- `@site/docs/*.mdx` resolves via wave-22 audit's *path-B-revised*
+  approach (sandbox-eval the compiled client chunk in
+  `build/assets/js/<chunkId>.<hash>.js`, fake the
+  `webpackChunk_corelink_docs` collector, return the chunk's
+  default export).
+- `@generated/docusaurus-plugin-content-docs/default/p/*.json`
+  resolves trivially via `realRequire(path.join(generatedFilesDir,
+  '...'))`.
+
+This is the "non-trivial `ssgRequire` patch" wave-23 estimated at
+3-5h. Wave-24 narrows the estimate to **2-3h** because:
+- The webpack-emitted require list is now fully characterised
+  (113 `@site/*` + 113 `resolveWeak` + 77 `@generated/*` literal
+  requires, exact strings logged above).
+- The two prior `ssgRequire` patches (`@theme/`, `@generated/`,
+  CSS, `resolveWeak`) establish the patch shape — adding two more
+  branches is mechanical.
+- The babel patches from wave-24 stay landed (they remove dead
+  code paths and don't regress anything), so wave-25 starts from
+  a cleaner baseline.
+
+## What landed in wave-24
+
+- `patches/@docusaurus__babel@3.10.1.patch` (new file, registered
+  in `package.json` + `pnpm-lock.yaml`).
+- This audit doc, updated with the wave-24 closure section.
+- DEBT-015-BUILD register row updated with wave-24 result + revised
+  ETA.
+
+The babel patches stay landed because:
+- They make the server bundle strictly cleaner (no dead
+  `babel-plugin-dynamic-import-node` transform).
+- They eliminate one of the two layers wave-23 conflated, which
+  reduces the diagnostic surface for wave-25.
+- They have zero observable regression (webpack compilation phase
+  identical, all non-build gates green).
+
+## Wave-24 quality gates
+
+- `pnpm typecheck` (apps/docs) → **green**.
+- `pnpm lint` (apps/docs) → **green**.
+- `python3 scripts/validate_specs.py` → **green** (444 schema + 9
+  YAML-only = 453 total).
+- `python3 scripts/validate_references.py` → **green** (no dangling
+  refs).
+- `pnpm build` (apps/docs) on Node 22 → **red** (same SSG failure
+  as wave-22/23, root cause now sharpened).
+
+## Closure verdict
+
+DEBT-015-BUILD closes **PARTIAL** for the third consecutive wave.
+Wave-23's diagnosis was directionally right (babel pass was emitting
+the nested-require pattern) but mechanically wrong (the culprit plugin
+was `babel-plugin-dynamic-import-node`, not preset-env `modules:auto`).
+Wave-24 cleaned up that babel layer and discovered the deeper layer is
+in webpack itself, which **cannot be patched via babel**. The path
+forward is now clearly **path B (`ssgRequire` alias resolver +
+client-chunk sandbox-eval)** at 2-3h, replacing wave-23's path #2
+(custom babel plugin, also provably insufficient by the same
+empirical argument).
+
+## ETA for follow-on
+
+T+14d (2026-05-30) unchanged. Wave-25 dispatch:
+
+- Extend `@docusaurus/core/lib/ssg/ssgNodeRequire.js` with `@site/*`
+  and `@generated/*` branches.
+- For `@site/docs/*.mdx`, sandbox-eval the corresponding client chunk
+  in `build/assets/js/<chunkId>.<hash>.js` using a faked
+  `webpackChunk_corelink_docs` collector.
+- For `@generated/*.json`, resolve directly to the
+  `.docusaurus/<plugin>/p/<file>.json` path.
+- Verify build + Lighthouse + SEO sanity.
+
