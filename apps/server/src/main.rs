@@ -70,6 +70,79 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let grpc_addr: SocketAddr = format!("0.0.0.0:{}", port).parse()?;
 
+    // Wave-19: Neon analytics shadow per-region project resolution.
+    //
+    // `corelink-audit-chain::neon_shadow::real::RealNeonShadowSink` is
+    // bound at the binary boot path against the per-region Neon
+    // project DSN read from `NEON_DB_URL_<REGION_UPPER>` (rows 120–124
+    // of `docs/internal/secrets-checklist.md`). We log which regions
+    // resolve so a misconfigured rollout is observable at boot, not
+    // at first customer query.
+    //
+    // The `RealNeonShadowSink` trait-object construction itself
+    // requires a `TokioPostgresExecutor` binder (deferred follow-on —
+    // see `specs/_audits/2026-05-16-neon-shadow-real-driver.md` §7).
+    // Until the binder ships, the customer-facing
+    // `/v1/audit/analytics/*` endpoints stay behind the wave-18
+    // `InMemoryNeonShadowSink` factory (the route module is
+    // module-level present but not merged into `routes::build()` for
+    // the same reason). The `--feature neon-real` flag is the
+    // build-time witness; flipping it on plus shipping the binder
+    // hot-swaps the production wiring without further code changes.
+    {
+        use corelink_analytics::Region;
+        use corelink_audit_chain::{EnvVarResolver, NeonProjectResolver};
+        let resolver = EnvVarResolver::new();
+        let active_regions = [
+            Region::Iad,
+            Region::Fra,
+            Region::Gru,
+            Region::Nrt,
+            Region::Syd,
+        ];
+        let mut resolved = 0usize;
+        for region in active_regions {
+            match resolver.resolve(region) {
+                Ok(_) => {
+                    resolved += 1;
+                    info!(
+                        region = region.as_str(),
+                        "wave-19 neon shadow: project DSN resolved"
+                    );
+                }
+                Err(_) => {
+                    info!(
+                        region = region.as_str(),
+                        env_var = EnvVarResolver::env_var_name(region),
+                        "wave-19 neon shadow: project DSN unset (bring-up friendly skip)"
+                    );
+                }
+            }
+        }
+        if resolved == 0 {
+            warn!(
+                "wave-19 neon shadow: NO per-region Neon DSN configured; \
+                 analytics endpoints stay on InMemoryNeonShadowSink"
+            );
+        } else {
+            info!(
+                resolved_regions = resolved,
+                "wave-19 neon shadow: per-region project resolver ready"
+            );
+        }
+        #[cfg(feature = "neon-real")]
+        {
+            // Build-time witness: the `RealNeonShadowSink`
+            // orchestration surface (trait, executor, SQL constants,
+            // resolver) IS compiled in. The actual `tokio-postgres`
+            // binder is the deferred follow-on.
+            info!(
+                "wave-19 neon shadow: --feature neon-real build-time witness OK \
+                 (RealNeonShadowSink + NeonExecutor + EnvVarResolver linked)"
+            );
+        }
+    }
+
     // R2-12: HTTP server with Stripe webhook route. Only started when
     // STRIPE_WEBHOOK_SECRET is present; otherwise we log and skip so
     // local dev / CI don't fail without billing config.

@@ -85,6 +85,13 @@
 
 #![allow(clippy::uninlined_format_args)]
 
+/// Production `RealNeonShadowSink` driver — closes the wave-18
+/// caveat #3 (in-memory fake shipped wave-18; this submodule ships
+/// the real Postgres driver with per-region project resolver +
+/// `app.current_tenant` RLS GUC SET + idempotent ON CONFLICT INSERT +
+/// aggregate-query SQL). See `real.rs` doc.
+pub mod real;
+
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};

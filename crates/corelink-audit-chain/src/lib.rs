@@ -172,6 +172,12 @@ pub use neon_shadow::{
     ShadowSyncReceipt, TimelineBucket, EVENT_TYPE_SHADOW_SYNCED,
     EVENT_TYPE_SHADOW_SYNC_FAILED, SHADOW_LAG_NOMINAL_MAX_MS, SHADOW_LAG_SEV2_THRESHOLD_MS,
 };
+pub use neon_shadow::real::{
+    EnvVarResolver, ExecutorParam, ExecutorRow, InMemoryExecutor, NeonError, NeonExecutor,
+    NeonProjectResolver, RealNeonShadowSink, StaticResolver, SQL_BEGIN_TXN, SQL_COMMIT_TXN,
+    SQL_INSERT_SHADOW_ROW, SQL_QUERY_EVENT_COUNT, SQL_QUERY_EVENT_COUNT_FILTERED,
+    SQL_QUERY_TIMELINE, SQL_RECONCILE_COUNT, SQL_SET_RLS_TENANT_GUC,
+};
 pub use exporter::{
     hashes_eq_ct, verify_export_result, verify_inclusion_proof, AuditExporter, ExportAuditRecord,
     ExportManifest, ExportResult, ExportWindow, ExportedAuditEvent, InMemoryAuditExporter,

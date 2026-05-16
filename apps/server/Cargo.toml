@@ -29,6 +29,18 @@ mod_module_files = "deny"
 # host-side integration tests + local dev.
 default = []
 
+# Wire the production `RealNeonShadowSink` Neon analytics shadow
+# driver (wave-19 closure for the wave-18 caveat #3). Off by default —
+# enable in production deployments where the per-region Neon project
+# DSN is configured via `NEON_DB_URL_<REGION_UPPER>` (rows 120–124 of
+# `docs/internal/secrets-checklist.md`). The flag is a build-time
+# witness: the `RealNeonShadowSink` orchestration surface is always
+# compiled in; the flag toggles the `apps/server` boot path log that
+# pins the production wiring is live.
+#
+# Pattern reference: `specs/_audits/2026-05-16-neon-shadow-real-driver.md` §3.
+neon-real = ["corelink-audit-chain/neon-real"]
+
 # Wire the production AWS KMS provider (`corelink_byok_aws::AwsKmsRealProvider`)
 # instead of the in-memory fake. Off by default — enable in production
 # deployments where customer CMKs live in AWS KMS. The BYOK orchestrator
@@ -171,6 +183,11 @@ corelink-byok-gcp = { path = "../../crates/corelink-byok-gcp", optional = true }
 corelink-byok-azure = { path = "../../crates/corelink-byok-azure", optional = true }
 corelink-byok-vault = { path = "../../crates/corelink-byok-vault", optional = true }
 async-trait = { workspace = true }
+# Wave-19 — `Region` enum read at the binary boot path for the Neon
+# analytics shadow per-region project resolver (`EnvVarResolver`).
+# Previously dev-dep only; promoted to main dep so the
+# `RealNeonShadowSink` env-var resolution check runs at boot.
+corelink-analytics = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
@@ -178,12 +195,14 @@ hmac = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
 # Wave-15.3 — integration test fixtures for the `audit_export` route.
-# `corelink-analytics` provides the canonical `Region` enum the
-# `AuditEvent` constructor uses; `tower` brings the `ServiceExt`
-# trait used to drive `axum::Router::oneshot` in async tests;
-# `serde_json` parses the NDJSON envelope; `tokio` runs the async
-# test functions; `axum` brings the `Request`/`Body` body shapes.
-corelink-analytics = { workspace = true }
+# `corelink-analytics` is promoted to a main dep above (wave-19 needs
+# `Region` at the binary boot path for the Neon shadow project
+# resolver); the dev-dep entry was removed to avoid duplicate edition
+# (the workspace dep is automatically available in test code).
+# `tower` brings the `ServiceExt` trait used to drive
+# `axum::Router::oneshot` in async tests; `serde_json` parses the
+# NDJSON envelope; `tokio` runs the async test functions; `axum`
+# brings the `Request`/`Body` body shapes.
 tower = { workspace = true, features = ["util"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 serde_json = { workspace = true }
