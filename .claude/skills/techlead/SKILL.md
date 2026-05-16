@@ -1,6 +1,6 @@
 ---
 name: techlead
-version: 2.1.0
+version: 2.1.1
 description: SOTA per-deliverable verification protocol for orchestrating multi-agent Sonnet swarms. The orchestrator's tech-lead persona — invoke before every merge to main, every wave close, every tag. Returns a structured verdict (APPROVE / FIX-FIRST / REJECT / ESCALATE) backed by 11 levels of cold-tool verification (sanity → build/lint → charter → security → tests → docs → spec hygiene → merge hygiene → decision documentation → risk → rolling). Mandates root-cause fixes over bypasses. Refuses anti-patterns observed in 30 days of execution.
 ---
 
@@ -145,10 +145,11 @@ cargo test --workspace --no-run 2>&1 | tail -3
 #                   exception block (below) applies.
 #   ✗ (design)    — failure is a DECLARED mutually-exclusive feature design.
 #                   ONLY permitted when the row is `--all-features` AND L0.6
-#                   discovered a `compile_error!`-gated feature AND a
-#                   `specs/_audits/*` document is cited that ratifies the
-#                   mutually-exclusive design. Overall verdict remains GO for
-#                   that specific row only. Other `✗` rows are still NO-GO.
+#                   discovered a `compile_error!`-gated feature AND a ratifying
+#                   ADR is cited (preferred) OR a `specs/_audits/*` document
+#                   is cited that ratifies the mutually-exclusive design.
+#                   Overall verdict remains GO for that specific row only.
+#                   Other `✗` rows are still NO-GO.
 #
 # Exception block (must appear in the verdict body when any row is `✗ (design)`):
 #
@@ -156,11 +157,21 @@ cargo test --workspace --no-run 2>&1 | tail -3
 #     row: --all-features
 #     reason: <feature-name> uses compile_error! against <conflicting-feature>
 #             (mutually exclusive by design)
+#     adr ref: specs/03_architecture/adrs/ADR-<id>-<slug>.md
+#              (preferred — first-class architectural ratification)
 #     audit ref: specs/_audits/<doc>.md §<anchor>
+#              (secondary — operational audit trail; required for the BYOK
+#              orchestrator case, where ADR-S30-001 is the ADR and the
+#              wave-15 audit is the operational baseline)
 #     scope: build|test|clippy
 #     verdict-impact: GO (design-declared)
 #
-# Without all four fields, the exception is invalid and the row stays `✗` → NO-GO.
+# Without an `adr ref` (preferred) OR an `audit ref` (fallback), plus the
+# other fields, the exception is invalid and the row stays `✗` → NO-GO.
+#
+# Canonical case (BYOK orchestrator, 4-provider mutually-exclusive features):
+#   adr ref:   specs/03_architecture/adrs/ADR-S30-001-byok-mutually-exclusive-providers.md
+#   audit ref: specs/_audits/2026-05-15-byok-real-provider-pattern.md §7
 
 # L1.4: no function-level #[allow] smuggled
 grep -rn "^[[:space:]]*#\[allow(clippy" "$TARGET_DIR/crates/<new-crate>/src/" 2>/dev/null | grep -v "^#!\[allow"
@@ -651,12 +662,20 @@ These are MY personal failures from 30 days of execution. The skill exists to re
 **Pattern:** L0+L2 batch verifier (Sonnet) reports `cargo build --workspace --all-features: pass` as a single pass/fail cell. The cell collapses the entire feature topology into one boolean. Mutually-exclusive feature combinations (designed to fail via `compile_error!`) get rolled into the same cell as the default build, masking a known-broken `--all-features` configuration behind a green checkmark. The orchestrator never sees the truth and merges on a hallucinated signal.
 
 **Refusal:**
-1. **L0.6 mandatory**: enumerate declared features per touched workspace member and flag any feature whose source path contains `compile_error!` as mutually-exclusive. Mutually-exclusive features without a corresponding `specs/_audits/*` ratification doc are themselves a charter violation — REJECT.
+1. **L0.6 mandatory**: enumerate declared features per touched workspace member and flag any feature whose source path contains `compile_error!` as mutually-exclusive. Mutually-exclusive features without a corresponding ratifying ADR (`specs/03_architecture/adrs/ADR-*.md`) — or, as fallback, a `specs/_audits/*` document — are themselves a charter violation → REJECT.
 2. **L1.3a mandatory**: emit the 4-row feature-set sub-matrix (`default features`, `--all-features`, two `per known feature` rows) with separate build/test/clippy columns. A single collapsed cell is automatic HARD REJECT.
-3. **`✗ (design)` rule**: the only way `--all-features` may be `✗` and the overall verdict still GO is when the L1.3a exception block is fully populated (row, reason, `specs/_audits/*` audit ref, scope, verdict-impact). Missing any field = NO-GO.
+3. **`✗ (design)` rule**: the only way `--all-features` may be `✗` and the overall verdict still GO is when the L1.3a exception block is fully populated (row, reason, **adr ref** preferred OR **audit ref** fallback, scope, verdict-impact). Missing the ratification ref = NO-GO.
 4. **No retroactive waivers**: if a wave merged with a single-cell pass and `--all-features` is actually broken, the wave is RE-OPENED for verification debt; the orchestrator does not paper over it in the next wave's risk register.
 
-**Real incident (canonical example):** Wave-18 closure (2026-05-14, base `cb6360d`). The L0+L2 Sonnet batch verifier reported `cargo build --workspace --all-features: pass` for branches 7, 8, 9, 10 (statuspage, wasm32, DSR, export-async). The canonical `--all-features` build had been structurally broken since commit `818c055` due to the BYOK orchestrator declaring mutually-exclusive provider features via `compile_error!`. The verifier conflated "default features build success" with "all features build success" and the orchestrator merged on the false positive. Caught post-merge during the wave-18 retro; no production damage but four merges shipped with verification debt. v2.1.0 of this skill (the L0.6 + L1.3a sub-matrix + AP-11 trio) exists to refuse this pattern on the orchestrator's behalf.
+**Canonical ratification (BYOK orchestrator case):**
+- ADR: `specs/03_architecture/adrs/ADR-S30-001-byok-mutually-exclusive-providers.md` (ACCEPTED 2026-05-16).
+- Baseline audit: `specs/_audits/2026-05-15-byok-real-provider-pattern.md §7`.
+- Implementation: `apps/server/src/byok_orchestrator.rs` lines 76–117 (6 pairwise `compile_error!` macros for the AWS/GCP/Azure/Vault feature flags).
+- Regression guard: `scripts/byok-feature-validate.sh` (re-asserts macros + per-provider build matrix).
+
+When the L1.3a `--all-features` row is `✗ (design)` for `corelink-server`, the exception block MUST cite `ADR-S30-001` as `adr ref`. Any L1.3a sub-matrix that fails to cite it for a BYOK-touching branch is itself an AP-11 violation.
+
+**Real incident (canonical example):** Wave-18 closure (2026-05-14, base `cb6360d`). The L0+L2 Sonnet batch verifier reported `cargo build --workspace --all-features: pass` for branches 7, 8, 9, 10 (statuspage, wasm32, DSR, export-async). The canonical `--all-features` build had been structurally broken since commit `818c055` due to the BYOK orchestrator declaring mutually-exclusive provider features via `compile_error!`. The verifier conflated "default features build success" with "all features build success" and the orchestrator merged on the false positive. Caught post-merge during the wave-18 retro; no production damage but four merges shipped with verification debt. v2.1.0 of this skill (the L0.6 + L1.3a sub-matrix + AP-11 trio) exists to refuse this pattern on the orchestrator's behalf. v2.1.1 (wave-30 stream-8, 2026-05-16) adds the first-class ADR cite (`ADR-S30-001`) so reviewers don't keep re-discovering the design exception as a finding.
 
 ---
 
@@ -708,6 +727,7 @@ If a wave is taking too long because L2 is failing, the answer is **fix L2**, no
 | 1.0.0 | 2026-05-14 | Gustavo (via Claude Opus 4.7) | Initial skill creation post-user-mandate "voce e o techlead" |
 | 2.0.0 | 2026-05-14 | Gustavo (via Claude Opus 4.7) | SOTA upgrade post-user-mandate "skill precisa ser sota, nao 'ok'". Added: detailed L0-L10 with rationale + time budgets per level; 10-anti-pattern refusal catalog from 30-day execution (AP-1 through AP-10); output schema with structured verdict; calibration + memory integration; integration matrix with other skills/tools; "refusing good enough" compact. Length 4x. |
 | 2.1.0 | 2026-05-15 | Gustavo (via Claude Opus 4.7) | Feature-flag matrix hardening post-wave-18 closure. Added `version:` frontmatter field. Extended L0 with sub-check L0.6 (per-workspace-member feature discovery + `compile_error!` mutually-exclusive detection). Extended L1 with sub-check L1.3a (mandatory 4-row build/test/clippy feature-set sub-matrix per code branch; `default features` / `--all-features` / 2× `per known feature`; `✗ (design)` exception block requires populated row + reason + `specs/_audits/*` ref + scope + verdict-impact). Added AP-11 "Single-cell feature-flag pass cell hides mutually-exclusive failures" with the wave-18 canonical incident (verifier reported `--all-features: pass` for branches 7-10 even though that build had been broken since `818c055` due to BYOK mutually-exclusive provider features). Quick-reference card and Section 7 "NEVER" list updated. No removals; v2.1.0 is strictly additive over v2.0.0. |
+| 2.1.1 | 2026-05-16 | Gustavo (via Claude Opus 4.7, wave-30 stream-8) | First-class ADR formalization of the BYOK mutually-exclusive feature design. L1.3a `✗ (design)` exception block now prefers `adr ref` (ratifying ADR) over `audit ref` (operational audit); both are accepted, but the BYOK orchestrator case MUST cite `ADR-S30-001-byok-mutually-exclusive-providers.md` as `adr ref` going forward. AP-11 entry adds a "Canonical ratification" block pointing at ADR-S30-001 + the wave-15 audit + `apps/server/src/byok_orchestrator.rs` lines 76–117 + the new `scripts/byok-feature-validate.sh` regression guard, so reviewers stop re-discovering the design exception as a finding. No other changes; v2.1.1 is strictly additive over v2.1.0. |
 
 ---
 

@@ -3,9 +3,9 @@ id: "AUDIT-2026-05-15-BYOK-REAL-PROVIDER-PATTERN"
 type: "audit"
 doc_status: "ACTIVE"
 audit_status: "ACTIVE"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-05-15"
-updated: "2026-05-15"
+updated: "2026-05-16"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: ["Crypto SME (TBD)", "VP-Sec"]
@@ -17,7 +17,9 @@ references:
   - "specs/_compliance/BYOK-FIPS-ATTESTATION-MATRIX.md"
   - "compliance/byok-fips-matrix.md"
   - "crates/corelink-byok-aws/src/real.rs"
-tags: ["byok", "fips", "ga", "pattern", "canonical-reference", "aws-kms", "gcp-kms", "azure-kv", "vault"]
+  - "specs/03_architecture/adrs/ADR-S30-001-byok-mutually-exclusive-providers.md"
+  - "specs/_audits/2026-05-16-byok-ap11-adr-formalization.md"
+tags: ["byok", "fips", "ga", "pattern", "canonical-reference", "aws-kms", "gcp-kms", "azure-kv", "vault", "ap-11"]
 ---
 
 # BYOK Real Provider Pattern — Canonical Reference
@@ -325,6 +327,14 @@ the default `cargo build -p corelink-server` produces the
 adapter crates remain optional and gated by the respective feature.
 
 ### 7.2 Multi-flag mutual-exclusion guard
+
+> **Ratified by `ADR-S30-001-byok-mutually-exclusive-providers.md`
+> (ACCEPTED 2026-05-16).** This section is the operational baseline; the
+> ADR is the first-class architectural decision and the canonical
+> reference for `/techlead` AP-11 exception blocks.
+> See also: `specs/_audits/2026-05-16-byok-ap11-adr-formalization.md`
+> (the formalization event record) and `scripts/byok-feature-validate.sh`
+> (regression guard).
 
 Enabling two or more `byok-*-real` flags simultaneously is a **HARD
 compile error** — the orchestrator is a singleton trait object and
