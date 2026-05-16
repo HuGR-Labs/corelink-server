@@ -70,3 +70,11 @@ url = "2"
 tokio-test = { workspace = true }
 tempfile = "3"
 proptest = { workspace = true }
+# Wave-23 (W23-RUSTLS-INIT): explicit rustls dep with `ring` feature so
+# the integration test suite can install a `CryptoProvider` exactly once
+# at test-suite init. With a single provider feature (`ring`) wired
+# transitively via `hyper-rustls`, the provider auto-installs today —
+# but a future feature-flag change (e.g. adding `aws-lc-rs` alongside
+# `ring`) would make auto-install ambiguous and panic. The explicit
+# `install_default()` call at test init is the defensive guard.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }

@@ -580,17 +580,52 @@ async fn handle_export(
     );
     // Wave-21 closure of A-P2-05: anchor the bucket `now_ms` to the
     // injected `WallClock` collaborator instead of the request window's
-    // `until_ms`. The window-derived helper (`now_ms_from_window`) is
-    // retained for the legacy path documented at its def-site and as a
-    // last-resort fallback when the wall clock saturates to 0 (pre-epoch
-    // / poisoned fake mutex). Production wiring slots `SystemWallClock`;
-    // tests pin time via `InMemoryFakeWallClock`.
+    // `until_ms`.
+    //
+    // Wave-23 closure of W21-R-P2-01 (adversarial review
+    // `2026-05-16-wave21-adversarial-review.md` §3.3): the previous
+    // implementation fell back to `now_ms_from_window(window).until_ms`
+    // when `wall_clock.now_ms() == 0`. That re-introduced the same
+    // attacker-controlled bucket clock the wave-21 stream was meant to
+    // close — a customer querying a 1970-epoch window with `until_ms`
+    // near 0 would still receive a window-derived bucket clock on the
+    // saturating path. We now fail-CLOSED (503 + `clock_unavailable`
+    // audit row) so the bucket clock NEVER couples to caller-controlled
+    // request bytes, even on the structurally-unreachable pre-epoch
+    // branch.
+    //
+    // Production reachability: `SystemWallClock` saturates to 0 only on
+    // pre-1970 wall-clock instants — structurally impossible on any
+    // production host (epoch is decades past). The fail-CLOSED 503
+    // affects only (a) test fakes deliberately pinned at `unix_ms == 0`
+    // and (b) exotic hosts with a pre-epoch system clock, which is an
+    // operational failure the audit pipeline SHOULD surface.
+    //
+    // `now_ms_from_window` is retained at its def-site for archival
+    // legacy use only — no production caller invokes it post-wave-23.
     let wall_now_ms = state.wall_clock.now_ms();
-    let now_ms = if wall_now_ms == 0 {
-        now_ms_from_window(window)
-    } else {
-        wall_now_ms
-    };
+    if wall_now_ms == 0 {
+        let row = ExportAuditRow {
+            event_type: EVENT_TYPE_EXPORT_REQUEST.to_string(),
+            authenticated_tenant: Some(authenticated_tenant),
+            attempted_tenant: None,
+            from_ms,
+            to_ms,
+            bytes_written: 0,
+            events_written: 0,
+            exit_status: "clock_unavailable".to_string(),
+            payload: None,
+        };
+        if let Some(resp) = emit_or_503(&state.audit_sink, row) {
+            return resp;
+        }
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "wall clock unavailable",
+        )
+            .into_response();
+    }
+    let now_ms = wall_now_ms;
     match state.rate_limiter.try_acquire(
         authenticated_tenant,
         bucket_key,
@@ -1340,13 +1375,17 @@ fn parse_u32_digits(b: &[u8]) -> Option<u32> {
 /// **Wave-21 closure (`A-P2-05`):** the route now consumes
 /// [`AuditExportRouteState::wall_clock`] (`Arc<dyn WallClock>`) and
 /// uses `wall_clock.now_ms()` as the canonical bucket clock. This
-/// helper is retained as a last-resort fallback for the degenerate
-/// case where the wall clock saturates to `0` (pre-epoch instant or a
-/// poisoned [`crate::wall_clock::InMemoryFakeWallClock`] mutex) so the
-/// bucket still has a strictly-monotonic-per-window anchor. The
-/// canonical fix-stream landed jointly with the symmetric closure at
-/// [`super::audit_analytics`] (`B-P2-03`) so both routes share the
-/// same [`crate::wall_clock::WallClock`] collaborator-swap surface.
+/// helper was retained at wave-21 as a last-resort fallback for the
+/// degenerate case where the wall clock saturates to `0`.
+///
+/// **Wave-23 closure (`W21-R-P2-01`):** the saturating-fallback path
+/// is now fail-CLOSED (503 + `clock_unavailable` audit row at the
+/// callsite). This helper is therefore unused on the production hot
+/// path and is retained for archival reference only — no caller
+/// remains. A future cleanup may delete it once external callers (none
+/// exist today) confirm. Marked `#[allow(dead_code)]` so the rest of
+/// the crate keeps clippy-clean; deletion is a separate cosmetic step.
+#[allow(dead_code, reason = "wave-23: superseded by fail-CLOSED branch at callsite; retained for archival reference until next hygiene sweep")]
 #[must_use]
 fn now_ms_from_window(window: ExportWindow) -> u64 {
     window.until_ms
@@ -1940,6 +1979,67 @@ mod tests {
             StatusCode::OK,
             "after advancing the fake wall clock 61s, the next request MUST allow \
              (proves wall-clock-driven `now_ms`, finding A-P2-05 closure)",
+        );
+    }
+
+    /// Wave-23 closure of W21-R-P2-01 — `wall_clock.now_ms() == 0`
+    /// MUST fail-CLOSED (503 + `clock_unavailable` audit row) rather
+    /// than fall back to the request-window-derived bucket clock. This
+    /// pins the structural fix described in
+    /// `specs/_audits/2026-05-16-wave23-cleanup.md` §W21-R-P2-01: the
+    /// bucket clock NEVER couples to caller-controlled bytes, even on
+    /// the structurally-unreachable (production) pre-epoch branch.
+    #[tokio::test]
+    async fn wall_clock_saturated_to_zero_returns_503_and_emits_clock_unavailable_row() {
+        use crate::wall_clock::InMemoryFakeWallClock;
+        use tower::ServiceExt;
+
+        let tenant = Uuid::from_u128(0xF2);
+        let sink: Arc<InMemoryExportAuditSink> =
+            Arc::new(InMemoryExportAuditSink::new());
+        let sink_dyn: Arc<dyn ExportAuditSink> = sink.clone();
+        let exporter: Arc<dyn AuditExporter> = Arc::new(InMemoryAuditExporter::new());
+        let rl_audit = Arc::new(InMemoryRateLimitAuditSink::new());
+        let rl_metrics = Arc::new(InMemoryRateLimitMetrics::new());
+        let rate_limiter: Arc<dyn RateLimiter> = Arc::new(
+            InMemoryTokenBucketRateLimiter::new(
+                rl_audit,
+                rl_metrics,
+                audit_export_rate_limit_config(),
+            ),
+        );
+        // Pin the wall clock at the saturating value (unix_ms == 0).
+        // SystemWallClock cannot reach this branch in production
+        // (epoch is decades past), but InMemoryFakeWallClock can —
+        // simulating a poisoned-mutex or pre-epoch host.
+        let fake = Arc::new(InMemoryFakeWallClock::at_unix_ms(0));
+        let state = AuditExportRouteState {
+            exporter,
+            rate_limiter,
+            audit_sink: sink_dyn,
+            pager_page_size: R2_LIST_PAGE_SIZE,
+            wall_clock: fake as Arc<dyn WallClock>,
+        };
+        let app = router(state);
+
+        let req = axum::http::Request::builder()
+            .uri("/v1/audit/export?from=0&to=1000")
+            .header(TENANT_ID_HEADER, tenant.to_string())
+            .body(axum::body::Body::empty())
+            .expect("req");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(
+            resp.status(),
+            StatusCode::SERVICE_UNAVAILABLE,
+            "wall-clock saturating to 0 MUST fail-CLOSED with 503 \
+             (W21-R-P2-01 closure — no fallback to until_ms-derived clock)",
+        );
+
+        let rows = sink.snapshot().expect("snapshot");
+        assert!(
+            rows.iter().any(|r| r.exit_status == "clock_unavailable"),
+            "fail-CLOSED path MUST emit one `clock_unavailable` audit row; saw {:?}",
+            rows.iter().map(|r| &r.exit_status).collect::<Vec<_>>(),
         );
     }
 

@@ -80,9 +80,9 @@ None.
 
 None.
 
-### 3.3 P2 (nice-to-have) — **2**
+### 3.3 P2 (nice-to-have) — **2** (both **CLOSED 2026-05-16** by wave-23 cleanup — see `specs/_audits/2026-05-16-wave23-cleanup.md`)
 
-- **W21-R-P2-01 (WallClock fallback couples to attacker-controlled
+- **W21-R-P2-01 — CLOSED 2026-05-16** (wave-23 cleanup §1.1; saturating branch now fail-CLOSED 503 + `clock_unavailable` audit row; NET-NEW test `wall_clock_saturated_to_zero_returns_503_and_emits_clock_unavailable_row` pins the contract). (WallClock fallback couples to attacker-controlled
   `until_ms`).** `audit_export.rs:589` — when `wall_clock.now_ms() == 0`
   the bucket clock falls back to `now_ms_from_window(window).until_ms`.
   In production `SystemWallClock` cannot return 0 (epoch is decades
@@ -97,7 +97,7 @@ None.
   a monotonic per-process `AtomicU64` counter or a hard refuse (return
   `503`). **Not a P1 because the trigger requires pre-epoch system
   time** (production hosts cannot reach this branch via SystemWallClock).
-- **W21-R-P2-02 (CI runbook workflow inherits FT-3 SHA-pin drift).**
+- **W21-R-P2-02 — CLOSED 2026-05-16** (wave-23 cleanup §1.2; inline `DRIFT-WAIVED-FT-3` comment block added pointing to waiver doc + ADR-0042 §A1 governance; behaviour unchanged per charter). (CI runbook workflow inherits FT-3 SHA-pin drift).**
   `.github/workflows/tla_runbooks_check.yml:50` uses the same pinned
   SHA `d5d07d5dab38ddb840c91ec48fa02f28b37a608d5af9a73570018591dbc8ef7f`
   that FT-3 documents as drifted upstream (actual
