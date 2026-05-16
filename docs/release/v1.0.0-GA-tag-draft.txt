@@ -90,9 +90,13 @@ Open carve-outs (acknowledged at GA, tracked for closure)
 - DEBT-003 AWS Artifact subscription pending IAM-Identity-Center
   enablement; SOC 2 Type 2 attestation downloaded via interim manual
   path. Target: T+30d post-GA.
-- DEBT-026 external penetration test — vendor engaged per
-  `2026-05-16-pentest-engagement-scope-freeze.md`; scope-frozen but
-  field-work begins post-GA (T+0 to T+14d). Findings feed wave-27+.
+- DEBT-026 external penetration test — engagement scope frozen per
+  `2026-05-16-pentest-engagement-scope-freeze.md`; vendor RFP send
+  pending Owner action (5-vendor shortlist NOT_CONTACTED at GA tag
+  per `reports/pentest-rfp-tracker.json`); engagement window
+  contracted for 2026-Q3 (forward-looking, not yet kicked off);
+  field-work begins post-vendor-selection (T+0 to T+44d retest
+  letter). Findings feed wave-27+.
 - Framework Reviewer Role FW-H (Compliance / Privacy second-pair)
   staffing pending nomination. ADR-0034b 2-key mechanism in place;
   FW-H role required for wave-27+ continuous-attestation cadence.
