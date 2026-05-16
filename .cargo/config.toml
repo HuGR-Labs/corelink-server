@@ -1,0 +1,27 @@
+# Wave-26 wasm32 baseline fix (getrandom 0.4.2 transitive).
+#
+# `uuid 1.23.1` with the `rng-getrandom` feature (used by tenant-path,
+# corelink-audit, corelink-pat, corelink-reapi, corelink-survey,
+# corelink-webauthn) pulls `uuid-rng-internal` which depends on
+# `getrandom 0.4`. Starting in getrandom 0.4.x, the wasm32-unknown-unknown
+# build requires opting into the `wasm_js` backend via BOTH:
+#   1. enabling the `wasm_js` cargo feature, AND
+#   2. setting `--cfg=getrandom_backend="wasm_js"` at compile time
+# (the cfg gate selects the backend module inside `getrandom::backends`).
+#
+# Without this cfg, getrandom 0.4.2 falls through to the `unsupported`
+# backend stub which does NOT export `fill_inner` / `inner_u32` /
+# `inner_u64`, causing the E0425 errors observed in the wave-25 audit §8
+# (commit 7e1a694) when building corelink-clerk-cf,
+# corelink-dsr-statuspage-scheduler, corelink-privacy-erasure-worker, and
+# corelink-statuspage-real for wasm32-unknown-unknown.
+#
+# The `wasm_js` cargo feature is enabled by a direct wasm32-targeted
+# dependency in `corelink-cf-bindings` (which is in the dep chain for all
+# four CF worker crates). See crates/corelink-cf-bindings/Cargo.toml.
+#
+# This config is workspace-scoped (`.cargo/config.toml` resolves upward
+# from the invocation cwd, but cargo also honors the workspace-root copy
+# for any package inside the workspace).
+[target.wasm32-unknown-unknown]
+rustflags = ['--cfg=getrandom_backend="wasm_js"']
