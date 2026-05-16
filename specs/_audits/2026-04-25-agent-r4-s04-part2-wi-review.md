@@ -294,7 +294,7 @@ Breakdown:
 - Per S-03 R4 reviews, none of these specs actually exist yet (planned forward). The alignment claim is hedged but the §11 DoD "TLA+ verde" is unsatisfiable until the specs exist. Same defect as WI-S03-008 #8.
 
 **Staging environment ownership unstated.**
-- All three WIs assume `staging.corelink.dev` exists with full S-04 stack deployed. There is no sub-task (in any of the 6 WIs) that provisions/maintains staging. This is a sprint-level dependency not surfaced. Cross-cutting with S-03 part 2 R4 review #11.
+- All three WIs assume `staging.corelink.humangr.com` exists with full S-04 stack deployed. There is no sub-task (in any of the 6 WIs) that provisions/maintains staging. This is a sprint-level dependency not surfaced. Cross-cutting with S-03 part 2 R4 review #11.
 
 ---
 

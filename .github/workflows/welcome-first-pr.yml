@@ -44,7 +44,7 @@ jobs:
             - **Feature request?** Use the *Feature Request* template — the
               "problem / alternatives" framing makes triage 10x faster.
             - **Security finding?** Please DO NOT post details in a public
-              issue. See `SECURITY.md` and email `security@corelink.dev` (or
+              issue. See `SECURITY.md` and email `security@humangr.com` (or
               use the GitHub *Report a vulnerability* private advisory flow).
 
             Welcome aboard!
@@ -63,7 +63,7 @@ jobs:
                --amend -s` if you forgot). The CI DCO check will block merge
                otherwise.
             4. **Security-sensitive change?** Do not include exploitation
-               details in this public PR. Coordinate with `security@corelink.dev`
+               details in this public PR. Coordinate with `security@humangr.com`
                first — see `SECURITY.md`.
             5. **Be patient.** CoreLink ships under a strict GA-Gate process;
                maintainer review can take a few business days, especially for

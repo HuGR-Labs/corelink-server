@@ -36,8 +36,8 @@ tags: ["sales", "faq", "rate-limit", "429", "throughput", "tier", "r-prep", "ga"
   upgrade-tier path, and the 5-arm taxonomy.
 - Each entry has: **Q**, **A** (short canonical answer), **Sources**.
 - If a prospect's question isn't here, route to the engineering doc
-  at `docs.corelink.dev/explanation/rate-limits` or to
-  `trust@corelink.dev`.
+  at `docs.corelink.humangr.com/explanation/rate-limits` or to
+  `trust@humangr.com`.
 
 ---
 
@@ -85,8 +85,8 @@ default 10k RPS is the benchmark we anchor on.
     "message": "…",
     "retry_after_seconds": 5,
     "tier": "free",
-    "tier_upgrade_url": "https://corelink.dev/pricing",
-    "docs_url": "https://docs.corelink.dev/explanation/rate-limits",
+    "tier_upgrade_url": "https://corelink.humangr.com/pricing",
+    "docs_url": "https://docs.corelink.humangr.com/explanation/rate-limits",
     "request_id": "01HFXY…",
     "limit": 10,
     "remaining": 0,
@@ -265,8 +265,8 @@ real CoreLink incident vs us being rate-limited normally?
 - **System-side, our problem:** `global_circuit_open`. This is the
   system-wide breaker tripped on multi-signal overload. It **is
   counted** in our SLO numerator. Action: check
-  [status.corelink.dev](https://status.corelink.dev); if no
-  incident is posted, escalate via `support@corelink.dev` with the
+  [status.corelink.humangr.com](https://status.corelink.humangr.com); if no
+  incident is posted, escalate via `support@humangr.com` with the
   `error.request_id` from the 429 body.
 
 The single most useful diagnostic value is the `request_id` — every

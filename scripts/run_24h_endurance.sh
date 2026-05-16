@@ -8,7 +8,7 @@
 #   scripts/run_24h_endurance.sh full             # 24h manual drill (PD-paged)
 #
 # Required env (full / nightly):
-#   K6_TARGET_HOST      e.g. https://staging.corelink.dev
+#   K6_TARGET_HOST      e.g. https://staging.corelink.humangr.com
 #   K6_AUTH_BEARER      staging PAT scoped to load-test tenant
 #
 # For smoke runs the script defaults to http://127.0.0.1:8787 with a stub PAT.

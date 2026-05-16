@@ -147,7 +147,7 @@ production version to upgrade from.
   latency, error rate, ingress / egress bandwidth, dedup ratio,
   storage utilisation, and audit-export volume; 12 pre-built
   dashboards (`specs/_dashboards/`).
-- **Statuspage integration** (`status.corelink.dev`) plus PagerDuty
+- **Statuspage integration** (`status.corelink.humangr.com`) plus PagerDuty
   Events v2 wiring for proactive customer communication on SEV-0 /
   SEV-1 incidents.
 
@@ -178,7 +178,7 @@ production version to upgrade from.
 ### §2.9 Public docs + pricing
 
 - **Docusaurus 3** documentation site at `apps/docs/`
-  (`docs.corelink.dev`) with the Diátaxis taxonomy
+  (`docs.corelink.humangr.com`) with the Diátaxis taxonomy
   (tutorial / how-to / reference / explanation), a 5-minute
   Bazel / Buck2 / native quickstart, auto-generated REAPI v2
   reference, and i18n in **en / pt-BR / es**.
@@ -349,7 +349,7 @@ at any wave boundary since wave-19 SEAL.
 
 ## §6. Operability
 
-- **Statuspage** at `status.corelink.dev` (dress-rehearsed wave-25;
+- **Statuspage** at `status.corelink.humangr.com` (dress-rehearsed wave-25;
   user-side DNS + ORG-ID switch is a T-7d operator step).
 - **PagerDuty** Events API v2 wired for SEV-0 / SEV-1 with a 5-minute
   response SLA, tested under load.
@@ -373,7 +373,7 @@ at any wave boundary since wave-19 SEAL.
 | **Enterprise** | Regulated / >250 users | Custom seats, custom storage, all 4 regions, **BYOK required**, **DPA + DPIA**, dedicated CSM, 24/7 P1 response, audit-log retention extensions, contractual SLA | Custom (annual contract) |
 
 > Detailed pricing, the feature matrix, and the pricing calculator live
-> on the docs site (`docs.corelink.dev/pricing`). Final-approver
+> on the docs site (`docs.corelink.humangr.com/pricing`). Final-approver
 > review (Finance + Legal + Security) per the S-18 cross-functional
 > anti-scope gate is required before any pricing change publishes.
 
@@ -396,7 +396,7 @@ structural code, spec, or invariant blocker remains**. Tracked in
 | 3 | **AWS KMS FIPS attestation PDF** — DEBT-003 engineering-CLOSED wave-28 (AWS Artifact recorder + fetch automation SEAL'd); operator runs `gh-cli`-style download at T-7d. | Vendor (AWS Artifact) | T-7d pre-launch | AWS BYOK customers receive the PDF on request; the 4th row in `byok-fips-matrix.md` is otherwise complete |
 | 4 | **Cross-tenant deduplication** | Roadmap | Post-GA | Intra-tenant dedup is on by default at GA; cross-tenant dedup is a privacy-sensitive feature gated on `CAP-DEDUP-CROSS-TENANT` design |
 | 5 | **Full Grafana embed in admin UI** (`CAP-UI-002`) | Roadmap | Post-GA | Admin UI ships with a plan / quota progress widget + audit-viewer link + billing overview + pilot admin UI (wave-29 stream #3); full Grafana embed is a post-GA enhancement |
-| 6 | **`status.corelink.dev` go-live** — DEBT-016 engineering-CLOSED wave-25/27/28 (init dress-run + T-7d rehearsal + provisioning automation SEAL'd); operator-bound DNS + ORG-ID env-var swap remaining. | Ops (operator-bound) | T-7d pre-launch | Statuspage URL substitution mechanism wired; production go-live is a DNS + ORG-ID swap |
+| 6 | **`status.corelink.humangr.com` go-live** — DEBT-016 engineering-CLOSED wave-25/27/28 (init dress-run + T-7d rehearsal + provisioning automation SEAL'd); operator-bound DNS + ORG-ID env-var swap remaining. | Ops (operator-bound) | T-7d pre-launch | Statuspage URL substitution mechanism wired; production go-live is a DNS + ORG-ID swap |
 | 7 | **≥ 3 cohort-1 pilot tenants enrolled** — DEBT-027 engineering-CLOSED wave-29 (signup backend + landing page + pilot admin UI all in flight at wave-29 close); recruitment is operator-paced. | Sales (operator-bound) | T-7d pre-launch | `G4` greenlight criterion in `RB-GA-CUTOVER.md` requires ≥ 3 pilot tenants with signed pilot agreements |
 
 The engineering-side verdict at wave-27 stream #8 final cutover-readiness
@@ -415,14 +415,14 @@ were not offered as production-supported builds.
 
 New customers begin from a clean tenant:
 
-1. Sign up at `app.corelink.dev` (S-19 self-service signup; DPA
+1. Sign up at `app.corelink.humangr.com` (S-19 self-service signup; DPA
    click-through with cryptographic receipt).
 2. Pick a tier (§7) and complete Stripe Checkout (or the
    Enterprise inquiry path).
 3. Provision a region (defaulting to the rendered-locale cookie).
 4. Generate a scoped PAT and wire it into your Bazel / Buck2 / CI
    runner via the credential-helper-protocol (CLI quickstart in
-   `docs.corelink.dev/quickstart`).
+   `docs.corelink.humangr.com/quickstart`).
 
 Migration from competing remote caches (BuildBuddy, EngFlow, Bazel
 Remote Cache, Buildless, NativeLink) is supported via the REAPI v2

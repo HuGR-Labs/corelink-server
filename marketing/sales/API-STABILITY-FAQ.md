@@ -66,7 +66,7 @@ aspirational — it's enforced in CI on every PR that touches our OpenAPI spec.
 
 **A:** Five overlapping signals, in this order:
 
-1. **`api-announce@corelink.dev` mailing list** — low-volume (≈6 messages/year),
+1. **`api-announce@humangr.com` mailing list** — low-volume (≈6 messages/year),
    sent at T+0 day. This list is **not** subject to data-erasure DSRs — you
    stay subscribed across personnel changes.
 2. **Status-page banner** at T+0.
@@ -244,7 +244,7 @@ runway**, not less.
 
 **A:** Five things, all light-touch:
 
-1. Have **one human** subscribed to `api-announce@corelink.dev`.
+1. Have **one human** subscribed to `api-announce@humangr.com`.
 2. Make sure your client (SDK or middleware) logs the `Sunset:` response
    header at WARN. First-party SDKs do this automatically.
 3. Set `X-CoreLink-API-Minor: <date>` if your CI fleet is sensitive to

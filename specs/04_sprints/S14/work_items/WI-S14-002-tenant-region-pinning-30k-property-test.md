@@ -146,7 +146,7 @@ Tenant region pinning enforcement é o coração do compliance Schrems II + LGPD
 
 3. **Cross-region KV leak (FM-054)**: Worker binding allows global KV access. Mitigação: per-region binding name (`corelink-session-{region}`); compile-time error if Worker tries cross-region binding; runbook RB-FM-054 dry-run em WI-S14-009.
 
-4. **Subdomain spoofing**: attacker requests `weur.api.corelink.dev` with ENAM tenant_id. Mitigação: middleware extracts request_region from custom domain; insert check rejects 403; audit emit; dashboard alert if rate > baseline.
+4. **Subdomain spoofing**: attacker requests `weur.api.corelink.humangr.com` with ENAM tenant_id. Mitigação: middleware extracts request_region from custom domain; insert check rejects 403; audit emit; dashboard alert if rate > baseline.
 
 5. **D1 row primary_region mutation post-signup**: bug em admin API allows changing `tenants.primary_region` post-signup = re-routing existing tenant data. Mitigação: D1 column `primary_region` immutable post-INSERT (CHECK constraint + UPDATE trigger reject); migration manual ticket only.
 
@@ -162,7 +162,7 @@ Tenant region pinning enforcement é o coração do compliance Schrems II + LGPD
 
 - **Force WEUR tenant_id with ENAM endpoint**: middleware rejects 403; audit emit; alert if rate > baseline.
 
-- **Tamper request_region header**: attacker sets `X-Region: weur` for ENAM endpoint. Mitigação: request_region derived from custom domain (`{region}.api.corelink.dev`) NOT from header; header ignored.
+- **Tamper request_region header**: attacker sets `X-Region: weur` for ENAM endpoint. Mitigação: request_region derived from custom domain (`{region}.api.corelink.humangr.com`) NOT from header; header ignored.
 
 - **DO storage cache poisoning attempt**: attacker triggers tenant primary_region update via admin API. Mitigação: admin API requires admin role + dual-approval (S-13); UPDATE trigger rejects primary_region mutation post-INSERT; manual ticket required for legitimate region migration.
 
@@ -180,7 +180,7 @@ Tenant region pinning enforcement é o coração do compliance Schrems II + LGPD
 
 **Persona 1 — Customer EU (financial services)**:
 - Signup com `primary_region: weur`; D1 INSERT `tenants.primary_region = 'weur'`; immutable post-INSERT.
-- Every API call routed to `weur.api.corelink.dev` (or smart routing detects WEUR via Geo-IP + tenant lookup).
+- Every API call routed to `weur.api.corelink.humangr.com` (or smart routing detects WEUR via Geo-IP + tenant lookup).
 - Evidence: cross-region access blocked counter `corelink_region_cross_region_read_blocked_total` zero baseline; alert if > 0 = SEV-2.
 
 **Persona 2 — Auditor SOC 2 + Schrems II + LGPD DPO**:
@@ -242,7 +242,7 @@ Application middleware + D1 schema migration + property test; HIGH_RISK; FF-HR-0
 
 3. **Tower layer wiring `crates/corelink-worker/middleware/region_check.rs`**:
    - Tower layer applied AFTER auth (TenantCtx propagated) + BEFORE handler.
-   - Extract request_region from custom domain (`{region}.api.corelink.dev`) — NÃO from header.
+   - Extract request_region from custom domain (`{region}.api.corelink.humangr.com`) — NÃO from header.
    - Call `RegionEnforcer::enforce(tenant_id, request_region)`.
    - Mismatch = 403 Forbidden + audit emit `corelink.region.cross_region_read_blocked` + métrica increment.
    - Match = continue handler dispatch.
@@ -294,7 +294,7 @@ Application middleware + D1 schema migration + property test; HIGH_RISK; FF-HR-0
     - 7y retention (CTRL-AUDIT-005).
 
 12. **Adversarial regression tests `tests/region_adversarial.rs`**:
-    - Subdomain spoofing: tenant ENAM with `weur.api.corelink.dev` → 403.
+    - Subdomain spoofing: tenant ENAM with `weur.api.corelink.humangr.com` → 403.
     - Header tampering: `X-Region: weur` ignored; custom domain authoritative.
     - DO cache poisoning attempt: admin API rejects primary_region UPDATE.
     - Replay request to wrong region: nonce protection (S-03 herdada) + region enforcement.
@@ -342,7 +342,7 @@ Feature: WI-S14-002 — Tenant region pinning enforcement + 30k property test + 
 
   Scenario: Tenant region pinning correct match
     Given tenant T1 com primary_region = 'weur'
-    When request to weur.api.corelink.dev/v1/cas/get com tenant_id=T1
+    When request to weur.api.corelink.humangr.com/v1/cas/get com tenant_id=T1
     Then region_check middleware allows
     And handler dispatched
     And R2/D1/DO/KV scoped to WEUR
@@ -350,7 +350,7 @@ Feature: WI-S14-002 — Tenant region pinning enforcement + 30k property test + 
 
   Scenario: Cross-region attempt blocked 403
     Given tenant T1 com primary_region = 'weur'
-    When request to enam.api.corelink.dev/v1/cas/get com tenant_id=T1
+    When request to enam.api.corelink.humangr.com/v1/cas/get com tenant_id=T1
     Then region_check middleware rejects 403 Forbidden
     And audit emit corelink.region.cross_region_read_blocked
     And métrica corelink_region_cross_region_read_blocked_total incremented
@@ -358,13 +358,13 @@ Feature: WI-S14-002 — Tenant region pinning enforcement + 30k property test + 
 
   Scenario: Subdomain spoofing rejected
     Given tenant T1 com primary_region = 'enam'
-    When attacker requests weur.api.corelink.dev with tenant_id=T1
+    When attacker requests weur.api.corelink.humangr.com with tenant_id=T1
     Then 403 returned (request_region = 'weur' from custom domain != tenant.primary = 'enam')
     And audit emit + alert
 
   Scenario: Header tampering ignored
     Given tenant T1 primary_region = 'weur'
-    When request to weur.api.corelink.dev with header X-Region: enam
+    When request to weur.api.corelink.humangr.com with header X-Region: enam
     Then header ignored
     And request_region = 'weur' (from custom domain)
     And match succeeds
@@ -428,7 +428,7 @@ Feature: WI-S14-002 — Tenant region pinning enforcement + 30k property test + 
 
 - Header trivially spoofed by attacker.
 - Custom domain authoritative (TLS-terminated by CF; cannot be tampered).
-- Falls back to smart routing for `api.corelink.dev` (no region prefix); smart routing uses Geo-IP + tenant lookup.
+- Falls back to smart routing for `api.corelink.humangr.com` (no region prefix); smart routing uses Geo-IP + tenant lookup.
 
 ### 9.2 Why D1 trigger immutable primary_region
 
@@ -644,7 +644,7 @@ Dashboard widget DASH-REGION:
 
 ## 23. API Contract
 
-`RegionEnforcer` é internal Rust trait. Tower layer transparent ao handler. Custom domain `{region}.api.corelink.dev` é API boundary; documented em OpenAPI spec.
+`RegionEnforcer` é internal Rust trait. Tower layer transparent ao handler. Custom domain `{region}.api.corelink.humangr.com` é API boundary; documented em OpenAPI spec.
 
 API semver stable post v1.0; breaking changes em `Region` enum = bump major + ADR + migration plan.
 

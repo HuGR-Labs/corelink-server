@@ -4,7 +4,7 @@
 # Wave-27 pilot-signup-pipeline deliverable #1.
 #
 # Operator runs this AFTER a tenant has completed the signup flow at
-# https://signup.corelink.dev/pilot/<token> (token-based slot reservation —
+# https://signup.corelink.humangr.com/pilot/<token> (token-based slot reservation —
 # see specs/_audits/2026-05-16-pilot-signup-pipeline.md §1). This script
 # enacts the pilot tier upgrade on the tenant record:
 #

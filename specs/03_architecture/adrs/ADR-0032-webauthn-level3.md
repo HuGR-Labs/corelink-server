@@ -43,7 +43,7 @@ design:
 - **INV-AUTH-WEBAUTHN-ORIGIN-EXACT** (CRITICAL) — origin allowlist
   is **exact match**; no prefix / regex / suffix matching.
 - **INV-AUTH-WEBAUTHN-RP-ID-CANONICAL** (CRITICAL) — RP-ID is
-  `corelink.dev` eTLD+1, never a subdomain.
+  `corelink.humangr.com` eTLD+1, never a subdomain.
 
 The canonical questions:
 
@@ -227,7 +227,7 @@ The canonical questions:
   `INV-AUTH-WEBAUTHN-ORIGIN-EXACT`.
 - **RP-ID = full hostname**: rejected by W3C §5.1.2 (must be
   domain or eTLD+1; using a full host means credentials are not
-  shared across `app.corelink.dev` + `admin.corelink.dev`).
+  shared across `app.corelink.humangr.com` + `admin.corelink.humangr.com`).
 - **Magic-link recovery**: rejected by sprint contract §10
   anti-scope (phishing-prone clicks).
 - **Skip attestation in registration**: rejected by
@@ -249,7 +249,7 @@ The 6-digit OTP forces a second factor: the user must read the
 digits from the email AND type them into the legitimate origin.
 A phishing site that captures the digits cannot complete the
 ceremony because the OTP is bound to the legitimate Clerk SSO
-session + the legitimate `app.corelink.dev` origin (which is in
+session + the legitimate `app.corelink.humangr.com` origin (which is in
 the allowlist). The 10-min TTL bounds the attacker's window; the
 3-generation / hour rate limit bounds the brute-force surface; the
 5-verify / OTP attempts limit prevents online guessing of the

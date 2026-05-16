@@ -104,7 +104,7 @@ EXISTS_JSON="$(wrangler d1 execute "${DB_NAME}" --remote --json \
 
 # 3. Re-POST to the webhook endpoint with the original signature.
 echo "step 3/3: dispatching to ${ENV} webhook endpoint..." >&2
-WEBHOOK_URL="https://api.${ENV}.corelink.dev/webhook/stripe"
+WEBHOOK_URL="https://api.${ENV}.corelink.humangr.com/webhook/stripe"
 RESPONSE="$(printf '%s' "${EVENT_JSON}" | curl -sS -X POST \
     -H "Content-Type: application/json" \
     -H "Stripe-Signature: t=replay,v1=replay-${EVENT_ID}" \

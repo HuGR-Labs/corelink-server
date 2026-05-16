@@ -162,18 +162,18 @@ impl RateLimitPolicy {
 /// `X-CoreLink-Tier-Upgrade-URL` header and the `tier_upgrade_url`
 /// field of the canonical 429 JSON body (`RateLimitErrorBody`).
 ///
-/// Frozen at `https://corelink.dev/pricing` per the audit
+/// Frozen at `https://corelink.humangr.com/pricing` per the audit
 /// `specs/_audits/2026-05-15-ratelimit-ux-audit.md` §2.
-pub const TIER_UPGRADE_URL: &str = "https://corelink.dev/pricing";
+pub const TIER_UPGRADE_URL: &str = "https://corelink.humangr.com/pricing";
 
 /// Canonical customer-facing rate-limit docs URL — value of the
 /// `docs_url` field of the canonical 429 JSON body (`RateLimitErrorBody`).
 ///
-/// Frozen at `https://docs.corelink.dev/explanation/rate-limits` per the
+/// Frozen at `https://docs.corelink.humangr.com/explanation/rate-limits` per the
 /// audit `specs/_audits/2026-05-15-ratelimit-ux-audit.md` §2; matches the
 /// Diátaxis Explanation quadrant doc at
 /// `apps/docs/docs/explanation/rate-limits.mdx`.
-pub const DOCS_URL: &str = "https://docs.corelink.dev/explanation/rate-limits";
+pub const DOCS_URL: &str = "https://docs.corelink.humangr.com/explanation/rate-limits";
 
 /// Typed RFC 9331 + Retry-After + X-Rate-Limit-Type +
 /// CoreLink-vendor-extension header payload.
@@ -818,20 +818,20 @@ mod tests {
         assert_eq!(h.corelink_quota_reset_utc, "2026-05-15T14:30:25Z");
         assert_eq!(
             h.corelink_tier_upgrade_url,
-            "https://corelink.dev/pricing"
+            "https://corelink.humangr.com/pricing"
         );
     }
 
     #[test]
     fn tier_upgrade_url_frozen_canonical_value() {
-        assert_eq!(TIER_UPGRADE_URL, "https://corelink.dev/pricing");
+        assert_eq!(TIER_UPGRADE_URL, "https://corelink.humangr.com/pricing");
     }
 
     #[test]
     fn docs_url_frozen_canonical_value() {
         assert_eq!(
             DOCS_URL,
-            "https://docs.corelink.dev/explanation/rate-limits"
+            "https://docs.corelink.humangr.com/explanation/rate-limits"
         );
     }
 
@@ -896,10 +896,10 @@ mod tests {
         assert!(json.contains("\"retry_after_seconds\":5"));
         assert!(json.contains("\"tier\":\"free\""));
         assert!(json.contains(
-            "\"tier_upgrade_url\":\"https://corelink.dev/pricing\""
+            "\"tier_upgrade_url\":\"https://corelink.humangr.com/pricing\""
         ));
         assert!(json.contains(
-            "\"docs_url\":\"https://docs.corelink.dev/explanation/rate-limits\""
+            "\"docs_url\":\"https://docs.corelink.humangr.com/explanation/rate-limits\""
         ));
         assert!(json.contains("\"request_id\":\"01HFXYZABC\""));
         assert!(json.contains("\"limit\":10"));

@@ -62,7 +62,7 @@ _Snippets are auto-generated from the OpenAPI contract. Replace `<YOUR_PAT>` wit
 
 ```bash
 curl -X POST \
-  'https://api.corelink.dev/v1/pats' \
+  'https://api.corelink.humangr.com/v1/pats' \
   -H 'Authorization: Bearer <YOUR_PAT>' \
   -H 'Content-Type: application/json' \
   -d '{
@@ -93,7 +93,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
     "#)?;
     let resp = client
-        .post("https://api.corelink.dev/v1/pats")
+        .post("https://api.corelink.humangr.com/v1/pats")
         .header("Authorization", "Bearer <YOUR_PAT>")
         .header("Content-Type", "application/json")
         .json(&body)
@@ -124,7 +124,7 @@ def main() -> None:
   ]
 }
     resp = httpx.post(
-        "https://api.corelink.dev/v1/pats",
+        "https://api.corelink.humangr.com/v1/pats",
         headers=headers,
         json=body,
     )
@@ -155,7 +155,7 @@ func main() {
     "cas.read"
   ]
 }`)
-    req, err := http.NewRequest("POST", "https://api.corelink.dev/v1/pats", bytes.NewReader(body))
+    req, err := http.NewRequest("POST", "https://api.corelink.humangr.com/v1/pats", bytes.NewReader(body))
     if err != nil {
         panic(err)
     }
@@ -174,7 +174,7 @@ func main() {
 ### JavaScript (fetch)
 
 ```javascript
-const resp = await fetch("https://api.corelink.dev/v1/pats", {
+const resp = await fetch("https://api.corelink.humangr.com/v1/pats", {
   method: "POST",
   headers: {
     "Authorization": "Bearer <YOUR_PAT>",

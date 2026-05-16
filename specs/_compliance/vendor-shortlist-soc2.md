@@ -109,7 +109,7 @@ tags: ["soc2", "drata", "vanta", "secureframe", "tugboat", "vendor-selection"]
 
 - Engagement signed Q3 (pre-S-20 sprint start per WI-S20-003 §2.1.1).
 - Annual subscription $10k Year 1 (Startup tier).
-- Trust Center URL: `trust.corelink.dev` (TBD post-GA).
+- Trust Center URL: `trust.corelink.humangr.com` (TBD post-GA).
 
 **Contingency:** Vanta as fallback if Drata integration with Cloudflare Workers exposes blocking gap; switching cost manageable (control library exports as CSV).
 

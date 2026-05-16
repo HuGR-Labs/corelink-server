@@ -208,13 +208,13 @@ before sending.
 >
 > Hi `<name>`,
 >
-> Our public DSR completion metric on `corelink.dev/status` is
+> Our public DSR completion metric on `corelink.humangr.com/status` is
 > temporarily unavailable due to a vendor outage at our status-page
 > provider (Atlassian Statuspage). The metric will resume publishing
 > as soon as the vendor recovers.
 >
 > **Important:** full DSR processing is unaffected. Every data-subject
-> request submitted via `corelink.dev/dsr` continues to be processed
+> request submitted via `corelink.humangr.com/dsr` continues to be processed
 > against our canonical 30-day GDPR Art. 12 / 15-day LGPD Art. 19
 > deadlines; only the public reporting of the aggregated p95 metric
 > is paused.

@@ -380,7 +380,7 @@ The wave-28 step-10 cron (`scripts/pre-cutover-weekly-verify.sh`) tracks 8 canon
 2. FW-H-1..4 role nominations (governance staffing)
 3. External pentest vendor SOW countersign (DEBT-026)
 4. DEBT-003 AWS Artifact PDF download + sha256
-5. DEBT-016 Statuspage status.corelink.dev go-live
+5. DEBT-016 Statuspage status.corelink.humangr.com go-live
 6. Pilot signups ≥ 5 design-partner attestations (G4)
 7. Pentest retest letter zero HIGH/CRITICAL (DEBT-026 final gate)
 8. Owner sign-off (ADR-0034b 2-key)

@@ -1,4 +1,4 @@
-# Audit — `signup.corelink.dev` Pilot Signup Backend (Wave-29 stream-1)
+# Audit — `signup.corelink.humangr.com` Pilot Signup Backend (Wave-29 stream-1)
 
 - **Date:** 2026-05-16
 - **Wave / stream:** Wave-29 / stream-1 (R-prep)
@@ -10,7 +10,7 @@
     - `specs/_audits/2026-05-16-pilot-signup-pipeline.md` (wave-27
       enablement bundle — admin scripts + Grafana panels)
     - `docs/internal/pilot-comms-templates.md` (wave-28 pilot-outreach
-      email templates referencing `https://signup.corelink.dev/pilot/<token>`)
+      email templates referencing `https://signup.corelink.humangr.com/pilot/<token>`)
     - `specs/_audits/2026-05-15-debt-register.md §DEBT-027` (row update)
 
 ## 1. Why
@@ -20,7 +20,7 @@ shell scripts (`grant-pilot-tier.sh`, `list-pilot-tenants.sh`,
 `pilot-24h-checkin.sh`) and the canonical Grafana dashboard YAML
 (`dashboards/grafana/dash-pilot-tenants.yml`). Wave-28's pilot-comms
 package pinned the public outreach URL
-`https://signup.corelink.dev/pilot/<token>` in every template
+`https://signup.corelink.humangr.com/pilot/<token>` in every template
 (`docs/internal/pilot-comms-templates.md`).
 
 The actual backend that redeems those tokens did not exist. Operator
@@ -93,7 +93,7 @@ chars. `email` must contain `@` (cheap RFC-5322 prefix check).
 ```json
 {
   "tenant_id": "<uuid v7>",
-  "activation_url": "https://signup.corelink.dev/pilot/activate/<id>",
+  "activation_url": "https://signup.corelink.humangr.com/pilot/activate/<id>",
   "state": "RESERVED"
 }
 ```

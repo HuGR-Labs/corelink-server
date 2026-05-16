@@ -36,8 +36,8 @@
 
 schema_version: "1.0.0"
 generated_by: "wave-28 R-prep step-5"
-canonical_hostname: "status.corelink.dev"
-support_url: "https://corelink.dev"
+canonical_hostname: "status.corelink.humangr.com"
+support_url: "https://corelink.humangr.com"
 
 groups:
   - id: "grp-customer-facing-api"
@@ -118,22 +118,22 @@ components:
 organization:
   page_name: "CoreLink Status"
   page_description: "Real-time service status for CoreLink shared content-addressable cache."
-  url: "https://status.corelink.dev"
-  support_url: "https://corelink.dev"
+  url: "https://status.corelink.humangr.com"
+  support_url: "https://corelink.humangr.com"
   hidden_from_search: true  # until GA cutover sign-off
   allow_page_subscribers: true
   allow_incident_subscribers: true
   branding:
-    logo_url: "https://corelink.dev/brand/statuspage-logo.svg"
-    favicon_url: "https://corelink.dev/brand/favicon.ico"
+    logo_url: "https://corelink.humangr.com/brand/statuspage-logo.svg"
+    favicon_url: "https://corelink.humangr.com/brand/favicon.ico"
     primary_color: "#0F172A"     # slate-900 (CoreLink primary)
     secondary_color: "#10B981"   # emerald-500 (operational green)
     css_body_background: "#F8FAFC"  # slate-50
 
 notifications:
-  email_from: "status@corelink.dev"
-  email_reply_to: "ops@corelink.dev"
-  ops_alert_address: "ops@corelink.dev"
+  email_from: "status@humangr.com"
+  email_reply_to: "ops@humangr.com"
+  ops_alert_address: "ops@humangr.com"
 
 # Cross-references (for downstream tools that ingest this manifest):
 #   - Source-of-truth runbook: `specs/_runbooks/STATUSPAGE-INIT.md` §2

@@ -140,7 +140,7 @@ Countersigned by `{{interview:customer_name}}` SRE/ops + procurement and by Core
 
 ## 8. Publication metadata
 
-- **Audience:** public marketing site (`corelink.dev/case-studies/oss-{{db:slug}}`).
+- **Audience:** public marketing site (`corelink.humangr.com/case-studies/oss-{{db:slug}}`).
 - **Confidentiality:** none; customer-approved public publication.
 - **Sanitization:** customer reviews all numbers + quotes before publication.
 - **Reference-call commitment:** `{{interview:customer_name}}` available for up to 2 reference calls per quarter for 12 months post-publication.

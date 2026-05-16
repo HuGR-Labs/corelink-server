@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 /// Canonical CoreLink region identifier.
 ///
 /// Maps to Cloudflare R2 `locationHint`, D1 `location`, and custom domain
-/// `{region}.api.corelink.dev`.
+/// `{region}.api.corelink.humangr.com`.
 ///
 /// INV-DATA-RESIDENCY: tenant `primary_region` is pinned at signup;
 /// cross-region writes → 403 + audit (enforced by WI-S14-002 insert checks).
@@ -84,7 +84,7 @@ impl Region {
     /// Custom domain for explicit per-region routing.
     #[must_use]
     pub fn custom_domain(&self) -> String {
-        format!("{}.api.corelink.dev", self.as_str())
+        format!("{}.api.corelink.humangr.com", self.as_str())
     }
 
     /// Parse from lowercase string.

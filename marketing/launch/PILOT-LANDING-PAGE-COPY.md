@@ -1,14 +1,14 @@
-# Pilot Landing Page Copy — `signup.corelink.dev/pilot` (PILOT-COMMS-006)
+# Pilot Landing Page Copy — `signup.corelink.humangr.com/pilot` (PILOT-COMMS-006)
 
 > **Status:** READY FOR OWNER PUBLICATION. Trace: wave-28 step-7. Honest pre-GA pilot framing.
-> Target page: `signup.corelink.dev/pilot` (matches wave-27 token-based slot-reservation pipeline + admin scripts).
+> Target page: `signup.corelink.humangr.com/pilot` (matches wave-27 token-based slot-reservation pipeline + admin scripts).
 > Companion to `marketing/launch/PILOT-ANNOUNCEMENT.md`. All copy is paste-ready; placeholders are angle-bracketed.
 
 ---
 
 ## Page slug + meta
 
-- **URL:** `https://signup.corelink.dev/pilot`
+- **URL:** `https://signup.corelink.humangr.com/pilot`
 - **HTML `<title>`:** `CoreLink Pilot — Shared Content-Addressable Cache | HuGR Labs`
 - **Meta description (155 chars):** `CoreLink Pilot — free 30-day pilot of a shared, tenant-isolated, content-addressable cache for builds, Docker, packages, and ML. Pre-GA. 10 slots.`
 - **OG image:** wordmark + tagline `Shared Content-Addressable Cache · Pre-GA Pilot`, 1200×630.
@@ -161,7 +161,7 @@ You can terminate at any point during the pilot. You get **14 days** to export u
 
 > **`[Apply for a pilot slot →]`**
 >
-> Questions before applying? `pilot@corelink.dev`
+> Questions before applying? `pilot@humangr.com`
 
 ---
 

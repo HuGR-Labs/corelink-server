@@ -56,13 +56,13 @@ SELECT asset_class, key_id, status, valid_from, valid_until
 1. **Confirm scope**: which asset class? TDK / PatSigning / AuditChain / AdminSigning / BYOK?
 2. **Identify the gap**:
    ```bash
-   curl -s "https://corelink.dev/_admin/keys/active?asset_class=$ASSET" \
+   curl -s "https://corelink.humangr.com/_admin/keys/active?asset_class=$ASSET" \
      -H "Authorization: Bearer $ADMIN_TOKEN"
    ```
    Compare returned `key_set` to expected overlap pair (old + new during overlap window).
 3. **Restore prior key to active set** (emergency rollback):
    ```bash
-   curl -X POST "https://corelink.dev/_admin/keys/emergency-restore" \
+   curl -X POST "https://corelink.humangr.com/_admin/keys/emergency-restore" \
      -H "Authorization: Bearer $ADMIN_TOKEN" \
      -d '{"asset_class":"'$ASSET'","key_id":"'$LAST_GOOD_KEY_ID'"}'
    ```

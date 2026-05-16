@@ -223,7 +223,7 @@ sprint_contract: "specs/04_sprints/S03/_spec_contract.md v1.1.0"
 - **alg=none rejection**: §6.1.3 + Gherkin "alg=none rejected" — explicit `Validation::new(Algorithm::RS256)` enforce; **correct**. `jsonwebtoken` 9.x API enforces ALG allowlist regardless of header content.
 - **`jsonwebtoken` 9.x version pin**: §6.1.1 "= 9.3" — correct (9.3+ has explicit `Validation::set_required_spec_claims()` API).
 - **Lazy JWKS refresh em KID miss**: defensável (cf. gap #1 race window). Industry-correct.
-- **Issuer allowlist exact match**: §9.4 prevents `https://clerk.corelink.dev.attacker.com` confusion; **correct**.
+- **Issuer allowlist exact match**: §9.4 prevents `https://clerk.corelink.humangr.com.attacker.com` confusion; **correct**.
 
 ### WI-002
 - **Argon2id m=65536/t=3/p=4**: OWASP Password Storage Cheat Sheet 2024 explicitly recommends `(m=46 MiB, t=1, p=1)` OR `(m=19 MiB, t=2, p=1)` as floors. WI's m=65536 (= 64 MiB) **exceeds** floor; t=3 OK; p=4 OK. **Correct (strict floor surpassed)**.

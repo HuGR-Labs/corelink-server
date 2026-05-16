@@ -62,7 +62,7 @@ impl Region {
         }
     }
 
-    /// Canonical lowercase string representation, used in DNS (`<tenant>.<region>.corelink.dev`),
+    /// Canonical lowercase string representation, used in DNS (`<tenant>.<region>.corelink.humangr.com`),
     /// D1 columns, and CloudEvent payloads.
     pub fn as_str(self) -> &'static str {
         match self {

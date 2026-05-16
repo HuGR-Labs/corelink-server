@@ -51,7 +51,7 @@ from corelink import CoreLinkClient
 # PAT format: corelink_<env>_<token_id>.<random_secret>.<hmac_sig> per S-03 decision (a)
 async def main():
     async with CoreLinkClient(
-        pat="corelink_dev_t_xxx.xxx.xxx",  # placeholder; obtain real PAT via https://app.corelink.dev/tokens
+        pat="corelink_dev_t_xxx.xxx.xxx",  # placeholder; obtain real PAT via https://app.corelink.humangr.com/tokens
         tenant_id="acme-corp",
     ) as client:
         # Cache write

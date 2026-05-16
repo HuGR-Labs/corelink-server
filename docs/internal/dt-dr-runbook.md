@@ -11,7 +11,7 @@
 ## 1. Overview
 
 This runbook covers recovery of the Dependency-Track self-hosted instance
-(`https://dt.corelink.dev`) from the following failure modes:
+(`https://dt.corelink.humangr.com`) from the following failure modes:
 
 | Failure | RTO | RPO | Recovery path |
 |---------|-----|-----|---------------|
@@ -71,7 +71,7 @@ docker compose -f /opt/dt/docker-compose.yml pull
 docker compose -f /opt/dt/docker-compose.yml up -d
 
 # Verify health.
-curl -sf https://dt.corelink.dev/api/version | jq .version
+curl -sf https://dt.corelink.humangr.com/api/version | jq .version
 ```
 
 ### 3.4 Verify SBOM history retained
@@ -79,7 +79,7 @@ curl -sf https://dt.corelink.dev/api/version | jq .version
 ```bash
 # Query DT API for recent project SBOMs.
 curl -H "X-Api-Key: $DT_API_KEY" \
-  "https://dt.corelink.dev/api/v1/project?pageSize=10" | jq '.[].name'
+  "https://dt.corelink.humangr.com/api/v1/project?pageSize=10" | jq '.[].name'
 ```
 
 Expected: all workspace members (corelink-server, corelink-cli, corelink-worker) present.
@@ -89,7 +89,7 @@ Expected: all workspace members (corelink-server, corelink-cli, corelink-worker)
 ```bash
 # Trigger a manual NVD sync.
 curl -X POST -H "X-Api-Key: $DT_API_KEY" \
-  "https://dt.corelink.dev/api/v1/vulnerability/source/NVD/refresh"
+  "https://dt.corelink.humangr.com/api/v1/vulnerability/source/NVD/refresh"
 
 # Watch logs for sync completion.
 docker logs dt-apiserver --follow | grep "NVD sync"
@@ -115,7 +115,7 @@ Expected: exit code 0 + Slack message in `#supply-chain-cve-alerts` within 15 mi
 
 ```bash
 # Query current DLQ size via reconcile job (dry run).
-DT_API_URL=https://dt.corelink.dev/api/v1 \
+DT_API_URL=https://dt.corelink.humangr.com/api/v1 \
 DT_API_KEY=$DT_API_KEY \
 DT_WEBHOOK_SECRET=$DT_WEBHOOK_SECRET \
 corelink-dt-reconcile

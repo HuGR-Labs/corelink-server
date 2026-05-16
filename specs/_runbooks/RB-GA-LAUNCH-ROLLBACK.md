@@ -141,7 +141,7 @@ If decision = REVERT, execute the following sequence. Target completion: **≤ 4
 wrangler kv key put --namespace-id <PROD_FF_KV> "public_status" "PRIVATE_PREVIEW"
 
 # 4.1.2 Verify the flag propagated
-curl https://api.corelink.dev/__health/feature-flags | jq '.public_status'
+curl https://api.corelink.humangr.com/__health/feature-flags | jq '.public_status'
 # expected: "PRIVATE_PREVIEW"
 
 # 4.1.3 Lock new-customer signup in admin-ui
@@ -152,7 +152,7 @@ wrangler kv key put --namespace-id <PROD_FF_KV> "new_signup_open" "false"
 pnpm --filter docs run deploy:rollback-banner
 ```
 
-**Verification.** New signups to `https://corelink.dev/signup` show "Private preview — invite-only" page; existing customers see no change.
+**Verification.** New signups to `https://corelink.humangr.com/signup` show "Private preview — invite-only" page; existing customers see no change.
 
 ### 4.2 Step 2 — Pause marketing comms (≤ 15 min)
 

@@ -223,19 +223,19 @@ The CLI exits with code 1. **Show the exit code** (`echo $?` after the command �
 
 ## Section 7 — FIPS attestation surface (6:30 → 7:00, 30s)
 
-**Lane:** browser navigates to the public Trust Center (`corelink.dev/trust`) **and** the tenant overview (`/en/admin/tenants/acme-prod`).
+**Lane:** browser navigates to the public Trust Center (`corelink.humangr.com/trust`) **and** the tenant overview (`/en/admin/tenants/acme-prod`).
 
 **Screenshot reference:** Shot #15 (tenant overview with FIPS badge + kill-switch toggle).
 
 **Action sequence:**
 
 1. On the tenant overview, point at the "Encryption: AWS KMS (FIPS 140-2 Level 3 attested)" badge.
-2. Navigate to `corelink.dev/trust` → scroll to "FIPS attestation" section → show the published attestation document with HSM serial numbers, KMS provider statements, and the timestamp of the most-recent customer-side attestation test.
+2. Navigate to `corelink.humangr.com/trust` → scroll to "FIPS attestation" section → show the published attestation document with HSM serial numbers, KMS provider statements, and the timestamp of the most-recent customer-side attestation test.
 3. End on the Trust Center page with the URL highlighted.
 
 **Voiceover (~26s):**
 
-> "FIPS 140-2 Level 3 attestation is surfaced both inside your tenant view and on our public Trust Center. We publish HSM serial numbers, KMS provider attestation statements, and the timestamp of the most recent attestation round-trip we ran from your KMS. If your auditor asks 'prove the HSM was real on the day my blob was encrypted', the answer is here. corelink.dev/trust."
+> "FIPS 140-2 Level 3 attestation is surfaced both inside your tenant view and on our public Trust Center. We publish HSM serial numbers, KMS provider attestation statements, and the timestamp of the most recent attestation round-trip we ran from your KMS. If your auditor asks 'prove the HSM was real on the day my blob was encrypted', the answer is here. corelink.humangr.com/trust."
 
 ---
 

@@ -80,7 +80,7 @@ Decomposição cumulativa em 6 WIs: (1) **WI-S19-001** signup orchestration back
 - Signup ≤ 3 min sustained measured via 5-dev workshop weekly + 30d observation window GA Evidence Gate D+45.
 - DPA click-through: full text rendered em locale ativa (cookie corelink_locale set by Next.js middleware); scroll-gate anti-dismiss; 6-field consent capture; JWT receipt downloadable + emailed.
 - Tier selection: 5 tiers visible; free tier instant activation; paid tiers Stripe Checkout redirect.
-- First-run: first PAT shown only-once; CLI install command rendered (`curl -fsSL https://corelink.dev/cli | sh`); quickstart link `docs.corelink.dev/quickstart` (S-18); optional in-app guided tour.
+- First-run: first PAT shown only-once; CLI install command rendered (`curl -fsSL https://corelink.humangr.com/cli | sh`); quickstart link `docs.corelink.humangr.com/quickstart` (S-18); optional in-app guided tour.
 
 **Persona 2 — Privacy Officer cliente / Compliance auditor**:
 - 6-field consent payload audit trail forensic-grade; backend S-11 consent verify endpoint R-S11-9 retorna match.
@@ -216,7 +216,7 @@ Métricas underscored snake_case com label `plan` aplicável; **NUNCA per-tenant
 - **S-10 SEALED** (billing Stripe + subscription activation foundation).
 - **S-11 SEALED** (DPA é consent type; consent ledger D1 + verify endpoint R-S11-9 reuse; 6-field schema canonical).
 - **S-16 SEALED** (frontend UI surfaces; consent UI 6-field pattern WI-S16-003 reuse pós Lote 10.16 fix).
-- **S-18 SEALED** (docs quickstart link `docs.corelink.dev/quickstart` referenced em first-run).
+- **S-18 SEALED** (docs quickstart link `docs.corelink.humangr.com/quickstart` referenced em first-run).
 
 ### Soft blockers
 

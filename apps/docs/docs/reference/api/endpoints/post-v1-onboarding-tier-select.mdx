@@ -58,12 +58,12 @@ _Snippets are auto-generated from the OpenAPI contract. Replace `<YOUR_PAT>` wit
 
 ```bash
 curl -X POST \
-  'https://api.corelink.dev/v1/onboarding/tier-select' \
+  'https://api.corelink.humangr.com/v1/onboarding/tier-select' \
   -H 'Authorization: Bearer <YOUR_PAT>' \
   -H 'Content-Type: application/json' \
   -d '{
-  "cancel_url": "https://corelink.dev/example",
-  "success_url": "https://corelink.dev/example",
+  "cancel_url": "https://corelink.humangr.com/example",
+  "success_url": "https://corelink.humangr.com/example",
   "tier": "free"
 }'
 ```
@@ -79,13 +79,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = Client::new();
     let body: Value = serde_json::from_str(r#"
 {
-  "cancel_url": "https://corelink.dev/example",
-  "success_url": "https://corelink.dev/example",
+  "cancel_url": "https://corelink.humangr.com/example",
+  "success_url": "https://corelink.humangr.com/example",
   "tier": "free"
 }
     "#)?;
     let resp = client
-        .post("https://api.corelink.dev/v1/onboarding/tier-select")
+        .post("https://api.corelink.humangr.com/v1/onboarding/tier-select")
         .header("Authorization", "Bearer <YOUR_PAT>")
         .header("Content-Type", "application/json")
         .json(&body)
@@ -109,12 +109,12 @@ def main() -> None:
         "Content-Type": "application/json",
     }
     body = {
-  "cancel_url": "https://corelink.dev/example",
-  "success_url": "https://corelink.dev/example",
+  "cancel_url": "https://corelink.humangr.com/example",
+  "success_url": "https://corelink.humangr.com/example",
   "tier": "free"
 }
     resp = httpx.post(
-        "https://api.corelink.dev/v1/onboarding/tier-select",
+        "https://api.corelink.humangr.com/v1/onboarding/tier-select",
         headers=headers,
         json=body,
     )
@@ -139,11 +139,11 @@ import (
 
 func main() {
     body := []byte(`{
-  "cancel_url": "https://corelink.dev/example",
-  "success_url": "https://corelink.dev/example",
+  "cancel_url": "https://corelink.humangr.com/example",
+  "success_url": "https://corelink.humangr.com/example",
   "tier": "free"
 }`)
-    req, err := http.NewRequest("POST", "https://api.corelink.dev/v1/onboarding/tier-select", bytes.NewReader(body))
+    req, err := http.NewRequest("POST", "https://api.corelink.humangr.com/v1/onboarding/tier-select", bytes.NewReader(body))
     if err != nil {
         panic(err)
     }
@@ -162,15 +162,15 @@ func main() {
 ### JavaScript (fetch)
 
 ```javascript
-const resp = await fetch("https://api.corelink.dev/v1/onboarding/tier-select", {
+const resp = await fetch("https://api.corelink.humangr.com/v1/onboarding/tier-select", {
   method: "POST",
   headers: {
     "Authorization": "Bearer <YOUR_PAT>",
     "Content-Type": "application/json",
   },
   body: JSON.stringify({
-  "cancel_url": "https://corelink.dev/example",
-  "success_url": "https://corelink.dev/example",
+  "cancel_url": "https://corelink.humangr.com/example",
+  "success_url": "https://corelink.humangr.com/example",
   "tier": "free"
 }),
 });

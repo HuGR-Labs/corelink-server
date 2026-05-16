@@ -190,7 +190,7 @@ echo "100/100 integrity check PASS"
 
 **Stop if even one mismatch.** A mismatch means either your backfill
 script had a bug or there's a layer-7 issue; file P1 to
-`support@corelink.dev` before going further.
+`support@humangr.com` before going further.
 
 ---
 
@@ -228,7 +228,7 @@ corelink doctor --json | jq '.checks[] | select(.status != "PASS")'
 
 ### Red flags — pause the migration
 
-- Any integrity mismatch → **stop**, P1 to `support@corelink.dev`.
+- Any integrity mismatch → **stop**, P1 to `support@humangr.com`.
 - Dual-write success rate < 99% → debug the upload script before
   cutover; you don't want consumers reading a digest that doesn't
   exist yet.
@@ -353,7 +353,7 @@ corelink stat "$RECENT" --output json | jq '.size_bytes'
 wc -c < /tmp/recent.bin   # should match size_bytes
 
 # 3. Audit trail visible:
-# https://app.corelink.dev/tenants/$CORELINK_TENANT_ID/audit
+# https://app.corelink.humangr.com/tenants/$CORELINK_TENANT_ID/audit
 # Filter: event_type=cas.read, last 1h. One event per consumer fetch.
 
 # 4. No S3 PUT/GET on the old bucket in the last 24h (CloudTrail).

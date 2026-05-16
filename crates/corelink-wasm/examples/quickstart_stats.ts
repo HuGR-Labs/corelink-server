@@ -5,7 +5,7 @@
 //
 // Run: tsx examples/quickstart_stats.ts
 
-const api = process.env.CORELINK_API_URL ?? "https://sandbox.corelink.dev";
+const api = process.env.CORELINK_API_URL ?? "https://sandbox.corelink.humangr.com";
 
 try {
   const resp = await fetch(`${api}/api/health`, {

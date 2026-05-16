@@ -44,19 +44,19 @@ alignment — is documented in
 
 ## Status page
 
-[status.corelink.dev](https://status.corelink.dev) is the **single source of
+[status.corelink.humangr.com](https://status.corelink.humangr.com) is the **single source of
 truth** during an incident. It is operated by Atlassian Statuspage and is
 isolated from the CoreLink production fabric — if CoreLink is down, the
 status page is up.
 
 Eight components are tracked:
 
-1. **API ingress** — `api.corelink.dev` egress.
+1. **API ingress** — `api.corelink.humangr.com` egress.
 2. **CAS read path** — content-addressable read operations.
 3. **CAS write path** — content-addressable write operations.
 4. **Action cache** — REAPI v2 action-result reads/writes.
 5. **Audit chain** — append + read + Merkle proof endpoints.
-6. **Admin plane** — `admin.corelink.dev`, dashboard, billing.
+6. **Admin plane** — `admin.corelink.humangr.com`, dashboard, billing.
 7. **Identity (Clerk)** — sign-in, MFA, token refresh.
 8. **BYOK envelope** — KMS round-trip per provider.
 
@@ -66,14 +66,14 @@ Per-region status is shown for each component (where applicable).
 
 You can subscribe to status updates by:
 
-- **Email** — sign up at [status.corelink.dev](https://status.corelink.dev).
+- **Email** — sign up at [status.corelink.humangr.com](https://status.corelink.humangr.com).
 - **SMS** — text the keyword from the status page (US / EU numbers
   supported).
-- **RSS** — `https://status.corelink.dev/history.rss`
-  / `https://status.corelink.dev/history.atom`.
+- **RSS** — `https://status.corelink.humangr.com/history.rss`
+  / `https://status.corelink.humangr.com/history.atom`.
 - **Webhook** — Slack and Microsoft Teams integrations available;
   PagerDuty webhook supported.
-- **JSON API** — `https://status.corelink.dev/api/v2/summary.json` for
+- **JSON API** — `https://status.corelink.humangr.com/api/v2/summary.json` for
   programmatic monitoring.
 
 Enterprise tenants can also pre-register a dedicated incident-comms
@@ -147,10 +147,10 @@ acknowledged:
 
 | What you saw | Where to send it |
 | --- | --- |
-| Security vulnerability or active exploit | `security@corelink.dev` — see [Security policy](/security/policy) |
-| Service outage or degradation not on status page | `support@corelink.dev` — we'll page on-call |
-| Privacy incident or data-subject concern | `privacy@corelink.dev` |
-| Pentest finding under coordinated disclosure | `security@corelink.dev` — PGP key at [`/.well-known/security-pgp.asc`](https://corelink.dev/.well-known/security-pgp.asc) |
+| Security vulnerability or active exploit | `security@humangr.com` — see [Security policy](/security/policy) |
+| Service outage or degradation not on status page | `support@humangr.com` — we'll page on-call |
+| Privacy incident or data-subject concern | `privacy@humangr.com` |
+| Pentest finding under coordinated disclosure | `security@humangr.com` — PGP key at [`/.well-known/security-pgp.asc`](https://corelink.humangr.com/.well-known/security-pgp.asc) |
 
 24/7 paging is in place across three regions per PagerDuty rotation. A
 weekly synthetic page (sent every Monday 14:00 UTC, sustained for 30 days
@@ -165,4 +165,4 @@ pre-GA) verifies the rotation actually pages — see
 - [Sub-processors](./subprocessors)
 - [Security policy (VDP)](/security/policy)
 - [Responsible disclosure](/security/responsible-disclosure)
-- [Status page](https://status.corelink.dev)
+- [Status page](https://status.corelink.humangr.com)

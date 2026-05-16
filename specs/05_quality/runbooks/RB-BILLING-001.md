@@ -47,7 +47,7 @@ tags: ["runbook", "p2", "billing", "audit-replay", "forensic", "compliance"]
 ### Step 3: Replay execution (≤ 5 min)
 ```bash
 # dry_run=true (default) to preview without side effects
-curl -X POST https://api.corelink.dev/v1/billing/replay \
+curl -X POST https://api.corelink.humangr.com/v1/billing/replay \
   -H "Authorization: Bearer $CORELINK_PAT" \
   -H "X-MFA-Token: $MFA" \
   -d '{

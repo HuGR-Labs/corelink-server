@@ -44,7 +44,7 @@ _Snippets are auto-generated from the OpenAPI contract. Replace `<YOUR_PAT>` wit
 
 ```bash
 curl -X GET \
-  'https://api.corelink.dev/v1/users/me' \
+  'https://api.corelink.humangr.com/v1/users/me' \
   -H 'Authorization: Bearer <YOUR_PAT>'
 ```
 
@@ -58,7 +58,7 @@ use serde_json::Value;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = Client::new();
     let resp = client
-        .get("https://api.corelink.dev/v1/users/me")
+        .get("https://api.corelink.humangr.com/v1/users/me")
         .header("Authorization", "Bearer <YOUR_PAT>")
         .send()
         .await?
@@ -79,7 +79,7 @@ def main() -> None:
         "Authorization": "Bearer <YOUR_PAT>",
     }
     resp = httpx.get(
-        "https://api.corelink.dev/v1/users/me",
+        "https://api.corelink.humangr.com/v1/users/me",
         headers=headers,
     )
     resp.raise_for_status()
@@ -103,7 +103,7 @@ import (
 
 func main() {
     var body []byte
-    req, err := http.NewRequest("GET", "https://api.corelink.dev/v1/users/me", nil)
+    req, err := http.NewRequest("GET", "https://api.corelink.humangr.com/v1/users/me", nil)
     if err != nil {
         panic(err)
     }
@@ -121,7 +121,7 @@ func main() {
 ### JavaScript (fetch)
 
 ```javascript
-const resp = await fetch("https://api.corelink.dev/v1/users/me", {
+const resp = await fetch("https://api.corelink.humangr.com/v1/users/me", {
   method: "GET",
   headers: {
     "Authorization": "Bearer <YOUR_PAT>",

@@ -64,7 +64,7 @@ Scope boundary:
 flowchart LR
     subgraph BROWSER["Consumer browser (customer device)"]
       direction TB
-      A["CoreLink billing page<br/>billing.corelink.dev/checkout<br/>(loaded from CoreLink origin)"]
+      A["CoreLink billing page<br/>billing.corelink.humangr.com/checkout<br/>(loaded from CoreLink origin)"]
       B["Stripe Elements iframe<br/>js.stripe.com/v3/<br/>(loaded from Stripe origin)"]
       A -.embeds.-> B
     end
@@ -135,7 +135,7 @@ flowchart LR
 │                                                                       │
 │   ┌─────────────────────────┐   ┌───────────────────────────────┐    │
 │   │ CoreLink checkout page  │   │ Stripe Elements iframe        │    │
-│   │ billing.corelink.dev    │◀─embeds─│ js.stripe.com/v3/      │    │
+│   │ billing.corelink.humangr.com    │◀─embeds─│ js.stripe.com/v3/      │    │
 │   │ (no card inputs)        │   │ ┌─ PAN, CVV, expiry inputs ─┐ │    │
 │   └─────────────────────────┘   │ └────────────────────────────┘ │    │
 │             ▲                   └───────────┬───────────────────┘    │
@@ -168,7 +168,7 @@ flowchart LR
 │                                                                       │
 │   ┌────────────────────────┐                                         │
 │   │ Cloudflare Worker      │                                         │
-│   │ billing.corelink.dev   │── API call ────────────┐                │
+│   │ billing.corelink.humangr.com   │── API call ────────────┐                │
 │   └────────────────────────┘                         │                │
 │              │                                       │                │
 │              ▼                                       ▼                │
@@ -212,7 +212,7 @@ flowchart LR
 sequenceDiagram
     autonumber
     participant SH as Stripe webhook emitter<br/>(PCI CDE)
-    participant W as CoreLink Worker<br/>billing.corelink.dev/webhook
+    participant W as CoreLink Worker<br/>billing.corelink.humangr.com/webhook
     participant S as billing-stripe<br/>signature.rs
     participant A as billing-stripe<br/>adapter.rs
     participant L as billing-aggregator<br/>ledger + chain
@@ -298,7 +298,7 @@ grep -rEn 'card_number|cvv|cvc|\bpan\b' --include='*.rs' --include='*.ts' --incl
 grep -nE 'Stripe|payment' specs/_compliance/VENDOR-RISK-REGISTER.md
 
 # 4. Verify the CSP / script inventory on the live checkout page.
-curl -sI https://billing.corelink.dev/checkout | grep -i content-security-policy
+curl -sI https://billing.corelink.humangr.com/checkout | grep -i content-security-policy
 # expected: script-src 'self' https://js.stripe.com
 
 # 5. Verify Stripe AOC is current in Drata.

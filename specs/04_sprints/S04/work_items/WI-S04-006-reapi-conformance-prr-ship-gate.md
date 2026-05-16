@@ -205,7 +205,7 @@ PRR ship gate; HIGH_RISK; FF-HR-002 + FF-HR-005 + FF-HR-009.
 1. **REAPI v2 Conformance Suite Integration**:
    - Pinned commit of bazelbuild/remote-apis test suite.
    - CI integration `tests/conformance/reapi_v2_ac.rs`:
-     - Spawns staging environment via wrangler dev OR connects to staging.corelink.dev.
+     - Spawns staging environment via wrangler dev OR connects to staging.corelink.humangr.com.
      - Runs subset: AC operations only.
      - Validates: GetActionResult NotFound + GetActionResult Hit + UpdateActionResult success + UpdateActionResult idempotent + BatchUpdate (100 cap) + edge cases.
    - Result artifact: JSON report + HTML view; uploaded to CI artifacts.

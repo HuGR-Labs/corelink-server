@@ -114,7 +114,7 @@ tags:
 | A.6.5 | Responsibilities after termination or change of employment | Yes | P | Clerk de-provisioning + INV-DATA-ERASURE-COMPLETE on offboarding; signed offboarding checklist pending. | GAP-ISO-05 | `specs/_compliance/ISO27001-GAP-ANALYSIS.md §3 GAP-ISO-05` |
 | A.6.6 | Confidentiality or non-disclosure agreements | Yes | I | DPA template §confidentiality + contractor NDAs + sub-processor templates. | — | `legal/dpa/v1.0.0` |
 | A.6.7 | Remote working | Yes | I | Cloudflare Access for admin plane + WebAuthn + session-bind-to-UA+IP. | — | `specs/03_architecture/security_model.md §6 CTRL-NET-001 + CTRL-AUTH-010` |
-| A.6.8 | Information security event reporting | Yes | I | RB-BREACH-NOTIF intake + PagerDuty 24/7 + `security@corelink.dev` triage. | — | `specs/05_quality/runbooks/RB-BREACH-NOTIF.md` |
+| A.6.8 | Information security event reporting | Yes | I | RB-BREACH-NOTIF intake + PagerDuty 24/7 + `security@humangr.com` triage. | — | `specs/05_quality/runbooks/RB-BREACH-NOTIF.md` |
 
 **Theme A.6 totals:** 8 / 8 applicable · 5 I · 3 P · 0 G · 0 N/A.
 

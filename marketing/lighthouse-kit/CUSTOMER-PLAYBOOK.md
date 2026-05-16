@@ -45,7 +45,7 @@ If at any point the math stops working for you — concern about the product, in
 - **Audit chain access:** you can query the audit chain for your tenant via CLI. You'll exercise this during attestation.
 - **SLA dashboard:** per-customer Grafana embed showing your SLOs in real time.
 - **(Enterprise BYOK only)** Your KMS provider key wiring; the BYOK kill-switch; the weekly BYOK chaos drill.
-- **(Enterprise only)** Your procurement-side legal questionnaire path. CoreLink pre-stages SIG Lite (5 business days), CSA CAIQ v4 (7 business days), and custom vendor-questionnaire response packs (3–10 business days depending on size) under `marketing/sales/legal-questionnaires/`. Your DPO / vendor-management team can request the bundle via `trust@corelink.dev` with countersigned NDA on file — turnaround per `RESPONSE-SLA-POLICY.md`.
+- **(Enterprise only)** Your procurement-side legal questionnaire path. CoreLink pre-stages SIG Lite (5 business days), CSA CAIQ v4 (7 business days), and custom vendor-questionnaire response packs (3–10 business days depending on size) under `marketing/sales/legal-questionnaires/`. Your DPO / vendor-management team can request the bundle via `trust@humangr.com` with countersigned NDA on file — turnaround per `RESPONSE-SLA-POLICY.md`.
 
 ### You are NOT testing
 - **Public production at scale** — staging is its own environment; we're not asking you to redirect prod traffic.
@@ -86,7 +86,7 @@ Print this. Tick it. Bring questions to the D+0 call or to your Slack Connect ch
 - [ ] One designated "ops/SRE" identified — receives the daily SLA samples and is paged on incidents.
 
 ### During the call
-- [ ] CLI installed: `curl -sSL https://corelink.dev/install.sh | sh` (verifies signature against our Sigstore bundle).
+- [ ] CLI installed: `curl -sSL https://corelink.humangr.com/install.sh | sh` (verifies signature against our Sigstore bundle).
 - [ ] First PAT issued via `corelink auth login --lighthouse-slot {your-slot-id}`.
 - [ ] First CAS write: `corelink cas put ./README.md` returns a `blake3:` digest.
 - [ ] First CAS read: `corelink cas get blake3:{digest}` returns the same bytes.
@@ -129,7 +129,7 @@ build:ci --experimental_remote_cache_async=true
 build:ci --remote_executor=
 build:ci --remote_upload_local_results=true
 # Use the CoreLink HTTP cache adapter:
-build:ci --remote_cache=https://cache.corelink.dev/v1/{your-slot-id}
+build:ci --remote_cache=https://cache.corelink.humangr.com/v1/{your-slot-id}
 build:ci --remote_header=Authorization=Bearer\ ${CORELINK_PAT}
 ```
 
@@ -143,7 +143,7 @@ Your Customer Success engineer will pick the right one with you on the D+3 scopi
 
 **Bazel-remote-cache replacement candidates** — if you're already running `bazel-remote-cache` standalone, the easiest path is `corelink-bazel-remote-shim` (a drop-in front that forwards to CoreLink with your existing API surface). Ask us about it.
 
-**Pants** — `[cache] remote_store_address = grpc://cache.corelink.dev:443/{your-slot-id}` and `remote_oauth_bearer_token_path = /etc/corelink/pat`.
+**Pants** — `[cache] remote_store_address = grpc://cache.corelink.humangr.com:443/{your-slot-id}` and `remote_oauth_bearer_token_path = /etc/corelink/pat`.
 
 ### What to look for in week 1
 
@@ -213,7 +213,7 @@ Notable events (24h):
   - 2026-MM-DD 14:22Z: scheduled BYOK chaos drill, kill-switch RTT 3m12s (target ≤ 5 min, PASS)
   - 2026-MM-DD 21:08Z: 1 transient cache GET 502 (retry succeeded, no customer impact)
 
-Grafana: https://grafana.corelink.dev/lighthouse/LH-EXAMPLE
+Grafana: https://grafana.corelink.humangr.com/lighthouse/LH-EXAMPLE
 Audit chain query: corelink audit list --customer LH-EXAMPLE --since 24h
 
 Reply with questions or page on PagerDuty for urgent items.
@@ -348,7 +348,7 @@ Talk to us before signing. We support a generic HTTP cache API (any client that 
 Yes, but we only attest the SLOs you actually exercise during the 30-day window. ML training data caching, Docker layer caching, generic CAS — all are in-scope use cases, all get sampled if you exercise them.
 
 **11. What about a security audit on our side — can we pentest CoreLink?**
-Subject to our responsible-disclosure policy. Email `security@corelink.dev` before any probing. Our Pentest-1 firm engagement is documented; we can share the executive summary under NDA.
+Subject to our responsible-disclosure policy. Email `security@humangr.com` before any probing. Our Pentest-1 firm engagement is documented; we can share the executive summary under NDA.
 
 **12. What happens during the 30-day window if you ship a CoreLink update that affects us?**
 Any deploy that touches your tenant's hot path: 24h notice in Slack Connect, with rollback plan. You can request a freeze on your tenant during a critical period of your own work — tell us. Material spec or DPA changes follow `specs/_runbooks/RB-DPA-CHANGE.md`.

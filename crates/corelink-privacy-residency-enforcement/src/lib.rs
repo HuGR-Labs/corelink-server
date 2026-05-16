@@ -27,7 +27,7 @@
 //!    write_rejected_cross_region}.v1` per Lote 10.9bis P0-G prefix.
 //!
 //! 4. [`assert_request`] — `assert_request_residency`: Worker pre-flight for
-//!    request routing. Custom domain `<tenant_id>.<region>.corelink.dev` regex
+//!    request routing. Custom domain `<tenant_id>.<region>.corelink.humangr.com` regex
 //!    match + 451 on mismatch.
 //!
 //! 5. [`assert_write`] — `assert_write_residency`: backend write pre-flight

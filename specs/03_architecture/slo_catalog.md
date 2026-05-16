@@ -59,7 +59,7 @@ tags: ["architecture", "slo", "sli", "error-budget", "reliability"]
 2. **Menos SLOs, mais significativos.** Começar com 5–7 top-level SLOs; resistir à inflação. Cada SLO ≥ 1 alert direto.
 3. **Mensurável hoje.** Sem instrumentação, sem SLO. Propor SLO sem ter SLI operando em prod ≥ 30 dias = red flag.
 4. **Error budget é real.** Burn define pace de deploy / rollback. Budget esgotado = freeze.
-5. **Transparência.** SLOs publicados em `status.corelink.dev`; burn em tempo real.
+5. **Transparência.** SLOs publicados em `status.corelink.humangr.com`; burn em tempo real.
 6. **Multi-tenant awareness.** SLOs globais **e** per-enterprise-tenant (em contratos com SLA).
 
 ---

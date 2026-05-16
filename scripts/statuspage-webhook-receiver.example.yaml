@@ -36,7 +36,7 @@ metadata:
 # ---------------------------------------------------------------------------
 
 inbound_webhook:
-  endpoint: https://api.corelink.dev/internal/webhooks/pagerduty
+  endpoint: https://api.corelink.humangr.com/internal/webhooks/pagerduty
   http_method: POST
   expected_content_type: application/json
   signature_header: X-PagerDuty-Signature
@@ -213,7 +213,7 @@ retry:
       Manual action required:
         1. Try the PagerDuty mobile app "Publish to Statuspage" button.
         2. If still failing, manually create at https://manage.statuspage.io.
-        3. If Statuspage UI itself is down: update corelink.dev/status static
+        3. If Statuspage UI itself is down: update corelink.humangr.com/status static
            fallback and tweet from @corelinkdev.
 
 # ---------------------------------------------------------------------------
@@ -264,10 +264,10 @@ failure_injection:
 
 deploy:
   staging:
-    domain: bridge-staging.corelink.dev
+    domain: bridge-staging.corelink.humangr.com
     pagerduty_service: corelink-sre-internal-staging
   prod:
-    domain: bridge.corelink.dev (internal)
+    domain: bridge.corelink.humangr.com (internal)
     pagerduty_service: corelink-sre-internal-prod
   promotion_gate:
     - STATUSPAGE-PRE-LAUNCH-TEST.md passes in staging end-to-end

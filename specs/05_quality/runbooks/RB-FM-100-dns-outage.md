@@ -20,22 +20,22 @@ tags: ["runbook", "p1", "network", "dns"]
 
 ## Detecção
 
-- Synthetic monitor externa (Pingdom/Better Uptime) reporta `NXDOMAIN` ou `SERVFAIL` em `cache.corelink.dev`.
+- Synthetic monitor externa (Pingdom/Better Uptime) reporta `NXDOMAIN` ou `SERVFAIL` em `cache.corelink.humangr.com`.
 - Métrica interna `corelink_synthetic_probe_success_ratio` cai a 0 de múltiplas regiões.
 - CF status page reporta DNS issue OU registrar reporta outage.
 
 ## Comunicação
 
 - **SEV-1.** Page SRE Lead + Communications.
-- Status page IMEDIATO: "Customers can't reach cache.corelink.dev due to DNS outage at [vendor]".
+- Status page IMEDIATO: "Customers can't reach cache.corelink.humangr.com due to DNS outage at [vendor]".
 - Twitter/X, Slack (tenants enterprise), email blast.
 - Se registrar próprio (ex: customer domains apontando para nosso CNAME): customer success notify.
 
 ## Triage (≤ 5 min)
 
-1. `dig @8.8.8.8 cache.corelink.dev` — funciona?
-2. `dig @1.1.1.1 cache.corelink.dev` — funciona?
-3. `whois cache.corelink.dev` — registrar respondendo?
+1. `dig @8.8.8.8 cache.corelink.humangr.com` — funciona?
+2. `dig @1.1.1.1 cache.corelink.humangr.com` — funciona?
+3. `whois cache.corelink.humangr.com` — registrar respondendo?
 4. Identificar: é CF DNS? É registrar? É nosso?
 
 ## Mitigação imediata

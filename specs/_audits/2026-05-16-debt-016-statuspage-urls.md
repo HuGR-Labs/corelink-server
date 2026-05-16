@@ -20,7 +20,7 @@ related:
 
 ## 1. Context
 
-The customer-facing trust corpus references `status.corelink.dev` across:
+The customer-facing trust corpus references `status.corelink.humangr.com` across:
 
 - **5 MDX pages** (`apps/docs/docs/trust/{index,incident-response,subprocessors}.mdx`,
   `apps/docs/docs/explanation/security/incident-history.mdx`,
@@ -73,7 +73,7 @@ rationale:
 ### 2.2 Single source of truth
 
 New helper `apps/docs/src/statuspage-url.ts` exports
-`DEFAULT_STATUSPAGE_URL` (`"https://status.corelink.dev"`) and
+`DEFAULT_STATUSPAGE_URL` (`"https://status.corelink.humangr.com"`) and
 `getStatuspageUrl(customFieldsValue?)`. The helper is importable from
 both Node (`docusaurus.config.ts`) and the browser (React components),
 and consults `process.env.STATUSPAGE_URL` at config time + the
@@ -81,7 +81,7 @@ and consults `process.env.STATUSPAGE_URL` at config time + the
 
 ### 2.3 Existing literal URLs in MDX
 
-Existing literal `https://status.corelink.dev` references in the 5 trust
+Existing literal `https://status.corelink.humangr.com` references in the 5 trust
 MDX pages × 4 locales are **intentionally retained as canonical
 defaults**. Rationale:
 
@@ -102,7 +102,7 @@ defaults**. Rationale:
 
 ## 3. Fallback policy
 
-`https://status.corelink.dev` — the canonical wave-19 commit value
+`https://status.corelink.humangr.com` — the canonical wave-19 commit value
 referenced by the 8+ trust pages and 20+ internal docs. This is the
 operator's **default canonical host**; the operator either CNAMEs it to
 the real Statuspage tenant (Option A) or sets `STATUSPAGE_URL` env var
@@ -127,7 +127,7 @@ documented in `specs/_runbooks/STATUSPAGE-INIT.md`.
   introduced to MDX itself (rationale §2.3).
 - **SUBSTITUTION MECHANISM:** build-time, via `docusaurus.config.ts`
   `customFields`. Runtime header injection rejected (§2.1).
-- **FALLBACK DEFAULT:** `https://status.corelink.dev` (wave-19 canonical
+- **FALLBACK DEFAULT:** `https://status.corelink.humangr.com` (wave-19 canonical
   commit value).
 - **RUNBOOK:** `specs/_runbooks/STATUSPAGE-INIT.md` (operator playbook
   Option A CNAME + Option B env-var override + GA-cutover gate).
@@ -151,7 +151,7 @@ GA-readiness review.
 ## 8. Caveats
 
 - The 20+ internal runbooks / compliance docs continue to reference the
-  literal `status.corelink.dev`; those are operator-facing (not customer-
+  literal `status.corelink.humangr.com`; those are operator-facing (not customer-
   facing) and don't need the build-time substitution mechanism — they
   inherit the same canonical default and same Option A / Option B
   provisioning paths.

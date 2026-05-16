@@ -27,7 +27,7 @@ last_updated: "2026-05-15"
 This page documents **where customer data physically lives**, **how it is
 protected**, and **how long we keep it**. Everything below is verifiable —
 either by reading the open-source code, by inspecting your tenant via the
-admin API, or by requesting the attestation pack at `trust@corelink.dev`.
+admin API, or by requesting the attestation pack at `trust@humangr.com`.
 
 ## What we store
 
@@ -81,7 +81,7 @@ verify your own tenant via the admin API:
 
 ```bash
 curl -H "Authorization: Bearer $PAT" \
-     https://api.corelink.dev/v1/tenant/me/residency-proof
+     https://api.corelink.humangr.com/v1/tenant/me/residency-proof
 ```
 
 The response is a signed attestation including the region pin, the last

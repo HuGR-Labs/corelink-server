@@ -184,7 +184,7 @@ Feature WI; STANDARD lane; admin ops UI.
 - Closing PRR + Lighthouse + UX workshop (WI-S16-007).
 - Backend admin plane API (S-13).
 - Backend audit events R2 bucket (S-09).
-- Internal CoreLink ops admin panel `admin.corelink.dev` separate subdomain.
+- Internal CoreLink ops admin panel `admin.corelink.humangr.com` separate subdomain.
 
 ## 7. Anti-Scope
 

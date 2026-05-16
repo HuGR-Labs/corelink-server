@@ -37,7 +37,7 @@ export interface ConsentSixFields {
 }
 
 export const WITHDRAWAL_METHOD_DEFAULT =
-  "Withdraw via /consent/withdraw or email privacy@corelink.dev";
+  "Withdraw via /consent/withdraw or email privacy@humangr.com";
 
 export interface ConsentSubmitPayload extends ConsentSixFields {
   locale: Locale;

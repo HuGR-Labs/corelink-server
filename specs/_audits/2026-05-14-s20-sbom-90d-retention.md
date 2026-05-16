@@ -43,7 +43,7 @@ tags:
 | Storage backend | Cloudflare R2 bucket `corelink-sbom-archive` (region: ENAM primary; replicated to WEUR per residency_failover INV) |
 | Object key scheme | `sbom/v1/<yyyy>/<mm>/<dd>/<git_sha>.cyclonedx.json` + `.sig` cosign sidecar |
 | Object Lock mode | **GOVERNANCE** retain-until = published_at + 90d (mirror INV-AUDIT-APPEND-ONLY pattern) |
-| Customer-accessible mirror | `https://corelink.dev/sbom/v1.json` (always points at latest) — historical SBOMs queryable via `?git_sha=<sha>` |
+| Customer-accessible mirror | `https://corelink.humangr.com/sbom/v1.json` (always points at latest) — historical SBOMs queryable via `?git_sha=<sha>` |
 | Verification trail | Daily cron `sbom-retention-verify.yml` walks objects emitted in last 90d; verifies cosign signature + Object Lock retention + content hash |
 | Failure alert | PagerDuty SEV-2 if any SBOM in 90d window missing, unsigned, or retention-expired before 90d |
 
@@ -103,7 +103,7 @@ Daily verification trail is appended to `specs/_audits/sbom-retention/<YYYY-MM-D
 | R2 | All SBOMs cosign-signed | 100% verifiable signature | cosign verify-blob |
 | R3 | Object Lock GOVERNANCE active | 100% objects with `RetainUntilDate ≥ published_at + 90d` | aws s3api get-object-retention |
 | R4 | CycloneDX 1.5+ spec | 100% objects pass `bomFormat=CycloneDX` + `specVersion ≥ 1.5` | jq validation |
-| R5 | Customer mirror reachable | `https://corelink.dev/sbom/v1.json` → 200 OK with valid SBOM | curl + jq smoke test in cron |
+| R5 | Customer mirror reachable | `https://corelink.humangr.com/sbom/v1.json` → 200 OK with valid SBOM | curl + jq smoke test in cron |
 | R6 | Zero retention-policy waivers | `corelink_sbom_retention_waiver_count_gauge = 0` | spec contract §19 |
 
 ---

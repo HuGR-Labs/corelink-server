@@ -56,7 +56,7 @@ SELECT * FROM admin_op_log
 1. **Confirm version skew**: query each region's `worker_running_version`:
    ```bash
    for region in wnam enam weur apac; do
-     curl -s "https://${region}.corelink.dev/_admin/config/version" \
+     curl -s "https://${region}.corelink.humangr.com/_admin/config/version" \
        -H "Authorization: Bearer $ADMIN_TOKEN"
    done
    ```
@@ -65,7 +65,7 @@ SELECT * FROM admin_op_log
 3. **Force config reload** on stuck region(s):
    ```bash
    # Admin endpoint forces re-fetch from CAS singleton
-   curl -X POST "https://${REGION}.corelink.dev/_admin/config/reload" \
+   curl -X POST "https://${REGION}.corelink.humangr.com/_admin/config/reload" \
      -H "Authorization: Bearer $ADMIN_TOKEN" \
      -d '{"version_target": "<latest>"}'
    ```

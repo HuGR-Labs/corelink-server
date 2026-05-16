@@ -9,14 +9,14 @@
 #   - Step 1: DNS CNAME verification — exercises a `dig`-based lookup
 #     against a non-routable test domain via a local hosts-style
 #     simulated authoritative record; in production the operator points
-#     `status.corelink.dev` at the Atlassian Statuspage tenant. Here we
+#     `status.corelink.humangr.com` at the Atlassian Statuspage tenant. Here we
 #     drive a deterministic resolver fake under
 #     `${SANDBOX}/dns/zone.txt` to prove the verification harness
 #     would catch a missing CNAME at T-7d.
 #   - Step 2: Statuspage API health check — curls the public-facing
 #     `https://www.statuspage.io/` landing page (read-only, no auth) to
 #     prove the operator's network path can reach the Atlassian-hosted
-#     surface that will host the eventual `status.corelink.dev` tenant.
+#     surface that will host the eventual `status.corelink.humangr.com` tenant.
 #     The check is HEAD-only with a tight timeout; offline-tolerant
 #     (records DEGRADED rather than FAIL if network is unavailable).
 #   - Step 3: Build-time substitution test — does NOT invoke `pnpm
@@ -24,7 +24,7 @@
 #     dress-run keeps this hermetic). Instead it executes the
 #     `getStatuspageUrl()` helper directly in a Node sandbox under
 #     `${SANDBOX}/build/`, with `STATUSPAGE_URL` env var set, and
-#     asserts that (a) the default is `https://status.corelink.dev`,
+#     asserts that (a) the default is `https://status.corelink.humangr.com`,
 #     (b) the override is `https://corelink-statuspage-test.example.com`,
 #     (c) an MDX fragment substituted via the runbook §3 `rg | sed`
 #     one-liner contains the substituted URL.
@@ -36,7 +36,7 @@
 #   - It DOES NOT provision a real Atlassian Statuspage tenant
 #     (operator-bound; requires Atlassian Business-tier subscription +
 #     SRE Lead sign-off — see runbook §2.1).
-#   - It DOES NOT touch real Cloudflare DNS for `corelink.dev` (the
+#   - It DOES NOT touch real Cloudflare DNS for `corelink.humangr.com` (the
 #     CNAME flip is operator-bound at T-7d).
 #   - It DOES NOT mutate any tracked repository file outside
 #     `specs/_audits/` (the build-substitution test runs in a tmp
@@ -206,7 +206,7 @@ step_1_dns_cname() {
 # Simulated authoritative zone (sandbox-only; not real DNS).
 # Format: <name> CNAME <target>
 ${TEST_DOMAIN} CNAME corelink-tenant-dressrun.statuspage.io
-status.corelink.dev CNAME corelink-tenant-canonical.statuspage.io
+status.corelink.humangr.com CNAME corelink-tenant-canonical.statuspage.io
 EOF
 
     local target
@@ -226,15 +226,15 @@ EOF
 
     # Also assert the canonical default record (Option A path) is wired.
     local canonical_target
-    canonical_target="$(awk '$1=="status.corelink.dev" && $2=="CNAME" {print $3}' "$zone_file")"
+    canonical_target="$(awk '$1=="status.corelink.humangr.com" && $2=="CNAME" {print $3}' "$zone_file")"
     if [[ -z "$canonical_target" || "$canonical_target" != *.statuspage.io ]]; then
         echo "OUTCOME=FAIL"
-        echo "DETAIL=canonical status.corelink.dev CNAME missing or wrong target"
+        echo "DETAIL=canonical status.corelink.humangr.com CNAME missing or wrong target"
         return 1
     fi
 
     echo "OUTCOME=PASS"
-    echo "DETAIL=CNAME ${TEST_DOMAIN} -> ${target}; canonical status.corelink.dev -> ${canonical_target}"
+    echo "DETAIL=CNAME ${TEST_DOMAIN} -> ${target}; canonical status.corelink.humangr.com -> ${canonical_target}"
     return 0
 }
 
@@ -300,7 +300,7 @@ import {getStatuspageUrl, DEFAULT_STATUSPAGE_URL} from '${REPO_ROOT}/apps/docs/s
     # without requiring a TS toolchain.
     cat >"$SANDBOX/build/helper.mjs" <<'EOF'
 // Mirror of apps/docs/src/statuspage-url.ts (verified by SHA below).
-export const DEFAULT_STATUSPAGE_URL = "https://status.corelink.dev";
+export const DEFAULT_STATUSPAGE_URL = "https://status.corelink.humangr.com";
 export function getStatuspageUrl(customFieldsValue) {
     if (typeof customFieldsValue === "string" && customFieldsValue.length > 0) {
         return customFieldsValue;
@@ -322,7 +322,7 @@ EOF
     # textual probe (the TS file embeds the same default + control
     # flow). This catches drift if someone changes the helper without
     # updating the dress-run mirror.
-    if ! grep -q 'DEFAULT_STATUSPAGE_URL = "https://status.corelink.dev"' \
+    if ! grep -q 'DEFAULT_STATUSPAGE_URL = "https://status.corelink.humangr.com"' \
             "${REPO_ROOT}/apps/docs/src/statuspage-url.ts"; then
         echo "OUTCOME=FAIL"
         echo "DETAIL=upstream statuspage-url.ts default does not match dress-run mirror"
@@ -335,7 +335,7 @@ EOF
 import {getStatuspageUrl} from '${SANDBOX}/build/helper.mjs';
 process.stdout.write(getStatuspageUrl());
 ")"
-    if [[ "$got_default" != "https://status.corelink.dev" ]]; then
+    if [[ "$got_default" != "https://status.corelink.humangr.com" ]]; then
         echo "OUTCOME=FAIL"
         echo "DETAIL=default URL mismatch: got '${got_default}'"
         return 1
@@ -370,9 +370,9 @@ process.stdout.write(getStatuspageUrl('https://explicit.example.com'));
     local mdx_expected="$SANDBOX/build/sample.expected.mdx"
     cat >"$mdx_in" <<'EOF'
 # Sample trust page
-Visit our status page at https://status.corelink.dev for live updates.
-RSS feed: https://status.corelink.dev/history.rss
-Bare host reference: status.corelink.dev
+Visit our status page at https://status.corelink.humangr.com for live updates.
+RSS feed: https://status.corelink.humangr.com/history.rss
+Bare host reference: status.corelink.humangr.com
 EOF
     local override_host="${OVERRIDE_URL#https://}"
     cat >"$mdx_expected" <<EOF
@@ -385,8 +385,8 @@ EOF
     # Apply the runbook §3 substitution (sed; rg-discovery is implicit
     # because we already know the target file).
     sed -i.bak \
-        -e "s#https://status.corelink.dev#${OVERRIDE_URL}#g" \
-        -e "s#status.corelink.dev#${override_host}#g" \
+        -e "s#https://status.corelink.humangr.com#${OVERRIDE_URL}#g" \
+        -e "s#status.corelink.humangr.com#${override_host}#g" \
         "$mdx_in"
     rm -f "$mdx_in.bak"
 

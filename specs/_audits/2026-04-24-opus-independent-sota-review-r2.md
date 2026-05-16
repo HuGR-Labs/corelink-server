@@ -219,10 +219,10 @@ Auditoria independente do codex/GPT (não li o output do Round 2 do codex). Foco
 ### M-08: S-12 SLSA L3 declara `slsa-github-generator/generator_generic_slsa3.yml@v1.10.0` versão pinada — pinning a tag versão exata sem `@sha256:...` é supply-chain hole (mesmo problema que cargo-deny resolve para deps)
 `specs/04_sprints/S12/_spec_contract.md:71`. Action pinned by tag = mutable; deve ser pinned by commit SHA per OpenSSF Scorecard.
 
-### M-09: S-16 anti-scope `❌ Admin panel operacional interno` (`S16:177`) cita `admin.corelink.dev` separado mas nenhum sprint cobre `admin.corelink.dev` — orphan ownership
+### M-09: S-16 anti-scope `❌ Admin panel operacional interno` (`S16:177`) cita `admin.corelink.humangr.com` separado mas nenhum sprint cobre `admin.corelink.humangr.com` — orphan ownership
 `specs/04_sprints/S16/_spec_contract.md:177`. Internal admin tooling é gap visível pré-GA — incident response oncall (S-17) precisa de quê pra ack/manage?
 
-### M-10: S-19 `R-S19-9` first-run renders "CLI install command" + quickstart docs link — spec assume `corelink.dev/cli` e `docs.corelink.dev/quickstart` existem; S-15 + S-18 entregam, mas S-19 não declara dep. CLI install URL deveria vir de config (env-aware staging vs prod)
+### M-10: S-19 `R-S19-9` first-run renders "CLI install command" + quickstart docs link — spec assume `corelink.humangr.com/cli` e `docs.corelink.humangr.com/quickstart` existem; S-15 + S-18 entregam, mas S-19 não declara dep. CLI install URL deveria vir de config (env-aware staging vs prod)
 `specs/04_sprints/S19/_spec_contract.md:110-112`.
 
 ### M-11: S-17 chaos catalog `≥ 8 FMs` (`S17:84`) cobre 8 de 26 P0/P1 FMs — 18 FMs sem chaos test pré-GA. Spec não justifica seleção dos 8 nem promete "remaining 18 covered post-GA"

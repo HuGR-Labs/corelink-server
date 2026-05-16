@@ -36,13 +36,13 @@ tags: ["load-test", "endurance", "24h", "analysis", "template", "r-prep", "ga-ev
 | End (UTC)            | `<<YYYY-MM-DDTHH:MM:SSZ>>` |
 | Elapsed              | `<<24h00m>>` |
 | Environment          | staging |
-| Target host          | `<<https://staging.corelink.dev>>` |
+| Target host          | `<<https://staging.corelink.humangr.com>>` |
 | Generators           | `<<3 regions: iad / fra / sin>>` |
 | Sustained VUs        | 50 |
 | Tenant pool          | 50 (Zipfian s=1.07) |
 | Traffic mix used     | CAS read 60% · CAS write 15% · audit query 10% · BYOK 8% · admin 5% · webhook 2% |
-| Prometheus RW URL    | `<<https://prom-rw.staging.corelink.dev/api/v1/write>>` |
-| Grafana dashboard    | `<<https://grafana.staging.corelink.dev/d/endurance-24h>>` |
+| Prometheus RW URL    | `<<https://prom-rw.staging.corelink.humangr.com/api/v1/write>>` |
+| Grafana dashboard    | `<<https://grafana.staging.corelink.humangr.com/d/endurance-24h>>` |
 | On-call shift log    | `<<link to RB-ENDURANCE-24H-DRILL execution journal>>` |
 
 ## 2. Hourly latency histograms (p50 / p95 / p99 per operation, per hour)

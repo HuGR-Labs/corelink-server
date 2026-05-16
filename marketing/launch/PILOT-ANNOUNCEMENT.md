@@ -67,7 +67,7 @@ You are **not** a fit if you need any of the following before GA:
 
 Reserve a pilot slot via the token-gated signup flow (wave-27 pilot-signup pipeline):
 
-**`https://signup.corelink.dev/pilot`**
+**`https://signup.corelink.humangr.com/pilot`**
 
 Slots are limited to the **first 10 qualified applicants** (DEBT-027 minimum to GA is ≥3 ACTIVE pilots; we are sizing the program to leave headroom for two cohorts). Application review SLO: 2 business days. Activation SLO: 5 business days post-acceptance.
 
@@ -91,8 +91,8 @@ If you need any of the GA-only items before signing, **wait for GA** and we'll r
 
 ## Contact
 
-- Pilot signup: `https://signup.corelink.dev/pilot`
-- Direct outreach: `pilot@corelink.dev`
+- Pilot signup: `https://signup.corelink.humangr.com/pilot`
+- Direct outreach: `pilot@humangr.com`
 - Engineering escalation (post-acceptance only): pilot Slack channel
 
 ---

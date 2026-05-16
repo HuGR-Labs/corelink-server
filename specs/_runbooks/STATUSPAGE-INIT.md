@@ -36,7 +36,7 @@ debt_links:
 
 **Trigger:** GA cutover preparation — operator must provision the real
 Atlassian Statuspage tenant and bind it to the canonical hostname
-`status.corelink.dev` (or override via the `STATUSPAGE_URL` env-var path)
+`status.corelink.humangr.com` (or override via the `STATUSPAGE_URL` env-var path)
 **before T-7d pre-launch**.
 
 **Owner:** SRE Lead (operator-side). Engineering side closed per
@@ -60,7 +60,7 @@ internal runbooks and compliance docs**:
 - `apps/docs/docs/how-to/billing/manage-subscription.mdx`
 - (and i18n mirrors under `apps/docs/i18n/{pt-BR,de,es-419}/...`)
 
-The canonical default is `https://status.corelink.dev`. The engineering
+The canonical default is `https://status.corelink.humangr.com`. The engineering
 side exposes a single source of truth at
 `apps/docs/src/statuspage-url.ts` (`DEFAULT_STATUSPAGE_URL` +
 `getStatuspageUrl()` helper) and wires it through
@@ -75,9 +75,9 @@ constraints below force Option B.
 
 ## 2. Option A — CNAME the canonical hostname (preferred, zero docs rebuild)
 
-**Use when:** the operator owns `corelink.dev` DNS (the default
+**Use when:** the operator owns `corelink.humangr.com` DNS (the default
 GA-cutover assumption) and is happy for the public statuspage to be
-served under `status.corelink.dev`.
+served under `status.corelink.humangr.com`.
 
 ### Steps
 
@@ -85,7 +85,7 @@ served under `status.corelink.dev`.
    - Subscribe to Atlassian Statuspage "Business" tier (minimum for SSO,
      metrics overlay, and per-region component status).
    - Create page with name `CoreLink Status`, support URL
-     `https://corelink.dev`, hidden from search until GA.
+     `https://corelink.humangr.com`, hidden from search until GA.
 2. Define the **8 tracked components** per
    `apps/docs/docs/trust/incident-response.mdx §Status page`:
    - API ingress
@@ -96,23 +96,23 @@ served under `status.corelink.dev`.
    - Admin plane
    - Identity (Clerk)
    - BYOK envelope
-3. Configure custom domain `status.corelink.dev` in Statuspage settings;
+3. Configure custom domain `status.corelink.humangr.com` in Statuspage settings;
    Statuspage will issue a `*.statuspage.io` target.
-4. Add CNAME `status.corelink.dev → <tenant>.statuspage.io` in
-   Cloudflare DNS (zone `corelink.dev`).
+4. Add CNAME `status.corelink.humangr.com → <tenant>.statuspage.io` in
+   Cloudflare DNS (zone `corelink.humangr.com`).
 5. Wait for Atlassian's automated TLS-cert provisioning (typically
-   ≤15 min) — confirm `https://status.corelink.dev` resolves and serves
+   ≤15 min) — confirm `https://status.corelink.humangr.com` resolves and serves
    the new tenant.
 6. **No docs rebuild required.** All 5 trust MDX pages × 4 locales + 20+
    internal docs now resolve correctly because the canonical hostname is
    pointing at the real tenant.
 7. Sanity-check:
    ```bash
-   curl -sI https://status.corelink.dev | head -3
-   curl -s https://status.corelink.dev/api/v2/summary.json | jq '.page.url'
-   curl -s https://status.corelink.dev/history.rss | head -3
+   curl -sI https://status.corelink.humangr.com | head -3
+   curl -s https://status.corelink.humangr.com/api/v2/summary.json | jq '.page.url'
+   curl -s https://status.corelink.humangr.com/history.rss | head -3
    ```
-   Expected: HTTP 200, JSON-API `page.url == "https://status.corelink.dev"`,
+   Expected: HTTP 200, JSON-API `page.url == "https://status.corelink.humangr.com"`,
    RSS valid XML.
 
 ### Sign-off
@@ -139,7 +139,7 @@ N-S-2).
 The CNAME TTL at provisioning is the standard Cloudflare default
 (**300s**), not 7d. The wave-24 framing of a "7-day window" referred to
 the operator's *decision deadline* between Option A and Option B, not
-the DNS TTL: re-pointing the `status.corelink.dev` CNAME after GA is
+the DNS TTL: re-pointing the `status.corelink.humangr.com` CNAME after GA is
 not in scope (Atlassian manages the underlying tenant target).
 
 If `T-10d` start slips, the gate at `T-7d` flips RED and triggers the
@@ -190,7 +190,7 @@ each customer-facing component — see the file header for the
 > `scripts/admin/statuspage-bootstrap.sh` against their own
 > tenant + page-id — only the DNS-record file
 > (`config/statuspage/dns-cname-record.txt`) is Option A specific
-> (Cloudflare + `status.corelink.dev`). Substitute your own
+> (Cloudflare + `status.corelink.humangr.com`). Substitute your own
 > domain + DNS provider before applying.
 
 **Use when:** the operator wants to host the statuspage under a different
@@ -214,14 +214,14 @@ status-portal contract, brand policy, or DNS-zone separation.
    `siteConfig.customFields.statuspageUrl` for any future MDX consumer
    that uses the `getStatuspageUrl()` helper.
 5. **MDX literal URLs do not auto-rewrite.** The 5 trust pages × 4
-   locales currently contain literal `https://status.corelink.dev`. If
+   locales currently contain literal `https://status.corelink.humangr.com`. If
    Option B is chosen, the operator must additionally run a one-shot
    text substitution under `apps/docs/docs/` and `apps/docs/i18n/` (and
    re-build) — recommended workflow:
    ```bash
    # From repo root, on a deploy-time branch:
    rg -l "status\.corelink\.dev" apps/docs/docs apps/docs/i18n |
-     xargs sed -i.bak "s#https://status.corelink.dev#${STATUSPAGE_URL}#g; s#status.corelink.dev#${STATUSPAGE_URL#https://}#g"
+     xargs sed -i.bak "s#https://status.corelink.humangr.com#${STATUSPAGE_URL}#g; s#status.corelink.humangr.com#${STATUSPAGE_URL#https://}#g"
    find apps/docs -name "*.bak" -delete
    pnpm --filter @corelink/docs build
    ```
@@ -264,7 +264,7 @@ the same §7 RA-3 ≥ 7d defer as Option A.
 By **T-7d pre-launch**, one of the following MUST be true (verified by
 SRE Lead + Release Captain):
 
-- [ ] **Option A:** `curl -sI https://status.corelink.dev` returns HTTP 200
+- [ ] **Option A:** `curl -sI https://status.corelink.humangr.com` returns HTTP 200
       and `summary.json` reports the 8 tracked components, **OR**
 - [ ] **Option B:** `STATUSPAGE_URL` env var is set in the docs deploy
       pipeline, deploy-time text-substitution branch merged to the
@@ -273,7 +273,7 @@ SRE Lead + Release Captain):
 
 If **neither** is true at T-7d, the launch readiness review **blocks GA
 cutover** (see `specs/_compliance/GA-GATE-CRITERIA.md`). Manual fallback
-(static HTML notice on `corelink.dev/status`) is **NOT** acceptable
+(static HTML notice on `corelink.humangr.com/status`) is **NOT** acceptable
 because the customer-facing trust corpus cites the live JSON-API /
 RSS / Atom / email-subscribe channels.
 

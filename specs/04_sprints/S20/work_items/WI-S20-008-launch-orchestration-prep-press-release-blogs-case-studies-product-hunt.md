@@ -22,7 +22,7 @@ inherits_from:
 tags: ["wi", "s20", "ga", "launch-orchestration", "marketing", "press-release", "product-hunt", "soft-gate", "high-risk"]
 ---
 
-# WI-S20-008 — Launch Orchestration Prep (SEPARATED From Engineering Gate Per Spec Contract §1 Codex Finding + §6.2; Soft-Gate; **NÃO Blocking Engineering Gate Binary GA-Go Decision**; CEO/Founder Enforce Gate; Launch Pode Shift Date Sem Affecting Engineering Readiness) — Press Release Reviewed Por PR + Legal (Subject: "CoreLink GA — Multi-Tenant Content-Addressable Cache on Cloudflare; Bazel/Buck2/RBE-Compatible Remote Cache; HuGR Org Launch") + 5 Blog Posts Deep Dives Published em Staging Blog `docs.corelink.dev/blog` (Multi-Tenant Cloudflare Architecture + BYOK Enterprise Schrems II + Customer-Managed Kill Switch & Erasure Attestation + TLA+ Formal Verification em Production + Lighthouse Customers Case Studies) + 3 Case Studies Drafted com Lighthouse Customer Testimonials (Forge + 1 OSS + 1 Enterprise BYOK; Marketing Co-Led com Customer Success) + Product Hunt Launch Prep (Assets: Hero Image + Tagline + 1-min Demo Video + Maker Comment Template + Outreach List) + Maker Outreach Scheduled D+25..D+30 Launch Day
+# WI-S20-008 — Launch Orchestration Prep (SEPARATED From Engineering Gate Per Spec Contract §1 Codex Finding + §6.2; Soft-Gate; **NÃO Blocking Engineering Gate Binary GA-Go Decision**; CEO/Founder Enforce Gate; Launch Pode Shift Date Sem Affecting Engineering Readiness) — Press Release Reviewed Por PR + Legal (Subject: "CoreLink GA — Multi-Tenant Content-Addressable Cache on Cloudflare; Bazel/Buck2/RBE-Compatible Remote Cache; HuGR Org Launch") + 5 Blog Posts Deep Dives Published em Staging Blog `docs.corelink.humangr.com/blog` (Multi-Tenant Cloudflare Architecture + BYOK Enterprise Schrems II + Customer-Managed Kill Switch & Erasure Attestation + TLA+ Formal Verification em Production + Lighthouse Customers Case Studies) + 3 Case Studies Drafted com Lighthouse Customer Testimonials (Forge + 1 OSS + 1 Enterprise BYOK; Marketing Co-Led com Customer Success) + Product Hunt Launch Prep (Assets: Hero Image + Tagline + 1-min Demo Video + Maker Comment Template + Outreach List) + Maker Outreach Scheduled D+25..D+30 Launch Day
 
 > **doc_status:** SEALED · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-20](../sprint.md) · **Assignee:** Gustavo Schneiter
@@ -43,7 +43,7 @@ tags: ["wi", "s20", "ga", "launch-orchestration", "marketing", "press-release", 
 
 **Objetivo**: Operacionalizar **launch orchestration prep** — press release + 5 blog posts + 3 case studies + Product Hunt launch prep + Maker outreach — **separated from engineering gate canonical** per spec contract §1 codex finding + §6.2; **NÃO blocking engineering gate binary GA-go decision**; Marketing-led + PR-led; CEO/Founder enforce gate; launch pode shift date sem affecting engineering readiness.
 
-**JTBD**: "Como Marketing Lead / PR Manager / CEO/Founder enforcing GA-go binary engineering gate, preciso evidência verificável que: (a) **launch orchestration é separated from engineering gate canonical** (binary GA-go independente); engineering gate WIs 001..007 SEALED → GA-go decision; launch orchestration WI-008 soft-gate; (b) **press release reviewed por PR + Legal** (Legal review per WI-S20-005 cumulative; PR review por external PR firm OR CMO contracted); (c) **5 blog posts deep dives published em staging blog** (`docs.corelink.dev/blog`); (d) **3 case studies drafted com lighthouse customer testimonials** (Forge + OSS + enterprise BYOK; Marketing co-led com Customer Success per WI-S20-004 cumulative); (e) **Product Hunt launch prep** com assets + Maker outreach scheduled D+25..D+30 launch day; (f) **NÃO blocking** — engineering gate binary independente de marketing readiness; CEO/Founder enforce gate."
+**JTBD**: "Como Marketing Lead / PR Manager / CEO/Founder enforcing GA-go binary engineering gate, preciso evidência verificável que: (a) **launch orchestration é separated from engineering gate canonical** (binary GA-go independente); engineering gate WIs 001..007 SEALED → GA-go decision; launch orchestration WI-008 soft-gate; (b) **press release reviewed por PR + Legal** (Legal review per WI-S20-005 cumulative; PR review por external PR firm OR CMO contracted); (c) **5 blog posts deep dives published em staging blog** (`docs.corelink.humangr.com/blog`); (d) **3 case studies drafted com lighthouse customer testimonials** (Forge + OSS + enterprise BYOK; Marketing co-led com Customer Success per WI-S20-004 cumulative); (e) **Product Hunt launch prep** com assets + Maker outreach scheduled D+25..D+30 launch day; (f) **NÃO blocking** — engineering gate binary independente de marketing readiness; CEO/Founder enforce gate."
 
 **SOFT-GATE NÃO BLOCKING ENGINEERING GATE BINARY** per spec contract §1 codex finding + §6.2 + sprint.md §7.
 
@@ -58,7 +58,7 @@ tags: ["wi", "s20", "ga", "launch-orchestration", "marketing", "press-release", 
    - **Reviewed por Legal**: Cooley/DLA Piper/Bird & Bird ~$15-30k 6-week lead reuso S-14 path (per WI-S20-005 cumulative).
    - Version control via Git: draft → PR review → Legal review → final.
 
-2. **5 blog posts deep dives published em staging blog** (`docs.corelink.dev/blog`):
+2. **5 blog posts deep dives published em staging blog** (`docs.corelink.humangr.com/blog`):
    - **Post 1**: "Multi-tenant Cloudflare architecture: how CoreLink scales to 1000 tenants per region without sacrificing isolation" (TLA+ tenant_isolation.tla + INV-TENANT-ISOLATION evidence).
    - **Post 2**: "BYOK enterprise tier + Schrems II compliance: 4 KMS providers + Ed25519 erasure attestation + DPA amendment Legal-reviewed" (S-14 BYOK + S-20 DPA v1).
    - **Post 3**: "Customer-managed kill switch & erasure attestation: hard-fail crypto sovereignty without operator override" (INV-BYOK-CRYPTO-SOVEREIGNTY + INV-ERASURE-ATTESTATION-SIGNED + NIST SP 800-88 Rev.1).
@@ -110,7 +110,7 @@ tags: ["wi", "s20", "ga", "launch-orchestration", "marketing", "press-release", 
 | ID | Entregável | Onde | DoD |
 |---|---|---|---|
 | S20-008-D1 | Press release | `marketing/press-release-ga.md` | reviewed por PR + Legal; subject "CoreLink GA — multi-tenant content-addressable cache on Cloudflare"; technical media + ecosystem outlets audience |
-| S20-008-D2 | 5 blog posts | `docs.corelink.dev/blog/{1-5}.md` published em staging blog | 1500-3000 words each; technical deep dive; code samples; references; SEO-optimized; production D+30 GA day |
+| S20-008-D2 | 5 blog posts | `docs.corelink.humangr.com/blog/{1-5}.md` published em staging blog | 1500-3000 words each; technical deep dive; code samples; references; SEO-optimized; production D+30 GA day |
 | S20-008-D3 | 3 case studies | `marketing/case-studies/{forge,oss,enterprise-byok}.md` | Marketing co-led com Customer Success; Legal-reviewed; customer-approved |
 | S20-008-D4 | Product Hunt launch prep | `marketing/product-hunt-assets/` | hero image + tagline + 1-min demo video + Maker comment template + outreach list 50-100; Maker outreach scheduled D+25..D+30 launch day |
 | S20-008-D5 | Soft-gate criteria documented | embedded em sprint.md §7.2 | criteria met; **NÃO blocking engineering gate binary GA-go decision** |
@@ -155,7 +155,7 @@ HuGR Labs today announced the General Availability of CoreLink, a multi-tenant c
 HuGR ("Human Guardrail") is the org behind CoreLink + a portfolio of developer infrastructure products.
 
 ## Contact
-- press@corelink.dev
+- press@humangr.com
 - gustavo@humangr.com
 
 ###
@@ -190,7 +190,7 @@ HuGR ("Human Guardrail") is the org behind CoreLink + a portfolio of developer i
 ### 6.1 Positive paths
 
 1. **Press release reviewed por PR + Legal** committed em `marketing/press-release-ga.md`.
-2. **5 blog posts published em staging blog** committed em `docs.corelink.dev/blog/{1-5}.md`.
+2. **5 blog posts published em staging blog** committed em `docs.corelink.humangr.com/blog/{1-5}.md`.
 3. **3 case studies drafted com lighthouse customer testimonials** committed em `marketing/case-studies/{forge,oss,enterprise-byok}.md`.
 4. **Product Hunt launch prep complete**: assets + Maker outreach list 50-100 + Maker outreach scheduled D+25..D+30.
 5. **Soft-gate criteria documented**: launch orchestration NÃO blocking engineering gate binary canonical.
@@ -216,7 +216,7 @@ HuGR ("Human Guardrail") is the org behind CoreLink + a portfolio of developer i
 
 - 5 posts × 1500-3000 words each.
 - Technical deep dive + code samples + references + SEO-optimized.
-- Published em staging blog `docs.corelink.dev/blog`.
+- Published em staging blog `docs.corelink.humangr.com/blog`.
 
 ### 7.3 Case studies validation
 

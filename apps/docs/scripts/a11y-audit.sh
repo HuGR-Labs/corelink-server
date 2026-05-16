@@ -14,7 +14,7 @@
 #   bash scripts/a11y-audit.sh                       # boot dev server, audit
 #   bash scripts/a11y-audit.sh --baseline            # write/refresh baseline
 #   bash scripts/a11y-audit.sh --against=baseline    # diff vs baseline
-#   DOCS_BASE_URL=https://docs.corelink.dev bash scripts/a11y-audit.sh
+#   DOCS_BASE_URL=https://docs.corelink.humangr.com bash scripts/a11y-audit.sh
 #                                                    # audit a live URL
 #
 # Exit codes:

@@ -7,7 +7,7 @@
 //! Run:
 //!
 //! ```text
-//! CORELINK_API_URL=https://api.corelink.dev \
+//! CORELINK_API_URL=https://api.corelink.humangr.com \
 //! CORELINK_PAT=$PAT \
 //!   cargo run --example quickstart_signup -p corelink-cli
 //! ```
@@ -26,7 +26,7 @@ use uuid::Uuid;
 #[tokio::main]
 async fn main() -> Result<()> {
     let api = env::var("CORELINK_API_URL")
-        .unwrap_or_else(|_| "https://sandbox.corelink.dev".to_string());
+        .unwrap_or_else(|_| "https://sandbox.corelink.humangr.com".to_string());
     let pat = env::var("CORELINK_PAT").context("CORELINK_PAT is required")?;
     let idem = format!("idem-{}", Uuid::now_v7());
 

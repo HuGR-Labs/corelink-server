@@ -4,7 +4,7 @@
 //! is routed to the tenant's `primary_region`. Failure → 451
 //! `legal_residency_violation` (PAT-ROUTING-PINNED-001 fail-CLOSED canonical).
 //!
-//! Custom domain pattern: `<tenant_id>.<region>.corelink.dev`
+//! Custom domain pattern: `<tenant_id>.<region>.corelink.humangr.com`
 //!
 //! # Audit fail-CLOSED ordering
 //!
@@ -21,15 +21,15 @@ use crate::{
 
 /// Parse the region from a custom domain host string.
 ///
-/// Accepts `<tenant_id>.<region>.corelink.dev` or bare `<region>` for tests.
+/// Accepts `<tenant_id>.<region>.corelink.humangr.com` or bare `<region>` for tests.
 /// Returns `None` if the host does not match the custom domain pattern.
 ///
 /// This is the canonical host-parsing entry point used by the Worker routing
 /// layer (PAT-ROUTING-PINNED-001 §3.4).
 pub fn region_from_host(host: &str) -> Option<Region> {
-    // Pattern: <tenant_id>.<region>.corelink.dev
+    // Pattern: <tenant_id>.<region>.corelink.humangr.com
     // We split on `.` and look for the second-to-last segment being a valid region
-    // when the last two segments are `corelink.dev`.
+    // when the last two segments are `corelink.humangr.com`.
     let parts: Vec<&str> = host.split('.').collect();
     let n = parts.len();
     if n >= 4 {

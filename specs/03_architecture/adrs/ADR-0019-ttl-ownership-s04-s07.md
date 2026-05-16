@@ -25,7 +25,7 @@ Round 2 audits (Opus C-03 + Codex CF-05) detectaram ownership clash entre S-04 e
 
 Customer free criado em S-04 staging → AC entries com prometida vida útil de 90d. Quando S-07 ship, esse mesmo customer free passa a ter TTL 7d (12.8× redução). **Sem migration plan; sem ADR; sem override declaration**.
 
-Pior, sprint contracts publicados em `docs.corelink.dev/sla` (S-18) prometem tier semantics — divergência entre S-04 e S-07 cria contract violation público.
+Pior, sprint contracts publicados em `docs.corelink.humangr.com/sla` (S-18) prometem tier semantics — divergência entre S-04 e S-07 cria contract violation público.
 
 ## Decision
 

@@ -17,7 +17,7 @@ last_updated: "2026-05-15"
 # API stability & deprecation policy
 
 > **Audience.** Customers, platform engineers, and SDK maintainers integrating
-> against `api.corelink.dev` (REST) or `cas.corelink.dev` / `bytestream.corelink.dev` (gRPC REAPI v2).
+> against `api.corelink.humangr.com` (REST) or `cas.corelink.humangr.com` / `bytestream.corelink.humangr.com` (gRPC REAPI v2).
 >
 > **Status.** Public policy. **Binding for GA endpoints** once promoted; subject to MSA §6.
 >
@@ -170,7 +170,7 @@ Content-Type: application/problem+json
 Link: </v2/pats>; rel="successor-version"
 
 {
-  "type": "https://corelink.dev/errors/endpoint-sunset",
+  "type": "https://corelink.humangr.com/errors/endpoint-sunset",
   "title": "Endpoint sunset",
   "status": 410,
   "detail": "POST /v1/pats was sunset on 2028-05-15. Use POST /v2/pats.",
@@ -235,7 +235,7 @@ the SDK CHANGELOG.
 
 To benefit from the 24-month GA window you should:
 
-1. **Subscribe to `api-announce@corelink.dev`** (low-volume; ~6 messages/year).
+1. **Subscribe to `api-announce@humangr.com`** (low-volume; ~6 messages/year).
    This is the only mailing list whose subscription survives DPO/tenant rotation;
    it is **not** unsubscribed by `data-erasure` DSRs.
 2. **Monitor for the `Sunset:` HTTP response header** in your client. Every

@@ -153,7 +153,7 @@ erasure conflicts with another regulatory retention obligation
 ## 5. Status-page integration — wave-16 shipped
 
 **Status (2026-05-15 wave-16):** SHIPPED. WI-S11-002 §6 mandate
-"DSR completion stats published to corelink.dev/status" is now
+"DSR completion stats published to corelink.humangr.com/status" is now
 satisfied at the trait surface + real HTTP wiring + bridge from the
 worker aggregator. The wave-15 deferral rationale below is preserved
 for historical context; the closing follow-on is captured immediately
@@ -162,7 +162,7 @@ under it.
 ### 5.1 Wave-15 deferral rationale (historical)
 
 WI-S11-002 §6 mandates publication of aggregated DSR completion
-stats to `corelink.dev/status`. The canonical aggregation surface
+stats to `corelink.humangr.com/status`. The canonical aggregation surface
 (per-tenant + per-jurisdiction completion rate + p95 resolution-hours
 histogram) required, at the wave-15 cycle, a production Grafana data
 source bound to the `corelink_dsr_resolution_hours` histogram + a
@@ -402,7 +402,7 @@ charter `trait-abstraction-defer` pattern. This audit closes:
   the canonical observation emit to
   `corelink_dsr_resolution_hours` histogram.
 - ~~Status-page widget bridging the production Grafana panel to
-  `corelink.dev/status`.~~ **CLOSED wave-17 (see §5.6).** Scheduler
+  `corelink.humangr.com/status`.~~ **CLOSED wave-17 (see §5.6).** Scheduler
   binding shipped under `corelink-dsr-statuspage-scheduler` +
   `corelink-clerk-cf::dsr_statuspage_cron`; `[triggers] crons =
   ["0 6 * * *"]` row added to `crates/corelink-clerk-cf/wrangler.toml`.

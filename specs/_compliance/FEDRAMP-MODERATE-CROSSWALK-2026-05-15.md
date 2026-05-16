@@ -280,7 +280,7 @@ These numbers come from FedRAMP PMO publicly available marketplace data + indust
 > `specs/_compliance/FEDRAMP-MODERATE-CROSSWALK-2026-05-15.md` (this doc)
 > and the rationale for not pursuing certification is in
 > `specs/_compliance/FEDRAMP-NOT-IN-SCOPE-RATIONALE.md`. If you require
-> FedRAMP authorization, please contact `enterprise@corelink.dev` for a
+> FedRAMP authorization, please contact `enterprise@humangr.com` for a
 > sponsorship discussion — the trigger conditions for re-opening the
 > decision are documented."
 
@@ -289,7 +289,7 @@ These numbers come from FedRAMP PMO publicly available marketplace data + indust
 - Use the §2 family table to answer "do you do <NIST control X>?" directly.
 - Anything **Coverage** = answer "yes, here is the SOC 2 / ISO evidence" and link to the corresponding row in `SOC2-EVIDENCE-ROLLUP-2026-05-15.md` or `ISO27001-CROSSWALK-2026-05-15.md`.
 - Anything **Partial** = answer "substance is in place; FedRAMP-formality artefact would need translation; SOC 2 evidence available now".
-- Anything **Not-in-Scope** = escalate to `enterprise@corelink.dev` per the customer page; this is a deal-shape question, not a controls question.
+- Anything **Not-in-Scope** = escalate to `enterprise@humangr.com` per the customer page; this is a deal-shape question, not a controls question.
 
 ### 5.3 For a future re-evaluation (per trigger conditions)
 

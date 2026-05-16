@@ -99,7 +99,7 @@ For prospects in regulated commercial industries who reference FedRAMP **as a qu
 
 For prospects who require demonstrable alignment with the Moderate baseline without an authorization:
 
-1. **Crosswalk document delivery** — `FEDRAMP-MODERATE-CROSSWALK-2026-05-15.md` delivered under NDA via `trust@corelink.dev`.
+1. **Crosswalk document delivery** — `FEDRAMP-MODERATE-CROSSWALK-2026-05-15.md` delivered under NDA via `trust@humangr.com`.
 2. **SOC 2 Type I report** (target Q1-2027) — covers AC / AU / CA / CM / IR / PE / RA / SA / SC / SI / SR families substantively.
 3. **ISO 27001:2022 certificate** (target Q1-2027) — covers Annex A overlap at 98.9% in-scope.
 4. **CSA STAR Level 1 self-assessment** (CAIQ submission) — completable on demand; ~2 person-weeks. *(Not committed; offered on request.)*
@@ -115,7 +115,7 @@ This stack answers "are you FedRAMP-aligned?" for ~95% of commercial-regulated p
 | Need / Question | Operational answer |
 |---|---|
 | "Do you have a FedRAMP authorization?" | "No. Our SOC 2 + ISO 27001 covers ~85% of FedRAMP Moderate substance. Here is the crosswalk." |
-| "Can you deliver a FedRAMP crosswalk?" | Yes — `FEDRAMP-MODERATE-CROSSWALK-2026-05-15.md` under NDA via `trust@corelink.dev` within 1 business day. |
+| "Can you deliver a FedRAMP crosswalk?" | Yes — `FEDRAMP-MODERATE-CROSSWALK-2026-05-15.md` under NDA via `trust@humangr.com` within 1 business day. |
 | "Can you commit to FedRAMP by date X?" | Only with sponsorship. See §4 trigger conditions. |
 | "Are you on the FedRAMP Marketplace?" | No. We do not appear on `marketplace.fedramp.gov`. |
 | "Do you support GovCloud / IL4 / IL5?" | No. We deploy on Cloudflare commercial + AWS / GCP / Azure commercial regions only. |
@@ -174,7 +174,7 @@ This document constitutes the **decision record** for "FedRAMP not pursued in th
 | Decided by | Gustavo Schneiter (Owner) |
 | Rationale | §2 above — commercial-market focus, $500-900k cost incompatible with stage, 12-18-month timeline incompatible with GA, substance already 85% covered via SOC 2 + ISO 27001. |
 | Re-evaluation triggers | §4 above. |
-| Customer-facing posture | `apps/docs/docs/trust/fedramp-info.mdx` — "we do not pursue FedRAMP today; contact `enterprise@corelink.dev` for sponsorship discussion". |
+| Customer-facing posture | `apps/docs/docs/trust/fedramp-info.mdx` — "we do not pursue FedRAMP today; contact `enterprise@humangr.com` for sponsorship discussion". |
 | Affected docs | `compliance_matrix.md §1` (already aligned: "Sob demanda; 36+ meses se demanda"); `ROADMAP-TO-GA.md` (this document linked as informational — no roadmap row added). |
 
 ---

@@ -46,7 +46,7 @@ tags: ["wi", "s14", "region", "terraform", "provisioning", "wnam", "enam", "weur
 
 ## 1. Intent
 
-Provisionar infraestrutura production-grade em 4 regiões com Terraform module reusable (per-region inputs) + migration path S-01..S-13 single-region → S-14 multi-region: (1) **R2 buckets** per-region com `locationHint` ∈ {`wnam`, `enam`, `weur`, `sam`} mapping para Cloudflare regions (us-west / us-east / eu-west / sa-east); (2) **D1 instances** per-region (primary + read replicas opcional) com region affinity; (3) **Durable Objects storage** per-region jurisdiction (DO `jurisdictional_restriction` para EU = `eu`); (4) **Cloudflare zone** + custom domain routing per-region (`{region}.api.corelink.dev` for explicit routing; falls back to `api.corelink.dev` smart routing); (5) **Terraform module `corelink-region`** reusable com per-region inputs + outputs (R2 bucket name + D1 instance ID + DO namespace ID + zone ID); (6) **Data migration script** `scripts/migrate_single_to_multi_region.rs` Rust binary (single-region → multi-region tenant migration; dry-run report; rollback path via Terraform state revert + D1 backup restore); (7) **Runbook RB-region** (provisioning procedure + rollback + migration playbook); (8) **Chaos test region outage** cada uma das 4 regiões (simula CF region partial outage; verify failover routing engages + alerts fire). Foundation layer para WI-S14-002..009.
+Provisionar infraestrutura production-grade em 4 regiões com Terraform module reusable (per-region inputs) + migration path S-01..S-13 single-region → S-14 multi-region: (1) **R2 buckets** per-region com `locationHint` ∈ {`wnam`, `enam`, `weur`, `sam`} mapping para Cloudflare regions (us-west / us-east / eu-west / sa-east); (2) **D1 instances** per-region (primary + read replicas opcional) com region affinity; (3) **Durable Objects storage** per-region jurisdiction (DO `jurisdictional_restriction` para EU = `eu`); (4) **Cloudflare zone** + custom domain routing per-region (`{region}.api.corelink.humangr.com` for explicit routing; falls back to `api.corelink.humangr.com` smart routing); (5) **Terraform module `corelink-region`** reusable com per-region inputs + outputs (R2 bucket name + D1 instance ID + DO namespace ID + zone ID); (6) **Data migration script** `scripts/migrate_single_to_multi_region.rs` Rust binary (single-region → multi-region tenant migration; dry-run report; rollback path via Terraform state revert + D1 backup restore); (7) **Runbook RB-region** (provisioning procedure + rollback + migration playbook); (8) **Chaos test region outage** cada uma das 4 regiões (simula CF region partial outage; verify failover routing engages + alerts fire). Foundation layer para WI-S14-002..009.
 
 ```hcl
 # File: infra/terraform/modules/corelink-region/main.tf
@@ -81,7 +81,7 @@ variable "do_jurisdiction" {
 
 variable "cf_zone_id" {
   type        = string
-  description = "Cloudflare zone ID for {region}.api.corelink.dev"
+  description = "Cloudflare zone ID for {region}.api.corelink.humangr.com"
 }
 
 resource "cloudflare_r2_bucket" "corelink_cas" {
@@ -196,13 +196,13 @@ Region provisioning é foundation layer cripto-load-bearing operacional crítico
 
 6. **Terraform state corruption**: state file lost ou corrompido = re-provisioning rebuild infrastructure (data loss potential). Mitigação: Terraform state em CF R2 backend com versioning + 90d retention; state lock via DynamoDB-equivalent (CF KV with consistent ops); backup state daily.
 
-7. **Custom domain routing mismatch**: `{region}.api.corelink.dev` certificate mismatch causing 525 errors. Mitigação: Terraform manages CF SSL certs + DNS records; integration test post-deploy validates custom domain routing per-region.
+7. **Custom domain routing mismatch**: `{region}.api.corelink.humangr.com` certificate mismatch causing 525 errors. Mitigação: Terraform manages CF SSL certs + DNS records; integration test post-deploy validates custom domain routing per-region.
 
 8. **Region outage propagates global** (FM-region-outage): WEUR outage causes WNAM tenants to see degraded service. Mitigação: chaos test region outage per-region; failover routing PAT-REGION-FAILOVER-001 (WI-S14-003) ensures isolation; per-region D1 + DO + R2 = no shared dependency.
 
 **Atacante adversarial scenarios**:
 
-- **Force tenant to wrong region via subdomain spoofing**: attacker tries `weur.api.corelink.dev` for ENAM tenant. Mitigação: insert checks validate `tenant.primary_region == request.region` (WI-S14-002); mismatch = 403 + audit emit `corelink.region.cross_region_read_blocked`.
+- **Force tenant to wrong region via subdomain spoofing**: attacker tries `weur.api.corelink.humangr.com` for ENAM tenant. Mitigação: insert checks validate `tenant.primary_region == request.region` (WI-S14-002); mismatch = 403 + audit emit `corelink.region.cross_region_read_blocked`.
 
 - **Inject migration script to cross-region**: attacker compromises CI; runs migration script with malicious target_region. Mitigação: migration script requires admin role + dual-approval (S-13) + WebAuthn UV=1 step-up; dry-run mandatory; rollback path tested.
 
@@ -307,10 +307,10 @@ Infrastructure-as-Code + migration script + runbook; HIGH_RISK; FF-HR-002 + FF-H
    - Verify D1 instance accessible per-region.
    - Verify DO `jurisdictional_restriction` set correctly (eu for WEUR).
    - Verify KV namespace per-region prefix prevents cross-region access.
-   - Custom domain `{region}.api.corelink.dev` routing test per-region.
+   - Custom domain `{region}.api.corelink.humangr.com` routing test per-region.
 
 10. **Adversarial tests**:
-    - Subdomain spoofing: attacker requests `weur.api.corelink.dev` with ENAM tenant_id → WI-S14-002 insert checks reject 403.
+    - Subdomain spoofing: attacker requests `weur.api.corelink.humangr.com` with ENAM tenant_id → WI-S14-002 insert checks reject 403.
     - Migration script malicious target_region: requires admin role + dual-approval + WebAuthn UV=1 (S-13 herdada).
     - Terraform state file tampering: state in R2 versioning + integrity hash; tamper detected.
 
@@ -355,7 +355,7 @@ Feature: WI-S14-001 — 4 regions provisioning + Terraform module + migration + 
     And 4 D1 instances provisioned (corelink-meta-{region})
     And 4 DO Workers provisioned with do_jurisdiction set
     And 4 KV namespaces with per-region prefix
-    And 4 custom domain DNS records ({region}.api.corelink.dev)
+    And 4 custom domain DNS records ({region}.api.corelink.humangr.com)
     And SSL certs valid per-region
 
   Scenario: WEUR DO jurisdictional restriction enforced
@@ -419,9 +419,9 @@ Feature: WI-S14-001 — 4 regions provisioning + Terraform module + migration + 
     And per-region isolation validated
     And report committed em audit folder
 
-  Scenario: Custom domain {region}.api.corelink.dev routing
+  Scenario: Custom domain {region}.api.corelink.humangr.com routing
     Given DNS records + SSL certs provisioned per-region
-    When client requests https://weur.api.corelink.dev/v1/cas/get
+    When client requests https://weur.api.corelink.humangr.com/v1/cas/get
     Then request routed to WEUR Worker
     And SSL cert valid (no 525 error)
     And Worker binding scopes to WEUR R2 + D1 + DO
@@ -467,11 +467,11 @@ Feature: WI-S14-001 — 4 regions provisioning + Terraform module + migration + 
 - Dry-run report identifies tenants + estimated duration + edge cases.
 - Approval gate before execute prevents catastrophic migration.
 
-### 9.6 Why custom domain `{region}.api.corelink.dev` (NÃO smart routing only)
+### 9.6 Why custom domain `{region}.api.corelink.humangr.com` (NÃO smart routing only)
 
 - Smart routing implicit (CF chooses region); customer cannot verify routing.
-- Explicit `{region}.api.corelink.dev` allows customer-side verification.
-- Falls back to `api.corelink.dev` smart routing for non-region-aware clients.
+- Explicit `{region}.api.corelink.humangr.com` allows customer-side verification.
+- Falls back to `api.corelink.humangr.com` smart routing for non-region-aware clients.
 
 ### 9.7 Why chaos test region outage cada região (NÃO single representative)
 
@@ -494,7 +494,7 @@ Feature: WI-S14-001 — 4 regions provisioning + Terraform module + migration + 
 - [ ] **10.s14.001.6** Migration script Rust binary + dry-run + execute + rollback paths green em staging (EVT-024).
 - [ ] **10.s14.001.7** Runbook RB-region committed + dry-run executed (EVT-017).
 - [ ] **10.s14.001.8** Chaos test region outage cada região (4 scenarios) verde; reports committed (EVT-023).
-- [ ] **10.s14.001.9** Custom domain `{region}.api.corelink.dev` routing test verde; SSL certs valid per-region (EVT-013).
+- [ ] **10.s14.001.9** Custom domain `{region}.api.corelink.humangr.com` routing test verde; SSL certs valid per-region (EVT-013).
 - [ ] **10.s14.001.10** Terraform state em R2 versioning + integrity hash + 90d retention (EVT-002).
 - [ ] **10.s14.001.11** Cost regression gate: 4 regions infra ≤ $800/mês (4× R2 + 4× D1 + 4× DO).
 - [ ] **10.s14.001.12** SOC 2 CC6.1 + Schrems II + LGPD Art. 33 attestation em PRR doc (EVT-044).

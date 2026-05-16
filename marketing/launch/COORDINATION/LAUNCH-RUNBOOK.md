@@ -59,7 +59,7 @@
 | Time | Action | Owner |
 |---|---|---|
 | T-0 06:00 PT | **Press release wire: BusinessWire** (primary) — embargo lifts. PR Newswire (secondary) goes at T+2h. | PR firm |
-| T-0 06:00 PT | **Blog post 01 publishes** on `corelink.dev/blog`. | Marketing |
+| T-0 06:00 PT | **Blog post 01 publishes** on `corelink.humangr.com/blog`. | Marketing |
 | T-0 06:00 PT | **Trust center embargoed assets** unlocked: TLA+ specs, SBOM, pentest summary letter (NDA-gated), DPA package. | Marketing + Trust Engineering |
 | T-0 06:30 PT | **Inbound press monitoring** begins. PR firm fields journalist follow-ups. | PR firm |
 

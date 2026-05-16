@@ -47,7 +47,7 @@ proptest! {
     ) {
         let (sink, creator) = make();
         let customer = format!("cus_{suffix}");
-        let return_url = "https://app.corelink.dev/customer/billing";
+        let return_url = "https://app.corelink.humangr.com/customer/billing";
         let tenant = "tenant_acme";
 
         let mut urls = Vec::with_capacity(n);

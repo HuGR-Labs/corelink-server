@@ -130,7 +130,7 @@ JWT validation é boundary crítico: vulnerabilidades clássicas (alg=none confu
 
 **Persona 1 — Dev fazendo `bazel build` first time**:
 - Auth flow: dashboard SSO Clerk → JWT emitido → CLI generates PAT (separate flow S-03 WI-002) → CLI auth com PAT.
-- JWT path direct: usuário acessa `dashboard.corelink.dev` → Clerk JS SDK → JWT em cookie → API call para `dashboard-api.corelink.dev/me` → ClerkAdapter valida → returns user info.
+- JWT path direct: usuário acessa `dashboard.corelink.humangr.com` → Clerk JS SDK → JWT em cookie → API call para `dashboard-api.corelink.humangr.com/me` → ClerkAdapter valida → returns user info.
 - Customer-visible error: `401 invalid_token` se signature/issuer/audience invalid; `412 tenant_not_provisioned` se org criado mas Neon não tem registro (race condition).
 
 **Persona 2 — Admin gerenciando tokens**:
@@ -222,14 +222,14 @@ Feature: ClerkAdapter JWT validate
 
   Background:
     Given ClerkAdapter configured with
-      issuer_allowlist = ["https://clerk.corelink.dev"]
+      issuer_allowlist = ["https://clerk.corelink.humangr.com"]
       audience = "corelink-api"
       jwks cached with kid_v1 RS256 public key
       clock_skew = 60s
 
   Scenario: Valid JWT signed by current key
     Given JWT signed by kid_v1 with valid claims
-      | iss | https://clerk.corelink.dev |
+      | iss | https://clerk.corelink.humangr.com |
       | aud | corelink-api |
       | sub | user_2abc |
       | org_id | org_xyz |
@@ -271,7 +271,7 @@ Feature: ClerkAdapter JWT validate
   Scenario: Issuer not in allowlist rejected
     Given JWT iss = "https://clerk.attacker.com"
     When validate(jwt) called
-    Then Result::Err(AuthError::IssuerMismatch { got: "https://clerk.attacker.com", expected: "https://clerk.corelink.dev" })
+    Then Result::Err(AuthError::IssuerMismatch { got: "https://clerk.attacker.com", expected: "https://clerk.corelink.humangr.com" })
 
   Scenario: KID rotation triggers JWKS refresh
     Given JWKS cached with kid_v1 only
@@ -324,8 +324,8 @@ Alternativa rejeitada: `jwt` crate (deprecated, no audit history); `josekit` (ov
 ### 9.4 Why issuer allowlist (não single string)
 
 - Multi-instance Clerk: staging vs prod distinct issuers.
-- Allowlist permite operar com `["https://clerk.staging.corelink.dev", "https://clerk.corelink.dev"]` em test envs sem hardcode prod.
-- Exact match (não prefix); evitar `https://clerk.corelink.dev.attacker.com` confusion.
+- Allowlist permite operar com `["https://clerk.staging.corelink.humangr.com", "https://clerk.corelink.humangr.com"]` em test envs sem hardcode prod.
+- Exact match (não prefix); evitar `https://clerk.corelink.humangr.com.attacker.com` confusion.
 
 ### 9.5 Why lazy JWKS refresh em KID miss
 

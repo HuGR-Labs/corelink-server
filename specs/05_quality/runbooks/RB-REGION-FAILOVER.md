@@ -51,14 +51,14 @@ SELECT * FROM dr_outage_log ORDER BY declared_at DESC LIMIT 5;
 
 1. **Declare outage** (starts canonical RTO measurement):
    ```bash
-   curl -X POST "https://corelink.dev/_admin/declare-outage" \
+   curl -X POST "https://corelink.humangr.com/_admin/declare-outage" \
      -H "Authorization: Bearer $ADMIN_TOKEN" \
      -d '{"region":"'$REGION'","reason":"<short>"}'
    ```
    This records `t_outage_declared` for RTO/RPO metrics (WI-S17-002).
 2. **Activate failover region**:
    ```bash
-   curl -X POST "https://corelink.dev/_admin/region-failover" \
+   curl -X POST "https://corelink.humangr.com/_admin/region-failover" \
      -H "Authorization: Bearer $ADMIN_TOKEN" \
      -d '{"failed":"'$REGION'","target":"'$TARGET_REGION'"}'
    ```
@@ -130,7 +130,7 @@ during the transition. ETA to full recovery: ~30 min. Next update: +10 min.
 ```
 [Identified] Traffic from {REGION} has been routed to {TARGET_REGION}.
 Service is operational. We are investigating root cause and will provide
-a post-incident report within 14 days at status.corelink.dev/incidents.
+a post-incident report within 14 days at status.corelink.humangr.com/incidents.
 ```
 
 ## Post-incident

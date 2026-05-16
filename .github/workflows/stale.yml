@@ -74,7 +74,7 @@ jobs:
             If this is a real bug, please add reproduction steps with an
             `audit_id` (see `.github/ISSUE_TEMPLATE/bug_report.yml`). If this
             is a security report, do NOT continue here — see `SECURITY.md`
-            and email `security@corelink.dev`.
+            and email `security@humangr.com`.
           stale-pr-message: |
             This pull request has had no activity for **60 days**. It will
             be closed in **14 days** unless:

@@ -88,7 +88,7 @@ of the sealed sprint contracts.
 | **Wave-26** | **GA-1 feature freeze** (`74b8faa` — engineering corpus feature-complete from here forward); INV-CRITICAL TLA final audit (61 / 61 CRITICAL TLA+-proved, **Z = 0 milestone established**); Lote 6 v1.0.0 GA RC2 absorption; wasm32 baseline lock + getrandom fix; CF Worker prefetch wire; release notes v1.0.0 GA DRAFT (`6ce134b`); **production-tier dress-run scoring 9.36 / 10 PROCEED** + v1.0.0-GA tag draft; wave-25 adversarial review (9.00 / 10 PASS); DEBT-026 RFP tracker | `specs/_audits/2026-05-16-wave26-closure.md` |
 | **Wave-27** | **GA cutover wave** (anchor) — final cutover-readiness verdict CONDITIONAL GO; 7-day endurance soak streak harness dispatched; Statuspage T-7d provisioning rehearsal; ShadowSinkFactory partial consumer adoption; wave-26 adversarial review prep; post-GA continuity runbook; pilot admin shell scripts + dashboard SSOT | `specs/_audits/2026-05-16-wave27-closure.md` |
 | **Wave-28** | Cutover-prep automation wave — AWS Artifact fetch automation (DEBT-003 engineering-CLOSED); pilot-announcement comms package; Statuspage provisioning automation (DEBT-016 engineering-CLOSED); pentest finding absorption framework (7-state machine, 48 test cases); LFPDPPP MX engagement final (DEBT-025 engineering-CLOSED); pentest RFP send ceremony (DEBT-026 engineering-CLOSED); pre-cutover weekly verification cron; wave-28 adversarial review **8.96 / 10 PASS** | `specs/_audits/2026-05-16-wave28-adversarial-review.md` |
-| **Wave-29** | **Cutover-wait-state + customer-acquisition wave** — engineering corpus feature-complete since wave-26 GA-1 freeze. signup.corelink.dev backend + landing page + pilot admin web UI (DEBT-027 engineering-CLOSED); ShadowSinkFactory full adoption (wave-21 → -27 → -29 follow-on chain); customer-facing artefacts (audit-chain viz UI + pricing page calculator + trust center publish); perf-baseline GA freeze snapshot; DEBT register: **8 nominally OPEN → 5 engineering-CLOSED operator-bound + 3 engineering-side P1 partial** | `specs/_audits/2026-05-16-wave29-closure.md` |
+| **Wave-29** | **Cutover-wait-state + customer-acquisition wave** — engineering corpus feature-complete since wave-26 GA-1 freeze. signup.corelink.humangr.com backend + landing page + pilot admin web UI (DEBT-027 engineering-CLOSED); ShadowSinkFactory full adoption (wave-21 → -27 → -29 follow-on chain); customer-facing artefacts (audit-chain viz UI + pricing page calculator + trust center publish); perf-baseline GA freeze snapshot; DEBT register: **8 nominally OPEN → 5 engineering-CLOSED operator-bound + 3 engineering-side P1 partial** | `specs/_audits/2026-05-16-wave29-closure.md` |
 
 ### Added — production wiring + customer-facing surfaces
 
@@ -112,7 +112,7 @@ of the sealed sprint contracts.
   (waves 22 – 23).
 - **24-hour endurance harness** — built wave-22; 10-minute dress-run
   wave-25; soak scheduled in the pre-cutover T-24h window.
-- **Statuspage** at `status.corelink.dev` — URL-substitution mechanism
+- **Statuspage** at `status.corelink.humangr.com` — URL-substitution mechanism
   (wave-24), dress-rehearsed wave-25.
 - **External pentest engagement** — scope frozen wave-25
   (`specs/_audits/2026-05-16-pre-ga-pentest-scope.md` +
@@ -158,7 +158,7 @@ of the sealed sprint contracts.
 - **Pre-cutover weekly verification cron** (wave-28) — automated
   weekly green-light digest against the cutover commit base.
 - **Pilot announcement comms package** (wave-28).
-- **signup.corelink.dev backend + landing page** (wave-29 streams #1, #2) —
+- **signup.corelink.humangr.com backend + landing page** (wave-29 streams #1, #2) —
   token-based pilot-slot reservation; idempotent token issuance + 24h
   replay-safe consumption; 4-section public landing (hero / value-prop
   / 3-tier pricing-summary / signup form). DEBT-027 engineering-CLOSED.

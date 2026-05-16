@@ -24,11 +24,11 @@ Quick context on what we're shipping and why we think it matters.
 
 **Links.**
 
-- Site: corelink.dev
-- Docs: docs.corelink.dev
-- Trust center: corelink.dev/trust
-- Blog series (launch day): corelink.dev/blog
-- TLA+ specs: corelink.dev/trust/formal-verification
+- Site: corelink.humangr.com
+- Docs: docs.corelink.humangr.com
+- Trust center: corelink.humangr.com/trust
+- Blog series (launch day): corelink.humangr.com/blog
+- TLA+ specs: corelink.humangr.com/trust/formal-verification
 
 I'll be here through the launch day responding. Thank you to **[HUNTER_NAME]** for the hunt, and to the engineers — both inside HuGR and at our three lighthouse customers — who got this to a place where we could ship it without flinching.
 

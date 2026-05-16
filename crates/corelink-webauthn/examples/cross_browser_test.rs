@@ -28,11 +28,11 @@ const CEREMONIES: [&str; 4] = [
 ];
 
 fn main() {
-    let cfg = EngineConfig::builder(RpId::new("corelink.dev").unwrap(), "CoreLink")
+    let cfg = EngineConfig::builder(RpId::new("corelink.humangr.com").unwrap(), "CoreLink")
         .origins(
             OriginAllowlist::from_strings([
-                "https://app.corelink.dev",
-                "https://admin.corelink.dev",
+                "https://app.corelink.humangr.com",
+                "https://admin.corelink.humangr.com",
             ])
             .unwrap(),
         )
@@ -73,7 +73,7 @@ fn main() {
                         COSE_ALG_ES256,
                         AuthenticatorFlags::up_uv(),
                         0,
-                        Origin::parse("https://app.corelink.dev").unwrap(),
+                        Origin::parse("https://app.corelink.humangr.com").unwrap(),
                     ),
                 )
                 .unwrap();
@@ -87,7 +87,7 @@ fn main() {
                     cred,
                     AuthenticatorFlags::up_uv(),
                     SignCount::new(1),
-                    Origin::parse("https://app.corelink.dev").unwrap(),
+                    Origin::parse("https://app.corelink.humangr.com").unwrap(),
                 );
                 engine.finish_authentication(auth.id(), response).unwrap();
             }

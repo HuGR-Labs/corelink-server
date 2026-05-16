@@ -423,7 +423,7 @@ async function main(): Promise<void> {
     "4. Preserve every `{{variable}}`, `$VAR`, `<Component>` placeholder verbatim.",
     "5. Return the same `.xlf` files (same directory structure) as a tarball.",
     "",
-    "Questions: docs@corelink.dev",
+    "Questions: docs@humangr.com",
     "",
   ].join("\n");
   await fs.writeFile(path.join(DIST_DIR, "README.md"), readme, "utf8");

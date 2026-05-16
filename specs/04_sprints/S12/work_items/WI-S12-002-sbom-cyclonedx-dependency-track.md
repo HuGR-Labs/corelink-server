@@ -293,7 +293,7 @@ Feature: SBOM CycloneDX 1.5+ generation + NTIA + TSA + DT ingestion
     And cargo-cyclonedx pinned at 0.5.x
     And cyclonedx-cli pinned at 0.27.x
     And TSA endpoint = "https://tsa.sigstore.dev/api/v1/timestamp"
-    And DT endpoint = "https://dt.corelink.dev/api/v1/bom"
+    And DT endpoint = "https://dt.corelink.humangr.com/api/v1/bom"
 
   Scenario: Release triggers SBOM generation pipeline
     Given a release tag v0.X.Y published

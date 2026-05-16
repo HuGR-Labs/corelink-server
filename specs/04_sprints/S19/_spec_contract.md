@@ -107,8 +107,8 @@ inherits_from:
 
 - **R-S19-9**: First-run experience:
   - First PAT shown (only-once per S-16 R-S16-8).
-  - CLI install command rendered (e.g., `curl -fsSL https://corelink.dev/cli | sh`).
-  - Quickstart link to `docs.corelink.dev/quickstart` (S-18).
+  - CLI install command rendered (e.g., `curl -fsSL https://corelink.humangr.com/cli | sh`).
+  - Quickstart link to `docs.corelink.humangr.com/quickstart` (S-18).
   - Optional in-app tour (S-16 frontend consume).
 - **R-S19-10**: Enterprise inquiry form:
   - Form fields: company, role, expected GB/mo, BYOK requirements, residency requirements.

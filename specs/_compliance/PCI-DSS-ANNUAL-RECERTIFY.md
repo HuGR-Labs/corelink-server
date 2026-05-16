@@ -115,7 +115,7 @@ grep -rEn 'card_number|cvv|cvc|\bpan\b' specs/03_architecture/data_model.md
 - [ ] Re-confirm logpush redaction tests still green:
       `cargo test -p corelink-logpush --test pii_redaction_100k_synthetic`.
 - [ ] Re-confirm CSP on the live checkout page:
-      `curl -sI https://billing.corelink.dev/checkout | grep -i content-security-policy`
+      `curl -sI https://billing.corelink.humangr.com/checkout | grep -i content-security-policy`
       → must include `script-src 'self' https://js.stripe.com`
       (no analytics, no tag manager, no chat widget).
 
@@ -180,7 +180,7 @@ grep -rEn 'card_number|cvv|cvc|\bpan\b' specs/03_architecture/data_model.md
 
 ### Step 8 — Communicate
 
-- [ ] Send a one-line note to `trust@corelink.dev` distribution list:
+- [ ] Send a one-line note to `trust@humangr.com` distribution list:
       "SAQ-A re-attested YYYY-MM-DD; next due YYYY-MM-DD."
 - [ ] Update the public trust page (already covered in Step 6).
 - [ ] Notify procurement teams of the 5 largest customers (Drata

@@ -25,12 +25,12 @@ import (
     "os"
     "time"
 
-    corelink "go.corelink.dev/corelink-go"
+    corelink "go.corelink.humangr.com/corelink-go"
 )
 
 func main() {
     client, _ := corelink.NewClient(context.Background(), corelink.Config{
-        Endpoint: "https://acme-dev.corelink.dev",
+        Endpoint: "https://acme-dev.corelink.humangr.com",
         PAT:      os.Getenv("CORELINK_PAT"),
     })
     http.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {

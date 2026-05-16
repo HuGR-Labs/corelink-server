@@ -66,7 +66,7 @@ _Snippets are auto-generated from the OpenAPI contract. Replace `<YOUR_PAT>` wit
 
 ```bash
 curl -X POST \
-  'https://api.corelink.dev/v1/admin/ops' \
+  'https://api.corelink.humangr.com/v1/admin/ops' \
   -H 'Authorization: Bearer <YOUR_PAT>' \
   -H 'X-Admin-Operation-Reason: string' \
   -H 'Content-Type: application/json' \
@@ -98,7 +98,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
     "#)?;
     let resp = client
-        .post("https://api.corelink.dev/v1/admin/ops")
+        .post("https://api.corelink.humangr.com/v1/admin/ops")
         .header("Authorization", "Bearer <YOUR_PAT>")
         .header("X-Admin-Operation-Reason", "string")
         .header("Content-Type", "application/json")
@@ -131,7 +131,7 @@ def main() -> None:
   "op_type": "ConfigRollback"
 }
     resp = httpx.post(
-        "https://api.corelink.dev/v1/admin/ops",
+        "https://api.corelink.humangr.com/v1/admin/ops",
         headers=headers,
         json=body,
     )
@@ -162,7 +162,7 @@ func main() {
   "op_payload": {},
   "op_type": "ConfigRollback"
 }`)
-    req, err := http.NewRequest("POST", "https://api.corelink.dev/v1/admin/ops", bytes.NewReader(body))
+    req, err := http.NewRequest("POST", "https://api.corelink.humangr.com/v1/admin/ops", bytes.NewReader(body))
     if err != nil {
         panic(err)
     }
@@ -182,7 +182,7 @@ func main() {
 ### JavaScript (fetch)
 
 ```javascript
-const resp = await fetch("https://api.corelink.dev/v1/admin/ops", {
+const resp = await fetch("https://api.corelink.humangr.com/v1/admin/ops", {
   method: "POST",
   headers: {
     "Authorization": "Bearer <YOUR_PAT>",

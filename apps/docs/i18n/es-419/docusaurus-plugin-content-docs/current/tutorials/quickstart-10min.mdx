@@ -49,7 +49,7 @@ brew install humangr-labs/tap/corelink
 Or, if you don't use Homebrew:
 
 ```bash
-curl -fsSL https://releases.corelink.dev/cli/latest/corelink-darwin-arm64.tar.gz \
+curl -fsSL https://releases.corelink.humangr.com/cli/latest/corelink-darwin-arm64.tar.gz \
   | tar -xz -C /usr/local/bin
 ```
 
@@ -57,7 +57,7 @@ curl -fsSL https://releases.corelink.dev/cli/latest/corelink-darwin-arm64.tar.gz
 <TabItem value="linux" label="Linux">
 
 ```bash
-curl -fsSL https://releases.corelink.dev/cli/latest/corelink-linux-amd64.tar.gz \
+curl -fsSL https://releases.corelink.humangr.com/cli/latest/corelink-linux-amd64.tar.gz \
   | sudo tar -xz -C /usr/local/bin
 ```
 
@@ -89,7 +89,7 @@ CoreLink authenticates every operation with a **Personal Access Token
 (PAT)**. For the quickstart we use a *sandbox* PAT that auto-creates a
 24h-TTL tenant on first use — no billing setup required.
 
-1. Visit **[https://app.corelink.dev/sandbox](https://app.corelink.dev/sandbox)** and sign in with Google, GitHub, or email (Clerk-backed; no credit card prompted).
+1. Visit **[https://app.corelink.humangr.com/sandbox](https://app.corelink.humangr.com/sandbox)** and sign in with Google, GitHub, or email (Clerk-backed; no credit card prompted).
 2. Click **Create sandbox PAT**. The PAT format is `corelink_sandbox_t_xxx.xxx.xxx`.
 3. Export it in your shell — the CLI reads from `CORELINK_PAT` by design (PAT flags are rejected per security control CTRL-CRED-001):
 
@@ -209,7 +209,7 @@ corelink stat "$DIGEST" --output json
 
 That JSON includes the timestamps and counters that the admin UI
 surfaces in **Audit → Events**. For a full audit-trail dashboard with
-actor identity and IP, sign in to [app.corelink.dev](https://app.corelink.dev) and open
+actor identity and IP, sign in to [app.corelink.humangr.com](https://app.corelink.humangr.com) and open
 your tenant → **Audit** tab. The same data is available via the
 [REST API `/v1/audit/events`](../reference/api/openapi.mdx) endpoint
 (see the FAQ for the exact filter syntax).
@@ -282,7 +282,7 @@ print(f"size={stat.size_bytes} exists={stat.exists}")
 <TabItem value="go" label="Go">
 
 ```bash
-go get go.corelink.dev/corelink-go@latest
+go get go.corelink.humangr.com/corelink-go@latest
 ```
 
 ```go
@@ -292,7 +292,7 @@ import (
     "fmt"
     "os"
 
-    corelink "go.corelink.dev/corelink-go"
+    corelink "go.corelink.humangr.com/corelink-go"
 )
 
 func main() {

@@ -3,7 +3,7 @@
 > **STATUS:** DRAFT — pending Legal review (Cooley / DLA Piper / Bird & Bird per WI-S20-005) + PR firm review + CEO sign-off.
 > **EMBARGO:** Tied to **Engineering Gate D-day + 24h** (per spec contract §6.1 binary GA-go decision). NOT FOR DISTRIBUTION UNTIL Engineering Gate APPROVED and embargo lift instruction issued by Owner / Final Approver.
 > **WIRE SERVICE:** BusinessWire (primary) · PR Newswire (secondary).
-> **MEDIA CONTACT:** press@corelink.dev
+> **MEDIA CONTACT:** press@humangr.com
 
 ---
 
@@ -43,7 +43,7 @@ Every claim below traces to a canonical CoreLink spec source, an external letter
 
 ## Pricing
 
-Tiered pricing across Free / Team / Enterprise. Specific list prices are available at `corelink.dev/pricing` and in customer-facing collateral; reference pricing is denoted in collateral as `$X` placeholders pending finalization by Finance.
+Tiered pricing across Free / Team / Enterprise. Specific list prices are available at `corelink.humangr.com/pricing` and in customer-facing collateral; reference pricing is denoted in collateral as `$X` placeholders pending finalization by Finance.
 
 ## Quote slots
 
@@ -72,7 +72,7 @@ Tiered pricing across Free / Team / Enterprise. Specific list prices are availab
 
 **About HuGR Labs.** HuGR Labs ("Human Guardrail") is a developer infrastructure company building tooling that makes high-leverage engineering work auditable, governable, and humane by default. Founded by **[FOUNDER_NAME(S)]** in **[FOUNDING_YEAR]**, the company is headquartered in **[HQ_LOCATION]**. HuGR Labs is funded by **[INVESTOR_PLACEHOLDERS]**. Total funding to date: **$X** (placeholder pending Finance confirmation). Additional information is available at `humangr.com`.
 
-**About CoreLink.** CoreLink is HuGR Labs' first commercial product, in development since 2026-04-23 (canonical naming decision) and reaching General Availability after twenty-one engineering sprints culminating in S-20 GA Readiness. Additional information is available at `corelink.dev`.
+**About CoreLink.** CoreLink is HuGR Labs' first commercial product, in development since 2026-04-23 (canonical naming decision) and reaching General Availability after twenty-one engineering sprints culminating in S-20 GA Readiness. Additional information is available at `corelink.humangr.com`.
 
 ## Forward-looking statements
 
@@ -80,8 +80,8 @@ This release contains forward-looking statements regarding planned product capab
 
 ## Media contact
 
-**press@corelink.dev**
-Press kit, embargoed assets, executive bios, and high-resolution logos: `corelink.dev/press` (gated until embargo lift).
+**press@humangr.com**
+Press kit, embargoed assets, executive bios, and high-resolution logos: `corelink.humangr.com/press` (gated until embargo lift).
 
 ## Wire distribution
 

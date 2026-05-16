@@ -36,14 +36,14 @@ TypeScript builds; they should be treated as illustrative, not benchmark-able.
 Forge migrated from a local-disk-only Bazel cache to CoreLink remote cache
 during the S-15 development window. The migration consisted of:
 
-1. `curl -fsSL https://corelink.dev/install.sh | sh` to install the CLI on
+1. `curl -fsSL https://corelink.humangr.com/install.sh | sh` to install the CLI on
    each developer machine + the CI runner image.
 2. `corelink config set auth.pat <PAT>` (PAT issued via the admin UI;
    stored in `~/.corelink/config.toml` with 0o600 permissions per
    CTRL-CRED-001).
 3. Drop-in `.bazelrc` snippet:
    ```
-   build --remote_cache=grpc://corelink.dev:443
+   build --remote_cache=grpc://corelink.humangr.com:443
    build --remote_header=authorization=Bearer ${CORELINK_PAT}
    build --remote_upload_local_results=true
    ```

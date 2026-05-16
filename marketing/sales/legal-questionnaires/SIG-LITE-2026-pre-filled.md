@@ -27,7 +27,7 @@ tags: ["sales", "legal", "questionnaire", "sig-lite", "shared-assessments", "pro
 > - CoreLink is **PCI DSS SAQ-A self-attested 2026-05-15** — not externally audited; Stripe (PCI L1 Service Provider) handles all CHD (`specs/_compliance/PCI-DSS-SAQ-A-2026-05-15.md`).
 > - CoreLink does **not** claim FedRAMP, HIPAA BAA, or any government certification. Crosswalk to NIST 800-53 Rev 5 Moderate available on request (`specs/_compliance/FEDRAMP-MODERATE-CROSSWALK-2026-05-15.md`); not a substitute for ATO.
 >
-> **Evidence delivery:** all NDA-gated artifacts route via `trust@corelink.dev` within 1 business day of countersigned NDA.
+> **Evidence delivery:** all NDA-gated artifacts route via `trust@humangr.com` within 1 business day of countersigned NDA.
 >
 > **Companion docs:** `CAIQ-V4-pre-filled.md`, `VENDOR-QUESTIONNAIRE-RESPONSE-TEMPLATE.md`, `EVIDENCE-PACK-INDEX.md`, `RESPONSE-SLA-POLICY.md`.
 
@@ -59,7 +59,7 @@ Legend:
 | A.2 | Is your risk assessment performed at least annually? | Y | Yes — quarterly cadence for Critical vendors; biannual for Important; annual for Standard. Operational runbook `specs/_runbooks/RB-VENDOR-RISK-QUARTERLY-REVIEW.md`. Next full register refresh 2026-08-15. | `specs/_compliance/VENDOR-RISK-REGISTER.md` §1 |
 | A.3 | Do you maintain an issue/exception/waiver register? | Y | Yes — 33-GAP register in `specs/_compliance/SOC2-GAP-ANALYSIS.md` with severity, owner, ETA. Waiver pattern `WAIVER-YYYYMMDD-NNN` enforced by `scripts/validate_references.py`. Top-5 GAPs published in SOC 2 evidence rollup §3.4. | `specs/_compliance/SOC2-GAP-ANALYSIS.md`; `specs/_compliance/SOC2-EVIDENCE-ROLLUP-2026-05-15.md` §3.4 |
 | A.4 | Have you completed a third-party risk assessment / pentest in the last 12 months? | P | Pentest scheduled pre-GA; summaries from internal adversarial reviews + cargo-fuzz at `specs/_audits/2026-05-14-cargo-fuzz-summary-s15.md`. Full external pentest scoped under R-6 staging-bake (T-30d pre-GA). | `specs/_audits/2026-05-14-cargo-fuzz-summary-s15.md`; `apps/docs/docs/trust/index.mdx` |
-| A.5 | Do you carry cyber-liability insurance? | P | Founder-stage; broker engagement scheduled Q3-2026 with ≥ $5M aggregate target. Evidence available on award of contract. | Available on request at `trust@corelink.dev` |
+| A.5 | Do you carry cyber-liability insurance? | P | Founder-stage; broker engagement scheduled Q3-2026 with ≥ $5M aggregate target. Evidence available on award of contract. | Available on request at `trust@humangr.com` |
 | A.6 | Is there an executive sponsor accountable for information security? | Y | Yes — Founder + VP-Sec (Gustavo Schneiter, 13-role sign-off model documented in `specs/_governance/`). DPO appointment per `specs/_compliance/DPO-APPOINTMENT-2026-05-15.md`. | `specs/_compliance/DPO-APPOINTMENT-2026-05-15.md`; `specs/_governance/` |
 | A.7 | Do you align to a published security framework (NIST CSF, ISO 27001, CIS)? | Y | Aligned to AICPA TSC 2017+2022 PoF (SOC 2 target Q4-2026) and ISO/IEC 27001:2022 (cert target Q1-2027; 98.9% in-scope Annex A coverage on internal crosswalk). NIST 800-53 Rev 5 Moderate crosswalk informational. | `specs/_compliance/SOC2-EVIDENCE-ROLLUP-2026-05-15.md`; `specs/_compliance/ISO27001-CROSSWALK-2026-05-15.md`; `apps/docs/docs/trust/iso27001.mdx` |
 | A.8 | Do you have a continuous compliance / GRC platform? | Y | Yes — Drata. 6 EvidenceStream variants; 90.7% strict auto-collection; 96.4% green; weekly digest landed 2026-05-15. | `specs/_compliance/DRATA-INTEGRATION-COVERAGE.md`; `specs/_compliance/weekly-digests/` |
@@ -80,7 +80,7 @@ Legend:
 | # | Question | A | CoreLink answer | Evidence |
 |---|---|---|---|---|
 | C.1 | Do you have a designated CISO / security lead? | Y | Yes — Founder + VP-Sec (Gustavo Schneiter). 13-role sign-off matrix in `specs/_governance/`. | `specs/_governance/` |
-| C.2 | Is there a designated Data Protection Officer? | Y | Yes — DPO appointed 2026-05-15 (`specs/_compliance/DPO-APPOINTMENT-2026-05-15.md`); contact `dpo@corelink.dev`. Responsibilities matrix `specs/_compliance/DPO-RESPONSIBILITIES-MATRIX.md`. | `specs/_compliance/DPO-APPOINTMENT-2026-05-15.md`; `specs/_compliance/DPO-RESPONSIBILITIES-MATRIX.md` |
+| C.2 | Is there a designated Data Protection Officer? | Y | Yes — DPO appointed 2026-05-15 (`specs/_compliance/DPO-APPOINTMENT-2026-05-15.md`); contact `dpo@humangr.com`. Responsibilities matrix `specs/_compliance/DPO-RESPONSIBILITIES-MATRIX.md`. | `specs/_compliance/DPO-APPOINTMENT-2026-05-15.md`; `specs/_compliance/DPO-RESPONSIBILITIES-MATRIX.md` |
 | C.3 | Are security responsibilities documented at the role level? | Y | Yes — sprint-contract §5.1 sign-off model; WI frontmatter (`assignee`/`owner`/`final_approver`/`reviewers`) validated via `scripts/validate_specs.py`. | `scripts/validate_specs.py`; `specs/04_sprints/` |
 | C.4 | Do you maintain a segregation-of-duties model? | Y | Dual-approval pattern `PAT-DUAL-APPROVAL-001` for destructive operations; GitHub branch protection; signed-deploy + Rekor for releases. | `specs/03_architecture/security_model.md` PAT-DUAL-APPROVAL-001; SOC 2 rollup §2.8 (CC8.1) |
 | C.5 | Do you contract with external legal / compliance counsel? | Y | Yes — external counsel engagement per `legal/legal-externo-engagement-contract.md`. Three DPA locales (EN-EU+UK, PT-BR, ES-LATAM) reviewed by external counsel. | `legal/legal-externo-engagement-contract.md`; `legal/dpa/v1.0.0` |
@@ -103,7 +103,7 @@ Legend:
 
 | # | Question | A | CoreLink answer | Evidence |
 |---|---|---|---|---|
-| E.1 | Are background checks performed at hire? | P | Practice in place for employees + contractors; formal documented procedure consolidated under HR-policy refresh Q3-2026. Available on award. | Available on request at `trust@corelink.dev` |
+| E.1 | Are background checks performed at hire? | P | Practice in place for employees + contractors; formal documented procedure consolidated under HR-policy refresh Q3-2026. Available on award. | Available on request at `trust@humangr.com` |
 | E.2 | Do you maintain confidentiality / NDA agreements? | Y | All personnel sign NDA at onboarding; per-advisor NDA at engagement (advisor-pool consolidation pending — GAP-04). Customer-facing DPA at `legal/dpa/v1.0.0`. | `specs/_governance/`; `legal/dpa/v1.0.0` |
 | E.3 | Is security-awareness training provided at hire + annually? | P | Drata-tracked attestation (employee-attestation tracker is one of Drata's modules — see vendor row 7 in VRR). Annual refresh cadence in place. | `specs/_compliance/VENDOR-RISK-REGISTER.md` row 7 |
 | E.4 | Are role-based training tracks defined (eng, privacy, support)? | P | Role-based competence matrix planned T+3m — **GAP-05** in SOC 2 rollup §2.1 (CC1.4). | SOC 2 rollup CC1.4; GAP-05 |
@@ -190,7 +190,7 @@ Legend:
 | K.5 | Do you support LGPD (Brazil)? | Y | Yes. DPO appointed; `sam` region pin for BR tenants; `INV-REGION-NO-CROSS-LEAK`; 72h ANPD notification. Residency attestation `specs/_compliance/LGPD-RESIDENCY-ATTESTATION-2026-05-15.md` verified nightly by `scripts/verify-lgpd-residency.py`. | `specs/_compliance/LGPD-FULL-AUDIT-2026-05-15.md`; `specs/_compliance/LGPD-RESIDENCY-ATTESTATION-2026-05-15.md` |
 | K.6 | Do you have a HIPAA BAA? | N | **Out of scope by design.** CoreLink is a build-artefact cache; it does not handle PHI. We do **not** sign BAAs. Infrastructure substrate (CF/AWS/GCP/Azure) is HIPAA-aligned but CoreLink product surface is not engineered for PHI. | `apps/docs/docs/trust/compliance.mdx`; FAQ-MASTER C5 |
 | K.7 | Are you FedRAMP authorized? | N | **No, and not in the near-term roadmap.** NIST 800-53 Rev 5 Moderate crosswalk at 87% (informational only — not a substitute for ATO). FedRAMP rationale: `specs/_compliance/FEDRAMP-NOT-IN-SCOPE-RATIONALE.md`. CSA STAR Level 1 / CAIQ available on request. | `specs/_compliance/FEDRAMP-MODERATE-CROSSWALK-2026-05-15.md`; `apps/docs/docs/trust/fedramp-info.mdx` |
-| K.8 | Are you CSA STAR (CAIQ) listed? | P | CAIQ v4 self-assessment pre-filled response available immediately on request (~1 business day via `trust@corelink.dev`); STAR Registry submission decision pending Q1-2027 post SOC 2 Type I issuance. See companion `CAIQ-V4-pre-filled.md`. | `marketing/sales/legal-questionnaires/CAIQ-V4-pre-filled.md` |
+| K.8 | Are you CSA STAR (CAIQ) listed? | P | CAIQ v4 self-assessment pre-filled response available immediately on request (~1 business day via `trust@humangr.com`); STAR Registry submission decision pending Q1-2027 post SOC 2 Type I issuance. See companion `CAIQ-V4-pre-filled.md`. | `marketing/sales/legal-questionnaires/CAIQ-V4-pre-filled.md` |
 | K.9 | Are sub-processors disclosed? | Y | Public list at `apps/docs/docs/trust/subprocessors.mdx` (auto-generated from `VENDOR-RISK-REGISTER.md`); 11 active sub-processors. 30-day advance notice on additions/replacements per DPA §6. | `apps/docs/docs/trust/subprocessors.mdx`; `legal/sub-processors.md` |
 | K.10 | Are cross-border data transfers contractually governed? | Y | SCC Modules 2/3 in DPA + supplementary measures (BYOK envelope encryption, per-region pin). EDPB-aligned Schrems II TIA documented. | `specs/_compliance/GDPR-SCC-EXECUTION-2026-05-15.md`; `legal/dpa/v1.0.0` §6 |
 
@@ -210,7 +210,7 @@ Legend:
 | # | Question | A | CoreLink answer | Evidence |
 |---|---|---|---|---|
 | M.1 | Do you publish a privacy notice? | Y | Yes — privacy notice published; LGPD ROPA at `specs/_compliance/LGPD-ROPA-2026-05-15.md`. | `specs/_compliance/LGPD-ROPA-2026-05-15.md`; `apps/docs/docs/trust/data-handling.mdx` |
-| M.2 | Do you appoint a DPO / Privacy Officer? | Y | Yes — DPO appointed 2026-05-15 (`dpo@corelink.dev`). Privacy contact `privacy@corelink.dev`. | `specs/_compliance/DPO-APPOINTMENT-2026-05-15.md` |
+| M.2 | Do you appoint a DPO / Privacy Officer? | Y | Yes — DPO appointed 2026-05-15 (`dpo@humangr.com`). Privacy contact `privacy@humangr.com`. | `specs/_compliance/DPO-APPOINTMENT-2026-05-15.md` |
 | M.3 | Do you maintain a Records of Processing Activities (ROPA)? | Y | Yes — `specs/_compliance/LGPD-ROPA-2026-05-15.md`; equivalent GDPR ROPA covered under DPA §3. | `specs/_compliance/LGPD-ROPA-2026-05-15.md`; `legal/dpa/v1.0.0` §3 |
 | M.4 | Do you perform DPIAs for high-risk processing? | Y | DPIA library at `specs/_compliance/GDPR-DPIA-LIBRARY.md`; CI validator `scripts/validate_dpia.py`. | `specs/_compliance/GDPR-DPIA-LIBRARY.md` |
 | M.5 | Is consent captured and provable? | Y | 6-field consent JWT receipt (WI-S19-002) + `INV-CONSENT-PROOF-VERIFIABLE`. LIA template at `legal/lia/`. | SOC 2 rollup §2.13 (P-CONSENT); ADR-S11-003 |
@@ -264,7 +264,7 @@ The actual SIG Lite 2026 workbook includes ~130 questions; the remaining ~16 are
 ## Pre-flight checklist (before sending to prospect)
 
 - [ ] Confirm prospect NDA on file with Legal.
-- [ ] Confirm `trust@corelink.dev` is the response sender alias.
+- [ ] Confirm `trust@humangr.com` is the response sender alias.
 - [ ] Bundle artifacts per `EVIDENCE-PACK-INDEX.md`.
 - [ ] Watermark the response with prospect name + date.
 - [ ] Run answer-key against latest commit SHA (cite the SHA in cover letter).
@@ -288,7 +288,7 @@ The actual SIG Lite 2026 workbook includes ~130 questions; the remaining ~16 are
 
 | What you need | Where to send it |
 |---|---|
-| SIG Lite response request (countersigned NDA on file) | `trust@corelink.dev` |
-| Privacy / data-subject question | `privacy@corelink.dev` |
-| Security vulnerability report | `security@corelink.dev` |
-| Procurement / vendor-review forms | `trust@corelink.dev` |
+| SIG Lite response request (countersigned NDA on file) | `trust@humangr.com` |
+| Privacy / data-subject question | `privacy@humangr.com` |
+| Security vulnerability report | `security@humangr.com` |
+| Procurement / vendor-review forms | `trust@humangr.com` |

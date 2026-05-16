@@ -28,7 +28,7 @@ stages:
 variables:
   # CORELINK_PAT: set in GitLab CI/CD project variables (masked, protected).
   # Do NOT hardcode here — anti-pattern per CTRL-CRED-001.
-  BAZEL_REMOTE_CACHE: "https://<YOUR_TENANT_ID>.corelink.dev/v1/cache"
+  BAZEL_REMOTE_CACHE: "https://<YOUR_TENANT_ID>.corelink.humangr.com/v1/cache"
   BEP_JSON: "bazel-out/bep.json"
 
 # ── Default image ─────────────────────────────────────────────────────────────

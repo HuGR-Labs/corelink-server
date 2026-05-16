@@ -47,7 +47,7 @@ corelink bench --put 50 --get 50
 
 ## C. Admin UI dashboard
 
-1. Open `https://app.corelink.dev/orgs/<your-org>/observability`.
+1. Open `https://app.corelink.humangr.com/orgs/<your-org>/observability`.
 2. Pick **Cache hit ratio (5m, by tenant)**.
 3. Trigger a fresh build (`bazel clean && bazel build //...`).
 4. The series should jump to ~100% after the first warm pass.
@@ -61,6 +61,6 @@ The hit ratio Grafana panel is documented in `dashboards/cache_hit_ratio.json`; 
 | `hit_ratio=0%` on second build | local disk cache served the request, never touched remote | `bazel clean` and set `build --noremote_accept_cached=false` to force remote read |
 | `UNAUTHENTICATED` errors | PAT expired or wrong env | Re-run `corelink doctor --check-auth`, regenerate PAT |
 | `COR_CAS_DIGEST_MISMATCH` | bytes corrupted in transit | `client_verify` rejected the blob — file an issue, do not disable verify |
-| Slow `p95 > 50ms` | far from the nearest edge | Pin the closer region in `.bazelrc`: `build --remote_cache=https://<region>.<tenant>.corelink.dev/v1/cache` |
+| Slow `p95 > 50ms` | far from the nearest edge | Pin the closer region in `.bazelrc`: `build --remote_cache=https://<region>.<tenant>.corelink.humangr.com/v1/cache` |
 
 You finished the getting-started track. Continue to the [REAPI reference](../reference/reapi/index.mdx) for the full RPC surface.

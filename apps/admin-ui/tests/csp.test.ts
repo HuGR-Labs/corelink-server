@@ -36,10 +36,10 @@ describe("CSP header generation", () => {
     expect(buildCspHeaderValue("n")).toContain("report-uri /api/csp-report");
   });
 
-  it("allows clerk.corelink.dev for script + connect", () => {
+  it("allows clerk.corelink.humangr.com for script + connect", () => {
     const value = buildCspHeaderValue("n");
-    expect(value).toContain("https://clerk.corelink.dev");
-    expect(value).toContain("https://api.corelink.dev");
+    expect(value).toContain("https://clerk.corelink.humangr.com");
+    expect(value).toContain("https://api.corelink.humangr.com");
   });
 
   it("toggles report-only header name based on opts", () => {

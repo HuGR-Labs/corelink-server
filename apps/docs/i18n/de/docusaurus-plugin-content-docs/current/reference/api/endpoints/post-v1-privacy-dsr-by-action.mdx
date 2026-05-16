@@ -71,7 +71,7 @@ _Snippets are auto-generated from the OpenAPI contract. Replace `<YOUR_PAT>` wit
 
 ```bash
 curl -X POST \
-  'https://api.corelink.dev/v1/privacy/dsr/access' \
+  'https://api.corelink.humangr.com/v1/privacy/dsr/access' \
   -H 'Authorization: Bearer <YOUR_PAT>' \
   -H 'Content-Type: application/json' \
   -d '{
@@ -100,7 +100,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
     "#)?;
     let resp = client
-        .post("https://api.corelink.dev/v1/privacy/dsr/access")
+        .post("https://api.corelink.humangr.com/v1/privacy/dsr/access")
         .header("Authorization", "Bearer <YOUR_PAT>")
         .header("Content-Type", "application/json")
         .json(&body)
@@ -130,7 +130,7 @@ def main() -> None:
   "request_payload_hash": "0000000000000000000000000000000000000000000000000000000000000000"
 }
     resp = httpx.post(
-        "https://api.corelink.dev/v1/privacy/dsr/access",
+        "https://api.corelink.humangr.com/v1/privacy/dsr/access",
         headers=headers,
         json=body,
     )
@@ -160,7 +160,7 @@ func main() {
   "notes": "string",
   "request_payload_hash": "0000000000000000000000000000000000000000000000000000000000000000"
 }`)
-    req, err := http.NewRequest("POST", "https://api.corelink.dev/v1/privacy/dsr/access", bytes.NewReader(body))
+    req, err := http.NewRequest("POST", "https://api.corelink.humangr.com/v1/privacy/dsr/access", bytes.NewReader(body))
     if err != nil {
         panic(err)
     }
@@ -179,7 +179,7 @@ func main() {
 ### JavaScript (fetch)
 
 ```javascript
-const resp = await fetch("https://api.corelink.dev/v1/privacy/dsr/access", {
+const resp = await fetch("https://api.corelink.humangr.com/v1/privacy/dsr/access", {
   method: "POST",
   headers: {
     "Authorization": "Bearer <YOUR_PAT>",

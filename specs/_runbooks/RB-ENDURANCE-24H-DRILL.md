@@ -69,7 +69,7 @@ between-drill drift continuity.
   - R2 staging buckets healthy; 24h lifecycle rule active on
     `load-test-r3` and `load-test-endurance` tenants.
 - Prometheus remote-write endpoint reachable from the k6 generators:
-  `https://prom-rw.staging.corelink.dev/api/v1/write` (verify with
+  `https://prom-rw.staging.corelink.humangr.com/api/v1/write` (verify with
   `curl -I` before kick-off).
 - Grafana dashboard `dashboards/grafana/DASH-ENDURANCE-24H.json` loaded
   (provisioned via `infra/grafana/`); the operator confirms all panels
@@ -141,9 +141,9 @@ the region-specific tenant bucket env).
 ```bash
 set -euo pipefail
 
-export K6_TARGET_HOST="https://staging.corelink.dev"
+export K6_TARGET_HOST="https://staging.corelink.humangr.com"
 export K6_AUTH_BEARER="$(op read op://corelink-staging/k6-pat/credential)"
-export K6_PROMETHEUS_RW_SERVER_URL="https://prom-rw.staging.corelink.dev/api/v1/write"
+export K6_PROMETHEUS_RW_SERVER_URL="https://prom-rw.staging.corelink.humangr.com/api/v1/write"
 export K6_ENDURANCE_CONFIRM="yes"
 export DURATION="24h"
 export VUS="50"

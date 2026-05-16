@@ -71,10 +71,10 @@ present, `report-uri` set — regardless of the mode in effect.
 | Directive | Allowlist |
 |---|---|
 | `default-src` | `'self'` |
-| `script-src` | `'self' 'nonce-…' https://clerk.corelink.dev` |
+| `script-src` | `'self' 'nonce-…' https://clerk.corelink.humangr.com` |
 | `style-src` | `'self' 'nonce-…'` |
 | `img-src` | `'self' data: https:` |
-| `connect-src` | `'self' https://api.corelink.dev https://clerk.corelink.dev` |
+| `connect-src` | `'self' https://api.corelink.humangr.com https://clerk.corelink.humangr.com` |
 | `frame-ancestors` | `'none'` |
 | `form-action` | `'self'` |
 | `base-uri` | `'self'` |

@@ -16,7 +16,7 @@ body:
         **Stop and read first:** if this report concerns a security
         vulnerability, do NOT continue here. Close this tab and use the
         [Security template](./security.yml) (or email
-        `security@corelink.dev`). Filing security findings on a public
+        `security@humangr.com`). Filing security findings on a public
         issue is a violation of our Vulnerability Disclosure Policy.
 
   - type: checkboxes

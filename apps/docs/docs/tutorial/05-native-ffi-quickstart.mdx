@@ -22,7 +22,7 @@ from corelink import CoreLinkClient
 
 async def main() -> None:
     async with CoreLinkClient(
-        endpoint="https://acme-dev.corelink.dev",
+        endpoint="https://acme-dev.corelink.humangr.com",
         pat=os.environ["CORELINK_PAT"],
     ) as client:
         digest = await client.put(b"hello, corelink")
@@ -38,7 +38,7 @@ Full example: [`examples/python/quickstart.py`](https://github.com/humangr-labs/
 ## Go — `corelink-go`
 
 ```bash
-go get go.corelink.dev/corelink-go@latest
+go get go.corelink.humangr.com/corelink-go@latest
 ```
 
 ```go
@@ -49,13 +49,13 @@ import (
     "fmt"
     "os"
 
-    corelink "go.corelink.dev/corelink-go"
+    corelink "go.corelink.humangr.com/corelink-go"
 )
 
 func main() {
     ctx := context.Background()
     client, err := corelink.NewClient(ctx, corelink.Config{
-        Endpoint: "https://acme-dev.corelink.dev",
+        Endpoint: "https://acme-dev.corelink.humangr.com",
         PAT:      os.Getenv("CORELINK_PAT"),
     })
     if err != nil {
@@ -87,7 +87,7 @@ pnpm add @corelink/client
 import { CoreLinkClient } from "@corelink/client";
 
 const client = new CoreLinkClient({
-  endpoint: "https://acme-dev.corelink.dev",
+  endpoint: "https://acme-dev.corelink.humangr.com",
   pat: process.env.CORELINK_PAT!,
 });
 

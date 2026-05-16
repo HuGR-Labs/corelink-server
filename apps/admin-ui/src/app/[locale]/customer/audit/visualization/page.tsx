@@ -433,14 +433,14 @@ function ExportBundleButton({
   const handleExport = (): void => {
     if (!head) return;
     const bundle = {
-      "@context": "https://corelink.dev/specs/audit-export/v1",
+      "@context": "https://corelink.humangr.com/specs/audit-export/v1",
       "@type": "AuditExportBundle",
       generated_at: new Date().toISOString(),
       chain_head: head,
       visible_leaves: leaves,
       verify_instructions: [
         "Run: corelink audit verify --bundle <path-to-this-file>",
-        "See https://docs.corelink.dev/reference/cli/audit",
+        "See https://docs.corelink.humangr.com/reference/cli/audit",
       ],
     };
     if (typeof window === "undefined") return;

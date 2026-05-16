@@ -24,7 +24,7 @@
 >
 > Pilot offer: $0 for 30 days, 100 GB CAS, 10k audit events / month, direct Slack with engineering. Auto-convert to STANDARD at GA or walk away — no card on file.
 >
-> 10 slots. Token-gated signup. Apply at `signup.corelink.dev/pilot`.
+> 10 slots. Token-gated signup. Apply at `signup.corelink.humangr.com/pilot`.
 >
 > We need ≥3 active pilots before we cut GA. If your team runs Bazel / Buck2 / Pants / Nix remote caches, a Docker / OCI registry, an ML model registry, or an internal package mirror, this is the call.
 

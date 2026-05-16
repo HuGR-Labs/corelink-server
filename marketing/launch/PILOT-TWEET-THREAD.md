@@ -79,11 +79,11 @@
 
 ## Tweet 8/8 — CTA + apply link
 
-> Apply: signup.corelink.dev/pilot
+> Apply: signup.corelink.humangr.com/pilot
 >
 > 10 slots. 2-business-day review. 5-business-day activation. Token-gated signup so we can actually onboard you well.
 >
-> Questions: pilot@corelink.dev
+> Questions: pilot@humangr.com
 >
 > 8/8
 

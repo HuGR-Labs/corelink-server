@@ -100,11 +100,11 @@ The `anonymized_id` is a UUID v4 generated on first launch and stored in
 Events are sent to:
 
 ```
-https://telemetry.corelink.dev/v1/events
+https://telemetry.corelink.humangr.com/v1/events
 ```
 
-This is a **separate domain** from the CoreLink data plane (`corelink.dev`). You can block
-`telemetry.corelink.dev` in your firewall without impacting cache operations.
+This is a **separate domain** from the CoreLink data plane (`corelink.humangr.com`). You can block
+`telemetry.corelink.humangr.com` in your firewall without impacting cache operations.
 
 Timeout: 1 second. If the endpoint is unreachable, the CLI continues normally
 (graceful failure — non-blocking; FM-R004).
@@ -131,6 +131,6 @@ Timeout: 1 second. If the endpoint is unreachable, the CLI continues normally
 
 ## Contact
 
-Privacy questions: privacy@corelink.dev
+Privacy questions: privacy@humangr.com
 
 LINDDUN review is available at `specs/_audits/2026-05-14-linddun-cli-telemetry.md`.

@@ -56,7 +56,7 @@ services:
     container_name: dt-frontend
     restart: unless-stopped
     environment:
-      API_BASE_URL: "https://dt.corelink.dev"
+      API_BASE_URL: "https://dt.corelink.humangr.com"
     networks:
       - dt-internal
     depends_on:

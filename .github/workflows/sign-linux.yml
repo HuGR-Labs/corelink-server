@@ -13,9 +13,9 @@
 #
 # Public-key distribution:
 #   - Publish the matching public key at
-#     `https://corelink.dev/.well-known/gpg-pubkey.asc`.
+#     `https://corelink.humangr.com/.well-known/gpg-pubkey.asc`.
 #   - End-users verify with:
-#       `curl -fsSL https://corelink.dev/.well-known/gpg-pubkey.asc | gpg --import`
+#       `curl -fsSL https://corelink.humangr.com/.well-known/gpg-pubkey.asc | gpg --import`
 #       `gpg --verify corelink-linux-x86_64.tar.gz.asc corelink-linux-x86_64.tar.gz`
 #
 # Secrets required:
@@ -56,7 +56,7 @@ jobs:
         run: |
           if [ -z "${GPG_PRIVATE_KEY}" ]; then
             echo "ready=false" >> "${GITHUB_OUTPUT}"
-            echo "::notice ::GPG_PRIVATE_KEY secret not populated — Linux signing skipped (acquire 4096-bit RSA key + populate secret + publish pubkey at https://corelink.dev/.well-known/gpg-pubkey.asc)."
+            echo "::notice ::GPG_PRIVATE_KEY secret not populated — Linux signing skipped (acquire 4096-bit RSA key + populate secret + publish pubkey at https://corelink.humangr.com/.well-known/gpg-pubkey.asc)."
           else
             echo "ready=true" >> "${GITHUB_OUTPUT}"
           fi

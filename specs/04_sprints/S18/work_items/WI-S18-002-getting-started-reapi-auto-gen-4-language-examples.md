@@ -78,7 +78,7 @@ Choose your build system:
 ## Bazel
 ```bash
 # 1. Set PAT (PAT format: corelink_<env>_<token_id>.<random_secret>.<hmac_sig> per S-03)
-export CORELINK_PAT="corelink_dev_t_xxx.xxx.xxx"  # placeholder; obtain real PAT via https://app.corelink.dev/tokens
+export CORELINK_PAT="corelink_dev_t_xxx.xxx.xxx"  # placeholder; obtain real PAT via https://app.corelink.humangr.com/tokens
 
 # 2. Clone starter
 git clone https://github.com/humangr-labs/corelink-server.git
@@ -162,7 +162,7 @@ Content WI; LOW_RISK lane.
    - Format `corelink_<env>_<token_id>.<random_secret>.<hmac_sig>` (S-03 decision (a)).
    - Placeholder: `corelink_dev_t_xxx.xxx.xxx`.
    - Never real PAT em examples (CTRL-CRED-001 reflection; CI lint check via grep enforces).
-   - PAT obtained via https://app.corelink.dev/tokens (S-13 admin plane reuse).
+   - PAT obtained via https://app.corelink.humangr.com/tokens (S-13 admin plane reuse).
 
 6. **Categorization Diátaxis discipline**:
    - Getting started → **Tutorials** (learning-oriented).

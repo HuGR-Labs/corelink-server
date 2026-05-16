@@ -28,7 +28,7 @@ tags: ["sales", "faq", "objection-handling", "r-prep", "ga", "customer-facing-so
 
 - The 50 questions are grouped into six topic blocks: **Pricing (8), Security (12), Compliance (8), Performance (6), Operations (8), Migration (8)**.
 - Each entry has: **Q**, **A** (short canonical answer), **Sources** (doc / spec / commit pointers).
-- If a prospect's question isn't here, route to `trust@corelink.dev` rather than improvising — and file the new question against this doc.
+- If a prospect's question isn't here, route to `trust@humangr.com` rather than improvising — and file the new question against this doc.
 
 ---
 
@@ -60,7 +60,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **A:** Soft-cap then notify, then negotiate. Concretely: at 80% of any cap we emit a webhook + email; at 100% we serve a `429 / overage-pending` for **TPS** (rate-limited, not refused — your build still completes, just slower) and continue serving **storage / egress** with the overage line appearing on the next invoice. We *do not* hard-fail builds in production tenants when caps are exceeded; we'd rather invoice you than break your inner loop. For Enterprise the overage line is governed by your order form; for Team it's metered at our standard list rate. We are happy to convert a recurring overage into a contractual tier upgrade with no penalty (see P5 — migration discount).
 
-**Sources:** SLO catalog (`docs.corelink.dev/slo`); overage runbook (`specs/_runbooks/RB-BILLING-OVERAGE.md`); quickstart-faq Q8.
+**Sources:** SLO catalog (`docs.corelink.humangr.com/slo`); overage runbook (`specs/_runbooks/RB-BILLING-OVERAGE.md`); quickstart-faq Q8.
 
 ### P3 — Is BYOK a premium? How much more?
 
@@ -148,7 +148,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** Do you have a SOC 2 report?
 
-**A:** Not yet — and we're explicit about it. **Internal readiness:** 83.7% weighted as of 2026-05-15 (per the auditor-grade Drata rollup, not a marketing percentage). **Type I fieldwork:** target Q4 2026, report Q1 2027. **Type II fieldwork:** target Q3 2027, report Q4 2027. **Audit partner:** Schellman & Co. (engagement letter executed). **Continuous-evidence platform:** Drata. We crosswalk to **ISO 27001:2022 at 98.9% in-scope** today (Stage 1 stacked with SOC 2 Q4-2026, certificate Q1-2027). Today's evidence is available under NDA from `trust@corelink.dev` (1 business day SLA on the routing).
+**A:** Not yet — and we're explicit about it. **Internal readiness:** 83.7% weighted as of 2026-05-15 (per the auditor-grade Drata rollup, not a marketing percentage). **Type I fieldwork:** target Q4 2026, report Q1 2027. **Type II fieldwork:** target Q3 2027, report Q4 2027. **Audit partner:** Schellman & Co. (engagement letter executed). **Continuous-evidence platform:** Drata. We crosswalk to **ISO 27001:2022 at 98.9% in-scope** today (Stage 1 stacked with SOC 2 Q4-2026, certificate Q1-2027). Today's evidence is available under NDA from `trust@humangr.com` (1 business day SLA on the routing).
 
 **Sources:** `apps/docs/docs/trust/compliance.mdx#soc-2`; `apps/docs/docs/trust/iso27001.mdx`; `specs/_compliance/SOC2-EVIDENCE-ROLLUP-2026-05-15.md`.
 
@@ -156,7 +156,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** When was the last pentest? Can we see the report?
 
-**A:** Yes — Pentest-1 firm engaged pre-GA, full report on file, post-remediation retest clean (this is one of the seven engineering-gate prerequisites, per spec contract S-20 §6.1 — see `BLOG-POSTS/01` "What 'GA' means"). The executive summary is shareable under NDA via `trust@corelink.dev`. Annual cadence post-GA; next engagement is Q4 2026 stacked with SOC 2 Type I fieldwork. We do not publish the unredacted report (industry-standard practice and a condition of the testing firm's engagement); we do share the executive summary, the methodology, and the remediation status for any finding.
+**A:** Yes — Pentest-1 firm engaged pre-GA, full report on file, post-remediation retest clean (this is one of the seven engineering-gate prerequisites, per spec contract S-20 §6.1 — see `BLOG-POSTS/01` "What 'GA' means"). The executive summary is shareable under NDA via `trust@humangr.com`. Annual cadence post-GA; next engagement is Q4 2026 stacked with SOC 2 Type I fieldwork. We do not publish the unredacted report (industry-standard practice and a condition of the testing firm's engagement); we do share the executive summary, the methodology, and the remediation status for any finding.
 
 **Sources:** `marketing/launch/BLOG-POSTS/01-introducing-corelink.md` (engineering gate); `apps/docs/docs/trust/index.mdx#whats-verifiable-vs-whats-attested`; spec contract S-20 §6.1.
 
@@ -232,7 +232,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** Are you LGPD compliant?
 
-**A:** Yes — compliant as a processor (and joint controller for limited service-telemetry purposes). DPO in place (`dpo@corelink.dev`). Brazilian-tenant data is processed **in-region** (`sam` — São Paulo) with full Art. 33 §1º residency attestation; the attestation document (`specs/_compliance/LGPD-RESIDENCY-ATTESTATION-2026-05-15.md`) is verified nightly by `scripts/verify-lgpd-residency.py`. Residency enforcement crate: `crates/corelink-privacy-residency-enforcement/`. DSR turnaround: 5-business-day acknowledgement, 15-business-day resolution (Art. 18). Cross-border transfers: SCCs in the DPA with supplementary measures per EDPB recommendation. Breach notification: 72h to ANPD.
+**A:** Yes — compliant as a processor (and joint controller for limited service-telemetry purposes). DPO in place (`dpo@humangr.com`). Brazilian-tenant data is processed **in-region** (`sam` — São Paulo) with full Art. 33 §1º residency attestation; the attestation document (`specs/_compliance/LGPD-RESIDENCY-ATTESTATION-2026-05-15.md`) is verified nightly by `scripts/verify-lgpd-residency.py`. Residency enforcement crate: `crates/corelink-privacy-residency-enforcement/`. DSR turnaround: 5-business-day acknowledgement, 15-business-day resolution (Art. 18). Cross-border transfers: SCCs in the DPA with supplementary measures per EDPB recommendation. Breach notification: 72h to ANPD.
 
 **Sources:** `apps/docs/docs/trust/compliance.mdx#lgpd`; `apps/docs/docs/trust/data-handling.mdx#residency`; `/residency/lgpd-brazil`.
 
@@ -294,9 +294,9 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** When my CI runner asks for a blob and you have it, how long does it take?
 
-**A:** **p99 CAS GET latency target ≤ 300 ms** in-region (SLO `SLO-LAT-CAS-GET`, customer-tenant scope). For lighthouse customers we measure daily; representative steady-state runs are well below target (typical observed p99: **180–220 ms** depending on region and blob-size mix; the calculator at `corelink.dev/calculator` exposes your projected value). Audit-append p99 target ≤ 500 ms. The fast path does *not* call your KMS — DEK is unwrapped at first read into the bounded 5-min in-memory cache and re-used until expiry. Cache-miss reads pay one KMS unwrap RTT (provider-specific; AWS / GCP / Azure / Vault all sub-100 ms p99 in practice).
+**A:** **p99 CAS GET latency target ≤ 300 ms** in-region (SLO `SLO-LAT-CAS-GET`, customer-tenant scope). For lighthouse customers we measure daily; representative steady-state runs are well below target (typical observed p99: **180–220 ms** depending on region and blob-size mix; the calculator at `corelink.humangr.com/calculator` exposes your projected value). Audit-append p99 target ≤ 500 ms. The fast path does *not* call your KMS — DEK is unwrapped at first read into the bounded 5-min in-memory cache and re-used until expiry. Cache-miss reads pay one KMS unwrap RTT (provider-specific; AWS / GCP / Azure / Vault all sub-100 ms p99 in practice).
 
-**Sources:** SLO catalog (`docs.corelink.dev/slo`); `marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md#what-were-measuring-daily-automated`; `marketing/launch/BLOG-POSTS/05-fast-cache-hit-economics.md`.
+**Sources:** SLO catalog (`docs.corelink.humangr.com/slo`); `marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md#what-were-measuring-daily-automated`; `marketing/launch/BLOG-POSTS/05-fast-cache-hit-economics.md`.
 
 ### PF2 — What hit rates are realistic?
 
@@ -334,7 +334,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** First week — what do we measure?
 
-**A:** Cold-start curve: first build of a fresh repo populates the cache (every blob is a miss, paying upload cost). Hit rate climbs over D+1 to D+7 as the working set warms. **Steady state is typically observable by D+7** for Bazel monorepos with typical build profiles; very large polyglot graphs may take longer to warm. The calculator at `corelink.dev/calculator` projects steady-state economics from your inputs; the dashboard shows your *actual* warming curve from D+1. This is true of every remote cache — we name it explicitly because some vendors don't.
+**A:** Cold-start curve: first build of a fresh repo populates the cache (every blob is a miss, paying upload cost). Hit rate climbs over D+1 to D+7 as the working set warms. **Steady state is typically observable by D+7** for Bazel monorepos with typical build profiles; very large polyglot graphs may take longer to warm. The calculator at `corelink.humangr.com/calculator` projects steady-state economics from your inputs; the dashboard shows your *actual* warming curve from D+1. This is true of every remote cache — we name it explicitly because some vendors don't.
 
 **Sources:** `marketing/launch/BLOG-POSTS/05-fast-cache-hit-economics.md#honest-caveats`; `marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md#phase-1-days-1-7-mirror-your-ci`.
 
@@ -346,7 +346,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** Where do I subscribe to status?
 
-**A:** [status.corelink.dev](https://status.corelink.dev) — operated by Atlassian Statuspage, **isolated from the CoreLink production fabric** (if CoreLink is down, status page is up). Eight components tracked: API ingress, CAS read path, CAS write path, action cache, audit chain, admin plane, identity (Clerk), BYOK envelope. Per-region status shown for each component. Subscribe via email, SMS (US / EU), RSS (`https://status.corelink.dev/history.rss`), webhook (Slack / Teams / PagerDuty), or JSON API (`/api/v2/summary.json`). Enterprise can pre-register a dedicated incident-comms distribution address inside tenant settings.
+**A:** [status.corelink.humangr.com](https://status.corelink.humangr.com) — operated by Atlassian Statuspage, **isolated from the CoreLink production fabric** (if CoreLink is down, status page is up). Eight components tracked: API ingress, CAS read path, CAS write path, action cache, audit chain, admin plane, identity (Clerk), BYOK envelope. Per-region status shown for each component. Subscribe via email, SMS (US / EU), RSS (`https://status.corelink.humangr.com/history.rss`), webhook (Slack / Teams / PagerDuty), or JSON API (`/api/v2/summary.json`). Enterprise can pre-register a dedicated incident-comms distribution address inside tenant settings.
 
 **Sources:** `apps/docs/docs/trust/incident-response.mdx#status-page`; `marketing/launch/STATUS-PAGE-SPEC.md`.
 
@@ -362,7 +362,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** How fast do you respond?
 
-**A:** Tier-dependent. **Team:** community Slack (`#help`) median < 1 hour weekday response; GitHub Issues / Discussions for design + bugs; email `support@corelink.dev` for billing / account. **Enterprise:** dedicated Slack Connect channel; SEV-1 response SLA **4 hours**; weekly account review available. **Lighthouse:** the full playbook applies (`marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md#support-slas`) — Slack acknowledge ≤ 1h business / ≤ 4h outside, PagerDuty ≤ 10 min 24/7, P1 engineering response ≤ 24h, attestation draft delivery ≤ 24h after D+40.
+**A:** Tier-dependent. **Team:** community Slack (`#help`) median < 1 hour weekday response; GitHub Issues / Discussions for design + bugs; email `support@humangr.com` for billing / account. **Enterprise:** dedicated Slack Connect channel; SEV-1 response SLA **4 hours**; weekly account review available. **Lighthouse:** the full playbook applies (`marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md#support-slas`) — Slack acknowledge ≤ 1h business / ≤ 4h outside, PagerDuty ≤ 10 min 24/7, P1 engineering response ≤ 24h, attestation draft delivery ≤ 24h after D+40.
 
 **Sources:** `apps/docs/docs/tutorials/quickstart-faq.mdx#15`; `marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md#support-slas`.
 
@@ -414,7 +414,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** We're running `bazel-remote` standalone today. How do we switch?
 
-**A:** Easiest path is the **`corelink-bazel-remote-shim`** — a drop-in front that forwards to CoreLink with the existing bazel-remote API surface. Your `.bazelrc` doesn't change beyond the cache URL. Alternative: use Bazel's native `--remote_cache` against `https://cache.corelink.dev/v1/{slot-id}` directly with a `--remote_header=Authorization=Bearer ${CORELINK_PAT}`. We recommend the **mirror-then-cutover** pattern (see M5) — write to both for 1–2 weeks, validate hit ratio, then flip primary. The full self-serve guide is at `apps/docs/docs/how-to/migrate/from-bazel-remote/`.
+**A:** Easiest path is the **`corelink-bazel-remote-shim`** — a drop-in front that forwards to CoreLink with the existing bazel-remote API surface. Your `.bazelrc` doesn't change beyond the cache URL. Alternative: use Bazel's native `--remote_cache` against `https://cache.corelink.humangr.com/v1/{slot-id}` directly with a `--remote_header=Authorization=Bearer ${CORELINK_PAT}`. We recommend the **mirror-then-cutover** pattern (see M5) — write to both for 1–2 weeks, validate hit ratio, then flip primary. The full self-serve guide is at `apps/docs/docs/how-to/migrate/from-bazel-remote/`.
 
 **Sources:** `marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md#phase-1-days-1-7-mirror-your-ci`; `apps/docs/docs/how-to/migrate/`.
 
@@ -462,7 +462,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** During the actual cutover, what support is available?
 
-**A:** Tier-dependent. **Team:** community Slack, GitHub Issues, written migration guides; we'll review your `.bazelrc` / `buckconfig.local` on request via `support@corelink.dev`. **Enterprise:** named Customer Success engineer for the cutover window, scheduled cutover-day Slack Connect call, post-cutover review at 24h / 7d / 30d. **Lighthouse:** the full Customer Playbook applies — dedicated engineer, weekly check-in, daily SLA samples, attestation at D+30 (`marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md`). We do **not** charge for cutover support on Enterprise — it's part of the contract.
+**A:** Tier-dependent. **Team:** community Slack, GitHub Issues, written migration guides; we'll review your `.bazelrc` / `buckconfig.local` on request via `support@humangr.com`. **Enterprise:** named Customer Success engineer for the cutover window, scheduled cutover-day Slack Connect call, post-cutover review at 24h / 7d / 30d. **Lighthouse:** the full Customer Playbook applies — dedicated engineer, weekly check-in, daily SLA samples, attestation at D+30 (`marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md`). We do **not** charge for cutover support on Enterprise — it's part of the contract.
 
 **Sources:** `marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md`; `apps/docs/docs/tutorials/quickstart-faq.mdx#15`.
 

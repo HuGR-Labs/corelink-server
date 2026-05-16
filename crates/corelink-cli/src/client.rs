@@ -1,7 +1,7 @@
 //! Thin HTTP client wrapper for `corelink-cli` (WI-S15-001).
 //!
 //! Wraps `reqwest` with the PAT bearer auth header and a base URL resolved
-//! from `CORELINK_BASE_URL` env var (default `https://corelink.dev`).
+//! from `CORELINK_BASE_URL` env var (default `https://corelink.humangr.com`).
 //! Retry with exponential backoff (FM-150) is implemented here.
 
 use std::sync::Arc;
@@ -14,7 +14,7 @@ use tracing::warn;
 use crate::error::CliError;
 
 /// Default base URL.
-const DEFAULT_BASE_URL: &str = "https://corelink.dev";
+const DEFAULT_BASE_URL: &str = "https://corelink.humangr.com";
 
 /// Maximum retry attempts for transient failures (FM-150).
 const MAX_RETRIES: u32 = 3;

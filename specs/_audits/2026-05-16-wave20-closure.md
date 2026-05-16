@@ -85,7 +85,7 @@ What's left blocking GA after this wave (user-bound items dominate):
 | **External pentest engagement** | Scoped | `2026-05-16-pre-ga-pentest-scope.md` SEALED (wave-19 commit `5db72eb`); engagement-checklist drafted; vendor + statement-of-work pending. |
 | **Pilot signups (≥ 3 design-partners)** | Pending | Onboarding flow ready (S-19 SEALED); pilot agreements + DPA signing pending external counterparty action. |
 | **AWS Artifact PDF download (DEBT-003 closure)** | Pending | Human downloads AWS Artifact SOC 2 + FIPS attestation PDF and runs `sha256sum` to fill the `TBD-on-receipt` row in `BYOK-FIPS-ATTESTATION-MATRIX.md`. |
-| **Statuspage `status.corelink.dev` go-live (DEBT-016)** | Pending | Operator follows `STATUSPAGE-INIT.md` provisioning playbook T-7d pre-launch. |
+| **Statuspage `status.corelink.humangr.com` go-live (DEBT-016)** | Pending | Operator follows `STATUSPAGE-INIT.md` provisioning playbook T-7d pre-launch. |
 
 ### 4.2 Agent-closable but still OPEN (wave-21 candidates)
 

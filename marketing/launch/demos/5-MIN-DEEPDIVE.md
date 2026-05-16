@@ -23,7 +23,7 @@ tags:
 # 5-minute deep dive demo — CoreLink GA
 
 > **Format:** website hero embed (1920×1080 native, web-optimized for autoplay-muted with captions burned in).
-> **Audience:** technical evaluator who clicked "watch demo" from `corelink.dev` after reading the press release or one blog post.
+> **Audience:** technical evaluator who clicked "watch demo" from `corelink.humangr.com` after reading the press release or one blog post.
 > **Tooling:** asciinema for the terminal lane (cast from `cli-asciinema-script.sh`); OBS or screen.studio for cuts; Loom-style picture-in-picture acceptable but optional.
 > **Voice:** narrator off-screen. Pace = unhurried but no dead air. **300 words/minute of speech is the ceiling.** Below that = reads boring on engineering audiences.
 > **Cross-refs:** `60-SEC-ELEVATOR.md`, `cli-asciinema-script.sh`, `admin-ui-screenshot-guide.md`, `byok-deep-dive-demo.md`, `competitive-comparison-demo.md`.
@@ -325,14 +325,14 @@ let data = client.get("af1c3e9b…").await?;
 **Visual:** end card.
 
 ```
-corelink.dev/quickstart      — 10-minute tutorial
-corelink.dev/trust           — TLA+ specs, SBOM, pentest
-corelink.dev/pricing         — sandbox is free
+corelink.humangr.com/quickstart      — 10-minute tutorial
+corelink.humangr.com/trust           — TLA+ specs, SBOM, pentest
+corelink.humangr.com/pricing         — sandbox is free
 ```
 
 **Voiceover (~18s):**
 
-> "That's the deep-dive. Ten-minute quickstart at corelink.dev. The trust center has our TLA+ specs, full SBOM, and the third-party pentest letter. Sandbox is free, no credit card. If you're evaluating for a regulated workload, our seven-minute BYOK deep dive walks the four-provider matrix and the kill-switch flow. Thanks for watching."
+> "That's the deep-dive. Ten-minute quickstart at corelink.humangr.com. The trust center has our TLA+ specs, full SBOM, and the third-party pentest letter. Sandbox is free, no credit card. If you're evaluating for a regulated workload, our seven-minute BYOK deep dive walks the four-provider matrix and the kill-switch flow. Thanks for watching."
 
 **Hold final URL card for 2s. End.**
 

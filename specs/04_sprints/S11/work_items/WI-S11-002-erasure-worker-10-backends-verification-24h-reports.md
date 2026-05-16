@@ -297,7 +297,7 @@ Não — regulatory feature, sem A/B (multi-arm = compliance risk).
 ## 6. Escopo
 
 > **Wave-16 closure note (2026-05-15):** the customer-facing
-> `corelink.dev/status` publish path mandated by this WI is **shipped**
+> `corelink.humangr.com/status` publish path mandated by this WI is **shipped**
 > via `crates/corelink-statuspage-real` (canonical Atlassian Statuspage
 > Public-Metric client, 1-per-5-min rate-limited, fail-CLOSED audit
 > envelope) + `corelink-privacy-erasure-worker::statuspage_publish`

@@ -36,7 +36,7 @@ CoreLink commits to the following maximum response windows, measured from **coun
 | **Custom vendor questionnaire** (31–80 questions) | **5 business days** | 4 business days | Standard four-part response (cover + answer + evidence + DPA) |
 | **Custom vendor questionnaire** (81+ questions) | **10 business days** | 7 business days | Large form; triage by domain; lean on canonical phrasings |
 | **Auditor / 3PAO evidence-pack request** | **2 business days** | 1 business day | NDA on file with engaged auditor; bundle per `EVIDENCE-PACK-INDEX.md` §2.4 |
-| **Single ad-hoc question** (procurement clarification) | **1 business day** | Same business day | Email reply via `trust@corelink.dev` |
+| **Single ad-hoc question** (procurement clarification) | **1 business day** | Same business day | Email reply via `trust@humangr.com` |
 | **DPA redline** | **5 business days** | 3 business days | Standard CoreLink DPA `v1.0.0`; external counsel routes deviations > ±15% |
 | **Sub-processor change-notice acknowledgement** | **30 calendar days advance** | n/a | Per DPA §6 + GDPR Art. 28 §2 + LGPD Art. 27 §4º — this is the customer-facing commitment, not internal SLA |
 
@@ -48,8 +48,8 @@ CoreLink commits to the following maximum response windows, measured from **coun
 
 The SLA window starts when **all** of the following are true:
 
-1. Countersigned NDA on file with CoreLink Legal (`legal@corelink.dev`).
-2. Questionnaire received via `trust@corelink.dev` (procurement-routing alias).
+1. Countersigned NDA on file with CoreLink Legal (`legal@humangr.com`).
+2. Questionnaire received via `trust@humangr.com` (procurement-routing alias).
 3. Questionnaire is **complete** — i.e. all prospect-side metadata cells (vendor name, scope, contact, date, framework version) are filled. Incomplete forms get a 1-business-day clarification round-trip that pauses the SLA.
 4. If the form requires a vendor portal upload, the portal credentials and access have been provisioned to a CoreLink response account.
 
@@ -160,7 +160,7 @@ To set expectations honestly:
 - **Custom-questionnaire pre-fill before NDA.** We will not share artifact-level evidence before NDA is on file. Public Trust Center is the pre-NDA reference.
 - **Bespoke control coverage that we don't actually have.** If a question maps to a control we don't have, we say so. The canonical phrasings (HIPAA out-of-scope, FedRAMP not pursued) are non-negotiable.
 - **Auditor walkthroughs with prospects who are not engaged auditors.** Procurement teams get the documented rollup; live walkthroughs are for 3PAO / engaged auditor scope only.
-- **SLA on questionnaires received outside the `trust@corelink.dev` channel.** If a prospect's BD lead emails a SIG Lite to a personal CoreLink address, the SLA clock starts only when the email is forwarded to `trust@corelink.dev`. This routing discipline preserves audit trail.
+- **SLA on questionnaires received outside the `trust@humangr.com` channel.** If a prospect's BD lead emails a SIG Lite to a personal CoreLink address, the SLA clock starts only when the email is forwarded to `trust@humangr.com`. This routing discipline preserves audit trail.
 
 ---
 
@@ -170,9 +170,9 @@ If a prospect believes their response is overdue or insufficient:
 
 | Step | Contact | Window |
 |---|---|---|
-| 1. Status check | `trust@corelink.dev` (auto-acknowledged 1 business day) | Day 0 |
-| 2. Escalate to DPO | `dpo@corelink.dev` (cc `trust@corelink.dev`) | Day +1 |
-| 3. Escalate to Founder | `gustavo@humangr.com` (cc DPO + `trust@corelink.dev`) | Day +2 |
+| 1. Status check | `trust@humangr.com` (auto-acknowledged 1 business day) | Day 0 |
+| 2. Escalate to DPO | `dpo@humangr.com` (cc `trust@humangr.com`) | Day +1 |
+| 3. Escalate to Founder | `gustavo@humangr.com` (cc DPO + `trust@humangr.com`) | Day +2 |
 
 Escalation reasons that justify Founder-level: SLA miss with no posted root-cause; material disagreement on a compliance claim; suspected contractual conflict (DPA + their template); engagement-blocking deadline.
 
@@ -232,8 +232,8 @@ Quarterly review:
 
 | What you need | Where to send it |
 |---|---|
-| SIG / CAIQ / vendor-questionnaire submission | `trust@corelink.dev` |
-| SLA escalation | `dpo@corelink.dev` |
+| SIG / CAIQ / vendor-questionnaire submission | `trust@humangr.com` |
+| SLA escalation | `dpo@humangr.com` |
 | Founder escalation | `gustavo@humangr.com` |
-| Privacy / DSR | `privacy@corelink.dev` |
-| Security vulnerability report | `security@corelink.dev` |
+| Privacy / DSR | `privacy@humangr.com` |
+| Security vulnerability report | `security@humangr.com` |

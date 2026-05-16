@@ -6,14 +6,14 @@ Runnable, copy-and-edit-friendly examples for the **top-10 CoreLink REST endpoin
 
 ## Sandbox setup
 
-All examples default to the public sandbox at `https://sandbox.corelink.dev` when `CORELINK_API_URL` is not set. To run against your own tenant:
+All examples default to the public sandbox at `https://sandbox.corelink.humangr.com` when `CORELINK_API_URL` is not set. To run against your own tenant:
 
 ```bash
-export CORELINK_API_URL="https://api.corelink.dev"     # or your dedicated region URL
+export CORELINK_API_URL="https://api.corelink.humangr.com"     # or your dedicated region URL
 export CORELINK_PAT="corelink_pat_..."                  # PAT issued via POST /v1/pats
 ```
 
-Issue a sandbox PAT through the Console (https://console.corelink.dev/pats) or via the bootstrap signup flow (`quickstart_signup` + `quickstart_put`).
+Issue a sandbox PAT through the Console (https://console.corelink.humangr.com/pats) or via the bootstrap signup flow (`quickstart_signup` + `quickstart_put`).
 
 ## Index — 10 endpoints × 4 languages = 40 examples
 

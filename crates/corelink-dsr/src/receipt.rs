@@ -55,7 +55,7 @@ pub const RECEIPT_ALG_RS256: &str = "RS256";
 
 /// Canonical JWT issuer claim. Pinned for the canonical
 /// `iss` claim per WI-S11-001 §1.
-pub const RECEIPT_ISSUER: &str = "corelink.dev/privacy";
+pub const RECEIPT_ISSUER: &str = "corelink.humangr.com/privacy";
 
 /// JWT receipt token (compact form: `header.claims.signature`). The
 /// trait surface treats the bytes as opaque; the verify surface
@@ -98,7 +98,7 @@ impl core::fmt::Display for JwtReceiptToken {
 /// Canonical JWT receipt claims (the canonical `claims` segment of
 /// the compact-form receipt). Per WI-S11-001 §1:
 ///
-/// - `iss` = canonical [`RECEIPT_ISSUER`] (`corelink.dev/privacy`).
+/// - `iss` = canonical [`RECEIPT_ISSUER`] (`corelink.humangr.com/privacy`).
 /// - `request_id` = canonical UUIDv7 (the idempotency ledger key).
 /// - `data_subject_id` = canonical UUIDv7 (PAT principal post-authn).
 /// - `request_kind` = canonical 6-arm enum.
@@ -667,6 +667,6 @@ mod tests {
     #[test]
     fn alg_constant_pinned() {
         assert_eq!(RECEIPT_ALG_RS256, "RS256");
-        assert_eq!(RECEIPT_ISSUER, "corelink.dev/privacy");
+        assert_eq!(RECEIPT_ISSUER, "corelink.humangr.com/privacy");
     }
 }

@@ -119,7 +119,7 @@ jobs:
         uses: treosh/lighthouse-ci-action@v11
         with:
           # Canonical Lote 10.18 codex P1 fix: Lighthouse runs against PR preview deployment
-          # (CF Pages preview branch URL `${{ steps.cf-pages-deploy.outputs.url }}`), NOT live docs.corelink.dev.
+          # (CF Pages preview branch URL `${{ steps.cf-pages-deploy.outputs.url }}`), NOT live docs.corelink.humangr.com.
           # Prior version targeted live URL = could miss regressions in change under review.
           # PR preview = CF Pages auto-creates preview deployment per PR; URL from CF Pages API.
           urls: |
@@ -147,7 +147,7 @@ jobs:
 
 Single-phase SEAL D+10 canonical em LOW_RISK lane (vs STANDARD two-phase D+20/D+50 quando 30d sustained needed; vs HIGH_RISK two-phase sempre per framework §33.5). DoD §6 todos critérios instant-verifiable at sprint close: Lighthouse score em 5 routes + WCAG axe-core 0 violations + Vale lint green + lychee broken-link green + cross-functional sign-offs coletados + UX research 5 devs em ≤ 30s + pricing calculator 10 scenarios validated. 2-week sprint LOW_RISK sem post-sprint observation window required.
 
-Closing ship gate consolida 7 deliverables canonical para S-20 GA gate: docs production-grade live em `docs.corelink.dev` + 5-dev UX research success + Lighthouse ≥ 95 sustained + cross-functional publish gate sign-offs (Finance/Legal/Privacy Officer/Security lead per relevant page).
+Closing ship gate consolida 7 deliverables canonical para S-20 GA gate: docs production-grade live em `docs.corelink.humangr.com` + 5-dev UX research success + Lighthouse ≥ 95 sustained + cross-functional publish gate sign-offs (Finance/Legal/Privacy Officer/Security lead per relevant page).
 
 PRR LOW_RISK 3 sign-offs canonical (Owner + Final Approver + Docs lead) + cross-functional publish gate separate (não main PRR per spec contract §10 anti-scope; non-skippable per Waiver policy §19). Cross-functional sign-offs (CF-1 pricing + CF-2 security + CF-3 compliance) collected em WI-S18-004; closing WI verifies + documenta em PRR.
 
@@ -550,7 +550,7 @@ Não introduz métricas Prometheus per-tenant em closing WI (per observability_m
 
 ### Outbound
 - **S-19 (enterprise customer onboarding)**: may reuse public docs sections.
-- **S-20 (GA gate)**: docs live em `docs.corelink.dev` + 5-dev UX research passed + Lighthouse ≥ 95 sustained + cross-functional publish gate sign-offs.
+- **S-20 (GA gate)**: docs live em `docs.corelink.humangr.com` + 5-dev UX research passed + Lighthouse ≥ 95 sustained + cross-functional publish gate sign-offs.
 
 ## 22. Effort PERT
 

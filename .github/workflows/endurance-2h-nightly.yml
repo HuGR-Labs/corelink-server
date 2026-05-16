@@ -67,7 +67,7 @@ jobs:
           k6 inspect \
             -e DURATION=30s \
             -e K6_AUTH_BEARER=ci-stub \
-            -e K6_TARGET_HOST=https://staging.corelink.dev \
+            -e K6_TARGET_HOST=https://staging.corelink.humangr.com \
             tests/load/k6/scenarios/endurance-24h.js
 
       - name: pre-flight target host check

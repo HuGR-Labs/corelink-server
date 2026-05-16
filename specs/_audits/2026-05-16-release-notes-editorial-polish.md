@@ -162,7 +162,7 @@ Added ~14 wave-26 / -27 / -28 / -29 customer-facing additions including
 GA-1 feature freeze, production-tier dress-run 9.36, 7-day endurance
 soak harness, pilot admin path (shell + UI), AWS Artifact automation,
 Statuspage automation, pentest absorption framework, pre-cutover weekly
-verify cron, pilot announcement comms, signup.corelink.dev backend +
+verify cron, pilot announcement comms, signup.corelink.humangr.com backend +
 landing, audit-chain viz UI, pricing calculator, trust center publish,
 perf-baseline GA freeze, ShadowSinkFactory full adoption, this audit,
 and the FAQ.
@@ -199,7 +199,7 @@ and the FAQ.
 
 ### 4.2 New section "Sign up for the pilot" — CTA
 
-Added pilot signup CTA pointing to `https://signup.corelink.dev/`
+Added pilot signup CTA pointing to `https://signup.corelink.humangr.com/`
 (wave-29 stream #2 landing page) + enterprise inquiry email. Per task
 brief "CTA links to pilot signup".
 

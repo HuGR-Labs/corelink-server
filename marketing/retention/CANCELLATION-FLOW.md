@@ -235,7 +235,7 @@ The content of this screen depends on the Step 2 answer. Three offer variants + 
 |   - 2026-07-15          Data permanently deleted.             |
 |                                                               |
 |   Receipt URL:                                                |
-|   https://app.corelink.dev/r/cn_01HZ...                       |
+|   https://app.corelink.humangr.com/r/cn_01HZ...                       |
 |   (Bookmark this — it's permanent and lists your re-          |
 |    activation options.)                                       |
 |                                                               |

@@ -237,7 +237,7 @@ def probe_inmemory_neon(_mode: str, _primary: str, _replica: str) -> float:
 # --- Staging / prod Prometheus probe ---------------------------------------
 #
 # Wire mode:
-#   - HTTP: `CORELINK_PROMETHEUS_URL` env (e.g. `https://prom.staging.corelink.dev`).
+#   - HTTP: `CORELINK_PROMETHEUS_URL` env (e.g. `https://prom.staging.corelink.humangr.com`).
 #     Queries `histogram_quantile(0.99, sum by (le, primary_region, replica_region)
 #     (rate({metric}_bucket{{labels}}[1h])))` and reads per-pair p99 lag.
 #   - Fixture: `CORELINK_VERIFIER_FIXTURE` env points to a JSON file with shape

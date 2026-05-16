@@ -128,7 +128,7 @@ file added — see commit history). Required env: `K6_TARGET_HOST`,
 ### 4.3 Full 24h drill (manual)
 
 ```bash
-K6_TARGET_HOST=https://staging.corelink.dev \
+K6_TARGET_HOST=https://staging.corelink.humangr.com \
 K6_AUTH_BEARER=$STAGING_PAT \
 K6_ALLOW_ADVERSARIAL=yes \
   scripts/run_24h_endurance.sh full

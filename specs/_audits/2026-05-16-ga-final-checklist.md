@@ -58,7 +58,7 @@
 - [ ] C-08 — G6 — DSR cron 24 h success rate 100 %.
 - [ ] C-09 — On-call rota confirmed for cutover window + T+7d (per `RB-ONCALL-POLICY.md`).
 - [ ] C-10 — 50+ RB-* runbooks reviewed in last 30 d (compliance weekly review cadence).
-- [ ] C-11 — Statuspage `status.corelink.dev` provisioned (DEBT-016 closed) OR `defer: §11#5`.
+- [ ] C-11 — Statuspage `status.corelink.humangr.com` provisioned (DEBT-016 closed) OR `defer: §11#5`.
 - [ ] C-12 — Backup-verification cron green for ≥ 7 consecutive days (`RB-BACKUP-VERIFICATION.md`).
 - [ ] C-13 — Cold-restore drill executed in last 90 d (`COLD-RESTORE-DRILL-SPEC.md`).
 - [ ] C-14 — Active-failover drill executed in last 90 d (`ACTIVE-FAILOVER-DRILL-SPEC.md`).
@@ -103,7 +103,7 @@
 - [ ] G-02 — FW-H-1..4 role nominations (§11#2).
 - [ ] G-03 — External pentest vendor + SOW (§11#3).
 - [ ] G-04 — DEBT-003 AWS Artifact PDF download + sha256 (§11#4).
-- [ ] G-05 — DEBT-016 Statuspage `status.corelink.dev` go-live (§11#5).
+- [ ] G-05 — DEBT-016 Statuspage `status.corelink.humangr.com` go-live (§11#5).
 - [ ] G-06 — Pilot signups ≥ 3 design-partners (§11#6).
 - [ ] G-07 — Owner sign-off (ADR-0034b 2-key) executed in §13.2 + §13.3 of `2026-05-16-ga-readiness-final.md` (§11#7). _(Wave-25 scrub: prior G-07 "Docs CI billing reinstatement" removed as stale — CI runs locally per `feedback_ci_local`; GHA infra not used. Former G-08 promoted to G-07.)_
 

@@ -7,7 +7,7 @@
 #   NEVER echoed to stderr, NEVER logged.
 #
 # Protocol: Bazel calls this script with a single JSON line on stdin:
-#   { "uri": "https://corelink.dev/v1/cache" }
+#   { "uri": "https://corelink.humangr.com/v1/cache" }
 # The helper writes a single JSON line to stdout:
 #   { "headers": { "Authorization": ["Bearer <token>"] } }
 #

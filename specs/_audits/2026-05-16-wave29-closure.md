@@ -15,8 +15,8 @@ Wave-29 is the **GA-cutover-wait-state + customer-acquisition wave** — dispatc
 
 | # | Stream | Branch / worktree | Disposition |
 |---|---|---|---|
-| 1 | **signup.corelink.dev backend** — token-based pilot-slot reservation backend (wires the contract pinned in wave-27 DEBT-027 register row); idempotent token issuance + 24h-replay-safe consumption + Slack-payload + Grafana-panel hooks. Candidate INV introduced: `INV-SIGNUP-TOKEN-IDEMPOTENT` (DRAFT; survey deferred — see §6.2). | `wt/r-prep-signup-corelink-dev-backend` (worktree `agent-signup-backend`) | **IN FLIGHT** (wave-29) |
-| 2 | **signup.corelink.dev landing page** — public landing (4-section: hero + value-prop + 3-tier pricing-summary + signup form); consumes pricing calculator stream #7 SSR data + DEBT-027 signup-link contract. | `wt/r-prep-signup-landing-page` (worktree `agent-signup-landing`) | **IN FLIGHT** (wave-29) |
+| 1 | **signup.corelink.humangr.com backend** — token-based pilot-slot reservation backend (wires the contract pinned in wave-27 DEBT-027 register row); idempotent token issuance + 24h-replay-safe consumption + Slack-payload + Grafana-panel hooks. Candidate INV introduced: `INV-SIGNUP-TOKEN-IDEMPOTENT` (DRAFT; survey deferred — see §6.2). | `wt/r-prep-signup-corelink-dev-backend` (worktree `agent-signup-backend`) | **IN FLIGHT** (wave-29) |
+| 2 | **signup.corelink.humangr.com landing page** — public landing (4-section: hero + value-prop + 3-tier pricing-summary + signup form); consumes pricing calculator stream #7 SSR data + DEBT-027 signup-link contract. | `wt/r-prep-signup-landing-page` (worktree `agent-signup-landing`) | **IN FLIGHT** (wave-29) |
 | 3 | **Pilot admin web UI** — Owner-facing pilot-admin UI consuming wave-27 admin scripts (`grant-pilot-tier.sh` / `list-pilot-tenants.sh` / `pilot-24h-checkin.sh`) as backend endpoints + Grafana dashboard embed; replaces shell-only pilot admin path. | `wt/r-prep-pilot-admin-web-ui` (worktree `agent-pilot-admin-ui`) | **IN FLIGHT** (wave-29) |
 | 4 | **ShadowSinkFactory full adoption** — final consumer-side adoption sweep (wave-21 `TokioPgShadowSinkFactory` wired to tenant-region resolver; wave-27 `wt/r-prep-shadow-sink-consumer-adoption` SEALED the partial adoption). Wave-29 flips the remaining ad-hoc constructors to factory-issued instances across all consumer crates (audit / ratelimit / replication). | `wt/r-prep-shadow-sink-full-adoption` (worktree `agent-shadow-sink-full-adoption`) | **IN FLIGHT** (wave-29) |
 | 5 | **Wave-28 adversarial review (codex Opus pass)** — mandatory per charter "all P1-classified streams must close before next wave unblocks". Cross-reviews wave-28 streams (AWS Artifact automation, Statuspage automation, pentest absorption, LFPDPPP MX final, pentest RFP send, pre-cutover weekly verify, pilot announcement comms). | `wt/r-prep-wave28-adversarial-review` (worktree `agent-wave28-review`) | **IN FLIGHT** (wave-29) |
@@ -30,13 +30,13 @@ Streams #1–#9 are dispatched in parallel by the orchestrator; this stream (#10
 
 ---
 
-## 2. signup.corelink.dev backend + landing + admin (cross-ref streams #1, #2, #3)
+## 2. signup.corelink.humangr.com backend + landing + admin (cross-ref streams #1, #2, #3)
 
-Wave-29 spawns the **first end-to-end customer-acquisition path on `corelink.dev`**. Three coordinated streams.
+Wave-29 spawns the **first end-to-end customer-acquisition path on `corelink.humangr.com`**. Three coordinated streams.
 
-### 2.1 Stream #1 — signup.corelink.dev backend
+### 2.1 Stream #1 — signup.corelink.humangr.com backend
 
-Engineering scope: token-based pilot-slot reservation backend. Wire-format pinned in wave-27 DEBT-027 register row §2.1 (`https://signup.corelink.dev/pilot/<token>` — base32-encoded 16-byte token; 7-day TTL; idempotent consumption with replay-safe 24h dedup window). Consumes:
+Engineering scope: token-based pilot-slot reservation backend. Wire-format pinned in wave-27 DEBT-027 register row §2.1 (`https://signup.corelink.humangr.com/pilot/<token>` — base32-encoded 16-byte token; 7-day TTL; idempotent consumption with replay-safe 24h dedup window). Consumes:
 
 - **wave-15 audit-chain R2 NDJSON producer** (`8ba0353`) — every token issuance / consumption is an audit event.
 - **wave-27 pilot admin scripts** (`6761860`) — `grant-pilot-tier.sh` runs server-side once a token is consumed.
@@ -45,9 +45,9 @@ Engineering scope: token-based pilot-slot reservation backend. Wire-format pinne
 
 Candidate INV: `INV-SIGNUP-TOKEN-IDEMPOTENT` — "consumption of a signup token MUST be exactly-once across replays within the 24h dedup window; the 25th-hour-onward replay MUST be observably distinguishable from the 1st-hour replay (different audit event ID, same tenant binding)." Survey-only per §6.2 (deferred to wave-30 sweep once stream #1 SEALs and the wire-spec lands canonical).
 
-### 2.2 Stream #2 — signup.corelink.dev landing page
+### 2.2 Stream #2 — signup.corelink.humangr.com landing page
 
-Engineering scope: public landing page at `https://signup.corelink.dev/` (4 sections — hero / value-prop / 3-tier pricing-summary / signup form). SSR-rendered. Consumes stream #7 pricing-calculator SSR data + DEBT-027 signup-link contract. No backend dependency for the static landing path (only the `<form action>` POST hits stream #1 backend).
+Engineering scope: public landing page at `https://signup.corelink.humangr.com/` (4 sections — hero / value-prop / 3-tier pricing-summary / signup form). SSR-rendered. Consumes stream #7 pricing-calculator SSR data + DEBT-027 signup-link contract. No backend dependency for the static landing path (only the `<form action>` POST hits stream #1 backend).
 
 ### 2.3 Stream #3 — pilot admin web UI
 

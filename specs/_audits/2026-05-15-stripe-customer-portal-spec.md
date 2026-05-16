@@ -78,7 +78,7 @@ vars as `corelink-stripe-real::client::create_checkout_session`).
 is DISABLED in the portal — Enterprise contracts require a paper
 amendment + DPA update. The portal config redirects "Cancel" /
 "Downgrade" clicks from Enterprise customers to a
-`mailto:sales@corelink.dev` link.
+`mailto:sales@humangr.com` link.
 
 ### 2.3 Branding
 
@@ -93,14 +93,14 @@ amendment + DPA update. The portal config redirects "Cancel" /
 
 ### 2.4 URL configuration
 
-- **Return URL allowlist:** `https://app.corelink.dev/*/customer/billing`
-  + `https://staging.corelink.dev/*/customer/billing` + `https://localhost:3000/*/customer/billing`.
+- **Return URL allowlist:** `https://app.corelink.humangr.com/*/customer/billing`
+  + `https://staging.corelink.humangr.com/*/customer/billing` + `https://localhost:3000/*/customer/billing`.
   Set per environment via `stripe billing_portal configurations
   update`. Any other return URL is rejected by Stripe before the
   redirect is even minted, which closes off the open-redirect attack
   vector.
-- **Privacy policy link:** `https://corelink.dev/privacy`.
-- **Terms of service link:** `https://corelink.dev/legal/terms`.
+- **Privacy policy link:** `https://corelink.humangr.com/privacy`.
+- **Terms of service link:** `https://corelink.humangr.com/legal/terms`.
 
 ## 3. Redirect flow
 
@@ -151,7 +151,7 @@ lookup is keyed by the JWT claim, not the body).
 **Request:**
 ```json
 {
-  "return_url": "https://app.corelink.dev/en/customer/billing",
+  "return_url": "https://app.corelink.humangr.com/en/customer/billing",
   "tenant_id": "tenant_acme"
 }
 ```

@@ -62,7 +62,7 @@ jobs:
           CORELINK_PAT: ${{ secrets.CORELINK_PAT }}
         run: |
           bazel build //... \
-            --remote_cache=https://corelink.dev/v1/cache \
+            --remote_cache=https://corelink.humangr.com/v1/cache \
             --credential_helper=%workspace%/.bazel/corelink-credential-helper.sh
             # Lote 10.15 codex P0 canonical CTRL-CRED-001: credential helper protocol Bazel 6+ retorna token via stdout (nunca em argv); CI runners exportam CORELINK_PAT como env var (GitHub Actions secrets / GitLab CI variables / CircleCI env vars) + helper script reads from env
       - name: Report cache hit ratio
@@ -83,7 +83,7 @@ bazel-build:
     CORELINK_PAT: $CORELINK_PAT  # GitLab CI/CD variable
   script:
     - bazel build //... \
-        --remote_cache=https://corelink.dev/v1/cache \
+        --remote_cache=https://corelink.humangr.com/v1/cache \
         --remote_header="Authorization=Bearer ${CORELINK_PAT}"
     - ratio=$(jq -r '.events[] | select(.cacheHit) | length' bazel-out/log.json)
     - echo "Cache Hit Ratio ${ratio}%"
@@ -103,7 +103,7 @@ jobs:
           name: Bazel build with remote cache
           command: |
             bazel build //... \
-              --remote_cache=https://corelink.dev/v1/cache \
+              --remote_cache=https://corelink.humangr.com/v1/cache \
               --credential_helper=%workspace%/.bazel/corelink-credential-helper.sh
             # Lote 10.15 codex P0 canonical CTRL-CRED-001: credential helper protocol Bazel 6+ retorna token via stdout (nunca em argv); CI runners exportam CORELINK_PAT como env var (GitHub Actions secrets / GitLab CI variables / CircleCI env vars) + helper script reads from env
       - run:
@@ -185,7 +185,7 @@ Feature WI; STANDARD lane; CI templates + telemetry opt-in.
      - `corelink config get telemetry` returns current state.
      - `corelink config list` shows telemetry status.
    - Default em fresh install: `telemetry = false` (em `~/.corelink/config.toml`).
-   - Endpoint: `https://telemetry.corelink.dev/v1/events` (separate domain from data plane).
+   - Endpoint: `https://telemetry.corelink.humangr.com/v1/events` (separate domain from data plane).
    - Payload format:
      ```json
      {
@@ -225,7 +225,7 @@ Feature WI; STANDARD lane; CI templates + telemetry opt-in.
      - How to opt-in (`corelink config set telemetry on`).
      - How to opt-out (`corelink config set telemetry off`).
      - Data retention 90d.
-     - Endpoint domain (`telemetry.corelink.dev` separate from data plane).
+     - Endpoint domain (`telemetry.corelink.humangr.com` separate from data plane).
 
 ### 6.2 Out-of-scope
 
@@ -332,7 +332,7 @@ Feature: CI templates 3 providers + telemetry opt-in default-off
 - Linkability LOW: rotatable; nunca per-tenant; user can rotate.
 - LINDDUN compliance + GDPR/LGPD compliant.
 
-### 9.4 Why separate domain `telemetry.corelink.dev` (não data plane)
+### 9.4 Why separate domain `telemetry.corelink.humangr.com` (não data plane)
 
 - Network isolation: customer can block telemetry endpoint via firewall sem impacting data plane.
 - Audit clarity: telemetry traffic distinguishable.

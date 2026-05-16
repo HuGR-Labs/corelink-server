@@ -113,7 +113,7 @@ inherits_from:
   - **1 enterprise** com BYOK + DPA: TBD via Sales engagement.
   - Migration plan + 30d observation + SLA claim met em 30d.
   - Customer attestations (testimonial + case study).
-- **R-S20-5**: SLA doc published em `legal/sla/v1.md` + `docs.corelink.dev/sla`; DPA v1 signed com 3 lighthouse customers.
+- **R-S20-5**: SLA doc published em `legal/sla/v1.md` + `docs.corelink.humangr.com/sla`; DPA v1 signed com 3 lighthouse customers.
 - **R-S20-6**: Incident response 24/7:
   - PagerDuty schedule live em 3 regiões (US/EU; APAC eventual scaling).
   - On-call manager + escalation matrix.

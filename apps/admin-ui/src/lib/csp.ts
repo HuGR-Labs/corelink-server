@@ -7,9 +7,9 @@
  *
  * Directives baseline:
  *   - default-src 'self'         (deny-by-default for most fetch contexts)
- *   - script-src  'self' nonce + clerk.corelink.dev
+ *   - script-src  'self' nonce + clerk.corelink.humangr.com
  *   - style-src   'self' nonce
- *   - connect-src 'self' + api.corelink.dev + clerk.corelink.dev
+ *   - connect-src 'self' + api.corelink.humangr.com + clerk.corelink.humangr.com
  *   - img-src     'self' data: https:
  *   - frame-ancestors 'none', form-action 'self', base-uri 'self'
  *   - report-uri /api/csp-report
@@ -31,11 +31,11 @@ export interface CspOptions {
 export function buildCspDirectives(nonce: string): string[] {
   return [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' https://clerk.corelink.dev`,
+    `script-src 'self' 'nonce-${nonce}' https://clerk.corelink.humangr.com`,
     `style-src 'self' 'nonce-${nonce}'`,
     "img-src 'self' data: https:",
     "font-src 'self' data:",
-    "connect-src 'self' https://api.corelink.dev https://clerk.corelink.dev",
+    "connect-src 'self' https://api.corelink.humangr.com https://clerk.corelink.humangr.com",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",

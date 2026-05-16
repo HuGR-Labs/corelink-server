@@ -15,7 +15,7 @@ BuildBuddy (managed REAPI), or any other build-tool remote cache that
 speaks the REAPI v2 protocol (Buck2, Pants, reclient).
 
 **Target:** CoreLink REAPI v2 endpoint at
-`grpc://reapi.corelink.dev:443/<tenant-id>` (or `https://...` for
+`grpc://reapi.corelink.humangr.com:443/<tenant-id>` (or `https://...` for
 HTTP/2). Surface is implemented by
 [`crates/corelink-reapi/`](https://github.com/humangr-labs/corelink-server/tree/main/crates/corelink-reapi)
 and exposes `ContentAddressableStorage`, `ActionCache`, `ByteStream`,
@@ -115,8 +115,8 @@ during the parallel-run.
 
 ```bazel
 # .bazelrc — add these lines; do NOT remove your existing --remote_cache flag.
-build:ci --bes_backend=grpcs://bes.corelink.dev:443
-build:ci --bes_results_url=https://app.corelink.dev/tenants/$CORELINK_TENANT_ID/builds
+build:ci --bes_backend=grpcs://bes.corelink.humangr.com:443
+build:ci --bes_results_url=https://app.corelink.humangr.com/tenants/$CORELINK_TENANT_ID/builds
 build:ci --bes_header=Authorization=Bearer\ $CORELINK_PAT
 build:ci --bes_upload_mode=fully_async
 ```
@@ -186,7 +186,7 @@ existing cache is still primary. You are collecting evidence.
 ### Red flags — pause the migration
 
 - Any `COR_CAS_DIGEST_MISMATCH` error in CI logs → **stop**, file a P1
-  via support@corelink.dev. Do not proceed to cutover.
+  via support@humangr.com. Do not proceed to cutover.
 - Hit ratio on CoreLink that is *higher* than your existing cache by
   > 20 percentage points → suspicious; usually means the existing
   cache is silently evicting under pressure. Investigate before
@@ -223,7 +223,7 @@ Friday evening or Sunday morning in your CI runners' timezone).
 # build:ci --remote_cache=https://bazel-remote.your-domain.com
 
 # NEW:
-build:ci --remote_cache=grpcs://reapi.corelink.dev:443/$CORELINK_TENANT_ID
+build:ci --remote_cache=grpcs://reapi.corelink.humangr.com:443/$CORELINK_TENANT_ID
 build:ci --remote_header=Authorization=Bearer\ $CORELINK_PAT
 build:ci --remote_upload_local_results=true
 build:ci --remote_timeout=60s
@@ -303,7 +303,7 @@ later via `corelink ls` + a tombstone if you want a clean exit).
 
 ### If rollback also fails
 
-Page support: `support@corelink.dev` with subject
+Page support: `support@humangr.com` with subject
 `P1 — Bazel migration rollback failure`. We can issue a one-line
 config helper that bypasses CoreLink entirely while you stabilize.
 
@@ -316,13 +316,13 @@ Run this after Phase 4:
 ```bash
 # 1. Last 24h CI builds all hit CoreLink:
 bazel info --config=ci | grep remote_cache
-# remote_cache: grpcs://reapi.corelink.dev:443/...
+# remote_cache: grpcs://reapi.corelink.humangr.com:443/...
 
 # 2. CoreLink is the only place new blobs land:
 corelink ls --tenant "$CORELINK_TENANT_ID" --limit 5
 
 # 3. Audit trail is populated:
-# Open https://app.corelink.dev/tenants/$CORELINK_TENANT_ID/audit
+# Open https://app.corelink.humangr.com/tenants/$CORELINK_TENANT_ID/audit
 # Filter: event_type=cas.write, last 24h. You should see one event per
 # CI action with a non-trivial output.
 

@@ -86,7 +86,7 @@ Single-screen, 5 panels arranged in a 2x3 grid (last cell = top-5 SLO burn table
 
 | Metric | Source | Aggregation | Display |
 |---|---|---|---|
-| Ticket volume last 60 min | support@corelink.dev / HubSpot inbox → Linear support board | Rolling 60-min count | Big number + sparkline |
+| Ticket volume last 60 min | support@humangr.com / HubSpot inbox → Linear support board | Rolling 60-min count | Big number + sparkline |
 | Ticket volume last 24h | Same | Rolling 24h count | Big number |
 | Ticket categories | Manual tag by CS-OC: `signup`, `billing`, `cli`, `cache-correctness`, `byok`, `docs-bug`, `feature-request`, `pricing`, `other` | Donut chart | Side panel |
 | First-response SLA compliance | Linear time-to-first-response | % within target (1h business / 4h off-hours) | Big number (%) |
@@ -137,7 +137,7 @@ Top 5 SLOs to watch:
 | CAS write event stream (Kafka or NATS) | First-CAS-write detection | Internal mTLS |
 | Synthetic E2E pipeline (`tests/e2e/signup-launch-day.spec.ts`) | Signup-to-first-CAS-write health | Service account |
 | Linear support board | Ticket volume + category | Linear API token |
-| HubSpot / support@corelink.dev | Support intake | HubSpot API token |
+| HubSpot / support@humangr.com | Support intake | HubSpot API token |
 | ahrefs Brand Mentions | Twitter / press mentions | ahrefs API |
 | Statuspage public view | Incident overlay | Public |
 | PagerDuty | SEV2/SEV1 page-outs | PagerDuty webhook |

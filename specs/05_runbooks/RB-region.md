@@ -46,7 +46,7 @@ This runbook covers:
 - [ ] Terraform 1.7+ installed. Provider: `cloudflare ~> 4.52.0`.
 - [ ] `CF_API_TOKEN` set (OIDC-bound; scoped to R2+D1+Workers+DNS+KV write).
 - [ ] `CF_ACCOUNT_ID` set.
-- [ ] `CF_ZONE_ID` set (zone for `api.corelink.dev`).
+- [ ] `CF_ZONE_ID` set (zone for `api.corelink.humangr.com`).
 - [ ] Staging environment isolated (NOT production).
 - [ ] PR approved by CODEOWNERS (Architect + Security Lead).
 - [ ] Dual-approval received (WI-S13-002).
@@ -75,7 +75,7 @@ Review all 4 plan outputs. Confirm:
 - 4 D1 databases: `corelink-meta-{region}`
 - 4 KV namespaces: `corelink-session-{region}`
 - 4 DO Workers: `corelink-do-{region}`
-- 4 DNS records: `{region}.api.corelink.dev`
+- 4 DNS records: `{region}.api.corelink.humangr.com`
 - WEUR: `do_jurisdiction = "eu"` confirmed in plan
 
 ### 2.3 Apply (manual; dual-approval required)

@@ -46,7 +46,7 @@ both starters.  Only the build descriptor and config differ.
 
 ```bash
 # Remote cache endpoint
-build --remote_cache=https://corelink.dev/v1/cache
+build --remote_cache=https://corelink.humangr.com/v1/cache
 
 # Auth via credential helper (Bazel 6+ CTRL-CRED-001 compliant)
 # PAT read from CORELINK_PAT env var; emitted as JSON response; never in argv.
@@ -65,7 +65,7 @@ the helper implementation.
 
 ```ini
 [remote_cache]
-url = https://corelink.dev/v1/cache
+url = https://corelink.humangr.com/v1/cache
 http_headers = Authorization: Bearer ${CORELINK_PAT}
 read = true
 write = true

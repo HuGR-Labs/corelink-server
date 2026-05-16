@@ -60,17 +60,17 @@ proptest! {
         sub in "[a-z]{1,16}"
     ) {
         let allow = OriginAllowlist::from_strings([
-            "https://app.corelink.dev",
-            "https://admin.corelink.dev",
+            "https://app.corelink.humangr.com",
+            "https://admin.corelink.humangr.com",
         ]).unwrap();
-        let canonical_app = Origin::parse("https://app.corelink.dev").unwrap();
-        let canonical_admin = Origin::parse("https://admin.corelink.dev").unwrap();
+        let canonical_app = Origin::parse("https://app.corelink.humangr.com").unwrap();
+        let canonical_admin = Origin::parse("https://admin.corelink.humangr.com").unwrap();
         prop_assert!(allow.contains(&canonical_app));
         prop_assert!(allow.contains(&canonical_admin));
 
         // every random suffix that is not exactly one of the canonical
         // entries must be rejected.
-        let evil_str = format!("https://{sub}.corelink.dev.{suffix}.com");
+        let evil_str = format!("https://{sub}.corelink.humangr.com.{suffix}.com");
         if let Ok(origin) = Origin::parse(&evil_str) {
             prop_assert!(!allow.contains(&origin));
         }
@@ -126,9 +126,9 @@ proptest! {
 
 #[test]
 fn prop_replay_resistance_single_use() {
-    let cfg = EngineConfig::builder(RpId::new("corelink.dev").unwrap(), "CoreLink")
+    let cfg = EngineConfig::builder(RpId::new("corelink.humangr.com").unwrap(), "CoreLink")
         .origins(
-            OriginAllowlist::from_strings(["https://app.corelink.dev"]).unwrap(),
+            OriginAllowlist::from_strings(["https://app.corelink.humangr.com"]).unwrap(),
         )
         .aaguids(
             AaguidPolicy::builder()
@@ -153,7 +153,7 @@ fn prop_replay_resistance_single_use() {
             COSE_ALG_ES256,
             AuthenticatorFlags::up_uv(),
             0,
-            Origin::parse("https://app.corelink.dev").unwrap(),
+            Origin::parse("https://app.corelink.humangr.com").unwrap(),
         );
         engine
             .finish_registration(reg.id(), response.clone())
@@ -212,15 +212,15 @@ fn prop_recovery_otp_single_use_100() {
 
 #[test]
 fn prop_origin_allowlist_no_prefix_bypass_10k() {
-    let allow = OriginAllowlist::from_strings(["https://app.corelink.dev"]).unwrap();
-    let canonical = Origin::parse("https://app.corelink.dev").unwrap();
+    let allow = OriginAllowlist::from_strings(["https://app.corelink.humangr.com"]).unwrap();
+    let canonical = Origin::parse("https://app.corelink.humangr.com").unwrap();
     assert!(allow.contains(&canonical));
 
     let cases = [
-        "https://app.corelink.dev.attacker.com",
-        "https://attacker.com/app.corelink.dev",
-        "https://app.corelink.dev:8443",
-        "https://APP.corelink.dev", // case is normalized to lowercase, but
+        "https://app.corelink.humangr.com.attacker.com",
+        "https://attacker.com/app.corelink.humangr.com",
+        "https://app.corelink.humangr.com:8443",
+        "https://APP.corelink.humangr.com", // case is normalized to lowercase, but
                                     // would still be a different host port-shape
                                     // — actually equals canonical after parse, so
                                     // this MUST be true. We re-test the lowercase

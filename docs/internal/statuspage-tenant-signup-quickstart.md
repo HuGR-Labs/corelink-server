@@ -40,7 +40,7 @@ Open https://statuspage.atlassian.com in a browser and click
 **Sign up** (or **Log in** if you already have an Atlassian account
 tied to the CoreLink org).
 
-- Use the org-shared email `ops@corelink.dev` so the tenant survives
+- Use the org-shared email `ops@humangr.com` so the tenant survives
   individual offboarding.
 - Choose the **Business** tier minimum (required for SSO + metrics
   overlay + per-region component status — see runbook §2.1).
@@ -54,7 +54,7 @@ In the new-page setup wizard:
   (this is the `<statuspage-tenant>` that the DNS CNAME will
   target; pick a name you can live with — it is rarely seen by
   customers once the CNAME is in place).
-- **Support URL:** `https://corelink.dev`
+- **Support URL:** `https://corelink.humangr.com`
 - **Time zone:** UTC (matches the trust-corpus cadence math).
 - **Visibility:** hidden from search until GA (the bootstrap script
   enforces this, but starting hidden avoids a public preview window).
@@ -107,8 +107,8 @@ The script will (idempotently — safe to re-run on any failure):
   maintenance BYOK rotation) as idle drafts.
 - Apply org-level branding (logo, favicon, primary + secondary
   colours) per `config/statuspage/components.yml`.
-- Set email-notification defaults (`from = status@corelink.dev`,
-  ops alert = `ops@corelink.dev`).
+- Set email-notification defaults (`from = status@humangr.com`,
+  ops alert = `ops@humangr.com`).
 
 Expected runtime: ~2 minutes (mostly network round-trips).
 
@@ -117,7 +117,7 @@ Expected runtime: ~2 minutes (mostly network round-trips).
 In the tenant admin UI:
 
 1. **Settings → Customise → Custom domain.**
-2. Enter `status.corelink.dev`.
+2. Enter `status.corelink.humangr.com`.
 3. Statuspage will display the Atlassian-side CNAME target — this is
    your `<statuspage-tenant>.statuspage.io` value. Copy it (or just
    use the value you already chose in step 2).
@@ -127,7 +127,7 @@ return to verify"*. Leave this tab open.
 
 ## Step 6 — DNS provider: add the CNAME
 
-In **Cloudflare DNS** (zone `corelink.dev`), add the record exactly as
+In **Cloudflare DNS** (zone `corelink.humangr.com`), add the record exactly as
 specified in `config/statuspage/dns-cname-record.txt`:
 
 | Field | Value |
@@ -156,7 +156,7 @@ Run the wave-25 verify script:
 python3 scripts/statuspage-init-verify.py
 ```
 
-Expected: HTTP 200 on `https://status.corelink.dev`, summary.json
+Expected: HTTP 200 on `https://status.corelink.humangr.com`, summary.json
 reports the 5 customer-facing components, RSS + Atom feeds resolve.
 
 Cross-check the 8 internal-subsystem mappings in
@@ -177,7 +177,7 @@ Once verify is green, file the sign-off line in
 | Bootstrap exits with code 2 | `STATUSPAGE_API_KEY` not in env | Re-run step 3 in the same shell that runs step 4. |
 | Bootstrap exits with code 3 | API rate-limit or transient 5xx | Re-run; the script is idempotent and resumes from the last successful item. |
 | Bootstrap exits with code 4 | YAML parse error in components.yml or incident-templates.yml | `python3 -c 'import yaml; yaml.safe_load(open("config/statuspage/components.yml"))'` to surface the offending line. |
-| `status.corelink.dev` returns ERR_SSL_PROTOCOL_ERROR after step 6 | TLS cert still issuing | Wait 15 min; Atlassian's ACME flow needs a clean retry window. |
+| `status.corelink.humangr.com` returns ERR_SSL_PROTOCOL_ERROR after step 6 | TLS cert still issuing | Wait 15 min; Atlassian's ACME flow needs a clean retry window. |
 | Statuspage tenant shows duplicate components after a re-run | Reconcile-by-name match failed (e.g. you renamed a component in YAML) | Delete the duplicate by hand in admin UI; the script will not invent duplicates on subsequent runs because it patches by name. |
 | Proxy was accidentally left ON in Cloudflare | Atlassian custom-domain verification hangs forever | Flip the cloud icon to grey, then re-click Verify in the Statuspage tab. No bootstrap re-run needed. |
 | You picked Option B (different domain) by mistake | This quickstart only covers Option A | See `specs/_runbooks/STATUSPAGE-INIT.md` §3 for the docs-rebuild flow. |

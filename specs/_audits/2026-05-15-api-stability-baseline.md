@@ -1,7 +1,7 @@
 # API stability baseline — 2026-05-15
 
-**Scope:** Every endpoint and gRPC RPC reachable on `api.corelink.dev`,
-`cas.corelink.dev`, `bytestream.corelink.dev` at the GA gate. Tier
+**Scope:** Every endpoint and gRPC RPC reachable on `api.corelink.humangr.com`,
+`cas.corelink.humangr.com`, `bytestream.corelink.humangr.com` at the GA gate. Tier
 assignment is derived from `openapi/corelink-v1.yaml` (`x-stability`
 extension, when present) plus a manual inference pass for endpoints that
 do not yet carry the extension, using these rules:
@@ -97,8 +97,8 @@ A subsequent commit will materialise `x-stability` on every operation in
 
 ## 2. gRPC REAPI v2 surface
 
-Hosted at `cas.corelink.dev:443` (CAS + Capabilities) and
-`bytestream.corelink.dev:443` (ByteStream + Health).
+Hosted at `cas.corelink.humangr.com:443` (CAS + Capabilities) and
+`bytestream.corelink.humangr.com:443` (ByteStream + Health).
 
 | Service                            | RPC                  | Tier      | Justification                                                            |
 |------------------------------------|----------------------|-----------|--------------------------------------------------------------------------|

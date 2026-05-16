@@ -229,7 +229,7 @@ Feature WI; STANDARD lane; foundation crate.
    - **#3 Storage write**: writeable test (1KB blob upload com tenant prefix derivation); fail = `COR_STORAGE_WRITE_DENIED` next-action "verify tenant quota + plan limits".
    - **#4 Storage read**: readable test (round-trip integrity verify do blob escrito em #3); fail = `COR_STORAGE_READ_FAIL` next-action "verify tenant region + KMS access se BYOK".
    - **#5 BYOK**: if `[auth].byok_enabled = true`, KMS access check (S-14 alignment); fail = `COR_BYOK_REVOKED` next-action "verify CMK status em KMS provider".
-   - **#6 Region**: tenant region matches expected (`<tenant>.<region>.corelink.dev`); fail = `COR_REGION_MISMATCH` next-action "verify tenant primary_region em admin UI".
+   - **#6 Region**: tenant region matches expected (`<tenant>.<region>.corelink.humangr.com`); fail = `COR_REGION_MISMATCH` next-action "verify tenant primary_region em admin UI".
    - **#7 Quota**: current usage vs plan limit + soft/hard thresholds (S-07/S-08 boundary); fail = `COR_QUOTA_EXCEEDED` next-action "verify plan + contact sales".
    - **#8 Client verify**: BLAKE3 verify default-on em SDK reflection (CTRL-CAS-002); fail = `COR_CLIENT_VERIFY_DISABLED` next-action "verify FFI wrapper config; do NOT disable except for explicit dev/test".
    - Output `text`: tabela rica com check_name + status (OK/FAIL) + latency + next-action.

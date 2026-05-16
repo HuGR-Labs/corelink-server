@@ -30,7 +30,7 @@ tags: ["spec-contract", "s18", "docs", "docusaurus", "diataxis", "wcag-2.2-aa", 
 
 ## 1. Objetivo
 
-Publicar **docs públicas production-grade** em `docs.corelink.dev` seguindo **Diátaxis taxonomy** (tutorial / how-to / reference / explanation): getting started com 5-min quickstart Bazel/Buck2/Native, REAPI v2 reference auto-gerada de protos + manual examples, SDK guides (Python/Go/JS/CLI), compliance & security page (SOC 2 timeline + SBOM access + pentest summary), pricing page (5 tiers + feature matrix + calculator). Docs são **face público** — impacto direto GTM, conversion, trust signal regulatory.
+Publicar **docs públicas production-grade** em `docs.corelink.humangr.com` seguindo **Diátaxis taxonomy** (tutorial / how-to / reference / explanation): getting started com 5-min quickstart Bazel/Buck2/Native, REAPI v2 reference auto-gerada de protos + manual examples, SDK guides (Python/Go/JS/CLI), compliance & security page (SOC 2 timeline + SBOM access + pentest summary), pricing page (5 tiers + feature matrix + calculator). Docs são **face público** — impacto direto GTM, conversion, trust signal regulatory.
 
 **Por que SOTA:** competitors têm docs fragmentadas, missing pricing transparency, sem SBOM access para enterprise procurement. CoreLink S-18 entrega: (a) Diátaxis-organized navigability; (b) auto-gen API reference (drift impossível); (c) Lighthouse ≥ 95 + WCAG 2.2 AA; (d) Vale CI lint para tone consistency; (e) lychee broken-link CI check; (f) SBOM downloadable + pentest exec summary public. Reference: **Stripe Docs** (gold standard), **Diátaxis Framework**, **Vale (linter)**, **Linear's API docs** (auto-gen excellence).
 
@@ -134,7 +134,7 @@ inherits_from:
 ## 6. Definition of Done
 
 - [ ] **WIs SEALED**: 5/5.
-- [ ] **Docs URL live** + SSL (CF Pages) com custom domain `docs.corelink.dev` (EVT-018).
+- [ ] **Docs URL live** + SSL (CF Pages) com custom domain `docs.corelink.humangr.com` (EVT-018).
 - [ ] **5 dev externos** completam getting started em ≤ 5 min — UX research session (EVT-018).
 - [ ] **Pricing calculator** validado por Finance + tested 10 sample scenarios (EVT-044).
 - [ ] **Pricing page** reviewed Finance + Legal (cross-functional gate CF-1; Lote 10.18 codex P1 canonical fix — Security removida do pricing review path; Security é cross-functional gate CF-2 apenas para security page) (EVT-044).
@@ -180,8 +180,8 @@ inherits_from:
 ## 10. Anti-scope
 
 - ❌ Video tutorials (backlog pós-GA).
-- ❌ Enterprise-specific docs com confidential business logic — S-19 customer onboarding owns enterprise material; docs.corelink.dev é GA-public-only.
-- ❌ Marketing landing page (separate `corelink.dev` site; S-20 marketing prep).
+- ❌ Enterprise-specific docs com confidential business logic — S-19 customer onboarding owns enterprise material; docs.corelink.humangr.com é GA-public-only.
+- ❌ Marketing landing page (separate `corelink.humangr.com` site; S-20 marketing prep).
 - ❌ Blog (pós-GA Q1).
 - ❌ Customer case studies pre-GA (waiting for lighthouse customers — S-20).
 - ❌ **Pricing/security claims sem cross-functional review** — anti-scope estrito; qualquer page tocando pricing requires Finance + Legal review; security/compliance requires Privacy Officer + Security lead. Sem review = não merge.
@@ -208,7 +208,7 @@ inherits_from:
 
 | ID | Título | Sub-tasks | O | M | P | PERT |
 |---|---|---|---|---|---|---|
-| **WI-S18-001** | Docusaurus 3.x foundation + Diátaxis taxonomy + i18n config + custom domain (Lote 10.18 codex P2 alignment com filename `WI-S18-001-docusaurus-foundation-diataxis-i18n-custom-domain.md`) | scaffold; CF Pages; sidebar Diátaxis; i18n config 3 locales; Algolia DocSearch; custom domain `docs.corelink.dev` | 12h | 18h | 28h | **18.7h** |
+| **WI-S18-001** | Docusaurus 3.x foundation + Diátaxis taxonomy + i18n config + custom domain (Lote 10.18 codex P2 alignment com filename `WI-S18-001-docusaurus-foundation-diataxis-i18n-custom-domain.md`) | scaffold; CF Pages; sidebar Diátaxis; i18n config 3 locales; Algolia DocSearch; custom domain `docs.corelink.humangr.com` | 12h | 18h | 28h | **18.7h** |
 | **WI-S18-002** | Getting started 5-min quickstart + REAPI auto-gen + 4-language code examples (Lote 10.18 codex P2 alignment com filename `WI-S18-002-getting-started-reapi-auto-gen-4-language-examples.md`) | quickstart Bazel/Buck2/Native; protoc-gen-doc CI gate; manual examples per endpoint Rust/Python/Go/JS | 14h | 22h | 36h | **23.0h** |
 | **WI-S18-003** | SDK guides Python pyO3 + Go cgo + JS/TS WASM + CLI per-command reference (Lote 10.18 codex P2 alignment com filename `WI-S18-003-sdk-guides-python-go-js-cli-per-command.md`) | per-language SDK guide; client verify default-on documented; CLI reference per command | 10h | 16h | 26h | **16.7h** |
 | **WI-S18-004** | Compliance + security + pricing pages + cross-functional gate (Lote 10.18 codex P2 alignment com filename `WI-S18-004-compliance-security-pricing-pages-cross-functional-gate.md`) | /compliance + /security + /pricing pages; SBOM access + Cosign verify + Rekor; pricing 5 tiers + calculator 10 scenarios; CODEOWNERS + CI hard merge control | 12h | 18h | 28h | **18.7h** |

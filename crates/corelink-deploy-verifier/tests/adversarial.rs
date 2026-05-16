@@ -32,7 +32,7 @@ fn make_webhook(tag: &str) -> CfDeployWebhook {
         tag,
         "deadbeef".repeat(5),
         format!("refs/tags/{tag}"),
-        DeployTarget::new("corelink-worker", "b".repeat(32), "api.corelink.dev/*"),
+        DeployTarget::new("corelink-worker", "b".repeat(32), "api.corelink.humangr.com/*"),
         GitHubActor::new(
             "github-actions[bot]",
             format!("humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/{tag}"),

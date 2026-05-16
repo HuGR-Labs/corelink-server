@@ -62,13 +62,13 @@ tags:
 
 | Channel | Owner | Hours | Intake target | First-touch SLA |
 |---|---|---|---|---|
-| `support@corelink.dev` (primary) | Support-T1 | 24/7 (follow-the-sun pre-GA: Gustavo + 1 backup) | Zendesk-equivalent ticket queue (TBD vendor; placeholder `support.corelink.dev`) | Per §4 by severity |
-| Status page subscribers (`status.corelink.dev`) | VPMkt | Auto-publish | Not a support channel — outbound only; tickets generated automatically when subscribers reply | n/a |
-| In-app help widget (Intercom-style; `apps/docs` footer + dashboard chrome) | Support-T1 | Business hours (T+0..T+30); 24/7 from T+30 | Backfills to `support@corelink.dev` queue with `channel:widget` tag | Same as email per §4 |
-| `billing@corelink.dev` | Support-T1 → Finance escalation | 24/7 | Same queue, `category:billing` tag | Per §4 |
-| `security@corelink.dev` | VPSec | 24/7 | **Bypasses support queue** — direct VPSec; reference `SECURITY.md` | ≤ 4h ack |
-| `dsr@corelink.dev` | Support-T1 → DSR pipeline | 24/7 | Routed through `RB-DSR-TICKET-TRIAGE.md` | ≤ 24h ack (per LGPD/GDPR 30-day window) |
-| `incidents@corelink.dev` | Engineering on-call (read-only for support) | 24/7 | Inbound replies to incident customer-emails (see CRISIS-COMMS §A.4) | Handled by IC, not support |
+| `support@humangr.com` (primary) | Support-T1 | 24/7 (follow-the-sun pre-GA: Gustavo + 1 backup) | Zendesk-equivalent ticket queue (TBD vendor; placeholder `support.corelink.humangr.com`) | Per §4 by severity |
+| Status page subscribers (`status.corelink.humangr.com`) | VPMkt | Auto-publish | Not a support channel — outbound only; tickets generated automatically when subscribers reply | n/a |
+| In-app help widget (Intercom-style; `apps/docs` footer + dashboard chrome) | Support-T1 | Business hours (T+0..T+30); 24/7 from T+30 | Backfills to `support@humangr.com` queue with `channel:widget` tag | Same as email per §4 |
+| `billing@humangr.com` | Support-T1 → Finance escalation | 24/7 | Same queue, `category:billing` tag | Per §4 |
+| `security@humangr.com` | VPSec | 24/7 | **Bypasses support queue** — direct VPSec; reference `SECURITY.md` | ≤ 4h ack |
+| `dsr@humangr.com` | Support-T1 → DSR pipeline | 24/7 | Routed through `RB-DSR-TICKET-TRIAGE.md` | ≤ 24h ack (per LGPD/GDPR 30-day window) |
+| `incidents@humangr.com` | Engineering on-call (read-only for support) | 24/7 | Inbound replies to incident customer-emails (see CRISIS-COMMS §A.4) | Handled by IC, not support |
 | Slack Connect (lighthouse + named enterprise tenants only) | Support-T2 + CS engineer | Business hours; PagerDuty for P0 | Per `CUSTOMER-PLAYBOOK.md` §Comms protocol | ≤ 1h tagged business / ≤ 4h outside |
 
 > **Channel hard rule:** every public-facing channel ultimately backfills to **one** unified ticket queue. The queue is the single source of truth for ticket state, SLA timing, and audit. No ticket lives only in Slack DM or email.

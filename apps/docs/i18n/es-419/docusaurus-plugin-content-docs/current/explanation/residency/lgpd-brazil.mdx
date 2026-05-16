@@ -113,10 +113,10 @@ Three independent layers, all of which are auditable:
 
 ### 4.1 DNS-level routing
 
-Every request to your tenant lands at `<tenant_id>.<region>.corelink.dev`.
-For a `sam` tenant, that is `<tenant_id>.sam.corelink.dev`. If you point
+Every request to your tenant lands at `<tenant_id>.<region>.corelink.humangr.com`.
+For a `sam` tenant, that is `<tenant_id>.sam.corelink.humangr.com`. If you point
 your client at a different region's hostname (say,
-`<tenant_id>.weur.corelink.dev`), the server **rejects the request with
+`<tenant_id>.weur.corelink.humangr.com`), the server **rejects the request with
 HTTP 451 `Unavailable for Legal Reasons`** and a body like:
 
 ```json

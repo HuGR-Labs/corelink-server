@@ -96,7 +96,7 @@ We mention it here because the customers we want to attract are customers who ca
 
 ## Pricing
 
-CoreLink ships with Free, Team, and Enterprise tiers. Reference pricing lives at `corelink.dev/pricing`. Where placeholders appear in this and other launch documents, they reflect Finance's final approval cycle — not undecided product economics.
+CoreLink ships with Free, Team, and Enterprise tiers. Reference pricing lives at `corelink.humangr.com/pricing`. Where placeholders appear in this and other launch documents, they reflect Finance's final approval cycle — not undecided product economics.
 
 ## What is next
 
@@ -104,12 +104,12 @@ Phase 2 — Remote Execution — opens in the next sprint cycle and brings execu
 
 ## Get started in five minutes
 
-If you have a working Bazel or Buck2 toolchain, the on-ramp is short. Sign up at `corelink.dev/signup`, generate a project token, drop two lines into your `.bazelrc` (or the Buck2 equivalent), and re-run your build. The first run populates the cache; the second tells you whether the latency story we are claiming is the latency story you measure.
+If you have a working Bazel or Buck2 toolchain, the on-ramp is short. Sign up at `corelink.humangr.com/signup`, generate a project token, drop two lines into your `.bazelrc` (or the Buck2 equivalent), and re-run your build. The first run populates the cache; the second tells you whether the latency story we are claiming is the latency story you measure.
 
-- **Sign up:** `corelink.dev/signup`
-- **Docs:** `docs.corelink.dev`
-- **Press kit:** `corelink.dev/press`
-- **Trust center:** `corelink.dev/trust`
+- **Sign up:** `corelink.humangr.com/signup`
+- **Docs:** `docs.corelink.humangr.com`
+- **Press kit:** `corelink.humangr.com/press`
+- **Trust center:** `corelink.humangr.com/trust`
 
 We are deeply proud of this launch and of the customers who came along for the ride before there was a launch to come along to. If you have a build cache that is, today, the bottleneck in your inner loop — we would like to hear from you.
 

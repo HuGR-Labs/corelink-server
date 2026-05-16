@@ -88,7 +88,7 @@ inherits_from:
   3. **Storage write**: writeable test (1KB blob) com tenant prefix derivation.
   4. **Storage read**: readable test (round-trip integrity verify).
   5. **BYOK**: if configured, KMS access check (S-14 alignment).
-  6. **Region**: tenant region matches expected (`<tenant>.<region>.corelink.dev`).
+  6. **Region**: tenant region matches expected (`<tenant>.<region>.corelink.humangr.com`).
   7. **Quota**: current usage vs plan limit + soft/hard thresholds (S-07/S-08 boundary).
   8. **Client verify**: BLAKE3 verify default-on em SDK (CTRL-CAS-002 reflection).
   - Per-failure: actionable next step (link to docs error_taxonomy `COR_*` codes).
@@ -97,7 +97,7 @@ inherits_from:
 
 - **R-S15-6**: `examples/bazel-starter/` real project com:
   - `WORKSPACE` + `BUILD.bazel` files.
-  - `.bazelrc` reference (Lote 10.15 codex P0 canonical fix CTRL-CRED-001): `--remote_cache=https://corelink.dev/v1/cache --credential_helper=%workspace%/.bazel/corelink-credential-helper.sh` — credential helper protocol Bazel 6+ retorna token via stdout (nunca em argv); shell-expansion `${CORELINK_PAT}` em `--remote_header` colocaria PAT em argv (`ps aux` leak) = CTRL-CRED-001 violation. Helper script reads `CORELINK_PAT` env var + emits Bazel JSON response per <https://bazel.build/docs/credential-helper>.
+  - `.bazelrc` reference (Lote 10.15 codex P0 canonical fix CTRL-CRED-001): `--remote_cache=https://corelink.humangr.com/v1/cache --credential_helper=%workspace%/.bazel/corelink-credential-helper.sh` — credential helper protocol Bazel 6+ retorna token via stdout (nunca em argv); shell-expansion `${CORELINK_PAT}` em `--remote_header` colocaria PAT em argv (`ps aux` leak) = CTRL-CRED-001 violation. Helper script reads `CORELINK_PAT` env var + emits Bazel JSON response per <https://bazel.build/docs/credential-helper>.
   - `README.md` step-by-step ≤ 5 min setup.
   - Integration test em GitHub Actions: clone → `bazel build //:hello` → confirma cache hit.
 - **R-S15-7**: `examples/buck2-starter/` análogo: `BUCK` files, `.buckconfig` reference, CI test.

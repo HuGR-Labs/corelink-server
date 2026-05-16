@@ -24,7 +24,7 @@ inherits_from:
 tags: ["wi", "s15", "bazel", "starter-project", "reapi", "ci-test", "dx", "standard"]
 ---
 
-# WI-S15-002 — Bazel Integration Starter Project `examples/bazel-starter/` (Real `WORKSPACE` + `BUILD.bazel` + `.bazelrc` Reference com `--remote_cache=https://corelink.dev/v1/cache --credential_helper=%workspace%/.bazel/corelink-credential-helper.sh` — Credential Helper Protocol Bazel 6+ Pattern; PAT NUNCA em argv per CTRL-CRED-001 Lote 10.15 codex P0 fix) + README ≤ 5 min Setup + GitHub Actions CI Integration Test (clone → `bazel build //:hello` → Confirma Cache Hit em Subsequent Invocation via Bazel Log Inspection) + Benchmark Com/Sem Cache + `docs/integrations/bazel.md` User Guide + REAPI v2 Adherence
+# WI-S15-002 — Bazel Integration Starter Project `examples/bazel-starter/` (Real `WORKSPACE` + `BUILD.bazel` + `.bazelrc` Reference com `--remote_cache=https://corelink.humangr.com/v1/cache --credential_helper=%workspace%/.bazel/corelink-credential-helper.sh` — Credential Helper Protocol Bazel 6+ Pattern; PAT NUNCA em argv per CTRL-CRED-001 Lote 10.15 codex P0 fix) + README ≤ 5 min Setup + GitHub Actions CI Integration Test (clone → `bazel build //:hello` → Confirma Cache Hit em Subsequent Invocation via Bazel Log Inspection) + Benchmark Com/Sem Cache + `docs/integrations/bazel.md` User Guide + REAPI v2 Adherence
 
 > **doc_status:** DRAFT · **work_status:** READY · **lane:** STANDARD
 > **Parent:** [S-15](../sprint.md) · **Assignee:** Gustavo Schneiter
@@ -36,7 +36,7 @@ tags: ["wi", "s15", "bazel", "starter-project", "reapi", "ci-test", "dx", "stand
 | Campo | Valor |
 |---|---|
 | ID | WI-S15-002 |
-| Título | Real Bazel starter project em `examples/bazel-starter/` com `WORKSPACE` + `BUILD.bazel` + `.bazelrc` reference (`--remote_cache=https://corelink.dev/v1/cache --credential_helper=%workspace%/.bazel/corelink-credential-helper.sh` — credential helper Bazel 6+ pattern per <https://bazel.build/docs/credential-helper>; PAT NUNCA em argv per CTRL-CRED-001 Lote 10.15 codex P0 canonical fix; helper script reads `CORELINK_PAT` env var + emits Bazel JSON response) + `README.md` step-by-step setup ≤ 5 min + GitHub Actions CI integration test (clone → `bazel build //:hello` → segunda invocation confirma cache hit via Bazel `--noremote_upload_local_results` log inspection); benchmark sample build com / sem cache + report; fixture project não-trivial (hello-world inline + 1 transitive dep para validar cross-target dedup); `docs/integrations/bazel.md` user guide publicado; REAPI v2 specification adherence verified. |
+| Título | Real Bazel starter project em `examples/bazel-starter/` com `WORKSPACE` + `BUILD.bazel` + `.bazelrc` reference (`--remote_cache=https://corelink.humangr.com/v1/cache --credential_helper=%workspace%/.bazel/corelink-credential-helper.sh` — credential helper Bazel 6+ pattern per <https://bazel.build/docs/credential-helper>; PAT NUNCA em argv per CTRL-CRED-001 Lote 10.15 codex P0 canonical fix; helper script reads `CORELINK_PAT` env var + emits Bazel JSON response) + `README.md` step-by-step setup ≤ 5 min + GitHub Actions CI integration test (clone → `bazel build //:hello` → segunda invocation confirma cache hit via Bazel `--noremote_upload_local_results` log inspection); benchmark sample build com / sem cache + report; fixture project não-trivial (hello-world inline + 1 transitive dep para validar cross-target dedup); `docs/integrations/bazel.md` user guide publicado; REAPI v2 specification adherence verified. |
 | Sprint | S-15 |
 | Lane | STANDARD |
 | Forcing factors | none |
@@ -86,7 +86,7 @@ cc_binary(
 
 ```ini
 # File: examples/bazel-starter/.bazelrc
-build --remote_cache=https://corelink.dev/v1/cache
+build --remote_cache=https://corelink.humangr.com/v1/cache
 build --credential_helper=%workspace%/.bazel/corelink-credential-helper.sh
 # Lote 10.15 codex P0 canonical fix CTRL-CRED-001: credential helper protocol Bazel 6+ — helper reads CORELINK_PAT env var + emits JSON token; PAT nunca em argv (vs --remote_header= que shell-expand into argv = ps aux leak)
 build --remote_timeout=30s
@@ -199,7 +199,7 @@ Feature: Bazel starter project + CI integration test
 
   Scenario: .bazelrc reference correto
     Given .bazelrc in examples/bazel-starter
-    Then contains --remote_cache=https://corelink.dev/v1/cache
+    Then contains --remote_cache=https://corelink.humangr.com/v1/cache
     And contains --credential_helper=%workspace%/.bazel/corelink-credential-helper.sh
     And NOT contains hardcoded PAT value
 
@@ -211,7 +211,7 @@ Feature: Bazel starter project + CI integration test
 
   Scenario: REAPI v2 adherence verified
     Given Bazel 7.x client + CoreLink staging endpoint
-    When `bazel build //:hello --remote_cache=https://staging.corelink.dev/v1/cache`
+    When `bazel build //:hello --remote_cache=https://staging.corelink.humangr.com/v1/cache`
     Then build succeeds
     And REAPI v2 protocol compliance (FindMissingBlobs + GetActionResult + UpdateActionResult endpoints)
 

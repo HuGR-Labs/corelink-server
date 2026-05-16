@@ -108,7 +108,7 @@ AUDIT_EVENT=$(cat <<'EOF'
 {
   "specversion": "1.0",
   "type": "dev.hugr.corelink.region.cross_region_read_blocked.v1",
-  "source": "https://corelink.dev/region-enforcer",
+  "source": "https://corelink.humangr.com/region-enforcer",
   "id": "DRY-RUN-evt-$(date -u +%Y%m%dT%H%M%SZ)",
   "time": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "datacontenttype": "application/json",
@@ -116,7 +116,7 @@ AUDIT_EVENT=$(cat <<'EOF'
     "tenant_id_hashed": "sha256:DRY-RUN-TENANT-HASH",
     "primary_region": "weur",
     "request_region": "enam",
-    "endpoint": "DRY-RUN-enam.api.corelink.dev",
+    "endpoint": "DRY-RUN-enam.api.corelink.humangr.com",
     "request_id": "DRY-RUN-req-$(uuidgen 2>/dev/null || echo 'uuid-unavailable')",
     "dry_run": true,
     "ts": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -160,7 +160,7 @@ Next steps:
 - Full breach assessment under Schrems II TIA.
 - Post-mortem to be published within 5 business days.
 
-Contact: privacy@corelink.dev | DPO: dpo@hugr.dev
+Contact: privacy@humangr.com | DPO: dpo@hugr.dev
 EOF
 )
 _info "Notification template rendered (DRY RUN)"

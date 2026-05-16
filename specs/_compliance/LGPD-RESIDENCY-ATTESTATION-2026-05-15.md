@@ -47,7 +47,7 @@ ANPD has not (as of 2026-05-15) published a definitive "adequacy list" of third 
 
 | Tenant residency | Brazilian data subjects present? | Legal basis relied on | Operational control |
 |---|---|---|---|
-| `sam` (BR) | Yes (primary) | Art. 33 caput — data stays in BR; no international transfer occurs | CTRL-PRIV-031 residency pinning + DNS routing `<tenant>.sam.corelink.dev` |
+| `sam` (BR) | Yes (primary) | Art. 33 caput — data stays in BR; no international transfer occurs | CTRL-PRIV-031 residency pinning + DNS routing `<tenant>.sam.corelink.humangr.com` |
 | `wnam` / `enam` / `weur` / `apac` / `afr` with BR subject content | Possibly (tenant-controlled) | Art. 33, V (contractual necessity) + Art. 33, II (ANPD-approved SCCs, embedded in DPA `legal/dpa-residency-amendment.md`) | DPA clause + tenant attestation at signup that PII processing is contractually required |
 | Any region, with explicit consent | Yes | Art. 33, VIII (specific and highlighted consent) | Consent capture per `privacy_model.md §5.6` — `purpose_tag = analytics_personalized` or equivalent |
 

@@ -25,7 +25,7 @@ module "cf_base" {
 
   cf_account_id = var.cf_account_id
   cf_zone_id    = var.cf_zone_id
-  zone_name     = "corelink.dev"
+  zone_name     = "corelink.humangr.com"
   environment   = "staging"
 
   create_email_records = true

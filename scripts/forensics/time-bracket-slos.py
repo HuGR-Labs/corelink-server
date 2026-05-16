@@ -52,7 +52,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SLO_CATALOG = REPO_ROOT / "specs" / "03_architecture" / "slo_catalog.md"
 
-GRAFANA_URL = os.environ.get("GRAFANA_URL", "https://grafana.corelink.dev")
+GRAFANA_URL = os.environ.get("GRAFANA_URL", "https://grafana.corelink.humangr.com")
 GRAFANA_TOKEN = os.environ.get("GRAFANA_TOKEN", "")
 
 # SLO ids are extracted by regex from slo_catalog.md headers of the form

@@ -21,7 +21,7 @@ tags: ["soc2", "cc9.2", "vendor-dd", "important", "hubspot", "crm", "gap-14"]
 
 > **doc_status:** ACTIVE · Register row: 11 · Category: **Important** · Residual risk: **3.6** (Inherent 9 × CEF 0.40).
 >
-> HubSpot is CoreLink's CRM for **enterprise-inquiry intake** (the `corelink.dev/enterprise` form posts directly to HubSpot via a private app token). It holds **sales prospect contact data only** — no customer tenant data, no billing data, no source code.
+> HubSpot is CoreLink's CRM for **enterprise-inquiry intake** (the `corelink.humangr.com/enterprise` form posts directly to HubSpot via a private app token). It holds **sales prospect contact data only** — no customer tenant data, no billing data, no source code.
 
 ---
 
@@ -39,7 +39,7 @@ tags: ["soc2", "cc9.2", "vendor-dd", "important", "hubspot", "crm", "gap-14"]
 ## 2. Service scope
 
 - **HubSpot CRM (Sales Hub Starter)** — contacts, companies, deals, pipelines
-- **Forms API** — `corelink.dev/enterprise` inquiry form submission → HubSpot contact + deal creation
+- **Forms API** — `corelink.humangr.com/enterprise` inquiry form submission → HubSpot contact + deal creation
 - **Workflows** — internal sales-cycle automation (assignment, follow-up cadence)
 - **Email tracking + sequences** — outbound sales emails to prospects who opted in
 - **Meetings tool** — calendar-booking links for AE → prospect calls

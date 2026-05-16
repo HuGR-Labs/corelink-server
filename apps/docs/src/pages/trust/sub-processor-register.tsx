@@ -62,7 +62,7 @@ const ACTIVE_SUB_PROCESSORS: readonly SubProcessor[] = [
     service: "Authentication + identity provider + JWT issuer",
     dataClasses: ["pii"],
     regions: "Multi-region (per tenant primary_region pin)",
-    dpaHref: "mailto:privacy@corelink.dev?subject=Clerk%20DPA%20request",
+    dpaHref: "mailto:privacy@humangr.com?subject=Clerk%20DPA%20request",
     dpaLabel: "Clerk DPA (on request)",
   },
   {
@@ -89,7 +89,7 @@ const ACTIVE_SUB_PROCESSORS: readonly SubProcessor[] = [
     service: "Slack (notification payloads only)",
     dataClasses: ["metadata", "audit-logs"],
     regions: "US / EU (selectable)",
-    dpaHref: "mailto:privacy@corelink.dev?subject=Slack%20DPA%20request",
+    dpaHref: "mailto:privacy@humangr.com?subject=Slack%20DPA%20request",
     dpaLabel: "Slack DPA (on request)",
   },
   {
@@ -125,7 +125,7 @@ const ACTIVE_SUB_PROCESSORS: readonly SubProcessor[] = [
     service: "Neon Postgres (shadow analytics plane)",
     dataClasses: ["pii", "metadata"],
     regions: "Multi-region (per tenant primary_region pin)",
-    dpaHref: "mailto:privacy@corelink.dev?subject=Neon%20DPA%20request",
+    dpaHref: "mailto:privacy@humangr.com?subject=Neon%20DPA%20request",
     dpaLabel: "Neon DPA (on request)",
   },
   {
@@ -134,7 +134,7 @@ const ACTIVE_SUB_PROCESSORS: readonly SubProcessor[] = [
     service: "Transactional email + SMS",
     dataClasses: ["pii"],
     regions: "Multi-region (per tenant primary_region pin)",
-    dpaHref: "mailto:privacy@corelink.dev?subject=Twilio%20DPA%20request",
+    dpaHref: "mailto:privacy@humangr.com?subject=Twilio%20DPA%20request",
     dpaLabel: "Twilio DPA (on request)",
   },
 ];
@@ -265,17 +265,17 @@ export default function SubProcessorRegister(): ReactElement {
             <li>
               <strong>Status page</strong> — subscribe at{" "}
               <a
-                href="https://status.corelink.dev"
+                href="https://status.corelink.humangr.com"
                 rel="noopener noreferrer"
                 target="_blank"
               >
-                status.corelink.dev
+                status.corelink.humangr.com
               </a>{" "}
               (RSS / email / SMS / webhook).
             </li>
             <li>
               <strong>RSS feed (post-GA)</strong> —{" "}
-              <code>https://corelink.dev/trust/subprocessors.rss</code>.
+              <code>https://corelink.humangr.com/trust/subprocessors.rss</code>.
             </li>
           </ul>
         </section>

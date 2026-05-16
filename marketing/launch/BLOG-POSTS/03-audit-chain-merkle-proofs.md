@@ -111,7 +111,7 @@ We publish bench numbers at GA-day. Today, in the embargoed launch documents, th
 
 ## Daily proof publication
 
-The chain head, signed by a CoreLink-side Ed25519 signing key (rotated and tracked at `corelink.dev/trust`), is published daily per region. The schedule is documented per region in the trust center. Customers can configure their own auditing pipeline to fetch the head and verify a consistency proof against the previous day's head as a routine integrity exercise.
+The chain head, signed by a CoreLink-side Ed25519 signing key (rotated and tracked at `corelink.humangr.com/trust`), is published daily per region. The schedule is documented per region in the trust center. Customers can configure their own auditing pipeline to fetch the head and verify a consistency proof against the previous day's head as a routine integrity exercise.
 
 We have customers who do this. We think more of them should.
 
@@ -139,14 +139,14 @@ Three things on the roadmap that are explicitly out of GA scope:
 
 **What hash algorithm?** SHA-256 at the tree layer, matching RFC 6962. BLAKE3 is used elsewhere in CoreLink for content addressing where REAPI compatibility permits, but the audit chain pins SHA-256 for ecosystem alignment with the RFC 6962 / Certificate Transparency tooling base.
 
-**Where do I find the signing key?** Published at `corelink.dev/trust/signing-keys` with rotation history.
+**Where do I find the signing key?** Published at `corelink.humangr.com/trust/signing-keys` with rotation history.
 
 ## Where to go next
 
-- **Trust center:** `corelink.dev/trust`
-- **Audit chain spec:** `docs.corelink.dev/trust/audit-chain`
+- **Trust center:** `corelink.humangr.com/trust`
+- **Audit chain spec:** `docs.corelink.humangr.com/trust/audit-chain`
 - **Verification toolkit (open source):** `github.com/humangr-labs/corelink-audit-verify` (placeholder pending GA repo open)
-- **Daily proof bundle format:** `docs.corelink.dev/trust/proof-bundle`
+- **Daily proof bundle format:** `docs.corelink.humangr.com/trust/proof-bundle`
 
 — Trust Engineering at CoreLink
 

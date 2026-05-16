@@ -85,7 +85,7 @@ docs). 2-week sprint without post-sprint observation window required.
 **In-scope (WIs SEALED 5/5):**
 
 - WI-S18-001 — Docusaurus 3.x foundation + Diátaxis taxonomy + i18n
-  config 3 locales + custom domain `docs.corelink.dev` + Algolia
+  config 3 locales + custom domain `docs.corelink.humangr.com` + Algolia
   DocSearch.
 - WI-S18-002 — Getting started 5-min quickstart + REAPI auto-gen +
   4-language code examples (Rust + Python + Go + JS).
@@ -100,7 +100,7 @@ docs). 2-week sprint without post-sprint observation window required.
 **Out-of-scope (deferred per spec contract §10):**
 
 - Video tutorials (post-GA backlog).
-- Marketing landing page (separate `corelink.dev` site; S-20).
+- Marketing landing page (separate `corelink.humangr.com` site; S-20).
 - Blog (post-GA Q1).
 - Customer case studies pre-GA (S-20).
 - Real-time pricing API.
@@ -112,7 +112,7 @@ docs). 2-week sprint without post-sprint observation window required.
 | # | Criterion | Status | Evidence |
 |---|---|---|---|
 | 1 | WIs SEALED 5/5 | OK at S-18 close | git log; per-WI frontmatter `doc_status: SEALED` |
-| 2 | Docs URL live + SSL + custom domain `docs.corelink.dev` | PENDING (WI-S18-001) | CF Pages deploy log |
+| 2 | Docs URL live + SSL + custom domain `docs.corelink.humangr.com` | PENDING (WI-S18-001) | CF Pages deploy log |
 | 3 | 5 dev externals complete getting started ≤ 5 min | CONDITIONALLY_APPROVED | `specs/_audits/2026-05-14-s18-ux-research.md` (DRAFT synthetic baseline; R-UX-05 real-participant re-run D+10) |
 | 4 | Pricing calculator validated by Finance + 10 sample scenarios | PENDING-CROSS-FUNCTIONAL (WI-S18-004 CF-1) | Finance sign-off log |
 | 5 | Pricing page reviewed Finance + Legal | PENDING-CROSS-FUNCTIONAL (CF-1) | CODEOWNERS gate |

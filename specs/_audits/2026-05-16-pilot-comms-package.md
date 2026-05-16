@@ -20,7 +20,7 @@ Owner-issued wave-28 step-7 charge: author the pilot announcement comms package 
 | 3 | Long-form LinkedIn post | `marketing/launch/PILOT-LINKEDIN-POST.md` | DELIVERED |
 | 4 | Show-HN-style post | `marketing/launch/PILOT-HN-LAUNCH.md` | DELIVERED |
 | 5 | Outbound email template (Mustache `{{lead_name}}` / `{{lead_company}}`) | `marketing/launch/PILOT-EMAIL-BLAST.md` | DELIVERED |
-| 6 | Landing-page copy for `signup.corelink.dev/pilot` | `marketing/launch/PILOT-LANDING-PAGE-COPY.md` | DELIVERED |
+| 6 | Landing-page copy for `signup.corelink.humangr.com/pilot` | `marketing/launch/PILOT-LANDING-PAGE-COPY.md` | DELIVERED |
 | 7 | 30-candidate direct-outreach target list | `docs/internal/pilot-target-list.md` | DELIVERED |
 | 8 | This audit doc | `specs/_audits/2026-05-16-pilot-comms-package.md` | (this file) |
 
@@ -53,7 +53,7 @@ GA-1 feature-freeze is ACTIVE per `specs/_audits/2026-05-16-ga-1-feature-freeze.
 
 1. **Honest pre-GA framing everywhere.** Every deliverable (1-pager, X thread, LinkedIn, HN, email, landing page) calls out explicitly what is **pilot** vs **GA-only**. The HN draft does this most aggressively (HN audience expects it); the email does this in 2 lines to keep the 150-word target; the landing page has a dedicated section. Rationale: HuGR pre-GA brand authority is contingent on never overselling.
 2. **Trace to GA-GATE-CRITERIA.** The 1-pager + landing page link to GA-GATE-CRITERIA.md (in spirit — actual URL is `/ga-gate`); this ties marketing claims to a concrete, public engineering contract.
-3. **Apply URL is `https://signup.corelink.dev/pilot`** per Owner brief, matching wave-27 token-based slot-reservation pipeline.
+3. **Apply URL is `https://signup.corelink.humangr.com/pilot`** per Owner brief, matching wave-27 token-based slot-reservation pipeline.
 4. **10 slots, ≥3 to GA.** The target-list funnel is sized so 30 candidates → 3–5 activated, leaving margin without forcing artificial scarcity.
 5. **No fabricated quotes.** Every claim traces to either the public spec corpus (TLA+ isolation, Merkle audit chain, 4-region replication) or is labelled as pre-GA pilot scope (best-effort SLOs, no BYOK in pilot, no SOC 2 Type II yet).
 6. **No emoji in copy.** Per Owner standing brief + observed style in `PRESS-RELEASE.md` + `LINKEDIN-POST.md` (the GA-day counterparts). Posting-note sections suggest no emoji even on X (corporate launch threads with thread-emoji read as marketing-noise to the build-infra audience).
@@ -78,7 +78,7 @@ GA-1 feature-freeze is ACTIVE per `specs/_audits/2026-05-16-ga-1-feature-freeze.
 
 | ID | Risk | Severity | Mitigation |
 |---|---|---|---|
-| R1 | `signup.corelink.dev/pilot` 404s at publication time → HN flagging risk + outbound email broken-link risk. | HIGH | **Owner pre-flight gate:** confirm landing page is live + signup form reachable BEFORE publishing X / LinkedIn / HN / sending emails. HN posting-notes section in `PILOT-HN-LAUNCH.md` explicitly calls this out. |
+| R1 | `signup.corelink.humangr.com/pilot` 404s at publication time → HN flagging risk + outbound email broken-link risk. | HIGH | **Owner pre-flight gate:** confirm landing page is live + signup form reachable BEFORE publishing X / LinkedIn / HN / sending emails. HN posting-notes section in `PILOT-HN-LAUNCH.md` explicitly calls this out. |
 | R2 | Pilot demand exceeds 10 slots → Owner has no published "cohort 2" timeline. | MED | The 1-pager mentions "two cohorts" of headroom; cohort-2 timeline is an Owner-side product-marketing decision and not in scope for this comms package. Acceptable risk. |
 | R3 | A pilot prospect cites GA-only capability (BYOK, SOC 2 Type II) as a deal-breaker mid-pilot. | MED | Landing-page FAQ + 1-pager + HN draft + LinkedIn post all front-load what's pilot-vs-GA. Mid-pilot deal-breakers should be screened OUT at the signup form's qualification stage. Acceptable. |
 | R4 | Pilot signup token-gating (wave-27) misfires for an inbound applicant → bad first impression. | MED | wave-27 admin-scripts include token re-issuance flow. Owner-side ops risk; not addressable in comms package. |

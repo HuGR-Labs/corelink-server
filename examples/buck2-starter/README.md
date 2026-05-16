@@ -21,7 +21,7 @@ Get your **first remote-cache hit in under 5 minutes** using Buck2 + CoreLink.
 
 ## Step 1 — Get a CoreLink PAT (~1 min)
 
-1. Sign up at <https://corelink.dev> (free tier available).
+1. Sign up at <https://corelink.humangr.com> (free tier available).
 2. Navigate to **Settings → API Tokens → New token**.
 3. Copy the token; you will export it in the next step.
 
@@ -125,7 +125,7 @@ Error: HTTP 401 Unauthorized
 ### Cache miss on warm build
 
 - Confirm `[remote_cache] write = true` in `.buckconfig`.
-- Check for proxy or firewall blocking `https://corelink.dev`.
+- Check for proxy or firewall blocking `https://corelink.humangr.com`.
 - Run with verbose logging: `buck2 build :hello -v 2`.
 
 ### Quota exceeded (429)
@@ -134,7 +134,7 @@ Error: HTTP 401 Unauthorized
 Error: HTTP 429 Too Many Requests
 ```
 
-- Your tenant has reached its usage limit.  Upgrade at <https://corelink.dev/billing>.
+- Your tenant has reached its usage limit.  Upgrade at <https://corelink.humangr.com/billing>.
 
 ### Network unreachable
 

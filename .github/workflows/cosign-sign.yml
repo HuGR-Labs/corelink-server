@@ -192,7 +192,7 @@ jobs:
               deploy_target: {
                 script_name: "corelink-worker",
                 zone_id: "ZONE_ID_PLACEHOLDER",
-                route_pattern: "api.corelink.dev/*"
+                route_pattern: "api.corelink.humangr.com/*"
               },
               triggered_by: {
                 login: "github-actions[bot]",

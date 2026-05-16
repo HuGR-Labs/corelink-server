@@ -277,7 +277,7 @@ These items CANNOT be closed by agent dispatch — they require operator / human
 |---|---|---|---|---|
 | H-1 | **DEBT-003** — AWS attestation PDF SHA-256 | Gustavo | 2026-06-14 (GAP-02 hard cap) | Download AWS Artifact SOC 2 + FIPS attestation PDF; run `sha256sum`; update `BYOK-FIPS-ATTESTATION-MATRIX.md` row |
 | H-2 | **DEBT-015** — apps/docs Node 22 build (out-of-scope blockers: draft pages + .mdx cross-links + GHA billing offline) | Gustavo / docs-CI | 2026-06-05 | Unstub or remove `draft: true` from 5+ MDX pages (audit-chain / byok / lgpd-brazil); normalise `.mdx` cross-links to extensionless; re-run on Node 22 with engine pin lifted |
-| H-3 | **DEBT-016** — Statuspage URLs (`status.corelink.dev` cited in 8+ trust pages but not live) | Gustavo | T-7d pre-launch | Follow `STATUSPAGE-INIT.md` provisioning playbook |
+| H-3 | **DEBT-016** — Statuspage URLs (`status.corelink.humangr.com` cited in 8+ trust pages but not live) | Gustavo | T-7d pre-launch | Follow `STATUSPAGE-INIT.md` provisioning playbook |
 | H-4 | **GHA billing unblock** — first `mutation-nightly.yml` artifact production blocked org-wide | Gustavo / ops | pre-GA | Resolve GitHub billing account state |
 | H-5 | **Outside-counsel review queue** — Legal review of DPA + privacy notice + SLA (per ROADMAP §5 R-5) | Gustavo + Legal | R-5 phase (30-60 days) | Engage legal vendor (budget commitment per ROADMAP §13) |
 | H-6 | **WI-S11-008 PRR ship gate** — DSR Statuspage scheduler (cron-trigger or DO-alarm composing publish job once/24h) | operator | R-4..R-6 | Operator wires scheduler; publish path already SHIPPED wave 16 |

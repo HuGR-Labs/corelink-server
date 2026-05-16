@@ -29,7 +29,7 @@ Prior art: WI-S11-007 established the `ResidencyEnforcement` trait + `InMemoryRe
 **The key decision:** where is `request_region` derived from?
 
 Option A: `X-Region` HTTP header (attacker-controlled; trivially spoofed).
-Option B: Custom domain `{region}.api.corelink.dev` (TLS-terminated by Cloudflare; cannot be tampered in transit).
+Option B: Custom domain `{region}.api.corelink.humangr.com` (TLS-terminated by Cloudflare; cannot be tampered in transit).
 
 ## Decision
 
@@ -37,7 +37,7 @@ Option B: Custom domain `{region}.api.corelink.dev` (TLS-terminated by Cloudflar
 
 **Stack:**
 
-1. **`region_from_host(host: &str) → Option<Region>`** — parses `{tenant_id}.{region}.corelink.dev` from the Host header (custom domain). Region must be in the 4-region canonical enum; unknown strings return `None` (fail-CLOSED).
+1. **`region_from_host(host: &str) → Option<Region>`** — parses `{tenant_id}.{region}.corelink.humangr.com` from the Host header (custom domain). Region must be in the 4-region canonical enum; unknown strings return `None` (fail-CLOSED).
 
 2. **`ResidencyEnforcement::assert_request_residency`** — Tower layer enforcer. Called AFTER auth (TenantCtx propagated) + BEFORE any handler or backend access. Mismatch = `ResidencyViolation::RequestRegionMismatch` = HTTP 451 (or 403 per spec; implementation maps to 451 per PAT-ROUTING-PINNED-001 fail-CLOSED canonical).
 

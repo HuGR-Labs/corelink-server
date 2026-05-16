@@ -170,7 +170,7 @@ and returned to the translator for revision under the contract SLA.
 
 ## 9. Contact
 
-- Engineering point of contact: docs@corelink.dev (internal)
+- Engineering point of contact: docs@humangr.com (internal)
 - Style questions during translation: file as a comment in the XLIFF segment
   using `<note category="translator-question">`.
 

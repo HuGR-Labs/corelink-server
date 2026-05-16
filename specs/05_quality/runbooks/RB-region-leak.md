@@ -41,7 +41,7 @@ tags: ["runbook", "p0", "region", "pinning", "residency", "schrems-ii", "lgpd", 
 **Verify counter spike:**
 ```bash
 # Prometheus query (adapt to your metrics backend)
-curl -s 'https://metrics.corelink.dev/api/v1/query' \
+curl -s 'https://metrics.corelink.humangr.com/api/v1/query' \
   --data-urlencode 'query=corelink_region_cross_region_read_blocked_total > 0' \
   | jq '.data.result'
 ```
@@ -70,7 +70,7 @@ curl -s 'https://metrics.corelink.dev/api/v1/query' \
 # (requires Cloudflare API token with WAF:Edit scope)
 
 # 2. Revoke offending PAT/session (S-03 PAT revoke API)
-curl -X POST https://api.corelink.dev/v1/admin/pat/revoke \
+curl -X POST https://api.corelink.humangr.com/v1/admin/pat/revoke \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -d '{"tenant_id": "<TENANT_ID>", "reason": "cross-region leak containment"}'
 
@@ -134,7 +134,7 @@ WHERE tenant_id = '<AFFECTED_TENANT_ID>';
 - GDPR Art. 33: notify supervisory authority within 72h if high risk.
 - LGPD Art. 48: notify ANPD + data subjects without undue delay.
 
-**Privacy Officer contact:** privacy@corelink.dev
+**Privacy Officer contact:** privacy@humangr.com
 **DPO contact:** dpo@hugr.dev
 
 ---
@@ -162,7 +162,7 @@ Actions taken: [SUMMARY]
 
 We will provide a full post-mortem within 5 business days.
 
-Contact: privacy@corelink.dev
+Contact: privacy@humangr.com
 ```
 
 ---

@@ -157,8 +157,8 @@ What we know so far:
 - {Scope: blobs, tenants, time window}
 - {Root cause status: investigating / contained / patched}
 
-We will publish a full post-mortem within 14 days at status.corelink.dev.
-For questions: incidents@corelink.dev.
+We will publish a full post-mortem within 14 days at status.corelink.humangr.com.
+For questions: incidents@humangr.com.
 
 — CoreLink Security & Engineering
 ```

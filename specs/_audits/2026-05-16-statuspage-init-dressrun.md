@@ -25,7 +25,7 @@ This dress-run delivers both: a hermetic execution harness (`scripts/statuspage-
 | Dimension | Production cutover | This dress-run |
 |---|---|---|
 | Atlassian Statuspage tenant | Real Business-tier subscription provisioned by SRE Lead | NOT provisioned (operator-bound; runbook §2.1) |
-| Cloudflare DNS CNAME for `status.corelink.dev` | Real edit in zone `corelink.dev` | Simulated via deterministic zone-file fake at `${SANDBOX}/dns/zone.txt` |
+| Cloudflare DNS CNAME for `status.corelink.humangr.com` | Real edit in zone `corelink.humangr.com` | Simulated via deterministic zone-file fake at `${SANDBOX}/dns/zone.txt` |
 | Statuspage public API health | `curl` against the operator's real tenant URL | `curl --head https://www.statuspage.io/` (read-only landing page; tenant-independent; offline-tolerant) |
 | `pnpm build` with `STATUSPAGE_URL` set | Full Docusaurus build in the docs deploy pipeline | Node-mirror of `getStatuspageUrl()` exercised under three env-var permutations + the `rg | sed` MDX substitution one-liner exercised on a synthetic MDX fragment |
 | Operator handoff | SRE Lead writes the row in `specs/_compliance/GA-GATE-CRITERIA.md` after the live cutover | JSON handoff doc emitted inside the sandbox, with runbook+helper SHA-256 fingerprints binding it to a specific engineering-closure commit |
@@ -38,7 +38,7 @@ Each step is implemented as a bash function in `scripts/statuspage-init-dressrun
 
 | # | Runbook coverage | Simulated fake | Outcome | Duration (ms) | Verification ID prefix |
 |---|---|---|---|---|---|
-| S1 | §2 step 4 + §3 step 2 — DNS CNAME `status.corelink.dev` → `*.statuspage.io` | Deterministic zone-file fake under `${SANDBOX}/dns/zone.txt`; awk-driven resolver | PASS | 74 | `VID-2026-05-16-S1-…` |
+| S1 | §2 step 4 + §3 step 2 — DNS CNAME `status.corelink.humangr.com` → `*.statuspage.io` | Deterministic zone-file fake under `${SANDBOX}/dns/zone.txt`; awk-driven resolver | PASS | 74 | `VID-2026-05-16-S1-…` |
 | S2 | §2 step 7 — Statuspage API reachability (`curl -sI`) | Real HEAD against `https://www.statuspage.io/` with `--max-time 5`; DEGRADED-tolerant on network failure | PASS (HTTP 301) | 446 | `VID-2026-05-16-S2-…` |
 | S3 | §3 steps 3–5 — build-time substitution (`STATUSPAGE_URL=…` + MDX `rg | sed` rewrite) | Node mirror of `getStatuspageUrl()` against 3 env permutations; synthetic MDX fragment + `sed` rewrite against `${OVERRIDE_URL}` | PASS | 337 | `VID-2026-05-16-S3-…` |
 | S4 | §2 step 7 sign-off + §3 sign-off — operator handoff | jq-emitted JSON handoff with UTC timestamps, runbook+helper SHA-256, and 3 go-live gates marked `pending-operator` | PASS | 170 | `VID-2026-05-16-S4-…` |
@@ -49,15 +49,15 @@ Each step is implemented as a bash function in `scripts/statuspage-init-dressrun
 
 ### 3.1 Per-step rationale
 
-**S1 — DNS CNAME verification.** The simulated zone-file fake is sufficient to prove the verification logic (a) refuses an empty CNAME and (b) refuses a non-`*.statuspage.io` target. Both negative cases were covered during development by toggling the zone-file and re-running; the production verifier inherits the same logic when pointed at a real resolver (the operator simply swaps the awk-driven lookup for `dig +short CNAME status.corelink.dev`).
+**S1 — DNS CNAME verification.** The simulated zone-file fake is sufficient to prove the verification logic (a) refuses an empty CNAME and (b) refuses a non-`*.statuspage.io` target. Both negative cases were covered during development by toggling the zone-file and re-running; the production verifier inherits the same logic when pointed at a real resolver (the operator simply swaps the awk-driven lookup for `dig +short CNAME status.corelink.humangr.com`).
 
 **S2 — Statuspage API health.** We hit the public Atlassian landing surface rather than the tenant-specific `summary.json` endpoint because the latter requires a real provisioned tenant. The landing-page HEAD is sufficient to prove "the operator's network path to Atlassian-hosted surfaces is open" — the runbook §2 step 7 `summary.json` check is operator-bound and will run live at T-7d. Step S2 records DEGRADED (not FAIL) on `curl` network errors so the dress-run remains usable in air-gapped CI.
 
 **S3 — Build-time substitution.** The Node mirror exercises three permutations:
-- no env var → default `https://status.corelink.dev` (canonical wave-19 commit value);
+- no env var → default `https://status.corelink.humangr.com` (canonical wave-19 commit value);
 - `STATUSPAGE_URL=https://corelink-statuspage-test.example.com` → operator-override value;
 - explicit `customFields` argument (component-time path) → the explicit value.
-The MDX-substitution sub-step runs the runbook §3 `sed` one-liner against a synthetic MDX fragment containing both the absolute URL form (`https://status.corelink.dev`) and the bare-host form (`status.corelink.dev`), then `diff`s against an expected fixture. This proves the §3 one-liner is regression-free.
+The MDX-substitution sub-step runs the runbook §3 `sed` one-liner against a synthetic MDX fragment containing both the absolute URL form (`https://status.corelink.humangr.com`) and the bare-host form (`status.corelink.humangr.com`), then `diff`s against an expected fixture. This proves the §3 one-liner is regression-free.
 
 **S4 — Audit trail.** The handoff JSON binds itself to the wave-24 engineering closure by recording the SHA-256 of `specs/_runbooks/STATUSPAGE-INIT.md` and `apps/docs/src/statuspage-url.ts` at dress-run time. If either drifts before the operator performs the real cutover, the dress-run must be re-run (enforced by `assert_evidence_recent` in the verifier — 7-day freshness window).
 
@@ -70,9 +70,9 @@ The verifier reads the evidence JSON and runs 7 assertions:
 | V1 | `evidence_wellformed` | Schema-level shape: kind, wave, dressrun_date (YYYY-MM-DD), generated_at_utc (RFC-3339 Z) |
 | V2 | `steps_complete` | All 4 steps present in order with the expected names; no FAIL outcomes; only Step 2 may be DEGRADED |
 | V3 | `verification_ids_unique` | Per-step VIDs are pairwise-distinct (deterministic content-addressing) |
-| V4 | `helper_default_canonical` | `apps/docs/src/statuspage-url.ts` still declares `DEFAULT_STATUSPAGE_URL = "https://status.corelink.dev"` |
-| V5 | `runbook_dod` | Runbook contains the 6 required tokens (`Option A`, `Option B`, `STATUSPAGE_URL`, `status.corelink.dev`, `T-7d`, `summary.json`) |
-| V6 | `trust_corpus_inventory` | `apps/docs/docs/**/*.mdx` contains at least 3 literal `status.corelink.dev` references — reconciles the runbook §1 "5 MDX pages × 4 locales" claim and catches an accidental sweep that would silently break Option A |
+| V4 | `helper_default_canonical` | `apps/docs/src/statuspage-url.ts` still declares `DEFAULT_STATUSPAGE_URL = "https://status.corelink.humangr.com"` |
+| V5 | `runbook_dod` | Runbook contains the 6 required tokens (`Option A`, `Option B`, `STATUSPAGE_URL`, `status.corelink.humangr.com`, `T-7d`, `summary.json`) |
+| V6 | `trust_corpus_inventory` | `apps/docs/docs/**/*.mdx` contains at least 3 literal `status.corelink.humangr.com` references — reconciles the runbook §1 "5 MDX pages × 4 locales" claim and catches an accidental sweep that would silently break Option A |
 | V7 | `evidence_recent` | Evidence age ≤ 7 days (gate must be re-run before T-7d if older) |
 
 Live result against `reports/statuspage-init-dressrun-2026-05-16.json`:
@@ -101,7 +101,7 @@ This dress-run does **not** itself satisfy the runbook §4 T-7d gate. What it *d
 
 What remains operator-bound for the T-7d gate (runbook §4 checklist):
 
-- [ ] **Option A:** real `curl -sI https://status.corelink.dev` returns HTTP 200 with the operator-provisioned tenant.
+- [ ] **Option A:** real `curl -sI https://status.corelink.humangr.com` returns HTTP 200 with the operator-provisioned tenant.
 - [ ] **Option B:** `STATUSPAGE_URL` env var set in the docs deploy pipeline + deploy-time substitution branch merged to the release tag + operator-chosen domain resolves.
 - [ ] `summary.json` reports the 8 tracked components per runbook §2 step 2.
 - [ ] SRE Lead records completion in `specs/_compliance/GA-GATE-CRITERIA.md` checklist row "Statuspage provisioned (Option A — CNAME)" *or* "Statuspage provisioned (Option B — env-var override)".
@@ -117,7 +117,7 @@ Until those 4 items are checked by the SRE Lead against the production cutover, 
 
 ## 7. Caveats
 
-- **Network dependency on Atlassian.** Step S2 currently relies on `https://www.statuspage.io/` being reachable. If Atlassian retires that landing page or the operator's CI runs in an air-gapped environment, Step S2 will be DEGRADED rather than PASS — the verifier accepts DEGRADED on Step S2 only. The operator's T-7d production cutover must independently verify `https://status.corelink.dev/api/v2/summary.json` per runbook §2 step 7.
+- **Network dependency on Atlassian.** Step S2 currently relies on `https://www.statuspage.io/` being reachable. If Atlassian retires that landing page or the operator's CI runs in an air-gapped environment, Step S2 will be DEGRADED rather than PASS — the verifier accepts DEGRADED on Step S2 only. The operator's T-7d production cutover must independently verify `https://status.corelink.humangr.com/api/v2/summary.json` per runbook §2 step 7.
 - **Helper-mirror drift risk.** Step S3 maintains a 22-line JS mirror of `apps/docs/src/statuspage-url.ts` inside the bash orchestrator. Drift between the mirror and the upstream TS module is caught by the V4 + Step 3a.1 textual probe, but a structural change to the helper (e.g. adding a third env var) requires a corresponding mirror update — the V4 assertion will fail loud rather than silently passing on stale logic.
 - **`rg` is not actually invoked in S3.** The runbook §3 command is `rg -l "status\.corelink\.dev" … | xargs sed -i …`. Step S3 exercises only the `sed` half against a known-content fixture; the `rg`-driven file discovery is left to the operator's real cutover (it depends on which trust-corpus files exist at the deploy-time commit and is orthogonal to the substitution mechanism we are verifying).
 - **No mutation of `specs/_compliance/GA-GATE-CRITERIA.md`.** The dress-run does NOT amend the GA-gate sign-off log. That log is operator-bound per runbook §2 sign-off and §3 sign-off; this audit is the *backstop* for the eventual sign-off, not a substitute.

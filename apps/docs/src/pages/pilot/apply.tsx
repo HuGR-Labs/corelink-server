@@ -1,9 +1,9 @@
 /**
- * Pilot signup form — `docs.corelink.dev/pilot/apply`.
+ * Pilot signup form — `docs.corelink.humangr.com/pilot/apply`.
  *
  * R-prep wave-29 stream-2 deliverable. Pairs with the
- * `signup.corelink.dev` backend handler (stream-1):
- *   POST https://signup.corelink.dev/v1/signup/pilot/{token}
+ * `signup.corelink.humangr.com` backend handler (stream-1):
+ *   POST https://signup.corelink.humangr.com/v1/signup/pilot/{token}
  *
  * Validation rules (client-side; backend re-validates):
  *   - token: 32-char Crockford base32 (0-9A-HJKMNP-TV-Z, case-insensitive,
@@ -28,7 +28,7 @@ import Layout from "@theme/Layout";
 import Translate, { translate } from "@docusaurus/Translate";
 import styles from "./pilot.module.css";
 
-const SIGNUP_ENDPOINT = "https://signup.corelink.dev/v1/signup/pilot";
+const SIGNUP_ENDPOINT = "https://signup.corelink.humangr.com/v1/signup/pilot";
 
 // Crockford base32 alphabet (32 chars, no I/L/O/U; case-insensitive on input).
 const CROCKFORD_RE = /^[0-9A-HJKMNP-TV-Z]{32}$/;
@@ -107,7 +107,7 @@ function backendErrorMessage(status: number, raw: string): string {
     return translate({
       id: "pilot.apply.backend.invalidToken",
       message:
-        "Invalid or expired token. Tokens are one-shot and tied to your outreach email — check the latest email or contact pilot@corelink.dev.",
+        "Invalid or expired token. Tokens are one-shot and tied to your outreach email — check the latest email or contact pilot@humangr.com.",
       description: "Pilot apply form — backend 400 fallback",
     });
   }
@@ -115,7 +115,7 @@ function backendErrorMessage(status: number, raw: string): string {
     return translate({
       id: "pilot.apply.backend.rateLimited",
       message:
-        "Rate limited. Wait a few minutes and try again — or reach pilot@corelink.dev if this persists.",
+        "Rate limited. Wait a few minutes and try again — or reach pilot@humangr.com if this persists.",
       description: "Pilot apply form — backend 429 fallback",
     });
   }
@@ -123,7 +123,7 @@ function backendErrorMessage(status: number, raw: string): string {
     return translate({
       id: "pilot.apply.backend.closed",
       message:
-        "Signup pipeline closed — all 10 pilot slots are currently reserved. Watch for GA at docs.corelink.dev or email pilot@corelink.dev to join the waitlist.",
+        "Signup pipeline closed — all 10 pilot slots are currently reserved. Watch for GA at docs.corelink.humangr.com or email pilot@humangr.com to join the waitlist.",
       description: "Pilot apply form — backend 503 fallback",
     });
   }
@@ -139,7 +139,7 @@ function backendErrorMessage(status: number, raw: string): string {
   return translate({
     id: "pilot.apply.backend.generic",
     message:
-      "Signup failed. Please retry, or contact pilot@corelink.dev with the timestamp.",
+      "Signup failed. Please retry, or contact pilot@humangr.com with the timestamp.",
     description: "Pilot apply form — backend generic fallback",
   });
 }
@@ -196,7 +196,7 @@ export default function PilotApply(): ReactElement {
           message: translate({
             id: "pilot.apply.backend.network",
             message:
-              "Network error contacting signup.corelink.dev. Retry, or email pilot@corelink.dev.",
+              "Network error contacting signup.corelink.humangr.com. Retry, or email pilot@humangr.com.",
             description: "Pilot apply form — network/fetch failure",
           }),
         });

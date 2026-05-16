@@ -436,7 +436,7 @@ mod tests {
     fn happy_path_emits_audit_before_url() {
         let (sink, creator) = make();
         let url = creator
-            .create_session("cus_abc", "https://app.corelink.dev/billing", "tenant_acme")
+            .create_session("cus_abc", "https://app.corelink.humangr.com/billing", "tenant_acme")
             .unwrap();
         assert!(url.as_str().starts_with("https://billing.stripe.com/p/session/"));
         let events = sink.events();
@@ -450,7 +450,7 @@ mod tests {
         let (sink, creator) = make();
         creator.arm_audit_failure();
         let err = creator
-            .create_session("cus_abc", "https://app.corelink.dev/billing", "tenant_acme")
+            .create_session("cus_abc", "https://app.corelink.humangr.com/billing", "tenant_acme")
             .unwrap_err();
         assert!(matches!(err, PortalSessionError::AuditFailed(_)));
         // No URL handed out + no event recorded (audit-armed path
@@ -463,7 +463,7 @@ mod tests {
     fn rejects_non_https_return_url() {
         let (_sink, creator) = make();
         let err = creator
-            .create_session("cus_abc", "http://app.corelink.dev/billing", "tenant_acme")
+            .create_session("cus_abc", "http://app.corelink.humangr.com/billing", "tenant_acme")
             .unwrap_err();
         assert!(matches!(err, PortalSessionError::InvalidReturnUrl(_)));
     }
@@ -472,7 +472,7 @@ mod tests {
     fn rejects_malformed_customer_id() {
         let (_sink, creator) = make();
         let err = creator
-            .create_session("not_a_customer", "https://app.corelink.dev/billing", "tenant_acme")
+            .create_session("not_a_customer", "https://app.corelink.humangr.com/billing", "tenant_acme")
             .unwrap_err();
         assert!(matches!(err, PortalSessionError::InvalidCustomerId(_)));
     }
@@ -499,7 +499,7 @@ mod tests {
             .with_clock(fake.clone());
 
         let url = creator
-            .create_session("cus_abc", "https://app.corelink.dev/billing", "tenant_acme")
+            .create_session("cus_abc", "https://app.corelink.humangr.com/billing", "tenant_acme")
             .unwrap();
 
         // Audit row carries the injected unix seconds — proves the
@@ -523,7 +523,7 @@ mod tests {
         // injection.
         fake.advance(std::time::Duration::from_secs(7));
         let url2 = creator
-            .create_session("cus_abc", "https://app.corelink.dev/billing", "tenant_acme")
+            .create_session("cus_abc", "https://app.corelink.humangr.com/billing", "tenant_acme")
             .unwrap();
         let expected_ms2_hex = format!("{:016x}", 1_700_000_007_000u64);
         assert!(

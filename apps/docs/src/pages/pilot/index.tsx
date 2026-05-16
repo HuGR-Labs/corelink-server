@@ -1,12 +1,12 @@
 /**
- * Pilot landing page — `docs.corelink.dev/pilot`.
+ * Pilot landing page — `docs.corelink.humangr.com/pilot`.
  *
  * R-prep wave-29 stream-2 deliverable. Source-of-truth copy:
  *   marketing/launch/PILOT-LANDING-PAGE-COPY.md (wave-28 step-7, b0485bc).
  *
- * Pairs with the `signup.corelink.dev` backend handler built in stream-1.
+ * Pairs with the `signup.corelink.humangr.com` backend handler built in stream-1.
  * Submitted form (see `./apply.tsx`) POSTs to
- *   `https://signup.corelink.dev/v1/signup/pilot/{token}`
+ *   `https://signup.corelink.humangr.com/v1/signup/pilot/{token}`
  *
  * Honest pre-GA framing is mandatory (wave-28 pilot comms precedent):
  * the in-page banner makes the pilot-vs-GA boundary explicit so it is
@@ -369,7 +369,7 @@ export default function PilotLanding(): ReactElement {
               id="pilot.footer.contact"
               description="Pilot landing — footer contact line"
             >
-              Questions before applying? pilot@corelink.dev
+              Questions before applying? pilot@humangr.com
             </Translate>
           </p>
         </section>

@@ -246,7 +246,7 @@ jobs:
           # Patch .buckconfig url to a non-routable address.
           # Use sed to override only for this step.
           cp .buckconfig .buckconfig.orig
-          sed -i 's|url = https://corelink.dev/v1/cache|url = https://192.0.2.1/v1/cache|g' .buckconfig
+          sed -i 's|url = https://corelink.humangr.com/v1/cache|url = https://192.0.2.1/v1/cache|g' .buckconfig
           export CORELINK_PAT="test_pat"
           # Build may still succeed (local fallback); what we assert is that
           # the remote cache path was attempted and failed gracefully.

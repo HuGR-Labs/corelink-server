@@ -92,10 +92,10 @@ customer-success on duty (drives customer-side communication).
 
 1. After mitigation, hit the canary:
    ```sh
-   curl -sS -X POST https://app.corelink.dev/api/v1/customer/billing/portal-session \
+   curl -sS -X POST https://app.corelink.humangr.com/api/v1/customer/billing/portal-session \
      -H "Authorization: Bearer $CANARY_SESSION_TOKEN" \
      -H "Content-Type: application/json" \
-     -d '{"return_url":"https://app.corelink.dev/en/customer/billing","tenant_id":"tenant_canary"}'
+     -d '{"return_url":"https://app.corelink.humangr.com/en/customer/billing","tenant_id":"tenant_canary"}'
    ```
 2. Expect 200 + `portal_url` starting with `https://billing.stripe.com/p/session/`.
 3. Confirm the canary audit row landed:
@@ -176,8 +176,8 @@ via the Stripe CLI from spec §2.1 / §2.2:
 ```sh
 stripe billing_portal configurations create \
   --business-profile[headline]="Manage your CoreLink subscription" \
-  --business-profile[privacy_policy_url]="https://corelink.dev/privacy" \
-  --business-profile[terms_of_service_url]="https://corelink.dev/legal/terms" \
+  --business-profile[privacy_policy_url]="https://corelink.humangr.com/privacy" \
+  --business-profile[terms_of_service_url]="https://corelink.humangr.com/legal/terms" \
   --features[invoice_history][enabled]=true \
   --features[payment_method_update][enabled]=true \
   --features[customer_update][enabled]=true \
@@ -193,7 +193,7 @@ stripe billing_portal configurations create \
   --features[subscription_update][products][0][prices][]="$STRIPE_PRICE_ID_ENTERPRISE" \
   --features[subscription_cancel][enabled]=true \
   --features[subscription_cancel][mode]=at_period_end \
-  --default-return-url="https://app.corelink.dev/en/customer/billing"
+  --default-return-url="https://app.corelink.humangr.com/en/customer/billing"
 ```
 
 After running, verify in the Dashboard that the configuration

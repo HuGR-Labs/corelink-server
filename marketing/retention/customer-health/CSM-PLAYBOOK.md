@@ -289,7 +289,7 @@ Treat as 5.2 but accelerate: Founder loop-in within 24h, joint call within 48h. 
 | L3 | Founder + Legal | Contract dispute; data dispute; allegation of breach; threat of public-facing complaint | Founder forwards to external counsel |
 | Engineering on-call | Eng on-call | CSM-witnessed product bug needing same-day eng attention | PagerDuty page following `RB-CUSTOMER-SUPPORT-T-90.md` §6 ticket→incident conversion criteria |
 | Support T1/T2 | Support Lead | CSM-handed ticket needing T1/T2 work | Slack `@support-shift-lead` |
-| VPSec | VPSec | Security concern, BYOK question CSM can't answer, security questionnaire request from customer | Email security@corelink.dev |
+| VPSec | VPSec | Security concern, BYOK question CSM can't answer, security questionnaire request from customer | Email security@humangr.com |
 
 **Escalation timing rule:** L0 → L1 within 24h of being stuck. L1 → L2 within 24h if L1 can't move it. **Never sit on a stuck ticket for the weekend.**
 
@@ -338,7 +338,7 @@ Founder reads within 24h; replies only if action is needed.
 - **Health Dashboard** (`HEALTH-DASHBOARD-SPEC.md`) — primary screen.
 - **CRM** — TBD vendor at GA-time; placeholder columns: `(tenant_id, principal_id, touch_at, touch_type, summary, csm)`. CSMs MUST log every touch within 24h.
 - **Slack Connect channels** — one per Enterprise BYOK tenant, opt-in for Team tenants.
-- **Email** — gmail-equivalent with shared `cs@corelink.dev` inbox for unassigned + handoff coverage.
+- **Email** — gmail-equivalent with shared `cs@humangr.com` inbox for unassigned + handoff coverage.
 - **Loom or equivalent** — for async video updates (Healthy tier quarterly check-ins).
 
 ### 8.2 Optional but recommended
@@ -349,7 +349,7 @@ Founder reads within 24h; replies only if action is needed.
 ### 8.3 Forbidden tools
 
 - **DM-only customer comms** — every customer touch must surface to the CRM. Slack DMs to a customer principal that aren't copied to the Slack Connect channel and logged in CRM = forbidden.
-- **Personal email** — customer comms come from `firstname@corelink.dev` only.
+- **Personal email** — customer comms come from `firstname@humangr.com` only.
 
 ---
 

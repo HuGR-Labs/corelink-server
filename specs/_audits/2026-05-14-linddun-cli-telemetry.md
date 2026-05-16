@@ -41,8 +41,8 @@ CoreLink CLI emits anonymized usage telemetry **only if explicitly enabled** by 
 **What is NEVER collected:** `tenant_id`, blob digests, PAT, file paths, IP address (server-side
 scrubbed at ingestion), user identity.
 
-**Endpoint:** `https://telemetry.corelink.dev/v1/events` (separate domain from data plane
-`corelink.dev` per §9.4 — customers can firewall independently).
+**Endpoint:** `https://telemetry.corelink.humangr.com/v1/events` (separate domain from data plane
+`corelink.humangr.com` per §9.4 — customers can firewall independently).
 
 **Retention:** 90 days (server-side aggregation; raw events deleted after aggregation at 7d).
 
@@ -82,7 +82,7 @@ scrubbed at ingestion), user identity.
 | Dimension | Assessment |
 |---|---|
 | Threat | Telemetry traffic is detectable by network monitoring tools. |
-| Controls | Separate domain `telemetry.corelink.dev` makes the traffic identifiable and blockable. This is a feature (transparency) not a threat in the privacy context. Customers can block via firewall without impacting data plane. |
+| Controls | Separate domain `telemetry.corelink.humangr.com` makes the traffic identifiable and blockable. This is a feature (transparency) not a threat in the privacy context. Customers can block via firewall without impacting data plane. |
 | Residual risk | **LOW** — detectability is acceptable and transparent; aligns with privacy-by-design (GDPR Art. 25). |
 | GDPR/LGPD | GDPR Recital 39 (transparency principle). |
 
@@ -109,7 +109,7 @@ scrubbed at ingestion), user identity.
 | Dimension | Assessment |
 |---|---|
 | Threat | Telemetry design violates applicable privacy regulations. |
-| Controls | GDPR Art. 25 compliant: default-off (data protection by design). GDPR Art. 7 compliant: explicit opt-in consent. GDPR Art. 5(1)(c): data minimisation enforced structurally. LGPD Art. 8: consent-based collection. LGPD Art. 6 X: transparency via privacy policy. No cross-border transfer concerns (telemetry.corelink.dev regional endpoint per tenant residency model — S-14 alignment). |
+| Controls | GDPR Art. 25 compliant: default-off (data protection by design). GDPR Art. 7 compliant: explicit opt-in consent. GDPR Art. 5(1)(c): data minimisation enforced structurally. LGPD Art. 8: consent-based collection. LGPD Art. 6 X: transparency via privacy policy. No cross-border transfer concerns (telemetry.corelink.humangr.com regional endpoint per tenant residency model — S-14 alignment). |
 | Residual risk | **LOW** — design is compliant with GDPR + LGPD at point of review. |
 | GDPR/LGPD | GDPR Art. 25, Art. 7, Art. 5; LGPD Art. 8, Art. 6. |
 

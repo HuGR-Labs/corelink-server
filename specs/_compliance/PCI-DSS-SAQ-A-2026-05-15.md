@@ -45,7 +45,7 @@ tags: ["pci-dss", "pci-dss-v4-0", "saq-a", "stripe", "tokenization", "billing", 
 | Merchant / entity name | HuGR Labs (operating "CoreLink") |
 | DBA | CoreLink |
 | Business address | (legal HQ on file with Stripe; redacted in public doc) |
-| Contact | `trust@corelink.dev` |
+| Contact | `trust@humangr.com` |
 | Card brands accepted | Visa, Mastercard, AmEx, Discover, JCB, UnionPay (whichever Stripe enables per geography) |
 | Acquirer / PSP | **Stripe, Inc.** (Level 1 Service Provider, PCI DSS v4.0 SAQ-D-SP compliant; AOC on file via Drata vendor module) |
 | Transaction channel | E-commerce, card-not-present only |
@@ -153,9 +153,9 @@ exception applies.**
 
 - **Answer:** **YES.**
 - **Evidence:**
-  - Cloudflare Page Shield enabled on `*.corelink.dev` — alerts on new
+  - Cloudflare Page Shield enabled on `*.corelink.humangr.com` — alerts on new
     third-party scripts within 5 minutes.
-  - CSP `report-uri` set to `https://csp-report.corelink.dev/report`;
+  - CSP `report-uri` set to `https://csp-report.corelink.humangr.com/report`;
     violations forwarded to PagerDuty SEV-3.
   - Synthetic monitor checks the payment-page HTML for the expected single
     Stripe `<script>` tag every 5 minutes (Cloudflare Healthchecks).
@@ -378,7 +378,7 @@ exception applies.**
   equivalent scans voluntarily as part of SOC 2 CC7.1:
 - **Voluntary evidence:**
   - Daily `cargo-audit` + weekly Dependency-Track + monthly OWASP ZAP
-    against `corelink.dev` payment-redirect page.
+    against `corelink.humangr.com` payment-redirect page.
   - Annual pentest (Schellman primary; SOW signed R5-1).
 - **PCI SSC v4.0 note:** SAQ A explicitly defers Req 11.3 ASV scanning to
   the TPSP. Stripe's SAQ-D-SP covers Req 11.3.

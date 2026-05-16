@@ -155,7 +155,7 @@ storage_service:
   # NEW: CoreLink CAS via the driver shim.
   driver: corelink
   corelink:
-    endpoint: grpcs://reapi.corelink.dev:443
+    endpoint: grpcs://reapi.corelink.humangr.com:443
     tenant_id: ${CORELINK_TENANT_ID}
     pat_secret_ref: corelink-pat   # k8s secret containing CORELINK_PAT
     region: enam
@@ -176,7 +176,7 @@ kubectl rollout status -n harbor deploy/harbor-registry
 # /etc/docker/registry/config.yml
 storage:
   corelink:
-    endpoint: grpcs://reapi.corelink.dev:443
+    endpoint: grpcs://reapi.corelink.humangr.com:443
     tenant_id: ${CORELINK_TENANT_ID}
     pat: ${CORELINK_PAT}
     region: enam
@@ -339,7 +339,7 @@ Restore the Glacier archive. Expensive (hours to days for restore).
 | --- | --- | --- |
 | `docker pull registry.example.com/library/myapp:1.2.3` on a fresh node | exits 0 in < 30 s for a 200 MiB image | CI logs |
 | Harbor UI shows last-7d pull count > 0 | yes | `https://harbor.example.com/harbor/projects/.../repositories` |
-| CoreLink audit shows `cas.read` events matching pull volume | yes (within ±2%) | `https://app.corelink.dev/tenants/$CORELINK_TENANT_ID/audit` |
+| CoreLink audit shows `cas.read` events matching pull volume | yes (within ±2%) | `https://app.corelink.humangr.com/tenants/$CORELINK_TENANT_ID/audit` |
 | `corelink ls --tenant ... --limit 1` returns layers | yes, recent timestamps | terminal |
 | No reads to old backend in last 7 days | yes | CloudTrail / filesystem `atime` |
 

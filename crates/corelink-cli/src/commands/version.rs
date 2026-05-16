@@ -55,7 +55,7 @@ pub fn build_version_info() -> VersionInfo {
         .unwrap_or(std::env::consts::ARCH)
         .to_owned();
     let slsa_attestation = format!(
-        "https://corelink.dev/attestations/cli/{version}/{git_rev}/slsa3.json"
+        "https://corelink.humangr.com/attestations/cli/{version}/{git_rev}/slsa3.json"
     );
 
     VersionInfo {
@@ -82,7 +82,7 @@ mod tests {
     #[test]
     fn version_info_has_slsa_link() {
         let info = build_version_info();
-        assert!(info.slsa_attestation.starts_with("https://corelink.dev/attestations/cli/"));
+        assert!(info.slsa_attestation.starts_with("https://corelink.humangr.com/attestations/cli/"));
     }
 
     #[test]

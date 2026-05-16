@@ -8,7 +8,7 @@
  * Operator-bound provisioning paths (see `specs/_runbooks/STATUSPAGE-INIT.md`):
  *
  *   - Option A (preferred, zero rebuild): Operator CNAMEs the canonical
- *     `status.corelink.dev` to the real Atlassian Statuspage tenant. All
+ *     `status.corelink.humangr.com` to the real Atlassian Statuspage tenant. All
  *     literal MDX URLs resolve correctly without docs rebuild.
  *
  *   - Option B (env-var override, rebuild required): Operator sets
@@ -17,7 +17,7 @@
  *     the operator-provided value; existing literal URLs in trust pages
  *     remain canonical defaults.
  *
- * The fallback default is `https://status.corelink.dev` (the canonical
+ * The fallback default is `https://status.corelink.humangr.com` (the canonical
  * wave-19 commit value referenced from 5 trust MDX pages × 4 locales and
  * 20+ internal runbooks).
  *
@@ -25,7 +25,7 @@
  * the browser (component-time). Do not introduce runtime-only deps.
  */
 
-export const DEFAULT_STATUSPAGE_URL = "https://status.corelink.dev";
+export const DEFAULT_STATUSPAGE_URL = "https://status.corelink.humangr.com";
 
 /**
  * Resolve the operator-configured statuspage URL.

@@ -46,7 +46,7 @@ useful war room member within 5 minutes.
   `#inc-YYYYMMDD-N` channel has been spun up, join that too.
 - Voice bridge: Zoom link in the `#incident-active` topic. Mic muted
   by default; unmute only to commit to an action.
-- Status page admin: <https://status.corelink.dev/admin> — read-only
+- Status page admin: <https://status.corelink.humangr.com/admin> — read-only
   unless you are IC.
 
 ### 1.2 Claim incident command (only if no IC exists)
@@ -65,7 +65,7 @@ Before you change anything, capture the "now" snapshot — this becomes
 evidence for the retro and a reference for "did it get better?".
 
 - Open the **Incident Overview** Grafana dashboard
-  (`grafana.corelink.dev/d/incident-overview`).
+  (`grafana.corelink.humangr.com/d/incident-overview`).
 - Screenshot the SLO panels at the current timestamp. Save to
   `incidents/INC-YYYYMMDD-N/00-baseline-grafana-<ts>.png` (see §10).
 - Note p50/p95/p99 latency, error rate, and which SLO is breached
@@ -451,7 +451,7 @@ chronological order.
 
 `trace_id` is the right correlator when one external request fans out
 to multiple internal services. Search Grafana Tempo
-(`tempo.corelink.dev`) by `trace_id`; every span across every service
+(`tempo.corelink.humangr.com`) by `trace_id`; every span across every service
 that participated will appear.
 
 ### 6.4 Active-failover incidents

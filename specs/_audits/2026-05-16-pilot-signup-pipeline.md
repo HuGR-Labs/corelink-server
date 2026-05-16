@@ -14,12 +14,12 @@
 The wave-27 contract for the customer-facing signup surface is:
 
 ```
-https://signup.corelink.dev/pilot/<token>
+https://signup.corelink.humangr.com/pilot/<token>
 ```
 
 `<token>` is a single-use slot reservation issued out-of-band by the operator (typically pasted into the personalised outreach email from `docs/internal/pilot-comms-templates.md`). The token-based model is intentional:
 
-- We do NOT yet have a public CTA on `corelink.dev` (pilot cohort is capped at 5–10 per customer-success-playbook §1).
+- We do NOT yet have a public CTA on `corelink.humangr.com` (pilot cohort is capped at 5–10 per customer-success-playbook §1).
 - The token carries: `target_tier=pilot`, `slot_id`, `valid_until_ms`, signature.
 - When redeemed, the token mints a `tenant_id` + sets `pilot_state = NEW`.
 - Tokens expire after 14 days unredeemed (matches sales-cycle median).

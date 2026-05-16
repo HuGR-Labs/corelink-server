@@ -199,7 +199,7 @@ minimum:
 
 1. `cargo install --path crates/corelink-cli` (or grab a release binary).
 2. `corelink auth login --env staging`.
-3. Configure Bazel with the `--remote_cache=https://staging.corelink.dev`
+3. Configure Bazel with the `--remote_cache=https://staging.corelink.humangr.com`
    block.
 4. Build any open-source Bazel target (e.g. `bazelbuild/rules_rust`).
 5. Confirm cache hits on the second build.

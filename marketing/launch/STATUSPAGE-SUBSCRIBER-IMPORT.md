@@ -58,12 +58,12 @@ Per `STATUS-PAGE-SPEC.md` §4.1:
 | Address | Reason | Per-component filter? |
 |---|---|---|
 | `oncall+statuspage@corelink.pagerduty.com` | PagerDuty service email (mirror of SP back into PD for visibility) | All components |
-| `security@corelink.dev` | Security alerting bridge | All components |
-| `support@corelink.dev` | CS-OC visibility | All components |
-| `compliance@corelink.dev` | SOC 2 / audit trail | C5 (Audit) + C4 (BYOK) only |
-| `ceo@corelink.dev` | Executive visibility | SEV1 only (filtered downstream by mail rule) |
-| `sre-lead@corelink.dev` | SRE leadership | All components |
-| `vpsec@corelink.dev` | Security leadership | All components |
+| `security@humangr.com` | Security alerting bridge | All components |
+| `support@humangr.com` | CS-OC visibility | All components |
+| `compliance@humangr.com` | SOC 2 / audit trail | C5 (Audit) + C4 (BYOK) only |
+| `ceo@humangr.com` | Executive visibility | SEV1 only (filtered downstream by mail rule) |
+| `sre-lead@humangr.com` | SRE leadership | All components |
+| `vpsec@humangr.com` | Security leadership | All components |
 
 **Internal-mandatory total: 7 addresses.**
 
@@ -71,7 +71,7 @@ Per `STATUS-PAGE-SPEC.md` §4.1:
 
 - **Email subscribers** to bulk-import: **15** (8 lighthouse + 7 internal).
 - **SMS subscribers** to bulk-import: **3** (one SRE contact per lighthouse customer, SEV1-only, explicit phone consent on file).
-- **Webhook subscribers**: **0 at T-0** (customers can self-serve post-launch via `status.corelink.dev`).
+- **Webhook subscribers**: **0 at T-0** (customers can self-serve post-launch via `status.corelink.humangr.com`).
 
 ---
 
@@ -310,7 +310,7 @@ Captured into the war room log per `RB-LAUNCH-WAR-ROOM-COORDINATION.md` §3 step
 
 ## 6. Post-launch growth
 
-Once `status.corelink.dev` is publicly announced at T-0 (per `LAUNCH-CHECKLIST-V2.md` row L22):
+Once `status.corelink.humangr.com` is publicly announced at T-0 (per `LAUNCH-CHECKLIST-V2.md` row L22):
 
 - Public visitors can self-subscribe via the Statuspage native widget (already enabled in `STATUSPAGE-INIT.md` §7.1).
 - No further bulk imports planned for the launch window.

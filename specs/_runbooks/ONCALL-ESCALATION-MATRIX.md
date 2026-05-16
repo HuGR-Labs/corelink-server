@@ -152,7 +152,7 @@ recovery within {{eta_minutes}} minutes. We'll update when fully restored.
 ```
 [Resolved] CoreLink — service fully restored
 The incident is fully resolved as of {{resolved_utc}} UTC. Total duration: {{duration}}.
-A full postmortem will be published within 5 business days at status.corelink.dev/postmortems.
+A full postmortem will be published within 5 business days at status.corelink.humangr.com/postmortems.
 ```
 
 ### 7.4 Customer email — SEV1 (sent by L2 after status-page identified phase)
@@ -169,7 +169,7 @@ What we're doing: {{mitigation_summary}}.
 What you can do: {{customer_action}}.
 
 We'll send a final update when the incident is fully resolved, followed by a public
-postmortem within 5 business days. Reach us at incidents@corelink.dev for any
+postmortem within 5 business days. Reach us at incidents@humangr.com for any
 immediate concerns.
 
 — CoreLink Engineering

@@ -166,7 +166,7 @@ jobs:
         run: |
           set -euo pipefail
           git config user.name  "corelink-bot"
-          git config user.email "bot@corelink.dev"
+          git config user.email "bot@humangr.com"
 
       - name: Open auto-sync PR with legal-review-required label
         if: steps.diff.outputs.changed == 'true'

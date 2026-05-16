@@ -83,7 +83,7 @@ GA-go binary engineering gate.
 4. **SBOM CycloneDX 1.5+ signed published** (per spec contract §6.1 + §9 + alinhado S-12 R-S12-3):
    - **CycloneDX 1.5+** specification (NÃO "Full SBOM v1.0" — codex finding remediated per spec contract §1).
    - **Signed**: cosign signature (S-12 cumulative SBOM signing).
-   - **Published**: customer-accessible em `https://corelink.dev/sbom/v1.json`.
+   - **Published**: customer-accessible em `https://corelink.humangr.com/sbom/v1.json`.
    - Coverage: cumulative S-13..S-19 crates + dependencies.
    - EVT-010 evidence captured.
 
@@ -131,7 +131,7 @@ GA-go binary engineering gate.
 | S20-007-D1 | 30d sustained staging evidence | `specs/_audits/2026-XX-XX-30d-staging-ga-evidence.md` | zero SEV-1 + < 3 SEV-2 + all SLOs sustained; per-day metrics; sequential post-S-17 chaos 4w; cumulative ~50d coverage pré-GA |
 | S20-007-D2 | Runbook coverage 90d cumulative | `specs/_audits/2026-XX-XX-runbook-coverage-90d-s17-s20.md` | ~25 of 47 P0/P1 runbooks dry-run em 90d cumulative S-17+S-20; per-RB status + drift + remediation; per Lote 10.17 fix S-17 canonical math |
 | S20-007-D3 | TLA+ 4 specs verde em CI sustained | `scripts/check_tla_obligations.py` + per-spec check scripts CI | tenant_isolation + cas_integrity + audit_immutability + gc_correctness verde sustained 30d em CI |
-| S20-007-D4 | SBOM CycloneDX 1.5+ signed published | `https://corelink.dev/sbom/v1.json` + cosign signature | CycloneDX 1.5+ spec; signed; published customer-accessible; cumulative S-13..S-19 coverage; alinhado S-12 R-S12-3 |
+| S20-007-D4 | SBOM CycloneDX 1.5+ signed published | `https://corelink.humangr.com/sbom/v1.json` + cosign signature | CycloneDX 1.5+ spec; signed; published customer-accessible; cumulative S-13..S-19 coverage; alinhado S-12 R-S12-3 |
 | S20-007-D5 | Zero active waivers controles CRITICAL audit | `specs/_audits/2026-XX-XX-waiver-audit-s20.md` | all active waivers reviewed; CRITICAL count = 0 |
 | S20-007-D6 | Closing PRR-GA-001 13 sign-offs collected | `specs/04_sprints/S20/PRR-GA-001.md` sign-off section | all 13 reviewers APPROVED status; promotion gate decision binary APPROVED → GA-GO |
 | S20-007-D7 | Cumulative adversarial summary | `specs/_audits/2026-XX-XX-adversarial-summary-s20-cumulative.md` | ~95 scenarios cross-WI cumulative; 100% mitigation rate sustained |
@@ -247,7 +247,7 @@ Per-WI scenarios aggregated; per spec contract §15 + §18 post-mortem hooks; 10
 
 - CycloneDX 1.5+ spec validated.
 - Cosign signature verified.
-- Published `https://corelink.dev/sbom/v1.json` accessible.
+- Published `https://corelink.humangr.com/sbom/v1.json` accessible.
 
 ### 7.5 Waiver audit
 

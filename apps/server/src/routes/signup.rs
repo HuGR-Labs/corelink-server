@@ -6,7 +6,7 @@
 //! `pilot-24h-checkin.sh`) and the Grafana dashboard panel template;
 //! wave-28's pilot-comms package (`docs/internal/pilot-comms-templates.md`)
 //! references the public URL
-//! `https://signup.corelink.dev/pilot/<token>`. This module is the
+//! `https://signup.corelink.humangr.com/pilot/<token>`. This module is the
 //! production backend that finally redeems those tokens.
 //!
 //! # Token format
@@ -58,7 +58,7 @@
 //!
 //! {
 //!   "tenant_id": "<uuid v7>",
-//!   "activation_url": "https://signup.corelink.dev/pilot/activate/<id>",
+//!   "activation_url": "https://signup.corelink.humangr.com/pilot/activate/<id>",
 //!   "state": "RESERVED"
 //! }
 //! ```
@@ -652,7 +652,7 @@ pub struct SignupRouteState {
     /// Wall clock — anchors the TTL check + emit wall-clock.
     pub wall_clock: Arc<dyn WallClock>,
     /// Activation URL base — production binds to
-    /// `https://signup.corelink.dev/pilot/activate`.
+    /// `https://signup.corelink.humangr.com/pilot/activate`.
     pub activation_url_base: Arc<String>,
 }
 
@@ -665,7 +665,7 @@ impl core::fmt::Debug for SignupRouteState {
 /// Canonical activation-URL base (production wiring). Tests inject a
 /// fixture base via [`build_state_with_key`].
 pub const DEFAULT_ACTIVATION_URL_BASE: &str =
-    "https://signup.corelink.dev/pilot/activate";
+    "https://signup.corelink.humangr.com/pilot/activate";
 
 /// Construct the native dev/CI route state with the given HMAC key.
 ///

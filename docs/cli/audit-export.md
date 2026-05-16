@@ -41,7 +41,7 @@ break before flushing all bytes:
 ```bash
 export CORELINK_PAT=corelink_prod_<token_id>.<secret>.<sig>
 corelink audit verify-ndjson \
-    --url 'https://api.corelink.dev/v1/audit/export?from=0&to=10000000000'
+    --url 'https://api.corelink.humangr.com/v1/audit/export?from=0&to=10000000000'
 ```
 
 You can also pass the bearer explicitly via `--bearer <TOKEN>`; the

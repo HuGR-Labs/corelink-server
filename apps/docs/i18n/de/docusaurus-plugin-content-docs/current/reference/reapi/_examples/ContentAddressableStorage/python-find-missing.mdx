@@ -35,7 +35,7 @@ async def main() -> None:
         for b in candidate_bytes
     ]
     async with CoreLinkClient(
-        endpoint="https://acme-dev.corelink.dev",
+        endpoint="https://acme-dev.corelink.humangr.com",
         pat=os.environ["CORELINK_PAT"],
     ) as client:
         missing = await client.cas.find_missing_blobs(digests)

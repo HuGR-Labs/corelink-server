@@ -72,7 +72,7 @@ Save as `<prospect>-corelink-response-cover-letter-YYYY-MM-DD.pdf`. Sign as Foun
 > - **SOC 2 Type I:** target Q4-2026 fieldwork with Schellman & Co.; report Q1-2027. Today: 83.7% weighted internal readiness, 96.4% green on Drata continuous compliance. The full Type-I-readiness rollup (`SOC2-EVIDENCE-ROLLUP-2026-05-15`) is shareable under NDA.
 > - **ISO 27001:2022:** certification target Q1-2027 with Schellman (Stage 1 Q4-2026 stacked with SOC 2). Today: 98.9% in-scope Annex A coverage on internal crosswalk. NDA-gated crosswalk pack available.
 > - **PCI DSS:** SAQ-A self-attested 2026-05-15. CoreLink itself is not in your PCI CDE — Stripe (PCI L1 Service Provider) handles all cardholder data; CoreLink stores only opaque Stripe tokens.
-> - **LGPD / GDPR:** compliant as processor (joint controller for limited service-telemetry); DPO appointed 2026-05-15 (`dpo@corelink.dev`); SCC Modules 2/3 in the DPA; verifiable residency attestation per region.
+> - **LGPD / GDPR:** compliant as processor (joint controller for limited service-telemetry); DPO appointed 2026-05-15 (`dpo@humangr.com`); SCC Modules 2/3 in the DPA; verifiable residency attestation per region.
 > - **HIPAA:** **out of scope by design.** CoreLink is a build-artefact cache and does not sign BAAs. The substrate (Cloudflare / AWS / GCP / Azure) is HIPAA-aligned, but the CoreLink product surface is not engineered for PHI.
 > - **FedRAMP:** **not pursued.** NIST 800-53 Rev 5 Moderate crosswalk at 87% (informational only — not a substitute for ATO). Documented rationale: `specs/_compliance/FEDRAMP-NOT-IN-SCOPE-RATIONALE.md`.
 >
@@ -85,14 +85,14 @@ Save as `<prospect>-corelink-response-cover-letter-YYYY-MM-DD.pdf`. Sign as Foun
 > Best regards,
 >
 > Gustavo Schneiter — Founder, DPO
-> `gustavo@humangr.com` · `dpo@corelink.dev`
+> `gustavo@humangr.com` · `dpo@humangr.com`
 > CoreLink (HuGR Labs)
 >
 > Encl: (1) Answer key — `<form-name>` populated · (2) Evidence index · (3) DPA `v1.0.0`
 >
 > ---
 >
-> *Routing:* please send all follow-up correspondence to `trust@corelink.dev` (procurement-routing alias). Privacy / DSR questions go to `privacy@corelink.dev`. Security-vulnerability reports go to `security@corelink.dev`. We commit to acknowledgement within 1 business day.
+> *Routing:* please send all follow-up correspondence to `trust@humangr.com` (procurement-routing alias). Privacy / DSR questions go to `privacy@humangr.com`. Security-vulnerability reports go to `security@humangr.com`. We commit to acknowledgement within 1 business day.
 
 ---
 
@@ -107,7 +107,7 @@ Where:
 
 - **A** (status): `Y` / `P` / `CC` / `N/A` / `N` per the legend below.
 - **CoreLink answer**: 1–4 sentences, direct, no marketing varnish. Cite the canonical phrasing in our public Trust Center where possible.
-- **Evidence pointer**: relative path within `humangr-labs/corelink-server` repository at commit `<SHA>` *OR* URL within the Trust Center *OR* "Available under NDA at `trust@corelink.dev`" — never silence.
+- **Evidence pointer**: relative path within `humangr-labs/corelink-server` repository at commit `<SHA>` *OR* URL within the Trust Center *OR* "Available under NDA at `trust@humangr.com`" — never silence.
 
 ### Legend (consistent across all CoreLink responses)
 
@@ -127,15 +127,15 @@ These are the 12 highest-frequency answer blocks. Lift them verbatim when the pr
 
 #### 2. ISO 27001 status
 
-> **A:** ISO/IEC 27001:2022 certification target Q1-2027 (Stage 1 audit Q4-2026 stacked with SOC 2 Type I; Stage 2 + certificate issuance Q1-2027). Today: 98.9% in-scope Annex A coverage on internal crosswalk; 91% overlap with SOC 2 evidence collection in Drata. NDA-gated crosswalk pack at `specs/_compliance/ISO27001-CROSSWALK-2026-05-15.md` available via `trust@corelink.dev`.
+> **A:** ISO/IEC 27001:2022 certification target Q1-2027 (Stage 1 audit Q4-2026 stacked with SOC 2 Type I; Stage 2 + certificate issuance Q1-2027). Today: 98.9% in-scope Annex A coverage on internal crosswalk; 91% overlap with SOC 2 evidence collection in Drata. NDA-gated crosswalk pack at `specs/_compliance/ISO27001-CROSSWALK-2026-05-15.md` available via `trust@humangr.com`.
 
 #### 3. PCI DSS status
 
-> **A:** PCI DSS SAQ-A compliant (self-attested 2026-05-15; validity through 2027-05-14). CoreLink is not in your PCI CDE — Stripe (PCI Level 1 Service Provider, SAQ-D-SP) tokenizes all card data via Stripe Elements; CoreLink stores only opaque Stripe identifiers (`cus_…`, `sub_…`, `pm_…`, `in_…`). Boundary diagram + signed SAQ-A available via `trust@corelink.dev`.
+> **A:** PCI DSS SAQ-A compliant (self-attested 2026-05-15; validity through 2027-05-14). CoreLink is not in your PCI CDE — Stripe (PCI Level 1 Service Provider, SAQ-D-SP) tokenizes all card data via Stripe Elements; CoreLink stores only opaque Stripe identifiers (`cus_…`, `sub_…`, `pm_…`, `in_…`). Boundary diagram + signed SAQ-A available via `trust@humangr.com`.
 
 #### 4. LGPD (Brazil) compliance
 
-> **A:** LGPD-compliant as processor (joint controller for limited service-telemetry). DPO appointed 2026-05-15 (`dpo@corelink.dev`). Brazilian-tenant data processed in-region (`sam` São Paulo); Art. 33 §1º residency attestation verified nightly by `scripts/verify-lgpd-residency.py`. 72h ANPD notification commitment. DSR turnaround: 5-business-day acknowledgement / 15-business-day resolution (Art. 18). SCC + supplementary measures for cross-border transfers.
+> **A:** LGPD-compliant as processor (joint controller for limited service-telemetry). DPO appointed 2026-05-15 (`dpo@humangr.com`). Brazilian-tenant data processed in-region (`sam` São Paulo); Art. 33 §1º residency attestation verified nightly by `scripts/verify-lgpd-residency.py`. 72h ANPD notification commitment. DSR turnaround: 5-business-day acknowledgement / 15-business-day resolution (Art. 18). SCC + supplementary measures for cross-border transfers.
 
 #### 5. GDPR compliance
 
@@ -147,7 +147,7 @@ These are the 12 highest-frequency answer blocks. Lift them verbatim when the pr
 
 #### 7. FedRAMP
 
-> **A:** Not pursued today. NIST 800-53 Rev 5 Moderate crosswalk at 87% (informational only — not a substitute for ATO). Rationale documented at `specs/_compliance/FEDRAMP-NOT-IN-SCOPE-RATIONALE.md`. Sponsorship-path documented. CSA STAR Level 1 / CAIQ self-assessment available on request via `trust@corelink.dev`.
+> **A:** Not pursued today. NIST 800-53 Rev 5 Moderate crosswalk at 87% (informational only — not a substitute for ATO). Rationale documented at `specs/_compliance/FEDRAMP-NOT-IN-SCOPE-RATIONALE.md`. Sponsorship-path documented. CSA STAR Level 1 / CAIQ self-assessment available on request via `trust@humangr.com`.
 
 #### 8. Encryption at rest + in transit
 
@@ -220,7 +220,7 @@ Standard DPA sections (per `legal/dpa/v1.0.0`):
 - [ ] DPA `v1.0.0` attached.
 - [ ] Commit SHA at top of cover letter.
 - [ ] Watermarked with prospect name + date.
-- [ ] Sent via `trust@corelink.dev` (procurement-routing alias) — never personal email.
+- [ ] Sent via `trust@humangr.com` (procurement-routing alias) — never personal email.
 - [ ] Logged in CRM with response timestamp + form-name + version + commit SHA.
 - [ ] Calendar invite sent for follow-up Q&A call within 5 business days of submission.
 
@@ -272,10 +272,10 @@ Typical themes: highly variable — combination of SIG, CAIQ, custom risk-rating
 
 | Situation | Escalate to |
 |---|---|
-| Question asks for a certification we don't hold | DPO (Gustavo Schneiter, `dpo@corelink.dev`) — write the "not yet, here's the roadmap" answer; never embellish. |
+| Question asks for a certification we don't hold | DPO (Gustavo Schneiter, `dpo@humangr.com`) — write the "not yet, here's the roadmap" answer; never embellish. |
 | Prospect wants to redline DPA beyond ±15% | External counsel per `legal/legal-externo-engagement-contract.md`. |
 | Prospect wants a custom security commitment beyond DPA | Founder + Security Lead — write into SOW addendum, not into questionnaire. |
-| Prospect requests on-site audit | DPO + Security Lead; route via `trust@corelink.dev`. Cite DPA §8 right-to-audit terms. |
+| Prospect requests on-site audit | DPO + Security Lead; route via `trust@humangr.com`. Cite DPA §8 right-to-audit terms. |
 | Prospect requests pentest results we don't have | "External pentest scoped under R-6 staging-bake (T-30d pre-GA); summary will be available `<date>`." |
 | Prospect insists on HIPAA BAA | Founder + Legal; if PHI is truly in scope, *decline the engagement*. CoreLink is not a HIPAA-aligned product. |
 | Prospect insists on FedRAMP | Founder; explain the 12–18 month 3PAO engagement requirement and ask whether SOC 2 + ISO 27001 satisfy their actual ATO requirement. Most do. |
@@ -298,7 +298,7 @@ Typical themes: highly variable — combination of SIG, CAIQ, custom risk-rating
 
 | What you need | Where to send it |
 |---|---|
-| Vendor-questionnaire response (countersigned NDA on file) | `trust@corelink.dev` |
-| DPA redline / legal | `legal@corelink.dev` |
-| Privacy / DSR | `privacy@corelink.dev` |
-| Security vulnerability report | `security@corelink.dev` |
+| Vendor-questionnaire response (countersigned NDA on file) | `trust@humangr.com` |
+| DPA redline / legal | `legal@humangr.com` |
+| Privacy / DSR | `privacy@humangr.com` |
+| Security vulnerability report | `security@humangr.com` |

@@ -155,7 +155,7 @@ async fn check_network(client: &CorelinkClient) -> DoctorCheck {
             "network",
             latency,
             "COR_NET_UNREACHABLE",
-            "Verify network connectivity, firewall rules, and DNS resolution for corelink.dev. See docs/error_taxonomy.md#COR_NET_UNREACHABLE",
+            "Verify network connectivity, firewall rules, and DNS resolution for corelink.humangr.com. See docs/error_taxonomy.md#COR_NET_UNREACHABLE",
         ),
     }
 }

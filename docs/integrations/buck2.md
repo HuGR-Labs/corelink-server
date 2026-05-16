@@ -67,7 +67,7 @@ Place `.buckconfig` in the root of your Buck2 project.
 # ── remote cache ─────────────────────────────────────────────────────────────
 [remote_cache]
 # CoreLink CAS HTTP endpoint (REAPI v2).
-url = https://corelink.dev/v1/cache
+url = https://corelink.humangr.com/v1/cache
 
 # PAT injected from environment — never hardcode.
 http_headers = Authorization: Bearer ${CORELINK_PAT}
@@ -85,7 +85,7 @@ http_header_prefix = x-corelink-client-version: buck2
 
 # ── REAPI v2 client (for full RE API surface) ─────────────────────────────────
 [buck2_re_client]
-remote_cache_address = https://corelink.dev/v1/cache
+remote_cache_address = https://corelink.humangr.com/v1/cache
 http_headers = Authorization: Bearer ${CORELINK_PAT}
 
 # ── client-side digest verification (CTRL-CAS-002) ────────────────────────────
@@ -145,7 +145,7 @@ build:
 
 ### Getting a PAT
 
-1. Sign up at <https://corelink.dev>.
+1. Sign up at <https://corelink.humangr.com>.
 2. Navigate to **Settings → API Tokens → New token**.
 3. Select scopes: `cache:read cache:write`.
 4. Copy the token and store it in your secrets manager.
@@ -236,7 +236,7 @@ buck2 build :target -v 3 2>&1 | grep -iE "remote|cache|reapi|http"
 |---|---|---|
 | `HTTP 401 Unauthorized` | PAT missing or invalid | `export CORELINK_PAT=<valid-token>` |
 | `HTTP 403 Forbidden` | Token lacks `cache:read` or `cache:write` scope | Re-issue token with correct scopes |
-| `HTTP 429 Too Many Requests` | Tenant quota exceeded | Upgrade plan at corelink.dev/billing |
+| `HTTP 429 Too Many Requests` | Tenant quota exceeded | Upgrade plan at corelink.humangr.com/billing |
 | `connection refused` / timeout | Network unreachable or bad endpoint URL | Check `url` in `.buckconfig`; verify firewall |
 | `BLAKE3 digest mismatch` | Corrupted artefact (CTRL-CAS-002 trip) | Retry build; if persistent, open support ticket |
 | Cache ratio < 80 % | Warm build not using remote cache | Confirm `read = true` in `.buckconfig` |
@@ -262,7 +262,7 @@ quota, and client-verify.  Each failed check includes a `next_action` field.
 
    ```ini
    [remote_cache]
-   url = https://eu.corelink.dev/v1/cache   # EU region
+   url = https://eu.corelink.humangr.com/v1/cache   # EU region
    ```
 
 3. **Parallel uploads** — Buck2 streams artefact uploads concurrently by
@@ -287,7 +287,7 @@ configuration is analogous:
 
 | Concern | Bazel (`.bazelrc`) | Buck2 (`.buckconfig`) |
 |---|---|---|
-| Cache endpoint | `--remote_cache=https://corelink.dev/v1/cache` | `[remote_cache] url = ...` |
+| Cache endpoint | `--remote_cache=https://corelink.humangr.com/v1/cache` | `[remote_cache] url = ...` |
 | Auth | credential helper script (Bazel 6+ CTRL-CRED-001 compliant) | `http_headers = Authorization: Bearer ${CORELINK_PAT}` |
 | Digest algorithm | SHA-256 (Bazel default) | BLAKE3 (Buck2 + CoreLink default) |
 | Retry | `--remote_retries=3` | `max_retries = 3` |

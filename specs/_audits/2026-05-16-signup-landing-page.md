@@ -4,7 +4,7 @@
 >
 > **Author:** wave-29 stream-2 agent (Claude Opus 4.7) — branch `wt/r-prep-signup-landing-page`.
 > **Base:** `main` @ `365dd38` ("merge wt/r-prep-pre-cutover-weekly-verify into main (wave-28)").
-> **Pairs with:** wave-29 stream #1 (`signup.corelink.dev` backend handler — `wt/r-prep-signup-corelink-dev-backend`).
+> **Pairs with:** wave-29 stream #1 (`signup.corelink.humangr.com` backend handler — `wt/r-prep-signup-corelink-dev-backend`).
 > **Canonical copy source:** `marketing/launch/PILOT-LANDING-PAGE-COPY.md` (wave-28 step-7, b0485bc).
 > **Cross-ref:** `apps/docs/docusaurus.config.ts` (S18 docs site config), `marketing/launch/PILOT-ANNOUNCEMENT.md`, `specs/_compliance/GA-GATE-CRITERIA.md`.
 
@@ -12,15 +12,15 @@
 
 ## 1. Stream scope
 
-Wave-28 commit `b0485bc` shipped the canonical landing-page COPY in markdown. This stream turns it into a real served page in the existing Docusaurus 3 docs site (`docs.corelink.dev` — S18 foundation), with a 3-page signup flow and 4-locale i18n scaffolding.
+Wave-28 commit `b0485bc` shipped the canonical landing-page COPY in markdown. This stream turns it into a real served page in the existing Docusaurus 3 docs site (`docs.corelink.humangr.com` — S18 foundation), with a 3-page signup flow and 4-locale i18n scaffolding.
 
 Three pages delivered:
 
 | Path | Purpose | Public URL at GA |
 |---|---|---|
-| `apps/docs/src/pages/pilot/index.tsx` | Landing (hero + 3 features + 5 FAQ + honest pre-GA banner) | `docs.corelink.dev/pilot` |
-| `apps/docs/src/pages/pilot/apply.tsx` | Token-gated signup form | `docs.corelink.dev/pilot/apply` |
-| `apps/docs/src/pages/pilot/welcome.tsx` | Post-signup welcome + onboarding next-steps | `docs.corelink.dev/pilot/welcome` |
+| `apps/docs/src/pages/pilot/index.tsx` | Landing (hero + 3 features + 5 FAQ + honest pre-GA banner) | `docs.corelink.humangr.com/pilot` |
+| `apps/docs/src/pages/pilot/apply.tsx` | Token-gated signup form | `docs.corelink.humangr.com/pilot/apply` |
+| `apps/docs/src/pages/pilot/welcome.tsx` | Post-signup welcome + onboarding next-steps | `docs.corelink.humangr.com/pilot/welcome` |
 | `apps/docs/src/pages/pilot/pilot.module.css` | Tailwind-free standalone CSS, theme-variable-bound | (asset) |
 
 The pages are served via Docusaurus 3 React-routing (`src/pages/` convention; per `docusaurus.config.ts` the docs preset uses `routeBasePath: "/"` so `src/pages/pilot/*` resolves at the root namespace). i18n is via `<Translate>` extraction; default-locale fallback is automatic for any locale that has not yet seeded a `code.json` entry — the established pattern in this repo for the `de` shadow locale per `apps/docs/i18n/TRANSLATION-WORKFLOW.md` SLA (≤ 14 d of EN change).
@@ -43,7 +43,7 @@ Mandatory per wave-28 pilot comms precedent. Present in three locations:
 
 ### 2.3 Signup form contract
 
-Backend pairing — POST `https://signup.corelink.dev/v1/signup/pilot/{token}` per wave-27 token-based slot-reservation pipeline (stream #1 of wave-29 builds the handler).
+Backend pairing — POST `https://signup.corelink.humangr.com/v1/signup/pilot/{token}` per wave-27 token-based slot-reservation pipeline (stream #1 of wave-29 builds the handler).
 
 Client validation:
 
@@ -97,7 +97,7 @@ Tiny CSS-only burst (8 emoji spans with a 600 ms staggered pop animation, define
 2. **No e2e Playwright test added** for the form flow. The wave-29 stream-1 (backend) audit should establish end-to-end fixtures; this stream is page-only.
 3. **No A11y baseline regen.** A11y baseline lives at `apps/docs/i18n/A11Y-BASELINE-2026-05-14.json`. New pages should be folded in on the next a11y-audit pass (`pnpm a11y-audit:baseline`).
 4. **Sitemap + robots.** Docusaurus auto-includes `src/pages/*` in `sitemap.xml` (preset config `sitemap.filename: "sitemap.xml"`). `robots.txt` allows everything by default — no changes needed.
-5. **Navbar entry not added.** The pilot landing is reached from outbound emails / signup.corelink.dev redirect — no in-site navigation surface needed pre-GA. If wave-30+ adds it, append `{ to: "/pilot", label: "Pilot", position: "left" }` to `themeConfig.navbar.items`.
+5. **Navbar entry not added.** The pilot landing is reached from outbound emails / signup.corelink.humangr.com redirect — no in-site navigation surface needed pre-GA. If wave-30+ adds it, append `{ to: "/pilot", label: "Pilot", position: "left" }` to `themeConfig.navbar.items`.
 
 ---
 

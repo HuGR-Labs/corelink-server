@@ -60,7 +60,7 @@ on disk, run:
 ## Reporting
 
 Instances of abusive, harassing, or otherwise unacceptable behaviour
-may be reported to the project maintainers at **conduct@corelink.dev**.
+may be reported to the project maintainers at **conduct@humangr.com**.
 
 All complaints will be:
 

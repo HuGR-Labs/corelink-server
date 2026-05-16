@@ -120,7 +120,7 @@
 - [ ] FW-H-3 Security Lead nominated OR ADR-0034b dual-hat fallback (on-call SRE Lead acts as Signature 2) applied.
 - [ ] DEBT-026 — Pentest vendor SOW countersigned.
 - [ ] DEBT-003 — AWS Artifact PDF downloaded + sha256 recorded.
-- [ ] DEBT-016 — Statuspage `status.corelink.dev` go-live complete.
+- [ ] DEBT-016 — Statuspage `status.corelink.humangr.com` go-live complete.
 - [ ] G4 — Pilot signups ≥ 5 design-partner attestations (sales-bound).
 - [ ] DEBT-026 final — Pentest retest letter zero HIGH/CRITICAL (vendor-bound; earliest 2026-07-29).
 - [ ] Owner sign-off (ADR-0034b 2-key) — populated in §10 of companion doc.

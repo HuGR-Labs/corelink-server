@@ -62,7 +62,7 @@ for the visual. In prose:
   gRPC; customer admins using the [admin UI](./apps/admin-ui/) or
   [`corelink-cli`](./crates/corelink-cli/); auditors pulling signed
   audit-log exports and inclusion proofs; the public
-  `status.corelink.dev` page and its SSE/RSS subscribers.
+  `status.corelink.humangr.com` page and its SSE/RSS subscribers.
 * **Cloudflare edge (`TB-0`/`TB-1`).** TLS 1.3 termination, WAF
   managed rules, per-IP rate limit, DDoS mitigation. From there the
   request enters a Cloudflare-internal service binding — never the

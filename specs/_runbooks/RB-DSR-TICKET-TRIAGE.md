@@ -63,7 +63,7 @@ tags:
 
 | Channel | Path | Auto-DSR? |
 |---|---|---|
-| `dsr@corelink.dev` | Support queue → DSR triage tag | yes, after agent confirms intent |
+| `dsr@humangr.com` | Support queue → DSR triage tag | yes, after agent confirms intent |
 | In-app DSR form (per WI-S16-004) | `/dsr/request` → backend API directly | yes, automatic |
 | CLI: `corelink dsr request --type {right_type}` | DSR API direct | yes, automatic |
 | Inbound to `support@` mentioning GDPR/LGPD rights keywords | Support queue → auto-route per RB-CUSTOMER-SUPPORT-T-90 §3.2 | semi (agent confirms) |

@@ -83,7 +83,7 @@ function adminHeaders(): Record<string, string> {
     "Content-Type": "application/json",
     // The Clerk session injection point — Phase 2 swap target.
     "X-Admin-Scope": "corelink:admin:pilots",
-    "X-Admin-Principal": "ops@corelink.dev",
+    "X-Admin-Principal": "ops@humangr.com",
   };
 }
 

@@ -184,7 +184,7 @@ that workflow state).
 | P1-3 | Blanket `#[allow(clippy::uninlined_format_args, ...)]` (12 sites) | **NOT FIXED** | `auth.rs:132`, `client.rs:183`, `doctor.rs:385`, `output.rs:88` still carry the allow attributes; commands/* unchanged |
 | P1-4 | Telemetry "non-blocking" doc claim oversold (`tokio::spawn` vs `exit`) | **NOT FIXED** | `telemetry.rs:104` still uses bare `tokio::spawn` with no `tokio::time::timeout` and no doc-comment correction |
 | P1-5 | `AuthConfig::redacted_pat` byte-slicing fragility | **NOT FIXED** | `config.rs:60` still has `&p[..idx.min(20)]`; no `char_indices` / `is_char_boundary` guard |
-| P1-6 | Telemetry endpoint hardcoded — no `CORELINK_TELEMETRY_ENDPOINT` env override | **NOT FIXED** | `telemetry.rs:24` still `const TELEMETRY_ENDPOINT: &str = "https://telemetry.corelink.dev/v1/events"` |
+| P1-6 | Telemetry endpoint hardcoded — no `CORELINK_TELEMETRY_ENDPOINT` env override | **NOT FIXED** | `telemetry.rs:24` still `const TELEMETRY_ENDPOINT: &str = "https://telemetry.corelink.humangr.com/v1/events"` |
 | P1-7 | CTRL-CRED-001 rejection misses `-p` short flag / unicode-fold attacks | **NOT FIXED** | `main.rs:161-168` unchanged; defensive `-p` rejection not added |
 
 **Net**: 1 of 7 round-1 P1s fixed (partial). The remaining 6 are all

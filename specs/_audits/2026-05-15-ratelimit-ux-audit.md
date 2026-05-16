@@ -79,7 +79,7 @@ Notes on the tier vocabulary discrepancy:
 Both are sealed in their respective contracts. The rate-limit ladder
 is what customers consume; the tier-selection ladder is what they pay
 on. The 429 body's `tier_upgrade_url` MUST point to the
-tier-selection canonical pricing surface (`https://corelink.dev/pricing`)
+tier-selection canonical pricing surface (`https://corelink.humangr.com/pricing`)
 and pass the **billing** tier vocabulary; the rate-limit `X-CoreLink-Tier`
 header carries the **rate-limit** tier vocabulary. The customer doc
 in §4 documents both vocabularies explicitly.
@@ -112,8 +112,8 @@ additions**, not replacements for the IETF canonical pair.
     "message": "Request rate exceeded …",    // human-readable
     "retry_after_seconds": 5,                // mirrors Retry-After
     "tier": "free",                          // current rate-limit tier
-    "tier_upgrade_url": "https://corelink.dev/pricing",
-    "docs_url": "https://docs.corelink.dev/explanation/rate-limits",
+    "tier_upgrade_url": "https://corelink.humangr.com/pricing",
+    "docs_url": "https://docs.corelink.humangr.com/explanation/rate-limits",
     "request_id": "01HFXY…",                 // UUIDv7 for support escalation
     "limit": 10,                              // RFC 9331 limit
     "remaining": 0,                           // RFC 9331 remaining
@@ -135,7 +135,7 @@ Field-by-field rationale:
   SDKs SHOULD honour whichever they see first.
 - `error.tier` is the customer's current rate-limit tier (lower-case
   snake_case; `corelink-ratelimit` vocabulary).
-- `error.tier_upgrade_url` is a static `https://corelink.dev/pricing`
+- `error.tier_upgrade_url` is a static `https://corelink.humangr.com/pricing`
   pointer to the canonical pricing surface; opens in the browser when
   the SDK prints the message.
 - `error.docs_url` points at `apps/docs/docs/explanation/rate-limits.mdx`

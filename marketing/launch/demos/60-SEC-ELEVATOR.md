@@ -94,7 +94,7 @@ Today: shared cache, no audit, no per-tenant boundary.
 
 ```bash
 $ corelink version
-corelink 1.0.0 (build sha=abc1234 slsa=https://releases.corelink.dev/cli/1.0.0/slsa)
+corelink 1.0.0 (build sha=abc1234 slsa=https://releases.corelink.humangr.com/cli/1.0.0/slsa)
 
 $ export CORELINK_PAT="corelink_sandbox_t_xxx.xxx.xxx"
 $ corelink doctor
@@ -167,12 +167,12 @@ Same digest. Audited. BYOK-encrypted at rest. Per-tenant boundary.
 **On-screen text (final hold for 3s):**
 
 ```
-corelink.dev  —  10-minute quickstart, free sandbox tenant.
+corelink.humangr.com  —  10-minute quickstart, free sandbox tenant.
 ```
 
 **Voiceover (~4s):**
 
-> "CoreLink — generally available today. Ten-minute quickstart, free sandbox tenant. corelink.dev."
+> "CoreLink — generally available today. Ten-minute quickstart, free sandbox tenant. corelink.humangr.com."
 
 **Sound:** same tonal sting as opening, mirrored. End on a half-second of silence over the URL.
 

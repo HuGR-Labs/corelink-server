@@ -63,7 +63,7 @@ DPA + SCC signature was completed pre-migration per WI-S20-005 (Legal externo: C
 
 ## Sales availability
 
-A non-sanitized variant of this case study, including the customer's name and quantitative SLA / latency / hit-rate deltas, is available under NDA for active enterprise sales conversations. Contact: `sales@corelink.dev`.
+A non-sanitized variant of this case study, including the customer's name and quantitative SLA / latency / hit-rate deltas, is available under NDA for active enterprise sales conversations. Contact: `sales@humangr.com`.
 
 ---
 

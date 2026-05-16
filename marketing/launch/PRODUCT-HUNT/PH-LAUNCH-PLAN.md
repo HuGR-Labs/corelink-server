@@ -21,7 +21,7 @@ Launch on Product Hunt is a marketing artifact, not the GA decision. The GA deci
 | T-0 00:05 PT | Maker leaves opening Maker comment (see `PH-MAKER-COMMENT.md`). | CEO/Founder (Maker) |
 | T-0 00:15 PT | Internal ambassadors (HuGR team) upvote + comment. No fake engagement. Genuine team commentary only. | Marketing |
 | T-0 01:00 PT | First-hour rank check. Adjust comment-tree response cadence. | Marketing |
-| T-0 06:00 PT | Press release wire (BusinessWire) — embargoed asset goes live. Blog post 01 ("Introducing CoreLink") publishes on `corelink.dev/blog`. | PR + Marketing |
+| T-0 06:00 PT | Press release wire (BusinessWire) — embargoed asset goes live. Blog post 01 ("Introducing CoreLink") publishes on `corelink.humangr.com/blog`. | PR + Marketing |
 | T-0 09:00 PT | CEO LinkedIn announcement (see `SOCIAL/LINKEDIN-POST.md`). Twitter launch thread (`SOCIAL/TWITTER-THREAD.md`). | CEO + Marketing |
 | T-0 10:00 PT | Hacker News Show HN post (see `SOCIAL/HACKERNEWS-SHOW-HN.md`). Single submission, no resubmission, no vote manipulation. | CEO/Founder |
 | T-0 12:00 PT | Mid-day rank check + incident-response posture review. SEV-1 in CoreLink production → CTO escalation; PH activity continues but Maker comment flags the issue transparently. | SRE + Marketing |
@@ -79,7 +79,7 @@ See `METRICS-DASHBOARD.md` for the full instrumentation plan. PH-specific metric
 - Hour-by-hour rank trajectory.
 - Upvote count.
 - Comment count (Maker + non-Maker).
-- Click-through to `corelink.dev` from PH.
+- Click-through to `corelink.humangr.com` from PH.
 - Signup conversion attributed to PH referrer.
 
 ## 7. Anti-patterns we will not do

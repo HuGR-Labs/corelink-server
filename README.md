@@ -25,7 +25,7 @@ walks each step in detail.
 brew install humangr-labs/tap/corelink
 
 # 2. Sign in to the sandbox (24h scratch tenant; no credit card).
-#    Visit https://app.corelink.dev/sandbox, copy the PAT, then:
+#    Visit https://app.corelink.humangr.com/sandbox, copy the PAT, then:
 export CORELINK_PAT="corelink_sandbox_t_xxx.xxx.xxx"
 corelink doctor                    # 8/8 checks PASS
 
@@ -122,7 +122,7 @@ rests on. Read in this order:
    compliance, sub-processors, incident response posture.
 2. [`SECURITY.md`](./SECURITY.md) — vulnerability disclosure policy,
    bounty scope, response SLA. Coordinated reports go to
-   `security@corelink.dev`; the canonical contact card is the
+   `security@humangr.com`; the canonical contact card is the
    [RFC 9116 security.txt](./apps/docs/static/.well-known/security.txt).
 3. [`specs/03_architecture/security_model.md`](./specs/03_architecture/security_model.md)
    — STRIDE rows per trust boundary, `CTRL-*` catalog.
@@ -255,11 +255,11 @@ deployment repo.
 
 | Concern | Address |
 |---|---|
-| Vulnerability disclosure | `security@corelink.dev` |
-| Privacy / DSR / DPO | `privacy@corelink.dev` |
-| Press / launch / analyst | `press@corelink.dev` |
-| Procurement / DPA / auditor | `trust@corelink.dev` |
-| Code of conduct reports | `conduct@corelink.dev` |
+| Vulnerability disclosure | `security@humangr.com` |
+| Privacy / DSR / DPO | `privacy@humangr.com` |
+| Press / launch / analyst | `press@humangr.com` |
+| Procurement / DPA / auditor | `trust@humangr.com` |
+| Code of conduct reports | `conduct@humangr.com` |
 
 The canonical security contact card lives at
 [`/.well-known/security.txt`](./apps/docs/static/.well-known/security.txt)

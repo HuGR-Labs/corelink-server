@@ -128,7 +128,7 @@ fn canonical_statuses_pinned() {
 #[test]
 fn canonical_constants_pinned() {
     assert_eq!(RECEIPT_ALG_RS256, "RS256");
-    assert_eq!(RECEIPT_ISSUER, "corelink.dev/privacy");
+    assert_eq!(RECEIPT_ISSUER, "corelink.humangr.com/privacy");
     assert_eq!(RECEIPT_EXPIRY_DAYS, 90);
     assert_eq!(SLA_LGPD_DAYS, 15);
     assert_eq!(SLA_GDPR_DAYS, 30);

@@ -84,7 +84,7 @@ What happens next:
 - We will attempt a first fix within 1 hour. If we can't, you'll know
   why.
 - If we find this is affecting other tenants, we'll convert to an
-  incident and post to https://status.corelink.dev.
+  incident and post to https://status.corelink.humangr.com.
 
 If you need to reach a human immediately, reply to this email with
 "escalate" and our Support Lead will phone you.
@@ -177,8 +177,8 @@ urgent than P3 (you have a deadline, this is blocking a decision),
 just reply with "urgent" and I'll re-triage.
 
 Useful links while you wait:
-- Docs: https://corelink.dev/docs
-- Status: https://status.corelink.dev
+- Docs: https://corelink.humangr.com/docs
+- Status: https://status.corelink.humangr.com
 - {{Optional context-specific link}}
 
 — {{agent_first_name}}, CoreLink Support
@@ -301,7 +301,7 @@ What we'd like you to verify:
 - {{specific_customer_action — e.g., "re-run your failing CI job and
   confirm cache hits resume"}}
 - {{specific_customer_action — e.g., "check your dashboard at
-  https://grafana.corelink.dev/lighthouse/{{slot}} for the SLO panel
+  https://grafana.corelink.humangr.com/lighthouse/{{slot}} for the SLO panel
   returning"}}
 
 Once you confirm on your side, I'll close the ticket as resolved. If
@@ -350,7 +350,7 @@ Ticket: {{ticket_id}}
 
 ## 10. `SR-DSR-ACK` — DSR-specific first-touch (any right type)
 
-**When:** within 24h of any DSR request landing in `dsr@corelink.dev` or via in-app DSR form. Routes via `RB-DSR-TICKET-TRIAGE.md`. **Hard rule:** 30-day regulatory clock starts at receipt — `{{received_at}}` is canonical.
+**When:** within 24h of any DSR request landing in `dsr@humangr.com` or via in-app DSR form. Routes via `RB-DSR-TICKET-TRIAGE.md`. **Hard rule:** 30-day regulatory clock starts at receipt — `{{received_at}}` is canonical.
 
 ```
 Subject: [CoreLink] DSR request received — {{dsr_id}}
@@ -381,7 +381,7 @@ with "did not submit" — we will pause processing and investigate.
 
 — {{agent_first_name}}, CoreLink Privacy Support
 DSR ID: {{dsr_id}}
-Contact: dsr@corelink.dev
+Contact: dsr@humangr.com
 ```
 
 ---
@@ -579,7 +579,7 @@ Your options:
 
 1. **Upgrade to Team tier** — keep everything, no migration needed.
    Pricing: ${{team_tier_price}}/mo flat or usage-based per
-   https://corelink.dev/pricing. Upgrade in-app or reply here.
+   https://corelink.humangr.com/pricing. Upgrade in-app or reply here.
 
 2. **Upgrade to Enterprise (BYOK)** — best fit if you need
    customer-managed keys, dedicated capacity, or SLA. Reply here and
@@ -598,7 +598,7 @@ of them easier.
 
 — {{agent_first_name}}, CoreLink Support
 Sandbox: {{tenant_id}}
-Pricing: https://corelink.dev/pricing
+Pricing: https://corelink.humangr.com/pricing
 ```
 
 ---

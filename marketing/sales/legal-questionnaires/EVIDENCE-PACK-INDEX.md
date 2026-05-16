@@ -17,14 +17,14 @@ tags: ["sales", "legal", "questionnaire", "evidence-pack", "procurement", "audit
 
 # Evidence Pack Index — Which artifact answers which question family
 
-> **Audience:** auditor or procurement reviewer with countersigned NDA on file via `trust@corelink.dev`. This is the one-page wayfinder for the evidence bundle attached to any CoreLink SIG / CAIQ / custom-form response.
+> **Audience:** auditor or procurement reviewer with countersigned NDA on file via `trust@humangr.com`. This is the one-page wayfinder for the evidence bundle attached to any CoreLink SIG / CAIQ / custom-form response.
 >
 > **Source of truth:** `humangr-labs/corelink-server` at commit `<SHA>` (cited per response). All paths below are repo-relative unless they start with `https://`.
 >
 > **Access model:**
-> - **PUBLIC** = visible on `apps/docs/docs/` or on `https://docs.corelink.dev/`.
+> - **PUBLIC** = visible on `apps/docs/docs/` or on `https://docs.corelink.humangr.com/`.
 > - **OPEN-SOURCE** = visible in the public `humangr-labs/corelink` repo.
-> - **NDA** = shareable with countersigned NDA on file via `trust@corelink.dev`. Turnaround: 1 business day.
+> - **NDA** = shareable with countersigned NDA on file via `trust@humangr.com`. Turnaround: 1 business day.
 > - **AUDITOR-ONLY** = shared with engaged 3PAO / external auditor only; not distributed even with NDA.
 
 ---
@@ -132,8 +132,8 @@ If a question family is not listed here, escalate to DPO before answering — it
 | 86 | Security contact card | `/.well-known/security.txt` | PUBLIC |
 | 87 | PGP key | `/.well-known/security-pgp.asc` | PUBLIC |
 | 88 | **SLO catalog** | `specs/03_architecture/slo_catalog.md` | OPEN-SOURCE |
-| 89 | SLO — public summary | `https://docs.corelink.dev/slo` | PUBLIC |
-| 90 | Status page | `https://status.corelink.dev` | PUBLIC |
+| 89 | SLO — public summary | `https://docs.corelink.humangr.com/slo` | PUBLIC |
+| 90 | Status page | `https://status.corelink.humangr.com` | PUBLIC |
 | 91 | **Trust Center — index** | `apps/docs/docs/trust/index.mdx` | PUBLIC |
 | 92 | Trust Center — compliance | `apps/docs/docs/trust/compliance.mdx` | PUBLIC |
 | 93 | Trust Center — data handling | `apps/docs/docs/trust/data-handling.mdx` | PUBLIC |
@@ -300,7 +300,7 @@ Next scheduled refresh: 2026-08-15 (Q3 quarterly review window, stacked with ven
 
 | What you need | Where to send it |
 |---|---|
-| Evidence pack request (countersigned NDA on file) | `trust@corelink.dev` |
-| Auditor / 3PAO walkthrough | `trust@corelink.dev` — cc Founder + DPO |
-| Privacy / DSR | `privacy@corelink.dev` |
-| Security vulnerability report | `security@corelink.dev` |
+| Evidence pack request (countersigned NDA on file) | `trust@humangr.com` |
+| Auditor / 3PAO walkthrough | `trust@humangr.com` — cc Founder + DPO |
+| Privacy / DSR | `privacy@humangr.com` |
+| Security vulnerability report | `security@humangr.com` |

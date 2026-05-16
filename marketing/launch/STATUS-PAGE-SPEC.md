@@ -39,7 +39,7 @@ tags:
 | Time-to-GA | Ready in < 1 day; H-18 already covers procurement. | 2-3 weeks of engineering + ops. |
 | Subscriber notifications (email + SMS + RSS + webhooks) | Native, battle-tested. | We build it. |
 | Page hosting reliability | Atlassian's SLA, geo-distributed. | We run it (ironic during our own outage). |
-| Brand fit | Adequate; custom domain `status.corelink.dev` supported. | Full brand control. |
+| Brand fit | Adequate; custom domain `status.corelink.humangr.com` supported. | Full brand control. |
 | Cost at GA scale | $99-299/mo (Business plan; supports private components for lighthouse). | $0 software + engineering + ops time. |
 | Audit trail | Native export; integrates with Drata for SOC 2. | We build retention. |
 | Auto-publish from PagerDuty | First-class integration. | We build it. |
@@ -53,9 +53,9 @@ tags:
 
 ## 2. Domain + branding
 
-- **Public URL:** `https://status.corelink.dev` (CNAME → Statuspage.io).
-- **Fallback URL:** `https://corelink.dev/status` — a static-HTML page in the CF Pages site, manually updated, served if Statuspage.io is itself down. Pre-staged with a "checking with our status provider" message.
-- **Brand:** CoreLink logo, neutral typography matching `corelink.dev`; status indicator colors follow industry convention (green/yellow/orange/red).
+- **Public URL:** `https://status.corelink.humangr.com` (CNAME → Statuspage.io).
+- **Fallback URL:** `https://corelink.humangr.com/status` — a static-HTML page in the CF Pages site, manually updated, served if Statuspage.io is itself down. Pre-staged with a "checking with our status provider" message.
+- **Brand:** CoreLink logo, neutral typography matching `corelink.humangr.com`; status indicator colors follow industry convention (green/yellow/orange/red).
 - **Footer:** RFC 9116 link to `security.txt`; link to `SECURITY.md`; link to trust center.
 
 ---
@@ -66,14 +66,14 @@ The status page advertises exactly the following 8 components. Each maps to a Co
 
 | # | Component name | What it advertises | Primary SLO mapped | Owner |
 |---|---|---|---|---|
-| C1 | **API** | The CoreLink control-plane API (`api.corelink.dev`) — REAPI surface, admin endpoints, signup/billing endpoints, BYOK key-management calls. | API p99 ≤ 250 ms; error rate ≤ 0.1%. | SRE-OC |
+| C1 | **API** | The CoreLink control-plane API (`api.corelink.humangr.com`) — REAPI surface, admin endpoints, signup/billing endpoints, BYOK key-management calls. | API p99 ≤ 250 ms; error rate ≤ 0.1%. | SRE-OC |
 | C2 | **CAS Read Path** | Content-addressable storage read serving — `GetBlob`, `BatchGetBlobs`, cache hits. | CAS read p99 ≤ 100 ms (hit); error rate ≤ 0.05%. | SRE-OC |
 | C3 | **CAS Write Path** | CAS write serving — `UpdateBlob`, `BatchUpdateBlobs`, deduplication, GC backpressure. | CAS write p99 ≤ 500 ms; error rate ≤ 0.1%. | SRE-OC |
 | C4 | **BYOK** | Customer-managed-key envelope encryption against AWS KMS / GCP KMS / Azure Key Vault / HashiCorp Vault. | BYOK envelope p99 ≤ 50 ms; vendor success rate ≥ 99.9%. | SRE-OC + VPSec |
 | C5 | **Audit** | Audit-chain ingest + Merkle-proof issuance; SIEM forwarding (S3 + Splunk-compatible). | Audit ingest lag ≤ 60 s; proof issuance p99 ≤ 200 ms. | VPSec |
 | C6 | **Billing** | Stripe webhook ingest, invoice generation, metering aggregation. | Webhook ingest success ≥ 99.9%; billing freshness ≤ 1 h. | Finance + SRE-OC |
-| C7 | **Docs** | `docs.corelink.dev` Docusaurus site + CDN; including security.txt + trust center. | Docs availability ≥ 99.95%. | VPMkt + Engineering |
-| C8 | **Admin Console** | `admin.corelink.dev` operator console — Clerk-gated; org/tenant/user admin. | Admin availability ≥ 99.9%. | SRE-OC |
+| C7 | **Docs** | `docs.corelink.humangr.com` Docusaurus site + CDN; including security.txt + trust center. | Docs availability ≥ 99.95%. | VPMkt + Engineering |
+| C8 | **Admin Console** | `admin.corelink.humangr.com` operator console — Clerk-gated; org/tenant/user admin. | Admin availability ≥ 99.9%. | SRE-OC |
 
 **Hidden / private components.** None at GA. (If we add tenant-scoped private status visibility post-GA, file ADR-0036.)
 
@@ -84,13 +84,13 @@ The status page advertises exactly the following 8 components. Each maps to a Co
 ### 4.1 Pre-subscribed (mandatory) at GA
 
 - **3 lighthouse customers** — primary contact + SRE/oncall contact each, totaling 6 emails minimum. Subscribed during onboarding per `marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md` Day-1 step.
-- **CoreLink internal:** SRE on-call distribution (PagerDuty service email), `security@corelink.dev`, `support@corelink.dev`, `compliance@corelink.dev`, `ceo@corelink.dev`.
+- **CoreLink internal:** SRE on-call distribution (PagerDuty service email), `security@humangr.com`, `support@humangr.com`, `compliance@humangr.com`, `ceo@humangr.com`.
 
 ### 4.2 Public opt-in channels (live at T-0)
 
-- **Email subscription** — visitors at `status.corelink.dev` click "Subscribe to updates" → email + per-component filter UI.
-- **RSS feed** — `status.corelink.dev/history.rss` and `status.corelink.dev/incidents.rss`.
-- **Atom feed** — `status.corelink.dev/history.atom`.
+- **Email subscription** — visitors at `status.corelink.humangr.com` click "Subscribe to updates" → email + per-component filter UI.
+- **RSS feed** — `status.corelink.humangr.com/history.rss` and `status.corelink.humangr.com/incidents.rss`.
+- **Atom feed** — `status.corelink.humangr.com/history.atom`.
 - **Webhook subscription** — for power users / paid customers, Statuspage POSTs incident payloads to a customer-provided URL.
 - **SMS subscription** — Statuspage Business plan; opt-in only; SEV1 messages only (cost control).
 - **Slack integration** — public CoreLink community Slack receives a `#status-updates` feed (one-way).
@@ -140,7 +140,7 @@ Rollback: <one paragraph: how we revert if the change misbehaves>
 Subscribers will receive a reminder 24 hours before the window opens and a
 final confirmation when the window closes.
 
-Questions: status@corelink.dev (replies monitored 24/7 during launch period;
+Questions: status@humangr.com (replies monitored 24/7 during launch period;
 standard business hours after T+30d).
 ```
 
@@ -205,7 +205,7 @@ approval_bypass:
 
 ### 7.3 Failure mode
 
-If PagerDuty → Statuspage webhook fails (3 attempts exhausted), the integration emits a SEV2 internal page-out to SRE-OC titled "Statuspage publish failed" with the original incident payload attached. SRE-OC then either (a) manually pushes to Statuspage from the PagerDuty mobile app, or (b) updates the static fallback page at `corelink.dev/status` and tweets from `@corelinkdev`.
+If PagerDuty → Statuspage webhook fails (3 attempts exhausted), the integration emits a SEV2 internal page-out to SRE-OC titled "Statuspage publish failed" with the original incident payload attached. SRE-OC then either (a) manually pushes to Statuspage from the PagerDuty mobile app, or (b) updates the static fallback page at `corelink.humangr.com/status` and tweets from `@corelinkdev`.
 
 ---
 

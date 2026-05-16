@@ -284,11 +284,11 @@ export default function IncidentHistory(): ReactElement {
             </li>
             <li>
               <a
-                href="https://status.corelink.dev"
+                href="https://status.corelink.humangr.com"
                 rel="noopener noreferrer"
                 target="_blank"
               >
-                status.corelink.dev
+                status.corelink.humangr.com
               </a>
             </li>
           </ul>

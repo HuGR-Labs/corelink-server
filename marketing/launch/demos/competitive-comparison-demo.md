@@ -194,7 +194,7 @@ The CLI exits with code 1 — show it.
 
 > "If your scope is single-org, no regulator, and you trust your network, bazel-remote is excellent. If your scope is multi-tenant, regulated, or audit-driven, CoreLink ships the additional surface as a product, not a roadmap. The choice is scope-driven, not better-versus-worse."
 
-**End card hold for 2s with `corelink.dev` URL.**
+**End card hold for 2s with `corelink.humangr.com` URL.**
 
 ---
 

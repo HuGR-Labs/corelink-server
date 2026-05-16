@@ -154,7 +154,7 @@ corelink.region.audit_residency_check_fail_total
 - **Insert checks reinforced** em D1 schema (region tag mandatory + check constraint).
 - **Property test** S-11 baseline 20k (R-S11-19) → S-14 30k (R-S14-19) → 100k nightly cron sustained 90d cross-region scenarios.
 - **TLA+ region_residency.tla** (planned Lote 9.4 obligation matrix): formal model region pinning.
-- **Custom domain routing** strict: `<tenant_id>.<region>.corelink.dev` enforced (no fallback).
+- **Custom domain routing** strict: `<tenant_id>.<region>.corelink.humangr.com` enforced (no fallback).
 - **Quarterly Schrems II TIA review** (S-14 R-S14-5 alignment).
 - **Customer-facing residency dashboard** (S-16): customer can verify own region pinning.
 

@@ -88,7 +88,7 @@ that cardholder data never crosses our network boundary.
 The detailed boundary diagram (Mermaid + ASCII + Stripe-vs-CoreLink
 responsibility matrix + storage map) lives in
 [`specs/_compliance/PCI-DSS-BOUNDARY-DIAGRAM.md`](https://github.com/humangr-labs/corelink/blob/main/specs/_compliance/PCI-DSS-BOUNDARY-DIAGRAM.md).
-Procurement teams can request the signed PDF via `trust@corelink.dev`.
+Procurement teams can request the signed PDF via `trust@humangr.com`.
 
 ## What you can verify yourself
 
@@ -108,7 +108,7 @@ grep -rEn 'card_number|cvv|cvc|\bpan\b' \
 #  note in the SAQ-A doc).
 
 # 2. Inspect the live checkout page's Content-Security-Policy header.
-curl -sI https://billing.corelink.dev/checkout | grep -i content-security-policy
+curl -sI https://billing.corelink.humangr.com/checkout | grep -i content-security-policy
 
 # Expected: script-src 'self' https://js.stripe.com
 # (no analytics, no tag managers, no chat widgets on the payment page)
@@ -116,7 +116,7 @@ curl -sI https://billing.corelink.dev/checkout | grep -i content-security-policy
 
 ## What we share with auditors and procurement
 
-On request to `trust@corelink.dev` (DPA on file required):
+On request to `trust@humangr.com` (DPA on file required):
 
 - The signed SAQ-A questionnaire (24 questions, PCI DSS v4.0).
 - The full boundary diagram (Mermaid + ASCII + storage map).
@@ -152,7 +152,7 @@ add Connect, we will re-scope to the appropriate SAQ variant, likely
 SAQ-A-EP, and re-publish this page.)
 
 **Can I get a copy of your AOC / SAQ-A?**
-Yes — email `trust@corelink.dev` with your DPA on file; we route signed
+Yes — email `trust@humangr.com` with your DPA on file; we route signed
 PDFs back within 1 business day.
 
 **You store `last4` and `brand`. Isn't that CHD?**
@@ -183,6 +183,6 @@ test (100k synthetic PANs, zero leaks):
 
 | What you need | Where to send it |
 | --- | --- |
-| SAQ-A, AOC, boundary diagram | `trust@corelink.dev` |
-| Procurement / vendor review forms | `trust@corelink.dev` |
-| Security vulnerability report | `security@corelink.dev` (see [policy](/security/policy)) |
+| SAQ-A, AOC, boundary diagram | `trust@humangr.com` |
+| Procurement / vendor review forms | `trust@humangr.com` |
+| Security vulnerability report | `security@humangr.com` (see [policy](/security/policy)) |

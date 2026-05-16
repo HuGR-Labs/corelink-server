@@ -253,7 +253,7 @@ jobs:
             echo "::warning::STATUSPAGE_API_KEY not configured — probe skipped."
             exit 0
           fi
-          # Advisory only: probe status.corelink.dev v1 API and log the
+          # Advisory only: probe status.corelink.humangr.com v1 API and log the
           # aggregated component status. The verify script picks up the
           # resulting reports/statuspage-live-state.json on the next run.
           mkdir -p reports

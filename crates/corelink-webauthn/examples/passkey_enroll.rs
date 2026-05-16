@@ -16,9 +16,9 @@ use corelink_webauthn::{
 };
 
 fn main() {
-    let cfg = EngineConfig::builder(RpId::new("corelink.dev").unwrap(), "CoreLink")
+    let cfg = EngineConfig::builder(RpId::new("corelink.humangr.com").unwrap(), "CoreLink")
         .origins(
-            OriginAllowlist::from_strings(["https://app.corelink.dev"]).unwrap(),
+            OriginAllowlist::from_strings(["https://app.corelink.humangr.com"]).unwrap(),
         )
         .aaguids(AaguidPolicy::builder().allow(Aaguid::touch_id()).build())
         .build()
@@ -38,7 +38,7 @@ fn main() {
         COSE_ALG_ES256,
         AuthenticatorFlags::up_uv_be(),
         0,
-        Origin::parse("https://app.corelink.dev").unwrap(),
+        Origin::parse("https://app.corelink.humangr.com").unwrap(),
     );
     let cred_id = engine.finish_registration(challenge.id(), response).unwrap();
     println!("Credential persisted: {cred_id:?}");

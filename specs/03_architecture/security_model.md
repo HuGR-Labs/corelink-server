@@ -347,7 +347,7 @@ Adicionado em Lote 5.4 endereçando audit S-10. Cobre `CTRL-NET-001..004` que es
 
 | ID           | Controle                            | Implementação                                              | Evidence     | Revalidação |
 |--------------|-------------------------------------|------------------------------------------------------------|--------------|-------------|
-| CTRL-NET-001 | HSTS preload | Domain `cache.corelink.dev` em [hstspreload.org](https://hstspreload.org); header `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload` | EVT-037 (SSL Labs A+) | Trimestral |
+| CTRL-NET-001 | HSTS preload | Domain `cache.corelink.humangr.com` em [hstspreload.org](https://hstspreload.org); header `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload` | EVT-037 (SSL Labs A+) | Trimestral |
 | CTRL-NET-002 | CAA record pinned | DNS CAA record permite apenas Let's Encrypt + Cloudflare-managed para emitir cert; bloqueia rogue CA | EVT-001 (DNS check) | Trimestral |
 | CTRL-NET-003 | CF service binding auth | Worker → Container via service binding (não público); binding nomes em manifest; CF account-level isolation | EVT-028 (config snapshot) | Trimestral |
 | CTRL-NET-004 | Error envelope sanitizer | Middleware converte panics/upstream errors em envelope `{error:{code,request_id}}` sem leak de stack trace ou DB internals | EVT-002 + EVT-005 | Contínuo |

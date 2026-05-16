@@ -177,7 +177,7 @@ Feature WI; HIGH_RISK; FF-HR-009; sales-load-bearing.
    - If saga in partial state > 5 min → invoke RB-FM-ENTERPRISE-HANDOFF-PARTIAL.
 
 5. **Auto-reply email** ≤ 5 min via SES:
-   - Static template: "Thank you for your interest in CoreLink. Our Sales team will respond within 24 hours. Inquiry ID: <id>. White-glove timeline below: ... Contact: sales@corelink.dev."
+   - Static template: "Thank you for your interest in CoreLink. Our Sales team will respond within 24 hours. Inquiry ID: <id>. White-glove timeline below: ... Contact: sales@humangr.com."
    - SES sandbox + DKIM/SPF/DMARC configured.
    - Bounce handling: alert > 5% bounce rate.
 

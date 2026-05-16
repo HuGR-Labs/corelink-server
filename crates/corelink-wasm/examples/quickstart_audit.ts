@@ -6,7 +6,7 @@
 //
 // Run: CORELINK_PAT=$ADMIN_PAT tsx examples/quickstart_audit.ts
 
-const api = process.env.CORELINK_API_URL ?? "https://sandbox.corelink.dev";
+const api = process.env.CORELINK_API_URL ?? "https://sandbox.corelink.humangr.com";
 const pat = process.env.CORELINK_PAT;
 if (!pat) {
   console.error("error: CORELINK_PAT env var is required");

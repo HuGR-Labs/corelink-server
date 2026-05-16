@@ -2,7 +2,7 @@
 
 > **Status:** READY FOR OWNER PUBLICATION. Trace: wave-28 step-7. Honest pre-GA pilot framing.
 > Format: 150-word outbound email for direct outreach to candidates from `docs/internal/pilot-target-list.md`.
-> Mustache placeholders: `{{lead_name}}`, `{{lead_company}}`. Single CTA: `signup.corelink.dev/pilot`.
+> Mustache placeholders: `{{lead_name}}`, `{{lead_company}}`. Single CTA: `signup.corelink.humangr.com/pilot`.
 > Companion to `marketing/launch/PILOT-ANNOUNCEMENT.md`.
 
 ---
@@ -40,7 +40,7 @@ Recommended default: **A**. B has higher open rates but pulls more low-intent re
 >
 > 10 slots. Worth a 20-minute call?
 >
-> Apply directly: **signup.corelink.dev/pilot** — or reply and I'll route you.
+> Apply directly: **signup.corelink.humangr.com/pilot** — or reply and I'll route you.
 >
 > Gustavo
 > HuGR Labs
@@ -53,7 +53,7 @@ Body: 158 words (target was 150; the procurement-honesty bullet adds ~10 words a
 
 ## Send-side notes (Owner-only — do not paste)
 
-- **Volume cap:** 30 sends / day per Owner address. Higher volume requires a dedicated outbound domain (e.g. `pilot.corelink.dev`) with proper SPF/DKIM/DMARC; do NOT send from `corelink.dev` primary at >30/day or you risk the launch-day domain reputation.
+- **Volume cap:** 30 sends / day per Owner address. Higher volume requires a dedicated outbound domain (e.g. `pilot.corelink.humangr.com`) with proper SPF/DKIM/DMARC; do NOT send from `corelink.humangr.com` primary at >30/day or you risk the launch-day domain reputation.
 - **Sequence:** 1 initial + 1 follow-up at day 4 + 1 break-up at day 10. Do not exceed 3 touches.
 - **Follow-up template:** one-line "still interested?" — do not re-pitch.
 - **Break-up template:** "closing the loop — no response means I'll de-prioritise; reply with a 'next quarter' if you want a reminder."

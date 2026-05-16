@@ -8,7 +8,7 @@
   "override_url": "https://corelink-statuspage-test.example.com",
   "steps": [
     {
-      "detail": "CNAME corelink-statuspage-test.example.com -> corelink-tenant-dressrun.statuspage.io; canonical status.corelink.dev",
+      "detail": "CNAME corelink-statuspage-test.example.com -> corelink-tenant-dressrun.statuspage.io; canonical status.corelink.humangr.com",
       "duration_ms": 233,
       "name": "dns_cname_verification",
       "outcome": "PASS",

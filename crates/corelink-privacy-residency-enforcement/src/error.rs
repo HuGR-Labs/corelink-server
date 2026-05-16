@@ -12,14 +12,14 @@ use thiserror::Error;
 /// fail-CLOSED canonical (`resilience_patterns.md §3.4`).
 ///
 /// The `remediation_url` field contains the correct custom domain
-/// (`<tenant_id>.<expected>.corelink.dev`) for client retry.
+/// (`<tenant_id>.<expected>.corelink.humangr.com`) for client retry.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 #[non_exhaustive]
 pub enum ResidencyViolation {
     /// Request was routed to the wrong region.
     #[error(
         "Request region '{requested}' does not match tenant.primary_region '{expected}'. \
-         Use <tenant_id>.{expected}.corelink.dev — Schrems II + LGPD Art. 33 §1º + GDPR Art. 44"
+         Use <tenant_id>.{expected}.corelink.humangr.com — Schrems II + LGPD Art. 33 §1º + GDPR Art. 44"
     )]
     RequestRegionMismatch {
         /// Tenant whose region was violated.

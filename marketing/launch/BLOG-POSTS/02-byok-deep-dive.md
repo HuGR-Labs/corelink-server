@@ -72,7 +72,7 @@ For each provider, CoreLink publishes:
 - The expected unwrap-latency budget (p99 ≤ 100 ms for the read path; the cache hit path does not call KMS at all).
 - The failure mode if the customer's KMS is unreachable (the data path returns a documented hard-fail error class; no fallback decryption path exists by design).
 
-Specific FIPS-validation references for each provider are maintained at `docs.corelink.dev/trust/byok-providers` and are versioned alongside the integration. When a provider rolls a new module validation, the documentation rolls with it.
+Specific FIPS-validation references for each provider are maintained at `docs.corelink.humangr.com/trust/byok-providers` and are versioned alongside the integration. When a provider rolls a new module validation, the documentation rolls with it.
 
 ### FIPS endpoint selection
 
@@ -122,7 +122,7 @@ When a customer initiates erasure under DSR / DSAR / right-to-erasure, CoreLink 
 - Tenant identifier and scope of erasure.
 - Audit-chain leaf hashes for the erased objects (so the chain remains verifiable after the underlying bytes are gone).
 - Timestamp.
-- The CoreLink-side signing key identifier (publishable, rotation-tracked at `corelink.dev/trust`).
+- The CoreLink-side signing key identifier (publishable, rotation-tracked at `corelink.humangr.com/trust`).
 - A NIST SP 800-88 Rev. 1 crypto-erase classification.
 
 The attestation is retained for 7 years (regulator-driven) and is independently re-verifiable by the customer using CoreLink's published signing key — the invariant `INV-ERASURE-ATTESTATION-SIGNED` makes the signing path a structural requirement.
@@ -151,10 +151,10 @@ A BYOK implementation is a series of trade-offs. The ones we made consciously:
 
 ## Where to go next
 
-- **Trust center:** `corelink.dev/trust`
-- **BYOK provider matrix:** `docs.corelink.dev/trust/byok-providers`
-- **Erasure attestation spec:** `docs.corelink.dev/trust/erasure-attestation`
-- **Kill switch runbook:** `docs.corelink.dev/runbooks/byok-kill-switch`
+- **Trust center:** `corelink.humangr.com/trust`
+- **BYOK provider matrix:** `docs.corelink.humangr.com/trust/byok-providers`
+- **Erasure attestation spec:** `docs.corelink.humangr.com/trust/erasure-attestation`
+- **Kill switch runbook:** `docs.corelink.humangr.com/runbooks/byok-kill-switch`
 
 — Crypto and Trust at CoreLink
 

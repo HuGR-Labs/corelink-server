@@ -210,13 +210,13 @@ pub async fn run_synthetic_page_weekly() {
 - Acknowledge page within target SLA.
 - Triage + initial diagnosis ≤ 15 min.
 - Open SEV channel #incident-{id}.
-- Update status page (status.corelink.dev).
+- Update status page (status.corelink.humangr.com).
 - Post-mortem within 72h SEV-1 / 7d SEV-2 (per S-17 framework).
 
 ## Tools
 - PagerDuty (paging + escalation).
 - Slack #incident-{id} (war room).
-- Status page: status.corelink.dev.
+- Status page: status.corelink.humangr.com.
 - Runbook library: specs/05_runbooks/RB-FM-*.md.
 ```
 
@@ -319,7 +319,7 @@ SLO novo S-20:
 - **Identifiability**: engineer email para PagerDuty paging.
 - **Non-repudiation**: PagerDuty event log = forensic-grade audit trail.
 - **Detectability**: synthetic page weekly verifies detectability + response time.
-- **Disclosure**: status page status.corelink.dev customer-facing transparency.
+- **Disclosure**: status page status.corelink.humangr.com customer-facing transparency.
 - **Unawareness**: customer notified per status page + breach notification SLA per DPA v1.
 - **Non-compliance**: SOC 2 + ISO/IEC 27001:2022 A.16 satisfied.
 

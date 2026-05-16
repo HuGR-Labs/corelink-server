@@ -4,7 +4,7 @@
 //! Each scenario corresponds to a well-known attack class:
 //!
 //! 1. `alg: none` injection.
-//! 2. Origin spoof (`evil.corelink.dev.attacker.com`).
+//! 2. Origin spoof (`evil.corelink.humangr.com.attacker.com`).
 //! 3. RP-ID confusion (browser sends spoofed RP-ID by way of an
 //!    origin that does not share the canonical eTLD+1 suffix).
 //! 4. UV downgrade in admin step-up.
@@ -36,11 +36,11 @@ use corelink_webauthn::{
 };
 
 fn engine() -> (InMemoryEngine<FixedClock>, FixedClock, UserAccountId) {
-    let cfg = EngineConfig::builder(RpId::new("corelink.dev").unwrap(), "CoreLink")
+    let cfg = EngineConfig::builder(RpId::new("corelink.humangr.com").unwrap(), "CoreLink")
         .origins(
             OriginAllowlist::from_strings([
-                "https://app.corelink.dev",
-                "https://admin.corelink.dev",
+                "https://app.corelink.humangr.com",
+                "https://admin.corelink.humangr.com",
             ])
             .unwrap(),
         )
@@ -74,7 +74,7 @@ fn enroll_passkey(
         COSE_ALG_ES256,
         AuthenticatorFlags::up_uv_be(),
         0,
-        Origin::parse("https://app.corelink.dev").unwrap(),
+        Origin::parse("https://app.corelink.humangr.com").unwrap(),
     );
     engine.finish_registration(reg.id(), response).unwrap();
     cred
@@ -93,7 +93,7 @@ fn test_alg_none_rejected() {
         0, // canonical "alg: none" attack
         AuthenticatorFlags::up_uv(),
         0,
-        Origin::parse("https://app.corelink.dev").unwrap(),
+        Origin::parse("https://app.corelink.humangr.com").unwrap(),
     );
     let err = engine.finish_registration(reg.id(), response).unwrap_err();
     assert!(matches!(err, WebAuthnError::Malformed(_)));
@@ -105,7 +105,7 @@ fn test_origin_spoof_rejected() {
     let reg = engine
         .start_registration(user, AuthenticatorAttachment::Platform)
         .unwrap();
-    let evil = Origin::parse("https://evil.corelink.dev.attacker.com").unwrap();
+    let evil = Origin::parse("https://evil.corelink.humangr.com.attacker.com").unwrap();
     let response = RegistrationResponse::synthetic_for_test(
         reg.id().clone(),
         Aaguid::touch_id(),
@@ -128,7 +128,7 @@ fn test_rp_id_confusion_via_unrelated_host() {
     let res =
         OriginAllowlist::from_strings(["https://corelink.example", "https://attacker.com"]);
     let allow = res.unwrap();
-    let consistency = allow.require_consistency_with(&RpId::new("corelink.dev").unwrap());
+    let consistency = allow.require_consistency_with(&RpId::new("corelink.humangr.com").unwrap());
     assert!(matches!(consistency, Err(WebAuthnError::Malformed(_))));
 }
 
@@ -144,7 +144,7 @@ fn test_uv_required_in_admin_step_up() {
         cred,
         AuthenticatorFlags::up_only(),
         SignCount::new(1),
-        Origin::parse("https://admin.corelink.dev").unwrap(),
+        Origin::parse("https://admin.corelink.humangr.com").unwrap(),
     );
     assert!(matches!(
         engine.finish_authentication(auth.id(), response),
@@ -165,7 +165,7 @@ fn test_attestation_required_at_registration() {
         COSE_ALG_ES256,
         AuthenticatorFlags::up_uv(),
         0,
-        Origin::parse("https://app.corelink.dev").unwrap(),
+        Origin::parse("https://app.corelink.humangr.com").unwrap(),
     );
     response.attestation_present = false;
     assert!(matches!(
@@ -187,7 +187,7 @@ fn test_aaguid_denylist_blocks_deprecated_authenticator() {
         COSE_ALG_ES256,
         AuthenticatorFlags::up_uv(),
         0,
-        Origin::parse("https://app.corelink.dev").unwrap(),
+        Origin::parse("https://app.corelink.humangr.com").unwrap(),
     );
     assert!(matches!(
         engine.finish_registration(reg.id(), response),
@@ -208,7 +208,7 @@ fn test_aaguid_closed_default_blocks_unknown() {
         COSE_ALG_ES256,
         AuthenticatorFlags::up_uv(),
         0,
-        Origin::parse("https://app.corelink.dev").unwrap(),
+        Origin::parse("https://app.corelink.humangr.com").unwrap(),
     );
     assert!(matches!(
         engine.finish_registration(reg.id(), response),
@@ -230,7 +230,7 @@ fn test_sign_count_regression_detected() {
         cred.clone(),
         AuthenticatorFlags::up_uv(),
         SignCount::new(5),
-        Origin::parse("https://app.corelink.dev").unwrap(),
+        Origin::parse("https://app.corelink.humangr.com").unwrap(),
     );
     let outcome = engine.finish_authentication(auth.id(), response).unwrap();
     assert_eq!(outcome.persisted_sign_count(), SignCount::new(5));
@@ -244,7 +244,7 @@ fn test_sign_count_regression_detected() {
         cred,
         AuthenticatorFlags::up_uv(),
         SignCount::new(2),
-        Origin::parse("https://app.corelink.dev").unwrap(),
+        Origin::parse("https://app.corelink.humangr.com").unwrap(),
     );
     assert!(matches!(
         engine.finish_authentication(auth2.id(), response2),
@@ -266,7 +266,7 @@ fn test_passkey_sign_count_zero_exempt_from_regression() {
             cred.clone(),
             AuthenticatorFlags::up_uv(),
             SignCount::zero(),
-            Origin::parse("https://app.corelink.dev").unwrap(),
+            Origin::parse("https://app.corelink.humangr.com").unwrap(),
         );
         let outcome = engine.finish_authentication(auth.id(), response).unwrap();
         assert!(outcome.is_authenticated());
@@ -287,7 +287,7 @@ fn test_challenge_replay_after_ttl_expiry() {
         cred,
         AuthenticatorFlags::up_uv(),
         SignCount::new(1),
-        Origin::parse("https://app.corelink.dev").unwrap(),
+        Origin::parse("https://app.corelink.humangr.com").unwrap(),
     );
     assert!(matches!(
         engine.finish_authentication(auth.id(), response),

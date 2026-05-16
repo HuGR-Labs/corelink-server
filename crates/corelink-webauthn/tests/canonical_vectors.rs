@@ -23,11 +23,11 @@ use corelink_webauthn::{
 };
 
 fn engine() -> (InMemoryEngine<FixedClock>, FixedClock, UserAccountId) {
-    let cfg = EngineConfig::builder(RpId::new("corelink.dev").unwrap(), "CoreLink")
+    let cfg = EngineConfig::builder(RpId::new("corelink.humangr.com").unwrap(), "CoreLink")
         .origins(
             OriginAllowlist::from_strings([
-                "https://app.corelink.dev",
-                "https://admin.corelink.dev",
+                "https://app.corelink.humangr.com",
+                "https://admin.corelink.humangr.com",
             ])
             .unwrap(),
         )
@@ -52,8 +52,8 @@ fn engine() -> (InMemoryEngine<FixedClock>, FixedClock, UserAccountId) {
 
 #[test]
 fn rp_id_canonical_eqs_corelink_dev() {
-    let rp = RpId::new("corelink.dev").unwrap();
-    assert_eq!(rp.as_str(), "corelink.dev");
+    let rp = RpId::new("corelink.humangr.com").unwrap();
+    assert_eq!(rp.as_str(), "corelink.humangr.com");
 }
 
 #[test]
@@ -82,9 +82,9 @@ fn rp_id_rejects_single_label() {
 #[test]
 fn rp_id_hash_is_sha256() {
     use sha2::{Digest, Sha256};
-    let rp = RpId::new("corelink.dev").unwrap();
+    let rp = RpId::new("corelink.humangr.com").unwrap();
     let mut h = Sha256::new();
-    h.update(b"corelink.dev");
+    h.update(b"corelink.humangr.com");
     let canonical: [u8; 32] = h.finalize().into();
     assert_eq!(rp.hash(), canonical);
 }
@@ -92,12 +92,12 @@ fn rp_id_hash_is_sha256() {
 #[test]
 fn origin_allowlist_is_exact_match() {
     let allow = OriginAllowlist::from_strings([
-        "https://app.corelink.dev",
-        "https://admin.corelink.dev",
+        "https://app.corelink.humangr.com",
+        "https://admin.corelink.humangr.com",
     ])
     .unwrap();
-    let good = Origin::parse("https://app.corelink.dev").unwrap();
-    let bad = Origin::parse("https://evil.corelink.dev.attacker.com").unwrap();
+    let good = Origin::parse("https://app.corelink.humangr.com").unwrap();
+    let bad = Origin::parse("https://evil.corelink.humangr.com.attacker.com").unwrap();
     assert!(allow.contains(&good));
     assert!(!allow.contains(&bad));
 }
@@ -105,7 +105,7 @@ fn origin_allowlist_is_exact_match() {
 #[test]
 fn origin_rejects_http() {
     assert!(matches!(
-        Origin::parse("http://app.corelink.dev"),
+        Origin::parse("http://app.corelink.humangr.com"),
         Err(WebAuthnError::Malformed(_))
     ));
 }
@@ -113,19 +113,19 @@ fn origin_rejects_http() {
 #[test]
 fn origin_rejects_userinfo() {
     assert!(matches!(
-        Origin::parse("https://user:pass@app.corelink.dev"),
+        Origin::parse("https://user:pass@app.corelink.humangr.com"),
         Err(WebAuthnError::Malformed(_))
     ));
 }
 
 #[test]
 fn origin_subdomain_check() {
-    let rp = RpId::new("corelink.dev").unwrap();
-    let app = Origin::parse("https://app.corelink.dev").unwrap();
+    let rp = RpId::new("corelink.humangr.com").unwrap();
+    let app = Origin::parse("https://app.corelink.humangr.com").unwrap();
     assert!(app.is_subdomain_of(&rp));
-    let evil = Origin::parse("https://evil.corelink.dev.attacker.com").unwrap();
+    let evil = Origin::parse("https://evil.corelink.humangr.com.attacker.com").unwrap();
     assert!(!evil.is_subdomain_of(&rp));
-    let bare = Origin::parse("https://corelink.dev").unwrap();
+    let bare = Origin::parse("https://corelink.humangr.com").unwrap();
     assert!(bare.is_subdomain_of(&rp));
 }
 
@@ -190,7 +190,7 @@ fn registration_happy_path_persists_credential() {
         COSE_ALG_ES256,
         AuthenticatorFlags::up_uv_be(),
         0,
-        Origin::parse("https://app.corelink.dev").unwrap(),
+        Origin::parse("https://app.corelink.humangr.com").unwrap(),
     );
     let cred_id = engine.finish_registration(challenge.id(), response).unwrap();
     assert_eq!(engine.credential_store().list_for_user(user).len(), 1);
@@ -218,7 +218,7 @@ fn admin_step_up_requires_uv() {
                 COSE_ALG_ES256,
                 AuthenticatorFlags::up_uv(),
                 0,
-                Origin::parse("https://admin.corelink.dev").unwrap(),
+                Origin::parse("https://admin.corelink.humangr.com").unwrap(),
             ),
         )
         .unwrap();
@@ -231,7 +231,7 @@ fn admin_step_up_requires_uv() {
         auth.allowed_credentials()[0].clone(),
         AuthenticatorFlags::up_only(),
         SignCount::new(1),
-        Origin::parse("https://admin.corelink.dev").unwrap(),
+        Origin::parse("https://admin.corelink.humangr.com").unwrap(),
     );
     let err = engine
         .finish_authentication(auth.id(), response)
@@ -253,7 +253,7 @@ fn challenge_is_single_use() {
         COSE_ALG_ES256,
         AuthenticatorFlags::up_uv(),
         0,
-        Origin::parse("https://app.corelink.dev").unwrap(),
+        Origin::parse("https://app.corelink.humangr.com").unwrap(),
     );
     let _ = engine.finish_registration(reg.id(), response.clone()).unwrap();
     // Replaying the same challenge id MUST fail (single-use store).
@@ -278,7 +278,7 @@ fn challenge_expires_at_ttl() {
         COSE_ALG_ES256,
         AuthenticatorFlags::up_uv(),
         0,
-        Origin::parse("https://app.corelink.dev").unwrap(),
+        Origin::parse("https://app.corelink.humangr.com").unwrap(),
     );
     assert!(matches!(
         engine.finish_registration(reg.id(), response),

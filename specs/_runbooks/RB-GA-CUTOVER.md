@@ -94,7 +94,7 @@ The following must all be **GREEN** at T-7d ± 2h. Any RED defers cutover by ≥
 - Neon shadow lag baseline captured (target p99 ≤ 5min per §4).
 - Audit-chain head SHA recorded per region (per `RB-AUDIT-EXPORT-INTEGRITY.md` §2.2).
 - **Cutover dependency map cross-check** (wave-27): `specs/_audits/2026-05-16-cutover-dependency-map.md` is the canonical T-N-day DAG governing this §0 checklist. Every critical-path node (N-F-1 framework GA tag → N-C-1 GA-GATE-CRITERIA READY → N-D-1 dress rehearsal → N-S-1 / N-S-1b Statuspage tenant → **N-S-2 STATUSPAGE go-live at T-7d** → N-C-2 §0 checklist GREEN → N-X-1 §1 freeze → N-X-2 §2 staging → N-X-3 §3 cutover) MUST have its success-gate row ticked in the map before this §0.6 baseline snapshot is signed off. Any RED critical-path node defers cutover per `RB-GA-LAUNCH-ROLLBACK.md` §7 RA-3 ≥ 7 days minimum.
-- **STATUSPAGE T-7d gate (explicit)**: at T-7d ± 2h the `RB-STATUSPAGE-INIT.md` §4 gate MUST be GREEN — either (Option A) `curl -sI https://status.corelink.dev` returns HTTP 200 with 8 components in `summary.json`, OR (Option B) the operator-chosen domain resolves to the tenant + `STATUSPAGE_URL` env var is set in the docs deploy pipeline + the deploy-time substitution branch is merged to the release tag. RED at T-7d on this row alone defers cutover ≥ 7 days; the manual static-HTML fallback is NOT acceptable because the trust corpus cites the live JSON-API + RSS + email-subscribe channels.
+- **STATUSPAGE T-7d gate (explicit)**: at T-7d ± 2h the `RB-STATUSPAGE-INIT.md` §4 gate MUST be GREEN — either (Option A) `curl -sI https://status.corelink.humangr.com` returns HTTP 200 with 8 components in `summary.json`, OR (Option B) the operator-chosen domain resolves to the tenant + `STATUSPAGE_URL` env var is set in the docs deploy pipeline + the deploy-time substitution branch is merged to the release tag. RED at T-7d on this row alone defers cutover ≥ 7 days; the manual static-HTML fallback is NOT acceptable because the trust corpus cites the live JSON-API + RSS + email-subscribe channels.
 
 ### 0.7 Regulatory sign-off (no breach event)
 
@@ -154,7 +154,7 @@ git push origin v1.0.0-ga.rc1
 pnpm --filter @corelink/worker run deploy:staging
 
 # 2.1.3 Verify staging health
-curl https://staging.corelink.dev/__health | jq '.status'
+curl https://staging.corelink.humangr.com/__health | jq '.status'
 # expected: "OPERATIONAL"
 ```
 
@@ -270,7 +270,7 @@ done
 
 ```bash
 # 3.5.1 Update Stripe webhook endpoint to live-mode URL
-stripe webhook_endpoints update "$STRIPE_WEBHOOK_ID" --url=https://api.corelink.dev/webhooks/stripe
+stripe webhook_endpoints update "$STRIPE_WEBHOOK_ID" --url=https://api.corelink.humangr.com/webhooks/stripe
 
 # 3.5.2 Verify webhook signing secret matches deployed Worker
 wrangler secret list --env=production | grep STRIPE_WEBHOOK_SECRET
@@ -288,7 +288,7 @@ wrangler tail --env=production --status=ok | grep -c "dlq-consumer-started"
 wrangler kv key put --namespace-id "$AUTH_KV_PROD" "clerk:env" "production"
 
 # 3.6.2 Verify JWT issuer URL responds
-curl https://clerk.corelink.dev/.well-known/jwks.json | jq '.keys | length'
+curl https://clerk.corelink.humangr.com/.well-known/jwks.json | jq '.keys | length'
 
 # 3.6.3 Enable WebAuthn admin endpoint
 wrangler kv key put --namespace-id "$AUTH_KV_PROD" "webauthn:admin:enabled" "true"
@@ -326,7 +326,7 @@ wrangler cron trigger --env=production --cron-name=dsr-statuspage-publish
 ./scripts/dns-cutover-apply.sh --confirm
 
 # 3.9.3 Verify propagation
-dig +short api.corelink.dev | head -3
+dig +short api.corelink.humangr.com | head -3
 ```
 
 **Verification gate:** all 4 CNAMEs resolve to GA endpoints from ≥ 3 geographically distinct resolvers (Google 8.8.8.8, Cloudflare 1.1.1.1, OpenDNS 208.67.222.222).
@@ -357,7 +357,7 @@ wrangler kv key put --namespace-id "$PROD_FF_KV" "public_status" "GA"
 wrangler kv key put --namespace-id "$PROD_FF_KV" "new_signup_open" "true"
 ```
 
-**Verification gate:** `curl https://api.corelink.dev/__health/feature-flags | jq '.public_status'` returns `"GA"`. New signup form is reachable. Status page shows green.
+**Verification gate:** `curl https://api.corelink.humangr.com/__health/feature-flags | jq '.public_status'` returns `"GA"`. New signup form is reachable. Status page shows green.
 
 ---
 
@@ -405,7 +405,7 @@ Target wall-clock: ≤ 1h from decision time. **Rollback is rollforward-safe** �
 
 | # | Action | Owner | Target | Verification |
 |---|---|---|---|---|
-| RB-S1 | **DNS revert** — flip apex + api + clerk + statuspage CNAMEs back to PRIVATE_PREVIEW endpoints | SRE Lead | ≤ 5 min from decision | `dig +short api.corelink.dev` returns preview endpoint from 3 resolvers |
+| RB-S1 | **DNS revert** — flip apex + api + clerk + statuspage CNAMEs back to PRIVATE_PREVIEW endpoints | SRE Lead | ≤ 5 min from decision | `dig +short api.corelink.humangr.com` returns preview endpoint from 3 resolvers |
 | RB-S2 | **CF Worker pin to previous version tag** — revert to `v1.0.0-pre-ga.last-known-good` per release ledger | Engineering Lead | ≤ 10 min from decision | `wrangler deployments list` shows pinned version; `curl /__health` returns previous version SHA |
 | RB-S3 | **Status page banner** — flip to "Rollback in progress — investigating" incident; do NOT attribute blame publicly | SRE Lead | ≤ 15 min from decision | Statuspage incident `investigating` lifecycle visible |
 | RB-S4 | **Customer comms** — send `CUTOVER-ROLLBACK-PILOT.md` to all 5 pilot tenants (reassurance, no service interruption since rollback is rollforward-safe); send `CUTOVER-ROLLBACK-PUBLIC.md` to status page subscribers | VPProduct + SRE Lead | ≤ 30 min from decision | Postmark delivery confirms; Slack `#incident-active` thread updated |
@@ -548,7 +548,7 @@ The `2026-MM-DD-ga-cutover-execution-attestation.md` (`type: audit`) doc must ca
 - `specs/_runbooks/RB-SECRETS-DRIFT.md` — secrets sweep consumed in §1.3.
 - `specs/_runbooks/RB-WEBHOOK-DLQ-REPLAY.md` — Stripe DLQ consumed in §3.5.
 - `specs/_runbooks/RB-DSR-STATUSPAGE-PUBLISH-FAILED.md` — DSR Statuspage consumed in §0.5 + §3.8 + §6.1.4.
-- `specs/_runbooks/STATUSPAGE-INIT.md` — operator provisioning playbook for `status.corelink.dev` (Option A CNAME / Option B env-var), gate at §4 T-7d, timing in §2.5 + §3.6 (wave-27).
+- `specs/_runbooks/STATUSPAGE-INIT.md` — operator provisioning playbook for `status.corelink.humangr.com` (Option A CNAME / Option B env-var), gate at §4 T-7d, timing in §2.5 + §3.6 (wave-27).
 - `specs/_audits/2026-05-16-cutover-dependency-map.md` — canonical T-N-day dependency DAG governing this §0 checklist; critical-path + slack metrics (wave-27).
 - `specs/_audits/2026-05-16-statuspage-init-dressrun.md` — wave-25 STATUSPAGE-INIT mechanism dress-run (covers N-S-1 / N-S-1b mechanism regression risk).
 - `specs/_runbooks/RB-COMPLIANCE-WEEKLY-REVIEW.md` — weekly attestation at T+7d (§6.3.1).

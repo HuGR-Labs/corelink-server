@@ -158,7 +158,7 @@ panels:
     type: text
     content: |
       Customer-facing signup link (token-based slot reservation):
-      https://signup.corelink.dev/pilot/<token>
+      https://signup.corelink.humangr.com/pilot/<token>
 
       Operator playbook:
       docs/internal/customer-success-playbook.md

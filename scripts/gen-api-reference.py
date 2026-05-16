@@ -427,7 +427,7 @@ def render_responses(endpoint: Endpoint, spec: Spec) -> str:
 # --------------------------------------------------------------------------- #
 
 
-_DEFAULT_BASE_URL = "https://api.corelink.dev"
+_DEFAULT_BASE_URL = "https://api.corelink.humangr.com"
 
 
 def _example_payload(schema: dict[str, Any] | None, spec: Spec, seen: set[str] | None = None) -> Any:
@@ -473,7 +473,7 @@ def _example_payload(schema: dict[str, Any] | None, spec: Spec, seen: set[str] |
         if fmt == "email":
             return "test-tenant@example.com"
         if fmt == "uri":
-            return "https://corelink.dev/example"
+            return "https://corelink.humangr.com/example"
         if fmt == "date-time":
             return "2026-01-01T00:00:00Z"
         pattern = schema.get("pattern")

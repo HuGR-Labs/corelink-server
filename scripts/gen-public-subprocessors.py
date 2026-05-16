@@ -338,10 +338,10 @@ Subscribe to change notices:
   change is queued, and a reminder 7 days before the change takes effect.
 - **Status page subscription** — sub-processor changes are also published
   as a *Maintenance / Informational* item at
-  [status.corelink.dev](https://status.corelink.dev). Subscribe via RSS,
+  [status.corelink.humangr.com](https://status.corelink.humangr.com). Subscribe via RSS,
   email, SMS, or webhook.
 - **RSS feed (sub-processor changes only):**
-  `https://corelink.dev/trust/subprocessors.rss` (post-GA).
+  `https://corelink.humangr.com/trust/subprocessors.rss` (post-GA).
 
 If you object to a proposed sub-processor change you have the rights set
 out in DPA §6.4 (objection window, escalation, termination-for-cause if
@@ -373,7 +373,7 @@ Internal prompts are routed through enterprise zero-retention APIs.
 
 If your DPO requires these to be listed as sub-processors despite the
 zero-retention guarantee and no-customer-data scope, please raise it via
-`privacy@corelink.dev` and we will update the table on a per-tenant basis.
+`privacy@humangr.com` and we will update the table on a per-tenant basis.
 
 ## Out-of-scope (referenced for completeness)
 

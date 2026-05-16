@@ -21,14 +21,14 @@ tags: ["sales", "legal", "questionnaire", "caiq", "csa", "ccm", "v4", "procureme
 >
 > **Source standard:** CSA CCM v4.0.x (Cloud Controls Matrix) + CAIQ v4.0.x. **197 questions across 17 control domains.** This pre-fill maps every CCM v4 control to (a) our canonical answer, (b) SOC 2 TSC cross-reference, (c) evidence artifact.
 >
-> **Auditor mode:** if you are a STAR auditor or 3PAO, this document is **NDA-gated for full evidence**. The summary table is shareable; deep-link artifacts require countersigned NDA via `trust@corelink.dev`.
+> **Auditor mode:** if you are a STAR auditor or 3PAO, this document is **NDA-gated for full evidence**. The summary table is shareable; deep-link artifacts require countersigned NDA via `trust@humangr.com`.
 >
 > **Scoping caveats (read first):**
 > - CoreLink is **SOC 2 Type I target Q4-2026** (fieldwork; report Q1-2027). No Type I report yet issued. Readiness 83.7% weighted, 96.4% green on Drata.
 > - CoreLink is **ISO 27001:2022 cert target Q1-2027** (Stage 1 Q4-2026, Stage 2 Q1-2027, Schellman & Co.).
 > - CoreLink is **PCI DSS SAQ-A self-attested** 2026-05-15 (not externally audited; Stripe handles all CHD).
 > - CoreLink is **not FedRAMP-authorized**; NIST 800-53 Rev 5 Moderate crosswalk at 87% (informational).
-> - **CSA STAR Registry submission decision pending Q1-2027** post SOC 2 Type I issuance — this CAIQ self-assessment is currently distributed on direct request via `trust@corelink.dev`.
+> - **CSA STAR Registry submission decision pending Q1-2027** post SOC 2 Type I issuance — this CAIQ self-assessment is currently distributed on direct request via `trust@humangr.com`.
 >
 > **Companion:** `SIG-LITE-2026-pre-filled.md`, `EVIDENCE-PACK-INDEX.md`, `RESPONSE-SLA-POLICY.md`.
 
@@ -159,8 +159,8 @@ CSP / CSC responsibility column:
 | DSP-15.1 | Encrypted backups? | Y | CSP | Same envelope as source. | C1.1 |
 | DSP-16.1 | Data residency commitments enforced? | Y | CSP | `INV-REGION-NO-CROSS-LEAK` + nightly `verify-lgpd-residency.py`. | P-CONSENT |
 | DSP-17.1 | Customer-initiated data export supported? | Y | CSP | Admin API export endpoint; verifiable erasure on termination. | P-DSR |
-| DSP-18.1 | Privacy notice published? | Y | CSP | Published; LGPD ROPA + GDPR DPIA library; `privacy@corelink.dev` contact. | P-CONSENT |
-| DSP-19.1 | DPO appointed and contact published? | Y | CSP | DPO appointed 2026-05-15 (`dpo@corelink.dev`). | P-DSR |
+| DSP-18.1 | Privacy notice published? | Y | CSP | Published; LGPD ROPA + GDPR DPIA library; `privacy@humangr.com` contact. | P-CONSENT |
+| DSP-19.1 | DPO appointed and contact published? | Y | CSP | DPO appointed 2026-05-15 (`dpo@humangr.com`). | P-DSR |
 
 ## GRC — Governance, Risk & Compliance (8 questions)
 
@@ -171,7 +171,7 @@ CSP / CSC responsibility column:
 | GRC-03.1 | Compliance program integrates third-party assessments? | Y | CSP | Drata vendor module + 19 vendors in `VENDOR-RISK-REGISTER.md`. | CC9.2 |
 | GRC-04.1 | Compliance status reported to executive leadership? | Y | CSP | Weekly compliance digest landed 2026-05-15; quarterly executive review. | CC4.2 |
 | GRC-05.1 | Policy exceptions tracked? | Y | CSP | Waiver pattern + GAP register. | CC4.2 |
-| GRC-06.1 | Whistleblower / ethics reporting channel? | Y | CSP | `legal@corelink.dev` + Code of Conduct; advisor-pool escalation per `specs/_governance/`. | CC1.1 |
+| GRC-06.1 | Whistleblower / ethics reporting channel? | Y | CSP | `legal@humangr.com` + Code of Conduct; advisor-pool escalation per `specs/_governance/`. | CC1.1 |
 | GRC-07.1 | Legal / regulatory monitoring performed? | Y | CSP | External counsel engagement (`legal/legal-externo-engagement-contract.md`); quarterly review. | CC1.1 |
 | GRC-08.1 | Insurance maintained? | P | CSP | Cyber-liability broker engagement Q3-2026; ≥ $5M aggregate target. | CC1.1 |
 
@@ -370,7 +370,7 @@ The DPA at `legal/dpa/v1.0.0` formally documents the shared-responsibility split
 ## Pre-flight checklist
 
 - [ ] Confirm prospect NDA on file with Legal.
-- [ ] Send response via `trust@corelink.dev`.
+- [ ] Send response via `trust@humangr.com`.
 - [ ] Bundle artifacts per `EVIDENCE-PACK-INDEX.md`.
 - [ ] Watermark response with prospect name + date + CAIQ version (v4.0.x).
 - [ ] Cite commit SHA in cover letter.
@@ -395,7 +395,7 @@ The DPA at `legal/dpa/v1.0.0` formally documents the shared-responsibility split
 
 | What you need | Where to send it |
 |---|---|
-| CAIQ v4 response request (countersigned NDA on file) | `trust@corelink.dev` |
-| Privacy / data-subject question | `privacy@corelink.dev` |
-| Security vulnerability report | `security@corelink.dev` |
-| Procurement / vendor-review forms | `trust@corelink.dev` |
+| CAIQ v4 response request (countersigned NDA on file) | `trust@humangr.com` |
+| Privacy / data-subject question | `privacy@humangr.com` |
+| Security vulnerability report | `security@humangr.com` |
+| Procurement / vendor-review forms | `trust@humangr.com` |

@@ -75,7 +75,7 @@ function calculateCost(usageGB: number, tier: keyof typeof TIERS): number | stri
 ## SBOM Access (Public)
 
 Download CoreLink Server SBOM (CycloneDX 1.5+ per S-12 SEALED):
-- [Latest SBOM (.cdx.json)](https://releases.corelink.dev/latest/sbom.cdx.json)
+- [Latest SBOM (.cdx.json)](https://releases.corelink.humangr.com/latest/sbom.cdx.json)
 
 ### Verification Instructions
 

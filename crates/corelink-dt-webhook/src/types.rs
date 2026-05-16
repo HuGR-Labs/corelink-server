@@ -179,7 +179,7 @@ impl std::fmt::Display for DtSeverity {
 pub enum AlertChannel {
     /// Slack `#supply-chain-cve-alerts`.
     Slack,
-    /// Email to `security@corelink.dev`.
+    /// Email to `security@humangr.com`.
     Email,
     /// PagerDuty SEV-2 incident trigger.
     PagerDuty,

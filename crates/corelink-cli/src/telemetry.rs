@@ -7,8 +7,8 @@
 //!   `anonymized_id`. **Never** `tenant_id`, blob digests, PAT, file paths, IP address.
 //! - **Non-blocking**: network failure is silently swallowed; CLI invocation is never blocked.
 //! - **Timeout 1s**: prevents CLI hang on unreachable endpoint (R-004 risk register).
-//! - **Separate domain** `telemetry.corelink.dev` (§9.4): customers can firewall it without
-//!   impacting the data plane (`corelink.dev`).
+//! - **Separate domain** `telemetry.corelink.humangr.com` (§9.4): customers can firewall it without
+//!   impacting the data plane (`corelink.humangr.com`).
 //!
 //! # LINDDUN compliance
 //!
@@ -21,7 +21,7 @@ use tracing::warn;
 use uuid::Uuid;
 
 /// Telemetry endpoint (separate domain from data plane — §9.4).
-const TELEMETRY_ENDPOINT: &str = "https://telemetry.corelink.dev/v1/events";
+const TELEMETRY_ENDPOINT: &str = "https://telemetry.corelink.humangr.com/v1/events";
 
 /// HTTP client timeout for telemetry POST (non-blocking; FM-R004).
 const TIMEOUT_MS: u64 = 1_000;

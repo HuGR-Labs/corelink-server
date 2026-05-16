@@ -56,11 +56,11 @@ const cspHeaders = (mode: 'report-only' | 'enforce') => ({
   key: mode === 'enforce' ? 'Content-Security-Policy' : 'Content-Security-Policy-Report-Only',
   value: [
     "default-src 'none'",
-    "script-src 'self' 'nonce-{NONCE}' https://clerk.corelink.dev",
+    "script-src 'self' 'nonce-{NONCE}' https://clerk.corelink.humangr.com",
     "style-src 'self' 'nonce-{NONCE}'",
     "img-src 'self' data: https://images.clerk.dev",
     "font-src 'self' data:",
-    "connect-src 'self' https://api.corelink.dev https://clerk.corelink.dev",
+    "connect-src 'self' https://api.corelink.humangr.com https://clerk.corelink.humangr.com",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -141,11 +141,11 @@ Feature WI; STANDARD lane; foundation layer.
 3. **Hardened CSP `default-src 'none'` setup**:
    - CSP headers via Next.js `headers()` config (vide §1 narrative example):
      - `default-src 'none'` (deny by default).
-     - `script-src 'self' 'nonce-{NONCE}' https://clerk.corelink.dev` (no `unsafe-inline`, no `eval`).
+     - `script-src 'self' 'nonce-{NONCE}' https://clerk.corelink.humangr.com` (no `unsafe-inline`, no `eval`).
      - `style-src 'self' 'nonce-{NONCE}'`.
      - `img-src 'self' data: https://images.clerk.dev`.
      - `font-src 'self' data:`.
-     - `connect-src 'self' https://api.corelink.dev https://clerk.corelink.dev`.
+     - `connect-src 'self' https://api.corelink.humangr.com https://clerk.corelink.humangr.com`.
      - `frame-ancestors 'none'` (clickjacking defense).
      - `base-uri 'self'`.
      - `form-action 'self'`.
@@ -227,7 +227,7 @@ Feature: Next.js 15 skeleton + Clerk + CSP + i18n + bundle budget + PII redactio
   Scenario: App skeleton deployed em CF Pages staging
     Given apps/web/ workspace member configured
     When `pnpm build` + CF Pages deploy runs
-    Then app accessible em https://staging.corelink.dev
+    Then app accessible em https://staging.corelink.humangr.com
     And health check route /api/health returns 200
 
   Scenario: Clerk SDK integrated com SSO + WebAuthn + MFA
@@ -483,7 +483,7 @@ Sentry/equiv. error tracking client-side com `safeLog()` wrapper PII redaction e
 
 ### Soft blockers
 - S-09 SEALED (CSP report endpoint persist em D1 ou KV).
-- CF Pages account configured + DNS staging.corelink.dev pointed.
+- CF Pages account configured + DNS staging.corelink.humangr.com pointed.
 
 ### Outbound
 - WI-S16-002 (tenant onboarding flow consume skeleton).

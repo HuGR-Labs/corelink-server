@@ -156,11 +156,11 @@ introduced_in_sprint: S-XX
 
 | error_code | HTTP | retryable | SDK exception | customer_message | next_action |
 |---|---|---|---|---|---|
-| `COR_DSR_RATE_LIMITED` | 429 | after_delay | `DSRRateLimitedError` | "DSR request limit reached (10/day)" | Wait 24h or contact privacy@corelink.dev |
+| `COR_DSR_RATE_LIMITED` | 429 | after_delay | `DSRRateLimitedError` | "DSR request limit reached (10/day)" | Wait 24h or contact privacy@humangr.com |
 | `COR_DSR_NOT_FOUND` | 404 | never | `DSRNotFoundError` | "DSR request not found" | Check `dsr_request_id` in JWT receipt |
 | `COR_DSR_ALREADY_PROCESSED` | 409 | never | `DSRAlreadyProcessedError` | "This DSR has already been processed" | Check status via `GET /v1/privacy/dsr/{id}/status` |
 | `COR_CONSENT_NOT_GRANTED` | 409 | never | `ConsentNotGrantedError` | "Cannot revoke consent that was never granted" | Verify `wording_id` matches an active consent |
-| `COR_RESIDENCY_VIOLATION` | 403 | never | `ResidencyError` | "Cross-region data access prohibited" | Use endpoint matching tenant region (`<tenant>.<region>.corelink.dev`) |
+| `COR_RESIDENCY_VIOLATION` | 403 | never | `ResidencyError` | "Cross-region data access prohibited" | Use endpoint matching tenant region (`<tenant>.<region>.corelink.humangr.com`) |
 
 ### 3.6 Billing errors (S-10)
 
@@ -212,7 +212,7 @@ Domínio adicionado em Lote 9.5b endereçando Opus R3 R3-10 + Codex R3-10.
 | `COR_ONBOARD_EMAIL_VERIFICATION_PENDING` | 403 | after_delay | `EmailVerifyPendingError` | "Email verification required to complete signup" | Check inbox for verification email; retry após click |
 | `COR_ONBOARD_DPA_NOT_SIGNED` | 402 | never | `DPANotSignedError` | "DPA must be signed before service activation" | Visit `<dashboard>/onboarding/dpa` to accept |
 | `COR_ONBOARD_DPA_VERSION_BUMPED` | 409 | never | `DPAReSignRequiredError` | "Updated DPA requires re-acceptance" | Re-accept DPA at `<dashboard>/onboarding/dpa`; 30d grace before degrade |
-| `COR_ONBOARD_TENANT_PROVISIONING_FAILED` | 500 | exponential | `TenantProvisioningError` | "Account setup failed" | Retry signup; if persistent, contact support@corelink.dev with request_id |
+| `COR_ONBOARD_TENANT_PROVISIONING_FAILED` | 500 | exponential | `TenantProvisioningError` | "Account setup failed" | Retry signup; if persistent, contact support@humangr.com with request_id |
 | `COR_ONBOARD_STRIPE_LINK_FAILED` | 500 | exponential | `StripeLinkError` | "Could not link payment provider" | Retry; check Stripe status; contact support if persistent |
 | `COR_ONBOARD_SIGNUP_RATE_LIMITED` | 429 | after_delay | `SignupRateLimitedError` | "Too many signup attempts from this IP" | Wait `Retry-After` seconds; contact support if NAT |
 | `COR_ONBOARD_INCOMPLETE_FLOW` | 409 | never | `IncompleteOnboardingError` | "Onboarding incomplete; resume required" | Continue at `<dashboard>/onboarding/resume` |
@@ -223,7 +223,7 @@ Domínio adicionado em Lote 9.5b endereçando Opus R3 R3-10 + Codex R3-10.
 |---|---|---|---|---|---|
 | `COR_SERVICE_DEGRADED` | 503 | exponential | `ServiceDegradedError` | "Service temporarily degraded; full functionality returns shortly" | Retry per `Retry-After`; check status page |
 | `COR_REGION_FAILOVER` | 503 | linear | `RegionFailoverError` | "Region temporarily unavailable; failing over" | Retry; SDK auto-routes to secondary region (S-14) |
-| `COR_INTERNAL` | 500 | never | `InternalError` | "An internal error occurred (request_id=<X>)" | Contact support@corelink.dev with request_id |
+| `COR_INTERNAL` | 500 | never | `InternalError` | "An internal error occurred (request_id=<X>)" | Contact support@humangr.com with request_id |
 
 ---
 

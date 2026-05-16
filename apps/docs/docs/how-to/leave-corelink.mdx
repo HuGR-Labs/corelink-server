@@ -26,7 +26,7 @@ with three guarantees:
    point. You get a signed receipt.
 
 For the legal posture (refund mechanics, MSA §10, DPA v1.0.0 §11),
-see the [Sales FAQ entry P6](https://corelink.dev/faq#p6-refund)
+see the [Sales FAQ entry P6](https://corelink.humangr.com/faq#p6-refund)
 and our [Trust page](/trust/data-handling).
 
 :::note Individual data-subject rights are a different flow
@@ -63,7 +63,7 @@ You will be asked to:
 If you prefer the API:
 
 ```bash
-curl -X POST https://api.corelink.dev/v1/tenant/$TENANT_ID/offboard \
+curl -X POST https://api.corelink.humangr.com/v1/tenant/$TENANT_ID/offboard \
   -H "Authorization: Bearer $CORELINK_TOKEN" \
   -H "X-Corelink-MFA-Step-Up: $STEP_UP_TOKEN" \
   -d '{"reason": "switching to in-house solution"}'
@@ -120,7 +120,7 @@ You can revert to ACTIVE at any time during the first 45 days,
 with full data:
 
 ```bash
-curl -X POST https://api.corelink.dev/v1/tenant/$TENANT_ID/offboard/revert \
+curl -X POST https://api.corelink.humangr.com/v1/tenant/$TENANT_ID/offboard/revert \
   -H "Authorization: Bearer $CORELINK_TOKEN"
 ```
 
@@ -129,7 +129,7 @@ dashboard. There is no penalty, no support call, no escalation.
 Your tenant immediately returns to a fully-active state.
 
 After T+45 (SUSPENDED), restoration requires a support call;
-email `support@corelink.dev` and we'll process a force-revert
+email `support@humangr.com` and we'll process a force-revert
 within one business day. After T+90 (ERASED), restoration is no
 longer possible — the data is cryptographically gone.
 
@@ -147,7 +147,7 @@ You will receive 3 transactional emails between T+0 and T+45:
   after this point; contact support if you change your mind.
 
 If you stop receiving emails, check that
-`@corelink.dev` is not being blocked by your provider. The
+`@humangr.com` is not being blocked by your provider. The
 audit chain is the authoritative record of every notification
 that was attempted.
 
@@ -198,8 +198,8 @@ Edge cases:
 
 ## Cross-references
 
-- [Sales FAQ P6 — refund posture](https://corelink.dev/faq#p6-refund)
-- [Sales FAQ M4 — data egress cost](https://corelink.dev/faq#m4-egress)
+- [Sales FAQ P6 — refund posture](https://corelink.humangr.com/faq#p6-refund)
+- [Sales FAQ M4 — data egress cost](https://corelink.humangr.com/faq#m4-egress)
 - [Trust page — Data handling](/trust/data-handling)
 - [How-to — DSR export for individual data subjects](/how-to/dsr-export)
   (separate flow for individual rights, not tenant offboarding)

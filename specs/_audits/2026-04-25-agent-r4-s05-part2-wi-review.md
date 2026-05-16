@@ -365,7 +365,7 @@ Breakdown:
 - WI-005 §12 references "cas_integrity.tla chunked variant (forward S-09 TLA+ work)". Same forward-deferred status as S-04. The "TLA+ verde" DoD item (none in S-05 explicitly; sprint contract §6 doesn't list TLA+ as DoD) is OK by absence. No regression here vs S-04.
 
 **Staging environment ownership:**
-- All three WIs assume `staging.corelink.dev` exists with full S-04 + S-05 stack deployed. No sub-task provisions/maintains staging. Same sprint-level dependency unsurfaced as S-04 part 2 (carried forward).
+- All three WIs assume `staging.corelink.humangr.com` exists with full S-04 + S-05 stack deployed. No sub-task provisions/maintains staging. Same sprint-level dependency unsurfaced as S-04 part 2 (carried forward).
 
 ---
 

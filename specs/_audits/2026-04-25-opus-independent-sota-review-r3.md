@@ -389,9 +389,9 @@ S-13:84 diz "nas últimas 3 destructive ops em janela de 24h, deve haver ≥ 3 d
 
 Codex R2 já flaggou (CF-08 sample). Lote 9.4 não closed. Either S-11 anti-scope deve dizer "TIA owned by S-14" OR S-14 anti-scope move TIA delivery.
 
-#### M-N3-10: Admin panel `admin.corelink.dev` orphan ownership
+#### M-N3-10: Admin panel `admin.corelink.humangr.com` orphan ownership
 
-S-16:177 "Admin panel operacional interno (CoreLink ops) — `admin.corelink.dev` subdomain separado, não em S-16". Nenhum sprint cobre `admin.corelink.dev`. Incident response oncall (S-17) precisa de quê pra ack/manage? S-13 admin plane API exists, mas UI não. Tracked em R2 M-09; ainda standing.
+S-16:177 "Admin panel operacional interno (CoreLink ops) — `admin.corelink.humangr.com` subdomain separado, não em S-16". Nenhum sprint cobre `admin.corelink.humangr.com`. Incident response oncall (S-17) precisa de quê pra ack/manage? S-13 admin plane API exists, mas UI não. Tracked em R2 M-09; ainda standing.
 
 #### M-N3-11: PLANNED-specs.md menciona Apalache symbolic check pos-GA Q1, mas não documenta migration path TLC→Apalache
 
@@ -598,7 +598,7 @@ Pos-S-2: documenter who reviews what when. Without, every doc keeps "staffing-bl
 
 **Total**: ~40-55h ≈ 5-7 dias úteis. Após Lote 9.5, S-02 implementation pode safely começar.
 
-**Lote 9.6 (post-S-02 implementation)**: H-N3-08 customer journey § enrichment para S-00..S-06 spec contracts; M-N3-09 Schrems II TIA cross-sprint reconciliation; M-N3-10 admin.corelink.dev ownership decision.
+**Lote 9.6 (post-S-02 implementation)**: H-N3-08 customer journey § enrichment para S-00..S-06 spec contracts; M-N3-09 Schrems II TIA cross-sprint reconciliation; M-N3-10 admin.corelink.humangr.com ownership decision.
 
 ---
 

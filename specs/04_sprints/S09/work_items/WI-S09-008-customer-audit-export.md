@@ -523,6 +523,6 @@ by this work item. The page is read-only and adds no server-side handlers:
 The wave-8 `wt/r-prep-audit-chain-viz` scaffold (commit `21f8ea8`,
 `apps/admin-ui/.../audit/visualization/page.tsx`) is left in place as the
 admin-shell variant; the wave-29 docs-surface page is the customer-facing
-default that ships at `docs.corelink.dev/customer/audit-chain`.
+default that ships at `docs.corelink.humangr.com/customer/audit-chain`.
 
 Audit doc: `specs/_audits/2026-05-16-audit-chain-viz-ui.md`.

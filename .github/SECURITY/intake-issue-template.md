@@ -29,7 +29,7 @@ assignees: []
 
 ## Channel of receipt
 
-- [ ] `security@corelink.dev` email
+- [ ] `security@humangr.com` email
 - [ ] `/.well-known/security-report` web form
 - [ ] CERT/CC ticket
 - [ ] GHSA from another vendor

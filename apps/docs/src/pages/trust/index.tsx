@@ -29,7 +29,7 @@
  *   - Each quadrant: 3–5 cards linking to existing trust pages (Docusaurus
  *     docs at `/trust/<slug>` or React pages at `/trust/<slug>`).
  *   - Status badges (LIVE / IN-AUDIT / POST-GA) on every compliance claim.
- *   - Footer: security@corelink.dev contact + report-security policy link.
+ *   - Footer: security@humangr.com contact + report-security policy link.
  *
  * i18n: copy is wrapped in `<Translate>` so the 4 locales (en-US default,
  * pt-BR, es-419, de) pick up `i18n/<locale>/code.json` overrides.
@@ -187,7 +187,7 @@ const QUADRANTS: readonly TrustQuadrant[] = [
         href: "/trust/data-handling#dpo",
         status: "LIVE",
         summary:
-          "DPO appointed 2026-05-15 per LGPD Art. 41 + GDPR Art. 37; privacy@corelink.dev for all data-subject requests.",
+          "DPO appointed 2026-05-15 per LGPD Art. 41 + GDPR Art. 37; privacy@humangr.com for all data-subject requests.",
       },
       {
         title: "Data Subject Access Request (DSAR) flow",
@@ -206,7 +206,7 @@ const QUADRANTS: readonly TrustQuadrant[] = [
     cards: [
       {
         title: "Status page + uptime history",
-        href: "https://status.corelink.dev",
+        href: "https://status.corelink.humangr.com",
         status: "LIVE",
         summary:
           "RSS / email / SMS / webhook subscription. Live incident timeline, scheduled maintenance, and sub-processor change broadcasts.",
@@ -517,14 +517,14 @@ export default function TrustCenter(): ReactElement {
             >
               For procurement, compliance, or vendor-risk questions, email
             </Translate>{" "}
-            <a href="mailto:security@corelink.dev">security@corelink.dev</a>.{" "}
+            <a href="mailto:security@humangr.com">security@humangr.com</a>.{" "}
             <Translate
               id="trust.landing.contact.privacy"
               description="Contact privacy line"
             >
               For data-subject access requests and DPA / SCC execution, email
             </Translate>{" "}
-            <a href="mailto:privacy@corelink.dev">privacy@corelink.dev</a>.
+            <a href="mailto:privacy@humangr.com">privacy@humangr.com</a>.
           </p>
           <p>
             <Translate

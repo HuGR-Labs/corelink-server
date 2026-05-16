@@ -18,18 +18,18 @@ info:
 
     **Stability:** `v1` — public, semver-compatible. Breaking changes require a
     new major path prefix (`/v2/...`).
-  termsOfService: https://corelink.dev/legal/terms
+  termsOfService: https://corelink.humangr.com/legal/terms
   contact:
     name: CoreLink Support
     email: test-tenant@example.com
-    url: https://corelink.dev/support
+    url: https://corelink.humangr.com/support
   license:
     name: Proprietary
-    url: https://corelink.dev/legal/terms
+    url: https://corelink.humangr.com/legal/terms
 servers:
-  - url: https://api.corelink.dev
+  - url: https://api.corelink.humangr.com
     description: Production
-  - url: https://api.staging.corelink.dev
+  - url: https://api.staging.corelink.humangr.com
     description: Staging
 tags:
   - name: signup

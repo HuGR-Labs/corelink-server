@@ -13,7 +13,7 @@
 #       source: reports/pentest-rfp-tracker.json
 #   4. DEBT-003 AWS Artifact PDF download + sha256 (BYOK FIPS attestation)
 #       source: specs/_compliance/BYOK-FIPS-ATTESTATION-MATRIX.md (TBD-on-receipt)
-#   5. DEBT-016 Statuspage status.corelink.dev go-live
+#   5. DEBT-016 Statuspage status.corelink.humangr.com go-live
 #       source: specs/_audits/2026-05-16-debt-016-statuspage-urls.md
 #                + live HEAD check (when --probe-live)
 #   6. Pilot signups ≥ 5 design-partner attestations (G4)
@@ -264,7 +264,7 @@ probe_item_5_statuspage() {
         if [[ "${live}" == "OPERATIONAL" || "${live}" == "operational" ]]; then
             state="SIGNED"
             rc="SIGNED"
-            note="status.corelink.dev OPERATIONAL per live state file."
+            note="status.corelink.humangr.com OPERATIONAL per live state file."
         fi
     fi
     printf '%s|%s|%s|%s' "${state}" "${rc}" "${lt}" "${note}"

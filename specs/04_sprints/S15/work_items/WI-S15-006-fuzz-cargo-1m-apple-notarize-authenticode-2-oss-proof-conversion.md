@@ -36,7 +36,7 @@ tags: ["wi", "s15", "ship-gate", "cargo-fuzz", "apple-notarize", "authenticode",
 | Campo | Valor |
 |---|---|
 | ID | WI-S15-006 |
-| Título | S-15 ship gate — cargo-fuzz 1M random inputs em CLI subcommands surface (input parsing + config file parsing + JSON deserialization paths + auth resolution paths; 0 panics; 0 secrets leaked em error paths via `secret_redaction_check` harness CTRL-CRED-001) + Apple notarization (acquire Apple Developer Program cert ahead of D-day + signtool automation + notarize submit + staple) + Linux GPG signing (release binaries signed + GPG public key published em `https://corelink.dev/.well-known/gpg-pubkey.asc`) + Windows Authenticode signing (acquire EV code-signing cert + signtool automation; fallback unsigned com warning até cert ready se acquisition slips — explicit waiver + ADR documented) + 2 OSS proof-of-conversion (pre-engagement Q3 com Forge + 1 external Bazel-using OSS project; documented em `examples/case-studies.md` com adoption story + setup time + cache hit ratio); PRR STANDARD doc S-15 com 5-8 sign-offs canonical (7 typical: Owner + Final Approver + Engineer + QA Lead + Product + DevX advisor + Docs lead); time-to-first-cache-hit ≤ 5 min measured via dev workshop com 3 external developers; adversarial test summary aggregation cross-WI (CLI fuzz scenarios + FFI memory safety + WASM bundle size + telemetry privacy + signing trust chain + OSS adoption); evidence pack: 1M fuzz iter green + 3 OSes signed + 2 OSS case-studies + dev workshop ≤ 5 min measured; final gate releases all S-15 WIs to Implementation SEAL state D+15 (libera S-16/S-18/S-19/S-20 dev). |
+| Título | S-15 ship gate — cargo-fuzz 1M random inputs em CLI subcommands surface (input parsing + config file parsing + JSON deserialization paths + auth resolution paths; 0 panics; 0 secrets leaked em error paths via `secret_redaction_check` harness CTRL-CRED-001) + Apple notarization (acquire Apple Developer Program cert ahead of D-day + signtool automation + notarize submit + staple) + Linux GPG signing (release binaries signed + GPG public key published em `https://corelink.humangr.com/.well-known/gpg-pubkey.asc`) + Windows Authenticode signing (acquire EV code-signing cert + signtool automation; fallback unsigned com warning até cert ready se acquisition slips — explicit waiver + ADR documented) + 2 OSS proof-of-conversion (pre-engagement Q3 com Forge + 1 external Bazel-using OSS project; documented em `examples/case-studies.md` com adoption story + setup time + cache hit ratio); PRR STANDARD doc S-15 com 5-8 sign-offs canonical (7 typical: Owner + Final Approver + Engineer + QA Lead + Product + DevX advisor + Docs lead); time-to-first-cache-hit ≤ 5 min measured via dev workshop com 3 external developers; adversarial test summary aggregation cross-WI (CLI fuzz scenarios + FFI memory safety + WASM bundle size + telemetry privacy + signing trust chain + OSS adoption); evidence pack: 1M fuzz iter green + 3 OSes signed + 2 OSS case-studies + dev workshop ≤ 5 min measured; final gate releases all S-15 WIs to Implementation SEAL state D+15 (libera S-16/S-18/S-19/S-20 dev). |
 | Sprint | S-15 |
 | Lane | STANDARD |
 | Forcing factors | none (closing WI; STANDARD lane single-phase SEAL D+15; DoD §6 não requer 30d observation window) |
@@ -74,7 +74,7 @@ Deliverables 6-fold:
    - **Acquire GPG signing key** (4096-bit RSA; stored em GitHub Actions secret `GPG_PRIVATE_KEY`).
    - **Signing automation** em `.github/workflows/sign-linux.yml`:
      - `gpg --detach-sign --armor corelink` produces `corelink.asc`.
-   - **GPG public key published** em `https://corelink.dev/.well-known/gpg-pubkey.asc` (well-known canonical location).
+   - **GPG public key published** em `https://corelink.humangr.com/.well-known/gpg-pubkey.asc` (well-known canonical location).
    - **README integration**: customer can verify via `gpg --verify corelink.asc corelink`.
    - **Output**: signed binaries para Linux arm64 + x86_64 em GitHub Release assets + `.asc` detached signatures.
 
@@ -200,7 +200,7 @@ Sprint ship gate; STANDARD lane; closing WI single-phase SEAL D+15.
    - Acquire GPG signing key 4096-bit RSA (stored em GitHub Actions secret).
    - Signing automation em `.github/workflows/sign-linux.yml`.
    - `gpg --detach-sign --armor` produces `.asc`.
-   - Public key published em `https://corelink.dev/.well-known/gpg-pubkey.asc`.
+   - Public key published em `https://corelink.humangr.com/.well-known/gpg-pubkey.asc`.
    - README integration: `gpg --verify corelink.asc corelink`.
    - Output: signed binaries + `.asc` detached signatures.
 
@@ -294,7 +294,7 @@ Feature: S-15 ship gate — cargo-fuzz 1M + 3 OSes signed + 2 OSS proof + PRR
     Given GPG signing key acquired + stored em GH Actions secret
     When `.github/workflows/sign-linux.yml` runs em release
     Then `gpg --detach-sign --armor corelink` produces corelink.asc
-    And public key published em https://corelink.dev/.well-known/gpg-pubkey.asc
+    And public key published em https://corelink.humangr.com/.well-known/gpg-pubkey.asc
     And customer can verify via `gpg --verify corelink.asc corelink`
 
   Scenario: Windows Authenticode signing succeeded
@@ -446,7 +446,7 @@ Feature: S-15 ship gate — cargo-fuzz 1M + 3 OSes signed + 2 OSS proof + PRR
 | Linux GPG sign workflow | `.github/workflows/sign-linux.yml` | YAML |
 | Windows Authenticode workflow | `.github/workflows/sign-windows.yml` | YAML |
 | Windows fallback ADR (if applicable) | `specs/_decisions/ADR-XXXX-windows-authenticode-fallback.md` | Markdown |
-| GPG public key | `https://corelink.dev/.well-known/gpg-pubkey.asc` (CDN endpoint) | ASCII-armor |
+| GPG public key | `https://corelink.humangr.com/.well-known/gpg-pubkey.asc` (CDN endpoint) | ASCII-armor |
 | 2 OSS case-studies | `examples/case-studies.md` | Markdown |
 | Dev workshop report | `specs/_audits/2026-XX-XX-dev-workshop-s15.md` | Markdown |
 | PRR doc S-15 | `specs/04_sprints/S15/PRR-S15.md` | Markdown |

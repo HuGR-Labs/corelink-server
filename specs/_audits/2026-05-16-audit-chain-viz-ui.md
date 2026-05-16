@@ -29,7 +29,7 @@ freeze_clause: "§3.b customer-value-add pre-GA enhancement"
 Wave-29 stream-6 restarts the wave-8 `wt/r-prep-audit-chain-viz` scaffold
 (commit `21f8ea8`, never merged) and lands the customer-facing audit-chain
 visualization as a standalone page inside the public docs surface
-(`apps/docs`, Docusaurus 3, `docs.corelink.dev`).
+(`apps/docs`, Docusaurus 3, `docs.corelink.humangr.com`).
 
 The wave-8 prototype landed inside `apps/admin-ui` (Next.js admin shell);
 the wave-29 deliverable instead lives in `apps/docs/src/pages/customer/`

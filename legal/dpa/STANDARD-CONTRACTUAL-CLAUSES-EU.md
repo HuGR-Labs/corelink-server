@@ -49,7 +49,7 @@ data under GDPR Art. 46.
 - **Data exporter:** the customer ("Controller"), as identified in the master
   agreement.
 - **Data importer:** HuGR Labs ("Processor"), operating the CoreLink service.
-  Contact: privacy@corelink.dev. DPO: dpo@corelink.dev.
+  Contact: privacy@humangr.com. DPO: dpo@humangr.com.
 
 ### B. Description of the transfer
 

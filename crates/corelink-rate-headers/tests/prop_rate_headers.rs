@@ -976,7 +976,7 @@ proptest! {
         prop_assert_eq!(body.docs_url, DOCS_URL);
         prop_assert_eq!(
             h.corelink_tier_upgrade_url,
-            "https://corelink.dev/pricing",
+            "https://corelink.humangr.com/pricing",
         );
 
         // INV-BODY-STABLE-CODE: at GA there is exactly one stable code.

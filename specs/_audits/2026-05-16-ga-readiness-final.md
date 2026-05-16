@@ -149,7 +149,7 @@ Per `specs/_audits/2026-05-15-debt-register.md` v1.2.1 (most recent reconciliati
 | **DEBT-010** | P1 partial (4/11) | CI optimisation P2/P3 (7 tickets remain) | Orchestrator | Post-GA (T+90d) | Explicitly deferred per wave-21/22 §5.2. |
 | **DEBT-013** | P1 partial (6/10) | Perf optimisation deferrals (OPT-03b, OPT-04ph2, OPT-08, OPT-03a infeasible) | Orchestrator | Post-GA (T+90d) | Wave-22 stream #6 tightened regression CI. |
 | **DEBT-015-BUILD** | P2 | Docusaurus 3 server-bundle externalisation (`@site/*` + `@generated/*`) | Orchestrator | wave-23 stream #3 SEAL (final attempt) | Webpack-config override or alternative SSG (escalation P1). |
-| **DEBT-016** | P2 | Statuspage `status.corelink.dev` go-live | User (Gustavo) | T-7d pre-launch | Operator follows `STATUSPAGE-INIT.md`; agent-impossible. |
+| **DEBT-016** | P2 | Statuspage `status.corelink.humangr.com` go-live | User (Gustavo) | T-7d pre-launch | Operator follows `STATUSPAGE-INIT.md`; agent-impossible. |
 | **DEBT-025** | P2 OPEN | LFPDPPP MX attorney sign-off | User (Gustavo) + attorney | wave-23-DEFER (engagement) → wave-26 (absorption) | wave-23 stream #6 attorney-package SEAL reduces attorney prep; sign-off itself is external. |
 
 ### §5.2 Projected post-wave-23-SEAL state
@@ -278,7 +278,7 @@ The 7 items below are **agent-impossible** under the autonomous-execution charte
 | 2 | **FW-H-1..4 role nominations** | User-bound (staffing) | Gustavo | None — agent cannot nominate | Pre-GA-Gate |
 | 3 | **External pentest vendor + SOW** | Vendor-bound | Gustavo + pentest vendor | wave-24 stream #7 (deferred from wave-22 §7) drafts RFP + shortlist + SOW template | Pre-GA-Gate (T+30d) |
 | 4 | **DEBT-003 AWS Artifact PDF download + sha256** | User-bound | Gustavo | None — agent cannot download Artifact PDFs | Pre-GA-Gate (T+30d) |
-| 5 | **DEBT-016 Statuspage `status.corelink.dev` go-live** | User-bound (ops) | Gustavo | `STATUSPAGE-INIT.md` runbook ready | T-7d pre-launch |
+| 5 | **DEBT-016 Statuspage `status.corelink.humangr.com` go-live** | User-bound (ops) | Gustavo | `STATUSPAGE-INIT.md` runbook ready | T-7d pre-launch |
 | 6 | **Pilot signups ≥ 3 design-partners (G4 greenlight)** | User-bound (sales) | Gustavo | wave-23 streams #5 + #7 + #8 build post-signup machinery; signups themselves remain external | Pre-T-24h (G4 snapshot window) |
 | 7 | **Owner sign-off (ADR-0034b 2-key)** | User-bound (governance) | Gustavo + on-call SRE | This audit ↓§13 unlocks 2-key signature block; ADR-0034b 2-key path codifies the waiver | T-0h (signature block) |
 

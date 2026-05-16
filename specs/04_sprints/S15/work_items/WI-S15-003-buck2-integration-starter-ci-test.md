@@ -48,13 +48,13 @@ Buck2 (Meta's open-sourced build system; Rust-based; REAPI v2 compatible) é bui
 ```ini
 # File: examples/buck2-starter/.buckconfig
 [remote_cache]
-url = https://corelink.dev/v1/cache
+url = https://corelink.humangr.com/v1/cache
 http_headers = Authorization: Bearer ${CORELINK_PAT}
 read = true
 write = true
 
 [buck2_re_client]
-remote_cache_address = https://corelink.dev/v1/cache
+remote_cache_address = https://corelink.humangr.com/v1/cache
 http_headers = Authorization: Bearer ${CORELINK_PAT}
 ```
 
@@ -179,7 +179,7 @@ Feature: Buck2 starter project + CI integration test + parity Bazel
   Scenario: .buckconfig reference correto
     Given .buckconfig in examples/buck2-starter
     Then [remote_cache] section configured
-    And url = https://corelink.dev/v1/cache
+    And url = https://corelink.humangr.com/v1/cache
     And http_headers contains ${CORELINK_PAT} (env var, NOT hardcoded)
 
   Scenario: Benchmark report generated

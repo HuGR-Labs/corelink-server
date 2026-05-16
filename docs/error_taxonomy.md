@@ -22,9 +22,9 @@ and server API responses. All codes use the `COR_` prefix (namespace: CoreLink).
 **Check**: doctor #1 (Network)
 **Meaning**: The CoreLink cluster endpoint is not reachable from this host.
 **Remediation**:
-1. Verify network connectivity to `corelink.dev` (ping, curl).
+1. Verify network connectivity to `corelink.humangr.com` (ping, curl).
 2. Check firewall rules — outbound HTTPS (port 443) must be allowed.
-3. Check DNS resolution: `dig corelink.dev` should return valid IPs.
+3. Check DNS resolution: `dig corelink.humangr.com` should return valid IPs.
 4. If behind a corporate proxy, set `HTTPS_PROXY` env var.
 
 ---
@@ -82,7 +82,7 @@ and server API responses. All codes use the `COR_` prefix (namespace: CoreLink).
 **Meaning**: The tenant's `primary_region` does not match the region of the connected endpoint.
 **Remediation**:
 1. Log in to CoreLink admin UI and verify the `primary_region` setting for your tenant.
-2. Use the region-specific endpoint: `<tenant>.<region>.corelink.dev`.
+2. Use the region-specific endpoint: `<tenant>.<region>.corelink.humangr.com`.
 3. Update `CORELINK_BASE_URL` env var to point to the correct regional endpoint.
 
 ---
@@ -94,7 +94,7 @@ and server API responses. All codes use the `COR_` prefix (namespace: CoreLink).
 **Remediation**:
 1. Check current usage in CoreLink admin UI under Plan & Billing.
 2. Evict unused blobs via `corelink gc` (when available, WI-S06-*).
-3. Contact sales to upgrade plan: sales@corelink.dev.
+3. Contact sales to upgrade plan: sales@humangr.com.
 4. Soft threshold (80%) generates a warning; hard threshold (100%) blocks writes.
 
 ---

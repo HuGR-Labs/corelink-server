@@ -16,9 +16,9 @@ use corelink_webauthn::{
 };
 
 fn main() {
-    let cfg = EngineConfig::builder(RpId::new("corelink.dev").unwrap(), "CoreLink")
+    let cfg = EngineConfig::builder(RpId::new("corelink.humangr.com").unwrap(), "CoreLink")
         .origins(
-            OriginAllowlist::from_strings(["https://admin.corelink.dev"]).unwrap(),
+            OriginAllowlist::from_strings(["https://admin.corelink.humangr.com"]).unwrap(),
         )
         .aaguids(
             AaguidPolicy::builder()
@@ -45,7 +45,7 @@ fn main() {
                 COSE_ALG_ES256,
                 AuthenticatorFlags::up_uv(),
                 0,
-                Origin::parse("https://admin.corelink.dev").unwrap(),
+                Origin::parse("https://admin.corelink.humangr.com").unwrap(),
             ),
         )
         .unwrap();
@@ -61,7 +61,7 @@ fn main() {
         cred,
         AuthenticatorFlags::up_uv(),
         SignCount::new(1),
-        Origin::parse("https://admin.corelink.dev").unwrap(),
+        Origin::parse("https://admin.corelink.humangr.com").unwrap(),
     );
     let outcome = engine.finish_authentication(auth.id(), response).unwrap();
     println!(

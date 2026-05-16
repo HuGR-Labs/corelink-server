@@ -24,7 +24,7 @@ inherits_from:
 tags: ["wi", "s20", "ga", "sla-v1", "dpa-v1", "legal-review", "lighthouse-signed", "high-risk"]
 ---
 
-# WI-S20-005 — SLA Contractual v1 Published (Covering Cumulative SLOs Canonical SLO-AVAIL-CAS-PUT/GET ≥ 99.9% + SLO-LAT-CAS-GET p99 < 300ms + SLO-FRESH-DSR-ERASURE ≤ 30d + SLO-FRESH-BILLING ≤ 24h Reconciliation < 0.1% Drift) Em `legal/sla/v1.md` + `docs.corelink.dev/sla` + DPA v1 Finalization + Legal Review Externo (Cooley/DLA Piper/Bird & Bird ~$15-30k 6-Week Lead Reuso S-14 Path) + 3 Lighthouse Customers Signing (DPA + Sub-Processor Agreement + Breach Notification SLA + Pricing Addendum Se Enterprise) + ADR If Waiver Needed + EVT-044 Evidence
+# WI-S20-005 — SLA Contractual v1 Published (Covering Cumulative SLOs Canonical SLO-AVAIL-CAS-PUT/GET ≥ 99.9% + SLO-LAT-CAS-GET p99 < 300ms + SLO-FRESH-DSR-ERASURE ≤ 30d + SLO-FRESH-BILLING ≤ 24h Reconciliation < 0.1% Drift) Em `legal/sla/v1.md` + `docs.corelink.humangr.com/sla` + DPA v1 Finalization + Legal Review Externo (Cooley/DLA Piper/Bird & Bird ~$15-30k 6-Week Lead Reuso S-14 Path) + 3 Lighthouse Customers Signing (DPA + Sub-Processor Agreement + Breach Notification SLA + Pricing Addendum Se Enterprise) + ADR If Waiver Needed + EVT-044 Evidence
 
 > **doc_status:** SEALED · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-20](../sprint.md) · **Assignee:** Gustavo Schneiter
@@ -43,9 +43,9 @@ tags: ["wi", "s20", "ga", "sla-v1", "dpa-v1", "legal-review", "lighthouse-signed
 
 ## 1. Objetivo + JTBD
 
-**Objetivo**: Publicar **SLA contractual v1** em `legal/sla/v1.md` + `docs.corelink.dev/sla` covering cumulative SLOs canonical (SLO-AVAIL-CAS-PUT/GET ≥ 99.9% + SLO-LAT-CAS-GET p99 < 300ms + SLO-FRESH-DSR-ERASURE ≤ 30d + SLO-FRESH-BILLING ≤ 24h reconciliation < 0.1% drift) + finalizar **DPA v1** com Legal review externo (Cooley/DLA Piper/Bird & Bird ~$15-30k 6-week lead reuso S-14 path) + 3 lighthouse customers signing (DPA + sub-processor agreement + breach notification SLA + pricing addendum se enterprise) + ADR if waiver needed.
+**Objetivo**: Publicar **SLA contractual v1** em `legal/sla/v1.md` + `docs.corelink.humangr.com/sla` covering cumulative SLOs canonical (SLO-AVAIL-CAS-PUT/GET ≥ 99.9% + SLO-LAT-CAS-GET p99 < 300ms + SLO-FRESH-DSR-ERASURE ≤ 30d + SLO-FRESH-BILLING ≤ 24h reconciliation < 0.1% drift) + finalizar **DPA v1** com Legal review externo (Cooley/DLA Piper/Bird & Bird ~$15-30k 6-week lead reuso S-14 path) + 3 lighthouse customers signing (DPA + sub-processor agreement + breach notification SLA + pricing addendum se enterprise) + ADR if waiver needed.
 
-**JTBD**: "Como CISO em prospect enterprise / DPO compliance auditor / Legal Counsel customer-side, preciso evidência verificável que: (a) **SLA contractual v1 published** em `legal/sla/v1.md` + `docs.corelink.dev/sla` (NÃO advisory only; é contractual com remediation flow + service credits); (b) **DPA v1 Legal externo reviewed** por Cooley/DLA Piper/Bird & Bird (não in-house counsel; engagement plan ~$15-30k 6-week lead reuso S-14 path); (c) **3 lighthouse customers signed** DPA + sub-processor agreement + breach notification SLA + pricing addendum (se enterprise tier); (d) **ADR if waiver needed** documented + Legal-approved + customer-approved; (e) **EVT-044 evidence captured** em PRR-GA-001 evidence pack."
+**JTBD**: "Como CISO em prospect enterprise / DPO compliance auditor / Legal Counsel customer-side, preciso evidência verificável que: (a) **SLA contractual v1 published** em `legal/sla/v1.md` + `docs.corelink.humangr.com/sla` (NÃO advisory only; é contractual com remediation flow + service credits); (b) **DPA v1 Legal externo reviewed** por Cooley/DLA Piper/Bird & Bird (não in-house counsel; engagement plan ~$15-30k 6-week lead reuso S-14 path); (c) **3 lighthouse customers signed** DPA + sub-processor agreement + breach notification SLA + pricing addendum (se enterprise tier); (d) **ADR if waiver needed** documented + Legal-approved + customer-approved; (e) **EVT-044 evidence captured** em PRR-GA-001 evidence pack."
 
 GA-go binary engineering gate.
 
@@ -53,7 +53,7 @@ GA-go binary engineering gate.
 
 ### 2.1 In-scope
 
-1. **SLA contractual v1** em `legal/sla/v1.md` + `docs.corelink.dev/sla`:
+1. **SLA contractual v1** em `legal/sla/v1.md` + `docs.corelink.humangr.com/sla`:
    - Coverage cumulative SLOs canonical (per SLO-CATALOG ratification):
      - SLO-AVAIL-CAS-PUT ≥ 99.9%.
      - SLO-AVAIL-CAS-GET ≥ 99.9%.
@@ -105,7 +105,7 @@ GA-go binary engineering gate.
 
 | ID | Entregável | Onde | DoD |
 |---|---|---|---|
-| S20-005-D1 | SLA contractual v1 | `legal/sla/v1.md` + `docs.corelink.dev/sla` | covering cumulative SLOs canonical; service credits; remediation flow; exclusions; reporting; termination clause; Legal-reviewed |
+| S20-005-D1 | SLA contractual v1 | `legal/sla/v1.md` + `docs.corelink.humangr.com/sla` | covering cumulative SLOs canonical; service credits; remediation flow; exclusions; reporting; termination clause; Legal-reviewed |
 | S20-005-D2 | DPA v1 finalization | `legal/dpa/v1.md` | Schrems II TIA + sub-processor agreement + breach notification SLA 72h + customer rights + cross-border transfers + pricing addendum enterprise; Legal externo reviewed Cooley/DLA Piper/Bird & Bird ~$15-30k 6-week lead |
 | S20-005-D3 | 3 lighthouse customers signing | `specs/_audits/2026-XX-XX-dpa-signed-3-lighthouse.md` | DPA + sub-processor agreement + breach notification SLA signed por 3 customers; pricing addendum signed enterprise |
 | S20-005-D4 | ADR if waiver needed | `specs/_audits/2026-XX-XX-dpa-waiver-{customer}.md` (if any) | Legal-approved + customer-approved + CEO/Founder approval; expiry + revalidation trigger |
@@ -142,7 +142,7 @@ GA-go binary engineering gate.
 - < 99% (catastrophic) → 50% credit + termination right.
 
 ## 4. Remediation flow
-1. Customer raises ticket via support@corelink.dev OR enterprise dedicated channel.
+1. Customer raises ticket via support@humangr.com OR enterprise dedicated channel.
 2. SRE escalation (PagerDuty 24/7 3 regions; per WI-S20-006).
 3. 5-Why post-mortem published within 72h SEV-1 / 7d SEV-2.
 4. Service credits issued automatic on monthly SLA report.
@@ -232,7 +232,7 @@ GA-go binary engineering gate.
 
 ### 6.1 Positive paths
 
-1. **SLA v1 published** em `legal/sla/v1.md` + `docs.corelink.dev/sla`.
+1. **SLA v1 published** em `legal/sla/v1.md` + `docs.corelink.humangr.com/sla`.
 2. **DPA v1 Legal externo reviewed** por Cooley/DLA Piper/Bird & Bird (multi-jurisdictional US + EU + Brazil).
 3. **3 lighthouse customers signed** DPA + sub-processor agreement + breach notification SLA.
 4. **Pricing addendum signed enterprise** (Customer 3 BYOK).

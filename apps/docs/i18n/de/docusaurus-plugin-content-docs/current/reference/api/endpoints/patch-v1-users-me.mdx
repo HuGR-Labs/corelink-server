@@ -54,7 +54,7 @@ _Snippets are auto-generated from the OpenAPI contract. Replace `<YOUR_PAT>` wit
 
 ```bash
 curl -X PATCH \
-  'https://api.corelink.dev/v1/users/me' \
+  'https://api.corelink.humangr.com/v1/users/me' \
   -H 'Authorization: Bearer <YOUR_PAT>' \
   -H 'Content-Type: application/json' \
   -d '{
@@ -79,7 +79,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
     "#)?;
     let resp = client
-        .patch("https://api.corelink.dev/v1/users/me")
+        .patch("https://api.corelink.humangr.com/v1/users/me")
         .header("Authorization", "Bearer <YOUR_PAT>")
         .header("Content-Type", "application/json")
         .json(&body)
@@ -107,7 +107,7 @@ def main() -> None:
   "locale": "en-US"
 }
     resp = httpx.patch(
-        "https://api.corelink.dev/v1/users/me",
+        "https://api.corelink.humangr.com/v1/users/me",
         headers=headers,
         json=body,
     )
@@ -135,7 +135,7 @@ func main() {
   "display_name": "string",
   "locale": "en-US"
 }`)
-    req, err := http.NewRequest("PATCH", "https://api.corelink.dev/v1/users/me", bytes.NewReader(body))
+    req, err := http.NewRequest("PATCH", "https://api.corelink.humangr.com/v1/users/me", bytes.NewReader(body))
     if err != nil {
         panic(err)
     }
@@ -154,7 +154,7 @@ func main() {
 ### JavaScript (fetch)
 
 ```javascript
-const resp = await fetch("https://api.corelink.dev/v1/users/me", {
+const resp = await fetch("https://api.corelink.humangr.com/v1/users/me", {
   method: "PATCH",
   headers: {
     "Authorization": "Bearer <YOUR_PAT>",

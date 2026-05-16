@@ -90,7 +90,7 @@ TITLE: Resolved — <component> restored
 UPDATE (HH:MM UTC):
 Service has been restored. <Component> has been operating normally for the
 past 15 minutes. We will publish a public post-incident retrospective within
-14 days at corelink.dev/blog/incidents.
+14 days at corelink.humangr.com/blog/incidents.
 
 We apologize for the disruption. Thank you for your patience.
 ```
@@ -120,8 +120,8 @@ mechanism.>
 What we're doing:
 <One paragraph: immediate remediation + medium-term prevention.>
 
-Live updates: https://status.corelink.dev
-Public retrospective: published within 14 days at corelink.dev/blog/incidents
+Live updates: https://status.corelink.humangr.com
+Public retrospective: published within 14 days at corelink.humangr.com/blog/incidents
 
 If you have questions or believe your impact was greater than what we've
 described, please reply to this email and we'll get back to you within 4
@@ -137,7 +137,7 @@ automatically; no action required.
 
 ```
 We're aware of an issue affecting <Component> at <HH:MM UTC>. Engineering
-is on it. Live updates: https://status.corelink.dev — full retro to follow.
+is on it. Live updates: https://status.corelink.humangr.com — full retro to follow.
 ```
 
 ### A.6 Internal protocol
@@ -240,13 +240,13 @@ What we have done:
 
 What you can do:
 <Concrete recommendations: rotate any shared secrets, check audit logs we
-provide, contact security@corelink.dev for help.>
+provide, contact security@humangr.com for help.>
 
 We have notified <regulator name(s)> as required by <LGPD Art. 48 /
 GDPR Art. 33>. We will publish a public post-incident retrospective when
 the investigation is complete.
 
-For questions: security@corelink.dev — monitored 24/7 during this period.
+For questions: security@humangr.com — monitored 24/7 during this period.
 
 We are sorry. Trust is the product, and we will be transparent through
 this.
@@ -330,7 +330,7 @@ What we learned: <one paragraph, blameless.>
 We hold ourselves to the standard that billing is part of the product. We
 fell short here. We are doing the work to make sure we don't again.
 
-If you have any questions, billing@corelink.dev is always staffed.
+If you have any questions, billing@humangr.com is always staffed.
 
 — CoreLink
 ```
@@ -351,8 +351,8 @@ internal review. Based on <CoreLink-internal telemetry / audit chain
 inspection>, we have <no evidence / preliminary evidence> of <specific
 claim>. We will share verified findings within <timeframe: 24h / 48h>.
 
-For confirmed customer impact, status.corelink.dev will publish.
-For security disclosures, contact security@corelink.dev.
+For confirmed customer impact, status.corelink.humangr.com will publish.
+For security disclosures, contact security@humangr.com.
 
 — CoreLink Security
 ```
@@ -377,7 +377,7 @@ If the investigation reveals customer impact to your account, we will
 inform you within <timeframe>, and we will follow the protocols described
 in our DPA <Section X>.
 
-For questions: security@corelink.dev.
+For questions: security@humangr.com.
 
 — <CEO name>
 ```
@@ -405,7 +405,7 @@ We've seen <researcher name>'s report on <topic>. Thank you for the
 research. Our security team is reviewing.
 
 If you believe your account may be affected, contact
-security@corelink.dev — we are responding 24/7.
+security@humangr.com — we are responding 24/7.
 
 We will publish a verified statement within <timeframe: 24h-48h>.
 
@@ -439,7 +439,7 @@ We'd like to coordinate the disclosure timeline. Our standard window
 fix is straightforward. Could we set up a call this week?
 
 We credit good-faith research in our Hall of Fame
-(https://corelink.dev/security/hall-of-fame) and have a bug bounty for
+(https://corelink.humangr.com/security/hall-of-fame) and have a bug bounty for
 in-scope findings.
 
 — <VPSec name>, Security, HuGR Labs / CoreLink
@@ -512,7 +512,7 @@ PR firm sends embargo-recall to all journalists; offer to re-embargo for new dat
 4. **Privacy incidents = 72-hour clock.** Document the awareness timestamp immediately.
 5. **No vendor blame** until Legal-cleared.
 6. **Blameless retros.** Per `specs/_runbooks/RB-POSTMORTEM-PROCESS.md`.
-7. **Single source of truth for incident status: `status.corelink.dev`.** All other channels (tweets, customer emails, press) point back to it.
+7. **Single source of truth for incident status: `status.corelink.humangr.com`.** All other channels (tweets, customer emails, press) point back to it.
 
 ---
 

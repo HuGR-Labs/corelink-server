@@ -112,7 +112,7 @@ Decomposição em 7 WIs: (1) **WI-S16-001** Next.js 15 skeleton em `apps/web/` d
 
 ### 2.2 Anti-scope
 
-- Admin panel operacional interno (CoreLink ops) — `admin.corelink.dev` subdomain separado; pós-GA Sentry findings + customer support tools.
+- Admin panel operacional interno (CoreLink ops) — `admin.corelink.humangr.com` subdomain separado; pós-GA Sentry findings + customer support tools.
 - Mobile app nativo (iOS/Android) — anti-scope at GA; web responsive sufficient.
 - Customer onboarding full sales-led for enterprise — S-19 (S-16 entrega self-service signup; enterprise é S-19 hand-off).
 - A/B testing infrastructure (Optimizely/equiv.) — pós-GA.

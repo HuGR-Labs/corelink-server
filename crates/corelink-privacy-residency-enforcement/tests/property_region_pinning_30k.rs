@@ -332,7 +332,7 @@ fn test_region_from_host_all_s14_regions() {
     use corelink_privacy_residency_enforcement::assert_request::region_from_host;
 
     for &region in &S14_REGIONS {
-        let host = format!("tenant-abc123.{}.corelink.dev", region.as_str());
+        let host = format!("tenant-abc123.{}.corelink.humangr.com", region.as_str());
         let parsed = region_from_host(&host);
         assert_eq!(
             parsed,
@@ -349,13 +349,13 @@ fn test_region_from_host_header_tampering_ignored() {
     use corelink_privacy_residency_enforcement::assert_request::region_from_host;
 
     // An enam tenant's correct domain
-    let correct_host = "tenant-abc.enam.corelink.dev";
+    let correct_host = "tenant-abc.enam.corelink.humangr.com";
     let parsed = region_from_host(correct_host);
     assert_eq!(parsed, Some(Region::Enam), "must parse enam from correct host");
 
     // Attacker passes a fake X-Region header with "weur" — but region_from_host
     // only looks at the host; header is ignored at this layer.
-    let attacker_host = "tenant-abc.weur.corelink.dev"; // they would need control of DNS
+    let attacker_host = "tenant-abc.weur.corelink.humangr.com"; // they would need control of DNS
     let parsed_attacker = region_from_host(attacker_host);
     // If they control the host (not possible via header), it correctly parses weur —
     // but the tenant_ctx.primary_region is still enam, so enforcement will reject.

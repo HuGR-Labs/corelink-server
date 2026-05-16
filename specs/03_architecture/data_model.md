@@ -388,7 +388,7 @@ audit-<region>/
 
 - **Lifecycle rule**: multipart incomplete > 7d → abort (FM-060).
 - **Object Lock**: audit bucket com Governance Mode 7y; emergency erasure requer legal hold process.
-- **CORS**: apenas `origin = api.corelink.dev` e `origin = <tenant-domain>` allowlisted para presigned URL uploads.
+- **CORS**: apenas `origin = api.corelink.humangr.com` e `origin = <tenant-domain>` allowlisted para presigned URL uploads.
 
 ---
 

@@ -85,7 +85,7 @@ Per WI-S20-005, external counsel (Cooley / DLA Piper / Bird & Bird) reviewed and
 
 For CoreLink customers in the EU using WEUR, the TIA conclusion is straightforward: data does not leave the EU. There is no transfer to assess.
 
-For customers using WNAM or ENAM regions for EU-origin data (which we generally do not recommend but is configurable), CoreLink provides a customer-facing TIA template, the SCC module language in the DPA, and a documented evaluation of US surveillance law as it applies to a CoreLink operator. This is published at `docs.corelink.dev/trust/schrems-ii`.
+For customers using WNAM or ENAM regions for EU-origin data (which we generally do not recommend but is configurable), CoreLink provides a customer-facing TIA template, the SCC module language in the DPA, and a documented evaluation of US surveillance law as it applies to a CoreLink operator. This is published at `docs.corelink.humangr.com/trust/schrems-ii`.
 
 The honest take: customers handling EU-origin personal data should default to WEUR. The TIA exists for the cases where they cannot.
 
@@ -113,10 +113,10 @@ CoreLink residency is also not a guarantee against governmental compulsion of th
 
 ## Where to go next
 
-- **Trust center:** `corelink.dev/trust`
-- **Residency invariant:** `docs.corelink.dev/trust/residency`
-- **Schrems II TIA template:** `docs.corelink.dev/trust/schrems-ii`
-- **DPA package (EN / PT-BR / ES):** `legal.corelink.dev/dpa`
+- **Trust center:** `corelink.humangr.com/trust`
+- **Residency invariant:** `docs.corelink.humangr.com/trust/residency`
+- **Schrems II TIA template:** `docs.corelink.humangr.com/trust/schrems-ii`
+- **DPA package (EN / PT-BR / ES):** `legal.corelink.humangr.com/dpa`
 
 — Privacy and Trust at CoreLink
 

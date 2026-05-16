@@ -146,7 +146,7 @@ Exit code: `0` if all checks ok/skip, `1` if any check fails.
   "version": "0.1.0",
   "git_rev": "abc1234",
   "build_timestamp": "epoch:1715040000",
-  "slsa_attestation": "https://corelink.dev/attestations/cli/0.1.0/abc1234/slsa3.json",
+  "slsa_attestation": "https://corelink.humangr.com/attestations/cli/0.1.0/abc1234/slsa3.json",
   "target_triple": "aarch64-apple-darwin"
 }
 ```

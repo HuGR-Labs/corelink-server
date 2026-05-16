@@ -94,7 +94,7 @@ What changed. Link to the PR / commit that fixed it.
 
 ## Acknowledgements
 Thanks to <researcher> for the responsible disclosure. Hall of Fame:
-https://corelink.dev/security/hall-of-fame
+https://corelink.humangr.com/security/hall-of-fame
 ```
 
 ## CWE

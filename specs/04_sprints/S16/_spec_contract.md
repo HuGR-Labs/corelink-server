@@ -174,7 +174,7 @@ inherits_from:
 
 ## 10. Anti-scope
 
-- ❌ Admin panel operacional interno (CoreLink ops) — `admin.corelink.dev` subdomain separado, não em S-16. (Cross-ref Sentry findings + customer support tools = pós-GA.)
+- ❌ Admin panel operacional interno (CoreLink ops) — `admin.corelink.humangr.com` subdomain separado, não em S-16. (Cross-ref Sentry findings + customer support tools = pós-GA.)
 - ❌ Mobile app nativo (iOS/Android) — anti-scope at GA; web responsive sufficient.
 - ❌ Customer onboarding (full sales-led for enterprise) — S-19 (S-16 entrega self-service signup; enterprise é S-19 hand-off).
 - ❌ A/B testing infrastructure (Optimizely/equiv.) — pós-GA.
@@ -191,7 +191,7 @@ inherits_from:
 - **S-10 SEALED** (billing data).
 - **S-11 SEALED** (privacy backend + DSR API + consent ledger).
 - **S-09 SEALED** (audit events R2 + métricas).
-- **S-13 SEALED** (admin plane API for ops; UI é separate `admin.corelink.dev`).
+- **S-13 SEALED** (admin plane API for ops; UI é separate `admin.corelink.humangr.com`).
 
 ### Soft blockers
 

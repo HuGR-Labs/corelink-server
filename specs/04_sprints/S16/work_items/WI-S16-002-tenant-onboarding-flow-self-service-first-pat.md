@@ -153,7 +153,7 @@ Feature WI; STANDARD lane; onboarding + PAT mgmt + settings.
 
 4. **URL-shareable invite link para co-developers**:
    - Generate signed JWT com `tenant_id` + `role` (member/admin) + `expires_at` (default 7d).
-   - URL pattern `https://app.corelink.dev/invite?token=<jwt>`.
+   - URL pattern `https://app.corelink.humangr.com/invite?token=<jwt>`.
    - On open, Clerk SDK `<SignUp />` flow pre-filled com tenant context; invite redeemed em first auth.
    - Reusa Clerk SDK invite flow (S-03).
 
@@ -245,7 +245,7 @@ Feature: Tenant onboarding flow + PAT mgmt + settings UI
     Given tenant admin generates invite link
     When invite token created
     Then signed JWT com tenant_id + role + expires_at (7d default)
-    And URL https://app.corelink.dev/invite?token=<jwt>
+    And URL https://app.corelink.humangr.com/invite?token=<jwt>
     When invitee opens URL, Clerk SignUp flow pre-filled tenant context
 
   Scenario: Onboarding wizard progress indicator clear

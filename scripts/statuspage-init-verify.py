@@ -15,7 +15,7 @@ to eyeball:
   4. The runbook + helper SHA-256 fingerprints recorded in the
      operator-handoff payload (re-derived live) match the on-disk
      artifacts at verify time — drift catches a stale dress-run.
-  5. The trust corpus literal-URL inventory (``status.corelink.dev``
+  5. The trust corpus literal-URL inventory (``status.corelink.humangr.com``
      references under ``apps/docs/docs/`` and ``apps/docs/i18n/``)
      reconciles with the runbook's "5 MDX pages × 4 locales" claim.
 
@@ -53,7 +53,7 @@ EXPECTED_STEP_NAMES = [
     "audit_trail_verification",
 ]
 
-DEFAULT_STATUSPAGE_URL = "https://status.corelink.dev"
+DEFAULT_STATUSPAGE_URL = "https://status.corelink.humangr.com"
 
 
 def _sha256(path: Path) -> str:
@@ -139,7 +139,7 @@ def assert_runbook_dod() -> list[str]:
         "Option A",
         "Option B",
         "STATUSPAGE_URL",
-        "status.corelink.dev",
+        "status.corelink.humangr.com",
         "T-7d",
         "summary.json",
     ]
@@ -159,19 +159,19 @@ def assert_trust_corpus_inventory() -> list[str]:
     # explanation/security/incident-history, how-to/billing/manage-subscription)
     # plus their i18n mirrors. We don't require an exact 5×4 = 20 match
     # because the i18n mirrors may not all reference statuspage on
-    # every page; we just require at least one literal `status.corelink.dev`
+    # every page; we just require at least one literal `status.corelink.humangr.com`
     # reference in en-US (the source of truth).
     en_us_root = docs_root / "docs"
     hits = 0
     for path in en_us_root.rglob("*.mdx"):
         try:
-            if "status.corelink.dev" in path.read_text():
+            if "status.corelink.humangr.com" in path.read_text():
                 hits += 1
         except OSError:
             continue
     if hits == 0:
         return [
-            "trust corpus inventory: zero literal status.corelink.dev "
+            "trust corpus inventory: zero literal status.corelink.humangr.com "
             "references in apps/docs/docs/**/*.mdx — runbook §1 claim invalidated"
         ]
     if hits < 3:

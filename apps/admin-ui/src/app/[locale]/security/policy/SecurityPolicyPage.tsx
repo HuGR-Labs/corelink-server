@@ -42,13 +42,13 @@ const COPY: Record<Locale, Strings> = {
     reportBody: (
       <>
         <p>
-          Email <code>security@corelink.dev</code> with the subject prefix{" "}
+          Email <code>security@humangr.com</code> with the subject prefix{" "}
           <code>[VULN]</code>. For high-impact issues, please encrypt with our
           PGP key.
         </p>
         <p>
           Prefer a web form? Use{" "}
-          <a href="https://corelink.dev/.well-known/security-report">
+          <a href="https://corelink.humangr.com/.well-known/security-report">
             /.well-known/security-report
           </a>
           .
@@ -114,13 +114,13 @@ const COPY: Record<Locale, Strings> = {
     reportBody: (
       <>
         <p>
-          Envie e-mail para <code>security@corelink.dev</code> com o prefixo{" "}
+          Envie e-mail para <code>security@humangr.com</code> com o prefixo{" "}
           <code>[VULN]</code> no assunto. Para problemas de alto impacto,
           criptografe com nossa chave PGP.
         </p>
         <p>
           Prefere formulário web? Use{" "}
-          <a href="https://corelink.dev/.well-known/security-report">
+          <a href="https://corelink.humangr.com/.well-known/security-report">
             /.well-known/security-report
           </a>
           .
@@ -186,13 +186,13 @@ const COPY: Record<Locale, Strings> = {
     reportBody: (
       <>
         <p>
-          Escribe a <code>security@corelink.dev</code> con el prefijo{" "}
+          Escribe a <code>security@humangr.com</code> con el prefijo{" "}
           <code>[VULN]</code> en el asunto. Para issues de alto impacto,
           cifra con nuestra clave PGP.
         </p>
         <p>
           ¿Prefieres un formulario web? Usa{" "}
-          <a href="https://corelink.dev/.well-known/security-report">
+          <a href="https://corelink.humangr.com/.well-known/security-report">
             /.well-known/security-report
           </a>
           .
@@ -262,13 +262,13 @@ const COPY: Record<Locale, Strings> = {
     reportBody: (
       <>
         <p>
-          E-Mail an <code>security@corelink.dev</code> mit dem Betreff-Präfix{" "}
+          E-Mail an <code>security@humangr.com</code> mit dem Betreff-Präfix{" "}
           <code>[VULN]</code>. Für Probleme mit hoher Auswirkung bitte mit
           unserem PGP-Schlüssel verschlüsseln.
         </p>
         <p>
           Lieber ein Webformular? Verwenden Sie{" "}
-          <a href="https://corelink.dev/.well-known/security-report">
+          <a href="https://corelink.humangr.com/.well-known/security-report">
             /.well-known/security-report
           </a>
           .

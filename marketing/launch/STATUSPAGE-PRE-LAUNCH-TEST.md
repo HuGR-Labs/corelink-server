@@ -23,7 +23,7 @@ tags:
 
 # Statuspage.io — T-7d Pre-Launch Test Plan
 
-> **Purpose:** the acceptance-test plan we run at **T-7d** against the freshly-provisioned Statuspage.io account, BEFORE we import lighthouse subscribers and BEFORE we announce `status.corelink.dev` publicly. Pass = green-light for §7 subscriber import + T-0 banner flip. Fail = rollback (see §6).
+> **Purpose:** the acceptance-test plan we run at **T-7d** against the freshly-provisioned Statuspage.io account, BEFORE we import lighthouse subscribers and BEFORE we announce `status.corelink.humangr.com` publicly. Pass = green-light for §7 subscriber import + T-0 banner flip. Fail = rollback (see §6).
 > **Audience:** SRE Lead (executor) + DevOps (operator) + VPSec (test-evidence reviewer).
 > **Cross-references:** `STATUS-PAGE-SPEC.md`, `STATUSPAGE-INIT.md`, `STATUSPAGE-SUBSCRIBER-IMPORT.md`, `scripts/statuspage-webhook-receiver.example.yaml`, `LAUNCH-CHECKLIST-V2.md`.
 > **Hard rule:** **every test runs against a TEST component**, not against C1..C8, until §5. The test component is created in §1 and deleted in §6 after sign-off.
@@ -35,12 +35,12 @@ tags:
 Before any test runs, **all** of these must be true:
 
 - [ ] `STATUSPAGE-INIT.md` §1–§7 complete (page exists, components present, secrets stored).
-- [ ] DNS for `status.corelink.dev` resolves; TLS cert valid for ≥ 80 days.
-- [ ] Fallback page at `https://corelink.dev/status` returns HTTP 200.
+- [ ] DNS for `status.corelink.humangr.com` resolves; TLS cert valid for ≥ 80 days.
+- [ ] Fallback page at `https://corelink.humangr.com/status` returns HTTP 200.
 - [ ] Webhook receiver spec reviewed; **native PagerDuty → Statuspage integration is the active path under test** (custom receiver is spec-only for GA).
 - [ ] **Test component created:** add a 9th component called `TEST — DO NOT SUBSCRIBE` in group `Operations`. Visibility: **public**, **but** marked with a banner description: "Internal test surface; do not subscribe; will be removed before T-0."
 - [ ] **Test PagerDuty service created:** `corelink-statuspage-test-prerelease` with the Statuspage integration attached and pointing at the test component.
-- [ ] Roster of 2 internal email addresses for subscriber-notification testing: `sre-lead@corelink.dev` and `devops@corelink.dev`. Both are §1.2 internal-mandatory subscribers already authorized for the page; they self-consent for the test.
+- [ ] Roster of 2 internal email addresses for subscriber-notification testing: `sre-lead@humangr.com` and `devops@humangr.com`. Both are §1.2 internal-mandatory subscribers already authorized for the page; they self-consent for the test.
 - [ ] **Date of run:** T-7d ± 1 calendar day. Snapshot of all UI screenshots saved to `specs/_audits/STATUSPAGE-PRELAUNCH-<run-date>/`.
 
 ---
@@ -54,7 +54,7 @@ Before any test runs, **all** of these must be true:
 **Steps:**
 
 1. In `https://manage.statuspage.io`, set the TEST component to `Degraded performance`.
-2. Open `https://status.corelink.dev` in a fresh incognito tab; refresh.
+2. Open `https://status.corelink.humangr.com` in a fresh incognito tab; refresh.
 3. Verify the test component shows yellow / "Degraded performance" within 60 s.
 4. Set the TEST component to `Partial outage`; verify orange within 60 s.
 5. Set to `Major outage`; verify red within 60 s.
@@ -68,7 +68,7 @@ Before any test runs, **all** of these must be true:
 
 **Goal:** confirm we can create an incident, post updates, and close it; that subscribers receive the right notifications at each step.
 
-**Subscribe pre-step:** subscribe `sre-lead@corelink.dev` to the TEST component **only** via the public widget on `https://status.corelink.dev`. Click the confirmation link in the email that arrives.
+**Subscribe pre-step:** subscribe `sre-lead@humangr.com` to the TEST component **only** via the public widget on `https://status.corelink.humangr.com`. Click the confirmation link in the email that arrives.
 
 **Steps:**
 
@@ -79,7 +79,7 @@ Before any test runs, **all** of these must be true:
    - Body: paste `CRISIS-COMMS-TEMPLATES.md` §A.1 SEV1 template (placeholders filled with TEST).
    - Deliver notifications: **enabled**.
    - Click **Create**.
-2. Confirm `sre-lead@corelink.dev` receives the incident-open email within 5 min. Capture screenshot.
+2. Confirm `sre-lead@humangr.com` receives the incident-open email within 5 min. Capture screenshot.
 3. Add an update to the incident:
    - Status: `Identified`
    - Body: paste §A.2 of CRISIS-COMMS-TEMPLATES.md.
@@ -87,9 +87,9 @@ Before any test runs, **all** of these must be true:
 5. Add a `Monitoring` update.
 6. Resolve the incident with §A.3 body.
 7. Confirm the resolution email arrives.
-8. Open `https://status.corelink.dev/history` and confirm the TEST incident appears with all 4 status transitions and a clear timeline.
+8. Open `https://status.corelink.humangr.com/history` and confirm the TEST incident appears with all 4 status transitions and a clear timeline.
 
-**Pass:** all 4 notifications received within 5 min each; history page shows full timeline. **Fail:** any missing notification → check `sre-lead@corelink.dev` spam folder; if absent there too, ticket Atlassian support; do not proceed.
+**Pass:** all 4 notifications received within 5 min each; history page shows full timeline. **Fail:** any missing notification → check `sre-lead@humangr.com` spam folder; if absent there too, ticket Atlassian support; do not proceed.
 
 ---
 
@@ -103,7 +103,7 @@ Before any test runs, **all** of these must be true:
    ```bash
    curl -sS -H "Authorization: Token token=${PD_API_TOKEN}" \
      -H "Content-Type: application/json" \
-     -H "From: sre-lead@corelink.dev" \
+     -H "From: sre-lead@humangr.com" \
      -X POST https://api.pagerduty.com/incidents \
      -d '{
        "incident": {
@@ -117,7 +117,7 @@ Before any test runs, **all** of these must be true:
 2. Within 60 s, expect a new Statuspage incident on the TEST component with status `Investigating` and the SEV1 auto-publish template body.
 3. Acknowledge the PD incident → expect the SP incident status to advance to `Identified` within 60 s.
 4. Resolve the PD incident → expect the SP component to flip back to `Operational` after the 15-min recovery window (per `STATUS-PAGE-SPEC.md` §9). **For test speed**, the recovery window can be overridden to 60 s in staging via the failure-injection env var; do **not** override in prod.
-5. Confirm `sre-lead@corelink.dev` received the SEV1 email AND (if SMS opt-in) an SMS.
+5. Confirm `sre-lead@humangr.com` received the SEV1 email AND (if SMS opt-in) an SMS.
 
 **Pass:** all 3 transitions auto-driven by PD; 1 email + 1 SMS delivered. **Fail:** any transition manual → re-check PD integration severity mapping in `STATUSPAGE-INIT.md` §6.1.
 
@@ -129,7 +129,7 @@ Before any test runs, **all** of these must be true:
 
 **Steps:**
 
-1. Use the bulk-add API call shape from `STATUSPAGE-SUBSCRIBER-IMPORT.md` §3.1 to add `devops@corelink.dev` to the TEST component.
+1. Use the bulk-add API call shape from `STATUSPAGE-SUBSCRIBER-IMPORT.md` §3.1 to add `devops@humangr.com` to the TEST component.
 2. Within 5 min, expect a confirmation email at that address. Capture screenshot.
 3. Click the confirmation link.
 4. Query `GET /subscribers` and confirm the row's `state` transitions from `quarantined` to `active`.
@@ -178,7 +178,7 @@ Before any test runs, **all** of these must be true:
 
 **Steps:**
 
-1. From a single load-test box, send 100 requests/sec for 30 sec to `https://status.corelink.dev`.
+1. From a single load-test box, send 100 requests/sec for 30 sec to `https://status.corelink.humangr.com`.
 2. Confirm response time stays < 500 ms p99 throughout.
 3. Confirm zero 5xx responses.
 

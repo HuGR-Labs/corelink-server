@@ -17,7 +17,7 @@
 (*                                                                         *)
 (*   INV-AUTH-ISS-EXACT-MATCH         (CRITICAL)                           *)
 (*     Issuer is compared via exact set membership against the allowlist; *)
-(*     prefix attacks (`https://clerk.corelink.dev.attacker.com`) and     *)
+(*     prefix attacks (`https://clerk.corelink.humangr.com.attacker.com`) and     *)
 (*     suffix attacks are rejected.                                        *)
 (*                                                                         *)
 (* Threat model:                                                           *)

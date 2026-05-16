@@ -16,7 +16,7 @@ Read many small blobs in one round-trip with client-verify default on.
 
 ## Prerequisites
 
-- `go get go.corelink.dev/corelink-go@latest`
+- `go get go.corelink.humangr.com/corelink-go@latest`
 - `CORELINK_PAT` exported
 
 ## Code
@@ -29,13 +29,13 @@ import (
     "fmt"
     "os"
 
-    corelink "go.corelink.dev/corelink-go"
+    corelink "go.corelink.humangr.com/corelink-go"
 )
 
 func main() {
     ctx := context.Background()
     client, err := corelink.NewClient(ctx, corelink.Config{
-        Endpoint: "https://acme-dev.corelink.dev",
+        Endpoint: "https://acme-dev.corelink.humangr.com",
         PAT:      os.Getenv("CORELINK_PAT"),
     })
     if err != nil {

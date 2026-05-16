@@ -315,17 +315,17 @@ fn test_state_unchanged_when_audit_fails_accepted_request() {
 #[test]
 fn test_region_from_custom_domain_host() {
     let cases = [
-        ("tenant123.weur.corelink.dev", Some(Region::Weur)),
-        ("myco.enam.corelink.dev", Some(Region::Enam)),
-        ("org.sam.corelink.dev", Some(Region::Sam)),
-        ("x.wnam.corelink.dev", Some(Region::Wnam)),
-        ("y.apac.corelink.dev", Some(Region::Apac)),
-        ("z.afr.corelink.dev", Some(Region::Afr)),
+        ("tenant123.weur.corelink.humangr.com", Some(Region::Weur)),
+        ("myco.enam.corelink.humangr.com", Some(Region::Enam)),
+        ("org.sam.corelink.humangr.com", Some(Region::Sam)),
+        ("x.wnam.corelink.humangr.com", Some(Region::Wnam)),
+        ("y.apac.corelink.humangr.com", Some(Region::Apac)),
+        ("z.afr.corelink.humangr.com", Some(Region::Afr)),
         // Non-matching patterns
-        ("tenant123.us.corelink.dev", None),
-        ("tenant123.eu.corelink.dev", None),
-        ("corelink.dev", None),
-        ("weur.corelink.dev", None), // missing tenant prefix
+        ("tenant123.us.corelink.humangr.com", None),
+        ("tenant123.eu.corelink.humangr.com", None),
+        ("corelink.humangr.com", None),
+        ("weur.corelink.humangr.com", None), // missing tenant prefix
     ];
 
     for (host, expected) in cases {

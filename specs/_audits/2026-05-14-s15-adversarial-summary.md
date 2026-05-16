@@ -109,7 +109,7 @@ S-14 adversarial summary (`AUDIT-2026-05-14-S14-PENTEST`) for continuity.
 |---|---|---|---|---|---|
 | 5.1 | Apple notarization rejected (binary heuristic mismatch) | `xcrun notarytool submit --wait` exits non-zero → CI red | Hardened runtime entitlements (`com.apple.security.cs.*` = false), early staging dry-run | LOW | `.github/workflows/notarize-macos.yml` |
 | 5.2 | macOS Gatekeeper rejects stapled binary | `spctl --assess --type execute --verbose=4` confirms before release | Stapler ticket embedded post-notarize; verify step in pipeline | LOW | `.github/workflows/notarize-macos.yml` |
-| 5.3 | GPG signature mismatch (key rotated mid-release) | `gpg --verify` in pipeline; consumer-side verification command in `README.md` | Single signing key per major version; pubkey served at `https://corelink.dev/.well-known/gpg-pubkey.asc` | LOW | `.github/workflows/sign-linux.yml` |
+| 5.3 | GPG signature mismatch (key rotated mid-release) | `gpg --verify` in pipeline; consumer-side verification command in `README.md` | Single signing key per major version; pubkey served at `https://corelink.humangr.com/.well-known/gpg-pubkey.asc` | LOW | `.github/workflows/sign-linux.yml` |
 | 5.4 | Windows EV cert slips → temptation to ship unsigned | `windows-cert-present` gate job; no unsigned artifact uploaded | ADR-S15-009 ratifies "no unsigned ship"; deferral to +1 sprint | LOW | `.github/workflows/sign-windows.yml`, `ADR-S15-009-windows-codesign-deferral.md` |
 | 5.5 | Authenticode timestamp service unreachable | `signtool sign /tr` fails; CI red | Fallback timestamp URL list (DigiCert + Sectigo + Microsoft RFC3161) documented for future rotation | LOW | `.github/workflows/sign-windows.yml` (TODO follow-up to add fallback list) |
 

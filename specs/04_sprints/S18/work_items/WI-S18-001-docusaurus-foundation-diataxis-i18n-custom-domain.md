@@ -21,7 +21,7 @@ inherits_from:
 tags: ["wi", "s18", "docs", "docusaurus", "diataxis", "algolia", "i18n", "custom-domain", "cf-pages", "low-risk"]
 ---
 
-# WI-S18-001 — Docusaurus 3.x Foundation em `apps/docs/` Deployed CF Pages Custom Domain `docs.corelink.dev` + SSL Let's Encrypt + Diátaxis Taxonomy Sidebar (Tutorials Learning-oriented + How-to Task-oriented + Reference Information-oriented + Explanation Understanding-oriented; PR Review Checks Taxonomy Fit per Quality Standard 14.s18.2) + Algolia DocSearch Integration + Versioning (Latest + 1 Prior Major; Docusaurus Native) + Edit on GitHub Link per Page + i18n Config 3 Locales en-US (Default) + pt-BR (LGPD Primary) + es-419 (Matching S-11 + S-15 + S-16 Alignment per Lote 10.16) + Foundation para WI-S18-002..005
+# WI-S18-001 — Docusaurus 3.x Foundation em `apps/docs/` Deployed CF Pages Custom Domain `docs.corelink.humangr.com` + SSL Let's Encrypt + Diátaxis Taxonomy Sidebar (Tutorials Learning-oriented + How-to Task-oriented + Reference Information-oriented + Explanation Understanding-oriented; PR Review Checks Taxonomy Fit per Quality Standard 14.s18.2) + Algolia DocSearch Integration + Versioning (Latest + 1 Prior Major; Docusaurus Native) + Edit on GitHub Link per Page + i18n Config 3 Locales en-US (Default) + pt-BR (LGPD Primary) + es-419 (Matching S-11 + S-15 + S-16 Alignment per Lote 10.16) + Foundation para WI-S18-002..005
 
 > **doc_status:** DRAFT · **work_status:** READY · **lane:** LOW_RISK
 > **Parent:** [S-18](../sprint.md) · **Assignee:** Gustavo Schneiter
@@ -33,14 +33,14 @@ tags: ["wi", "s18", "docs", "docusaurus", "diataxis", "algolia", "i18n", "custom
 | Campo | Valor |
 |---|---|
 | ID | WI-S18-001 |
-| Título | Docusaurus 3.x foundation + Diátaxis taxonomy + Algolia DocSearch + i18n 3 locales + custom domain `docs.corelink.dev`. |
+| Título | Docusaurus 3.x foundation + Diátaxis taxonomy + Algolia DocSearch + i18n 3 locales + custom domain `docs.corelink.humangr.com`. |
 | Sprint | S-18 |
 | Lane | LOW_RISK |
 | Forcing factors | none (LOW_RISK; foundation WI; docs sprint não toca tenant data flow path; Docusaurus 3.x open-source canonical; CF Pages free tier baseline; Algolia DocSearch free tier OSS) |
 
 ## 1. Intent
 
-Foundation WI do S-18. Entrega o **Docusaurus 3.x foundation** em `apps/docs/` deployed CF Pages custom domain `docs.corelink.dev` + SSL Let's Encrypt automated, Diátaxis taxonomy sidebar 4 categories canonical (tutorial / how-to / reference / explanation; PR review checks taxonomy fit per Quality Standard 14.s18.2), Algolia DocSearch integration (free tier OSS), versioning latest + 1 prior major (Docusaurus native), edit on GitHub link per page, i18n config 3 locales en-US (default) + pt-BR (LGPD primary) + es-419 (matching S-11 + S-15 + S-16 alignment per Lote 10.16). Foundation layer para WI-S18-002..005 (getting started + REAPI auto-gen + SDK guides + compliance/security/pricing pages + closing ship gate).
+Foundation WI do S-18. Entrega o **Docusaurus 3.x foundation** em `apps/docs/` deployed CF Pages custom domain `docs.corelink.humangr.com` + SSL Let's Encrypt automated, Diátaxis taxonomy sidebar 4 categories canonical (tutorial / how-to / reference / explanation; PR review checks taxonomy fit per Quality Standard 14.s18.2), Algolia DocSearch integration (free tier OSS), versioning latest + 1 prior major (Docusaurus native), edit on GitHub link per page, i18n config 3 locales en-US (default) + pt-BR (LGPD primary) + es-419 (matching S-11 + S-15 + S-16 alignment per Lote 10.16). Foundation layer para WI-S18-002..005 (getting started + REAPI auto-gen + SDK guides + compliance/security/pricing pages + closing ship gate).
 
 ```typescript
 // File: apps/docs/docusaurus.config.ts
@@ -49,7 +49,7 @@ import type { Config } from '@docusaurus/types';
 const config: Config = {
   title: 'CoreLink',
   tagline: 'Multi-tenant content-addressable cache on Cloudflare',
-  url: 'https://docs.corelink.dev',
+  url: 'https://docs.corelink.humangr.com',
   baseUrl: '/',
   organizationName: 'humangr-labs',
   projectName: 'corelink-server',
@@ -96,7 +96,7 @@ export default config;
 
 ## 2. Narrative
 
-Docusaurus 3.x é canonical reference em docs frameworks (Stripe + Linear-tier baseline) com built-in i18n + versioning + edit on GitHub + sidebars + Algolia DocSearch integration. Diátaxis taxonomy é canonical reference em docs IA (information architecture) per <https://diataxis.fr/> — 4 categories (tutorial learning-oriented + how-to task-oriented + reference information-oriented + explanation understanding-oriented) força disciplina. CF Pages custom domain `docs.corelink.dev` deploy free tier + SSL Let's Encrypt automated. Algolia DocSearch free tier OSS para dev tools.
+Docusaurus 3.x é canonical reference em docs frameworks (Stripe + Linear-tier baseline) com built-in i18n + versioning + edit on GitHub + sidebars + Algolia DocSearch integration. Diátaxis taxonomy é canonical reference em docs IA (information architecture) per <https://diataxis.fr/> — 4 categories (tutorial learning-oriented + how-to task-oriented + reference information-oriented + explanation understanding-oriented) força disciplina. CF Pages custom domain `docs.corelink.humangr.com` deploy free tier + SSL Let's Encrypt automated. Algolia DocSearch free tier OSS para dev tools.
 
 Foundation pattern: WI-S18-002..005 consumirão this scaffold (getting started em tutorial; how-to integrate Bazel CI em how-to; REAPI v2 reference em reference; "Why content-addressable cache?" em explanation; SDK guides distributed across categories conforme content type). PR review checks Diátaxis taxonomy fit per Quality Standard 14.s18.2 (every page categorized; reviewer Docs lead).
 
@@ -138,9 +138,9 @@ Foundation WI; LOW_RISK lane.
    - `sidebars.ts` com 4 sidebars Diátaxis (tutorials + howto + reference + explanation).
    - `static/` com favicon + logo placeholder.
 
-2. **CF Pages deploy** custom domain `docs.corelink.dev`:
+2. **CF Pages deploy** custom domain `docs.corelink.humangr.com`:
    - GitHub Actions workflow `.github/workflows/docs-deploy.yml` build + deploy CF Pages.
-   - Custom domain `docs.corelink.dev` configured CF Pages dashboard.
+   - Custom domain `docs.corelink.humangr.com` configured CF Pages dashboard.
    - SSL Let's Encrypt automated (CF native).
    - Preview deploys per PR.
 
@@ -205,11 +205,11 @@ Feature: Docusaurus 3.x foundation + Diátaxis taxonomy + Algolia DocSearch + i1
     And docusaurus build succeeds
     And static site generated em apps/docs/build/
 
-  Scenario: CF Pages deploy custom domain docs.corelink.dev
+  Scenario: CF Pages deploy custom domain docs.corelink.humangr.com
     Given GitHub Actions workflow docs-deploy.yml
     When push to main
     Then CF Pages build + deploy executed
-    And custom domain docs.corelink.dev resolves
+    And custom domain docs.corelink.humangr.com resolves
     And SSL Let's Encrypt automated valid
     And preview deploys per PR working
 
@@ -249,8 +249,8 @@ Feature: Docusaurus 3.x foundation + Diátaxis taxonomy + Algolia DocSearch + i1
     And PR fails if category missing or wrong
 
   Scenario: SSL custom domain
-    Given custom domain docs.corelink.dev configured CF Pages
-    When user visits https://docs.corelink.dev
+    Given custom domain docs.corelink.humangr.com configured CF Pages
+    When user visits https://docs.corelink.humangr.com
     Then SSL valid Let's Encrypt automated
     And HSTS header present
 ```
@@ -268,7 +268,7 @@ Feature: Docusaurus 3.x foundation + Diátaxis taxonomy + Algolia DocSearch + i1
 ### 9.2 Why CF Pages custom domain (não Vercel / Netlify)
 
 - CF Pages free tier baseline; CoreLink stack already CF-native (Workers + R2 + D1 + KV).
-- Custom domain `docs.corelink.dev` SSL Let's Encrypt automated.
+- Custom domain `docs.corelink.humangr.com` SSL Let's Encrypt automated.
 - Preview deploys per PR free tier.
 
 ### 9.3 Why Diátaxis taxonomy (não freeform IA)
@@ -306,7 +306,7 @@ Feature: Docusaurus 3.x foundation + Diátaxis taxonomy + Algolia DocSearch + i1
 ## 10. Completeness Criteria
 
 - [ ] **10.s18.001.1** Docusaurus 3.x scaffold em `apps/docs/` (build succeeds).
-- [ ] **10.s18.001.2** CF Pages deploy custom domain `docs.corelink.dev` + SSL Let's Encrypt automated (EVT-018).
+- [ ] **10.s18.001.2** CF Pages deploy custom domain `docs.corelink.humangr.com` + SSL Let's Encrypt automated (EVT-018).
 - [ ] **10.s18.001.3** Diátaxis taxonomy sidebar 4 categories (tutorials + howto + reference + explanation).
 - [ ] **10.s18.001.4** Algolia DocSearch integrated (contextualSearch=true; public search-only API key).
 - [ ] **10.s18.001.5** Versioning latest + 1 prior major (docsVersionDropdown).
@@ -318,7 +318,7 @@ Feature: Docusaurus 3.x foundation + Diátaxis taxonomy + Algolia DocSearch + i1
 ## 11. DoD
 
 - [ ] Docusaurus 3.x scaffold em `apps/docs/` build succeeds.
-- [ ] CF Pages deploy custom domain `docs.corelink.dev` SSL valid.
+- [ ] CF Pages deploy custom domain `docs.corelink.humangr.com` SSL valid.
 - [ ] Diátaxis taxonomy sidebar 4 categories + PR review template.
 - [ ] Algolia DocSearch integrated.
 - [ ] Versioning + edit on GitHub + i18n config 3 locales.
@@ -354,7 +354,7 @@ Feature: Docusaurus 3.x foundation + Diátaxis taxonomy + Algolia DocSearch + i1
 
 ### Integration tests
 - CF Pages deploy succeeds (GitHub Actions workflow green).
-- Custom domain docs.corelink.dev resolves SSL valid.
+- Custom domain docs.corelink.humangr.com resolves SSL valid.
 - Algolia DocSearch returns results em search box.
 - Versioning switcher works (latest ↔ 1.x).
 - localeDropdown switcher works (en-US ↔ pt-BR ↔ es-419).
@@ -427,7 +427,7 @@ O: 12h, M: 18h, P: 28h → PERT **18.7h** (per spec contract §12; foundation WI
 
 **Direct cost**:
 - CF Pages free tier: $0/mês.
-- Custom domain docs.corelink.dev DNS: ~$15/year (already owned domain).
+- Custom domain docs.corelink.humangr.com DNS: ~$15/year (already owned domain).
 - Algolia DocSearch free tier OSS: $0/mês.
 - GitHub Actions free tier (public repo): $0/mês.
 
@@ -473,7 +473,7 @@ CF Pages deploy rollback: revert PR + redeploy previous build. RTO ≤ 5min. Rec
 
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
-| 1.0.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | Criação WI-S18-001 (cycle 12.S18.0; LOW_RISK lane; Docusaurus 3.x foundation + Diátaxis taxonomy + Algolia DocSearch + i18n 3 locales + custom domain `docs.corelink.dev`). |
+| 1.0.0 | 2026-04-29 | Gustavo (via Claude Opus 4.7) | Criação WI-S18-001 (cycle 12.S18.0; LOW_RISK lane; Docusaurus 3.x foundation + Diátaxis taxonomy + Algolia DocSearch + i18n 3 locales + custom domain `docs.corelink.humangr.com`). |
 
 ## 30. Anti-patterns evitados
 

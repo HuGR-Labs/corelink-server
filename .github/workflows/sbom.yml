@@ -219,7 +219,7 @@ jobs:
           DT_API_KEY: ${{ secrets.DT_API_KEY }}
         run: |
           VERSION="${{ needs.sbom-generate.outputs.version }}"
-          DT_URL="${{ vars.DT_ENDPOINT || 'https://dt.corelink.dev' }}"
+          DT_URL="${{ vars.DT_ENDPOINT || 'https://dt.corelink.humangr.com' }}"
 
           ./target/release/sbom-publish ingest-dt \
             --input sbom.cdx.json \

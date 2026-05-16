@@ -430,7 +430,7 @@ done
 
 # 5.4 Apply organization branding + notification defaults
 log "Live: applying organisation branding + notification defaults..."
-brand_payload='{"page":{"name":"CoreLink Status","url":"https://status.corelink.dev","support_url":"https://corelink.dev","hidden_from_search":true,"allow_page_subscribers":true,"allow_incident_subscribers":true,"notifications_from_email":"status@corelink.dev","notifications_email_footer":"Replies go to ops@corelink.dev."}}'
+brand_payload='{"page":{"name":"CoreLink Status","url":"https://status.corelink.humangr.com","support_url":"https://corelink.humangr.com","hidden_from_search":true,"allow_page_subscribers":true,"allow_incident_subscribers":true,"notifications_from_email":"status@humangr.com","notifications_email_footer":"Replies go to ops@humangr.com."}}'
 api_call PATCH "/pages/${PAGE_ID}" "${brand_payload}" >/dev/null
 
 log "Bootstrap complete."

@@ -3,7 +3,7 @@
 # Security findings MUST NOT be filed on the public tracker. This "template"
 # exists solely to surface the right private channels in the issue picker —
 # users who attempt to open it are prompted to confirm they understand the
-# VDP, then redirected to `SECURITY.md` and `security@corelink.dev`.
+# VDP, then redirected to `SECURITY.md` and `security@humangr.com`.
 #
 # Cross-link:
 #   - SECURITY.md (top-level policy, GitHub auto-detects)
@@ -34,9 +34,9 @@ body:
            a GitHub account): click *Security* → *Report a vulnerability*
            on the repo. This opens a private thread with maintainers.
 
-        2. **Email** [`security@corelink.dev`](mailto:security@corelink.dev).
+        2. **Email** [`security@humangr.com`](mailto:security@humangr.com).
            PGP key + RFC 9116 contact card at
-           <https://corelink.dev/.well-known/security.txt>.
+           <https://corelink.humangr.com/.well-known/security.txt>.
 
         We acknowledge within **3 business days** and aim for resolution
         within the timelines in `SECURITY.md`. Good-faith researchers are
@@ -54,7 +54,7 @@ body:
       label: "Acknowledgement"
       description: "Tick the box ONLY if you have read the above and intend to file the security report via the private channel. This issue will be closed by maintainers without action."
       options:
-        - label: "I understand this is the wrong channel and I will use the private security advisory flow or `security@corelink.dev`."
+        - label: "I understand this is the wrong channel and I will use the private security advisory flow or `security@humangr.com`."
           required: true
 
   - type: textarea

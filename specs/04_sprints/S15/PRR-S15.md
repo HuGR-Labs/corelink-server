@@ -203,7 +203,7 @@ project README:
 
 ```bash
 # Verify a CoreLink Linux release tarball against the published pubkey.
-curl -fsSL https://corelink.dev/.well-known/gpg-pubkey.asc | gpg --import
+curl -fsSL https://corelink.humangr.com/.well-known/gpg-pubkey.asc | gpg --import
 gpg --verify corelink-linux-x86_64.tar.gz.asc corelink-linux-x86_64.tar.gz
 ```
 

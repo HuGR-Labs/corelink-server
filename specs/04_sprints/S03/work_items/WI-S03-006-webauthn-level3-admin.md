@@ -48,9 +48,9 @@ Implementar WebAuthn Level 3 (W3C Recommendation 2024) em `crates/corelink-webau
 
 ```rust
 pub struct WebAuthnAdapter {
-    rp_id: String,                  // Relying Party ID = "corelink.dev" (eTLD+1)
+    rp_id: String,                  // Relying Party ID = "corelink.humangr.com" (eTLD+1)
     rp_name: String,                // "CoreLink"
-    origins_allowlist: Vec<Url>,    // ["https://app.corelink.dev", "https://admin.corelink.dev"]
+    origins_allowlist: Vec<Url>,    // ["https://app.corelink.humangr.com", "https://admin.corelink.humangr.com"]
     challenge_store: Arc<ChallengeStore>,
     credential_store: Arc<dyn CredentialStore>,  // backed by Neon webauthn_credentials table
 }
@@ -127,7 +127,7 @@ Crate dependencies: `webauthn-rs = "0.5"` (audited; W3C L3 compliant); `coset = 
 
 WebAuthn é a base do phishing-resistant authentication moderno. Implementação errada = open door para attackers via fake authenticator OR origin spoofing. Bugs catastróficos:
 
-1. **RP ID confusion**: atacante hospeda `evil.corelink.dev.attacker.com`; cliente browser detects `rp_id = "corelink.dev"` mas origin `"evil.corelink.dev.attacker.com"`. Browser rejeita; mas server-side: weak validation pode aceitar. Mitigação: server validates `rp_id` é eTLD+1 (não host); origins allowlist exact match (não prefix match).
+1. **RP ID confusion**: atacante hospeda `evil.corelink.humangr.com.attacker.com`; cliente browser detects `rp_id = "corelink.humangr.com"` mas origin `"evil.corelink.humangr.com.attacker.com"`. Browser rejeita; mas server-side: weak validation pode aceitar. Mitigação: server validates `rp_id` é eTLD+1 (não host); origins allowlist exact match (não prefix match).
 
 2. **Origin allowlist bypass**: dev environment `localhost` allowed; deploy to prod with localhost still in allowlist. Mitigação: env-specific config; production deploy guard rejects localhost in `origins_allowlist`.
 
@@ -149,7 +149,7 @@ WebAuthn é a base do phishing-resistant authentication moderno. Implementação
 
 **Atacante adversarial scenarios**:
 
-- **Phishing attack**: atacante hosts `corelink.dev-evil.com`; user navigates accidentally; browser refuses to send credential (origin mismatch enforced by browser); WebAuthn é phishing-resistant by design. Defense é client-side mostly; server reinforces via origin allowlist.
+- **Phishing attack**: atacante hosts `corelink.humangr.com-evil.com`; user navigates accidentally; browser refuses to send credential (origin mismatch enforced by browser); WebAuthn é phishing-resistant by design. Defense é client-side mostly; server reinforces via origin allowlist.
 
 - **Authenticator cloning**: atacante steals YubiKey + extracts private key (extremely difficult; tamper-resistant HW). If success, sign_count regression catches replay. Mitigação layered: HW tamper resistance + sign_count + audit anomaly detection.
 
@@ -264,7 +264,7 @@ WebAuthn cripto adapter + admin flow integration; HIGH_RISK; FF-HR-002 + FF-HR-0
 
 9. **Adversarial regression tests** (W3C spec known attacks):
    - `test_alg_none_rejected`: malformed COSE alg field → reject.
-   - `test_origin_spoof`: `evil.corelink.dev.attacker.com` rejected.
+   - `test_origin_spoof`: `evil.corelink.humangr.com.attacker.com` rejected.
    - `test_rp_id_confusion`: cliente sends rp_id = "attacker.com" → reject.
    - `test_uv_required`: UV=0 in admin step-up → reject.
    - `test_attestation_chain_invalid`: malformed cert chain → reject.
@@ -320,9 +320,9 @@ Feature: WebAuthn Level 3 — registration + authentication + admin step-up
 
   Background:
     Given WebAuthnAdapter configured com:
-      rp_id = "corelink.dev"
+      rp_id = "corelink.humangr.com"
       rp_name = "CoreLink"
-      origins_allowlist = ["https://app.corelink.dev", "https://admin.corelink.dev"]
+      origins_allowlist = ["https://app.corelink.humangr.com", "https://admin.corelink.humangr.com"]
     And aaguid_allowlist contains YubiKey 5 + Touch ID + Windows Hello + Android biometrics + iCloud Keychain passkey
     And FIDO MDS metadata cached (24h TTL)
 
@@ -371,7 +371,7 @@ Feature: WebAuthn Level 3 — registration + authentication + admin step-up
     And audit "auth.admin_op.webauthn_authenticated" event emitted
 
   Scenario: Origin spoof rejected
-    Given browser sends ceremony with origin = "https://evil.corelink.dev.attacker.com"
+    Given browser sends ceremony with origin = "https://evil.corelink.humangr.com.attacker.com"
     When finish_authentication validates origin
     Then origin NOT em allowlist (allowlist exact match)
     And response 401 com error_code COR_AUTH_ORIGIN_MISMATCH
@@ -435,10 +435,10 @@ Feature: WebAuthn Level 3 — registration + authentication + admin step-up
 - Hand-roll = full security posture loss; out of scope for spec-first iteration.
 - Compatible com axum + tonic ecosystem.
 
-### 9.2 Why RP ID = eTLD+1 ("corelink.dev")
+### 9.2 Why RP ID = eTLD+1 ("corelink.humangr.com")
 
 - W3C spec: RP ID must be domain or eTLD+1; not subdomain.
-- Allows credentials shared across `app.corelink.dev` + `admin.corelink.dev` + `api.corelink.dev`.
+- Allows credentials shared across `app.corelink.humangr.com` + `admin.corelink.humangr.com` + `api.corelink.humangr.com`.
 - Cookies + WebAuthn align em scoping.
 
 ### 9.3 Why UV flag required em admin step-up
@@ -545,7 +545,7 @@ Sim — **ADR-0032**: "WebAuthn Level 3 implementation strategy + AAGUID allowli
 - **INV-AUTH-WEBAUTHN-ATTESTATION-VERIFIED** (CRITICAL): registration verifies attestation; cargo-fuzz + adversarial test.
 - **INV-AUTH-WEBAUTHN-SIGN-COUNT-MONOTONIC** (HIGH): sign_count strictly increasing; replay regression catches.
 - **INV-AUTH-WEBAUTHN-ORIGIN-EXACT** (CRITICAL): origin allowlist exact match (no prefix bypass).
-- **INV-AUTH-WEBAUTHN-RP-ID-CANONICAL** (CRITICAL): RP ID = "corelink.dev" eTLD+1; never subdomain.
+- **INV-AUTH-WEBAUTHN-RP-ID-CANONICAL** (CRITICAL): RP ID = "corelink.humangr.com" eTLD+1; never subdomain.
 
 TLA+ alignment: planned `webauthn_ceremony.tla` (S-09 ou pós); modela challenge → response → verify state machine.
 
@@ -581,7 +581,7 @@ TLA+ alignment: planned `webauthn_ceremony.tla` (S-09 ou pós); modela challenge
 
 ## 15. Chaos Experiments
 
-1. **Origin spoof attack**: red team simulates `evil.corelink.dev.attacker.com` ceremony; verify rejection. Hypothesis: exact match wins. Procedure: Playwright simulate; assert.
+1. **Origin spoof attack**: red team simulates `evil.corelink.humangr.com.attacker.com` ceremony; verify rejection. Hypothesis: exact match wins. Procedure: Playwright simulate; assert.
 
 2. **Replay attack with stale response**: capture valid ceremony response; replay 5 min later; verify SignCountRegression OR challenge expired catches.
 

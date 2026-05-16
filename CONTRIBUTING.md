@@ -55,7 +55,7 @@ instead.
 - **Bugs** → use [`.github/ISSUE_TEMPLATE/bug_report.yml`](./.github/ISSUE_TEMPLATE/bug_report.yml).
 - **Feature ideas** → use [`.github/ISSUE_TEMPLATE/feature_request.yml`](./.github/ISSUE_TEMPLATE/feature_request.yml).
 - **Security findings** → do NOT file a public issue. See
-  [`SECURITY.md`](./SECURITY.md) or email `security@corelink.dev`.
+  [`SECURITY.md`](./SECURITY.md) or email `security@humangr.com`.
 - **Open-ended questions / design discussions** →
   [GitHub Discussions](https://github.com/humangr-labs/corelink-server/discussions).
 - **Looking for something small to do?** Issues tagged
@@ -185,7 +185,7 @@ Checklist.
 Be respectful, assume good faith, focus on the work. We do not yet
 maintain a separate `CODE_OF_CONDUCT.md`; in the meantime, the
 [Contributor Covenant v2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/)
-applies. Report Code-of-Conduct concerns to `conduct@corelink.dev`.
+applies. Report Code-of-Conduct concerns to `conduct@humangr.com`.
 
 ---
 

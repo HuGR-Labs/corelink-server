@@ -419,7 +419,7 @@ Feature: WI-S14-003 — Hot blob replica + read failover PAT-REGION-FAILOVER-001
 
   Scenario: Failover read-only mode (writes blocked)
     Given failover engaged WEUR → SAM
-    When client writes to weur.api.corelink.dev
+    When client writes to weur.api.corelink.humangr.com
     Then 503 returned
     And customer notified via dashboard alert
     And write blocked (no stale read post-write inconsistency)

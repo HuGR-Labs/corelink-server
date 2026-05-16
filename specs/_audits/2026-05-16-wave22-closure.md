@@ -114,7 +114,7 @@ What's left blocking GA after wave-22 streams complete (cross-ref wave-21 §5):
 | External pentest engagement kickoff | Scoped | Vendor + SOW pending; scope SEALED wave-19. |
 | Pilot signups (≥ 3 design-partners) | Pending | Onboarding flow ready (S-19 SEALED); pilot agreements + DPA signing pending external counterparty. |
 | AWS Artifact PDF download (DEBT-003 closure) | Pending | Human downloads + `sha256sum` to fill `TBD-on-receipt` in `BYOK-FIPS-ATTESTATION-MATRIX.md`. |
-| Statuspage `status.corelink.dev` go-live (DEBT-016) | Pending | Operator follows `STATUSPAGE-INIT.md` T-7d pre-launch. |
+| Statuspage `status.corelink.humangr.com` go-live (DEBT-016) | Pending | Operator follows `STATUSPAGE-INIT.md` T-7d pre-launch. |
 | Docs CI billing reinstatement | Pending | GitHub-billing account issue — out-of-stream resolution. |
 
 ### 4.2 Agent-closable, post-wave-22 SEAL — projected residual

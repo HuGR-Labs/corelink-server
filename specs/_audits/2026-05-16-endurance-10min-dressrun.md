@@ -270,7 +270,7 @@ apenas wiring-validation.
 ## 9. Próximos passos
 
 - **Wave-26+**: pré-GA T-3, executar `scripts/run_24h_endurance.sh
-  full` contra staging com `K6_TARGET_HOST=https://staging.corelink.dev`.
+  full` contra staging com `K6_TARGET_HOST=https://staging.corelink.humangr.com`.
   O analisador retornará GREENLIGHT desde que p99 per-route fique abaixo
   dos floors em `RB-24H-ENDURANCE-LOAD.md` §3 E o operador popule
   G2–G6 com os snapshots de dashboard.

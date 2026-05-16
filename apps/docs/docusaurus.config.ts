@@ -7,7 +7,7 @@ import { getStatuspageUrl } from "./src/statuspage-url";
  * CoreLink public docs Docusaurus configuration.
  *
  * WI-S18-001 foundation deliverable. Deploys to Cloudflare Pages at
- * `docs.corelink.dev` (custom domain via CNAME) with three locales
+ * `docs.corelink.humangr.com` (custom domain via CNAME) with three locales
  * (en-US default + pt-BR + es-419 per sprint contract R-S18-12) and a
  * Diátaxis-organized sidebar (tutorial / how-to / reference / explanation).
  *
@@ -15,7 +15,7 @@ import { getStatuspageUrl } from "./src/statuspage-url";
  * injected at D-day via environment variables (`ALGOLIA_APP_ID`,
  * `ALGOLIA_SEARCH_API_KEY`, `ALGOLIA_INDEX_NAME`).
  */
-const SITE_URL = "https://docs.corelink.dev";
+const SITE_URL = "https://docs.corelink.humangr.com";
 const ORG = "humangr-labs";
 const REPO = "corelink-server";
 const EDIT_BASE = `https://github.com/${ORG}/${REPO}/edit/main/apps/docs/`;
@@ -26,7 +26,7 @@ const EDIT_BASE = `https://github.com/${ORG}/${REPO}/edit/main/apps/docs/`;
  * Operator-bound provisioning (see `specs/_runbooks/STATUSPAGE-INIT.md`):
  *
  *   Option A — CNAME (zero docs rebuild, preferred):
- *     Operator owns `status.corelink.dev` DNS and CNAMEs it to the real
+ *     Operator owns `status.corelink.humangr.com` DNS and CNAMEs it to the real
  *     Atlassian Statuspage instance (e.g. `corelink.statuspage.io`). All
  *     literal URLs in MDX trust pages resolve correctly with no rebuild.
  *
@@ -35,7 +35,7 @@ const EDIT_BASE = `https://github.com/${ORG}/${REPO}/edit/main/apps/docs/`;
  *     `pnpm build`. Trust-page MDX consumes the URL via the
  *     `siteConfig.customFields.statuspageUrl` accessor (used by shared
  *     components / `getStatuspageUrl()` helper). Existing literal
- *     `https://status.corelink.dev` references remain as the **default
+ *     `https://status.corelink.humangr.com` references remain as the **default
  *     canonical host** — Option A is the preferred provisioning path.
  *
  * The default value is the canonical wave-19 commit value referenced from
@@ -59,7 +59,7 @@ const config: Config = {
 
   // DEBT-016 — exposed to MDX/components via `useDocusaurusContext()`
   // (`siteConfig.customFields.statuspageUrl`). Default kept canonical
-  // (`https://status.corelink.dev`); operator override via `STATUSPAGE_URL`
+  // (`https://status.corelink.humangr.com`); operator override via `STATUSPAGE_URL`
   // env var at build time (see `specs/_runbooks/STATUSPAGE-INIT.md`).
   customFields: {
     statuspageUrl: STATUSPAGE_URL,

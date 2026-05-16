@@ -14,7 +14,7 @@
 (*     such an attempt.                                                   *)
 (*                                                                         *)
 (*   INV-AUTH-WEBAUTHN-RP-ID-CANONICAL  (CRITICAL, §3.14 Auth)              *)
-(*     RP ID is canonical eTLD+1 ("corelink.dev"); subdomain values are  *)
+(*     RP ID is canonical eTLD+1 ("corelink.humangr.com"); subdomain values are  *)
 (*     refused at constructor time. The `WebAuthnAdapter::new`            *)
 (*     constructor refuses to instantiate if `rp_id` is a subdomain;     *)
 (*     verification with non-canonical RP ID is unreachable.             *)

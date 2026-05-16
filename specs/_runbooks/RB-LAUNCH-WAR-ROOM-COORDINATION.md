@@ -41,7 +41,7 @@ tags:
 - [ ] Reserve a Zoom bridge with 24h continuous capability. Pin the URL in the war room channel.
 - [ ] If Bay Area FTE: book a physical war room with a 4K monitor and reliable wifi.
 - [ ] Pre-stage Signal fallback group with all key roles (`LAUNCH-CHECKLIST-V2.md` §1).
-- [ ] Pre-stage `corelink.dev/status` static fallback page (per `STATUS-PAGE-SPEC.md` §2).
+- [ ] Pre-stage `corelink.humangr.com/status` static fallback page (per `STATUS-PAGE-SPEC.md` §2).
 
 ## 3. Setup at T-6h (15-min checklist)
 
@@ -86,7 +86,7 @@ tags:
 | BYOK vendor down | SRE-OC paged | CTO + VPSec; status page → C4 partial outage |
 | Press hostile inbound | PR firm responds first | CEO informed; CEO decides direct response |
 | Engineering Gate revoked mid-launch | Halt all forward T-0 actions immediately | CEO + CTO; invoke `CRISIS-COMMS-TEMPLATES.md` §F (defer comms) |
-| Status page itself down | Invoke static fallback `corelink.dev/status` + tweet from `@corelinkdev` | SRE-OC + VPMkt |
+| Status page itself down | Invoke static fallback `corelink.humangr.com/status` + tweet from `@corelinkdev` | SRE-OC + VPMkt |
 
 ## 6. Wind-down at T+72h
 

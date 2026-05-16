@@ -27,7 +27,7 @@ inherits_from:
 tags: ["wi", "s11", "residency", "data-residency", "schrems-ii", "lgpd-art-33", "gdpr-art-44", "custom-domain-routing", "20k-property-test", "fm-451", "high-risk"]
 ---
 
-# WI-S11-007 — Residency Pinning E2E + Custom Domain Routing 6-Region Canonical Enum (`<tenant_id>.<region>.corelink.dev` per `data_model.md §2.1` + `privacy_model.md §7.1` — wnam/enam/weur/sam/apac/afr) + Insert Checks Reject Cross-Region Writes (D1 trigger + Worker pre-flight assertion) + 20k Property Test (10k weur + 10k enam) + RB-DATA-RESIDENCY-LEAK Runbook + FM-451 Declaration + INV-DATA-RESIDENCY CRITICAL (Lote 10.11.0-bis: HIGH→CRITICAL Schrems II) §3.11 Runtime Cobertura (`crates/corelink-privacy-residency-enforcement`; tenant.primary_region canonical column em `data_model.md §4.1` L151 — NOT tenant_metadata.region_pinned legacy; Worker routing via custom domain mapping; insert checks via D1 CHECK constraint + worker pre-flight; 20k property test 10k weur + 10k enam → 0 cross-region leaks; RB-DATA-RESIDENCY-LEAK runbook NEW; FM-451 NEW declarado em failure_modes.md; TLA+ scope split (Lote 10.11.0-bis-prime cycle 3 reconciled): PARTIAL S-11 via dsr_erasure_atomicity.tla (InvResidencyPinned + temporal InvResidencyMonotonic — pinning + monotonic); FULL S-14 via region_residency.tla (cross-region routing actions) per invariant_registry.md §4.2 — S-11 entrega runtime + property tests + custom domain routing + TLA+ partial coverage; Schrems II + LGPD Art. 33 § 1º + GDPR Art. 44 alignment; CloudEvents `dev.hugr.corelink.residency.{request_routed,write_rejected_cross_region}.v1` 2 canonical types per Lote 10.9bis P0-G prefix em audit-`<region>` Object Lock 7y emit fail-CLOSED)
+# WI-S11-007 — Residency Pinning E2E + Custom Domain Routing 6-Region Canonical Enum (`<tenant_id>.<region>.corelink.humangr.com` per `data_model.md §2.1` + `privacy_model.md §7.1` — wnam/enam/weur/sam/apac/afr) + Insert Checks Reject Cross-Region Writes (D1 trigger + Worker pre-flight assertion) + 20k Property Test (10k weur + 10k enam) + RB-DATA-RESIDENCY-LEAK Runbook + FM-451 Declaration + INV-DATA-RESIDENCY CRITICAL (Lote 10.11.0-bis: HIGH→CRITICAL Schrems II) §3.11 Runtime Cobertura (`crates/corelink-privacy-residency-enforcement`; tenant.primary_region canonical column em `data_model.md §4.1` L151 — NOT tenant_metadata.region_pinned legacy; Worker routing via custom domain mapping; insert checks via D1 CHECK constraint + worker pre-flight; 20k property test 10k weur + 10k enam → 0 cross-region leaks; RB-DATA-RESIDENCY-LEAK runbook NEW; FM-451 NEW declarado em failure_modes.md; TLA+ scope split (Lote 10.11.0-bis-prime cycle 3 reconciled): PARTIAL S-11 via dsr_erasure_atomicity.tla (InvResidencyPinned + temporal InvResidencyMonotonic — pinning + monotonic); FULL S-14 via region_residency.tla (cross-region routing actions) per invariant_registry.md §4.2 — S-11 entrega runtime + property tests + custom domain routing + TLA+ partial coverage; Schrems II + LGPD Art. 33 § 1º + GDPR Art. 44 alignment; CloudEvents `dev.hugr.corelink.residency.{request_routed,write_rejected_cross_region}.v1` 2 canonical types per Lote 10.9bis P0-G prefix em audit-`<region>` Object Lock 7y emit fail-CLOSED)
 
 > **doc_status:** SEALED · **work_status:** DONE · **lane:** HIGH_RISK
 > **Parent:** [S-11](../sprint.md) · **Assignee:** Gustavo Schneiter
@@ -39,7 +39,7 @@ tags: ["wi", "s11", "residency", "data-residency", "schrems-ii", "lgpd-art-33", 
 | Campo | Valor |
 |---|---|
 | ID | WI-S11-007 |
-| Título | Residency pinning E2E + custom domain routing 6-region canonical enum (`<tenant_id>.<region>.corelink.dev`) + insert checks reject cross-region writes + 20k property test (10k weur + 10k enam) + RB-DATA-RESIDENCY-LEAK runbook NEW + FM-451 NEW declared em failure_modes.md; tenant.primary_region canonical column data_model.md §4.1 L151 (NOT tenant_metadata.region_pinned legacy correção sprint contract v1.2.0); INV-DATA-RESIDENCY CRITICAL (Lote 10.11.0-bis: HIGH→CRITICAL Schrems II) §3.11 L154 runtime cobertura; TLA+ scope split (Lote 10.11.0-bis-prime cycle 3; status updated Lote 10.11.0-bis-bis V2 2026-05-15): **PARTIAL em S-11** (`dsr_erasure_atomicity.tla` InvResidencyPinned + InvResidencyMonotonic) + **FULL LANDED EARLY (was deferred to S-14)** (`region_residency.tla` per invariant_registry.md §4.2 — ✅ GREEN per 2026-05-15-tla-coverage-audit §3; sprint owner S-14 preserved); 2 CloudEvents canonical `dev.hugr.corelink.residency.{request_routed,write_rejected_cross_region}.v1` per Lote 10.9bis P0-G prefix em audit-`<region>` Object Lock 7y emit fail-CLOSED |
+| Título | Residency pinning E2E + custom domain routing 6-region canonical enum (`<tenant_id>.<region>.corelink.humangr.com`) + insert checks reject cross-region writes + 20k property test (10k weur + 10k enam) + RB-DATA-RESIDENCY-LEAK runbook NEW + FM-451 NEW declared em failure_modes.md; tenant.primary_region canonical column data_model.md §4.1 L151 (NOT tenant_metadata.region_pinned legacy correção sprint contract v1.2.0); INV-DATA-RESIDENCY CRITICAL (Lote 10.11.0-bis: HIGH→CRITICAL Schrems II) §3.11 L154 runtime cobertura; TLA+ scope split (Lote 10.11.0-bis-prime cycle 3; status updated Lote 10.11.0-bis-bis V2 2026-05-15): **PARTIAL em S-11** (`dsr_erasure_atomicity.tla` InvResidencyPinned + InvResidencyMonotonic) + **FULL LANDED EARLY (was deferred to S-14)** (`region_residency.tla` per invariant_registry.md §4.2 — ✅ GREEN per 2026-05-15-tla-coverage-audit §3; sprint owner S-14 preserved); 2 CloudEvents canonical `dev.hugr.corelink.residency.{request_routed,write_rejected_cross_region}.v1` per Lote 10.9bis P0-G prefix em audit-`<region>` Object Lock 7y emit fail-CLOSED |
 | Sprint | S-11 |
 | Lane | HIGH_RISK |
 | Forcing factors | FF-HR-003 (PII regulatory), FF-HR-005 (CTRL-PRIV-031), FF-HR-010 (1ª regulatory full impl) |
@@ -48,7 +48,7 @@ tags: ["wi", "s11", "residency", "data-residency", "schrems-ii", "lgpd-art-33", 
 
 Residency pinning é o **legal exposure mitigation primary** — sem isso, **Schrems II** (CJEU C-311/18) + **LGPD Art. 33 § 1º** + **GDPR Art. 44** (international transfer restrictions) ficam unfulfilled. Customer EU dado em region US sem SCC valid = invalidação Privacy Shield + multa potencialmente catastrófica. CoreLink stack: 6 canonical regions per privacy_model.md §7.1 (wnam/enam/weur/sam/apac/afr); tenant escolhe `tenant.primary_region` em signup; CAS/AC/billing-events/audit data NUNCA cross-region.
 
-S-11 entrega 4 layers (Lote 10.11.0-bis-prime cycle 3 reconciled; status cascade Lote 10.11.0-bis-bis V2 2026-05-15): (a) custom domain routing `<tenant_id>.<region>.corelink.dev`; (b) insert checks reject cross-region writes via D1 CHECK constraint + worker pre-flight assertion; (c) 20k property test (10k weur + 10k enam) → 0 cross-region leaks; (d) **TLA+ partial coverage via `dsr_erasure_atomicity.tla`** (InvResidencyPinned: ticket pinning canonical; InvResidencyMonotonic temporal: no cross-region migration). **FULL TLA+ proof LANDED EARLY (was deferred to S-14)** via `region_residency.tla` — spec checked in via R-prep wave 2026-05-15 (✅ GREEN per 2026-05-15-tla-coverage-audit §3; sprint owner S-14 preserved for provenance); adds backend region dimension + cross-region routing actions + replication-eventually-converges. S-11 cobertura excede regulatory baseline + Schrems II defensibility (4-layer defense — runtime custom-domain + D1 CHECK + 20k property + TLA+ formal partial-S-11 + full-S-14-landed-early).
+S-11 entrega 4 layers (Lote 10.11.0-bis-prime cycle 3 reconciled; status cascade Lote 10.11.0-bis-bis V2 2026-05-15): (a) custom domain routing `<tenant_id>.<region>.corelink.humangr.com`; (b) insert checks reject cross-region writes via D1 CHECK constraint + worker pre-flight assertion; (c) 20k property test (10k weur + 10k enam) → 0 cross-region leaks; (d) **TLA+ partial coverage via `dsr_erasure_atomicity.tla`** (InvResidencyPinned: ticket pinning canonical; InvResidencyMonotonic temporal: no cross-region migration). **FULL TLA+ proof LANDED EARLY (was deferred to S-14)** via `region_residency.tla` — spec checked in via R-prep wave 2026-05-15 (✅ GREEN per 2026-05-15-tla-coverage-audit §3; sprint owner S-14 preserved for provenance); adds backend region dimension + cross-region routing actions + replication-eventually-converges. S-11 cobertura excede regulatory baseline + Schrems II defensibility (4-layer defense — runtime custom-domain + D1 CHECK + 20k property + TLA+ formal partial-S-11 + full-S-14-landed-early).
 
 ```rust
 // File: crates/corelink-privacy-residency-enforcement/src/lib.rs
@@ -118,7 +118,7 @@ Sem runtime enforcement, customer EU pode acidentalmente ter blob em region US (
 
 ### 2.2 Abordagem
 
-Runtime layer 3-fold: (a) **Custom domain routing** Cloudflare Workers regex match `<tenant_id>.<region>.corelink.dev`; cross-region requests rejected **451 `legal_residency_violation`** (PAT-ROUTING-PINNED-001 fail-CLOSED canonical resilience_patterns.md §3.4; NUNCA passthrough silencioso); (b) **Insert checks** D1 CHECK constraint em backend tables + Worker pre-flight assertion antes de R2 write; (c) **Property test 20k** tenants (10k weur + 10k enam) random ops → 0 cross-region leaks via simulated cross-region traffic injection.
+Runtime layer 3-fold: (a) **Custom domain routing** Cloudflare Workers regex match `<tenant_id>.<region>.corelink.humangr.com`; cross-region requests rejected **451 `legal_residency_violation`** (PAT-ROUTING-PINNED-001 fail-CLOSED canonical resilience_patterns.md §3.4; NUNCA passthrough silencioso); (b) **Insert checks** D1 CHECK constraint em backend tables + Worker pre-flight assertion antes de R2 write; (c) **Property test 20k** tenants (10k weur + 10k enam) random ops → 0 cross-region leaks via simulated cross-region traffic injection.
 
 `tenant.primary_region` é canonical column em data_model.md §4.1 L151 (NOT `tenant_metadata.region_pinned` — corrigido em sprint contract v1.2.0 Lote 10.11.0; legacy column nunca existiu, foi typo em sprint contract v1.1.0). Foundation para region routing layer reuse de S-09 multi-region observability.
 
@@ -129,13 +129,13 @@ TLA+ formal proof é **deferred a S-14** (`region_residency.tla` / `byok_soverei
 - **Schrems II + LGPD Art. 33 § 1º + GDPR Art. 44 alignment absoluto**: cross-region writes blocked at runtime.
 - **CTRL-PRIV-031 satisfação**: residency pinning + bucket locationHint + DO stickiness.
 - **INV-DATA-RESIDENCY CRITICAL (Lote 10.11.0-bis: HIGH→CRITICAL Schrems II) §3.11 runtime cobertura**: 20k property test 0 violations sustained CI.
-- **Customer trust**: custom domain `<tenant>.weur.corelink.dev` é visible signal of region pinning.
+- **Customer trust**: custom domain `<tenant>.weur.corelink.humangr.com` é visible signal of region pinning.
 - **FM-451 mitigation**: residency leak detection via 2 CloudEvents R2 7y + alert.
 - **Foundation S-14 BYOK**: residency_pinning + crypto-erase + customer-controlled key vault.
 
 ### 2.4 Principais riscos & trade-offs
 
-- **Custom domain DNS overhead**: tenant precisa CNAME `<tenant>.weur.corelink.dev`; UX friction at signup. **Mitigation**: optional para `team`+ (managed via Cloudflare Pages); free/solo use default routing transparente.
+- **Custom domain DNS overhead**: tenant precisa CNAME `<tenant>.weur.corelink.humangr.com`; UX friction at signup. **Mitigation**: optional para `team`+ (managed via Cloudflare Pages); free/solo use default routing transparente.
 - **D1 CHECK constraint vs trigger**: CHECK constraint compile-time + zero runtime cost; trigger runtime overhead but flexible. **Decisão (DD-001)**: CHECK constraint primary; trigger fallback for complex cases (e.g., cross-table tenant_id derivation).
 - **20k vs higher property test count**: 20k is sprint contract §5.7 R-S11-19 specified; higher (100k) more confidence but slower CI. **Decisão (DD-002)**: 20k baseline + 100k nightly cron property test (S-09 inheritance pattern).
 - **TLA+ deferral**: cobertura runtime + property test é industry standard mas formal proof ideal; S-14 future.
@@ -155,7 +155,7 @@ TLA+ formal proof é **deferred a S-14** (`region_residency.tla` / `byok_soverei
 
 1. Signup: tenant escolhe `region` ∈ canonical 6-region enum (default = sam BR; can override).
 2. Tenant em D1 inserted com `primary_region = <chosen>` (data_model.md §4.1 L151).
-3. Custom domain `<tenant_id>.<region>.corelink.dev` provisioned (managed via Cloudflare Pages for `team`+).
+3. Custom domain `<tenant_id>.<region>.corelink.humangr.com` provisioned (managed via Cloudflare Pages for `team`+).
 4. All requests roteadas para region pinned via custom domain DNS resolution.
 5. Backend writes (CAS/AC/billing-events/audit) pre-flight asserted contra tenant.primary_region.
 6. Mismatch → **451 `legal_residency_violation`** (PAT-ROUTING-PINNED-001 fail-CLOSED canonical); `dev.hugr.corelink.residency.write_rejected_cross_region.v1` audit emit.
@@ -239,7 +239,7 @@ Não — regulatory feature.
 1. NEW crate `crates/corelink-privacy-residency-enforcement` (assert_request_residency + assert_write_residency).
 2. Region enum canonical 6-region closed (wnam/enam/weur/sam/apac/afr per privacy_model.md §7.1).
 3. Worker routing layer (S-09 multi-region inheritance):
-   - (a) Custom domain `<tenant_id>.<region>.corelink.dev` regex match;
+   - (a) Custom domain `<tenant_id>.<region>.corelink.humangr.com` regex match;
    - (b) Cross-region requests rejected **451 `legal_residency_violation`** (PAT-ROUTING-PINNED-001 canonical);
    - (c) `dev.hugr.corelink.residency.request_routed.v1` audit emit per request.
 4. D1 CHECK constraint em backend tables (e.g., `blob_meta`, `ac_meta`, `audit_outbox`) ensuring region tag matches tenant.primary_region.
@@ -292,7 +292,7 @@ END;
 - **D1**: CHECK constraints + triggers em backend tables (blob_meta, ac_meta, audit_outbox, billing-events staging).
 - **R2**: bucket locationHint per region (S-01 inheritance).
 - **DO**: stickiness per tenant.primary_region (S-07 inheritance pattern).
-- **Cloudflare DNS**: custom domain `<tenant>.<region>.corelink.dev` records.
+- **Cloudflare DNS**: custom domain `<tenant>.<region>.corelink.humangr.com` records.
 - **R2 audit-`<region>`**: 2 canonical CloudEvents Object Lock 7y.
 
 ### 6.3 Arquivos do repositório
@@ -357,12 +357,12 @@ crates/corelink-privacy-dsr-api/src/routes/region_migration.rs  # NEW route
 ### AC-001: Tenant signup region opt-in canonical 6-region
 
 ```gherkin
-Given um signup form em corelink.dev
+Given um signup form em corelink.humangr.com
 When tenant submete payload {region: "weur", ...} canonical 6-region enum
 Then D1 INSERT INTO tenant (tenant_id, primary_region, ...) VALUES (..., 'weur', ...) succeeds
 And NÃO permite valor outside canonical 6-region (CHECK constraint reject 'us'|'eu'|'apac' string drift; força wnam/enam/weur/sam/apac/afr)
 And tenant.primary_region = 'weur' permanently (region migration via separate endpoint per privacy_model.md §7.2 cooldown 30d)
-And custom domain `<tenant_id>.weur.corelink.dev` provisioned via Cloudflare Pages
+And custom domain `<tenant_id>.weur.corelink.humangr.com` provisioned via Cloudflare Pages
 And email confirmação enviado em locale tenant explica region pinned per LGPD/GDPR/CCPA
 ```
 
@@ -370,9 +370,9 @@ And email confirmação enviado em locale tenant explica region pinned per LGPD/
 
 ```gherkin
 Given tenant_id T tem primary_region = 'weur'
-When request feita a `<T>.enam.corelink.dev/v1/cas/...` (cross-region; deveria ser weur)
+When request feita a `<T>.enam.corelink.humangr.com/v1/cas/...` (cross-region; deveria ser weur)
 Then Worker routing layer detecta mismatch
-And response 451 com body { "error": "legal_residency_violation", "details": "Request region 'enam' does not match tenant.primary_region 'weur'", "remediation": "Use <tenant_id>.weur.corelink.dev", "framework": "Schrems II + LGPD Art. 33 §1º + GDPR Art. 44" }
+And response 451 com body { "error": "legal_residency_violation", "details": "Request region 'enam' does not match tenant.primary_region 'weur'", "remediation": "Use <tenant_id>.weur.corelink.humangr.com", "framework": "Schrems II + LGPD Art. 33 §1º + GDPR Art. 44" }
 And `dev.hugr.corelink.residency.request_routed.v1` audit emit com payload {tenant_id, requested_region: 'enam', expected_region: 'weur', outcome: 'rejected'}
 And `corelink_residency_violation_total{src_region='enam',target_region='weur',backend='request'}` Prom counter incrementado
 ```
@@ -658,7 +658,7 @@ LINDDUN per privacy_model.md §4 + STRIDE per security_model.md §6:
 
 ## 27. Knowledge Transfer
 
-Tech talk (1h): "S-11 Residency Pinning E2E: 6-region canonical + custom domain routing + D1 CHECK constraint + 20k property test + ADR-S11-010 TLA+ deferral S-14"; doc `docs/dev/residency-enforcement-architecture.md`; onboarding test 6 questões: 6-region canonical enum (privacy_model.md §7.1), custom domain pattern `<tenant_id>.<region>.corelink.dev`, D1 trigger vs CHECK constraint trade-off (DD-001), region migration cooldown 30d rationale (ADR-S11-011), TLA+ deferral S-14 rationale (ADR-S11-010), Schrems II + LGPD Art. 33 § 1º + GDPR Art. 44 alignment.
+Tech talk (1h): "S-11 Residency Pinning E2E: 6-region canonical + custom domain routing + D1 CHECK constraint + 20k property test + ADR-S11-010 TLA+ deferral S-14"; doc `docs/dev/residency-enforcement-architecture.md`; onboarding test 6 questões: 6-region canonical enum (privacy_model.md §7.1), custom domain pattern `<tenant_id>.<region>.corelink.humangr.com`, D1 trigger vs CHECK constraint trade-off (DD-001), region migration cooldown 30d rationale (ADR-S11-011), TLA+ deferral S-14 rationale (ADR-S11-010), Schrems II + LGPD Art. 33 § 1º + GDPR Art. 44 alignment.
 
 ## 28. Risk Register (12-row HIGH_RISK)
 
@@ -703,7 +703,7 @@ D+0 design (Architect; D1 CHECK vs trigger trade-off + ADR-S11-010 deferral); D+
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.1.0 | 2026-04-28 | Gustavo (Lote 10.11.0-bis + 10.11bis) | **Canonical fixes pós baseline review aggregate 5.18/10**: (a) **GPT P1-7 residency_enforcement_strict write-once-true** (PAT-ROUTING-PINNED-001 canonical resilience_patterns.md §3.4) — anterior permitia flip → "transparent passthrough" fail-OPEN privacy leak. Agora: dual approval Privacy Officer + Compliance + SecLead + ANPD/EDPB pre-notification + audit chain entry para break-glass. (b) **Fail-CLOSED 451 `legal_residency_violation`** em redirect indisponível — NUNCA passthrough silencioso. (c) **INV-DATA-RESIDENCY HIGH→CRITICAL** (Schrems II + 20k property test + custom domain routing TLA+ via PAT-FORMAL-VERIFICATION-001). (d) **FM-451 residency violation** declared canonical em failure_modes.md §3.10. (e) **tenant.primary_region CHECK constraint** PG-side enforced (data_model.md §4.1). |
-| 1.0.0 | 2026-04-26 | Gustavo (Lote 10.11) | Criação WI-S11-007; HIGH_RISK; SOTA pós-S-10 SEALED. Residency pinning E2E legal exposure mitigation primary. Schrems II + LGPD Art. 33 § 1º + GDPR Art. 44 alignment via runtime layer 3-fold: (a) custom domain routing `<tenant_id>.<region>.corelink.dev` 6-region canonical enum (wnam/enam/weur/sam/apac/afr per privacy_model.md §7.1); (b) D1 CHECK + trigger constraint defense-in-depth em backend tables (blob_meta + ac_meta + audit_outbox + billing-events staging); (c) Worker pre-flight assertion antes de R2 writes. tenant.primary_region canonical column data_model.md §4.1 L151 (NOT tenant_metadata.region_pinned legacy correção sprint contract v1.2.0 Lote 10.11.0). 20k property test em CI (10k weur + 10k enam × 5 random ops cada) → 0 cross-region leaks. 100k nightly cron property test sustained 90d (S-09 inheritance pattern). NEW RB-DATA-RESIDENCY-LEAK runbook + NEW FM-451 declaration em failure_modes.md (residency leak P0 S=5 → upgrade FF-HR-010). 2 CloudEvents canonical `dev.hugr.corelink.residency.{request_routed,write_rejected_cross_region}.v1` per Lote 10.9bis P0-G prefix em audit-`<region>` Object Lock 7y emit fail-CLOSED. Region migration endpoint POST /v1/admin/tenant/region-migration com step-up MFA + Privacy Officer + Compliance review + cooldown 30d (privacy_model.md §7.2 + ADR-S11-011). NEW ADR-S11-010 (TLA+ residency formal proof deferred to S-14 — `region_residency.tla` / `byok_sovereignty.tla` per invariant_registry.md §4.2 L445; rationale: industry standard runtime + property tests sufficient regulatory baseline; S-14 BYOK overlap; sprint scope discipline) + ADR-S11-011 (cooldown 30d rationale). INV-DATA-RESIDENCY CRITICAL (Lote 10.11.0-bis: HIGH→CRITICAL Schrems II) §3.11 L154 runtime cobertura + INV-AUDIT-APPEND-ONLY CRITICAL §3.6 L116 cobertura. CTRL-PRIV-031 (residency pinning) satisfação. 8 AC scenarios + 6 chaos + 12 risks + 8 post-mortem hooks. Email signup template integration 3 locales (region pinned mention via WI-S11-004 mjml infra). **Lote 10.10 lessons absorbed**: source-of-truth FIRST INV positions verified pre-merge (Lote 10.8bis P1-13); typed enum (6 regions canonical closed; cardinality discipline ADR-S11-006 pattern); sign-off cap 12; cascade discipline absoluta; split-tier audit fail-CLOSED; corelink_time canonical helper; severity cascade lesson (Lote 10.10-sextus): HIGH severity invariant violation → SEV-1 alert override em CRITICAL data exposure scenarios; CTRL-PRIV-014 audit minimization (tenant_id pseudonymized). |
+| 1.0.0 | 2026-04-26 | Gustavo (Lote 10.11) | Criação WI-S11-007; HIGH_RISK; SOTA pós-S-10 SEALED. Residency pinning E2E legal exposure mitigation primary. Schrems II + LGPD Art. 33 § 1º + GDPR Art. 44 alignment via runtime layer 3-fold: (a) custom domain routing `<tenant_id>.<region>.corelink.humangr.com` 6-region canonical enum (wnam/enam/weur/sam/apac/afr per privacy_model.md §7.1); (b) D1 CHECK + trigger constraint defense-in-depth em backend tables (blob_meta + ac_meta + audit_outbox + billing-events staging); (c) Worker pre-flight assertion antes de R2 writes. tenant.primary_region canonical column data_model.md §4.1 L151 (NOT tenant_metadata.region_pinned legacy correção sprint contract v1.2.0 Lote 10.11.0). 20k property test em CI (10k weur + 10k enam × 5 random ops cada) → 0 cross-region leaks. 100k nightly cron property test sustained 90d (S-09 inheritance pattern). NEW RB-DATA-RESIDENCY-LEAK runbook + NEW FM-451 declaration em failure_modes.md (residency leak P0 S=5 → upgrade FF-HR-010). 2 CloudEvents canonical `dev.hugr.corelink.residency.{request_routed,write_rejected_cross_region}.v1` per Lote 10.9bis P0-G prefix em audit-`<region>` Object Lock 7y emit fail-CLOSED. Region migration endpoint POST /v1/admin/tenant/region-migration com step-up MFA + Privacy Officer + Compliance review + cooldown 30d (privacy_model.md §7.2 + ADR-S11-011). NEW ADR-S11-010 (TLA+ residency formal proof deferred to S-14 — `region_residency.tla` / `byok_sovereignty.tla` per invariant_registry.md §4.2 L445; rationale: industry standard runtime + property tests sufficient regulatory baseline; S-14 BYOK overlap; sprint scope discipline) + ADR-S11-011 (cooldown 30d rationale). INV-DATA-RESIDENCY CRITICAL (Lote 10.11.0-bis: HIGH→CRITICAL Schrems II) §3.11 L154 runtime cobertura + INV-AUDIT-APPEND-ONLY CRITICAL §3.6 L116 cobertura. CTRL-PRIV-031 (residency pinning) satisfação. 8 AC scenarios + 6 chaos + 12 risks + 8 post-mortem hooks. Email signup template integration 3 locales (region pinned mention via WI-S11-004 mjml infra). **Lote 10.10 lessons absorbed**: source-of-truth FIRST INV positions verified pre-merge (Lote 10.8bis P1-13); typed enum (6 regions canonical closed; cardinality discipline ADR-S11-006 pattern); sign-off cap 12; cascade discipline absoluta; split-tier audit fail-CLOSED; corelink_time canonical helper; severity cascade lesson (Lote 10.10-sextus): HIGH severity invariant violation → SEV-1 alert override em CRITICAL data exposure scenarios; CTRL-PRIV-014 audit minimization (tenant_id pseudonymized). |
 
 ## 32. Anti-patterns evitados
 

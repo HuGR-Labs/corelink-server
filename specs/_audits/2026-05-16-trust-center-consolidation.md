@@ -91,7 +91,7 @@ i18n via `<Translate>` + `i18n/<locale>/code.json` — 4 locales: en-US default,
 | Auto-generator for sub-processor register (`scripts/gen-public-subprocessors.py`) not yet implemented — page is hand-maintained mirror today | DEBT-027 (open) | GA +14 days |
 | Drift-gate CI for sub-processor register (`.github/workflows/subprocessors-sync.yml`) referenced in MDX but not yet present in repo | DEBT-027 (open) | GA +14 days |
 | Postmortem corpus auto-pull for `/trust/incident-history` (we manually list 2 drill PMs today) | Roadmap "post-GA postmortem corpus" | T+30 days post-GA |
-| RSS feed for sub-processor changes (`https://corelink.dev/trust/subprocessors.rss`) | Roadmap "post-GA RSS feeds" | T+30 days post-GA |
+| RSS feed for sub-processor changes (`https://corelink.humangr.com/trust/subprocessors.rss`) | Roadmap "post-GA RSS feeds" | T+30 days post-GA |
 | Hall of Thanks public roster (`/security/hall-of-thanks`) | VDP §6 (pre-GA recognition only) | GA +30 days |
 | Tor mirror for VDP (`corelink-vdp.onion`) | VDP §7 (post-GA) | GA +60 days |
 | Bug-bounty intake form (`/security/report`) | VDP §8 (post-GA) | GA +30 days |
@@ -107,7 +107,7 @@ All remaining gaps are post-GA roadmap items, not pre-GA blockers. None of them 
 **`/trust` (React landing, new):** PUBLISH.
 - Honest framing: every compliance card carries a LIVE / IN-AUDIT / POST-GA badge.
 - SOC 2 explicitly marked IN-AUDIT (not "certified"). ISO 27001 marked IN-AUDIT (Stage-1 prep). FedRAMP marked POST-GA (not pursued today).
-- Footer contact: security@corelink.dev + privacy@corelink.dev + link to `/security/report-security`.
+- Footer contact: security@humangr.com + privacy@humangr.com + link to `/security/report-security`.
 - i18n: 4 locales via `<Translate>` + code.json.
 - Accessibility: every card has `aria-label`, badge has `aria-label`, sections have `aria-labelledby`.
 
@@ -157,7 +157,7 @@ Per the user mandate ("DO NOT claim certifications not yet achieved (SOC 2 Type 
 | Audit chain (Merkle-linked, 7-year retention) | Currently shipped | `LIVE` | ✅ honest |
 | VDP (90-day coordinated disclosure) | Policy documented and live | `LIVE` | ✅ honest |
 | Sub-processor register (11 active) | Page live and refreshed 2026-05-15 | `LIVE` | ✅ honest |
-| Status page | `status.corelink.dev` (operator-bound provisioning per `RB-STATUSPAGE-INIT.md`) | `LIVE` | ✅ honest |
+| Status page | `status.corelink.humangr.com` (operator-bound provisioning per `RB-STATUSPAGE-INIT.md`) | `LIVE` | ✅ honest |
 | SLA (99.95%) | Customer-facing SLA published, service-credit schedule defined | `LIVE` | ✅ honest |
 | Incident response (72h breach SLA) | Process documented; runbook live | `LIVE` | ✅ honest |
 | Incident history (real customer incidents) | None pre-GA; 2 internal drill PMs only | `POST-GA` | ✅ honest (banner explicit) |
@@ -176,7 +176,7 @@ The Trust Center publish-prep changeset passes the following gates (subject to l
 - ✅ TypeScript strict pass — no `any`, all readonly props, no unused imports.
 - ✅ `scripts/validate_specs.py` — `_audits/` is in `SKIP_ALL` so the consolidation doc requires no front matter.
 - ✅ `scripts/validate_references.py` — no broken cross-doc references introduced; all links to `specs/_compliance/...` exist.
-- ✅ No dead links — every trust card on `/trust` links to an existing route (`/trust/<existing>` MDX or the 2 new React pages or external `https://status.corelink.dev`).
+- ✅ No dead links — every trust card on `/trust` links to an existing route (`/trust/<existing>` MDX or the 2 new React pages or external `https://status.corelink.humangr.com`).
 - ✅ Accessibility — all interactive elements have aria labels; badge colours meet WCAG 2.2 AA contrast (verified against the existing `--ifm-color-*` palette).
 
 ---
@@ -187,7 +187,7 @@ The Trust Center publish-prep changeset passes the following gates (subject to l
 2. **GA +14d:** ship `scripts/gen-public-subprocessors.py` + `.github/workflows/subprocessors-sync.yml` drift-gate (closes DEBT-027).
 3. **GA +30d:** wire the postmortem-corpus auto-pull for `/trust/incident-history`; delete the legacy `/security/incident-history` MDX + redirect.
 4. **GA +30d:** publish Hall of Thanks roster at `/security/hall-of-thanks` per VDP §6.
-5. **GA +30d:** ship the `https://corelink.dev/trust/subprocessors.rss` feed.
+5. **GA +30d:** ship the `https://corelink.humangr.com/trust/subprocessors.rss` feed.
 6. **GA +60d:** stand up Tor mirror `corelink-vdp.onion` + bug-bounty intake form `/security/report`.
 
 All follow-ups are tracked above in §3.2; none of them block the wave-29 publish.
@@ -200,7 +200,7 @@ All follow-ups are tracked above in §3.2; none of them block the wave-29 publis
 |---|---|---|
 | Security Lead (`(a nomear)` per FW-H-3) | All `LIVE` / `IN-AUDIT` claims, VDP SLAs, PGP fingerprint, pentest engagement description | pending — recommend approval |
 | Legal | Safe-harbor language, DPA / SCC pointers, sub-processor register notice mechanism, reward-program (post-GA) language | pending — recommend approval |
-| DPO | Sub-processor register, LGPD / GDPR / CCPA framing, DSAR flow pointer, privacy@corelink.dev contact | pending — recommend approval |
+| DPO | Sub-processor register, LGPD / GDPR / CCPA framing, DSAR flow pointer, privacy@humangr.com contact | pending — recommend approval |
 
 This wave-29 stream-8 changeset is **CONDITIONAL APPROVE** for merge to `main` once the 3 reviewers ack the file diff. No content changes anticipated post-review — the page is honest by construction and every claim is backed by an existing `specs/_compliance/` or `specs/_audits/` artefact.
 

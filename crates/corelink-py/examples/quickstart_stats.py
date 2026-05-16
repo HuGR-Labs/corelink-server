@@ -18,7 +18,7 @@ import urllib.request
 
 
 def main() -> int:
-    api = os.environ.get("CORELINK_API_URL", "https://sandbox.corelink.dev")
+    api = os.environ.get("CORELINK_API_URL", "https://sandbox.corelink.humangr.com")
     req = urllib.request.Request(url=f"{api}/api/health", method="GET", headers={"Accept": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:

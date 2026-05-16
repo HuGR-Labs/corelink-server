@@ -39,7 +39,7 @@ cache hit, Bazel skips execution entirely and fetches the outputs directly.
 
 ### 1. Generate a PAT
 
-1. Log in to <https://app.corelink.dev>
+1. Log in to <https://app.corelink.humangr.com>
 2. Navigate to **Settings → Tokens → New Token**
 3. Grant scopes: `cache:read`, `cache:write`
 4. Copy the token (`corelink_prod_...`)
@@ -66,7 +66,7 @@ Append to your project's `.bazelrc`:
 
 ```ini
 # CoreLink remote cache (REAPI v2)
-build --remote_cache=https://corelink.dev/v1/cache
+build --remote_cache=https://corelink.humangr.com/v1/cache
 build --credential_helper=%workspace%/.bazel/corelink-credential-helper.sh
 build --remote_timeout=30s
 build --remote_retries=3
@@ -97,7 +97,7 @@ bazel build //...           # warm — should be ≥ 80% cache hits
 
 | Flag | Recommended value | Notes |
 |---|---|---|
-| `--remote_cache` | `https://corelink.dev/v1/cache` | REAPI v2 endpoint |
+| `--remote_cache` | `https://corelink.humangr.com/v1/cache` | REAPI v2 endpoint |
 | `--credential_helper` | `%workspace%/.bazel/corelink-credential-helper.sh` | Bazel 6+ protocol; reads `CORELINK_PAT` |
 | `--remote_timeout` | `30s` | Per-request deadline; FM-150 (transient) |
 | `--remote_retries` | `3` | Retry on transient errors |
@@ -206,7 +206,7 @@ corelink stat --quota
 corelink doctor | grep -i quota
 ```
 
-Upgrade plan at <https://app.corelink.dev/billing> or reduce parallel jobs
+Upgrade plan at <https://app.corelink.humangr.com/billing> or reduce parallel jobs
 (`--jobs=50`).
 
 ### Cache misses on repeated builds
@@ -293,7 +293,7 @@ build --remote_cache=grpcs://remote.buildbuddy.io
 build --remote_header=x-buildbuddy-api-key=<key>
 
 # After (CoreLink — credential helper replaces header in argv):
-build --remote_cache=https://corelink.dev/v1/cache
+build --remote_cache=https://corelink.humangr.com/v1/cache
 build --credential_helper=%workspace%/.bazel/corelink-credential-helper.sh
 ```
 
@@ -305,7 +305,7 @@ build --remote_cache=grpcs://scheduler.nativelink.net:443
 build --remote_header=x-nativelink-api-key=<key>
 
 # After:
-build --remote_cache=https://corelink.dev/v1/cache
+build --remote_cache=https://corelink.humangr.com/v1/cache
 build --credential_helper=%workspace%/.bazel/corelink-credential-helper.sh
 ```
 
@@ -348,7 +348,7 @@ If a blob is corrupted in transit or storage, the client rejects it with
 ### Secret hygiene
 
 - Add `CORELINK_PAT` to `.gitignore`-covered locations; never commit it.
-- Rotate PATs via <https://app.corelink.dev/tokens>.
+- Rotate PATs via <https://app.corelink.humangr.com/tokens>.
 - Scope PATs to minimum required: `cache:read` for read-only runners;
   `cache:read cache:write` for build runners.
 
@@ -371,7 +371,7 @@ CoreLink implements the following REAPI v2 gRPC-over-HTTP/2 methods:
 All methods require `Authorization: Bearer <PAT>` header (provided by the
 credential helper).
 
-Staging endpoint for testing: `https://staging.corelink.dev/v1/cache`
+Staging endpoint for testing: `https://staging.corelink.humangr.com/v1/cache`
 
 ---
 

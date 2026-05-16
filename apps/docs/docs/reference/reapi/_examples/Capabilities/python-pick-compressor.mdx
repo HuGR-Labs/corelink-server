@@ -18,7 +18,7 @@ PREFER = [Compressor.ZSTD, Compressor.IDENTITY]
 
 async def main() -> None:
     async with CoreLinkClient(
-        endpoint="https://acme-dev.corelink.dev",
+        endpoint="https://acme-dev.corelink.humangr.com",
         pat=os.environ["CORELINK_PAT"],
     ) as client:
         caps = await client.capabilities.get()

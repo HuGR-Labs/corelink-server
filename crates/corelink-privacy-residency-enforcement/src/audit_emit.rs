@@ -101,7 +101,7 @@ impl ResidencyAuditRecord {
         Self {
             spec_version: "1.0".to_string(),
             event_type: ResidencyAuditEventType::RequestRouted.as_cloudevents_type().to_string(),
-            source: "https://corelink.dev/residency-enforcement".to_string(),
+            source: "https://corelink.humangr.com/residency-enforcement".to_string(),
             id: id.into(),
             time: time.into(),
             data,
@@ -116,7 +116,7 @@ impl ResidencyAuditRecord {
             event_type: ResidencyAuditEventType::WriteRejectedCrossRegion
                 .as_cloudevents_type()
                 .to_string(),
-            source: "https://corelink.dev/residency-enforcement".to_string(),
+            source: "https://corelink.humangr.com/residency-enforcement".to_string(),
             id: id.into(),
             time: time.into(),
             data,

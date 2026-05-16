@@ -1,8 +1,8 @@
 /**
- * Pilot welcome page — `docs.corelink.dev/pilot/welcome`.
+ * Pilot welcome page — `docs.corelink.humangr.com/pilot/welcome`.
  *
  * R-prep wave-29 stream-2 deliverable. Reached after successful POST
- * to `signup.corelink.dev/v1/signup/pilot/{token}` from `./apply.tsx`.
+ * to `signup.corelink.humangr.com/v1/signup/pilot/{token}` from `./apply.tsx`.
  *
  * Confetti is intentionally tiny (8 emoji spans + a CSS animation in
  * `pilot.module.css`) — no third-party dependency, no canvas. The
@@ -140,7 +140,7 @@ export default function PilotWelcome(): ReactElement {
                 id="pilot.welcome.step.contact"
                 description="Pilot welcome — next-steps item 4"
               >
-                Email pilot@corelink.dev with any questions before activation.
+                Email pilot@humangr.com with any questions before activation.
               </Translate>
             </li>
           </ol>

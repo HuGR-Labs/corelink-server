@@ -1,7 +1,7 @@
 //! Adversarial regression tests — WI-S14-002 §6.1.12.
 //!
 //! Covers 6+ adversarial scenarios per spec:
-//!   1. Subdomain spoofing: tenant ENAM with `weur.api.corelink.dev` → rejected.
+//!   1. Subdomain spoofing: tenant ENAM with `weur.api.corelink.humangr.com` → rejected.
 //!   2. Header tampering: `X-Region: weur` ignored; custom domain authoritative.
 //!   3. DO cache poisoning attempt: primary_region update rejected at enforcement layer.
 //!   4. Replay request to wrong region: region enforcement catches re-routed replay.
@@ -26,7 +26,7 @@ use corelink_privacy_residency_enforcement::{
 };
 
 // ── Scenario 1: Subdomain spoofing rejected ───────────────────────────────────
-// Attacker uses ENAM tenant_id with `weur.api.corelink.dev` endpoint.
+// Attacker uses ENAM tenant_id with `weur.api.corelink.humangr.com` endpoint.
 // Custom domain authoritative: region extracted from host = 'weur'.
 // Tenant pinned to 'enam' → 403 semantics (RequestRegionMismatch).
 
@@ -37,7 +37,7 @@ fn test_adversarial_subdomain_spoofing_rejected() {
     let enf = InMemoryResidencyEnforcement::new();
 
     // Attacker routes request to weur endpoint for an enam tenant
-    let spoofed_host = "tenant-eu-financial-001.weur.corelink.dev";
+    let spoofed_host = "tenant-eu-financial-001.weur.corelink.humangr.com";
     let extracted_region = region_from_host(spoofed_host);
     assert_eq!(
         extracted_region,
@@ -88,7 +88,7 @@ fn test_adversarial_header_tampering_ignored() {
     let enf = InMemoryResidencyEnforcement::new();
 
     // Correct host: weur domain
-    let host = "tenant-weur-sre-001.weur.corelink.dev";
+    let host = "tenant-weur-sre-001.weur.corelink.humangr.com";
     let extracted = region_from_host(host);
     assert_eq!(extracted, Some(Region::Weur), "correct weur host must extract weur");
 
@@ -244,7 +244,7 @@ fn test_adversarial_kv_namespace_per_region_naming() {
 }
 
 // ── Scenario 7: Attacker forces WEUR tenant with ENAM endpoint ───────────────
-// `weur.api.corelink.dev` host → request_region = weur.
+// `weur.api.corelink.humangr.com` host → request_region = weur.
 // Tenant pinned to enam → 403 (cross-region injection).
 
 #[test]
