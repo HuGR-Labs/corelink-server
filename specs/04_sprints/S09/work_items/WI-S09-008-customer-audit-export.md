@@ -451,26 +451,39 @@ payload into a first-class `payload: Option<serde_json::Value>` field:
   ordering contract (SEV-0 audit emit lands BEFORE the
   `Frame::trailers` frame on the wire) is byte-identical to wave-19
   — the lift only changed WHICH field of `ExportAuditRow` carries
-  the structured payload, not the synchronous frame-plan
-  pre-materialization in `build_audit_export_stream_frames`.
+  the structured payload, not the async page-by-page frame
+  generation in `build_audit_export_async_stream` (the wave-19
+  replacement for the wave-18 synchronous `Vec<Frame<Bytes>>` plan).
 
-Wave-19 net-new tests:
+Wave-19 net-new tests (the contract is pinned end-to-end by the
+integration test + the 10 000-iter proptest + the CLI compat test;
+no unit-test surface was added in wave-19 — the wave-18 unit suite
+already covers the sink contract):
 
-- `apps/server/src/routes/audit_export.rs::tests::payload_column_populated_on_mid_stream_break`
-  (unit) — asserts the mid-stream emit populates `payload` with the
-  canonical 4-key JSON map AND `exit_status =
-  EXIT_STATUS_VERIFY_FAILED_MID_STREAM` (no colon, no prefix).
-- `apps/server/src/routes/audit_export.rs::tests::wave18_row_without_payload_field_still_parses`
-  (unit) — pins the `#[serde(default)]` migration: wave-18 row JSON
-  without a `payload` field still deserializes cleanly.
 - `apps/server/tests/audit_export.rs::wave19_audit_row_payload_and_trailer_payload_byte_identical`
   (integration) — asserts the structured payload captured in the
-  audit row and the JSON encoded in the HTTP trailer are
+  audit row (`ExportAuditRow::payload`) and the JSON encoded in the
+  `X-CoreLink-Audit-Export-Aborted` HTTP trailer are
   **byte-identical** via `subtle::ConstantTimeEq` (defence-in-depth
-  on the security-critical chain-break diagnostic).
+  on the security-critical chain-break diagnostic). This is the
+  load-bearing pin for the wave-19 schema lift: it transitively
+  asserts (a) the mid-stream emit populates `payload` with the
+  canonical 4-key JSON map, (b) `exit_status =
+  EXIT_STATUS_VERIFY_FAILED_MID_STREAM` (no colon-prefix), and (c)
+  the row payload and the trailer payload remain byte-equal across
+  the schema lift.
+- `apps/server/src/routes/audit_export.rs::tests::audit_anchor_emits_before_trailer_under_random_breaks`
+  (proptest @ 10 000 iter; row count `n ∈ [1, 16]`, page size
+  `p ∈ [1, 8]`, tenant seed randomized) — pins the
+  audit-anchor-BEFORE-trailer ordering invariant across the async
+  page-by-page generator and the schema lift.
 - `crates/corelink-cli/src/commands/verify_ndjson.rs::tests::unknown_row_envelope_fields_ignored_for_forwards_compat`
   (CLI) — round-trips a row envelope with AND without an extra
-  `payload` field; both verify cleanly.
+  `payload` field; both verify cleanly. Pins the `#[serde(default)]`
+  forwards-compat contract on the customer-CLI side (which is the
+  only surface where the `payload`-absent shape actually matters —
+  the server-emit side always writes `payload: Some(...)` for the
+  mid-stream break and `payload: None` for non-mid-stream sites).
 
 Quality gates closed (Wave 19):
 

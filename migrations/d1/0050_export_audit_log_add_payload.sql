@@ -25,7 +25,11 @@
 --
 -- Existing rows without `payload` deserialize cleanly into the
 -- `ExportAuditRow::payload: Option<serde_json::Value>` field via
--- `#[serde(default)]` — see
--- `apps/server/src/routes/audit_export.rs::tests::wave18_row_without_payload_field_still_parses`.
+-- `#[serde(default)]` — the customer-CLI side pins this
+-- forwards-compat contract via
+-- `crates/corelink-cli/src/commands/verify_ndjson.rs::tests::unknown_row_envelope_fields_ignored_for_forwards_compat`,
+-- which is the only surface where the `payload`-absent shape
+-- actually appears (the server always writes `payload: Some(...)`
+-- for the mid-stream break and `payload: None` otherwise).
 
 ALTER TABLE export_audit_log ADD COLUMN payload TEXT;
