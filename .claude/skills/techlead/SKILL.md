@@ -1,5 +1,6 @@
 ---
 name: techlead
+version: 2.1.0
 description: SOTA per-deliverable verification protocol for orchestrating multi-agent Sonnet swarms. The orchestrator's tech-lead persona — invoke before every merge to main, every wave close, every tag. Returns a structured verdict (APPROVE / FIX-FIRST / REJECT / ESCALATE) backed by 11 levels of cold-tool verification (sanity → build/lint → charter → security → tests → docs → spec hygiene → merge hygiene → decision documentation → risk → rolling). Mandates root-cause fixes over bypasses. Refuses anti-patterns observed in 30 days of execution.
 ---
 
@@ -71,13 +72,28 @@ EXPECTED_TESTS="<from agent report>"
 grep -rE "#\[test\]|fn test_|proptest!" --include="*.rs" "$TARGET_DIR/crates/<new-crate>/" "$TARGET_DIR/tests/<e2e-crate>/" 2>/dev/null | wc -l
 # L0.5: files exist
 ls -la <claimed-files-from-agent-report>
+
+# L0.6: feature-flag discovery per workspace member (AP-11 prep)
+# Enumerate declared features and detect mutually-exclusive ones so L1 can
+# emit a per-feature sub-matrix instead of a single pass/fail cell.
+for f in $(git diff main..HEAD --name-only | grep -E "crates/.*/Cargo\.toml$"); do
+  echo "===== $f ====="
+  awk '/^\[features\]/,/^\[/' "$f" | grep -v "^\[" | grep -E "^[a-zA-Z0-9_-]+\s*="
+done
+# For each declared feature, scan its gated source for `compile_error!`:
+for d in $(git diff main..HEAD --name-only | grep -E "crates/.*/src/" | xargs -n1 dirname | sort -u); do
+  grep -Hn "compile_error!" "$d"/*.rs 2>/dev/null
+done
+# Any `compile_error!` reachable behind a feature gate => MUTUALLY EXCLUSIVE.
+# Record the feature name; L1 will mark `--all-features` as `✗ (design)`
+# instead of pass/fail and require a citation under specs/_audits/*.
 ```
 
-**Success:** all 5 sub-checks pass.
+**Success:** all 6 sub-checks pass. L0.6 produces an explicit list of declared features per touched crate plus any mutually-exclusive markers found.
 
-**Fail action:** **REJECT with "STOP — re-dispatch finisher agent"**. Do NOT merge anything. Anti-pattern caught here: agent's hallucinated test count. We've been bitten 3 times.
+**Fail action:** **REJECT with "STOP — re-dispatch finisher agent"**. Do NOT merge anything. Anti-pattern caught here: agent's hallucinated test count. We've been bitten 3 times. If L0.6 surfaces a mutually-exclusive feature without a matching `specs/_audits/*` reference, this is a charter violation (AP-11) — REJECT until the audit doc is filed.
 
-**Rationale:** Sonnet agents have lied (R2-1: "0 tests" reported but actually 27; R6-prep: "waiting on cargo build" but never committed; R2-10: same). Cold-spot-checking the agent's numbers takes 60s; trusting them wastes hours.
+**Rationale:** Sonnet agents have lied (R2-1: "0 tests" reported but actually 27; R6-prep: "waiting on cargo build" but never committed; R2-10: same). Cold-spot-checking the agent's numbers takes 60s; trusting them wastes hours. L0.6 was added in v2.1.0 after the wave-18 incident: the L0+L2 batch verifier reported `--all-features: pass` for four branches even though that build was structurally broken since `818c055` (BYOK orchestrator mutually-exclusive provider features). Discovering the feature topology at L0 forces L1 to emit a per-feature row that the verifier cannot collapse to a single misleading `pass`.
 
 ---
 
@@ -87,19 +103,64 @@ ls -la <claimed-files-from-agent-report>
 
 **Commands:**
 ```bash
-# L1.1: workspace builds
+# L1.1: workspace builds (default features)
 cargo build --workspace 2>&1 | tail -3
 # Must exit 0. If aws-lc-sys disk pressure: clean target/ first (see L10).
 
-# L1.2: clippy strict (rust 1.91)
+# L1.2: clippy strict (rust 1.91, default features)
 cargo clippy --workspace --tests -- -D warnings 2>&1 | tail -5
 # Must exit 0. New 1.91 lints to watch:
 #   uninlined_format_args, format_in_format_args, default_constructed_unit_structs,
 #   duplicated_attributes, assertions_on_constants
 
-# L1.3: tests compile
+# L1.3: tests compile (default features)
 cargo test --workspace --no-run 2>&1 | tail -3
 # Must exit 0. Don't run them (slow); compile check is enough at L1.
+
+# L1.3a: feature-set sub-matrix (MANDATORY, v2.1.0+)
+# A single "build pass" cell hides mutually-exclusive feature design failures.
+# For every code branch verified at L1, emit the following 4-row matrix
+# (per touched workspace member, or once at the workspace root if changes
+# span many crates). Pull declared features from L0.6.
+#
+#   | feature set          | build | test | clippy |
+#   |----------------------|-------|------|--------|
+#   | (default features)   |  ✓    |  ✓   |   ✓    |
+#   | --all-features       |  ✓/✗  |  ✓/✗ |   ✓/✗  |
+#   | (per known feature)  |  ✓    |  ✓   |   ✓    |
+#   | (per known feature)  |  ✓    |  ✓   |   ✓    |
+#
+# Concrete commands (run all three for each feature row):
+#   cargo build   --workspace --all-features         2>&1 | tail -3
+#   cargo test    --workspace --all-features --no-run 2>&1 | tail -3
+#   cargo clippy  --workspace --all-features --tests -- -D warnings 2>&1 | tail -5
+#   # then per declared feature F (skip the default set):
+#   cargo build   -p <crate> --no-default-features --features "F" 2>&1 | tail -3
+#   cargo test    -p <crate> --no-default-features --features "F" --no-run 2>&1 | tail -3
+#   cargo clippy  -p <crate> --no-default-features --features "F" --tests -- -D warnings 2>&1 | tail -5
+#
+# Marking rules:
+#   ✓             — all three (build/test/clippy) exit 0 for that feature row.
+#   ✗             — any of the three fail. Overall verdict = NO-GO unless the
+#                   exception block (below) applies.
+#   ✗ (design)    — failure is a DECLARED mutually-exclusive feature design.
+#                   ONLY permitted when the row is `--all-features` AND L0.6
+#                   discovered a `compile_error!`-gated feature AND a
+#                   `specs/_audits/*` document is cited that ratifies the
+#                   mutually-exclusive design. Overall verdict remains GO for
+#                   that specific row only. Other `✗` rows are still NO-GO.
+#
+# Exception block (must appear in the verdict body when any row is `✗ (design)`):
+#
+#   FEATURE EXCEPTION (AP-11):
+#     row: --all-features
+#     reason: <feature-name> uses compile_error! against <conflicting-feature>
+#             (mutually exclusive by design)
+#     audit ref: specs/_audits/<doc>.md §<anchor>
+#     scope: build|test|clippy
+#     verdict-impact: GO (design-declared)
+#
+# Without all four fields, the exception is invalid and the row stays `✗` → NO-GO.
 
 # L1.4: no function-level #[allow] smuggled
 grep -rn "^[[:space:]]*#\[allow(clippy" "$TARGET_DIR/crates/<new-crate>/src/" 2>/dev/null | grep -v "^#!\[allow"
@@ -114,14 +175,15 @@ NEW_CRATE_NAME="<from-Cargo.toml>"
 grep "$NEW_CRATE_NAME" Cargo.toml | head
 ```
 
-**Success:** all 6 sub-checks pass.
+**Success:** all 6 sub-checks pass AND the L1.3a feature-set sub-matrix is emitted with every row either `✓` or `✗ (design)` (with a valid AP-11 exception block).
 
 **Fail action:** **FIX-FIRST**. Dispatch a fix agent OR fix manually. Re-run L1 before proceeding. Common fixes:
 - Clippy 1.91 strict: add `clippy::uninlined_format_args` to test module's `#![allow]` (CRATE-level only in tests)
 - `#[allow]` smuggle: remove + properly fix the underlying lint
 - Missing workspace member: edit `Cargo.toml` `[workspace] members = [...]` to include the new crate
+- L1.3a single-cell pass without sub-matrix: HARD REJECT — verifier collapsed mutually-exclusive features (AP-11). Re-run with the per-feature commands and re-emit the 4-row matrix.
 
-**Rationale:** This is the most-violated gate. Sonnet agents under context pressure tend to add `#[allow]` rather than fix. We've been bitten by clippy regressions 4+ times. 1.91 lints are stricter than 1.88.
+**Rationale:** This is the most-violated gate. Sonnet agents under context pressure tend to add `#[allow]` rather than fix. We've been bitten by clippy regressions 4+ times. 1.91 lints are stricter than 1.88. The L1.3a sub-matrix was added in v2.1.0 after wave-18: the L0+L2 batch verifier (Sonnet) reported `cargo build --workspace --all-features: pass` for branches 7-10 even though `--all-features` had been broken since `818c055` (BYOK orchestrator mutually-exclusive provider features). A single pass/fail cell cannot represent a feature topology with declared mutual exclusion; the matrix forces the verifier to either show the truth or trigger AP-11.
 
 ---
 
@@ -446,8 +508,14 @@ git log --oneline origin/main..HEAD | wc -l
 ```
 TECH-LEAD VERDICT — <branch> @ <commit> | <YYYY-MM-DD HH:MM:SS>
 ================================================================
-L0 Sanity        : PASS|FAIL — <one-line evidence>
+L0 Sanity        : PASS|FAIL — <one-line evidence>  (declared features: <list or none>; mutually-exclusive: <list or none>)
 L1 Build/Lint    : PASS|FAIL — <one-line evidence>
+L1.3a Features   : | feature set | build | test | clippy |
+                   | (default)   |  ?    |  ?   |   ?    |
+                   | --all       |  ?    |  ?   |   ?    |
+                   | <feat-A>    |  ?    |  ?   |   ?    |
+                   | <feat-B>    |  ?    |  ?   |   ?    |
+                   (any `✗ (design)` row requires AP-11 exception block below)
 L2 Charter       : PASS|FAIL — <one-line evidence>  (Constraints violated: <list> or NONE)
 L3 Security      : PASS|FAIL — <one-line evidence>  (Risks: <list> or NONE)
 L4 Tests         : PASS|FAIL — count: <unit>+<prop>+<adv>=<total>; mutation kill rate: <%> (if available)
@@ -578,6 +646,20 @@ These are MY personal failures from 30 days of execution. The skill exists to re
 
 ---
 
+### AP-11: Single-cell feature-flag pass cell hides mutually-exclusive failures
+
+**Pattern:** L0+L2 batch verifier (Sonnet) reports `cargo build --workspace --all-features: pass` as a single pass/fail cell. The cell collapses the entire feature topology into one boolean. Mutually-exclusive feature combinations (designed to fail via `compile_error!`) get rolled into the same cell as the default build, masking a known-broken `--all-features` configuration behind a green checkmark. The orchestrator never sees the truth and merges on a hallucinated signal.
+
+**Refusal:**
+1. **L0.6 mandatory**: enumerate declared features per touched workspace member and flag any feature whose source path contains `compile_error!` as mutually-exclusive. Mutually-exclusive features without a corresponding `specs/_audits/*` ratification doc are themselves a charter violation — REJECT.
+2. **L1.3a mandatory**: emit the 4-row feature-set sub-matrix (`default features`, `--all-features`, two `per known feature` rows) with separate build/test/clippy columns. A single collapsed cell is automatic HARD REJECT.
+3. **`✗ (design)` rule**: the only way `--all-features` may be `✗` and the overall verdict still GO is when the L1.3a exception block is fully populated (row, reason, `specs/_audits/*` audit ref, scope, verdict-impact). Missing any field = NO-GO.
+4. **No retroactive waivers**: if a wave merged with a single-cell pass and `--all-features` is actually broken, the wave is RE-OPENED for verification debt; the orchestrator does not paper over it in the next wave's risk register.
+
+**Real incident (canonical example):** Wave-18 closure (2026-05-14, base `cb6360d`). The L0+L2 Sonnet batch verifier reported `cargo build --workspace --all-features: pass` for branches 7, 8, 9, 10 (statuspage, wasm32, DSR, export-async). The canonical `--all-features` build had been structurally broken since commit `818c055` due to the BYOK orchestrator declaring mutually-exclusive provider features via `compile_error!`. The verifier conflated "default features build success" with "all features build success" and the orchestrator merged on the false positive. Caught post-merge during the wave-18 retro; no production damage but four merges shipped with verification debt. v2.1.0 of this skill (the L0.6 + L1.3a sub-matrix + AP-11 trio) exists to refuse this pattern on the orchestrator's behalf.
+
+---
+
 ## Section 5 — Calibration + memory
 
 **First 3 invocations:** time each level. Document actual vs budget.
@@ -625,6 +707,7 @@ If a wave is taking too long because L2 is failing, the answer is **fix L2**, no
 |---|---|---|---|
 | 1.0.0 | 2026-05-14 | Gustavo (via Claude Opus 4.7) | Initial skill creation post-user-mandate "voce e o techlead" |
 | 2.0.0 | 2026-05-14 | Gustavo (via Claude Opus 4.7) | SOTA upgrade post-user-mandate "skill precisa ser sota, nao 'ok'". Added: detailed L0-L10 with rationale + time budgets per level; 10-anti-pattern refusal catalog from 30-day execution (AP-1 through AP-10); output schema with structured verdict; calibration + memory integration; integration matrix with other skills/tools; "refusing good enough" compact. Length 4x. |
+| 2.1.0 | 2026-05-15 | Gustavo (via Claude Opus 4.7) | Feature-flag matrix hardening post-wave-18 closure. Added `version:` frontmatter field. Extended L0 with sub-check L0.6 (per-workspace-member feature discovery + `compile_error!` mutually-exclusive detection). Extended L1 with sub-check L1.3a (mandatory 4-row build/test/clippy feature-set sub-matrix per code branch; `default features` / `--all-features` / 2× `per known feature`; `✗ (design)` exception block requires populated row + reason + `specs/_audits/*` ref + scope + verdict-impact). Added AP-11 "Single-cell feature-flag pass cell hides mutually-exclusive failures" with the wave-18 canonical incident (verifier reported `--all-features: pass` for branches 7-10 even though that build had been broken since `818c055` due to BYOK mutually-exclusive provider features). Quick-reference card and Section 7 "NEVER" list updated. No removals; v2.1.0 is strictly additive over v2.0.0. |
 
 ---
 
@@ -632,8 +715,8 @@ If a wave is taking too long because L2 is failing, the answer is **fix L2**, no
 
 ```
 BEFORE EVERY MERGE:
-  1. L0 Sanity (60s)   — git log + ls + test count cold-check
-  2. L1 Build (3m)     — cargo build + clippy -D warnings + test --no-run
+  1. L0 Sanity (60s)   — git log + ls + test count cold-check + L0.6 feature-flag discovery (compile_error! => mutually-exclusive)
+  2. L1 Build (3m)     — cargo build + clippy -D warnings + test --no-run + L1.3a 4-row feature-set sub-matrix (default / --all-features / per-feature)
   3. L2 Charter (5m)   — non_exhaustive + no unsafe + no tokio in src + no prop_assert!(matches!) + PROPTEST_CASES runtime + audit fail-CLOSED + no unwrap/expect/panic + forbid(unsafe_code) + no secret logs
   4. L3 Security (8m)  — auth on endpoints + audit before mutate + no PII in audit + ConstantTimeEq for HMAC + replay protection + AAD on BYOK + SHA-pin GHA
   5. L4 Tests (5m)     — ≥5 unit + ≥1 prop + adversarial naming + deterministic seed + live-network gated
@@ -657,4 +740,5 @@ NEVER:
   - Bypass charter constraints (AP-4).
   - Let spec failures linger "out of scope" (AP-5).
   - Take Cargo.lock --theirs blindly (AP-6).
+  - Accept a single-cell `--all-features: pass` from a Sonnet verifier (AP-11). Demand the L1.3a 4-row matrix.
 ```
