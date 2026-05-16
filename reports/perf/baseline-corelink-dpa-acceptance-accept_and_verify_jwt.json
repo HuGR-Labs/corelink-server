@@ -4,9 +4,11 @@
   "captured_at": "",
   "commit": "pending",
   "crate": "corelink-dpa-acceptance",
+  "criticality": "CRITICAL",
   "mean_ns": null,
   "median_ns": null,
-  "notes": "Pending \u2014 record via scripts/refresh-perf-baseline.sh on a green CI run, then commit. See RB-PERF-REGRESSION.",
+  "notes": "Pending \u2014 record via scripts/refresh-perf-baseline.sh on a green CI run, then commit. See RB-PERF-REGRESSION. Wave-22 (2026-05-16): criticality tag added for split-threshold gate. Pre-GA pilot tenant workloads. Canonical baseline tag: perf-baseline-pre-ga-2026-05-16.",
   "p99_ns": null,
-  "sample_count": null
+  "sample_count": null,
+  "tolerance_pct": null
 }

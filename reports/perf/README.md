@@ -3,8 +3,14 @@
 This directory holds the **committed** criterion baseline used by the
 `perf-regression` CI gate. One JSON file per tracked `(crate, bench)`
 pair. `perf-regression-check.py` compares each PR run's criterion
-output against these files and fails the workflow on >10% p99
-regression by default.
+output against these files and fails the workflow on a per-bench
+tolerance:
+
+- **CRITICAL** benches gate at **>5% p99 regression** (wave-22 tightening).
+- **NON_CRITICAL** benches gate at **>15% p99 regression**.
+- A per-baseline `tolerance_pct` override wins over the class default.
+
+The canonical pre-GA snapshot is tagged `perf-baseline-pre-ga-2026-05-16`.
 
 ## Files
 
@@ -15,16 +21,18 @@ regression by default.
 
 ```json
 {
-  "bench_id":   "<criterion-relative-bench-id>",
-  "crate":      "<cargo-crate-name>",
-  "bench":      "<bench-target>",
-  "captured_at":"YYYY-MM-DDTHH:MM:SSZ",
-  "commit":     "<short-git-sha or 'pending'>",
-  "median_ns":  123.45,
-  "mean_ns":    130.10,
-  "p99_ns":     180.00,
+  "bench_id":     "<criterion-relative-bench-id>",
+  "crate":        "<cargo-crate-name>",
+  "bench":        "<bench-target>",
+  "captured_at":  "YYYY-MM-DDTHH:MM:SSZ",
+  "commit":       "<short-git-sha or 'pending'>",
+  "median_ns":    123.45,
+  "mean_ns":      130.10,
+  "p99_ns":       180.00,
   "sample_count": 100,
-  "notes":      "free-form"
+  "criticality":  "CRITICAL|NON_CRITICAL",
+  "tolerance_pct": null,
+  "notes":        "free-form"
 }
 ```
 
@@ -33,21 +41,21 @@ a **pending** baseline (no measurement recorded yet). The regression
 check tolerates pending baselines as "record one" — it never fails on
 them.
 
-## Tracked benches (initial set, locked-in by `scripts/refresh-perf-baseline.sh`)
+## Tracked benches (wave-22 split-tolerance table)
 
-| Crate                        | Bench target              | Hot path                                  |
-|------------------------------|---------------------------|-------------------------------------------|
-| `corelink-tenant-path`       | `derive`                  | tenant prefix derivation (every request)  |
-| `corelink-tenant-path`       | `derive_prefix_v2`        | optimized derivation                      |
-| `corelink-hash`              | `blake3_bench`            | content addressing (CAS write)            |
-| `corelink-hash`              | `blake3`                  | content addressing (CAS read)             |
-| `corelink-byok`              | `envelope_roundtrip`      | BYOK envelope encrypt/decrypt             |
-| `corelink-audit-chain`       | `merkle_append`           | audit Merkle append                       |
-| `corelink-audit-chain`       | `jcs_canonicalize`        | audit JSON canonicalization               |
-| `corelink-signup`            | `orchestrator`            | signup flow orchestration                 |
-| `corelink-tier-selection`    | `select`                  | tier selection (auth middleware-adjacent) |
-| `corelink-dpa-acceptance`    | `accept_and_verify_jwt`   | DPA accept + JWT verify                   |
-| `corelink-stripe-real`       | `webhook_verify`          | Stripe webhook verification               |
+| Crate                        | Bench target              | Class         | Tolerance | Hot path                                  |
+|------------------------------|---------------------------|---------------|-----------|-------------------------------------------|
+| `corelink-tenant-path`       | `derive`                  | CRITICAL      | 5%        | tenant prefix derivation (every request)  |
+| `corelink-tenant-path`       | `derive_prefix_v2`        | CRITICAL      | 5%        | optimized derivation                      |
+| `corelink-hash`              | `blake3_bench`            | CRITICAL      | 5%        | content addressing (CAS write)            |
+| `corelink-hash`              | `blake3`                  | CRITICAL      | 5%        | content addressing (CAS read / chunk)     |
+| `corelink-audit-chain`       | `merkle_append`           | CRITICAL      | 5%        | audit-chain append                        |
+| `corelink-audit-chain`       | `jcs_canonicalize`        | CRITICAL      | 5%        | audit JSON canonicalization               |
+| `corelink-dpa-acceptance`    | `accept_and_verify_jwt`   | CRITICAL      | 5%        | DPA accept + JWT verify (clerk path)      |
+| `corelink-byok`              | `envelope_roundtrip`      | NON_CRITICAL  | 15%       | BYOK envelope encrypt/decrypt             |
+| `corelink-signup`            | `orchestrator`            | NON_CRITICAL  | 15%       | signup flow orchestration                 |
+| `corelink-tier-selection`    | `select`                  | NON_CRITICAL  | 15%       | tier selection (auth middleware-adjacent) |
+| `corelink-stripe-real`       | `webhook_verify`          | NON_CRITICAL  | 15%       | Stripe webhook verification               |
 
 ## How to update
 
