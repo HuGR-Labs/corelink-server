@@ -2,7 +2,7 @@
 """quickstart_audit — Stream audit events via GET /v1/admin/audit-events.
 
 Customer concept: every privileged operation is Merkle-chained into the
-audit log (INV-AUDIT-CHAIN-001). The response includes chain_head_hash
+audit log (INV-AUDIT-APPEND-ONLY). The response includes chain_head_hash
 for client-side verification (CTRL-AUDIT-002).
 
 Run:

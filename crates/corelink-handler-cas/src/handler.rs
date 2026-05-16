@@ -459,7 +459,7 @@ mod tests {
         assert_eq!(lat_count, 1);
 
         let rows = audit.snapshot().expect("audit");
-        // ReadAttempted then ReadServed in order — INV-AUDIT-EMIT
+        // ReadAttempted then ReadServed in order — INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER
         // ordering pinned.
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].kind, AuditEventKind::ReadAttempted);

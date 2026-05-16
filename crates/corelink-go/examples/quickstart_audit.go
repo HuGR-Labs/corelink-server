@@ -3,7 +3,7 @@
 // quickstart_audit — Stream audit events via GET /v1/admin/audit-events.
 //
 // Customer concept: every privileged op is Merkle-chained into the
-// audit log (INV-AUDIT-CHAIN-001). Response includes chain_head_hash
+// audit log (INV-AUDIT-APPEND-ONLY). Response includes chain_head_hash
 // for client-side verification (CTRL-AUDIT-002).
 //
 // Run: CORELINK_PAT=$ADMIN_PAT go run examples/quickstart_audit.go

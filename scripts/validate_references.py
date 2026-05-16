@@ -159,6 +159,8 @@ WHITELIST_IDS = {
     "INV-DEDUP",  # line-wrap artifact: "INV-DEDUP-\nCONSISTENCY" → captures short form (PRR-S07 §A)
     "INV-EVICT",  # line-wrap artifact: "INV-EVICT-\nSOFT-DELETE-FIRST" → captures short form (PRR-S07 §3)
     "INV-AUDIT-CHAIN",  # informal short-form reference to INV-AUDIT-APPEND-ONLY (PRR-S03; alias in §5)
+    "INV-AUDIT-EMIT-ATOMIC",  # shortened form widely used in Wave-20+ crates (statuspage-real, slack-real, region, rotation-adapters, drata-sync) for INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER; alias in §5 (Wave-23 sweep)
+    "INV-AUTH-WEBAUTHN",  # family-collective shorthand in crates/corelink-webauthn/README.md referring to 5-INV WebAuthn family §3.14; alias in §5 (Wave-23 sweep)
     "INV-OBS",  # plural-form mention (S20 sprint.md §8 "INV-OBS-* invariants")
     "INV-RATE-LIMIT",  # plural-form mention; canonical IDs are INV-RATE-LIMIT-PROPORTIONALITY (PRR-S08)
     "INV-CAS-SIDE-CHANNEL",  # short-form mention em S-02 §6 (full ID INV-CAS-SIDE-CHANNEL-INDISTINGUISHABLE)
