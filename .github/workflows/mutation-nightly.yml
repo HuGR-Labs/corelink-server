@@ -1,6 +1,6 @@
-name: mutation-nightly (R2 baseline + 5-crate expansion 2026-05-15)
+name: mutation-nightly (R2 baseline + 5-crate expansion + wave-24 large-crate lane)
 
-# Nightly cargo-mutants gate on the 8 most security-critical crates:
+# Nightly cargo-mutants gate on 11 critical crates:
 # - corelink-byok (envelope encryption + DEK cache)         [baseline 2026-05-14]
 # - corelink-signup (atomic provisioning orchestrator)      [baseline 2026-05-14]
 # - corelink-tier-selection (INV-ONBOARD-DPA-FIRST)         [baseline 2026-05-14]
@@ -9,12 +9,18 @@ name: mutation-nightly (R2 baseline + 5-crate expansion 2026-05-15)
 # - corelink-clerk (SSO JWT validation + JWKS)              [expansion 2026-05-15]
 # - corelink-dual-approval (admin op gate + collusion)      [expansion 2026-05-15]
 # - corelink-ratelimit (token bucket + Retry-After)         [expansion 2026-05-15]
+# - corelink-r2-multipart (150 mutants; large surface)      [wave-24 2026-05-16]
+# - corelink-quota-cas (350 mutants; large surface)         [wave-24 2026-05-16]
+# - corelink-webauthn (369 mutants; large surface)          [wave-24 2026-05-16]
 #
 # Per `specs/_audits/2026-05-14-mutation-baseline.md` +
-# `specs/_audits/2026-05-15-mutation-expansion.md` baseline:
-# kill rate ≥ 75 % per crate; build fails if kill rate drops > 5 % vs
-# the recorded baseline so a PR cannot silently regress mutation
-# coverage on critical security paths.
+# `specs/_audits/2026-05-15-mutation-expansion.md` +
+# `specs/_audits/2026-05-16-debt-008-wave24-mutation-sweep.md`
+# baseline: kill rate ≥ 75 % per crate; build fails if kill rate
+# drops > 5 % vs the recorded baseline so a PR cannot silently
+# regress mutation coverage on critical security paths. The 3
+# wave-24 crates are scoped to CI-nightly only (not blocking PR
+# CI) per wave-24 §6 budget-decision matrix.
 #
 # Reference: tenant-path nightly mutants lane (WI-S01-001 §17).
 
@@ -43,6 +49,11 @@ env:
   CLERK_BASELINE: 75
   DUAL_APPROVAL_BASELINE: 75
   RATELIMIT_BASELINE: 75
+  # Wave-24 large-crate lane — no pre-recorded baseline (first
+  # nightly run establishes the kill-rate; floor is 75 % flat).
+  R2_MULTIPART_BASELINE: 75
+  QUOTA_CAS_BASELINE: 75
+  WEBAUTHN_BASELINE: 75
   REGRESSION_TOLERANCE_PP: 5
 
 jobs:
@@ -61,6 +72,9 @@ jobs:
           - corelink-clerk
           - corelink-dual-approval
           - corelink-ratelimit
+          - corelink-r2-multipart
+          - corelink-quota-cas
+          - corelink-webauthn
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -106,6 +120,9 @@ jobs:
             "corelink-clerk": int(os.environ["CLERK_BASELINE"]),
             "corelink-dual-approval": int(os.environ["DUAL_APPROVAL_BASELINE"]),
             "corelink-ratelimit": int(os.environ["RATELIMIT_BASELINE"]),
+            "corelink-r2-multipart": int(os.environ["R2_MULTIPART_BASELINE"]),
+            "corelink-quota-cas": int(os.environ["QUOTA_CAS_BASELINE"]),
+            "corelink-webauthn": int(os.environ["WEBAUTHN_BASELINE"]),
           }
           tolerance = int(os.environ["REGRESSION_TOLERANCE_PP"])
 
