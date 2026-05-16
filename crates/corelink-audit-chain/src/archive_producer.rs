@@ -458,6 +458,18 @@ impl ArchiveProducer {
     ///   line's sequence number is not the expected next sequence.
     /// - [`ArchiveProducerError::SinkBackend`] on flush failure.
     /// - [`ArchiveProducerError::Internal`] on mutex poisoning.
+    ///
+    /// # Cross-module invariant (wave-20 B-P2-06 closure)
+    ///
+    /// `observe` NEVER emits an empty `ArchiveReceipt` — the flush policy
+    /// fires on `row_count >= DEFAULT_FLUSH_AFTER_LINES` OR
+    /// `wall_clock_ms >= DEFAULT_FLUSH_AFTER_MS`; both gates require
+    /// `buffered_rows.len() >= 1`. The downstream `NeonShadowSink::sync_chunk`
+    /// REJECTS empty input fail-CLOSED with `NeonShadowError::Internal(
+    /// "empty rows slice")` — that error surface assumes this producer
+    /// guarantee. Any future buffer-window-with-no-emits drift MUST
+    /// preserve this contract or the shadow-sync pipeline starts to log
+    /// SEV-2 audit anomalies that don't correspond to a real chain break.
     pub fn observe(
         &self,
         line: PersistedAuditLine,

@@ -69,6 +69,16 @@ CREATE INDEX IF NOT EXISTS idx_audit_events_shadow_tenant_time
 CREATE INDEX IF NOT EXISTS idx_audit_events_shadow_tenant_event_type
     ON audit_events_shadow(tenant_id, event_type);
 
+-- Wave-20 (B-P2-05 closure): the (event_type, event_time) index is NOT
+-- prefixed by tenant_id. The RLS gate filters returned rows to the bound
+-- tenant; the planner typically prefers idx_audit_events_shadow_tenant_event_type
+-- for per-tenant queries. This index is retained as a forward hook for the
+-- internal global-rollup analytics query ("how many cas.put.v1 events
+-- fired today, all tenants") that the SRE platform team scopes to bypass
+-- RLS via a superuser role. The write-amplification cost is bounded at
+-- ~25 rows / flush (archive_producer chunk size), well below the dashboard
+-- write budget. A follow-on migration may DROP the index if the global
+-- rollup never lands.
 CREATE INDEX IF NOT EXISTS idx_audit_events_shadow_event_type_time
     ON audit_events_shadow(event_type, event_time);
 

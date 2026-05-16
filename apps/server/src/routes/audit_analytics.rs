@@ -456,6 +456,16 @@ async fn handle_timeline(
     }
     let span = query.to.saturating_sub(query.from);
     let bucket_count_estimate = span.div_ceil(granularity_ms);
+    // The bucket-cardinality gate is a defense against *resource
+    // exhaustion* (a 7-year span at 1ms granularity would compute
+    // 220-billion buckets), NOT a rate-limit bypass guard. Wave-20
+    // (B-P2-04 closure): a burst of 11 requests with `to - from = 1,
+    // granularity = 1` (each request returns 1 bucket, passing this
+    // cardinality cap) would consume 10 rate-limit tokens immediately,
+    // BUT the underlying Postgres aggregate over a 1ms span is bounded
+    // O(1) and the per-tenant rate-limit gate one line down enforces
+    // the throughput cap. The residual attack surface is one burst of
+    // `rate_limit.capacity` cheap aggregates — bounded by design.
     if bucket_count_estimate > MAX_TIMELINE_BUCKETS {
         return (
             StatusCode::BAD_REQUEST,
@@ -508,6 +518,16 @@ async fn handle_timeline(
 }
 
 /// Extract + validate the `X-Tenant-Id` header.
+///
+/// Wave-20 (B-P3-03 closure): the `Err` variant carries a full
+/// `axum::response::Response` (>100 bytes) which Clippy flags via
+/// `result_large_err`. The waiver is deliberate — the caller chains
+/// `let tenant = match parse_tenant_header(...) { Ok(t) => t, Err(r) =>
+/// return r };` and the alternative (`ParseTenantError { resp: Response
+/// }` newtype) would force every call site to unwrap the newtype before
+/// returning. The size cost is bounded by `Response`'s stack-allocated
+/// header map (one of the few large-on-stack types in axum), accepted
+/// trade-off for call-site ergonomics. Tracked as cosmetic follow-on.
 #[allow(clippy::result_large_err)]
 fn parse_tenant_header(
     headers: &HeaderMap,
@@ -528,6 +548,16 @@ fn parse_tenant_header(
 
 /// Common rate-limit + emit-on-deny path. Returns `Some(response)` on
 /// deny; `None` if the request may proceed.
+///
+/// **Known residual trait (wave-20 B-P2-03 closure):** `now_ms` is anchored
+/// to the query window's `to_ms` (NOT wall-clock). Symmetric trait at
+/// `audit_export::now_ms_from_window` (Stream A A-P2-05) — both routes
+/// share the same `WallClock`-collaborator-swap path slotted at production
+/// wiring. A customer querying a 1970-epoch window every 60ms keeps
+/// refilling the bucket; the global throughput cap is enforced one layer
+/// up by the per-tenant request budget in the wall-clock-backed
+/// production wiring. The cleanup lands as one cross-route fix-stream
+/// in wave-21+.
 fn rate_limit_check(
     state: &AuditAnalyticsRouteState,
     tenant: Uuid,
