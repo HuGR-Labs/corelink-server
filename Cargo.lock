@@ -1448,6 +1448,12 @@ dependencies = [
  "corelink-runbook-tracker",
  "dirs",
  "hex",
+ "http 1.4.0",
+ "http-body 1.0.1",
+ "http-body-util",
+ "hyper",
+ "hyper-rustls",
+ "hyper-util",
  "proptest",
  "reqwest",
  "serde",
@@ -1459,6 +1465,7 @@ dependencies = [
  "toml",
  "tracing",
  "tracing-subscriber",
+ "url",
  "uuid",
 ]
 

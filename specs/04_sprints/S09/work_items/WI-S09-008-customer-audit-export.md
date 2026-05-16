@@ -4,7 +4,7 @@ type: "work_item"
 doc_status: "SEALED"
 work_status: "READY"
 audit_status: "ACTIVE"
-version: "0.3.0"
+version: "0.4.0"
 created: "2026-05-15"
 updated: "2026-05-15"
 lane: "HIGH_RISK"
@@ -21,7 +21,7 @@ inherits_from:
   - "SECURITY-MODEL"
   - "INVARIANT-REGISTRY"
   - "PRIVACY-MODEL"
-tags: ["wi", "s09", "audit-export", "customer-facing", "compliance", "soc2", "gdpr-art-15", "high-risk", "wave-17-pd-wired"]
+tags: ["wi", "s09", "audit-export", "customer-facing", "compliance", "soc2", "gdpr-art-15", "high-risk", "wave-17-pd-wired", "wave-19-cli-http-trailer"]
 ---
 
 # WI-S09-008 — Customer-facing `/v1/audit/export` Endpoint (streaming NDJSON + cryptographic inclusion proofs; SOC 2 CC7.2 / GDPR Art. 15+20 / LGPD Art. 9+18 portability; reads from Wave-15 R2 archive producer; reuses `ChainVerifier` + `verify_inclusion_proof` pure-logic primitives; fail-CLOSED per Lote 10.6bis)
@@ -135,7 +135,7 @@ Error responses (fail-CLOSED canonical):
 - [x] Chaos test: induced chain break surfaces SEV-0 audit (`apps/server/tests/audit_export.rs::chain_tamper_emits_verify_failed_sev0`; the SEV-0 audit emit is the security anchor). **Streaming wire-up + abort trailer DONE wave-18** — `apps/server/src/routes/audit_export.rs` now wires `axum::body::Body::new(http_body_util::StreamBody::new(...))` with a per-row `verify_inclusion_proof` re-check against the manifest anchor; on the first chain-break detected mid-stream the route (a) emits the SEV-0 `corelink.audit.export_verify_failed.v1` audit row carrying `{break_at_seq, break_at_chunk, observed, expected}` BEFORE pushing (b) the `http_body::Frame::trailers` frame setting `X-CoreLink-Audit-Export-Aborted` to the canonical JSON payload — the body stream then closes immediately. The `Trailer:` response header advertises the abort trailer upfront per RFC 7230 §4.4. Wave-18 ships 3 new server integration tests (`streaming_response_does_not_buffer`, `abort_trailer_emitted_on_mid_stream_chain_break`, `customer_cli_handles_abort_trailer_gracefully`) on top of the wave-16 7 + 1 new CLI test (`streaming_wire_shape_round_trips_via_line_parser`); the wave-17 CLI parser remains byte-equivalent on the streaming wire shape. Commit `wave-18 / wt/r-prep-audit-export-streaming` (see `git log`).
 - [x] Tenant-isolation test: cross-tenant JWT returns 403 + audit emit (`apps/server/tests/audit_export.rs::cross_tenant_attempt_emits_security_audit_and_403`); 7 tests total (happy + cross-tenant + empty-range + verify-failed + 401 + 429 + 503-on-audit-fail).
 - [x] **PagerDuty alert wiring for the 2 security/integrity emits (Wave-17, 2026-05-15)** — `dashboards/alerts/dash-audit-export-alerts.yml` ships rule `AuditExport_CrossTenantAttempt` (SEV-1 → PagerDuty critical → `PAGERDUTY_ROUTING_KEY` row #11 secrets matrix, escalation policy `corelink-incident-response`) and rule `AuditExport_VerifyFailed` (SEV-0 → PagerDuty critical → secondary direct-to-Tier-3 escalation; 1h MTTA / 4h MTTR; LGPD Art. 46 + GDPR Art. 33 72h regulatory clock on confirm). Tenant ids in PD payloads are BLAKE3-pseudonymised (INV-AUTH-AUDIT-PSEUDONYMIZATION + CTRL-PRIV-001). Event #1 (`corelink.audit.export_request.v1`) is info-only — dashboard recording rule `corelink_audit_export_request_rate_5m`, NOT paged. New runbooks `specs/_runbooks/RB-AUDIT-EXPORT-CROSS-TENANT-ATTEMPT.md` (SEV-1; 6 ops sections + customer-comm decision tree) and `specs/_runbooks/RB-AUDIT-EXPORT-VERIFY-FAILED.md` (SEV-0; 7 ops sections incl. R2 chunk pull forensics + audit-chain rebuild). Wave-17 follow-on flagged at wave-16 L9 risk register §6 is **CLOSED**.
-- [x] Customer-side CLI re-verify (`corelink audit verify-ndjson --ndjson <file> --chain-head-anchor <hex>`) green on the exported NDJSON (Wave 17; `crates/corelink-cli/src/commands/verify_ndjson.rs`; 6 unit tests — happy path 10-event round-trip, tampered chunk #3, wrong anchor, empty NDJSON, malformed proof JSON, mismatched chain-head; structured chain-break diagnostic with line + observed vs expected hash + kind; constant-time hash compare via `corelink_audit_chain::hashes_eq_ct`).
+- [x] Customer-side CLI re-verify (`corelink audit verify-ndjson --ndjson <file> --chain-head-anchor <hex>`) green on the exported NDJSON (Wave 17; `crates/corelink-cli/src/commands/verify_ndjson.rs`; 6 unit tests — happy path 10-event round-trip, tampered chunk #3, wrong anchor, empty NDJSON, malformed proof JSON, mismatched chain-head; structured chain-break diagnostic with line + observed vs expected hash + kind; constant-time hash compare via `corelink_audit_chain::hashes_eq_ct`). **Wave-19 follow-on DONE (HTTP-aware CLI lands)** — new subcommand variant `corelink audit verify-ndjson --url <export-url> --bearer <PAT> [--chain-head-anchor <hex>]` streams the response via `hyper` + `hyper-util` + `hyper-rustls` (reqwest 0.12 gates trailers behind `pub(crate)` so a direct hyper client is the only path that exposes `Frame::trailers`), reads the wave-18 `x-corelink-audit-export-aborted` trailer carrying `{break_at_seq, break_at_chunk, observed, expected}` JSON, prints the canonical `AUDIT_EXPORT_ABORTED: break_at_seq=N break_at_chunk=M observed=<hex> expected=<hex>` diagnostic to stderr, and exits **sysexits DATAERR (65)** so wrapping scripts (Drata / SIEM / re-export automation) can distinguish a data-integrity event from generic CLI failure (any other non-zero exit). On the happy path the chain-head anchor is recovered from the `X-CoreLink-Audit-Export-Chain-Head-Anchor` response header (offline `--ndjson` mode still demands `--chain-head-anchor`; the HTTP path also accepts the flag for defence-in-depth and refuses to verify if flag + header disagree). Wave-19 ships +3 integration tests (`crates/corelink-cli/tests/verify_ndjson_http.rs`: clean stream, mid-stream abort trailer detected, network failure) + 4 unit tests (trailer payload parse + diagnostic round-trip, exit-code mapping, ASCII-CT compare for anchor cross-check, malformed payload rejection); all 6 wave-17 + 1 wave-18 file-mode tests stay green (7/7). Bearer token never logged (CTRL-CRED-001 verified in the network-failure test). Commit `wave-19 / wt/r-prep-cli-verify-ndjson-http`.
 - [x] Daily-verify cron (`audit-chain-daily-verify.yml`) extended to a 7-day rolling matrix (Wave 17; today + today-1..today-6; SEV-0 marker `AUDIT_CHAIN_7DAY_BREAK_DETECTED::<date>::<chunk-key>` routes to PagerDuty via `PAGERDUTY_ROUTING_KEY`; production R2 list path behind `AUDIT_R2_BUCKET` + `CF_API_TOKEN` per branch `wt/r-prep-r2-list-cf-token` commit `275281e`; public CI smoke harness fixture-only; all `uses:` SHA-pinned per HIGH_RISK lane FF-HR-005). Wave-18 follow-on: integrate the paginated CF API v4 R2-list step inside each matrix-day job (current workflow has the 7-day matrix structure adopted; the per-day production R2 list lift remains tracked as `scripts/r2-audit-list-and-download.sh` placeholder).
 
 ---
@@ -302,3 +302,97 @@ Quality gates closed (Wave 17):
 | `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/audit-chain-daily-verify.yml'))"` | green |
 | `python3 scripts/verify-action-sha-pinning.py` (528 uses pinned) | green |
 | `python3 scripts/validate_specs.py` | green |
+
+---
+
+## 12. Wave-19 closure summary — HTTP-aware `verify-ndjson --url` (2026-05-15)
+
+Wave 19 closes the wave-18 follow-on flagged in §6 AC line 138: the
+customer-CLI re-verify now lands a production HTTP-aware path that
+detects the `x-corelink-audit-export-aborted` trailer mid-stream and
+surfaces the canonical diagnostic.
+
+**Subcommand variant** (`crates/corelink-cli/src/main.rs`):
+
+```
+corelink audit verify-ndjson \
+  --url <export-url> \
+  --bearer <PAT|env CORELINK_PAT> \
+  [--chain-head-anchor <HEX>]
+```
+
+`--url` and `--ndjson` (wave-17 file mode) are mutually exclusive
+(clap `conflicts_with`). `--bearer` defaults to env `CORELINK_PAT`
+and is `hide_env_values = true` so `corelink --help` never leaks it.
+
+**Wire-up choice** — reqwest 0.12 gates `ResponseBody::trailers`
+behind `pub(crate)`. We use `hyper` 1.x + `hyper-util` (legacy client)
++ `hyper-rustls` (with `rustls-native-certs` + `webpki-tokio`
+fallback) directly so the HTTP-fetch path can iterate the response
+body via `http_body::Body::poll_frame` and inspect the trailer
+[`Frame`]. The fixture integration tests issue plaintext HTTP/1.1
+against a `tokio::net::TcpListener` (no TLS, hermetic).
+
+**Trailer detection** (`commands/verify_ndjson_http.rs`):
+
+1. Drain the body frame-by-frame; data frames accumulate into a
+   single `Vec<u8>` (capped at 64 MiB); trailer frames merge into a
+   single `HeaderMap`.
+2. If the trailer set contains `x-corelink-audit-export-aborted`:
+   parse the value as the canonical
+   `{break_at_seq, break_at_chunk, observed, expected}` JSON and
+   print
+   ```
+   AUDIT_EXPORT_ABORTED: break_at_seq=<n> break_at_chunk=<n>
+                          observed=<64hex> expected=<64hex>
+   ```
+   to **stderr**, return the structured
+   `HttpVerifyOutcome::AbortedMidStream { payload, diagnostic }`,
+   exit **sysexits DATAERR (65)**.
+3. Otherwise resolve the chain-head anchor (header first; optional
+   `--chain-head-anchor` flag wins iff supplied AND matches the
+   header — constant-time compared so an anchor-cross-check side
+   channel cannot leak which byte differs) and run the wave-17
+   chain verifier against the body bytes. Verifier-rejection paths
+   surface the same structured chain-break diagnostics as the
+   `--ndjson` mode; the source label in those errors is the URL.
+
+**Exit-code mapping** (binary translates `CliError::AuditExportAborted`
+in `main.rs`):
+
+| Outcome | Exit |
+|---|---|
+| Verified (chain intact) | 0 |
+| Mid-stream abort trailer detected | 65 (sysexits DATAERR) |
+| Network / TLS / HTTP non-2xx / parse error | 1 |
+
+**Bearer redaction** (CTRL-CRED-001) — the token is materialised
+into a single `HeaderValue` and never written to any tracing /
+stderr / stdout sink. The wave-19 network-failure integration test
+asserts the literal token string is absent from the structured
+error message.
+
+**Tests shipped:**
+
+| Layer | New | Total green |
+|---|---|---|
+| `corelink-cli` lib unit (`verify_ndjson_http::tests`) | +4 | trailer payload parse + diagnostic round-trip, exit-code mapping, ASCII CT compare, malformed payload rejection |
+| `corelink-cli` integration (`tests/verify_ndjson_http.rs`) | +3 | clean stream + verifier, mid-stream abort trailer, network failure |
+| `corelink-cli` wave-17 + wave-18 file-mode regressions | 7/7 | all preserved |
+| `corelink-server` `tests/audit_export.rs` wave-18 trailer | 10/10 | all preserved |
+
+**Docs** — new section in `docs/cli/audit-export.md` (created
+this wave, `docs/cli/` was the canonical CLI doc location with
+`json-output-schema.md` + `telemetry.md`).
+
+**Quality gates closed (Wave 19):**
+
+| Gate | Status |
+|---|---|
+| `cargo build -p corelink-cli` | green |
+| `cargo test -p corelink-cli` (69 lib + 7 audit + 6 telemetry + 3 new integration) | green |
+| `cargo clippy --workspace --all-targets -- -D warnings` | green |
+| `cargo test -p corelink-server --test audit_export` (10/10 wave-18 preserved) | green |
+| `python3 scripts/validate_specs.py` | green |
+| `python3 scripts/validate_references.py` | green |
+

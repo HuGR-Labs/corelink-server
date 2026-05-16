@@ -22,6 +22,17 @@ mod error;
 mod output;
 mod telemetry;
 
+// Wave-19 crate-root aliases — keep the `crate::verify_ndjson::...`
+// and `crate::audit_export::...` import paths uniform between the
+// binary's `commands::*` modules and the lib's mirror `#[path]`
+// includes. The `pub use` makes each alias a crate-root path
+// (`crate::verify_ndjson`, `crate::audit_export`) rather than just a
+// local binding. Used by `commands::verify_ndjson_http` (HTTP path
+// pulls in the offline verifier helpers) and by the `verify_ndjson`
+// test module (fixture builder lives in `audit_export`).
+pub use commands::audit as audit_export;
+pub use commands::verify_ndjson;
+
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -188,23 +199,51 @@ enum AuditAction {
         path: PathBuf,
     },
 
-    /// Offline re-verify of a streaming NDJSON envelope produced by
+    /// Re-verify a streaming NDJSON envelope produced by
     /// `GET /v1/audit/export` (WI-S09-008 customer-CLI AC).
     ///
-    /// The NDJSON file carries one `{event, proof}` line per audit
-    /// row plus a trailing `{"manifest": ...}` line. The
-    /// `--chain-head-anchor` MUST be the value the server published in
-    /// the `X-CoreLink-Audit-Export-Chain-Head-Anchor` response header
-    /// at export time. Exit 0 on full chain integrity verified; exit
-    /// 1 with a structured chain-break error on any divergence.
+    /// Two transports:
+    ///
+    /// **Offline (wave-17)** — `--ndjson <FILE>`: reads the envelope
+    /// from disk. The file carries one `{event, proof}` line per
+    /// audit row plus a trailing `{"manifest": ...}` line. The
+    /// `--chain-head-anchor` MUST be the value the server published
+    /// in the `X-CoreLink-Audit-Export-Chain-Head-Anchor` response
+    /// header at export time. Exit 0 on full chain integrity
+    /// verified; exit 1 with a structured chain-break error on any
+    /// divergence.
+    ///
+    /// **HTTP-aware (wave-19)** — `--url <URL> --bearer <PAT>`:
+    /// streams the export response, reads the
+    /// `x-corelink-audit-export-aborted` HTTP trailer (wave-18 abort
+    /// signal). On trailer detection: prints
+    /// `AUDIT_EXPORT_ABORTED: break_at_seq=N break_at_chunk=M
+    /// observed=<hex> expected=<hex>` to stderr and exits
+    /// **sysexits DATAERR (65)**. Otherwise pipes the bytes through
+    /// the wave-17 verifier against the chain-head anchor (either the
+    /// response header or `--chain-head-anchor` flag if supplied —
+    /// both must match if both are present). Exit 0 on success;
+    /// non-zero (other than 65) on network / HTTP errors.
     VerifyNdjson {
-        /// Path to the NDJSON envelope file.
-        #[arg(long = "ndjson", value_name = "FILE")]
-        ndjson: PathBuf,
+        /// Path to the NDJSON envelope file (offline mode; mutually
+        /// exclusive with `--url`).
+        #[arg(long = "ndjson", value_name = "FILE", conflicts_with = "url")]
+        ndjson: Option<PathBuf>,
+        /// Export URL (`https://api.corelink.dev/v1/audit/export?...`).
+        /// Mutually exclusive with `--ndjson`. Requires `--bearer`.
+        #[arg(long = "url", value_name = "URL", conflicts_with = "ndjson", requires = "bearer")]
+        url: Option<String>,
+        /// Bearer token (PAT) for the export request. Read from
+        /// `CORELINK_PAT` env var if not supplied. Never logged.
+        #[arg(long = "bearer", value_name = "TOKEN", env = "CORELINK_PAT", hide_env_values = true)]
+        bearer: Option<String>,
         /// 64-char BLAKE3 chain-head anchor (from response header
-        /// `X-CoreLink-Audit-Export-Chain-Head-Anchor`).
+        /// `X-CoreLink-Audit-Export-Chain-Head-Anchor`). REQUIRED for
+        /// `--ndjson`; OPTIONAL for `--url` (recovered from the
+        /// response header automatically; supply only for defence-in-
+        /// depth cross-check).
         #[arg(long = "chain-head-anchor", value_name = "HEX")]
-        chain_head_anchor: String,
+        chain_head_anchor: Option<String>,
     },
 }
 
@@ -302,6 +341,15 @@ async fn main() {
     }
 
     if let Err(e) = result {
+        // Wave-19 — `verify-ndjson --url` abort-trailer arm exits
+        // with sysexits DATAERR (65) so wrapping scripts (Drata /
+        // SIEM / re-export automation) can distinguish a data-
+        // integrity event from generic CLI failure. The structured
+        // diagnostic was already printed to stderr by the command
+        // module; we deliberately skip re-printing here.
+        if matches!(e, CliError::AuditExportAborted) {
+            std::process::exit(commands::verify_ndjson_http::EXIT_DATAERR);
+        }
         eprintln!("error: {e}");
         std::process::exit(1);
     }
@@ -330,7 +378,7 @@ async fn run() -> (&'static str, Result<(), CliError>) {
             return (label, run_runbook_drill(action, format));
         }
         Commands::Audit { action } => {
-            return (label, run_audit(action, format));
+            return (label, run_audit(action, format).await);
         }
         _ => {}
     }
@@ -394,7 +442,7 @@ fn subcommand_label(cmd: &Commands) -> &'static str {
     }
 }
 
-fn run_audit(action: &AuditAction, format: OutputFormat) -> Result<(), CliError> {
+async fn run_audit(action: &AuditAction, format: OutputFormat) -> Result<(), CliError> {
     match action {
         AuditAction::Export {
             tenant,
@@ -450,10 +498,53 @@ fn run_audit(action: &AuditAction, format: OutputFormat) -> Result<(), CliError>
         }
         AuditAction::VerifyNdjson {
             ndjson,
+            url,
+            bearer,
             chain_head_anchor,
         } => {
-            commands::verify_ndjson::run_verify_ndjson(ndjson, chain_head_anchor, format)?;
-            Ok(())
+            match (ndjson, url) {
+                (Some(path), None) => {
+                    let anchor = chain_head_anchor.as_deref().ok_or_else(|| {
+                        CliError::Other(
+                            "audit verify-ndjson --ndjson requires --chain-head-anchor (the value from response header X-CoreLink-Audit-Export-Chain-Head-Anchor)".to_owned(),
+                        )
+                    })?;
+                    commands::verify_ndjson::run_verify_ndjson(path, anchor, format)?;
+                    Ok(())
+                }
+                (None, Some(u)) => {
+                    let token = bearer.as_deref().ok_or_else(|| {
+                        CliError::Other(
+                            "audit verify-ndjson --url requires --bearer <TOKEN> (or env CORELINK_PAT)".to_owned(),
+                        )
+                    })?;
+                    let outcome = commands::verify_ndjson_http::run_verify_ndjson_http(
+                        u,
+                        token,
+                        chain_head_anchor.as_deref(),
+                        format,
+                    )
+                    .await?;
+                    // The abort arm prints to stderr inside the
+                    // command + must exit with sysexits DATAERR (65).
+                    // We thread this through a dedicated CliError
+                    // variant that `main` translates to the right
+                    // process exit code below.
+                    if matches!(
+                        outcome,
+                        commands::verify_ndjson_http::HttpVerifyOutcome::AbortedMidStream { .. }
+                    ) {
+                        return Err(CliError::AuditExportAborted);
+                    }
+                    Ok(())
+                }
+                (Some(_), Some(_)) => Err(CliError::Other(
+                    "audit verify-ndjson: --ndjson and --url are mutually exclusive".to_owned(),
+                )),
+                (None, None) => Err(CliError::Other(
+                    "audit verify-ndjson: supply either --ndjson <FILE> or --url <URL>".to_owned(),
+                )),
+            }
         }
     }
 }
