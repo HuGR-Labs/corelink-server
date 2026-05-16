@@ -354,6 +354,21 @@ Upon 2-key APPROVED decision in §13.2 + §13.3:
 
 This document plus `specs/_audits/2026-05-16-ga-final-checklist.md` plus the signed `GA-GATE-GO-NOGO-TEMPLATE.md` instance + cutover decision-meeting notes constitute the GA-launch evidence package per `IR-TABLETOP-PLAYBOOK.md` retention norm (SOC 2 CC7.4 continuous-improvement signal).
 
+### §13.6 Lote-6-Owner-prep — framework v1.0.0 GA tag cut (independent of product GA)
+
+The framework v1.0.0 GA tag (`framework-v1-0-0-ga`) is a **prerequisite for the product v1.0.0-GA tag** (per §17 below) and is **independent** of the §13.1 pre-condition gate / §13.2-§13.3 2-key signature block — the framework cut is a single-Owner-action artifact (4 reviewer signatures + Final Approver), not a 2-key cutover gate.
+
+| Aspect | Framework v1.0.0 GA cut | Product v1.0.0-GA cut |
+|---|---|---|
+| Tag | `framework-v1-0-0-ga` | `v1.0.0-GA` |
+| Pre-condition gate | `specs/_audits/2026-05-16-lote-6-owner-signoff-prep.md §5` (10-step boolean) | §13.1 (8 booleans) |
+| Sign-off mechanics | §43.1 (FW-H-1..4 + Final Approver) per ADR-0034b (Option C) or Option A | §13.2 + §13.3 (2-key per ADR-0034b) |
+| Authorizing reference | `specs/_audits/2026-05-16-lote-6-owner-signoff-prep.md §6` (5-step git command list) | `RB-GA-CUTOVER.md` §0 → §4 |
+| Trimestral cadence | Anchored at framework cut date (addendum §5.1) | N/A (product GA is a one-shot) |
+| Wave-27 D-day eligibility | Owner-sign-off prep package shipped — `DEFER-with-Owner-sign-off-prep-package-shipped` per `specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md §11.9` | Conditional on §13.1 + §11 DEFER closure |
+
+**Owner action surface for the framework cut:** **`specs/_audits/2026-05-16-lote-6-owner-signoff-prep.md`** — single ~30-min Owner read package (read order §1, decision §2, fills §3/§4, execution §5, commands §6, post-cut §7). The framework cut can land before, with, or after the product GA cutover at Owner discretion; the prep doc §7 post-cut table enumerates what unfreezes downstream when the framework tag is cut.
+
 ---
 
 ## §14. Quality gates verified (this audit)
@@ -401,7 +416,10 @@ This document plus `specs/_audits/2026-05-16-ga-final-checklist.md` plus the sig
 - `specs/_compliance/GA-GATE-CRITERIA.md` — 59-criteria checklist (6 tracks).
 - `specs/_compliance/GA-GATE-GO-NOGO-TEMPLATE.md` — meeting template (this audit feeds §1-§4).
 - `specs/03_architecture/adrs/ADR-0034-prr-staffing-waiver-solo-tier.md` — 2-key signature waiver path.
-- `specs/00_framework.md` v1.0.0-rc1 — framework (this audit notes the §17 below).
+- `specs/00_framework.md` v1.0.0-rc2 — framework (RC1 → RC2 at wave-26; this audit notes the §17 below + §13.6 Lote-6-Owner-prep cross-ref).
+- `specs/_audits/2026-05-16-lote-6-owner-signoff-prep.md` — wave-27 Owner-sign-off prep package for the `framework-v1-0-0-ga` tag cut (see §13.6).
+- `specs/_audits/2026-05-16-lote-6-v1-rc2-ready.md` — wave-26 readiness summary (predecessor of the wave-27 prep package).
+- `specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md` §11.8 (wave-26 RC2 cut) + §11.9 (wave-27 prep package shipped).
 
 ---
 
