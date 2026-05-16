@@ -34,6 +34,10 @@ tags: ["runbook", "p0", "ga", "cutover", "deployment", "rollout", "private-previ
 
 The following must all be **GREEN** at T-7d ± 2h. Any RED defers cutover by ≥ 7d minimum (per `RB-GA-LAUNCH-ROLLBACK.md` §7 RA-3 — sustained-staging window does not auto-extend).
 
+> **MANDATORY pre-cutover read (D-day morning):**
+> Before invoking §0.1 below, the Owner + Signature-2 (Security Lead OR on-call SRE Lead per ADR-0034b dual-hat fallback) MUST read `specs/_audits/2026-05-16-final-cutover-readiness.md` end-to-end (~10 minutes) AND tick every row in the printable companion `specs/_audits/2026-05-16-final-cutover-readiness-checklist.md` (sections A..N).
+> The 2-key signature block in the readiness doc §10 is the authoritative authorization for the §0.1..§0.8 checklist below; without it, no §1..§3 step may execute. The readiness doc consolidates wave-18..wave-26 evidence (sprint impls, INV-CRITICAL TLA+, adversarial trend, mutation kill-rate, chaos coverage, endurance, freeze monitor, dress-run verdict, compliance, security posture, 8-item DEFER counter) into a single sign-off-ready surface.
+
 ### 0.1 Wave-18 SEAL landed
 
 | # | Item | Verification | Owner | Status |
