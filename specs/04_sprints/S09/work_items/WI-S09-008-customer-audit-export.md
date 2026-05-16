@@ -496,3 +496,33 @@ Quality gates closed (Wave 19):
 | `python3 scripts/check_migrations_additive.py` (additive lift) | green |
 | `python3 scripts/validate_specs.py` | green |
 | `python3 scripts/validate_references.py` | green |
+
+## 14. Wave-29 closure note — customer-facing audit-chain visualization UI (2026-05-16)
+
+Wave-29 stream-6 (`wt/r-prep-audit-chain-viz-ui`) lands the customer-facing
+audit-chain visualization page that consumes the wave-19 endpoints surfaced
+by this work item. The page is read-only and adds no server-side handlers:
+
+- **UI**: `apps/docs/src/pages/customer/audit-chain.tsx` +
+  `apps/docs/src/pages/customer/audit-chain.module.css`. Renders the BLAKE3
+  chain-head anchor (recovered from
+  `X-CoreLink-Audit-Export-Chain-Head-Anchor` per wave-19 commit `3d835cb`),
+  event-count + bytes-flushed metrics from
+  `GET /v1/audit/analytics/event-count`, a CSS bar-chart timeline from
+  `GET /v1/audit/analytics/timeline`, an "Export to NDJSON" action that
+  triggers `GET /v1/audit/export`, and a "Verify offline" deeplink to the
+  wave-17/wave-19 CLI `verify-ndjson` docs (commit `7ec5435`).
+- **i18n**: 4 canonical locales (en-US, pt-BR, de, es-419) under
+  `apps/docs/i18n/<locale>/code.json` using `customer.auditChain.*` keys.
+- **Pre-GA honesty**: explicit "Pilot data — SOC 2 Type II certification
+  pending" banner per wave-26 Trust Center copy review.
+- **Auth**: customer-scoped Clerk JWT via `window.__corelink` shell hooks
+  populated by the admin-ui Clerk provider; gracefully degrades when the
+  shell is absent (public-link landing).
+
+The wave-8 `wt/r-prep-audit-chain-viz` scaffold (commit `21f8ea8`,
+`apps/admin-ui/.../audit/visualization/page.tsx`) is left in place as the
+admin-shell variant; the wave-29 docs-surface page is the customer-facing
+default that ships at `docs.corelink.dev/customer/audit-chain`.
+
+Audit doc: `specs/_audits/2026-05-16-audit-chain-viz-ui.md`.

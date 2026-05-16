@@ -154,5 +154,113 @@
   "trust.incident.related.title": {
     "message": "Relacionado",
     "description": "Related section title"
+  },
+  "customer.auditChain.pageTitle": {
+    "message": "Cadena de auditoría — cliente",
+    "description": "Browser tab title for the customer audit-chain page"
+  },
+  "customer.auditChain.pageDescription": {
+    "message": "Inspecciona el ancla BLAKE3 de la cadena, el volumen de eventos y exporta el log de auditoría de tu inquilino en NDJSON.",
+    "description": "Meta description for the customer audit-chain page"
+  },
+  "customer.auditChain.title": {
+    "message": "Cadena de auditoría",
+    "description": "H1 on the customer audit-chain visualization page"
+  },
+  "customer.auditChain.subtitle": {
+    "message": "Inspecciona el ancla criptográfica de la cadena, el volumen de eventos y la línea de tiempo del log de auditoría de tu inquilino en la ventana seleccionada.",
+    "description": "Subtitle explaining what the page shows"
+  },
+  "customer.auditChain.preGa.title": {
+    "message": "Datos piloto — certificación SOC 2 Type II pendiente.",
+    "description": "Pilot framing banner title"
+  },
+  "customer.auditChain.preGa.body": {
+    "message": "La integridad de la cadena se aplica criptográficamente (RFC 6962 + BLAKE3) y se verifica a diario mediante el cron documentado en WI-S09-008. La recolección de evidencia SOC 2 está en curso antes del GA.",
+    "description": "Pilot framing banner body"
+  },
+  "customer.auditChain.shellMissing": {
+    "message": "Inicia sesión en el panel de CoreLink para cargar datos de auditoría del inquilino. Esta página consume datos en vivo solo dentro del shell autenticado.",
+    "description": "Shown when the Clerk shell is not bootstrapped"
+  },
+  "customer.auditChain.window.heading": {
+    "message": "Ventana",
+    "description": "Date range section heading"
+  },
+  "customer.auditChain.window.from": {
+    "message": "Desde (UTC)",
+    "description": "Start-date input label"
+  },
+  "customer.auditChain.window.to": {
+    "message": "Hasta (UTC, inclusive)",
+    "description": "End-date input label"
+  },
+  "customer.auditChain.btn.loading": {
+    "message": "Cargando…",
+    "description": "Reload button label while loading"
+  },
+  "customer.auditChain.btn.reload": {
+    "message": "Recargar",
+    "description": "Reload button label"
+  },
+  "customer.auditChain.btn.export": {
+    "message": "Exportar a NDJSON",
+    "description": "Export-to-NDJSON button label"
+  },
+  "customer.auditChain.anchor.heading": {
+    "message": "Ancla de la cadena",
+    "description": "Chain-head anchor section heading"
+  },
+  "customer.auditChain.anchor.body": {
+    "message": "El ancla BLAKE3 de 32 bytes a continuación fija el estado inclusivo de la cadena de auditoría al final de la ventana seleccionada. Captúrala offline y pásala a corelink audit verify-ndjson --chain-head-anchor <hex> para verificar la exportación sin confiar en nuestra infraestructura.",
+    "description": "Anchor section body copy"
+  },
+  "customer.auditChain.anchor.placeholder": {
+    "message": "— (carga una ventana para poblar)",
+    "description": "Placeholder shown when the anchor has not been loaded yet"
+  },
+  "customer.auditChain.anchor.helpLink": {
+    "message": "Verificar offline — consulta la documentación del CLI verify-ndjson →",
+    "description": "Deeplink to the CLI verify-ndjson documentation"
+  },
+  "customer.auditChain.metrics.heading": {
+    "message": "Volumen",
+    "description": "Metrics section heading"
+  },
+  "customer.auditChain.metrics.events": {
+    "message": "Eventos en la ventana",
+    "description": "Event-count metric label"
+  },
+  "customer.auditChain.metrics.bytes": {
+    "message": "Bytes escritos (estimación)",
+    "description": "Bytes-flushed metric label"
+  },
+  "customer.auditChain.metrics.granularity": {
+    "message": "Granularidad del bucket",
+    "description": "Bucket-granularity metric label"
+  },
+  "customer.auditChain.timeline.heading": {
+    "message": "Línea de tiempo",
+    "description": "Timeline chart section heading"
+  },
+  "customer.auditChain.timeline.empty": {
+    "message": "Sin eventos en la ventana seleccionada.",
+    "description": "Placeholder when no events fall in the window"
+  },
+  "customer.auditChain.ssrFallback": {
+    "message": "Cargando cadena de auditoría del cliente…",
+    "description": "SSR fallback while the BrowserOnly child hydrates"
+  },
+  "customer.auditChain.error.invalidDate": {
+    "message": "Rango de fechas inválido; usa YYYY-MM-DD.",
+    "description": "Error shown when one of the date inputs cannot be parsed"
+  },
+  "customer.auditChain.error.invertedRange": {
+    "message": "La fecha final debe ser posterior a la inicial.",
+    "description": "Error shown when To <= From"
+  },
+  "customer.auditChain.error.windowTooLong": {
+    "message": "Ventana demasiado larga; la UI limita a 7 días. Usa la API para ventanas más largas (hasta 7 años).",
+    "description": "Error shown when the user picks a window > 7 days"
   }
 }
