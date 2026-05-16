@@ -183,13 +183,47 @@ def unstaged_or_untracked_files() -> list[str]:
 
 
 def commits_in_range(rev_range: str) -> list[str]:
-    out = run_git(["rev-list", "--no-merges", rev_range])
+    # Include merge commits so a `FREEZE-EXCEPTION` trailer attached to the
+    # merge itself is honoured (regression net for W26-P2-01: merge-commit-only
+    # trailer would otherwise be silently dropped under `--no-merges`).
+    # `files_in_commit` handles merge vs non-merge diffing below.
+    out = run_git(["rev-list", rev_range])
     return [line.strip() for line in out.splitlines() if line.strip()]
+
+
+def is_merge_commit(sha: str) -> bool:
+    """Return True iff `sha` has more than one parent."""
+    out = run_git(["rev-list", "--parents", "-n", "1", sha]).strip()
+    if not out:
+        return False
+    # Format: "<sha> <parent1> [<parent2> ...]"
+    parts = out.split()
+    return len(parts) > 2
 
 
 def files_in_commit(sha: str) -> list[str]:
-    out = run_git(["diff-tree", "--no-commit-id", "--name-only", "-r", sha])
-    return [line.strip() for line in out.splitlines() if line.strip()]
+    # For non-merge commits, plain `diff-tree -r <sha>` shows the diff vs the
+    # single parent. For merge commits, plain `diff-tree` is silent by default,
+    # which would let frozen-surface changes introduced by the merge slip
+    # through. We use `-m --first-parent` for merges so the diff is computed
+    # against the first parent (the branch being merged into), capturing the
+    # net-incoming files brought in by the merge.
+    if is_merge_commit(sha):
+        out = run_git(
+            ["diff-tree", "-m", "--first-parent", "--no-commit-id",
+             "--name-only", "-r", sha]
+        )
+    else:
+        out = run_git(["diff-tree", "--no-commit-id", "--name-only", "-r", sha])
+    # De-duplicate while preserving order (merge diffs may repeat under `-m`).
+    seen: set[str] = set()
+    files: list[str] = []
+    for line in out.splitlines():
+        stripped = line.strip()
+        if stripped and stripped not in seen:
+            seen.add(stripped)
+            files.append(stripped)
+    return files
 
 
 def commit_message(sha: str) -> str:
