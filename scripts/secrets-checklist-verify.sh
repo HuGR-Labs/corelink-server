@@ -19,8 +19,83 @@
 # Exit codes:
 #   0 — matrix and code are in sync
 #   1 — drift detected (script prints offending env vars)
+#
+# Canonical env-var name shape (used by every extractor below):
+#   ^[A-Z][A-Z0-9_]+$   (≥ 2 chars total — leading letter + ≥ 1 alnum/_).
+#
+# Single-letter tokens (e.g. `X`) are *not* env-var names. They appear in
+# documentation/template placeholders such as `${{ secrets.X }}` in
+# `.github/workflows/_TEMPLATE.yml.md` and would otherwise generate
+# false-positive drift. The shortest real env var in the matrix is 4 chars
+# (`PORT`), so the 2-char floor is well below the empirical minimum and
+# strictly tighter than the documentation placeholder shape. See
+# `specs/_audits/2026-05-16-secrets-x-false-positive-fix.md`.
 
 set -euo pipefail
+
+# -----------------------------------------------------------------------------
+# Self-test mode: exercise the env-var name regex against canonical inputs.
+# Runs in a temp dir, scoped entirely to this script — no repo I/O, no
+# matrix dependency, no side effects. Invoked via `--self-test`.
+# -----------------------------------------------------------------------------
+if [ "${1:-}" = "--self-test" ]; then
+    SELF_TEST_DIR="$(mktemp -d)"
+    trap 'rm -rf "${SELF_TEST_DIR}"' EXIT
+
+    # Canonical valid names (accept), placeholders/single-letter (reject).
+    cat > "${SELF_TEST_DIR}/fixture.rs" <<'EOF'
+fn _accept() {
+    let _ = std::env::var("PORT").ok();
+    let _ = std::env::var("DT_API_KEY").ok();
+    let _ = std::env::var("STATUSPAGE_API_KEY").ok();
+}
+fn _reject_single_letter() {
+    let _ = std::env::var("X").ok();
+}
+EOF
+    cat > "${SELF_TEST_DIR}/fixture.ts" <<'EOF'
+const a = process.env.PORT;
+const b = process.env.DT_API_KEY;
+const c = process.env["STATUSPAGE_API_KEY"];
+const x = process.env.X;
+const y = process.env["X"];
+EOF
+    mkdir -p "${SELF_TEST_DIR}/.github/workflows"
+    cat > "${SELF_TEST_DIR}/.github/workflows/sample.yml" <<'EOF'
+jobs:
+  j:
+    steps:
+      - run: echo ok
+        env:
+          GOOD: ${{ secrets.STATUSPAGE_API_KEY }}
+          BAD:  ${{ secrets.X }}
+EOF
+
+    # Run extractors against the fixture dir (mirrors the patterns below).
+    pushd "${SELF_TEST_DIR}" >/dev/null
+    extracted="$({
+        grep -rEh 'env::var(_os)?\("[A-Z][A-Z0-9_]+"\)' --include='*.rs' . 2>/dev/null \
+            | grep -oE '"[A-Z][A-Z0-9_]+"' | tr -d '"'
+        grep -rEh 'process\.env\.[A-Z][A-Z0-9_]+' --include='*.ts' . 2>/dev/null \
+            | grep -oE 'process\.env\.[A-Z][A-Z0-9_]+' | sed 's/process\.env\.//'
+        grep -rEh 'process\.env\["[A-Z][A-Z0-9_]+"\]' --include='*.ts' . 2>/dev/null \
+            | grep -oE '"[A-Z][A-Z0-9_]+"' | tr -d '"'
+        grep -rEh '\$\{\{\s*secrets\.[A-Z][A-Z0-9_]+\s*\}\}' .github/workflows/ 2>/dev/null \
+            | grep -oE 'secrets\.[A-Z][A-Z0-9_]+' | sed 's/secrets\.//'
+    } | sort -u)"
+    popd >/dev/null
+
+    expected="$(printf 'DT_API_KEY\nPORT\nSTATUSPAGE_API_KEY\n')"
+    if [ "${extracted}" = "${expected}" ]; then
+        echo "self-test: OK (regex accepts ≥2-char canonical names; rejects single-letter 'X')"
+        exit 0
+    else
+        echo "self-test: FAIL" >&2
+        echo "expected:" >&2; printf '%s\n' "${expected}" | sed 's/^/  /' >&2
+        echo "got:" >&2;      printf '%s\n' "${extracted}" | sed 's/^/  /' >&2
+        exit 1
+    fi
+fi
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "${REPO_ROOT}"
@@ -62,7 +137,7 @@ extract_matrix_vars() {
     # Then pull tokens in backticks from the env var column (3rd content column).
     grep -E '^\| [0-9]+ \|' "${MATRIX_FILE}" \
         | awk -F'|' '{print $4}' \
-        | grep -oE '`[A-Z][A-Z0-9_]*`' \
+        | grep -oE '`[A-Z][A-Z0-9_]+`' \
         | tr -d '`' \
         | sort -u
 }
@@ -78,30 +153,32 @@ extract_matrix_vars() {
 extract_code_vars() {
     {
         # Rust: env::var("FOO"), std::env::var("FOO"), env::var_os("FOO")
-        grep -rEh 'env::var(_os)?\("[A-Z][A-Z0-9_]*"\)' \
+        # Name shape: [A-Z][A-Z0-9_]+ (≥2 chars) — rejects single-letter
+        # placeholders like `X` while admitting the shortest real var (PORT, 4).
+        grep -rEh 'env::var(_os)?\("[A-Z][A-Z0-9_]+"\)' \
             --include='*.rs' \
             --exclude-dir=target \
             --exclude-dir=node_modules \
             --exclude-dir=_archive \
             --exclude-dir=.git \
             . 2>/dev/null \
-            | grep -oE 'env::var(_os)?\("[A-Z][A-Z0-9_]*"\)' \
-            | grep -oE '"[A-Z][A-Z0-9_]*"' \
+            | grep -oE 'env::var(_os)?\("[A-Z][A-Z0-9_]+"\)' \
+            | grep -oE '"[A-Z][A-Z0-9_]+"' \
             | tr -d '"' || true
 
         # Rust: env::set_var("FOO", ...) — symmetric, in case tests set things
-        grep -rEh 'env::set_var\("[A-Z][A-Z0-9_]*"' \
+        grep -rEh 'env::set_var\("[A-Z][A-Z0-9_]+"' \
             --include='*.rs' \
             --exclude-dir=target \
             --exclude-dir=node_modules \
             --exclude-dir=_archive \
             --exclude-dir=.git \
             . 2>/dev/null \
-            | grep -oE '"[A-Z][A-Z0-9_]*"' \
+            | grep -oE '"[A-Z][A-Z0-9_]+"' \
             | tr -d '"' || true
 
         # TS/JS: process.env.FOO
-        grep -rEh 'process\.env\.[A-Z][A-Z0-9_]*' \
+        grep -rEh 'process\.env\.[A-Z][A-Z0-9_]+' \
             --include='*.ts' --include='*.tsx' \
             --include='*.js' --include='*.jsx' --include='*.mjs' --include='*.cjs' \
             --exclude-dir=node_modules \
@@ -111,11 +188,11 @@ extract_code_vars() {
             --exclude-dir=_archive \
             --exclude-dir=.git \
             . 2>/dev/null \
-            | grep -oE 'process\.env\.[A-Z][A-Z0-9_]*' \
+            | grep -oE 'process\.env\.[A-Z][A-Z0-9_]+' \
             | sed 's/process\.env\.//' || true
 
         # TS/JS: process.env["FOO"]
-        grep -rEh 'process\.env\["[A-Z][A-Z0-9_]*"\]' \
+        grep -rEh 'process\.env\["[A-Z][A-Z0-9_]+"\]' \
             --include='*.ts' --include='*.tsx' \
             --include='*.js' --include='*.jsx' --include='*.mjs' --include='*.cjs' \
             --exclude-dir=node_modules \
@@ -125,13 +202,14 @@ extract_code_vars() {
             --exclude-dir=_archive \
             --exclude-dir=.git \
             . 2>/dev/null \
-            | grep -oE '"[A-Z][A-Z0-9_]*"' \
+            | grep -oE '"[A-Z][A-Z0-9_]+"' \
             | tr -d '"' || true
 
-        # GHA: ${{ secrets.FOO }}
-        grep -rEh '\$\{\{\s*secrets\.[A-Z][A-Z0-9_]*\s*\}\}' \
+        # GHA: ${{ secrets.FOO }} — rejects template placeholder `secrets.X`
+        # in `.github/workflows/_TEMPLATE.yml.md`.
+        grep -rEh '\$\{\{\s*secrets\.[A-Z][A-Z0-9_]+\s*\}\}' \
             .github/workflows/ 2>/dev/null \
-            | grep -oE 'secrets\.[A-Z][A-Z0-9_]*' \
+            | grep -oE 'secrets\.[A-Z][A-Z0-9_]+' \
             | sed 's/secrets\.//' || true
     } | sort -u
 }
