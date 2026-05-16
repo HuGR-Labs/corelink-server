@@ -3,7 +3,7 @@ id: "PROPOSAL-2026-05-16-FRAMEWORK-REVIEWER-ROLES-ADDENDUM"
 type: "governance"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "0.1.0"
+version: "0.1.1"
 created: "2026-05-16"
 updated: "2026-05-16"
 owner: "Gustavo Schneiter"
@@ -33,6 +33,8 @@ references:
 ## §1 Dual-hat fallback policy
 
 The original proposal §8.1 OQ-1 enumerated three options (A = 4 distinct people; B = 3 with one dual-hat; C = 2 with Owner dual-hatting). This section formalizes the **Option C** fallback as a named operating mode so the gate is executable WITHOUT waiting for the goal-state hiring outcome.
+
+> **Wave-24 cross-ref.** The §1.1 item-4-required ADR was authored as **`specs/03_architecture/adrs/ADR-0034b-framework-reviewer-dual-hat-fallback.md`** (wave-24, status PROPOSED → ACCEPTED on Owner invocation). ADR-0034b is the canonical authorization artifact for invoking the fallback; this §1 is the operating-policy specification it references.
 
 ### §1.1 When dual-hat fallback applies
 
@@ -281,6 +283,7 @@ Until then, the addendum sits as DRAFT alongside the original proposal and `revi
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 0.1.0 | 2026-05-16 | Gustavo Schneiter (via Claude Opus 4.7, wave-22 Lote 7 absorption) | Initial addendum. Extends `specs/_proposals/2026-05-16-framework-reviewer-roles.md` v0.1.0 with §1 dual-hat fallback policy (Pairing-Alpha / Pairing-Beta), §2 cross-veto rule + 3-of-4 quorum, §3 sign-off SLA (STANDARD 3 BD / HIGH_RISK 7 BD), §4 Reviewer Training Pack 10-hour floor, §5 90-day rolling quarterly cadence anchored on FROZEN cut, §6 conflict-of-interest declaration + recusal. Does not modify FW-H-* role scopes; specifies operating mechanics for small-org case. |
+| 0.1.1 | 2026-05-16 | Claude Opus 4.7 (wave-24 ADR-0034b cross-ref) | Adds §1 wave-24 cross-ref callout pointing at the newly-authored `specs/03_architecture/adrs/ADR-0034b-framework-reviewer-dual-hat-fallback.md` (the §1.1 item-4-required authorization artifact). Adds ADR-0034b to the closing cross-references list. No semantic change to operating policy. |
 
 ---
 
@@ -291,3 +294,4 @@ Until then, the addendum sits as DRAFT alongside the original proposal and `revi
 - `specs/00_framework.md §43.1` — slot labels reference role IDs FW-H-1..4 defined in the original proposal; this addendum specifies how those slots are filled, vetoed, scheduled, and trained.
 - `specs/_governance/reviewer_staffing_strategy.md` — multi-tier strategy SOT; this addendum is downstream operating policy for the Tier 1 framework-freeze gate specifically.
 - `specs/03_architecture/adrs/ADR-0034-prr-staffing-waiver-solo-tier.md` — prior-art for the §1.1-mandated dual-hat ADR pattern.
+- `specs/03_architecture/adrs/ADR-0034b-framework-reviewer-dual-hat-fallback.md` — wave-24 ADR that authorizes the §1 dual-hat fallback at the framework-freeze tier (analog of ADR-0034 at the PRR tier); status PROPOSED, transitions to ACCEPTED on Owner invocation.
