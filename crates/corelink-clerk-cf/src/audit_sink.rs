@@ -35,12 +35,60 @@
 //!   and the scoped key / SQL preview / DO name — never raw blob bytes,
 //!   JWT secrets, or D1 row payloads.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use corelink_cf_bindings::{
     D1AuditFn, D1Error, D1Op, DoAuditFn, DoError, DoOp, KvAuditFn, KvError, KvOp, R2AuditFn,
     R2Error, R2Op,
 };
+
+/// W26-P2-08 telemetry side-channel: monotonic counter of `emit_synthetic`
+/// calls that hit a poisoned recorder mutex on the fail-CLOSED prefetch path.
+///
+/// # Rationale (double-fault safe)
+///
+/// The wave-26 CF Worker request-prelude fail-CLOSED path calls
+/// [`AuditSink::emit_synthetic`] to surface a `tenant_region_unresolved`
+/// row before the 503 fires. If that emission encounters a poisoned
+/// recorder mutex (test-mode native target only — production `wasm32`
+/// ConsoleNdjson is infallible), the original code silently dropped the
+/// event. Wave-26 adversarial review (`specs/_audits/2026-05-16-wave26-adversarial-review.md §228`)
+/// flagged the silent drop as an INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER
+/// observability gap: the operator cannot tell from logs that an audit
+/// emission failed, even though the 503 still fires correctly.
+///
+/// W26-P2-08 records the poison event without re-acquiring the poisoned
+/// mutex and without doing anything that can itself re-fault:
+///
+/// 1. An [`AtomicU64`] increment (`fetch_add` is lock-free; cannot
+///    poison; allocation-free).
+/// 2. A `tracing::error!` line with a structured `event` field. `tracing`
+///    macros do not allocate on the fast path when the subscriber is
+///    absent (CF Worker `wasm32` target), and on native test targets the
+///    panic-safe `tracing` impls never re-enter user mutex state.
+///
+/// The counter is exported as a metric (`corelink_audit_mutex_poison_total
+/// {path="prefetch_fail_closed"}`) so operators can alert. The 503
+/// fail-CLOSED behaviour is preserved — this counter is purely a
+/// telemetry side-channel.
+static AUDIT_MUTEX_POISON_TOTAL_PREFETCH_FAIL_CLOSED: AtomicU64 = AtomicU64::new(0);
+
+/// Read the current value of the W26-P2-08 mutex-poison telemetry counter.
+///
+/// Operators wire this through their metrics exporter as
+/// `corelink_audit_mutex_poison_total{path="prefetch_fail_closed"}`. The
+/// counter is monotonic across the process lifetime; restart resets to 0.
+///
+/// Returns the count of poisoned-mutex events observed by
+/// [`AuditSink::emit_synthetic`] since process start. A non-zero value
+/// indicates that at least one fail-CLOSED audit emission was silently
+/// dropped (the 503 still fired) — operators should investigate the
+/// upstream panic that poisoned the recorder mutex.
+#[must_use]
+pub fn audit_mutex_poison_total_prefetch_fail_closed() -> u64 {
+    AUDIT_MUTEX_POISON_TOTAL_PREFETCH_FAIL_CLOSED.load(Ordering::Relaxed)
+}
 
 /// A single audit event captured before a binding operation.
 ///
@@ -214,9 +262,31 @@ impl AuditSink {
     /// the same NDJSON canonical sink without expanding those enums.
     ///
     /// Infallible by design — the recorder backend's mutex-poison case
-    /// degrades to a silent drop (the prefetch wire is already on the
-    /// fail-CLOSED path; an additional log line failing is not actionable
-    /// and must not double-fault the 503 response).
+    /// degrades to a recorded telemetry event (atomic counter + tracing
+    /// line) rather than a silent drop. The prefetch wire is already on
+    /// the fail-CLOSED path; the 503 still fires regardless of audit
+    /// emission outcome.
+    ///
+    /// # W26-P2-08 — mutex-poison telemetry (double-fault safe)
+    ///
+    /// When the recorder mutex is poisoned (a thread panicked while
+    /// holding the lock — only reachable on the native test target;
+    /// `wasm32` production uses `ConsoleNdjson` which is infallible),
+    /// the event would otherwise be silently dropped. W26-P2-08 records
+    /// the poison via:
+    ///
+    /// 1. [`AtomicU64::fetch_add`] on
+    ///    [`AUDIT_MUTEX_POISON_TOTAL_PREFETCH_FAIL_CLOSED`] — lock-free,
+    ///    allocation-free, cannot itself poison or fault.
+    /// 2. [`tracing::error!`] with a structured `event` field. The
+    ///    macro is no-op on subscriber-absent targets and never re-enters
+    ///    the poisoned recorder mutex.
+    ///
+    /// Both steps are deliberately **separate** from the audit emit
+    /// chain: they do NOT call back into [`AuditSink::record`] or
+    /// [`AuditSink::emit_synthetic`], so a poisoned recorder cannot
+    /// trigger a recursive emit (the double-fault risk the original
+    /// silent drop was guarding against).
     pub fn emit_synthetic(&self, event: AuditEvent) {
         match &self.backend {
             SinkBackend::ConsoleNdjson => {
@@ -229,11 +299,29 @@ impl AuditSink {
                     let _ = event;
                 }
             }
-            SinkBackend::Recorder(buf) => {
-                if let Ok(mut guard) = buf.lock() {
+            SinkBackend::Recorder(buf) => match buf.lock() {
+                Ok(mut guard) => {
                     guard.push(event);
                 }
-            }
+                Err(_poisoned) => {
+                    // W26-P2-08: record the poison instead of silently
+                    // dropping. The lock-free atomic increment cannot
+                    // itself fault, and the tracing emission cannot
+                    // re-acquire the poisoned mutex. The 503 fail-CLOSED
+                    // path still fires upstream.
+                    let _prev = AUDIT_MUTEX_POISON_TOTAL_PREFETCH_FAIL_CLOSED
+                        .fetch_add(1, Ordering::Relaxed);
+                    tracing::error!(
+                        event = "audit_emit_mutex_poison_on_fail_closed",
+                        surface = event.surface,
+                        op = event.op,
+                        "audit recorder mutex poisoned during fail-CLOSED \
+                         emit_synthetic; 503 still fires upstream; counter \
+                         corelink_audit_mutex_poison_total\
+                         {{path=prefetch_fail_closed}} incremented",
+                    );
+                }
+            },
         }
     }
 
