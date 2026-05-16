@@ -39,15 +39,22 @@
 //!
 //! Stripe HTTPS calls run from `apps/server` (native Rust server
 //! worker context). Cloudflare Worker (`wasm32-unknown-unknown`)
-//! callers use the in-memory fake or proxy to the native worker. This
-//! crate is GATED OUT of wasm32 builds via the inner-attribute below
-//! so `cargo build --target wasm32-unknown-unknown` skips it instead
-//! of failing on native-TLS dependencies.
-#![cfg(not(target_arch = "wasm32"))]
+//! callers use the in-memory fake or proxy to the native worker.
+//!
+//! Wave-19 (R-PREP) lifts the crate-root gate so wasm32-safe surface
+//! (`webhook` signature verify + `webhook_dispatch` trait pipeline +
+//! `error` taxonomy + `retry` pure-logic + `dlq` types + `portal` audit
+//! types) compiles on `wasm32-unknown-unknown`. The native-only HTTPS
+//! client (`client.rs`, depends on `reqwest::blocking`) is per-module
+//! gated to non-wasm32 targets. This mirrors the `r2_real / d1_real /
+//! kv_real / do_real` pattern documented in
+//! `specs/_audits/2026-05-15-cf-binding-real-pattern.md` and
+//! `specs/_audits/2026-05-16-stripe-wasm32-gate-lift.md`.
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 #![deny(missing_debug_implementations)]
 
+#[cfg(not(target_arch = "wasm32"))]
 pub mod client;
 pub mod dlq;
 pub mod error;
@@ -56,6 +63,7 @@ pub mod retry;
 pub mod webhook;
 pub mod webhook_dispatch;
 
+#[cfg(not(target_arch = "wasm32"))]
 pub use client::{StripeRealClient, StripeRealClientBuilder};
 pub use portal::{
     BillingPortalSessionCreator, InMemoryPortalAuditSink, InMemoryPortalSessionCreator,

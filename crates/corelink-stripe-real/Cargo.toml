@@ -1,6 +1,6 @@
 [package]
 name = "corelink-stripe-real"
-description = "CoreLink Stripe HTTPS client — real implementation of corelink-tier-selection::StripeClient via reqwest (rustls). Ships endpoints for Checkout Sessions, Subscriptions, Customers, and Billing Portal sessions; idempotent POSTs via `Idempotency-Key`; exponential backoff retries on 5xx / 429 (respects `Retry-After`); pure-function HMAC-SHA256 webhook signature verify (constant-time via `subtle::ConstantTimeEq`; 5-min replay window). API key + webhook secret resolved from env (`STRIPE_SECRET_KEY` / `STRIPE_SECRET_KEY_TEST` / `STRIPE_WEBHOOK_SECRET`) — NEVER logged. `StripeError` `#[non_exhaustive]` taxonomy (RateLimited / Authentication / CardDeclined / InvalidRequest / ApiConnection / Idempotency / Generic). wasm32 gated out: production callers run in `apps/server` (native Rust, NOT CF Worker) per `trait-abstraction-defer` charter — R2-1."
+description = "CoreLink Stripe HTTPS client — real implementation of corelink-tier-selection::StripeClient via reqwest (rustls). Ships endpoints for Checkout Sessions, Subscriptions, Customers, and Billing Portal sessions; idempotent POSTs via `Idempotency-Key`; exponential backoff retries on 5xx / 429 (respects `Retry-After`); pure-function HMAC-SHA256 webhook signature verify (constant-time via `subtle::ConstantTimeEq`; 5-min replay window). API key + webhook secret resolved from env (`STRIPE_SECRET_KEY` / `STRIPE_SECRET_KEY_TEST` / `STRIPE_WEBHOOK_SECRET`) — NEVER logged. `StripeError` `#[non_exhaustive]` taxonomy (RateLimited / Authentication / CardDeclined / InvalidRequest / ApiConnection / Idempotency / Generic). Wave-19 (R-PREP): crate-root gate lifted; wasm32-safe surface (`webhook`, `webhook_dispatch`, `error`, `retry`, `dlq`, `portal`) builds on `wasm32-unknown-unknown`; native-only HTTPS client (`client.rs` + reqwest) gated per-module to non-wasm32 (see `specs/_audits/2026-05-16-stripe-wasm32-gate-lift.md`)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -40,9 +40,16 @@ sha2 = { workspace = true }
 subtle = { workspace = true }
 hex = { workspace = true }
 blake3 = { workspace = true }
-reqwest = { workspace = true, features = ["json", "rustls-tls", "blocking"], default-features = false }
 url = "2"
 corelink-tier-selection = { path = "../corelink-tier-selection" }
+
+# Wave-19 (R-PREP): native-only HTTPS dependency. The `client.rs` module
+# wrapping `reqwest::blocking` is gated to non-wasm32 at the module level
+# (see `src/lib.rs`); pulling `reqwest` in only on native targets keeps
+# the wasm32 build slim and avoids hitting reqwest's wasm shim
+# (which lacks `blocking`).
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+reqwest = { workspace = true, features = ["json", "rustls-tls", "blocking"], default-features = false }
 
 [dev-dependencies]
 proptest = { workspace = true }
