@@ -15,7 +15,9 @@ name: perf-regression (r-prep)
 #
 # Baselines are committed under `reports/perf/`; operators refresh
 # them via `scripts/refresh-perf-baseline.sh`. The canonical
-# pre-GA snapshot is tagged `perf-baseline-pre-ga-2026-05-16`.
+# pre-GA snapshot is tagged `perf-baseline-ga-2026-05-16` (wave-29
+# stream-9, supersedes the wave-22 `perf-baseline-pre-ga-2026-05-16`
+# tag — see `specs/_audits/2026-05-16-perf-baseline-ga-freeze.md`).
 #
 # Triage on failure: specs/_runbooks/RB-PERF-REGRESSION.md
 #

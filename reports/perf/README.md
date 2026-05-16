@@ -10,7 +10,10 @@ tolerance:
 - **NON_CRITICAL** benches gate at **>15% p99 regression**.
 - A per-baseline `tolerance_pct` override wins over the class default.
 
-The canonical pre-GA snapshot is tagged `perf-baseline-pre-ga-2026-05-16`.
+The canonical pre-GA snapshot is tagged `perf-baseline-ga-2026-05-16`
+(wave-29 stream-9, on `main @ 365dd38`); it supersedes the wave-22
+`perf-baseline-pre-ga-2026-05-16` tag. See
+`specs/_audits/2026-05-16-perf-baseline-ga-freeze.md`.
 
 ## Files
 
