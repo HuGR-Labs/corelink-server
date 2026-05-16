@@ -1,8 +1,8 @@
 diff --git a/lib/ssg/ssgNodeRequire.js b/lib/ssg/ssgNodeRequire.js
-index cfd85dbde0b9a52996b7321bef85eafb7b29ec17..bc6a01b8b8be2ab78db06018e50a5fa65498f1fc 100644
+index cfd85dbde0b9a52996b7321bef85eafb7b29ec17..51a97dacf9346cf32af98274e788e71c6953a5b6 100644
 --- a/lib/ssg/ssgNodeRequire.js
 +++ b/lib/ssg/ssgNodeRequire.js
-@@ -23,6 +23,41 @@ function createSSGRequire(serverBundlePath) {
+@@ -23,6 +23,111 @@ function createSSGRequire(serverBundlePath) {
      const realRequire = (0, module_1.createRequire)(serverBundlePath);
      const allRequiredIds = [];
      const ssgRequireFunction = (id) => {
@@ -27,7 +27,77 @@ index cfd85dbde0b9a52996b7321bef85eafb7b29ec17..bc6a01b8b8be2ab78db06018e50a5fa6
 +        // SSR. Without this stub the build fails with ERR_MODULE_NOT_FOUND
 +        // on Node 22 even after CSS stubs and require.resolveWeak polyfill.
 +        if (typeof id === 'string' && (id.startsWith('@theme/') || id.startsWith('@generated/'))) {
++            // CoreLink DEBT-015-BUILD wave-25 path-#3 belt-and-suspenders:
++            // If `@generated/*.json` slips through (e.g. webpack 5's
++            // `target:'node'` lazy-require pattern under a future code-gen
++            // regression), try to resolve it against the on-disk
++            // `.docusaurus/<plugin>/p/<file>.json`. The plugin emits these
++            // JSON files at build-time, and they are the canonical
++            // server-readable form of route-data state. We derive the
++            // generated-files dir relative to the bundle: every Docusaurus
++            // SSG run places `server.bundle.js` at
++            // `<siteDir>/.docusaurus/i18n/<locale>/__server/server.bundle.js`
++            // (or `<siteDir>/.docusaurus/__server/server.bundle.js` for the
++            // default locale), so the generated dir is two levels up.
++            if (id.startsWith('@generated/') && id.endsWith('.json')) {
++                try {
++                    const path = require('path');
++                    const fs = require('fs');
++                    const generatedRoot = path.resolve(path.dirname(serverBundlePath), '..');
++                    const rel = id.replace(/^@generated\//, '');
++                    const onDisk = path.join(generatedRoot, rel);
++                    if (fs.existsSync(onDisk)) {
++                        return realRequire(onDisk);
++                    }
++                } catch (_e) {
++                    // fall through to stub
++                }
++            }
 +            return { default: () => {}, __esModule: true };
++        }
++        // CoreLink DEBT-015-BUILD wave-25 path-#3 defensive branch:
++        // `@site/*` is webpack's docs-root alias. Webpack 5's
++        // `target:'node'` server target has historically (waves 22-24)
++        // emitted literal `require("@site/docs/*.mdx")` calls for
++        // dynamic-import specifiers. The wave-24 `@docusaurus/babel`
++        // patch (modules:false + syntax-dynamic-import) defused that
++        // path empirically, but we add this branch as a safety net so
++        // a future regression returns a noop stub instead of throwing
++        // ERR_MODULE_NOT_FOUND at SSG time. For `.json` targets we
++        // attempt a real filesystem read against `<siteDir>/<rest>`
++        // (siteDir derived from the bundle path: bundle lives under
++        // `<siteDir>/.docusaurus/[i18n/<locale>/]__server/`).
++        if (typeof id === 'string' && id.startsWith('@site/')) {
++            try {
++                const path = require('path');
++                const fs = require('fs');
++                // Walk up from the bundle until we find a sibling
++                // .docusaurus dir's parent (the siteDir).
++                let cursor = path.dirname(serverBundlePath);
++                let siteDir = null;
++                for (let i = 0; i < 6 && cursor && cursor !== path.dirname(cursor); i++) {
++                    if (fs.existsSync(path.join(cursor, '.docusaurus'))) {
++                        siteDir = cursor;
++                        break;
++                    }
++                    cursor = path.dirname(cursor);
++                }
++                const rel = id.replace(/^@site\//, '');
++                if (siteDir && /\.json$/.test(rel)) {
++                    const onDisk = path.join(siteDir, rel);
++                    if (fs.existsSync(onDisk)) {
++                        return realRequire(onDisk);
++                    }
++                }
++                // For MDX/JS/TSX: the compiled component lives only in
++                // the client-side webpack chunks. Sandbox-evaluating
++                // them is out of scope for the safety-net role; return
++                // a noop React-component-shaped stub so SSR renders an
++                // empty fragment rather than throwing.
++            } catch (_e) {
++                // fall through to stub
++            }
++            return { default: () => null, __esModule: true };
 +        }
 +        // CoreLink DEBT-015-BUILD patch: webpack's server bundle
 +        // externalises `theme-classic/lib/*` client-module entries
@@ -44,7 +114,7 @@ index cfd85dbde0b9a52996b7321bef85eafb7b29ec17..bc6a01b8b8be2ab78db06018e50a5fa6
          const module = realRequire(id);
          allRequiredIds.push(id);
          return module;
-@@ -33,6 +68,10 @@ function createSSGRequire(serverBundlePath) {
+@@ -33,6 +138,10 @@ function createSSGRequire(serverBundlePath) {
          });
      };
      ssgRequireFunction.resolve = realRequire.resolve;

@@ -9,7 +9,7 @@ patchedDependencies:
     hash: b1fc2e8a067c02d1c1f10b25904e5b3f249dbac87e06c9ae05a78683fbc45ff3
     path: patches/@docusaurus__babel@3.10.1.patch
   '@docusaurus/core@3.10.1':
-    hash: 78166d8e355052f497744d4afa688cf80bfa67f48d28c8f66f485ff3eac3e223
+    hash: 901de121dee51926c4eb27d2b28f6508cd0e3c676905b90ddc7d0d680c17b6cc
     path: patches/@docusaurus__core@3.10.1.patch
 
 importers:
@@ -171,7 +171,7 @@ importers:
     dependencies:
       '@docusaurus/core':
         specifier: 3.10.1
-        version: 3.10.1(patch_hash=78166d8e355052f497744d4afa688cf80bfa67f48d28c8f66f485ff3eac3e223)(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
+        version: 3.10.1(patch_hash=901de121dee51926c4eb27d2b28f6508cd0e3c676905b90ddc7d0d680c17b6cc)(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
       '@docusaurus/preset-classic':
         specifier: 3.10.1
         version: 3.10.1(@algolia/client-search@5.52.1)(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(@types/react@18.3.28)(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(search-insights@2.17.3)(typescript@5.6.3)
@@ -12453,7 +12453,7 @@ snapshots:
       - uglify-js
       - webpack-cli
 
-  '@docusaurus/core@3.10.1(patch_hash=78166d8e355052f497744d4afa688cf80bfa67f48d28c8f66f485ff3eac3e223)(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)':
+  '@docusaurus/core@3.10.1(patch_hash=901de121dee51926c4eb27d2b28f6508cd0e3c676905b90ddc7d0d680c17b6cc)(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)':
     dependencies:
       '@docusaurus/babel': 3.10.1(patch_hash=b1fc2e8a067c02d1c1f10b25904e5b3f249dbac87e06c9ae05a78683fbc45ff3)(clean-css@5.3.3)(cssnano@6.1.2(postcss@8.5.14))(html-minifier-terser@7.2.0)(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@docusaurus/bundler': 3.10.1(lightningcss@1.32.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
@@ -12607,7 +12607,7 @@ snapshots:
 
   '@docusaurus/plugin-content-blog@3.10.1(@docusaurus/plugin-content-docs@3.10.1(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3))(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)':
     dependencies:
-      '@docusaurus/core': 3.10.1(patch_hash=78166d8e355052f497744d4afa688cf80bfa67f48d28c8f66f485ff3eac3e223)(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
+      '@docusaurus/core': 3.10.1(patch_hash=901de121dee51926c4eb27d2b28f6508cd0e3c676905b90ddc7d0d680c17b6cc)(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
       '@docusaurus/logger': 3.10.1
       '@docusaurus/mdx-loader': 3.10.1(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@docusaurus/plugin-content-docs': 3.10.1(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
@@ -12655,7 +12655,7 @@ snapshots:
 
   '@docusaurus/plugin-content-docs@3.10.1(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)':
     dependencies:
-      '@docusaurus/core': 3.10.1(patch_hash=78166d8e355052f497744d4afa688cf80bfa67f48d28c8f66f485ff3eac3e223)(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
+      '@docusaurus/core': 3.10.1(patch_hash=901de121dee51926c4eb27d2b28f6508cd0e3c676905b90ddc7d0d680c17b6cc)(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
       '@docusaurus/logger': 3.10.1
       '@docusaurus/mdx-loader': 3.10.1(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@docusaurus/module-type-aliases': 3.10.1(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -12701,7 +12701,7 @@ snapshots:
 
   '@docusaurus/plugin-content-pages@3.10.1(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)':
     dependencies:
-      '@docusaurus/core': 3.10.1(patch_hash=78166d8e355052f497744d4afa688cf80bfa67f48d28c8f66f485ff3eac3e223)(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
+      '@docusaurus/core': 3.10.1(patch_hash=901de121dee51926c4eb27d2b28f6508cd0e3c676905b90ddc7d0d680c17b6cc)(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
       '@docusaurus/mdx-loader': 3.10.1(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@docusaurus/types': 3.10.1(clean-css@5.3.3)(cssnano@6.1.2(postcss@8.5.14))(html-minifier-terser@7.2.0)(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@docusaurus/utils': 3.10.1(clean-css@5.3.3)(cssnano@6.1.2(postcss@8.5.14))(html-minifier-terser@7.2.0)(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -12737,7 +12737,7 @@ snapshots:
 
   '@docusaurus/plugin-css-cascade-layers@3.10.1(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)':
     dependencies:
-      '@docusaurus/core': 3.10.1(patch_hash=78166d8e355052f497744d4afa688cf80bfa67f48d28c8f66f485ff3eac3e223)(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
+      '@docusaurus/core': 3.10.1(patch_hash=901de121dee51926c4eb27d2b28f6508cd0e3c676905b90ddc7d0d680c17b6cc)(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
       '@docusaurus/types': 3.10.1(clean-css@5.3.3)(cssnano@6.1.2(postcss@8.5.14))(html-minifier-terser@7.2.0)(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@docusaurus/utils': 3.10.1(clean-css@5.3.3)(cssnano@6.1.2(postcss@8.5.14))(html-minifier-terser@7.2.0)(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@docusaurus/utils-validation': 3.10.1(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -12770,7 +12770,7 @@ snapshots:
 
   '@docusaurus/plugin-debug@3.10.1(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)':
     dependencies:
-      '@docusaurus/core': 3.10.1(patch_hash=78166d8e355052f497744d4afa688cf80bfa67f48d28c8f66f485ff3eac3e223)(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
+      '@docusaurus/core': 3.10.1(patch_hash=901de121dee51926c4eb27d2b28f6508cd0e3c676905b90ddc7d0d680c17b6cc)(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
       '@docusaurus/types': 3.10.1(clean-css@5.3.3)(cssnano@6.1.2(postcss@8.5.14))(html-minifier-terser@7.2.0)(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@docusaurus/utils': 3.10.1(clean-css@5.3.3)(cssnano@6.1.2(postcss@8.5.14))(html-minifier-terser@7.2.0)(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       fs-extra: 11.3.5
@@ -12804,7 +12804,7 @@ snapshots:
 
   '@docusaurus/plugin-google-analytics@3.10.1(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)':
     dependencies:
-      '@docusaurus/core': 3.10.1(patch_hash=78166d8e355052f497744d4afa688cf80bfa67f48d28c8f66f485ff3eac3e223)(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
+      '@docusaurus/core': 3.10.1(patch_hash=901de121dee51926c4eb27d2b28f6508cd0e3c676905b90ddc7d0d680c17b6cc)(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
       '@docusaurus/types': 3.10.1(clean-css@5.3.3)(cssnano@6.1.2(postcss@8.5.14))(html-minifier-terser@7.2.0)(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@docusaurus/utils-validation': 3.10.1(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       react: 18.3.1
@@ -12836,7 +12836,7 @@ snapshots:
 
   '@docusaurus/plugin-google-gtag@3.10.1(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)':
     dependencies:
-      '@docusaurus/core': 3.10.1(patch_hash=78166d8e355052f497744d4afa688cf80bfa67f48d28c8f66f485ff3eac3e223)(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
+      '@docusaurus/core': 3.10.1(patch_hash=901de121dee51926c4eb27d2b28f6508cd0e3c676905b90ddc7d0d680c17b6cc)(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
       '@docusaurus/types': 3.10.1(clean-css@5.3.3)(cssnano@6.1.2(postcss@8.5.14))(html-minifier-terser@7.2.0)(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@docusaurus/utils-validation': 3.10.1(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@types/gtag.js': 0.0.20
@@ -12869,7 +12869,7 @@ snapshots:
 
   '@docusaurus/plugin-google-tag-manager@3.10.1(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)':
     dependencies:
-      '@docusaurus/core': 3.10.1(patch_hash=78166d8e355052f497744d4afa688cf80bfa67f48d28c8f66f485ff3eac3e223)(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
+      '@docusaurus/core': 3.10.1(patch_hash=901de121dee51926c4eb27d2b28f6508cd0e3c676905b90ddc7d0d680c17b6cc)(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
       '@docusaurus/types': 3.10.1(clean-css@5.3.3)(cssnano@6.1.2(postcss@8.5.14))(html-minifier-terser@7.2.0)(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@docusaurus/utils-validation': 3.10.1(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       react: 18.3.1
@@ -12901,7 +12901,7 @@ snapshots:
 
   '@docusaurus/plugin-sitemap@3.10.1(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)':
     dependencies:
-      '@docusaurus/core': 3.10.1(patch_hash=78166d8e355052f497744d4afa688cf80bfa67f48d28c8f66f485ff3eac3e223)(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
+      '@docusaurus/core': 3.10.1(patch_hash=901de121dee51926c4eb27d2b28f6508cd0e3c676905b90ddc7d0d680c17b6cc)(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
       '@docusaurus/logger': 3.10.1
       '@docusaurus/types': 3.10.1(clean-css@5.3.3)(cssnano@6.1.2(postcss@8.5.14))(html-minifier-terser@7.2.0)(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@docusaurus/utils': 3.10.1(clean-css@5.3.3)(cssnano@6.1.2(postcss@8.5.14))(html-minifier-terser@7.2.0)(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -12938,7 +12938,7 @@ snapshots:
 
   '@docusaurus/plugin-svgr@3.10.1(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)':
     dependencies:
-      '@docusaurus/core': 3.10.1(patch_hash=78166d8e355052f497744d4afa688cf80bfa67f48d28c8f66f485ff3eac3e223)(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
+      '@docusaurus/core': 3.10.1(patch_hash=901de121dee51926c4eb27d2b28f6508cd0e3c676905b90ddc7d0d680c17b6cc)(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
       '@docusaurus/types': 3.10.1(clean-css@5.3.3)(cssnano@6.1.2(postcss@8.5.14))(html-minifier-terser@7.2.0)(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@docusaurus/utils': 3.10.1(clean-css@5.3.3)(cssnano@6.1.2(postcss@8.5.14))(html-minifier-terser@7.2.0)(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@docusaurus/utils-validation': 3.10.1(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -12974,7 +12974,7 @@ snapshots:
 
   '@docusaurus/preset-classic@3.10.1(@algolia/client-search@5.52.1)(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(@types/react@18.3.28)(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(search-insights@2.17.3)(typescript@5.6.3)':
     dependencies:
-      '@docusaurus/core': 3.10.1(patch_hash=78166d8e355052f497744d4afa688cf80bfa67f48d28c8f66f485ff3eac3e223)(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
+      '@docusaurus/core': 3.10.1(patch_hash=901de121dee51926c4eb27d2b28f6508cd0e3c676905b90ddc7d0d680c17b6cc)(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
       '@docusaurus/plugin-content-blog': 3.10.1(@docusaurus/plugin-content-docs@3.10.1(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3))(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
       '@docusaurus/plugin-content-docs': 3.10.1(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
       '@docusaurus/plugin-content-pages': 3.10.1(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
@@ -13025,7 +13025,7 @@ snapshots:
 
   '@docusaurus/theme-classic@3.10.1(@types/react@18.3.28)(lightningcss@1.32.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)':
     dependencies:
-      '@docusaurus/core': 3.10.1(patch_hash=78166d8e355052f497744d4afa688cf80bfa67f48d28c8f66f485ff3eac3e223)(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
+      '@docusaurus/core': 3.10.1(patch_hash=901de121dee51926c4eb27d2b28f6508cd0e3c676905b90ddc7d0d680c17b6cc)(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
       '@docusaurus/logger': 3.10.1
       '@docusaurus/mdx-loader': 3.10.1(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@docusaurus/module-type-aliases': 3.10.1(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -13113,7 +13113,7 @@ snapshots:
     dependencies:
       '@algolia/autocomplete-core': 1.19.8(@algolia/client-search@5.52.1)(algoliasearch@5.52.1)(search-insights@2.17.3)
       '@docsearch/react': 4.6.3(@algolia/client-search@5.52.1)(@types/react@18.3.28)(algoliasearch@5.52.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(search-insights@2.17.3)
-      '@docusaurus/core': 3.10.1(patch_hash=78166d8e355052f497744d4afa688cf80bfa67f48d28c8f66f485ff3eac3e223)(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
+      '@docusaurus/core': 3.10.1(patch_hash=901de121dee51926c4eb27d2b28f6508cd0e3c676905b90ddc7d0d680c17b6cc)(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
       '@docusaurus/logger': 3.10.1
       '@docusaurus/plugin-content-docs': 3.10.1(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
       '@docusaurus/theme-common': 3.10.1(@docusaurus/plugin-content-docs@3.10.1(@mdx-js/react@3.1.1(@types/react@18.3.28)(react@18.3.1))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3))(lightningcss@1.32.0)(postcss@8.5.14)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
