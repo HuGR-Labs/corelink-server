@@ -1,0 +1,92 @@
+{
+  "audit_doc": "specs/_audits/2026-05-16-perf-baseline-ga-freeze.md",
+  "benches_executed_end_to_end": [
+    "corelink-tenant-path::derive_prefix_v2",
+    "corelink-hash::blake3",
+    "corelink-audit-chain::jcs_canonicalize"
+  ],
+  "benches_pending_recapture": [
+    "corelink-tenant-path::derive",
+    "corelink-hash::blake3_bench",
+    "corelink-audit-chain::merkle_append",
+    "corelink-dpa-acceptance::accept_and_verify_jwt",
+    "corelink-byok::envelope_roundtrip",
+    "corelink-signup::orchestrator",
+    "corelink-tier-selection::select",
+    "corelink-stripe-real::webhook_verify"
+  ],
+  "captured_at": "2026-05-16T13:45:35Z",
+  "commit": "365dd38a3f575ca35c123bfa1385f2ca083d3072",
+  "commit_short": "365dd38",
+  "measurement_mode": "criterion --quick (laptop wall-clock budget); CI canonical refresh per \u00a75",
+  "rows": [
+    {
+      "bench": "derive_prefix_v2",
+      "crate": "corelink-tenant-path",
+      "criterion_group": "tenant_path_derive_prefix_batch",
+      "criticality": "CRITICAL",
+      "measurements": [
+        {
+          "input": "1000-distinct-tenants",
+          "mean_ns": 1149611.8671875,
+          "median_ns": 1149611.8671875
+        }
+      ]
+    },
+    {
+      "bench": "blake3",
+      "crate": "corelink-hash",
+      "criterion_group": "blake3_hash",
+      "criticality": "CRITICAL",
+      "measurements": [
+        {
+          "input": "100MiB",
+          "mean_ns": 31760873.1875,
+          "median_ns": 31760873.1875
+        },
+        {
+          "input": "1B",
+          "mean_ns": 78.32611083984375,
+          "median_ns": 78.32611083984375
+        },
+        {
+          "input": "1KiB",
+          "mean_ns": 945.1853103637695,
+          "median_ns": 945.1853103637695
+        },
+        {
+          "input": "1MiB",
+          "mean_ns": 263054.8515625,
+          "median_ns": 263054.8515625
+        }
+      ]
+    },
+    {
+      "bench": "jcs_canonicalize",
+      "crate": "corelink-audit-chain",
+      "criterion_group": "audit_chain_jcs_canonicalize",
+      "criticality": "CRITICAL",
+      "measurements": [
+        {
+          "input": "100B-data",
+          "mean_ns": 15956.543579101562,
+          "median_ns": 15956.543579101562
+        },
+        {
+          "input": "10240B-data",
+          "mean_ns": 26728.0546875,
+          "median_ns": 26728.0546875
+        },
+        {
+          "input": "1024B-data",
+          "mean_ns": 18754.700744628906,
+          "median_ns": 18754.700744628906
+        }
+      ]
+    }
+  ],
+  "stream": "wave-29 stream-9 perf-baseline-ga-freeze",
+  "supersedes_tag": "perf-baseline-pre-ga-2026-05-16",
+  "tag": "perf-baseline-ga-2026-05-16",
+  "wave22_predecessor_state": "all 11 baselines pending (median_ns null) \u2014 schema-current, numeric-net-new"
+}

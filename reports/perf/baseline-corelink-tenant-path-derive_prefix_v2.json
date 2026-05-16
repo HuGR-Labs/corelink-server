@@ -1,14 +1,14 @@
 {
   "bench": "derive_prefix_v2",
-  "bench_id": "derive_prefix_v2",
-  "captured_at": "",
-  "commit": "pending",
+  "bench_id": "tenant_path_derive_prefix_batch/1000-distinct-tenants",
+  "captured_at": "2026-05-16T13:45:51Z",
+  "commit": "365dd38",
   "crate": "corelink-tenant-path",
   "criticality": "CRITICAL",
-  "mean_ns": null,
-  "median_ns": null,
-  "notes": "Pending \u2014 record via scripts/refresh-perf-baseline.sh on a green CI run, then commit. See RB-PERF-REGRESSION. Wave-22 (2026-05-16): criticality tag added for split-threshold gate. Pre-GA pilot tenant workloads. Canonical baseline tag: perf-baseline-pre-ga-2026-05-16.",
-  "p99_ns": null,
+  "mean_ns": 1149611.8671875,
+  "median_ns": 1149611.8671875,
+  "notes": "Wave-29 stream-9 GA-freeze (--quick mode). Canonical tag: perf-baseline-ga-2026-05-16. p99_ns is upper-CI-bound proxy from --quick (full sample p99 requires --measurement-time 5; operator refresh per audit \u00a75). Pre-GA pilot tenant workloads.",
+  "p99_ns": 1150861.640625,
   "sample_count": null,
   "tolerance_pct": null
 }
