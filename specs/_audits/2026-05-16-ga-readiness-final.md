@@ -350,6 +350,8 @@ Upon 2-key APPROVED decision in §13.2 + §13.3:
 5. Greenlight composite `slo:greenlight:composite_ok == 1` ≥ 30 min before declaring §3.11 cutover complete.
 6. T+24h / T+72h / T+7d: `RB-GA-CUTOVER.md` §6 post-cutover review cadence.
 
+**Cutover dependency map (wave-27).** The canonical T-N-day DAG that governs steps 1–6 above is `specs/_audits/2026-05-16-cutover-dependency-map.md`. It enumerates 15 nodes (11 critical-path, 4 with slack) across phases F (framework GA tag) / D (dress rehearsal + tabletop) / S (Statuspage Option A / Option B) / C (GA-GATE-CRITERIA + §0 checklist + DPO no-breach attestation) / X (T-72h → T-24h → T-0h execution) / P (T+24h → T+72h → T+7d post-cutover). Every critical-path node's success-gate row in the map MUST be ticked before its downstream node may proceed. The STATUSPAGE go-live (N-S-2) is fixed at T-7d with Option A's 3d provisioning buffer (start T-10d) and Option B's 1d verify window (start T-10d, finish T-8d); slip on either branch defers GA T-0 by ≥ 7 days per `RB-GA-LAUNCH-ROLLBACK.md` §7 RA-3.
+
 ### §13.5 Audit retention
 
 This document plus `specs/_audits/2026-05-16-ga-final-checklist.md` plus the signed `GA-GATE-GO-NOGO-TEMPLATE.md` instance + cutover decision-meeting notes constitute the GA-launch evidence package per `IR-TABLETOP-PLAYBOOK.md` retention norm (SOC 2 CC7.4 continuous-improvement signal).
