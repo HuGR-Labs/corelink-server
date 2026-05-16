@@ -40,6 +40,8 @@
 pub mod byok;
 
 pub mod byok_orchestrator;
+#[cfg(feature = "neon-real")]
+pub mod neon_shadow_factory;
 pub mod routes;
 pub mod wall_clock;
 pub mod webhook;

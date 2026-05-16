@@ -138,9 +138,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             use corelink_audit_chain::neon_shadow::real_tokio_pg::TokioPostgresExecutor;
             use corelink_audit_chain::{
                 InMemoryShadowSyncAuditSink, InMemoryTenantRegionResolver, NeonExecutor,
-                RealNeonShadowSink, ShadowSyncAuditSink, TenantRegionError, TenantRegionResolver,
+                ShadowSyncAuditSink, TenantRegionResolver,
             };
-            use corelink_audit_chain::NeonShadowSink;
+            use corelink_server::neon_shadow_factory::TokioPgShadowSinkFactory;
             use std::collections::BTreeMap;
             use uuid::Uuid;
 
@@ -217,62 +217,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     )
                 };
 
-                /// Production factory: resolves `(tenant_id) -> Arc<dyn NeonShadowSink>`
-                /// by routing through the wave-21
-                /// `TenantRegionResolver` (replacing the wave-20
-                /// hard-coded `Region::Iad` default) and feeding the
-                /// per-region executor through `RealNeonShadowSink`.
-                /// Each `for_tenant` allocates a fresh
-                /// `RealNeonShadowSink` so the tenant pin stays
-                /// per-request.
-                #[derive(Debug)]
-                struct TokioPgShadowSinkFactory {
-                    executors: BTreeMap<&'static str, Arc<dyn NeonExecutor>>,
-                    audit_sink: Arc<dyn ShadowSyncAuditSink>,
-                    region_resolver: Arc<dyn TenantRegionResolver>,
-                }
-                impl ShadowSinkFactory for TokioPgShadowSinkFactory {
-                    fn for_tenant(
-                        &self,
-                        tenant_id: Uuid,
-                    ) -> Result<Arc<dyn NeonShadowSink>, &'static str> {
-                        // Wave-21: route through the
-                        // `TenantRegionResolver`. The two error
-                        // variants surface as stable `&'static str`s
-                        // that the `audit_analytics` route layer
-                        // maps to 503 SERVICE_UNAVAILABLE.
-                        let region = match self.region_resolver.resolve_region(&tenant_id) {
-                            Ok(r) => r,
-                            Err(TenantRegionError::Unresolved { .. }) => {
-                                return Err("tenant_region: unresolved");
-                            }
-                            Err(TenantRegionError::BackendUnavailable { .. }) => {
-                                return Err("tenant_region: backend_unavailable");
-                            }
-                            // `TenantRegionError` is `#[non_exhaustive]`;
-                            // a future variant defaults to the same
-                            // 503-equivalent terminal state until the
-                            // route layer is taught the new branch.
-                            Err(_) => return Err("tenant_region: unknown"),
-                        };
-                        let exec = self
-                            .executors
-                            .get(region.as_str())
-                            .ok_or("region has no executor pool")?
-                            .clone();
-                        Ok(Arc::new(RealNeonShadowSink::new(
-                            tenant_id,
-                            region,
-                            exec,
-                            self.audit_sink.clone(),
-                        )))
-                    }
-                }
-                Arc::new(TokioPgShadowSinkFactory {
+                // Wave-29 closure: the production factory now lives
+                // in `corelink_server::neon_shadow_factory` as a public
+                // type so the `for_tenant_in_region` override (which
+                // skips the per-request `TenantRegionResolver` round-
+                // trip when the wave-26 `RequestPrelude` populated the
+                // region) is unit-testable. See
+                // `specs/_audits/2026-05-16-shadow-sink-full-adoption.md`.
+                let audit_sink: Arc<dyn ShadowSyncAuditSink> =
+                    Arc::new(InMemoryShadowSyncAuditSink::new());
+                Arc::new(TokioPgShadowSinkFactory::new(
                     executors,
-                    audit_sink: Arc::new(InMemoryShadowSyncAuditSink::new()),
-                    region_resolver: tenant_region_resolver,
-                }) as Arc<dyn ShadowSinkFactory>
+                    audit_sink,
+                    tenant_region_resolver,
+                )) as Arc<dyn ShadowSinkFactory>
             }
         }
         #[cfg(not(feature = "neon-real"))]
