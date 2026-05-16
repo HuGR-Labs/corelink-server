@@ -87,6 +87,17 @@ subtle = { workspace = true }
 # to exercise the boot path on native CI.
 corelink-cf-bindings = { workspace = true }
 
+# Wave-18 DSR Statuspage real binding deps (wasm32 only). The cron
+# entry point in `dsr_statuspage_cron.rs` hand-composes
+# `aggregate_24h_window → bridge_to_report → publish_dsr_metric_async`
+# from these three crates (the wave-17 native scheduler crate is sync
+# and cannot be reused on wasm32; the orchestration is replicated
+# inline here).
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+corelink-privacy-erasure-worker = { workspace = true }
+corelink-statuspage-real = { workspace = true }
+corelink-dsr-statuspage-scheduler = { workspace = true }
+
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 # Host-side integration tests in `tests/prod_wiring.rs` use tokio as
 # the async test runtime. The wasm32 build does not use tokio (the
