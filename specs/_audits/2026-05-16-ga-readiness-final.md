@@ -26,7 +26,7 @@
 | Dimension | State | Verdict |
 |---|---|---|
 | Sprint implementation (S-00 → S-20) | All 21 sprints SEALED; R-prep + waves 18-24 production wiring complete | ✅ GREEN |
-| Spec corpus | 197 INVs declared / 143 WI-coverage / 0 orphan / 1 CRITICAL without TLA+ proof (INV-PAT-REVOKE-PROPAGATION, wave-23 §3.28 NEW; TLA+ exempt per §4.3 pattern — sub-second revocation propagation is a wall-clock obligation, not a distributed-consensus property) | ✅ GREEN |
+| Spec corpus | 197 INVs declared / 143 WI-coverage / 0 orphan / **0 CRITICAL without TLA+ proof** (was 1 — INV-PAT-REVOKE-PROPAGATION §3.28 is now TLA-verified via `specs/tla/auth_pat_revoke.tla` cherry-pick `8fa1c22` landed wave-25; **61/61 CRITICAL TLA-verified, Z=0 unverified per wave-26 final audit `specs/_audits/2026-05-16-inv-critical-tla-coverage-final.md` commit `d1581b5`**; broader-scope TLA-verified count now 82; figures refreshed wave-27 per `specs/_audits/2026-05-16-tla-figure-refresh-wave27.md`) | ✅ GREEN |
 | Adversarial review aggregate (waves 18→23) | wave-18 9.5/10 → wave-19 8.86/10 → wave-20 9.40/10 → wave-21 9.55/10 → wave-22 9.45/10 → wave-23 (this wave, in-flight stream #1) | ✅ GREEN (trend stable above 9.4 SOTA-bar with floor 8.5) |
 | DEBT register | 6 canonical OPEN pre-wave-23-SEAL → projected 4 post-wave-23-SEAL; 1 P0 (DEBT-003 user-bound) | 🟡 YELLOW (P0 user-bound) |
 | Mutation kill-rate (DEBT-008) | 4 crates empirically CLOSED (audit-chain 84.24%, hash 97.22%, dedup 92.06%, tenant-path 100%) + 2 PARTIAL projected 100% + 5 in-flight wave-23 + 4 on CI-nightly matrix | 🟡 YELLOW (narrows to GREEN at wave-23 stream #2 SEAL) |
@@ -117,22 +117,22 @@ Per `python3 scripts/validate_canonical_consistency.py` against `wt/r-prep-ga-re
 | Metric | Count (wave-24 ingest) | Δ vs wave-22 close |
 |---|---|---|
 | INVs declared (registry §3 rows) | **197** | +5 (wave-23 §3.27 + §3.28 INV-DRAFT promotion sweep) |
-| └ CRITICAL | **61** | +1 (INV-PAT-REVOKE-PROPAGATION §3.28 — TLA+ exempt per §4.3 pattern: sub-second wall-clock obligation, not distributed-consensus property) |
+| └ CRITICAL | **61** | +1 (INV-PAT-REVOKE-PROPAGATION §3.28 — now TLA-verified via `specs/tla/auth_pat_revoke.tla` cherry-pick `8fa1c22` landed wave-25; §4.3 wall-clock-obligation exemption no longer consumed) |
 | └ HIGH | **132** | +4 |
 | └ MEDIUM | **4** | 0 |
 | └ LOW / UNKNOWN | **0** | 0 |
 | Aliases declared (registry §5) | **15** | +2 (wave-23 sweep added 2 legacy → canonical aliases) |
-| TLA+ verified (declared INVs proved in `specs/tla/*.tla`) | **81** | 0 |
+| TLA+ verified (declared INVs proved in `specs/tla/*.tla`) | **82** | +1 (was 81 pre-wave-25; +1 from `auth_pat_revoke.tla` cherry-pick `8fa1c22`; refreshed wave-27 per `specs/_audits/2026-05-16-tla-figure-refresh-wave27.md`) |
 | Code-referenced (declared INVs cited in `crates/*/src/`) | **103** | 0 |
 | Test-referenced (declared INVs cited in `crates/*/tests/`) | **89** | 0 |
 | Orphan refs (in code, NOT in registry+aliases) | **0** | 0 |
-| CRITICAL without TLA+ proof | **1** (INV-PAT-REVOKE-PROPAGATION — TLA+ exempt) | +1 |
+| CRITICAL without TLA+ proof | **0** (was 1; INV-PAT-REVOKE-PROPAGATION TLA-verified via `auth_pat_revoke.tla` cherry-pick `8fa1c22` wave-25; **61/61 CRITICAL TLA-verified, Z=0 unverified per wave-26 final audit `specs/_audits/2026-05-16-inv-critical-tla-coverage-final.md` commit `d1581b5`**) | -1 |
 | Declared with NO code/test reference | **76** | +5 (forward-looking INV-DRAFT promotions) |
 | Declared test-only (test ref but no src/) | **18** | 0 |
 
 Per `python3 scripts/validate_inv_promotion.py`: registry coverage **143/143** (all WI-declared INVs present in registry §3) — unchanged.
 
-**Net INV state:** all CRITICAL invariants either have TLA+ proof OR are documented exempt under §4.3 (non-distributed-systems-property). Zero orphan refs. Coverage is 143/143 against WI-declared INVs. The +5 INV-DRAFT promotions from wave-23 sweep are forward-looking (no current code-ref yet) and reflect S-17 OPS + AUTH-PAT registry sections.
+**Net INV state:** **all 61 CRITICAL invariants have direct or inherited TLA+ proof** post wave-25 `auth_pat_revoke.tla` cherry-pick `8fa1c22` + wave-26 final audit `specs/_audits/2026-05-16-inv-critical-tla-coverage-final.md` (commit `d1581b5`) confirming 61/61 CRITICAL TLA-verified, Z=0 unverified. The §4.3 wall-clock-obligation exemption framework remains in the registry but **no CRITICAL invariant currently consumes it**. Zero orphan refs. Coverage is 143/143 against WI-declared INVs. The +5 INV-DRAFT promotions from wave-23 sweep are forward-looking (no current code-ref yet) and reflect S-17 OPS + AUTH-PAT registry sections. (Figures refreshed wave-27 per `specs/_audits/2026-05-16-tla-figure-refresh-wave27.md`.)
 
 ---
 
@@ -360,7 +360,7 @@ This document plus `specs/_audits/2026-05-16-ga-final-checklist.md` plus the sig
 
 | Gate | Command | Result |
 |---|---|---|
-| Canonical consistency validator | `python3 scripts/validate_canonical_consistency.py` | exit 0 — 197 INVs declared, 0 orphan refs, 1 CRITICAL without TLA+ proof (INV-PAT-REVOKE-PROPAGATION — TLA+ exempt per §4.3 wall-clock pattern). |
+| Canonical consistency validator | `python3 scripts/validate_canonical_consistency.py` | exit 0 — 197 INVs declared, 0 orphan refs, **0 CRITICAL without TLA+ proof** (was 1; INV-PAT-REVOKE-PROPAGATION TLA-verified via `auth_pat_revoke.tla` cherry-pick `8fa1c22` wave-25; tla-verified: 82 declared INVs proved; refreshed wave-27 per `specs/_audits/2026-05-16-tla-figure-refresh-wave27.md` against wave-26 final audit `specs/_audits/2026-05-16-inv-critical-tla-coverage-final.md` commit `d1581b5`). |
 | Reference validator | `python3 scripts/validate_references.py` | exit 0 — no dangling references. |
 | Spec corpus validator | `python3 scripts/validate_specs.py` | exit 0 — `_audits/` excluded from `SKIP_ALL`. |
 | INV promotion validator | `python3 scripts/validate_inv_promotion.py` | exit 0 — 143/143 WI-coverage. |
@@ -375,6 +375,8 @@ This document plus `specs/_audits/2026-05-16-ga-final-checklist.md` plus the sig
 - **Author:** Claude Opus 4.7 (wave-24 GA-readiness final-audit agent)
 - **Sign-off:** Gustavo Schneiter (Signature 1, §13.2) + on-call SRE (Signature 2, §13.3)
 - **Co-Authored-By:** Claude Opus 4.7 <noreply@anthropic.com>
+- **Refresh history:**
+  - **2026-05-16 (wave-27 R-prep, branch `wt/r-prep-tla-figure-refresh`)** — TLA-coverage figures refreshed on §1.2 row "Spec corpus" (line 29), §4 INV table rows (lines 120, 125, 129) + narrative paragraph (line 135), §14 Quality gates row "Canonical consistency validator" (line 363) from the wave-24-authored snapshot "**81 TLA-verified / 1 CRITICAL TLA-exempt**" to the wave-26-canonical state "**82 TLA-verified / 0 TLA-exempt + 61/61 CRITICAL TLA-verified, Z=0 unverified**" per wave-26 final audit `specs/_audits/2026-05-16-inv-critical-tla-coverage-final.md` (commit `d1581b5`). Root cause: wave-25 P1-01 in `specs/_audits/2026-05-16-wave25-adversarial-review.md` §3 — registry state advanced one row after `auth_pat_revoke.tla` cherry-pick `8fa1c22` landed wave-25; this audit was authored pre-cherry-pick. Substantive verdict unchanged (CONDITIONAL GO remains; CRITICAL-no-TLA = 0 was true under exempt classification, now true under direct-proof classification). Cross-ref `specs/_audits/2026-05-16-tla-figure-refresh-wave27.md`.
 
 ---
 

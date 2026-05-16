@@ -127,11 +127,11 @@ Per `python3 scripts/validate_canonical_consistency.py` on this branch (post-swe
 | └ MEDIUM | **4** | 0 |
 | └ LOW / UNKNOWN | **0** | 0 |
 | Aliases declared (registry §5) | 15 | 0 |
-| TLA+ verified (declared INVs proved in `specs/tla/*.tla`) | **81** | 0 |
+| TLA+ verified (declared INVs proved in `specs/tla/*.tla`) | **82** | +1 (was 81 at wave-25 sweep authoring; +1 from `auth_pat_revoke.tla` cherry-pick `8fa1c22` landed later in wave-25 merge order; figure refreshed wave-27 per `specs/_audits/2026-05-16-tla-figure-refresh-wave27.md`) |
 | Code-referenced (declared INVs cited in `crates/*/src/`) | 103 | 0 |
 | Test-referenced (declared INVs cited in `crates/*/tests/`) | 89 | 0 |
 | Orphan refs (in code, NOT in registry+aliases) | **0** | 0 |
-| CRITICAL without TLA+ proof | **1** (INV-PAT-REVOKE-PROPAGATION — TLA+ exempt per wave-24 GA-readiness §4.3: sub-second wall-clock obligation, not distributed-consensus property) | 0 |
+| CRITICAL without TLA+ proof | **0** (was 1 at wave-25 sweep authoring; INV-PAT-REVOKE-PROPAGATION TLA-verified via `auth_pat_revoke.tla` cherry-pick `8fa1c22` landed later in wave-25 merge order; **61/61 CRITICAL TLA-verified, Z=0 unverified per wave-26 final audit `specs/_audits/2026-05-16-inv-critical-tla-coverage-final.md` commit `d1581b5`**; figure refreshed wave-27 per `specs/_audits/2026-05-16-tla-figure-refresh-wave27.md`) | -1 |
 | Declared with NO code/test reference | 76 | 0 |
 | Declared test-only (test ref but no src/) | 18 | 0 |
 
@@ -228,7 +228,7 @@ Per the wave-25 sweep charter:
 | Gate | Command | Result |
 |---|---|---|
 | INV promotion validator | `python3 scripts/validate_inv_promotion.py` | exit 0 — registry coverage 143/143; all WI-declared INVs present. |
-| Canonical consistency validator | `python3 scripts/validate_canonical_consistency.py` | exit 0 — 197 INVs declared; 0 orphan refs; 1 CRITICAL without TLA+ (INV-PAT-REVOKE-PROPAGATION — TLA+ exempt per wave-24 §4.3 wall-clock obligation pattern). |
+| Canonical consistency validator | `python3 scripts/validate_canonical_consistency.py` | exit 0 — 197 INVs declared; 0 orphan refs; **0 CRITICAL without TLA+** at HEAD (was 1 at wave-25 sweep authoring; INV-PAT-REVOKE-PROPAGATION TLA-verified via `auth_pat_revoke.tla` cherry-pick `8fa1c22` landed later in wave-25 merge order; tla-verified: 82; refreshed wave-27 per `specs/_audits/2026-05-16-tla-figure-refresh-wave27.md` against wave-26 final audit `specs/_audits/2026-05-16-inv-critical-tla-coverage-final.md` commit `d1581b5`). |
 | Spec corpus validator | `python3 scripts/validate_specs.py` | exit 0 — 446 with schema + 9 YAML-only (455 total). |
 | Reference validator | `python3 scripts/validate_references.py` | exit 0 — no dangling references (267 INV uses; 82 SLO uses; 234 RB uses; 36 ADR uses; 11 FF-HR uses; 31 SLO definitions; 127 RB definitions; 27 ADR definitions; 199 INV definitions). |
 
@@ -255,7 +255,7 @@ Per the wave-25 charter §"next-wave (wave-26) candidate streams — anchor: GA-
 
 - **INV registry stable at 197** — wave-24 SEAL added zero new canonical INVs; wave-25 in-flight streams (per §5.1) project zero additions. **Wave-26 GA-1 freeze locks the count at 197 declared.** Any post-GA additions are R-prep-post-GA absorption work, not GA-blockers.
 - **No DRAFT entries detected** in `specs/03_architecture/invariant_registry.md` §3 sub-sections at wave-25 base; the doc-level `doc_status: DRAFT` front-matter remains staffing-blocked per F-09 until ≥ 2 reviewers nominated (separate from per-entry status — same caveat as wave-22/23/24).
-- **CRITICAL-no-TLA+ count is 1** (INV-PAT-REVOKE-PROPAGATION) — TLA+ exempt per wave-24 GA-readiness §4.3 (wall-clock obligation, not distributed-consensus property). The wave-24 PAT-revoke TLA+ stream (#6) was attempted; the wave-24 GA-readiness final-audit classified it as TLA+-exempt rather than TLA+-required. **No wave-26 follow-on warranted** unless the GA-cutover meeting reverses the exempt classification.
+- **CRITICAL-no-TLA+ count is 0 at HEAD** (was 1 — INV-PAT-REVOKE-PROPAGATION — at wave-25 sweep authoring; flipped to TLA-verified when `auth_pat_revoke.tla` cherry-pick `8fa1c22` landed later in wave-25 merge order; **61/61 CRITICAL TLA-verified, Z=0 unverified per wave-26 final audit `specs/_audits/2026-05-16-inv-critical-tla-coverage-final.md` commit `d1581b5`**). The wave-24 PAT-revoke TLA+ stream (#6) attempt was completed and absorbed via the wave-25 cherry-pick. The §4.3 wall-clock-obligation exemption framework remains in the registry but no CRITICAL invariant currently consumes it. **No wave-26 follow-on warranted** (caveat refreshed wave-27 per `specs/_audits/2026-05-16-tla-figure-refresh-wave27.md`).
 - **DEBT-008 final state is 10 empirically-CLOSED crates + 5 CI-nightly** post-wave-24-SEAL (wave-24 stream #2 + PAT/clerk combined-bucket added pat + clerk to the empirical set; the 3 large crates were re-classified to CI-nightly per the wave-24 commit narrative). **No wave-26 first-sweep stream needed** unless wave-25 stream #3 surfaces a < 75% CI-nightly streak.
 - **DEBT-015-BUILD path-(3) is the LAST in-charter attempt** — wave-26 alt-arch is the escalation deadline already triggered by the path-(3) outcome. If path-(3) succeeds (wave-25 stream #2 CLOSED), DEBT-015-BUILD flips to CLOSED and wave-26 needs no follow-on. If path-(3) fails, wave-26 stream #3 is mandatory and escalates DEBT-015-BUILD to P1 with alt-arch decision.
 - **GA-readiness DEFER counter locked at 8** (5 user-bound + 3 vendor-bound) by wave-25 stream #4 drift detector. Wave-26 GA-1 freeze cutover meeting consumes this counter as the canonical residual-blocker list.
@@ -281,6 +281,8 @@ Per the wave-25 charter §"next-wave (wave-26) candidate streams — anchor: GA-
 - **Author:** Claude Opus 4.7 (wave-25 hygiene agent)
 - **Sign-off:** Gustavo Schneiter (final approver, async at next review)
 - **Co-Authored-By:** Claude Opus 4.7 <noreply@anthropic.com>
+- **Refresh history:**
+  - **2026-05-16 (wave-27 R-prep, branch `wt/r-prep-tla-figure-refresh`)** — TLA-coverage figures refreshed on §5 INV registry table (lines 130, 134), §7 Quality gates "Canonical consistency validator" row (line 231), §8.1 caveat "CRITICAL-no-TLA+ count" (line 258) from the wave-25-sweep-authoring snapshot "**81 TLA-verified / 1 CRITICAL TLA-exempt**" to the wave-26-canonical state "**82 TLA-verified / 0 TLA-exempt + 61/61 CRITICAL TLA-verified, Z=0 unverified**" per wave-26 final audit `specs/_audits/2026-05-16-inv-critical-tla-coverage-final.md` (commit `d1581b5`). Root cause: wave-25 P1-01 in `specs/_audits/2026-05-16-wave25-adversarial-review.md` §3 — this audit was authored on `e9ee8eb` BEFORE the wave-25 cherry-pick `8fa1c22` (`auth_pat_revoke.tla`) reordered the registry state. Substantive verdict (wave-25 closure CLOSED via combined-bucket) unchanged. Cross-ref `specs/_audits/2026-05-16-tla-figure-refresh-wave27.md`.
 
 ---
 
