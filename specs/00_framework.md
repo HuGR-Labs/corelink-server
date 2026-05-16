@@ -3204,6 +3204,8 @@ Em casos em que regra deste framework impede resolução de problema real:
 ### 43.1 Revisores requeridos para *freeze*
 
 > **Wave-20 Lote 7 update.** Role definitions for the 3 "(a nomear)" slots below are proposed in [`specs/_proposals/2026-05-16-framework-reviewer-roles.md`][FW-REVIEWER-ROLES] (FW-H-1 Software Architecture Lead; FW-H-3 Security Lead; FW-H-4 Production Operations Lead; +1 extracted slot FW-H-2 Compliance & Privacy Lead — see proposal §8 OQ-1/OQ-2 for org-structure choices). Until the Owner nominates individuals and they complete the §3 acceptance deliverables, this section remains "(a nomear)" and v1.0.0 GA freeze stays DEFERRED per `specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md §6.3 Path A/B/C`.
+>
+> **Wave-24 dual-hat fallback option.** A small-org operating mode is available: the Owner MAY take 2 of the 4 FW-H-* slots personally (Pairing-Alpha: FW-H-1 + FW-H-3; Pairing-Beta: FW-H-2 + FW-H-4) with the remaining 2 slots filled by retained external advisors. The fallback is authorized by [`specs/03_architecture/adrs/ADR-0034b-framework-reviewer-dual-hat-fallback.md`][ADR-0034B] (status PROPOSED, transitions to ACCEPTED on Owner invocation) and specified operationally in [`specs/_proposals/2026-05-16-framework-reviewer-roles-addendum.md §1`][FW-REVIEWER-ROLES-ADDENDUM]. Auto-expiration triggers (headcount ≥ 10, SOC2 kickoff, 18-month ceiling, Owner role transition) apply.
 
 - [ ] **Gustavo Schneiter** (Aprovador Final / FW-H-0) — ____________ YYYY-MM-DD
 - [ ] **Revisor Técnico** *(a nomear — proposal: FW-H-1 Software Architecture Lead per [FRAMEWORK-REVIEWER-ROLES][FW-REVIEWER-ROLES] §2.1)* — ____________ YYYY-MM-DD
@@ -3212,6 +3214,8 @@ Em casos em que regra deste framework impede resolução de problema real:
 - [ ] *(optional, contingent on OQ-1 Option A)* **Revisor de Compliance & Privacidade** *(a nomear — proposal: FW-H-2 Compliance & Privacy Lead per [FRAMEWORK-REVIEWER-ROLES][FW-REVIEWER-ROLES] §2.2)* — ____________ YYYY-MM-DD
 
 [FW-REVIEWER-ROLES]: _proposals/2026-05-16-framework-reviewer-roles.md
+[FW-REVIEWER-ROLES-ADDENDUM]: _proposals/2026-05-16-framework-reviewer-roles-addendum.md
+[ADR-0034B]: 03_architecture/adrs/ADR-0034b-framework-reviewer-dual-hat-fallback.md
 
 ### 43.2 Comentários de revisão
 

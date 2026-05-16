@@ -3,7 +3,7 @@ id: "AUDIT-2026-05-15-FRAMEWORK-V1-0-0-GA"
 type: "audit"
 doc_status: "ACTIVE"
 audit_status: "ACTIVE"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-05-15"
 updated: "2026-05-16"
 owner: "Gustavo Schneiter"
@@ -311,12 +311,40 @@ The wave-22 Lote 7 absorption authored `specs/_proposals/2026-05-16-framework-re
 
 **Effect on §6.3 Path C recommendation:** unchanged (Path C remains active). The audit recommends the Owner reads both the proposal AND the addendum at the next governance checkpoint together, since they collapse to a single decision surface.
 
+### 11.7 Wave-24 follow-on: ADR-0034b authored — engineering side COMPLETE
+
+The wave-24 ADR-0034b authoring agent landed `specs/03_architecture/adrs/ADR-0034b-framework-reviewer-dual-hat-fallback.md` v0.1.0 (status PROPOSED, schema `doc_status: DRAFT`; transitions to ACCEPTED on Owner invocation). This ADR is the §1.1-item-4-required authorization artifact that the wave-22 addendum forward-referenced.
+
+**Together with the wave-22 addendum, the engineering side of Path A is now COMPLETE.** Specifically:
+
+| Wave | Artifact | Closes |
+|---|---|---|
+| Wave-20 (Lote 7) | Reviewer roles proposal | "Role definitions exist" + "Onboarding read-order" + "Acceptance deliverables" + "RACI" |
+| Wave-22 (Lote 7) | Addendum §1–§6 operating policy | "Operating mechanics underspecified" (dual-hat / cross-veto / SLA / training-pack budget / 90-day cadence / COI) |
+| Wave-24 (this entry) | ADR-0034b dual-hat fallback authorization | Addendum §1.1 item-4 forward reference (authorizing-ADR artifact) |
+
+**Effect on §6 verdict:** unchanged (still DEFER on §7 / §43.1 promotion rule). The ADR does NOT change the §7 rule; it formalizes the SHAPE of waiver authority for a specific staffing regime.
+
+**Effect on §6.3 Path C recommendation:** unchanged (Path C remains active). The audit now recommends the Owner reads (in order) the proposal + addendum + ADR-0034b at the next governance checkpoint, since the three documents collapse to a single decision surface (`Option A 4-distinct staffing` vs. `Option C dual-hat fallback via ADR-0034b Pairing-Alpha/Beta`).
+
+**Pending user action (post-wave-24):**
+
+1. Owner reads proposal + addendum + ADR-0034b together (~30 min governance checkpoint).
+2. Owner picks Option A (hire 4 distinct) OR invokes Option C via ADR-0034b (Pairing-Alpha or Pairing-Beta).
+3. If Option C: Owner authors the §42 change-log entry per ADR-0034b §Eligibility item 5 (`authorizing_adr: ADR-0034b`, `pairing: <alpha|beta>`, `owner_conflict_disclosed: ...`).
+4. Onboard the 2 retained external advisors per the addendum §4 Training Pack (10-hour floor).
+5. Each reviewer (including Owner under dual-hat) produces the §3 acceptance deliverable comments doc.
+6. v1.0.0 cut commit.
+
+The engineering side of Path A cannot land further pre-work without Owner decision. The audit verdict moves from `DEFER-with-engineering-side-READY (wave-22)` to `DEFER-with-engineering-side-COMPLETE (wave-24)` — strictly closer to PROMOTE while still honoring the framework's own §7 human-action gate.
+
 ---
 
 ## 10. Change log
 
 | Version | Date | Author | Change |
 |---|---|---|---|
+| 1.3.0 | 2026-05-16 | Claude Opus 4.7 (wave-24 ADR-0034b agent) | Adds §11.7 wave-24 follow-on. `specs/03_architecture/adrs/ADR-0034b-framework-reviewer-dual-hat-fallback.md` v0.1.0 lands (PROPOSED) as the §1.1-item-4-required authorization artifact for the addendum's dual-hat fallback. Engineering side of Path A now COMPLETE (verdict text moves from `DEFER-with-engineering-side-READY` to `DEFER-with-engineering-side-COMPLETE`). §6 DEFER verdict itself unchanged (still gated on Owner nomination/invocation). |
 | 1.2.0 | 2026-05-16 | Claude Opus 4.7 (wave-22 Lote 7 absorption agent) | Adds §11.6 wave-22 follow-on. The reviewer-roles proposal is now extended by `specs/_proposals/2026-05-16-framework-reviewer-roles-addendum.md` v0.1.0 with six operating-policy clauses (dual-hat fallback, cross-veto + quorum, sign-off SLA, training pack budget, 90-day rolling cadence, conflict-of-interest declaration). v1.0.0 GA verdict remains DEFER on §7 / §43.1 rule; addendum specifies HOW the existing gate operates in the small-org regime without adding new gates. |
 | 1.1.0 | 2026-05-16 | Claude Opus 4.7 (wave-20 Lote 7 agent) | Adds §11 `unblock-path-C-progress` documenting that the engineering side of Path A is now READY: reviewer roles proposal `specs/_proposals/2026-05-16-framework-reviewer-roles.md` lands defining FW-H-1..4 role profiles; framework §43.1 annotated to link to the proposal. v1.0.0 GA verdict remains DEFER pending user nomination of individuals (purely human-action; §11.5). Path A is now single-step-away rather than multi-step. |
 | 1.0.0 | 2026-05-15 | Claude Opus 4.7 (wave-18 Lote 6 agent) | Initial audit. Reframes task #14 (v0.3.0 freeze → v1.0.0 GA freeze). Engineering verdict READY (§3 + §4 all GREEN). Decision §6 = **DEFER** — framework's own §7 / §43.1 promotion rule (Aprovador Final + ≥ N reviewers) not satisfied by agent action; three reviewer slots remain `(a nomear)`. Three explicit unblock paths documented (§6.3). Task #14 CLOSED via reframing + audit delivery (§8); the version cut to v1.0.0 GA itself is a follow-up gated on Path A/B/C selection by human. |
