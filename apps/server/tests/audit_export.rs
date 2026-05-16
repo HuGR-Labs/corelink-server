@@ -42,8 +42,8 @@ use corelink_server::routes::audit_export::{
     audit_export_rate_limit_config, router, AuditExportRouteState, ExportAuditRow,
     ExportAuditSink, InMemoryExportAuditSink, AUDIT_EXPORT_ROUTE,
     EVENT_TYPE_CROSS_TENANT_ATTEMPT, EVENT_TYPE_EXPORT_REQUEST,
-    EVENT_TYPE_VERIFY_FAILED, EXIT_STATUS_VERIFY_FAILED_MID_STREAM,
-    HEADER_EXPORT_ABORTED, TENANT_ID_HEADER,
+    EVENT_TYPE_VERIFY_FAILED, EXIT_STATUS_VERIFY_FAILED_MID_STREAM, HEADER_EXPORT_ABORTED,
+    R2_LIST_PAGE_SIZE, TENANT_ID_HEADER,
 };
 use corelink_analytics::Region;
 use serde_json::{json, Value};
@@ -92,6 +92,7 @@ fn fixture_with_chain(
         exporter: exporter.clone() as Arc<dyn AuditExporter>,
         rate_limiter: limiter,
         audit_sink: audit_sink.clone() as Arc<dyn ExportAuditSink>,
+        pager_page_size: R2_LIST_PAGE_SIZE,
     };
     (state, exporter, audit_sink)
 }
@@ -282,6 +283,7 @@ async fn chain_tamper_emits_verify_failed_sev0() {
         exporter: tamper,
         rate_limiter: state_orig.rate_limiter.clone(),
         audit_sink: state_orig.audit_sink.clone(),
+        pager_page_size: state_orig.pager_page_size,
     };
     let app = router(state);
 
@@ -386,6 +388,7 @@ async fn audit_failure_aborts_with_503() {
         exporter: state.exporter.clone(),
         rate_limiter: state.rate_limiter.clone(),
         audit_sink: bad as Arc<dyn ExportAuditSink>,
+        pager_page_size: state.pager_page_size,
     };
     let app = router(state);
 
@@ -496,6 +499,7 @@ async fn abort_trailer_emitted_on_mid_stream_chain_break() {
         exporter: tamper,
         rate_limiter: state_orig.rate_limiter.clone(),
         audit_sink: state_orig.audit_sink.clone(),
+        pager_page_size: state_orig.pager_page_size,
     };
     let app = router(state);
 
@@ -530,14 +534,11 @@ async fn abort_trailer_emitted_on_mid_stream_chain_break() {
         "expected hash is BLAKE3-256 hex (64 chars)"
     );
 
-    // Audit emit ORDERING — at minimum the export_request.v1 row +
-    // the SEV-0 verify_failed.v1 row are captured. Wave-18 additionally
-    // emitted a SECOND verify_failed.v1 row carrying the mid-stream
-    // payload colon-prefix-encoded into `exit_status`. **Wave-19 schema
-    // lift (closes wave-18 caveat #4):** the structured payload now
-    // rides in the first-class `ExportAuditRow::payload` column and
+    // Audit emit ORDERING — wave-18 emitted via colon-prefix encoding;
+    // wave-19 schema lift (closes caveat #4): structured payload rides
+    // in the first-class `ExportAuditRow::payload` column and
     // `exit_status` carries the stable enum
-    // `EXIT_STATUS_VERIFY_FAILED_MID_STREAM` (no colon-prefix encoding).
+    // `EXIT_STATUS_VERIFY_FAILED_MID_STREAM`.
     let captured = audit_sink.snapshot().expect("audit snapshot");
     let mid_stream_emits: Vec<&ExportAuditRow> = captured
         .iter()
@@ -545,27 +546,232 @@ async fn abort_trailer_emitted_on_mid_stream_chain_break() {
         .collect();
     assert!(
         !mid_stream_emits.is_empty(),
-        "mid-stream SEV-0 audit row emitted carrying the wire payload \
-         (wave-19: exit_status = stable enum {EXIT_STATUS_VERIFY_FAILED_MID_STREAM})"
+        "mid-stream SEV-0 audit row emitted carrying the wave-19 structured payload"
     );
-    // The mid-stream emit lands BEFORE the trailer frame on the wire:
-    // we re-verify here by asserting the emit was captured (the sink
-    // runs synchronously inside the route handler before the body
-    // stream is built, so capture-order = wire-order).
     let mid = mid_stream_emits[0];
     assert_eq!(mid.event_type, EVENT_TYPE_VERIFY_FAILED);
-    // Wave-19: the structured `{break_at_seq, break_at_chunk,
-    // observed, expected}` payload rides in the first-class
-    // `payload` column (lifted from the wave-18 colon-prefix encoding).
     let audit_payload = mid
         .payload
         .as_ref()
         .expect("wave-19 payload column populated on mid-stream break");
-    // The audit row carries the SAME payload shape as the trailer.
     assert_eq!(audit_payload.get("break_at_seq"), parsed.get("break_at_seq"));
     assert_eq!(audit_payload.get("break_at_chunk"), parsed.get("break_at_chunk"));
     assert_eq!(audit_payload.get("observed"), parsed.get("observed"));
     assert_eq!(audit_payload.get("expected"), parsed.get("expected"));
+}
+
+/// Wave-18 AC-3 — round-trip the streaming response through the
+/// wave-17 `verify-ndjson` CLI's parser. The body bytes (excluding
+/// trailers) MUST remain line-by-line parseable; on the abort-trailer
+/// arm an HTTP-aware client surfaces the canonical
+/// "Export aborted mid-stream — server detected chain break at seq N
+/// chunk X" diagnostic with exit code 1 (encoded here as a structured
+/// `CliCompatDiagnostic` value).
+#[tokio::test]
+async fn customer_cli_handles_abort_trailer_gracefully() {
+    // Happy-path arm — streaming body parses cleanly line-by-line.
+    {
+        let tenant = Uuid::now_v7();
+        let (state, _exporter, _audit_sink) = fixture_with_chain(tenant, 4, 100);
+        let app = router(state);
+        let resp = app
+            .oneshot(build_request(tenant, 0, 1_000))
+            .await
+            .expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let collected = BodyExt::collect(resp.into_body())
+            .await
+            .expect("collect body");
+        // No trailer on happy path.
+        let trailers = collected.trailers().cloned().unwrap_or_default();
+        assert!(
+            trailers.get(HEADER_EXPORT_ABORTED).is_none(),
+            "happy path emits no abort trailer"
+        );
+        let body_bytes = collected.to_bytes();
+        let body = String::from_utf8(body_bytes.to_vec()).expect("utf-8");
+        // The wave-17 CLI parser logic: every non-empty line except
+        // the last is a `{event, proof}` row; the last is the
+        // `{"manifest": ...}` envelope.
+        let lines: Vec<&str> = body.lines().filter(|l| !l.trim().is_empty()).collect();
+        assert!(lines.len() >= 2, "at least one row + manifest");
+        let last = lines.last().expect("last");
+        let footer: Value = serde_json::from_str(last).expect("manifest");
+        assert!(footer.get("manifest").is_some(), "footer carries manifest");
+        for line in &lines[..lines.len() - 1] {
+            let v: Value = serde_json::from_str(line).expect("row");
+            assert!(v.get("event").is_some());
+            assert!(v.get("proof").is_some());
+        }
+    }
+    // Abort arm — HTTP-aware client detects the trailer + raises the
+    // canonical diagnostic with exit code 1.
+    {
+        let tenant = Uuid::now_v7();
+        let (state_orig, exporter, _audit_sink) = fixture_with_chain(tenant, 3, 100);
+        let tamper: Arc<dyn AuditExporter> = Arc::new(TamperingExporter {
+            inner: exporter.clone(),
+        });
+        let state = AuditExportRouteState {
+            exporter: tamper,
+            rate_limiter: state_orig.rate_limiter.clone(),
+            audit_sink: state_orig.audit_sink.clone(),
+            pager_page_size: state_orig.pager_page_size,
+        };
+        let app = router(state);
+        let resp = app
+            .oneshot(build_request(tenant, 0, 1_000))
+            .await
+            .expect("oneshot");
+        let collected = BodyExt::collect(resp.into_body())
+            .await
+            .expect("collect body");
+        let trailers = collected.trailers().cloned().expect("trailers");
+        let payload_str = trailers
+            .get(HEADER_EXPORT_ABORTED)
+            .expect("abort trailer")
+            .to_str()
+            .expect("ascii")
+            .to_string();
+        let diagnostic = cli_compat_diagnostic_from_trailer(&payload_str);
+        assert_eq!(diagnostic.exit_code, 1);
+        assert!(
+            diagnostic
+                .message
+                .starts_with("Export aborted mid-stream — server detected chain break at seq "),
+            "canonical diagnostic surfaced: {}",
+            diagnostic.message
+        );
+        assert!(
+            diagnostic.message.contains(" chunk "),
+            "diagnostic carries chunk index: {}",
+            diagnostic.message
+        );
+        // The structured payload survives intact for SIEM consumers.
+        let parsed: Value =
+            serde_json::from_str(&diagnostic.structured_payload).expect("structured");
+        assert!(parsed.get("break_at_seq").is_some());
+        assert!(parsed.get("break_at_chunk").is_some());
+        assert!(parsed.get("observed").is_some());
+        assert!(parsed.get("expected").is_some());
+    }
+}
+
+/// Mirrors the wave-17 customer-CLI diagnostic shape an HTTP-aware
+/// invocation would produce after observing the
+/// `X-CoreLink-Audit-Export-Aborted` trailer. The CLI today reads
+/// from a file (offline); when wired through the network it ALSO
+/// observes trailers and surfaces this diagnostic. Wave-18 ships the
+/// wire format; the CLI's HTTP-fetch path follow-on lifts this
+/// helper verbatim.
+#[derive(Debug)]
+struct CliCompatDiagnostic {
+    exit_code: i32,
+    message: String,
+    structured_payload: String,
+}
+
+fn cli_compat_diagnostic_from_trailer(payload: &str) -> CliCompatDiagnostic {
+    let parsed: Value =
+        serde_json::from_str(payload).expect("trailer payload is canonical JSON");
+    let seq = parsed
+        .get("break_at_seq")
+        .and_then(Value::as_u64)
+        .unwrap_or_default();
+    let chunk = parsed
+        .get("break_at_chunk")
+        .and_then(Value::as_u64)
+        .unwrap_or_default();
+    let message = format!(
+        "Export aborted mid-stream — server detected chain break at seq {seq} chunk {chunk}"
+    );
+    CliCompatDiagnostic {
+        exit_code: 1,
+        message,
+        structured_payload: payload.to_string(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Wave-19 integration test — multi-page async streaming. Exercises the
+// `R2ListPager`-backed `async_stream::stream!` generator over a window
+// that spans >1 page (2500 keys → 3 pages at the canonical page size
+// of 1000). Pins the contract that the generator yields ALL rows across
+// page boundaries + the trailing manifest frame, with no Content-Length
+// and the `Trailer:` header advertised.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn streaming_response_yields_all_rows_across_multiple_pages() {
+    // Wave-19 multi-page contract — exercise >1 R2 list page in the
+    // generator. The spec target is "2500 keys → 3 pages at the
+    // canonical 1000/page split"; the InMemoryAuditExporter builds
+    // O(n²) sibling lists in `export_window` (each row carries the
+    // forward chain — see crates/corelink-audit-chain/src/exporter.rs
+    // §330), so 2500 events produce a ~500 MB body that exhausts the
+    // axum `to_bytes` limit. We exercise the SAME multi-page wire
+    // path by overriding `pager_page_size` to `3` against a 9-row
+    // chain → 3 pages of 3 rows each (3×3 mirrors the canonical
+    // 1000×3 = 2500-key shape with `2500/1000` rounded down to 3
+    // pages + a small tail). The wave-19 unit test
+    // `async_stream_yields_rows_across_pages_then_manifest` covers
+    // page-size=3 over 7 rows for the asymmetric tail; this test
+    // covers the symmetric N×N case at the HTTP wire-level.
+    let tenant = Uuid::now_v7();
+    let row_count: u64 = 9;
+    let (mut state, _exporter, _audit_sink) =
+        fixture_with_chain(tenant, row_count, 100);
+    state.pager_page_size = 3;
+    assert!(
+        R2_LIST_PAGE_SIZE > state.pager_page_size,
+        "test exercises page size override below the canonical default \
+         ({R2_LIST_PAGE_SIZE})"
+    );
+    let app = router(state);
+
+    let resp = app
+        .oneshot(build_request(tenant, 0, 10_000))
+        .await
+        .expect("oneshot");
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    // Streaming wire shape preserved across multi-page: no
+    // Content-Length, Trailer: advertised upfront.
+    assert!(
+        resp.headers().get(axum::http::header::CONTENT_LENGTH).is_none(),
+        "multi-page response must remain Content-Length-less (chunked / streamed)"
+    );
+    let trailer_decl = resp
+        .headers()
+        .get(axum::http::header::TRAILER)
+        .expect("Trailer header advertised")
+        .to_str()
+        .expect("ascii Trailer header");
+    assert_eq!(trailer_decl, HEADER_EXPORT_ABORTED);
+
+    // Drain the body; the body MUST hold 9 row lines + 1 manifest
+    // line, in order. The wave-19 generator yields one row per
+    // Frame::data (cross-page); the wave-16 wire shape is preserved
+    // byte-for-byte (rows suffixed with `\n`, manifest tail). The
+    // page boundary is invisible at the wire level — proof the
+    // streaming generator stitches pages cleanly.
+    let body = to_bytes(resp.into_body(), 4 * 1024 * 1024)
+        .await
+        .expect("drain body");
+    let text = std::str::from_utf8(&body).expect("ascii ndjson");
+    let lines: Vec<&str> = text.split('\n').filter(|l| !l.is_empty()).collect();
+    assert_eq!(
+        lines.len(),
+        (row_count + 1) as usize,
+        "expected {row_count} row lines + 1 manifest line; got body={text}"
+    );
+    // First line parses as `{event, proof}`; last line parses as `{manifest}`.
+    let first: Value = serde_json::from_str(lines[0]).expect("first row json");
+    assert!(first.get("event").is_some(), "first line is a row envelope");
+    assert!(first.get("proof").is_some(), "first line carries inclusion proof");
+    let last: Value =
+        serde_json::from_str(lines[row_count as usize]).expect("manifest json");
+    assert!(last.get("manifest").is_some(), "last line is the manifest");
 }
 
 /// Wave-19 closure (caveat #4 from wave-18) — the structured
@@ -589,6 +795,7 @@ async fn wave19_audit_row_payload_and_trailer_payload_byte_identical() {
         exporter: tamper,
         rate_limiter: state_orig.rate_limiter.clone(),
         audit_sink: state_orig.audit_sink.clone(),
+        pager_page_size: state_orig.pager_page_size,
     };
     let app = router(state);
 
@@ -673,135 +880,4 @@ async fn wave19_audit_row_payload_and_trailer_payload_byte_identical() {
     assert_eq!(audit_payload.get("break_at_chunk"), trailer_parsed.get("break_at_chunk"));
     assert_eq!(audit_payload.get("observed"), trailer_parsed.get("observed"));
     assert_eq!(audit_payload.get("expected"), trailer_parsed.get("expected"));
-}
-
-/// Wave-18 AC-3 — round-trip the streaming response through the
-/// wave-17 `verify-ndjson` CLI's parser. The body bytes (excluding
-/// trailers) MUST remain line-by-line parseable; on the abort-trailer
-/// arm an HTTP-aware client surfaces the canonical
-/// "Export aborted mid-stream — server detected chain break at seq N
-/// chunk X" diagnostic with exit code 1 (encoded here as a structured
-/// `CliCompatDiagnostic` value).
-#[tokio::test]
-async fn customer_cli_handles_abort_trailer_gracefully() {
-    // Happy-path arm — streaming body parses cleanly line-by-line.
-    {
-        let tenant = Uuid::now_v7();
-        let (state, _exporter, _audit_sink) = fixture_with_chain(tenant, 4, 100);
-        let app = router(state);
-        let resp = app
-            .oneshot(build_request(tenant, 0, 1_000))
-            .await
-            .expect("oneshot");
-        assert_eq!(resp.status(), StatusCode::OK);
-        let collected = BodyExt::collect(resp.into_body())
-            .await
-            .expect("collect body");
-        // No trailer on happy path.
-        let trailers = collected.trailers().cloned().unwrap_or_default();
-        assert!(
-            trailers.get(HEADER_EXPORT_ABORTED).is_none(),
-            "happy path emits no abort trailer"
-        );
-        let body_bytes = collected.to_bytes();
-        let body = String::from_utf8(body_bytes.to_vec()).expect("utf-8");
-        // The wave-17 CLI parser logic: every non-empty line except
-        // the last is a `{event, proof}` row; the last is the
-        // `{"manifest": ...}` envelope.
-        let lines: Vec<&str> = body.lines().filter(|l| !l.trim().is_empty()).collect();
-        assert!(lines.len() >= 2, "at least one row + manifest");
-        let last = lines.last().expect("last");
-        let footer: Value = serde_json::from_str(last).expect("manifest");
-        assert!(footer.get("manifest").is_some(), "footer carries manifest");
-        for line in &lines[..lines.len() - 1] {
-            let v: Value = serde_json::from_str(line).expect("row");
-            assert!(v.get("event").is_some());
-            assert!(v.get("proof").is_some());
-        }
-    }
-    // Abort arm — HTTP-aware client detects the trailer + raises the
-    // canonical diagnostic with exit code 1.
-    {
-        let tenant = Uuid::now_v7();
-        let (state_orig, exporter, _audit_sink) = fixture_with_chain(tenant, 3, 100);
-        let tamper: Arc<dyn AuditExporter> = Arc::new(TamperingExporter {
-            inner: exporter.clone(),
-        });
-        let state = AuditExportRouteState {
-            exporter: tamper,
-            rate_limiter: state_orig.rate_limiter.clone(),
-            audit_sink: state_orig.audit_sink.clone(),
-        };
-        let app = router(state);
-        let resp = app
-            .oneshot(build_request(tenant, 0, 1_000))
-            .await
-            .expect("oneshot");
-        let collected = BodyExt::collect(resp.into_body())
-            .await
-            .expect("collect body");
-        let trailers = collected.trailers().cloned().expect("trailers");
-        let payload_str = trailers
-            .get(HEADER_EXPORT_ABORTED)
-            .expect("abort trailer")
-            .to_str()
-            .expect("ascii")
-            .to_string();
-        let diagnostic = cli_compat_diagnostic_from_trailer(&payload_str);
-        assert_eq!(diagnostic.exit_code, 1);
-        assert!(
-            diagnostic
-                .message
-                .starts_with("Export aborted mid-stream — server detected chain break at seq "),
-            "canonical diagnostic surfaced: {}",
-            diagnostic.message
-        );
-        assert!(
-            diagnostic.message.contains(" chunk "),
-            "diagnostic carries chunk index: {}",
-            diagnostic.message
-        );
-        // The structured payload survives intact for SIEM consumers.
-        let parsed: Value =
-            serde_json::from_str(&diagnostic.structured_payload).expect("structured");
-        assert!(parsed.get("break_at_seq").is_some());
-        assert!(parsed.get("break_at_chunk").is_some());
-        assert!(parsed.get("observed").is_some());
-        assert!(parsed.get("expected").is_some());
-    }
-}
-
-/// Mirrors the wave-17 customer-CLI diagnostic shape an HTTP-aware
-/// invocation would produce after observing the
-/// `X-CoreLink-Audit-Export-Aborted` trailer. The CLI today reads
-/// from a file (offline); when wired through the network it ALSO
-/// observes trailers and surfaces this diagnostic. Wave-18 ships the
-/// wire format; the CLI's HTTP-fetch path follow-on lifts this
-/// helper verbatim.
-#[derive(Debug)]
-struct CliCompatDiagnostic {
-    exit_code: i32,
-    message: String,
-    structured_payload: String,
-}
-
-fn cli_compat_diagnostic_from_trailer(payload: &str) -> CliCompatDiagnostic {
-    let parsed: Value =
-        serde_json::from_str(payload).expect("trailer payload is canonical JSON");
-    let seq = parsed
-        .get("break_at_seq")
-        .and_then(Value::as_u64)
-        .unwrap_or_default();
-    let chunk = parsed
-        .get("break_at_chunk")
-        .and_then(Value::as_u64)
-        .unwrap_or_default();
-    let message = format!(
-        "Export aborted mid-stream — server detected chain break at seq {seq} chunk {chunk}"
-    );
-    CliCompatDiagnostic {
-        exit_code: 1,
-        message,
-        structured_payload: payload.to_string(),
-    }
 }

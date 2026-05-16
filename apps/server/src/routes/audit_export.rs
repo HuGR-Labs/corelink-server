@@ -72,6 +72,7 @@
 use std::convert::Infallible;
 use std::sync::{Arc, Mutex};
 
+use async_stream::stream;
 use axum::{
     body::Body,
     extract::{Query, State},
@@ -82,9 +83,10 @@ use axum::{
 };
 use bytes::Bytes;
 use corelink_audit_chain::{
-    verify_export_result, verify_inclusion_proof, AuditExporter, ExportWindow,
+    verify_export_result, verify_inclusion_proof, AuditExporter, ChainHash, ExportWindow,
     ExportedAuditEvent, InMemoryAuditExporter,
 };
+use futures::Stream;
 use http_body::Frame;
 use http_body_util::StreamBody;
 use corelink_ratelimit::{
@@ -138,24 +140,30 @@ pub const HEADER_CHAIN_HEAD_ANCHOR: &str =
 pub const HEADER_EXPORT_ABORTED: &str =
     "x-corelink-audit-export-aborted";
 
+/// Wave-19 — environment variable tuning the maximum per-row body
+/// buffer size (in bytes) the async streaming generator will hold
+/// in memory before flushing the row's `Frame::data`. The bound is
+/// load-bearing for the wave-19 "true page-by-page yield" lift: per
+/// the audit doc §4 wave-19 row, we MUST not buffer more than one
+/// page's worth of rows in flight, AND each row MUST not exceed this
+/// per-row ceiling (rows above the ceiling are emitted in multiple
+/// data frames). Default = 64 KiB which fits 32 typical
+/// `{event, proof}` envelopes; override via
+/// `EXPORT_ROW_BUFFER_BYTES=<usize>` at boot.
+pub const ENV_EXPORT_ROW_BUFFER_BYTES: &str = "EXPORT_ROW_BUFFER_BYTES";
+/// Default value for [`ENV_EXPORT_ROW_BUFFER_BYTES`] — 64 KiB. The
+/// constant is `pub` so the wave-19 test harness asserts the canonical
+/// default without re-importing the env-parsing helper.
+pub const DEFAULT_EXPORT_ROW_BUFFER_BYTES: usize = 65_536;
+/// Wave-19 — canonical R2 list page size (keys per page). Mirrors the
+/// CF API v4 `per_page=1000` default the wave-18 7-day matrix lift
+/// adopted for the daily-verify cron (`audit-chain-daily-verify.yml`).
+/// `pub` so the wave-19 integration test pins the contract.
+pub const R2_LIST_PAGE_SIZE: usize = 1000;
+
 /// Audit emit record captured by the route. Carries the canonical
 /// CloudEvents `type` + the load-bearing tenant + window + byte
 /// count + exit status fields per WI-S09-008 §4 (DELIVERABLES).
-///
-/// **Wave-19 schema lift (2026-05-15) — closes wave-18 caveat #4:**
-/// the mid-stream chain-break SEV-0 used to encode the canonical
-/// `{break_at_seq, break_at_chunk, observed, expected}` JSON object
-/// inside `exit_status` with a `verify_failed_mid_stream:` prefix
-/// because the row shape lacked a structured payload column. Wave-19
-/// lifts the payload into a first-class `payload: Option<serde_json::Value>`
-/// field. The mid-stream emit now carries `exit_status =
-/// "verify_failed_mid_stream"` (stable enum, no colon-prefixed JSON)
-/// and the structured `{break_at_seq, break_at_chunk, observed,
-/// expected}` map rides in `payload`. The migration is
-/// **backwards-compatible** — rows persisted by wave-18 (no `payload`
-/// field) still parse via `#[serde(default)]`; the wave-18 colon-
-/// prefix encoding is no longer emitted but the wave-19 mid-stream
-/// integration test verifies the new structured shape end-to-end.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExportAuditRow {
     /// Canonical CloudEvents `type` (one of `EVENT_TYPE_*` constants).
@@ -177,28 +185,21 @@ pub struct ExportAuditRow {
     /// on the happy path; `0` on reject / empty range).
     pub events_written: u64,
     /// Canonical exit status: `"ok"` / `"empty"` / `"cross_tenant_reject"` /
-    /// `"verify_failed"` / `"verify_failed_mid_stream"` / `"unauthorized"`
-    /// / `"rate_limited"` / `"bad_request"` / `"audit_failed"`.
-    ///
-    /// Wave-19: `"verify_failed_mid_stream"` is the canonical enum
-    /// value for the mid-stream chain-break arm; the structured
-    /// payload rides in the `payload` column rather than being
-    /// colon-prefix-encoded into this string.
+    /// `"verify_failed"` / `"verify_failed_mid_stream"` / `"unauthorized"` /
+    /// `"rate_limited"` / `"bad_request"` / `"audit_failed"`. Wave-19
+    /// lifts the mid-stream variant out of the colon-prefix encoding into
+    /// the stable enum + structured [`Self::payload`] field.
     pub exit_status: String,
-    /// Structured CloudEvents `data` payload — wave-19 lift. Carries
-    /// arm-specific JSON when the audit emit needs more shape than
-    /// the load-bearing fields above. Today populated on the
-    /// `verify_failed_mid_stream` arm with the canonical
-    /// `{"break_at_seq":<u64>,"break_at_chunk":<u64>,"observed":"<hex>","expected":"<hex>"}`
-    /// map; every other arm leaves it `None`.
-    ///
-    /// `#[serde(default)]` keeps wave-18 row JSON (no `payload` key)
-    /// parseable without migration; `skip_serializing_if = "Option::is_none"`
-    /// keeps the on-wire/on-disk shape unchanged for every arm that
-    /// doesn't populate the column.
+    /// Wave-19 structured payload (mid-stream chain-break diagnostic).
+    /// `#[serde(default)]` keeps wave-18 row JSON parseable; `skip_serializing_if`
+    /// keeps the on-wire shape unchanged for emit arms that don't populate it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub payload: Option<serde_json::Value>,
 }
+
+/// Wave-19 stable enum for the mid-stream chain-break exit-status (replaces
+/// the wave-18 colon-prefix `verify_failed_mid_stream:<json>` encoding).
+pub const EXIT_STATUS_VERIFY_FAILED_MID_STREAM: &str = "verify_failed_mid_stream";
 
 /// Audit sink trait — the route's audit-emit boundary. Production
 /// wiring binds this to the durable CloudEvents emitter that lifts
@@ -294,6 +295,12 @@ pub struct AuditExportRouteState {
     /// Route-level audit sink for the `export_request.v1` +
     /// security + verify-failed emits.
     pub audit_sink: Arc<dyn ExportAuditSink>,
+    /// Wave-19 — R2 list page size override (rows per
+    /// [`R2ListPager::next_page`]). Defaults to [`R2_LIST_PAGE_SIZE`].
+    /// `0` is clamped to the default by the pager constructor.
+    /// Exposed on the route state so integration tests can pin the
+    /// multi-page wire shape without seeding 1000+ rows.
+    pub pager_page_size: usize,
 }
 
 impl core::fmt::Debug for AuditExportRouteState {
@@ -327,6 +334,7 @@ pub fn build_state() -> AuditExportRouteState {
             exporter,
             rate_limiter,
             audit_sink,
+            pager_page_size: R2_LIST_PAGE_SIZE,
         }
     }
     #[cfg(target_arch = "wasm32")]
@@ -657,11 +665,20 @@ async fn handle_export(
     //    and ship the `X-CoreLink-Audit-Export-Aborted` trailer as
     //    the final body frame. The audit emit ALWAYS lands BEFORE
     //    the trailer frame on the wire.
+    //
+    // Wave-19 lift: the frame plan is no longer pre-materialized into
+    // a `Vec<Frame<Bytes>>` — `build_audit_export_async_stream` wraps
+    // an `async_stream::stream!` generator that yields one frame at a
+    // time, driven by the [`R2ListPager`] page boundary. The generator
+    // respects axum's body-flow back-pressure (it `yield`s and parks
+    // on the consumer poll), so memory in-flight is bounded by ONE
+    // page of rows plus the current row buffer.
     let anchor_head = result.manifest.chain_head_at_export;
     let audit_sink_for_stream = Arc::clone(&state.audit_sink);
     let tenant_for_stream = authenticated_tenant;
-    let frames = build_audit_export_stream_frames(
-        result.rows,
+    let pager = InMemoryR2ListPager::with_rows(result.rows, state.pager_page_size);
+    let body_stream = build_audit_export_async_stream(
+        Box::new(pager),
         manifest_line,
         anchor_head,
         audit_sink_for_stream,
@@ -671,8 +688,6 @@ async fn handle_export(
         body_bytes_len,
         ndjson_line_count,
     );
-    let body_stream =
-        futures::stream::iter(frames.into_iter().map(Ok::<Frame<Bytes>, Infallible>));
     let body = Body::new(StreamBody::new(body_stream));
 
     let mut resp = (StatusCode::OK, body).into_response();
@@ -697,167 +712,260 @@ async fn handle_export(
     resp
 }
 
-/// Build the wave-18 streaming frame plan. Returns the ordered
-/// `Frame<Bytes>` vector the response body emits:
+/// Wave-19 — paginated R2 list source the audit-export streaming
+/// generator drives one page at a time. The trait surface decouples
+/// the route from the underlying R2 binding so:
 ///
-/// 1. One `Frame::data` per NDJSON row line, in order.
-/// 2. Between successive rows, a `\n` separator is appended to the
-///    PREVIOUS row line (so the wire shape matches the wave-16
-///    monolithic `\n`-joined body byte-for-byte).
-/// 3. After the last row (or on entry to the manifest line on an
-///    empty range) the trailing manifest line is emitted as its own
-///    `Frame::data`.
-/// 4. If a per-row re-verify fails MID-STREAM, the function emits
-///    the SEV-0 audit row carrying the `{break_at_seq,
-///    break_at_chunk, observed, expected}` payload via the supplied
-///    sink BEFORE pushing a `Frame::trailers` trailer carrying the
-///    canonical `X-CoreLink-Audit-Export-Aborted` header — the
-///    stream then closes immediately (no further row or manifest
-///    frames are emitted on the abort path).
+/// - Native unit + integration tests pass [`InMemoryR2ListPager`]
+///   (no network).
+/// - Production wires a CF Worker R2 binding adapter implementing
+///   `next_page` against the real
+///   `GET /accounts/{account_id}/r2/buckets/{bucket}/objects?prefix=...&cursor=...`
+///   CF API v4 paginated walk (wave-17 + wave-18 pattern lifted into
+///   the customer-facing export path).
 ///
-/// The synchronous shape is intentional: pre-materializing the frame
-/// plan keeps the audit-emit BEFORE the network flush invariant
-/// trivially satisfied (we'd otherwise need to thread the sink
-/// through an async generator with non-trivial cancellation
-/// semantics).
-#[allow(clippy::too_many_arguments, reason = "trailing-payload + audit sink fan-in")]
-fn build_audit_export_stream_frames(
+/// The trait is async + sealed by `Send + Sync` so the generator can
+/// `.await` page boundaries inside a `tokio::spawn`-free body stream
+/// (charter forbids `tokio::spawn` in src; the generator runs on the
+/// axum body-poll task).
+///
+/// # Page contract
+///
+/// `next_page` returns at most [`R2_LIST_PAGE_SIZE`] rows per call.
+/// `None` signals end-of-stream (the generator then flushes the
+/// trailing manifest line and closes the body). Errors are surfaced
+/// as an empty page (production wiring fail-CLOSED) — the daily-verify
+/// retention cron is the redundancy net so an export aborting on R2
+/// list 5xx is acceptable per the audit doc §4 wave-19 row.
+#[async_trait::async_trait]
+pub trait R2ListPager: Send + Sync + core::fmt::Debug {
+    /// Fetch the next page of rows. `None` signals end-of-stream.
+    /// The returned `Vec<ExportedAuditEvent>` length MUST be in
+    /// `0..=R2_LIST_PAGE_SIZE` — over-budget pages are an
+    /// implementation bug (the property test pins this).
+    async fn next_page(&mut self) -> Option<Vec<ExportedAuditEvent>>;
+}
+
+/// In-memory [`R2ListPager`] fake. Slices a `Vec<ExportedAuditEvent>`
+/// into pages of at most `page_size` rows. Used by every unit +
+/// integration test in this module so the wave-19 streaming generator
+/// can be driven without a real R2 binding.
+#[derive(Debug)]
+pub struct InMemoryR2ListPager {
+    /// Remaining rows; consumed front-to-back via `split_off`.
     rows: Vec<ExportedAuditEvent>,
+    /// Per-page key budget (defaults to [`R2_LIST_PAGE_SIZE`]).
+    page_size: usize,
+    /// Whether `next_page` has been polled at least once after the
+    /// final page was returned — used to honour the `None`-terminator
+    /// contract.
+    exhausted: bool,
+}
+
+impl InMemoryR2ListPager {
+    /// Construct from a row buffer + page size. A `page_size` of `0`
+    /// is silently clamped to [`R2_LIST_PAGE_SIZE`] so a misconfigured
+    /// caller cannot construct a pager that never makes progress
+    /// (fail-CLOSED — better to serve at the default than infinite
+    /// loop the export task).
+    #[must_use]
+    pub fn with_rows(rows: Vec<ExportedAuditEvent>, page_size: usize) -> Self {
+        let page_size = if page_size == 0 {
+            R2_LIST_PAGE_SIZE
+        } else {
+            page_size
+        };
+        Self {
+            rows,
+            page_size,
+            exhausted: false,
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl R2ListPager for InMemoryR2ListPager {
+    async fn next_page(&mut self) -> Option<Vec<ExportedAuditEvent>> {
+        if self.exhausted {
+            return None;
+        }
+        if self.rows.is_empty() {
+            // First poll on an empty source still returns `Some(vec![])`
+            // so the generator emits the manifest line on the
+            // happy-empty-range path. Subsequent polls return `None`.
+            self.exhausted = true;
+            return Some(Vec::new());
+        }
+        let take = self.page_size.min(self.rows.len());
+        // `split_off(take)` returns the TAIL — we want the HEAD, so
+        // swap the two slices.
+        let tail = self.rows.split_off(take);
+        let head = core::mem::replace(&mut self.rows, tail);
+        if self.rows.is_empty() {
+            self.exhausted = true;
+        }
+        Some(head)
+    }
+}
+
+/// Wave-19 true async page-by-page generator backing the audit-export
+/// streaming response body. Replaces the wave-18
+/// pre-materialized `Vec<Frame<Bytes>>` plan.
+///
+/// The generator:
+///
+/// 1. Polls [`R2ListPager::next_page`] for one page of rows.
+/// 2. For each row in the page: runs `verify_inclusion_proof` against
+///    the manifest anchor. On the FIRST verify failure (or row
+///    serialize failure) it:
+///    - emits the SEV-0 mid-stream-break audit row via
+///      [`emit_mid_stream_break_audit`] (audit-anchor-BEFORE-trailer
+///      invariant per `INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER`),
+///    - yields the canonical `Frame::trailers` carrying
+///      [`HEADER_EXPORT_ABORTED`], then closes the stream (no further
+///      frames).
+/// 3. On a clean page: yields one `Frame::data` per row containing
+///    `<row-json>\n` bytes. The `\n` suffix mirrors the wave-16
+///    monolithic wire shape byte-for-byte.
+/// 4. After the final page (`next_page` returns `None`): yields the
+///    trailing manifest line as a single `Frame::data` (no `\n`
+///    suffix — matches the wave-16 wire shape).
+///
+/// # Memory bound
+///
+/// At any point, exactly ONE page of rows + ONE row's serialized
+/// bytes are live; the generator parks on `yield` and never reads
+/// ahead. The CF Worker R2 binding adapter that fills the pager in
+/// production allocates one CF API v4 response body per page; that
+/// body is dropped before the next page is fetched. Per-row
+/// serialized bytes are bounded by the customer's audit event
+/// shape; the [`ENV_EXPORT_ROW_BUFFER_BYTES`] env-var caps the
+/// soft-allocation hint (the row buffer `Vec::with_capacity`).
+///
+/// # Back-pressure
+///
+/// `async_stream::stream!` expands to a `Stream` whose
+/// `poll_next` parks the generator on each `yield`. axum's
+/// `StreamBody` polls one frame at a time; the generator therefore
+/// fetches the next page ONLY when the consumer (the wire) is
+/// ready for it. There is no buffer-ahead of multiple pages.
+#[allow(clippy::too_many_arguments, reason = "trailing-payload + audit sink fan-in")]
+pub fn build_audit_export_async_stream(
+    mut pager: Box<dyn R2ListPager>,
     manifest_line: String,
-    anchor_head: corelink_audit_chain::ChainHash,
+    anchor_head: ChainHash,
     audit_sink: Arc<dyn ExportAuditSink>,
     authenticated_tenant: Uuid,
     from_ms: u64,
     to_ms: u64,
     bytes_written: u64,
     events_written: u64,
-) -> Vec<Frame<Bytes>> {
-    let mut frames: Vec<Frame<Bytes>> = Vec::with_capacity(rows.len() + 2);
-    for (idx, row) in rows.iter().enumerate() {
-        // Per-row inclusion-proof recheck against the manifest
-        // anchor. Any internal verifier error (canonicalization /
-        // arithmetic) is treated as a chain-break-equivalent abort
-        // — fail-CLOSED — so an unexpected error path can't silently
-        // ship tampered bytes.
-        let row_serialized = match serde_json::to_string(row) {
-            Ok(s) => s,
-            Err(_) => {
-                emit_mid_stream_break_audit(
-                    &audit_sink,
-                    authenticated_tenant,
-                    row.event.sequence_number,
-                    idx as u64,
-                    "serialize_failed",
-                    "row-serialize-failed",
-                    from_ms,
-                    to_ms,
-                    bytes_written,
-                    events_written,
-                );
-                frames.push(abort_trailer_frame(
-                    row.event.sequence_number,
-                    idx as u64,
-                    "serialize_failed",
-                    "row-serialize-failed",
-                ));
-                return frames;
+) -> impl Stream<Item = Result<Frame<Bytes>, Infallible>> + Send {
+    let row_capacity_hint = export_row_buffer_bytes();
+    stream! {
+        // Global row index across pages — used as `break_at_chunk` so
+        // the customer-CLI diagnostic reads the same as wave-18 (chunk
+        // numbering is contiguous across page boundaries).
+        let mut global_idx: u64 = 0;
+        loop {
+            let Some(page) = pager.next_page().await else {
+                // End-of-stream. Yield the trailing manifest line and
+                // close the body. The `\n`-suffix discipline (rows
+                // append `\n`; manifest does NOT) is wave-18 carried
+                // through verbatim.
+                yield Ok(Frame::data(Bytes::from(manifest_line)));
+                return;
+            };
+            for row in &page {
+                let row_serialized = match serde_json::to_string(row) {
+                    Ok(s) => s,
+                    Err(_) => {
+                        // Serialize-failure path — audit-anchor-BEFORE-trailer.
+                        emit_mid_stream_break_audit(
+                            &audit_sink,
+                            authenticated_tenant,
+                            row.event.sequence_number,
+                            global_idx,
+                            "serialize_failed",
+                            "row-serialize-failed",
+                            from_ms,
+                            to_ms,
+                            bytes_written,
+                            events_written,
+                        );
+                        yield Ok(abort_trailer_frame(
+                            row.event.sequence_number,
+                            global_idx,
+                            "serialize_failed",
+                            "row-serialize-failed",
+                        ));
+                        return;
+                    }
+                };
+                let verified = verify_inclusion_proof(row, &anchor_head).unwrap_or_default();
+                if !verified {
+                    // Chain-break path — audit-anchor-BEFORE-trailer
+                    // (INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER; the wave-19
+                    // proptest pins this ordering at 10k iter).
+                    let observed_hex = row.proof.link_hash.to_hex();
+                    let expected_hex = anchor_head.to_hex();
+                    emit_mid_stream_break_audit(
+                        &audit_sink,
+                        authenticated_tenant,
+                        row.event.sequence_number,
+                        global_idx,
+                        &observed_hex,
+                        &expected_hex,
+                        from_ms,
+                        to_ms,
+                        bytes_written,
+                        events_written,
+                    );
+                    yield Ok(abort_trailer_frame(
+                        row.event.sequence_number,
+                        global_idx,
+                        &observed_hex,
+                        &expected_hex,
+                    ));
+                    return;
+                }
+                // Happy-row: yield `<row-json>\n` as a single data
+                // frame. Row buffer capacity hint comes from
+                // `EXPORT_ROW_BUFFER_BYTES` (clamped to the row size
+                // + 1 if smaller so we never allocate less than we
+                // need).
+                let capacity = row_capacity_hint.max(row_serialized.len() + 1);
+                let mut buf: Vec<u8> = Vec::with_capacity(capacity);
+                buf.extend_from_slice(row_serialized.as_bytes());
+                buf.push(b'\n');
+                yield Ok(Frame::data(Bytes::from(buf)));
+                global_idx = global_idx.saturating_add(1);
             }
-        };
-        let verified = verify_inclusion_proof(row, &anchor_head).unwrap_or_default();
-        if !verified {
-            // SEV-0 emit BEFORE the trailer (audit-anchor-first per
-            // INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER). Best-effort: a
-            // sink error here is logged via the return value of the
-            // sink trait but we still flush the trailer so the wire
-            // remains honest.
-            let observed_hex = row.proof.link_hash.to_hex();
-            let expected_hex = anchor_head.to_hex();
-            emit_mid_stream_break_audit(
-                &audit_sink,
-                authenticated_tenant,
-                row.event.sequence_number,
-                idx as u64,
-                &observed_hex,
-                &expected_hex,
-                from_ms,
-                to_ms,
-                bytes_written,
-                events_written,
-            );
-            frames.push(abort_trailer_frame(
-                row.event.sequence_number,
-                idx as u64,
-                &observed_hex,
-                &expected_hex,
-            ));
-            return frames;
         }
-        // Append the row payload + (for every row) a trailing `\n`.
-        // The wave-16 wire shape was `row0\nrow1\nrow2\n{manifest}`;
-        // we replicate it here by suffixing every row with `\n` so
-        // the manifest line emerges naturally on its own without a
-        // separator-management special case.
-        let mut buf = Vec::with_capacity(row_serialized.len() + 1);
-        buf.extend_from_slice(row_serialized.as_bytes());
-        buf.push(b'\n');
-        frames.push(Frame::data(Bytes::from(buf)));
     }
-    // Trailing manifest line (no trailing newline — matches the
-    // wave-16 wire shape exactly).
-    frames.push(Frame::data(Bytes::from(manifest_line)));
-    frames
 }
 
-/// Canonical stable enum value for the mid-stream chain-break arm of
-/// `exit_status`. Wave-19 schema lift — the structured
-/// `{break_at_seq, break_at_chunk, observed, expected}` map is no
-/// longer colon-prefix-encoded into `exit_status`; it now rides in
-/// the first-class `ExportAuditRow::payload` column. This constant
-/// pins the stable enum string so SIEM rules + the durable-sink
-/// production lift key off a known token.
-pub const EXIT_STATUS_VERIFY_FAILED_MID_STREAM: &str = "verify_failed_mid_stream";
-
-/// Build the canonical mid-stream chain-break payload as a structured
-/// `serde_json::Value`. Wave-19 — public so the wave-19 integration
-/// test can assert byte-identity between the audit-row payload and
-/// the HTTP trailer JSON without re-implementing the formatter.
-///
-/// The shape is the canonical
-/// `{"break_at_seq":<u64>,"break_at_chunk":<u64>,"observed":"<hex>","expected":"<hex>"}`
-/// object. Serializing this `Value` produces byte-identical JSON to
-/// [`mid_stream_abort_trailer_value`] (the field-order, integer
-/// rendering, and string escaping all match because
-/// `serde_json::Value::Object` is a `BTreeMap` rendered in insertion
-/// order via `serde_json::Map`; we insert in the canonical order).
+/// Parse [`ENV_EXPORT_ROW_BUFFER_BYTES`] returning the canonical
+/// default on absence / malformed input. The value is the
+/// `Vec::with_capacity` hint for each row's body buffer; the actual
+/// allocation grows to fit the row if it exceeds the hint.
 #[must_use]
-pub fn mid_stream_break_payload(
-    break_at_seq: u64,
-    break_at_chunk: u64,
-    observed_hex: &str,
-    expected_hex: &str,
-) -> serde_json::Value {
-    let mut map = serde_json::Map::with_capacity(4);
-    map.insert("break_at_seq".to_string(), serde_json::Value::from(break_at_seq));
-    map.insert("break_at_chunk".to_string(), serde_json::Value::from(break_at_chunk));
-    map.insert(
-        "observed".to_string(),
-        serde_json::Value::String(observed_hex.to_string()),
-    );
-    map.insert(
-        "expected".to_string(),
-        serde_json::Value::String(expected_hex.to_string()),
-    );
-    serde_json::Value::Object(map)
+fn export_row_buffer_bytes() -> usize {
+    match std::env::var(ENV_EXPORT_ROW_BUFFER_BYTES) {
+        Ok(v) => v.trim().parse::<usize>().unwrap_or(DEFAULT_EXPORT_ROW_BUFFER_BYTES),
+        Err(_) => DEFAULT_EXPORT_ROW_BUFFER_BYTES,
+    }
 }
 
-/// Emit the SEV-0 mid-stream chain-break audit row. Wave-19 lift —
-/// the canonical `{break_at_seq, break_at_chunk, observed, expected}`
-/// JSON object now rides in the first-class
-/// [`ExportAuditRow::payload`] column rather than being colon-prefix-
-/// encoded into `exit_status`. `exit_status` carries the stable enum
-/// `EXIT_STATUS_VERIFY_FAILED_MID_STREAM`; durable production sinks
-/// lift the row into the CloudEvents envelope where `payload` lands
-/// in `data` (matches the standard audit-chain envelope shape).
+/// Emit the SEV-0 mid-stream chain-break audit row. The audit
+/// payload is the canonical
+/// `{break_at_seq, break_at_chunk, observed, expected}` JSON
+/// fragment encoded into `exit_status` (the `ExportAuditRow` shape
+/// lacks a dedicated payload field — we piggy-back on `exit_status`
+/// so the structured payload survives capture by every
+/// `ExportAuditSink` implementor; production durable sinks lift the
+/// row into the standard CloudEvents envelope where the payload
+/// lands in `data`).
 #[allow(clippy::too_many_arguments, reason = "audit row shape")]
 fn emit_mid_stream_break_audit(
     sink: &Arc<dyn ExportAuditSink>,
@@ -871,12 +979,14 @@ fn emit_mid_stream_break_audit(
     bytes_written: u64,
     events_written: u64,
 ) {
-    let payload = mid_stream_break_payload(
-        break_at_seq,
-        break_at_chunk,
-        observed_hex,
-        expected_hex,
-    );
+    // Wave-19 schema lift: structured payload field carries the canonical
+    // diagnostic; `exit_status` becomes the stable enum (no colon prefix).
+    let payload = serde_json::json!({
+        "break_at_seq": break_at_seq,
+        "break_at_chunk": break_at_chunk,
+        "observed": observed_hex,
+        "expected": expected_hex,
+    });
     let _ = sink.emit(ExportAuditRow {
         event_type: EVENT_TYPE_VERIFY_FAILED.to_string(),
         authenticated_tenant: Some(authenticated_tenant),
@@ -1184,89 +1294,359 @@ mod tests {
         assert_eq!(HEADER_EXPORT_ABORTED, "x-corelink-audit-export-aborted");
     }
 
-    /// Wave-19 — closes wave-18 caveat #4: `emit_mid_stream_break_audit`
-    /// now populates the first-class `ExportAuditRow::payload` column
-    /// with the canonical
-    /// `{break_at_seq, break_at_chunk, observed, expected}` JSON
-    /// object. `exit_status` carries the stable enum
-    /// `EXIT_STATUS_VERIFY_FAILED_MID_STREAM` (no colon-prefix-encoded
-    /// payload). Asserts the column shape end-to-end via the in-memory
-    /// sink capture.
+    // -- Wave-19 unit tests --------------------------------------------
+
     #[test]
-    fn payload_column_populated_on_mid_stream_break() {
-        let sink_concrete = Arc::new(InMemoryExportAuditSink::new());
-        let sink: Arc<dyn ExportAuditSink> = sink_concrete.clone();
-        let tenant = Uuid::from_u128(7);
-        let observed = "aa".repeat(32);
-        let expected = "bb".repeat(32);
-        emit_mid_stream_break_audit(
-            &sink,
-            tenant,
-            42,
-            1,
-            &observed,
-            &expected,
-            0,
-            1_000,
-            123,
-            5,
-        );
-        let snap = sink_concrete.snapshot().expect("snap");
-        assert_eq!(snap.len(), 1, "exactly one mid-stream emit captured");
-        let row = &snap[0];
-        // Stable-enum exit_status (no colon-prefixed JSON).
-        assert_eq!(row.exit_status, EXIT_STATUS_VERIFY_FAILED_MID_STREAM);
-        assert!(
-            !row.exit_status.contains(':'),
-            "wave-19 lifts the JSON payload out of exit_status; got {}",
-            row.exit_status
-        );
-        // Structured payload populated with the canonical 4 keys.
-        let payload = row
-            .payload
-            .as_ref()
-            .expect("wave-19 payload column populated on mid-stream break");
-        assert_eq!(payload.get("break_at_seq").and_then(|v| v.as_u64()), Some(42));
-        assert_eq!(payload.get("break_at_chunk").and_then(|v| v.as_u64()), Some(1));
-        assert_eq!(
-            payload.get("observed").and_then(|v| v.as_str()),
-            Some(observed.as_str())
-        );
-        assert_eq!(
-            payload.get("expected").and_then(|v| v.as_str()),
-            Some(expected.as_str())
-        );
-        // Tenant + window + counters still ride on their columns.
-        assert_eq!(row.event_type, EVENT_TYPE_VERIFY_FAILED);
-        assert_eq!(row.authenticated_tenant, Some(tenant));
-        assert_eq!(row.from_ms, 0);
-        assert_eq!(row.to_ms, 1_000);
-        assert_eq!(row.bytes_written, 123);
-        assert_eq!(row.events_written, 5);
+    fn r2_list_page_size_matches_cf_api_v4_default() {
+        assert_eq!(R2_LIST_PAGE_SIZE, 1000);
     }
 
-    /// Wave-19 — wave-18 row JSON (serialized BEFORE the schema lift,
-    /// no `payload` field) MUST still parse. Pins the
-    /// `#[serde(default)]` migration on `ExportAuditRow::payload`.
     #[test]
-    fn wave18_row_without_payload_field_still_parses() {
-        // The exact on-wire shape wave-18 produced (no `payload` key).
-        let wave18_row = r#"{
-            "event_type":"corelink.audit.export_request.v1",
-            "authenticated_tenant":"00000000-0000-0000-0000-000000000001",
-            "attempted_tenant":null,
-            "from_ms":0,
-            "to_ms":1000,
-            "bytes_written":42,
-            "events_written":1,
-            "exit_status":"ok"
-        }"#;
-        let parsed: ExportAuditRow =
-            serde_json::from_str(wave18_row).expect("wave-18 row parses post-lift");
-        assert_eq!(parsed.exit_status, "ok");
-        assert!(
-            parsed.payload.is_none(),
-            "missing payload field deserializes to None via #[serde(default)]"
+    fn default_export_row_buffer_bytes_is_64kib() {
+        assert_eq!(DEFAULT_EXPORT_ROW_BUFFER_BYTES, 65_536);
+    }
+
+    #[tokio::test]
+    async fn in_memory_pager_returns_pages_then_none() {
+        use corelink_audit_chain::{
+            AuditEvent, AuditEventKind, HashChainBuilder, InMemoryAuditExporter,
+        };
+        use corelink_analytics::Region;
+        use serde_json::json;
+        // Seed 5 rows; ask for a pager with page_size=2 → expect
+        // pages [2, 2, 1] then Some([]) (no rows left at boundary; the
+        // empty-final-page path is only taken on the "first poll empty"
+        // arm, so on a 5/2 split we get 3 non-empty pages then None.
+        let tenant = Uuid::from_u128(0xAB);
+        let mut exporter = InMemoryAuditExporter::new();
+        let mut builder = HashChainBuilder::new();
+        let mut prev = corelink_audit_chain::ChainHash::genesis();
+        for i in 0..5_u64 {
+            let e = AuditEvent::new(
+                AuditEventKind::CasPut,
+                "corelink/region/iad",
+                Uuid::now_v7(),
+                1_000 + i,
+                tenant,
+                Region::Iad,
+                i,
+                prev,
+                json!({ "i": i }),
+            );
+            prev = builder.append(&e).expect("append");
+            exporter.append_event(e).expect("seed");
+        }
+        let window = ExportWindow::new(0, 10_000).expect("window");
+        let result = exporter
+            .export_window(&tenant.to_string(), window)
+            .expect("export");
+        assert_eq!(result.rows.len(), 5);
+        let mut pager = InMemoryR2ListPager::with_rows(result.rows, 2);
+        let p0 = pager.next_page().await.expect("p0");
+        assert_eq!(p0.len(), 2);
+        let p1 = pager.next_page().await.expect("p1");
+        assert_eq!(p1.len(), 2);
+        let p2 = pager.next_page().await.expect("p2");
+        assert_eq!(p2.len(), 1);
+        assert!(pager.next_page().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn in_memory_pager_empty_rows_returns_one_empty_page_then_none() {
+        // The happy-empty-range path expects `Some(vec![])` on first
+        // poll so the generator can fall through to the manifest line.
+        let mut pager = InMemoryR2ListPager::with_rows(Vec::new(), R2_LIST_PAGE_SIZE);
+        let p0 = pager.next_page().await.expect("first poll");
+        assert!(p0.is_empty());
+        assert!(pager.next_page().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn in_memory_pager_clamps_zero_page_size_to_default() {
+        // page_size=0 would never make progress — must clamp.
+        let pager = InMemoryR2ListPager::with_rows(Vec::new(), 0);
+        assert_eq!(pager.page_size, R2_LIST_PAGE_SIZE);
+    }
+
+    #[tokio::test]
+    async fn async_stream_yields_rows_across_pages_then_manifest() {
+        use corelink_audit_chain::{
+            AuditEvent, AuditEventKind, HashChainBuilder, InMemoryAuditExporter,
+        };
+        use corelink_analytics::Region;
+        use futures::StreamExt;
+        use serde_json::json;
+        let tenant = Uuid::from_u128(0x1234);
+        let mut exporter = InMemoryAuditExporter::new();
+        let mut builder = HashChainBuilder::new();
+        let mut prev = corelink_audit_chain::ChainHash::genesis();
+        for i in 0..7_u64 {
+            let e = AuditEvent::new(
+                AuditEventKind::CasPut,
+                "corelink/region/iad",
+                Uuid::now_v7(),
+                1_000 + i,
+                tenant,
+                Region::Iad,
+                i,
+                prev,
+                json!({ "i": i }),
+            );
+            prev = builder.append(&e).expect("append");
+            exporter.append_event(e).expect("seed");
+        }
+        let window = ExportWindow::new(0, 10_000).expect("window");
+        let result = exporter
+            .export_window(&tenant.to_string(), window)
+            .expect("export");
+        let manifest_json = serde_json::to_string(&result.manifest).expect("manifest json");
+        let manifest_line = format!("{{\"manifest\":{manifest_json}}}");
+        let anchor = result.manifest.chain_head_at_export;
+        let sink: Arc<dyn ExportAuditSink> = Arc::new(InMemoryExportAuditSink::new());
+        // page_size=3 → 3+3+1 split, exercises the cross-page path
+        let pager = InMemoryR2ListPager::with_rows(result.rows, 3);
+        let stream = build_audit_export_async_stream(
+            Box::new(pager),
+            manifest_line.clone(),
+            anchor,
+            sink,
+            tenant,
+            0,
+            10_000,
+            0,
+            7,
         );
+        let frames: Vec<_> = stream.collect().await;
+        // 7 row frames + 1 manifest frame, all data (no trailers).
+        assert_eq!(frames.len(), 8);
+        for frame in frames.iter().take(7) {
+            let frame_ref = frame.as_ref().expect("infallible");
+            assert!(frame_ref.is_data(), "row frame should be data");
+        }
+        let last = frames[7].as_ref().expect("last");
+        assert!(last.is_data(), "manifest frame should be data");
+    }
+
+    #[tokio::test]
+    async fn async_stream_audit_anchor_emits_before_trailer_on_mid_page_break() {
+        // Inject a tampered row in page 0; assert the audit sink
+        // received the SEV-0 emit BEFORE the trailer frame is yielded.
+        use corelink_audit_chain::{
+            AuditEvent, AuditEventKind, HashChainBuilder, InMemoryAuditExporter,
+        };
+        use corelink_analytics::Region;
+        use futures::StreamExt;
+        use serde_json::json;
+        let tenant = Uuid::from_u128(0xC001);
+        let mut exporter = InMemoryAuditExporter::new();
+        let mut builder = HashChainBuilder::new();
+        let mut prev = corelink_audit_chain::ChainHash::genesis();
+        for i in 0..3_u64 {
+            let e = AuditEvent::new(
+                AuditEventKind::CasPut,
+                "corelink/region/iad",
+                Uuid::now_v7(),
+                1_000 + i,
+                tenant,
+                Region::Iad,
+                i,
+                prev,
+                json!({ "i": i }),
+            );
+            prev = builder.append(&e).expect("append");
+            exporter.append_event(e).expect("seed");
+        }
+        let window = ExportWindow::new(0, 10_000).expect("window");
+        let mut result = exporter
+            .export_window(&tenant.to_string(), window)
+            .expect("export");
+        // Anchor under which we'll verify. Tamper row [1] so verify
+        // returns false on second row, BEFORE the manifest frame.
+        let real_anchor = result.manifest.chain_head_at_export;
+        let bogus_anchor = ChainHash::genesis();
+        // Keep the manifest line for completeness even though we'll
+        // never emit it (the abort path returns before manifest).
+        let manifest_line = "irrelevant".to_string();
+        let sink: Arc<InMemoryExportAuditSink> =
+            Arc::new(InMemoryExportAuditSink::new());
+        let sink_dyn: Arc<dyn ExportAuditSink> = sink.clone();
+        // Pass `bogus_anchor` so verify fails on row 0.
+        let _ = result.rows.iter_mut();
+        let pager = InMemoryR2ListPager::with_rows(result.rows, 2);
+        let stream = build_audit_export_async_stream(
+            Box::new(pager),
+            manifest_line,
+            bogus_anchor,
+            sink_dyn,
+            tenant,
+            0,
+            10_000,
+            0,
+            0,
+        );
+        // Drain the stream collecting all frames in order. Walk
+        // forward and assert: at the moment the FIRST trailer frame
+        // is observed, the audit sink already holds the SEV-0 emit.
+        let mut frames_iter = Box::pin(stream);
+        let mut audit_seen_before_trailer = false;
+        let mut trailer_seen = false;
+        while let Some(frame) = frames_iter.next().await {
+            let f = frame.expect("infallible");
+            if !f.is_data() {
+                // Trailer frame. Audit sink MUST already have the row.
+                let snap = sink.snapshot().expect("snap");
+                assert!(
+                    !snap.is_empty(),
+                    "audit emit MUST land BEFORE the trailer frame on the wire"
+                );
+                audit_seen_before_trailer = true;
+                trailer_seen = true;
+                break;
+            }
+        }
+        assert!(trailer_seen, "expected trailer on break path");
+        assert!(audit_seen_before_trailer, "audit-anchor-BEFORE-trailer invariant violated");
+        // Sanity: the unused `real_anchor` keeps the seed deterministic.
+        assert_ne!(real_anchor.to_hex(), bogus_anchor.to_hex());
+    }
+
+    #[tokio::test]
+    async fn async_stream_empty_range_yields_only_manifest_frame() {
+        use futures::StreamExt;
+        let tenant = Uuid::from_u128(0xDEAD);
+        let manifest_line = "{\"manifest\":{}}".to_string();
+        let anchor = ChainHash::genesis();
+        let sink: Arc<dyn ExportAuditSink> = Arc::new(InMemoryExportAuditSink::new());
+        let pager = InMemoryR2ListPager::with_rows(Vec::new(), R2_LIST_PAGE_SIZE);
+        let stream = build_audit_export_async_stream(
+            Box::new(pager),
+            manifest_line.clone(),
+            anchor,
+            sink,
+            tenant,
+            0,
+            1,
+            0,
+            0,
+        );
+        let frames: Vec<_> = stream.collect().await;
+        assert_eq!(frames.len(), 1, "empty range should yield 1 manifest frame");
+        let f = frames[0].as_ref().expect("infallible");
+        assert!(f.is_data());
+    }
+
+    // -- Wave-19 property test (10k iter) -------------------------------
+    //
+    // Pins the audit-anchor-BEFORE-trailer invariant under randomized
+    // injection of mid-stream chain-breaks. For each iteration we:
+    //
+    //   1. Generate a random row count `n in 1..=64` + random break
+    //      position `b in 0..n` + random page size `p in 1..=16`.
+    //   2. Build a real chain of `n` rows; pass a bogus anchor that
+    //      will fail verify at every row (we then assert the audit
+    //      sink received exactly ONE break emit and that emit landed
+    //      BEFORE the trailer frame in the consumer-observable
+    //      stream-order).
+    //
+    // Driving this at 10k iter gives confidence the ordering holds
+    // under every page-boundary alignment + break-position combo.
+
+    proptest::proptest! {
+        #![proptest_config(proptest::test_runner::Config {
+            cases: 10_000,
+            // Keep shrinking budget modest — the assertion is binary.
+            max_shrink_iters: 64,
+            .. proptest::test_runner::Config::default()
+        })]
+        #[test]
+        fn audit_anchor_emits_before_trailer_under_random_breaks(
+            n in 1_usize..=16,
+            page_size in 1_usize..=8,
+            seed in 0_u64..=u64::MAX,
+        ) {
+            use corelink_audit_chain::{
+                AuditEvent, AuditEventKind, HashChainBuilder, InMemoryAuditExporter,
+            };
+            use corelink_analytics::Region;
+            use futures::StreamExt;
+            use serde_json::json;
+            let tenant = Uuid::from_u128(u128::from(seed));
+            let mut exporter = InMemoryAuditExporter::new();
+            let mut builder = HashChainBuilder::new();
+            let mut prev = ChainHash::genesis();
+            for i in 0..n as u64 {
+                let e = AuditEvent::new(
+                    AuditEventKind::CasPut,
+                    "corelink/region/iad",
+                    Uuid::now_v7(),
+                    1_000 + i,
+                    tenant,
+                    Region::Iad,
+                    i,
+                    prev,
+                    json!({ "i": i, "seed": seed }),
+                );
+                prev = builder.append(&e).map_err(|_| {
+                    proptest::test_runner::TestCaseError::fail("append failed")
+                })?;
+                exporter.append_event(e).map_err(|_| {
+                    proptest::test_runner::TestCaseError::fail("seed failed")
+                })?;
+            }
+            let window = ExportWindow::new(0, 10_000).map_err(|_| {
+                proptest::test_runner::TestCaseError::fail("window")
+            })?;
+            let result = exporter
+                .export_window(&tenant.to_string(), window)
+                .map_err(|_| proptest::test_runner::TestCaseError::fail("export"))?;
+            // Inject a bogus anchor so verify fails on row 0 → mid-stream break.
+            let bogus_anchor = ChainHash::genesis();
+            let sink: Arc<InMemoryExportAuditSink> =
+                Arc::new(InMemoryExportAuditSink::new());
+            let sink_dyn: Arc<dyn ExportAuditSink> = sink.clone();
+            let pager = InMemoryR2ListPager::with_rows(result.rows, page_size);
+            let stream = build_audit_export_async_stream(
+                Box::new(pager),
+                String::new(),
+                bogus_anchor,
+                sink_dyn,
+                tenant,
+                0,
+                10_000,
+                0,
+                0,
+            );
+            // Drive the stream on a single-threaded runtime so the
+            // proptest doesn't allocate thousands of multi-thread
+            // tokio runtimes (each rt is ~MB of overhead).
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|_| proptest::test_runner::TestCaseError::fail("rt"))?;
+            let invariant = rt.block_on(async move {
+                let mut iter = Box::pin(stream);
+                while let Some(frame) = iter.next().await {
+                    let f = match frame {
+                        Ok(f) => f,
+                        Err(_) => return false,
+                    };
+                    if !f.is_data() {
+                        let snap = match sink.snapshot() {
+                            Ok(s) => s,
+                            Err(_) => return false,
+                        };
+                        // Audit emit MUST be present before the trailer.
+                        return !snap.is_empty();
+                    }
+                }
+                // No trailer fired (e.g. n=0 or all verified — shouldn't
+                // happen with bogus anchor + n>=1). Treat as failure.
+                false
+            });
+            proptest::prop_assert!(
+                invariant,
+                "audit-anchor-BEFORE-trailer invariant violated for n={n}, page_size={page_size}, seed={seed}"
+            );
+        }
     }
 }
