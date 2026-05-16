@@ -1,0 +1,171 @@
+# DASH-NEON-SHADOW alert rules — Wave-19 PagerDuty wiring for the
+# wave-18 Neon analytics shadow (`RealNeonShadowSink` driver + per-region
+# project resolution + daily reconciliation cron). Closes the wave-18
+# caveat #3 in full.
+#
+# Source-of-truth (event-type constants are pinned by Rust tests
+# `audit_event_type_constants_match_spec` in
+# `crates/corelink-audit-chain/src/neon_shadow.rs`):
+#
+#   1. corelink.audit.neon_shadow_synced.v1
+#        — info on nominal sync; sev-2 when `observed_lag_ms >= 3_600_000`
+#          (lag-threshold breach captured on the success arm).
+#   2. corelink.audit.neon_shadow_sync_failed.v1
+#        — SEV-2 analytics lag (this file: rule `NeonShadowLagSev2`).
+#
+# Drift detection is owned by `.github/workflows/neon-shadow-reconcile-daily.yml`
+# which fires `NeonShadowDriftSev2` directly via PagerDuty Events API v2
+# (dedup_key = `neon-shadow-drift-<region>-<date>`).
+#
+# Routing per `specs/03_architecture/observability_model.md` §9:
+# Alertmanager → PagerDuty Events API v2 via `routing_key` bound to
+# the `PAGERDUTY_ROUTING_KEY` secret (row #11 of
+# `docs/internal/secrets-checklist.md`; same secret as
+# `dash-audit-export-alerts.yml`). Slack mirror via `#corelink-alerts`.
+#
+# Severity mapping per observability_model §9.2:
+#   SEV-2 → PagerDuty `severity: warning` + primary escalation policy
+#           `corelink-incident-response`; 1h MTTA cap; 24h MTTR target
+#           per S-17 ops maturity baseline. Analytics lag is operational,
+#           NOT a personal-data breach (RB-NEON-SHADOW-LAG §4 — no GDPR
+#           Art. 33 / LGPD Art. 48 72h clock starts here).
+#
+# Privacy / tenant-id pseudonymisation (INV-AUTH-AUDIT-PSEUDONYMIZATION):
+# the PD `payload.custom_details` MUST NOT carry the raw tenant_id.
+# The corelink emitter shipping the metric label hashes the tenant
+# via BLAKE3 (`tenant_id_hex8` = first 8 hex chars of BLAKE3) before
+# the metric reaches the alertmanager pipeline; CTRL-PRIV-001 +
+# INV-OBS-CARDINALITY-BUDGET enforce this server-side.
+#
+# Metric contract (counters / gauges populated inside
+# `RealNeonShadowSink` + the reconcile cron; tenant labels carry the
+# BLAKE3-pseudonymised hex8 ONLY, never the raw UUID):
+#   corelink_neon_shadow_observed_lag_ms{region, tenant_id_hex8}        gauge
+#   corelink_neon_shadow_sync_failed_total{region, tenant_id_hex8}      counter
+#   corelink_neon_shadow_drift_count{region, tenant_id_hex8, date}      gauge
+#
+# CI gate: `promtool test rules` on PR (wired via the existing
+# `dashboards/alerts/*.yml` validator; same pattern as
+# `dash-audit-export-alerts.yml`).
+
+groups:
+  - name: corelink-neon-shadow
+    interval: 30s
+    rules:
+
+      # ------------------------------------------------------------------
+      # Recording rules — pre-aggregated per-region series for the
+      # alert + dashboard panels. Keeps the alert expressions cheap +
+      # the panels stable as the per-tenant cardinality grows.
+      # ------------------------------------------------------------------
+
+      # R1 — per-region p99 lag (5-min window). The dashboard renders
+      # this as a single line per region; the alert reads the same.
+      - record: corelink_neon_shadow_observed_lag_ms_p99
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum by (region, le) (
+              rate(corelink_neon_shadow_observed_lag_ms_bucket[5m])
+            )
+          )
+
+      # R2 — per-region 1h sum of drift counts (rolling), surfaced as
+      # the dashboard "drift rate" panel. The daily cron sets the
+      # gauge once per (region, date); the recording rule lifts it to
+      # a continuous series Alertmanager can evaluate.
+      - record: corelink_neon_shadow_drift_rate_1h
+        expr: |
+          sum by (region) (
+            max_over_time(corelink_neon_shadow_drift_count[1h])
+          )
+
+      # ------------------------------------------------------------------
+      # Rule A — SEV-2: per-region shadow lag breaches 60-min ceiling.
+      # ------------------------------------------------------------------
+      # Fires when the per-region p99 observed lag stays at or above
+      # `SHADOW_LAG_SEV2_THRESHOLD_MS = 3_600_000 ms` (60 min) for 5
+      # consecutive minutes. The threshold mirrors the Rust constant —
+      # changing this value without an ADR violates the lag SLO and is
+      # caught at unit test time
+      # (`crates/corelink-audit-chain/src/neon_shadow.rs::tests::lag_constants_pin_to_canonical_slo`).
+      #
+      # Routing key: PAGERDUTY_ROUTING_KEY (prod; row #11 secrets
+      # matrix). dedup_key = "neon-shadow-lag:{region}" so consecutive
+      # fires inside the same incident collapse.
+      - alert: NeonShadowLagSev2
+        expr: corelink_neon_shadow_observed_lag_ms_p99 >= 3600000
+        for: 5m
+        labels:
+          severity: sev2
+          pagerduty_severity: warning
+          pagerduty_routing_key_env: PAGERDUTY_ROUTING_KEY
+          escalation_policy: corelink-incident-response
+          runbook: RB-NEON-SHADOW-LAG
+          owner_team: sre
+          sprint: S-19
+          wave: wave-19
+          gate: ship
+          incident_type: operational
+        annotations:
+          summary: "Neon analytics shadow lag ≥ 60 min — SEV-2 analytics lag"
+          description: |
+            The Neon analytics shadow sink's observed-lag p99 for region
+            {{ $labels.region }} has stayed at or above the SEV-2
+            threshold (60 min / 3_600_000 ms) for 5 consecutive minutes.
+
+            The R2 NDJSON archive remains the canonical chain-integrity
+            store — this page is an ANALYTICS LAG signal, NOT a chain
+            break. The GDPR Art. 33 / LGPD Art. 48 72h notification
+            clock does NOT start here (see RB-NEON-SHADOW-LAG §4).
+
+            First-3-actions: see runbook §5 cheat sheet
+            (acknowledge → diagnose §2.2A → decide §2.3).
+
+            Affected region: {{ $labels.region }}.
+            DO NOT log the raw tenant_id from the dashboard — pull it
+            via the admin audit-viewer with dual-approval.
+          runbook_url: "../../specs/_runbooks/RB-NEON-SHADOW-LAG.md"
+          dedup_key: "neon-shadow-lag:{{ $labels.region }}"
+
+      # ------------------------------------------------------------------
+      # Rule B — SEV-2: daily reconciliation drift detected.
+      # ------------------------------------------------------------------
+      # Fires when the daily reconciliation cron's drift gauge for any
+      # (region, date) is non-zero. The cron also fires PD directly
+      # with a per-(region, date) dedup key (see workflow); this
+      # Alertmanager rule exists for the rolling dashboard view +
+      # case the workflow PD post fails.
+      #
+      # Routing key: PAGERDUTY_ROUTING_KEY (prod; row #11 secrets
+      # matrix). dedup_key = "neon-shadow-drift:{region}".
+      - alert: NeonShadowDriftSev2
+        expr: corelink_neon_shadow_drift_rate_1h > 0
+        for: 0m  # SEV-2; immediate fire when reconcile cron sets the gauge.
+        labels:
+          severity: sev2
+          pagerduty_severity: warning
+          pagerduty_routing_key_env: PAGERDUTY_ROUTING_KEY
+          escalation_policy: corelink-incident-response
+          runbook: RB-NEON-SHADOW-LAG
+          owner_team: sre
+          sprint: S-19
+          wave: wave-19
+          gate: ship
+          incident_type: operational
+        annotations:
+          summary: "Neon analytics shadow drift detected — SEV-2 reconciliation mismatch"
+          description: |
+            The daily reconciliation cron (UTC 03:00) detected a
+            non-zero drift between the canonical R2 NDJSON archive +
+            the Neon analytics shadow for region {{ $labels.region }}.
+
+            See RB-NEON-SHADOW-LAG §3 for the per-shape triage table
+            (shadow-missing → catch-up replay; shadow-extra → SEV-1
+            audit incident; content-divergence → SEV-0 chain break).
+
+            Affected region: {{ $labels.region }}.
+            DO NOT log the raw tenant_id from the dashboard — pull it
+            via the admin audit-viewer with dual-approval.
+          runbook_url: "../../specs/_runbooks/RB-NEON-SHADOW-LAG.md"
+          dedup_key: "neon-shadow-drift:{{ $labels.region }}"

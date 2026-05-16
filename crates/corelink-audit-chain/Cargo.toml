@@ -24,6 +24,28 @@ print_stdout = "deny"
 print_stderr = "deny"
 mod_module_files = "deny"
 
+[features]
+# Default: pure-logic crate; only the in-memory fakes are built.
+default = []
+
+# Build-time witness for the production `RealNeonShadowSink` driver
+# path (per-region project resolver + `app.current_tenant` RLS GUC
+# `set_local`-via-`SELECT set_config` + idempotent ON CONFLICT DO
+# NOTHING insert + aggregate-query SQL). The trait surface +
+# `RealNeonShadowSink` orchestration are ALWAYS built in (so the
+# `apps/server` binary can wire them without conditional code); the
+# `tokio-postgres` adapter (`real::tokio_postgres_executor`) is gated
+# by this flag + `cfg(not(target_arch = "wasm32"))` so the CF Worker
+# build stays clean.
+#
+# Pattern reference (mirrors `byok-aws-real` / `cf-billing-real`
+# trait-abstraction-defer charter): the `NeonExecutor` trait lives in
+# this crate; the production Postgres binder lives in the binary; the
+# feature flag is a compile-time witness, not a runtime gate.
+#
+# See `specs/_audits/2026-05-16-neon-shadow-real-driver.md` §3.
+neon-real = []
+
 [dependencies]
 thiserror = { workspace = true }
 serde = { workspace = true }
