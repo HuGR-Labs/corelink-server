@@ -35,6 +35,13 @@ use axum::Router;
 pub mod admin;
 /// AC HTTP routes (R-prep wire-up; wave-11).
 pub mod ac;
+/// Customer-facing audit-analytics routes (Wave-18 wiring of the
+/// Neon analytics shadow sync): `GET /v1/audit/analytics/event-count`
+/// + `GET /v1/audit/analytics/timeline` over the per-tenant
+/// `audit_events_shadow` Neon table. The shadow is analytics-only;
+/// the canonical chain-integrity store is the R2 NDJSON archive
+/// (Wave 15) — see `specs/_audits/2026-05-15-neon-analytics-shadow.md`.
+pub mod audit_analytics;
 /// Customer-facing audit-export route (Wave-15.3 wiring of
 /// WI-S09-008): `GET /v1/audit/export?from=&to=` streams NDJSON
 /// audit events + inclusion proofs.

@@ -84,6 +84,7 @@ Full proof + integration with `audit_immutability.tla` is a follow-on Lote (no P
 | TLA+ spec stub | This document §3 | `specs/_audits/2026-05-15-audit-chain-retention.md` |
 | Customer-facing audit-export endpoint (Wave-15.3) | axum route + integration test | `apps/server/src/routes/audit_export.rs` + `apps/server/tests/audit_export.rs` (7 tests: happy / cross-tenant reject / empty range / verify-failed SEV-0 / 401 / 429 / 503-audit-fail) |
 | Wave-17 PagerDuty alert wiring for the 2 paged emits | Alert rules + 2 SEV runbooks | `dashboards/alerts/dash-audit-export-alerts.yml` (`AuditExport_CrossTenantAttempt` SEV-1, `AuditExport_VerifyFailed` SEV-0) + `specs/_runbooks/RB-AUDIT-EXPORT-CROSS-TENANT-ATTEMPT.md` + `specs/_runbooks/RB-AUDIT-EXPORT-VERIFY-FAILED.md`. Routing: `PAGERDUTY_ROUTING_KEY` (secrets-matrix row #11). SEV-0 starts LGPD Art. 46 / GDPR Art. 33 72h clock on confirm. |
+| Wave-18 Neon analytics shadow tier | Shadow sync + 2 customer-facing SQL aggregate endpoints | `crates/corelink-audit-chain/src/neon_shadow.rs` + `apps/server/src/routes/audit_analytics.rs` + `migrations/neon/0001_audit_events_shadow.sql` + `specs/_audits/2026-05-15-neon-analytics-shadow.md`. **Tier split:** R2 = canonical chain-integrity store (this doc, §2.1 Object Lock 7y retention); Neon = analytics convenience tier (≤ 5 min nominal lag; SEV-2 on lag ≥ 60 min; SEV-0 chain-break discipline preserved at the R2 source-of-truth). Daily-verify cron unchanged — it walks R2; Neon divergence is treated as analytics anomaly, not chain break. |
 
 ## 5. SOC 2 CC7.2 mapping
 
