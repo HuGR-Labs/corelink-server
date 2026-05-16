@@ -31,16 +31,32 @@ export type GatedTree = (typeof GATED_TREES)[number];
 /**
  * Required frontmatter keys on every page under a gated tree.
  *
- * `cross_functional_review` MUST equal the literal string `TBD` until
- * sign-off lands; the test enforces this via {@link CROSS_FUNCTIONAL_TBD}.
+ * `cross_functional_review` MUST be one of {@link CROSS_FUNCTIONAL_PENDING_VALUES}
+ * until sign-off lands. Both `TBD` and `pending` are accepted as equivalent
+ * unsigned-off markers — the wave-22 DEBT-015 build closure (see
+ * `specs/_audits/2026-05-15-debt-register.md` row DEBT-015) flipped the literal
+ * from `TBD` to `pending` on `audit-chain.mdx` / `byok.mdx` / `lgpd-brazil.mdx`
+ * to keep the pages in the production build (Docusaurus excludes `draft: true`
+ * pages, which broke 90+ MDX cross-links). Both literals carry identical
+ * semantics for the §10 anti-scope gate; the gate test accepts either.
+ *
+ * The user-visible DRAFT signal is enforced via {@link DRAFT_BANNER_REGEX} —
+ * every gated page MUST render `<DraftBanner />` (or the literal banner
+ * blockquote) even when `draft: true` is omitted to keep the page buildable.
  */
 export const REQUIRED_FRONTMATTER_KEYS = [
   "cross_functional_review",
   "pending_signoff",
-  "draft",
 ] as const;
 
+/** Canonical "not yet signed off" literal (legacy; pre-DEBT-015 wave-22). */
 export const CROSS_FUNCTIONAL_TBD = "TBD";
+
+/** Accepted "not yet signed off" literals — see DEBT-015 wave-22 note above. */
+export const CROSS_FUNCTIONAL_PENDING_VALUES: readonly string[] = [
+  "TBD",
+  "pending",
+] as const;
 
 /**
  * Regex that detects the DRAFT banner. Either the standalone Markdown
