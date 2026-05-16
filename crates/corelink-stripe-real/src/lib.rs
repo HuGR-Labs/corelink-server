@@ -15,14 +15,27 @@
 //! - `POST /v1/customers` + `GET /v1/customers/:id` — customer CRUD.
 //! - `POST /v1/billing_portal/sessions` — Stripe Customer Portal URL.
 //!
-//! # API key resolution
+//! # Wave-31 wallet-broker series (stream-1): credential brokerage
 //!
-//! - `STRIPE_SECRET_KEY` (live) or `STRIPE_SECRET_KEY_TEST` (test mode)
-//!   resolved at [`StripeRealClient::from_env`].
+//! Outbound Stripe calls route through the HuGR Wallet remote
+//! credential broker. CoreLink NEVER holds a real upstream Stripe API
+//! secret.
+//! Credentials resolve via [`StripeClientConfig::from_env`]:
+//!
+//! - `HUGR_WALLET_BASE`  — wallet broker base URL (default
+//!   `https://api.humangr.com`).
+//! - `HUGR_WALLET_TOKEN` — CoreLink-side `hugrw_` token (held in a
+//!   redacting [`secrecy::SecretString`]).
+//! - `HUGR_STRIPE_REF`   — wallet ref name (default `stripe-prod`).
 //! - `STRIPE_WEBHOOK_SECRET` resolved at [`verify_webhook_signature`]
 //!   caller — passed in explicitly so callers can rotate without
-//!   rebuilding the client.
-//! - SECRETS ARE NEVER LOGGED. The `Debug` impl redacts the key.
+//!   rebuilding the client. Webhook flow stays direct (inbound +
+//!   local HMAC verify); no upstream key involved.
+//! - SECRETS ARE NEVER LOGGED. The `Debug` impls on
+//!   [`StripeClientConfig`] and [`StripeRealClient`] redact the token.
+//!
+//! See `specs/_audits/2026-05-16-wallet-broker-stripe.md` for the
+//! full architecture diagram + blast-radius analysis.
 //!
 //! # Idempotency
 //!
@@ -65,7 +78,10 @@ pub mod webhook;
 pub mod webhook_dispatch;
 
 #[cfg(not(target_arch = "wasm32"))]
-pub use client::{StripeRealClient, StripeRealClientBuilder};
+pub use client::{
+    StripeClientConfig, StripeRealClient, StripeRealClientBuilder,
+    DEFAULT_HUGR_STRIPE_REF, DEFAULT_HUGR_WALLET_BASE,
+};
 pub use clock::{Clock, InMemoryFakeClock};
 #[cfg(not(target_arch = "wasm32"))]
 pub use clock::SystemClock;

@@ -1,6 +1,6 @@
 # Production Secrets Runbook (WI-R2-14)
 
-> **Last sealed:** 2026-05-14
+> **Last sealed:** 2026-05-16 (wave-31 wallet-broker series stream-1 — Stripe routed through HuGR Wallet broker; see `specs/_audits/2026-05-16-wallet-broker-stripe.md`)
 > **Owner:** SRE Lead (co-owned with Security Lead)
 > **Companion:** `docs/internal/secrets-checklist.md` (the matrix of all secrets)
 
@@ -23,8 +23,15 @@ Every row marked `cf-wrangler` in the matrix is populated via:
 ```bash
 # One-shot per secret. The command prompts stdin for the value;
 # DO NOT pass via CLI args (would land in shell history).
-wrangler secret put STRIPE_SECRET_KEY        --env prod
-wrangler secret put STRIPE_WEBHOOK_SECRET    --env prod
+#
+# Wave-31 wallet-broker series stream-1 (Stripe): the upstream
+# `sk_live_...` no longer lives in CF Worker secrets — it is held by
+# the HuGR Wallet broker (api.humangr.com) under ref `stripe-prod` and
+# injected into outbound calls by the wallet. CoreLink stores only the
+# proxy-scoped `hugrw_` token. See
+# `specs/_audits/2026-05-16-wallet-broker-stripe.md`.
+wrangler secret put HUGR_WALLET_TOKEN        --env prod   # hugrw_... (CoreLink-side proxy token)
+wrangler secret put STRIPE_WEBHOOK_SECRET    --env prod   # whsec_... (inbound HMAC verify — direct, NOT brokered)
 wrangler secret put CLERK_SECRET_KEY         --env prod
 wrangler secret put PAGERDUTY_ROUTING_KEY    --env prod
 wrangler secret put SLACK_WEBHOOK_URL_ALERTS_SEV1            --env prod
@@ -107,27 +114,31 @@ expiry.
 1. **Pre-rotate** — generate new credential at vendor (do NOT revoke old yet).
 2. **Stage** — push new value to a `STAGE_` prefixed env var:
    ```bash
-   wrangler secret put STAGE_STRIPE_SECRET_KEY --env prod
+   # Example: rotating the wallet-broker token (wave-31 Stripe path).
+   wrangler secret put STAGE_HUGR_WALLET_TOKEN --env prod
    ```
 3. **Canary** — deploy a 1% canary that consumes `STAGE_` first, falls back to
    the live var. Run for 30 min; check `corelink-stripe-real` error rates.
 4. **Promote** — overwrite the live var:
    ```bash
-   wrangler secret put STRIPE_SECRET_KEY --env prod
+   wrangler secret put HUGR_WALLET_TOKEN --env prod
    ```
 5. **Verify** — run `scripts/secrets-checklist-verify.sh` + smoke tests.
-6. **Revoke old** — at the vendor.
-7. **Clean up** — `wrangler secret delete STAGE_STRIPE_SECRET_KEY --env prod`.
+6. **Revoke old** — at the vendor (for `HUGR_WALLET_TOKEN`, revoke the prior
+   `hugrw_` token in the wallet UI; for direct-vendor secrets, revoke at the
+   vendor dashboard).
+7. **Clean up** — `wrangler secret delete STAGE_HUGR_WALLET_TOKEN --env prod`.
 8. **Record** — emit a `secret.rotated` event to D1 `audit_outbox` with
    `{secret_name, rotator_actor, rotated_at, prev_kid, new_kid}`.
 
 ### 2.2 Auto-tested rotation (high-value secrets)
 
-For `STRIPE_SECRET_KEY`, `PAGERDUTY_ROUTING_KEY`, and `CLERK_SECRET_KEY`,
-production deploys an **out-of-band rotation drill** monthly: the SRE team
-rotates the secret in staging following the playbook above and verifies the
-canary path works end-to-end. Failures block the production rotation until the
-playbook is fixed. See `RB-SECRETS-ROTATION-DRILL.md` (TBD).
+For `HUGR_WALLET_TOKEN` (wave-31; supersedes legacy `STRIPE_SECRET_KEY`),
+`PAGERDUTY_ROUTING_KEY`, and `CLERK_SECRET_KEY`, production deploys an
+**out-of-band rotation drill** monthly: the SRE team rotates the secret in
+staging following the playbook above and verifies the canary path works
+end-to-end. Failures block the production rotation until the playbook is
+fixed. See `RB-SECRETS-ROTATION-DRILL.md` (TBD).
 
 ### 2.3 Roll-forward (no rollback)
 
@@ -145,7 +156,7 @@ a public repo, lost device, etc.), execute this playbook:
 | T+ | Action | Owner |
 |---|---|---|
 | 0min | **Detect** — incident declared (PD page or manual). Page SRE Lead + Security Lead via `#alerts-sev1`. | Detector |
-| +5min | **Revoke** at vendor (NOT just rotate — explicit revocation). For Stripe: delete key at dashboard. For Slack: revoke webhook at app config. For AWS: deactivate + schedule deletion of access key. | Rotation owner per matrix |
+| +5min | **Revoke** at vendor (NOT just rotate — explicit revocation). For `HUGR_WALLET_TOKEN`: revoke the `hugrw_` token in the HuGR Wallet UI (instant; CoreLink does not hold the upstream Stripe key — that stays untouched, the wallet owner separately rotates it inside the wallet KV). For Slack: revoke webhook at app config. For AWS: deactivate + schedule deletion of access key. | Rotation owner per matrix |
 | +10min | **Generate new** credential at vendor. | Rotation owner |
 | +15min | **Deploy** new value via `wrangler secret put` (or GHA secret update + redeploy). Skip canary — this is the compromise path, accept brief downtime over compromise. | Rotation owner |
 | +30min | **Audit** — pull last 24h of activity for the compromised credential from the vendor's audit log. Cross-reference against CoreLink audit_outbox for replay. | Security Lead |
@@ -155,11 +166,17 @@ a public repo, lost device, etc.), execute this playbook:
 
 ### Per-secret compromise notes
 
-- **`STRIPE_SECRET_KEY`** (#1): After revoke, immediately switch
+- **`HUGR_WALLET_TOKEN`** (#1; wave-31 supersedes legacy `STRIPE_SECRET_KEY`):
+  After revoking the `hugrw_` token in the wallet UI, immediately switch
   `corelink-billing-aggregator` to read-only mode until rotation completes.
-  Replay last 24h via `corelink-billing-replay --since 24h`.
-- **`STRIPE_WEBHOOK_SECRET`** (#3): Re-fetch missed webhooks via Stripe's
-  `events.list` API with `created[gte]=T-24h`. Stripe retains 30d of events.
+  Replay last 24h via `corelink-billing-replay --since 24h`. Note: the upstream
+  `sk_live_...` lives in wallet KV and is NOT exposed to CoreLink — a leak of
+  `HUGR_WALLET_TOKEN` does NOT require Stripe-side key rotation (the wallet
+  owner does that on a separate cadence inside the wallet). See
+  `specs/_audits/2026-05-16-wallet-broker-stripe.md §6` blast-radius analysis.
+- **`STRIPE_WEBHOOK_SECRET`** (#3): UNCHANGED by wave-31 — inbound HMAC verify
+  is direct, not brokered. Re-fetch missed webhooks via Stripe's `events.list`
+  API with `created[gte]=T-24h`. Stripe retains 30d of events.
 - **`PAGERDUTY_ROUTING_KEY`** (#11): Recreate integration. After rotation,
   fire a synthetic page via `corelink-synthetic-pager` to verify the new
   routing key delivers.
@@ -189,7 +206,7 @@ Every `wrangler secret put` emits a Cloudflare account audit log entry:
 
 ```
 event.type   = "workers.secret.update"
-event.target = "STRIPE_SECRET_KEY"
+event.target = "HUGR_WALLET_TOKEN"
 event.actor  = <CF user email>
 event.at     = <ISO-8601>
 ```
@@ -204,7 +221,7 @@ We mirror every secret-mutation event to D1 (`audit_outbox` table, see
 ```json
 {
   "kind": "secret.rotated",
-  "secret_name": "STRIPE_SECRET_KEY",
+  "secret_name": "HUGR_WALLET_TOKEN",
   "actor": "alice@humangr.com",
   "rotated_at": "2026-05-14T18:32:00Z",
   "rotation_reason": "scheduled-90d",
@@ -236,7 +253,7 @@ Monthly, run `scripts/secrets_audit_reconcile.py` (TBD) which:
 
 | Secret family | Where | Owner |
 |---|---|---|
-| Stripe | `wrangler secret put` + Stripe dashboard | SRE Lead |
+| Stripe (wallet-broker, wave-31) | `wrangler secret put HUGR_WALLET_TOKEN` + HuGR Wallet UI for upstream `sk_live_...` rotation (wallet-owner-side, decoupled) | SRE Lead (`hugrw_` token) + Wallet Owner (upstream key) |
 | Clerk | `wrangler secret put` + Clerk dashboard + Vercel env | DevOps |
 | PagerDuty | `wrangler secret put` + PagerDuty integration | SRE Lead |
 | Slack webhooks | `wrangler secret put` + Slack app config | SRE Lead |

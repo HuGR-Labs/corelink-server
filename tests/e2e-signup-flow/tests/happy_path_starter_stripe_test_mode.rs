@@ -5,12 +5,14 @@
 //! `select_tier(Starter)` issues a Checkout redirect with a session id
 //! and that the webhook activates the subscription idempotently.
 //!
-//! When `STRIPE_SECRET_KEY_TEST` is set in the environment, an
-//! additional `#[ignore]`-gated variant constructs the real HTTPS
-//! Stripe client (`corelink-stripe-real`) and asserts that the
+//! When `HUGR_WALLET_TOKEN` is set in the environment, an additional
+//! `#[ignore]`-gated variant constructs the real HTTPS Stripe client
+//! (`corelink-stripe-real`) routed through the HuGR Wallet broker
+//! (wave-31 wallet-broker series, stream-1) and asserts that the
 //! Checkout Session POST returns 200 + a `cs_test_*` session id. The
-//! live test reads its API key from env and never logs the secret
-//! (charter CTRL-CRED-REDACT).
+//! live test reads only the `hugrw_` token from env — the underlying
+//! `STRIPE_SECRET_KEY` lives inside the wallet KV and is never seen
+//! by CoreLink (charter CTRL-CRED-REDACT).
 
 #![allow(
     clippy::unwrap_used,
@@ -108,20 +110,24 @@ fn r3_1_happy_path_starter_in_memory() {
         .unwrap();
 }
 
-/// Live-integration: real HTTPS Stripe Checkout Session create.
+/// Live-integration: real HTTPS Stripe Checkout Session create via
+/// the HuGR Wallet broker (wave-31 wallet-broker series, stream-1).
 ///
-/// Skipped unless `STRIPE_SECRET_KEY_TEST` + `STRIPE_PRICE_ID_STARTER`
-/// are present in the environment. Run via:
+/// Skipped unless `HUGR_WALLET_TOKEN` + `STRIPE_PRICE_ID_STARTER` are
+/// present in the environment. The wallet ref must be pre-provisioned
+/// with a `sk_test_...` upstream secret. Run via:
 ///
 /// ```text
-/// STRIPE_SECRET_KEY_TEST=sk_test_... \
+/// HUGR_WALLET_BASE=https://api.humangr.com \
+/// HUGR_WALLET_TOKEN=hugrw_live_... \
+/// HUGR_STRIPE_REF=stripe-prod-test \
 /// STRIPE_PRICE_ID_STARTER=price_... \
 /// cargo test -p e2e-signup-flow -- --ignored
 /// ```
 #[test]
 #[ignore]
 fn r3_1_happy_path_starter_live_stripe() {
-    if env::var("STRIPE_SECRET_KEY_TEST").is_err() {
+    if env::var("HUGR_WALLET_TOKEN").is_err() {
         // Charter: ignored-but-skip — exit cleanly.
         return;
     }
@@ -129,11 +135,25 @@ fn r3_1_happy_path_starter_live_stripe() {
         return;
     }
     // Build a live Stripe client via env. The harness does not log
-    // any secret material.
+    // any secret material — the hugrw_ token is held in a redacting
+    // SecretString and the real upstream key lives in the wallet KV.
     let client = corelink_stripe_real::StripeRealClient::from_env()
         .expect("stripe live client build");
-    // Smoke-test: API base is well-formed.
-    assert!(client.api_base().starts_with("https://"));
+    // Smoke-test: proxy base URL is well-formed and routes through
+    // the wallet broker (NOT directly at `api.stripe.com`).
+    let proxy_base = client.proxy_base();
+    assert!(
+        proxy_base.starts_with("https://"),
+        "proxy base must be HTTPS: {proxy_base}"
+    );
+    assert!(
+        proxy_base.contains("/_wallet/proxy/"),
+        "proxy base must route through HuGR Wallet broker: {proxy_base}"
+    );
+    assert!(
+        !proxy_base.starts_with("https://api.stripe.com"),
+        "client must NOT hit Stripe directly post-wave-31: {proxy_base}"
+    );
     // The full create_checkout_session call is exercised by the
     // corelink-stripe-real crate's own `live-integration` tests; we
     // only assert the harness can wire the client end-to-end without
