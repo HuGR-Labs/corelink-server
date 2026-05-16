@@ -69,19 +69,24 @@
 //! what to trust; the audit emit guarantees the server-side detect
 //! anchor for the security team page-out).
 
+use std::convert::Infallible;
 use std::sync::{Arc, Mutex};
 
 use axum::{
+    body::Body,
     extract::{Query, State},
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, HeaderName, HeaderValue, StatusCode},
     response::IntoResponse,
     routing::get,
     Router,
 };
+use bytes::Bytes;
 use corelink_audit_chain::{
-    verify_export_result, AuditExporter, ExportWindow, ExportedAuditEvent,
-    InMemoryAuditExporter,
+    verify_export_result, verify_inclusion_proof, AuditExporter, ExportWindow,
+    ExportedAuditEvent, InMemoryAuditExporter,
 };
+use http_body::Frame;
+use http_body_util::StreamBody;
 use corelink_ratelimit::{
     BucketKey, InMemoryRateLimitAuditSink, InMemoryRateLimitMetrics,
     InMemoryTokenBucketRateLimiter, RateLimitConfig, RateLimitDecision, RateLimiter,
@@ -110,6 +115,28 @@ pub const EVENT_TYPE_CROSS_TENANT_ATTEMPT: &str =
 /// emit.
 pub const EVENT_TYPE_VERIFY_FAILED: &str =
     "corelink.audit.export_verify_failed.v1";
+
+/// Canonical chain-head anchor response header (mirrors the
+/// wave-17 customer-CLI doc reference). Lower-case per HTTP/2 wire
+/// convention.
+pub const HEADER_CHAIN_HEAD_ANCHOR: &str =
+    "x-corelink-audit-export-chain-head-anchor";
+
+/// Wave-18 HTTP trailer name surfaced on the response when the
+/// streaming verifier detects a chain-break MID-STREAM. The trailer
+/// value is a compact JSON object
+/// `{"break_at_seq":<u64>,"break_at_chunk":<u64>,"observed":"<hex>","expected":"<hex>"}`
+/// — the customer-CLI parses it to surface the actionable diagnostic
+/// "Export aborted mid-stream — server detected chain break at seq N
+/// chunk X" (see `crates/corelink-cli/src/commands/verify_ndjson.rs`).
+///
+/// Per HTTP/1.1 (RFC 7230 §4.4) trailers MUST be advertised up-front
+/// via the `Trailer:` response header so intermediaries that strip
+/// unknown trailers know to preserve this one; we always advertise
+/// the trailer name even on the happy path so the wire shape is
+/// stable.
+pub const HEADER_EXPORT_ABORTED: &str =
+    "x-corelink-audit-export-aborted";
 
 /// Audit emit record captured by the route. Carries the canonical
 /// CloudEvents `type` + the load-bearing tenant + window + byte
@@ -485,20 +512,26 @@ async fn handle_export(
     };
 
     // 6. Verify the proof chain server-side BEFORE emitting bytes.
-    //    On verify failure we still deliver the bytes (caller decides
-    //    what to trust) but we emit the SEV-0 security audit row so
-    //    the security team gets paged.
+    //    Wave-16 upfront gate: catches the chain-break early so the
+    //    `export_request.v1` row carries `exit_status="verify_failed"`
+    //    (the security anchor preserved across wave-17 and wave-18).
+    //    Wave-18 adds a complementary per-row re-verify INSIDE the
+    //    streaming body — on detect we ALSO emit a SEV-0 with the
+    //    mid-stream `{break_at_seq, break_at_chunk, observed,
+    //    expected}` payload and flush the
+    //    `X-CoreLink-Audit-Export-Aborted` HTTP trailer before
+    //    closing the body. The customer-CLI surfaces the trailer as
+    //    an actionable diagnostic.
     let verify_outcome = verify_export_result(&result);
     let verify_failed = verify_outcome.is_err();
 
-    // 7. Audit emit — BEFORE the byte stream. Audit failure on the
-    //    `export_request.v1` arm aborts with 503 (fail-CLOSED per
-    //    INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER).
-    //
-    //    The bytes_written + events_written values reflect what we
-    //    are about to flush; on the verify-failed path we still flush
-    //    the bytes (caller decides what to trust) so the audit row
-    //    captures the same delivery shape as the happy path.
+    // 7. Pre-serialize the per-row NDJSON envelopes + the trailing
+    //    manifest line so any serialization failure surfaces as a
+    //    `500` BEFORE the response status is sent (we never want to
+    //    flip to `200` and then discover row 3 can't serialize). The
+    //    bytes themselves are streamed out one frame at a time
+    //    further down — the HTTP wire shape is chunked / no
+    //    Content-Length, NOT a buffer-then-flush 200.
     let manifest_json = match serde_json::to_string(&result.manifest) {
         Ok(s) => s,
         Err(_) => {
@@ -509,7 +542,7 @@ async fn handle_export(
                 .into_response();
         }
     };
-    let (body_bytes, ndjson_line_count) = match serialize_ndjson_body(&result.rows) {
+    let row_lines = match serialize_ndjson_lines(&result.rows) {
         Ok(t) => t,
         Err(_) => {
             return (
@@ -519,7 +552,19 @@ async fn handle_export(
                 .into_response();
         }
     };
-    let body_bytes_len = body_bytes.len() as u64;
+    let manifest_line = format!("{{\"manifest\":{manifest_json}}}");
+    // bytes_written = sum of every row line length + an interleaving
+    // newline between successive rows + a newline before the manifest
+    // line + the manifest line bytes. Mirrors the wave-16 wire shape
+    // verbatim so the wave-17 CLI sees the SAME byte stream.
+    let row_bytes_sum: u64 = row_lines.iter().map(|l| l.len() as u64).sum();
+    let interleave_newlines: u64 = if row_lines.is_empty() {
+        0
+    } else {
+        row_lines.len() as u64 // (n-1) between rows + 1 before manifest = n
+    };
+    let body_bytes_len = row_bytes_sum + interleave_newlines + manifest_line.len() as u64;
+    let ndjson_line_count = row_lines.len() as u64;
 
     let exit_status = if verify_failed {
         "verify_failed"
@@ -529,6 +574,9 @@ async fn handle_export(
         "ok"
     };
 
+    // 8. Audit emit — BEFORE the byte stream. Audit failure on the
+    //    `export_request.v1` arm aborts with 503 (fail-CLOSED per
+    //    INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER).
     let request_row = ExportAuditRow {
         event_type: EVENT_TYPE_EXPORT_REQUEST.to_string(),
         authenticated_tenant: Some(authenticated_tenant),
@@ -549,8 +597,9 @@ async fn handle_export(
 
     if verify_failed {
         // SEV-0 — emit the verify-failed security row alongside the
-        // request row. The customer still receives the bytes; the
-        // security team gets paged off the SEV-0 emit.
+        // request row. The customer still receives the bytes (the
+        // mid-stream abort trailer fires on the FIRST tampered row);
+        // the security team gets paged off this SEV-0 emit.
         let _ = state.audit_sink.emit(ExportAuditRow {
             event_type: EVENT_TYPE_VERIFY_FAILED.to_string(),
             authenticated_tenant: Some(authenticated_tenant),
@@ -563,28 +612,244 @@ async fn handle_export(
         });
     }
 
-    // 8. Build the response. NDJSON body + manifest as a trailing
-    //    NDJSON line carrying the canonical `manifest:` envelope.
-    let mut composed: Vec<u8> = Vec::with_capacity(body_bytes.len() + manifest_json.len() + 32);
-    composed.extend_from_slice(&body_bytes);
-    if !composed.is_empty() {
-        composed.push(b'\n');
-    }
-    // Final line: `{"manifest": <manifest>}`. The customer
-    // verifier reads this as the chain-anchor envelope.
-    let footer = format!("{{\"manifest\":{manifest_json}}}");
-    composed.extend_from_slice(footer.as_bytes());
+    // 9. Build the streaming response body. Per-row NDJSON frames
+    //    + the trailing manifest line. The per-row re-verify gate
+    //    runs INSIDE the stream against the manifest anchor; on the
+    //    FIRST chain-break we emit a SEV-0 carrying the mid-stream
+    //    `{break_at_seq, break_at_chunk, observed, expected}` payload
+    //    and ship the `X-CoreLink-Audit-Export-Aborted` trailer as
+    //    the final body frame. The audit emit ALWAYS lands BEFORE
+    //    the trailer frame on the wire.
+    let anchor_head = result.manifest.chain_head_at_export;
+    let audit_sink_for_stream = Arc::clone(&state.audit_sink);
+    let tenant_for_stream = authenticated_tenant;
+    let frames = build_audit_export_stream_frames(
+        result.rows,
+        manifest_line,
+        anchor_head,
+        audit_sink_for_stream,
+        tenant_for_stream,
+        from_ms,
+        to_ms,
+        body_bytes_len,
+        ndjson_line_count,
+    );
+    let body_stream =
+        futures::stream::iter(frames.into_iter().map(Ok::<Frame<Bytes>, Infallible>));
+    let body = Body::new(StreamBody::new(body_stream));
 
-    let mut resp = (StatusCode::OK, composed).into_response();
-    if let Ok(val) = "application/x-ndjson".parse() {
+    let mut resp = (StatusCode::OK, body).into_response();
+    if let Ok(val) = HeaderValue::from_str("application/x-ndjson") {
         resp.headers_mut()
             .insert(axum::http::header::CONTENT_TYPE, val);
     }
-    if let Ok(val) = result.manifest.chain_head_at_export.to_hex().parse() {
-        resp.headers_mut()
-            .insert("x-corelink-audit-export-chain-head-anchor", val);
+    if let (Ok(val), Ok(name)) = (
+        HeaderValue::from_str(&result.manifest.chain_head_at_export.to_hex()),
+        HeaderName::from_bytes(HEADER_CHAIN_HEAD_ANCHOR.as_bytes()),
+    ) {
+        resp.headers_mut().insert(name, val);
+    }
+    // Advertise the abort trailer upfront per RFC 7230 §4.4 so any
+    // intermediary preserving only declared trailers keeps ours. The
+    // trailer fires ONLY on mid-stream chain-break; on the happy path
+    // the response closes with zero trailer frames + the advertised
+    // trailer simply doesn't appear in the final block.
+    if let Ok(val) = HeaderValue::from_str(HEADER_EXPORT_ABORTED) {
+        resp.headers_mut().insert(axum::http::header::TRAILER, val);
     }
     resp
+}
+
+/// Build the wave-18 streaming frame plan. Returns the ordered
+/// `Frame<Bytes>` vector the response body emits:
+///
+/// 1. One `Frame::data` per NDJSON row line, in order.
+/// 2. Between successive rows, a `\n` separator is appended to the
+///    PREVIOUS row line (so the wire shape matches the wave-16
+///    monolithic `\n`-joined body byte-for-byte).
+/// 3. After the last row (or on entry to the manifest line on an
+///    empty range) the trailing manifest line is emitted as its own
+///    `Frame::data`.
+/// 4. If a per-row re-verify fails MID-STREAM, the function emits
+///    the SEV-0 audit row carrying the `{break_at_seq,
+///    break_at_chunk, observed, expected}` payload via the supplied
+///    sink BEFORE pushing a `Frame::trailers` trailer carrying the
+///    canonical `X-CoreLink-Audit-Export-Aborted` header — the
+///    stream then closes immediately (no further row or manifest
+///    frames are emitted on the abort path).
+///
+/// The synchronous shape is intentional: pre-materializing the frame
+/// plan keeps the audit-emit BEFORE the network flush invariant
+/// trivially satisfied (we'd otherwise need to thread the sink
+/// through an async generator with non-trivial cancellation
+/// semantics).
+#[allow(clippy::too_many_arguments, reason = "trailing-payload + audit sink fan-in")]
+fn build_audit_export_stream_frames(
+    rows: Vec<ExportedAuditEvent>,
+    manifest_line: String,
+    anchor_head: corelink_audit_chain::ChainHash,
+    audit_sink: Arc<dyn ExportAuditSink>,
+    authenticated_tenant: Uuid,
+    from_ms: u64,
+    to_ms: u64,
+    bytes_written: u64,
+    events_written: u64,
+) -> Vec<Frame<Bytes>> {
+    let mut frames: Vec<Frame<Bytes>> = Vec::with_capacity(rows.len() + 2);
+    for (idx, row) in rows.iter().enumerate() {
+        // Per-row inclusion-proof recheck against the manifest
+        // anchor. Any internal verifier error (canonicalization /
+        // arithmetic) is treated as a chain-break-equivalent abort
+        // — fail-CLOSED — so an unexpected error path can't silently
+        // ship tampered bytes.
+        let row_serialized = match serde_json::to_string(row) {
+            Ok(s) => s,
+            Err(_) => {
+                emit_mid_stream_break_audit(
+                    &audit_sink,
+                    authenticated_tenant,
+                    row.event.sequence_number,
+                    idx as u64,
+                    "serialize_failed",
+                    "row-serialize-failed",
+                    from_ms,
+                    to_ms,
+                    bytes_written,
+                    events_written,
+                );
+                frames.push(abort_trailer_frame(
+                    row.event.sequence_number,
+                    idx as u64,
+                    "serialize_failed",
+                    "row-serialize-failed",
+                ));
+                return frames;
+            }
+        };
+        let verified = verify_inclusion_proof(row, &anchor_head).unwrap_or_default();
+        if !verified {
+            // SEV-0 emit BEFORE the trailer (audit-anchor-first per
+            // INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER). Best-effort: a
+            // sink error here is logged via the return value of the
+            // sink trait but we still flush the trailer so the wire
+            // remains honest.
+            let observed_hex = row.proof.link_hash.to_hex();
+            let expected_hex = anchor_head.to_hex();
+            emit_mid_stream_break_audit(
+                &audit_sink,
+                authenticated_tenant,
+                row.event.sequence_number,
+                idx as u64,
+                &observed_hex,
+                &expected_hex,
+                from_ms,
+                to_ms,
+                bytes_written,
+                events_written,
+            );
+            frames.push(abort_trailer_frame(
+                row.event.sequence_number,
+                idx as u64,
+                &observed_hex,
+                &expected_hex,
+            ));
+            return frames;
+        }
+        // Append the row payload + (for every row) a trailing `\n`.
+        // The wave-16 wire shape was `row0\nrow1\nrow2\n{manifest}`;
+        // we replicate it here by suffixing every row with `\n` so
+        // the manifest line emerges naturally on its own without a
+        // separator-management special case.
+        let mut buf = Vec::with_capacity(row_serialized.len() + 1);
+        buf.extend_from_slice(row_serialized.as_bytes());
+        buf.push(b'\n');
+        frames.push(Frame::data(Bytes::from(buf)));
+    }
+    // Trailing manifest line (no trailing newline — matches the
+    // wave-16 wire shape exactly).
+    frames.push(Frame::data(Bytes::from(manifest_line)));
+    frames
+}
+
+/// Emit the SEV-0 mid-stream chain-break audit row. The audit
+/// payload is the canonical
+/// `{break_at_seq, break_at_chunk, observed, expected}` JSON
+/// fragment encoded into `exit_status` (the `ExportAuditRow` shape
+/// lacks a dedicated payload field — we piggy-back on `exit_status`
+/// so the structured payload survives capture by every
+/// `ExportAuditSink` implementor; production durable sinks lift the
+/// row into the standard CloudEvents envelope where the payload
+/// lands in `data`).
+#[allow(clippy::too_many_arguments, reason = "audit row shape")]
+fn emit_mid_stream_break_audit(
+    sink: &Arc<dyn ExportAuditSink>,
+    authenticated_tenant: Uuid,
+    break_at_seq: u64,
+    break_at_chunk: u64,
+    observed_hex: &str,
+    expected_hex: &str,
+    from_ms: u64,
+    to_ms: u64,
+    bytes_written: u64,
+    events_written: u64,
+) {
+    let payload = format!(
+        "{{\"break_at_seq\":{break_at_seq},\"break_at_chunk\":{break_at_chunk},\"observed\":\"{observed_hex}\",\"expected\":\"{expected_hex}\"}}"
+    );
+    let _ = sink.emit(ExportAuditRow {
+        event_type: EVENT_TYPE_VERIFY_FAILED.to_string(),
+        authenticated_tenant: Some(authenticated_tenant),
+        attempted_tenant: None,
+        from_ms,
+        to_ms,
+        bytes_written,
+        events_written,
+        exit_status: format!("verify_failed_mid_stream:{payload}"),
+    });
+}
+
+/// Build the canonical mid-stream abort HTTP-trailer frame. Payload
+/// is a single ASCII JSON object value placed in the
+/// `X-CoreLink-Audit-Export-Aborted` trailer header — the
+/// customer-CLI parses it for the operator diagnostic. We expose the
+/// shape through `mid_stream_abort_trailer_value` so the wave-18
+/// integration test can assert the canonical payload byte-for-byte
+/// without re-implementing the formatter.
+fn abort_trailer_frame(
+    break_at_seq: u64,
+    break_at_chunk: u64,
+    observed_hex: &str,
+    expected_hex: &str,
+) -> Frame<Bytes> {
+    let mut trailers = HeaderMap::new();
+    let value = mid_stream_abort_trailer_value(
+        break_at_seq,
+        break_at_chunk,
+        observed_hex,
+        expected_hex,
+    );
+    if let (Ok(name), Ok(val)) = (
+        HeaderName::from_bytes(HEADER_EXPORT_ABORTED.as_bytes()),
+        HeaderValue::from_str(&value),
+    ) {
+        trailers.insert(name, val);
+    }
+    Frame::trailers(trailers)
+}
+
+/// Canonical mid-stream abort-trailer payload encoder. Public for
+/// the wave-18 integration test + the customer-CLI compatibility
+/// test (both assert the exact wire shape).
+#[must_use]
+pub fn mid_stream_abort_trailer_value(
+    break_at_seq: u64,
+    break_at_chunk: u64,
+    observed_hex: &str,
+    expected_hex: &str,
+) -> String {
+    format!(
+        "{{\"break_at_seq\":{break_at_seq},\"break_at_chunk\":{break_at_chunk},\"observed\":\"{observed_hex}\",\"expected\":\"{expected_hex}\"}}"
+    )
 }
 
 /// Constant-time compare on two UUIDs (defense in depth — the
@@ -677,19 +942,17 @@ fn now_ms_from_window(window: ExportWindow) -> u64 {
     window.until_ms
 }
 
-/// Serialize the per-row NDJSON envelope: one line per row, no
-/// trailing newline. The envelope shape is `{"event": <ev>, "proof": <p>}`
-/// per WI-S09-008 §4.
-fn serialize_ndjson_body(rows: &[ExportedAuditEvent]) -> Result<(Vec<u8>, u64), serde_json::Error> {
-    let mut out: Vec<u8> = Vec::with_capacity(rows.len() * 512);
-    for (i, row) in rows.iter().enumerate() {
-        if i > 0 {
-            out.push(b'\n');
-        }
-        let line = serde_json::to_string(row)?;
-        out.extend_from_slice(line.as_bytes());
+/// Serialize each row to its canonical NDJSON envelope line (no
+/// trailing newline; the streaming layer appends `\n` between rows).
+/// Envelope shape: `{"event": <ev>, "proof": <p>}` per WI-S09-008 §4.
+fn serialize_ndjson_lines(
+    rows: &[ExportedAuditEvent],
+) -> Result<Vec<String>, serde_json::Error> {
+    let mut out: Vec<String> = Vec::with_capacity(rows.len());
+    for row in rows {
+        out.push(serde_json::to_string(row)?);
     }
-    Ok((out, rows.len() as u64))
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -812,9 +1075,28 @@ mod tests {
     }
 
     #[test]
-    fn serialize_ndjson_body_empty_returns_zero() {
-        let (bytes, count) = serialize_ndjson_body(&[]).expect("empty");
-        assert!(bytes.is_empty());
-        assert_eq!(count, 0);
+    fn serialize_ndjson_lines_empty_returns_zero() {
+        let lines = serialize_ndjson_lines(&[]).expect("empty");
+        assert!(lines.is_empty());
+    }
+
+    #[test]
+    fn mid_stream_abort_trailer_value_matches_canonical_payload() {
+        let v = mid_stream_abort_trailer_value(
+            42,
+            1,
+            "aa".repeat(32).as_str(),
+            "bb".repeat(32).as_str(),
+        );
+        assert!(v.starts_with("{\"break_at_seq\":42,\"break_at_chunk\":1,"));
+        assert!(v.contains("\"observed\":\""));
+        assert!(v.contains("\"expected\":\""));
+        // Round-trips as JSON.
+        let _: serde_json::Value = serde_json::from_str(&v).expect("valid json");
+    }
+
+    #[test]
+    fn export_aborted_header_constant_matches_canonical_name() {
+        assert_eq!(HEADER_EXPORT_ABORTED, "x-corelink-audit-export-aborted");
     }
 }

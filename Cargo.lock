@@ -2277,6 +2277,7 @@ dependencies = [
  "hex",
  "hmac 0.12.1",
  "http 1.4.0",
+ "http-body 1.0.1",
  "http-body-util",
  "proptest",
  "prost",

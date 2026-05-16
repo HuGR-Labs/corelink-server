@@ -107,6 +107,11 @@ axum = { workspace = true, features = ["query"] }
 tower = { workspace = true }
 http = { workspace = true }
 http-body-util = { workspace = true }
+# Wave-18 — `GET /v1/audit/export` true streaming wire-up + the
+# `X-CoreLink-Audit-Export-Aborted` HTTP trailer. The trailer is
+# emitted via `http_body::Frame::trailers` on a mid-stream chain
+# break; `StreamBody` wraps a `Stream<Item = Result<Frame, _>>`.
+http-body = "1.0"
 bytes = { workspace = true }
 corelink-stripe-real = { workspace = true }
 corelink-tier-selection = { workspace = true }

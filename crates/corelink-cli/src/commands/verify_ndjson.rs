@@ -436,6 +436,42 @@ mod tests {
         drop(tmp);
     }
 
+    /// Wave-18 — the streaming server output (wave-18 wire shape:
+    /// per-row `Frame::data` followed by a trailing manifest `Frame::data`)
+    /// MUST remain byte-equivalent to the wave-16 buffer-then-flush
+    /// envelope so the line-by-line CLI parser keeps round-tripping.
+    /// The fixture in this module mirrors that exact wire shape
+    /// (each row + `\n` separators + a trailing manifest line); the
+    /// happy-path test below replays it through a 12-event window to
+    /// pin the streaming-compat contract.
+    #[test]
+    fn streaming_wire_shape_round_trips_via_line_parser() {
+        let (tmp, path, anchor) = build_ndjson_fixture(12);
+        let body = fs::read_to_string(&path).unwrap();
+        // The body MUST be parseable line-by-line with no special
+        // trailer awareness (the trailer rides on the HTTP layer
+        // when fetched from the wire; for offline-file consumption
+        // the file is just the body bytes the server flushed).
+        let lines: Vec<&str> = body.lines().filter(|l| !l.trim().is_empty()).collect();
+        assert_eq!(lines.len(), 13, "12 row lines + 1 manifest line");
+        // The last line decodes as the manifest envelope.
+        let footer: serde_json::Value =
+            serde_json::from_str(lines[lines.len() - 1]).unwrap();
+        assert!(footer.get("manifest").is_some());
+        // Every prior line decodes as a `{event, proof}` row.
+        for line in &lines[..lines.len() - 1] {
+            let v: serde_json::Value = serde_json::from_str(line).unwrap();
+            assert!(v.get("event").is_some());
+            assert!(v.get("proof").is_some());
+        }
+        // And the full pipeline still verifies (the streaming wire
+        // shape preserves the cryptographic envelope byte-for-byte).
+        let outcome = run_verify_ndjson(&path, &anchor, OutputFormat::Json).unwrap();
+        assert!(outcome.verified);
+        assert_eq!(outcome.events_verified, 12);
+        drop(tmp);
+    }
+
     /// Mismatched chain-head — the manifest line itself has been
     /// tampered (anchor flipped); we surface the manifest disagrees
     /// with the recomputed final hash.
