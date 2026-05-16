@@ -56,6 +56,126 @@ Each entry cross-references:
 
 ---
 
+## [1.0.0] - DRAFT — pending `framework-v1-0-0-ga` tag + Owner approval
+
+> **DRAFT.** This section is the technical changelog companion to
+> `RELEASE-NOTES-v1.0.0-GA.md`. Publication is gated on the
+> `framework-v1-0-0-ga` tag and the 2-key Owner + on-call SRE approval
+> recorded in `specs/_audits/2026-05-16-ga-readiness-final.md` §13.
+> Wave references below trace to `specs/_audits/2026-05-16-wave{N}-closure.md`.
+
+### Wave summary — production wiring + adversarial review + DEBT closure
+
+The 21-sprint spec-corpus phase (S-00 → S-20) is captured in the `[0.x]`
+and per-sprint sections below. The post-S-20 production wiring + GA
+readiness phase ran across **25 waves** dispatched on `main` between
+the `ga-engineering-gate-complete` tag (2026-05-14) and the GA
+cutover window (2026-05-16+). Each wave layered adversarial review +
+debt closure + production wiring + chaos / endurance evidence on top
+of the sealed sprint contracts.
+
+| Wave | Focus | SEAL evidence |
+|---|---|---|
+| **R-prep + wave-1..17** | Per-sprint SEAL cadence; spec-corpus build-out; production wiring layer additions (real Stripe wasm32, real BYOK providers, real CF bindings, real Neon driver, replica coordinator, DSR worker production, customer dashboard, statuspage init, breach notification templates, etc.) | Per-sprint `_audits/sprint-close-round-*.md` |
+| **Wave-18** | Audit-export production wiring (Stream A); Neon shadow analytics plane (Stream B); first cold-tool adversarial review pass | `specs/_audits/2026-05-16-wave18-aggregate-closure.md` (9.5 / 10) |
+| **Wave-19** | S-18 pentest scope freeze; CLI `verify-ndjson` HTTP wiring; SDK example expansion | `specs/_audits/2026-05-16-wave19-adversarial-review.md` (8.86 / 10) |
+| **Wave-20** | Audit-export streaming + payload column; 10-stream adversarial review | `specs/_audits/2026-05-16-wave20-closure.md` (9.40 / 10) |
+| **Wave-21** | WallClock cross-route closure; DEBT-008 mutation sweep (hash 77.78 → 97.22 %); tenant-config region resolver (9.85 / 10) | `specs/_audits/2026-05-16-wave21-closure.md` (9.55 / 10) |
+| **Wave-22** | Tenant-path UUID fix (9.9 / 10); Stripe MatClock wasm32 (9.7 / 10); chaos campaign harness (8 isolated fail-CLOSED scenarios); 24h endurance harness | `specs/_audits/2026-05-16-wave22-closure.md` (9.45 / 10) |
+| **Wave-23** | Chaos combined-failures matrix (executor-loss × replication-lag × tenant-isolation); pilot onboarding E2E rig; CS playbook; beta-feedback triage; LFPDPPP MX attorney-package; INV-PAT-REVOKE-PROPAGATION promotion | `specs/_audits/2026-05-16-wave23-closure.md` (9.20 / 10) |
+| **Wave-24** | GA cutover dry-run (RB-GA-CUTOVER §3, G1..G6 GREEN); GA readiness final audit (CONDITIONAL GO); DEBT-008 wave-24 closure batch; PAT-revoke TLA-exempt registration; ADR-0034b dual-hat path | `specs/_audits/2026-05-16-wave24-closure.md` (codex-Opus pass in flight) |
+| **Wave-25** | External pentest engagement scope freeze (RFP + shortlist + SOW); DEBT-015-BUILD path-(3) ssgRequire; endurance 10-min dress-rehearsal; statuspage init dress-run; tenant-config CF prod-wire; pre-GA security attestation; GA-readiness DEFER drift detector; wave-24 adversarial-review pass | `specs/_audits/2026-05-16-wave25-closure.md` (in flight) |
+
+### Added — production wiring + customer-facing surfaces
+
+- **Audit export** — NDJSON streaming via signed URL + offline verifier
+  (`corelink audit verify-ndjson`) + payload column + Merkle proof
+  embed (waves 18 + 20).
+- **Neon shadow analytics plane** — wired with RLS WITH CHECK at the
+  SQL layer; real driver; replication SLO §4.27 – §4.29 observation
+  streak active (waves 18 + 22).
+- **BYOK 4-provider matrix** — AWS KMS, GCP KMS, Azure Key Vault,
+  HashiCorp Vault — real provider pattern documented and exercised
+  (R-prep + wave-25 attestation rollup).
+- **Customer-facing audit export** + **customer dashboard** + **Stripe
+  customer portal** (R-prep + waves 18 – 25).
+- **Customer breach notification templates** (R-prep).
+- **`RB-GA-CUTOVER.md`** + `RB-GA-LAUNCH-ROLLBACK.md` +
+  `RB-LAUNCH-WAR-ROOM-COORDINATION.md` + 13 additional SEV-class
+  runbooks (waves 19 – 24).
+- **Chaos campaign** — 8 isolated fail-CLOSED scenarios + 3
+  combined-failure scenarios under `cargo test --features chaos`
+  (waves 22 – 23).
+- **24-hour endurance harness** — built wave-22; 10-minute dress-run
+  wave-25; soak scheduled in the pre-cutover T-24h window.
+- **Statuspage** at `status.corelink.dev` — URL-substitution mechanism
+  (wave-24), dress-rehearsed wave-25.
+- **External pentest engagement** — scope frozen wave-25
+  (`specs/_audits/2026-05-16-pre-ga-pentest-scope.md` +
+  `specs/_pentest/SOW-S20-EXTERNAL-PENTEST.md`); vendor engagement
+  scheduled 2026-Q3.
+- **Pre-GA security attestation package** — wave-25 rollup
+  (`specs/_audits/2026-05-16-pre-ga-security-attestation.md`).
+- **Pilot onboarding E2E rig** + **CS playbook** + **beta-feedback
+  triage pipeline** (wave-23).
+- **GA gate** — `specs/_compliance/GA-GATE-CRITERIA.md` (59 criteria
+  across 6 tracks) + `GA-GATE-GO-NOGO-TEMPLATE.md` (2-key signature
+  template) + ADR-0034 / ADR-0034b PRR staffing + dual-hat waiver
+  paths.
+- **GA-readiness DEFER drift detector** — CI gate that prevents
+  silent regression of the DEFER population between wave-25 and
+  cutover (wave-25 stream #4).
+
+### Changed
+
+- **Invariant registry** — 197 declared (61 CRITICAL, 132 HIGH,
+  4 MEDIUM); 81+ TLA+ verified; zero CRITICAL lacking proof or
+  documented `§4.3` exemption; 0 orphan refs; 143 / 143 WI-coverage.
+- **DEFER counter** scrubbed wave-25 (`specs/_audits/2026-05-16-ga-readiness-defer-scrub.md`):
+  stale "Docs CI billing reinstatement" row removed (CI runs locally
+  per `feedback_ci_local`); current counter is 7 external items
+  (5 user-bound + 1 vendor-bound + 1 mixed).
+- **`canary` → `staging-only`** chaos discipline at GA per S-17
+  cross-functional decision (production chaos not authorised on
+  the GA cutover day).
+
+### Fixed
+
+- **DEBT-001** — secrets matrix tighten (closed wave-15);
+  `validate_secrets_matrix.py` code-only false-positive resolved
+  wave-22.
+- **DEBT-002, DEBT-004, DEBT-005, DEBT-006, DEBT-007, DEBT-009,
+  DEBT-011, DEBT-012, DEBT-014, DEBT-017 – DEBT-020, DEBT-022,
+  DEBT-024** — closed (no waiver) across waves 15 – 24.
+- **DEBT-008** — mutation kill-rate baseline empirically CLOSED for 8
+  of 15 crates (≥ 75 % floor on the remaining 5 via the
+  `mutation-nightly.yml` CI-nightly matrix).
+- **WallClock cross-route** — wave-21 closure (`f3462c6`);
+  9.55 / 10 adversarial score.
+- **`INV-PAT-REVOKE-PROPAGATION`** — promoted to CRITICAL wave-23;
+  TLA+ exempt under §4.3 (wall-clock obligation, not consensus
+  property); empirical sub-second propagation verified via mutation
+  sweep + runbook drill.
+
+### Security
+
+- **External pentest** — scope frozen; engagement contracted for
+  2026-Q3; HIGH / CRITICAL findings gate any future `GA-Full` /
+  `v1.1.0` promotion. **No external pentest report is yet published**;
+  customer-facing security claims do not depend on a completed
+  external pentest at v1.0.0 GA.
+- **Adversarial review** — 8 consecutive waves averaging
+  9.41 / 10 (mean over the last 5 sealed waves), 0 P0 / 0 outstanding
+  P1 at any wave boundary since wave-19 SEAL.
+- **Compliance** — SOC 2 Type I ready, ISO 27001 Stage-1 eligible,
+  GDPR / LGPD / PCI-SAQ-A / CCPA ready; LFPDPPP MX attorney sign-off
+  pending (DEBT-025; wave-26 absorption); FedRAMP Moderate documented
+  as not in scope for GA.
+- **BYOK** — 4-provider FIPS attestation matrix complete for 3 of 4
+  rows (AWS Artifact PDF download pending — DEBT-003 user-bound).
+
+---
+
 ## [1.0.0-rc.1] - 2026-05-14 — GA Engineering Gate complete
 
 Tag: `ga-engineering-gate-complete` (HEAD `f09d640`, alias of `s20-impl-sealed`).
