@@ -421,7 +421,7 @@ jobs:
                 # Fall back to the verifier's tenant=<id> structured line.
                 CHUNK=$(grep "AUDIT_CHAIN_BREAK_DETECTED" "${DAY_LOG}" | head -1 | sed -E 's/.*tenant=([^:]+):.*/\1/' || echo "unknown")
               else
-                CHUNK="${CHUNK#${CHUNKS_DIR}/}"
+                CHUNK="${CHUNK#"${CHUNKS_DIR}"/}"
               fi
               MARKER_7D="AUDIT_CHAIN_7DAY_BREAK_DETECTED::${D}::${CHUNK}"
               BREAK_MARKERS="${BREAK_MARKERS}${MARKER_7D}\n"
