@@ -178,6 +178,12 @@ const sidebars: SidebarsConfig = {
     // Diátaxis quadrants so procurement / DPO traffic can find compliance
     // posture, sub-processors, and IR in one place per R-8 launch checklist
     // (LAUNCH-CHECKLIST-V2.md row L23: "Trust center unlock").
+    //
+    // The consolidated 1-page Trust Center landing lives at `/trust` (React
+    // page at `src/pages/trust/index.tsx`, wave-29 stream-8 deliverable) and
+    // is NOT a sidebar entry — `trust/index` (slug `/trust/overview`) is the
+    // long-form deep-dive linked from the React landing. See
+    // `specs/_audits/2026-05-16-trust-center-consolidation.md`.
     {
       type: "category",
       label: "Trust",
@@ -185,6 +191,9 @@ const sidebars: SidebarsConfig = {
       collapsed: true,
       items: [
         "trust/compliance",
+        "trust/iso27001",
+        "trust/pci-dss",
+        "trust/fedramp-info",
         "trust/data-handling",
         "trust/subprocessors",
         "trust/incident-response",
