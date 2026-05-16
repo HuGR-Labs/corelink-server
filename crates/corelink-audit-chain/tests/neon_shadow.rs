@@ -119,9 +119,15 @@ fn roundtrip_hundred_events_through_archive_plus_shadow_sync_matches_aggregate()
         let now_ms = BASE_MS + (i as u64) + 100;
         if let Some(receipt) = producer.observe(line.clone(), now_ms).unwrap() {
             // Build shadow rows from the just-flushed buffered slice.
+            // Wave-21 (B-P1-05): `from_persisted_line` now returns a
+            // `Result`. The producer guarantees well-formed NDJSON so
+            // the unwrap is structurally safe on the happy path.
             let shadow_rows: Vec<ShadowEventRow> = buffered
                 .iter()
-                .map(|l| ShadowEventRow::from_persisted_line(l, region))
+                .map(|l| {
+                    ShadowEventRow::from_persisted_line(l, region)
+                        .expect("archive_producer emits well-formed NDJSON")
+                })
                 .collect();
             let sync_receipt = shadow.sync_chunk(&receipt, &shadow_rows, now_ms).unwrap();
             assert_eq!(sync_receipt.rows_persisted, 25);
@@ -219,7 +225,10 @@ fn lag_detection_emits_sev2_when_observed_lag_breaches_60min() {
     let now_ms = BASE_MS + SHADOW_LAG_SEV2_THRESHOLD_MS;
     let shadow_rows: Vec<ShadowEventRow> = lines
         .iter()
-        .map(|l| ShadowEventRow::from_persisted_line(l, region))
+        .map(|l| {
+            ShadowEventRow::from_persisted_line(l, region)
+                .expect("archive_producer emits well-formed NDJSON")
+        })
         .collect();
     let sync_receipt = shadow.sync_chunk(&receipt, &shadow_rows, now_ms).unwrap();
     assert!(sync_receipt.breaches_sev2_threshold());

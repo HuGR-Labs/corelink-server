@@ -207,38 +207,54 @@ impl ShadowEventRow {
     /// Build a row from a freshly-flushed [`PersistedAuditLine`] +
     /// pinned region.
     ///
-    /// Best-effort extracts `time_ms` and `event_type` from the NDJSON
-    /// line; on parse failure the row carries `event_time_ms = 0` and
-    /// `event_type = ""`. Analytics queries that filter on these fields
-    /// then surface the malformed row as a separate analytics-anomaly
-    /// signal (NOT a chain break — that's R2's job).
-    #[must_use]
-    pub fn from_persisted_line(line: &PersistedAuditLine, region: Region) -> Self {
-        let v = serde_json::from_str::<serde_json::Value>(&line.ndjson)
-            .ok();
+    /// Wave-21 (B-P1-05 closure): returns a `Result<_, ParseError>`
+    /// instead of the wave-18 "best-effort" silent default
+    /// (`event_time_ms = 0` / `event_type = ""`) which silently inflated
+    /// the analytics `[0..granularity)` bucket. The producer-side wiring
+    /// (`archive_producer.rs`) is the only happy-path caller, and it
+    /// ALWAYS writes well-formed NDJSON (every line round-trips through
+    /// `AuditEvent::serialize` → `serde_json::to_string`), so the
+    /// `Err` path is structurally unreachable on the production happy
+    /// path. The Result is surfaced anyway so:
+    ///
+    /// 1. A wire-shape mutation (a future field rename / type change)
+    ///    that breaks the canonical fields surfaces a compile-time
+    ///    type error at every call site rather than silently admitting
+    ///    bogus rows.
+    /// 2. Adversarial fixtures (replay of a corrupted R2 line) get a
+    ///    typed error instead of a malformed-but-accepted row.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ParseError`] when the NDJSON line is not valid JSON or
+    /// is missing one of the canonical required fields (`time_ms`,
+    /// `type`, `prev_hash` as 32-byte hex).
+    pub fn from_persisted_line(
+        line: &PersistedAuditLine,
+        region: Region,
+    ) -> Result<Self, ParseError> {
+        let v: serde_json::Value = serde_json::from_str(&line.ndjson)
+            .map_err(|e| ParseError::InvalidJson(e.to_string()))?;
         let event_time_ms = v
-            .as_ref()
-            .and_then(|j| j.get("time_ms"))
+            .get("time_ms")
             .and_then(serde_json::Value::as_u64)
-            .unwrap_or(0);
+            .ok_or(ParseError::MissingField("time_ms"))?;
         // CloudEvents canonical attribute name is `type`
         // (`AuditEvent` serializes via `#[serde(rename = "type")]`).
         let event_type = v
-            .as_ref()
-            .and_then(|j| j.get("type"))
+            .get("type")
             .and_then(serde_json::Value::as_str)
-            .unwrap_or("")
+            .ok_or(ParseError::MissingField("type"))?
             .to_string();
-        let prev_hash = v
-            .as_ref()
-            .and_then(|j| j.get("prev_hash"))
+        let prev_hash_hex = v
+            .get("prev_hash")
             .and_then(serde_json::Value::as_str)
-            .and_then(|s| {
-                let mut buf = [0u8; 32];
-                hex::decode_to_slice(s, &mut buf).ok().map(|_| ChainHash(buf))
-            })
-            .unwrap_or_else(ChainHash::genesis);
-        Self {
+            .ok_or(ParseError::MissingField("prev_hash"))?;
+        let mut buf = [0u8; 32];
+        hex::decode_to_slice(prev_hash_hex, &mut buf)
+            .map_err(|e| ParseError::InvalidPrevHash(e.to_string()))?;
+        let prev_hash = ChainHash(buf);
+        Ok(Self {
             tenant_id: line.tenant_id,
             seq: line.sequence_number,
             event_time_ms,
@@ -247,8 +263,35 @@ impl ShadowEventRow {
             link_hash: line.link_hash,
             region,
             payload_json: line.ndjson.clone(),
-        }
+        })
     }
+}
+
+/// Parse-error surface for [`ShadowEventRow::from_persisted_line`].
+///
+/// Wave-21 closure of B-P1-05 (per
+/// `specs/_audits/2026-05-16-wave18-adversarial-review-streamB-neon-shadow.md`
+/// §6): the wave-18 implementation silently admitted malformed NDJSON
+/// rows with `event_time_ms = 0` and `event_type = ""`, which inflated
+/// the analytics `[0..granularity)` bucket. This typed error is the
+/// structural fail-CLOSED downgrade so a future wire-shape mutation
+/// surfaces at the type system rather than as a silent data-quality
+/// regression.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum ParseError {
+    /// The NDJSON line did not parse as a JSON value.
+    #[error("invalid NDJSON: {0}")]
+    InvalidJson(String),
+
+    /// A canonical required field was absent from the NDJSON line.
+    #[error("missing canonical NDJSON field: {0}")]
+    MissingField(&'static str),
+
+    /// The `prev_hash` field was present but not a valid 32-byte hex
+    /// string (e.g. wrong length / non-hex chars).
+    #[error("prev_hash hex decode failed: {0}")]
+    InvalidPrevHash(String),
 }
 
 /// Outcome of a successful [`NeonShadowSink::sync_chunk`] call.
@@ -354,6 +397,24 @@ pub enum NeonShadowError {
     /// Internal invariant violation (mutex poisoned, empty chunk, etc.).
     #[error("neon shadow internal invariant violated: {0}")]
     Internal(String),
+
+    /// The downstream audit-emit pipeline rejected a shadow-sync audit
+    /// row.
+    ///
+    /// Wave-21 (B-P1-02 closure): replaces the wave-18 `let _ = ...`
+    /// discard pattern on `audit_sink.emit(...)`. Surfaces SEV-1 to the
+    /// caller; the route layer translates this to a 503 response so the
+    /// analytics-of-audit pager fires loudly when the audit sink is
+    /// flapping (the previous behaviour silently swallowed the
+    /// audit-emit failure, masking the SEV-2 anchor that the security
+    /// team subscribes to). The R2 archive remains the chain-integrity
+    /// source of truth — this error never implies a chain break.
+    ///
+    /// The wrapped string is the static reason returned by
+    /// [`ShadowSyncAuditSink::emit`] (e.g. `"shadow audit sink mutex
+    /// poisoned"`).
+    #[error("neon shadow audit-emit failed: {0}")]
+    AuditEmitFailed(&'static str),
 }
 
 /// Audit emit record for the shadow-sync pipeline. Production wiring
@@ -631,19 +692,27 @@ impl NeonShadowSink for InMemoryNeonShadowSink {
         // 1. Tenant + residency pre-checks. The chunk receipt's tenant
         //    id MUST match the sink's bound tenant; every row's tenant
         //    id MUST match too.
+        //
+        // Wave-21 (B-P1-02 closure): audit-emit failure on the fail-
+        // CLOSED arms is NO LONGER swallowed — emit failure surfaces
+        // `NeonShadowError::AuditEmitFailed` (SEV-1 over SEV-2; the
+        // route layer translates to 503 so the security team's pager
+        // fires loudly when the audit sink is flapping).
         if receipt.tenant_id != self.tenant_id {
             // Audit-emit BEFORE returning (fail-CLOSED ordering mirrors
             // `archive_producer::sink_failure`).
-            let _ = self.audit_sink.emit(ShadowSyncAuditRow {
-                event_type: EVENT_TYPE_SHADOW_SYNC_FAILED,
-                tenant_id: self.tenant_id,
-                first_seq: receipt.first_sequence_number,
-                last_seq: receipt.last_sequence_number,
-                region: self.region,
-                observed_lag_ms: 0,
-                failure_reason: "tenant isolation violation".to_string(),
-                sev: "sev-2",
-            });
+            self.audit_sink
+                .emit(ShadowSyncAuditRow {
+                    event_type: EVENT_TYPE_SHADOW_SYNC_FAILED,
+                    tenant_id: self.tenant_id,
+                    first_seq: receipt.first_sequence_number,
+                    last_seq: receipt.last_sequence_number,
+                    region: self.region,
+                    observed_lag_ms: 0,
+                    failure_reason: "tenant isolation violation".to_string(),
+                    sev: "sev-2",
+                })
+                .map_err(NeonShadowError::AuditEmitFailed)?;
             return Err(NeonShadowError::TenantIsolationViolation {
                 sink_tenant: self.tenant_id.to_string(),
                 sink_tenant_redacted: redact_tenant_uuid(&self.tenant_id),
@@ -653,16 +722,18 @@ impl NeonShadowSink for InMemoryNeonShadowSink {
         }
         for row in rows {
             if row.tenant_id != self.tenant_id {
-                let _ = self.audit_sink.emit(ShadowSyncAuditRow {
-                    event_type: EVENT_TYPE_SHADOW_SYNC_FAILED,
-                    tenant_id: self.tenant_id,
-                    first_seq: receipt.first_sequence_number,
-                    last_seq: receipt.last_sequence_number,
-                    region: self.region,
-                    observed_lag_ms: 0,
-                    failure_reason: "row tenant isolation violation".to_string(),
-                    sev: "sev-2",
-                });
+                self.audit_sink
+                    .emit(ShadowSyncAuditRow {
+                        event_type: EVENT_TYPE_SHADOW_SYNC_FAILED,
+                        tenant_id: self.tenant_id,
+                        first_seq: receipt.first_sequence_number,
+                        last_seq: receipt.last_sequence_number,
+                        region: self.region,
+                        observed_lag_ms: 0,
+                        failure_reason: "row tenant isolation violation".to_string(),
+                        sev: "sev-2",
+                    })
+                    .map_err(NeonShadowError::AuditEmitFailed)?;
                 return Err(NeonShadowError::TenantIsolationViolation {
                     sink_tenant: self.tenant_id.to_string(),
                     sink_tenant_redacted: redact_tenant_uuid(&self.tenant_id),
@@ -671,16 +742,18 @@ impl NeonShadowSink for InMemoryNeonShadowSink {
                 });
             }
             if row.region != self.region {
-                let _ = self.audit_sink.emit(ShadowSyncAuditRow {
-                    event_type: EVENT_TYPE_SHADOW_SYNC_FAILED,
-                    tenant_id: self.tenant_id,
-                    first_seq: receipt.first_sequence_number,
-                    last_seq: receipt.last_sequence_number,
-                    region: self.region,
-                    observed_lag_ms: 0,
-                    failure_reason: "row residency violation".to_string(),
-                    sev: "sev-2",
-                });
+                self.audit_sink
+                    .emit(ShadowSyncAuditRow {
+                        event_type: EVENT_TYPE_SHADOW_SYNC_FAILED,
+                        tenant_id: self.tenant_id,
+                        first_seq: receipt.first_sequence_number,
+                        last_seq: receipt.last_sequence_number,
+                        region: self.region,
+                        observed_lag_ms: 0,
+                        failure_reason: "row residency violation".to_string(),
+                        sev: "sev-2",
+                    })
+                    .map_err(NeonShadowError::AuditEmitFailed)?;
                 return Err(NeonShadowError::ResidencyViolation {
                     sink_region: self.region.as_str(),
                     observed_region: row.region.as_str(),
@@ -712,16 +785,18 @@ impl NeonShadowSink for InMemoryNeonShadowSink {
                 })?
                 .clone();
             if let Some(msg) = inj {
-                let _ = self.audit_sink.emit(ShadowSyncAuditRow {
-                    event_type: EVENT_TYPE_SHADOW_SYNC_FAILED,
-                    tenant_id: self.tenant_id,
-                    first_seq: receipt.first_sequence_number,
-                    last_seq: receipt.last_sequence_number,
-                    region: self.region,
-                    observed_lag_ms,
-                    failure_reason: msg.clone(),
-                    sev: "sev-2",
-                });
+                self.audit_sink
+                    .emit(ShadowSyncAuditRow {
+                        event_type: EVENT_TYPE_SHADOW_SYNC_FAILED,
+                        tenant_id: self.tenant_id,
+                        first_seq: receipt.first_sequence_number,
+                        last_seq: receipt.last_sequence_number,
+                        region: self.region,
+                        observed_lag_ms,
+                        failure_reason: msg.clone(),
+                        sev: "sev-2",
+                    })
+                    .map_err(NeonShadowError::AuditEmitFailed)?;
                 return Err(NeonShadowError::Backend(msg));
             }
         }
@@ -752,16 +827,18 @@ impl NeonShadowSink for InMemoryNeonShadowSink {
         } else {
             "info"
         };
-        let _ = self.audit_sink.emit(ShadowSyncAuditRow {
-            event_type: EVENT_TYPE_SHADOW_SYNCED,
-            tenant_id: self.tenant_id,
-            first_seq: receipt.first_sequence_number,
-            last_seq: receipt.last_sequence_number,
-            region: self.region,
-            observed_lag_ms,
-            failure_reason: String::new(),
-            sev,
-        });
+        self.audit_sink
+            .emit(ShadowSyncAuditRow {
+                event_type: EVENT_TYPE_SHADOW_SYNCED,
+                tenant_id: self.tenant_id,
+                first_seq: receipt.first_sequence_number,
+                last_seq: receipt.last_sequence_number,
+                region: self.region,
+                observed_lag_ms,
+                failure_reason: String::new(),
+                sev,
+            })
+            .map_err(NeonShadowError::AuditEmitFailed)?;
 
         Ok(ShadowSyncReceipt {
             tenant_id: self.tenant_id,
@@ -1056,13 +1133,94 @@ mod tests {
             sequence_number: 7,
             link_hash: ChainHash([0x11; 32]),
         };
-        let row = ShadowEventRow::from_persisted_line(&line, Region::Iad);
+        let row = ShadowEventRow::from_persisted_line(&line, Region::Iad)
+            .expect("well-formed NDJSON parses");
         assert_eq!(row.tenant_id, tenant);
         assert_eq!(row.seq, 7);
         assert_eq!(row.event_time_ms, 1_700);
         assert_eq!(row.event_type, "dev.hugr.corelink.cas.put.v1");
         assert_eq!(row.region, Region::Iad);
         assert_eq!(row.link_hash, ChainHash([0x11; 32]));
+    }
+
+    #[test]
+    fn from_persisted_line_rejects_malformed_input() {
+        // Wave-21 (B-P1-05 closure) — every malformed NDJSON shape
+        // surfaces a typed `ParseError`, never silently admits a row
+        // with `event_time_ms = 0` / `event_type = ""`.
+        let tenant = Uuid::now_v7();
+        let mk = |ndjson: &str| PersistedAuditLine {
+            r2_key: "k".into(),
+            ndjson: ndjson.to_string(),
+            tenant_id: tenant,
+            sequence_number: 0,
+            link_hash: ChainHash::genesis(),
+        };
+
+        // 1. Garbage (not valid JSON at all).
+        let garbage = ShadowEventRow::from_persisted_line(
+            &mk("this is not json"),
+            Region::Iad,
+        )
+        .expect_err("non-JSON must reject");
+        assert!(matches!(garbage, ParseError::InvalidJson(_)));
+
+        // 2. JSON missing `time_ms`.
+        let no_time = ShadowEventRow::from_persisted_line(
+            &mk("{\"type\":\"x\",\"prev_hash\":\"00000000000000000000000000000000000000000000000000000000000000ab\"}"),
+            Region::Iad,
+        )
+        .expect_err("missing time_ms must reject");
+        assert!(matches!(no_time, ParseError::MissingField("time_ms")));
+
+        // 3. JSON missing `type`.
+        let no_type = ShadowEventRow::from_persisted_line(
+            &mk("{\"time_ms\":1,\"prev_hash\":\"00000000000000000000000000000000000000000000000000000000000000ab\"}"),
+            Region::Iad,
+        )
+        .expect_err("missing type must reject");
+        assert!(matches!(no_type, ParseError::MissingField("type")));
+
+        // 4. JSON missing `prev_hash`.
+        let no_prev = ShadowEventRow::from_persisted_line(
+            &mk("{\"time_ms\":1,\"type\":\"x\"}"),
+            Region::Iad,
+        )
+        .expect_err("missing prev_hash must reject");
+        assert!(matches!(no_prev, ParseError::MissingField("prev_hash")));
+
+        // 5. Invalid hex in prev_hash.
+        let bad_hex = ShadowEventRow::from_persisted_line(
+            &mk("{\"time_ms\":1,\"type\":\"x\",\"prev_hash\":\"NOT_HEX\"}"),
+            Region::Iad,
+        )
+        .expect_err("non-hex prev_hash must reject");
+        assert!(matches!(bad_hex, ParseError::InvalidPrevHash(_)));
+    }
+
+    /// Audit sink that fails every emit — exercises the wave-21
+    /// `AuditEmitFailed` lift for the in-memory shadow sink.
+    #[derive(Debug, Default)]
+    struct AlwaysFailAuditSink;
+
+    impl ShadowSyncAuditSink for AlwaysFailAuditSink {
+        fn emit(&self, _row: ShadowSyncAuditRow) -> Result<(), &'static str> {
+            Err("synthetic audit-emit failure")
+        }
+    }
+
+    #[test]
+    fn in_memory_sink_propagates_audit_emit_failure_on_success_path() {
+        // Wave-21 (B-P1-02 closure) — happy-path audit emit failure no
+        // longer silently swallowed; surfaces `AuditEmitFailed`.
+        let tenant = Uuid::now_v7();
+        let audit: Arc<dyn ShadowSyncAuditSink> = Arc::new(AlwaysFailAuditSink);
+        let sink = InMemoryNeonShadowSink::new(tenant, Region::Iad, audit);
+        let rows = vec![dummy_row(tenant, Region::Iad, 0, 1_000, "x")];
+        let err = sink
+            .sync_chunk(&dummy_receipt(tenant, 0, 0), &rows, 2_000)
+            .expect_err("audit emit failure must propagate");
+        assert!(matches!(err, NeonShadowError::AuditEmitFailed(_)));
     }
 
     #[test]
