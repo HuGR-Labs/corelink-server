@@ -1,6 +1,10 @@
 # Production Secrets Checklist (WI-R2-14)
 
-> **Last sealed:** 2026-05-14
+> **Last sealed:** 2026-05-16 (wave-20 small-closure: 3-secret triage —
+>   STATUSPAGE_API_KEY bound to its real wave-18 worker consumer via the
+>   extended `env.secret(bindings::X)` scanner; TWILIO_ACCOUNT_SID +
+>   TWILIO_AUTH_TOKEN tightened as forward-looking with target wave-22.
+>   See `specs/_audits/2026-05-16-secrets-matrix-tighten.md`.)
 > **Owner of this document:** SRE Lead (co-owned with Security Lead)
 > **Validation (deploy gate, fail-closed):** `scripts/secrets-checklist-verify.sh`
 > via `.github/workflows/cf-deploy-prod.yml`. Drift between this matrix and
@@ -95,9 +99,9 @@ rotation owner → compromise response → storage location.
 | 37 | GCP mock flag (test only) | `CORELINK_BYOK_GCP_MOCK` | corelink-byok-gcp | (internal) | n/a | Set `1` in dev/test only | rotate-on-compromise | Security Lead | N/A | dev only |
 | 38 | Azure mock flag (test only) | `CORELINK_BYOK_AZURE_MOCK` | corelink-byok-azure | (internal) | n/a | Set `1` in dev/test only | rotate-on-compromise | Security Lead | N/A | dev only |
 | 39 | SendGrid API key | `SENDGRID_API_KEY` | .github/workflows/pentest-findings-sync.yml (notification path) | SendGrid (Twilio) | https://app.sendgrid.com | Settings → API Keys → Create API Key with `mail.send` scope | 180d | DevOps | Revoke at SendGrid; replace; replay queued mail | cf-wrangler + gha-secret |
-| 40 | Twilio account SID | `TWILIO_ACCOUNT_SID` | (SMS notification path) | Twilio | https://console.twilio.com | Console homepage → Account Info → Account SID | rotate-on-compromise | DevOps | N/A directly (paired with auth token) | cf-wrangler |
-| 41 | Twilio auth token | `TWILIO_AUTH_TOKEN` | (SMS notification path) | Twilio | https://console.twilio.com | Console homepage → Account Info → Auth Token → "View" | 180d | DevOps | Rotate at console; redeploy | cf-wrangler |
-| 42 | Statuspage API key | `STATUSPAGE_API_KEY` | corelink-statuspage-real (wave-16 DSR completion publish path via `Authorization: OAuth …`) | Atlassian Statuspage | https://manage.statuspage.io | Account → API Keys → Create API Key | 365d | DevOps | Revoke + recreate | cf-wrangler |
+| 40 | Twilio account SID | `TWILIO_ACCOUNT_SID` | (forward-looking — see §Forward-looking secrets; target wave-22 SMS notification follow-on) | Twilio | https://console.twilio.com | Console homepage → Account Info → Account SID | rotate-on-compromise | DevOps | N/A directly (paired with auth token) | cf-wrangler |
+| 41 | Twilio auth token | `TWILIO_AUTH_TOKEN` | (forward-looking — see §Forward-looking secrets; target wave-22 SMS notification follow-on) | Twilio | https://console.twilio.com | Console homepage → Account Info → Auth Token → "View" | 180d | DevOps | Rotate at console; redeploy | cf-wrangler |
+| 42 | Statuspage API key | `STATUSPAGE_API_KEY` | corelink-statuspage-real (wave-16 DSR completion publish path via `Authorization: OAuth …`) + corelink-clerk-cf::dsr_statuspage_cron (wave-18 wasm32 scheduled cron; resolved via `env.secret(bindings::STATUSPAGE_API_KEY)`) | Atlassian Statuspage | https://manage.statuspage.io | Account → API Keys → Create API Key | 365d | DevOps | Revoke + recreate | cf-wrangler |
 | 43 | Cookiebot domain group ID | `COOKIEBOT_DOMAIN_GROUP_ID` | apps/admin-ui | Cookiebot | https://manage.cookiebot.com | Create domain group → copy ID | 365d | DevOps | N/A (ID, not a secret; rotate only on domain group recreation) | vercel-env |
 | 44 | Dependency-Track API URL | `DT_API_URL` | corelink-dt-reconcile, corelink-dt-cli | Dependency-Track (self-hosted) | (internal) | Self-hosted DT instance URL | rotate-on-compromise | DevOps | N/A (URL) | cf-wrangler |
 | 45 | Dependency-Track API key | `DT_API_KEY` | corelink-dt-reconcile, .github/workflows/sbom.yml | Dependency-Track (self-hosted) | (DT admin UI) | Administration → Access Management → Teams → API keys | 180d | DevOps | Regenerate at DT admin UI | gha-secret + cf-wrangler |
@@ -196,6 +200,43 @@ rotation owner → compromise response → storage location.
   per-tenant. We never persist these centrally.
 - **Build-metadata** rows (#74, #75) are not secrets in the cryptographic sense
   but are included so the verifier doesn't flag them as missing.
+
+## Forward-looking secrets
+
+Some rows in the matrix above describe credentials that are **provisioned and
+documented for an upcoming wave but have no code consumer yet**. These rows
+are intentional and tracked here so:
+
+- Procurement / vendor onboarding can run **ahead of** code wiring (SOC 2
+  CC6.1 evidence of credential lifecycle is captured before the consumer
+  ships, not retroactively).
+- `validate_secrets_matrix.py` treats them as a soft-warn `matrix_only`
+  category — they are NOT drift (no `code_only` entry to remediate) but
+  they are also NOT in `in_both`, so the JSON report distinguishes them
+  cleanly for the daily cron / SOC 2 dashboard.
+- The targeted wave + binding feature is recorded **per row** below so a
+  reader can answer "why is this still matrix-only?" without spelunking
+  through workflow history.
+
+| Env var | Target wave | Target feature / binding | Tracking note |
+|---|---|---|---|
+| `TWILIO_ACCOUNT_SID` | wave-22 | SMS notification follow-on (PagerDuty-equivalent customer-side SMS for SEV-1 breach notifications); pairs with `TWILIO_AUTH_TOKEN`. | Twilio account already procured; `wrangler secret put` step documented in `docs/internal/secrets-runbook.md` so the secret can be pre-staged before the wave-22 consumer crate lands. No code consumer yet. |
+| `TWILIO_AUTH_TOKEN` | wave-22 | SMS notification follow-on (paired with `TWILIO_ACCOUNT_SID`). | Same as above. The auth token has a 180d rotation cadence which will start the day the wave-22 consumer ships (per CTRL-PRIV-001 — no rotation clock for unwired credentials). |
+| `AWS_ACCESS_KEY_ID` | (BYOK break-glass) | AWS Secrets Manager mirror copy used for break-glass restoration of AWS BYOK credentials when the customer-side AssumeRole chain is unavailable. Consumer is documented operational runbook (not a code consumer). | Tracked here so the matrix-only soft-warn is intentional rather than dead. |
+| `AWS_SECRET_ACCESS_KEY` | (BYOK break-glass) | Paired with `AWS_ACCESS_KEY_ID`. | Same as above. |
+| `AWS_USE_FIPS_ENDPOINT` | wave-? | FIPS endpoint toggle for AWS BYOK (FedRAMP / DoD posture); planned but not yet wired into the orchestrator. | Forward-looking config flag; consumer slated for the FedRAMP follow-on. |
+| `CLERK_AUDIENCE`, `CLERK_JWKS_URL`, `CLERK_JWT_ISSUER`, `CLERK_PUBLISHABLE_KEY` | (Clerk runtime) | Clerk auth bindings consumed via the `ENV_*` const-alias pattern (`pub const ENV_AUDIENCE: &str = "CLERK_AUDIENCE"`). The validator's worker-binding scanner accepts only `pub const X: &str = "X"` (name-equals-value) to filter out SQL/error-code constants, so these aliased forms intentionally remain soft-warn. Real code consumer is `corelink-clerk::env_config`. | Not a credential drift — a scanner-coverage gap that we keep narrow on purpose. |
+| `COOKIEBOT_DOMAIN_GROUP_ID` | (admin-ui browser) | `apps/admin-ui` reads it as a `NEXT_PUBLIC_*` derivative; consumer is a TS module that resolves the ID at build time (not at runtime), so the validator's `process.env.X` scanner doesn't catch it. | Wired but scanner-invisible. |
+| `DT_MOCK_INJECTION_ENABLED` | (test only) | Test-only mock-injection flag for `corelink-dt-cli`; the validator's allowlist regex already catches `DT_MOCK_INJECTION_ENABLED$` so it's filtered from the `code` side but the matrix row remains as a documented test knob. | Intentional matrix-only mirror of the allowlist entry. |
+| `HUBSPOT_PRIVATE_APP_TOKEN` | (Sales Ops integration) | HubSpot enterprise inquiry intake; consumed by an admin-side workflow (`pentest-findings-sync.yml` predecessor) that is paused pending Sales Ops onboarding. | Forward-looking; will be wired when the intake automation reopens. |
+| `PAGERDUTY_SYNTHETIC_ROUTING_KEY` | (synthetic monitoring) | Synthetic-probe routing key planned for the synthetic-monitoring lane. | Forward-looking; pairs with #11 / #12 PagerDuty integrations. |
+| `SLACK_WEBHOOK_URL_*` (six webhooks) | (Slack workspace integration) | Six functionally-independent Slack webhooks for SEV-1/SEV-2 alerts, breach notifications, enterprise inquiries, lighthouse customers, and on-call handoff. Currently routed via PagerDuty integrations; direct Slack delivery is a wave-? enhancement. | Pre-procured per `secrets-runbook.md`; not yet wired into a code consumer. |
+
+These rows are revisited at every sprint SEAL and the table is the
+single-glance audit of "what is matrix-only and why". When a row's target
+wave lands and the consumer ships, the row is moved from this table into
+the main matrix's `Consumer crate(s) / workflow` column (and the validator
+naturally re-classifies it from `matrix_only` to `in_both` on the next run).
 
 ## Drift policy
 
