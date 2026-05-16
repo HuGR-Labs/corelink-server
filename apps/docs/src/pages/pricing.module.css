@@ -1,0 +1,196 @@
+/* Pricing page + calculator shared styles. Wave-29 stream-7. */
+
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 2rem 1rem 4rem;
+}
+
+.header {
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+.honestNote {
+  background: #fef3c7;
+  border: 1px solid #b45309;
+  color: #7c2d12;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.95rem;
+  margin: 1rem 0 2rem;
+}
+
+.periodToggle {
+  display: inline-flex;
+  gap: 0.25rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 999px;
+  padding: 0.25rem;
+  margin: 0.5rem auto 2rem;
+}
+
+.periodToggle button {
+  border: 0;
+  background: transparent;
+  padding: 0.4rem 1rem;
+  border-radius: 999px;
+  cursor: pointer;
+  font: inherit;
+  color: var(--ifm-font-color-base);
+}
+
+.periodToggle button[aria-pressed="true"] {
+  background: var(--ifm-color-primary);
+  color: var(--ifm-color-white, #fff);
+}
+
+.tierGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+
+.tierCard {
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  background: var(--ifm-background-surface-color);
+  display: flex;
+  flex-direction: column;
+}
+
+.tierCard h3 {
+  margin: 0 0 0.5rem;
+}
+
+.tierPrice {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin: 0.25rem 0;
+}
+
+.tierSubprice {
+  color: var(--ifm-color-emphasis-700);
+  font-size: 0.85rem;
+}
+
+.tierFeatures {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0;
+  font-size: 0.9rem;
+}
+
+.tierFeatures li {
+  padding: 0.2rem 0;
+}
+
+.checkmark {
+  color: var(--ifm-color-success);
+  font-weight: 700;
+  margin-right: 0.4rem;
+}
+
+.dash {
+  color: var(--ifm-color-emphasis-500);
+  margin-right: 0.4rem;
+}
+
+.compareTable {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 2rem 0;
+  font-size: 0.92rem;
+}
+
+.compareTable th,
+.compareTable td {
+  border: 1px solid var(--ifm-color-emphasis-300);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+}
+
+.compareTable th {
+  background: var(--ifm-color-emphasis-100);
+  font-weight: 600;
+}
+
+.calcForm {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+  background: var(--ifm-color-emphasis-100);
+  padding: 1.25rem;
+  border-radius: 0.75rem;
+  margin: 1.5rem 0;
+}
+
+.calcField label {
+  display: block;
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 0.25rem;
+}
+
+.calcField input {
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 0.5rem;
+  background: var(--ifm-background-color);
+  color: var(--ifm-font-color-base);
+}
+
+.resultsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+
+.resultCard {
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 0.75rem;
+  padding: 1rem;
+  background: var(--ifm-background-surface-color);
+}
+
+.resultCard.recommended {
+  border-color: var(--ifm-color-primary);
+  border-width: 2px;
+}
+
+.recommendedBadge {
+  display: inline-block;
+  background: var(--ifm-color-primary);
+  color: var(--ifm-color-white, #fff);
+  font-size: 0.75rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  margin-bottom: 0.4rem;
+}
+
+.cta {
+  display: inline-block;
+  margin: 1.5rem 0 0;
+  padding: 0.75rem 1.5rem;
+  background: var(--ifm-color-primary);
+  color: var(--ifm-color-white, #fff);
+  border-radius: 0.5rem;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.cta:hover {
+  text-decoration: none;
+  filter: brightness(1.05);
+}
+
+.breakEven {
+  background: var(--ifm-color-emphasis-100);
+  padding: 1rem;
+  border-radius: 0.5rem;
+  margin: 1rem 0;
+}
