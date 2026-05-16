@@ -1,0 +1,57 @@
+[package]
+name = "e2e-pilot-onboarding"
+description = "Wave-23 R-PREP pilot tenant onboarding end-to-end harness — five canonical scenarios that exercise the full GA customer journey (signup → CAS upload of 100 blobs → 24h audit export with chain integrity → DSR erasure with 7-day SLA → offboarding with 30-day grace + final deletion + erasure verification) in a single deterministic in-memory pipeline. Self-contained: the harness composes a tiny set of in-memory fakes (D1 tenant ledger, R2 CAS, audit chain, DSR worker, billing subscription) instead of binding to the production crates so the 5-test journey surface stays stable across signup/billing/dsr API churn (charter trait-abstraction-defer applies). Per-test runtime budget < 60s; full suite < 5 min. No `tokio` in src; no network IO under any branch."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+blake3 = { workspace = true }
+hex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+
+[[test]]
+name = "test_01_tenant_signup"
+path = "tests/test_01_tenant_signup.rs"
+
+[[test]]
+name = "test_02_first_cas_upload"
+path = "tests/test_02_first_cas_upload.rs"
+
+[[test]]
+name = "test_03_audit_export_roundtrip"
+path = "tests/test_03_audit_export_roundtrip.rs"
+
+[[test]]
+name = "test_04_dsr_erasure"
+path = "tests/test_04_dsr_erasure.rs"
+
+[[test]]
+name = "test_05_tenant_offboarding"
+path = "tests/test_05_tenant_offboarding.rs"

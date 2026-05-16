@@ -275,6 +275,16 @@ members = [
     # Decoupled from the wasm32-only `corelink-cf-bindings::CfD1DatabaseReal`
     # via a thin `BillingD1Writer` trait so the surface tests on native CI.
     "crates/corelink-billing-stripe-materializer",
+    # Wave-23 R-PREP pilot tenant onboarding end-to-end harness — composes
+    # the full GA customer journey in a single deterministic in-memory
+    # pipeline: signup → first CAS upload (100 blobs) → 24h audit export
+    # → DSR erasure (7-day SLA) → offboarding (30-day grace + final
+    # deletion + erasure verification). Self-contained: no external infra
+    # and no production crate dependency (decoupled per the
+    # `charter-trait-abstraction-defer` clause so the 5-test journey
+    # surface stays stable across signup/billing/dsr API churn). Five
+    # canonical tests; each <60s; full suite <5min target.
+    "tests/e2e-pilot-onboarding",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
