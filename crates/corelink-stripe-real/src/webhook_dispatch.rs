@@ -732,56 +732,29 @@ impl DispatchResponse {
 }
 
 // =========================================================================
-// Time provider abstraction (deterministic injection for tests).
+// Time provider abstraction.
 // =========================================================================
+//
+// Wave-20: the `Clock` trait + `SystemClock` impl moved to
+// `crate::clock` so production wasm32 callers can inject
+// `WasmWorkerClock` (which reads `js_sys::Date::now()` instead of
+// panicking on `SystemTime::now()`). The trait + `SystemClock` are
+// re-exported below for back-compat with all 51 existing tests and
+// downstream callers; the `FixedClock` SLI helper stays here because
+// it carries a hard-coded `latency_seconds` value used exclusively
+// by webhook-pipeline tests.
 
-/// Pluggable clock; production injects [`SystemClock`], tests inject
-/// [`FixedClock`].
-pub trait Clock: fmt::Debug + Send + Sync {
-    /// Current unix time in seconds.
-    fn now_seconds(&self) -> u64;
-    /// Current unix time in milliseconds.
-    fn now_ms(&self) -> u64;
-    /// Monotonic instant for SLI latency measurement (best-effort
-    /// converted to seconds). Production wraps `std::time::Instant`;
-    /// tests return a fixed +1.0s delta.
-    fn observe_latency_seconds(&self, start_marker: u64) -> f64;
-    /// Capture an opaque start marker (used by `observe_latency_seconds`).
-    fn start_marker(&self) -> u64;
-}
-
-/// System-clock-backed `Clock`.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct SystemClock;
-
-impl Clock for SystemClock {
-    fn now_seconds(&self) -> u64 {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0)
-    }
-    fn now_ms(&self) -> u64 {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
-            .unwrap_or(0)
-    }
-    fn start_marker(&self) -> u64 {
-        self.now_ms()
-    }
-    fn observe_latency_seconds(&self, start_marker: u64) -> f64 {
-        let now_ms = self.now_ms();
-        let delta_ms = now_ms.saturating_sub(start_marker);
-        // Cast: ms<u64> → f64 is lossy only beyond 2^53 ms (~285k years).
-        #[allow(clippy::cast_precision_loss, reason = "ms→seconds, 53-bit precision is far beyond webhook latency range")]
-        let s = delta_ms as f64 / 1000.0;
-        s
-    }
-}
+pub use crate::clock::Clock;
+#[cfg(not(target_arch = "wasm32"))]
+pub use crate::clock::SystemClock;
 
 /// Fixed-time test clock; returns `seconds` for now-* queries and a
 /// hard-coded `latency_seconds` from `observe_latency_seconds`.
+///
+/// Distinct from [`crate::clock::InMemoryFakeClock`]: this variant
+/// pins the SLI latency to a fixed value (for deterministic SLI
+/// histogram assertions in the webhook pipeline tests) rather than
+/// computing it from the elapsed delta.
 #[derive(Clone, Copy, Debug)]
 pub struct FixedClock {
     /// Fixed unix seconds.
@@ -802,6 +775,9 @@ impl FixedClock {
 }
 
 impl Clock for FixedClock {
+    fn now(&self) -> std::time::SystemTime {
+        std::time::UNIX_EPOCH + std::time::Duration::from_secs(self.seconds)
+    }
     fn now_seconds(&self) -> u64 {
         self.seconds
     }

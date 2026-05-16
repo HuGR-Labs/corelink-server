@@ -42,7 +42,8 @@
 
 use core::fmt;
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
+
+use crate::clock::Clock;
 
 /// Stripe Customer Portal session URL — newtype to prevent accidental
 /// string-typed swap with checkout/invoice URLs.
@@ -175,8 +176,14 @@ pub trait BillingPortalSessionCreator: fmt::Debug + Send + Sync {
 ///
 /// Mirrors Stripe-side single-use + uniqueness semantics so callers
 /// that accidentally cache URLs will be caught by `assert_ne!`.
+///
+/// Wave-20: time is sourced via the [`Clock`] trait so wasm32 callers
+/// can inject [`crate::clock::WasmWorkerClock`] (default on wasm32) or
+/// tests can inject [`crate::clock::InMemoryFakeClock`] without hitting
+/// the `SystemTime::now()` panic on `wasm32-unknown-unknown`.
 pub struct InMemoryPortalSessionCreator {
     audit: Arc<dyn PortalAuditSink>,
+    clock: Arc<dyn Clock + Send + Sync>,
     next_seq: Arc<Mutex<u64>>,
     fail_next_stripe: Arc<Mutex<bool>>,
     fail_next_audit: Arc<Mutex<bool>>,
@@ -187,21 +194,33 @@ impl fmt::Debug for InMemoryPortalSessionCreator {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("InMemoryPortalSessionCreator")
             .field("audit", &self.audit)
+            .field("clock", &self.clock)
             .finish()
     }
 }
 
 impl InMemoryPortalSessionCreator {
-    /// Construct a fake bound to `audit`.
+    /// Construct a fake bound to `audit`. Uses the
+    /// [`crate::clock::default_clock`] for wall-time reads
+    /// (`SystemClock` on native, `WasmWorkerClock` on wasm32).
     #[must_use]
     pub fn new(audit: Arc<dyn PortalAuditSink>) -> Self {
         Self {
             audit,
+            clock: crate::clock::default_clock(),
             next_seq: Arc::new(Mutex::new(0)),
             fail_next_stripe: Arc::new(Mutex::new(false)),
             fail_next_audit: Arc::new(Mutex::new(false)),
             issued: Arc::new(Mutex::new(Vec::new())),
         }
+    }
+
+    /// Inject a custom [`Clock`] (for tests or for wasm32 callers that
+    /// want a runtime-specific clock impl).
+    #[must_use]
+    pub fn with_clock(mut self, clock: Arc<dyn Clock + Send + Sync>) -> Self {
+        self.clock = clock;
+        self
     }
 
     /// Adversarial: cause the next `create_session` to fail with a
@@ -278,17 +297,16 @@ impl BillingPortalSessionCreator for InMemoryPortalSessionCreator {
             *g = g.saturating_add(1);
             *g
         };
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        // Nanosecond entropy mixed into the id so even a clock that
-        // doesn't advance produces unique URLs.
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.subsec_nanos())
-            .unwrap_or(0);
-        let session_id = format!("bps_fake_{seq:016x}_{nanos:08x}");
+        let now = self.clock.now_seconds();
+        // Wave-20: the previous impl mixed `SystemTime::now().subsec_nanos()`
+        // into the id for entropy. That call panics on
+        // `wasm32-unknown-unknown`. We now derive uniqueness from the
+        // millisecond field of the injected clock combined with the
+        // monotonically-incrementing `seq` counter — which is itself
+        // sufficient for uniqueness; the ms component is purely a
+        // human-readable timestamp suffix.
+        let now_ms = self.clock.now_ms();
+        let session_id = format!("bps_fake_{seq:016x}_{now_ms:016x}");
         let url_str = format!("https://billing.stripe.com/p/session/{session_id}");
         let url = PortalSessionUrl::new(url_str)?;
 
@@ -465,5 +483,54 @@ mod tests {
         let dbg = format!("{url:?}");
         assert!(dbg.contains("<redacted>"));
         assert!(!dbg.contains("bps_secret"));
+    }
+
+    // Wave-20: verify the injected `Clock` is actually consulted for
+    // the audit timestamp + session-id ms suffix (no direct
+    // `SystemTime::now()` reads remain). Closes the wave-19 caveat at
+    // the unit-test level.
+    #[test]
+    fn clock_injection_used_for_idempotency_keys() {
+        use crate::clock::InMemoryFakeClock;
+
+        let sink = Arc::new(InMemoryPortalAuditSink::new());
+        let fake = Arc::new(InMemoryFakeClock::at_unix_seconds(1_700_000_000));
+        let creator = InMemoryPortalSessionCreator::new(sink.clone())
+            .with_clock(fake.clone());
+
+        let url = creator
+            .create_session("cus_abc", "https://app.corelink.dev/billing", "tenant_acme")
+            .unwrap();
+
+        // Audit row carries the injected unix seconds — proves the
+        // creator consulted `clock.now_seconds()` instead of the
+        // real wall clock.
+        let events = sink.events();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].issued_at_unix, 1_700_000_000);
+
+        // Session id encodes the ms suffix from the injected clock
+        // (1_700_000_000_000 ms = `00000018b0211900` hex).
+        let expected_ms_hex = format!("{:016x}", 1_700_000_000_000u64);
+        assert!(
+            url.as_str().contains(&expected_ms_hex),
+            "expected url to encode injected clock ms ({expected_ms_hex}); got {}",
+            url.as_str()
+        );
+
+        // Advance the fake clock and confirm the next session-id ms
+        // suffix changes accordingly — full closed-loop proof of
+        // injection.
+        fake.advance(std::time::Duration::from_secs(7));
+        let url2 = creator
+            .create_session("cus_abc", "https://app.corelink.dev/billing", "tenant_acme")
+            .unwrap();
+        let expected_ms2_hex = format!("{:016x}", 1_700_000_007_000u64);
+        assert!(
+            url2.as_str().contains(&expected_ms2_hex),
+            "expected advanced-clock url to encode new ms ({expected_ms2_hex}); got {}",
+            url2.as_str()
+        );
+        assert_ne!(url.as_str(), url2.as_str(), "URLs must remain unique");
     }
 }
