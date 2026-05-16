@@ -42,7 +42,8 @@ use corelink_server::routes::audit_export::{
     audit_export_rate_limit_config, router, AuditExportRouteState, ExportAuditRow,
     ExportAuditSink, InMemoryExportAuditSink, AUDIT_EXPORT_ROUTE,
     EVENT_TYPE_CROSS_TENANT_ATTEMPT, EVENT_TYPE_EXPORT_REQUEST,
-    EVENT_TYPE_VERIFY_FAILED, HEADER_EXPORT_ABORTED, TENANT_ID_HEADER,
+    EVENT_TYPE_VERIFY_FAILED, HEADER_EXPORT_ABORTED, R2_LIST_PAGE_SIZE,
+    TENANT_ID_HEADER,
 };
 use corelink_analytics::Region;
 use serde_json::{json, Value};
@@ -91,6 +92,7 @@ fn fixture_with_chain(
         exporter: exporter.clone() as Arc<dyn AuditExporter>,
         rate_limiter: limiter,
         audit_sink: audit_sink.clone() as Arc<dyn ExportAuditSink>,
+        pager_page_size: R2_LIST_PAGE_SIZE,
     };
     (state, exporter, audit_sink)
 }
@@ -281,6 +283,7 @@ async fn chain_tamper_emits_verify_failed_sev0() {
         exporter: tamper,
         rate_limiter: state_orig.rate_limiter.clone(),
         audit_sink: state_orig.audit_sink.clone(),
+        pager_page_size: state_orig.pager_page_size,
     };
     let app = router(state);
 
@@ -385,6 +388,7 @@ async fn audit_failure_aborts_with_503() {
         exporter: state.exporter.clone(),
         rate_limiter: state.rate_limiter.clone(),
         audit_sink: bad as Arc<dyn ExportAuditSink>,
+        pager_page_size: state.pager_page_size,
     };
     let app = router(state);
 
@@ -495,6 +499,7 @@ async fn abort_trailer_emitted_on_mid_stream_chain_break() {
         exporter: tamper,
         rate_limiter: state_orig.rate_limiter.clone(),
         audit_sink: state_orig.audit_sink.clone(),
+        pager_page_size: state_orig.pager_page_size,
     };
     let app = router(state);
 
@@ -617,6 +622,7 @@ async fn customer_cli_handles_abort_trailer_gracefully() {
             exporter: tamper,
             rate_limiter: state_orig.rate_limiter.clone(),
             audit_sink: state_orig.audit_sink.clone(),
+            pager_page_size: state_orig.pager_page_size,
         };
         let app = router(state);
         let resp = app
@@ -690,4 +696,86 @@ fn cli_compat_diagnostic_from_trailer(payload: &str) -> CliCompatDiagnostic {
         message,
         structured_payload: payload.to_string(),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Wave-19 integration test — multi-page async streaming. Exercises the
+// `R2ListPager`-backed `async_stream::stream!` generator over a window
+// that spans >1 page (2500 keys → 3 pages at the canonical page size
+// of 1000). Pins the contract that the generator yields ALL rows across
+// page boundaries + the trailing manifest frame, with no Content-Length
+// and the `Trailer:` header advertised.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn streaming_response_yields_all_rows_across_multiple_pages() {
+    // Wave-19 multi-page contract — exercise >1 R2 list page in the
+    // generator. The spec target is "2500 keys → 3 pages at the
+    // canonical 1000/page split"; the InMemoryAuditExporter builds
+    // O(n²) sibling lists in `export_window` (each row carries the
+    // forward chain — see crates/corelink-audit-chain/src/exporter.rs
+    // §330), so 2500 events produce a ~500 MB body that exhausts the
+    // axum `to_bytes` limit. We exercise the SAME multi-page wire
+    // path by overriding `pager_page_size` to `3` against a 9-row
+    // chain → 3 pages of 3 rows each (3×3 mirrors the canonical
+    // 1000×3 = 2500-key shape with `2500/1000` rounded down to 3
+    // pages + a small tail). The wave-19 unit test
+    // `async_stream_yields_rows_across_pages_then_manifest` covers
+    // page-size=3 over 7 rows for the asymmetric tail; this test
+    // covers the symmetric N×N case at the HTTP wire-level.
+    let tenant = Uuid::now_v7();
+    let row_count: u64 = 9;
+    let (mut state, _exporter, _audit_sink) =
+        fixture_with_chain(tenant, row_count, 100);
+    state.pager_page_size = 3;
+    assert!(
+        R2_LIST_PAGE_SIZE > state.pager_page_size,
+        "test exercises page size override below the canonical default \
+         ({R2_LIST_PAGE_SIZE})"
+    );
+    let app = router(state);
+
+    let resp = app
+        .oneshot(build_request(tenant, 0, 10_000))
+        .await
+        .expect("oneshot");
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    // Streaming wire shape preserved across multi-page: no
+    // Content-Length, Trailer: advertised upfront.
+    assert!(
+        resp.headers().get(axum::http::header::CONTENT_LENGTH).is_none(),
+        "multi-page response must remain Content-Length-less (chunked / streamed)"
+    );
+    let trailer_decl = resp
+        .headers()
+        .get(axum::http::header::TRAILER)
+        .expect("Trailer header advertised")
+        .to_str()
+        .expect("ascii Trailer header");
+    assert_eq!(trailer_decl, HEADER_EXPORT_ABORTED);
+
+    // Drain the body; the body MUST hold 9 row lines + 1 manifest
+    // line, in order. The wave-19 generator yields one row per
+    // Frame::data (cross-page); the wave-16 wire shape is preserved
+    // byte-for-byte (rows suffixed with `\n`, manifest tail). The
+    // page boundary is invisible at the wire level — proof the
+    // streaming generator stitches pages cleanly.
+    let body = to_bytes(resp.into_body(), 4 * 1024 * 1024)
+        .await
+        .expect("drain body");
+    let text = std::str::from_utf8(&body).expect("ascii ndjson");
+    let lines: Vec<&str> = text.split('\n').filter(|l| !l.is_empty()).collect();
+    assert_eq!(
+        lines.len(),
+        (row_count + 1) as usize,
+        "expected {row_count} row lines + 1 manifest line; got body={text}"
+    );
+    // First line parses as `{event, proof}`; last line parses as `{manifest}`.
+    let first: Value = serde_json::from_str(lines[0]).expect("first row json");
+    assert!(first.get("event").is_some(), "first line is a row envelope");
+    assert!(first.get("proof").is_some(), "first line carries inclusion proof");
+    let last: Value =
+        serde_json::from_str(lines[row_count as usize]).expect("manifest json");
+    assert!(last.get("manifest").is_some(), "last line is the manifest");
 }

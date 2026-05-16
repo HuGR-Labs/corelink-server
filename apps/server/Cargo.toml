@@ -129,6 +129,11 @@ http-body-util = { workspace = true }
 # break; `StreamBody` wraps a `Stream<Item = Result<Frame, _>>`.
 http-body = "1.0"
 bytes = { workspace = true }
+# Wave-19 — true async page-by-page generator for the audit-export
+# streaming body (replaces the wave-18 `Vec<Frame<Bytes>>` plan with
+# an R2-list-driven `Stream<Frame<Bytes>>` that respects axum
+# back-pressure + bounds per-page memory).
+async-stream = { workspace = true }
 corelink-stripe-real = { workspace = true }
 corelink-tier-selection = { workspace = true }
 # Wave-17: production materializer + D1 idempotency + tier reconciliation
