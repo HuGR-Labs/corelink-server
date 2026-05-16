@@ -136,6 +136,7 @@ Tag draft contents (summarized — full text in the file):
   - DEBT-003 — AWS Artifact subscription pending IAM-Identity-Center enablement; SOC 2 attestation via interim manual path. Target T+30d post-GA.
   - DEBT-026 — external pentest engagement scope frozen; vendor RFP send pending Owner action (5-vendor shortlist NOT_CONTACTED per `reports/pentest-rfp-tracker.json`); engagement window contracted for 2026-Q3 (forward-looking); field-work begins post-vendor-selection.
   - FW-H — Compliance / Privacy second-pair reviewer role staffing pending nomination; ADR-0034b 2-key mechanism in place to bridge.
+- **Dress-rehearsal evidence carve-out**: this audit executed in `sim` mode (per §1.1). The §9 T-14d **real-mode staffed staging dress-rehearsal** (CF + R2 + Neon + Clerk + Stripe sandbox) remains separately mandated by `RB-GA-CUTOVER.md` §9 and is the score-realising event for the 8.4 sim-mode score recorded in §7 below. This wave-26 dress-run is the backstop / shape-validator, not a substitute. Not blocking wave-27 tag preparation; blocking T-0h cutover authorization.
 - **Sign-off** (per RB-GA-CUTOVER §8 + ADR-0034b 2-key):
   - Signer 1: Gustavo Schneiter (Owner / CEO)
   - Signer 2: (to be nominated) — On-call SRE Lead

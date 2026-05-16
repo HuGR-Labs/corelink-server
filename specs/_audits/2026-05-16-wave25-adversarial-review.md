@@ -259,3 +259,16 @@ TIME: 47min
 
 Signed-off-by: Gustavo Schneiter <gustavo@humangr.com>
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+
+---
+
+## 10. Closure note — wave-30 P2 absorption sweep (2026-05-16)
+
+> The P2 / P3 findings recorded in this review have been triaged in
+> `specs/_audits/2026-05-16-p2-absorption-sweep-w25-28.md` (wave-30 stream-7).
+> Per-finding dispositions:
+>
+> - **P2-01** (pentest vendor-shortlist scoring-rubric vs application drift) → **CLOSED-WAVE-30** (FIX-NOW). `specs/_audits/pentest-vendor-shortlist.md` §0.1 / §0.2 / §6.1 rewritten to describe the actual raw-sum computation (110 max = 70 primary + 40 secondary); relative ranking unaffected.
+> - **P2-02** (DEBT-015-BUILD babel-patch "load-bearing" claim without empirical re-test) → **DEFER-POST-GA**. 5-minute `pnpm build` re-test with patches reverted is substantive verification, not cosmetic; recorded in the sweep's §4 residual queue for wave-30+ R-prep.
+> - **P3-01** (`ga-readiness-defer-drift.py` docstring vs regex drift) → **CLOSED-WAVE-30** (FIX-NOW). Docstring now matches the functionally-tighter "checked or unchecked DEFER rows" reality.
+> - **P3-02** (§11 intro scrub-annotation triple-confirmation pattern) → **CLOSED-WAVE-30** (FIX-NOW). Duplicate parenthetical stripped from `2026-05-16-ga-readiness-final.md` §11 intro; provenance retained in the totals line.

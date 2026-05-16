@@ -270,7 +270,7 @@ Per `specs/_audits/2026-05-16-wave23-closure.md` §3.4 dry-run readiness assessm
 
 ## §11. External dependency state — DEFER counter
 
-The 7 items below are **agent-impossible** under the autonomous-execution charter. They are tracked here to provide a single counter for the go/no-go board. (Wave-25 scrub: prior row #7 "Docs CI billing reinstatement" removed as stale — CI is locally executed per `feedback_ci_local` memory; GHA billing reinstatement is not on the GA-blocker path. See `specs/_audits/2026-05-16-ga-readiness-defer-scrub.md`.)
+The 7 items below are **agent-impossible** under the autonomous-execution charter. They are tracked here to provide a single counter for the go/no-go board. (Count delta vs the pre-wave-25 corpus is recorded in the totals line below; full provenance in `specs/_audits/2026-05-16-ga-readiness-defer-scrub.md`.)
 
 | # | Item | Class | Owner | Wave-23 unblock vector | ETA |
 |---|---|---|---|---|---|

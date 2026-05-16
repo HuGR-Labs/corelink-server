@@ -410,3 +410,22 @@ TIME: 48 min
 Signed-off-by: Gustavo Schneiter <gustavo@humangr.com>
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+
+---
+
+## 17. Closure note — wave-30 P2 absorption sweep (2026-05-16)
+
+> The 8 P2 findings recorded in this review have been triaged in
+> `specs/_audits/2026-05-16-p2-absorption-sweep-w25-28.md` (wave-30 stream-7).
+> Per-finding dispositions (W26-P2-NN IDs assigned by the sweep doc §2.2):
+>
+> - **W26-P2-01** (`--range` excludes merge commits; merge-commit-only FREEZE trailer would be missed) → **DEFER-POST-GA**. Substantive code-path change + tests, not cosmetic.
+> - **W26-P2-02** (`SKIP_PATH_PATTERNS` includes broad subtrees) → **SCOPE-CHANGE / accepted-as-designed**. Conservative-by-design under §3.d implicit-allow.
+> - **W26-P2-03** (INV inheritance chain documented by prose, not structured field) → **DEFER-POST-GA**. Architectural — schema + validator change.
+> - **W26-P2-04** (Pairing-Beta as pre-GA default depends on unaudited workload claims) → **SCOPE-CHANGE**. Policy decision; trimestral-review surface.
+> - **W26-P2-05** (RC2 stamp + DRAFT status juxtaposition) → **SCOPE-CHANGE / accepted-as-designed**.
+> - **W26-P2-06** (T-14d staffed staging mandate invisible in GA tag-draft contents bullets) → **CLOSED-WAVE-30** (FIX-NOW). Added an explicit dress-rehearsal carve-out bullet to `2026-05-16-prod-deploy-dressrun.md` §6.
+> - **W26-P2-07** (No CI gate verifies the new `.cargo/config.toml` is picked up by the wasm32 job) → **OBE-BY-LATER-WAVE**. Infra verification task routed to the wave-30 endurance/CI stream.
+> - **W26-P2-08** (`emit_synthetic` silent drop on mutex-poison on fail-CLOSED path) → **DEFER-POST-GA**. Code-path change without re-introducing double-fault risk; recorded for post-GA refactor.
+> - **W26-P2-09** (marketing summary "9.41" vs wave-26 closure 9.39 rounding) → **CLOSED-WAVE-30** (FIX-NOW). Marketing summary now cites "~9.4 (audit-trail arithmetic mean 9.39)".
+> - **W26-P2-10** (wave-26 closure §1 stream #4 naming drift: "RFP send authorisation" vs actual scaffolding scope) → **CLOSED-WAVE-30** (FIX-NOW). Stream #4 row renamed to "DEBT-026 RFP tracker scaffolding (engineering-side; actual RFP send wave-28 stream #4)".
