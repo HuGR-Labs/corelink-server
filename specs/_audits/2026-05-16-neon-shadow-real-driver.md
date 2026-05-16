@@ -189,3 +189,84 @@ tests under `--features neon-real`.
 
 DCO sign-off (wave-20 closure-note): Gustavo Schneiter <gustavo@humangr.com>.
 
+## 7. Wave-21 closure note — tenant-config region resolver
+
+The wave-20 `TokioPgShadowSinkFactory::for_tenant` impl in
+`apps/server/src/main.rs` carried an explicit `TODO(wave-21)`: every
+tenant resolved to `Region::Iad` regardless of their pinned region
+because the tenant-config store was not yet wired. Wave-21 closes
+that TODO with the same `trait-abstraction-defer` pattern §3 pins:
+
+- **Trait surface** — `TenantRegionResolver` ships in
+  `crates/corelink-audit-chain/src/neon_shadow/tenant_region.rs`.
+  Signature: `fn resolve_region(&self, tenant_id: &Uuid) -> Result<Region, TenantRegionError>`.
+  Error taxonomy: `Unresolved` (no row + no fallback) +
+  `BackendUnavailable` (D1 query refused). Both map to `Err(&'static str)`
+  at the `ShadowSinkFactory::for_tenant` boundary so the `audit_analytics`
+  route layer surfaces 503 SERVICE_UNAVAILABLE.
+- **`InMemoryTenantRegionResolver`** — staging / dev / test impl
+  backed by `HashMap<Uuid, Region>` with a configurable fallback
+  region. Mirrors the wave-19 `StaticResolver` pattern for the
+  per-region DSN resolver. The native gRPC boot path (`apps/server/src/main.rs`
+  `--feature neon-real` branch) installs it with `Uuid::nil() -> IAD`
+  + fallback `IAD`, behind a WARN log line that operators see when
+  the binary boots.
+- **`D1TenantRegionResolver`** — production impl that delegates to
+  a `TenantConfigStore` trait (`fn region_label(&self, tenant_id: &Uuid) -> Result<Option<String>, String>`).
+  The CF Worker production boot path (`corelink-clerk-cf::prod_wiring`,
+  separately wired) is the only call site that constructs a real
+  impl wrapping `corelink_cf_bindings::d1_real::CfD1DatabaseReal::scoped_query`
+  against the `tenant_config.region` column. Native binaries cannot
+  reach `worker::D1Database` directly — same constraint that pinned
+  `InMemoryBillingD1` in the wave-18 Stripe-materializer wire.
+- **Migration `0052_tenant_config_region.sql`** — creates the
+  minimum `tenant_config` table (`tenant_id TEXT PRIMARY KEY` +
+  `region TEXT NOT NULL DEFAULT 'IAD' CHECK (region IN (…22 colocodes…))`)
+  plus the additive `ADD COLUMN IF NOT EXISTS region` for pre-existing
+  variants. Idempotent. The CHECK list enumerates every `corelink_analytics::Region`
+  variant in both upper- and lower-case so the resolver's
+  case-insensitive `parse_region_label` round-trips.
+
+### Wave-21 deliverables
+
+| Deliverable | Loc | LOC |
+|---|---|---|
+| `TenantRegionResolver` trait + 2 impls + parser | `crates/corelink-audit-chain/src/neon_shadow/tenant_region.rs` | ~430 |
+| `lib.rs` re-export | `crates/corelink-audit-chain/src/lib.rs` | +4 |
+| `neon_shadow.rs` sub-mod declaration | `crates/corelink-audit-chain/src/neon_shadow.rs` | +14 |
+| Boot-path wire (`Region::Iad` default removed) | `apps/server/src/main.rs` | ~+60 / -10 |
+| D1 column add migration | `migrations/d1/0052_tenant_config_region.sql` | ~100 |
+
+### Wave-21 net-new tests
+
+- `in_memory_resolver_returns_pinned_region_for_known_tenant` — trait round-trip.
+- `in_memory_resolver_fallback_flips_unresolved_to_ok` — resolver fallback path.
+- `d1_resolver_surfaces_backend_unavailable_when_store_errors` — 503 path
+  (D1 store returns `Err`, resolver propagates `BackendUnavailable`,
+  factory translates to `&'static str` consumed by the route layer's
+  `SERVICE_UNAVAILABLE` arm).
+- `d1_resolver_falls_back_on_missing_row` — `Ok(None)` legacy tenant
+  path (resolver applies configured fallback).
+- `d1_resolver_rejects_unknown_region_label` — stale enum value
+  defense-in-depth (resolver lifts to `BackendUnavailable`).
+- `d1_resolver_parses_uppercase_migration_default` — migration
+  `DEFAULT 'IAD'` round-trips through the case-insensitive parser.
+- `parse_region_label_covers_every_canonical_colocode` — parser
+  invariant against `Region::as_str`.
+
+Total wave-21 net-new: **7 unit tests** (3 charter-mandated + 4
+defense-in-depth). Test counts: 139 → 146 lib (default), 142 → 149
+lib (`--features neon-real`).
+
+### Wave-21 gates
+
+- `cargo build -p corelink-audit-chain`: green.
+- `cargo build -p corelink-server`: green.
+- `cargo build -p corelink-server --features neon-real`: green.
+- `cargo test -p corelink-audit-chain --lib`: 146 passing.
+- `cargo test -p corelink-audit-chain --lib --features neon-real`: 149 passing.
+- `cargo clippy -p corelink-audit-chain --all-targets -- -D warnings`: clean.
+- `cargo clippy -p corelink-server --features neon-real --all-targets -- -D warnings`: clean.
+
+DCO sign-off (wave-21 closure-note): Gustavo Schneiter <gustavo@humangr.com>.
+
