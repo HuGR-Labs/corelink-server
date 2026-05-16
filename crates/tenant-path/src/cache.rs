@@ -320,4 +320,18 @@ mod tests {
         assert!(cache.is_empty());
         assert_eq!(cache.len(), 0);
     }
+
+    #[test]
+    fn cache_is_not_empty_after_insertion() {
+        // Mutation guard (DEBT-008 wave-22): kills the
+        // `is_empty -> bool with true` survivor by asserting the
+        // false branch is reachable after a single populated entry.
+        let tdk = fresh_tdk(0x66);
+        let cache = TenantPrefixCache::new();
+        let v = TdkVersion(1);
+        let tenant = Uuid::now_v7();
+        let _ = cache.get_or_derive(&tdk, v, tenant);
+        assert!(!cache.is_empty());
+        assert_eq!(cache.len(), 1);
+    }
 }
