@@ -3,7 +3,7 @@ id: "PROPOSAL-2026-05-16-FRAMEWORK-REVIEWER-ROLES-ADDENDUM"
 type: "governance"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "0.1.2"
+version: "0.1.3"
 created: "2026-05-16"
 updated: "2026-05-16"
 owner: "Gustavo Schneiter"
@@ -11,7 +11,7 @@ final_approver: "Gustavo Schneiter"
 reviewers: []
 supersedes: null
 superseded_by: null
-tags: ["governance", "reviewers", "staffing", "proposal", "framework-freeze", "wave-22", "wave-24", "wave-25", "lote-7", "ga", "addendum", "dual-hat", "raci"]
+tags: ["governance", "reviewers", "staffing", "proposal", "framework-freeze", "wave-22", "wave-24", "wave-25", "wave-26", "lote-7", "ga", "addendum", "dual-hat", "raci", "sla"]
 references:
   - "specs/00_framework.md"
   - "specs/_proposals/2026-05-16-framework-reviewer-roles.md"
@@ -228,23 +228,25 @@ The original proposal §6 contains a 13-row RACI summary scoped to framework-lev
 
 ### §6.2 Detailed RACI matrix — 15 framework decision rows
 
-| # | Decision | Owner (Gustavo) | FW-H-1 Architecture | FW-H-2 Compliance | FW-H-3 Security | FW-H-4 Production Ops |
-|---|---|---|---|---|---|---|
-| 1 | **ADR creation** (new ADR authored against framework §-content) | A | R if architecture; C otherwise | C if compliance-touching | C if security-touching | C if ops-touching |
-| 2 | **ADR approval** (status DRAFT → ACCEPTED transition) | A | C | C | C | C |
-| 3 | **INV registry promotion** (DRAFT → PROVEN / tla_verified status flip) | A | R (architecture-of-record co-signs) | I | C if security invariant; else I | C if SLI / SLO invariant; else I |
-| 4 | **Sprint impl sign-off** (S-NN PRR gate close per `_governance/reviewer_staffing_strategy.md §2.5`) | A | C | C | C | R |
-| 5 | **DEBT register entry** (new DEBT-NNN authored or waived per §35.6) | A | C | C if compliance-DEBT | C if security-DEBT | R (operational reality check) |
-| 6 | **Runbook approval** (new runbook authored / existing materially edited per §25) | A | I | I | C if security-runbook | R |
-| 7 | **TLA+ spec addition** (new formal spec landed in `specs/_proofs/`) | A | R | I | C if security-property | I |
-| 8 | **BYOK provider addition** (§28 — new KMS / HSM provider integrated) | A | C | C (DPA review) | R (key-custody architecture co-signs) | C (operational SLO impact) |
-| 9 | **Region addition** (new deployment region / data-residency expansion) | A | C | R (regulatory mapping per §21) | C (tenant-isolation INVs cross-region) | C (latency SLO + on-call coverage) |
-| 10 | **Schema migration** (canonical-source schema or DB migration touching framework §-binding fields) | A | R (architecture-of-record) | C if PII-schema | C if security-schema | C (rollout posture) |
-| 11 | **Customer breach response** (SEV-1 breach, regulatory notification per §27 + §30) | A | I | R (notification timeline + DPA invocation) | C (forensics + IR coordination) | C (status-page + comms cadence) |
-| 12 | **Pentest finding triage** (external pentest report intake per `_audits/2026-05-16-pre-ga-pentest-scope.md`) | A | C (architectural remediation) | I | R (severity classification + remediation owner assignment) | C (operational mitigations) |
-| 13 | **GA cutover sign-off** (v1.0.0 FROZEN cut + product GA gate close) | A | R | R | R | R |
-| 14 | **Quarterly framework review** (addendum §5 delta-doc cadence) | A | R if Q1; C otherwise | R if Q2; C otherwise | R if Q3; C otherwise | R if Q4; C otherwise |
-| 15 | **Annual deep review** (addendum §5.5 — T+360 days from v1.0.0 cut) | A | R | R | R | R |
+> **Wave-26 update.** The trailing `INV binding` column was added per `specs/_audits/2026-05-16-lote-7-followons-closure.md §3` to bind rows to the invariant-registry entries they functionally enforce. Rows whose decision class is not directly tied to a single invariant carry `—` (the binding is implicit via the broader §-coverage). The binding is **non-exclusive**: a row may touch multiple INVs at runtime; the column names the *closest* invariant whose violation would block the decision. Bindings reference `specs/03_architecture/invariant_registry.md`.
+
+| # | Decision | Owner (Gustavo) | FW-H-1 Architecture | FW-H-2 Compliance | FW-H-3 Security | FW-H-4 Production Ops | INV binding |
+|---|---|---|---|---|---|---|---|
+| 1 | **ADR creation** (new ADR authored against framework §-content) | A | R if architecture; C otherwise | C if compliance-touching | C if security-touching | C if ops-touching | — |
+| 2 | **ADR approval** (status DRAFT → ACCEPTED transition) | A | C | C | C | C | — |
+| 3 | **INV registry promotion** (DRAFT → PROVEN / tla_verified status flip) | A | R (architecture-of-record co-signs) | I | C if security invariant; else I | C if SLI / SLO invariant; else I | INV-OBS-AUDIT-CHAIN-INTEGRITY (promotion provenance lands in audit chain) |
+| 4 | **Sprint impl sign-off** (S-NN PRR gate close per `_governance/reviewer_staffing_strategy.md §2.5`) | A | C | C | C | R | — |
+| 5 | **DEBT register entry** (new DEBT-NNN authored or waived per §35.6) | A | C | C if compliance-DEBT | C if security-DEBT | R (operational reality check) | — |
+| 6 | **Runbook approval** (new runbook authored / existing materially edited per §25) | A | I | I | C if security-runbook | R | — |
+| 7 | **TLA+ spec addition** (new formal spec landed in `specs/_proofs/`) | A | R | I | C if security-property | I | — |
+| 8 | **BYOK provider addition** (§28 — new KMS / HSM provider integrated) | A | C | C (DPA review) | R (key-custody architecture co-signs) | C (operational SLO impact) | INV-BYOK-CRYPTO-SOVEREIGNTY |
+| 9 | **Region addition** (new deployment region / data-residency expansion) | A | C | R (regulatory mapping per §21) | C (tenant-isolation INVs cross-region) | C (latency SLO + on-call coverage) | INV-REGION-NO-CROSS-LEAK |
+| 10 | **Schema migration** (canonical-source schema or DB migration touching framework §-binding fields) | A | R (architecture-of-record) | C if PII-schema | C if security-schema | C (rollout posture) | INV-AUTH-MIGRATION-ADDITIVE |
+| 11 | **Customer breach response** (SEV-1 breach, regulatory notification per §27 + §30) | A | I | R (notification timeline + DPA invocation) | C (forensics + IR coordination) | C (status-page + comms cadence) | INV-AUDIT-APPEND-ONLY (breach-timeline evidence preserved) |
+| 12 | **Pentest finding triage** (external pentest report intake per `_audits/2026-05-16-pre-ga-pentest-scope.md`) | A | C (architectural remediation) | I | R (severity classification + remediation owner assignment) | C (operational mitigations) | — |
+| 13 | **GA cutover sign-off** (v1.0.0 FROZEN cut + product GA gate close) | A | R | R | R | R | INV-ROLLOUT-COSIGN-GATE (cutover artifact provenance) |
+| 14 | **Quarterly framework review** (addendum §5 delta-doc cadence) | A | R if Q1; C otherwise | R if Q2; C otherwise | R if Q3; C otherwise | R if Q4; C otherwise | — |
+| 15 | **Annual deep review** (addendum §5.5 — T+360 days from v1.0.0 cut) | A | R | R | R | R | — |
 
 ### §6.3 Dual-hat fallback row (per ADR-0034b §Permitted pairings)
 
@@ -261,7 +263,89 @@ The table below shows the **net effect on the §6.2 R column** for each pairing.
 
 **Cross-veto preservation under dual-hat.** Addendum §2 cross-veto rights are preserved row-by-row. Specifically, under Pairing-Alpha, the external advisors (FW-H-2 + FW-H-4) retain `vote: BLOCK` authority on **any** row in §6.2 — including rows where the R-cell is held by an Owner-dual-hat slot. This is the addendum §2.2 cross-domain veto operating at the per-decision granularity.
 
-### §6.4 Disambiguating rules (matrix-edge cases)
+### §6.4 Pairing-Alpha vs Pairing-Beta selection heuristics (wave-26)
+
+ADR-0034b §Permitted pairings names the two permitted dual-hat pairings but does not script the **selection decision** the Owner makes at invocation time. This section provides that decision tree so the choice is reproducible / auditable rather than a one-off judgment call.
+
+> **Source-of-truth.** This subsection complements ADR-0034b §Permitted pairings (which is normative). The heuristics below are advisory inputs to the §43.1 sign-off block authoring; the Owner retains final discretion per `00_framework.md §43.1` Final-Approver authority. The §10 change-log records which heuristic dimension dominated the decision so the rationale is preserved.
+
+#### §6.4.1 Decision tree
+
+```
+1. Look at the trailing 90-day work mix (use the §5 quarterly delta-doc inventories):
+   - Count of ADRs landed × architectural weight  → Architecture-pressure score
+   - Count of canonical-source / spec-corpus edits → Architecture-pressure score
+   - Count of TLA+ specs landed                   → Architecture-pressure score
+   - Count of customer-breach / SEV-1 incidents   → Compliance-pressure score
+   - Count of runbook edits / new RBs             → ProdOps-pressure score
+   - Count of GA-cutover / region-rollout events  → Compliance-pressure score
+   - Count of pentest / vulnerability triage events → Security-pressure score
+
+2. If Architecture-pressure + Security-pressure ≥ Compliance-pressure + ProdOps-pressure
+   → choose **Pairing-Alpha** (Owner = FW-H-1 + FW-H-3).
+   Externals fill FW-H-2 (Compliance) + FW-H-4 (Production Ops).
+
+3. Else if Compliance-pressure + ProdOps-pressure > Architecture-pressure + Security-pressure
+   → choose **Pairing-Beta** (Owner = FW-H-2 + FW-H-4).
+   Externals fill FW-H-1 (Architecture) + FW-H-3 (Security).
+
+4. Tie-breaker (pressures within ±20% of each other):
+   - If pre-GA (no v1.0.0 FROZEN cut yet OR within first 90 days post-cut)
+     → **Pairing-Beta** (compliance-heavy phase: cutover, region rollouts, runbook discipline).
+   - If post-GA + steady-state (≥ 90 days post-cut, no SEV-1 in window)
+     → **Pairing-Alpha** (architecture-heavy phase: ADR landing, INV promotion, TLA+ deepening).
+```
+
+#### §6.4.2 Default for SaaS pre-GA (CoreLink current state)
+
+For the CoreLink program as of wave-26 (pre-GA, S-21 sprints in flight, GA cutover decision row [§6.2 row 13] is the next major framework event), the default is **Pairing-Beta**:
+
+- The next 90 days are dominated by §6.2 row 13 (GA cutover) and row 9 (Region addition), both of which are HIGH_RISK lane with FW-H-2 (Compliance) R-status.
+- Runbook approval (row 6) and DEBT register entry (row 5) cadence is at trailing-90-day high-water-mark per `_audits/2026-05-15-debt-register.md` — both FW-H-4 R.
+- Sprint impl sign-off (row 4) is FW-H-4 R; sprint cadence remains weekly until S-21 close.
+- Architecture-pressure has plateaued post-S-14 (TLA+ landing rate slowing per `tla_check.yml` weekly volume); Pairing-Alpha's preferred row pattern (rows 3 / 7 / 8 / 10) is less frequently hit.
+
+Pairing-Beta keeps the Owner on the rows that fire weekly (4 / 5 / 6 / 9 / 11) and routes the lower-cadence rows (3 / 7 / 8 / 10 / 12) to external advisors who can take a deeper-but-rarer engagement model.
+
+#### §6.4.3 Re-pairing criteria post-GA
+
+After the v1.0.0 FROZEN cut + product GA, the Owner SHOULD re-evaluate the pairing at the first quarterly review (T+90 days post-cut). Re-pair to **Pairing-Alpha** when ALL of the following hold:
+
+1. ≥ 6 ADRs landed in the trailing 90 days (high architectural-work cadence).
+2. ≥ 1 TLA+ spec added or promoted to GREEN in the window.
+3. No SEV-1 breach response (row 11) fired in the window.
+4. No new region / data-residency expansion (row 9) is scheduled in the next 90 days.
+5. The DEBT register entry rate has dropped to ≤ 3 entries per 90 days (operational steady-state).
+
+Re-pairing requires authoring a delta entry in the §1.1-mandated dual-hat ADR (ADR-0034b) recording the heuristic-dimension scores and the chosen pairing. The §43.1 sign-off block for the next quarterly review records the new pairing; mid-quarter re-pairings are discouraged because they invalidate the per-row R-cell attribution for the partial-quarter audit trail.
+
+#### §6.4.4 Anti-patterns to avoid
+
+- **Choosing Pairing-Alpha pre-GA to avoid compliance reading.** This inverts the workload — Compliance pressure is highest pre-GA and routing it to a thinly-engaged external advisor risks DPA / regulatory misses. The §1.2 OQ-1 rationale specifically calls out "Owner takes the slots they personally have working competence in"; an Owner without strong regulatory background should NOT take FW-H-2.
+- **Choosing Pairing-Beta post-GA in steady-state.** This routes Architecture (FW-H-1) R-status to an external advisor who may have shallower familiarity with the framework's INV / TLA+ corpus than the Owner who authored most of it. The INV registry promotion row (3) and TLA+ row (7) cadence post-GA benefit from Owner-as-FW-H-1 continuity.
+- **Mid-quarter re-pairing.** See §6.4.3 — invalidates the audit trail. Recover by waiting to the next quarter boundary.
+
+#### §6.4.5 Audit trail
+
+Each pairing decision is recorded in the §10 change-log entry that authors / re-affirms the dual-hat ADR with the format:
+
+```
+pairing_chosen: Alpha | Beta
+heuristic_inputs:
+  architecture_pressure: <int>  # 0-N ADRs / TLA+ specs / spec edits in trailing 90d
+  security_pressure: <int>      # 0-N pentest / vuln events in trailing 90d
+  compliance_pressure: <int>    # 0-N breach / region / regulatory events
+  prodops_pressure: <int>       # 0-N runbook / DEBT / sprint-impl events
+  tie_breaker_invoked: yes | no
+  pre_or_post_GA: pre-GA | post-GA-<days>d
+decision_rationale: <one-paragraph>
+```
+
+This is the §3.4 SLA-conformance line's structural sibling: a per-90-day record that the quarterly review chair can inspect to detect drift (e.g., "Pairing-Beta was chosen Q1 and Q2 but heuristic scores favored Pairing-Alpha both quarters — investigate why").
+
+---
+
+### §6.5 Disambiguating rules (matrix-edge cases)
 
 1. **Multi-domain decisions.** If a decision row crosses two or more FW-H-* slots' primary §-coverage (e.g., a BYOK change that also touches a regulatory regime), the slot whose primary coverage contains the **canonical §-section authoring the rule under change** is R; the others are C. This mirrors the original proposal §6 "Disambiguating rule".
 2. **C-cell SLA.** A reviewer marked C on a decision row inherits the addendum §3.2 SLA: STANDARD lane = 1 BD initial response, 3 BD sign-off; HIGH_RISK lane = 2 BD initial response, 7 BD sign-off. Silent C is a procedural defect logged in the quarterly review (addendum §3.4 SLA conformance line).
@@ -270,7 +354,7 @@ The table below shows the **net effect on the §6.2 R column** for each pairing.
 5. **Recusal interaction.** A reviewer who declared a §7 conflict-of-interest (this addendum, post-renumber) on a given row recuses by shifting their R/C cell to ABSTAIN; their backup (per original proposal §7) absorbs the R if they hold one, else the quorum drops by one effective seat (addendum §2.4 + this addendum §7.3 recusal mechanics).
 6. **Decision-row provenance.** Each row in §6.2 maps to a `00_framework.md` section. Future framework versions may add rows; new rows MUST cite the framework §-section they bind to and MUST declare the R/A/C/I cells explicitly (no "TBD" cells permitted — single-A discipline includes "single-A-or-explicit-deferral").
 
-### §6.5 Cross-references
+### §6.6 Cross-references
 
 - `specs/_proposals/2026-05-16-framework-reviewer-roles.md §6` — the summary view (13 rows; same staffing intent, coarser grain).
 - `specs/03_architecture/adrs/ADR-0034b-framework-reviewer-dual-hat-fallback.md §Permitted pairings + §Forbidden pairings + §Cross-veto rights under dual-hat` — authorization for the §6.3 dual-hat row of this matrix.
@@ -355,6 +439,7 @@ Until then, the addendum sits as DRAFT alongside the original proposal and `revi
 | 0.1.0 | 2026-05-16 | Gustavo Schneiter (via Claude Opus 4.7, wave-22 Lote 7 absorption) | Initial addendum. Extends `specs/_proposals/2026-05-16-framework-reviewer-roles.md` v0.1.0 with §1 dual-hat fallback policy (Pairing-Alpha / Pairing-Beta), §2 cross-veto rule + 3-of-4 quorum, §3 sign-off SLA (STANDARD 3 BD / HIGH_RISK 7 BD), §4 Reviewer Training Pack 10-hour floor, §5 90-day rolling quarterly cadence anchored on FROZEN cut, §6 conflict-of-interest declaration + recusal. Does not modify FW-H-* role scopes; specifies operating mechanics for small-org case. |
 | 0.1.1 | 2026-05-16 | Claude Opus 4.7 (wave-24 ADR-0034b cross-ref) | Adds §1 wave-24 cross-ref callout pointing at the newly-authored `specs/03_architecture/adrs/ADR-0034b-framework-reviewer-dual-hat-fallback.md` (the §1.1 item-4-required authorization artifact). Adds ADR-0034b to the closing cross-references list. No semantic change to operating policy. |
 | 0.1.2 | 2026-05-16 | Claude Opus 4.7 (wave-25 Lote 7 RACI detail) | Adds **§6 RACI matrix detail** authoring the 15-row per-decision matrix (ADR creation, ADR approval, INV registry promotions, sprint impl sign-off, DEBT register entries, runbook approvals, TLA+ spec additions, BYOK provider additions, region additions, schema migrations, customer breach response, pentest finding triage, GA cutover, quarterly review, annual deep review) with explicit R/A/C/I cells per FW-H-* slot, single-A discipline enforced (Owner = A always), and a dedicated **§6.3 dual-hat fallback row** showing per-pairing A/R-cell migration under ADR-0034b Pairing-Alpha (FW-H-1+FW-H-3) and Pairing-Beta (FW-H-2+FW-H-4). Renumbers existing §6 (COI) → §7, §7 (summary table) → §8, §8 (acceptance) → §9, §9 (changelog) → §10. The §8 summary table is updated to reflect the seven (was six) clauses. Cross-veto preservation under dual-hat is reasserted in §6.3 last paragraph. Closes the wave-22 / wave-24 forward reference where both documents pointed at "the addendum proposal §6 RACI" without an authored detail. ADR-0034b cross-refs `addendum §6.2 / §6.4` (COI subsections) are migrated to `§7.2 / §7.4` in the same wave-25 commit. |
+| 0.1.3 | 2026-05-16 | Claude Opus 4.7 (wave-26 Lote 7 follow-ons closure) | Closes the three wave-25 follow-on items deferred in `specs/_audits/2026-05-16-lote-7-raci-detail.md §8`: (1) Adds **INV binding column** to the §6.2 matrix — 6 of 15 rows bind to a concrete INV (Row 3 → INV-OBS-AUDIT-CHAIN-INTEGRITY; Row 8 → INV-BYOK-CRYPTO-SOVEREIGNTY; Row 9 → INV-REGION-NO-CROSS-LEAK; Row 10 → INV-AUTH-MIGRATION-ADDITIVE; Row 11 → INV-AUDIT-APPEND-ONLY; Row 13 → INV-ROLLOUT-COSIGN-GATE). Rows with no direct INV binding carry `—`. (2) Inserts new **§6.4 Pairing-Alpha vs Pairing-Beta selection heuristics** with decision tree, default-for-SaaS-pre-GA (Pairing-Beta), re-pairing criteria post-GA, anti-patterns, and audit-trail format. Renumbers the previous §6.4 (Disambiguating rules) → §6.5 and the previous §6.5 (Cross-references) → §6.6. (3) **CI SLA wire-up** lands `scripts/check-raci-sla.py` parsing §6.2 + §3.2 lanes + emitting an advisory conformance line; wired into `.github/workflows/spec_validation.yml` as an advisory step (never blocks). Closure audit doc: `specs/_audits/2026-05-16-lote-7-followons-closure.md`. No semantic change to §1–§5 / §7–§9 operating-policy clauses. |
 
 ---
 

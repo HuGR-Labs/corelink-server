@@ -59,3 +59,11 @@ jobs:
         # Catches stale DEFER rows (e.g. GHA-billing / CI-offline framings)
         # that contradict the `feedback_ci_local` stance. Exits 1 on drift.
         run: python3 scripts/ga-readiness-defer-drift.py
+
+      - name: RACI sign-off SLA advisory (wave-26)
+        # Parses §6 RACI matrix detail from the framework reviewer roles
+        # addendum and emits an advisory conformance line consumed by the
+        # quarterly framework review delta-doc (addendum §3.4). Advisory
+        # only — exits 0 even when SLA breaches detected. Wave-26 closure
+        # per `specs/_audits/2026-05-16-lote-7-followons-closure.md`.
+        run: python3 scripts/check-raci-sla.py --dry-run
