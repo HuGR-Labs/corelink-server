@@ -3,7 +3,7 @@ id: "RB-STATUSPAGE-INIT"
 type: "runbook"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-16"
 updated: "2026-05-16"
 sprint: "R-prep"
@@ -16,11 +16,14 @@ superseded_by: null
 inherits_from:
   - "RB-DSR-STATUSPAGE-PUBLISH-FAILED"
   - "ONCALL-ESCALATION-MATRIX"
-tags: ["runbook", "statuspage", "operator", "ga-cutover", "provisioning", "debt-016", "wave-24"]
+tags: ["runbook", "statuspage", "operator", "ga-cutover", "provisioning", "debt-016", "wave-24", "wave-27"]
 escalation: "SRE Lead → Incident Commander → CTO"
 review_cadence: "annual + post-incident"
 related:
   - "specs/_audits/2026-05-16-debt-016-statuspage-urls.md"
+  - "specs/_audits/2026-05-16-statuspage-init-dressrun.md"
+  - "specs/_audits/2026-05-16-cutover-dependency-map.md"
+  - "specs/_runbooks/RB-GA-CUTOVER.md"
   - "marketing/launch/STATUS-PAGE-SPEC.md"
   - "specs/_runbooks/RB-DSR-STATUSPAGE-PUBLISH-FAILED.md"
   - "apps/docs/docs/trust/incident-response.mdx"
@@ -117,6 +120,34 @@ served under `status.corelink.dev`.
 SRE Lead records completion in `specs/_compliance/GA-GATE-CRITERIA.md`
 checklist row for "Statuspage provisioned (Option A — CNAME)".
 
+### 2.5 Timing relative to GA-cutover sequence
+
+The wave-24 cut of this runbook stated only "before T-7d" without
+propagation analysis. Wave-27 hardens the timing per the canonical
+dependency map at
+`specs/_audits/2026-05-16-cutover-dependency-map.md` (nodes N-S-1 +
+N-S-2).
+
+**Recommended Option A schedule:**
+
+| Anchor | Action | Owner |
+|---|---|---|
+| T-10d | Begin §2 steps 1–6 (tenant provisioning + 8 components + CNAME) | SRE Lead |
+| T-10d → T-7d | **3d buffer** for Atlassian TLS-cert issuance + CF zone update propagation + 8-component setup + statuspage banner staging (`RB-GA-CUTOVER.md` §0.5) | passive |
+| T-7d | §4 go-live gate verified (§2 step 7 curl block) and sign-off filed in `GA-GATE-CRITERIA.md` | SRE Lead + Release Captain |
+
+The CNAME TTL at provisioning is the standard Cloudflare default
+(**300s**), not 7d. The wave-24 framing of a "7-day window" referred to
+the operator's *decision deadline* between Option A and Option B, not
+the DNS TTL: re-pointing the `status.corelink.dev` CNAME after GA is
+not in scope (Atlassian manages the underlying tenant target).
+
+If `T-10d` start slips, the gate at `T-7d` flips RED and triggers the
+`RB-GA-LAUNCH-ROLLBACK.md` §7 RA-3 sustained-staging clause — GA T-0
+defers by **≥ 7 days minimum** because the gate is binary and the
+window does not auto-extend. See dependency map §9 for the slip-window
+matrix.
+
 ---
 
 ## 3. Option B — `STATUSPAGE_URL` env-var override (rebuild required)
@@ -162,6 +193,29 @@ SRE Lead records completion in `specs/_compliance/GA-GATE-CRITERIA.md`
 checklist row for "Statuspage provisioned (Option B — env-var override)".
 Include the chosen domain + commit SHA of the substitution branch.
 
+### 3.6 Timing relative to GA-cutover sequence
+
+Per the wave-27 dependency map
+(`specs/_audits/2026-05-16-cutover-dependency-map.md` node N-S-1b):
+
+| Anchor | Action | Owner |
+|---|---|---|
+| T-14d ± 3d | Operator decides Option B (post-dress-rehearsal, see dep-map §6.2) | SRE Lead + Owner |
+| T-10d | Begin §3 steps 1–4 (tenant + operator-chosen domain + env-var set + docs rebuild on deploy-time branch) | SRE Lead + Engineering Lead |
+| T-9d → T-8d | Substitution sweep (§3 step 5) committed on deploy-time branch | Engineering Lead |
+| T-8d → T-7d | **1d verify window**: operator-domain CNAME propagation across the operator's zone + docs-build re-run validation | SRE Lead |
+| T-7d | §4 go-live gate verified; sign-off filed in `GA-GATE-CRITERIA.md` | SRE Lead + Release Captain |
+
+The 1d verify window is tighter than Option A's 3d buffer because the
+wave-25 dress-run already proved the substitution mechanism is
+regression-free (S3 PASS, see
+`specs/_audits/2026-05-16-statuspage-init-dressrun.md` §3). The verify
+window therefore covers operator-domain DNS resolution + docs-build
+re-run only, not the substitution mechanism itself.
+
+A slip past T-8d on Option B forfeits the verify window and triggers
+the same §7 RA-3 ≥ 7d defer as Option A.
+
 ---
 
 ## 4. GA-cutover gate (T-7d)
@@ -198,6 +252,10 @@ review.
 ## 6. Cross-references
 
 - Engineering-side closure audit: `specs/_audits/2026-05-16-debt-016-statuspage-urls.md`
+- Dress-run audit (wave-25): `specs/_audits/2026-05-16-statuspage-init-dressrun.md`
+- Cutover dependency map (wave-27): `specs/_audits/2026-05-16-cutover-dependency-map.md`
+- GA cutover runbook: `specs/_runbooks/RB-GA-CUTOVER.md` §0 + §3 + §9
+- Reverse runbook (slip-window): `specs/_runbooks/RB-GA-LAUNCH-ROLLBACK.md` §7 RA-3
 - Build-time accessor: `apps/docs/src/statuspage-url.ts`
 - Build config wiring: `apps/docs/docusaurus.config.ts customFields.statuspageUrl`
 - DSR-channel runbook: `specs/_runbooks/RB-DSR-STATUSPAGE-PUBLISH-FAILED.md`
