@@ -194,15 +194,72 @@ A future follow-up may add a wasm32 smoke test driven from `corelink-billing-str
 ## 8. Caveats
 
 - **`portal.rs` + `webhook_dispatch.rs` use `std::time::SystemTime::now()`** — ~~OPEN~~ **CLOSED 2026-05-16 (wave-20)**. Replaced by a target-conditional [`Clock`] trait abstraction (`crates/corelink-stripe-real/src/clock.rs`): native injects `SystemClock` (wraps `SystemTime::now()`), wasm32 injects `WasmWorkerClock` (reads `js_sys::Date::now()` — never panics on `wasm32-unknown-unknown`), tests inject `InMemoryFakeClock` (deterministic). `StripeRealClientBuilder::with_clock` + `InMemoryPortalSessionCreator::with_clock` setters added. All `SystemTime::now()` call sites in the wasm32-safe surface (`portal.rs`, `webhook_dispatch.rs::SystemClock`) eliminated. Net-new tests: +4 lib (3 in `clock.rs`, 1 in `portal.rs::clock_injection_used_for_idempotency_keys`) + 1 doctest. Closure branch: `wt/r-prep-stripe-wasm32-clock-trait`.
+- **`corelink-billing-stripe-materializer::handler::SystemMatClock`** — ~~OPEN (wave-20 follow-on)~~ **CLOSED 2026-05-16 (wave-22)** — see §9.
 - **`client.rs` re-exports**: the `pub use client::{StripeRealClient, StripeRealClientBuilder}` re-export is cfg-gated to mirror the module gate. Callers using `corelink_stripe_real::StripeRealClient` on wasm32 will get a clean `unresolved import` (intended; they should be using the trait or the in-memory fake).
 - **Dev-dep `tokio`**: unchanged. Used only in test code (`#[tokio::test]` arms) which never runs on wasm32.
 
-## 9. Sign-off
+## 9. MatClock follow-on closure (wave-22, 2026-05-16)
+
+The wave-20 SEAL note flagged that `corelink-billing-stripe-materializer::handler::SystemMatClock` was intentionally left out of scope — it owned a separate `MatClock` trait (private to `handler.rs`) whose `SystemMatClock` impl called `std::time::SystemTime::now()` directly. On `wasm32-unknown-unknown` this would panic at runtime in the Cloudflare Worker before the first webhook materializes. Wave-22 closes that follow-on by mirroring the wave-20 pattern end-to-end.
+
+### 9.1 What changed
+
+- New module `crates/corelink-billing-stripe-materializer/src/clock.rs` exposing the [`MatClock`] trait + three impls:
+  - `SystemMatClock` — `cfg(not(target_arch = "wasm32"))`; wraps `SystemTime::now()`.
+  - `WasmWorkerMatClock` — `cfg(target_arch = "wasm32")`; reads `js_sys::Date::now()` with `is_finite()` + `< 0.0` clamping; never panics.
+  - `InMemoryFakeMatClock` — always available; `at_unix_ms` / `at_unix_seconds` / `advance(Duration)` / `set_unix_ms` for deterministic tests.
+- Trait surface: canonical `fn now(&self) -> SystemTime`; convenience `fn now_ms(&self) -> u64` with a default impl that derives from `now()` (saturates to `0` pre-epoch, clamps to `u64::MAX` on overflow). The handler keeps calling `clock.now_ms()` — no audit `ts_ms` semantics shifted.
+- Factory `default_mat_clock() -> Arc<dyn MatClock + Send + Sync>` — native picks `SystemMatClock`, wasm32 picks `WasmWorkerMatClock`. `D1SubscriptionStateHandler::new` now wires through this factory (was hardcoded `Arc::new(SystemMatClock)` in handler.rs, fatal on wasm32).
+- `handler.rs` no longer declares its own `MatClock` trait / `SystemMatClock` / `FixedMatClock`. The handler imports `MatClock` from `crate::clock` and the internal test fixture uses `InMemoryFakeMatClock::at_unix_ms(1_700_000_000_000)` instead of `FixedMatClock(1_700_000_000_000)`.
+- `Cargo.toml`: added `[target.'cfg(target_arch = "wasm32")'.dependencies] js-sys = { workspace = true }` (mirrors the wave-20 stripe-real arm). Native + `cf-billing-real` arms unchanged.
+- `src/lib.rs`: re-exports `MatClock`, `InMemoryFakeMatClock`, `default_mat_clock`, and the cfg-gated `SystemMatClock` (native) / `WasmWorkerMatClock` (wasm32). The handler's old `pub struct FixedMatClock` (only re-exposed for cross-crate tests, but nothing actually used it) is gone; downstream test crates should use `InMemoryFakeMatClock::at_unix_ms` instead.
+
+### 9.2 `SystemTime::now` call sites replaced
+
+| Site | Before | After |
+| --- | --- | --- |
+| `handler.rs::SystemMatClock::now_ms` | `std::time::SystemTime::now().duration_since(UNIX_EPOCH)...` | trait impl moved to `clock.rs::SystemMatClock::now() -> SystemTime` (native cfg-gated); the duration math is the default `MatClock::now_ms` derived from `now()` |
+
+One direct `SystemTime::now()` call site eliminated from the wasm32-safe surface (`handler.rs`). The new `clock.rs::SystemMatClock` is `cfg(not(target_arch = "wasm32"))`-gated, so the wasm32 crate graph no longer contains any reachable `SystemTime::now()` call.
+
+### 9.3 Tests net-new (+3)
+
+All three live in `src/clock.rs::tests`:
+
+1. `fake_clock_returns_injected_time_and_advances` — pins at `1_700_000_000` unix-s, checks `now_ms()` + `now() -> SystemTime`, then `advance(2_500ms)` + `set_unix_ms` round-trips.
+2. `system_clock_returns_non_decreasing_ms` — `cfg(not(target_arch = "wasm32"))`-gated; spin-loops until the OS clock advances, then asserts `b >= a`.
+3. `default_mat_clock_returns_target_appropriate_impl` — calls `default_mat_clock().now_ms()` + `.now()` on whatever the current target is. On native this exercises `SystemMatClock`; on wasm32 this exercises `WasmWorkerMatClock` (the wasm32-safe build path — `cargo build --target wasm32-unknown-unknown` proves the closure compiles).
+
+Plus 1 doctest on the `clock` module header showing `InMemoryFakeMatClock` deterministic-time idiom.
+
+### 9.4 Quality-gate evidence
+
+| Gate | Command | Result |
+| --- | --- | --- |
+| Native build | `cargo build -p corelink-billing-stripe-materializer` | green |
+| wasm32 build | `cargo build --target wasm32-unknown-unknown -p corelink-billing-stripe-materializer` | green |
+| Native tests | `cargo test -p corelink-billing-stripe-materializer` | 21 lib + 8 integration + 1 doctest; all passed (was 18 lib pre-wave-22) |
+| Workspace clippy | `cargo clippy --workspace --all-targets -- -D warnings` | green |
+| validate_specs.py | `python3 scripts/validate_specs.py` | green |
+| validate_references.py | `python3 scripts/validate_references.py` | green |
+
+### 9.5 Charter compliance
+
+| Constraint | Status |
+| --- | --- |
+| `#![forbid(unsafe_code)]` | preserved (crate root) |
+| No `unwrap` / `expect` / `panic` / `indexing_slicing` in `src/` | preserved (mutex-poison path returns inner deterministically per wave-20 idiom) |
+| `mod_module_files = "deny"` | preserved (`clock.rs` is a sibling module, not a `clock/mod.rs`) |
+| Audit fail-CLOSED ordering | preserved (no audit emit path semantics touched; only the clock impl behind `ts_ms` changed) |
+| DCO sign-off + Co-Authored-By | included in commit |
+
+## 10. Sign-off
 
 | Role | Status |
 | --- | --- |
 | Owner / Final Approver (Gustavo) | SEALED 2026-05-16 |
 | Architect | SEALED 2026-05-16 (per-module gate pattern matches cf-binding precedent) |
+| Wave-22 MatClock closure (Gustavo) | SEALED 2026-05-16 |
 
 ---
 
