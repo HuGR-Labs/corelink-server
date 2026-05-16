@@ -11,12 +11,13 @@ final_approver: "Gustavo Schneiter"
 reviewers: []
 supersedes: null
 superseded_by: null
-tags: ["governance", "reviewers", "staffing", "proposal", "framework-freeze", "wave-20", "lote-7", "ga"]
+tags: ["governance", "reviewers", "staffing", "proposal", "framework-freeze", "wave-20", "wave-22", "lote-7", "ga"]
 references:
   - "specs/00_framework.md"
   - "specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md"
   - "specs/_governance/reviewer_staffing_strategy.md"
   - "specs/03_architecture/adrs/ADR-0034-prr-staffing-waiver-solo-tier.md"
+  - "specs/_proposals/2026-05-16-framework-reviewer-roles-addendum.md"
 ---
 
 # Framework Reviewer Roles — Lote 7 Staffing Proposal (FW-H-1..4)
@@ -262,17 +263,29 @@ Until then, the proposal sits as DRAFT alongside `reviewer_staffing_strategy.md`
 
 ---
 
-## §10 Change log
+## §10 Change log + addendum cross-reference
+
+### §10.1 Wave-22 addendum (operating policy)
+
+The operating mechanics for executing this proposal in a small-org regime — dual-hat fallback formalization (OQ-1 Option C), cross-veto rule, sign-off SLA, reviewer training pack budget, 90-day rolling quarterly cadence, conflict-of-interest declaration — are captured in the wave-22 follow-on addendum:
+
+- `specs/_proposals/2026-05-16-framework-reviewer-roles-addendum.md` v0.1.0 (DRAFT alongside this proposal; transitions ACTIVE jointly at FROZEN cut).
+
+The addendum does NOT redefine FW-H-1..4 role scopes (§2.1–§2.4 of this proposal remain canonical); it specifies HOW the gate operates when staffing is constrained, when reviewers disagree, when sign-off stalls, when a reviewer onboards, when the framework drifts between freezes, and when reviewers have personal stake in artifacts under review. Owner reads both documents together at the same governance checkpoint.
+
+### §10.2 Change log
 
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 0.1.0 | 2026-05-16 | Gustavo Schneiter (via Claude Opus 4.7, wave-20 Lote 7) | Initial proposal. Defines 4 canonical roles for `00_framework.md §43.1` slots FW-H-1..4 to unblock Path A in wave-18 Lote 6 GA-freeze audit. Complements (does not supersede) `_governance/reviewer_staffing_strategy.md` v0.1.0. |
+| 0.1.0+wave22 | 2026-05-16 | Gustavo Schneiter (via Claude Opus 4.7, wave-22 Lote 7 absorption) | Added §10.1 cross-reference to addendum `specs/_proposals/2026-05-16-framework-reviewer-roles-addendum.md` v0.1.0. No semantic change to FW-H-* role scopes; addendum operates downstream of this proposal as operating-policy layer. |
 
 ---
 
 **Cross-references:**
 
 - `specs/00_framework.md §43.1` — slots updated in same wave-20 commit to link here.
-- `specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md §unblock-path-C-progress` — wave-20 update logs landing of this proposal as engineering-side READY.
+- `specs/_proposals/2026-05-16-framework-reviewer-roles-addendum.md` — wave-22 addendum specifying operating policy (dual-hat fallback, veto, SLA, training, cadence, COI).
+- `specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md §unblock-path-C-progress` — wave-20 update logs landing of this proposal as engineering-side READY; wave-22 update notes the addendum extends coverage to small-org case.
 - `specs/_governance/reviewer_staffing_strategy.md` — multi-tier strategy SOT; this proposal narrows Tier 1 framework-freeze gate.
-- `specs/03_architecture/adrs/ADR-0034-prr-staffing-waiver-solo-tier.md` — analogous waiver pattern (PRR-scoped); informs OQ-1 Option C fallback.
+- `specs/03_architecture/adrs/ADR-0034-prr-staffing-waiver-solo-tier.md` — analogous waiver pattern (PRR-scoped); informs OQ-1 Option C fallback; addendum §1.1 mandates an analogous ADR when dual-hat mode is invoked.
