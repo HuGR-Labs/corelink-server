@@ -330,7 +330,7 @@ Não — regulatory feature, sem A/B (multi-arm = compliance risk).
 > real `worker::Fetch`-backed adapter shipped wave-18.
 >
 > **Wave-18 closure note (2026-05-15):** scheduler-binding fully wired
-> wave-18 (commit `<WAVE18_COMMIT_SHA>`). The real
+> wave-18 (commit `26f86b1`). The real
 > `worker::Fetch`-backed
 > [`corelink_statuspage_real::StatuspageWasm32Client`] +
 > `worker::D1Database`-backed
