@@ -148,11 +148,16 @@ cargo test -p corelink-wasm
 
 | Runtime | Status |
 |---|---|
-| Node.js 18 | Supported |
-| Node.js 20 | Supported |
-| Node.js 22 | Supported |
+| Node.js 18 | **Unsupported** (EOL 2025-04-30; see migration note below) |
+| Node.js 20 | Best-effort (maintenance LTS until 2026-04-30; migrate to 22) |
+| Node.js 22 | **Supported (current LTS, EOL 2027-04-30)** — recommended |
 | Browser (ESM) | Supported |
 | Cloudflare Workers | Supported (wasm32 target) |
+
+> **ESM-by-default.** All canonical examples use `import` syntax. The
+> `@corelink/client` package exports ESM only; CommonJS `require()` is not
+> supported. Tenants on Node 20 should plan migration to Node 22 LTS — see
+> [`docs/internal/node22-migration.md`](../internal/node22-migration.md).
 
 ## Design
 
