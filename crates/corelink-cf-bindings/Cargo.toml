@@ -64,6 +64,29 @@ thiserror = { workspace = true }
 # wasm bindgen futures for async bridging in the worker handler.
 wasm-bindgen-futures = { workspace = true }
 
+# Wave-26 wasm32 baseline fix.
+#
+# `uuid 1.23.1` with `rng-getrandom` (used by tenant-path / corelink-audit
+# / corelink-pat / corelink-reapi / corelink-survey / corelink-webauthn —
+# all of which flow into this crate's reverse-dep chain via corelink-worker
+# and corelink-ac) pulls `getrandom 0.4`. Without this explicit dep the
+# `wasm_js` cargo feature is never enabled, the backend module is empty,
+# and the E0425 errors documented in the wave-25 audit §8 break the
+# wasm32-unknown-unknown build of corelink-clerk-cf,
+# corelink-dsr-statuspage-scheduler, corelink-privacy-erasure-worker, and
+# corelink-statuspage-real.
+#
+# The companion `--cfg=getrandom_backend="wasm_js"` rustflag is set in
+# `<workspace>/.cargo/config.toml`. Both halves are required: the cfg
+# selects the backend module, the feature pulls in the wasm-bindgen / js-sys
+# deps that the backend module uses.
+#
+# Lives here (in cf-bindings) because every CF worker crate that targets
+# wasm32 depends on this crate; feature unification therefore covers the
+# whole CF surface without per-leaf-crate plumbing.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom_v04 = { package = "getrandom", version = "0.4", default-features = false, features = ["wasm_js"] }
+
 # Serde for D1 row deserialisation in `CfD1DatabaseReal::first` (the
 # wasm32 production path delegates to `worker::D1PreparedStatement::first`
 # which is generic over `for<'a> Deserialize<'a>`). The native stub does
