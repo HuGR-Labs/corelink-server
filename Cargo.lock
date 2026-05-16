@@ -1296,6 +1296,7 @@ dependencies = [
  "corelink-stripe-real",
  "corelink-tier-selection",
  "hex",
+ "js-sys",
  "proptest",
  "serde",
  "serde_json",

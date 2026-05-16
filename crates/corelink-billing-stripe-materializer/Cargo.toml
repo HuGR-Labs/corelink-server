@@ -55,6 +55,17 @@ corelink-tier-selection = { path = "../corelink-tier-selection" }
 corelink-cf-bindings = { workspace = true, optional = true }
 corelink-audit-chain = { workspace = true, optional = true }
 
+# Wave-22: wasm32 wall-clock via `js_sys::Date::now()`. Closes the
+# wave-20 follow-on caveat — `D1SubscriptionStateHandler`'s
+# `SystemMatClock` previously called `SystemTime::now()` directly,
+# which panics at runtime on `wasm32-unknown-unknown`. The new
+# `WasmWorkerMatClock` (see `src/clock.rs`) reads the Worker's
+# `Date::now()` global instead. Mirrors the wave-20 closure in
+# `corelink-stripe-real::clock`. See audit
+# `specs/_audits/2026-05-16-stripe-wasm32-gate-lift.md §9`.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = { workspace = true }
+
 [dev-dependencies]
 proptest = { workspace = true }
 corelink-cf-bindings = { workspace = true }

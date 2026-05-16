@@ -57,6 +57,7 @@
 #![forbid(unsafe_code)]
 
 mod audit;
+pub mod clock;
 mod d1;
 mod handler;
 mod idempotency;
@@ -68,6 +69,11 @@ pub use audit::{
     AuditSeverity, BillingAuditEmitter, BillingAuditError, BillingAuditRecord,
     InMemoryBillingAuditEmitter, RealStripeAuditEmitter,
 };
+#[cfg(not(target_arch = "wasm32"))]
+pub use clock::SystemMatClock;
+#[cfg(target_arch = "wasm32")]
+pub use clock::WasmWorkerMatClock;
+pub use clock::{InMemoryFakeMatClock, MatClock, default_mat_clock};
 pub use d1::{BillingD1Error, BillingD1Writer, InMemoryBillingD1, MaterializedRow};
 pub use handler::{D1SubscriptionStateHandler, EVENT_MATERIALIZATION_MATRIX};
 pub use idempotency::D1IdempotencyStore;

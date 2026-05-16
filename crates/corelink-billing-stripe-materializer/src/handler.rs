@@ -38,6 +38,7 @@ use corelink_stripe_real::webhook_dispatch::{
 use corelink_tier_selection::tier::TierKind;
 
 use crate::audit::{AuditSeverity, BillingAuditEmitter, BillingAuditError, BillingAuditRecord};
+use crate::clock::{MatClock, default_mat_clock};
 use crate::d1::{BillingD1Error, BillingD1Writer, MaterializedRow};
 use crate::tier::{TierSelectError, TierSelector};
 
@@ -120,42 +121,6 @@ fn tier_to_mat(e: TierSelectError) -> MaterializerError {
     }
 }
 
-/// Wall-clock provider; production wires `SystemClock`, tests inject
-/// a fixed instant so audit `ts_ms` is deterministic.
-pub trait MatClock: fmt::Debug + Send + Sync {
-    /// Current unix milliseconds.
-    fn now_ms(&self) -> u64;
-}
-
-/// Default system-clock impl.
-#[derive(Clone, Copy, Debug, Default)]
-struct SystemMatClock;
-
-impl MatClock for SystemMatClock {
-    fn now_ms(&self) -> u64 {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
-            .unwrap_or(0)
-    }
-}
-
-/// Fixed-time test clock. Public + `#[allow(dead_code)]` because the
-/// struct is reachable only via the test harness; production callers
-/// drive [`D1SubscriptionStateHandler::new`] which wires `SystemClock`.
-#[allow(dead_code, reason = "test helper exposed to downstream test crates")]
-#[derive(Clone, Copy, Debug)]
-pub struct FixedMatClock(
-    /// Fixed ms value.
-    pub u64,
-);
-
-impl MatClock for FixedMatClock {
-    fn now_ms(&self) -> u64 {
-        self.0
-    }
-}
-
 /// Production [`StateMaterializer`] implementation.
 pub struct D1SubscriptionStateHandler {
     d1: Arc<dyn BillingD1Writer>,
@@ -177,7 +142,13 @@ impl fmt::Debug for D1SubscriptionStateHandler {
 
 impl D1SubscriptionStateHandler {
     /// Construct a new handler wiring `d1` + `audit` + `tier_selector`
-    /// behind the canonical `SystemClock`.
+    /// behind the canonical production [`MatClock`]
+    /// ([`crate::clock::default_mat_clock`]): native targets get
+    /// [`crate::clock::SystemMatClock`]; wasm32 targets get
+    /// [`crate::clock::WasmWorkerMatClock`] which reads
+    /// `js_sys::Date::now()` (avoiding the
+    /// `wasm32-unknown-unknown` `SystemTime::now()` runtime panic per
+    /// wave-22 closure of the wave-20 follow-on caveat).
     #[must_use]
     pub fn new(
         d1: Arc<dyn BillingD1Writer>,
@@ -188,11 +159,13 @@ impl D1SubscriptionStateHandler {
             d1,
             audit,
             tier_selector,
-            clock: Arc::new(SystemMatClock),
+            clock: default_mat_clock(),
         }
     }
 
-    /// Inject a custom [`MatClock`] (tests use [`FixedMatClock`]).
+    /// Inject a custom [`MatClock`] (tests use
+    /// [`crate::clock::InMemoryFakeMatClock`] for deterministic
+    /// timestamps).
     #[must_use]
     pub fn with_clock(mut self, clock: Arc<dyn MatClock>) -> Self {
         self.clock = clock;
@@ -624,6 +597,7 @@ impl StateMaterializer for D1SubscriptionStateHandler {
 mod tests {
     use super::*;
     use crate::audit::InMemoryBillingAuditEmitter;
+    use crate::clock::InMemoryFakeMatClock;
     use crate::d1::InMemoryBillingD1;
     use crate::tier::InMemoryTierSelector;
     use corelink_tier_selection::tier::TierKind;
@@ -640,7 +614,9 @@ mod tests {
             ("plan_pro", TierKind::Pro),
         ]));
         let handler = D1SubscriptionStateHandler::new(d1.clone(), audit.clone(), sel)
-            .with_clock(Arc::new(FixedMatClock(1_700_000_000_000)));
+            .with_clock(Arc::new(InMemoryFakeMatClock::at_unix_ms(
+                1_700_000_000_000,
+            )));
         (handler, d1, audit)
     }
 
