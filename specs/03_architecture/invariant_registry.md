@@ -3,7 +3,7 @@ id: "INVARIANT-REGISTRY"
 type: "invariant"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "0.2.2"
+version: "0.2.3"
 created: "2026-04-24"
 updated: "2026-05-16"
 owner: "Gustavo Schneiter"
@@ -17,7 +17,7 @@ tags: ["architecture", "invariants", "registry", "tla"]
 # Invariant Registry — Catálogo Canônico de INV-XXX
 
 > **doc_status:** DRAFT
-> **Versão:** 0.2.2
+> **Versão:** 0.2.3
 > **Última atualização:** 2026-05-16 (Wave-24 R-PREP `auth_pat_revoke.tla` dispatch: INV-PAT-REVOKE-PROPAGATION §3.28 PLANNED → TLA-VERIFIED via new `specs/tla/auth_pat_revoke.tla` + PR/nightly cfgs + CI matrix wiring; safety 5 invariants (`InvRevokedTokenNeverValidates` + `InvRevokeAuditAtomic` + `InvRevokeIsIdempotent` + `InvRegionImpliesSoTRevoked` + `InvRevokeIsMonotonic`) + liveness `InvRevokeAtLeastOncePropagation` proven; PR-lane 1 263 distinct states / depth 10 / 3 s wall clock; nightly 61 293 distinct states / depth 14 / 1 min 06 s wall clock; all temporal branches green; see `specs/_audits/2026-05-16-auth-pat-revoke-tla.md`. Wave-23 invariant-draft sweep: §3.27 OPS domain (4 INVs INV-S17-OPS-EXCLUSIVITY / INV-S17-SEV1-DRILL-PAUSE / INV-S17-CHAOS-STAGING-ONLY / INV-S17-ONCALL-FATIGUE-AUTOROTATE) promoted from S-17 `_spec_contract.md §8`; §3.28 PAT revocation domain (INV-PAT-REVOKE-PROPAGATION) promoted from apps/docs OpenAPI + 4 i18n MDX endpoint contracts; 5 aliases added (INV-AUDIT-CHAIN, INV-AUDIT-EMIT-ATOMIC, INV-AUTH-WEBAUTHN family-shorthand, INV-BLAKE3-256-LOWER-HEX-64 subsumed) — see `specs/_audits/2026-05-16-inv-draft-sweep.md`. 2026-05-07 Hardening: INV-LRU-CONSISTENCY race-window claim corrected (S-07 R5 P2-1); INV-OBS-CARDINALITY-BUDGET suspended-tier policy documented (S-09 R5 P2-3))
 > **Owner:** Gustavo Schneiter
 > **Aprovador Final:** Gustavo Schneiter
@@ -617,6 +617,168 @@ INV introduced in `apps/server/src/routes/signup.rs` `insert_or_existing` (wave-
 - `specs/_audits/2026-05-16-inv-signup-token-tla.md` — Wave-30 R-PREP dispatch audit (TLC verification ledger).
 
 **Aliases históricos:** nenhum. Declared inline in `signup.rs` `insert_or_existing` doc comment + wave-29 stream-10 closure §6.2 candidate registration, promoted to registry in Wave-30 stream-4 R-PREP (2026-05-16).
+
+### 3.30 INV inheritance index (machine-readable structured field) — W26-P2-03 (2026-05-16)
+
+Wave-26 adversarial review (`specs/_audits/2026-05-16-p2-absorption-sweep-w25-28.md §49 W26-P2-03`) identified that inheritance chains (`INV-CAS-IDEMPOTENCY → cas_integrity.tla`, `INV-GC-004 → InvGCReRefProtected`) were asserted by prose only — a future regression dropping an inherited TLA property would not be caught mechanically. This section adds a **structured `inherits_from` field** that machines can read, plus a reciprocal `inherited_by` index. Validator `scripts/validate_inv_inheritance.py` parses this section and enforces:
+
+- Every `inherits_from` target exists (TLA file on disk, OR property string present in TLA spec, OR parent INV ID present in registry).
+- Every parent target has a reciprocal `inherited_by` entry listing the child INV (bidirectional integrity).
+
+**Schema** (each entry under `chains:`):
+
+- `inv` (required, string) — child INV ID present elsewhere in this registry §3.
+- `inherits_from` (required, non-empty list of strings) — each entry is one of:
+  - TLA spec path: `specs/tla/<name>.tla`
+  - TLA property name: `specs/tla/<name>.tla:<PropertyName>` (use `:` as separator)
+  - Another INV ID: `INV-<NAME>`
+
+**Reciprocal index** under `parents:` (one entry per distinct parent):
+
+- `target` (required, string) — same forms as `inherits_from` entries.
+- `inherited_by` (required, non-empty list of INV IDs).
+
+**Additivity contract**: this section is OPTIONAL — INVs not listed here validate exactly as before. The schema does NOT mutate any existing §3.1–§3.29 table row.
+
+```yaml
+# inv-inheritance-index v1 — parsed by scripts/validate_inv_inheritance.py
+# Added 2026-05-16 (W26-P2-03 — DEFER-POST-GA absorption from wave-30 stream-08).
+# Sources cited inline; only chains clearly documented in §3.X or §4.X prose
+# are converted (no speculative chains per W26-P2-03 charter).
+chains:
+  - inv: INV-CAS-IDEMPOTENCY
+    inherits_from:
+      - specs/tla/cas_integrity.tla
+    source: "§4.1 L633 — 'Coberto por cas_integrity.tla via Hash determinístico'"
+
+  - inv: INV-CAS-IMMUTABILITY
+    inherits_from:
+      - specs/tla/cas_integrity.tla:InvCASImmutability
+    source: "§4.1 L634 — 'Coberto por cas_integrity.tla (InvCASImmutability)'"
+
+  - inv: INV-DIGEST-VERIFICATION
+    inherits_from:
+      - specs/tla/cas_integrity.tla:InvPoisoningRejected
+    source: "§4.1 L639 — 'Coberto por cas_integrity.tla (InvPoisoningRejected)'"
+
+  - inv: INV-AC-TENANT-SCOPED
+    inherits_from:
+      - INV-TENANT-ISOLATION
+    source: "§3.3 L93 — 'Deriva de INV-TENANT-ISOLATION' + §4.1 L635"
+
+  - inv: INV-GC-004
+    inherits_from:
+      - specs/tla/gc_correctness.tla:InvGCReRefProtected
+    source: "§3.4 L102 + §4.1 L637 — 'Coberto por gc_correctness.tla (InvGCReRefProtected)'"
+
+  - inv: INV-GC-MARK-STARTED-AT-IMMUTABLE
+    inherits_from:
+      - specs/tla/gc_correctness.tla
+    source: "§3.X L349 — 'Coberto por gc_correctness.tla' (TLA+ obligation MarkPhaseStart)"
+
+  - inv: INV-GC-MARK-STARTED-AT-ATOMIC
+    inherits_from:
+      - specs/tla/gc_correctness.tla
+    source: "§3.X L351 — 'Coberto por gc_correctness.tla'"
+
+  - inv: INV-GC-REACHABLE-SET-COMPLETE
+    inherits_from:
+      - specs/tla/gc_correctness.tla
+    source: "§4.1 L663 — 'Parent: gc_correctness.tla (InvGCReachableNeverDeleted)' (the dedicated spec gc_reachable_set_complete.tla strengthens but inherits the parent)"
+
+  - inv: INV-KEY-AUDIT
+    inherits_from:
+      - specs/tla/audit_immutability.tla
+    source: "§3.13 L196 — 'Coberto por audit_immutability.tla'"
+
+  - inv: INV-AUTH-AUDIT-PSEUDONYMIZATION
+    inherits_from:
+      - specs/tla/audit_immutability.tla
+    source: "§4.1 L660 — 'Parent: audit_immutability.tla'"
+
+  - inv: INV-SUB-PROCESSOR-AUDIT-FAIL-CLOSED
+    inherits_from:
+      - specs/tla/audit_immutability.tla
+    source: "§4.1 L664 + §3.X L413 + §4.3 L721 — 'Parent: audit_immutability.tla' / 'Covered by INV-AUDIT-APPEND-ONLY audit_immutability.tla ✅ GREEN inheritance'"
+
+  - inv: INV-OFFBOARDING-AUDIT-COMPLETE
+    inherits_from:
+      - specs/tla/audit_immutability.tla
+    source: "§3.X L534 — 'Covered by audit_immutability.tla ✅ GREEN inheritance'"
+
+  - inv: INV-BILLING-PORTAL-AUDIT-FAIL-CLOSED
+    inherits_from:
+      - specs/tla/audit_immutability.tla
+    source: "§3.X L455 — 'Covered by audit_immutability.tla (split-tier ADR-S11-002 inheritance)'"
+
+  - inv: INV-AUTH-REVOCATION-SLO-60S
+    inherits_from:
+      - specs/tla/auth_revocation.tla
+    source: "§4.1 L641 — 'Coberto por auth_revocation.tla (RevokedEventuallyConverges)'"
+
+  - inv: INV-AUTH-MASS-REVOKE-ATOMIC
+    inherits_from:
+      - specs/tla/auth_revocation.tla
+    source: "§4.1 L642 — 'Coberto por auth_revocation.tla (InvMassRevokeAtomicOutbox)'"
+
+  - inv: INV-AUTH-PROPAGATION-AT-LEAST-ONCE
+    inherits_from:
+      - specs/tla/auth_revocation.tla
+    source: "§4.1 L643 — 'Coberto por auth_revocation.tla (InvRegionMonotonic + WF Deliver)'"
+
+# Reciprocal index — every parent target above MUST appear here with the
+# child INVs that inherit it. Validator enforces bidirectional integrity.
+parents:
+  - target: specs/tla/cas_integrity.tla
+    inherited_by:
+      - INV-CAS-IDEMPOTENCY
+
+  - target: specs/tla/cas_integrity.tla:InvCASImmutability
+    inherited_by:
+      - INV-CAS-IMMUTABILITY
+
+  - target: specs/tla/cas_integrity.tla:InvPoisoningRejected
+    inherited_by:
+      - INV-DIGEST-VERIFICATION
+
+  - target: INV-TENANT-ISOLATION
+    inherited_by:
+      - INV-AC-TENANT-SCOPED
+
+  - target: specs/tla/gc_correctness.tla:InvGCReRefProtected
+    inherited_by:
+      - INV-GC-004
+
+  - target: specs/tla/gc_correctness.tla
+    inherited_by:
+      - INV-GC-MARK-STARTED-AT-IMMUTABLE
+      - INV-GC-MARK-STARTED-AT-ATOMIC
+      - INV-GC-REACHABLE-SET-COMPLETE
+
+  - target: specs/tla/audit_immutability.tla
+    inherited_by:
+      - INV-KEY-AUDIT
+      - INV-AUTH-AUDIT-PSEUDONYMIZATION
+      - INV-SUB-PROCESSOR-AUDIT-FAIL-CLOSED
+      - INV-OFFBOARDING-AUDIT-COMPLETE
+      - INV-BILLING-PORTAL-AUDIT-FAIL-CLOSED
+
+  - target: specs/tla/auth_revocation.tla
+    inherited_by:
+      - INV-AUTH-REVOCATION-SLO-60S
+      - INV-AUTH-MASS-REVOKE-ATOMIC
+      - INV-AUTH-PROPAGATION-AT-LEAST-ONCE
+```
+
+**Conversion scope** (W26-P2-03): 16 chains converted across 8 distinct parent targets. All chains were already documented in prose in §3.X / §4.X — no speculative additions. Other prose forms (e.g. "subsumed by", "indirectly covered", "sibling of") were intentionally **not** converted: those describe weaker semantic relationships than inheritance and require separate field design to model accurately.
+
+**Validator failure modes** (exit 1):
+
+- `[INV-X] inherits_from target Y does not exist` (file missing OR property absent OR parent INV unknown).
+- `[INV-X] inherits_from cites parent P but parents[P].inherited_by does not list INV-X` (asymmetric link).
+- `[parents[P]] inherited_by lists INV-Y but INV-Y has no chain entry citing P` (asymmetric link inverse).
+
+**CI wiring**: `scripts/validate_inv_inheritance.py` runs as a smoke step in the canonical-validation chain alongside `validate_specs.py` and `validate_inv_promotion.py`. Live registry post-W26-P2-03 conversion validates green.
 
 ---
 
