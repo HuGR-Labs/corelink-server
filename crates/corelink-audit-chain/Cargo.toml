@@ -46,6 +46,20 @@ default = []
 # See `specs/_audits/2026-05-16-neon-shadow-real-driver.md` §3.
 neon-real = []
 
+# Wave-20 test-infra: gate the 5 ephemeral-Postgres integration tests
+# that live in `tests/neon_shadow_real.rs`. The harness boots a
+# `postgres:16-alpine` testcontainer per test (Docker required), applies
+# the wave-18 + wave-20 migrations, binds a tokio-postgres-backed
+# `NeonExecutor` adapter, and exercises `RealNeonShadowSink` end-to-end.
+#
+# OFF by default — local dev + CI runs that lack Docker stay green via
+# `#[cfg_attr(not(feature = "live-pg"), ignore)]` on every test.
+#
+# ON via `cargo test -p corelink-audit-chain --features live-pg` —
+# requires a reachable Docker daemon (see
+# `specs/_audits/2026-05-16-neon-shadow-pg-testharness.md`).
+live-pg = []
+
 [dependencies]
 thiserror = { workspace = true }
 serde = { workspace = true }
@@ -65,6 +79,16 @@ proptest = { workspace = true }
 rand = "0.9"
 rand_chacha = "0.9"
 criterion = { workspace = true }
+# Wave-20 ephemeral-Postgres test harness (`tests/harness/pg_container.rs`).
+# Dev-deps only — never linked into the library or CF Worker bundle.
+# The `live-pg` feature gates the 5 tests in `tests/neon_shadow_real.rs`
+# that exercise `RealNeonShadowSink` against a `postgres:16-alpine`
+# testcontainer. Docker is required at run-time; `cargo build` without
+# the feature does NOT require Docker.
+testcontainers = "0.21"
+testcontainers-modules = { version = "0.9", features = ["postgres"] }
+tokio = { workspace = true }
+tokio-postgres = { version = "0.7", features = ["with-uuid-1", "with-serde_json-1"] }
 
 [[bin]]
 name = "verifier"
@@ -73,6 +97,15 @@ path = "src/bin/verifier.rs"
 [[test]]
 name = "prop_audit_chain"
 path = "tests/prop_audit_chain.rs"
+
+# Wave-20 ephemeral-Postgres integration suite. Every test inside is
+# annotated `#[cfg_attr(not(feature = "live-pg"), ignore)]` so the
+# default `cargo test -p corelink-audit-chain` run skips them when
+# Docker is unavailable; `--features live-pg` opts in to the real
+# boot path.
+[[test]]
+name = "neon_shadow_real"
+path = "tests/neon_shadow_real.rs"
 
 [[bench]]
 name = "merkle_append"
