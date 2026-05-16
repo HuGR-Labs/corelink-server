@@ -30,11 +30,37 @@
 )]
 
 use std::net::SocketAddr;
+use std::sync::Once;
 use std::time::Duration;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use uuid::Uuid;
+
+/// Wave-23 (W23-RUSTLS-INIT): install the `ring` CryptoProvider as
+/// rustls' process-wide default exactly once per test binary.
+///
+/// rustls 0.23 requires either (a) exactly one provider feature flag
+/// set across all dependent crates so auto-install can pick it
+/// unambiguously, OR (b) an explicit `CryptoProvider::install_default()`
+/// call at process init. Today the dep tree carries only `ring`, so
+/// auto-install would succeed — but a future feature-flag change (e.g.
+/// adding `aws-lc-rs` alongside `ring`) would make auto-install
+/// ambiguous and panic with "multiple CryptoProviders available". This
+/// explicit init is the defensive guard: it runs before the CLI's
+/// `HttpsConnectorBuilder::new()` path so the provider is always set,
+/// independent of feature-flag drift.
+///
+/// `install_default()` returns `Err` if a provider is already installed
+/// — we ignore that error because it means the auto-install already
+/// won the race, which is also a valid post-state. `Once` guarantees
+/// the body runs at most once per process.
+fn init_rustls_provider() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    });
+}
 
 use corelink_audit_chain::{AuditExporter, ExportWindow};
 use corelink_cli::audit_export::build_fixture_exporter;
@@ -177,6 +203,7 @@ async fn spawn_fixture_server(scenario: Scenario) -> SocketAddr {
 /// with `verified=true` + `events_verified=10`.
 #[tokio::test]
 async fn streams_clean_response_and_verifies() {
+    init_rustls_provider();
     let (body, anchor) = build_ndjson_body(10);
     let addr = spawn_fixture_server(Scenario::CleanHappyPath {
         body,
@@ -218,6 +245,7 @@ async fn streams_clean_response_and_verifies() {
 /// the `AUDIT_EXPORT_ABORTED:` diagnostic + returns exit-code 65.
 #[tokio::test]
 async fn mid_stream_abort_trailer_detected_and_diagnostic_surfaced() {
+    init_rustls_provider();
     // Body bytes can be anything — the CLI must short-circuit on the
     // trailer BEFORE verifying the chain. We emit a single
     // (well-formed) row + manifest so a future regression where the
@@ -282,6 +310,7 @@ async fn mid_stream_abort_trailer_detected_and_diagnostic_surfaced() {
 /// reserved for the abort-trailer arm).
 #[tokio::test]
 async fn network_failure_surfaces_structured_error() {
+    init_rustls_provider();
     let addr = spawn_fixture_server(Scenario::DropConnection).await;
     let url = format!("http://{addr}/v1/audit/export?from=0&to=10000");
     let res = run_verify_ndjson_http(
