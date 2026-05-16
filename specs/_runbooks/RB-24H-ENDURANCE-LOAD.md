@@ -3,7 +3,7 @@ id: "RB-24H-ENDURANCE-LOAD"
 type: "runbook"
 doc_status: "ACTIVE"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-16"
 updated: "2026-05-16"
 owner: "Engineering Lead"
@@ -53,12 +53,21 @@ traffic profile.
 | Variant   | When                                  | Duration | Profile               |
 |-----------|---------------------------------------|----------|-----------------------|
 | smoke     | Every PR that touches harness files   | 30s      | 50 RPS local 127.0.0.1 |
+| dressrun  | Wave-25+ manual pre-cutover wiring    | 10min    | 100 RPS local mock    |
 | nightly   | CI nightly at 02:00 UTC               | 2h       | 1000 RPS staging      |
 | full      | Manual pre-GA drill (T-3 days)        | 24h      | 1000 RPS staging      |
 
 Smoke is wired through `scripts/run_24h_endurance.sh smoke` and runs even
 if the local server is not up — the runner degrades to
 `smoke=red[unreachable]` so the harness wiring is still verifiable.
+
+Dressrun is wired through `scripts/run_24h_endurance.sh dressrun` and
+exercises the 10-min profile (2-min ramp-up to 100 RPS, 6-min sustain,
+2-min ramp-down) against a local in-memory mock or the `apps/server`
+binary in InMemory wiring. It is **not** a substitute for the 24h drill;
+its sole purpose is end-to-end wiring validation (k6 → summary →
+analyzer → verdict) before the full pre-GA drill is scheduled. See
+§10 dress-run history and `specs/_audits/2026-05-16-endurance-10min-dressrun.md`.
 
 ## 3. Drift floors (per route p99)
 
@@ -88,6 +97,27 @@ The runner targets `http://127.0.0.1:8787` by default with a stub PAT.
 If `corelink-server` is running locally the smoke run hits the real
 routes; otherwise it writes `smoke=red[unreachable]` and exits 0. Either
 way the harness wiring (k6 script, fixtures, analyser) is exercised.
+
+### 4.1b Dressrun (local, 10min)
+
+```bash
+# Option A: against the in-memory Python mock target
+python3 scripts/_dressrun_mock_target.py --port 8787 &
+MOCK_PID=$!
+scripts/run_24h_endurance.sh dressrun
+kill "$MOCK_PID"
+
+# Option B: against apps/server in InMemory wiring (preferred)
+cargo run --release -p corelink-server &
+SRV_PID=$!
+scripts/run_24h_endurance.sh dressrun
+kill "$SRV_PID"
+```
+
+The dressrun mode exports `DURATION=10min` and `K6_PROFILE=10min`. It
+defaults to `http://127.0.0.1:8787` and tolerates unreachable target
+(same semantics as smoke). Use it before scheduling a full 24h drill to
+prove the harness + analyzer pipeline is intact on a clean dev box.
 
 ### 4.2 Nightly (CI, 2h)
 
@@ -170,7 +200,9 @@ even if the gate metric itself is green.
 - `tests/load/fixtures/customer-routes.ndjson`
 - `scripts/run_24h_endurance.sh`
 - `scripts/analyze_endurance_run.py`
+- `scripts/_dressrun_mock_target.py`
 - `specs/_audits/2026-05-16-24h-endurance-harness.md`
+- `specs/_audits/2026-05-16-endurance-10min-dressrun.md`
 - `specs/_runbooks/RB-ENDURANCE-24H-DRILL.md`
 - `specs/_runbooks/RB-GA-CUTOVER.md`
 - `specs/_runbooks/RB-PERF-REGRESSION.md`
@@ -181,6 +213,16 @@ even if the gate metric itself is green.
 
 ## 9. Change log
 
-| Version | Date       | Author              | Change                  |
-|---------|------------|---------------------|-------------------------|
-| 1.0.0   | 2026-05-16 | Gustavo Schneiter   | Initial draft (wave-22). |
+| Version | Date       | Author              | Change                                           |
+|---------|------------|---------------------|--------------------------------------------------|
+| 1.0.0   | 2026-05-16 | Gustavo Schneiter   | Initial draft (wave-22).                         |
+| 1.1.0   | 2026-05-16 | Gustavo Schneiter   | Wave-25 dress-run: 10min profile + dressrun mode + analyzer p99/threshold hardenings (`AUDIT-W25-ENDURANCE-10MIN-DRESSRUN`). |
+
+## 10. Dress-run history
+
+Each entry represents a `dressrun` invocation that validated the harness
++ analyzer plumbing before scheduling a full 24h drill.
+
+| Date       | Wave | Operator           | Target                  | Profile | Verdict (real run) | GREENLIGHT path | Regression-flip (5x) | Notes                                                              |
+|------------|------|--------------------|-------------------------|---------|--------------------|-----------------|----------------------|--------------------------------------------------------------------|
+| 2026-05-16 | w25  | gustavoschneiter   | 127.0.0.1:8787 (mock)   | 10min   | BLOCK              | PASS            | PASS                 | 45 109 iterations / mock saturated cas/upload → real RED on G1 stdout-tail. Audit: `specs/_audits/2026-05-16-endurance-10min-dressrun.md`. Analyzer fixes: p99 numeric fallback + stdout-breach override. |

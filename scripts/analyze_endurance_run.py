@@ -78,7 +78,77 @@ def _route_metric(summary: dict[str, Any], route: str) -> dict[str, Any] | None:
     return None
 
 
-def _gate_g1(summary: dict[str, Any] | None) -> tuple[str, list[str]]:
+def _extract_p99(metric: dict[str, Any], floor_ms: float) -> tuple[float | None, bool | None]:
+    """Return ``(p99_value, threshold_pass)``.
+
+    k6 ``--summary-export`` does NOT include a numeric ``p(99)`` field on
+    Trend metrics by default; only ``avg/min/med/max/p(90)/p(95)`` are
+    serialised. The p99 value is enforced via a ``thresholds`` entry
+    (e.g. ``p(99)<400``) whose boolean result IS present on the metric.
+
+    We therefore look in this order:
+      1) explicit numeric ``p(99)`` / ``p99`` field (rare),
+      2) the ``thresholds`` map for any ``p(99)<NNN`` expression,
+      3) ``None`` if neither is present.
+    """
+    p99 = metric.get("p(99)") or metric.get("p99")
+    if p99 is not None:
+        try:
+            v = float(p99)
+        except (TypeError, ValueError):
+            v = None
+        if v is not None:
+            return (v, v <= float(floor_ms))
+    thresholds = metric.get("thresholds") or {}
+    if isinstance(thresholds, dict):
+        for expr, result in thresholds.items():
+            if "p(99)" in expr or "p99" in expr:
+                # result is bool in summary-export. True == threshold met.
+                if isinstance(result, dict):
+                    ok = bool(result.get("ok"))
+                else:
+                    ok = bool(result)
+                return (None, ok)
+    return (None, None)
+
+
+def _stdout_threshold_breach_routes(stdout_log: Path) -> set[str]:
+    """Parse ``k6-stdout.log`` for the final ``thresholds … have been
+    crossed`` line. Returns the set of route metric keys that k6
+    reported as breached. Empty set if no breach line is present.
+
+    This is the source of truth for k6 threshold pass/fail in
+    ``--summary-export`` because the per-metric ``thresholds`` map can
+    contain stale intermediate booleans.
+    """
+    if not stdout_log.exists():
+        return set()
+    breached: set[str] = set()
+    try:
+        text = stdout_log.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return set()
+    for line in text.splitlines():
+        if "thresholds on metrics" in line and "have been crossed" in line:
+            # Format: ...thresholds on metrics 'route_latency{route:...}, route_latency{...}' have been crossed
+            try:
+                inner = line.split("thresholds on metrics", 1)[1]
+                inner = inner.split("have been crossed", 1)[0]
+                inner = inner.strip().strip("'\"")
+                for part in inner.split(","):
+                    p = part.strip().strip("'\"")
+                    if p:
+                        breached.add(p)
+            except (IndexError, ValueError):
+                continue
+    return breached
+
+
+def _gate_g1(
+    summary: dict[str, Any] | None,
+    stdout_breaches: set[str] | None = None,
+) -> tuple[str, list[str]]:
+    stdout_breaches = stdout_breaches or set()
     if not summary:
         return ("UNKNOWN", ["G1: no k6-summary.json present"])
     if summary.get("preflight") == "unreachable":
@@ -93,17 +163,41 @@ def _gate_g1(summary: dict[str, Any] | None) -> tuple[str, list[str]]:
             verdict = "UNKNOWN" if verdict == "GREEN" else verdict
             notes.append(f"G1[{route}]: metric absent (no samples).")
             continue
-        p99 = m.get("p(99)") or m.get("p99")
-        if p99 is None:
-            notes.append(f"G1[{route}]: p99 missing from metric payload.")
-            continue
-        ok = float(p99) <= float(floor_ms)
-        notes.append(
-            f"G1[{route}]: p99={p99:.1f}ms floor={floor_ms}ms "
-            f"-> {'GREEN' if ok else 'RED'}"
-        )
-        if not ok:
+        # k6-stdout final summary is authoritative for threshold pass/fail.
+        sub_key = f"route_latency{{route:{route}}}"
+        if sub_key in stdout_breaches:
+            notes.append(
+                f"G1[{route}]: k6-stdout reports threshold breach "
+                f"(p(99) > {floor_ms}ms floor) -> RED"
+            )
             verdict = "RED"
+            continue
+        p99_val, threshold_ok = _extract_p99(m, floor_ms)
+        if p99_val is None and threshold_ok is None:
+            # Neither numeric nor threshold available — cannot judge.
+            verdict = "UNKNOWN" if verdict == "GREEN" else verdict
+            notes.append(
+                f"G1[{route}]: p99 unavailable (numeric absent AND no "
+                f"p(99) threshold present). Treating as UNKNOWN."
+            )
+            continue
+        if p99_val is not None:
+            ok = float(p99_val) <= float(floor_ms)
+            notes.append(
+                f"G1[{route}]: p99={p99_val:.1f}ms floor={floor_ms}ms "
+                f"-> {'GREEN' if ok else 'RED'}"
+            )
+            if not ok:
+                verdict = "RED"
+        else:  # threshold_ok is known
+            ok = bool(threshold_ok)
+            notes.append(
+                f"G1[{route}]: numeric p99 absent; threshold "
+                f"p(99)<{floor_ms} -> {'GREEN' if ok else 'RED'} (from "
+                f"k6 threshold evaluation)"
+            )
+            if not ok:
+                verdict = "RED"
     return (verdict, notes)
 
 
@@ -171,8 +265,9 @@ def main(argv: list[str] | None = None) -> int:
 
     meta = _read_json(run_dir / "run-meta.json") or {}
     summary = _read_json(run_dir / "k6-summary.json") or {}
+    stdout_breaches = _stdout_threshold_breach_routes(run_dir / "k6-stdout.log")
 
-    g1 = _gate_g1(summary)
+    g1 = _gate_g1(summary, stdout_breaches)
     g2 = _gate_g2(meta)
     g3 = _gate_g3(meta)
     g4 = _gate_g4(meta)

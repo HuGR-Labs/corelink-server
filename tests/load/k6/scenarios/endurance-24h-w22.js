@@ -25,9 +25,15 @@
 //     without dominating SLO measurements.
 //
 // SHORT-RUN VARIANTS
-//   DURATION=24h (default — ramp-up 1h, sustain 22h, ramp-down 1h)
-//   DURATION=2h  (CI nightly — ramp-up 5m, sustain 110m, ramp-down 5m)
-//   DURATION=30s (smoke — ramp-up 5s, sustain 20s, ramp-down 5s)
+//   DURATION=24h   (default — ramp-up 1h, sustain 22h, ramp-down 1h)
+//   DURATION=2h    (CI nightly — ramp-up 5m, sustain 110m, ramp-down 5m)
+//   DURATION=10min (wave-25 dress-run — ramp-up 2m, sustain 6m @ 100 RPS, ramp-down 2m)
+//   DURATION=30s   (smoke — ramp-up 5s, sustain 20s, ramp-down 5s)
+//
+// PROFILE SELECTOR
+//   K6_PROFILE=10min also selects the 10-min dress-run profile when
+//   `DURATION` is unset (kept for runner ergonomics — see wave-25
+//   `scripts/run_24h_endurance.sh dressrun`).
 //
 // METRICS (custom k6 Trends/Counters)
 //   - `route_latency` per route (p50/p90/p99 emitted via thresholds)
@@ -68,7 +74,14 @@ import { SharedArray } from 'k6/data';
 // ─────────────────────────────────────────────────────────────────────────
 const TARGET_HOST = __ENV.K6_TARGET_HOST || 'http://127.0.0.1:8787';
 const AUTH_BEARER = __ENV.K6_AUTH_BEARER || 'stub-staging-pat';
-const DURATION = __ENV.DURATION || '24h';
+// `K6_PROFILE` is a runner-ergonomics shorthand that selects a known
+// profile shape; DURATION (if set) always wins so operators can override.
+const PROFILE = (__ENV.K6_PROFILE || '').toLowerCase();
+const PROFILE_TO_DURATION = {
+  '10min': '10min',
+  dressrun: '10min',
+};
+const DURATION = __ENV.DURATION || PROFILE_TO_DURATION[PROFILE] || '24h';
 const ALLOW_ADVERSARIAL = (__ENV.K6_ALLOW_ADVERSARIAL || 'no').toLowerCase() === 'yes';
 const ENDURANCE_CONFIRM = (__ENV.K6_ENDURANCE_CONFIRM || 'no').toLowerCase() === 'yes';
 
@@ -81,6 +94,8 @@ if (!ALLOWED_HOST_RE.test(TARGET_HOST)) {
   );
 }
 
+// 10min is short enough that the operator interlock is not required —
+// it is the wave-25 dress-run profile and is meant to be cheap to run.
 const LONG_DURATIONS = ['24h', '22h', '12h', '8h', '4h', '2h', '1h'];
 if (LONG_DURATIONS.includes(DURATION) && !ENDURANCE_CONFIRM) {
   throw new Error(
@@ -171,6 +186,18 @@ function buildStages(duration) {
         { duration: '110m', target: 1000 },
         { duration: '5m', target: 0 },
       ];
+    case '10min':
+      // Wave-25 dress-run: 2-min ramp-up to 100 RPS, 6-min sustain,
+      // 2-min ramp-down. Picked to exercise the same arrival-rate shape
+      // as the 24h profile at ~1/10 RPS and 1/144 duration so the
+      // analyzer's per-route p99 path, threshold accounting, and verdict
+      // logic are all driven end-to-end without the operational cost
+      // of a true 24h run.
+      return [
+        { duration: '2m', target: 100 },
+        { duration: '6m', target: 100 },
+        { duration: '2m', target: 0 },
+      ];
     case '30s':
     default:
       return [
@@ -208,7 +235,12 @@ export const options = {
     memory_sidecar: {
       executor: 'constant-vus',
       vus: 1,
-      duration: DURATION === '30s' ? '30s' : DURATION,
+      duration:
+        DURATION === '30s'
+          ? '30s'
+          : DURATION === '10min'
+            ? '10m'
+            : DURATION,
       exec: 'memorySidecar',
     },
   },
@@ -306,8 +338,10 @@ export function customerRoutes() {
 }
 
 export function memorySidecar() {
-  // Poll the diagnostics endpoint every 5 minutes (or 5s in smoke mode).
-  const pollMs = DURATION === '30s' ? 5000 : 300000;
+  // Poll the diagnostics endpoint every 5 minutes (5s in smoke mode,
+  // 30s in 10min dress-run so we get ~20 samples in 10 minutes).
+  const pollMs =
+    DURATION === '30s' ? 5000 : DURATION === '10min' ? 30000 : 300000;
   const res = http.get(`${TARGET_HOST}/v1/admin/diagnostics/memory`, {
     headers: { Authorization: `Bearer ${AUTH_BEARER}` },
     tags: { route: 'GET /v1/admin/diagnostics/memory' },
