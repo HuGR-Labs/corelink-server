@@ -172,6 +172,17 @@ Declare SEV-3 if:
 
 **3-locale requirement**: All 3 locales (PT-BR, EN-US, ES-MX) MUST be sent. This is a mandatory GA requirement per sprint contract §10.s11.7 and LGPD Art. 9 (direito à informação acessível). Do NOT send single locale.
 
+**Wave-18 customer-readable narrative templates** (per `specs/_audits/2026-05-15-customer-breach-notification-templates.md`):
+
+The MJML transactional templates above ship the email envelope. The **customer-readable markdown narrative** referenced by each MJML body lives under `docs/customer-comm/breach-notification/v1.0.0/`, organised as **2 incident classes × 3 locales**:
+
+| Incident class | pt-BR | en | es |
+|---|---|---|---|
+| Audit-chain integrity incident (triggered by `corelink.audit.export_verify_failed.v1` SEV-0) | `docs/customer-comm/breach-notification/v1.0.0/pt-BR/audit-chain-integrity-incident.md` | `docs/customer-comm/breach-notification/v1.0.0/en/audit-chain-integrity-incident.md` | `docs/customer-comm/breach-notification/v1.0.0/es/audit-chain-integrity-incident.md` |
+| DSR pipeline temporary degradation (triggered by `corelink.privacy.statuspage_publish_failed.v1` ≥ 24h SEV-1) | `docs/customer-comm/breach-notification/v1.0.0/pt-BR/dsr-pipeline-temporary-degradation.md` | `docs/customer-comm/breach-notification/v1.0.0/en/dsr-pipeline-temporary-degradation.md` | `docs/customer-comm/breach-notification/v1.0.0/es/dsr-pipeline-temporary-degradation.md` |
+
+Each template anchors a jurisdiction-appropriate statutory citation (LGPD Art. 48 / GDPR Art. 34 / LFPDPPP Art. 20-21) and embeds locale-correct complaint-mechanism URLs (ANPD / Irish DPC + California AG / INAI). The templates use **double-curly Mustache placeholders** (14 vars for Class A; 15 vars for Class B) — Privacy Officer must replace every placeholder before dispatch.
+
 ---
 
 ## Section 4: Templates Fill-in Instructions
