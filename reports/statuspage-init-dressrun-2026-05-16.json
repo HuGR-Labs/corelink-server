@@ -1,0 +1,45 @@
+{
+  "degraded_count": 0,
+  "dressrun_date": "2026-05-16",
+  "fail_count": 0,
+  "generated_at_utc": "2026-05-16T08:42:20Z",
+  "kind": "statuspage-init-dressrun",
+  "overall_outcome": "PASS",
+  "override_url": "https://corelink-statuspage-test.example.com",
+  "steps": [
+    {
+      "detail": "CNAME corelink-statuspage-test.example.com -> corelink-tenant-dressrun.statuspage.io; canonical status.corelink.dev",
+      "duration_ms": 233,
+      "name": "dns_cname_verification",
+      "outcome": "PASS",
+      "step_id": "S1",
+      "verification_id": "VID-2026-05-16-S1-7027caf5a728"
+    },
+    {
+      "detail": "-> corelink-tenant-canonical.statuspage.io HEAD https://www.statuspage.io/ returned HTTP",
+      "duration_ms": 903,
+      "name": "statuspage_api_health",
+      "outcome": "PASS",
+      "step_id": "S2",
+      "verification_id": "VID-2026-05-16-S2-02bbbe4b0df9"
+    },
+    {
+      "detail": "301 helper default+override+explicit OK; MDX rg|sed",
+      "duration_ms": 657,
+      "name": "build_time_substitution",
+      "outcome": "PASS",
+      "step_id": "S3",
+      "verification_id": "VID-2026-05-16-S3-229ff64dad55"
+    },
+    {
+      "detail": "substitution OK (corelink-statuspage-test.example.com) handoff_sha=74af4925a98be7d11c09c713111638346b4ea994380503ba67294d3a607f1483 runbook_sha=b182724cc7ab helper_sha=22ccffffd53b",
+      "duration_ms": 381,
+      "name": "audit_trail_verification",
+      "outcome": "PASS",
+      "step_id": "S4",
+      "verification_id": "VID-2026-05-16-S4-23747b545a64"
+    }
+  ],
+  "test_domain": "corelink-statuspage-test.example.com",
+  "wave": "R-prep wave-25"
+}
