@@ -10,5 +10,113 @@
   "homepage.tagline": {
     "message": "Multi-Tenant Content-Addressable Cache auf Cloudflare",
     "description": "Site tagline shown in the homepage hero"
+  },
+  "customer.auditChain.pageTitle": {
+    "message": "Audit-Kette — Kunde",
+    "description": "Browser tab title for the customer audit-chain page"
+  },
+  "customer.auditChain.pageDescription": {
+    "message": "Prüfen Sie den BLAKE3-Ketten-Anker, das Ereignisvolumen und exportieren Sie das Audit-Log Ihres Mandanten als NDJSON.",
+    "description": "Meta description for the customer audit-chain page"
+  },
+  "customer.auditChain.title": {
+    "message": "Audit-Kette",
+    "description": "H1 on the customer audit-chain visualization page"
+  },
+  "customer.auditChain.subtitle": {
+    "message": "Prüfen Sie den kryptografischen Ketten-Anker, das Ereignisvolumen und die Zeitleiste des Audit-Logs Ihres Mandanten im ausgewählten Fenster.",
+    "description": "Subtitle explaining what the page shows"
+  },
+  "customer.auditChain.preGa.title": {
+    "message": "Pilot-Daten — SOC-2-Type-II-Zertifizierung ausstehend.",
+    "description": "Pilot framing banner title"
+  },
+  "customer.auditChain.preGa.body": {
+    "message": "Die Integrität der Kette wird kryptografisch durchgesetzt (RFC 6962 + BLAKE3) und täglich über den in WI-S09-008 dokumentierten Cron-Job verifiziert. Die Beweismittelsammlung für SOC 2 läuft vor dem GA.",
+    "description": "Pilot framing banner body"
+  },
+  "customer.auditChain.shellMissing": {
+    "message": "Melden Sie sich am CoreLink-Dashboard an, um mandantenspezifische Audit-Daten zu laden. Diese Seite nutzt Live-Daten nur innerhalb der authentifizierten Shell.",
+    "description": "Shown when the Clerk shell is not bootstrapped"
+  },
+  "customer.auditChain.window.heading": {
+    "message": "Fenster",
+    "description": "Date range section heading"
+  },
+  "customer.auditChain.window.from": {
+    "message": "Von (UTC)",
+    "description": "Start-date input label"
+  },
+  "customer.auditChain.window.to": {
+    "message": "Bis (UTC, einschließlich)",
+    "description": "End-date input label"
+  },
+  "customer.auditChain.btn.loading": {
+    "message": "Lädt…",
+    "description": "Reload button label while loading"
+  },
+  "customer.auditChain.btn.reload": {
+    "message": "Neu laden",
+    "description": "Reload button label"
+  },
+  "customer.auditChain.btn.export": {
+    "message": "Als NDJSON exportieren",
+    "description": "Export-to-NDJSON button label"
+  },
+  "customer.auditChain.anchor.heading": {
+    "message": "Ketten-Anker",
+    "description": "Chain-head anchor section heading"
+  },
+  "customer.auditChain.anchor.body": {
+    "message": "Der 32-Byte-BLAKE3-Anker unten fixiert den inklusiven Zustand der Audit-Kette am Ende des gewählten Fensters. Erfassen Sie ihn offline und übergeben Sie ihn an corelink audit verify-ndjson --chain-head-anchor <hex>, um den Export ohne Vertrauen in unsere Infrastruktur zu verifizieren.",
+    "description": "Anchor section body copy"
+  },
+  "customer.auditChain.anchor.placeholder": {
+    "message": "— (Fenster laden zum Befüllen)",
+    "description": "Placeholder shown when the anchor has not been loaded yet"
+  },
+  "customer.auditChain.anchor.helpLink": {
+    "message": "Offline verifizieren — siehe die CLI-verify-ndjson-Dokumentation →",
+    "description": "Deeplink to the CLI verify-ndjson documentation"
+  },
+  "customer.auditChain.metrics.heading": {
+    "message": "Volumen",
+    "description": "Metrics section heading"
+  },
+  "customer.auditChain.metrics.events": {
+    "message": "Ereignisse im Fenster",
+    "description": "Event-count metric label"
+  },
+  "customer.auditChain.metrics.bytes": {
+    "message": "Geschriebene Bytes (Schätzung)",
+    "description": "Bytes-flushed metric label"
+  },
+  "customer.auditChain.metrics.granularity": {
+    "message": "Bucket-Granularität",
+    "description": "Bucket-granularity metric label"
+  },
+  "customer.auditChain.timeline.heading": {
+    "message": "Zeitleiste",
+    "description": "Timeline chart section heading"
+  },
+  "customer.auditChain.timeline.empty": {
+    "message": "Keine Ereignisse im gewählten Fenster.",
+    "description": "Placeholder when no events fall in the window"
+  },
+  "customer.auditChain.ssrFallback": {
+    "message": "Kunden-Audit-Kette wird geladen…",
+    "description": "SSR fallback while the BrowserOnly child hydrates"
+  },
+  "customer.auditChain.error.invalidDate": {
+    "message": "Ungültiger Datumsbereich; verwenden Sie YYYY-MM-DD.",
+    "description": "Error shown when one of the date inputs cannot be parsed"
+  },
+  "customer.auditChain.error.invertedRange": {
+    "message": "Das Enddatum muss nach dem Startdatum liegen.",
+    "description": "Error shown when To <= From"
+  },
+  "customer.auditChain.error.windowTooLong": {
+    "message": "Fenster zu lang; die UI begrenzt auf 7 Tage. Nutzen Sie die API für längere Fenster (bis zu 7 Jahre).",
+    "description": "Error shown when the user picks a window > 7 days"
   }
 }
