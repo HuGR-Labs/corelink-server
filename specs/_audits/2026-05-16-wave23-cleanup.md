@@ -154,3 +154,74 @@ Each `#[tokio::test]` calls `init_rustls_provider()` as its first statement. `in
 ## 5. Score
 
 Wave-23 cleanup stream: 3 P2 closures + 1 NET-NEW test + all gates green. No P0/P1/P3 introduced. No regressions in the wave-21 / wave-22 invariant surface.
+
+---
+
+## 6. Wave-24 addendum — symmetric `audit_analytics.rs` closure
+
+> **Added:** 2026-05-16 (wave-24).
+> **Branch:** `wt/r-prep-audit-analytics-wallclock-symmetry`.
+> **Base:** `main` @ `33138b5` (wave-23 SEAL tip).
+> **Author:** wave-24 agent (Claude Opus 4.7).
+> **Scope:** Close the §4 first caveat ("`audit_analytics.rs:675` asymmetry") flagged by wave-23.
+
+### 6.1 What changed
+
+`apps/server/src/routes/audit_analytics.rs::rate_limit_check` — the previous saturating-fallback path
+
+```rust
+let now_ms = if wall_now_ms == 0 { to_ms } else { wall_now_ms };
+```
+
+now fail-CLOSES with HTTP 503 + an `exit_status = "clock_unavailable"` analytics audit row, mirroring the wave-23 fix at `audit_export.rs` (commit `5203e8b`, §1.1 above). The bucket clock NEVER couples to caller-controlled `to_ms` bytes, even on the structurally-unreachable pre-epoch branch.
+
+```rust
+// apps/server/src/routes/audit_analytics.rs (wave-24, post-fix)
+let wall_now_ms = state.wall_clock.now_ms();
+if wall_now_ms == 0 {
+    let resp = (StatusCode::SERVICE_UNAVAILABLE, "wall clock unavailable")
+        .into_response();
+    return Some(emit_or_503(
+        state,
+        AnalyticsAuditRow::new(
+            EVENT_TYPE_ANALYTICS_QUERY.to_string(),
+            Some(tenant),
+            endpoint.to_string(),
+            from_ms,
+            to_ms,
+            0,
+            "clock_unavailable".to_string(),
+        ),
+        resp,
+    ));
+}
+let now_ms = wall_now_ms;
+```
+
+### 6.2 Reachability post-fix (symmetric)
+
+Identical to §1.1 — `SystemWallClock` cannot reach the saturating branch in production (epoch is decades past). Test fakes (`InMemoryFakeWallClock::at_unix_ms(0)`) and exotic pre-epoch hosts now surface a 503 + audit row, which is the correct operational signal.
+
+### 6.3 NET-NEW test
+
+| Test fn | Module | Pins |
+| --- | --- | --- |
+| `analytics_wall_clock_saturated_to_zero_returns_503_and_emits_clock_unavailable_row` | `corelink-server::routes::audit_analytics::tests` | 503 + `clock_unavailable` row on `InMemoryFakeWallClock::at_unix_ms(0)`; asserts row's `event_type`, `authenticated_tenant`, `endpoint = "event_count"`, `from_ms = 0`, `to_ms = 1_000`, `buckets_returned = 0`. |
+
+**Count:** 1 NET-NEW test (wave-24 increment).
+
+### 6.4 Caveat closure
+
+Wave-23 §4 first bullet ("`audit_analytics.rs:675` asymmetry") is now **CLOSED**. Both audit routes (`audit_export` + `audit_analytics`) share a fail-CLOSED 503 + `clock_unavailable` audit-row discipline on the saturating wall-clock branch; the bucket clock is symmetric and uncoupled from caller bytes on either path.
+
+### 6.5 Gates (wave-24)
+
+- `cargo build --workspace`: green.
+- `cargo test -p corelink-server --lib audit_analytics`: 9/9 green (incl. the new NET-NEW test).
+- `cargo clippy --workspace --all-targets -- -D warnings`: clean.
+- `scripts/validate_specs.py` + `scripts/validate_references.py`: green.
+
+### 6.6 Status
+
+**CLOSED.** Symmetric wave-23 fix landed on the analytics route; wave-23 §4 first caveat is no longer outstanding.
+

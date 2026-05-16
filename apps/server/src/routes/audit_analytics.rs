@@ -655,14 +655,32 @@ fn parse_tenant_header(
 ///
 /// **Wave-21 closure (`B-P2-03`):** the bucket `now_ms` is now anchored
 /// to [`AuditAnalyticsRouteState::wall_clock`] rather than the query
-/// window's `to_ms`. The window-derived `to_ms` is retained as a
-/// last-resort fallback when the wall clock saturates to `0` (pre-epoch
-/// instant or a poisoned [`crate::wall_clock::InMemoryFakeWallClock`]
-/// mutex) so the bucket still has a strictly-monotonic-per-window
-/// anchor. The symmetric closure at
+/// window's `to_ms`. The symmetric closure at
 /// [`super::audit_export`] (`A-P2-05`) lands the same
 /// [`crate::wall_clock::WallClock`] collaborator-swap surface — both
 /// routes share the trait so production wiring stays uniform.
+///
+/// **Wave-24 closure (symmetric `W21-R-P2-01`):** the previous
+/// implementation fell back to the query-window `to_ms` when
+/// `wall_clock.now_ms() == 0`. That coupled the bucket clock to
+/// caller-controlled bytes on the structurally-unreachable pre-epoch
+/// branch — the exact pathology `audit_export.rs` closed at wave-23
+/// (commit `5203e8b`, audit
+/// `specs/_audits/2026-05-16-wave23-cleanup.md` §W21-R-P2-01). The
+/// analytics route was scoped OUT of wave-23 and explicitly flagged
+/// for a follow-on hygiene sweep — this is that sweep. The saturating
+/// branch now fail-CLOSES with HTTP 503 + an
+/// `exit_status = "clock_unavailable"` audit row, mirroring the
+/// audit-export discipline. The bucket clock NEVER couples to
+/// caller-controlled bytes, even on the structurally-unreachable
+/// pre-epoch branch.
+///
+/// Production reachability: `SystemWallClock` saturates to 0 only on
+/// pre-1970 wall-clock instants — structurally impossible on any
+/// production host (epoch is decades past). The fail-CLOSED 503
+/// affects only (a) test fakes deliberately pinned at `unix_ms == 0`
+/// and (b) exotic hosts with a pre-epoch system clock, which is an
+/// operational failure the audit pipeline SHOULD surface.
 fn rate_limit_check(
     state: &AuditAnalyticsRouteState,
     tenant: Uuid,
@@ -672,7 +690,29 @@ fn rate_limit_check(
 ) -> Option<axum::response::Response> {
     let bucket_key = BucketKey::per_tenant_per_endpoint(tenant, "audit.analytics");
     let wall_now_ms = state.wall_clock.now_ms();
-    let now_ms = if wall_now_ms == 0 { to_ms } else { wall_now_ms };
+    if wall_now_ms == 0 {
+        // Fail-CLOSED: emit `clock_unavailable` audit row + 503.
+        // The bucket clock MUST NEVER couple to caller-controlled
+        // bytes (`to_ms`), even on the structurally-unreachable
+        // pre-epoch branch. Mirrors the wave-23 closure of
+        // `W21-R-P2-01` on `audit_export.rs`.
+        let resp = (StatusCode::SERVICE_UNAVAILABLE, "wall clock unavailable")
+            .into_response();
+        return Some(emit_or_503(
+            state,
+            AnalyticsAuditRow::new(
+                EVENT_TYPE_ANALYTICS_QUERY.to_string(),
+                Some(tenant),
+                endpoint.to_string(),
+                from_ms,
+                to_ms,
+                0,
+                "clock_unavailable".to_string(),
+            ),
+            resp,
+        ));
+    }
+    let now_ms = wall_now_ms;
     match state.rate_limiter.try_acquire(tenant, bucket_key, 1, now_ms) {
         Ok(outcome) => match outcome.decision {
             RateLimitDecision::Allow { .. } => None,
@@ -1129,5 +1169,96 @@ mod tests {
             "after advancing the fake wall clock 60s, the next request MUST allow \
              (proves wall-clock-driven `now_ms`, finding B-P2-03 closure)",
         );
+    }
+
+    /// Wave-24 closure of the symmetric `W21-R-P2-01` —
+    /// `wall_clock.now_ms() == 0` on the analytics route MUST fail-CLOSED
+    /// (503 + `clock_unavailable` audit row) rather than fall back to the
+    /// caller-controlled query-window `to_ms`. Mirrors the wave-23
+    /// `audit_export.rs` test
+    /// `wall_clock_saturated_to_zero_returns_503_and_emits_clock_unavailable_row`.
+    ///
+    /// The wave-23 cleanup explicitly scoped the analytics symmetric path
+    /// OUT of `W21-R-P2-01` (see commit `5203e8b` +
+    /// `specs/_audits/2026-05-16-wave23-cleanup.md` §1.1 CAVEAT). This is
+    /// the follow-on hygiene sweep that closes the asymmetry: the bucket
+    /// clock NEVER couples to caller-controlled bytes on EITHER route.
+    #[tokio::test]
+    async fn analytics_wall_clock_saturated_to_zero_returns_503_and_emits_clock_unavailable_row() {
+        use crate::wall_clock::InMemoryFakeWallClock;
+
+        let tenant = Uuid::now_v7();
+        let shadow: Arc<dyn NeonShadowSink> = Arc::new(InMemoryNeonShadowSink::new(
+            tenant,
+            Region::Iad,
+            Arc::new(InMemoryShadowSyncAuditSink::new()),
+        ));
+        let factory: Arc<dyn ShadowSinkFactory> = Arc::new(OneTenantFactory {
+            tenant,
+            shadow,
+        });
+        let mut state = build_state(factory);
+
+        // Capture-sink swap so we can snapshot the emitted row.
+        let capture: Arc<InMemoryAnalyticsAuditSink> =
+            Arc::new(InMemoryAnalyticsAuditSink::new());
+        state.audit_sink = capture.clone() as Arc<dyn AnalyticsAuditSink>;
+
+        // Pin the wall clock at the saturating value (unix_ms == 0).
+        // SystemWallClock cannot reach this branch in production
+        // (epoch is decades past), but InMemoryFakeWallClock can —
+        // simulating a poisoned-mutex or pre-epoch host.
+        let fake = Arc::new(InMemoryFakeWallClock::at_unix_ms(0));
+        state.wall_clock = fake as Arc<dyn WallClock>;
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            TENANT_ID_HEADER,
+            tenant.to_string().parse().expect("header parse"),
+        );
+        let query = EventCountQuery {
+            from: 0,
+            to: 1_000,
+            event_type: None,
+        };
+
+        let resp = handle_event_count(
+            State(state.clone()),
+            headers.clone(),
+            Query(query),
+        )
+        .await
+        .into_response();
+        assert_eq!(
+            resp.status(),
+            StatusCode::SERVICE_UNAVAILABLE,
+            "analytics wall-clock saturating to 0 MUST fail-CLOSED with 503 \
+             (wave-24 symmetric W21-R-P2-01 closure — no fallback to to_ms-derived clock)",
+        );
+        let body = to_bytes(resp.into_body(), 1024).await.expect("body");
+        assert_eq!(
+            &body[..],
+            b"wall clock unavailable",
+            "503 body MUST be the canonical `wall clock unavailable` marker",
+        );
+
+        let rows = capture.snapshot().expect("snapshot");
+        assert!(
+            rows.iter().any(|r| r.exit_status == "clock_unavailable"),
+            "fail-CLOSED path MUST emit one `clock_unavailable` audit row; saw {:?}",
+            rows.iter().map(|r| &r.exit_status).collect::<Vec<_>>(),
+        );
+        // Sanity — the emitted row carries the request tenant + endpoint,
+        // matching the analytics audit-row schema.
+        let row = rows
+            .iter()
+            .find(|r| r.exit_status == "clock_unavailable")
+            .expect("at least one clock_unavailable row");
+        assert_eq!(row.authenticated_tenant, Some(tenant));
+        assert_eq!(row.endpoint, "event_count");
+        assert_eq!(row.from_ms, 0);
+        assert_eq!(row.to_ms, 1_000);
+        assert_eq!(row.buckets_returned, 0);
+        assert_eq!(row.event_type, EVENT_TYPE_ANALYTICS_QUERY);
     }
 }
