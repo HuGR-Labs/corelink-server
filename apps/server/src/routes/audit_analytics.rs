@@ -61,6 +61,8 @@ use corelink_ratelimit::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::wall_clock::{default_wall_clock, WallClock};
+
 /// Canonical route path for the event-count aggregate.
 pub const ROUTE_EVENT_COUNT: &str = "/v1/audit/analytics/event-count";
 
@@ -214,6 +216,15 @@ pub struct AuditAnalyticsRouteState {
     pub rate_limiter: Arc<dyn RateLimiter>,
     /// Audit emit sink.
     pub audit_sink: Arc<dyn AnalyticsAuditSink>,
+    /// Wave-21 — wall-clock collaborator. The rate-limit gate uses
+    /// `wall_clock.now_ms()` as its bucket `now_ms` so the bucket clock
+    /// advances on real time rather than the query window's `to_ms`
+    /// (closes finding `B-P2-03`). Production wiring slots
+    /// [`crate::wall_clock::SystemWallClock`] (the [`build_state`]
+    /// default); tests inject
+    /// [`crate::wall_clock::InMemoryFakeWallClock`] for deterministic
+    /// rate-limit timing.
+    pub wall_clock: Arc<dyn WallClock>,
 }
 
 impl core::fmt::Debug for AuditAnalyticsRouteState {
@@ -642,15 +653,16 @@ fn parse_tenant_header(
 /// Common rate-limit + emit-on-deny path. Returns `Some(response)` on
 /// deny; `None` if the request may proceed.
 ///
-/// **Known residual trait (wave-20 B-P2-03 closure):** `now_ms` is anchored
-/// to the query window's `to_ms` (NOT wall-clock). Symmetric trait at
-/// `audit_export::now_ms_from_window` (Stream A A-P2-05) — both routes
-/// share the same `WallClock`-collaborator-swap path slotted at production
-/// wiring. A customer querying a 1970-epoch window every 60ms keeps
-/// refilling the bucket; the global throughput cap is enforced one layer
-/// up by the per-tenant request budget in the wall-clock-backed
-/// production wiring. The cleanup lands as one cross-route fix-stream
-/// in wave-21+.
+/// **Wave-21 closure (`B-P2-03`):** the bucket `now_ms` is now anchored
+/// to [`AuditAnalyticsRouteState::wall_clock`] rather than the query
+/// window's `to_ms`. The window-derived `to_ms` is retained as a
+/// last-resort fallback when the wall clock saturates to `0` (pre-epoch
+/// instant or a poisoned [`crate::wall_clock::InMemoryFakeWallClock`]
+/// mutex) so the bucket still has a strictly-monotonic-per-window
+/// anchor. The symmetric closure at
+/// [`super::audit_export`] (`A-P2-05`) lands the same
+/// [`crate::wall_clock::WallClock`] collaborator-swap surface — both
+/// routes share the trait so production wiring stays uniform.
 fn rate_limit_check(
     state: &AuditAnalyticsRouteState,
     tenant: Uuid,
@@ -659,7 +671,8 @@ fn rate_limit_check(
     to_ms: u64,
 ) -> Option<axum::response::Response> {
     let bucket_key = BucketKey::per_tenant_per_endpoint(tenant, "audit.analytics");
-    let now_ms = to_ms;
+    let wall_now_ms = state.wall_clock.now_ms();
+    let now_ms = if wall_now_ms == 0 { to_ms } else { wall_now_ms };
     match state.rate_limiter.try_acquire(tenant, bucket_key, 1, now_ms) {
         Ok(outcome) => match outcome.decision {
             RateLimitDecision::Allow { .. } => None,
@@ -721,10 +734,12 @@ pub fn build_state(shadow_factory: Arc<dyn ShadowSinkFactory>) -> AuditAnalytics
         audit_analytics_rate_limit_config(),
     ));
     let audit_sink: Arc<dyn AnalyticsAuditSink> = Arc::new(InMemoryAnalyticsAuditSink::new());
+    let wall_clock = default_wall_clock();
     AuditAnalyticsRouteState {
         shadow_factory,
         rate_limiter,
         audit_sink,
+        wall_clock,
     }
 }
 
@@ -1011,5 +1026,108 @@ mod tests {
         );
         let body = to_bytes(resp.into_body(), 1024).await.expect("body");
         assert_eq!(&body[..], b"audit pipeline closed");
+    }
+
+    /// Wave-21 closure (`B-P2-03`): the rate-limit bucket's `now_ms`
+    /// is now driven by `state.wall_clock` (an `Arc<dyn WallClock>`)
+    /// rather than the request's query-window `to_ms`. This test
+    /// pins the contract by:
+    ///   1. Injecting an [`InMemoryFakeWallClock`] pinned at a known
+    ///      unix-ms instant.
+    ///   2. Repeatedly issuing the SAME stationary query window
+    ///      `[0, 1_000)` to exhaust the 10-token burst (rate-limit
+    ///      config: burst=10, refill=1/s).
+    ///   3. Asserting the 11th request denies (429) — proving the
+    ///      bucket clock is NOT advancing on the stationary query
+    ///      window.
+    ///   4. Advancing the fake wall clock by 60s; asserting the next
+    ///      request allows — proving the bucket clock IS advancing on
+    ///      the injected wall-clock.
+    #[tokio::test]
+    async fn rate_limit_now_ms_is_driven_by_injected_wall_clock() {
+        use crate::wall_clock::InMemoryFakeWallClock;
+
+        let tenant = Uuid::now_v7();
+        let shadow: Arc<dyn NeonShadowSink> = Arc::new(InMemoryNeonShadowSink::new(
+            tenant,
+            Region::Iad,
+            Arc::new(InMemoryShadowSyncAuditSink::new()),
+        ));
+        let factory: Arc<dyn ShadowSinkFactory> = Arc::new(OneTenantFactory {
+            tenant,
+            shadow,
+        });
+        let mut state = build_state(factory);
+
+        // Pin the wall clock at a known instant well past unix epoch
+        // so the fallback-on-zero arm is NOT exercised.
+        let fake = Arc::new(InMemoryFakeWallClock::at_unix_ms(1_700_000_000_000));
+        state.wall_clock = fake.clone() as Arc<dyn WallClock>;
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            TENANT_ID_HEADER,
+            tenant.to_string().parse().expect("header parse"),
+        );
+        // Stationary query window — the legacy `to_ms`-driven path
+        // would let this loop forever; the wave-21 wall-clock-driven
+        // path correctly exhausts after `burst=10`.
+        let query = EventCountQuery {
+            from: 0,
+            to: 1_000,
+            event_type: None,
+        };
+        // Burst capacity = 10 per `audit_analytics_rate_limit_config`.
+        // Drain the bucket — every request issues at the SAME pinned
+        // wall-clock instant, so no refill happens.
+        let mut allowed_count: u32 = 0;
+        for _ in 0..10 {
+            let resp = handle_event_count(
+                State(state.clone()),
+                headers.clone(),
+                Query(query.clone()),
+            )
+            .await
+            .into_response();
+            if resp.status() == StatusCode::OK {
+                allowed_count = allowed_count.saturating_add(1);
+            }
+        }
+        assert_eq!(
+            allowed_count, 10,
+            "10 OKs expected within the burst window (wall clock pinned)",
+        );
+
+        // 11th request — bucket empty, wall clock still pinned → 429.
+        let resp_denied = handle_event_count(
+            State(state.clone()),
+            headers.clone(),
+            Query(query.clone()),
+        )
+        .await
+        .into_response();
+        assert_eq!(
+            resp_denied.status(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "11th request MUST 429 — wall clock pinned so bucket cannot refill",
+        );
+
+        // Advance the wall clock by 60s — the bucket should now have
+        // refilled (refill=1 token/s × 60s = 60 tokens, clamped to
+        // burst=10). The next request MUST allow.
+        fake.advance(std::time::Duration::from_secs(60));
+        let resp_after_advance = handle_event_count(
+            State(state),
+            headers,
+            Query(query),
+        )
+        .await
+        .into_response();
+        assert_eq!(
+            resp_after_advance.status(),
+            StatusCode::OK,
+            "after advancing the fake wall clock 60s, the next request MUST allow \
+             (proves wall-clock-driven `now_ms`, finding B-P2-03 closure)",
+        );
     }
 }

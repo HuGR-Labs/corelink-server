@@ -23,6 +23,14 @@
 //!   an `InMemoryFake`. Multiple `byok-*-real` flags is a HARD
 //!   compile error. See
 //!   `specs/_audits/2026-05-15-byok-real-provider-pattern.md §7`.
+//! - [`wall_clock`] — cross-route wall-clock trait (`WallClock` +
+//!   `SystemWallClock` + `InMemoryFakeWallClock`). Wave-21 closure of
+//!   the `A-P2-05` (audit-export) + `B-P2-03` (audit-analytics)
+//!   findings: both routes consume `Arc<dyn WallClock>` in their route
+//!   state so the rate-limit `now_ms` becomes wall-clock-derived rather
+//!   than window-derived. See
+//!   `specs/_audits/2026-05-16-wave18-adversarial-review-streamA-audit-export.md`
+//!   and `…-streamB-neon-shadow.md`.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -33,4 +41,5 @@ pub mod byok;
 
 pub mod byok_orchestrator;
 pub mod routes;
+pub mod wall_clock;
 pub mod webhook;

@@ -45,6 +45,7 @@ use corelink_server::routes::audit_export::{
     EVENT_TYPE_VERIFY_FAILED, EXIT_STATUS_VERIFY_FAILED_MID_STREAM, HEADER_EXPORT_ABORTED,
     R2_LIST_PAGE_SIZE, TENANT_ID_HEADER,
 };
+use corelink_server::wall_clock::default_wall_clock;
 use corelink_analytics::Region;
 use serde_json::{json, Value};
 use tower::ServiceExt; // .oneshot
@@ -93,6 +94,7 @@ fn fixture_with_chain(
         rate_limiter: limiter,
         audit_sink: audit_sink.clone() as Arc<dyn ExportAuditSink>,
         pager_page_size: R2_LIST_PAGE_SIZE,
+        wall_clock: default_wall_clock(),
     };
     (state, exporter, audit_sink)
 }
@@ -284,6 +286,7 @@ async fn chain_tamper_emits_verify_failed_sev0() {
         rate_limiter: state_orig.rate_limiter.clone(),
         audit_sink: state_orig.audit_sink.clone(),
         pager_page_size: state_orig.pager_page_size,
+        wall_clock: state_orig.wall_clock.clone(),
     };
     let app = router(state);
 
@@ -389,6 +392,7 @@ async fn audit_failure_aborts_with_503() {
         rate_limiter: state.rate_limiter.clone(),
         audit_sink: bad as Arc<dyn ExportAuditSink>,
         pager_page_size: state.pager_page_size,
+        wall_clock: state.wall_clock.clone(),
     };
     let app = router(state);
 
@@ -500,6 +504,7 @@ async fn abort_trailer_emitted_on_mid_stream_chain_break() {
         rate_limiter: state_orig.rate_limiter.clone(),
         audit_sink: state_orig.audit_sink.clone(),
         pager_page_size: state_orig.pager_page_size,
+        wall_clock: state_orig.wall_clock.clone(),
     };
     let app = router(state);
 
@@ -617,6 +622,7 @@ async fn customer_cli_handles_abort_trailer_gracefully() {
             rate_limiter: state_orig.rate_limiter.clone(),
             audit_sink: state_orig.audit_sink.clone(),
             pager_page_size: state_orig.pager_page_size,
+            wall_clock: state_orig.wall_clock.clone(),
         };
         let app = router(state);
         let resp = app
@@ -796,6 +802,7 @@ async fn wave19_audit_row_payload_and_trailer_payload_byte_identical() {
         rate_limiter: state_orig.rate_limiter.clone(),
         audit_sink: state_orig.audit_sink.clone(),
         pager_page_size: state_orig.pager_page_size,
+        wall_clock: state_orig.wall_clock.clone(),
     };
     let app = router(state);
 

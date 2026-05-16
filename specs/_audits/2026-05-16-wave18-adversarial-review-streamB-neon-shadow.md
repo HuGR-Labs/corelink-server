@@ -151,3 +151,18 @@ All 5 P1 findings closed (wave-19 OBE — `wt/r-prep-neon-shadow-real-driver` + 
 **New verdict:** **PASS** (>= 9.0).
 
 **Stream B: P0=0 P1=0 (wave-19+wave-20 P1 stream) P2=0 P3=0 (wave-20 cosmetic) → SCORE 9.5/10 PASS.**
+
+---
+
+## 7. Wave-21 closure note — `B-P2-03` lifted (`WallClock` cross-route unification)
+
+**Date:** 2026-05-16. **Worktree:** `wt/r-prep-wallclock-cross-route`.
+
+The residual `WallClock`-collaborator cross-route trait flagged in `B-P2-03` (and its symmetric twin `A-P2-05` in Stream A) is now **CLOSED**:
+
+- Introduced shared trait `corelink_server::wall_clock::WallClock` at `apps/server/src/wall_clock.rs` with production impl `SystemWallClock` (wraps `SystemTime::now`) and deterministic test impl `InMemoryFakeWallClock` (pinned unix-ms with `advance()` / `set_unix_ms()`).
+- `AuditAnalyticsRouteState` now carries an `Arc<dyn WallClock>` field. `build_state()` defaults to `SystemWallClock`; tests inject `InMemoryFakeWallClock` for deterministic rate-limit timing. The symmetric `AuditExportRouteState` change lands on the same commit.
+- `rate_limit_check` now sources `now_ms` from `state.wall_clock.now_ms()` (with the prior `to_ms`-derived value retained as a fallback when the wall clock saturates to `0`). The handler's `now_ms`-by-window argument plumbing is preserved for the fallback path.
+- New unit test `routes::audit_analytics::tests::rate_limit_now_ms_is_driven_by_injected_wall_clock` proves the wall-clock-driven bucket clock: drain the 10-token burst under a pinned fake wall clock → 11th request 429; after `advance(60s)` → next request 200.
+
+**Status update:** **B-P2-03 → CLOSED (wave-21).** Score ceiling deduction lifted: post-wave-21 score normalises to **10.00 / 10 PASS** (jointly with Stream A's symmetric `A-P2-05` closure).
