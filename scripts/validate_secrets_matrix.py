@@ -115,6 +115,29 @@ RUST_ENV_RE = re.compile(
     r"(?:std::)?env::(?:var|var_os|set_var)\(\s*\"([A-Z][A-Z0-9_]*)\""
 )
 
+# Cloudflare Worker / workers-rs env-binding access:
+#   env.secret("STATUSPAGE_API_KEY")
+#   env.var("STATUSPAGE_PAGE_ID")
+#   env.secret(bindings::STATUSPAGE_API_KEY)
+#   env.var(bindings::STATUSPAGE_TENANT_ID)
+#
+# The literal-string form is captured by group 1. The `path::IDENT` form is
+# captured by group 2 and must be resolved against the file-local map of
+# `pub const IDENT: &str = "VALUE"` declarations (RUST_BINDING_CONST_RE
+# below) to recover the env-var name.
+RUST_WORKER_ENV_RE = re.compile(
+    r"\.(?:secret|var)\(\s*"
+    r"(?:\"([A-Z][A-Z0-9_]*)\"|(?:\w+::)?([A-Z][A-Z0-9_]+))\s*\)"
+)
+
+# File-local map: `pub const NAME: &str = "VALUE";`
+# Used only to resolve the path::IDENT form of RUST_WORKER_ENV_RE — we
+# accept a binding only if the resolved VALUE itself matches the env-var
+# shape `[A-Z][A-Z0-9_]*` (filters out SQL constants, error codes, etc.).
+RUST_BINDING_CONST_RE = re.compile(
+    r'pub\s+const\s+([A-Z][A-Z0-9_]*)\s*:\s*&\'?\s*str\s*=\s*"([^"]+)"'
+)
+
 # TS/JS process.env.X and process.env["X"]
 TS_ENV_DOT_RE = re.compile(r"process\.env\.([A-Z][A-Z0-9_]*)")
 TS_ENV_BRACKET_RE = re.compile(r"process\.env\[\s*\"([A-Z][A-Z0-9_]*)\"\s*\]")
@@ -164,13 +187,32 @@ def _iter_files(root: Path, suffixes: Iterable[str]) -> Iterable[Path]:
 
 def scan_rust(root: Path) -> set[str]:
     hits: set[str] = set()
+    env_var_shape = re.compile(r"^[A-Z][A-Z0-9_]*$")
     for f in _iter_files(root, (".rs",)):
         try:
             txt = f.read_text(encoding="utf-8", errors="ignore")
         except OSError:
             continue
+        # std::env::var("X") — direct env access
         for m in RUST_ENV_RE.finditer(txt):
             hits.add(m.group(1))
+        # workers-rs `env.secret(...)` / `env.var(...)` — Cloudflare Worker
+        # binding access. Pre-build the file-local const map once; only
+        # accept values that themselves look like env-var names.
+        bindings = {
+            m.group(1): m.group(2)
+            for m in RUST_BINDING_CONST_RE.finditer(txt)
+        }
+        for m in RUST_WORKER_ENV_RE.finditer(txt):
+            literal, ident = m.group(1), m.group(2)
+            if literal:
+                hits.add(literal)
+                continue
+            if ident is None:
+                continue
+            value = bindings.get(ident)
+            if value and env_var_shape.match(value):
+                hits.add(value)
     return hits
 
 
