@@ -274,3 +274,16 @@ No rebase trail, no orphan refs, no force-pushes. Recovery is structurally indis
 
 Signed-off-by: Gustavo Schneiter <gustavo@humangr.com>
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+
+---
+
+## 7. Closure note — wave-30 P2 absorption sweep (2026-05-16)
+
+> The 3 P2 findings recorded in this review have been triaged in
+> `specs/_audits/2026-05-16-p2-absorption-sweep-w25-28.md` (wave-30 stream-7).
+> All 3 absorbed as **CLOSED-WAVE-30** (FIX-NOW); the P3 cosmetic cohort is
+> retained on the residual queue for opportunistic absorption.
+>
+> - **W28-P2-01** (statuspage-bootstrap `find_by_name` stdin-flow obscurity) → **CLOSED-WAVE-30**. Added a 13-line data-flow comment above the helper explaining `argv[1]` vs `stdin` (the heredoc body is the python source; `<<<` outside the heredoc supplies stdin).
+> - **W28-P2-02** (send-pentest-rfp.sh Python f-string interpolation of vendor name) → **CLOSED-WAVE-30**. `print_vendor_recipe` rewritten to pass `vendor_name` via `argv`, matching the `mark_sent` discipline; safe against future vendors with apostrophes in the name.
+> - **W28-P2-03** (send-pentest-rfp.sh assumes vendor PGP key is in keyring; no preflight, no recv-keys hint) → **CLOSED-WAVE-30**. Recipe gains an explicit "STEP 0 — preflight" block that runs `gpg --list-keys "${contact_email}"` and prints recv-keys / import hints pointing at `docs/legal/pentest-vendor-contacts.md` if the key is absent.

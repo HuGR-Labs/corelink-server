@@ -12,8 +12,12 @@ Scope (active rows only — scrub annotations / scrub audit doc are
 exempt):
 
   - specs/_audits/2026-05-16-ga-final-checklist.md
-      * Lines beginning with the checklist token `- [ ]` (these are
-        the live DEFER rows operators evaluate).
+      * Lines beginning with a checklist token (`- [ ]`, `- [x]`, or
+        `- [X]`) — either unchecked DEFER rows the operator still
+        evaluates, OR checked rows whose closure-narrative still
+        carries a stale signal. Both are drift surfaces; the
+        functionally-tighter regex below matches all three forms by
+        design (see CHECKLIST_ROW_RE).
 
   - specs/_audits/2026-05-16-ga-readiness-final.md
       * Lines inside §11 table that are *data rows* (start with `| `

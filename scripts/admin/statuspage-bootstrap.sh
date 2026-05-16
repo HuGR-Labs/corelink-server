@@ -344,6 +344,17 @@ json_escape() {
 # find_by_name <list-json> <name>
 # Echoes the matched object's `id`, or empty string. Uses python3 (already
 # a repo dep) to avoid a jq hard dependency.
+#
+# Data-flow note (W28-P2-01 absorption — 2026-05-16):
+#   The python invocation looks visually like it only receives `name` via argv,
+#   but the JSON payload is supplied on stdin via the outer `<<<"${list_json}"`
+#   here-string at the end of the enclosing `if/else/fi` (`fi <<<"${list_json}"`).
+#   The here-doc `<<PY ... PY` provides the python source body — NOT stdin — so
+#   the heredoc body does not shadow the here-string. Net effect:
+#     - sys.argv[1] = needle (vendor / group / component name)
+#     - sys.stdin   = list_json (the JSON array we are searching)
+#   The grep-fallback branch consumes `${list_json}` via `echo` directly because
+#   it does not have a python process to which stdin could attach.
 find_by_name() {
   local list_json="$1"
   local name="$2"
