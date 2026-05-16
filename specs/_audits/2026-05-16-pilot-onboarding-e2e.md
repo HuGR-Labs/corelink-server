@@ -182,3 +182,16 @@ Measured locally on Apple M-class silicon, dev profile:
 - SLO targets above are taken from the canonical `slo_catalog.md` for
   the corresponding routes; if any target tightens or relaxes, this
   audit + the runbook MUST be updated in lock-step.
+
+## 8. pilot-signup-pipeline — wave-27 prep cross-reference
+
+The wave-27 R-prep stream extends the wave-23 *journey-shape* audit
+with the *operator-action-shape* tooling that wraps it: the three
+admin scripts (`grant-pilot-tier.sh`, `list-pilot-tenants.sh`,
+`pilot-24h-checkin.sh`), the Grafana dashboard placeholder
+(`dashboards/grafana/dash-pilot-tenants.yml`), and a new DEBT row
+tracking "pilot signups ≥ 3" GA readiness.
+
+See `specs/_audits/2026-05-16-pilot-signup-pipeline.md` for the full
+wave-27 deliverables and `DEBT-027` in
+`specs/_audits/2026-05-15-debt-register.md` for the gate-tracking row.

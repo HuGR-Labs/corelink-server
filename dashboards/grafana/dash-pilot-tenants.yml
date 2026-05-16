@@ -1,0 +1,186 @@
+# dash-pilot-tenants.yml — Grafana dashboard PLACEHOLDER for pilot tenants.
+#
+# Wave-27 pilot-signup-pipeline deliverable #4.
+#
+# This file is a placeholder describing the panel set the
+# `DASH-PILOT-TENANTS.json` Grafana dashboard MUST render at T-7d. The
+# full JSON model is produced by `dashboards/grafana/DASH-PILOT-TENANTS.json`
+# (sibling DASH-TENANT.json convention) and is wired to the canonical
+# Prometheus / VictoriaMetrics tenant in the production grafana stack.
+#
+# This YAML is the SOURCE OF TRUTH for panel inventory + per-panel
+# semantics; the JSON is generated from it during T-7d ship.
+#
+# See:
+#   docs/internal/pilot-dashboard-checklist.md — the 10 metrics
+#   specs/_audits/2026-05-16-pilot-signup-pipeline.md §4 (dashboard placeholder)
+#   docs/internal/customer-success-playbook.md §3
+---
+dashboard:
+  uid: DASH-PILOT-TENANTS
+  title: "CoreLink — Pilot Tenants (DASH-PILOT-TENANTS)"
+  description: |
+    Wave-27 pilot-signup-pipeline placeholder dashboard. Surfaces the 10
+    canonical pilot-health metrics from docs/internal/pilot-dashboard-checklist.md.
+    AdminCtx RBAC required; corelink-viewer locked out (no per-tenant deep-dive).
+  tags:
+    - corelink
+    - pilot
+    - wave-27
+    - ga-readiness
+    - placeholder
+  timezone: utc
+  refresh: 60s
+  schemaVersion: 39
+
+panels:
+  - id: 1
+    title: "Pilot signup count (rolling 7d)"
+    type: stat
+    description: |
+      Count of tenants whose pilot_state ∈ {NEW, ACTIVE, GRADUATED} with
+      signup_at_ms in the last 7 days. Gate target: ≥ 3 signups before GA.
+    targets:
+      - expr: |
+          sum(corelink_pilot_signups_total{state=~"NEW|ACTIVE|GRADUATED"})
+        legend: "rolling 7d signups"
+    thresholds:
+      - value: 0
+        color: red
+      - value: 3
+        color: green
+    gate: "GA-readiness pilot-signups ≥ 3"
+
+  - id: 2
+    title: "Pilot state distribution"
+    type: piechart
+    description: |
+      Distribution of all current pilot tenants by pilot_state.
+      Used in customer-success weekly review.
+    targets:
+      - expr: |
+          sum by (state) (corelink_pilot_tenant_state)
+        legend: "{{state}}"
+
+  - id: 3
+    title: "Time-to-first-blob (per tenant)"
+    type: timeseries
+    description: |
+      first_blob_at_ms - tier_granted_at_ms, per tenant. The 24h auto-checkin
+      script (scripts/admin/pilot-24h-checkin.sh) alerts when this exceeds 24h.
+    targets:
+      - expr: |
+          (corelink_pilot_first_blob_at_ms - corelink_pilot_tier_granted_at_ms) / 1000 / 3600
+        legend: "{{tenant_id}} (hours)"
+    thresholds:
+      - value: 24
+        color: red
+
+  - id: 4
+    title: "Pilot tenant cap utilization"
+    type: bargauge
+    description: |
+      bytes_used / cap_bytes per pilot tenant. Drives `--cap` upgrade
+      decisions in grant-pilot-tier.sh.
+    targets:
+      - expr: |
+          corelink_pilot_bytes_used / corelink_pilot_cap_bytes * 100
+        legend: "{{tenant_id}} ({{slug}})"
+    unit: percent
+    thresholds:
+      - value: 70
+        color: yellow
+      - value: 90
+        color: red
+
+  - id: 5
+    title: "Pilot signup pipeline health (24h)"
+    type: stat
+    description: |
+      Composite health score combining:
+        * 7d signup count vs ≥3 gate
+        * % tenants with first_blob within 24h
+        * # active 24h-checkin alerts open
+    targets:
+      - expr: |
+          corelink_pilot_pipeline_health_score
+        legend: "health score (0-100)"
+    thresholds:
+      - value: 60
+        color: yellow
+      - value: 80
+        color: green
+
+  - id: 6
+    title: "Signup-to-grant latency (operator SLA: < 4h)"
+    type: timeseries
+    description: |
+      tier_granted_at_ms - signup_at_ms, per pilot tenant. Operator SLA
+      from customer-success-playbook.md §3.2 is "first response < 4h".
+    targets:
+      - expr: |
+          (corelink_pilot_tier_granted_at_ms - corelink_pilot_signup_at_ms) / 1000 / 3600
+        legend: "{{tenant_id}} (hours)"
+    thresholds:
+      - value: 4
+        color: red
+
+  - id: 7
+    title: "Pilot tenants in NEW state (operator action needed)"
+    type: table
+    description: |
+      Lists every tenant with pilot_state = 'NEW'. Each row needs an
+      operator running scripts/admin/grant-pilot-tier.sh.
+    targets:
+      - expr: |
+          corelink_pilot_tenant_state{state="NEW"}
+        legend: "{{tenant_id}} ({{slug}})"
+
+  - id: 8
+    title: "Pilot tenants approaching pilot window end (60-90 days)"
+    type: table
+    description: |
+      Lists every pilot tenant within 30 days of the 90-day pilot window
+      end (now_ms - tier_granted_at_ms > 60 days). These need a
+      graduation conversation per customer-success-playbook.md §4.
+    targets:
+      - expr: |
+          (time() * 1000 - corelink_pilot_tier_granted_at_ms) / 1000 / 86400
+        legend: "{{tenant_id}} (days in pilot)"
+    thresholds:
+      - value: 60
+        color: yellow
+      - value: 90
+        color: red
+
+  - id: 9
+    title: "Pilot dashboard tile — public link"
+    type: text
+    content: |
+      Customer-facing signup link (token-based slot reservation):
+      https://signup.corelink.dev/pilot/<token>
+
+      Operator playbook:
+      docs/internal/customer-success-playbook.md
+
+      Audit:
+      specs/_audits/2026-05-16-pilot-signup-pipeline.md
+
+  - id: 10
+    title: "Pilot graduation funnel (last 90d)"
+    type: stat
+    description: |
+      Count of pilot tenants that successfully transitioned NEW → ACTIVE
+      → GRADUATED in the last 90 days. Used at wave-28 to decide on
+      GA-Full vs. GA-Limited transition.
+    targets:
+      - expr: |
+          sum(corelink_pilot_graduations_total{window="90d"})
+        legend: "graduations (90d)"
+
+# T-7d ship checklist (operator):
+#   [ ] Generate DASH-PILOT-TENANTS.json from this YAML
+#   [ ] Land in dashboards/grafana/ alongside the other DASH-*.json
+#   [ ] Wire the 10 corelink_pilot_* metrics in apps/server/src/admin/pilot_metrics.rs
+#   [ ] Add panel to docs/internal/pilot-dashboard-checklist.md cross-reference
+#   [ ] Verify AdminCtx RBAC filter excludes corelink-viewer
