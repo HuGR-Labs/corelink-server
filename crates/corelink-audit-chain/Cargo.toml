@@ -43,8 +43,21 @@ default = []
 # this crate; the production Postgres binder lives in the binary; the
 # feature flag is a compile-time witness, not a runtime gate.
 #
-# See `specs/_audits/2026-05-16-neon-shadow-real-driver.md` §3.
-neon-real = []
+# Wave-20 closure: flipping this flag now ALSO pulls in the
+# `TokioPostgresExecutor` adapter (`neon_shadow::real_tokio_pg`)
+# which is the actual driver binder satisfying `NeonExecutor`.
+#
+# See `specs/_audits/2026-05-16-neon-shadow-real-driver.md` §3 + §7
+# (wave-20 closure-note).
+neon-real = [
+    "dep:deadpool-postgres",
+    "dep:tokio",
+    "dep:tokio-postgres",
+    "dep:tokio-postgres-rustls",
+    "dep:rustls",
+    "dep:rustls-native-certs",
+    "dep:webpki-roots",
+]
 
 [dependencies]
 thiserror = { workspace = true }
@@ -60,6 +73,21 @@ corelink-analytics = { workspace = true }
 # audit sink record buffer (no poisoning, smaller guard).
 parking_lot = { workspace = true }
 
+# Wave-20 — `TokioPostgresExecutor` adapter satisfying `NeonExecutor`.
+# All optional, gated by the `neon-real` feature (native-only — the
+# wasm32 stub at `neon_shadow::real_tokio_pg::wasm_stub` requires no
+# extra deps).
+#
+# `default-features = false` everywhere to keep the transitive dep
+# surface minimal — we explicitly enable only the features we need.
+deadpool-postgres = { version = "0.14", default-features = false, features = ["rt_tokio_1"], optional = true }
+tokio-postgres = { version = "0.7", default-features = false, features = ["with-uuid-1"], optional = true }
+tokio-postgres-rustls = { version = "0.13", default-features = false, optional = true }
+tokio = { workspace = true, optional = true }
+rustls = { version = "0.23", default-features = false, features = ["std", "ring"], optional = true }
+rustls-native-certs = { version = "0.8", optional = true }
+webpki-roots = { version = "0.26", optional = true }
+
 [dev-dependencies]
 proptest = { workspace = true }
 rand = "0.9"
@@ -73,6 +101,14 @@ path = "src/bin/verifier.rs"
 [[test]]
 name = "prop_audit_chain"
 path = "tests/prop_audit_chain.rs"
+
+# Wave-20 — `#[ignore]`-by-default Neon-staging integration tests +
+# 1 always-on smoke test for the env-var resolver / secrets-matrix
+# consistency. Run with `--features neon-real -- --ignored` against a
+# live Postgres (see test file docs for the testcontainers harness).
+[[test]]
+name = "neon_shadow_real"
+path = "tests/neon_shadow_real.rs"
 
 [[bench]]
 name = "merkle_append"

@@ -91,6 +91,12 @@ ALLOWLIST_REGEX = re.compile(
     r"|PROJECTS$|SKIP_WEBSERVER$"
     r"|GCP_TEST_KEY_RESOURCE$|GCP_TEST_REGION$"
     r"|DT_API_KEY_TEST_|DT_MOCK_INJECTION_ENABLED$"
+    # Wave-20 — `NEON_TEST_DSN` is the `#[ignore]`-by-default Neon-staging
+    # integration test DSN consumed by
+    # `crates/corelink-audit-chain/tests/neon_shadow_real.rs`. Not a
+    # production secret — the production per-region DSN lives at
+    # `NEON_DB_URL_<REGION>` (matrix rows 120–124).
+    r"|NEON_TEST_DSN$"
     r")"
 )
 

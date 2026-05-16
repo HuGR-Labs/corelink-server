@@ -92,6 +92,18 @@
 /// aggregate-query SQL). See `real.rs` doc.
 pub mod real;
 
+/// Wave-20 closure: `tokio-postgres` + `deadpool-postgres` adapter
+/// that satisfies the [`real::NeonExecutor`] trait. Native-only +
+/// gated by the `neon-real` Cargo feature so wasm32 + default builds
+/// stay free of the Postgres driver transitive deps. The wasm32 stub
+/// is always compiled in so the `Arc<dyn NeonExecutor>` wiring type-
+/// checks on both targets — every stub method surfaces
+/// [`real::NeonError::WasmOnly`].
+///
+/// Pattern reference: `specs/_audits/2026-05-16-neon-shadow-real-driver.md`
+/// §7 (wave-20 closure-note appended).
+pub mod real_tokio_pg;
+
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
