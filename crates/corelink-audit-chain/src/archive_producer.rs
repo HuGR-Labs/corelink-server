@@ -141,6 +141,23 @@ impl Default for FlushPolicy {
 }
 
 impl FlushPolicy {
+    /// Construct a flush policy with explicit thresholds. Provided so
+    /// external test harnesses (`tests/neon_shadow.rs`) can build a
+    /// custom policy without struct-expression access (the type is
+    /// `#[non_exhaustive]` for additive growth across follow-on WIs).
+    #[must_use]
+    pub const fn new(
+        flush_after_ms: u64,
+        max_events_per_chunk: u64,
+        max_bytes_per_chunk: u64,
+    ) -> Self {
+        Self {
+            flush_after_ms,
+            max_events_per_chunk,
+            max_bytes_per_chunk,
+        }
+    }
+
     /// Whether a flush should trip given the current buffer state.
     #[must_use]
     pub fn should_flush(&self, buffered_events: u64, buffered_bytes: u64, age_ms: u64) -> bool {

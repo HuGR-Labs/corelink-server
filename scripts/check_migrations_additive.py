@@ -48,7 +48,14 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-MIGRATION_DIRS = [REPO_ROOT / "migrations", REPO_ROOT / "migrations" / "d1"]
+MIGRATION_DIRS = [
+    REPO_ROOT / "migrations",
+    REPO_ROOT / "migrations" / "d1",
+    # Wave-18 — Neon analytics shadow migrations land in `migrations/neon/`.
+    # The shadow tables are additive-only (INV-AUDIT-APPEND-ONLY); the
+    # gate is the same additive-only discipline as `migrations/d1/`.
+    REPO_ROOT / "migrations" / "neon",
+]
 
 BANNED_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("DROP TABLE", re.compile(r"\bDROP\s+TABLE\b", re.IGNORECASE)),

@@ -142,6 +142,7 @@ pub mod chain;
 pub mod error;
 pub mod event;
 pub mod exporter;
+pub mod neon_shadow;
 pub mod sink;
 pub mod verifier;
 
@@ -164,6 +165,12 @@ pub use event::{
     canonical_audit_event_kinds, AuditEvent, AuditEventKind, ChainHash,
     CLOUDEVENTS_DATACONTENTTYPE, CLOUDEVENTS_SPECVERSION, EVENT_TYPE_PREFIX, GENESIS_PREV_HASH,
     GENESIS_SEQUENCE_NUMBER,
+};
+pub use neon_shadow::{
+    EventCountBucket, InMemoryNeonShadowSink, InMemoryShadowSyncAuditSink, NeonShadowError,
+    NeonShadowSink, ShadowEventRow, ShadowSyncAuditRow, ShadowSyncAuditSink,
+    ShadowSyncReceipt, TimelineBucket, EVENT_TYPE_SHADOW_SYNCED,
+    EVENT_TYPE_SHADOW_SYNC_FAILED, SHADOW_LAG_NOMINAL_MAX_MS, SHADOW_LAG_SEV2_THRESHOLD_MS,
 };
 pub use exporter::{
     hashes_eq_ct, verify_export_result, verify_inclusion_proof, AuditExporter, ExportAuditRecord,
