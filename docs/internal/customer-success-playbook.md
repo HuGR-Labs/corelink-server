@@ -156,6 +156,13 @@ The CS owner runs a watch:
 
 ## §4 First-30-Days Success Metrics
 
+> **Post-GA cross-ref:** during the first 30 days **after GA cutover**, the
+> per-tenant metrics below are consumed by `specs/_runbooks/RB-POST-GA-CONTINUITY.md`
+> §1.2 (initial pilot ack) + §2.2 (first onboarding ack) + §3.1.4 (weekly summary
+> cross-publish) + §4.1 (pilot-to-GA conversion). The continuity runbook is the
+> canonical orchestrator of the T+0..T+30d window; this §4 remains the
+> per-pilot daily review template.
+
 These are the metrics CS reviews **daily** during the pilot. All
 are surfaced by the pilot dashboard (`pilot-dashboard-checklist.md`).
 
