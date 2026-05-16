@@ -180,6 +180,7 @@ tags: ["runbook", "p1", "onboarding", "signup", "atomic-provisioning", "dpa-firs
 - `specs/04_sprints/S19/work_items/WI-S19-004-tier-selection-stripe-checkout-inv-onboard-dpa-first-d1-lock.md`.
 - `specs/02_governance/invariant_registry.md` §3.12 (INV-ONBOARD-DPA-FIRST + INV-ONBOARD-ATOMIC-PROVISIONING).
 - `specs/05_quality/runbooks/RB-FM-160-auth-invalid-storm.md` (pattern template).
+- `specs/_runbooks/RB-GA-CUTOVER.md` §3.6 + §3.11 — GA cutover Clerk JWT issuer flip + signup-open feature flag (this runbook is consumed if signup fails post-cutover).
 - GDPR Art. 33 (breach notification).
 
 ---

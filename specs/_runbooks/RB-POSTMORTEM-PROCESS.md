@@ -217,4 +217,10 @@ All metric names are `snake_case` per the metrics naming convention.
 
 ---
 
+## 11. See also
+
+- `specs/_runbooks/RB-GA-CUTOVER.md` §5.3 RB-S5 + §6.3.4 — GA cutover rollback retro within 24h + cutover retro at T+7d consume this runbook.
+
+---
+
 **End RB-POSTMORTEM-PROCESS.**

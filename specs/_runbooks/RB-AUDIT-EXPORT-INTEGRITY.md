@@ -186,3 +186,7 @@ For every SEV-0 / SEV-1:
 ## 7. Fitness function
 
 This runbook MUST be drilled quarterly. Expected duration **30 minutes** end-to-end on a synthetic export (`corelink audit export --fixture`). Drift > 2x (60 min) triggers FM-202 review per `corelink-runbook-tracker`.
+
+## 8. See also
+
+- `specs/_runbooks/RB-GA-CUTOVER.md` §3.7 + §4 G2 + §6.1.3 — GA cutover audit-chain Logpush enablement + greenlight criterion G2 + T+24h spot verifier; pre-cutover re-read mandatory per §0.2.5.

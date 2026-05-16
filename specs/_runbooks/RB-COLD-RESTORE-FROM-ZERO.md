@@ -563,6 +563,7 @@ If at step 9 something unexpected breaks (e.g. drill tenant's E2E fails 1h post-
 - `crates/corelink-cf-bindings` — R2 / D1 / KV / DO wrappers.
 - `crates/corelink-byok` — envelope encryption.
 - `crates/corelink-drata-sync` — evidence upload CLI.
+- `specs/_runbooks/RB-GA-CUTOVER.md` §0.2.6 — GA cutover requires last full cold-restore drill ≤ 90d before T-0h.
 
 ---
 

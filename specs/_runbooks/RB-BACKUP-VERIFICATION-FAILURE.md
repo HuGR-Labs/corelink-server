@@ -163,6 +163,7 @@ Once the root cause is identified and fixed:
 - `specs/_compliance/COLD-RESTORE-DRILL-SPEC.md` — quarterly cycle 1
 - `specs/_runbooks/RB-COLD-RESTORE-FROM-ZERO.md` — emergency path
 - `specs/_runbooks/RB-POSTMORTEM-PROCESS.md` — post-mortem template
+- `specs/_runbooks/RB-GA-CUTOVER.md` §0.2.7 + §0.6 — GA cutover requires last verification ≤ 7d AND D1 backup snapshot taken at T-7d before T-0h.
 
 ---
 

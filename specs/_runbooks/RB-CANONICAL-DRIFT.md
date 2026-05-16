@@ -167,3 +167,4 @@ python3 scripts/validate_canonical_consistency.py --json | \
   CC4.1 (continuous compliance monitoring)
 - GA gate: `ROADMAP-TO-GA.md` §7 R-7 (evidence pack includes canonical
   consistency JSON report)
+- `specs/_runbooks/RB-GA-CUTOVER.md` §1.2 + §2.2 + §0.2.11 — GA cutover migration-additivity gate + proptest gate consume this runbook; pre-cutover sweep ≤ 24h mandatory.
