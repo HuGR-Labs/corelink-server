@@ -127,3 +127,14 @@ W19-P2-02 (unemitted enum members in doc) + W19-P2-03 (pre-existing 0044 collisi
 
 Signed-off-by: Gustavo Schneiter <gustavo@humangr.com>
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+
+---
+
+## 7. Wave-21 closure note (2026-05-16)
+
+| Finding | Disposition | Branch / commit | Notes |
+|---|---|---|---|
+| **W19-P1-01** | **CLOSED** | `wt/r-prep-w19-p1-01-doc-fix` | WI-S09-008 §13 (lines 457-473) revised: the two phantom unit-test citations (`payload_column_populated_on_mid_stream_break`, `wave18_row_without_payload_field_still_parses`) are removed; §13 now cites only tests that materially exist — `wave19_audit_row_payload_and_trailer_payload_byte_identical` (integration; load-bearing pin), `audit_anchor_emits_before_trailer_under_random_breaks` (proptest @ 10 000 iter), and `unknown_row_envelope_fields_ignored_for_forwards_compat` (CLI). The byte-identical integration test transitively pins (a) the canonical 4-key map on `payload` and (b) `exit_status = EXIT_STATUS_VERIFY_FAILED_MID_STREAM` (no colon-prefix). Same edit pass also fixed the W19-P2-01 stale function-name drift (line 455: `build_audit_export_stream_frames` → `build_audit_export_async_stream`) and removed two follow-on stale citations to the phantom tests (`migrations/d1/0050_export_audit_log_add_payload.sql` comment + `specs/_audits/2026-05-15-audit-chain-retention.md` §4 row). |
+| **W19-R-L7-02** | **CLOSED** | already-resolved (wave-20 `4ccc161`) | The `emit_mid_stream_break_audit` docstring (`apps/server/src/routes/audit_export.rs:1124-1145`) was wholesale rewritten in the wave-20 emit-discipline closure commit (`4ccc161 wave-20(audit-export): fail-CLOSED emit discipline across non-happy paths`): the stale "piggy-back on `exit_status`" prose is gone, replaced by an accurate description of the wave-19 schema lift (structured `payload` column; `exit_status` carries the stable `EXIT_STATUS_VERIFY_FAILED_MID_STREAM` enum) AND the wave-20 `Result<(), &'static str>` return contract (caller force-closes the body without yielding the abort-trailer on emit-failure — truncated body is the loudest signal short of a 503). No additional source-code edit required in this sprintlet — finding is materially resolved at HEAD. |
+
+Both findings are now CLOSED. W19-P2-01 was bundled into the W19-P1-01 closure (single-edit-pass on WI-S09-008 §13). W19-P2-02 (unemitted enum members) + W19-P2-03 (pre-existing 0044 collision) remain post-GA cleanup, per §6.
