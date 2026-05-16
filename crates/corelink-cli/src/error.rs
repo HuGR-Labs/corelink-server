@@ -33,6 +33,16 @@ pub enum CliError {
     /// Generic error with context.
     #[error("{0}")]
     Other(String),
+
+    /// Wave-19 (WI-S09-008 §6) — `audit verify-ndjson --url`
+    /// detected the wave-18 `x-corelink-audit-export-aborted` HTTP
+    /// trailer mid-stream. The detailed canonical diagnostic is
+    /// already printed to stderr by
+    /// `commands::verify_ndjson_http::run_verify_ndjson_http`; this
+    /// variant exists so `main` can translate to sysexits DATAERR
+    /// (65) without re-printing.
+    #[error("audit-export aborted mid-stream (see diagnostic on stderr)")]
+    AuditExportAborted,
 }
 
 /// Config-file specific errors.

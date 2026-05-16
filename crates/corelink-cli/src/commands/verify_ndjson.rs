@@ -45,6 +45,136 @@ use corelink_audit_chain::{
     hashes_eq_ct, link_chain_hash, AuditEvent, ChainHash, ExportManifest, InclusionProof,
 };
 
+/// Public re-export of [`parse_ndjson_envelope`] for the wave-19
+/// HTTP-fetch sibling module (`verify_ndjson_http`). The wave-17
+/// parser is the canonical NDJSON envelope decoder; wave-19 reuses it
+/// against in-memory bytes instead of a file path.
+///
+/// # Errors
+///
+/// Propagates the wave-17 structured parse errors verbatim.
+pub fn parse_ndjson_envelope_public(
+    body: &str,
+) -> Result<(Vec<RowEnvelopePub>, ExportManifest), CliError> {
+    let (rows, manifest) = parse_ndjson_envelope(body)?;
+    let mapped: Vec<RowEnvelopePub> = rows
+        .into_iter()
+        .map(|r| RowEnvelopePub {
+            event: r.event,
+            proof: r.proof,
+        })
+        .collect();
+    Ok((mapped, manifest))
+}
+
+/// Public-facing row envelope wrapper. Mirrors the internal
+/// [`RowEnvelope`] shape but is exported so sibling modules (wave-19
+/// HTTP fetch) can pipe parsed rows back through
+/// [`run_verify_chain_public`] without round-tripping through disk.
+#[derive(Debug)]
+pub struct RowEnvelopePub {
+    /// Parsed audit event.
+    pub event: AuditEvent,
+    /// Parsed inclusion proof.
+    pub proof: InclusionProof,
+}
+
+/// Re-verify a pre-parsed NDJSON envelope (rows + manifest) against a
+/// customer-supplied chain-head anchor. Sibling-module entrypoint
+/// shared with [`run_verify_ndjson`] (file path) + the wave-19
+/// HTTP-fetch CLI command.
+///
+/// `source_label` is included in chain-break diagnostics in place of
+/// the file path (HTTP path uses the URL).
+///
+/// # Errors
+///
+/// Returns the same structured [`CliError::Other`] chain-break +
+/// manifest / anchor mismatch errors as [`run_verify_ndjson`].
+pub fn run_verify_chain_public(
+    rows: &[RowEnvelopePub],
+    manifest: &ExportManifest,
+    expected_anchor_hex: &str,
+    source_label: &str,
+    output_fmt: OutputFormat,
+) -> Result<VerifyNdjsonOutcome, CliError> {
+    let expected_anchor = parse_anchor_hex(expected_anchor_hex)?;
+    let mut prev_link: Option<ChainHash> = None;
+    let mut last_link: Option<ChainHash> = None;
+    for (idx, row) in rows.iter().enumerate() {
+        let line_number = idx.saturating_add(1);
+        if let Some(prev) = prev_link {
+            if !chain_hashes_eq_ct(&prev, &row.event.prev_hash) {
+                return Err(structured_chain_break_label(
+                    line_number,
+                    &row.event.prev_hash.to_hex(),
+                    &prev.to_hex(),
+                    "continuity",
+                    source_label,
+                ));
+            }
+        }
+        let recomputed = link_chain_hash(&row.event.prev_hash, &row.event).map_err(|e| {
+            CliError::Other(format!(
+                "link recompute failed at line {line_number}: {e}"
+            ))
+        })?;
+        if !chain_hashes_eq_ct(&recomputed, &row.proof.link_hash) {
+            return Err(structured_chain_break_label(
+                line_number,
+                &row.proof.link_hash.to_hex(),
+                &recomputed.to_hex(),
+                "link_recompute",
+                source_label,
+            ));
+        }
+        prev_link = Some(recomputed);
+        last_link = Some(recomputed);
+    }
+    let final_link = last_link.unwrap_or(ChainHash::genesis());
+    let manifest_head_hex = manifest.chain_head_at_export.to_hex();
+    if !chain_hashes_eq_ct(&manifest.chain_head_at_export, &final_link) {
+        return Err(CliError::Other(format!(
+            "audit verify-ndjson: manifest chain_head_at_export ({manifest_head_hex}) disagrees with recomputed final hash ({}) — export envelope is internally inconsistent",
+            final_link.to_hex()
+        )));
+    }
+    if !chain_hashes_eq_ct(&expected_anchor, &final_link) {
+        return Err(CliError::Other(format!(
+            "audit verify-ndjson: customer-supplied --chain-head-anchor ({}) does not match recomputed final hash ({}) — the chunk may be tampered or the wrong anchor was supplied; expected the value from response header X-CoreLink-Audit-Export-Chain-Head-Anchor",
+            expected_anchor.to_hex(),
+            final_link.to_hex()
+        )));
+    }
+    let outcome = VerifyNdjsonOutcome {
+        file_path: source_label.to_owned(),
+        events_verified: rows.len() as u64,
+        expected_chain_head_anchor: expected_anchor.to_hex(),
+        manifest_chain_head: manifest_head_hex,
+        final_observed_chain_head: final_link.to_hex(),
+        verified: true,
+    };
+    let fmt = Formatter::new(output_fmt);
+    fmt.emit(&outcome).map_err(CliError::Json)?;
+    Ok(outcome)
+}
+
+/// Source-label-aware variant of [`structured_chain_break`] — used by
+/// [`run_verify_chain_public`] so the diagnostic can reference a URL
+/// instead of a `Path`.
+fn structured_chain_break_label(
+    line: usize,
+    observed_hex: &str,
+    expected_hex: &str,
+    kind: &str,
+    label: &str,
+) -> CliError {
+    let body = format!(
+        "Chain break at chunk {label} event line #{line}: observed hash {observed_hex}, expected {expected_hex} — chunk may be tampered (kind={kind}). Structured: {{\"verified\":false,\"file\":\"{label}\",\"line\":{line},\"observed\":\"{observed_hex}\",\"expected\":\"{expected_hex}\",\"kind\":\"{kind}\"}}"
+    );
+    CliError::Other(body)
+}
+
 use crate::error::CliError;
 use crate::output::{Formatter, OutputFormat};
 
@@ -307,7 +437,20 @@ fn structured_chain_break(
 )]
 mod tests {
     use super::*;
+    // Wave-19 — this module is re-included at both
+    // `crate::commands::verify_ndjson` (binary) AND `crate::verify_ndjson`
+    // (lib) via `#[path]`. The fixture builder lives at
+    // `crate::commands::audit` in the binary and `crate::audit_export`
+    // in the lib; we reach the binary path here (lib test runs use
+    // the lib alias). The `#[cfg(not(test))]` is unused — both test
+    // contexts work because the lib re-exports the same file.
+    #[cfg(any())]
     use crate::commands::audit::build_fixture_exporter;
+    // Both binary + lib expose the fixture exporter under
+    // `audit_export` (the lib mod name); for the binary tests we
+    // alias it as `audit_export` via the `pub use` at the binary
+    // crate root.
+    use crate::audit_export::build_fixture_exporter;
     use corelink_audit_chain::{AuditExporter, ExportWindow};
     use tempfile::TempDir;
     use uuid::Uuid;

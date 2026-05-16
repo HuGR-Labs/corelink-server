@@ -34,6 +34,19 @@ pub mod output;
 #[path = "commands/audit.rs"]
 pub mod audit_export;
 
+/// Offline NDJSON verifier (`audit verify-ndjson --ndjson <FILE>`).
+/// Exposed for integration tests + the wave-19 HTTP-aware sibling
+/// (`verify_ndjson_http`) to reuse the chain-walk pipeline.
+#[path = "commands/verify_ndjson.rs"]
+pub mod verify_ndjson;
+
+/// Wave-19 HTTP-aware `verify-ndjson --url` (WI-S09-008 §6 closure).
+/// Streams `GET /v1/audit/export`, reads the wave-18
+/// `x-corelink-audit-export-aborted` trailer, surfaces the canonical
+/// diagnostic + exits sysexits DATAERR (65) on detection.
+#[path = "commands/verify_ndjson_http.rs"]
+pub mod verify_ndjson_http;
+
 /// Pure helpers exposed for fuzz harnesses. None of these perform network I/O
 /// or touch the filesystem; they are deterministic transformations of
 /// user-controlled input, suitable for libFuzzer / AFL++ targets.

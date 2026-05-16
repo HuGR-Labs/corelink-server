@@ -53,6 +53,18 @@ reqwest = { version = "0.12", features = ["rustls-tls", "json", "stream"], defau
 bytes = { workspace = true }
 # WI-S15-005 telemetry: platform-aware config path (~/.corelink)
 dirs = "5"
+# WI-S09-008 §6 wave-19 HTTP-aware `verify-ndjson --url` — needs raw
+# trailer access (the `x-corelink-audit-export-aborted` trailer is the
+# load-bearing wave-18 abort signal). reqwest 0.12 hides trailers behind
+# a `pub(crate)` ResponseBody; we use hyper directly to read frames +
+# trailers via `http_body::Body::poll_frame`.
+hyper = { version = "1", features = ["client", "http1"] }
+hyper-util = { version = "0.1", features = ["client", "client-legacy", "http1", "tokio"] }
+hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "ring", "rustls-native-certs", "webpki-tokio"] }
+http = "1"
+http-body = "1"
+http-body-util = { workspace = true }
+url = "2"
 
 [dev-dependencies]
 tokio-test = { workspace = true }
