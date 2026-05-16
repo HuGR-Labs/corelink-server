@@ -19,7 +19,7 @@ If you already have a digest and want to skip recomputation, supply it via
 
 ## Prerequisites
 
-- Authentication configured (see [01-authenticate](./01-authenticate.mdx)).
+- Authentication configured (see [01-authenticate](./01-authenticate)).
 
 ## Minimal example
 
@@ -56,11 +56,11 @@ the same digest with no extra storage cost (CTRL-CAS-001 dedupe).
 
 | Exception | Cause | Action |
 |---|---|---|
-| `AuthError` | PAT missing or revoked | Re-run [01-authenticate](./01-authenticate.mdx) |
-| `QuotaError` | Tenant over quota | Inspect `corelink stat`; see [troubleshooting](./07-troubleshooting.mdx) |
+| `AuthError` | PAT missing or revoked | Re-run [01-authenticate](./01-authenticate) |
+| `QuotaError` | Tenant over quota | Inspect `corelink stat`; see [troubleshooting](./07-troubleshooting) |
 | `DigestMismatchError` | `expected_digest` did not match | Recompute locally; do not retry blindly |
 
 ## Next steps
 
-- [Download the blob](./03-download-blob.mdx)
-- [Batch many uploads](./05-batch-operations.mdx)
+- [Download the blob](./03-download-blob)
+- [Batch many uploads](./05-batch-operations)

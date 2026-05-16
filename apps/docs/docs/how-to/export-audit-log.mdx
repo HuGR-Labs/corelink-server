@@ -17,12 +17,12 @@ You're preparing evidence for one of:
 - **LGPD Art. 9** (subject access) or **Art. 18** (portability).
 - An internal forensic investigation, regulator notice, or DPA-required disclosure.
 
-CoreLink's audit chain is BLAKE3-linked, retained 7 years on R2 with Object Lock Governance Mode, and verified daily by a SEV-0 cron (see [`RB-AUDIT-CHAIN-001`](../../../specs/_runbooks/RB-AUDIT-CHAIN-001.md) — internal). This guide shows how to extract a tamper-proof slice of that chain for any compliance use.
+CoreLink's audit chain is BLAKE3-linked, retained 7 years on R2 with Object Lock Governance Mode, and verified daily by a SEV-0 cron (see runbook `RB-AUDIT-CHAIN-001` — internal). This guide shows how to extract a tamper-proof slice of that chain for any compliance use.
 
 ## Prerequisites
 
 - CoreLink CLI installed (`corelink version` ≥ this WI).
-- Authenticated as your tenant ([01-authenticate](./sdk-cli/01-authenticate.mdx)).
+- Authenticated as your tenant ([01-authenticate](./sdk-cli/01-authenticate)).
 - The tenant id you want to export (pseudonymous UUIDv7; the same id shown in the admin console).
 
 ## Minimal command
@@ -123,7 +123,7 @@ Each row carries the canonical CloudEvents 1.0 attribute set + CoreLink extensio
 
 | Regime | Article / Control | Evidence pointer |
 |---|---|---|
-| SOC 2 | CC4.1, CC7.2, CC8.1 | [`SOC2-EVIDENCE-ROLLUP-2026-05-15.md`](../../../specs/_compliance/SOC2-EVIDENCE-ROLLUP-2026-05-15.md) §CC4.1 — file the export as `EVT-AUDIT-EXPORT-<tenant>-<since>-<until>`. |
+| SOC 2 | CC4.1, CC7.2, CC8.1 | Internal: `SOC2-EVIDENCE-ROLLUP-2026-05-15.md` §CC4.1 — file the export as `EVT-AUDIT-EXPORT-<tenant>-<since>-<until>`. |
 | GDPR | Art. 15(3), Art. 20(1) | Subject access / portability: ship the JSON-LD export to the data subject within 1 month (Art. 12(3)). |
 | LGPD | Art. 9 (acesso), Art. 18 (portabilidade) | Same JSON-LD export satisfies both rights under the Brazilian regime. |
 | ISO 27001 | A.12.4.1 (Event logging) | Audit-trail completeness evidence; pair with daily `chain_verified_ok` records. |
@@ -133,13 +133,13 @@ Each row carries the canonical CloudEvents 1.0 attribute set + CoreLink extensio
 
 **Export hangs at "verify".** The `--verify` pass is O(events²) for the sibling walk; a 1M-event window takes ~30s on commodity hardware. For very large windows, split into monthly chunks and concatenate the JSON-LD `events` arrays — chain head continuity is enforced via the manifest.
 
-**Verify reports "chain break".** Stop — that's a SEV-0 signal. Open a support ticket at [`support@hugr.com`](mailto:support@hugr.com) **with the export file attached**. Internal triage runbook: [`RB-AUDIT-EXPORT-INTEGRITY`](../../../specs/_runbooks/RB-AUDIT-EXPORT-INTEGRITY.md).
+**Verify reports "chain break".** Stop — that's a SEV-0 signal. Open a support ticket at [`support@hugr.com`](mailto:support@hugr.com) **with the export file attached**. Internal triage runbook: `RB-AUDIT-EXPORT-INTEGRITY`.
 
-**"production server-side endpoint not yet wired".** Today the CLI requires `--fixture` for offline / regression mode while the CF Worker `GET /v1/audit/export/window` impl lands. Production wiring goes live in the audit-export-worker rollout — track [`ROADMAP-TO-GA.md`](../../../ROADMAP-TO-GA.md) §4 R-4.
+**"production server-side endpoint not yet wired".** Today the CLI requires `--fixture` for offline / regression mode while the CF Worker `GET /v1/audit/export/window` impl lands. Production wiring goes live in the audit-export-worker rollout — see `ROADMAP-TO-GA.md` §4 R-4.
 
 ## Related
 
 - [`corelink audit verify`](#verifying-an-export-offline) — offline proof check.
-- [SOC 2 evidence rollup CC4.1](../../../specs/_compliance/SOC2-EVIDENCE-ROLLUP-2026-05-15.md) — internal control mapping.
-- [Privacy model §6](../../../specs/03_architecture/privacy_model.md) — DSR pipeline this export feeds.
-- [Security model §Merkle proofs](../../../specs/03_architecture/security_model.md) — the cryptographic spine that makes proof-of-integrity work.
+- SOC 2 evidence rollup CC4.1 (internal: `specs/_compliance/SOC2-EVIDENCE-ROLLUP-2026-05-15.md`) — internal control mapping.
+- Privacy model §6 (internal: `specs/03_architecture/privacy_model.md`) — DSR pipeline this export feeds.
+- Security model §Merkle proofs (internal: `specs/03_architecture/security_model.md`) — the cryptographic spine that makes proof-of-integrity work.

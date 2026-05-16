@@ -36,6 +36,6 @@ cat digests.txt | corelink stat --batch --format=json
 
 | CLI exit code | Cause | Fix |
 | --- | --- | --- |
-| `4` | Blob not found | Upload via [`corelink put`](./cli-put-get.mdx) |
+| `4` | Blob not found | Upload via [`corelink put`](./cli-put-get) |
 | `3` | `COR_AUTH_PAT_INVALID` | Re-mint PAT |
 | `7` | Malformed digest string | Use `sha256:<hash_hex>:<size_bytes>` |

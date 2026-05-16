@@ -7,7 +7,7 @@ description: Use the CoreLink SDK directly from Python, Go, or Node.js applicati
 
 # Native SDK quickstart
 
-If you are building a custom pipeline (ML training cache, CI artifact store, data lake), use the language SDKs rather than Bazel/Buck2. All SDKs share the same REAPI v2 semantics and enable `client_verify` by default ([CTRL-CAS-002](../reference/reapi/index.mdx)).
+If you are building a custom pipeline (ML training cache, CI artifact store, data lake), use the language SDKs rather than Bazel/Buck2. All SDKs share the same REAPI v2 semantics and enable `client_verify` by default ([CTRL-CAS-002](../reference/reapi/index)).
 
 ## Python — `corelink-py`
 
@@ -102,4 +102,4 @@ Full example: [`examples/javascript/quickstart.ts`](https://github.com/humangr-l
 
 All SDKs re-hash blob bytes on read and reject mismatches (`COR_CAS_DIGEST_MISMATCH`). This catches tampering between cache server and client. Disable only with explicit opt-in (`client_verify=False`), and an audit warning is logged.
 
-Next: [Verify cache hit ratio](./06-verify-cache-hit.mdx).
+Next: [Verify cache hit ratio](./06-verify-cache-hit).

@@ -8,7 +8,7 @@ description: 15 questions every new CoreLink user asks in the first hour — san
 # Quickstart FAQ
 
 Fifteen questions every new CoreLink user asks during or right after
-the [10-minute quickstart](./quickstart-10min.mdx). If your question
+the [10-minute quickstart](./quickstart-10min). If your question
 isn't here, jump to [Support](#15--how-do-i-get-help-if-i-am-stuck).
 
 ---
@@ -114,7 +114,7 @@ In the admin UI: **Settings → Tokens → Revoke**. Revocation propagates
 globally in **&lt; 60 seconds** (FM-061 rotation drill measures the
 actual P95). Revoked tokens immediately fail with
 `COR_AUTH_PAT_REVOKED` even if cached client-side. For programmatic
-rotation see the [REST API](../reference/api/openapi.mdx) `/v1/pats`
+rotation see the [REST API](../reference/api/openapi) `/v1/pats`
 endpoints — the canonical pattern is "create new → swap into
 secrets-store → revoke old".
 
@@ -141,7 +141,7 @@ process exits non-zero before the bytes touch your filesystem. To
 Three paths:
 
 - **CLI** — `corelink ls --tenant <id>` + `corelink stat <digest> --output json` gives per-blob first-seen / last-seen / access counts.
-- **REST** — `GET /v1/audit/events?since=2026-05-15T00:00:00Z` with your PAT (see [REST reference](../reference/api/openapi.mdx)).
+- **REST** — `GET /v1/audit/events?since=2026-05-15T00:00:00Z` with your PAT (see [REST reference](../reference/api/openapi)).
 - **Streaming** — Enterprise tier supports webhook delivery to your SIEM (Datadog, Splunk, Sumo, custom HTTPS endpoint) with HMAC-signed payloads.
 
 Sandbox tenants expose the same REST surface; only the retention

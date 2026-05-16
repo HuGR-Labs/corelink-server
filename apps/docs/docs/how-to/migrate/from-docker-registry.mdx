@@ -137,7 +137,7 @@ done
 ```
 
 For large registries (> 500 GiB), parallelize with `xargs -P 16` per
-the [S3 migration guide](./from-s3-only.mdx#step-1--backfill-existing-artifacts-into-corelink).
+the [S3 migration guide](./from-s3-only#step-1--backfill-existing-artifacts-into-corelink).
 
 ### Step 2 — Configure your registry to use CoreLink as the storage driver
 
@@ -349,8 +349,8 @@ When all five rows pass, the migration is done.
 
 ## Cross-links
 
-- [Migration overview](./index.mdx) — decision matrix.
-- [From S3-only artifact storage](./from-s3-only.mdx) — if your "registry" is actually just an S3 bucket of tarballs.
-- [From a Bazel remote cache](./from-bazel-remote-cache.mdx) — if you also build images via Bazel `rules_oci`.
-- [10-minute quickstart](../../tutorials/quickstart-10min.mdx) — install the CLI.
+- [Migration overview](./index) — decision matrix.
+- [From S3-only artifact storage](./from-s3-only) — if your "registry" is actually just an S3 bucket of tarballs.
+- [From a Bazel remote cache](./from-bazel-remote-cache) — if you also build images via Bazel `rules_oci`.
+- [10-minute quickstart](../../tutorials/quickstart-10min) — install the CLI.
 - [Lighthouse Customer Playbook](https://github.com/humangr-labs/corelink-server/blob/main/marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md) — if you want a dedicated engineer for a complex multi-cluster cutover.

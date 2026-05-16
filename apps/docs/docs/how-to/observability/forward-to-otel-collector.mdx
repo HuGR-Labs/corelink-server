@@ -32,7 +32,7 @@ vendor lock-in.
 
 - An OpenTelemetry Collector reachable from CoreLink's egress IP range.
   We publish CoreLink's egress IP allow-list at
-  [Trust → Data handling](../../trust/data-handling.mdx#corelink-egress-ip-ranges).
+  [Trust → Data handling](../../trust/data-handling#corelink-egress-ip-ranges).
 - TLS enabled on the Collector endpoint (CoreLink rejects plaintext
   `http://` / `grpc://` for non-localhost endpoints).
 - A bearer token rotated quarterly. The Collector validates it via the
@@ -228,12 +228,12 @@ CoreLink Pro tenant:
 
 ## Cross-references
 
-- [Observability overview](./index.mdx)
-- [Forward to Datadog](./forward-to-datadog.mdx) (alternative, lower
+- [Observability overview](./index)
+- [Forward to Datadog](./forward-to-datadog) (alternative, lower
   setup cost if you already own Datadog).
-- [Forward to Grafana Cloud](./forward-to-grafana-cloud.mdx)
+- [Forward to Grafana Cloud](./forward-to-grafana-cloud)
   (alternative; Prom remote-write + Tempo OTLP HTTP).
-- [Trust → Data handling](../../trust/data-handling.mdx) — PII hygiene
+- [Trust → Data handling](../../trust/data-handling) — PII hygiene
   + egress IP ranges.
 - [`specs/_audits/2026-05-15-otel-export-spec.md`](https://github.com/humangr-labs/corelink-server/blob/main/specs/_audits/2026-05-15-otel-export-spec.md)
   — full inventory of what we export.

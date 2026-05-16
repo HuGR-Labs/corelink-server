@@ -72,7 +72,7 @@ corelink version
 ```
 
 If you see a version string, you're good. If not, jump to the
-[FAQ](./quickstart-faq.mdx).
+[FAQ](./quickstart-faq).
 
 ---
 
@@ -121,8 +121,8 @@ corelink config list
 
 That's it — no project-local file required for the quickstart. (Build
 systems like Bazel/Buck2 use their own remote-cache config; see the
-[Bazel quickstart](../tutorial/03-bazel-quickstart.mdx) and
-[Buck2 quickstart](../tutorial/04-buck2-quickstart.mdx).)
+[Bazel quickstart](../tutorial/03-bazel-quickstart) and
+[Buck2 quickstart](../tutorial/04-buck2-quickstart).)
 
 ---
 
@@ -204,7 +204,7 @@ That JSON includes the timestamps and counters that the admin UI
 surfaces in **Audit → Events**. For a full audit-trail dashboard with
 actor identity and IP, sign in to [app.corelink.dev](https://app.corelink.dev) and open
 your tenant → **Audit** tab. The same data is available via the
-[REST API `/v1/audit/events`](../reference/api/openapi.mdx) endpoint
+[REST API `/v1/audit/events`](../reference/api/openapi) endpoint
 (see the FAQ for the exact filter syntax).
 
 :::note Audit retention
@@ -338,12 +338,12 @@ client-side BLAKE3 verification enabled by default.
 You've stored, retrieved, audited, and SDK-called against CoreLink in
 under 10 minutes. Pick the next path that matches your team:
 
-- **Wire it into your build system** — [Bazel](../tutorial/03-bazel-quickstart.mdx) or [Buck2](../tutorial/04-buck2-quickstart.mdx) quickstart (≈ 5 min each).
-- **Migrate from an existing cache or store** — [Migration overview](../how-to/migrate/index.mdx) → self-serve guides for `bazel-remote` / BuildBuddy, S3-only, and Harbor / Quay (1–3 engineer-days each).
-- **Verify your cache-hit ratio** — [Verify cache hit](../tutorial/06-verify-cache-hit.mdx) walks through the metrics endpoint.
-- **Move to production** — [Pricing](/pricing) for paid tier limits, [How-to: production setup](../how-to/index.mdx) for the full checklist (custom domain, BYOK, regions, SLA).
-- **BYOK (Bring Your Own Key)** — Enterprise plan only; see [BYOK setup](../how-to/index.mdx) for AWS/GCP/Azure/Vault provider matrix.
-- **Sandbox quirks + billing triggers** — read the [Quickstart FAQ](./quickstart-faq.mdx) (15 questions, ~3 minutes).
+- **Wire it into your build system** — [Bazel](../tutorial/03-bazel-quickstart) or [Buck2](../tutorial/04-buck2-quickstart) quickstart (≈ 5 min each).
+- **Migrate from an existing cache or store** — [Migration overview](../how-to/migrate/index) → self-serve guides for `bazel-remote` / BuildBuddy, S3-only, and Harbor / Quay (1–3 engineer-days each).
+- **Verify your cache-hit ratio** — [Verify cache hit](../tutorial/06-verify-cache-hit) walks through the metrics endpoint.
+- **Move to production** — [Pricing](/pricing) for paid tier limits, [How-to: production setup](../how-to/index) for the full checklist (custom domain, BYOK, regions, SLA).
+- **BYOK (Bring Your Own Key)** — Enterprise plan only; see [BYOK setup](../how-to/index) for AWS/GCP/Azure/Vault provider matrix.
+- **Sandbox quirks + billing triggers** — read the [Quickstart FAQ](./quickstart-faq) (15 questions, ~3 minutes).
 
 ---
 

@@ -1,8 +1,8 @@
 diff --git a/lib/ssg/ssgNodeRequire.js b/lib/ssg/ssgNodeRequire.js
-index cfd85dbde0b9a52996b7321bef85eafb7b29ec17..8f1e321271d2e0e87da45227c80936a1ab1e8f5b 100644
+index cfd85dbde0b9a52996b7321bef85eafb7b29ec17..bc6a01b8b8be2ab78db06018e50a5fa65498f1fc 100644
 --- a/lib/ssg/ssgNodeRequire.js
 +++ b/lib/ssg/ssgNodeRequire.js
-@@ -23,6 +23,15 @@ function createSSGRequire(serverBundlePath) {
+@@ -23,6 +23,41 @@ function createSSGRequire(serverBundlePath) {
      const realRequire = (0, module_1.createRequire)(serverBundlePath);
      const allRequiredIds = [];
      const ssgRequireFunction = (id) => {
@@ -15,10 +15,36 @@ index cfd85dbde0b9a52996b7321bef85eafb7b29ec17..8f1e321271d2e0e87da45227c80936a1
 +        if (typeof id === 'string' && /\.(css|scss|sass|less|styl)$/i.test(id)) {
 +            return {};
 +        }
++        // CoreLink DEBT-015-BUILD patch: webpack externalises aliased
++        // `@theme/*` and `@generated/*` imports inside source files
++        // shipped by `@docusaurus/theme-classic` (e.g. the runtime
++        // `lib/prism-include-languages.js` imports
++        // `@theme/prism-include-languages`). At SSG time Node cannot
++        // resolve these bare specifiers — they live only in webpack's
++        // alias map. Stub them: the affected modules (Prism language
++        // augmentation, generated config readers) are meaningful only
++        // in the browser bundle and a noop default export is safe at
++        // SSR. Without this stub the build fails with ERR_MODULE_NOT_FOUND
++        // on Node 22 even after CSS stubs and require.resolveWeak polyfill.
++        if (typeof id === 'string' && (id.startsWith('@theme/') || id.startsWith('@generated/'))) {
++            return { default: () => {}, __esModule: true };
++        }
++        // CoreLink DEBT-015-BUILD patch: webpack's server bundle
++        // externalises `theme-classic/lib/*` client-module entries
++        // (e.g. `prism-include-languages`, `nprogress`). Each is an
++        // ESM file with inner `import '@theme/...'` or `import './*.css'`
++        // statements that Node's ESM loader cannot resolve at SSG time
++        // (the webpack alias map is gone, and CSS has no Node loader).
++        // Stub them: these modules are meaningful only in the browser
++        // bundle (Prism syntax-highlight augmentation, top-progress bar)
++        // and a noop default export is safe at SSR.
++        if (typeof id === 'string' && /[\\/]@docusaurus[\\/]theme-classic[\\/]lib[\\/](prism-include-languages|nprogress)(\.js)?$/.test(id)) {
++            return { default: () => {}, __esModule: true };
++        }
          const module = realRequire(id);
          allRequiredIds.push(id);
          return module;
-@@ -33,6 +42,10 @@ function createSSGRequire(serverBundlePath) {
+@@ -33,6 +68,10 @@ function createSSGRequire(serverBundlePath) {
          });
      };
      ssgRequireFunction.resolve = realRequire.resolve;

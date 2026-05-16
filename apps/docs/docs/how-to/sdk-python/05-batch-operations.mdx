@@ -15,7 +15,7 @@ pass (e.g. a remote-build worker draining its local cache). You want maximum
 throughput without tripping CoreLink's per-tenant rate limits.
 
 If you have a single large blob, prefer streaming
-([02-upload-blob](./02-upload-blob.mdx)).
+([02-upload-blob](./02-upload-blob)).
 
 ## Pattern: bounded `asyncio.gather`
 
@@ -72,5 +72,5 @@ This cuts upload count by 60-90% on typical build outputs.
 
 ## Next steps
 
-- [CI integration](./06-ci-integration.mdx)
-- [Troubleshooting](./07-troubleshooting.mdx)
+- [CI integration](./06-ci-integration)
+- [Troubleshooting](./07-troubleshooting)
