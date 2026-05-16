@@ -1,0 +1,21 @@
+# AWS Artifact PDF SHA-256 ledger — append-only.
+#
+# DEBT-003 evidence anchor; canonical cross-references:
+#   specs/_compliance/aws-artifact-placeholder.md
+#   specs/_compliance/BYOK-FIPS-ATTESTATION-MATRIX.md
+#   scripts/verify-aws-artifact-pdf.sh
+#
+# Line format (after this header):
+#   <64-hex sha256>  <filename>  # fetched=YYYY-MM-DD principal=<iam-arn> kind=<fips|soc2|other>
+#
+# Lines are append-only. Never edit, reorder, or delete prior receipts.
+# Each new line is its own git commit so the audit chain stays explicit.
+#
+# Verifier modes (see scripts/verify-aws-artifact-pdf.sh --help):
+#   --check-empty     CI gate: this file is in initial header-only state.
+#   --verify-ledger   Post-receipt: all body lines well-formed.
+#   --pdf <path>      Operator-side: a local PDF matches a ledger row.
+#
+# As of wave-27 (engineering-side land), this file is intentionally empty
+# below the header block. Owner appends the first row per DEBT-003 closure
+# protocol §6 of the placeholder doc.
