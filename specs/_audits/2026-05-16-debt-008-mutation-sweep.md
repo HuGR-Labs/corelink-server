@@ -3,14 +3,14 @@ id: "AUDIT-DEBT-008-MUTATION-SWEEP-2026-05-16"
 type: "audit"
 doc_status: "REVIEW"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-16"
 updated: "2026-05-16"
-sprint: "Wave-21 (post-2026-05-15 DEBT-008 expansion)"
+sprint: "Wave-21 (post-2026-05-15 DEBT-008 expansion) + wave-22 addendum (tenant-path)"
 parent_wi: "WI-DEBT-008-MUTATION-FULL-SWEEP"
 parent_audit: "specs/_audits/2026-05-15-mutation-full-sweep.md"
 owner: "Gustavo Schneiter"
-tags: ["audit", "mutation-testing", "cargo-mutants", "debt-008", "corelink-hash", "wave-21"]
+tags: ["audit", "mutation-testing", "cargo-mutants", "debt-008", "corelink-hash", "corelink-tenant-path", "wave-21", "wave-22"]
 ---
 
 # Wave-21 DEBT-008 mutation sweep — `corelink-hash` empirical baseline + 7 targeted kills
@@ -34,6 +34,7 @@ tags: ["audit", "mutation-testing", "cargo-mutants", "debt-008", "corelink-hash"
 | Crate | Mutants | Caught (pre) | Missed (pre) | Unviable | Viable | Kill rate (pre) | Targeted tests added | Caught (post) | Missed (post) | Kill rate (post) |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | `corelink-hash` | 43 | 28 | 8 | 7 | 36 | **77.78 %** | 7 | 35 | 1 (equivalent) | **97.22 %** |
+| `corelink-tenant-path` (wave-22) | 21 | 17 | 0 (1 timeout) | 3 | 18 | **94.44 %** | 1 | 18 | 0 | **100.00 %** |
 
 - **Pre-additions:** 77.78 % kill rate (28/36 viable mutants caught).
 - **Post-additions:** 97.22 % kill rate (35/36; the single remaining
@@ -178,21 +179,26 @@ wave-14 plumbing — or queue for wave-22 follow-on dispatch.
 | `corelink-dual-approval` | PARTIAL (CI-nightly) | unchanged | pending first CI run |
 | `corelink-ratelimit` | PARTIAL (CI-nightly) | unchanged | pending first CI run |
 | **`corelink-hash`** | not in matrix | **CLOSED** (this audit) | **97.22 %** |
+| **`corelink-tenant-path`** | BLOCKED (compile error) | **CLOSED** (wave-22 addendum §11) | **100.00 %** |
 
 DEBT-008 remains **PARTIAL** at the register level (4 crates still on
 CI-nightly + N un-swept critical crates), but the empirically-closed
-subset grows from `{audit-chain}` to `{audit-chain, hash}`. The
-`corelink-hash` empirical 97.22 % rate is the highest measured kill
-rate in the corpus.
+subset grows from `{audit-chain}` to `{audit-chain, hash,
+tenant-path}`. The `corelink-tenant-path` empirical 100.00 % rate is the
+new highest measured kill rate in the corpus, surpassing
+`corelink-hash`'s 97.22 % (which retains the equivalent-mutant `|→^`
+floor).
 
 ## 8. Caveats
 
-1. **`corelink-tenant-path` compile error:** `cargo test -p
+1. ~~**`corelink-tenant-path` compile error:** `cargo test -p
    corelink-tenant-path` fails to compile because the bench/test code
    references `Uuid::now_v7()` which is not in scope under the current
    `uuid` feature set. This blocks mutation testing for the canonical
    tenant-isolation crate; tracked as a follow-on ticket (not in
-   wave-21 scope).
+   wave-21 scope).~~ **RESOLVED in wave-22 addendum §11** — `uuid`
+   feature set lifted to `["v7", "rng-getrandom"]` on top of the
+   workspace pin; empirical sweep landed at 100.00 % kill rate.
 2. **The equivalent `|→^` mutant** is documented in §3.1 and in the
    `mutation_kills.rs` header comment. If a future refactor changes
    the nibble-domain invariant (e.g., accepts wider input), the mutant
@@ -223,3 +229,131 @@ rate in the corpus.
 | Crate | Pre-additions | New (this audit) | Total |
 |---|---:|---:|---:|
 | `corelink-hash` | 20 (prop_hash + blob_store_contract) | 7 (`mutation_kills.rs`) | 27 |
+| `corelink-tenant-path` (wave-22) | 21 (lib + integration; was failing compile) | 1 (`cache_is_not_empty_after_insertion`) | 22 |
+
+## 11. Wave-22 addendum — `corelink-tenant-path` (2026-05-16)
+
+> **Context:** caveat §8.1 (compile error blocking the sweep) was the
+> only inflight blocker preventing `corelink-tenant-path` — the
+> canonical tenant-isolation surface (CTRL-AUTH-004 / INV-TENANT-ISOLATION
+> layer 5) — from being empirically swept under DEBT-008. This addendum
+> lifts the block, lands the sweep, and promotes the crate to the
+> empirically-closed subset.
+
+### 11.1 Root cause + fix
+
+- **Root cause:** `crates/tenant-path/Cargo.toml` declared
+  `uuid = { workspace = true }`, which pulled the workspace
+  feature set `["v4", "serde", "js"]`. The `cache.rs` test module
+  and the `derive_prefix_cached` bench reference `Uuid::now_v7()`,
+  which requires the `v7` feature. Compile failure: `function or
+  associated item not found in uuid::Uuid` (6 occurrences across
+  `cache.rs` test mod + `benches/derive_prefix_cached.rs`).
+- **Fix:** lifted the dep to
+  `uuid = { workspace = true, features = ["v7", "rng-getrandom"] }`.
+  Pattern matches the established `corelink-audit` and
+  `corelink-auth-schema` precedent (both add `v7` per-crate on top of
+  the workspace pin). `rng-getrandom` is required because `now_v7()`
+  needs a host RNG (the workspace pin's `js` feature only covers
+  wasm32).
+
+### 11.2 Empirical sweep results
+
+**Pre-additions** (immediately after the compile fix):
+
+```text
+21 mutants tested in 12m 32s: 17 caught, 3 unviable, 1 timeouts
+```
+
+- Viable population: 18 (21 − 3 unviable).
+- Caught: 17. Missed: 0. Timeouts: 1.
+- Pre-additions kill rate: **94.44 %** (17/18).
+- Timeout mutant: `cache.rs:180:9: replace TenantPrefixCache::is_empty
+  -> bool with true`. The existing `cache_is_empty_initially` test
+  asserts `cache.is_empty() == true` on a fresh cache, which the
+  mutation also satisfies (it returns `true` unconditionally). No
+  existing test exercises the **false** branch, so the test runtime
+  cycles up to the 120 s ceiling without divergence.
+
+### 11.3 Targeted test added
+
+A single test in `crates/tenant-path/src/cache.rs`:
+
+```rust
+#[test]
+fn cache_is_not_empty_after_insertion() {
+    // Mutation guard (DEBT-008 wave-22): kills the
+    // `is_empty -> bool with true` survivor by asserting the
+    // false branch is reachable after a single populated entry.
+    let tdk = fresh_tdk(0x66);
+    let cache = TenantPrefixCache::new();
+    let v = TdkVersion(1);
+    let tenant = Uuid::now_v7();
+    let _ = cache.get_or_derive(&tdk, v, tenant);
+    assert!(!cache.is_empty());
+    assert_eq!(cache.len(), 1);
+}
+```
+
+This exercises the **false** branch of `is_empty()` after a single
+insertion, immediately failing the `replace -> true` mutation by
+inverting the assertion that the original would satisfy.
+
+### 11.4 Verification re-sweep
+
+```text
+21 mutants tested in 9m 24s: 18 caught, 3 unviable
+```
+
+- Viable population: 18.
+- Caught: 18. Missed: 0. Timeouts: 0.
+- Post-additions kill rate: **100.00 %** (18/18).
+- This is the highest measured kill rate in the DEBT-008 corpus,
+  surpassing `corelink-hash`'s 97.22 % (which retains the
+  equivalent-mutant `|→^` floor at one missed mutant).
+
+### 11.5 Surviving-mutant table — none
+
+Post-additions, **zero** viable mutants survive. The 3 unviable
+mutants are documented for completeness:
+
+| File:Line | Mutation | Why unviable |
+|---|---|---|
+| `cache.rs:121` | `get_or_derive -> TenantPrefix with Default::default()` | `Default` not implemented for `TenantPrefix` — won't compile under mutation. |
+| `prefix.rs:63` | `TenantDerivationKey::from_bytes -> Self with Default::default()` | `Default` not implemented for `TenantDerivationKey` (zeroize discipline forbids it). |
+| `prefix.rs:149` | `derive_prefix -> TenantPrefix with Default::default()` | Same — `Default` is intentionally absent on `TenantPrefix`. |
+
+The absence of `Default` on the three key types is itself a
+correctness invariant (a zero-value tenant prefix or all-zero TDK
+would be a security footgun); the mutation-tool's failure to
+synthesize these mutants is a *positive* signal, not a gap.
+
+### 11.6 Invocation
+
+```bash
+# Pre-additions sweep (after Cargo.toml fix, before targeted test)
+cargo mutants -p corelink-tenant-path --no-shuffle --jobs 4 \
+  --timeout 120 \
+  --output ./target/mutants/corelink-tenant-path.out
+
+# Verification re-sweep (after targeted test landed)
+cargo mutants -p corelink-tenant-path --no-shuffle --jobs 4 \
+  --timeout 120 \
+  --output ./target/mutants/corelink-tenant-path-verify.out
+```
+
+### 11.7 Wave-22 decisions log
+
+- **2026-05-16** — `corelink-tenant-path` Cargo.toml lifted to
+  `uuid` features `["v7", "rng-getrandom"]`; `cargo build -p
+  corelink-tenant-path` and `cargo test -p corelink-tenant-path`
+  both green.
+- **2026-05-16** — empirical pre-additions sweep: 17/18 caught
+  (94.44 %); 1 timeout on `is_empty -> bool with true`.
+- **2026-05-16** — targeted test `cache_is_not_empty_after_insertion`
+  added (1 net-new test in `crates/tenant-path/src/cache.rs`).
+- **2026-05-16** — verification re-sweep: 18/18 caught (100.00 %);
+  zero misses, zero timeouts.
+- **2026-05-16** — DEBT-008 empirically-closed subset extended to
+  `{corelink-audit-chain, corelink-hash, corelink-tenant-path}`.
+  Caveat §8.1 resolved.
