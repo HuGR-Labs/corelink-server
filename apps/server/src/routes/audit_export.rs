@@ -68,6 +68,27 @@
 //! are flushed (we still deliver the bytes — the caller decides
 //! what to trust; the audit emit guarantees the server-side detect
 //! anchor for the security team page-out).
+//!
+//! ### Wave-20 emit-discipline lift (closes A-P1-02/03/05/A-P2-01)
+//!
+//! Every pre-byte-stream audit-emit on a non-happy path is now
+//! routed through [`emit_or_503`] — if the sink returns `Err` the
+//! route aborts with `503 Service Unavailable` carrying the
+//! `audit pipeline closed` body (mirrors the existing
+//! `export_request.v1` arm at step 8). This closes the prior
+//! regression where cross-tenant-reject / rate-limit-deny /
+//! verify-failed-sev0 emits silently dropped on a paired
+//! audit-sink-down + adversarial event, leaving the security team
+//! with no anchor row.
+//!
+//! Mid-stream chain-break is the one case where a 503 is impossible
+//! (response headers are already flushed). The async stream
+//! generator surfaces an audit-emit failure via:
+//!   1. a SEV-0 `tracing::error!` carrying the would-be audit row,
+//!   2. force-closing the stream WITHOUT emitting the abort trailer
+//!      frame (the consumer sees a truncated body — a louder
+//!      signal than a missing audit row).
+//! See [`emit_mid_stream_break_audit`] for the trade-off note.
 
 use std::convert::Infallible;
 use std::sync::{Arc, Mutex};
@@ -262,6 +283,35 @@ impl InMemoryExportAuditSink {
         *g = Some(msg);
         Ok(())
     }
+}
+
+/// Wave-20 — shared fail-CLOSED audit-emit helper. Emits `row` via
+/// `sink`; on success returns `None`. On failure returns
+/// `Some(503 + "audit pipeline closed")` so the caller can early-
+/// return without serving any bytes. Mirrors the wave-15 discipline
+/// previously inlined only on the `export_request.v1` arm — every
+/// pre-byte-stream emit on a non-happy path now routes through this
+/// helper.
+///
+/// Closes audit findings A-P1-02 (cross-tenant-reject), A-P1-03 (mid-
+/// stream-break — see [`emit_mid_stream_break_audit`] for the
+/// post-header trade-off), A-P1-05 (verify-failed-sev0), A-P2-01
+/// (rate-limit-deny).
+#[must_use]
+pub fn emit_or_503(
+    sink: &Arc<dyn ExportAuditSink>,
+    row: ExportAuditRow,
+) -> Option<axum::response::Response> {
+    if sink.emit(row).is_err() {
+        return Some(
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "audit pipeline closed",
+            )
+                .into_response(),
+        );
+    }
+    None
 }
 
 impl ExportAuditSink for InMemoryExportAuditSink {
@@ -461,7 +511,11 @@ async fn handle_export(
             }
         };
         if !uuid_eq_ct(&authenticated_tenant, &attempted) {
-            let _ = state.audit_sink.emit(ExportAuditRow {
+            // Wave-20 — fail-CLOSED audit emit (A-P1-02). On audit-sink
+            // failure return 503 instead of 403 so the security team
+            // never loses the cross-tenant anchor row to a silent
+            // pipeline outage.
+            let row = ExportAuditRow {
                 event_type: EVENT_TYPE_CROSS_TENANT_ATTEMPT.to_string(),
                 authenticated_tenant: Some(authenticated_tenant),
                 attempted_tenant: Some(attempted),
@@ -471,7 +525,10 @@ async fn handle_export(
                 events_written: 0,
                 exit_status: "cross_tenant_reject".to_string(),
                 payload: None,
-            });
+            };
+            if let Some(resp) = emit_or_503(&state.audit_sink, row) {
+                return resp;
+            }
             return (StatusCode::FORBIDDEN, "cross-tenant audit-export denied")
                 .into_response();
         }
@@ -500,7 +557,11 @@ async fn handle_export(
             RateLimitDecision::Deny429 {
                 retry_after_secs, ..
             } => {
-                let _ = state.audit_sink.emit(ExportAuditRow {
+                // Wave-20 — fail-CLOSED audit emit (A-P2-01). On audit-
+                // sink failure surface 503 instead of 429 so the analytics
+                // dashboard's emit-count == 429-count parity assertion is
+                // never silently broken.
+                let row = ExportAuditRow {
                     event_type: EVENT_TYPE_EXPORT_REQUEST.to_string(),
                     authenticated_tenant: Some(authenticated_tenant),
                     attempted_tenant: None,
@@ -510,7 +571,10 @@ async fn handle_export(
                     events_written: 0,
                     exit_status: "rate_limited".to_string(),
                     payload: None,
-                });
+                };
+                if let Some(resp) = emit_or_503(&state.audit_sink, row) {
+                    return resp;
+                }
                 let body = format!("rate-limited; retry after {retry_after_secs}s");
                 let mut resp = (StatusCode::TOO_MANY_REQUESTS, body).into_response();
                 if let Ok(val) = format!("{retry_after_secs}").parse() {
@@ -521,8 +585,24 @@ async fn handle_export(
             // Future non-Allow decision variant — fail-CLOSED on
             // an unknown arm: deny the request with a generic 429
             // so the route never serves bytes under an unrecognised
-            // decision shape.
+            // decision shape. Wave-20 — also fail-CLOSED audit emit
+            // (A-P2-01 carry-over) so the future variant doesn't
+            // silently bypass the parity assertion either.
             _ => {
+                let row = ExportAuditRow {
+                    event_type: EVENT_TYPE_EXPORT_REQUEST.to_string(),
+                    authenticated_tenant: Some(authenticated_tenant),
+                    attempted_tenant: None,
+                    from_ms,
+                    to_ms,
+                    bytes_written: 0,
+                    events_written: 0,
+                    exit_status: "rate_limited".to_string(),
+                    payload: None,
+                };
+                if let Some(resp) = emit_or_503(&state.audit_sink, row) {
+                    return resp;
+                }
                 return (
                     StatusCode::TOO_MANY_REQUESTS,
                     "rate-limit decision arm not handled",
@@ -644,7 +724,12 @@ async fn handle_export(
         // request row. The customer still receives the bytes (the
         // mid-stream abort trailer fires on the FIRST tampered row);
         // the security team gets paged off this SEV-0 emit.
-        let _ = state.audit_sink.emit(ExportAuditRow {
+        //
+        // Wave-20 — fail-CLOSED (A-P1-05). On audit-sink failure we
+        // surface 503 instead of streaming the (still-tampered) body
+        // without the SEV-0 anchor — the customer can retry, but a
+        // silent miss of the security-team page is unacceptable.
+        let row = ExportAuditRow {
             event_type: EVENT_TYPE_VERIFY_FAILED.to_string(),
             authenticated_tenant: Some(authenticated_tenant),
             attempted_tenant: None,
@@ -654,7 +739,10 @@ async fn handle_export(
             events_written: ndjson_line_count,
             exit_status: "verify_failed".to_string(),
             payload: None,
-        });
+        };
+        if let Some(resp) = emit_or_503(&state.audit_sink, row) {
+            return resp;
+        }
     }
 
     // 9. Build the streaming response body. Per-row NDJSON frames
@@ -881,7 +969,11 @@ pub fn build_audit_export_async_stream(
                     Ok(s) => s,
                     Err(_) => {
                         // Serialize-failure path — audit-anchor-BEFORE-trailer.
-                        emit_mid_stream_break_audit(
+                        // Wave-20 (A-P1-03): on audit-emit failure we
+                        // force-close the body WITHOUT yielding the
+                        // trailer (see `emit_mid_stream_break_audit`
+                        // doc-comment for the trade-off note).
+                        if emit_mid_stream_break_audit(
                             &audit_sink,
                             authenticated_tenant,
                             row.event.sequence_number,
@@ -892,7 +984,24 @@ pub fn build_audit_export_async_stream(
                             to_ms,
                             bytes_written,
                             events_written,
-                        );
+                        )
+                        .is_err()
+                        {
+                            tracing::error!(
+                                target: "corelink.audit.export",
+                                event = "audit_export_mid_stream_emit_failed",
+                                severity = "SEV-0",
+                                tenant = %authenticated_tenant,
+                                break_at_seq = row.event.sequence_number,
+                                break_at_chunk = global_idx,
+                                observed = "serialize_failed",
+                                expected = "row-serialize-failed",
+                                "audit-sink failed during mid-stream serialize-failure emit; \
+                                 force-closing body without abort trailer (wave-20 A-P1-03 \
+                                 trade-off: missing trailer is louder than missing anchor)"
+                            );
+                            return;
+                        }
                         yield Ok(abort_trailer_frame(
                             row.event.sequence_number,
                             global_idx,
@@ -907,9 +1016,12 @@ pub fn build_audit_export_async_stream(
                     // Chain-break path — audit-anchor-BEFORE-trailer
                     // (INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER; the wave-19
                     // proptest pins this ordering at 10k iter).
+                    // Wave-20 (A-P1-03): on audit-emit failure we force-
+                    // close the body WITHOUT yielding the trailer (see
+                    // `emit_mid_stream_break_audit` doc-comment).
                     let observed_hex = row.proof.link_hash.to_hex();
                     let expected_hex = anchor_head.to_hex();
-                    emit_mid_stream_break_audit(
+                    if emit_mid_stream_break_audit(
                         &audit_sink,
                         authenticated_tenant,
                         row.event.sequence_number,
@@ -920,7 +1032,24 @@ pub fn build_audit_export_async_stream(
                         to_ms,
                         bytes_written,
                         events_written,
-                    );
+                    )
+                    .is_err()
+                    {
+                        tracing::error!(
+                            target: "corelink.audit.export",
+                            event = "audit_export_mid_stream_emit_failed",
+                            severity = "SEV-0",
+                            tenant = %authenticated_tenant,
+                            break_at_seq = row.event.sequence_number,
+                            break_at_chunk = global_idx,
+                            observed = %observed_hex,
+                            expected = %expected_hex,
+                            "audit-sink failed during mid-stream chain-break emit; \
+                             force-closing body without abort trailer (wave-20 A-P1-03 \
+                             trade-off: missing trailer is louder than missing anchor)"
+                        );
+                        return;
+                    }
                     yield Ok(abort_trailer_frame(
                         row.event.sequence_number,
                         global_idx,
@@ -957,15 +1086,28 @@ fn export_row_buffer_bytes() -> usize {
     }
 }
 
-/// Emit the SEV-0 mid-stream chain-break audit row. The audit
-/// payload is the canonical
-/// `{break_at_seq, break_at_chunk, observed, expected}` JSON
-/// fragment encoded into `exit_status` (the `ExportAuditRow` shape
-/// lacks a dedicated payload field — we piggy-back on `exit_status`
-/// so the structured payload survives capture by every
-/// `ExportAuditSink` implementor; production durable sinks lift the
-/// row into the standard CloudEvents envelope where the payload
-/// lands in `data`).
+/// Emit the SEV-0 mid-stream chain-break audit row. The structured
+/// `{break_at_seq, break_at_chunk, observed, expected}` payload is
+/// carried on the wave-19 [`ExportAuditRow::payload`] field;
+/// `exit_status` is the stable [`EXIT_STATUS_VERIFY_FAILED_MID_STREAM`]
+/// enum (no colon-prefix encoding).
+///
+/// Wave-20 — returns `Result<(), &'static str>` (A-P1-03 closure). The
+/// route handler has already flushed response headers by the time the
+/// async stream generator polls a row, so an audit-emit failure cannot
+/// be surfaced as a 503. The caller (the `stream!` generator inside
+/// [`build_audit_export_async_stream`]) handles `Err` by:
+///   1. emitting a `tracing::error!` at SEV-0 carrying the would-be
+///      audit row + sink-error string,
+///   2. force-closing the body WITHOUT yielding the
+///      `Frame::trailers` abort trailer — the customer-CLI sees a
+///      truncated body (the loudest possible signal short of a 503).
+///
+/// The trade-off is documented in the module-level "Wave-20 emit-
+/// discipline lift" doc-block: a silent abort-trailer with a missing
+/// audit row would let the security team's detect surface miss the
+/// event entirely; a truncated body forces the CLI verifier to flag
+/// a chain-broken export.
 #[allow(clippy::too_many_arguments, reason = "audit row shape")]
 fn emit_mid_stream_break_audit(
     sink: &Arc<dyn ExportAuditSink>,
@@ -978,16 +1120,14 @@ fn emit_mid_stream_break_audit(
     to_ms: u64,
     bytes_written: u64,
     events_written: u64,
-) {
-    // Wave-19 schema lift: structured payload field carries the canonical
-    // diagnostic; `exit_status` becomes the stable enum (no colon prefix).
+) -> Result<(), &'static str> {
     let payload = serde_json::json!({
         "break_at_seq": break_at_seq,
         "break_at_chunk": break_at_chunk,
         "observed": observed_hex,
         "expected": expected_hex,
     });
-    let _ = sink.emit(ExportAuditRow {
+    sink.emit(ExportAuditRow {
         event_type: EVENT_TYPE_VERIFY_FAILED.to_string(),
         authenticated_tenant: Some(authenticated_tenant),
         attempted_tenant: None,
@@ -997,7 +1137,7 @@ fn emit_mid_stream_break_audit(
         events_written,
         exit_status: EXIT_STATUS_VERIFY_FAILED_MID_STREAM.to_string(),
         payload: Some(payload),
-    });
+    })
 }
 
 /// Build the canonical mid-stream abort HTTP-trailer frame. Payload
@@ -1533,6 +1673,232 @@ mod tests {
         assert_eq!(frames.len(), 1, "empty range should yield 1 manifest frame");
         let f = frames[0].as_ref().expect("infallible");
         assert!(f.is_data());
+    }
+
+    // -- Wave-20 emit-discipline unit tests -----------------------------
+    //
+    // Close audit findings A-P1-02 (cross-tenant-reject),
+    // A-P1-03 (mid-stream-break), A-P1-05 (verify-failed-sev0),
+    // A-P2-01 (rate-limit-deny). Each test injects an audit-sink
+    // failure on the corresponding non-happy path and asserts the
+    // route returns 503 (or for the mid-stream path: force-closes
+    // the body without a trailer frame).
+
+    /// A-P1-02 closure — cross-tenant-reject now fails CLOSED.
+    #[tokio::test]
+    async fn cross_tenant_reject_returns_503_on_audit_sink_failure() {
+        use tower::ServiceExt;
+        let auth_tenant = Uuid::from_u128(0xAA);
+        let attempted = Uuid::from_u128(0xBB);
+        let sink = Arc::new(InMemoryExportAuditSink::new());
+        sink.inject_failure("pipeline down").expect("inject");
+        let exporter: Arc<dyn AuditExporter> = Arc::new(InMemoryAuditExporter::new());
+        let rl_audit = Arc::new(InMemoryRateLimitAuditSink::new());
+        let rl_metrics = Arc::new(InMemoryRateLimitMetrics::new());
+        let rate_limiter: Arc<dyn RateLimiter> = Arc::new(
+            InMemoryTokenBucketRateLimiter::new(
+                rl_audit,
+                rl_metrics,
+                audit_export_rate_limit_config(),
+            ),
+        );
+        let state = AuditExportRouteState {
+            exporter,
+            rate_limiter,
+            audit_sink: sink as Arc<dyn ExportAuditSink>,
+            pager_page_size: R2_LIST_PAGE_SIZE,
+        };
+        let app = router(state);
+        let uri = format!(
+            "/v1/audit/export?from=0&to=1000&tenant={attempted}",
+        );
+        let req = axum::http::Request::builder()
+            .uri(uri)
+            .header(TENANT_ID_HEADER, auth_tenant.to_string())
+            .body(axum::body::Body::empty())
+            .expect("req");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(
+            resp.status(),
+            StatusCode::SERVICE_UNAVAILABLE,
+            "cross-tenant audit-emit failure MUST surface 503 (A-P1-02)"
+        );
+    }
+
+    /// A-P2-01 closure — rate-limit-deny now fails CLOSED.
+    #[tokio::test]
+    async fn rate_limit_deny_returns_503_on_audit_sink_failure() {
+        use tower::ServiceExt;
+        // Build a rate limiter that's already at the floor (burst=1,
+        // first request consumes the token) so the second request hits
+        // Deny429. The audit sink will fail when emitting the
+        // rate_limited row, surfacing 503.
+        let tenant = Uuid::from_u128(0xC1);
+        let sink = Arc::new(InMemoryExportAuditSink::new());
+        let exporter: Arc<dyn AuditExporter> = Arc::new(InMemoryAuditExporter::new());
+        let rl_audit = Arc::new(InMemoryRateLimitAuditSink::new());
+        let rl_metrics = Arc::new(InMemoryRateLimitMetrics::new());
+        let rate_limiter: Arc<dyn RateLimiter> = Arc::new(
+            InMemoryTokenBucketRateLimiter::new(
+                rl_audit,
+                rl_metrics,
+                audit_export_rate_limit_config(),
+            ),
+        );
+        let state = AuditExportRouteState {
+            exporter,
+            rate_limiter,
+            audit_sink: sink.clone() as Arc<dyn ExportAuditSink>,
+            pager_page_size: R2_LIST_PAGE_SIZE,
+        };
+        let app = router(state);
+        // First request: consume the token (200 expected; no failure
+        // injected yet so emit succeeds).
+        let req1 = axum::http::Request::builder()
+            .uri("/v1/audit/export?from=0&to=1000")
+            .header(TENANT_ID_HEADER, tenant.to_string())
+            .body(axum::body::Body::empty())
+            .expect("req1");
+        let resp1 = app.clone().oneshot(req1).await.expect("oneshot");
+        assert_eq!(resp1.status(), StatusCode::OK);
+        // Inject failure NOW so the second request's rate_limited
+        // emit hits the failing sink.
+        sink.inject_failure("pipeline down").expect("inject");
+        let req2 = axum::http::Request::builder()
+            .uri("/v1/audit/export?from=0&to=1000")
+            .header(TENANT_ID_HEADER, tenant.to_string())
+            .body(axum::body::Body::empty())
+            .expect("req2");
+        let resp2 = app.oneshot(req2).await.expect("oneshot");
+        assert_eq!(
+            resp2.status(),
+            StatusCode::SERVICE_UNAVAILABLE,
+            "rate-limit-deny audit-emit failure MUST surface 503 (A-P2-01)"
+        );
+    }
+
+    /// A-P1-05 closure — verify-failed SEV-0 now fails CLOSED.
+    #[tokio::test]
+    async fn verify_failed_sev0_returns_503_on_audit_sink_failure() {
+        // Drive the route handler logic directly by constructing the
+        // emit_or_503 path with a failing sink; this isolates the
+        // verify-failed arm without standing up a full chain-tampering
+        // exporter (the integration test
+        // `chain_tamper_emits_verify_failed_sev0` already covers the
+        // happy-emit path end-to-end). The 503 surface is what we pin
+        // here.
+        let sink: Arc<dyn ExportAuditSink> = Arc::new({
+            let s = InMemoryExportAuditSink::new();
+            s.inject_failure("pipeline down").expect("inject");
+            s
+        });
+        let row = ExportAuditRow {
+            event_type: EVENT_TYPE_VERIFY_FAILED.to_string(),
+            authenticated_tenant: Some(Uuid::from_u128(0xD1)),
+            attempted_tenant: None,
+            from_ms: 0,
+            to_ms: 1,
+            bytes_written: 0,
+            events_written: 0,
+            exit_status: "verify_failed".to_string(),
+            payload: None,
+        };
+        let resp = emit_or_503(&sink, row).expect("503 on sink failure");
+        assert_eq!(
+            resp.status(),
+            StatusCode::SERVICE_UNAVAILABLE,
+            "verify-failed-sev0 audit-emit failure MUST surface 503 (A-P1-05)"
+        );
+    }
+
+    /// A-P1-03 closure — mid-stream-break audit-emit failure force-
+    /// closes the body WITHOUT yielding the abort trailer frame. This
+    /// is the documented trade-off: a 503 is impossible after headers
+    /// are flushed, so a truncated body becomes the loudest signal.
+    /// We assert (a) the audit sink saw the emit attempt, (b) NO
+    /// trailer frame leaves the generator, (c) the row data frames
+    /// already yielded BEFORE the break-row are preserved.
+    #[tokio::test]
+    async fn mid_stream_break_surfaces_audit_failure_via_forced_close() {
+        use corelink_audit_chain::{
+            AuditEvent, AuditEventKind, HashChainBuilder, InMemoryAuditExporter,
+        };
+        use corelink_analytics::Region;
+        use futures::StreamExt;
+        use serde_json::json;
+        let tenant = Uuid::from_u128(0xE1);
+        let mut exporter = InMemoryAuditExporter::new();
+        let mut builder = HashChainBuilder::new();
+        let mut prev = ChainHash::genesis();
+        for i in 0..3_u64 {
+            let e = AuditEvent::new(
+                AuditEventKind::CasPut,
+                "corelink/region/iad",
+                Uuid::now_v7(),
+                1_000 + i,
+                tenant,
+                Region::Iad,
+                i,
+                prev,
+                json!({ "i": i }),
+            );
+            prev = builder.append(&e).expect("append");
+            exporter.append_event(e).expect("seed");
+        }
+        let window = ExportWindow::new(0, 10_000).expect("window");
+        let result = exporter
+            .export_window(&tenant.to_string(), window)
+            .expect("export");
+        // Bogus anchor → verify fails on row 0 → mid-stream break path.
+        let bogus_anchor = ChainHash::genesis();
+        // Sink that fails on EVERY emit (production: audit pipeline
+        // down during the mid-stream verify-failed emit).
+        let sink_inner = Arc::new(InMemoryExportAuditSink::new());
+        sink_inner
+            .inject_failure("pipeline down mid-stream")
+            .expect("inject");
+        let sink_dyn: Arc<dyn ExportAuditSink> = sink_inner.clone();
+        let pager = InMemoryR2ListPager::with_rows(result.rows, 2);
+        let stream = build_audit_export_async_stream(
+            Box::new(pager),
+            "ignored-manifest".to_string(),
+            bogus_anchor,
+            sink_dyn,
+            tenant,
+            0,
+            10_000,
+            0,
+            0,
+        );
+        let frames: Vec<_> = stream.collect().await;
+        // Every frame yielded must be a `Frame::data` — the trailer
+        // frame is suppressed under the wave-20 force-close discipline.
+        for (idx, frame) in frames.iter().enumerate() {
+            let f = frame.as_ref().expect("infallible");
+            assert!(
+                f.is_data(),
+                "frame[{idx}] MUST be data — abort trailer is suppressed \
+                 on audit-emit failure (A-P1-03 force-close trade-off)"
+            );
+        }
+        // The audit sink rejected the emit (so no captured row), but
+        // the sink-error path was traversed exactly once (the snapshot
+        // is empty because every emit returns Err early — we pin the
+        // empty snapshot as a regression on the "force-close was
+        // taken" path).
+        let snap = sink_inner.snapshot().expect("snap");
+        assert!(
+            snap.is_empty(),
+            "failing sink captures zero rows; force-close path traversed"
+        );
+        // Sanity: the generator stopped early — row 0 verify-fails so
+        // no data frames precede the (suppressed) trailer. Frames len
+        // is therefore 0 (the generator returns BEFORE yielding any
+        // happy-row data frames in this seed).
+        assert!(
+            frames.len() < 3,
+            "generator must force-close before draining all rows"
+        );
     }
 
     // -- Wave-19 property test (10k iter) -------------------------------

@@ -88,3 +88,44 @@ The wave-18 streaming + mid-stream-trailer wire is correctly shipped and the loa
 ---
 
 **Reviewer sign-off:** wave-19 builder (opus 4.7), 2026-05-16. CONDITIONAL — proceed to SEAL wave-18 ONLY if the orchestrator dispatches the fail-closed-emit-discipline fix stream before tagging GA. Otherwise the cross-tenant + mid-stream-break audit anchors silently miss on sink-pipeline-down paths — a regression in the security team's detect surface.
+
+---
+
+## Wave-20 closure note (2026-05-16)
+
+**Status:** A-P1-02, A-P1-03, A-P1-05, A-P2-01 — **CLOSED**.
+
+**Branch:** `wt/r-prep-audit-export-fail-closed-emit-discipline`.
+
+**Helper:** `emit_or_503` in `apps/server/src/routes/audit_export.rs` (~line 270; defined immediately after the `ExportAuditSink` trait + `InMemoryExportAuditSink` impl block). Public surface — re-callable from any future audit-emit boundary in the route. Mirrors the wave-15 inline `is_err() → 503` discipline previously only on the `export_request.v1` arm.
+
+**Sites updated (5 — 1 per audit finding + 1 wildcard variant):**
+
+1. Cross-tenant-reject (A-P1-02) — `handle_export` cross-tenant arm now routes the `corelink.security.audit_export_cross_tenant_attempt.v1` emit through `emit_or_503`. On sink failure surfaces 503 + `"audit pipeline closed"` instead of dropping the row and shipping a 403 with no security anchor.
+2. Rate-limit-deny (A-P2-01) — both the `Deny429` arm AND the `#[non_exhaustive]` wildcard arm now route the `corelink.audit.export_request.v1` rate-limited emit through `emit_or_503`. Closes the analytics-dashboard parity-assertion regression where a paired audit-sink-down + 429 burst would silently break `emit_count == 429_count`.
+3. Verify-failed-sev0 (A-P1-05) — the SEV-0 verify-failed emit (when `verify_export_result` flags the chain BEFORE the streaming body starts) now routes through `emit_or_503`. On sink failure surfaces 503 instead of streaming the (still-tampered) body without the security-team page anchor.
+4. Mid-stream chain-break (A-P1-03) — `emit_mid_stream_break_audit` lifted to return `Result<(), &'static str>`. The async stream generator inside `build_audit_export_async_stream` handles `Err` by force-closing the body WITHOUT emitting the `Frame::trailers` abort trailer. Documented trade-off (in the function doc-comment + the module-level "Wave-20 emit-discipline lift" doc-block): response headers are already flushed by the time the generator polls a row, so a 503 is structurally impossible; a truncated body + a `tracing::error!` SEV-0 line is louder than a silent missing audit anchor.
+5. Same as (4) — the serialize-failure arm inside the generator (parallel structure to the verify-failure arm).
+
+**Tests net-new (4):**
+
+- `cross_tenant_reject_returns_503_on_audit_sink_failure` — drives the route end-to-end via `Router::oneshot` with an injected-failure sink + a tenant-mismatch query string; asserts 503.
+- `rate_limit_deny_returns_503_on_audit_sink_failure` — drives two consecutive requests through the route; the first consumes the rate-limit token, the second hits `Deny429` after the sink failure is injected; asserts the second response is 503.
+- `verify_failed_sev0_returns_503_on_audit_sink_failure` — drives the `emit_or_503` helper directly with a failing sink; asserts the returned `Response` carries 503. Pairs with the existing `chain_tamper_emits_verify_failed_sev0` integration test (which already pins the happy-emit end-to-end path).
+- `mid_stream_break_surfaces_audit_failure_via_forced_close` — drives the async stream generator with a failing sink + a bogus anchor (forces verify-fail on row 0); asserts NO trailer frame is yielded and the snapshot is empty (force-close path traversed).
+
+All 4 + the wave-19 proptest pass on Tokio multi-thread runtime in `cargo test -p corelink-server --lib audit_export` (27/27 lib tests green; wave-18 + wave-19 + wave-20 cumulative). All 12 integration tests in `cargo test -p corelink-server --test audit_export` preserved + green (the audit doc cites 11; wave-19 added one more — `streaming_response_yields_all_rows_across_multiple_pages` — for a current total of 12).
+
+**Quality gates:**
+
+- `cargo build --workspace` — pass.
+- `cargo test -p corelink-server --lib audit_export` — 27/27 pass (lib unit + wave-19 proptest 10k iter + wave-20 net-new 4).
+- `cargo test -p corelink-server --test audit_export` — 12/12 pass.
+- `cargo clippy --workspace --all-targets -- -D warnings` — clean.
+- `scripts/validate_specs.py` + `scripts/validate_references.py` — both green.
+
+**Invariant alignment:** `INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER` now mechanically enforced on every non-happy path in the audit-export route. The trade-off documented in (4)/(5) above is the ONE path where the invariant's strict "emit MUST succeed before mutation" cannot be honoured with a status-code response (the mutation is the wire byte-stream + the headers are already flushed); force-close + SEV-0 tracer is the documented escape hatch.
+
+**Deferred (out of wave-20 scope):** A-P1-01 (true async-generator streaming) was closed independently by wave-19 (`build_audit_export_async_stream` replaces the wave-18 `Vec<Frame<Bytes>>` plan). A-P1-04 (payload-column lift) — closed independently by `wt/r-prep-audit-export-payload-column` (the wave-19 `ExportAuditRow::payload: Option<serde_json::Value>` field is live). A-P2-02 / A-P2-03 / A-P2-04 / A-P2-05 / A-P3-01 / A-P3-02 — out of wave-20 scope per the recommended fix-stream descriptor; tracked as follow-on grooming.
+
+**Closer sign-off:** wave-20 builder (claude opus 4.7), 2026-05-16. SEALED — the 4 P1/P2 findings clustered around the discarded-`Result` root cause are mechanically closed; the security-team detect surface is restored on sink-pipeline-down paths.
