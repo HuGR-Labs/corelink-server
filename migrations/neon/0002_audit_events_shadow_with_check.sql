@@ -51,10 +51,14 @@ BEGIN
         WITH CHECK (tenant_id = current_setting('app.current_tenant', true)::uuid);
 EXCEPTION
     WHEN undefined_object THEN
-        -- Policy not yet created (fresh setup ordering); no-op. The
-        -- original migration's CREATE POLICY will run with USING + the
-        -- caller is expected to re-run this migration after.
-        NULL;
+        -- Policy not yet created (fresh setup ordering); surface a
+        -- NOTICE so operator-driven migration tooling logs the case
+        -- instead of silently swallowing it. The original migration's
+        -- CREATE POLICY will run with USING + the caller is expected
+        -- to re-run this migration after. See W21-FOLLOWUP-01
+        -- (`specs/_audits/2026-05-16-wave20-adversarial-review.md`
+        -- W20-P2-01).
+        RAISE NOTICE 'tenant_isolation_audit_events_shadow policy already exists';
 END $$;
 
 -- ---------------------------------------------------------------------------
@@ -68,5 +72,8 @@ BEGIN
         WITH CHECK (tenant_id = current_setting('app.current_tenant', true)::uuid);
 EXCEPTION
     WHEN undefined_object THEN
-        NULL;
+        -- Mirror of the audit_events_shadow branch above — log the
+        -- fresh-setup-ordering case via NOTICE rather than swallowing.
+        -- See W21-FOLLOWUP-01.
+        RAISE NOTICE 'tenant_isolation_audit_shadow_lag policy already exists';
 END $$;

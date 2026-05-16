@@ -148,6 +148,24 @@ mod native {
                     e
                 ))
             })?;
+            // W21-FOLLOWUP-02: document the multi-thread runtime contract
+            // programmatically. `block_in_place` (used in `execute` / `query`)
+            // panics on a current-thread runtime; failing fast here in debug
+            // builds surfaces a wiring mistake before the first dispatch.
+            // No-op in release (debug_assert!).
+            //
+            // Note: the audit doc suggests `metrics().num_workers() > 1`, but
+            // `Handle::metrics` is gated behind `tokio_unstable` (not enabled
+            // in this workspace). `runtime_flavor() == MultiThread` is the
+            // stable equivalent and is what the audit's prose recommendation
+            // actually pins.
+            debug_assert!(
+                matches!(
+                    rt.runtime_flavor(),
+                    tokio::runtime::RuntimeFlavor::MultiThread
+                ),
+                "TokioPostgresExecutor requires multi-thread runtime"
+            );
             let tls = build_tls()?;
             let connector = MakeRustlsConnect::new(tls);
 
@@ -198,6 +216,15 @@ mod native {
                     e
                 ))
             })?;
+            // W21-FOLLOWUP-02: mirror the multi-thread runtime guard from
+            // `connect`. See that constructor for the rationale.
+            debug_assert!(
+                matches!(
+                    rt.runtime_flavor(),
+                    tokio::runtime::RuntimeFlavor::MultiThread
+                ),
+                "TokioPostgresExecutor requires multi-thread runtime"
+            );
             Ok(Self { pool, rt })
         }
 

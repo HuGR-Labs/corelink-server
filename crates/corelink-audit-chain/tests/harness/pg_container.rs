@@ -145,13 +145,34 @@ pub struct PgHarness {
 impl Drop for PgHarness {
     fn drop(&mut self) {
         if let Some(container) = self.container.take() {
-            // Enter the runtime so the testcontainers async-drop
-            // helper can call `tokio::runtime::Handle::current()`
-            // without panicking. The actual container teardown is
-            // best-effort — a hung Docker daemon should not crash
-            // the test process during shutdown.
-            let _guard = self.runtime.enter();
-            drop(container);
+            // W21-FOLLOWUP-03: wrap the container drop in a 30s timeout
+            // so a hung Docker daemon never blocks the test process
+            // indefinitely on shutdown. The runtime is entered via
+            // `block_on` so the testcontainers async-drop helper can call
+            // `tokio::runtime::Handle::current()` without panicking
+            // (testcontainers 0.21's `ContainerAsync::drop` requires a
+            // runtime in scope). The actual teardown remains best-effort
+            // — if the timeout elapses we log to stderr but do NOT panic
+            // (Drop must never panic).
+            let runtime = Arc::clone(&self.runtime);
+            runtime.block_on(async {
+                let timeout = tokio::time::timeout(
+                    std::time::Duration::from_secs(30),
+                    async move {
+                        drop(container);
+                    },
+                )
+                .await;
+                if timeout.is_err() {
+                    eprintln!(
+                        "PgHarness::drop timed out after 30s waiting for \
+                         testcontainers async-drop — Docker daemon may be \
+                         hung; container will be reaped by docker-prune or \
+                         the host's cleanup cron. See W21-FOLLOWUP-03 \
+                         (`specs/_audits/2026-05-16-wave20-adversarial-review.md`)."
+                    );
+                }
+            });
         }
     }
 }
