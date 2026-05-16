@@ -118,6 +118,8 @@ use serde::{Deserialize, Serialize};
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
+use crate::wall_clock::{default_wall_clock, WallClock};
+
 /// Canonical audit-export route path.
 pub const AUDIT_EXPORT_ROUTE: &str = "/v1/audit/export";
 
@@ -367,6 +369,15 @@ pub struct AuditExportRouteState {
     /// Exposed on the route state so integration tests can pin the
     /// multi-page wire shape without seeding 1000+ rows.
     pub pager_page_size: usize,
+    /// Wave-21 — wall-clock collaborator. The rate-limit gate uses
+    /// `wall_clock.now_ms()` as its bucket `now_ms` so the bucket clock
+    /// advances on real time rather than on the request window's
+    /// `until_ms` (closes finding `A-P2-05`). Production wiring slots
+    /// [`crate::wall_clock::SystemWallClock`] (the
+    /// [`build_state`] default); tests inject
+    /// [`crate::wall_clock::InMemoryFakeWallClock`] for deterministic
+    /// rate-limit timing.
+    pub wall_clock: Arc<dyn WallClock>,
 }
 
 /// Manual `Debug` impl (wave-20 A-P3-02 closure): the `dyn` trait-object
@@ -405,11 +416,13 @@ pub fn build_state() -> AuditExportRouteState {
             ),
         );
         let audit_sink: Arc<dyn ExportAuditSink> = Arc::new(InMemoryExportAuditSink::new());
+        let wall_clock = default_wall_clock();
         AuditExportRouteState {
             exporter,
             rate_limiter,
             audit_sink,
             pager_page_size: R2_LIST_PAGE_SIZE,
+            wall_clock,
         }
     }
     #[cfg(target_arch = "wasm32")]
@@ -565,7 +578,19 @@ async fn handle_export(
         authenticated_tenant,
         "audit.export",
     );
-    let now_ms = now_ms_from_window(window);
+    // Wave-21 closure of A-P2-05: anchor the bucket `now_ms` to the
+    // injected `WallClock` collaborator instead of the request window's
+    // `until_ms`. The window-derived helper (`now_ms_from_window`) is
+    // retained for the legacy path documented at its def-site and as a
+    // last-resort fallback when the wall clock saturates to 0 (pre-epoch
+    // / poisoned fake mutex). Production wiring slots `SystemWallClock`;
+    // tests pin time via `InMemoryFakeWallClock`.
+    let wall_now_ms = state.wall_clock.now_ms();
+    let now_ms = if wall_now_ms == 0 {
+        now_ms_from_window(window)
+    } else {
+        wall_now_ms
+    };
     match state.rate_limiter.try_acquire(
         authenticated_tenant,
         bucket_key,
@@ -1310,23 +1335,18 @@ fn parse_u32_digits(b: &[u8]) -> Option<u32> {
     Some(out)
 }
 
-/// Wall-clock proxy for the rate-limit gate. The route runs in a
-/// CF Worker / axum context that doesn't pull `std::time::SystemTime`
-/// for the rate-limit decision; we anchor the gate to the window's
-/// upper bound so the bucket clock is deterministic per request.
-/// Production wiring substitutes the canonical `WallClock` collaborator
-/// here.
+/// Window-derived `now_ms` fallback for the rate-limit gate.
 ///
-/// **Known residual trait (wave-20 A-P2-05 closure):** because `now_ms`
-/// is the window's `until_ms` (NOT wall-clock), a customer who repeatedly
-/// queries the SAME 1970-epoch window can keep refilling the token
-/// bucket (the bucket clock never advances). The rate-limit gate is
-/// therefore an `EXPORT/window` guard, NOT a global throughput cap; the
-/// global cap is enforced one layer up by the per-tenant request budget
-/// in `WallClock`-backed production wiring. Symmetric trait at
-/// `audit_analytics::rate_limit_check` (Stream B B-P2-03) — both routes
-/// share the same `WallClock`-collaborator-swap-at-production-wiring
-/// path so the cleanup lands as one cross-route fix-stream in wave-21+.
+/// **Wave-21 closure (`A-P2-05`):** the route now consumes
+/// [`AuditExportRouteState::wall_clock`] (`Arc<dyn WallClock>`) and
+/// uses `wall_clock.now_ms()` as the canonical bucket clock. This
+/// helper is retained as a last-resort fallback for the degenerate
+/// case where the wall clock saturates to `0` (pre-epoch instant or a
+/// poisoned [`crate::wall_clock::InMemoryFakeWallClock`] mutex) so the
+/// bucket still has a strictly-monotonic-per-window anchor. The
+/// canonical fix-stream landed jointly with the symmetric closure at
+/// [`super::audit_analytics`] (`B-P2-03`) so both routes share the
+/// same [`crate::wall_clock::WallClock`] collaborator-swap surface.
 #[must_use]
 fn now_ms_from_window(window: ExportWindow) -> u64 {
     window.until_ms
@@ -1765,6 +1785,7 @@ mod tests {
             rate_limiter,
             audit_sink: sink as Arc<dyn ExportAuditSink>,
             pager_page_size: R2_LIST_PAGE_SIZE,
+            wall_clock: default_wall_clock(),
         };
         let app = router(state);
         let uri = format!(
@@ -1808,6 +1829,7 @@ mod tests {
             rate_limiter,
             audit_sink: sink.clone() as Arc<dyn ExportAuditSink>,
             pager_page_size: R2_LIST_PAGE_SIZE,
+            wall_clock: default_wall_clock(),
         };
         let app = router(state);
         // First request: consume the token (200 expected; no failure
@@ -1832,6 +1854,92 @@ mod tests {
             resp2.status(),
             StatusCode::SERVICE_UNAVAILABLE,
             "rate-limit-deny audit-emit failure MUST surface 503 (A-P2-01)"
+        );
+    }
+
+    /// Wave-21 closure (`A-P2-05`): the rate-limit bucket's `now_ms`
+    /// is now driven by `state.wall_clock` (an `Arc<dyn WallClock>`)
+    /// rather than the request's `until_ms`. This test pins the
+    /// contract by:
+    ///   1. Injecting an [`crate::wall_clock::InMemoryFakeWallClock`]
+    ///      pinned at a known unix-ms instant.
+    ///   2. Issuing the SAME stationary query window twice within the
+    ///      60s refill floor — second request 429 (proves the bucket
+    ///      clock is NOT advancing on the stationary `until_ms`).
+    ///   3. Advancing the fake wall clock past the refill floor —
+    ///      next request 200 (proves the bucket clock IS advancing on
+    ///      the injected wall clock).
+    #[tokio::test]
+    async fn rate_limit_now_ms_is_driven_by_injected_wall_clock() {
+        use crate::wall_clock::InMemoryFakeWallClock;
+        use tower::ServiceExt;
+
+        let tenant = Uuid::from_u128(0xF1);
+        let sink = Arc::new(InMemoryExportAuditSink::new());
+        let exporter: Arc<dyn AuditExporter> = Arc::new(InMemoryAuditExporter::new());
+        let rl_audit = Arc::new(InMemoryRateLimitAuditSink::new());
+        let rl_metrics = Arc::new(InMemoryRateLimitMetrics::new());
+        let rate_limiter: Arc<dyn RateLimiter> = Arc::new(
+            InMemoryTokenBucketRateLimiter::new(
+                rl_audit,
+                rl_metrics,
+                audit_export_rate_limit_config(),
+            ),
+        );
+        // Pin the wall clock at a known instant well past unix epoch
+        // so the fallback-on-zero arm is NOT exercised.
+        let fake = Arc::new(InMemoryFakeWallClock::at_unix_ms(1_700_000_000_000));
+        let state = AuditExportRouteState {
+            exporter,
+            rate_limiter,
+            audit_sink: sink as Arc<dyn ExportAuditSink>,
+            pager_page_size: R2_LIST_PAGE_SIZE,
+            wall_clock: fake.clone() as Arc<dyn WallClock>,
+        };
+        let app = router(state);
+
+        // First request — burst=1 → consumes the token, 200 expected.
+        let req1 = axum::http::Request::builder()
+            .uri("/v1/audit/export?from=0&to=1000")
+            .header(TENANT_ID_HEADER, tenant.to_string())
+            .body(axum::body::Body::empty())
+            .expect("req1");
+        let resp1 = app.clone().oneshot(req1).await.expect("oneshot");
+        assert_eq!(
+            resp1.status(),
+            StatusCode::OK,
+            "first request consumes the burst-1 token; expected 200",
+        );
+
+        // Second request immediately — wall clock still pinned, bucket
+        // empty, refill floor not reached → 429.
+        let req2 = axum::http::Request::builder()
+            .uri("/v1/audit/export?from=0&to=1000")
+            .header(TENANT_ID_HEADER, tenant.to_string())
+            .body(axum::body::Body::empty())
+            .expect("req2");
+        let resp2 = app.clone().oneshot(req2).await.expect("oneshot");
+        assert_eq!(
+            resp2.status(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "second request inside the 60s refill floor MUST 429 \
+             (wall clock pinned; bucket cannot refill)",
+        );
+
+        // Advance the wall clock by 61s — the bucket refills (refill=1
+        // token / 60s; 61s ≥ 60s floor). The next request MUST allow.
+        fake.advance(std::time::Duration::from_secs(61));
+        let req3 = axum::http::Request::builder()
+            .uri("/v1/audit/export?from=0&to=1000")
+            .header(TENANT_ID_HEADER, tenant.to_string())
+            .body(axum::body::Body::empty())
+            .expect("req3");
+        let resp3 = app.oneshot(req3).await.expect("oneshot");
+        assert_eq!(
+            resp3.status(),
+            StatusCode::OK,
+            "after advancing the fake wall clock 61s, the next request MUST allow \
+             (proves wall-clock-driven `now_ms`, finding A-P2-05 closure)",
         );
     }
 
