@@ -3,7 +3,7 @@ id: "AUDIT-2026-05-15-FRAMEWORK-V1-0-0-GA"
 type: "audit"
 doc_status: "ACTIVE"
 audit_status: "ACTIVE"
-version: "1.3.0"
+version: "1.4.0"
 created: "2026-05-15"
 updated: "2026-05-16"
 owner: "Gustavo Schneiter"
@@ -23,7 +23,7 @@ references:
   - "specs/_proposals/2026-05-16-framework-reviewer-roles-addendum.md"
   - "specs/_governance/reviewer_staffing_strategy.md"
   - "ROADMAP-TO-GA.md"
-tags: ["framework", "freeze", "ga", "v1.0.0", "wave-18", "wave-22", "lote-6", "lote-7", "self-referential"]
+tags: ["framework", "freeze", "ga", "v1.0.0", "wave-18", "wave-22", "wave-24", "wave-26", "lote-6", "lote-7", "self-referential"]
 ---
 
 # Framework v1.0.0 GA freeze audit — wave-18 / Lote 6
@@ -338,12 +338,39 @@ The wave-24 ADR-0034b authoring agent landed `specs/03_architecture/adrs/ADR-003
 
 The engineering side of Path A cannot land further pre-work without Owner decision. The audit verdict moves from `DEFER-with-engineering-side-READY (wave-22)` to `DEFER-with-engineering-side-COMPLETE (wave-24)` — strictly closer to PROMOTE while still honoring the framework's own §7 human-action gate.
 
+### 11.8 Wave-26 follow-on: framework RC2 cut + §42 template pre-authored — Owner-sign-off-only remaining
+
+The wave-26 RC2 readiness agent landed three artifacts that consolidate the wave-20 / wave-22 / wave-24 absorption arc into a single Owner-actionable surface:
+
+| Artifact | Path | Purpose |
+|---|---|---|
+| Framework version bump RC1 → **RC2** + header readiness note | `specs/00_framework.md` (frontmatter `version: "1.0.0-rc2"`, `updated: "2026-05-16"`; new §0 wave-26 readiness blockquote) | Signals "engineering-side READY for Owner sign-off via either Option A or Option C"; `doc_status` deliberately stays DRAFT (no premature promotion — that flips at the FROZEN cut). |
+| §43.1 placeholder convention | `specs/00_framework.md` §43.1 | Each FW-H-* slot labeled with either `PROPOSED-OWNER-DUAL-HAT` (Option C / ADR-0034b path) or `(a nomear)` (Option A path); Owner replaces with `<name> — <date> — sha:<7>` at FROZEN cut. Pairing-Alpha vs Pairing-Beta seat assignments documented inline. |
+| §42 change-log template entry | `specs/00_framework.md` §42 ("TEMPLATE — v1.0.0 GA cut entry, pre-authored, awaiting Owner") | Pre-authored row with both Shape A (Option A) and Shape C (Option C) shells filled to the field-level; Owner deletes the unused shape and fills 1–3 lines (nominee names + dates + SHAs + pairing choice if Option C). |
+
+**Engineering side state.** The wave-24 verdict text was `DEFER-with-engineering-side-COMPLETE` (artifact chain proposal → addendum → ADR-0034b complete). Wave-26 RC2 narrows this further to **`DEFER-with-Owner-sign-off-only-remaining`**: the §42 entry, §43.1 lines, and version stamp are all pre-authored to the point where the Owner's residual action is mechanical (~30 min: read + decision + fill-in + commit + tag).
+
+**Effect on §6 verdict.** Unchanged — still DEFER on §7 / §43.1 promotion rule (Aprovador Final + ≥ N revisores requeridos cannot be satisfied by agent action; reviewer signatures and the §42 entry filling are Owner-bound by PRINC-007 / PRINC-008 / PRINC-015).
+
+**Effect on §6.3 Path C recommendation.** Path C ("DEFER and continue") remains active until Owner acts. With wave-26 RC2 landed, Path A is now **fill-in-the-blanks-away** (rather than the wave-24 state of `single-step-away-but-no-template`). The recommendation flips to: Owner reads proposal + addendum + ADR-0034b + the pre-authored §42 template at the next governance checkpoint, picks Option A or Option C, fills in the template, and tags `framework-v1-0-0-ga`.
+
+**Pending user action (post-wave-26, minimal viable):**
+
+1. Owner reads `specs/_proposals/2026-05-16-framework-reviewer-roles.md` + addendum + `specs/03_architecture/adrs/ADR-0034b-framework-reviewer-dual-hat-fallback.md` + the pre-authored §42 entry in `specs/00_framework.md` (~30 min).
+2. Owner picks Option A (hire 4 distinct) OR Option C (invoke ADR-0034b Pairing-Alpha or Pairing-Beta).
+3. Owner deletes the unused Shape (A or C) from the §42 template entry; fills in the remaining Shape's 1–3 placeholder lines (names + dates + SHAs + pairing choice).
+4. Owner flips `doc_status: DRAFT → FROZEN` and `version: 1.0.0-rc2 → 1.0.0` in the framework frontmatter (single commit).
+5. Owner tags `framework-v1-0-0-ga` and writes the v1.0.0 promotion audit at `specs/_audits/2026-MM-DD-framework-v1.0.0-promotion.md`.
+
+**Cross-reference.** Consolidated wave-26 readiness summary at `specs/_audits/2026-05-16-lote-6-v1-rc2-ready.md` (companion doc to this audit; restates the §6.3 paths in terms of the §42 template's Shape A / Shape C fields and the actual ~30-min Owner-action surface).
+
 ---
 
 ## 10. Change log
 
 | Version | Date | Author | Change |
 |---|---|---|---|
+| 1.4.0 | 2026-05-16 | Claude Opus 4.7 (wave-26 Lote 6 RC2 readiness agent) | Adds §11.8 wave-26 follow-on. Framework RC1 → **RC2** version bump + §42 template entry pre-authored (Shape A + Shape C) + §43.1 placeholder convention (`PROPOSED-OWNER-DUAL-HAT` vs `(a nomear)`) all land in `specs/00_framework.md`. Verdict text narrows from `DEFER-with-engineering-side-COMPLETE` (wave-24) to `DEFER-with-Owner-sign-off-only-remaining` (wave-26 — ~30 min mechanical action: read + decision + fill-in + commit + tag). §6 DEFER verdict itself unchanged (still gated on Owner's §7 / §43.1 sign-off). Companion readiness doc: `specs/_audits/2026-05-16-lote-6-v1-rc2-ready.md`. |
 | 1.3.0 | 2026-05-16 | Claude Opus 4.7 (wave-24 ADR-0034b agent) | Adds §11.7 wave-24 follow-on. `specs/03_architecture/adrs/ADR-0034b-framework-reviewer-dual-hat-fallback.md` v0.1.0 lands (PROPOSED) as the §1.1-item-4-required authorization artifact for the addendum's dual-hat fallback. Engineering side of Path A now COMPLETE (verdict text moves from `DEFER-with-engineering-side-READY` to `DEFER-with-engineering-side-COMPLETE`). §6 DEFER verdict itself unchanged (still gated on Owner nomination/invocation). |
 | 1.2.0 | 2026-05-16 | Claude Opus 4.7 (wave-22 Lote 7 absorption agent) | Adds §11.6 wave-22 follow-on. The reviewer-roles proposal is now extended by `specs/_proposals/2026-05-16-framework-reviewer-roles-addendum.md` v0.1.0 with six operating-policy clauses (dual-hat fallback, cross-veto + quorum, sign-off SLA, training pack budget, 90-day rolling cadence, conflict-of-interest declaration). v1.0.0 GA verdict remains DEFER on §7 / §43.1 rule; addendum specifies HOW the existing gate operates in the small-org regime without adding new gates. |
 | 1.1.0 | 2026-05-16 | Claude Opus 4.7 (wave-20 Lote 7 agent) | Adds §11 `unblock-path-C-progress` documenting that the engineering side of Path A is now READY: reviewer roles proposal `specs/_proposals/2026-05-16-framework-reviewer-roles.md` lands defining FW-H-1..4 role profiles; framework §43.1 annotated to link to the proposal. v1.0.0 GA verdict remains DEFER pending user nomination of individuals (purely human-action; §11.5). Path A is now single-step-away rather than multi-step. |
