@@ -82,9 +82,9 @@ use corelink_analytics::Region;
 
 use crate::archive_producer::ArchiveReceipt;
 use crate::neon_shadow::{
-    EventCountBucket, NeonShadowError, NeonShadowSink, ShadowEventRow, ShadowSyncAuditRow,
-    ShadowSyncAuditSink, ShadowSyncReceipt, TimelineBucket, EVENT_TYPE_SHADOW_SYNCED,
-    EVENT_TYPE_SHADOW_SYNC_FAILED, SHADOW_LAG_SEV2_THRESHOLD_MS,
+    redact_tenant_uuid, EventCountBucket, NeonShadowError, NeonShadowSink, ShadowEventRow,
+    ShadowSyncAuditRow, ShadowSyncAuditSink, ShadowSyncReceipt, TimelineBucket,
+    EVENT_TYPE_SHADOW_SYNCED, EVENT_TYPE_SHADOW_SYNC_FAILED, SHADOW_LAG_SEV2_THRESHOLD_MS,
 };
 
 // ---------------------------------------------------------------------------
@@ -536,7 +536,9 @@ impl NeonShadowSink for RealNeonShadowSink {
             });
             return Err(NeonShadowError::TenantIsolationViolation {
                 sink_tenant: self.tenant_id.to_string(),
+                sink_tenant_redacted: redact_tenant_uuid(&self.tenant_id),
                 observed_tenant: receipt.tenant_id.to_string(),
+                observed_tenant_redacted: redact_tenant_uuid(&receipt.tenant_id),
             });
         }
         for row in rows {
@@ -553,7 +555,9 @@ impl NeonShadowSink for RealNeonShadowSink {
                 });
                 return Err(NeonShadowError::TenantIsolationViolation {
                     sink_tenant: self.tenant_id.to_string(),
+                    sink_tenant_redacted: redact_tenant_uuid(&self.tenant_id),
                     observed_tenant: row.tenant_id.to_string(),
+                    observed_tenant_redacted: redact_tenant_uuid(&row.tenant_id),
                 });
             }
             if row.region != self.region {

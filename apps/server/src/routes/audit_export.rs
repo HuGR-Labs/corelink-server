@@ -199,8 +199,15 @@ pub struct ExportAuditRow {
     pub from_ms: u64,
     /// Window upper bound (Unix epoch ms; exclusive).
     pub to_ms: u64,
-    /// NDJSON byte count flushed to the response stream. `0` for
-    /// reject paths (we never wrote bytes).
+    /// NDJSON byte count INTENDED for the response stream — populated
+    /// before the body is flushed so the audit-emit can land BEFORE the
+    /// first byte (per `INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER`). On an
+    /// HTTP-2 RST_STREAM mid-flush the value over-reports bytes shipped;
+    /// the `bytes_emitted = bytes_acked` SLO is ground-truthed via a
+    /// post-flush wall-clock metric, NOT this field. `0` for reject
+    /// paths (we never wrote bytes). Wave-20 (A-P2-02 closure):
+    /// documented the intent-to-flush semantic surfaced in the wave-18
+    /// adversarial review.
     pub bytes_written: u64,
     /// Number of audit events flushed (matches manifest.event_count
     /// on the happy path; `0` on reject / empty range).
@@ -242,6 +249,15 @@ pub trait ExportAuditSink: Send + Sync + core::fmt::Debug {
 /// In-memory capture sink for the export-audit emits. Cloning
 /// shares the captured buffer so the test harness can inspect
 /// emit ordering without re-handing the sink to the route state.
+///
+/// **Contention bound (wave-20 A-P2-04 closure):** every `emit` takes a
+/// global `Mutex` lock on the captured-rows vector — every emit on this
+/// sink is sequenced. The native target is TEST-ONLY (production wires the
+/// CloudEvents emitter), so the operational impact is bounded by the test
+/// matrix throughput (single-digit emits per integration test). The
+/// production wiring slots a lock-free CloudEvents publisher behind the
+/// `dyn ExportAuditSink` trait surface, so this contention bound never
+/// reaches a customer-facing path.
 #[derive(Clone, Debug, Default)]
 pub struct InMemoryExportAuditSink {
     inner: Arc<Mutex<Vec<ExportAuditRow>>>,
@@ -353,6 +369,15 @@ pub struct AuditExportRouteState {
     pub pager_page_size: usize,
 }
 
+/// Manual `Debug` impl (wave-20 A-P3-02 closure): the `dyn` trait-object
+/// fields (`Arc<dyn AuditExporter>`, `Arc<dyn RateLimiter>`,
+/// `Arc<dyn ExportAuditSink>`) do NOT require `Debug` on their trait
+/// surface — adding a `: Debug` bound would couple every production
+/// implementer to a `Debug` derive, which leaks internal state shape
+/// (e.g. a real R2 client's auth headers). `finish_non_exhaustive`
+/// renders a stable shape (`AuditExportRouteState { .. }`) that's safe
+/// to surface in trace logs without redacting per-field. Tests inspect
+/// the captured-emit Vec directly via the sink, NOT via this `Debug`.
 impl core::fmt::Debug for AuditExportRouteState {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("AuditExportRouteState").finish_non_exhaustive()
@@ -585,9 +610,13 @@ async fn handle_export(
             // Future non-Allow decision variant — fail-CLOSED on
             // an unknown arm: deny the request with a generic 429
             // so the route never serves bytes under an unrecognised
-            // decision shape. Wave-20 — also fail-CLOSED audit emit
-            // (A-P2-01 carry-over) so the future variant doesn't
-            // silently bypass the parity assertion either.
+            // decision shape. Wave-20 (A-P2-01 closure): emit a
+            // `rate_limited` audit row before the response so the
+            // analytics dashboard's `emit-count vs 429-count` parity
+            // assertion holds across future variant growth — AND
+            // fail-CLOSED via `emit_or_503` so the future variant
+            // doesn't silently bypass the parity assertion either
+            // (A-P1-05 + A-P2-01 jointly).
             _ => {
                 let row = ExportAuditRow {
                     event_type: EVENT_TYPE_EXPORT_REQUEST.to_string(),
@@ -937,6 +966,12 @@ impl R2ListPager for InMemoryR2ListPager {
 /// `StreamBody` polls one frame at a time; the generator therefore
 /// fetches the next page ONLY when the consumer (the wire) is
 /// ready for it. There is no buffer-ahead of multiple pages.
+// Wave-20 (A-P3-01 closure): the 9-arg signature is a deliberate compromise
+// between (a) one private context struct that would couple the stream-builder
+// to a particular wiring shape and (b) the current explicit-arg surface that
+// keeps the function call-site self-documenting at the route handler boundary.
+// A `StreamBuildContext { ... }` refactor is tracked as a follow-on cleanup
+// (cosmetic only; no behavioral change).
 #[allow(clippy::too_many_arguments, reason = "trailing-payload + audit sink fan-in")]
 pub fn build_audit_export_async_stream(
     mut pager: Box<dyn R2ListPager>,
@@ -1204,6 +1239,18 @@ fn parse_timestamp(s: &str) -> Option<u64> {
 
 /// Pure-logic parse of `YYYY-MM-DDTHH:MM:SSZ` to Unix epoch ms.
 /// Returns `None` on malformed shape. Covers years 1970..=9999.
+///
+/// This is a deliberate minimal-RFC3339 subset (per WI-S09-008 §4):
+/// - **No** fractional-second support (`.NNN` rejected).
+/// - **No** timezone offset support beyond literal `Z` (UTC only).
+/// - **No** leap-second handling (`23:59:60` rejected).
+///
+/// The minimal shape is load-bearing: the audit-export window parameter is a
+/// security-sensitive boundary input, and a smaller grammar means a smaller
+/// adversarial surface. The full RFC3339 surface (offsets, fractional seconds,
+/// `+00:00` vs `Z`) is intentionally out of scope here — a customer with a
+/// non-UTC timestamp converts at the call site, NOT inside the audit-emit
+/// hot path. Reviewed wave-20 (A-P2-03 closure).
 fn parse_rfc3339_utc_ms(s: &str) -> Option<u64> {
     let b = s.as_bytes();
     if b.len() != 20 {
@@ -1269,6 +1316,17 @@ fn parse_u32_digits(b: &[u8]) -> Option<u32> {
 /// upper bound so the bucket clock is deterministic per request.
 /// Production wiring substitutes the canonical `WallClock` collaborator
 /// here.
+///
+/// **Known residual trait (wave-20 A-P2-05 closure):** because `now_ms`
+/// is the window's `until_ms` (NOT wall-clock), a customer who repeatedly
+/// queries the SAME 1970-epoch window can keep refilling the token
+/// bucket (the bucket clock never advances). The rate-limit gate is
+/// therefore an `EXPORT/window` guard, NOT a global throughput cap; the
+/// global cap is enforced one layer up by the per-tenant request budget
+/// in `WallClock`-backed production wiring. Symmetric trait at
+/// `audit_analytics::rate_limit_check` (Stream B B-P2-03) — both routes
+/// share the same `WallClock`-collaborator-swap-at-production-wiring
+/// path so the cleanup lands as one cross-route fix-stream in wave-21+.
 #[must_use]
 fn now_ms_from_window(window: ExportWindow) -> u64 {
     window.until_ms

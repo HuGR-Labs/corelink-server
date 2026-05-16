@@ -83,7 +83,10 @@
 //! - `EVENT_TYPE_SHADOW_SYNCED` = `"corelink.audit.neon_shadow_synced.v1"`.
 //! - `EVENT_TYPE_SHADOW_SYNC_FAILED` = `"corelink.audit.neon_shadow_sync_failed.v1"`.
 
-#![allow(clippy::uninlined_format_args)]
+// Wave-20 (B-P3-02 closure): the wave-15 module-level
+// `#![allow(clippy::uninlined_format_args)]` is dropped; every `format!`
+// in this module uses the inlined-args style (`format!("{x}")`, NOT
+// `format!("{}", x)`).
 
 /// Production `RealNeonShadowSink` driver — closes the wave-18
 /// caveat #3 (in-memory fake shipped wave-18; this submodule ships
@@ -169,6 +172,14 @@ impl ShadowEventRow {
     /// Construct a row with every field explicit. Provided so external
     /// test harnesses can build a row without struct-expression access
     /// (the type is `#[non_exhaustive]` for additive growth).
+    ///
+    /// Wave-20 (B-P3-01 closure): the 8-arg signature is a deliberate
+    /// compromise — the row is `#[non_exhaustive]`, so external callers
+    /// CANNOT build it via struct expression even from within the same
+    /// crate. A builder pattern (`ShadowEventRow::builder()...build()`)
+    /// would lift the lint waiver but couples the row construction to
+    /// runtime validation; the current explicit-arg shape keeps the
+    /// type a pure data carrier. Tracked as cosmetic follow-on.
     #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -279,6 +290,16 @@ impl ShadowSyncReceipt {
     }
 }
 
+/// Wave-20 (B-P2-02 closure) — pseudonymize a tenant UUID to its first 8
+/// hex characters for safe surfacing via the `Display` impl on
+/// [`NeonShadowError`]. The full UUID is retained in the structured error
+/// fields for downstream Splunk / Drata correlation.
+#[must_use]
+pub(crate) fn redact_tenant_uuid(uuid: &Uuid) -> String {
+    let s = uuid.simple().to_string();
+    s.chars().take(8).collect()
+}
+
 /// Canonical error surface for the Neon shadow-sync pipeline.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -286,14 +307,29 @@ pub enum NeonShadowError {
     /// The sync was bound to `tenant_a` but received a row carrying
     /// `tenant_b`. Fail-CLOSED (tenant isolation). The corresponding
     /// SQL-layer enforcement is RLS keyed on `app.current_tenant`.
+    ///
+    /// **Display redaction (wave-20 B-P2-02 closure):** the `Display`
+    /// impl is generated via `thiserror`'s `#[error(...)]` over the
+    /// `sink_tenant_redacted` / `observed_tenant_redacted` fields, which
+    /// carry the FIRST 8 HEX CHARACTERS of the UUID only. The full UUIDs
+    /// are preserved as separate `sink_tenant` / `observed_tenant`
+    /// structured fields for downstream Splunk / Drata correlation, but
+    /// a log-scrape of a shared logging pipeline never surfaces the raw
+    /// UUID. Mirrors the `audit_export.rs` discipline (the route never
+    /// logs raw tenant_id). The 8-hex prefix is collision-safe at the
+    /// per-tenant-incident granularity (1/16^8 ~= 1/4B).
     #[error(
-        "neon shadow tenant isolation violation: sink tenant={sink_tenant}, observed tenant={observed_tenant}"
+        "neon shadow tenant isolation violation: sink tenant={sink_tenant_redacted}, observed tenant={observed_tenant_redacted}"
     )]
     TenantIsolationViolation {
-        /// Sink-bound tenant id.
+        /// Sink-bound tenant id (full UUID, for structured-field correlation).
         sink_tenant: String,
-        /// Offending row's tenant id.
+        /// Sink-bound tenant id (8-hex prefix; surfaced via `Display`).
+        sink_tenant_redacted: String,
+        /// Offending row's tenant id (full UUID, for structured-field correlation).
         observed_tenant: String,
+        /// Offending row's tenant id (8-hex prefix; surfaced via `Display`).
+        observed_tenant_redacted: String,
     },
 
     /// The sync was bound to `region_a` but received a row carrying
@@ -438,6 +474,16 @@ pub trait NeonShadowSink: Send + Sync + core::fmt::Debug {
 
     /// Persist every row of a freshly-flushed R2 archive chunk to the
     /// `audit_events_shadow` Neon table.
+    ///
+    /// **Pre-validation pass (wave-20 B-P2-01 closure):** implementations
+    /// MUST validate tenant_id and region per row; the canonical
+    /// `InMemoryNeonShadowSink` implementation walks the rows ONCE with
+    /// both checks inlined (single-pass; short-circuits on the FIRST
+    /// mismatch). Implementations are NOT required to surface every
+    /// violation in the chunk — fail-CLOSED on the first observed
+    /// mismatch is the canonical contract. The chunk-size cap is bounded
+    /// by `archive_producer::DEFAULT_FLUSH_AFTER_LINES` (canonical 25
+    /// rows in steady state), so the O(n) pass is bounded at the producer.
     ///
     /// # Errors
     ///
@@ -600,7 +646,9 @@ impl NeonShadowSink for InMemoryNeonShadowSink {
             });
             return Err(NeonShadowError::TenantIsolationViolation {
                 sink_tenant: self.tenant_id.to_string(),
+                sink_tenant_redacted: redact_tenant_uuid(&self.tenant_id),
                 observed_tenant: receipt.tenant_id.to_string(),
+                observed_tenant_redacted: redact_tenant_uuid(&receipt.tenant_id),
             });
         }
         for row in rows {
@@ -617,7 +665,9 @@ impl NeonShadowSink for InMemoryNeonShadowSink {
                 });
                 return Err(NeonShadowError::TenantIsolationViolation {
                     sink_tenant: self.tenant_id.to_string(),
+                    sink_tenant_redacted: redact_tenant_uuid(&self.tenant_id),
                     observed_tenant: row.tenant_id.to_string(),
+                    observed_tenant_redacted: redact_tenant_uuid(&row.tenant_id),
                 });
             }
             if row.region != self.region {
@@ -807,7 +857,7 @@ mod tests {
 
     fn dummy_receipt(tenant: Uuid, first: u64, last: u64) -> ArchiveReceipt {
         ArchiveReceipt {
-            r2_key: format!("audit/2026/05/15/{:08}.ndjson", first),
+            r2_key: format!("audit/2026/05/15/{first:08}.ndjson"),
             tenant_id: tenant,
             first_event_time_ms: 1_000,
             last_event_time_ms: 2_000,
@@ -995,9 +1045,9 @@ mod tests {
     #[test]
     fn shadow_event_row_from_persisted_line_extracts_fields() {
         let tenant = Uuid::now_v7();
+        let prev_hash_hex = "00".repeat(32);
         let ndjson = format!(
-            "{{\"type\":\"dev.hugr.corelink.cas.put.v1\",\"time_ms\":1700,\"prev_hash\":\"{}\"}}",
-            "00".repeat(32)
+            "{{\"type\":\"dev.hugr.corelink.cas.put.v1\",\"time_ms\":1700,\"prev_hash\":\"{prev_hash_hex}\"}}"
         );
         let line = PersistedAuditLine {
             r2_key: "k".into(),
