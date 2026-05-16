@@ -3,7 +3,7 @@ id: "AUDIT-2026-05-15-FRAMEWORK-V1-0-0-GA"
 type: "audit"
 doc_status: "ACTIVE"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-05-15"
 updated: "2026-05-16"
 owner: "Gustavo Schneiter"
@@ -20,9 +20,10 @@ references:
   - "specs/_audits/2026-05-15-canonical-consistency-baseline.md"
   - "specs/03_architecture/adrs/ADR-0034-prr-staffing-waiver-solo-tier.md"
   - "specs/_proposals/2026-05-16-framework-reviewer-roles.md"
+  - "specs/_proposals/2026-05-16-framework-reviewer-roles-addendum.md"
   - "specs/_governance/reviewer_staffing_strategy.md"
   - "ROADMAP-TO-GA.md"
-tags: ["framework", "freeze", "ga", "v1.0.0", "wave-18", "lote-6", "self-referential"]
+tags: ["framework", "freeze", "ga", "v1.0.0", "wave-18", "wave-22", "lote-6", "lote-7", "self-referential"]
 ---
 
 # Framework v1.0.0 GA freeze audit — wave-18 / Lote 6
@@ -293,11 +294,29 @@ To flip the verdict from DEFER → PROMOTE, the Owner needs to:
 
 **Until those four items execute, no agent action can advance the freeze gate.** The audit verdict is now honestly DEFER-with-engineering-side-READY, which is the strongest possible state without violating PRINC-007 / PRINC-008 / PRINC-015.
 
+### 11.6 Wave-22 follow-on: addendum extends proposal to small-org case
+
+The wave-22 Lote 7 absorption authored `specs/_proposals/2026-05-16-framework-reviewer-roles-addendum.md` v0.1.0, which extends the wave-20 proposal with six operating-policy clauses needed to execute the FW-H-1..4 gate in a small-org regime (the realistic CoreLink configuration of solo Owner + AI labor + 1–2 retained external advisors):
+
+| Addendum § | Clause | Effect on Path A |
+|---|---|---|
+| §1 | Dual-hat fallback (Pairing-Alpha: Owner takes FW-H-1 + FW-H-3; Pairing-Beta: Owner takes FW-H-2 + FW-H-4) | Formalizes OQ-1 Option C as a named operating mode with auto-expiration triggers (headcount ≥ 10, SOC2 kickoff, 18-month ceiling); enables Owner to invoke fallback without redesigning the gate |
+| §2 | Cross-veto rule + 3-of-4 quorum | Defines `vote: BLOCK / APPROVE / ABSTAIN / WITHDRAW` semantics; allows one reviewer to be unreachable without stalling the cut |
+| §3 | Sign-off SLA (STANDARD 3 BD / HIGH_RISK 7 BD) | Concretizes time commitment per the lane; informs candidate negotiation |
+| §4 | Reviewer Training Pack 10-hour floor | Pins a contractual minimum over the existing §4 onboarding read order; fits the 4–10h/month retainer envelope |
+| §5 | 90-day rolling quarterly cadence anchored on FROZEN cut | Replaces calendar-Q clock with commit-date anchor; first quarterly review scope explicitly enumerated |
+| §6 | Conflict-of-interest declaration + recusal | Mandates `conflicts_declared:` at onboarding; specifies recusal mechanics; Owner conflict disclosed (cannot recuse — structural) |
+
+**Effect on §6 verdict:** unchanged (still DEFER on §7 / §43.1 promotion rule). The addendum does NOT add new gates — it specifies HOW the existing gate operates in the small-org regime, removing remaining "operating-mechanics underspecified" risk. Path A's engineering side is now READY at a finer grain than wave-20 left it.
+
+**Effect on §6.3 Path C recommendation:** unchanged (Path C remains active). The audit recommends the Owner reads both the proposal AND the addendum at the next governance checkpoint together, since they collapse to a single decision surface.
+
 ---
 
 ## 10. Change log
 
 | Version | Date | Author | Change |
 |---|---|---|---|
+| 1.2.0 | 2026-05-16 | Claude Opus 4.7 (wave-22 Lote 7 absorption agent) | Adds §11.6 wave-22 follow-on. The reviewer-roles proposal is now extended by `specs/_proposals/2026-05-16-framework-reviewer-roles-addendum.md` v0.1.0 with six operating-policy clauses (dual-hat fallback, cross-veto + quorum, sign-off SLA, training pack budget, 90-day rolling cadence, conflict-of-interest declaration). v1.0.0 GA verdict remains DEFER on §7 / §43.1 rule; addendum specifies HOW the existing gate operates in the small-org regime without adding new gates. |
 | 1.1.0 | 2026-05-16 | Claude Opus 4.7 (wave-20 Lote 7 agent) | Adds §11 `unblock-path-C-progress` documenting that the engineering side of Path A is now READY: reviewer roles proposal `specs/_proposals/2026-05-16-framework-reviewer-roles.md` lands defining FW-H-1..4 role profiles; framework §43.1 annotated to link to the proposal. v1.0.0 GA verdict remains DEFER pending user nomination of individuals (purely human-action; §11.5). Path A is now single-step-away rather than multi-step. |
 | 1.0.0 | 2026-05-15 | Claude Opus 4.7 (wave-18 Lote 6 agent) | Initial audit. Reframes task #14 (v0.3.0 freeze → v1.0.0 GA freeze). Engineering verdict READY (§3 + §4 all GREEN). Decision §6 = **DEFER** — framework's own §7 / §43.1 promotion rule (Aprovador Final + ≥ N reviewers) not satisfied by agent action; three reviewer slots remain `(a nomear)`. Three explicit unblock paths documented (§6.3). Task #14 CLOSED via reframing + audit delivery (§8); the version cut to v1.0.0 GA itself is a follow-up gated on Path A/B/C selection by human. |
