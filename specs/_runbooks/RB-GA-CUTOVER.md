@@ -95,6 +95,14 @@ The following must all be **GREEN** at T-7d ± 2h. Any RED defers cutover by ≥
 - DPO + Legal Counsel acknowledge in writing: **"GA cutover is a posture change that does NOT involve PII disclosure, data export, sub-processor change, or any event triggering GDPR Art. 33 / LGPD ANPD breach notification."** Filed at `specs/_audits/2026-MM-DD-ga-cutover-no-breach-attestation.md`.
 - Re-confirm DPAs at T-30d remain signed (no new sub-processor added at cutover).
 
+### 0.8 Dry-run history
+
+The §3 sequence is exercised against in-process fakes via `scripts/ga-cutover-dryrun.sh` ahead of the §9 mandated production dress-rehearsal. Each dry-run emits a sealed audit doc under `specs/_audits/YYYY-MM-DD-ga-cutover-dryrun.md` and a JSON evidence bundle under `reports/ga-cutover-dryrun-YYYY-MM-DD.json`. The dry-run is a *necessary but not sufficient* precondition for the §9 dress-rehearsal: it asserts the runbook orchestration is internally consistent and that the §4 greenlight recording-rule thresholds evaluate cleanly when fed canonical values; it does NOT substitute for the §9 production dress-rehearsal against a real staging environment.
+
+| Run date | Verdict | Greenlights (G1..G6) | §3 steps PASS | Triggers fired | GA-readiness | Audit doc |
+|---|---|---|---|---|---|---|
+| 2026-05-16 | GREEN | 6 / 6 | 11 / 11 | 0 / 6 | 8.9 / 10 | `specs/_audits/2026-05-16-ga-cutover-dryrun.md` |
+
 ---
 
 ## 1. T-72h freeze + validation
