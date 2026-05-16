@@ -17,6 +17,8 @@ tags: ["meta", "process", "framework"]
 # 00 — Specification Framework
 
 > **doc_status:** DRAFT (FROZEN staffing-blocked — promoção bloqueada até ≥ 2 reviewers nomeados)
+>
+> **GA-readiness unlock note (2026-05-16, wave-24):** per `specs/_audits/2026-05-16-ga-readiness-final.md` §17, Owner sign-off via the ADR-0034b 2-key path (Owner + on-call SRE, §13.2 + §13.3 of that audit) **explicitly unlocks** the v1.0.0 promotion at wave-27 (post-GA cutover, T+7d to T+30d stable-state window). The framework cannot be promoted on the GA-cutover-day signature itself; promotion requires a separate post-cutover stable-state period. This RC1 → v1.0.0 promotion is a wave-27 deliverable (`specs/_audits/2026-MM-DD-framework-v1.0.0-promotion.md` placeholder, to be authored at promotion time).
 > **Versão:** 1.0.0-rc1
 > **Última atualização:** 2026-04-24
 > **Owner:** Gustavo Schneiter
