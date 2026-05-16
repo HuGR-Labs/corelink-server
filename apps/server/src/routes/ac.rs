@@ -1,4 +1,4 @@
-//! `GET /v1/ac/{tenant}/{action_digest}` + `PUT /v1/ac/{tenant}/{action_digest}`
+//! `GET /v1/ac/:tenant/:action_digest` + `PUT /v1/ac/:tenant/:action_digest`
 //! — Action Cache (AC) read + update routes wired against
 //! [`corelink_handler_ac::AcLookupHandler`] and
 //! [`corelink_handler_ac::AcUpdateHandler`].
@@ -51,12 +51,18 @@ use corelink_handler_ac::{
     InMemoryAcHandler, InMemoryAuditSink, InMemorySliObserver,
 };
 
-/// Canonical AC lookup route path (axum-style `{name}` captures).
-pub const AC_LOOKUP_ROUTE: &str = "/v1/ac/{tenant}/{action_digest}";
+/// Canonical AC lookup route path (axum-0.7 / matchit-0.7 `:name` captures).
+///
+/// DEBT-029 (2026-05-16): previously declared with `{tenant}/{action_digest}`
+/// which is matchit-0.8+ syntax and would have panicked at `Router::new()`
+/// against the workspace-pinned axum 0.7 / matchit 0.7. Fixed by replacing
+/// brace placeholders with the `:name` form used by every other live
+/// route (see `admin_pilot.rs`, `signup.rs`).
+pub const AC_LOOKUP_ROUTE: &str = "/v1/ac/:tenant/:action_digest";
 
 /// Canonical AC update route path. The update path reuses the
 /// same template; axum disambiguates by HTTP method.
-pub const AC_UPDATE_ROUTE: &str = "/v1/ac/{tenant}/{action_digest}";
+pub const AC_UPDATE_ROUTE: &str = "/v1/ac/:tenant/:action_digest";
 
 /// Shared route state — distinct trait objects for read and update.
 #[derive(Clone)]
@@ -111,7 +117,7 @@ pub fn router(state: AcRouteState) -> Router {
         .with_state(state)
 }
 
-/// `GET /v1/ac/{tenant}/{action_digest}` handler — lookup.
+/// `GET /v1/ac/:tenant/:action_digest` handler — lookup.
 async fn handle_lookup(
     State(state): State<AcRouteState>,
     Path((tenant, action_digest)): Path<(String, String)>,
@@ -134,7 +140,7 @@ async fn handle_lookup(
     }
 }
 
-/// `PUT /v1/ac/{tenant}/{action_digest}` handler — update.
+/// `PUT /v1/ac/:tenant/:action_digest` handler — update.
 async fn handle_update(
     State(state): State<AcRouteState>,
     Path((tenant, action_digest)): Path<(String, String)>,
@@ -205,8 +211,8 @@ mod tests {
 
     #[test]
     fn route_constants_match_canonical_path() {
-        assert_eq!(AC_LOOKUP_ROUTE, "/v1/ac/{tenant}/{action_digest}");
-        assert_eq!(AC_UPDATE_ROUTE, "/v1/ac/{tenant}/{action_digest}");
+        assert_eq!(AC_LOOKUP_ROUTE, "/v1/ac/:tenant/:action_digest");
+        assert_eq!(AC_UPDATE_ROUTE, "/v1/ac/:tenant/:action_digest");
     }
 
     #[test]

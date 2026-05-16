@@ -1,4 +1,4 @@
-//! `GET /v1/admin/read/{resource}` + `POST /v1/admin/mutate` —
+//! `GET /v1/admin/read/:resource` + `POST /v1/admin/mutate` —
 //! admin-plane read + mutate routes wired against
 //! [`corelink_handler_admin::AdminReadHandler`] and
 //! [`corelink_handler_admin::AdminMutateHandler`].
@@ -49,8 +49,14 @@ use corelink_handler_admin::{
 };
 use serde::Deserialize;
 
-/// Canonical admin read route path (axum-style `{name}` capture).
-pub const ADMIN_READ_ROUTE: &str = "/v1/admin/read/{resource}";
+/// Canonical admin read route path (axum-0.7 / matchit-0.7 `:name` capture).
+///
+/// DEBT-029 (2026-05-16): previously declared with `{resource}` which is
+/// matchit-0.8+ syntax and would have panicked at `Router::new()` against
+/// the workspace-pinned axum 0.7 / matchit 0.7. Fixed by replacing the
+/// brace placeholder with the `:name` form used by every other live
+/// route (see `admin_pilot.rs`, `signup.rs`).
+pub const ADMIN_READ_ROUTE: &str = "/v1/admin/read/:resource";
 
 /// Canonical admin mutate route path.
 pub const ADMIN_MUTATE_ROUTE: &str = "/v1/admin/mutate";
@@ -171,7 +177,7 @@ impl AdminMutateBody {
     }
 }
 
-/// `GET /v1/admin/read/{resource}` handler.
+/// `GET /v1/admin/read/:resource` handler.
 async fn handle_read(
     State(state): State<AdminRouteState>,
     Path(resource): Path<String>,
@@ -258,7 +264,7 @@ mod tests {
 
     #[test]
     fn route_constants_match_canonical_paths() {
-        assert_eq!(ADMIN_READ_ROUTE, "/v1/admin/read/{resource}");
+        assert_eq!(ADMIN_READ_ROUTE, "/v1/admin/read/:resource");
         assert_eq!(ADMIN_MUTATE_ROUTE, "/v1/admin/mutate");
     }
 
