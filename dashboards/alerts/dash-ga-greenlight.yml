@@ -1,0 +1,295 @@
+# DASH-GA-GREENLIGHT composite recording rules — RB-GA-CUTOVER §4.
+#
+# This file declares 6 independent greenlight recording rules (G1..G6)
+# plus 1 composite rule that gates the §3 gradual rollout promotion
+# decisions in `specs/_runbooks/RB-GA-CUTOVER.md`.
+#
+# Rule shape mirrors `dash-slo-multi-burn.yml` recording-rule pattern.
+# All criteria are boolean (1 = GREEN / GO, 0 = RED / NO-GO) so the
+# composite is a logical AND of the 6 inputs.
+#
+# Severity routing per `observability_model.md §3.1`:
+# - sev0 (oncall page + escalation): composite_ok flips 0 for >5min
+#   during cutover window — fires RB-GA-CUTOVER §5 RB-T5 trigger.
+# - sev1 (oncall page): any single G1..G6 flips 0 for >5min during
+#   cutover window — fires §5 RB-T5 trigger + correlates to specific
+#   gate to inform rollback decision.
+#
+# Runbook URL annotation per sprint contract §14.s09.3. CI hook
+# runbook-coverage gates this file.
+#
+# Production calibration deferred to T-7d greenlight dashboard
+# validation step (RB-GA-CUTOVER §9): confirm each recording rule
+# returns real values from staging Prometheus instance.
+
+groups:
+  # -----------------------------------------------------------------
+  # G1 — P99 latency ≤ SLO across all 5 regions
+  #
+  # Pulls the same SLO multi-burn signal as `dash-slo-multi-burn.yml`
+  # SLI-LATENCY-CAS-GET-P99 §4 but aggregates per-region and asserts
+  # ALL regions are within budget. Sustained 30min required per §4 G1.
+  # -----------------------------------------------------------------
+  - name: ga-greenlight-g1-p99-latency
+    interval: 30s
+    rules:
+      - record: slo:greenlight:p99_latency_per_region_ok
+        expr: |
+          (
+            sum by (region) (rate(corelink_cas_get_latency_violations_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[30m]))
+            /
+            sum by (region) (rate(corelink_cas_get_latency_total{tenant_id!="00000000-0000-0000-0000-canary000000"}[30m]))
+          ) < 0.01
+
+      - record: slo:greenlight:p99_latency_regions_ok
+        expr: |
+          (count(slo:greenlight:p99_latency_per_region_ok == bool 1) == 5) * 1
+
+      - alert: GaGreenlightG1_P99LatencyRegions_NoGo
+        expr: slo:greenlight:p99_latency_regions_ok == 0
+        for: 5m
+        labels:
+          severity: sev1
+          greenlight_gate: G1
+          slo: SLI-LATENCY-CAS-GET-P99
+          sprint: R-GA
+          gate: cutover
+        annotations:
+          summary: "GA-GREENLIGHT G1 NO-GO — P99 latency budget breach in ≥ 1 region (5min sustained)"
+          description: |
+            One or more of the 5 regions has p99 latency violation rate
+            above 1% sustained 5min. Per RB-GA-CUTOVER §4 G1: all 5
+            regions must be within budget for 30min before any §3.3
+            gradual rollout promotion. Fires §5 RB-T3 rollback trigger
+            if duration ≥ 15min.
+          runbook_url: "https://corelink.io/runbooks/RB-GA-CUTOVER.md#g1"
+
+  # -----------------------------------------------------------------
+  # G2 — Audit-chain integrity verifier green
+  #
+  # Mirrors `dash-audit-export-alerts.yml` chain-integrity signal.
+  # Sustained 24h prior to T-0h AND continuously from §3.7 onward.
+  # Any non-zero violation count fires SEV-0 immediately.
+  # -----------------------------------------------------------------
+  - name: ga-greenlight-g2-audit-chain
+    interval: 30s
+    rules:
+      - record: slo:greenlight:audit_chain_integrity
+        expr: |
+          (sum(increase(corelink_audit_chain_integrity_violation_total[24h])) == bool 0) * 1
+
+      - alert: GaGreenlightG2_AuditChain_NoGo
+        expr: slo:greenlight:audit_chain_integrity == 0
+        for: 1m
+        labels:
+          severity: sev0
+          greenlight_gate: G2
+          inv: INV-AUDIT-APPEND-ONLY
+          sprint: R-GA
+          gate: cutover
+        annotations:
+          summary: "GA-GREENLIGHT G2 NO-GO — audit-chain integrity violation detected"
+          description: |
+            corelink_audit_chain_integrity_violation_total > 0 in last
+            24h window. Per RB-GA-CUTOVER §4 G2: must be 0 sustained
+            24h prior + continuously from §3.7. Fires §5 RB-T4
+            rollback trigger immediately (no debounce — audit-chain
+            break is CRITICAL invariant violation per
+            invariant_registry.md). Hand-off to RB-AUDIT-EXPORT-INTEGRITY.
+          runbook_url: "https://corelink.io/runbooks/RB-GA-CUTOVER.md#g2"
+
+  # -----------------------------------------------------------------
+  # G3 — Zero SEV-0/SEV-1 incidents in 72h prior to T-0h
+  #
+  # Sourced from PagerDuty incident exporter metric. Sustained
+  # 72h prior required per §4 G3.
+  # -----------------------------------------------------------------
+  - name: ga-greenlight-g3-sev01-zero-72h
+    interval: 1m
+    rules:
+      - record: slo:greenlight:sev01_count_72h
+        expr: |
+          sum(pagerduty_incidents_active{severity=~"sev0|sev1"}) or vector(0)
+
+      - record: slo:greenlight:sev01_zero_72h_ok
+        expr: |
+          (sum(increase(pagerduty_incidents_created_total{severity=~"sev0|sev1"}[72h])) == bool 0) * 1
+
+      - alert: GaGreenlightG3_Sev01_72h_NoGo
+        expr: slo:greenlight:sev01_zero_72h_ok == 0
+        for: 5m
+        labels:
+          severity: sev1
+          greenlight_gate: G3
+          sprint: R-GA
+          gate: cutover
+        annotations:
+          summary: "GA-GREENLIGHT G3 NO-GO — ≥ 1 SEV-0/SEV-1 incident in last 72h"
+          description: |
+            ≥ 1 SEV-0 or SEV-1 incident detected in last 72h window.
+            Per RB-GA-CUTOVER §4 G3: must be 0 sustained 72h prior to
+            T-0h. Cutover deferred by ≥ 72h from last incident
+            resolution per §0.7 readiness criterion. Fires §5 RB-T1
+            or RB-T2 rollback trigger if occurring during cutover
+            window.
+          runbook_url: "https://corelink.io/runbooks/RB-GA-CUTOVER.md#g3"
+
+  # -----------------------------------------------------------------
+  # G4 — Customer success ack ≥ 5 pilot tenants
+  #
+  # Manual gauge updated by VPProduct via sealed audit doc filing.
+  # Snapshot value at T-24h ± 6h per §4 G4. Default 0 (NO-GO) until
+  # explicitly set to ≥ 5 in `specs/_audits/` attestation.
+  # -----------------------------------------------------------------
+  - name: ga-greenlight-g4-pilot-attestations
+    interval: 5m
+    rules:
+      - record: slo:greenlight:pilot_attestations_count
+        expr: |
+          max(corelink_ga_pilot_attestation_signed_count) or vector(0)
+
+      - record: slo:greenlight:pilot_attestations_ok
+        expr: |
+          (slo:greenlight:pilot_attestations_count >= bool 5) * 1
+
+      - alert: GaGreenlightG4_PilotAttestations_NoGo
+        expr: slo:greenlight:pilot_attestations_ok == 0
+        for: 15m
+        labels:
+          severity: sev1
+          greenlight_gate: G4
+          sprint: R-GA
+          gate: cutover
+        annotations:
+          summary: "GA-GREENLIGHT G4 NO-GO — pilot tenant attestations < 5"
+          description: |
+            Pilot tenant attestation count is below 5. Per
+            RB-GA-CUTOVER §4 G4: ≥ 5 signed attestations required at
+            T-24h ± 6h snapshot. VPProduct must collect missing
+            attestations OR cutover defers ≥ 7d per
+            RB-GA-LAUNCH-ROLLBACK §7 RA-5 minimum-gap rule.
+          runbook_url: "https://corelink.io/runbooks/RB-GA-CUTOVER.md#g4"
+
+  # -----------------------------------------------------------------
+  # G5 — Neon shadow lag p99 ≤ 5min
+  #
+  # Sustained 30min required per §4 G5. Source is
+  # `dash-audit-export-alerts.yml` neon_shadow_replication_lag_seconds
+  # exporter.
+  # -----------------------------------------------------------------
+  - name: ga-greenlight-g5-neon-shadow-lag
+    interval: 30s
+    rules:
+      - record: slo:greenlight:neon_shadow_lag_p99
+        expr: |
+          max(neon_shadow_replication_lag_seconds_p99) or vector(0)
+
+      - record: slo:greenlight:neon_shadow_lag_ok
+        expr: |
+          (slo:greenlight:neon_shadow_lag_p99 <= bool 300) * 1
+
+      - alert: GaGreenlightG5_NeonShadowLag_NoGo
+        expr: slo:greenlight:neon_shadow_lag_ok == 0
+        for: 5m
+        labels:
+          severity: sev1
+          greenlight_gate: G5
+          sprint: R-GA
+          gate: cutover
+        annotations:
+          summary: "GA-GREENLIGHT G5 NO-GO — Neon shadow replication lag p99 > 5min"
+          description: |
+            Neon shadow replication lag p99 > 300s sustained 5min.
+            Per RB-GA-CUTOVER §4 G5: must be ≤ 5min sustained 30min.
+            Hand-off to neon-analytics-shadow runbook for lag
+            triage; if persistent, defer §3.7 audit-chain Logpush
+            step until lag recovers.
+          runbook_url: "https://corelink.io/runbooks/RB-GA-CUTOVER.md#g5"
+
+  # -----------------------------------------------------------------
+  # G6 — DSR cron last 24h success rate 100%
+  #
+  # Sustained 24h prior to T-0h required per §4 G6. Sourced from
+  # `dash-dsr-statuspage-alerts.yml` cron success/fail counters.
+  # -----------------------------------------------------------------
+  - name: ga-greenlight-g6-dsr-cron-24h
+    interval: 1m
+    rules:
+      - record: slo:greenlight:dsr_cron_runs_total_24h
+        expr: |
+          sum(increase(corelink_dsr_cron_runs_total[24h])) or vector(0)
+
+      - record: slo:greenlight:dsr_cron_runs_failed_24h
+        expr: |
+          sum(increase(corelink_dsr_cron_runs_failed_total[24h])) or vector(0)
+
+      - record: slo:greenlight:dsr_cron_24h_success
+        expr: |
+          (
+            (slo:greenlight:dsr_cron_runs_total_24h > bool 0)
+            *
+            (slo:greenlight:dsr_cron_runs_failed_24h == bool 0)
+          )
+
+      - alert: GaGreenlightG6_DsrCron24h_NoGo
+        expr: slo:greenlight:dsr_cron_24h_success == 0
+        for: 5m
+        labels:
+          severity: sev1
+          greenlight_gate: G6
+          sprint: R-GA
+          gate: cutover
+        annotations:
+          summary: "GA-GREENLIGHT G6 NO-GO — DSR cron 24h success rate < 100%"
+          description: |
+            DSR cron has ≥ 1 failure in last 24h OR zero runs (cron
+            not firing). Per RB-GA-CUTOVER §4 G6: must be 100%
+            success across all 24 hourly runs in last 24h. Hand-off
+            to RB-DSR-STATUSPAGE-PUBLISH-FAILED §3 triage.
+          runbook_url: "https://corelink.io/runbooks/RB-GA-CUTOVER.md#g6"
+
+  # -----------------------------------------------------------------
+  # COMPOSITE — All 6 greenlight criteria simultaneously GREEN
+  #
+  # This is the single recording rule consulted by RB-GA-CUTOVER
+  # §3.3 gradual rollout promotion decisions AND §3.11 cutover-
+  # complete declaration. Must be 1 (GREEN) sustained 30min before
+  # promoting from 50% → 100% AND before §3.11 status-page flip.
+  #
+  # Falsified by any single G1..G6 flipping 0. Alert RB-T5 in
+  # RB-GA-CUTOVER §5.1 fires on composite==0 for ≥5min during
+  # cutover window.
+  # -----------------------------------------------------------------
+  - name: ga-greenlight-composite
+    interval: 30s
+    rules:
+      - record: slo:greenlight:composite_ok
+        expr: |
+          (
+            slo:greenlight:p99_latency_regions_ok
+            * slo:greenlight:audit_chain_integrity
+            * slo:greenlight:sev01_zero_72h_ok
+            * slo:greenlight:pilot_attestations_ok
+            * slo:greenlight:neon_shadow_lag_ok
+            * slo:greenlight:dsr_cron_24h_success
+          )
+
+      - alert: GaGreenlightComposite_NoGo
+        expr: slo:greenlight:composite_ok == 0
+        for: 5m
+        labels:
+          severity: sev0
+          greenlight_gate: COMPOSITE
+          sprint: R-GA
+          gate: cutover
+        annotations:
+          summary: "GA-GREENLIGHT COMPOSITE NO-GO — ≥ 1 of 6 criteria RED for 5min"
+          description: |
+            Composite greenlight rule is 0 (NO-GO) for ≥ 5min. At
+            least one of G1..G6 is failing. Per RB-GA-CUTOVER §5.1
+            RB-T5: fires immediate rollback decision per §5.2 2-key
+            auth (on-call SRE Lead + Product Lead). Check individual
+            G1..G6 alert annotations to identify which gate(s)
+            tripped. NO §3.3 promotion or §3.11 declaration is
+            permitted while this alert is firing.
+          runbook_url: "https://corelink.io/runbooks/RB-GA-CUTOVER.md#composite"

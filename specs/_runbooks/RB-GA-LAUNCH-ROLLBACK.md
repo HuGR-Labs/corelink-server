@@ -275,6 +275,7 @@ This runbook is **non-DR-drilled** in normal cadence (you cannot rehearse a real
 - `specs/_compliance/GA-GATE-CRITERIA.md` — criteria that get re-validated in re-attestation cycle.
 - `specs/_compliance/GA-GATE-GO-NOGO-TEMPLATE.md` §4 + §5 — forward-refs this runbook; §5 is the emergency Go/No-Go format used here.
 - `specs/_runbooks/ONCALL-ESCALATION-MATRIX.md` — SEV-1 paging escalation tiers.
+- `specs/_runbooks/RB-GA-CUTOVER.md` — sister *forward* runbook (cutover from PRIVATE_PREVIEW → GA); this runbook is the *reverse* posture flip and the hand-off target if a §5 trigger in RB-GA-CUTOVER fires post-§3.11.
 - `specs/_runbooks/RB-POSTMORTEM-PROCESS.md` — postmortem template kicked off in §4.5.
 - `specs/_runbooks/RB-LIGHTHOUSE-CUSTOMER-INCIDENT.md` — lighthouse-specific incident response (consumed in §3 T1-4 + T7-3).
 - `specs/_runbooks/RB-PENTEST-FINDING-RESPONSE.md` — pentest finding handling (consumed in §3 T1-5 + T7-4).

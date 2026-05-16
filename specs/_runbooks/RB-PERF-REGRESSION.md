@@ -157,3 +157,4 @@ time to fix the regression" — use option 5.3 instead.
 - `scripts/refresh-perf-baseline.sh` — operator refresh script.
 - `reports/perf/README.md` — committed baseline manifest format.
 - `.github/workflows/perf-regression.yml` — CI workflow.
+- `specs/_runbooks/RB-GA-CUTOVER.md` §4 G1 + §0.2.12 + §5.1 RB-T3 — GA cutover greenlight criterion G1 (P99 latency ≤ SLO 5 regions) + rollback trigger RB-T3 (P99 SLO breach >15min) hand off to this runbook.

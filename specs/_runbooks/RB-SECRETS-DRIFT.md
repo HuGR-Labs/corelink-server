@@ -207,3 +207,4 @@ Mapped to: `specs/_compliance/SOC2-EVIDENCE-ROLLUP-2026-05-15.md` §CC6.1.
 - `.github/workflows/cf-deploy-prod.yml` — production deploy gate
 - `ROADMAP-TO-GA.md` §9 — Human Track credential acquisition
 - `specs/_audits/2026-05-15-secrets-coverage-baseline.md` — baseline snapshot
+- `specs/_runbooks/RB-GA-CUTOVER.md` §1.3 + §0.2.10 — GA cutover final secrets matrix audit (Stripe live, Clerk JWT, BYOK) consumes this runbook; pre-cutover sweep ≤ 7d mandatory.

@@ -410,3 +410,9 @@ This runbook MUST be drilled semi-annually via a synthetic Statuspage
 hours** (compressed from the 24h MTTR target — the drill validates the
 path, not the regulatory wait). Drift > 2× (4h) triggers FM-202 review
 per `corelink-runbook-tracker`.
+
+---
+
+## 10. See also
+
+- `specs/_runbooks/RB-GA-CUTOVER.md` §0.2.9 + §0.5 + §3.8 + §4 G6 + §6.1.4 — GA cutover Statuspage banner pre-staging + DSR cron enablement + greenlight criterion G6 (DSR cron 100% success 24h) + T+24h cron review; pre-cutover re-read mandatory.

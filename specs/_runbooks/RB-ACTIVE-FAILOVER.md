@@ -378,3 +378,4 @@ If Drain step (§3) fails to reach in-flight=0 within 90s + queue-TTL exhausted:
 - `crates/corelink-replica-worker/` — ResidencyGraph + replication lag SLO
 - `specs/_runbooks/RB-COLD-RESTORE-FROM-ZERO.md` — escalation path if primary unreachable ≥ 4h
 - `specs/_runbooks/ONCALL-ESCALATION-MATRIX.md` — 3-tier escalation
+- `specs/_runbooks/RB-GA-CUTOVER.md` §3.3 + §0.2.4 — GA cutover gradual rollout consumes this runbook if a regional fault is hit during T-0h; pre-cutover re-read mandatory.

@@ -340,6 +340,9 @@ After every replay (success, fail, or abandon):
   emits its audit row BEFORE state mutation.
 - INV-OBS-AUDIT-CHAIN-INTEGRITY (S-09 inheritance) — every replay
   is a separate chain event.
+- `specs/_runbooks/RB-GA-CUTOVER.md` §3.5 + §0.2.8 — GA cutover Stripe
+  webhook live-mode flip + DLQ consumer enablement; pre-cutover re-read
+  mandatory.
 
 ## 9. Sign-off
 
