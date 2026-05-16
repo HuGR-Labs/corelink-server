@@ -182,6 +182,15 @@ pub use neon_shadow::tenant_region::{
     parse_region_label, D1TenantRegionResolver, InMemoryTenantRegionResolver,
     TenantConfigStore, TenantRegionError, TenantRegionResolver,
 };
+// Wave-25 follow-on: re-export `Region` from `corelink-analytics` so
+// downstream callers of `D1TenantRegionResolver` (notably
+// `corelink-clerk-cf::prod_wiring::build_tenant_region_resolver`)
+// don't need to pull `corelink-analytics` as a direct dep alongside
+// `corelink-audit-chain` — the resolver's `fallback` argument is a
+// `Region`, so a clean wire path needs the type in scope at the call
+// site. The canonical type still lives in `corelink-analytics`; this
+// is a re-export only (no behaviour change).
+pub use corelink_analytics::Region;
 pub use exporter::{
     hashes_eq_ct, verify_export_result, verify_inclusion_proof, AuditExporter, ExportAuditRecord,
     ExportManifest, ExportResult, ExportWindow, ExportedAuditEvent, InMemoryAuditExporter,

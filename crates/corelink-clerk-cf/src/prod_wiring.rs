@@ -301,6 +301,87 @@ pub fn build_billing_real_bindings(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Wave-25 follow-on: tenant-config region resolver wire for the Neon
+// analytics shadow.
+//
+// Wave-21 shipped the `D1TenantRegionResolver` trait surface in
+// `corelink-audit-chain::neon_shadow::tenant_region` but left the CF
+// Worker production boot path on an `InMemoryTenantRegionResolver`
+// IAD fallback (audit doc §7 caveat: "`corelink-clerk-cf::prod_wiring`
+// not yet updated to construct `D1TenantRegionResolver`"). This module
+// closes that caveat: when the CF Worker boot path runs with the
+// `tenant-region-real` feature on, the resolver wraps a
+// `D1TenantConfigStore` (which queries the wave-21
+// `tenant_config.region` column) behind the canonical
+// `D1TenantRegionResolver`. When the feature is off OR the D1 store
+// is empty (dev mode), the boot path falls back to
+// `InMemoryTenantRegionResolver` with an explicit IAD default —
+// mirroring the wave-20 native gRPC boot path's behaviour.
+// ---------------------------------------------------------------------------
+
+/// Wave-25 production tenant-region resolver wire. Constructs a
+/// [`corelink_audit_chain::D1TenantRegionResolver`] backed by a
+/// [`crate::tenant_region_real::D1TenantConfigStore`] when the
+/// `store` is supplied (i.e. the D1 binding is present), and falls
+/// back to a populated
+/// [`corelink_audit_chain::InMemoryTenantRegionResolver`] otherwise.
+///
+/// Returns the resolver as an `Arc<dyn TenantRegionResolver>` so it
+/// can be threaded into the wave-20 `TokioPgShadowSinkFactory`
+/// (mirrored on the CF Worker side by the analogous synchronous
+/// `ShadowSinkFactory::for_tenant` dispatch).
+///
+/// `fallback_region` is the legacy-tenant / cache-miss landing
+/// region — the wave-21 audit doc §7 charter pins this to `Region::Iad`
+/// for production rollouts (the wave-20 hard-coded default) so a
+/// fresh deployment doesn't 503 every legacy tenant.
+///
+/// # Modes
+///
+/// - `Some(store)` — production wire. The resolver routes every
+///   `resolve_region` through the D1-backed store. The CF Worker
+///   boot path MUST call
+///   [`crate::tenant_region_real::D1TenantConfigStore::prefetch`]
+///   in the request-prelude to populate the cache for the current
+///   request's tenant BEFORE the synchronous `ShadowSinkFactory::
+///   for_tenant` dispatch.
+/// - `None` — dev mode wire. The resolver routes every
+///   `resolve_region` through an empty
+///   [`corelink_audit_chain::InMemoryTenantRegionResolver`] that
+///   always falls back to `fallback_region`. Used when the
+///   `CLERK_DB` D1 binding is absent (local `wrangler dev` without
+///   D1 binding wired).
+///
+/// # Errors
+///
+/// Infallible — both the `D1TenantConfigStore::new` constructor and
+/// the `InMemoryTenantRegionResolver::new().with_fallback(...)`
+/// chain are infallible. Returns `Self` directly.
+#[cfg(feature = "tenant-region-real")]
+#[must_use]
+pub fn build_tenant_region_resolver(
+    store: Option<std::sync::Arc<crate::tenant_region_real::D1TenantConfigStore>>,
+    fallback_region: corelink_audit_chain::Region,
+) -> std::sync::Arc<dyn corelink_audit_chain::TenantRegionResolver> {
+    match store {
+        Some(store) => {
+            // Wrap the concrete `D1TenantConfigStore` as a
+            // trait-object `TenantConfigStore` for the resolver.
+            let trait_store: std::sync::Arc<dyn corelink_audit_chain::TenantConfigStore> =
+                store;
+            std::sync::Arc::new(corelink_audit_chain::D1TenantRegionResolver::new(
+                trait_store,
+                fallback_region,
+            ))
+        }
+        None => std::sync::Arc::new(
+            corelink_audit_chain::InMemoryTenantRegionResolver::new()
+                .with_fallback(fallback_region),
+        ),
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,

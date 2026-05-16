@@ -41,6 +41,15 @@ pub mod dsr_statuspage_cron;
 pub mod health;
 pub mod prod_wiring;
 
+// Wave-25: D1-backed `TenantConfigStore` wire for the Neon analytics
+// shadow region pin. Gated by the `tenant-region-real` feature so the
+// optional `corelink-audit-chain` + `uuid` deps stay out of the
+// default wasm32 build surface. Closes the wave-21 audit-doc §7
+// caveat "`corelink-clerk-cf::prod_wiring` not yet updated to
+// construct `D1TenantRegionResolver`".
+#[cfg(feature = "tenant-region-real")]
+pub mod tenant_region_real;
+
 pub use audit_sink::{AuditEvent, AuditSink};
 pub use cf_fetch::CfJwksFetcher;
 pub use cf_kv::CfKvJwksCache;

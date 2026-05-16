@@ -270,3 +270,29 @@ lib (`--features neon-real`).
 
 DCO sign-off (wave-21 closure-note): Gustavo Schneiter <gustavo@humangr.com>.
 
+### Wave-21 §7 caveat — CLOSED wave-25 (2026-05-16)
+
+The wave-21 closure-note above flagged ONE remaining deferred bit:
+
+> The CF Worker production boot path (`corelink-clerk-cf::prod_wiring`,
+> separately wired) is the only call site that ever constructs a real
+> impl wrapping `corelink_cf_bindings::d1_real::CfD1DatabaseReal::scoped_query`
+> against the `tenant_config.region` column.
+
+That CF Worker production wire is **CLOSED at wave-25** — see
+`specs/_audits/2026-05-16-tenant-config-cf-prod-wire.md`. The wire
+ships:
+
+- `corelink-clerk-cf::tenant_region_real::D1TenantConfigStore` (sync
+  `TenantConfigStore` impl over an async D1 prefetch helper that
+  wraps `CfD1DatabaseReal::scoped_query`).
+- `corelink-clerk-cf::prod_wiring::build_tenant_region_resolver`
+  (constructs `D1TenantRegionResolver` when the D1 binding is
+  present; falls back to `InMemoryTenantRegionResolver` with the
+  configured fallback region when absent — `wrangler dev` mode).
+- Gated by the `tenant-region-real` Cargo feature (build-time
+  witness; default wasm32 surface unchanged when the feature is off).
+- 2 integration tests + 3 unit tests pin the wire contract.
+
+Status: §7 caveat CLOSED-WAVE-25.
+
