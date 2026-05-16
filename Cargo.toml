@@ -255,6 +255,12 @@ members = [
     # harness (scenarios: primary fail → replica promoted → failback
     # after 24h; split-brain rejection; replica-lag SLO breach reroute).
     "tests/e2e-replication-failover",
+    # Wave-22 chaos engineering campaign harness — 8 fail-CLOSED
+    # scenarios (network partition / D1 pool / shadow sink silent
+    # failure / RLS GUC dropout / BYOK 503 / Stripe clock skew /
+    # Clerk JWKS rotation / CAS multipart abort). Opt-in `chaos`
+    # feature; default `cargo test --workspace` skips this surface.
+    "tests/chaos",
     # R-prep survey infra (NPS / CSAT / free-text / multi-choice).
     # HMAC-SHA256-signed one-shot invite tokens + TTL + audit-fail-CLOSED
     # record path + in-memory fake. Anti-abuse runbook RB-SURVEY-ABUSE +
