@@ -61,12 +61,19 @@ mod d1;
 mod handler;
 mod idempotency;
 mod tier;
+#[cfg(feature = "cf-billing-real")]
+mod wasm32_binders;
 
 pub use audit::{
-    BillingAuditEmitter, BillingAuditError, BillingAuditRecord, InMemoryBillingAuditEmitter,
-    RealStripeAuditEmitter,
+    AuditSeverity, BillingAuditEmitter, BillingAuditError, BillingAuditRecord,
+    InMemoryBillingAuditEmitter, RealStripeAuditEmitter,
 };
 pub use d1::{BillingD1Error, BillingD1Writer, InMemoryBillingD1, MaterializedRow};
 pub use handler::{D1SubscriptionStateHandler, EVENT_MATERIALIZATION_MATRIX};
 pub use idempotency::D1IdempotencyStore;
 pub use tier::{InMemoryTierSelector, TierSelector};
+
+#[cfg(feature = "cf-billing-real")]
+pub use wasm32_binders::{
+    ArchiveProducerBillingEmitter, CfD1BillingWriter, ProductionArchiveSink, ProductionAuditLine,
+};

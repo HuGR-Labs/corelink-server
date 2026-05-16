@@ -497,3 +497,132 @@ a split).
   `BillingD1Writer` trait is the dependency-inversion seam: the
   wasm32 binder forwards each method to the `CfD1DatabaseReal`
   tenant-scoped prepared statements without touching this crate.
+
+## Materializers (wave 18 — wasm32 binders, v1.3.0 follow-on)
+
+> **Branch:** `wt/r-prep-stripe-wasm32-binders`
+> **Commit:** see `BRANCH` cover note
+> **DCO:** signed-off
+> **Audit doc cross-ref:** §materializers.wasm32-binders
+
+### §materializers.wasm32-binders
+
+Wave 17 shipped the `BillingD1Writer` + `BillingAuditEmitter` trait
+seams and pinned `apps/server/main.rs` to the `InMemoryBillingD1` +
+`InMemoryBillingAuditEmitter` mirrors on native. Wave 18 closes the
+production binder gap by adding two trait-object wrappers in a new
+gated module:
+
+```text
+crates/corelink-billing-stripe-materializer/
+  src/wasm32_binders.rs        (NEW — feature `cf-billing-real`)
+  tests/wasm32_binders.rs      (NEW — 15 native-CI tests via the stub)
+```
+
+Wrappers:
+
+- **`CfD1BillingWriter { d1: Arc<CfD1DatabaseReal>, tenant: TenantId }`**
+  routes every `BillingD1Writer` method through the wave-14
+  `CfD1DatabaseReal` wrapper. Each call:
+    1. Cross-tenant ct-eq reject (`MaterializedRow.tenant_id` MUST
+       constant-time equal the writer's anchored `TenantId`;
+       `subtle::ConstantTimeEq`).
+    2. Re-validate SQL through `CfD1DatabaseReal::scoped_query`
+       (defense-in-depth on the static materializer literals; the
+       canonical Stripe-row prepared statements are pinned at
+       compile time in `wasm32_binders::SQL_*`).
+    3. Bind-time tenant ct-eq via `verify_first_bind`.
+    4. Surfaces a stable `BillingD1Error::Transient(
+       "wasm32_async_dispatch_pending: …")`. The actual
+       `worker::D1Database::prepare/bind/run` async chain runs in the
+       CF Worker boot layer one frame above (which owns the
+       `JsFuture` event-loop affinity); the sync `BillingD1Writer`
+       trait keeps the materializer testable on native CI without
+       tokio creep.
+- **`ArchiveProducerBillingEmitter { producer: Arc<ArchiveProducer>,
+  audit_sink: Arc<dyn R2AuditSink> }`** routes every
+  `BillingAuditRecord` through the wave-15 `ArchiveProducer`
+  (per-tenant NDJSON archive with chain-head continuity) + the wave-15
+  `R2AuditSink` (per-event PutObject). The binder surfaces
+  `BillingAuditError::Transient("wasm32_audit_chain_pending: …")` —
+  the per-tenant `HashChainBuilder` chain wrapping is performed by
+  the CF Worker boot layer one frame above (single source of chain
+  truth per tenant).
+
+### Server feature flag
+
+`apps/server/Cargo.toml` adds `cf-billing-real`, additive and OFF by
+default. On native dev / CI the `InMemoryBillingD1` +
+`InMemoryBillingAuditEmitter` mirrors are wired (preserves the wave-17
+default); on wasm32 with `--features cf-billing-real` the
+`CfD1BillingWriter` + `ArchiveProducerBillingEmitter` wrappers are
+constructed at boot from the canonical `CfRealBindings` bundle in
+`corelink-clerk-cf::prod_wiring`.
+
+The materializer crate exposes the symmetric `cf-billing-real`
+feature flag which pulls in the optional `corelink-cf-bindings` +
+`corelink-audit-chain` deps; the `wasm32_binders` module is
+compile-gated on the feature so the default-feature build remains
+slim (no new transitive deps on the InMemory-only path).
+
+### Native-CI integration test (`tests/wasm32_binders.rs`)
+
+15 tests pin the contract:
+
+| # | Scenario | Asserts |
+| - | -------- | ------- |
+| 1-6 | One per `BillingD1Writer` mutation method | sync gate passes (scope + bind), staged-pending transient |
+| 7 | `try_record_event` empty event id | `InvalidPayload` rejected |
+| 8 | `try_record_event` happy path | staged-pending transient |
+| 9 | `upsert_customer` cross-tenant row | `InvalidPayload` ct-eq mismatch |
+| 10 | `read_tier` cross-tenant id | `InvalidPayload` ct-eq mismatch |
+| 11 | `upsert_tier` cross-tenant id | `InvalidPayload` ct-eq mismatch |
+| 12 | `upsert_tier` empty tier wire | `InvalidPayload` rejected |
+| 13 | `read_tier` returns `Ok(None)` post-validation | structural sentinel |
+| 14 | Audit emitter stages record via producer seam | staged-pending transient |
+| 15 | Audit emitter exposes producer + sink witnesses | `Arc::ptr_eq` |
+
+The validation contract is identical on native and wasm32 (the
+wrapper-layer code in `corelink-cf-bindings::d1_real` runs on both
+targets); the only divergence is the final `worker::D1Database` call
+which `stub_for_native_tests` short-circuits with `WasmOnly:`. The
+native CI run therefore pins every wasm32 invariant before the
+wasm32 build catches a regression at runtime.
+
+### Quality gates (wave 18)
+
+| gate | command | result |
+| ---- | ------- | ------ |
+| build (default) | `cargo build -p corelink-billing-stripe-materializer` | green |
+| build (wasm32) | `cargo build -p corelink-billing-stripe-materializer --target wasm32-unknown-unknown` | green |
+| build (server) | `cargo build -p corelink-server --features cf-billing-real` | green |
+| clippy | `cargo clippy -p corelink-billing-stripe-materializer --tests -- -D warnings` | green |
+| tests | `cargo test -p corelink-billing-stripe-materializer` | 26 wave-17 preserved + 15 new |
+| specs | `python3 scripts/validate_specs.py` | green |
+
+### Wave-18 invariants reaffirmed
+
+- **INV-TENANT-ISOLATION** — every wasm32 binder method runs the
+  tenant ct-eq probe before any SQL or audit emit reaches the wrapped
+  binding (`subtle::ConstantTimeEq`; defense in depth on top of the
+  wave-14 `CfD1DatabaseReal` bind-time check).
+- **INV-BILLING-NO-LOSS** — the binder's audit fail-CLOSED gate fires
+  BEFORE any D1 write reaches the underlying `worker::D1Database`
+  (the wave-14 `CfD1DatabaseReal::with_audit` hook owns the fence).
+- **INV-AUDIT-APPEND-ONLY** — the `ArchiveProducerBillingEmitter`
+  routes the `BillingAuditRecord` through the wave-15 producer + R2
+  sink seam; no path mutates or deletes existing audit rows.
+
+### What deliberately did NOT change (wave 18 baseline)
+
+- The wave-17 `BillingD1Writer` + `BillingAuditEmitter` trait surfaces
+  are unchanged. The wasm32 binders are pure additions behind the
+  `cf-billing-real` feature; default-feature builds (the native gRPC
+  server + axum HTTP shell) keep the `InMemory*` mirrors.
+- The wave-15 `WebhookDispatcher` sync trait contract is unchanged.
+  The wasm32 binders preserve the sync surface end-to-end; the async
+  CF binding dispatch is handled by the CF Worker boot layer above
+  (per the documented architectural seam).
+- `apps/server/main.rs` keeps the wave-17 wiring for the default
+  build; the `cf-billing-real` feature flag is the build-time witness
+  for the wasm32 cutover path.

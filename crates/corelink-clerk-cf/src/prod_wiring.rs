@@ -223,6 +223,84 @@ pub fn build_real_bindings_for_tests(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Wave-18 follow-on: billing materializer real bindings.
+//
+// When the `cf-billing-real` feature is on, the CF Worker boot path
+// additionally constructs the `CfD1BillingWriter` +
+// `ArchiveProducerBillingEmitter` trait objects from the canonical
+// `CfRealBindings` bundle. The result is plugged into
+// `corelink-stripe-real::webhook_dispatch::WebhookDispatcher::new` so
+// the materializer + audit emitter route through wave-14
+// `CfD1DatabaseReal` + wave-15 `ArchiveProducer` at every call site.
+//
+// The construction lives here so the binding-access boundary stays
+// single-source-of-truth — `apps/server::main.rs` keeps the wave-17
+// InMemory* wiring for native (D1 is not reachable outside the CF
+// Worker isolate), and the wasm32 binary in `apps/corelink-worker`
+// calls `build_billing_real_bindings` at fetch-event boot.
+// ---------------------------------------------------------------------------
+
+/// Wave-18 wasm32 production billing-materializer bindings bundle.
+///
+/// Holds the `CfD1BillingWriter` + `ArchiveProducerBillingEmitter`
+/// trait objects + the underlying `ArchiveProducer` so the CF Worker
+/// fetch handler can construct a `WebhookDispatcher` without
+/// re-importing the wave-18 binder types at every call site.
+///
+/// The producer is exposed so the boot layer can call
+/// `force_flush` on shutdown drain / scheduled flush per the wave-15
+/// archive-flush policy.
+#[cfg(feature = "cf-billing-real")]
+#[derive(Debug)]
+pub struct CfBillingRealBindings {
+    /// `BillingD1Writer` impl routing through `CfD1DatabaseReal`.
+    pub billing_d1: std::sync::Arc<corelink_billing_stripe_materializer::CfD1BillingWriter>,
+    /// `BillingAuditEmitter` impl routing through `ArchiveProducer` +
+    /// `R2AuditSink`.
+    pub billing_audit: std::sync::Arc<
+        corelink_billing_stripe_materializer::ArchiveProducerBillingEmitter,
+    >,
+    /// Borrow of the underlying producer for shutdown-drain hooks.
+    pub archive_producer: std::sync::Arc<corelink_audit_chain::ArchiveProducer>,
+}
+
+/// Construct the wave-18 billing-real bindings bundle from a wrapped
+/// `CfD1DatabaseReal` + the wave-15 archive `producer` + `r2_sink`.
+///
+/// `tenant` is the validated `TenantId` the D1 wrapper is anchored to;
+/// the same tenant is propagated to the `CfD1BillingWriter` so per-row
+/// `MaterializedRow.tenant_id` ct-eq checks share one source of truth.
+///
+/// # Errors
+///
+/// Infallible at the binding-construction layer (all validation
+/// happens upstream at `TenantContext::from_header_value` and the
+/// `CfD1DatabaseReal::new` constructor). Returns `Self` directly.
+#[cfg(feature = "cf-billing-real")]
+#[must_use]
+pub fn build_billing_real_bindings(
+    d1: std::sync::Arc<corelink_cf_bindings::CfD1DatabaseReal>,
+    tenant: corelink_cf_bindings::TenantId,
+    producer: std::sync::Arc<corelink_audit_chain::ArchiveProducer>,
+    r2_sink: std::sync::Arc<dyn corelink_audit_chain::R2AuditSink>,
+) -> CfBillingRealBindings {
+    let billing_d1 = std::sync::Arc::new(
+        corelink_billing_stripe_materializer::CfD1BillingWriter::new(d1, tenant),
+    );
+    let billing_audit = std::sync::Arc::new(
+        corelink_billing_stripe_materializer::ArchiveProducerBillingEmitter::new(
+            producer.clone(),
+            r2_sink,
+        ),
+    );
+    CfBillingRealBindings {
+        billing_d1,
+        billing_audit,
+        archive_producer: producer,
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,

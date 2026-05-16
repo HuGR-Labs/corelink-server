@@ -85,6 +85,22 @@ byok-vault-real = ["dep:corelink-byok-vault", "corelink-byok-vault/real"]
 # than at first R2 access in a staging Worker.
 cf-r2-real = ["dep:corelink-cf-bindings"]
 
+# Wave-18 follow-on: opt into the wasm32 production binders for the
+# Stripe materializer (`corelink-billing-stripe-materializer`). On
+# `target_arch = "wasm32"` this routes `BillingD1Writer` through
+# `corelink-cf-bindings::CfD1DatabaseReal` and `BillingAuditEmitter`
+# through `corelink-audit-chain::ArchiveProducer` (the wave-14 + wave-15
+# canonical seams). On native targets the wrapper module compiles
+# behind the same flag — `apps/server/main.rs` keeps the wave-17
+# `InMemoryBillingD1` + `InMemoryBillingAuditEmitter` mirrors for the
+# native gRPC server + axum HTTP shell (D1 is not reachable outside the
+# CF Worker on native dev/CI anyway). Off by default; enable on the CF
+# Worker build (`wrangler deploy --features cf-billing-real`).
+#
+# Pattern reference: see `specs/_audits/2026-05-15-stripe-webhook-production.md`
+# §materializers.wasm32-binders.
+cf-billing-real = ["corelink-billing-stripe-materializer/cf-billing-real"]
+
 [dependencies]
 # R-PREP-CF-R2-REAL — gated by the `cf-r2-real` feature (see [features]).
 corelink-cf-bindings = { workspace = true, optional = true }

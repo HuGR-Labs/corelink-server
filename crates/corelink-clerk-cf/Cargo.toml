@@ -87,6 +87,28 @@ subtle = { workspace = true }
 # to exercise the boot path on native CI.
 corelink-cf-bindings = { workspace = true }
 
+# Wave-18 follow-on: optional billing materializer wrappers gated by
+# the `cf-billing-real` feature. When on, `prod_wiring::build_billing_real_bindings`
+# constructs the `CfD1BillingWriter` + `ArchiveProducerBillingEmitter`
+# trait objects from the canonical `CfRealBindings` bundle so the CF
+# Worker boot path can wire them into the Stripe materializer
+# `WebhookDispatcher` without re-importing the binders at every call site.
+corelink-billing-stripe-materializer = { workspace = true, optional = true }
+corelink-audit-chain = { workspace = true, optional = true }
+
+[features]
+default = []
+
+# Opt into the wave-18 wasm32 binders for the Stripe materializer.
+# Pulls in `corelink-billing-stripe-materializer` + `corelink-audit-chain`
+# and unlocks `prod_wiring::build_billing_real_bindings`. See
+# `specs/_audits/2026-05-15-stripe-webhook-production.md` §materializers.wasm32-binders.
+cf-billing-real = [
+    "dep:corelink-billing-stripe-materializer",
+    "dep:corelink-audit-chain",
+    "corelink-billing-stripe-materializer/cf-billing-real",
+]
+
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 # Host-side integration tests in `tests/prod_wiring.rs` use tokio as
 # the async test runtime. The wasm32 build does not use tokio (the

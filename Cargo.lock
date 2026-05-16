@@ -1184,6 +1184,8 @@ name = "corelink-billing-stripe-materializer"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "corelink-audit-chain",
+ "corelink-cf-bindings",
  "corelink-stripe-real",
  "corelink-tier-selection",
  "hex",
@@ -1191,6 +1193,7 @@ dependencies = [
  "serde",
  "serde_json",
  "subtle",
+ "uuid",
 ]
 
 [[package]]
@@ -1413,6 +1416,8 @@ dependencies = [
 name = "corelink-clerk-cf"
 version = "0.1.0"
 dependencies = [
+ "corelink-audit-chain",
+ "corelink-billing-stripe-materializer",
  "corelink-cf-bindings",
  "corelink-clerk",
  "js-sys",
