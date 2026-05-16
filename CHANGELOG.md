@@ -68,7 +68,7 @@ Each entry cross-references:
 
 The 21-sprint spec-corpus phase (S-00 → S-20) is captured in the `[0.x]`
 and per-sprint sections below. The post-S-20 production wiring + GA
-readiness phase ran across **25 waves** dispatched on `main` between
+readiness phase ran across **29 waves** dispatched on `main` between
 the `ga-engineering-gate-complete` tag (2026-05-14) and the GA
 cutover window (2026-05-16+). Each wave layered adversarial review +
 debt closure + production wiring + chaos / endurance evidence on top
@@ -84,7 +84,11 @@ of the sealed sprint contracts.
 | **Wave-22** | Tenant-path UUID fix (9.9 / 10); Stripe MatClock wasm32 (9.7 / 10); chaos campaign harness (8 isolated fail-CLOSED scenarios); 24h endurance harness | `specs/_audits/2026-05-16-wave22-closure.md` (9.45 / 10) |
 | **Wave-23** | Chaos combined-failures matrix (executor-loss × replication-lag × tenant-isolation); pilot onboarding E2E rig; CS playbook; beta-feedback triage; LFPDPPP MX attorney-package; INV-PAT-REVOKE-PROPAGATION promotion | `specs/_audits/2026-05-16-wave23-closure.md` (9.20 / 10) |
 | **Wave-24** | GA cutover dry-run (RB-GA-CUTOVER §3, G1..G6 GREEN); GA readiness final audit (CONDITIONAL GO); DEBT-008 wave-24 closure batch; PAT-revoke TLA-exempt registration; ADR-0034b dual-hat path | `specs/_audits/2026-05-16-wave24-closure.md` (codex-Opus pass in flight) |
-| **Wave-25** | External pentest engagement scope freeze (RFP + shortlist + SOW); DEBT-015-BUILD path-(3) ssgRequire; endurance 10-min dress-rehearsal; statuspage init dress-run; tenant-config CF prod-wire; pre-GA security attestation; GA-readiness DEFER drift detector; wave-24 adversarial-review pass | `specs/_audits/2026-05-16-wave25-closure.md` (in flight) |
+| **Wave-25** | External pentest engagement scope freeze (RFP + shortlist + SOW); DEBT-015-BUILD path-(3) ssgRequire; endurance 10-min dress-rehearsal (0 SLO / 0 INV violations); statuspage init dress-run; tenant-config CF prod-wire; pre-GA security attestation; GA-readiness DEFER drift detector (8 → 7 scrub); wave-24 adversarial-review pass (recovery cherry-picks `d172a4a` + `8fa1c22`) | `specs/_audits/2026-05-16-wave25-closure.md` |
+| **Wave-26** | **GA-1 feature freeze** (`74b8faa` — engineering corpus feature-complete from here forward); INV-CRITICAL TLA final audit (61 / 61 CRITICAL TLA+-proved, **Z = 0 milestone established**); Lote 6 v1.0.0 GA RC2 absorption; wasm32 baseline lock + getrandom fix; CF Worker prefetch wire; release notes v1.0.0 GA DRAFT (`6ce134b`); **production-tier dress-run scoring 9.36 / 10 PROCEED** + v1.0.0-GA tag draft; wave-25 adversarial review (9.00 / 10 PASS); DEBT-026 RFP tracker | `specs/_audits/2026-05-16-wave26-closure.md` |
+| **Wave-27** | **GA cutover wave** (anchor) — final cutover-readiness verdict CONDITIONAL GO; 7-day endurance soak streak harness dispatched; Statuspage T-7d provisioning rehearsal; ShadowSinkFactory partial consumer adoption; wave-26 adversarial review prep; post-GA continuity runbook; pilot admin shell scripts + dashboard SSOT | `specs/_audits/2026-05-16-wave27-closure.md` |
+| **Wave-28** | Cutover-prep automation wave — AWS Artifact fetch automation (DEBT-003 engineering-CLOSED); pilot-announcement comms package; Statuspage provisioning automation (DEBT-016 engineering-CLOSED); pentest finding absorption framework (7-state machine, 48 test cases); LFPDPPP MX engagement final (DEBT-025 engineering-CLOSED); pentest RFP send ceremony (DEBT-026 engineering-CLOSED); pre-cutover weekly verification cron; wave-28 adversarial review **8.96 / 10 PASS** | `specs/_audits/2026-05-16-wave28-adversarial-review.md` |
+| **Wave-29** | **Cutover-wait-state + customer-acquisition wave** — engineering corpus feature-complete since wave-26 GA-1 freeze. signup.corelink.dev backend + landing page + pilot admin web UI (DEBT-027 engineering-CLOSED); ShadowSinkFactory full adoption (wave-21 → -27 → -29 follow-on chain); customer-facing artefacts (audit-chain viz UI + pricing page calculator + trust center publish); perf-baseline GA freeze snapshot; DEBT register: **8 nominally OPEN → 5 engineering-CLOSED operator-bound + 3 engineering-side P1 partial** | `specs/_audits/2026-05-16-wave29-closure.md` |
 
 ### Added — production wiring + customer-facing surfaces
 
@@ -125,16 +129,71 @@ of the sealed sprint contracts.
 - **GA-readiness DEFER drift detector** — CI gate that prevents
   silent regression of the DEFER population between wave-25 and
   cutover (wave-25 stream #4).
+- **GA-1 feature freeze** (wave-26 `74b8faa`) — engineering corpus
+  feature-complete from this commit forward; post-freeze admits only
+  `specs/` / `docs/` / `.github/` / `scripts/` / `apps/` changes per
+  ADR-0034b §3 scope-fence.
+- **Production-tier dress-run** (wave-26) — 13 / 13 steps PASS,
+  6 / 6 greenlights GREEN, 0 / 6 rollback triggers fired,
+  prep-ring isolation guard verified, **GA-readiness 9.36 / 10
+  PROCEED** (`specs/_audits/2026-05-16-prod-deploy-dressrun.md`);
+  pre-authored v1.0.0-GA tag draft at `docs/release/v1.0.0-GA-tag-draft.txt`.
+- **7-day endurance soak streak** harness (wave-27 stream #4) —
+  wall-clock 168 h SLO observation streak feeding NO-GO trigger #5.
+- **Post-GA continuity runbook** (`RB-POST-GA-CONTINUITY.md`) —
+  wave-27 anchor.
+- **Pilot admin path** — shell scripts (`grant-pilot-tier.sh`,
+  `list-pilot-tenants.sh`, `pilot-24h-checkin.sh`) wave-27;
+  Grafana dashboard SSOT `dashboards/grafana/dash-pilot-tenants.yml`;
+  **Owner-facing pilot admin web UI** wave-29 stream #3.
+- **AWS Artifact PDF recorder + fetch automation** (wave-28) —
+  DEBT-003 engineering-CLOSED.
+- **Statuspage provisioning automation** (wave-28) — DEBT-016
+  engineering-CLOSED; operator DNS + ORG-ID swap is the only
+  remaining T-7d step.
+- **Pentest finding absorption framework** (wave-28) — 7-state
+  machine (`RECEIVED → TRIAGED → IN_FIX → FIXED → RETEST_SUBMITTED →
+  RETEST_PASSED → ABSORBED`); CVSS / P-tier coherence enforced; 48
+  test cases passing.
+- **Pre-cutover weekly verification cron** (wave-28) — automated
+  weekly green-light digest against the cutover commit base.
+- **Pilot announcement comms package** (wave-28).
+- **signup.corelink.dev backend + landing page** (wave-29 streams #1, #2) —
+  token-based pilot-slot reservation; idempotent token issuance + 24h
+  replay-safe consumption; 4-section public landing (hero / value-prop
+  / 3-tier pricing-summary / signup form). DEBT-027 engineering-CLOSED.
+- **Customer-facing audit-chain visualisation UI** (wave-29 stream #6) —
+  tenant-scoped Merkle-path inspector + tamper-evidence proof viewer.
+- **Public pricing page calculator + 4-tier comparison + internal
+  cost-worksheet** (wave-29 stream #7).
+- **Trust center publish pipeline** (wave-29 stream #8) — consolidates
+  SOC 2 / ISO 27001 / PCI DSS / LGPD / FedRAMP-informational status +
+  DEBT-003 AWS Artifact PDF link (gated by DEBT-003 closure).
+- **Perf-baseline GA freeze snapshot** (wave-29 stream #9) — 5 SLO
+  families pinned at the cutover commit base; consumed by NO-GO
+  trigger #5 (endurance 7-day soak streak).
+- **ShadowSinkFactory full adoption** (wave-21 → wave-27 → wave-29
+  follow-on chain) — zero direct `ShadowSink::new(...)` call sites in
+  consumer crates post-SEAL; all sinks issued via
+  `ShadowSinkFactory::for_tenant(tenant_id)` with region-aware
+  resolution.
+- **Release-notes editorial-polish audit**
+  (`specs/_audits/2026-05-16-release-notes-editorial-polish.md`) and
+  **customer-facing FAQ** (`RELEASE-NOTES-v1.0.0-GA-FAQ.md`) — wave-30
+  stream #10.
 
 ### Changed
 
 - **Invariant registry** — 197 declared (61 CRITICAL, 132 HIGH,
-  4 MEDIUM); 81+ TLA+ verified; zero CRITICAL lacking proof or
-  documented `§4.3` exemption; 0 orphan refs; 143 / 143 WI-coverage.
+  4 MEDIUM); **82 TLA+ verified**; **all 61 CRITICAL TLA+-proved**
+  (Z = 0 milestone established wave-26 stream #9, preserved across
+  waves 26 → 29); 0 orphan refs; 143 / 143 WI-coverage; 15 legacy →
+  canonical aliases documented; 0 UNKNOWN severity classifications.
 - **DEFER counter** scrubbed wave-25 (`specs/_audits/2026-05-16-ga-readiness-defer-scrub.md`):
   stale "Docs CI billing reinstatement" row removed (CI runs locally
-  per `feedback_ci_local`); current counter is 7 external items
-  (5 user-bound + 1 vendor-bound + 1 mixed).
+  per `feedback_ci_local`); current counter is **7 external items**
+  (5 user-bound + 1 vendor-bound + 1 mixed); drift detector exit 0
+  held stable across waves 25 → 29.
 - **`canary` → `staging-only`** chaos discipline at GA per S-17
   cross-functional decision (production chaos not authorised on
   the GA cutover day).
@@ -159,20 +218,30 @@ of the sealed sprint contracts.
 
 ### Security
 
-- **External pentest** — scope frozen; engagement contracted for
-  2026-Q3; HIGH / CRITICAL findings gate any future `GA-Full` /
-  `v1.1.0` promotion. **No external pentest report is yet published**;
-  customer-facing security claims do not depend on a completed
-  external pentest at v1.0.0 GA.
-- **Adversarial review** — 8 consecutive waves averaging
-  9.41 / 10 (mean over the last 5 sealed waves), 0 P0 / 0 outstanding
-  P1 at any wave boundary since wave-19 SEAL.
+- **External pentest** — scope frozen (wave-25); **RFP send ceremony
+  executed wave-28** (DEBT-026 engineering-CLOSED); vendor 30-day
+  selection clock running. Earliest retest letter target 2026-07-29.
+  Pentest finding absorption framework SEAL'd wave-28 (7-state
+  machine; 48 test cases). HIGH / CRITICAL findings gate any future
+  `GA-Full` / `v1.1.0` promotion. **No external pentest report is
+  yet published**; customer-facing security claims do not depend on
+  a completed external pentest at v1.0.0 GA.
+- **Adversarial review** — 10 consecutive waves; last-5 PASS-trend
+  rolling mean **9.32 / 10** (raw chronological 8.83; charter
+  rolling-window framing 9.41); wave-28 review re-anchored at
+  **8.96 / 10 PASS**; 0 P0 / 0 outstanding P1 at any wave boundary
+  since wave-19 SEAL. Wave-24 6.95 / 10 CONDITIONAL recovered via
+  wave-25 cherry-picks `d172a4a` + `8fa1c22` to a 9.40 projection.
+- **GA-readiness** — wave-26 production-tier dress-run **9.36 / 10
+  PROCEED** (13 / 13 steps PASS; 6 / 6 greenlights; 0 / 6 rollback
+  triggers); wave-27 final cutover-readiness verdict CONDITIONAL GO.
 - **Compliance** — SOC 2 Type I ready, ISO 27001 Stage-1 eligible,
-  GDPR / LGPD / PCI-SAQ-A / CCPA ready; LFPDPPP MX attorney sign-off
-  pending (DEBT-025; wave-26 absorption); FedRAMP Moderate documented
-  as not in scope for GA.
-- **BYOK** — 4-provider FIPS attestation matrix complete for 3 of 4
-  rows (AWS Artifact PDF download pending — DEBT-003 user-bound).
+  GDPR / LGPD / PCI-SAQ-A / CCPA ready; **LFPDPPP MX engineering-CLOSED
+  wave-28** (DEBT-025; attorney sign-off operator-paced); FedRAMP
+  Moderate documented as not in scope for GA.
+- **BYOK** — 4-provider FIPS attestation matrix; **AWS Artifact
+  recorder + fetch automation SEAL'd wave-28** (DEBT-003
+  engineering-CLOSED; operator T-7d download remains).
 
 ---
 
