@@ -4,9 +4,9 @@ name: mutation-nightly (R2 baseline + 5-crate expansion + wave-24 large-crate la
 # - corelink-byok (envelope encryption + DEK cache)         [baseline 2026-05-14]
 # - corelink-signup (atomic provisioning orchestrator)      [baseline 2026-05-14]
 # - corelink-tier-selection (INV-ONBOARD-DPA-FIRST)         [baseline 2026-05-14]
-# - corelink-audit-chain (BLAKE3 chain integrity)           [expansion 2026-05-15]
-# - corelink-pat (PAT mint/verify + Argon2id)               [expansion 2026-05-15]
-# - corelink-clerk (SSO JWT validation + JWKS)              [expansion 2026-05-15]
+# - corelink-audit-chain (BLAKE3 chain integrity)           [expansion 2026-05-15; empirically CLOSED wave-13 @ 84.24 %]
+# - corelink-pat (PAT mint/verify + Argon2id)               [expansion 2026-05-15; wave-24 empirical partial-lift 2026-05-16 — see `specs/_audits/2026-05-16-pat-clerk-mutation-sweep.md`; nightly is the empirical SEAL gate per wave-14 precedent]
+# - corelink-clerk (SSO JWT validation + JWKS)              [expansion 2026-05-15; wave-24 empirical partial-lift 2026-05-16 — see `specs/_audits/2026-05-16-pat-clerk-mutation-sweep.md`; nightly is the empirical SEAL gate per wave-14 precedent]
 # - corelink-dual-approval (admin op gate + collusion)      [expansion 2026-05-15]
 # - corelink-ratelimit (token bucket + Retry-After)         [expansion 2026-05-15]
 # - corelink-r2-multipart (150 mutants; large surface)      [wave-24 2026-05-16]
@@ -21,6 +21,18 @@ name: mutation-nightly (R2 baseline + 5-crate expansion + wave-24 large-crate la
 # regress mutation coverage on critical security paths. The 3
 # wave-24 crates are scoped to CI-nightly only (not blocking PR
 # CI) per wave-24 §6 budget-decision matrix.
+#
+# WAVE-24 LIFT 2026-05-16 (corelink-pat + corelink-clerk):
+# Local full sweep is structurally infeasible for these two crates
+# (~4.5 h / crate even with --jobs 4 due to OWASP-2024 Argon2id
+# parameter cycles + 10 000-iter RS256 proptests). Wave-24 ran a
+# 62 % partial sweep on `corelink-pat` (74.8 % empirical, +7
+# targeted tests for 5 killable misses, 19 structurally-equivalent
+# misses documented) and a 5-file (24 % LOC) subset sweep on
+# `corelink-clerk` (85.7 % empirical, 0 missed). This workflow is
+# now the canonical empirical SEAL gate for both crates per the
+# `TD-DEBT-008-WAVE-14-EMPIRICAL` precedent: the first scheduled
+# nightly run after this commit IS the empirical confirmation.
 #
 # Reference: tenant-path nightly mutants lane (WI-S01-001 §17).
 

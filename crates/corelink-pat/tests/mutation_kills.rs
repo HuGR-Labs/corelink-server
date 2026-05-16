@@ -26,7 +26,7 @@
 )]
 
 use corelink_pat::{
-    PatEnv, PatError, PatScopes, PatSigningKey, PatTokenId, SCOPE_ADMIN_AUDIT,
+    parse_env, PatEnv, PatError, PatScopes, PatSigningKey, PatTokenId, SCOPE_ADMIN_AUDIT,
     SCOPE_ADMIN_BILLING, SCOPE_ADMIN_TENANT_R, SCOPE_ADMIN_TENANT_W, SCOPE_ADMIN_TOKENS,
     SCOPE_ADMIN_USERS, SCOPE_CACHE_DELETE, SCOPE_CACHE_FIND, SCOPE_CACHE_R, SCOPE_CACHE_RW,
     SCOPE_CACHE_W, SCOPE_EXECUTE_ACTION, SCOPE_KNOWN_MASK, SCOPE_REPORT_RESULT,
@@ -334,4 +334,217 @@ fn pat_error_display_strings_distinct_and_non_empty() {
     sorted.sort_unstable();
     sorted.dedup();
     assert_eq!(sorted.len(), 5, "every variant must have distinct Display");
+}
+
+// =====================================================================
+// Wave-24 additions (2026-05-16 empirical sweep): targeted kills for
+// mutants that survived the wave-15 defensive baseline. See
+// `specs/_audits/2026-05-16-debt-008-wave24-pat-clerk-sweep.md` for
+// the per-mutant analysis.
+// =====================================================================
+
+/// Kill `format.rs:241:37 replace + with *` in `parse_env`. The guard
+/// `bytes.len() < PAT_PREFIX_LEN + 3` becomes `bytes.len() < 9 * 3 =
+/// 27`, which would reject canonical-shape inputs of total length
+/// [12..27). Calling `parse_env` on the 13-byte string
+/// `"corelink_pat_"` MUST return `Ok(PatEnv::Pat)` because the env
+/// segment + trailing `_` is fully present — the `*` mutant would
+/// short-circuit to `Err(Malformed)`.
+#[test]
+fn parse_env_accepts_13_byte_pat_prefix_with_trailing_separator() {
+    let input = "corelink_pat_"; // len 13
+    assert_eq!(input.len(), 13);
+    let parsed = parse_env(input).expect("parse_env must accept canonical 13-byte pat prefix");
+    assert_eq!(parsed, PatEnv::Pat);
+}
+
+/// Companion: same guard against the `+` → `-` flavor (cap drops to
+/// `9 - 3 = 6`). A 7-byte input that starts with the literal `core...`
+/// MUST still produce `Err(Malformed)` because the prefix scanner +
+/// downstream length check both reject. Pinning the explicit Err
+/// keeps this surface a 1:1 regression catcher if the early-length
+/// guard is mutated to a different arithmetic.
+#[test]
+fn parse_env_rejects_7_byte_truncated_input() {
+    let input = "corelin"; // len 7
+    assert_eq!(input.len(), 7);
+    assert!(matches!(parse_env(input), Err(PatError::Malformed)));
+}
+
+/// Kill `scopes.rs:110:20 & → |` and `& → ^` in `PatScopes::single`.
+/// The unmutated body is `Self(scope & SCOPE_KNOWN_MASK)` — single bit
+/// in, single bit out. Mutants:
+/// - `scope | SCOPE_KNOWN_MASK` → all 12 bits set (popcount 12).
+/// - `scope ^ SCOPE_KNOWN_MASK` → 11 bits set (popcount 11) when
+///   input is one of the 12 canonical bits.
+#[test]
+fn pat_scopes_single_returns_exactly_the_input_canonical_bit() {
+    let r = PatScopes::single(SCOPE_CACHE_R);
+    assert_eq!(r.to_u64(), SCOPE_CACHE_R);
+    assert_eq!(r.to_u64().count_ones(), 1);
+    let w = PatScopes::single(SCOPE_CACHE_W);
+    assert_eq!(w.to_u64(), SCOPE_CACHE_W);
+    assert_eq!(w.to_u64().count_ones(), 1);
+    // Distinctness: a constant-return mutant would collapse.
+    assert_ne!(r.to_u64(), w.to_u64());
+    // Reserved bits get dropped (the `& SCOPE_KNOWN_MASK` body
+    // semantic — both `|` and `^` mutants would corrupt this).
+    let masked = PatScopes::single(SCOPE_CACHE_R | (1u64 << 63));
+    assert_eq!(masked.to_u64(), SCOPE_CACHE_R, "reserved bit must drop");
+}
+
+/// Kill `scopes.rs:131:31 & → |` in `PatScopes::add`. Body is
+/// `Self((self.0 | scope) & SCOPE_KNOWN_MASK)`. Mutant: `(... | scope)
+/// | SCOPE_KNOWN_MASK` ⇒ always returns SCOPE_KNOWN_MASK regardless
+/// of the input. Asserting `empty().add(SCOPE_CACHE_R) == {bit 0}`
+/// kills this directly.
+#[test]
+fn pat_scopes_add_single_bit_preserves_popcount_one() {
+    let s = PatScopes::empty().add(SCOPE_CACHE_R);
+    assert_eq!(s.to_u64(), SCOPE_CACHE_R);
+    assert_eq!(s.to_u64().count_ones(), 1);
+    // Add a second disjoint bit → popcount 2.
+    let s2 = s.add(SCOPE_CACHE_W);
+    assert_eq!(s2.to_u64(), SCOPE_CACHE_R | SCOPE_CACHE_W);
+    assert_eq!(s2.to_u64().count_ones(), 2);
+    // Adding a reserved bit must be a no-op (the `& SCOPE_KNOWN_MASK`
+    // tail drops it).
+    let s3 = s.add(1u64 << 63);
+    assert_eq!(s3.to_u64(), SCOPE_CACHE_R);
+}
+
+/// Kill any "constant return" mutant on the `Ok` / `Err` arms of
+/// `parse_env` by exhausting all three env discriminants
+/// + asserting distinctness at the public boundary.
+#[test]
+fn parse_env_distinguishes_all_three_env_discriminants() {
+    let pat = parse_env("corelink_pat_").expect("pat");
+    let ci = parse_env("corelink_ci_").expect("ci");
+    let ro = parse_env("corelink_ro_").expect("ro");
+    assert_eq!(pat, PatEnv::Pat);
+    assert_eq!(ci, PatEnv::Ci);
+    assert_eq!(ro, PatEnv::Ro);
+    // Distinctness: a `Ok(_)` constant-return mutant would collapse.
+    assert_ne!(pat, ci);
+    assert_ne!(ci, ro);
+    assert_ne!(pat, ro);
+}
+
+/// Kill `mint.rs:80 % → /` and `mint.rs:80 % → +` on the production
+/// `mint` (OsRng) path. Same Crockford mapping as line 185.
+/// - Under `% → /`: alphabet collapses to `'0'..='7'` (8 chars).
+/// - Under `% → +`: every char defaults to `'0'`.
+///
+/// Mint a single token via the production path and assert it contains
+/// at least one char outside `'0'..='7'` (kills `/`; prob ≈ 1 - 0.25^16
+/// under proper `%`) and at least one non-`'0'` char (kills `+`;
+/// prob ≈ 1 - (1/32)^16 under proper `%`). Both checks are
+/// effectively unflakeable.
+#[test]
+fn mint_production_token_id_spans_upper_half_of_alphabet() {
+    use uuid::Uuid;
+    let key = PatSigningKey::from_bytes(vec![0x11u8; 32]).expect("signing key");
+    // Try a few times to make the test rock-solid; first attempt is
+    // already > 1 - 10^-9 likely to pass.
+    let mut saw_upper = false;
+    let mut saw_non_zero = false;
+    for _ in 0..4 {
+        let (plaintext, _pat) = corelink_pat::mint::mint(
+            PatEnv::Pat,
+            corelink_pat::TenantId(Uuid::nil()),
+            corelink_pat::PrincipalId(Uuid::nil()),
+            PatScopes::from_u64(SCOPE_CACHE_R),
+            None,
+            &key,
+            1,
+        )
+        .expect("mint");
+        let s = plaintext.into_string();
+        let prefix = "corelink_pat_";
+        let body = &s[prefix.len()..];
+        let token_id = &body[..16];
+        // Crockford upper half = '8','9','A','B','C','D','E','F','G','H','J','K','M','N','P','Q','R','S','T','V','W','X','Y','Z'
+        if token_id.chars().any(|c| !('0'..='7').contains(&c)) {
+            saw_upper = true;
+        }
+        if token_id.chars().any(|c| c != '0') {
+            saw_non_zero = true;
+        }
+        if saw_upper && saw_non_zero {
+            break;
+        }
+    }
+    assert!(saw_upper, "mint must occasionally emit chars outside '0'..='7'");
+    assert!(saw_non_zero, "mint must emit non-'0' chars");
+}
+
+/// Kill `mint.rs:185 % → /` and `mint.rs:185 % → +` on the
+/// deterministic `mint_with_entropy` path. Line 185 maps each
+/// token_id byte into the 32-element Crockford alphabet via `% 32`.
+/// - Under `% → /`: `(u8 as usize) / 32 ∈ 0..=7`, alphabet collapses
+///   to the 8 chars `'0'..='7'`.
+/// - Under `% → +`: `(u8 as usize) + 32 ∈ 32..=287`, all out of range
+///   of the 32-element slice — every char defaults to `'0'`.
+///
+/// Feed token_id_bytes that span every 8th value across [0, 255]
+/// (covering all 32 mod-32 residues exactly once across the 16
+/// bytes) so the proper `%` produces 16 distinct alphabet chars —
+/// strictly more than the 8 (`/`) or 1 (`+`) the mutants can emit.
+#[test]
+fn mint_with_entropy_token_id_alphabet_spans_more_than_eight_symbols() {
+    use corelink_pat::mint::{mint_with_entropy, DeterministicMintInput};
+    use corelink_pat::types::PAT_TOKEN_ID_LEN;
+    use password_hash::Salt;
+    use std::collections::HashSet;
+    use uuid::Uuid;
+
+    let salt: Salt<'static> = Salt::from_b64("Y29yZWxpbmt2MXNhbHQwMQ").expect("salt");
+    let key = PatSigningKey::from_bytes(vec![0x42u8; 32]).expect("signing key");
+    // 16 bytes spanning all 32 Crockford residues: pick byte i = i * 8
+    // so values are 0, 8, 16, ..., 120 — each `% 32` ∈ {0, 8, 16, 24, 0, 8, ...},
+    // giving 4 distinct symbols. Better: byte i = i * 16 + (i / 2) so we
+    // hit 16 unique mod-32 values directly.
+    let mut token_id_bytes = [0u8; PAT_TOKEN_ID_LEN];
+    for (i, b) in token_id_bytes.iter_mut().enumerate() {
+        // Spread mod-32 hits across the 16 positions:
+        // i=0 -> 0; i=1 -> 17; i=2 -> 34 (->2); ... so 16 distinct.
+        *b = (i as u8).wrapping_mul(17);
+    }
+    let secret_bytes = [0xBBu8; 32];
+
+    let (plaintext, _pat) = mint_with_entropy(DeterministicMintInput {
+        env: PatEnv::Pat,
+        tenant_id: corelink_pat::TenantId(Uuid::nil()),
+        principal_id: corelink_pat::PrincipalId(Uuid::nil()),
+        scopes: PatScopes::from_u64(SCOPE_CACHE_R),
+        ttl: None,
+        signing_key: &key,
+        signing_key_id: 1,
+        token_id_bytes,
+        secret_bytes,
+        salt,
+    })
+    .expect("mint_with_entropy");
+
+    let s = plaintext.into_string();
+    let prefix = "corelink_pat_";
+    assert!(s.starts_with(prefix), "plaintext shape: {}", s);
+    let body = &s[prefix.len()..];
+    let token_id = &body[..16];
+    let alphabet: HashSet<char> = token_id.chars().collect();
+    assert!(
+        alphabet.len() > 8,
+        "mint_with_entropy must span >8 distinct Crockford symbols on a \
+         residue-spreading 16-byte input; got {} ({:?})",
+        alphabet.len(),
+        alphabet
+    );
+    // Also: under `% → +`, every char defaults to '0'. Pin a stronger
+    // upper-half discriminator: the token MUST contain at least one
+    // non-'0' char.
+    assert!(
+        token_id.chars().any(|c| c != '0'),
+        "mint_with_entropy token_id must include non-'0' chars; got {}",
+        token_id
+    );
 }
