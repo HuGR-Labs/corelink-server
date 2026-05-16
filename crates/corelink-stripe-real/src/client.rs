@@ -6,6 +6,7 @@
 //! `tokio::task::spawn_blocking` to keep the async runtime unblocked.
 
 use std::env;
+use std::sync::Arc;
 use std::time::Duration;
 
 use corelink_tier_selection::error::TierError;
@@ -15,6 +16,7 @@ use corelink_tier_selection::stripe::{
 use corelink_tier_selection::tenant::StripeCustomerId;
 use serde::Deserialize;
 
+use crate::clock::{default_clock, Clock};
 use crate::error::StripeError;
 use crate::retry::RetryPolicy;
 
@@ -29,6 +31,7 @@ pub struct StripeRealClientBuilder {
     api_base: String,
     retry_policy: RetryPolicy,
     timeout: Duration,
+    clock: Arc<dyn Clock + Send + Sync>,
 }
 
 impl Default for StripeRealClientBuilder {
@@ -38,6 +41,12 @@ impl Default for StripeRealClientBuilder {
             api_base: STRIPE_API_BASE.to_string(),
             retry_policy: RetryPolicy::default(),
             timeout: Duration::from_secs(30),
+            // Wave-20: default = `SystemClock` on native, `WasmWorkerClock`
+            // on wasm32 (this module is native-only so always `SystemClock`,
+            // but `default_clock()` keeps the call site target-agnostic for
+            // when the HTTPS client surface is ported to wasm32 in a
+            // future wave).
+            clock: default_clock(),
         }
     }
 }
@@ -77,6 +86,16 @@ impl StripeRealClientBuilder {
         self
     }
 
+    /// Inject a [`Clock`] implementation. Default = `SystemClock`
+    /// (native) / `WasmWorkerClock` (wasm32). Tests typically pass
+    /// [`crate::clock::InMemoryFakeClock`] for deterministic
+    /// timestamps in idempotency keys / SLI markers.
+    #[must_use]
+    pub fn with_clock(mut self, clock: Arc<dyn Clock + Send + Sync>) -> Self {
+        self.clock = clock;
+        self
+    }
+
     /// Build the client.
     ///
     /// # Errors
@@ -99,6 +118,7 @@ impl StripeRealClientBuilder {
             api_base: self.api_base,
             retry_policy: self.retry_policy,
             http,
+            clock: self.clock,
         })
     }
 }
@@ -130,6 +150,14 @@ pub struct StripeRealClient {
     api_base: String,
     retry_policy: RetryPolicy,
     http: reqwest::blocking::Client,
+    // Wave-20: held for future timestamp-bearing operations (idempotency
+    // key TTL eviction, retry-budget windows). Currently the production
+    // HTTPS layer reads no wall-clock — Stripe owns idempotency-key
+    // retention. Kept here as the canonical injection point so test
+    // harnesses can pin time via `.with_clock(...)` once a clock-dependent
+    // operation lands.
+    #[allow(dead_code, reason = "wave-20 injection scaffold; consumed by future timestamp ops")]
+    clock: Arc<dyn Clock + Send + Sync>,
 }
 
 impl core::fmt::Debug for StripeRealClient {
@@ -138,6 +166,7 @@ impl core::fmt::Debug for StripeRealClient {
             .field("api_key", &"<redacted>")
             .field("api_base", &self.api_base)
             .field("retry_policy", &self.retry_policy)
+            .field("clock", &self.clock)
             .finish()
     }
 }

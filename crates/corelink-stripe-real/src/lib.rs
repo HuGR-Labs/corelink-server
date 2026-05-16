@@ -56,6 +56,7 @@
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod client;
+pub mod clock;
 pub mod dlq;
 pub mod error;
 pub mod portal;
@@ -65,6 +66,11 @@ pub mod webhook_dispatch;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use client::{StripeRealClient, StripeRealClientBuilder};
+pub use clock::{Clock, InMemoryFakeClock};
+#[cfg(not(target_arch = "wasm32"))]
+pub use clock::SystemClock;
+#[cfg(target_arch = "wasm32")]
+pub use clock::WasmWorkerClock;
 pub use portal::{
     BillingPortalSessionCreator, InMemoryPortalAuditSink, InMemoryPortalSessionCreator,
     PortalAuditEvent, PortalAuditSink, PortalSessionError, PortalSessionUrl,
@@ -80,9 +86,9 @@ pub use error::{StripeError, WebhookVerifyError};
 pub use retry::{RetryPolicy, DEFAULT_MAX_RETRIES};
 pub use webhook::{verify_webhook_signature, DEFAULT_TOLERANCE_SECONDS};
 pub use webhook_dispatch::{
-    AuditEmitter, AuditOutcome, AuditRecord, CanonicalWebhookEventType, Clock,
+    AuditEmitter, AuditOutcome, AuditRecord, CanonicalWebhookEventType,
     DispatchResponse, FixedClock, IdempotencyOutcome, IdempotencyStore, IdempotencyToken,
     InMemoryIdempotencyStore, MaterializerError, RecordingAuditEmitter, RecordingSliRecorder,
     RecordingStateMaterializer, SliObservation, SliRecorder, StateMaterializer,
-    StripeWebhookEnvelope, SystemClock, WebhookDispatcher, SLI_BILLING_STRIPE_EVENT_SECONDS,
+    StripeWebhookEnvelope, WebhookDispatcher, SLI_BILLING_STRIPE_EVENT_SECONDS,
 };
