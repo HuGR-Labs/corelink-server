@@ -3,9 +3,9 @@ id: "AUDIT-2026-05-15-FRAMEWORK-V1-0-0-GA"
 type: "audit"
 doc_status: "ACTIVE"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-15"
-updated: "2026-05-15"
+updated: "2026-05-16"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -19,6 +19,8 @@ references:
   - "specs/_audits/2026-05-15-debt-register.md"
   - "specs/_audits/2026-05-15-canonical-consistency-baseline.md"
   - "specs/03_architecture/adrs/ADR-0034-prr-staffing-waiver-solo-tier.md"
+  - "specs/_proposals/2026-05-16-framework-reviewer-roles.md"
+  - "specs/_governance/reviewer_staffing_strategy.md"
   - "ROADMAP-TO-GA.md"
 tags: ["framework", "freeze", "ga", "v1.0.0", "wave-18", "lote-6", "self-referential"]
 ---
@@ -242,8 +244,60 @@ The charter says *"execute até o último pacote, sem loose ends, sem gambiarras
 - `specs/03_architecture/adrs/ADR-0034-prr-staffing-waiver-solo-tier.md` — solo-tier waiver pattern (scopes to PRR sign-offs; analogous logic available for framework freeze via §35.6 + §41.3)
 - `ROADMAP-TO-GA.md` v1.0.0 — R-3..R-4 boundary snapshot
 
+## 11. Wave-20 Lote 7 update — `unblock-path-C-progress` (engineering side READY)
+
+> **Status flip (2026-05-16):** the engineering-side preparation for Path A (§6.3) is now COMPLETE. The remaining gate is user nomination of individuals — purely a human-action decision that cannot be agent-executed.
+
+### 11.1 What landed in wave-20 Lote 7
+
+| Artifact | Path | Purpose |
+|---|---|---|
+| Reviewer roles proposal | `specs/_proposals/2026-05-16-framework-reviewer-roles.md` | Defines 4 canonical role profiles (FW-H-1..4) with `§-coverage`, `required background`, `acceptance deliverables`, RACI, onboarding checklist, sign-off cadence, backup/bus-factor policy, 3 open questions for Owner |
+| `00_framework.md §43.1` annotation | `specs/00_framework.md` | "(a nomear)" labels now link to FW-H-* role IDs in the proposal so the Owner pattern-matches role → candidate without re-reading the §-catalog |
+
+### 11.2 Effect on §6 verdict
+
+The audit's §6.1 verdict (DEFER) **does NOT change** — promotion is still gated on the framework's own §7 `Aprovador Final + ≥ N revisores requeridos` rule.
+
+But the **shape of the gate has narrowed**: where previously the gate was "(a nomear) — no defined role profile to match against", it is now "(named profile with onboarding doc, acceptance criteria, time commitment, and pattern-match guidance) — pending Owner nomination of individuals".
+
+This reduces the human-track effort from "design + nominate" to "nominate" (a strictly smaller decision surface), which IS the engineering-side READY signal Path A required.
+
+### 11.3 Path A progress checklist
+
+| Path A step | Status as of wave-20 | Next action owner |
+|---|---|---|
+| (i) Role definitions exist for §43.1 slots | DONE (proposal v0.1.0 in `_proposals/`) | n/a |
+| (ii) Onboarding read-order documented | DONE (proposal §4) | n/a |
+| (iii) Acceptance deliverables specified | DONE (proposal §3) | n/a |
+| (iv) RACI documented for post-freeze decisions | DONE (proposal §6) | n/a |
+| (v) Owner selects OQ-1/OQ-2/OQ-3 (org-structure choices) | PENDING | Gustavo Schneiter |
+| (vi) Owner nominates 4 individuals (or 3 with documented dual-hat) | PENDING | Gustavo Schneiter |
+| (vii) Each nominee completes §4 onboarding read | PENDING | Nominees |
+| (viii) Each nominee produces §3 deliverable comments doc | PENDING | Nominees |
+| (ix) Each nominee signs §43.1 line | PENDING | Nominees |
+| (x) Final v1.0.0 cut commit (bump version + §42 change-log entry) | PENDING | Gustavo Schneiter (signs as Final Approver) |
+
+### 11.4 Effect on §6.3 Path C recommendation
+
+Path C ("DEFER and continue") remains the active state. With wave-20 landing the proposal, Path A is now **single-step-away** (Owner nomination), whereas before it was multi-step (Owner had to design role scopes before nominating). This makes Path A meaningfully cheaper than before; the audit recommends Owner reads the proposal at next governance checkpoint and decides.
+
+### 11.5 Pending user action (minimal viable)
+
+To flip the verdict from DEFER → PROMOTE, the Owner needs to:
+
+1. Answer OQ-1 (4 distinct / 3 dual-hat / 2 with Owner dual-hatting).
+2. Answer OQ-2 (re-scope Produto → Ops, or keep literal, or add 5th slot).
+3. Nominate per the answers (1–4 individuals).
+4. Coordinate the onboarding + comments-doc round (~2–3 weeks per nominee).
+
+**Until those four items execute, no agent action can advance the freeze gate.** The audit verdict is now honestly DEFER-with-engineering-side-READY, which is the strongest possible state without violating PRINC-007 / PRINC-008 / PRINC-015.
+
+---
+
 ## 10. Change log
 
 | Version | Date | Author | Change |
 |---|---|---|---|
+| 1.1.0 | 2026-05-16 | Claude Opus 4.7 (wave-20 Lote 7 agent) | Adds §11 `unblock-path-C-progress` documenting that the engineering side of Path A is now READY: reviewer roles proposal `specs/_proposals/2026-05-16-framework-reviewer-roles.md` lands defining FW-H-1..4 role profiles; framework §43.1 annotated to link to the proposal. v1.0.0 GA verdict remains DEFER pending user nomination of individuals (purely human-action; §11.5). Path A is now single-step-away rather than multi-step. |
 | 1.0.0 | 2026-05-15 | Claude Opus 4.7 (wave-18 Lote 6 agent) | Initial audit. Reframes task #14 (v0.3.0 freeze → v1.0.0 GA freeze). Engineering verdict READY (§3 + §4 all GREEN). Decision §6 = **DEFER** — framework's own §7 / §43.1 promotion rule (Aprovador Final + ≥ N reviewers) not satisfied by agent action; three reviewer slots remain `(a nomear)`. Three explicit unblock paths documented (§6.3). Task #14 CLOSED via reframing + audit delivery (§8); the version cut to v1.0.0 GA itself is a follow-up gated on Path A/B/C selection by human. |
