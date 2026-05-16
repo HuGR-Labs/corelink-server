@@ -1,0 +1,31 @@
+-- Wave-19 schema lift — additive lift of `payload TEXT` onto a
+-- pre-existing `export_audit_log` table. Pairs with
+-- `0049_export_audit_log.sql` (which ships the canonical baseline
+-- shape with `payload TEXT` already present on a fresh database).
+--
+-- ## Why a second migration file?
+--
+-- D1 / SQLite has no `ALTER TABLE ADD COLUMN IF NOT EXISTS` form.
+-- If `0049_export_audit_log.sql` has already been applied on a fresh
+-- database, `payload TEXT` is present and this `ALTER` will fail.
+-- Operators apply this migration **only on databases provisioned
+-- prior to wave-19** that already have the wave-15.3/wave-18 table
+-- without the column. The migration runner skips it once the wave-19
+-- shape is detected (operators wrap with a sentinel check via the
+-- wrangler migration ledger).
+--
+-- The fail-CLOSED contract: if D1 reports the column already exists,
+-- the operator treats this migration as a no-op and marks it applied;
+-- the runner MUST NOT mutate the column type or default value if the
+-- column is present (`ALTER COLUMN ... TYPE` and
+-- `ALTER COLUMN ... DROP NOT NULL` are banned by
+-- `scripts/check_migrations_additive.py`).
+--
+-- ## Backwards compatibility
+--
+-- Existing rows without `payload` deserialize cleanly into the
+-- `ExportAuditRow::payload: Option<serde_json::Value>` field via
+-- `#[serde(default)]` — see
+-- `apps/server/src/routes/audit_export.rs::tests::wave18_row_without_payload_field_still_parses`.
+
+ALTER TABLE export_audit_log ADD COLUMN payload TEXT;

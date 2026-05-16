@@ -615,6 +615,67 @@ mod tests {
         drop(tmp);
     }
 
+    /// Wave-19 forwards-compat — the wave-19 audit-export schema lift
+    /// adds a `payload TEXT` column to the server-side `ExportAuditRow`
+    /// (see `apps/server/src/routes/audit_export.rs`). The CLI parses
+    /// the streamed NDJSON `{event, proof}` row envelope, NOT the
+    /// audit-row shape directly. However, future schema lifts could
+    /// add unknown top-level keys to either the row or the manifest
+    /// envelope; this test pins the
+    /// `#[serde(deny_unknown_fields=false)]` discipline (the serde
+    /// default) so the CLI keeps parsing rows that carry extra fields
+    /// the wave-17 reader doesn't recognise. Also covers the explicit
+    /// "row WITHOUT extra fields still parses" path so we have one
+    /// round-trip pinning BOTH the absent-field arm and the present-
+    /// field arm.
+    #[test]
+    fn unknown_row_envelope_fields_ignored_for_forwards_compat() {
+        let (tmp, path, anchor) = build_ndjson_fixture(3);
+        let body = fs::read_to_string(&path).unwrap();
+        let mut lines: Vec<String> = body.lines().map(str::to_owned).collect();
+        // Arm A — every row line WITHOUT extra fields parses cleanly
+        // (the baseline wave-17 wire shape; pins
+        // `#[serde(default)]`-equivalent behaviour for absent keys).
+        let outcome_a = run_verify_ndjson(&path, &anchor, OutputFormat::Json).unwrap();
+        assert!(outcome_a.verified);
+        assert_eq!(outcome_a.events_verified, 3);
+
+        // Arm B — every row line WITH an extra `payload` top-level
+        // field still parses (forwards-compat with the wave-19 schema
+        // lift; the row envelope's `serde::Deserialize` ignores
+        // unknown keys by default). We inject the canonical
+        // mid-stream-break-shaped payload to mirror the production
+        // wire shape an HTTP-aware client would observe.
+        for line in lines.iter_mut().take(3) {
+            // Convert `{"event":...,"proof":...}` → `{"event":...,"proof":...,"payload":{...}}`
+            // by stripping exactly ONE trailing `}` and re-appending
+            // the payload sub-object + the outer `}`.
+            assert!(line.ends_with('}'), "row line is a JSON object: {line}");
+            let inner = format!(
+                ",\"payload\":{{\"break_at_seq\":42,\"break_at_chunk\":1,\"observed\":\"{}\",\"expected\":\"{}\"}}}}",
+                "aa".repeat(32),
+                "bb".repeat(32),
+            );
+            // Strip ONLY the final `}` (not all trailing closers — the
+            // row JSON nests sub-objects whose terminal `}` we MUST
+            // preserve).
+            let mut without_last_close = line.clone();
+            assert_eq!(without_last_close.pop(), Some('}'));
+            *line = format!("{without_last_close}{inner}");
+            // Sanity — the modified line is valid JSON.
+            let _: serde_json::Value =
+                serde_json::from_str(line).expect("injected row line still valid JSON");
+        }
+        fs::write(&path, lines.join("\n")).unwrap();
+        let outcome_b = run_verify_ndjson(&path, &anchor, OutputFormat::Json).unwrap();
+        assert!(
+            outcome_b.verified,
+            "row envelope carrying an extra `payload` field still parses + verifies"
+        );
+        assert_eq!(outcome_b.events_verified, 3);
+        drop(tmp);
+    }
+
     /// Mismatched chain-head — the manifest line itself has been
     /// tampered (anchor flipped); we surface the manifest disagrees
     /// with the recomputed final hash.
