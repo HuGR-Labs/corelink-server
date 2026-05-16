@@ -25,7 +25,7 @@ typical team.
 :::tip You already did the 10-minute quickstart, right?
 Every guide here assumes you have a working `corelink` CLI, a valid
 `CORELINK_PAT`, and a tenant id. If you don't, do the
-[10-minute quickstart](../../tutorials/quickstart-10min.mdx) first —
+[10-minute quickstart](../../tutorials/quickstart-10min) first —
 it's a hard prerequisite.
 :::
 
@@ -33,10 +33,10 @@ it's a hard prerequisite.
 
 | What you have today | What you want | Guide |
 | --- | --- | --- |
-| `bazel-remote` (open source) or BuildBuddy as your Bazel remote cache | CoreLink REAPI v2 (CAS + Action Cache) | [From a Bazel remote cache](./from-bazel-remote-cache.mdx) |
-| S3 bucket holding build artifacts, ML datasets, or release binaries (no CAS semantics) | Content-addressable storage with audit trail and BLAKE3 integrity | [From S3-only artifact storage](./from-s3-only.mdx) |
-| Self-hosted Harbor, Quay, or generic Docker registry holding image layers | CoreLink CAS as the layer backend (registry stays in front) | [From a Docker registry](./from-docker-registry.mdx) |
-| Pants, Buck2, or custom REAPI cache | Read the [Bazel guide](./from-bazel-remote-cache.mdx) — the REAPI v2 wire protocol is identical; just swap `.bazelrc` flags for your build tool's equivalent. | — |
+| `bazel-remote` (open source) or BuildBuddy as your Bazel remote cache | CoreLink REAPI v2 (CAS + Action Cache) | [From a Bazel remote cache](./from-bazel-remote-cache) |
+| S3 bucket holding build artifacts, ML datasets, or release binaries (no CAS semantics) | Content-addressable storage with audit trail and BLAKE3 integrity | [From S3-only artifact storage](./from-s3-only) |
+| Self-hosted Harbor, Quay, or generic Docker registry holding image layers | CoreLink CAS as the layer backend (registry stays in front) | [From a Docker registry](./from-docker-registry) |
+| Pants, Buck2, or custom REAPI cache | Read the [Bazel guide](./from-bazel-remote-cache) — the REAPI v2 wire protocol is identical; just swap `.bazelrc` flags for your build tool's equivalent. | — |
 | **Mixed** (e.g. S3 + Docker registry, or bazel-remote + S3) | Run all three migrations in sequence, lowest-blast-radius first (S3 → Docker → Bazel). | — |
 
 If your situation doesn't fit any row above, file an issue against
@@ -70,16 +70,16 @@ Before you read any specific guide, run this once.
 - [ ] **PAT exported** — `echo $CORELINK_PAT` is non-empty (or it's in `~/.corelink/config.toml`).
 - [ ] **`corelink doctor`** — all 8 checks PASS (net, auth, storage, BYOK, region, quota, client verify, time-skew).
 - [ ] **Tenant id known** — `corelink config get defaults.tenant_id` returns your production tenant (not `sandbox-xxxx`).
-- [ ] **Region pin chosen** — `wnam` / `enam` / `weur` / `sam` (data residency; see the [residency explainer](../../explanation/residency/lgpd-brazil.mdx)).
+- [ ] **Region pin chosen** — `wnam` / `enam` / `weur` / `sam` (data residency; see the [residency explainer](../../explanation/residency/lgpd-brazil)).
 - [ ] **CI users identified** — who else (humans + service accounts) writes to the existing system today? They need a CoreLink PAT scoped appropriately.
 - [ ] **Backup of existing config committed** — `git stash` is not enough; tag the commit (`pre-corelink-migration`).
 - [ ] **30-min rollback drill scheduled** — book the calendar slot now, not when you need it.
 
 ## Cross-links you'll want during the migration
 
-- [10-minute quickstart](../../tutorials/quickstart-10min.mdx) — install + first put/get.
-- [Quickstart FAQ](../../tutorials/quickstart-faq.mdx) — sandbox vs production, billing triggers.
-- [How-to: production setup](../index.mdx) — custom domain, BYOK, region pinning.
+- [10-minute quickstart](../../tutorials/quickstart-10min) — install + first put/get.
+- [Quickstart FAQ](../../tutorials/quickstart-faq) — sandbox vs production, billing triggers.
+- [How-to: production setup](../index) — custom domain, BYOK, region pinning.
 - [Lighthouse Customer Playbook](https://github.com/humangr-labs/corelink-server/blob/main/marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md) — if you decide partway through that you want a dedicated engineer.
 
 ## Support during a self-serve migration

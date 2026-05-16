@@ -47,7 +47,7 @@ two streams:
    `corelink.admin.op.denied`.
 
 Both are queryable via the admin API and CLI. The deeper
-[audit chain explainer](../../explanation/security/audit-chain.mdx) covers
+[audit chain explainer](../../explanation/security/audit-chain) covers
 the underlying mechanism (Merkle proofs, retention, etc).
 
 ## Query 1 — every role grant or revoke in the last 30 days
@@ -114,7 +114,7 @@ The CLI returns:
 
 You can verify the proof locally with any RFC 6962 client (e.g.
 `ct-tools`) without trusting CoreLink. See
-[audit chain](../../explanation/security/audit-chain.mdx) for the
+[audit chain](../../explanation/security/audit-chain) for the
 verification walkthrough.
 
 ## Query 4 — REST API alternative
@@ -179,15 +179,15 @@ HMAC-signed by the dual-approval signing key under a per-tenant region
 Audit chain entries are retained 7 years (aligned with SOC 2 Type II).
 After tenant offboarding, customer-identifying fields are pseudonymized
 but the chain entries themselves persist for the regulatory window. See
-[audit chain](../../explanation/security/audit-chain.mdx) for the
+[audit chain](../../explanation/security/audit-chain) for the
 retention contract.
 
 ## Related
 
-- [Audit chain](../../explanation/security/audit-chain.mdx) — underlying
+- [Audit chain](../../explanation/security/audit-chain) — underlying
   Merkle log mechanism.
-- [RBAC overview](../../explanation/rbac/index.mdx) — the dual-approval
+- [RBAC overview](../../explanation/rbac/index) — the dual-approval
   gate.
-- [Role catalog](../../explanation/rbac/role-catalog.mdx) — what each
+- [Role catalog](../../explanation/rbac/role-catalog) — what each
   role can do.
-- [Invite a team member](./invite-team-member.mdx)
+- [Invite a team member](./invite-team-member)

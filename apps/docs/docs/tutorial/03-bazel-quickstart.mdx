@@ -11,8 +11,8 @@ This tutorial mirrors [`examples/bazel-starter/`](https://github.com/humangr-lab
 
 ## Prerequisites
 
-- `corelink` CLI installed ([step 1](./01-installation.mdx)).
-- `CORELINK_PAT` exported ([step 2](./02-first-pat.mdx)).
+- `corelink` CLI installed ([step 1](./01-installation)).
+- `CORELINK_PAT` exported ([step 2](./02-first-pat)).
 - Bazel **6 or newer** (credential helper protocol is required).
 
 ## 1. Clone the starter (optional)
@@ -85,4 +85,4 @@ bazel build //:hello 2>&1 | grep -E "remote cache hit|processes:"
 
 If you see `remote cache hit`, you're done. If not, run `corelink doctor --check-auth` and double-check the `--remote_cache` URL.
 
-Next: [Buck2 quickstart](./04-buck2-quickstart.mdx) or [verify cache hit ratio](./06-verify-cache-hit.mdx).
+Next: [Buck2 quickstart](./04-buck2-quickstart) or [verify cache hit ratio](./06-verify-cache-hit).

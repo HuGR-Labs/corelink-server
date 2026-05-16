@@ -16,7 +16,7 @@ one explicitly.
 
 ## Prerequisites
 
-- Authentication configured ([01-authenticate](./01-authenticate.mdx)).
+- Authentication configured ([01-authenticate](./01-authenticate)).
 
 ## Minimal example
 
@@ -73,11 +73,11 @@ The SDK aborts in-flight uploads when the context is cancelled.
 
 | Error type | Cause | Action |
 |---|---|---|
-| `*corelink.AuthError` | PAT missing or revoked | Re-run [01-authenticate](./01-authenticate.mdx) |
-| `*corelink.QuotaError` | Tenant over quota | See [troubleshooting](./07-troubleshooting.mdx) |
+| `*corelink.AuthError` | PAT missing or revoked | Re-run [01-authenticate](./01-authenticate) |
+| `*corelink.QuotaError` | Tenant over quota | See [troubleshooting](./07-troubleshooting) |
 | `*corelink.DigestMismatchError` | Caller-supplied digest wrong | Recompute |
 
 ## Next steps
 
-- [Download the blob](./03-download-blob.mdx)
-- [Batch many uploads](./05-batch-operations.mdx)
+- [Download the blob](./03-download-blob)
+- [Batch many uploads](./05-batch-operations)

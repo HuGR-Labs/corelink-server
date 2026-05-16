@@ -9,7 +9,7 @@ tags: [reference, cli]
 # `corelink` CLI reference
 
 > Per-command reference. For task-oriented help see the
-> [CLI how-to guides](../../how-to/sdk-cli/01-authenticate.mdx).
+> [CLI how-to guides](../../how-to/sdk-cli/01-authenticate).
 
 The `corelink` binary is a single signed executable for macOS, Linux, and
 Windows (cross-OS reproducible builds, SLSA-3 attestation per WI-S15-001).
@@ -20,20 +20,20 @@ Windows (cross-OS reproducible builds, SLSA-3 attestation per WI-S15-001).
 |---|---|---|---|
 | `--output` | `text \| json` | `text` | Output format. JSON is parsing-friendly for CI scripts and follows the schema documented per subcommand. |
 | `--help` | flag | — | Print contextual help and exit `0`. |
-| `--version` | flag | — | Print the binary version and exit `0`. Same as the [`version`](./version.mdx) subcommand. |
+| `--version` | flag | — | Print the binary version and exit `0`. Same as the [`version`](./version) subcommand. |
 
 ## Subcommands
 
 | Command | Purpose | Page |
 |---|---|---|
-| `ls`      | List CAS / AC entries for a tenant.        | [ls](./ls.mdx) |
-| `get`     | Download a blob by digest (verified).      | [get](./get.mdx) |
-| `put`     | Upload a file as a blob.                   | [put](./put.mdx) |
-| `stat`    | Inspect metadata for a digest.             | [stat](./stat.mdx) |
-| `bench`   | Micro-benchmark vs the cluster.            | [bench](./bench.mdx) |
-| `doctor`  | Run the 8 diagnostic checks.               | [doctor](./doctor.mdx) |
-| `version` | Print version + git rev + SLSA URL.        | [version](./version.mdx) |
-| `config`  | Manage `~/.corelink/config.toml`.          | [config](./config.mdx) |
+| `ls`      | List CAS / AC entries for a tenant.        | [ls](./ls) |
+| `get`     | Download a blob by digest (verified).      | [get](./get) |
+| `put`     | Upload a file as a blob.                   | [put](./put) |
+| `stat`    | Inspect metadata for a digest.             | [stat](./stat) |
+| `bench`   | Micro-benchmark vs the cluster.            | [bench](./bench) |
+| `doctor`  | Run the 8 diagnostic checks.               | [doctor](./doctor) |
+| `version` | Print version + git rev + SLSA URL.        | [version](./version) |
+| `config`  | Manage `~/.corelink/config.toml`.          | [config](./config) |
 
 ## Authentication
 

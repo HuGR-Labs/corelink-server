@@ -16,7 +16,7 @@ supply one explicitly.
 
 ## Prerequisites
 
-- Authentication configured ([01-authenticate](./01-authenticate.mdx)).
+- Authentication configured ([01-authenticate](./01-authenticate)).
 
 ## Minimal example
 
@@ -66,11 +66,11 @@ const opts: PutOptions = { expectedDigest: "..." satisfies BlobDigest };
 
 | Class | Cause | Action |
 |---|---|---|
-| `AuthError` | PAT missing or revoked | [01-authenticate](./01-authenticate.mdx) |
-| `QuotaError` | Tenant over quota | [troubleshooting](./07-troubleshooting.mdx) |
+| `AuthError` | PAT missing or revoked | [01-authenticate](./01-authenticate) |
+| `QuotaError` | Tenant over quota | [troubleshooting](./07-troubleshooting) |
 | `DigestMismatchError` | `expectedDigest` wrong | Recompute |
 
 ## Next steps
 
-- [Download the blob](./03-download-blob.mdx)
-- [Batch many uploads](./05-batch-operations.mdx)
+- [Download the blob](./03-download-blob)
+- [Batch many uploads](./05-batch-operations)

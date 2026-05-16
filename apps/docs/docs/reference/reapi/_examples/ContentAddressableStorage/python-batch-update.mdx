@@ -6,7 +6,7 @@ sidebar_label: Python · BatchUpdateBlobs
 
 # Python — `BatchUpdateBlobs`
 
-Upload many small blobs in one round-trip. Use this whenever the combined payload fits the server's `max_batch_total_size_bytes` (see [`Capabilities.GetCapabilities`](../Capabilities/python-get-capabilities.mdx)).
+Upload many small blobs in one round-trip. Use this whenever the combined payload fits the server's `max_batch_total_size_bytes` (see [`Capabilities.GetCapabilities`](../Capabilities/python-get-capabilities)).
 
 ## Prerequisites
 
@@ -49,6 +49,6 @@ OK  sha256:8da8b9d77a8e... (5 B)
 
 | Status | Error taxonomy | Cause |
 | --- | --- | --- |
-| `INVALID_ARGUMENT` | `COR_CAS_BATCH_TOO_LARGE` | Combined payload exceeds `max_batch_total_size_bytes`. Split or stream via [ByteStream.Write](../ByteStream/python-write.mdx). |
+| `INVALID_ARGUMENT` | `COR_CAS_BATCH_TOO_LARGE` | Combined payload exceeds `max_batch_total_size_bytes`. Split or stream via [ByteStream.Write](../ByteStream/python-write). |
 | `ABORTED` | `COR_CAS_DIGEST_MISMATCH` | Hash supplied does not match bytes uploaded. |
 | `UNAUTHENTICATED` | `COR_AUTH_PAT_INVALID` | PAT expired / wrong env. Re-mint via the admin UI. |
