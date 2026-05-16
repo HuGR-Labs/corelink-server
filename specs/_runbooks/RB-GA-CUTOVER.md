@@ -419,6 +419,8 @@ If rollback occurs **post-§3.11** (i.e., GA posture was declared and announced 
 
 ## 6. Post-cutover
 
+> **Canonical expansion:** `specs/_runbooks/RB-POST-GA-CONTINUITY.md` is the **canonical 30-day post-GA continuity playbook** that extends this section through T+30d (greenlight re-verification, SLO baseline capture, weekly compliance digest, pilot-to-GA conversion, freeze-thaw evaluation, quarterly framework prep). The §6.1 / §6.2 / §6.3 stubs below remain the cutover-time anchor; the continuity playbook §1 / §2 / §3 / §4 consume them.
+
 ### 6.1 T+24h
 
 | # | Action | Owner | Evidence |
