@@ -3,9 +3,9 @@ id: "INVARIANT-REGISTRY"
 type: "invariant"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "0.2.1"
+version: "0.2.2"
 created: "2026-04-24"
-updated: "2026-05-07"
+updated: "2026-05-16"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -17,8 +17,8 @@ tags: ["architecture", "invariants", "registry", "tla"]
 # Invariant Registry — Catálogo Canônico de INV-XXX
 
 > **doc_status:** DRAFT
-> **Versão:** 0.2.1
-> **Última atualização:** 2026-05-07 (Hardening sprint 2026-05-07: INV-LRU-CONSISTENCY race-window claim corrected (S-07 R5 P2-1); INV-OBS-CARDINALITY-BUDGET suspended-tier policy documented (S-09 R5 P2-3))
+> **Versão:** 0.2.2
+> **Última atualização:** 2026-05-16 (Wave-23 invariant-draft sweep: §3.27 OPS domain (4 INVs INV-S17-OPS-EXCLUSIVITY / INV-S17-SEV1-DRILL-PAUSE / INV-S17-CHAOS-STAGING-ONLY / INV-S17-ONCALL-FATIGUE-AUTOROTATE) promoted from S-17 `_spec_contract.md §8`; §3.28 PAT revocation domain (INV-PAT-REVOKE-PROPAGATION) promoted from apps/docs OpenAPI + 4 i18n MDX endpoint contracts; 5 aliases added (INV-AUDIT-CHAIN, INV-AUDIT-EMIT-ATOMIC, INV-AUTH-WEBAUTHN family-shorthand, INV-BLAKE3-256-LOWER-HEX-64 subsumed) — see `specs/_audits/2026-05-16-inv-draft-sweep.md`. 2026-05-07 Hardening: INV-LRU-CONSISTENCY race-window claim corrected (S-07 R5 P2-1); INV-OBS-CARDINALITY-BUDGET suspended-tier policy documented (S-09 R5 P2-3))
 > **Owner:** Gustavo Schneiter
 > **Aprovador Final:** Gustavo Schneiter
 > **Revisores:** ⚠️ **staffing-blocked** — promoção a `doc_status: FROZEN` bloqueada até ≥ 2 reviewers nomeados conforme roles indicados (endereça F-09 audit Lote 3+4)
@@ -564,6 +564,44 @@ INVs introduced by the `corelink-rollout-controller` crate (WI-S13-005 progressi
 
 ---
 
+### 3.27 Operational discipline domain (domain OPS / S-17) — Wave-23 invariant-draft sweep (2026-05-16)
+
+INVs introduced in `specs/04_sprints/S17/_spec_contract.md §8 "Cross-WI invariants (S-17 operational discipline)"` (Wave-19 sprint expansion) but never promoted to the canonical registry. Promoted here from S-17 `_spec_contract` declarations as part of the Wave-23 invariant-draft sweep audit. Severity HIGH (operational discipline → ambiguous SLO attribution / oncall capacity / GA-blocking chaos-in-prod).
+
+| ID | Nome | Severidade | Descrição | Enforcement | TLA+ file |
+|---|---|---|---|---|---|
+| **INV-S17-OPS-EXCLUSIVITY** | At most one of {chaos experiment, DR drill, runbook drill} active per region at any time | HIGH | Shared `ops_event_lock` D1 row checked by each scheduler's pre-flight; aborts with `LockHeld` if violated. Rationale: concurrent chaos + DR drill produces ambiguous SLO impact attribution | Integration test concurrent-start rejection + scheduler pre-flight lock check; chaos test attempting concurrent ops | N/A (operational invariant; D1 row-level lock semantics) |
+| **INV-S17-SEV1-DRILL-PAUSE** | Runbook drills, chaos experiments, and DR drills auto-deferred during active global SEV-1 incident | HIGH | `incident_active` flag check in scheduler `should_run()`; emits `corelink.ops.drill_deferred` audit event when active. Rationale: drills during real incidents starve oncall capacity | Integration test SEV-1 flag-set scheduler short-circuit + audit emit verification | N/A (operational invariant; flag-gated scheduler semantics) |
+| **INV-S17-CHAOS-STAGING-ONLY** | Chaos experiments MUST NEVER target production environment | HIGH | `DrillEnv::require_staging()` (`corelink-chaos-scheduler`) AND `[env.prod]` wrangler config omits `[triggers]`; audit fail-CLOSED `Aborted{reason="prod_target"}` if attempted. Rationale: chaos in prod is GA-blocking per S-17 spec contract §10 | Two-layer defense: runtime `require_staging()` reject + wrangler config absence; adversarial test attempting prod target → expected `Aborted` | N/A (operational invariant; layered defense pattern) |
+| **INV-S17-ONCALL-FATIGUE-AUTOROTATE** | Primary oncall hitting hard thresholds auto-handoff to backup | HIGH | `corelink-oncall::threshold` module observes Sev1>3/week, Sev2>8/week, total pages>15/non-rotation week; triggers `PagerDutyClient::handoff_to_backup`; emits audit before rotation. Rationale: alerts alone insufficient — observed fatigue without escape valve causes silent quality decline | Integration test threshold-cross handoff + audit emit ordering check | N/A (operational invariant; observation-driven handoff) |
+
+**Cross-references**:
+- `specs/04_sprints/S17/_spec_contract.md §8` — origin declarations (Wave-19 sprint expansion).
+- `specs/03_architecture/resilience_patterns.md` — PAT-RUNBOOK-DRILL-001 + PAT-CORRELATION-ID-001 sibling operational patterns.
+- `compliance_matrix.md` — operational discipline mapped to SOC 2 CC7.3 (system operations) + SRE-grade GA gate (S-17 §10).
+
+**Aliases históricos:** nenhum. Declared in S-17 `_spec_contract.md` Wave-19 and promoted to registry in Wave-23 invariant-draft sweep (2026-05-16).
+
+---
+
+### 3.28 PAT revocation domain (domain AUTH-PAT) — Wave-23 invariant-draft sweep (2026-05-16)
+
+INV introduced in `apps/docs/static/openapi-corelink-v1.yaml` + 4 i18n MDX endpoint references (`apps/docs/.../delete-v1-pats-by-pat_id.mdx`) for the `DELETE /v1/pats/{pat_id}` endpoint 204 response. Promoted here from public API contract docs as part of the Wave-23 invariant-draft sweep audit. Complements the existing `INV-AUTH-PAT-*` family (§3.14) which covers mint / verify / hash invariants; this INV covers the **revocation propagation** lifecycle.
+
+| ID | Nome | Severidade | Descrição | Enforcement | TLA+ file |
+|---|---|---|---|---|---|
+| **INV-PAT-REVOKE-PROPAGATION** | Subsequent uses of a revoked PAT MUST fail closed (401) within propagation window | CRITICAL | Revocation writes `revoked_at` timestamp + audit emit; verify path checks `revoked_at IS NULL` in D1 query (no edge cache lookahead); propagation window ≤ 60s end-to-end (inherits S-03 admin role revocation pattern per WI-S13-002 §7 L161). Failure mode: stale token usage post-revocation returns 401, never 200/204 | Integration test mint → revoke → verify-rejection + property test 10k iter rapid mint/revoke race + audit emit ordering check (revoke audit BEFORE response 204) | (planned `auth_pat_revoke.tla`; PLANNED; sibling of `auth_pat_hybrid.tla` for verify path) |
+
+**Cross-references**:
+- `apps/docs/static/openapi-corelink-v1.yaml` — DELETE /v1/pats/{pat_id} 204 response semantics.
+- `apps/docs/docs/reference/api/endpoints/delete-v1-pats-by-pat_id.mdx` (+ 3 i18n: pt-BR / de / es-419) — customer-facing fail-closed contract.
+- INV-AUTH-PAT-* family (§3.14) — sibling mint/verify/hash invariants.
+- WI-S13-002 §7 L161 — runtime admin_role revocation check (60s propagation window pattern).
+
+**Aliases históricos:** nenhum. Declared in public OpenAPI + 4 i18n MDX endpoint docs (apps/docs) and promoted to registry in Wave-23 invariant-draft sweep (2026-05-16).
+
+---
+
 ## 4. TLA+ coverage matrix
 
 CRITICAL invariantes **DEVEM** ter TLA+ spec + model check verde no CI (CTRL-FORMAL-001 em `security_model.md §6.9`).
@@ -692,6 +730,10 @@ Por 6 meses (até 2026-10-24), estes aliases continuam referenciáveis mas dispa
 | `INV-DATA-AC-REFS-EXIST` | INV-AC-OUTPUTS-VALID |
 | `INV-DATA-TENANT-ISOLATION` | INV-TENANT-ISOLATION |
 | `INV-CAS-DIGEST-INTEGRITY` (drift surfaced em S-09 dashboards; Lote 10.9bis wave 17 rename per R4-P1-1 + R5-P1-S1) | INV-CAS-INTEGRITY |
+| `INV-AUDIT-CHAIN` (shortened form in S-03 `_spec_contract.md` v1.3.2 + PRR-S03 R-S03-007; surfaced Wave-23 sweep) | INV-AUDIT-APPEND-ONLY |
+| `INV-AUDIT-EMIT-ATOMIC` (shortened form in Wave-20+ crates: `corelink-statuspage-real`, `corelink-slack-real`, `corelink-region`, `corelink-rotation-adapters`, `corelink-drata-sync`; surfaced Wave-23 sweep) | INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER |
+| `INV-AUTH-WEBAUTHN` (family shorthand in `crates/corelink-webauthn/README.md`; refers to 5-INV WebAuthn family §3.14 — UV-REQUIRED-ADMIN / ATTESTATION-VERIFIED / SIGN-COUNT-MONOTONIC / ORIGIN-EXACT / RP-ID-CANONICAL; surfaced Wave-23 sweep) | §3.14 AUTH-WEBAUTHN family (no single canonical; alias is family-collective shorthand) |
+| `INV-BLAKE3-256-LOWER-HEX-64` (S-06 R4 review recommendation `specs/04_sprints/S06/_review_R4_opus_part1.md §P3-002-1`; never canonicalized as separate INV — digest canonical-form constraint subsumed by `INV-CAS-INTEGRITY` write-time hash check + `INV-CAS-IDEMPOTENCY` BLAKE3 deterministic enforcement; surfaced Wave-23 sweep) | INV-CAS-INTEGRITY (digest canonical form subsumed) |
 
 ---
 

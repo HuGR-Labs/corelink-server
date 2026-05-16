@@ -1,7 +1,7 @@
 //! `quickstart_audit` — Stream audit events via `GET /v1/admin/audit-events`.
 //!
 //! Customer concept: every privileged operation in CoreLink is
-//! Merkle-chained into the audit log (INV-AUDIT-CHAIN-001). This
+//! Merkle-chained into the audit log (INV-AUDIT-APPEND-ONLY). This
 //! endpoint paginates the chain in commit order; the response includes
 //! `chain_head_hash` for client-side verification (CTRL-AUDIT-002).
 //!
