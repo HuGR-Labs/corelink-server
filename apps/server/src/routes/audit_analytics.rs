@@ -47,12 +47,13 @@
 use std::sync::{Arc, Mutex};
 
 use axum::{
-    extract::{Query, State},
+    extract::{Extension, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::get,
     Router,
 };
+use corelink_analytics::Region;
 use corelink_audit_chain::{NeonShadowSink, TimelineBucket};
 use corelink_ratelimit::{
     BucketKey, InMemoryRateLimitAuditSink, InMemoryRateLimitMetrics,
@@ -205,6 +206,78 @@ pub trait ShadowSinkFactory: Send + Sync + core::fmt::Debug {
         &self,
         tenant_id: Uuid,
     ) -> Result<Arc<dyn NeonShadowSink>, &'static str>;
+
+    /// Wave-27 closure: resolve a shadow sink for `tenant_id` given a
+    /// *pre-resolved* `region` — typically sourced from the
+    /// [`RequestPrelude`] populated by the CF Worker request-prelude
+    /// prefetch (wave-26). Production factories override this to skip
+    /// the per-request `TenantRegionResolver::resolve_region` round-trip
+    /// and dispatch straight to the per-region executor pool.
+    ///
+    /// The default implementation delegates back to [`Self::for_tenant`]
+    /// so existing trait impls keep compiling without modification — the
+    /// route layer falls back to this default only when the request was
+    /// dispatched WITHOUT a `RequestPrelude` extension (dev/test boot
+    /// paths or the CF Worker fetch-handler invoked the legacy path).
+    ///
+    /// # Errors
+    ///
+    /// Same error contract as [`Self::for_tenant`]: a static error
+    /// string when the tenant has no pinned region recorded or the
+    /// per-region executor pool is unavailable.
+    fn for_tenant_in_region(
+        &self,
+        tenant_id: Uuid,
+        _region: Region,
+    ) -> Result<Arc<dyn NeonShadowSink>, &'static str> {
+        self.for_tenant(tenant_id)
+    }
+}
+
+/// Wave-27 closure: server-side request-prelude carrier.
+///
+/// Structural mirror of `corelink_clerk_cf::prod_wiring::RequestPrelude`
+/// (the wasm32-only CF Worker request-prelude bundle landed in wave-26).
+/// The CF Worker fetch handler populates this extension *before*
+/// dispatching the axum router; downstream handler-chain code (this
+/// route + future shadow-sink consumers) consumes the pre-resolved
+/// region without re-issuing the wave-25 `D1TenantConfigStore` lookup.
+///
+/// The struct lives in this crate (not in `corelink-clerk-cf`) because
+/// `corelink-clerk-cf` is wasm32-only and the analytics route is
+/// native — the CF Worker boot path constructs a `RequestPrelude` from
+/// its own `prod_wiring::RequestPrelude` at the handler boundary.
+///
+/// # Fields
+///
+/// - `tenant_id` — validated tenant uuid (matches `X-Tenant-Id` header).
+/// - `region` — pre-resolved analytics-shadow region for `tenant_id`,
+///   sourced from the CF Worker request-prelude prefetch (wave-26).
+/// - `region_label` — `region.as_str()` cached so handler-chain logging
+///   stays cheap (no `.to_string()` on every emit).
+#[derive(Clone, Debug)]
+#[non_exhaustive]
+pub struct RequestPrelude {
+    /// Validated tenant uuid.
+    pub tenant_id: Uuid,
+    /// Pre-resolved analytics-shadow region.
+    pub region: Region,
+    /// Stable region label (`region.as_str()`) for audit + logging.
+    pub region_label: &'static str,
+}
+
+impl RequestPrelude {
+    /// Construct a request-prelude carrier with explicit fields.
+    /// `#[non_exhaustive]` blocks struct-expression construction from
+    /// external crates so we expose this builder.
+    #[must_use]
+    pub fn new(tenant_id: Uuid, region: Region) -> Self {
+        Self {
+            tenant_id,
+            region,
+            region_label: region.as_str(),
+        }
+    }
 }
 
 /// Shared route state.
@@ -328,6 +401,123 @@ impl From<TimelineBucket> for TimelineEntry {
     }
 }
 
+/// Audit-row `exit_status` recorded on the fallback path when the
+/// CF Worker request-prelude extension (wave-26 `RequestPrelude`) is
+/// missing — the legacy `state.shadow_factory.for_tenant(tenant_id)`
+/// resolver round-trip is exercised and a `tracing::warn!` line is
+/// emitted so production operators can detect a CF Worker boot path
+/// regression (the prelude extension SHOULD be present on every CF
+/// Worker-dispatched request after wave-27).
+///
+/// The marker is non-terminal — the route still serves a successful
+/// response on the fallback path; the audit row carries
+/// `exit_status = "request_prelude_missing"` AS WELL AS the canonical
+/// terminal `exit_status` (the helper emits the marker via a fresh
+/// audit row before falling through to the legacy resolver).
+pub const REQUEST_PRELUDE_MISSING_EXIT: &str = "request_prelude_missing";
+
+/// Wave-27 closure: resolve the per-tenant shadow sink, preferring the
+/// CF Worker request-prelude (wave-26) when present.
+///
+/// When the axum `Extension<RequestPrelude>` carries a pre-resolved
+/// region for `tenant_id`, this helper dispatches through
+/// [`ShadowSinkFactory::for_tenant_in_region`] — skipping the legacy
+/// per-request `TenantRegionResolver::resolve_region` round-trip. The
+/// CF Worker `prefetch_request_prelude` (wave-26
+/// `corelink_clerk_cf::prod_wiring`) is the canonical populator: it
+/// runs the D1 `SELECT region FROM tenant_config WHERE tenant_id = ?`
+/// in the request-prelude and bundles the resolved [`Region`] into the
+/// extension.
+///
+/// When the extension is missing (dev / test / native gRPC boot paths
+/// without the CF Worker prefetch), this helper:
+///
+/// 1. Emits a `tracing::warn!` line so production operators can detect
+///    a CF Worker boot path regression. NEVER a silent IAD fallback —
+///    the WARN line is the operator-visible signal.
+/// 2. Emits a `request_prelude_missing` audit row through
+///    `state.audit_sink.emit` so the row survives in the analytics
+///    pipeline (Logpush + dashboard widgets union on `exit_status`).
+/// 3. Falls back to the legacy `state.shadow_factory.for_tenant(tenant_id)`
+///    dispatch which routes through the wave-21 `TenantRegionResolver`
+///    chain — the same path consumers exercised before wave-26.
+///
+/// The fallback path is intentionally NOT a hard failure: the analytics
+/// route MUST stay functional on the native gRPC boot path (which never
+/// constructs a CF Worker prelude). The WARN + audit emit is the SEV-3
+/// observability hook; SEV-2 alerting is the rate of
+/// `request_prelude_missing` rows in the dashboard.
+///
+/// # Errors
+///
+/// Returns a static error string when the underlying factory dispatch
+/// fails — propagated unchanged so the calling handler emits the
+/// canonical `backend_error` audit row + 500.
+///
+/// # Tenant binding
+///
+/// When the prelude extension's `tenant_id` does NOT match the header
+/// `tenant_id`, the prelude is IGNORED and the fallback path runs. This
+/// is a defense-in-depth catch for a wiring bug where the CF Worker
+/// dispatches with a stale prelude attached to a different tenant's
+/// request — the rejection emits the `request_prelude_missing` marker
+/// (the prelude is *functionally* missing for this tenant).
+fn resolve_shadow_via_prelude(
+    state: &AuditAnalyticsRouteState,
+    prelude: Option<&RequestPrelude>,
+    tenant: Uuid,
+    endpoint: &str,
+    from_ms: u64,
+    to_ms: u64,
+) -> Result<Arc<dyn NeonShadowSink>, &'static str> {
+    match prelude {
+        Some(p) if p.tenant_id == tenant => {
+            // Hot path — prelude present and bound to the same tenant.
+            state.shadow_factory.for_tenant_in_region(tenant, p.region)
+        }
+        Some(_) => {
+            // Prelude attached BUT bound to a different tenant — the
+            // CF Worker dispatched with a stale extension. Treat as
+            // missing (emit the marker + fall back).
+            tracing::warn!(
+                endpoint,
+                tenant = %tenant,
+                "wave-27 audit-analytics: RequestPrelude tenant mismatch; falling back to factory.for_tenant — \
+                 SEV-3 wiring observability"
+            );
+            let _ = state.audit_sink.emit(AnalyticsAuditRow::new(
+                EVENT_TYPE_ANALYTICS_QUERY.to_string(),
+                Some(tenant),
+                endpoint.to_string(),
+                from_ms,
+                to_ms,
+                0,
+                REQUEST_PRELUDE_MISSING_EXIT.to_string(),
+            ));
+            state.shadow_factory.for_tenant(tenant)
+        }
+        None => {
+            // Prelude extension absent — dev/test/native gRPC dispatch.
+            tracing::warn!(
+                endpoint,
+                tenant = %tenant,
+                "wave-27 audit-analytics: RequestPrelude extension missing; falling back to factory.for_tenant — \
+                 SEV-3 wiring observability"
+            );
+            let _ = state.audit_sink.emit(AnalyticsAuditRow::new(
+                EVENT_TYPE_ANALYTICS_QUERY.to_string(),
+                Some(tenant),
+                endpoint.to_string(),
+                from_ms,
+                to_ms,
+                0,
+                REQUEST_PRELUDE_MISSING_EXIT.to_string(),
+            ));
+            state.shadow_factory.for_tenant(tenant)
+        }
+    }
+}
+
 /// Emit an audit row and return a response. If the emit fails the
 /// caller-supplied `success_resp` is dropped and a `503 Service
 /// Unavailable` is returned instead — preserving the
@@ -353,6 +543,7 @@ fn emit_or_503(
 /// Internal handler for `/event-count`.
 async fn handle_event_count(
     State(state): State<AuditAnalyticsRouteState>,
+    prelude: Option<Extension<RequestPrelude>>,
     headers: HeaderMap,
     Query(query): Query<EventCountQuery>,
 ) -> axum::response::Response {
@@ -378,7 +569,14 @@ async fn handle_event_count(
     if let Some(resp) = rate_limit_check(&state, tenant, "event_count", query.from, query.to) {
         return resp;
     }
-    let shadow = match state.shadow_factory.for_tenant(tenant) {
+    let shadow = match resolve_shadow_via_prelude(
+        &state,
+        prelude.as_ref().map(|Extension(p)| p),
+        tenant,
+        "event_count",
+        query.from,
+        query.to,
+    ) {
         Ok(s) => s,
         Err(msg) => {
             return emit_or_503(
@@ -470,6 +668,7 @@ async fn handle_event_count(
 /// Internal handler for `/timeline`.
 async fn handle_timeline(
     State(state): State<AuditAnalyticsRouteState>,
+    prelude: Option<Extension<RequestPrelude>>,
     headers: HeaderMap,
     Query(query): Query<TimelineQuery>,
 ) -> axum::response::Response {
@@ -546,7 +745,14 @@ async fn handle_timeline(
     if let Some(resp) = rate_limit_check(&state, tenant, "timeline", query.from, query.to) {
         return resp;
     }
-    let shadow = match state.shadow_factory.for_tenant(tenant) {
+    let shadow = match resolve_shadow_via_prelude(
+        &state,
+        prelude.as_ref().map(|Extension(p)| p),
+        tenant,
+        "timeline",
+        query.from,
+        query.to,
+    ) {
         Ok(s) => s,
         Err(msg) => {
             return emit_or_503(
@@ -997,7 +1203,7 @@ mod tests {
             to: 1_000,
             event_type: None,
         };
-        let resp = handle_event_count(State(state.clone()), headers.clone(), Query(query))
+        let resp = handle_event_count(State(state.clone()), None, headers.clone(), Query(query))
             .await
             .into_response();
         assert_eq!(
@@ -1014,7 +1220,7 @@ mod tests {
             to: 1_000,
             granularity: Some(100),
         };
-        let resp2 = handle_timeline(State(state), headers, Query(tq))
+        let resp2 = handle_timeline(State(state), None, headers, Query(tq))
             .await
             .into_response();
         assert_eq!(
@@ -1056,7 +1262,7 @@ mod tests {
             to: 1_000,
             granularity: Some(100),
         };
-        let resp = handle_timeline(State(state), headers, Query(tq))
+        let resp = handle_timeline(State(state), None, headers, Query(tq))
             .await
             .into_response();
         assert_eq!(
@@ -1124,6 +1330,7 @@ mod tests {
         for _ in 0..10 {
             let resp = handle_event_count(
                 State(state.clone()),
+                None,
                 headers.clone(),
                 Query(query.clone()),
             )
@@ -1141,6 +1348,7 @@ mod tests {
         // 11th request — bucket empty, wall clock still pinned → 429.
         let resp_denied = handle_event_count(
             State(state.clone()),
+            None,
             headers.clone(),
             Query(query.clone()),
         )
@@ -1158,6 +1366,7 @@ mod tests {
         fake.advance(std::time::Duration::from_secs(60));
         let resp_after_advance = handle_event_count(
             State(state),
+            None,
             headers,
             Query(query),
         )
@@ -1224,6 +1433,7 @@ mod tests {
 
         let resp = handle_event_count(
             State(state.clone()),
+            None,
             headers.clone(),
             Query(query),
         )
@@ -1260,5 +1470,288 @@ mod tests {
         assert_eq!(row.to_ms, 1_000);
         assert_eq!(row.buckets_returned, 0);
         assert_eq!(row.event_type, EVENT_TYPE_ANALYTICS_QUERY);
+    }
+
+    // ------------------------------------------------------------------
+    // Wave-27: RequestPrelude extension consumer adoption tests.
+    //
+    // These pin the wave-27 closure of the wave-26 caveat:
+    // "ShadowSinkFactory consumer call sites are not yet shadow-aware".
+    // After wave-27 the analytics handlers prefer the pre-resolved
+    // `RequestPrelude.region` (sourced from
+    // `corelink_clerk_cf::prod_wiring::prefetch_request_prelude`) over
+    // re-resolving via `state.shadow_factory.for_tenant(tenant_id)` and
+    // fall back to the legacy path with a WARN + audit emit ONLY when
+    // the extension is missing.
+    // ------------------------------------------------------------------
+
+    /// Recording factory that captures which method was invoked
+    /// (`for_tenant` legacy path vs. `for_tenant_in_region` wave-27
+    /// shadow-aware path) so the tests can assert the consumer adoption
+    /// without relying on observable side effects on the shadow sink.
+    #[derive(Debug)]
+    struct RecordingShadowFactory {
+        tenant: Uuid,
+        region: Region,
+        audit: Arc<InMemoryShadowSyncAuditSink>,
+        for_tenant_calls: Arc<Mutex<u32>>,
+        for_tenant_in_region_calls: Arc<Mutex<(u32, Option<Region>)>>,
+    }
+
+    impl RecordingShadowFactory {
+        fn new(tenant: Uuid, region: Region) -> Self {
+            Self {
+                tenant,
+                region,
+                audit: Arc::new(InMemoryShadowSyncAuditSink::new()),
+                for_tenant_calls: Arc::new(Mutex::new(0)),
+                for_tenant_in_region_calls: Arc::new(Mutex::new((0, None))),
+            }
+        }
+    }
+
+    impl ShadowSinkFactory for RecordingShadowFactory {
+        fn for_tenant(
+            &self,
+            tenant_id: Uuid,
+        ) -> Result<Arc<dyn NeonShadowSink>, &'static str> {
+            *self.for_tenant_calls.lock().expect("legacy counter") += 1;
+            if tenant_id == self.tenant {
+                Ok(Arc::new(InMemoryNeonShadowSink::new(
+                    self.tenant,
+                    self.region,
+                    self.audit.clone(),
+                )))
+            } else {
+                Err("tenant not bound in recording factory")
+            }
+        }
+
+        fn for_tenant_in_region(
+            &self,
+            tenant_id: Uuid,
+            region: Region,
+        ) -> Result<Arc<dyn NeonShadowSink>, &'static str> {
+            let mut g = self
+                .for_tenant_in_region_calls
+                .lock()
+                .expect("shadow-aware counter");
+            g.0 += 1;
+            g.1 = Some(region);
+            drop(g);
+            if tenant_id == self.tenant {
+                Ok(Arc::new(InMemoryNeonShadowSink::new(
+                    self.tenant,
+                    region,
+                    self.audit.clone(),
+                )))
+            } else {
+                Err("tenant not bound in recording factory")
+            }
+        }
+    }
+
+    /// Wave-27 closure pin: when a `RequestPrelude` extension is attached
+    /// to the request, the handler MUST dispatch through
+    /// `for_tenant_in_region(tenant, prelude.region)` — skipping the
+    /// per-request `TenantRegionResolver::resolve_region` round-trip the
+    /// legacy `for_tenant` path runs internally.
+    #[tokio::test]
+    async fn request_prelude_consumed_dispatches_through_for_tenant_in_region() {
+        let tenant = Uuid::now_v7();
+        let recording = Arc::new(RecordingShadowFactory::new(tenant, Region::Fra));
+        let factory: Arc<dyn ShadowSinkFactory> = recording.clone();
+        let state = build_state(factory);
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            TENANT_ID_HEADER,
+            tenant.to_string().parse().expect("header parse"),
+        );
+        let query = EventCountQuery {
+            from: 0,
+            to: 1_000,
+            event_type: None,
+        };
+        let prelude = RequestPrelude::new(tenant, Region::Fra);
+
+        let resp = handle_event_count(
+            State(state),
+            Some(Extension(prelude)),
+            headers,
+            Query(query),
+        )
+        .await
+        .into_response();
+        assert_eq!(resp.status(), StatusCode::OK, "happy path expected");
+
+        let legacy = *recording.for_tenant_calls.lock().expect("legacy counter");
+        let shadow_aware = *recording
+            .for_tenant_in_region_calls
+            .lock()
+            .expect("shadow-aware counter");
+        assert_eq!(
+            legacy, 0,
+            "wave-27: prelude-present requests MUST NOT touch the legacy for_tenant path"
+        );
+        assert_eq!(
+            shadow_aware.0, 1,
+            "wave-27: prelude-present requests MUST dispatch through for_tenant_in_region exactly once"
+        );
+        assert_eq!(
+            shadow_aware.1,
+            Some(Region::Fra),
+            "wave-27: for_tenant_in_region MUST receive the prelude's pre-resolved region"
+        );
+    }
+
+    /// Wave-27 fallback path pin: when the `RequestPrelude` extension is
+    /// MISSING (dev / test / native gRPC dispatch), the handler MUST fall
+    /// back to `for_tenant`, emit a `request_prelude_missing` audit row,
+    /// AND still serve a successful response. NOT silent IAD — the
+    /// audit row is the operator-visible signal.
+    #[tokio::test]
+    async fn request_prelude_missing_falls_back_with_warn_and_audit() {
+        let tenant = Uuid::now_v7();
+        let recording = Arc::new(RecordingShadowFactory::new(tenant, Region::Iad));
+        let factory: Arc<dyn ShadowSinkFactory> = recording.clone();
+        let mut state = build_state(factory);
+
+        // Capture-sink swap so we can snapshot the emitted rows.
+        let capture: Arc<InMemoryAnalyticsAuditSink> =
+            Arc::new(InMemoryAnalyticsAuditSink::new());
+        state.audit_sink = capture.clone() as Arc<dyn AnalyticsAuditSink>;
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            TENANT_ID_HEADER,
+            tenant.to_string().parse().expect("header parse"),
+        );
+        let query = EventCountQuery {
+            from: 0,
+            to: 1_000,
+            event_type: None,
+        };
+
+        let resp = handle_event_count(State(state), None, headers, Query(query))
+            .await
+            .into_response();
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "wave-27: fallback path MUST stay functional (the prelude extension is OPTIONAL)"
+        );
+
+        let legacy = *recording.for_tenant_calls.lock().expect("legacy counter");
+        let shadow_aware = *recording
+            .for_tenant_in_region_calls
+            .lock()
+            .expect("shadow-aware counter");
+        assert_eq!(
+            legacy, 1,
+            "wave-27: prelude-missing requests MUST fall back to the legacy for_tenant exactly once"
+        );
+        assert_eq!(
+            shadow_aware.0, 0,
+            "wave-27: prelude-missing requests MUST NOT touch the shadow-aware path"
+        );
+
+        let rows = capture.snapshot().expect("snapshot");
+        let missing_rows: Vec<&AnalyticsAuditRow> = rows
+            .iter()
+            .filter(|r| r.exit_status == REQUEST_PRELUDE_MISSING_EXIT)
+            .collect();
+        assert_eq!(
+            missing_rows.len(),
+            1,
+            "wave-27: fallback path MUST emit exactly one `request_prelude_missing` audit row; \
+             saw {} rows total",
+            rows.len()
+        );
+        let row = missing_rows[0];
+        assert_eq!(row.authenticated_tenant, Some(tenant));
+        assert_eq!(row.endpoint, "event_count");
+        assert_eq!(row.from_ms, 0);
+        assert_eq!(row.to_ms, 1_000);
+        assert_eq!(row.event_type, EVENT_TYPE_ANALYTICS_QUERY);
+    }
+
+    /// Wave-27 defense-in-depth pin: when a `RequestPrelude` extension
+    /// is attached BUT bound to a DIFFERENT tenant than the
+    /// `X-Tenant-Id` header (a wiring bug where the CF Worker
+    /// dispatched with a stale prelude), the handler MUST IGNORE the
+    /// stale prelude and fall back through the legacy path with the
+    /// `request_prelude_missing` marker emitted (the prelude is
+    /// *functionally* missing for the current tenant).
+    ///
+    /// Exercises the symmetric `handle_timeline` arm so the fallback
+    /// emit + WARN is pinned for both routes.
+    #[tokio::test]
+    async fn request_prelude_missing_emit_pinned_for_timeline_route() {
+        let tenant = Uuid::now_v7();
+        let mut stale_tenant = Uuid::now_v7();
+        while stale_tenant == tenant {
+            stale_tenant = Uuid::now_v7();
+        }
+        let recording = Arc::new(RecordingShadowFactory::new(tenant, Region::Iad));
+        let factory: Arc<dyn ShadowSinkFactory> = recording.clone();
+        let mut state = build_state(factory);
+
+        let capture: Arc<InMemoryAnalyticsAuditSink> =
+            Arc::new(InMemoryAnalyticsAuditSink::new());
+        state.audit_sink = capture.clone() as Arc<dyn AnalyticsAuditSink>;
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            TENANT_ID_HEADER,
+            tenant.to_string().parse().expect("header parse"),
+        );
+        let tq = TimelineQuery {
+            from: 0,
+            to: 1_000,
+            granularity: Some(100),
+        };
+        // Stale prelude — attached but bound to a DIFFERENT tenant.
+        let stale_prelude = RequestPrelude::new(stale_tenant, Region::Fra);
+
+        let resp = handle_timeline(
+            State(state),
+            Some(Extension(stale_prelude)),
+            headers,
+            Query(tq),
+        )
+        .await
+        .into_response();
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "wave-27: stale-prelude requests fall back to factory.for_tenant and still serve a response"
+        );
+
+        let legacy = *recording.for_tenant_calls.lock().expect("legacy counter");
+        let shadow_aware = *recording
+            .for_tenant_in_region_calls
+            .lock()
+            .expect("shadow-aware counter");
+        assert_eq!(
+            legacy, 1,
+            "wave-27: stale-prelude MUST trigger the legacy fallback"
+        );
+        assert_eq!(
+            shadow_aware.0, 0,
+            "wave-27: stale-prelude MUST NOT dispatch through the shadow-aware path"
+        );
+
+        let rows = capture.snapshot().expect("snapshot");
+        assert!(
+            rows.iter().any(|r| {
+                r.exit_status == REQUEST_PRELUDE_MISSING_EXIT && r.endpoint == "timeline"
+            }),
+            "wave-27: timeline route MUST emit `request_prelude_missing` on stale-prelude fallback; \
+             saw {:?}",
+            rows.iter()
+                .map(|r| (&r.endpoint, &r.exit_status))
+                .collect::<Vec<_>>()
+        );
     }
 }
