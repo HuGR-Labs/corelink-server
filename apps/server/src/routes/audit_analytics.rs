@@ -91,6 +91,23 @@ pub const MAX_GRANULARITY_MS: u64 = 24 * 60 * 60 * 1_000;
 /// Audit row captured per analytics request. Mirrors the `ExportAuditRow`
 /// shape so the wave-17 dashboard widgets can union the two emit
 /// streams on `event_type`.
+///
+/// ## Wave-29 — `region_source` field
+///
+/// Wave-27 wired the CF Worker `RequestPrelude` into the route. Wave-29
+/// finishes the loop by adding the `region_source` field so operators
+/// can observe (per emit) whether the shadow sink was resolved through
+/// the prelude hot path (`Some("prelude")` — no D1 round-trip) or the
+/// wave-21 resolver fallback (`Some("fallback")`). Non-resolver emit
+/// arms (bad-request, rate-limit, clock-unavailable, audit-failed,
+/// request-prelude-missing marker) leave the field as `None` because
+/// no shadow-sink resolution was attempted.
+///
+/// The field is additive — `AnalyticsAuditRow` is `#[non_exhaustive]`
+/// and the canonical [`AnalyticsAuditRow::new`] constructor defaults
+/// `region_source` to `None`. Call sites on the resolver path
+/// (`event_count` + `timeline` happy-path emits) decorate the row
+/// via [`AnalyticsAuditRow::with_region_source`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct AnalyticsAuditRow {
@@ -109,12 +126,32 @@ pub struct AnalyticsAuditRow {
     /// Exit status: `"ok"` / `"unauthorized"` / `"rate_limited"` /
     /// `"bad_request"` / `"backend_error"` / `"audit_failed"`.
     pub exit_status: String,
+    /// Wave-29 telemetry — region resolution source on the rows whose
+    /// emit path attempted a shadow-sink resolve. Canonical values:
+    /// `"prelude"` (wave-26 `RequestPrelude` hot path — no D1 round-
+    /// trip) or `"fallback"` (wave-21 `TenantRegionResolver` round-
+    /// trip). `None` on pre-resolution exit arms (bad-request, rate-
+    /// limit, clock-unavailable, request-prelude-missing marker).
+    pub region_source: Option<String>,
 }
+
+/// Canonical `region_source` value for the wave-29 prelude hot path
+/// (no resolver round-trip; the wave-26 `RequestPrelude` carried the
+/// pre-resolved region).
+pub const REGION_SOURCE_PRELUDE: &str = "prelude";
+
+/// Canonical `region_source` value for the wave-21 resolver fallback
+/// path (a `TenantRegionResolver::resolve_region` round-trip was
+/// performed).
+pub const REGION_SOURCE_FALLBACK: &str = "fallback";
 
 impl AnalyticsAuditRow {
     /// Construct a new analytics audit row with every field explicit.
     /// `#[non_exhaustive]` blocks struct-expression construction from
     /// external crates so we expose this builder.
+    ///
+    /// `region_source` defaults to `None`; decorate the row via
+    /// [`Self::with_region_source`] on the resolver-path emit arms.
     #[must_use]
     pub fn new(
         event_type: String,
@@ -133,7 +170,19 @@ impl AnalyticsAuditRow {
             to_ms,
             buckets_returned,
             exit_status,
+            region_source: None,
         }
+    }
+
+    /// Wave-29: decorate this row with the `region_source` telemetry
+    /// field (`"prelude"` on the hot path; `"fallback"` on the
+    /// resolver round-trip arm). The constants
+    /// [`REGION_SOURCE_PRELUDE`] / [`REGION_SOURCE_FALLBACK`] are the
+    /// canonical values.
+    #[must_use]
+    pub fn with_region_source(mut self, region_source: &'static str) -> Self {
+        self.region_source = Some(region_source.to_string());
+        self
     }
 }
 
@@ -469,11 +518,20 @@ fn resolve_shadow_via_prelude(
     endpoint: &str,
     from_ms: u64,
     to_ms: u64,
-) -> Result<Arc<dyn NeonShadowSink>, &'static str> {
+) -> Result<(Arc<dyn NeonShadowSink>, &'static str), &'static str> {
     match prelude {
         Some(p) if p.tenant_id == tenant => {
-            // Hot path — prelude present and bound to the same tenant.
-            state.shadow_factory.for_tenant_in_region(tenant, p.region)
+            // Hot path — prelude present and bound to the same
+            // tenant. Wave-29: the production `TokioPgShadowSinkFactory`
+            // override skips the `TenantRegionResolver::resolve_region`
+            // round-trip entirely and dispatches straight to the per-
+            // region executor pool. The `region_source = "prelude"`
+            // telemetry threads through to the canonical
+            // `corelink.audit.analytics_query.v1` happy-path emit.
+            let sink = state
+                .shadow_factory
+                .for_tenant_in_region(tenant, p.region)?;
+            Ok((sink, REGION_SOURCE_PRELUDE))
         }
         Some(_) => {
             // Prelude attached BUT bound to a different tenant — the
@@ -494,7 +552,8 @@ fn resolve_shadow_via_prelude(
                 0,
                 REQUEST_PRELUDE_MISSING_EXIT.to_string(),
             ));
-            state.shadow_factory.for_tenant(tenant)
+            let sink = state.shadow_factory.for_tenant(tenant)?;
+            Ok((sink, REGION_SOURCE_FALLBACK))
         }
         None => {
             // Prelude extension absent — dev/test/native gRPC dispatch.
@@ -513,7 +572,8 @@ fn resolve_shadow_via_prelude(
                 0,
                 REQUEST_PRELUDE_MISSING_EXIT.to_string(),
             ));
-            state.shadow_factory.for_tenant(tenant)
+            let sink = state.shadow_factory.for_tenant(tenant)?;
+            Ok((sink, REGION_SOURCE_FALLBACK))
         }
     }
 }
@@ -569,7 +629,7 @@ async fn handle_event_count(
     if let Some(resp) = rate_limit_check(&state, tenant, "event_count", query.from, query.to) {
         return resp;
     }
-    let shadow = match resolve_shadow_via_prelude(
+    let (shadow, region_source) = match resolve_shadow_via_prelude(
         &state,
         prelude.as_ref().map(|Extension(p)| p),
         tenant,
@@ -577,7 +637,7 @@ async fn handle_event_count(
         query.from,
         query.to,
     ) {
-        Ok(s) => s,
+        Ok(pair) => pair,
         Err(msg) => {
             return emit_or_503(
                 &state,
@@ -610,7 +670,8 @@ async fn handle_event_count(
                 query.to,
                 0,
                 "backend_error".to_string(),
-            ),
+            )
+            .with_region_source(region_source),
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "shadow sink tenant mismatch",
@@ -635,7 +696,8 @@ async fn handle_event_count(
                     query.to,
                     0,
                     "backend_error".to_string(),
-                ),
+                )
+                .with_region_source(region_source),
                 (StatusCode::INTERNAL_SERVER_ERROR, "shadow aggregate failed").into_response(),
             );
         }
@@ -660,7 +722,8 @@ async fn handle_event_count(
             query.to,
             buckets_returned,
             "ok".to_string(),
-        ),
+        )
+        .with_region_source(region_source),
         (StatusCode::OK, axum::Json(response)).into_response(),
     )
 }
@@ -745,7 +808,7 @@ async fn handle_timeline(
     if let Some(resp) = rate_limit_check(&state, tenant, "timeline", query.from, query.to) {
         return resp;
     }
-    let shadow = match resolve_shadow_via_prelude(
+    let (shadow, region_source) = match resolve_shadow_via_prelude(
         &state,
         prelude.as_ref().map(|Extension(p)| p),
         tenant,
@@ -753,7 +816,7 @@ async fn handle_timeline(
         query.from,
         query.to,
     ) {
-        Ok(s) => s,
+        Ok(pair) => pair,
         Err(msg) => {
             return emit_or_503(
                 &state,
@@ -781,7 +844,8 @@ async fn handle_timeline(
                 query.to,
                 0,
                 "backend_error".to_string(),
-            ),
+            )
+            .with_region_source(region_source),
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "shadow sink tenant mismatch",
@@ -802,7 +866,8 @@ async fn handle_timeline(
                     query.to,
                     0,
                     "backend_error".to_string(),
-                ),
+                )
+                .with_region_source(region_source),
                 (StatusCode::INTERNAL_SERVER_ERROR, "shadow aggregate failed").into_response(),
             );
         }
@@ -822,7 +887,8 @@ async fn handle_timeline(
             query.to,
             buckets_returned,
             "ok".to_string(),
-        ),
+        )
+        .with_region_source(region_source),
         (StatusCode::OK, axum::Json(response)).into_response(),
     )
 }
@@ -1752,6 +1818,163 @@ mod tests {
             rows.iter()
                 .map(|r| (&r.endpoint, &r.exit_status))
                 .collect::<Vec<_>>()
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // Wave-29: ShadowSinkFactory full-adoption tests.
+    //
+    // Closes the wave-27 caveat #2 ("Production `TokioPgShadowSinkFactory`
+    // override — wave-21 impl continues to use the default
+    // `for_tenant_in_region → for_tenant` delegate"). After wave-29:
+    //
+    // 1. The production factory's override (in
+    //    `corelink_server::neon_shadow_factory`) skips the
+    //    `TenantRegionResolver` round-trip entirely.
+    // 2. The route's `corelink.audit.analytics_query.v1` emit threads
+    //    the `region_source` telemetry field (`"prelude"` vs
+    //    `"fallback"`) so operators can observe which dispatch path
+    //    each request took.
+    // ------------------------------------------------------------------
+
+    /// Wave-29 closure pin: with the wave-26 `RequestPrelude`
+    /// attached, the canonical `corelink.audit.analytics_query.v1`
+    /// emit (success path) MUST carry `region_source = "prelude"` AND
+    /// the recording factory MUST observe ZERO calls to the legacy
+    /// `for_tenant` arm — i.e. the prelude region propagated end-to-
+    /// end and no D1 round-trip was paid.
+    #[tokio::test]
+    async fn audit_analytics_consumes_prelude_region_without_extra_d1_round_trip() {
+        let tenant = Uuid::now_v7();
+        let recording = Arc::new(RecordingShadowFactory::new(tenant, Region::Fra));
+        let factory: Arc<dyn ShadowSinkFactory> = recording.clone();
+        let mut state = build_state(factory);
+
+        // Capture-sink swap so we can introspect emitted rows.
+        let capture: Arc<InMemoryAnalyticsAuditSink> =
+            Arc::new(InMemoryAnalyticsAuditSink::new());
+        state.audit_sink = capture.clone() as Arc<dyn AnalyticsAuditSink>;
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            TENANT_ID_HEADER,
+            tenant.to_string().parse().expect("header parse"),
+        );
+        let query = EventCountQuery {
+            from: 0,
+            to: 1_000,
+            event_type: None,
+        };
+        let prelude = RequestPrelude::new(tenant, Region::Fra);
+
+        let resp = handle_event_count(
+            State(state),
+            Some(Extension(prelude)),
+            headers,
+            Query(query),
+        )
+        .await
+        .into_response();
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "wave-29 happy path: prelude-aware dispatch must serve 200"
+        );
+
+        // Wave-29: the legacy resolver round-trip is gone.
+        let legacy = *recording.for_tenant_calls.lock().expect("legacy counter");
+        assert_eq!(
+            legacy, 0,
+            "wave-29: prelude-attached requests MUST NOT touch for_tenant — no D1 round-trip"
+        );
+        let shadow_aware = *recording
+            .for_tenant_in_region_calls
+            .lock()
+            .expect("shadow-aware counter");
+        assert_eq!(
+            shadow_aware.0, 1,
+            "wave-29: prelude-attached requests MUST dispatch through for_tenant_in_region once"
+        );
+        assert_eq!(
+            shadow_aware.1,
+            Some(Region::Fra),
+            "wave-29: the prelude region MUST be the value handed to for_tenant_in_region"
+        );
+
+        // Wave-29 telemetry: the canonical success emit carries
+        // `region_source = "prelude"`. There should be exactly one
+        // `ok` emit (no `request_prelude_missing` row since the
+        // prelude was present and matched the tenant).
+        let rows = capture.snapshot().expect("snapshot");
+        let ok_rows: Vec<&AnalyticsAuditRow> = rows
+            .iter()
+            .filter(|r| r.exit_status == "ok")
+            .collect();
+        assert_eq!(
+            ok_rows.len(),
+            1,
+            "wave-29: exactly one ok emit expected; saw {:?}",
+            rows.iter()
+                .map(|r| (&r.endpoint, &r.exit_status, &r.region_source))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            ok_rows[0].region_source.as_deref(),
+            Some(REGION_SOURCE_PRELUDE),
+            "wave-29: prelude hot path MUST tag region_source = \"prelude\""
+        );
+        let missing_rows: Vec<&AnalyticsAuditRow> = rows
+            .iter()
+            .filter(|r| r.exit_status == REQUEST_PRELUDE_MISSING_EXIT)
+            .collect();
+        assert!(
+            missing_rows.is_empty(),
+            "wave-29: prelude-attached requests MUST NOT emit request_prelude_missing"
+        );
+    }
+
+    /// Wave-29 symmetric pin: the fallback path (no prelude attached)
+    /// MUST tag the canonical success emit with `region_source =
+    /// "fallback"` so dashboard widgets can split the rate of
+    /// "prelude vs. fallback" dispatches — closing the wave-27
+    /// observability caveat #3 (dashboard widget for the marker).
+    #[tokio::test]
+    async fn audit_analytics_fallback_path_tags_region_source_fallback() {
+        let tenant = Uuid::now_v7();
+        let recording = Arc::new(RecordingShadowFactory::new(tenant, Region::Iad));
+        let factory: Arc<dyn ShadowSinkFactory> = recording.clone();
+        let mut state = build_state(factory);
+
+        let capture: Arc<InMemoryAnalyticsAuditSink> =
+            Arc::new(InMemoryAnalyticsAuditSink::new());
+        state.audit_sink = capture.clone() as Arc<dyn AnalyticsAuditSink>;
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            TENANT_ID_HEADER,
+            tenant.to_string().parse().expect("header parse"),
+        );
+        let query = EventCountQuery {
+            from: 0,
+            to: 1_000,
+            event_type: None,
+        };
+
+        let resp = handle_event_count(State(state), None, headers, Query(query))
+            .await
+            .into_response();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let rows = capture.snapshot().expect("snapshot");
+        let ok_rows: Vec<&AnalyticsAuditRow> = rows
+            .iter()
+            .filter(|r| r.exit_status == "ok")
+            .collect();
+        assert_eq!(ok_rows.len(), 1);
+        assert_eq!(
+            ok_rows[0].region_source.as_deref(),
+            Some(REGION_SOURCE_FALLBACK),
+            "wave-29: fallback path MUST tag region_source = \"fallback\""
         );
     }
 }
