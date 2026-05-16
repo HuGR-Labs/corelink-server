@@ -96,6 +96,15 @@ corelink-cf-bindings = { workspace = true }
 corelink-billing-stripe-materializer = { workspace = true, optional = true }
 corelink-audit-chain = { workspace = true, optional = true }
 
+# Wave-25 follow-on: optional `D1TenantRegionResolver` wire for the
+# Neon analytics shadow region pin. Pulled in by the
+# `tenant-region-real` feature alongside `corelink-audit-chain`
+# (which carries the resolver trait surface). The store impl wraps a
+# `CfD1DatabaseReal` against the `tenant_config.region` column added
+# by migration `0052_tenant_config_region.sql`. `uuid` is needed for
+# the per-tenant cache key.
+uuid = { workspace = true, optional = true }
+
 # Wave-18 DSR Statuspage real binding deps (wasm32 only). The cron
 # entry point in `dsr_statuspage_cron.rs` hand-composes
 # `aggregate_24h_window → bridge_to_report → publish_dsr_metric_async`
@@ -118,6 +127,16 @@ cf-billing-real = [
     "dep:corelink-billing-stripe-materializer",
     "dep:corelink-audit-chain",
     "corelink-billing-stripe-materializer/cf-billing-real",
+]
+
+# Wave-25: wire the `D1TenantRegionResolver` (from
+# `corelink-audit-chain::neon_shadow::tenant_region`) into the CF
+# Worker production boot path. Closes the wave-21 audit-doc §7 caveat
+# "`corelink-clerk-cf::prod_wiring` not yet updated to construct
+# `D1TenantRegionResolver`". See `specs/_audits/2026-05-16-tenant-config-cf-prod-wire.md`.
+tenant-region-real = [
+    "dep:corelink-audit-chain",
+    "dep:uuid",
 ]
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
