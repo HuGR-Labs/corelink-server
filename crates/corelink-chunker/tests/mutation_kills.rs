@@ -202,37 +202,31 @@ fn fastcdc_scan_boundary_mask_selection_is_deterministic() {
         chunks += 1;
     }
 
-    // Empirical baseline pins (the unmutated chunker must produce
-    // these exact counts on this deterministic input). Mutated
-    // `< → ==` or `< → >` changes the mask phase and yields a
-    // different chunk count or different first digest.
-    assert!(chunks >= 3, "expected multi-chunk decomposition, got {chunks}");
-    // The first digest is determined by the bytes consumed up to
-    // the first boundary; mask drift changes boundary position →
-    // digest changes. Pinning it via a fresh computation:
-    let mut reference = fastcdc();
-    let mut ref_cursor = 0;
-    let mut ref_first_digest: Option<[u8; 32]> = None;
-    while ref_cursor < payload.len() && ref_first_digest.is_none() {
-        let slice = &payload[ref_cursor..];
-        match reference.feed(slice) {
-            ChunkerStep::Chunk { chunk, consumed } => {
-                ref_first_digest = Some(chunk.digest);
-                ref_cursor += consumed;
-            }
-            ChunkerStep::NeedMore { consumed } => {
-                ref_cursor += consumed;
-                if consumed == 0 {
-                    break;
-                }
-            }
-            ChunkerStep::Error(_) => break,
-        }
-    }
+    // Empirical baseline pins captured from the unmutated chunker
+    // on this deterministic 12 MiB payload (see audit
+    // 2026-05-16-debt-008-wave24-mutation-sweep.md §4.1 probe).
+    // Mutated `< → ==` or `< → >` at fastcdc.rs:165 shifts the
+    // mask phase and yields a different chunk count OR different
+    // first digest — both are hardcoded literal pins below, so
+    // the test cannot drift with the implementation.
     assert_eq!(
-        digests.first().copied(),
-        ref_first_digest,
-        "first chunk digest must be deterministic"
+        chunks, 12,
+        "canonical 12 MiB payload yields exactly 12 chunks \
+         (kills mask-selection mutants by pinning chunk count)"
+    );
+    // Canonical first chunk: digest captured from unmutated baseline.
+    let first_digest_hex: String = digests
+        .first()
+        .expect("at least one chunk")
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect();
+    assert_eq!(
+        first_digest_hex,
+        "ab0c43c584271bfa70b8224278d1f1aa629d2ab38acd4b002b337176b5e35c71",
+        "canonical first chunk digest pinned to unmutated baseline; \
+         any mask-selection mutation shifts the boundary and changes \
+         the digest"
     );
 }
 

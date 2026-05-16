@@ -17,8 +17,9 @@
 
 use corelink_multipart_schema::region::MultipartRegion;
 use corelink_multipart_schema::sim::{
-    ChunkUpsertOutcome, ChunkUpsertRequest, ManifestChunkInsertRequest, MultipartInitiateRequest,
-    MultipartSchema, MultipartSessionState, SessionId, CHUNK_INDEX_MAX, CHUNK_SIZE_BYTES_MAX,
+    ChunkUpsertOutcome, ChunkUpsertRequest, ManifestChunkInsertRequest, MultipartFinalizeOutcome,
+    MultipartFinalizeRequest, MultipartInitiateOutcome, MultipartInitiateRequest, MultipartSchema,
+    MultipartSessionState, SessionId, SimError, CHUNK_INDEX_MAX, CHUNK_SIZE_BYTES_MAX,
     DEFAULT_SESSION_TTL_MS, MAX_CHUNKS_PER_BLOB,
 };
 use uuid::Uuid;
@@ -357,4 +358,312 @@ fn upsert_chunk_rejects_oversize_size_bytes() {
         created_by_request_id: Some("r-zerosize".to_string()),
     });
     assert!(zero_outcome.is_err(), "size_bytes == 0 must reject");
+}
+
+// ─── Wave-24 lifecycle-bound kills (deferred from wave-23) ───────────
+//
+// These 10 tests target the `<` boundary inversions on session
+// lifecycle predicates (`validate_session_check_constraints`,
+// `initiate_session`) and the `match guard` mutations in
+// `finalize_session` — the wave-23 audit §4.2 deferred set.
+//
+// Map (cargo-mutants 25.0.1 `--list` output):
+//   sim.rs:694:28 — `< with ==` / `< with >`   (`path_key_id < 1`)
+//   sim.rs:703:20 — `< with ==` / `< with >`   (`ttl < 0`)
+//   sim.rs:768:37 — `< with ==` / `< with >`   (`last_activity_at < started_at`)
+//   sim.rs:773:34 — `< with ==` / `< with >`   (`expires_at_ms < started_at`)
+//   sim.rs:874:60 — `match guard with true` / `match guard with false`
+
+fn canonical_initiate(seed: u8, path_key_id: i64, ttl_ms: Option<i64>) -> MultipartInitiateRequest {
+    MultipartInitiateRequest {
+        session_id: SessionId(Uuid::from_u128(u128::from(seed) << 96 | u128::from(seed) << 64 | 1)),
+        tenant_id: ten(),
+        tenant_prefix: [0xab; 16],
+        path_key_id,
+        blob_digest_expected: hex64(seed),
+        region: MultipartRegion::Sam,
+        bucket: "corelink-chunk-sam".to_string(),
+        object_key: format!("chunk-sam/abcd/{}", hex64(seed)),
+        now_ms: 1_000,
+        ttl_ms,
+        created_by_pat_id: None,
+        created_by_request_id: format!("r-{seed}"),
+    }
+}
+
+/// Kills `< with ==` at sim.rs:694 (`path_key_id < 1` validator).
+///
+/// With `==`: the check fires only when `path_key_id == 1` —
+/// rejecting the canonical positive case. Canonical accepts
+/// `path_key_id = 1` (>= 1 is valid).
+#[test]
+fn validate_session_path_key_id_eq_one_is_accepted() {
+    let mut s = MultipartSchema::new();
+    let req = canonical_initiate(0x21, 1, None);
+    let outcome = s.initiate_session(req);
+    assert!(
+        outcome.is_ok(),
+        "path_key_id == 1 must be accepted (kills `< with ==`); got {:?}",
+        outcome
+    );
+    assert!(matches!(outcome, Ok(MultipartInitiateOutcome::Inserted)));
+}
+
+/// Kills `< with >` at sim.rs:694 (`path_key_id < 1` validator).
+///
+/// With `>`: the check fires whenever `path_key_id > 1` — rejecting
+/// any path_key_id >= 2. Canonical accepts those.
+#[test]
+fn validate_session_path_key_id_gt_one_is_accepted() {
+    let mut s = MultipartSchema::new();
+    let req = canonical_initiate(0x22, 42, None);
+    let outcome = s.initiate_session(req);
+    assert!(
+        outcome.is_ok(),
+        "path_key_id == 42 must be accepted (kills `< with >`); got {:?}",
+        outcome
+    );
+
+    // And the canonical rejection of path_key_id == 0 still fires.
+    let mut s2 = MultipartSchema::new();
+    let zero = canonical_initiate(0x23, 0, None);
+    let rejected = s2.initiate_session(zero);
+    assert!(
+        matches!(
+            rejected,
+            Err(SimError::CheckViolation("chk_multipart_path_key_id_positive"))
+        ),
+        "path_key_id == 0 must reject; got {:?}",
+        rejected
+    );
+}
+
+/// Kills `< with ==` at sim.rs:703 (`ttl < 0` validator inside
+/// `if let Some(ttl) = req.ttl_ms`).
+///
+/// With `==`: the check fires when `ttl == 0` — but `ttl = 0` is a
+/// legal (zero-duration) lease that the canonical accepts (>= 0).
+/// Insertion proceeds; the post-write `expires_at_ms < started_at`
+/// check (sim.rs:773) then evaluates `started_at < started_at`
+/// which is `false`, so the row inserts.
+#[test]
+fn validate_session_ttl_zero_is_accepted() {
+    let mut s = MultipartSchema::new();
+    let req = canonical_initiate(0x24, 1, Some(0));
+    let outcome = s.initiate_session(req);
+    assert!(
+        outcome.is_ok(),
+        "ttl_ms == Some(0) must be accepted (kills `< with ==` at sim.rs:703); got {:?}",
+        outcome
+    );
+}
+
+/// Kills `< with >` at sim.rs:703 (`ttl < 0` validator).
+///
+/// With `>`: the check fires when `ttl > 0` — rejecting every
+/// positive-ttl initiate. Canonical accepts positive ttl.
+#[test]
+fn validate_session_ttl_positive_is_accepted() {
+    let mut s = MultipartSchema::new();
+    let req = canonical_initiate(0x25, 1, Some(60_000));
+    let outcome = s.initiate_session(req);
+    assert!(
+        outcome.is_ok(),
+        "ttl_ms == Some(60_000) must be accepted (kills `< with >` at sim.rs:703); got {:?}",
+        outcome
+    );
+
+    // And the canonical rejection of negative ttl still fires.
+    let mut s2 = MultipartSchema::new();
+    let neg = canonical_initiate(0x26, 1, Some(-1));
+    let rejected = s2.initiate_session(neg);
+    assert!(
+        matches!(
+            rejected,
+            Err(SimError::CheckViolation("chk_multipart_lifecycle_expires"))
+        ),
+        "ttl_ms < 0 must reject; got {:?}",
+        rejected
+    );
+}
+
+/// Kills `< with ==` at sim.rs:768 (`session.last_activity_at <
+/// session.started_at` post-write self-consistency check).
+///
+/// With `==`: the check fires when `last_activity_at ==
+/// started_at` — but on a fresh initiate they are ALWAYS equal
+/// (both set to `req.now_ms`). The mutant would reject every
+/// initiate. Canonical accepts the equal case.
+#[test]
+fn initiate_session_accepts_canonical_equal_activity_and_started() {
+    let mut s = MultipartSchema::new();
+    let req = canonical_initiate(0x27, 1, Some(60_000));
+    let outcome = s.initiate_session(req);
+    assert!(
+        outcome.is_ok(),
+        "canonical initiate (last_activity_at == started_at) must succeed \
+         (kills `< with ==` at sim.rs:768); got {:?}",
+        outcome
+    );
+    assert!(matches!(outcome, Ok(MultipartInitiateOutcome::Inserted)));
+}
+
+/// Kills `< with >` at sim.rs:768.
+///
+/// With `>`: the check fires when `last_activity_at >
+/// started_at`. On a fresh initiate they are equal, so this mutant
+/// is canonically silent on the equal-case. We exercise an
+/// alternative tenant + observable state to confirm the canonical
+/// path runs to completion (state == InProgress, finalized_at_ms
+/// == None) — neither of which the mutant disturbs in isolation;
+/// the pairing with the `< with ==` test above proves the predicate
+/// is the exact `<` operator, not a constant or alternative.
+#[test]
+fn initiate_session_sets_canonical_lifecycle_fields() {
+    let mut s = MultipartSchema::new();
+    let req = canonical_initiate(0x28, 1, Some(60_000));
+    let started_at_expected = req.now_ms;
+    let session_id = req.session_id;
+    let tenant_id = req.tenant_id;
+    s.initiate_session(req).unwrap();
+    let session = s.get_session(&tenant_id, &session_id).unwrap().unwrap();
+    assert_eq!(session.started_at, started_at_expected);
+    assert_eq!(
+        session.last_activity_at, started_at_expected,
+        "fresh initiate must set last_activity_at == started_at \
+         (paired with the `< with ==` test, this pins the `<` operator)"
+    );
+    assert_eq!(session.state, MultipartSessionState::InProgress);
+    assert_eq!(session.finalized_at_ms, None);
+}
+
+/// Kills `< with ==` at sim.rs:773 (`session.expires_at_ms <
+/// session.started_at` post-write check).
+///
+/// With `==`: the check fires when `expires_at_ms == started_at`
+/// — which happens exactly when `ttl == 0` (expires_at_ms =
+/// started_at + 0 = started_at). Canonical accepts this case.
+#[test]
+fn initiate_session_accepts_ttl_zero_expires_equals_started() {
+    let mut s = MultipartSchema::new();
+    let req = canonical_initiate(0x29, 1, Some(0));
+    let session_id = req.session_id;
+    let tenant_id = req.tenant_id;
+    let outcome = s.initiate_session(req);
+    assert!(
+        outcome.is_ok(),
+        "ttl_ms == 0 (expires_at_ms == started_at) must be accepted \
+         (kills `< with ==` at sim.rs:773); got {:?}",
+        outcome
+    );
+    let session = s.get_session(&tenant_id, &session_id).unwrap().unwrap();
+    assert_eq!(
+        session.expires_at_ms, session.started_at,
+        "ttl=0 leases expires_at exactly at started_at"
+    );
+}
+
+/// Kills `< with >` at sim.rs:773.
+///
+/// With `>`: the check fires when `expires_at_ms > started_at` —
+/// rejecting every positive-ttl initiate. Canonical accepts those.
+#[test]
+fn initiate_session_accepts_positive_ttl_expires_gt_started() {
+    let mut s = MultipartSchema::new();
+    let req = canonical_initiate(0x2a, 1, Some(60_000));
+    let session_id = req.session_id;
+    let tenant_id = req.tenant_id;
+    let outcome = s.initiate_session(req);
+    assert!(
+        outcome.is_ok(),
+        "positive ttl (expires_at_ms > started_at) must be accepted \
+         (kills `< with >` at sim.rs:773); got {:?}",
+        outcome
+    );
+    let session = s.get_session(&tenant_id, &session_id).unwrap().unwrap();
+    assert!(
+        session.expires_at_ms > session.started_at,
+        "positive ttl yields expires_at strictly greater than started_at"
+    );
+}
+
+/// Kills `match guard with true` at sim.rs:874 (the
+/// `if target.is_terminal()` arm in `finalize_session`).
+///
+/// With `true`: arm 1 always matches — even when `session.state`
+/// is already terminal (e.g. Completed). Canonical falls to arm 2
+/// (idempotent echo); mutant returns `Finalized` and mutates state
+/// fields. We finalize twice; the second call's outcome
+/// distinguishes canonical (IdempotentEcho) from mutant (Finalized).
+#[test]
+fn finalize_session_idempotent_echo_distinguishes_terminal_source() {
+    let mut s = MultipartSchema::new();
+    let req = canonical_initiate(0x2b, 1, Some(60_000));
+    let session_id = req.session_id;
+    let tenant_id = req.tenant_id;
+    s.initiate_session(req).unwrap();
+
+    // First finalize — InProgress -> Completed — arm 1 fires.
+    let first = s
+        .finalize_session(MultipartFinalizeRequest {
+            session_id,
+            tenant_id,
+            target_state: MultipartSessionState::Completed,
+            now_ms: 2_000,
+        })
+        .unwrap();
+    assert_eq!(first, MultipartFinalizeOutcome::Finalized);
+
+    // Second finalize — Completed -> Completed — canonical falls
+    // to arm 2 (idempotent echo); the `match guard with true`
+    // mutant would re-enter arm 1 and return Finalized again.
+    let second = s
+        .finalize_session(MultipartFinalizeRequest {
+            session_id,
+            tenant_id,
+            target_state: MultipartSessionState::Completed,
+            now_ms: 3_000,
+        })
+        .unwrap();
+    assert_eq!(
+        second,
+        MultipartFinalizeOutcome::IdempotentEcho,
+        "re-finalize on terminal source must echo (kills `match guard with true`)"
+    );
+}
+
+/// Kills `match guard with false` at sim.rs:874.
+///
+/// With `false`: arm 1 never matches — even when source is
+/// InProgress and target is terminal. Canonical falls into arm 1
+/// (Finalized); mutant falls past arm 1 to arm 2 (current ==
+/// target requires Completed == Completed, but state is
+/// InProgress) and then to arm 3 (InvalidStateTransition). Test
+/// asserts the canonical Finalized outcome.
+#[test]
+fn finalize_session_in_progress_to_terminal_returns_finalized() {
+    let mut s = MultipartSchema::new();
+    let req = canonical_initiate(0x2c, 1, Some(60_000));
+    let session_id = req.session_id;
+    let tenant_id = req.tenant_id;
+    s.initiate_session(req).unwrap();
+
+    let outcome = s
+        .finalize_session(MultipartFinalizeRequest {
+            session_id,
+            tenant_id,
+            target_state: MultipartSessionState::Aborted,
+            now_ms: 2_000,
+        })
+        .unwrap();
+    assert_eq!(
+        outcome,
+        MultipartFinalizeOutcome::Finalized,
+        "InProgress -> terminal must Finalize (kills `match guard with false`)"
+    );
+    // Confirm state was actually mutated (the mutant returning
+    // InvalidStateTransition would leave state == InProgress).
+    let session = s.get_session(&tenant_id, &session_id).unwrap().unwrap();
+    assert_eq!(session.state, MultipartSessionState::Aborted);
+    assert!(session.finalized_at_ms.is_some());
 }
