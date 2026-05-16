@@ -388,7 +388,7 @@ sha2 = "0.10"
 blake3 = { version = "1", features = ["traits-preview"] }
 base64 = "0.22"
 hex = "0.4"
-uuid = { version = "1", features = ["v4", "serde", "js"] }
+uuid = { version = "1", features = ["v4", "v7", "serde", "js"] }
 subtle = "2"
 zeroize = { version = "1.8", features = ["derive"] }
 hkdf = "0.12"
