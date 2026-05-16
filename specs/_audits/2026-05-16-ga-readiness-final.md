@@ -36,8 +36,9 @@
 | Customer-facing readiness | CLI verify-ndjson HTTP / SDK examples / pilot onboarding E2E (wave-23 stream #5) / CS playbook (wave-23 stream #7) / beta-feedback triage (wave-23 stream #8) | 🟡 YELLOW pending wave-23 SEAL streams |
 | Operational readiness | RB-GA-CUTOVER + 50+ RB-* runbooks cross-ref; 24h endurance harness built wave-22; chaos campaign 8 fail-CLOSED scenarios SEALED wave-22; chaos combined-failure (wave-23) in flight | 🟡 YELLOW pending dry-run rehearsal |
 | External dependencies | 7 DEFER (5 user-bound + 1 vendor-bound + 1 mixed) | 🟡 YELLOW (counter §11) |
+| Freeze status | GA-1 feature freeze ACTIVE since 2026-05-16 per `specs/_audits/2026-05-16-ga-1-feature-freeze.md` §1; only §3.a P0-security / §3.b P1-ga-blocker / §3.c cosmetic-doc exceptions may merge to `main` until §6 thaw conditions are satisfied | ✅ ACTIVE |
 
-**Net:** **CONDITIONAL GO**. Owner sign-off via ADR-0034b 2-key (Owner + on-call SRE) unlocks `RB-GA-CUTOVER.md` §0 checklist run. The 7 external DEFER items are the *only* gate remaining; engineering-side has no in-house blocker.
+**Net:** **CONDITIONAL GO**. Owner sign-off via ADR-0034b 2-key (Owner + on-call SRE) unlocks `RB-GA-CUTOVER.md` §0 checklist run. The 7 external DEFER items are the *only* gate remaining; engineering-side has no in-house blocker. Feature-freeze GA-1 is now enforced (`scripts/check-ga-freeze-allowed.py`), so no further engineering scope can creep into the cutover window.
 
 ---
 

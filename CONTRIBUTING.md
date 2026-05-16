@@ -1,5 +1,43 @@
 # Contributing to CoreLink
 
+> ## 0. GA-1 FEATURE FREEZE IS ACTIVE (effective 2026-05-16)
+>
+> CoreLink is in a **GA-1 feature-freeze window** that runs from 2026-05-16
+> through the GA cutover and the post-GA T+7d clean-state observation
+> period. **New features will not be accepted to `main` during the
+> freeze.** Only three exception classes can land:
+>
+> 1. **P0 security fixes** (CVSS ≥ 7.0 on a reachable surface) — 2-key
+>    approval (Owner + Security Lead) required.
+> 2. **P1 GA-blocker fixes** (defects that block `RB-GA-CUTOVER.md` §0
+>    greenlight) — 2-key approval (Owner + on-call SRE) required.
+> 3. **Cosmetic doc fixes** (typo / broken link / formatting; no semantic
+>    change) — single CODEOWNER approval OK.
+>
+> Every commit that touches a frozen surface MUST carry a
+> `FREEZE-EXCEPTION: <class>` trailer in its body (one of
+> `P0-security`, `P1-ga-blocker`, `cosmetic-doc`, or `implicit-allow`).
+> The `scripts/check-ga-freeze-allowed.py` gate enforces this.
+>
+> **Frozen surfaces:** spec corpus, invariant registry, ADR set, public
+> API surface (`crates/corelink-api/`, `apps/server/src/routes/`),
+> OpenAPI envelope (`openapi/`), runbooks (`specs/_runbooks/`),
+> dashboards (`dashboards/`), migrations, schemas.
+>
+> **Implicitly allowed (no exception trailer required):** anything under
+> `specs/_audits/`, `specs/_compliance/`, `reports/`, plus
+> `CHANGELOG.md`, `TODO.md`, `ROADMAP-TO-GA.md`.
+>
+> Full allowlist + decision protocol + thaw conditions live in
+> [`specs/_audits/2026-05-16-ga-1-feature-freeze.md`](./specs/_audits/2026-05-16-ga-1-feature-freeze.md)
+> §3 / §4 / §6. Read it before opening a PR that touches a frozen path.
+>
+> If your contribution does not fit one of the three exception classes,
+> please hold the PR and re-open it after the Owner publishes the
+> companion **thaw declaration** post-GA T+7d clean.
+
+---
+
 Thanks for thinking about contributing to CoreLink! This file is the
 **community-facing** entry point. Maintainers and full-time contributors
 should also read `docs/internal/AUTHOR-PRE-PR-CHECKLIST.md` and
