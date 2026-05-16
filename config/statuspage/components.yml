@@ -1,0 +1,143 @@
+# config/statuspage/components.yml — Wave-28 R-prep step-5
+#
+# Atlassian Statuspage component-tree config draft (Option A — CNAME path
+# per `specs/_runbooks/STATUSPAGE-INIT.md` §2). Consumed by
+# `scripts/admin/statuspage-bootstrap.sh` after the operator has created
+# the tenant in browser (see
+# `docs/internal/statuspage-tenant-signup-quickstart.md`).
+#
+# Surface contract:
+#   - Customer-facing tracked components: 5 (per task spec).
+#   - Component groups: 4 (Customer-Facing API · Compliance & Audit ·
+#     Identity & Auth · Infrastructure).
+#   - Initial status MUST be `operational` for every component (the
+#     bootstrap script is idempotent; flipping status post-incident is
+#     out-of-band via `RB-DSR-STATUSPAGE-PUBLISH-FAILED.md` cadence).
+#   - `display_uptime: true` for every customer-tracked component (the
+#     trust-corpus MDX pages explicitly reference the uptime panel — see
+#     `apps/docs/docs/trust/incident-response.mdx §Status page`).
+#
+# NOTE on the 5-vs-8 split:
+#   The wave-24 runbook §2 step 2 enumerates 8 components (API ingress /
+#   CAS read / CAS write / Action cache / Audit chain / Admin plane /
+#   Identity (Clerk) / BYOK envelope). The wave-28 step-5 task spec
+#   collapses these into 5 customer-friendly surfaces grouped by user
+#   journey rather than internal subsystem. The bootstrap script merges
+#   both views: the 5 surfaces below are the *public* labels; the
+#   8 internal probes feed status into them via the
+#   `internal_subsystems:` mapping (consumed by future component-status
+#   updaters, not by the initial component-creation API call).
+#
+# DCO compliance:
+#   This file ships under the repo's DCO. The bootstrap script that
+#   consumes it carries the per-script DCO header.
+#
+# Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+
+schema_version: "1.0.0"
+generated_by: "wave-28 R-prep step-5"
+canonical_hostname: "status.corelink.dev"
+support_url: "https://corelink.dev"
+
+groups:
+  - id: "grp-customer-facing-api"
+    name: "Customer-Facing API"
+    description: "Public CAS endpoints, build/cache lookups, and write paths exposed to tenants."
+  - id: "grp-compliance-audit"
+    name: "Compliance & Audit"
+    description: "Tamper-evident audit chain, DSR pipeline, and audit-export distribution."
+  - id: "grp-identity-auth"
+    name: "Identity & Auth"
+    description: "Tenant authentication (Clerk JWT), per-tenant RBAC, and admin-plane access."
+  - id: "grp-infrastructure"
+    name: "Infrastructure"
+    description: "Cross-region failover, BYOK provider envelope chain, and shared infra primitives."
+
+components:
+  - id: "cmp-cas-api"
+    name: "CAS API"
+    description: "Content-addressable storage read + write endpoints. Drives every build and ML lookup."
+    group: "grp-customer-facing-api"
+    status: "operational"
+    display_uptime: true
+    showcase: true
+    internal_subsystems:
+      - "api-ingress"
+      - "cas-read-path"
+      - "cas-write-path"
+      - "action-cache"
+
+  - id: "cmp-audit-export"
+    name: "Audit Export"
+    description: "Per-tenant audit-log streaming + signed-bundle export distribution (per-region)."
+    group: "grp-compliance-audit"
+    status: "operational"
+    display_uptime: true
+    showcase: true
+    internal_subsystems:
+      - "audit-chain"
+      - "audit-export-distributor"
+
+  - id: "cmp-dsr-pipeline"
+    name: "DSR Pipeline"
+    description: "GDPR/CCPA data-subject-request intake, erasure worker, and statuspage-notify channel."
+    group: "grp-compliance-audit"
+    status: "operational"
+    display_uptime: true
+    showcase: true
+    internal_subsystems:
+      - "dsr-intake"
+      - "privacy-erasure-worker"
+
+  - id: "cmp-auth-clerk-jwt"
+    name: "Auth (Clerk JWT)"
+    description: "Clerk-issued JWT verification, tenant-scoped session minting, and admin-plane auth."
+    group: "grp-identity-auth"
+    status: "operational"
+    display_uptime: true
+    showcase: true
+    internal_subsystems:
+      - "identity-clerk"
+      - "admin-plane"
+
+  - id: "cmp-byok-provider-matrix"
+    name: "BYOK Provider Matrix"
+    description: "Customer-managed-key envelope chain across AWS KMS, GCP KMS, Azure Key Vault."
+    group: "grp-infrastructure"
+    status: "operational"
+    display_uptime: true
+    showcase: true
+    internal_subsystems:
+      - "byok-envelope"
+      - "byok-provider-aws"
+      - "byok-provider-gcp"
+      - "byok-provider-azure"
+
+# Bootstrap-time defaults for organisation surface (applied via
+# the `pages` API endpoint, idempotent).
+organization:
+  page_name: "CoreLink Status"
+  page_description: "Real-time service status for CoreLink shared content-addressable cache."
+  url: "https://status.corelink.dev"
+  support_url: "https://corelink.dev"
+  hidden_from_search: true  # until GA cutover sign-off
+  allow_page_subscribers: true
+  allow_incident_subscribers: true
+  branding:
+    logo_url: "https://corelink.dev/brand/statuspage-logo.svg"
+    favicon_url: "https://corelink.dev/brand/favicon.ico"
+    primary_color: "#0F172A"     # slate-900 (CoreLink primary)
+    secondary_color: "#10B981"   # emerald-500 (operational green)
+    css_body_background: "#F8FAFC"  # slate-50
+
+notifications:
+  email_from: "status@corelink.dev"
+  email_reply_to: "ops@corelink.dev"
+  ops_alert_address: "ops@corelink.dev"
+
+# Cross-references (for downstream tools that ingest this manifest):
+#   - Source-of-truth runbook: `specs/_runbooks/STATUSPAGE-INIT.md` §2
+#   - Trust-corpus consumer: `apps/docs/docs/trust/incident-response.mdx`
+#   - Quickstart: `docs/internal/statuspage-tenant-signup-quickstart.md`
+#   - Bootstrap script: `scripts/admin/statuspage-bootstrap.sh`
+#   - Verify script (wave-25): `scripts/statuspage-init-verify.py`

@@ -1,0 +1,88 @@
+# config/statuspage/dns-cname-record.txt — Wave-28 R-prep step-5
+#
+# Exact DNS CNAME record the operator must add in the DNS provider
+# console (Cloudflare DNS for the canonical `corelink.dev` zone) after
+# the Atlassian Statuspage tenant has been created and the bootstrap
+# script has run.
+#
+# This is the LAST executable action in the Owner quickstart — see
+# `docs/internal/statuspage-tenant-signup-quickstart.md` step 6.
+#
+# Replace `<statuspage-tenant>` below with the operator's actual
+# Statuspage tenant subdomain (e.g. `corelink` if the operator chose
+# `corelink.statuspage.io` as the Atlassian-side URL).
+#
+# After saving the record, propagation typically completes in ≤ 5 min on
+# Cloudflare with TTL=Auto. Atlassian then auto-issues a TLS cert for
+# `status.corelink.dev` within ~15 min. Verify with:
+#   bash scripts/statuspage-init-verify.py
+# (from wave-25 dress-run).
+#
+# Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+
+# ------------------------------------------------------------------
+# Cloudflare DNS console — Add record
+# ------------------------------------------------------------------
+# Zone:        corelink.dev
+# Type:        CNAME
+# Name:        status
+# Target:      <statuspage-tenant>.statuspage.io
+# Proxy:       OFF (DNS-only, grey cloud)
+# TTL:         Auto
+# Comment:     "Statuspage tenant — wave-28 step-5 — see RB-STATUSPAGE-INIT.md §2"
+# ------------------------------------------------------------------
+
+# Why Proxy=OFF (CRITICAL):
+#   Atlassian Statuspage does NOT support being fronted by Cloudflare's
+#   reverse proxy. If the orange-cloud (proxy) is enabled:
+#     - Atlassian's automated TLS-cert issuance will FAIL because the
+#       ACME HTTP-01 / TLS-ALPN-01 challenge is intercepted by
+#       Cloudflare's edge.
+#     - Custom-domain validation in the Statuspage admin UI will hang
+#       indefinitely.
+#   Always confirm the cloud icon is GREY (DNS-only) before saving.
+
+# Why TTL=Auto on Cloudflare:
+#   Cloudflare "Auto" = 300s (5 min) when proxy is OFF. This matches
+#   the wave-24 runbook §2.5 standard. For non-Cloudflare providers
+#   that don't expose an Auto mode (Route 53, Google Cloud DNS,
+#   AWS Route 53, Azure DNS, Linode DNS), use TTL = 300 explicitly.
+
+# Zone-file equivalent (BIND format) — for operators using
+# Terraform / DNSControl / OctoDNS to manage the zone declaratively:
+#
+#   status.corelink.dev.   300   IN   CNAME   <statuspage-tenant>.statuspage.io.
+#
+# Trailing dots are required; semicolons begin comments in BIND.
+
+# Verification curl sequence (post-propagation):
+#
+#   # 1. DNS resolves to *.statuspage.io
+#   dig +short CNAME status.corelink.dev
+#
+#   # 2. HTTPS responds with HTTP 200 and the right page URL
+#   curl -sI https://status.corelink.dev | head -3
+#   curl -s https://status.corelink.dev/api/v2/summary.json \
+#     | jq '.page.url'
+#
+#   # 3. Subscription channels resolve
+#   curl -s https://status.corelink.dev/history.rss | head -3
+#   curl -s https://status.corelink.dev/history.atom | head -3
+#
+# Expected:
+#   - dig: prints `<statuspage-tenant>.statuspage.io.`
+#   - curl HEAD: HTTP/2 200, server: `Cowboy` (Atlassian's stack)
+#   - summary.json: `.page.url == "https://status.corelink.dev"`
+#   - RSS/Atom: valid XML root element
+#
+# If ANY of the above fails:
+#   1. Re-check the Cloudflare record (proxy OFF, exact target string).
+#   2. Wait up to 15 min for Atlassian TLS issuance.
+#   3. Escalate per `specs/_runbooks/STATUSPAGE-INIT.md` §4 GA-cutover
+#      gate (the gate is binary; manual fallback is NOT acceptable).
+
+# Cross-references:
+#   - Source-of-truth runbook: `specs/_runbooks/STATUSPAGE-INIT.md` §2 step 4
+#   - Bootstrap script: `scripts/admin/statuspage-bootstrap.sh`
+#   - Verify script (wave-25): `scripts/statuspage-init-verify.py`
+#   - Quickstart: `docs/internal/statuspage-tenant-signup-quickstart.md`
