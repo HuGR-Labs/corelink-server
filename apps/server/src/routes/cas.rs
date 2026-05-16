@@ -1,4 +1,4 @@
-//! `GET /v1/cas/{tenant}/{hash}` — CAS read route wired against
+//! `GET /v1/cas/:tenant/:hash` — CAS read route wired against
 //! [`corelink_handler_cas::CasReadHandler`].
 //!
 //! This is the **example end-to-end wire-up** demonstrating how the
@@ -41,8 +41,14 @@ use corelink_handler_cas::{
     InMemoryCasHandler, InMemorySliObserver,
 };
 
-/// Canonical CAS read route path (axum-style `{name}` captures).
-pub const CAS_READ_ROUTE: &str = "/v1/cas/{tenant}/{hash}";
+/// Canonical CAS read route path (matchit-0.7 / axum-0.7 `:name` captures).
+///
+/// MUST use the `:name` form — matchit 0.7.3 (the version transitively
+/// pinned via `axum = "0.7"`) parses `{name}` as **literal path bytes**
+/// rather than a capture, which would silently route every real request
+/// to a router-level 404. This was DEBT-029 (closed wave-30 stream-1)
+/// on `ac.rs` + `admin.rs`; DEBT-029-cas closes the same surface here.
+pub const CAS_READ_ROUTE: &str = "/v1/cas/:tenant/:hash";
 
 /// Shared route state.
 #[derive(Clone)]
@@ -100,7 +106,7 @@ pub fn router(state: CasRouteState) -> Router {
         .with_state(state)
 }
 
-/// `GET /v1/cas/{tenant}/{hash}` handler.
+/// `GET /v1/cas/:tenant/:hash` handler.
 ///
 /// For demonstration purposes the route reads the tenant as both
 /// the path tenant and the caller's authenticated tenant. Production
@@ -170,7 +176,22 @@ mod tests {
 
     #[test]
     fn route_constant_matches_canonical_path() {
-        assert_eq!(CAS_READ_ROUTE, "/v1/cas/{tenant}/{hash}");
+        assert_eq!(CAS_READ_ROUTE, "/v1/cas/:tenant/:hash");
+    }
+
+    #[test]
+    fn route_constant_uses_matchit_0_7_colon_syntax_not_curly_braces() {
+        // DEBT-029-cas regression net: matchit 0.7.3 parses `{name}`
+        // as LITERAL path bytes, not a capture. Any reintroduction of
+        // the `{name}` form would silently route every real request
+        // to a router-level 404. Pin both the absence of `{` and the
+        // presence of `:tenant` + `:hash` so renames don't drift.
+        assert!(
+            !CAS_READ_ROUTE.contains('{'),
+            "CAS_READ_ROUTE must use matchit-0.7 `:name` syntax, not `{{name}}`"
+        );
+        assert!(CAS_READ_ROUTE.contains(":tenant"));
+        assert!(CAS_READ_ROUTE.contains(":hash"));
     }
 
     #[test]
