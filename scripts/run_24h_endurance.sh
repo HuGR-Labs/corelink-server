@@ -3,6 +3,7 @@
 #
 # Usage:
 #   scripts/run_24h_endurance.sh smoke            # 30s local smoke (default)
+#   scripts/run_24h_endurance.sh dressrun         # 10min wave-25 dress-run
 #   scripts/run_24h_endurance.sh nightly          # 2h CI variant
 #   scripts/run_24h_endurance.sh full             # 24h manual drill (PD-paged)
 #
@@ -43,6 +44,17 @@ case "$MODE" in
     export K6_AUTH_BEARER="${K6_AUTH_BEARER:-stub-staging-pat}"
     export K6_ENDURANCE_CONFIRM="${K6_ENDURANCE_CONFIRM:-no}"
     ;;
+  dressrun)
+    # Wave-25 dress-run: exercises the 10-min profile (2 + 6 + 2) at
+    # 100 RPS against a local in-memory mock or cargo-run binary.
+    # NOT a substitute for the 24h drill — purpose is to validate the
+    # harness + analyzer plumbing end-to-end.
+    export DURATION="${DURATION:-10min}"
+    export K6_PROFILE="${K6_PROFILE:-10min}"
+    export K6_TARGET_HOST="${K6_TARGET_HOST:-http://127.0.0.1:8787}"
+    export K6_AUTH_BEARER="${K6_AUTH_BEARER:-stub-staging-pat}"
+    export K6_ENDURANCE_CONFIRM="${K6_ENDURANCE_CONFIRM:-no}"
+    ;;
   nightly)
     export DURATION="2h"
     export K6_ENDURANCE_CONFIRM="yes"
@@ -60,7 +72,7 @@ case "$MODE" in
     fi
     ;;
   *)
-    echo "usage: $0 {smoke|nightly|full}" >&2
+    echo "usage: $0 {smoke|dressrun|nightly|full}" >&2
     exit 64
     ;;
 esac
@@ -91,16 +103,22 @@ if command -v curl >/dev/null 2>&1; then
 fi
 
 if [[ "$PREFLIGHT_OK" == "0" ]]; then
-  if [[ "$MODE" == "smoke" ]]; then
-    echo "[run_24h_endurance] target unreachable; smoke run reports red[unreachable]." >&2
+  if [[ "$MODE" == "smoke" || "$MODE" == "dressrun" ]]; then
+    echo "[run_24h_endurance] target unreachable; $MODE run reports red[unreachable]." >&2
     {
       echo "preflight=unreachable"
-      echo "smoke=red[unreachable]"
+      echo "$MODE=red[unreachable]"
     } > "$RESULTS_DIR/smoke-status.txt"
     cat > "$RESULTS_DIR/k6-summary.json" <<EOF
-{"preflight":"unreachable","mode":"smoke","duration":"$DURATION","target":"$K6_TARGET_HOST"}
+{"preflight":"unreachable","mode":"$MODE","duration":"$DURATION","target":"$K6_TARGET_HOST"}
 EOF
-    echo "[run_24h_endurance] DONE (smoke unreachable; harness wiring still verifiable)"
+    echo "[run_24h_endurance] DONE ($MODE unreachable; harness wiring still verifiable)"
+    # Still run the analyzer so the verdict path is exercised.
+    if [[ -x "$SCRIPT_DIR/analyze_endurance_run.py" ]]; then
+      python3 "$SCRIPT_DIR/analyze_endurance_run.py" \
+        --run-dir "$RESULTS_DIR" \
+        --out "$RESULTS_DIR/analysis.md" || true
+    fi
     exit 0
   fi
   echo "[fatal] target $K6_TARGET_HOST unreachable for non-smoke mode." >&2
