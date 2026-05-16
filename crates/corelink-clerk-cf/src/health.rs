@@ -372,6 +372,35 @@ pub async fn main(
         Err(e) => return worker::Response::error(format!("wiring: {e}"), 500),
     };
 
+    // Wave-26 prefetch wire — populate the per-request
+    // `D1TenantConfigStore` cache + resolve the analytics-shadow region
+    // BEFORE any synchronous `ShadowSinkFactory::for_tenant` dispatch.
+    // On resolver failure we fail-CLOSED with HTTP 503 + emit a
+    // `tenant_region_unresolved` audit row (NOT a silent fallback to
+    // `Region::Iad`). The prelude is held alongside `bindings` for the
+    // duration of the request so downstream handler-chain code can
+    // branch on `prelude.region` without re-resolving.
+    //
+    // When the `tenant-region-real` feature is OFF the prefetch step
+    // compiles away — the `/health` handler ships its legacy behaviour
+    // unchanged (no analytics shadow region branching).
+    #[cfg(feature = "tenant-region-real")]
+    let _prelude = match crate::prod_wiring::prefetch_request_prelude(
+        tenant.clone(),
+        &bindings.d1,
+        &bindings.audit,
+        corelink_audit_chain::Region::Iad,
+    )
+    .await
+    {
+        Ok(p) => p,
+        Err(e) => {
+            // Audit row was already emitted by `prefetch_request_prelude`
+            // through the shared `AuditSink::emit_synthetic` path.
+            return worker::Response::error(format!("tenant_region_unresolved: {e}"), 503);
+        }
+    };
+
     let now = worker::js_sys::Date::new_0()
         .to_iso_string()
         .as_string()
