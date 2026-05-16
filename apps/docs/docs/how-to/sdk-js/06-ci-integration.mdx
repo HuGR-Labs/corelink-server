@@ -49,7 +49,7 @@ try {
 
 ```yaml
 build:
-  image: node:20
+  image: node:22
   variables:
     CORELINK_PAT: $CORELINK_PAT  # masked CI variable
   script:
@@ -64,7 +64,7 @@ version: 2.1
 jobs:
   build:
     docker:
-      - image: cimg/node:20.11
+      - image: cimg/node:22.11
     environment:
       CORELINK_PAT: $CORELINK_PAT
     steps:
