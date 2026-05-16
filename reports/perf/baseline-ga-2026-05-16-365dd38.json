@@ -3,9 +3,7 @@
   "benches_executed_end_to_end": [
     "corelink-tenant-path::derive_prefix_v2",
     "corelink-hash::blake3",
-    "corelink-audit-chain::jcs_canonicalize"
-  ],
-  "benches_pending_recapture": [
+    "corelink-audit-chain::jcs_canonicalize",
     "corelink-tenant-path::derive",
     "corelink-hash::blake3_bench",
     "corelink-audit-chain::merkle_append",
@@ -15,10 +13,15 @@
     "corelink-tier-selection::select",
     "corelink-stripe-real::webhook_verify"
   ],
+  "benches_pending_recapture": [],
   "captured_at": "2026-05-16T13:45:35Z",
   "commit": "365dd38a3f575ca35c123bfa1385f2ca083d3072",
   "commit_short": "365dd38",
-  "measurement_mode": "criterion --quick (laptop wall-clock budget); CI canonical refresh per \u00a75",
+  "measurement_mode": "criterion --quick (laptop wall-clock budget); CI canonical refresh per §5",
+  "recapture_audit_doc": "specs/_audits/2026-05-16-perf-benches-recapture.md",
+  "recapture_captured_at": "2026-05-16T14:38:37Z",
+  "recapture_commit": "04f2dffe",
+  "recapture_stream": "wave-30 stream-5 perf-benches-recapture",
   "rows": [
     {
       "bench": "derive_prefix_v2",
@@ -83,10 +86,220 @@
           "median_ns": 18754.700744628906
         }
       ]
+    },
+    {
+      "bench": "derive",
+      "crate": "corelink-tenant-path",
+      "criterion_group": "derive_prefix",
+      "criticality": "CRITICAL",
+      "measurements": [
+        {
+          "input": "derive_prefix",
+          "mean_ns": 1666.5,
+          "median_ns": 1666.5,
+          "p99_proxy_ns": 1682.3
+        }
+      ],
+      "recapture_source": "wave-30 stream-5"
+    },
+    {
+      "bench": "blake3_bench",
+      "crate": "corelink-hash",
+      "criterion_group": "Digest::compute",
+      "criticality": "CRITICAL",
+      "measurements": [
+        {
+          "input": "1 KiB",
+          "mean_ns": 1249.3,
+          "median_ns": 1249.3,
+          "p99_proxy_ns": 1257.3
+        },
+        {
+          "input": "64 KiB",
+          "mean_ns": 27746.0,
+          "median_ns": 27746.0,
+          "p99_proxy_ns": 27766.0
+        },
+        {
+          "input": "1024 KiB",
+          "mean_ns": 523770.0,
+          "median_ns": 523770.0,
+          "p99_proxy_ns": 529030.0
+        },
+        {
+          "input": "5120 KiB",
+          "mean_ns": 2365700.0,
+          "median_ns": 2365700.0,
+          "p99_proxy_ns": 2389500.0
+        },
+        {
+          "input": "VerifiedBody::new (1 MiB, ok)",
+          "mean_ns": 483550.0,
+          "median_ns": 483550.0,
+          "p99_proxy_ns": 485030.0
+        },
+        {
+          "input": "Digest::verify_constant_time",
+          "mean_ns": 98.459,
+          "median_ns": 98.459,
+          "p99_proxy_ns": 98.919
+        }
+      ],
+      "recapture_source": "wave-30 stream-5"
+    },
+    {
+      "bench": "merkle_append",
+      "crate": "corelink-audit-chain",
+      "criterion_group": "audit_chain",
+      "criticality": "CRITICAL",
+      "measurements": [
+        {
+          "input": "append_single",
+          "mean_ns": 19694.0,
+          "median_ns": 19694.0,
+          "p99_proxy_ns": 19717.0
+        },
+        {
+          "input": "append_10k/sequential",
+          "mean_ns": 292990000.0,
+          "median_ns": 292990000.0,
+          "p99_proxy_ns": 295080000.0
+        }
+      ],
+      "recapture_source": "wave-30 stream-5"
+    },
+    {
+      "bench": "accept_and_verify_jwt",
+      "crate": "corelink-dpa-acceptance",
+      "criterion_group": "dpa",
+      "criticality": "CRITICAL",
+      "measurements": [
+        {
+          "input": "accept_rs256_sign",
+          "mean_ns": 760770.0,
+          "median_ns": 760770.0,
+          "p99_proxy_ns": 767750.0
+        },
+        {
+          "input": "verify_receipt_rs256",
+          "mean_ns": 46630.0,
+          "median_ns": 46630.0,
+          "p99_proxy_ns": 46799.0
+        }
+      ],
+      "recapture_source": "wave-30 stream-5"
+    },
+    {
+      "bench": "envelope_roundtrip",
+      "crate": "corelink-byok",
+      "criterion_group": "byok",
+      "criticality": "NON_CRITICAL",
+      "measurements": [
+        {
+          "input": "wrap_dek",
+          "mean_ns": 15237.0,
+          "median_ns": 15237.0,
+          "p99_proxy_ns": 15332.0
+        },
+        {
+          "input": "unwrap_dek",
+          "mean_ns": 1631.8,
+          "median_ns": 1631.8,
+          "p99_proxy_ns": 1640.7
+        },
+        {
+          "input": "wrap_unwrap_roundtrip",
+          "mean_ns": 17757.0,
+          "median_ns": 17757.0,
+          "p99_proxy_ns": 17780.0
+        }
+      ],
+      "recapture_source": "wave-30 stream-5"
+    },
+    {
+      "bench": "orchestrator",
+      "crate": "corelink-signup",
+      "criterion_group": "signup",
+      "criticality": "NON_CRITICAL",
+      "measurements": [
+        {
+          "input": "provision_new",
+          "mean_ns": 41626.0,
+          "median_ns": 41626.0,
+          "p99_proxy_ns": 41920.0
+        },
+        {
+          "input": "provision_idempotent_replay",
+          "mean_ns": 4343.2,
+          "median_ns": 4343.2,
+          "p99_proxy_ns": 4512.0
+        }
+      ],
+      "recapture_source": "wave-30 stream-5"
+    },
+    {
+      "bench": "select",
+      "crate": "corelink-tier-selection",
+      "criterion_group": "tier_selection",
+      "criticality": "NON_CRITICAL",
+      "measurements": [
+        {
+          "input": "select_free",
+          "mean_ns": 5268.3,
+          "median_ns": 5268.3,
+          "p99_proxy_ns": 5312.5
+        },
+        {
+          "input": "select_starter",
+          "mean_ns": 10272.0,
+          "median_ns": 10272.0,
+          "p99_proxy_ns": 10766.0
+        }
+      ],
+      "recapture_source": "wave-30 stream-5"
+    },
+    {
+      "bench": "webhook_verify",
+      "crate": "corelink-stripe-real",
+      "criterion_group": "stripe_webhook",
+      "criticality": "NON_CRITICAL",
+      "measurements": [
+        {
+          "input": "verify/256B",
+          "mean_ns": 3885.1,
+          "median_ns": 3885.1,
+          "p99_proxy_ns": 3961.6
+        },
+        {
+          "input": "verify/1024B",
+          "mean_ns": 12367.0,
+          "median_ns": 12367.0,
+          "p99_proxy_ns": 12704.0
+        },
+        {
+          "input": "verify/4096B",
+          "mean_ns": 26599.0,
+          "median_ns": 26599.0,
+          "p99_proxy_ns": 27152.0
+        },
+        {
+          "input": "verify/16384B",
+          "mean_ns": 87600.0,
+          "median_ns": 87600.0,
+          "p99_proxy_ns": 89896.0
+        },
+        {
+          "input": "compute_signature_4KiB",
+          "mean_ns": 24690.0,
+          "median_ns": 24690.0,
+          "p99_proxy_ns": 25506.0
+        }
+      ],
+      "recapture_source": "wave-30 stream-5"
     }
   ],
-  "stream": "wave-29 stream-9 perf-baseline-ga-freeze",
+  "stream": "wave-29 stream-9 perf-baseline-ga-freeze + wave-30 stream-5 perf-benches-recapture",
   "supersedes_tag": "perf-baseline-pre-ga-2026-05-16",
   "tag": "perf-baseline-ga-2026-05-16",
-  "wave22_predecessor_state": "all 11 baselines pending (median_ns null) \u2014 schema-current, numeric-net-new"
+  "wave22_predecessor_state": "all 11 baselines pending (median_ns null) — schema-current, numeric-net-new"
 }
