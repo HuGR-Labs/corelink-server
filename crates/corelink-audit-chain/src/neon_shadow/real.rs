@@ -436,12 +436,26 @@ impl RealNeonShadowSink {
         }
     }
 
-    /// Helper: emit a shadow-sync audit row without short-circuiting
-    /// on emit failure (audit-of-audit fail-CLOSED ordering — emit
-    /// BEFORE the txn aborts so the analytics-lag pager fires even
-    /// when the audit sink itself is flapping).
-    fn emit_audit(&self, row: ShadowSyncAuditRow) {
-        let _ = self.audit_sink.emit(row);
+    /// Helper: emit a shadow-sync audit row, lifting an audit-sink
+    /// rejection to [`NeonShadowError::AuditEmitFailed`].
+    ///
+    /// Wave-21 (B-P1-02 closure): the wave-18 helper discarded the
+    /// emit result via `let _ = ...`. On a paired audit-sink-down +
+    /// cross-tenant attempt the SEV-2 anchor the security team
+    /// subscribes to silently vanished. The wave-20 SQL `WITH CHECK`
+    /// constraint is the structural backstop; this helper closes the
+    /// trait-level gap so the route layer sees the failure and can
+    /// translate to a 503 + SEV-1 alert.
+    ///
+    /// Ordering note: the helper is still called BEFORE the original
+    /// violation `Err(_)` is returned, so the SEV-2 audit row lands on
+    /// the happy path. Only an audit-pipeline failure escalates to
+    /// `AuditEmitFailed` (SEV-1 > SEV-2 in the operator response
+    /// matrix).
+    fn emit_audit(&self, row: ShadowSyncAuditRow) -> Result<(), NeonShadowError> {
+        self.audit_sink
+            .emit(row)
+            .map_err(NeonShadowError::AuditEmitFailed)
     }
 
     /// Constant-time tenant id comparison via `subtle::ConstantTimeEq`.
@@ -533,7 +547,7 @@ impl NeonShadowSink for RealNeonShadowSink {
                 observed_lag_ms: 0,
                 failure_reason: "tenant isolation violation".to_string(),
                 sev: "sev-2",
-            });
+            })?;
             return Err(NeonShadowError::TenantIsolationViolation {
                 sink_tenant: self.tenant_id.to_string(),
                 sink_tenant_redacted: redact_tenant_uuid(&self.tenant_id),
@@ -552,7 +566,7 @@ impl NeonShadowSink for RealNeonShadowSink {
                     observed_lag_ms: 0,
                     failure_reason: "row tenant isolation violation".to_string(),
                     sev: "sev-2",
-                });
+                })?;
                 return Err(NeonShadowError::TenantIsolationViolation {
                     sink_tenant: self.tenant_id.to_string(),
                     sink_tenant_redacted: redact_tenant_uuid(&self.tenant_id),
@@ -570,7 +584,7 @@ impl NeonShadowSink for RealNeonShadowSink {
                     observed_lag_ms: 0,
                     failure_reason: "row residency violation".to_string(),
                     sev: "sev-2",
-                });
+                })?;
                 return Err(NeonShadowError::ResidencyViolation {
                     sink_region: self.region.as_str(),
                     observed_region: row.region.as_str(),
@@ -597,7 +611,7 @@ impl NeonShadowSink for RealNeonShadowSink {
                 observed_lag_ms,
                 failure_reason: format!("BEGIN failed: {}", e),
                 sev: "sev-2",
-            });
+            })?;
             return Err(e.into());
         }
         if let Err(e) = self.executor.execute(
@@ -613,7 +627,7 @@ impl NeonShadowSink for RealNeonShadowSink {
                 observed_lag_ms,
                 failure_reason: format!("set_config failed: {}", e),
                 sev: "sev-2",
-            });
+            })?;
             return Err(e.into());
         }
 
@@ -642,7 +656,7 @@ impl NeonShadowSink for RealNeonShadowSink {
                     observed_lag_ms,
                     failure_reason: format!("INSERT failed at seq={}: {}", row.seq, e),
                     sev: "sev-2",
-                });
+                })?;
                 return Err(e.into());
             }
         }
@@ -658,7 +672,7 @@ impl NeonShadowSink for RealNeonShadowSink {
                 observed_lag_ms,
                 failure_reason: format!("COMMIT failed: {}", e),
                 sev: "sev-2",
-            });
+            })?;
             return Err(e.into());
         }
 
@@ -677,7 +691,7 @@ impl NeonShadowSink for RealNeonShadowSink {
             observed_lag_ms,
             failure_reason: String::new(),
             sev,
-        });
+        })?;
 
         Ok(ShadowSyncReceipt {
             tenant_id: self.tenant_id,
@@ -1134,6 +1148,36 @@ mod tests {
         assert!(matches!(err, NeonShadowError::Backend(_)));
         let snap = audit.snapshot().expect("snap");
         assert_eq!(snap[0].event_type, EVENT_TYPE_SHADOW_SYNC_FAILED);
+    }
+
+    /// Audit sink that always rejects emits — drives the wave-21
+    /// `AuditEmitFailed` lift exercised by
+    /// `real_neon_sink_propagates_audit_emit_failure`.
+    #[derive(Debug, Default)]
+    struct AlwaysFailAuditSink;
+
+    impl ShadowSyncAuditSink for AlwaysFailAuditSink {
+        fn emit(&self, _row: ShadowSyncAuditRow) -> Result<(), &'static str> {
+            Err("synthetic audit-emit failure")
+        }
+    }
+
+    #[test]
+    fn real_neon_sink_propagates_audit_emit_failure() {
+        // Wave-21 (B-P1-02 closure): `RealNeonShadowSink.sync_chunk` no
+        // longer swallows audit-emit failures via `let _ = ...`. On a
+        // happy-path Neon sync where the audit pipeline is down the
+        // sink surfaces `NeonShadowError::AuditEmitFailed` so the route
+        // layer can translate to 503 + SEV-1.
+        let tenant = Uuid::now_v7();
+        let exec = Arc::new(InMemoryExecutor::new());
+        let audit: Arc<dyn ShadowSyncAuditSink> = Arc::new(AlwaysFailAuditSink);
+        let sink = RealNeonShadowSink::new(tenant, Region::Iad, exec, audit);
+        let rows = vec![dummy_row(tenant, Region::Iad, 0, 1_000, "x")];
+        let err = sink
+            .sync_chunk(&dummy_receipt(tenant, 0, 0), &rows, 2_000)
+            .expect_err("audit emit failure must propagate");
+        assert!(matches!(err, NeonShadowError::AuditEmitFailed(_)));
     }
 
     #[test]

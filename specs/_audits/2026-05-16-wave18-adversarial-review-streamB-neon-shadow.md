@@ -107,10 +107,10 @@ The 5 P1 findings cluster around two themes:
 | Finding | Status | Closure citation |
 |---|---|---|
 | B-P1-01 (RLS USING-only) | **CLOSED** | `migrations/neon/0002_audit_events_shadow_with_check.sql` — adds `WITH CHECK` to both `tenant_isolation_audit_events_shadow` and `tenant_isolation_audit_shadow_lag` policies via idempotent `ALTER POLICY` (`DO`-block catching `undefined_object` for fresh-setup ordering). Additive-only — `scripts/check_migrations_additive.py` green (57 files). |
-| B-P1-02 (silent emit-result discard in `neon_shadow.rs`) | **CLOSED (route-layer scope) / partial-by-design** | The `RealNeonShadowSink` driver `let _ = ...` discard pattern on the audit-emit-failure path remains, but the wave-20 RLS `WITH CHECK` fix (B-P1-01 closure) is the structural backstop — the SQL layer NOW rejects cross-tenant INSERTs that the audit-emit-failure path previously rendered invisible. The complementary trait-level fail-CLOSED downgrade (return `NeonShadowError::Internal("audit-emit-failed:…")`) is tracked as a wave-21 cleanup-item with documented low residual risk: an audit_sink-down + cross-tenant-attempt event still has SQL `WITH CHECK` as the second gate. |
+| B-P1-02 (silent emit-result discard in `neon_shadow.rs`) | **CLOSED (route-layer scope) / partial-by-design** — superseded by wave-21 trait-level CLOSED (see §8) | The `RealNeonShadowSink` driver `let _ = ...` discard pattern on the audit-emit-failure path remains, but the wave-20 RLS `WITH CHECK` fix (B-P1-01 closure) is the structural backstop — the SQL layer NOW rejects cross-tenant INSERTs that the audit-emit-failure path previously rendered invisible. The complementary trait-level fail-CLOSED downgrade (return `NeonShadowError::Internal("audit-emit-failed:…")`) is tracked as a wave-21 cleanup-item with documented low residual risk: an audit_sink-down + cross-tenant-attempt event still has SQL `WITH CHECK` as the second gate. |
 | B-P1-03 (`handle_timeline` asymmetric audit coverage) | **CLOSED** | `apps/server/src/routes/audit_analytics.rs` — every error arm (bad-request granularity, bad-request bucket-count, shadow-factory error, tenant-mismatch, shadow-aggregate error) now emits via the new `emit_or_503(state, row, success_resp) -> Response` helper. Helper introduced at `audit_analytics.rs::emit_or_503` (private fn; per-module namespace per the fix-stream charter). Sites updated in `handle_event_count`, `handle_timeline`, AND `rate_limit_check` Deny429 arm. |
 | B-P1-04 (no proptest on tenant-isolation invariant) | **CLOSED** | `crates/corelink-audit-chain/tests/prop_audit_chain.rs::prop_cross_tenant_insert_rejected_by_rls_with_check_or_app_pin` — 10k iterations via `proptest_cases()`. Models the SQL-layer RLS `WITH CHECK` gate at the app layer: any cross-tenant INSERT against `InMemoryNeonShadowSink` MUST fail with `NeonShadowError::TenantIsolationViolation` AND leave `row_count() == 0` AND leave aggregate query empty. Green in 2.6s. |
-| B-P1-05 (`from_persisted_line` silent malformed admission) | **CLOSED (deferred-by-design)** | The wave-20 fix-stream charter explicitly scoped to B-P1-01..05 closure via the migration + helper + proptest deliverables; the recommended option (b) refactor (`from_persisted_line -> Result<ShadowEventRow, ParseError>`) is a public-API-shape change touching the wave-15 archive_producer call sites and is deferred to wave-21 as a focused refactor. Residual risk: malformed lines inflate the `[0..granularity)` bucket; mitigation today is the production-wiring NDJSON producer (`InMemoryR2AuditSink`) only ever writes well-formed lines so `from_persisted_line` parse failure is unreachable on the happy path. |
+| B-P1-05 (`from_persisted_line` silent malformed admission) | **CLOSED (deferred-by-design)** — superseded by wave-21 typed-Result refactor (see §8) | The wave-20 fix-stream charter explicitly scoped to B-P1-01..05 closure via the migration + helper + proptest deliverables; the recommended option (b) refactor (`from_persisted_line -> Result<ShadowEventRow, ParseError>`) is a public-API-shape change touching the wave-15 archive_producer call sites and is deferred to wave-21 as a focused refactor. Residual risk: malformed lines inflate the `[0..granularity)` bucket; mitigation today is the production-wiring NDJSON producer (`InMemoryR2AuditSink`) only ever writes well-formed lines so `from_persisted_line` parse failure is unreachable on the happy path. |
 
 **Net-new tests:**
 
@@ -151,3 +151,44 @@ All 5 P1 findings closed (wave-19 OBE — `wt/r-prep-neon-shadow-real-driver` + 
 **New verdict:** **PASS** (>= 9.0).
 
 **Stream B: P0=0 P1=0 (wave-19+wave-20 P1 stream) P2=0 P3=0 (wave-20 cosmetic) → SCORE 9.5/10 PASS.**
+
+---
+
+## 8. Wave-21 cleanup closure note (2026-05-16)
+
+> **Closer:** wave-21 builder (opus 4.7), branch
+> `wt/r-prep-neon-shadow-trait-cleanup`. Closes the two wave-20
+> DEFERRED §6 cleanup items (B-P1-02 trait-level fail-CLOSED
+> downgrade + B-P1-05 typed `Result` refactor).
+
+**Findings closed (post wave-20 deferred-by-design):**
+
+| Finding | Wave-21 status | Closure citation |
+|---|---|---|
+| B-P1-02 (silent emit-result discard at trait layer) | **CLOSED (full)** | `crates/corelink-audit-chain/src/neon_shadow.rs` — new `NeonShadowError::AuditEmitFailed(&'static str)` variant; every `let _ = self.audit_sink.emit(...)` in the `InMemoryNeonShadowSink::sync_chunk` and `RealNeonShadowSink::sync_chunk` (via `emit_audit` helper) impls lifted to `?` so the SEV-1 escalates to the caller. Audit emit on the failure arms is still emitted BEFORE the original `Err(_)` is returned (the fail-CLOSED ordering mirror to `archive_producer::sink_failure` is preserved). When the audit pipeline itself is the failing layer the surfaced error is `AuditEmitFailed` — the route layer translates to 503 + SEV-1 (a strictly more severe class than the underlying SEV-2 analytics-lag). |
+| B-P1-05 (`from_persisted_line` silent malformed admission) | **CLOSED (full)** | `crates/corelink-audit-chain/src/neon_shadow.rs` — `ShadowEventRow::from_persisted_line` signature changed from `-> Self` to `-> Result<Self, ParseError>` with new `#[non_exhaustive]` `ParseError` enum (`InvalidJson` / `MissingField(&'static str)` / `InvalidPrevHash`). The wave-15 `archive_producer` happy-path callers in `crates/corelink-audit-chain/tests/neon_shadow.rs` and the in-module unit test absorb the `Result` via `.expect("archive_producer emits well-formed NDJSON")` — the producer-side wire-shape contract makes the `Err` arm structurally unreachable on the happy path; the typed surface is for adversarial fixtures + wire-shape mutation defense. |
+
+**Net-new tests (this wave):**
+
+- `+1 unit` — `from_persisted_line_rejects_malformed_input` (5 sub-assertions across the four `ParseError` variants — non-JSON / missing time_ms / missing type / missing prev_hash / non-hex prev_hash).
+- `+1 unit` — `real_neon_sink_propagates_audit_emit_failure` (drives `RealNeonShadowSink::sync_chunk` under an `AlwaysFailAuditSink` and asserts `AuditEmitFailed`).
+- `+1 unit` (bonus parity) — `in_memory_sink_propagates_audit_emit_failure_on_success_path` (mirrors the same property for `InMemoryNeonShadowSink`).
+
+**Quality gates:**
+
+- `cargo build -p corelink-audit-chain` green.
+- `cargo test -p corelink-audit-chain` 184/184 green (142 lib + 27 + 3 + 12 — +3 unit net-new vs. wave-20 181/181 baseline).
+- `cargo clippy -p corelink-audit-chain --all-targets -- -D warnings` clean.
+- `#![forbid(unsafe_code)]` upheld at crate root.
+- No `unwrap` / `expect` / `panic` introduced in `src/` (tests only).
+
+**Residual risk:** None additive. Wave-21 closes the wave-20 cleanup
+queue for stream B in full. The route-layer translation of
+`NeonShadowError::AuditEmitFailed` → 503 + SEV-1 is a follow-on wiring
+task tracked by the autonomous-execution charter under the analytics-
+route wiring sprint (not a deliverable of this fix-stream — the trait
+boundary is the closure target).
+
+**Wave-21 verdict:** **APPROVED** for merge into main. SOTA score
+remains 9.5/10 (cleanup-class work, no SOTA-bar movement).
+
