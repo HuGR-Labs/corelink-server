@@ -54,3 +54,8 @@ jobs:
 
       - name: Check cost regression gate adoption
         run: python3 scripts/check_cost_regression.py
+
+      - name: GA-readiness DEFER drift detector (wave-25 advisory)
+        # Catches stale DEFER rows (e.g. GHA-billing / CI-offline framings)
+        # that contradict the `feedback_ci_local` stance. Exits 1 on drift.
+        run: python3 scripts/ga-readiness-defer-drift.py
