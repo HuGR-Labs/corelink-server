@@ -63,3 +63,18 @@ path = "tests/campaign_clerk_jwks_rotation_recovers.rs"
 [[test]]
 name = "campaign_cas_multipart_abort_cleanup"
 path = "tests/campaign_cas_multipart_abort_cleanup.rs"
+
+# Wave-23 combined-failure orchestrated scenarios — composed from the
+# wave-22 mini-models, asserting cross-failure interactions surfaced by
+# the wave-22 dress rehearsal.
+[[test]]
+name = "campaign_combined_partition_plus_byok_503"
+path = "tests/campaign_combined_partition_plus_byok_503.rs"
+
+[[test]]
+name = "campaign_combined_d1_exhaustion_plus_stripe_drift"
+path = "tests/campaign_combined_d1_exhaustion_plus_stripe_drift.rs"
+
+[[test]]
+name = "campaign_combined_neon_shadow_failure_plus_audit_export"
+path = "tests/campaign_combined_neon_shadow_failure_plus_audit_export.rs"
