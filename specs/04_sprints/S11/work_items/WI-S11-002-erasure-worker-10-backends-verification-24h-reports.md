@@ -377,6 +377,34 @@ Não — regulatory feature, sem A/B (multi-arm = compliance risk).
 > envelope. See `specs/_audits/2026-05-15-dsr-worker-production.md`
 > §5.6 for the canonical surface map.
 
+> **Wave-19 closure note (2026-05-15) — outcome rehydration ENABLED:**
+> wave-18 caveat #2 (`fetch_window_async` returns `Vec::new()` because
+> `dsr_erasure_log` stored per-(dsr_id, backend) tombstones, NOT full
+> `VerificationOutcome` snapshots) is CLOSED. Migration
+> `0051_dsr_erasure_log_outcome_json.sql` lands an additive
+> `ALTER TABLE dsr_erasure_log ADD COLUMN outcome_json TEXT NULL`
+> + a partial index `idx_dsr_erasure_log_outcome_json_present` on
+> `(tenant_id, completed_at DESC) WHERE outcome_json IS NOT NULL`.
+> The canonical [`CRON_OUTCOME_QUERY`] is rewritten from the
+> wave-18 `COUNT(DISTINCT dsr_id)` probe to a per-row
+> `SELECT outcome_json … WHERE outcome_json IS NOT NULL` projection.
+> `D1Wasm32RowSource::fetch_window_async` rehydrates each row via
+> `serde_json::from_str` into a `VerificationOutcome` (fail-CLOSED
+> via `D1RowSourceError::Parse` on malformed bytes). The writer
+> side is `ErasureIdempotencyLedger::set_outcome_snapshot` (new
+> trait method; default no-op for out-of-tree fakes) invoked by
+> `VerificationJob::run_24h_sweep` after each `VerifiedComplete` /
+> `VerifiedPartial` / `SlaBreached` decision. `VerificationOutcome`
+> picks up `Serialize` + `Deserialize` derives (additive — every
+> field already implements both). Round-trip discipline pinned by
+> the 10_000-iter property test
+> `prop_outcome_json_roundtrip::outcome_json_render_parse_roundtrip`
+> in `corelink-dsr-statuspage-scheduler`. Tenant-scope clause +
+> constant-time tenant-id bind verification + audit fail-CLOSED
+> envelope preserved verbatim. Charter constraints
+> (`#![forbid(unsafe_code)]`, no unwrap/expect/panic outside test,
+> `#[non_exhaustive]` on public enums) preserved.
+
 ### 6.1 Em escopo (exaustivo)
 
 1. NEW crate `crates/corelink-privacy-erasure-worker` (queue consumer + per-backend erase + verification).

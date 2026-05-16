@@ -49,3 +49,4 @@ worker = { version = "0.8", features = ["d1", "http"] }
 tokio = { workspace = true, features = ["macros", "rt"] }
 wiremock = "0.6"
 uuid = { workspace = true }
+proptest = { workspace = true }

@@ -93,13 +93,62 @@ pub trait ErasureIdempotencyLedger: Send + Sync + core::fmt::Debug {
         &self,
         dsr_id: Uuid,
     ) -> Result<Vec<BackendCompletion>, ErasureIdempotencyError>;
+
+    /// Wave-19: persist the canonical `outcome_json` snapshot column
+    /// against every tombstone row for `dsr_id`. The verification job
+    /// invokes this after it emits a `VerifiedComplete` /
+    /// `VerifiedPartial` / `SlaBreached` decision so the canonical
+    /// 24h cron read path
+    /// (`D1Wasm32RowSource::fetch_window_async`) can rehydrate the
+    /// `VerificationOutcome` from the canonical D1
+    /// `dsr_erasure_log.outcome_json` column (migration `0049`).
+    ///
+    /// The default implementation is a no-op so out-of-tree custom
+    /// ledgers (test fakes, alternate backends) keep compiling
+    /// without code change — wave-19 is purely additive on the trait
+    /// surface.
+    ///
+    /// # Errors
+    ///
+    /// - [`ErasureIdempotencyError::Backend`] for transport failures.
+    fn set_outcome_snapshot(
+        &self,
+        _dsr_id: Uuid,
+        _outcome_json: &str,
+    ) -> Result<(), ErasureIdempotencyError> {
+        Ok(())
+    }
+
+    /// Wave-19: read the canonical `outcome_json` snapshot column for
+    /// `dsr_id`. Returns `None` if no snapshot has been persisted yet
+    /// (legacy rows, pre-verification window). Used by the in-memory
+    /// fake's tests + by the wave-19 round-trip property test that
+    /// pins the serialize → store → fetch → deserialize discipline.
+    ///
+    /// The default implementation returns `None` so out-of-tree
+    /// custom ledgers keep compiling without code change.
+    ///
+    /// # Errors
+    ///
+    /// - [`ErasureIdempotencyError::Backend`] for transport failures.
+    fn get_outcome_snapshot(
+        &self,
+        _dsr_id: Uuid,
+    ) -> Result<Option<String>, ErasureIdempotencyError> {
+        Ok(None)
+    }
 }
 
 /// In-memory ledger. Cloning shares the underlying buffer so
 /// orchestrator + verifier can hold separate handles.
+///
+/// Wave-19 adds the `outcome_snapshots` map (canonical `outcome_json`
+/// snapshot column, keyed by `dsr_id`) — symmetric to the canonical
+/// D1 `dsr_erasure_log.outcome_json` column (migration `0049`).
 #[derive(Clone, Default, Debug)]
 pub struct InMemoryErasureIdempotencyLedger {
     inner: Arc<Mutex<HashMap<(Uuid, BackendKind), BackendCompletion>>>,
+    outcome_snapshots: Arc<Mutex<HashMap<Uuid, String>>>,
 }
 
 impl InMemoryErasureIdempotencyLedger {
@@ -178,6 +227,32 @@ impl ErasureIdempotencyLedger for InMemoryErasureIdempotencyLedger {
                 .unwrap_or(usize::MAX)
         });
         Ok(out)
+    }
+
+    fn set_outcome_snapshot(
+        &self,
+        dsr_id: Uuid,
+        outcome_json: &str,
+    ) -> Result<(), ErasureIdempotencyError> {
+        let mut guard = self.outcome_snapshots.lock().map_err(|_| {
+            ErasureIdempotencyError::Backend(
+                "outcome-snapshot mutex poisoned".to_string(),
+            )
+        })?;
+        guard.insert(dsr_id, outcome_json.to_owned());
+        Ok(())
+    }
+
+    fn get_outcome_snapshot(
+        &self,
+        dsr_id: Uuid,
+    ) -> Result<Option<String>, ErasureIdempotencyError> {
+        let guard = self.outcome_snapshots.lock().map_err(|_| {
+            ErasureIdempotencyError::Backend(
+                "outcome-snapshot mutex poisoned".to_string(),
+            )
+        })?;
+        Ok(guard.get(&dsr_id).cloned())
     }
 }
 

@@ -229,7 +229,24 @@ the canonical matrix (`docs/internal/secrets-checklist.md`):
 matrix rows grow to 118 (drift only on the matrix-only side, never
 code-only).
 
-### 5.6 Wave-17 closure — scheduler binding shipped; wave-18 closure — wasm32 real backend wired
+### 5.6 Wave-17 closure — scheduler binding shipped; wave-18 closure — wasm32 real backend wired; wave-19 closure — outcome rehydration ENABLED
+
+**Status (2026-05-15 wave-19):** outcome rehydration ENABLED. Wave-18
+shipped the real wasm32 D1 binding but
+`D1Wasm32RowSource::fetch_window_async` returned `Vec::new()` after a
+successful D1 probe because `dsr_erasure_log` (migration `0022`)
+stored per-(dsr_id, backend) tombstones — NOT full
+`VerificationOutcome` snapshots. Wave-19 lands migration `0049`
+(`ALTER TABLE dsr_erasure_log ADD COLUMN outcome_json TEXT NULL`)
+plus the symmetric reader-side rehydration path: the canonical
+[`CRON_OUTCOME_QUERY`] is rewritten from `COUNT(DISTINCT dsr_id)` to
+`SELECT outcome_json … WHERE outcome_json IS NOT NULL`;
+`fetch_window_async` parses each row via `serde_json::from_str` into
+a `VerificationOutcome` (fail-CLOSED via `D1RowSourceError::Parse`
+on malformed bytes). The writer-side is the
+`VerificationJob::run_24h_sweep` ledger
+`set_outcome_snapshot(dsr_id, json)` call — additive, default
+no-op on out-of-tree ledgers per the trait charter.
 
 **Status (2026-05-15 wave-18):** scheduler real backend wired wave-18.
 Wave-17 (commit `49901da` + `dd58b27`) shipped the publish scheduler

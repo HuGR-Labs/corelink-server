@@ -38,7 +38,7 @@
 //! - **Audit fence** — every prepare / bind / first / all emits an
 //!   audit row via the injected closure; fail-CLOSED on any reject.
 //!
-//! # Schema dependency — `outcome_json` snapshot column
+//! # Schema dependency — `outcome_json` snapshot column (wave-19 ENABLED)
 //!
 //! The canonical `dsr_erasure_log` D1 table (migration `0022`) carries
 //! one row PER (dsr_id, backend) tombstone — NOT one row per
@@ -46,43 +46,80 @@
 //! [`corelink_privacy_erasure_worker::VerificationOutcome`] from D1
 //! requires a snapshot column (`outcome_json TEXT NULL`) that the
 //! 24h verification job writes on each `VerifiedComplete` /
-//! `VerifiedPartial` / `SlaBreached` decision. That migration lands
-//! in a follow-up wave; wave-18 ships the **wired** D1 binding (proven
-//! via the canonical [`crate::CRON_OUTCOME_QUERY`] count read against
-//! the table) and the **async** entry point so the cron's hot path is
-//! end-to-end real wasm32 wiring from this commit forward.
+//! `VerifiedPartial` / `SlaBreached` decision.
 //!
-//! Until the `outcome_json` snapshot column lands, the row source
-//! returns an empty `Vec<VerificationOutcome>` after a successful D1
-//! probe. The scheduler-equivalent flow in `dsr_statuspage_cron` then
-//! emits the canonical `Skipped / EmptyWindow` audit (NOT the
-//! wave-17 `wasm32_real_binding_deferred` skip) — the binding IS
-//! real; the absence of rehydratable rows is a schema-state, not a
-//! deferred-wiring fact.
+//! **Wave-19 (migration `0049`):** the `outcome_json` column lands as
+//! an additive `ALTER TABLE ADD COLUMN` per the wave-19 closure note.
+//! [`CRON_OUTCOME_QUERY`] is rewritten to project `outcome_json` and
+//! [`D1Wasm32RowSource::fetch_window_async`] parses each row via
+//! `serde_json::from_str` into a [`VerificationOutcome`]. NULL rows
+//! (legacy, written pre-wave-19) are skipped — they will rotate out
+//! within the 24h sweep window as wave-19 forward rolls in.
+//!
+//! Parse failures on a non-NULL `outcome_json` value surface as
+//! [`D1RowSourceError::Parse`] (fail-CLOSED per the wave-17 trait
+//! contract).
 //!
 //! # Canonical SQL
 //!
 //! See [`CRON_OUTCOME_QUERY`].
 
-#[cfg(target_arch = "wasm32")]
 use corelink_privacy_erasure_worker::VerificationOutcome;
 #[cfg(target_arch = "wasm32")]
 use crate::row_source::D1RowSourceError;
 
-/// Canonical D1 SELECT executed by the wave-18 wasm32 row source.
+/// Canonical wave-19 `outcome_json` parser. Pure helper exposed at
+/// public visibility so the native test harness (proptest) can pin
+/// the round-trip discipline (serde derives) without requiring a
+/// wasm32 toolchain. Production callers reach this through
+/// [`D1Wasm32RowSource::fetch_window_async`].
 ///
-/// Returns a one-column projection (`row_count`) over the canonical
-/// `dsr_erasure_log` table filtered by tenant + the 24h `completed_at`
-/// window. The aggregation is intentionally a `COUNT(DISTINCT dsr_id)`
-/// — once the `outcome_json` snapshot column lands the SELECT switches
-/// to `SELECT outcome_json FROM ...` and the projection is rehydrated
-/// per row. The shape of the query is otherwise stable from wave-18
-/// forward.
+/// # Errors
+///
+/// Returns the `serde_json` error message as a `String` (wrapped at
+/// the call site into [`D1RowSourceError::Parse`]).
+pub fn parse_outcome_json(s: &str) -> Result<VerificationOutcome, String> {
+    serde_json::from_str::<VerificationOutcome>(s)
+        .map_err(|e| format!("outcome_json parse: {e}"))
+}
+
+/// Canonical wave-19 `outcome_json` serializer. Symmetric to
+/// [`parse_outcome_json`]; the verification job writer path
+/// (`corelink-privacy-erasure-worker`) renders the column value via
+/// this helper to keep the round-trip pinned in one place.
+///
+/// # Errors
+///
+/// Returns the `serde_json` error message as a `String`.
+pub fn render_outcome_json(outcome: &VerificationOutcome) -> Result<String, String> {
+    serde_json::to_string(outcome)
+        .map_err(|e| format!("outcome_json render: {e}"))
+}
+
+/// Canonical row shape projected by [`CRON_OUTCOME_QUERY`]. One field
+/// — the `outcome_json` snapshot column (migration `0049`). The SQL
+/// filters out NULL rows so the field is non-Option at the typed
+/// boundary; a NULL slipping through (would only happen on a future
+/// SQL drift) parses as a `D1RowSourceError::Parse` fail-CLOSED at
+/// the call site.
+#[cfg(target_arch = "wasm32")]
+#[derive(serde::Deserialize)]
+struct OutcomeJsonRow {
+    outcome_json: String,
+}
+
+/// Canonical D1 SELECT executed by the wave-19 wasm32 row source.
+///
+/// Returns the `outcome_json` snapshot column projection (migration
+/// `0049`) over the canonical `dsr_erasure_log` table filtered by
+/// tenant + the 24h `completed_at` window. NULL `outcome_json` rows
+/// (legacy, pre-wave-19) are filtered out at the SQL layer — the cron
+/// must only re-hydrate canonical `VerificationOutcome` snapshots.
 ///
 /// The query MUST carry `WHERE tenant_id = ?` verbatim — the wave-14
 /// `TenantScopedQuery` validator rejects any SELECT that does not.
 pub const CRON_OUTCOME_QUERY: &str =
-    "SELECT COUNT(DISTINCT dsr_id) AS row_count FROM dsr_erasure_log WHERE tenant_id = ? AND completed_at >= ?";
+    "SELECT outcome_json FROM dsr_erasure_log WHERE tenant_id = ? AND completed_at >= ? AND outcome_json IS NOT NULL";
 
 /// wasm32 D1 row source for the DSR Statuspage publish cron.
 ///
@@ -125,7 +162,7 @@ impl D1Wasm32RowSource {
     /// timestamp falls in the half-open 24h window starting at
     /// `window_start_unix_s`.
     ///
-    /// # Wave-18 semantics
+    /// # Wave-19 semantics
     ///
     /// 1. Build the canonical [`CRON_OUTCOME_QUERY`] via
     ///    `CfD1DatabaseReal::scoped_query` (tenant-scope SQL validator
@@ -136,16 +173,20 @@ impl D1Wasm32RowSource {
     ///    constant-time tenant-id verification fires on the first
     ///    positional parameter; audit fence fires on the bind op.
     /// 4. `all()` executes the read.
-    /// 5. Until the `outcome_json` snapshot column lands the row
-    ///    source returns `Vec::new()`. The COUNT result is consumed
-    ///    only to prove the binding round-trip; no per-row
-    ///    rehydration is attempted.
+    /// 5. Each row's `outcome_json` snapshot column (migration `0049`)
+    ///    is parsed via `serde_json::from_str` into a
+    ///    [`VerificationOutcome`]; any parse failure surfaces as
+    ///    [`D1RowSourceError::Parse`] fail-CLOSED per the wave-17
+    ///    trait contract.
     ///
     /// # Errors
     ///
     /// - [`D1RowSourceError::Read`] on any underlying D1 read failure
     ///   (transport / SQL parse on the worker side / tenant-scope or
     ///   bind validation rejection).
+    /// - [`D1RowSourceError::Parse`] when a row's `outcome_json`
+    ///   column fails to deserialize as a canonical
+    ///   [`VerificationOutcome`] (fail-CLOSED — aborts the publish).
     pub async fn fetch_window_async(
         &self,
         window_start_unix_s: u64,
@@ -164,14 +205,22 @@ impl D1Wasm32RowSource {
             .db
             .bind(stmt, &[tenant_id.as_str(), completed_at_ms.as_str()])
             .map_err(|e| D1RowSourceError::Read(format!("bind: {e}")))?;
-        // Consume the read. The result is intentionally discarded until
-        // the `outcome_json` snapshot column lands.
-        let _result = self
+        let result = self
             .db
             .all(&bound)
             .await
             .map_err(|e| D1RowSourceError::Read(format!("all: {e}")))?;
-        Ok(Vec::new())
+        let rows: Vec<OutcomeJsonRow> = result
+            .results()
+            .map_err(|e| D1RowSourceError::Read(format!("results: {e}")))?;
+        let mut outcomes = Vec::with_capacity(rows.len());
+        for (idx, row) in rows.into_iter().enumerate() {
+            let parsed = parse_outcome_json(&row.outcome_json).map_err(|e| {
+                D1RowSourceError::Parse(format!("row {idx}: {e}"))
+            })?;
+            outcomes.push(parsed);
+        }
+        Ok(outcomes)
     }
 }
 
