@@ -115,6 +115,8 @@ Wave-22 path (B) framing is correctly invalidated (no on-disk MDX compiled outpu
 
 The audit table is the SoT; the commit message inflates multipart-schema's projection by 6 pp. Wave-24 re-sweep will resolve the discrepancy empirically, but the in-flight projection should be reconcilable. Recommend the wave-24 DEBT-008 stream verify both numbers and amend the audit if the commit-message figure was the post-additions actual. **P2**.
 
+**CLOSED (wave-25, branch `wt/r-prep-debt-008-number-discrepancy`)** — Wave-24 empirical re-sweep produced the canonical figures: chunker **95.79 % raw / 100 % of killable**, multipart-schema **97.44 % raw / 100 % of killable** (see `specs/_audits/2026-05-16-debt-008-wave24-mutation-sweep.md`). Wave-25 reconciled the wave-23 audit doc (§1 table, §5.2, §7 status table, §9 decisions log) to point at the canonical wave-24 figures inline; the pre-additions empirical numbers (79.79 % / 77.78 %) remain canonical for the wave-23 snapshot. Reconciliation audit: `specs/_audits/2026-05-16-debt-008-number-discrepancy-fix.md`.
+
 **P3-5**: 11 of the 26 multipart-schema missed mutants are explicitly deferred to wave-24 as "lifecycle-bound" (require deeper session-lifecycle fixtures). The deferral is documented and reasonable but the audit doc does not enumerate WHICH 11 mutants — just the file-line clusters. Wave-24 starting from line/mutant-id list would be faster. Cosmetic doc improvement.
 
 ### 3.7 Beta triage rubric P0/P1/P2/P3 boundaries — PASS
