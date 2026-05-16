@@ -22,6 +22,8 @@ Baseline schema (per bench), JSON object:
     "mean_ns":   <float>,
     "p99_ns":    <float|null>,        # null when sample.json not present
     "sample_count": <int|null>,
+    "criticality": "CRITICAL"|"NON_CRITICAL",  # gate tolerance class
+    "tolerance_pct": <float|null>,             # optional per-bench override
     "notes": "<str>"
   }
 
@@ -33,10 +35,17 @@ Exit codes:
   1 — usage / IO / schema error
   2 — at least one regression beyond threshold
 
-Threshold:
-  --threshold-pct N  (default: 10)
-  env PERF_REGRESS_THRESHOLD_PCT overrides default when --threshold-pct
-  is not passed.
+Thresholds (wave-22 tightening — pre-GA pilot tenant workloads):
+  --critical-threshold-pct N      (default: 5)   — CRITICAL benches
+  --default-threshold-pct N       (default: 15)  — non-critical benches
+  --threshold-pct N               (legacy/back-compat; overrides BOTH
+                                   defaults with a single value when set)
+  env PERF_REGRESS_CRITICAL_PCT, PERF_REGRESS_DEFAULT_PCT, and
+  PERF_REGRESS_THRESHOLD_PCT (legacy) override the defaults when the
+  matching CLI flag is not passed.
+
+  Per-bench override: `tolerance_pct` in the baseline JSON wins over
+  the criticality-based class default.
 
 Usage:
   scripts/perf-regression-check.py
@@ -153,16 +162,41 @@ def _format_ns(v: float | None) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    default_threshold = float(os.environ.get("PERF_REGRESS_THRESHOLD_PCT", "10"))
+    # Wave-22 tightening: split single threshold into criticality classes.
+    # Back-compat: PERF_REGRESS_THRESHOLD_PCT (if set) still applies to BOTH
+    # classes uniformly (the legacy single-knob behaviour).
+    legacy_threshold_env = os.environ.get("PERF_REGRESS_THRESHOLD_PCT")
+    default_critical = float(
+        os.environ.get("PERF_REGRESS_CRITICAL_PCT")
+        or legacy_threshold_env
+        or "5"
+    )
+    default_noncritical = float(
+        os.environ.get("PERF_REGRESS_DEFAULT_PCT")
+        or legacy_threshold_env
+        or "15"
+    )
     parser = argparse.ArgumentParser(
         prog="perf-regression-check.py",
         description="Compare criterion bench output to committed baselines and fail on p99 regression.",
     )
     parser.add_argument(
+        "--critical-threshold-pct",
+        type=float,
+        default=default_critical,
+        help="Regression threshold for CRITICAL benches (default: 5; env PERF_REGRESS_CRITICAL_PCT)",
+    )
+    parser.add_argument(
+        "--default-threshold-pct",
+        type=float,
+        default=default_noncritical,
+        help="Regression threshold for non-critical benches (default: 15; env PERF_REGRESS_DEFAULT_PCT)",
+    )
+    parser.add_argument(
         "--threshold-pct",
         type=float,
-        default=default_threshold,
-        help="Regression threshold in percent (default: 10; env PERF_REGRESS_THRESHOLD_PCT)",
+        default=None,
+        help="Legacy single threshold — when set, applies to both critical and non-critical (back-compat with pre-wave-22)",
     )
     parser.add_argument(
         "--criterion-root",
@@ -195,6 +229,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    # Resolve effective thresholds (legacy single-knob wins when provided).
+    if args.threshold_pct is not None:
+        critical_pct = args.threshold_pct
+        noncritical_pct = args.threshold_pct
+        threshold_mode = f"legacy single threshold {args.threshold_pct:.1f}%"
+    else:
+        critical_pct = args.critical_threshold_pct
+        noncritical_pct = args.default_threshold_pct
+        threshold_mode = (
+            f"CRITICAL {critical_pct:.1f}% / non-critical {noncritical_pct:.1f}%"
+        )
+
     results = _collect_criterion_results(args.criterion_root)
     baselines = _load_baselines(args.baseline_dir)
 
@@ -214,10 +260,10 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
-    print(f"==> perf regression check (threshold: {args.threshold_pct:.1f}% on {args.metric})")
-    print(f"{'bench_id':<60} {'baseline':>12} {'current':>12} {'delta':>10}")
+    print(f"==> perf regression check ({threshold_mode} on {args.metric})")
+    print(f"{'bench_id':<60} {'class':>14} {'baseline':>12} {'current':>12} {'delta':>10}")
 
-    regressions: list[tuple[str, float, float, float]] = []
+    regressions: list[tuple[str, float, float, float, float, str]] = []
     compared = 0
     missing_results: list[str] = []
     missing_baselines: list[str] = []
@@ -246,11 +292,39 @@ def main(argv: list[str] | None = None) -> int:
         base_v = _pick(base)
         cur_v = _pick(cur)
 
+        # Resolve per-bench tolerance class & threshold.
+        # Priority: explicit `tolerance_pct` override > class-default
+        # (CRITICAL | NON_CRITICAL) > non-critical fallback.
+        criticality_raw = str(base.get("criticality") or "NON_CRITICAL").upper()
+        if criticality_raw not in ("CRITICAL", "NON_CRITICAL"):
+            print(
+                f"WARN: bench {bench_id} has unknown criticality "
+                f"{criticality_raw!r}; treating as NON_CRITICAL",
+                file=sys.stderr,
+            )
+            criticality_raw = "NON_CRITICAL"
+        class_default = critical_pct if criticality_raw == "CRITICAL" else noncritical_pct
+        # Per-bench tolerance_pct override applies only in split-threshold
+        # mode. Legacy single-threshold mode (--threshold-pct) is meant as
+        # a global escape hatch and ignores per-bench overrides.
+        tol_override = base.get("tolerance_pct")
+        if args.threshold_pct is not None:
+            effective_threshold = args.threshold_pct
+        else:
+            effective_threshold = (
+                float(tol_override) if tol_override is not None else class_default
+            )
+
         if base_v is None:
             pending_baselines.append(bench_id)
-            print(f"{bench_id:<60} {'pending':>12} {_format_ns(cur_v):>12} {'(record)':>10}")
+            print(
+                f"{bench_id:<60} {criticality_raw:>14} {'pending':>12} "
+                f"{_format_ns(cur_v):>12} {'(record)':>10}"
+            )
             report_entries.append({
                 "bench_id": bench_id,
+                "criticality": criticality_raw,
+                "threshold_pct": effective_threshold,
                 "status": "pending_baseline",
                 "current_ns": cur_v,
             })
@@ -265,17 +339,24 @@ def main(argv: list[str] | None = None) -> int:
         delta_pct = ((cur_v - base_v) / base_v) * 100.0 if base_v != 0 else 0.0
         compared += 1
         marker = ""
-        if delta_pct > args.threshold_pct:
-            regressions.append((bench_id, base_v, cur_v, delta_pct))
+        if delta_pct > effective_threshold:
+            regressions.append(
+                (bench_id, base_v, cur_v, delta_pct, effective_threshold, criticality_raw)
+            )
             marker = "  REGRESS"
         report_entries.append({
             "bench_id": bench_id,
+            "criticality": criticality_raw,
+            "threshold_pct": effective_threshold,
             "status": "regression" if marker else "ok",
             "baseline_ns": base_v,
             "current_ns": cur_v,
             "delta_pct": delta_pct,
         })
-        print(f"{bench_id:<60} {_format_ns(base_v):>12} {_format_ns(cur_v):>12} {delta_pct:>+9.1f}%{marker}")
+        print(
+            f"{bench_id:<60} {criticality_raw:>14} {_format_ns(base_v):>12} "
+            f"{_format_ns(cur_v):>12} {delta_pct:>+9.1f}%{marker}"
+        )
 
     for b in pending_baselines:
         print(f"NOTE: baseline for '{b}' is pending — record via scripts/refresh-perf-baseline.sh", file=sys.stderr)
@@ -293,11 +374,21 @@ def main(argv: list[str] | None = None) -> int:
         with args.json_out.open("w", encoding="utf-8") as f:
             json.dump(
                 {
-                    "threshold_pct": args.threshold_pct,
+                    "critical_threshold_pct": critical_pct,
+                    "default_threshold_pct": noncritical_pct,
+                    "legacy_threshold_pct": args.threshold_pct,
+                    "threshold_mode": threshold_mode,
                     "metric": args.metric,
                     "compared": compared,
                     "regressions": [
-                        {"bench_id": r[0], "baseline_ns": r[1], "current_ns": r[2], "delta_pct": r[3]}
+                        {
+                            "bench_id": r[0],
+                            "baseline_ns": r[1],
+                            "current_ns": r[2],
+                            "delta_pct": r[3],
+                            "effective_threshold_pct": r[4],
+                            "criticality": r[5],
+                        }
                         for r in regressions
                     ],
                     "entries": report_entries,
@@ -309,15 +400,18 @@ def main(argv: list[str] | None = None) -> int:
 
     if regressions:
         print()
-        print(f"==> FAIL: {len(regressions)} bench(es) regressed > {args.threshold_pct:.1f}% on {args.metric}")
-        for bench_id, base_v, cur_v, delta in regressions:
-            print(f"   - {bench_id}: {delta:+.1f}%  (baseline={base_v:.2f}ns  current={cur_v:.2f}ns)")
+        print(f"==> FAIL: {len(regressions)} bench(es) regressed on {args.metric} ({threshold_mode})")
+        for bench_id, base_v, cur_v, delta, eff, klass in regressions:
+            print(
+                f"   - [{klass}] {bench_id}: {delta:+.1f}% > {eff:.1f}%  "
+                f"(baseline={base_v:.2f}ns  current={cur_v:.2f}ns)"
+            )
         print()
         print("See specs/_runbooks/RB-PERF-REGRESSION.md for triage.")
         return 2
 
     print()
-    print(f"==> OK: {compared} bench(es) within threshold; "
+    print(f"==> OK: {compared} bench(es) within threshold ({threshold_mode}); "
           f"{len(pending_baselines)} pending baseline(s); "
           f"{len(missing_baselines)} unknown bench_id(s)")
     return 0

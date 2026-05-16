@@ -2,10 +2,20 @@ name: perf-regression (r-prep)
 
 # Perf-regression gate: runs criterion benches on PRs that touch
 # perf-critical crates (or carry the `perf-sensitive` label) and
-# fails when any tracked bench regresses beyond the configured
-# threshold (default: 10% p99). Baselines are committed under
-# `reports/perf/`; operators refresh them via
-# `scripts/refresh-perf-baseline.sh`.
+# fails when any tracked bench regresses beyond its tolerance class.
+#
+# Wave-22 (2026-05-16) tightening for pre-GA pilot tenant workloads:
+#   - CRITICAL benches (tenant-path derive, blake3 chunk, JCS
+#     canonicalize, audit-chain merkle append, JWT verify under
+#     DPA accept, plus envelope_roundtrip / orchestrator / tier
+#     selection on the request-hot path) gate at >5% p99 regression.
+#   - Non-critical benches gate at >15% p99 regression.
+#   - Per-bench `tolerance_pct` override (in the baseline JSON)
+#     wins over the class default.
+#
+# Baselines are committed under `reports/perf/`; operators refresh
+# them via `scripts/refresh-perf-baseline.sh`. The canonical
+# pre-GA snapshot is tagged `perf-baseline-pre-ga-2026-05-16`.
 #
 # Triage on failure: specs/_runbooks/RB-PERF-REGRESSION.md
 #
@@ -36,10 +46,18 @@ on:
       - '.github/workflows/perf-regression.yml'
   workflow_dispatch:
     inputs:
-      threshold_pct:
-        description: 'Regression threshold (percent). Default 10.'
+      critical_threshold_pct:
+        description: 'CRITICAL bench regression threshold (percent). Default 5 (wave-22).'
         required: false
-        default: '10'
+        default: '5'
+      default_threshold_pct:
+        description: 'Non-critical bench regression threshold (percent). Default 15 (wave-22).'
+        required: false
+        default: '15'
+      legacy_threshold_pct:
+        description: 'Optional legacy single threshold (overrides both above). Leave empty for split mode.'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -52,6 +70,9 @@ env:
   # Pinned criterion measurement parameters; bumps require ADR.
   PERF_BENCH_WARMUP_TIME: "1"
   PERF_BENCH_MEASUREMENT_TIME: "5"
+  # Wave-22 split thresholds; per-bench `tolerance_pct` overrides win.
+  PERF_REGRESS_CRITICAL_PCT_DEFAULT: "5"
+  PERF_REGRESS_DEFAULT_PCT_DEFAULT: "15"
 
 jobs:
   # Gate the job: only run when (a) PR carries `perf-sensitive` label,
@@ -128,14 +149,46 @@ jobs:
             echo "::endgroup::"
           done
 
-      - name: Perf-regression check (p99, threshold)
+      - name: Perf-regression check (p99, split thresholds)
         env:
-          PERF_REGRESS_THRESHOLD_PCT: ${{ github.event.inputs.threshold_pct || '10' }}
+          PERF_REGRESS_CRITICAL_PCT: ${{ github.event.inputs.critical_threshold_pct || env.PERF_REGRESS_CRITICAL_PCT_DEFAULT }}
+          PERF_REGRESS_DEFAULT_PCT: ${{ github.event.inputs.default_threshold_pct || env.PERF_REGRESS_DEFAULT_PCT_DEFAULT }}
+          LEGACY_OVERRIDE: ${{ github.event.inputs.legacy_threshold_pct || '' }}
         run: |
           set -euo pipefail
-          python3 scripts/perf-regression-check.py \
-            --metric p99 \
-            --json-out perf-regression-report.json
+          ARGS=( --metric p99 --json-out perf-regression-report.json )
+          if [[ -n "${LEGACY_OVERRIDE}" ]]; then
+            echo "::warning::legacy single-threshold override active (${LEGACY_OVERRIDE}%) — splits ignored"
+            ARGS+=( --threshold-pct "${LEGACY_OVERRIDE}" )
+          fi
+          python3 scripts/perf-regression-check.py "${ARGS[@]}"
+
+      - name: Capture flame-graph on regression (best-effort)
+        if: failure()
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          if ! command -v cargo-flamegraph >/dev/null 2>&1; then
+            echo "::notice::cargo-flamegraph not installed on runner; skipping flame capture"
+            exit 0
+          fi
+          mkdir -p perf-flames
+          # Best-effort: capture flame for the first CRITICAL bench so the
+          # operator has a starting point. Non-fatal if it can't run.
+          cargo flamegraph --bench derive_prefix_v2 -p corelink-tenant-path \
+            -o perf-flames/tenant-path-derive-prefix-v2.svg \
+            -- --bench --warm-up-time 1 --measurement-time 3 \
+            || echo "::warning::flamegraph capture failed (non-fatal)"
+
+      - name: Upload flame-graph artifact
+        if: failure()
+        continue-on-error: true
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: perf-flames-${{ github.run_id }}
+          path: perf-flames
+          retention-days: 14
+          if-no-files-found: ignore
 
       - name: Upload criterion HTML + JSON artifact
         if: always()
