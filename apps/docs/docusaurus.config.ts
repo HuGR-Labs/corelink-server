@@ -1,6 +1,7 @@
 import type { Config } from "@docusaurus/types";
 import type * as Preset from "@docusaurus/preset-classic";
 import { themes as prismThemes } from "prism-react-renderer";
+import { getStatuspageUrl } from "./src/statuspage-url";
 
 /**
  * CoreLink public docs Docusaurus configuration.
@@ -19,6 +20,30 @@ const ORG = "humangr-labs";
 const REPO = "corelink-server";
 const EDIT_BASE = `https://github.com/${ORG}/${REPO}/edit/main/apps/docs/`;
 
+/**
+ * Canonical default statuspage URL (DEBT-016 closure, R-prep wave-24).
+ *
+ * Operator-bound provisioning (see `specs/_runbooks/STATUSPAGE-INIT.md`):
+ *
+ *   Option A — CNAME (zero docs rebuild, preferred):
+ *     Operator owns `status.corelink.dev` DNS and CNAMEs it to the real
+ *     Atlassian Statuspage instance (e.g. `corelink.statuspage.io`). All
+ *     literal URLs in MDX trust pages resolve correctly with no rebuild.
+ *
+ *   Option B — env-var override (rebuild required):
+ *     Operator sets `STATUSPAGE_URL=https://status.example.com` before
+ *     `pnpm build`. Trust-page MDX consumes the URL via the
+ *     `siteConfig.customFields.statuspageUrl` accessor (used by shared
+ *     components / `getStatuspageUrl()` helper). Existing literal
+ *     `https://status.corelink.dev` references remain as the **default
+ *     canonical host** — Option A is the preferred provisioning path.
+ *
+ * The default value is the canonical wave-19 commit value referenced from
+ * 5 customer-facing trust pages × 4 locales (en/pt-BR/es-419/de) and
+ * 20+ internal runbooks + spec docs.
+ */
+const STATUSPAGE_URL = getStatuspageUrl();
+
 const config: Config = {
   title: "CoreLink",
   tagline: "Multi-tenant content-addressable cache on Cloudflare",
@@ -31,6 +56,14 @@ const config: Config = {
   onBrokenLinks: "throw",
   onBrokenMarkdownLinks: "throw",
   noIndex: false,
+
+  // DEBT-016 — exposed to MDX/components via `useDocusaurusContext()`
+  // (`siteConfig.customFields.statuspageUrl`). Default kept canonical
+  // (`https://status.corelink.dev`); operator override via `STATUSPAGE_URL`
+  // env var at build time (see `specs/_runbooks/STATUSPAGE-INIT.md`).
+  customFields: {
+    statuspageUrl: STATUSPAGE_URL,
+  },
 
   i18n: {
     defaultLocale: "en-US",
