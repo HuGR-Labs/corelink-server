@@ -215,6 +215,7 @@ Per `specs/_compliance/*` 2026-05-15 dated rollup docs (last-touched compliance 
 | **WallClock cross-route** | Wave-21 closure `f3462c6`; 9.55/10 adversarial score; wave-23 cleanup absorbed P2-01 | ✅ GREEN |
 | **Chaos combined-failure** | wave-23 stream #4 in flight (executor-loss × replication-lag × tenant-isolation) | 🟡 YELLOW pending stream #4 SEAL |
 | **Pentest scope** | `specs/_audits/2026-05-16-pre-ga-pentest-scope.md` v1.0 SEALED wave-18 (502 lines, 6 attacker models, 41 attack chains, ASVS v4.0.3 self-assessment, STRIDE + LINDDUN matrices) | ✅ DOCUMENTED (engagement vendor-bound) |
+| **Pre-GA security attestation** | `specs/_audits/2026-05-16-pre-ga-security-attestation.md` (wave-25) — consolidated 8-wave adversarial trend, INV-CRITICAL TLA+ coverage, mutation/chaos/endurance evidence, compliance + BYOK + audit chain rollup, vendor handoff checklist | ✅ DOCUMENTED (day-1 vendor pack) |
 | **Mutation kill-rate** (DEBT-008 11-of-15 crates either empirical or projected ≥75%) | `specs/_audits/2026-05-16-debt-008-wave23-mutation-sweep.md` + 4 prior sweep audits; 4 crates on CI-nightly matrix | 🟡 YELLOW (narrows to GREEN at wave-23 stream #2 SEAL) |
 | **Secrets matrix** | `specs/_audits/2026-05-16-secrets-matrix-tighten.md` (DEBT-001 closed wave-15; validator `code_only=0`); `specs/_audits/2026-05-16-secrets-x-false-positive-fix.md` | ✅ GREEN |
 | **Static analysis** | `specs/_audits/2026-05-15-static-analysis-baseline.md` + `specs/_audits/2026-05-15-codeql-semgrep-baseline.md` + actionlint baseline + action SHA pinning baseline | ✅ GREEN |
@@ -391,6 +392,7 @@ This document plus `specs/_audits/2026-05-16-ga-final-checklist.md` plus the sig
 - `specs/_audits/2026-05-15-debt-register.md` v1.2.1 — DEBT register canonical state.
 - `specs/03_architecture/invariant_registry.md` — INV registry canonical state (post-wave-23 sweep: 197 declared).
 - `specs/_audits/2026-05-16-pre-ga-pentest-scope.md` v1.0 — pre-GA pentest scope (SEALED wave-18, engagement vendor-bound).
+- `specs/_audits/2026-05-16-pre-ga-security-attestation.md` — consolidated pre-GA security attestation (wave-25; day-1 evidence pack for external pentest vendor + cross-ref §8 security posture row).
 - `specs/_runbooks/RB-GA-CUTOVER.md` — cutover runbook (this audit's pre-condition gate feeds §0 checklist).
 - `specs/_runbooks/RB-GA-LAUNCH-ROLLBACK.md` — reverse runbook (§5 trigger conditions).
 - `specs/_compliance/GA-GATE-CRITERIA.md` — 59-criteria checklist (6 tracks).
