@@ -111,13 +111,24 @@ fn r3_1_happy_path_starter_in_memory() {
 }
 
 /// Live-integration: real HTTPS Stripe Checkout Session create via
-/// the HuGR Wallet broker (wave-31 wallet-broker series, stream-1).
+/// either auth mode (wave-31 dual-mode auth, 2026-05-21).
 ///
-/// Skipped unless `HUGR_WALLET_TOKEN` + `STRIPE_PRICE_ID_STARTER` are
-/// present in the environment. The wallet ref must be pre-provisioned
-/// with a `sk_test_...` upstream secret. Run via:
+/// Skipped unless `STRIPE_PRICE_ID_STARTER` is present AND the
+/// credentials for the selected `STRIPE_AUTH_MODE` are set:
+///
+/// - default `direct` → requires `STRIPE_SECRET_KEY`,
+/// - `wallet-broker` → requires `HUGR_WALLET_TOKEN`.
+///
+/// Run via:
 ///
 /// ```text
+/// # Direct (default):
+/// STRIPE_SECRET_KEY=sk_test_... \
+/// STRIPE_PRICE_ID_STARTER=price_... \
+/// cargo test -p e2e-signup-flow -- --ignored
+///
+/// # Wallet-broker (when the broker is back online):
+/// STRIPE_AUTH_MODE=wallet-broker \
 /// HUGR_WALLET_BASE=https://api.humangr.com \
 /// HUGR_WALLET_TOKEN=hugrw_live_... \
 /// HUGR_STRIPE_REF=stripe-prod-test \
@@ -127,33 +138,47 @@ fn r3_1_happy_path_starter_in_memory() {
 #[test]
 #[ignore]
 fn r3_1_happy_path_starter_live_stripe() {
-    if env::var("HUGR_WALLET_TOKEN").is_err() {
-        // Charter: ignored-but-skip — exit cleanly.
-        return;
-    }
     if env::var("STRIPE_PRICE_ID_STARTER").is_err() {
         return;
     }
+    // Skip unless credentials for the selected mode are present.
+    let mode = env::var("STRIPE_AUTH_MODE").unwrap_or_else(|_| "direct".to_string());
+    match mode.as_str() {
+        "direct" => {
+            if env::var("STRIPE_SECRET_KEY").is_err() {
+                return;
+            }
+        }
+        "wallet-broker" | "wallet_broker" => {
+            if env::var("HUGR_WALLET_TOKEN").is_err() {
+                return;
+            }
+        }
+        _ => return,
+    }
     // Build a live Stripe client via env. The harness does not log
-    // any secret material — the hugrw_ token is held in a redacting
-    // SecretString and the real upstream key lives in the wallet KV.
+    // any secret material — both `sk_…` (direct) and `hugrw_…`
+    // (wallet) tokens are held in redacting SecretStrings.
     let client = corelink_stripe_real::StripeRealClient::from_env()
         .expect("stripe live client build");
-    // Smoke-test: proxy base URL is well-formed and routes through
-    // the wallet broker (NOT directly at `api.stripe.com`).
-    let proxy_base = client.proxy_base();
-    assert!(
-        proxy_base.starts_with("https://"),
-        "proxy base must be HTTPS: {proxy_base}"
-    );
-    assert!(
-        proxy_base.contains("/_wallet/proxy/"),
-        "proxy base must route through HuGR Wallet broker: {proxy_base}"
-    );
-    assert!(
-        !proxy_base.starts_with("https://api.stripe.com"),
-        "client must NOT hit Stripe directly post-wave-31: {proxy_base}"
-    );
+    let base = client.effective_base_url();
+    assert!(base.starts_with("https://"), "base URL must be HTTPS: {base}");
+    if mode == "wallet-broker" || mode == "wallet_broker" {
+        assert!(
+            base.contains("/_wallet/proxy/"),
+            "wallet-broker base must route through HuGR Wallet broker: {base}"
+        );
+        assert!(
+            !base.starts_with("https://api.stripe.com"),
+            "wallet-broker client must NOT hit Stripe directly: {base}"
+        );
+    } else {
+        // direct
+        assert!(
+            !base.contains("/_wallet/proxy/"),
+            "direct-mode base must NOT carry a wallet proxy segment: {base}"
+        );
+    }
     // The full create_checkout_session call is exercised by the
     // corelink-stripe-real crate's own `live-integration` tests; we
     // only assert the harness can wire the client end-to-end without

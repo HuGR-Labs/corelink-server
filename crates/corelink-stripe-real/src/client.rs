@@ -1,27 +1,31 @@
 //! HTTPS Stripe API client implementing
 //! [`corelink_tier_selection::stripe::StripeClient`].
 //!
-//! # Wave-31 wallet-broker refactor (stream-1)
+//! # Wave-31 dual-mode auth (2026-05-21)
 //!
-//! ALL outbound Stripe API calls route through the HuGR Wallet remote
-//! credential broker at:
+//! Outbound Stripe API calls can route through either of two auth modes,
+//! selected at process start via the `STRIPE_AUTH_MODE` env var:
 //!
-//! ```text
-//! {HUGR_WALLET_BASE}/_wallet/proxy/{HUGR_STRIPE_REF}/<upstream_path>
-//!     Authorization: Bearer hugrw_<token>
-//! ```
+//! - `direct` (DEFAULT — current production): direct call to
+//!   `api.stripe.com/v1/...` with `Authorization: Bearer sk_live_...`.
+//!   CoreLink holds the upstream Stripe secret in
+//!   `STRIPE_SECRET_KEY`. This is the path that runs while the HuGR
+//!   Wallet broker is temporarily unavailable.
+//! - `wallet-broker` (the wave-31 stream-1 path, kept whole — see
+//!   `specs/_audits/2026-05-16-wallet-broker-stripe.md`): call routes
+//!   through `{HUGR_WALLET_BASE}/_wallet/proxy/{HUGR_STRIPE_REF}/<path>`
+//!   with `Authorization: Bearer hugrw_<token>`; CoreLink never holds
+//!   the real upstream `sk_live_...`. Re-enable by flipping
+//!   `STRIPE_AUTH_MODE=wallet-broker` once the wallet is healthy.
 //!
-//! The wallet validates the `hugrw_` token, strips the Authorization
-//! header, decrypts the real Stripe key from KV (AES-256-GCM), injects
-//! it as `Authorization: Bearer sk_live_...` on the upstream call,
-//! and proxies the response back. CoreLink NEVER holds a real
-//! upstream Stripe API secret. If the `hugrw_` token leaks, the wallet
-//! owner rotates it without touching CoreLink and the underlying Stripe
-//! key never leaks.
+//! Both modes fail CLOSED: missing required env vars OR upstream 5xx
+//! after retries → typed error to caller. There is NEVER a silent
+//! fallback to the other mode (that would expose the upstream key
+//! through the broker, or vice versa).
 //!
 //! Webhook signature verification stays direct (see `webhook.rs`) — it
 //! is inbound (Stripe → CoreLink) and uses a local
-//! `STRIPE_WEBHOOK_SECRET` for HMAC verify; no upstream key involved.
+//! `STRIPE_WEBHOOK_SECRET` for HMAC verify; same in both modes.
 //!
 //! Uses `reqwest::blocking` for synchronous trait compatibility. The
 //! consumer in `apps/server` wraps `create_checkout_session` calls in
@@ -43,6 +47,9 @@ use crate::clock::{default_clock, Clock};
 use crate::error::StripeError;
 use crate::retry::RetryPolicy;
 
+/// Default direct-to-Stripe API base URL.
+pub const DEFAULT_STRIPE_API_BASE: &str = "https://api.stripe.com";
+
 /// Default HuGR Wallet broker base URL (production).
 ///
 /// Tests inject a `wiremock::MockServer` URI here so they never hit the
@@ -56,70 +63,171 @@ pub const DEFAULT_HUGR_WALLET_BASE: &str = "https://api.humangr.com";
 /// `stripe-prod`. Tests can override via `HUGR_STRIPE_REF`.
 pub const DEFAULT_HUGR_STRIPE_REF: &str = "stripe-prod";
 
-/// Wallet-broker configuration for the Stripe HTTPS client.
+/// Selectable auth mode for the Stripe HTTPS client.
 ///
-/// Holds everything required to build the upstream proxy URL +
-/// `hugrw_` bearer credential. The token is wrapped in a
-/// [`SecretString`] so it NEVER leaks via `Debug` / `Display` / panic
-/// output. Construct via [`StripeClientConfig::new`] or
-/// [`StripeClientConfig::from_env`].
+/// Switched per process via the `STRIPE_AUTH_MODE` env var (see
+/// [`StripeClientConfig::from_env`]). Both variants are
+/// `#[non_exhaustive]` so future modes can be added without breaking
+/// callers; every credential field is wrapped in
+/// [`secrecy::SecretString`] so it cannot leak via `Debug` / `Display`
+/// / panic output.
 #[derive(Clone)]
 #[non_exhaustive]
-pub struct StripeClientConfig {
-    /// Base URL of the HuGR Wallet broker (e.g.
-    /// `https://api.humangr.com` in prod, or a `wiremock` URI in
-    /// tests). The proxy path `/_wallet/proxy/<ref>/<...>` is appended
-    /// automatically.
-    pub wallet_base: String,
-    /// CoreLink-side `hugrw_` token authorising the proxy call. The
-    /// wallet validates the token + its `proxy` scope on `stripe_ref`.
-    /// Held as [`SecretString`] — never printed.
-    pub wallet_token: SecretString,
-    /// Wallet ref name for the Stripe upstream (canonical:
-    /// `stripe-prod`).
-    pub stripe_ref: String,
+pub enum StripeAuthMode {
+    /// Direct to `api.stripe.com` with
+    /// `Authorization: Bearer sk_live_…` (or `sk_test_…`).
+    ///
+    /// This is the DEFAULT mode until the HuGR Wallet broker is
+    /// operational again.
+    Direct {
+        /// Stripe API base URL (default
+        /// [`DEFAULT_STRIPE_API_BASE`]).
+        api_base: String,
+        /// Upstream Stripe secret key (`sk_live_…` or `sk_test_…`).
+        /// The value's prefix tells us live vs test; we do not branch
+        /// on it here. Held as [`SecretString`] — never printed.
+        api_key: SecretString,
+    },
+    /// Through the HuGR Wallet broker at
+    /// `{wallet_base}/_wallet/proxy/{stripe_ref}/…` with
+    /// `Authorization: Bearer hugrw_…`.
+    WalletBroker {
+        /// Base URL of the HuGR Wallet broker (e.g.
+        /// `https://api.humangr.com` in prod, or a `wiremock` URI in
+        /// tests).
+        wallet_base: String,
+        /// CoreLink-side `hugrw_` token authorising the proxy call.
+        /// The wallet validates the token + its `proxy` scope on
+        /// `stripe_ref`. Held as [`SecretString`] — never printed.
+        wallet_token: SecretString,
+        /// Wallet ref name for the Stripe upstream (canonical:
+        /// `stripe-prod`).
+        stripe_ref: String,
+    },
 }
 
-impl core::fmt::Debug for StripeClientConfig {
+impl core::fmt::Debug for StripeAuthMode {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("StripeClientConfig")
-            .field("wallet_base", &self.wallet_base)
-            .field("wallet_token", &"<redacted>")
-            .field("stripe_ref", &self.stripe_ref)
-            .finish()
+        match self {
+            Self::Direct { api_base, .. } => f
+                .debug_struct("StripeAuthMode::Direct")
+                .field("api_base", api_base)
+                .field("api_key", &"<redacted>")
+                .finish(),
+            Self::WalletBroker {
+                wallet_base,
+                stripe_ref,
+                ..
+            } => f
+                .debug_struct("StripeAuthMode::WalletBroker")
+                .field("wallet_base", wallet_base)
+                .field("wallet_token", &"<redacted>")
+                .field("stripe_ref", stripe_ref)
+                .finish(),
+        }
     }
 }
 
+/// Auth-mode-agnostic configuration for the Stripe HTTPS client.
+///
+/// Wraps a [`StripeAuthMode`] which carries the credentials + URL
+/// shape for the selected mode. Both this struct and the enum are
+/// `#[non_exhaustive]`; the `Debug` impl redacts every credential.
+/// Construct via [`StripeClientConfig::direct`] /
+/// [`StripeClientConfig::wallet_broker`] /
+/// [`StripeClientConfig::from_env`].
+#[derive(Clone, Debug)]
+#[non_exhaustive]
+pub struct StripeClientConfig {
+    /// Auth mode the client is configured for.
+    pub mode: StripeAuthMode,
+}
+
 impl StripeClientConfig {
-    /// Construct a config explicitly (used by tests + by the bin
-    /// crate at `apps/server` after it reads env).
+    /// Construct a Direct-mode config explicitly.
     #[must_use]
-    pub fn new(
+    pub fn direct(api_base: impl Into<String>, api_key: SecretString) -> Self {
+        Self {
+            mode: StripeAuthMode::Direct {
+                api_base: api_base.into(),
+                api_key,
+            },
+        }
+    }
+
+    /// Construct a Wallet-broker-mode config explicitly.
+    #[must_use]
+    pub fn wallet_broker(
         wallet_base: impl Into<String>,
         wallet_token: SecretString,
         stripe_ref: impl Into<String>,
     ) -> Self {
         Self {
-            wallet_base: wallet_base.into(),
-            wallet_token,
-            stripe_ref: stripe_ref.into(),
+            mode: StripeAuthMode::WalletBroker {
+                wallet_base: wallet_base.into(),
+                wallet_token,
+                stripe_ref: stripe_ref.into(),
+            },
         }
     }
 
     /// Resolve a [`StripeClientConfig`] from env vars.
     ///
-    /// Reads:
-    /// - `HUGR_WALLET_BASE`  (optional; defaults to
-    ///   [`DEFAULT_HUGR_WALLET_BASE`]),
-    /// - `HUGR_WALLET_TOKEN` (REQUIRED — the `hugrw_` token),
-    /// - `HUGR_STRIPE_REF`   (optional; defaults to
+    /// `STRIPE_AUTH_MODE` (default `direct` if unset) selects the
+    /// mode. Accepted values:
+    /// - `direct` → reads `STRIPE_API_BASE` (default
+    ///   [`DEFAULT_STRIPE_API_BASE`]) + `STRIPE_SECRET_KEY`
+    ///   (REQUIRED).
+    /// - `wallet-broker` / `wallet_broker` → reads
+    ///   `HUGR_WALLET_BASE` (default [`DEFAULT_HUGR_WALLET_BASE`]) +
+    ///   `HUGR_WALLET_TOKEN` (REQUIRED) + `HUGR_STRIPE_REF` (default
     ///   [`DEFAULT_HUGR_STRIPE_REF`]).
+    ///
+    /// Both kebab-case (`wallet-broker`) and snake-case
+    /// (`wallet_broker`) spellings of the mode are accepted to be
+    /// friendly to deploy templating systems with different
+    /// case-folding conventions.
     ///
     /// # Errors
     ///
-    /// Returns [`StripeError::Authentication`] if `HUGR_WALLET_TOKEN`
-    /// is missing or empty.
+    /// Returns [`StripeError::Authentication`] with a mode-specific
+    /// message if:
+    /// - `STRIPE_AUTH_MODE` is set to an unknown value, OR
+    /// - the required credential for the selected mode is
+    ///   missing/empty.
     pub fn from_env() -> Result<Self, StripeError> {
+        let mode_raw = env::var("STRIPE_AUTH_MODE")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "direct".to_string());
+        match mode_raw.as_str() {
+            "direct" => Self::from_env_direct(),
+            "wallet-broker" | "wallet_broker" => Self::from_env_wallet_broker(),
+            other => Err(StripeError::Authentication(format!(
+                "STRIPE_AUTH_MODE={other} is not recognised; expected 'direct' or 'wallet-broker'"
+            ))),
+        }
+    }
+
+    fn from_env_direct() -> Result<Self, StripeError> {
+        let api_base = env::var("STRIPE_API_BASE")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| DEFAULT_STRIPE_API_BASE.to_string());
+        let api_key = env::var("STRIPE_SECRET_KEY")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| {
+                StripeError::Authentication(
+                    "STRIPE_AUTH_MODE=direct requires STRIPE_SECRET_KEY (set $STRIPE_SECRET_KEY \
+                     to your sk_live_… or sk_test_… key)"
+                        .to_string(),
+                )
+            })?;
+        Ok(Self::direct(api_base, SecretString::from(api_key)))
+    }
+
+    fn from_env_wallet_broker() -> Result<Self, StripeError> {
         let wallet_base = env::var("HUGR_WALLET_BASE")
             .ok()
             .filter(|s| !s.is_empty())
@@ -128,22 +236,56 @@ impl StripeClientConfig {
             .ok()
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| DEFAULT_HUGR_STRIPE_REF.to_string());
-        let raw_token = env::var("HUGR_WALLET_TOKEN").ok().filter(|s| !s.is_empty());
-        let raw_token = raw_token.ok_or_else(|| {
-            StripeError::Authentication(
-                "HUGR_WALLET_TOKEN is not set (wave-31 wallet-broker series)".to_string(),
-            )
-        })?;
-        Ok(Self::new(wallet_base, SecretString::from(raw_token), stripe_ref))
+        let wallet_token = env::var("HUGR_WALLET_TOKEN")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| {
+                StripeError::Authentication(
+                    "STRIPE_AUTH_MODE=wallet-broker requires HUGR_WALLET_TOKEN (set \
+                     $HUGR_WALLET_TOKEN to the hugrw_ proxy token)"
+                        .to_string(),
+                )
+            })?;
+        Ok(Self::wallet_broker(
+            wallet_base,
+            SecretString::from(wallet_token),
+            stripe_ref,
+        ))
     }
 
-    /// Construct the upstream proxy base URL —
-    /// `{wallet_base}/_wallet/proxy/{stripe_ref}`. Stripe paths
-    /// (`/v1/...`) are appended by the HTTP layer.
+    /// Compute the effective base URL the next request will be POSTed
+    /// under. Stripe paths (`/v1/...`) are appended by the HTTP layer.
+    ///
+    /// - `Direct` → `{api_base}` (e.g. `https://api.stripe.com`).
+    /// - `WalletBroker` →
+    ///   `{wallet_base}/_wallet/proxy/{stripe_ref}`.
+    ///
+    /// Trailing slashes on the base inputs are normalised.
     #[must_use]
-    pub fn proxy_base_url(&self) -> String {
-        let base = self.wallet_base.trim_end_matches('/');
-        format!("{base}/_wallet/proxy/{}", self.stripe_ref)
+    pub fn effective_base_url(&self) -> String {
+        match &self.mode {
+            StripeAuthMode::Direct { api_base, .. } => {
+                api_base.trim_end_matches('/').to_string()
+            }
+            StripeAuthMode::WalletBroker {
+                wallet_base,
+                stripe_ref,
+                ..
+            } => {
+                let base = wallet_base.trim_end_matches('/');
+                format!("{base}/_wallet/proxy/{stripe_ref}")
+            }
+        }
+    }
+
+    /// Return the bearer token the client uses for the
+    /// `Authorization` header. Crate-internal — never leaks across
+    /// the public API.
+    fn bearer_token(&self) -> &SecretString {
+        match &self.mode {
+            StripeAuthMode::Direct { api_key, .. } => api_key,
+            StripeAuthMode::WalletBroker { wallet_token, .. } => wallet_token,
+        }
     }
 }
 
@@ -217,7 +359,7 @@ impl StripeRealClientBuilder {
     /// # Errors
     ///
     /// - [`StripeError::Authentication`] if no config was injected and
-    ///   `HUGR_WALLET_TOKEN` is unset.
+    ///   env resolution fails for the selected `STRIPE_AUTH_MODE`.
     /// - [`StripeError::ApiConnection`] if the underlying HTTP client
     ///   fails to initialize.
     pub fn build(self) -> Result<StripeRealClient, StripeError> {
@@ -229,10 +371,10 @@ impl StripeRealClientBuilder {
             .timeout(self.timeout)
             .build()
             .map_err(|e| StripeError::ApiConnection(e.to_string()))?;
-        let proxy_base = config.proxy_base_url();
+        let base_url = config.effective_base_url();
         Ok(StripeRealClient {
             config,
-            proxy_base,
+            base_url,
             retry_policy: self.retry_policy,
             http,
             clock: self.clock,
@@ -240,17 +382,16 @@ impl StripeRealClientBuilder {
     }
 }
 
-/// Production Stripe HTTPS client routing through the HuGR Wallet
-/// broker.
+/// Production Stripe HTTPS client (dual-mode: direct or wallet-broker).
 ///
-/// The `Debug` impl REDACTS the `hugrw_` token — secrets MUST never
+/// The `Debug` impl REDACTS every credential — secrets MUST never
 /// appear in logs.
 pub struct StripeRealClient {
     config: StripeClientConfig,
-    /// Cached proxy base — `{wallet_base}/_wallet/proxy/{stripe_ref}`.
-    /// Avoids recomputing per-request; tested in
-    /// `client_uses_wallet_proxy_url`.
-    proxy_base: String,
+    /// Cached effective base URL — either `{api_base}` (Direct) or
+    /// `{wallet_base}/_wallet/proxy/{stripe_ref}` (WalletBroker).
+    /// Avoids recomputing per-request.
+    base_url: String,
     retry_policy: RetryPolicy,
     http: reqwest::blocking::Client,
     // Wave-20: held for future timestamp-bearing operations (idempotency
@@ -267,7 +408,7 @@ impl core::fmt::Debug for StripeRealClient {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("StripeRealClient")
             .field("config", &self.config)
-            .field("proxy_base", &self.proxy_base)
+            .field("base_url", &self.base_url)
             .field("retry_policy", &self.retry_policy)
             .field("clock", &self.clock)
             .finish()
@@ -289,12 +430,12 @@ impl StripeRealClient {
         StripeRealClientBuilder::new()
     }
 
-    /// Borrow the proxy base URL — i.e. the value the next request
-    /// will be POSTed under (`{wallet_base}/_wallet/proxy/{stripe_ref}`).
-    /// Used by tests to pin the wallet-broker URL contract.
+    /// Borrow the effective base URL — the value the next request
+    /// will be POSTed under. Used by tests to pin the per-mode URL
+    /// contract.
     #[must_use]
-    pub fn proxy_base(&self) -> &str {
-        &self.proxy_base
+    pub fn effective_base_url(&self) -> &str {
+        &self.base_url
     }
 
     /// Borrow the [`StripeClientConfig`] used to construct this client.
@@ -303,8 +444,7 @@ impl StripeRealClient {
         &self.config
     }
 
-    /// POST to a Stripe form-encoded endpoint via the wallet proxy
-    /// with idempotency + retry.
+    /// POST to a Stripe form-encoded endpoint with idempotency + retry.
     ///
     /// `idempotency_key` MUST be deterministic per logical request so
     /// retries are safe per Stripe spec.
@@ -314,13 +454,13 @@ impl StripeRealClient {
         form: &[(&str, String)],
         idempotency_key: &str,
     ) -> Result<T, StripeError> {
-        let url = format!("{}{}", self.proxy_base, path);
+        let url = format!("{}{}", self.base_url, path);
         let mut attempt: u32 = 0;
         loop {
             let req = self
                 .http
                 .post(&url)
-                .bearer_auth(self.config.wallet_token.expose_secret())
+                .bearer_auth(self.config.bearer_token().expose_secret())
                 .header("Idempotency-Key", idempotency_key)
                 .header("Stripe-Version", "2024-06-20")
                 .form(form);
@@ -328,8 +468,9 @@ impl StripeRealClient {
                 Ok(r) => r,
                 Err(e) => {
                     // Transport-level failure — fail-CLOSED retry up to
-                    // budget (wave-31: NO fallback to direct Stripe;
-                    // CoreLink no longer holds the upstream key).
+                    // budget. No silent fallback to the OTHER mode
+                    // (would expose the upstream key through the
+                    // broker, or vice versa).
                     if let Some(ms) = self.retry_policy.next_sleep_ms(attempt, None) {
                         std::thread::sleep(Duration::from_millis(ms));
                         attempt = attempt.saturating_add(1);
@@ -358,16 +499,15 @@ impl StripeRealClient {
         }
     }
 
-    /// GET a Stripe endpoint via the wallet proxy with retry on
-    /// 5xx/429.
+    /// GET a Stripe endpoint with retry on 5xx/429.
     fn get<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T, StripeError> {
-        let url = format!("{}{}", self.proxy_base, path);
+        let url = format!("{}{}", self.base_url, path);
         let mut attempt: u32 = 0;
         loop {
             let req = self
                 .http
                 .get(&url)
-                .bearer_auth(self.config.wallet_token.expose_secret())
+                .bearer_auth(self.config.bearer_token().expose_secret())
                 .header("Stripe-Version", "2024-06-20");
             let resp = match req.send() {
                 Ok(r) => r,
@@ -399,7 +539,7 @@ impl StripeRealClient {
         }
     }
 
-    /// `POST /v1/customers` — create a customer (via wallet proxy).
+    /// `POST /v1/customers` — create a customer.
     ///
     /// # Errors
     /// See [`StripeError`] taxonomy.
@@ -416,7 +556,7 @@ impl StripeRealClient {
         self.post_form::<CustomerObject>("/v1/customers", &form, idempotency_key)
     }
 
-    /// `GET /v1/customers/:id` — fetch a customer (via wallet proxy).
+    /// `GET /v1/customers/:id` — fetch a customer.
     ///
     /// # Errors
     /// See [`StripeError`] taxonomy.
@@ -424,8 +564,7 @@ impl StripeRealClient {
         self.get::<CustomerObject>(&format!("/v1/customers/{id}"))
     }
 
-    /// `POST /v1/subscriptions` — create a subscription (via wallet
-    /// proxy).
+    /// `POST /v1/subscriptions` — create a subscription.
     ///
     /// # Errors
     /// See [`StripeError`] taxonomy.
@@ -442,8 +581,7 @@ impl StripeRealClient {
         self.post_form::<SubscriptionObject>("/v1/subscriptions", &form, idempotency_key)
     }
 
-    /// `GET /v1/subscriptions/:id` — fetch a subscription (via wallet
-    /// proxy).
+    /// `GET /v1/subscriptions/:id` — fetch a subscription.
     ///
     /// # Errors
     /// See [`StripeError`] taxonomy.
@@ -452,7 +590,7 @@ impl StripeRealClient {
     }
 
     /// `POST /v1/billing_portal/sessions` — create a Customer Portal
-    /// session (via wallet proxy).
+    /// session.
     ///
     /// # Errors
     /// See [`StripeError`] taxonomy.
@@ -474,7 +612,7 @@ impl StripeRealClient {
     }
 
     /// `POST /v1/checkout/sessions` — typed Stripe Checkout creation
-    /// via wallet proxy (returns the raw Stripe object).
+    /// (returns the raw Stripe object).
     fn create_checkout_session_raw(
         &self,
         req: &CheckoutSessionRequest,
@@ -651,8 +789,66 @@ pub struct CheckoutSessionObject {
 mod tests {
     use super::*;
 
-    fn test_config() -> StripeClientConfig {
-        StripeClientConfig::new(
+    /// Process-wide env-var lock to serialise tests that mutate
+    /// `STRIPE_AUTH_MODE` / `STRIPE_SECRET_KEY` / `HUGR_WALLET_*` /
+    /// `STRIPE_API_BASE` / `HUGR_STRIPE_REF`. Cargo runs `#[test]`s
+    /// concurrently per binary, and these process-global env vars
+    /// race otherwise.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Capture + clear every env var these tests touch; restore on
+    /// drop. Used as a scope guard inside each env-touching test.
+    struct EnvGuard {
+        saved: Vec<(&'static str, Option<String>)>,
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl EnvGuard {
+        fn new(vars: &[&'static str]) -> Self {
+            // .unwrap_or_else on poison so a previous test panic
+            // doesn't take down the whole suite — we still want the
+            // exclusion semantics. Tests are allowed to panic per
+            // module-level allow.
+            let lock = ENV_LOCK
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let saved: Vec<_> = vars.iter().map(|k| (*k, env::var(*k).ok())).collect();
+            for k in vars {
+                env::remove_var(k);
+            }
+            Self { saved, _lock: lock }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            for (k, v) in self.saved.drain(..) {
+                match v {
+                    Some(val) => env::set_var(k, val),
+                    None => env::remove_var(k),
+                }
+            }
+        }
+    }
+
+    const ENV_KEYS: &[&str] = &[
+        "STRIPE_AUTH_MODE",
+        "STRIPE_API_BASE",
+        "STRIPE_SECRET_KEY",
+        "HUGR_WALLET_BASE",
+        "HUGR_WALLET_TOKEN",
+        "HUGR_STRIPE_REF",
+    ];
+
+    fn direct_test_config() -> StripeClientConfig {
+        StripeClientConfig::direct(
+            "https://api.stripe.test",
+            SecretString::from("sk_test_DUMMY".to_string()),
+        )
+    }
+
+    fn wallet_test_config() -> StripeClientConfig {
+        StripeClientConfig::wallet_broker(
             "https://wallet.test",
             SecretString::from("hugrw_test_token".to_string()),
             "stripe-prod",
@@ -660,111 +856,266 @@ mod tests {
     }
 
     #[test]
-    fn debug_redacts_wallet_token() {
-        let c = StripeRealClient::builder()
-            .config(StripeClientConfig::new(
+    fn debug_redacts_in_both_modes() {
+        // Direct.
+        let cfg_direct = StripeClientConfig::direct(
+            "https://api.stripe.test",
+            SecretString::from("sk_test_DO_NOT_LOG_ME".to_string()),
+        );
+        let dbg_direct = format!("{cfg_direct:?}");
+        assert!(
+            dbg_direct.contains("<redacted>"),
+            "Direct config Debug must redact: {dbg_direct}"
+        );
+        assert!(
+            !dbg_direct.contains("sk_"),
+            "Direct config Debug must NOT contain sk_ prefix: {dbg_direct}"
+        );
+        assert!(
+            !dbg_direct.contains("DO_NOT_LOG_ME"),
+            "Direct config Debug must NOT contain raw key: {dbg_direct}"
+        );
+
+        // WalletBroker.
+        let cfg_wallet = StripeClientConfig::wallet_broker(
+            "https://wallet.test",
+            SecretString::from("hugrw_DO_NOT_LOG_ME".to_string()),
+            "stripe-prod",
+        );
+        let dbg_wallet = format!("{cfg_wallet:?}");
+        assert!(
+            dbg_wallet.contains("<redacted>"),
+            "Wallet config Debug must redact: {dbg_wallet}"
+        );
+        assert!(
+            !dbg_wallet.contains("hugrw_"),
+            "Wallet config Debug must NOT contain hugrw_ prefix: {dbg_wallet}"
+        );
+        assert!(
+            !dbg_wallet.contains("DO_NOT_LOG_ME"),
+            "Wallet config Debug must NOT contain raw token: {dbg_wallet}"
+        );
+    }
+
+    #[test]
+    fn debug_redacts_on_built_client_both_modes() {
+        // Direct client.
+        let c_direct = StripeRealClient::builder()
+            .config(StripeClientConfig::direct(
+                "https://api.stripe.test",
+                SecretString::from("sk_test_SECRET".to_string()),
+            ))
+            .build()
+            .unwrap();
+        let dbg = format!("{c_direct:?}");
+        assert!(dbg.contains("<redacted>"));
+        assert!(!dbg.contains("sk_"), "Direct client Debug leaked sk_: {dbg}");
+        assert!(!dbg.contains("SECRET"));
+
+        // Wallet client.
+        let c_wallet = StripeRealClient::builder()
+            .config(StripeClientConfig::wallet_broker(
                 "https://wallet.test",
-                SecretString::from("hugrw_DO_NOT_LOG_ME".to_string()),
+                SecretString::from("hugrw_SECRET".to_string()),
                 "stripe-prod",
             ))
             .build()
             .unwrap();
-        let dbg = format!("{c:?}");
-        assert!(dbg.contains("<redacted>"), "Debug must redact token: {dbg}");
-        assert!(
-            !dbg.contains("DO_NOT_LOG_ME"),
-            "Debug must NOT contain raw token: {dbg}"
-        );
-    }
-
-    #[test]
-    fn config_debug_redacts_token() {
-        let cfg = StripeClientConfig::new(
-            "https://wallet.test",
-            SecretString::from("hugrw_SECRET_VALUE".to_string()),
-            "stripe-prod",
-        );
-        let dbg = format!("{cfg:?}");
+        let dbg = format!("{c_wallet:?}");
         assert!(dbg.contains("<redacted>"));
-        assert!(!dbg.contains("SECRET_VALUE"));
+        assert!(
+            !dbg.contains("hugrw_"),
+            "Wallet client Debug leaked hugrw_: {dbg}"
+        );
+        assert!(!dbg.contains("SECRET"));
     }
 
     #[test]
-    fn builder_defaults_consume_injected_config() {
-        let c = StripeRealClient::builder().config(test_config()).build().unwrap();
-        // Wave-31: proxy base = `{wallet_base}/_wallet/proxy/{stripe_ref}`.
+    fn builder_direct_yields_api_stripe_base() {
+        let c = StripeRealClient::builder()
+            .config(direct_test_config())
+            .build()
+            .unwrap();
+        assert_eq!(c.effective_base_url(), "https://api.stripe.test");
+    }
+
+    #[test]
+    fn builder_wallet_yields_wallet_proxy_base() {
+        let c = StripeRealClient::builder()
+            .config(wallet_test_config())
+            .build()
+            .unwrap();
         assert_eq!(
-            c.proxy_base(),
+            c.effective_base_url(),
             "https://wallet.test/_wallet/proxy/stripe-prod"
         );
     }
 
     #[test]
-    fn proxy_base_trims_trailing_slash() {
-        let cfg = StripeClientConfig::new(
+    fn effective_base_url_trims_trailing_slash_direct() {
+        let cfg = StripeClientConfig::direct(
+            "https://api.stripe.test/",
+            SecretString::from("sk_test_x".to_string()),
+        );
+        assert_eq!(cfg.effective_base_url(), "https://api.stripe.test");
+    }
+
+    #[test]
+    fn effective_base_url_trims_trailing_slash_wallet() {
+        let cfg = StripeClientConfig::wallet_broker(
             "https://wallet.test/",
             SecretString::from("hugrw_x".to_string()),
             "stripe-prod",
         );
         assert_eq!(
-            cfg.proxy_base_url(),
+            cfg.effective_base_url(),
             "https://wallet.test/_wallet/proxy/stripe-prod"
         );
     }
 
-    /// Single env-touching test. The process-global env is shared
-    /// across the test runner threads, so we serialise both checks
-    /// (missing-token → Authentication error AND defaults applied
-    /// when only the token is set) into one test that owns the
-    /// transitions deterministically and restores callers' state on
-    /// exit. Two separate `#[test]`s would race the cargo test
-    /// scheduler.
     #[test]
-    fn from_env_contract() {
-        let base = env::var("HUGR_WALLET_BASE").ok();
-        let tok = env::var("HUGR_WALLET_TOKEN").ok();
-        let r = env::var("HUGR_STRIPE_REF").ok();
-
-        // 1. Missing HUGR_WALLET_TOKEN → Authentication.
-        env::remove_var("HUGR_WALLET_BASE");
-        env::remove_var("HUGR_WALLET_TOKEN");
-        env::remove_var("HUGR_STRIPE_REF");
-        let err = StripeClientConfig::from_env().unwrap_err();
-        assert!(matches!(err, StripeError::Authentication(_)));
-
-        // 2. Empty HUGR_WALLET_TOKEN → Authentication (filter-empty
-        //    semantics; matches deploy-config "unset === empty" rule).
-        env::set_var("HUGR_WALLET_TOKEN", "");
-        let err = StripeClientConfig::from_env().unwrap_err();
-        assert!(matches!(err, StripeError::Authentication(_)));
-
-        // 3. Token set + base/ref unset → defaults applied.
-        env::set_var("HUGR_WALLET_TOKEN", "hugrw_envtest");
+    fn from_env_direct_default_when_unset() {
+        let _g = EnvGuard::new(ENV_KEYS);
+        // STRIPE_AUTH_MODE unset → defaults to "direct".
+        env::set_var("STRIPE_SECRET_KEY", "sk_test_envdefault");
         let cfg = StripeClientConfig::from_env().unwrap();
-        assert_eq!(cfg.wallet_base, DEFAULT_HUGR_WALLET_BASE);
-        assert_eq!(cfg.stripe_ref, DEFAULT_HUGR_STRIPE_REF);
-        assert_eq!(cfg.wallet_token.expose_secret(), "hugrw_envtest");
+        match cfg.mode {
+            StripeAuthMode::Direct { ref api_base, .. } => {
+                assert_eq!(api_base, DEFAULT_STRIPE_API_BASE);
+            }
+            other => panic!("expected Direct mode by default, got {other:?}"),
+        }
+    }
 
-        // 4. Explicit base + ref → values flow through.
+    #[test]
+    fn from_env_direct_explicit() {
+        let _g = EnvGuard::new(ENV_KEYS);
+        env::set_var("STRIPE_AUTH_MODE", "direct");
+        env::set_var("STRIPE_SECRET_KEY", "sk_test_explicit");
+        env::set_var("STRIPE_API_BASE", "https://api.stripe.local");
+        let cfg = StripeClientConfig::from_env().unwrap();
+        match cfg.mode {
+            StripeAuthMode::Direct {
+                ref api_base,
+                ref api_key,
+            } => {
+                assert_eq!(api_base, "https://api.stripe.local");
+                assert_eq!(api_key.expose_secret(), "sk_test_explicit");
+            }
+            other => panic!("expected Direct mode, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn from_env_wallet_broker() {
+        let _g = EnvGuard::new(ENV_KEYS);
+        env::set_var("STRIPE_AUTH_MODE", "wallet-broker");
+        env::set_var("HUGR_WALLET_TOKEN", "hugrw_envtest");
         env::set_var("HUGR_WALLET_BASE", "https://wallet.local");
         env::set_var("HUGR_STRIPE_REF", "stripe-staging");
         let cfg = StripeClientConfig::from_env().unwrap();
-        assert_eq!(cfg.wallet_base, "https://wallet.local");
-        assert_eq!(cfg.stripe_ref, "stripe-staging");
+        match cfg.mode {
+            StripeAuthMode::WalletBroker {
+                ref wallet_base,
+                ref wallet_token,
+                ref stripe_ref,
+            } => {
+                assert_eq!(wallet_base, "https://wallet.local");
+                assert_eq!(wallet_token.expose_secret(), "hugrw_envtest");
+                assert_eq!(stripe_ref, "stripe-staging");
+            }
+            other => panic!("expected WalletBroker mode, got {other:?}"),
+        }
+    }
 
-        // Restore.
-        match base {
-            Some(v) => env::set_var("HUGR_WALLET_BASE", v),
-            None => env::remove_var("HUGR_WALLET_BASE"),
+    #[test]
+    fn from_env_wallet_broker_snake_case() {
+        let _g = EnvGuard::new(ENV_KEYS);
+        env::set_var("STRIPE_AUTH_MODE", "wallet_broker");
+        env::set_var("HUGR_WALLET_TOKEN", "hugrw_snake");
+        let cfg = StripeClientConfig::from_env().unwrap();
+        match cfg.mode {
+            StripeAuthMode::WalletBroker {
+                ref wallet_base,
+                ref stripe_ref,
+                ..
+            } => {
+                assert_eq!(wallet_base, DEFAULT_HUGR_WALLET_BASE);
+                assert_eq!(stripe_ref, DEFAULT_HUGR_STRIPE_REF);
+            }
+            other => panic!("expected WalletBroker mode (snake_case), got {other:?}"),
         }
-        match tok {
-            Some(v) => env::set_var("HUGR_WALLET_TOKEN", v),
-            None => env::remove_var("HUGR_WALLET_TOKEN"),
+    }
+
+    #[test]
+    fn from_env_unknown_mode_fails() {
+        let _g = EnvGuard::new(ENV_KEYS);
+        env::set_var("STRIPE_AUTH_MODE", "lol");
+        let err = StripeClientConfig::from_env().unwrap_err();
+        match err {
+            StripeError::Authentication(msg) => {
+                assert!(
+                    msg.contains("STRIPE_AUTH_MODE")
+                        && msg.contains("lol")
+                        && msg.contains("direct")
+                        && msg.contains("wallet-broker"),
+                    "unknown-mode error must name the var + reject + valid modes: {msg}"
+                );
+            }
+            other => panic!("expected Authentication for unknown mode, got {other:?}"),
         }
-        match r {
-            Some(v) => env::set_var("HUGR_STRIPE_REF", v),
-            None => env::remove_var("HUGR_STRIPE_REF"),
+    }
+
+    #[test]
+    fn from_env_direct_missing_key_fails() {
+        let _g = EnvGuard::new(ENV_KEYS);
+        env::set_var("STRIPE_AUTH_MODE", "direct");
+        // STRIPE_SECRET_KEY intentionally not set.
+        let err = StripeClientConfig::from_env().unwrap_err();
+        match err {
+            StripeError::Authentication(msg) => {
+                assert!(
+                    msg.contains("STRIPE_SECRET_KEY"),
+                    "direct-mode missing-key error must name STRIPE_SECRET_KEY: {msg}"
+                );
+                assert!(
+                    msg.contains("direct"),
+                    "direct-mode missing-key error must be mode-specific: {msg}"
+                );
+            }
+            other => panic!("expected Authentication, got {other:?}"),
         }
+
+        // Empty also fails (filter-empty semantics).
+        env::set_var("STRIPE_SECRET_KEY", "");
+        let err = StripeClientConfig::from_env().unwrap_err();
+        assert!(matches!(err, StripeError::Authentication(_)));
+    }
+
+    #[test]
+    fn from_env_wallet_broker_missing_token_fails() {
+        let _g = EnvGuard::new(ENV_KEYS);
+        env::set_var("STRIPE_AUTH_MODE", "wallet-broker");
+        // HUGR_WALLET_TOKEN intentionally not set.
+        let err = StripeClientConfig::from_env().unwrap_err();
+        match err {
+            StripeError::Authentication(msg) => {
+                assert!(
+                    msg.contains("HUGR_WALLET_TOKEN"),
+                    "wallet-broker missing-token error must name HUGR_WALLET_TOKEN: {msg}"
+                );
+                assert!(
+                    msg.contains("wallet-broker"),
+                    "wallet-broker missing-token error must be mode-specific: {msg}"
+                );
+            }
+            other => panic!("expected Authentication, got {other:?}"),
+        }
+
+        // Empty also fails.
+        env::set_var("HUGR_WALLET_TOKEN", "");
+        let err = StripeClientConfig::from_env().unwrap_err();
+        assert!(matches!(err, StripeError::Authentication(_)));
     }
 
     #[test]

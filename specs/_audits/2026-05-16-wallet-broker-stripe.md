@@ -3,9 +3,9 @@ id: "AUDIT-2026-05-16-WALLET-BROKER-STRIPE"
 type: "audit_report"
 doc_status: "FROZEN"
 audit_status: "SEALED"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-16"
-updated: "2026-05-16"
+updated: "2026-05-21"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -332,3 +332,212 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
 > **Mandate (wave-31 stream-1):** *"Route ALL outbound Stripe API calls through the HuGR Wallet remote credential broker, eliminating the need for CoreLink to ever hold a real Stripe API key in its Cloudflare Worker secrets. … Fail-CLOSED on wallet unavailability — NOT a fallback to direct Stripe."*
 >
 > Disposition: **DELIVERED.** Per §3 the entire outbound Stripe surface routes via `{wallet_base}/_wallet/proxy/{stripe_ref}`; per §4 `STRIPE_SECRET_KEY` is removed from the deploy contract; per §5 a wiremock test suite pins the URL + auth + fail-CLOSED behaviours; per §6 the post-leak blast radius is now bounded by the wallet's revocation surface; per §7 webhook flow is correctly preserved as direct.
+
+---
+
+## §10 Dual-mode addendum (2026-05-21)
+
+**Status update (2026-05-21):** the HuGR Wallet broker is temporarily
+unavailable for operational reasons. To unblock CoreLink while the
+wallet is restored, the wave-31 stream-1 work is being **preserved
+intact** and exposed as one of two selectable auth modes:
+
+### §10.1 Default flip (`STRIPE_AUTH_MODE`)
+
+The `StripeRealClient` now reads `STRIPE_AUTH_MODE` at process start
+(defaults to `direct` when unset). Accepted values:
+
+- `direct` (DEFAULT until wallet is restored) — reads
+  `STRIPE_API_BASE` (default `https://api.stripe.com`) +
+  `STRIPE_SECRET_KEY` (REQUIRED). Direct call to Stripe with
+  `Authorization: Bearer sk_…`.
+- `wallet-broker` / `wallet_broker` — the wave-31 stream-1 path
+  (§§2.2/3.1/4/5), unchanged. Both kebab and snake spellings are
+  accepted to be friendly to deploy templating systems with different
+  case-folding conventions. Any other value → `StripeError::Authentication`
+  naming the rejected value + the two valid options.
+
+The wave-31 stream-1 work is **NOT REVERTED**. The wallet-broker path
+remains exactly as documented in §§2.2/3.1/3.5/4/5/6.2/7 — it is now
+the `wallet-broker` variant of the dual-mode enum and is re-enabled by
+flipping `STRIPE_AUTH_MODE=wallet-broker` once the broker is back.
+
+### §10.2 Enum shape
+
+```rust
+#[non_exhaustive]
+pub enum StripeAuthMode {
+    Direct {
+        api_base: String,         // default `https://api.stripe.com`
+        api_key: SecretString,    // sk_live_… or sk_test_…
+    },
+    WalletBroker {
+        wallet_base: String,      // default `https://api.humangr.com`
+        wallet_token: SecretString,
+        stripe_ref: String,       // default `stripe-prod`
+    },
+}
+
+#[non_exhaustive]
+pub struct StripeClientConfig {
+    pub mode: StripeAuthMode,
+}
+```
+
+Both variants and the wrapper struct are `#[non_exhaustive]`; every
+credential is wrapped in `secrecy::SecretString`. The `Debug` impl on
+`StripeAuthMode` redacts each credential to a single `<redacted>`
+token (no value, no length, no prefix — pinned by
+`debug_redacts_in_both_modes`). The `Debug` impl on `StripeRealClient`
+delegates through the config so the same redaction applies.
+
+`StripeClientConfig::effective_base_url()` (mode-agnostic, replaces
+`proxy_base_url`) returns:
+- Direct → `{api_base}` (trimmed).
+- WalletBroker → `{wallet_base}/_wallet/proxy/{stripe_ref}` (trimmed).
+
+`StripeRealClient::effective_base_url()` exposes the same value for
+test pinning. The old `proxy_base()` accessor is renamed to
+`effective_base_url()` for mode-agnosticism.
+
+### §10.3 Fail-CLOSED in BOTH modes
+
+Per the wave-31 charter, neither mode falls back silently to the
+other. The fail-CLOSED contract is preserved:
+
+- Missing/empty required env var for the selected mode →
+  `StripeError::Authentication` with a mode-specific message naming
+  the missing var (e.g. `"STRIPE_AUTH_MODE=direct requires
+  STRIPE_SECRET_KEY (set $STRIPE_SECRET_KEY to your sk_live_… or
+  sk_test_… key)"`).
+- Upstream 5xx after retries exhaust → `StripeError::Generic {
+  http_status: 5xx, .. }`. Every retry hits the SAME URL family
+  (Direct: `{api_base}/v1/…`; WalletBroker:
+  `{wallet_base}/_wallet/proxy/{stripe_ref}/v1/…`); there is no
+  cross-mode escalation.
+
+A silent fallback would expose the upstream `sk_live_…` through the
+broker (direct → wallet-broker) or short-circuit the wallet's
+revocation surface (wallet-broker → direct). Both are explicitly
+forbidden and structurally impossible: each mode's client only carries
+the credentials for that mode.
+
+### §10.4 New test net for Direct mode
+
+3 new wiremock-driven `#[tokio::test]`s in
+`crates/corelink-stripe-real/tests/direct_proxy.rs`:
+
+- `direct_mode_uses_api_stripe_com_url` — request URL is
+  `{mock_api_base}/v1/customers` (no `_wallet/proxy` segment).
+- `direct_mode_uses_sk_token_auth` — captured `Authorization` is
+  `Bearer sk_test_<key>` (no `hugrw_` prefix, no HTTP Basic).
+- `direct_mode_fails_closed_on_upstream_5xx` — Stripe 5xx after
+  retries exhaust surfaces as `StripeError::Generic { http_status:
+  503, .. }`; every retry hits the flat Stripe path (no fallback to
+  wallet broker).
+
+The 3 wave-31 stream-1 `tests/wallet_broker_proxy.rs` tests are
+**preserved unchanged** and now exercise the `WalletBroker` variant of
+the dual-mode enum. They migrated only at the constructor call site
+(`StripeClientConfig::new` → `StripeClientConfig::wallet_broker`) and
+the accessor name (`proxy_base()` → `effective_base_url()`); the
+assertions are byte-identical.
+
+In-crate `#[cfg(test)]` adds 8 mode-switching unit tests on
+`StripeClientConfig::from_env`:
+
+- `from_env_direct_default_when_unset` — `STRIPE_AUTH_MODE` unset →
+  Direct mode.
+- `from_env_direct_explicit` — `STRIPE_AUTH_MODE=direct` → Direct
+  mode with explicit `STRIPE_API_BASE` flowing through.
+- `from_env_wallet_broker` — `STRIPE_AUTH_MODE=wallet-broker` →
+  WalletBroker mode.
+- `from_env_wallet_broker_snake_case` — `STRIPE_AUTH_MODE=wallet_broker`
+  → WalletBroker mode (case-folding friendliness).
+- `from_env_unknown_mode_fails` — `STRIPE_AUTH_MODE=lol` →
+  `StripeError::Authentication` naming the rejected value + the two
+  valid options.
+- `from_env_direct_missing_key_fails` — direct mode without
+  `STRIPE_SECRET_KEY` → `StripeError::Authentication` whose message
+  contains both `STRIPE_SECRET_KEY` and `direct`.
+- `from_env_wallet_broker_missing_token_fails` — wallet-broker mode
+  without `HUGR_WALLET_TOKEN` → `StripeError::Authentication` whose
+  message contains both `HUGR_WALLET_TOKEN` and `wallet-broker`.
+- `debug_redacts_in_both_modes` — `{:?}` on neither variant carries
+  `sk_` nor `hugrw_` nor the raw secret value.
+
+Plus 2 builder-level tests pinning the per-mode base URL
+(`builder_direct_yields_api_stripe_base`,
+`builder_wallet_yields_wallet_proxy_base`), 2 trim-trailing-slash
+tests per mode, and 1 `debug_redacts_on_built_client_both_modes`. All
+env-touching tests serialise on a module-level `Mutex` to dodge the
+cargo test scheduler races that the original §5 `from_env_contract`
+test was written defensively against.
+
+### §10.5 Webhook flow — still unchanged
+
+`webhook.rs` + `webhook_dispatch.rs` are untouched in both modes —
+inbound HMAC verify against the local `STRIPE_WEBHOOK_SECRET`. §7
+applies verbatim.
+
+### §10.6 Deploy migration (direct mode, default 2026-05-21)
+
+Operator action to flip from wave-31 stream-1 wallet-broker back to
+direct (while the wallet broker is unavailable):
+
+```bash
+# 1. Provision the direct-mode Stripe key:
+wrangler secret put STRIPE_SECRET_KEY --env prod
+# (paste sk_live_… or sk_test_…)
+
+# 2. Explicitly select direct mode (or rely on the default):
+wrangler secret put STRIPE_AUTH_MODE --env prod
+# (paste 'direct' — or just leave unset; default is 'direct')
+
+# 3. (Optional) Once the wallet broker is back online, flip mode:
+wrangler secret put STRIPE_AUTH_MODE --env prod
+# (paste 'wallet-broker')
+# Pre-req: HUGR_WALLET_TOKEN already in CF secrets (it remained
+# present across this addendum).
+
+# 4. Verify:
+wrangler secret list --env prod | grep -E 'STRIPE_AUTH_MODE|STRIPE_SECRET_KEY|HUGR_WALLET_TOKEN|STRIPE_WEBHOOK_SECRET'
+```
+
+`STRIPE_WEBHOOK_SECRET` stays in CF secrets in both modes (it is the
+inbound HMAC key, see §7).
+
+### §10.7 Gates (re-run on `wt/r-prep-stripe-dual-mode`)
+
+| Gate | Command | Result |
+|---|---|---|
+| Workspace build | `cargo build --workspace` | OK |
+| Stripe-real tests | `cargo test -p corelink-stripe-real` | OK — 65 lib + 4 + 2 + 4 + 3 (direct_proxy NEW) + 3 (wallet_broker_proxy preserved) + 12 + 1 doctest |
+| Tier-selection tests | `cargo test -p corelink-tier-selection` | OK |
+| Billing materializer tests | `cargo test -p corelink-billing-stripe-materializer` | OK |
+| Server tests | `cargo test -p corelink-server` | OK |
+| Workspace clippy | `cargo clippy --workspace --all-targets -- -D warnings` | OK |
+| Spec validator | `python3 scripts/validate_specs.py` | OK |
+| Reference validator | `python3 scripts/validate_references.py` | OK |
+| Migrations additive | `python3 scripts/check_migrations_additive.py` | OK |
+
+Test count delta vs §5 baseline: **+8 client::tests** (env-contract
+expansion to dual-mode) + **+3 `tests/direct_proxy.rs`** (the new
+mode's wiremock pin). The 3 `tests/wallet_broker_proxy.rs` tests are
+preserved.
+
+### §10.8 DCO + sign-off (addendum)
+
+Signed-off-by: Gustavo Schneiter <gustavo@humangr.com>
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+
+> **Mandate (2026-05-21):** *"Dual-mode auth. Default = direct (wallet's
+> broken). Keep wallet-broker as a switchable enum variant. Fail-CLOSED
+> in both modes. Don't revert wave-31 stream-1."*
+>
+> Disposition: **DELIVERED.** The wave-31 stream-1 wallet-broker work
+> is preserved intact as the `WalletBroker` variant of the dual-mode
+> enum; the Direct variant is the new default; both variants fail-CLOSED
+> on missing creds or upstream 5xx; the new test net pins the Direct
+> mode's URL contract + auth header + fail-CLOSED behaviour; the
+> wallet-broker test net is preserved byte-identical.

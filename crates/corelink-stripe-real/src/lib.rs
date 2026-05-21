@@ -15,27 +15,30 @@
 //! - `POST /v1/customers` + `GET /v1/customers/:id` — customer CRUD.
 //! - `POST /v1/billing_portal/sessions` — Stripe Customer Portal URL.
 //!
-//! # Wave-31 wallet-broker series (stream-1): credential brokerage
+//! # Wave-31 dual-mode auth (2026-05-21)
 //!
-//! Outbound Stripe calls route through the HuGR Wallet remote
-//! credential broker. CoreLink NEVER holds a real upstream Stripe API
-//! secret.
-//! Credentials resolve via [`StripeClientConfig::from_env`]:
+//! Outbound Stripe calls route through one of two auth modes,
+//! selected by `STRIPE_AUTH_MODE` at process start:
 //!
-//! - `HUGR_WALLET_BASE`  — wallet broker base URL (default
-//!   `https://api.humangr.com`).
-//! - `HUGR_WALLET_TOKEN` — CoreLink-side `hugrw_` token (held in a
-//!   redacting [`secrecy::SecretString`]).
-//! - `HUGR_STRIPE_REF`   — wallet ref name (default `stripe-prod`).
-//! - `STRIPE_WEBHOOK_SECRET` resolved at [`verify_webhook_signature`]
-//!   caller — passed in explicitly so callers can rotate without
-//!   rebuilding the client. Webhook flow stays direct (inbound +
-//!   local HMAC verify); no upstream key involved.
-//! - SECRETS ARE NEVER LOGGED. The `Debug` impls on
-//!   [`StripeClientConfig`] and [`StripeRealClient`] redact the token.
+//! - `direct` (DEFAULT) — direct to `api.stripe.com` with
+//!   `Authorization: Bearer sk_live_…` (or `sk_test_…`); env vars
+//!   `STRIPE_API_BASE` (default `https://api.stripe.com`) +
+//!   `STRIPE_SECRET_KEY` (REQUIRED).
+//! - `wallet-broker` — through the HuGR Wallet remote credential
+//!   broker (wave-31 stream-1; the wallet is temporarily unavailable
+//!   so this mode is not the default until further notice); env vars
+//!   `HUGR_WALLET_BASE` (default `https://api.humangr.com`) +
+//!   `HUGR_WALLET_TOKEN` (REQUIRED) + `HUGR_STRIPE_REF` (default
+//!   `stripe-prod`).
 //!
-//! See `specs/_audits/2026-05-16-wallet-broker-stripe.md` for the
-//! full architecture diagram + blast-radius analysis.
+//! Both modes wrap credentials in [`secrecy::SecretString`]; the
+//! `Debug` impls on [`StripeClientConfig`], [`StripeAuthMode`], and
+//! [`StripeRealClient`] redact every credential. `STRIPE_WEBHOOK_SECRET`
+//! is resolved at [`verify_webhook_signature`] caller in both modes —
+//! webhook flow stays direct (inbound + local HMAC verify).
+//!
+//! See `specs/_audits/2026-05-16-wallet-broker-stripe.md` §10 for the
+//! dual-mode addendum + blast-radius analysis.
 //!
 //! # Idempotency
 //!
@@ -79,8 +82,8 @@ pub mod webhook_dispatch;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use client::{
-    StripeClientConfig, StripeRealClient, StripeRealClientBuilder,
-    DEFAULT_HUGR_STRIPE_REF, DEFAULT_HUGR_WALLET_BASE,
+    StripeAuthMode, StripeClientConfig, StripeRealClient, StripeRealClientBuilder,
+    DEFAULT_HUGR_STRIPE_REF, DEFAULT_HUGR_WALLET_BASE, DEFAULT_STRIPE_API_BASE,
 };
 pub use clock::{Clock, InMemoryFakeClock};
 #[cfg(not(target_arch = "wasm32"))]

@@ -111,7 +111,7 @@ fn live_billing_portal_session() {
 fn live_authentication_failure_bad_token() {
     use corelink_stripe_real::StripeClientConfig;
     use secrecy::SecretString;
-    let cfg = StripeClientConfig::new(
+    let cfg = StripeClientConfig::wallet_broker(
         env::var("HUGR_WALLET_BASE").unwrap_or_else(|_| "https://api.humangr.com".to_string()),
         SecretString::from("hugrw_INVALID_TOKEN".to_string()),
         env::var("HUGR_STRIPE_REF").unwrap_or_else(|_| "stripe-prod-test".to_string()),
