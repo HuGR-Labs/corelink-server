@@ -33,7 +33,7 @@ use wiremock::matchers::{header, header_exists, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn config_for(server: &MockServer, token: &str) -> StripeClientConfig {
-    StripeClientConfig::new(
+    StripeClientConfig::wallet_broker(
         server.uri(),
         SecretString::from(token.to_string()),
         "stripe-prod",
@@ -56,13 +56,13 @@ async fn client_uses_wallet_proxy_url() {
         .await;
 
     let cfg = config_for(&server, "hugrw_url_test");
-    let proxy_base = cfg.proxy_base_url();
+    let proxy_base = cfg.effective_base_url();
     let cust = tokio::task::spawn_blocking(move || {
         let client = StripeRealClient::builder().config(cfg).build().expect("build");
-        // Sanity: the proxy_base on the client matches what we
-        // computed pre-spawn (i.e. the wallet ref is baked in
+        // Sanity: the effective base URL on the client matches what
+        // we computed pre-spawn (i.e. the wallet ref is baked in
         // before any request hits the wire).
-        assert_eq!(client.proxy_base(), proxy_base);
+        assert_eq!(client.effective_base_url(), proxy_base);
         client.create_customer("u@example.test", "tenant_url_test", "idem-url-1")
     })
     .await

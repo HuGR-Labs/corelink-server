@@ -1,8 +1,48 @@
 # Production Secrets Runbook (WI-R2-14)
 
-> **Last sealed:** 2026-05-16 (wave-31 wallet-broker series stream-1 — Stripe routed through HuGR Wallet broker; see `specs/_audits/2026-05-16-wallet-broker-stripe.md`)
+> **Last sealed:** 2026-05-21 (wave-31 dual-mode auth — Stripe client now supports BOTH direct and wallet-broker auth, switched by `STRIPE_AUTH_MODE`; see `specs/_audits/2026-05-16-wallet-broker-stripe.md §10`)
 > **Owner:** SRE Lead (co-owned with Security Lead)
 > **Companion:** `docs/internal/secrets-checklist.md` (the matrix of all secrets)
+
+## Stripe auth modes
+
+> **DEFAULT (2026-05-21):** Stripe runs in `direct` mode. The HuGR Wallet
+> broker is temporarily unavailable for operational reasons, so CoreLink
+> calls Stripe directly with `STRIPE_SECRET_KEY` until further notice.
+> Flip back to `wallet-broker` (see column 2 below) once the broker is
+> restored — there is NO automatic fallback; the mode must be set
+> explicitly via `STRIPE_AUTH_MODE`.
+
+The `crates/corelink-stripe-real` HTTPS client supports two auth modes,
+selected per process via the `STRIPE_AUTH_MODE` env var. Both modes wrap
+every credential in a redacting `SecretString`; the `Debug` impls on
+`StripeClientConfig` / `StripeAuthMode` / `StripeRealClient` redact every
+secret. Webhook signature verification stays direct in both modes (see
+`STRIPE_WEBHOOK_SECRET` below) — webhooks are inbound HMAC against a
+local key, no upstream credential involved.
+
+| Direct mode (`STRIPE_AUTH_MODE=direct`, default) | Wallet-broker mode (`STRIPE_AUTH_MODE=wallet-broker`) |
+|---|---|
+| `STRIPE_API_BASE` (optional; default `https://api.stripe.com`) | `HUGR_WALLET_BASE` (optional; default `https://api.humangr.com`) |
+| `STRIPE_SECRET_KEY` (REQUIRED; `sk_live_…` or `sk_test_…`) | `HUGR_WALLET_TOKEN` (REQUIRED; `hugrw_…` proxy token) |
+| (no ref — points straight at Stripe) | `HUGR_STRIPE_REF` (optional; default `stripe-prod`) |
+| URL shape: `{api_base}/v1/…` | URL shape: `{wallet_base}/_wallet/proxy/{stripe_ref}/v1/…` |
+| Auth: `Authorization: Bearer sk_…` | Auth: `Authorization: Bearer hugrw_…` |
+| CoreLink HOLDS the upstream Stripe key. | CoreLink does NOT hold the upstream key; wallet holds it in KV. |
+| Rotation: standard Stripe dashboard → `wrangler secret put STRIPE_SECRET_KEY`. | Rotation of `hugrw_`: wallet UI → `wrangler secret put HUGR_WALLET_TOKEN`. Rotation of `sk_live_…`: wallet-owner-side, decoupled from CoreLink. |
+
+Both modes fail CLOSED: a missing required env var → `StripeError::Authentication`
+with a mode-specific message; an upstream 5xx after retries exhaust →
+`StripeError::Generic { http_status: 5xx, .. }`. There is NEVER a silent
+fallback to the OTHER mode (would expose the upstream key through the
+broker, or vice versa).
+
+`STRIPE_AUTH_MODE` accepts both `wallet-broker` (kebab-case) and
+`wallet_broker` (snake-case) for deploy-template friendliness; any other
+value → `StripeError::Authentication` naming the rejected value.
+
+See `specs/_audits/2026-05-16-wallet-broker-stripe.md §10` (dual-mode
+addendum) for the full enum shape + test net.
 
 This runbook covers the **operational** side of secrets management:
 
@@ -24,14 +64,18 @@ Every row marked `cf-wrangler` in the matrix is populated via:
 # One-shot per secret. The command prompts stdin for the value;
 # DO NOT pass via CLI args (would land in shell history).
 #
-# Wave-31 wallet-broker series stream-1 (Stripe): the upstream
-# `sk_live_...` no longer lives in CF Worker secrets — it is held by
-# the HuGR Wallet broker (api.humangr.com) under ref `stripe-prod` and
-# injected into outbound calls by the wallet. CoreLink stores only the
-# proxy-scoped `hugrw_` token. See
-# `specs/_audits/2026-05-16-wallet-broker-stripe.md`.
-wrangler secret put HUGR_WALLET_TOKEN        --env prod   # hugrw_... (CoreLink-side proxy token)
-wrangler secret put STRIPE_WEBHOOK_SECRET    --env prod   # whsec_... (inbound HMAC verify — direct, NOT brokered)
+# Wave-31 dual-mode auth (2026-05-21): the Stripe client supports
+# BOTH direct (default while the HuGR Wallet broker is temporarily
+# unavailable) and wallet-broker auth, switched by `STRIPE_AUTH_MODE`.
+# Populate the secrets for the mode you intend to run:
+#   - DEFAULT (`STRIPE_AUTH_MODE=direct`):       STRIPE_SECRET_KEY
+#   - When wallet is restored (`STRIPE_AUTH_MODE=wallet-broker`):
+#                                               HUGR_WALLET_TOKEN
+# Both modes always need STRIPE_WEBHOOK_SECRET (inbound HMAC, local).
+# See `specs/_audits/2026-05-16-wallet-broker-stripe.md §10`.
+wrangler secret put STRIPE_SECRET_KEY        --env prod   # sk_live_... — DEFAULT mode (2026-05-21 onward)
+wrangler secret put HUGR_WALLET_TOKEN        --env prod   # hugrw_... — set only when STRIPE_AUTH_MODE=wallet-broker
+wrangler secret put STRIPE_WEBHOOK_SECRET    --env prod   # whsec_... (inbound HMAC verify — direct in BOTH modes)
 wrangler secret put CLERK_SECRET_KEY         --env prod
 wrangler secret put PAGERDUTY_ROUTING_KEY    --env prod
 wrangler secret put SLACK_WEBHOOK_URL_ALERTS_SEV1            --env prod
@@ -112,28 +156,38 @@ expiry.
 **Manual rotation playbook (any secret)**:
 
 1. **Pre-rotate** — generate new credential at vendor (do NOT revoke old yet).
-2. **Stage** — push new value to a `STAGE_` prefixed env var:
+2. **Stage** — push new value to a `STAGE_` prefixed env var. The Stripe
+   secret to rotate depends on the active `STRIPE_AUTH_MODE`:
    ```bash
-   # Example: rotating the wallet-broker token (wave-31 Stripe path).
+   # Direct mode (DEFAULT, 2026-05-21 onward): rotate STRIPE_SECRET_KEY.
+   wrangler secret put STAGE_STRIPE_SECRET_KEY --env prod
+
+   # Wallet-broker mode: rotate HUGR_WALLET_TOKEN.
    wrangler secret put STAGE_HUGR_WALLET_TOKEN --env prod
    ```
 3. **Canary** — deploy a 1% canary that consumes `STAGE_` first, falls back to
    the live var. Run for 30 min; check `corelink-stripe-real` error rates.
-4. **Promote** — overwrite the live var:
+4. **Promote** — overwrite the live var (same name as the secret you staged):
    ```bash
+   # Direct mode:
+   wrangler secret put STRIPE_SECRET_KEY --env prod
+
+   # Wallet-broker mode:
    wrangler secret put HUGR_WALLET_TOKEN --env prod
    ```
 5. **Verify** — run `scripts/secrets-checklist-verify.sh` + smoke tests.
-6. **Revoke old** — at the vendor (for `HUGR_WALLET_TOKEN`, revoke the prior
-   `hugrw_` token in the wallet UI; for direct-vendor secrets, revoke at the
-   vendor dashboard).
-7. **Clean up** — `wrangler secret delete STAGE_HUGR_WALLET_TOKEN --env prod`.
+6. **Revoke old** — at the vendor:
+   - Direct mode: revoke the prior `sk_…` key in the Stripe dashboard.
+   - Wallet-broker mode: revoke the prior `hugrw_` token in the wallet UI.
+   - For other direct-vendor secrets, revoke at the vendor dashboard.
+7. **Clean up** — `wrangler secret delete STAGE_<NAME> --env prod`.
 8. **Record** — emit a `secret.rotated` event to D1 `audit_outbox` with
    `{secret_name, rotator_actor, rotated_at, prev_kid, new_kid}`.
 
 ### 2.2 Auto-tested rotation (high-value secrets)
 
-For `HUGR_WALLET_TOKEN` (wave-31; supersedes legacy `STRIPE_SECRET_KEY`),
+For the Stripe credential of the currently-active mode (`STRIPE_SECRET_KEY`
+in direct mode, `HUGR_WALLET_TOKEN` in wallet-broker mode),
 `PAGERDUTY_ROUTING_KEY`, and `CLERK_SECRET_KEY`, production deploys an
 **out-of-band rotation drill** monthly: the SRE team rotates the secret in
 staging following the playbook above and verifies the canary path works
@@ -156,7 +210,7 @@ a public repo, lost device, etc.), execute this playbook:
 | T+ | Action | Owner |
 |---|---|---|
 | 0min | **Detect** — incident declared (PD page or manual). Page SRE Lead + Security Lead via `#alerts-sev1`. | Detector |
-| +5min | **Revoke** at vendor (NOT just rotate — explicit revocation). For `HUGR_WALLET_TOKEN`: revoke the `hugrw_` token in the HuGR Wallet UI (instant; CoreLink does not hold the upstream Stripe key — that stays untouched, the wallet owner separately rotates it inside the wallet KV). For Slack: revoke webhook at app config. For AWS: deactivate + schedule deletion of access key. | Rotation owner per matrix |
+| +5min | **Revoke** at vendor (NOT just rotate — explicit revocation). Stripe-direct (`STRIPE_SECRET_KEY`, default mode 2026-05-21 onward): revoke the leaked `sk_…` key in the Stripe dashboard. Wallet-broker (`HUGR_WALLET_TOKEN`): revoke the `hugrw_` token in the HuGR Wallet UI (instant; CoreLink does not hold the upstream Stripe key in that mode — wallet owner rotates `sk_live_…` separately inside the wallet KV). For Slack: revoke webhook at app config. For AWS: deactivate + schedule deletion of access key. | Rotation owner per matrix |
 | +10min | **Generate new** credential at vendor. | Rotation owner |
 | +15min | **Deploy** new value via `wrangler secret put` (or GHA secret update + redeploy). Skip canary — this is the compromise path, accept brief downtime over compromise. | Rotation owner |
 | +30min | **Audit** — pull last 24h of activity for the compromised credential from the vendor's audit log. Cross-reference against CoreLink audit_outbox for replay. | Security Lead |
@@ -166,14 +220,22 @@ a public repo, lost device, etc.), execute this playbook:
 
 ### Per-secret compromise notes
 
-- **`HUGR_WALLET_TOKEN`** (#1; wave-31 supersedes legacy `STRIPE_SECRET_KEY`):
+- **`STRIPE_SECRET_KEY`** (Stripe direct mode, 2026-05-21 default):
+  Revoke the `sk_…` key in the Stripe dashboard immediately. Switch
+  `corelink-billing-aggregator` to read-only mode until a new key is
+  minted, rotated in via `wrangler secret put STRIPE_SECRET_KEY`, and
+  the canary clears. Replay last 24h via `corelink-billing-replay --since 24h`.
+  Stripe retains 30d of events, so the audit trail of charges signed
+  with the rotated key is recoverable via `events.list`.
+- **`HUGR_WALLET_TOKEN`** (Stripe wallet-broker mode, when active):
   After revoking the `hugrw_` token in the wallet UI, immediately switch
   `corelink-billing-aggregator` to read-only mode until rotation completes.
   Replay last 24h via `corelink-billing-replay --since 24h`. Note: the upstream
   `sk_live_...` lives in wallet KV and is NOT exposed to CoreLink — a leak of
   `HUGR_WALLET_TOKEN` does NOT require Stripe-side key rotation (the wallet
   owner does that on a separate cadence inside the wallet). See
-  `specs/_audits/2026-05-16-wallet-broker-stripe.md §6` blast-radius analysis.
+  `specs/_audits/2026-05-16-wallet-broker-stripe.md §6` blast-radius analysis
+  + `§10` dual-mode addendum.
 - **`STRIPE_WEBHOOK_SECRET`** (#3): UNCHANGED by wave-31 — inbound HMAC verify
   is direct, not brokered. Re-fetch missed webhooks via Stripe's `events.list`
   API with `created[gte]=T-24h`. Stripe retains 30d of events.
@@ -253,7 +315,8 @@ Monthly, run `scripts/secrets_audit_reconcile.py` (TBD) which:
 
 | Secret family | Where | Owner |
 |---|---|---|
-| Stripe (wallet-broker, wave-31) | `wrangler secret put HUGR_WALLET_TOKEN` + HuGR Wallet UI for upstream `sk_live_...` rotation (wallet-owner-side, decoupled) | SRE Lead (`hugrw_` token) + Wallet Owner (upstream key) |
+| Stripe (direct mode, DEFAULT 2026-05-21) | `wrangler secret put STRIPE_SECRET_KEY` + Stripe dashboard for `sk_…` rotation | SRE Lead |
+| Stripe (wallet-broker mode, wave-31; when broker is healthy) | `wrangler secret put HUGR_WALLET_TOKEN` + HuGR Wallet UI for upstream `sk_live_...` rotation (wallet-owner-side, decoupled) | SRE Lead (`hugrw_` token) + Wallet Owner (upstream key) |
 | Clerk | `wrangler secret put` + Clerk dashboard + Vercel env | DevOps |
 | PagerDuty | `wrangler secret put` + PagerDuty integration | SRE Lead |
 | Slack webhooks | `wrangler secret put` + Slack app config | SRE Lead |
