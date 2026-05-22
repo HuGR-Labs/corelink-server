@@ -48,6 +48,18 @@ members = [
     # coordinator 3-state machine by reference. See
     # `specs/_audits/2026-05-22-w33-stream-c-infra-ops.md`.
     "crates/corelink-replication",
+    # Wave-33 Stage 1 Stream C sub-step C.2 — canonical ops aggregator
+    # (LARGEST Wave-33 absorption: 28 → 1). Option-A re-export façade
+    # over the 28 absorbed ops-context crates (oncall + statuspage +
+    # slack + 4 admin + customer-alerts + enterprise-inquiry + survey +
+    # runbook + tenant-offboarding + deploy-verifier + terraform-drift +
+    # 2 DR + chaos + 2 rotation + 3 DT + drata + 2 supply-chain + 2
+    # config + d1-migrations). HTTPS portions of statuspage + slack also
+    # re-exported by `corelink-adapters-cloud` (C.3). Preserves admin
+    # dual-approval flow, runbook PAT-RUNBOOK-DRILL-001, oncall fatigue,
+    # statuspage 1-per-5-min rate-limiter by reference. See
+    # `specs/_audits/2026-05-22-w33-stream-c-infra-ops.md`.
+    "crates/corelink-ops",
     "crates/tenant-path",
     "crates/corelink-hash",
     "crates/corelink-worker",
@@ -551,6 +563,9 @@ corelink-privacy = { path = "crates/corelink-privacy" }
 # (5 absorbed crates: region + replica-worker + replication-coordinator +
 # failover-router + rollout-controller).
 corelink-replication = { path = "crates/corelink-replication" }
+# Wave-33 Stage 1 Stream C sub-step C.2: canonical ops aggregator façade
+# (LARGEST Wave-33 absorption — 28 absorbed crates).
+corelink-ops = { path = "crates/corelink-ops" }
 # Wave-33 Stage 1 Stream B sub-step B.5: DPA acceptance + versioning deps
 # (consumed by the `corelink-privacy::dpa::{acceptance, versioning}` façade).
 corelink-dpa-acceptance = { path = "crates/corelink-dpa-acceptance" }
@@ -623,6 +638,19 @@ corelink-openapi = { path = "crates/corelink-openapi" }
 corelink-handler-cas = { path = "crates/corelink-handler-cas" }
 corelink-handler-ac = { path = "crates/corelink-handler-ac" }
 corelink-handler-admin = { path = "crates/corelink-handler-admin" }
+# Wave-33 Stage 1 Stream C sub-step C.2 — workspace dep entries for the
+# 7 ops-aggregator absorbed crates that previously had no shared
+# workspace-level dependency line (they were each pulled in only by
+# apps/server or sibling crates via relative path). The ops umbrella
+# now needs to consume them via `{ workspace = true }`.
+corelink-oncall = { path = "crates/corelink-oncall" }
+corelink-slack-real = { path = "crates/corelink-slack-real" }
+corelink-enterprise-inquiry = { path = "crates/corelink-enterprise-inquiry" }
+corelink-survey = { path = "crates/corelink-survey" }
+corelink-runbook-tracker = { path = "crates/corelink-runbook-tracker" }
+corelink-terraform-drift-consumer = { path = "crates/corelink-terraform-drift-consumer" }
+corelink-supply-chain-policy = { path = "crates/corelink-supply-chain-policy" }
+corelink-d1-migrations = { path = "crates/corelink-d1-migrations" }
 
 # CLI tooling (WI-S15-001 / WI-S15-005)
 toml = "0.8"
