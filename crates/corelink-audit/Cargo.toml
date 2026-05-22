@@ -36,6 +36,12 @@ thiserror = { workspace = true }
 uuid = { workspace = true, features = ["v7", "rng-getrandom", "serde"] }
 zeroize = { workspace = true }
 
+# Wave-33 Stage 0 sub-step 4 — Option-A aggregator re-exports for
+# Merkle chain processor + audit analytics. Physical absorption
+# deferred to Stage 1 per the established Option-A pattern.
+corelink-audit-chain = { workspace = true }
+corelink-analytics = { workspace = true }
+
 [dev-dependencies]
 proptest = { workspace = true }
 

@@ -1134,6 +1134,8 @@ dependencies = [
 name = "corelink-audit"
 version = "0.1.0"
 dependencies = [
+ "corelink-analytics",
+ "corelink-audit-chain",
  "hex",
  "hmac 0.12.1",
  "proptest",

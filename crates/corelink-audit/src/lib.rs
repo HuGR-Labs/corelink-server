@@ -105,7 +105,14 @@
 
 #![forbid(unsafe_code)]
 
-pub mod chain;
+// Internal hash-primitive module. Renamed wave-33 Stage 0 sub-step 4
+// from `chain` to `link_hash` to free the `chain` namespace for the
+// new aggregator-style re-export of `corelink-audit-chain` (Merkle
+// chain processor). Public re-exports of `compute_content_hash` /
+// `link_chain_hash` / `ContentHash` / `ChainHash` /
+// `CONTENT_HASH_HEX_LEN` remain reachable at the crate root — no
+// public-API breakage.
+pub mod link_hash;
 pub mod emitter;
 pub mod error;
 pub mod events;
@@ -113,7 +120,21 @@ pub mod metrics;
 pub mod redact;
 pub mod retention;
 
-pub use chain::{
+// Wave-33 Stage 0 sub-step 4 — canonical EDA chokepoint trait.
+// Single import target for every Stage 1 stream's audit-fail-CLOSED
+// path: `use corelink_audit::ports::AuditEmitter`.
+pub mod ports;
+
+// Wave-33 Stage 0 sub-step 4 — Option-A aggregator submodules.
+// Physical absorption of `corelink-audit-chain` (Merkle chain
+// processor) + `corelink-analytics` (audit analytics) deferred to
+// Stage 1 per the established Option-A pattern; aggregator submodules
+// surface the canonical import paths now so Stage 1 streams can
+// migrate consumers incrementally.
+pub mod analytics;
+pub mod chain;
+
+pub use link_hash::{
     compute_content_hash, link_chain_hash, ChainHash, ContentHash, CONTENT_HASH_HEX_LEN,
 };
 pub use emitter::{Emitter, EmitterError, InMemoryEmitter};
