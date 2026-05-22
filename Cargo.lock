@@ -1203,6 +1203,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-billing"
+version = "0.1.0"
+dependencies = [
+ "corelink-abuse",
+ "corelink-billing-aggregator",
+ "corelink-billing-emit",
+ "corelink-billing-reconcile",
+ "corelink-billing-replay",
+ "corelink-billing-stripe",
+ "corelink-billing-stripe-materializer",
+ "corelink-quota",
+ "corelink-quota-cas",
+ "corelink-quota-fsm",
+ "corelink-rate-headers",
+ "corelink-ratelimit",
+ "corelink-stripe-real",
+ "corelink-tier-selection",
+]
+
+[[package]]
 name = "corelink-billing-aggregator"
 version = "0.1.0"
 dependencies = [

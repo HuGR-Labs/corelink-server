@@ -14,6 +14,13 @@ members = [
     # Wave-33 Stage 0 sub-step 3 — canonical observability aggregator.
     # Option-A re-export façade over the 7 telemetry crates per spec §4.
     "crates/corelink-telemetry",
+    # Wave-33 Stage 1 Stream B sub-step B.1 — canonical billing
+    # aggregator. Option-A re-export façade over the 14 billing /
+    # quota / rate-limit / abuse crates per spec §4. Physical
+    # absorption deferred to consumer-migration stream; absorbed
+    # crates remain canonical sources of truth. See
+    # `specs/_audits/2026-05-22-w33-stream-b-policy.md`.
+    "crates/corelink-billing",
     "crates/tenant-path",
     "crates/corelink-hash",
     "crates/corelink-worker",
@@ -474,6 +481,8 @@ corelink-synthetic-pager = { path = "crates/corelink-synthetic-pager" }
 corelink-lighthouse-tracker = { path = "crates/corelink-lighthouse-tracker" }
 # Wave-33 Stage 0 sub-step 3: canonical observability aggregator façade.
 corelink-telemetry = { path = "crates/corelink-telemetry" }
+# Wave-33 Stage 1 Stream B sub-step B.1: canonical billing aggregator façade.
+corelink-billing = { path = "crates/corelink-billing" }
 corelink-billing-emit = { path = "crates/corelink-billing-emit" }
 corelink-billing-aggregator = { path = "crates/corelink-billing-aggregator" }
 corelink-billing-stripe = { path = "crates/corelink-billing-stripe" }
