@@ -107,6 +107,41 @@
 //!   `corelink_signup_orchestration_total{outcome, region}` +
 //!   `corelink_signup_atomicity_rollback_total{step}` (cardinality
 //!   bounded per INV-OBS-CARDINALITY-BUDGET).
+//!
+//! # Wave-33 Stream B sub-step B.4 — canonical-path adoption review
+//!
+//! Per `specs/_audits/2026-05-22-w33-stream-b-policy.md` sub-step B.4,
+//! the wave-33 reorg surveys this crate for adoption of the canonical
+//! cross-cutting surfaces introduced at Stage 0:
+//!
+//! - `corelink_core` (apex cross-cutting types) — NOT adopted. This
+//!   crate's `TenantId` / `CorrelationId` / `Bcp47Locale` etc. are
+//!   signup-scoped newtype envelopes that intentionally encode signup
+//!   semantics (e.g. `TenantId` here is a "freshly minted" UUIDv7
+//!   that the orchestrator generates, not an externally-furnished
+//!   tenant id). Migration to `corelink_core::TenantId` would alter
+//!   the type's API contract (deserialization rules, format
+//!   constraints) and is therefore behaviour-changing. Deferred to a
+//!   consumer-migration follow-on.
+//! - `corelink_crypto` — NOT applicable. The crate has no inline
+//!   crypto path; SHA-256 email hashing happens at consumer wiring
+//!   layer (Cloudflare Worker handler in `apps/worker/`).
+//! - `corelink_audit::ports::AuditEmitter` — NOT adopted. The
+//!   crate's `audit::SignupAuditSink::emit(&self, record:
+//!   &SignupAuditRecord)` trait takes a strongly-typed
+//!   `SignupAuditRecord` by reference; the wave-33 `AuditEmitter::emit`
+//!   trait takes a generic `AuditEvent` envelope by value with
+//!   `event_type: String` + `payload: serde_json::Value`. Migrating
+//!   would change the public API surface (signup's trait downstream
+//!   consumers would need to wrap records into JSON envelopes at
+//!   every emit site, losing compile-time field validation). The
+//!   migration is therefore behaviour-changing and deferred to the
+//!   consumer-migration stream that owns the audit envelope
+//!   harmonization across all 5 context-local `AuditSink` traits
+//!   (cas / ac / admin / signup / billing).
+//!
+//! Crate health verified at wave-33 B.4: 67 tests pass (`cargo test
+//! -p corelink-signup`); zero regressions; baseline preserved.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
