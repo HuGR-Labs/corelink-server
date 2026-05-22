@@ -32,7 +32,7 @@ use proptest::prelude::*;
 use proptest::test_runner::Config;
 use uuid::Uuid;
 
-use corelink_ac::sig::{
+use corelink_ac_core::sig::{
     compose_canonical_bytes, HkdfSigner, HkdfVerifier, MockTdkHandle, SigError, SignatureSigner,
     SignatureVerifier, TdkHandle, AC_ENVELOPE_PREIMAGE_LEN, AC_ENVELOPE_SIG_LEN,
 };

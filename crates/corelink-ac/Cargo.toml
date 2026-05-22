@@ -1,6 +1,6 @@
 [package]
 name = "corelink-ac"
-description = "CoreLink Action Cache Merkle codec + dual-side verifier (WI-S04-003). Builds the canonical Merkle tree over an `ActionResult`'s output_files + output_directories digest set (BLAKE3-256 with RFC 6962-style domain separation: `\\x00`-prefix leaves + `\\x01`-prefix internal nodes), enforces the bounded-parser discipline (depth ≤ 32, fanout ≤ 4096, total nodes ≤ 100 000, payload ≤ 1 MiB) at decode time, and supplies the dual-side `MerkleVerifier` consumed by both the server (`corelink-worker::reapi::ac` UpdateActionResult pre-persist verify) and the client SDK (`corelink-client-verify` post-download verify). Tree shape is byte-deterministic for the same `(tenant_id, action_digest, result)` so REAPI v2 idempotency holds. The trait surface is wasm32-clean (no tokio dependency) so the same crate compiles into the Cloudflare Worker bundle and the Rust client SDK."
+description = "Wave-33 Stage 1 Stream A sub-step A.2b — canonical Action Cache (AC) bounded-context aggregator façade for the CoreLink workspace. Re-exports the 3 absorbed crates that historically partitioned the AC surface (`corelink-ac-core` Merkle codec + dual-side verifier, `corelink-ac-schema` region + simulation schema, `corelink-handler-ac` AC handler) under a single canonical import surface (`corelink_ac::core`, `corelink_ac::schema`, `corelink_ac::handler`, plus the top-level `pub use corelink_ac_core::*` so historical `use corelink_ac::{MerkleVerifier, …}` paths continue to resolve). Stage 1 ships this crate as a re-export aggregator (Option-A least-invasive interpretation per Stage 0 SEAL §4) so downstream crates can adopt the canonical paths without disturbing the existing AC tests / fuzz harness / canonical vectors. Physical absorption of source modules is deferred to Stage 2; see `specs/_audits/2026-05-22-wave33-code-reorg-spec.md` §6 + Stream A SEAL audit."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -25,53 +25,14 @@ print_stderr = "deny"
 mod_module_files = "deny"
 
 [dependencies]
-corelink-hash = { workspace = true }
-blake3 = { workspace = true }
-hex = { workspace = true }
-thiserror = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-# WI-S04-004 — HKDF-SHA256 digest signing infrastructure (CTRL-AC-002).
-hkdf = { workspace = true }
-sha2 = { workspace = true }
-subtle = { workspace = true }
-zeroize = { workspace = true }
-uuid = { workspace = true }
+# Stage 0 cross-cutting deps (canonical import targets for any new
+# code that lands inside this crate post-aggregator).
+corelink-core = { workspace = true }
+corelink-crypto = { workspace = true }
+corelink-audit = { workspace = true }
 
-[dev-dependencies]
-proptest = { workspace = true }
-rand = "0.9"
-rand_chacha = "0.9"
-
-[[test]]
-name = "prop_merkle"
-path = "tests/prop_merkle.rs"
-
-[[test]]
-name = "canonical_vectors"
-path = "tests/canonical_vectors.rs"
-
-[[test]]
-name = "round_trip"
-path = "tests/round_trip.rs"
-
-[[test]]
-name = "tampering"
-path = "tests/tampering.rs"
-
-# WI-S04-004 sig module test targets.
-[[test]]
-name = "prop_sig"
-path = "tests/prop_sig.rs"
-
-[[test]]
-name = "canonical_vectors_sig"
-path = "tests/canonical_vectors_sig.rs"
-
-[[test]]
-name = "key_rotation_sig"
-path = "tests/key_rotation_sig.rs"
-
-[[test]]
-name = "timing_sig"
-path = "tests/timing_sig.rs"
+# Re-export targets (Stage 1 Stream A sub-step A.2b Option-A aggregator:
+# physical absorption deferred to Stage 2).
+corelink-ac-core = { workspace = true }
+corelink-ac-schema = { workspace = true }
+corelink-handler-ac = { workspace = true }

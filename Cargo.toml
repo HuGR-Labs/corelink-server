@@ -14,6 +14,10 @@ members = [
     # Wave-33 Stage 0 sub-step 3 — canonical observability aggregator.
     # Option-A re-export façade over the 7 telemetry crates per spec §4.
     "crates/corelink-telemetry",
+    # Wave-33 Stage 1 Stream A sub-step A.1 — canonical CAS bounded-
+    # context aggregator. Option-A re-export façade over the 10
+    # absorbed CAS hot-path crates per spec §4 + §6 Stream A.
+    "crates/corelink-cas",
     "crates/tenant-path",
     "crates/corelink-hash",
     "crates/corelink-worker",
@@ -26,6 +30,16 @@ members = [
     "crates/corelink-webauthn",
     "crates/corelink-audit",
     "crates/corelink-ac-schema",
+    # Wave-33 Stage 1 Stream A sub-step A.2a — renamed from
+    # `corelink-ac` to free the `corelink-ac` package name for the
+    # Stream A umbrella aggregator landing in A.2b. The crate itself
+    # is the unchanged AC Merkle codec + dual-side verifier
+    # (WI-S04-003); only the package name + Cargo.toml location moved.
+    "crates/corelink-ac-core",
+    # Wave-33 Stage 1 Stream A sub-step A.2b — canonical AC bounded-
+    # context aggregator. Option-A re-export façade over the 3
+    # absorbed AC crates (`corelink-ac-core`, `corelink-ac-schema`,
+    # `corelink-handler-ac`) per spec §4 + §6 Stream A.
     "crates/corelink-ac",
     "crates/corelink-chunker",
     "crates/corelink-r2-multipart",
@@ -314,7 +328,7 @@ exclude = [
     # workspace resolver and cargo-fuzz drives them stand-alone.
     "crates/corelink-byok/fuzz",
     "crates/corelink-audit-chain/fuzz",
-    "crates/corelink-ac/fuzz",
+    "crates/corelink-ac-core/fuzz",
 ]
 
 [workspace.package]
@@ -429,6 +443,9 @@ ed25519-dalek = { version = "2", features = ["rand_core"] }
 corelink-core = { path = "crates/corelink-core" }
 # Wave-33 Stage 0 sub-step 2: canonical cryptography aggregator façade.
 corelink-crypto = { path = "crates/corelink-crypto" }
+# Wave-33 Stage 1 Stream A sub-step A.1: canonical CAS bounded-context
+# aggregator (10 absorbed crates per spec §4 + §6 Stream A).
+corelink-cas = { path = "crates/corelink-cas" }
 corelink-tenant-path = { path = "crates/tenant-path" }
 corelink-hash = { path = "crates/corelink-hash" }
 corelink-worker = { path = "crates/corelink-worker" }
@@ -446,6 +463,12 @@ corelink-auth-schema = { path = "crates/corelink-auth-schema" }
 corelink-webauthn = { path = "crates/corelink-webauthn" }
 corelink-audit = { path = "crates/corelink-audit" }
 corelink-ac-schema = { path = "crates/corelink-ac-schema" }
+# Wave-33 Stage 1 Stream A sub-step A.2a — renamed from `corelink-ac`
+# to free the `corelink-ac` package name for the Stream A umbrella
+# aggregator landing in A.2b. Crate body unchanged.
+corelink-ac-core = { path = "crates/corelink-ac-core" }
+# Wave-33 Stage 1 Stream A sub-step A.2b — canonical AC bounded-
+# context aggregator (3 absorbed AC crates per spec §4 + §6 Stream A).
 corelink-ac = { path = "crates/corelink-ac" }
 corelink-chunker = { path = "crates/corelink-chunker" }
 corelink-r2-multipart = { path = "crates/corelink-r2-multipart" }

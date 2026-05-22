@@ -1061,6 +1061,18 @@ dependencies = [
 name = "corelink-ac"
 version = "0.1.0"
 dependencies = [
+ "corelink-ac-core",
+ "corelink-ac-schema",
+ "corelink-audit",
+ "corelink-core",
+ "corelink-crypto",
+ "corelink-handler-ac",
+]
+
+[[package]]
+name = "corelink-ac-core"
+version = "0.1.0"
+dependencies = [
  "blake3",
  "corelink-hash",
  "hex",
@@ -1463,6 +1475,25 @@ dependencies = [
  "rand 0.9.4",
  "rand_chacha 0.9.0",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "corelink-cas"
+version = "0.1.0"
+dependencies = [
+ "corelink-audit",
+ "corelink-chunker",
+ "corelink-core",
+ "corelink-crypto",
+ "corelink-dedup",
+ "corelink-edge",
+ "corelink-eviction",
+ "corelink-handler-cas",
+ "corelink-lru-tracker",
+ "corelink-manifest",
+ "corelink-meta",
+ "corelink-multipart-schema",
+ "corelink-r2-multipart",
 ]
 
 [[package]]
@@ -2022,7 +2053,7 @@ name = "corelink-manifest"
 version = "0.1.0"
 dependencies = [
  "blake3",
- "corelink-ac",
+ "corelink-ac-core",
  "corelink-hash",
  "hex",
  "hkdf",
@@ -2700,7 +2731,7 @@ dependencies = [
  "async-trait",
  "base64",
  "bytes",
- "corelink-ac",
+ "corelink-ac-core",
  "corelink-audit",
  "corelink-clerk",
  "corelink-hash",

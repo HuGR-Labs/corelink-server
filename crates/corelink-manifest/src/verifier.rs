@@ -661,7 +661,7 @@ mod tests {
     use crate::builder::ManifestBuilder;
     use crate::sig::{ManifestSigner, ManifestVerifierSig};
     use crate::types::{ChunkInput, ChunkerAlgorithm};
-    use corelink_ac::sig::{MockTdkHandle, TdkHandle};
+    use corelink_ac_core::sig::{MockTdkHandle, TdkHandle};
     use std::sync::Arc;
 
     fn fixed_tenant() -> Uuid {

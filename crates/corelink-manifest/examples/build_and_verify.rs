@@ -10,7 +10,7 @@
 
 use std::sync::Arc;
 
-use corelink_ac::sig::{MockTdkHandle, TdkHandle};
+use corelink_ac_core::sig::{MockTdkHandle, TdkHandle};
 use corelink_manifest::{
     ChunkInput, ChunkerAlgorithm, ManifestBuilder, ManifestSigner, ManifestVerifier,
     ManifestVerifierSig,

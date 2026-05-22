@@ -31,7 +31,7 @@
 
 use std::sync::Arc;
 
-use corelink_ac::sig::{
+use corelink_ac_core::sig::{
     keyed_mac_with_info, keyed_mac_with_info_from_bytes, SigError, TdkHandle, RESERVED_SIG_KEY_ID,
 };
 use subtle::ConstantTimeEq;
@@ -325,7 +325,7 @@ pub fn compute_signature(
 )]
 mod tests {
     use super::*;
-    use corelink_ac::sig::MockTdkHandle;
+    use corelink_ac_core::sig::MockTdkHandle;
 
     fn fixed_tenant() -> Uuid {
         Uuid::parse_str("01938af0-abcd-7123-8456-000000000c01").unwrap()
@@ -358,12 +358,12 @@ mod tests {
         // Distinct from corelink-ac sig info (b"ac-sig").
         assert_ne!(
             HKDF_INFO_MANIFEST_SIG,
-            corelink_ac::sig::HKDF_INFO_AC_SIG
+            corelink_ac_core::sig::HKDF_INFO_AC_SIG
         );
         // No prefix relationship in either direction (truncation-attack
         // defense — see module rustdoc).
-        assert!(!HKDF_INFO_MANIFEST_SIG.starts_with(corelink_ac::sig::HKDF_INFO_AC_SIG));
-        assert!(!corelink_ac::sig::HKDF_INFO_AC_SIG.starts_with(HKDF_INFO_MANIFEST_SIG));
+        assert!(!HKDF_INFO_MANIFEST_SIG.starts_with(corelink_ac_core::sig::HKDF_INFO_AC_SIG));
+        assert!(!corelink_ac_core::sig::HKDF_INFO_AC_SIG.starts_with(HKDF_INFO_MANIFEST_SIG));
         // Reserved meta-manifest info string distinct + non-prefix.
         assert_eq!(HKDF_INFO_META_MANIFEST_SIG_RESERVED, b"meta-manifest-sig");
         assert!(!HKDF_INFO_META_MANIFEST_SIG_RESERVED.starts_with(HKDF_INFO_MANIFEST_SIG));
@@ -392,8 +392,8 @@ mod tests {
         let bytes = [0xCD; 102];
         let manifest_sig = manifest_signer.sign(fixed_tenant(), 1, &bytes).unwrap();
         // AC-domain sig with the same inputs.
-        let ac_signer = corelink_ac::sig::HkdfSigner::new(handle, 1).unwrap();
-        let ac_sig = corelink_ac::sig::SignatureSigner::sign(
+        let ac_signer = corelink_ac_core::sig::HkdfSigner::new(handle, 1).unwrap();
+        let ac_sig = corelink_ac_core::sig::SignatureSigner::sign(
             &ac_signer,
             fixed_tenant(),
             1,
@@ -560,7 +560,7 @@ mod tests {
         let (signer, _, _) = fresh_signer_verifier(vec![1]);
         let bytes = [0x88; 102];
         let sig_via_signer = signer.sign(fixed_tenant(), 1, &bytes).unwrap();
-        let tdk_arr = corelink_ac::sig::derive_default_mock_tdk(fixed_tenant(), 1);
+        let tdk_arr = corelink_ac_core::sig::derive_default_mock_tdk(fixed_tenant(), 1);
         let sig_via_helper = compute_signature(&tdk_arr, 1, &bytes).unwrap();
         assert_eq!(sig_via_signer, sig_via_helper);
     }

@@ -14,11 +14,11 @@
     reason = "test code: panics surface as test failures by design"
 )]
 
-use corelink_ac::types::{
+use corelink_ac_core::types::{
     AcEnvelope, ActionDigest, ActionResult, OutputDirectoryDigest, OutputFileDigest,
     MERKLE_ROOT_LEN, RESULT_HASH_LEN,
 };
-use corelink_ac::{build_root, codec, compute_result_hash, verify_root};
+use corelink_ac_core::{build_root, codec, compute_result_hash, verify_root};
 use corelink_hash::Digest;
 
 fn build_envelope(out_files: usize, out_dirs: usize, tenant: &str) -> AcEnvelope {
@@ -143,7 +143,7 @@ fn codec_rejects_envelope_with_mutated_version_byte() {
     let err = codec::decode(&b).unwrap_err();
     assert!(matches!(
         err,
-        corelink_ac::MerkleError::VersionUnsupported(2)
+        corelink_ac_core::MerkleError::VersionUnsupported(2)
     ));
 }
 

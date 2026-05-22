@@ -1,0 +1,7 @@
+//! Content dedup index — wave-33 canonical CAS surface.
+//!
+//! Re-exports the entire public API of `corelink-dedup`. The actual
+//! implementation lives in `crates/corelink-dedup/` (Stage 1 Stream
+//! A sub-step A.1 Option-A aggregator pattern; see crate-level rustdoc).
+
+pub use corelink_dedup::*;

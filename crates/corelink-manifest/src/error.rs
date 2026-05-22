@@ -12,7 +12,7 @@
 //! variants (e.g. compression sentinel arms in S-12) can be added
 //! without an SemVer break.
 
-use corelink_ac::sig::SigError;
+use corelink_ac_core::sig::SigError;
 use thiserror::Error;
 
 use crate::bounds::{MAX_CHUNK_SIZE_BYTES, MAX_CHUNKS_PER_BLOB, MAX_TOTAL_SIZE_BYTES};

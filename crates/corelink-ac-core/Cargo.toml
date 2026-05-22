@@ -1,0 +1,77 @@
+[package]
+name = "corelink-ac-core"
+description = "CoreLink Action Cache Merkle codec + dual-side verifier (WI-S04-003). Builds the canonical Merkle tree over an `ActionResult`'s output_files + output_directories digest set (BLAKE3-256 with RFC 6962-style domain separation: `\\x00`-prefix leaves + `\\x01`-prefix internal nodes), enforces the bounded-parser discipline (depth ≤ 32, fanout ≤ 4096, total nodes ≤ 100 000, payload ≤ 1 MiB) at decode time, and supplies the dual-side `MerkleVerifier` consumed by both the server (`corelink-worker::reapi::ac` UpdateActionResult pre-persist verify) and the client SDK (`corelink-client-verify` post-download verify). Tree shape is byte-deterministic for the same `(tenant_id, action_digest, result)` so REAPI v2 idempotency holds. The trait surface is wasm32-clean (no tokio dependency) so the same crate compiles into the Cloudflare Worker bundle and the Rust client SDK."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+corelink-hash = { workspace = true }
+blake3 = { workspace = true }
+hex = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# WI-S04-004 — HKDF-SHA256 digest signing infrastructure (CTRL-AC-002).
+hkdf = { workspace = true }
+sha2 = { workspace = true }
+subtle = { workspace = true }
+zeroize = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+rand = "0.9"
+rand_chacha = "0.9"
+
+[[test]]
+name = "prop_merkle"
+path = "tests/prop_merkle.rs"
+
+[[test]]
+name = "canonical_vectors"
+path = "tests/canonical_vectors.rs"
+
+[[test]]
+name = "round_trip"
+path = "tests/round_trip.rs"
+
+[[test]]
+name = "tampering"
+path = "tests/tampering.rs"
+
+# WI-S04-004 sig module test targets.
+[[test]]
+name = "prop_sig"
+path = "tests/prop_sig.rs"
+
+[[test]]
+name = "canonical_vectors_sig"
+path = "tests/canonical_vectors_sig.rs"
+
+[[test]]
+name = "key_rotation_sig"
+path = "tests/key_rotation_sig.rs"
+
+[[test]]
+name = "timing_sig"
+path = "tests/timing_sig.rs"

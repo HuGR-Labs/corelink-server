@@ -23,9 +23,9 @@
     reason = "test code: panics surface as test failures by design"
 )]
 
-use corelink_ac::merkle::{INNER_PREFIX, LEAF_PREFIX};
-use corelink_ac::types::{ActionResult, OutputFileDigest};
-use corelink_ac::{
+use corelink_ac_core::merkle::{INNER_PREFIX, LEAF_PREFIX};
+use corelink_ac_core::types::{ActionResult, OutputFileDigest};
+use corelink_ac_core::{
     build_root, MAX_NODE_COUNT, MAX_OUTPUT_DIRECTORIES, MAX_OUTPUT_FILES, MAX_PAYLOAD_BYTES,
     MAX_TREE_DEPTH, MAX_TREE_FANOUT,
 };
