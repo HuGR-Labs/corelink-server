@@ -1,0 +1,38 @@
+[package]
+name = "corelink-telemetry"
+description = "Wave-33 Stage 0 sub-step 3 — canonical observability aggregator façade for the CoreLink workspace. Re-exports the 7 telemetry/observability crates (`corelink-tracing`, `corelink-logpush`, `corelink-otel-export`, `corelink-canary`, `corelink-synthetic-pager`, `corelink-slo`, `corelink-lighthouse-tracker`) under a single canonical import surface (`corelink_telemetry::tracing`, `corelink_telemetry::logpush`, `corelink_telemetry::otel`, `corelink_telemetry::canary`, `corelink_telemetry::synthetic_pager`, `corelink_telemetry::slo`, `corelink_telemetry::lighthouse`). Stage 0 Option-A aggregator pattern (physical absorption deferred to Stage 1's infra+ops stream which owns telemetry consumers atomically); see `specs/_audits/2026-05-22-w33-stage0-foundation.md` §4."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+# Re-export targets — Stage 0 Option-A aggregator. Each absorbed crate
+# remains the source of truth in `crates/`; this façade gives Stage 1
+# streams a single import path. Physical absorption deferred to
+# Stage 1 infra+ops stream per autonomous execution charter.
+corelink-tracing = { workspace = true }
+corelink-logpush = { workspace = true }
+corelink-otel-export = { workspace = true }
+corelink-canary = { workspace = true }
+corelink-synthetic-pager = { workspace = true }
+corelink-slo = { workspace = true }
+corelink-lighthouse-tracker = { workspace = true }

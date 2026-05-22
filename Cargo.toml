@@ -2,6 +2,18 @@
 resolver = "2"
 members = [
     "apps/server",
+    # Wave-33 Stage 0 sub-step 1 — apex cross-cutting types crate.
+    # Depends on no other corelink-* crate; Stage 3 cargo-deny will
+    # enforce. See `specs/_audits/2026-05-22-wave33-code-reorg-spec.md`.
+    "crates/corelink-core",
+    # Wave-33 Stage 0 sub-step 2 — canonical cryptography aggregator.
+    # Option-A re-export façade over corelink-hash + corelink-client-verify
+    # + corelink-erasure-attestation (physical absorption deferred per
+    # hard-pause-trigger-1; see Stage 0 SEAL audit §7).
+    "crates/corelink-crypto",
+    # Wave-33 Stage 0 sub-step 3 — canonical observability aggregator.
+    # Option-A re-export façade over the 7 telemetry crates per spec §4.
+    "crates/corelink-telemetry",
     "crates/tenant-path",
     "crates/corelink-hash",
     "crates/corelink-worker",
@@ -413,6 +425,10 @@ bytes = "1"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 
 # Internal crates
+# Wave-33 Stage 0 sub-step 1: apex cross-cutting types crate.
+corelink-core = { path = "crates/corelink-core" }
+# Wave-33 Stage 0 sub-step 2: canonical cryptography aggregator façade.
+corelink-crypto = { path = "crates/corelink-crypto" }
 corelink-tenant-path = { path = "crates/tenant-path" }
 corelink-hash = { path = "crates/corelink-hash" }
 corelink-worker = { path = "crates/corelink-worker" }
@@ -453,6 +469,11 @@ corelink-audit-chain = { path = "crates/corelink-audit-chain" }
 corelink-slo = { path = "crates/corelink-slo" }
 corelink-supply-verify = { path = "crates/corelink-supply-verify" }
 corelink-canary = { path = "crates/corelink-canary" }
+# Wave-33 Stage 0 sub-step 3: telemetry aggregator deps.
+corelink-synthetic-pager = { path = "crates/corelink-synthetic-pager" }
+corelink-lighthouse-tracker = { path = "crates/corelink-lighthouse-tracker" }
+# Wave-33 Stage 0 sub-step 3: canonical observability aggregator façade.
+corelink-telemetry = { path = "crates/corelink-telemetry" }
 corelink-billing-emit = { path = "crates/corelink-billing-emit" }
 corelink-billing-aggregator = { path = "crates/corelink-billing-aggregator" }
 corelink-billing-stripe = { path = "crates/corelink-billing-stripe" }

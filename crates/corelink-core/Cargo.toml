@@ -1,0 +1,35 @@
+[package]
+name = "corelink-core"
+description = "Wave-33 Stage 0 — apex cross-cutting types for the CoreLink workspace. Pure-logic newtypes (`TenantId`, `Digest`, `Region`, `SecretWrap`), workspace-cross-cutting error enum (`CoreError`), and the `Clock` trait surface (monotonic + wall). Apex of the dependency graph: this crate depends on NO other `corelink-*` crate (cargo-deny enforced post Stage 3). Behaviour-preserving Stage 0 — existing scattered copies remain in place until Stage 1 streams migrate consumers."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+serde = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true, features = ["v7", "serde"] }
+subtle = { workspace = true }
+secrecy = "0.10"
+
+[dev-dependencies]
+serde_json = { workspace = true }

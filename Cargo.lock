@@ -1134,6 +1134,8 @@ dependencies = [
 name = "corelink-audit"
 version = "0.1.0"
 dependencies = [
+ "corelink-analytics",
+ "corelink-audit-chain",
  "hex",
  "hmac 0.12.1",
  "proptest",
@@ -1636,6 +1638,30 @@ dependencies = [
  "tokio-test",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "corelink-core"
+version = "0.1.0"
+dependencies = [
+ "secrecy",
+ "serde",
+ "serde_json",
+ "subtle",
+ "thiserror 2.0.18",
+ "uuid",
+]
+
+[[package]]
+name = "corelink-crypto"
+version = "0.1.0"
+dependencies = [
+ "corelink-client-verify",
+ "corelink-erasure-attestation",
+ "corelink-hash",
+ "hmac 0.12.1",
+ "sha2 0.10.9",
+ "subtle",
 ]
 
 [[package]]
@@ -2556,6 +2582,19 @@ version = "0.1.0"
 dependencies = [
  "proptest",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "corelink-telemetry"
+version = "0.1.0"
+dependencies = [
+ "corelink-canary",
+ "corelink-lighthouse-tracker",
+ "corelink-logpush",
+ "corelink-otel-export",
+ "corelink-slo",
+ "corelink-synthetic-pager",
+ "corelink-tracing",
 ]
 
 [[package]]
