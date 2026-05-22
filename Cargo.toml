@@ -28,6 +28,14 @@ members = [
     # and `subtle::ConstantTimeEq` on PAT verify by reference. See
     # `specs/_audits/2026-05-22-w33-stream-b-policy.md`.
     "crates/corelink-auth",
+    # Wave-33 Stage 1 Stream B sub-step B.5 — canonical privacy
+    # aggregator. Option-A re-export façade over the 11 privacy-
+    # context crates (DSR + statuspage scheduler + breach + consent +
+    # erasure + notice + pseudonymize + residency + sub-processor +
+    # 2 DPA crates). Preserves Ed25519 erasure-attestation signing
+    # path + audit-emit-BEFORE-mutation fail-CLOSED envelopes by
+    # reference. See `specs/_audits/2026-05-22-w33-stream-b-policy.md`.
+    "crates/corelink-privacy",
     "crates/tenant-path",
     "crates/corelink-hash",
     "crates/corelink-worker",
@@ -506,6 +514,12 @@ corelink-telemetry = { path = "crates/corelink-telemetry" }
 corelink-billing = { path = "crates/corelink-billing" }
 # Wave-33 Stage 1 Stream B sub-step B.3: canonical auth aggregator façade.
 corelink-auth = { path = "crates/corelink-auth" }
+# Wave-33 Stage 1 Stream B sub-step B.5: canonical privacy aggregator façade.
+corelink-privacy = { path = "crates/corelink-privacy" }
+# Wave-33 Stage 1 Stream B sub-step B.5: DPA acceptance + versioning deps
+# (consumed by the `corelink-privacy::dpa::{acceptance, versioning}` façade).
+corelink-dpa-acceptance = { path = "crates/corelink-dpa-acceptance" }
+corelink-dpa-versioning = { path = "crates/corelink-dpa-versioning" }
 corelink-billing-emit = { path = "crates/corelink-billing-emit" }
 corelink-billing-aggregator = { path = "crates/corelink-billing-aggregator" }
 corelink-billing-stripe = { path = "crates/corelink-billing-stripe" }

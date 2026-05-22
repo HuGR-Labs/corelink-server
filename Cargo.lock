@@ -2146,6 +2146,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-privacy"
+version = "0.1.0"
+dependencies = [
+ "corelink-dpa-acceptance",
+ "corelink-dpa-versioning",
+ "corelink-dsr",
+ "corelink-dsr-statuspage-scheduler",
+ "corelink-privacy-breach-emit",
+ "corelink-privacy-consent-ledger",
+ "corelink-privacy-erasure-worker",
+ "corelink-privacy-notice-emit",
+ "corelink-privacy-pseudonymize",
+ "corelink-privacy-residency-enforcement",
+ "corelink-privacy-sub-processor-emit",
+]
+
+[[package]]
 name = "corelink-privacy-breach-emit"
 version = "0.1.0"
 dependencies = [
