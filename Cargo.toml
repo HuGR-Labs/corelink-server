@@ -60,6 +60,15 @@ members = [
     # statuspage 1-per-5-min rate-limiter by reference. See
     # `specs/_audits/2026-05-22-w33-stream-c-infra-ops.md`.
     "crates/corelink-ops",
+    # Wave-33 Stage 1 Stream C sub-step C.3 — canonical cloud-adapters
+    # aggregator. Option-A re-export façade over the binding portion
+    # (HTTPS / CF Worker JsValue) of 5 absorbed adapter crates
+    # (cf-bindings + clerk-cf + stripe-real + statuspage-real +
+    # slack-real). Pure-logic portion re-exported simultaneously by
+    # sibling umbrellas (corelink-billing / corelink-ops / corelink-auth);
+    # physical decomposition deferred to Stage 2. See
+    # `specs/_audits/2026-05-22-w33-stream-c-infra-ops.md`.
+    "crates/corelink-adapters-cloud",
     "crates/tenant-path",
     "crates/corelink-hash",
     "crates/corelink-worker",
@@ -566,6 +575,10 @@ corelink-replication = { path = "crates/corelink-replication" }
 # Wave-33 Stage 1 Stream C sub-step C.2: canonical ops aggregator façade
 # (LARGEST Wave-33 absorption — 28 absorbed crates).
 corelink-ops = { path = "crates/corelink-ops" }
+# Wave-33 Stage 1 Stream C sub-step C.3: canonical cloud-adapters aggregator
+# (5 absorbed: cf-bindings + clerk-cf + stripe-real + statuspage-real +
+# slack-real — binding portions).
+corelink-adapters-cloud = { path = "crates/corelink-adapters-cloud" }
 # Wave-33 Stage 1 Stream B sub-step B.5: DPA acceptance + versioning deps
 # (consumed by the `corelink-privacy::dpa::{acceptance, versioning}` façade).
 corelink-dpa-acceptance = { path = "crates/corelink-dpa-acceptance" }

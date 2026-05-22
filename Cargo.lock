@@ -1100,6 +1100,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-adapters-cloud"
+version = "0.1.0"
+dependencies = [
+ "corelink-cf-bindings",
+ "corelink-clerk-cf",
+ "corelink-slack-real",
+ "corelink-statuspage-real",
+ "corelink-stripe-real",
+]
+
+[[package]]
 name = "corelink-admin-api"
 version = "0.1.0"
 dependencies = [

@@ -1,0 +1,35 @@
+[package]
+name = "corelink-adapters-cloud"
+description = "Wave-33 Stage 1 Stream C sub-step C.3 — canonical cloud-adapters aggregator façade. Re-exports the binding-portion (HTTPS / CF Worker JsValue) surface of 5 absorbed cloud-adapter crates (corelink-cf-bindings + corelink-clerk-cf + corelink-stripe-real + corelink-statuspage-real + corelink-slack-real) under a single canonical import surface (`corelink_adapters_cloud::{cf, clerk, stripe, statuspage, slack}`). Stage 1 Stream C lands this crate as an Option-A re-export façade — the physical decomposition between pure-logic (which stays in corelink-billing::stripe / corelink-ops::statuspage / corelink-ops::slack / corelink-auth::clerk_cf) and HTTPS / CF-binding portions is deferred to Stage 2. The umbrella compiles on both native and wasm32 targets; per-module `#[cfg(target_arch = \"wasm32\")]` gating in the absorbed crates keeps the wasm32-only types out of the native rlib (see `corelink-cf-bindings` and `corelink-clerk-cf` for the per-module gates)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+# Re-export targets (Stage 1 Stream C Option-A aggregator: physical
+# pure-logic vs. binding decomposition deferred to Stage 2. See Stream C
+# SEAL audit §1.)
+corelink-cf-bindings = { workspace = true }
+corelink-clerk-cf = { workspace = true }
+corelink-stripe-real = { workspace = true }
+corelink-statuspage-real = { workspace = true }
+corelink-slack-real = { workspace = true }
