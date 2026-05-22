@@ -215,8 +215,9 @@ grep "$NEW_CRATE_NAME" Cargo.toml | head
 | L2.7 | No `unwrap()` / `expect()` / `panic!` / `unimplemented!()` / `todo!()` outside `#[cfg(test)]` | `grep -rEn "unwrap\(\)\|expect\(\|panic!\|todo!\|unimplemented!" $NEW/src/ \| grep -v "#\[cfg(test)"` (empty) |
 | L2.8 | `#![forbid(unsafe_code)]` at crate root | `grep "forbid(unsafe_code)" $NEW/src/lib.rs` (must exist) |
 | L2.9 | Secrets never logged | `grep -rEn "tracing::\|log::\|println!\|eprintln!\|dbg!" $NEW/src/ \| grep -iE "secret\|api_key\|token\|jwt\|password"` → manually verify all matches redact |
+| L2.10 | **File size discipline** (added 2026-05-22 per user mandate). NEW `.rs`/`.ts`/`.tsx` files: HARD CAP 500 LOC, SWEET SPOT 200 LOC. >500 LOC = HARD REJECT (must split before merge). 200-500 LOC = advisory note in verdict. <200 LOC = green. Exceptions: lockfiles, build.rs-generated code, test fixtures, schema/proto-generated files (must be marked with `// @generated` header). | `git diff $BASE..HEAD --name-only --diff-filter=A \| grep -E "\\.(rs\|ts\|tsx)$" \| while read f; do loc=$(wc -l < "$f"); if [ "$loc" -gt 500 ]; then echo "HARD-CAP $loc $f"; elif [ "$loc" -gt 200 ]; then echo "OVER-SWEET $loc $f"; fi; done` |
 
-**Success:** all 9 sub-checks pass.
+**Success:** all 10 sub-checks pass.
 
 **Fail action:** **HARD REJECT**. Charter violations are non-negotiable. Dispatch a fix agent with explicit reference to the rule violated. Re-run L2 before merging.
 
