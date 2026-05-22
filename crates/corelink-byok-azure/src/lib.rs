@@ -66,7 +66,7 @@
 //!
 //! ```rust
 //! # tokio_test::block_on(async {
-//! use corelink_byok::{KmsProvider, KmsKeyId, KmsProviderKind, Dek, FipsLevel};
+//! use corelink_byok_core::{KmsProvider, KmsKeyId, KmsProviderKind, Dek, FipsLevel};
 //! use corelink_byok_azure::AzureKeyVaultProvider;
 //!
 //! let provider = AzureKeyVaultProvider::new_mock("eastus");
@@ -89,7 +89,7 @@
 //!
 //! ```rust
 //! # tokio_test::block_on(async {
-//! use corelink_byok::{KmsProvider, KmsKeyId, KmsProviderKind, Dek, WrappedDek};
+//! use corelink_byok_core::{KmsProvider, KmsKeyId, KmsProviderKind, Dek, WrappedDek};
 //! use corelink_byok_azure::AzureKeyVaultProvider;
 //! use serde_json::json;
 //!
@@ -123,7 +123,7 @@ use aes_gcm::{
     Aes256Gcm,
     aead::{Aead, KeyInit, generic_array::GenericArray},
 };
-use corelink_byok::{BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider,
+use corelink_byok_core::{BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider,
                     KmsProviderKind, WrappedDek};
 
 pub(crate) mod key_resource;
@@ -422,7 +422,7 @@ fn context_to_aad(ctx: Option<&serde_json::Value>) -> Vec<u8> {
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use corelink_byok::KmsProvider;
+    use corelink_byok_core::KmsProvider;
 
     fn gcp_key_id() -> KmsKeyId {
         KmsKeyId {

@@ -25,7 +25,7 @@ print_stderr = "deny"
 mod_module_files = "deny"
 
 [dependencies]
-corelink-byok = { path = "../corelink-byok" }
+corelink-byok-core = { path = "../corelink-byok-core" }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

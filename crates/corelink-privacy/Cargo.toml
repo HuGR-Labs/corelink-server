@@ -1,0 +1,42 @@
+[package]
+name = "corelink-privacy"
+description = "Wave-33 Stage 1 Stream B sub-step B.5 — canonical privacy-context aggregator façade. Re-exports the 11 absorbed privacy-context crates (DSR + DSR Statuspage scheduler + breach-emit + consent-ledger + erasure-worker + notice-emit + pseudonymize + residency-enforcement + sub-processor-emit + DPA acceptance + DPA versioning) under a single canonical import surface (`corelink_privacy::{dsr, breach, consent, erasure, notice, pseudonymize, residency, sub_processor, dpa}`). Stage 1 Stream B ships this crate as a re-export aggregator (Option-A least-invasive interpretation per `specs/_audits/2026-05-22-w33-stage0-foundation.md` §4) so consumer migration can proceed incrementally. Absorbed crates remain canonical sources of truth, retaining their own tests/benches/fuzz. The Ed25519 erasure-attestation signing path lives in `corelink-erasure-attestation` (absorbed in Stage 0 by `corelink-crypto`); the erasure-worker re-export here pulls in the worker scheduler + 12-backend per-row erasure path while leaving the cryptographic primitive at its canonical Stage-0 location."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+# Re-export targets (Stage 1 Stream B Option-A aggregator: physical
+# absorption deferred to consumer-migration stream that owns the
+# `apps/server` route layer + D1 migration runner atomically; see
+# Stream B SEAL audit §1).
+corelink-dsr = { workspace = true }
+corelink-dsr-statuspage-scheduler = { workspace = true }
+corelink-privacy-breach-emit = { workspace = true }
+corelink-privacy-consent-ledger = { workspace = true }
+corelink-privacy-erasure-worker = { workspace = true }
+corelink-privacy-notice-emit = { workspace = true }
+corelink-privacy-pseudonymize = { workspace = true }
+corelink-privacy-residency-enforcement = { workspace = true }
+corelink-privacy-sub-processor-emit = { workspace = true }
+corelink-dpa-acceptance = { workspace = true }
+corelink-dpa-versioning = { workspace = true }

@@ -1,0 +1,44 @@
+[package]
+name = "corelink-billing"
+description = "Wave-33 Stage 1 Stream B sub-step B.1 — canonical billing aggregator façade. Re-exports the 14 absorbed billing-context crates under a single canonical import surface (`corelink_billing::{aggregator, emit, reconcile, replay, stripe, stripe_materializer, tier, quota, rate_headers, ratelimit, abuse}`). Stage 1 Stream B ships this crate as a re-export aggregator (Option-A least-invasive interpretation per `specs/_audits/2026-05-22-w33-stage0-foundation.md` §4) so consumer migration can proceed incrementally. Physical absorption of source modules is deferred to the consumer-migration stream that owns producer call sites (apps/server routes, worker bindings); the absorbed crates remain canonical sources of truth, retaining their own tests/benches/fuzz. The wave-31 wallet broker dual-mode for Stripe (commit `e3c564df` in main) is preserved as-is via the `stripe` submodule re-export of `corelink-stripe-real`."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+# Re-export targets (Stage 1 Stream B Option-A aggregator: physical
+# absorption deferred to consumer-migration stream that owns producer
+# call sites atomically; see Stream B SEAL audit §1).
+corelink-billing-aggregator = { workspace = true }
+corelink-billing-emit = { workspace = true }
+corelink-billing-reconcile = { workspace = true }
+corelink-billing-replay = { workspace = true }
+corelink-billing-stripe = { workspace = true }
+corelink-billing-stripe-materializer = { workspace = true }
+corelink-stripe-real = { workspace = true }
+corelink-tier-selection = { workspace = true }
+corelink-quota = { workspace = true }
+corelink-quota-cas = { workspace = true }
+corelink-quota-fsm = { workspace = true }
+corelink-rate-headers = { workspace = true }
+corelink-ratelimit = { workspace = true }
+corelink-abuse = { workspace = true }

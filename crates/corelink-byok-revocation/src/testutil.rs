@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use corelink_byok::{BYOKError, Dek, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind, WrappedDek};
+use corelink_byok_core::{BYOKError, Dek, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind, WrappedDek};
 
 use crate::alerter::{CustomerAlerter, RevocationAlertPayload};
 use crate::error::RevocationError;
@@ -21,7 +21,7 @@ use crate::store::{TenantByokStatus, TenantStatusStore};
 /// # Example
 ///
 /// ```rust
-/// use corelink_byok::{KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind};
+/// use corelink_byok_core::{KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind};
 /// use corelink_byok_revocation::testutil::StubKmsProvider;
 ///
 /// # tokio_test::block_on(async {
@@ -77,8 +77,8 @@ impl KmsProvider for StubKmsProvider {
         "us-east-1"
     }
 
-    fn fips_level(&self) -> corelink_byok::FipsLevel {
-        corelink_byok::FipsLevel::None
+    fn fips_level(&self) -> corelink_byok_core::FipsLevel {
+        corelink_byok_core::FipsLevel::None
     }
 
     async fn wrap_dek(
@@ -113,7 +113,7 @@ impl KmsProvider for StubKmsProvider {
 /// # Example
 ///
 /// ```rust
-/// use corelink_byok::{KmsKeyId, KmsProviderKind};
+/// use corelink_byok_core::{KmsKeyId, KmsProviderKind};
 /// use corelink_byok_revocation::store::{TenantByokStatus, TenantStatusStore};
 /// use corelink_byok_revocation::testutil::InMemoryTenantStore;
 ///
@@ -185,7 +185,7 @@ impl TenantStatusStore for InMemoryTenantStore {
 /// # Example
 ///
 /// ```rust
-/// use corelink_byok::{KmsKeyId, KmsProviderKind};
+/// use corelink_byok_core::{KmsKeyId, KmsProviderKind};
 /// use corelink_byok_revocation::CustomerAlerter;
 /// use corelink_byok_revocation::alerter::RevocationAlertPayload;
 /// use corelink_byok_revocation::testutil::NoopAlerter;
@@ -233,7 +233,7 @@ impl CustomerAlerter for NoopAlerter {
 /// # Example
 ///
 /// ```rust
-/// use corelink_byok::{KmsKeyId, KmsProviderKind};
+/// use corelink_byok_core::{KmsKeyId, KmsProviderKind};
 /// use corelink_byok_revocation::CustomerAlerter;
 /// use corelink_byok_revocation::alerter::RevocationAlertPayload;
 /// use corelink_byok_revocation::testutil::RecordingAlerter;

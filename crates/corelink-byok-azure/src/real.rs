@@ -69,12 +69,12 @@
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-use corelink_byok::BYOKError;
+use corelink_byok_core::BYOKError;
 
 #[cfg(target_arch = "wasm32")]
 use async_trait::async_trait;
 #[cfg(target_arch = "wasm32")]
-use corelink_byok::{
+use corelink_byok_core::{
     Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind, WrappedDek,
 };
 
@@ -215,7 +215,7 @@ mod native {
     use subtle::ConstantTimeEq;
     use tracing::{debug, warn};
 
-    use corelink_byok::{
+    use corelink_byok_core::{
         BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind,
         WrappedDek,
     };

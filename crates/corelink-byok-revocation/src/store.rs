@@ -1,6 +1,6 @@
 //! [`TenantStatusStore`] — pluggable tenant BYOK status persistence.
 
-use corelink_byok::KmsKeyId;
+use corelink_byok_core::KmsKeyId;
 
 use crate::error::RevocationError;
 
@@ -55,7 +55,7 @@ impl core::fmt::Display for TenantByokStatus {
 ///
 /// ```rust
 /// use std::sync::Arc;
-/// use corelink_byok::{KmsKeyId, KmsProviderKind};
+/// use corelink_byok_core::{KmsKeyId, KmsProviderKind};
 /// use corelink_byok_revocation::store::{TenantStatusStore, TenantByokStatus};
 /// use corelink_byok_revocation::testutil::InMemoryTenantStore;
 ///

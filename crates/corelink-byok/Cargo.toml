@@ -1,6 +1,6 @@
 [package]
 name = "corelink-byok"
-description = "CoreLink BYOK (Bring Your Own Key) enterprise tier — KmsProvider trait + types (KmsKeyId, WrappedDek, Dek, KmsAccessStatus, BYOKError, FipsLevel) + DekCache with 5-min TTL hard limit (INV-BYOK-CRYPTO-SOVEREIGNTY) + EnvelopeEncryptor write/read paths (ephemeral DEK via CSPRNG getrandom; AES-256-GCM body encryption FIPS 197; AAD encryption_context binding mandatory; ZeroizeOnDrop on all key material). Foundation for WI-S14-004 AWS KMS adapter + WI-S14-005 GCP/Azure/Vault adapters + WI-S14-006 kill switch + WI-S14-007 erasure attestation."
+description = "Wave-33 Stage 1 Stream B sub-step B.2b — canonical BYOK microkernel umbrella aggregator. Re-exports `corelink-byok-core` (KmsProvider trait + envelope encryption + DekCache) at the crate root for backwards-compatible consumer paths (`use corelink_byok::KmsProvider;`), and exposes per-provider adapter modules behind 4 cargo features (`aws` / `gcp` / `azure` / `vault`) that are MUTUALLY EXCLUSIVE at compile time. The `revocation` submodule is always-on (it composes with whatever provider is enabled). This is the modular monolith × microkernel boundary per `specs/_audits/2026-05-22-wave33-code-reorg-spec.md` §3: one provider per deployment, selected at build time, with `compile_error!` denial of multi-provider builds (charter Hard Pause Trigger 2 — BYOK mutual-exclusion enforcement at compile time)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -24,103 +24,69 @@ print_stdout = "deny"
 print_stderr = "deny"
 mod_module_files = "deny"
 
+[features]
+# Default = no provider selected. Builds the trait surface + revocation
+# detector only, which is what apps/server consumes when wiring tests
+# against InMemoryFake providers; matches the pre-wave-33 default
+# build behaviour of the original `corelink-byok` crate.
+default = []
+
+# Provider features — MUTUALLY EXCLUSIVE at compile time (see lib.rs
+# `compile_error!` gate). Selecting more than one is a build error,
+# preserving the wave-33 reorg spec §3 microkernel contract.
+aws = ["dep:corelink-byok-aws"]
+gcp = ["dep:corelink-byok-gcp"]
+azure = ["dep:corelink-byok-azure"]
+vault = ["dep:corelink-byok-vault"]
+
+# Wave-33 Stage 1 Stream B sub-step B.2c — preserved from the
+# absorbed `corelink-byok-matrix-test` crate. These features opt the
+# matrix integration tests (`tests/matrix.rs`, `tests/matrix_prop.rs`,
+# `tests/matrix_adversarial.rs`) into REAL provider mode when the
+# matching env var (`GCP_TEST_KEY_RESOURCE` / `AZURE_TEST_KEY_RESOURCE`)
+# is set. Default off — CI runs in mock mode without provider creds.
+# These features DO NOT enable the matching provider's main `aws` /
+# `gcp` / `azure` / `vault` feature on the umbrella, so they do not
+# trigger the mutual-exclusion `compile_error!` gates. The integration
+# tests reference the provider crates as direct dev-dependencies; the
+# `corelink-byok-{gcp,azure}/production` sub-feature is forwarded so
+# the real HTTPS client is linkable inside the test crate.
+production-gcp = ["corelink-byok-gcp/production"]
+production-azure = ["corelink-byok-azure/production"]
+
 [dependencies]
-# Error handling
-thiserror = { workspace = true }
+# Core trait + types (always present; re-exported at crate root for
+# backwards-compatible `use corelink_byok::KmsProvider;` paths).
+corelink-byok-core = { workspace = true }
 
-# Serde
-serde = { workspace = true }
-serde_json = { workspace = true }
+# Revocation detector — always-on; composes with whichever provider is
+# enabled (or none, in InMemoryFake test wiring).
+corelink-byok-revocation = { workspace = true }
 
-# Async (trait — wasm32-safe, header-only proc-macro)
-async-trait = { workspace = true }
-
-# Crypto — AES-256-GCM body encryption
-aes-gcm = { workspace = true }
-
-# Crypto — memory safety
-zeroize = { workspace = true }
-subtle = { workspace = true }
-
-# Observability
-tracing = { workspace = true }
-
-# LRU cache for DEK cache
-lru = { workspace = true }
-
-# ── Native (non-wasm32) deps ──────────────────────────────────────────────
-# Workspace `tokio = { features = ["full"] }` pulls in `mio` + `net` +
-# `rt-multi-thread` which do not compile for `wasm32-unknown-unknown`.
-# The corelink-byok lib only uses `tokio::sync::Mutex` (in `dek_cache.rs`)
-# and `#[tokio::test]` in unit tests — both are sync-feature only, but the
-# workspace pin is a single shared spec. Gating the workspace pin to native
-# preserves `tokio = "full"` behavior on all server / native paths while
-# letting wasm32 link a minimal `sync`-only tokio (below).
-#
-# Workspace `getrandom` is on this native block too — native uses OS-level
-# CSPRNG (getrandom(2) / getentropy(3) / BCryptGenRandom) with no `js`
-# feature; wasm32 routes through WebCrypto via the `js` feature (below).
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-tokio = { workspace = true }
-getrandom = { workspace = true }
-
-# ── wasm32 enablement (R-prep BYOK unblock 2026-05-15) ────────────────────
-# `getrandom` 0.2 fails to compile on `wasm32-unknown-unknown` unless the
-# `js` feature is enabled (routes CSPRNG calls through WebCrypto via
-# `js-sys`). `tokio` is reduced to the `sync` feature only — the lib
-# touches `tokio::sync::Mutex` and nothing else from tokio at runtime
-# (no `net` / `rt-multi-thread` / `time`). This keeps mio + the
-# native-only async runtime out of the wasm32 dep graph.
-#
-# Unblocks downstream BYOK provider crates (corelink-byok-aws,
-# corelink-byok-gcp, corelink-byok-azure, corelink-byok-vault) which all
-# link `*WasmStub` types on wasm32 (see specs/_audits/
-# 2026-05-15-byok-real-provider-pattern.md §4).
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { version = "0.2", features = ["js"] }
-tokio = { version = "1", default-features = false, features = ["sync"] }
+# Provider adapters — optional, gated by mutually-exclusive features.
+corelink-byok-aws = { workspace = true, optional = true }
+corelink-byok-gcp = { workspace = true, optional = true }
+corelink-byok-azure = { workspace = true, optional = true }
+corelink-byok-vault = { workspace = true, optional = true }
 
 [dev-dependencies]
-proptest = { workspace = true }
-tokio-test = { workspace = true }
-tokio = { workspace = true }
-getrandom = { workspace = true }
+# Wave-33 Stage 1 Stream B sub-step B.2c — folded matrix tests
+# (formerly `corelink-byok-matrix-test`, 31 LOC src/ shell dropped
+# as unused). The 3 matrix test files (`matrix.rs`,
+# `matrix_adversarial.rs`, `matrix_prop.rs`) exercise the full
+# 4-provider × 4-op matrix + adversarial + property-test surface.
+# They directly link every provider adapter — this DOES NOT
+# violate the BYOK microkernel mutual-exclusion contract because
+# the `compile_error!` guards live in this crate's `lib.rs` (gated
+# by FEATURES of `corelink-byok`, not by direct dependencies of
+# integration tests). Integration test crates have their own
+# crate boundary and do not activate the umbrella's feature flags.
+corelink-byok-core = { workspace = true }
+corelink-byok-aws = { workspace = true }
+corelink-byok-gcp = { workspace = true }
+corelink-byok-azure = { workspace = true }
+corelink-byok-vault = { workspace = true }
 async-trait = { workspace = true }
 serde_json = { workspace = true }
-criterion = { workspace = true }
-
-[[bench]]
-name = "envelope_roundtrip"
-harness = false
-
-[[test]]
-name = "prop_byok"
-path = "tests/prop_byok.rs"
-
-[[test]]
-name = "adversarial"
-path = "tests/adversarial.rs"
-
-[[test]]
-name = "byok_matrix_framework"
-path = "tests/byok_matrix_framework.rs"
-
-[[test]]
-name = "mutation_kills"
-path = "tests/mutation_kills.rs"
-
-[[example]]
-name = "write_aws"
-path = "examples/write_aws.rs"
-
-[[example]]
-name = "read_aws"
-path = "examples/read_aws.rs"
-
-[[example]]
-name = "wrap_dek"
-path = "examples/wrap_dek.rs"
-
-[[example]]
-name = "unwrap_dek"
-path = "examples/unwrap_dek.rs"
+tokio = { workspace = true }
+proptest = { workspace = true }

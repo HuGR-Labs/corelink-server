@@ -79,7 +79,7 @@
 
 #![forbid(unsafe_code)]
 
-use corelink_byok::types::BYOKError;
+use corelink_byok_core::types::BYOKError;
 
 pub mod real;
 
@@ -224,7 +224,7 @@ mod legacy {
         primitives::Blob,
         Client,
     };
-    use corelink_byok::{
+    use corelink_byok_core::{
         types::{BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProviderKind, WrappedDek},
         KmsProvider,
     };

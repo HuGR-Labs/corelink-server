@@ -1,6 +1,6 @@
 //! [`CustomerAlerter`] — pluggable multi-channel customer alert delivery.
 
-use corelink_byok::{KmsKeyId, KmsProviderKind};
+use corelink_byok_core::{KmsKeyId, KmsProviderKind};
 
 use crate::error::RevocationError;
 
@@ -9,7 +9,7 @@ use crate::error::RevocationError;
 /// # Example
 ///
 /// ```rust
-/// use corelink_byok::{KmsKeyId, KmsProviderKind};
+/// use corelink_byok_core::{KmsKeyId, KmsProviderKind};
 /// use corelink_byok_revocation::alerter::RevocationAlertPayload;
 ///
 /// let payload = RevocationAlertPayload {
@@ -56,7 +56,7 @@ pub struct RevocationAlertPayload {
 /// # Example
 ///
 /// ```rust
-/// use corelink_byok::{KmsKeyId, KmsProviderKind};
+/// use corelink_byok_core::{KmsKeyId, KmsProviderKind};
 /// use corelink_byok_revocation::CustomerAlerter;
 /// use corelink_byok_revocation::alerter::RevocationAlertPayload;
 /// use corelink_byok_revocation::testutil::NoopAlerter;

@@ -36,7 +36,7 @@
 //!
 //! ```rust
 //! use corelink_byok_gcp::GcpKmsProvider;
-//! use corelink_byok::{KmsProvider, FipsLevel};
+//! use corelink_byok_core::{KmsProvider, FipsLevel};
 //!
 //! let provider = GcpKmsProvider::new_mock("us-east1");
 //! assert_eq!(provider.fips_level(), FipsLevel::Fips140_2_L1);
@@ -47,7 +47,7 @@
 //!
 //! ```rust
 //! # tokio_test::block_on(async {
-//! use corelink_byok::{KmsProvider, KmsKeyId, KmsProviderKind, Dek};
+//! use corelink_byok_core::{KmsProvider, KmsKeyId, KmsProviderKind, Dek};
 //! use corelink_byok_gcp::GcpKmsProvider;
 //!
 //! let provider = GcpKmsProvider::new_mock("us-east1");
@@ -68,7 +68,7 @@
 //!
 //! ```rust
 //! # tokio_test::block_on(async {
-//! use corelink_byok::{KmsProvider, KmsKeyId, KmsProviderKind, Dek, WrappedDek};
+//! use corelink_byok_core::{KmsProvider, KmsKeyId, KmsProviderKind, Dek, WrappedDek};
 //! use corelink_byok_gcp::GcpKmsProvider;
 //! use serde_json::json;
 //!
@@ -98,7 +98,7 @@
 #![allow(clippy::uninlined_format_args, clippy::format_in_format_args)]
 
 use async_trait::async_trait;
-use corelink_byok::{BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider,
+use corelink_byok_core::{BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider,
                     KmsProviderKind, WrappedDek};
 
 pub(crate) mod key_resource;
@@ -365,7 +365,7 @@ pub fn is_mock_env() -> bool {
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use corelink_byok::KmsProvider;
+    use corelink_byok_core::KmsProvider;
 
     #[test]
     fn fips_level_is_140_2_l1() {

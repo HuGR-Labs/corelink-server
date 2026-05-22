@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use corelink_byok::{DekCache, Dek, KmsKeyId, KmsProviderKind, WrappedDek};
+use corelink_byok_core::{DekCache, Dek, KmsKeyId, KmsProviderKind, WrappedDek};
 use corelink_byok_revocation::testutil::{
     InMemoryTenantStore, NoopAlerter, RecordingAlerter, StubKmsProvider,
 };

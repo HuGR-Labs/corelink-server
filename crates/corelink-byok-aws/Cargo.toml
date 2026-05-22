@@ -34,7 +34,7 @@ default = []
 real = []
 
 [dependencies]
-corelink-byok = { path = "../corelink-byok" }
+corelink-byok-core = { path = "../corelink-byok-core" }
 
 # Async
 async-trait = { workspace = true }

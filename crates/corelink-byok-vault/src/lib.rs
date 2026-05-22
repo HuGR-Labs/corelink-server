@@ -46,7 +46,7 @@
 //!
 //! ```rust
 //! # tokio_test::block_on(async {
-//! use corelink_byok::{KmsProvider, KmsKeyId, KmsProviderKind, Dek, FipsLevel};
+//! use corelink_byok_core::{KmsProvider, KmsKeyId, KmsProviderKind, Dek, FipsLevel};
 //! use corelink_byok_vault::VaultProvider;
 //!
 //! let provider = VaultProvider::new_mock("us-east-1");
@@ -69,7 +69,7 @@
 //!
 //! ```rust
 //! # tokio_test::block_on(async {
-//! use corelink_byok::{KmsProvider, KmsKeyId, KmsProviderKind, Dek, WrappedDek};
+//! use corelink_byok_core::{KmsProvider, KmsKeyId, KmsProviderKind, Dek, WrappedDek};
 //! use corelink_byok_vault::VaultProvider;
 //! use serde_json::json;
 //!
@@ -100,7 +100,7 @@
 
 use async_trait::async_trait;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use corelink_byok::{BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider,
+use corelink_byok_core::{BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider,
                     KmsProviderKind, WrappedDek};
 
 #[cfg(all(feature = "real", not(target_arch = "wasm32")))]
@@ -415,7 +415,7 @@ impl KmsProvider for VaultProvider {
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic, clippy::indexing_slicing, clippy::uninlined_format_args)]
 mod tests {
     use super::*;
-    use corelink_byok::KmsProvider;
+    use corelink_byok_core::KmsProvider;
 
     fn vault_key_id() -> KmsKeyId {
         KmsKeyId {

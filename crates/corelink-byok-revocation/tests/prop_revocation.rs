@@ -16,7 +16,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use corelink_byok::{Dek, DekCache, KmsKeyId, KmsProviderKind, WrappedDek};
+use corelink_byok_core::{Dek, DekCache, KmsKeyId, KmsProviderKind, WrappedDek};
 use corelink_byok_revocation::{RevocationConfig, RevocationDetector};
 use corelink_byok_revocation::testutil::{
     InMemoryTenantStore, NoopAlerter, RecordingAlerter, StubKmsProvider,

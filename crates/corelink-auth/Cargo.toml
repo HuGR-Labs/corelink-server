@@ -1,0 +1,53 @@
+[package]
+name = "corelink-auth"
+description = "Wave-33 Stage 1 Stream B sub-step B.3 — canonical authentication-context aggregator façade. Re-exports the 6 absorbed auth-context crates (Clerk JWT verify + Clerk CF Worker bindings pure-logic + auth-schema RLS + WebAuthn + PAT issuance/revoke + tenant-path CTRL-CAS-001 enforcer) under a single canonical import surface (`corelink_auth::{clerk, clerk_cf, schema, webauthn, pat, tenant_path}`). Stage 1 Stream B ships this crate as a re-export aggregator (Option-A least-invasive interpretation per `specs/_audits/2026-05-22-w33-stage0-foundation.md` §4) so consumer migration can proceed incrementally. Absorbed crates remain canonical sources of truth, retaining their own tests/benches/fuzz. The `corelink-clerk-cf` wasm32-only portion is preserved by reference (charter Hard Pause Trigger 5 — wasm32 build green tripwire); the `corelink-tenant-path` CTRL-CAS-001 prefix enforcer is absorbed unchanged (charter `INV-AUTH-SCHEMA-RLS-DEFAULT-ON` preserved by reference)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+# Re-export targets (Stage 1 Stream B Option-A aggregator: physical
+# absorption deferred to consumer-migration stream that owns the
+# `apps/server` route layer + `corelink-worker` wasm32 entry atomically;
+# see Stream B SEAL audit §1).
+#
+# Default-features = false on `corelink-clerk` to mirror the workspace
+# default; consumers opt in to clerk-prod via the `clerk-prod` feature
+# (declared below).
+corelink-clerk = { workspace = true }
+# `corelink-clerk-cf` is wasm32-only; the umbrella consumes its pure-
+# logic surface via cfg-gated re-export so the native CI build path
+# does not pull wasm-bindgen / worker-rs into the auth aggregator.
+# See lib.rs `#[cfg(target_arch = "wasm32")]` gate on the `clerk_cf`
+# submodule.
+corelink-clerk-cf = { workspace = true }
+corelink-auth-schema = { workspace = true }
+corelink-webauthn = { workspace = true }
+corelink-pat = { workspace = true }
+corelink-tenant-path = { workspace = true }
+
+[features]
+# Default mirrors the workspace clerk dep (no default features), and
+# the consumer opts in to the JWT adapter via the umbrella feature
+# `clerk-jwt-adapter` to keep parity with the absorbed crate.
+default = []
+clerk-jwt-adapter = ["corelink-clerk/jwt-adapter"]
