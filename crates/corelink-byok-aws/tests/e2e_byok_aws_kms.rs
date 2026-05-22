@@ -29,7 +29,7 @@ mod e2e_aws_kms {
     use std::env;
     use std::time::Instant;
 
-    use corelink_byok::{
+    use corelink_byok_core::{
         dek_cache::DekCache,
         envelope::EnvelopeEncryptor,
         types::{KmsAccessStatus, KmsKeyId, KmsProviderKind},
@@ -185,7 +185,7 @@ mod e2e_aws_kms {
         for _ in 0..10 {
             let mut dek_bytes = [0u8; 32];
             getrandom::getrandom(&mut dek_bytes).expect("getrandom");
-            let dek = corelink_byok::types::Dek { bytes: dek_bytes };
+            let dek = corelink_byok_core::types::Dek { bytes: dek_bytes };
 
             let t0 = Instant::now();
             provider

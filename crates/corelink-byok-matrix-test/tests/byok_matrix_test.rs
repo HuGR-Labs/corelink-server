@@ -27,7 +27,7 @@
 //! real `aws-sdk-kms` client end-to-end.
 
 #![allow(clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
-use corelink_byok::{
+use corelink_byok_core::{
     BYOKError, DekCache, Dek, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind, FipsLevel,
     WrappedDek,
 };

@@ -57,7 +57,7 @@
 )]
 
 use base64::Engine as _;
-use corelink_byok::{
+use corelink_byok_core::{
     BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind, WrappedDek,
 };
 use corelink_byok_vault::__test_support::VaultAuth;

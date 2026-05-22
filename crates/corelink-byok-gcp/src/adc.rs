@@ -32,7 +32,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use tracing::{debug, warn};
 
-use corelink_byok::BYOKError;
+use corelink_byok_core::BYOKError;
 
 /// Public OAuth2 scope for Cloud KMS access.
 pub(crate) const KMS_SCOPE: &str = "https://www.googleapis.com/auth/cloudkms";

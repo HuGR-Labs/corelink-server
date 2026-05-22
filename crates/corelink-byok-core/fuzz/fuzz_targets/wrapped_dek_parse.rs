@@ -21,8 +21,8 @@
 
 #![no_main]
 
-use corelink_byok::envelope::EncryptedBlob;
-use corelink_byok::WrappedDek;
+use corelink_byok_core::envelope::EncryptedBlob;
+use corelink_byok_core::WrappedDek;
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {

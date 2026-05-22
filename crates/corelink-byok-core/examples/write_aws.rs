@@ -1,13 +1,18 @@
-//! Example: unwrap (KMS-decrypt) a wrapped DEK.
+//! Example: BYOK write path with a stub AWS KMS provider.
 //!
-//! Shows that the encryption_context AAD must match exactly.
-//! Cross-blob swap attempt → `BYOKError::AadMismatch`.
+//! Demonstrates the full envelope encryption flow:
+//! 1. Generate ephemeral DEK via CSPRNG.
+//! 2. Encrypt body with AES-256-GCM.
+//! 3. Wrap DEK via KMS.
+//! 4. Store wrapped DEK + ciphertext (caller persists to D1 + R2).
 
 #![allow(clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::panic, clippy::print_stdout, clippy::print_stderr)]
 use async_trait::async_trait;
 use serde_json::Value;
 
-use corelink_byok::{
+use corelink_byok_core::{
+    dek_cache::DekCache,
+    envelope::EnvelopeEncryptor,
     types::{BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProviderKind, WrappedDek},
     KmsProvider,
 };
@@ -50,13 +55,8 @@ impl KmsProvider for StubProvider {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let provider = StubProvider;
-
-    // Generate + wrap DEK.
-    let mut dek_bytes = [0u8; 32];
-    getrandom::getrandom(&mut dek_bytes).map_err(|e| format!("getrandom: {e}"))?;
-    let original = dek_bytes;
-    let dek = Dek { bytes: dek_bytes };
+    let cache = DekCache::new(300)?;
+    let enc = EnvelopeEncryptor::new(StubProvider, cache);
 
     let key_id = KmsKeyId {
         provider: KmsProviderKind::AwsKms,
@@ -64,17 +64,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         region: "us-east-1".to_string(),
     };
 
-    let aad = serde_json::json!({
-        "tenant_id": "tenant_example",
-        "blob_hash": "sha256:unwrap_example",
-    });
+    let plaintext = b"CoreLink BYOK write example";
+    let blob = enc
+        .encrypt(plaintext, &key_id, "tenant_example", "sha256:example")
+        .await?;
 
-    let wrapped = provider.wrap_dek(&dek, &key_id, Some(&aad)).await?;
-
-    // Correct unwrap.
-    let recovered = provider.unwrap_dek(&wrapped).await?;
-    assert_eq!(recovered.bytes, original);
-    println!("Unwrap DEK complete: DEK bytes match original");
+    println!("Write path complete:");
+    println!("  ciphertext len = {} bytes", blob.ciphertext.len());
+    println!("  nonce = {:?}", blob.nonce);
+    println!(
+        "  wrapped_dek.kms_provider = {:?}",
+        blob.wrapped_dek.provider
+    );
 
     Ok(())
 }

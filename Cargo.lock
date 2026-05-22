@@ -1334,20 +1334,12 @@ dependencies = [
 name = "corelink-byok"
 version = "0.1.0"
 dependencies = [
- "aes-gcm",
- "async-trait",
- "criterion",
- "getrandom 0.2.17",
- "lru",
- "proptest",
- "serde",
- "serde_json",
- "subtle",
- "thiserror 2.0.18",
- "tokio",
- "tokio-test",
- "tracing",
- "zeroize",
+ "corelink-byok-aws",
+ "corelink-byok-azure",
+ "corelink-byok-core",
+ "corelink-byok-gcp",
+ "corelink-byok-revocation",
+ "corelink-byok-vault",
 ]
 
 [[package]]
@@ -1357,7 +1349,7 @@ dependencies = [
  "async-trait",
  "aws-config",
  "aws-sdk-kms",
- "corelink-byok",
+ "corelink-byok-core",
  "futures",
  "getrandom 0.2.17",
  "proptest",
@@ -1378,7 +1370,7 @@ dependencies = [
  "aes-gcm",
  "async-trait",
  "base64",
- "corelink-byok",
+ "corelink-byok-core",
  "futures",
  "getrandom 0.2.17",
  "proptest",
@@ -1397,12 +1389,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-byok-core"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "async-trait",
+ "criterion",
+ "getrandom 0.2.17",
+ "lru",
+ "proptest",
+ "serde",
+ "serde_json",
+ "subtle",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-test",
+ "tracing",
+ "zeroize",
+]
+
+[[package]]
 name = "corelink-byok-gcp"
 version = "0.1.0"
 dependencies = [
  "async-trait",
  "base64",
- "corelink-byok",
+ "corelink-byok-core",
  "futures",
  "getrandom 0.2.17",
  "jsonwebtoken",
@@ -1426,9 +1438,9 @@ name = "corelink-byok-matrix-test"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "corelink-byok",
  "corelink-byok-aws",
  "corelink-byok-azure",
+ "corelink-byok-core",
  "corelink-byok-gcp",
  "corelink-byok-vault",
  "proptest",
@@ -1441,7 +1453,7 @@ name = "corelink-byok-revocation"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "corelink-byok",
+ "corelink-byok-core",
  "proptest",
  "serde",
  "serde_json",
@@ -1457,7 +1469,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "base64",
- "corelink-byok",
+ "corelink-byok-core",
  "futures",
  "proptest",
  "regex",
@@ -1689,7 +1701,7 @@ name = "corelink-customer-alerts"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "corelink-byok",
+ "corelink-byok-core",
  "corelink-byok-revocation",
  "serde",
  "serde_json",

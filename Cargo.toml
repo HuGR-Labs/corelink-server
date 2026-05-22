@@ -106,6 +106,16 @@ members = [
     # S-14 BYOK (WI-S14-004 trait canonical + WI-S14-005 adapters + matrix
     # test + WI-S14-006 revocation/alerts ported to canonical per sprint-
     # close P0-1 + P0-2 fixes)
+    # Wave-33 Stage 1 Stream B sub-step B.2a — renamed from
+    # `corelink-byok` for collision avoidance with the umbrella
+    # aggregator at `crates/corelink-byok` (B.2b). Behaviour unchanged.
+    "crates/corelink-byok-core",
+    # Wave-33 Stage 1 Stream B sub-step B.2b — BYOK microkernel
+    # umbrella. Re-exports `corelink-byok-core` at the crate root
+    # (backwards-compatible `use corelink_byok::KmsProvider;`) and
+    # exposes per-provider modules behind 4 mutually-exclusive cargo
+    # features (aws / gcp / azure / vault). See
+    # `specs/_audits/2026-05-22-w33-stream-b-policy.md`.
     "crates/corelink-byok",
     "crates/corelink-byok-aws",
     "crates/corelink-byok-gcp",
@@ -319,7 +329,7 @@ exclude = [
     # Merkle/JCS + HKDF (pre-pentest hardening lane). Each fuzz crate carries
     # its own [workspace] inner toml so they are excluded from the outer
     # workspace resolver and cargo-fuzz drives them stand-alone.
-    "crates/corelink-byok/fuzz",
+    "crates/corelink-byok-core/fuzz",
     "crates/corelink-audit-chain/fuzz",
     "crates/corelink-ac/fuzz",
 ]
@@ -517,6 +527,16 @@ corelink-region = { path = "crates/corelink-region" }
 corelink-replica-worker = { path = "crates/corelink-replica-worker" }
 corelink-failover-router = { path = "crates/corelink-failover-router" }
 # S-14 BYOK (canonical from WI-S14-004; consolidated dupes from -005 and -006)
+# Wave-33 Stage 1 Stream B sub-step B.2a — renamed from `corelink-byok`.
+corelink-byok-core = { path = "crates/corelink-byok-core" }
+# Wave-33 Stage 1 Stream B sub-step B.2b — BYOK microkernel umbrella
+# aggregator. Re-exports `corelink-byok-core` at the crate root and
+# gates per-provider adapter modules behind 4 mutually-exclusive cargo
+# features. Default = no provider (trait + InMemoryFake only). Consumers
+# that pre-wave-33 said `corelink-byok = { workspace = true }` now
+# resolve to this umbrella; their `use corelink_byok::KmsProvider;`
+# call sites continue to compile unchanged (re-export pattern preserves
+# the public surface, per charter "behaviour-preserving refactor ONLY").
 corelink-byok = { path = "crates/corelink-byok" }
 corelink-byok-aws = { path = "crates/corelink-byok-aws" }
 corelink-byok-gcp = { path = "crates/corelink-byok-gcp" }

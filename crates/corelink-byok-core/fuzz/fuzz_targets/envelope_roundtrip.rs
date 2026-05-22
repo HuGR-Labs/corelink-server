@@ -10,8 +10,8 @@
 #![no_main]
 
 use async_trait::async_trait;
-use corelink_byok::envelope::{EncryptedBlob, EnvelopeEncryptor};
-use corelink_byok::{
+use corelink_byok_core::envelope::{EncryptedBlob, EnvelopeEncryptor};
+use corelink_byok_core::{
     BYOKError, Dek, DekCache, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider,
     KmsProviderKind, WrappedDek,
 };

@@ -19,7 +19,7 @@
     clippy::uninlined_format_args
 )]
 
-use corelink_byok::{
+use corelink_byok_core::{
     dek_cache::DekCache,
     types::{Dek, KmsKeyId, KmsProviderKind, WrappedDek},
 };

@@ -27,7 +27,7 @@
 use proptest::prelude::*;
 use tokio::runtime::Runtime;
 
-use corelink_byok::{
+use corelink_byok_core::{
     dek_cache::DekCache,
     envelope::EnvelopeEncryptor,
     types::{BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProviderKind, WrappedDek},

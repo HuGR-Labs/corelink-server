@@ -21,7 +21,7 @@
 use async_trait::async_trait;
 use serde_json::Value;
 
-use corelink_byok::{
+use corelink_byok_core::{
     dek_cache::DekCache,
     types::{BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProviderKind, WrappedDek},
     KmsProvider,

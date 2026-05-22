@@ -6,7 +6,7 @@
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use corelink_byok::{DekCache, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind};
+use corelink_byok_core::{DekCache, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind};
 use tracing::{error, info, warn};
 
 use crate::alerter::{CustomerAlerter, RevocationAlertPayload};
@@ -71,7 +71,7 @@ pub struct KillSwitchOutcome {
 ///
 /// ```rust
 /// use std::sync::Arc;
-/// use corelink_byok::DekCache;
+/// use corelink_byok_core::DekCache;
 /// use corelink_byok_revocation::{RevocationDetector, RevocationConfig};
 /// use corelink_byok_revocation::testutil::{NoopAlerter, InMemoryTenantStore, StubKmsProvider};
 ///

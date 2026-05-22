@@ -42,7 +42,7 @@ struct Entry {
 /// # Example
 ///
 /// ```rust,no_run
-/// use corelink_byok::DekCache;
+/// use corelink_byok_core::DekCache;
 ///
 /// # tokio_test::block_on(async {
 /// let cache = DekCache::new(300).expect("TTL within bounds");

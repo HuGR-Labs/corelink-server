@@ -1,12 +1,13 @@
-//! Example: wrap (KMS-encrypt) a DEK.
+//! Example: unwrap (KMS-decrypt) a wrapped DEK.
 //!
-//! Shows the mandatory AAD binding: `{"tenant_id": "...", "blob_hash": "..."}`.
+//! Shows that the encryption_context AAD must match exactly.
+//! Cross-blob swap attempt → `BYOKError::AadMismatch`.
 
 #![allow(clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::panic, clippy::print_stdout, clippy::print_stderr)]
 use async_trait::async_trait;
 use serde_json::Value;
 
-use corelink_byok::{
+use corelink_byok_core::{
     types::{BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProviderKind, WrappedDek},
     KmsProvider,
 };
@@ -51,9 +52,10 @@ impl KmsProvider for StubProvider {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let provider = StubProvider;
 
-    // Generate ephemeral DEK.
+    // Generate + wrap DEK.
     let mut dek_bytes = [0u8; 32];
     getrandom::getrandom(&mut dek_bytes).map_err(|e| format!("getrandom: {e}"))?;
+    let original = dek_bytes;
     let dek = Dek { bytes: dek_bytes };
 
     let key_id = KmsKeyId {
@@ -62,18 +64,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         region: "us-east-1".to_string(),
     };
 
-    // Mandatory AAD binding.
     let aad = serde_json::json!({
         "tenant_id": "tenant_example",
-        "blob_hash": "sha256:wrap_example",
+        "blob_hash": "sha256:unwrap_example",
     });
 
     let wrapped = provider.wrap_dek(&dek, &key_id, Some(&aad)).await?;
 
-    println!("Wrap DEK complete:");
-    println!("  wrapped ciphertext len = {} bytes", wrapped.ciphertext.len());
-    println!("  provider = {:?}", wrapped.provider);
-    println!("  encryption_context = {:?}", wrapped.encryption_context);
+    // Correct unwrap.
+    let recovered = provider.unwrap_dek(&wrapped).await?;
+    assert_eq!(recovered.bytes, original);
+    println!("Unwrap DEK complete: DEK bytes match original");
 
     Ok(())
 }

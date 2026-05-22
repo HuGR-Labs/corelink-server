@@ -34,7 +34,7 @@ use serde::Deserialize;
 use tokio::sync::Mutex;
 use tracing::{debug, warn};
 
-use corelink_byok::BYOKError;
+use corelink_byok_core::BYOKError;
 
 /// Refresh margin: renew the token this many seconds before expiry.
 const REFRESH_MARGIN_SECS: u64 = 60;

@@ -1,0 +1,126 @@
+[package]
+name = "corelink-byok-core"
+description = "Wave-33 Stage 1 Stream B sub-step B.2a — renamed from `corelink-byok` for collision avoidance with the new umbrella aggregator at `corelink-byok` (B.2b). Behaviour unchanged. CoreLink BYOK (Bring Your Own Key) enterprise tier core — KmsProvider trait + types (KmsKeyId, WrappedDek, Dek, KmsAccessStatus, BYOKError, FipsLevel) + DekCache with 5-min TTL hard limit (INV-BYOK-CRYPTO-SOVEREIGNTY) + EnvelopeEncryptor write/read paths (ephemeral DEK via CSPRNG getrandom; AES-256-GCM body encryption FIPS 197; AAD encryption_context binding mandatory; ZeroizeOnDrop on all key material). Foundation for WI-S14-004 AWS KMS adapter + WI-S14-005 GCP/Azure/Vault adapters + WI-S14-006 kill switch + WI-S14-007 erasure attestation."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+# Error handling
+thiserror = { workspace = true }
+
+# Serde
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Async (trait — wasm32-safe, header-only proc-macro)
+async-trait = { workspace = true }
+
+# Crypto — AES-256-GCM body encryption
+aes-gcm = { workspace = true }
+
+# Crypto — memory safety
+zeroize = { workspace = true }
+subtle = { workspace = true }
+
+# Observability
+tracing = { workspace = true }
+
+# LRU cache for DEK cache
+lru = { workspace = true }
+
+# ── Native (non-wasm32) deps ──────────────────────────────────────────────
+# Workspace `tokio = { features = ["full"] }` pulls in `mio` + `net` +
+# `rt-multi-thread` which do not compile for `wasm32-unknown-unknown`.
+# The corelink-byok lib only uses `tokio::sync::Mutex` (in `dek_cache.rs`)
+# and `#[tokio::test]` in unit tests — both are sync-feature only, but the
+# workspace pin is a single shared spec. Gating the workspace pin to native
+# preserves `tokio = "full"` behavior on all server / native paths while
+# letting wasm32 link a minimal `sync`-only tokio (below).
+#
+# Workspace `getrandom` is on this native block too — native uses OS-level
+# CSPRNG (getrandom(2) / getentropy(3) / BCryptGenRandom) with no `js`
+# feature; wasm32 routes through WebCrypto via the `js` feature (below).
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { workspace = true }
+getrandom = { workspace = true }
+
+# ── wasm32 enablement (R-prep BYOK unblock 2026-05-15) ────────────────────
+# `getrandom` 0.2 fails to compile on `wasm32-unknown-unknown` unless the
+# `js` feature is enabled (routes CSPRNG calls through WebCrypto via
+# `js-sys`). `tokio` is reduced to the `sync` feature only — the lib
+# touches `tokio::sync::Mutex` and nothing else from tokio at runtime
+# (no `net` / `rt-multi-thread` / `time`). This keeps mio + the
+# native-only async runtime out of the wasm32 dep graph.
+#
+# Unblocks downstream BYOK provider crates (corelink-byok-aws,
+# corelink-byok-gcp, corelink-byok-azure, corelink-byok-vault) which all
+# link `*WasmStub` types on wasm32 (see specs/_audits/
+# 2026-05-15-byok-real-provider-pattern.md §4).
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+tokio = { version = "1", default-features = false, features = ["sync"] }
+
+[dev-dependencies]
+proptest = { workspace = true }
+tokio-test = { workspace = true }
+tokio = { workspace = true }
+getrandom = { workspace = true }
+async-trait = { workspace = true }
+serde_json = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "envelope_roundtrip"
+harness = false
+
+[[test]]
+name = "prop_byok"
+path = "tests/prop_byok.rs"
+
+[[test]]
+name = "adversarial"
+path = "tests/adversarial.rs"
+
+[[test]]
+name = "byok_matrix_framework"
+path = "tests/byok_matrix_framework.rs"
+
+[[test]]
+name = "mutation_kills"
+path = "tests/mutation_kills.rs"
+
+[[example]]
+name = "write_aws"
+path = "examples/write_aws.rs"
+
+[[example]]
+name = "read_aws"
+path = "examples/read_aws.rs"
+
+[[example]]
+name = "wrap_dek"
+path = "examples/wrap_dek.rs"
+
+[[example]]
+name = "unwrap_dek"
+path = "examples/unwrap_dek.rs"

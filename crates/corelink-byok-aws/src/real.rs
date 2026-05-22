@@ -40,13 +40,13 @@
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-use corelink_byok::BYOKError;
+use corelink_byok_core::BYOKError;
 
 #[cfg(target_arch = "wasm32")]
 use async_trait::async_trait;
 
 #[cfg(target_arch = "wasm32")]
-use corelink_byok::{
+use corelink_byok_core::{
     Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind, WrappedDek,
 };
 
@@ -132,7 +132,7 @@ mod native {
     use super::{aad_fingerprint, canonicalize_aad_to_string_map};
     use crate::{resolve_endpoint_hostname, validate_aws_kms_key_arn};
     use async_trait::async_trait;
-    use corelink_byok::{
+    use corelink_byok_core::{
         BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind,
         WrappedDek,
     };

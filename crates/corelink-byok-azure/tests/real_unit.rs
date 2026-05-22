@@ -27,7 +27,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use base64::Engine as _;
-use corelink_byok::{
+use corelink_byok_core::{
     BYOKError, Dek, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind, WrappedDek,
 };
 use corelink_byok_azure::__test_support::EntraCredentials;
@@ -648,7 +648,7 @@ fn fips_level_is_140_2_l2() {
     let p = AzureKeyVaultRealProvider::new_mock("eastus", PROD_VAULT_URL).unwrap();
     assert_eq!(
         p.fips_level(),
-        corelink_byok::FipsLevel::Fips140_2_L2
+        corelink_byok_core::FipsLevel::Fips140_2_L2
     );
     assert_eq!(p.provider_kind(), KmsProviderKind::AzureKeyVault);
     assert_eq!(p.region(), "eastus");

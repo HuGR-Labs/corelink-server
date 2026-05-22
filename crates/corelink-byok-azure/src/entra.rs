@@ -31,7 +31,7 @@ use serde::Deserialize;
 use tokio::sync::Mutex;
 use tracing::{debug, warn};
 
-use corelink_byok::BYOKError;
+use corelink_byok_core::BYOKError;
 
 /// Public OAuth2 scope for Key Vault data plane.
 pub(crate) const KV_SCOPE: &str = "https://vault.azure.net/.default";

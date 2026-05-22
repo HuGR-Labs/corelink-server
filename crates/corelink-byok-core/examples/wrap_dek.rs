@@ -1,18 +1,12 @@
-//! Example: BYOK read path with DEK cache.
+//! Example: wrap (KMS-encrypt) a DEK.
 //!
-//! Demonstrates:
-//! 1. Fetch wrapped DEK from D1 (stub).
-//! 2. Check DEK cache (5 min TTL hard).
-//! 3. On miss: unwrap via KMS.
-//! 4. Decrypt body with AES-256-GCM.
+//! Shows the mandatory AAD binding: `{"tenant_id": "...", "blob_hash": "..."}`.
 
 #![allow(clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::panic, clippy::print_stdout, clippy::print_stderr)]
 use async_trait::async_trait;
 use serde_json::Value;
 
-use corelink_byok::{
-    dek_cache::DekCache,
-    envelope::EnvelopeEncryptor,
+use corelink_byok_core::{
     types::{BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProviderKind, WrappedDek},
     KmsProvider,
 };
@@ -55,8 +49,12 @@ impl KmsProvider for StubProvider {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let cache = DekCache::new(300)?;
-    let enc = EnvelopeEncryptor::new(StubProvider, cache);
+    let provider = StubProvider;
+
+    // Generate ephemeral DEK.
+    let mut dek_bytes = [0u8; 32];
+    getrandom::getrandom(&mut dek_bytes).map_err(|e| format!("getrandom: {e}"))?;
+    let dek = Dek { bytes: dek_bytes };
 
     let key_id = KmsKeyId {
         provider: KmsProviderKind::AwsKms,
@@ -64,20 +62,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         region: "us-east-1".to_string(),
     };
 
-    // Simulate write first.
-    let plaintext = b"CoreLink BYOK read example";
-    let blob = enc
-        .encrypt(plaintext, &key_id, "tenant_example", "sha256:read_example")
-        .await?;
+    // Mandatory AAD binding.
+    let aad = serde_json::json!({
+        "tenant_id": "tenant_example",
+        "blob_hash": "sha256:wrap_example",
+    });
 
-    // Read path.
-    let recovered = enc
-        .decrypt(&blob, "tenant_example", "sha256:read_example")
-        .await?;
+    let wrapped = provider.wrap_dek(&dek, &key_id, Some(&aad)).await?;
 
-    assert_eq!(recovered, plaintext);
-    println!("Read path complete: {} bytes recovered", recovered.len());
-    println!("  plaintext = {:?}", std::str::from_utf8(&recovered)?);
+    println!("Wrap DEK complete:");
+    println!("  wrapped ciphertext len = {} bytes", wrapped.ciphertext.len());
+    println!("  provider = {:?}", wrapped.provider);
+    println!("  encryption_context = {:?}", wrapped.encryption_context);
 
     Ok(())
 }

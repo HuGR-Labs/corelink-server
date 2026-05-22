@@ -43,7 +43,7 @@
 //!
 //! ```rust
 //! use std::sync::Arc;
-//! use corelink_byok::DekCache;
+//! use corelink_byok_core::DekCache;
 //! use corelink_byok_revocation::{RevocationDetector, RevocationConfig};
 //! use corelink_byok_revocation::testutil::{NoopAlerter, InMemoryTenantStore, StubKmsProvider};
 //!

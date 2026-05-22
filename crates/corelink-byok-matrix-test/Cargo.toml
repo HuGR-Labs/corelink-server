@@ -34,7 +34,7 @@ production-gcp = ["corelink-byok-gcp/production"]
 production-azure = ["corelink-byok-azure/production"]
 
 [dependencies]
-corelink-byok = { path = "../corelink-byok" }
+corelink-byok-core = { path = "../corelink-byok-core" }
 corelink-byok-aws = { path = "../corelink-byok-aws" }
 corelink-byok-gcp = { path = "../corelink-byok-gcp" }
 corelink-byok-azure = { path = "../corelink-byok-azure" }

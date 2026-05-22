@@ -32,7 +32,7 @@
     clippy::panic
 )]
 
-use corelink_byok::{
+use corelink_byok_core::{
     types::{BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProviderKind, WrappedDek},
     KmsProvider,
 };

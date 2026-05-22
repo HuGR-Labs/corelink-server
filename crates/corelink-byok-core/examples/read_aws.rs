@@ -1,16 +1,16 @@
-//! Example: BYOK write path with a stub AWS KMS provider.
+//! Example: BYOK read path with DEK cache.
 //!
-//! Demonstrates the full envelope encryption flow:
-//! 1. Generate ephemeral DEK via CSPRNG.
-//! 2. Encrypt body with AES-256-GCM.
-//! 3. Wrap DEK via KMS.
-//! 4. Store wrapped DEK + ciphertext (caller persists to D1 + R2).
+//! Demonstrates:
+//! 1. Fetch wrapped DEK from D1 (stub).
+//! 2. Check DEK cache (5 min TTL hard).
+//! 3. On miss: unwrap via KMS.
+//! 4. Decrypt body with AES-256-GCM.
 
 #![allow(clippy::uninlined_format_args, clippy::format_in_format_args, clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing, clippy::panic, clippy::print_stdout, clippy::print_stderr)]
 use async_trait::async_trait;
 use serde_json::Value;
 
-use corelink_byok::{
+use corelink_byok_core::{
     dek_cache::DekCache,
     envelope::EnvelopeEncryptor,
     types::{BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProviderKind, WrappedDek},
@@ -64,18 +64,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         region: "us-east-1".to_string(),
     };
 
-    let plaintext = b"CoreLink BYOK write example";
+    // Simulate write first.
+    let plaintext = b"CoreLink BYOK read example";
     let blob = enc
-        .encrypt(plaintext, &key_id, "tenant_example", "sha256:example")
+        .encrypt(plaintext, &key_id, "tenant_example", "sha256:read_example")
         .await?;
 
-    println!("Write path complete:");
-    println!("  ciphertext len = {} bytes", blob.ciphertext.len());
-    println!("  nonce = {:?}", blob.nonce);
-    println!(
-        "  wrapped_dek.kms_provider = {:?}",
-        blob.wrapped_dek.provider
-    );
+    // Read path.
+    let recovered = enc
+        .decrypt(&blob, "tenant_example", "sha256:read_example")
+        .await?;
+
+    assert_eq!(recovered, plaintext);
+    println!("Read path complete: {} bytes recovered", recovered.len());
+    println!("  plaintext = {:?}", std::str::from_utf8(&recovered)?);
 
     Ok(())
 }
