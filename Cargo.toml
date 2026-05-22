@@ -40,6 +40,14 @@ members = [
     # path + audit-emit-BEFORE-mutation fail-CLOSED envelopes by
     # reference. See `specs/_audits/2026-05-22-w33-stream-b-policy.md`.
     "crates/corelink-privacy",
+    # Wave-33 Stage 1 Stream C sub-step C.1 — canonical replication
+    # aggregator. Option-A re-export façade over the 5 absorbed
+    # replication-context crates (region + replica-worker +
+    # replication-coordinator + failover-router + rollout-controller).
+    # Preserves DR-16 warm-failover lifecycle + R-PREP wave-15
+    # coordinator 3-state machine by reference. See
+    # `specs/_audits/2026-05-22-w33-stream-c-infra-ops.md`.
+    "crates/corelink-replication",
     "crates/tenant-path",
     "crates/corelink-hash",
     "crates/corelink-worker",
@@ -539,6 +547,10 @@ corelink-billing = { path = "crates/corelink-billing" }
 corelink-auth = { path = "crates/corelink-auth" }
 # Wave-33 Stage 1 Stream B sub-step B.5: canonical privacy aggregator façade.
 corelink-privacy = { path = "crates/corelink-privacy" }
+# Wave-33 Stage 1 Stream C sub-step C.1: canonical replication aggregator façade
+# (5 absorbed crates: region + replica-worker + replication-coordinator +
+# failover-router + rollout-controller).
+corelink-replication = { path = "crates/corelink-replication" }
 # Wave-33 Stage 1 Stream B sub-step B.5: DPA acceptance + versioning deps
 # (consumed by the `corelink-privacy::dpa::{acceptance, versioning}` façade).
 corelink-dpa-acceptance = { path = "crates/corelink-dpa-acceptance" }
@@ -576,6 +588,7 @@ corelink-rollout-controller = { path = "crates/corelink-rollout-controller" }
 corelink-region = { path = "crates/corelink-region" }
 corelink-replica-worker = { path = "crates/corelink-replica-worker" }
 corelink-failover-router = { path = "crates/corelink-failover-router" }
+corelink-replication-coordinator = { path = "crates/corelink-replication-coordinator" }
 # S-14 BYOK (canonical from WI-S14-004; consolidated dupes from -005 and -006)
 # Wave-33 Stage 1 Stream B sub-step B.2a — renamed from `corelink-byok`.
 corelink-byok-core = { path = "crates/corelink-byok-core" }

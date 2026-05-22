@@ -2435,6 +2435,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-replication"
+version = "0.1.0"
+dependencies = [
+ "corelink-failover-router",
+ "corelink-region",
+ "corelink-replica-worker",
+ "corelink-replication-coordinator",
+ "corelink-rollout-controller",
+]
+
+[[package]]
 name = "corelink-replication-coordinator"
 version = "0.1.0"
 dependencies = [
