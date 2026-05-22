@@ -25,7 +25,7 @@ print_stderr = "deny"
 mod_module_files = "deny"
 
 [dependencies]
-corelink-ac = { workspace = true }
+corelink-ac-core = { workspace = true }
 corelink-hash = { workspace = true }
 blake3 = { workspace = true }
 hex = { workspace = true }
@@ -40,7 +40,7 @@ zeroize = { workspace = true }
 proptest = { workspace = true }
 blake3 = { workspace = true }
 hex = { workspace = true }
-corelink-ac = { workspace = true }
+corelink-ac-core = { workspace = true }
 
 [[test]]
 name = "prop_manifest"

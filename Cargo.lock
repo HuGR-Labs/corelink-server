@@ -1058,7 +1058,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "corelink-ac"
+name = "corelink-ac-core"
 version = "0.1.0"
 dependencies = [
  "blake3",
@@ -2041,7 +2041,7 @@ name = "corelink-manifest"
 version = "0.1.0"
 dependencies = [
  "blake3",
- "corelink-ac",
+ "corelink-ac-core",
  "corelink-hash",
  "hex",
  "hkdf",
@@ -2719,7 +2719,7 @@ dependencies = [
  "async-trait",
  "base64",
  "bytes",
- "corelink-ac",
+ "corelink-ac-core",
  "corelink-audit",
  "corelink-clerk",
  "corelink-hash",

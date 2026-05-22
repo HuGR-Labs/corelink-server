@@ -26,11 +26,11 @@
 use std::collections::HashSet;
 use std::sync::Mutex;
 
-use corelink_ac::{
+use corelink_ac_core::{
     build_root, codec, BlobMetaReader, MerkleError, OutputsCheckError, OutputsValidator,
     StrictOutputsValidator, MAX_OUTPUT_FILES,
 };
-use corelink_ac::types::{
+use corelink_ac_core::types::{
     AcEnvelope, ActionDigest, ActionResult, OutputFileDigest, MERKLE_ROOT_LEN, RESULT_HASH_LEN,
 };
 use corelink_hash::Digest;

@@ -1,5 +1,5 @@
 [package]
-name = "corelink-ac"
+name = "corelink-ac-core"
 description = "CoreLink Action Cache Merkle codec + dual-side verifier (WI-S04-003). Builds the canonical Merkle tree over an `ActionResult`'s output_files + output_directories digest set (BLAKE3-256 with RFC 6962-style domain separation: `\\x00`-prefix leaves + `\\x01`-prefix internal nodes), enforces the bounded-parser discipline (depth ≤ 32, fanout ≤ 4096, total nodes ≤ 100 000, payload ≤ 1 MiB) at decode time, and supplies the dual-side `MerkleVerifier` consumed by both the server (`corelink-worker::reapi::ac` UpdateActionResult pre-persist verify) and the client SDK (`corelink-client-verify` post-download verify). Tree shape is byte-deterministic for the same `(tenant_id, action_digest, result)` so REAPI v2 idempotency holds. The trait surface is wasm32-clean (no tokio dependency) so the same crate compiles into the Cloudflare Worker bundle and the Rust client SDK."
 version.workspace = true
 edition.workspace = true

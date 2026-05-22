@@ -12,8 +12,8 @@
     reason = "test code: panics surface as test failures by design"
 )]
 
-use corelink_ac::types::{ActionResult, OutputDirectoryDigest, OutputFileDigest};
-use corelink_ac::{
+use corelink_ac_core::types::{ActionResult, OutputDirectoryDigest, OutputFileDigest};
+use corelink_ac_core::{
     build_root, verify_root, CanonicalMerkleVerifier, MerkleError, MerkleVerifier,
     MAX_OUTPUT_DIRECTORIES, MAX_OUTPUT_FILES,
 };

@@ -57,7 +57,7 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use uuid::Uuid;
 
-use corelink_ac::sig::{
+use corelink_ac_core::sig::{
     compose_canonical_bytes, HkdfSigner, HkdfVerifier, MockTdkHandle, SignatureSigner,
     SignatureVerifier, TdkHandle, AC_ENVELOPE_SIG_LEN,
 };
