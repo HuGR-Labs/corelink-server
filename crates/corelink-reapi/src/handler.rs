@@ -256,6 +256,91 @@ where
     }
 }
 
+// ---------------------------------------------------------------------------
+// `batch_read_blobs` internal types (Wave 33 Stream A2.1a)
+//
+// Hoisted from inside `batch_read_blobs` to module scope so the function can
+// be decomposed into helper free functions without each helper carrying the
+// type definitions inline. They remain module-private (`pub(super)` ready
+// once the file moves under `handler/`) — no public API change.
+// ---------------------------------------------------------------------------
+
+/// 4a — per-input-slot pre-validation outcome (digest hex + size_bytes).
+#[derive(Clone)]
+enum SlotState {
+    /// Digest hex was malformed; surface INVALID_ARGUMENT per-blob.
+    BadDigest {
+        proto_digest: Option<ProtoDigest>,
+        message: String,
+    },
+    /// Well-formed; needs the D1 metadata pass.
+    Pending {
+        proto_digest: ProtoDigest,
+        digest: Digest,
+    },
+}
+
+/// 4b — per-row D1 lookup outcome. Per ADR-0028 the wire response for
+/// every miss arm is uniform `NOT_FOUND`, but the audit-emit envelope MUST
+/// disambiguate NeverExisted (low-severity) from Tombstoned (legitimate
+/// post-GC) so the S-09 forensics pipeline can distinguish ordinary
+/// cache-miss probes from genuine tombstone-read attempts.
+#[derive(Clone, Copy, Debug)]
+enum MetaPass1Result {
+    /// Row absent OR exists in another tenant's scope (uniform per
+    /// ADR-0028 — no oracle).
+    NeverExisted,
+    /// Row exists but `deleted_at` is set.
+    Tombstoned,
+    /// Row exists + alive; size_bytes is the canonical size.
+    Alive { size_bytes: u64 },
+}
+
+/// 4c — per-slot decision after the D1 pass; drives which entries fall
+/// into Pass 2's R2 fetch + composition phases.
+#[derive(Clone)]
+enum Decision {
+    BadDigest {
+        proto_digest: Option<ProtoDigest>,
+        message: String,
+        grpc_code: i32,
+    },
+    Miss {
+        proto_digest: ProtoDigest,
+        digest: Digest,
+        reason: MissReason,
+    },
+    ExceedsSingleCap {
+        proto_digest: ProtoDigest,
+    },
+    ExceedsAggregate {
+        proto_digest: ProtoDigest,
+    },
+    CallerSizeMismatch {
+        proto_digest: ProtoDigest,
+        row_size: u64,
+    },
+    MetaTransport {
+        proto_digest: ProtoDigest,
+        mapping: crate::error_map::ErrorMapping,
+    },
+    Fetch {
+        proto_digest: ProtoDigest,
+        digest: Digest,
+        row_size: u64,
+    },
+}
+
+/// 4d — Pass 2 R2 fetch outcome. Typed enum so the orphan condition
+/// (alive blob_meta + `R2Error::NotFound`) is structurally distinguishable
+/// from generic Err mappings (codex round-3 P2 SEAL fix).
+#[derive(Clone)]
+enum FetchOutcome {
+    Body(Bytes),
+    R2Orphan,
+    Other(crate::error_map::ErrorMapping),
+}
+
 /// Concrete `ContentAddressableStorage` service.
 pub struct CasWriteService<V, B, M, R, C>
 where
@@ -510,21 +595,10 @@ where
         let inline_cap_bytes: u64 = u64::try_from(MAX_BATCH_TOTAL_SIZE_BYTES).unwrap_or(u64::MAX);
         let single_blob_inline_cap_bytes: u64 = inline_cap_bytes; // 4 MiB
 
-        // 4a. Pre-validate digests + decode hex per-index.
-        #[derive(Clone)]
-        enum SlotState {
-            // Digest hex was malformed; surface
-            // INVALID_ARGUMENT per-blob.
-            BadDigest {
-                proto_digest: Option<ProtoDigest>,
-                message: String,
-            },
-            // Well-formed; needs the D1 metadata pass.
-            Pending {
-                proto_digest: ProtoDigest,
-                digest: Digest,
-            },
-        }
+        // 4a. Pre-validate digests + decode hex per-index. (The
+        // `SlotState` enum lives at module scope post Wave 33 Stream
+        // A2.1a so the per-phase helpers can pass it without nested-type
+        // visibility gymnastics.)
         let n_input = inner.digests.len();
         let mut slots: Vec<SlotState> = Vec::with_capacity(n_input);
         for pd in inner.digests.into_iter() {
@@ -563,16 +637,8 @@ where
         // tombstone-read attempts (codex round-2 P2 SEAL fix).
         //
         // Each future yields `(idx, Result<MetaPass1Result, ErrorMapping>)`.
-        #[derive(Clone, Copy, Debug)]
-        enum MetaPass1Result {
-            /// Row absent OR exists in another tenant's scope (uniform
-            /// per ADR-0028 — no oracle).
-            NeverExisted,
-            /// Row exists but `deleted_at` is set.
-            Tombstoned,
-            /// Row exists + alive; size_bytes is the canonical size.
-            Alive { size_bytes: u64 },
-        }
+        // The `MetaPass1Result` enum lives at module scope (Wave 33
+        // Stream A2.1a hoist).
         use futures::stream::StreamExt;
         const BOUNDED_CONCURRENCY: usize = 16;
         let pending_indices: Vec<(usize, Digest)> = slots
@@ -616,40 +682,9 @@ where
 
         // 4c. Decide per-slot which bodies to fetch (running aggregate
         // cap in input order; missed/oversize/aggregate-cap-rejected
-        // slots flagged here so Pass 2 only does R2 GETs for hits
-        // that fit).
-        #[derive(Clone)]
-        enum Decision {
-            BadDigest {
-                proto_digest: Option<ProtoDigest>,
-                message: String,
-                grpc_code: i32,
-            },
-            Miss {
-                proto_digest: ProtoDigest,
-                digest: Digest,
-                reason: MissReason,
-            },
-            ExceedsSingleCap {
-                proto_digest: ProtoDigest,
-            },
-            ExceedsAggregate {
-                proto_digest: ProtoDigest,
-            },
-            CallerSizeMismatch {
-                proto_digest: ProtoDigest,
-                row_size: u64,
-            },
-            MetaTransport {
-                proto_digest: ProtoDigest,
-                mapping: crate::error_map::ErrorMapping,
-            },
-            Fetch {
-                proto_digest: ProtoDigest,
-                digest: Digest,
-                row_size: u64,
-            },
-        }
+        // slots flagged here so Pass 2 only does R2 GETs for hits that
+        // fit). The `Decision` enum lives at module scope (Wave 33
+        // Stream A2.1a hoist).
         let mut running: u64 = 0;
         let mut decisions: Vec<Decision> = Vec::with_capacity(n_input);
         for (idx, slot) in slots.iter().enumerate() {
@@ -768,18 +803,8 @@ where
                 _ => None,
             })
             .collect();
-        // Pass 2 result type: a typed enum so the orphan condition
-        // (alive blob_meta + `R2Error::NotFound`) is structurally
-        // distinguishable from generic Err mappings — the earlier
-        // pointer-equality sentinel approach was fragile to
-        // refactors that rebuilt the string (codex round-3 P2 SEAL
-        // fix).
-        #[derive(Clone)]
-        enum FetchOutcome {
-            Body(Bytes),
-            R2Orphan,
-            Other(crate::error_map::ErrorMapping),
-        }
+        // Pass 2 result type `FetchOutcome` lives at module scope
+        // post Wave 33 Stream A2.1a hoist.
         let mut fetched: Vec<Option<FetchOutcome>> = (0..n_input).map(|_| None).collect();
         let mut fetch_stream = futures::stream::iter(fetch_targets)
             .map(move |(idx, digest)| async move {
