@@ -36,6 +36,11 @@ members = [
     # is the unchanged AC Merkle codec + dual-side verifier
     # (WI-S04-003); only the package name + Cargo.toml location moved.
     "crates/corelink-ac-core",
+    # Wave-33 Stage 1 Stream A sub-step A.2b — canonical AC bounded-
+    # context aggregator. Option-A re-export façade over the 3
+    # absorbed AC crates (`corelink-ac-core`, `corelink-ac-schema`,
+    # `corelink-handler-ac`) per spec §4 + §6 Stream A.
+    "crates/corelink-ac",
     "crates/corelink-chunker",
     "crates/corelink-r2-multipart",
     "crates/corelink-multipart-schema",
@@ -462,6 +467,9 @@ corelink-ac-schema = { path = "crates/corelink-ac-schema" }
 # to free the `corelink-ac` package name for the Stream A umbrella
 # aggregator landing in A.2b. Crate body unchanged.
 corelink-ac-core = { path = "crates/corelink-ac-core" }
+# Wave-33 Stage 1 Stream A sub-step A.2b — canonical AC bounded-
+# context aggregator (3 absorbed AC crates per spec §4 + §6 Stream A).
+corelink-ac = { path = "crates/corelink-ac" }
 corelink-chunker = { path = "crates/corelink-chunker" }
 corelink-r2-multipart = { path = "crates/corelink-r2-multipart" }
 corelink-multipart-schema = { path = "crates/corelink-multipart-schema" }

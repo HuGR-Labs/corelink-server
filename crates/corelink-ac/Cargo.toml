@@ -1,0 +1,38 @@
+[package]
+name = "corelink-ac"
+description = "Wave-33 Stage 1 Stream A sub-step A.2b — canonical Action Cache (AC) bounded-context aggregator façade for the CoreLink workspace. Re-exports the 3 absorbed crates that historically partitioned the AC surface (`corelink-ac-core` Merkle codec + dual-side verifier, `corelink-ac-schema` region + simulation schema, `corelink-handler-ac` AC handler) under a single canonical import surface (`corelink_ac::core`, `corelink_ac::schema`, `corelink_ac::handler`, plus the top-level `pub use corelink_ac_core::*` so historical `use corelink_ac::{MerkleVerifier, …}` paths continue to resolve). Stage 1 ships this crate as a re-export aggregator (Option-A least-invasive interpretation per Stage 0 SEAL §4) so downstream crates can adopt the canonical paths without disturbing the existing AC tests / fuzz harness / canonical vectors. Physical absorption of source modules is deferred to Stage 2; see `specs/_audits/2026-05-22-wave33-code-reorg-spec.md` §6 + Stream A SEAL audit."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+# Stage 0 cross-cutting deps (canonical import targets for any new
+# code that lands inside this crate post-aggregator).
+corelink-core = { workspace = true }
+corelink-crypto = { workspace = true }
+corelink-audit = { workspace = true }
+
+# Re-export targets (Stage 1 Stream A sub-step A.2b Option-A aggregator:
+# physical absorption deferred to Stage 2).
+corelink-ac-core = { workspace = true }
+corelink-ac-schema = { workspace = true }
+corelink-handler-ac = { workspace = true }

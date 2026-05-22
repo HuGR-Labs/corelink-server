@@ -1058,6 +1058,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-ac"
+version = "0.1.0"
+dependencies = [
+ "corelink-ac-core",
+ "corelink-ac-schema",
+ "corelink-audit",
+ "corelink-core",
+ "corelink-crypto",
+ "corelink-handler-ac",
+]
+
+[[package]]
 name = "corelink-ac-core"
 version = "0.1.0"
 dependencies = [
