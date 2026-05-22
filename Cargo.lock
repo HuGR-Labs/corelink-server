@@ -1334,12 +1334,16 @@ dependencies = [
 name = "corelink-byok"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "corelink-byok-aws",
  "corelink-byok-azure",
  "corelink-byok-core",
  "corelink-byok-gcp",
  "corelink-byok-revocation",
  "corelink-byok-vault",
+ "proptest",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -1431,21 +1435,6 @@ dependencies = [
  "tracing",
  "wiremock",
  "zeroize",
-]
-
-[[package]]
-name = "corelink-byok-matrix-test"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "corelink-byok-aws",
- "corelink-byok-azure",
- "corelink-byok-core",
- "corelink-byok-gcp",
- "corelink-byok-vault",
- "proptest",
- "serde_json",
- "tokio",
 ]
 
 [[package]]

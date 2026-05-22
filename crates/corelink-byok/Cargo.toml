@@ -39,6 +39,21 @@ gcp = ["dep:corelink-byok-gcp"]
 azure = ["dep:corelink-byok-azure"]
 vault = ["dep:corelink-byok-vault"]
 
+# Wave-33 Stage 1 Stream B sub-step B.2c — preserved from the
+# absorbed `corelink-byok-matrix-test` crate. These features opt the
+# matrix integration tests (`tests/matrix.rs`, `tests/matrix_prop.rs`,
+# `tests/matrix_adversarial.rs`) into REAL provider mode when the
+# matching env var (`GCP_TEST_KEY_RESOURCE` / `AZURE_TEST_KEY_RESOURCE`)
+# is set. Default off — CI runs in mock mode without provider creds.
+# These features DO NOT enable the matching provider's main `aws` /
+# `gcp` / `azure` / `vault` feature on the umbrella, so they do not
+# trigger the mutual-exclusion `compile_error!` gates. The integration
+# tests reference the provider crates as direct dev-dependencies; the
+# `corelink-byok-{gcp,azure}/production` sub-feature is forwarded so
+# the real HTTPS client is linkable inside the test crate.
+production-gcp = ["corelink-byok-gcp/production"]
+production-azure = ["corelink-byok-azure/production"]
+
 [dependencies]
 # Core trait + types (always present; re-exported at crate root for
 # backwards-compatible `use corelink_byok::KmsProvider;` paths).
@@ -55,4 +70,23 @@ corelink-byok-azure = { workspace = true, optional = true }
 corelink-byok-vault = { workspace = true, optional = true }
 
 [dev-dependencies]
-# Smoke tests rely on these being reachable via the public surface.
+# Wave-33 Stage 1 Stream B sub-step B.2c — folded matrix tests
+# (formerly `corelink-byok-matrix-test`, 31 LOC src/ shell dropped
+# as unused). The 3 matrix test files (`matrix.rs`,
+# `matrix_adversarial.rs`, `matrix_prop.rs`) exercise the full
+# 4-provider × 4-op matrix + adversarial + property-test surface.
+# They directly link every provider adapter — this DOES NOT
+# violate the BYOK microkernel mutual-exclusion contract because
+# the `compile_error!` guards live in this crate's `lib.rs` (gated
+# by FEATURES of `corelink-byok`, not by direct dependencies of
+# integration tests). Integration test crates have their own
+# crate boundary and do not activate the umbrella's feature flags.
+corelink-byok-core = { workspace = true }
+corelink-byok-aws = { workspace = true }
+corelink-byok-gcp = { workspace = true }
+corelink-byok-azure = { workspace = true }
+corelink-byok-vault = { workspace = true }
+async-trait = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+proptest = { workspace = true }

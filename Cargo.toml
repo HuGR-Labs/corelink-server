@@ -121,7 +121,11 @@ members = [
     "crates/corelink-byok-gcp",
     "crates/corelink-byok-azure",
     "crates/corelink-byok-vault",
-    "crates/corelink-byok-matrix-test",
+    # Wave-33 Stage 1 Stream B sub-step B.2c — `corelink-byok-matrix-test`
+    # absorbed into `corelink-byok/tests/{matrix,matrix_adversarial,matrix_prop}.rs`.
+    # The src/ shell (31 LOC) is dropped as the helper consts/types were
+    # unused; the 3 integration-test files preserve every cell of the
+    # 16-combination matrix + adversarial + property surface unchanged.
     "crates/corelink-byok-revocation",
     "crates/corelink-customer-alerts",
     # WI-S14-007 Ed25519 erasure attestation
