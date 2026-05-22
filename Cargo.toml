@@ -2,6 +2,10 @@
 resolver = "2"
 members = [
     "apps/server",
+    # Wave-33 Stage 0 sub-step 1 — apex cross-cutting types crate.
+    # Depends on no other corelink-* crate; Stage 3 cargo-deny will
+    # enforce. See `specs/_audits/2026-05-22-wave33-code-reorg-spec.md`.
+    "crates/corelink-core",
     "crates/tenant-path",
     "crates/corelink-hash",
     "crates/corelink-worker",
