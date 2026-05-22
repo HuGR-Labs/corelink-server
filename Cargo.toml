@@ -21,6 +21,13 @@ members = [
     # crates remain canonical sources of truth. See
     # `specs/_audits/2026-05-22-w33-stream-b-policy.md`.
     "crates/corelink-billing",
+    # Wave-33 Stage 1 Stream B sub-step B.3 — canonical auth
+    # aggregator. Option-A re-export façade over the 6 auth-context
+    # crates (clerk + clerk-cf + auth-schema + webauthn + pat +
+    # tenant-path). Preserves charter `INV-AUTH-SCHEMA-RLS-DEFAULT-ON`
+    # and `subtle::ConstantTimeEq` on PAT verify by reference. See
+    # `specs/_audits/2026-05-22-w33-stream-b-policy.md`.
+    "crates/corelink-auth",
     "crates/tenant-path",
     "crates/corelink-hash",
     "crates/corelink-worker",
@@ -497,6 +504,8 @@ corelink-lighthouse-tracker = { path = "crates/corelink-lighthouse-tracker" }
 corelink-telemetry = { path = "crates/corelink-telemetry" }
 # Wave-33 Stage 1 Stream B sub-step B.1: canonical billing aggregator façade.
 corelink-billing = { path = "crates/corelink-billing" }
+# Wave-33 Stage 1 Stream B sub-step B.3: canonical auth aggregator façade.
+corelink-auth = { path = "crates/corelink-auth" }
 corelink-billing-emit = { path = "crates/corelink-billing-emit" }
 corelink-billing-aggregator = { path = "crates/corelink-billing-aggregator" }
 corelink-billing-stripe = { path = "crates/corelink-billing-stripe" }

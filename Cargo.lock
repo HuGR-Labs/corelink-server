@@ -1179,6 +1179,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-auth"
+version = "0.1.0"
+dependencies = [
+ "corelink-auth-schema",
+ "corelink-clerk",
+ "corelink-clerk-cf",
+ "corelink-pat",
+ "corelink-tenant-path",
+ "corelink-webauthn",
+]
+
+[[package]]
 name = "corelink-auth-schema"
 version = "0.1.0"
 dependencies = [
