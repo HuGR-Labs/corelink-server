@@ -1651,6 +1651,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-crypto"
+version = "0.1.0"
+dependencies = [
+ "corelink-client-verify",
+ "corelink-erasure-attestation",
+ "corelink-hash",
+ "hmac 0.12.1",
+ "sha2 0.10.9",
+ "subtle",
+]
+
+[[package]]
 name = "corelink-customer-alerts"
 version = "0.1.0"
 dependencies = [

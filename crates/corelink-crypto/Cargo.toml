@@ -1,0 +1,39 @@
+[package]
+name = "corelink-crypto"
+description = "Wave-33 Stage 0 sub-step 2 — canonical cryptography aggregator façade for the CoreLink workspace. Re-exports BLAKE3 (`corelink-hash`), Ed25519 erasure-attestation (`corelink-erasure-attestation`), and the client-side SDK verifier (`corelink-client-verify`) under a single canonical import surface (`corelink_crypto::blake3`, `corelink_crypto::ed25519::attestation`, `corelink_crypto::client_verify`). Stage 0 ships this crate as a re-export aggregator (Option-A least-invasive interpretation) so Stage 1 streams can adopt the canonical paths without disturbing the cbindgen / cdylib / FFI pipelines that the absorbed crates own. Physical absorption of source modules is deferred to the consumer-migration stream that owns FFI + Go/Python SDK paths atomically; see `specs/_audits/2026-05-22-w33-stage0-foundation.md` §4 + §7."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+# Re-export targets (Stage 0 Option-A aggregator: physical absorption
+# deferred per audit doc §7 hard-pause-trigger-1 partial activation).
+corelink-hash = { workspace = true }
+corelink-client-verify = { workspace = true }
+corelink-erasure-attestation = { workspace = true }
+
+# Primitives surfaced for the `hmac` + `ct_eq` submodules (which would
+# otherwise be empty pass-through modules). These are workspace-pinned
+# RustCrypto building blocks Stage 1 streams will consume.
+subtle = { workspace = true }
+hmac = { workspace = true }
+sha2 = { workspace = true }
