@@ -40,6 +40,43 @@ members = [
     # path + audit-emit-BEFORE-mutation fail-CLOSED envelopes by
     # reference. See `specs/_audits/2026-05-22-w33-stream-b-policy.md`.
     "crates/corelink-privacy",
+    # Wave-33 Stage 1 Stream C sub-step C.1 — canonical replication
+    # aggregator. Option-A re-export façade over the 5 absorbed
+    # replication-context crates (region + replica-worker +
+    # replication-coordinator + failover-router + rollout-controller).
+    # Preserves DR-16 warm-failover lifecycle + R-PREP wave-15
+    # coordinator 3-state machine by reference. See
+    # `specs/_audits/2026-05-22-w33-stream-c-infra-ops.md`.
+    "crates/corelink-replication",
+    # Wave-33 Stage 1 Stream C sub-step C.2 — canonical ops aggregator
+    # (LARGEST Wave-33 absorption: 28 → 1). Option-A re-export façade
+    # over the 28 absorbed ops-context crates (oncall + statuspage +
+    # slack + 4 admin + customer-alerts + enterprise-inquiry + survey +
+    # runbook + tenant-offboarding + deploy-verifier + terraform-drift +
+    # 2 DR + chaos + 2 rotation + 3 DT + drata + 2 supply-chain + 2
+    # config + d1-migrations). HTTPS portions of statuspage + slack also
+    # re-exported by `corelink-adapters-cloud` (C.3). Preserves admin
+    # dual-approval flow, runbook PAT-RUNBOOK-DRILL-001, oncall fatigue,
+    # statuspage 1-per-5-min rate-limiter by reference. See
+    # `specs/_audits/2026-05-22-w33-stream-c-infra-ops.md`.
+    "crates/corelink-ops",
+    # Wave-33 Stage 1 Stream C sub-step C.3 — canonical cloud-adapters
+    # aggregator. Option-A re-export façade over the binding portion
+    # (HTTPS / CF Worker JsValue) of 5 absorbed adapter crates
+    # (cf-bindings + clerk-cf + stripe-real + statuspage-real +
+    # slack-real). Pure-logic portion re-exported simultaneously by
+    # sibling umbrellas (corelink-billing / corelink-ops / corelink-auth);
+    # physical decomposition deferred to Stage 2. See
+    # `specs/_audits/2026-05-22-w33-stream-c-infra-ops.md`.
+    "crates/corelink-adapters-cloud",
+    # Wave-33 Stage 1 Stream C sub-step C.4 — canonical Vault-adapters
+    # aggregator. Option-A re-export façade over the HTTPS / mTLS
+    # binding portion of `corelink-byok-vault` (pure-logic portion
+    # simultaneously re-exported by `corelink-byok::vault` behind the
+    # `vault` cargo feature). HuGR Wallet broker sibling adapter lands
+    # in a Wave-31 follow-up. See
+    # `specs/_audits/2026-05-22-w33-stream-c-infra-ops.md`.
+    "crates/corelink-adapters-vault",
     "crates/tenant-path",
     "crates/corelink-hash",
     "crates/corelink-worker",
@@ -539,6 +576,20 @@ corelink-billing = { path = "crates/corelink-billing" }
 corelink-auth = { path = "crates/corelink-auth" }
 # Wave-33 Stage 1 Stream B sub-step B.5: canonical privacy aggregator façade.
 corelink-privacy = { path = "crates/corelink-privacy" }
+# Wave-33 Stage 1 Stream C sub-step C.1: canonical replication aggregator façade
+# (5 absorbed crates: region + replica-worker + replication-coordinator +
+# failover-router + rollout-controller).
+corelink-replication = { path = "crates/corelink-replication" }
+# Wave-33 Stage 1 Stream C sub-step C.2: canonical ops aggregator façade
+# (LARGEST Wave-33 absorption — 28 absorbed crates).
+corelink-ops = { path = "crates/corelink-ops" }
+# Wave-33 Stage 1 Stream C sub-step C.3: canonical cloud-adapters aggregator
+# (5 absorbed: cf-bindings + clerk-cf + stripe-real + statuspage-real +
+# slack-real — binding portions).
+corelink-adapters-cloud = { path = "crates/corelink-adapters-cloud" }
+# Wave-33 Stage 1 Stream C sub-step C.4: canonical Vault-adapters aggregator
+# (1 absorbed: corelink-byok-vault — HTTPS / mTLS binding portion).
+corelink-adapters-vault = { path = "crates/corelink-adapters-vault" }
 # Wave-33 Stage 1 Stream B sub-step B.5: DPA acceptance + versioning deps
 # (consumed by the `corelink-privacy::dpa::{acceptance, versioning}` façade).
 corelink-dpa-acceptance = { path = "crates/corelink-dpa-acceptance" }
@@ -576,6 +627,7 @@ corelink-rollout-controller = { path = "crates/corelink-rollout-controller" }
 corelink-region = { path = "crates/corelink-region" }
 corelink-replica-worker = { path = "crates/corelink-replica-worker" }
 corelink-failover-router = { path = "crates/corelink-failover-router" }
+corelink-replication-coordinator = { path = "crates/corelink-replication-coordinator" }
 # S-14 BYOK (canonical from WI-S14-004; consolidated dupes from -005 and -006)
 # Wave-33 Stage 1 Stream B sub-step B.2a — renamed from `corelink-byok`.
 corelink-byok-core = { path = "crates/corelink-byok-core" }
@@ -610,6 +662,19 @@ corelink-openapi = { path = "crates/corelink-openapi" }
 corelink-handler-cas = { path = "crates/corelink-handler-cas" }
 corelink-handler-ac = { path = "crates/corelink-handler-ac" }
 corelink-handler-admin = { path = "crates/corelink-handler-admin" }
+# Wave-33 Stage 1 Stream C sub-step C.2 — workspace dep entries for the
+# 7 ops-aggregator absorbed crates that previously had no shared
+# workspace-level dependency line (they were each pulled in only by
+# apps/server or sibling crates via relative path). The ops umbrella
+# now needs to consume them via `{ workspace = true }`.
+corelink-oncall = { path = "crates/corelink-oncall" }
+corelink-slack-real = { path = "crates/corelink-slack-real" }
+corelink-enterprise-inquiry = { path = "crates/corelink-enterprise-inquiry" }
+corelink-survey = { path = "crates/corelink-survey" }
+corelink-runbook-tracker = { path = "crates/corelink-runbook-tracker" }
+corelink-terraform-drift-consumer = { path = "crates/corelink-terraform-drift-consumer" }
+corelink-supply-chain-policy = { path = "crates/corelink-supply-chain-policy" }
+corelink-d1-migrations = { path = "crates/corelink-d1-migrations" }
 
 # CLI tooling (WI-S15-001 / WI-S15-005)
 toml = "0.8"

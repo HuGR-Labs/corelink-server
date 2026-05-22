@@ -1,0 +1,31 @@
+[package]
+name = "corelink-adapters-vault"
+description = "Wave-33 Stage 1 Stream C sub-step C.4 — canonical Vault-adapters aggregator façade. Re-exports the HTTPS / mTLS portion of `corelink-byok-vault` (HashiCorp Vault Transit BYOK adapter implementing `KmsProvider`; WI-S14-005) at the canonical submodule `corelink_adapters_vault::vault`. The pure-logic portion of `corelink-byok-vault` is simultaneously re-exported by `corelink-byok::vault` (Stream B sub-step B.2b — BYOK microkernel umbrella, per-provider modules behind 4 mutually-exclusive cargo features). Stage 1 lands the canonical import surface so consumer migration can proceed incrementally; physical decomposition between pure-logic and HTTPS portions is deferred to Stage 2. The HuGR Wallet broker adapter lands as a sibling submodule under a Wave-31 follow-up. Preserves Vault Enterprise FIPS 140-3 Level 1 build mTLS auth path and `SecretString` on client-cert PEM bytes by reference."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+# Re-export target (Stage 1 Stream C Option-A aggregator: physical
+# pure-logic vs. HTTPS decomposition deferred to Stage 2; see Stream C
+# SEAL audit §1).
+corelink-byok-vault = { workspace = true }

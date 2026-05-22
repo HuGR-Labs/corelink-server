@@ -1100,6 +1100,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-adapters-cloud"
+version = "0.1.0"
+dependencies = [
+ "corelink-cf-bindings",
+ "corelink-clerk-cf",
+ "corelink-slack-real",
+ "corelink-statuspage-real",
+ "corelink-stripe-real",
+]
+
+[[package]]
+name = "corelink-adapters-vault"
+version = "0.1.0"
+dependencies = [
+ "corelink-byok-vault",
+]
+
+[[package]]
 name = "corelink-admin-api"
 version = "0.1.0"
 dependencies = [
@@ -2142,6 +2160,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-ops"
+version = "0.1.0"
+dependencies = [
+ "corelink-admin-api",
+ "corelink-admin-dry-run",
+ "corelink-backup-verify",
+ "corelink-chaos-scheduler",
+ "corelink-config-api",
+ "corelink-config-do",
+ "corelink-customer-alerts",
+ "corelink-d1-migrations",
+ "corelink-deploy-verifier",
+ "corelink-dr-drill",
+ "corelink-drata-sync",
+ "corelink-dt-webhook",
+ "corelink-dual-approval",
+ "corelink-enterprise-inquiry",
+ "corelink-handler-admin",
+ "corelink-oncall",
+ "corelink-rotation-adapters",
+ "corelink-rotation-worker",
+ "corelink-runbook-tracker",
+ "corelink-slack-real",
+ "corelink-statuspage-real",
+ "corelink-supply-chain-policy",
+ "corelink-supply-verify",
+ "corelink-survey",
+ "corelink-tenant-offboarding",
+ "corelink-terraform-drift-consumer",
+]
+
+[[package]]
 name = "corelink-otel-export"
 version = "0.1.0"
 dependencies = [
@@ -2432,6 +2482,17 @@ dependencies = [
  "proptest",
  "serde",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "corelink-replication"
+version = "0.1.0"
+dependencies = [
+ "corelink-failover-router",
+ "corelink-region",
+ "corelink-replica-worker",
+ "corelink-replication-coordinator",
+ "corelink-rollout-controller",
 ]
 
 [[package]]

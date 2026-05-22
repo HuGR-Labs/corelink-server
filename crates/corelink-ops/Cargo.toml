@@ -1,0 +1,60 @@
+[package]
+name = "corelink-ops"
+description = "Wave-33 Stage 1 Stream C sub-step C.2 — canonical ops-context aggregator façade. Re-exports the 28 absorbed ops-context crates (oncall + statuspage + slack + 4 admin crates + customer-alerts + enterprise-inquiry + survey + runbook + tenant-offboarding + deploy-verifier + terraform-drift + 2 DR crates + chaos + 2 rotation + 3 DT + drata + 2 supply-chain + 2 config + d1-migrations) under a single canonical import surface (`corelink_ops::{oncall, statuspage, slack, admin, alerts, enterprise, survey, runbook, tenant_offboarding, deploy, terraform, dr, chaos, rotation, dt, drata, supply_chain, config, migrations}`). LARGEST absorption of Wave-33 (28 → 1). Option-A aggregator (per `specs/_audits/2026-05-22-w33-stage0-foundation.md` §4): absorbed crates remain canonical sources of truth, retaining their own tests/benches; consumer migration proceeds incrementally. Preserves admin dual-approval flow, runbook-drill PAT-RUNBOOK-DRILL-001 invariant, oncall PagerDuty trait, statuspage 1-per-5-min rate-limiter, customer-alerts multi-channel emit, audit-emit-BEFORE-mutation fail-CLOSED envelopes across every absorbed crate by reference. Note: the HTTPS portions of `corelink-statuspage-real` and `corelink-slack-real` are also re-exported by `corelink-adapters-cloud` (Stage 1 Stream C sub-step C.3); the pure-logic vs. binding decomposition is deferred to Stage 2."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+# Re-export targets (Stage 1 Stream C Option-A aggregator: physical
+# absorption deferred; absorbed crates remain canonical sources of
+# truth. See Stream C SEAL audit §1.)
+corelink-oncall = { workspace = true }
+corelink-statuspage-real = { workspace = true }
+corelink-slack-real = { workspace = true }
+corelink-admin-api = { workspace = true }
+corelink-admin-dry-run = { workspace = true }
+corelink-handler-admin = { workspace = true }
+corelink-dual-approval = { workspace = true }
+corelink-customer-alerts = { workspace = true }
+corelink-enterprise-inquiry = { workspace = true }
+corelink-survey = { workspace = true }
+corelink-runbook-tracker = { workspace = true }
+corelink-tenant-offboarding = { workspace = true }
+corelink-deploy-verifier = { workspace = true }
+corelink-terraform-drift-consumer = { workspace = true }
+corelink-dr-drill = { workspace = true }
+corelink-backup-verify = { workspace = true }
+corelink-chaos-scheduler = { workspace = true }
+corelink-rotation-adapters = { workspace = true }
+corelink-rotation-worker = { workspace = true }
+# `corelink-dt-cli` and `corelink-dt-reconcile` are binary-only crates
+# (no `src/lib.rs`) so they cannot be re-exported into the umbrella's
+# library surface. They remain workspace binary targets; see
+# `src/dt.rs` for the canonical-import audit trail.
+corelink-dt-webhook = { workspace = true }
+corelink-drata-sync = { workspace = true }
+corelink-supply-chain-policy = { workspace = true }
+corelink-supply-verify = { workspace = true }
+corelink-config-api = { workspace = true }
+corelink-config-do = { workspace = true }
+corelink-d1-migrations = { workspace = true }
