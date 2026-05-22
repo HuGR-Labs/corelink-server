@@ -1111,6 +1111,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-adapters-vault"
+version = "0.1.0"
+dependencies = [
+ "corelink-byok-vault",
+]
+
+[[package]]
 name = "corelink-admin-api"
 version = "0.1.0"
 dependencies = [

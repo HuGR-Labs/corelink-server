@@ -69,6 +69,14 @@ members = [
     # physical decomposition deferred to Stage 2. See
     # `specs/_audits/2026-05-22-w33-stream-c-infra-ops.md`.
     "crates/corelink-adapters-cloud",
+    # Wave-33 Stage 1 Stream C sub-step C.4 — canonical Vault-adapters
+    # aggregator. Option-A re-export façade over the HTTPS / mTLS
+    # binding portion of `corelink-byok-vault` (pure-logic portion
+    # simultaneously re-exported by `corelink-byok::vault` behind the
+    # `vault` cargo feature). HuGR Wallet broker sibling adapter lands
+    # in a Wave-31 follow-up. See
+    # `specs/_audits/2026-05-22-w33-stream-c-infra-ops.md`.
+    "crates/corelink-adapters-vault",
     "crates/tenant-path",
     "crates/corelink-hash",
     "crates/corelink-worker",
@@ -579,6 +587,9 @@ corelink-ops = { path = "crates/corelink-ops" }
 # (5 absorbed: cf-bindings + clerk-cf + stripe-real + statuspage-real +
 # slack-real — binding portions).
 corelink-adapters-cloud = { path = "crates/corelink-adapters-cloud" }
+# Wave-33 Stage 1 Stream C sub-step C.4: canonical Vault-adapters aggregator
+# (1 absorbed: corelink-byok-vault — HTTPS / mTLS binding portion).
+corelink-adapters-vault = { path = "crates/corelink-adapters-vault" }
 # Wave-33 Stage 1 Stream B sub-step B.5: DPA acceptance + versioning deps
 # (consumed by the `corelink-privacy::dpa::{acceptance, versioning}` façade).
 corelink-dpa-acceptance = { path = "crates/corelink-dpa-acceptance" }
