@@ -14,6 +14,10 @@ members = [
     # Wave-33 Stage 0 sub-step 3 — canonical observability aggregator.
     # Option-A re-export façade over the 7 telemetry crates per spec §4.
     "crates/corelink-telemetry",
+    # Wave-33 Stage 1 Stream A sub-step A.1 — canonical CAS bounded-
+    # context aggregator. Option-A re-export façade over the 10
+    # absorbed CAS hot-path crates per spec §4 + §6 Stream A.
+    "crates/corelink-cas",
     "crates/tenant-path",
     "crates/corelink-hash",
     "crates/corelink-worker",
@@ -429,6 +433,9 @@ ed25519-dalek = { version = "2", features = ["rand_core"] }
 corelink-core = { path = "crates/corelink-core" }
 # Wave-33 Stage 0 sub-step 2: canonical cryptography aggregator façade.
 corelink-crypto = { path = "crates/corelink-crypto" }
+# Wave-33 Stage 1 Stream A sub-step A.1: canonical CAS bounded-context
+# aggregator (10 absorbed crates per spec §4 + §6 Stream A).
+corelink-cas = { path = "crates/corelink-cas" }
 corelink-tenant-path = { path = "crates/tenant-path" }
 corelink-hash = { path = "crates/corelink-hash" }
 corelink-worker = { path = "crates/corelink-worker" }

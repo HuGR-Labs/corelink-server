@@ -1466,6 +1466,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-cas"
+version = "0.1.0"
+dependencies = [
+ "corelink-audit",
+ "corelink-chunker",
+ "corelink-core",
+ "corelink-crypto",
+ "corelink-dedup",
+ "corelink-edge",
+ "corelink-eviction",
+ "corelink-handler-cas",
+ "corelink-lru-tracker",
+ "corelink-manifest",
+ "corelink-meta",
+ "corelink-multipart-schema",
+ "corelink-r2-multipart",
+]
+
+[[package]]
 name = "corelink-cf-bindings"
 version = "0.1.0"
 dependencies = [
