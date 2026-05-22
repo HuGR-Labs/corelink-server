@@ -29,6 +29,7 @@ use uuid::Uuid;
     Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
 )]
 #[serde(transparent)]
+#[non_exhaustive]
 pub struct TenantId(Uuid);
 
 impl TenantId {

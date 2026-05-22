@@ -36,6 +36,7 @@ pub const DIGEST_LEN: usize = 32;
 /// `corelink-crypto::blake3` (Stage 0 sub-step 2 absorbs it).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
+#[non_exhaustive]
 pub struct Digest(#[serde(with = "hex_serde")] [u8; DIGEST_LEN]);
 
 impl Digest {

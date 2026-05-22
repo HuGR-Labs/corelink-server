@@ -20,6 +20,7 @@ use secrecy::{ExposeSecret, SecretString};
 /// The inner [`SecretString`] zeroizes on drop and refuses to leak its
 /// content via `Debug` / `Display`. Callers that need the raw bytes
 /// must explicitly call [`Self::expose`].
+#[non_exhaustive]
 pub struct SecretWrap(SecretString);
 
 impl SecretWrap {
