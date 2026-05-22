@@ -2583,6 +2583,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-telemetry"
+version = "0.1.0"
+dependencies = [
+ "corelink-canary",
+ "corelink-lighthouse-tracker",
+ "corelink-logpush",
+ "corelink-otel-export",
+ "corelink-slo",
+ "corelink-synthetic-pager",
+ "corelink-tracing",
+]
+
+[[package]]
 name = "corelink-tenant-offboarding"
 version = "0.1.0"
 dependencies = [

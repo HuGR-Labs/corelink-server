@@ -11,6 +11,9 @@ members = [
     # + corelink-erasure-attestation (physical absorption deferred per
     # hard-pause-trigger-1; see Stage 0 SEAL audit §7).
     "crates/corelink-crypto",
+    # Wave-33 Stage 0 sub-step 3 — canonical observability aggregator.
+    # Option-A re-export façade over the 7 telemetry crates per spec §4.
+    "crates/corelink-telemetry",
     "crates/tenant-path",
     "crates/corelink-hash",
     "crates/corelink-worker",
@@ -466,6 +469,11 @@ corelink-audit-chain = { path = "crates/corelink-audit-chain" }
 corelink-slo = { path = "crates/corelink-slo" }
 corelink-supply-verify = { path = "crates/corelink-supply-verify" }
 corelink-canary = { path = "crates/corelink-canary" }
+# Wave-33 Stage 0 sub-step 3: telemetry aggregator deps.
+corelink-synthetic-pager = { path = "crates/corelink-synthetic-pager" }
+corelink-lighthouse-tracker = { path = "crates/corelink-lighthouse-tracker" }
+# Wave-33 Stage 0 sub-step 3: canonical observability aggregator façade.
+corelink-telemetry = { path = "crates/corelink-telemetry" }
 corelink-billing-emit = { path = "crates/corelink-billing-emit" }
 corelink-billing-aggregator = { path = "crates/corelink-billing-aggregator" }
 corelink-billing-stripe = { path = "crates/corelink-billing-stripe" }
