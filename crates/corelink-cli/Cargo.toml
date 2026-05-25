@@ -44,7 +44,7 @@ serde_json = { workspace = true }
 blake3 = { workspace = true }
 hex = { workspace = true }
 uuid = { workspace = true, features = ["v7", "serde"] }
-toml = "0.8"
+toml = "1.1"
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 thiserror = { workspace = true }
@@ -52,7 +52,7 @@ anyhow = { workspace = true }
 reqwest = { version = "0.12", features = ["rustls-tls", "json", "stream"], default-features = false }
 bytes = { workspace = true }
 # WI-S15-005 telemetry: platform-aware config path (~/.corelink)
-dirs = "5"
+dirs = "6"
 # WI-S09-008 §6 wave-19 HTTP-aware `verify-ndjson --url` — needs raw
 # trailer access (the `x-corelink-audit-export-aborted` trailer is the
 # load-bearing wave-18 abort signal). reqwest 0.12 hides trailers behind

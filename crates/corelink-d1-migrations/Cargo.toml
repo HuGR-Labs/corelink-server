@@ -28,12 +28,12 @@ mod_module_files = "deny"
 # `bundled` ships a static libsqlite3 so CI doesn't depend on the host
 # libsqlite version. rusqlite 0.32 supports SQLite 3.45+ which has the
 # bulk of D1's SQL dialect (CHECK / triggers / WHERE-clause indexes).
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.39", features = ["bundled"] }
 
 [dev-dependencies]
 proptest = { workspace = true }
 rand = "0.9"
-rand_chacha = "0.9"
+rand_chacha = "0.10"
 
 [[test]]
 name = "d1_migration_integration"
