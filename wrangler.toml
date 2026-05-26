@@ -147,6 +147,7 @@ binding = "CONFIG_DB"
 database_name = "corelink-config-dev"
 database_id = "PLACEHOLDER_D1_CONFIG_DB_ID"
 preview_database_id = "PLACEHOLDER_D1_CONFIG_DB_PREVIEW_ID"
+migrations_dir = "migrations/d1"
 
 # R2-10 — Rollout-controller Durable Object namespace (WI-S13-*),
 # consumed by `corelink-cf-bindings::CfDurableObjectAdapter`. Single
@@ -289,6 +290,7 @@ id = "b024aef6d57f4a49a4c1715563794392"
 binding = "CONFIG_DB"
 database_name = "corelink-config-prod"
 database_id = "d64742ea-e102-40b2-a844-ff02e3f94562"
+migrations_dir = "migrations/d1"
 
 [[env.prod.durable_objects.bindings]]
 name = "CORELINK_SERVER"

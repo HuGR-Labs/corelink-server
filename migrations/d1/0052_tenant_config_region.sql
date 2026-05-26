@@ -85,7 +85,11 @@ CREATE TABLE IF NOT EXISTS tenant_config (
 -- charter. The CHECK constraint is enforced at INSERT/UPDATE time only;
 -- existing rows pick up the column-level DEFAULT 'IAD'.
 
-ALTER TABLE tenant_config ADD COLUMN IF NOT EXISTS region TEXT NOT NULL DEFAULT 'IAD';
+-- D1 compatibility: ALTER TABLE ADD COLUMN skipped — CREATE TABLE IF NOT EXISTS
+-- above already includes 'region'. On a fresh DB this migration creates the table
+-- with region; on a pre-existing DB without region, the CREATE TABLE is a no-op
+-- and this ALTER would be needed. Since corelink-prod-d1 is a fresh DB provisioned
+-- in Phase C (2026-05-26), the column exists from the CREATE TABLE above.
 
 -- ── 3. Index for the resolver's read path ──────────────────────────────────
 -- `tenant_id` is the PRIMARY KEY (already a covering index). No

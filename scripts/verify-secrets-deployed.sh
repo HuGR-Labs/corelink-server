@@ -63,9 +63,11 @@ err()  { printf '%s [%s] ERROR: %s\n' "$LOG_PREFIX" "$(date -u +%H:%M:%SZ)" "$*"
 
 # ── 1. Check prerequisites ───────────────────────────────────────────────────
 
-if ! command -v wrangler >/dev/null 2>&1; then
-    err "wrangler CLI not found in PATH"
-    err "Install: npm install -g wrangler"
+WRANGLER_CMD="${WRANGLER:-npx wrangler@latest}"
+
+if ! $WRANGLER_CMD --version >/dev/null 2>&1; then
+    err "wrangler CLI not reachable via: $WRANGLER_CMD"
+    err "Ensure npx is available or set WRANGLER env var."
     exit 127
 fi
 
@@ -133,7 +135,11 @@ log "canonical cf-wrangler secret count: $CANONICAL_COUNT"
 
 log "querying wrangler secret list --env $WRANGLER_ENV"
 
-DEPLOYED_JSON="$(wrangler secret list --env "$WRANGLER_ENV" --json 2>/dev/null)" || {
+# NOTE: wrangler secret list outputs JSON by default (no --json flag needed;
+# --json is not a supported flag for this subcommand). Strip the Cloudflare
+# skills banner from stdout before parsing.
+DEPLOYED_JSON="$($WRANGLER_CMD secret list --env "$WRANGLER_ENV" 2>/dev/null | \
+    python3 -c 'import sys,re; raw=sys.stdin.read(); m=re.search(r"(\[.*\])", raw, re.DOTALL); print(m.group(1) if m else "[]")')" || {
     err "wrangler secret list failed"
     err "Check: wrangler auth, --env value, and that the Worker is deployed."
     exit 1

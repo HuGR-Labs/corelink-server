@@ -63,9 +63,9 @@ CREATE INDEX IF NOT EXISTS idx_region_provisioning_audit_weur_jurisdiction
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS region_migration_progress (
     -- Composite key: (tenant_id, migration_run_id)
+    -- D1 compatibility: PRIMARY KEY table constraint must be LAST in the column list.
     tenant_id TEXT NOT NULL,
     migration_run_id BLOB(16) NOT NULL,
-    PRIMARY KEY (tenant_id, migration_run_id),
 
     -- Source region (original single-region)
     source_region TEXT NOT NULL CHECK (source_region IN ('wnam', 'enam', 'weur', 'sam')),
@@ -95,7 +95,9 @@ CREATE TABLE IF NOT EXISTS region_migration_progress (
     completed_at_ms BIGINT,
 
     -- Error message if failed
-    error_message TEXT
+    error_message TEXT,
+
+    PRIMARY KEY (tenant_id, migration_run_id)
 );
 
 -- Index for per-run progress queries

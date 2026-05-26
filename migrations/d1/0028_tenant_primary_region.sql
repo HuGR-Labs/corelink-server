@@ -17,10 +17,15 @@
 -- INV-REGION-NO-CROSS-LEAK CRITICAL (WI-S14-002 §12): runtime cobertura via
 -- insert checks + 30k property test; this migration provides D1-level backstop.
 
--- ── Step 1: Add primary_region column (nullable initially for backfill safety) ─────────────
+-- ── Step 1: primary_region column ────────────────────────────────────────────
+-- D1 compatibility: tenant.primary_region was created NOT NULL in migration
+-- 0023_residency_check_constraints.sql. ALTER TABLE ADD COLUMN is skipped here
+-- to avoid 'duplicate column name' error. Steps 2-5 (backfill + triggers + index)
+-- still apply.
 
-ALTER TABLE tenant ADD COLUMN IF NOT EXISTS primary_region TEXT
-    CHECK (primary_region IS NULL OR primary_region IN ('wnam','enam','weur','sam','apac','afr'));
+-- NOTE: backfill (Step 2 below) runs regardless; any pre-existing rows without
+-- primary_region would get 'enam' default. The NOT NULL constraint in 0023
+-- ensures all future inserts require a value.
 
 -- ── Step 2: Backfill existing tenants (legacy single-region default = 'enam') ───────────────
 -- Existing tenants pre-S14 were single-region ENAM (us-east); assign conservatively.

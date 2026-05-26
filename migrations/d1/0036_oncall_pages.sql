@@ -45,11 +45,12 @@ CREATE TABLE IF NOT EXISTS oncall_shifts (
     engineer_id         TEXT    NOT NULL,
     start_ms            BIGINT  NOT NULL,
     end_ms              BIGINT  NOT NULL,
+    -- Correlation id (PAT-CORRELATION-ID-001) from the audit chain.
+    -- D1 compatibility: column defs must precede table-level CONSTRAINTs.
+    correlation_id      TEXT    NOT NULL,
     -- 7-day shift cap canonical (SHIFT_CAP_SECONDS in corelink-oncall).
     CONSTRAINT shift_cap_7d CHECK (end_ms - start_ms <= 604800000),
     CONSTRAINT shift_positive_duration CHECK (end_ms > start_ms),
-    -- Correlation id (PAT-CORRELATION-ID-001) from the audit chain.
-    correlation_id      TEXT    NOT NULL,
     FOREIGN KEY (tier) REFERENCES oncall_rotations(tier)
 );
 

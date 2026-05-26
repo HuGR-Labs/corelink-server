@@ -36,7 +36,11 @@ set -euo pipefail
 readonly SCRIPT_NAME="$(basename "$0")"
 readonly REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 readonly MIGRATIONS_DIR="$REPO_ROOT/migrations/d1"
-readonly DB_NAME="corelink-prod-d1"
+# DB_NAME matches the wrangler.toml binding name under [[env.prod.d1_databases]].
+# Use with --env prod so wrangler picks up the prod D1 binding (CONFIG_DB →
+# database_id d64742ea-e102-40b2-a844-ff02e3f94562, migrations_dir migrations/d1).
+readonly DB_NAME="CONFIG_DB"
+readonly DB_ENV="prod"
 readonly EXPECTED_FILE_COUNT=52
 # Computed via CREATE TABLE analysis across all 52 migration files.
 # Exact derivation: grep-count of unique table names = 75 (0028 + 0031 are
@@ -143,10 +147,10 @@ done
 if ! $APPLY_MODE; then
     log ""
     log "DRY-RUN complete. $ACTUAL_COUNT migration files listed above would be applied"
-    log "to $DB_NAME via: wrangler d1 migrations apply $DB_NAME --remote"
+    log "to $DB_NAME (env=$DB_ENV) via: wrangler d1 migrations apply $DB_NAME --env $DB_ENV --remote"
     log ""
     log "Post-apply verification would check:"
-    log "  wrangler d1 execute $DB_NAME --remote --command=\"SELECT count(*) FROM sqlite_master WHERE type='table'\""
+    log "  wrangler d1 execute $DB_NAME --env $DB_ENV --remote --command=\"SELECT count(*) FROM sqlite_master WHERE type='table'\""
     log "  Expected table count: $EXPECTED_TABLE_COUNT"
     log ""
     log "To apply for real: $0 --apply"
@@ -155,17 +159,19 @@ fi
 
 # ── 5. Apply path (requires wrangler + CF auth) ──────────────────────────────
 
-if ! command -v wrangler >/dev/null 2>&1; then
-    err "wrangler CLI not found in PATH"
-    err "Install: npm install -g wrangler"
+WRANGLER_CMD="${WRANGLER:-npx wrangler@latest}"
+
+if ! $WRANGLER_CMD --version >/dev/null 2>&1; then
+    err "wrangler CLI not reachable via: $WRANGLER_CMD"
+    err "Ensure npx is available or set WRANGLER env var to the wrangler binary path."
     exit 127
 fi
 
-WRANGLER_VER="$(wrangler --version 2>/dev/null || echo unknown)"
+WRANGLER_VER="$($WRANGLER_CMD --version 2>/dev/null || echo unknown)"
 log "wrangler version: $WRANGLER_VER"
 
 # CTRL-AUDIT-EMIT-BEFORE-MUTATION: log intent before every mutation.
-log "APPLY MODE: will invoke wrangler d1 migrations apply $DB_NAME --remote"
+log "APPLY MODE: will invoke $WRANGLER_CMD d1 migrations apply $DB_NAME --env $DB_ENV --remote"
 log "WARNING: D1 schema changes are IRREVERSIBLE. Rollback = delete + re-provision D1."
 log "         See specs/_runbooks/RB-D1-MIGRATION-APPLY.md for recovery procedure."
 log ""
@@ -173,9 +179,10 @@ log ""
 # wrangler d1 migrations apply handles idempotency via its internal
 # d1_migrations table — it skips already-applied migrations automatically.
 # We apply the entire set; wrangler determines what is pending.
+# --env prod ensures the prod D1 binding (CONFIG_DB) is used with migrations_dir=migrations/d1.
 
-log "invoking: wrangler d1 migrations apply $DB_NAME --remote"
-if ! wrangler d1 migrations apply "$DB_NAME" --remote; then
+log "invoking: $WRANGLER_CMD d1 migrations apply $DB_NAME --env $DB_ENV --remote"
+if ! $WRANGLER_CMD d1 migrations apply "$DB_NAME" --env "$DB_ENV" --remote; then
     err "wrangler d1 migrations apply FAILED"
     err "Partial migration state possible. Do NOT re-run blindly."
     err "1. Run: wrangler d1 migrations list $DB_NAME --remote"
@@ -191,17 +198,17 @@ log "wrangler d1 migrations apply OK"
 
 log "post-apply verification: counting tables in sqlite_master"
 
-TABLE_COUNT_JSON="$(wrangler d1 execute "$DB_NAME" --remote \
+TABLE_COUNT_JSON="$($WRANGLER_CMD d1 execute "$DB_NAME" --env "$DB_ENV" --remote \
     --command="SELECT count(*) as n FROM sqlite_master WHERE type='table'" \
     --json 2>/dev/null)" || {
     err "post-apply table-count query failed"
     err "The migrations themselves may have succeeded. Check manually:"
-    err "  wrangler d1 execute $DB_NAME --remote --command=\"SELECT count(*) FROM sqlite_master WHERE type='table'\""
+    err "  $WRANGLER_CMD d1 execute $DB_NAME --env $DB_ENV --remote --command=\"SELECT count(*) FROM sqlite_master WHERE type='table'\""
     exit 1
 }
 
 ACTUAL_TABLE_COUNT="$(printf '%s' "$TABLE_COUNT_JSON" | python3 -c \
-    "import json,sys; rows=json.load(sys.stdin); print(rows[0]['results'][0]['n'])" 2>/dev/null)" || {
+    "import json,sys,re; raw=sys.stdin.read(); m=re.search(r'(\[.*\])', raw, re.DOTALL); rows=json.loads(m.group(1)); print(rows[0]['results'][0]['n'])" 2>/dev/null)" || {
     err "failed to parse table count from JSON: $TABLE_COUNT_JSON"
     exit 1
 }

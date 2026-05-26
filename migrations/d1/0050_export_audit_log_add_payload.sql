@@ -32,4 +32,10 @@
 -- actually appears (the server always writes `payload: Some(...)`
 -- for the mid-stream break and `payload: None` otherwise).
 
-ALTER TABLE export_audit_log ADD COLUMN payload TEXT;
+-- D1 compatibility (2026-05-26): export_audit_log.payload was included in
+-- CREATE TABLE in migration 0049_export_audit_log.sql (applied on fresh
+-- corelink-prod-d1). ALTER TABLE ADD COLUMN would fail with 'duplicate column
+-- name: payload'. This migration is a no-op on fresh DBs per the design note
+-- at the top of this file. The SELECT 1 below satisfies D1's requirement for
+-- a non-empty migration file.
+SELECT 1;

@@ -2,7 +2,7 @@
 --
 -- 1. New `dpa_versions` append-only catalog table — every DPA version
 --    ever published.
--- 2. Three additive columns on `tenants` for the per-tenant
+-- 2. Three additive columns on `tenant` for the per-tenant
 --    re-acceptance lifecycle.
 --
 -- NOTE: This migration is additive only (no DROP / ALTER on existing
@@ -25,10 +25,10 @@ CREATE TABLE IF NOT EXISTS dpa_versions (
 CREATE INDEX IF NOT EXISTS idx_dpa_versions_published_at
     ON dpa_versions(published_at);
 
-ALTER TABLE tenants ADD COLUMN current_dpa_version    TEXT;
-ALTER TABLE tenants ADD COLUMN dpa_grace_expires_at   INTEGER;
-ALTER TABLE tenants ADD COLUMN re_acceptance_pending  INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE tenant ADD COLUMN current_dpa_version    TEXT;
+ALTER TABLE tenant ADD COLUMN dpa_grace_expires_at   INTEGER;
+ALTER TABLE tenant ADD COLUMN re_acceptance_pending  INTEGER NOT NULL DEFAULT 0;
 
-CREATE INDEX IF NOT EXISTS idx_tenants_dpa_pending
-    ON tenants(re_acceptance_pending, dpa_grace_expires_at)
+CREATE INDEX IF NOT EXISTS idx_tenant_dpa_pending
+    ON tenant(re_acceptance_pending, dpa_grace_expires_at)
     WHERE re_acceptance_pending = 1;
