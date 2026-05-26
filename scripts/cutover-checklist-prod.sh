@@ -163,13 +163,13 @@ abort_cutover() {
 # ──────────────────────────────────────────────
 # Hard pause trigger 2: wrangler required
 # ──────────────────────────────────────────────
-if ! command -v wrangler &>/dev/null; then
+if ! command -v npx &>/dev/null; then
   echo "HARD PAUSE TRIGGER 2: wrangler CLI not found in PATH." >&2
   echo "Install: npm install -g wrangler  (requires Node 18+)" >&2
   exit 1
 fi
 
-WRANGLER_VERSION=$(wrangler --version 2>/dev/null | head -1 || echo "unknown")
+WRANGLER_VERSION=$(npx wrangler@latest --version 2>/dev/null | head -1 || echo "unknown")
 log "wrangler version: ${WRANGLER_VERSION}"
 
 # Hard pause trigger 1: dns-prod-plan.sh must be present
@@ -289,7 +289,7 @@ fi
 item "PRE-CUTOVER: Canary traffic stable at 5% for >= 10 minutes"
 echo "  Verify in CF Dashboard → Workers → corelink-prod → Traffic Splits"
 echo "  Canary should show 5% weight, no error spikes in last 10 minutes"
-echo "  Command: wrangler deployments list --env prod"
+echo "  Command: npx wrangler@latest deployments list --env prod"
 emit "#### [07/15] PRE-CUTOVER: 5% canary stable >= 10 minutes"
 if ! confirm "Is the 5% canary stable with no error spikes over the last 10 minutes?"; then
   abort_cutover "Canary not stable — cannot ramp to 100%"
@@ -321,7 +321,7 @@ echo ""
 
 # Item 9: Ramp canary 5% → 100%
 item "CUTOVER STEP 1: Ramp canary from 5% to 100%"
-echo "  Command: wrangler deployments promote <deployment-id> --env prod"
+echo "  Command: npx wrangler@latest deployments promote <deployment-id> --env prod"
 echo "  Or via CF Dashboard → Workers → corelink-prod → Deployments → Promote"
 echo "  This routes 100% of traffic to the new Worker + DO + Container version."
 echo ""
@@ -333,7 +333,7 @@ if ! confirm "Confirm you want to ramp from 5% canary to 100% now?"; then
 fi
 log "Executing canary ramp to 100%..."
 emit "  - Canary ramp initiated at $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-emit "  - Command: wrangler deployments promote <id> --env prod"
+emit "  - Command: npx wrangler@latest deployments promote <id> --env prod"
 # NOTE: Phase H APPLY will execute the actual wrangler command here.
 # This PREP script documents the step and records operator confirmation.
 echo "  [RECORDED] Canary ramp confirmed. Phase H APPLY will execute wrangler promote."
@@ -351,10 +351,10 @@ fi
 # Item 11: CF Pages custom domains
 item "CUTOVER STEP 3: CF Pages custom domains responding"
 echo "  Verify:"
-echo "    curl -sI https://docs.corelink.humangr.com | head -1  → HTTP/2 200"
-echo "    curl -sI https://app.corelink.humangr.com  | head -1  → HTTP/2 200"
+echo "    curl -sI https://corelink-docs.humangr.com | head -1  → HTTP/2 200"
+echo "    curl -sI https://corelink-app.humangr.com  | head -1  → HTTP/2 200"
 emit "#### [11/15] CUTOVER: Pages custom domains responding (docs + app)"
-if ! confirm "Are both docs.corelink.humangr.com and app.corelink.humangr.com returning 200?"; then
+if ! confirm "Are both corelink-docs.humangr.com and corelink-app.humangr.com returning 200?"; then
   abort_cutover "Pages custom domains not responding — check CF Pages project custom domain setup"
 fi
 
@@ -381,7 +381,7 @@ emit "#### [12/15] POST-CUTOVER: Smoke test green"
 POST_SMOKE_PASS=false
 if confirm "Have you run smoke-prod-corelink.sh post-cutover and it returned exit 0?" "false"; then
   POST_SMOKE_PASS=true
-  pass "Post-cutover smoke confirmed green"
+  echo "  [PASS] Post-cutover smoke confirmed green"
   emit "  - [PASS] Post-cutover smoke green"
 else
   echo ""
@@ -396,7 +396,7 @@ else
     bash "${SCRIPT_DIR}/rollback-prod-corelink.sh" --auto || true
   else
     echo "  ERROR: rollback-prod-corelink.sh not found at ${SCRIPT_DIR}/" >&2
-    echo "  Manual rollback required: wrangler rollback --env prod" >&2
+    echo "  Manual rollback required: npx wrangler@latest rollback --env prod" >&2
   fi
   exit 2
 fi
@@ -421,11 +421,11 @@ fi
 # Item 14: Roll-forward verification
 item "POST-CUTOVER: Roll-forward verification"
 echo "  Verify the deployed commit matches the expected SHA:"
-echo "    wrangler deployments list --env prod | head -3"
+echo "    npx wrangler@latest deployments list --env prod | head -3"
 echo "    git log --oneline -5"
 echo "  Confirm: deployed Worker commit == current repo HEAD"
 emit "#### [14/15] POST-CUTOVER: Roll-forward verification"
-DEPLOYED_SHA=$(wrangler deployments list --env prod 2>/dev/null | grep -m1 "sha\|commit\|version" | awk '{print $NF}' || echo "unknown")
+DEPLOYED_SHA=$(npx wrangler@latest deployments list --env prod 2>/dev/null | grep -m1 "sha\|commit\|version" | awk '{print $NF}' || echo "unknown")
 REPO_HEAD=$(git -C "${REPO_ROOT}" rev-parse --short HEAD 2>/dev/null || echo "unknown")
 echo "  Current repo HEAD: ${REPO_HEAD}"
 echo "  Deployed version:  ${DEPLOYED_SHA}"

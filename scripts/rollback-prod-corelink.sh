@@ -2,7 +2,7 @@
 # rollback-prod-corelink.sh — Wave 32 Phase H PREP
 #
 # Fast rollback of CoreLink production deploy.
-# Reverts Worker+DO (wrangler rollback), Container (wrangler containers rollback),
+# Reverts Worker+DO (npx wrangler@latest rollback), Container (npx wrangler@latest containers rollback),
 # and DNS records (from Phase G snapshot) to their pre-cutover state.
 #
 # Usage:
@@ -69,8 +69,8 @@ Options:
   --help              Show this help
 
 Rollback steps:
-  1. Worker rollback:    wrangler rollback --env prod
-  2. Container rollback: wrangler containers rollback corelink-server:prod
+  1. Worker rollback:    npx wrangler@latest rollback --env prod
+  2. Container rollback: npx wrangler@latest containers rollback corelink-server:prod
   3. DNS rollback:       scripts/dns-prod-apply.sh --rollback <snapshot>
   4. Smoke verify:       bash scripts/smoke-prod-corelink.sh (against pre-cutover baseline)
 
@@ -119,13 +119,13 @@ Date: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
 Rollback plan:
 
 Step 1: Worker + DO rollback
-  Command: wrangler rollback --env ${WORKER_ENV}
+  Command: npx wrangler@latest rollback --env ${WORKER_ENV}
   Effect:  Reverts corelink-prod Worker and CoreLinkServer DO to previous deployment.
   Note:    DO storage state survives rollback. Only code rolls back.
   Risk:    None for data. Workers.dev subdomain returns to previous Worker version.
 
 Step 2: Container rollback
-  Command: wrangler containers rollback corelink-server:prod
+  Command: npx wrangler@latest containers rollback corelink-server:prod
   Effect:  Reverts the CF Container image to the previous pushed version.
   Note:    Container must be re-started by DO after Worker rollback.
 
@@ -142,7 +142,7 @@ Step 4: Post-rollback smoke verification
             DNS checks may fail if DNS was not yet applied — that is OK.
 
 Decision tree:
-  - Worker rollback fails     → HALT + manual action (wrangler deployments promote <id>)
+  - Worker rollback fails     → HALT + manual action (npx wrangler@latest deployments promote <id>)
   - Container rollback fails  → WARN + continue to DNS rollback (Worker already safe)
   - DNS rollback fails        → ERR + manual deletion of 9 CNAME records
   - Post-rollback smoke fails → WARN + escalate to Owner
@@ -184,13 +184,13 @@ HEADER
 log "rollback-prod-corelink.sh — ${TIMESTAMP}"
 emit_log "## Prerequisite checks"
 
-if ! command -v wrangler &>/dev/null; then
+if ! command -v npx &>/dev/null; then
   err "wrangler CLI not found in PATH"
   emit_log "- [ERR] wrangler not found"
   echo "Install: npm install -g wrangler" >&2
   exit 1
 fi
-WRANGLER_VER=$(wrangler --version 2>/dev/null | head -1 || echo "unknown")
+WRANGLER_VER=$(npx wrangler@latest --version 2>/dev/null | head -1 || echo "unknown")
 log "wrangler: ${WRANGLER_VER}"
 emit_log "- wrangler: ${WRANGLER_VER}"
 
@@ -206,8 +206,8 @@ if ! $AUTO; then
   echo "═══════════════════════════════════════════════════════"
   echo ""
   echo "  This will rollback:"
-  echo "    - Worker + DO (wrangler rollback)"
-  echo "    - Container (wrangler containers rollback)"
+  echo "    - Worker + DO (npx wrangler@latest rollback)"
+  echo "    - Container (npx wrangler@latest containers rollback)"
   if [[ -f "$DNS_SNAPSHOT" ]]; then
     echo "    - DNS records (from snapshot: ${DNS_SNAPSHOT})"
   else
@@ -238,11 +238,11 @@ if ! $DNS_ONLY; then
   step "1/4: Worker + DO rollback"
   emit_log ""
   emit_log "## Step 1: Worker + DO rollback"
-  emit_log "**Command:** \`wrangler rollback --env ${WORKER_ENV}\`"
+  emit_log "**Command:** \`npx wrangler@latest rollback --env ${WORKER_ENV}\`"
   emit_log "**Time:** $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-  log "CTRL-AUDIT-EMIT: about to invoke wrangler rollback --env ${WORKER_ENV}"
+  log "CTRL-AUDIT-EMIT: about to invoke npx wrangler@latest rollback --env ${WORKER_ENV}"
 
-  if wrangler rollback --env "${WORKER_ENV}" 2>&1 | tee -a "$ROLLBACK_LOG"; then
+  if npx wrangler@latest rollback --env "${WORKER_ENV}" 2>&1 | tee -a "$ROLLBACK_LOG"; then
     ok "Worker + DO rollback complete"
     emit_log "**Result:** OK"
   else
@@ -250,9 +250,9 @@ if ! $DNS_ONLY; then
     emit_log "**Result:** FAILED"
     echo ""
     echo "  CRITICAL: Worker rollback failed. Manual action required:" >&2
-    echo "    1. Check: wrangler deployments list --env ${WORKER_ENV}" >&2
+    echo "    1. Check: npx wrangler@latest deployments list --env ${WORKER_ENV}" >&2
     echo "    2. Identify previous stable deployment ID" >&2
-    echo "    3. Manually: wrangler deployments promote <ID> --env ${WORKER_ENV}" >&2
+    echo "    3. Manually: npx wrangler@latest deployments promote <ID> --env ${WORKER_ENV}" >&2
     echo ""
     # Worker rollback failure is critical — halt full rollback
     emit_log ""
@@ -264,11 +264,11 @@ if ! $DNS_ONLY; then
   step "2/4: Container rollback"
   emit_log ""
   emit_log "## Step 2: Container rollback"
-  emit_log "**Command:** \`wrangler containers rollback corelink-server:prod\`"
+  emit_log "**Command:** \`npx wrangler@latest containers rollback corelink-server:prod\`"
   emit_log "**Time:** $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-  log "CTRL-AUDIT-EMIT: about to invoke wrangler containers rollback corelink-server:prod"
+  log "CTRL-AUDIT-EMIT: about to invoke npx wrangler@latest containers rollback corelink-server:prod"
 
-  if wrangler containers rollback corelink-server:prod 2>&1 | tee -a "$ROLLBACK_LOG"; then
+  if npx wrangler@latest containers rollback corelink-server:prod 2>&1 | tee -a "$ROLLBACK_LOG"; then
     ok "Container rollback complete"
     emit_log "**Result:** OK"
   else
@@ -276,7 +276,7 @@ if ! $DNS_ONLY; then
     emit_log "**Result:** FAILED (non-fatal — Worker already rolled back)"
     echo ""
     echo "  WARNING: Container rollback failed. Worker is already rolled back." >&2
-    echo "  Manual action: wrangler containers rollback corelink-server:prod" >&2
+    echo "  Manual action: npx wrangler@latest containers rollback corelink-server:prod" >&2
     echo "  Continuing with DNS rollback..." >&2
     echo ""
     STEP_FAIL=$(( STEP_FAIL + 1 ))
@@ -298,11 +298,11 @@ if [[ ! -f "$DNS_APPLY" ]]; then
   emit_log "**Result:** FAILED — dns-prod-apply.sh not found"
   echo "  Manual DNS rollback required:" >&2
   echo "  Delete these 9 CNAME records via CF Dashboard or API:" >&2
-  echo "    api.corelink.humangr.com" >&2
-  echo "    app.corelink.humangr.com" >&2
-  echo "    docs.corelink.humangr.com" >&2
-  echo "    signup.corelink.humangr.com" >&2
-  echo "    admin.corelink.humangr.com" >&2
+  echo "    corelink-api.humangr.com" >&2
+  echo "    corelink-app.humangr.com" >&2
+  echo "    corelink-docs.humangr.com" >&2
+  echo "    corelink-signup.humangr.com" >&2
+  echo "    corelink-admin.humangr.com" >&2
   echo "    acme-dev.corelink.humangr.com" >&2
   echo "    staging.corelink.humangr.com" >&2
   echo "    sandbox.corelink.humangr.com" >&2
