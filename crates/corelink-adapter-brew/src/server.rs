@@ -1,0 +1,156 @@
+//! Axum router + `run_brew_adapter` entrypoint.
+//!
+//! The router exposes ONE route — a catch-all `GET /{*path}` — because
+//! brew bottle requests are an opaque, path-only namespace. Every
+//! request flows through:
+//!
+//! 1. `extract_bearer` → PAT plaintext (HTTP 401 on mismatch);
+//! 2. `resolve_tenant` → tenant id (HTTP 401);
+//! 3. `BottleService::fetch` → bytes (HTTP 200) or one of the
+//!    structured failure modes mapped below.
+//!
+//! ## Status code mapping
+//!
+//! | `BrewAdapterError` variant | HTTP | Why |
+//! |---|---|---|
+//! | `Auth`              | 401 | bad / missing PAT |
+//! | `Cas`               | 502 | upstream-CAS dependency failure |
+//! | `Upstream`          | 502 | upstream bottle host failed |
+//! | `BottleOversized`   | 413 | request exceeded `bottle_size_limit_bytes` |
+//! | `Audit`             | 503 | audit chokepoint failed (fail-CLOSED) |
+//! | `Bind`              | n/a | bind failures surface from `run_brew_adapter` directly |
+
+use std::net::SocketAddr;
+use std::sync::Arc;
+
+use axum::body::Body;
+use axum::extract::{Request, State};
+use axum::http::{HeaderMap, StatusCode};
+use axum::response::{IntoResponse, Response};
+use axum::routing::get;
+use axum::Router;
+
+use crate::audit::AuditOrchestrator;
+use crate::auth::{extract_bearer, resolve_tenant};
+use crate::bottle::BottleService;
+use crate::config::BrewAdapterConfig;
+use crate::error::BrewAdapterError;
+use crate::ports::{SharedCasStore, SharedTenantResolver};
+use crate::upstream::UpstreamFetcher;
+
+/// Shared router state. `Clone`-cheap (every field is `Arc`-shaped).
+#[derive(Clone)]
+pub struct BrewRouterState {
+    bottle: Arc<BottleService>,
+    tenant_resolver: SharedTenantResolver,
+}
+
+impl std::fmt::Debug for BrewRouterState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BrewRouterState")
+            .field("bottle", &self.bottle)
+            .field("tenant_resolver", &"Arc<dyn TenantResolver>")
+            .finish()
+    }
+}
+
+/// Build the axum [`Router`] without binding a listener — useful for
+/// in-process tests (drive it directly with `tower::ServiceExt`).
+///
+/// # Errors
+///
+/// Returns [`BrewAdapterError::Upstream`] if the reqwest client cannot
+/// be initialized.
+pub fn build_router(config: BrewAdapterConfig) -> Result<Router, BrewAdapterError> {
+    let upstream = Arc::new(UpstreamFetcher::new(config.upstream_domain.clone())?);
+    let auditor = AuditOrchestrator::new(config.auditor.clone());
+    let bottle = Arc::new(BottleService::new(
+        Arc::<dyn crate::ports::CasStore>::clone(&config.cas),
+        upstream,
+        auditor,
+        config.bottle_size_limit_bytes,
+    ));
+    let state = BrewRouterState {
+        bottle,
+        tenant_resolver: Arc::<dyn crate::ports::TenantResolver>::clone(&config.tenant_resolver),
+    };
+    Ok(Router::new()
+        .route("/", get(handle_bottle_request))
+        .route("/*path", get(handle_bottle_request))
+        .with_state(state))
+}
+
+/// Bind the configured [`SocketAddr`] and serve forever.
+///
+/// # Errors
+///
+/// Returns [`BrewAdapterError::Bind`] if the listener cannot bind,
+/// [`BrewAdapterError::Upstream`] if the reqwest client fails to
+/// initialize, or propagates any axum / hyper serve failure as
+/// `BrewAdapterError::Bind` (the only post-bind I/O error class that
+/// surfaces to this layer).
+pub async fn run_brew_adapter(config: BrewAdapterConfig) -> Result<(), BrewAdapterError> {
+    let bind_addr: SocketAddr = config.bind_addr;
+    let router = build_router(config)?;
+    let listener = tokio::net::TcpListener::bind(bind_addr)
+        .await
+        .map_err(BrewAdapterError::Bind)?;
+    tracing::info!(?bind_addr, "corelink-adapter-brew listening");
+    axum::serve(listener, router)
+        .await
+        .map_err(BrewAdapterError::Bind)?;
+    Ok(())
+}
+
+/// Catch-all bottle request handler.
+async fn handle_bottle_request(
+    State(state): State<BrewRouterState>,
+    headers: HeaderMap,
+    request: Request,
+) -> Response {
+    let raw_path = request.uri().path_and_query().map_or("/", |pq| pq.as_str());
+
+    let pat = match extract_bearer(&headers) {
+        Ok(pat) => pat,
+        Err(err) => return err.into_response(),
+    };
+
+    let tenant_id = match resolve_tenant(&state.tenant_resolver, &pat).await {
+        Ok(t) => t,
+        Err(err) => return err.into_response(),
+    };
+
+    match state.bottle.fetch(&tenant_id, raw_path).await {
+        Ok(bytes) => {
+            let mut response = Response::new(Body::from(bytes));
+            *response.status_mut() = StatusCode::OK;
+            response
+        }
+        Err(err) => err.into_response(),
+    }
+}
+
+impl IntoResponse for BrewAdapterError {
+    fn into_response(self) -> Response {
+        let (status, body) = match &self {
+            Self::Auth(msg) => (StatusCode::UNAUTHORIZED, format!("auth: {msg}")),
+            Self::Cas(msg) => (StatusCode::BAD_GATEWAY, format!("cas: {msg}")),
+            Self::Upstream(msg) => (StatusCode::BAD_GATEWAY, format!("upstream: {msg}")),
+            Self::BottleOversized(bytes) => (
+                StatusCode::PAYLOAD_TOO_LARGE,
+                format!("bottle exceeds limit: {bytes} bytes"),
+            ),
+            Self::Audit(msg) => (StatusCode::SERVICE_UNAVAILABLE, format!("audit: {msg}")),
+            Self::Bind(err) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("bind: {err}"),
+            ),
+        };
+        let mut response = Response::new(Body::from(body));
+        *response.status_mut() = status;
+        response
+    }
+}
+
+#[doc(hidden)]
+pub fn _unused_marker(_: &SharedCasStore) {}
