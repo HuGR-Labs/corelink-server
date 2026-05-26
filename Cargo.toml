@@ -427,6 +427,13 @@ members = [
     # See `specs/_proposals/adapters/npm.md` and
     # `specs/_audits/2026-05-26-w34-adapter-npm-v2.md`.
     "crates/corelink-adapter-npm",
+    # Wave-35 — adapter-host consolidation bridge crate. Bridges the
+    # five Wave-34 adapter-local port traits (CasStore, KvStore,
+    # TenantResolver, BlobStore, ManifestKvStore) onto the canonical
+    # workspace Stage-1 SPI traits (CasReadHandler, CasWriteHandler,
+    # KvBackend, PatValidator, AuditEmitter). Closes follow-up #3 from
+    # `specs/_audits/2026-05-26-wave-33-34-closure-followups.md §5`.
+    "crates/corelink-adapter-host",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
@@ -728,6 +735,8 @@ corelink-adapter-oci = { path = "crates/corelink-adapter-oci" }
 corelink-adapter-cargo = { path = "crates/corelink-adapter-cargo" }
 # Wave-34 — npm registry caching proxy adapter (see workspace.members comment).
 corelink-adapter-npm = { path = "crates/corelink-adapter-npm" }
+# Wave-35 — adapter-host consolidation (see workspace.members comment).
+corelink-adapter-host = { path = "crates/corelink-adapter-host" }
 
 # CLI tooling (WI-S15-001 / WI-S15-005)
 toml = "0.8"

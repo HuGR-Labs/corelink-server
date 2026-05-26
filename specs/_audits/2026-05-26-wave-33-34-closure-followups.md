@@ -179,7 +179,11 @@ for new engineers to navigate. NOT runtime correctness risk.
 **Tracking:** this audit +
 `specs/_audits/2026-05-26-w33-stage2-e-consumer-migration.md`.
 
-## §5. Follow-up #3 — Wave 35 adapter-host consolidation
+## §5. Follow-up #3 — Wave 35 adapter-host consolidation [CLOSED 2026-05-26]
+
+> **Status: CLOSED.** Crate `corelink-adapter-host` delivered and SEALed.
+> SEAL audit: `specs/_audits/2026-05-26-w35-adapter-host-prep.md`.
+> 44 tests passing; all acceptance criteria met.
 
 **Source:** Wave 34 adapter campaign (5 SEAL audits) — every adapter's
 SEAL audit §3 documents inline-ports pattern with production wiring

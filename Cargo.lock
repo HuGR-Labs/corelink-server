@@ -1154,6 +1154,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-adapter-host"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "corelink-adapter-brew",
+ "corelink-adapter-cargo",
+ "corelink-adapter-npm",
+ "corelink-adapter-oci",
+ "corelink-adapter-pip",
+ "corelink-audit",
+ "corelink-core",
+ "corelink-handler-cas",
+ "corelink-reapi",
+ "corelink-replication",
+ "corelink-worker",
+ "proptest",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "corelink-adapter-npm"
 version = "0.1.0"
 dependencies = [
