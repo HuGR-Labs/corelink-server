@@ -175,8 +175,9 @@ TOTAL_MS=$(( (END_NS - START_NS) / 1000000 ))
 # --- summary ------------------------------------------------------------------
 echo "" >&2
 echo "─── Summary ───" >&2
-PASS_COUNT=$(grep -c '|PASS|' "$RESULTS_FILE" 2>/dev/null || echo 0)
-FAIL_COUNT=$(grep -c '|FAIL|' "$RESULTS_FILE" 2>/dev/null || echo 0)
+# grep -c exits 1 when match count is 0; capture exit and force a clean integer.
+PASS_COUNT=$(grep -c '|PASS|' "$RESULTS_FILE" 2>/dev/null); [ -z "$PASS_COUNT" ] && PASS_COUNT=0
+FAIL_COUNT=$(grep -c '|FAIL|' "$RESULTS_FILE" 2>/dev/null); [ -z "$FAIL_COUNT" ] && FAIL_COUNT=0
 echo "  PASS: $PASS_COUNT" >&2
 echo "  FAIL: $FAIL_COUNT" >&2
 echo "  Wall: ${TOTAL_MS} ms" >&2
