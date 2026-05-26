@@ -412,6 +412,13 @@ members = [
     # `specs/_proposals/adapters/oci.md` for the executable contract
     # and `specs/_audits/2026-05-26-w34-adapter-oci.md` for the SEAL.
     "crates/corelink-adapter-oci",
+    # Wave-34 — Cargo build cache adapter (sccache HTTP backend wire).
+    # Bridges sccache GET/PUT/HEAD /<key> against CoreLink's per-tenant
+    # content-addressable storage. BLAKE3 key alignment with sccache =
+    # zero translation cost. PAT-scoped (`cas:read` + `cas:write`). See
+    # `specs/_proposals/adapters/cargo.md` (v2 redraft) and
+    # `specs/_audits/2026-05-26-w34-adapter-cargo-v2.md`.
+    "crates/corelink-adapter-cargo",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
@@ -709,6 +716,8 @@ corelink-adapter-pip = { path = "crates/corelink-adapter-pip" }
 corelink-adapter-brew = { path = "crates/corelink-adapter-brew" }
 # Wave-34 — OCI registry adapter (see workspace.members comment).
 corelink-adapter-oci = { path = "crates/corelink-adapter-oci" }
+# Wave-34 — Cargo build cache adapter (sccache HTTP backend wire).
+corelink-adapter-cargo = { path = "crates/corelink-adapter-cargo" }
 
 # CLI tooling (WI-S15-001 / WI-S15-005)
 toml = "0.8"
