@@ -35,6 +35,83 @@ This skill encodes the lessons from 30 days of orchestrating: every anti-pattern
 
 ---
 
+## Section 0.5 — Pre-Dispatch Packet Protocol (MANDATORY, added 2026-05-26)
+
+> **User mandate 2026-05-26:** *"os prompts e instrucoes que voce esta passando pros agents sao sota? Sao objetivos, claros e preservam contexto? Entregam tudo mastigado pros agents nao terem que queimar token pesquisando e estudando repo etc?"* — answer was NO; agents were burning 10-30% of tokens on discovery the orchestrator could have done in 5 min of bash. Stage 2 single-agent dispatch burned ~80K tokens / 51 tool uses producing ZERO commits because all of that budget went to scope-reconnaissance. This protocol fixes that.
+
+**Trigger:** every time the orchestrator dispatches a Sonnet agent via the `Agent` tool, BEFORE writing the `prompt` field.
+
+**Refuse the dispatch** until the packet is computed.
+
+### The 8 dispatch-packet items (compute via bash, paste into prompt)
+
+1. **Target files (full paths + LOC + largest fn LOC):**
+   ```bash
+   for f in <target-files>; do
+     loc=$(wc -l < "$f")
+     largest=$(awk '/^[[:space:]]*(pub )?(async )?fn / {if (n) print n, fn; fn=$0; n=0} {n++} END {print n, fn}' "$f" | sort -rn | head -1)
+     echo "$f  $loc LOC  largest: $largest"
+   done
+   ```
+   Paste table inline in prompt.
+
+2. **Consumer surface (grep'd):** for each crate/symbol the agent will move/rename:
+   ```bash
+   grep -rln "<symbol>" --include="*.rs" --include="*.toml" .
+   ```
+   Paste list inline.
+
+3. **Cargo baseline (pre-run by orchestrator):**
+   ```bash
+   cargo check --workspace 2>&1 | tail -3   # capture green state + duration
+   cargo test -p <target-crate> --no-run 2>&1 | tail -3   # capture test compile state
+   ```
+   Paste status + commit SHA + duration in prompt.
+
+4. **Existing pattern snippets (inline, not refs):** if asking agent to replicate a prior pattern (A2 decomp, BYOK µkernel mutex, Stage 0 aggregator), paste the actual 30-50 line snippet inline. NEVER say "read X.md and follow that pattern" — extract the pattern verbatim.
+
+5. **Hard rules (terse, no rationale):** list as bullet points without explanation. The rationale is in this skill + the spec; agent has read those during onboarding.
+
+6. **Sub-step plan (commit messages exact):** every commit message the agent will produce, pre-templated.
+
+7. **Gates list (exact commands):** every `cargo` / `python3` invocation the agent must run, copy-paste ready.
+
+8. **Hard pause triggers (numbered, terse):** N conditions. On any: HALT + escalate. No auto-recover.
+
+### Anti-protocol (refuse these in prompt)
+
+- ❌ "Read `<path>` cover-to-cover before touching anything." (agent burns 5-10K tokens reading docs that aren't actively load-bearing for the move)
+- ❌ "Inspect the file to identify..." (orchestrator does the inspection)
+- ❌ "Determine the consumer surface for..." (orchestrator greps + provides)
+- ❌ "Capture cargo baseline before edits" (orchestrator pre-runs + provides timestamp)
+- ❌ "Follow the A2 pattern from `<audit>.md` §3" (orchestrator inlines the pattern)
+- ❌ Long rationale prose about WHY a rule exists (the skill + spec contain rationale; prompt is execution-only)
+
+### Pro-protocol (use these in prompt)
+
+- ✅ "Decompose these 3 files (LOC + largest fn pre-computed below) using this pattern (inline snippet below)."
+- ✅ "Update these 17 consumer files (full paths below)."
+- ✅ "Baseline cargo check green at SHA `<...>` (1m44s wall-clock); test count target: 389."
+- ✅ "Sub-step commits (exact messages): 1. `wave-33 stage X: ...`; 2. `wave-33 stage X: ...`"
+
+### Acceptable prompt length
+
+- Pre-protocol: ~3500-5000 chars (lots of rules + references)
+- Post-protocol: ~3500-5000 chars (similar length, but **half rules → half facts**)
+
+The total length doesn't drop much. What drops is the agent's token spend on discovery. The orchestrator's bash cost (5-10 min per dispatch) is amortized many times over by avoiding agent re-discovery + premature exits caused by mid-task context overflow.
+
+### Calibration
+
+After each dispatch, in the post-merge `/techlead` log entry, add a line:
+```
+2026-MM-DD | dispatch-packet | <branch> | tokens-saved-est: <N> | bash-precompute-cost-min: <M>
+```
+
+After 5 invocations, review: did agents avoid the discovery phase? Did premature exits drop? Adjust packet contents accordingly.
+
+---
+
 ## Section 1 — Resolve the target
 
 The skill is invoked as `/techlead <target>` where `<target>` is one of:
