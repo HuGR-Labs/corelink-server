@@ -242,7 +242,7 @@ deploy_pages_project() {
     log_info "Command that would run:"
     log_info "  ${WRANGLER} pages deploy ${dist_dir} \\"
     log_info "    --project-name ${project_name} \\"
-    log_info "    --env ${cf_env}"
+    log_info "    --branch production"
     return 0
   fi
 
@@ -250,9 +250,15 @@ deploy_pages_project() {
   verify_token_pages_scope
 
   log_step "Running wrangler pages deploy..."
+  # Wrangler 4.x removed --env for pages deploy; use --branch instead.
+  # cf_env "prod" maps to branch "production" (CF Pages convention).
+  local branch="${cf_env}"
+  if [ "${cf_env}" = "prod" ]; then
+    branch="production"
+  fi
   "${WRANGLER}" pages deploy "${dist_dir}" \
     --project-name "${project_name}" \
-    --env "${cf_env}"
+    --branch "${branch}"
 
   log_info "Deploy complete for ${project_name}."
 }
@@ -288,12 +294,27 @@ verify_deploy() {
 load_env_local() {
   local env_file="${REPO_ROOT}/.env.local"
   if [ -f "${env_file}" ]; then
+    # Preserve any CLOUDFLARE_API_TOKEN already set in the caller's env
+    # (e.g. token-shadowing: CLOUDFLARE_API_TOKEN="$CLOUDFLARE_PAGES_API_TOKEN" bash script.sh).
+    # sourcing .env.local would overwrite it; we restore after.
+    local _saved_api_token="${CLOUDFLARE_API_TOKEN:-}"
+    local _api_token_was_set=false
+    if [ -n "${CLOUDFLARE_API_TOKEN:-}" ]; then
+      _api_token_was_set=true
+    fi
+
     # Export only lines that are KEY=VALUE (skip comments, blank lines).
     set -a
     # shellcheck disable=SC1090
     source "${env_file}"
     set +a
     log_info "Loaded env from ${env_file}"
+
+    # Restore caller-supplied token if it was set before sourcing.
+    if [ "${_api_token_was_set}" = "true" ]; then
+      export CLOUDFLARE_API_TOKEN="${_saved_api_token}"
+      log_info "Restored caller-supplied CLOUDFLARE_API_TOKEN (token-shadow active)."
+    fi
   else
     log_warn ".env.local not found at ${env_file} — ensure CF credentials are set in environment."
   fi

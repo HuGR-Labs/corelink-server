@@ -10,6 +10,7 @@
 // matrix.
 
 import React from "react";
+import Link from "next/link";
 import type { AuthContext, AuthProvider } from "@/lib/auth";
 import { getAuthContext, hasCustomerAccess } from "@/lib/auth";
 
@@ -24,7 +25,7 @@ export function Unauthenticated(): React.ReactElement {
       <h1>Sign in required</h1>
       <p>
         Your tenant dashboard is only available to signed-in members. Visit{" "}
-        <a href="/sign-in">/sign-in</a> to authenticate.
+        <Link href="/sign-in">/sign-in</Link> to authenticate.
       </p>
     </div>
   );

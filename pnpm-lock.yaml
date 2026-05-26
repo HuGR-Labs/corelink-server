@@ -4,8 +4,6 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-pnpmfileChecksum: sha256-Ct9gEfO5HjpBCLhCAvL1iTThQHFSL3/UXrlwfRud2Jg=
-
 patchedDependencies:
   '@docusaurus/core@3.10.1':
     hash: 901de121dee51926c4eb27d2b28f6508cd0e3c676905b90ddc7d0d680c17b6cc

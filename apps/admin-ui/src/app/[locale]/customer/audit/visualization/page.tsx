@@ -320,6 +320,8 @@ function ProofModal({
           {result && !result.ok && result.reason === "wasm_unavailable" && (
             <>
               ⚠ Browser verifier unavailable — use the{" "}
+              {/* Cross-app link to docs site — not a Next.js page */}
+              {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
               <a href="/docs/reference/cli/audit">corelink audit verify</a> CLI to verify
               offline.
             </>
@@ -414,6 +416,8 @@ function IntegrityTimeline({
       {anomalies.size > 0 && (
         <p role="alert" data-testid="timeline-anomaly-alert">
           ⚠ Chain rollback detected — see{" "}
+          {/* Cross-app link to trust center — not a Next.js page */}
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
           <a href="/trust/incident-response">trust-center incident response</a>.
         </p>
       )}
@@ -460,6 +464,8 @@ function ExportBundleButton({
       <button type="button" data-testid="export-bundle-btn" onClick={handleExport}>
         Download audit bundle (JSON-LD)
       </button>
+      {/* Cross-app link to docs site — not a Next.js page */}
+      {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
       <a
         href="/docs/reference/cli/audit"
         data-testid="cli-doc-link"

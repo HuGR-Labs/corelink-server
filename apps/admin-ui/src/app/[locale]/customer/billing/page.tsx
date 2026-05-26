@@ -45,6 +45,8 @@ export default async function Page(props: {
           <li>
             Switch between Free, Starter, Team, and Enterprise tiers
             (tier-matrix constraints apply — see the
+            {/* Cross-app link to docs site — not a Next.js page */}
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
             <a href="/how-to/billing/manage-subscription">customer guide</a>).
           </li>
           <li>Cancel your subscription.</li>
