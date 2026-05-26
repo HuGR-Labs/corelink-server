@@ -380,6 +380,11 @@ members = [
     # Decoupled from the wasm32-only `corelink-cf-bindings::CfD1DatabaseReal`
     # via a thin `BillingD1Writer` trait so the surface tests on native CI.
     "crates/corelink-billing-stripe-materializer",
+    # Wave-34 — PyPI caching proxy adapter (PEP 503 + PEP 691). Booted
+    # alongside the sibling cargo / npm / brew / oci adapters per the
+    # Wave-34 adapter campaign (see `specs/_proposals/adapters/pip.md`
+    # and SEAL `specs/_audits/2026-05-26-w34-adapter-pip.md`).
+    "crates/corelink-adapter-pip",
     # Wave-23 R-PREP pilot tenant onboarding end-to-end harness — composes
     # the full GA customer journey in a single deterministic in-memory
     # pipeline: signup → first CAS upload (100 blobs) → 24h audit export
@@ -681,6 +686,8 @@ corelink-runbook-tracker = { path = "crates/corelink-runbook-tracker" }
 corelink-terraform-drift-consumer = { path = "crates/corelink-terraform-drift-consumer" }
 corelink-supply-chain-policy = { path = "crates/corelink-supply-chain-policy" }
 corelink-d1-migrations = { path = "crates/corelink-d1-migrations" }
+# Wave-34 adapter campaign — pip (PyPI) adapter.
+corelink-adapter-pip = { path = "crates/corelink-adapter-pip" }
 
 # CLI tooling (WI-S15-001 / WI-S15-005)
 toml = "0.8"
