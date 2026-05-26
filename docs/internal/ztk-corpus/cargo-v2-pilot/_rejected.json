@@ -1,0 +1,10 @@
+[
+  {
+    "trigger": "STRUCTURAL_LAYOUT",
+    "label": "corelink-cargo-adapter-sccache-translation",
+    "content": "The CoreLink cargo adapter (corelink-adapter-cargo) bridges sccache: its translate module maps sccache cache keys to CoreLink CAS digests.",
+    "quote": "sccache key \u2194 CoreLink CAS digest translation.",
+    "phase": 2,
+    "reason": "quote_not_in_transcript"
+  }
+]

@@ -1,0 +1,101 @@
+{
+  "corelink-adapter-inline-ports-mandate": {
+    "verdict": "ATOMIC",
+    "reason": "It states a single architectural rule (adapters declare inline port traits instead of importing workspace SPI), with the negative examples and rationale pointer serving as elaboration of that one rule rather than independent units.",
+    "splits": null,
+    "merge_into": null
+  },
+  "corelink-workspace-spi-traits-fictional": {
+    "verdict": "ATOMIC",
+    "reason": "It records a single discovery-decision: the workspace SPI trait names are fictional/unneeded and the v1 cargo packet HALTed pre-mutation because of them.",
+    "splits": null,
+    "merge_into": null
+  },
+  "corelink-audit-before-mutation": {
+    "verdict": "ATOMIC",
+    "reason": "It states exactly one fail-closed rule: emit an audit event before every state mutation in CoreLink adapters.",
+    "splits": null,
+    "merge_into": null
+  },
+  "corelink-loc-cap-l210": {
+    "verdict": "ATOMIC",
+    "reason": "It captures one cohesive rule about per-file LOC limits, where the 500-line hard cap and \u2264200-line sweet spot are two thresholds of the same single sizing rule.",
+    "splits": null,
+    "merge_into": null
+  },
+  "corelink-rust-safety-conventions": {
+    "verdict": "NEEDS_SPLIT",
+    "reason": "The capture bundles general crate-hardening rules with an unrelated PAT secret-handling rule, which are independent units that each stand alone.",
+    "splits": [
+      {
+        "label": "corelink-adapter-crate-hardening",
+        "content": "CoreLink adapter crates must mark every pub type `#[non_exhaustive]`, set `#![forbid(unsafe_code)]`, and contain zero `unwrap`/`expect`/`panic` in `src/`."
+      },
+      {
+        "label": "corelink-pat-secret-handling",
+        "content": "CoreLink PATs must be stored as `SecretString` and compared using `subtle::ConstantTimeEq`."
+      }
+    ],
+    "merge_into": null
+  },
+  "corelink-axum-version-alignment": {
+    "verdict": "ATOMIC",
+    "reason": "It captures a single decision\u2014pinning axum 0.7 with its specific feature/dependency configuration\u2014justified by one coherent rationale (tonic 0.12/hyper 1 alignment).",
+    "splits": null,
+    "merge_into": null
+  },
+  "corelink-reqwest-rustls-config": {
+    "verdict": "ATOMIC",
+    "reason": "Captures a single reference fact\u2014CoreLink's reqwest dependency spec and its rustls TLS backend\u2014as one coherent unit.",
+    "splits": null,
+    "merge_into": null
+  },
+  "corelink-pat-constant-time-verify": {
+    "verdict": "ATOMIC",
+    "reason": "Captures a single rule about how CoreLink adapters verify PATs using constant-time comparison.",
+    "splits": null,
+    "merge_into": null
+  },
+  "corelink-audit-emitter-fail-closed": {
+    "verdict": "ATOMIC",
+    "reason": "The capture describes a single concept\u2014what the AuditEmitter trait is and the one contract it abstracts\u2014forming one self-contained reference unit.",
+    "splits": null,
+    "merge_into": null
+  },
+  "corelink-cargo-adapter-no-upstream-fetch": {
+    "verdict": "ATOMIC",
+    "reason": "It captures one reference fact\u2014why the CoreLink cargo/sccache adapter lacks an upstream fetch path\u2014with the causal explanation being supporting context for that single unit, not an independent standalone unit.",
+    "splits": null,
+    "merge_into": null
+  },
+  "corelink-axum-server-body-via-bodyext": {
+    "verdict": "ATOMIC",
+    "reason": "It records exactly one decision\u2014use http_body_util::BodyExt over futures_util for collecting request bodies in CoreLink axum servers.",
+    "splits": null,
+    "merge_into": null
+  },
+  "corelink-subtle-choice-unwrap-u8": {
+    "verdict": "ATOMIC",
+    "reason": "Captures a single reference fact about converting subtle's ConstantTimeEq Choice to u8 via .unwrap_u8() in CoreLink's pinned version.",
+    "splits": null,
+    "merge_into": null
+  },
+  "corelink-no-must-use-on-router": {
+    "verdict": "ATOMIC",
+    "reason": "The capture states exactly one anti-pattern rule (don't add redundant #[must_use] on Router-returning functions) with its rationale, forming a single self-contained unit.",
+    "splits": null,
+    "merge_into": null
+  },
+  "corelink-unwrap-or-allowed-vs-bare-unwrap": {
+    "verdict": "ATOMIC",
+    "reason": "It captures a single rule clarifying the scope of CoreLink's unwrap/panic ban, with the unwrap_or allowance and test-block exceptions all being facets of that one rule rather than independent units.",
+    "splits": null,
+    "merge_into": null
+  },
+  "corelink-adapter-test-floor-10": {
+    "verdict": "ATOMIC",
+    "reason": "It states a single rule (CoreLink adapter crates require \u226510 tests as a SEAL gate), with the Wave-34 figure serving as supporting evidence rather than an independent unit.",
+    "splits": null,
+    "merge_into": null
+  }
+}

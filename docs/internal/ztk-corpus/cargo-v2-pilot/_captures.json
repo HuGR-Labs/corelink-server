@@ -1,0 +1,114 @@
+[
+  {
+    "trigger": "RULE_ESTABLISHED",
+    "label": "corelink-adapter-inline-ports-mandate",
+    "content": "CoreLink adapters must declare adapter-local port traits (e.g. `pub trait CasStore`, `pub trait TenantResolver`) in their own `src/ports.rs` rather than importing workspace SPI. The canonical rationale lives in `specs/_proposals/adapters/README.md` \u00a7\"Architectural pattern \u2014 inline-ports\". Adapters do NOT import `corelink_cas::CasStore`, `corelink_auth::TenantResolver`, or `corelink_handler_cas::*`.",
+    "quote": "Declare adapter-local `pub trait CasStore` + `pub trait TenantResolver` in `crates/corelink-adapter-cargo/src/ports.rs`",
+    "phase": 1
+  },
+  {
+    "trigger": "FACT_DISCOVERED",
+    "label": "corelink-workspace-spi-traits-fictional",
+    "content": "The workspace SPI trait names some adapter contracts reference (corelink_cas::CasStore, corelink_auth::TenantResolver, corelink_handler_cas::CasReadHandler/CasWriteHandler) are not needed by adapters, and some do not exist as named in the workspace. The v1 cargo packet HALTed pre-mutation on these fictional trait surfaces.",
+    "quote": "None of these are needed; some don't exist as named.",
+    "phase": 1
+  },
+  {
+    "trigger": "FACT_DISCOVERED",
+    "label": "corelink-audit-emitter-sole-workspace-trait",
+    "content": "The one workspace trait CoreLink adapters consume is `corelink_audit::ports::AuditEmitter` \u2014 a sync emit, fail-CLOSED chokepoint. `InMemoryAuditEmitter` is the existing impl used for tests.",
+    "quote": "The ONE workspace trait you DO consume: `corelink_audit::ports::AuditEmitter` (sync emit, fail-CLOSED chokepoint",
+    "phase": 1
+  },
+  {
+    "trigger": "RULE_ESTABLISHED",
+    "label": "corelink-audit-before-mutation",
+    "content": "In CoreLink adapters, an audit event must be emitted BEFORE every state mutation (e.g. one event before each CAS put). This is a fail-closed chokepoint.",
+    "quote": "Audit emit BEFORE every state mutation",
+    "phase": 1
+  },
+  {
+    "trigger": "RULE_ESTABLISHED",
+    "label": "corelink-loc-cap-l210",
+    "content": "CoreLink rule L2.10: no `.rs` file may exceed 500 LOC (hard cap), with a sweet spot of \u2264200 LOC per file.",
+    "quote": "L2.10: no `.rs` >500 LOC; sweet spot \u2264200",
+    "phase": 1
+  },
+  {
+    "trigger": "RULE_ESTABLISHED",
+    "label": "corelink-rust-safety-conventions",
+    "content": "CoreLink adapter crates must mark every pub type `#[non_exhaustive]`, set `#![forbid(unsafe_code)]`, and have zero `unwrap`/`expect`/`panic` in `src/`. PATs must use `SecretString` plus `subtle::ConstantTimeEq` for comparison.",
+    "quote": "`#[non_exhaustive]` every pub type; `#![forbid(unsafe_code)]`; zero `unwrap/expect/panic` in `src/`",
+    "phase": 1
+  },
+  {
+    "trigger": "DECISION",
+    "label": "corelink-axum-version-alignment",
+    "content": "CoreLink pins axum 0.7 with tower + http 1.x because that stack aligns with tonic 0.12 (which uses hyper 1 underneath). axum is configured default-features=false with features [\"http1\", \"tokio\", \"json\"].",
+    "quote": "axum 0.7 + tower + http 1.x align with tonic 0.12 (hyper 1 underneath).",
+    "phase": 2
+  },
+  {
+    "trigger": "FACT_DISCOVERED",
+    "label": "corelink-reqwest-rustls-config",
+    "content": "CoreLink's workspace reqwest dependency is `reqwest = { version = \"0.12\", features = [\"json\", \"rustls-tls\"], default-features = false }` \u2014 rustls (not native-tls) is the TLS backend.",
+    "quote": "reqwest = { version = \"0.12\", features = [\"json\", \"rustls-tls\"], default-features = false }",
+    "phase": 2
+  },
+  {
+    "trigger": "RULE_ESTABLISHED",
+    "label": "corelink-pat-constant-time-verify",
+    "content": "CoreLink adapters verify PATs using `subtle::ConstantTimeEq` by reference (constant-time comparison to avoid timing side-channels).",
+    "quote": "`subtle::ConstantTimeEq` on PAT verify by reference.",
+    "phase": 2
+  },
+  {
+    "trigger": "FACT_DISCOVERED",
+    "label": "corelink-audit-emitter-fail-closed",
+    "content": "The CoreLink `AuditEmitter` trait is the canonical chokepoint surface that abstracts the audit-fail-CLOSED contract over any `AuditEvent`-shaped row.",
+    "quote": "audit-fail-CLOSED contract over any [`AuditEvent`]-shaped row.",
+    "phase": 2
+  },
+  {
+    "trigger": "FACT_DISCOVERED",
+    "label": "corelink-cargo-adapter-no-upstream-fetch",
+    "content": "The CoreLink cargo (sccache) adapter has no upstream fetch path, unlike the brew adapter, because sccache pushes build artifacts to the server (the adapter receives PUTs rather than fetching from an upstream domain).",
+    "quote": "The cargo adapter is simpler than brew because it has no upstream fetch (sccache pushes artifacts to us)",
+    "phase": 3
+  },
+  {
+    "trigger": "DECISION",
+    "label": "corelink-axum-server-body-via-bodyext",
+    "content": "For collecting incoming request bodies in CoreLink axum adapter servers, use `http_body_util::BodyExt` with `axum::body::Body` streaming rather than `futures_util`.",
+    "quote": "revise the server to avoid `futures_util` by using `axum`'s body utilities instead",
+    "phase": 3
+  },
+  {
+    "trigger": "FACT_DISCOVERED",
+    "label": "corelink-subtle-choice-unwrap-u8",
+    "content": "In CoreLink's pinned `subtle` version, `ConstantTimeEq` returns a `Choice` that is not directly convertible to `u8`; convert it with `.unwrap_u8()`. Relates to [[corelink-pat-constant-time-verify]].",
+    "quote": "The `subtle` version here returns `Choice` not directly convertible to `u8`. The correct API is `.unwrap_u8()`.",
+    "phase": 4
+  },
+  {
+    "trigger": "ANTI_PATTERN",
+    "label": "corelink-no-must-use-on-router",
+    "content": "In CoreLink axum adapters, do not put `#[must_use]` on a function returning axum's `Router` (e.g. `build_router`) \u2014 `Router` is already `#[must_use]`, so clippy flags the redundant attribute under `-D warnings`.",
+    "quote": "Remove `#[must_use]` from `build_router` (Router already is must_use)",
+    "phase": 4
+  },
+  {
+    "trigger": "RULE_ESTABLISHED",
+    "label": "corelink-unwrap-or-allowed-vs-bare-unwrap",
+    "content": "CoreLink's zero-`unwrap()/expect()/panic!()` rule for `src/` bans only bare assertions. `unwrap_or(fallback)` is allowed in production code because it supplies a fallback rather than asserting; bare `unwrap()`/`panic!()` are confined to `#[cfg(test)]` blocks with `#[allow(clippy::unwrap_used, clippy::panic)]`.",
+    "quote": "they're `unwrap_or(fallback)` which is allowed",
+    "phase": 5
+  },
+  {
+    "trigger": "RULE_ESTABLISHED",
+    "label": "corelink-adapter-test-floor-10",
+    "content": "CoreLink adapter crates have a test-count floor of \u226510 tests as a SEAL gate; the Wave-34 cargo adapter landed 34 tests (3.4\u00d7 floor).",
+    "quote": "Total: 34** (floor was \u226510; 3.4\u00d7 floor)",
+    "phase": 5
+  }
+]
