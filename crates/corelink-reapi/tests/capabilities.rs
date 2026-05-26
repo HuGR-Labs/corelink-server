@@ -24,7 +24,7 @@ use corelink_reapi::proto::reapi::GetCapabilitiesRequest;
 use corelink_reapi::{CapabilitiesService, StubPatValidator};
 use corelink_tenant_path::TenantDerivationKey;
 use corelink_cas::r2_storage::{InMemoryR2, R2Reader, R2Writer};
-use corelink_worker::Region;
+use corelink_replication::region_resolver::Region;
 use tokio::net::TcpListener;
 use tonic::transport::Server;
 use zeroize::Zeroizing;

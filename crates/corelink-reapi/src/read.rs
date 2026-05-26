@@ -73,7 +73,7 @@ use corelink_hash::Digest;
 use corelink_meta::{BlobMetaKey, BlobMetaRow, MetaError, MetaStore};
 use corelink_worker::storage::error::R2Error;
 use corelink_cas::r2_storage::{R2Backend, R2Reader};
-use corelink_worker::TenantCtx;
+use corelink_replication::region_resolver::TenantCtx;
 use thiserror::Error;
 
 /// Disambiguated 404 reason, retained on the [`ReadOutcome::NotFound`]
@@ -248,7 +248,7 @@ mod tests {
     };
     use corelink_tenant_path::TenantDerivationKey;
     use corelink_cas::r2_storage::{InMemoryR2, R2Reader, R2Writer};
-    use corelink_worker::Region;
+    use corelink_replication::region_resolver::Region;
     use uuid::Uuid;
     use zeroize::Zeroizing;
 

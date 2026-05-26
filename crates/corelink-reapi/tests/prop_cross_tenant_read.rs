@@ -54,7 +54,7 @@ use corelink_meta::{
 use corelink_reapi::read::{CasReadOrchestrator, MissReason, ReadOutcome};
 use corelink_tenant_path::TenantDerivationKey;
 use corelink_cas::r2_storage::{CountingR2, InMemoryR2, R2Reader, R2Writer};
-use corelink_worker::{Region, TenantCtx};
+use corelink_replication::region_resolver::{Region, TenantCtx};
 use proptest::prelude::*;
 use uuid::Uuid;
 use zeroize::Zeroizing;

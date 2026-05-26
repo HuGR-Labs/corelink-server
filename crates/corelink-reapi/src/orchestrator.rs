@@ -57,7 +57,7 @@ use corelink_meta::{
 };
 use corelink_worker::storage::error::R2Error;
 use corelink_cas::r2_storage::{PutOutcome, R2Backend, R2Writer};
-use corelink_worker::TenantCtx;
+use corelink_replication::region_resolver::TenantCtx;
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -441,7 +441,7 @@ mod tests {
     use corelink_meta::InMemoryMetaStore;
     use corelink_tenant_path::TenantDerivationKey;
     use corelink_cas::r2_storage::{InMemoryR2, R2Writer};
-    use corelink_worker::Region;
+    use corelink_replication::region_resolver::Region;
     use zeroize::Zeroizing;
 
     fn fixed_tdk() -> TenantDerivationKey {

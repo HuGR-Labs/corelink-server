@@ -100,7 +100,7 @@ use corelink_cas::cache::kv::{FakeClock, InMemoryKv};
 use corelink_cas::cache::negative::{NegativeCache, DEFAULT_NEGATIVE_CACHE_TTL_SECS};
 use corelink_cas::cache::MissReason as CacheMiss;
 use corelink_cas::r2_storage::{CountingR2, InMemoryR2, R2Reader, R2Writer};
-use corelink_worker::{Region, TenantCtx};
+use corelink_replication::region_resolver::{Region, TenantCtx};
 use proptest::prelude::*;
 use uuid::Uuid;
 use zeroize::Zeroizing;
