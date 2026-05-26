@@ -26,7 +26,7 @@
 //! `corelink-clerk-cf`.
 
 use bytes::Bytes;
-use corelink_worker::storage::error::R2Error;
+use corelink_cas::r2_storage::R2Error;
 use corelink_cas::r2_storage::{BackendPutOutcome, R2Backend};
 use std::future::Future;
 // `worker::r2` is a private module in workers-rs 0.8; the public re-export

@@ -55,7 +55,7 @@ use corelink_hash::{Digest, HashMismatch, VerifiedBody};
 use corelink_meta::{
     AuditEvent, AuditEventType, BlobMetaKey, CommitPutRequest, InsertOutcome, MetaError, MetaStore,
 };
-use corelink_worker::storage::error::R2Error;
+use corelink_cas::r2_storage::R2Error;
 use corelink_cas::r2_storage::{PutOutcome, R2Backend, R2Writer};
 use corelink_replication::region_resolver::TenantCtx;
 use thiserror::Error;

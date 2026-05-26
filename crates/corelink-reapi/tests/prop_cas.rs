@@ -247,7 +247,7 @@ proptest! {
         prop_assert!(
             matches!(
                 b_result,
-                Err(corelink_worker::storage::error::R2Error::NotFound)
+                Err(corelink_cas::r2_storage::R2Error::NotFound)
             ),
             "tenant B must NOT read tenant A's blob; got: {:?}",
             b_result
@@ -761,7 +761,7 @@ async fn boundary_blob_just_over_5_mib_rejects_e2e() {
     // so the test traps drift to a different size-limit code path
     // (e.g. RegionMismatch, Backend) without re-spec'ing the contract.
     match err {
-        OrchestratorError::R2(corelink_worker::storage::error::R2Error::BlobTooLarge {
+        OrchestratorError::R2(corelink_cas::r2_storage::R2Error::BlobTooLarge {
             size,
             limit,
         }) => {

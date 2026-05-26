@@ -416,7 +416,7 @@ where
                 // reconciler in S-06 repairs the orphan window) AND tag
                 // the slot so the response-composition phase emits the
                 // canonical SEV-2 `r2_orphan_detected` audit.
-                Err(corelink_worker::storage::error::R2Error::NotFound) => FetchOutcome::R2Orphan,
+                Err(corelink_cas::r2_storage::R2Error::NotFound) => FetchOutcome::R2Orphan,
                 Err(e) => FetchOutcome::Other(e.mapping()),
             };
             (idx, mapped)

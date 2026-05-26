@@ -70,7 +70,7 @@
 //! step-by-step recipe.
 
 use bytes::Bytes;
-use corelink_worker::storage::error::R2Error;
+use corelink_cas::r2_storage::R2Error;
 use corelink_cas::r2_storage::BackendPutOutcome;
 #[cfg(target_arch = "wasm32")]
 use corelink_cas::r2_storage::R2Backend;

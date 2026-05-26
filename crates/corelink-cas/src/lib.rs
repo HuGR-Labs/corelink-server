@@ -77,6 +77,14 @@ pub mod r2_multipart;
 pub mod r2_storage {
     //! R2 storage adapters — canonical wave-33 surface for
     //! `corelink-worker::storage::r2`.
+    //!
+    //! Wave-33 Stage 2.E §11 follow-up: also surface the sibling
+    //! `corelink_worker::storage::error::R2Error` type here so that
+    //! consumers of the canonical surface do not have to dual-import
+    //! `corelink_worker::storage::error::R2Error` alongside this module.
+    //! Without this, the dispatch packet's mapping table would leave
+    //! 7 R2Error-only consumer lines stranded on the impl crate path.
+    pub use corelink_worker::storage::error::R2Error;
     pub use corelink_worker::storage::r2::*;
 }
 

@@ -124,10 +124,12 @@ pub use r2_real::AuditFn as R2AuditFn;
 // crate-level `TenantPrefix` for the prefix-style (R2) surface.
 pub use kv_real::{KvOp, TenantPrefix as KvTenantPrefix};
 
-// `R2Error` and `KvError` live in `corelink_worker` (the trait-surface
-// crate). Re-export them here so consumers wiring the real bindings have
-// a single import path (`corelink_cf_bindings::*`) for both the adapter
-// types AND their error variants. This keeps `apps/server` / the CF
-// Worker boot path free of `corelink_worker::storage::error::*` paths.
+// `R2Error` and `KvError` physically live in `corelink_worker` (the
+// trait-surface crate). Re-export them here under the canonical wave-33
+// surfaces `corelink_cas::r2_storage` + `corelink_cas::cache::kv` so
+// consumers wiring the real bindings have a single import path
+// (`corelink_cf_bindings::*`) for both the adapter types AND their error
+// variants. This keeps `apps/server` / the CF Worker boot path free of
+// `corelink_worker::storage::error::*` paths (wave-33 Stage 2.E).
 pub use corelink_cas::cache::kv::KvError;
-pub use corelink_worker::storage::error::R2Error;
+pub use corelink_cas::r2_storage::R2Error;
