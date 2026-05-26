@@ -11,7 +11,7 @@ on:
     branches: ["main", "wt/wi-s15-004"]
     paths:
       - "crates/corelink-py/**"
-      - "crates/corelink-go/**"
+      - "tools/sdks/go/**"
       - "crates/corelink-wasm/**"
       - "crates/corelink-client-verify/**"
       - "corelink-go/**"
@@ -19,7 +19,7 @@ on:
   pull_request:
     paths:
       - "crates/corelink-py/**"
-      - "crates/corelink-go/**"
+      - "tools/sdks/go/**"
       - "crates/corelink-wasm/**"
       - "crates/corelink-client-verify/**"
       - "corelink-go/**"

@@ -214,7 +214,7 @@ members = [
     "crates/corelink-cli",
     # WI-S15-004 FFI wrappers (Python pyO3 + Go cgo + JS/TS WASM)
     "crates/corelink-py",
-    "crates/corelink-go",
+    "tools/sdks/go",
     "crates/corelink-wasm",
     # WI-S17-001 chaos scheduler (8 experiment types + safe-mode auto-abort
     # + deterministic seed + 7y archive). Foundation for WI-S17-002..006.
