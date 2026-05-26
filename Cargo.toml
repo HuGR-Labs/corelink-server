@@ -1,7 +1,13 @@
 [workspace]
 resolver = "2"
 members = [
-    "apps/server",
+    # Wave-33 Stage 2.B — gRPC server binary absorbed from `apps/server` into
+    # `crates/corelink-container` so the production container has a canonical
+    # crate location alongside the rest of the workspace. Binary name stays
+    # `corelink-server` (Dockerfile + wrangler.toml depend on
+    # `/usr/local/bin/corelink-server`). See
+    # `specs/_audits/2026-05-26-w33-stage2-b-container.md`.
+    "crates/corelink-container",
     # Wave-33 Stage 0 sub-step 1 — apex cross-cutting types crate.
     # Depends on no other corelink-* crate; Stage 3 cargo-deny will
     # enforce. See `specs/_audits/2026-05-22-wave33-code-reorg-spec.md`.
