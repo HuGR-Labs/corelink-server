@@ -1,0 +1,47 @@
+[package]
+name = "corelink-adapter-host"
+description = "Wave 35 consolidation — bridge adapter-local ports (corelink-adapter-{cargo,npm,pip,brew,oci}) to workspace Stage-1 SPI (CasReadHandler/CasWriteHandler/PatValidator/KvBackend/AuditEmitter)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+corelink-adapter-cargo = { workspace = true }
+corelink-adapter-npm   = { workspace = true }
+corelink-adapter-pip   = { workspace = true }
+corelink-adapter-brew  = { workspace = true }
+corelink-adapter-oci   = { workspace = true }
+corelink-handler-cas   = { workspace = true }
+corelink-worker        = { workspace = true }
+corelink-reapi         = { workspace = true }
+corelink-audit         = { workspace = true }
+corelink-core          = { workspace = true }
+
+async-trait = "0.1"
+tokio = { version = "1", features = ["sync", "macros"] }
+bytes = "1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["sync", "macros", "rt-multi-thread"] }
+proptest = "1.5"
+corelink-replication = { workspace = true }
+uuid = { workspace = true }
