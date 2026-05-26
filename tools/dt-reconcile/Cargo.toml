@@ -25,7 +25,7 @@ print_stderr = "deny"
 mod_module_files = "deny"
 
 [dependencies]
-corelink-dt-webhook = { path = "../corelink-dt-webhook" }
+corelink-dt-webhook = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
