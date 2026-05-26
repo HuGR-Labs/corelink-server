@@ -237,31 +237,15 @@ vars = { ENVIRONMENT = "prod" }
 # Routes-only change: deploy with `wrangler deploy --env prod --containers-rollout none`
 # to avoid re-rolling the 11 healthy Firecracker container instances.
 [[env.prod.routes]]
-pattern = "api.corelink.humangr.com/*"
+pattern = "corelink-api.humangr.com/*"
 zone_name = "humangr.com"
 
 [[env.prod.routes]]
-pattern = "signup.corelink.humangr.com/*"
+pattern = "corelink-signup.humangr.com/*"
 zone_name = "humangr.com"
 
 [[env.prod.routes]]
-pattern = "admin.corelink.humangr.com/*"
-zone_name = "humangr.com"
-
-[[env.prod.routes]]
-pattern = "acme-dev.corelink.humangr.com/*"
-zone_name = "humangr.com"
-
-[[env.prod.routes]]
-pattern = "sandbox.corelink.humangr.com/*"
-zone_name = "humangr.com"
-
-[[env.prod.routes]]
-pattern = "go.corelink.humangr.com/*"
-zone_name = "humangr.com"
-
-[[env.prod.routes]]
-pattern = "staging.corelink.humangr.com/*"
+pattern = "corelink-admin.humangr.com/*"
 zone_name = "humangr.com"
 
 [[env.prod.r2_buckets]]
