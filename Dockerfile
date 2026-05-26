@@ -36,10 +36,12 @@ WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 COPY tools ./tools
-# Wave-32 Phase E APPLY fix: workspace member apps/migrate-single-to-multi-region
-# must be present so cargo can resolve the workspace manifest. Other apps/ dirs
-# (admin-ui, docs, server) are non-Rust and not workspace members — skip them.
+# Wave-32 Phase E APPLY fix: all workspace members outside crates/ and tools/
+# must be present so cargo can resolve the workspace manifest tree. These are
+# Rust-only dirs; the non-Rust apps (admin-ui, docs, server) are NOT workspace
+# members and are deliberately excluded to keep the build context minimal.
 COPY apps/migrate-single-to-multi-region ./apps/migrate-single-to-multi-region
+COPY tests ./tests
 
 # Cache de deps: stub `main.rs` + `lib.rs` no container crate (o bin
 # depende do lib do mesmo crate via `use corelink_server::*`) + builda só
