@@ -1100,6 +1100,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-adapter-brew"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "blake3",
+ "bytes",
+ "corelink-audit",
+ "hex",
+ "http 1.4.0",
+ "http-body-util",
+ "proptest",
+ "reqwest",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "subtle",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-test",
+ "tower 0.5.3",
+ "tracing",
+ "url",
+ "uuid",
+ "wiremock",
+]
+
+[[package]]
 name = "corelink-adapters-cloud"
 version = "0.1.0"
 dependencies = [
@@ -1218,6 +1246,7 @@ dependencies = [
  "corelink-pat",
  "corelink-tenant-path",
  "corelink-webauthn",
+ "corelink-worker",
 ]
 
 [[package]]
@@ -1545,6 +1574,7 @@ dependencies = [
  "corelink-meta",
  "corelink-multipart-schema",
  "corelink-r2-multipart",
+ "corelink-worker",
 ]
 
 [[package]]
@@ -2493,6 +2523,7 @@ dependencies = [
  "corelink-replica-worker",
  "corelink-replication-coordinator",
  "corelink-rollout-controller",
+ "corelink-worker",
 ]
 
 [[package]]

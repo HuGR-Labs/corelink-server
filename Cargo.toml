@@ -390,6 +390,15 @@ members = [
     # surface stays stable across signup/billing/dsr API churn). Five
     # canonical tests; each <60s; full suite <5min target.
     "tests/e2e-pilot-onboarding",
+    # Wave-34 Adapter Campaign — Homebrew bottle caching adapter.
+    # Read-path HTTPS proxy that brew redirects to via
+    # `HOMEBREW_BOTTLE_DOMAIN`. Cache key = BLAKE3 of canonicalized
+    # upstream URL; brew URLs do NOT embed an upstream SHA so this
+    # adapter operates with BEST-EFFORT pre-store integrity (brew
+    # client verifies post-download against the formula DSL). See
+    # `specs/_proposals/adapters/brew.md` and
+    # `specs/_audits/2026-05-26-w34-adapter-brew.md`.
+    "crates/corelink-adapter-brew",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
@@ -681,6 +690,8 @@ corelink-runbook-tracker = { path = "crates/corelink-runbook-tracker" }
 corelink-terraform-drift-consumer = { path = "crates/corelink-terraform-drift-consumer" }
 corelink-supply-chain-policy = { path = "crates/corelink-supply-chain-policy" }
 corelink-d1-migrations = { path = "crates/corelink-d1-migrations" }
+# Wave-34 Adapter Campaign — Homebrew bottle caching adapter.
+corelink-adapter-brew = { path = "crates/corelink-adapter-brew" }
 
 # CLI tooling (WI-S15-001 / WI-S15-005)
 toml = "0.8"

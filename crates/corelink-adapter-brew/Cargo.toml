@@ -1,0 +1,75 @@
+[package]
+name = "corelink-adapter-brew"
+description = "CoreLink Homebrew bottle caching adapter (Wave-34). Sits between `brew install` and the upstream OCI bottle host (GitHub Packages by default). Routes bottle downloads through CoreLink's per-tenant content-addressable storage so repeated installs across a CI fleet hit local cache. Read-path proxy keyed by canonical upstream URL; trusts upstream bytes (the brew client verifies against the formula DSL post-download). PAT-scoped (`brew:read`). See `specs/_proposals/adapters/brew.md` and `specs/_audits/2026-05-26-w34-adapter-brew.md`."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+# Audit chokepoint — `AuditEmitter` (sync trait, wasm32-friendly) per
+# wave-33 Stage 0 sub-step 4. Audit emit MUST precede every CAS put.
+corelink-audit = { workspace = true }
+# Hash primitive for canonical-URL → CAS key derivation. brew bottles
+# do not embed a hash in the URL; we BLAKE3 the canonicalized URL.
+blake3 = { workspace = true }
+# HTTP server stack — axum routes brew's plain HTTPS GETs.
+axum = { workspace = true }
+tower = { workspace = true }
+http = { workspace = true }
+http-body-util = { workspace = true }
+bytes = { workspace = true }
+# Async runtime + reqwest upstream client.
+tokio = { workspace = true }
+reqwest = { workspace = true }
+async-trait = { workspace = true }
+# URL parsing/canonicalization for bottle URL → CAS key.
+url = "2"
+# Error / serde / tracing.
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+# Constant-time PAT compare + secret zeroize.
+subtle = { workspace = true }
+secrecy = "0.10"
+# Encoding (hex digest of BLAKE3 for CAS keys + log fields).
+hex = { workspace = true }
+# Unix-ms timestamps for audit envelopes.
+uuid = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+tokio-test = { workspace = true }
+proptest = { workspace = true }
+wiremock = "0.6"
+serde_json = { workspace = true }
+
+[[test]]
+name = "smoke"
+path = "tests/smoke.rs"
+
+[[test]]
+name = "prop_url_normalize"
+path = "tests/prop_url_normalize.rs"
+
+[[test]]
+name = "adversarial"
+path = "tests/adversarial.rs"
