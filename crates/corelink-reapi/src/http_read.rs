@@ -58,7 +58,7 @@ use axum::Router;
 use bytes::Bytes;
 use corelink_hash::Digest;
 use corelink_meta::MetaStore;
-use corelink_worker::middleware::{MissArm, MissMarker, TimingPaddingLayer};
+use corelink_auth::middleware::{MissArm, MissMarker, TimingPaddingLayer};
 use corelink_cas::r2_storage::R2Backend;
 
 use crate::error_map::{

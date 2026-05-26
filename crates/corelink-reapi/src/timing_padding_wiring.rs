@@ -33,7 +33,7 @@
 //!   is the only canonical detection. Codex round-1 P0 + round-2
 //!   P0 fix.
 
-use corelink_worker::middleware::{JitterPolicy, PredicateKind, TimingPaddingConfig, TimingPaddingLayer};
+use corelink_auth::middleware::{JitterPolicy, PredicateKind, TimingPaddingConfig, TimingPaddingLayer};
 
 /// Type re-export — callers usually import `MissPaddingLayer` rather
 /// than the longer `corelink_worker::middleware::TimingPaddingLayer`.
@@ -97,7 +97,7 @@ pub fn canonical_grpc_padding_layer() -> TimingPaddingLayer {
 )]
 mod tests {
     use super::*;
-    use corelink_worker::middleware::PredicateKind;
+    use corelink_auth::middleware::PredicateKind;
 
     #[test]
     fn canonical_http_layer_uses_any_predicate() {
