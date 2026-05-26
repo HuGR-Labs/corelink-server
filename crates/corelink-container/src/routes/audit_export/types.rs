@@ -43,7 +43,7 @@ pub const HEADER_CHAIN_HEAD_ANCHOR: &str =
 /// `{"break_at_seq":<u64>,"break_at_chunk":<u64>,"observed":"<hex>","expected":"<hex>"}`
 /// — the customer-CLI parses it to surface the actionable diagnostic
 /// "Export aborted mid-stream — server detected chain break at seq N
-/// chunk X" (see `crates/corelink-cli/src/commands/verify_ndjson.rs`).
+/// chunk X" (see `tools/cli/src/commands/verify_ndjson.rs`).
 ///
 /// Per HTTP/1.1 (RFC 7230 §4.4) trailers MUST be advertised up-front
 /// via the `Trailer:` response header so intermediaries that strip

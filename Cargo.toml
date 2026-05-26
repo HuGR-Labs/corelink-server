@@ -152,8 +152,8 @@ members = [
     "crates/corelink-supply-chain-policy",
     "crates/corelink-config-api",
     "crates/corelink-config-do",
-    "crates/corelink-dt-cli",
-    "crates/corelink-dt-reconcile",
+    "tools/dt-cli",
+    "tools/dt-reconcile",
     "crates/corelink-dt-webhook",
     "crates/corelink-dual-approval",
     "crates/corelink-admin-api",
@@ -217,10 +217,10 @@ members = [
     # follow-up WI per autonomous-execution charter trait-abstraction-defer.
     "crates/corelink-otel-export",
     # WI-S15-001 CLI 7 subcommands + WI-S15-005 telemetry opt-in (same crate)
-    "crates/corelink-cli",
+    "tools/cli",
     # WI-S15-004 FFI wrappers (Python pyO3 + Go cgo + JS/TS WASM)
-    "crates/corelink-py",
-    "crates/corelink-go",
+    "tools/sdks/python",
+    "tools/sdks/go",
     "crates/corelink-wasm",
     # WI-S17-001 chaos scheduler (8 experiment types + safe-mode auto-abort
     # + deterministic seed + 7y archive). Foundation for WI-S17-002..006.
@@ -296,7 +296,7 @@ members = [
     # Hand-authored YAML + embedded constants; spec_roundtrip integration test
     # gates drift between the YAML, the generated JSON sibling, and the path
     # constants exported by this crate.
-    "crates/corelink-openapi",
+    "tools/openapi",
     # R-prep handler-crate skeletons (CAS / AC / Admin). Each crate ships the
     # typed handler-surface trait + InMemoryFake + per-handler SliObserver
     # integration emitting canonical Sli observations + audit-fail-CLOSED
@@ -622,8 +622,8 @@ corelink-privacy-residency-enforcement = { path = "crates/corelink-privacy-resid
 corelink-config-do = { path = "crates/corelink-config-do" }
 corelink-config-api = { path = "crates/corelink-config-api" }
 corelink-dt-webhook = { path = "crates/corelink-dt-webhook" }
-corelink-dt-cli = { path = "crates/corelink-dt-cli" }
-corelink-dt-reconcile = { path = "crates/corelink-dt-reconcile" }
+corelink-dt-cli = { path = "tools/dt-cli" }
+corelink-dt-reconcile = { path = "tools/dt-reconcile" }
 corelink-dual-approval = { path = "crates/corelink-dual-approval" }
 corelink-admin-api = { path = "crates/corelink-admin-api" }
 corelink-admin-dry-run = { path = "crates/corelink-admin-dry-run" }
@@ -663,7 +663,7 @@ corelink-billing-stripe-materializer = { path = "crates/corelink-billing-stripe-
 corelink-statuspage-real = { path = "crates/corelink-statuspage-real" }
 corelink-dsr-statuspage-scheduler = { path = "crates/corelink-dsr-statuspage-scheduler" }
 corelink-drata-sync = { path = "crates/corelink-drata-sync" }
-corelink-openapi = { path = "crates/corelink-openapi" }
+corelink-openapi = { path = "tools/openapi" }
 # R-prep handler-crate skeletons (CAS / AC / Admin).
 corelink-handler-cas = { path = "crates/corelink-handler-cas" }
 corelink-handler-ac = { path = "crates/corelink-handler-ac" }
@@ -686,7 +686,7 @@ corelink-d1-migrations = { path = "crates/corelink-d1-migrations" }
 toml = "0.8"
 dirs = "5"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
-corelink-cli = { path = "crates/corelink-cli" }
+corelink-cli = { path = "tools/cli" }
 
 # Test / bench
 proptest = "1.5"

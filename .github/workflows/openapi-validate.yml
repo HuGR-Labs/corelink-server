@@ -14,14 +14,14 @@ on:
   pull_request:
     paths:
       - "openapi/**"
-      - "crates/corelink-openapi/**"
+      - "tools/openapi/**"
       - "scripts/openapi_sync.py"
       - ".github/workflows/openapi-validate.yml"
   push:
     branches: [main]
     paths:
       - "openapi/**"
-      - "crates/corelink-openapi/**"
+      - "tools/openapi/**"
       - "scripts/openapi_sync.py"
       - ".github/workflows/openapi-validate.yml"
   workflow_dispatch:

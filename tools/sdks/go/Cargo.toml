@@ -30,7 +30,7 @@ print_stderr = "deny"
 mod_module_files = "deny"
 
 [dependencies]
-corelink-client-verify = { path = "../corelink-client-verify", features = ["ffi"] }
+corelink-client-verify = { workspace = true, features = ["ffi"] }
 tracing = { workspace = true }
 
 [dev-dependencies]

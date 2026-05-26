@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # validate-quickstart.sh — verify every `corelink <subcmd>` example in the
 # 10-minute quickstart MDX corresponds to a REAL subcommand in
-# `crates/corelink-cli/src/main.rs`.
+# `tools/cli/src/main.rs`.
 #
 # Designed to run WITHOUT a sandbox PAT — it never executes the commands,
 # it only parses MDX fenced shell blocks and grep-checks the CLI source.
@@ -22,7 +22,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 
 MDX="${REPO_ROOT}/apps/docs/docs/tutorials/quickstart-10min.mdx"
-CLI_SRC="${REPO_ROOT}/crates/corelink-cli/src/main.rs"
+CLI_SRC="${REPO_ROOT}/tools/cli/src/main.rs"
 
 if [[ ! -f "${MDX}" ]]; then
   echo "error: quickstart MDX not found at ${MDX}" >&2
@@ -36,7 +36,7 @@ fi
 echo "validate-quickstart: parsing ${MDX#${REPO_ROOT}/}"
 echo "validate-quickstart: cross-checking against ${CLI_SRC#${REPO_ROOT}/}"
 
-# Whitelist of subcommands derived from `crates/corelink-cli/src/main.rs`
+# Whitelist of subcommands derived from `tools/cli/src/main.rs`
 # (the `enum Commands` block). Updated when CLI surface changes.
 KNOWN_SUBCMDS=(
   "ls" "get" "put" "stat" "bench" "doctor" "version" "config"

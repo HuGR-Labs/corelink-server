@@ -27,7 +27,7 @@ use uuid::Uuid;
 // We inline the minimal logic here rather than re-exporting private items from the binary.
 // The telemetry payload schema is duplicated below for black-box testing.
 
-/// Mirror of `TelemetryEvent` from `corelink-cli/src/telemetry.rs`.
+/// Mirror of `TelemetryEvent` from `tools/cli/src/telemetry.rs`.
 /// Used to verify schema invariants without coupling to internal paths.
 #[derive(Debug, serde::Serialize)]
 struct TelemetryPayload {

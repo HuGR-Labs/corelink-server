@@ -41,7 +41,7 @@ useless_conversion = "allow"
 
 [dependencies]
 pyo3 = { workspace = true }
-corelink-client-verify = { path = "../corelink-client-verify" }
+corelink-client-verify = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]

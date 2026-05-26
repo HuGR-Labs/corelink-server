@@ -239,7 +239,7 @@ updates:
   # pip — corelink-py (Python SDK).
   # ---------------------------------------------------------------------------
   - package-ecosystem: pip
-    directory: "/crates/corelink-py"
+    directory: "/tools/sdks/python"
     schedule:
       interval: weekly
       day: monday
