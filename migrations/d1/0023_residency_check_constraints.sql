@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS tenant (
 
 -- ── 2. blob_meta: region column + trigger ───────────────────────────────────
 
-ALTER TABLE blob_meta ADD COLUMN IF NOT EXISTS region TEXT NOT NULL DEFAULT 'wnam'
+ALTER TABLE blob_meta ADD COLUMN region TEXT NOT NULL DEFAULT 'wnam'
     CHECK (region IN ('wnam','enam','weur','sam','apac','afr'));
 
 -- Trigger: BEFORE INSERT — reject if region != tenant.primary_region.
@@ -47,10 +47,10 @@ BEGIN
     SELECT RAISE(ABORT, 'residency_violation: blob_meta.region must match tenant.primary_region');
 END;
 
--- ── 3. ac_meta: region column + trigger ─────────────────────────────────────
-
-ALTER TABLE ac_meta ADD COLUMN IF NOT EXISTS region TEXT NOT NULL DEFAULT 'wnam'
-    CHECK (region IN ('wnam','enam','weur','sam','apac','afr'));
+-- ── 3. ac_meta: region trigger only ─────────────────────────────────────────
+-- D1 compatibility note: ac_meta.region was created in 0002_ac_meta.sql;
+-- ALTER TABLE ADD COLUMN is skipped here because D1 has no ADD COLUMN IF NOT EXISTS.
+-- The triggers below are idempotent (CREATE TRIGGER IF NOT EXISTS is supported).
 
 CREATE TRIGGER IF NOT EXISTS trg_ac_meta_region_match_insert
 BEFORE INSERT ON ac_meta
@@ -70,7 +70,7 @@ END;
 
 -- ── 4. audit_outbox: region column + trigger ─────────────────────────────────
 
-ALTER TABLE audit_outbox ADD COLUMN IF NOT EXISTS region TEXT NOT NULL DEFAULT 'wnam'
+ALTER TABLE audit_outbox ADD COLUMN region TEXT NOT NULL DEFAULT 'wnam'
     CHECK (region IN ('wnam','enam','weur','sam','apac','afr'));
 
 CREATE TRIGGER IF NOT EXISTS trg_audit_outbox_region_match_insert
@@ -81,18 +81,10 @@ BEGIN
     SELECT RAISE(ABORT, 'residency_violation: audit_outbox.region must match tenant.primary_region');
 END;
 
--- ── 5. billing_events_staging: region column + trigger ───────────────────────
-
-ALTER TABLE billing_events_staging ADD COLUMN IF NOT EXISTS region TEXT NOT NULL DEFAULT 'wnam'
-    CHECK (region IN ('wnam','enam','weur','sam','apac','afr'));
-
-CREATE TRIGGER IF NOT EXISTS trg_billing_events_region_match_insert
-BEFORE INSERT ON billing_events_staging
-FOR EACH ROW
-WHEN NEW.region != (SELECT primary_region FROM tenant WHERE tenant_id = NEW.tenant_id)
-BEGIN
-    SELECT RAISE(ABORT, 'residency_violation: billing_events_staging.region must match tenant.primary_region');
-END;
+-- ── 5. billing_events_staging: DEFERRED ──────────────────────────────────────
+-- D1 compatibility note: billing_events_staging does not exist in migrations
+-- 0001-0022. ALTER TABLE and trigger creation are deferred to the migration that
+-- creates the table. No-op here.
 
 -- ── 6. region_migration_request: new table (ADR-S11-011 cooldown 30d) ────────
 

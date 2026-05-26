@@ -215,7 +215,7 @@ rollback() {
 
     local rb_failed=0
     for name in "${SUCCESSFULLY_PUT[@]}"; do
-        if wrangler secret delete "$name" --env "$WRANGLER_ENV" --force 2>/dev/null; then
+        if $WRANGLER_CMD secret delete "$name" --env "$WRANGLER_ENV" --force 2>/dev/null; then
             err "  ROLLBACK OK: deleted $name"
         else
             err "  ROLLBACK FAIL: could not delete $name — manual cleanup required"
@@ -227,7 +227,7 @@ rollback() {
         err "WARNING: $rb_failed secret(s) could NOT be deleted during rollback."
         err "Manual cleanup required. Run:"
         for name in "${SUCCESSFULLY_PUT[@]}"; do
-            err "  wrangler secret delete $name --env $WRANGLER_ENV --force"
+            err "  $WRANGLER_CMD secret delete $name --env $WRANGLER_ENV --force"
         done
     else
         err "ROLLBACK COMPLETE: all $((${#SUCCESSFULLY_PUT[@]})) secrets removed from prod."
@@ -317,13 +317,15 @@ fi
 
 # ── 7. Apply path (requires wrangler + CF auth) ───────────────────────────────
 
-if ! command -v wrangler >/dev/null 2>&1; then
-    err "wrangler CLI not found in PATH"
-    err "Install: npm install -g wrangler"
+WRANGLER_CMD="${WRANGLER:-npx wrangler@latest}"
+
+if ! $WRANGLER_CMD --version >/dev/null 2>&1; then
+    err "wrangler CLI not reachable via: $WRANGLER_CMD"
+    err "Ensure npx is available or set WRANGLER env var to the wrangler binary path."
     exit 127
 fi
 
-WRANGLER_VER="$(wrangler --version 2>/dev/null || echo unknown)"
+WRANGLER_VER="$($WRANGLER_CMD --version 2>/dev/null || echo unknown)"
 log "wrangler version: $WRANGLER_VER"
 log ""
 log "APPLY MODE: pushing $SECRET_COUNT secrets to $WRANGLER_ENV"
@@ -346,7 +348,7 @@ for name in "${SECRET_NAMES[@]}"; do
     log "[$N/$SECRET_COUNT] putting $name ... (length=${VAL_LEN} chars; SHA256[:8]=${VAL_HASH})"
 
     # Push secret. Value piped via stdin — never passed as CLI arg or logged.
-    if ! printf '%s' "$VAL" | wrangler secret put "$name" --env "$WRANGLER_ENV" 2>&1; then
+    if ! printf '%s' "$VAL" | $WRANGLER_CMD secret put "$name" --env "$WRANGLER_ENV" 2>&1; then
         err "[$N/$SECRET_COUNT] FAILED to put $name"
         rollback "$name"
         exit 1

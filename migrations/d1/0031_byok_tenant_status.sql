@@ -9,20 +9,20 @@
 -- Revocation audit trail: byok_revoked_at_ms + byok_revoked_provider +
 -- byok_revoked_kms_key_id stored for 7y (CTRL-AUDIT-005).
 
-ALTER TABLE tenants ADD COLUMN byok_status TEXT DEFAULT 'active'
+ALTER TABLE tenant ADD COLUMN byok_status TEXT DEFAULT 'active'
     CHECK (byok_status IN ('active', 'degraded_read_only', 'revoked'));
 
-ALTER TABLE tenants ADD COLUMN byok_revoked_at_ms INTEGER;
+ALTER TABLE tenant ADD COLUMN byok_revoked_at_ms INTEGER;
 
-ALTER TABLE tenants ADD COLUMN byok_revoked_provider TEXT;
+ALTER TABLE tenant ADD COLUMN byok_revoked_provider TEXT;
 
-ALTER TABLE tenants ADD COLUMN byok_revoked_kms_key_id TEXT;
+ALTER TABLE tenant ADD COLUMN byok_revoked_kms_key_id TEXT;
 
 -- Index for fast kill-switch degrade + recovery queries.
 CREATE INDEX IF NOT EXISTS idx_tenants_byok_status
-    ON tenants (byok_status);
+    ON tenant (byok_status);
 
 -- Index for per-key revocation lookup.
 CREATE INDEX IF NOT EXISTS idx_tenants_byok_kms_key_id
-    ON tenants (byok_revoked_kms_key_id)
+    ON tenant (byok_revoked_kms_key_id)
     WHERE byok_revoked_kms_key_id IS NOT NULL;

@@ -37,36 +37,33 @@
 -- tenant — atomic-tx target table (load-bearing for
 -- INV-ONBOARD-ATOMIC-PROVISIONING).
 -- ===========================================================
-CREATE TABLE IF NOT EXISTS tenant (
-    -- Tenant id (UUID v7).
-    tenant_id           TEXT    NOT NULL PRIMARY KEY,
-    -- Signup id (UUID v7); idempotency cache key target.
-    signup_id           TEXT    NOT NULL UNIQUE,
-    -- sha256 hex digest of normalized email (RFC 5321 + lowercase).
-    -- UNIQUE constraint prevents the race-condition exploit where two
-    -- concurrent Clerk webhook events for the same user produce two
-    -- tenants (Gherkin acceptance: "Race condition 100 concurrent
-    -- email_verified same user → 1 tenant created").
-    email_hash          TEXT    NOT NULL UNIQUE,
-    -- Primary region pinned per Lote 10.16 cookie-canonical map;
-    -- immutable post-INSERT per INV-REGION-NO-CROSS-LEAK (S-14
-    -- alignment).
-    primary_region      TEXT    NOT NULL CHECK (primary_region IN ('enam', 'sam', 'eu')),
-    -- Tenant state: `active` = DPA accepted + Stripe linked;
-    -- `dpa_pending` = DPA awaiting click-through (WI-S19-002);
-    -- `pending_billing_link` = atomic D1 tx committed but Stripe link
-    -- pending saga compensation (chaos Stripe outage path; WI §9.2
-    -- PAT-DEGRADE-001 degrade read-only). Production wiring transitions
-    -- via the Stripe-customer-link saga worker.
-    tenant_state        TEXT    NOT NULL DEFAULT 'dpa_pending' CHECK (
-        tenant_state IN ('active', 'dpa_pending', 'pending_billing_link', 'degraded_read_only')
-    ),
-    -- Stripe customer id (NULL until saga compensation completes).
-    stripe_customer_id  TEXT,
-    -- Created/updated timestamps (ms since epoch).
-    created_ms          BIGINT  NOT NULL,
-    updated_ms          BIGINT  NOT NULL
-);
+-- D1 compatibility note (2026-05-26): tenant was created in migration 0023
+-- with a minimal schema (tenant_id, primary_region, created_at_ms, updated_at_ms).
+-- This migration adds the signup orchestration columns via ALTER TABLE ADD COLUMN.
+-- D1 does not support ALTER TABLE ADD COLUMN IF NOT EXISTS, so these are plain
+-- ADD COLUMN statements. This is safe on a fresh corelink-prod-d1 DB (Phase C
+-- provisioned 2026-05-26) because 0023 was just applied and these columns don't
+-- exist yet.
+
+ALTER TABLE tenant ADD COLUMN signup_id TEXT;
+ALTER TABLE tenant ADD COLUMN email_hash TEXT;
+ALTER TABLE tenant ADD COLUMN tenant_state TEXT NOT NULL DEFAULT 'dpa_pending'
+    CHECK (tenant_state IN ('active', 'dpa_pending', 'pending_billing_link', 'degraded_read_only'));
+ALTER TABLE tenant ADD COLUMN stripe_customer_id TEXT;
+ALTER TABLE tenant ADD COLUMN created_ms BIGINT;
+ALTER TABLE tenant ADD COLUMN updated_ms BIGINT;
+
+-- NOTE: signup_id UNIQUE and email_hash UNIQUE constraints cannot be added via
+-- ALTER TABLE ADD COLUMN in SQLite/D1. Uniqueness is enforced at the application
+-- layer (WI-S19-001 atomic signup handler) + via the UNIQUE indexes below.
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tenant_signup_id_unique
+    ON tenant (signup_id)
+    WHERE signup_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tenant_email_hash_unique
+    ON tenant (email_hash)
+    WHERE email_hash IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_tenant_email_hash
     ON tenant (email_hash);
