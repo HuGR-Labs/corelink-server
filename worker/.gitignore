@@ -1,0 +1,14 @@
+# Build output
+dist/
+
+# Coverage reports
+coverage/
+
+# Generated wrangler types
+worker-configuration.d.ts
+
+# Node modules (managed by pnpm at workspace root)
+node_modules/
+
+# Wrangler dev state
+.wrangler/

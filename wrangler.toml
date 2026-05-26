@@ -5,15 +5,15 @@
 name = "corelink"
 compatibility_date = "2026-04-01"
 
-# Worker (control plane) — a implementar depois em ./worker/
-# main = "worker/src/index.ts"
+# Worker (control plane) — Wave 32 Phase B implementation
+main = "worker/src/index.ts"
 
 # Container com o servidor gRPC Rust
 [[containers]]
 class_name = "CoreLinkServer"
 image = "./Dockerfile"
 max_instances = 5
-instance_type = "standard"
+instance_type = "standard-1"
 
 # Durable Object que gerencia lifecycle do Container + event bus
 [[durable_objects.bindings]]
@@ -268,7 +268,7 @@ bucket_name = "corelink-manifest-syd"
 class_name = "CoreLinkServer"
 image = "./Dockerfile"
 max_instances = 20
-instance_type = "standard"
+instance_type = "standard-1"
 
 # R2-10 — prod KV / D1 / DO bindings. IDs are placeholders pending
 # the `wrangler kv namespace create --env prod` / `wrangler d1 create
@@ -405,7 +405,7 @@ class_name = "RolloutController"
 class_name = "CoreLinkServer"
 image = "./Dockerfile"
 max_instances = 10
-instance_type = "standard"
+instance_type = "standard-1"
 
 # Staging crons — chaos + synthetic-pager fire here too (per WI-S17/S20
 # default = dev/staging only). Prod remains crons-omitted.
