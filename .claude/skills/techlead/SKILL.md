@@ -112,6 +112,102 @@ After 5 invocations, review: did agents avoid the discovery phase? Did premature
 
 ---
 
+## Section 0.6 — Parallel Dispatch Protocol (MANDATORY, added 2026-05-26)
+
+> **User mandate 2026-05-26:** *"voce pode orquestrador ate 6 agents sonnet ao mesmo tempo beleza? E importante que os prompts e briefing que forem para agents sejam sota para que o trabalho caia mastigado pra eles."* — orchestrator may run up to **6 concurrent Sonnet agents** when their work is conflict-disjoint.
+
+**Trigger:** any time the orchestrator is about to dispatch a new `Agent` while ≥1 prior agent is still in flight.
+
+**Refuse the parallel dispatch** until the conflict map is produced.
+
+### Hard cap
+
+**Max-parallel: 6** Sonnet agents at any moment. Authorized by Owner 2026-05-26. Going beyond requires explicit Owner approval per dispatch.
+
+### Pre-dispatch conflict map (MANDATORY for each parallel dispatch)
+
+Before dispatching agent N+1 while agents 1..N are running, produce this table:
+
+| Agent | Touches (paths) | Mutates (atomic sites) | Reads-only |
+|---|---|---|---|
+| 1 | `crates/A/` `crates/B/` | `Cargo.toml:L149-150` | `crates/C/` |
+| 2 | `apps/X/` `tools/Y/` | `Cargo.toml:L214-217` `Dockerfile:L24` | `crates/D/` |
+| ... | | | |
+
+For each pair `(i, j)` of running+candidate agents, classify the overlap:
+
+- **CONFLICT-FREE** — zero overlap on `Touches` OR overlap is only on `Reads-only` sets → SAFE PARALLEL
+- **UNION-RESOLVABLE** — overlap is on `Cargo.toml [workspace.members]` lines, `CHANGELOG.md` rows, `debt-register` rows, audit-doc appendices, or other append-only/list-only files → SAFE PARALLEL (resolve via UNION at merge time)
+- **MUTATION-CONFLICT** — both agents modify the SAME file at the SAME atomic site (function body, mod declarations, struct fields, single SQL migration) → **SEQUENTIAL ONLY**. Do NOT dispatch in parallel.
+
+### Decision matrix per pair
+
+```
+        | Touches  | Mutates   | Verdict
+--------+----------+-----------+----------------
+1 vs 2  | disjoint | disjoint  | PARALLEL
+1 vs 2  | shared   | disjoint  | PARALLEL (caller verifies later)
+1 vs 2  | shared   | append-only same file  | PARALLEL (union-resolve)
+1 vs 2  | shared   | overlap same file:line | SEQUENTIAL
+```
+
+### Special-case: workspace.members + Cargo.lock
+
+Cargo.toml `[workspace.members = [...]]` and `Cargo.lock` are append/union-resolvable. Two agents adding entries → UNION at merge time, no real conflict (we've done this in Stream A1+B merge). Two agents REMOVING the SAME entry → conflict but trivial (both removals converge). Two agents EDITING the SAME entry → sequential.
+
+### Merge order when parallel agents return
+
+When multiple parallel agents SEAL, merge in this order:
+
+1. **Smallest blast-radius first** (`git diff --stat` smaller wins). Mechanical out-of-tree moves before complex refactors.
+2. **Independent agents** (no shared files) can merge in any order.
+3. **Union-resolvable conflicts** resolved with explicit UNION on the conflict marker; document in merge commit message.
+4. **Last-merged agent's branch** absorbs all rebase friction; pre-validate locally before pushing.
+
+### When SEQUENTIAL is the right call
+
+Pick sequential (1 agent at a time) when:
+
+- The work is THE SAME mega-file decomposition (e.g., handler.rs split — only one agent should touch it).
+- The work is INVERSE coupling (agent X removes files that agent Y reads).
+- The work changes the public API of a crate that other agents depend on AT BUILD TIME (agent X breaks compile while agent Y rebases on top → cascading red).
+- Owner explicitly picked "sequential safe" per question (e.g., 2026-05-26 Stage 2 dispatch choice).
+
+### Recovery from one-agent failure in parallel batch
+
+If agent K (of N parallel) reports premature-exit or hard-pause-triggers:
+
+1. Agents 1..N (excluding K) continue independently — they are in isolated worktrees, K's failure does NOT poison them.
+2. Apply `/techlead` to K's worktree per partial-SEAL pattern (Stream A1 precedent — accept partial + dispatch follow-on).
+3. Do NOT cancel or re-dispatch the other N-1 agents.
+4. K's re-dispatch (if needed) goes into the next parallel batch with updated conflict map (K's partial commits may now intersect with other agents' work).
+
+### Calibration entry
+
+After each parallel batch completes, log:
+```
+2026-MM-DD | parallel-batch | <N> agents | conflicts-hit: <count> | union-resolves: <count> | sequential-rebases: <count>
+```
+
+After 3 parallel batches, review whether the conflict-map predictions were accurate. Adjust the decision matrix if real-world overlaps weren't predicted.
+
+### Anti-protocol (refuse these)
+
+- ❌ Dispatching N+1 without explicitly producing the conflict map first.
+- ❌ Assuming "different directories = parallel-safe" (always check Cargo.toml + workspace-level mutation surfaces).
+- ❌ Sequential-dispatching when conflict-free parallelism would have been safe (wastes wall-clock).
+- ❌ Parallel-dispatching when MUTATION-CONFLICT predicted (creates merge nightmares).
+- ❌ Going past 6 concurrent without Owner check-in (Owner authorized 6, not infinity).
+
+### Pro-protocol
+
+- ✅ Compute conflict map (≤5 min bash) before each parallel dispatch.
+- ✅ Default to parallel when CONFLICT-FREE or UNION-RESOLVABLE.
+- ✅ Default to sequential when MUTATION-CONFLICT predicted.
+- ✅ Document the conflict map inline in the dispatch packet sent to each agent ("agent K is parallel-safe with X, Y, Z because reasons").
+
+---
+
 ## Section 1 — Resolve the target
 
 The skill is invoked as `/techlead <target>` where `<target>` is one of:
