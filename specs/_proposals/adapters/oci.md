@@ -1,3 +1,20 @@
+---
+id: "PROPOSAL-2026-05-26-ADAPTER-OCI"
+type: "governance"
+doc_status: "DRAFT"
+audit_status: "ACTIVE"
+version: "0.1.0"
+created: "2026-05-26"
+updated: "2026-05-26"
+owner: "Gustavo Schneiter"
+final_approver: "Gustavo Schneiter"
+reviewers: []
+supersedes: null
+superseded_by: null
+tags: ["proposal", "adapters", "wave-34", "oci", "package-manager"]
+references:
+---
+
 # Adapter Contract — OCI Registry (Docker, containerd, podman, buildah)
 
 **Wave:** 34 · **Crate target:** `corelink-adapter-oci` · **Owner:** Gustavo Schneiter · **Authored:** 2026-05-26

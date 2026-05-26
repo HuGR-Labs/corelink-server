@@ -1,3 +1,20 @@
+---
+id: "PROPOSAL-2026-05-26-ADAPTER-CONTRACTS-INDEX"
+type: "governance"
+doc_status: "DRAFT"
+audit_status: "ACTIVE"
+version: "0.1.0"
+created: "2026-05-26"
+updated: "2026-05-26"
+owner: "Gustavo Schneiter"
+final_approver: "Gustavo Schneiter"
+reviewers: []
+supersedes: null
+superseded_by: null
+tags: ["proposal", "adapters", "wave-34", "package-managers", "index"]
+references:
+---
+
 # Adapter Contracts — Wave 34 (Adapter Campaign)
 
 > **Authored:** 2026-05-26 (post Wave 33 Stage 2 in flight).
