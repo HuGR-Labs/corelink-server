@@ -42,6 +42,10 @@ COPY tools ./tools
 # members and are deliberately excluded to keep the build context minimal.
 COPY apps/migrate-single-to-multi-region ./apps/migrate-single-to-multi-region
 COPY tests ./tests
+# Wave-32 Phase E APPLY fix: many crates embed SQL migration files via
+# include_str!("../../../migrations/d1/*.sql") at compile time. The
+# migrations/ directory must be present in the build context.
+COPY migrations ./migrations
 
 # Cache de deps: stub `main.rs` + `lib.rs` no container crate (o bin
 # depende do lib do mesmo crate via `use corelink_server::*`) + builda só
