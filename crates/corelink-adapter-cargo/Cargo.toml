@@ -1,0 +1,73 @@
+[package]
+name = "corelink-adapter-cargo"
+description = "CoreLink Cargo build cache adapter (Wave-34). Implements the sccache HTTP storage backend wire (GET/PUT/HEAD /<key>) against CoreLink's per-tenant content-addressable storage. Binary build artifacts are cached so `cargo build` invocations across a CI fleet hit CoreLink on repeat builds. BLAKE3 key alignment: sccache's HTTP backend already uses BLAKE3 — zero translation cost. PAT-scoped (`cas:read` + `cas:write`). See `specs/_proposals/adapters/cargo.md` and `specs/_audits/2026-05-26-w34-adapter-cargo-v2.md`."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+# Audit chokepoint — `AuditEmitter` (sync trait) per Wave-33 Stage 0
+# sub-step 4 rationale. Audit emit MUST precede every CAS put.
+corelink-audit = { workspace = true }
+# HTTP server stack — axum routes sccache's GET/PUT/HEAD wire.
+axum = { workspace = true }
+tower = { workspace = true }
+http = { workspace = true }
+http-body-util = { workspace = true }
+bytes = { workspace = true }
+# Async runtime.
+tokio = { workspace = true }
+async-trait = { workspace = true }
+# Error / serde / tracing.
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+# Constant-time PAT compare + secret zeroize.
+subtle = { workspace = true }
+secrecy = "0.10"
+# Encoding (hex for digest display).
+hex = { workspace = true }
+# Unix-ms timestamps for audit envelopes.
+uuid = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+tokio-test = { workspace = true }
+proptest = { workspace = true }
+wiremock = "0.6"
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+serde_json = { workspace = true }
+corelink-audit = { workspace = true }
+subtle = { workspace = true }
+async-trait = { workspace = true }
+
+[[test]]
+name = "smoke"
+path = "tests/smoke.rs"
+
+[[test]]
+name = "prop_translate"
+path = "tests/prop_translate.rs"
+
+[[test]]
+name = "adversarial"
+path = "tests/adversarial.rs"
