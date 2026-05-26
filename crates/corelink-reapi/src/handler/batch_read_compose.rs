@@ -13,7 +13,7 @@ use crate::error_map::GRPC_NOT_FOUND;
 use crate::pat::TenantContext;
 use crate::proto::reapi::batch_read_blobs_response;
 use crate::read::MissReason;
-use corelink_worker::TenantCtx as StorageTenantCtx;
+use corelink_replication::region_resolver::TenantCtx as StorageTenantCtx;
 
 use super::audit_emit_batch::{
     emit_read_completed_audit_post_stream_at_slot, emit_read_miss_audit_at_slot,

@@ -58,6 +58,13 @@ subtle = { workspace = true }
 # bleeds into the wasm32 build).
 corelink-worker = { workspace = true }
 
+# Wave-33 Stage 2.E: canonical wave-33 import surfaces — wasm32 sources
+# (`cf_r2.rs`, `r2_real.rs`, `cf_kv.rs`, `kv_real.rs`) use
+# `corelink_cas::r2_storage::*` / `corelink_cas::cache::*` instead of
+# reaching directly into the impl crate `corelink-worker`. The
+# `corelink-cas` umbrella re-exports those modules verbatim.
+corelink-cas = { workspace = true }
+
 # Error types.
 thiserror = { workspace = true }
 
@@ -108,3 +115,6 @@ rand_chacha = "0.9"
 bytes = { workspace = true }
 tokio = { workspace = true }
 corelink-worker = { workspace = true }
+# Wave-33 Stage 2.E: native tests use `corelink_cas::r2_storage::*`
+# canonical path instead of `corelink_worker::storage::r2::*`.
+corelink-cas = { workspace = true }

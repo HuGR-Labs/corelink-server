@@ -55,6 +55,13 @@ host-server = [
     # Pull the WI-S02-004 timing-padding middleware into the host-server
     # build so the canonical layer is mounted on `cas_get_router` (HTTP
     # REST) and on the gRPC stack via the `MissMarker` extension.
+    #
+    # Wave-33 Stage 2.E: route the feature flag through the canonical
+    # `corelink-auth` umbrella (which gates the same `tower-middleware`
+    # feature on `corelink-worker/tower-middleware`). Consumers compile
+    # against `corelink_auth::middleware::*` / `corelink_auth::worker_session::*`
+    # rather than `corelink_worker::middleware::*` / `corelink_worker::auth::*`.
+    "corelink-auth/tower-middleware",
     "corelink-worker/tower-middleware",
 ]
 
@@ -62,6 +69,16 @@ host-server = [
 corelink-hash = { workspace = true }
 corelink-tenant-path = { workspace = true }
 corelink-worker = { workspace = true }
+# Wave-33 Stage 2.E: canonical wave-33 import surfaces — consumers in this
+# crate now use `corelink_cas::r2_storage::*` / `corelink_cas::cache::*`,
+# `corelink_replication::region_resolver::{Region, TenantCtx}`, and
+# `corelink_auth::middleware::*` instead of reaching directly into the
+# impl crate `corelink-worker`. The `corelink-worker` dep stays because
+# this crate also pulls in trait-level types not re-exported by the
+# umbrellas; surface-level imports route through the canonical paths.
+corelink-cas = { workspace = true }
+corelink-replication = { workspace = true }
+corelink-auth = { workspace = true }
 corelink-meta = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }

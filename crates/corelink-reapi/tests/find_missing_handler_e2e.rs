@@ -54,8 +54,8 @@ use corelink_reapi::proto::reapi::{
 };
 use corelink_reapi::{AuthScope, CasWriteService, StubPatValidator};
 use corelink_tenant_path::TenantDerivationKey;
-use corelink_worker::storage::r2::{InMemoryR2, R2Reader, R2Writer};
-use corelink_worker::Region;
+use corelink_cas::r2_storage::{InMemoryR2, R2Reader, R2Writer};
+use corelink_replication::region_resolver::Region;
 use tokio::net::TcpListener;
 use tonic::metadata::MetadataValue;
 use tonic::transport::{Channel, Server};

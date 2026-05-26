@@ -71,8 +71,8 @@ use std::sync::Arc;
 
 use corelink_meta::MetaStore;
 use corelink_tenant_path::TenantDerivationKey;
-use corelink_worker::storage::r2::{R2Backend, R2Reader, R2Writer};
-use corelink_worker::TenantCtx as StorageTenantCtx;
+use corelink_cas::r2_storage::{R2Backend, R2Reader, R2Writer};
+use corelink_replication::region_resolver::TenantCtx as StorageTenantCtx;
 use tonic::{Request, Status};
 
 use crate::orchestrator::OrphanReconciler;

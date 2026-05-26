@@ -11,7 +11,7 @@
 
 use bytes::Bytes;
 use corelink_hash::Digest;
-use corelink_worker::Region;
+use corelink_replication::region_resolver::Region;
 use tonic::Status;
 use uuid::Uuid;
 

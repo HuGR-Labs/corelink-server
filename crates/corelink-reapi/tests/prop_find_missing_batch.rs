@@ -34,8 +34,8 @@ use corelink_meta::{
 };
 use corelink_reapi::find_missing::FindMissingOrchestrator;
 use corelink_tenant_path::TenantDerivationKey;
-use corelink_worker::storage::r2::{InMemoryR2, R2Writer};
-use corelink_worker::{Region, TenantCtx};
+use corelink_cas::r2_storage::{InMemoryR2, R2Writer};
+use corelink_replication::region_resolver::{Region, TenantCtx};
 use proptest::collection::vec;
 use proptest::prelude::*;
 use uuid::Uuid;

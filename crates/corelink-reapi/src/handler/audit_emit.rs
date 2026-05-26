@@ -13,7 +13,7 @@
 //! functions share the BLAKE3-derived UUIDv7 stamping discipline.
 
 use corelink_hash::Digest;
-use corelink_worker::{Region, TenantCtx as StorageTenantCtx};
+use corelink_replication::region_resolver::{Region, TenantCtx as StorageTenantCtx};
 use uuid::Uuid;
 
 use crate::read::MissReason;

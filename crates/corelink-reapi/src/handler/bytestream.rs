@@ -12,7 +12,7 @@ use std::sync::Arc;
 use bytes::Bytes;
 use corelink_hash::Digest;
 use corelink_meta::MetaStore;
-use corelink_worker::storage::r2::R2Backend;
+use corelink_cas::r2_storage::R2Backend;
 use tonic::{async_trait, Code, Request, Response, Status, Streaming};
 
 use crate::capabilities::MAX_CAS_BLOB_SIZE_BYTES;

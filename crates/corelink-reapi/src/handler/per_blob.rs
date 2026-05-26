@@ -6,8 +6,8 @@
 use bytes::Bytes;
 use corelink_hash::Digest;
 use corelink_meta::MetaStore;
-use corelink_worker::storage::r2::R2Backend;
-use corelink_worker::{Region, TenantCtx as StorageTenantCtx};
+use corelink_cas::r2_storage::R2Backend;
+use corelink_replication::region_resolver::{Region, TenantCtx as StorageTenantCtx};
 use uuid::Uuid;
 
 use crate::capabilities::MAX_CAS_BLOB_SIZE_BYTES;

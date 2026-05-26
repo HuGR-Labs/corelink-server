@@ -35,7 +35,7 @@ use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::fmt;
 
-use corelink_worker::Region;
+use corelink_replication::region_resolver::Region;
 use thiserror::Error;
 use uuid::Uuid;
 

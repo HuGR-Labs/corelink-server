@@ -32,7 +32,7 @@
 
 use corelink_hash::HashMismatch;
 use corelink_meta::MetaError;
-use corelink_worker::storage::error::R2Error;
+use corelink_cas::r2_storage::R2Error;
 
 /// `error_taxonomy.md` code for `AuthStubError::PatInvalid`.
 pub const COR_AUTH_PAT_INVALID: &str = "COR_AUTH_PAT_INVALID";

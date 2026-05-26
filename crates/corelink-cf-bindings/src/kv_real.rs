@@ -63,7 +63,7 @@
 //! - Tenant prefix enforced (typed wrapper + runtime check + CT cmp).
 //! - `#[non_exhaustive]` on public enums.
 
-use corelink_worker::cache::kv::{KvBackend, KvError};
+use corelink_cas::cache::kv::{KvBackend, KvError};
 use std::fmt;
 #[cfg(target_arch = "wasm32")]
 use std::future::Future;

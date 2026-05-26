@@ -35,7 +35,7 @@
 use corelink_cf_bindings::kv_real::{
     AuditFn, CfKvNamespaceReal, KvOp, TenantPrefix, CF_KV_MIN_TTL_SECS,
 };
-use corelink_worker::cache::kv::{KvBackend, KvError};
+use corelink_cas::cache::kv::{KvBackend, KvError};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};

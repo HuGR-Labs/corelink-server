@@ -19,7 +19,7 @@
 //! Workers are single-threaded so wrapping the `!Send` JS futures is
 //! sound. See module docs in `cf_r2.rs` for the full rationale.
 
-use corelink_worker::cache::kv::{KvBackend, KvError};
+use corelink_cas::cache::kv::{KvBackend, KvError};
 use std::future::Future;
 use worker::kv::KvStore;
 

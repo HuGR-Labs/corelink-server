@@ -1554,6 +1554,7 @@ name = "corelink-cf-bindings"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "corelink-cas",
  "corelink-worker",
  "getrandom 0.4.2",
  "proptest",
@@ -2434,9 +2435,12 @@ dependencies = [
  "axum",
  "blake3",
  "bytes",
+ "corelink-auth",
+ "corelink-cas",
  "corelink-client-verify",
  "corelink-hash",
  "corelink-meta",
+ "corelink-replication",
  "corelink-tenant-path",
  "corelink-worker",
  "futures",
