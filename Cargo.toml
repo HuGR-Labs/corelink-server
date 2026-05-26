@@ -146,7 +146,7 @@ members = [
     "crates/corelink-supply-chain-policy",
     "crates/corelink-config-api",
     "crates/corelink-config-do",
-    "crates/corelink-dt-cli",
+    "tools/dt-cli",
     "crates/corelink-dt-reconcile",
     "crates/corelink-dt-webhook",
     "crates/corelink-dual-approval",
@@ -616,7 +616,7 @@ corelink-privacy-residency-enforcement = { path = "crates/corelink-privacy-resid
 corelink-config-do = { path = "crates/corelink-config-do" }
 corelink-config-api = { path = "crates/corelink-config-api" }
 corelink-dt-webhook = { path = "crates/corelink-dt-webhook" }
-corelink-dt-cli = { path = "crates/corelink-dt-cli" }
+corelink-dt-cli = { path = "tools/dt-cli" }
 corelink-dt-reconcile = { path = "crates/corelink-dt-reconcile" }
 corelink-dual-approval = { path = "crates/corelink-dual-approval" }
 corelink-admin-api = { path = "crates/corelink-admin-api" }
