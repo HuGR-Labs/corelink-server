@@ -90,6 +90,20 @@ pub mod http_read;
 #[cfg(feature = "host-server")]
 pub mod timing_padding_wiring;
 
+/// Wave 33 Stage 2.A-v2 additive aggregator (per 2.A HALT audit §9(b)):
+/// canonical wave-33 path for the worker-side REAPI adapter surface
+/// (timing-padding wiring helpers, request-padding bracket types) that
+/// physically lives in `corelink-worker::reapi`. Gated behind
+/// `host-server` because the underlying `corelink-worker::reapi` module
+/// requires `tower-middleware`, which `host-server` already pulls
+/// (see Cargo.toml `host-server` feature definition).
+#[cfg(feature = "host-server")]
+pub mod worker_adapter {
+    //! Worker-side REAPI adapter — canonical wave-33 surface for
+    //! `corelink-worker::reapi`.
+    pub use corelink_worker::reapi::*;
+}
+
 pub use audit::{
     AuditEnvelope, AuditEnvelopeBuilder, REAPI_CROSS_TENANT_ATTEMPT, REAPI_PUT_COMPLETED,
     REAPI_R2_ORPHAN_DETECTED, REAPI_READ_COMPLETED, REAPI_READ_MISS, REAPI_TOMBSTONED_READ_ATTEMPT,
