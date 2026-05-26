@@ -33,3 +33,9 @@ corelink-replica-worker = { workspace = true }
 corelink-replication-coordinator = { workspace = true }
 corelink-failover-router = { workspace = true }
 corelink-rollout-controller = { workspace = true }
+
+# Wave 33 Stage 2.A-v2 additive aggregator (per 2.A HALT audit §9(b)):
+# expose corelink-worker's Region enum + region-resolver state under
+# canonical wave-33 path `corelink_replication::region_resolver::*`.
+# Region is top-level public in corelink-worker (no feature gate).
+corelink-worker = { workspace = true }

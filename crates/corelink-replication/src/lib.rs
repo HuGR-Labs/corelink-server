@@ -87,6 +87,17 @@ pub mod region;
 pub mod replica;
 pub mod rollout;
 
+/// Wave 33 Stage 2.A-v2 additive aggregator (per 2.A HALT audit §9(b)):
+/// canonical wave-33 path for the worker-side region resolver — the
+/// `Region` enum + canonical bucket-name mapping that physically lives
+/// at the top level of `corelink-worker`. Re-export rather than physical
+/// move preserves 63-consumer surface + Stage 1 Option-A façade design.
+pub mod region_resolver {
+    //! Worker-side region resolver — canonical wave-33 surface for
+    //! `corelink-worker::Region` (and the corresponding `TenantCtx`).
+    pub use corelink_worker::{Region, TenantCtx};
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
