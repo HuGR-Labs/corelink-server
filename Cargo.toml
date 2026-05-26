@@ -419,6 +419,14 @@ members = [
     # `specs/_proposals/adapters/cargo.md` (v2 redraft) and
     # `specs/_audits/2026-05-26-w34-adapter-cargo-v2.md`.
     "crates/corelink-adapter-cargo",
+    # Wave-34 — npm registry caching proxy adapter. `npm install`
+    # (and pnpm / yarn / bun) consult CoreLink as a transparent
+    # caching mirror in front of registry.npmjs.org. Metadata cached
+    # in KV with TTL; tarballs in CAS keyed by SHA256 of tarball URL.
+    # Mandatory pre-CAS-store SHA1 integrity check vs dist.shasum.
+    # See `specs/_proposals/adapters/npm.md` and
+    # `specs/_audits/2026-05-26-w34-adapter-npm-v2.md`.
+    "crates/corelink-adapter-npm",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
@@ -718,6 +726,8 @@ corelink-adapter-brew = { path = "crates/corelink-adapter-brew" }
 corelink-adapter-oci = { path = "crates/corelink-adapter-oci" }
 # Wave-34 — Cargo build cache adapter (sccache HTTP backend wire).
 corelink-adapter-cargo = { path = "crates/corelink-adapter-cargo" }
+# Wave-34 — npm registry caching proxy adapter (see workspace.members comment).
+corelink-adapter-npm = { path = "crates/corelink-adapter-npm" }
 
 # CLI tooling (WI-S15-001 / WI-S15-005)
 toml = "0.8"
