@@ -17,7 +17,21 @@ references:
 
 # Adapter Contract — npm (Node.js)
 
-**Wave:** 34 · **Crate target:** `corelink-adapter-npm` · **Owner:** Gustavo Schneiter · **Authored:** 2026-05-26
+**Wave:** 34 · **Crate target:** `corelink-adapter-npm` · **Owner:** Gustavo Schneiter · **Authored:** 2026-05-26 · **Redrafted:** 2026-05-26 v2 (inline-ports mandate)
+
+## 0. PATTERN MANDATE — inline-ports (MUST READ FIRST)
+
+This adapter MUST follow the **inline-ports pattern** convergently established by pip + brew
++ oci on `main` at `98170fb3` / `d1a275f9` / `3d3788dd`. **Do not bind to workspace traits
+directly. Do not mutate umbrella `lib.rs` files.** Declare adapter-local port traits
+(`CasStore` + `KvStore` + `TenantResolver`) in `src/ports.rs`. Provide in-memory test fakes
+colocated.
+
+**Canonical template to mirror:** pip is the closest analogue — both have CAS + KV. See
+`crates/corelink-adapter-pip/src/ports.rs` (121 LOC; 3 async traits + handle type aliases).
+SEAL audit precedent: `specs/_audits/2026-05-26-w34-adapter-pip.md` §3.
+
+Document this inline-ports decision in your SEAL audit §3 (mirror pip/brew/oci §3 / §6).
 
 ## 1. Headline + scope
 
@@ -42,17 +56,21 @@ Clients send `Authorization: Bearer <token>` for private packages; public reads 
 
 ## 3. Mapping to CoreLink
 
-| npm wire | CoreLink call |
+| npm wire | NpmAdapter port call (all adapter-local async ports) |
 |---|---|
-| `GET /<pkg>` | `cache_meta_get(tenant, pkg)` → on miss: upstream fetch + `cache_meta_put`; on hit: serve cached JSON |
-| `GET /<pkg>/-/<tarball>.tgz` | digest-keyed: `CasStore::get(tenant, blake3(tarball_url))`; on miss: upstream fetch + `CasStore::put` + audit emit `npm.tarball.cache_write` |
+| `GET /<pkg>` | `kv.get(&tenant, &format!("meta:{pkg}"))` → on `None` or stale (per TTL): upstream fetch + `kv.put(&tenant, key, json_bytes, now_ms)`; hit fresh → serve cached JSON |
+| `GET /<pkg>/-/<tarball>.tgz` | `cas.get(&tenant, &Digest::from(blake3(tarball_url)))` → on `None`: upstream fetch + verify tarball SHA matches metadata-published shasum → `auditor.emit(npm.tarball.cache_write)` (BEFORE put) → `cas.put(...)` |
 | `GET /-/ping` | `200 {}` direct, no upstream |
 | `GET /-/v1/search` | `501 Not Implemented` (out of scope) |
 
+`CasStore` + `KvStore` + `TenantResolver` are **adapter-local async traits** in
+`crates/corelink-adapter-npm/src/ports.rs` (mirror pip's shape). Production wiring deferred
+to Wave 35.
+
 **Metadata vs binary blobs:** metadata is short JSON, mutable upstream (new versions get published). Binary tarballs are immutable (npm enforces "no republish under same name+version"). Therefore:
 
-- Tarballs: cache forever under `blake3(url)` (content-addressable; immutable). **Stored in CAS.**
-- Metadata: cache with TTL (5min default; configurable per request via `Cache-Control: max-age` upstream). **Stored in KV** (`corelink-adapters-cloud::cf::kv`), NOT CAS.
+- Tarballs: cache forever under `blake3(url)` (content-addressable; immutable). **Stored in CAS port.**
+- Metadata: cache with TTL (5min default; configurable per request via `Cache-Control: max-age` upstream). **Stored in KV port** (returns `(value, inserted_at_unix_ms)` so adapter checks freshness in pure logic, like pip).
 
 ## 4. Crate structure
 
@@ -77,19 +95,66 @@ crates/corelink-adapter-npm/
 
 Estimated: ~1300 LOC. Per L2.10: every file ≤500 LOC; largest expected `server.rs` (280).
 
-### Dep graph
+### Dep graph (lean; inline-ports = no workspace SPI deps)
 
 ```
 corelink-adapter-npm
-  ├── corelink-cas              (tarball storage)
-  ├── corelink-auth             (PAT → tenant)
-  ├── corelink-audit            (fail-CLOSED emit)
   ├── corelink-core             (TenantId, Digest, SecretWrap)
+  ├── corelink-audit            (only the AuditEmitter trait + AuditEvent type — fail-CLOSED chokepoint)
   ├── corelink-telemetry        (tracing)
-  └── corelink-adapters-cloud   (KV for metadata; reqwest client wrapper)
+  ├── async-trait               (port traits in src/ports.rs)
+  ├── axum                      (HTTP server)
+  ├── reqwest                   (upstream registry.npmjs.org client)
+  ├── secrecy                   (SecretString for PAT)
+  ├── subtle                    (ConstantTimeEq for PAT compare)
+  └── thiserror                 (error enum)
 ```
 
+**NO deps on `corelink-cas`, `corelink-auth`, `corelink-handler-cas`, `corelink-worker`,
+`corelink-adapters-cloud`, `corelink-reapi`.** Production binding to those Stage-1 surfaces
+happens in the Wave 35 `corelink-adapter-host` crate.
+
 ## 5. Trait interface
+
+Inline-ports pattern: declare 3 async traits in
+`crates/corelink-adapter-npm/src/ports.rs`. Mirror pip's `src/ports.rs` shape exactly (commit
+`98170fb3`).
+
+```rust
+// crates/corelink-adapter-npm/src/ports.rs
+use std::sync::Arc;
+use async_trait::async_trait;
+use corelink_core::types::{digest::Digest, tenant::TenantId};
+use crate::error::NpmAdapterError;
+
+#[async_trait]
+pub trait CasStore: Send + Sync + std::fmt::Debug {
+    async fn get(&self, tenant: &TenantId, digest: &Digest)
+        -> Result<Option<Vec<u8>>, NpmAdapterError>;
+    async fn put(&self, tenant: &TenantId, digest: &Digest, bytes: Vec<u8>)
+        -> Result<(), NpmAdapterError>;
+}
+
+#[async_trait]
+pub trait KvStore: Send + Sync + std::fmt::Debug {
+    // Returns (value, inserted_at_unix_ms) for freshness check in pure logic.
+    async fn get(&self, tenant: &TenantId, key: &str)
+        -> Result<Option<(Vec<u8>, u64)>, NpmAdapterError>;
+    async fn put(&self, tenant: &TenantId, key: &str, value: Vec<u8>, inserted_at_unix_ms: u64)
+        -> Result<(), NpmAdapterError>;
+}
+
+#[async_trait]
+pub trait TenantResolver: Send + Sync + std::fmt::Debug {
+    async fn resolve(&self, pat_plaintext: &str) -> Result<TenantId, NpmAdapterError>;
+}
+
+pub type CasStoreHandle = Arc<dyn CasStore>;
+pub type KvStoreHandle = Arc<dyn KvStore>;
+pub type TenantResolverHandle = Arc<dyn TenantResolver>;
+```
+
+Adapter config wires these handles + the workspace `AuditEmitter`:
 
 ```rust
 #[non_exhaustive]
@@ -98,9 +163,9 @@ pub struct NpmAdapterConfig {
     pub upstream_registry: url::Url,   // default https://registry.npmjs.org
     pub metadata_ttl_seconds: u64,     // default 300
     pub tarball_size_limit_bytes: u64, // default 256 MiB
-    pub cas: std::sync::Arc<dyn corelink_cas::CasStore>,
-    pub metadata_kv: std::sync::Arc<dyn corelink_adapters_cloud::cf::kv::KvStore>,
-    pub tenant_resolver: std::sync::Arc<dyn corelink_auth::TenantResolver>,
+    pub cas: crate::ports::CasStoreHandle,
+    pub metadata_kv: crate::ports::KvStoreHandle,
+    pub tenant_resolver: crate::ports::TenantResolverHandle,
     pub auditor: std::sync::Arc<dyn corelink_audit::ports::AuditEmitter>,
 }
 
@@ -128,13 +193,21 @@ pub enum NpmAdapterError {
 
 ## 6. Auth + multi-tenancy
 
-npm clients send `Authorization: Bearer <token>`. The adapter expects `Bearer hugr-pat_<token>` (CoreLink PAT). Resolves to tenant via `TenantResolver`.
+npm clients send `Authorization: Bearer <token>`. The adapter expects `Bearer hugr-pat_<token>` (CoreLink PAT). Calls `tenant_resolver.resolve(pat_plaintext).await?` (adapter-local port from `src/ports.rs`); successful resolve returns `TenantId`.
 
-**Multi-tenant cache:** every CAS key is namespaced with the tenant prefix derived in `corelink-auth::tenant_path`. Tenant A's cached `lodash@4.17.21` tarball is a DIFFERENT CAS key than tenant B's, even though the bytes are identical (intra-tenant only; cross-tenant dedup is post-GA roadmap).
+**Multi-tenant cache:** the adapter passes `&tenant_id` into every `cas.{get,put}` and
+`kv.{get,put}` call. The production wiring of these ports (Wave 35) is responsible for
+enforcing tenant prefix derivation (`corelink_tenant_path::derive_prefix`). From the npm
+adapter's perspective, tenancy is opaque — `TenantId` is threaded through.
 
-PAT scopes required: `npm:read` (custom scope; map to existing scope catalog in `corelink-auth`).
+PAT scopes required: `npm:read` (custom scope; the production `TenantResolver` impl
+validates against the scope catalog). The adapter does NOT validate scopes itself.
 
-**Anonymous reads (no Authorization):** REJECTED at v1. The "public shared namespace" feature that allows unauth'd cache hits is post-GA scope (depends on cross-tenant dedup). Document in §10.
+**Anonymous reads (no Authorization):** REJECTED at v1. The "public shared namespace"
+feature is post-GA (depends on cross-tenant dedup). Documented in §10.
+
+Constant-time PAT comparison happens inside the `TenantResolver` impl, not in the adapter
+handler.
 
 ## 7. Cache invalidation
 
@@ -155,7 +228,18 @@ Operator-side force-invalidation: out of scope; handled via admin plane.
 | **Property** | Metadata TTL: cached entry served fresh under TTL; expired entry triggers upstream refresh; offline upstream with cached entry serves cached. | Round-trip + boundary + offline cases |
 | **Adversarial** | (1) Forged Bearer token → 401 + audit. (2) Tarball larger than `tarball_size_limit_bytes` → 413 + audit. (3) Upstream returns tampered tarball (hash mismatch vs metadata) → reject + audit. (4) Tenant A cannot access tenant B's tarball even if both downloaded same package version. (5) Replay attack: same tarball URL, different bytes upstream → upstream change detected via metadata hash; refresh. | All 5 pass; 0 leaks |
 
-Test infra: `wiremock` for the upstream `registry.npmjs.org`; `InMemoryCasStore` + `InMemoryKvStore` + `InMemoryTenantResolver` + `InMemoryAuditEmitter`. No real npm binary needed except in smoke tier.
+Test infra (all adapter-local or workspace-canonical):
+
+| Role | Fake/impl | Location |
+|---|---|---|
+| CAS read+write | in-memory `HashMap<(TenantId, Digest), Vec<u8>>` impl of `crate::ports::CasStore` | `tests/common.rs` (colocated) |
+| Metadata KV | in-memory `HashMap<(TenantId, String), (Vec<u8>, u64)>` impl of `crate::ports::KvStore` (returns `(value, ts)`) | `tests/common.rs` |
+| Tenant resolver | `FixedTenant { tenant_id }` impl of `crate::ports::TenantResolver` (constant-time PAT compare on fixture) | `tests/common.rs` |
+| Audit emit | `corelink_audit::ports::InMemoryAuditEmitter` (sync; existing workspace fake) | workspace dep |
+| Upstream registry | `wiremock` (mock HTTP server) | dev-dep |
+
+Reference pip's `tests/common.rs` (commit `e279b296`) for the canonical fake layout. No real
+npm binary required except in smoke tier.
 
 ## 9. Acceptance criteria
 

@@ -51,11 +51,59 @@ no "design the trait interface". The contract IS the design.
 
 | # | File | Adapter | Upstream Spec | LOC Target | Status |
 |---|---|---|---|---|---|
-| 1 | `cargo.md` | cargo build cache | Cargo Book §16 | ~400 LOC | DRAFT |
-| 2 | `npm.md` | npm package cache | npm CLI registry API | ~400 LOC | DRAFT |
-| 3 | `pip.md` | pip wheel cache | PEP 503 (Simple Index) + PEP 691 (JSON) | ~400 LOC | DRAFT |
-| 4 | `brew.md` | brew bottle cache | Homebrew bottle DSL + GitHub Packages OCI | ~350 LOC | DRAFT |
-| 5 | `oci.md` | OCI registry / Docker | OCI Distribution Spec v1.1 | ~500 LOC | DRAFT |
+| 1 | `cargo.md` | cargo build cache | Cargo Book §16 | ~400 LOC | **REDRAFT v2** (re-dispatch pending) |
+| 2 | `npm.md` | npm package cache | npm CLI registry API | ~400 LOC | **REDRAFT v2** (re-dispatch pending) |
+| 3 | `pip.md` | pip wheel cache | PEP 503 (Simple Index) + PEP 691 (JSON) | ~400 LOC | **SEALED** (`98170fb3` — 57 tests; inline-ports) |
+| 4 | `brew.md` | brew bottle cache | Homebrew bottle DSL + GitHub Packages OCI | ~350 LOC | **SEALED** (`d1a275f9` — 27 tests; inline-ports) |
+| 5 | `oci.md` | OCI registry / Docker | OCI Distribution Spec v1.1 | ~500 LOC | **SEALED** (`3d3788dd` — 59 tests; inline-ports) |
+
+## Architectural pattern — inline-ports (convergent agent decision, 2026-05-26)
+
+**Status:** canonical for Wave 34 after **3-way independent convergence** (pip / brew / oci agents
+each arrived at the same design without coordination on `wt/r-prep-w34-adapter-{pip,brew,oci}`).
+
+**v1 packet error:** the original contract drafts referenced trait surfaces that do not exist
+in the workspace (`corelink_cas::CasStore`, `corelink_auth::TenantResolver`,
+`corelink_adapters_cloud::cf::kv::KvStore`). Cargo + npm agents HALTed pre-mutation per
+"executa, não decide". Pip + brew + oci agents each independently chose to declare minimal
+**adapter-local port traits** in `src/ports.rs` (parallel-safe; no umbrella mutation; isolated
+adapter domain).
+
+**Why inline-ports is SOTA (not a workaround):**
+
+- Hexagonal architecture purity: adapter defines its own ports in its own domain language
+  (`TenantId` + `Digest` Rust-native types; async uniform; TTL with timestamp for pip's KV).
+- Workspace SPI (`CasReadHandler` + `CasWriteHandler` + `KvBackend` + `PatValidator`) is
+  intentionally split-API / mixed sync-async — exposing it directly at the adapter boundary
+  would leak workspace internals into the adapter modules.
+- Each port surface is shaped by the adapter's specific needs (brew has no KV; oci has
+  `ManifestKvStore` specific; pip's KV returns `(value, ts)` for freshness check).
+- Production wiring (bridging adapter ports → workspace SPI) is the load-bearing translation
+  tier — not debt, but the correct architectural layer.
+
+**Canonical reference templates** (merged on main):
+
+- `crates/corelink-adapter-pip/src/ports.rs` — async `CasStore` + `KvStore` + `TenantResolver`
+  (most comprehensive; includes TTL-aware KV).
+- `crates/corelink-adapter-brew/src/ports.rs` — async `CasStore` + `TenantResolver` (CAS-only;
+  no KV needed).
+- `crates/corelink-adapter-oci/src/ports.rs` — async `BlobStore` + `ManifestKvStore` +
+  `TenantResolver` (with in-mem fakes for upload-session state).
+
+**Wave 35 consolidation campaign:** extract `corelink-adapter-host` crate that provides
+production bridges (one `impl pip::CasStore for CasHandlerBridge` per adapter, ~50 LOC each)
+once all 5 adapters have stabilised. Pre-empted at Wave 34: lock the inline-ports pattern
+NOW so cargo + npm land consistent with pip/brew/oci.
+
+**Mandate for re-dispatched cargo + npm contracts:**
+
+- Declare adapter-local `pub trait CasStore` / `pub trait TenantResolver` (and `KvStore` if
+  needed) in `src/ports.rs` matching the pip/brew/oci shape (async, tenant-scoped,
+  domain-native types, in-memory test fake colocated).
+- Do NOT bind to workspace traits directly. Do NOT mutate umbrella `lib.rs` files.
+- Document the inline-ports decision in the adapter's SEAL audit §3 (same template as
+  `specs/_audits/2026-05-26-w34-adapter-{pip,brew,oci}.md`).
+- Production bridges deferred to Wave 35 explicitly.
 
 ## Shape of each contract (template)
 

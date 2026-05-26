@@ -17,7 +17,23 @@ references:
 
 # Adapter Contract — Cargo (Rust)
 
-**Wave:** 34 (Adapter Campaign) · **Crate target:** `corelink-adapter-cargo` · **Owner:** Gustavo Schneiter · **Authored:** 2026-05-26
+**Wave:** 34 (Adapter Campaign) · **Crate target:** `corelink-adapter-cargo` · **Owner:** Gustavo Schneiter · **Authored:** 2026-05-26 · **Redrafted:** 2026-05-26 v2 (inline-ports mandate)
+
+## 0. PATTERN MANDATE — inline-ports (MUST READ FIRST)
+
+This adapter MUST follow the **inline-ports pattern** convergently established by pip + brew
++ oci on `main` at `98170fb3` / `d1a275f9` / `3d3788dd`. **Do not bind to workspace traits
+directly. Do not mutate umbrella `lib.rs` files.** Declare adapter-local port traits in
+`src/ports.rs`. Provide in-memory test fakes colocated in the same file.
+
+**Canonical templates to mirror** (look at brew first; cargo is the closest analogue — both
+CAS-only, no KV):
+
+- `crates/corelink-adapter-brew/src/ports.rs` — async `CasStore` + `TenantResolver`; ~107 LOC.
+- `crates/corelink-adapter-pip/src/ports.rs` — adds `KvStore` (not needed here); ~121 LOC.
+- `specs/_audits/2026-05-26-w34-adapter-brew.md` §6 + §3 — SEAL audit precedent.
+
+Document this inline-ports decision in your SEAL audit §3 (mirrors the brew/pip/oci §3 / §6).
 
 ## 1. Headline + scope
 
@@ -40,11 +56,13 @@ Canonical reference: https://github.com/mozilla/sccache/blob/main/docs/HTTP.md
 
 ## 3. Mapping to CoreLink
 
-| sccache wire | CoreLink call |
+| sccache wire | CargoAdapter port call (adapter-local trait, async, tenant-scoped) |
 |---|---|
-| `GET /<key>` | `corelink_cas::CasStore::get(tenant_id, Digest(<key>))` |
-| `PUT /<key>` | `corelink_cas::CasStore::put(tenant_id, Digest(<key>), bytes)` + audit emit `cargo.cache.write` |
-| `HEAD /<key>` | `corelink_cas::CasStore::exists(tenant_id, Digest(<key>))` |
+| `GET /<key>` | `cas.get(&tenant_id, &Digest::from(key))` → `Ok(Some(bytes))` (hit) / `Ok(None)` (miss) → 200 / 404 |
+| `PUT /<key>` | `cas.put(&tenant_id, &Digest::from(key), bytes)` after `auditor.emit(cargo.cache.write)` (fail-CLOSED — audit BEFORE put) |
+| `HEAD /<key>` | `cas.get(&tenant_id, &Digest::from(key))` → 200 (Some) / 404 (None); discard bytes. No separate `exists()` on the port — use `get` and ignore the body. |
+
+`CasStore` is the **adapter-local trait** in `crates/corelink-adapter-cargo/src/ports.rs` (mirror brew's shape). Production wiring (bridging cargo's `CasStore` to workspace `CasReadHandler` + `CasWriteHandler` from `corelink-handler-cas`) is **Wave 35** — out of scope here.
 
 sccache's BLAKE3 keys ARE valid `Digest` values for CoreLink (both 32-byte BLAKE3). Zero translation cost.
 
@@ -69,27 +87,62 @@ crates/corelink-adapter-cargo/
 
 Estimated total: ~1050 LOC across 9-10 files. Per L2.10: every file ≤500 LOC. Largest expected: `server.rs` (250 LOC).
 
-### Dep graph
+### Dep graph (lean; inline-ports = no workspace SPI deps)
 
 ```
 corelink-adapter-cargo
-  ├── corelink-cas              (REAPI CAS surface)
-  ├── corelink-auth             (tenant resolution from PAT)
-  ├── corelink-audit            (audit emit fail-CLOSED)
-  ├── corelink-core             (types: TenantId, Digest, SecretWrap)
-  └── corelink-telemetry        (tracing instrumentation)
+  ├── corelink-core             (TenantId, Digest, SecretWrap)
+  ├── corelink-audit            (only the AuditEmitter trait + AuditEvent type — fail-CLOSED contract)
+  ├── corelink-telemetry        (tracing instrumentation)
+  ├── async-trait               (port traits declared in src/ports.rs)
+  ├── axum                      (HTTP server)
+  ├── secrecy                   (SecretString for PAT plaintext)
+  ├── subtle                    (ConstantTimeEq for PAT compare)
+  └── thiserror                 (error enum)
 ```
 
-NO direct deps on `corelink-reapi`, `corelink-billing`, etc. Lean.
+**NO deps on `corelink-cas`, `corelink-auth`, `corelink-reapi`, `corelink-handler-cas`,
+`corelink-worker`, `corelink-adapters-cloud`.** Production binding to those Stage-1 surfaces
+happens in the Wave 35 `corelink-adapter-host` crate, not here.
 
 ## 5. Trait interface (public Rust)
+
+Inline-ports pattern: declare `CasStore` + `TenantResolver` as **adapter-local async traits**
+in `crates/corelink-adapter-cargo/src/ports.rs`. Mirror brew's shape.
+
+```rust
+// crates/corelink-adapter-cargo/src/ports.rs
+use std::sync::Arc;
+use async_trait::async_trait;
+use corelink_core::types::{digest::Digest, tenant::TenantId};
+use crate::error::CargoAdapterError;
+
+#[async_trait]
+pub trait CasStore: Send + Sync + std::fmt::Debug {
+    async fn get(&self, tenant: &TenantId, digest: &Digest)
+        -> Result<Option<Vec<u8>>, CargoAdapterError>;
+    async fn put(&self, tenant: &TenantId, digest: &Digest, bytes: Vec<u8>)
+        -> Result<(), CargoAdapterError>;
+}
+
+#[async_trait]
+pub trait TenantResolver: Send + Sync + std::fmt::Debug {
+    async fn resolve(&self, pat_plaintext: &str) -> Result<TenantId, CargoAdapterError>;
+}
+
+pub type CasStoreHandle = Arc<dyn CasStore>;
+pub type TenantResolverHandle = Arc<dyn TenantResolver>;
+```
+
+Adapter config wires these handles + the `AuditEmitter` from `corelink-audit` (the one
+workspace trait the adapter consumes directly — see Stage 0 SEAL §4 chokepoint rationale).
 
 ```rust
 #[non_exhaustive]
 pub struct CargoAdapterConfig {
     pub bind_addr: std::net::SocketAddr,
-    pub upstream_cas: std::sync::Arc<dyn corelink_cas::CasStore>,
-    pub tenant_resolver: std::sync::Arc<dyn corelink_auth::TenantResolver>,
+    pub cas: crate::ports::CasStoreHandle,
+    pub tenant_resolver: crate::ports::TenantResolverHandle,
     pub auditor: std::sync::Arc<dyn corelink_audit::ports::AuditEmitter>,
 }
 
@@ -109,21 +162,32 @@ pub enum CargoAdapterError {
 }
 ```
 
-Single function entry. No factory complexity. Test fakes for `CasStore`, `TenantResolver`, `AuditEmitter` already exist in `corelink-cas` + `corelink-auth` + `corelink-audit` (`InMemory*` types).
+**Test fakes (colocated):**
+
+- `CasStore` fake: in-memory `HashMap<(TenantId, Digest), Vec<u8>>` impl in `tests/common.rs`.
+- `TenantResolver` fake: `FixedTenant { tenant_id: TenantId }` impl returning the fixed
+  tenant if PAT plaintext matches a fixture; rejecting otherwise (constant-time compare via
+  `subtle::ConstantTimeEq`).
+- `AuditEmitter` fake: use the existing workspace `corelink_audit::ports::InMemoryAuditEmitter`
+  (sync emit; captures events in `Arc<Mutex<Vec<AuditEvent>>>`).
+
+**Do NOT** import `corelink_cas::CasStore`, `corelink_auth::TenantResolver`,
+`corelink_handler_cas::CasReadHandler`, or any other workspace SPI. Production bridges live
+in the Wave 35 `corelink-adapter-host` crate.
 
 ## 6. Auth + multi-tenancy
 
-sccache's HTTP backend supports a single `Authorization: Bearer <token>` header. We require it: every request MUST carry `Authorization: Bearer hugr-pat_<token>` where the PAT resolves to a tenant via `corelink-auth::TenantResolver`.
+sccache's HTTP backend supports a single `Authorization: Bearer <token>` header. We require it: every request MUST carry `Authorization: Bearer hugr-pat_<token>`. The adapter passes the PAT plaintext to its adapter-local `TenantResolver::resolve(pat_plaintext)` port (declared in `src/ports.rs`); a successful resolve returns `TenantId`, which is then passed to every `cas.get` / `cas.put` call.
 
-Multi-tenant: each tenant has its own keyspace at the wire level via the resolved `tenant_id`. The HTTP path (`/<key>`) is tenant-unaware; the adapter prefixes internally before calling `CasStore`. Cargo client doesn't know.
+Multi-tenant: the adapter passes `&tenant_id` into every `CasStore::{get,put}` call. The PRODUCTION wiring of `CasStore` (deferred to Wave 35) is responsible for enforcing tenant prefix derivation via `corelink_tenant_path::derive_prefix`. From the cargo adapter's perspective, tenancy is opaque — it just threads `TenantId` through.
 
-PAT scopes required: `cas:read` + `cas:write` for cargo cache use. Audit emit per `(tenant_id, key, operation)`.
+PAT scopes required: `cas:read` + `cas:write` for cargo cache use. The cargo adapter does NOT validate scopes itself — that's the production `TenantResolver` impl's responsibility (returns error if PAT lacks scope). Audit emit per `(tenant_id, key, operation)` BEFORE the `cas.put` call (audit-fail-CLOSED contract).
 
-Reject (HTTP 401 + audit emit `cargo.adapter.auth_failed`):
+Reject (HTTP 401 + audit emit `cargo.adapter.auth_failed` via the workspace `AuditEmitter`):
 - Missing `Authorization` header.
-- PAT signature invalid (subtle::ConstantTimeEq compare; per `corelink-auth`).
-- PAT scope insufficient.
-- PAT revoked.
+- `TenantResolver::resolve` returns `Err(CargoAdapterError::Auth(...))` (PAT invalid / scope insufficient / revoked).
+
+Constant-time PAT comparison happens inside the `TenantResolver` impl, not in the adapter handler.
 
 ## 7. Cache invalidation
 
@@ -139,7 +203,17 @@ Operator-side invalidation (admin force-delete a cache entry): out of scope for 
 | **Property** | Key translation: sccache 32-byte BLAKE3 ↔ `Digest`. Roundtrip property: `digest_to_key(key_to_digest(k)) == k` for all 32-byte inputs. | 1k cases pass; 10k nightly |
 | **Adversarial** | (1) Forged Bearer token → 401 + audit row. (2) Oversize PUT body (>16 MiB) → 413 + audit row. (3) Tenant A reads tenant B's key → MUST miss (different namespace). (4) Replay attack (same key, different content) → second PUT rejected (CAS immutability). | All 4 pass; 0 leaks |
 
-Test infra: `wiremock` for HTTP-side mocking; `InMemoryCasStore` + `InMemoryTenantResolver` + `InMemoryAuditEmitter` for backends. No real sccache binary required for non-smoke tests (can stub the wire).
+Test infra (all adapter-local or workspace-canonical):
+
+| Role | Fake/impl | Location |
+|---|---|---|
+| CAS read+write | in-memory `HashMap<(TenantId, Digest), Vec<u8>>` impl of `crate::ports::CasStore` | `tests/common.rs` (colocated) |
+| Tenant resolver | `FixedTenant { tenant_id: TenantId }` impl of `crate::ports::TenantResolver` (constant-time PAT compare on fixture match) | `tests/common.rs` |
+| Audit emit | `corelink_audit::ports::InMemoryAuditEmitter` (sync; existing workspace fake) | workspace dep |
+| HTTP wire mock | `wiremock` | dev-dep |
+
+No real sccache binary required for non-smoke tests (can stub the wire). Reference brew's
+`tests/common.rs` (commit `42a12337`) for the canonical fake layout.
 
 ## 9. Acceptance criteria
 
