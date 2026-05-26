@@ -45,9 +45,23 @@ corelink-webauthn = { workspace = true }
 corelink-pat = { workspace = true }
 corelink-tenant-path = { workspace = true }
 
+# Wave 33 Stage 2.A-v2 additive aggregator (per 2.A HALT audit §9(b)):
+# expose corelink-worker's middleware + auth submodules under canonical
+# wave-33 paths `corelink_auth::middleware::*` + `corelink_auth::worker_session::*`.
+# Re-export rather than physical move preserves 63-consumer surface +
+# Stage 1 Option-A façade design.
+corelink-worker = { workspace = true }
+
 [features]
 # Default mirrors the workspace clerk dep (no default features), and
 # the consumer opts in to the JWT adapter via the umbrella feature
 # `clerk-jwt-adapter` to keep parity with the absorbed crate.
 default = []
 clerk-jwt-adapter = ["corelink-clerk/jwt-adapter"]
+# Wave 33 Stage 2.A-v2: expose corelink-worker's Tower middleware +
+# auth session lifecycle adapters under canonical wave-33 paths
+# `corelink_auth::middleware::*` + `corelink_auth::worker_session::*`.
+# Gated because corelink-worker default-feature is wasm32-clean
+# (http/tower/tokio NOT pulled). Consumers wanting these canonical
+# paths must opt in via `corelink-auth/tower-middleware`.
+tower-middleware = ["corelink-worker/tower-middleware"]

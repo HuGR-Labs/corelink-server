@@ -115,6 +115,31 @@ pub mod schema;
 pub mod tenant_path;
 pub mod webauthn;
 
+/// Wave 33 Stage 2.A-v2 additive aggregator (per 2.A HALT audit §9(b)):
+/// canonical wave-33 path for Tower/HTTP auth middleware that physically
+/// lives in `corelink-worker::middleware`. Includes the timing-padding
+/// 404 layer (INV-CAS-SIDE-CHANNEL-INDISTINGUISHABLE). Gated behind the
+/// `tower-middleware` feature because the underlying `corelink-worker`
+/// module is wasm32-excluded; enable via `corelink-auth/tower-middleware`.
+#[cfg(feature = "tower-middleware")]
+pub mod middleware {
+    //! Tower/HTTP auth middleware — canonical wave-33 surface for
+    //! `corelink-worker::middleware`.
+    pub use corelink_worker::middleware::*;
+}
+
+/// Wave 33 Stage 2.A-v2 additive aggregator: canonical wave-33 path for
+/// worker-side auth session lifecycle adapters (revocation orchestrator,
+/// KV invalidator, cross-region propagation) that physically live in
+/// `corelink-worker::auth`. Gated behind `tower-middleware` for the same
+/// wasm32 reason as `middleware` above.
+#[cfg(feature = "tower-middleware")]
+pub mod worker_session {
+    //! Worker-side auth session lifecycle — canonical wave-33 surface
+    //! for `corelink-worker::auth`.
+    pub use corelink_worker::auth::*;
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
