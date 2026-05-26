@@ -404,6 +404,14 @@ members = [
     # `specs/_proposals/adapters/brew.md` and
     # `specs/_audits/2026-05-26-w34-adapter-brew.md`.
     "crates/corelink-adapter-brew",
+    # Wave-34 — OCI Distribution Spec v1.1 registry adapter (Docker /
+    # podman / buildah / containerd / crane consume CoreLink as a
+    # standard OCI registry endpoint). Most complex of the 5 wave-34
+    # adapters: push + pull, multi-step blob uploads, manifest
+    # mutation, bearer-realm scoped auth. See
+    # `specs/_proposals/adapters/oci.md` for the executable contract
+    # and `specs/_audits/2026-05-26-w34-adapter-oci.md` for the SEAL.
+    "crates/corelink-adapter-oci",
 ]
 exclude = [
     "crates/tenant-path/fuzz",
@@ -699,6 +707,8 @@ corelink-d1-migrations = { path = "crates/corelink-d1-migrations" }
 corelink-adapter-pip = { path = "crates/corelink-adapter-pip" }
 # Wave-34 Adapter Campaign — Homebrew bottle caching adapter.
 corelink-adapter-brew = { path = "crates/corelink-adapter-brew" }
+# Wave-34 — OCI registry adapter (see workspace.members comment).
+corelink-adapter-oci = { path = "crates/corelink-adapter-oci" }
 
 # CLI tooling (WI-S15-001 / WI-S15-005)
 toml = "0.8"
