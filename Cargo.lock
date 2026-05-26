@@ -1100,6 +1100,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-adapter-pip"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "bytes",
+ "corelink-audit",
+ "corelink-core",
+ "hex",
+ "http 1.4.0",
+ "http-body-util",
+ "proptest",
+ "reqwest",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "subtle",
+ "thiserror 2.0.18",
+ "tokio",
+ "tower 0.5.3",
+ "tracing",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "corelink-adapters-cloud"
 version = "0.1.0"
 dependencies = [
@@ -1218,6 +1245,7 @@ dependencies = [
  "corelink-pat",
  "corelink-tenant-path",
  "corelink-webauthn",
+ "corelink-worker",
 ]
 
 [[package]]
@@ -1545,6 +1573,7 @@ dependencies = [
  "corelink-meta",
  "corelink-multipart-schema",
  "corelink-r2-multipart",
+ "corelink-worker",
 ]
 
 [[package]]
@@ -2493,6 +2522,7 @@ dependencies = [
  "corelink-replica-worker",
  "corelink-replication-coordinator",
  "corelink-rollout-controller",
+ "corelink-worker",
 ]
 
 [[package]]
