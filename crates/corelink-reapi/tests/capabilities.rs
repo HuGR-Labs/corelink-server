@@ -23,7 +23,7 @@ use corelink_reapi::proto::reapi::capabilities_client::CapabilitiesClient;
 use corelink_reapi::proto::reapi::GetCapabilitiesRequest;
 use corelink_reapi::{CapabilitiesService, StubPatValidator};
 use corelink_tenant_path::TenantDerivationKey;
-use corelink_worker::storage::r2::{InMemoryR2, R2Reader, R2Writer};
+use corelink_cas::r2_storage::{InMemoryR2, R2Reader, R2Writer};
 use corelink_worker::Region;
 use tokio::net::TcpListener;
 use tonic::transport::Server;

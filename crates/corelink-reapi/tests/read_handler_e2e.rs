@@ -60,7 +60,7 @@ use corelink_reapi::{
     cas_get_router, AuthScope, ByteStreamService, CasWriteService, HttpReadState, StubPatValidator,
 };
 use corelink_tenant_path::TenantDerivationKey;
-use corelink_worker::storage::r2::{InMemoryR2, R2Reader, R2Writer};
+use corelink_cas::r2_storage::{InMemoryR2, R2Reader, R2Writer};
 use corelink_worker::Region;
 use tokio::net::TcpListener;
 use tonic::metadata::MetadataValue;

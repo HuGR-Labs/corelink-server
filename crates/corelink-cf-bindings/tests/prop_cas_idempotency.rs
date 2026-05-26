@@ -45,7 +45,7 @@
 )]
 
 use bytes::Bytes;
-use corelink_worker::storage::r2::{BackendPutOutcome, InMemoryR2, R2Backend};
+use corelink_cas::r2_storage::{BackendPutOutcome, InMemoryR2, R2Backend};
 use proptest::prelude::*;
 use proptest::test_runner::Config;
 use rand::{Rng, SeedableRng};

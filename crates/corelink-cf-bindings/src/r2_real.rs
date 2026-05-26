@@ -71,9 +71,9 @@
 
 use bytes::Bytes;
 use corelink_worker::storage::error::R2Error;
-use corelink_worker::storage::r2::BackendPutOutcome;
+use corelink_cas::r2_storage::BackendPutOutcome;
 #[cfg(target_arch = "wasm32")]
-use corelink_worker::storage::r2::R2Backend;
+use corelink_cas::r2_storage::R2Backend;
 use std::fmt;
 #[cfg(target_arch = "wasm32")]
 use std::future::Future;

@@ -56,7 +56,7 @@ use corelink_meta::{
     AuditEvent, AuditEventType, BlobMetaKey, CommitPutRequest, InsertOutcome, MetaError, MetaStore,
 };
 use corelink_worker::storage::error::R2Error;
-use corelink_worker::storage::r2::{PutOutcome, R2Backend, R2Writer};
+use corelink_cas::r2_storage::{PutOutcome, R2Backend, R2Writer};
 use corelink_worker::TenantCtx;
 use thiserror::Error;
 use uuid::Uuid;
@@ -440,7 +440,7 @@ mod tests {
     use corelink_hash::Digest;
     use corelink_meta::InMemoryMetaStore;
     use corelink_tenant_path::TenantDerivationKey;
-    use corelink_worker::storage::r2::{InMemoryR2, R2Writer};
+    use corelink_cas::r2_storage::{InMemoryR2, R2Writer};
     use corelink_worker::Region;
     use zeroize::Zeroizing;
 

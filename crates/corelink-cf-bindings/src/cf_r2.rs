@@ -27,7 +27,7 @@
 
 use bytes::Bytes;
 use corelink_worker::storage::error::R2Error;
-use corelink_worker::storage::r2::{BackendPutOutcome, R2Backend};
+use corelink_cas::r2_storage::{BackendPutOutcome, R2Backend};
 use std::future::Future;
 // `worker::r2` is a private module in workers-rs 0.8; the public re-export
 // at crate root (`pub use crate::r2::*` in `worker/src/lib.rs`) lifts

@@ -88,7 +88,7 @@ use corelink_reapi::orchestrator::{
     NoopOrphanReconciler, OrchestratorError,
 };
 use corelink_tenant_path::TenantDerivationKey;
-use corelink_worker::storage::r2::{InMemoryR2, R2Reader, R2Writer};
+use corelink_cas::r2_storage::{InMemoryR2, R2Reader, R2Writer};
 use corelink_worker::{Region, TenantCtx};
 use proptest::prelude::*;
 use uuid::Uuid;
@@ -703,7 +703,7 @@ async fn empty_body_is_rejected_by_meta_size_check_not_silent_success() {
 /// (`SINGLE_BLOB_LIMIT_BYTES` in the worker crate). Must succeed Fresh.
 #[tokio::test]
 async fn boundary_blob_at_exactly_5_mib_succeeds_e2e() {
-    use corelink_worker::storage::r2::SINGLE_BLOB_LIMIT_BYTES;
+    use corelink_cas::r2_storage::SINGLE_BLOB_LIMIT_BYTES;
 
     let tdk = fixture_tdk();
     let backend = Arc::new(InMemoryR2::new());
@@ -738,7 +738,7 @@ async fn boundary_blob_at_exactly_5_mib_succeeds_e2e() {
 /// surface `OrchestratorError::R2(_::BlobTooLarge)`. R2 + D1 untouched.
 #[tokio::test]
 async fn boundary_blob_just_over_5_mib_rejects_e2e() {
-    use corelink_worker::storage::r2::SINGLE_BLOB_LIMIT_BYTES;
+    use corelink_cas::r2_storage::SINGLE_BLOB_LIMIT_BYTES;
 
     let tdk = fixture_tdk();
     let backend = Arc::new(InMemoryR2::new());
