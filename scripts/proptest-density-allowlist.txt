@@ -19,3 +19,20 @@
 corelink-handler-cas         # follow-up WI: cover INV-CAS-* in handler
 corelink-otel-export         # follow-up WI: OTEL export INV coverage
 corelink-tenant-offboarding  # follow-up WI: offboarding state-machine INVs
+
+# Wave 33 umbrella aggregator crates — pub use re-export façades; INV refs
+# inherited from absorbed crates (which have their own proptests). The
+# umbrella itself has no behaviour. Follow-up: WI-PROPTEST-FU-W33-001
+# (decide whether absorbed-crate proptests should be re-counted under
+# the umbrella, or if doc-references alone satisfy the gate).
+corelink-auth                # Wave 33 Stage 1 Stream B aggregator
+corelink-cas                 # Wave 33 Stage 1 Stream A aggregator
+corelink-container           # Wave 33 Stage 2.B (apps/server → crate)
+corelink-core                # Wave 33 Stage 0 apex types
+
+# Pre-existing gaps surfaced when ci.sh first added the gate to the
+# canonical pre-merge set (these crates pre-date Wave 33; INV refs in doc
+# comments without per-crate proptests). Follow-up: WI-PROPTEST-FU-W33-002.
+corelink-clerk-cf            # CF Worker bindings; pure-binding crate
+corelink-statuspage-real     # statuspage adapter; HTTPS binding crate
+corelink-wasm                # wasm32 entry shell
