@@ -55,7 +55,7 @@ COPY migrations ./migrations
 # o source real de `corelink-container/src/` muda. Os manifests
 # (`Cargo.toml`s) e `Cargo.lock` já foram copiados acima — esta layer
 # cacheia ~95% do build time em re-builds incrementais.
-RUN echo "fn main() {}" > crates/corelink-container/src/main.rs \
+RUN printf '#![allow(missing_docs)]\nfn main() {}\n' > crates/corelink-container/src/main.rs \
  && echo "//! stub for dep cache layer" > crates/corelink-container/src/lib.rs \
  && cargo build --release -p corelink-server \
  && rm crates/corelink-container/src/main.rs crates/corelink-container/src/lib.rs
