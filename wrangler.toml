@@ -8,6 +8,30 @@ compatibility_date = "2026-04-01"
 # Worker (control plane) — Wave 32 Phase B implementation
 main = "worker/src/index.ts"
 
+# ── Security hardening (Wave 32 Phase E pre-deploy — 2026-05-26) ─────────────
+#
+# Post-incident lockdown after a $36 surprise CF bill on a previous public
+# staging env (bots discovered the workers.dev subdomain and hammered it).
+#
+# workers_dev = false :: Worker is NOT reachable at any
+#   <name>.<account-subdomain>.workers.dev URL. Customer traffic arrives ONLY
+#   via the custom domain configured in Phase G DNS (e.g. api.corelink.humangr.com),
+#   which is proxied through CF (orange-cloud) + protected by zone-level Bot
+#   Fight Mode. Bot wildcard scans of *.workers.dev cannot find this Worker.
+#
+# Trade-off: smoke testing post-Phase-E APPLY cannot use the workers.dev URL.
+# Smoke is deferred to Phase H (post-Phase-G DNS apply) when api.corelink.humangr.com
+# resolves. Pre-Phase-G, smoke uses `wrangler tail` + `wrangler dev --remote`
+# preview URLs (which require Authorization, not bot-scannable).
+workers_dev = false
+
+# [limits] cpu_ms cap per request — hard upper bound that aborts runaway
+# request handlers before CF bills extra CPU. Default is 50ms on Workers
+# Paid plan; pinning to 30ms gives headroom while bounding worst case.
+# Aborted requests still cost a single invocation but no DO/R2/D1 followup.
+[limits]
+cpu_ms = 30
+
 # Container com o servidor gRPC Rust
 [[containers]]
 class_name = "CoreLinkServer"
