@@ -11,6 +11,9 @@
   "pnpm": {
     "patchedDependencies": {
       "@docusaurus/core@3.10.1": "patches/@docusaurus__core@3.10.1.patch"
+    },
+    "overrides": {
+      "@types/react": "^19.0.12"
     }
   },
   "scripts": {

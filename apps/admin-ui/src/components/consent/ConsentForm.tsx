@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef } from "react";
+import * as React from "react";
 import type {
   ConsentSixFields,
   DataCategory,
@@ -22,6 +22,12 @@ export interface ConsentFormProps {
   capturedAtMs: number;
   /** Read-only mode (review step). */
   readOnly?: boolean;
+  /**
+   * React 19 ref-as-prop (replaces forwardRef pattern).
+   * Typed as a plain mutable-ref shape to avoid dual @types/react conflicts
+   * between the admin-ui (v19) and docs-site (v18) workspace packages.
+   */
+  ref?: { current: HTMLDivElement | null } | null;
 }
 
 // English fallback labels. Real i18n strings ship via WI-S16-006.
@@ -59,8 +65,7 @@ function labelsFor(locale: string): Record<string, string> {
   return LABELS[locale] ?? LABELS["en-US"]!;
 }
 
-export const ConsentForm = forwardRef<HTMLDivElement, ConsentFormProps>(
-  function ConsentForm({ value, onChange, locale, capturedAtMs, readOnly }, ref) {
+export function ConsentForm({ value, onChange, locale, capturedAtMs, readOnly, ref }: ConsentFormProps) {
     const t = labelsFor(locale);
 
     function patch<K extends keyof ConsentSixFields>(key: K, v: ConsentSixFields[K]) {
@@ -76,7 +81,7 @@ export const ConsentForm = forwardRef<HTMLDivElement, ConsentFormProps>(
 
     return (
       <div
-        ref={ref}
+        ref={ref as React.RefObject<HTMLDivElement> | null | undefined}
         // CTRL-PRIV-001 / EVT-012 privacy guard: analytics + session-replay
         // tools MUST treat .privacy-no-capture as opt-out.
         className="privacy-no-capture consent-form"
@@ -186,5 +191,4 @@ export const ConsentForm = forwardRef<HTMLDivElement, ConsentFormProps>(
         </p>
       </div>
     );
-  },
-);
+}

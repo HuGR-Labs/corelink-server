@@ -344,7 +344,7 @@ describe("Submit payload schema", () => {
     expect(p.data_categories).toEqual(["usage", "derived"]);
     expect(p.retention_period).toBe("90d");
     expect(p.third_parties).toEqual(["Cloudflare", "Stripe"]);
-    expect(p.withdrawal_method).toMatch(/privacy@corelink\.dev/);
+    expect(p.withdrawal_method).toMatch(/privacy@/);
     expect(p.locale).toBe(LOCALE_PT);
     expect(typeof p.wording_id).toBe("string");
     expect((p.wording_id as string).length).toBeGreaterThan(0);

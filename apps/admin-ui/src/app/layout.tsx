@@ -10,6 +10,10 @@ export const metadata: Metadata = {
   description: "Shared content-addressable cache for builds, packages, and ML.",
 };
 
+// Cloudflare Pages Edge Runtime — required by @cloudflare/next-on-pages.
+// All child routes inherit this unless they explicitly opt out.
+export const runtime = "edge";
+
 // next-intl uses `headers()` for locale detection which is dynamic. Static
 // rendering optimization (via `setRequestLocale` + per-locale segments) is
 // scoped to WI-S16-006 (privacy/sub-processors pages + locale switcher).
