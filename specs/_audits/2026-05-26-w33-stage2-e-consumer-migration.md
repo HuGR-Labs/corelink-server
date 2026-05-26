@@ -145,9 +145,10 @@ All KEPT — same Option-A re-export rationale via `corelink-replication`, `core
 | 2.E.3 | `f881ddcf` | `corelink_worker::{Region, TenantCtx}` → `corelink_replication::region_resolver::{Region, TenantCtx}` | 25 (reapi src+tests, all bare-/grouped-/`as X`-variants) | none (corelink-replication already added) |
 | 2.E.4 | `76c85af4` | `corelink_worker::middleware` → `corelink_auth::middleware`; `corelink_worker::auth` → `corelink_auth::worker_session` | 2 (reapi: `http_read.rs`, `timing_padding_wiring.rs`) | `corelink-auth/tower-middleware` feature added to `corelink-reapi/host-server` (alongside existing `corelink-worker/tower-middleware`) |
 | 2.E.5 | n/a | `corelink_worker::reapi` → `corelink_reapi::worker_adapter` | 0 — only consumer is `corelink-reapi/src/lib.rs` (the aggregator shim itself); no external consumer to migrate | none |
+| 2.E.6 | `7dc14035` | `corelink_worker::storage::error::R2Error` → `corelink_cas::r2_storage::R2Error` | 9 (5 `use` lines + 2 inline qualified paths in reapi src+tests + 2 `pub use` shims in cf-bindings) | added `pub use corelink_worker::storage::error::R2Error;` inside `corelink-cas::r2_storage` module (1-line) — surface follow-up to fill a gap left by the dispatch packet's mapping table |
 | 2.E SEAL | this doc | — | — | — |
 
-**Total Phase 1 commits:** 4 migrations + 1 SEAL = 5 sub-step SHAs.
+**Total Phase 1 commits:** 5 migrations + 1 SEAL = 6 sub-step SHAs.
 
 ## §4 Consumer surface delta
 
@@ -158,7 +159,8 @@ All KEPT — same Option-A re-export rationale via `corelink-replication`, `core
 | `middleware` + `auth` | 5 (incl. 2 aggregator shims) | 2 (aggregator shims only) | `corelink-auth/src/lib.rs:128, 140` |
 | `Region` / `TenantCtx` | 27 (incl. 1 aggregator shim) | 1 (aggregator shim only) | `corelink-replication/src/lib.rs:98` |
 | `reapi` | 1 (the aggregator shim itself) | 1 (unchanged) | `corelink-reapi/src/lib.rs:104` |
-| **Total consumer files migrated** | — | — | **38 unique files** |
+| `storage::error::R2Error` (2.E.6) | 7 lines | 0 (all migrated) | re-export added inside `corelink-cas/src/lib.rs:87` |
+| **Total consumer files migrated** | — | — | **38 unique consumer files + 7 R2Error lines** |
 
 The 4 aggregator `lib.rs` re-export sites intentionally retain `pub use corelink_worker::<area>::*` — they are the canonical paths' implementation.
 
@@ -229,7 +231,41 @@ Phase 2 is therefore not a "loose end" of Stage 2.E — it is a separate archite
 
 ## §11 Final SEAL commit
 
-`<this commit>` on branch `wt/r-prep-w33-stage2-e-consumer-migration`.
+Post-amendment SEAL commit `<this commit>` on branch
+`wt/r-prep-w33-stage2-e-consumer-migration` (HEAD).
+
+Full sub-step chain on the branch from baseline `a1c49678`:
+
+```
+7dc14035  wave-33 stage 2.E.6: migrate R2Error consumers via canonical corelink_cas::r2_storage
+814bd380  wave-33 stage 2.E SEAL: consumer migration (partial-SEAL with Phase 2 deferral)  [SUPERSEDED by SEAL amendment]
+76c85af4  wave-33 stage 2.E.4: migrate corelink_worker::{middleware,auth} consumers to corelink_auth
+f881ddcf  wave-33 stage 2.E.3: migrate corelink_worker Region/TenantCtx consumers to corelink_replication::region_resolver
+568ff652  wave-33 stage 2.E.2: migrate corelink_worker::cache consumers to corelink_cas::cache
+9a98cd99  wave-33 stage 2.E.1: migrate corelink_worker::storage::r2 consumers to corelink_cas::r2_storage
+```
+
+(The 2.E.6 commit lands AFTER the initial 2.E SEAL `814bd380` because the
+R2Error gap was identified in the post-SEAL grep sweep. This SEAL amendment
+commit supersedes `814bd380` as the authoritative SEAL document state.)
+
+End grep verification — only the 5 expected aggregator re-export shims
+remain referencing `corelink_worker`:
+
+```
+crates/corelink-cas/src/lib.rs:80:    pub use corelink_worker::storage::r2::*;
+crates/corelink-cas/src/lib.rs:87:    pub use corelink_worker::storage::error::R2Error;
+crates/corelink-cas/src/lib.rs:96:    pub use corelink_worker::cache::*;
+crates/corelink-auth/src/lib.rs:128:  pub use corelink_worker::middleware::*;
+crates/corelink-auth/src/lib.rs:140:  pub use corelink_worker::auth::*;
+crates/corelink-replication/src/lib.rs:98: pub use corelink_worker::{Region, TenantCtx};
+crates/corelink-reapi/src/lib.rs:104:     pub use corelink_worker::reapi::*;
+```
+
+Zero non-shim `use corelink_worker::*` references remain in the workspace
+outside `crates/corelink-worker/` itself.
+
+End of Wave 33 Stage 2.E SEAL.
 
 ---
 
