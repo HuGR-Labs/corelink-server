@@ -213,7 +213,7 @@ members = [
     # WI-S15-001 CLI 7 subcommands + WI-S15-005 telemetry opt-in (same crate)
     "crates/corelink-cli",
     # WI-S15-004 FFI wrappers (Python pyO3 + Go cgo + JS/TS WASM)
-    "crates/corelink-py",
+    "tools/sdks/python",
     "tools/sdks/go",
     "crates/corelink-wasm",
     # WI-S17-001 chaos scheduler (8 experiment types + safe-mode auto-abort

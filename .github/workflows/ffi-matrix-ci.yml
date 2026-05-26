@@ -10,7 +10,7 @@ on:
   push:
     branches: ["main", "wt/wi-s15-004"]
     paths:
-      - "crates/corelink-py/**"
+      - "tools/sdks/python/**"
       - "tools/sdks/go/**"
       - "crates/corelink-wasm/**"
       - "crates/corelink-client-verify/**"
@@ -18,7 +18,7 @@ on:
       - ".github/workflows/ffi-matrix-ci.yml"
   pull_request:
     paths:
-      - "crates/corelink-py/**"
+      - "tools/sdks/python/**"
       - "tools/sdks/go/**"
       - "crates/corelink-wasm/**"
       - "crates/corelink-client-verify/**"
@@ -108,7 +108,7 @@ jobs:
         run: pip install maturin pytest pytest-asyncio
 
       - name: Build corelink-py wheel
-        working-directory: crates/corelink-py
+        working-directory: tools/sdks/python
         run: maturin build --release --features extension-module
 
       - name: Install wheel
@@ -116,7 +116,7 @@ jobs:
           pip install target/wheels/corelink_py-*.whl
 
       - name: Run Python tests (client-verify default-on assertion)
-        working-directory: crates/corelink-py
+        working-directory: tools/sdks/python
         run: |
           python -c "
           import corelink_py as cl
