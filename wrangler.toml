@@ -223,6 +223,47 @@ crons = [
 name = "corelink-prod"
 vars = { ENVIRONMENT = "prod" }
 
+# ── Worker route bindings (Wave 32 Phase G+ — DNS cutover) ────────────────
+#
+# With `workers_dev = false` at top-level (security hardening per d398fa45),
+# the Worker is reachable ONLY via these custom-route bindings on humangr.com.
+# Each CNAME from Phase G (9ade35e2) points at the CF edge; the route binding
+# tells CF Edge "invoke `corelink-prod` Worker for matching requests".
+#
+# Pages-backed CNAMEs (app.*, docs.*) do NOT need worker routes — Pages handles
+# their custom-domain routing via Phase F APPLY (corelink-docs + corelink-admin-ui
+# project custom-domain config).
+#
+# Routes-only change: deploy with `wrangler deploy --env prod --containers-rollout none`
+# to avoid re-rolling the 11 healthy Firecracker container instances.
+[[env.prod.routes]]
+pattern = "api.corelink.humangr.com/*"
+zone_name = "humangr.com"
+
+[[env.prod.routes]]
+pattern = "signup.corelink.humangr.com/*"
+zone_name = "humangr.com"
+
+[[env.prod.routes]]
+pattern = "admin.corelink.humangr.com/*"
+zone_name = "humangr.com"
+
+[[env.prod.routes]]
+pattern = "acme-dev.corelink.humangr.com/*"
+zone_name = "humangr.com"
+
+[[env.prod.routes]]
+pattern = "sandbox.corelink.humangr.com/*"
+zone_name = "humangr.com"
+
+[[env.prod.routes]]
+pattern = "go.corelink.humangr.com/*"
+zone_name = "humangr.com"
+
+[[env.prod.routes]]
+pattern = "staging.corelink.humangr.com/*"
+zone_name = "humangr.com"
+
 [[env.prod.r2_buckets]]
 binding = "CAS_BUCKET"
 bucket_name = "corelink-cas-prod"
