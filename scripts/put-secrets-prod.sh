@@ -44,16 +44,28 @@ readonly TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 # ── CLI parse ────────────────────────────────────────────────────────────────
 
 APPLY_MODE=false
+MVP_ONLY=false
 ENV_FILE="$DEFAULT_ENV_FILE"
+readonly MVP_ALLOWLIST="$REPO_ROOT/scripts/secrets-mvp-allowlist.txt"
 
 usage() {
     grep '^#' "$0" | head -45 | sed 's/^# \?//'
+    cat <<'USAGE_EXTRA'
+
+  --mvp-only      Only put secrets present in scripts/secrets-mvp-allowlist.txt.
+                  Secrets in secrets-checklist.md but NOT in the allowlist are
+                  SKIPPED with a WARN (not failed). Per Wave 32 Phase D MVP
+                  decision: solopreneur deploy doesn't need Slack/Twilio/etc
+                  at provision-time; per-feature lazy enrollment.
+USAGE_EXTRA
 }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --apply)
             APPLY_MODE=true; shift ;;
+        --mvp-only)
+            MVP_ONLY=true; shift ;;
         --env-file)
             ENV_FILE="${2:-}"
             if [[ -z "$ENV_FILE" ]]; then
@@ -222,6 +234,62 @@ rollback() {
     fi
     err "========================================="
 }
+
+# ── 4.5 MVP allowlist filter (if --mvp-only) ────────────────────────────────
+
+if $MVP_ONLY; then
+    if [[ ! -f "$MVP_ALLOWLIST" ]]; then
+        err "MVP allowlist file not found: $MVP_ALLOWLIST"
+        err "Run without --mvp-only OR create the allowlist file first."
+        exit 1
+    fi
+    log "MVP-ONLY mode: filtering against $MVP_ALLOWLIST"
+
+    # Read allowlist (strip comments, whitespace, empty lines).
+    mapfile -t MVP_NAMES < <(grep -v '^[[:space:]]*#' "$MVP_ALLOWLIST" | grep -v '^[[:space:]]*$' | awk '{$1=$1};1')
+
+    # Filter SECRET_NAMES to intersection with MVP_NAMES; track deferred ones.
+    FILTERED=()
+    DEFERRED=()
+    for name in "${SECRET_NAMES[@]}"; do
+        match=false
+        for mvp in "${MVP_NAMES[@]}"; do
+            if [[ "$name" == "$mvp" ]]; then match=true; break; fi
+        done
+        if $match; then
+            FILTERED+=("$name")
+        else
+            DEFERRED+=("$name")
+        fi
+    done
+
+    # Also include MVP-allowlist entries that aren't in checklist (defensive —
+    # e.g. internal HMAC keys generated outside the vendor matrix).
+    for mvp in "${MVP_NAMES[@]}"; do
+        in_filtered=false
+        for f in "${FILTERED[@]:-}"; do
+            if [[ "$f" == "$mvp" ]]; then in_filtered=true; break; fi
+        done
+        if ! $in_filtered; then
+            FILTERED+=("$mvp")
+        fi
+    done
+
+    SECRET_NAMES=("${FILTERED[@]}")
+    SECRET_COUNT=${#SECRET_NAMES[@]}
+
+    if [[ ${#DEFERRED[@]} -gt 0 ]]; then
+        warn ""
+        warn "Deferred (NOT in MVP allowlist; will be skipped):"
+        for d in "${DEFERRED[@]}"; do
+            warn "  - $d"
+        done
+        warn ""
+        warn "These will need to be put when the corresponding feature ships."
+        warn ""
+    fi
+    log "MVP-mode active: $SECRET_COUNT secrets will be put (${#DEFERRED[@]} deferred to WARN)."
+fi
 
 # ── 5. Emit plan ─────────────────────────────────────────────────────────────
 
