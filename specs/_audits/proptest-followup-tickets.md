@@ -2,11 +2,11 @@
 id: "AUDIT-PROPTEST-FOLLOWUP-TICKETS"
 type: "audit_followup_backlog"
 doc_status: "ACTIVE"
-audit_status: "CLOSED"
-version: "1.1.0"
+audit_status: "ACTIVE"
+version: "1.2.0"
 created: "2026-05-15"
-updated: "2026-05-15"
-closed: "2026-05-15"
+updated: "2026-05-26"
+closed: null
 owner: "Gustavo Schneiter"
 final_approver: null
 reviewers: []
@@ -233,3 +233,115 @@ DEBT-009. The CI density gate (FU-005) lands here in DEBT-017:
   `corelink-tenant-offboarding`) are listed as pre-GA follow-ups.
 - `.github/workflows/proptest-density-gate.yml` — PR-gate workflow.
 - `CONTRIBUTING.md §"Property test density gate"` — contributor docs.
+
+---
+
+## Wave-33 expansion (2026-05-26) — re-opened section
+
+Wave 33 / Wave 34 work introduced 7 new gap crates: 4 from Wave 33
+Stage 1/0 (umbrella aggregators with INV refs in doc comments but no
+proptests, since they are `pub use` re-export façades) + 3 pre-existing
+crates surfaced when `scripts/ci.sh` first added the proptest-density
+gate to the canonical pre-merge set (these were previously not measured
+against the gate). All 7 are in
+`scripts/proptest-density-allowlist.txt` pending closure under the
+following two follow-up WIs.
+
+### WI-PROPTEST-FU-W33-001 — Umbrella aggregator proptest accounting
+
+**Status:** OPEN
+**Owner:** orchestrator (Gustavo Schneiter)
+**Priority:** P3 (architectural decision, not runtime correctness)
+**Effort:** 0.5d (decision + script tweak)
+
+**Crates in scope:**
+
+- `corelink-auth` — Wave 33 Stage 1 Stream B aggregator
+- `corelink-cas` — Wave 33 Stage 1 Stream A aggregator
+- `corelink-container` — Wave 33 Stage 2.B (apps/server → crate)
+- `corelink-core` — Wave 33 Stage 0 apex
+
+**Problem statement:** these umbrellas are `pub use` re-export façades.
+Their `src/lib.rs` carries INV references in doc comments (for
+discoverability + canonical-path traceability), but the umbrella itself
+has zero behaviour — the INV-covered behaviour lives in the absorbed
+crates, which have their own proptests (and their own non-zero
+density ratios). The density gate, as currently shaped, double-counts:
+it sees INV refs in the umbrella's doc comments but finds 0 proptests
+in the umbrella's own `tests/` directory.
+
+**Acceptance criteria (one of):**
+
+(a) Tweak `scripts/check_proptest_density_gate.sh` to detect
+    aggregator crates (heuristic: `src/lib.rs` is ≤ 500 LOC AND
+    contains only `pub use` re-exports AND no `pub fn` / `pub
+    struct`) and exempt them from the density ratio by automatic
+    inheritance from absorbed crates listed in `[dependencies]`.
+
+(b) Document that umbrella crates are intentionally proptest-empty
+    and document the absorbed-crate ↔ INV mapping in each umbrella's
+    `lib.rs` `//!` doc block.
+
+(c) Move INV references out of umbrella `lib.rs` doc comments to
+    avoid double-counting (least preferred — loses canonical-path
+    discoverability).
+
+**Recommendation:** option (a) is the cleanest and aligns with the
+"INV traceability survives the reorg" charter. Schedule for a Wave 35
+or 36 tooling pass.
+
+---
+
+### WI-PROPTEST-FU-W33-002 — Pre-existing density gaps surfaced by ci.sh
+
+**Status:** OPEN
+**Owner:** TBD (per-crate sprint assignment)
+**Priority:** P3 (pre-existing; not regressions)
+**Effort:** 1.5d total (0.5d per crate)
+
+**Crates in scope:**
+
+- `corelink-clerk-cf` — CF Worker bindings; pure-binding crate (mostly
+  `#[durable_object]` wire-up). INV refs:
+  `INV-AUTH-PAT-VERIFY-CONSTANT-TIME` (via `corelink-clerk` impl) +
+  `INV-CLERK-JWKS-CACHE-TTL` (CF-side). Already has integration tests
+  via `corelink-clerk-cf/tests/`; missing per-INV property tests.
+- `corelink-statuspage-real` — Statuspage HTTPS adapter; binding crate
+  with reqwest client. INV refs: `INV-STATUSPAGE-RATE-LIMIT-1-PER-5MIN`
+  + `INV-STATUSPAGE-AUDIT-FAIL-CLOSED`. Has integration tests; missing
+  per-INV property tests.
+- `corelink-wasm` — wasm32 entry shell. INV refs:
+  `INV-WASM-ENTRY-PURE-LOGIC` + `INV-WASM-NO-WAKER` (no async runtime).
+  Hard to property-test from wasm32 target; consider host-side property
+  tests with `wasm-bindgen-test`.
+
+**Acceptance criteria:**
+
+1. Each of the 3 crates lands ≥ 1 property test per INV reference (or
+   documents why a property test is infeasible — e.g. wasm32 target
+   constraints).
+2. Each lands a brief `tests/README.md` linking INVs to their proptest
+   coverage.
+3. Allowlist entries removed from
+   `scripts/proptest-density-allowlist.txt` as each crate lands.
+
+**Risk if deferred:** none short-term (the allowlist tolerates the
+gap). Long-term, the gate's signal weakens if too many crates
+permanently allowlist.
+
+---
+
+## Summary (Wave-33 expansion)
+
+| WI | Scope | Effort | Priority | Status |
+|---|---|---|---|---|
+| WI-PROPTEST-FU-W33-001 | Umbrella aggregator double-counting fix | 0.5d | P3 | **OPEN** (2026-05-26) |
+| WI-PROPTEST-FU-W33-002 | 3 pre-existing density gaps | 1.5d | P3 | **OPEN** (2026-05-26) |
+
+**Total Wave-33 expansion effort:** 2.0d. **GA-blocker:** none —
+both are post-GA quality hardening. Closure target: Wave 36 tooling
+pass (post-Wave-35 adapter consolidation).
+
+The audit's overall `audit_status` is re-opened to `ACTIVE` while
+these 2 follow-ups remain open; will return to `CLOSED` when both
+land.

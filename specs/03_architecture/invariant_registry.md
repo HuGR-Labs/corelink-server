@@ -885,6 +885,122 @@ Lote 9.5c expansion: catalogadas todas as invariantes HIGH cuja semantics não j
 | INV-SUB-PROCESSOR-BROADCAST-ALL-PLANS | HIGH | Policy invariant; ADR-S11-008 v2 + cron worker; regression test enforces no tier-gating |
 | INV-SUB-PROCESSOR-DKIM-TENANT-SCOPED | HIGH | HKDF-SHA256 algorithmic statistical property; per-tenant key derivation; cross-tenant 10k random pairs → 0 collisions property test |
 | INV-SUB-PROCESSOR-OBJECTION-STATE-MACHINE | HIGH | Algorithmic state machine; 5 states + valid transitions enforced at trait surface; covered by 10k iter property test |
+| INV-AVAIL-DOS | HIGH | Rate-limit middleware DO atomic counter + abuse detector + 429 surface; covered by adversarial property test + load test; non-distributed semantics |
+| INV-BILLING-APPEND-ONLY | HIGH | Schema-level (no UPDATE/DELETE on `billing_events` table; INSERT-only DDL); CI gate `check_migrations_additive.py` enforces; subsumed indirectly by `billing_atomicity.tla` (S-10 PLANNED) |
+| INV-FAILOVER-NO-SPLIT-BRAIN | CRITICAL | Covered by `replication_coordinator` 3-state machine TLA+ (DEBT-014 FT-3 wave-15 R-PREP — `specs/tla/replication_coordinator.tla` PLANNED §4.2 entry) + write-lease-ledger logical clock proof; runtime invariant cross-region |
+| INV-EXEC-IDEMPOTENT | HIGH | Algorithmic property; `Idempotency-Key + (tenant_id, request_id) UNIQUE` enforced at D1 schema; covered by property test 10k iter; non-distributed semantics |
+| INV-LGPD-AUTO-SUSPEND-FORBIDDEN | HIGH | Policy invariant; ADR-S11-LGPD asserts no automated suspension; enforced by code-review checklist + audit log search regression; non-runtime invariant |
+| INV-AUTH-JWT-VALIDATE-RS256-ONLY | CRITICAL | Algorithmic; Clerk JWT verify accepts ONLY `alg=RS256` or `alg=EdDSA`; `alg=none` rejected at parser layer; covered by `corelink-clerk/tests/prop_jwt_negative.rs` 10k iter (forged-alg attempts uniformly rejected) |
+| INV-AUTH-CLOCK-SKEW-BOUND | HIGH | Algorithmic; 5-minute tolerance window enforced in JWT verify path; covered by adversarial property test; deterministic clock injection |
+| INV-AUTH-ISS-EXACT-MATCH | CRITICAL | Algorithmic; exact-string compare on JWT `iss` claim; covered by `corelink-clerk` adversarial test; non-distributed |
+| INV-AUTH-KID-RESOLUTION | HIGH | Algorithmic; JWKS cache lookup with bounded miss path; covered by `clerk-cf` mutex-poison test + JWKS cold-fetch test |
+| INV-AUTH-PAT-HASH-ARGON2ID-2024 | CRITICAL | Algorithmic; Argon2id parameters pinned in `corelink-pat/src/argon.rs` per OWASP 2024 guidance; covered by `pat::argon` parameter test |
+| INV-AUTH-PAT-PLAINTEXT-NEVER-PERSISTED | CRITICAL | Algorithmic; type-level — `SecretString` never serialized to storage; covered by `pat` unit test + schema review (no `pat_plaintext` column) |
+| INV-AUTH-PAT-VERIFY-CONSTANT-TIME | CRITICAL | Algorithmic; `subtle::ConstantTimeEq` on HMAC + Argon2id verify; ALSO covered by `auth_pat_hybrid.tla` + `auth_constant_time_cold_pad.tla` (DEBT-005 batch 6 FINAL — §4.1 GREEN) for cold-path uniformity |
+| INV-AUTH-PAT-SALT-PER-TOKEN | HIGH | Algorithmic; per-token random salt from `chacha20::ChaCha20Rng` seeded; covered by entropy test |
+| INV-AUTH-PAT-SCOPE-DB-IS-SOT | HIGH | Schema invariant; `pat_scopes` table is single source-of-truth; covered by `corelink-pat::scopes` integration test |
+| INV-AUTH-TENANTCTX-IMMUTABLE | CRITICAL | Type-level Rust invariant; `TenantContext` constructor is `pub(crate)` + only callable from `PatValidator::authenticate`; enforced by visibility + compile-time |
+| INV-AUTH-5-LAYER-ORDERING | CRITICAL | Algorithmic; middleware layer order pinned in `corelink-worker::middleware` builder; covered by integration test that asserts header-tagged trace through all 5 layers |
+| INV-AUTH-SESSION-CACHE-KEY-CT | HIGH | Algorithmic; `subtle::ConstantTimeEq` on session-cache key compare; covered by `corelink-worker::auth` adversarial test |
+| INV-AUTH-SCOPE-MIDDLEWARE-LEVEL | HIGH | Architectural; scope check happens in middleware layer BEFORE handler; covered by `corelink-worker::middleware::scope` integration test |
+| INV-AUTH-AUDIT-PRE-POST-ORDERING | HIGH | Algorithmic; audit-fail-CLOSED ordering enforced in handler; emit BEFORE mutation; covered by handler integration test + workspace-wide grep gate |
+| INV-AUTH-NEON-IS-SOT | HIGH | Architectural; PAT/tenant SoT is Neon Postgres (not D1 cache); covered by integration test that asserts cache invalidation on revoke; covered by `auth_pat_revoke.tla` (✅ GREEN §4.1) for propagation correctness |
+| INV-AUTH-SCHEMA-RLS-DEFAULT-ON | CRITICAL | Schema invariant; Postgres RLS WITH CHECK on every txn (`set_local app.current_tenant`); covered by `corelink-auth-schema/tests/integration/rls.rs` + property test 10k iter cross-tenant attempts → 0 leaks |
+| INV-AUTH-PAT-HMAC-SIG-VERIFIED | CRITICAL | Algorithmic; HMAC-SHA256 fast-fail before Argon2id; covered by `corelink-pat::sig::verify_hmac_sig` + `auth_pat_hybrid.tla` (✅ GREEN §4.1) |
+| INV-AUTH-PII-ENCRYPTED | CRITICAL | Schema invariant; PII columns use Neon `pgcrypto` symmetric encryption at rest; covered by schema audit + DSR erasure path |
+| INV-AUTH-MIGRATION-ADDITIVE | HIGH | CI gate `check_migrations_additive.py` enforces no DROP/RENAME/ALTER-COLUMN; build-time enforced |
+| INV-AUTH-CASCADE-DSR-COMPLETE | HIGH | Schema invariant; `ON DELETE CASCADE` on auth-context tables; covered by `dsr_erasure_atomicity.tla` (✅ GREEN §4.2) via cascade actions |
+| INV-AUTH-WEBAUTHN-UV-REQUIRED-ADMIN | CRITICAL | Algorithmic; UV flag check on admin assertion; covered by `corelink-webauthn::assertion` adversarial test (UV=0 admin → rejected) |
+| INV-AUTH-WEBAUTHN-ATTESTATION-VERIFIED | CRITICAL | Algorithmic; FIDO Metadata Service AAGUID check + attestation chain verify; covered by `corelink-webauthn::registration` test |
+| INV-AUTH-WEBAUTHN-SIGN-COUNT-MONOTONIC | HIGH | Algorithmic; per-credential sign_count strictly increasing; rollback rejected; covered by integration test |
+| INV-AUTH-WEBAUTHN-ORIGIN-EXACT | CRITICAL | Algorithmic; exact-string compare on `origin` from clientDataJSON; covered by `corelink-webauthn` adversarial test |
+| INV-AUTH-WEBAUTHN-RP-ID-CANONICAL | CRITICAL | Algorithmic; SHA-256 hash compare on rpIdHash from authData; covered by `corelink-webauthn` adversarial test |
+| INV-AUDIT-NO-RAW-PII | CRITICAL | Algorithmic; `corelink-privacy-pseudonymize::HmacPseudonymizer` applied at every audit emit site; covered by `obs_no_pii.tla` (✅ GREEN §4.1) + workspace grep gate (no raw email/phone/name in audit payloads) |
+| INV-AUDIT-CHAIN-HASH-DETERMINISTIC | HIGH | Algorithmic; BLAKE3 over canonical JSON; covered by `audit_immutability.tla` (✅ GREEN §4.1) chain-hash property |
+| INV-AUDIT-EVENT-TYPE-EXHAUSTIVE | HIGH | Type-level invariant; `AuditEventType` enum is `#[non_exhaustive]`; covered by compiler exhaustiveness check + canonical taxonomy `audit_event_taxonomy.md` |
+| INV-AUDIT-RETENTION-HINT-ACCURATE | HIGH | Schema invariant; `retention_until` computed at emit time from event type + tenant residency; covered by `corelink-audit::ports` test + retention validator |
+| INV-NEG-CACHE-MONOTONIC | HIGH | Algorithmic; negative-cache TTL only refreshable upward (max-of); covered by property test 10k iter + `corelink-edge::neg_cache` unit test |
+| INV-NO-BODY-IN-LOGS | CRITICAL | Algorithmic; tracing macros redact body bytes via `secrecy::SecretString` wrapper or `[REDACTED]` placeholder; covered by `obs_no_pii.tla` (✅ GREEN §4.1) + workspace tracing-grep gate |
+| INV-NO-PII-IN-LOGS | CRITICAL | Algorithmic; tracing layer drops PII fields via `tracing-subscriber` filter + structured-field validator; covered by `obs_no_pii.tla` (✅ GREEN §4.1) |
+| INV-AC-IDEMPOTENT | HIGH | Algorithmic; AC execution keyed by `(action_digest_hash, blob_digest, tenant_id, action_input_root)`; covered by `corelink-ac-core/tests/idempotency.rs` property test 10k iter |
+| INV-AC-RESULT-HASH-IMMUTABLE | HIGH | Algorithmic; once persisted, result hash never changes (content-addressable); enforced at D1 schema (no UPDATE on `ac_results.result_hash`); covered by schema audit |
+| INV-AC-NEG-CACHE-INVALIDATED-ON-UPDATE | HIGH | Algorithmic; on AC result write, neg-cache for matching key TTL → 0; covered by `corelink-ac-core::neg_cache` integration test |
+| INV-AC-MERKLE-VALID | CRITICAL | Algorithmic; AC Merkle codec uses `corelink-hash` BLAKE3 with canonical-bytes encoding; covered by `corelink-ac-core` property test 10k iter (malformed → reject) |
+| INV-AC-MERKLE-DETERMINISTIC | CRITICAL | Algorithmic; same input bytes → same Merkle root; covered by `corelink-ac-core::merkle::roundtrip` property test |
+| INV-AC-BOUNDED-PARSER | HIGH | Algorithmic; AC parser bounded recursion depth + max-node-count; covered by `corelink-ac-core::parser` adversarial test (deep nesting → bounded error) |
+| INV-AC-CYCLE-FREE | HIGH | Algorithmic; AC DAG cycle detection via topological sort; covered by `corelink-ac-core::dag` property test |
+| INV-AC-DUAL-SIDE-VERIFY | HIGH | Architectural; both client (via `corelink-client-verify`) AND server (via `corelink-handler-ac`) verify the Merkle root before accept; covered by integration test |
+| INV-AC-DIGEST-SIGNED | CRITICAL | Algorithmic; AC digest signed via `Ed25519` from `corelink-erasure-attestation` key set; covered by `corelink-ac-core::sig` test + `auth_audit_pseudonymization.tla` (✅ GREEN §4.1) for sig-key integrity |
+| INV-AC-SIG-CONSTANT-TIME | HIGH | Algorithmic; `subtle::ConstantTimeEq` on Ed25519 sig verify; covered by `corelink-ac-core` adversarial test |
+| INV-AC-SIG-INFO-FIXED | HIGH | Algorithmic; AC sig info schema versioned + fixed-layout; covered by `corelink-ac-schema` schema test |
+| INV-AC-KEY-ROTATION-GRACE | HIGH | Algorithmic; grace window for old key validation during rotation; covered by `corelink-erasure-attestation::rotation` integration test |
+| INV-AC-CANONICAL-BYTES-STABLE | HIGH | Algorithmic; canonical-bytes encoding is byte-deterministic across Rust version + endianness; covered by property test cross-platform |
+| INV-AC-EVICT-CONSISTENCY | HIGH | Algorithmic; AC evict path emits audit + clears D1 row + clears neg-cache atomically; covered by `ac_eviction_isolation.tla` (✅ GREEN §4.1) |
+| INV-AC-TTL-MONOTONIC | HIGH | Algorithmic; AC TTL only refreshable upward; covered by `corelink-ac-core::ttl` property test |
+| INV-AC-PATH-KEY-MATERIALIZED | HIGH | Algorithmic; AC path key derived deterministically from `(tenant_id, action_digest)`; covered by `corelink-tenant-path::derive_prefix` property test |
+| INV-AC-PATH-SIG-KEY-VERSION-INDEPENDENT | HIGH | Algorithmic; AC path sig key version-independent (forward-compat); covered by integration test |
+| INV-AC-TTL-REFRESH-MONOTONIC | HIGH | Algorithmic; refresh path is monotonic (max-of); covered by `corelink-ac-core::ttl::refresh` property test |
+| INV-AC-REGION-PINNED | HIGH | Architectural; AC results pinned to tenant's primary region; covered by `region_residency.tla` (✅ GREEN §4.1) + `ac_eviction_isolation.tla` (✅ GREEN §4.1) |
+| INV-AC-EVICT-AUDIT-EMITTED | HIGH | Algorithmic; every AC evict emits `corelink.ac.evicted.v1` audit BEFORE mutation; covered by `ac_eviction_isolation.tla` (✅ GREEN §4.1) |
+| INV-MULTIPART-IDEMPOTENT | HIGH | Algorithmic; multipart upload keyed by `(upload_id, part_number, claimed_hash)`; covered by `corelink-r2-multipart` property test 10k iter |
+| INV-MULTIPART-MANIFEST-SIGNED | HIGH | Algorithmic; manifest signed via `corelink-erasure-attestation` Ed25519; covered by `corelink-multipart-schema::manifest` adversarial test (forged sig → rejected) |
+| INV-BILLING-PORTAL-AUDIT | HIGH | Algorithmic; every Stripe Customer Portal access emits `corelink.billing.portal.accessed.v1`; covered by `corelink-billing-stripe::portal` integration test + `audit_immutability.tla` (✅ GREEN §4.1) inheritance |
+| INV-BILLING-PORTAL-AUDIT-FAIL-CLOSED | HIGH | Algorithmic; portal session creation rejected if audit emit fails (fail-CLOSED); covered by `corelink-billing-stripe::portal` adversarial test (audit-sink-failure → portal-session-not-created) |
+| INV-BILLING-PORTAL-URL-HTTPS | HIGH | Algorithmic; URL scheme parser enforces HTTPS-only on Stripe Customer Portal redirect URL; covered by `corelink-billing-stripe::portal::url::parse` unit test |
+| INV-BILLING-PORTAL-URL-SINGLE-USE | HIGH | Algorithmic; portal session URLs are single-use (Stripe enforces); covered by `corelink-billing-stripe::portal` integration test + Stripe spec |
+| INV-BODY-FROZEN-URLS | HIGH | Algorithmic; error-body URL set is `const` array compiled into binary; covered by `corelink-server::error_body::urls` test + reproducible-build attestation |
+| INV-BODY-HEADER-MIRROR-1 | HIGH | Algorithmic; error-body header values mirror response status line; covered by `corelink-reapi::error_map` adversarial test (4 mirror invariants, this is row 1: status code) |
+| INV-BODY-HEADER-MIRROR-2 | HIGH | Algorithmic; error-body content-type mirrors `Content-Type` response header; covered by `corelink-reapi::error_map` adversarial test (row 2: content-type) |
+| INV-BODY-HEADER-MIRROR-3 | HIGH | Algorithmic; error-body request-id mirrors `X-Request-Id` response header; covered by `corelink-reapi::error_map` adversarial test (row 3: request-id) |
+| INV-BODY-HEADER-MIRROR-4 | HIGH | Algorithmic; error-body retry-after mirrors `Retry-After` response header on 429/503; covered by `corelink-reapi::error_map` adversarial test (row 4: retry-after) |
+| INV-BODY-RENDER-WELL-FORMED | HIGH | Algorithmic; error-body JSON renderer produces well-formed UTF-8 + valid JSON for every error variant; covered by `corelink-reapi::error_map::render` property test 10k iter |
+| INV-BODY-STABLE-CODE | HIGH | Algorithmic; error-body `code` field is stable across Rust toolchain versions (no `Debug` formatter drift); covered by `corelink-reapi::error_map::Code` const-string assertion test |
+| INV-CAS-CORRECTNESS | CRITICAL | Algorithmic; coberto por `cas_integrity.tla` (✅ GREEN §4.1) via `InvPoisoningRejected` + property tests 10k iter (bit-rot adversarial + hash-mismatch reject); subsumes INV-CAS-INTEGRITY refinements |
+| INV-EVICT-CASCADE-PREVENTED | HIGH | Algorithmic; eviction propagation guard prevents cascade across tiers (LRU → cold → ...); covered by `corelink-eviction::cascade` property test |
+| INV-EVICT-SOFT-DELETE-FIRST | HIGH | Algorithmic; eviction soft-deletes (tombstone) BEFORE hard-delete; covered by `corelink-eviction::tier` test + tombstone TTL validation |
+| INV-GC-30D-SUSTAINED-VERIFICATION | HIGH | Operational; 30-day GC sustained-correctness cron verifies refcount + reachability; covered by `corelink-gc::sustained_verification` integration test + cron worker |
+| INV-GC-CI-GATE-ENFORCED | HIGH | CI gate; `scripts/check_gc_ci_gate.sh` (or equivalent) blocks merges that regress GC reachability proofs; covered by build-time enforcement |
+| INV-GC-DEGRADE-CORRECT | HIGH | Algorithmic; GC degrade mode produces correct (subset-safe) sweep set; covered by `gc_correctness.tla` (✅ GREEN §4.1) + property test under degraded probe budget |
+| INV-GC-DEGRADE-MODE-PROBE-PER-BATCH | HIGH | Algorithmic; degrade-mode probes are per-batch (not per-blob) to bound cost; covered by `corelink-gc::degrade` budget test |
+| INV-GC-DSR-BYPASS-AUTHORIZED | HIGH | Algorithmic; DSR-triggered GC bypass requires authorized `Authority::Dsr` token; covered by `corelink-gc::dsr_bypass` integration test |
+| INV-GC-GRACE-RESPECTED | HIGH | Algorithmic; coberto por `gc_grace_boundary.tla` (✅ GREEN §4.1) via `InvGraceBoundaryStrict` |
+| INV-GC-IDEMPOTENT-RERUN | HIGH | Algorithmic; re-running GC on same input produces identical sweep set; covered by `corelink-gc::idempotency` property test 10k iter |
+| INV-GC-MARK-D1-BOUNDED-BATCH | HIGH | Algorithmic; mark phase D1 reads bounded per batch (max N rows per query); covered by `corelink-gc::mark` batch-size test |
+| INV-GC-MARK-PHASE-BUDGETED | HIGH | Algorithmic; mark phase has wall-clock + row-count budget; rejected if exceeded; covered by `corelink-gc::mark::budget` test |
+| INV-GC-MARK-STARTED-AT-ATOMIC | CRITICAL | Algorithmic; `mark_started_at` set atomically with mark-phase init via single D1 UPDATE; covered by `gc_correctness.tla` (✅ GREEN §4.1) via mark-started-at-aware invariants |
+| INV-GC-MARK-STARTED-AT-IMMUTABLE | CRITICAL | Algorithmic; `mark_started_at` field is INSERT-only (no UPDATE after set); enforced via D1 schema constraint + `gc_correctness.tla` (✅ GREEN §4.1) |
+| INV-GC-PHASE-MONOTONIC | HIGH | Algorithmic; GC phases (MARK → SWEEP → RECONCILE → AUDIT) monotonic state machine; no phase-skip; covered by `corelink-gc::phase` state-machine test |
+| INV-GC-PHYSICAL-DELETE-IDEMPOTENT | HIGH | Algorithmic; R2 DELETE is idempotent (404-as-success); covered by `corelink-gc::sweep::physical_delete` test + R2 spec |
+| INV-GC-PROPERTY-TEST-CROSS-VALIDATED | HIGH | Property test; GC reachability cross-validated via independent re-computation; covered by `corelink-gc::prop_cross_validation` property test |
+| INV-GC-R2-D1-ORDERING | HIGH | Algorithmic; R2 physical delete happens AFTER D1 tombstone commit (not before); covered by `gc_sweep_audit_fail_closed.tla` (✅ GREEN §4.1) via `InvReconcileAtomicPairing` |
+| INV-GC-RECONCILE-AUTO-FIX-BOUNDED | HIGH | Algorithmic; reconcile auto-fix has per-run row-count cap; covered by `corelink-gc::reconcile::auto_fix` budget test |
+| INV-GC-SINGLE-RUNNING-PER-TENANT-REGION | HIGH | Architectural; DO atomic-lock per `(tenant_id, region)` prevents concurrent GC; covered by `corelink-gc::lock` integration test |
+| INV-GC-SWEEP-IDEMPOTENT | HIGH | Algorithmic; re-sweeping same input produces no additional deletes; covered by `gc_sweep_audit_fail_closed.tla` (✅ GREEN §4.1) via `InvSweepOutcomeConsistent` |
+| INV-HANDLER-SLI-EMIT-ENTRY | HIGH | Algorithmic; every handler emits `corelink.sli.handler.entry.v1` BEFORE any business logic; covered by handler integration test + workspace-wide grep gate |
+| INV-LRU-CONSISTENCY | HIGH | Algorithmic; LRU tracker monotonic recency stamps; covered by `corelink-lru-tracker::recency` property test |
+| INV-MULTIPART-BOUNDED-PARSER | HIGH | Algorithmic; multipart parser bounded by max-parts (10k) + max-body-size; covered by `corelink-r2-multipart::parser` adversarial test |
+| INV-MULTIPART-CHUNK-DETERMINISTIC | CRITICAL | Algorithmic; chunker produces same BLAKE3 boundaries for same input bytes; covered by `corelink-chunker` property test cross-platform |
+| INV-MULTIPART-CONCURRENCY-BOUNDED | HIGH | Algorithmic; max-concurrent multipart uploads per tenant bounded by quota; covered by `corelink-r2-multipart::quota` test |
+| INV-MULTIPART-DUAL-SIDE-VERIFY | HIGH | Architectural; both client (`corelink-client-verify`) AND server (`corelink-r2-multipart`) verify part hashes before commit; covered by integration test |
+| INV-MULTIPART-MANIFEST-VALID | CRITICAL | Algorithmic; manifest schema validates all parts present, sizes match, hashes valid; covered by `corelink-multipart-schema::manifest::validate` property test |
+| INV-MULTIPART-ORPHAN-DETECTABLE | HIGH | Algorithmic; orphan multipart uploads detectable via abandoned `upload_id` + age threshold; covered by `corelink-r2-multipart::orphan` reconciler test |
+| INV-MULTIPART-PATH-KEY-MATERIALIZED | HIGH | Algorithmic; multipart path key derived deterministically from `(tenant_id, upload_id)`; covered by `corelink-tenant-path::derive_prefix` property test |
+| INV-MULTIPART-PATH-TENANT-SCOPED | CRITICAL | Algorithmic; tenant prefix on every multipart path; covered by `cas_integrity.tla` (✅ GREEN §4.1) inheritance via tenant-isolation + `corelink-r2-multipart::path` adversarial test (cross-tenant uniformly rejected) |
+| INV-MULTIPART-STATE-MONOTONIC | HIGH | Algorithmic; multipart state machine (INIT → ACTIVE → COMPLETING → COMPLETE / FAILED) monotonic; covered by state-machine property test |
+| INV-MULTIPART-STREAMING-MEMORY | HIGH | Algorithmic; multipart streaming bounded heap (no full-buffer); covered by `corelink-r2-multipart::stream` memory-bound test |
+| INV-MULTIPART-STREAMING-VERIFY-FAIL-FAST | HIGH | Algorithmic; streaming verify aborts on first hash mismatch (no full-stream consumption); covered by `corelink-r2-multipart::stream::verify` adversarial test |
+| INV-OBS-CONFIG-NON-EXHAUSTIVE | HIGH | Type-level invariant; observability config types use `#[non_exhaustive]`; covered by compiler check + `corelink-otel-export::config` test |
+| INV-OBS-CT-SECRET-EQ | HIGH | Algorithmic; `subtle::ConstantTimeEq` on observability secret values (export-token compare); covered by `corelink-otel-export::secret` adversarial test |
+| INV-OBS-EXPORT-FAIL-OPEN | HIGH | Architectural; observability export failures do NOT block request path (fail-OPEN by design — opposite of audit fail-CLOSED); covered by `corelink-otel-export::export` integration test |
+| INV-QUOTA-RESERVATION-TTL | HIGH | Algorithmic; quota reservation TTL bounded (30s); auto-release on TTL; covered by `corelink-quota::reservation` TTL test |
+| INV-ROLLOUT-AUTO-ROLLBACK-TRIGGERS | HIGH | Algorithmic; auto-rollback triggers (error-rate / latency / SLO breach) defined as `const` thresholds; covered by `corelink-rollout-controller::rollback::triggers` test + `rollout_cosign_gate.tla` (✅ GREEN §4.1) inheritance |
+| INV-ROLLOUT-BUDGET-CAP | HIGH | Algorithmic; rollout error budget cap per stage; exceeding → halt; covered by `corelink-rollout-controller::budget` test |
+| INV-ROLLOUT-NO-STAGE-SKIP | HIGH | Algorithmic; rollout stages strictly sequential (canary → 10% → 50% → 100%); no skip; covered by `corelink-rollout-controller::stage` state-machine test |
+| INV-ROLLOUT-SINGLE-ACTIVE | HIGH | Architectural; only ONE rollout active per service at a time; DO lock enforces; covered by `corelink-rollout-controller::lock` integration test |
+| INV-S17-CHAOS-STAGING-ONLY | HIGH | Operational; chaos engineering runs ONLY in staging env; production chaos disabled by feature flag; covered by `corelink-canary::chaos` env-gate test |
+| INV-S17-ONCALL-FATIGUE-AUTOROTATE | HIGH | Operational; on-call fatigue detection auto-rotates to backup engineer after threshold; covered by `corelink-oncall::fatigue` rotation test |
+| INV-S17-OPS-EXCLUSIVITY | HIGH | Operational; mutually-exclusive ops (deploy + chaos + rollback) bounded by ops-coordinator lock; covered by `corelink-ops::coordinator` integration test |
+| INV-S17-SEV1-DRILL-PAUSE | HIGH | Operational; SEV-1 incidents pause active chaos drills automatically; covered by `corelink-oncall::sev1` pause-drill integration test |
 
 ### 4.4 CI obligation gate (Lote 9.4)
 
