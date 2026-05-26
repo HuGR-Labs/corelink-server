@@ -15,7 +15,7 @@
 # quando o código real muda.
 
 # ---- Build stage ----
-FROM rust:1.82-slim-bookworm AS builder
+FROM rust:1.91-slim-bookworm AS builder
 
 # Deps pra compilar protos e linkagem
 RUN apt-get update && apt-get install -y --no-install-recommends \

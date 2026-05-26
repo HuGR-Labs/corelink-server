@@ -54,7 +54,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IMAGE_NAME="corelink-server"
 IMAGE_TAG_PROD="prod"
 ARCH="linux/amd64"  # CF Containers beta: amd64-only
-RUST_VERSION="1.82"
+RUST_VERSION="1.91"
 SMOKE_TIMEOUT_S=10  # seconds to wait for gRPC server to bind before probe
 GRPC_PORT=50051
 
