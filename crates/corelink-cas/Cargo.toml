@@ -43,3 +43,11 @@ corelink-multipart-schema = { workspace = true }
 corelink-meta = { workspace = true }
 corelink-manifest = { workspace = true }
 corelink-handler-cas = { workspace = true }
+
+# Wave 33 Stage 2.A-v2 additive aggregator (per 2.A HALT audit §9(b)):
+# expose corelink-worker's storage::r2 + cache submodules under canonical
+# wave-33 import paths `corelink_cas::r2_storage::*` + `corelink_cas::cache::*`.
+# Physical move of these 2700+ LOC was rejected at 2.A because target
+# aggregator façade is paper-thin Option-A; re-exporting via pub use
+# preserves the architecture intent without breaking 63 consumers.
+corelink-worker = { workspace = true }

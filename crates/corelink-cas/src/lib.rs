@@ -70,6 +70,24 @@ pub mod meta;
 pub mod multipart_schema;
 pub mod r2_multipart;
 
+/// Wave 33 Stage 2.A-v2 additive aggregator (per 2.A HALT audit §9(b)):
+/// canonical wave-33 path for R2 storage adapters that physically live
+/// in `corelink-worker::storage::r2`. Re-export rather than physical
+/// move preserves 63-consumer surface + Stage 1 Option-A façade design.
+pub mod r2_storage {
+    //! R2 storage adapters — canonical wave-33 surface for
+    //! `corelink-worker::storage::r2`.
+    pub use corelink_worker::storage::r2::*;
+}
+
+/// Wave 33 Stage 2.A-v2 additive aggregator: canonical wave-33 path for
+/// CAS edge cache adapters that physically live in `corelink-worker::cache`.
+pub mod cache {
+    //! CAS cache adapters — canonical wave-33 surface for
+    //! `corelink-worker::cache`.
+    pub use corelink_worker::cache::*;
+}
+
 #[cfg(test)]
 mod tests {
     //! Smoke tests proving every canonical re-export path resolves at
