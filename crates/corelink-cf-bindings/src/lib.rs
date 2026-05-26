@@ -129,5 +129,5 @@ pub use kv_real::{KvOp, TenantPrefix as KvTenantPrefix};
 // a single import path (`corelink_cf_bindings::*`) for both the adapter
 // types AND their error variants. This keeps `apps/server` / the CF
 // Worker boot path free of `corelink_worker::storage::error::*` paths.
-pub use corelink_worker::cache::kv::KvError;
+pub use corelink_cas::cache::kv::KvError;
 pub use corelink_worker::storage::error::R2Error;

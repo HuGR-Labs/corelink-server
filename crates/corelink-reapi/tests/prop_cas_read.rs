@@ -96,9 +96,9 @@ use corelink_meta::{
 use corelink_reapi::find_missing::FindMissingOrchestrator;
 use corelink_reapi::read::{CasReadOrchestrator, MissReason as ReadMiss, ReadOutcome};
 use corelink_tenant_path::TenantDerivationKey;
-use corelink_worker::cache::kv::{FakeClock, InMemoryKv};
-use corelink_worker::cache::negative::{NegativeCache, DEFAULT_NEGATIVE_CACHE_TTL_SECS};
-use corelink_worker::cache::MissReason as CacheMiss;
+use corelink_cas::cache::kv::{FakeClock, InMemoryKv};
+use corelink_cas::cache::negative::{NegativeCache, DEFAULT_NEGATIVE_CACHE_TTL_SECS};
+use corelink_cas::cache::MissReason as CacheMiss;
 use corelink_cas::r2_storage::{CountingR2, InMemoryR2, R2Reader, R2Writer};
 use corelink_worker::{Region, TenantCtx};
 use proptest::prelude::*;
