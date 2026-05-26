@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "build:cf": "next-on-pages",
+    "build:cf": "pnpm dlx vercel@latest build --yes && node -e \"const fs=require('fs');const rm=p=>{try{fs.rmSync(p,{recursive:true})}catch{}};rm('.vercel/output/functions/_not-found.func');rm('.vercel/output/functions/_not-found.rsc.func');rm('.vercel/output/functions/_error.func')\" && next-on-pages --skip-build",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",

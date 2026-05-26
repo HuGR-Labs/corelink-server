@@ -25,7 +25,7 @@ function get(obj: unknown, dotted: string): unknown {
 
 describe("i18n locale completeness", () => {
   it("LOCALES list matches available locale files", () => {
-    expect(LOCALES).toEqual(["en", "pt", "es"]);
+    expect(LOCALES).toEqual(["en", "pt", "es", "de"]);
     expect(DEFAULT_LOCALE).toBe("en");
   });
 
