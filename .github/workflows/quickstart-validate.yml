@@ -16,14 +16,14 @@ on:
     paths:
       - "apps/docs/docs/tutorials/quickstart-10min.mdx"
       - "apps/docs/scripts/validate-quickstart.sh"
-      - "crates/corelink-cli/src/main.rs"
+      - "tools/cli/src/main.rs"
       - ".github/workflows/quickstart-validate.yml"
   push:
     branches: [main]
     paths:
       - "apps/docs/docs/tutorials/quickstart-10min.mdx"
       - "apps/docs/scripts/validate-quickstart.sh"
-      - "crates/corelink-cli/src/main.rs"
+      - "tools/cli/src/main.rs"
 
 permissions:
   contents: read

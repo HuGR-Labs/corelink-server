@@ -211,7 +211,7 @@ members = [
     # follow-up WI per autonomous-execution charter trait-abstraction-defer.
     "crates/corelink-otel-export",
     # WI-S15-001 CLI 7 subcommands + WI-S15-005 telemetry opt-in (same crate)
-    "crates/corelink-cli",
+    "tools/cli",
     # WI-S15-004 FFI wrappers (Python pyO3 + Go cgo + JS/TS WASM)
     "tools/sdks/python",
     "tools/sdks/go",
@@ -680,7 +680,7 @@ corelink-d1-migrations = { path = "crates/corelink-d1-migrations" }
 toml = "0.8"
 dirs = "5"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
-corelink-cli = { path = "crates/corelink-cli" }
+corelink-cli = { path = "tools/cli" }
 
 # Test / bench
 proptest = "1.5"

@@ -33,7 +33,7 @@ mod_module_files = "deny"
 
 [dependencies]
 # WI-S17-003: runbook dry-run tracker (pure-logic library — no I/O, no async).
-corelink-runbook-tracker = { path = "../corelink-runbook-tracker" }
+corelink-runbook-tracker = { workspace = true }
 # WI-R-PREP-AUDIT-EXPORT: audit log export CLI (json-ld/csv/parquet + Merkle proofs).
 corelink-audit-chain = { workspace = true }
 corelink-analytics = { workspace = true }
