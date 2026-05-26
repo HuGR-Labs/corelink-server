@@ -87,6 +87,43 @@ This skill encodes the lessons from 30 days of orchestrating: every anti-pattern
 - ❌ "Follow the A2 pattern from `<audit>.md` §3" (orchestrator inlines the pattern)
 - ❌ Long rationale prose about WHY a rule exists (the skill + spec contain rationale; prompt is execution-only)
 
+### MANDATORY Agent Step 0 — baseline verification (added 2026-05-26 after 2.D incident)
+
+**Every dispatch packet MUST include this verbatim:**
+
+```
+## Step 0 (BEFORE ANY WORK) — verify worktree baseline
+
+The orchestrator's `Agent` tool may initialize your worktree at a STALE commit
+(default-branch-tip from when the worktree was first created, not current
+main). You MUST verify before any work:
+
+```sh
+EXPECTED_BASELINE="<sha-from-packet>"
+ACTUAL_BASELINE=$(git rev-parse HEAD)
+if [ "$ACTUAL_BASELINE" != "$EXPECTED_BASELINE" ]; then
+    # The worktree is on a stale commit. Reset to expected baseline.
+    git fetch origin
+    git checkout -B <branch-name-from-packet> $EXPECTED_BASELINE
+    # Re-verify
+    git rev-parse HEAD   # must now equal $EXPECTED_BASELINE
+fi
+```
+
+If `$ACTUAL_BASELINE` matches `$EXPECTED_BASELINE`, you're already on the
+right commit — proceed.
+
+If reset is needed, do it BEFORE creating your work branch. Do NOT begin
+sub-steps until verified.
+
+PRECEDENT: PRE-A noted "Worktree initial state was misleading. Filesystem
+was at 99269ed0 (pre-Stage-1, wave-30 tip, 107 crates). Required reset +
+new-branch-from-main." 2.D ignored this same scenario and committed 7
+sub-steps against the stale base — all had to be redone. Don't be 2.D.
+```
+
+The orchestrator must inject `EXPECTED_BASELINE=<sha>` literally into every packet — no exceptions.
+
 ### Pro-protocol (use these in prompt)
 
 - ✅ "Decompose these 3 files (LOC + largest fn pre-computed below) using this pattern (inline snippet below)."
