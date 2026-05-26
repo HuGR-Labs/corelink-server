@@ -290,7 +290,7 @@ members = [
     # Hand-authored YAML + embedded constants; spec_roundtrip integration test
     # gates drift between the YAML, the generated JSON sibling, and the path
     # constants exported by this crate.
-    "crates/corelink-openapi",
+    "tools/openapi",
     # R-prep handler-crate skeletons (CAS / AC / Admin). Each crate ships the
     # typed handler-surface trait + InMemoryFake + per-handler SliObserver
     # integration emitting canonical Sli observations + audit-fail-CLOSED
@@ -657,7 +657,7 @@ corelink-billing-stripe-materializer = { path = "crates/corelink-billing-stripe-
 corelink-statuspage-real = { path = "crates/corelink-statuspage-real" }
 corelink-dsr-statuspage-scheduler = { path = "crates/corelink-dsr-statuspage-scheduler" }
 corelink-drata-sync = { path = "crates/corelink-drata-sync" }
-corelink-openapi = { path = "crates/corelink-openapi" }
+corelink-openapi = { path = "tools/openapi" }
 # R-prep handler-crate skeletons (CAS / AC / Admin).
 corelink-handler-cas = { path = "crates/corelink-handler-cas" }
 corelink-handler-ac = { path = "crates/corelink-handler-ac" }
