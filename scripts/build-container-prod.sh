@@ -110,7 +110,8 @@ else
     log "Reusing existing buildx builder 'corelink-builder'."
     docker buildx use corelink-builder
 fi
-docker buildx inspect --bootstrap corelink-builder | head -10
+# Use grep instead of head to avoid SIGPIPE broken-pipe exit with set -euo pipefail
+docker buildx inspect --bootstrap corelink-builder 2>&1 | grep -E "^(Name|Driver|Status|BuildKit)" || true
 
 # ── Step 2: Derive SOURCE_DATE_EPOCH (ADR-0015) ────────────────────────────
 
