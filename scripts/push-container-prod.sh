@@ -112,23 +112,24 @@ fi
 
 # ── Step 3: Verify wrangler ────────────────────────────────────────────────
 
-if ! command -v wrangler >/dev/null 2>&1; then
-    die "wrangler CLI not found. Install via: npm install -g wrangler
-     (or pnpm add -g wrangler)."
-fi
-log "Wrangler: $(wrangler --version 2>&1 | head -1)"
+# Phase D APPLY patch: use npx wrangler@latest (wrangler not in global PATH).
+WRANGLER_CMD="npx wrangler@latest"
+log "Wrangler: $($WRANGLER_CMD --version 2>&1 | head -1)"
 
 # ── Step 4: Verify CF authentication ──────────────────────────────────────
 
-# Auth precedence: CF_API_TOKEN env var > wrangler login session.
+# Auth precedence: CLOUDFLARE_API_TOKEN (primary; set in .env.local) >
+# CF_API_TOKEN (legacy alias) > wrangler login session.
 # CTRL-CRED-001: never embed credentials in this script.
-if [ -n "${CF_API_TOKEN:-}" ]; then
+if [ -n "${CLOUDFLARE_API_TOKEN:-}" ]; then
+    log "CF auth: CLOUDFLARE_API_TOKEN env var set (CTRL-CRED-001: not logging value)."
+elif [ -n "${CF_API_TOKEN:-}" ]; then
     log "CF auth: CF_API_TOKEN env var set (CTRL-CRED-001: not logging value)."
-elif wrangler whoami >/dev/null 2>&1; then
-    log "CF auth: wrangler login session active ($(wrangler whoami 2>&1 | head -1))."
+elif $WRANGLER_CMD whoami >/dev/null 2>&1; then
+    log "CF auth: wrangler login session active ($($WRANGLER_CMD whoami 2>&1 | head -1))."
 else
-    die "CF auth FAILED: neither CF_API_TOKEN env var set nor wrangler login session found.
-     Set CF_API_TOKEN from .env.local or run 'wrangler login'."
+    die "CF auth FAILED: neither CLOUDFLARE_API_TOKEN/CF_API_TOKEN env var set nor wrangler login session found.
+     Set CLOUDFLARE_API_TOKEN from .env.local or run 'npx wrangler@latest login'."
 fi
 
 # ── Step 5: Derive push target ─────────────────────────────────────────────
@@ -142,7 +143,7 @@ log ""
 if [ "$DRY_RUN" -eq 1 ]; then
     log "DRY-RUN MODE — the following command would be executed with --apply:"
     log ""
-    log "  wrangler containers push $FULL_TAG_PROD --env $WRANGLER_ENV"
+    log "  npx wrangler@latest containers push $FULL_TAG_PROD --env $WRANGLER_ENV"
     log ""
     log "What this would do:"
     log "  1. Authenticate to Cloudflare Containers registry using CF_API_TOKEN."
@@ -170,7 +171,8 @@ else
     # NOTE: If `wrangler containers push` command syntax changes in a future
     # wrangler release, update this line and document the change in the
     # Phase E APPLY audit doc.
-    wrangler containers push "$FULL_TAG_PROD" --env "$WRANGLER_ENV"
+    # Phase D APPLY patch: use npx wrangler@latest (wrangler not in global PATH).
+    $WRANGLER_CMD containers push "$FULL_TAG_PROD" --env "$WRANGLER_ENV"
 
     log ""
     log "Push completed."

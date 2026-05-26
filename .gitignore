@@ -76,3 +76,4 @@ apps/admin-ui/tsconfig.tsbuildinfo
 # Endurance load test results — never commit (regen via scripts/run_24h_endurance.sh)
 tests/load/results/
 target-isolated
+worker-configuration.d.ts
