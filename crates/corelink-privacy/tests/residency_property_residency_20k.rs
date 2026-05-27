@@ -43,10 +43,17 @@ use corelink_privacy::residency::{
 /// Included for documentation and future callers; used in
 /// `test_proptest_cases_runtime_configurable`.
 fn proptest_cases() -> u32 {
+    proptest_cases_or(20_000)
+}
+
+/// Parameterized variant — returns env override if set, else `default`.
+/// Used by per-block `#![proptest_config(...)]` to allow callsite-
+/// specific defaults while keeping the env-override contract uniform.
+fn proptest_cases_or(default: u32) -> u32 {
     std::env::var("PROPTEST_CASES")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(20_000)
+        .unwrap_or(default)
 }
 
 /// Global failure counter — mirrors `corelink_residency_property_test_failures_total`.
@@ -88,7 +95,7 @@ fn any_backend_strategy() -> impl Strategy<Value = BackendKind> {
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 10_000,
+        cases: proptest_cases_or(10_000),
         ..ProptestConfig::default()
     })]
 
@@ -129,7 +136,7 @@ proptest! {
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 10_000,
+        cases: proptest_cases_or(10_000),
         ..ProptestConfig::default()
     })]
 
@@ -170,7 +177,7 @@ proptest! {
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 5_000,
+        cases: proptest_cases_or(5_000),
         ..ProptestConfig::default()
     })]
 
@@ -205,7 +212,7 @@ proptest! {
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 5_000,
+        cases: proptest_cases_or(5_000),
         ..ProptestConfig::default()
     })]
 
@@ -238,7 +245,7 @@ proptest! {
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 5_000,
+        cases: proptest_cases_or(5_000),
         ..ProptestConfig::default()
     })]
 
@@ -284,7 +291,7 @@ proptest! {
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 5_000,
+        cases: proptest_cases_or(5_000),
         ..ProptestConfig::default()
     })]
 

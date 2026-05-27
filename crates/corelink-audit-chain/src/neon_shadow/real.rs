@@ -1301,6 +1301,15 @@ mod proptests {
     use crate::neon_shadow::InMemoryShadowSyncAuditSink;
     use proptest::prelude::*;
 
+    /// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Default 10k
+    /// for the PR gate; nightly stress via `PROPTEST_CASES=100_000`.
+    fn proptest_cases() -> u32 {
+        std::env::var("PROPTEST_CASES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(10_000)
+    }
+
     fn arb_payload() -> impl Strategy<Value = String> {
         // Arbitrary single-key JSON object with a string value
         // covering common audit-payload shapes.
@@ -1312,7 +1321,7 @@ mod proptests {
     }
 
     proptest! {
-        #![proptest_config(ProptestConfig { cases: 10_000, .. ProptestConfig::default() })]
+        #![proptest_config(ProptestConfig { cases: proptest_cases(), .. ProptestConfig::default() })]
 
         #[test]
         fn roundtrip_jsonb_preserves_payload(

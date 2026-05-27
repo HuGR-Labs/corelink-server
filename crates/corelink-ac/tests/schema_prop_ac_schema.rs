@@ -48,6 +48,16 @@ use corelink_ac::schema::{
 use proptest::prelude::*;
 use uuid::Uuid;
 
+/// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Returns the
+/// env-overridden value if set, else `default`. The 100k nightly
+/// variant overrides via `PROPTEST_CASES=100_000`.
+fn proptest_cases(default: u32) -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(default)
+}
+
 // ---------------------------------------------------------------------------
 // Strategies.
 // ---------------------------------------------------------------------------
@@ -107,7 +117,7 @@ fn upsert_request_strategy() -> impl Strategy<Value = AcUpsertRequest> {
 // ---------------------------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(10_000))]
+    #![proptest_config(ProptestConfig::with_cases(proptest_cases(10_000)))]
 
     #[test]
     fn pk_uniqueness_idempotent_same_result_hash(req in upsert_request_strategy()) {
@@ -148,7 +158,7 @@ proptest! {
 // ---------------------------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(10_000))]
+    #![proptest_config(ProptestConfig::with_cases(proptest_cases(10_000)))]
 
     #[test]
     fn cross_tenant_get_returns_none(
@@ -190,7 +200,7 @@ proptest! {
 // ---------------------------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(10_000))]
+    #![proptest_config(ProptestConfig::with_cases(proptest_cases(10_000)))]
 
     #[test]
     fn check_blob_refs_size_enforced(
@@ -285,7 +295,7 @@ proptest! {
 // ---------------------------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(10_000))]
+    #![proptest_config(ProptestConfig::with_cases(proptest_cases(10_000)))]
 
     #[test]
     fn lifecycle_invariant_holds_after_insert(
@@ -323,7 +333,7 @@ proptest! {
 // ---------------------------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(10_000))]
+    #![proptest_config(ProptestConfig::with_cases(proptest_cases(10_000)))]
 
     #[test]
     fn blob_refs_count_round_trips(
@@ -369,7 +379,7 @@ proptest! {
 // ---------------------------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(10_000))]
+    #![proptest_config(ProptestConfig::with_cases(proptest_cases(10_000)))]
 
     #[test]
     fn migration_reapply_preserves_rows(req in upsert_request_strategy()) {
@@ -391,7 +401,7 @@ proptest! {
 // ---------------------------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(5_000))]
+    #![proptest_config(ProptestConfig::with_cases(proptest_cases(5_000)))]
 
     #[test]
     fn multi_tenant_populations_isolated(

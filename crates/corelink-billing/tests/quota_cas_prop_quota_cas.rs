@@ -54,10 +54,17 @@ use proptest::prelude::*;
 use uuid::Uuid;
 
 fn proptest_cases() -> u32 {
+    proptest_cases_or(10_000)
+}
+
+/// Parameterized variant — returns env override if set, else `default`.
+/// Used by per-block `#![proptest_config(...)]` to keep the env-override
+/// contract uniform across callsites with distinct case counts.
+fn proptest_cases_or(default: u32) -> u32 {
     std::env::var("PROPTEST_CASES")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(10_000)
+        .unwrap_or(default)
 }
 
 type CheckerType = InMemoryAtomicQuotaChecker<
@@ -499,7 +506,7 @@ proptest! {
 // ---- prop_check_duration_under_5ms_p99 (informational) ------------
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(1_000))]
+    #![proptest_config(ProptestConfig::with_cases(proptest_cases_or(1_000)))]
 
     /// Informational SLO probe: in-memory CAS check duration is
     /// vanishingly small compared to the WI §22 5ms p99 SLO. The

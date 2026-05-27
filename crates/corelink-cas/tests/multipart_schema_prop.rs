@@ -46,6 +46,16 @@ use corelink_cas::multipart_schema::{
 use proptest::prelude::*;
 use uuid::Uuid;
 
+/// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Returns the
+/// env-overridden value if set, else `default`. The 100k nightly
+/// variant overrides via `PROPTEST_CASES=100_000`.
+fn proptest_cases(default: u32) -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(default)
+}
+
 // ---------------------------------------------------------------------------
 // Strategies.
 // ---------------------------------------------------------------------------
@@ -125,7 +135,7 @@ fn session_initiate_strategy() -> impl Strategy<Value = MultipartInitiateRequest
 // ---------------------------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(10_000))]
+    #![proptest_config(ProptestConfig::with_cases(proptest_cases(10_000)))]
 
     #[test]
     fn prop_chunks_pk_uniqueness(req in chunk_request_strategy()) {
@@ -179,7 +189,7 @@ proptest! {
 // ---------------------------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(10_000))]
+    #![proptest_config(ProptestConfig::with_cases(proptest_cases(10_000)))]
 
     #[test]
     fn prop_chunks_check_size_bytes_rejected(
@@ -260,7 +270,7 @@ proptest! {
 // ---------------------------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(10_000))]
+    #![proptest_config(ProptestConfig::with_cases(proptest_cases(10_000)))]
 
     #[test]
     fn prop_chunks_tenant_isolation(
@@ -300,7 +310,7 @@ proptest! {
 // ---------------------------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(10_000))]
+    #![proptest_config(ProptestConfig::with_cases(proptest_cases(10_000)))]
 
     #[test]
     fn prop_manifest_chunks_pk_ordered(
@@ -355,7 +365,7 @@ proptest! {
 // ---------------------------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(10_000))]
+    #![proptest_config(ProptestConfig::with_cases(proptest_cases(10_000)))]
 
     #[test]
     fn prop_multipart_sessions_state_transitions_forward(
@@ -487,7 +497,7 @@ proptest! {
 // ---------------------------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(5_000))]
+    #![proptest_config(ProptestConfig::with_cases(proptest_cases(5_000)))]
 
     #[test]
     fn prop_multi_tenant_chunks_isolated(
@@ -536,7 +546,7 @@ proptest! {
 // ---------------------------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(10_000))]
+    #![proptest_config(ProptestConfig::with_cases(proptest_cases(10_000)))]
 
     #[test]
     fn prop_migration_reapply_preserves_rows(req in chunk_request_strategy()) {

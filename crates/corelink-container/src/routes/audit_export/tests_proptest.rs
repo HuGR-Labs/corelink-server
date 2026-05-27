@@ -34,9 +34,18 @@ use uuid::Uuid;
 use super::audit_sink::{ExportAuditSink, InMemoryExportAuditSink};
 use super::stream::{build_audit_export_async_stream, InMemoryR2ListPager};
 
+/// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Default 10k
+/// for the PR gate; 100k nightly via `PROPTEST_CASES=100_000`.
+fn proptest_cases() -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(10_000)
+}
+
 proptest::proptest! {
     #![proptest_config(proptest::test_runner::Config {
-        cases: 10_000,
+        cases: proptest_cases(),
         // Keep shrinking budget modest — the assertion is binary.
         max_shrink_iters: 64,
         .. proptest::test_runner::Config::default()

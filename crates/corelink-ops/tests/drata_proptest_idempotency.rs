@@ -23,6 +23,15 @@ use corelink_ops::drata::{
 };
 use proptest::prelude::*;
 
+/// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Default 64
+/// for the PR gate; override via `PROPTEST_CASES=N` for stress runs.
+fn proptest_cases() -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(64)
+}
+
 fn streams() -> impl Strategy<Value = EvidenceStream> {
     prop_oneof![
         Just(EvidenceStream::AuditLogs),
@@ -49,7 +58,7 @@ fn records() -> impl Strategy<Value = Vec<EvidenceRecord>> {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(64))]
+    #![proptest_config(ProptestConfig::with_cases(proptest_cases()))]
 
     /// Replaying the same batch arbitrarily many times must yield
     /// exactly `unique(hashes)` Drata pushes — never more.

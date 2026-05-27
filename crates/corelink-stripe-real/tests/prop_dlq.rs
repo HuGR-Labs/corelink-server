@@ -28,6 +28,15 @@ use corelink_stripe_real::dlq::{
 };
 use proptest::prelude::*;
 
+/// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Default 100
+/// for the PR gate; override via `PROPTEST_CASES=N` for stress runs.
+fn proptest_cases() -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(100)
+}
+
 /// Build a fresh quarantine row for a given event_id at `now_ms`.
 fn quarantine_row(event_id: &str, now_ms: u64, attempt_index: u32) -> WebhookDlqRow {
     WebhookDlqRow::new_quarantine(
@@ -43,7 +52,7 @@ fn quarantine_row(event_id: &str, now_ms: u64, attempt_index: u32) -> WebhookDlq
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 100,
+        cases: proptest_cases(),
         .. ProptestConfig::default()
     })]
 

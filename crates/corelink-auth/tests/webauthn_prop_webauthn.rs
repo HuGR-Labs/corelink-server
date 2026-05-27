@@ -41,6 +41,15 @@ use corelink_auth::webauthn::{
     COSE_ALG_ES256,
 };
 
+/// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Default 10k
+/// for the PR gate; 100k nightly via `PROPTEST_CASES=100_000`.
+fn proptest_cases() -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(10_000)
+}
+
 #[test]
 fn prop_challenge_uniqueness_10k() {
     let mut seen = HashSet::with_capacity(10_000);
@@ -52,7 +61,7 @@ fn prop_challenge_uniqueness_10k() {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(10_000))]
+    #![proptest_config(ProptestConfig::with_cases(proptest_cases()))]
 
     #[test]
     fn prop_origin_allowlist_strict(

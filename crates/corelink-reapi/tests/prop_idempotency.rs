@@ -47,6 +47,15 @@ use proptest::prelude::*;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
+/// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Default 256
+/// for the PR gate; override via `PROPTEST_CASES=N` for stress runs.
+fn proptest_cases() -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(256)
+}
+
 fn rt() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -86,7 +95,7 @@ fn make_plan<'a>(
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 256,
+        cases: proptest_cases(),
         max_shrink_iters: 0,
         ..ProptestConfig::default()
     })]

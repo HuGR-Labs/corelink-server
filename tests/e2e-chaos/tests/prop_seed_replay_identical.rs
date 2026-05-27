@@ -24,6 +24,15 @@ use corelink_chaos_scheduler::{ChaosRunId, ChaosTarget};
 use e2e_chaos::{make_experiment, run_clean_staging, ChaosE2eDrill};
 use proptest::prelude::*;
 
+/// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Default 200
+/// for the PR gate; override via `PROPTEST_CASES=N` for stress runs.
+fn proptest_cases() -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(200)
+}
+
 fn arb_drill() -> impl Strategy<Value = ChaosE2eDrill> {
     prop_oneof![
         Just(ChaosE2eDrill::NetworkPartition),
@@ -42,7 +51,7 @@ fn arb_run_id() -> impl Strategy<Value = String> {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(200))]
+    #![proptest_config(ProptestConfig::with_cases(proptest_cases()))]
 
     /// For any random `(drill, run_id, impact)` tuple, two independent
     /// runs through the chaos runner produce a bit-identical `ChaosRun`

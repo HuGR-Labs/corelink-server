@@ -293,6 +293,15 @@ mod prop {
     use super::*;
     use proptest::prelude::*;
 
+    /// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Default 64
+    /// for the PR gate; override via `PROPTEST_CASES=N` for stress runs.
+    fn proptest_cases() -> u32 {
+        std::env::var("PROPTEST_CASES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(64)
+    }
+
     fn arb_kv() -> impl Strategy<Value = (String, String)> {
         let key = "[a-z][a-z0-9_]{0,15}";
         let val = "[a-zA-Z0-9_:.-]{1,32}";
@@ -310,7 +319,7 @@ mod prop {
     }
 
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(64))]
+        #![proptest_config(ProptestConfig::with_cases(proptest_cases()))]
 
         /// Same EncryptionContext on wrap and unwrap → success.
         /// Modified EncryptionContext on unwrap → AadMismatch.

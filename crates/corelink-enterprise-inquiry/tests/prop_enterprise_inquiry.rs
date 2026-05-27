@@ -34,6 +34,15 @@ use corelink_enterprise_inquiry::{
 };
 use proptest::prelude::*;
 
+/// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Default 32
+/// for the PR gate; override via `PROPTEST_CASES=N` for stress runs.
+fn proptest_cases() -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(32)
+}
+
 fn form(company: &str, gb: u64, byok: BYOKRequirementsKind) -> EnterpriseInquiryForm {
     EnterpriseInquiryForm::new(
         company,
@@ -65,7 +74,7 @@ fn byok_strat() -> impl Strategy<Value = BYOKRequirementsKind> {
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 32, .. ProptestConfig::default()
+        cases: proptest_cases(), .. ProptestConfig::default()
     })]
 
     /// Saga atomicity: every terminated submit_inquiry leaves the

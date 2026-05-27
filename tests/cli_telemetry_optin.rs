@@ -23,6 +23,15 @@
 use proptest::prelude::*;
 use uuid::Uuid;
 
+/// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Default 10k
+/// for the PR gate; 100k nightly via `PROPTEST_CASES=100_000`.
+fn proptest_cases() -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(10_000)
+}
+
 // ── Re-export the types under test via path (integration test reaches into crate). ──
 // We inline the minimal logic here rather than re-exporting private items from the binary.
 // The telemetry payload schema is duplicated below for black-box testing.
@@ -83,7 +92,7 @@ fn outcome_strategy() -> impl Strategy<Value = &'static str> {
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 10_000, // 10k iterations per R-S15-14 + completeness criterion 10.s15.005.4
+        cases: proptest_cases(), // 10k default per R-S15-14 + completeness criterion 10.s15.005.4; env-overridable
         ..Default::default()
     })]
 

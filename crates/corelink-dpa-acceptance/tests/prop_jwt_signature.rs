@@ -19,6 +19,15 @@ use corelink_dpa_acceptance::{
 };
 use proptest::prelude::*;
 
+/// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Default 16
+/// for the PR gate; override via `PROPTEST_CASES=N` for stress runs.
+fn proptest_cases() -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(16)
+}
+
 fn build_req(ui_capture_ts: i64) -> DpaAcceptanceRequest {
     let registry = registry_three_locales();
     DpaAcceptanceRequest {
@@ -68,7 +77,7 @@ fn verify_rejects_wrong_public_key() {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(16))]
+    #![proptest_config(ProptestConfig::with_cases(proptest_cases()))]
 
     #[test]
     fn tampering_breaks_signature(flip_pos in 0usize..256) {

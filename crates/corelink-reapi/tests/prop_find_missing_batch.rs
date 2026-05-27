@@ -41,6 +41,15 @@ use proptest::prelude::*;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
+/// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Default 10k
+/// for the PR gate; 100k nightly via `PROPTEST_CASES=100_000`.
+fn proptest_cases() -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(10_000)
+}
+
 fn fixed_tdk() -> TenantDerivationKey {
     TenantDerivationKey::from_bytes(Zeroizing::new([0u8; 32]))
 }
@@ -81,7 +90,7 @@ proptest! {
         // pair via random strategies, exercising the FindMissingBlobs handler
         // end-to-end with random-input diversity (closes Sonnet sprint-close P1-1
         // raised against the previous 64-case config).
-        cases: 10_000,
+        cases: proptest_cases(),
         max_shrink_iters: 64,
         .. ProptestConfig::default()
     })]

@@ -33,6 +33,15 @@ use corelink_ops::tenant_offboarding::{
     CANONICAL_READ_ONLY_DAYS,
 };
 
+/// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Default 256
+/// for the PR gate; override via `PROPTEST_CASES=N` for stress runs.
+fn proptest_cases() -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(256)
+}
+
 const MS_PER_DAY: i64 = 86_400_000;
 
 #[derive(Clone, Debug)]
@@ -70,7 +79,7 @@ fn time_step_strategy() -> impl Strategy<Value = i64> {
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 256,
+        cases: proptest_cases(),
         .. ProptestConfig::default()
     })]
 

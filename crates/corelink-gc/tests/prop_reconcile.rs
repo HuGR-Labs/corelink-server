@@ -49,6 +49,16 @@ use corelink_gc::{
 use proptest::prelude::*;
 use uuid::Uuid;
 
+/// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Returns the
+/// env-overridden value if set, else `default`. The 100k nightly
+/// variant overrides via `PROPTEST_CASES=100_000`.
+fn proptest_cases(default: u32) -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(default)
+}
+
 fn region_from(idx: usize) -> GcRegion {
     GcRegion::all()[idx % 5]
 }
@@ -150,7 +160,7 @@ fn push_ac_referencing(
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 10_000,
+        cases: proptest_cases(10_000),
         .. ProptestConfig::default()
     })]
 
@@ -596,7 +606,7 @@ proptest! {
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 256,
+        cases: proptest_cases(256),
         .. ProptestConfig::default()
     })]
 
