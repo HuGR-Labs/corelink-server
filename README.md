@@ -45,6 +45,23 @@ Every byte returned by `get` is re-hashed client-side against the
 requested digest before it leaves the verifier (`CTRL-CAS-002`); a
 mismatch refuses the read and emits a P0 integrity event.
 
+## Production status
+
+The production data plane is wired and deployed. The Wave 32
+production-deploy campaign sealed 2026-05-22 (tag
+[`corelink-prod-deploy-v1`](https://github.com/humangr-labs/corelink-server/releases/tag/corelink-prod-deploy-v1)),
+with all 5 customer endpoints live behind the canonical
+`corelink.humangr.com` domain. The Wave 33-36 reorg campaign
+(2026-05-22 → 2026-05-27) then consolidated the workspace from 149
+packages to 87 across 11 umbrella crates, restored the wasm32 build,
+resolved the materializer dependency cycle via traits extraction,
+added 14 proptests, and locked the adapter import boundaries down
+with cargo-deny. The remaining path to GA Full is the human-driven
+external-engagement track (pentest + SOC 2 + Legal + lighthouse
+customers + 30-day staging burn-in) tracked in
+[`ROADMAP-TO-GA.md`](./ROADMAP-TO-GA.md) Waves R-5..R-8. No code
+debt; only time-bounded calendar work.
+
 ## Why CoreLink
 
 Five invariant-grounded commitments. Each maps to a verifiable
@@ -175,16 +192,40 @@ Then:
   — each scoped to roughly half a day.
 - OSS vs closed boundary:
   [`docs/internal/OSS-VS-CLOSED-MATRIX.md`](./docs/internal/OSS-VS-CLOSED-MATRIX.md)
-  — 13 crates dual-licensed MIT/Apache, ~60 stay server-side.
+  — 13 crates dual-licensed MIT/Apache; the remaining server-side
+  crates stay closed (counts re-balanced after the Wave 33-36 reorg
+  consolidated 149 packages into 87).
 
 ## Workspace layout
 
-The Cargo workspace ships 107 crates plus the apps, docs, specs, and
-launch surfaces. Top-level directories, one line each:
+The Cargo workspace ships 87 packages organized around **11 umbrella
+crates** plus the apps, docs, specs, and launch surfaces. The current
+shape is the result of the Wave 33-36 reorg campaign (2026-05-22 →
+2026-05-27), which consolidated 149 historical packages into the
+present 87 via the **Mod-Mono + Hex + EDA + Actor + µKernel** pattern
+documented in
+[`specs/_audits/2026-05-22-wave33-code-reorg-spec.md`](./specs/_audits/2026-05-22-wave33-code-reorg-spec.md).
+The 11 umbrellas are
+[`corelink-cas`](./crates/corelink-cas/),
+[`corelink-ac`](./crates/corelink-ac/),
+[`corelink-auth`](./crates/corelink-auth/),
+[`corelink-billing`](./crates/corelink-billing/),
+[`corelink-byok`](./crates/corelink-byok/),
+[`corelink-privacy`](./crates/corelink-privacy/),
+[`corelink-replication`](./crates/corelink-replication/),
+[`corelink-telemetry`](./crates/corelink-telemetry/),
+[`corelink-ops`](./crates/corelink-ops/),
+[`corelink-adapter-host`](./crates/corelink-adapter-host/), and
+[`corelink-container`](./crates/corelink-container/) (the gRPC server
+binary, absorbed from `apps/server` in Wave 33 Stage 2.B). Top-level
+directories, one line each:
 
-- [`apps/`](./apps/) — Cloudflare Worker (`apps/server`), admin UI
-  (`apps/admin-ui`), and Docusaurus docs site (`apps/docs`).
-- [`crates/`](./crates/) — 107-crate Cargo workspace; the 12 core
+- [`apps/`](./apps/) — Cloudflare Worker shim, admin UI
+  (`apps/admin-ui`), and Docusaurus docs site (`apps/docs`). The
+  production gRPC server now lives in
+  [`crates/corelink-container`](./crates/corelink-container/) (binary
+  name `corelink-server` preserved for Dockerfile + wrangler.toml).
+- [`crates/`](./crates/) — 87-package Cargo workspace; the 12 core
   crates are listed in
   [ARCHITECTURE.md §3](./ARCHITECTURE.md#3-core-building-blocks).
 - [`specs/`](./specs/) — canonical specs (Level 0 → Level 5), TLA+
@@ -210,9 +251,18 @@ SDK generators never lag the server.
 
 ## Architecture diagram
 
-See [`docs/internal/architecture/diagrams/system-context.mmd`](./docs/internal/architecture/diagrams/system-context.mmd)
-for the C4-L1 system-context diagram (72 lines, renders cleanly in
-GitHub Mermaid). The full diagram set —
+The runtime architecture follows a **Mod-Mono + Hex + EDA + Actor +
+µKernel** pattern: a single deployable mod-monolith (the
+`corelink-container` gRPC server) composed of hexagonal umbrella
+crates with ports/adapters at the boundaries; an event-driven audit
+backbone in `corelink-audit-chain`; Cloudflare Durable Objects as
+the actor substrate for per-tenant state; and a µKernel boundary
+around BYOK so customer-held KEKs never cross trust zones. The full
+charter is in
+[`specs/_audits/2026-05-22-wave33-code-reorg-spec.md`](./specs/_audits/2026-05-22-wave33-code-reorg-spec.md);
+the C4-L1 system-context diagram is at
+[`docs/internal/architecture/diagrams/system-context.mmd`](./docs/internal/architecture/diagrams/system-context.mmd)
+(72 lines, renders cleanly in GitHub Mermaid). The full diagram set —
 [`audit-chain-merkle`](./docs/internal/architecture/diagrams/audit-chain-merkle.mmd),
 [`byok-envelope`](./docs/internal/architecture/diagrams/byok-envelope.mmd),
 [`data-flow-read`](./docs/internal/architecture/diagrams/data-flow-read.mmd),
@@ -248,8 +298,9 @@ server-side — is documented in
 [`docs/internal/OSS-VS-CLOSED-MATRIX.md`](./docs/internal/OSS-VS-CLOSED-MATRIX.md).
 At time of writing, 13 customer-facing crates (CLI, schema crates,
 verifier primitives, FFI wrappers) are dual MIT/Apache and intended
-for `crates.io`; ~60 server-side crates remain in the closed
-deployment repo.
+for `crates.io`; the remaining server-side packages stay in the
+closed deployment repo (the workspace currently ships 87 packages
+total after the Wave 33-36 reorg).
 
 ## Contact
 
@@ -272,7 +323,17 @@ The canonical security contact card lives at
   envelope, audit chain, top-10 SLOs, failure-mode taxonomy,
   compliance posture.
 - [`ROADMAP-TO-GA.md`](./ROADMAP-TO-GA.md) — 21-sprint plan from
-  scaffold to GA, with per-sprint exit criteria and audit trail.
+  scaffold to GA, with per-sprint exit criteria and audit trail
+  (v1.1.0; Waves 32-36 SEAL'd 2026-05-27).
+- [`specs/_audits/2026-05-22-wave33-code-reorg-spec.md`](./specs/_audits/2026-05-22-wave33-code-reorg-spec.md)
+  — Wave 33-36 reorg charter (Mod-Mono + Hex + EDA + Actor +
+  µKernel; 149 → 87 packages; 11 umbrella crates).
+- [`specs/_audits/2026-05-26-wave-33-34-closure-followups.md`](./specs/_audits/2026-05-26-wave-33-34-closure-followups.md)
+  — Wave 33/34 closure-followups audit (`audit_status: CLOSED`).
+  Tag chain: `wave-33-stage2-sealed`, `wave-34-adapters-sealed`,
+  `wave-35-phase-2-sealed`, `wave-36-stage-2-sealed`,
+  `wave-36-final-sealed`, and production
+  `corelink-prod-deploy-v1`.
 - [`SECURITY.md`](./SECURITY.md) — vulnerability disclosure policy
   and response SLA.
 - [`CONTRIBUTING.md`](./CONTRIBUTING.md) — DCO, review process,
