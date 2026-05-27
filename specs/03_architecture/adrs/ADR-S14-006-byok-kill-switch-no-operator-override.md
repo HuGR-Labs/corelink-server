@@ -135,7 +135,7 @@ email bounce + in-app notification missed = customer surprised = trust loss.
 - `crates/corelink-byok/src/cache.rs` (`DekCache::new` hard TTL rejection).
 - `crates/corelink-byok-revocation/src/detector.rs` (`handle_revocation`
   — no override path).
-- `specs/05_runbooks/RB-BYOK-REVOKE.md`.
+- `specs/05_quality/runbooks/RB-BYOK-REVOKE.md`.
 
 ## Change Log
 

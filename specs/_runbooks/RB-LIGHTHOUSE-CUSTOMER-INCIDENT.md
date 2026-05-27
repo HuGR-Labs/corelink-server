@@ -177,7 +177,7 @@ Either path requires Engineering Lead approval (lighthouse decisions are not on-
 - `migrations/d1/0042_lighthouse_customers.sql` — D1 persistence.
 - `specs/_runbooks/RB-CHAOS-CATALOG.md` — chaos scenarios that map to lighthouse SLOs.
 - `specs/_runbooks/RB-ONCALL-POLICY.md` — on-call rotation policy.
-- `specs/05_runbooks/RB-BYOK-REVOKE.md` — BYOK revocation (Enterprise BYOK only).
+- `specs/05_quality/runbooks/RB-BYOK-REVOKE.md` — BYOK revocation (Enterprise BYOK only).
 - `specs/05_runbooks/RB-region.md` — region failover.
 - `specs/_runbooks/RB-POSTMORTEM-PROCESS.md` — post-mortem process.
 - `specs/_runbooks/RB-GA-CUTOVER.md` §3.4 + §5.1 RB-T6 — GA cutover BYOK orchestrator flip + lighthouse-withdrawal rollback trigger.

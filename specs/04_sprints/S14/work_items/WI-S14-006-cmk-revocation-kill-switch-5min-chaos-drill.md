@@ -276,7 +276,7 @@ Background worker + chaos drill + runbook; HIGH_RISK; FF-HR-005.
    - Optional Slack webhook (customer-configured).
    - Delivery confirmation via dashboard read.
 
-4. **Runbook `specs/05_runbooks/RB-BYOK-REVOKE.md`**:
+4. **Runbook `specs/05_quality/runbooks/RB-BYOK-REVOKE.md`**:
    - Detection: kill switch métrica + audit emit.
    - Investigation: customer-side CMK status + CoreLink-side state.
    - Customer communication: notification channels validation.
@@ -585,7 +585,7 @@ TLA+ alignment: registry §4.2 indica `region_residency.tla` PLANNED S-14 WI-S14
 | Property tests | `crates/corelink-byok-revocation/tests/prop_revocation.rs` | Rust |
 | Adversarial tests | `crates/corelink-byok-revocation/tests/adversarial.rs` | Rust |
 | Integration tests E2E | `tests/e2e_byok_kill_switch_{aws,gcp,azure,vault}.rs` | Rust |
-| Runbook RB-BYOK-REVOKE | `specs/05_runbooks/RB-BYOK-REVOKE.md` | Markdown |
+| Runbook RB-BYOK-REVOKE | `specs/05_quality/runbooks/RB-BYOK-REVOKE.md` | Markdown |
 | RB-BYOK-REVOKE dry-run report | `specs/_audits/2026-XX-XX-rb-byok-revoke-dry-run.md` | Markdown |
 | Customer doc | `docs/customer/byok-kill-switch.md` | Markdown |
 | ADR-XXXX (kill switch) | `specs/03_architecture/adrs/ADR-XXXX-byok-kill-switch-no-operator-override.md` | Markdown |
