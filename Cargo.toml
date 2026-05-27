@@ -122,12 +122,10 @@ members = [
     "crates/corelink-abuse",
     "crates/corelink-rate-headers",
     "crates/corelink-analytics",
-    "crates/corelink-logpush",
     "crates/corelink-tracing",
     "crates/corelink-audit-chain",
     "crates/corelink-slo",
     "crates/corelink-supply-verify",
-    "crates/corelink-canary",
     "crates/corelink-billing-emit",
     "crates/corelink-billing-aggregator",
     "crates/corelink-billing-stripe",
@@ -210,12 +208,6 @@ members = [
     # between drill cycles. Trait + InMemory fake only; real R2/D1/KV
     # handler deferred per autonomous-execution charter trait-abstraction-defer.
     "crates/corelink-backup-verify",
-    # R-prep enterprise observability forwarding — customers want metrics +
-    # traces fan-out to their own Datadog / OTel Collector / Grafana Cloud
-    # stack. Trait surface + per-vendor config schema + InMemoryFake + per-
-    # vendor deferred-real stubs. Real HTTP/gRPC wiring deferred to a
-    # follow-up WI per autonomous-execution charter trait-abstraction-defer.
-    "crates/corelink-otel-export",
     # WI-S15-001 CLI 7 subcommands + WI-S15-005 telemetry opt-in (same crate)
     "tools/cli",
     # WI-S15-004 FFI wrappers (Python pyO3 + Go cgo + JS/TS WASM)
@@ -239,13 +231,6 @@ members = [
     "crates/corelink-tier-selection",
     # WI-S19-005 enterprise inquiry form + Slack/CRM atomic outbox + 24h auto-reply SLA
     "crates/corelink-enterprise-inquiry",
-    # WI-S20-004 lighthouse customer state machine tracker (3 customers — 2 team
-    # + 1 enterprise BYOK — across recruiting → engaged → migrating → observing
-    # → attested → case-study-signed; 30d observation window canonical;
-    # GA Evidence Gate D+60 check)
-    "crates/corelink-lighthouse-tracker",
-    # WI-S20-006 synthetic page weekly drill — 3-region 24/7 follow-the-sun + MTTA budget
-    "crates/corelink-synthetic-pager",
     # R2-1 real HTTPS Stripe client implementing corelink-tier-selection::StripeClient
     # (Checkout / Subscriptions / Customers / Billing Portal + webhook HMAC-SHA256 verify
     # + idempotent POST retries with exponential backoff + Retry-After). Native-only
@@ -609,16 +594,13 @@ corelink-edge = { path = "crates/corelink-edge" }
 corelink-abuse = { path = "crates/corelink-abuse" }
 corelink-rate-headers = { path = "crates/corelink-rate-headers" }
 corelink-analytics = { path = "crates/corelink-analytics" }
-corelink-logpush = { path = "crates/corelink-logpush" }
 corelink-tracing = { path = "crates/corelink-tracing" }
 corelink-audit-chain = { path = "crates/corelink-audit-chain" }
 corelink-slo = { path = "crates/corelink-slo" }
 corelink-supply-verify = { path = "crates/corelink-supply-verify" }
-corelink-canary = { path = "crates/corelink-canary" }
-# Wave-33 Stage 0 sub-step 3: telemetry aggregator deps.
-corelink-synthetic-pager = { path = "crates/corelink-synthetic-pager" }
-corelink-lighthouse-tracker = { path = "crates/corelink-lighthouse-tracker" }
-# Wave-33 Stage 0 sub-step 3: canonical observability aggregator façade.
+# W35-P2-TELEMETRY (2026-05-26) absorbed corelink-canary, corelink-logpush,
+# corelink-otel-export, corelink-synthetic-pager, corelink-lighthouse-tracker
+# as inline modules of corelink-telemetry.
 corelink-telemetry = { path = "crates/corelink-telemetry" }
 # Wave-33 Stage 1 Stream B sub-step B.1: canonical billing aggregator façade.
 corelink-billing = { path = "crates/corelink-billing" }
@@ -699,7 +681,6 @@ corelink-customer-alerts = { path = "crates/corelink-customer-alerts" }
 corelink-erasure-attestation = { path = "crates/corelink-erasure-attestation" }
 corelink-dr-drill = { path = "crates/corelink-dr-drill" }
 corelink-backup-verify = { path = "crates/corelink-backup-verify" }
-corelink-otel-export = { path = "crates/corelink-otel-export" }
 corelink-chaos-scheduler = { path = "crates/corelink-chaos-scheduler" }
 corelink-tier-selection = { path = "crates/corelink-tier-selection" }
 corelink-stripe-real = { path = "crates/corelink-stripe-real" }
