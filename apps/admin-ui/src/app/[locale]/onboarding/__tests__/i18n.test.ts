@@ -11,11 +11,15 @@ describe("i18n lookups", () => {
   });
 
   it("returns localized strings for every onboarding step", () => {
+    // Phase 0.C: `onboarding.billing.*` keys removed when the
+    // in-wizard billing step was deleted (PLG defer-billing). The
+    // post-signup upgrade flow uses Stripe-hosted Checkout which
+    // localizes itself based on the Accept-Language header — we no
+    // longer maintain a parallel set of billing strings here.
     const keys = [
       "onboarding.tenant.title",
       "onboarding.dpa.title",
       "onboarding.region_plan.title",
-      "onboarding.billing.title",
       "onboarding.pat.title",
       "onboarding.done.title",
     ];

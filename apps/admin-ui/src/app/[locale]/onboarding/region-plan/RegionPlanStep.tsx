@@ -8,7 +8,6 @@ import {
   SUPPORTED_REGIONS,
   type Plan,
   type Region,
-  isFreeplan,
 } from "@/lib/validators";
 import { configureTenantAction } from "../actions";
 import { loadState, saveState, nextStepFor } from "@/lib/onboarding-state";
@@ -38,10 +37,12 @@ export function RegionPlanStep({
         region,
         plan,
       });
+      // Phase 0.C: wizard no longer collects a payment method. All
+      // plans (free + paid) advance straight to PAT. The money question
+      // happens post-signup via Stripe-hosted Checkout Session.
       const next = nextStepFor("region-plan", { plan });
       saveState({ step: next, tenantId: persisted.tenantId });
-      const path = isFreeplan(plan) ? "pat" : "billing";
-      window.location.assign(`/${locale}/onboarding/${path}`);
+      window.location.assign(`/${locale}/onboarding/${next}`);
     } catch (err) {
       setError((err as Error).message);
       setSubmitting(false);

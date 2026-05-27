@@ -33,11 +33,6 @@
       "plan_label": "Plan",
       "submit": "Continuar"
     },
-    "billing": {
-      "title": "Configurar facturación",
-      "submit": "Guardar método de pago",
-      "skipped_free": "Plan Free: no se requiere pago."
-    },
     "pat": {
       "title": "Crea tu primer token de acceso personal",
       "label_label": "Nombre del token",

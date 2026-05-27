@@ -9,11 +9,22 @@
  *  - Anything in localStorage is a bug.
  */
 
+/**
+ * Onboarding wizard steps.
+ *
+ * Phase 0.C (PLG defer-billing): the `billing` step was removed. The
+ * money question now happens post-signup via a Stripe-hosted Checkout
+ * Session triggered from `<UpgradeButton />` on the customer billing
+ * page (see `apps/admin-ui/src/components/UpgradeButton.tsx` +
+ * `apps/admin-ui/src/app/api/checkout/session/route.ts`). Removing the
+ * in-wizard step collapses paid-plan signup from 6 steps to 5 and
+ * eliminates the raw `payment_method_id` text input scaffold that
+ * blocked launch-readiness §2.
+ */
 export type OnboardingStep =
   | "tenant"
   | "dpa"
   | "region-plan"
-  | "billing"
   | "pat"
   | "done";
 
@@ -21,7 +32,6 @@ export const ALL_STEPS: readonly OnboardingStep[] = [
   "tenant",
   "dpa",
   "region-plan",
-  "billing",
   "pat",
   "done",
 ] as const;
@@ -98,17 +108,20 @@ export function prevStep(step: OnboardingStep): OnboardingStep {
 
 /**
  * Returns the next step accounting for plan-driven skips.
- * Free plan skips the billing step (no payment method to collect).
+ *
+ * Phase 0.C: the billing step was removed from the wizard entirely
+ * (PLG defer-billing pattern — see `OnboardingStep` doc-comment).
+ * `ctx` is retained so callers and future plan-driven branching can
+ * keep the same signature without a churning rewrite. Today every
+ * plan walks the identical 5-step sequence; the function is a
+ * passthrough to `nextStep`. Free vs paid divergence happens AFTER
+ * signup on the upgrade surface, not in the wizard.
  */
 export function nextStepFor(
   step: OnboardingStep,
-  ctx: { plan?: string | null },
+  _ctx: { plan?: string | null },
 ): OnboardingStep {
-  const candidate = nextStep(step);
-  if (candidate === "billing" && ctx.plan === "free") {
-    return nextStep(candidate);
-  }
-  return candidate;
+  return nextStep(step);
 }
 
 /**

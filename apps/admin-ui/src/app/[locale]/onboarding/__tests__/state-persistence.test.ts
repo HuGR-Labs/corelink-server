@@ -67,17 +67,26 @@ describe("onboarding state persistence", () => {
   });
 
   it("nextStep / prevStep traverse the wizard linearly", () => {
+    // Phase 0.C: wizard collapsed from 6 → 5 steps (billing removed —
+    // PLG defer-billing pattern; the money question happens
+    // post-signup via Stripe Checkout Session). region-plan → pat is
+    // now adjacent in the sequence.
     expect(nextStep("tenant")).toBe("dpa");
     expect(nextStep("dpa")).toBe("region-plan");
+    expect(nextStep("region-plan")).toBe("pat");
+    expect(nextStep("pat")).toBe("done");
     expect(nextStep("done")).toBe("done"); // saturates
     expect(prevStep("tenant")).toBe("tenant"); // saturates
-    expect(prevStep("billing")).toBe("region-plan");
+    expect(prevStep("pat")).toBe("region-plan");
+    expect(prevStep("done")).toBe("pat");
   });
 
-  it("free plan skips the billing step in the wizard sequence", () => {
-    expect(nextStepFor("region-plan", { plan: "free" })).toBe("pat");
-    expect(nextStepFor("region-plan", { plan: "starter" })).toBe("billing");
-    expect(nextStepFor("region-plan", { plan: "pro" })).toBe("billing");
-    expect(nextStepFor("region-plan", { plan: "enterprise" })).toBe("billing");
+  it("all plans walk the same 5-step sequence post defer-billing", () => {
+    // Phase 0.C: there is no billing step to skip; every plan goes
+    // region-plan → pat. `ctx` is retained for API stability + future
+    // plan-driven branching.
+    for (const plan of ["free", "starter", "pro", "enterprise"] as const) {
+      expect(nextStepFor("region-plan", { plan })).toBe("pat");
+    }
   });
 });
