@@ -1233,6 +1233,7 @@ dependencies = [
  "corelink-billing-reconcile",
  "corelink-billing-stripe",
  "corelink-billing-stripe-materializer",
+ "corelink-billing-stripe-traits",
  "corelink-eviction",
  "corelink-rate-headers",
  "corelink-ratelimit",
@@ -1326,6 +1327,7 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "corelink-audit-chain",
+ "corelink-billing-stripe-traits",
  "corelink-cf-bindings",
  "corelink-stripe-real",
  "corelink-tier-selection",
@@ -1336,6 +1338,16 @@ dependencies = [
  "serde_json",
  "subtle",
  "uuid",
+]
+
+[[package]]
+name = "corelink-billing-stripe-traits"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "hex",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -2192,6 +2204,7 @@ name = "corelink-stripe-real"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "corelink-billing-stripe-traits",
  "corelink-tier-selection",
  "criterion",
  "hex",

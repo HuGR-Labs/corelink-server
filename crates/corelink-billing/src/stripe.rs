@@ -32,3 +32,20 @@ pub mod schema {
 pub mod real {
     pub use corelink_stripe_real::*;
 }
+
+/// Port traits + identity / outcome / error types for the Stripe
+/// webhook materializer pipeline (Wave-36 Trigger A leaf surface).
+///
+/// Re-exports the entire public API of `corelink-billing-stripe-traits`
+/// — `AuditEmitter`, `IdempotencyStore`, `StateMaterializer`,
+/// `SliRecorder` plus `AuditRecord`, `AuditOutcome`,
+/// `IdempotencyToken`, `IdempotencyOutcome`, `CanonicalWebhookEventType`,
+/// `StripeWebhookEnvelope`, `MaterializerError`, `SliObservation`,
+/// `DispatchResponse`, and the `SLI_BILLING_STRIPE_EVENT_SECONDS`
+/// constant. Future consumers SHOULD reach the trait surface through
+/// this canonical umbrella path instead of importing
+/// `corelink-billing-stripe-traits` directly. See
+/// `specs/_audits/2026-05-27-w36-trigger-a-seal.md`.
+pub mod traits {
+    pub use corelink_billing_stripe_traits::*;
+}

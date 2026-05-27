@@ -16,7 +16,12 @@
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
-use corelink_stripe_real::webhook_dispatch::{AuditEmitter, AuditRecord};
+// Wave-36 Trigger A: trait + record surface migrated to the leaf
+// `corelink-billing-stripe-traits` crate. The materializer production
+// sources MUST NOT depend on `corelink-stripe-real` for the trait
+// surface — that path is reserved for concrete HTTPS adapters /
+// dispatchers / test fakes (gated to tests / e2e harnesses).
+use corelink_billing_stripe_traits::{AuditEmitter, AuditRecord};
 use serde::{Deserialize, Serialize};
 
 /// Error returned by [`BillingAuditEmitter::emit_billing`]. The

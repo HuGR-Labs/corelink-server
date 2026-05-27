@@ -1,0 +1,33 @@
+[package]
+name = "corelink-billing-stripe-traits"
+description = "Wave-36 Trigger A — port traits + identity/outcome/error types for the Stripe webhook materializer pipeline. Leaf crate with ZERO `corelink-*` deps by design: extracts the four pluggable port traits (`AuditEmitter`, `IdempotencyStore`, `StateMaterializer`, `SliRecorder`) plus their identity newtypes (`IdempotencyToken`), wire envelopes (`StripeWebhookEnvelope`, `CanonicalWebhookEventType`), outcomes (`IdempotencyOutcome`, `AuditOutcome`, `DispatchResponse`), records (`AuditRecord`, `SliObservation`) and errors (`MaterializerError`) out of `corelink-stripe-real::webhook_dispatch` so that downstream consumers (the materializer, future binders) can depend on the trait surface WITHOUT a transitive dep on the concrete HTTPS adapter. Resolves the dep-graph cycle `billing → billing-stripe-materializer → stripe-real → (would close back via direct migration)` identified in Wave-36 Stage 2.C closure §5.1. Stripe-real depends on this crate and re-exports its symbols for back-compat with the `corelink_stripe_real::webhook_dispatch::*` public surface."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+mod_module_files = "deny"
+
+[dependencies]
+# NO corelink-* deps (leaf crate by design — this is the load-bearing
+# invariant that resolves the materializer dep-graph cycle).
+serde = { workspace = true }
+serde_json = { workspace = true }
+blake3 = { workspace = true }
+hex = { workspace = true }

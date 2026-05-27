@@ -32,10 +32,16 @@ use corelink_billing_stripe_materializer::{
     D1SubscriptionStateHandler, InMemoryBillingAuditEmitter, InMemoryBillingD1,
     InMemoryTierSelector, RealStripeAuditEmitter, EVENT_MATERIALIZATION_MATRIX,
 };
-use corelink_stripe_real::webhook_dispatch::{
-    CanonicalWebhookEventType, DispatchResponse, FixedClock, RecordingSliRecorder, StateMaterializer,
-    StripeWebhookEnvelope, WebhookDispatcher,
+// Wave-36 Trigger A: trait + outcome / envelope / canonical-event-type
+// surface migrated to the leaf `corelink-billing-stripe-traits` crate;
+// the concrete dispatcher + test fakes (`WebhookDispatcher`,
+// `FixedClock`, `RecordingSliRecorder`) remain in `corelink-stripe-real`.
+// Test code is allowed to depend on both (per
+// `specs/_audits/2026-05-27-w36-trigger-a-seal.md`).
+use corelink_billing_stripe_traits::{
+    CanonicalWebhookEventType, DispatchResponse, StateMaterializer, StripeWebhookEnvelope,
 };
+use corelink_stripe_real::webhook_dispatch::{FixedClock, RecordingSliRecorder, WebhookDispatcher};
 use corelink_stripe_real::webhook::compute_signature;
 use corelink_tier_selection::tier::TierKind;
 

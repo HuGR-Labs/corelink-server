@@ -34,6 +34,11 @@ corelink-billing-reconcile = { workspace = true }
 corelink-billing-stripe = { workspace = true }
 corelink-billing-stripe-materializer = { workspace = true }
 corelink-stripe-real = { workspace = true }
+# Wave-36 Trigger A: re-export the leaf trait crate as
+# `corelink_billing::stripe::traits` so consumers reach the four port
+# traits + identity / outcome types through the canonical umbrella
+# path. See `specs/_audits/2026-05-27-w36-trigger-a-seal.md`.
+corelink-billing-stripe-traits = { workspace = true }
 corelink-tier-selection = { workspace = true }
 corelink-rate-headers = { workspace = true }
 corelink-ratelimit = { workspace = true }
