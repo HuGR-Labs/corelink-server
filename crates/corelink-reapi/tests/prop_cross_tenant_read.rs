@@ -59,6 +59,15 @@ use proptest::prelude::*;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
+/// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Default 10k
+/// for the PR gate; 100k nightly via `PROPTEST_CASES=100_000`.
+fn proptest_cases() -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(10_000)
+}
+
 fn fixed_tdk() -> TenantDerivationKey {
     TenantDerivationKey::from_bytes(Zeroizing::new([0u8; 32]))
 }
@@ -130,7 +139,7 @@ proptest! {
         // 10k iter per WI-S02-001 §10.1.1. The harness boots a fresh
         // backend + meta + ctx pair on every iteration; no global state
         // leaks across iterations.
-        cases: 10_000,
+        cases: proptest_cases(),
         max_shrink_iters: 256,
         // Failures persist into a sibling-file regression DB by default
         // (`prop_cross_tenant_read.proptest-regressions`). We do NOT

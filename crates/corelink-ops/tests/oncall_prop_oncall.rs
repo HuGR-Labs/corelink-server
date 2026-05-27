@@ -43,10 +43,20 @@ mod helpers {
 
 use helpers::{eng, setup_pd_tier1};
 
+/// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Returns the
+/// env-overridden value if set, else `default`. The 100k nightly
+/// variant overrides via `PROPTEST_CASES=100_000`.
+fn proptest_cases(default: u32) -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(default)
+}
+
 // -- Pure-logic decision matrix (Lote 10.17 codex P1 fix canonical) --
 
 proptest! {
-    #![proptest_config(ProptestConfig { cases: 10_000, .. ProptestConfig::default() })]
+    #![proptest_config(ProptestConfig { cases: proptest_cases(10_000), .. ProptestConfig::default() })]
 
     /// HARD thresholds NEVER collapse to a soft-only response.
     #[test]
@@ -121,7 +131,7 @@ proptest! {
 // -- Ledger orchestrator invariants --
 
 proptest! {
-    #![proptest_config(ProptestConfig { cases: 1_000, .. ProptestConfig::default() })]
+    #![proptest_config(ProptestConfig { cases: proptest_cases(1_000), .. ProptestConfig::default() })]
 
     /// Protection window veto: an engineer cannot be re-rostered within
     /// the 2-week post-shift window.

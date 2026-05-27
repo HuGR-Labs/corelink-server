@@ -27,6 +27,15 @@ use corelink_signup::orchestrator::InMemoryProvisionRecord;
 
 use proptest::prelude::*;
 
+/// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Default 1000
+/// for the PR gate; override via `PROPTEST_CASES=N` for stress runs.
+fn proptest_cases() -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1_000)
+}
+
 fn arb_idem_key() -> impl Strategy<Value = String> {
     // 1..32 ascii alnum (avoid empty — that's a Rejected path tested
     // exhaustively in unit tests).
@@ -44,7 +53,7 @@ fn arb_locale() -> impl Strategy<Value = &'static str> {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(1_000))]
+    #![proptest_config(ProptestConfig::with_cases(proptest_cases()))]
 
     #[test]
     fn r3_1_prop_random_signup_payloads_uphold_invariants(

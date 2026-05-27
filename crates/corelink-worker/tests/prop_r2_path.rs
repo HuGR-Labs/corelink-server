@@ -36,6 +36,16 @@ use proptest::prelude::*;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
+/// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Default 100k
+/// for this canonical-stress invariant; PR gates may override down via
+/// `PROPTEST_CASES=10_000` for fast cycles.
+fn proptest_cases() -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(100_000)
+}
+
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
@@ -168,7 +178,7 @@ fn key_via_writer(uuid: Uuid, region: Region, body: &Bytes) -> String {
 // canonical-key constructor in production code (closes codex round-1 P2).
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 100_000,
+        cases: proptest_cases(),
         max_shrink_iters: 64,
         ..ProptestConfig::default()
     })]

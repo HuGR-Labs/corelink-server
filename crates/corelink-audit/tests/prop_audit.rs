@@ -29,6 +29,15 @@ use corelink_audit::{
 use proptest::prelude::*;
 use uuid::Uuid;
 
+/// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Default 10k
+/// for the PR gate; 100k nightly via `PROPTEST_CASES=100_000`.
+fn proptest_cases() -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(10_000)
+}
+
 fn principal_strategy() -> impl Strategy<Value = PrincipalIdHash> {
     "[a-zA-Z0-9_]{1,32}"
         .prop_filter("non-empty", |s| !s.is_empty())
@@ -88,7 +97,7 @@ fn event_strategy() -> impl Strategy<Value = AuthEvent> {
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 10_000,
+        cases: proptest_cases(),
         max_global_rejects: 100_000,
         ..ProptestConfig::default()
     })]

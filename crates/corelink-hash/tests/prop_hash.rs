@@ -36,6 +36,15 @@ use bytes::Bytes;
 use corelink_hash::{Digest, HashMismatch, ParseError, VerifiedBody, DIGEST_LEN};
 use proptest::prelude::*;
 
+/// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Default 10k
+/// for the PR gate; 100k nightly via `PROPTEST_CASES=100_000`.
+fn proptest_cases() -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(10_000)
+}
+
 // ---------------------------------------------------------------------------
 // Canonical regression vectors.
 //
@@ -363,7 +372,7 @@ fn perf_regression_5mib_under_50ms() {
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 10_000,
+        cases: proptest_cases(),
         max_shrink_iters: 64,
         ..ProptestConfig::default()
     })]

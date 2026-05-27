@@ -37,6 +37,15 @@ use corelink_privacy_erasure_worker::{
 use proptest::prelude::*;
 use uuid::Uuid;
 
+/// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Default 10k
+/// for the PR gate; 100k nightly via `PROPTEST_CASES=100_000`.
+fn proptest_cases() -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(10_000)
+}
+
 fn uuid_strategy() -> impl Strategy<Value = Uuid> {
     proptest::array::uniform16(any::<u8>()).prop_map(Uuid::from_bytes)
 }
@@ -173,7 +182,7 @@ prop_compose! {
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 10_000,
+        cases: proptest_cases(),
         ..ProptestConfig::default()
     })]
 

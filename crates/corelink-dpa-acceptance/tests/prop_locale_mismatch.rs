@@ -21,6 +21,15 @@ use corelink_dpa_acceptance::{
 };
 use proptest::prelude::*;
 
+/// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Default 64
+/// for the PR gate; override via `PROPTEST_CASES=N` for stress runs.
+fn proptest_cases() -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(64)
+}
+
 fn locale_strategy() -> impl Strategy<Value = LocaleBcp47> {
     prop_oneof![
         Just(LocaleBcp47::EnUs),
@@ -30,7 +39,7 @@ fn locale_strategy() -> impl Strategy<Value = LocaleBcp47> {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(64))]
+    #![proptest_config(ProptestConfig::with_cases(proptest_cases()))]
 
     #[test]
     fn locale_mismatch_is_total(

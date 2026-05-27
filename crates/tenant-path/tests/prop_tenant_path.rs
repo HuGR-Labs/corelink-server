@@ -29,6 +29,15 @@ use proptest::prelude::*;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
+/// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Default 10k
+/// for the PR gate; 100k nightly via `PROPTEST_CASES=100_000`.
+fn proptest_cases() -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(10_000)
+}
+
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
@@ -218,7 +227,7 @@ fn prefix_is_copy() {
 proptest! {
     // AC-2: distinct UUIDs ⇒ distinct prefixes (10k iter).
     #![proptest_config(ProptestConfig {
-        cases: 10_000,
+        cases: proptest_cases(),
         max_shrink_iters: 64,
         ..ProptestConfig::default()
     })]

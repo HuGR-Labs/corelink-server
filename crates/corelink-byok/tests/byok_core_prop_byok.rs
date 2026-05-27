@@ -37,6 +37,16 @@ use corelink_byok::{
 use async_trait::async_trait;
 use serde_json::Value;
 
+/// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Returns the
+/// env-overridden value if set, else `default`. The 100k nightly
+/// variant overrides via `PROPTEST_CASES=100_000`.
+fn proptest_cases(default: u32) -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(default)
+}
+
 // ── Stub KMS provider ─────────────────────────────────────────────────────────
 
 struct StubProvider;
@@ -101,7 +111,7 @@ fn rt() -> Runtime {
 // ── Property 1: nonce uniqueness ──────────────────────────────────────────────
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(10_000))]
+    #![proptest_config(ProptestConfig::with_cases(proptest_cases(10_000)))]
 
     #[test]
     fn prop_aes_gcm_nonce_unique(_seed in 0u64..u64::MAX) {
@@ -119,7 +129,7 @@ proptest! {
 // ── Property 2: DEK randomness ────────────────────────────────────────────────
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(10_000))]
+    #![proptest_config(ProptestConfig::with_cases(proptest_cases(10_000)))]
 
     #[test]
     fn prop_dek_random_not_deterministic(_seed in 0u64..u64::MAX) {
@@ -134,7 +144,7 @@ proptest! {
 // ── Property 3: AAD binding (cross-blob swap) ─────────────────────────────────
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(10_000))]
+    #![proptest_config(ProptestConfig::with_cases(proptest_cases(10_000)))]
 
     #[test]
     fn prop_aad_binding(
@@ -173,7 +183,7 @@ proptest! {
 // ── Property 4: DEK cache TTL 5-min hard limit ───────────────────────────────
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(10_000))]
+    #![proptest_config(ProptestConfig::with_cases(proptest_cases(10_000)))]
 
     #[test]
     fn prop_dek_cache_ttl_5min_hard(ttl in 301u64..=86_400) {
@@ -188,7 +198,7 @@ proptest! {
 // ── Property 5: DEK cache eviction atomic ────────────────────────────────────
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(1_000))]
+    #![proptest_config(ProptestConfig::with_cases(proptest_cases(1_000)))]
 
     #[test]
     fn prop_dek_cache_eviction_atomic(
@@ -227,7 +237,7 @@ proptest! {
 // ── Property 6: wrap → unwrap roundtrip ──────────────────────────────────────
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(10_000))]
+    #![proptest_config(ProptestConfig::with_cases(proptest_cases(10_000)))]
 
     #[test]
     fn prop_wrap_unwrap_roundtrip(

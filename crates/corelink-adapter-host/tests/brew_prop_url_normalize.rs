@@ -16,6 +16,15 @@
 use corelink_adapter_host::brew::bottle::{canonical_bottle_path, cas_key_for};
 use proptest::prelude::*;
 
+/// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Default 1024
+/// for the PR gate; override via `PROPTEST_CASES=N` for stress runs.
+fn proptest_cases() -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1024)
+}
+
 /// Generate a "bottle-ish" path segment.
 ///
 /// Lowercase ASCII alphanumeric plus a few path separators. Kept tiny
@@ -38,7 +47,7 @@ fn base_path_strategy() -> impl Strategy<Value = String> {
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 1024,
+        cases: proptest_cases(),
         .. ProptestConfig::default()
     })]
 

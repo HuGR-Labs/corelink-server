@@ -36,6 +36,15 @@ use corelink_ac::types::{
 use corelink_hash::Digest;
 use proptest::prelude::*;
 
+/// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Default 10k
+/// for the PR gate; 100k nightly via `PROPTEST_CASES=100_000`.
+fn proptest_cases() -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(10_000)
+}
+
 #[derive(Debug)]
 struct FixtureReader {
     alive: Mutex<HashSet<(String, [u8; 32])>>,
@@ -86,7 +95,7 @@ fn arb_result(min_files: usize, max_files: usize) -> impl Strategy<Value = Actio
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 10_000,
+        cases: proptest_cases(),
         ..ProptestConfig::default()
     })]
 

@@ -16,6 +16,15 @@ use corelink_adapter_host::pip::pep503_html::{
 };
 use proptest::prelude::*;
 
+/// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Default 1024
+/// for the PR gate; override via `PROPTEST_CASES=N` for stress runs.
+fn proptest_cases() -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1024)
+}
+
 fn sha256_hex_strategy() -> impl Strategy<Value = String> {
     proptest::collection::vec(any::<u8>(), 32).prop_map(hex::encode)
 }
@@ -55,7 +64,7 @@ fn project_index_strategy() -> impl Strategy<Value = ProjectIndex> {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig { cases: 1024, .. ProptestConfig::default() })]
+    #![proptest_config(ProptestConfig { cases: proptest_cases(), .. ProptestConfig::default() })]
 
     /// HTML encode → HTML parse must yield an equivalent
     /// `ProjectIndex` (after normalising the project name; we don't

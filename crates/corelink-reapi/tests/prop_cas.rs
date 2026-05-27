@@ -94,6 +94,16 @@ use proptest::prelude::*;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
+/// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Returns the
+/// env-overridden value if set, else `default`. The 100k nightly
+/// variant overrides via `PROPTEST_CASES=100_000`.
+fn proptest_cases(default: u32) -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(default)
+}
+
 // ---------------------------------------------------------------------------
 // Shared fixtures
 // ---------------------------------------------------------------------------
@@ -184,7 +194,7 @@ fn drive_commit_put(
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 10_000,
+        cases: proptest_cases(10_000),
         max_shrink_iters: 32,
         ..ProptestConfig::default()
     })]
@@ -379,7 +389,7 @@ proptest! {
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 10_000,
+        cases: proptest_cases(10_000),
         max_shrink_iters: 32,
         ..ProptestConfig::default()
     })]
@@ -499,7 +509,7 @@ proptest! {
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 10_000,
+        cases: proptest_cases(10_000),
         max_shrink_iters: 32,
         ..ProptestConfig::default()
     })]
@@ -793,7 +803,7 @@ async fn boundary_blob_just_over_5_mib_rejects_e2e() {
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 256,
+        cases: proptest_cases(256),
         max_shrink_iters: 16,
         ..ProptestConfig::default()
     })]

@@ -26,6 +26,16 @@ use corelink_tier_selection::{
     TIER_SELECTION_LOCK_WINDOW_MS,
 };
 
+/// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Returns the
+/// env-overridden value if set, else `default`. The 100k nightly
+/// variant overrides via `PROPTEST_CASES=100_000`.
+fn proptest_cases(default: u32) -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(default)
+}
+
 fn build_ledger_dpa_accepted(
     tenants: &[&str],
 ) -> (
@@ -85,7 +95,7 @@ fn tier_strategy() -> impl Strategy<Value = TierKind> {
 // -------------------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig { cases: 10_000, .. ProptestConfig::default() })]
+    #![proptest_config(ProptestConfig { cases: proptest_cases(10_000), .. ProptestConfig::default() })]
 
     /// INV-ONBOARD-DPA-FIRST: when DPA is NEVER accepted, tier
     /// selection ALWAYS fails with `DpaRequired` — for ANY tier
@@ -126,7 +136,7 @@ proptest! {
 // -------------------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig { cases: 10_000, .. ProptestConfig::default() })]
+    #![proptest_config(ProptestConfig { cases: proptest_cases(10_000), .. ProptestConfig::default() })]
 
     /// Concurrent tier selection within the 60s lock window returns
     /// `LockHeld`. After the window expires, the lock is released.
@@ -170,7 +180,7 @@ proptest! {
 // -------------------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig { cases: 1_000, .. ProptestConfig::default() })]
+    #![proptest_config(ProptestConfig { cases: proptest_cases(1_000), .. ProptestConfig::default() })]
 
     /// Duplicate webhook deliveries with the same `event_id` activate
     /// the subscription exactly once. Subsequent deliveries return
@@ -223,7 +233,7 @@ proptest! {
 // -------------------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig { cases: 1_000, .. ProptestConfig::default() })]
+    #![proptest_config(ProptestConfig { cases: proptest_cases(1_000), .. ProptestConfig::default() })]
 
     /// Backend rejects direct Stripe Checkout for Enterprise tier
     /// even when DPA accepted. Audit event emitted.
@@ -250,7 +260,7 @@ proptest! {
 // -------------------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig { cases: 1_000, .. ProptestConfig::default() })]
+    #![proptest_config(ProptestConfig { cases: proptest_cases(1_000), .. ProptestConfig::default() })]
 
     /// When the audit sink rejects, the orchestrator returns
     /// `TierError::Audit` and NO state mutation occurs.
@@ -301,7 +311,7 @@ fn canonical_tier_strings_stable() {
 // -------------------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig { cases: 1_000, .. ProptestConfig::default() })]
+    #![proptest_config(ProptestConfig { cases: proptest_cases(1_000), .. ProptestConfig::default() })]
 
     /// Valid signatures within the 5-min replay window verify.
     /// Outside the window OR with tampered payload, verification

@@ -40,10 +40,17 @@ use corelink_privacy::residency::{
 ///
 /// Default 30_000 per WI-S14-002 §6.1.6.
 fn proptest_cases() -> u32 {
+    proptest_cases_or(30_000)
+}
+
+/// Parameterized variant — returns env override if set, else `default`.
+/// Used by per-block `#![proptest_config(...)]` to keep the env-override
+/// contract uniform across callsites with distinct case counts.
+fn proptest_cases_or(default: u32) -> u32 {
     std::env::var("PROPTEST_CASES")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(30_000)
+        .unwrap_or(default)
 }
 
 /// Global leak counter — mirrors `corelink_region_cross_region_read_blocked_total`.
@@ -99,7 +106,7 @@ fn mismatch_pair_strategy() -> impl Strategy<Value = (TenantCtx, Region)> {
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 7_500,
+        cases: proptest_cases_or(7_500),
         ..ProptestConfig::default()
     })]
 
@@ -123,7 +130,7 @@ proptest! {
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 7_500,
+        cases: proptest_cases_or(7_500),
         ..ProptestConfig::default()
     })]
 
@@ -150,7 +157,7 @@ proptest! {
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 7_500,
+        cases: proptest_cases_or(7_500),
         ..ProptestConfig::default()
     })]
 
@@ -204,7 +211,7 @@ proptest! {
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 7_500,
+        cases: proptest_cases_or(7_500),
         ..ProptestConfig::default()
     })]
 

@@ -43,6 +43,16 @@ use corelink_auth::schema::{
 use proptest::prelude::*;
 use uuid::Uuid;
 
+/// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Returns the
+/// env-overridden value if set, else `default`. The 100k nightly
+/// variant overrides via `PROPTEST_CASES=100_000`.
+fn proptest_cases(default: u32) -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(default)
+}
+
 // ----------------------------------------------------------------------------
 // Strategies.
 // ----------------------------------------------------------------------------
@@ -64,7 +74,7 @@ fn email_hash_strategy() -> impl Strategy<Value = [u8; 32]> {
 // ----------------------------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(10_000))]
+    #![proptest_config(ProptestConfig::with_cases(proptest_cases(10_000)))]
 
     #[test]
     fn pat_token_hash_unique(
@@ -297,7 +307,7 @@ fn tenant_seed_strategy() -> impl Strategy<Value = TenantSeed> {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(10_000))]
+    #![proptest_config(ProptestConfig::with_cases(proptest_cases(10_000)))]
 
     /// The canonical RLS envelope: for any pair of tenants populated
     /// with PATs, querying tenant_b's view never returns rows owned by
@@ -411,7 +421,7 @@ proptest! {
 // ----------------------------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(2_048))]
+    #![proptest_config(ProptestConfig::with_cases(proptest_cases(2_048)))]
 
     /// For every populated account, `dsr_hard_delete_account`:
     ///   - Removes the account row.

@@ -52,6 +52,15 @@ use proptest::prelude::*;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
+/// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Default 10k
+/// for the PR gate; 100k nightly via `PROPTEST_CASES=100_000`.
+fn proptest_cases() -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(10_000)
+}
+
 // -- helpers ---------------------------------------------------------------
 
 fn tdk_zero() -> TenantDerivationKey {
@@ -102,7 +111,7 @@ fn digest_strategy() -> impl Strategy<Value = Digest> {
 // -- proptest @ 10k --------------------------------------------------------
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(10_000))]
+    #![proptest_config(ProptestConfig::with_cases(proptest_cases()))]
 
     /// INV-TENANT-ISOLATION: Tenant A's cached negative is invisible to
     /// Tenant B. 10k iter over random (tenant_a, tenant_b, digest, reason).

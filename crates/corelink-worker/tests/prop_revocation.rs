@@ -48,6 +48,15 @@ use corelink_worker::auth::revocation::{
 use corelink_worker::cache::kv::{AlwaysFailingKv, InMemoryKv};
 use corelink_worker::Region;
 
+/// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Default 10k
+/// for the PR gate; 100k nightly via `PROPTEST_CASES=100_000`.
+fn proptest_cases() -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(10_000)
+}
+
 fn fresh_pat_id() -> PatId {
     PatId(Uuid::now_v7())
 }
@@ -132,7 +141,7 @@ fn build_rig_with_kv_outage(
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 10_000,
+        cases: proptest_cases(),
         max_shrink_iters: 0,
         ..ProptestConfig::default()
     })]
@@ -328,7 +337,7 @@ proptest! {
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 10_000,
+        cases: proptest_cases(),
         max_shrink_iters: 0,
         ..ProptestConfig::default()
     })]

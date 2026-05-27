@@ -18,6 +18,15 @@ use corelink_handler_ac::{
 
 use proptest::prelude::*;
 
+/// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Default 256
+/// for the PR gate; override via `PROPTEST_CASES=N` for stress runs.
+fn proptest_cases() -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(256)
+}
+
 fn fixture() -> (Arc<InMemoryAuditSink>, Arc<InMemorySliObserver>, InMemoryAcHandler) {
     let a = Arc::new(InMemoryAuditSink::new());
     let s = Arc::new(InMemorySliObserver::new());
@@ -26,7 +35,7 @@ fn fixture() -> (Arc<InMemoryAuditSink>, Arc<InMemorySliObserver>, InMemoryAcHan
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(256))]
+    #![proptest_config(ProptestConfig::with_cases(proptest_cases()))]
 
     #[test]
     fn prop_lookup_emits_avail_ac_lookup_per_entry(

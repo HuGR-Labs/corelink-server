@@ -42,6 +42,15 @@ use e2e_byok_revoke::helpers::{
 use e2e_byok_revoke::setup_byok_env;
 use proptest::prelude::*;
 
+/// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Default 1000
+/// for the PR gate; override via `PROPTEST_CASES=N` for stress runs.
+fn proptest_cases() -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1_000)
+}
+
 /// Atomic vs property semantics: proptest cannot drive async on its
 /// own. We construct a single tokio runtime here and use
 /// `Runtime::block_on` per case.
@@ -93,7 +102,7 @@ fn scenario_strat() -> impl Strategy<Value = Scenario> {
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 1000,
+        cases: proptest_cases(),
         max_shrink_iters: 256,
         .. ProptestConfig::default()
     })]
