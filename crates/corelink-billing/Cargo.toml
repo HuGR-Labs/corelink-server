@@ -31,14 +31,22 @@ mod_module_files = "deny"
 corelink-billing-aggregator = { workspace = true }
 corelink-billing-emit = { workspace = true }
 corelink-billing-reconcile = { workspace = true }
-corelink-billing-replay = { workspace = true }
 corelink-billing-stripe = { workspace = true }
 corelink-billing-stripe-materializer = { workspace = true }
 corelink-stripe-real = { workspace = true }
 corelink-tier-selection = { workspace = true }
-corelink-quota = { workspace = true }
-corelink-quota-cas = { workspace = true }
-corelink-quota-fsm = { workspace = true }
 corelink-rate-headers = { workspace = true }
 corelink-ratelimit = { workspace = true }
-corelink-abuse = { workspace = true }
+
+# Direct deps for absorbed sub-crates (W35 Phase 2: abuse, billing-replay,
+# quota, quota-cas, quota-fsm physically absorbed into this crate).
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true, features = ["v7", "serde"] }
+corelink-eviction = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+rand = "0.9"
+rand_chacha = "0.9"

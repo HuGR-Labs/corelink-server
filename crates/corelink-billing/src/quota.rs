@@ -2,8 +2,7 @@
 //!
 //! Three absorbed quota crates folded under the canonical `quota`
 //! submodule as three sub-submodules so consumers can target the
-//! exact granularity they need (Stage 1 Stream B sub-step B.1
-//! Option-A aggregator pattern):
+//! exact granularity they need (W35 Phase 2 physical absorption):
 //!
 //! - [`core`] — `corelink-quota`: the quota trait + accounting
 //!   primitives shared by every quota enforcement path.
@@ -13,22 +12,10 @@
 //!   machine + audit envelope for quota-breach events.
 
 /// Quota trait + accounting primitives.
-///
-/// Re-exports the entire public API of `corelink-quota`.
-pub mod core {
-    pub use corelink_quota::*;
-}
+pub mod core;
 
 /// CAS write-time quota enforcement.
-///
-/// Re-exports the entire public API of `corelink-quota-cas`.
-pub mod cas {
-    pub use corelink_quota_cas::*;
-}
+pub mod cas;
 
 /// Soft / hard quota state machine.
-///
-/// Re-exports the entire public API of `corelink-quota-fsm`.
-pub mod fsm {
-    pub use corelink_quota_fsm::*;
-}
+pub mod fsm;
