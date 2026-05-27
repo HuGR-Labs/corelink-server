@@ -1,37 +1,38 @@
 /**
- * Onboarding wizard state.
+ * Onboarding state — collapsed signup model (Phase-0 PLG framework §4).
  *
- * Persistence rules (CTRL-CRED-001):
- *  - Wizard step + tenant_id are persisted to sessionStorage so a user can
- *    refresh mid-flow.
- *  - PAT plaintext is NEVER persisted (sessionStorage or localStorage). It is
- *    held in memory only and zeroed on modal close.
- *  - Anything in localStorage is a bug.
+ * Before this refactor the wizard had six gated steps (tenant → dpa →
+ * region-plan → billing → pat → done). The collapsed flow has just two:
+ * the Clerk sign-up form, then `/welcome`. Tenant + region + plan + PAT
+ * are provisioned server-side on the Clerk `user.created` webhook.
+ *
+ * What survives in this module:
+ *  - The in-memory PAT holder (`setPlaintextPat` / `getPlaintextPat` /
+ *    `clearPlaintextPat`) is still the **only** approved channel for
+ *    handling a freshly-issued PAT inside the admin-ui process. The
+ *    /welcome page reads the plaintext from a one-shot Clerk session
+ *    claim and stashes it here in memory; nothing else may persist it.
+ *  - The CTRL-CRED-001 guard (`saveState` refusing credential-shaped
+ *    JSON, no localStorage anywhere) is preserved as a defensive guard
+ *    for any future ephemeral wizard state.
+ *
+ * What is gone:
+ *  - The `OnboardingStep` graph, `ALL_STEPS`, `nextStep*`/`prevStep*`
+ *    helpers, and the free-plan-skip branch. The new flow has a single
+ *    landing screen so there are no step transitions to model.
  */
 
-export type OnboardingStep =
-  | "tenant"
-  | "dpa"
-  | "region-plan"
-  | "billing"
-  | "pat"
-  | "done";
-
-export const ALL_STEPS: readonly OnboardingStep[] = [
-  "tenant",
-  "dpa",
-  "region-plan",
-  "billing",
-  "pat",
-  "done",
-] as const;
-
 export interface PersistedState {
-  step: OnboardingStep;
+  /**
+   * Tenant id of the freshly-provisioned workspace, if the webhook has
+   * landed by the time the user reaches /welcome. Stored in
+   * sessionStorage so a page refresh during the activation wait keeps
+   * the SSE subscription pointed at the right tenant.
+   */
   tenantId: string | null;
 }
 
-const STORAGE_KEY = "corelink.onboarding.v1";
+const STORAGE_KEY = "corelink.onboarding.v2";
 
 export interface StorageLike {
   getItem(key: string): string | null;
@@ -50,17 +51,14 @@ function safeStorage(): StorageLike | null {
 
 export function loadState(storage?: StorageLike | null): PersistedState {
   const s = storage === undefined ? safeStorage() : storage;
-  if (!s) return { step: "tenant", tenantId: null };
+  if (!s) return { tenantId: null };
   const raw = s.getItem(STORAGE_KEY);
-  if (!raw) return { step: "tenant", tenantId: null };
+  if (!raw) return { tenantId: null };
   try {
     const parsed = JSON.parse(raw) as PersistedState;
-    if (!ALL_STEPS.includes(parsed.step)) {
-      return { step: "tenant", tenantId: null };
-    }
-    return parsed;
+    return { tenantId: typeof parsed.tenantId === "string" ? parsed.tenantId : null };
   } catch {
-    return { step: "tenant", tenantId: null };
+    return { tenantId: null };
   }
 }
 
@@ -70,8 +68,8 @@ export function saveState(
 ): void {
   const s = storage === undefined ? safeStorage() : storage;
   if (!s) return;
-  // Defensive: refuse to persist anything that looks like a PAT.
   const json = JSON.stringify(state);
+  // CTRL-CRED-001 guard: refuse to write anything that looks like a PAT.
   if (/corelink_(prod|test)_/.test(json)) {
     throw new Error("Refusing to persist credential-shaped data");
   }
@@ -84,36 +82,10 @@ export function clearState(storage?: StorageLike | null): void {
   s.removeItem(STORAGE_KEY);
 }
 
-export function nextStep(step: OnboardingStep): OnboardingStep {
-  const idx = ALL_STEPS.indexOf(step);
-  if (idx < 0 || idx === ALL_STEPS.length - 1) return step;
-  return ALL_STEPS[idx + 1]!;
-}
+// ──────────────────────────────────────────────────────────────────────────
+// In-memory PAT holder — module-scoped variable, NEVER serialized.
+// ──────────────────────────────────────────────────────────────────────────
 
-export function prevStep(step: OnboardingStep): OnboardingStep {
-  const idx = ALL_STEPS.indexOf(step);
-  if (idx <= 0) return step;
-  return ALL_STEPS[idx - 1]!;
-}
-
-/**
- * Returns the next step accounting for plan-driven skips.
- * Free plan skips the billing step (no payment method to collect).
- */
-export function nextStepFor(
-  step: OnboardingStep,
-  ctx: { plan?: string | null },
-): OnboardingStep {
-  const candidate = nextStep(step);
-  if (candidate === "billing" && ctx.plan === "free") {
-    return nextStep(candidate);
-  }
-  return candidate;
-}
-
-/**
- * In-memory PAT holder. Module-scoped variable, NEVER serialized.
- */
 let inMemoryPat: string | null = null;
 
 export function setPlaintextPat(pat: string): void {

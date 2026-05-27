@@ -1,0 +1,20 @@
+name = "corelink-signup-worker"
+main = "src/index.ts"
+compatibility_date = "2026-05-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Bindings below are placeholders — actual values are configured per
+# environment via `wrangler secret put` and Pages dashboard.
+#
+#   CLERK_WEBHOOK_SECRET    — svix signing key from Clerk dashboard.
+#   ANALYTICS_DB            — D1 binding owned by `apps/analytics-worker/`.
+#   CORELINK_API_BASE       — base URL of the tenant + PAT issuance API.
+#   CORELINK_API_TOKEN      — service-to-service bearer for the API above.
+#
+# [[d1_databases]]
+# binding = "ANALYTICS_DB"
+# database_name = "corelink-analytics"
+# database_id = "<assigned-by-agent-G>"
+
+[vars]
+CORELINK_API_BASE = "https://corelink-api.humangr.com"
