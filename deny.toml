@@ -46,7 +46,17 @@ yanked = "deny"
 # via quarterly RS256 key rotation + signing-latency P99±3σ alerting +
 # per-tenant signing-process isolation. Full decision matrix +
 # auto-promotion triggers in ADR-S20-RSA-MARVIN-MITIGATION.
-ignore = ["RUSTSEC-2023-0071"]
+ignore = [
+    "RUSTSEC-2023-0071",
+    # 2026-05-27 Wave 36 close-out — rustls-pemfile RUSTSEC-2025-0134
+    # (unmaintained). Reached only via `bollard 0.17 → testcontainers 0.21
+    # → testcontainers-modules 0.9` which is a `[dev-dependencies]` of
+    # `corelink-audit-chain` (test-only). Zero production exposure. Re-evaluate
+    # when bollard cuts a release dropping rustls-pemfile or when testcontainers
+    # migrates to rustls-pki-types directly. Mitigation: PEM parsing only
+    # happens at test-container boot, never against external input in prod.
+    "RUSTSEC-2025-0134",
+]
 # CVSS threshold not applied: HIGH_RISK lane treats EVERY advisory as
 # blocking until explicitly waived via ADR.
 
@@ -186,6 +196,24 @@ skip = [
     { crate = "indexmap@1.9.3", reason = "transitive via prost-build" },
     # socket2 0.5 + 0.6 from tokio + newer hyper-util.
     { crate = "socket2@0.5.10", reason = "transitive via tokio 1.40 stack; resolves with tokio 1.42+" },
+    # ----- 2026-05-27 Wave 36 close-out batch (post tag wave-36-final-sealed) -----
+    # Pre-existing transitive dupes inherited from upstream crates that
+    # ship overlapping major lines. Each older version is the OLDER duplicate;
+    # the newer line is preferred. Re-evaluate when upstream resolves.
+    { crate = "const-oid@0.9.6", reason = "transitive via RustCrypto 0.10 line (0.10.2 newer via spki/der 0.7); resolves with RustCrypto 0.11 migration" },
+    { crate = "fallible-iterator@0.2.0", reason = "transitive via tokio-postgres / postgres-types (0.3.0 newer); resolves with postgres ecosystem bump" },
+    { crate = "hashbrown@0.14.5", reason = "transitive via newer async stack (0.17.1 from latest indexmap); resolves with indexmap 2.x catchup" },
+    { crate = "hmac@0.12.1", reason = "transitive via RustCrypto 0.12 (0.13 newer via signature-2); resolves with RustCrypto 0.11/0.13 migration" },
+    { crate = "http@0.2.12", reason = "transitive via tonic 0.12 + reqwest old line (1.4.1 newer via axum 0.7 / hyper 1.x); resolves with tonic 0.13" },
+    { crate = "http-body@0.4.6", reason = "transitive via tonic 0.12 (1.0.1 newer via hyper 1.x); resolves with tonic 0.13" },
+    { crate = "rand@0.8.6", reason = "transitive via older RustCrypto stack (0.9.4/0.10.1 newer); resolves with RustCrypto 0.11 migration" },
+    { crate = "rand@0.9.4", reason = "transitive via mid-tier deps (0.10.1 newest); transient until ecosystem stabilizes on 0.10" },
+    { crate = "rand_chacha@0.3.1", reason = "transitive via older rand 0.8 (0.9.0 newer); resolves with rand 0.10 catchup" },
+    { crate = "rand_core@0.6.4", reason = "transitive via older rand 0.8 (0.9.5/0.10.1 newer); resolves with RustCrypto 0.11 migration" },
+    { crate = "rand_core@0.9.5", reason = "transitive via rand 0.9 (0.10.1 newest); transient until ecosystem stabilizes on 0.10" },
+    { crate = "sha2@0.10.9", reason = "transitive via RustCrypto 0.10 line (0.11.0 newer); resolves with RustCrypto 0.11 migration" },
+    { crate = "wasm-streams@0.4.2", reason = "transitive via older wasm-bindgen-futures (0.5.0 newer); resolves with wasm-bindgen ecosystem bump" },
+    { crate = "webpki-roots@0.26.11", reason = "transitive via rustls 0.23 stack (1.0.7 newer via rustls 0.24+); resolves with rustls major bump" },
 ]
 skip-tree = []
 
