@@ -10,5 +10,7 @@ This directory exists so the Docusaurus content-pages i18n plugin has a
 parallel locale directory for translation overrides. No override is
 needed for en-US (it IS the source locale).
 
-The numbers rendered are provisional pre-GA — see
-`specs/_audits/sealed/2026-05-16-pricing-page.md` for the rate card status.
+The launch rate card (Free / Pro $25/mo or $250/yr / Enterprise) is
+concrete — no longer provisional. See
+`specs/_audits/2026-05-27-pricing-benchmarks.md` §5 +
+`specs/_audits/2026-05-27-phase-0-execution-plan.md` §2.E.

@@ -1,10 +1,18 @@
 /**
- * Public pricing page — wave-29 stream-7 r-prep deliverable.
+ * Public pricing page — Phase 0.E launch shape.
  *
- * 5-tier comparison (Free / Starter / Team / Pro / Enterprise) following
- * the canonical wave-13 tier taxonomy. Every numeric value is provisional
- * per honest pre-GA framing; rates remain `<TBD per GA pricing review>`
- * until Finance / Legal / Product sign off in CONTENT-REVIEW.md.
+ * 3 tiers (Free / Pro / Enterprise) per pricing-benchmarks §5 + ROADMAP-TO-LAUNCH.md §3
+ * + phase-0-execution-plan.md §2.E. Prices are concrete launch prices
+ * (no longer provisional). CTAs route to real surfaces:
+ *
+ *   Free        → https://corelink-app.humangr.com/sign-up
+ *   Pro         → https://corelink-app.humangr.com/upgrade?plan=pro
+ *   Enterprise  → mailto:sales@humangr.com
+ *
+ * The `/upgrade?plan=pro` route in `apps/admin-ui` triggers the
+ * Stripe Checkout Session created by Phase 0.C
+ * (`BILLINGSTEP-DELETE-WIRE-CHECKOUT`); if the user is not signed in
+ * Clerk routes through `/sign-up?intent=pro&redirect=/upgrade?plan=pro`.
  */
 
 import Layout from "@theme/Layout";
@@ -17,19 +25,58 @@ import {
   applyPeriodDiscount,
   formatUsd,
 } from "../lib/pricing";
-import type { BillingPeriod, TierShape } from "../lib/pricing";
+import type { BillingPeriod, TierId, TierShape } from "../lib/pricing";
 
 import styles from "./pricing.module.css";
 
+const APP_BASE = "https://corelink-app.humangr.com";
+const SIGNUP_URL = `${APP_BASE}/sign-up`;
+const UPGRADE_PRO_URL = `${APP_BASE}/upgrade?plan=pro`;
+const SALES_MAILTO = "mailto:sales@humangr.com?subject=CoreLink%20Enterprise%20inquiry";
+
+interface TierCta {
+  readonly label: string;
+  readonly href: string;
+  readonly rel?: string;
+}
+
+function ctaForTier(tier: TierId): TierCta {
+  switch (tier) {
+    case "free":
+      return { label: "Start free", href: SIGNUP_URL };
+    case "pro":
+      // Admin-ui handles the auth check: if not signed in Clerk
+      // intercepts and routes to `/sign-up?redirect=/upgrade?plan=pro`.
+      // If signed in it POSTs to /api/checkout/session and 303s into
+      // Stripe Checkout (wired by Phase 0.C).
+      return { label: "Upgrade to Pro", href: UPGRADE_PRO_URL };
+    case "enterprise":
+      return { label: "Contact sales", href: SALES_MAILTO };
+  }
+}
+
 function tierHeadlinePrice(card: TierShape, period: BillingPeriod): string {
   if (card.usdMonthlyBase === null) {
-    return "Contact us";
+    return "Custom";
   }
   if (card.usdMonthlyBase === 0) {
     return "$0";
   }
   const effective = applyPeriodDiscount(card.usdMonthlyBase, period);
   return `${formatUsd(effective)}/mo`;
+}
+
+function tierSubprice(card: TierShape, period: BillingPeriod): string {
+  if (card.usdMonthlyBase === null) {
+    return "Custom contract";
+  }
+  if (card.usdMonthlyBase === 0) {
+    return "Free forever — no card";
+  }
+  if (period === "annual" && card.usdAnnualList !== null) {
+    return `${formatUsd(card.usdAnnualList)}/year — 2 months free`;
+  }
+  return "billed monthly";
 }
 
 function CheckOrDash({ included }: { included: boolean }): ReactElement {
@@ -50,24 +97,16 @@ export default function Pricing(): ReactElement {
   return (
     <Layout
       title="Pricing"
-      description="CoreLink plans: Free, Starter, Team, Pro, Enterprise. Pricing is provisional pending GA."
+      description="CoreLink plans: Free, Pro ($25/mo or $250/yr), Enterprise. Three tiers, one number on Pro, no per-seat."
     >
       <main className={styles.page}>
         <header className={styles.header}>
           <h1>Pricing</h1>
           <p>
-            Five plans — from a free single-developer tier to enterprise BYOK.
-            Pick the smallest one that covers your usage.
+            Three plans. One paid number ($25/mo on Pro). No per-seat, no
+            per-build, no surprise bills.
           </p>
         </header>
-
-        <div className={styles.honestNote} role="status">
-          <strong>Pre-GA notice.</strong> Every dollar amount on this page is
-          provisional and subject to refinement at GA. The shape (tier
-          features, included quotas, overage axes) is stable; magnitudes float
-          until Finance, Legal, and Product sign off. The pilot tier is free
-          during evaluation — see <a href="/pilot/apply">Apply for pilot</a>.
-        </div>
 
         <div className={styles.periodToggle} role="group" aria-label="Billing period">
           <button
@@ -82,58 +121,64 @@ export default function Pricing(): ReactElement {
             aria-pressed={period === "annual"}
             onClick={() => setPeriod("annual")}
           >
-            Annual (save 15%)
+            Annual (2 months free)
           </button>
         </div>
 
         <section aria-label="Tier headline cards" className={styles.tierGrid}>
           {CANONICAL_TIERS.map((tierId) => {
             const card = TIER_RATE_CARD[tierId];
+            const cta = ctaForTier(tierId);
             return (
-              <article key={tierId} className={styles.tierCard}>
+              <article
+                key={tierId}
+                className={
+                  tierId === "pro"
+                    ? `${styles.tierCard} ${styles.tierCardFeatured}`
+                    : styles.tierCard
+                }
+              >
+                {tierId === "pro" ? (
+                  <span className={styles.recommendedBadge}>Most popular</span>
+                ) : null}
                 <h3>{card.label}</h3>
+                <p className={styles.tierTagline}>{card.tagline}</p>
                 <div className={styles.tierPrice}>
                   {tierHeadlinePrice(card, period)}
                 </div>
                 <div className={styles.tierSubprice}>
-                  {card.usdMonthlyBase === null
-                    ? "Custom contract"
-                    : period === "annual"
-                      ? "billed annually"
-                      : "billed monthly"}
+                  {tierSubprice(card, period)}
                 </div>
                 <ul className={styles.tierFeatures}>
-                  <li>{card.includedCasGb.toLocaleString("en-US")} GB CAS storage</li>
                   <li>
-                    {card.includedTransferGb.toLocaleString("en-US")} GB
-                    transfer / mo
+                    <strong>{card.includedCasGb.toLocaleString("en-US")} GB</strong>{" "}
+                    cache storage
                   </li>
                   <li>
-                    {card.includedAuditEvents.toLocaleString("en-US")} audit
-                    events / mo
+                    <strong>
+                      {card.includedRequests.toLocaleString("en-US")}
+                    </strong>{" "}
+                    cache requests / mo
                   </li>
                   <li>
-                    {card.includedRegions} region
-                    {card.includedRegions === 1 ? "" : "s"}
+                    {card.includedWorkspaces === null
+                      ? "Unlimited workspaces"
+                      : `${card.includedWorkspaces} workspace${card.includedWorkspaces === 1 ? "" : "s"}`}
                   </li>
                   <li>
-                    {card.includedByokProviders === 0
-                      ? "No BYOK"
-                      : `${card.includedByokProviders} BYOK provider${card.includedByokProviders === 1 ? "" : "s"}`}
+                    {card.hardCap
+                      ? "Hard cap at 100% — no surprise bills"
+                      : "Custom capacity"}
                   </li>
-                  <li>
-                    {card.includedSeats} admin seat
-                    {card.includedSeats === 1 ? "" : "s"}
-                  </li>
-                  <li>
-                    Support:{" "}
-                    {card.supportResponseHours === "custom"
-                      ? "Custom SLA"
-                      : `${card.supportResponseHours} h response`}
-                  </li>
+                  <li>{card.support}</li>
                 </ul>
-                <a className={styles.cta} href="/pilot/apply">
-                  {card.usdMonthlyBase === null ? "Contact sales" : "Start pilot"}
+                <a
+                  className={styles.cta}
+                  href={cta.href}
+                  rel={cta.rel}
+                  data-tier={tierId}
+                >
+                  {cta.label}
                 </a>
               </article>
             );
@@ -142,8 +187,10 @@ export default function Pricing(): ReactElement {
 
         <h2>Feature comparison</h2>
         <p>
-          Every numeric quota below is the included allowance for the plan; once
-          you exceed it, the per-unit overage rate from the calculator applies.
+          Every numeric quota below is the included allowance for the plan.
+          Free and Pro hard-cap at 100% — your cache returns{" "}
+          <code>429 Quota Exceeded</code> with an upgrade hint instead of
+          silently billing overage.
         </p>
 
         <table className={styles.compareTable}>
@@ -159,93 +206,96 @@ export default function Pricing(): ReactElement {
           </thead>
           <tbody>
             <tr>
-              <th scope="row">CAS storage (GB included)</th>
-              {CANONICAL_TIERS.map((t) => (
-                <td key={t}>
-                  {TIER_RATE_CARD[t].includedCasGb.toLocaleString("en-US")}
-                </td>
-              ))}
-            </tr>
-            <tr>
-              <th scope="row">Transfer (GB / mo included)</th>
-              {CANONICAL_TIERS.map((t) => (
-                <td key={t}>
-                  {TIER_RATE_CARD[t].includedTransferGb.toLocaleString("en-US")}
-                </td>
-              ))}
-            </tr>
-            <tr>
-              <th scope="row">Audit events / mo</th>
-              {CANONICAL_TIERS.map((t) => (
-                <td key={t}>
-                  {TIER_RATE_CARD[t].includedAuditEvents.toLocaleString("en-US")}
-                </td>
-              ))}
-            </tr>
-            <tr>
-              <th scope="row">Regions included</th>
-              {CANONICAL_TIERS.map((t) => (
-                <td key={t}>{TIER_RATE_CARD[t].includedRegions}</td>
-              ))}
-            </tr>
-            <tr>
-              <th scope="row">BYOK providers</th>
-              {CANONICAL_TIERS.map((t) => (
-                <td key={t}>
-                  <CheckOrDash
-                    included={TIER_RATE_CARD[t].includedByokProviders > 0}
-                  />
-                  {TIER_RATE_CARD[t].includedByokProviders > 0
-                    ? `${TIER_RATE_CARD[t].includedByokProviders} included`
-                    : ""}
-                </td>
-              ))}
-            </tr>
-            <tr>
-              <th scope="row">Admin seats</th>
-              {CANONICAL_TIERS.map((t) => (
-                <td key={t}>{TIER_RATE_CARD[t].includedSeats}</td>
-              ))}
-            </tr>
-            <tr>
-              <th scope="row">Support response</th>
+              <th scope="row">Price</th>
               {CANONICAL_TIERS.map((t) => {
-                const r = TIER_RATE_CARD[t].supportResponseHours;
-                return <td key={t}>{r === "custom" ? "Custom" : `${r} h`}</td>;
+                const c = TIER_RATE_CARD[t];
+                return (
+                  <td key={t}>
+                    {c.usdMonthlyBase === null
+                      ? "Custom"
+                      : c.usdMonthlyBase === 0
+                        ? "$0"
+                        : `$${c.usdMonthlyBase}/mo`}
+                  </td>
+                );
               })}
             </tr>
             <tr>
-              <th scope="row">DPA + SOC 2 (when issued)</th>
+              <th scope="row">CAS storage included</th>
               {CANONICAL_TIERS.map((t) => (
                 <td key={t}>
-                  <CheckOrDash included={t !== "free"} />
+                  {TIER_RATE_CARD[t].includedCasGb.toLocaleString("en-US")} GB
                 </td>
               ))}
             </tr>
             <tr>
-              <th scope="row">SSO (SAML / OIDC)</th>
+              <th scope="row">Cache requests / mo</th>
               {CANONICAL_TIERS.map((t) => (
                 <td key={t}>
-                  <CheckOrDash included={t === "pro" || t === "enterprise"} />
+                  {TIER_RATE_CARD[t].includedRequests.toLocaleString("en-US")}
                 </td>
               ))}
             </tr>
             <tr>
-              <th scope="row">SCIM provisioning</th>
+              <th scope="row">Workspaces</th>
+              {CANONICAL_TIERS.map((t) => {
+                const w = TIER_RATE_CARD[t].includedWorkspaces;
+                return <td key={t}>{w === null ? "Unlimited" : w}</td>;
+              })}
+            </tr>
+            <tr>
+              <th scope="row">BYOK (R2 + KMS)</th>
               {CANONICAL_TIERS.map((t) => (
                 <td key={t}>
-                  <CheckOrDash included={t === "enterprise"} />
+                  <CheckOrDash included={TIER_RATE_CARD[t].byok} />
                 </td>
+              ))}
+            </tr>
+            <tr>
+              <th scope="row">SSO / SAML</th>
+              {CANONICAL_TIERS.map((t) => (
+                <td key={t}>
+                  <CheckOrDash included={TIER_RATE_CARD[t].sso} />
+                </td>
+              ))}
+            </tr>
+            <tr>
+              <th scope="row">99.9% SLA + credits</th>
+              {CANONICAL_TIERS.map((t) => (
+                <td key={t}>
+                  <CheckOrDash included={TIER_RATE_CARD[t].slaCredits} />
+                </td>
+              ))}
+            </tr>
+            <tr>
+              <th scope="row">DPA + MSA</th>
+              {CANONICAL_TIERS.map((t) => (
+                <td key={t}>
+                  <CheckOrDash included={TIER_RATE_CARD[t].dpa} />
+                </td>
+              ))}
+            </tr>
+            <tr>
+              <th scope="row">Audit log export</th>
+              {CANONICAL_TIERS.map((t) => (
+                <td key={t}>
+                  <CheckOrDash included={TIER_RATE_CARD[t].auditLogExport} />
+                </td>
+              ))}
+            </tr>
+            <tr>
+              <th scope="row">Support</th>
+              {CANONICAL_TIERS.map((t) => (
+                <td key={t}>{TIER_RATE_CARD[t].support}</td>
               ))}
             </tr>
           </tbody>
         </table>
 
         <p>
-          See the{" "}
-          <a href="/pricing/calculator">interactive calculator</a> to plug in
-          your usage profile and see per-tier estimates side-by-side. Numbers
-          remain provisional until Finance signs off the rate card at GA.
+          Need to size for your team? See the{" "}
+          <a href="/pricing/calculator">interactive calculator</a> — plug in
+          your storage and request volume to find the smallest tier that fits.
         </p>
       </main>
     </Layout>
