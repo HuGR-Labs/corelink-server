@@ -3,9 +3,9 @@ id: "RB-SUBPROCESSOR-CHANGE"
 type: "runbook"
 doc_status: "ACTIVE"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-15"
-updated: "2026-05-15"
+updated: "2026-05-27"
 sprint: "R-prep"
 parent_wi: "WI-R-PREP-SUBPROCESSOR-SYNC"
 owner: "Gustavo Schneiter"
@@ -16,6 +16,8 @@ superseded_by: null
 inherits_from: ["VENDOR-RISK-REGISTER-2026-05-15", "RB-VENDOR-RISK-QUARTERLY-REVIEW"]
 tags: ["runbook", "subprocessor", "lgpd", "gdpr", "privacy", "ctrl-priv-021", "legal-review"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-privacy-sub-processor-emit` was absorbed into `corelink-privacy` via inline `mod sub_processor;` per SEAL `specs/_audits/sealed/2026-05-26-w35-p2-privacy-absorption.md`. Canonical consumer path is now `corelink_privacy::sub_processor::*`. Operational references using the absorbed crate path still work for HISTORICAL log/grep reference but new automation should use the umbrella.
 
 <!-- forensics-backlink -->
 > **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §10.

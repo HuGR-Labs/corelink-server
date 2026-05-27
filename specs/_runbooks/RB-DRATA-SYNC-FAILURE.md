@@ -3,9 +3,9 @@ id: "RB-DRATA-SYNC-FAILURE"
 type: "runbook"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-14"
-updated: "2026-05-14"
+updated: "2026-05-27"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -14,6 +14,8 @@ superseded_by: null
 parent: "WI-R5P-SOC2-DRATA"
 tags: ["runbook", "r5p", "soc2", "drata", "evidence-sync", "fail-open", "sla-24h"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-drata-sync` was absorbed into `corelink-ops` via inline `mod drata;` per SEAL `specs/_audits/sealed/2026-05-26-w35-p2-ops-absorption.md`. Canonical consumer path is now `corelink_ops::drata::*` (including `EvidenceRecord` at `crates/corelink-ops/src/drata/record.rs`). Operational references using the absorbed crate path still work for HISTORICAL log/grep reference but new automation should use the umbrella.
 
 <!-- forensics-backlink -->
 > **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §4, §9.1.

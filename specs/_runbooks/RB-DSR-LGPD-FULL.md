@@ -3,9 +3,9 @@ id: "RB-DSR-LGPD-FULL"
 type: "runbook"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-15"
-updated: "2026-05-15"
+updated: "2026-05-27"
 sprint: "R5-3"
 parent_wi: "GAP-22-FOLLOWUP-FULL-AUDIT"
 owner: "Gustavo Schneiter"
@@ -19,6 +19,8 @@ inherits_from:
   - "PRIVACY-MODEL"
 tags: ["runbook", "lgpd", "lgpd-art-18", "dsr", "data-subject-rights", "gap-22-followup", "anpd"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-privacy-consent-ledger` and `corelink-privacy-residency-enforcement` were absorbed into `corelink-privacy` via inline `mod consent;` / `mod residency;` per SEAL `specs/_audits/sealed/2026-05-26-w35-p2-privacy-absorption.md`. Canonical consumer paths are now `corelink_privacy::consent::*` and `corelink_privacy::residency::*` (including the legal-hold `migration` submodule referenced at §legal-hold). Operational references using the absorbed crate paths still work for HISTORICAL log/grep reference but new automation should use the umbrella.
 
 <!-- forensics-backlink -->
 > **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §4, §8.1.

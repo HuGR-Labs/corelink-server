@@ -3,9 +3,9 @@ id: "RB-BACKUP-VERIFICATION-FAILURE"
 type: "runbook"
 doc_status: "ACTIVE"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-15"
-updated: "2026-05-15"
+updated: "2026-05-27"
 owner: "SRE Lead"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -13,6 +13,8 @@ supersedes: null
 superseded_by: null
 tags: ["runbook", "r-prep", "backup-verification", "dr", "daily-cadence", "slo-backup-verification"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-backup-verify` was absorbed into `corelink-ops` via inline `mod dr::backup_verify;` per SEAL `specs/_audits/sealed/2026-05-26-w35-p2-ops-absorption.md`. Canonical consumer path is now `corelink_ops::dr::backup_verify::*` (verification trait + in-memory fake). Operational references using the absorbed crate path still work for HISTORICAL log/grep reference but new automation should use the umbrella.
 
 <!-- forensics-backlink -->
 > **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §3, §10.

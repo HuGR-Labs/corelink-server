@@ -3,9 +3,9 @@ id: "RB-SURVEY-ABUSE"
 type: "runbook"
 doc_status: "ACTIVE"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-15"
-updated: "2026-05-15"
+updated: "2026-05-27"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -13,6 +13,8 @@ supersedes: null
 superseded_by: null
 tags: ["runbook", "r-prep", "retention", "customer-health", "survey", "nps", "csat", "abuse", "rate-limit", "anti-spam", "analyst-review"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-survey` and `corelink-abuse` were absorbed into `corelink-ops` and `corelink-billing` via inline `mod survey;` / `mod abuse;` per SEALs `specs/_audits/sealed/2026-05-26-w35-p2-ops-absorption.md` and `specs/_audits/sealed/2026-05-26-w35-p2-billing-absorption.md`. Canonical consumer paths are now `corelink_ops::survey::*` (token, recorder, sanitize_free_text) and `corelink_billing::abuse::*`. Operational references using the absorbed crate names still work for HISTORICAL log/grep reference but new automation should use the umbrellas.
 
 # RB-SURVEY-ABUSE — Customer-health survey abuse + spam triage
 

@@ -3,9 +3,9 @@ id: "RB-DPO-ESCALATION"
 type: "runbook"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-15"
-updated: "2026-05-15"
+updated: "2026-05-27"
 sprint: "R5-3"
 parent_wi: "GAP-01"
 owner: "Gustavo Schneiter"
@@ -32,6 +32,8 @@ tags:
   - "sla"
   - "gap-01"
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-privacy-residency-enforcement` was absorbed into `corelink-privacy` via inline `mod residency;` per SEAL `specs/_audits/sealed/2026-05-26-w35-p2-privacy-absorption.md`. Canonical consumer path is now `corelink_privacy::residency::*`. Operational references using the absorbed crate name still work for HISTORICAL log/grep reference but new automation (and DPO veto-trigger language) should use the umbrella.
 
 <!-- forensics-backlink -->
 > **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §8.1, §10.
