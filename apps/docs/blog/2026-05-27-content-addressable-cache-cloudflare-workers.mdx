@@ -1,0 +1,676 @@
+---
+slug: content-addressable-cache-cloudflare-workers
+title: How we built a content-addressable build cache on Cloudflare Workers
+authors: [gustavo]
+tags: [engineering, build-cache, cloudflare-workers, rust, blake3]
+date: 2026-05-27T08:00:00.000Z
+description: A deep-dive into the architecture, the type-driven integrity story, and the things we tried and abandoned while building CoreLink on Workers + R2 + D1.
+---
+
+CoreLink is a multi-tenant, content-addressable cache for builds, package
+indices, container layers, and ML artifacts. We run the whole control
+plane on Cloudflare Workers and the hot data path on Cloudflare
+Containers, with R2 for blobs and D1 for hot metadata. This is the
+post we wished we had read before we started.
+
+It is long. There are real code paths from the repo, real failure
+stories from the last six months, and one place where we admit we
+modeled something wrong in TLA+ and had to redo it. If you are
+considering Workers for anything more than a wrapper around an
+upstream API, the cliffs we hit are probably the same cliffs you will
+hit.
+
+<!-- truncate -->
+
+## §0 — Why this post exists
+
+We started with a different working title — *"Why content-addressable
+storage is the right primitive for build caches."* It is a perfectly
+fine essay; it is also the essay that every CAS-curious reader has
+already read in some form (the 2009 *bup* paper, the Bazel
+remote-cache RFC, Tailscale's `taildrop` post, the Camlistore
+archive). What none of those posts cover is what happens when you try
+to actually run it under the constraints of a serverless edge:
+128 MB of RAM per Worker invocation, a 30 second wall-clock budget,
+no shared memory, no tokio, no `getrandom` in the same WASM that runs
+your hot path, and a billing model where every cross-binding hop is a
+line item.
+
+So this post is about the second-most fundamental question, which is
+the one we had to answer with code instead of essays: **given that
+content-addressable storage is the right primitive, what does the
+implementation look like when the substrate is Workers + R2 + D1?**
+
+Five sections:
+
+1. **The shape of the system** — control plane vs data plane, where
+   each invariant lives, what crosses a Cloudflare service binding
+   and what doesn't.
+2. **Integrity as a type, not a check** — how BLAKE3 became a Rust
+   newtype and why the `VerifiedBody` envelope removes "we forgot to
+   verify" from the failure modes.
+3. **The chunker we threw away (twice)** — fixed-size, then naive
+   FastCDC, then FastCDC with bounded-parser discipline.
+4. **Tenant isolation as a TLA+ invariant** — the model we wrote, the
+   abstraction we got wrong in version 1, and what TLC actually
+   caught.
+5. **What didn't work** — the 149 → 87 crate reorganization, the
+   D1-as-hot-path mistake, the chunker mask seeds that drifted, and
+   one cargo-deny rule that took us three days to write.
+
+Reading time is about 18 minutes. If you only have five, skip to §3
+(the chunker) and §5 (what didn't work) — those are the parts you
+cannot find in the public literature.
+
+## §1 — The shape of the system
+
+The high-level picture is unsurprising. The interesting parts are
+where things split.
+
+```text
+                           ┌──────────────────────────────┐
+   bazel / buck2 / pants   │   Cloudflare edge (TB-0/1)   │
+   sccache / nix / cargo   │   TLS 1.3, WAF, rate-limit   │
+   ───── REAPI v2 gRPC ───▶│                              │
+                           └────────────┬─────────────────┘
+                                        │
+                       service binding (never public Internet)
+                                        ▼
+        ┌────────────────────────────────────────────────────┐
+        │  Control plane — Cloudflare Workers (stateless)    │
+        │  apps/server + crates/corelink-worker              │
+        │  auth · quota · rate-limit · billing-emit · admin  │
+        └───────────────┬──────────────────────┬─────────────┘
+                        │                      │
+            service binding (Worker→Container) │
+                        ▼                      ▼
+   ┌───────────────────────────────┐   ┌──────────────────────┐
+   │  Data plane — Cloudflare      │   │  Durable Objects     │
+   │  Container, Rust REAPI gRPC   │   │  rate buckets,       │
+   │  chunk · hash · dedup · R2 IO │   │  config singletons,  │
+   └──┬─────────────┬───────────┬──┘   │  replica fan-out     │
+      │             │           │      └──────────────────────┘
+      ▼             ▼           ▼
+   ┌─────┐      ┌──────┐    ┌──────┐
+   │ R2  │      │  D1  │    │  KV  │
+   │blobs│      │ hot  │    │verify│
+   │+AC  │      │ meta │    │cache │
+   │+log │      │+quota│    │+flags│
+   └─────┘      └──────┘    └──────┘
+```
+
+Three rules govern that diagram, and they are the rules we wish
+someone had told us out loud:
+
+**Rule 1 — Workers do not touch hot bytes.** A Worker invocation has
+~128 MB of RAM and a wall-clock budget. The moment your hot loop is
+"stream multi-GB blobs through me," you have written a Container
+disguised as a Worker, and it will fail under the most boring
+production load you can imagine. Workers do auth, quota, rate-limit,
+billing emit, admin — control-plane work. Bytes go through the
+Container.
+
+**Rule 2 — One round-trip per RPC, or you're paying for it.** Every
+Worker → D1 hop is a network call. Every Worker → R2 hop is a
+network call. The Container → R2 path stays in-region by Cloudflare
+construction, so it is the only place where the "edge" framing
+actually delivers latency wins. We design the request shape so that a
+hot CAS read costs *one* D1 lookup (action-cache or blob-meta) and
+*one* R2 GET. Two D1 lookups is the sound of a refactor that broke
+the design.
+
+**Rule 3 — Stateful primitives are Durable Objects, not D1.** D1 is a
+fine SQLite-on-the-edge for hot but small reads. It is *not* a
+coordination primitive. We learned this twice (see §5). Anywhere you
+would have used a Postgres advisory lock, a Redis token-bucket, or a
+"singleton config service," you want a Durable Object.
+
+A piece of the actual `ARCHITECTURE.md` makes the split explicit:
+
+> The boundary between the control plane (Worker) and the data plane
+> (Container) is deliberate. The Worker is stateless and cheap to fan
+> out — perfect for auth, rate-limit, billing-emission, and admin
+> operations that involve many small RPC hops. The Container holds
+> the hot loop (chunk → hash → R2 PUT/GET → verify) and stays
+> in-region with R2 so the bandwidth-heavy phase never traverses the
+> public Internet.
+> — [`ARCHITECTURE.md`](https://github.com/humangr-labs/corelink-server/blob/main/ARCHITECTURE.md) §2
+
+If you only walk away with one idea from this post, walk away with
+that one. The "edge" pitch breaks the moment your loop crosses the
+Worker/Container line in the wrong direction.
+
+## §2 — Integrity as a type, not a check
+
+CoreLink commits to four invariants. The first one — `INV-CAS-INTEGRITY` —
+is the only one for which our SLO budget is literally zero. No
+returned byte may ever diverge from the digest the caller asked for.
+A poisoned cache silently re-flashes production binaries; the cost
+of one violation is catastrophic, and the cost of a too-eager
+runtime check is one extra BLAKE3 pass per GET. We pay the BLAKE3
+pass.
+
+The interesting question is: **how do you make sure the BLAKE3 pass
+actually happens?** "We always call the verify function" is exactly
+the sentence engineers say two minutes before they ship a bug that
+skips the verify function on one code path. So we did it with the
+type system instead.
+
+The full type lives in
+[`crates/corelink-hash/src/digest.rs`](https://github.com/humangr-labs/corelink-server/blob/main/crates/corelink-hash/src/digest.rs).
+Trimmed to the load-bearing parts:
+
+```rust
+// crates/corelink-hash/src/digest.rs — lines 12-32
+pub const DIGEST_LEN: usize = 32;
+
+/// 32-byte BLAKE3 content digest.
+///
+/// PartialEq / Eq are derived for ergonomic non-adversarial use (set
+/// membership, D1 lookups). For *adversarial* timing-sensitive paths —
+/// i.e. any verification step where an attacker may observe latency —
+/// use [`Self::verify_constant_time`].
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Digest([u8; DIGEST_LEN]);
+
+impl Digest {
+    /// Hash `body` with BLAKE3-256 and return the resulting [`Digest`].
+    #[must_use]
+    pub fn compute(body: &[u8]) -> Self {
+        Self(*blake3::hash(body).as_bytes())
+    }
+    // ...
+}
+```
+
+Two things to notice. First, the byte array is **private**. You
+cannot construct a `Digest` from arbitrary bytes; the only
+constructors are `compute(&[u8])` (real hashing) and `from_hex(&str)`
+(length- and alphabet-checked parse). The type system carries the
+invariant that any `Digest` value the program holds either came from
+a real hash or from a parsed-and-validated string.
+
+Second, the comparison story is **two functions, deliberately**. The
+derived `PartialEq` short-circuits on the first mismatching byte, so
+it leaks "how many bytes were correct" through timing. We use that
+for D1 lookups where the digest is *the key the caller asked for* —
+no adversarial latency channel. For verification, we use this:
+
+```rust
+// crates/corelink-hash/src/digest.rs — lines 70-80
+pub fn verify_constant_time(&self, other: &Self) -> bool {
+    self.0.ct_eq(&other.0).into()
+}
+```
+
+That `ct_eq` is `subtle::ConstantTimeEq` — the same primitive used
+by every MAC-verify and password-hash-compare in the Rust ecosystem.
+The cost is one extra pass over 32 bytes; the benefit is that an
+attacker who repeatedly retries a fake digest gets no signal about
+how close they are.
+
+The third piece is the envelope:
+
+```rust
+// crates/corelink-hash/src/verified_body.rs — lines 18-42
+#[derive(Clone)]
+pub struct VerifiedBody {
+    body: Bytes,
+    digest: Digest,
+}
+
+impl VerifiedBody {
+    /// Compute the BLAKE3 digest of `body` and verify it matches
+    /// `claimed` in constant time.
+    pub fn new(body: Bytes, claimed: Digest) -> Result<Self, HashMismatch> {
+        let computed = Digest::compute(&body);
+        if !computed.verify_constant_time(&claimed) {
+            return Err(HashMismatch);
+        }
+        Ok(Self { body, digest: claimed })
+    }
+    // body() / digest() / into_parts() ...
+}
+```
+
+`VerifiedBody` is the only type our storage adapters (R2, KV, D1)
+accept on the write path. The signature is `put(_: &VerifiedBody)`,
+not `put(_: Bytes, _: Digest)`. **The type system makes "forgot to
+verify" a compile error**, not a code-review oversight. We sleep
+better because of this.
+
+There is a small testing escape hatch (`#[doc(hidden)] pub fn
+as_bytes(&self) -> &[u8; 32]`) so the integration tests can build
+adversarial single-bit-flipped digests without re-deriving them
+through hex manipulation. Production code cannot reach it because
+the test files live outside the crate's `src/`. We were tempted to
+delete it three times during the Wave-33 reorg; we kept it because
+the alternative was a bunch of fragile hex-twiddling that obscured
+the test's intent.
+
+The whole pattern compresses to:
+
+> *Make the invariant a type. Make the type's constructor the only
+> path to the data. Then the compiler enforces the discipline you
+> would otherwise have to re-enforce in every code review forever.*
+
+This is not a new idea — it is just the GhostCell / typestate
+pattern with a CAS shape. It is wildly underused in production
+storage code.
+
+## §3 — The chunker we threw away (twice)
+
+This is the part of the system that has the most "wait, what?"
+moments for people who have not written one before.
+
+A content-addressable cache deduplicates by content, not by name.
+The unit of dedup is *the chunk*. A chunker takes a byte stream and
+emits chunks; for two payloads that share a long common prefix or
+infix, the chunker should emit overlapping chunks so the rest of the
+stack can dedup them.
+
+Chunker v1: **fixed 2 MiB chunks.** Easy to write, easy to reason
+about, no rolling-hash state. Behavior on real workloads: a 10 MB
+ML model that grew by 100 bytes at the start of file 0 produced
+zero dedup hits. Every chunk boundary shifted by 100 bytes, every
+BLAKE3 digest was new, the cache hit rate for that workload was 0%.
+
+This is the well-known *boundary-shift problem*. The literature
+solution is content-defined chunking (CDC): instead of cutting every
+2 MiB, you scan a rolling hash over the stream and cut at offsets
+where the hash matches some predicate. Now boundaries are determined
+by the *content*, not by the *position*, so a 100-byte prefix shift
+no longer invalidates every downstream chunk.
+
+We picked FastCDC (Xia et al., USENIX ATC 2016). The first cut
+landed in a 380-line file and worked great on canonical test
+vectors. We shipped it.
+
+Then we found two problems.
+
+**Problem A — drift in the mask seeds.** FastCDC has two
+canonical mask seeds, `MASK_S` and `MASK_L`. Get one bit wrong and
+the chunker is still *correct* (it still produces valid chunks),
+but it is no longer *deterministic* across CoreLink versions —
+because we used the wrong masks, the boundaries it emits do not
+match what every other FastCDC implementation in the world emits.
+That breaks the dedup story across language SDKs: a Go-side
+implementation would chunk differently than our Rust side, so the
+Bazel client and the `sccache` client would hash *different* chunk
+boundaries for the same input bytes, and the dedup ratio would
+collapse silently.
+
+We fixed it by pinning the mask seeds in a constants module and
+guarding them with a canonical-vectors test that runs in CI:
+
+```rust
+// crates/corelink-cas/src/chunker.rs — head of module
+//! | FastCDC2MiB | opt-in | FastCDC content-defined chunking (Xia et al.,
+//! | USENIX ATC 2016) with bounds min = 1 MiB / avg = 2 MiB / max = 4 MiB
+//! | and the canonical Gear-hash mask seeds
+//! | (MASK_S = 0x0000_d9f0_0353_0000, MASK_L = 0x0000_d900_0353_0000).
+//!
+//! Mask seeds are pinned via [`bounds`] constants — drift here is an
+//! `INV-MULTIPART-CHUNK-DETERMINISTIC` regression and is gated on CI
+//! by [`tests/chunker_canonical_vectors.rs`].
+```
+
+If someone ever "improves" the chunker by editing the masks, the
+canonical-vectors test fails before merge. That is the only kind of
+guard that survives multi-engineer development; comments lie, tests
+do not.
+
+**Problem B — unbounded parser, crafted oversize input.** The
+naive FastCDC loop, asked to chunk a 200 GiB payload, will happily
+allocate, run, and OOM. In a Container that is annoying. In a
+Worker — even though Workers do not handle hot bytes — it is a DoS
+primitive: a single crafted multipart-init RPC could allocate enough
+state to take the instance out before any auth check fired.
+
+The fix is *bounded-parser discipline.* Every `feed()` call rejects
+early if the cumulative input would exceed
+[`bounds::MAX_BLOB_SIZE`] = 160 GiB or
+[`bounds::MAX_CHUNKS_PER_BLOB`] = 81 920, without allocating the
+oversize buffers. The hard limits are encoded in the `bounds`
+submodule, the chunker reads them at every step, and the
+property-based tests throw adversarial oversize payloads at it on
+every PR. The invariant has a name — `INV-MULTIPART-BOUNDED-PARSER`
+— so when we extend the protocol later, we can search for the name
+and re-prove the property still holds.
+
+Today the chunker config looks like this:
+
+```rust
+use corelink_cas::chunker::{Chunker, ChunkerConfig, ChunkerKind, ChunkerStep};
+
+let mut chunker = ChunkerKind::new(ChunkerConfig::default())
+    .expect("default config is always valid");
+
+let payload = vec![0u8; 5 * 1024 * 1024];
+let mut cursor = 0;
+while cursor < payload.len() {
+    match chunker.feed(&payload[cursor..]) {
+        ChunkerStep::Chunk { chunk: _, consumed } => {
+            cursor += consumed; // emit chunk, continue
+        }
+        ChunkerStep::NeedMore { consumed } => {
+            cursor += consumed; // request more bytes from caller
+        }
+        ChunkerStep::Error(_) => break,
+    }
+}
+if let Some(_final_chunk) = chunker.finalize() {
+    // emit terminal partial chunk
+}
+```
+
+It is a state machine, not a streaming iterator, because the
+Container reads bytes off the wire in arbitrary-sized buffers that
+do not align with chunk boundaries. The state machine carries the
+rolling-hash state between `feed()` calls; the BLAKE3 digest is
+computed inline on the now-known-bounded chunk. Throughput on the
+WASM build is ≥ 200 MB/s — the BLAKE3 SIMD path is the bottleneck,
+and the portable Gear-hash sits well underneath that.
+
+Two-and-a-half full rewrites later, the lesson:
+
+> *If your storage primitive is content-addressable, the chunker is
+> the dedup story. Get the boundary policy wrong and the rest of the
+> stack cannot save you. Pin the constants, write the canonical-vectors
+> test, and enforce bounded-parser discipline from line one.*
+
+## §4 — Tenant isolation as a TLA+ invariant
+
+Most people writing multi-tenant infrastructure write "tenant A
+cannot read tenant B's data" in a marketing page and then enforce it
+with five lines of `if ctx.tenant != row.tenant { return 403; }`
+spread across six handler files. That works until it doesn't. The
+failure mode is silent and unbounded: a single missed check is a
+cross-tenant data leak.
+
+We took the time to model it in TLA+. The file is
+[`specs/tla/tenant_isolation.tla`](https://github.com/humangr-labs/corelink-server/blob/main/specs/tla/tenant_isolation.tla),
+and the version we ship is v3 — v1 had an abstraction error TLC
+found for us.
+
+The model has six variables: who owns which principal, which blobs
+each tenant *legitimately* owns (ground truth), the HMAC prefix for
+each tenant, the R2 storage map, an access log, and a
+`defenses_active` flag that lets TLC explore both the
+defense-in-depth-on and defense-in-depth-bypassed cases.
+
+The three invariants are stated separately, because in our
+experience "tenant isolation" gets sloppy precisely when read,
+write, and list paths all share one sentence:
+
+```
+INV-ISO-READ: Principal of Tenant A nunca recebe blob de Tenant B
+INV-ISO-WRITE: Principal de Tenant A nunca escreve em namespace de B
+INV-ISO-ENUM: List de A nunca retorna blobs de B
+```
+
+(The model is bilingual because that is how the engineer who wrote
+it thinks; we kept it as-is, because forcing translation introduces
+copy-paste bugs.)
+
+The model carries one piece of abstraction-honest annotation that I
+think every TLA+ model in a real codebase should have. We use a
+small surrogate prefix space (`1..Cardinality(Tenants)`), not the
+real 256-bit HMAC output, because TLC has to explore the state
+space and a 2^256 prefix space is not tractable. The model
+explicitly states this:
+
+> *NOTA DE ABSTRAÇÃO (M-02 audit Lote 6): o modelo usa espaço de
+> prefixos `1..Cardinality(Tenants)` — o mesmo tamanho de Tenants.
+> Isso é um surrogate SIMPLIFICADO, não uma abstração fiel de HMAC
+> real. Na prática:*
+>
+> - *Production: HMAC-SHA256 output ∈ \{0,1\}^\{256\} — collision prob ≈ 0*
+> - *Neste model: |PrefixSpace| = |Tenants| — collision por pigeonhole
+>   se atacante brute-force guessing*
+>
+> *O `PrefixInjective` aqui enforce injetividade explicitamente.
+> TLA+ em CoreLink verifica LÓGICA de isolation assumindo HMAC é
+> injetivo. Collision-resistance é garantida pela escolha do
+> algoritmo (BLAKE3/SHA-256).*
+
+This is the part I want platform engineers to read twice. **The TLA+
+model is not a proof that HMAC is collision-resistant.** It is a
+proof that *given* an injective HMAC, the surrounding logic does not
+have a path that violates tenant isolation. The cryptographic
+property and the structural property are separated, named, and each
+is verified by the appropriate tool.
+
+What TLC actually caught in v1 was that we modeled `Write` as
+"principal writes to their own tenant" — which is exactly the case
+where the invariant cannot fail by construction, because the write
+is to your own prefix. We refactored v3 to model `Write` as
+"principal `p` writes to `target_tenant`", where `target_tenant` is
+chosen *adversarially* by the model checker. With that change, the
+guard `target_tenant = tenant_of[p]` became a *real* assertion
+instead of a tautology, and TLC immediately explored the
+bypass-the-guard branch. The invariant still held, but now we know
+it holds for a real adversary, not for a friendly one.
+
+The full corpus of TLA+ specs in CoreLink runs in CI on every change
+to `tenant-path`, `corelink-worker`, or `corelink-reapi`. There is a
+`nightly.cfg` variant of every spec that explores a larger state
+space; the regular CI runs the smaller config so PR latency stays
+under a few minutes. The nightly runs catch the deep-state
+counterexamples we would otherwise miss.
+
+The pattern, stated for re-use:
+
+> *Model the property in TLA+. State the abstractions you took
+> explicitly. Pick the adversarial action shape, not the friendly
+> one. Run the small config in PR CI, the big config in nightly.*
+
+If you have never used TLA+ before, the activation energy is real
+(the syntax is its own thing, the tooling is from a different
+universe, the error messages are about counterexample traces and
+not stack frames). The payoff is that you stop arguing about whether
+the invariant holds: either TLC finds a counterexample or it does
+not.
+
+## §5 — What didn't work
+
+Five sections of "and then everything worked" would not be honest.
+Three things didn't.
+
+### 5.1 — The crate explosion (149 → 87)
+
+We had 149 workspace crates at one point. The idea was Mod-Mono +
+Hexagonal: every bounded context is its own crate, every adapter is
+its own crate, and the workspace acts as the connective tissue.
+
+This was wrong. The compile times got bad — every PR that touched a
+shared trait re-compiled 60+ leaf crates — and worse, the import
+boundaries became porous: nothing forced `crates/corelink-billing`
+to *only* depend on `crates/corelink-billing-traits`, so over time
+it grew direct deps on `corelink-cas-internal-types`, and now the
+billing test suite recompiled whenever the CAS chunker shipped a new
+field.
+
+The Wave 33-36 reorg consolidated 149 crates into 87 across 11
+umbrella crates. The pattern was the "Option-A aggregator" — a new
+umbrella crate `pub use`s the absorbed crates at canonical
+submodule paths while the original crates remain the source of
+truth, then a later wave physically absorbs the source files once
+every consumer has migrated. From the `corelink-cas/src/lib.rs` doc
+comment:
+
+```rust
+//! Wave-33 Stage 1 Stream A sub-step A.1 lands this crate as the
+//! single import target for every CAS-tier primitive that
+//! historically lived in 10 separate fragmented crates:
+//!
+//! use corelink_cas::chunker::*;
+//! use corelink_cas::dedup::*;
+//! use corelink_cas::edge::*;
+//! use corelink_cas::eviction::*;
+//! ...
+```
+
+We also locked the new boundaries with `cargo-deny`. If a downstream
+crate tries to depend on `corelink-cas-internal-types` directly
+(bypassing the canonical `corelink-cas::*` re-export), `cargo deny
+check` rejects it on CI. The rule took three days to write — the
+first version was over-permissive, the second over-restrictive, and
+only the third matched what we actually wanted. The lesson is that
+**import boundaries are not documentation; they are CI rules** —
+and `cargo-deny` is the right place for them.
+
+If you take one piece of structure advice from this post: **start
+with five crates, not fifty.** Refactor out by sharp pain, not by
+speculative cleanliness. Cleanliness without pain pressure produces
+the 149-crate workspace.
+
+### 5.2 — D1 as a coordination primitive
+
+D1 looks like SQLite. D1 acts like SQLite. D1 has `BEGIN
+IMMEDIATE`. So we used it as a coordination primitive for the
+multipart-upload state machine — the one that tracks "client opened
+session X, has uploaded parts 1, 2, and 4, missing part 3" and
+needs strict serialization or it leaks parts.
+
+This worked in single-region tests. Under load, two Workers
+racing for the same D1 row would both win the `BEGIN IMMEDIATE` —
+because D1's isolation under contention is *not* the SQLite
+isolation you remember from your laptop. The eventual fix was to
+move the multipart-upload state to a Durable Object keyed by
+`(tenant, session_id)`. DOs give you single-instance-per-key
+serialization by construction, and the in-memory state lives where
+the state machine lives.
+
+D1 stayed in the architecture, but only for *read-mostly* hot
+metadata where the consequence of a race is at most a redundant R2
+PUT (the BLAKE3 digest still prevents corruption). For anything
+write-coordinated, Durable Objects.
+
+The lesson:
+
+> *D1 is a query layer. Durable Objects are a coordination layer.
+> Use D1 where you would have used Postgres for hot reads; use
+> Durable Objects where you would have used Redis or a Postgres
+> advisory lock.*
+
+### 5.3 — The audit chain that we almost made async
+
+Every state-changing operation in CoreLink lands in an append-only
+Merkle-chained audit log. The naive implementation says: handler
+finishes, returns 200 to the client, then asynchronously emits the
+audit row. Lower p99 latency on the happy path. What's not to like?
+
+What's not to like is the failure mode. If the async emit fails
+silently — a Worker invocation aborts, a queue is full, a flush
+gets dropped — you have returned 200 to the client and no audit
+row exists. The customer's auditor asks "show me every operation
+on tenant T between 2026-04-01 and 2026-04-30" and you cannot. The
+audit log is supposed to be the *primary artifact*, not the
+secondary derivative.
+
+We rewrote it to be **fail-CLOSED**. The handler emits the audit
+row *first*, the audit-row write returns success *or* the handler
+fails. From the charter audit:
+
+> *Audit fail-CLOSED preserved: not touched. Any NEW audit-emit
+> site that lands inside this crate post-aggregator MUST consume
+> `corelink_audit::ports::AuditEmitter` (Stage 0 chokepoint).*
+
+There is exactly one type — `AuditEmitter` — that handlers consume,
+and that type's only emit method returns `Result<(), AuditError>`.
+A handler that ignores the `Result` is a `clippy::must_use` lint
+error, which is a CI fail, which means the handler must propagate
+the error to the client. The customer gets an honest 500 if the
+audit emit failed; they do not get a silent success. We pay some
+p99 latency for this; we trade it for the property that *every
+returned 200 corresponds to an audit row that exists*.
+
+This is the same shape as §2 — make the property a type, not a
+discipline. The discipline lives in code reviews and gets lost. The
+type lives in the compiler and does not.
+
+## §6 — Things we have not solved
+
+If you have made it this far, you deserve the honest list of things
+we have not figured out yet. These are real, they are open, and we
+would love to be wrong about any of them.
+
+- **Cross-region replication latency.** Our four enumerated regions
+  (`wnam`, `enam`, `weur`, `sam`) replicate audit-log roots at hourly
+  cadence, but the *blob* replication SLO is "best-effort under one
+  hour" and we are not happy with that number. The R2 replication
+  primitives are not yet what we want them to be; we are watching
+  the public roadmap.
+
+- **WASM-host parity for property tests.** The chunker compiles to
+  both the Cloudflare Containers x86_64 build and the Workers WASM
+  build. Our property tests cover the x86_64 build cleanly but the
+  WASM build only via canonical vectors. We want full property
+  coverage on WASM and we do not yet have the harness for it.
+
+- **The OpenAPI vs REAPI gRPC split.** Our wire surface is REAPI v2
+  gRPC; our admin and metrics surface is REST/OpenAPI. The two are
+  not the same shape and we have lived with a small reconciliation
+  layer between them for the entire life of the project. We have
+  considered going all-REAPI or all-REST and neither works; the
+  current split is the least-bad answer we have found.
+
+- **The TLA+ → code drift problem.** Our TLA+ models are checked in
+  CI. The mapping from TLA+ identifier to Rust identifier is in a
+  doc comment, not in a tool. If a Rust refactor renames the field
+  but not the model, the drift is silent until next nightly.
+  We are looking at TLA+ → Rust property-test code generation. We
+  have not built it.
+
+These are the things that should keep a serious CAS implementer
+honest. If you have answers, write us — `engineering@humangr.com`,
+or open an issue on
+[`humangr-labs/corelink-server`](https://github.com/humangr-labs/corelink-server).
+
+## What's next
+
+CoreLink is in the final pre-GA push. Production data plane is
+deployed. The Wave 32 production-deploy campaign sealed on
+2026-05-22 with all customer endpoints live behind
+`corelink.humangr.com`; the Wave 33-36 reorg sealed on 2026-05-27
+with the 149 → 87 crate consolidation and the cargo-deny boundary
+lockdown. The remaining path to GA is the human-driven
+external-engagement work (pentest, SOC 2, legal, lighthouse
+customers, 30-day staging burn-in) tracked in our public
+[`ROADMAP-TO-GA.md`](https://github.com/humangr-labs/corelink-server/blob/main/ROADMAP-TO-GA.md).
+
+If you want to try it, the 60-second demo is:
+
+```bash
+# Install the CLI (macOS shown; Linux/Windows in the quickstart).
+brew install humangr-labs/tap/corelink
+
+# Sign in to the sandbox. 24h scratch tenant, no credit card.
+# Visit https://app.corelink.humangr.com/sandbox to grab a PAT.
+export CORELINK_PAT="corelink_sandbox_t_xxx.xxx.xxx"
+corelink doctor                    # 8/8 checks PASS
+
+# Store, retrieve, audit.
+echo "hello, corelink — $(date)" > /tmp/hello.txt
+DIGEST=$(corelink put /tmp/hello.txt --output json | jq -r .digest)
+corelink get "$DIGEST" --output /tmp/restored.txt
+diff -q /tmp/hello.txt /tmp/restored.txt
+corelink ls --limit 5
+```
+
+The full
+[10-minute quickstart](/tutorial/) walks each step in detail.
+Source is on
+[GitHub](https://github.com/humangr-labs/corelink-server)
+under MIT OR Apache-2.0 for the dual-licensed crates;
+[`ARCHITECTURE.md`](https://github.com/humangr-labs/corelink-server/blob/main/ARCHITECTURE.md)
+is the canonical entry point if you want to read code instead of
+prose.
+
+If you have feedback on this post, the place to drop it is the
+[discussion on this repo](https://github.com/humangr-labs/corelink-server/discussions)
+or the [HN thread when this lands there](https://news.ycombinator.com).
+We read every comment.
+
+— Gustavo

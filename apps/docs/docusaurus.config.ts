@@ -265,7 +265,27 @@ const config: Config = {
             current: { label: "Latest", path: "" },
           },
         },
-        blog: false,
+        blog: {
+          // Engineering blog. Deep-dive posts, not announcements. Mounted
+          // at `/blog/` (parent docs preset takes `/`, so blog needs an
+          // explicit non-root routeBasePath). Authors live in
+          // `blog/authors.yml`; tags taxonomy in `blog/tags.yml`.
+          routeBasePath: "/blog",
+          path: "blog",
+          showReadingTime: true,
+          blogTitle: "CoreLink Engineering",
+          blogDescription:
+            "How we build CoreLink — content-addressable cache for builds, package indices, container layers, and ML artifacts.",
+          postsPerPage: 10,
+          feedOptions: {
+            type: ["rss", "atom"],
+            title: "CoreLink Engineering",
+            description:
+              "Engineering deep-dives from the CoreLink team.",
+            copyright: `Copyright © ${new Date().getFullYear()} HuGR Labs.`,
+          },
+          editUrl: EDIT_BASE,
+        },
         theme: {
           customCss: "./src/css/custom.css",
         },
@@ -317,6 +337,7 @@ const config: Config = {
         { to: "/reference/", label: "Reference", position: "left" },
         { to: "/explanation/architecture", label: "Explanation", position: "left" },
         { to: "/reference/api", label: "API", position: "left" },
+        { to: "/blog", label: "Blog", position: "left" },
         { to: "/pricing", label: "Pricing", position: "left" },
         { to: "/security", label: "Security", position: "left" },
         {

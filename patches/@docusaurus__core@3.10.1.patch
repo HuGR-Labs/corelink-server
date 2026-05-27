@@ -2,7 +2,7 @@ diff --git a/lib/ssg/ssgNodeRequire.js b/lib/ssg/ssgNodeRequire.js
 index cfd85dbde0b9a52996b7321bef85eafb7b29ec17..51a97dacf9346cf32af98274e788e71c6953a5b6 100644
 --- a/lib/ssg/ssgNodeRequire.js
 +++ b/lib/ssg/ssgNodeRequire.js
-@@ -23,6 +23,111 @@ function createSSGRequire(serverBundlePath) {
+@@ -23,6 +23,146 @@ function createSSGRequire(serverBundlePath) {
      const realRequire = (0, module_1.createRequire)(serverBundlePath);
      const allRequiredIds = [];
      const ssgRequireFunction = (id) => {
@@ -111,10 +111,45 @@ index cfd85dbde0b9a52996b7321bef85eafb7b29ec17..51a97dacf9346cf32af98274e788e71c
 +        if (typeof id === 'string' && /[\\/]@docusaurus[\\/]theme-classic[\\/]lib[\\/](prism-include-languages|nprogress)(\.js)?$/.test(id)) {
 +            return { default: () => {}, __esModule: true };
 +        }
++        // CoreLink blog-plugin patch (2026-05-27): the blog plugin
++        // (`@docusaurus/plugin-content-blog`) registers a webpack alias
++        // `'~blog' -> '<.docusaurus>/docusaurus-plugin-content-blog'` and
++        // emits per-route JSON files (`blog-post-list-prop-default.json`,
++        // `blogMetadata-default.json`, etc.) at build time. The server
++        // bundle ends up with literal `require('~blog/default/...json')`
++        // calls that Node cannot resolve (the alias map is webpack-only).
++        // Resolve them against the on-disk JSON. siteDir is found by
++        // walking up from the bundle until we hit a directory whose
++        // child is `.docusaurus`.
++        if (typeof id === 'string' && id.startsWith('~blog/')) {
++            try {
++                const path = require('path');
++                const fs = require('fs');
++                let cursor = path.dirname(serverBundlePath);
++                let siteDir = null;
++                for (let i = 0; i < 6 && cursor && cursor !== path.dirname(cursor); i++) {
++                    if (fs.existsSync(path.join(cursor, '.docusaurus'))) {
++                        siteDir = cursor;
++                        break;
++                    }
++                    cursor = path.dirname(cursor);
++                }
++                if (siteDir) {
++                    const rel = id.replace(/^~blog\//, '');
++                    const onDisk = path.join(siteDir, '.docusaurus', 'docusaurus-plugin-content-blog', rel);
++                    if (fs.existsSync(onDisk)) {
++                        return realRequire(onDisk);
++                    }
++                }
++            } catch (_e) {
++                // fall through to stub
++            }
++            return { default: () => null, __esModule: true };
++        }
          const module = realRequire(id);
          allRequiredIds.push(id);
          return module;
-@@ -33,6 +138,10 @@ function createSSGRequire(serverBundlePath) {
+@@ -33,6 +173,10 @@ function createSSGRequire(serverBundlePath) {
          });
      };
      ssgRequireFunction.resolve = realRequire.resolve;
