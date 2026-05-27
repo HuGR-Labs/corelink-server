@@ -3,9 +3,9 @@ id: "TENANT-OFFBOARDING-SPEC"
 type: "architecture"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "0.1.0"
+version: "0.2.0"
 created: "2026-05-15"
-updated: "2026-05-15"
+updated: "2026-05-27"
 sprint: "R-prep"
 parent_wi: "WI-R-PREP-TENANT-OFFBOARDING"
 owner: "Gustavo Schneiter"
@@ -19,6 +19,8 @@ inherits_from:
   - "ADR-S11-002"
 tags: ["architecture", "offboarding", "tenant-lifecycle", "lgpd", "gdpr", "byok", "r-prep"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-admin-dry-run`, `corelink-byok-revocation`, `corelink-privacy-erasure-worker`, and `corelink-tenant-offboarding` were absorbed into `corelink-byok`, `corelink-ops`, and `corelink-privacy` via inline `mod <name>;` per SEAL specs/_audits/sealed/2026-05-26-w35-p2-byok-absorption.md / specs/_audits/sealed/2026-05-26-w35-p2-ops-absorption.md / specs/_audits/sealed/2026-05-26-w35-p2-privacy-absorption.md. Canonical consumer path is now `corelink_byok::*`, `corelink_ops::*`, `corelink_privacy::*`.
 
 # Tenant-Offboarding Spec — 5-state lifecycle + 30/45/90-day windows
 

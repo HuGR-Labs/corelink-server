@@ -3,9 +3,9 @@ id: "DPO-RESPONSIBILITIES-MATRIX"
 type: "compliance_raci"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-15"
-updated: "2026-05-15"
+updated: "2026-05-27"
 sprint: "R5-3"
 parent_wi: "GAP-01"
 owner: "Gustavo Schneiter"
@@ -29,6 +29,8 @@ tags:
   - "gap-01"
   - "governance"
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-privacy-consent-ledger`, `corelink-privacy-erasure-worker`, and `corelink-privacy-residency-enforcement` were absorbed into `corelink-privacy` via inline `mod <name>;` per SEAL specs/_audits/sealed/2026-05-26-w35-p2-privacy-absorption.md. Canonical consumer path is now `corelink_privacy::*`.
 
 # DPO Responsibilities Matrix — RACI + Decision Rights
 

@@ -4,9 +4,9 @@ type: "work_item"
 doc_status: "FROZEN"
 work_status: "DONE"
 audit_status: "AUDITED"
-version: "1.4.0"
+version: "1.5.0"
 created: "2026-04-26"
-updated: "2026-05-03"
+updated: "2026-05-27"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-005", "FF-HR-009"]
 parent: "S-10"
@@ -24,6 +24,8 @@ inherits_from:
   - "PRIVACY-MODEL"
 tags: ["wi", "s10", "replay", "forensic", "billing", "billing-admin-role", "audit-trail", "high-risk"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-billing-replay`, and `corelink-quota` were absorbed into `corelink-billing` via inline `mod <name>;` per SEAL specs/_audits/sealed/2026-05-26-w35-p2-billing-absorption.md. Canonical consumer path is now `corelink_billing::*`.
 
 # WI-S10-006 — Replay Forensic Endpoint `POST /v1/billing/replay` + Role `billing_admin` + Audit Trail (`crates/corelink-billing-replay/`; sprint contract §5.6 R-S10-12/13 + INV-BILLING-REPLAYABLE-FROM-EVENTS NEW invariant §8; reconstructs invoice byte-a-byte from R2 raw events 7y archive cooperation com WI-S10-001; `dry_run` parameter default `true` — explicit `false` requires Finance + Compliance Officer + Architect 3-of-3 sign-off audit event; role protection CTRL-AUTHZ-001 + CTRL-AUTHZ-002 `billing_admin` mandatory + S-03 RBAC inheritance; per-call audit event mandatory `dev.hugr.corelink.billing.replay.requested.v1` CloudEvents v1.0 emit to S-09 audit chain; replay output: counter aggregates re-derived + invoice line items reconstructed + Stripe invoice diff against fetched current state via WI-S10-003 fetch_invoice cooperation; comparison report 3-mode: events_match=true reconciliation green; events_match=false drift detected; output schema typed `ReplayReport` NOT serde_json::Value Lote 10.9-quinquies NEW-P0-2; rate limit replay endpoint per `billing_admin` user 10 req/h sprint contract §15 R-007 mitigation against forensic abuse + S-08 cooperation; reasonable SLA `< 30min` reconstruction per sprint contract §6 DoD + §14.s10.3 audit-grade replay; INV-BILLING-REPLAYABLE-FROM-EVENTS HIGH invariant — auditor-grade SOC 2 CC1.4 evidence trail; documented runbook RB-BILLING-001 audit replay procedure)
 

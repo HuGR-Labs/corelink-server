@@ -4,9 +4,9 @@ type: "work_item"
 doc_status: "SEALED"
 work_status: "DONE"
 audit_status: "AUDITED"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-04-28"
-updated: "2026-05-14"
+updated: "2026-05-27"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-005"]
 parent: "S-13"
@@ -25,6 +25,8 @@ inherits_from:
   - "FAILURE-MODES"
 tags: ["wi", "s13", "admin-plane", "secret-rotation", "tdk", "pat-signing", "audit-chain", "byok", "roll-forward", "high-risk"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-rotation-worker` was absorbed into `corelink-ops` via inline `mod <name>;` per SEAL specs/_audits/sealed/2026-05-26-w35-p2-ops-absorption.md. Canonical consumer path is now `corelink_ops::*`.
 
 # WI-S13-003 — Secret Rotation Worker (5 Asset Types: TDK 7d / PAT Signing 24h / Audit Chain 24h / Admin Signing 24h / BYOK 7d) + Per-Asset Adapter + PAT-ROLL-FORWARD-001 Auto-Rollback se Downstream Errors > 1% + Métricas Observability + INV-KEY-OVERLAP Property Test 10k Per Asset Class
 

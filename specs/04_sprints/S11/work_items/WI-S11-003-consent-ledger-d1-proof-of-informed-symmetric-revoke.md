@@ -4,9 +4,9 @@ type: "work_item"
 doc_status: "SEALED"
 work_status: "DONE"
 audit_status: "AUDITED"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-04-26"
-updated: "2026-05-13"
+updated: "2026-05-27"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-003", "FF-HR-005", "FF-HR-010"]
 parent: "S-11"
@@ -26,6 +26,8 @@ inherits_from:
   - "KEY-MANAGEMENT"
 tags: ["wi", "s11", "consent-ledger", "gdpr-art-7", "lgpd-art-8", "proof-of-informed", "symmetric-revoke", "hmac", "high-risk"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-privacy-consent-ledger` was absorbed into `corelink-privacy` via inline `mod <name>;` per SEAL specs/_audits/sealed/2026-05-26-w35-p2-privacy-absorption.md. Canonical consumer path is now `corelink_privacy::*`.
 
 # WI-S11-003 — Consent Ledger Neon Schema (canonical pós Lote 10.11.0-bis) + Proof of Informed Consent (notice_text_hash + version + locale + wording_id + ui_capture_ts + submission_ts) + 5 Endpoints (capture/revoke/list/verify/admin) + Symmetric Revocation Schema (Lote 9.4 Opus H-05) + HMAC Signature + CTRL-PRIV-CONSENT-001..006 Wiring (`crates/corelink-privacy-consent-ledger`; Neon tables `consent_ledger` (canonical pós Lote 10.11.0-bis; privacy_model.md §5.6 L255) + `consent_revocation` 6-field schema simétrico per Lote 9.4 Opus H-05 — grant e revoke carregam mesmos campos de proof; INV-CONSENT-PROOF-VERIFIABLE CRITICAL (Lote 10.11.0-bis: HIGH→CRITICAL com TLA+ symmetry) §3.12 L168 satisfaction; CTRL-PRIV-CONSENT-001 (opt-in proof of informed) + 002 (revogação imediata ≤5min cascade) + 003 (audit immutable) + 004 (LIA) + 005 (notice versioning) + 006 (proof of display screenshot opcional); HMAC-SHA256 per-consent signature via tenant-scoped HKDF; verify endpoint público stateless re-derives signature; cascade unsubscribe ≤24h downstream notify; GDPR Art. 7 + LGPD Art. 8 alignment "freely, specific, informed, unambiguous"; emit fail-CLOSED audit `dev.hugr.corelink.consent.{granted,revoked}.v1` 2 CloudEvents canonical types per privacy_model.md §5.6 L257)
 

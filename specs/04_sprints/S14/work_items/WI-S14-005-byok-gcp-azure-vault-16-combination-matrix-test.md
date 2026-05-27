@@ -4,9 +4,9 @@ type: "work_item"
 doc_status: "DRAFT"
 work_status: "READY"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-28"
-updated: "2026-04-28"
+updated: "2026-05-27"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-005", "FF-HR-008"]
 parent: "S-14"
@@ -25,6 +25,8 @@ inherits_from:
   - "COMPLIANCE-MATRIX"
 tags: ["wi", "s14", "byok", "gcp-kms", "azure-key-vault", "hashicorp-vault", "matrix-test", "fips-140-2", "fips-140-3", "high-risk"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-byok-azure`, `corelink-byok-gcp`, and `corelink-byok-vault` were absorbed into `corelink-byok` via inline `mod <name>;` per SEAL specs/_audits/sealed/2026-05-26-w35-p2-byok-absorption.md. Canonical consumer path is now `corelink_byok::*`.
 
 # WI-S14-005 — BYOK GCP KMS Adapter (FIPS 140-2 / 140-3 Quando Suportado) + Azure Key Vault Premium HSM Adapter (FIPS 140-2 Level 2) + HashiCorp Vault Transit Adapter (FIPS 140-3 Level 1 Vault Enterprise; mTLS Auth Customer-Hosted) Batch Implementation + 16-Combination Matrix Test `tests/byok_matrix_test.rs` (4 Providers × 4 Ops {write, read, wrap, unwrap}) Verde em Staging Weekly + Auto-Fail PR Se Matrix Break + FIPS Doc per Provider em `compliance/byok-fips-matrix.md`
 

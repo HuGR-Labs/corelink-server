@@ -3,9 +3,9 @@ id: "RB-TENANT-OFFBOARDING"
 type: "runbook"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-15"
-updated: "2026-05-15"
+updated: "2026-05-27"
 sprint: "R-prep"
 parent_wi: "WI-R-PREP-TENANT-OFFBOARDING"
 owner: "Gustavo Schneiter"
@@ -18,6 +18,8 @@ inherits_from:
   - "RB-DSR-LGPD-FULL"
 tags: ["runbook", "offboarding", "tenant-lifecycle", "support", "anti-fraud", "r-prep"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-abuse`, `corelink-byok-revocation`, `corelink-tenant-offboarding`, and `corelink-webauthn` were absorbed into `corelink-ac`, `corelink-billing`, `corelink-byok`, and `corelink-ops` via inline `mod <name>;` per SEAL specs/_audits/sealed/2026-05-26-w35-p2-ac-absorption.md / specs/_audits/sealed/2026-05-26-w35-p2-billing-absorption.md / specs/_audits/sealed/2026-05-26-w35-p2-byok-absorption.md / specs/_audits/sealed/2026-05-26-w35-p2-ops-absorption.md. Canonical consumer path is now `corelink_ac::*`, `corelink_billing::*`, `corelink_byok::*`, `corelink_ops::*`.
 
 # RB-TENANT-OFFBOARDING — Internal runbook for tenant-level offboarding
 

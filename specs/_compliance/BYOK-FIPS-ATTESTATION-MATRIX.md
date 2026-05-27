@@ -4,9 +4,9 @@ id: "BYOK-FIPS-ATTESTATION-MATRIX"
 type: "compliance_doc"
 doc_status: "ACTIVE"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-15"
-updated: "2026-05-15"
+updated: "2026-05-27"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: ["Crypto SME (TBD)", "VP-Sec", "Auditor (SOC 2 Type I)"]
@@ -27,6 +27,8 @@ references:
   - "NIST FIPS 140-2 (sunset 2026-09-22)"
 tags: ["byok", "fips", "gap-02", "soc2", "cc6-1", "c1-1", "blocking-ga"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-byok-aws`, `corelink-byok-azure`, `corelink-byok-gcp`, and `corelink-byok-vault` were absorbed into `corelink-byok` via inline `mod <name>;` per SEAL specs/_audits/sealed/2026-05-26-w35-p2-byok-absorption.md. Canonical consumer path is now `corelink_byok::*`.
 
 # BYOK FIPS Attestation Matrix — GAP-02 Closure Tracker
 

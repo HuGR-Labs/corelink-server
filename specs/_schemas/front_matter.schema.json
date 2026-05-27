@@ -58,7 +58,7 @@
     },
     "doc_status": {
       "type": "string",
-      "enum": ["DRAFT", "REVIEW", "FROZEN", "THAWED", "SUPERSEDED", "DEPRECATED", "SEALED", "ACTIVE"]
+      "enum": ["DRAFT", "REVIEW", "FROZEN", "THAWED", "SUPERSEDED", "DEPRECATED", "SEALED", "ACTIVE", "DEFASADO"]
     },
     "audit_status": {
       "type": "string",
