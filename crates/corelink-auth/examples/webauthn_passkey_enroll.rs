@@ -9,7 +9,7 @@
     reason = "example binary"
 )]
 
-use corelink_webauthn::{
+use corelink_auth::webauthn::{
     Aaguid, AaguidPolicy, AuthenticatorAttachment, AuthenticatorFlags, CredentialId, EngineConfig,
     FixedClock, InMemoryEngine, Origin, OriginAllowlist, RegistrationResponse, RpId,
     UserAccountId, WebAuthnEngine, COSE_ALG_ES256,

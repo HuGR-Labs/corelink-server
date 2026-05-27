@@ -2,7 +2,7 @@
 //!
 //! [`Credential`] mirrors the canonical `webauthn_credentials` row
 //! shape from `migrations/002_auth_tables.sql §7`; the in-memory
-//! credential store ([`crate::store::InMemoryCredentialStore`])
+//! credential store ([`super::store::InMemoryCredentialStore`])
 //! enforces every UNIQUE constraint that the production Postgres
 //! row would.
 
@@ -11,12 +11,12 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::challenge::ChallengeId;
-use crate::cose::CoseAlgorithm;
-use crate::flags::AuthenticatorFlags;
-use crate::sign_count::SignCount;
-use crate::types::UserAccountId;
-use crate::{Aaguid, Origin};
+use super::challenge::ChallengeId;
+use super::cose::CoseAlgorithm;
+use super::flags::AuthenticatorFlags;
+use super::sign_count::SignCount;
+use super::types::UserAccountId;
+use super::{Aaguid, Origin};
 
 /// Opaque credential identifier (W3C `credentialId`; up to 1023
 /// bytes per spec — typically 32-64 bytes for production
@@ -28,9 +28,9 @@ pub struct CredentialId(Vec<u8>);
 impl CredentialId {
     /// Construct from raw bytes. Returns `Err(Malformed)` on empty
     /// input or input longer than W3C's 1023-byte hard cap.
-    pub fn new(bytes: Vec<u8>) -> Result<Self, crate::WebAuthnError> {
+    pub fn new(bytes: Vec<u8>) -> Result<Self, super::WebAuthnError> {
         if bytes.is_empty() || bytes.len() > 1023 {
-            return Err(crate::WebAuthnError::Malformed("credential id length"));
+            return Err(super::WebAuthnError::Malformed("credential id length"));
         }
         Ok(Self(bytes))
     }

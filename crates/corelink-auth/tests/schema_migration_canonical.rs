@@ -15,7 +15,7 @@
     reason = "test target"
 )]
 
-use corelink_auth_schema::{schema_version, MIGRATION_002_AUTH_TABLES};
+use corelink_auth::schema::{schema_version, MIGRATION_002_AUTH_TABLES};
 
 /// Strip `-- …` line comments before scanning so prose comments cannot
 /// produce false positives in the destructive-token / banned-default

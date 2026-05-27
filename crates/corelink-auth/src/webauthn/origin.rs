@@ -21,7 +21,7 @@ use std::fmt;
 
 use sha2::{Digest, Sha256};
 
-use crate::WebAuthnError;
+use super::WebAuthnError;
 
 /// Canonical RP-ID (Relying Party ID) — must be eTLD+1 per W3C §5.1.2.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

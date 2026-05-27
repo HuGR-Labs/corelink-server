@@ -36,7 +36,7 @@
 
 use std::collections::HashSet;
 
-use corelink_auth_schema::{
+use corelink_auth::schema::{
     AccountRow, AuthSchema, MembershipRow, PatRow, RevocationLogRow, RevocationReason, Role,
     SimError, TenantRow, TenantTier, UserAccountRow,
 };

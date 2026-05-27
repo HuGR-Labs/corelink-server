@@ -3,7 +3,7 @@
 //! Three distinct stores:
 //!
 //! 1. [`ChallengeStore`] — short-lived KV (Cloudflare KV in
-//!    production) keyed on [`crate::ChallengeId`]; TTL-bound.
+//!    production) keyed on [`super::ChallengeId`]; TTL-bound.
 //! 2. [`CredentialStore`] — Neon Postgres `webauthn_credentials`
 //!    table (per `migrations/002_auth_tables.sql §7`).
 //! 3. [`RecoveryOtpStore`] — Neon `auth_recovery_otp` table; rate
@@ -18,11 +18,11 @@ use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 
-use crate::challenge::StoredChallenge;
-use crate::credential::Credential;
-use crate::recovery::{RecoveryOtpRecord, RecoveryRateLimit};
-use crate::types::UserAccountId;
-use crate::{ChallengeId, CredentialId, WebAuthnError};
+use super::challenge::StoredChallenge;
+use super::credential::Credential;
+use super::recovery::{RecoveryOtpRecord, RecoveryRateLimit};
+use super::types::UserAccountId;
+use super::{ChallengeId, CredentialId, WebAuthnError};
 
 /// Authenticator attachment selector (W3C §5.4.5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -198,7 +198,7 @@ impl CredentialStore for InMemoryCredentialStore {
         let mut guard = self.inner.lock().map_err(|_| WebAuthnError::Conflict)?;
         match guard.get_mut(credential_id) {
             Some(c) => {
-                c.sign_count = crate::SignCount::new(new_sign_count);
+                c.sign_count = super::SignCount::new(new_sign_count);
                 c.last_used_at_ms = Some(last_used_at_ms);
                 Ok(())
             }
@@ -237,7 +237,7 @@ pub trait RecoveryOtpStore: Send + Sync + std::fmt::Debug {
         user: UserAccountId,
         candidate: &str,
         now_ms: u64,
-    ) -> Result<crate::recovery::RecoveryOtpVerifyOutcome, WebAuthnError>;
+    ) -> Result<super::recovery::RecoveryOtpVerifyOutcome, WebAuthnError>;
 
     /// Increment a generation-rate counter and return the resulting
     /// count for the rolling 1-hour window.
@@ -284,7 +284,7 @@ impl RecoveryOtpStore for InMemoryRecoveryOtpStore {
         user: UserAccountId,
         candidate: &str,
         now_ms: u64,
-    ) -> Result<crate::recovery::RecoveryOtpVerifyOutcome, WebAuthnError> {
+    ) -> Result<super::recovery::RecoveryOtpVerifyOutcome, WebAuthnError> {
         let mut guard = self.by_user.lock().map_err(|_| WebAuthnError::Conflict)?;
         let record = match guard.get_mut(&user) {
             Some(r) => r,
@@ -300,13 +300,13 @@ impl RecoveryOtpStore for InMemoryRecoveryOtpStore {
             return Err(WebAuthnError::RecoveryOtpRateLimited);
         }
         record.attempts_remaining = record.attempts_remaining.saturating_sub(1);
-        if !crate::recovery::verify_otp(candidate, &record.hash) {
-            return Ok(crate::recovery::RecoveryOtpVerifyOutcome::Mismatch {
+        if !super::recovery::verify_otp(candidate, &record.hash) {
+            return Ok(super::recovery::RecoveryOtpVerifyOutcome::Mismatch {
                 attempts_remaining: record.attempts_remaining,
             });
         }
         record.consumed_at_ms = Some(now_ms);
-        Ok(crate::recovery::RecoveryOtpVerifyOutcome::Consumed {
+        Ok(super::recovery::RecoveryOtpVerifyOutcome::Consumed {
             otp_id: record.id,
         })
     }

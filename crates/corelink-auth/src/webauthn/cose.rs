@@ -8,7 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::WebAuthnError;
+use super::WebAuthnError;
 
 /// IANA COSE algorithm registry value for ES256 (ECDSA-P256-SHA256;
 /// W3C registered: -7). Default for platform authenticators.

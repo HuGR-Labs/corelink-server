@@ -49,7 +49,7 @@
 use std::collections::BTreeSet;
 
 use corelink_audit::redact::{EmailHash, PatIdHash, PrincipalIdHash};
-use corelink_auth_schema::sim::{
+use corelink_auth::schema::sim::{
     AccountRow, AuthSchema, MembershipRow, PatRow, RevocationLogRow, RevocationReason, Role,
     TenantRow, TenantTier, UserAccountRow,
 };

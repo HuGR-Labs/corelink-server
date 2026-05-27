@@ -16,22 +16,22 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::challenge::{
+use super::challenge::{
     AuthenticationChallenge, ChallengeId, ChallengePurpose, ChallengeTtl, RegistrationChallenge,
     StoredChallenge,
 };
-use crate::clock::EngineClock;
-use crate::cose::parse_cose_algorithm;
-use crate::credential::{Credential, CredentialId, RegistrationResponse};
-use crate::flags::AuthenticatorFlags;
-use crate::metrics::{CeremonyResult, MetricsObserver, NoopMetrics};
-use crate::sign_count::{assess as assess_sign_count, SignCount, SignCountSeverity};
-use crate::store::{
+use super::clock::EngineClock;
+use super::cose::parse_cose_algorithm;
+use super::credential::{Credential, CredentialId, RegistrationResponse};
+use super::flags::AuthenticatorFlags;
+use super::metrics::{CeremonyResult, MetricsObserver, NoopMetrics};
+use super::sign_count::{assess as assess_sign_count, SignCount, SignCountSeverity};
+use super::store::{
     AuthenticatorAttachment, ChallengeStore, CredentialStore, InMemoryChallengeStore,
     InMemoryCredentialStore, InMemoryRecoveryOtpStore, RecoveryOtpStore,
 };
-use crate::types::UserAccountId;
-use crate::{
+use super::types::UserAccountId;
+use super::{
     AaguidPolicy, ChallengeBytes, Origin, OriginAllowlist, RecoveryRateLimit, RpId, WebAuthnError,
 };
 
