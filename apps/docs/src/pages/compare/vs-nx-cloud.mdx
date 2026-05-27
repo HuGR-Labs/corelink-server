@@ -1,0 +1,309 @@
+---
+title: "CoreLink vs Nx Cloud: which build cache to pick"
+description: "Detailed technical comparison of CoreLink and Nx Cloud — flat-tier vs per-credit pricing, polyglot REAPI cache vs Nx-native, BYOK on four KMS, the May 2026 self-host deprecation. Honest tradeoffs as of 2026-05-27."
+keywords:
+  - "nx cloud"
+  - "nx cloud alternative"
+  - "build cache"
+  - "monorepo cache"
+  - "remote cache"
+  - "nx self host"
+  - "byok build cache"
+  - "nx cloud pricing"
+last_updated: "2026-05-27"
+---
+
+# CoreLink vs Nx Cloud
+
+Nx Cloud and CoreLink target overlapping pain — slow CI on a monorepo
+— from opposite directions. Nx Cloud is the managed cache and CI
+distribution layer for **Nx**, the JavaScript / TypeScript monorepo
+build tool (owned by Nrwl, now part of the Nx OSS organization). It is
+deeply integrated with the Nx CLI, ships an analytics dashboard, and
+markets Nx Agents as "4× faster, 30% cheaper than GitHub Actions" for
+Nx workspaces.
+
+CoreLink is a REAPI v2 polyglot cache (Bazel, Buck2, Pants, Please,
+BuildStream, recc — plus Cargo, npm, pip, brew, OCI adapters) with
+BYOK on four KMS providers and an RFC 6962 audit chain. We do **not**
+run a JavaScript / TypeScript monorepo CLI; we are the cache and the
+trust layer underneath whichever build tool you already use.
+
+This page lays out the honest tradeoffs. Dated **2026-05-27**.
+
+## TL;DR
+
+- **Pick Nx Cloud if** your monorepo is Nx (or you are willing to move
+  to Nx), you want one vendor for cache + CI task distribution +
+  analytics, and the per-contributor + per-credit + per-connection
+  billing shape is acceptable to your finance team.
+- **Pick CoreLink if** you want a flat-priced REAPI v2 cache that works
+  with Bazel / Buck2 / Pants / Cargo / npm / pip / brew / OCI from one
+  workspace, with BYOK across four KMS providers and an
+  auditor-re-derivable audit chain. CoreLink is not Nx-native; if you
+  rely on `nx affected` task graph distribution, Nx Cloud is the
+  product designed for that.
+- **The May 2026 Nx self-host plugin deprecation** (CVE-2025-36852) is
+  a real industry event — orgs that were running the free
+  self-hosted-Nx-cache plugin are now choosing between paid Nx Cloud,
+  rolling their own, or evaluating REAPI-flavored alternatives.
+  CoreLink is a candidate in that third bucket.
+
+## At a glance
+
+| Capability | CoreLink | Nx Cloud |
+|---|---|---|
+| Pricing (smallest paid tier) | $25/mo flat (Pro: 500 GB / 20M req included) | Team: $19/contributor + $5.50 per 10k credits + $2.25/concurrent CI connection |
+| Free tier | 10 GB cache, 500k req/mo, 1 workspace, no card | "Hobby": 50,000 credits/mo (resets), 5 contributors, 10 concurrent CI connections |
+| Pricing axis | Flat tier (one number) | Hybrid: per-seat + per-credit + per-CI-connection |
+| Wire protocol | REAPI v2 (CAS + ActionCache + Capabilities) | Nx-native protocol (proprietary) — not REAPI |
+| Build-tool surface | Bazel, Buck2, Pants, Please, BuildStream, recc + Cargo / npm / pip / brew / OCI adapters | Nx CLI (JavaScript / TypeScript monorepos); some plugin coverage for adjacent tools |
+| Task distribution / DTE | No — cache only, no executor / agent fleet | Yes — Nx Agents, marketed "4× faster, 30% cheaper than GitHub Actions" for Nx workspaces |
+| BYOK across 4 KMS (AWS / GCP / Azure / Vault) | Yes — customer-held KEK, 5-min DEK cap, Ed25519 erasure attest | Not advertised on the public pricing page |
+| Audit chain (RFC 6962 / RFC 3161) | Yes — re-derivable Merkle root | Not advertised |
+| TLA+-verified tenant isolation | Yes — counterexamples block CI merge | Not advertised |
+| Free self-host option | No (CLI is OSS-ish; data plane is SaaS) | **Deprecated May 2026** (CVE-2025-36852). Self-host now only on Enterprise tier |
+| Analytics / monorepo dashboard | No (lean trust-and-cache product) | Yes — flagship feature |
+| Hosting | Cloudflare Workers + R2 edge | SaaS (Nrwl-operated); Enterprise self-host |
+| Company shape | Solo founder, bootstrapped | Funded; large Nx community footprint |
+| Source for prices | corelink.humangr.com (this site) | https://nx.dev/pricing (fetched 2026-05-27) |
+
+## Where Nx Cloud wins
+
+Nx Cloud is the cleanest answer for a specific buyer; we will name it.
+
+1. **Nx-native distributed task execution.** `nx affected` reads your
+   project graph and runs only the necessary work; Nx Agents then
+   distribute that work across an autoscaled agent fleet. The remote
+   cache is part of a broader **task graph + cache + distribution**
+   product. If your monorepo is Nx, the integration is invisible and
+   the speedup is what you came for. CoreLink is a cache; we do not
+   compute your task graph or distribute your CI.
+
+2. **Cache + CI distribution + analytics in one product.** Nx Cloud's
+   dashboard shows time saved per pipeline, flaky-test trends, cache-
+   hit-by-target, and per-PR savings. Nx Agents collapses the
+   distribution layer into the same vendor. For a JS / TS monorepo
+   team, this is one buy that replaces three.
+
+3. **Massive Nx community footprint.** Nx is one of the dominant JS /
+   TS monorepo build tools. Plugin coverage, conference content,
+   tutorials, and hiring signal — all favor "Nx + Nx Cloud" for a JS
+   shop. CoreLink has none of that brand reach in the JS world.
+
+4. **Per-contributor pricing is buyer-friendly for small teams.** At 5
+   contributors, the Team tier starts at $95/mo seat plus credits and
+   CI connections. For a team that uses the Nx-native cache heavily
+   and does not blow past the 50k Hobby credit cap, the seat math is
+   predictable.
+
+5. **Enterprise self-host exists (paid).** The free self-host plugin
+   was deprecated in May 2026 due to CVE-2025-36852, but the paid
+   Enterprise tier still ships self-host. CoreLink does not offer a
+   self-host data plane in 2026.
+
+## Where CoreLink wins
+
+Honest differentiation, not shade.
+
+1. **REAPI v2 vs Nx-native protocol.** CoreLink speaks the open REAPI
+   v2 wire protocol. Any REAPI client works — Bazel, Buck2, Pants,
+   Please, BuildStream, recc — without a CoreLink-specific SDK. Nx
+   Cloud speaks Nx's proprietary protocol; you commit to the Nx CLI as
+   the build tool. If you are evaluating monorepo tools, REAPI keeps
+   your options open.
+
+2. **Polyglot, not JS / TS-shaped.** CoreLink ships first-class adapters
+   for Bazel CAS + Cargo + npm + pip + brew + OCI on the same content-
+   addressable store. One bill, one audit log, one quota, one BYOK
+   envelope. A polyglot team running Nx (JS) + sccache (Rust) +
+   bazel-remote (Bazel) stitches three vendors today; CoreLink
+   collapses that.
+
+3. **Flat-tier pricing, no credits, no per-seat.** Pro is $25/mo or
+   $250/yr (~17% annual discount, "2 months free" — the Plausible /
+   BetterStack convention). One number. Two limits (GB, req). A buyer
+   can decide in 30 seconds without a spreadsheet. Nx Cloud's
+   "$19/contributor + $5.50 per 10k credits + $2.25/CI connection"
+   shape is honest but requires modeling to predict a bill — credit
+   unpredictability is a recurring complaint in the Nx user community
+   (cited in our pricing benchmarks audit §1 / Medium / Emily Xiong).
+
+4. **BYOK by default, on four KMS providers.** AWS KMS, GCP KMS,
+   Azure Key Vault, HashiCorp Vault. Customer-held KEK; 5-minute DEK
+   in-memory cap; Ed25519-signed erasure attestation on revocation. Nx
+   Cloud's public page does not advertise a 4-KMS BYOK story at the
+   cache tier. For a regulated buyer who needs customer-managed keys
+   to clear SOC 2 / HIPAA, this is a structural difference.
+
+5. **RFC 6962 / RFC 3161 Merkle-chained audit log.** Your external
+   auditor downloads the log shard, replays it, and recomputes the
+   published Merkle root. Same trust model as Certificate Transparency.
+   Nx Cloud does not advertise a comparable audit chain.
+
+6. **TLA+-verified tenant isolation.** Cross-tenant safety is
+   model-checked in CI; counterexamples block merge to `main`. The
+   model is public. Important to a specific set of engineering-trust
+   buyers.
+
+7. **A reasonable answer to the May 2026 self-host deprecation.** If
+   you were running the free Nx self-hosted-cache plugin and you do
+   not want to upgrade to paid Nx Cloud (or you cannot accept the
+   CVE risk on the deprecated plugin), CoreLink offers a managed
+   REAPI cache + a BYOK enterprise path. It is not a drop-in for the
+   Nx CLI — there is a switching cost — but it is a credible
+   alternative for an org that was already considering moving off Nx
+   self-host.
+
+## Cost comparison: a concrete scenario
+
+**Scenario.** 100-engineer Series C startup. JS / TS monorepo on Nx
+plus a Rust backend services group plus a small Bazel-built data
+pipeline. ~200 GB warm cache combined, ~12M cache requests/month, 30
+concurrent CI lanes on peak days. SOC 2 Type II audit on the calendar
+in 6 months.
+
+### CoreLink
+
+- **Pro: $25/mo flat.** 500 GB included (you use 200 across all
+  workloads). 20M requests included (you use 12M). One bill covers
+  Bazel CAS + Cargo cache + Turborepo / Nx adapter (where the Nx CLI
+  is configured to talk to a generic remote cache rather than Nx
+  Cloud's native protocol).
+- BYOK + audit-chain are at the Enterprise tier; for the SOC 2 push,
+  open an Enterprise conversation when the auditor signals customer-
+  managed keys. Published anchor range: $500–$5,000/mo for Enterprise
+  features.
+- Cache distribution / task graph distribution: not in scope. Your CI
+  scheduler (GitHub Actions matrix, Buildkite, Nx Agents on a
+  side-arrangement) remains responsible.
+- **Estimated total: $25/mo at Pro**, $1,000–$2,000/mo if you upgrade
+  to a small Enterprise tier for BYOK + dedicated infra + SLA.
+
+### Nx Cloud
+
+Per Nx Cloud Team pricing (https://nx.dev/pricing, fetched 2026-05-27):
+
+- **Contributor seats:** $19/contributor. At 100 engineers, that is
+  **$1,900/mo** in seat fees alone.
+- **Credits:** $5.50 per 10k credits. Credit consumption depends on
+  workspace + agent configuration; a 100-eng monorepo with daily
+  pipelines lands well into 6-figure-credits/month territory in
+  community reports (we will not invent a number here — Nx Cloud's
+  rate card requires modeling against your specific task graph).
+- **Concurrent CI connections:** $2.25/connection. At 30 peak lanes,
+  that is **$67.50/mo**.
+- **Enterprise (self-host, SSO, conformance):** custom-quoted; not
+  posted.
+- **Estimated baseline: $2,000–$3,000+/mo** at this team size before
+  credit overages, plus Enterprise pricing on top if you need SSO /
+  self-host / cross-repo conformance.
+
+### What the bill **does not** show
+
+- **Switching cost.** Moving an Nx monorepo off Nx Cloud is a real
+  workflow change. The Nx Agents distribution model is integrated;
+  ripping it out and replacing with a generic cache + a separate CI
+  scheduler is engineering work. We will not pretend it is a one-day
+  swap. Honest estimate: 1–4 sprints depending on how deep `nx
+  affected` is in your pipelines.
+- **Polyglot value.** If your stack is JS + Rust + Bazel data
+  pipeline, Nx Cloud handles only the JS leg. The Rust and Bazel legs
+  still need sccache + S3 + bazel-remote, each with their own audit
+  posture. CoreLink replaces those three with one.
+- **BYOK / audit-chain readiness.** If your SOC 2 Type II auditor is
+  going to require customer-managed keys at the build-cache layer, the
+  Nx Cloud public materials do not commit to that today. CoreLink
+  Enterprise does.
+
+## Migration considerations
+
+You are on Nx Cloud and curious about CoreLink. Honest staging:
+
+1. **Audit what Nx Cloud is actually buying you.** If the answer is
+   "the dashboard and Nx Agents", CoreLink is the wrong substitute —
+   we do neither. If the answer is "primarily cache, the dashboard is
+   nice-to-have", continue.
+2. **Provision a CoreLink workspace** at
+   `https://corelink-app.humangr.com/sign-up`. Free tier (10 GB, 500k
+   req/mo), no credit card.
+3. **Point Nx at a generic remote cache.** Nx CLI supports remote
+   cache backends beyond Nx Cloud's native one (see Nx docs for the
+   custom-runner pattern). Configure Nx to talk to CoreLink as the
+   remote cache. Keep Nx Cloud's task graph distribution on for now;
+   you are only moving the **cache** axis.
+4. **Run shadow for two weeks.** Measure cache-hit ratio per
+   workspace, p95 GET latency, and pipeline time delta. The numbers
+   should be similar — both are content-addressable.
+5. **Decide the distribution question.** If `nx affected` + Nx Agents
+   is doing real work and you cannot replace it with GitHub Actions
+   matrix / Buildkite sharding, **stay on Nx Cloud** for distribution
+   and run CoreLink as your cache layer. If `nx affected` is not core
+   to your workflow, drop Nx Cloud entirely and let GitHub Actions
+   handle scheduling.
+6. **Move Rust / Bazel / npm onto CoreLink.** Once cache is on
+   CoreLink, point your Cargo / Bazel / Docker / pip caches at the
+   same workspace. One bill, one audit log, one BYOK envelope.
+7. **BYOK for SOC 2.** On Enterprise, point CoreLink at your KMS.
+
+If you were running the **deprecated free Nx self-hosted-cache
+plugin** (CVE-2025-36852, deprecated May 2026), the migration shape is
+slightly different — you are leaving a self-hosted footgun rather than
+a paid SaaS. The CoreLink Free tier (10 GB, 500k req/mo) is enough to
+prove cache-hit math against your old self-hosted instance; if your
+cache footprint is larger, $25/mo Pro is the next step.
+
+## When NOT to choose CoreLink
+
+We lose several Nx-shaped buying conversations cleanly.
+
+1. **Your monorepo is Nx and your daily driver is the Nx dashboard
+   plus Nx Agents.** This is the segment Nx Cloud was built for.
+   CoreLink does not compute `nx affected`, does not distribute Nx
+   tasks, and does not render the analytics dashboard. The "switch to
+   CoreLink" pitch is not credible here.
+
+2. **You are a pure JS / TS shop and you do not want to leave the Nx
+   ecosystem.** Even with the May 2026 self-host deprecation,
+   upgrading to paid Nx Cloud keeps you in a familiar tool. The
+   cognitive cost of evaluating a REAPI cache is real and is the
+   wrong cost to pay for a small JS team.
+
+3. **You need a monorepo task graph as a product feature.** Nx Cloud
+   sells the **distribution** product, not just the cache. CoreLink is
+   a cache. If you need someone to schedule your tasks across an
+   autoscaled agent fleet, this is Nx Cloud's home segment.
+
+4. **Per-credit pricing has actually been good for you.** Some teams
+   genuinely prefer the metered shape because their workload is bursty
+   and the Hobby tier (50k credits, 5 contributors) covers their
+   off-peak weeks at $0. If that is your shape, the flat $25/mo Pro
+   tier on CoreLink is an upgrade from Nx Cloud Hobby's free, not from
+   an established Nx Cloud Team commitment.
+
+5. **You are a solo developer on a free tier.** Both Nx Cloud Hobby
+   and CoreLink Free will cover you. The right move is whichever you
+   already know how to wire up. We are not trying to win this
+   conversation.
+
+We will not pretend Nx Cloud is bad. It is well-built for its buyer
+and our products are not the same thing. The question is whether your
+buyer is theirs or ours.
+
+## Resources
+
+- CoreLink docs: [/docs](/docs/)
+- CoreLink pricing: [/pricing](/pricing/)
+- Capability matrix (with BuildBuddy, NativeLink, EngFlow, bazel-
+  remote alongside Nx Cloud's neighbors):
+  [/docs/pricing/comparison](/docs/pricing/comparison)
+- Nx Cloud pricing page (verify before quoting):
+  [https://nx.dev/pricing](https://nx.dev/pricing)
+- Nx self-host deprecation context (Medium / Emily Xiong):
+  [https://emilyxiong.medium.com/exploring-of-nx-self-hosted-cache-5bc39bd2ed7f](https://emilyxiong.medium.com/exploring-of-nx-self-hosted-cache-5bc39bd2ed7f)
+- Source for the comparisons on this page: the CoreLink competitive
+  landscape audit (`specs/_audits/2026-05-27-competitive-landscape.md`)
+  and pricing benchmarks (`specs/_audits/2026-05-27-pricing-benchmarks.md`).
+
+If you find a factual error, open an issue on
+`humangr-labs/corelink-server`. Correctness wins over rhetoric.

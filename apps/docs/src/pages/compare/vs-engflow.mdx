@@ -1,0 +1,305 @@
+---
+title: "CoreLink vs EngFlow: which build cache to pick"
+description: "Detailed technical comparison of CoreLink and EngFlow — published pricing vs sales-gated quotes, REAPI compatibility, BYOK on four KMS providers, polyglot reach beyond Bazel. Honest tradeoffs as of 2026-05-27."
+keywords:
+  - "engflow"
+  - "engflow alternative"
+  - "build cache"
+  - "bazel remote cache"
+  - "remote cache"
+  - "reapi cache"
+  - "engflow pricing"
+  - "byok build cache"
+last_updated: "2026-05-27"
+---
+
+# CoreLink vs EngFlow
+
+EngFlow is the Bazel ecosystem authority. The company was founded by
+Ulf Adams (former Bazel tech lead at Google) and Helen Altshuler (ex
+Google Bazel onboarding lead), raised an $18M Series A from a16z /
+Tiger Global / firstminute in 2022, and speaks at every BazelCon. If
+your purchasing criterion is "the people who built Bazel should sell
+us the Bazel platform", EngFlow is the literal answer.
+
+CoreLink is a different shape. We are a polyglot **cache-only** product
+with self-serve pricing, BYOK across four KMS providers, and an
+RFC 6962 audit chain. We do not try to out-Bazel the Bazel creators
+on Bazel-purist ground; we sell against EngFlow on **pricing
+transparency**, **polyglot reach**, and **time-to-decision** for the
+mid-market platform engineer.
+
+This page lays out the honest tradeoffs. Dated **2026-05-27**; verify
+the EngFlow pricing page before quoting in a buying decision —
+EngFlow's pricing is contact-gated on both tiers and changes by deal.
+
+## TL;DR
+
+- **Pick EngFlow if** you are a Bazel monolith shop (500+ engineers,
+  RBE-heavy, dedicated build infra team) and you want the Bazel
+  creators on your support escalation path. Be ready for a contact-sales
+  workflow on both the Free and Enterprise tiers.
+- **Pick CoreLink if** you want a published price on the page, REAPI
+  cache that works with Bazel **and** Cargo / npm / pip / OCI, BYOK on
+  four KMS providers as a default feature, and a 3–14 day trial-to-buy
+  cycle that fits inside a platform engineer's unsigned-authority
+  ceiling.
+- **Either is fine if** Bazel-only is your world and you have
+  procurement bandwidth for a multi-week sales cycle.
+
+## At a glance
+
+| Capability | CoreLink | EngFlow |
+|---|---|---|
+| Pricing (smallest paid tier) | $25/mo flat (Pro: 500 GB / 20M req) — posted on page | Not publicly priced. Both tiers ("Free" and "Enterprise") gated on "Contact sales" |
+| Free tier limits | 10 GB cache, 500k req/mo, 1 workspace, no card, self-serve | Single-machine RE, 32 cores, Linux only, Bazel only, contact-gated |
+| Self-serve sign-up | Yes — no sales call required for Free or Pro | No — contact form on every tier |
+| Wire protocol | REAPI v2 (CAS + ActionCache + Capabilities) | REAPI v2 + Bazel + Goma + Soong + Reclient + BuildStream + Pants + Please + recc |
+| Bazel coverage depth | Standard REAPI; cache only | Deepest in the market (Bazel creators run the company) |
+| Multi-language cache (Cargo / npm / pip / OCI) | Yes — first-class adapters | Bazel ecosystem clients only (no Cargo / npm / pip / OCI surface) |
+| Remote execution (RBE) | No (cache-only by design) | Yes — Linux + macOS + Windows; autoscaling executor fleets |
+| BYOK across 4 KMS (AWS / GCP / Azure / Vault) | Yes — customer-held KEK, 5-min DEK cap, Ed25519 erasure attest | Not advertised on the public page |
+| Audit chain (RFC 6962 / RFC 3161) | Yes — re-derivable Merkle root | Not advertised on the public page |
+| TLA+-verified tenant isolation | Yes — counterexamples block CI merge | Not advertised |
+| Self-host option | No (Cloudflare edge data plane) | Yes — both SaaS managed and self-host advertised |
+| Hosting | Cloudflare Workers + R2 edge | SaaS managed + self-host (your AWS / GCP / Azure) |
+| Company shape | Solo founder, bootstrapped, self-serve | Series A $18M (a16z, Tiger Global, firstminute, 2022), sales-led |
+| Time to first cache hit | Minutes (self-serve signup + CLI install) | Days to weeks (contact form → sales call → quote → trial) |
+| Source for prices | corelink.humangr.com (this site) | https://www.engflow.com/product/pricing (fetched 2026-05-27) |
+
+## Where EngFlow wins
+
+We say this without irony: EngFlow is excellent at what it does.
+
+1. **Deepest Bazel + adjacent-tool coverage in the market.** Beyond
+   Bazel, EngFlow supports Goma (Chromium-style distributed compile),
+   Soong (Android Open Source Project build system), Reclient,
+   BuildStream, Pants, Please, and `recc`. If your stack is Chromium,
+   AOSP, or any of the long-tail REAPI-adjacent build systems with
+   non-trivial integration debt, EngFlow has probably already done the
+   integration work. CoreLink supports the REAPI v2 contract — that
+   covers Bazel, Buck2, Pants, Please, BuildStream, recc — but we do
+   not advertise Goma or Soong integration depth.
+
+2. **Remote execution as a first-class product.** EngFlow runs Linux,
+   macOS, **and** Windows executor fleets. The autoscaler is a real
+   product. The "we will run your Bazel build farm so your SREs do not
+   have to" pitch is genuinely the differentiator. CoreLink does not
+   ship RBE; if your buying criterion is "make the EKS Bazel cluster
+   go away", EngFlow (or BuildBuddy) is the conversation.
+
+3. **The founders' provenance.** Ulf Adams was the Bazel tech lead at
+   Google. Helen Altshuler led Bazel onboarding at Google. When the
+   Bazel community asks "who do we trust to run remote execution at
+   scale", the answer is recursive — the people who designed remote
+   execution. CoreLink has no such pedigree to draw on. For a
+   1,000-engineer monorepo where the cost of getting Bazel wrong is
+   measured in weeks of lost productivity, that provenance has real
+   buying weight.
+
+4. **Self-host with both flavors.** EngFlow's public materials
+   advertise both SaaS managed and self-host (run on your AWS / GCP /
+   Azure account, your network, your IAM). For an enterprise with a
+   "no third-party data plane" mandate, this is a clean answer.
+   CoreLink's data plane is Cloudflare-edge today; if your threat model
+   excludes Cloudflare, we are out of contention.
+
+5. **Funded.** $18M Series A from name-brand VCs. A 1,000-engineer
+   procurement department reads this as "the vendor will exist in 5
+   years." A solo-founder CoreLink reads, to that same procurement
+   department, as "vendor-risk score = high." That is a real win for
+   EngFlow at the enterprise tier.
+
+## Where CoreLink wins
+
+Honest differentiation, not shade.
+
+1. **Self-serve pricing, with a number on the page.** EngFlow gates
+   both the Free tier and the Enterprise tier on a contact form. There
+   is no published mid-tier. A platform engineer who wants to evaluate
+   the cache **today** cannot — they have to book a sales call. CoreLink
+   posts $25/mo Pro on the page. Free signup needs no credit card.
+   First cache hit in minutes. This is the difference between
+   *evaluating a cache* and *evaluating a vendor relationship*.
+
+2. **Buyer-authority fit for the mid-market.** Per our ICP audit
+   (Persona P1 — Platform Lead at compliance-aware Series B/C SaaS, 50–
+   250 eng), the unsigned-authority budget is typically $500–$2,000/mo.
+   CoreLink lands inside that window with a card and a click; EngFlow's
+   sales-led shape lands outside it by definition. If your buyer is the
+   VP-Eng at a 1,000-engineer org, EngFlow's friction is fine — they
+   are paid to run procurement. If your buyer is the platform lead at a
+   150-engineer org, EngFlow's friction is the bug.
+
+3. **Polyglot, not Bazel-ecosystem-only.** Cargo, npm, pip, brew, OCI
+   artifacts on the same content-addressable store. One bill, one
+   audit log, one quota, one BYOK envelope. Today, a polyglot org
+   stitches EngFlow (Bazel) + sccache + S3 (Rust / C++) + Turborepo
+   (JS / TS) + a private registry (OCI) + four security reviews.
+   CoreLink collapses that into one workspace.
+
+4. **BYOK by default, on four KMS providers.** AWS KMS, GCP KMS,
+   Azure Key Vault, HashiCorp Vault. Customer-held KEK; CoreLink
+   decrypts a Data Encryption Key into memory for at most 5 minutes;
+   revocation produces an Ed25519-signed erasure attestation. EngFlow's
+   public page does not advertise a 4-KMS BYOK story at the cache
+   tier. (EngFlow's self-host option lets you BYO infrastructure end-
+   to-end, which is a different — and stronger — privacy posture in
+   one direction; the tradeoff is the operational cost of self-host.)
+
+5. **RFC 6962 / RFC 3161 audit chain, re-derivable.** Your auditor
+   downloads the log shard, replays it, and recomputes the published
+   Merkle root. Same trust model as Certificate Transparency. This is
+   engineered for the SOC 2 Type II auditor's first interview.
+   EngFlow does not advertise a comparable audit chain.
+
+6. **TLA+-verified tenant isolation invariant.** The cross-tenant
+   safety property is model-checked in CI; counterexamples block merge
+   to `main`. The model is public. This is the kind of artifact that
+   matters to engineering-trust buyers who actually open the spec
+   folder.
+
+7. **No remote execution to operate or be billed for.** If you are
+   happy with GitHub Actions runners, Buildkite agents, or your own
+   Kubernetes job runners, CoreLink charges you $0 for the executor
+   you are not using. EngFlow's pricing structure assumes RBE is part
+   of the deal.
+
+## Cost comparison: a concrete scenario
+
+We cannot give you EngFlow's number — EngFlow does not post it. What
+we can do is give you a like-for-like CoreLink number and an
+honest sketch of what an EngFlow deal looks like at the same scale.
+
+**Scenario.** 100-engineer Series C fintech. ~50 monorepo builds/day,
+~200 GB warm cache, ~12M cache requests/month, mostly Linux CI with a
+small macOS fleet for the iOS client. SOC 2 Type II audit on the
+calendar in 90 days. Bazel + sccache (Rust) + Turborepo (JS frontend).
+
+### CoreLink
+
+- **Pro: $25/mo flat.** 500 GB included (you use 200), 20M requests
+  included (you use 12M). One bill covers Bazel CAS + Cargo cache +
+  Turborepo adapter.
+- BYOK + audit-chain are at the Enterprise tier; for the SOC 2 push,
+  open an Enterprise conversation when the auditor signals
+  customer-managed keys are required. Published anchor range:
+  $500–$5,000/mo depending on storage + dedicated infra + BYOK + SSO +
+  SLA.
+- Self-serve trial-to-decision: typically 3–14 days. No procurement
+  cycle below $2k/mo.
+
+### EngFlow
+
+- Public pricing page: contact-gated. No number posted. We will not
+  invent one.
+- Anecdotal range from public industry conversations (not from
+  EngFlow): enterprise deals for the Bazel + RBE bundle land in
+  $40k–$500k/yr depending on executor hours, RBE fleet size, and
+  support tier. EngFlow targets P2 (VP-Eng at 500+ eng monorepo)
+  rather than P1 (Platform Lead at 50–250 eng).
+- Sales cycle: weeks to months. Includes a PoC, security
+  questionnaire, DPA + MSA negotiation, internal champion recruitment.
+- The Bazel + macOS RBE story is real value at scale. For a 100-
+  engineer fintech that does not yet run a Bazel RBE cluster, that
+  value is mostly aspirational — you are paying for capacity you do
+  not have a roadmap to use.
+
+### What the bill **does not** show
+
+- **Time-to-decision cost.** A 90-day SOC 2 deadline is incompatible
+  with a 90-day enterprise sales cycle. The CoreLink Pro tier lets you
+  start the work this week and convert to Enterprise when the auditor
+  requires it. With EngFlow, the sales cycle **is** the timeline.
+- **Polyglot stitching tax.** EngFlow handles the Bazel side; the
+  Rust and JS sides still need sccache + Turborepo + their own audit
+  posture. That is three vendors and three security reviews instead of
+  one.
+- **Procurement friction.** Two contracts, two DPAs, two annual
+  renewals, two pricing renegotiations vs one — at 100 engineers, that
+  is real overhead the bill never shows.
+
+## Migration considerations
+
+You are on EngFlow and curious about CoreLink. Concrete steps:
+
+1. **Provision a CoreLink workspace** at
+   `https://corelink-app.humangr.com/sign-up`. No credit card, no sales
+   call. You will land on the Free tier (10 GB cache, 500k req/mo).
+2. **Add CoreLink as a shadow cache.** Bazel supports a chain of
+   caches via `--remote_cache` + `--experimental_remote_downloader`.
+   Run EngFlow as primary and CoreLink as shadow for one week. Measure
+   cache-hit ratio, p95 GET latency, p95 PUT latency, error rate. The
+   numbers should be within noise — both are content-addressable
+   stores reading the same hashes.
+3. **Decide which axis to cut over.** EngFlow's RBE has no CoreLink
+   equivalent. Two viable patterns:
+   - **Cache-on-CoreLink, RBE-on-EngFlow.** Keep EngFlow for executor
+     pool; move `--remote_cache` to CoreLink. Useful if RBE is a
+     genuine workload (you have macOS / Windows executor hours that
+     justify it).
+   - **Cache-on-CoreLink, no RBE.** Drop the EngFlow contract; rely on
+     GitHub Actions / Buildkite for CI compute. The right move if
+     EngFlow RBE is shelfware or if your build matrix is mostly
+     Linux-on-Linux without scaling problems.
+4. **Add Cargo / npm / OCI workloads.** Once Bazel is cut over, point
+   `sccache` (or your equivalent), the Turborepo remote cache, and
+   your OCI tag pulls at CoreLink. One bill, one audit log, one BYOK
+   envelope.
+5. **BYOK rotation when the SOC 2 auditor asks.** On Enterprise, point
+   CoreLink at your KMS (AWS / GCP / Azure / Vault). Rotation is
+   operator-controlled.
+
+You do not have to leave EngFlow to take CoreLink cache. If EngFlow's
+RBE is doing real work, leave it doing real work. CoreLink is happy to
+be your cache and Cargo and JS partner.
+
+## When NOT to choose CoreLink
+
+We lose three buying conversations cleanly to EngFlow.
+
+1. **You are a Bazel monolith at 500+ engineers and you need RBE.**
+   This is EngFlow's home segment and they earn it. Mac and Windows
+   executor pools, autoscaling, the Bazel creators on the support
+   escalation path — there is no part of that we can match in 2026.
+   CoreLink does not ship RBE.
+
+2. **You require a self-hosted-on-your-own-infrastructure data
+   plane.** EngFlow advertises self-host. CoreLink runs on Cloudflare
+   edge with BYOK; we do not deploy into your AWS / GCP / Azure
+   account today. If your security or regulatory model requires the
+   data plane inside your VPC, EngFlow is the answer.
+
+3. **Your buyer is a VP-Eng with $500k/yr procurement authority and
+   a 6-month evaluation timeline.** EngFlow's sales-led shape is the
+   right shape for that buyer. CoreLink's self-serve shape is the
+   wrong shape for that buyer — they will read it as "small vendor,
+   high risk". We are better as a tool the platform team adopts from
+   below than a procurement-led top-down deal.
+
+4. **You depend on Goma, Soong, or non-REAPI build-system
+   integrations.** We do not have integration depth there. EngFlow
+   does.
+
+5. **You need a logo wall.** EngFlow has one. We are at the case-
+   study-of-one stage. For a procurement-led buyer who weights social
+   proof heavily, this is a real and rational gap.
+
+We will not pretend these gaps do not exist. They do. And EngFlow is a
+good company.
+
+## Resources
+
+- CoreLink docs: [/docs](/docs/)
+- CoreLink pricing: [/pricing](/pricing/)
+- Capability matrix (with BuildBuddy, NativeLink, bazel-remote
+  alongside EngFlow): [/docs/pricing/comparison](/docs/pricing/comparison)
+- EngFlow pricing page (verify before quoting):
+  [https://www.engflow.com/product/pricing](https://www.engflow.com/product/pricing)
+- EngFlow team: [https://www.engflow.com/company/team](https://www.engflow.com/company/team)
+- Source for the comparisons on this page: the CoreLink competitive
+  landscape audit (`specs/_audits/2026-05-27-competitive-landscape.md`)
+  and pricing benchmarks (`specs/_audits/2026-05-27-pricing-benchmarks.md`).
+
+If you find a factual error, open an issue on
+`humangr-labs/corelink-server`. Correctness wins over rhetoric.
