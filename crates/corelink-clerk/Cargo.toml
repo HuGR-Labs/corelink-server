@@ -92,14 +92,19 @@ corelink-clerk = { path = ".", features = ["jwt-adapter", "test-utils", "http-fe
 [[example]]
 name = "basic"
 path = "examples/basic.rs"
+# Uses `fakes::{InMemoryKvCache, StaticJwksFetcher}` — gated behind
+# `test-utils` (post-§L2.1/§L2.7 charter audit hygiene).
+required-features = ["jwt-adapter", "test-utils"]
 
 [[example]]
 name = "multi_issuer"
 path = "examples/multi_issuer.rs"
+required-features = ["jwt-adapter", "test-utils"]
 
 [[example]]
 name = "rotation"
 path = "examples/rotation.rs"
+required-features = ["jwt-adapter", "test-utils"]
 
 [[test]]
 name = "prop_validate"
