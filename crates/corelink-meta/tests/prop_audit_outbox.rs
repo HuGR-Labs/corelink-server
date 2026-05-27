@@ -176,6 +176,7 @@ proptest! {
                 .commit_put(CommitPutRequest { key: key2, size_bytes: 16, now_ms: 2, audit: conflicting })
                 .await
                 .unwrap_err();
+            // SOTA-OK: variant-only assertion sufficient — AuditIdempotencyConflict is a unit variant carrying no semantic state.
             prop_assert!(matches!(err, MetaError::AuditIdempotencyConflict));
             // key1 row exists; key2 row does NOT (atomicity).
             prop_assert!(store.get(&key1).await.unwrap().is_some());

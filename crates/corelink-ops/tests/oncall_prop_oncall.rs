@@ -158,7 +158,12 @@ proptest! {
         let res = ledger.start_shift(s2, "cid-2");
         let in_protection = gap_ms < PROTECTION_PERIOD_SECONDS * 1000;
         if in_protection {
-            prop_assert!(matches!(res, Err(OncallError::InvalidRotation(_))));
+            match &res {
+                Err(OncallError::InvalidRotation(msg)) => {
+                    prop_assert!(!msg.is_empty(), "InvalidRotation reason must not be empty");
+                }
+                other => prop_assert!(false, "expected OncallError::InvalidRotation, got {other:?}"),
+            }
         } else {
             prop_assert!(res.is_ok());
         }
@@ -183,7 +188,12 @@ proptest! {
         )
         .unwrap();
         let res = ledger.start_shift(s, "cid");
-        prop_assert!(matches!(res, Err(OncallError::Audit(_))));
+        match &res {
+            Err(OncallError::Audit(msg)) => {
+                prop_assert!(!msg.is_empty(), "Audit error reason must not be empty");
+            }
+            other => prop_assert!(false, "expected OncallError::Audit, got {other:?}"),
+        }
 
         // No active shift was registered (tier lookup returns None).
         let tier = ledger

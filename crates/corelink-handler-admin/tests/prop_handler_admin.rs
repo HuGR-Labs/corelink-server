@@ -84,7 +84,12 @@ proptest! {
             Some(DualApprovalToken::new("a1", approver)),
             1,
         )).expect_err("audit closed");
-        prop_assert!(matches!(err, AdminHandlerError::AuditFailed(_)));
+        match &err {
+            AdminHandlerError::AuditFailed(msg) => {
+                prop_assert!(msg.contains("d1 down"), "expected injected message; got {msg:?}");
+            }
+            other => prop_assert!(false, "expected AuditFailed, got {other:?}"),
+        }
         prop_assert!(h.applied_snapshot().expect("snap").is_empty());
     }
 }

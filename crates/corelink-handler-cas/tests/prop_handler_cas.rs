@@ -78,7 +78,12 @@ proptest! {
             tenant.clone(),
             1,
         )).expect_err("audit closed");
-        prop_assert!(matches!(err, CasHandlerError::AuditFailed(_)));
+        match &err {
+            CasHandlerError::AuditFailed(msg) => {
+                prop_assert!(msg.contains("simulated d1 down"), "expected injected message; got {msg:?}");
+            }
+            other => prop_assert!(false, "expected AuditFailed, got {other:?}"),
+        }
         // No row recorded.
         prop_assert_eq!(audit.snapshot().expect("a").len(), 0);
     }

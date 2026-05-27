@@ -83,11 +83,14 @@ proptest! {
     ) {
         let assessment = assess(SignCount::new(stored), SignCount::new(incoming));
         if stored == 0 && incoming == 0 {
+            // SOTA-OK: variant-only assertion sufficient — PasskeyExempt is a unit variant carrying no semantic state.
             prop_assert!(matches!(assessment.severity, SignCountSeverity::PasskeyExempt));
         } else if incoming > stored {
+            // SOTA-OK: variant-only assertion sufficient — Monotonic is a unit variant carrying no semantic state.
             prop_assert!(matches!(assessment.severity, SignCountSeverity::Monotonic));
             prop_assert_eq!(assessment.persisted, SignCount::new(incoming));
         } else {
+            // SOTA-OK: variant-only assertion sufficient — Sev2InvestigationRequired is a unit variant carrying no semantic state.
             prop_assert!(matches!(
                 assessment.severity,
                 SignCountSeverity::Sev2InvestigationRequired
@@ -115,10 +118,12 @@ proptest! {
         let policy = AaguidPolicy::builder().allow(allow).deny(deny).build();
         let result = policy.evaluate(candidate);
         if candidate == deny {
+            // SOTA-OK: variant-only assertion sufficient — AaguidDenied is a unit variant carrying no semantic state.
             prop_assert!(matches!(result, Err(WebAuthnError::AaguidDenied)));
         } else if candidate == allow {
             prop_assert!(result.is_ok());
         } else {
+            // SOTA-OK: variant-only assertion sufficient — AaguidNotAllowed is a unit variant carrying no semantic state.
             prop_assert!(matches!(result, Err(WebAuthnError::AaguidNotAllowed)));
         }
     }

@@ -316,7 +316,15 @@ proptest! {
             InMemoryProvisionRecord::new(),
         );
         let err = o.provision(&req(&idem, &email, &locale, &cid)).unwrap_err();
-        prop_assert!(matches!(err, OrchestrationError::Audit(_)));
+        match &err {
+            OrchestrationError::Audit(inner) => {
+                // Inner SignupAuditEmitError is a foreign error type whose
+                // Debug form must not be empty (it must carry a cause).
+                prop_assert!(!format!("{inner:?}").is_empty(),
+                    "Audit inner must carry a cause");
+            }
+            other => prop_assert!(false, "expected OrchestrationError::Audit, got {other:?}"),
+        }
         prop_assert_eq!(store.committed_tenant_count().unwrap(), 0);
     }
 }

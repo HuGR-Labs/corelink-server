@@ -91,7 +91,12 @@ proptest! {
         let err = creator
             .create_session(&format!("cus_{suffix}"), "https://x.example/", "t_1")
             .unwrap_err();
-        prop_assert!(matches!(err, PortalSessionError::AuditFailed(_)));
+        match &err {
+            PortalSessionError::AuditFailed(msg) => {
+                prop_assert!(!msg.is_empty(), "AuditFailed reason must not be empty");
+            }
+            other => prop_assert!(false, "expected PortalSessionError::AuditFailed, got {other:?}"),
+        }
         prop_assert!(sink.events().is_empty());
         prop_assert!(creator.issued().is_empty());
     }

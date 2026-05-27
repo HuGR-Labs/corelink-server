@@ -254,6 +254,7 @@ proptest! {
         let v2 = ClientVerifier::new(v2_cfg_silent_disabled);
         let d = Digest::compute(&body);
         let err = v2.verify(&body, &d).expect_err("disabled");
+        // SOTA-OK: variant-only assertion sufficient — VerifyError::VerifyDisabled is a unit variant carrying no semantic state.
         prop_assert!(matches!(err, VerifyError::VerifyDisabled));
     }
 }

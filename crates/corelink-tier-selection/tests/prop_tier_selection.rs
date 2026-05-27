@@ -152,6 +152,7 @@ proptest! {
 
         if gap_ms < TIER_SELECTION_LOCK_WINDOW_MS {
             // Within window → LockHeld.
+            // SOTA-OK: variant-only assertion sufficient — TierError::LockHeld carries no semantic state.
             prop_assert!(matches!(r2, Err(TierError::LockHeld)),
                 "expected LockHeld within {TIER_SELECTION_LOCK_WINDOW_MS}ms, got {r2:?}");
         } else {
@@ -239,6 +240,7 @@ proptest! {
             TierKind::Enterprise,
             "u@x.com",
         ).unwrap_err();
+        // SOTA-OK: variant-only assertion sufficient — TierError::UseInquiryForm carries no semantic state.
         prop_assert!(matches!(err, TierError::UseInquiryForm));
         prop_assert_eq!(stripe.sessions().len(), 0, "Stripe must not be called for Enterprise");
         prop_assert!(audit.has_event(TierSelectionAuditEventType::EnterpriseRouteBypassAttempt));
@@ -278,7 +280,12 @@ proptest! {
             "u@x.com",
         );
         prop_assert!(result.is_err());
-        prop_assert!(matches!(result.unwrap_err(), TierError::Audit(_)));
+        match result.unwrap_err() {
+            TierError::Audit(msg) => {
+                prop_assert!(!msg.is_empty(), "Audit error message must not be empty");
+            }
+            other => prop_assert!(false, "expected TierError::Audit, got {other:?}"),
+        }
         // Stripe must NOT have been called.
         prop_assert_eq!(stripe.sessions().len(), 0);
         // No row materialized.
@@ -327,7 +334,12 @@ proptest! {
             prop_assert!(r.is_ok(), "expected ok, got {r:?}");
         } else {
             prop_assert!(r.is_err());
-            prop_assert!(matches!(r.unwrap_err(), TierError::InvalidSignature(_)));
+            match r.unwrap_err() {
+                TierError::InvalidSignature(msg) => {
+                    prop_assert!(!msg.is_empty(), "InvalidSignature message must not be empty");
+                }
+                other => prop_assert!(false, "expected TierError::InvalidSignature, got {other:?}"),
+            }
         }
     }
 }

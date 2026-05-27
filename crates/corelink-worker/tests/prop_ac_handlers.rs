@@ -182,6 +182,7 @@ proptest! {
 
             // B reads — must 404.
             let r = w.handler.get_action_result(&ctx_b, &ad, "req-b").await;
+            // SOTA-OK: variant-only assertion sufficient — AcError::NotFound is a unit variant carrying no semantic state.
             prop_assert!(matches!(r, Err(AcError::NotFound)), "B must see 404; got {r:?}");
             Ok(())
         }).unwrap();
@@ -228,6 +229,7 @@ proptest! {
             let (ad, ar) = synthesize_action_result(seed_action);
             // 1st GET — miss.
             let r = w.handler.get_action_result(&ctx, &ad, "req-1").await;
+            // SOTA-OK: variant-only assertion sufficient — AcError::NotFound is a unit variant carrying no semantic state.
             prop_assert!(matches!(r, Err(AcError::NotFound)));
             // Neg cache hot.
             let tctx = ctx.tenant_ctx();

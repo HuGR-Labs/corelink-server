@@ -167,6 +167,7 @@ proptest! {
                 .splice_blob(&ctx_b, &fin.manifest_digest, &mut sink, "req-b-spl")
                 .await
                 .unwrap_err();
+            // SOTA-OK: variant-only assertion sufficient — SpliceError::ManifestNotFound is a unit variant carrying no semantic state.
             prop_assert!(matches!(err, SpliceError::ManifestNotFound),
                 "cross-tenant splice MUST return ManifestNotFound, got {err:?}");
             prop_assert!(sink.snapshot().is_empty(),
@@ -279,12 +280,21 @@ proptest! {
                     Bytes::from_static(b"late"), "req-late")
                 .await
                 .unwrap_err();
+            // SOTA-OK: variant-only assertion sufficient — SplitError::SessionAborted is a unit variant carrying no semantic state.
             prop_assert!(matches!(err, SplitError::SessionAborted),
                 "post-abort append MUST return SessionAborted, got {err:?}");
             // Finalize rejected.
             let err = handler.finalize_split(&ctx, sid, "req-fin").await.unwrap_err();
-            prop_assert!(matches!(err, SplitError::BackendUnavailable(_) | SplitError::SessionAborted),
-                "post-abort finalize MUST be rejected (Aborted lifts as Backend in the InMemory fake), got {err:?}");
+            match &err {
+                SplitError::SessionAborted => {
+                    // SOTA-OK: SessionAborted is a unit variant carrying no semantic state.
+                }
+                SplitError::BackendUnavailable(msg) => {
+                    prop_assert!(!msg.is_empty(), "BackendUnavailable reason must not be empty");
+                }
+                other => prop_assert!(false,
+                    "post-abort finalize MUST be rejected (Aborted lifts as Backend in the InMemory fake), got {other:?}"),
+            }
             // Splice on a never-finalized blob MUST report ManifestNotFound.
             let mut sink = CollectingSink::new();
             // We don't have a manifest digest here; sample an arbitrary
@@ -292,6 +302,7 @@ proptest! {
             // is statistically negligible.)
             let unknown = corelink_worker::reapi::cas::ManifestDigest::from_bytes([1u8; 32]);
             let err = handler.splice_blob(&ctx, &unknown, &mut sink, "req-spl").await.unwrap_err();
+            // SOTA-OK: variant-only assertion sufficient — SpliceError::ManifestNotFound is a unit variant carrying no semantic state.
             prop_assert!(matches!(err, SpliceError::ManifestNotFound));
             Ok(())
         })?;

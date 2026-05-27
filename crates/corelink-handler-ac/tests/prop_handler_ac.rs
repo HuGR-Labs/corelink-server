@@ -82,7 +82,12 @@ proptest! {
             tenant.clone(),
             1,
         )).expect_err("audit closed");
-        prop_assert!(matches!(err, AcHandlerError::AuditFailed(_)));
+        match &err {
+            AcHandlerError::AuditFailed(msg) => {
+                prop_assert!(msg.contains("d1 down"), "expected injected message; got {msg:?}");
+            }
+            other => prop_assert!(false, "expected AuditFailed, got {other:?}"),
+        }
         // Subsequent lookup is a miss — no mutation occurred.
         let miss_err = h.lookup(AcLookupRequest::new(
             tenant.clone(),
@@ -93,6 +98,11 @@ proptest! {
         ));
         // The injection persists so any further audit call fails too;
         // the structural assertion is that the update did NOT commit.
-        prop_assert!(matches!(miss_err, Err(AcHandlerError::AuditFailed(_))));
+        match &miss_err {
+            Err(AcHandlerError::AuditFailed(msg)) => {
+                prop_assert!(msg.contains("d1 down"), "expected injected message; got {msg:?}");
+            }
+            other => prop_assert!(false, "expected Err(AuditFailed), got {other:?}"),
+        }
     }
 }

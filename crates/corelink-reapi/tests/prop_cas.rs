@@ -439,6 +439,7 @@ proptest! {
         );
 
         // Must return HashMismatch.
+        // SOTA-OK: variant-only assertion sufficient — inner HashMismatch is a unit struct carrying no semantic state.
         prop_assert!(matches!(
             result,
             Err(OrchestratorError::HashMismatch(_))

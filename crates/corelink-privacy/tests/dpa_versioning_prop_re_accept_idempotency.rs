@@ -73,6 +73,7 @@ proptest! {
         let r1 = handler.re_accept(tenant, v2, now);
         prop_assert!(r1.is_ok(), "first call must succeed");
         let r2 = handler.re_accept(tenant, v2, now + 1);
+        // SOTA-OK: variant-only assertion sufficient — NoPendingReacceptance is a unit variant carrying no semantic state.
         prop_assert!(matches!(r2, Err(DpaVersioningError::NoPendingReacceptance)));
     }
 
