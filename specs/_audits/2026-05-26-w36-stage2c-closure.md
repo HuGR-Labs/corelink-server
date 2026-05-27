@@ -362,10 +362,35 @@ All charter invariants preserved in migrated and unchanged files:
 Test count delta: zero (no tests added or removed; test executables
 all compile clean via `cargo test --workspace --no-run`).
 
-## §10. Sign-off
+## §10. Closure note — W36 Stage 3 cargo-deny lockdown enforced (2026-05-27)
+
+The §8 step 3 "cargo-deny lockdown" task is now executed and SEALed
+in `specs/_audits/2026-05-27-w36-stage-3-seal.md`. The lockdown
+adds 4 `[bans] deny` entries (one per absorbed adapter crate) to
+the workspace `deny.toml`, each with a `wrappers = [...]` allowlist
+enumerating exactly the legal historical direct importers (Wave-33
+umbrella façades + this audit's dangling `corelink-server` dep +
+the `e2e-signup-flow` workspace test crate + the Trigger B wasm32
+fallback edges). New consumers attempting direct imports fail CI at
+the cargo-deny gate with an explanatory error pointing to the
+canonical umbrella path.
+
+Combined with Trigger A SEAL (materializer src migrated to
+`corelink-billing-stripe-traits`,
+`specs/_audits/2026-05-27-w36-trigger-a-seal.md`) and Trigger B
+SEAL (scheduler `corelink-ops` platform-gated to `not(wasm32)`,
+`specs/_audits/2026-05-27-w36-trigger-b-seal.md`), this Partial-SEAL
+is upgraded to **FULL Wave-36 closure** end-to-end: closure-followups
+§3 follow-up #1 fully closed via path (c).
+
+## §11. Sign-off
 
 DCO sign-off: Gustavo Schneiter <gustavo@humangr.com>.
 
 Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>.
 
-**End of Wave 36 Stage 2.C Closure (Partial SEAL) audit.**
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com> (§10 closure
+note 2026-05-27 W36 Stage 3 SEAL).
+
+**End of Wave 36 Stage 2.C Closure audit (Partial SEAL upgraded to
+FULL closure 2026-05-27 via W36 Stage 3 SEAL).**
