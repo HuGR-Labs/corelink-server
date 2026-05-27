@@ -1,0 +1,131 @@
+{
+  "kvbackend-rpitit-not-object-safe": {
+    "verdict": "ATOMIC",
+    "reason": "Captures a single reference fact about the KvBackend trait's non-object-safety and its one direct consequence (bridges must be generic), which together form one indivisible unit.",
+    "splits": null,
+    "merge_into": null
+  },
+  "cargo-brew-adapter-port-error-types": {
+    "verdict": "ATOMIC",
+    "reason": "It records a single discovered fact\u2014one shared port-trait convention (port-local error types plus &str params) common to both adapters\u2014not independent units.",
+    "splits": null,
+    "merge_into": null
+  },
+  "cas-read-request-principal-is-string": {
+    "verdict": "ATOMIC",
+    "reason": "It captures one reference fact\u2014that `CasReadRequest.principal` is a `String`\u2014and the bridge-synthesis remark is a direct consequence of that single fact, not an independent unit.",
+    "splits": null,
+    "merge_into": null
+  },
+  "pat-validator-authenticate-signature": {
+    "verdict": "ATOMIC",
+    "reason": "It captures exactly one reference fact: the actual two-argument signature of `PatValidator::authenticate`.",
+    "splits": null,
+    "merge_into": null
+  },
+  "region-enum-variants-jurisdiction": {
+    "verdict": "NEEDS_SPLIT",
+    "reason": "It bundles a reference (the Region enum's variants and their R2/D1 region-code mappings) with an independent rule (Weur mandates DO jurisdiction = \"eu\"), each of which stands alone.",
+    "splits": [
+      {
+        "label": "region-enum-variants-jurisdiction",
+        "content": "In corelink-server the `Region` enum (corelink-region/src/region.rs) defines variants Wnam (us-west), Enam (us-east), Weur (eu-west), and Sam (sa-east), mapping to Cloudflare R2/D1 region codes."
+      },
+      {
+        "label": "weur-mandates-eu-do-jurisdiction",
+        "content": "The Weur region variant mandates a Durable Object jurisdiction of \"eu\"."
+      }
+    ],
+    "merge_into": null
+  },
+  "region-not-reexported-from-reapi": {
+    "verdict": "ATOMIC",
+    "reason": "It states a single fact\u2014where `Region` is and isn't exported from\u2014with the import-path detail serving as supporting evidence rather than an independent standalone unit.",
+    "splits": null,
+    "merge_into": null
+  },
+  "stubpatvalidator-insert-signature": {
+    "verdict": "ATOMIC",
+    "reason": "The capture records exactly one reference unit\u2014the full signature of a single function (`StubPatValidator::insert`)\u2014which stands alone without co-loading another zettel.",
+    "splits": null,
+    "merge_into": null
+  },
+  "oci-blobstore-chunked-upload": {
+    "verdict": "NEEDS_SPLIT",
+    "reason": "The discovered fact (BlobStore's chunked-upload protocol resists the CAS handler SPI) is independent from the routine clean mappings (ManifestKvStore\u2192KvBackend, TenantResolver\u2192PatValidator), which stand alone as their own reference unit.",
+    "splits": [
+      {
+        "label": "oci-blobstore-resists-cas-handler-spi",
+        "content": "In corelink-server, the OCI adapter's `BlobStore` port uses a chunked upload protocol (open_upload, append_chunk, finalize_upload) that does not map cleanly onto the CAS `CasReadHandler`/`CasWriteHandler` SPI traits, unlike the cargo/brew adapters."
+      },
+      {
+        "label": "oci-adapter-port-spi-mappings",
+        "content": "In corelink-server's OCI adapter, `ManifestKvStore` maps to the `KvBackend` SPI and `TenantResolver` maps to `PatValidator`."
+      }
+    ],
+    "merge_into": null
+  },
+  "secrecy-per-crate-not-workspace": {
+    "verdict": "NEEDS_SPLIT",
+    "reason": "It bundles a dependency-management fact (secrecy pinned per-crate rather than via workspace.dependencies) with a separate API-version fact (corelink-core uses the 0.10 ExposeSecret/SecretString API), each of which stands alone.",
+    "splits": [
+      {
+        "label": "secrecy-per-crate-not-workspace",
+        "content": "In corelink-server, `secrecy` is pinned to `\"0.10\"` directly in each crate rather than via `workspace = true`, so it is not declared in `[workspace.dependencies]`."
+      },
+      {
+        "label": "corelink-core-uses-secrecy-0-10-api",
+        "content": "corelink-core uses the secrecy 0.10 `ExposeSecret`/`SecretString` API."
+      }
+    ],
+    "merge_into": null
+  },
+  "secretwrap-expose-returns-str": {
+    "verdict": "NEEDS_SPLIT",
+    "reason": "It bundles a reference fact about expose()'s signature with an independent decision-rule about preferring it to avoid a secrecy dependency, each of which stands alone.",
+    "splits": [
+      {
+        "label": "secretwrap-expose-returns-str",
+        "content": "In corelink-core (corelink-core/src/types/secret.rs), `SecretWrap::expose()` returns `&str` directly."
+      },
+      {
+        "label": "prefer-secretwrap-expose-over-secrecy",
+        "content": "Prefer `SecretWrap::expose()` over `secrecy::ExposeSecret::expose_secret` so crates avoid a direct `secrecy` dependency."
+      }
+    ],
+    "merge_into": null
+  },
+  "authscope-variants-cacheread-cachewrite": {
+    "verdict": "ATOMIC",
+    "reason": "It captures a single reference unit\u2014the variant set of one enum (AuthScope)\u2014where the no-Cas note and the non-implication clause are clarifying facts about that same enum rather than independently standalone units.",
+    "splits": null,
+    "merge_into": null
+  },
+  "patvalidator-not-debug-bound": {
+    "verdict": "ATOMIC",
+    "reason": "It captures one rule (PatValidator lacks a Debug bound, so Arc<dyn PatValidator> holders need a manual Debug impl); the listed tenant bridges are illustrative instances of that single rule, not independent units.",
+    "splits": null,
+    "merge_into": null
+  },
+  "inmemory-cas-verifies-fake-hash": {
+    "verdict": "ATOMIC",
+    "reason": "It captures a single reference fact about InMemoryCasHandler's verification rule, with the production-CAS contrast serving as clarifying context for that same unit rather than an independent standalone concept.",
+    "splits": null,
+    "merge_into": null
+  },
+  "corelink-adapter-host-crate-purpose": {
+    "verdict": "NEEDS_SPLIT",
+    "reason": "It combines the crate's bridging purpose (a reference/concept unit) with an independent 500-LOC-per-file size convention (a rule), each of which stands alone.",
+    "splits": [
+      {
+        "label": "corelink-adapter-host-crate-purpose",
+        "content": "In corelink-server, the `corelink-adapter-host` crate (Wave 35) bridges the Wave-34 adapter ports (cargo/brew/oci/npm/pip) to the workspace Stage-1 SPI."
+      },
+      {
+        "label": "corelink-adapter-host-files-under-500-loc",
+        "content": "The `corelink-adapter-host` source files (lib.rs, cargo.rs, brew.rs, oci.rs, npm.rs, pip.rs) are each kept under 500 LOC."
+      }
+    ],
+    "merge_into": null
+  }
+}

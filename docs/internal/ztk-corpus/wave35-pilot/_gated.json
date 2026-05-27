@@ -1,0 +1,65 @@
+[
+  {
+    "trigger": "FACT_DISCOVERED",
+    "label": "kvbackend-rpitit-not-object-safe",
+    "content": "In corelink-server, the workspace `KvBackend` trait (corelink-worker/src/cache/kv.rs:158) uses RPITIT (`impl Future` return types) rather than async_trait, which makes it NOT object-safe \u2014 it cannot be used as `Arc<dyn KvBackend>`. Bridges over it must be generic (`K: KvBackend + 'static`).",
+    "quote": "The `KvBackend` uses RPITIT which makes it NOT object-safe. I need to check if we can use `Arc<dyn KvBackend>`.",
+    "phase": 1
+  },
+  {
+    "trigger": "FACT_DISCOVERED",
+    "label": "cargo-brew-adapter-port-error-types",
+    "content": "The corelink-adapter-cargo and corelink-adapter-brew adapters' port traits use their own port-local `CasError` / `TenantResolveError` types \u2014 NOT the crate-level `CargoAdapterError` / `BrewAdapterError`. They also take `&str` params rather than `&TenantId`/`&Digest`.",
+    "quote": "Important discovery: the cargo adapter uses its own `CasError` / `TenantResolveError` types (not `CargoAdapterError`)",
+    "phase": 1
+  },
+  {
+    "trigger": "FACT_DISCOVERED",
+    "label": "cas-read-request-principal-is-string",
+    "content": "In corelink-server, `CasReadRequest.principal` (corelink-handler-cas/src/request.rs) is just a `String`, so bridge-time synthesis of the principal is straightforward (a bridge struct can take `principal: String` as a constructor param).",
+    "quote": "**`CasReadRequest.principal`**: it's just a `String` \u2014 bridge-time synthesis is straightforward",
+    "phase": 1
+  },
+  {
+    "trigger": "FACT_DISCOVERED",
+    "label": "pat-validator-authenticate-signature",
+    "content": "In corelink-server, `PatValidator::authenticate` (corelink-reapi/src/pat.rs:225) takes `(token: &str, request_id: &str)` \u2014 two args, not the single-arg `(token: &str)` shape.",
+    "quote": "**`PatValidator::authenticate`** takes `(token: &str, request_id: &str)`",
+    "phase": 1
+  },
+  {
+    "trigger": "FACT_DISCOVERED",
+    "label": "region-not-reexported-from-reapi",
+    "content": "In corelink-server, `Region` is NOT re-exported from `corelink_reapi`; `corelink-reapi`'s lib.rs only exports `AuthScope, AuthStubError, PatValidator, StubPatValidator, TenantContext`. To get `Region`, code must use `corelink_replication::region_resolver::Region` (which itself re-exports `corelink_region` via `pub use corelink_region::*;`).",
+    "quote": "Region is NOT re-exported from reapi",
+    "phase": 2
+  },
+  {
+    "trigger": "FACT_DISCOVERED",
+    "label": "stubpatvalidator-insert-signature",
+    "content": "In corelink-server, `StubPatValidator::insert` (corelink-reapi/src/pat.rs) takes `(token, tenant_id: Uuid, principal_id: Uuid, region: Region, scopes: impl IntoIterator<Item=AuthScope>)`.",
+    "quote": "`StubPatValidator::insert` takes `(token, tenant_id: Uuid, principal_id: Uuid, region: Region, scopes: impl IntoIterator<Item=AuthScope>)`",
+    "phase": 2
+  },
+  {
+    "trigger": "FACT_DISCOVERED",
+    "label": "authscope-variants-cacheread-cachewrite",
+    "content": "In corelink-server, the `AuthScope` enum (corelink-reapi) has variants `CacheRead`, `CacheWrite`, and `CacheFindMissing` \u2014 there are NO `CasRead`/`CasWrite` variants. `CacheFindMissing` does NOT imply `CacheRead`.",
+    "quote": "The actual variants are `CacheRead` and `CacheWrite`, not `CasRead`/`CasWrite`.",
+    "phase": 3
+  },
+  {
+    "trigger": "FACT_DISCOVERED",
+    "label": "patvalidator-not-debug-bound",
+    "content": "In corelink-server, the `PatValidator` trait does not require `Debug` in its bound, so structs storing `Arc<dyn PatValidator>` cannot `#[derive(Debug)]` and need a manual `Debug` impl (e.g. the tenant bridges CargoTenantBridge, BrewTenantBridge, NpmTenantBridge, PipTenantBridge, OciTenantBridge in corelink-adapter-host).",
+    "quote": "`PatValidator` doesn't require `Debug` in its bound. I need to either:\n1. Add `: fmt::Debug` to the `PatValidator` bound when stored, or\n2. Implement `Debug` manually",
+    "phase": 3
+  },
+  {
+    "trigger": "FACT_DISCOVERED",
+    "label": "inmemory-cas-verifies-fake-hash",
+    "content": "In corelink-server, the `InMemoryCasHandler` test/stub verifies `fake_hash(bytes) == claimed_hash`, meaning the `claimed_hash` in a `CasWriteRequest` must equal `fake_hash(bytes)` when using it. A real production CAS handler has no such constraint (it verifies BLAKE3).",
+    "quote": "The `InMemoryCasHandler` verifies `fake_hash(bytes) == claimed_hash`.",
+    "phase": 4
+  }
+]

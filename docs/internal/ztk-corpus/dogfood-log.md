@@ -117,3 +117,40 @@ Anti-asks honored per devolutiva §8:
 | Session | Date | Source | Zettels | Status |
 |---|---|---|---|---|
 | 1 | 2026-05-26 | Wave 34 cargo v2 SEAL | 14 | ✅ DONE (4/14 sampled; 10 sampling pending) |
+| 2 | 2026-05-26 | Wave 35 Phase 2 absorption agent (KvBackend / CAS / PAT / OCI BlobStore findings) | 9 linked | ✅ DONE (artifacts in `wave35-pilot/`; 5 NEEDS_SPLIT pre-gate then 9 atomic survivors; 20 cross-links, avg 2.22/zettel) |
+
+---
+
+## Session 2 — 2026-05-26 — Wave 35 Phase 2 absorption pilot
+
+**Transcript:** Wave 35 Phase 2 absorption agent (CAS / ADAPTER-HOST cluster — port-trait + RPITIT findings).
+
+**Input:** subagent transcript (~16 captured FACT_DISCOVERED events across 5 phases).
+
+**Output:** `docs/internal/ztk-corpus/wave35-pilot/linked/` (9 zettels; ZTK L1 grammar v0.1).
+
+### Pipeline counts
+
+| Stage | Counts |
+|---|---|
+| capture.py | attempted=16 (5 phases), accepted=16 |
+| filter.py | signal=14, duplicate=2 |
+| gates.py | ATOMIC=9, NEEDS_SPLIT=5 (post-split: would yield 10 atomic units) |
+| linking.py | 9/9 linked; 20 cross-links; avg 2.22/zettel |
+| **Total** | **9 final zettels** |
+
+### Wins vs Session 1
+
+- **NEEDS_SPLIT detection working** — 5 captures correctly flagged as compound (e.g. `region-enum-variants-jurisdiction` bundling enum-variants-reference WITH weur-mandates-eu-do-rule); auto-suggested split candidates surfaced for each. Suggests Session 2 captures had broader cognitive scope than Session 1's adapter-port findings.
+- **Cross-link density up** — Session 1 had ~1.x avg cross-links/zettel; Session 2 hit 2.22. RPITIT/object-safety/PAT-validator/CAS-handler cluster forms a small clique (good signal for downstream recall).
+- **Zero noise / zero agent_meta** — same as Session 1; precision filter stays strong on agent transcripts.
+
+### Frictions
+
+- **NEEDS_SPLIT not automatically resolved** — the 5 violations were SURFACED with split candidates but not actioned (no consumer-side splitter yet). For ZTK pipeline maturity, an optional auto-split stage would close the loop.
+- **No agent-source tagging in captures.json** — couldn't easily extract which W35-P2 agent generated the transcript without grepping into individual capture content. Suggests capture.py could include source-transcript metadata.
+
+### Anti-asks (continued)
+
+- ❌ Did NOT capture this orchestrator meta-session (still too big; picked one of the W35-P2 absorption agents instead, consistent with Session 1 policy).
+- ❌ Did NOT modify `grammar/v0.1.md` (LOCKED).

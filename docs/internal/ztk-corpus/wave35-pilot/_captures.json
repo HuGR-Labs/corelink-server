@@ -1,0 +1,114 @@
+[
+  {
+    "trigger": "FACT_DISCOVERED",
+    "label": "kvbackend-rpitit-not-object-safe",
+    "content": "In corelink-server, the workspace `KvBackend` trait (corelink-worker/src/cache/kv.rs:158) uses RPITIT (`impl Future` return types) rather than async_trait, which makes it NOT object-safe \u2014 it cannot be used as `Arc<dyn KvBackend>`. Bridges over it must be generic (`K: KvBackend + 'static`).",
+    "quote": "The `KvBackend` uses RPITIT which makes it NOT object-safe. I need to check if we can use `Arc<dyn KvBackend>`.",
+    "phase": 1
+  },
+  {
+    "trigger": "FACT_DISCOVERED",
+    "label": "cargo-brew-adapter-port-error-types",
+    "content": "The corelink-adapter-cargo and corelink-adapter-brew adapters' port traits use their own port-local `CasError` / `TenantResolveError` types \u2014 NOT the crate-level `CargoAdapterError` / `BrewAdapterError`. They also take `&str` params rather than `&TenantId`/`&Digest`.",
+    "quote": "Important discovery: the cargo adapter uses its own `CasError` / `TenantResolveError` types (not `CargoAdapterError`)",
+    "phase": 1
+  },
+  {
+    "trigger": "FACT_DISCOVERED",
+    "label": "cas-read-request-principal-is-string",
+    "content": "In corelink-server, `CasReadRequest.principal` (corelink-handler-cas/src/request.rs) is just a `String`, so bridge-time synthesis of the principal is straightforward (a bridge struct can take `principal: String` as a constructor param).",
+    "quote": "**`CasReadRequest.principal`**: it's just a `String` \u2014 bridge-time synthesis is straightforward",
+    "phase": 1
+  },
+  {
+    "trigger": "FACT_DISCOVERED",
+    "label": "pat-validator-authenticate-signature",
+    "content": "In corelink-server, `PatValidator::authenticate` (corelink-reapi/src/pat.rs:225) takes `(token: &str, request_id: &str)` \u2014 two args, not the single-arg `(token: &str)` shape.",
+    "quote": "**`PatValidator::authenticate`** takes `(token: &str, request_id: &str)`",
+    "phase": 1
+  },
+  {
+    "trigger": "STRUCTURAL_LAYOUT",
+    "label": "region-enum-variants-jurisdiction",
+    "content": "In corelink-server, the `Region` enum (corelink-region/src/region.rs) has variants Wnam (us-west), Enam (us-east), Weur (eu-west), and Sam (sa-east), mapping to Cloudflare R2/D1 region codes. The Weur variant mandates DO jurisdiction = \"eu\".",
+    "quote": "/// WEUR \u2014 eu-west (Cloudflare R2/D1 `weur`). DO jurisdiction = \"eu\" mandatory.",
+    "phase": 2
+  },
+  {
+    "trigger": "FACT_DISCOVERED",
+    "label": "region-not-reexported-from-reapi",
+    "content": "In corelink-server, `Region` is NOT re-exported from `corelink_reapi`; `corelink-reapi`'s lib.rs only exports `AuthScope, AuthStubError, PatValidator, StubPatValidator, TenantContext`. To get `Region`, code must use `corelink_replication::region_resolver::Region` (which itself re-exports `corelink_region` via `pub use corelink_region::*;`).",
+    "quote": "Region is NOT re-exported from reapi",
+    "phase": 2
+  },
+  {
+    "trigger": "FACT_DISCOVERED",
+    "label": "stubpatvalidator-insert-signature",
+    "content": "In corelink-server, `StubPatValidator::insert` (corelink-reapi/src/pat.rs) takes `(token, tenant_id: Uuid, principal_id: Uuid, region: Region, scopes: impl IntoIterator<Item=AuthScope>)`.",
+    "quote": "`StubPatValidator::insert` takes `(token, tenant_id: Uuid, principal_id: Uuid, region: Region, scopes: impl IntoIterator<Item=AuthScope>)`",
+    "phase": 2
+  },
+  {
+    "trigger": "FACT_DISCOVERED",
+    "label": "oci-blobstore-chunked-upload",
+    "content": "In corelink-server, the OCI adapter's `BlobStore` port uses a chunked upload protocol (open_upload, append_chunk, finalize_upload...) that does not map cleanly onto the CAS `CasReadHandler`/`CasWriteHandler` SPI traits, unlike the cargo/brew adapters. Its `ManifestKvStore` maps to `KvBackend` and `TenantResolver` to `PatValidator`.",
+    "quote": "OCI's `BlobStore` has a fundamentally different protocol (chunked upload)",
+    "phase": 2
+  },
+  {
+    "trigger": "FACT_DISCOVERED",
+    "label": "secrecy-per-crate-not-workspace",
+    "content": "In corelink-server, the `secrecy` crate is pinned to version `\"0.10\"` and is NOT declared in `[workspace.dependencies]` \u2014 each crate specifies `secrecy = \"0.10\"` directly rather than via `workspace = true`. corelink-core uses the 0.10 `ExposeSecret`/`SecretString` API.",
+    "quote": "secrecy is not in workspace.dependencies \u2014 it's specified per-crate. I need to use `\"0.10\"` directly, not `workspace = true`",
+    "phase": 3
+  },
+  {
+    "trigger": "FACT_DISCOVERED",
+    "label": "secretwrap-expose-returns-str",
+    "content": "In corelink-server, `SecretWrap::expose()` (corelink-core/src/types/secret.rs) returns `&str` directly. Prefer it over calling `secrecy::ExposeSecret::expose_secret` so crates don't need a direct `secrecy` dependency.",
+    "quote": "`SecretWrap::expose()` returns `&str` directly. I should use that instead.",
+    "phase": 3
+  },
+  {
+    "trigger": "FACT_DISCOVERED",
+    "label": "authscope-variants-cacheread-cachewrite",
+    "content": "In corelink-server, the `AuthScope` enum (corelink-reapi) has variants `CacheRead`, `CacheWrite`, and `CacheFindMissing` \u2014 there are NO `CasRead`/`CasWrite` variants. `CacheFindMissing` does NOT imply `CacheRead`.",
+    "quote": "The actual variants are `CacheRead` and `CacheWrite`, not `CasRead`/`CasWrite`.",
+    "phase": 3
+  },
+  {
+    "trigger": "FACT_DISCOVERED",
+    "label": "patvalidator-not-debug-bound",
+    "content": "In corelink-server, the `PatValidator` trait does not require `Debug` in its bound, so structs storing `Arc<dyn PatValidator>` cannot `#[derive(Debug)]` and need a manual `Debug` impl (e.g. the tenant bridges CargoTenantBridge, BrewTenantBridge, NpmTenantBridge, PipTenantBridge, OciTenantBridge in corelink-adapter-host).",
+    "quote": "`PatValidator` doesn't require `Debug` in its bound. I need to either:\n1. Add `: fmt::Debug` to the `PatValidator` bound when stored, or\n2. Implement `Debug` manually",
+    "phase": 3
+  },
+  {
+    "trigger": "FACT_DISCOVERED",
+    "label": "inmemory-cas-verifies-fake-hash",
+    "content": "In corelink-server, the `InMemoryCasHandler` test/stub verifies `fake_hash(bytes) == claimed_hash`, meaning the `claimed_hash` in a `CasWriteRequest` must equal `fake_hash(bytes)` when using it. A real production CAS handler has no such constraint (it verifies BLAKE3).",
+    "quote": "The `InMemoryCasHandler` verifies `fake_hash(bytes) == claimed_hash`.",
+    "phase": 4
+  },
+  {
+    "trigger": "FACT_DISCOVERED",
+    "label": "worker-region-vs-replication-region",
+    "content": "In corelink-server there are two distinct `Region` enums: `corelink_worker::Region` (corelink-worker/src/region.rs) only has the `Wnam` variant, while `corelink_replication::region_resolver::Region` has `Wnam`, `Enam`, `Weur`, `Sam`. Importing both into a test module causes ambiguous resolution; qualify the path to avoid `Region::Enam` resolving to the worker enum.",
+    "quote": "`corelink_worker::Region` only has `Wnam`. That's a different `Region` enum from `corelink_replication::region_resolver::Region`",
+    "phase": 4
+  },
+  {
+    "trigger": "FACT_DISCOVERED",
+    "label": "replication-region-resolver-reexports-worker-region",
+    "content": "In corelink-server, `corelink_replication::region_resolver::Region` is a re-export of `corelink_worker::Region` (the module does `pub use corelink_worker::{Region, TenantCtx};`). Consequently it only has the `Wnam` variant \u2014 variants like `Enam`/`Sam`/`Weur` do not exist on it. corelink-reapi's pat.rs imports this same `corelink_replication::region_resolver::Region`.",
+    "quote": "pub use corelink_worker::{Region, TenantCtx};",
+    "phase": 5
+  },
+  {
+    "trigger": "STRUCTURAL_LAYOUT",
+    "label": "corelink-adapter-host-crate-purpose",
+    "content": "In corelink-server, the `corelink-adapter-host` crate (added in Wave 35) bridges the Wave-34 adapter ports (cargo/brew/oci/npm/pip) to the workspace Stage-1 SPI. Its source files (lib.rs, cargo.rs, brew.rs, oci.rs, npm.rs, pip.rs) are each kept under 500 LOC.",
+    "quote": "feat(wave-35): corelink-adapter-host \u2014 bridge Wave-",
+    "phase": 5
+  }
+]

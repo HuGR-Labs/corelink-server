@@ -1,0 +1,98 @@
+[
+  {
+    "label": "kvbackend-rpitit-not-object-safe",
+    "trigger": "FACT_DISCOVERED",
+    "class": "signal",
+    "reason": "States a concrete, atomic technical fact about CoreLink's KvBackend trait and its object-safety constraint useful for future project sessions."
+  },
+  {
+    "label": "cargo-brew-adapter-port-error-types",
+    "trigger": "FACT_DISCOVERED",
+    "class": "signal",
+    "reason": "Atomic fact about CoreLink's cargo/brew adapter port traits using port-local error types and &str params, useful in future project sessions."
+  },
+  {
+    "label": "cas-read-request-principal-is-string",
+    "trigger": "FACT_DISCOVERED",
+    "class": "signal",
+    "reason": "States a concrete, atomic fact about CoreLink's code (CasReadRequest.principal type) useful for future bridge work in this repo."
+  },
+  {
+    "label": "pat-validator-authenticate-signature",
+    "trigger": "FACT_DISCOVERED",
+    "class": "signal",
+    "reason": "Atomic, verifiable fact about a specific function signature in the CoreLink repo, useful for future project sessions and distinct from other corpus captures."
+  },
+  {
+    "label": "region-enum-variants-jurisdiction",
+    "trigger": "STRUCTURAL_LAYOUT",
+    "class": "signal",
+    "reason": "Atomic, concrete fact about CoreLink's Region enum variants and the Weur\u2192EU jurisdiction binding, useful in future project sessions."
+  },
+  {
+    "label": "region-not-reexported-from-reapi",
+    "trigger": "FACT_DISCOVERED",
+    "class": "signal",
+    "reason": "Concrete, atomic fact about CoreLink's module structure (where Region must be imported from), useful in future project sessions and distinct from the related re-export captures."
+  },
+  {
+    "label": "stubpatvalidator-insert-signature",
+    "trigger": "FACT_DISCOVERED",
+    "class": "signal",
+    "reason": "Records a concrete API signature for StubPatValidator::insert in the CoreLink repo, useful in future project sessions and distinct from the other corpus captures."
+  },
+  {
+    "label": "oci-blobstore-chunked-upload",
+    "trigger": "FACT_DISCOVERED",
+    "class": "signal",
+    "reason": "Atomic, real fact about CoreLink's OCI adapter port-to-SPI mapping that is useful in future project sessions and not duplicated elsewhere in the corpus."
+  },
+  {
+    "label": "secrecy-per-crate-not-workspace",
+    "trigger": "FACT_DISCOVERED",
+    "class": "signal",
+    "reason": "Concrete, atomic fact about CoreLink's dependency management \u2014 secrecy 0.10 pinned per-crate rather than via workspace dependencies."
+  },
+  {
+    "label": "secretwrap-expose-returns-str",
+    "trigger": "FACT_DISCOVERED",
+    "class": "signal",
+    "reason": "States a concrete operating rule about CoreLink's codebase\u2014using SecretWrap::expose() at a specific path instead of secrecy's expose_secret to avoid the dependency."
+  },
+  {
+    "label": "authscope-variants-cacheread-cachewrite",
+    "trigger": "FACT_DISCOVERED",
+    "class": "signal",
+    "reason": "Atomic fact about CoreLink's AuthScope enum variants and their semantics, useful in future project sessions."
+  },
+  {
+    "label": "patvalidator-not-debug-bound",
+    "trigger": "FACT_DISCOVERED",
+    "class": "signal",
+    "reason": "Atomic project-specific fact that PatValidator lacks a Debug bound, forcing manual Debug impls on named tenant bridges in corelink-adapter-host."
+  },
+  {
+    "label": "inmemory-cas-verifies-fake-hash",
+    "trigger": "FACT_DISCOVERED",
+    "class": "signal",
+    "reason": "States a specific, atomic operating constraint of CoreLink's InMemoryCasHandler stub useful in future project sessions."
+  },
+  {
+    "label": "worker-region-vs-replication-region",
+    "trigger": "FACT_DISCOVERED",
+    "class": "duplicate",
+    "reason": "It restates replication-region-resolver-reexports-worker-region and region-enum-variants-jurisdiction content about the two Region enums and their variants, materially overlapping with existing captures."
+  },
+  {
+    "label": "replication-region-resolver-reexports-worker-region",
+    "trigger": "FACT_DISCOVERED",
+    "class": "duplicate",
+    "reason": "It restates the worker-region-vs-replication-region capture \u2014 that corelink_replication's Region is the same as corelink_worker's Region with only the Wnam variant."
+  },
+  {
+    "label": "corelink-adapter-host-crate-purpose",
+    "trigger": "STRUCTURAL_LAYOUT",
+    "class": "signal",
+    "reason": "Atomic project fact about CoreLink's corelink-adapter-host crate purpose, contents, and LOC rule, distinct from other corpus captures."
+  }
+]

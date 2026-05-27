@@ -1,0 +1,26 @@
+[
+  {
+    "trigger": "FACT_DISCOVERED",
+    "label": "oci-adapter-distinct-port-shape",
+    "content": "The corelink-adapter-oci adapter's ports differ from the other adapters: trait `BlobStore` (not CasStore), `ManifestKvStore` (not KvStore), `TenantResolver::resolve_pat(&SecretWrap)`, and uses `PortResult<T> = Result<T, String>` plus `bytes::Bytes`.",
+    "quote": "oci uses `PortResult<T> = Result<T, String>`, `bytes::Bytes`, `SecretWrap`, completely different shape",
+    "phase": 1,
+    "reason": "quote_not_in_transcript"
+  },
+  {
+    "trigger": "HISTORICAL_CONTEXT",
+    "label": "wave34-adapters-inline-ports",
+    "content": "Per the Wave-34 charter (parallel-safe per Section 0.6), each per-package-manager adapter in corelink-server (cargo/npm/brew/oci/pip) declares its own minimal port surface inline rather than depending on a shared port crate.",
+    "quote": "each per-package-manager adapter (cargo /\nnpm / brew / oci / pip) declares its own minimal port surface\ninline rather than",
+    "phase": 1,
+    "reason": "quote_not_in_transcript"
+  },
+  {
+    "trigger": "STATEMENT_AS_RULE",
+    "label": "kvbridge-wire-format-ts-prefix",
+    "content": "In corelink-server's corelink-adapter-host, the NpmKvBridge and PipKvBridge wire format stores `inserted_at_unix_ms` as an 8-byte big-endian prefix before the value bytes; the pip bridge encoding matches the npm bridge encoding exactly.",
+    "quote": "`inserted_at_unix_ms` is stored as an 8-byte big-endian prefix before\n/// the value bytes. This matches the npm bridge encoding exactly.",
+    "phase": 4,
+    "reason": "quote_not_in_transcript"
+  }
+]
