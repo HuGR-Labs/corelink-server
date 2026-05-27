@@ -3,6 +3,8 @@ name = "corelink-reapi-fuzz"
 version = "0.1.0"
 edition = "2021"
 publish = false
+license = "UNLICENSED"
+description = "cargo-fuzz harnesses for corelink-reapi — protobuf BatchUpdate decode robustness, audit request-id totality, and ReadResource resource-name parser stability under arbitrary inputs."
 
 [package.metadata]
 cargo-fuzz = true

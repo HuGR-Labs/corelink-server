@@ -5,6 +5,7 @@ name = "corelink-audit-chain-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2021"
+license = "UNLICENSED"
 description = "cargo-fuzz harnesses for corelink-audit-chain — BLAKE3 hash-chain append determinism (insertion-order dependence; recompute-from-head matches builder head) + JCS canonicalization idempotence (canonicalize(canonicalize(x)) == canonicalize(x))."
 
 [package.metadata]

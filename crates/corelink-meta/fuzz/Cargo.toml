@@ -5,6 +5,8 @@ name = "corelink-meta-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2021"
+license = "UNLICENSED"
+description = "cargo-fuzz harnesses for corelink-meta — commit/put roundtrip determinism and audit-entry idempotency under arbitrary insertion order."
 
 [package.metadata]
 cargo-fuzz = true

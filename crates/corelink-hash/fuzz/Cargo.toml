@@ -5,6 +5,8 @@ name = "corelink-hash-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2021"
+license = "UNLICENSED"
+description = "cargo-fuzz harnesses for corelink-hash — digest_parse (arbitrary bytes through digest-string parser; must never panic) and verify_body (streaming verify on adversarial inputs; constant-time mismatch reporting)."
 
 [package.metadata]
 cargo-fuzz = true

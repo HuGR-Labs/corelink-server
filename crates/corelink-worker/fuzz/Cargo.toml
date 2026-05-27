@@ -5,6 +5,8 @@ name = "corelink-worker-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2021"
+license = "UNLICENSED"
+description = "cargo-fuzz harnesses for corelink-worker — R2 object-path derivation injection safety and R2 put/get roundtrip equivalence under arbitrary tenant + content-digest inputs."
 
 [package.metadata]
 cargo-fuzz = true
