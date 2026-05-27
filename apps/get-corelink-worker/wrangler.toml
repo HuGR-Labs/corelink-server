@@ -1,0 +1,71 @@
+# Wrangler configuration for the `get-corelink-worker` (Phase 0.H).
+#
+# This Worker serves the CoreLink CLI install one-liner at
+# https://get.corelink.io. It is a pure static-string render — no KV /
+# R2 / D1 / DO bindings, no outbound fetches, no secrets.
+#
+# Architecture choice: the script body is held in `src/install.ts` as a
+# string constant (NOT a Worker Static Asset binding) so the Worker can
+# enforce required-query-parameter validation, set strict Cache-Control
+# headers, and surface CF-side metrics without an extra request to KV.
+# This keeps p99 < 50 ms even from cold start.
+#
+# DNS / custom-domain setup is OUT OF SCOPE for this file — Gustavo
+# wires `get.corelink.io` as a CF custom domain on the Worker via the
+# CF dashboard (separate runbook, see `apps/get-corelink-worker/README.md`
+# §"Deploy"). The `[env.prod.routes]` block below tells CF Edge to
+# invoke this Worker for matching requests once DNS is live.
+
+name = "corelink-get-cli"
+main = "src/index.ts"
+compatibility_date = "2026-04-01"
+compatibility_flags = ["nodejs_compat"]
+
+# ── Security hardening (matches root wrangler.toml convention) ────────────
+#
+# workers_dev = false :: Worker is NOT reachable at any
+#   <name>.<account-subdomain>.workers.dev URL. Bot scans of *.workers.dev
+#   cannot find this Worker. Customer traffic arrives ONLY via the
+#   `get.corelink.io` custom-domain route configured in [env.prod.routes].
+#
+# Pre-DNS smoke testing uses `wrangler dev` (local) or
+# `wrangler dev --remote` (preview URL is auth-required, not bot-scannable).
+workers_dev = false
+
+# [limits] cpu_ms — static string render is sub-millisecond. 10ms cap
+# gives 10x headroom and bounds worst case for any future template
+# expansion logic. (Default on Workers Paid plan is 50 ms; 10 is more
+# than enough.)
+[limits]
+cpu_ms = 10
+
+# Non-secret vars. The CoreLink CLI release origin + default API
+# endpoint are non-credential config so they live here, not in
+# `wrangler secret`. Both values are PUBLIC by definition (the install
+# script is fetched and read by every developer who runs the curl
+# one-liner).
+[vars]
+ENVIRONMENT = "dev"
+RELEASE_ORIGIN = "https://github.com/humangr-labs/corelink-cli/releases/latest/download"
+DEFAULT_API_ENDPOINT = "https://corelink-api.humangr.com"
+
+# ── Production environment (deploy with --env prod) ──────────────────────
+[env.prod]
+name = "corelink-get-cli-prod"
+vars = { ENVIRONMENT = "prod", RELEASE_ORIGIN = "https://github.com/humangr-labs/corelink-cli/releases/latest/download", DEFAULT_API_ENDPOINT = "https://corelink-api.humangr.com" }
+
+# `get.corelink.io` route binding — once DNS is set up (Gustavo runbook,
+# see README.md §Deploy), this tells CF Edge to invoke this Worker for
+# every request matching the pattern.
+#
+# Pattern uses `/*` so both `https://get.corelink.io` and
+# `https://get.corelink.io/?ref=marketing` route to the Worker; the
+# Worker ignores query params and always renders the same script.
+#
+# `zone_name = "corelink.io"` assumes `corelink.io` is a CF zone in the
+# humangr-labs CF account. If `corelink.io` is owned but not delegated
+# to CF nameservers yet, this deploy will fail with a clear error
+# message — see hard-pause trigger in the agent prompt §6.
+[[env.prod.routes]]
+pattern = "get.corelink.io/*"
+zone_name = "corelink.io"
