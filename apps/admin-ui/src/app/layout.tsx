@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
 import { ClerkProvider } from "@clerk/nextjs";
+import { PlausibleScript } from "@/components/analytics/PlausibleScript";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -37,6 +38,8 @@ export default async function RootLayout({
       <body data-nonce={nonce ?? ""}>
         <NextIntlClientProvider locale={locale} messages={messages}>
           {children}
+          {/* Phase 0.G — Plausible install (gated by analytics consent cookie). */}
+          <PlausibleScript />
         </NextIntlClientProvider>
       </body>
     </html>
