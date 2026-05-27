@@ -4,6 +4,7 @@ import {
   buildCspHeader,
   buildCspHeaderValue,
   containsUnsafeDirective,
+  containsScriptUnsafeInline,
   generateNonce,
   STATIC_SECURITY_HEADERS,
 } from "@/lib/csp";
@@ -18,11 +19,18 @@ describe("CSP header generation", () => {
     expect(style).toContain(`'nonce-${nonce}'`);
   });
 
-  it("never emits unsafe-inline or unsafe-eval", () => {
+  it("never emits unsafe-eval or unsafe-hashes", () => {
     const value = buildCspHeaderValue("any-nonce");
+    // containsUnsafeDirective checks 'unsafe-eval' + unsafe-hashes (never acceptable).
+    // 'unsafe-inline' is intentionally present on style-src (Tailwind + Clerk);
+    // it is validated absent from script-src in the separate test below.
     expect(containsUnsafeDirective(value)).toBe(false);
-    expect(value).not.toContain("'unsafe-inline'");
     expect(value).not.toContain("'unsafe-eval'");
+  });
+
+  it("'unsafe-inline' absent from script-src (only allowed on style-src)", () => {
+    const value = buildCspHeaderValue("any-nonce");
+    expect(containsScriptUnsafeInline(value)).toBe(false);
   });
 
   it("emits frame-ancestors 'none' and form-action 'self'", () => {
@@ -51,6 +59,7 @@ describe("CSP header generation", () => {
   });
 
   it("allows Stripe Checkout / portal endpoints for script + connect + frame", () => {
+    // Source: https://docs.stripe.com/security/guide#content-security-policy
     const directives = buildCspDirectives("n");
     const script = directives.find((d) => d.startsWith("script-src")) ?? "";
     const connect = directives.find((d) => d.startsWith("connect-src")) ?? "";
@@ -58,8 +67,29 @@ describe("CSP header generation", () => {
     expect(script).toContain("https://js.stripe.com");
     expect(connect).toContain("https://api.stripe.com");
     expect(connect).toContain("https://m.stripe.network");
+    // Added in csp-allowlist-validation audit (2026-05-27):
+    expect(connect).toContain("https://checkout.stripe.com");
+    expect(connect).toContain("https://billing.stripe.com");
     expect(frame).toContain("https://js.stripe.com");
     expect(frame).toContain("https://hooks.stripe.com");
+  });
+
+  it("allows Clerk frame-src for modal/popup auth steps", () => {
+    // Source: https://clerk.com/docs/security/content-security-policy
+    const directives = buildCspDirectives("n");
+    const frame = directives.find((d) => d.startsWith("frame-src")) ?? "";
+    expect(frame).toContain("https://clerk.corelink.humangr.com");
+  });
+
+  it("style-src includes 'unsafe-inline' (required by Tailwind + Clerk widgets)", () => {
+    // 'unsafe-inline' is acceptable on style-src per OWASP guidance when nonce is
+    // also present; required by Tailwind CSS JIT and Clerk modal overlay styles.
+    // MUST NOT appear on script-src.
+    const directives = buildCspDirectives("n");
+    const style = directives.find((d) => d.startsWith("style-src")) ?? "";
+    const script = directives.find((d) => d.startsWith("script-src")) ?? "";
+    expect(style).toContain("'unsafe-inline'");
+    expect(script).not.toContain("'unsafe-inline'");
   });
 
   it("connect-src is explicit per host — never permits wildcard", () => {
