@@ -98,6 +98,33 @@ const config: Config = {
     },
   ],
 
+  plugins: [
+    // Phase 0 §A `LEGAL-FOOTER-WIRE` — alias legacy compliance paths to the
+    // public `/legal/*` surface and absorb common visitor typos. Footer links
+    // (themeConfig.footer) keep their canonical `/legal/{privacy,terms,sub-processors}`
+    // targets; redirects below cover deep-link continuity from older external
+    // references and the docs-internal compliance/privacy explainers.
+    [
+      "@docusaurus/plugin-client-redirects",
+      {
+        // Targets must be live routes. Internal compliance explainers
+        // (`docs/explanation/compliance/dpa.mdx`, `privacy/gdpr.mdx`) are
+        // `draft: true` and excluded from production builds; until they
+        // lift draft status post-Legal+DPO review, `/legal/dpa` lands on
+        // the public privacy page (which links onward to the DPA explainer
+        // when published). The DPA-direct redirect is added here so it
+        // auto-upgrades the moment the explainer page goes live without
+        // touching this config again — just lift the draft flag.
+        redirects: [
+          { from: "/legal/dpa", to: "/legal/privacy" },
+          { from: "/privacy", to: "/legal/privacy" },
+          { from: "/terms", to: "/legal/terms" },
+          { from: "/sub-processors", to: "/legal/sub-processors" },
+        ],
+      },
+    ],
+  ],
+
   presets: [
     [
       "classic",
