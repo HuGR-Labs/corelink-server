@@ -54,18 +54,10 @@ DEFAULT_API_ENDPOINT = "https://corelink-api.humangr.com"
 name = "corelink-get-cli-prod"
 vars = { ENVIRONMENT = "prod", RELEASE_ORIGIN = "https://github.com/humangr-labs/corelink-cli/releases/latest/download", DEFAULT_API_ENDPOINT = "https://corelink-api.humangr.com" }
 
-# `get.corelink.io` route binding — once DNS is set up (Gustavo runbook,
-# see README.md §Deploy), this tells CF Edge to invoke this Worker for
-# every request matching the pattern.
-#
-# Pattern uses `/*` so both `https://get.corelink.io` and
-# `https://get.corelink.io/?ref=marketing` route to the Worker; the
-# Worker ignores query params and always renders the same script.
-#
-# `zone_name = "corelink.io"` assumes `corelink.io` is a CF zone in the
-# humangr-labs CF account. If `corelink.io` is owned but not delegated
-# to CF nameservers yet, this deploy will fail with a clear error
-# message — see hard-pause trigger in the agent prompt §6.
+# `corelink-get.humangr.com/*` route binding. Reuses existing humangr.com
+# CF zone with FLAT subdomain pattern (CF Universal SSL Free covers
+# `*.humangr.com` but NOT 3-level `*.corelink.humangr.com` — same Wave 32
+# Phase H lesson, hence flat names like corelink-{api,app,docs,signup,admin}.
 [[env.prod.routes]]
-pattern = "get.corelink.io/*"
-zone_name = "corelink.io"
+pattern = "corelink-get.humangr.com/*"
+zone_name = "humangr.com"
