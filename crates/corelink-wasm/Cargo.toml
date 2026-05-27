@@ -51,3 +51,4 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 wasm-bindgen-test = { workspace = true }
+proptest = { workspace = true }
