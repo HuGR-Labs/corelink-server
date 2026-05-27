@@ -35,6 +35,22 @@
 //! `corelink_region::Region`, `corelink_hash::Digest`, etc.) stay in
 //! place. Stage 1 streams will migrate their context-owned consumers
 //! via `pub use corelink_core::*` and drop the scattered duplicates.
+//!
+//! ## INV pin map (W36-PROPTEST-FU-001 closure)
+//!
+//! This crate is the apex types crate; its single INV reference
+//! (`INV-DATA-RESIDENCY` in `types::region`) is a **policy pin**
+//! documenting how `Region` participates in the data-residency
+//! invariant, not a load-bearing property test. Per
+//! WI-PROPTEST-FU-W33-001 closure
+//! (`specs/_audits/2026-05-26-w36-proptest-fu-001-seal.md`), the
+//! property test lives in the owning crate listed below; this crate
+//! is listed in `scripts/proptest-density-allowlist.txt` as an
+//! "INV-pin documentation" exemption:
+//!
+//! | INV ref pinned here   | Property-test owner crate                       |
+//! |-----------------------|-------------------------------------------------|
+//! | `INV-DATA-RESIDENCY`  | `corelink-signup` (regional-pin at signup path) |
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
