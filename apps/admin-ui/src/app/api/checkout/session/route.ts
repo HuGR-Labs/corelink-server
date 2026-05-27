@@ -57,10 +57,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { apiPost, ApiClientError } from "@/lib/api-client";
 
-// Node runtime (NOT edge) so that Clerk's server SDK has access to
-// `crypto.subtle` + `Buffer` for JWT decode + the lazy import succeeds.
-// The handler is small and stateless — cold-start cost is negligible.
-export const runtime = "nodejs";
+// Edge runtime — required by Cloudflare Pages (per Wave 32 Phase F).
+// Clerk's server SDK works on edge via the lazy `await import(...)`
+// pattern below; the same approach is used in `/api/welcome/stream`
+// and `/api/v1/[...path]`. JWT decode uses Web Crypto (`crypto.subtle`)
+// which is available in the edge runtime — no Buffer dependency.
+export const runtime = "edge";
 export const dynamic = "force-dynamic";
 
 /** Canonical paid tiers accepted by this route. */
