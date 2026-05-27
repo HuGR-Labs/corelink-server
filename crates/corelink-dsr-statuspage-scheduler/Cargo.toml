@@ -45,6 +45,19 @@ corelink-cf-bindings = { workspace = true }
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 worker = { version = "0.8", features = ["d1", "http"] }
 
+# W36 Stage 2.C Trigger B (closure spec
+# `specs/_audits/2026-05-26-w36-stage2c-closure.md` §5.2):
+# `corelink-ops` (Wave-33 canonical ops umbrella) is platform-gated to
+# native targets only because its transitive dep chain pulls
+# `tokio v1.52.3 → mio v1.2.0`, and `mio` is unsupported on wasm32
+# ("This wasm target is unsupported by mio"). The scheduler's native
+# code paths consume `corelink-ops::statuspage::*` (canonical umbrella);
+# the wasm32 build falls back to importing the canonical LOC owner
+# `corelink-statuspage-real` directly — both resolve to the same
+# symbols (the ops umbrella is a pure `pub use` re-export).
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+corelink-ops = { workspace = true }
+
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt"] }
 wiremock = "0.6"

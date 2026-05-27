@@ -27,6 +27,19 @@
 use std::sync::Arc;
 
 use corelink_privacy_erasure_worker::aggregate_24h_window;
+// W36 Stage 2.C Trigger B (closure spec
+// `specs/_audits/2026-05-26-w36-stage2c-closure.md` §5.2):
+// Consume Wave-33 canonical ops umbrella (`corelink_ops::statuspage`)
+// on native; fall back to the canonical LOC owner
+// (`corelink_statuspage_real`) on wasm32 because `corelink-ops` pulls
+// `tokio → mio` which is unsupported on wasm32. Both paths resolve to
+// the same symbols (the umbrella is a pure `pub use` re-export — see
+// `crates/corelink-ops/src/statuspage.rs`).
+#[cfg(not(target_arch = "wasm32"))]
+use corelink_ops::statuspage::{
+    bridge_to_report, DsrCompletionReportError, StatuspageBackend, StatuspageClientError,
+};
+#[cfg(target_arch = "wasm32")]
 use corelink_statuspage_real::{
     bridge_to_report, DsrCompletionReportError, StatuspageBackend, StatuspageClientError,
 };
@@ -382,7 +395,11 @@ mod tests {
     use crate::audit::InMemorySchedulerAuditSink;
     use crate::cron_log::InMemoryCronRunLog;
     use crate::row_source::InMemoryD1RowSource;
-    use corelink_statuspage_real::InMemoryStatuspageBackend;
+    // W36 Stage 2.C Trigger B — see file-header note for rationale.
+    // Tests are native-only (wasm32 has no test runner under the
+    // worker target), so we can unconditionally consume the canonical
+    // `corelink_ops::statuspage::*` umbrella here.
+    use corelink_ops::statuspage::InMemoryStatuspageBackend;
 
     #[test]
     fn canonical_constants_pinned() {
@@ -398,7 +415,7 @@ mod tests {
             "page-1",
             "metric-1",
             "abcd1234",
-            Arc::new(corelink_statuspage_real::InMemoryStatuspageAuditSink::new()),
+            Arc::new(corelink_ops::statuspage::InMemoryStatuspageAuditSink::new()),
         ));
         let audit = Arc::new(InMemorySchedulerAuditSink::new());
         let sched = DsrStatuspagePublishScheduler::new(
@@ -439,7 +456,7 @@ mod tests {
             "page-1",
             "metric-1",
             "abcd1234",
-            Arc::new(corelink_statuspage_real::InMemoryStatuspageAuditSink::new()),
+            Arc::new(corelink_ops::statuspage::InMemoryStatuspageAuditSink::new()),
         ));
         let audit = Arc::new(InMemorySchedulerAuditSink::new());
         let sched = DsrStatuspagePublishScheduler::new(
@@ -475,7 +492,7 @@ mod tests {
             "page-1",
             "metric-1",
             "abcd1234",
-            Arc::new(corelink_statuspage_real::InMemoryStatuspageAuditSink::new()),
+            Arc::new(corelink_ops::statuspage::InMemoryStatuspageAuditSink::new()),
         ));
         let audit = Arc::new(InMemorySchedulerAuditSink::new());
         let sched = DsrStatuspagePublishScheduler::new(
