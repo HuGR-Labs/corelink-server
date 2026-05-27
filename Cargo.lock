@@ -2607,8 +2607,12 @@ dependencies = [
  "corelink-region",
  "corelink-replica-worker",
  "corelink-replication-coordinator",
- "corelink-rollout-controller",
  "corelink-worker",
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "uuid",
 ]
 
 [[package]]
@@ -2620,17 +2624,6 @@ dependencies = [
  "proptest",
  "serde",
  "thiserror 2.0.18",
-]
-
-[[package]]
-name = "corelink-rollout-controller"
-version = "0.1.0"
-dependencies = [
- "proptest",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "uuid",
 ]
 
 [[package]]

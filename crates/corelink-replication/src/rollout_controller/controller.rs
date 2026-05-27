@@ -17,15 +17,15 @@
 
 use std::sync::{Arc, Mutex};
 
-use crate::audit::{
+use super::audit::{
     FailingRolloutAuditSink, InMemoryRolloutAuditSink, RolloutAuditEventType, RolloutAuditRecord,
     RolloutAuditSink,
 };
-use crate::auto_rollback::AutoRollbackDriver;
-use crate::budget::BudgetTracker;
-use crate::error::RolloutError;
-use crate::state_machine::RolloutStateMachine;
-use crate::types::{
+use super::auto_rollback::AutoRollbackDriver;
+use super::budget::BudgetTracker;
+use super::error::RolloutError;
+use super::state_machine::RolloutStateMachine;
+use super::types::{
     AdminActor, AutoRollbackTrigger, DeployArtifact, GateMetrics, NextAction, RolloutDecision,
     RolloutHandle, RolloutStage, RolloutStatus,
 };
@@ -471,13 +471,13 @@ where
 /// Convenience alias: in-memory controller with in-memory audit + budget.
 pub type DefaultInMemoryController = InMemoryRolloutController<
     InMemoryRolloutAuditSink,
-    crate::budget::InMemoryBudgetTracker,
+    super::budget::InMemoryBudgetTracker,
 >;
 
 /// Convenience alias: controller with failing audit (for fail-CLOSED tests).
 pub type FailingAuditController = InMemoryRolloutController<
     FailingRolloutAuditSink,
-    crate::budget::InMemoryBudgetTracker,
+    super::budget::InMemoryBudgetTracker,
 >;
 
 /// Construct a default in-memory controller (convenient for tests).
@@ -485,10 +485,10 @@ pub type FailingAuditController = InMemoryRolloutController<
 pub fn default_controller() -> (
     DefaultInMemoryController,
     Arc<InMemoryRolloutAuditSink>,
-    Arc<crate::budget::InMemoryBudgetTracker>,
+    Arc<super::budget::InMemoryBudgetTracker>,
 ) {
     let audit = Arc::new(InMemoryRolloutAuditSink::new());
-    let budget = Arc::new(crate::budget::InMemoryBudgetTracker::new());
+    let budget = Arc::new(super::budget::InMemoryBudgetTracker::new());
     let controller = InMemoryRolloutController::new(Arc::clone(&audit), Arc::clone(&budget));
     (controller, audit, budget)
 }
@@ -603,7 +603,7 @@ mod tests {
         let records = audit.records().unwrap();
         assert_eq!(records.len(), 1);
         let first = records.first().expect("expected at least one audit record");
-        assert_eq!(first.event_type, crate::audit::RolloutAuditEventType::Start);
+        assert_eq!(first.event_type, super::super::audit::RolloutAuditEventType::Start);
     }
 
     #[test]
@@ -681,7 +681,7 @@ mod tests {
 
     #[test]
     fn failing_audit_blocks_start() {
-        let budget = Arc::new(crate::budget::InMemoryBudgetTracker::new());
+        let budget = Arc::new(super::super::budget::InMemoryBudgetTracker::new());
         let audit = Arc::new(FailingRolloutAuditSink);
         let ctrl: FailingAuditController = InMemoryRolloutController::new(audit, budget);
         let actor = fresh_actor(0);
@@ -698,7 +698,7 @@ mod tests {
         budget.set_now_ms(now_ms).unwrap();
         for _ in 0..3 {
             budget
-                .record_rollback(crate::budget::BudgetRecord {
+                .record_rollback(super::super::budget::BudgetRecord {
                     handle_id: Uuid::now_v7(),
                     rollback_started_ms: now_ms - 1_000,
                     rollback_completed_ms: now_ms,

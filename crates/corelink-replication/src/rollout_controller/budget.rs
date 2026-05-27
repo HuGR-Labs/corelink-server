@@ -19,7 +19,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use crate::error::RolloutError;
+use super::error::RolloutError;
 use uuid::Uuid;
 
 /// Record of a single auto-rollback's budget consumption.

@@ -10,7 +10,7 @@
 //! use corelink_replication::replica::*;      // replica worker (per-region apply lane)
 //! use corelink_replication::coordinator::*;  // R-PREP wave-15 coordinator (3-state)
 //! use corelink_replication::failover::*;     // DR-16 warm-failover router
-//! use corelink_replication::rollout::*;      // staged rollout controller (canary lanes)
+//! use corelink_replication::rollout_controller::*; // staged rollout controller (canary lanes)
 //! ```
 //!
 //! ## Stage 1 Stream C absorption strategy — Option-A aggregator
@@ -41,7 +41,9 @@
 //!   prevention, failback after recovery, partial-region); re-exported
 //!   at [`failover`].
 //! - `corelink-rollout-controller` — staged rollout controller (canary
-//!   lanes, version-pinned rollout gates); re-exported at [`rollout`].
+//!   lanes, version-pinned rollout gates); **Wave 35 Phase 2** physically
+//!   absorbed into this crate at [`rollout_controller`] per
+//!   `specs/_audits/2026-05-26-w35-p2-replication-absorption.md`.
 //!
 //! ### Why aggregator rather than physical move
 //!
@@ -85,7 +87,7 @@ pub mod coordinator;
 pub mod failover;
 pub mod region;
 pub mod replica;
-pub mod rollout;
+pub mod rollout_controller;
 
 pub mod region_resolver {
     //! Wave 33 Stage 2.A-v2 additive aggregator (per 2.A HALT audit §9(b)):
@@ -131,8 +133,8 @@ mod tests {
     }
 
     #[test]
-    fn rollout_path_resolves() {
+    fn rollout_controller_path_resolves() {
         #[allow(unused_imports)]
-        use crate::rollout as _ro;
+        use crate::rollout_controller as _ro;
     }
 }

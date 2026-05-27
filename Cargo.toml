@@ -159,7 +159,9 @@ members = [
     "crates/corelink-rotation-adapters",
     "crates/corelink-rotation-worker",
     "crates/corelink-terraform-drift-consumer",
-    "crates/corelink-rollout-controller",
+    # Wave 35 Phase 2: `corelink-rollout-controller` absorbed into
+    # `corelink-replication::rollout_controller` per
+    # `specs/_audits/2026-05-26-w35-p2-replication-absorption.md`.
     "crates/corelink-region",
     "apps/migrate-single-to-multi-region",
     "crates/corelink-replica-worker",
@@ -655,7 +657,9 @@ corelink-admin-api = { path = "crates/corelink-admin-api" }
 corelink-admin-dry-run = { path = "crates/corelink-admin-dry-run" }
 corelink-rotation-adapters = { path = "crates/corelink-rotation-adapters" }
 corelink-rotation-worker = { path = "crates/corelink-rotation-worker" }
-corelink-rollout-controller = { path = "crates/corelink-rollout-controller" }
+# Wave 35 Phase 2: `corelink-rollout-controller` absorbed into
+# `corelink-replication::rollout_controller`; consumers reach it via the
+# umbrella `corelink-replication` workspace dep.
 corelink-region = { path = "crates/corelink-region" }
 corelink-replica-worker = { path = "crates/corelink-replica-worker" }
 corelink-failover-router = { path = "crates/corelink-failover-router" }

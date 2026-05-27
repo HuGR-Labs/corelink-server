@@ -82,9 +82,16 @@
 //! - **INV-ROLLOUT-COSIGN-GATE** (HIGH, S-12 herdada): deploy without
 //!   Cosign signature rejected at `start()`.
 
-#![forbid(unsafe_code)]
-#![deny(missing_docs)]
-#![deny(missing_debug_implementations)]
+// Crate-level lints (`forbid(unsafe_code)`, `deny(missing_docs)`,
+// `deny(missing_debug_implementations)`) are inherited from the
+// `corelink-replication` umbrella crate root + Cargo `[lints.rust]`
+// stanza. Wave-35 Phase 2 absorption (per
+// `specs/_audits/2026-05-26-w35-p2-replication-absorption.md`)
+// physically relocated this module from the standalone
+// `corelink-rollout-controller` crate into
+// `corelink-replication::rollout_controller`; charter constraints
+// (audit-fail-CLOSED, `#[non_exhaustive]`, no unwrap/expect/panic
+// outside tests) preserved verbatim.
 
 pub mod audit;
 pub mod auto_rollback;
