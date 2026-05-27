@@ -1,10 +1,16 @@
 /**
- * Trust Center landing — consolidated 1-page entry at `/trust`.
+ * Trust Center — five-quadrant deep-dive at `/trust/center`.
  *
- * Wave-29 stream-8 deliverable. Replaces the legacy `docs/trust/index.mdx`
- * page (now mounted at `/trust/overview` for procurement / DPO deep-dive)
- * with a five-quadrant React landing that links into the existing trust
- * corpus drafted in waves 4 + 5 + 25.
+ * Wave-29 stream-8 deliverable, relocated from `/trust` to `/trust/center`
+ * in the Phase-0 launch-readiness sweep (2026-05-27). The shorter `/trust`
+ * route now serves the charter-aligned security-controls summary
+ * (`src/pages/trust.tsx`) that auditors and procurement linked from
+ * outbound RFP responses tend to expect on first hit. This quadrant page
+ * remains the canonical detailed entry, linked from `/trust` and from the
+ * security / procurement footer columns.
+ *
+ * Legacy long-form trust page lives at `/trust/overview`
+ * (`docs/trust/index.mdx`) for procurement / DPO single-page printable.
  *
  * Honest pre-GA framing rules (CRITICAL — see consolidation audit
  * `specs/_audits/sealed/2026-05-16-trust-center-consolidation.md` §C2):
