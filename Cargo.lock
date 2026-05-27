@@ -1100,118 +1100,20 @@ dependencies = [
 ]
 
 [[package]]
-name = "corelink-adapter-brew"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "axum",
- "blake3",
- "bytes",
- "corelink-audit",
- "hex",
- "http 1.4.0",
- "http-body-util",
- "proptest",
- "reqwest",
- "secrecy",
- "serde",
- "serde_json",
- "subtle",
- "thiserror 2.0.18",
- "tokio",
- "tokio-test",
- "tower 0.5.3",
- "tracing",
- "url",
- "uuid",
- "wiremock",
-]
-
-[[package]]
-name = "corelink-adapter-cargo"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "axum",
- "bytes",
- "corelink-audit",
- "hex",
- "http 1.4.0",
- "http-body-util",
- "proptest",
- "reqwest",
- "secrecy",
- "serde",
- "serde_json",
- "subtle",
- "thiserror 2.0.18",
- "tokio",
- "tokio-test",
- "tower 0.5.3",
- "tracing",
- "uuid",
- "wiremock",
-]
-
-[[package]]
 name = "corelink-adapter-host"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "axum",
+ "base64",
+ "blake3",
  "bytes",
- "corelink-adapter-brew",
- "corelink-adapter-cargo",
- "corelink-adapter-npm",
- "corelink-adapter-oci",
- "corelink-adapter-pip",
  "corelink-audit",
  "corelink-core",
  "corelink-handler-cas",
  "corelink-reapi",
  "corelink-replication",
  "corelink-worker",
- "proptest",
- "tokio",
- "uuid",
-]
-
-[[package]]
-name = "corelink-adapter-npm"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "axum",
- "bytes",
- "corelink-audit",
- "corelink-core",
- "hex",
- "http 1.4.0",
- "http-body-util",
- "proptest",
- "reqwest",
- "secrecy",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "subtle",
- "thiserror 2.0.18",
- "tokio",
- "tower 0.5.3",
- "tracing",
- "url",
- "uuid",
-]
-
-[[package]]
-name = "corelink-adapter-oci"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "axum",
- "base64",
- "bytes",
- "corelink-audit",
- "corelink-core",
  "futures",
  "hex",
  "hmac 0.12.1",
@@ -1219,31 +1121,6 @@ dependencies = [
  "http-body-util",
  "parking_lot",
  "proptest",
- "secrecy",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "subtle",
- "thiserror 2.0.18",
- "tokio",
- "tower 0.5.3",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "corelink-adapter-pip"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "axum",
- "bytes",
- "corelink-audit",
- "corelink-core",
- "hex",
- "http 1.4.0",
- "http-body-util",
- "proptest",
  "reqwest",
  "secrecy",
  "serde",
@@ -1252,10 +1129,12 @@ dependencies = [
  "subtle",
  "thiserror 2.0.18",
  "tokio",
+ "tokio-test",
  "tower 0.5.3",
  "tracing",
  "url",
  "uuid",
+ "wiremock",
 ]
 
 [[package]]

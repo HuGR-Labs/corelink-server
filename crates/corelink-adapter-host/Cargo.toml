@@ -25,23 +25,66 @@ print_stderr = "deny"
 mod_module_files = "deny"
 
 [dependencies]
-corelink-adapter-cargo = { workspace = true }
-corelink-adapter-npm   = { workspace = true }
-corelink-adapter-pip   = { workspace = true }
-corelink-adapter-brew  = { workspace = true }
-corelink-adapter-oci   = { workspace = true }
+# Workspace SPI handlers + identity (target of the bridges).
 corelink-handler-cas   = { workspace = true }
 corelink-worker        = { workspace = true }
 corelink-reapi         = { workspace = true }
 corelink-audit         = { workspace = true }
 corelink-core          = { workspace = true }
 
-async-trait = "0.1"
-tokio = { version = "1", features = ["sync", "macros"] }
-bytes = "1"
+# Async + bytes (bridge surface).
+async-trait = { workspace = true }
+tokio = { workspace = true }
+bytes = { workspace = true }
+
+# --- Absorbed adapter dependencies (Wave-35 Phase 2) -----------------
+# HTTP server stack — axum routers for brew / cargo / npm / oci / pip.
+axum = { workspace = true, features = ["query"] }
+tower = { workspace = true }
+http = { workspace = true }
+http-body-util = { workspace = true }
+# Upstream clients (brew / npm / pip).
+reqwest = { workspace = true }
+url = "2"
+# Concurrency primitive used by absorbed oci adapter port internals.
+parking_lot = { workspace = true }
+# Futures combinators (oci streaming).
+futures = { workspace = true }
+# Hash primitives — BLAKE3 (brew URL→CAS), SHA256 (npm/pip/oci digests).
+blake3 = { workspace = true }
+sha2 = { workspace = true }
+hmac = { workspace = true }
+# Encoding for digests, base64 token bodies (oci).
+hex = { workspace = true }
+base64 = { workspace = true }
+# Secret wrapping for PAT bytes / HMAC keys.
+secrecy = "0.10"
+# Constant-time PAT / token compare (cargo / brew / npm / pip / oci).
+subtle = { workspace = true }
+# Errors, serde, tracing.
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+# UUIDs for tenant ids + upload-session ids (oci).
+uuid = { workspace = true }
 
 [dev-dependencies]
-tokio = { version = "1", features = ["sync", "macros", "rt-multi-thread"] }
-proptest = "1.5"
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio-test = { workspace = true }
+proptest = { workspace = true }
+serde_json = { workspace = true }
+tower = { workspace = true, features = ["util"] }
+wiremock = "0.6"
 corelink-replication = { workspace = true }
+corelink-core = { workspace = true }
+corelink-audit = { workspace = true }
+async-trait = { workspace = true }
+subtle = { workspace = true }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 uuid = { workspace = true }
+hex = { workspace = true }
+http-body-util = { workspace = true }
+axum = { workspace = true }
+http = { workspace = true }
+bytes = { workspace = true }

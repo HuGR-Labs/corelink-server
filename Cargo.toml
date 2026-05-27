@@ -367,11 +367,6 @@ members = [
     # Decoupled from the wasm32-only `corelink-cf-bindings::CfD1DatabaseReal`
     # via a thin `BillingD1Writer` trait so the surface tests on native CI.
     "crates/corelink-billing-stripe-materializer",
-    # Wave-34 — PyPI caching proxy adapter (PEP 503 + PEP 691). Booted
-    # alongside the sibling cargo / npm / brew / oci adapters per the
-    # Wave-34 adapter campaign (see `specs/_proposals/adapters/pip.md`
-    # and SEAL `specs/_audits/2026-05-26-w34-adapter-pip.md`).
-    "crates/corelink-adapter-pip",
     # Wave-23 R-PREP pilot tenant onboarding end-to-end harness — composes
     # the full GA customer journey in a single deterministic in-memory
     # pipeline: signup → first CAS upload (100 blobs) → 24h audit export
@@ -382,44 +377,14 @@ members = [
     # surface stays stable across signup/billing/dsr API churn). Five
     # canonical tests; each <60s; full suite <5min target.
     "tests/e2e-pilot-onboarding",
-    # Wave-34 Adapter Campaign — Homebrew bottle caching adapter.
-    # Read-path HTTPS proxy that brew redirects to via
-    # `HOMEBREW_BOTTLE_DOMAIN`. Cache key = BLAKE3 of canonicalized
-    # upstream URL; brew URLs do NOT embed an upstream SHA so this
-    # adapter operates with BEST-EFFORT pre-store integrity (brew
-    # client verifies post-download against the formula DSL). See
-    # `specs/_proposals/adapters/brew.md` and
-    # `specs/_audits/2026-05-26-w34-adapter-brew.md`.
-    "crates/corelink-adapter-brew",
-    # Wave-34 — OCI Distribution Spec v1.1 registry adapter (Docker /
-    # podman / buildah / containerd / crane consume CoreLink as a
-    # standard OCI registry endpoint). Most complex of the 5 wave-34
-    # adapters: push + pull, multi-step blob uploads, manifest
-    # mutation, bearer-realm scoped auth. See
-    # `specs/_proposals/adapters/oci.md` for the executable contract
-    # and `specs/_audits/2026-05-26-w34-adapter-oci.md` for the SEAL.
-    "crates/corelink-adapter-oci",
-    # Wave-34 — Cargo build cache adapter (sccache HTTP backend wire).
-    # Bridges sccache GET/PUT/HEAD /<key> against CoreLink's per-tenant
-    # content-addressable storage. BLAKE3 key alignment with sccache =
-    # zero translation cost. PAT-scoped (`cas:read` + `cas:write`). See
-    # `specs/_proposals/adapters/cargo.md` (v2 redraft) and
-    # `specs/_audits/2026-05-26-w34-adapter-cargo-v2.md`.
-    "crates/corelink-adapter-cargo",
-    # Wave-34 — npm registry caching proxy adapter. `npm install`
-    # (and pnpm / yarn / bun) consult CoreLink as a transparent
-    # caching mirror in front of registry.npmjs.org. Metadata cached
-    # in KV with TTL; tarballs in CAS keyed by SHA256 of tarball URL.
-    # Mandatory pre-CAS-store SHA1 integrity check vs dist.shasum.
-    # See `specs/_proposals/adapters/npm.md` and
-    # `specs/_audits/2026-05-26-w34-adapter-npm-v2.md`.
-    "crates/corelink-adapter-npm",
-    # Wave-35 — adapter-host consolidation bridge crate. Bridges the
-    # five Wave-34 adapter-local port traits (CasStore, KvStore,
-    # TenantResolver, BlobStore, ManifestKvStore) onto the canonical
-    # workspace Stage-1 SPI traits (CasReadHandler, CasWriteHandler,
-    # KvBackend, PatValidator, AuditEmitter). Closes follow-up #3 from
-    # `specs/_audits/2026-05-26-wave-33-34-closure-followups.md §5`.
+    # Wave-35 Phase 2 — adapter-host umbrella. Absorbs the five former
+    # Wave-34 adapter crates (corelink-adapter-{brew,cargo,npm,oci,pip})
+    # as inline `mod` submodules and bridges their adapter-local port
+    # traits (CasStore, KvStore, TenantResolver, BlobStore,
+    # ManifestKvStore) onto the canonical workspace Stage-1 SPI traits
+    # (CasReadHandler, CasWriteHandler, KvBackend, PatValidator,
+    # AuditEmitter). Closes follow-up #4 from
+    # `specs/_audits/2026-05-26-wave-33-34-closure-followups.md §4`.
     "crates/corelink-adapter-host",
 ]
 exclude = [
@@ -710,17 +675,8 @@ corelink-runbook-tracker = { path = "crates/corelink-runbook-tracker" }
 corelink-terraform-drift-consumer = { path = "crates/corelink-terraform-drift-consumer" }
 corelink-supply-chain-policy = { path = "crates/corelink-supply-chain-policy" }
 corelink-d1-migrations = { path = "crates/corelink-d1-migrations" }
-# Wave-34 adapter campaign — pip (PyPI) adapter.
-corelink-adapter-pip = { path = "crates/corelink-adapter-pip" }
-# Wave-34 Adapter Campaign — Homebrew bottle caching adapter.
-corelink-adapter-brew = { path = "crates/corelink-adapter-brew" }
-# Wave-34 — OCI registry adapter (see workspace.members comment).
-corelink-adapter-oci = { path = "crates/corelink-adapter-oci" }
-# Wave-34 — Cargo build cache adapter (sccache HTTP backend wire).
-corelink-adapter-cargo = { path = "crates/corelink-adapter-cargo" }
-# Wave-34 — npm registry caching proxy adapter (see workspace.members comment).
-corelink-adapter-npm = { path = "crates/corelink-adapter-npm" }
-# Wave-35 — adapter-host consolidation (see workspace.members comment).
+# Wave-35 Phase 2 — adapter-host umbrella crate (absorbs Wave-34
+# corelink-adapter-{brew,cargo,npm,oci,pip} as inline submodules).
 corelink-adapter-host = { path = "crates/corelink-adapter-host" }
 
 # CLI tooling (WI-S15-001 / WI-S15-005)
