@@ -27,7 +27,7 @@ use corelink_billing_stripe_materializer::{
 use corelink_server::routes;
 use corelink_server::routes::audit_analytics::ShadowSinkFactory;
 use corelink_server::webhook::{router as webhook_router, WebhookState};
-use corelink_stripe_real::webhook_dispatch::{
+use corelink_billing::stripe::real::webhook_dispatch::{
     RecordingSliRecorder, StateMaterializer, SystemClock, WebhookDispatcher,
 };
 use corelink_tier_selection::tier::TierKind;

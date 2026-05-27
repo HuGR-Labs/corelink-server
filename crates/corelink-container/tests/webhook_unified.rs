@@ -38,8 +38,8 @@ use std::sync::Arc;
 use axum::body::Body;
 use axum::http::{self, HeaderMap, Request, StatusCode};
 use corelink_server::webhook::{router, WebhookState, STRIPE_WEBHOOK_ROUTE};
-use corelink_stripe_real::webhook::compute_signature;
-use corelink_stripe_real::webhook_dispatch::{
+use corelink_billing::stripe::real::webhook::compute_signature;
+use corelink_billing::stripe::real::webhook_dispatch::{
     AuditOutcome, CanonicalWebhookEventType, FixedClock, InMemoryIdempotencyStore,
     RecordingAuditEmitter, RecordingSliRecorder, RecordingStateMaterializer, WebhookDispatcher,
 };

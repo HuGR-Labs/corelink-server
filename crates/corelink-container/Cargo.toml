@@ -147,6 +147,9 @@ bytes = { workspace = true }
 # back-pressure + bounds per-page memory).
 async-stream = { workspace = true }
 corelink-stripe-real = { workspace = true }
+# Wave-36 consumer migration: canonical umbrella path for stripe consumers
+# (replaces direct `corelink_stripe_real::*` imports in main.rs / webhook.rs).
+corelink-billing = { workspace = true }
 corelink-tier-selection = { workspace = true }
 # Wave-17: production materializer + D1 idempotency + tier reconciliation
 # (replaces the Recording* / InMemory* placeholders from wave 16).
