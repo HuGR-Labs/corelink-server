@@ -5,6 +5,8 @@ name = "corelink-tenant-path-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2021"
+license = "UNLICENSED"
+description = "cargo-fuzz harnesses for corelink-tenant-path — tenant-prefix derivation determinism and tenant-id injection resistance across arbitrary path inputs."
 
 [package.metadata]
 cargo-fuzz = true

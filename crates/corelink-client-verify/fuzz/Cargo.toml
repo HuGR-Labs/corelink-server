@@ -5,6 +5,8 @@ name = "corelink-client-verify-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2021"
+license = "UNLICENSED"
+description = "cargo-fuzz harnesses for corelink-client-verify — exercises the sync verify path (verify_sync) and the C-ABI surface (verify_ffi) so the stream + ffi feature builds get differential coverage beyond unit tests."
 
 [package.metadata]
 cargo-fuzz = true

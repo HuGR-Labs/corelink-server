@@ -5,6 +5,7 @@ name = "corelink-byok-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2021"
+license = "UNLICENSED"
 description = "cargo-fuzz harnesses for corelink-byok envelope encryption (pre-pentest hardening). Targets: wrapped_dek_parse — arbitrary bytes through serde + envelope decrypt; envelope_roundtrip — encrypt-then-decrypt invariant under random key/aad/plaintext."
 
 [package.metadata]
