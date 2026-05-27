@@ -65,6 +65,55 @@ const config: Config = {
     statuspageUrl: STATUSPAGE_URL,
   },
 
+  // ── SEO §A — JSON-LD schema.org markup ────────────────────────────────
+  // Per ROADMAP-TO-LAUNCH §4 (SEO/discovery). Two JSON-LD blocks emitted
+  // into <head> on every page:
+  //   1. `Organization` — establishes HuGR Labs corporate identity.
+  //   2. `SoftwareApplication` — describes CoreLink as a developer tool
+  //      (category: DeveloperApplication, OS-agnostic, pricing pointer).
+  // Both blocks are static (no PII, no per-page variance) so they are
+  // safe to inject globally via `headTags`. The structured-data values
+  // mirror the public footer + pricing page; updates to those surfaces
+  // should be reflected here too.
+  headTags: [
+    {
+      tagName: "script",
+      attributes: { type: "application/ld+json" },
+      innerHTML: JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        name: "HuGR Labs",
+        url: "https://humangr.com",
+        logo: `${SITE_URL}/img/logo.svg`,
+        sameAs: [`https://github.com/${ORG}`],
+      }),
+    },
+    {
+      tagName: "script",
+      attributes: { type: "application/ld+json" },
+      innerHTML: JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        name: "CoreLink",
+        applicationCategory: "DeveloperApplication",
+        operatingSystem: "Linux, macOS, Windows",
+        url: SITE_URL,
+        description:
+          "Multi-tenant content-addressable cache for Bazel / Buck2 / REAPI remote builds.",
+        offers: {
+          "@type": "Offer",
+          url: `${SITE_URL}/pricing`,
+          priceCurrency: "USD",
+        },
+        publisher: {
+          "@type": "Organization",
+          name: "HuGR Labs",
+          url: "https://humangr.com",
+        },
+      }),
+    },
+  ],
+
   i18n: {
     defaultLocale: "en-US",
     locales: ["en-US", "pt-BR", "es-419", "de"],
@@ -159,9 +208,25 @@ const config: Config = {
       disableSwitch: false,
       respectPrefersColorScheme: true,
     },
+    // SEO metadata — generic <meta> tags applied site-wide. Per-page MDX may
+    // override individual entries via front-matter `description` / `image`.
+    // OpenGraph + Twitter Card properties enable rich link previews on
+    // Slack / LinkedIn / X / Discord / GitHub PR descriptions.
     metadata: [
       { name: "description", content: "CoreLink — multi-tenant content-addressable cache on Cloudflare." },
       { name: "keywords", content: "corelink, cache, content-addressable, bazel, buck2, remote cache, REAPI" },
+      // OpenGraph (Facebook, LinkedIn, Slack, Discord, GitHub previews)
+      { property: "og:title", content: "CoreLink — Multi-tenant content-addressable cache" },
+      { property: "og:description", content: "Drop-in Bazel / Buck2 / REAPI remote cache on Cloudflare. Content-addressable, multi-tenant, BYOK-capable." },
+      { property: "og:type", content: "website" },
+      { property: "og:url", content: SITE_URL },
+      { property: "og:image", content: `${SITE_URL}/img/og-image.png` },
+      { property: "og:site_name", content: "CoreLink Docs" },
+      // Twitter / X large-image card
+      { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: "CoreLink — Multi-tenant content-addressable cache" },
+      { name: "twitter:description", content: "Drop-in Bazel / Buck2 / REAPI remote cache on Cloudflare. Content-addressable, multi-tenant, BYOK-capable." },
+      { name: "twitter:image", content: `${SITE_URL}/img/og-image.png` },
     ],
     navbar: {
       title: "CoreLink",

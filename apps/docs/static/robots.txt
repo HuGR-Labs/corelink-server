@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://docs.corelink.dev/sitemap.xml
+Sitemap: https://docs.corelink.humangr.com/sitemap.xml
