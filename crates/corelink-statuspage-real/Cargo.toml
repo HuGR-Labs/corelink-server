@@ -50,3 +50,7 @@ js-sys = { workspace = true }
 [dev-dependencies]
 wiremock = "0.6"
 tokio = { workspace = true }
+# Property-based test density for the pure-logic surfaces
+# (DsrCompletionReport / RetryPolicy / StatuspageRateLimiter / redact).
+# WI-PROPTEST-FU-W33-002. Native-only (proptest needs the host scheduler).
+proptest = { workspace = true }
