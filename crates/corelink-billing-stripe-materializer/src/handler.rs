@@ -32,7 +32,10 @@
 use std::fmt;
 use std::sync::Arc;
 
-use corelink_stripe_real::webhook_dispatch::{
+// Wave-36 Trigger A: trait + type surface migrated to the leaf
+// `corelink-billing-stripe-traits` crate (no `corelink-stripe-real`
+// dep in production sources of the materializer).
+use corelink_billing_stripe_traits::{
     CanonicalWebhookEventType, MaterializerError, StateMaterializer, StripeWebhookEnvelope,
 };
 use corelink_tier_selection::tier::TierKind;

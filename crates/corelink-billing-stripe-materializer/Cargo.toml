@@ -47,6 +47,19 @@ serde_json = { workspace = true }
 subtle = { workspace = true }
 hex = { workspace = true }
 blake3 = { workspace = true }
+# Wave-36 Trigger A: trait surface migrated from
+# `corelink-stripe-real::webhook_dispatch` to the leaf
+# `corelink-billing-stripe-traits` crate (zero `corelink-*` deps).
+# The materializer's production sources (`audit.rs`, `handler.rs`,
+# `idempotency.rs`) consume the four port traits + identity / outcome
+# types from this leaf, eliminating the prospective dep-graph cycle
+# `billing → materializer → stripe-real → (would loop via direct
+# migration)`. See `specs/_audits/2026-05-27-w36-trigger-a-seal.md`.
+corelink-billing-stripe-traits = { path = "../corelink-billing-stripe-traits" }
+# `corelink-stripe-real` remains a (build/dev-time) dep so the
+# integration test (`tests/materializers_e2e.rs`) can construct the
+# concrete `WebhookDispatcher` + test fakes (`FixedClock`,
+# `RecordingSliRecorder`, …) that still live in stripe-real.
 corelink-stripe-real = { path = "../corelink-stripe-real" }
 corelink-tier-selection = { path = "../corelink-tier-selection" }
 

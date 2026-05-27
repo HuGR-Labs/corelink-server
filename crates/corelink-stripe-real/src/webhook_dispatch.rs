@@ -6,6 +6,25 @@
 //! driven from any HTTP server crate (axum, hyper, worker-rs, tests)
 //! without runtime coupling.
 //!
+//! # Wave-36 Trigger A — trait surface moved
+//!
+//! The four port traits (`AuditEmitter`, `IdempotencyStore`,
+//! `StateMaterializer`, `SliRecorder`) plus the identity / outcome /
+//! error types (`IdempotencyToken`, `CanonicalWebhookEventType`,
+//! `StripeWebhookEnvelope`, `IdempotencyOutcome`, `AuditRecord`,
+//! `AuditOutcome`, `SliObservation`, `DispatchResponse`,
+//! `MaterializerError`) now live in the leaf crate
+//! `corelink-billing-stripe-traits`. They are re-exported from this
+//! module at the previous paths so consumers using
+//! `corelink_stripe_real::webhook_dispatch::*` keep working
+//! unchanged. The concrete HTTPS dispatcher + in-memory store + test
+//! fakes (`WebhookDispatcher`, `InMemoryIdempotencyStore`,
+//! `RecordingStateMaterializer`, `RecordingAuditEmitter`,
+//! `RecordingSliRecorder`, `FixedClock`) remain defined here; the
+//! `impl` blocks now reference the traits crate explicitly. See
+//! `specs/_audits/2026-05-27-w36-trigger-a-seal.md` for the cycle
+//! resolution rationale.
+//!
 //! # Pipeline
 //!
 //! ```text
@@ -73,220 +92,24 @@
 use core::fmt;
 use std::sync::{Arc, Mutex};
 
-use serde::Deserialize;
-
 use crate::error::WebhookVerifyError;
 use crate::webhook::{verify_webhook_signature, DEFAULT_TOLERANCE_SECONDS};
 
 // =========================================================================
-// Canonical 10-element event taxonomy.
+// Wave-36 Trigger A: re-export the trait + type surface from the leaf
+// `corelink-billing-stripe-traits` crate. Preserves the canonical
+// `corelink_stripe_real::webhook_dispatch::*` public paths.
 // =========================================================================
 
-/// The canonical Stripe event taxonomy this dispatcher recognises.
-///
-/// `Unknown` is the forward-compat sink for any Stripe event-type
-/// string outside the 10 enumerated arms; the dispatcher acks with
-/// 200 + emits an audit row so we can observe the unknown rate without
-/// breaking when Stripe ships new event types.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum CanonicalWebhookEventType {
-    /// `customer.subscription.deleted`        (state mutator).
-    SubscriptionDeleted,
-    /// `customer.subscription.updated`        (state mutator).
-    SubscriptionUpdated,
-    /// `invoice.paid`                         (state mutator).
-    InvoicePaid,
-    /// `invoice.payment_failed`               (state mutator).
-    InvoicePaymentFailed,
-    /// `charge.dispute.created`               (state mutator).
-    ChargeDisputeCreated,
-    /// `customer.subscription.created`        (observability echo).
-    SubscriptionCreated,
-    /// `customer.subscription.trial_will_end` (observability echo).
-    SubscriptionTrialWillEnd,
-    /// `charge.refunded`                      (observability echo).
-    ChargeRefunded,
-    /// `customer.created`                     (observability echo).
-    CustomerCreated,
-    /// `invoice.created`                      (observability echo).
-    InvoiceCreated,
-    /// Any event type outside the 10-element canonical set.
-    Unknown,
-}
-
-impl CanonicalWebhookEventType {
-    /// Map a Stripe event type string into a canonical variant.
-    ///
-    /// Returns [`Self::Unknown`] for any type outside the SLA-required
-    /// 10-element set; never errors.
-    #[must_use]
-    pub fn classify(raw: &str) -> Self {
-        match raw {
-            "customer.subscription.deleted" => Self::SubscriptionDeleted,
-            "customer.subscription.updated" => Self::SubscriptionUpdated,
-            "invoice.paid" => Self::InvoicePaid,
-            "invoice.payment_failed" => Self::InvoicePaymentFailed,
-            "charge.dispute.created" => Self::ChargeDisputeCreated,
-            "customer.subscription.created" => Self::SubscriptionCreated,
-            "customer.subscription.trial_will_end" => Self::SubscriptionTrialWillEnd,
-            "charge.refunded" => Self::ChargeRefunded,
-            "customer.created" => Self::CustomerCreated,
-            "invoice.created" => Self::InvoiceCreated,
-            _ => Self::Unknown,
-        }
-    }
-
-    /// Wire string for SLI label / audit `event_type` field.
-    #[must_use]
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::SubscriptionDeleted => "customer.subscription.deleted",
-            Self::SubscriptionUpdated => "customer.subscription.updated",
-            Self::InvoicePaid => "invoice.paid",
-            Self::InvoicePaymentFailed => "invoice.payment_failed",
-            Self::ChargeDisputeCreated => "charge.dispute.created",
-            Self::SubscriptionCreated => "customer.subscription.created",
-            Self::SubscriptionTrialWillEnd => "customer.subscription.trial_will_end",
-            Self::ChargeRefunded => "charge.refunded",
-            Self::CustomerCreated => "customer.created",
-            Self::InvoiceCreated => "invoice.created",
-            Self::Unknown => "unknown",
-        }
-    }
-
-    /// True iff the dispatcher should materialize per-event state. The
-    /// observability-only echoes (`*_created` etc.) return false.
-    #[must_use]
-    pub const fn is_state_mutator(self) -> bool {
-        matches!(
-            self,
-            Self::SubscriptionDeleted
-                | Self::SubscriptionUpdated
-                | Self::InvoicePaid
-                | Self::InvoicePaymentFailed
-                | Self::ChargeDisputeCreated
-        )
-    }
-
-    /// All ten canonical SLA-required event types (excludes `Unknown`).
-    #[must_use]
-    pub const fn sla_event_types() -> [Self; 10] {
-        [
-            Self::SubscriptionDeleted,
-            Self::SubscriptionUpdated,
-            Self::InvoicePaid,
-            Self::InvoicePaymentFailed,
-            Self::ChargeDisputeCreated,
-            Self::SubscriptionCreated,
-            Self::SubscriptionTrialWillEnd,
-            Self::ChargeRefunded,
-            Self::CustomerCreated,
-            Self::InvoiceCreated,
-        ]
-    }
-}
+pub use corelink_billing_stripe_traits::{
+    AuditEmitter, AuditOutcome, AuditRecord, CanonicalWebhookEventType, DispatchResponse,
+    IdempotencyOutcome, IdempotencyStore, IdempotencyToken, MaterializerError, SliObservation,
+    SliRecorder, StateMaterializer, StripeWebhookEnvelope, SLI_BILLING_STRIPE_EVENT_SECONDS,
+};
 
 // =========================================================================
-// Wire envelope (deserialized AFTER signature verify).
+// Idempotency in-memory fake (concrete adapter; trait def is upstream).
 // =========================================================================
-
-/// Top-level Stripe event envelope. Only the canonical addressing
-/// fields are typed; the payload sub-object stays loose
-/// (`serde_json::Value`) because every event-type has a different
-/// shape and the materializer extracts what it needs.
-#[derive(Clone, Debug, Deserialize)]
-#[non_exhaustive]
-pub struct StripeWebhookEnvelope {
-    /// Stripe-assigned event id, e.g. `evt_1Nf2k3Xyz...`.
-    pub id: String,
-    /// Stripe event-type string, e.g. `customer.subscription.deleted`.
-    #[serde(rename = "type")]
-    pub event_type: String,
-    /// Inner `data.object` (loose).
-    #[serde(default)]
-    pub data: serde_json::Value,
-    /// Stripe `created` timestamp (unix seconds). Absent on some events.
-    #[serde(default)]
-    pub created: u64,
-}
-
-// =========================================================================
-// BLAKE3 idempotency token.
-// =========================================================================
-
-/// 32-byte BLAKE3 digest derived from the Stripe event id. Equal
-/// digests imply equal event ids (collision probability < 2^-128).
-///
-/// Used as the dedup primary-key in the `stripe_event_log` D1 table.
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct IdempotencyToken([u8; 32]);
-
-impl IdempotencyToken {
-    /// Derive a token from a Stripe event id by hashing
-    /// `b"stripe-event-id:" || event_id` with BLAKE3. The domain prefix
-    /// pins the hash family to this use-case so future reuses (e.g.
-    /// hashing aggregate counters) cannot collide by construction.
-    #[must_use]
-    pub fn from_event_id(event_id: &str) -> Self {
-        let mut hasher = blake3::Hasher::new();
-        hasher.update(b"stripe-event-id:");
-        hasher.update(event_id.as_bytes());
-        Self(*hasher.finalize().as_bytes())
-    }
-
-    /// Raw 32-byte digest.
-    #[must_use]
-    pub const fn as_bytes(&self) -> &[u8; 32] {
-        &self.0
-    }
-
-    /// 64-char lower-hex representation; stable for DB rows / logs.
-    #[must_use]
-    pub fn to_hex(self) -> String {
-        hex::encode(self.0)
-    }
-}
-
-impl fmt::Debug for IdempotencyToken {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // 8-char prefix; never dump full token for log-correlation
-        // hygiene (the token is derived from a non-secret event id, but
-        // mirroring CAS hashes keeps logs uniformly short).
-        write!(f, "IdempotencyToken({}...)", &self.to_hex()[..8])
-    }
-}
-
-// =========================================================================
-// Idempotency store trait + in-memory fake.
-// =========================================================================
-
-/// Outcome of an idempotency dedup attempt.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum IdempotencyOutcome {
-    /// Token was new; dispatch should proceed.
-    FirstSight,
-    /// Token already present; dispatch must be skipped (Stripe retry).
-    AlreadyProcessed,
-}
-
-/// Pluggable dedup store. Production wires this to a D1
-/// `INSERT OR IGNORE INTO stripe_event_log` statement; tests use the
-/// in-memory fake.
-pub trait IdempotencyStore: fmt::Debug + Send + Sync {
-    /// Attempt to insert `token`. Returns
-    /// [`IdempotencyOutcome::FirstSight`] iff the row was created, or
-    /// [`IdempotencyOutcome::AlreadyProcessed`] iff the row already
-    /// existed. Returns `Err(String)` on transient backend failure
-    /// (caller propagates as HTTP 500 → Stripe retries).
-    fn try_insert(
-        &self,
-        token: IdempotencyToken,
-        event_type: CanonicalWebhookEventType,
-        now_ms: u64,
-    ) -> Result<IdempotencyOutcome, String>;
-}
 
 /// Internal row stored alongside each dedup token (event-type +
 /// insertion timestamp). Kept private so the in-memory map type
@@ -343,66 +166,8 @@ impl IdempotencyStore for InMemoryIdempotencyStore {
 }
 
 // =========================================================================
-// State materializer trait (production: D1 writers; tests: recorder).
+// State materializer test-only recorder (concrete fake; trait def is upstream).
 // =========================================================================
-
-/// Errors a materializer can surface to the dispatcher.
-#[derive(Debug)]
-#[non_exhaustive]
-pub enum MaterializerError {
-    /// Transient backend error (D1 unavailable, write conflict, etc.).
-    /// Dispatcher returns HTTP 500 → Stripe retries.
-    Transient(String),
-    /// Permanent input error (envelope shape unexpected, required
-    /// field missing, etc.). Dispatcher returns HTTP 422 → Stripe
-    /// stops retrying.
-    InvalidPayload(String),
-}
-
-impl fmt::Display for MaterializerError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Transient(s) => write!(f, "transient backend error: {s}"),
-            Self::InvalidPayload(s) => write!(f, "invalid payload: {s}"),
-        }
-    }
-}
-
-impl std::error::Error for MaterializerError {}
-
-/// Trait that owns per-event-type state mutation. Production binds
-/// this to the canonical D1 writers (`customers`, `subscriptions`,
-/// `invoices`, `disputes`) inside `corelink-tier-selection` /
-/// `corelink-billing-*`. Tests use [`RecordingStateMaterializer`].
-///
-/// All methods receive the verified envelope. Implementations MUST
-/// be idempotent at the row level (a second call with the same event
-/// id is impossible past the dispatcher's dedup gate, but downstream
-/// rows MUST still tolerate it for the rollback-replay edge case).
-pub trait StateMaterializer: fmt::Debug + Send + Sync {
-    /// `customer.subscription.deleted` → downgrade tenant to Free.
-    fn on_subscription_deleted(
-        &self,
-        env: &StripeWebhookEnvelope,
-    ) -> Result<(), MaterializerError>;
-    /// `customer.subscription.updated` → refresh tier + status.
-    fn on_subscription_updated(
-        &self,
-        env: &StripeWebhookEnvelope,
-    ) -> Result<(), MaterializerError>;
-    /// `invoice.paid` → extend access expiry + mark invoice paid.
-    fn on_invoice_paid(&self, env: &StripeWebhookEnvelope) -> Result<(), MaterializerError>;
-    /// `invoice.payment_failed` → set grace-period flag.
-    fn on_invoice_payment_failed(
-        &self,
-        env: &StripeWebhookEnvelope,
-    ) -> Result<(), MaterializerError>;
-    /// `charge.dispute.created` → freeze charges + Finance alert.
-    fn on_charge_dispute_created(
-        &self,
-        env: &StripeWebhookEnvelope,
-    ) -> Result<(), MaterializerError>;
-}
 
 /// Test-only recorder. Stores `(event_type, event_id)` per call so
 /// the integration test can assert the right method fired for the
@@ -493,81 +258,8 @@ impl StateMaterializer for RecordingStateMaterializer {
 }
 
 // =========================================================================
-// Audit emission (canonical `corelink.billing.stripe_event_processed.v1`).
+// Audit emitter test-only recorder (concrete fake; trait def is upstream).
 // =========================================================================
-
-/// One audit row emitted per dispatched event. The mapping to a
-/// CloudEvents-style envelope (or to the canonical
-/// `corelink-audit-chain` builder) is the production binder's
-/// responsibility; this struct carries the typed fields.
-#[derive(Clone, Debug)]
-#[non_exhaustive]
-pub struct AuditRecord {
-    /// Always `"corelink.billing.stripe_event_processed.v1"`.
-    pub event_name: &'static str,
-    /// Stripe event id (e.g. `evt_1Nf2k3...`).
-    pub stripe_event_id: String,
-    /// Canonical (post-classification) event type.
-    pub canonical_event_type: CanonicalWebhookEventType,
-    /// Outcome — `dispatched`, `duplicate`, `signature_invalid`,
-    /// `envelope_invalid`, `materializer_failed`, `materializer_invalid`,
-    /// `unknown_event_type`.
-    pub outcome: AuditOutcome,
-    /// Idempotency token hex (None for early-exit paths before token
-    /// derivation — e.g. signature_invalid).
-    pub idempotency_token_hex: Option<String>,
-    /// Wall-clock ms when the audit record was assembled.
-    pub ts_ms: u64,
-    /// Optional error detail (free-form, NEVER contains body/secret).
-    pub error_detail: Option<String>,
-}
-
-/// Outcome enumeration; bound to the audit record. Driven by the
-/// dispatcher; emitters never set this themselves.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum AuditOutcome {
-    /// Event dispatched to the materializer and accepted.
-    Dispatched,
-    /// Duplicate event id; ack 200 with no dispatch.
-    Duplicate,
-    /// Signature verify failed (replay / mismatch / future-dated /
-    /// missing header).
-    SignatureInvalid,
-    /// JSON envelope did not parse.
-    EnvelopeInvalid,
-    /// Materializer reported a transient error (500 → Stripe retries).
-    MaterializerFailed,
-    /// Materializer reported an invalid payload (422; Stripe stops).
-    MaterializerInvalid,
-    /// Unknown event type acked for forward-compat.
-    UnknownEventType,
-}
-
-impl AuditOutcome {
-    /// Wire string used in SLI labels / audit JSON.
-    #[must_use]
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Dispatched => "dispatched",
-            Self::Duplicate => "duplicate",
-            Self::SignatureInvalid => "signature_invalid",
-            Self::EnvelopeInvalid => "envelope_invalid",
-            Self::MaterializerFailed => "materializer_failed",
-            Self::MaterializerInvalid => "materializer_invalid",
-            Self::UnknownEventType => "unknown_event_type",
-        }
-    }
-}
-
-/// Pluggable audit sink. Production binds to `corelink-audit-chain`;
-/// tests use the in-memory fake. Audit emission is **fail-CLOSED**:
-/// a returned `Err` aborts the dispatcher with HTTP 500.
-pub trait AuditEmitter: fmt::Debug + Send + Sync {
-    /// Emit one audit row. Errors propagate as HTTP 500 (Stripe retries
-    /// → next delivery hits the dedup row → resolved without re-dispatch).
-    fn emit(&self, record: &AuditRecord) -> Result<(), String>;
-}
 
 /// Test-only in-memory audit emitter.
 #[derive(Clone, Debug, Default)]
@@ -627,35 +319,8 @@ impl AuditEmitter for RecordingAuditEmitter {
 }
 
 // =========================================================================
-// SLI recorder (`corelink_billing_stripe_event_seconds`).
+// SLI recorder (concrete fake; trait def is upstream).
 // =========================================================================
-
-/// Canonical SLI histogram name emitted per dispatched webhook.
-/// Underscore-separated per Prom canonical naming (Lote 10.9bis P0-E).
-pub const SLI_BILLING_STRIPE_EVENT_SECONDS: &str = "corelink_billing_stripe_event_seconds";
-
-/// One SLI observation. Labels are explicit (no map) so the production
-/// binder can wire them into any registry without runtime label-map
-/// coercion. The wire shape matches the canonical Prom histogram.
-#[derive(Clone, Copy, Debug)]
-#[non_exhaustive]
-pub struct SliObservation {
-    /// Always `"corelink_billing_stripe_event_seconds"`.
-    pub metric_name: &'static str,
-    /// Latency seconds (wall-clock; observed by the caller around the
-    /// whole pipeline). `f64` so the histogram bucketing is uniform.
-    pub seconds: f64,
-    /// Canonical event-type label.
-    pub event_type: CanonicalWebhookEventType,
-    /// Outcome label.
-    pub outcome: AuditOutcome,
-}
-
-/// Pluggable SLI sink.
-pub trait SliRecorder: fmt::Debug + Send + Sync {
-    /// Record one observation. Implementations MUST NOT block.
-    fn observe(&self, obs: SliObservation);
-}
 
 /// Test-only recorder.
 #[derive(Clone, Debug, Default)]
@@ -690,43 +355,6 @@ impl SliRecorder for RecordingSliRecorder {
     fn observe(&self, obs: SliObservation) {
         if let Ok(mut g) = self.obs.lock() {
             g.push(obs);
-        }
-    }
-}
-
-// =========================================================================
-// Dispatcher response (HTTP-status-coded outcome).
-// =========================================================================
-
-/// HTTP-status-coded outcome of one dispatch pipeline call.
-/// Mapped 1:1 to PCI DSS SAQ-A error envelope per `compliance_matrix.md`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum DispatchResponse {
-    /// 200 OK — dispatched, duplicate-acked, or unknown-event-type-acked.
-    Ok200,
-    /// 400 Bad Request — missing/non-ascii `Stripe-Signature` header.
-    BadRequest400,
-    /// 401 Unauthorized — signature verify failed (HMAC mismatch / replay).
-    Unauthorized401,
-    /// 422 Unprocessable Entity — envelope JSON malformed OR
-    /// materializer reported permanent input error.
-    Unprocessable422,
-    /// 500 Internal Server Error — transient backend / audit / materializer
-    /// failure. Stripe retries.
-    InternalError500,
-}
-
-impl DispatchResponse {
-    /// Bare HTTP status code (u16).
-    #[must_use]
-    pub const fn status_code(self) -> u16 {
-        match self {
-            Self::Ok200 => 200,
-            Self::BadRequest400 => 400,
-            Self::Unauthorized401 => 401,
-            Self::Unprocessable422 => 422,
-            Self::InternalError500 => 500,
         }
     }
 }
@@ -877,15 +505,15 @@ impl WebhookDispatcher {
         // (1) Header present?
         let Some(sig_header) = signature_header else {
             self.emit_audit_and_sli(
-                AuditRecord {
-                    event_name: "corelink.billing.stripe_event_processed.v1",
-                    stripe_event_id: String::new(),
-                    canonical_event_type: CanonicalWebhookEventType::Unknown,
-                    outcome: AuditOutcome::SignatureInvalid,
-                    idempotency_token_hex: None,
-                    ts_ms: now_ms,
-                    error_detail: Some("missing or non-ascii Stripe-Signature header".to_string()),
-                },
+                AuditRecord::new(
+                    "corelink.billing.stripe_event_processed.v1",
+                    String::new(),
+                    CanonicalWebhookEventType::Unknown,
+                    AuditOutcome::SignatureInvalid,
+                    None,
+                    now_ms,
+                    Some("missing or non-ascii Stripe-Signature header".to_string()),
+                ),
                 CanonicalWebhookEventType::Unknown,
                 AuditOutcome::SignatureInvalid,
                 start,
@@ -902,15 +530,15 @@ impl WebhookDispatcher {
             self.tolerance_seconds,
         ) {
             self.emit_audit_and_sli(
-                AuditRecord {
-                    event_name: "corelink.billing.stripe_event_processed.v1",
-                    stripe_event_id: String::new(),
-                    canonical_event_type: CanonicalWebhookEventType::Unknown,
-                    outcome: AuditOutcome::SignatureInvalid,
-                    idempotency_token_hex: None,
-                    ts_ms: now_ms,
-                    error_detail: Some(classify_verify_err(&e).to_string()),
-                },
+                AuditRecord::new(
+                    "corelink.billing.stripe_event_processed.v1",
+                    String::new(),
+                    CanonicalWebhookEventType::Unknown,
+                    AuditOutcome::SignatureInvalid,
+                    None,
+                    now_ms,
+                    Some(classify_verify_err(&e).to_string()),
+                ),
                 CanonicalWebhookEventType::Unknown,
                 AuditOutcome::SignatureInvalid,
                 start,
@@ -923,15 +551,15 @@ impl WebhookDispatcher {
             Ok(e) => e,
             Err(e) => {
                 self.emit_audit_and_sli(
-                    AuditRecord {
-                        event_name: "corelink.billing.stripe_event_processed.v1",
-                        stripe_event_id: String::new(),
-                        canonical_event_type: CanonicalWebhookEventType::Unknown,
-                        outcome: AuditOutcome::EnvelopeInvalid,
-                        idempotency_token_hex: None,
-                        ts_ms: now_ms,
-                        error_detail: Some(format!("json parse: {e}")),
-                    },
+                    AuditRecord::new(
+                        "corelink.billing.stripe_event_processed.v1",
+                        String::new(),
+                        CanonicalWebhookEventType::Unknown,
+                        AuditOutcome::EnvelopeInvalid,
+                        None,
+                        now_ms,
+                        Some(format!("json parse: {e}")),
+                    ),
                     CanonicalWebhookEventType::Unknown,
                     AuditOutcome::EnvelopeInvalid,
                     start,
@@ -948,15 +576,15 @@ impl WebhookDispatcher {
         match self.idempotency.try_insert(token, canon, now_ms) {
             Ok(IdempotencyOutcome::AlreadyProcessed) => {
                 self.emit_audit_and_sli(
-                    AuditRecord {
-                        event_name: "corelink.billing.stripe_event_processed.v1",
-                        stripe_event_id: env.id.clone(),
-                        canonical_event_type: canon,
-                        outcome: AuditOutcome::Duplicate,
-                        idempotency_token_hex: Some(token.to_hex()),
-                        ts_ms: now_ms,
-                        error_detail: None,
-                    },
+                    AuditRecord::new(
+                        "corelink.billing.stripe_event_processed.v1",
+                        env.id.clone(),
+                        canon,
+                        AuditOutcome::Duplicate,
+                        Some(token.to_hex()),
+                        now_ms,
+                        None,
+                    ),
                     canon,
                     AuditOutcome::Duplicate,
                     start,
@@ -964,17 +592,21 @@ impl WebhookDispatcher {
                 return DispatchResponse::Ok200;
             }
             Ok(IdempotencyOutcome::FirstSight) => {} // proceed
+            // `IdempotencyOutcome` is `#[non_exhaustive]` from the
+            // upstream `corelink-billing-stripe-traits` crate; treat
+            // any future variant conservatively as "proceed".
+            Ok(_) => {}
             Err(e) => {
                 self.emit_audit_and_sli(
-                    AuditRecord {
-                        event_name: "corelink.billing.stripe_event_processed.v1",
-                        stripe_event_id: env.id.clone(),
-                        canonical_event_type: canon,
-                        outcome: AuditOutcome::MaterializerFailed,
-                        idempotency_token_hex: Some(token.to_hex()),
-                        ts_ms: now_ms,
-                        error_detail: Some(format!("idempotency store: {e}")),
-                    },
+                    AuditRecord::new(
+                        "corelink.billing.stripe_event_processed.v1",
+                        env.id.clone(),
+                        canon,
+                        AuditOutcome::MaterializerFailed,
+                        Some(token.to_hex()),
+                        now_ms,
+                        Some(format!("idempotency store: {e}")),
+                    ),
                     canon,
                     AuditOutcome::MaterializerFailed,
                     start,
@@ -1006,36 +638,40 @@ impl WebhookDispatcher {
             | CanonicalWebhookEventType::InvoiceCreated => Ok(()),
             CanonicalWebhookEventType::Unknown => {
                 self.emit_audit_and_sli(
-                    AuditRecord {
-                        event_name: "corelink.billing.stripe_event_processed.v1",
-                        stripe_event_id: env.id.clone(),
-                        canonical_event_type: canon,
-                        outcome: AuditOutcome::UnknownEventType,
-                        idempotency_token_hex: Some(token.to_hex()),
-                        ts_ms: now_ms,
-                        error_detail: None,
-                    },
+                    AuditRecord::new(
+                        "corelink.billing.stripe_event_processed.v1",
+                        env.id.clone(),
+                        canon,
+                        AuditOutcome::UnknownEventType,
+                        Some(token.to_hex()),
+                        now_ms,
+                        None,
+                    ),
                     canon,
                     AuditOutcome::UnknownEventType,
                     start,
                 );
                 return DispatchResponse::Ok200;
             }
+            // `CanonicalWebhookEventType` is `#[non_exhaustive]` from
+            // the upstream traits crate; treat any future variant as
+            // an observability-only echo (no state mutation).
+            _ => Ok(()),
         };
 
         // (7) Audit + SLI per dispatch outcome.
         match dispatch_result {
             Ok(()) => {
                 let resp = self.emit_audit_and_sli(
-                    AuditRecord {
-                        event_name: "corelink.billing.stripe_event_processed.v1",
-                        stripe_event_id: env.id.clone(),
-                        canonical_event_type: canon,
-                        outcome: AuditOutcome::Dispatched,
-                        idempotency_token_hex: Some(token.to_hex()),
-                        ts_ms: now_ms,
-                        error_detail: None,
-                    },
+                    AuditRecord::new(
+                        "corelink.billing.stripe_event_processed.v1",
+                        env.id.clone(),
+                        canon,
+                        AuditOutcome::Dispatched,
+                        Some(token.to_hex()),
+                        now_ms,
+                        None,
+                    ),
                     canon,
                     AuditOutcome::Dispatched,
                     start,
@@ -1047,15 +683,15 @@ impl WebhookDispatcher {
             }
             Err(MaterializerError::Transient(msg)) => {
                 self.emit_audit_and_sli(
-                    AuditRecord {
-                        event_name: "corelink.billing.stripe_event_processed.v1",
-                        stripe_event_id: env.id.clone(),
-                        canonical_event_type: canon,
-                        outcome: AuditOutcome::MaterializerFailed,
-                        idempotency_token_hex: Some(token.to_hex()),
-                        ts_ms: now_ms,
-                        error_detail: Some(msg),
-                    },
+                    AuditRecord::new(
+                        "corelink.billing.stripe_event_processed.v1",
+                        env.id.clone(),
+                        canon,
+                        AuditOutcome::MaterializerFailed,
+                        Some(token.to_hex()),
+                        now_ms,
+                        Some(msg),
+                    ),
                     canon,
                     AuditOutcome::MaterializerFailed,
                     start,
@@ -1064,20 +700,40 @@ impl WebhookDispatcher {
             }
             Err(MaterializerError::InvalidPayload(msg)) => {
                 self.emit_audit_and_sli(
-                    AuditRecord {
-                        event_name: "corelink.billing.stripe_event_processed.v1",
-                        stripe_event_id: env.id.clone(),
-                        canonical_event_type: canon,
-                        outcome: AuditOutcome::MaterializerInvalid,
-                        idempotency_token_hex: Some(token.to_hex()),
-                        ts_ms: now_ms,
-                        error_detail: Some(msg),
-                    },
+                    AuditRecord::new(
+                        "corelink.billing.stripe_event_processed.v1",
+                        env.id.clone(),
+                        canon,
+                        AuditOutcome::MaterializerInvalid,
+                        Some(token.to_hex()),
+                        now_ms,
+                        Some(msg),
+                    ),
                     canon,
                     AuditOutcome::MaterializerInvalid,
                     start,
                 );
                 DispatchResponse::Unprocessable422
+            }
+            // `MaterializerError` is `#[non_exhaustive]` in the leaf traits
+            // crate; treat any future variants as transient so the
+            // dispatcher returns 500 (Stripe retries) rather than panicking.
+            Err(_) => {
+                self.emit_audit_and_sli(
+                    AuditRecord::new(
+                        "corelink.billing.stripe_event_processed.v1",
+                        env.id.clone(),
+                        canon,
+                        AuditOutcome::MaterializerFailed,
+                        Some(token.to_hex()),
+                        now_ms,
+                        Some("unknown materializer error variant".to_string()),
+                    ),
+                    canon,
+                    AuditOutcome::MaterializerFailed,
+                    start,
+                );
+                DispatchResponse::InternalError500
             }
         }
     }
@@ -1092,12 +748,12 @@ impl WebhookDispatcher {
         start_marker: u64,
     ) -> Option<String> {
         let audit_err = self.audit.emit(&record).err();
-        self.sli.observe(SliObservation {
-            metric_name: SLI_BILLING_STRIPE_EVENT_SECONDS,
-            seconds: self.clock.observe_latency_seconds(start_marker),
+        self.sli.observe(SliObservation::new(
+            SLI_BILLING_STRIPE_EVENT_SECONDS,
+            self.clock.observe_latency_seconds(start_marker),
             event_type,
             outcome,
-        });
+        ));
         audit_err
     }
 }

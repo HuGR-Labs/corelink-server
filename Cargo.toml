@@ -322,6 +322,11 @@ members = [
     # Decoupled from the wasm32-only `corelink-cf-bindings::CfD1DatabaseReal`
     # via a thin `BillingD1Writer` trait so the surface tests on native CI.
     "crates/corelink-billing-stripe-materializer",
+    # Wave-36 Trigger A: leaf crate holding the 4 port traits + identity /
+    # outcome / error types extracted from `corelink-stripe-real::webhook_dispatch`,
+    # resolving the materializer dep-graph cycle hazard identified in
+    # `specs/_audits/2026-05-26-w36-stage2c-closure.md` §5.1.
+    "crates/corelink-billing-stripe-traits",
     # Wave-23 R-PREP pilot tenant onboarding end-to-end harness — composes
     # the full GA customer journey in a single deterministic in-memory
     # pipeline: signup → first CAS upload (100 blobs) → 24h audit export
@@ -576,6 +581,7 @@ corelink-chaos-scheduler = { path = "crates/corelink-chaos-scheduler" }
 corelink-tier-selection = { path = "crates/corelink-tier-selection" }
 corelink-stripe-real = { path = "crates/corelink-stripe-real" }
 corelink-billing-stripe-materializer = { path = "crates/corelink-billing-stripe-materializer" }
+corelink-billing-stripe-traits = { path = "crates/corelink-billing-stripe-traits" }
 corelink-statuspage-real = { path = "crates/corelink-statuspage-real" }
 corelink-dsr-statuspage-scheduler = { path = "crates/corelink-dsr-statuspage-scheduler" }
 corelink-openapi = { path = "tools/openapi" }
