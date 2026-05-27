@@ -2,10 +2,10 @@
 id: "AUDIT-2026-05-26-W34-ADAPTER-OCI"
 type: "audit"
 doc_status: "ACTIVE"
-audit_status: "ACTIVE"
-version: "1.0.0"
+audit_status: "CLOSED"
+version: "1.1.0"
 created: "2026-05-26"
-updated: "2026-05-26"
+updated: "2026-05-27"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -14,6 +14,8 @@ superseded_by: null
 tags: ["audit", "wave-34", "adapters", "oci", "registry"]
 references:
 ---
+
+> **CLOSED 2026-05-27** — Wave-34 adapters sealed via git tag `wave-34-adapters-sealed` (SEAL commit `941f9315` "wave-34 SEAL: OCI Distribution Spec v1.1 registry adapter"); subsequently absorbed into `corelink-adapter-host` via `wave-35-phase-2-sealed`. See `specs/_audits/2026-05-27-audit-triage-post-w36.md`.
 
 # Wave 34 SEAL — OCI Distribution Spec v1.1 Registry Adapter
 

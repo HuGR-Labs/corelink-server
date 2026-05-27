@@ -2,15 +2,18 @@
 id: "AUDIT-2026-04-25-agent-r4-s06-part2a"
 type: "audit_report"
 doc_status: "FINAL"
-audit_status: "ACTIVE"
-version: "1.0.0"
+audit_status: "CLOSED"
+version: "1.1.0"
 created: "2026-04-25"
+updated: "2026-05-27"
 reviewer: "agent-r4 (Claude Opus 4.7 1M)"
 scope: "S-06 Part 2a — WI-S06-004, WI-S06-005 (focused 2 WIs)"
 parent_audit: "specs/_audits/2026-04-25-agent-r4-s06-part1-wi-review.md"
 sprint_contract: "specs/04_sprints/S06/_spec_contract.md v1.1.0"
 tags: ["audit", "r4", "s06", "part2a", "wi-004", "wi-005", "adversarial"]
 ---
+
+> **CLOSED 2026-05-27** — S-06 sprint implementation sealed via git tag `s06-impl-sealed`; this independent review record is delivered. See `specs/_audits/2026-05-27-audit-triage-post-w36.md` for triage methodology.
 
 # S-06 Part 2a Adversarial WI Review — WI-004 (Physical Delete) + WI-005 (Refcount Reconcile)
 
