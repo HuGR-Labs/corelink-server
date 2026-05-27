@@ -90,23 +90,48 @@ export async function configureTenantAction(input: {
   );
 }
 
-export interface SetupIntent {
-  client_secret: string;
+/**
+ * Stripe Checkout Session — PLG defer-billing pattern (Phase 0.C).
+ *
+ * Signup wizard no longer asks for a payment method. Money question
+ * deferred to upgrade-click via Stripe-hosted Checkout Session. The
+ * backend `POST /v1/onboarding/tier-select` enforces the
+ * INV-ONBOARD-DPA-FIRST D1 lock (DPA acceptance row MUST exist before
+ * a Stripe Checkout session is minted) and returns a Stripe-hosted
+ * `checkout.session.url` we redirect to. Tier activation (set
+ * `tenants.plan = 'pro'`) happens server-side when the corresponding
+ * `checkout.session.completed` webhook lands on
+ * `/v1/billing/stripe-webhook` (idempotent via canonical Stripe
+ * `evt_*` event id — see `corelink-tier-selection/src/ledger.rs`).
+ *
+ * See `specs/_audits/2026-05-27-phase-0-execution-plan.md` §2.C +
+ * `specs/_audits/2026-05-27-plg-onboarding-framework.md` §4.
+ */
+export interface CheckoutSessionRequest {
+  /** Canonical tier id (`free` | `starter` | `team` | `pro` | `enterprise`). */
+  tier: string;
+  success_url: string;
+  cancel_url: string;
 }
 
-export async function createSetupIntentAction(): Promise<SetupIntent> {
-  const token = await getSessionToken();
-  return apiPost<SetupIntent>("/v1/billing/setup-intent", {}, { token });
+export interface CheckoutSessionResponse {
+  /** Stripe-hosted Checkout URL — client redirects via `Location: 303`. */
+  checkout_url: string;
+  /** Stripe `cs_*` session id (echoed back in success_url for analytics). */
+  session_id: string;
 }
 
-export async function recordBillingSetupAction(input: {
-  tenantId: string;
-  paymentMethodId: string;
-}): Promise<{ ok: true }> {
+export async function createCheckoutSessionAction(
+  input: CheckoutSessionRequest,
+): Promise<CheckoutSessionResponse> {
   const token = await getSessionToken();
-  return apiPost<{ ok: true }>(
-    `/v1/tenants/${encodeURIComponent(input.tenantId)}/billing-setup`,
-    { payment_method_id: input.paymentMethodId },
+  return apiPost<CheckoutSessionResponse>(
+    "/v1/onboarding/tier-select",
+    {
+      tier: input.tier,
+      success_url: input.success_url,
+      cancel_url: input.cancel_url,
+    },
     { token },
   );
 }

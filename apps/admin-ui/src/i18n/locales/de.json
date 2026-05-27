@@ -33,11 +33,6 @@
       "plan_label": "Tarif",
       "submit": "Weiter"
     },
-    "billing": {
-      "title": "Abrechnung einrichten",
-      "submit": "Zahlungsmethode speichern",
-      "skipped_free": "Free-Tarif: keine Zahlung erforderlich."
-    },
     "pat": {
       "title": "Erstes persönliches Zugangstoken erstellen",
       "label_label": "Token-Name",

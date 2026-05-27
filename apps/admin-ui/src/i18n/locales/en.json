@@ -33,11 +33,6 @@
       "plan_label": "Plan",
       "submit": "Continue"
     },
-    "billing": {
-      "title": "Set up billing",
-      "submit": "Save payment method",
-      "skipped_free": "Free plan: no payment required."
-    },
     "pat": {
       "title": "Create your first personal access token",
       "label_label": "Token name",

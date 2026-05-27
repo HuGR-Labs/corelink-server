@@ -1,11 +1,16 @@
 /**
- * Customer-facing billing page — entry point for the Stripe Customer
- * Portal redirect flow.
+ * Customer-facing billing page — entry point for both:
+ *   - The Stripe Customer Portal redirect flow (existing tenants
+ *     managing their subscription).
+ *   - The Stripe Checkout Session upgrade flow (Phase 0.C — PLG
+ *     defer-billing: free-tier tenants upgrading to Pro).
  *
- * Scope (wt/r-prep-stripe-portal):
- *   - Render a short "Manage subscription" panel.
- *   - "Open Stripe Portal" button → POST
- *     `/api/v1/customer/billing/portal-session` → redirect.
+ * Scope:
+ *   - Render "Upgrade to Pro" → POST `/api/checkout/session` →
+ *     Stripe-hosted Checkout. (Phase 0.C / launch-readiness §2.)
+ *   - Render "Manage subscription" → POST
+ *     `/api/v1/customer/billing/portal-session` → Stripe Customer
+ *     Portal.
  *
  * Out of scope (deferred to follow-ups):
  *   - Inline plan summary widget (lives in customer dashboard S-16).
@@ -19,6 +24,7 @@
 import * as React from "react";
 import { getAuthContext } from "@/lib/auth";
 import { PortalLauncher } from "./PortalLauncher";
+import { UpgradeButton } from "@/components/UpgradeButton";
 
 export default async function Page(props: {
   params: Promise<{ locale: string }>;
@@ -29,14 +35,30 @@ export default async function Page(props: {
 
   return (
     <main aria-labelledby="billing-heading">
-      <h1 id="billing-heading">Manage subscription</h1>
-      <p>
-        Update payment method, download invoices, change plan, or cancel
-        your subscription. Clicking the button below opens the secure
-        Stripe Customer Portal in this window. You will return to this
-        page when you close the portal.
-      </p>
-      <PortalLauncher locale={locale} tenantId={tenantId} />
+      <h1 id="billing-heading">Billing</h1>
+
+      <section aria-labelledby="upgrade-heading">
+        <h2 id="upgrade-heading">Upgrade to Pro</h2>
+        <p>
+          Get unmetered cache hits, BYOK across all regions, and
+          priority support. Clicking the button below opens Stripe
+          Checkout in this window. CoreLink never sees your card
+          number — Stripe handles all payment data.
+        </p>
+        <UpgradeButton locale={locale} tier="pro" />
+      </section>
+
+      <section aria-labelledby="manage-heading">
+        <h2 id="manage-heading">Manage subscription</h2>
+        <p>
+          Update payment method, download invoices, change plan, or
+          cancel your subscription. Clicking the button below opens
+          the secure Stripe Customer Portal in this window. You will
+          return to this page when you close the portal.
+        </p>
+        <PortalLauncher locale={locale} tenantId={tenantId} />
+      </section>
+
       <section aria-labelledby="portal-faq-heading">
         <h2 id="portal-faq-heading">What you can do in the portal</h2>
         <ul>
