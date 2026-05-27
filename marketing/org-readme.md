@@ -1,0 +1,61 @@
+# HuGR Labs
+
+Build infrastructure for regulated polyglot engineering orgs. We ship
+tools that default to BYOK, residency honesty, and verifiable audit logs.
+
+## Active products
+
+### CoreLink — content-addressable cache
+
+[corelink-server](https://github.com/humangr-labs/corelink-server) |
+[corelink-cli](https://github.com/humangr-labs/corelink-cli)
+
+REAPI v2 compatible cache for Bazel, Buck2, Cargo, npm, pip, OCI Docker
+layers, and ML model registries. Multi-tenant. Per-tenant BYOK across four
+KMS providers (AWS KMS, GCP Cloud KMS, Azure Key Vault, HashiCorp Vault).
+RFC-6962-style append-only audit chain — BLAKE3-addressed, Ed25519-signed,
+replayable by the tenant at any time.
+
+Currently shipping: **pilot-open, pre-GA**. Free tier available; 10 pilot
+slots for organisations that need the BYOK + audit path.
+
+## Engineering philosophy
+
+**Specs first.** Every non-trivial subsystem has an invariant document
+before implementation begins. Specs live under `specs/` and are committed
+with version and seal status.
+
+**TLA+ where it matters.** Cross-tenant isolation and the audit chain
+commit protocol are modelled formally. The model runs in CI; a regression
+that breaks an invariant breaks the build.
+
+**Property tests over snapshots.** Snapshot tests rot; property tests
+state what must always hold. The Rust workspace has proptests covering the
+CAS addressing, Merkle chain, and tenant namespace isolation.
+
+**Honest accounting.** BYOK, SOC 2 Type II, and SLA contracts are listed
+with their actual status — shipped, in-progress, or planned — in the
+ROADMAP and CHANGELOG of each repo. No feature listed as "available" unless
+CI is green on it.
+
+**Supply chain locked.** `cargo-deny` with explicit allow-lists on
+licenses, crates, and advisories. `#![forbid(unsafe_code)]` across the
+workspace.
+
+## Currently shipping
+
+CoreLink is in active pilot. Pilot milestone requires three active tenants
+before GA gate opens. See
+[ROADMAP-TO-LAUNCH.md](https://github.com/humangr-labs/corelink-server/blob/main/ROADMAP-TO-LAUNCH.md)
+for the full 8-phase plan.
+
+## Community
+
+- [CODE_OF_CONDUCT.md](.github/CODE_OF_CONDUCT.md)
+- [CONTRIBUTING.md](.github/CONTRIBUTING.md)
+- [SECURITY.md](.github/SECURITY.md)
+- Issues and pull requests welcome on public repos
+
+## Contact
+
+gustavo@humangr.com | [corelink-docs.humangr.com](https://corelink-docs.humangr.com)
