@@ -3,9 +3,9 @@ id: "ACTIVE-FAILOVER-DRILL-SPEC-2026-05-15"
 type: "compliance_drill_spec"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-15"
-updated: "2026-05-15"
+updated: "2026-05-27"
 sprint: "R-6"
 parent_wi: "WT-R6-ACTIVE-FAILOVER"
 owner: "SRE Lead"
@@ -15,6 +15,8 @@ supersedes: null
 superseded_by: null
 tags: ["compliance", "dr", "active-failover", "warm-failover", "soc2-cc7-5", "soc2-cc9-1", "soc2-a1-2", "iso-27031", "rb-active-failover", "dr-16", "r-6"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-drata-sync` was absorbed into `corelink-ops` via inline `mod <name>;` per SEAL specs/_audits/sealed/2026-05-26-w35-p2-ops-absorption.md. Canonical consumer path is now `corelink_ops::drata::*`. Other crate anchors in this drill spec (`corelink-failover-router`, `corelink-region`, `corelink-replica-worker`) retain Option-A re-export shims under `corelink-replication` and remain callable at their original names per Wave 35 P2 replication-absorption SEAL §1.
 
 # Active-Region Failover Drill Spec — Warm Switch With Minimal Data Loss
 

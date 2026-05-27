@@ -3,9 +3,9 @@ id: "VENDOR-RISK-REGISTER-2026-05-15"
 type: "compliance_register"
 doc_status: "ACTIVE"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-15"
-updated: "2026-05-15"
+updated: "2026-05-27"
 sprint: "R5-3"
 parent_wi: "WI-R5-3-GAP-14-VENDOR-RISK"
 owner: "Gustavo Schneiter"
@@ -16,6 +16,8 @@ superseded_by: null
 inherits_from: ["VENDOR-RISK-METHODOLOGY-2026-05-15", "SOC2-EVIDENCE-ROLLUP-2026-05-15"]
 tags: ["soc2", "cc9.2", "vendor-risk", "register", "gap-14", "drata"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-billing-replay` was absorbed into `corelink-billing` via inline `mod <name>;` per SEAL specs/_audits/sealed/2026-05-26-w35-p2-billing-absorption.md. Canonical consumer path is now `corelink_billing::replay::*`.
 
 # Vendor Risk Register
 
