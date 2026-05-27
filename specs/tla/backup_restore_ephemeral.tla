@@ -25,7 +25,8 @@
 (*                                                                         *)
 (* Cross-refs:                                                             *)
 (*   - `specs/03_architecture/invariant_registry.md §3.20 INV-BACKUP-*`  *)
-(*   - `crates/corelink-backup-verify/src/lib.rs`                        *)
+(*   - `crates/corelink-ops/src/dr/backup_verify.rs` (post Wave 35 P2:   *)
+(*     corelink-backup-verify absorbed into corelink-ops/src/dr/)         *)
 (***************************************************************************)
 
 EXTENDS Integers, FiniteSets, Sequences, TLC

@@ -27,7 +27,8 @@
 (* Cross-refs:                                                             *)
 (*   - `specs/03_architecture/invariant_registry.md §3.3 INV-DIGEST-*`    *)
 (*   - `crates/corelink-hash/src/lib.rs::verify_body`                    *)
-(*   - `crates/corelink-worker/src/r2_put.rs` (Write path)               *)
+(*   - `crates/corelink-worker/src/storage/r2.rs` (Write path; post      *)
+(*     Wave 33 reorg: r2_put.rs migrated into storage/ submodule)         *)
 (*   - sibling: `specs/tla/cas_integrity.tla` (InvPoisoningRejected)     *)
 (***************************************************************************)
 

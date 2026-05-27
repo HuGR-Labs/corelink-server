@@ -35,7 +35,8 @@
 (* Cross-refs:                                                             *)
 (*   - `specs/03_architecture/invariant_registry.md §3.4 AUTH`            *)
 (*   - `migrations/auth/*.sql`                                            *)
-(*   - `crates/corelink-auth/src/orm.rs` (pii crypto wrapper)             *)
+(*   - `crates/corelink-auth/src/schema/` (pii crypto wrapper; post      *)
+(*     Wave 33 reorg: orm.rs split into schema/ submodule)                *)
 (***************************************************************************)
 
 EXTENDS Integers, FiniteSets, Sequences, TLC

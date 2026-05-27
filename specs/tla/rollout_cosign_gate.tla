@@ -37,7 +37,9 @@
 (* Cross-refs:                                                             *)
 (*   - `specs/03_architecture/invariant_registry.md §3.26 INV-ROLLOUT-*` *)
 (*   - `specs/03_architecture/invariant_registry.md §3.10 INV-SUPPLY-*`  *)
-(*   - `crates/corelink-rollout-controller/src/lib.rs::start`            *)
+(*   - `crates/corelink-replication/src/rollout_controller/controller.rs *)
+(*     ::start` (post Wave 35 P2: corelink-rollout-controller absorbed   *)
+(*     into corelink-replication/src/rollout_controller/)                 *)
 (***************************************************************************)
 
 EXTENDS Integers, FiniteSets, Sequences, TLC
