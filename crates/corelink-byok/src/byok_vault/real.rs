@@ -41,7 +41,7 @@
 //!
 //! `reqwest` (and its tokio runtime) does not compile to
 //! `wasm32-unknown-unknown` from the CoreLink workspace profile. On
-//! wasm32 we link [`VaultWasmStub`] which returns
+//! wasm32 we link `VaultWasmStub` which returns
 //! `BYOKError::Provider("Vault real provider unsupported on wasm32; ...")`
 //! from every method. CoreLink Workers proxy envelope operations to the
 //! native server process, which holds the actual Vault Transit client.

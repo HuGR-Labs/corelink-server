@@ -431,7 +431,7 @@ impl ClerkHealthState {
 
 /// Pure-logic actor implementation. Owns the in-memory state + audit
 /// hook + the anchored tenant id. Holds no `worker::*` types so it
-/// compiles and runs on both targets; the wasm32 [`ClerkHealthDo`]
+/// compiles and runs on both targets; the wasm32 `ClerkHealthDo`
 /// shell wraps this type plus a `worker::durable::State` to persist
 /// across requests.
 pub struct ClerkHealthLogic {

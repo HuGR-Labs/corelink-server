@@ -188,7 +188,7 @@ impl VaultProvider {
     ///
     /// # Errors
     ///
-    /// Returns [`BYOKError::MtlsError`] if certs cannot be parsed.
+    /// Returns a `BYOKError` variant if certs cannot be parsed.
     pub fn new_production(
         vault_url: &str,
         transit_engine_path: &str,

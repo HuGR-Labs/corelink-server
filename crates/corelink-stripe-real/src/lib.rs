@@ -1,5 +1,5 @@
 //! `corelink-stripe-real` — production HTTPS Stripe API client implementing
-//! the [`StripeClient`] trait from `corelink-tier-selection`.
+//! the `StripeClient` trait from `corelink-tier-selection`.
 //!
 //! # Scope
 //!

@@ -228,7 +228,7 @@ pub fn verify_chain_link(
 ///   `[0u8; 32]` if the chain is empty / about to emit the genesis).
 /// - The first event ever emitted MUST have `sequence_number == 0` and
 ///   `prev_hash == [0u8; 32]`; the builder enforces this in
-///   [`HashChainBuilder::next_link`].
+///   [`HashChainBuilder::append`].
 #[derive(Clone, Debug)]
 pub struct HashChainBuilder {
     head: ChainHash,

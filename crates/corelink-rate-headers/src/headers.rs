@@ -275,7 +275,7 @@ impl RateLimitHeaders {
 ///
 /// Composes [`RateLimitHeaders`] from per-camada bucket state +
 /// per-request decision context. The canonical entry is
-/// [`RateLimitHeaderBuilder::for_decision`] which renders the full
+/// [`RateLimitHeaderBuilder::build`] which renders the full
 /// 5-tuple typed payload. The render-stage helpers
 /// ([`RateLimitHeaders::render_rate_limit`] etc.) ship the canonical
 /// strings the production Tower middleware writes.

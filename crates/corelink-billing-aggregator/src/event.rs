@@ -274,7 +274,7 @@ pub struct AggregatedCounter {
 
 impl AggregatedCounter {
     /// Construct a canonical aggregated counter. The orchestrator at
-    /// [`crate::aggregator::InMemoryCounterAggregator::run`] is the
+    /// [`crate::aggregator::CounterAggregator::run`] is the
     /// canonical caller; this constructor is exposed so adversarial
     /// tests can build aggregates outside the orchestrator (e.g. to
     /// exercise `prop_chain_break_detected_on_tamper` directly at the

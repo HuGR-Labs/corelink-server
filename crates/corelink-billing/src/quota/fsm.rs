@@ -156,6 +156,10 @@
 //! - PagerDuty 2 services dispatch: `corelink-finance` (Suspended SEV-1
 //!   page) / `corelink-sre` (audit-emit failure SEV-2 page).
 
+// W35-P2: inherited `//!` docs from the absorbed `corelink-quota-fsm`
+// crate use short intra-doc refs that resolved at the former crate root.
+#![allow(rustdoc::broken_intra_doc_links)]
+
 pub mod audit;
 pub mod error;
 pub mod event;

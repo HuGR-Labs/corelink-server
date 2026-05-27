@@ -1,7 +1,7 @@
 //! `INV-AC-OUTPUTS-VALID` aliveness check trait + InMemory fake
 //! (WI-S04-001 §6.1.5–§6.1.6).
 //!
-//! Production wiring uses [`corelink_meta::MetaStore`] to look up
+//! Production wiring uses `corelink_meta::MetaStore` to look up
 //! every `output_file` / `output_directory` digest under the same
 //! tenant_id. The fake here lets the property tests pre-populate
 //! "alive" and "tombstoned" digest sets without spinning up the

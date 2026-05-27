@@ -3,7 +3,7 @@
 //! `ManifestError` is the single error type surfaced by the builder /
 //! verifier APIs. The verifier's [`VerifyError`] is a discriminated
 //! union over `ManifestError` (structure failures), [`SigError`] (sig
-//! failures, delegated to [`corelink-ac::sig::SigError`] verbatim so the
+//! failures, delegated to [`corelink_ac::sig::SigError`] verbatim so the
 //! HKDF surface stays single-source-of-truth) and the streaming-only
 //! per-chunk-mismatch arm.
 //!
@@ -120,7 +120,7 @@ pub enum VerifyError {
     Structure(#[from] ManifestError),
 
     /// Cripto-signature verification failure (HKDF-SHA256 + BLAKE3
-    /// keyed-hash). Delegates to [`corelink-ac::sig::SigError`] so the
+    /// keyed-hash). Delegates to [`corelink_ac::sig::SigError`] so the
     /// underlying error taxonomy stays single-source-of-truth.
     #[error("manifest signature invalid: {0}")]
     Sig(#[from] SigError),

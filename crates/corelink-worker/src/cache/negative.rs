@@ -136,7 +136,7 @@ pub enum NegativeCacheError {
 
 /// KV-backed negative cache for the CoreLink CAS read path.
 ///
-/// Holds an [`Arc`]-shareable backend so a single cache instance can be
+/// Holds an [`std::sync::Arc`]-shareable backend so a single cache instance can be
 /// fanned out across the request handler stack. Construction requires
 /// a [`Region`] (residency anchor) — the `lookup` /
 /// `put_miss` / `invalidate_on_write` methods reject any caller whose

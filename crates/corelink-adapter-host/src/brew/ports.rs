@@ -36,7 +36,7 @@ pub trait CasStore: Send + Sync + Debug {
     /// Return the bytes stored under `(tenant_id, cas_key)`, or `None`
     /// on miss. `Err` is reserved for backend failure (network, disk,
     /// permission) and surfaces as
-    /// [`crate::BrewAdapterError::Cas`].
+    /// [`crate::brew::BrewAdapterError::Cas`].
     async fn get(
         &self,
         tenant_id: &str,
@@ -89,7 +89,7 @@ pub trait TenantResolver: Send + Sync + Debug {
 #[non_exhaustive]
 pub enum TenantResolveError {
     /// PAT not found, expired, or lacking the `brew:read` scope.
-    /// Surfaces as HTTP 401 via [`crate::BrewAdapterError::Auth`].
+    /// Surfaces as HTTP 401 via [`crate::brew::BrewAdapterError::Auth`].
     #[error("invalid PAT")]
     InvalidPat,
 
@@ -99,9 +99,9 @@ pub enum TenantResolveError {
     Backend(String),
 }
 
-/// Type-erased CAS handle bundled into [`crate::BrewAdapterConfig`].
+/// Type-erased CAS handle bundled into [`crate::brew::BrewAdapterConfig`].
 pub type SharedCasStore = Arc<dyn CasStore>;
 
 /// Type-erased tenant resolver bundled into
-/// [`crate::BrewAdapterConfig`].
+/// [`crate::brew::BrewAdapterConfig`].
 pub type SharedTenantResolver = Arc<dyn TenantResolver>;

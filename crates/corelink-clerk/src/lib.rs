@@ -17,7 +17,7 @@
 //!
 //! | Target | Fetcher | Crate / feature |
 //! |---|---|---|
-//! | Native (`apps/server`, CLI, CI) | [`HttpJwksFetcher`] (`reqwest` + `rustls-tls`) | `corelink-clerk` feature `http-fetcher` |
+//! | Native (`apps/server`, CLI, CI) | `HttpJwksFetcher` (`reqwest` + `rustls-tls`) | `corelink-clerk` feature `http-fetcher` |
 //! | Cloudflare Workers (`wasm32-unknown-unknown`) | `CfJwksFetcher` (`worker::Fetch::Url`) | `corelink-clerk-cf` |
 //!
 //! - [`JwksFetcher`]: HTTPS JWKS endpoint fetch. Tests use

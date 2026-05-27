@@ -4,7 +4,7 @@
 //! ## Why a thin trait surface (not direct `corelink-audit::Emitter`)
 //!
 //! `corelink-audit::Emitter` (S-03 WI-S03-007) is the canonical
-//! `auth.*` event surface — its [`AuthEventType`](corelink_audit::AuthEventType)
+//! `auth.*` event surface — its `AuthEventType` (from `corelink_audit`)
 //! taxonomy covers token / session / membership / WebAuthn / DSR
 //! events. AC events (`ac.get.ok` / `ac.get.miss` / `ac.update.ok` /
 //! `ac.update.merkle_invalid` / `ac.update.outputs_missing` + the

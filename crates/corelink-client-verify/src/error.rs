@@ -3,7 +3,7 @@
 //! `VerifyError` is the only fallible result variant returned by sync verify.
 //! It is intentionally narrow: today the only failure mode is a digest
 //! mismatch (bit rot, cache poisoning, or an opt-out caller asking for a
-//! verify that was disabled). Stream-mode adds [`StreamVerifyError`] which
+//! verify that was disabled). Stream-mode adds `StreamVerifyError` which
 //! carries the upstream I/O error in addition to mismatch.
 
 use thiserror::Error;

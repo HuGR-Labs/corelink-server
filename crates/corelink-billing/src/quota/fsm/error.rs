@@ -63,7 +63,7 @@ pub enum QuotaFsmStoreError {
     Backend(String),
 }
 
-/// Canonical error surface returned by the [`crate::fsm`] APIs.
+/// Canonical error surface returned by the [`crate::quota::fsm`] APIs.
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum QuotaFsmError {

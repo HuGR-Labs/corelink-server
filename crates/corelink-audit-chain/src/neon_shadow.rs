@@ -529,7 +529,7 @@ impl ShadowSyncAuditSink for InMemoryShadowSyncAuditSink {
 
 /// Neon analytics shadow sink trait.
 ///
-/// Production wiring binds [`RealNeonShadowSink`] (deferred follow-on
+/// Production wiring binds [`real::RealNeonShadowSink`] (deferred follow-on
 /// WI — needs the `tokio-postgres` / Neon serverless driver wiring).
 /// Tests bind [`InMemoryNeonShadowSink`].
 ///

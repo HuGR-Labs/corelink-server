@@ -83,7 +83,7 @@ pub trait CrmClient: core::fmt::Debug + Send + Sync {
     /// CRM-side entry id used for downstream Sales follow-up.
     ///
     /// `tenant_id` is supplied by the ledger and is the value bound
-    /// into the sealed payload's AAD (per [`InquiryAadContext`]); the
+    /// into the sealed payload's AAD (per [`crate::InquiryAadContext`]); the
     /// adapter MUST pass it through to the encryptor so the unseal
     /// path can re-derive the AAD and fail-CLOSED on mismatch.
     ///

@@ -23,7 +23,7 @@
 //! # Secrets handling
 //!
 //! [`ClerkEnvSecrets::secret_key`] is a `String` wrapped in
-//! [`zeroize::Zeroizing`] so the heap allocation is wiped on drop.
+//! `zeroize::Zeroizing` so the heap allocation is wiped on drop.
 //! The `Debug` impl redacts the value. **Callers must never log it.**
 
 use std::env;
@@ -69,7 +69,7 @@ pub struct ClerkEnvSecrets {
     /// Clerk publishable key (frontend; non-secret but kept here for
     /// completeness — surfaces as `pk_test_…` / `pk_live_…`).
     pub publishable_key: String,
-    /// Clerk secret key (backend). Wrapped in [`zeroize::Zeroizing`]
+    /// Clerk secret key (backend). Wrapped in `zeroize::Zeroizing`
     /// so the heap allocation is wiped on drop. `Debug` is redacted.
     pub secret_key: SecretKey,
 }

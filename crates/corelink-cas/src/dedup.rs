@@ -38,7 +38,7 @@
 //!    every fallible API surfaces (transport / programmer / auth
 //!    failures only — "digest is missing" is a happy-path outcome, not
 //!    an error).
-//! 5. The [`write`] module ships [`record_chunk_write`] — the helper
+//! 5. The [`mod@write`] module ships [`record_chunk_write`] — the helper
 //!    the production `BatchUpdateBlobs` / `WriteBlob` / chunk-upsert
 //!    handler invokes after each `chunks` INSERT/ON CONFLICT to
 //!    increment the dedup-on-write counters per WI §6.1.7 (R-S07-2).

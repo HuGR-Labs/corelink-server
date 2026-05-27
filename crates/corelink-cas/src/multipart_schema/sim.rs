@@ -453,7 +453,7 @@ impl MultipartSchema {
     /// The simulator does NOT see the bytes — it can only check the
     /// `size_bytes` / `region` / `r2_object_key` columns line up. A
     /// `region` mismatch (a chunk dedup hit across regions) is rejected
-    /// with [`SimError::CheckViolation("chk_chunks_region_immutable")`]:
+    /// with [`SimError::CheckViolation`] (`chk_chunks_region_immutable`):
     /// the chunk's R2 location is part of its identity for routing
     /// purposes, and a hash collision across regions would otherwise
     /// silently overwrite the routing column. `size_bytes` mismatch on

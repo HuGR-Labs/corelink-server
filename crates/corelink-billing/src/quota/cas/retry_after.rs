@@ -15,7 +15,7 @@
 //!
 //! Constants:
 //! - [`SECS_PER_DAY`] = 86_400.
-//! - [`UNIX_EPOCH_DAYS_TO_1970`] = 0 (anchor).
+//! - `UNIX_EPOCH_DAYS_TO_1970` = 0 (anchor).
 //! - [`MAX_SECS_PER_MONTH`] = 31 × 86_400 = 2_678_400 (worst-case
 //!   distance between two 1st-UTC-midnights).
 //!

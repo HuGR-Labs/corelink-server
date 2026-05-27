@@ -88,6 +88,12 @@
 //!
 //! `specs/_audits/2026-05-16-signup-corelink-dev-backend.md`.
 
+// W35-P2: module-level `//!` docs reference items defined further down
+// this file via short paths; under the umbrella crate's scope they
+// would require full prefixes. Suppressing the lint preserves the
+// original reference text.
+#![allow(rustdoc::broken_intra_doc_links)]
+
 use std::sync::{Arc, Mutex};
 
 use axum::{

@@ -1,5 +1,5 @@
 //! Adapter configuration assembled by the binary entrypoint and
-//! handed to [`crate::run_brew_adapter`].
+//! handed to [`crate::brew::run_brew_adapter`].
 //!
 //! Environment-variable mapping (consumed by the binary that wires
 //! this adapter into the production server):

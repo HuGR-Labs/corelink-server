@@ -6,7 +6,7 @@
 //! events. The five observability-only echoes
 //! (`customer.subscription.created`, `customer.subscription.trial_will_end`,
 //! `charge.refunded`, `customer.created`, `invoice.created`) are
-//! materialised here too via the [`echo_*`-style] entry points the
+//! materialised here too via the `echo_*`-style entry points the
 //! dispatcher does NOT route — instead the handler exposes a
 //! [`D1SubscriptionStateHandler::materialize_echo`] entry that the
 //! integration harness drives directly. This keeps the trait surface
@@ -148,7 +148,7 @@ impl D1SubscriptionStateHandler {
     /// behind the canonical production [`MatClock`]
     /// ([`crate::clock::default_mat_clock`]): native targets get
     /// [`crate::clock::SystemMatClock`]; wasm32 targets get
-    /// [`crate::clock::WasmWorkerMatClock`] which reads
+    /// `crate::clock::WasmWorkerMatClock` which reads
     /// `js_sys::Date::now()` (avoiding the
     /// `wasm32-unknown-unknown` `SystemTime::now()` runtime panic per
     /// wave-22 closure of the wave-20 follow-on caveat).

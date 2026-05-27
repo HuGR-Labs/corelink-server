@@ -2,7 +2,7 @@
 //! (R-PREP, wasm32 production binding — replicates the pattern landed
 //! in [`crate::r2_real`] for the D1 surface).
 //!
-//! # What this module adds over [`crate::cf_d1::CfD1DatabaseAdapter`]
+//! # What this module adds over `crate::cf_d1::CfD1DatabaseAdapter` (wasm32-only)
 //!
 //! `cf_d1::CfD1DatabaseAdapter` is the **minimal** raw-passthrough
 //! `prepare` / `exec` wrapper used by `corelink-clerk-cf::health` for

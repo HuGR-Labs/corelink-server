@@ -3,7 +3,7 @@
 //! These constants are the cross-crate alignment authority for the
 //! manifest pipeline. The S-05 spec contract §5.1 P1-SR5-001 pins
 //! [`MAX_CHUNKS_PER_BLOB`] at `81_920` (160 GiB / 2 MiB exact); the
-//! [`corelink-chunker`] crate's `MAX_CHUNKS_PER_BLOB` mirrors this value
+//! `corelink-cas::chunker` module's `MAX_CHUNKS_PER_BLOB` mirrors this value
 //! verbatim and the worker's
 //! `corelink-worker::reapi::cas::types::MAX_CHUNKS_PER_BLOB` constant
 //! does the same. Drift between the three is caught by the compile-time
@@ -35,7 +35,7 @@ pub const MAX_CHUNK_SIZE_BYTES: u32 = 4 * 1024 * 1024;
 pub const MANIFEST_PREIMAGE_LEN: usize = 102;
 
 /// Length of an HKDF-derived manifest signature (BLAKE3 keyed-hash
-/// output = 32 bytes — matches [`corelink-ac`]'s `AC_ENVELOPE_SIG_LEN`).
+/// output = 32 bytes — matches `corelink_ac`'s `AC_ENVELOPE_SIG_LEN`).
 pub const MANIFEST_SIG_LEN: usize = 32;
 
 /// Cross-crate alignment self-check: derived bounds stay coherent.

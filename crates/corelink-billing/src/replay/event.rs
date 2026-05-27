@@ -248,7 +248,7 @@ pub struct ReplayRequest {
 
 impl ReplayRequest {
     /// Construct a fresh replay request. The canonical orchestrator
-    /// at [`super::engine::InMemoryReplayEngine::replay`] consumes the
+    /// at [`super::engine::ReplayEngine::replay`] consumes the
     /// request directly; production wiring at the Worker route
     /// `POST /v1/billing/replay` deserializes the inbound JSON body +
     /// populates `requested_by` + `presented_role` + `tenant_id` from

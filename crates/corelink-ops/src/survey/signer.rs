@@ -14,7 +14,7 @@
 //!   (deferred — wave wiring lives under
 //!   `marketing/retention/customer-health/NPS-SURVEY-SCHEDULE.md`).
 //!
-//! The [`InMemoryFake`] sink mirrors the sign + record cycle for unit +
+//! The [`crate::survey::recorder::InMemoryFake`] sink mirrors the sign + record cycle for unit +
 //! property + integration tests.
 
 use uuid::Uuid;
@@ -97,7 +97,7 @@ pub trait SurveyLinkSigner: Send + Sync {
 }
 
 /// Helper: build the canonical token payload + sign it with the given
-/// key. Shared between [`InMemoryFake`] and any future production
+/// key. Shared between [`crate::survey::recorder::InMemoryFake`] and any future production
 /// adapter so the math stays in one place.
 ///
 /// # Errors

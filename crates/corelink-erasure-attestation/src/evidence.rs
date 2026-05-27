@@ -1,6 +1,6 @@
 //! [`EvidenceBundle`] — NIST SP 800-88 Rev.1 §2.4 crypto-erase evidence.
 //!
-//! The `evidence_hash` field in [`ErasureAttestationPayload`] is a
+//! The `evidence_hash` field in [`crate::attestation::ErasureAttestationPayload`] is a
 //! SHA-256 hex digest of the canonical JSON serialization of an
 //! [`EvidenceBundle`]. This binds:
 //!

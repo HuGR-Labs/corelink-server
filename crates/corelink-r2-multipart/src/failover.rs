@@ -350,7 +350,7 @@ impl InMemoryMultipartFailoverInventory {
             .push((row, state));
     }
 
-    /// Force the next [`drain_and_inventory`] call to return an
+    /// Force the next [`MultipartFailoverInventory::drain_and_inventory`] call to return an
     /// `InventoryQueryFailed` error with `msg`.
     pub fn force_query_failure(&self, msg: impl Into<String>) {
         *self.fail_query.lock().unwrap_or_else(|p| p.into_inner()) = Some(msg.into());

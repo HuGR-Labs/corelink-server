@@ -13,7 +13,7 @@ use crate::edge::cidr::CidrParseError;
 use crate::edge::metrics::EdgeMetricsObserverError;
 
 /// Canonical errors surfaced by [`crate::edge::policy::EdgePolicy`] and
-/// [`crate::edge::blocklist::CidrBlocklist`].
+/// the CIDR blocklist primitives in [`crate::edge::cidr`].
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum EdgeError {

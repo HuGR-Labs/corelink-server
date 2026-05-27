@@ -10,8 +10,8 @@
 //! Construction surface mirrors the pre-existing
 //! `corelink_hash::Digest` for behavioural compatibility: callers
 //! cannot fabricate a `Digest` from arbitrary bytes outside this module
-//! without going through [`Self::from_bytes`] (parser-style, no
-//! computation), [`Self::from_hex`] (length + alphabet check), or the
+//! without going through [`Digest::from_bytes`] (parser-style, no
+//! computation), [`Digest::from_hex`] (length + alphabet check), or the
 //! crypto crate's BLAKE3 factory.
 
 use core::fmt;

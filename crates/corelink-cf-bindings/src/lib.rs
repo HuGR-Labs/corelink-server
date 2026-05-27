@@ -5,11 +5,11 @@
 //!
 //! | Trait surface (host)                          | Adapter (CF wasm32)       | `worker::*` type                   |
 //! |-----------------------------------------------|---------------------------|------------------------------------|
-//! | `corelink_worker::storage::r2::R2Backend`     | [`CfR2BucketAdapter`]     | `worker::r2::Bucket`               |
+//! | `corelink_worker::storage::r2::R2Backend`     | `CfR2BucketAdapter` (wasm32-only) | `worker::r2::Bucket`               |
 //! | `corelink_worker::storage::r2::R2Backend` (+ extended ops) | [`r2_real::CfR2BucketReal`] | `worker::r2::Bucket`     |
-//! | `corelink_worker::cache::kv::KvBackend`       | [`CfKvNamespaceAdapter`]  | `worker::kv::KvStore`              |
-//! | (D1 — no canonical trait yet; raw accessor)   | [`CfD1DatabaseAdapter`]   | `worker::D1Database`               |
-//! | (DO stub access)                              | [`CfDurableObjectAdapter`] | `worker::durable::ObjectNamespace` |
+//! | `corelink_worker::cache::kv::KvBackend`       | `CfKvNamespaceAdapter` (wasm32-only) | `worker::kv::KvStore`              |
+//! | (D1 — no canonical trait yet; raw accessor)   | `CfD1DatabaseAdapter` (wasm32-only) | `worker::D1Database`               |
+//! | (DO stub access)                              | `CfDurableObjectAdapter` (wasm32-only) | `worker::durable::ObjectNamespace` |
 //!
 //! ## Compile target
 //!

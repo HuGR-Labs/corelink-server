@@ -202,7 +202,7 @@ impl MerkleError {
     /// `COR_AC_MERKLE_INVALID`; this code surfaces in
     /// `ac.update.merkle_invalid` audits so SRE dashboards can split
     /// by failure mode without parsing the human-readable
-    /// [`fmt::Display`] string.
+    /// [`std::fmt::Display`] string.
     #[must_use]
     pub const fn audit_code(&self) -> &'static str {
         match self {

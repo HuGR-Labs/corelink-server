@@ -38,7 +38,7 @@
 //!    serializing twice byte-equal is asserted by property test 10 000 iter.
 //! 3. **INV-AUDIT-EVENT-TYPE-EXHAUSTIVE (HIGH)**: [`AuthEventType`] has
 //!    a corresponding [`AuthEventData`] payload struct, and the
-//!    serde-tag string is asserted exhaustively in [`tests/canonical_vectors.rs`].
+//!    serde-tag string is asserted exhaustively in `tests/canonical_vectors.rs`.
 //!    A future WI adds new variants strictly via additive enum growth
 //!    behind `#[non_exhaustive]`.
 //! 4. **INV-AUDIT-RETENTION-HINT-ACCURATE (HIGH)**: every event carries

@@ -81,7 +81,7 @@ impl LogicalClock {
     ///
     /// # Errors
     ///
-    /// Same as [`now_ms`].
+    /// Same as [`LogicalClock::now_ms`].
     pub fn advance_ms(&self, delta_ms: u64) -> Result<(), HarnessError> {
         let mut g = self
             .inner
@@ -153,7 +153,7 @@ impl WriteLeaseLedger {
     ///
     /// # Errors
     ///
-    /// Same as [`handover`].
+    /// Same as [`WriteLeaseLedger::handover`].
     pub fn holder_at(&self, at_ms: u64) -> Result<Option<String>, HarnessError> {
         let g = self
             .inner
@@ -171,7 +171,7 @@ impl WriteLeaseLedger {
     ///
     /// # Errors
     ///
-    /// Same as [`handover`].
+    /// Same as [`WriteLeaseLedger::handover`].
     pub fn snapshot(&self) -> Result<Vec<LeaseEntry>, HarnessError> {
         let g = self
             .inner
@@ -184,7 +184,7 @@ impl WriteLeaseLedger {
     ///
     /// # Errors
     ///
-    /// Same as [`handover`].
+    /// Same as [`WriteLeaseLedger::handover`].
     pub fn distinct_holder_count(&self) -> Result<usize, HarnessError> {
         let snap = self.snapshot()?;
         let mut seen: Vec<String> = Vec::with_capacity(snap.len());

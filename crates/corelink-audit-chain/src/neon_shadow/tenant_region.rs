@@ -8,13 +8,13 @@
 //! closes that TODO by introducing a thin abstraction that the boot
 //! path consumes:
 //!
-//! - [`TenantRegionResolver`] — trait surface (`tenant_id → Region`).
-//! - [`InMemoryTenantRegionResolver`] — staging / dev / test impl
+//! - [`crate::neon_shadow::tenant_region::TenantRegionResolver`] — trait surface (`tenant_id → Region`).
+//! - [`crate::neon_shadow::tenant_region::InMemoryTenantRegionResolver`] — staging / dev / test impl
 //!   backed by a `HashMap<Uuid, Region>` + a configurable fallback
 //!   region. Mirrors the wave-19 [`crate::neon_shadow::real::StaticResolver`]
 //!   pattern for per-region DSN resolution.
-//! - [`D1TenantRegionResolver`] — production impl that delegates to a
-//!   [`TenantConfigStore`] (the trait that the CF Worker binder layer
+//! - [`crate::neon_shadow::tenant_region::D1TenantRegionResolver`] — production impl that delegates to a
+//!   [`crate::neon_shadow::tenant_region::TenantConfigStore`] (the trait that the CF Worker binder layer
 //!   wires up against `worker::D1Database` via
 //!   `corelink-cf-bindings::d1_real::CfD1DatabaseReal`). The store is
 //!   queried for the `region` column of the `tenant_config` D1 table
@@ -28,8 +28,8 @@
 //! server stay on the in-memory mirror for dev/CI. The CF Worker
 //! production boot path (`corelink-clerk-cf`) is the only call site
 //! that ever constructs a real D1-backed
-//! [`TenantConfigStore`]; everywhere else uses
-//! [`InMemoryTenantRegionResolver`].
+//! [`crate::neon_shadow::tenant_region::TenantConfigStore`]; everywhere else uses
+//! [`crate::neon_shadow::tenant_region::InMemoryTenantRegionResolver`].
 //!
 //! ## Tenant-id type
 //!

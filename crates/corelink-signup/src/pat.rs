@@ -7,7 +7,7 @@
 //! surfaced to the user exactly once via a `ShownOnceToken` UUID v7
 //! whose first-`GET` invalidates the token (subsequent GETs return
 //! 410 Gone). This crate carries only the hash + the opaque token
-//! identifier; the raw PAT material NEVER enters [`SignupRequest`]
+//! identifier; the raw PAT material NEVER enters [`crate::request::SignupRequest`]
 //! (CTRL-CRED-001 — PAT material NOT in signup payload; PAT is issued
 //! by the orchestrator, not supplied by the caller; the WI-S19-006 flow
 //! owns the user-facing reveal endpoint).

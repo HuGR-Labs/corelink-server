@@ -1,4 +1,4 @@
-//! Canonical bounded-parser constants for [`crate::Chunker`]
+//! Canonical bounded-parser constants for [`crate::chunker::Chunker`]
 //! implementations (WI-S05-002 §6.1.1, §9.6, §9.7; spec contract
 //! S-05 §5.1 P1-SR5-001).
 //!
@@ -12,7 +12,7 @@
 //! cross-crate seam stays in lock-step.
 
 /// Maximum size in bytes of a single multipart blob. Hard upper bound
-/// on what any [`crate::Chunker`] is allowed to consume in one
+/// on what any [`crate::chunker::Chunker`] is allowed to consume in one
 /// session. Beyond this the caller MUST split into multiple multipart
 /// sessions and stitch via the upstream manifest layer (out-of-scope
 /// for WI-S05-002; ships in WI-S05-006).
@@ -31,7 +31,7 @@ pub const MAX_BLOB_SIZE: u64 = 160 * 1024 * 1024 * 1024;
 /// Numerical value: **81 920** = `MAX_BLOB_SIZE / FIXED_DEFAULT_CHUNK_SIZE`.
 pub const MAX_CHUNKS_PER_BLOB: u32 = 81_920;
 
-/// Default fixed-size chunk granularity for [`crate::ChunkerAlgorithm::Fixed2MiB`].
+/// Default fixed-size chunk granularity for [`crate::chunker::ChunkerAlgorithm::Fixed2MiB`].
 /// Sprint contract S-05 §9.2 anchors the choice.
 pub const FIXED_DEFAULT_CHUNK_SIZE: usize = 2 * 1024 * 1024;
 

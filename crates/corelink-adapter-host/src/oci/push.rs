@@ -3,7 +3,7 @@
 //! Push paths are the audit-fail-CLOSED hot path. Every state-mutating
 //! finalize emits BEFORE the mutation lands:
 //!
-//! - [`upload::finalize`] emits `oci.blob.push.v1` BEFORE writing the
+//! - `upload::finalize` emits `oci.blob.push.v1` BEFORE writing the
 //!   blob to CAS (or `oci.blob.push.digest_mismatch.v1` on declared-
 //!   digest mismatch BEFORE canceling the upload session).
 //! - [`manifest::put`] emits `oci.manifest.push.v1` BEFORE persisting

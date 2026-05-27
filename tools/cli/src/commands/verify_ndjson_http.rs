@@ -33,7 +33,7 @@
 //!
 //! - `#![forbid(unsafe_code)]` inherited from the crate.
 //! - No `unwrap` / `expect` / `panic` — every fallible op surfaces via
-//!   `?` into [`CliError`].
+//!   `?` into [`crate::error::CliError`].
 //! - Bearer token is NEVER logged or printed; tracing emits mask any
 //!   `authorization` header derived value (`tracing::debug!` lines
 //!   only log the URL path + status, never the bearer).

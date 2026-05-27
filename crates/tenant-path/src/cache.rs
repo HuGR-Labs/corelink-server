@@ -22,7 +22,7 @@
 //! entries age out under random eviction (or are explicitly purged).
 //!
 //! This is asserted by the property test
-//! [`tests::cache_invalidates_on_tdk_version_bump`].
+//! `tests::cache_invalidates_on_tdk_version_bump`.
 //!
 //! ## Size bound
 //!

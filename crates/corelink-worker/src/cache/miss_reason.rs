@@ -8,7 +8,7 @@
 //! from the response. The variant survives so that internal audit chains
 //! (S-09) and admin-plane tooling can correlate forensics by reason.
 //!
-//! # Mapping to the read-orchestrator [`crate::read::MissReason`]
+//! # Mapping to the read-orchestrator `corelink_reapi::read::MissReason`
 //!
 //! `corelink-reapi`'s `MissReason` enumerates `{NeverExisted, Tombstoned,
 //! R2OrphanRow}` — the three *runtime* arms produced by the read

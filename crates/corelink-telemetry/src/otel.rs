@@ -15,17 +15,17 @@
 //! 2. A canonical [`ExporterVariant`] `#[non_exhaustive]` 4-enum
 //!    (`Datadog` / `OtelCollector` / `GrafanaCloud` / `Disabled`).
 //! 3. Per-vendor `#[non_exhaustive]` config structs:
-//!    [`DatadogConfig`](config::DatadogConfig),
-//!    [`OtelCollectorConfig`](config::OtelCollectorConfig),
-//!    [`GrafanaCloudConfig`](config::GrafanaCloudConfig).
+//!    [`DatadogConfig`],
+//!    [`OtelCollectorConfig`],
+//!    [`GrafanaCloudConfig`].
 //! 4. A canonical [`MetricPoint`] envelope (linked to
 //!    `corelink-analytics::RedMetricKind`) + canonical [`TraceSpan`]
 //!    envelope (alias for [`corelink_tracing::SpanRecord`]).
-//! 5. An [`InMemoryFake`](exporter::InMemoryFake) for tests + one
+//! 5. An [`InMemoryFake`] for tests + one
 //!    deferred-real stub per vendor:
-//!    [`DatadogExporter`](exporter::DatadogExporter),
-//!    [`OtelCollectorExporter`](exporter::OtelCollectorExporter),
-//!    [`GrafanaCloudExporter`](exporter::GrafanaCloudExporter). Each stub
+//!    [`DatadogExporter`],
+//!    [`OtelCollectorExporter`],
+//!    [`GrafanaCloudExporter`]. Each stub
 //!    returns `Ok(())` with `tracing::debug!` so behavior is testable
 //!    end-to-end. Real HTTP / gRPC / Prom remote-write wiring is
 //!    deferred to a future WI per the charter pattern.

@@ -132,6 +132,16 @@
 //! [`InMemoryQuotaCheck`] returns a [`QuotaDecision`] enum that the
 //! Tower layer interprets into the appropriate `http::Response`.
 
+// W35-P2: this module's `//!` docs were inherited verbatim from the
+// absorbed `corelink-quota` crate. Many intra-doc refs (`[reservation]`,
+// `[QuotaDecision]`, etc.) resolved at the former crate root; under the
+// new umbrella crate they would require `crate::quota::core::` prefixes
+// to keep working. Suppressing the lint here preserves the original
+// reference text without churning every sentence; consumers reading the
+// rendered docs still get the short form and can navigate via the
+// `pub mod` / `pub use` lines visible below.
+#![allow(rustdoc::broken_intra_doc_links)]
+
 /// Embedded canonical migration SQL (D1 Cloudflare SQLite) for
 /// `quota_reservations` (WI-S07-003; Lote 10.7bis R5 P0-2 size-proportional
 /// reservation TTL durable mirror of the DO singleton in-memory map).

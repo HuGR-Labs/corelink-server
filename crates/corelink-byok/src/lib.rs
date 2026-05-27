@@ -210,7 +210,7 @@ pub mod azure {
     pub use crate::byok_azure::*;
 }
 
-/// HashiCorp Vault Transit provider adapter — see [`aws`] for the
+/// HashiCorp Vault Transit provider adapter — see `aws` for the
 /// feature-gate contract; analogous shape per provider.
 #[cfg(feature = "_internal-vault")]
 pub mod vault {

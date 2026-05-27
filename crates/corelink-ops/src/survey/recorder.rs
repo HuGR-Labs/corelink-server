@@ -67,7 +67,7 @@ pub struct PersistedResponse {
     pub user_agent_hash: [u8; 32],
     /// Token id (`jti`) the response was recorded against. Replay
     /// rejection uses this column as the dedup key in production; the
-    /// in-memory fake mirrors that semantics via [`InMemoryFake::seen_jtis`].
+    /// in-memory fake mirrors that semantics via `InMemoryFake::seen_jtis`.
     pub token_jti: Uuid,
 }
 

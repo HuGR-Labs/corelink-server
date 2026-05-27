@@ -36,7 +36,7 @@ pub trait CasStore: Send + Sync + Debug {
     /// Return the bytes stored under `(tenant_id, digest_hex)`, or
     /// `None` on miss. `Err` is reserved for backend failure (network,
     /// disk, permission) and surfaces as
-    /// [`crate::CargoAdapterError::Cas`].
+    /// [`crate::cargo::CargoAdapterError::Cas`].
     async fn get(
         &self,
         tenant_id: &str,
@@ -88,7 +88,7 @@ pub trait TenantResolver: Send + Sync + Debug {
 #[non_exhaustive]
 pub enum TenantResolveError {
     /// PAT not found, expired, or lacking `cas:read` / `cas:write` scope.
-    /// Surfaces as HTTP 401 via [`crate::CargoAdapterError::Auth`].
+    /// Surfaces as HTTP 401 via [`crate::cargo::CargoAdapterError::Auth`].
     #[error("invalid PAT")]
     InvalidPat,
 
@@ -98,9 +98,9 @@ pub enum TenantResolveError {
     Backend(String),
 }
 
-/// Type-erased CAS handle bundled into [`crate::CargoAdapterConfig`].
+/// Type-erased CAS handle bundled into [`crate::cargo::CargoAdapterConfig`].
 pub type SharedCasStore = Arc<dyn CasStore>;
 
 /// Type-erased tenant resolver bundled into
-/// [`crate::CargoAdapterConfig`].
+/// [`crate::cargo::CargoAdapterConfig`].
 pub type SharedTenantResolver = Arc<dyn TenantResolver>;

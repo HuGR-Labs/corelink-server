@@ -82,7 +82,7 @@ pub const USAGE_EVENT_TYPE: &str = "corelink.billing.usage.recorded";
 /// the BLAKE3 derivation is well-defined for the FIRST canonicalization
 /// pass — the second pass writes the derived bytes back into the slot
 /// for the on-the-wire shape). Mirrors the
-/// [`corelink_audit_chain::GENESIS_PREV_HASH`] convention.
+/// `corelink_audit_chain::GENESIS_PREV_HASH` convention.
 pub const GENESIS_IDEM_KEY: [u8; 32] = [0u8; 32];
 
 /// Canonical 6-element usage-event kind taxonomy per WI-S10-001 §1
@@ -252,7 +252,7 @@ impl<'de> Deserialize<'de> for UsageUnit {
 /// Canonical 32-byte BLAKE3-256 idem_key newtype. Always hex-rendered
 /// when serialized to JSON for the CloudEvents wire shape (RFC 4648 §8
 /// hex-lowercase canonical form). Mirrors
-/// [`corelink_audit_chain::ChainHash`].
+/// `corelink_audit_chain::ChainHash`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct IdemKey(pub [u8; 32]);
 
@@ -359,7 +359,7 @@ fn region_from_str(s: &str) -> Option<Region> {
 pub struct UsageEventData {
     /// Tenant id of the billable operation. Per the WI-S10-001 §1
     /// invariant 6 + Lote 10.4bis: this MUST come from the
-    /// authenticated [`TenantCtx`] middleware (S-03 inheritance) NOT
+    /// authenticated `TenantCtx` middleware (S-03 inheritance) NOT
     /// the request body — the production wiring at the hot path
     /// extracts it from the JWT-authenticated context. The trait surface
     /// here treats it as opaque.
@@ -449,11 +449,11 @@ pub struct UsageEvent {
 impl UsageEvent {
     /// Construct a canonical usage event. The `idem_key` slot is
     /// initialized to [`IdemKey::genesis`]; the orchestrator at
-    /// [`crate::emitter::InMemoryUsageEventEmitter::emit`] derives the
+    /// [`crate::emitter::UsageEventEmitter::emit`] derives the
     /// canonical key via [`crate::idempotency::derive_idem_key`] +
     /// rewrites the slot before persisting. Callers wanting to
     /// pre-derive the key can invoke
-    /// [`Self::with_derived_idem_key`].
+    /// `Self::with_derived_idem_key`.
     ///
     /// Returns [`InvalidBillingPeriod`] when `billing_period` is not
     /// of the canonical `YYYY-MM` shape (e.g. wrong length / non-digit

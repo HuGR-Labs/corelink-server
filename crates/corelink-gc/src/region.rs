@@ -2,8 +2,8 @@
 //!
 //! WI-S06-001 §1 + S-06 spec contract §5.1 enumerate 5 regions: `sam`,
 //! `iad`, `lhr`, `nrt`, `syd` — the same canonical list as
-//! [`corelink_ac::schema::AcRegion`] +
-//! [`corelink_multipart_schema::MultipartRegion`]. The schema CHECK
+//! `corelink_ac::schema::AcRegion` +
+//! `corelink_cas::multipart_schema::MultipartRegion`. The schema CHECK
 //! constraint `region IN ('sam', 'iad', 'lhr', 'nrt', 'syd')` rejects
 //! any other value at INSERT time on the `gc_run` table; this module is
 //! the canonical Rust mirror.

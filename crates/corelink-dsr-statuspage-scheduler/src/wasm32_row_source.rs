@@ -64,6 +64,12 @@
 //!
 //! See [`CRON_OUTCOME_QUERY`].
 
+// W35: `D1Wasm32RowSource` + its async API are `cfg(target_arch =
+// "wasm32")` so the rustdoc host build cannot resolve module-level
+// references to them. Suppressing the lint preserves the original
+// reference text without churn.
+#![allow(rustdoc::broken_intra_doc_links)]
+
 use corelink_privacy_erasure_worker::VerificationOutcome;
 #[cfg(target_arch = "wasm32")]
 use crate::row_source::D1RowSourceError;

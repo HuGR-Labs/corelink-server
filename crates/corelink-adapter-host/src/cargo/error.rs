@@ -6,7 +6,7 @@
 
 use thiserror::Error;
 
-/// All recoverable failure modes surfaced by [`crate::run_cargo_adapter`]
+/// All recoverable failure modes surfaced by [`crate::cargo::run_cargo_adapter`]
 /// and the underlying request pipeline.
 #[derive(Debug, Error)]
 #[non_exhaustive]

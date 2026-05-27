@@ -28,10 +28,10 @@
 //!   which lex-sorts because the AC input is an unordered set.)
 //! - **HKDF-SHA256 sig with `info = b"manifest-sig"`**: domain-separated
 //!   from `b"ac-sig"` (WI-S04-004) and `b"meta-manifest-sig"` (WI-S05-006
-//!   forward). The CI test [`sig::tests::canonical_info_string`]
+//!   forward). The CI test `sig::tests::canonical_info_string`
 //!   asserts byte-equal AND non-prefix relationships across all three.
 //! - **Per-tenant TDK** lookup goes through
-//!   [`corelink-ac::sig::TdkHandle`] reused verbatim — single TDK
+//!   `corelink_ac::sig::TdkHandle` reused verbatim — single TDK
 //!   surface across the whole stack.
 //!
 //! # Bounded parser (WI §6.1.5 + [`bounds`])
