@@ -11,7 +11,7 @@
 //!    `#[ignore]` e2e suite).
 //!
 //! Pattern reference:
-//! `specs/_audits/2026-05-15-byok-real-provider-pattern.md §7`.
+//! `specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md §7`.
 
 #![forbid(unsafe_code)]
 #![allow(clippy::unwrap_used)]

@@ -94,7 +94,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Sources:** standard MSA §10 (cancellation); `legal/dpa/v1.0.0` §11 (termination).
 
-**Self-service surface.** Team-tier and below cancel through the Stripe Customer Portal — see the customer guide at `apps/docs/docs/how-to/billing/manage-subscription.mdx` (published as `/how-to/billing/manage-subscription`). Enterprise cancellation routes through your sales contact for the paper amendment + DPA closure (see `specs/_audits/2026-05-15-stripe-customer-portal-spec.md` §2.2 — Enterprise downgrade rule).
+**Self-service surface.** Team-tier and below cancel through the Stripe Customer Portal — see the customer guide at `apps/docs/docs/how-to/billing/manage-subscription.mdx` (published as `/how-to/billing/manage-subscription`). Enterprise cancellation routes through your sales contact for the paper amendment + DPA closure (see `specs/_audits/sealed/2026-05-15-stripe-customer-portal-spec.md` §2.2 — Enterprise downgrade rule).
 
 ### P7 — Can we sign a multi-year contract?
 

@@ -4,7 +4,7 @@
 //! Wave-26 wired `AuditSink::emit_synthetic` as the canonical surface
 //! for the `tenant_region_unresolved` audit row emitted before a 503
 //! fail-CLOSED response. The wave-26 adversarial review
-//! (`specs/_audits/2026-05-16-wave26-adversarial-review.md §228`)
+//! (`specs/_audits/sealed/2026-05-16-wave26-adversarial-review.md §228`)
 //! flagged that on the recorder backend a poisoned mutex would be
 //! silently dropped — the 503 still fires, but the operator loses
 //! observability that the audit emission failed.

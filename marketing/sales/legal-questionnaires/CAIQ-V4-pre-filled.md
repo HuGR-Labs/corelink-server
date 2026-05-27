@@ -70,7 +70,7 @@ CSP / CSC responsibility column:
 | AIS-02.1 | Application security baseline requirements? | Y | CSP | INV registry (189 INVs) + CTRL catalog (96 controls) + PAT patterns + STRIDE matrix. | CC5.1 |
 | AIS-03.1 | Secure SDLC integrated into development? | Y | CSP | Spec-first + TDD + sprint preflight + PR template + dual approval. ADR-driven decisions. | CC8.1 |
 | AIS-04.1 | Application security testing performed? | Y | CSP | CodeQL + Semgrep (custom rules) on every PR; cargo-fuzz daily; property tests (10k concurrent signup, 100k synthetic PANs). | CC7.1 |
-| AIS-05.1 | Vulnerabilities remediated within SLA? | Y | CSP | Severity-based SLA per `RB-STATIC-ANALYSIS-TRIAGE.md`; baseline `specs/_audits/2026-05-15-static-analysis-baseline.md`. | CC7.1 |
+| AIS-05.1 | Vulnerabilities remediated within SLA? | Y | CSP | Severity-based SLA per `RB-STATIC-ANALYSIS-TRIAGE.md`; baseline `specs/_audits/sealed/2026-05-15-static-analysis-baseline.md`. | CC7.1 |
 | AIS-06.1 | API authentication / authorization documented? | Y | CSP | Clerk JWT + RBAC + `auth_model.md` + per-tenant DO routing (CTRL-AUTHZ-001, CTRL-AUTHZ-002). | CC6.2 |
 | AIS-07.1 | Input validation enforced? | Y | CSP | `CTRL-INPUT-001..004` + schema validation `specs/_schemas/` + property tests. | PI1.1 |
 
@@ -83,7 +83,7 @@ CSP / CSC responsibility column:
 | BCR-03.1 | RTO / RPO defined per system? | Y | CSP | **RTO ≤ 15 min write-flip / RPO ≤ 5 min** for active-region warm failover (DR-16). Cold-restore-from-zero (DR-15) RTO documented. | A1.2 |
 | BCR-04.1 | Backups encrypted? | Y | CSP | Same envelope as source (AES-256-GCM + BYOK if enabled). 35-day rolling window. | C1.1 |
 | BCR-05.1 | Backups tested? | P | CSP | Cold-restore drill spec sealed; first dry-run T-30d pre-GA. Active-failover drill sealed; first cycle outstanding. | A1.3 |
-| BCR-06.1 | Recovery procedures tested at planned intervals? | P | CSP | Cadence: QUARTERLY (cold-restore) + MONTHLY (active-failover) post-GA. Region-outage chaos drill SEALED (`specs/_audits/2026-05-14-region-outage-chaos-s14.md`). | A1.3 |
+| BCR-06.1 | Recovery procedures tested at planned intervals? | P | CSP | Cadence: QUARTERLY (cold-restore) + MONTHLY (active-failover) post-GA. Region-outage chaos drill SEALED (`specs/_audits/sealed/2026-05-14-region-outage-chaos-s14.md`). | A1.3 |
 | BCR-07.1 | Customer notified of material outages? | Y | CSP | Status page within 5 min (SEV1); email to affected tenants within 30 min; per-tenant `incident-comms` distribution. | CC2.3 |
 | BCR-08.1 | Capacity planning performed? | Y | CSP | SLO catalog + `CTRL-GC-001` quota + multi-region D1+DO+R2. | A1.1 |
 | BCR-09.1 | Equipment redundancy across regions? | Y | CSP | Multi-region Workers + R2 cross-region replication + per-tenant DO failover. | A1.1 |
@@ -300,7 +300,7 @@ CSP / CSC responsibility column:
 | TVM-07.1 | Bug bounty / responsible disclosure? | P | CSP | VDP + safe harbor in place; formal bug bounty deferred to post-GA. | CC7.3 |
 | TVM-08.1 | Endpoint scanning? | P | CSP | OS-vendor anti-malware; commercial EDR consolidation Q3-2026. | CC7.1 |
 | TVM-09.1 | Web-application scanning? | Y | CSP | CodeQL + Semgrep custom rules + Cloudflare WAF (OWASP CRS 4.0 upgrade is GAP-10). | CC7.1 |
-| TVM-10.1 | Cloud-config drift detection? | Y | CSP | Canonical-consistency validator + secrets-drift gate on every PR; baseline `specs/_audits/2026-05-15-canonical-consistency-baseline.md`. | CC4.1 |
+| TVM-10.1 | Cloud-config drift detection? | Y | CSP | Canonical-consistency validator + secrets-drift gate on every PR; baseline `specs/_audits/sealed/2026-05-15-canonical-consistency-baseline.md`. | CC4.1 |
 
 ## UEM — Universal Endpoint Management (14 questions)
 

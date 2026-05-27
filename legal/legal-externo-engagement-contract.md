@@ -128,7 +128,7 @@ If Legal externo review is not completed by D+30, WAIVER-S14-001 is activated (`
 |---|---|---|---|
 | 1 | Redlined DPA Amendment Template | `.docx` + `.md` (tracked changes) | `legal/dpa-residency-amendment-redlined-v[N].md` |
 | 2 | Redlined TIA Template | `.docx` + `.md` (tracked changes) | `legal/tia-template-redlined-v[N].md` |
-| 3 | Legal externo sign-off letter | PDF + Markdown | `specs/_audits/2026-XX-XX-legal-externo-review-s14.md` |
+| 3 | Legal externo sign-off letter | PDF + Markdown | `specs/_audits/sealed/2026-XX-XX-legal-externo-review-s14.md` |
 | 4 | Material issues summary | Markdown | Included in sign-off letter |
 
 ---

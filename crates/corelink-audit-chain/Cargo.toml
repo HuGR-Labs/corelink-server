@@ -47,7 +47,7 @@ default = []
 # `TokioPostgresExecutor` adapter (`neon_shadow::real_tokio_pg`)
 # which is the actual driver binder satisfying `NeonExecutor`.
 #
-# See `specs/_audits/2026-05-16-neon-shadow-real-driver.md` §3 + §7
+# See `specs/_audits/sealed/2026-05-16-neon-shadow-real-driver.md` §3 + §7
 # (wave-20 closure-note).
 neon-real = [
     "dep:deadpool-postgres",
@@ -70,7 +70,7 @@ neon-real = [
 #
 # ON via `cargo test -p corelink-audit-chain --features live-pg` —
 # requires a reachable Docker daemon (see
-# `specs/_audits/2026-05-16-neon-shadow-pg-testharness.md`).
+# `specs/_audits/sealed/2026-05-16-neon-shadow-pg-testharness.md`).
 live-pg = []
 
 [dependencies]

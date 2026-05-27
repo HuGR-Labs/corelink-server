@@ -21,7 +21,7 @@ use thiserror::Error;
 /// per-request `AuthCtx::AuthMethod::Jwt` arm — `Arc<str>` here
 /// eliminates the per-request `String::clone` heap traffic on the
 /// JWT auth hot path called out in
-/// `specs/_audits/2026-05-15-perf-optimization-audit.md §4 #1`.
+/// `specs/_audits/sealed/2026-05-15-perf-optimization-audit.md §4 #1`.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct ClerkUserId(Arc<str>);
 

@@ -65,7 +65,7 @@ Adicionar `FF-HR-011` ao framework `§33.5.3`:
 
 ## 5. Evidence
 
-- Audit findings: `specs/_audits/2026-04-24-sonnet-audit-lote3-4.md` (S-15) e `2026-04-24-gpt-audit-lote3-4.md` (F-02).
+- Audit findings: `specs/_audits/sealed/2026-04-24-sonnet-audit-lote3-4.md` (S-15) e `2026-04-24-gpt-audit-lote3-4.md` (F-02).
 - Framework atualizado: `specs/00_framework.md §33.5.3` linha ~2055.
 
 ---

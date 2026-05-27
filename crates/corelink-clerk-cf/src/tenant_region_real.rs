@@ -54,9 +54,9 @@
 //! - `crates/corelink-audit-chain/src/neon_shadow/tenant_region.rs`
 //!   — `TenantConfigStore` trait + `D1TenantRegionResolver` impl.
 //! - `migrations/d1/0052_tenant_config_region.sql` — D1 column.
-//! - `specs/_audits/2026-05-16-tenant-config-cf-prod-wire.md`
+//! - `specs/_audits/sealed/2026-05-16-tenant-config-cf-prod-wire.md`
 //!   — wave-25 closure note.
-//! - `specs/_audits/2026-05-16-neon-shadow-real-driver.md` §7
+//! - `specs/_audits/sealed/2026-05-16-neon-shadow-real-driver.md` §7
 //!   — wave-21 caveat being closed.
 
 use std::collections::HashMap;

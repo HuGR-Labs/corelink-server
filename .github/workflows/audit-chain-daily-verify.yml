@@ -50,7 +50,7 @@ name: audit-chain-daily-verify (Wave 18)
 # Implements: WI-S09-008 §6 daily-verify cron acceptance criterion
 #             (Wave 17 7-day matrix closure + Wave 18 paginated CF API
 #             v4 R2-list lift inside each matrix day);
-#             specs/_audits/2026-05-15-audit-chain-retention.md §2.2.
+#             specs/_audits/sealed/2026-05-15-audit-chain-retention.md §2.2.
 #
 # Secrets consumed (rows in docs/internal/secrets-checklist.md):
 #   - CF_ACCOUNT_ID            (#49) — CF account id

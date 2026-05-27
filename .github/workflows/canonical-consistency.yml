@@ -1,7 +1,7 @@
 name: Canonical Consistency (R-PREP canonical-lint)
 
 # Cross-validates INV registry × TLA+ × code × tests against the locked
-# baseline in `specs/_audits/2026-05-15-canonical-consistency-baseline.md`.
+# baseline in `specs/_audits/sealed/2026-05-15-canonical-consistency-baseline.md`.
 #
 # Fires on PRs that touch ANY of:
 # - `specs/**`              — registry / TLA / docs corpus drift
@@ -33,7 +33,7 @@ on:
     branches: [main]
     paths:
       - 'specs/03_architecture/invariant_registry.md'
-      - 'specs/_audits/2026-05-15-canonical-consistency-baseline.md'
+      - 'specs/_audits/sealed/2026-05-15-canonical-consistency-baseline.md'
       - 'scripts/validate_canonical_consistency.py'
 
 permissions:

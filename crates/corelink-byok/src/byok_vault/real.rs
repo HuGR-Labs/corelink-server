@@ -3,7 +3,7 @@
 //!
 //! This module is the canonical Vault Transit real-mode entry point. It
 //! follows the GA-hardened pattern documented in
-//! `specs/_audits/2026-05-15-byok-real-provider-pattern.md` (with AWS KMS
+//! `specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md` (with AWS KMS
 //! as source-of-truth):
 //!
 //! 1. **AAD JCS canonicalization (mandatory).** Every `encrypt` / `decrypt`
@@ -761,7 +761,7 @@ pub use native::{VaultRealProvider, VaultTransitProvider};
 /// `BYOKError::Provider("Vault real provider unsupported on wasm32; ...")`.
 /// In production CF Worker deployments envelope operations are forwarded
 /// to the native server process via the internal control-plane RPC — see
-/// `specs/_audits/2026-05-15-byok-real-provider-pattern.md`.
+/// `specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md`.
 #[cfg(target_arch = "wasm32")]
 #[derive(Debug, Clone)]
 #[non_exhaustive]

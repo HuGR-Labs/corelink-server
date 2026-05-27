@@ -14,7 +14,7 @@ superseded_by: null
 tags: ["runbook", "p1", "gc", "data-integrity", "tla", "dry-run-executed"]
 ---
 
-> **Dry-run executed 2026-05-02** — host-side harness `scripts/rb_fm_300_dry_run.sh` (WI-S06-007) green; chaos magnitude pinned to 0.5% per-tenant refcount drift per Lote 10.6bis P0-W7-4. Audit trace: `specs/_audits/2026-05-02-rb-fm-300-dry-run.md`.
+> **Dry-run executed 2026-05-02** — host-side harness `scripts/rb_fm_300_dry_run.sh` (WI-S06-007) green; chaos magnitude pinned to 0.5% per-tenant refcount drift per Lote 10.6bis P0-W7-4. Audit trace: `specs/_audits/sealed/2026-05-02-rb-fm-300-dry-run.md`.
 
 # RB-FM-300 — GC Deleta Blob Ainda Referenciado (Refcount Bug)
 

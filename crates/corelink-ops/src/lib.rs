@@ -39,7 +39,7 @@
 //!
 //! ## Stage 1 Stream C absorption strategy — Option-A aggregator
 //!
-//! Per `specs/_audits/2026-05-22-wave33-code-reorg-spec.md` §6 Stage 1
+//! Per `specs/_audits/sealed/2026-05-22-wave33-code-reorg-spec.md` §6 Stage 1
 //! Stream C and the Stage 0 SEAL audit §4 (Option-A aggregator
 //! interpretation), this crate "absorbs" 28 existing crates by
 //! re-exporting them at canonical submodule paths. The absorbed

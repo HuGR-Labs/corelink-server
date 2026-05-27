@@ -48,5 +48,5 @@ tags: ["runbook", "p2", "multipart", "r2", "stub"]
 ## References
 
 - `failure_modes.md` FM-060.
-- `specs/04_sprints/S05/_spec_contract.md`.
+- `specs/04_sprints/_sealed/S05/_spec_contract.md`.
 - R2 multipart limits: <https://developers.cloudflare.com/r2/api/s3/multipart-uploads/>.

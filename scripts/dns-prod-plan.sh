@@ -72,7 +72,7 @@ fi
 # DNS plan definition
 #
 # Derived from:
-#   - specs/_audits/2026-05-22-wave32-prod-deploy-spec.md §4 Phase G
+#   - specs/_audits/sealed/2026-05-22-wave32-prod-deploy-spec.md §4 Phase G
 #   - wrangler.toml [env.prod] (name = "corelink-prod")
 #   - Phase F scope: Pages projects corelink-docs + corelink-admin-ui
 #   - Phase A (complete): status.corelink.humangr.com → hugrl.betteruptime.com

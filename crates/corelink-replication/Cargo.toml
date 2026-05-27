@@ -1,6 +1,6 @@
 [package]
 name = "corelink-replication"
-description = "Wave-33 Stage 1 Stream C sub-step C.1 — canonical replication-context aggregator façade. Re-exports the 5 absorbed replication-context crates (corelink-region + corelink-replica-worker + corelink-replication-coordinator + corelink-failover-router + corelink-rollout-controller) under a single canonical import surface (`corelink_replication::{region, replica, coordinator, failover, rollout}`). Option-A aggregator (per `specs/_audits/2026-05-22-w33-stage0-foundation.md` §4): absorbed crates remain canonical sources of truth, retaining their own tests/benches; consumer migration proceeds incrementally. Preserves DR-16 failover-router warm-failover lifecycle, R-PREP wave-15 multi-region coordinator 3-state machine (PRIMARY/HOT_STANDBY/REPLICA), and audit-emit-BEFORE-mutation fail-CLOSED envelopes across every absorbed crate by reference."
+description = "Wave-33 Stage 1 Stream C sub-step C.1 — canonical replication-context aggregator façade. Re-exports the 5 absorbed replication-context crates (corelink-region + corelink-replica-worker + corelink-replication-coordinator + corelink-failover-router + corelink-rollout-controller) under a single canonical import surface (`corelink_replication::{region, replica, coordinator, failover, rollout}`). Option-A aggregator (per `specs/_audits/sealed/2026-05-22-w33-stage0-foundation.md` §4): absorbed crates remain canonical sources of truth, retaining their own tests/benches; consumer migration proceeds incrementally. Preserves DR-16 failover-router warm-failover lifecycle, R-PREP wave-15 multi-region coordinator 3-state machine (PRIMARY/HOT_STANDBY/REPLICA), and audit-emit-BEFORE-mutation fail-CLOSED envelopes across every absorbed crate by reference."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -40,7 +40,7 @@ corelink-failover-router = { workspace = true }
 corelink-worker = { workspace = true }
 
 # Wave 35 Phase 2 physical absorption (per
-# `specs/_audits/2026-05-26-w35-p2-replication-absorption.md`):
+# `specs/_audits/sealed/2026-05-26-w35-p2-replication-absorption.md`):
 # `corelink-rollout-controller` is now an in-crate module at
 # `corelink_replication::rollout_controller`. These deps were
 # previously transitively pulled via the absorbed crate.

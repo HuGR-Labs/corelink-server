@@ -23,9 +23,9 @@ tags: ["runbook", "p1", "ga", "post-ga", "continuity", "thaw", "wave-27", "r-pre
 >
 > **Companion docs.**
 > - `specs/_runbooks/RB-GA-CUTOVER.md` §6 — the *cutover* runbook's post-cutover stub; this playbook is the **canonical expansion** of that stub.
-> - `specs/_audits/2026-05-16-ga-1-feature-freeze.md` §6 — feature-freeze **thaw conditions** that this runbook **operationalises** (§5 below is the executable form of that audit's §6).
+> - `specs/_audits/sealed/2026-05-16-ga-1-feature-freeze.md` §6 — feature-freeze **thaw conditions** that this runbook **operationalises** (§5 below is the executable form of that audit's §6).
 > - `docs/internal/customer-success-playbook.md` §4 — the daily CS metric set that this runbook **gates** (§2 and §4 below consume those metrics).
-> - `specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md` §11.5 + §11.8 — wave-22 90-day rolling quarterly cadence anchored on FROZEN cut (this runbook's §6 prepares the first quarterly slot).
+> - `specs/_audits/sealed/2026-05-15-framework-v1-0-0-ga-audit.md` §11.5 + §11.8 — wave-22 90-day rolling quarterly cadence anchored on FROZEN cut (this runbook's §6 prepares the first quarterly slot).
 > - `scripts/post-ga-monitor.sh` — the executable companion that reads §§1–4 criteria daily and emits a markdown digest under `reports/post-ga/`.
 >
 > **Window:** T+0 (cutover §3.11 complete) → T+30d. After T+30d, ownership transitions to standard ops (weekly compliance digest + monthly business review).
@@ -141,7 +141,7 @@ The 72h..7d window is the **first full week of GA operation**. The objective is 
 
 | # | Action | Owner | Verification |
 |---|---|---|---|
-| 3.2.1 | Re-run the most-recent sprint-close adversarial review (e.g., `specs/_audits/2026-05-14-adversarial-summary-s13.md` template) against GA-posture telemetry — focus on findings tagged `defer-to-post-GA` | Owner + tech-lead persona | New audit doc filed at `specs/_audits/<DATE>-post-ga-adversarial-absorption.md` |
+| 3.2.1 | Re-run the most-recent sprint-close adversarial review (e.g., `specs/_audits/sealed/2026-05-14-adversarial-summary-s13.md` template) against GA-posture telemetry — focus on findings tagged `defer-to-post-GA` | Owner + tech-lead persona | New audit doc filed at `specs/_audits/<DATE>-post-ga-adversarial-absorption.md` |
 | 3.2.2 | Each finding routes to one of: (a) DEBT register row (P2/P3), (b) §3.b GA-blocker fix under freeze exception, (c) `post-thaw` queue per `2026-05-16-ga-1-feature-freeze.md` §6 | Owner | Routing table in absorption doc; each finding has explicit class |
 | 3.2.3 | If any finding routes to §3.b GA-blocker, open the issue + commit-trailer `FREEZE-EXCEPTION: P1-ga-blocker` per freeze §3.b protocol | Owner + on-call SRE | Issue link + 2-key recorded in `reports/ga-freeze-monitor.json` |
 
@@ -241,7 +241,7 @@ Once §5.1..§5.4 evaluate to TRUE (typically at T+7d but no earlier than the §
 1. Author `specs/_audits/<DATE>-ga-1-feature-thaw.md` per `2026-05-16-ga-1-feature-freeze.md §6` item 3.
 2. Decide `scripts/check-ga-freeze-allowed.py` disposition (delete OR `--post-thaw` mode); record decision in thaw doc.
 3. Open a **cosmetic-doc** PR under freeze §3.c that removes the `## §0 GA-1 FEATURE FREEZE IS ACTIVE` blockquote from `CONTRIBUTING.md` (single-reviewer CODEOWNERS sufficient; commit subject `docs: ` + trailer `FREEZE-EXCEPTION: cosmetic-doc`).
-4. Append a final row to `specs/_audits/2026-05-16-ga-1-feature-freeze.md §5` freeze monitor referencing the thaw doc SHA.
+4. Append a final row to `specs/_audits/sealed/2026-05-16-ga-1-feature-freeze.md §5` freeze monitor referencing the thaw doc SHA.
 5. Update `reports/ga-freeze-monitor.json` `freeze_status: "THAWED"` with the thaw declaration SHA.
 
 ### 5.2 Pre-thaw posture (T+7d to thaw declaration)
@@ -256,7 +256,7 @@ A partial thaw (e.g., "API surface only") is explicitly disallowed per `2026-05-
 
 ## §6. First-quarter framework v1.0.1 review prep
 
-Per `specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md §11.5` (wave-22 90-day rolling quarterly cadence anchored on FROZEN cut), the first quarterly review fires at **anchor SHA + 90d**. This runbook prepares the slot.
+Per `specs/_audits/sealed/2026-05-15-framework-v1-0-0-ga-audit.md §11.5` (wave-22 90-day rolling quarterly cadence anchored on FROZEN cut), the first quarterly review fires at **anchor SHA + 90d**. This runbook prepares the slot.
 
 ### 6.1 Anchor SHA capture
 
@@ -338,9 +338,9 @@ All attestations append to `specs/_audits/<DATE>-ga-cutover-execution-attestatio
 - `specs/_runbooks/RB-AUDIT-EXPORT-VERIFY-FAILED.md` — audit-chain spot-verifier consumed in §2.2.2.
 - `specs/_runbooks/RB-POSTMORTEM-PROCESS.md` — post-mortem template stood up in §4.3.
 - `specs/_runbooks/ONCALL-ESCALATION-MATRIX.md` — paging tiers used by §1.4 escalation triggers.
-- `specs/_audits/2026-05-16-ga-1-feature-freeze.md` §6 — freeze-thaw conditions operationalised by §5.
-- `specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md` §11.5 + §11.8 — quarterly cadence + reviewer pool status consumed in §6.
-- `specs/_audits/2026-05-14-soc2-readiness-score.md` — D+30 readiness milestone consumed in §4.4.
+- `specs/_audits/sealed/2026-05-16-ga-1-feature-freeze.md` §6 — freeze-thaw conditions operationalised by §5.
+- `specs/_audits/sealed/2026-05-15-framework-v1-0-0-ga-audit.md` §11.5 + §11.8 — quarterly cadence + reviewer pool status consumed in §6.
+- `specs/_audits/sealed/2026-05-14-soc2-readiness-score.md` — D+30 readiness milestone consumed in §4.4.
 - `docs/internal/customer-success-playbook.md` §4 + §5 + §6 + §7 — daily CS metrics + escalation tree + conversion criteria + termination protocol consumed across §1..§4.
 - `docs/internal/pilot-comms-templates.md` — templates referenced in §7.
 - `docs/internal/pilot-dashboard-checklist.md` — 10-metric pilot dashboard consumed in §1 + §2.

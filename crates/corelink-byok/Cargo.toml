@@ -144,7 +144,7 @@ jsonwebtoken = { version = "9.3", optional = true }
 # touches `tokio::sync::Mutex` and nothing else from tokio at runtime
 # (no `net` / `rt-multi-thread` / `time`). All HTTP clients (aws-sdk-kms,
 # reqwest, jsonwebtoken) are native-only; wasm32 links the matching
-# `*WasmStub` types instead. See specs/_audits/2026-05-15-byok-real-provider-pattern.md.
+# `*WasmStub` types instead. See specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2", features = ["js"] }
 tokio = { version = "1", default-features = false, features = ["sync"] }

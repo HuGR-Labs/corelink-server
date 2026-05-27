@@ -1,6 +1,6 @@
 [package]
 name = "corelink-stripe-real"
-description = "CoreLink Stripe HTTPS client — real implementation of corelink-tier-selection::StripeClient via reqwest (rustls). Ships endpoints for Checkout Sessions, Subscriptions, Customers, and Billing Portal sessions; idempotent POSTs via `Idempotency-Key`; exponential backoff retries on 5xx / 429 (respects `Retry-After`); pure-function HMAC-SHA256 webhook signature verify (constant-time via `subtle::ConstantTimeEq`; 5-min replay window). Wave-31 (R-PREP wallet-broker series, stream-1): outbound Stripe calls now route through the HuGR Wallet remote credential broker at `{HUGR_WALLET_BASE}/_wallet/proxy/{HUGR_STRIPE_REF}/…` with `Authorization: Bearer ${HUGR_WALLET_TOKEN}` — CoreLink never holds a real `STRIPE_SECRET_KEY`. Webhook signature verification stays direct (inbound + local `STRIPE_WEBHOOK_SECRET`). API token + ref resolved via `StripeClientConfig::from_env()`; the `hugrw_` token is held in a redacting `SecretString` and NEVER logged. `StripeError` `#[non_exhaustive]` taxonomy (RateLimited / Authentication / CardDeclined / InvalidRequest / ApiConnection / Idempotency / Generic). Wave-19 (R-PREP): crate-root gate lifted; wasm32-safe surface (`webhook`, `webhook_dispatch`, `error`, `retry`, `dlq`, `portal`) builds on `wasm32-unknown-unknown`; native-only HTTPS client (`client.rs` + reqwest) gated per-module to non-wasm32 (see `specs/_audits/2026-05-16-stripe-wasm32-gate-lift.md` + `specs/_audits/2026-05-16-wallet-broker-stripe.md`)."
+description = "CoreLink Stripe HTTPS client — real implementation of corelink-tier-selection::StripeClient via reqwest (rustls). Ships endpoints for Checkout Sessions, Subscriptions, Customers, and Billing Portal sessions; idempotent POSTs via `Idempotency-Key`; exponential backoff retries on 5xx / 429 (respects `Retry-After`); pure-function HMAC-SHA256 webhook signature verify (constant-time via `subtle::ConstantTimeEq`; 5-min replay window). Wave-31 (R-PREP wallet-broker series, stream-1): outbound Stripe calls now route through the HuGR Wallet remote credential broker at `{HUGR_WALLET_BASE}/_wallet/proxy/{HUGR_STRIPE_REF}/…` with `Authorization: Bearer ${HUGR_WALLET_TOKEN}` — CoreLink never holds a real `STRIPE_SECRET_KEY`. Webhook signature verification stays direct (inbound + local `STRIPE_WEBHOOK_SECRET`). API token + ref resolved via `StripeClientConfig::from_env()`; the `hugrw_` token is held in a redacting `SecretString` and NEVER logged. `StripeError` `#[non_exhaustive]` taxonomy (RateLimited / Authentication / CardDeclined / InvalidRequest / ApiConnection / Idempotency / Generic). Wave-19 (R-PREP): crate-root gate lifted; wasm32-safe surface (`webhook`, `webhook_dispatch`, `error`, `retry`, `dlq`, `portal`) builds on `wasm32-unknown-unknown`; native-only HTTPS client (`client.rs` + reqwest) gated per-module to non-wasm32 (see `specs/_audits/sealed/2026-05-16-stripe-wasm32-gate-lift.md` + `specs/_audits/sealed/2026-05-16-wallet-broker-stripe.md`)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -43,7 +43,7 @@ blake3 = { workspace = true }
 url = "2"
 # Wave-31 (R-PREP wallet-broker stream-1): `hugrw_` token held in a
 # redacting `SecretString` so it never leaks via `Debug` / `Display` /
-# panic output. See `specs/_audits/2026-05-16-wallet-broker-stripe.md`.
+# panic output. See `specs/_audits/sealed/2026-05-16-wallet-broker-stripe.md`.
 secrecy = "0.10"
 corelink-tier-selection = { path = "../corelink-tier-selection" }
 # Wave-36 Trigger A: the four port traits + identity / outcome / error
@@ -53,7 +53,7 @@ corelink-tier-selection = { path = "../corelink-tier-selection" }
 # `corelink_stripe_real::webhook_dispatch::*` public surface keeps
 # working unchanged, and (b) implements the traits on the concrete
 # HTTPS dispatcher / in-memory store / test-fake adapters that still
-# live here. See `specs/_audits/2026-05-27-w36-trigger-a-seal.md`.
+# live here. See `specs/_audits/sealed/2026-05-27-w36-trigger-a-seal.md`.
 corelink-billing-stripe-traits = { path = "../corelink-billing-stripe-traits" }
 
 # Wave-19 (R-PREP): native-only HTTPS dependency. The `client.rs` module
@@ -68,7 +68,7 @@ reqwest = { workspace = true, features = ["json", "rustls-tls", "blocking"], def
 # wave-19 `SystemTime::now()` runtime-panic caveat on
 # `wasm32-unknown-unknown`. See
 # `crates/corelink-stripe-real/src/clock.rs` ::WasmWorkerClock and audit
-# `specs/_audits/2026-05-16-stripe-wasm32-gate-lift.md §8`.
+# `specs/_audits/sealed/2026-05-16-stripe-wasm32-gate-lift.md §8`.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = { workspace = true }
 

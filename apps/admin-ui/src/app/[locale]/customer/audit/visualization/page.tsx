@@ -1,7 +1,7 @@
 // wt/r-prep-audit-chain-viz — customer audit-chain visualization.
 //
 // React skeleton implementing the five components described in
-// `specs/_audits/2026-05-15-audit-viz-spec.md`:
+// `specs/_audits/sealed/2026-05-15-audit-viz-spec.md`:
 //
 //   A — chain head card
 //   B — leaf table

@@ -21,7 +21,7 @@
  * excludes draft pages from the build, breaking 90+ MDX cross-links. The
  * `<DraftBanner />` JSX element fully subsumes the user-visible signal that
  * `draft: true` was meant to carry, so the gate test no longer asserts the
- * frontmatter flag. See `specs/_audits/2026-05-16-prexisting-test-failures-triage.md`
+ * frontmatter flag. See `specs/_audits/sealed/2026-05-16-prexisting-test-failures-triage.md`
  * for the full reconciliation.
  *
  * This test is the canonical CI gate for the S-18 anti-scope rule. Removing

@@ -13,7 +13,7 @@ supersedes: null
 superseded_by: null
 tags: ["runbook", "p1", "supply-chain", "dependency", "maintainer-compromise", "solarwinds", "rustsec", "cargo-audit", "dependency-track", "rb-fm-156", "wi-s12-007", "dry-run-executed"]
 dry_run_executed: "2026-05-13"
-dry_run_evidence: "specs/_audits/2026-05-13-rb-fm-156-dry-run.md"
+dry_run_evidence: "specs/_audits/sealed/2026-05-13-rb-fm-156-dry-run.md"
 ---
 
 # RB-FM-156 — Dep Maintainer Malicioso (SolarWinds-style Supply Chain Compromise)
@@ -277,9 +277,9 @@ done
 
 - `specs/03_architecture/failure_modes.md` FM-156.
 - `specs/03_architecture/security_model.md` CTRL-SUPPLY-001 + CTRL-SUPPLY-004 + CTRL-SUPPLY-006.
-- `specs/04_sprints/S12/_spec_contract.md` R-S12-9 (cargo-audit CI) + R-S12-11 (Dependabot).
-- `specs/04_sprints/S12/work_items/WI-S12-004-cargo-audit-cargo-deny-dependabot.md`.
-- `specs/04_sprints/S12/work_items/WI-S12-005-dependency-track-self-host-cve-alerts.md`.
+- `specs/04_sprints/_sealed/S12/_spec_contract.md` R-S12-9 (cargo-audit CI) + R-S12-11 (Dependabot).
+- `specs/04_sprints/_sealed/S12/work_items/WI-S12-004-cargo-audit-cargo-deny-dependabot.md`.
+- `specs/04_sprints/_sealed/S12/work_items/WI-S12-005-dependency-track-self-host-cve-alerts.md`.
 - RustSec Advisory Database: <https://rustsec.org/advisories/>.
 - cargo-audit documentation: <https://github.com/rustsec/rustsec/tree/main/cargo-audit>.
 - Dependency-Track API docs: <https://docs.dependencytrack.org/integrations/rest-api/>.

@@ -3,7 +3,7 @@
 //! Every test below pins the EXACT substitution behaviour of a
 //! survivor from the wave-23 first sweep (cargo-mutants 25.0.1,
 //! `--no-shuffle --jobs 4 --timeout 120`). See
-//! `specs/_audits/2026-05-16-debt-008-wave23-mutation-sweep.md`
+//! `specs/_audits/sealed/2026-05-16-debt-008-wave23-mutation-sweep.md`
 //! §4 for the survivor list and 1:1 mapping.
 
 #![allow(

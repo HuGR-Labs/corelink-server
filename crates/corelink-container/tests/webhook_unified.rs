@@ -7,7 +7,7 @@
 //! full HTTP plumbing. This proves the unification refactor binds end
 //! to end and preserves the 10-event SLA taxonomy + idempotency +
 //! audit emission contracts pinned by wave-15 audit doc
-//! `specs/_audits/2026-05-15-stripe-webhook-production.md`.
+//! `specs/_audits/sealed/2026-05-15-stripe-webhook-production.md`.
 //!
 //! Coverage:
 //!

@@ -322,7 +322,7 @@ Cada CTRL **DEVE** ter: descrição, implementação, owner (time), evidência o
 | CTRL-FORMAL-001 | TLA+ obrigatório para INV CRITICAL | CI falha se invariante CRITICAL não tem model check verde | EVT-022 | Por mudança |
 | CTRL-FORMAL-002 | Proof artifacts versionados      | `.tla` + `.cfg` em repo; CI roda TLC; evidence anexada à PR | EVT-001 | Por PR |
 
-> **Coverage audit (R-PREP 2026-05-15):** see `specs/_audits/2026-05-15-tla-coverage-audit.md` for the full pre-GA gap analysis (11 specs surveyed) and `specs/_audits/tla-followup-tickets.md` for the 9 remaining gap tickets. That audit closed 3 CRITICAL gaps in the auth-revocation cluster via the new `specs/tla/auth_revocation.tla`.
+> **Coverage audit (R-PREP 2026-05-15):** see `specs/_audits/sealed/2026-05-15-tla-coverage-audit.md` for the full pre-GA gap analysis (11 specs surveyed) and `specs/_audits/sealed/tla-followup-tickets.md` for the 9 remaining gap tickets. That audit closed 3 CRITICAL gaps in the auth-revocation cluster via the new `specs/tla/auth_revocation.tla`.
 
 ### 6.10 Privacy (coordenação — ver `privacy_model.md`)
 

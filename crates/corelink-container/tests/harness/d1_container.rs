@@ -31,7 +31,7 @@
 //!    surrogate; this module reuses the same pin.
 //!
 //! The audit doc captures this as a deliberate design call —
-//! `specs/_audits/2026-05-16-signup-live-d1-tests.md` §2.
+//! `specs/_audits/sealed/2026-05-16-signup-live-d1-tests.md` §2.
 //!
 //! ## Migration surface
 //!

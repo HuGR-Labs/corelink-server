@@ -1,7 +1,7 @@
 -- Migration 0045: Stripe webhook dead-letter quarantine table.
 --
 -- Closes GAP-P0-1 + GAP-P0-2 + GAP-P0-3 from
--- `specs/_audits/2026-05-15-webhook-retry-dlq.md`.
+-- `specs/_audits/sealed/2026-05-15-webhook-retry-dlq.md`.
 --
 -- # Why this table exists
 --

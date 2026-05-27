@@ -10,8 +10,8 @@
 # Charter: CTRL-CRED-001 — CLERK_SECRET_KEY must never appear in client bundle.
 #          ADR-0015       — reproducible builds via SOURCE_DATE_EPOCH.
 #
-# Spec ref: specs/_audits/2026-05-22-wave32-prod-deploy-spec.md §3 Phase F
-# Audit:    specs/_audits/2026-05-26-w32-phaseF-prep.md
+# Spec ref: specs/_audits/sealed/2026-05-22-wave32-prod-deploy-spec.md §3 Phase F
+# Audit:    specs/_audits/sealed/2026-05-26-w32-phaseF-prep.md
 
 set -euo pipefail
 

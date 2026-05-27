@@ -95,7 +95,7 @@ tags:
 | A.5.32 | Intellectual property rights | Yes | I | `cargo-deny` license allowlist (MIT / Apache-2.0 / BSD / ISC / MPL-2.0; deny GPL / AGPL / SSPL) + INV-SUPPLY-LICENSE-ALLOWLIST. | — | `specs/03_architecture/security_model.md §6 CTRL-SUPPLY-006` |
 | A.5.33 | Protection of records | Yes | I | R2 Object Lock Governance Mode + 7y retention lifecycle + quarterly recovery test. | — | `specs/03_architecture/security_model.md §6 CTRL-AUDIT-001/005` |
 | A.5.34 | Privacy and protection of PII | Yes | I | `privacy_model.md` + LGPD-FULL-AUDIT + LGPD-ROPA + RB-DSR-LGPD-FULL + INV-CONSENT-PROOF-VERIFIABLE. SOC2 GAP-22 closed 2026-05-15. PIMS extension (ISO 27701) tracked as GAP-ISO-08 informational deferred to Q3-2027 post-cert. | — | `specs/03_architecture/privacy_model.md` |
-| A.5.35 | Independent review of information security | Yes | P | External pentest annual (Schellman / Bishop Fox); SOC 2 Type I T+6m. Cadence calendarization pending. | SOC2 GAP-20 | `specs/_pentest/SOW-S20-EXTERNAL-PENTEST.md` |
+| A.5.35 | Independent review of information security | Yes | P | External pentest annual (Schellman / Bishop Fox); SOC 2 Type I T+6m. Cadence calendarization pending. | SOC2 GAP-20 | `specs/_audits/sealed/pentest/SOW-S20-EXTERNAL-PENTEST.md` |
 | A.5.36 | Compliance with policies, rules and standards for information security | Yes | P | Drata continuous compliance + 96.4% green sustained + weekly compliance review; review cadence pending. | SOC2 GAP-08 | `specs/_compliance/DRATA-INTEGRATION-COVERAGE.md` |
 | A.5.37 | Documented operating procedures | Yes | I | 60+ `RB-*.md` runbooks under VCS. | — | `specs/05_quality/runbooks/` |
 
@@ -174,10 +174,10 @@ tags:
 | A.8.23 | Web filtering | Yes | I | Container egress allowlist (`*.r2.cloudflarestorage.com` + registries allowlist); admin-plane via Cloudflare Access. | — | `specs/03_architecture/security_model.md §6 CTRL-NET-005` |
 | A.8.24 | Use of cryptography | Yes | P | TLS 1.3 + AES-256-GCM at rest + envelope encryption per-tenant + annual key rotation; per-provider BYOK FIPS attestation in progress. | SOC2 GAP-02 | `specs/_compliance/BYOK-FIPS-ATTESTATION-MATRIX.md` |
 | A.8.25 | Secure development life cycle | Yes | I | Schema validation + property tests + TLA+ 4 INV-level + ADR + sprint preflight reviews. | — | `specs/03_architecture/security_model.md §6 CTRL-INPUT-001..004 + CTRL-FORMAL-001` |
-| A.8.26 | Application security requirements | Yes | I | OWASP ASVS L2/L3 per-surface map + pentest SOW + property tests. | — | `specs/_pentest/SOW-S20-EXTERNAL-PENTEST.md` |
+| A.8.26 | Application security requirements | Yes | I | OWASP ASVS L2/L3 per-surface map + pentest SOW + property tests. | — | `specs/_audits/sealed/pentest/SOW-S20-EXTERNAL-PENTEST.md` |
 | A.8.27 | Secure system architecture and engineering principles | Yes | I | STRIDE/LINDDUN + threat-model per WI HIGH_RISK + failure_modes.md FM-XXX taxonomy. | — | `specs/03_architecture/failure_modes.md` |
 | A.8.28 | Secure coding | Yes | I | Rust + `sqlx::query!` parameterized only + `#[serde(deny_unknown_fields)]` + cargo-fuzz. | — | `specs/03_architecture/security_model.md §6 CTRL-INPUT-002/003 + CTRL-SUPPLY-005` |
-| A.8.29 | Security testing in development and acceptance | Yes | I | cargo-fuzz summaries + property tests + TLA+ model check CI gate + pentest baseline. | — | `specs/_pentest/SOW-S20-EXTERNAL-PENTEST.md` |
+| A.8.29 | Security testing in development and acceptance | Yes | I | cargo-fuzz summaries + property tests + TLA+ model check CI gate + pentest baseline. | — | `specs/_audits/sealed/pentest/SOW-S20-EXTERNAL-PENTEST.md` |
 | A.8.30 | Outsourced development | **No** | — | **Excluded:** all development is in-house; advisor pool is consultative only and is not assigned development tasks. Justification per Clause 6.1.3 d) 2). | — | `specs/_compliance/ISO27001-CROSSWALK-2026-05-15.md §5 A.8.30` |
 | A.8.31 | Separation of development, test and production environments | Yes | I | Separate Cloudflare accounts (dev / staging / prod) + separate D1 + R2 + DO namespaces + branch protection on `main`. | — | `specs/03_architecture/security_model.md §6` |
 | A.8.32 | Change management | Yes | I | Branch protection + PR review + signed deploy + Rekor + sprint contracts §5.1 + preflight. | — | `specs/03_architecture/security_model.md §6 PAT-DUAL-APPROVAL-001 + CTRL-SUPPLY-001` |

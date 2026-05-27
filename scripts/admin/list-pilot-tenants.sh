@@ -54,7 +54,7 @@ EXAMPLES:
   ${SCRIPT_NAME} --state ACTIVE --format json
   ${SCRIPT_NAME} --state GRADUATED
 
-See: specs/_audits/2026-05-16-pilot-signup-pipeline.md §2 (operator pre-flight)
+See: specs/_audits/sealed/2026-05-16-pilot-signup-pipeline.md §2 (operator pre-flight)
      docs/internal/customer-success-playbook.md §1 (pilot lifecycle)
 USAGE
 }

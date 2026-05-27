@@ -33,7 +33,7 @@ into the dashboards their on-call already watches.
   never raw `tenant_id`. See
   [Trust → Data handling](../../trust/data-handling.mdx) for the full
   PII-hygiene posture; the per-metric forwarded-label inventory is in
-  [`specs/_audits/2026-05-15-otel-export-spec.md`](https://github.com/humangr-labs/corelink-server/blob/main/specs/_audits/2026-05-15-otel-export-spec.md).
+  [`specs/_audits/sealed/2026-05-15-otel-export-spec.md`](https://github.com/humangr-labs/corelink-server/blob/main/specs/_audits/sealed/2026-05-15-otel-export-spec.md).
 
 **Fail-OPEN guarantee.** If your observability stack is down (auth
 reject, network unreachable, rate-limit, 5xx), **CoreLink keeps
@@ -65,4 +65,4 @@ dark is your incident — not ours.
 - Trust posture: [Trust → Data handling](../../trust/data-handling.mdx).
 - Dashboards we ship out-of-the-box: see the dashboards catalog in
   [`observability_model.md §8`](https://github.com/humangr-labs/corelink-server/blob/main/specs/03_architecture/observability_model.md#8-dashboards--catálogo).
-- Audit of what we export and why: [`specs/_audits/2026-05-15-otel-export-spec.md`](https://github.com/humangr-labs/corelink-server/blob/main/specs/_audits/2026-05-15-otel-export-spec.md).
+- Audit of what we export and why: [`specs/_audits/sealed/2026-05-15-otel-export-spec.md`](https://github.com/humangr-labs/corelink-server/blob/main/specs/_audits/sealed/2026-05-15-otel-export-spec.md).

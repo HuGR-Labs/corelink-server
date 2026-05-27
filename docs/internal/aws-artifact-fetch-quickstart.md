@@ -207,7 +207,7 @@ and the canonical `Co-Authored-By: Claude Opus 4.7` trailer.
 
 ## Step 7 (manual follow-up) — Update DEBT-003 register row
 
-After committing, edit `specs/_audits/2026-05-15-debt-register.md`:
+After committing, edit `specs/_audits/sealed/2026-05-15-debt-register.md`:
 flip the DEBT-003 row from
 `(engineering-CLOSED; operator-bound)` to `(CLOSED <date>, commit
 <short-sha>)`. This is a separate commit per the §6 step 9 convention

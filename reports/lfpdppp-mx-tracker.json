@@ -1,8 +1,8 @@
 {
   "schema_version": "1.0",
   "updated": "2026-05-16",
-  "doc_reference": "specs/_audits/2026-05-16-lfpdppp-mx-engagement-package-final.md",
-  "engagement_baseline": "specs/_audits/2026-05-16-lfpdppp-mx-legal-review-package.md",
+  "doc_reference": "specs/_audits/sealed/2026-05-16-lfpdppp-mx-engagement-package-final.md",
+  "engagement_baseline": "specs/_audits/sealed/2026-05-16-lfpdppp-mx-legal-review-package.md",
   "shortlist": "docs/legal/lfpdppp-mx-attorney-shortlist.md",
   "engagement_letter": "docs/legal/lfpdppp-mx-engagement-letter-template.md",
   "email_template": "docs/legal/lfpdppp-mx-engagement-email-template.md",

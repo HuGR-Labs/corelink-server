@@ -1,7 +1,7 @@
 //! Wave-21 DEBT-008 mutation-sweep follow-on: targeted tests that kill the
 //! 7 non-equivalent surviving mutants surfaced by the 2026-05-16 empirical
 //! `cargo mutants -p corelink-hash` run (8 missed / 36 viable → 77.78 %
-//! kill rate). See `specs/_audits/2026-05-16-debt-008-mutation-sweep.md`.
+//! kill rate). See `specs/_audits/sealed/2026-05-16-debt-008-mutation-sweep.md`.
 //!
 //! The 8th miss (`crates/corelink-hash/src/digest.rs:59:31: replace | with ^
 //! in Digest::from_hex`) is a mathematically **equivalent mutation**:

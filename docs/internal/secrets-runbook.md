@@ -1,6 +1,6 @@
 # Production Secrets Runbook (WI-R2-14)
 
-> **Last sealed:** 2026-05-21 (wave-31 dual-mode auth — Stripe client now supports BOTH direct and wallet-broker auth, switched by `STRIPE_AUTH_MODE`; see `specs/_audits/2026-05-16-wallet-broker-stripe.md §10`)
+> **Last sealed:** 2026-05-21 (wave-31 dual-mode auth — Stripe client now supports BOTH direct and wallet-broker auth, switched by `STRIPE_AUTH_MODE`; see `specs/_audits/sealed/2026-05-16-wallet-broker-stripe.md §10`)
 > **Owner:** SRE Lead (co-owned with Security Lead)
 > **Companion:** `docs/internal/secrets-checklist.md` (the matrix of all secrets)
 
@@ -41,7 +41,7 @@ broker, or vice versa).
 `wallet_broker` (snake-case) for deploy-template friendliness; any other
 value → `StripeError::Authentication` naming the rejected value.
 
-See `specs/_audits/2026-05-16-wallet-broker-stripe.md §10` (dual-mode
+See `specs/_audits/sealed/2026-05-16-wallet-broker-stripe.md §10` (dual-mode
 addendum) for the full enum shape + test net.
 
 This runbook covers the **operational** side of secrets management:
@@ -72,7 +72,7 @@ Every row marked `cf-wrangler` in the matrix is populated via:
 #   - When wallet is restored (`STRIPE_AUTH_MODE=wallet-broker`):
 #                                               HUGR_WALLET_TOKEN
 # Both modes always need STRIPE_WEBHOOK_SECRET (inbound HMAC, local).
-# See `specs/_audits/2026-05-16-wallet-broker-stripe.md §10`.
+# See `specs/_audits/sealed/2026-05-16-wallet-broker-stripe.md §10`.
 wrangler secret put STRIPE_SECRET_KEY        --env prod   # sk_live_... — DEFAULT mode (2026-05-21 onward)
 wrangler secret put HUGR_WALLET_TOKEN        --env prod   # hugrw_... — set only when STRIPE_AUTH_MODE=wallet-broker
 wrangler secret put STRIPE_WEBHOOK_SECRET    --env prod   # whsec_... (inbound HMAC verify — direct in BOTH modes)
@@ -234,7 +234,7 @@ a public repo, lost device, etc.), execute this playbook:
   `sk_live_...` lives in wallet KV and is NOT exposed to CoreLink — a leak of
   `HUGR_WALLET_TOKEN` does NOT require Stripe-side key rotation (the wallet
   owner does that on a separate cadence inside the wallet). See
-  `specs/_audits/2026-05-16-wallet-broker-stripe.md §6` blast-radius analysis
+  `specs/_audits/sealed/2026-05-16-wallet-broker-stripe.md §6` blast-radius analysis
   + `§10` dual-mode addendum.
 - **`STRIPE_WEBHOOK_SECRET`** (#3): UNCHANGED by wave-31 — inbound HMAC verify
   is direct, not brokered. Re-fetch missed webhooks via Stripe's `events.list`

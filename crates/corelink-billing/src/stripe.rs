@@ -45,7 +45,7 @@ pub mod real {
 /// constant. Future consumers SHOULD reach the trait surface through
 /// this canonical umbrella path instead of importing
 /// `corelink-billing-stripe-traits` directly. See
-/// `specs/_audits/2026-05-27-w36-trigger-a-seal.md`.
+/// `specs/_audits/sealed/2026-05-27-w36-trigger-a-seal.md`.
 pub mod traits {
     pub use corelink_billing_stripe_traits::*;
 }

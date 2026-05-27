@@ -2,7 +2,7 @@
 //!
 //! Wave-8 landed the CAS read end-to-end as the **example wire-up**
 //! for the R-prep handler-crate skeleton (see
-//! `specs/_audits/2026-05-14-slo-instrumentation-gaps.md §6`):
+//! `specs/_audits/sealed/2026-05-14-slo-instrumentation-gaps.md §6`):
 //! `apps/server::routes::cas` wires `corelink-handler-cas` + in-memory
 //! fakes into an axum route, demonstrating where the
 //! `#[cfg(target_arch = "wasm32")]` CF-Worker handler slots in.
@@ -54,7 +54,7 @@ pub mod ac;
 /// + `GET /v1/audit/analytics/timeline` over the per-tenant
 /// `audit_events_shadow` Neon table. The shadow is analytics-only;
 /// the canonical chain-integrity store is the R2 NDJSON archive
-/// (Wave 15) — see `specs/_audits/2026-05-15-neon-analytics-shadow.md`.
+/// (Wave 15) — see `specs/_audits/sealed/2026-05-15-neon-analytics-shadow.md`.
 pub mod audit_analytics;
 /// Customer-facing audit-export route (Wave-15.3 wiring of
 /// WI-S09-008): `GET /v1/audit/export?from=&to=` streams NDJSON
@@ -65,7 +65,7 @@ pub mod cas;
 /// Pilot signup route (wave-29 stream-1; closes DEBT-027 engineering-side).
 /// Surfaces `POST /v1/signup/pilot/{token}` over an HMAC-SHA256
 /// signed token + per-IP rate-limit + fail-CLOSED audit emit. See
-/// `specs/_audits/2026-05-16-signup-corelink-dev-backend.md`.
+/// `specs/_audits/sealed/2026-05-16-signup-corelink-dev-backend.md`.
 pub mod signup;
 
 /// Per-tenant in-memory shadow-sink factory. Production wiring

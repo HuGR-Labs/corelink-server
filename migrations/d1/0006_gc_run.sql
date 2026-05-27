@@ -2,8 +2,8 @@
 -- (S-06 Garbage Collection: worker checkpoint table; WI-S06-001 §1).
 --
 -- Canonical sources:
---   - specs/04_sprints/S06/work_items/WI-S06-001-worker-gc-binary-scheduler-degrade-mode.md §1
---   - specs/04_sprints/S06/_spec_contract.md §5.1 (R-S06-1..3) + §5.2..§5.5
+--   - specs/04_sprints/_sealed/S06/work_items/WI-S06-001-worker-gc-binary-scheduler-degrade-mode.md §1
+--   - specs/04_sprints/_sealed/S06/_spec_contract.md §5.1 (R-S06-1..3) + §5.2..§5.5
 --   - specs/03_architecture/invariant_registry.md INV-GC-IDEMPOTENT-RERUN +
 --     INV-GC-SINGLE-RUNNING-PER-TENANT-REGION + INV-GC-PHASE-MONOTONIC +
 --     INV-GC-MARK-STARTED-AT-IMMUTABLE

@@ -27,5 +27,5 @@ Termos canônicos:
 
 **Aviso pré-GA honesto:** todos os valores monetários são provisórios e
 podem ser refinados até o GA. Plano piloto gratuito durante a avaliação.
-Ver `specs/_audits/2026-05-16-pricing-page.md` para o status da tabela
+Ver `specs/_audits/sealed/2026-05-16-pricing-page.md` para o status da tabela
 de preços.

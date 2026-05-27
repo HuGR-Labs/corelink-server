@@ -183,7 +183,7 @@ const sidebars: SidebarsConfig = {
     // page at `src/pages/trust/index.tsx`, wave-29 stream-8 deliverable) and
     // is NOT a sidebar entry — `trust/index` (slug `/trust/overview`) is the
     // long-form deep-dive linked from the React landing. See
-    // `specs/_audits/2026-05-16-trust-center-consolidation.md`.
+    // `specs/_audits/sealed/2026-05-16-trust-center-consolidation.md`.
     {
       type: "category",
       label: "Trust",

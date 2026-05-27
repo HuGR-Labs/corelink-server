@@ -1,11 +1,11 @@
 # LFPDPPP MX Attorney Engagement Email — Send-Ready Template
 
-> **Status:** Send-ready template prepared by the wave-28 step-6 R-prep stream. Mustache placeholders `{{...}}` MUST be filled before send. Companion to `docs/legal/lfpdppp-mx-attorney-shortlist.md` (5-candidate shortlist) + `docs/legal/lfpdppp-mx-engagement-letter-template.md` (engagement letter — the binding work statement) + `specs/_audits/2026-05-16-lfpdppp-mx-legal-review-package.md` (scoping packet — engineering-side artifact inventory).
+> **Status:** Send-ready template prepared by the wave-28 step-6 R-prep stream. Mustache placeholders `{{...}}` MUST be filled before send. Companion to `docs/legal/lfpdppp-mx-attorney-shortlist.md` (5-candidate shortlist) + `docs/legal/lfpdppp-mx-engagement-letter-template.md` (engagement letter — the binding work statement) + `specs/_audits/sealed/2026-05-16-lfpdppp-mx-legal-review-package.md` (scoping packet — engineering-side artifact inventory).
 >
 > **Send instructions:** customize `{{attorney_name}}` + `{{attorney_email}}` + `{{owner_pgp}}` + `{{deadline_date}}` per row in `reports/lfpdppp-mx-tracker.json`; attach the engagement packet per §0 below; PGP-encrypt or use a signed-URL channel (Keybase / 1Password share) — never plain-text email — for the attached spec corpus excerpts.
 >
 > **Companion artifacts (engagement packet — attach all):**
-> 1. `specs/_audits/2026-05-16-lfpdppp-mx-legal-review-package.md` (engineering-side scoping packet, §1-§8)
+> 1. `specs/_audits/sealed/2026-05-16-lfpdppp-mx-legal-review-package.md` (engineering-side scoping packet, §1-§8)
 > 2. `docs/legal/lfpdppp-mx-engagement-letter-template.md` (engagement letter — binding work statement)
 > 3. `docs/legal/lfpdppp-mx-retainer-template.md` (retainer template — negotiating baseline)
 > 4. `legal/privacy-notice/v1.0.0/es-MX.md` (es-MX privacy notice — primary review artifact)
@@ -90,7 +90,7 @@
 >
 > ---
 >
-> *Este envío está registrado en `reports/lfpdppp-mx-tracker.json` bajo DEBT-025 en el registro canónico de deuda (`specs/_audits/2026-05-15-debt-register.md`).*
+> *Este envío está registrado en `reports/lfpdppp-mx-tracker.json` bajo DEBT-025 en el registro canónico de deuda (`specs/_audits/sealed/2026-05-15-debt-register.md`).*
 
 ---
 
@@ -200,9 +200,9 @@ Owner pre-send verification (per email sent):
 - **Shortlist:** `docs/legal/lfpdppp-mx-attorney-shortlist.md` (5 candidates ranked).
 - **Engagement letter:** `docs/legal/lfpdppp-mx-engagement-letter-template.md` (binding work statement).
 - **Retainer template:** `docs/legal/lfpdppp-mx-retainer-template.md` (negotiating baseline).
-- **Scoping packet:** `specs/_audits/2026-05-16-lfpdppp-mx-legal-review-package.md` (engineering-side §1-§8).
+- **Scoping packet:** `specs/_audits/sealed/2026-05-16-lfpdppp-mx-legal-review-package.md` (engineering-side §1-§8).
 - **Tracker script:** `scripts/admin/lfpdppp-mx-tracker.py` + `reports/lfpdppp-mx-tracker.json`.
-- **Wave-28 step-6 closure audit:** `specs/_audits/2026-05-16-lfpdppp-mx-engagement-package-final.md`.
+- **Wave-28 step-6 closure audit:** `specs/_audits/sealed/2026-05-16-lfpdppp-mx-engagement-package-final.md`.
 - **Pentest RFP email precedent:** `docs/legal/pentest-rfp-email-template.md` (wave-26 precedent; same Mustache-templated pattern applied here for LFPDPPP MX).
 
 ---

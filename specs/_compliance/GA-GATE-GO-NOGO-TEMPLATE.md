@@ -199,8 +199,8 @@ Within 24 h of meeting close, the Owner / facilitator:
 
 - `GA-GATE-CRITERIA.md` — 59 criteria checklist consumed by this template.
 - `specs/_runbooks/RB-GA-LAUNCH-ROLLBACK.md` — rollback decision tree for D+1 / D+7 / D+30 triggers.
-- `specs/04_sprints/S20/PRR-S20-GA.md` — global PRR + 13 canonical sign-offs.
-- `specs/04_sprints/S20/PRR-S20-CLOSING.md` — closing PRR + final per-canonical-source verdict.
+- `specs/04_sprints/_sealed/S20/PRR-S20-GA.md` — global PRR + 13 canonical sign-offs.
+- `specs/04_sprints/_sealed/S20/PRR-S20-CLOSING.md` — closing PRR + final per-canonical-source verdict.
 - `ROADMAP-TO-GA.md` §7 — Wave R-7 Evidence Gate context.
 - ADR-0034 — solo-tier dual-hat provisions + 4-signer minimum slot coverage.
 - `specs/_runbooks/ONCALL-ESCALATION-MATRIX.md` — feeds the post-launch incident response if rollback triggered.

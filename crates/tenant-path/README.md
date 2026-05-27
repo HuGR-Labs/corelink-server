@@ -8,7 +8,7 @@ via HMAC-SHA256 over the tenant UUID, base64-URL-no-pad encoded and truncated
 to 16 ASCII characters per `specs/03_architecture/remote_cache_product_profile.md §7.1`.
 
 Authoritative ADR: [`ADR-0043`](../../specs/03_architecture/adrs/ADR-0043-hmac-tenant-prefix-algorithm.md).
-Sprint contract: [`WI-S01-001`](../../specs/04_sprints/S01/work_items/WI-S01-001-tenant-path-hmac.md).
+Sprint contract: [`WI-S01-001`](../../specs/04_sprints/_sealed/S01/work_items/WI-S01-001-tenant-path-hmac.md).
 
 ## Quickstart
 

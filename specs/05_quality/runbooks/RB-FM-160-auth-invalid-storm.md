@@ -70,6 +70,6 @@ tags: ["runbook", "p2", "auth", "credential-attack", "stub"]
 ## References
 
 - `failure_modes.md` FM-160.
-- `specs/04_sprints/S03/_spec_contract.md` (auth path).
+- `specs/04_sprints/_sealed/S03/_spec_contract.md` (auth path).
 - `specs/04_sprints/S08/_spec_contract.md` (rate limit per-PAT/per-IP).
 - OWASP ASVS V2/V3.

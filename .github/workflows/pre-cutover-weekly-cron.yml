@@ -7,13 +7,13 @@ name: Pre-Cutover Weekly Verification (wave-28 step-10)
 #
 # Companion script: scripts/pre-cutover-weekly-verify.sh.
 # Diff script: scripts/pre-cutover-state-diff.py.
-# Audit doc: specs/_audits/2026-05-16-pre-cutover-weekly-verify.md.
+# Audit doc: specs/_audits/sealed/2026-05-16-pre-cutover-weekly-verify.md.
 #
 # Sources of truth for the 8 DEFER items:
-#   - specs/_audits/2026-05-16-ga-readiness-final.md §11
-#   - specs/_audits/2026-05-16-final-cutover-readiness.md §1
-#   - specs/_audits/2026-05-16-ga-final-checklist.md §G
-#   - specs/_audits/2026-05-16-pre-cutover-state-snapshot.md §L
+#   - specs/_audits/sealed/2026-05-16-ga-readiness-final.md §11
+#   - specs/_audits/sealed/2026-05-16-final-cutover-readiness.md §1
+#   - specs/_audits/sealed/2026-05-16-ga-final-checklist.md §G
+#   - specs/_audits/sealed/2026-05-16-pre-cutover-state-snapshot.md §L
 #
 # Charter:
 #   - Actions SHA-pinned per supply-chain policy (CC8.1 / CTRL-SUPPLY-002).
@@ -227,7 +227,7 @@ jobs:
                   "custom_details": {
                       "digest_path": os.environ.get("DIGEST_PATH", ""),
                       "digest_date": os.environ.get("DIGEST_DATE", ""),
-                      "audit_doc": "specs/_audits/2026-05-16-pre-cutover-weekly-verify.md",
+                      "audit_doc": "specs/_audits/sealed/2026-05-16-pre-cutover-weekly-verify.md",
                   },
               },
           }
@@ -292,7 +292,7 @@ jobs:
             echo "- Regression: \`${{ steps.verify.outputs.regression }}\`"
             echo "- Diff-vs-prior: \`${{ steps.diff.outputs.regression_via_diff }}\`"
             echo "- Digest path: \`${{ steps.verify.outputs.digest_path }}\`"
-            echo "- Audit doc: \`specs/_audits/2026-05-16-pre-cutover-weekly-verify.md\`"
+            echo "- Audit doc: \`specs/_audits/sealed/2026-05-16-pre-cutover-weekly-verify.md\`"
             echo "- Cron: Monday 09:00 Bahia (UTC-3 = 12:00 UTC)"
             echo "- Charter: synchronous bash/python only; no PII in digest"
           } >> "${GITHUB_STEP_SUMMARY}"

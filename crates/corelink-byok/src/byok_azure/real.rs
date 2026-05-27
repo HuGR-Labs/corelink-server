@@ -2,7 +2,7 @@
 //!
 //! This module is the canonical Azure Key Vault real-mode entry point. It
 //! follows the BYOK real-provider pattern locked in by
-//! `specs/_audits/2026-05-15-byok-real-provider-pattern.md` (canonical
+//! `specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md` (canonical
 //! reference impl: `crates/corelink-byok-aws/src/real.rs`):
 //!
 //! 1. **FIPS endpoint enforced.** [`AzureKeyVaultRealProvider::new`]
@@ -1160,7 +1160,7 @@ pub use native::AzureKeyVaultRealProvider;
 /// on wasm32; ...")`. In production CF Worker deployments envelope
 /// operations are forwarded to the native server process via the internal
 /// control-plane RPC — see
-/// `specs/_audits/2026-05-15-byok-real-provider-pattern.md`.
+/// `specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md`.
 #[cfg(target_arch = "wasm32")]
 #[derive(Debug, Clone)]
 #[non_exhaustive]

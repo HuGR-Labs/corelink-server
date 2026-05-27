@@ -252,7 +252,7 @@ items, each scoped to a future wave.
   intake records, emits the markdown summary by severity, and assigns
   rows to the wave-N backlog.
 - `tests/beta_feedback_triage_test.py` — rubric / SLA / routing tests.
-- `specs/_audits/2026-05-16-beta-feedback-triage-harness.md` — audit doc
+- `specs/_audits/sealed/2026-05-16-beta-feedback-triage-harness.md` — audit doc
   for this harness and first-week post-pilot-launch process.
 - `docs/internal/oncall-24-7-readiness.md` — on-call calendar referenced
   by SLA holiday handling.

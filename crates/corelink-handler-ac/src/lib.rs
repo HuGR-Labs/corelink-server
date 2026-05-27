@@ -1,7 +1,7 @@
 //! `corelink-handler-ac` — Action Cache HTTP handler skeleton (R-prep).
 //!
 //! Closes the handler-layer SLO emit gap for `SLO-AVAIL-AC` +
-//! `SLO-LAT-AC-HIT` per `specs/_audits/2026-05-14-slo-instrumentation-gaps.md`.
+//! `SLO-LAT-AC-HIT` per `specs/_audits/sealed/2026-05-14-slo-instrumentation-gaps.md`.
 //!
 //! # Crate contents
 //!

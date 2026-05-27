@@ -44,7 +44,7 @@
 //!
 //! ## Cross-refs
 //!
-//! - `specs/_audits/2026-05-16-neon-shadow-real-driver.md` §7
+//! - `specs/_audits/sealed/2026-05-16-neon-shadow-real-driver.md` §7
 //!   (wave-21 closure note).
 //! - `migrations/d1/0052_tenant_config_region.sql` — D1 column add.
 

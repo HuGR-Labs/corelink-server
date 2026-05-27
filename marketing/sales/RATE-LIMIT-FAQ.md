@@ -104,7 +104,7 @@ both the headers and the body so single-channel consumers
 
 **Sources:**
 `crates/corelink-rate-headers/src/headers.rs::RateLimitErrorBody`;
-`specs/_audits/2026-05-15-ratelimit-ux-audit.md` §2.
+`specs/_audits/sealed/2026-05-15-ratelimit-ux-audit.md` §2.
 
 ### RL3 — Why RFC 9331 and not `X-RateLimit-Limit / -Remaining / -Reset`?
 

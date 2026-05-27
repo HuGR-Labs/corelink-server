@@ -2,7 +2,7 @@
 
 CoreLink Clerk SSO adapter — JWT RS256 validation + JWKS cache.
 
-Implements [WI-S03-001](../../specs/04_sprints/S03/work_items/WI-S03-001-clerk-adapter.md)
+Implements [WI-S03-001](../../specs/04_sprints/_sealed/S03/work_items/WI-S03-001-clerk-adapter.md)
 (HIGH_RISK lane; FF-HR-002 / FF-HR-005 / FF-HR-009).
 
 ## Surface

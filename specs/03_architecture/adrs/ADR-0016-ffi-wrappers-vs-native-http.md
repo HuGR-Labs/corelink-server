@@ -182,7 +182,7 @@ the long-term security maintenance cost.
 
 ## 7. References
 
-- `specs/04_sprints/S15/work_items/WI-S15-004-ffi-wrappers-python-go-js-adr-0016.md`
+- `specs/04_sprints/_sealed/S15/work_items/WI-S15-004-ffi-wrappers-python-go-js-adr-0016.md`
 - `specs/04_sprints/S02/` — `corelink-client-verify` canonical implementation
 - `crates/corelink-client-verify/src/ffi.rs` — C-ABI surface
 - `corelink-go/corelink.go` — Go cgo wrapper

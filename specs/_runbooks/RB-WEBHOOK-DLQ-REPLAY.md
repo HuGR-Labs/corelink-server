@@ -23,7 +23,7 @@ tags: ["runbook", "stripe", "webhook", "dlq", "replay", "billing", "r-prep"]
 table (migration `0045_stripe_webhook_dlq.sql`) — when an alert fires
 (non-zero DLQ depth OR oldest-row age > 6h), how to triage, decide,
 replay or abandon, and verify outcome. Companion to
-`specs/_audits/2026-05-15-webhook-retry-dlq.md`.
+`specs/_audits/sealed/2026-05-15-webhook-retry-dlq.md`.
 
 **Audience.** On-call billing engineer + secondary approver for the
 dual-approval replay step (admin API surface; today this is two
@@ -330,7 +330,7 @@ After every replay (success, fail, or abandon):
 
 ## 8. Related runbooks + invariants
 
-- `specs/_audits/2026-05-15-webhook-retry-dlq.md` — audit doc.
+- `specs/_audits/sealed/2026-05-15-webhook-retry-dlq.md` — audit doc.
 - `RB-FM-SIGNUP-FAILED.md` — upstream sign-up failure runbook
   (FM-150 sibling).
 - `RB-POSTMORTEM-PROCESS.md` — canonical post-mortem template.

@@ -2,7 +2,7 @@
 """
 GA-1 feature-freeze gate — pre-commit / pre-merge enforcement.
 
-Canonical source: `specs/_audits/2026-05-16-ga-1-feature-freeze.md`
+Canonical source: `specs/_audits/sealed/2026-05-16-ga-1-feature-freeze.md`
 (read its §2 frozen surfaces + §3 allowed exceptions + §4 decision protocol
 before touching this script).
 
@@ -63,7 +63,7 @@ from typing import Iterable
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# --- Allowed exception classes (mirror specs/_audits/2026-05-16-ga-1-feature-freeze.md §3) ---
+# --- Allowed exception classes (mirror specs/_audits/sealed/2026-05-16-ga-1-feature-freeze.md §3) ---
 ALLOWED_CLASSES = {
     "P0-security",
     "P1-ga-blocker",
@@ -400,7 +400,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "GA-1 feature-freeze gate (see "
-            "specs/_audits/2026-05-16-ga-1-feature-freeze.md)."
+            "specs/_audits/sealed/2026-05-16-ga-1-feature-freeze.md)."
         )
     )
     mode = parser.add_mutually_exclusive_group()

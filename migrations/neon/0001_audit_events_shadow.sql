@@ -1,8 +1,8 @@
 -- CoreLink Neon Postgres — audit-events analytics shadow table (Wave 18).
 --
 -- Canonical sources:
---   - specs/_audits/2026-05-15-neon-analytics-shadow.md (this wave audit doc)
---   - specs/_audits/2026-05-15-audit-chain-retention.md (R2 = canonical chain)
+--   - specs/_audits/sealed/2026-05-15-neon-analytics-shadow.md (this wave audit doc)
+--   - specs/_audits/sealed/2026-05-15-audit-chain-retention.md (R2 = canonical chain)
 --   - crates/corelink-audit-chain/src/neon_shadow.rs (NeonShadowSink trait)
 --   - specs/03_architecture/invariant_registry.md
 --       INV-OBS-AUDIT-CHAIN-INTEGRITY    (HIGH; R2 = canonical; Neon = analytics)

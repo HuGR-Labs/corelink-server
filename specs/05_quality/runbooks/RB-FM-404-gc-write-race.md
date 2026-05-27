@@ -14,7 +14,7 @@ superseded_by: null
 tags: ["runbook", "p1", "gc", "data-integrity", "tla", "dry-run-executed"]
 ---
 
-> **Dry-run executed 2026-05-02** — host-side harness `scripts/rb_fm_404_dry_run.sh` (WI-S06-007) green; chaos magnitude pinned to UpdateActionResult fired at exactly `mark_started_at_ms + 1ms` (boundary case; protected_re_ref expected) per Lote 10.6bis P0-W7-4. 100k race property test cross-validates `gc_correctness.tla::InvGCReRefProtected` against the real Rust impl. Audit trace: `specs/_audits/2026-05-02-rb-fm-404-dry-run.md`.
+> **Dry-run executed 2026-05-02** — host-side harness `scripts/rb_fm_404_dry_run.sh` (WI-S06-007) green; chaos magnitude pinned to UpdateActionResult fired at exactly `mark_started_at_ms + 1ms` (boundary case; protected_re_ref expected) per Lote 10.6bis P0-W7-4. 100k race property test cross-validates `gc_correctness.tla::InvGCReRefProtected` against the real Rust impl. Audit trace: `specs/_audits/sealed/2026-05-02-rb-fm-404-dry-run.md`.
 
 # RB-FM-404 — GC Sweep Conflita Com Write (Refcount Race)
 

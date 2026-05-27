@@ -3,7 +3,7 @@
 //!
 //! # Why this crate exists
 //!
-//! Wave 36 Stage 2.C closure (`specs/_audits/2026-05-26-w36-stage2c-closure.md`
+//! Wave 36 Stage 2.C closure (`specs/_audits/sealed/2026-05-26-w36-stage2c-closure.md`
 //! §5.1) identified a dep-graph cycle hazard: under the canonical
 //! Stage 3 cargo-deny lockdown (direct `corelink-stripe-real` deps
 //! denied for non-umbrella consumers), the materializer crate

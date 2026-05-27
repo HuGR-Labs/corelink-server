@@ -103,7 +103,7 @@ generic CLI failure by checking specifically for `65`.
 
 ### Cross-references
 
-- Spec: `specs/04_sprints/S09/work_items/WI-S09-008-customer-audit-export.md` §6 + §12
+- Spec: `specs/04_sprints/_sealed/S09/work_items/WI-S09-008-customer-audit-export.md` §6 + §12
 - Server emit: `apps/server/src/routes/audit_export.rs` (constants `HEADER_EXPORT_ABORTED`, `HEADER_CHAIN_HEAD_ANCHOR`)
 - Wave-18 server tests: `apps/server/tests/audit_export.rs` (`abort_trailer_emitted_on_mid_stream_chain_break`, `customer_cli_handles_abort_trailer_gracefully`)
 - Wave-19 CLI sources: `crates/corelink-cli/src/commands/verify_ndjson_http.rs` + `crates/corelink-cli/tests/verify_ndjson_http.rs`

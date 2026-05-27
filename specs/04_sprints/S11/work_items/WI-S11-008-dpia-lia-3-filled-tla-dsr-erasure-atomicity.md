@@ -820,7 +820,7 @@ And cross-reference com WI-S11-008 commit hash em registry update
 
 **Status:** ✅ DONE wave-17 (this commit).
 
-Per `specs/_audits/2026-05-15-dsr-worker-production.md` §9 wave-15 deferral list, the PRR ship-gate scope absorbed the wave-16 "status-page widget bridging the production Grafana panel to `corelink.humangr.com/status`" deferral. Wave-16 (commit `47e3442`) shipped the publish-path layers (trait + transport + aggregator + bridge); wave-17 ships the scheduler binding that fires the composition once per 24h:
+Per `specs/_audits/sealed/2026-05-15-dsr-worker-production.md` §9 wave-15 deferral list, the PRR ship-gate scope absorbed the wave-16 "status-page widget bridging the production Grafana panel to `corelink.humangr.com/status`" deferral. Wave-16 (commit `47e3442`) shipped the publish-path layers (trait + transport + aggregator + bridge); wave-17 ships the scheduler binding that fires the composition once per 24h:
 
 - **Scheduler crate (NEW):** `corelink-dsr-statuspage-scheduler` — composes `aggregate_24h_window → bridge_to_report → publish_dsr_metric` behind four trait surfaces (`D1RowSource`, `CronRunLog`, `StatuspageBackend`, `SchedulerAuditSink`). Cron expression `0 6 * * *` (06:00 UTC daily, after audit-chain daily-verify at 02:00 UTC, before SF business start). 14 lib tests + 6 WireMock integration tests cover happy / empty-window / 401 / 429 retry-exhaustion / D1 read-fail.
 - **CF Worker entry point:** `corelink-clerk-cf::dsr_statuspage_cron::scheduled` — `#[event(scheduled)]` handler resolving the three `STATUSPAGE_*` bindings from `worker::Env` + emitting the canonical `corelink.privacy.statuspage_publish_scheduled.v1` NDJSON audit line BEFORE any work. The real D1 row source + `worker::Fetch`-backed `StatuspageBackend` impl remain trait-abstraction-deferred to a follow-up real-binding wave; the wasm32 handler short-circuits with the canonical `wasm32_real_binding_deferred` skip event so the cron firing is observable in the audit chain from wave-17 forward.
@@ -829,7 +829,7 @@ Per `specs/_audits/2026-05-15-dsr-worker-production.md` §9 wave-15 deferral lis
 - **Audit envelope (fail-CLOSED):** 4 canonical event types — `statuspage_publish_scheduled.v1` / `statuspage_publish_succeeded.v1` / `statuspage_publish_failed.v1` / `statuspage_publish_skipped.v1`. Every transition emits BEFORE the caller-visible outcome (INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER); audit emit failure surfaces as `SchedulerError::Audit` and aborts the tick. Pinned by all 6 integration tests asserting the 2-event envelope (`Scheduled` → `Succeeded` / `Failed` / `Skipped`).
 - **Secrets surface:** `STATUSPAGE_PAGE_ID` (row 116) + `STATUSPAGE_METRIC_DSR_RESOLUTION_HOURS` (row 117) → `[vars]`; `STATUSPAGE_API_KEY` (row 42) → `wrangler secret put` only (the cron handler resolves via `env.secret(...)`). `python3 scripts/validate_secrets_matrix.py` clean.
 
-See `specs/_audits/2026-05-15-dsr-worker-production.md` §5.6 for the wave-17 closure surface table + test surface + charter-constraint matrix.
+See `specs/_audits/sealed/2026-05-15-dsr-worker-production.md` §5.6 for the wave-17 closure surface table + test surface + charter-constraint matrix.
 
 ## 12. Invariants Validated
 

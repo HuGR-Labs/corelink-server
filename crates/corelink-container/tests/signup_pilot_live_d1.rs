@@ -43,8 +43,8 @@
 //!
 //! ## Cross-reference
 //!
-//! - Audit doc: `specs/_audits/2026-05-16-signup-live-d1-tests.md`.
-//! - Wave-29 baseline audit doc: `specs/_audits/2026-05-16-signup-corelink-dev-backend.md`
+//! - Audit doc: `specs/_audits/sealed/2026-05-16-signup-live-d1-tests.md`.
+//! - Wave-29 baseline audit doc: `specs/_audits/sealed/2026-05-16-signup-corelink-dev-backend.md`
 //!   §closure-note (lifted from §13 wave-30 follow-up).
 
 #![forbid(unsafe_code)]

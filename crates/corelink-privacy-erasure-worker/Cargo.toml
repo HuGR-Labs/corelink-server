@@ -51,7 +51,7 @@ corelink-dsr = { workspace = true }
 # corelink-slo is dev-only for SLI binding regression
 # (`tests/sli_binding.rs` pins `METRIC_DSR_RESOLUTION_HOURS` to
 # `Sli::FreshDsrErasure.prometheus_metric_base()`). Closure from
-# `specs/_audits/2026-05-15-dsr-worker-production.md §3`.
+# `specs/_audits/sealed/2026-05-15-dsr-worker-production.md §3`.
 corelink-slo = { workspace = true }
 
 [[test]]

@@ -29,7 +29,7 @@
 # false-positive drift. The shortest real env var in the matrix is 4 chars
 # (`PORT`), so the 2-char floor is well below the empirical minimum and
 # strictly tighter than the documentation placeholder shape. See
-# `specs/_audits/2026-05-16-secrets-x-false-positive-fix.md`.
+# `specs/_audits/sealed/2026-05-16-secrets-x-false-positive-fix.md`.
 
 set -euo pipefail
 

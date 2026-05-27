@@ -58,7 +58,7 @@
 //!   pseudonymized at the boundary BEFORE export. The audit log lists
 //!   every forwarded metric kind for evidence. Pinned by
 //!   `prop_exported_label_set_pii_clean` + audit doc
-//!   `specs/_audits/2026-05-15-otel-export-spec.md`.
+//!   `specs/_audits/sealed/2026-05-15-otel-export-spec.md`.
 //!
 //! - **INV-OBS-CONFIG-NON-EXHAUSTIVE**: every per-vendor config struct
 //!   is `#[non_exhaustive]` so adding a new auth field (mTLS, OAuth2
@@ -90,7 +90,7 @@
 //! over-quota-throttle).
 //!
 //! Cross-links: `specs/03_architecture/observability_model.md`,
-//! `specs/_audits/2026-05-15-otel-export-spec.md`,
+//! `specs/_audits/sealed/2026-05-15-otel-export-spec.md`,
 //! `apps/docs/docs/how-to/observability/forward-to-{datadog,
 //! otel-collector,grafana-cloud}.mdx`,
 //! `apps/docs/docs/trust/data-handling.mdx`.

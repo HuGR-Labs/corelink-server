@@ -1,5 +1,5 @@
 {
-  "audit_doc": "specs/_audits/2026-05-16-perf-baseline-ga-freeze.md",
+  "audit_doc": "specs/_audits/sealed/2026-05-16-perf-baseline-ga-freeze.md",
   "benches_executed_end_to_end": [
     "corelink-tenant-path::derive_prefix_v2",
     "corelink-hash::blake3",
@@ -18,7 +18,7 @@
   "commit": "365dd38a3f575ca35c123bfa1385f2ca083d3072",
   "commit_short": "365dd38",
   "measurement_mode": "criterion --quick (laptop wall-clock budget); CI canonical refresh per §5",
-  "recapture_audit_doc": "specs/_audits/2026-05-16-perf-benches-recapture.md",
+  "recapture_audit_doc": "specs/_audits/sealed/2026-05-16-perf-benches-recapture.md",
   "recapture_captured_at": "2026-05-16T14:38:37Z",
   "recapture_commit": "04f2dffe",
   "recapture_stream": "wave-30 stream-5 perf-benches-recapture",

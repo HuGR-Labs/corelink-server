@@ -322,7 +322,7 @@ mod tests {
 
     // ---- Property-based invariants (WI-PROPTEST-FU-W33-002) ----
     //
-    // Density follow-up per `specs/_audits/proptest-followup-tickets.md`.
+    // Density follow-up per `specs/_audits/sealed/proptest-followup-tickets.md`.
     // These exercise the pure-Rust helpers (`*_inner`) which back the
     // `#[wasm_bindgen]` methods — covering invariants that must hold across
     // arbitrary inputs at the JS/TS boundary. `PROPTEST_CASES` env var

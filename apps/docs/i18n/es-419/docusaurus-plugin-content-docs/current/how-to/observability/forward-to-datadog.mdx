@@ -62,7 +62,7 @@ your runbook; the CoreLink config supports atomic key swap via the
 
 By default, CoreLink forwards **every top-level RED + USE metric** plus
 **every SLO-bound metric**. The full canonical inventory is in
-[`specs/_audits/2026-05-15-otel-export-spec.md`](https://github.com/humangr-labs/corelink-server/blob/main/specs/_audits/2026-05-15-otel-export-spec.md).
+[`specs/_audits/sealed/2026-05-15-otel-export-spec.md`](https://github.com/humangr-labs/corelink-server/blob/main/specs/_audits/sealed/2026-05-15-otel-export-spec.md).
 Per-metric label sets are PII-free by construction (`tenant_tier` /
 `region` / `result` / etc.; never the raw `tenant_id`).
 
@@ -167,7 +167,7 @@ Add APM trace ingest at ~$1.75 per million spans (sampled at 1%).
 - [Observability overview](./index.mdx)
 - [Trust → Data handling](../../trust/data-handling.mdx) — PII hygiene
   in telemetry; constant-time API-key comparison; fail-OPEN proof.
-- [`specs/_audits/2026-05-15-otel-export-spec.md`](https://github.com/humangr-labs/corelink-server/blob/main/specs/_audits/2026-05-15-otel-export-spec.md)
+- [`specs/_audits/sealed/2026-05-15-otel-export-spec.md`](https://github.com/humangr-labs/corelink-server/blob/main/specs/_audits/sealed/2026-05-15-otel-export-spec.md)
   — full inventory of what we export, per-metric data classification,
   PII-free verification.
 - [Datadog API docs — metrics submit](https://docs.datadoghq.com/api/latest/metrics/#submit-metrics).

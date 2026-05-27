@@ -15,8 +15,8 @@ superseded_by: null
 deciders: ["Gustavo Schneiter (Owner)", "Crypto SME (TBD per WI-S01-002 §30)"]
 status_history: [{"date": "2026-05-15", "status": "FROZEN", "by": "Gustavo Schneiter (S-01 implementation phase, corelink-hash crate)"}]
 context_links:
-  - "specs/04_sprints/S01/work_items/WI-S01-002-blake3-verify-at-write.md"
-  - "specs/04_sprints/S01/work_items/WI-S01-001-tenant-path-hmac.md"
+  - "specs/04_sprints/_sealed/S01/work_items/WI-S01-002-blake3-verify-at-write.md"
+  - "specs/04_sprints/_sealed/S01/work_items/WI-S01-001-tenant-path-hmac.md"
   - "specs/03_architecture/security_model.md"
   - "specs/03_architecture/invariant_registry.md"
   - "crates/corelink-hash"
@@ -189,7 +189,7 @@ with the following commitments:
 - ROADMAP-TO-GA.md §1 R-1 — S-01 foundation wave; this ADR is one of the R-1
   artifacts gating "Spec hygiene + abandoned review backlog + Opus eyeball
   pass".
-- S-01 sprint (`specs/04_sprints/S01/sprint.md`) — parent.
+- S-01 sprint (`specs/04_sprints/_sealed/S01/sprint.md`) — parent.
 - ADR-0043 — `tenant-path` sister ADR documenting the parallel HMAC-SHA256
   decision; this ADR mirrors that one for the digest side of the same
   type-driven security pattern.

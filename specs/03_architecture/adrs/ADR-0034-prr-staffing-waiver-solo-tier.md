@@ -15,8 +15,8 @@ superseded_by: null
 deciders: ["Gustavo Schneiter (Owner)", "Architect (TBD)"]
 context_links:
   - "specs/00_framework.md §33.5.4.3 (HIGH_RISK lane sign-off rules)"
-  - "specs/04_sprints/S04/_spec_contract.md §6 DoD"
-  - "specs/04_sprints/S04/work_items/WI-S04-006-reapi-conformance-prr-ship-gate.md"
+  - "specs/04_sprints/_sealed/S04/_spec_contract.md §6 DoD"
+  - "specs/04_sprints/_sealed/S04/work_items/WI-S04-006-reapi-conformance-prr-ship-gate.md"
 tags: ["adr", "prr", "staffing", "waiver", "solo-tier", "governance"]
 ---
 

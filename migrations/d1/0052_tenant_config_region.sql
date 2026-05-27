@@ -1,4 +1,4 @@
--- Wave-21 closure (`specs/_audits/2026-05-16-neon-shadow-real-driver.md` §7):
+-- Wave-21 closure (`specs/_audits/sealed/2026-05-16-neon-shadow-real-driver.md` §7):
 -- per-tenant pinned-region for the Neon analytics shadow.
 --
 -- Wave-20 wired the production `TokioPgShadowSinkFactory` in

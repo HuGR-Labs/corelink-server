@@ -24,7 +24,7 @@
 #     - analysis.md   (after scripts/analyze_endurance_run.py)
 #
 # This script is the canonical entrypoint cited by RB-24H-ENDURANCE-LOAD.md
-# and specs/_audits/2026-05-16-24h-endurance-harness.md.
+# and specs/_audits/sealed/2026-05-16-24h-endurance-harness.md.
 
 set -euo pipefail
 

@@ -3,7 +3,7 @@
 //!
 //! Replicates the [`crate::r2_real`] template onto Cloudflare Workers KV
 //! ([`worker::kv::KvStore`]). See
-//! `specs/_audits/2026-05-15-cf-binding-real-pattern.md` for the
+//! `specs/_audits/sealed/2026-05-15-cf-binding-real-pattern.md` for the
 //! audit-fenced, tenant-prefix-enforced shape this module follows.
 //!
 //! # What this module adds over [`crate::cf_kv::CfKvNamespaceAdapter`]

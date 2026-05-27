@@ -3,8 +3,8 @@
 -- WI-S07-003 reservation lifecycle).
 --
 -- Canonical sources:
---   - specs/04_sprints/S07/work_items/WI-S07-003-quota-enforcement-middleware.md §6.1.4
---   - specs/04_sprints/S07/_spec_contract.md §5 R-S07-3 + §8 INV-QUOTA-RESERVATION-TTL
+--   - specs/04_sprints/_sealed/S07/work_items/WI-S07-003-quota-enforcement-middleware.md §6.1.4
+--   - specs/04_sprints/_sealed/S07/_spec_contract.md §5 R-S07-3 + §8 INV-QUOTA-RESERVATION-TTL
 --   - specs/03_architecture/invariant_registry.md INV-QUOTA-RESERVATION-TTL
 --   - specs/03_architecture/adrs/ADR-0020-quota-enforcement-ownership.md (FROZEN)
 --   - specs/03_architecture/adrs/ADR-0036-d1-schema-migration-governance.md

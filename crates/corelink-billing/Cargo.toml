@@ -1,6 +1,6 @@
 [package]
 name = "corelink-billing"
-description = "Wave-33 Stage 1 Stream B sub-step B.1 — canonical billing aggregator façade. Re-exports the 14 absorbed billing-context crates under a single canonical import surface (`corelink_billing::{aggregator, emit, reconcile, replay, stripe, stripe_materializer, tier, quota, rate_headers, ratelimit, abuse}`). Stage 1 Stream B ships this crate as a re-export aggregator (Option-A least-invasive interpretation per `specs/_audits/2026-05-22-w33-stage0-foundation.md` §4) so consumer migration can proceed incrementally. Physical absorption of source modules is deferred to the consumer-migration stream that owns producer call sites (apps/server routes, worker bindings); the absorbed crates remain canonical sources of truth, retaining their own tests/benches/fuzz. The wave-31 wallet broker dual-mode for Stripe (commit `e3c564df` in main) is preserved as-is via the `stripe` submodule re-export of `corelink-stripe-real`."
+description = "Wave-33 Stage 1 Stream B sub-step B.1 — canonical billing aggregator façade. Re-exports the 14 absorbed billing-context crates under a single canonical import surface (`corelink_billing::{aggregator, emit, reconcile, replay, stripe, stripe_materializer, tier, quota, rate_headers, ratelimit, abuse}`). Stage 1 Stream B ships this crate as a re-export aggregator (Option-A least-invasive interpretation per `specs/_audits/sealed/2026-05-22-w33-stage0-foundation.md` §4) so consumer migration can proceed incrementally. Physical absorption of source modules is deferred to the consumer-migration stream that owns producer call sites (apps/server routes, worker bindings); the absorbed crates remain canonical sources of truth, retaining their own tests/benches/fuzz. The wave-31 wallet broker dual-mode for Stripe (commit `e3c564df` in main) is preserved as-is via the `stripe` submodule re-export of `corelink-stripe-real`."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -37,7 +37,7 @@ corelink-stripe-real = { workspace = true }
 # Wave-36 Trigger A: re-export the leaf trait crate as
 # `corelink_billing::stripe::traits` so consumers reach the four port
 # traits + identity / outcome types through the canonical umbrella
-# path. See `specs/_audits/2026-05-27-w36-trigger-a-seal.md`.
+# path. See `specs/_audits/sealed/2026-05-27-w36-trigger-a-seal.md`.
 corelink-billing-stripe-traits = { workspace = true }
 corelink-tier-selection = { workspace = true }
 corelink-rate-headers = { workspace = true }

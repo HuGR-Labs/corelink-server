@@ -21,7 +21,7 @@ Wire-in:
       3 consecutive fails → SEV-1
 
 Anchors:
-  - specs/_audits/2026-05-15-replication-audit.md §7
+  - specs/_audits/sealed/2026-05-15-replication-audit.md §7
   - specs/03_architecture/slo_catalog.md §4.23..4.26
   - crates/corelink-replica-worker (REPLICATION_LAG_P99_SLO_SECS = 60)
 
@@ -55,7 +55,7 @@ from typing import Callable, Iterable
 # ---------------------------------------------------------------------------
 # Constants — RPO budgets per domain (seconds).
 # Sourced from specs/03_architecture/slo_catalog.md §4.18..4.26 +
-# specs/_audits/2026-05-15-replication-audit.md §3.
+# specs/_audits/sealed/2026-05-15-replication-audit.md §3.
 # ---------------------------------------------------------------------------
 
 # Cross-region replication-lag SLO budgets (p99 ceilings, continuous SLI).

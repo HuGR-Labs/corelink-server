@@ -180,7 +180,7 @@ if [[ ! -f "${SCRIPT_DIR}/dns-prod-plan.sh" ]]; then
 fi
 
 # Hard pause trigger 3: Phase G audit must list 9 plan rows
-PHASE_G_AUDIT="${REPO_ROOT}/specs/_audits/2026-05-26-w32-phaseG-prep.md"
+PHASE_G_AUDIT="${REPO_ROOT}/specs/_audits/sealed/2026-05-26-w32-phaseG-prep.md"
 if [[ ! -f "$PHASE_G_AUDIT" ]]; then
   echo "HARD PAUSE TRIGGER 3: Phase G audit not found: ${PHASE_G_AUDIT}" >&2
   exit 1
@@ -202,7 +202,7 @@ cat > "$OUTPUT_FILE" <<HEADER
 **Operator:** $(whoami)@$(hostname)
 **wrangler:** ${WRANGLER_VERSION}
 **Script:** scripts/cutover-checklist-prod.sh
-**Parent spec:** specs/_audits/2026-05-22-wave32-prod-deploy-spec.md §4 Phase H
+**Parent spec:** specs/_audits/sealed/2026-05-22-wave32-prod-deploy-spec.md §4 Phase H
 
 ---
 

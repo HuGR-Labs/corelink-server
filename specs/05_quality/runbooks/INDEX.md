@@ -18,7 +18,7 @@ tags: ["runbook", "index", "catalog", "r6-2"]
 
 > **Purpose:** single catalog of all canonical operational runbooks (`RB-*`) for CoreLink. Each runbook documents Symptom, Detection, Immediate mitigation, Root-cause investigation, Rollback/recovery, Escalation path, Post-incident, Related.
 >
-> **Coverage audit:** see `specs/_audits/2026-05-14-runbook-coverage.md` for the SLO/Alert/FM → runbook mapping (last verified 2026-05-14).
+> **Coverage audit:** see `specs/_audits/sealed/2026-05-14-runbook-coverage.md` for the SLO/Alert/FM → runbook mapping (last verified 2026-05-14).
 >
 > **Drill cadence:** P0/P1 runbooks subject to monthly dry-run via `corelink-runbook-tracker` (WI-S17-003); canonical catalog `specs/05_runbooks/RB-RUNBOOK-DRILL-INDEX.md`.
 

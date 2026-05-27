@@ -2,7 +2,7 @@
 """
 validate_slo_instrumentation.py — SLO catalog ↔ code instrumentation gate.
 
-Companion to `specs/_audits/2026-05-14-slo-instrumentation-gaps.md`.
+Companion to `specs/_audits/sealed/2026-05-14-slo-instrumentation-gaps.md`.
 
 Enforces:
 
@@ -20,7 +20,7 @@ Enforces:
      `slo_catalog.md`. Catches drift where a code SLI is added but
      the catalog is not amended.
 
-  3. **Audit document presence**: `specs/_audits/2026-05-14-slo-instrumentation-gaps.md`
+  3. **Audit document presence**: `specs/_audits/sealed/2026-05-14-slo-instrumentation-gaps.md`
      exists (load-bearing reference for the deferred-SLO rationale).
 
 Exit code:

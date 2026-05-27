@@ -3,7 +3,7 @@
 (* CoreLink — auth revocation propagation (R-PREP / GA hardening 2026-05-15)*)
 (*                                                                         *)
 (* Closes the highest-impact uncovered gap surfaced by                      *)
-(* `specs/_audits/2026-05-15-tla-coverage-audit.md`:                        *)
+(* `specs/_audits/sealed/2026-05-15-tla-coverage-audit.md`:                        *)
 (* three CRITICAL invariants over PAT revocation were PLANNED in            *)
 (* `invariant_registry.md §4.2` (`auth_revocation.tla`) but had no spec.    *)
 (*                                                                         *)
@@ -55,7 +55,7 @@
 (*   - `specs/03_architecture/auth_model.md §6`                            *)
 (*   - `specs/03_architecture/invariant_registry.md §3.14`                 *)
 (*   - `specs/03_architecture/security_model.md §6.9 CTRL-FORMAL-001`      *)
-(*   - `specs/_audits/2026-05-15-tla-coverage-audit.md` §5 recommendation  *)
+(*   - `specs/_audits/sealed/2026-05-15-tla-coverage-audit.md` §5 recommendation  *)
 (***************************************************************************)
 
 EXTENDS Integers, FiniteSets, Sequences, TLC

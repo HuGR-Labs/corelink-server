@@ -5,7 +5,7 @@
 //! - `warm_hit` — cache pre-populated with 50 tenants, all calls hit.
 //!
 //! Acceptance gate per
-//! `specs/_audits/perf-optimization-followup-tickets.md` OPT-01:
+//! `specs/_audits/sealed/perf-optimization-followup-tickets.md` OPT-01:
 //! `warm_hit` p99 must be ≤ 100 ns.
 //!
 //! The cold-miss path is intentionally close to (slightly slower than)

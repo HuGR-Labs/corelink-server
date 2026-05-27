@@ -14,8 +14,8 @@
 #   bash scripts/deploy-pages-admin-ui-prod.sh --apply      # actually deploy
 #   bash scripts/deploy-pages-admin-ui-prod.sh --skip-build # dry-run, skip build
 #
-# Spec:  specs/_audits/2026-05-22-wave32-prod-deploy-spec.md §4 Phase F
-# Audit: specs/_audits/2026-05-26-w32-phaseF-prep.md
+# Spec:  specs/_audits/sealed/2026-05-22-wave32-prod-deploy-spec.md §4 Phase F
+# Audit: specs/_audits/sealed/2026-05-26-w32-phaseF-prep.md
 #
 # Charter compliance:
 #   CTRL-CRED-001  — NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is OK in client bundle

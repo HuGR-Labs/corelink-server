@@ -12,7 +12,7 @@ without provisioning the real `apps/server` binary.
 This is NOT a substitute for the real server. The greenlight verdict
 emitted from a run against this mock is informative for harness wiring
 only and is explicitly marked as such in the audit trail
-(`specs/_audits/2026-05-16-endurance-10min-dressrun.md`).
+(`specs/_audits/sealed/2026-05-16-endurance-10min-dressrun.md`).
 
 Run:
     python3 scripts/_dressrun_mock_target.py --port 8787

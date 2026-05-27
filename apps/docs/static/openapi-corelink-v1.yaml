@@ -131,7 +131,7 @@ paths:
         Operator mints tokens via `scripts/admin/mint-pilot-token.sh`.
 
         Reference: `apps/server/src/routes/signup.rs` +
-        `specs/_audits/2026-05-16-signup-corelink-dev-backend.md`.
+        `specs/_audits/sealed/2026-05-16-signup-corelink-dev-backend.md`.
       parameters:
         - name: token
           in: path

@@ -204,7 +204,7 @@ shape is the result of the Wave 33-36 reorg campaign (2026-05-22 →
 2026-05-27), which consolidated 149 historical packages into the
 present 87 via the **Mod-Mono + Hex + EDA + Actor + µKernel** pattern
 documented in
-[`specs/_audits/2026-05-22-wave33-code-reorg-spec.md`](./specs/_audits/2026-05-22-wave33-code-reorg-spec.md).
+[`specs/_audits/sealed/2026-05-22-wave33-code-reorg-spec.md`](./specs/_audits/sealed/2026-05-22-wave33-code-reorg-spec.md).
 The 11 umbrellas are
 [`corelink-cas`](./crates/corelink-cas/),
 [`corelink-ac`](./crates/corelink-ac/),
@@ -259,7 +259,7 @@ backbone in `corelink-audit-chain`; Cloudflare Durable Objects as
 the actor substrate for per-tenant state; and a µKernel boundary
 around BYOK so customer-held KEKs never cross trust zones. The full
 charter is in
-[`specs/_audits/2026-05-22-wave33-code-reorg-spec.md`](./specs/_audits/2026-05-22-wave33-code-reorg-spec.md);
+[`specs/_audits/sealed/2026-05-22-wave33-code-reorg-spec.md`](./specs/_audits/sealed/2026-05-22-wave33-code-reorg-spec.md);
 the C4-L1 system-context diagram is at
 [`docs/internal/architecture/diagrams/system-context.mmd`](./docs/internal/architecture/diagrams/system-context.mmd)
 (72 lines, renders cleanly in GitHub Mermaid). The full diagram set —
@@ -325,10 +325,10 @@ The canonical security contact card lives at
 - [`ROADMAP-TO-GA.md`](./ROADMAP-TO-GA.md) — 21-sprint plan from
   scaffold to GA, with per-sprint exit criteria and audit trail
   (v1.1.0; Waves 32-36 SEAL'd 2026-05-27).
-- [`specs/_audits/2026-05-22-wave33-code-reorg-spec.md`](./specs/_audits/2026-05-22-wave33-code-reorg-spec.md)
+- [`specs/_audits/sealed/2026-05-22-wave33-code-reorg-spec.md`](./specs/_audits/sealed/2026-05-22-wave33-code-reorg-spec.md)
   — Wave 33-36 reorg charter (Mod-Mono + Hex + EDA + Actor +
   µKernel; 149 → 87 packages; 11 umbrella crates).
-- [`specs/_audits/2026-05-26-wave-33-34-closure-followups.md`](./specs/_audits/2026-05-26-wave-33-34-closure-followups.md)
+- [`specs/_audits/sealed/2026-05-26-wave-33-34-closure-followups.md`](./specs/_audits/sealed/2026-05-26-wave-33-34-closure-followups.md)
   — Wave 33/34 closure-followups audit (`audit_status: CLOSED`).
   Tag chain: `wave-33-stage2-sealed`, `wave-34-adapters-sealed`,
   `wave-35-phase-2-sealed`, `wave-36-stage-2-sealed`,

@@ -55,17 +55,17 @@ external pentest engagement on 2026-06-15. Baseline wave-5 scenarios
 This harness is the canonical artefact for the multi-tenant isolation
 control surface in:
 
-- `specs/_pentest/PENTEST-EVIDENCE-PACKAGE.md` (P0 surface: §3.5
+- `specs/_audits/sealed/pentest/PENTEST-EVIDENCE-PACKAGE.md` (P0 surface: §3.5
   Multi-tenant isolation)
-- `specs/_audits/stride-per-crate/STRIDE-corelink-tenant-path.md`
+- `specs/_audits/sealed/stride-per-crate/STRIDE-corelink-tenant-path.md`
   (test coverage column for TB-tp-1 / TB-tp-2 / TB-tp-3 / TB-tp-4)
-- `specs/_audits/stride-per-crate/STRIDE-corelink-byok.md`
+- `specs/_audits/sealed/stride-per-crate/STRIDE-corelink-byok.md`
   (rotation + AAD binding rows)
-- `specs/_audits/stride-per-crate/STRIDE-corelink-audit-chain.md`
+- `specs/_audits/sealed/stride-per-crate/STRIDE-corelink-audit-chain.md`
   (chain non-forgeability + query injection rows)
-- `specs/_audits/stride-per-crate/STRIDE-corelink-dsr.md`
+- `specs/_audits/sealed/stride-per-crate/STRIDE-corelink-dsr.md`
   (cross-tenant DSR rejection)
-- `specs/04_sprints/S20/pentest_gate.md` (gate evidence for the
+- `specs/04_sprints/_sealed/S20/pentest_gate.md` (gate evidence for the
   2026-06-15 external engagement)
 
 Scenario count moved 12 → 25 in 2026-05-15 as part of the

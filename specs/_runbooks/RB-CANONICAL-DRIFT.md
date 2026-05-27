@@ -21,7 +21,7 @@ tags: ["runbook", "spec-hygiene", "canonical-consistency", "INV", "drift"]
 > **Trigger:** `validate_canonical_consistency.py` (or
 > `canonical-consistency.yml` CI workflow) fails on a pull request, or the
 > weekly digest surfaces a regression vs baseline
-> (`specs/_audits/2026-05-15-canonical-consistency-baseline.md`).
+> (`specs/_audits/sealed/2026-05-15-canonical-consistency-baseline.md`).
 >
 > **Severity:** SEV-3 (process / hygiene). No customer impact; blocks PR
 > merge until resolved.
@@ -89,7 +89,7 @@ INV-BACKUP-INTEGRITY-SAMPLE-CAP (HIGH). Cross-reference
 This is **expected** for forward-looking invariants whose implementation
 sprint has not yet landed. The validator warns but does not fail unless
 the BASELINE rollup count rises above the floor pinned in
-`specs/_audits/2026-05-15-canonical-consistency-baseline.md`.
+`specs/_audits/sealed/2026-05-15-canonical-consistency-baseline.md`.
 
 ### Decision tree
 
@@ -160,7 +160,7 @@ python3 scripts/validate_canonical_consistency.py --json | \
 
 ## 8. Cross-references
 
-- Baseline: `specs/_audits/2026-05-15-canonical-consistency-baseline.md`
+- Baseline: `specs/_audits/sealed/2026-05-15-canonical-consistency-baseline.md`
 - Validator chain doc: `docs/internal/CODE-REVIEW-CHECKLIST.md` §L6
 - TLA obligation gate: `scripts/check_tla_obligations.py` + registry §4
 - SOC 2 evidence: `specs/_compliance/SOC2-EVIDENCE-ROLLUP-2026-05-15.md`

@@ -154,7 +154,7 @@ Procedure:
 
 ## 7. Cross-references
 
-- Baseline: `specs/_audits/2026-05-15-static-analysis-baseline.md`.
+- Baseline: `specs/_audits/sealed/2026-05-15-static-analysis-baseline.md`.
 - SOC2 evidence rollup: `specs/_compliance/SOC2-EVIDENCE-ROLLUP-2026-05-15.md`
   row **CC8.1** (change-management — this runbook is the operational
   arm of the static-analysis gate evidence package).

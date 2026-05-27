@@ -23,10 +23,10 @@ reviewers:
   - "MX Attorney (TBD — counter-signatory)"
 supersedes: null
 superseded_by: null
-related_audit: "specs/_audits/2026-05-16-lfpdppp-mx-engagement-package-final.md"
+related_audit: "specs/_audits/sealed/2026-05-16-lfpdppp-mx-engagement-package-final.md"
 related_letter: "docs/legal/lfpdppp-mx-engagement-letter-template.md"
 related_shortlist: "docs/legal/lfpdppp-mx-attorney-shortlist.md"
-related_scoping_packet: "specs/_audits/2026-05-16-lfpdppp-mx-legal-review-package.md"
+related_scoping_packet: "specs/_audits/sealed/2026-05-16-lfpdppp-mx-legal-review-package.md"
 ---
 
 # LFPDPPP MX Attorney Engagement — Retainer Template
@@ -39,7 +39,7 @@ related_scoping_packet: "specs/_audits/2026-05-16-lfpdppp-mx-legal-review-packag
 >
 > **Companion artifacts** (read before signing):
 >
-> 1. `specs/_audits/2026-05-16-lfpdppp-mx-legal-review-package.md` — scoping packet (§1-§8; the binding work statement)
+> 1. `specs/_audits/sealed/2026-05-16-lfpdppp-mx-legal-review-package.md` — scoping packet (§1-§8; the binding work statement)
 > 2. `docs/legal/lfpdppp-mx-engagement-letter-template.md` — engagement letter (defines scope; this retainer operationalizes it)
 > 3. `docs/legal/lfpdppp-mx-attorney-shortlist.md` — candidate shortlist (5 firms)
 > 4. `legal/privacy-notice/REVIEW_PROCESS.md` — EVT-044 PDF SOP
@@ -61,7 +61,7 @@ This **Retainer Agreement** (the "Agreement") is entered into on `[EFFECTIVE DAT
 
 ### 2.1 In-scope work statement
 
-Attorney shall render a **written legal opinion** on §1-§7 of the scoping packet (`specs/_audits/2026-05-16-lfpdppp-mx-legal-review-package.md`), covering:
+Attorney shall render a **written legal opinion** on §1-§7 of the scoping packet (`specs/_audits/sealed/2026-05-16-lfpdppp-mx-legal-review-package.md`), covering:
 
 1. **§1** — Verification of the LFPDPPP statutory citations inventory (11 citation sites covering Arts. 8, 10, 20, 21, 22-26, 32, 36 + Capítulo VII PPD).
 2. **§2** — Sign-off on the 2 es breach-notification templates as LFPDPPP Art. 20-21 compliant.
@@ -298,7 +298,7 @@ If any provision is unenforceable, the rest remains in force. This Agreement + t
 
 | Artifact | Path | Hash (BLAKE3 or SHA-256; Client supplies) |
 |---|---|---|
-| Scoping packet | `specs/_audits/2026-05-16-lfpdppp-mx-legal-review-package.md` | `[HASH]` |
+| Scoping packet | `specs/_audits/sealed/2026-05-16-lfpdppp-mx-legal-review-package.md` | `[HASH]` |
 | Engagement letter | `docs/legal/lfpdppp-mx-engagement-letter-template.md` | `[HASH]` |
 | Privacy notice (es-MX) | `legal/privacy-notice/v1.0.0/es-MX.md` | `[HASH]` |
 | Breach template — audit-chain | `docs/customer-comm/breach-notification/v1.0.0/es/audit-chain-integrity-incident.md` | `[HASH]` |
@@ -312,13 +312,13 @@ Hashes are pinned at signature; if any artifact changes mid-engagement, Client s
 ## 11. Cross-references
 
 - **Engagement letter** (the binding work statement): `docs/legal/lfpdppp-mx-engagement-letter-template.md`
-- **Scoping packet** (the engineering-side §1-§8 inventory): `specs/_audits/2026-05-16-lfpdppp-mx-legal-review-package.md`
+- **Scoping packet** (the engineering-side §1-§8 inventory): `specs/_audits/sealed/2026-05-16-lfpdppp-mx-legal-review-package.md`
 - **Shortlist** (5 candidate firms): `docs/legal/lfpdppp-mx-attorney-shortlist.md`
 - **Email template** (Mustache RFP outreach): `docs/legal/lfpdppp-mx-engagement-email-template.md`
 - **Tracker** (state machine + per-firm rollup): `scripts/admin/lfpdppp-mx-tracker.py` + `reports/lfpdppp-mx-tracker.json`
 - **Review process SOP** (EVT-044 PDF SOP): `legal/privacy-notice/REVIEW_PROCESS.md`
-- **Wave-28 step-6 closure audit:** `specs/_audits/2026-05-16-lfpdppp-mx-engagement-package-final.md`
-- **Debt-register row:** `specs/_audits/2026-05-15-debt-register.md DEBT-025`
+- **Wave-28 step-6 closure audit:** `specs/_audits/sealed/2026-05-16-lfpdppp-mx-engagement-package-final.md`
+- **Debt-register row:** `specs/_audits/sealed/2026-05-15-debt-register.md DEBT-025`
 - **Pentest engagement-contract precedent**: `docs/legal/pentest-engagement-contract-template.md` (wave-26 precedent; same retainer-template pattern applied here for LFPDPPP MX).
 
 ---

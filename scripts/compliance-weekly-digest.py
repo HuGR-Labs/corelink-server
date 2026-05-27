@@ -34,7 +34,7 @@ Domains aggregated:
        and flags any with conclusion = `failure` / `timed_out` / `cancelled`.
     10. **TLA verification status** (R5-3 expansion) — parses
         `<!-- BASELINE k=v -->` ratchet floors at the bottom of
-        `specs/_audits/2026-05-15-canonical-consistency-baseline.md`. Diff
+        `specs/_audits/sealed/2026-05-15-canonical-consistency-baseline.md`. Diff
         vs prior digest. **HARD FAIL** if `tla_verified`,
         `code_referenced`, `test_referenced`, or `critical_referenced`
         regressed; **HARD FAIL** if `orphan_refs` > 0.
@@ -1404,7 +1404,7 @@ def render_markdown(p: DigestPayload) -> str:
         lines.append(
             "**Escalation:** rolling-30d streak ≥ 3 → SEV-2 page; "
             "Replication SRE Lead opens `WI-REPLICATION-SLO-DRIFT` and "
-            "cross-references `specs/_audits/2026-05-15-replication-audit.md`."
+            "cross-references `specs/_audits/sealed/2026-05-15-replication-audit.md`."
         )
     lines.append("")
 

@@ -4,9 +4,9 @@
 # Format: one crate per line. Comment lines start with `#`. Each entry
 # carries the closing WI ID (so the allowlist shrinks as WIs land).
 #
-# Source audit: specs/_audits/2026-05-15-proptest-density.md
+# Source audit: specs/_audits/sealed/2026-05-15-proptest-density.md
 # Gate script: scripts/check_proptest_density_gate.sh
-# Backlog:    specs/_audits/proptest-followup-tickets.md
+# Backlog:    specs/_audits/sealed/proptest-followup-tickets.md
 #
 # Resolved (via DEBT-009 / DEBT-017):
 #   corelink-slack-real         → WI-PROPTEST-FU-001 (CLOSED 2026-05-15)
@@ -29,7 +29,7 @@ corelink-tenant-offboarding  # follow-up WI: offboarding state-machine INVs
 #     `crates/corelink-auth/tests/`. Clerk/pat/tenant-path still
 #     `pub use` re-exports but the in-crate proptests already cover the
 #     INV refs above the 1.0 threshold. See SEAL audit
-#     `specs/_audits/2026-05-26-w36-proptest-fu-001-seal.md`.
+#     `specs/_audits/sealed/2026-05-26-w36-proptest-fu-001-seal.md`.
 #   - corelink-cas: REMOVED from allowlist 2026-05-26 — ratio 3.79 (PASS).
 #     Chunker/dedup/edge/eviction/lru_tracker/manifest/meta/multipart_schema/
 #     r2_multipart physically absorbed; 12 proptest! blocks + 72 proptest

@@ -7,7 +7,7 @@
 //! that the existing suite missed (or would miss with a more
 //! aggressive AST visitor).
 //!
-//! See `specs/_audits/2026-05-14-mutation-baseline.md` for the full
+//! See `specs/_audits/sealed/2026-05-14-mutation-baseline.md` for the full
 //! mutant-by-mutant classification.
 
 #![forbid(unsafe_code)]

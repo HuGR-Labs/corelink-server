@@ -126,7 +126,7 @@ Justificativa: HIGH_RISK lane (FF-HR-005) tolera **delay de release**, não tole
 
 ## 5. Evidence
 
-- WI: `specs/04_sprints/S01/work_items/WI-S01-007-ci-tlc-gate-sbom.md` v1.2.0.
+- WI: `specs/04_sprints/_sealed/S01/work_items/WI-S01-007-ci-tlc-gate-sbom.md` v1.2.0.
 - Workflow: `.github/workflows/cas_foundation.yml` jobs `sbom-cyclonedx` + `cosign-sign`.
 - Predecessor ADR: `ADR-0014` (format decision).
 - Reproducible build sibling: `ADR-0015` (best-effort scope; full SLSA L3 deferred WI-S12-006).

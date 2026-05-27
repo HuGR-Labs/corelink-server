@@ -6,7 +6,7 @@ Reads a per-attorney JSON status file (`reports/lfpdppp-mx-tracker.json`)
 and emits a markdown summary the Owner can paste into wave-28 audits
 or use as the live attorney-engagement dashboard.
 
-Per `specs/_audits/2026-05-16-lfpdppp-mx-engagement-package-final.md §4`
+Per `specs/_audits/sealed/2026-05-16-lfpdppp-mx-engagement-package-final.md §4`
 + `docs/legal/lfpdppp-mx-attorney-shortlist.md §3.1`, the engagement flow is:
 
     NOT_CONTACTED → EMAIL_SENT → RESPONSE_RECEIVED → IN_NEGOTIATION
@@ -281,7 +281,7 @@ def render_markdown(tracker: dict) -> str:
     )
     lines.append("")
     lines.append(
-        "Per `specs/_audits/2026-05-16-lfpdppp-mx-engagement-package-final.md` "
+        "Per `specs/_audits/sealed/2026-05-16-lfpdppp-mx-engagement-package-final.md` "
         "+ `docs/legal/lfpdppp-mx-attorney-shortlist.md`."
     )
     lines.append("")

@@ -95,7 +95,7 @@ Deploy **Dependency-Track v4.11** (pinned; bump via ADR) on:
 
 ## Related
 
-- WI-S12-005: `specs/04_sprints/S12/work_items/WI-S12-005-dependency-track-self-host-cve-alerts.md`
+- WI-S12-005: `specs/04_sprints/_sealed/S12/work_items/WI-S12-005-dependency-track-self-host-cve-alerts.md`
 - DR runbook: `docs/internal/dt-dr-runbook.md`
 - SLO: `SLO-SUPPLY-CVE-DETECTION` (corelink_supply_dt_alert_delivery_duration_seconds p99 ≤ 900s)
 

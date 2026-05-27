@@ -14,7 +14,7 @@ superseded_by: null
 tags: ["governance", "reviewers", "staffing", "proposal", "framework-freeze", "wave-20", "wave-22", "lote-7", "ga"]
 references:
   - "specs/00_framework.md"
-  - "specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md"
+  - "specs/_audits/sealed/2026-05-15-framework-v1-0-0-ga-audit.md"
   - "specs/_governance/reviewer_staffing_strategy.md"
   - "specs/03_architecture/adrs/ADR-0034-prr-staffing-waiver-solo-tier.md"
   - "specs/_proposals/2026-05-16-framework-reviewer-roles-addendum.md"
@@ -22,7 +22,7 @@ references:
 
 # Framework Reviewer Roles — Lote 7 Staffing Proposal (FW-H-1..4)
 
-> **Purpose.** The wave-18 Lote 6 audit (`specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md`) DEFERRED `00_framework.md` v1.0.0-rc1 → v1.0.0 GA promotion because §43.1 contains 4 reviewer slots, 3 of which are `(a nomear)`. This document proposes **canonical role definitions** for each of those slots so the Owner can pattern-match real organization members (or external advisors) to slots, sign off §43.1, and close the framework freeze gate (unblock Path A in audit §6.3).
+> **Purpose.** The wave-18 Lote 6 audit (`specs/_audits/sealed/2026-05-15-framework-v1-0-0-ga-audit.md`) DEFERRED `00_framework.md` v1.0.0-rc1 → v1.0.0 GA promotion because §43.1 contains 4 reviewer slots, 3 of which are `(a nomear)`. This document proposes **canonical role definitions** for each of those slots so the Owner can pattern-match real organization members (or external advisors) to slots, sign off §43.1, and close the framework freeze gate (unblock Path A in audit §6.3).
 >
 > **Non-goal.** This proposal does NOT nominate individuals; it does NOT supersede `specs/_governance/reviewer_staffing_strategy.md` v0.1.0 (which remains the operative multi-tier staffing strategy). It NARROWS the framework-freeze gate to four concretely-scoped role definitions whose intersection produces full §1–§43 coverage.
 
@@ -137,7 +137,7 @@ A nominated reviewer of any FW-H-* slot follows this read order before producing
 2. **ADR index** — `specs/03_architecture/adrs/` (27 ADRs; budget 2–4h skim, deeper on the ones touching your §-coverage).
 3. **Invariant registry** — `specs/03_architecture/invariant_registry.md` (192 INVs, 76 tla_verified; budget 1–2h skim, deep on the INVs your §-coverage signs off).
 4. **Section-specific canonical sources** — see `reviewer_staffing_strategy.md §2` mapping table for which canonical sources each role overlaps with.
-5. **Audit baseline** — `specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md` (this is the DEFER doc you are unblocking) + `specs/_audits/2026-05-15-ga-readiness-consolidation-wave-13-17.md` (wave-17 baseline).
+5. **Audit baseline** — `specs/_audits/sealed/2026-05-15-framework-v1-0-0-ga-audit.md` (this is the DEFER doc you are unblocking) + `specs/_audits/sealed/2026-05-15-ga-readiness-consolidation-wave-13-17.md` (wave-17 baseline).
 6. **Runbook index** — `specs/_runbooks/` (124 runbooks; budget 1–2h skim — confirms that the framework's runbook-discipline claims in §25 match operational reality).
 7. **(Optional, recommended for FW-H-1 + FW-H-4)** — sample one sprint contract (suggested: `specs/02_sprints/S-01/`) and one PRR (`specs/02_sprints/S-20/prr/`) to ground the meta-doc in actual artifact shapes.
 
@@ -204,8 +204,8 @@ Each FW-H-* slot SHOULD have a documented `+1 backup` reviewer (a secondary indi
 |---|---|---|
 | FW-H-1 Arch | (nominate) | A senior staff engineer with 3+ years on the CoreLink codebase OR a peer architect from an adjacent system (cache / build-graph / distributed-blob storage). |
 | FW-H-2 Compliance | (nominate) | A fractional DPO retained on advisory contract; OR external counsel with privacy-engineering depth. |
-| FW-H-3 Security | (nominate) | A retained AppSec advisor (e.g., the firm engaged for the pre-GA pentest per `specs/_audits/2026-05-16-pre-ga-pentest-scope.md`). |
-| FW-H-4 Ops | (nominate) | A senior on-call engineer once the 24/7 rota lands (see `specs/_audits/2026-05-14-s20-oncall-24-7-readiness.md`); interim = Gustavo as Owner. |
+| FW-H-3 Security | (nominate) | A retained AppSec advisor (e.g., the firm engaged for the pre-GA pentest per `specs/_audits/sealed/2026-05-16-pre-ga-pentest-scope.md`). |
+| FW-H-4 Ops | (nominate) | A senior on-call engineer once the 24/7 rota lands (see `specs/_audits/sealed/2026-05-14-s20-oncall-24-7-readiness.md`); interim = Gustavo as Owner. |
 
 **Open seat policy.** If a primary departs, the backup becomes acting primary; a new backup nomination is required within 30 days. If a slot is vacant for > 60 consecutive days, the framework auto-demotes from FROZEN to THAWED per §7 lifecycle, triggering the freeze gate again.
 
@@ -286,6 +286,6 @@ The addendum does NOT redefine FW-H-1..4 role scopes (§2.1–§2.4 of this prop
 
 - `specs/00_framework.md §43.1` — slots updated in same wave-20 commit to link here.
 - `specs/_proposals/2026-05-16-framework-reviewer-roles-addendum.md` — wave-22 addendum specifying operating policy (dual-hat fallback, veto, SLA, training, cadence, COI).
-- `specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md §unblock-path-C-progress` — wave-20 update logs landing of this proposal as engineering-side READY; wave-22 update notes the addendum extends coverage to small-org case.
+- `specs/_audits/sealed/2026-05-15-framework-v1-0-0-ga-audit.md §unblock-path-C-progress` — wave-20 update logs landing of this proposal as engineering-side READY; wave-22 update notes the addendum extends coverage to small-org case.
 - `specs/_governance/reviewer_staffing_strategy.md` — multi-tier strategy SOT; this proposal narrows Tier 1 framework-freeze gate.
 - `specs/03_architecture/adrs/ADR-0034-prr-staffing-waiver-solo-tier.md` — analogous waiver pattern (PRR-scoped); informs OQ-1 Option C fallback; addendum §1.1 mandates an analogous ADR when dual-hat mode is invoked.

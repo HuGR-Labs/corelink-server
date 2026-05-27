@@ -221,7 +221,7 @@ async fn rate_limit_now_ms_is_driven_by_injected_wall_clock() {
 /// MUST fail-CLOSED (503 + `clock_unavailable` audit row) rather
 /// than fall back to the request-window-derived bucket clock. This
 /// pins the structural fix described in
-/// `specs/_audits/2026-05-16-wave23-cleanup.md` §W21-R-P2-01: the
+/// `specs/_audits/sealed/2026-05-16-wave23-cleanup.md` §W21-R-P2-01: the
 /// bucket clock NEVER couples to caller-controlled bytes, even on
 /// the structurally-unreachable (production) pre-epoch branch.
 #[tokio::test]

@@ -9,7 +9,7 @@
 //!   4. The async error path `wrap_dek` returns
 //!      `BYOKError::Provider("AWS KMS real provider unsupported on
 //!      wasm32; ...")` — the explicit-error contract documented in
-//!      `specs/_audits/2026-05-15-byok-real-provider-pattern.md` §4.
+//!      `specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md` §4.
 //!
 //! The compile of this test against `wasm32-unknown-unknown` is the
 //! primary gate, validated by `cargo build --tests --target

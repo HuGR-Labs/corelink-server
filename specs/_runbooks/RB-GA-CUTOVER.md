@@ -35,7 +35,7 @@ tags: ["runbook", "p0", "ga", "cutover", "deployment", "rollout", "private-previ
 The following must all be **GREEN** at T-7d ± 2h. Any RED defers cutover by ≥ 7d minimum (per `RB-GA-LAUNCH-ROLLBACK.md` §7 RA-3 — sustained-staging window does not auto-extend).
 
 > **MANDATORY pre-cutover read (D-day morning):**
-> Before invoking §0.1 below, the Owner + Signature-2 (Security Lead OR on-call SRE Lead per ADR-0034b dual-hat fallback) MUST read `specs/_audits/2026-05-16-final-cutover-readiness.md` end-to-end (~10 minutes) AND tick every row in the printable companion `specs/_audits/2026-05-16-final-cutover-readiness-checklist.md` (sections A..N).
+> Before invoking §0.1 below, the Owner + Signature-2 (Security Lead OR on-call SRE Lead per ADR-0034b dual-hat fallback) MUST read `specs/_audits/sealed/2026-05-16-final-cutover-readiness.md` end-to-end (~10 minutes) AND tick every row in the printable companion `specs/_audits/sealed/2026-05-16-final-cutover-readiness-checklist.md` (sections A..N).
 > The 2-key signature block in the readiness doc §10 is the authoritative authorization for the §0.1..§0.8 checklist below; without it, no §1..§3 step may execute. The readiness doc consolidates wave-18..wave-26 evidence (sprint impls, INV-CRITICAL TLA+, adversarial trend, mutation kill-rate, chaos coverage, endurance, freeze monitor, dress-run verdict, compliance, security posture, 8-item DEFER counter) into a single sign-off-ready surface.
 
 ### 0.1 Wave-18 SEAL landed
@@ -93,7 +93,7 @@ The following must all be **GREEN** at T-7d ± 2h. Any RED defers cutover by ≥
 - R2 bucket inventory baseline CSV (`r2-baseline-T-7d.csv`) committed to `specs/_audits/`.
 - Neon shadow lag baseline captured (target p99 ≤ 5min per §4).
 - Audit-chain head SHA recorded per region (per `RB-AUDIT-EXPORT-INTEGRITY.md` §2.2).
-- **Cutover dependency map cross-check** (wave-27): `specs/_audits/2026-05-16-cutover-dependency-map.md` is the canonical T-N-day DAG governing this §0 checklist. Every critical-path node (N-F-1 framework GA tag → N-C-1 GA-GATE-CRITERIA READY → N-D-1 dress rehearsal → N-S-1 / N-S-1b Statuspage tenant → **N-S-2 STATUSPAGE go-live at T-7d** → N-C-2 §0 checklist GREEN → N-X-1 §1 freeze → N-X-2 §2 staging → N-X-3 §3 cutover) MUST have its success-gate row ticked in the map before this §0.6 baseline snapshot is signed off. Any RED critical-path node defers cutover per `RB-GA-LAUNCH-ROLLBACK.md` §7 RA-3 ≥ 7 days minimum.
+- **Cutover dependency map cross-check** (wave-27): `specs/_audits/sealed/2026-05-16-cutover-dependency-map.md` is the canonical T-N-day DAG governing this §0 checklist. Every critical-path node (N-F-1 framework GA tag → N-C-1 GA-GATE-CRITERIA READY → N-D-1 dress rehearsal → N-S-1 / N-S-1b Statuspage tenant → **N-S-2 STATUSPAGE go-live at T-7d** → N-C-2 §0 checklist GREEN → N-X-1 §1 freeze → N-X-2 §2 staging → N-X-3 §3 cutover) MUST have its success-gate row ticked in the map before this §0.6 baseline snapshot is signed off. Any RED critical-path node defers cutover per `RB-GA-LAUNCH-ROLLBACK.md` §7 RA-3 ≥ 7 days minimum.
 - **STATUSPAGE T-7d gate (explicit)**: at T-7d ± 2h the `RB-STATUSPAGE-INIT.md` §4 gate MUST be GREEN — either (Option A) `curl -sI https://status.corelink.humangr.com` returns HTTP 200 with 8 components in `summary.json`, OR (Option B) the operator-chosen domain resolves to the tenant + `STATUSPAGE_URL` env var is set in the docs deploy pipeline + the deploy-time substitution branch is merged to the release tag. RED at T-7d on this row alone defers cutover ≥ 7 days; the manual static-HTML fallback is NOT acceptable because the trust corpus cites the live JSON-API + RSS + email-subscribe channels.
 
 ### 0.7 Regulatory sign-off (no breach event)
@@ -107,7 +107,7 @@ The §3 sequence is exercised against in-process fakes via `scripts/ga-cutover-d
 
 | Run date | Verdict | Greenlights (G1..G6) | §3 steps PASS | Triggers fired | GA-readiness | Audit doc |
 |---|---|---|---|---|---|---|
-| 2026-05-16 | GREEN | 6 / 6 | 11 / 11 | 0 / 6 | 8.9 / 10 | `specs/_audits/2026-05-16-ga-cutover-dryrun.md` |
+| 2026-05-16 | GREEN | 6 / 6 | 11 / 11 | 0 / 6 | 8.9 / 10 | `specs/_audits/sealed/2026-05-16-ga-cutover-dryrun.md` |
 
 ---
 
@@ -549,8 +549,8 @@ The `2026-MM-DD-ga-cutover-execution-attestation.md` (`type: audit`) doc must ca
 - `specs/_runbooks/RB-WEBHOOK-DLQ-REPLAY.md` — Stripe DLQ consumed in §3.5.
 - `specs/_runbooks/RB-DSR-STATUSPAGE-PUBLISH-FAILED.md` — DSR Statuspage consumed in §0.5 + §3.8 + §6.1.4.
 - `specs/_runbooks/STATUSPAGE-INIT.md` — operator provisioning playbook for `status.corelink.humangr.com` (Option A CNAME / Option B env-var), gate at §4 T-7d, timing in §2.5 + §3.6 (wave-27).
-- `specs/_audits/2026-05-16-cutover-dependency-map.md` — canonical T-N-day dependency DAG governing this §0 checklist; critical-path + slack metrics (wave-27).
-- `specs/_audits/2026-05-16-statuspage-init-dressrun.md` — wave-25 STATUSPAGE-INIT mechanism dress-run (covers N-S-1 / N-S-1b mechanism regression risk).
+- `specs/_audits/sealed/2026-05-16-cutover-dependency-map.md` — canonical T-N-day dependency DAG governing this §0 checklist; critical-path + slack metrics (wave-27).
+- `specs/_audits/sealed/2026-05-16-statuspage-init-dressrun.md` — wave-25 STATUSPAGE-INIT mechanism dress-run (covers N-S-1 / N-S-1b mechanism regression risk).
 - `specs/_runbooks/RB-COMPLIANCE-WEEKLY-REVIEW.md` — weekly attestation at T+7d (§6.3.1).
 - `specs/_runbooks/RB-POSTMORTEM-PROCESS.md` — postmortem template kicked off at §5.3 RB-S5.
 - `specs/_runbooks/RB-PERF-REGRESSION.md` — perf regression handling if §4 G1 trips.
@@ -571,7 +571,7 @@ The `2026-MM-DD-ga-cutover-execution-attestation.md` (`type: audit`) doc must ca
 
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
-| 1.1.0 | 2026-05-16 | Gustavo (via Claude Opus wave-27 background worker, worktree `wt/r-prep-statuspage-timing-cutover-map`) | §0.6 baseline snapshot now cross-references the wave-27 cutover dependency map (`specs/_audits/2026-05-16-cutover-dependency-map.md`); §0.6 adds explicit T-7d STATUSPAGE gate row pulling forward the Option A / Option B verification from `RB-STATUSPAGE-INIT.md` §4. §10 references gain three rows (STATUSPAGE-INIT runbook, dependency map, STATUSPAGE-INIT dress-run audit). No behavioural change to §1–§9 — wave-27 is a doc/timing-clarity tightening only. |
+| 1.1.0 | 2026-05-16 | Gustavo (via Claude Opus wave-27 background worker, worktree `wt/r-prep-statuspage-timing-cutover-map`) | §0.6 baseline snapshot now cross-references the wave-27 cutover dependency map (`specs/_audits/sealed/2026-05-16-cutover-dependency-map.md`); §0.6 adds explicit T-7d STATUSPAGE gate row pulling forward the Option A / Option B verification from `RB-STATUSPAGE-INIT.md` §4. §10 references gain three rows (STATUSPAGE-INIT runbook, dependency map, STATUSPAGE-INIT dress-run audit). No behavioural change to §1–§9 — wave-27 is a doc/timing-clarity tightening only. |
 | 1.0.0 | 2026-05-15 | Gustavo (via Claude Opus wave-19 builder, worktree `wt/r-prep-ga-cutover-runbook`) | Initial canonical end-to-end GA cutover runbook — §0 T-7d pre-cutover checklist (7 sub-sections; 12 SEV runbook re-reads); §1 T-72h schema freeze + 5-region D1 + Neon shadow + R2 additivity validation + secrets matrix audit; §2 T-24h staging + 10k-iter proptest + 24h endurance load test; §3 T-0h **11-step orchestrated cutover sequence** (R2 buckets → Neon migrations → CF Worker gradual 1%→10%→50%→100% with 15min holds → BYOK → Stripe live → Clerk → audit-chain Logpush → DSR cron → DNS → rate limits → status page); §4 **6 independent greenlight criteria** (P99 latency / audit-chain / SEV-0/1 zero-72h / customer ack ≥ 5 / Neon shadow lag / DSR cron 100%) with composite recording rule; §5 **6 rollback triggers** + 2-key (SRE Lead + Product Lead) decision + 5-step rollforward-safe rollback sequence (DNS revert → Worker pin → status page → comms → retro); §6 post-cutover T+24h / T+72h / T+7d cadence; §7 **9 comms templates** (3 customer email pre/during/post + 3 status page + 3 Slack channels); §8 2-key sign-off + execution attestation; §9 dress rehearsal + tabletop + comms dry-run cadence at T-14d. Regulatory: explicitly documents cutover is **NOT a breach event** (no PII disclosure, no sub-processor change, no GDPR Art. 33 / LGPD ANPD 72h clock). |
 
 ---

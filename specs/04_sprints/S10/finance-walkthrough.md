@@ -301,7 +301,7 @@ $5k single engagement):
 The host-side dry-run execution `scripts/rb_billing_001_replay_forensic_dry_run.sh`
 runs all 7 steps green at PR speed (10k iter prop tests across 7
 canonical prop tests in `corelink-billing-replay::prop_billing_replay`);
-audit trace: `specs/_audits/2026-05-03-rb-billing-001-replay-forensic-dry-run.md`.
+audit trace: `specs/_audits/sealed/2026-05-03-rb-billing-001-replay-forensic-dry-run.md`.
 
 ## 7. Sign-off (Finance walkthrough mock auditor exhibit)
 

@@ -28,7 +28,7 @@ use std::sync::Arc;
 
 use corelink_privacy_erasure_worker::aggregate_24h_window;
 // W36 Stage 2.C Trigger B (closure spec
-// `specs/_audits/2026-05-26-w36-stage2c-closure.md` §5.2):
+// `specs/_audits/sealed/2026-05-26-w36-stage2c-closure.md` §5.2):
 // Consume Wave-33 canonical ops umbrella (`corelink_ops::statuspage`)
 // on native; fall back to the canonical LOC owner
 // (`corelink_statuspage_real`) on wasm32 because `corelink-ops` pulls

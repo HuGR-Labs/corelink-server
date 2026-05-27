@@ -30,7 +30,7 @@
 //!
 //! Without this fix, the `corelink-py` crate is unbuildable on macOS under
 //! `--all-features`, which is a P1 GA blocker per the wave-30 audit
-//! (`specs/_audits/2026-05-16-corelink-py-linker-fix.md`).
+//! (`specs/_audits/sealed/2026-05-16-corelink-py-linker-fix.md`).
 
 fn main() {
     // Only act when the consumer actually enables the PyO3 extension-module

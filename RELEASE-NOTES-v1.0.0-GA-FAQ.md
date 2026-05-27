@@ -12,7 +12,7 @@ companion_docs:
   - "RELEASE-NOTES-v1.0.0-GA.md"
   - "CHANGELOG.md"
   - "docs/release-notes/v1.0.0-GA-marketing-summary.md"
-  - "specs/_audits/2026-05-16-release-notes-editorial-polish.md"
+  - "specs/_audits/sealed/2026-05-16-release-notes-editorial-polish.md"
 ---
 
 # CoreLink v1.0.0 GA — Customer FAQ (DRAFT)
@@ -22,7 +22,7 @@ companion_docs:
 > state; nothing here overclaims a vendor attestation that has not
 > closed. Publication is gated on the `framework-v1-0-0-ga` tag and
 > the Owner + on-call SRE 2-key approval recorded in
-> `specs/_audits/2026-05-16-ga-readiness-final.md` §13.
+> `specs/_audits/sealed/2026-05-16-ga-readiness-final.md` §13.
 
 ---
 
@@ -123,7 +123,7 @@ external pentest.
 
 **What is sealed today:**
 
-- **Engagement scope** — `specs/_audits/2026-05-16-pre-ga-pentest-scope.md`
+- **Engagement scope** — `specs/_audits/sealed/2026-05-16-pre-ga-pentest-scope.md`
   v1.0 (502 lines; 6 attacker models; 41 attack chains; ASVS v4.0.3
   self-assessment; STRIDE + LINDDUN matrices). Wave-25 SEAL.
 - **Vendor shortlist** — Bishop Fox, NCC Group, Trail of Bits.
@@ -226,11 +226,11 @@ gate** (Finance + Legal + Security review) before publication — see
 - `CHANGELOG.md` — technical changelog.
 - `docs/release-notes/v1.0.0-GA-marketing-summary.md` — 1-page exec
   summary.
-- `specs/_audits/2026-05-16-release-notes-editorial-polish.md` —
+- `specs/_audits/sealed/2026-05-16-release-notes-editorial-polish.md` —
   this FAQ's editorial polish audit (wave-30 stream #10).
-- `specs/_audits/2026-05-16-final-cutover-readiness.md` — CONDITIONAL
+- `specs/_audits/sealed/2026-05-16-final-cutover-readiness.md` — CONDITIONAL
   GO verdict + 7-DEFER counter + 10-row Owner pre-condition checklist.
-- `specs/_audits/2026-05-16-prod-deploy-dressrun.md` — production-tier
+- `specs/_audits/sealed/2026-05-16-prod-deploy-dressrun.md` — production-tier
   dress-run 9.36 / 10 PROCEED.
 
 ---

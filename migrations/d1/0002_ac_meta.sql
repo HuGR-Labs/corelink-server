@@ -1,7 +1,7 @@
 -- CoreLink D1 (Cloudflare SQLite) — migration 0002 for `ac_meta` (Action Cache).
 --
 -- Canonical sources:
---   - specs/04_sprints/S04/work_items/WI-S04-002-d1-ac-meta-r2-bucket.md §1
+--   - specs/04_sprints/_sealed/S04/work_items/WI-S04-002-d1-ac-meta-r2-bucket.md §1
 --   - specs/03_architecture/data_model.md §4.2
 --   - specs/03_architecture/adrs/ADR-0036-d1-schema-migration-governance.md
 --   - specs/03_architecture/adrs/ADR-0035-ac-handler-invariants.md (H-3 tenant_prefix materialization)

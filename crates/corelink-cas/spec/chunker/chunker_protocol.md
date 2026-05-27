@@ -133,4 +133,4 @@ crate lands so any drift trips at compile time.
 - Buildbarn manifest format: <https://github.com/buildbarn/bb-storage>
 - ADR-0022 — `../../specs/03_architecture/adrs/ADR-0022-chunk-size-vs-part-size-decoupling.md`
 - ADR-0039 — `../../specs/03_architecture/adrs/ADR-0039-chunker-public-api-stability.md`
-- WI-S05-002 — `../../specs/04_sprints/S05/work_items/WI-S05-002-corelink-chunker-fastcdc-adr-0022.md`
+- WI-S05-002 — `../../specs/04_sprints/_sealed/S05/work_items/WI-S05-002-corelink-chunker-fastcdc-adr-0022.md`

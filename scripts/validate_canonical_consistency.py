@@ -51,7 +51,7 @@ Exit codes
 
 Baseline file
 -------------
-`specs/_audits/2026-05-15-canonical-consistency-baseline.md` holds the
+`specs/_audits/sealed/2026-05-15-canonical-consistency-baseline.md` holds the
 initial counts. The validator reads its frontmatter `baseline:` block for
 the ratchet thresholds. New regressions (CRITICAL INV that LOST a code or
 test reference vs baseline) fail CI.

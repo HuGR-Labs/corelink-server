@@ -3,10 +3,10 @@
 -- trigger + WI-S07-003 quota middleware).
 --
 -- Canonical sources:
---   - specs/04_sprints/S07/work_items/WI-S07-002-eviction-worker-lru-ttl-quota-trigger.md §1 + §6
---   - specs/04_sprints/S07/work_items/WI-S07-003-quota-enforcement-middleware.md §6.1.5
+--   - specs/04_sprints/_sealed/S07/work_items/WI-S07-002-eviction-worker-lru-ttl-quota-trigger.md §1 + §6
+--   - specs/04_sprints/_sealed/S07/work_items/WI-S07-003-quota-enforcement-middleware.md §6.1.5
 --     (Lote 10.7bis P0-2 fix: NEW table separating STATE from POLICY).
---   - specs/04_sprints/S07/_spec_contract.md §5 R-S07-2 + R-S07-3
+--   - specs/04_sprints/_sealed/S07/_spec_contract.md §5 R-S07-2 + R-S07-3
 --   - specs/03_architecture/invariant_registry.md INV-QUOTA-ENFORCEMENT +
 --     INV-TENANT-ISOLATION + INV-EVICT-SOFT-DELETE-FIRST
 --   - specs/03_architecture/adrs/ADR-0020-quota-enforcement-ownership.md (FROZEN)

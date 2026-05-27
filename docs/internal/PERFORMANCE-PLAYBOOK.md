@@ -5,11 +5,11 @@
 > encrypt/decrypt, tenant-prefix derivation, auth middleware).
 >
 > **Companion docs:**
-> - `specs/_audits/2026-05-14-perf-baseline.md` — the criterion bench
+> - `specs/_audits/sealed/2026-05-14-perf-baseline.md` — the criterion bench
 >   baseline (the numbers).
-> - `specs/_audits/2026-05-15-perf-optimization-audit.md` — the
+> - `specs/_audits/sealed/2026-05-15-perf-optimization-audit.md` — the
 >   audit (where we are vs where we should be).
-> - `specs/_audits/perf-optimization-followup-tickets.md` — sprint
+> - `specs/_audits/sealed/perf-optimization-followup-tickets.md` — sprint
 >   backlog (what to do next).
 >
 > **Rule of thumb:** if you are adding code to a path called on
@@ -465,10 +465,10 @@ check.
 
 ## References
 
-- `specs/_audits/2026-05-14-perf-baseline.md` — criterion baseline numbers.
-- `specs/_audits/2026-05-15-perf-optimization-audit.md` — audit identifying these patterns.
-- `specs/_audits/perf-optimization-followup-tickets.md` — Sprint-ready optimization WIs.
-- `specs/_audits/2026-05-14-mutation-baseline.md` — kill-rate floor preserved by every optimization.
+- `specs/_audits/sealed/2026-05-14-perf-baseline.md` — criterion baseline numbers.
+- `specs/_audits/sealed/2026-05-15-perf-optimization-audit.md` — audit identifying these patterns.
+- `specs/_audits/sealed/perf-optimization-followup-tickets.md` — Sprint-ready optimization WIs.
+- `specs/_audits/sealed/2026-05-14-mutation-baseline.md` — kill-rate floor preserved by every optimization.
 - `specs/_runbooks/RB-PERF-REGRESSION.md` — triage when the gate fails.
 - `specs/03_architecture/slo_catalog.md` — SLO targets.
 - `specs/03_architecture/storage_semantics_matrix.md` — storage write-batching guarantees.

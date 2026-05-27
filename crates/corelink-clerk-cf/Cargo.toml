@@ -130,7 +130,7 @@ default = []
 # Opt into the wave-18 wasm32 binders for the Stripe materializer.
 # Pulls in `corelink-billing-stripe-materializer` + `corelink-audit-chain`
 # and unlocks `prod_wiring::build_billing_real_bindings`. See
-# `specs/_audits/2026-05-15-stripe-webhook-production.md` §materializers.wasm32-binders.
+# `specs/_audits/sealed/2026-05-15-stripe-webhook-production.md` §materializers.wasm32-binders.
 cf-billing-real = [
     "dep:corelink-billing-stripe-materializer",
     "dep:corelink-audit-chain",
@@ -141,7 +141,7 @@ cf-billing-real = [
 # `corelink-audit-chain::neon_shadow::tenant_region`) into the CF
 # Worker production boot path. Closes the wave-21 audit-doc §7 caveat
 # "`corelink-clerk-cf::prod_wiring` not yet updated to construct
-# `D1TenantRegionResolver`". See `specs/_audits/2026-05-16-tenant-config-cf-prod-wire.md`.
+# `D1TenantRegionResolver`". See `specs/_audits/sealed/2026-05-16-tenant-config-cf-prod-wire.md`.
 tenant-region-real = [
     "dep:corelink-audit-chain",
     "dep:uuid",

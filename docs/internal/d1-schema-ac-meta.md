@@ -161,4 +161,4 @@ Storage growth metric `corelink.d1.ac_meta.size_bytes` alerts on >
 - `specs/03_architecture/adrs/ADR-0035-ac-handler-invariants.md` — H-3 tenant_prefix materialization.
 - `specs/03_architecture/adrs/ADR-0021-hkdf-vs-ed25519-ac-signing.md` — sig_key_id rationale.
 - `specs/03_architecture/adrs/ADR-0037-merkle-action-protocol-result-hash.md` — `result_hash = BLAKE3(merkle_root)` rationale.
-- `specs/04_sprints/S04/work_items/WI-S04-002-d1-ac-meta-r2-bucket.md` — WI canonical text.
+- `specs/04_sprints/_sealed/S04/work_items/WI-S04-002-d1-ac-meta-r2-bucket.md` — WI canonical text.

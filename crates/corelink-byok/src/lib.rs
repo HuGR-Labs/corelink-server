@@ -21,7 +21,7 @@
 //!
 //! ## Why microkernel
 //!
-//! Per `specs/_audits/2026-05-22-wave33-code-reorg-spec.md` §2 +
+//! Per `specs/_audits/sealed/2026-05-22-wave33-code-reorg-spec.md` §2 +
 //! decision matrix, BYOK is a "microkernel pattern" surface: a thin
 //! core (`corelink-byok-core` ships the `KmsProvider` trait + types +
 //! envelope encryption + `DekCache`), and exactly ONE provider plugin

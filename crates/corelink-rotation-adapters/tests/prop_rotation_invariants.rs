@@ -2,7 +2,7 @@
 //! `corelink-rotation-adapters` (WI-S13-003).
 //!
 //! Closes the proptest-density gap identified in
-//! `specs/_audits/2026-05-15-proptest-density.md` (ratio 0/7 → 7/7).
+//! `specs/_audits/sealed/2026-05-15-proptest-density.md` (ratio 0/7 → 7/7).
 //!
 //! # Iteration tiers (per S-07 P1-2 PROPTEST_CASES contract)
 //!

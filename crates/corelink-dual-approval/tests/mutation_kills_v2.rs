@@ -5,7 +5,7 @@
 //!
 //! Every test in this file is the minimum surface required to kill one
 //! specific surviving mutant; see
-//! `specs/_audits/2026-05-15-mutation-full-sweep.md` (DEBT-008 closure
+//! `specs/_audits/sealed/2026-05-15-mutation-full-sweep.md` (DEBT-008 closure
 //! wave-14 section) for the mutant-by-mutant rationale.
 
 #![forbid(unsafe_code)]

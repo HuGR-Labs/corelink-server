@@ -73,5 +73,5 @@ If we outgrow Grafana Cloud (cost > benefit), migration:
 ## References
 
 - Grafana Cloud <https://grafana.com/products/cloud/>.
-- `specs/04_sprints/S09/_spec_contract.md`.
+- `specs/04_sprints/_sealed/S09/_spec_contract.md`.
 - `specs/03_architecture/observability_model.md`.

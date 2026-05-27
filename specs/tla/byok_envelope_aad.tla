@@ -30,7 +30,7 @@
 (* Cross-refs:                                                             *)
 (*   - `specs/03_architecture/invariant_registry.md §3.13 INV-BYOK-*`     *)
 (*   - `specs/03_architecture/byok_model.md`                              *)
-(*   - `specs/_audits/2026-05-14-byok-kill-switch-drill-aws.md`           *)
+(*   - `specs/_audits/sealed/2026-05-14-byok-kill-switch-drill-aws.md`           *)
 (***************************************************************************)
 
 EXTENDS Integers, FiniteSets, Sequences, TLC

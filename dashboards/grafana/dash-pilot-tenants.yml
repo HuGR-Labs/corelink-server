@@ -13,7 +13,7 @@
 #
 # See:
 #   docs/internal/pilot-dashboard-checklist.md — the 10 metrics
-#   specs/_audits/2026-05-16-pilot-signup-pipeline.md §4 (dashboard placeholder)
+#   specs/_audits/sealed/2026-05-16-pilot-signup-pipeline.md §4 (dashboard placeholder)
 #   docs/internal/customer-success-playbook.md §3
 ---
 dashboard:
@@ -164,7 +164,7 @@ panels:
       docs/internal/customer-success-playbook.md
 
       Audit:
-      specs/_audits/2026-05-16-pilot-signup-pipeline.md
+      specs/_audits/sealed/2026-05-16-pilot-signup-pipeline.md
 
   - id: 10
     title: "Pilot graduation funnel (last 90d)"

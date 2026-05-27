@@ -7,7 +7,7 @@
  * corpus drafted in waves 4 + 5 + 25.
  *
  * Honest pre-GA framing rules (CRITICAL — see consolidation audit
- * `specs/_audits/2026-05-16-trust-center-consolidation.md` §C2):
+ * `specs/_audits/sealed/2026-05-16-trust-center-consolidation.md` §C2):
  *
  *   - LIVE-ATTESTATION → the artefact exists, is current, and is binding
  *     on CoreLink (e.g. SAQ-A self-attestation, LGPD ROPA, sub-processor
@@ -20,7 +20,7 @@
  *     surveillance audit, FedRAMP sponsorship path).
  *
  * Per `docs/internal/security-readiness.md` §3 and the wave-25 pre-GA
- * security attestation (`specs/_audits/2026-05-16-pre-ga-security-attestation.md`),
+ * security attestation (`specs/_audits/sealed/2026-05-16-pre-ga-security-attestation.md`),
  * we MUST NOT claim certifications not yet achieved. SOC 2 Type II is
  * IN-AUDIT (window started 2026-05-15), not "certified".
  *
@@ -249,7 +249,7 @@ const QUADRANTS: readonly TrustQuadrant[] = [
     cards: [
       {
         title: "Pre-GA security attestation pack",
-        href: "https://github.com/humangr-labs/corelink-server/blob/main/specs/_audits/2026-05-16-pre-ga-security-attestation.md",
+        href: "https://github.com/humangr-labs/corelink-server/blob/main/specs/_audits/sealed/2026-05-16-pre-ga-security-attestation.md",
         status: "LIVE",
         summary:
           "Day-1 evidence pack for pentest vendors + GA sign-off — consolidated security posture across 8 waves of adversarial review.",

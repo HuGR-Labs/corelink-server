@@ -314,10 +314,10 @@ Labels are **tenant-agnostic** (LINDDUN linkability mitigation).
 
 - Per-experiment specs: `specs/05_quality/chaos/*.md` (WI-S17-001).
 - Tabletop template: `specs/_runbooks/RB-TABLETOP-TEMPLATE.md`.
-- Game day report Q2-2026: `specs/_audits/2026-05-14-s17-tabletop-byok-revoke.md`.
-- Adversarial summary: `specs/_audits/2026-05-14-s17-adversarial-summary.md`.
-- Spec contract: `specs/04_sprints/S17/_spec_contract.md` §5.1 + §9 + §14 + §15.
-- WI: `specs/04_sprints/S17/work_items/WI-S17-001-chaos-scheduler-8-types-staging-weekly-catalog.md`.
+- Game day report Q2-2026: `specs/_audits/sealed/2026-05-14-s17-tabletop-byok-revoke.md`.
+- Adversarial summary: `specs/_audits/sealed/2026-05-14-s17-adversarial-summary.md`.
+- Spec contract: `specs/04_sprints/_sealed/S17/_spec_contract.md` §5.1 + §9 + §14 + §15.
+- WI: `specs/04_sprints/_sealed/S17/work_items/WI-S17-001-chaos-scheduler-8-types-staging-weekly-catalog.md`.
 - Runtime: `crates/corelink-chaos-scheduler/`.
 - D1 schema: `migrations/d1/0033_chaos_runs.sql`.
 - Refs: Netflix Chaos Engineering Principles, Google SRE Workbook Ch 12.

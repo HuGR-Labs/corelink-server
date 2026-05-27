@@ -352,7 +352,7 @@ Run within 5 business days of `Observing → Attested` for every lighthouse cust
 - Attestation form template: `specs/_lighthouse/sla-attestation-template.md`.
 - Case study skeletons (marketing): `marketing/lighthouse-kit/case-study-template/`.
 - Case study skeletons (spec canonical): `specs/_lighthouse/case-study-templates/`.
-- Work item: `specs/04_sprints/S20/work_items/WI-S20-004-3-lighthouse-customers-2-team-1-enterprise-byok-30d-sla-attestations.md`.
+- Work item: `specs/04_sprints/_sealed/S20/work_items/WI-S20-004-3-lighthouse-customers-2-team-1-enterprise-byok-30d-sla-attestations.md`.
 - ROADMAP entry: `ROADMAP-TO-GA.md` §5 R5-A1 + §9 H-12.
 
 ---

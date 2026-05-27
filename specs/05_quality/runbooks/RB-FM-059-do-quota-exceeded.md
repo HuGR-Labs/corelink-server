@@ -14,7 +14,7 @@ superseded_by: null
 tags: ["runbook", "p2", "do", "quota", "rate-limit", "dry-run-executed"]
 ---
 
-> **Dry-run executed 2026-05-02** — host-side harness `scripts/rb_fm_059_dry_run.sh` (WI-S07-005) green; chaos magnitude pinned to 1000 concurrent writes at 99.9% quota per Lote 10.6bis P0-W7-4. Detection signal cross-checked against `corelink_quota_denials_total{result=race_detected}` (must remain 0 across the prop suite) NOT a sustained-rate alert. Audit trace: `specs/_audits/2026-05-02-rb-fm-059-dry-run.md`.
+> **Dry-run executed 2026-05-02** — host-side harness `scripts/rb_fm_059_dry_run.sh` (WI-S07-005) green; chaos magnitude pinned to 1000 concurrent writes at 99.9% quota per Lote 10.6bis P0-W7-4. Detection signal cross-checked against `corelink_quota_denials_total{result=race_detected}` (must remain 0 across the prop suite) NOT a sustained-rate alert. Audit trace: `specs/_audits/sealed/2026-05-02-rb-fm-059-dry-run.md`.
 
 # RB-FM-059 — Cloudflare Durable Object Quota Exceeded
 

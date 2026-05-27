@@ -10,7 +10,7 @@
 //! failure mode is a compile-time / test-time signal, not a silent
 //! metric drop.
 //!
-//! Closure from `specs/_audits/2026-05-15-dsr-worker-production.md
+//! Closure from `specs/_audits/sealed/2026-05-15-dsr-worker-production.md
 //! §3` per WI-S11-002 §10.4 O-4.1.
 
 #![allow(
@@ -29,7 +29,7 @@ fn sli_metric_base_pinned_to_corelink_slo() {
     // Production cron emits to this exact base name. Renaming either
     // side without the other → silent dashboard / alert / SLO calc
     // breakage. Pinned per
-    // `specs/_audits/2026-05-15-dsr-worker-production.md §3`.
+    // `specs/_audits/sealed/2026-05-15-dsr-worker-production.md §3`.
     assert_eq!(
         METRIC_DSR_RESOLUTION_HOURS,
         Sli::FreshDsrErasure.prometheus_metric_base(),

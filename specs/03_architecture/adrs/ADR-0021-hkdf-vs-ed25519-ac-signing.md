@@ -15,9 +15,9 @@ superseded_by: null
 deciders: ["Gustavo Schneiter (Owner)", "Crypto SME (TBD; mandatory emphatic per WI-S04-004 §30)"]
 status_history: [{"date": "2026-04-25", "status": "FROZEN", "by": "Gustavo Schneiter (Lote 10.4-tris P1-R5-016 fix — file created from inline content in WI-S04-004 §1)"}]
 context_links:
-  - "specs/04_sprints/S04/work_items/WI-S04-004-hkdf-digest-signing-adr-0021.md"
-  - "specs/04_sprints/S04/work_items/WI-S04-001-reapi-actioncache-handlers.md"
-  - "specs/04_sprints/S04/_spec_contract.md"
+  - "specs/04_sprints/_sealed/S04/work_items/WI-S04-004-hkdf-digest-signing-adr-0021.md"
+  - "specs/04_sprints/_sealed/S04/work_items/WI-S04-001-reapi-actioncache-handlers.md"
+  - "specs/04_sprints/_sealed/S04/_spec_contract.md"
 tags: ["adr", "s04", "ac", "hkdf", "signing", "cripto-load-bearing"]
 ---
 

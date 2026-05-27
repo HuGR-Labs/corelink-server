@@ -1,7 +1,7 @@
 //! Property tests for the Stripe webhook DLQ surface.
 //!
 //! Closes the property-test requirement of
-//! `specs/_audits/2026-05-15-webhook-retry-dlq.md`:
+//! `specs/_audits/sealed/2026-05-15-webhook-retry-dlq.md`:
 //!
 //! 1. **Idempotency on `stripe_event_id`**: the same `event_id`
 //!    quarantined across 100 random orderings (re-quarantines +

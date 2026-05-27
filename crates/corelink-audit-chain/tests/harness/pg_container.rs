@@ -18,7 +18,7 @@
 //! `cargo test -p corelink-audit-chain --features live-pg` runs the
 //! suite locally on a developer laptop with Docker Desktop in under
 //! 60 s total. See
-//! `specs/_audits/2026-05-16-neon-shadow-pg-testharness.md`.
+//! `specs/_audits/sealed/2026-05-16-neon-shadow-pg-testharness.md`.
 //!
 //! ## Tenant isolation contract
 //!
@@ -169,7 +169,7 @@ impl Drop for PgHarness {
                          testcontainers async-drop — Docker daemon may be \
                          hung; container will be reaped by docker-prune or \
                          the host's cleanup cron. See W21-FOLLOWUP-03 \
-                         (`specs/_audits/2026-05-16-wave20-adversarial-review.md`)."
+                         (`specs/_audits/sealed/2026-05-16-wave20-adversarial-review.md`)."
                     );
                 }
             });
@@ -342,7 +342,7 @@ impl NeonExecutor for TokioPostgresExecutor {
             // even when the server would otherwise infer `float8` for
             // a param that we bind as `i64`. Mirrors the production
             // `tokio_postgres_executor` binder's intended behavior;
-            // see `specs/_audits/2026-05-16-neon-shadow-pg-testharness.md`.
+            // see `specs/_audits/sealed/2026-05-16-neon-shadow-pg-testharness.md`.
             let stmt = client.prepare_typed(&sql_owned, &types).await?;
             client.execute(&stmt, &refs).await
         };

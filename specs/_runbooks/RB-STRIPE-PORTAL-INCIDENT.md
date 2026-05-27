@@ -26,9 +26,9 @@ page, or returning from the portal lands somewhere broken.
 customer-success on duty (drives customer-side communication).
 
 **Companion docs.**
-- Configuration spec: `specs/_audits/2026-05-15-stripe-customer-portal-spec.md`
+- Configuration spec: `specs/_audits/sealed/2026-05-15-stripe-customer-portal-spec.md`
 - Webhook DLQ runbook: `specs/_runbooks/RB-WEBHOOK-DLQ-REPLAY.md`
-- Webhook DLQ audit: `specs/_audits/2026-05-15-webhook-retry-dlq.md`
+- Webhook DLQ audit: `specs/_audits/sealed/2026-05-15-webhook-retry-dlq.md`
 - Customer guide: `apps/docs/docs/how-to/billing/manage-subscription.mdx`
 
 **Severity bands.**
@@ -130,7 +130,7 @@ or a different locale page than the one they started on.
 
 1. Compare the active allowlist (Stripe Dashboard → Customer Portal →
    Default redirect on return) against
-   `specs/_audits/2026-05-15-stripe-customer-portal-spec.md` §2.4.
+   `specs/_audits/sealed/2026-05-15-stripe-customer-portal-spec.md` §2.4.
 2. If drift exists, edit the dashboard config to match the spec.
    Stripe rejects any return URL not in the allowlist BEFORE
    redirecting, so the fallback behavior is "stay on Stripe's
@@ -197,7 +197,7 @@ stripe billing_portal configurations create \
 ```
 
 After running, verify in the Dashboard that the configuration
-matches every row in `specs/_audits/2026-05-15-stripe-customer-portal-spec.md` §2.1.
+matches every row in `specs/_audits/sealed/2026-05-15-stripe-customer-portal-spec.md` §2.1.
 Run the canary in §2.3.
 
 ## 8. Postmortem requirements

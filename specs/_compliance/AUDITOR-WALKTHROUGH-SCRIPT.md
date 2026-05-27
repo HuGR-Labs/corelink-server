@@ -102,7 +102,7 @@ tags: ["soc2", "auditor", "walkthrough", "type-i-prep", "schellman", "a-lign"]
 
 | Show | What auditor sees | Where |
 |---|---|---|
-| Doc | SLO catalog + RB-DR-DRILL + region-outage chaos summary | `specs/03_architecture/slo_catalog.md` + `specs/_audits/2026-05-14-region-outage-chaos-s14.md` |
+| Doc | SLO catalog + RB-DR-DRILL + region-outage chaos summary | `specs/03_architecture/slo_catalog.md` + `specs/_audits/sealed/2026-05-14-region-outage-chaos-s14.md` |
 | Dashboard | Grafana SLO panel (past 90d) + multi-region replication health | Grafana |
 | Control test | Show region-outage chaos drill recording; if T+2m+ also show cold-restore drill (closes GAP-15) | Pre-recorded chaos drill |
 

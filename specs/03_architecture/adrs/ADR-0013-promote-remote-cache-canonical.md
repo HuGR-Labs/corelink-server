@@ -74,7 +74,7 @@ Os 3 entram em §35.5.1 com status `Nível 3`.
 
 ## 5. Evidence
 
-- Audit findings: `specs/_audits/2026-04-24-gpt-audit-lote3-4.md` (F-02), `2026-04-24-sonnet-audit-lote3-4.md` (S-07, F-13).
+- Audit findings: `specs/_audits/sealed/2026-04-24-gpt-audit-lote3-4.md` (F-02), `2026-04-24-sonnet-audit-lote3-4.md` (S-07, F-13).
 
 ---
 

@@ -18,7 +18,7 @@ tags: ["soc2", "type-i", "roadmap", "drata", "schellman", "a-lign", "type-ii-pre
 >
 > **Anchor:** WI-S20-003 D4 + spec contract §10 anti-scope (Type I deferred 6m pós-GA).
 >
-> **Companion:** `specs/_compliance/SOC2-GAP-ANALYSIS.md` (33 GAPs · 1 blocking-GA closing · 9 major · 23 minor) + `specs/_compliance/vendor-shortlist-soc2.md` (Drata selected) + `specs/_audits/2026-05-14-soc2-readiness-score.md`.
+> **Companion:** `specs/_compliance/SOC2-GAP-ANALYSIS.md` (33 GAPs · 1 blocking-GA closing · 9 major · 23 minor) + `specs/_compliance/vendor-shortlist-soc2.md` (Drata selected) + `specs/_audits/sealed/2026-05-14-soc2-readiness-score.md`.
 
 ## Phase overview
 

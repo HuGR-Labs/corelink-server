@@ -32,7 +32,7 @@
 # What this does NOT do:
 #   - It does NOT create the `framework-v1-0-0-ga` tag (that is a
 #     pre-requisite, applied at lote-6 Owner sign-off prep — see
-#     `specs/_audits/2026-05-16-lote-6-owner-signoff-prep.md` cross-ref).
+#     `specs/_audits/sealed/2026-05-16-lote-6-owner-signoff-prep.md` cross-ref).
 #   - It does NOT execute the RB-GA-CUTOVER §3 cutover sequence (that is
 #     pre-requisite; this script presumes the sequence has finished GREEN).
 #   - It does NOT page on-call, send customer comms, or publish marketing

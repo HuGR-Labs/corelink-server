@@ -14,9 +14,9 @@ supersedes: null
 superseded_by: null
 deciders: ["Gustavo Schneiter (Owner)", "Crypto SME (TBD; mandatory emphatic per WI-S04-004)"]
 context_links:
-  - "specs/04_sprints/S04/work_items/WI-S04-003-corelink-ac-merkle-dual-side.md"
-  - "specs/04_sprints/S04/work_items/WI-S04-004-hkdf-digest-signing-adr-0021.md"
-  - "specs/04_sprints/S04/work_items/WI-S04-002-d1-ac-meta-r2-bucket.md"
+  - "specs/04_sprints/_sealed/S04/work_items/WI-S04-003-corelink-ac-merkle-dual-side.md"
+  - "specs/04_sprints/_sealed/S04/work_items/WI-S04-004-hkdf-digest-signing-adr-0021.md"
+  - "specs/04_sprints/_sealed/S04/work_items/WI-S04-002-d1-ac-meta-r2-bucket.md"
 tags: ["adr", "s04", "ac", "merkle", "result_hash", "cripto"]
 ---
 

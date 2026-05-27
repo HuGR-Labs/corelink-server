@@ -94,7 +94,7 @@ export function hasAdminRole(ctx: AuthContext): boolean {
 /**
  * Customer self-serve dashboard requires Viewer-minimum: any authenticated
  * org member (admin/viewer/member) sees their tenant dashboard. Anonymous
- * sessions are rejected. See specs/_audits/2026-05-15-customer-dashboard-spec.md
+ * sessions are rejected. See specs/_audits/sealed/2026-05-15-customer-dashboard-spec.md
  * §RBAC for the role mapping rationale.
  */
 export function hasCustomerAccess(ctx: AuthContext): boolean {

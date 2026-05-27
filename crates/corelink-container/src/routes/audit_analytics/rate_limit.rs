@@ -62,7 +62,7 @@ pub(super) fn parse_tenant_header(
 /// caller-controlled bytes on the structurally-unreachable pre-epoch
 /// branch — the exact pathology `audit_export.rs` closed at wave-23
 /// (commit `5203e8b`, audit
-/// `specs/_audits/2026-05-16-wave23-cleanup.md` §W21-R-P2-01). The
+/// `specs/_audits/sealed/2026-05-16-wave23-cleanup.md` §W21-R-P2-01). The
 /// analytics route was scoped OUT of wave-23 and explicitly flagged
 /// for a follow-on hygiene sweep — this is that sweep. The saturating
 /// branch now fail-CLOSES with HTTP 503 + an

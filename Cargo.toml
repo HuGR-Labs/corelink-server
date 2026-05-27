@@ -6,11 +6,11 @@ members = [
     # crate location alongside the rest of the workspace. Binary name stays
     # `corelink-server` (Dockerfile + wrangler.toml depend on
     # `/usr/local/bin/corelink-server`). See
-    # `specs/_audits/2026-05-26-w33-stage2-b-container.md`.
+    # `specs/_audits/sealed/2026-05-26-w33-stage2-b-container.md`.
     "crates/corelink-container",
     # Wave-33 Stage 0 sub-step 1 — apex cross-cutting types crate.
     # Depends on no other corelink-* crate; Stage 3 cargo-deny will
-    # enforce. See `specs/_audits/2026-05-22-wave33-code-reorg-spec.md`.
+    # enforce. See `specs/_audits/sealed/2026-05-22-wave33-code-reorg-spec.md`.
     "crates/corelink-core",
     # Wave-33 Stage 0 sub-step 2 — canonical cryptography aggregator.
     # Option-A re-export façade over corelink-hash + corelink-client-verify
@@ -29,14 +29,14 @@ members = [
     # quota / rate-limit / abuse crates per spec §4. Physical
     # absorption deferred to consumer-migration stream; absorbed
     # crates remain canonical sources of truth. See
-    # `specs/_audits/2026-05-22-w33-stream-b-policy.md`.
+    # `specs/_audits/sealed/2026-05-22-w33-stream-b-policy.md`.
     "crates/corelink-billing",
     # Wave-33 Stage 1 Stream B sub-step B.3 — canonical auth
     # aggregator. Option-A re-export façade over the 6 auth-context
     # crates (clerk + clerk-cf + auth-schema + webauthn + pat +
     # tenant-path). Preserves charter `INV-AUTH-SCHEMA-RLS-DEFAULT-ON`
     # and `subtle::ConstantTimeEq` on PAT verify by reference. See
-    # `specs/_audits/2026-05-22-w33-stream-b-policy.md`.
+    # `specs/_audits/sealed/2026-05-22-w33-stream-b-policy.md`.
     "crates/corelink-auth",
     # Wave-33 Stage 1 Stream B sub-step B.5 — canonical privacy
     # aggregator. Option-A re-export façade over the 11 privacy-
@@ -44,7 +44,7 @@ members = [
     # erasure + notice + pseudonymize + residency + sub-processor +
     # 2 DPA crates). Preserves Ed25519 erasure-attestation signing
     # path + audit-emit-BEFORE-mutation fail-CLOSED envelopes by
-    # reference. See `specs/_audits/2026-05-22-w33-stream-b-policy.md`.
+    # reference. See `specs/_audits/sealed/2026-05-22-w33-stream-b-policy.md`.
     "crates/corelink-privacy",
     # Wave-33 Stage 1 Stream C sub-step C.1 — canonical replication
     # aggregator. Option-A re-export façade over the 5 absorbed
@@ -52,7 +52,7 @@ members = [
     # replication-coordinator + failover-router + rollout-controller).
     # Preserves DR-16 warm-failover lifecycle + R-PREP wave-15
     # coordinator 3-state machine by reference. See
-    # `specs/_audits/2026-05-22-w33-stream-c-infra-ops.md`.
+    # `specs/_audits/sealed/2026-05-22-w33-stream-c-infra-ops.md`.
     "crates/corelink-replication",
     # Wave-33 Stage 1 Stream C sub-step C.2 — canonical ops aggregator
     # (LARGEST Wave-33 absorption: 28 → 1). Option-A re-export façade
@@ -64,7 +64,7 @@ members = [
     # re-exported by `corelink-adapters-cloud` (C.3). Preserves admin
     # dual-approval flow, runbook PAT-RUNBOOK-DRILL-001, oncall fatigue,
     # statuspage 1-per-5-min rate-limiter by reference. See
-    # `specs/_audits/2026-05-22-w33-stream-c-infra-ops.md`.
+    # `specs/_audits/sealed/2026-05-22-w33-stream-c-infra-ops.md`.
     "crates/corelink-ops",
     # Wave-33 Stage 1 Stream C sub-step C.3 — canonical cloud-adapters
     # aggregator. Option-A re-export façade over the binding portion
@@ -73,7 +73,7 @@ members = [
     # slack-real). Pure-logic portion re-exported simultaneously by
     # sibling umbrellas (corelink-billing / corelink-ops / corelink-auth);
     # physical decomposition deferred to Stage 2. See
-    # `specs/_audits/2026-05-22-w33-stream-c-infra-ops.md`.
+    # `specs/_audits/sealed/2026-05-22-w33-stream-c-infra-ops.md`.
     "crates/corelink-adapters-cloud",
     # Wave-33 Stage 1 Stream C sub-step C.4 — canonical Vault-adapters
     # aggregator. Option-A re-export façade over the HTTPS / mTLS
@@ -81,7 +81,7 @@ members = [
     # simultaneously re-exported by `corelink-byok::vault` behind the
     # `vault` cargo feature). HuGR Wallet broker sibling adapter lands
     # in a Wave-31 follow-up. See
-    # `specs/_audits/2026-05-22-w33-stream-c-infra-ops.md`.
+    # `specs/_audits/sealed/2026-05-22-w33-stream-c-infra-ops.md`.
     "crates/corelink-adapters-vault",
     "crates/tenant-path",
     "crates/corelink-hash",
@@ -120,7 +120,7 @@ members = [
     # Wave-35 Phase 2: corelink-privacy-{breach-emit, consent-ledger,
     # notice-emit, residency-enforcement, sub-processor-emit} absorbed
     # into the corelink-privacy umbrella per
-    # `specs/_audits/2026-05-26-w35-p2-privacy-absorption.md`.
+    # `specs/_audits/sealed/2026-05-26-w35-p2-privacy-absorption.md`.
     # corelink-privacy-{erasure-worker, pseudonymize} preserved
     # external (not in W35-P2 absorb scope).
     "crates/corelink-clerk-cf",
@@ -136,7 +136,7 @@ members = [
     "crates/corelink-terraform-drift-consumer",
     # Wave 35 Phase 2: `corelink-rollout-controller` absorbed into
     # `corelink-replication::rollout_controller` per
-    # `specs/_audits/2026-05-26-w35-p2-replication-absorption.md`.
+    # `specs/_audits/sealed/2026-05-26-w35-p2-replication-absorption.md`.
     "crates/corelink-region",
     "apps/migrate-single-to-multi-region",
     "crates/corelink-replica-worker",
@@ -158,7 +158,7 @@ members = [
     # the canonical `corelink-byok` umbrella. Public surface preserved
     # 1:1: `corelink_byok::*` (core), `corelink_byok::revocation::*`,
     # and per-provider namespaces feature-gated + mutually exclusive.
-    # See `specs/_audits/2026-05-26-w35-p2-byok-absorption.md`.
+    # See `specs/_audits/sealed/2026-05-26-w35-p2-byok-absorption.md`.
     "crates/corelink-byok",
     # WI-S14-007 Ed25519 erasure attestation
     "crates/corelink-erasure-attestation",
@@ -186,7 +186,7 @@ members = [
     "crates/corelink-signup",
     # Wave-35 Phase 2: corelink-dpa-versioning absorbed into
     # corelink-privacy::dpa::versioning per
-    # `specs/_audits/2026-05-26-w35-p2-privacy-absorption.md`.
+    # `specs/_audits/sealed/2026-05-26-w35-p2-privacy-absorption.md`.
     # WI-S19-004 tier selection + Stripe Checkout + INV-ONBOARD-DPA-FIRST D1 lock
     "crates/corelink-tier-selection",
     # WI-S19-005 enterprise inquiry form + Slack/CRM atomic outbox + 24h auto-reply SLA
@@ -200,7 +200,7 @@ members = [
     # routing + retry + audit envelope; bridges to enterprise-inquiry via adapter)
     "crates/corelink-slack-real",
     # Wave-16 Atlassian Statuspage real client (closes WI-S11-002 §6 status-
-    # page deferral from `specs/_audits/2026-05-15-dsr-worker-production.md`
+    # page deferral from `specs/_audits/sealed/2026-05-15-dsr-worker-production.md`
     # §5). StatuspageBackend trait + DsrCompletionReport 24h-rolling payload
     # + reqwest::blocking POST `/v1/pages/{page_id}/metrics/{metric_id}/data.json`
     # + 1-per-5-min rate-limiter + 3-retry exp-backoff + fail-CLOSED audit
@@ -208,7 +208,7 @@ members = [
     "crates/corelink-statuspage-real",
     # Wave-17 DSR Statuspage 24h publish scheduler — closes the
     # scheduler-binding deferred at wave-16 per
-    # `specs/_audits/2026-05-15-dsr-worker-production.md` §5.
+    # `specs/_audits/sealed/2026-05-15-dsr-worker-production.md` §5.
     # Composes `corelink-privacy-erasure-worker::aggregate_24h_window`
     # + `corelink-statuspage-real::bridge_to_report` +
     # `StatuspageBackend::publish_dsr_metric` into a 06:00 UTC daily
@@ -244,7 +244,7 @@ members = [
     # typed handler-surface trait + InMemoryFake + per-handler SliObserver
     # integration emitting canonical Sli observations + audit-fail-CLOSED
     # ordering envelope. Closes the handler-layer SLO emit gap from
-    # specs/_audits/2026-05-14-slo-instrumentation-gaps.md §6. Real
+    # specs/_audits/sealed/2026-05-14-slo-instrumentation-gaps.md §6. Real
     # wasm32 CF-Worker impls deferred per autonomous-execution charter
     # trait-abstraction-defer.
     "crates/corelink-handler-cas",
@@ -325,7 +325,7 @@ members = [
     # Wave-36 Trigger A: leaf crate holding the 4 port traits + identity /
     # outcome / error types extracted from `corelink-stripe-real::webhook_dispatch`,
     # resolving the materializer dep-graph cycle hazard identified in
-    # `specs/_audits/2026-05-26-w36-stage2c-closure.md` §5.1.
+    # `specs/_audits/sealed/2026-05-26-w36-stage2c-closure.md` §5.1.
     "crates/corelink-billing-stripe-traits",
     # Wave-23 R-PREP pilot tenant onboarding end-to-end harness — composes
     # the full GA customer journey in a single deterministic in-memory
@@ -344,7 +344,7 @@ members = [
     # ManifestKvStore) onto the canonical workspace Stage-1 SPI traits
     # (CasReadHandler, CasWriteHandler, KvBackend, PatValidator,
     # AuditEmitter). Closes follow-up #4 from
-    # `specs/_audits/2026-05-26-wave-33-34-closure-followups.md §4`.
+    # `specs/_audits/sealed/2026-05-26-wave-33-34-closure-followups.md §4`.
     "crates/corelink-adapter-host",
 ]
 exclude = [
@@ -383,7 +383,7 @@ dashmap = "6"
 # DEBT-013 OPT-04 phase 1 — `parking_lot::Mutex` is the panic-free,
 # slightly faster drop-in for `std::sync::Mutex` on hot CAS / AC /
 # audit-chain in-memory stores. Audit ref:
-# `specs/_audits/2026-05-15-perf-optimization-audit.md` §2 OPT-04.
+# `specs/_audits/sealed/2026-05-15-perf-optimization-audit.md` §2 OPT-04.
 parking_lot = "0.12"
 
 # gRPC stack
@@ -574,7 +574,7 @@ corelink-replication-coordinator = { path = "crates/corelink-replication-coordin
 # (always-on kill-switch detector), `corelink_byok::{aws,gcp,azure,vault}`
 # (per-provider namespaces; feature-gated, MUTUALLY EXCLUSIVE at
 # compile time per charter Hard Pause Trigger 2). See
-# `specs/_audits/2026-05-26-w35-p2-byok-absorption.md`.
+# `specs/_audits/sealed/2026-05-26-w35-p2-byok-absorption.md`.
 corelink-byok = { path = "crates/corelink-byok" }
 corelink-erasure-attestation = { path = "crates/corelink-erasure-attestation" }
 corelink-chaos-scheduler = { path = "crates/corelink-chaos-scheduler" }

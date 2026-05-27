@@ -112,10 +112,10 @@ The 5 canonical tiers (`Free`, `Solo`, `Team`, `Business`, `Enterprise`) are pin
 
 ## References
 
-- `specs/04_sprints/S04/_spec_contract.md` (CAP-AC-004).
-- `specs/04_sprints/S04/work_items/WI-S04-005-ttl-worker-cron-do-adr-0019.md` (TTL infrastructure delivery).
-- `specs/04_sprints/S07/_spec_contract.md` (CAP-EVICT-002).
-- Opus Round 2 C-03 (`specs/_audits/2026-04-24-opus-independent-sota-review-r2.md:63-71`).
+- `specs/04_sprints/_sealed/S04/_spec_contract.md` (CAP-AC-004).
+- `specs/04_sprints/_sealed/S04/work_items/WI-S04-005-ttl-worker-cron-do-adr-0019.md` (TTL infrastructure delivery).
+- `specs/04_sprints/_sealed/S07/_spec_contract.md` (CAP-EVICT-002).
+- Opus Round 2 C-03 (`specs/_audits/sealed/2026-04-24-opus-independent-sota-review-r2.md:63-71`).
 - Codex Round 2 CF-05.
 - `crates/corelink-worker/src/reapi/ac/ttl/resolver.rs` — `TierTtlResolver` trait + S-04 GA fallback impl.
 

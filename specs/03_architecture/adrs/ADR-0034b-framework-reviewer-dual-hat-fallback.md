@@ -20,7 +20,7 @@ context_links:
   - "specs/03_architecture/adrs/ADR-0034-prr-staffing-waiver-solo-tier.md (prior-art at PRR tier)"
   - "specs/00_framework.md §43.1 (Revisores requeridos para freeze)"
   - "specs/_governance/reviewer_staffing_strategy.md §7.2 (Founder-only-sign-off fallback prior art)"
-  - "specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md §11 (unblock-path-C-progress)"
+  - "specs/_audits/sealed/2026-05-15-framework-v1-0-0-ga-audit.md §11 (unblock-path-C-progress)"
 tags: ["adr", "governance", "reviewers", "staffing", "framework-freeze", "dual-hat", "small-org", "ga", "wave-22", "wave-24", "wave-25", "raci"]
 ---
 
@@ -49,7 +49,7 @@ The proposal's §8 Open Question OQ-1 enumerated three staffing options:
 - **Option B** — 3 people with one slot dual-hatted.
 - **Option C** — 2 people (Owner dual-hats two slots; 2 externals fill remaining slots).
 
-CoreLink operates in a small-org regime today: solo Owner + AI labor + 1–2 retained external advisors. Hiring 4 distinct senior reviewers (FW-H-1..4 each requires a senior IC or equivalent) is **not contractually feasible** prior to the first customer-driven SOC2 / ISO27001 mandate. Without a formal fallback, the framework v1.0.0 FROZEN cut stays indefinitely DEFERRED (per `specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md §6.3 Path A/B/C`), even though the engineering side is READY (wave-20 Lote 7 absorption documented in audit §11).
+CoreLink operates in a small-org regime today: solo Owner + AI labor + 1–2 retained external advisors. Hiring 4 distinct senior reviewers (FW-H-1..4 each requires a senior IC or equivalent) is **not contractually feasible** prior to the first customer-driven SOC2 / ISO27001 mandate. Without a formal fallback, the framework v1.0.0 FROZEN cut stays indefinitely DEFERRED (per `specs/_audits/sealed/2026-05-15-framework-v1-0-0-ga-audit.md §6.3 Path A/B/C`), even though the engineering side is READY (wave-20 Lote 7 absorption documented in audit §11).
 
 ### Why an ADR (not just the addendum)
 
@@ -152,7 +152,7 @@ Triggers are monitored by the **trimestral framework review** (addendum §5.2) �
 
 **Continuity risk.** Framework decisions span quarterly cadence (addendum §5); rotating reviewers lose context between cuts. The addendum §4 Reviewer Training Pack (10-hour floor) assumes a stable reviewer who can amortize onboarding across multiple decisions. Rotating reviewers repay the onboarding cost on every cut — economically and practically prohibitive.
 
-**Audit trail risk.** SOC2 readiness expects identifiable reviewer continuity (per `specs/_audits/2026-05-14-soc2-readiness-score.md`). Rotating reviewers fragment the audit trail.
+**Audit trail risk.** SOC2 readiness expects identifiable reviewer continuity (per `specs/_audits/sealed/2026-05-14-soc2-readiness-score.md`). Rotating reviewers fragment the audit trail.
 
 **Verdict.** Rejected — addendum §4 + §5 explicitly assume continuity.
 
@@ -170,7 +170,7 @@ Triggers are monitored by the **trimestral framework review** (addendum §5.2) �
 
 **Mechanism.** Keep framework at v1.0.0-rc1 indefinitely; revisit only when the org grows to 12+ engineers.
 
-**Cost.** GA verdict stuck on DEFER indefinitely; downstream sprint-contract / runbook / ADR work continues to reference an unreleased framework. Audit `specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md` §6.3 explicitly rejects this as the steady-state.
+**Cost.** GA verdict stuck on DEFER indefinitely; downstream sprint-contract / runbook / ADR work continues to reference an unreleased framework. Audit `specs/_audits/sealed/2026-05-15-framework-v1-0-0-ga-audit.md` §6.3 explicitly rejects this as the steady-state.
 
 **Verdict.** Rejected — the addendum and this ADR exist specifically to terminate indefinite-DEFER.
 
@@ -209,7 +209,7 @@ Forward-looking: when a framework v1.0.0 FROZEN cut is authored under this ADR, 
 - `specs/03_architecture/adrs/ADR-0034-prr-staffing-waiver-solo-tier.md` — PRR-tier prior-art pattern (ADR-0034b is the analogous artifact at framework-freeze tier).
 - `specs/00_framework.md §43.1` — slot labels the dual-hat applies to.
 - `specs/_governance/reviewer_staffing_strategy.md §7.2` — Founder-only-sign-off prior art.
-- `specs/_audits/2026-05-15-framework-v1-0-0-ga-audit.md §11` — `unblock-path-C-progress` (this ADR + the wave-22 addendum together complete the engineering-side preparation for Path A).
+- `specs/_audits/sealed/2026-05-15-framework-v1-0-0-ga-audit.md §11` — `unblock-path-C-progress` (this ADR + the wave-22 addendum together complete the engineering-side preparation for Path A).
 
 ## Change log
 

@@ -166,7 +166,7 @@ corelink.onboarding.atomic_rollback_total{reason}
 ## References
 
 - `invariant_registry.md` INV-ONBOARD-ATOMIC-PROVISIONING + INV-ONBOARD-DPA-FIRST (§3.12).
-- `specs/04_sprints/S19/_spec_contract.md` (onboarding flow + R-S19-2 atomicity).
+- `specs/04_sprints/_sealed/S19/_spec_contract.md` (onboarding flow + R-S19-2 atomicity).
 - `specs/04_sprints/S10/_spec_contract.md` (Stripe customer mapping).
 - `specs/04_sprints/S11/_spec_contract.md` (DPA = consent type).
 - `specs/03_architecture/error_taxonomy.md` `COR_BILLING_DPA_NOT_SIGNED`.

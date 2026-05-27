@@ -107,11 +107,11 @@ If a question family is not listed here, escalate to DPO before answering — it
 | 61 | DR — cold restore runbook | `specs/_runbooks/RB-COLD-RESTORE-FROM-ZERO.md` | NDA |
 | 62 | DR — active failover spec | `specs/_compliance/ACTIVE-FAILOVER-DRILL-SPEC.md` | NDA |
 | 63 | DR — active failover runbook | `specs/_runbooks/RB-ACTIVE-FAILOVER.md` | NDA |
-| 64 | DR — chaos drill summary | `specs/_audits/2026-05-14-region-outage-chaos-s14.md` | NDA |
+| 64 | DR — chaos drill summary | `specs/_audits/sealed/2026-05-14-region-outage-chaos-s14.md` | NDA |
 | 65 | DR — drill evidence | `specs/_compliance/drill-evidence/` | NDA |
-| 66 | **Vulnerability mgmt — static analysis** | `specs/_audits/2026-05-15-static-analysis-baseline.md` | NDA |
+| 66 | **Vulnerability mgmt — static analysis** | `specs/_audits/sealed/2026-05-15-static-analysis-baseline.md` | NDA |
 | 67 | Vuln — triage runbook | `specs/_runbooks/RB-STATIC-ANALYSIS-TRIAGE.md` | NDA |
-| 68 | Vuln — cargo-fuzz summary | `specs/_audits/2026-05-14-cargo-fuzz-summary-s15.md` | NDA |
+| 68 | Vuln — cargo-fuzz summary | `specs/_audits/sealed/2026-05-14-cargo-fuzz-summary-s15.md` | NDA |
 | 69 | Vuln — Dependency-Track | ADR-0037 (`specs/03_architecture/adrs/`) | OPEN-SOURCE |
 | 70 | **Supply chain — SBOM** | Release artifacts `https://github.com/humangr-labs/corelink/releases` | OPEN-SOURCE |
 | 71 | Supply chain — Rekor / Sigstore | Per release (Cosign signatures) | OPEN-SOURCE |
@@ -199,7 +199,7 @@ For engaged auditors only — different access tier:
 
 1. `specs/_compliance/AUDITOR-WALKTHROUGH-SCRIPT.md` — step-by-step.
 2. All §1 NDA items above.
-3. AUDITOR-ONLY: `specs/_audits/2026-05-14-soc2-readiness-score.md` (internal scorecard).
+3. AUDITOR-ONLY: `specs/_audits/sealed/2026-05-14-soc2-readiness-score.md` (internal scorecard).
 4. AUDITOR-ONLY: full vendor DD files at `specs/_compliance/vendor-dd/`.
 5. AUDITOR-ONLY: ir-scenarios at `specs/_compliance/ir-scenarios/`.
 6. AUDITOR-ONLY: drill-evidence at `specs/_compliance/drill-evidence/`.

@@ -54,7 +54,7 @@ blake3 = { workspace = true }
 # `idempotency.rs`) consume the four port traits + identity / outcome
 # types from this leaf, eliminating the prospective dep-graph cycle
 # `billing → materializer → stripe-real → (would loop via direct
-# migration)`. See `specs/_audits/2026-05-27-w36-trigger-a-seal.md`.
+# migration)`. See `specs/_audits/sealed/2026-05-27-w36-trigger-a-seal.md`.
 corelink-billing-stripe-traits = { path = "../corelink-billing-stripe-traits" }
 # `corelink-stripe-real` remains a (build/dev-time) dep so the
 # integration test (`tests/materializers_e2e.rs`) can construct the
@@ -75,7 +75,7 @@ corelink-audit-chain = { workspace = true, optional = true }
 # `WasmWorkerMatClock` (see `src/clock.rs`) reads the Worker's
 # `Date::now()` global instead. Mirrors the wave-20 closure in
 # `corelink-stripe-real::clock`. See audit
-# `specs/_audits/2026-05-16-stripe-wasm32-gate-lift.md §9`.
+# `specs/_audits/sealed/2026-05-16-stripe-wasm32-gate-lift.md §9`.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = { workspace = true }
 

@@ -14,7 +14,7 @@ superseded_by: null
 tags: ["runbook", "p1", "ddos", "rate-limit", "availability", "wi-s08-006", "dry-run-executed"]
 ---
 
-> **Dry-run executed 2026-05-02** (host-side; harness `scripts/rb_fm_250_dry_run.sh`; audit trace `specs/_audits/2026-05-02-rb-fm-250-dry-run.md`). Per WI-S08-006 §6.1.3 + sprint contract §6 DoD EVT-017. Flipped DRAFT → FROZEN at S-08 PRR ship gate ceremony.
+> **Dry-run executed 2026-05-02** (host-side; harness `scripts/rb_fm_250_dry_run.sh`; audit trace `specs/_audits/sealed/2026-05-02-rb-fm-250-dry-run.md`). Per WI-S08-006 §6.1.3 + sprint contract §6 DoD EVT-017. Flipped DRAFT → FROZEN at S-08 PRR ship gate ceremony.
 
 # RB-FM-250 — DDoS Volumetric (single-tenant ou cross-tenant)
 

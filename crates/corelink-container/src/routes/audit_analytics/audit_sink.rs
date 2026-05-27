@@ -71,7 +71,7 @@ impl AnalyticsAuditSink for InMemoryAnalyticsAuditSink {
 /// SEV-2 anchor is never silently lost).
 ///
 /// Mirrors the `audit_export` wave-20 fix-stream pattern; see
-/// `specs/_audits/2026-05-16-wave18-adversarial-review-streamB-neon-shadow.md`
+/// `specs/_audits/sealed/2026-05-16-wave18-adversarial-review-streamB-neon-shadow.md`
 /// findings B-P1-02 + B-P1-03 for the discipline drift this closes.
 pub(super) fn emit_or_503(
     state: &AuditAnalyticsRouteState,

@@ -3,7 +3,7 @@
 **Version:** 1.0.0  
 **Effective:** 2026-05-14  
 **WI:** WI-S15-005  
-**LINDDUN review:** `specs/_audits/2026-05-14-linddun-cli-telemetry.md`
+**LINDDUN review:** `specs/_audits/sealed/2026-05-14-linddun-cli-telemetry.md`
 
 ---
 
@@ -133,4 +133,4 @@ Timeout: 1 second. If the endpoint is unreachable, the CLI continues normally
 
 Privacy questions: privacy@humangr.com
 
-LINDDUN review is available at `specs/_audits/2026-05-14-linddun-cli-telemetry.md`.
+LINDDUN review is available at `specs/_audits/sealed/2026-05-14-linddun-cli-telemetry.md`.

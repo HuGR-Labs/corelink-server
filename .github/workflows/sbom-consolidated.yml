@@ -18,7 +18,7 @@ name: sbom-consolidated (R7-1 supply-quality rollup)
 # SHA-pinned per HIGH_RISK lane FF-HR-005 + ADR-S12-045 §6 tooling-pin policy.
 #
 # Reference: scripts/sbom-aggregate.sh, tools/sbom-publish,
-#            specs/_audits/2026-05-14-sbom-coverage.md
+#            specs/_audits/sealed/2026-05-14-sbom-coverage.md
 
 on:
   push:

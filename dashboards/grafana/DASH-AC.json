@@ -259,7 +259,7 @@
   "links": [
     {
       "title": "Spec — WI-S04-006",
-      "url": "../../specs/04_sprints/S04/work_items/WI-S04-006-reapi-conformance-prr-ship-gate.md",
+      "url": "../../specs/04_sprints/_sealed/S04/work_items/WI-S04-006-reapi-conformance-prr-ship-gate.md",
       "type": "link",
       "icon": "doc"
     },

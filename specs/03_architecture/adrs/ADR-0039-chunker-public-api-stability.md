@@ -16,7 +16,7 @@ deciders: ["Gustavo Schneiter (Owner)", "Architect with Crypto SME specializatio
 status_history:
   - {date: "2026-05-01", status: "FROZEN", by: "Gustavo Schneiter (via Claude Opus 4.7) — published at WI-S05-002 SEAL alongside ADR-0022 ratification"}
 context_links:
-  - "specs/04_sprints/S05/work_items/WI-S05-002-corelink-chunker-fastcdc-adr-0022.md"
+  - "specs/04_sprints/_sealed/S05/work_items/WI-S05-002-corelink-chunker-fastcdc-adr-0022.md"
   - "specs/03_architecture/adrs/ADR-0022-chunk-size-vs-part-size-decoupling.md"
   - "crates/corelink-chunker/spec/chunker_protocol.md"
 tags: ["adr", "s05", "chunker", "api-stability", "semver"]

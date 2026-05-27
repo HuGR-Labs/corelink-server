@@ -13,7 +13,7 @@ supersedes: null
 superseded_by: null
 tags: ["runbook", "p1", "supply-chain", "typosquatting", "cargo", "lockfile-diff", "codeowners", "sbom", "dependency-track", "rb-fm-157", "wi-s12-007", "dry-run-executed"]
 dry_run_executed: "2026-05-14"
-dry_run_evidence: "specs/_audits/2026-05-14-rb-fm-157-dry-run.md"
+dry_run_evidence: "specs/_audits/sealed/2026-05-14-rb-fm-157-dry-run.md"
 ---
 
 # RB-FM-157 — Typosquatting Dependency (Cargo / crates.io)
@@ -342,9 +342,9 @@ done
 
 - `specs/03_architecture/failure_modes.md` FM-157.
 - `specs/03_architecture/security_model.md` CTRL-SUPPLY-001 + CTRL-SUPPLY-004 + CTRL-SUPPLY-006.
-- `specs/04_sprints/S12/_spec_contract.md` R-S12-9 + R-S12-10 + R-S12-18.
-- `specs/04_sprints/S12/work_items/WI-S12-004-cargo-audit-cargo-deny-dependabot.md`.
-- `specs/04_sprints/S12/work_items/WI-S12-005-dependency-track-self-host-cve-alerts.md`.
+- `specs/04_sprints/_sealed/S12/_spec_contract.md` R-S12-9 + R-S12-10 + R-S12-18.
+- `specs/04_sprints/_sealed/S12/work_items/WI-S12-004-cargo-audit-cargo-deny-dependabot.md`.
+- `specs/04_sprints/_sealed/S12/work_items/WI-S12-005-dependency-track-self-host-cve-alerts.md`.
 - RustSec Advisory Database: <https://rustsec.org/advisories/>.
 - cargo-deny documentation: <https://embarkstudios.github.io/cargo-deny/>.
 - crates.io security contact: <https://crates.io/security>.

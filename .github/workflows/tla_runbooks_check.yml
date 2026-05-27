@@ -6,7 +6,7 @@ name: TLA+ Model Check — Runbooks (DEBT-014 FT-8)
 # INV-DATA-RESIDENCY failover side via `residency_failover.tla`,
 # INV-BYOK-CRYPTO-SOVEREIGNTY via `byok_kill_switch.tla`, consent
 # proof-per-version via `dpa_versioning_grace.tla`) and previously had NO
-# PR-gate CI exposure — see `specs/_audits/tla-followup-tickets.md` FT-8.
+# PR-gate CI exposure — see `specs/_audits/sealed/tla-followup-tickets.md` FT-8.
 #
 # CI block on any spec failure (exit code != 0).
 
@@ -48,8 +48,8 @@ jobs:
         env:
           TLC_VERSION: '1.8.0'
           # DRIFT-WAIVED-FT-3 — this SHA-pin is the wave-20 archive value
-          # tracked in `specs/_audits/2026-05-15-debt-014-ft3-ft4-waivers.md`
-          # §FT-3 and audited in `specs/_audits/2026-05-16-wave21-adversarial-review.md`
+          # tracked in `specs/_audits/sealed/2026-05-15-debt-014-ft3-ft4-waivers.md`
+          # §FT-3 and audited in `specs/_audits/sealed/2026-05-16-wave21-adversarial-review.md`
           # §3.3 (W21-R-P2-02). Upstream v1.8.0 release artifact has drifted
           # to `25780ac95...` post-pin (release re-hash incident). Behaviour
           # is fail-CLOSED by design — the PR gate refuses to run until

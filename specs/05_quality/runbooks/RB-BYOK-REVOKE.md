@@ -371,7 +371,7 @@ Required within 24h (SEV-1) or 7d (SEV-2):
 **Participants:** Security Lead (dual-hat) + SRE (dual-hat) + Crypto SME (dual-hat) + AppSec (dual-hat)
 **Duration:** 2h drill + 1h debrief | **Result:** PASS | **Drift findings:** 0
 
-Full dry-run report: `specs/_audits/2026-05-14-rb-byok-revoke-dry-run.md`.
+Full dry-run report: `specs/_audits/sealed/2026-05-14-rb-byok-revoke-dry-run.md`.
 
 Kill switch p99 validated at 2s (SLA ≤ 360s). Audit chain verified. Customer notification templates reviewed. No runbook drift identified. All §3–§8 steps executable in staging environment.
 
@@ -383,7 +383,7 @@ Kill switch p99 validated at 2s (SLA ≤ 360s). Audit chain verified. Customer n
 - `specs/03_architecture/invariant_registry.md §3.12` (INV-BYOK-CRYPTO-SOVEREIGNTY)
 - `specs/04_sprints/S14/work_items/WI-S14-006-cmk-revocation-kill-switch-5min-chaos-drill.md`
 - `specs/04_sprints/S14/work_items/WI-S14-009-tla-region-residency-rb-byok-revoke-pentest-prr.md`
-- `specs/_audits/2026-05-14-rb-byok-revoke-dry-run.md`
+- `specs/_audits/sealed/2026-05-14-rb-byok-revoke-dry-run.md`
 - `scripts/byok_kill_switch_drill.sh`
 - `.github/workflows/byok_kill_switch_drill_weekly.yml`
 - NIST SP 800-57 Pt 1 Rev 5 §5.3 (key management)

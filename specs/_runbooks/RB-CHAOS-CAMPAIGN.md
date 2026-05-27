@@ -17,9 +17,9 @@ tags: ["runbook", "chaos", "wave-22", "fail-closed", "r-prep"]
 # RB-CHAOS-CAMPAIGN — Wave-22/23 chaos campaign harness runbook
 
 > Companion audits:
-> [`specs/_audits/2026-05-16-chaos-campaign-harness.md`](../_audits/2026-05-16-chaos-campaign-harness.md)
+> [`specs/_audits/sealed/2026-05-16-chaos-campaign-harness.md`](../_audits/2026-05-16-chaos-campaign-harness.md)
 > (wave-22 baseline — 8 isolated scenarios) and
-> [`specs/_audits/2026-05-16-chaos-combined-failures.md`](../_audits/2026-05-16-chaos-combined-failures.md)
+> [`specs/_audits/sealed/2026-05-16-chaos-combined-failures.md`](../_audits/2026-05-16-chaos-combined-failures.md)
 > (wave-23 — 3 combined-failure orchestrated scenarios).
 > Adjacent: `RB-ACTIVE-FAILOVER`, `RB-AUDIT-EXPORT-INTEGRITY`,
 > `RB-COLD-RESTORE-FROM-ZERO`, `RB-CHAOS-CATALOG`.
@@ -102,7 +102,7 @@ Combined-recovery rules of thumb:
 Each combined scenario is encoded as a single `#[test]` in
 `tests/chaos/tests/campaign_combined_*.rs` and is gated by the same
 `chaos` feature flag as the wave-22 scenarios. The wave-23 audit
-(`specs/_audits/2026-05-16-chaos-combined-failures.md`) documents each
+(`specs/_audits/sealed/2026-05-16-chaos-combined-failures.md`) documents each
 pair's chaos injection sequence, fail-CLOSED contract, audit anchors,
 and recovery sequence in detail.
 
@@ -129,7 +129,7 @@ Add a new isolated scenario:
    `#[cfg(feature = "chaos")]`, asserting the observable triplet.
 3. Register the test binary in `tests/chaos/Cargo.toml` `[[test]]`.
 4. Append a row to the matrix in
-   `specs/_audits/2026-05-16-chaos-campaign-harness.md` and to the
+   `specs/_audits/sealed/2026-05-16-chaos-campaign-harness.md` and to the
    matrix above.
 5. Run `cargo test -p chaos-campaign --features chaos` and
    `cargo clippy -p chaos-campaign --all-targets --features chaos -- -D warnings`.
@@ -142,7 +142,7 @@ Add a new combined-failure scenario (wave-23 pattern):
    `#[cfg(feature = "chaos")]` gated.
 3. Register the test binary in `tests/chaos/Cargo.toml` `[[test]]`.
 4. Append a row to §combined-failure-recovery above and to the matrix
-   in `specs/_audits/2026-05-16-chaos-combined-failures.md`.
+   in `specs/_audits/sealed/2026-05-16-chaos-combined-failures.md`.
 5. Same gates: `cargo test -p chaos-campaign --features chaos` and
    `cargo clippy -p chaos-campaign --all-targets --features chaos -- -D warnings`.
 

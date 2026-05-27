@@ -11,7 +11,7 @@ future agent tries to re-add an equivalent stale row.
 Scope (active rows only — scrub annotations / scrub audit doc are
 exempt):
 
-  - specs/_audits/2026-05-16-ga-final-checklist.md
+  - specs/_audits/sealed/2026-05-16-ga-final-checklist.md
       * Lines beginning with a checklist token (`- [ ]`, `- [x]`, or
         `- [X]`) — either unchecked DEFER rows the operator still
         evaluates, OR checked rows whose closure-narrative still
@@ -19,7 +19,7 @@ exempt):
         functionally-tighter regex below matches all three forms by
         design (see CHECKLIST_ROW_RE).
 
-  - specs/_audits/2026-05-16-ga-readiness-final.md
+  - specs/_audits/sealed/2026-05-16-ga-readiness-final.md
       * Lines inside §11 table that are *data rows* (start with `| `
         and a numeric index in the first cell), i.e. the canonical
         DEFER counter table.
@@ -52,8 +52,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-READINESS_DOC = REPO_ROOT / "specs/_audits/2026-05-16-ga-readiness-final.md"
-CHECKLIST_DOC = REPO_ROOT / "specs/_audits/2026-05-16-ga-final-checklist.md"
+READINESS_DOC = REPO_ROOT / "specs/_audits/sealed/2026-05-16-ga-readiness-final.md"
+CHECKLIST_DOC = REPO_ROOT / "specs/_audits/sealed/2026-05-16-ga-final-checklist.md"
 
 STALE_SIGNALS = (
     "GHA billing",
@@ -141,7 +141,7 @@ def main() -> int:
         "framed as a GHA-billing / CI-offline blocker is stale by definition. "
         "Remove the row, decrement the §11 DEFER counter, and add a wave-25-"
         "style scrub annotation if you want to record the deletion in-band.\n"
-        "See: specs/_audits/2026-05-16-ga-readiness-defer-scrub.md"
+        "See: specs/_audits/sealed/2026-05-16-ga-readiness-defer-scrub.md"
     )
     return 1
 

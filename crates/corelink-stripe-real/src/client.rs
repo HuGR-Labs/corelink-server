@@ -12,7 +12,7 @@
 //!   `STRIPE_SECRET_KEY`. This is the path that runs while the HuGR
 //!   Wallet broker is temporarily unavailable.
 //! - `wallet-broker` (the wave-31 stream-1 path, kept whole — see
-//!   `specs/_audits/2026-05-16-wallet-broker-stripe.md`): call routes
+//!   `specs/_audits/sealed/2026-05-16-wallet-broker-stripe.md`): call routes
 //!   through `{HUGR_WALLET_BASE}/_wallet/proxy/{HUGR_STRIPE_REF}/<path>`
 //!   with `Authorization: Bearer hugrw_<token>`; CoreLink never holds
 //!   the real upstream `sk_live_...`. Re-enable by flipping

@@ -191,4 +191,4 @@ Once verify is green, file the sign-off line in
 - Bootstrap script: `scripts/admin/statuspage-bootstrap.sh`
 - Verify script (wave-25): `scripts/statuspage-init-verify.py`
 - GA gate: `specs/_compliance/GA-GATE-CRITERIA.md`
-- Cutover dependency map: `specs/_audits/2026-05-16-cutover-dependency-map.md`
+- Cutover dependency map: `specs/_audits/sealed/2026-05-16-cutover-dependency-map.md`

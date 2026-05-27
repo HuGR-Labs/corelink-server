@@ -1,7 +1,7 @@
 //! `TokioPostgresExecutor` — production `NeonExecutor` adapter (wave-20).
 //!
 //! Closes the wave-19 deferred binder caveat from
-//! `specs/_audits/2026-05-16-neon-shadow-real-driver.md` §7:
+//! `specs/_audits/sealed/2026-05-16-neon-shadow-real-driver.md` §7:
 //!
 //! > **Real `TokioPostgresExecutor` binder** — deferred to the server-wire
 //! > follow-on (the `apps/server` boot path needs the `deadpool-postgres`

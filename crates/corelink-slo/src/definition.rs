@@ -39,7 +39,7 @@ pub enum Sli {
     RateLimitWithinQuota,
     /// `SLI-AVAIL-CP` per `slo_catalog.md §4.1` — control-plane
     /// (auth + admin + non-storage) availability. Closure from
-    /// `specs/_audits/2026-05-14-slo-instrumentation-gaps.md` P0-1.
+    /// `specs/_audits/sealed/2026-05-14-slo-instrumentation-gaps.md` P0-1.
     AvailControlPlane,
     /// `SLI-LATENCY-CAS-PUT-P99` per `slo_catalog.md §4.7` — CAS PUT
     /// p99 latency target (1s team / 600ms enterprise, blobs ≤ 16 MiB).
@@ -81,7 +81,7 @@ pub enum Sli {
     /// erasure resolution freshness target (≥ 99 % of erasure tickets
     /// resolve within 30 days; LGPD Art. 19 + GDPR Art. 12.3 + CCPA
     /// §1798.130 SLA). Bound from
-    /// `specs/_audits/2026-05-15-dsr-worker-production.md §3`
+    /// `specs/_audits/sealed/2026-05-15-dsr-worker-production.md §3`
     /// closure of WI-S11-002 SLI binding gap. The emit point is the
     /// `corelink-privacy-erasure-worker` 24h verification job which
     /// observes `corelink_dsr_resolution_hours` once per completed
@@ -342,7 +342,7 @@ mod tests {
     #[test]
     fn audit_2026_05_15_dsr_worker_closure_present() {
         // S-11 / WI-S11-002 SLI binding closure shipped per
-        // `specs/_audits/2026-05-15-dsr-worker-production.md §3`.
+        // `specs/_audits/sealed/2026-05-15-dsr-worker-production.md §3`.
         let v = canonical_slis();
         let slugs: std::collections::HashSet<&str> =
             v.iter().map(|s| s.slug()).collect();
@@ -360,7 +360,7 @@ mod tests {
     #[test]
     fn audit_2026_05_14_p0_closures_present() {
         // Five P0 closures shipped per
-        // `specs/_audits/2026-05-14-slo-instrumentation-gaps.md §5`.
+        // `specs/_audits/sealed/2026-05-14-slo-instrumentation-gaps.md §5`.
         let v = canonical_slis();
         let slugs: std::collections::HashSet<&str> =
             v.iter().map(|s| s.slug()).collect();

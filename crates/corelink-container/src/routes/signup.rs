@@ -86,7 +86,7 @@
 //!
 //! # Audit cross-reference
 //!
-//! `specs/_audits/2026-05-16-signup-corelink-dev-backend.md`.
+//! `specs/_audits/sealed/2026-05-16-signup-corelink-dev-backend.md`.
 
 use std::sync::{Arc, Mutex};
 

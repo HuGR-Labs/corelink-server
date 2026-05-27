@@ -5,7 +5,7 @@
 #
 # Operator runs this AFTER a tenant has completed the signup flow at
 # https://signup.corelink.humangr.com/pilot/<token> (token-based slot reservation —
-# see specs/_audits/2026-05-16-pilot-signup-pipeline.md §1). This script
+# see specs/_audits/sealed/2026-05-16-pilot-signup-pipeline.md §1). This script
 # enacts the pilot tier upgrade on the tenant record:
 #
 #   1. Verifies the tenant exists in the canonical D1 tenants table.
@@ -66,7 +66,7 @@ EXAMPLES:
   ${SCRIPT_NAME} --tenant-id 4a2c0a7e-1b9f-4d3a-9c0e-7e1f2b3a4c5d --tier pilot --cap 100GB
   ${SCRIPT_NAME} --tenant-id 4a2c0a7e-1b9f-4d3a-9c0e-7e1f2b3a4c5d --tier pilot --cap 100GB --dry-run
 
-See: specs/_audits/2026-05-16-pilot-signup-pipeline.md §2 (operator pre-flight).
+See: specs/_audits/sealed/2026-05-16-pilot-signup-pipeline.md §2 (operator pre-flight).
 USAGE
 }
 

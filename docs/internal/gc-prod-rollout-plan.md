@@ -107,7 +107,7 @@ inconsistent states.
 
 ## 7. References
 
-- [PRR-S06 promotion decision](../../specs/04_sprints/S06/PRR-S06.md)
+- [PRR-S06 promotion decision](../../specs/04_sprints/_sealed/S06/PRR-S06.md)
 - [SLA addendum](../customer/gc-sla-addendum-s06-ga.md)
 - [Release notes S-06](../customer/release-notes-s06.md)
 - [How CoreLink reclaims storage safely](../customer/gc-feature-overview.md)

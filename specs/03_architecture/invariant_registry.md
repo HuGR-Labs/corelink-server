@@ -18,7 +18,7 @@ tags: ["architecture", "invariants", "registry", "tla"]
 
 > **doc_status:** DRAFT
 > **Versão:** 0.2.3
-> **Última atualização:** 2026-05-16 (Wave-24 R-PREP `auth_pat_revoke.tla` dispatch: INV-PAT-REVOKE-PROPAGATION §3.28 PLANNED → TLA-VERIFIED via new `specs/tla/auth_pat_revoke.tla` + PR/nightly cfgs + CI matrix wiring; safety 5 invariants (`InvRevokedTokenNeverValidates` + `InvRevokeAuditAtomic` + `InvRevokeIsIdempotent` + `InvRegionImpliesSoTRevoked` + `InvRevokeIsMonotonic`) + liveness `InvRevokeAtLeastOncePropagation` proven; PR-lane 1 263 distinct states / depth 10 / 3 s wall clock; nightly 61 293 distinct states / depth 14 / 1 min 06 s wall clock; all temporal branches green; see `specs/_audits/2026-05-16-auth-pat-revoke-tla.md`. Wave-23 invariant-draft sweep: §3.27 OPS domain (4 INVs INV-S17-OPS-EXCLUSIVITY / INV-S17-SEV1-DRILL-PAUSE / INV-S17-CHAOS-STAGING-ONLY / INV-S17-ONCALL-FATIGUE-AUTOROTATE) promoted from S-17 `_spec_contract.md §8`; §3.28 PAT revocation domain (INV-PAT-REVOKE-PROPAGATION) promoted from apps/docs OpenAPI + 4 i18n MDX endpoint contracts; 5 aliases added (INV-AUDIT-CHAIN, INV-AUDIT-EMIT-ATOMIC, INV-AUTH-WEBAUTHN family-shorthand, INV-BLAKE3-256-LOWER-HEX-64 subsumed) — see `specs/_audits/2026-05-16-inv-draft-sweep.md`. 2026-05-07 Hardening: INV-LRU-CONSISTENCY race-window claim corrected (S-07 R5 P2-1); INV-OBS-CARDINALITY-BUDGET suspended-tier policy documented (S-09 R5 P2-3))
+> **Última atualização:** 2026-05-16 (Wave-24 R-PREP `auth_pat_revoke.tla` dispatch: INV-PAT-REVOKE-PROPAGATION §3.28 PLANNED → TLA-VERIFIED via new `specs/tla/auth_pat_revoke.tla` + PR/nightly cfgs + CI matrix wiring; safety 5 invariants (`InvRevokedTokenNeverValidates` + `InvRevokeAuditAtomic` + `InvRevokeIsIdempotent` + `InvRegionImpliesSoTRevoked` + `InvRevokeIsMonotonic`) + liveness `InvRevokeAtLeastOncePropagation` proven; PR-lane 1 263 distinct states / depth 10 / 3 s wall clock; nightly 61 293 distinct states / depth 14 / 1 min 06 s wall clock; all temporal branches green; see `specs/_audits/sealed/2026-05-16-auth-pat-revoke-tla.md`. Wave-23 invariant-draft sweep: §3.27 OPS domain (4 INVs INV-S17-OPS-EXCLUSIVITY / INV-S17-SEV1-DRILL-PAUSE / INV-S17-CHAOS-STAGING-ONLY / INV-S17-ONCALL-FATIGUE-AUTOROTATE) promoted from S-17 `_spec_contract.md §8`; §3.28 PAT revocation domain (INV-PAT-REVOKE-PROPAGATION) promoted from apps/docs OpenAPI + 4 i18n MDX endpoint contracts; 5 aliases added (INV-AUDIT-CHAIN, INV-AUDIT-EMIT-ATOMIC, INV-AUTH-WEBAUTHN family-shorthand, INV-BLAKE3-256-LOWER-HEX-64 subsumed) — see `specs/_audits/sealed/2026-05-16-inv-draft-sweep.md`. 2026-05-07 Hardening: INV-LRU-CONSISTENCY race-window claim corrected (S-07 R5 P2-1); INV-OBS-CARDINALITY-BUDGET suspended-tier policy documented (S-09 R5 P2-3))
 > **Owner:** Gustavo Schneiter
 > **Aprovador Final:** Gustavo Schneiter
 > **Revisores:** ⚠️ **staffing-blocked** — promoção a `doc_status: FROZEN` bloqueada até ≥ 2 reviewers nomeados conforme roles indicados (endereça F-09 audit Lote 3+4)
@@ -566,7 +566,7 @@ INVs introduced by the `corelink-rollout-controller` crate (WI-S13-005 progressi
 
 ### 3.27 Operational discipline domain (domain OPS / S-17) — Wave-23 invariant-draft sweep (2026-05-16)
 
-INVs introduced in `specs/04_sprints/S17/_spec_contract.md §8 "Cross-WI invariants (S-17 operational discipline)"` (Wave-19 sprint expansion) but never promoted to the canonical registry. Promoted here from S-17 `_spec_contract` declarations as part of the Wave-23 invariant-draft sweep audit. Severity HIGH (operational discipline → ambiguous SLO attribution / oncall capacity / GA-blocking chaos-in-prod).
+INVs introduced in `specs/04_sprints/_sealed/S17/_spec_contract.md §8 "Cross-WI invariants (S-17 operational discipline)"` (Wave-19 sprint expansion) but never promoted to the canonical registry. Promoted here from S-17 `_spec_contract` declarations as part of the Wave-23 invariant-draft sweep audit. Severity HIGH (operational discipline → ambiguous SLO attribution / oncall capacity / GA-blocking chaos-in-prod).
 
 | ID | Nome | Severidade | Descrição | Enforcement | TLA+ file |
 |---|---|---|---|---|---|
@@ -576,7 +576,7 @@ INVs introduced in `specs/04_sprints/S17/_spec_contract.md §8 "Cross-WI invaria
 | **INV-S17-ONCALL-FATIGUE-AUTOROTATE** | Primary oncall hitting hard thresholds auto-handoff to backup | HIGH | `corelink-oncall::threshold` module observes Sev1>3/week, Sev2>8/week, total pages>15/non-rotation week; triggers `PagerDutyClient::handoff_to_backup`; emits audit before rotation. Rationale: alerts alone insufficient — observed fatigue without escape valve causes silent quality decline | Integration test threshold-cross handoff + audit emit ordering check | N/A (operational invariant; observation-driven handoff) |
 
 **Cross-references**:
-- `specs/04_sprints/S17/_spec_contract.md §8` — origin declarations (Wave-19 sprint expansion).
+- `specs/04_sprints/_sealed/S17/_spec_contract.md §8` — origin declarations (Wave-19 sprint expansion).
 - `specs/03_architecture/resilience_patterns.md` — PAT-RUNBOOK-DRILL-001 + PAT-CORRELATION-ID-001 sibling operational patterns.
 - `compliance_matrix.md` — operational discipline mapped to SOC 2 CC7.3 (system operations) + SRE-grade GA gate (S-17 §10).
 
@@ -613,14 +613,14 @@ INV introduced in `apps/server/src/routes/signup.rs` `insert_or_existing` (wave-
 - `apps/server/tests/signup_pilot.rs::duplicate_email_returns_original_tenant_id` — wire-level integration test for the idempotency claim.
 - `specs/tla/signup_resignup.tla` (DEBT-014 FT-9) — disjoint sibling covering the S-19 production-tenant onboarding path.
 - `specs/tla/audit_emit_atomic.tla` (DEBT-005 batch 2) — inherits INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER pattern; THIS spec proves the signup-route-specific binding (`reserved` vs `duplicate` exit_status pairing).
-- `specs/_audits/2026-05-16-wave29-closure.md §6.2` — DRAFT candidate text + deferral rationale.
-- `specs/_audits/2026-05-16-inv-signup-token-tla.md` — Wave-30 R-PREP dispatch audit (TLC verification ledger).
+- `specs/_audits/sealed/2026-05-16-wave29-closure.md §6.2` — DRAFT candidate text + deferral rationale.
+- `specs/_audits/sealed/2026-05-16-inv-signup-token-tla.md` — Wave-30 R-PREP dispatch audit (TLC verification ledger).
 
 **Aliases históricos:** nenhum. Declared inline in `signup.rs` `insert_or_existing` doc comment + wave-29 stream-10 closure §6.2 candidate registration, promoted to registry in Wave-30 stream-4 R-PREP (2026-05-16).
 
 ### 3.30 INV inheritance index (machine-readable structured field) — W26-P2-03 (2026-05-16)
 
-Wave-26 adversarial review (`specs/_audits/2026-05-16-p2-absorption-sweep-w25-28.md §49 W26-P2-03`) identified that inheritance chains (`INV-CAS-IDEMPOTENCY → cas_integrity.tla`, `INV-GC-004 → InvGCReRefProtected`) were asserted by prose only — a future regression dropping an inherited TLA property would not be caught mechanically. This section adds a **structured `inherits_from` field** that machines can read, plus a reciprocal `inherited_by` index. Validator `scripts/validate_inv_inheritance.py` parses this section and enforces:
+Wave-26 adversarial review (`specs/_audits/sealed/2026-05-16-p2-absorption-sweep-w25-28.md §49 W26-P2-03`) identified that inheritance chains (`INV-CAS-IDEMPOTENCY → cas_integrity.tla`, `INV-GC-004 → InvGCReRefProtected`) were asserted by prose only — a future regression dropping an inherited TLA property would not be caught mechanically. This section adds a **structured `inherits_from` field** that machines can read, plus a reciprocal `inherited_by` index. Validator `scripts/validate_inv_inheritance.py` parses this section and enforces:
 
 - Every `inherits_from` target exists (TLA file on disk, OR property string present in TLA spec, OR parent INV ID present in registry).
 - Every parent target has a reciprocal `inherited_by` entry listing the child INV (bidirectional integrity).
@@ -799,7 +799,7 @@ CRITICAL invariantes **DEVEM** ter TLA+ spec + model check verde no CI (CTRL-FOR
 | INV-GC-004 | Coberto por `gc_correctness.tla` (InvGCReRefProtected) | ✅ GREEN |
 | INV-AUDIT-APPEND-ONLY | `specs/tla/audit_immutability.tla` + D1 schema + daily verify | ✅ GREEN (Lote 6.2) |
 | INV-DIGEST-VERIFICATION | Coberto por `cas_integrity.tla` (InvPoisoningRejected) | ✅ GREEN |
-| INV-AUTH-REVOCATION-IDEMPOTENT | `specs/tla/auth_revocation.tla` + `.cfg` (PR) + `_nightly.cfg` | ✅ GREEN (R-PREP 2026-05-15 audit `specs/_audits/2026-05-15-tla-coverage-audit.md`) — TLC: 6 785 distinct states, ~2 s local; `InvRevocationIdempotent`. |
+| INV-AUTH-REVOCATION-IDEMPOTENT | `specs/tla/auth_revocation.tla` + `.cfg` (PR) + `_nightly.cfg` | ✅ GREEN (R-PREP 2026-05-15 audit `specs/_audits/sealed/2026-05-15-tla-coverage-audit.md`) — TLC: 6 785 distinct states, ~2 s local; `InvRevocationIdempotent`. |
 | INV-AUTH-REVOCATION-SLO-60S | Coberto por `auth_revocation.tla` (`RevokedEventuallyConverges` temporal property, WF on Deliver) | ✅ GREEN (R-PREP 2026-05-15) — topological convergence proved; 60s wall-clock budget enforced separately by chaos tests + SLO alerts. |
 | INV-AUTH-MASS-REVOKE-ATOMIC | Coberto por `auth_revocation.tla` (`InvMassRevokeAtomicOutbox` + atomic `MassRevoke` action) | ✅ GREEN (R-PREP 2026-05-15) — single Neon UPDATE flips all unrevoked PATs of tenant in one step. |
 | INV-AUTH-PROPAGATION-AT-LEAST-ONCE | Coberto por `auth_revocation.tla` (`InvRegionMonotonic` + WF Deliver) | ✅ GREEN (R-PREP 2026-05-15). |
@@ -1031,7 +1031,7 @@ Por 6 meses (até 2026-10-24), estes aliases continuam referenciáveis mas dispa
 | `INV-AUDIT-CHAIN` (shortened form in S-03 `_spec_contract.md` v1.3.2 + PRR-S03 R-S03-007; surfaced Wave-23 sweep) | INV-AUDIT-APPEND-ONLY |
 | `INV-AUDIT-EMIT-ATOMIC` (shortened form in Wave-20+ crates: `corelink-statuspage-real`, `corelink-slack-real`, `corelink-region`, `corelink-rotation-adapters`, `corelink-drata-sync`; surfaced Wave-23 sweep) | INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER |
 | `INV-AUTH-WEBAUTHN` (family shorthand in `crates/corelink-webauthn/README.md`; refers to 5-INV WebAuthn family §3.14 — UV-REQUIRED-ADMIN / ATTESTATION-VERIFIED / SIGN-COUNT-MONOTONIC / ORIGIN-EXACT / RP-ID-CANONICAL; surfaced Wave-23 sweep) | §3.14 AUTH-WEBAUTHN family (no single canonical; alias is family-collective shorthand) |
-| `INV-BLAKE3-256-LOWER-HEX-64` (S-06 R4 review recommendation `specs/04_sprints/S06/_review_R4_opus_part1.md §P3-002-1`; never canonicalized as separate INV — digest canonical-form constraint subsumed by `INV-CAS-INTEGRITY` write-time hash check + `INV-CAS-IDEMPOTENCY` BLAKE3 deterministic enforcement; surfaced Wave-23 sweep) | INV-CAS-INTEGRITY (digest canonical form subsumed) |
+| `INV-BLAKE3-256-LOWER-HEX-64` (S-06 R4 review recommendation `specs/04_sprints/_sealed/S06/_review_R4_opus_part1.md §P3-002-1`; never canonicalized as separate INV — digest canonical-form constraint subsumed by `INV-CAS-INTEGRITY` write-time hash check + `INV-CAS-IDEMPOTENCY` BLAKE3 deterministic enforcement; surfaced Wave-23 sweep) | INV-CAS-INTEGRITY (digest canonical form subsumed) |
 
 ---
 

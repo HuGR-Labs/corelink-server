@@ -90,7 +90,7 @@ and 30d sustained correctness gate.
 
 - [SLA addendum](./gc-sla-addendum-s06-ga.md)
 - [How CoreLink reclaims storage safely](./gc-feature-overview.md)
-- [PRR-S06 promotion decision](../../specs/04_sprints/S06/PRR-S06.md)
+- [PRR-S06 promotion decision](../../specs/04_sprints/_sealed/S06/PRR-S06.md)
 
 ## Change log
 

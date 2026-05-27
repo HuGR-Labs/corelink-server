@@ -302,7 +302,7 @@ breaking changes that require a `1`-yr deprecation per WI §23.
 
 ## Cross-references
 
-- **WI**: `specs/04_sprints/S03/work_items/WI-S03-007-audit-events-evt047-chain.md`
+- **WI**: `specs/04_sprints/_sealed/S03/work_items/WI-S03-007-audit-events-evt047-chain.md`
 - **Implementation**: `crates/corelink-audit/`
 - **Forward consumer**: `WI-S09-004` (audit chain processor; reads
   persisted JCS bytes; computes `chain_hash_n`).

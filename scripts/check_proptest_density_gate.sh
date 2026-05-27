@@ -13,8 +13,8 @@
 #   1  → gate failed (new or regressed gap below 1.0 ratio)
 #   2  → gate misconfiguration (script can't read inputs)
 #
-# Source audit: specs/_audits/2026-05-15-proptest-density.md
-# Followup:    specs/_audits/proptest-followup-tickets.md (WI-PROPTEST-FU-005)
+# Source audit: specs/_audits/sealed/2026-05-15-proptest-density.md
+# Followup:    specs/_audits/sealed/proptest-followup-tickets.md (WI-PROPTEST-FU-005)
 
 set -euo pipefail
 LC_NUMERIC=C

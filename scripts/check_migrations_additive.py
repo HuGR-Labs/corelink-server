@@ -4,7 +4,7 @@ Enforce INV-AUTH-MIGRATION-ADDITIVE (HIGH) on every SQL migration in
 `migrations/` and `migrations/d1/`.
 
 Canonical sources:
-- specs/04_sprints/S03/work_items/WI-S03-005-neon-schema-auth-tables.md §6.1.6
+- specs/04_sprints/_sealed/S03/work_items/WI-S03-005-neon-schema-auth-tables.md §6.1.6
 - specs/03_architecture/invariant_registry.md INV-AUTH-MIGRATION-ADDITIVE
 - specs/03_architecture/adrs/ADR-0031-neon-schema-pgcrypto.md §5.6
 

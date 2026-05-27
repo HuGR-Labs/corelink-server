@@ -23,7 +23,7 @@ tags: ["soc2", "tsc-2017", "tsc-2022", "evidence-rollup", "drata", "auditor-read
 >
 > **Observation period (this snapshot):** 2026-05-15 (cut date) to 2026-06-15 (D+30 implementation SEAL / staging-bake closure). This rollup is the **consolidated index** that points each TSC criterion at: (a) our CTRL ID, (b) evidence stream type, (c) artifact location with commit/source hash, (d) collection cadence, (e) status.
 >
-> **Companion docs (canonical, do not duplicate):** `specs/_compliance/SOC2-GAP-ANALYSIS.md` (33 GAPs · severity · ETA), `specs/_compliance/DRATA-INTEGRATION-COVERAGE.md` (six EvidenceStream variants × TSC mapping), `specs/_audits/2026-05-14-soc2-readiness-score.md` (per-criterion R/Y/G scoring), `specs/_compliance/SOC2-ROADMAP.md` (T+0..T+6m phase plan), `specs/03_architecture/compliance_matrix.md` (Level-3 framework crosswalk).
+> **Companion docs (canonical, do not duplicate):** `specs/_compliance/SOC2-GAP-ANALYSIS.md` (33 GAPs · severity · ETA), `specs/_compliance/DRATA-INTEGRATION-COVERAGE.md` (six EvidenceStream variants × TSC mapping), `specs/_audits/sealed/2026-05-14-soc2-readiness-score.md` (per-criterion R/Y/G scoring), `specs/_compliance/SOC2-ROADMAP.md` (T+0..T+6m phase plan), `specs/03_architecture/compliance_matrix.md` (Level-3 framework crosswalk).
 >
 > **Auditor entry point:** read this doc first; then drop down to companion-doc detail. Auditor walkthrough script: `specs/_compliance/AUDITOR-WALKTHROUGH-SCRIPT.md`.
 
@@ -80,7 +80,7 @@ Format key:
 
 | TSC | CTRL ID | Evidence type | Artifact location | Cadence | Status | Last update |
 |---|---|---|---|---|---|---|
-| CC3.1 | process control (sprint GA-go gates) | change_management | `specs/04_sprints/S20/_spec_contract.md` GA-go gates + `specs/03_architecture/slo_catalog.md` | PER-RELEASE | I | f18acdc |
+| CC3.1 | process control (sprint GA-go gates) | change_management | `specs/04_sprints/_sealed/S20/_spec_contract.md` GA-go gates + `specs/03_architecture/slo_catalog.md` | PER-RELEASE | I | f18acdc |
 | CC3.2 | process control (failure-mode taxonomy + STRIDE) | change_management | `specs/03_architecture/failure_modes.md` FM-XXX taxonomy + `specs/_audits/matrix-stride-ctrl.csv` | AUTO | I | f18acdc |
 | CC3.3 | CTRL-AUTH-010 + PAT-DUAL-APPROVAL-001 | credential_management | INV-ADMIN-DUAL-APPROVAL + INV-ADMIN-MFA-FRESHNESS + INV-AUDIT-APPEND-ONLY | AUTO | P (GAP-07 — fraud-specific model) | f18acdc |
 | CC3.4 | process control (ADR + sprint preflight) | change_management | `specs/03_architecture/adrs/` + sprint preflight reviews `specs/_audits/2026-05-14-s*-sprint-preflight-review.md` | AUTO | I | f18acdc |
@@ -89,7 +89,7 @@ Format key:
 
 | TSC | CTRL ID | Evidence type | Artifact location | Cadence | Status | Last update |
 |---|---|---|---|---|---|---|
-| CC4.1 | CTRL-COMP-001 (continuous compliance) | audit_logs | Drata continuous monitoring + `specs/_audits/templates/byok-quarterly-review.md` + adversarial summaries + **canonical-consistency validator** (`scripts/validate_canonical_consistency.py` + `.github/workflows/canonical-consistency.yml` on every PR; baseline `specs/_audits/2026-05-15-canonical-consistency-baseline.md`; triage `specs/_runbooks/RB-CANONICAL-DRIFT.md`) — cross-validates INV registry × TLA+ × code × tests for spec-corpus drift | DAILY (Drata) + PER-PR (canonical-consistency) | I | wt/r-prep-canonical-lint |
+| CC4.1 | CTRL-COMP-001 (continuous compliance) | audit_logs | Drata continuous monitoring + `specs/_audits/templates/byok-quarterly-review.md` + adversarial summaries + **canonical-consistency validator** (`scripts/validate_canonical_consistency.py` + `.github/workflows/canonical-consistency.yml` on every PR; baseline `specs/_audits/sealed/2026-05-15-canonical-consistency-baseline.md`; triage `specs/_runbooks/RB-CANONICAL-DRIFT.md`) — cross-validates INV registry × TLA+ × code × tests for spec-corpus drift | DAILY (Drata) + PER-PR (canonical-consistency) | I | wt/r-prep-canonical-lint |
 | CC4.2 | process control (deficiency comms via GAP register) | audit_logs (`corelink.compliance.review_completed`) | GAP-XX log (this rollup + SOC2-GAP-ANALYSIS) · **weekly compliance digest LANDED 2026-05-15** (`scripts/compliance-weekly-digest.py` + `.github/workflows/compliance-weekly.yml` Mon 09:00 UTC + `specs/_runbooks/RB-COMPLIANCE-WEEKLY-REVIEW.md` + `specs/_compliance/weekly-digests/`) | WEEKLY | **I (GAP-08 closed 2026-05-15)** | wt/r-prep-compliance-weekly |
 
 ### 2.5 CC5 Control Activities
@@ -104,7 +104,7 @@ Format key:
 
 | TSC | CTRL ID | Evidence type | Artifact location | Cadence | Status | Last update |
 |---|---|---|---|---|---|---|
-| CC6.1 | CTRL-AUTH-001/004/007/010 + CTRL-SECRETS-DRIFT-001 | credential_management | `specs/03_architecture/auth_model.md` + Clerk SSO + MFA + `compliance/byok-fips-matrix.md` + `docs/internal/secrets-checklist.md` (**108-row matrix; DEBT-001 drift closure commit `52624e7`**) + `scripts/validate_secrets_matrix.py` (post-closure: `code_only=0`, matrix=109, in_both=89, matrix_only=20) + daily drift gate `.github/workflows/secrets-drift.yml` (90d JSON artifact) + triage `specs/_runbooks/RB-SECRETS-DRIFT.md` + baseline `specs/_audits/2026-05-15-secrets-coverage-baseline.md` + closure register `specs/_audits/2026-05-15-debt-register.md` §4.1 (DEBT-001 CLOSED 2026-05-15 commit `52624e7`) | AUTO | **G — blocking-GA (GAP-02 closing D+30; secrets-drift evidence ADDED 2026-05-15; DEBT-001 secrets-matrix drift CLOSED 2026-05-15 commit `52624e7`)** | 52624e7 |
+| CC6.1 | CTRL-AUTH-001/004/007/010 + CTRL-SECRETS-DRIFT-001 | credential_management | `specs/03_architecture/auth_model.md` + Clerk SSO + MFA + `compliance/byok-fips-matrix.md` + `docs/internal/secrets-checklist.md` (**108-row matrix; DEBT-001 drift closure commit `52624e7`**) + `scripts/validate_secrets_matrix.py` (post-closure: `code_only=0`, matrix=109, in_both=89, matrix_only=20) + daily drift gate `.github/workflows/secrets-drift.yml` (90d JSON artifact) + triage `specs/_runbooks/RB-SECRETS-DRIFT.md` + baseline `specs/_audits/sealed/2026-05-15-secrets-coverage-baseline.md` + closure register `specs/_audits/sealed/2026-05-15-debt-register.md` §4.1 (DEBT-001 CLOSED 2026-05-15 commit `52624e7`) | AUTO | **G — blocking-GA (GAP-02 closing D+30; secrets-drift evidence ADDED 2026-05-15; DEBT-001 secrets-matrix drift CLOSED 2026-05-15 commit `52624e7`)** | 52624e7 |
 | CC6.2 | CTRL-AUTHZ-001 | access_reviews | Clerk identity provisioning · WI-S19-001 onboarding · INV-ONBOARD-DPA-FIRST | AUTO | I | f18acdc |
 | CC6.3 | CTRL-AUTHZ-002 + CTRL-CRED-003 | access_reviews | Clerk RBAC + INV-DATA-ERASURE-COMPLETE + INV-ERASURE-ATTESTATION-SIGNED | QUARTERLY (target) | P (GAP-01 + GAP-26 — automation pending) | f18acdc |
 | CC6.4 | — | OOS_INHERITED | `legal/sub-processors.md` (Cloudflare/AWS/GCP/Azure SOC 2 reports referenced) | ANNUAL | P (GAP-09 — refresh cadence) | f18acdc |
@@ -117,17 +117,17 @@ Format key:
 
 | TSC | CTRL ID | Evidence type | Artifact location | Cadence | Status | Last update |
 |---|---|---|---|---|---|---|
-| CC7.1 | CTRL-SUPPLY-004 + CTRL-SUPPLY-005 | vulnerability_management | ADR-0037 Dependency-Track + `deny.toml` cargo-deny + `specs/_audits/2026-05-14-cargo-fuzz-summary-s15.md` | DAILY | I | f18acdc |
+| CC7.1 | CTRL-SUPPLY-004 + CTRL-SUPPLY-005 | vulnerability_management | ADR-0037 Dependency-Track + `deny.toml` cargo-deny + `specs/_audits/sealed/2026-05-14-cargo-fuzz-summary-s15.md` | DAILY | I | f18acdc |
 | CC7.2 | CTRL-META-001 | audit_logs | Prometheus catalog + DASH-GA-READINESS + DASH-COMPLIANCE-S20 + pentest summaries | DAILY | I | f18acdc |
 | CC7.3 | process control (PagerDuty + RB-BREACH-NOTIF + IR-TABLETOP-PLAYBOOK) | incident_response | WI-S20-006 PagerDuty 24/7 + 3 regions + synthetic page weekly + RB-BREACH-NOTIF + IR-TABLETOP-PLAYBOOK.md (6 scenarios; quarterly cadence; first session Q3-2026) | AUTO | P (GAP-03 — playbook + 6 scenarios + 2026 schedule landed; first execution pending Q3-2026) | f18acdc |
 | CC7.4 | process control (runbook RB-* suite) | incident_response | RB-BREACH-NOTIF + RB-CONSENT-TAMPERING + RB-DATA-RESIDENCY-LEAK + RB-DSR-ERASURE-INCOMPLETE + RB-BYOK-REVOKE | AUTO | P (GAP-12 — postmortem template) | f18acdc |
-| CC7.5 | process control (RB-DR-DRILL + chaos drills) | incident_response | RB-DR-DRILL + `specs/_audits/2026-05-14-region-outage-chaos-s14.md` + byok-kill-switch drill | QUARTERLY (target) | P (GAP-13 — DR cadence calendarized) | f18acdc |
+| CC7.5 | process control (RB-DR-DRILL + chaos drills) | incident_response | RB-DR-DRILL + `specs/_audits/sealed/2026-05-14-region-outage-chaos-s14.md` + byok-kill-switch drill | QUARTERLY (target) | P (GAP-13 — DR cadence calendarized) | f18acdc |
 
 ### 2.8 CC8 Change Management
 
 | TSC | CTRL ID | Evidence type | Artifact location | Cadence | Status | Last update |
 |---|---|---|---|---|---|---|
-| CC8.1 | PAT-DUAL-APPROVAL-001 + CTRL-SUPPLY-001 | change_management | GitHub branch protection + PAT-DUAL-APPROVAL-001 + signed-deploy + Rekor + sprint contracts §5.1 + preflight reviews + static-analysis gate (`.github/workflows/codeql.yml` + `.github/workflows/semgrep.yml` + `semgrep.yml` custom rules + `specs/_audits/2026-05-15-static-analysis-baseline.md` + `specs/_runbooks/RB-STATIC-ANALYSIS-TRIAGE.md`) | AUTO | I | f18acdc + wt/r-prep-codeql-semgrep |
+| CC8.1 | PAT-DUAL-APPROVAL-001 + CTRL-SUPPLY-001 | change_management | GitHub branch protection + PAT-DUAL-APPROVAL-001 + signed-deploy + Rekor + sprint contracts §5.1 + preflight reviews + static-analysis gate (`.github/workflows/codeql.yml` + `.github/workflows/semgrep.yml` + `semgrep.yml` custom rules + `specs/_audits/sealed/2026-05-15-static-analysis-baseline.md` + `specs/_runbooks/RB-STATIC-ANALYSIS-TRIAGE.md`) | AUTO | I | f18acdc + wt/r-prep-codeql-semgrep |
 
 ### 2.9 CC9 Risk Mitigation
 
@@ -142,7 +142,7 @@ Format key:
 |---|---|---|---|---|---|---|
 | A1.1 | CTRL-GC-001 + CTRL-GC-002 (capacity / quota) | audit_logs | SLO catalog + chaos region-outage drill + multi-region D1+DO+R2 | AUTO | I | f18acdc |
 | A1.2 | process control (RB-DR-DRILL + backup encryption) | incident_response | RB-DR-DRILL + backup encryption attested + **cold-restore drill spec + runbook + orchestrator + verification gate sealed** (`COLD-RESTORE-DRILL-SPEC.md` + `RB-COLD-RESTORE-FROM-ZERO.md` + `scripts/cold-restore-drill.sh` + `scripts/verify-cold-restore.py`); first dry-run scheduled T-30d pre-GA + **active-region warm failover drill sealed 2026-05-15** (`ACTIVE-FAILOVER-DRILL-SPEC.md` + `RB-ACTIVE-FAILOVER.md` + `scripts/active-failover-drill.sh` 3-mode + `tests/e2e-failover-router/` 5-scenario E2E — DR-16; RTO ≤ 15min write-flip / RPO ≤ 5min) | QUARTERLY (post-GA) cold-restore; MONTHLY (post-GA) active-failover | P → I-pending-first-drill (GAP-15 cold-restore procedure GREEN; first cycle outstanding; DR-16 procedure GREEN; first cycle outstanding) | wt/r-prep-active-failover |
-| A1.3 | process control (recovery testing via chaos drills) | incident_response | `specs/_audits/2026-05-14-region-outage-chaos-s14.md` + byok-kill-switch + RB-FM-105 dry-run + **DR-15 cold-restore drill (`BCP-DR-DRILL-CADENCE.md` row added 2026-05-15)** + **DR-16 active-region warm failover drill (`BCP-DR-DRILL-CADENCE.md` row added 2026-05-15)** | QUARTERLY (cold-restore) + MONTHLY (active-failover) | P (GAP-13 + GAP-15) | wt/r-prep-active-failover |
+| A1.3 | process control (recovery testing via chaos drills) | incident_response | `specs/_audits/sealed/2026-05-14-region-outage-chaos-s14.md` + byok-kill-switch + RB-FM-105 dry-run + **DR-15 cold-restore drill (`BCP-DR-DRILL-CADENCE.md` row added 2026-05-15)** + **DR-16 active-region warm failover drill (`BCP-DR-DRILL-CADENCE.md` row added 2026-05-15)** | QUARTERLY (cold-restore) + MONTHLY (active-failover) | P (GAP-13 + GAP-15) | wt/r-prep-active-failover |
 
 ### 2.11 C1 Confidentiality
 
@@ -155,7 +155,7 @@ Format key:
 
 | TSC | CTRL ID | Evidence type | Artifact location | Cadence | Status | Last update |
 |---|---|---|---|---|---|---|
-| PI1.1 | CTRL-INPUT-001 + CTRL-INPUT-002 + CTRL-INPUT-003 + CTRL-INPUT-004 | change_management | `specs/_schemas/` schema validation + `specs/_audits/2026-05-14-property-test-summary-s19.md` | PER-RELEASE | I | f18acdc |
+| PI1.1 | CTRL-INPUT-001 + CTRL-INPUT-002 + CTRL-INPUT-003 + CTRL-INPUT-004 | change_management | `specs/_schemas/` schema validation + `specs/_audits/sealed/2026-05-14-property-test-summary-s19.md` | PER-RELEASE | I | f18acdc |
 | PI1.2 | CTRL-AUDIT-001 + CTRL-AUDIT-002 + CTRL-AUDIT-003 + CTRL-AUDIT-004 + CTRL-AUDIT-005 | audit_logs | INV-AUDIT-APPEND-ONLY + INV-OBS-AUDIT-CHAIN-INTEGRITY + Merkle audit chain (S-13) | AUTO | I | f18acdc |
 | PI1.3 | CTRL-FORMAL-001 + CTRL-FORMAL-002 | audit_logs | Reconcile job (S-13) + Merkle proofs + property test 10k concurrent signup | DAILY | P (GAP-16 — attestation procedure) | f18acdc |
 | PI1.4 | CTRL-AUTHZ-001 + CTRL-AUTHZ-002 | access_reviews | `auth_model.md` + tenant-scoped DO routing + CC6.1 controls | AUTO | I | f18acdc |
@@ -181,7 +181,7 @@ Format key:
 - **Gap (G — blocking-GA):** 2 / 43 = **4.6%** (CC6.1 + C1.1, both GAP-02 closing D+30 hard cap with fallback ADR per WI-S20-003 §5.2).
 - **OOS_INHERITED:** 2 (CC6.4 + CC6.5; sub-processor SOC 2 inherited).
 
-### 3.2 Weighted readiness (per `specs/_audits/2026-05-14-soc2-readiness-score.md`)
+### 3.2 Weighted readiness (per `specs/_audits/sealed/2026-05-14-soc2-readiness-score.md`)
 
 - **Internal scorecard:** 83.7% (113/135 criterion-points weighted G=3 / Y=2 / R=1).
 - **Drata dashboard:** 96.4% (per-control evidence collection basis).
@@ -300,7 +300,7 @@ For each Gap or Partial row, the following table assigns owner / effort / target
 ## 6. Cross-references
 
 - **Master gap analysis (33 GAPs · severity · ETA):** `specs/_compliance/SOC2-GAP-ANALYSIS.md`
-- **Per-criterion R/Y/G scoring + projected pass-rate:** `specs/_audits/2026-05-14-soc2-readiness-score.md`
+- **Per-criterion R/Y/G scoring + projected pass-rate:** `specs/_audits/sealed/2026-05-14-soc2-readiness-score.md`
 - **Drata integration coverage (six streams × TSC):** `specs/_compliance/DRATA-INTEGRATION-COVERAGE.md`
 - **6-month Type I roadmap (T+0..T+6m phases):** `specs/_compliance/SOC2-ROADMAP.md`
 - **Level-3 framework crosswalk (SOC 2 + ISO 27001 + LGPD + GDPR):** `specs/03_architecture/compliance_matrix.md`

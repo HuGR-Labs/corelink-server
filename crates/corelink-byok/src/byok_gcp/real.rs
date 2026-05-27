@@ -4,7 +4,7 @@
 //! the AWS reference implementation
 //! (`crates/corelink-byok-aws/src/real.rs`) and applies the GA-hardened
 //! charter constraints documented in
-//! `specs/_audits/2026-05-15-byok-real-provider-pattern.md`:
+//! `specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md`:
 //!
 //! 1. **FIPS endpoint enforced where GCP offers it.** Constructor uses the
 //!    canonical Cloud KMS endpoint `cloudkms.googleapis.com` by default and
@@ -66,7 +66,7 @@ pub const DEFAULT_GCP_KMS_HOST: &str = "cloudkms.googleapis.com";
 /// Resolve the Cloud KMS hostname for `region`, optionally selecting the
 /// FedRAMP-High regional FIPS variant.
 ///
-/// Per the audit at `specs/_audits/2026-05-15-byok-real-provider-pattern.md`
+/// Per the audit at `specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md`
 /// (§3), FedRAMP-High FIPS endpoints follow the shape
 /// `cloudkms.<region>.rep.googleapis.com`. All other regions resolve to the
 /// canonical `cloudkms.googleapis.com` (a global host; the region is then
@@ -865,7 +865,7 @@ pub use native::GcpKmsRealProvider;
 /// `BYOKError::Provider("GCP KMS real provider unsupported on wasm32; ...")`.
 /// In production CF Worker deployments envelope operations are forwarded to
 /// the native server process via the internal control-plane RPC — see
-/// `specs/_audits/2026-05-15-byok-real-provider-pattern.md`.
+/// `specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md`.
 #[cfg(target_arch = "wasm32")]
 #[derive(Debug, Clone)]
 #[non_exhaustive]

@@ -2,7 +2,7 @@
 //! that `CfR2BucketAdapter` implements (WI-PROPTEST-FU-003 — DEBT-009).
 //!
 //! Closes the proptest-density gap identified in
-//! `specs/_audits/2026-05-15-proptest-density.md` (ratio 0/1 → 3/1).
+//! `specs/_audits/sealed/2026-05-15-proptest-density.md` (ratio 0/1 → 3/1).
 //!
 //! # Why native-runnable
 //!

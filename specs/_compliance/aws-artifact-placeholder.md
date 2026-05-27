@@ -16,7 +16,7 @@
 > Owner-bound per DEBT-003 registry row.
 >
 > **Cross-ref:**
-> - `specs/_audits/2026-05-15-debt-register.md` (DEBT-003 row)
+> - `specs/_audits/sealed/2026-05-15-debt-register.md` (DEBT-003 row)
 > - `specs/_compliance/BYOK-FIPS-ATTESTATION-MATRIX.md` (§2 AWS KMS row —
 >   `sha256:TBD-on-receipt`)
 > - `scripts/verify-aws-artifact-pdf.sh` (the verifier this doc binds)
@@ -236,7 +236,7 @@ The full DEBT-003 closure flow, end-to-end:
    to confirm the local PDF matches the appended SHA256SUMS row.
 8. Owner commits both files in a single commit with message
    `chore(debt-003): record AWS Artifact FIPS PDF SHA-256 (<short-date>)`.
-9. Owner flips the DEBT-003 row in `specs/_audits/2026-05-15-debt-register.md`
+9. Owner flips the DEBT-003 row in `specs/_audits/sealed/2026-05-15-debt-register.md`
    from `(engineering-CLOSED; operator-bound)` to `(CLOSED <date>, commit
    <sha>)` and notes the commit hash.
 
@@ -270,7 +270,7 @@ Post-receipt gates (operator-bound, fired by the §6 closure protocol):
 ## 8. Freeze allowance
 
 This deliverable lands under the GA-1 feature freeze (active per
-`specs/_audits/2026-05-16-ga-1-feature-freeze.md`). All paths touched:
+`specs/_audits/sealed/2026-05-16-ga-1-feature-freeze.md`). All paths touched:
 
 - `specs/_compliance/aws-artifact-placeholder.md` — §3.d implicit-allow
   (under `specs/_compliance/`).
@@ -278,9 +278,9 @@ This deliverable lands under the GA-1 feature freeze (active per
 - `specs/_compliance/aws-artifact-pdfs/SHA256SUMS` — §3.d implicit-allow.
 - `scripts/verify-aws-artifact-pdf.sh` — not on the frozen-surface list
   (new shell script; `scripts/` is not enumerated in §2 of the freeze).
-- `specs/_audits/2026-05-16-debt-003-aws-artifact-placeholder.md` —
+- `specs/_audits/sealed/2026-05-16-debt-003-aws-artifact-placeholder.md` —
   §3.d implicit-allow.
-- `specs/_audits/2026-05-15-debt-register.md` — §3.d implicit-allow.
+- `specs/_audits/sealed/2026-05-15-debt-register.md` — §3.d implicit-allow.
 
 The change set is GA-blocker preparation per DEBT-003's P0 status
 (target 2026-06-14) and is freeze-compliant by virtue of the implicit-allow
@@ -298,9 +298,9 @@ Wave-27 R-prep deliverable acceptance:
       ledger (header-only).
 - [x] `specs/_compliance/aws-artifact-pdfs/.gitignore` — ignores PDF
       binaries.
-- [x] `specs/_audits/2026-05-16-debt-003-aws-artifact-placeholder.md` —
+- [x] `specs/_audits/sealed/2026-05-16-debt-003-aws-artifact-placeholder.md` —
       land audit.
-- [x] DEBT-003 row uplift in `specs/_audits/2026-05-15-debt-register.md`
+- [x] DEBT-003 row uplift in `specs/_audits/sealed/2026-05-15-debt-register.md`
       to `engineering-CLOSED; operator-bound PDF fetch pending`.
 
 Operator-side acceptance criteria for full DEBT-003 closure:
