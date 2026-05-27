@@ -58,7 +58,7 @@ preview_bucket_name = "corelink-cas-preview"
 # WI-S04-002 — R2 buckets for AC envelopes (5 regions per WI §1).
 # Production cutover happens via `scripts/provision_ac_buckets.sh <env>`;
 # bindings here pin the canonical name + preview-bucket convention.
-# Region literals MUST match crates/corelink-ac-schema::REGION_LIST.
+# Region literals MUST match corelink_ac::schema::REGION_LIST.
 [[r2_buckets]]
 binding = "AC_BUCKET_SAM"
 bucket_name = "corelink-ac-sam"

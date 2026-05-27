@@ -10,8 +10,8 @@ use core::fmt;
 
 use corelink_hash::Digest;
 
-use crate::error::OutputsCheckError;
-use crate::types::ActionResult;
+use crate::ac_core::error::OutputsCheckError;
+use crate::ac_core::types::ActionResult;
 
 /// Reader trait for the `blob_meta` aliveness check (WI-S04-003 §6.1.6).
 ///
@@ -142,7 +142,7 @@ where
 )]
 mod tests {
     use super::*;
-    use crate::types::{ActionResult, OutputFileDigest};
+    use crate::ac_core::types::{ActionResult, OutputFileDigest};
     use std::collections::HashSet;
     use std::sync::Mutex;
 

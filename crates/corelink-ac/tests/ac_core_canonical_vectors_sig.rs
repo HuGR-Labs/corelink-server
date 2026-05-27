@@ -24,7 +24,7 @@ use std::sync::Arc;
 
 use uuid::Uuid;
 
-use corelink_ac_core::sig::{
+use corelink_ac::sig::{
     compose_canonical_bytes, derive_default_mock_tdk, HkdfSigner, HkdfVerifier, MockTdkHandle,
     SignatureSigner, SignatureVerifier, TdkHandle, AC_ENVELOPE_PREIMAGE_LEN, AC_ENVELOPE_SIG_LEN,
     HKDF_INFO_AC_SIG, RESERVED_SIG_KEY_ID, TDK_LEN,
@@ -293,7 +293,7 @@ fn vector_011_compute_signature_matches_signer_byte_equal() {
     // (which holds only the TDK + canonical_bytes; not a signer
     // object) computes the SAME signature the production handler
     // does.
-    use corelink_ac_core::sig::compute_signature;
+    use corelink_ac::sig::compute_signature;
     let mock = build_handle_with_keys(&[fixed_tenant_a()], &[1]);
     let handle: Arc<dyn TdkHandle> = mock.clone() as Arc<dyn TdkHandle>;
     let signer = HkdfSigner::new(handle, 1).unwrap();
@@ -315,6 +315,6 @@ fn vector_011_compute_signature_matches_signer_byte_equal() {
 // Re-derive raw TDK bytes for `compute_signature` callers (the `Tdk`
 // newtype's `as_bytes` accessor is crate-internal). Mirrors the
 // documented mock TDK derivation recipe.
-fn tdk_as_bytes(_tdk: &corelink_ac_core::sig::Tdk) -> [u8; TDK_LEN] {
+fn tdk_as_bytes(_tdk: &corelink_ac::sig::Tdk) -> [u8; TDK_LEN] {
     derive_default_mock_tdk(fixed_tenant_a(), 1)
 }

@@ -20,8 +20,8 @@ fn main() {
     println!("HKDF info strings:");
     println!(
         "  ac-sig:           {:?} ({} bytes)",
-        std::str::from_utf8(corelink_ac_core::sig::HKDF_INFO_AC_SIG).unwrap_or("<binary>"),
-        corelink_ac_core::sig::HKDF_INFO_AC_SIG.len()
+        std::str::from_utf8(corelink_ac::sig::HKDF_INFO_AC_SIG).unwrap_or("<binary>"),
+        corelink_ac::sig::HKDF_INFO_AC_SIG.len()
     );
     println!(
         "  manifest-sig:     {:?} ({} bytes)",
@@ -38,12 +38,12 @@ fn main() {
     // Same TDK + same canonical bytes + same sig_key_id → DIFFERENT
     // sigs across the two domains.
     let tenant = Uuid::nil();
-    let tdk = corelink_ac_core::sig::derive_default_mock_tdk(tenant, 1);
+    let tdk = corelink_ac::sig::derive_default_mock_tdk(tenant, 1);
     let canonical_bytes = [0xCD; 102];
 
     let manifest_sig = corelink_cas::manifest::compute_signature(&tdk, 1, &canonical_bytes)
         .expect("compute_signature OK");
-    let ac_sig = corelink_ac_core::sig::compute_signature(&tdk, 1, &canonical_bytes)
+    let ac_sig = corelink_ac::sig::compute_signature(&tdk, 1, &canonical_bytes)
         .expect("compute_signature OK");
 
     assert_ne!(manifest_sig, ac_sig);

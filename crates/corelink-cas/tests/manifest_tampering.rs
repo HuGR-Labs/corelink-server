@@ -18,7 +18,7 @@
 
 use std::sync::Arc;
 
-use corelink_ac_core::sig::{MockTdkHandle, TdkHandle};
+use corelink_ac::sig::{MockTdkHandle, TdkHandle};
 use corelink_cas::manifest::{
     ChunkInput, ChunkerAlgorithm, Manifest, ManifestBuilder, ManifestError, ManifestSigner,
     ManifestVerifier, ManifestVerifierSig, VerifyError,
@@ -141,7 +141,7 @@ fn tamper_sig_key_id_to_unknown_fires_key_unknown() {
     m.sig_key_id = 99;
     let err = ManifestVerifier::new().verify_full(&m, &v).unwrap_err();
     match err {
-        VerifyError::Sig(corelink_ac_core::sig::SigError::KeyIdUnknown { .. }) => {}
+        VerifyError::Sig(corelink_ac::sig::SigError::KeyIdUnknown { .. }) => {}
         _ => panic!("unexpected: {err:?}"),
     }
 }
@@ -152,7 +152,7 @@ fn tamper_sig_key_id_to_zero_fires_reserved() {
     m.sig_key_id = 0;
     let err = ManifestVerifier::new().verify_full(&m, &v).unwrap_err();
     match err {
-        VerifyError::Sig(corelink_ac_core::sig::SigError::KeyIdReserved) => {}
+        VerifyError::Sig(corelink_ac::sig::SigError::KeyIdReserved) => {}
         _ => panic!("unexpected: {err:?}"),
     }
 }
@@ -167,7 +167,7 @@ fn tamper_chunker_algo_fires_sig_invalid() {
     m.chunker_algo = ChunkerAlgorithm::FastCdc2MiB;
     let err = ManifestVerifier::new().verify_full(&m, &v).unwrap_err();
     match err {
-        VerifyError::Sig(corelink_ac_core::sig::SigError::Invalid) => {}
+        VerifyError::Sig(corelink_ac::sig::SigError::Invalid) => {}
         _ => panic!("unexpected: {err:?}"),
     }
 }

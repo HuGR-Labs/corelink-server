@@ -13,7 +13,7 @@
     reason = "test target"
 )]
 
-use corelink_ac_schema::{
+use corelink_ac::schema::{
     AcRegion, AcSchema, AcUpsertOutcome, AcUpsertRequest, SigAlg,
 };
 use uuid::Uuid;

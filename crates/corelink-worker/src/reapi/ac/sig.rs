@@ -308,7 +308,7 @@ pub fn debug_fake_key(tenant_id: Uuid, sig_key_id: u32) -> [u8; 32] {
 }
 
 /// Canonical adapter wrapping the real
-/// `corelink_ac_core::sig::HkdfSigner` + `corelink_ac_core::sig::HkdfVerifier`
+/// `corelink_ac::sig::HkdfSigner` + `corelink_ac::sig::HkdfVerifier`
 /// pair so the production handler can satisfy the local [`Signer`]
 /// trait without the handler module taking a direct dependency on the
 /// canonical signer/verifier types (deferred-trait-abstraction
@@ -316,9 +316,9 @@ pub fn debug_fake_key(tenant_id: Uuid, sig_key_id: u32) -> [u8; 32] {
 ///
 /// The adapter holds:
 ///
-/// - An `Arc<corelink_ac_core::sig::HkdfSigner>` for the signing path
+/// - An `Arc<corelink_ac::sig::HkdfSigner>` for the signing path
 ///   (handler `UpdateActionResult` step pre-persist).
-/// - An `Arc<corelink_ac_core::sig::HkdfVerifier>` for the verify path
+/// - An `Arc<corelink_ac::sig::HkdfVerifier>` for the verify path
 ///   (handler `GetActionResult` step post-fetch + dual-side client
 ///   SDK).
 ///
@@ -327,8 +327,8 @@ pub fn debug_fake_key(tenant_id: Uuid, sig_key_id: u32) -> [u8; 32] {
 /// clone (only `Arc` bumps).
 #[derive(Clone, Debug)]
 pub struct CanonicalAcSigner {
-    signer: Arc<corelink_ac_core::sig::HkdfSigner>,
-    verifier: Arc<corelink_ac_core::sig::HkdfVerifier>,
+    signer: Arc<corelink_ac::sig::HkdfSigner>,
+    verifier: Arc<corelink_ac::sig::HkdfVerifier>,
 }
 
 impl CanonicalAcSigner {
@@ -336,24 +336,24 @@ impl CanonicalAcSigner {
     /// `corelink-ac` signer + verifier objects.
     #[must_use]
     pub fn new(
-        signer: Arc<corelink_ac_core::sig::HkdfSigner>,
-        verifier: Arc<corelink_ac_core::sig::HkdfVerifier>,
+        signer: Arc<corelink_ac::sig::HkdfSigner>,
+        verifier: Arc<corelink_ac::sig::HkdfVerifier>,
     ) -> Self {
         Self { signer, verifier }
     }
 
-    /// Borrow the inner [`corelink_ac_core::sig::HkdfSigner`] — exposed for
+    /// Borrow the inner [`corelink_ac::sig::HkdfSigner`] — exposed for
     /// rotation orchestration (e.g. `signer.rotate_to(N+1)` from the
     /// admin plane in S-13).
     #[must_use]
-    pub fn inner_signer(&self) -> &Arc<corelink_ac_core::sig::HkdfSigner> {
+    pub fn inner_signer(&self) -> &Arc<corelink_ac::sig::HkdfSigner> {
         &self.signer
     }
 
-    /// Borrow the inner [`corelink_ac_core::sig::HkdfVerifier`] — exposed
+    /// Borrow the inner [`corelink_ac::sig::HkdfVerifier`] — exposed
     /// for rotation orchestration.
     #[must_use]
-    pub fn inner_verifier(&self) -> &Arc<corelink_ac_core::sig::HkdfVerifier> {
+    pub fn inner_verifier(&self) -> &Arc<corelink_ac::sig::HkdfVerifier> {
         &self.verifier
     }
 }
@@ -365,7 +365,7 @@ impl Signer for CanonicalAcSigner {
         sig_key_id: u32,
         canonical_bytes: &[u8],
     ) -> Result<[u8; AC_ENVELOPE_SIG_LEN], SigError> {
-        use corelink_ac_core::sig::SignatureSigner as _;
+        use corelink_ac::sig::SignatureSigner as _;
         self.signer
             .sign(tenant_id, sig_key_id, canonical_bytes)
             .map_err(map_canonical_sig_error)
@@ -378,14 +378,14 @@ impl Signer for CanonicalAcSigner {
         canonical_bytes: &[u8],
         signature: &[u8; AC_ENVELOPE_SIG_LEN],
     ) -> Result<(), SigError> {
-        use corelink_ac_core::sig::SignatureVerifier as _;
+        use corelink_ac::sig::SignatureVerifier as _;
         self.verifier
             .verify(tenant_id, sig_key_id, canonical_bytes, signature)
             .map_err(map_canonical_sig_error)
     }
 }
 
-/// Map a [`corelink_ac_core::sig::SigError`] back to this crate's
+/// Map a [`corelink_ac::sig::SigError`] back to this crate's
 /// [`SigError`] enum.
 ///
 /// The two enums overlap on the canonical-cripto arms (`Mismatch` ↔
@@ -393,8 +393,8 @@ impl Signer for CanonicalAcSigner {
 /// canonical variant collapses onto [`SigError::Backend`] with the
 /// canonical reason code prefix so the audit dashboard split still
 /// surfaces the underlying failure mode via the message body.
-fn map_canonical_sig_error(err: corelink_ac_core::sig::SigError) -> SigError {
-    use corelink_ac_core::sig::SigError as Canon;
+fn map_canonical_sig_error(err: corelink_ac::sig::SigError) -> SigError {
+    use corelink_ac::sig::SigError as Canon;
     match err {
         Canon::Invalid => SigError::Mismatch,
         Canon::KeyIdReserved => SigError::KeyIdReserved,
@@ -578,7 +578,7 @@ mod tests {
     /// [`Signer`] trait via the same canonical 121-byte preimage.
     #[test]
     fn canonical_ac_signer_round_trips_real_hkdf() {
-        use corelink_ac_core::sig::{HkdfSigner, HkdfVerifier, MockTdkHandle, TdkHandle};
+        use corelink_ac::sig::{HkdfSigner, HkdfVerifier, MockTdkHandle, TdkHandle};
 
         let mock = Arc::new(MockTdkHandle::new());
         mock.install_default(fixed_tenant(), 1);
@@ -601,7 +601,7 @@ mod tests {
 
     #[test]
     fn canonical_ac_signer_rejects_byte_flip() {
-        use corelink_ac_core::sig::{HkdfSigner, HkdfVerifier, MockTdkHandle, TdkHandle};
+        use corelink_ac::sig::{HkdfSigner, HkdfVerifier, MockTdkHandle, TdkHandle};
 
         let mock = Arc::new(MockTdkHandle::new());
         mock.install_default(fixed_tenant(), 1);
@@ -626,7 +626,7 @@ mod tests {
 
     #[test]
     fn canonical_ac_signer_rejects_reserved_key_id() {
-        use corelink_ac_core::sig::{HkdfSigner, HkdfVerifier, MockTdkHandle, TdkHandle};
+        use corelink_ac::sig::{HkdfSigner, HkdfVerifier, MockTdkHandle, TdkHandle};
 
         let mock = Arc::new(MockTdkHandle::new());
         mock.install_default(fixed_tenant(), 1);
@@ -645,7 +645,7 @@ mod tests {
         // Verifier whitelist excludes the verify key_id → real
         // canonical SigError::KeyIdUnknown maps to SigError::Backend
         // on the worker side.
-        use corelink_ac_core::sig::{HkdfSigner, HkdfVerifier, MockTdkHandle, TdkHandle};
+        use corelink_ac::sig::{HkdfSigner, HkdfVerifier, MockTdkHandle, TdkHandle};
 
         let mock = Arc::new(MockTdkHandle::new());
         mock.install_default(fixed_tenant(), 1);

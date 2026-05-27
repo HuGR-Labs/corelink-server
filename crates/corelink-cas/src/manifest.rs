@@ -69,7 +69,7 @@
 //!     ChunkInput, ChunkerAlgorithm, ManifestBuilder,
 //!     ManifestSigner, ManifestVerifier, ManifestVerifierSig,
 //! };
-//! use corelink_ac_core::sig::{MockTdkHandle, TdkHandle};
+//! use corelink_ac::sig::{MockTdkHandle, TdkHandle};
 //! use std::sync::Arc;
 //! use uuid::Uuid;
 //!

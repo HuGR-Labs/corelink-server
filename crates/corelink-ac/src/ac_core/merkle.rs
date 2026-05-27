@@ -22,7 +22,7 @@
 //!   outputs"; the worker's individual-digest sentinel still rejects
 //!   any `output_*[i].digest` of all-zeros).
 //!
-//! Bounds enforcement (WI §6.1.5 + [`crate::bounds`]) is integrated
+//! Bounds enforcement (WI §6.1.5 + [`crate::ac_core::bounds`]) is integrated
 //! into both the build path and the verify path. The verify path
 //! short-circuits at the cheapest bound check (slice length) to keep
 //! the bench gate p99 ≤ 10 ms tight.
@@ -30,11 +30,11 @@
 use blake3::Hasher;
 use corelink_hash::Digest;
 
-use crate::bounds::{
+use crate::ac_core::bounds::{
     MAX_NODE_COUNT, MAX_OUTPUT_DIRECTORIES, MAX_OUTPUT_FILES, MAX_TREE_DEPTH,
 };
-use crate::error::MerkleError;
-use crate::types::{ActionResult, MERKLE_ROOT_LEN};
+use crate::ac_core::error::MerkleError;
+use crate::ac_core::types::{ActionResult, MERKLE_ROOT_LEN};
 
 /// Domain-separation prefix byte for leaf hashes (RFC 6962-style).
 pub const LEAF_PREFIX: u8 = 0x00;
@@ -264,7 +264,7 @@ pub fn compute_result_hash(merkle_root: &[u8; MERKLE_ROOT_LEN]) -> [u8; MERKLE_R
 )]
 mod tests {
     use super::*;
-    use crate::types::{OutputDirectoryDigest, OutputFileDigest};
+    use crate::ac_core::types::{OutputDirectoryDigest, OutputFileDigest};
     use corelink_hash::Digest;
 
     fn fresh_result(n_files: usize) -> ActionResult {

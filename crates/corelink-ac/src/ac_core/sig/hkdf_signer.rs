@@ -20,9 +20,9 @@
 //!
 //! ## Trait surfaces
 //!
-//! - [`HkdfSigner`] implements [`crate::sig::SignatureSigner`] —
+//! - [`HkdfSigner`] implements [`crate::ac_core::sig::SignatureSigner`] —
 //!   production handler `UpdateActionResult` pre-persist hook.
-//! - [`HkdfVerifier`] implements [`crate::sig::SignatureVerifier`] —
+//! - [`HkdfVerifier`] implements [`crate::ac_core::sig::SignatureVerifier`] —
 //!   production handler `GetActionResult` post-fetch hook AND the
 //!   client SDK dual-side post-download verifier.
 //!
@@ -44,7 +44,7 @@ use super::tdk::TdkHandle;
 use super::{SignatureSigner, SignatureVerifier, RESERVED_SIG_KEY_ID};
 
 /// HKDF info bytes — `b"ac-sig"` per ADR-0021 §1. Constant; CI gate
-/// in [`crate::sig::tests::canonical_info_string`] asserts byte-equal.
+/// in [`crate::ac_core::sig::tests::canonical_info_string`] asserts byte-equal.
 pub const HKDF_INFO_AC_SIG: &[u8] = b"ac-sig";
 
 /// Canonical signature byte length (`32`). HKDF-Expand outputs 32
@@ -446,8 +446,8 @@ const _: () = assert!(AC_ENVELOPE_PREIMAGE_LEN == 121);
 )]
 mod tests {
     use super::*;
-    use crate::sig::canonical::compose;
-    use crate::sig::tdk::MockTdkHandle;
+    use crate::ac_core::sig::canonical::compose;
+    use crate::ac_core::sig::tdk::MockTdkHandle;
 
     fn fixed_tenant() -> Uuid {
         Uuid::parse_str("01938af0-abcd-7123-8456-000000000a01").unwrap()

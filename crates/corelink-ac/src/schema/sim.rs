@@ -33,7 +33,7 @@ use std::collections::BTreeMap;
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::region::AcRegion;
+use crate::schema::region::AcRegion;
 
 /// Canonical hex digest length (BLAKE3-256 / SHA-256 hex).
 pub const DIGEST_HEX_LEN: usize = 64;

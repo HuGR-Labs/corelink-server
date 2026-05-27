@@ -97,8 +97,8 @@
 //! # Quickstart
 //!
 //! ```
-//! use corelink_ac_core::merkle::{build_root, verify_root};
-//! use corelink_ac_core::types::{ActionResult, OutputFileDigest};
+//! use corelink_ac::merkle::{build_root, verify_root};
+//! use corelink_ac::types::{ActionResult, OutputFileDigest};
 //! use corelink_hash::Digest;
 //!
 //! let r = ActionResult::new(

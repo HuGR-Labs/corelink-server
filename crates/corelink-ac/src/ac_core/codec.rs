@@ -11,14 +11,14 @@
 //! is a transport, not the cripto authority (per ADR-0037).
 //!
 //! Bounded-parser discipline: [`decode`] enforces
-//! [`crate::bounds::MAX_PAYLOAD_BYTES`] on the input slice **before**
+//! [`crate::ac_core::bounds::MAX_PAYLOAD_BYTES`] on the input slice **before**
 //! invoking `serde_json::from_slice`, so an oversized envelope is
 //! rejected with `MerkleError::PayloadExceeded` without `serde_json`
 //! ever allocating a `Vec<Value>` for the malformed input.
 
-use crate::bounds::MAX_PAYLOAD_BYTES;
-use crate::error::MerkleError;
-use crate::types::{AcEnvelope, AC_ENVELOPE_VERSION};
+use crate::ac_core::bounds::MAX_PAYLOAD_BYTES;
+use crate::ac_core::error::MerkleError;
+use crate::ac_core::types::{AcEnvelope, AC_ENVELOPE_VERSION};
 
 /// Encode an [`AcEnvelope`] to canonical JSON bytes.
 ///
@@ -79,7 +79,7 @@ pub fn decode(bytes: &[u8]) -> Result<AcEnvelope, MerkleError> {
 )]
 mod tests {
     use super::*;
-    use crate::types::{
+    use crate::ac_core::types::{
         ActionDigest, ActionResult, OutputFileDigest, MERKLE_ROOT_LEN, RESULT_HASH_LEN,
     };
     use corelink_hash::Digest;

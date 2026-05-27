@@ -2,7 +2,7 @@
 //!
 //! WI-S06-001 §1 + S-06 spec contract §5.1 enumerate 5 regions: `sam`,
 //! `iad`, `lhr`, `nrt`, `syd` — the same canonical list as
-//! [`corelink_ac_schema::AcRegion`] +
+//! [`corelink_ac::schema::AcRegion`] +
 //! [`corelink_multipart_schema::MultipartRegion`]. The schema CHECK
 //! constraint `region IN ('sam', 'iad', 'lhr', 'nrt', 'syd')` rejects
 //! any other value at INSERT time on the `gc_run` table; this module is
@@ -20,7 +20,7 @@ use thiserror::Error;
 /// One of the canonical 5 GC regions WI-S06-001 freezes at S-06 GA.
 ///
 /// The variant order matches the SQL `CHECK` constraint list
-/// left-to-right, and matches `corelink_ac_schema::AcRegion` +
+/// left-to-right, and matches `corelink_ac::schema::AcRegion` +
 /// `corelink_multipart_schema::MultipartRegion` — the same 5 regions
 /// host AC envelopes + multipart chunks + manifests + GC checkpoint
 /// rows. `Display` / [`GcRegion::as_str`] yield the lower-case bucket

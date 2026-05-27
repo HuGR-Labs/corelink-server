@@ -24,7 +24,7 @@ use std::sync::Arc;
 
 use uuid::Uuid;
 
-use corelink_ac_core::sig::{
+use corelink_ac::sig::{
     compose_canonical_bytes, HkdfSigner, HkdfVerifier, MockTdkHandle, SigError, SignatureSigner,
     SignatureVerifier, TdkHandle, RESERVED_SIG_KEY_ID,
 };

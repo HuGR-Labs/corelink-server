@@ -1,6 +1,6 @@
 [package]
 name = "corelink-ac"
-description = "Wave-33 Stage 1 Stream A sub-step A.2b — canonical Action Cache (AC) bounded-context aggregator façade for the CoreLink workspace. Re-exports the 3 absorbed crates that historically partitioned the AC surface (`corelink-ac-core` Merkle codec + dual-side verifier, `corelink-ac-schema` region + simulation schema, `corelink-handler-ac` AC handler) under a single canonical import surface (`corelink_ac::core`, `corelink_ac::schema`, `corelink_ac::handler`, plus the top-level `pub use corelink_ac_core::*` so historical `use corelink_ac::{MerkleVerifier, …}` paths continue to resolve). Stage 1 ships this crate as a re-export aggregator (Option-A least-invasive interpretation per Stage 0 SEAL §4) so downstream crates can adopt the canonical paths without disturbing the existing AC tests / fuzz harness / canonical vectors. Physical absorption of source modules is deferred to Stage 2; see `specs/_audits/2026-05-22-wave33-code-reorg-spec.md` §6 + Stream A SEAL audit."
+description = "Wave-35 Phase 2 — canonical Action Cache (AC) bounded-context surface for the CoreLink workspace. Physically absorbs the former `corelink-ac-core` (Merkle codec + dual-side verifier + HKDF-SHA256 signature, WI-S04-003/004) and `corelink-ac-schema` (D1 region + simulation schema, WI-S04-002) crates as inline submodules (`corelink_ac::*` top-level re-exports the former ac-core surface; `corelink_ac::schema::*` carries the former ac-schema surface). The `corelink-handler-ac` crate remains a workspace member; the umbrella keeps a `corelink_ac::handler` re-export shim until a future consolidation lands. Zero behavioural change — purely a workspace-member consolidation. See `specs/_audits/2026-05-26-w35-p2-ac-absorption.md` for the SEAL audit."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -25,14 +25,78 @@ print_stderr = "deny"
 mod_module_files = "deny"
 
 [dependencies]
-# Stage 0 cross-cutting deps (canonical import targets for any new
-# code that lands inside this crate post-aggregator).
+# Stage 0 cross-cutting deps.
 corelink-core = { workspace = true }
 corelink-crypto = { workspace = true }
 corelink-audit = { workspace = true }
 
-# Re-export targets (Stage 1 Stream A sub-step A.2b Option-A aggregator:
-# physical absorption deferred to Stage 2).
-corelink-ac-core = { workspace = true }
-corelink-ac-schema = { workspace = true }
+# Wave-35 Phase 2 transitive deps (inherited from absorbed `corelink-ac-core`
+# + `corelink-ac-schema`).
+corelink-hash = { workspace = true }
+blake3 = { workspace = true }
+hex = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# HKDF-SHA256 envelope signature infrastructure (CTRL-AC-002).
+hkdf = { workspace = true }
+sha2 = { workspace = true }
+subtle = { workspace = true }
+zeroize = { workspace = true }
+uuid = { workspace = true, features = ["v7"] }
+
+# Handler shim — `corelink-handler-ac` remains an external workspace
+# member; the umbrella re-exports it via `corelink_ac::handler::*`.
 corelink-handler-ac = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+rand = "0.9"
+rand_chacha = "0.9"
+
+# Absorbed `corelink-ac-core` integration tests (`<mod>_` prefixed in
+# `tests/` to disambiguate from absorbed `corelink-ac-schema`).
+[[test]]
+name = "ac_core_prop_merkle"
+path = "tests/ac_core_prop_merkle.rs"
+
+[[test]]
+name = "ac_core_canonical_vectors"
+path = "tests/ac_core_canonical_vectors.rs"
+
+[[test]]
+name = "ac_core_round_trip"
+path = "tests/ac_core_round_trip.rs"
+
+[[test]]
+name = "ac_core_tampering"
+path = "tests/ac_core_tampering.rs"
+
+[[test]]
+name = "ac_core_prop_sig"
+path = "tests/ac_core_prop_sig.rs"
+
+[[test]]
+name = "ac_core_canonical_vectors_sig"
+path = "tests/ac_core_canonical_vectors_sig.rs"
+
+[[test]]
+name = "ac_core_key_rotation_sig"
+path = "tests/ac_core_key_rotation_sig.rs"
+
+[[test]]
+name = "ac_core_timing_sig"
+path = "tests/ac_core_timing_sig.rs"
+
+# Absorbed `corelink-ac-schema` integration tests.
+[[test]]
+name = "schema_migration_canonical"
+path = "tests/schema_migration_canonical.rs"
+
+[[test]]
+name = "schema_prop_ac_schema"
+path = "tests/schema_prop_ac_schema.rs"
+
+[[test]]
+name = "schema_idempotency_canonical"
+path = "tests/schema_idempotency_canonical.rs"
