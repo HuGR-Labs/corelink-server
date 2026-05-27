@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withSentryConfig } from "@sentry/nextjs";
 import createNextIntlPlugin from "next-intl/plugin";
 import { buildCspHeaderValue, STATIC_SECURITY_HEADERS } from "./src/lib/csp";
 
@@ -55,4 +56,34 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withNextIntl(nextConfig);
+/**
+ * Sentry wrapper — automatically uploads source maps + tunnels client beacons
+ * through `/monitoring` so ad-blockers don't strip them. The wrapper is a
+ * no-op when neither `SENTRY_AUTH_TOKEN` nor `NEXT_PUBLIC_SENTRY_DSN` are
+ * configured, so local builds and CI without Sentry credentials remain
+ * unaffected. Gustavo wires the auth token + DSN per the Sentry setup
+ * runbook (`specs/_audits/2026-05-27-sentry-setup-runbook.md`).
+ *
+ *   - `silent: true`  — suppress Sentry CLI chatter during build.
+ *   - `widenClientFileUpload: true` — also map server bundles for SSR errors.
+ *   - `tunnelRoute: "/monitoring"`  — proxy ingest through a same-origin path
+ *                                     so privacy plugins / corporate proxies
+ *                                     do not drop beacons. Documented in the
+ *                                     admin-ui README.
+ *   - `disableLogger: true` — strip `Sentry.logger.*` calls in production for
+ *                              smaller client bundles.
+ *   - `automaticVercelMonitors: false` — we deploy on Cloudflare Pages, not
+ *                                         Vercel; this would create dead
+ *                                         monitor sources.
+ */
+const sentryBuildOptions = {
+  org: process.env.SENTRY_ORG ?? "corelink",
+  project: process.env.SENTRY_PROJECT ?? "corelink-admin-ui",
+  silent: true,
+  widenClientFileUpload: true,
+  tunnelRoute: "/monitoring" as const,
+  disableLogger: true,
+  automaticVercelMonitors: false,
+};
+
+export default withSentryConfig(withNextIntl(nextConfig), sentryBuildOptions);
