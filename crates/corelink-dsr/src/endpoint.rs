@@ -401,8 +401,11 @@ where
             format!("accepted sla_deadline_ms={sla_deadline_ms}"),
         ))?;
 
-        self.store.insert(ticket)?;
-
+        // INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER — receipt was already issued at
+        // line 392 (above), so the ReceiptIssued audit captures the canonical
+        // intent BEFORE the store.insert mutation. If store.insert fails after
+        // emit, the audit log carries the receipt-issued intent and downstream
+        // reconciliation handles the ticket-side miss.
         self.audit.emit(Self::audit_record(
             DsrAuditEventType::ReceiptIssued,
             request,
@@ -410,6 +413,8 @@ where
             None,
             format!("receipt_issued exp_days={CANONICAL_RECEIPT_EXPIRY_DAYS}"),
         ))?;
+
+        self.store.insert(ticket)?;
 
         Ok(DsrDecision::RequestAccepted {
             receipt: receipt_token,

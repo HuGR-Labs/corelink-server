@@ -124,10 +124,10 @@ impl StatuspageBackend for InMemoryStatuspageBackend {
             report: report.clone(),
             now_epoch_ms,
         };
-        match self.recorded.lock() {
-            Ok(mut g) => g.push(recorded),
-            Err(p) => p.into_inner().push(recorded),
-        }
+        // INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER — audit emit BEFORE the
+        // `recorded` Vec push (this in-memory backend's canonical state
+        // mutation). If audit.emit fails, the recorded slot stays empty
+        // and the caller observes the audit error first.
         let evt = StatuspageAuditEvent {
             outcome: StatuspageAuditOutcome::Published,
             page_id: self.page_id.clone(),
@@ -140,6 +140,10 @@ impl StatuspageBackend for InMemoryStatuspageBackend {
             window_end_unix_s: report.window_end_unix_s,
         };
         self.audit.emit(&evt)?;
+        match self.recorded.lock() {
+            Ok(mut g) => g.push(recorded),
+            Err(p) => p.into_inner().push(recorded),
+        }
         Ok(PublishOutcome {
             page_id: self.page_id.clone(),
             metric_id: self.metric_id.clone(),
