@@ -7,13 +7,13 @@
 //! 3. `prop_aad_binding_per_provider` — tampered encryption_context is rejected.
 //! 4. `prop_check_access_ok_mock` — check_access returns Ok in mock mode.
 
-use corelink_byok_core::{BYOKError, Dek, KmsKeyId, KmsProvider, KmsProviderKind, WrappedDek};
-use corelink_byok_gcp::GcpKmsProvider;
-use corelink_byok_azure::AzureKeyVaultProvider;
-use corelink_byok_vault::VaultProvider;
+use corelink_byok::{BYOKError, Dek, KmsKeyId, KmsProvider, KmsProviderKind, WrappedDek};
+use corelink_byok::gcp::GcpKmsProvider;
+use corelink_byok::azure::AzureKeyVaultProvider;
+use corelink_byok::vault::VaultProvider;
 use async_trait::async_trait;
 use proptest::prelude::*;
-use corelink_byok_core::{FipsLevel, KmsAccessStatus};
+use corelink_byok::{FipsLevel, KmsAccessStatus};
 
 // ──────────────────────────────────────────────────────────────────────────────
 // AWS mock (fills 4th provider slot)

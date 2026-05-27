@@ -129,6 +129,6 @@ async fn transient_then_revoked_does_fire_kill_switch() {
         .expect("revoked → kill switch");
     assert_eq!(
         event.event_type,
-        corelink_byok_revocation::event::EVENT_TYPE_CMK_REVOKED
+        corelink_byok::revocation::event::EVENT_TYPE_CMK_REVOKED
     );
 }

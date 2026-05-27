@@ -110,10 +110,59 @@ compile_error!(
 );
 
 // ============================================================================
+// Wave-35 Phase 2 — physical absorption of the 6 BYOK sub-crates.
+//
+// The former `corelink-byok-{core,revocation,aws,gcp,azure,vault}`
+// crates are now internal modules `byok_{core,revocation,aws,gcp,
+// azure,vault}` under this umbrella. The public surface is preserved
+// 1:1: `corelink_byok::*` re-exports the byok-core trait + types at
+// the crate root; `corelink_byok::revocation::*` is always-on; the
+// 4 per-provider submodules remain feature-gated and mutually
+// exclusive per the microkernel charter.
+// ============================================================================
+
+// `byok_core` is exposed at `pub(crate)` so sibling provider modules
+// can address `crate::byok_core::types::BYOKError` (the legacy
+// `corelink_byok_core::types::BYOKError` callers were rewritten to
+// `crate::byok_core::types::BYOKError` during absorption — see
+// `src/byok_aws.rs`). Downstream consumers reach the same symbols
+// via the always-on `pub use byok_core::*;` glob below.
+// All six absorbed modules are unconditionally compiled. This
+// matches the pre-absorption matrix-test wiring where every
+// provider crate was linked as a dev-dependency without engaging
+// the umbrella's mutual-exclusion gates. The gates remain enforced
+// on the public `corelink_byok::{aws,gcp,azure,vault}` namespace
+// re-exports below — production binaries that activate two namespace
+// features still hit a compile_error. cargo-deny enforces the
+// single-provider-SDK-per-binary rule at the workspace boundary.
+pub(crate) mod byok_core;
+mod byok_revocation;
+// The 4 provider modules are compiled when the matching internal
+// `_internal-<provider>` feature is on. The PUBLIC features
+// (`aws` / `gcp` / `azure` / `vault`) activate the corresponding
+// `_internal-*` flag transitively, plus the matching real/
+// production sub-feature, plus the namespace re-export below.
+//
+// Matrix integration tests declare `required-features = ["_matrix-test"]`
+// which activates all four `_internal-*` flags WITHOUT engaging
+// the mutual-exclusion `compile_error!` guards above (which
+// inspect only the public namespace features). Production
+// binaries activate exactly one public provider feature; combining
+// two public features is a hard compile error.
+#[cfg(feature = "_internal-aws")]
+mod byok_aws;
+#[cfg(feature = "_internal-gcp")]
+mod byok_gcp;
+#[cfg(feature = "_internal-azure")]
+mod byok_azure;
+#[cfg(feature = "_internal-vault")]
+mod byok_vault;
+
+// ============================================================================
 // Core surface re-export (always-on; preserves pre-wave-33 import paths).
 // ============================================================================
 
-pub use corelink_byok_core::*;
+pub use byok_core::*;
 
 // ============================================================================
 // Always-on revocation submodule.
@@ -121,11 +170,11 @@ pub use corelink_byok_core::*;
 
 /// BYOK CMK revocation detector + multi-channel alerting.
 ///
-/// Re-exports the entire public API of `corelink-byok-revocation`.
-/// Always-on (no feature gate) so the kill-switch lifecycle is
-/// available in every build configuration.
+/// Re-exports the entire public API of the absorbed
+/// `byok_revocation` module. Always-on (no feature gate) so the
+/// kill-switch lifecycle is available in every build configuration.
 pub mod revocation {
-    pub use corelink_byok_revocation::*;
+    pub use crate::byok_revocation::*;
 }
 
 // ============================================================================
@@ -134,37 +183,38 @@ pub mod revocation {
 // build; the compile_error! gates above guarantee at most one is on.
 // ============================================================================
 
-/// AWS KMS provider adapter — gated by `aws` cargo feature.
-///
-/// Re-exports the entire public API of `corelink-byok-aws`.
-#[cfg(feature = "aws")]
+/// AWS KMS provider adapter — re-exports the public API of the
+/// absorbed `byok_aws` module. The namespace is reachable whenever
+/// the internal `_internal-aws` feature is on, which is the case
+/// for the public `aws` feature, the `real-aws` flavour sub-feature,
+/// and the `_matrix-test` cross-provider integration-test flag.
+/// Mutual exclusion across `corelink_byok::{aws,gcp,azure,vault}`
+/// is enforced by the public-feature `compile_error!` gates above
+/// — combining two public namespace features is a hard build error.
+#[cfg(feature = "_internal-aws")]
 pub mod aws {
-    pub use corelink_byok_aws::*;
+    pub use crate::byok_aws::*;
 }
 
-/// Google Cloud KMS provider adapter — gated by `gcp` cargo feature.
-///
-/// Re-exports the entire public API of `corelink-byok-gcp`.
-#[cfg(feature = "gcp")]
+/// Google Cloud KMS provider adapter — see [`aws`] for the feature-gate
+/// contract; analogous shape per provider.
+#[cfg(feature = "_internal-gcp")]
 pub mod gcp {
-    pub use corelink_byok_gcp::*;
+    pub use crate::byok_gcp::*;
 }
 
-/// Azure Key Vault provider adapter — gated by `azure` cargo feature.
-///
-/// Re-exports the entire public API of `corelink-byok-azure`.
-#[cfg(feature = "azure")]
+/// Azure Key Vault provider adapter — see [`aws`] for the feature-gate
+/// contract; analogous shape per provider.
+#[cfg(feature = "_internal-azure")]
 pub mod azure {
-    pub use corelink_byok_azure::*;
+    pub use crate::byok_azure::*;
 }
 
-/// HashiCorp Vault Transit provider adapter — gated by `vault`
-/// cargo feature.
-///
-/// Re-exports the entire public API of `corelink-byok-vault`.
-#[cfg(feature = "vault")]
+/// HashiCorp Vault Transit provider adapter — see [`aws`] for the
+/// feature-gate contract; analogous shape per provider.
+#[cfg(feature = "_internal-vault")]
 pub mod vault {
-    pub use corelink_byok_vault::*;
+    pub use crate::byok_vault::*;
 }
 
 #[cfg(test)]

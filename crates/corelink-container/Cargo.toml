@@ -49,7 +49,7 @@ neon-real = ["corelink-audit-chain/neon-real"]
 #
 # Pattern reference (replicated for GCP/Azure/Vault):
 # `specs/_audits/2026-05-15-byok-real-provider-pattern.md` §7.
-byok-aws-real = ["dep:corelink-byok-aws"]
+byok-aws-real = ["corelink-byok/aws"]
 
 # Wire the production GCP Cloud KMS provider
 # (`corelink_byok_gcp::GcpKmsRealProvider`) instead of the in-memory fake.
@@ -61,7 +61,7 @@ byok-aws-real = ["dep:corelink-byok-aws"]
 # "unsupported on wasm32" error (Workers proxy to the native server).
 #
 # Pattern reference: `specs/_audits/2026-05-15-byok-real-provider-pattern.md`.
-byok-gcp-real = ["dep:corelink-byok-gcp", "corelink-byok-gcp/production"]
+byok-gcp-real = ["corelink-byok/gcp"]
 
 # Wire the production Azure Key Vault provider
 # (`corelink_byok_azure::AzureKeyVaultRealProvider`) instead of the
@@ -69,7 +69,7 @@ byok-gcp-real = ["dep:corelink-byok-gcp", "corelink-byok-gcp/production"]
 # customer CMKs live in Azure Key Vault Premium HSM / Managed HSM.
 #
 # Pattern reference: `specs/_audits/2026-05-15-byok-real-provider-pattern.md`.
-byok-azure-real = ["dep:corelink-byok-azure", "corelink-byok-azure/real"]
+byok-azure-real = ["corelink-byok/azure"]
 
 # Wire the production HashiCorp Vault Transit provider
 # (`corelink_byok_vault::VaultRealProvider`) instead of the in-memory fake.
@@ -77,7 +77,7 @@ byok-azure-real = ["dep:corelink-byok-azure", "corelink-byok-azure/real"]
 # live in a customer-hosted Vault Enterprise (FIPS-mode) cluster.
 #
 # Pattern reference: `specs/_audits/2026-05-15-byok-real-provider-pattern.md`.
-byok-vault-real = ["dep:corelink-byok-vault", "corelink-byok-vault/real"]
+byok-vault-real = ["corelink-byok/vault"]
 
 # R-PREP-CF-R2-REAL — opt into the real Cloudflare R2 binding adapter
 # (`corelink_cf_bindings::CfR2BucketReal`). On `target_arch = "wasm32"`
@@ -190,13 +190,14 @@ hex = { workspace = true }
 # in-memory fake when no `byok-*-real` flag is active.
 # Pattern: `specs/_audits/2026-05-15-byok-real-provider-pattern.md` §7.
 corelink-byok = { path = "../../crates/corelink-byok" }
-# Optional BYOK adapter crates — only linked when the matching
-# `byok-<provider>-real` feature is enabled. See features section
-# above and `specs/_audits/2026-05-15-byok-real-provider-pattern.md`.
-corelink-byok-aws = { path = "../../crates/corelink-byok-aws", optional = true }
-corelink-byok-gcp = { path = "../../crates/corelink-byok-gcp", optional = true }
-corelink-byok-azure = { path = "../../crates/corelink-byok-azure", optional = true }
-corelink-byok-vault = { path = "../../crates/corelink-byok-vault", optional = true }
+# Wave-35 Phase 2 — the former `corelink-byok-{aws,gcp,azure,vault}`
+# crates were physically absorbed into the umbrella. Provider
+# namespaces are now reached via `corelink_byok::{aws,gcp,azure,vault}`,
+# gated by the matching umbrella feature. The `byok-<provider>-real`
+# features above forward to `corelink-byok/<provider>` which activates
+# the namespace AND the matching `production-*` / `real-*` sub-feature
+# in one shot. Mutual-exclusion (compile_error!) is preserved on the
+# umbrella's namespace surface.
 async-trait = { workspace = true }
 # Wave-19 — `Region` enum read at the binary boot path for the Neon
 # analytics shadow per-region project resolver (`EnvVarResolver`).

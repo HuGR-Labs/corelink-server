@@ -14,10 +14,10 @@
 //! | Flag set | Concrete type | Audit target |
 //! |---|---|---|
 //! | (none) | [`InMemoryFake`] (this module) | `corelink.byok.in_memory.audit` |
-//! | `byok-aws-real` | `corelink_byok_aws::AwsKmsRealProvider` | `corelink.byok.aws.audit` |
-//! | `byok-gcp-real` | `corelink_byok_gcp::GcpKmsRealProvider` | `corelink.byok.gcp.audit` |
-//! | `byok-azure-real` | `corelink_byok_azure::AzureKeyVaultRealProvider` | `corelink.byok.azure.audit` |
-//! | `byok-vault-real` | `corelink_byok_vault::VaultRealProvider` | `corelink.byok.vault.audit` |
+//! | `byok-aws-real` | `corelink_byok::aws::AwsKmsRealProvider` | `corelink.byok.aws.audit` |
+//! | `byok-gcp-real` | `corelink_byok::gcp::GcpKmsRealProvider` | `corelink.byok.gcp.audit` |
+//! | `byok-azure-real` | `corelink_byok::azure::AzureKeyVaultRealProvider` | `corelink.byok.azure.audit` |
+//! | `byok-vault-real` | `corelink_byok::vault::VaultRealProvider` | `corelink.byok.vault.audit` |
 //!
 //! Setting two or more `byok-*-real` flags simultaneously is a HARD
 //! compile error — only one production provider may be linked into the
@@ -224,13 +224,13 @@ async fn build_active() -> Result<Arc<dyn KmsProvider>, BYOKError> {
     #[cfg(feature = "byok-aws-real")]
     {
         let region = std::env::var("AWS_REGION").unwrap_or_else(|_| "us-east-1".to_string());
-        let p = corelink_byok_aws::AwsKmsRealProvider::new(&region).await?;
+        let p = corelink_byok::aws::AwsKmsRealProvider::new(&region).await?;
         Ok(Arc::new(p))
     }
     #[cfg(feature = "byok-gcp-real")]
     {
         let region = std::env::var("GCP_REGION").unwrap_or_else(|_| "us-east1".to_string());
-        let p = corelink_byok_gcp::GcpKmsRealProvider::new(&region).await?;
+        let p = corelink_byok::gcp::GcpKmsRealProvider::new(&region).await?;
         Ok(Arc::new(p))
     }
     #[cfg(feature = "byok-azure-real")]
@@ -250,14 +250,14 @@ async fn build_active() -> Result<Arc<dyn KmsProvider>, BYOKError> {
         })?;
         let region = std::env::var("CORELINK_BYOK_AZURE_REGION")
             .unwrap_or_else(|_| "eastus2".to_string());
-        let p = corelink_byok_azure::AzureKeyVaultRealProvider::new(&region, &vault_url)?;
+        let p = corelink_byok::azure::AzureKeyVaultRealProvider::new(&region, &vault_url)?;
         Ok(Arc::new(p))
     }
     #[cfg(feature = "byok-vault-real")]
     {
         let region = std::env::var("CORELINK_BYOK_VAULT_REGION")
             .unwrap_or_else(|_| "customer-hosted".to_string());
-        let p = corelink_byok_vault::VaultRealProvider::from_env(&region)?;
+        let p = corelink_byok::vault::VaultRealProvider::from_env(&region)?;
         Ok(Arc::new(p))
     }
     #[cfg(not(any(

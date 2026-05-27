@@ -11,8 +11,8 @@
 
 use std::sync::Arc;
 
+use corelink_byok::aws::AwsKmsRealProvider;
 use corelink_byok::{BYOKError, KmsProvider};
-use corelink_byok_aws::AwsKmsRealProvider;
 
 /// Construct the production AWS KMS provider for the configured region.
 ///

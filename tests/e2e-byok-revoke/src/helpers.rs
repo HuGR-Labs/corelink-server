@@ -45,7 +45,7 @@ use corelink_byok::{
     BYOKError, Dek, DekCache, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProvider,
     KmsProviderKind, WrappedDek,
 };
-use corelink_byok_revocation::{
+use corelink_byok::revocation::{
     alerter::{CustomerAlerter, RevocationAlertPayload},
     error::RevocationError,
     event::{EVENT_TYPE_CMK_RESTORED, EVENT_TYPE_CMK_REVOKED},
@@ -385,7 +385,7 @@ fn digest32(s: &str) -> [u8; 32] {
 /// Production wiring INSERTs into the D1 `audit_outbox` table in the
 /// same atomic batch as the tenant status update
 /// (INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER). The harness assertions check
-/// `event_type` strings as defined in `corelink_byok_revocation::event`.
+/// `event_type` strings as defined in `corelink_byok::revocation::event`.
 #[derive(Debug, Default, Clone)]
 pub struct AuditSink {
     inner: Arc<Mutex<Vec<RevocationAuditEvent>>>,
@@ -551,7 +551,7 @@ impl CustomerAlerter for CustomerAlertSink {
 
 /// In-memory `TenantStatusStore` keyed by `KmsKeyId.key_arn_or_id`.
 ///
-/// Mirrors the one in `corelink_byok_revocation::testutil` but the
+/// Mirrors the one in `corelink_byok::revocation::testutil` but the
 /// harness re-implements it here so additional inspection helpers (e.g.
 /// `transition_history`) can be exposed without modifying the upstream
 /// testutil module.

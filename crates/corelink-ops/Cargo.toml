@@ -43,9 +43,11 @@ corelink-rotation-adapters = { workspace = true }
 corelink-dt-webhook = { workspace = true }
 corelink-config-do = { workspace = true }
 
-# Cross-crate dependencies of the absorbed (W35-P2-OPS) modules:
-corelink-byok-core = { workspace = true }
-corelink-byok-revocation = { workspace = true }
+# Cross-crate dependencies of the absorbed (W35-P2-OPS) modules.
+# W35-P2-BYOK: byok-core + byok-revocation physically absorbed into
+# corelink-byok umbrella; symbols reached via `corelink_byok::*` (core)
+# and `corelink_byok::revocation::*`.
+corelink-byok = { workspace = true }
 corelink-failover-router = { workspace = true }
 corelink-replica-worker = { workspace = true }
 corelink-audit = { workspace = true }

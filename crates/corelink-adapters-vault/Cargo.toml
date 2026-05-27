@@ -25,7 +25,9 @@ print_stderr = "deny"
 mod_module_files = "deny"
 
 [dependencies]
-# Re-export target (Stage 1 Stream C Option-A aggregator: physical
-# pure-logic vs. HTTPS decomposition deferred to Stage 2; see Stream C
-# SEAL audit §1).
-corelink-byok-vault = { workspace = true }
+# Wave-35 Phase 2 — re-export target. The former `corelink-byok-vault`
+# crate was physically absorbed into the `corelink-byok` umbrella;
+# the Vault Transit adapter surface is reached at `corelink_byok::vault::*`
+# (gated by the umbrella `vault` feature, mutually exclusive with the
+# other 3 provider namespaces per BYOK microkernel charter).
+corelink-byok = { workspace = true, features = ["vault"] }
