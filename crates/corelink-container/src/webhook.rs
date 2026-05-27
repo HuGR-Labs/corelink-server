@@ -50,7 +50,7 @@ use axum::{
     routing::post,
     Router,
 };
-use corelink_stripe_real::webhook_dispatch::{DispatchResponse, WebhookDispatcher};
+use corelink_billing::stripe::real::webhook_dispatch::{DispatchResponse, WebhookDispatcher};
 
 /// HTTP route path for the webhook endpoint.
 pub const STRIPE_WEBHOOK_ROUTE: &str = "/v1/billing/stripe-webhook";
@@ -148,7 +148,7 @@ pub fn dispatch_response_to_axum(resp: DispatchResponse) -> (StatusCode, &'stati
 )]
 mod tests {
     use super::*;
-    use corelink_stripe_real::webhook_dispatch::{
+    use corelink_billing::stripe::real::webhook_dispatch::{
         AuditOutcome, DispatchResponse, FixedClock, InMemoryIdempotencyStore,
         RecordingAuditEmitter, RecordingSliRecorder, RecordingStateMaterializer,
     };

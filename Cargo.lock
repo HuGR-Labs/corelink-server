@@ -2729,6 +2729,7 @@ dependencies = [
  "bytes",
  "corelink-analytics",
  "corelink-audit-chain",
+ "corelink-billing",
  "corelink-billing-stripe-materializer",
  "corelink-byok",
  "corelink-byok-aws",
