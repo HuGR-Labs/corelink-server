@@ -3,11 +3,11 @@
 //! This crate provides concrete implementations of the two trait
 //! abstractions defined in `corelink-clerk`:
 //!
-//! - [`CfKvJwksCache`]: implements [`KvJwksCache`] on top of a
+//! - [`CfKvJwksCache`]: implements [`corelink_clerk::KvJwksCache`] on top of a
 //!   Cloudflare KV namespace (`worker::kv::KvStore`). Replaces the
 //!   in-memory `fakes::InMemoryKvCache` used in unit tests.
 //!
-//! - [`CfJwksFetcher`]: implements [`JwksFetcher`] on top of
+//! - [`CfJwksFetcher`]: implements [`corelink_clerk::JwksFetcher`] on top of
 //!   `worker::Fetch::Url` (CF Workers Fetch API). Replaces the
 //!   in-memory `fakes::StaticJwksFetcher` used in unit tests.
 //!

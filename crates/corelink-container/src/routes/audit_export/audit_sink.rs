@@ -93,7 +93,7 @@ impl InMemoryExportAuditSink {
 /// helper.
 ///
 /// Closes audit findings A-P1-02 (cross-tenant-reject), A-P1-03 (mid-
-/// stream-break — see [`super::stream::emit_mid_stream_break_audit`]
+/// stream-break — see `super::stream::emit_mid_stream_break_audit`
 /// for the post-header trade-off), A-P1-05 (verify-failed-sev0), A-P2-01
 /// (rate-limit-deny).
 #[must_use]

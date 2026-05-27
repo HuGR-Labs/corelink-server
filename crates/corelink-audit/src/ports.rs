@@ -101,7 +101,7 @@ pub struct AuditEvent {
     pub tenant_id: String,
 
     /// Emit timestamp in unix milliseconds. The producer SHOULD use
-    /// the canonical [`corelink_core::Clock`] surface to obtain this
+    /// the canonical `corelink_core::Clock` surface to obtain this
     /// value — production wall-clock or test fake.
     pub at_unix_ms: u64,
 

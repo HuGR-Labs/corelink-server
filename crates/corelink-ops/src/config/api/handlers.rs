@@ -11,13 +11,13 @@
 //!
 //! All mutating endpoints enforce:
 //! 1. Admin role (via [`AdminContext::is_admin`]).
-//! 2. MFA freshness ≤ 30 min (via [`middleware::mfa_freshness::check_mfa_freshness`]).
+//! 2. MFA freshness ≤ 30 min (via `middleware::mfa_freshness::check_mfa_freshness`).
 //! 3. Rollback additionally requires dual-approval (X-Dual-Approver header).
 //!
 //! # Audit fail-CLOSED
 //!
 //! Handlers do not directly call the audit sink; the sink is wired inside
-//! [`ConfigSingletonStore::update`] / [`rollback_to`]. Handlers only build
+//! [`ConfigSingletonStore::update`] / `rollback_to`. Handlers only build
 //! the request and propagate errors.
 
 use serde::{Deserialize, Serialize};

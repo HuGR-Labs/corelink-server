@@ -12,7 +12,7 @@
 //!
 //! 1. Parse each `{event, proof}` row.
 //! 2. Recompute the chain link at each row via
-//!    [`link_chain_hash`] over (`event.prev_hash`, `event`); compare
+//!    [`corelink_audit_chain::link_chain_hash`] over (`event.prev_hash`, `event`); compare
 //!    constant-time against `proof.link_hash`.
 //! 3. Walk the chain forward — the *next* row's `event.prev_hash`
 //!    MUST equal the current row's `proof.link_hash`.

@@ -91,7 +91,7 @@ pub struct EncryptedInquiryPayload {
     /// BYOK envelope (wrapped DEK + AES-256-GCM ciphertext + nonce),
     /// base64-encoded. The exact framing is provider-opaque; the
     /// production binary's `corelink-byok::EnvelopeEncryptor` serde-
-    /// serialises the [`corelink_byok::EncryptedBlob`] before base64.
+    /// serialises the `corelink_byok::EncryptedBlob` before base64.
     pub ciphertext_b64: String,
     /// AAD context that was bound at seal time. The unseal path
     /// re-derives this from the [`SealedInquiry::sanitized`] surrogates

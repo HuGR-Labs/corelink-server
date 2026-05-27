@@ -1,10 +1,10 @@
 //! Real CF R2 binding adapter with extended operations + tenant-prefix
 //! enforcement (R-PREP, wasm32 production binding).
 //!
-//! # What this module adds over [`crate::cf_r2::CfR2BucketAdapter`]
+//! # What this module adds over `crate::cf_r2::CfR2BucketAdapter` (wasm32-only)
 //!
 //! `cf_r2::CfR2BucketAdapter` (wasm32-only) implements the **minimal**
-//! [`R2Backend`] trait surface (`put_if_none_match` / `get` / `head`)
+//! `R2Backend` trait surface (`put_if_none_match` / `get` / `head`)
 //! that `corelink-worker::storage::r2::R2Writer` needs for the CAS
 //! hot-path. Production also needs the broader R2 toolkit:
 //!

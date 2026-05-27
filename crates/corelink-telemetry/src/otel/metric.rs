@@ -3,7 +3,7 @@
 //! Per `INV-OBS-NO-PII`, every metric forwarded to a third-party
 //! observability vendor is keyed by a canonical
 //! [`corelink_analytics::RedMetricKind`] (15 enum variants, snake_case
-//! `corelink_*` slugs). The [`labels`] field carries the canonical
+//! `corelink_*` slugs). The [`MetricPoint::labels`] field carries the canonical
 //! pseudonymous-only label set documented in
 //! `specs/03_architecture/observability_model.md §10` — the free-form
 //! customer-side `tenant_id` is pseudonymized at the boundary BEFORE

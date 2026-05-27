@@ -4,7 +4,7 @@
 //! This handler exercises all four real-binding adapters
 //! (`CfR2BucketReal`, `CfD1DatabaseReal`, `CfKvNamespaceReal`,
 //! `CfDurableObjectReal`) from `corelink-cf-bindings`. Each adapter is
-//! constructed via [`crate::prod_wiring::build_real_bindings`] at request
+//! constructed via `crate::prod_wiring::build_real_bindings` at request
 //! entry and threaded into this handler as a single [`CfRealBindings`]
 //! bundle.
 //!

@@ -37,7 +37,7 @@
 //! 4. The [`bucket`] module ships [`TokenBucketState`] (the durable
 //!    state machine; `available_tokens: f64` for sub-1-token refill
 //!    precision per WI §1 invariant 5) + [`BucketDecision`]
-//!    (`#[non_exhaustive]` Allow / Deny429) + [`try_acquire`] (the
+//!    (`#[non_exhaustive]` Allow / Deny429) + [`bucket::try_acquire`] (the
 //!    canonical lazy-refill formula; monotonic clock clamp;
 //!    canceled-tenant guard per Lote 10.8bis P1-1).
 //! 5. The [`audit`] module ships [`RateLimitEventType`]
@@ -79,7 +79,7 @@
 //!
 //! - **INV-RATE-LIMIT-PROPORTIONALITY** (HIGH; spec_contract §8 +
 //!   invariant_registry §3.12): `refill_rate × window` consistent with
-//!   tenant Plan tier; mudança plan reflete via [`update_plan`].
+//!   tenant Plan tier; mudança plan reflete via `update_plan`.
 //!   Pinned by `prop_token_bucket_proportionality` +
 //!   `prop_token_bucket_never_exceeds_capacity`.
 //! - **INV-AVAIL-ISOLATION** (HIGH; spec_contract §8 +

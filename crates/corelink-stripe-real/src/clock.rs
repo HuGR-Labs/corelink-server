@@ -12,7 +12,7 @@
 //! introduces this [`Clock`] trait so:
 //!
 //! - **native** callers inject [`SystemClock`] (wraps `SystemTime::now`)
-//! - **wasm32** callers inject [`WasmWorkerClock`] (reads
+//! - **wasm32** callers inject `WasmWorkerClock` (reads
 //!   `js_sys::Date::now()` — Workers expose `Date` per the
 //!   Web-Platform `globalThis` contract)
 //! - **tests** inject [`InMemoryFakeClock`] for deterministic timestamps
@@ -50,7 +50,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// Wall-clock abstraction.
 ///
-/// Production impls: [`SystemClock`] (native) or [`WasmWorkerClock`]
+/// Production impls: [`SystemClock`] (native) or `WasmWorkerClock`
 /// (wasm32). Test impls: [`InMemoryFakeClock`] (deterministic).
 ///
 /// The canonical method is [`Clock::now`]; the seconds / millis / SLI
@@ -61,7 +61,7 @@ pub trait Clock: fmt::Debug + Send + Sync {
     ///
     /// Implementations MUST NOT panic on wasm32. The wave-19 caveat
     /// (`SystemTime::now()` panics on `wasm32-unknown-unknown`) is
-    /// closed by routing wasm32 callers through [`WasmWorkerClock`]
+    /// closed by routing wasm32 callers through `WasmWorkerClock`
     /// which reads `js_sys::Date::now()` instead.
     fn now(&self) -> SystemTime;
 
@@ -111,7 +111,7 @@ pub trait Clock: fmt::Debug + Send + Sync {
 /// Native system-clock impl. Wraps [`std::time::SystemTime::now`].
 ///
 /// On `wasm32-unknown-unknown` this impl is **not available** — wasm32
-/// callers MUST use [`WasmWorkerClock`] instead. Mis-use is caught at
+/// callers MUST use `WasmWorkerClock` instead. Mis-use is caught at
 /// compile time via the `cfg` gate.
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone, Copy, Debug, Default)]
@@ -238,7 +238,7 @@ impl Clock for InMemoryFakeClock {
 /// Construct the production wall-clock for the current target:
 ///
 /// - native (`cfg(not(target_arch = "wasm32"))`) → [`SystemClock`]
-/// - wasm32 (`cfg(target_arch = "wasm32")`)     → [`WasmWorkerClock`]
+/// - wasm32 (`cfg(target_arch = "wasm32")`)     → `WasmWorkerClock`
 ///
 /// Wraps in `Arc<dyn Clock + Send + Sync>` so callers can store the
 /// clock in shared state without leaking the concrete type.

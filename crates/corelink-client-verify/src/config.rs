@@ -16,7 +16,7 @@
 /// [`VerifyConfig::disabled`] constructor, which both flips the flag AND
 /// causes the resulting [`ClientVerifier`](crate::ClientVerifier) to emit a
 /// canonical warning + counter increment when constructed. CI gates the
-/// default invariant via [`prop_default_is_enabled`] /
+/// default invariant via `prop_default_is_enabled` /
 /// `default_is_enabled` regression tests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VerifyConfig {

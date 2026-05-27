@@ -135,7 +135,7 @@ pub enum ErasureReportError {
     SignatureInvalid,
 }
 
-/// Canonical error surface returned by the [`crate::worker`] APIs.
+/// Canonical error surface returned by the erasure worker orchestrator APIs.
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum ErasureWorkerError {

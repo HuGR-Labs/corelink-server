@@ -4,7 +4,7 @@
 //! ## Three-modes design
 //!
 //! 1. **`verify_structure`** (`pub(crate)` — internal API per WI v1.2.0
-//!    Lote 10.5bis P0 fix; the public API is [`verify_full`] which
+//!    Lote 10.5bis P0 fix; the public API is [`ManifestVerifier::verify_full`] which
 //!    chains structure THEN sig in the canonical pinned order to
 //!    prevent API misuse where a caller could verify the sig without
 //!    the structural bounds check). Pure-logic; no I/O. Verifies:

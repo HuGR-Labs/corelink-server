@@ -13,9 +13,9 @@
 //!
 //! ## Architecture
 //!
-//! The [`super::real::NeonExecutor`] trait is synchronous, but the
+//! The [`crate::neon_shadow::real::NeonExecutor`] trait is synchronous, but the
 //! underlying `tokio-postgres` client is fully async. The adapter
-//! bridges the gap by holding a [`tokio::runtime::Handle`] captured at
+//! bridges the gap by holding a `tokio::runtime::Handle` captured at
 //! construction time and dispatching every call through
 //! `block_in_place(|| handle.block_on(fut))`. This pattern is safe on
 //! the tonic + axum hosts because they run on a multi-thread tokio
@@ -43,7 +43,7 @@
 //! - `recycle = Fast` (the deadpool default) — connections are reused
 //!   without a `SELECT 1` ping; tokio-postgres surfaces a `closed()`
 //!   future on the connection if Neon's pool-pause cycle invalidated
-//!   the link, and the adapter's [`super::real::NeonError::Backend`]
+//!   the link, and the adapter's [`crate::neon_shadow::real::NeonError::Backend`]
 //!   propagation triggers the SEV-2 audit emit so an operator notices
 //!   even though the next pool checkout will succeed cleanly.
 //!
@@ -59,19 +59,19 @@
 //!
 //! Every concrete type in this file is `#[cfg(not(target_arch = "wasm32"))]`.
 //! The wasm32 path links a stub whose every method surfaces
-//! [`super::real::NeonError::WasmOnly`] so a CF Worker that misroutes
+//! [`crate::neon_shadow::real::NeonError::WasmOnly`] so a CF Worker that misroutes
 //! a Neon call fails fast instead of silently no-op-ing — this mirrors
-//! the [`super::real::RealNeonShadowSink`] wasm32 stub pattern.
+//! the [`crate::neon_shadow::real::RealNeonShadowSink`] wasm32 stub pattern.
 //!
 //! ## Charter
 //!
 //! - `#![forbid(unsafe_code)]` — inherited from the crate root.
 //! - No `unwrap` / `expect` / `panic` in src — every fallible step
-//!   surfaces a typed [`super::real::NeonError`] variant.
+//!   surfaces a typed [`crate::neon_shadow::real::NeonError`] variant.
 //! - Sync method bodies use `block_in_place` (panics on single-thread
 //!   runtime — explicit failure, not silent dead-lock).
 //! - Constant-time tenant comparison stays at the
-//!   [`super::real::RealNeonShadowSink`] layer (this adapter is
+//!   [`crate::neon_shadow::real::RealNeonShadowSink`] layer (this adapter is
 //!   tenant-agnostic; the GUC `set_config` is the SQL-layer gate).
 //!
 //! ## Tests
@@ -79,7 +79,7 @@
 //! Unit tests cover the wasm32 stub + the param-vec encoder shape
 //! (the SQL-ordering invariant is already pinned by the wave-19
 //! `sync_chunk_emits_canonical_sql_order` test against the
-//! [`super::real::InMemoryExecutor`]).
+//! [`crate::neon_shadow::real::InMemoryExecutor`]).
 //!
 //! Five `#[ignore]`-by-default integration tests live in
 //! `crates/corelink-audit-chain/tests/neon_shadow_real.rs` — they

@@ -132,7 +132,7 @@ pub struct BillingAuditRecord {
 }
 
 /// Audit-of-audit emit error alias (lifted from
-/// [`BillingAuditSinkError`]).
+/// [`crate::error::BillingAuditSinkError`]).
 pub use crate::error::BillingAuditSinkError as BillingAuditEmitError;
 
 /// Audit-of-audit sink trait. Production wiring composes:

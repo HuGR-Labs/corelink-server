@@ -3,10 +3,10 @@
 //! # What this crate ships
 //!
 //! 1. The canonical SQL artifact `migrations/d1/0002_ac_meta.sql`,
-//!    embedded via [`MIGRATION_0002_AC_META`] so production code can
+//!    embedded via [`crate::schema::MIGRATION_0002_AC_META`] so production code can
 //!    pass the DDL to `wrangler d1 migrations apply` (or any host-side
 //!    runner) without re-reading the file from disk.
-//! 2. A **host-side in-memory schema simulator** ([`AcSchema`]) that
+//! 2. A **host-side in-memory schema simulator** ([`crate::schema::AcSchema`]) that
 //!    enforces every load-bearing invariant the migration relies on:
 //!    PRIMARY KEY uniqueness on `(tenant_id, action_digest)`, every
 //!    inline CHECK constraint, tenant-isolation envelope (the
@@ -16,7 +16,7 @@
 //!    semantic that pins `INV-AC-IDEMPOTENT` +
 //!    `INV-AC-RESULT-HASH-IMMUTABLE`. The simulator is purposefully
 //!    ORM-free — its sole consumers are property tests in this crate.
-//! 3. The [`region`] module documenting the canonical 5-region list
+//! 3. The [`crate::schema::region`] module documenting the canonical 5-region list
 //!    (`sam`, `iad`, `lhr`, `nrt`, `syd`) that the schema CHECK
 //!    constraint enforces. Adding a new region requires a new ADR +
 //!    new migration per ADR-0036 Rule 3.
@@ -37,7 +37,7 @@
 //!
 //! WI-S04-001's `AcMetaStore` trait surface
 //! (`corelink-worker::reapi::ac::meta`) is the integration seam the
-//! handler depends on. The simulator in this crate ([`AcSchema`])
+//! handler depends on. The simulator in this crate ([`crate::schema::AcSchema`])
 //! mirrors the **same** algorithmic semantics the in-memory fake
 //! `InMemoryAcMetaStore` ships in WI-S04-001 — both enforce the
 //! load-bearing invariants the production D1 binding (deferred to
@@ -54,7 +54,7 @@
 //!   library code (all crate-strict clippy lints are `deny`).
 //! - The simulator is **not** a SQL parser. It implements a hand-coded
 //!   subset corresponding to the `ac_meta` table and reports
-//!   structured [`SimError`] errors when an invariant fires.
+//!   structured [`crate::schema::SimError`] errors when an invariant fires.
 
 #![forbid(unsafe_code)]
 

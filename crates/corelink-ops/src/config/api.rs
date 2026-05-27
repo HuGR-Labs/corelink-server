@@ -6,7 +6,7 @@
 //! - [`handlers`] module: [`handle_get_current`], [`handle_put`],
 //!   [`handle_rollback`], [`handle_get_history`] — logic for the four
 //!   admin config endpoints.
-//! - [`middleware::mfa_freshness`]: [`check_mfa_freshness`] — enforces
+//! - [`middleware::mfa_freshness`]: `check_mfa_freshness` — enforces
 //!   CTRL-AUTH-010 + INV-ADMIN-MFA-FRESHNESS (30 min hard window).
 //! - [`error::ApiError`]: HTTP status-aware error taxonomy.
 //!

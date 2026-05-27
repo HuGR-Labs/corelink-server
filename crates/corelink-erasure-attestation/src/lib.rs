@@ -26,7 +26,7 @@
 //!
 //! Per-region Ed25519 signing keys rotate every 30 days (canonical overlap
 //! per `key_management.md §3.2.1` + ADR-0018; managed by the S-13 rotation
-//! worker via [`corelink_rotation_adapters::ErasureAttestationRotationAdapter`]).
+//! worker via `corelink_rotation_adapters::ErasureAttestationRotationAdapter`).
 //! During the 30d overlap window both the Active and Overlap public keys are
 //! served by `GET /v1/public/keys/erasure/{region}.pub`; a verifier that
 //! downloaded the old public key pre-rotation can still verify attestations
@@ -36,7 +36,7 @@
 //!
 //! Every DSR erasure of a BYOK tenant MUST produce exactly one Ed25519-signed
 //! attestation persisted in R2 with 7y retention and indexed in D1.
-//! Enforced by [`ErasureAttester::attest_erasure`].
+//! Enforced by the `ErasureAttester::attest_erasure` surface in the consumer crate.
 //!
 //! # Security properties
 //!

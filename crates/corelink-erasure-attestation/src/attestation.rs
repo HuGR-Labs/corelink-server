@@ -31,7 +31,7 @@ pub struct ErasureAttestationPayload {
     /// KMS key ID (ARN / resource name) that was destroyed.
     pub kms_key_id: String,
 
-    /// SHA-256 hex digest of the [`EvidenceBundle`] binding audit chain
+    /// SHA-256 hex digest of the [`crate::evidence::EvidenceBundle`] binding audit chain
     /// segment IDs + KMS destroy timestamp + KMS key_id + tenant_id.
     /// (NIST SP 800-88 Rev.1 §2.4 evidence binding.)
     pub evidence_hash: String,

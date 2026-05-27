@@ -30,7 +30,7 @@
 //! MASK_L, GEAR)` ⇒ same boundaries byte-for-byte. The `GEAR` table
 //! lives in [`gear`] and is derived from a fixed SplitMix64 seed
 //! `0xCORELINK_CHUNKER_FASTCDC_V1` so any third-party implementation
-//! can reproduce it independently — pinned by [`tests/canonical_vectors.rs`].
+//! can reproduce it independently — pinned by `tests/canonical_vectors.rs`.
 //!
 //! # Memory contract
 //!
@@ -330,7 +330,7 @@ impl FastCdcChunker {
 /// PRNG seeded with the constant `0xC0_RE_LI_NK_FA_ST_CD_C1` (ASCII
 /// "corelink-chunker-fastcdc-v1" treated as a 64-bit endian-aware
 /// fingerprint, fixed for the life of v1.x). The table is generated
-/// at compile time via [`build_table`] and the test suite asserts
+/// at compile time via `build_table` and the test suite asserts
 /// its first / last / middle entries cross every release so any
 /// drift is caught in CI.
 pub mod gear {

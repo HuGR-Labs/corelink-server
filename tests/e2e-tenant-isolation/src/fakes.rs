@@ -318,7 +318,7 @@ pub enum FakeError {
 
 /// In-memory CAS / R2 fake — keys are partitioned by
 /// [`TenantPrefix`]; every authenticated read / write goes through
-/// [`Self::get`] / [`Self::put`] which verify the requester's tenant
+/// the CAS fake's `get` / `put` methods which verify the requester's tenant
 /// id against the prefix-bound owner BEFORE returning success.
 /// CAS entry: owner tenant id + value bytes.
 type CasEntry = (Uuid, Vec<u8>);

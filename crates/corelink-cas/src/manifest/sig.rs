@@ -16,14 +16,14 @@
 //! (HKDF-Expand uses `info` as a label so a shared prefix could enable
 //! truncation attacks if the implementation ever changed the
 //! length-binding semantic). The CI test
-//! [`tests::canonical_info_string`] asserts byte-equal AND distinctness.
+//! `tests::canonical_info_string` asserts byte-equal AND distinctness.
 //!
 //! ## Reuse over re-implement
 //!
 //! The HKDF Extract+Expand + BLAKE3 keyed-hash + constant-time compare
 //! pipeline is shared with `corelink-ac::sig::hkdf_signer`. To avoid
 //! duplicating that pipeline we depend on the
-//! [`corelink-ac::sig::compute_signature`] helper which derives a
+//! `corelink_ac::sig::compute_signature` helper which derives a
 //! sig_key from `(tdk_bytes, sig_key_id)` under `info = b"ac-sig"` —
 //! BUT we DON'T call it directly; we re-derive locally with
 //! `info = b"manifest-sig"`. The helpers `derive_sig_key` + `keyed_mac`
@@ -40,7 +40,7 @@ use uuid::Uuid;
 use crate::manifest::bounds::MANIFEST_SIG_LEN;
 
 /// HKDF info bytes — `b"manifest-sig"` per WI-S05-005 §9.3. Constant;
-/// CI gate in [`tests::canonical_info_string`] asserts byte-equal AND
+/// CI gate in `tests::canonical_info_string` asserts byte-equal AND
 /// distinctness from `b"ac-sig"` + `b"meta-manifest-sig"`.
 pub const HKDF_INFO_MANIFEST_SIG: &[u8] = b"manifest-sig";
 
@@ -51,7 +51,7 @@ pub const HKDF_INFO_MANIFEST_SIG: &[u8] = b"manifest-sig";
 pub const HKDF_INFO_META_MANIFEST_SIG_RESERVED: &[u8] = b"meta-manifest-sig";
 
 /// Compute the manifest-domain MAC tag via the canonical
-/// [`corelink-ac::sig::keyed_mac_with_info`] helper. Pinned info string
+/// [`corelink_ac::sig::keyed_mac_with_info`] helper. Pinned info string
 /// = [`HKDF_INFO_MANIFEST_SIG`] (`b"manifest-sig"`).
 fn manifest_mac(
     tdk_handle: &dyn TdkHandle,
@@ -70,7 +70,7 @@ fn manifest_mac(
 
 /// Manifest signer — production impl. Holds an `Arc<dyn TdkHandle>` for
 /// per-tenant secret resolution; cheap to clone (only the Arc is
-/// bumped). Mirrors the [`corelink-ac::sig::HkdfSigner`] shape with the
+/// bumped). Mirrors the [`corelink_ac::sig::HkdfSigner`] shape with the
 /// canonical `info = b"manifest-sig"` substitution.
 #[derive(Clone)]
 pub struct ManifestSigner {
@@ -152,7 +152,7 @@ impl ManifestSigner {
 
 /// Manifest verifier — production impl. Holds an `Arc<dyn TdkHandle>` plus
 /// a sorted `accepted_key_ids` whitelist. Mirrors
-/// [`corelink-ac::sig::HkdfVerifier`].
+/// [`corelink_ac::sig::HkdfVerifier`].
 #[derive(Clone)]
 pub struct ManifestVerifierSig {
     tdk_handle: Arc<dyn TdkHandle>,
@@ -296,7 +296,7 @@ impl ManifestVerifierSig {
 
 /// Convenience: compute the canonical 32-byte sig over `canonical_bytes`
 /// without holding a [`ManifestSigner`] (mirrors
-/// [`corelink-ac::sig::compute_signature`]).
+/// `corelink_ac::sig::compute_signature`).
 ///
 /// # Errors
 ///

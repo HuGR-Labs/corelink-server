@@ -134,7 +134,7 @@ pub struct StripeAuditRecord {
 }
 
 /// Audit-of-audit emit error alias (lifted from
-/// [`StripeAuditSinkError`]).
+/// [`crate::error::StripeAuditSinkError`]).
 pub use crate::error::StripeAuditSinkError as StripeAuditEmitError;
 
 /// Audit-of-audit sink trait. Production wiring composes:

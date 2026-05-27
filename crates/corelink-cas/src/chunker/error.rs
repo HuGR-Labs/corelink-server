@@ -1,16 +1,16 @@
-//! Canonical error taxonomy for [`crate::Chunker`] implementations.
+//! Canonical error taxonomy for [`crate::chunker::Chunker`] implementations.
 //!
 //! `#[non_exhaustive]` so additive variants don't break downstream
 //! callers across post-v1 releases (WI-S05-002 §6.1.11, §17).
 
 use thiserror::Error;
 
-/// Error returned by [`crate::Chunker`] implementations + the
-/// [`crate::ChunkerConfig::validate`] surface.
+/// Error returned by [`crate::chunker::Chunker`] implementations + the
+/// [`crate::chunker::ChunkerConfig::validate`] surface.
 #[derive(Debug, Error, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ChunkerError {
-    /// Cumulative input exceeded [`crate::bounds::MAX_BLOB_SIZE`].
+    /// Cumulative input exceeded [`crate::chunker::bounds::MAX_BLOB_SIZE`].
     /// The chunker rejects further input early without allocating
     /// — see WI-S05-002 §2.3 (R-3) bounded-parser invariant.
     #[error(
@@ -23,7 +23,7 @@ pub enum ChunkerError {
         max: u64,
     },
 
-    /// The chunker would cross [`crate::bounds::MAX_CHUNKS_PER_BLOB`]
+    /// The chunker would cross [`crate::chunker::bounds::MAX_CHUNKS_PER_BLOB`]
     /// if it emitted another chunk. Cross-crate aligned with
     /// `corelink-worker::reapi::cas::types::MAX_CHUNKS_PER_BLOB` per
     /// spec contract S-05 §5.1 P1-SR5-001.
@@ -37,7 +37,7 @@ pub enum ChunkerError {
         max: u32,
     },
 
-    /// `ChunkerConfig` for [`crate::ChunkerAlgorithm::FastCDC2MiB`]
+    /// `ChunkerConfig` for [`crate::chunker::ChunkerAlgorithm::FastCDC2MiB`]
     /// violated the `min ≤ avg ≤ max` invariant required by the
     /// FastCDC algorithm (Xia 2016 §3.4).
     #[error("FastCDC config invalid: min={min} avg={avg} max={max} (require min ≤ avg ≤ max, all > 0)")]

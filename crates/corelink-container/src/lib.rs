@@ -14,7 +14,7 @@
 //!   end-to-end as the example wire-up for the R-prep handler-crate
 //!   skeleton (see
 //!   `specs/_audits/sealed/2026-05-14-slo-instrumentation-gaps.md §6`).
-//! - [`byok`] — feature-gated AWS-only BYOK provider factory (built
+//! - `byok` — feature-gated AWS-only BYOK provider factory (built
 //!   when `--features byok-aws-real`). Preserved as a thin convenience
 //!   wrapper; new code should use [`byok_orchestrator`].
 //! - [`byok_orchestrator`] — singleton trait-object dispatch over the

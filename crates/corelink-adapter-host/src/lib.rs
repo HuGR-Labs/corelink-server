@@ -24,7 +24,7 @@
 //! spawning the sync call onto `tokio::task::spawn_blocking` so the
 //! async runtime thread is never blocked.
 //!
-//! [`KvBackend`] uses RPITIT (`impl Future`) and is therefore not
+//! `KvBackend` uses RPITIT (`impl Future`) and is therefore not
 //! object-safe. Bridges that target `KvBackend` are generic over
 //! `K: KvBackend + Send + Sync + fmt::Debug + 'static`.
 //!

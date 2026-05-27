@@ -26,7 +26,7 @@
 //!   defined exactly once in
 //!   [`corelink_stripe_real::webhook_dispatch::CanonicalWebhookEventType`]).
 //! - Audit emit / SLI emit (delegated to the
-//!   [`AuditEmitter`] / [`SliRecorder`] traits the dispatcher owns).
+//!   `AuditEmitter` / `SliRecorder` traits the dispatcher owns).
 //!
 //! Before wave 16 this file owned a parallel trait surface
 //! (`SubscriptionStateHandler`, `WebhookAuditSink`, `WebhookIdempotencyStore`,

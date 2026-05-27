@@ -14,10 +14,10 @@
 //!      scopes against; CTRL-PRIV-001 / INV-TENANT-ISOLATION)
 //!    - `DSR_LOG_DB`             (D1 binding)
 //! 2. Constructs the wave-18 real backends:
-//!    - [`corelink_dsr_statuspage_scheduler::D1Wasm32RowSource`] —
+//!    - `corelink_dsr_statuspage_scheduler::D1Wasm32RowSource` —
 //!      `worker::D1Database`-backed reader against the canonical
 //!      `dsr_erasure_log` table.
-//!    - [`corelink_statuspage_real::StatuspageWasm32Client`] —
+//!    - `corelink_statuspage_real::StatuspageWasm32Client` —
 //!      `worker::Fetch`-backed Statuspage Public-Metric publisher.
 //! 3. Composes
 //!    `D1Wasm32RowSource::fetch_window_async → aggregate_24h_window →
@@ -32,14 +32,14 @@
 //! skip event because the wave-16 native `StatuspageHttpClient` uses
 //! `reqwest::blocking` which does not link on wasm32. Wave-18 lands
 //! the real `worker::Fetch`-backed
-//! [`corelink_statuspage_real::StatuspageWasm32Client`] + the real
+//! `corelink_statuspage_real::StatuspageWasm32Client` + the real
 //! `worker::D1Database`-backed
-//! [`corelink_dsr_statuspage_scheduler::D1Wasm32RowSource`] and wires
+//! `corelink_dsr_statuspage_scheduler::D1Wasm32RowSource` and wires
 //! them into this handler. The skip event is REMOVED.
 //!
 //! # Why hand-composed (not via the native scheduler)
 //!
-//! The native [`corelink_dsr_statuspage_scheduler::DsrStatuspagePublishScheduler`]
+//! The native `corelink_dsr_statuspage_scheduler::DsrStatuspagePublishScheduler`
 //! orchestrator uses **sync** trait surfaces (`D1RowSource` /
 //! `StatuspageBackend`); on wasm32 the canonical equivalents are async
 //! (`worker::D1Database::all` / `worker::Fetch::send`). With no

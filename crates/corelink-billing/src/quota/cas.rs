@@ -170,6 +170,10 @@
 //! intact for the transitional window per ADR-0020 FROZEN; new
 //! middleware mounts pin THIS crate's canonical path.
 
+// W35-P2: inherited `//!` docs from the absorbed `corelink-quota-cas`
+// crate use short intra-doc refs that resolved at the former crate root.
+#![allow(rustdoc::broken_intra_doc_links)]
+
 /// Embedded canonical migration SQL (D1 Cloudflare SQLite) for
 /// `quota_cas_attempts` (WI-S08-003; durable audit row of every CAS
 /// attempt — successful / denied / race-detected — for SEV-3 race

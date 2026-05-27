@@ -4,18 +4,18 @@
 //!
 //! ## What this module ships
 //!
-//! - [`NeonProjectResolver`] trait — looks up the per-region Neon
+//! - [`crate::neon_shadow::real::NeonProjectResolver`] trait — looks up the per-region Neon
 //!   project DSN (a Neon **project** is the residency-pinned Postgres
 //!   instance; each `Region` has its own project per
 //!   INV-DATA-RESIDENCY CRITICAL).
-//! - [`EnvVarResolver`] — canonical impl reading `NEON_DB_URL_<REGION>`
+//! - [`crate::neon_shadow::real::EnvVarResolver`] — canonical impl reading `NEON_DB_URL_<REGION>`
 //!   env vars (e.g. `NEON_DB_URL_IAD`, `NEON_DB_URL_FRA`).
-//! - [`NeonExecutor`] trait — the SQL backplane abstraction. The real
+//! - [`crate::neon_shadow::real::NeonExecutor`] trait — the SQL backplane abstraction. The real
 //!   `tokio-postgres` adapter satisfies this trait (lives at the
 //!   binary boot path, per the trait-abstraction-defer charter
 //!   pattern; mirrors `corelink-byok-aws::AwsKmsRealProvider` +
 //!   `corelink-cf-bindings::cf_r2`).
-//! - [`RealNeonShadowSink`] — the production [`NeonShadowSink`] impl
+//! - [`crate::neon_shadow::real::RealNeonShadowSink`] — the production [`crate::neon_shadow::NeonShadowSink`] impl
 //!   that orchestrates: tenant + residency pre-validation → BEGIN txn
 //!   → `SELECT set_config('app.current_tenant', $1, true)` (RLS GUC
 //!   binding) → idempotent INSERT (`ON CONFLICT (tenant_id, seq) DO
@@ -67,7 +67,7 @@
 //!
 //! `RealNeonShadowSink` is `cfg(not(target_arch = "wasm32"))`. The
 //! wasm32 target compiles a stub whose every method returns
-//! [`NeonError::WasmOnly`]. CF Workers reach the production Neon
+//! [`crate::neon_shadow::real::NeonError::WasmOnly`]. CF Workers reach the production Neon
 //! project via the native gRPC server, NOT directly from the worker
 //! isolate.
 

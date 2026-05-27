@@ -2,7 +2,7 @@
 //! audit fence on every stub fetch (R-PREP-CF-DO-REAL, wasm32
 //! production binding + native stub).
 //!
-//! # What this module adds over [`crate::cf_do::CfDurableObjectAdapter`]
+//! # What this module adds over `crate::cf_do::CfDurableObjectAdapter` (wasm32-only)
 //!
 //! `cf_do::CfDurableObjectAdapter` (wasm32-only) is a thin shim around
 //! `worker::ObjectNamespace::id_from_name` + `id_from_string` +
@@ -41,10 +41,10 @@
 //!   wasm32 build.
 //!
 //! For unit tests that need to exercise the full fetch round-trip
-//! without the wasm32 toolchain, callers pass a [`FakeDoRouter`] into
-//! [`CfDurableObjectReal::with_fake_router`] (native build only). The
+//! without the wasm32 toolchain, callers pass a `FakeDoRouter` (native-only)
+//! into [`CfDurableObjectReal::with_fake_router`] (native build only). The
 //! router routes scoped names to handler closures that produce
-//! [`FakeFetchResponse`]s — see the `tests/do_real.rs` integration
+//! `FakeFetchResponse`s — see the `tests/do_real.rs` integration
 //! tests for the canonical wiring.
 //!
 //! # Pattern replication

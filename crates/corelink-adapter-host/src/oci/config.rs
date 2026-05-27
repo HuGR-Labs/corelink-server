@@ -1,4 +1,4 @@
-//! Configuration for [`crate::run_oci_adapter`].
+//! Configuration for [`crate::oci::run_oci_adapter`].
 //!
 //! Charter-critical defaults:
 //!
@@ -23,7 +23,7 @@ use corelink_core::SecretWrap;
 
 use crate::oci::ports::{BlobStore, ManifestKvStore, TenantResolver};
 
-/// Live configuration consumed by [`crate::run_oci_adapter`].
+/// Live configuration consumed by [`crate::oci::run_oci_adapter`].
 ///
 /// Construction-by-struct-literal is intentional: every field is
 /// public so the call site surfaces every dependency at the wiring

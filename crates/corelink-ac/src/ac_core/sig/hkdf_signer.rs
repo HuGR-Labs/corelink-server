@@ -44,7 +44,7 @@ use super::tdk::TdkHandle;
 use super::{SignatureSigner, SignatureVerifier, RESERVED_SIG_KEY_ID};
 
 /// HKDF info bytes — `b"ac-sig"` per ADR-0021 §1. Constant; CI gate
-/// in [`crate::ac_core::sig::tests::canonical_info_string`] asserts byte-equal.
+/// in `crate::ac_core::sig::tests::canonical_info_string` asserts byte-equal.
 pub const HKDF_INFO_AC_SIG: &[u8] = b"ac-sig";
 
 /// Canonical signature byte length (`32`). HKDF-Expand outputs 32
@@ -357,9 +357,9 @@ pub fn compute_signature(
 /// the same cripto stack with a domain-separated info string —
 /// `b"manifest-sig"` (WI-S05-005) / `b"meta-manifest-sig"` (WI-S05-006
 /// reserved) — without re-implementing the Extract+Expand+keyed-hash
-/// pipeline AND without breaking the [`Tdk`] hygiene contract (the
+/// pipeline AND without breaking the [`super::Tdk`] hygiene contract (the
 /// raw bytes remain crate-private; the helper borrows them inside this
-/// function and drops the [`Tdk`] before returning).
+/// function and drops the [`super::Tdk`] before returning).
 ///
 /// The function preserves every cripto invariant of the AC sig
 /// pipeline:

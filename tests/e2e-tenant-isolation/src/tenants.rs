@@ -62,7 +62,7 @@ impl TenantCtx {
     ///
     /// Returns [`TenantCtxError::UuidParse`] only if the hard-coded
     /// UUID constant somehow becomes invalid (defence-in-depth — the
-    /// constant is tested in [`Self::tenant_a_round_trip`]).
+    /// constant is tested in `tenant_a_round_trip`).
     pub fn tenant_a() -> Result<Self, TenantCtxError> {
         Self::from_uuid_str(TENANT_A_UUID)
     }

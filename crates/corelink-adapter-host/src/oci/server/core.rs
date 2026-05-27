@@ -18,7 +18,7 @@ pub struct AppState {
     pub config: Arc<OciAdapterConfig>,
     /// Clock — exposed as a fn pointer to keep tests deterministic.
     /// Defaults to wall-clock `SystemTime::now()` in
-    /// [`crate::run_oci_adapter`]; tests inject a fixed value.
+    /// [`crate::oci::run_oci_adapter`]; tests inject a fixed value.
     pub clock_unix_ms: fn() -> u64,
 }
 
@@ -43,7 +43,7 @@ impl std::fmt::Debug for AppState {
     }
 }
 
-/// Default wall-clock function used by [`crate::run_oci_adapter`].
+/// Default wall-clock function used by [`crate::oci::run_oci_adapter`].
 #[must_use]
 pub fn wallclock_unix_ms() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};

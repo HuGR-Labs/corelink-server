@@ -6,10 +6,10 @@
 //! `specs/_audits/sealed/2026-05-15-cf-binding-real-pattern.md` for the
 //! audit-fenced, tenant-prefix-enforced shape this module follows.
 //!
-//! # What this module adds over [`crate::cf_kv::CfKvNamespaceAdapter`]
+//! # What this module adds over `crate::cf_kv::CfKvNamespaceAdapter` (wasm32-only)
 //!
 //! `cf_kv::CfKvNamespaceAdapter` (wasm32-only) implements the **minimal**
-//! [`KvBackend`] trait surface (`get` / `put_with_ttl` / `delete`) used
+//! `KvBackend` trait surface (`get` / `put_with_ttl` / `delete`) used
 //! by the negative-cache. Production also needs the broader KV toolkit:
 //!
 //! - `get_bytes` — raw byte read (already covered by trait `get`,
@@ -39,7 +39,7 @@
 //!    cross-tenant probes.
 //! 5. **TTL clamp** — Cloudflare requires `expirationTtl >= 60s`; the
 //!    wrapper clamps defensively (the same behavior
-//!    [`crate::cf_kv::CfKvNamespaceAdapter`] applies on its `put_with_ttl`
+//!    `crate::cf_kv::CfKvNamespaceAdapter` applies on its `put_with_ttl`
 //!    path).
 //!
 //! # Dual-target build
@@ -76,7 +76,7 @@ use subtle::ConstantTimeEq;
 
 /// Minimum KV TTL enforced by Cloudflare (60 seconds). PUTs with a
 /// smaller TTL are clamped up rather than rejected — matches the
-/// behavior of [`crate::cf_kv::CfKvNamespaceAdapter::put_with_ttl`].
+/// behavior of `crate::cf_kv::CfKvNamespaceAdapter::put_with_ttl`.
 pub const CF_KV_MIN_TTL_SECS: u64 = 60;
 
 // ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 //! `corelink audit export` + `corelink audit verify` — tamper-proof audit
 //! log export for SOC 2 / GDPR / LGPD evidence (WI-R-PREP-AUDIT-EXPORT).
 //!
-//! Customer-facing CLI surface over the [`AuditExporter`] trait. The
+//! Customer-facing CLI surface over the [`corelink_audit_chain::AuditExporter`] trait. The
 //! production wiring (CF Worker `GET /v1/audit/export/window`) is
 //! deferred to a follow-on WI; this lane ships the pure-logic CLI +
 //! in-memory fake transport so customers can validate the format

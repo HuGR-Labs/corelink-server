@@ -8,7 +8,7 @@
 //! cryptographic primitive** that every pseudonymized backend in
 //! `corelink-privacy-erasure-worker` invokes plus the verify
 //! (re-derive) surface used by forensic re-correlation. Production
-//! wiring at WI-S11-008 binds the [`PseudonymVerifier`] trait to the
+//! wiring at WI-S11-008 binds the `PseudonymVerifier` trait to the
 //! customer-controlled erasure_salt vault (BYOK KMS deferred to S-14
 //! per ADR-S11-003 interim).
 //!

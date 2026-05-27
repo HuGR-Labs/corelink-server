@@ -178,7 +178,7 @@ pub trait BillingPortalSessionCreator: fmt::Debug + Send + Sync {
 /// that accidentally cache URLs will be caught by `assert_ne!`.
 ///
 /// Wave-20: time is sourced via the [`Clock`] trait so wasm32 callers
-/// can inject [`crate::clock::WasmWorkerClock`] (default on wasm32) or
+/// can inject `crate::clock::WasmWorkerClock` (default on wasm32) or
 /// tests can inject [`crate::clock::InMemoryFakeClock`] without hitting
 /// the `SystemTime::now()` panic on `wasm32-unknown-unknown`.
 pub struct InMemoryPortalSessionCreator {

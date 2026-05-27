@@ -16,7 +16,7 @@
 //!    (`Wnam` / `Enam` / `Weur` / `Sam`; APAC/AFR phase 2) + [`TenantTier`]
 //!    4-canonical (`Solo` / `Team` / `Business` / `Enterprise`) for the
 //!    cardinality-safe live Prometheus label (`tenant_tier × region = 16 séries`;
-//!    per INV-OBS-CARDINALITY-BUDGET S-09). Also exports [`residency_graph`]
+//!    per INV-OBS-CARDINALITY-BUDGET S-09). Also exports `residency_graph`
 //!    — the **static acyclic** failover-sibling map (WNAM↔ENAM, WEUR↔SAM;
 //!    acyclic; cross-jurisdiction forbidden per Schrems II + LGPD Art. 33).
 //!

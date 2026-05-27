@@ -81,6 +81,9 @@
 #![deny(missing_debug_implementations)]
 // Suppress doc_lazy_continuation for `+ continuation` style in doc comments.
 #![allow(clippy::doc_lazy_continuation)]
+// W35-P2: inherited `//!` docs from the absorbed sibling crate use
+// short paths that resolved at the former crate root.
+#![allow(rustdoc::broken_intra_doc_links)]
 
 pub mod audit_emit;
 pub mod error;

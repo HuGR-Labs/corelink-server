@@ -16,7 +16,7 @@
 //!
 //! - **native** callers inject [`SystemMatClock`] (wraps
 //!   `SystemTime::now`).
-//! - **wasm32** callers inject [`WasmWorkerMatClock`] (reads
+//! - **wasm32** callers inject `WasmWorkerMatClock` (reads
 //!   `js_sys::Date::now()` — Workers expose `Date` per the
 //!   Web-Platform `globalThis` contract).
 //! - **tests** inject [`InMemoryFakeMatClock`] for deterministic
@@ -56,7 +56,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 /// Wall-clock abstraction for the Stripe billing materializer.
 ///
 /// Production impls: [`SystemMatClock`] (native) or
-/// [`WasmWorkerMatClock`] (wasm32). Test impl: [`InMemoryFakeMatClock`]
+/// `WasmWorkerMatClock` (wasm32). Test impl: [`InMemoryFakeMatClock`]
 /// (deterministic).
 ///
 /// The canonical method is [`MatClock::now`]; the milliseconds helper
@@ -66,7 +66,7 @@ pub trait MatClock: fmt::Debug + Send + Sync {
     ///
     /// Implementations MUST NOT panic on wasm32. The wave-19 caveat
     /// (`SystemTime::now()` panics on `wasm32-unknown-unknown`) is
-    /// closed by routing wasm32 callers through [`WasmWorkerMatClock`]
+    /// closed by routing wasm32 callers through `WasmWorkerMatClock`
     /// which reads `js_sys::Date::now()` instead.
     fn now(&self) -> SystemTime;
 
@@ -88,7 +88,7 @@ pub trait MatClock: fmt::Debug + Send + Sync {
 /// Native system-clock impl. Wraps [`std::time::SystemTime::now`].
 ///
 /// On `wasm32-unknown-unknown` this impl is **not available** — wasm32
-/// callers MUST use [`WasmWorkerMatClock`] instead. Mis-use is caught
+/// callers MUST use `WasmWorkerMatClock` instead. Mis-use is caught
 /// at compile time via the `cfg` gate.
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone, Copy, Debug, Default)]
@@ -215,7 +215,7 @@ impl MatClock for InMemoryFakeMatClock {
 /// Construct the production wall-clock for the current target:
 ///
 /// - native (`cfg(not(target_arch = "wasm32"))`) → [`SystemMatClock`]
-/// - wasm32 (`cfg(target_arch = "wasm32")`)     → [`WasmWorkerMatClock`]
+/// - wasm32 (`cfg(target_arch = "wasm32")`)     → `WasmWorkerMatClock`
 ///
 /// Wraps in `Arc<dyn MatClock + Send + Sync>` so callers can store the
 /// clock in shared state without leaking the concrete type. Mirrors

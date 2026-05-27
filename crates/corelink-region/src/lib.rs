@@ -4,12 +4,12 @@
 //!
 //! # Modules
 //!
-//! - [`region`] — [`Region`] enum + [`DoJurisdiction`] enum.
-//! - [`event`] — [`ProvisioningEvent`] + [`MigrationEvent`] CloudEvent types.
-//! - [`metrics`] — [`RegionMetrics`] struct (5 canonical metrics §6.1.6).
-//! - [`migration`] — [`MigrationReport`] + [`MigrationDecision`] taxonomy.
-//! - [`error`] — [`RegionError`] taxonomy.
-//! - [`audit`] — [`RegionAuditSink`] trait + [`InMemoryRegionAuditSink`].
+//! - [`region`] — `Region` enum + `DoJurisdiction` enum.
+//! - [`event`] — `ProvisioningEvent` + `MigrationEvent` CloudEvent types.
+//! - [`metrics`] — `RegionMetrics` struct (5 canonical metrics §6.1.6).
+//! - [`migration`] — `MigrationReport` + `MigrationDecision` taxonomy.
+//! - [`error`] — `RegionError` taxonomy.
+//! - [`audit`] — `RegionAuditSink` trait + `InMemoryRegionAuditSink`.
 //! - [`replica_lag`] — D1 read-replica lag probe (DEBT-011 P0-002).
 //! - [`kv_propagation`] — KV cross-region propagation-lag probe (DEBT-011 P1-001).
 //! - [`do_sync_age`] — DO→D1 sync-age probe (DEBT-011 P1-003).

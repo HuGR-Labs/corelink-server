@@ -1,6 +1,6 @@
 //! `corelink-customer-alerts` — multi-channel customer alert delivery.
 //!
-//! Implements [`CustomerAlerter`] for production use, dispatching to:
+//! Implements `CustomerAlerter` for production use, dispatching to:
 //!
 //! - **Dashboard**: D1 row INSERT into `customer_alerts` + WebSocket fanout.
 //! - **Email**: SendGrid / SES (configurable per tenant).

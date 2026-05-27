@@ -6,7 +6,7 @@
 
 use thiserror::Error;
 
-/// All recoverable failure modes surfaced by [`crate::run_brew_adapter`]
+/// All recoverable failure modes surfaced by [`crate::brew::run_brew_adapter`]
 /// and the underlying request pipeline.
 #[derive(Debug, Error)]
 #[non_exhaustive]
@@ -37,7 +37,7 @@ pub enum BrewAdapterError {
     Upstream(String),
 
     /// Upstream Content-Length (or streamed byte total) exceeded the
-    /// configured [`crate::BrewAdapterConfig::bottle_size_limit_bytes`].
+    /// configured [`crate::brew::BrewAdapterConfig::bottle_size_limit_bytes`].
     /// Routes map this to HTTP 413.
     #[error("bottle exceeds limit: {0} bytes")]
     BottleOversized(u64),

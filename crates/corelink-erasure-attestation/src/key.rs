@@ -16,7 +16,7 @@ use zeroize::ZeroizeOnDrop;
 /// # Lifecycle
 ///
 /// Managed by the S-13 rotation worker via
-/// [`corelink_rotation_adapters::ErasureAttestationRotationAdapter`].
+/// `corelink_rotation_adapters::ErasureAttestationRotationAdapter`.
 /// Canonical 30d overlap per `key_management.md §3.2.1` + ADR-0018.
 #[derive(ZeroizeOnDrop)]
 pub struct ErasureSigningKey {

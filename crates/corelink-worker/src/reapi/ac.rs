@@ -25,7 +25,7 @@
 //!   tree codec verifier surface (real impl lands in WI-S04-003).
 //! - [`outputs::OutputsCheck`] — `output_files`/`output_directories`
 //!   aliveness check against `blob_meta` (delegates to
-//!   [`corelink_meta::MetaStore`] in production wiring).
+//!   `corelink_meta::MetaStore` in production wiring).
 //! - [`audit::AuditSink`] — the audit emit seam used by the handler.
 //!
 //! ## What is NOT here

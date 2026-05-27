@@ -1,5 +1,5 @@
 //! Adapter configuration assembled by the binary entrypoint and
-//! handed to [`crate::run_cargo_adapter`].
+//! handed to [`crate::cargo::run_cargo_adapter`].
 //!
 //! Environment-variable mapping (consumed by the binary that wires
 //! this adapter into the production server):

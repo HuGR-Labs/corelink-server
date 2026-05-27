@@ -269,7 +269,7 @@ pub struct AcEnvelope {
 impl AcEnvelope {
     /// Construct a fresh envelope with `version = v1`. Public for
     /// tests + integration adapters; the canonical builder is
-    /// [`crate::ac_core::merkle::build`].
+    /// [`crate::ac_core::merkle::build_root`].
     #[must_use]
     #[allow(
         clippy::too_many_arguments,

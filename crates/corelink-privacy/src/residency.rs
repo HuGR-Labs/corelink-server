@@ -64,6 +64,9 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 #![deny(missing_debug_implementations)]
+// W35-P2: inherited `//!` docs from the absorbed sibling crate use
+// short paths that resolved at the former crate root.
+#![allow(rustdoc::broken_intra_doc_links)]
 
 pub mod assert_request;
 pub mod assert_write;

@@ -50,7 +50,7 @@
 //! # Per-instance `Arc<Mutex<>>` F-001
 //!
 //! [`InMemoryConfigSingletonStore::new`] creates an independent instance.
-//! Cloning the store shares state via the inner [`Arc`]. There is no
+//! Cloning the store shares state via the inner [`std::sync::Arc`]. There is no
 //! global singleton (per F-001 closure).
 //!
 //! # wasm32 compatibility

@@ -4,7 +4,7 @@
 //! This is how the enterprise inquiry consumer keeps its existing trait
 //! surface while wiring through the new shared real Slack client. The
 //! adapter renders inquiry posts using the canonical
-//! [`MessageTemplate::NewEnterpriseInquiry`] template (or a synthesised
+//! `MessageTemplate::NewEnterpriseInquiry` template (or a synthesised
 //! rollback header for compensating actions).
 
 use std::sync::Arc;

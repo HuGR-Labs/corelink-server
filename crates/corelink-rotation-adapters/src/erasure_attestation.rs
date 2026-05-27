@@ -11,7 +11,7 @@
 //! Each region runs an independent adapter instance with staggered
 //! rotation cron (01:00 UTC region-offset) to avoid simultaneous
 //! transitions. INV-KEY-OVERLAP is enforced via the canonical
-//! [`is_valid_read_state`] predicate.
+//! `is_valid_read_state` predicate.
 //!
 //! # Production wiring (deferred to GA ship gate)
 //!
@@ -91,7 +91,7 @@ impl ErasureAttestationRotationAdapter {
 
     /// Return the current active key handle, if any.
     ///
-    /// Used by [`corelink_erasure_attestation`] to retrieve the active
+    /// Used by `corelink_erasure_attestation` to retrieve the active
     /// signing key for the attestation path.
     #[must_use]
     pub fn active_key(&self) -> Option<KeyHandle> {

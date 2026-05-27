@@ -70,7 +70,7 @@ pub enum ReplayIdempotencyError {
     DivergentPayload(String),
 }
 
-/// Canonical error surface returned by the [`crate::engine`] APIs.
+/// Canonical error surface returned by the [`crate::replay::engine`] APIs.
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum ReplayError {

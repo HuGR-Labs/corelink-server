@@ -115,6 +115,10 @@
 //! - [`parse`] — timestamp + UUID-CT + NDJSON-serialize helpers.
 
 #![forbid(unsafe_code)]
+// W35-P2: module-level `//!` docs use short paths to absorbed-sibling
+// items; under the umbrella crate's scope they would require full
+// prefixes. Suppressing the lint preserves the original text.
+#![allow(rustdoc::broken_intra_doc_links)]
 
 pub mod audit_sink;
 pub mod handler;

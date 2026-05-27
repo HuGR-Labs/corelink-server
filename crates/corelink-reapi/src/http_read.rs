@@ -359,7 +359,7 @@ where
 /// `read_completed` audit envelope is emitted post-stream-completion,
 /// with the actually-delivered `bytes_sent` count. Client-cancellation
 /// (browser back-button, curl ctrl+c, axum dropping the body) routes
-/// through the [`HttpReadAuditGuard::Drop`] path and emits
+/// through the `HttpReadAuditGuard` `Drop` path and emits
 /// `corelink.cas.read_aborted` instead. Codex round-2 P2 fix.
 struct HttpReadAuditTail {
     tenant_id: uuid::Uuid,

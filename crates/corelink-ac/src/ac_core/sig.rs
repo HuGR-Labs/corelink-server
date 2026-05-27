@@ -18,7 +18,7 @@
 //!      rotation produces correlated keying material; binding the
 //!      version into the salt removes that correlation).
 //!    - `info` = `b"ac-sig"` (constant; CI test
-//!      [`tests::canonical_info_string`] asserts byte-equal).
+//!      `tests::canonical_info_string` asserts byte-equal).
 //!    - Output `OKM` = 32-byte sig key.
 //! 2. **MAC primitive**: BLAKE3 keyed-hash (`blake3::keyed_hash(&sig_key,
 //!    canonical_bytes)`); 32-byte tag; 256-bit MAC; 2^128 PRF-secure
@@ -47,7 +47,7 @@
 //! Every [`TdkHandle::fetch`] surface returns a [`Tdk`] newtype that
 //! wraps a `Zeroizing<Vec<u8>>` so the underlying TDK bytes are
 //! zero-on-drop (defense against post-mortem memory dump). The newtype
-//! has redacted [`fmt::Debug`] (`Tdk(REDACTED)`) and no `Display` /
+//! has redacted [`std::fmt::Debug`] (`Tdk(REDACTED)`) and no `Display` /
 //! `PartialEq` impls — leak-by-print is a compile error.
 
 #![allow(

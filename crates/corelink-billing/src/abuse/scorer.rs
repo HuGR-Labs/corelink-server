@@ -4,7 +4,7 @@
 //! [`AbuseAuditSink`], the [`AbuseMetricsObserver`], the
 //! [`AbuseConfig`], and the cross-WI integration with
 //! `corelink-ratelimit` (silent downgrade applies a refill-rate
-//! reduction via the [`update_plan`] call per WI §6.1.4 CI-2 mechanism).
+//! reduction via the `update_plan` call per WI §6.1.4 CI-2 mechanism).
 //!
 //! ## Decision pipeline (per cron-tick per tenant)
 //!

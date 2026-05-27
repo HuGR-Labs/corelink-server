@@ -112,7 +112,7 @@ pub enum LruDecision {
     /// drop the OLDEST entry. The new record IS enqueued (per spec
     /// §6.1.4); the dropped key is reported via the audit/metrics
     /// path. This arm is reserved for FIFO overflow signals (the
-    /// orchestrator uses [`Recorded`] with `was_existing=false` for
+    /// orchestrator uses [`LruDecision::Recorded`] with `was_existing=false` for
     /// the call's own decision).
     Dropped {
         /// Wall-clock instant the drop fired.
