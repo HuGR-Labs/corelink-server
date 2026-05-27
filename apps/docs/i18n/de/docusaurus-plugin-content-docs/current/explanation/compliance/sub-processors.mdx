@@ -1,7 +1,7 @@
 ---
 title: "Sub-processors"
 slug: "/compliance/sub-processors"
-description: "Current list of CoreLink sub-processors and the 30-day change-notice policy."
+description: "Aktuelle Liste der CoreLink-Sub-Prozessoren und Richtlinie zur 30-tägigen Vorankündigung."
 draft: true
 cross_functional_review: TBD
 pending_signoff:
@@ -10,7 +10,7 @@ pending_signoff:
   - "Legal"
 sources:
   - "legal/sub-processors.md"
-last_updated: "2026-05-14"
+last_updated: "2026-05-27"
 ---
 
 <!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
@@ -26,37 +26,39 @@ import { DraftBanner } from "../../../src/components/DraftBanner";
 
 # Sub-processors
 
-> **DRAFT — pending Legal + Finance + Security review.** The authoritative
-> machine-readable source is `legal/sub-processors.md`. This page mirrors that
-> file for procurement teams who cannot pull from the repository.
+## Benachrichtigungsrichtlinie
 
-## Notification policy
+CoreLink verpflichtet sich zu einer **30-tägigen Vorankündigung**, bevor ein neuer
+Sub-Prozessor mit der Verarbeitung personenbezogener Kundendaten beginnt, und bevor
+ein bestehender Sub-Prozessor seine Verarbeitungsrolle, Region oder eigene
+Sub-Prozessorliste wesentlich ändert (DSGVO Art. 28(2)).
 
-CoreLink commits to a **30-day prior notice** before any new sub-processor
-begins processing customer personal data. Notices are DKIM-signed and delivered
-to the account owner contact.
+Um eine zusätzliche E-Mail-Adresse (Sicherheitsteam, DSB, Einkauf) für
+Änderungsbenachrichtigungen anzumelden, senden Sie eine E-Mail an
+[privacy@humangr.com](mailto:privacy@humangr.com) mit dem Betreff
+„Anmeldung für Sub-Prozessor-Benachrichtigungen" und Ihrer Mandanten-ID.
 
-## Active sub-processors
+## Aktive Sub-Prozessoren
 
-| Provider | Role | Region | Certifications | DPA |
-| --- | --- | --- | --- | --- |
-| Cloudflare, Inc. | Infrastructure (Workers, R2, KV, DO, D1, Pages, Email) | Multi-region (tenant-pinned) | SOC 2 Type II, ISO 27001, ISO 27018, PCI-DSS L1, HIPAA-compliant infra | [DPA](https://www.cloudflare.com/cloudflare-customer-dpa/) |
-| Neon Inc. | Postgres hosting (control plane only) | US or EU (selectable) | SOC 2 Type II, ISO 27001, HIPAA-compliant | [DPA](https://neon.tech/dpa) |
-| Clerk | Authentication and user identity | US | SOC 2 Type II | TBD |
-| Stripe, Inc. | Billing and payment processing | US (PCI-DSS L1) | SOC 2 Type II, PCI-DSS L1 | TBD |
+| Sub-Prozessor | Dienst | Verarbeitete Daten | Region | DPA / Zert. | Wirksam ab |
+| --- | --- | --- | --- | --- | --- |
+| Cloudflare, Inc. | CDN, Edge Compute (Workers), R2, KV, Durable Objects, D1, Pages, Email Routing | App-Traffic + Kundendateien (verschlüsselt im Ruhezustand) | Global mit regionaler Pinnung | [DPA](https://www.cloudflare.com/cloudflare-customer-dpa/) · ISO 27001 · SOC 2 Type II · ISO 27018 · PCI DSS L1 · EU–US DPF | 2026-04-01 |
+| Clerk, Inc. | Authentifizierung + Benutzeridentität (SSO, MFA) | E-Mail, Name, Passwort-Hash, Sitzungstoken | United States (us-east-1) | [DPA](https://clerk.com/legal/dpa) · SOC 2 Type II · DSGVO · CCPA · EU–US DPF | 2026-04-01 |
+| Stripe, Inc. | Zahlungsabwicklung und Abonnementabrechnung | Rechnungs-E-Mail + Zahlungsmittel-Token (PCI-DSS L1) | US; EU über Stripe Payments Europe Ltd. (Irland) | [DPA](https://stripe.com/legal/dpa) · PCI DSS L1 · SOC 2 Type II · ISO 27001 · EU–US DPF | 2026-04-01 |
+| Resend | Transaktionale E-Mails + Newsletter-Liste | Empfänger-E-Mail + Zustellstatus | United States | [DPA](https://resend.com/legal/dpa) · SOC 2 Type II (in Bearbeitung) | 2026-05-27 |
+| Sentry (Functional Software, Inc.) | Anwendungsfehler-Monitoring (SaaS Cloud) | Fehlerereignisse — PII-Felder per Konfiguration entfernt | United States (Sentry SaaS Cloud) | [DPA](https://sentry.io/legal/dpa/) · SOC 2 Type II · DSGVO | 2026-05-27 |
+| Plausible Analytics | Datenschutzfreundliche Web-Analytics (EU-Cloud) | Anonymisierte Ereignisse — cookiefrei, kein PII | European Union (Deutschland) | [Data Policy](https://plausible.io/data-policy) · DSGVO (cookiefrei by design) | 2026-05-27 |
+| Better Stack, Inc. (Better Uptime) | Öffentliche Statusseite | Nur öffentlicher Status — keine personenbezogenen Kundendaten | European Union | [Datenschutzrichtlinie](https://betterstack.com/privacy) · DSGVO | 2026-05-27 |
+| GitHub, Inc. (Microsoft) | Quellcode-Hosting + CI/CD | Code + Issues + CI-Artifact-Logs | United States | [DPA](https://docs.github.com/en/site-policy/privacy-policies/github-data-protection-agreement) · SOC 2 Type II · ISO 27001 · DSGVO · EU–US DPF | 2026-04-01 |
 
-> The full machine-readable list — including jurisdiction, data categories,
-> certifications, and contract dates — is maintained in
-> `legal/sub-processors.md` and published to the trust portal.
+> Die vollständige maschinenlesbare Liste — einschließlich Zuständigkeitsbereich, Datenkategorien,
+> Zertifizierungen und Vertragsdaten — wird in
+> `apps/admin-ui/src/content/sub-processors.json` gepflegt und im Trust-Portal
+> veröffentlicht. Den Commit-Verlauf zur Prüfung finden Sie auf
+> [GitHub](https://github.com/humangr-labs/corelink-server/commits/main/apps/docs/src/pages/legal/sub-processors.tsx).
 
-## How to subscribe to change notices
+## Anmeldung für Änderungsbenachrichtigungen
 
-1. Open a support ticket of type **"Compliance / Sub-processor Notice"**.
-2. Provide the email address that should receive DKIM-signed notices.
-3. We confirm subscription within TBD business days.
-
-## Cross-functional review checklist
-
-- [ ] DPO — confirm GDPR and LGPD compliance of each provider.
-- [ ] Procurement — confirm DPA links and contract status.
-- [ ] Legal — confirm 30-day notice mechanism.
+1. Senden Sie eine E-Mail an **privacy@humangr.com** mit dem Betreff „Anmeldung für Sub-Prozessor-Benachrichtigungen".
+2. Geben Sie die E-Mail-Adresse an, die DKIM-signierte Benachrichtigungen erhalten soll.
+3. Die Anmeldung wird innerhalb eines Werktages per Opt-in-Link bestätigt.
