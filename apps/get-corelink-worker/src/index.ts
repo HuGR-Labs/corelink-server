@@ -22,7 +22,23 @@
  */
 
 import type { ExecutionContext, ExportedHandler } from "@cloudflare/workers-types";
+import * as Sentry from "@sentry/cloudflare";
 import { renderInstallScript } from "./install.ts";
+
+/**
+ * Sentry wrapper for the install-script Worker. We use
+ * `Sentry.withSentry` to wrap the default fetch handler. When
+ * `SENTRY_DSN` is absent (local `wrangler dev` / `pnpm test`), the
+ * wrapper is a no-op so test acceptance is not coupled to Sentry
+ * provisioning.
+ *
+ *   - tracesSampleRate 0.1 / errors 1.0 (mandate §3)
+ *   - sendDefaultPii false — the install URL carries no PII but we set
+ *     the flag explicitly so a future route addition doesn't leak.
+ *   - The Authorization scrub is a defensive belt-and-braces measure —
+ *     this Worker never accepts an Authorization header, but if a
+ *     misconfigured CI runner sends one we still strip it.
+ */
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Types
@@ -33,6 +49,10 @@ export interface Env {
   ENVIRONMENT: string;
   RELEASE_ORIGIN: string;
   DEFAULT_API_ENDPOINT: string;
+  /** Sentry DSN — absent in dev/test. Wired as a Worker secret in prod. */
+  SENTRY_DSN?: string;
+  /** Git SHA / release tag, set as a plain var at deploy time. */
+  SENTRY_RELEASE?: string;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -145,7 +165,7 @@ async function route(request: Request, env: Env): Promise<Response> {
 // Worker entry
 // ──────────────────────────────────────────────────────────────────────────────
 
-const handler: ExportedHandler<Env> = {
+const baseHandler: ExportedHandler<Env> = {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
     try {
       const res = await route(request, env);
@@ -155,6 +175,10 @@ const handler: ExportedHandler<Env> = {
       // Log just the error message (no request body, no env values).
       const msg = err instanceof Error ? err.message : "unknown";
       console.error(`get-corelink-worker error: ${msg}`);
+      // Explicit capture: the `withSentry` wrapper auto-captures throws,
+      // but we swallow + return 500 to satisfy the "no detail leak"
+      // contract. Capture here so Sentry still sees the error.
+      Sentry.captureException(err);
       return withSecurityHeaders(
         new Response("Internal Server Error\n", {
           status: 500,
@@ -165,4 +189,40 @@ const handler: ExportedHandler<Env> = {
   },
 };
 
-export default handler;
+// `withSentry` injects an isolation scope per request, captures unhandled
+// throws, and posts them to the configured DSN. When `env.SENTRY_DSN` is
+// unset the SDK degrades to a passthrough (verified in unit tests).
+export default Sentry.withSentry(
+  (env: Env) => ({
+    // Empty string when secret unset → Sentry SDK treats as init no-op.
+    dsn: env.SENTRY_DSN ?? "",
+    environment: env.ENVIRONMENT,
+    // Default release tag to "unknown" so the strict type accepts it; the
+    // real value flows from `SENTRY_RELEASE` Worker var set at deploy time.
+    release: env.SENTRY_RELEASE ?? "unknown",
+    sendDefaultPii: false,
+    tracesSampleRate: 0.1,
+    sampleRate: 1.0,
+    beforeSend(event: Sentry.ErrorEvent) {
+      return scrubAuthorization(event);
+    },
+  }),
+  // `@sentry/cloudflare` ships its own `@cloudflare/workers-types` bundle which
+  // diverges slightly from the worker's pinned version. The handler shape is
+  // identical at runtime, so an `unknown` cast keeps both type graphs happy.
+  baseHandler as unknown as Parameters<typeof Sentry.withSentry>[1],
+) as ExportedHandler<Env>;
+
+const SENSITIVE_HEADER_PATTERN = /^(authorization|cookie|set-cookie|x-api-key|proxy-authorization)$/i;
+
+function scrubAuthorization(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
+  if (event.request?.headers) {
+    const h = event.request.headers as Record<string, string>;
+    for (const k of Object.keys(h)) {
+      if (SENSITIVE_HEADER_PATTERN.test(k)) {
+        h[k] = "[Filtered]";
+      }
+    }
+  }
+  return event;
+}

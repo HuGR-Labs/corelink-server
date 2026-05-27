@@ -44,6 +44,83 @@ const EDIT_BASE = `https://github.com/${ORG}/${REPO}/edit/main/apps/docs/`;
  */
 const STATUSPAGE_URL = getStatuspageUrl();
 
+/**
+ * Sentry config for the public docs site.
+ *
+ * Docs is a static-rendered Docusaurus site — the only error surface is
+ * client-side JS (interactive code samples, search, locale switcher). We
+ * load the official Sentry CDN loader script (`@sentry/browser` distribution)
+ * via `headTags` because:
+ *
+ *   1. It's bundler-free — Docusaurus webpack doesn't see the script, so
+ *      it can't break the build if the import path changes.
+ *   2. The loader supports lazy init — Sentry only fully boots when an
+ *      error fires, so first-paint stays clean.
+ *   3. PII filter + sample rate are injected inline as a small bootstrap
+ *      that runs before the loader resolves, so we cover the edge case of
+ *      an error firing during initial parse.
+ *
+ * DSN sourcing:
+ *   `SENTRY_DSN_DOCS` is read at build time (Cloudflare Pages env). When
+ *   absent we emit no Sentry tag at all — local builds and CI without a
+ *   DSN ship a vanilla static site. Gustavo provisions the DSN per the
+ *   Sentry setup runbook.
+ *
+ * Loader version is pinned to the lockfile-equivalent CDN URL; Sentry's
+ * docs note these URLs are immutable so we get reproducible builds.
+ */
+const SENTRY_DSN_DOCS = process.env["SENTRY_DSN_DOCS"];
+const SENTRY_DOCS_RELEASE = process.env["CF_PAGES_COMMIT_SHA"] ?? process.env["GIT_SHA"];
+
+const sentryHeadTags = SENTRY_DSN_DOCS
+  ? [
+      {
+        // Pre-loader bootstrap: configures the loader before script loads
+        // so PII + sample rate are honored even on the very first error.
+        // (Sentry's loader documents this `window.sentryOnLoad` hook —
+        // it runs after `Sentry.init({...})` is ready.)
+        tagName: "script" as const,
+        attributes: {},
+        innerHTML: [
+          "window.sentryOnLoad = function () {",
+          "  Sentry.init({",
+          `    dsn: ${JSON.stringify(SENTRY_DSN_DOCS)},`,
+          `    environment: ${JSON.stringify(process.env["NODE_ENV"] ?? "production")},`,
+          SENTRY_DOCS_RELEASE ? `    release: ${JSON.stringify(SENTRY_DOCS_RELEASE)},` : "",
+          "    sendDefaultPii: false,",
+          "    tracesSampleRate: 0.1,",
+          // Authorization scrub for the rare API-doc playground that may
+          // include bearer tokens in a `fetch` error breadcrumb.
+          "    beforeBreadcrumb: function (b) {",
+          "      if (b && b.data && typeof b.data === 'object') {",
+          "        for (var k in b.data) {",
+          "          if (/^(authorization|cookie|set-cookie|x-api-key|proxy-authorization)$/i.test(k)) {",
+          "            b.data[k] = '[Filtered]';",
+          "          }",
+          "        }",
+          "      }",
+          "      return b;",
+          "    },",
+          "  });",
+          "};",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      },
+      {
+        tagName: "script" as const,
+        attributes: {
+          // Loader for @sentry/browser. Loaded async — never blocks paint.
+          src: "https://browser.sentry-cdn.com/8.45.0/bundle.tracing.min.js",
+          crossorigin: "anonymous",
+          async: true,
+          defer: true,
+        },
+        innerHTML: "",
+      },
+    ]
+  : [];
+
 const config: Config = {
   title: "CoreLink",
   tagline: "Multi-tenant content-addressable cache on Cloudflare",
@@ -65,16 +142,15 @@ const config: Config = {
     statuspageUrl: STATUSPAGE_URL,
   },
 
-  // ── SEO §A — JSON-LD schema.org markup ────────────────────────────────
-  // Per ROADMAP-TO-LAUNCH §4 (SEO/discovery). Two JSON-LD blocks emitted
-  // into <head> on every page:
-  //   1. `Organization` — establishes HuGR Labs corporate identity.
-  //   2. `SoftwareApplication` — describes CoreLink as a developer tool
-  //      (category: DeveloperApplication, OS-agnostic, pricing pointer).
+  // ── SEO + Observability — global <head> tags ──────────────────────────
+  // Union of:
+  //   (a) JSON-LD schema.org Organization + SoftwareApplication blocks
+  //       (SEO/discovery per ROADMAP-TO-LAUNCH §4 — mirrors footer +
+  //       pricing page; update together).
+  //   (b) Sentry loader (empty when SENTRY_DSN_DOCS is unset — see
+  //       `sentryHeadTags` declaration above for rationale).
   // Both blocks are static (no PII, no per-page variance) so they are
-  // safe to inject globally via `headTags`. The structured-data values
-  // mirror the public footer + pricing page; updates to those surfaces
-  // should be reflected here too.
+  // safe to inject globally via `headTags`.
   headTags: [
     {
       tagName: "script",
@@ -112,6 +188,7 @@ const config: Config = {
         },
       }),
     },
+    ...sentryHeadTags,
   ],
 
   i18n: {
