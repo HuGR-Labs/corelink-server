@@ -2,10 +2,10 @@
 id: "AUDIT-2026-05-26-WAVE-33-34-CLOSURE-FOLLOWUPS"
 type: "audit"
 doc_status: "ACTIVE"
-audit_status: "ACTIVE"
-version: "1.0.0"
+audit_status: "CLOSED"
+version: "1.1.0"
 created: "2026-05-26"
-updated: "2026-05-26"
+updated: "2026-05-27"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
