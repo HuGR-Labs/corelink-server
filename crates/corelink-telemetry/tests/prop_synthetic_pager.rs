@@ -68,7 +68,12 @@ proptest! {
         let now = emit.saturating_add(elapsed);
         let r = decide_drill_outcome(emit, None, now);
         if elapsed < UNACK_HARD_WINDOW_MS {
-            prop_assert!(matches!(r, Err(SyntheticDrillError::Internal(_))));
+            match &r {
+                Err(SyntheticDrillError::Internal(msg)) => {
+                    prop_assert!(!msg.is_empty(), "Internal error msg must not be empty");
+                }
+                other => prop_assert!(false, "expected SyntheticDrillError::Internal, got {other:?}"),
+            }
         } else {
             let (outcome, m) = r.unwrap();
             prop_assert_eq!(outcome, AckOutcome::Unacked);
@@ -145,7 +150,12 @@ proptest! {
         )
         .unwrap();
         let res = f.record(&r);
-        prop_assert!(matches!(res, Err(SyntheticDrillError::Recorder(_))));
+        match &res {
+            Err(SyntheticDrillError::Recorder(msg)) => {
+                prop_assert!(!msg.is_empty(), "Recorder error msg must not be empty");
+            }
+            other => prop_assert!(false, "expected SyntheticDrillError::Recorder, got {other:?}"),
+        }
     }
 
     /// Region UTC-hour mapping is total: every hour 0..=23 maps to

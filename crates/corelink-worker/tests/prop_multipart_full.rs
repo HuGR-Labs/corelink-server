@@ -238,6 +238,7 @@ proptest! {
                 .splice_blob(&ctx_b, &fin.manifest_digest, &mut sink_b, "req-spl-b")
                 .await
                 .unwrap_err();
+            // SOTA-OK: variant-only assertion sufficient — SpliceError::ManifestNotFound is a unit variant carrying no semantic state.
             prop_assert!(matches!(err, SpliceError::ManifestNotFound),
                 "cross-tenant SpliceBlob MUST be ManifestNotFound");
             prop_assert!(sink_b.snapshot().is_empty(),

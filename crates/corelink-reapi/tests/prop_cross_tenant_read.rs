@@ -201,6 +201,7 @@ proptest! {
             // B sees uniform NotFound — same as a never-existed digest.
             // Per ADR-0028 the wire surface conflates NeverExisted with
             // CrossTenantMasked.
+            // SOTA-OK: variant-only assertion sufficient — MissReason::NeverExisted is a unit variant carrying no semantic state.
             prop_assert!(matches!(
                 out,
                 ReadOutcome::NotFound(MissReason::NeverExisted)
@@ -293,6 +294,7 @@ proptest! {
             let orch = CasReadOrchestrator::new(&reader, &meta);
             let out = orch.read_blob(&ctx, &digest).await.unwrap();
 
+            // SOTA-OK: variant-only assertion sufficient — MissReason::NeverExisted is a unit variant carrying no semantic state.
             prop_assert!(matches!(
                 out,
                 ReadOutcome::NotFound(MissReason::NeverExisted)

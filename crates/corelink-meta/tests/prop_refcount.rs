@@ -297,6 +297,7 @@ proptest! {
                 })
                 .await
                 .unwrap_err();
+            // SOTA-OK: variant-only assertion sufficient — AuditIdempotencyConflict is a unit variant carrying no semantic state.
             prop_assert!(matches!(err, MetaError::AuditIdempotencyConflict));
             // No row appended after the conflict.
             prop_assert_eq!(store.outbox_snapshot().len(), 1);

@@ -81,12 +81,14 @@ proptest! {
                 region,
             )
             .unwrap_err();
+        // SOTA-OK: variant-only assertion sufficient — DrillError::ProdEnvForbidden is a unit variant carrying no semantic state.
         prop_assert!(matches!(err, DrillError::ProdEnvForbidden));
 
         let sim = InMemoryCfRegionOutageSimulator::new();
         let err = sim
             .simulate(DrillEnv::Production, region, 100, 10)
             .unwrap_err();
+        // SOTA-OK: variant-only assertion sufficient — DrillError::ProdEnvForbidden is a unit variant carrying no semantic state.
         prop_assert!(matches!(err, DrillError::ProdEnvForbidden));
     }
 

@@ -116,7 +116,13 @@ proptest! {
                     enc_config(),
                 );
                 let err = l.submit_inquiry(f, key, inquiry_id.clone(), 1_000, "cid").unwrap_err();
-                prop_assert!(matches!(err, EnterpriseInquiryError::Slack(_)));
+                match &err {
+                    EnterpriseInquiryError::Slack(inner) => {
+                        prop_assert!(!format!("{inner:?}").is_empty(),
+                            "Slack inner must carry a cause");
+                    }
+                    other => prop_assert!(false, "expected EnterpriseInquiryError::Slack, got {other:?}"),
+                }
                 l.get_outbox(&inquiry_id).unwrap().status
             }
             (true, false) => {
@@ -129,7 +135,13 @@ proptest! {
                     enc_config(),
                 );
                 let err = l.submit_inquiry(f, key, inquiry_id.clone(), 1_000, "cid").unwrap_err();
-                prop_assert!(matches!(err, EnterpriseInquiryError::Crm(_)));
+                match &err {
+                    EnterpriseInquiryError::Crm(inner) => {
+                        prop_assert!(!format!("{inner:?}").is_empty(),
+                            "Crm inner must carry a cause");
+                    }
+                    other => prop_assert!(false, "expected EnterpriseInquiryError::Crm, got {other:?}"),
+                }
                 l.get_outbox(&inquiry_id).unwrap().status
             }
         };
@@ -229,7 +241,13 @@ proptest! {
             1_000,
             "cid",
         ).unwrap_err();
-        prop_assert!(matches!(err, EnterpriseInquiryError::Audit(_)));
+        match &err {
+            EnterpriseInquiryError::Audit(inner) => {
+                prop_assert!(!format!("{inner:?}").is_empty(),
+                    "Audit inner must carry a cause");
+            }
+            other => prop_assert!(false, "expected EnterpriseInquiryError::Audit, got {other:?}"),
+        }
         prop_assert!(l.get_inquiry(&inquiry_id).is_none());
         prop_assert!(l.get_outbox(&inquiry_id).is_none());
     }
@@ -254,7 +272,13 @@ proptest! {
             1_000,
             "cid",
         ).unwrap_err();
-        prop_assert!(matches!(err, EnterpriseInquiryError::Crm(_)));
+        match &err {
+            EnterpriseInquiryError::Crm(inner) => {
+                prop_assert!(!format!("{inner:?}").is_empty(),
+                    "Crm inner must carry a cause");
+            }
+            other => prop_assert!(false, "expected EnterpriseInquiryError::Crm, got {other:?}"),
+        }
         let posts = slack.snapshot();
         prop_assert_eq!(posts.len(), 2);
         prop_assert_eq!(posts[0].kind, SlackPostKind::NewInquiry);

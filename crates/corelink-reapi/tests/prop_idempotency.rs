@@ -250,6 +250,7 @@ proptest! {
                 1_700_000_000_000,
             );
             let err = orch.commit_put(plan).await.unwrap_err();
+            // SOTA-OK: variant-only assertion sufficient — inner HashMismatch is a unit struct carrying no semantic state.
             prop_assert!(matches!(err, OrchestratorError::HashMismatch(_)));
             prop_assert_eq!(backend.len(), 0);
             prop_assert_eq!(meta.row_count(), 0);

@@ -260,6 +260,7 @@ proptest! {
 
             // B reads — must 404.
             let r = w.handler.get_action_result(&ctx_b, &ad, "req-b-r").await;
+            // SOTA-OK: variant-only assertion sufficient — AcError::NotFound is a unit variant carrying no semantic state.
             prop_assert!(matches!(r, Err(AcError::NotFound)), "B must see 404; got {r:?}");
 
             // Audit chain: cross-tenant GET emits GetMiss (canonical
@@ -461,6 +462,7 @@ proptest! {
 
             // 1st GET — A misses, neg cache populated for A.
             let r = w.handler.get_action_result(&ctx_a, &ad, "req-a-r1").await;
+            // SOTA-OK: variant-only assertion sufficient — AcError::NotFound is a unit variant carrying no semantic state.
             prop_assert!(matches!(r, Err(AcError::NotFound)));
             let tctx_a = ctx_a.tenant_ctx();
             let tctx_b = ctx_b.tenant_ctx();
@@ -489,6 +491,7 @@ proptest! {
             // B's GET still 404 (cross-tenant); B's neg cache populates
             // for the digest — but distinct from A's row.
             let r = w.handler.get_action_result(&ctx_b, &ad, "req-b-r").await;
+            // SOTA-OK: variant-only assertion sufficient — AcError::NotFound is a unit variant carrying no semantic state.
             prop_assert!(matches!(r, Err(AcError::NotFound)));
             let hit_b_after = w.neg.lookup(&tctx_b, &ad.hash).await.unwrap();
             prop_assert_eq!(hit_b_after, Some(()), "B's neg cache populates after B's miss");

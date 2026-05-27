@@ -250,6 +250,7 @@ proptest! {
 
             // Cross-tenant must surface uniform 404 NeverExisted.
             let out_actor = orch.read_blob(&ctx_actor, &digest).await.unwrap();
+            // SOTA-OK: variant-only assertion sufficient — ReadMiss::NeverExisted is a unit variant carrying no semantic state.
             prop_assert!(matches!(out_actor, ReadOutcome::NotFound(ReadMiss::NeverExisted)));
 
             // R2 GET must NOT fire on the cross-tenant branch — AuthZ
@@ -495,6 +496,7 @@ proptest! {
             // Cross-tenant must STILL see uniform 404 (cache invalidation
             // for tenant T does NOT leak to attacker tenant).
             let out_attacker = orch.read_blob(&attacker_ctx, &digest).await.unwrap();
+            // SOTA-OK: variant-only assertion sufficient — ReadMiss::NeverExisted is a unit variant carrying no semantic state.
             prop_assert!(matches!(
                 out_attacker,
                 ReadOutcome::NotFound(ReadMiss::NeverExisted)
@@ -559,6 +561,7 @@ proptest! {
             let reader = R2Reader::new(Region::Wnam, Arc::clone(&counting));
             let orch = CasReadOrchestrator::new(&reader, &meta);
             let out = orch.read_blob(&ctx, &digest).await.unwrap();
+            // SOTA-OK: variant-only assertion sufficient — ReadMiss::Tombstoned is a unit variant carrying no semantic state.
             prop_assert!(matches!(
                 out,
                 ReadOutcome::NotFound(ReadMiss::Tombstoned)

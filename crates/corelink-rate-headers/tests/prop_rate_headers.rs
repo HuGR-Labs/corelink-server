@@ -248,6 +248,7 @@ proptest! {
     ) {
         let kind = canonical_kind_list()[kind_idx];
         let s = kind.as_str();
+        // SOTA-OK: variant-only assertion sufficient — `s` is a static &str literal, the canonical-arm set is the test invariant.
         prop_assert!(matches!(
             s,
             "tenant_quota" | "per_ip" | "per_pat" | "over_quota"
@@ -444,6 +445,7 @@ proptest! {
             300,
         );
         prop_assert!(eval.signals_tripped >= 2);
+        // SOTA-OK: variant-only assertion sufficient — TripReason::MultiSignalCombined is a unit variant carrying no semantic state.
         prop_assert!(matches!(
             eval.trip_reason,
             Some(TripReason::MultiSignalCombined)
@@ -473,6 +475,7 @@ proptest! {
         let (breaker, _, _) = fresh();
         let mut now = BASE_NOW;
         let initial = breaker.snapshot().unwrap().state;
+        // SOTA-OK: variant-only assertion sufficient — CircuitState::Closed is a unit variant carrying no semantic state.
         prop_assert!(matches!(initial, CircuitState::Closed));
         // Feed the configured workload; observe the transition arm
         // hit at each step.

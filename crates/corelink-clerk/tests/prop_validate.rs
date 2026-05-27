@@ -161,9 +161,15 @@ proptest! {
         let mutated_sig = URL_SAFE_NO_PAD.encode(&sig_bytes);
         let mutated = format!("{}.{}.{}", parts[0], parts[1], mutated_sig);
         let result = futures_executor_blocking(adapter.validate(&mutated));
-        prop_assert!(matches!(result, Err(AuthError::SignatureInvalid)
-            | Err(AuthError::Malformed(_))),
-            "expected signature reject, got {:?}", result);
+        match &result {
+            Err(AuthError::SignatureInvalid) => {
+                // SOTA-OK: SignatureInvalid is a unit variant carrying no semantic state.
+            }
+            Err(AuthError::Malformed(msg)) => {
+                prop_assert!(!msg.is_empty(), "Malformed reason must not be empty");
+            }
+            other => prop_assert!(false, "expected signature reject, got {other:?}"),
+        }
     }
 
     /// Expired-token regression: any `exp` more than `leeway` seconds
@@ -175,6 +181,7 @@ proptest! {
         claims.exp = (NOW_FIXED - 60 - secs_past_leeway) as i64;
         let jwt = sign(shared_key(), &claims);
         let result = futures_executor_blocking(adapter.validate(&jwt));
+        // SOTA-OK: variant-only assertion sufficient — AuthError::Expired is a unit variant carrying no semantic state.
         prop_assert!(matches!(result, Err(AuthError::Expired)),
             "expected Expired, got {:?}", result);
     }
@@ -213,6 +220,7 @@ proptest! {
         claims.aud = bogus;
         let jwt = sign(shared_key(), &claims);
         let result = futures_executor_blocking(adapter.validate(&jwt));
+        // SOTA-OK: variant-only assertion sufficient — AuthError::AudienceMismatch is a unit variant carrying no semantic state.
         prop_assert!(matches!(result, Err(AuthError::AudienceMismatch)),
             "expected AudienceMismatch, got {:?}", result);
     }
