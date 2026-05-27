@@ -42,6 +42,35 @@ describe("CSP header generation", () => {
     expect(value).toContain("https://api.corelink.humangr.com");
   });
 
+  it("allows Plausible Analytics on script-src + connect-src (pre-HN-launch)", () => {
+    const directives = buildCspDirectives("n");
+    const script = directives.find((d) => d.startsWith("script-src")) ?? "";
+    const connect = directives.find((d) => d.startsWith("connect-src")) ?? "";
+    expect(script).toContain("https://plausible.io");
+    expect(connect).toContain("https://plausible.io");
+  });
+
+  it("allows Stripe Checkout / portal endpoints for script + connect + frame", () => {
+    const directives = buildCspDirectives("n");
+    const script = directives.find((d) => d.startsWith("script-src")) ?? "";
+    const connect = directives.find((d) => d.startsWith("connect-src")) ?? "";
+    const frame = directives.find((d) => d.startsWith("frame-src")) ?? "";
+    expect(script).toContain("https://js.stripe.com");
+    expect(connect).toContain("https://api.stripe.com");
+    expect(connect).toContain("https://m.stripe.network");
+    expect(frame).toContain("https://js.stripe.com");
+    expect(frame).toContain("https://hooks.stripe.com");
+  });
+
+  it("connect-src is explicit per host — never permits wildcard", () => {
+    const directives = buildCspDirectives("n");
+    const connect = directives.find((d) => d.startsWith("connect-src")) ?? "";
+    expect(connect).not.toContain(" *");
+    expect(connect).not.toContain("https:*");
+    // Wildcard token alone (not preceded by a domain char) would be ` * `.
+    expect(/\s\*(\s|$)/.test(connect)).toBe(false);
+  });
+
   it("toggles report-only header name based on opts", () => {
     const enforce = buildCspHeader({ nonce: "n", reportOnly: false });
     const reportOnly = buildCspHeader({ nonce: "n", reportOnly: true });
@@ -61,6 +90,13 @@ describe("CSP header generation", () => {
     expect(hsts?.value).toContain("max-age=63072000");
     expect(hsts?.value).toContain("includeSubDomains");
     expect(hsts?.value).toContain("preload");
+  });
+
+  it("Permissions-Policy opts out of FLoC interest-cohort (pre-HN-launch)", () => {
+    const pp = STATIC_SECURITY_HEADERS.find(
+      (h) => h.name === "Permissions-Policy",
+    );
+    expect(pp?.value).toContain("interest-cohort=()");
   });
 });
 

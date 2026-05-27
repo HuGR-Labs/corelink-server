@@ -63,6 +63,26 @@ describe("get-corelink-worker routes", () => {
     expect(res.headers.get("Strict-Transport-Security")).toContain("max-age=63072000");
   });
 
+  it("GET / response includes pre-HN-launch security headers (CSP/XFO/Permissions)", async () => {
+    const res = await fetch("https://get.corelink.io/");
+    // Strict CSP — no scripts/iframes/anything since body is shell, not HTML.
+    const csp = res.headers.get("Content-Security-Policy") ?? "";
+    expect(csp).toContain("default-src 'none'");
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(csp).not.toContain("unsafe-inline");
+    expect(csp).not.toContain("unsafe-eval");
+    expect(res.headers.get("X-Frame-Options")).toBe("DENY");
+    expect(res.headers.get("Permissions-Policy")).toContain("interest-cohort=()");
+  });
+
+  it("404 responses still carry security headers", async () => {
+    const res = await fetch("https://get.corelink.io/unknown");
+    expect(res.status).toBe(404);
+    expect(res.headers.get("X-Frame-Options")).toBe("DENY");
+    expect(res.headers.get("Content-Security-Policy")).toContain("default-src 'none'");
+    expect(res.headers.get("Strict-Transport-Security")).toContain("preload");
+  });
+
   it("GET / response surfaces ENVIRONMENT for debug-tracing", async () => {
     const res = await fetch("https://get.corelink.io/");
     expect(res.headers.get("X-Corelink-Env")).toBe("test");
