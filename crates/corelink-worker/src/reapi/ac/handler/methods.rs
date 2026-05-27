@@ -368,6 +368,27 @@ where
 
         // Step [7] — envelope put (R2-first per WI §9.5; orphan
         // recoverable via S-06 reconcile).
+        //
+        // INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER scope clarification
+        // (audit-ordering-high-risk-seal §Escalation 4, 2026-05-27):
+        // the R2 envelope_store.put (step 7), persist_action_result
+        // (step 7b) and meta.upsert (step 8) precede the audit emits
+        // at lines 408 (`UpdateResultMismatch`) and 430 (`UpdateOk`).
+        // This is the canonical architecture per WI-S04-001 §9.5
+        // ratified in ADR-0035 ("AC handler invariants"):
+        //   - R2 is content-addressable + idempotent (overwrite OK);
+        //   - D1 INSERT failure leaves an orphan R2 envelope
+        //     (recoverable via S-06 GC reconcile, R-009 mitigation);
+        //   - the inverse (D1-first) would create ghost rows
+        //     referencing missing R2 objects → 404 forever.
+        // The `UpdateResultMismatch` audit (line 408) is
+        // decision-driven on the upsert's `ResultHashMismatch`
+        // outcome (same shape as billing-emit idempotency); the
+        // `UpdateOk` audit (line 430) is the completion of the
+        // intent established by the upstream fail-CLOSED audits
+        // (`UpdateMerkleInvalid`, `UpdateOutputsMissing`,
+        // `UpdateSigInvalid` at lines 297/318/350 — those fire
+        // BEFORE any state mutation per the canonical envelope).
         let action_hex = action_digest.hash.to_hex();
         let tenant_prefix = *ctx.tenant_prefix();
         self.envelope_store

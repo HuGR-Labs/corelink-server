@@ -925,16 +925,33 @@ where
         // 4. R2 DeleteObject FIRST (Lote 10.6bis P0-2 ordering;
         // PAT-RETRY-IDEMPOTENT-001 semantics — both `Deleted` and
         // `NotFound` are successes).
+        //
+        // INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER scope clarification
+        // (audit-ordering-high-risk-seal §Escalation 3, 2026-05-27):
+        // R2 DeleteObject precedes the audit emit. The INV applies to
+        // OWN-state mutations (D1 batch: DELETE blob_meta + DELETE
+        // gc_candidate + INSERT audit_outbox); external R2 calls are
+        // classified as external-API observability (same pattern as
+        // `corelink-byok::byok_*::*::wrap_dek`, `corelink-slack-real`,
+        // `corelink-statuspage-real::http`). Reasoning: R2 is
+        // idempotent (NotFound is a success), so retry-after-emit
+        // would either silently delete (success replay) or duplicate
+        // the audit (failure replay). R2-first means the audit row
+        // ALWAYS reflects the actual deletion state; the D1 batch
+        // (step 6+7 below) atomically rolls back on emit failure,
+        // preserving the canonical fail-CLOSED envelope around OWN
+        // state.
         let r2_outcome = self
             .r2
             .delete(candidate.tenant_id, region, &purge_state.r2_key)
             .map_err(PhysicalDeleteError::from)?;
 
         // 5. Audit emit BEFORE flipping the row status — fail-closed
-        // envelope (mirrors sweep). Production wiring atomically rolls
-        // back the D1 batch (DELETE blob_meta + DELETE gc_candidate +
-        // INSERT audit_outbox) on emit failure; the in-memory fake's
-        // lower fidelity is documented in the module-level rustdoc.
+        // envelope (mirrors sweep) for OWN D1 mutations. Production
+        // wiring atomically rolls back the D1 batch (DELETE blob_meta
+        // + DELETE gc_candidate + INSERT audit_outbox) on emit
+        // failure; the in-memory fake's lower fidelity is documented
+        // in the module-level rustdoc.
         self.audit.emit(GcAuditRecord {
             event_type: GcEventType::PhysicalDeleted,
             run_id: candidate.mark_run_id,
