@@ -54,7 +54,7 @@ appears below with closure target + owner + acceptance criteria.
 | 1 | Stage 2.C HALT — adapter HTTPS-vs-pure-logic physical split | Wave 36 (Stage 3 cargo-deny lockdown) | Orchestrator + per-adapter sprint owners | LOW (architectural endpoint; current state functional) | **PARTIAL 2026-05-26** — see `specs/_audits/2026-05-26-w36-stage2c-closure.md` (PARTIAL-SEAL; 3 consumer files migrated in `corelink-container`; 6 files blocked by 2 hard-pause triggers: dep-graph cycle in `corelink-billing-stripe-materializer` [Trigger A] + wasm32 tokio/mio pull in `corelink-dsr-statuspage-scheduler` [Trigger B]; both documented with escalation paths) |
 | 2 | Stage 2.E Phase 2 — 72 absorbed crates removal | Wave 35 (post adapter-host consolidation) | Orchestrator | MEDIUM (workspace bloat; consumer migration prerequisite) | OPEN |
 | 3 | Wave 35 — adapter-host consolidation crate | Wave 35 (next campaign) | Orchestrator | HIGH (blocks adapter production deployment) | **CLOSED 2026-05-26** — see `specs/_audits/2026-05-26-w35-adapter-host-prep.md` (SEAL `9d0f4284`; 1974 LOC; 44 tests GREEN; merged into main as `7aacf4d6`) |
-| 4 | WI-PROPTEST-FU-W33-001 — umbrella aggregator double-counting | Wave 36 (tooling pass) | Orchestrator | P3 | OPEN |
+| 4 | WI-PROPTEST-FU-W33-001 — umbrella aggregator double-counting | Wave 36 (tooling pass) | Orchestrator | P3 | **CLOSED 2026-05-26** — see `specs/_audits/2026-05-26-w36-proptest-fu-001-seal.md` (obsoleted by Wave 35 Phase 2 physical absorption of corelink-auth + corelink-cas; corelink-container + corelink-core re-classified as INV-pin documentation pattern with per-INV ownership pointers in lib.rs + allowlist) |
 | 5 | WI-PROPTEST-FU-W33-002 — pre-existing density gaps | Wave 36 (per-crate sprint) | TBD per crate | P3 | OPEN |
 
 (#4 + #5 also tracked separately in
@@ -247,17 +247,21 @@ requires Wave 35.
 
 ## §6. Follow-up #4 + #5 — proptest density gaps
 
-Already tracked in `specs/_audits/proptest-followup-tickets.md` (now
-re-opened to `audit_status: ACTIVE`):
+Tracked in `specs/_audits/proptest-followup-tickets.md`:
 
 - **WI-PROPTEST-FU-W33-001** — umbrella aggregator double-counting fix
-  (corelink-{auth, cas, container, core}). Target Wave 36 tooling
-  pass. P3.
+  (corelink-{auth, cas, container, core}). **CLOSED 2026-05-26**
+  (W36-PROPTEST-FU-001 — obsoleted by Wave 35 Phase 2 physical
+  absorption for auth + cas; container + core re-classified as
+  INV-pin documentation crates with per-INV ownership pointers in
+  their `lib.rs` doc blocks and `proptest-density-allowlist.txt`
+  comments). SEAL audit:
+  `specs/_audits/2026-05-26-w36-proptest-fu-001-seal.md`. P3.
 - **WI-PROPTEST-FU-W33-002** — 3 pre-existing density gaps
   (corelink-clerk-cf, corelink-statuspage-real, corelink-wasm).
-  Target Wave 36 per-crate sprint. P3.
+  Target Wave 36 per-crate sprint. P3. **OPEN**.
 
-Total effort: 2.0d. GA non-blocking.
+Total residual effort: 1.5d. GA non-blocking.
 
 ## §7. Wave-by-wave summary
 

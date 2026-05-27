@@ -3,7 +3,7 @@ id: "AUDIT-PROPTEST-FOLLOWUP-TICKETS"
 type: "audit_followup_backlog"
 doc_status: "ACTIVE"
 audit_status: "ACTIVE"
-version: "1.2.0"
+version: "1.3.0"
 created: "2026-05-15"
 updated: "2026-05-26"
 closed: null
@@ -247,48 +247,92 @@ against the gate). All 7 are in
 `scripts/proptest-density-allowlist.txt` pending closure under the
 following two follow-up WIs.
 
-### WI-PROPTEST-FU-W33-001 — Umbrella aggregator proptest accounting
+### WI-PROPTEST-FU-W33-001 — Umbrella aggregator proptest accounting — **CLOSED 2026-05-26 (obsoleted by Wave 35 Phase 2 physical absorption + INV-pin documentation pattern)**
 
-**Status:** OPEN
+**Status:** CLOSED 2026-05-26 (W36-PROPTEST-FU-001)
+**Closure SEAL:** `specs/_audits/2026-05-26-w36-proptest-fu-001-seal.md`
 **Owner:** orchestrator (Gustavo Schneiter)
 **Priority:** P3 (architectural decision, not runtime correctness)
-**Effort:** 0.5d (decision + script tweak)
+**Effort:** 0.5d (executed as decision + allowlist + doc cleanup; no
+script tweak required after closure narrative)
 
-**Crates in scope:**
+**Original crates in scope:**
 
 - `corelink-auth` — Wave 33 Stage 1 Stream B aggregator
 - `corelink-cas` — Wave 33 Stage 1 Stream A aggregator
 - `corelink-container` — Wave 33 Stage 2.B (apps/server → crate)
 - `corelink-core` — Wave 33 Stage 0 apex
 
-**Problem statement:** these umbrellas are `pub use` re-export façades.
-Their `src/lib.rs` carries INV references in doc comments (for
-discoverability + canonical-path traceability), but the umbrella itself
-has zero behaviour — the INV-covered behaviour lives in the absorbed
-crates, which have their own proptests (and their own non-zero
-density ratios). The density gate, as currently shaped, double-counts:
-it sees INV refs in the umbrella's doc comments but finds 0 proptests
-in the umbrella's own `tests/` directory.
+**Original problem statement:** these umbrellas were `pub use`
+re-export façades whose `src/lib.rs` carried INV references in doc
+comments (for discoverability + canonical-path traceability) while the
+umbrella itself had zero behaviour. The density gate "double-counted":
+INV refs in doc comments inflated the denominator while 0 proptests
+in the umbrella's own `tests/` directory zeroed the numerator.
 
-**Acceptance criteria (one of):**
+**Why CLOSED 2026-05-26 (post-Wave-35-Phase-2 reality):**
 
-(a) Tweak `scripts/check_proptest_density_gate.sh` to detect
-    aggregator crates (heuristic: `src/lib.rs` is ≤ 500 LOC AND
-    contains only `pub use` re-exports AND no `pub fn` / `pub
-    struct`) and exempt them from the density ratio by automatic
-    inheritance from absorbed crates listed in `[dependencies]`.
+The original "double-counting via `pub use` re-export" framing is
+**INVALIDATED** for the 2 historically-aggregator crates, and **never
+applied** to the 2 boundary/types crates:
 
-(b) Document that umbrella crates are intentionally proptest-empty
-    and document the absorbed-crate ↔ INV mapping in each umbrella's
-    `lib.rs` `//!` doc block.
+1. `corelink-auth` — Wave 35 Phase 2 physically absorbed `schema` +
+   `webauthn` into `src/schema/` + `src/webauthn/`. Their proptests
+   moved into `crates/corelink-auth/tests/` (4 proptest! blocks /
+   14 proptest tests / 6 INV refs). Current ratio: **2.33** — passes
+   the density gate naturally. Removed from allowlist.
+2. `corelink-cas` — Wave 35 Phase 2 physically absorbed
+   chunker/dedup/edge/eviction/lru_tracker/manifest/meta/multipart_schema/r2_multipart.
+   Their proptests moved into `crates/corelink-cas/tests/`
+   (12 proptest! blocks / 72 proptest tests / 19 INV refs). Current
+   ratio: **3.79** — passes the density gate naturally. Removed from
+   allowlist.
+3. `corelink-container` — never was a `pub use` re-export aggregator;
+   it is `apps/server`'s library-half (15 src files of route/webhook/
+   byok orchestrator logic). Its 3 INV refs
+   (`INV-AUTH-MIGRATION-ADDITIVE`, `INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER`,
+   `INV-TENANT-ISOLATION`) are **route-boundary pin annotations**,
+   not load-bearing properties — the property tests live in
+   `corelink-d1-migrations`, `corelink-audit`, and
+   `corelink-tenant-path` + `corelink-auth::schema` respectively.
+   Pattern: "INV-pin documentation" — exempted via allowlist with
+   per-INV ownership pointer.
+4. `corelink-core` — Wave-33 Stage 0 apex types crate (TenantId,
+   Digest, Region, SecretWrap, CoreError, Clock). Its 1 INV ref
+   (`INV-DATA-RESIDENCY`) is a policy-pin documenting how
+   `types/region.rs` participates in the residency invariant; the
+   property test lives in `corelink-signup` (regional-pin at signup
+   path). Same "INV-pin documentation" pattern as container.
 
-(c) Move INV references out of umbrella `lib.rs` doc comments to
-    avoid double-counting (least preferred — loses canonical-path
-    discoverability).
+**Closure scope (this session — W36-PROPTEST-FU-001):**
 
-**Recommendation:** option (a) is the cleanest and aligns with the
-"INV traceability survives the reorg" charter. Schedule for a Wave 35
-or 36 tooling pass.
+- `scripts/proptest-density-allowlist.txt`: REMOVED `corelink-auth` +
+  `corelink-cas` from the W33-001 section (they now pass the gate
+  naturally); REWROTE the W33-001 block to document the closure
+  narrative + the INV-pin-only residual (container + core) with
+  per-crate ownership pointers.
+- `corelink-container/src/lib.rs`: added `## INV pin map` doc block
+  enumerating each pinned INV → property-test-owner crate.
+- `corelink-core/src/lib.rs`: added INV pin pointer for
+  `INV-DATA-RESIDENCY` → `corelink-signup` ownership.
+- This ticket → CLOSED.
+- `specs/_audits/2026-05-26-wave-33-34-closure-followups.md` §6 #4 →
+  CLOSED.
+
+**Acceptance criteria (one of) — selected:** option (b) ("document
+the absorbed-crate ↔ INV mapping in each umbrella's `lib.rs` `//!`
+doc block") + naturalized closure for the historically-aggregator
+crates. Option (a) (script heuristic) deemed unnecessary because the
+allowlist already serves as the exemption mechanism and the surface
+shrunk to 2 crates (container + core) for which explicit per-INV
+ownership documentation is more honest than a structural heuristic.
+
+**Risk if not closed:** zero — gate currently green, no behavioural
+change, no test regression.
+
+**Tracking:** this ticket + closure SEAL audit
+`specs/_audits/2026-05-26-w36-proptest-fu-001-seal.md` +
+`specs/_audits/2026-05-26-wave-33-34-closure-followups.md` §6 #4.
 
 ---
 
@@ -335,13 +379,12 @@ permanently allowlist.
 
 | WI | Scope | Effort | Priority | Status |
 |---|---|---|---|---|
-| WI-PROPTEST-FU-W33-001 | Umbrella aggregator double-counting fix | 0.5d | P3 | **OPEN** (2026-05-26) |
+| WI-PROPTEST-FU-W33-001 | Umbrella aggregator double-counting fix | 0.5d | P3 | **CLOSED 2026-05-26** (W36-PROPTEST-FU-001; obsoleted by Wave 35 Phase 2 absorption + INV-pin doc pattern) |
 | WI-PROPTEST-FU-W33-002 | 3 pre-existing density gaps | 1.5d | P3 | **OPEN** (2026-05-26) |
 
 **Total Wave-33 expansion effort:** 2.0d. **GA-blocker:** none —
 both are post-GA quality hardening. Closure target: Wave 36 tooling
 pass (post-Wave-35 adapter consolidation).
 
-The audit's overall `audit_status` is re-opened to `ACTIVE` while
-these 2 follow-ups remain open; will return to `CLOSED` when both
-land.
+The audit's overall `audit_status` remains `ACTIVE` while FU-W33-002
+remains open; will return to `CLOSED` when FU-W33-002 lands.

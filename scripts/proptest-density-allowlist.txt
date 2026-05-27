@@ -20,15 +20,36 @@ corelink-handler-cas         # follow-up WI: cover INV-CAS-* in handler
 corelink-otel-export         # follow-up WI: OTEL export INV coverage
 corelink-tenant-offboarding  # follow-up WI: offboarding state-machine INVs
 
-# Wave 33 umbrella aggregator crates — pub use re-export façades; INV refs
-# inherited from absorbed crates (which have their own proptests). The
-# umbrella itself has no behaviour. Follow-up: WI-PROPTEST-FU-W33-001
-# (decide whether absorbed-crate proptests should be re-counted under
-# the umbrella, or if doc-references alone satisfy the gate).
-corelink-auth                # Wave 33 Stage 1 Stream B aggregator
-corelink-cas                 # Wave 33 Stage 1 Stream A aggregator
-corelink-container           # Wave 33 Stage 2.B (apps/server → crate)
-corelink-core                # Wave 33 Stage 0 apex types
+# Wave 33 umbrella aggregator crates — original WI-PROPTEST-FU-W33-001
+# scope (double-counting via `pub use` re-export aggregators).
+#
+# Post Wave 35 Phase 2 (BYOK absorption + auth/cas physical absorption):
+#   - corelink-auth: REMOVED from allowlist 2026-05-26 — ratio 2.33 (PASS).
+#     Schema + webauthn modules physically absorbed; proptests moved into
+#     `crates/corelink-auth/tests/`. Clerk/pat/tenant-path still
+#     `pub use` re-exports but the in-crate proptests already cover the
+#     INV refs above the 1.0 threshold. See SEAL audit
+#     `specs/_audits/2026-05-26-w36-proptest-fu-001-seal.md`.
+#   - corelink-cas: REMOVED from allowlist 2026-05-26 — ratio 3.79 (PASS).
+#     Chunker/dedup/edge/eviction/lru_tracker/manifest/meta/multipart_schema/
+#     r2_multipart physically absorbed; 12 proptest! blocks + 72 proptest
+#     tests now live in `crates/corelink-cas/tests/`. r2_storage + cache
+#     still `pub use corelink_worker` aggregators but the in-crate
+#     proptests already clear the 1.0 threshold.
+#
+# Remaining INV-pin-only documentation crates (NOT re-export aggregators;
+# they document INVs that are pinned at their boundary but whose
+# load-bearing property tests live in the owning crate):
+corelink-container           # INV-AUTH-MIGRATION-ADDITIVE proptested in
+                             # corelink-d1-migrations; INV-AUDIT-EMIT-ATOMIC-
+                             # WITH-HANDLER proptested in corelink-audit;
+                             # INV-TENANT-ISOLATION proptested in
+                             # corelink-tenant-path + corelink-auth schema.
+corelink-core                # INV-DATA-RESIDENCY proptested in
+                             # corelink-signup (regional-pin at signup).
+# WI-PROPTEST-FU-W33-001 CLOSED 2026-05-26 (obsoleted by physical
+# absorption + INV-pin documentation pattern). Above 2 entries are the
+# stable "INV-pin doc" residual, NOT debt.
 
 # Pre-existing gaps surfaced when ci.sh first added the gate to the
 # canonical pre-merge set (these crates pre-date Wave 33; INV refs in doc

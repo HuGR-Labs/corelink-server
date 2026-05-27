@@ -31,6 +31,28 @@
 //!   than window-derived. See
 //!   `specs/_audits/2026-05-16-wave18-adversarial-review-streamA-audit-export.md`
 //!   and `…-streamB-neon-shadow.md`.
+//!
+//! # INV pin map (W36-PROPTEST-FU-001 closure)
+//!
+//! This crate carries INV references in route-boundary doc comments
+//! that name **which invariant is pinned at the HTTP boundary**, not
+//! where the load-bearing property tests live. Per WI-PROPTEST-FU-W33-001
+//! closure (`specs/_audits/2026-05-26-w36-proptest-fu-001-seal.md`),
+//! the property tests for each pinned INV live in the owning crate
+//! listed below; this crate is listed in
+//! `scripts/proptest-density-allowlist.txt` as an
+//! "INV-pin documentation" exemption:
+//!
+//! | INV ref pinned here              | Property-test owner crate(s)                         |
+//! |----------------------------------|------------------------------------------------------|
+//! | `INV-AUTH-MIGRATION-ADDITIVE`    | `corelink-d1-migrations` (`tests/prop_migration_additivity.rs`) |
+//! | `INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER` | `corelink-audit` + `corelink-slack-real` (`tests/prop_slack_emit_atomic.rs`) |
+//! | `INV-TENANT-ISOLATION`           | `corelink-tenant-path` + `corelink-auth::schema` (`corelink-auth/tests/schema_prop_schema.rs`) |
+//!
+//! The route-boundary references in `src/routes/*.rs` are **pin
+//! annotations** documenting which invariant the route enforces; they
+//! do NOT relocate the property logic. See the SEAL audit above for
+//! the full closure narrative.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
