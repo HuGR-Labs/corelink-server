@@ -4,9 +4,9 @@ type: "work_item"
 doc_status: "SEALED"
 work_status: "DONE"
 audit_status: "AUDITED"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-28"
-updated: "2026-04-28"
+updated: "2026-05-27"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-005"]
 parent: "S-14"
@@ -25,6 +25,8 @@ inherits_from:
   - "FAILURE-MODES"
 tags: ["wi", "s14", "byok", "kill-switch", "cmk-revocation", "chaos-drill", "inv-byok-crypto-sovereignty", "high-risk"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-byok-revocation`, and `corelink-customer-alerts` were absorbed into `corelink-byok`, and `corelink-ops` via inline `mod <name>;` per SEAL specs/_audits/sealed/2026-05-26-w35-p2-byok-absorption.md / specs/_audits/sealed/2026-05-26-w35-p2-ops-absorption.md. Canonical consumer path is now `corelink_byok::*`, `corelink_ops::*`.
 
 # WI-S14-006 — CMK Revocation Detection (KMS Access Check Background Every 60s per Active BYOK Tenant) + Customer Kill Switch ≤ 5 min Global Hard-Fail (DEK Cache TTL 5 min Hard Expires All In-Flight Reads + KMS Access Check 60s Detect + Degrade Tenant Read-Only + Audit Emit `corelink.byok.cmk_revoked` + Alert Customer; Total p99 ≤ 5 min Global; INV-BYOK-CRYPTO-SOVEREIGNTY CRITICAL Hard-Fail No Operator Override) + Chaos Drill Weekly em Staging + Runbook RB-BYOK-REVOKE Dry-Run
 

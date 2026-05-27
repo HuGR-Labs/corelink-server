@@ -4,9 +4,9 @@ type: "work_item"
 doc_status: "FROZEN"
 work_status: "DONE"
 audit_status: "AUDITED"
-version: "1.3.0"
+version: "1.4.0"
 created: "2026-04-25"
-updated: "2026-05-02"
+updated: "2026-05-27"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-005", "FF-HR-002"]
 parent: "S-08"
@@ -25,6 +25,8 @@ inherits_from:
   - "PRIVACY-MODEL"
 tags: ["wi", "s08", "abuse-detection", "scoring", "heuristica", "lgpd-art20", "humane-response", "high-risk"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-abuse` was absorbed into `corelink-billing` via inline `mod <name>;` per SEAL specs/_audits/sealed/2026-05-26-w35-p2-billing-absorption.md. Canonical consumer path is now `corelink_billing::*`.
 
 # WI-S08-004 — Abuse Detection Heurística Multi-Feature + Scoring + Humane Response (`crates/corelink-abuse-detector`; weighted-sum score `corelink_abuse_score{tenant_id}` em [0.0, 1.0]; features = {cpu_wallclock_ratio, egress_bytes_per_min, action_digest_entropy, concurrent_exec_count} sprint contract §5 R-S08-7; observed via S-09 metrics 5min aggregation windows; 4-tier response gradient: noop / silent-downgrade-50% / admin-review-trigger-SEV2 / suspend-candidate-human-review-only; LGPD Art. 20 + GDPR Art. 22 humane response sprint contract §7.10.s08.3 (3 customer self-service endpoints: GET /v1/admin/abuse_score + POST /v1/admin/abuse_appeal + audit log every decision); threshold calibration via 50 synthetic workloads (n=50 benign + n=50 high-intensity abusive; Lote 10.8bis P0-E corrected; 95% CI requirement) ≥ 80% true positive + 0 false positive sprint contract §6 DoD; per-tenant isolation formal property test sprint contract §7.10.s08.4)
 

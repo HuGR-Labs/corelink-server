@@ -4,9 +4,9 @@ type: "work_item"
 doc_status: "FROZEN"
 work_status: "DONE"
 audit_status: "AUDITED"
-version: "1.3.0"
+version: "1.4.0"
 created: "2026-04-25"
-updated: "2026-05-02"
+updated: "2026-05-27"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-005", "FF-HR-002"]
 parent: "S-08"
@@ -25,6 +25,8 @@ inherits_from:
   - "AUTH-MODEL"
 tags: ["wi", "s08", "quota", "rate-limit", "per-pat", "atomic-cas", "do-actor", "bandwidth-monthly", "high-risk"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-quota`, and `corelink-quota-cas` were absorbed into `corelink-billing` via inline `mod <name>;` per SEAL specs/_audits/sealed/2026-05-26-w35-p2-billing-absorption.md. Canonical consumer path is now `corelink_billing::*`.
 
 # WI-S08-003 — Quota Checker Middleware (Atomic CAS via DO Actor) + Per-PAT Rate Camada 3 + Monthly Bandwidth Quota (`crates/corelink-quota`; DO `Quota-<tenant_id>` race-free serialization; canonical `tenant_storage_state.bytes_used` Lote 10.7bis P0-2 absorbed — phantom `tenant_quota.bytes_used` from sprint contract REJECTED; `tenant_quota.max_storage_bytes` POLICY immutable; race-aware strict-< predicate analogous a S-06 INV-GC-004 + S-07 WI-S07-002 absorbed; CAP-QUOTA-001 hard-block 100% boundary com S-07 ≤95% eviction trigger ADR-0020 FROZEN; CAP-QUOTA-002 monthly bandwidth via DO `BandwidthTracker-<tenant>-<YYYY-MM>` reset 1st UTC; per-PAT rate camada 3 of 4 PAT-RATE-LIMIT-001; INV-QUOTA-ENFORCEMENT atomic enforcement)
 

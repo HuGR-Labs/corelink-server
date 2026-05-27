@@ -3,14 +3,16 @@ id: "DRATA-INTEGRATION-COVERAGE-2026-05-14"
 type: "compliance_drata_coverage"
 doc_status: "FROZEN"
 audit_status: "AUDITED"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-14"
-updated: "2026-05-14"
+updated: "2026-05-27"
 sprint: "R5-prep"
 parent_wi: "WI-R5P-SOC2-DRATA"
 owner: "Gustavo Schneiter"
 tags: ["soc2", "tsc-2017", "drata", "evidence-coverage", "r5p"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-drata-sync` was absorbed into `corelink-ops` via inline `mod <name>;` per SEAL specs/_audits/sealed/2026-05-26-w35-p2-ops-absorption.md. Canonical consumer path is now `corelink_ops::*`.
 
 # Drata Integration Coverage — SOC 2 TSC × CoreLink Evidence Streams
 

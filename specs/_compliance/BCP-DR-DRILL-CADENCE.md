@@ -3,9 +3,9 @@ id: "BCP-DR-DRILL-CADENCE-2026-05-14"
 type: "compliance_cadence"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-14"
-updated: "2026-05-15"
+updated: "2026-05-27"
 sprint: "R-6"
 parent_wi: "WT-R6-3"
 owner: "Gustavo Schneiter"
@@ -15,6 +15,8 @@ supersedes: null
 superseded_by: null
 tags: ["bcp", "dr", "drill-cadence", "r-6", "90-day", "soc2-cc7-5", "soc2-cc9-1", "iso-27031", "rb-oncall-policy", "wi-s17-002", "wi-s17-005", "wi-s20-006"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-dr-drill`, and `corelink-oncall` were absorbed into `corelink-ops` via inline `mod <name>;` per SEAL specs/_audits/sealed/2026-05-26-w35-p2-ops-absorption.md. Canonical consumer path is now `corelink_ops::*`.
 
 # BCP / DR Drill Cadence — 90-Day Pre-GA Operational Rehearsal
 

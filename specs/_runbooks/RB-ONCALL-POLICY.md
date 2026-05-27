@@ -3,9 +3,9 @@ id: "RB-ONCALL-POLICY"
 type: "runbook"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-05-14"
-updated: "2026-05-14"
+updated: "2026-05-27"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -13,6 +13,8 @@ supersedes: null
 superseded_by: null
 tags: ["runbook", "oncall", "rotation", "fatigue", "burnout-prevention", "rb-oncall-policy", "wi-s17-005", "wi-s20-006", "24-7", "follow-the-sun"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-oncall`, and `corelink-synthetic-pager` were absorbed into `corelink-ops`, and `corelink-telemetry` via inline `mod <name>;` per SEAL specs/_audits/sealed/2026-05-26-w35-p2-ops-absorption.md / specs/_audits/sealed/2026-05-26-w35-p2-telemetry-absorption.md. Canonical consumer path is now `corelink_ops::*`, `corelink_telemetry::*`.
 
 <!-- forensics-backlink -->
 > **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §1.

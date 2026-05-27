@@ -1,11 +1,11 @@
 ---
 id: "PROPOSAL-2026-05-26-ADAPTER-OCI"
 type: "governance"
-doc_status: "DRAFT"
+doc_status: "DEFASADO"
 audit_status: "ACTIVE"
-version: "0.1.0"
+version: "0.2.0"
 created: "2026-05-26"
-updated: "2026-05-26"
+updated: "2026-05-27"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -14,6 +14,8 @@ superseded_by: null
 tags: ["proposal", "adapters", "wave-34", "oci", "package-manager"]
 references:
 ---
+
+> **DEFASADO 2026-05-27 — never landed.** This proposal/draft was scoped but did not advance to implementation. Preserved as historical record; no current code references it. See `specs/_audits/2026-05-27-specs-inventory-cleanup-map.md` §3.2 for the inventory triage decision.
 
 # Adapter Contract — OCI Registry (Docker, containerd, podman, buildah)
 

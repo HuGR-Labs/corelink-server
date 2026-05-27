@@ -3,9 +3,9 @@ id: "RB-ONCALL-ESCALATION-MATRIX"
 type: "runbook"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-14"
-updated: "2026-05-14"
+updated: "2026-05-27"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -13,6 +13,8 @@ supersedes: null
 superseded_by: null
 tags: ["runbook", "oncall", "escalation", "matrix", "3-tier", "sev1", "sev2", "sev3", "pagerduty", "wt-r6-3", "wi-s17-005", "bcp-dr"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-oncall` was absorbed into `corelink-ops` via inline `mod <name>;` per SEAL specs/_audits/sealed/2026-05-26-w35-p2-ops-absorption.md. Canonical consumer path is now `corelink_ops::*`.
 
 <!-- forensics-backlink -->
 > **Forensics:** see `docs/internal/FORENSICS-GUIDE.md` §1.2.

@@ -3,9 +3,9 @@ id: "RB-FM-AC-MIGRATION-BUG"
 type: "runbook"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "0.1.0"
+version: "0.2.0"
 created: "2026-05-01"
-updated: "2026-05-01"
+updated: "2026-05-27"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -13,6 +13,8 @@ supersedes: null
 superseded_by: null
 tags: ["runbook", "p1", "schema", "migration", "d1", "ac"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-ac-schema` was absorbed into `corelink-ac` via inline `mod <name>;` per SEAL specs/_audits/sealed/2026-05-26-w35-p2-ac-absorption.md. Canonical consumer path is now `corelink_ac::*`.
 
 # RB-FM-AC-MIGRATION-BUG — D1 `ac_meta` Migration Bug Detected in Prod
 

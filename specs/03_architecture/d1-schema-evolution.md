@@ -3,9 +3,9 @@ id: "d1-schema-evolution"
 type: "architecture"
 doc_status: "ACTIVE"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-14"
-updated: "2026-05-14"
+updated: "2026-05-27"
 owner: "SRE Lead"
 final_approver: "Engineering Director"
 reviewers: []
@@ -13,6 +13,8 @@ supersedes: null
 superseded_by: null
 tags: ["architecture", "d1", "migrations", "schema", "r2-13"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-d1-migrations` was absorbed into `corelink-ops` via inline `mod <name>;` per SEAL specs/_audits/sealed/2026-05-26-w35-p2-ops-absorption.md. Canonical consumer path is now `corelink_ops::*`.
 
 # D1 schema evolution registry
 

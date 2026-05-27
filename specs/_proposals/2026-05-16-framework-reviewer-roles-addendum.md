@@ -1,11 +1,11 @@
 ---
 id: "PROPOSAL-2026-05-16-FRAMEWORK-REVIEWER-ROLES-ADDENDUM"
 type: "governance"
-doc_status: "DRAFT"
+doc_status: "DEFASADO"
 audit_status: "ACTIVE"
-version: "0.1.3"
+version: "0.2.0"
 created: "2026-05-16"
-updated: "2026-05-16"
+updated: "2026-05-27"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -19,6 +19,8 @@ references:
   - "specs/_governance/reviewer_staffing_strategy.md"
   - "specs/03_architecture/adrs/ADR-0034-prr-staffing-waiver-solo-tier.md"
 ---
+
+> **DEFASADO 2026-05-27 — never landed.** This proposal/draft was scoped but did not advance to implementation. Preserved as historical record; no current code references it. See `specs/_audits/2026-05-27-specs-inventory-cleanup-map.md` §3.2 for the inventory triage decision.
 
 # Framework Reviewer Roles — Addendum (Dual-Hat Fallback + Operating Policy)
 

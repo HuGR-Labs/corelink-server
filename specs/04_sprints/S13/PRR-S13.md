@@ -4,9 +4,9 @@ type: "prr"
 doc_status: "FROZEN"
 work_status: "CONDITIONALLY_APPROVED"
 audit_status: "AUDITED"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-14"
-updated: "2026-05-14"
+updated: "2026-05-27"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -32,6 +32,8 @@ inherits_from:
   - "FAILURE-MODES"
 tags: ["prr", "s13", "admin-plane", "config-singleton", "dual-approval", "collusion-rotation", "secret-rotation", "terraform-drift", "progressive-rollout", "high-risk", "ship-gate", "11-signoffs-canonical"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-admin-api`, `corelink-admin-dry-run`, `corelink-config-api`, `corelink-rollout-controller`, and `corelink-rotation-worker` were absorbed into `corelink-adapter-host`, and `corelink-ops` via inline `mod <name>;` per SEAL specs/_audits/sealed/2026-05-26-w35-p2-adapter-host-absorption.md / specs/_audits/sealed/2026-05-26-w35-p2-ops-absorption.md. Canonical consumer path is now `corelink_adapter_host::*`, `corelink_ops::*`.
 
 # PRR-S13 — Production Readiness Review · S-13: Admin Plane (Config + Feature Flags + Secret Rotation + Progressive Rollout)
 

@@ -4,9 +4,9 @@ type: "work_item"
 doc_status: "SEALED"
 work_status: "DONE"
 audit_status: "AUDITED"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-04-28"
-updated: "2026-05-14"
+updated: "2026-05-27"
 lane: "HIGH_RISK"
 lane_forcing_factors: ["FF-HR-005"]
 parent: "S-13"
@@ -23,6 +23,8 @@ inherits_from:
   - "FAILURE-MODES"
 tags: ["wi", "s13", "admin-plane", "progressive-rollout", "auto-rollback", "error-budget", "canary", "high-risk"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-rollout-controller` was absorbed into `corelink-adapter-host` via inline `mod <name>;` per SEAL specs/_audits/sealed/2026-05-26-w35-p2-adapter-host-absorption.md. Canonical consumer path is now `corelink_adapter_host::*`.
 
 # WI-S13-005 — Progressive Rollout Controller 4-Stage (1% → 10% → 50% → 100%) + Auto-Rollback Triggers (Error Rate > Baseline + 3σ OR SLO Burn > 14.4 OR p99 > Baseline + 50% Sustained 5 min) + PAT-PROGRESSIVE-ROLLOUT-001 + Rollback Budget 30% Monthly Cap + Chaos Test Bad Deploy Auto-Rollback ≤ 10 min p99
 

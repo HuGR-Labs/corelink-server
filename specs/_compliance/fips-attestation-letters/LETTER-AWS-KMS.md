@@ -2,9 +2,9 @@
 id: "LETTER-AWS-KMS"
 type: "vendor_letter_template"
 doc_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-15"
-updated: "2026-05-15"
+updated: "2026-05-27"
 owner: "Gustavo Schneiter"
 vendor: "Amazon Web Services, Inc."
 provider: "AWS KMS"
@@ -12,6 +12,8 @@ target_sla_days: 30
 gap: "GAP-02"
 tags: ["byok", "fips", "letter-template", "aws-kms", "gap-02"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-byok-aws` was absorbed into `corelink-byok` via inline `mod <name>;` per SEAL specs/_audits/sealed/2026-05-26-w35-p2-byok-absorption.md. Canonical consumer path is now `corelink_byok::*`.
 
 # Attestation request — AWS KMS FIPS 140-3 validation
 

@@ -1,11 +1,11 @@
 ---
 id: "PROPOSAL-2026-05-16-FRAMEWORK-REVIEWER-ROLES"
 type: "governance"
-doc_status: "DRAFT"
+doc_status: "DEFASADO"
 audit_status: "ACTIVE"
-version: "0.1.0"
+version: "0.2.0"
 created: "2026-05-16"
-updated: "2026-05-16"
+updated: "2026-05-27"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -19,6 +19,8 @@ references:
   - "specs/03_architecture/adrs/ADR-0034-prr-staffing-waiver-solo-tier.md"
   - "specs/_proposals/2026-05-16-framework-reviewer-roles-addendum.md"
 ---
+
+> **DEFASADO 2026-05-27 — never landed.** This proposal/draft was scoped but did not advance to implementation. Preserved as historical record; no current code references it. See `specs/_audits/2026-05-27-specs-inventory-cleanup-map.md` §3.2 for the inventory triage decision.
 
 # Framework Reviewer Roles — Lote 7 Staffing Proposal (FW-H-1..4)
 

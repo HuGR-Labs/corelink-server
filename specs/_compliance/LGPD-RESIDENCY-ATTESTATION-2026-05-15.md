@@ -3,9 +3,9 @@ id: "LGPD-RESIDENCY-ATTESTATION-2026-05-15"
 type: "compliance_attestation"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-15"
-updated: "2026-05-15"
+updated: "2026-05-27"
 sprint: "R5-3"
 parent_wi: "GAP-22"
 owner: "Gustavo Schneiter"
@@ -20,6 +20,8 @@ inherits_from:
   - "INVARIANT-REGISTRY"
 tags: ["lgpd", "lgpd-art-33", "residency", "attestation", "gap-22", "soc2-cross-framework", "brazil", "sam-region", "anpd"]
 ---
+
+> **Post Wave 35 Phase 2 update 2026-05-27:** `corelink-privacy-residency-enforcement` was absorbed into `corelink-privacy` via inline `mod <name>;` per SEAL specs/_audits/sealed/2026-05-26-w35-p2-privacy-absorption.md. Canonical consumer path is now `corelink_privacy::*`.
 
 # LGPD Art. 33 §1º — Residency Attestation Bundle (2026-05-15)
 
