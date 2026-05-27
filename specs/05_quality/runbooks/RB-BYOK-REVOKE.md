@@ -1,11 +1,12 @@
 ---
 id: "RB-BYOK-REVOKE"
 type: "runbook"
+wi: "WI-S14-006"
 doc_status: "ACTIVE"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-04-24"
-updated: "2026-05-14"
+updated: "2026-05-27"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -113,6 +114,28 @@ corelink-admin byok kill-switch-timing --tenant-id <TENANT_ID>
 # SLA: detection ≤ 60s, total ≤ 360s (6 min p99)
 ```
 
+**Underlying SQL pattern** (when `corelink-admin` CLI is unavailable, or for staging diagnostics): extract `evicted_dek_count` + `kill_switch_duration_ms` from `audit_outbox` payload directly:
+
+```bash
+wrangler d1 execute corelink-db --command \
+  "SELECT json_extract(payload, '\$.evicted_dek_count'),
+          json_extract(payload, '\$.kill_switch_duration_ms')
+   FROM audit_outbox
+   WHERE event_type = 'corelink.byok.cmk_revoked'
+   ORDER BY created_at DESC LIMIT 5;"
+```
+
+**Step 3.5:** Verify customer alert delivery.
+
+```bash
+# Customer alert delivery confirmation (revocation notice reached customer):
+wrangler d1 execute corelink-db --command \
+  "SELECT channel, status, delivered_at
+   FROM customer_alerts
+   WHERE tenant_id = '<TENANT_ID>'
+   ORDER BY created_at DESC LIMIT 10;"
+```
+
 ---
 
 ## §4. Immediate Containment (≤ 6 min from detection)
@@ -144,6 +167,8 @@ corelink-admin byok in-flight-ops --tenant-id <TENANT_ID>
 ---
 
 ## §5. Communication Templates
+
+> **Placeholder convention:** templates below use `<PLACEHOLDER>` style. Some delivery pipelines (auto-dispatch path) render via Mustache (`{{provider}}`, `{{detected_at}}`, `{{restored_at}}`). Reconcile with the actual notification-templating engine in use before manual override; both forms are accepted in the renderer.
 
 ### 5.1 Internal Slack notification (post to `#incidents-corelink`)
 
@@ -388,3 +413,47 @@ Kill switch p99 validated at 2s (SLA ≤ 360s). Audit chain verified. Customer n
 - `.github/workflows/byok_kill_switch_drill_weekly.yml`
 - NIST SP 800-57 Pt 1 Rev 5 §5.3 (key management)
 - NIST SP 800-88 Rev.1 (crypto-erase)
+
+---
+
+## Appendix A. Raw D1 fallback commands (when `corelink-admin` CLI is unavailable)
+
+Use these `wrangler d1 execute` snippets as a fallback when the admin CLI is down or for staging diagnostics. Production preference is the `corelink-admin` CLI surfaces in §3–§7 (they include dual-approval enforcement per CTRL-KEY-014 + CTRL-ADMIN-002).
+
+**A.1 Confirm kill switch fired (audit_outbox):**
+
+```bash
+wrangler d1 execute corelink-db --command \
+  "SELECT * FROM audit_outbox
+   WHERE event_type = 'corelink.byok.cmk_revoked'
+   AND created_at > datetime('now', '-1 hour')
+   ORDER BY created_at DESC LIMIT 10;"
+```
+
+**A.2 Check tenant byok_status:**
+
+```bash
+wrangler d1 execute corelink-db --command \
+  "SELECT tenant_id, byok_status, byok_revoked_at_ms,
+          byok_revoked_provider, byok_revoked_kms_key_id
+   FROM tenants
+   WHERE byok_status != 'active'
+   ORDER BY byok_revoked_at_ms DESC LIMIT 20;"
+```
+
+**A.3 Verify recovery (byok_status flipped back to `active`):**
+
+```bash
+wrangler d1 execute corelink-db --command \
+  "SELECT byok_status FROM tenants WHERE tenant_id = '<TENANT_ID>';"
+# Expected: 'active'
+```
+
+---
+
+## Change Log
+
+| Version | Date | Author | Change |
+|---|---|---|---|
+| 1.0.0 | 2026-05-14 | Gustavo (via Claude Sonnet 4.6) | Initial production-grade runbook (WI-S14-006 + WI-S14-009); supersedes 0.1.0 draft. |
+| 1.1.0 | 2026-05-27 | Wave C duplicate-merger | Frontmatter `wi: WI-S14-006` added; §3.4 SQL pattern + §3.5 customer_alerts query merged from former `specs/05_runbooks/RB-BYOK-REVOKE.md`; §5 Mustache placeholder note; Appendix A raw `wrangler d1 execute` fallback commands; this Change Log section. Per `specs/_audits/2026-05-27-specs-wave-c-duplicate-analysis.md`. |

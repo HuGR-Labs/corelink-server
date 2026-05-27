@@ -3,9 +3,9 @@ id: "RB-FM-SIGNUP-FAILED"
 type: "runbook"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "0.1.0"
+version: "0.2.0"
 created: "2026-05-14"
-updated: "2026-05-14"
+updated: "2026-05-27"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -27,6 +27,15 @@ tags: ["runbook", "p1", "onboarding", "signup", "atomic-provisioning", "dpa-firs
 > **INV-ONBOARD-ATOMIC-PROVISIONING**: signup orchestration (Clerk verify → tenant row → DPA receipt → Stripe customer → first PAT) MUST commit as a single D1 transaction. Any partial-state observed in prod is by definition a violation; this runbook is the operator response.
 >
 > **INV-ONBOARD-DPA-FIRST**: a tenant row MUST NOT exist without a corresponding `dpa_acceptance` row joined by D1 lock; a Stripe subscription MUST NOT be activated without DPA receipt JWT verifiable (INV-CONSENT-PROOF-VERIFIABLE).
+
+---
+
+## 0. Pré-condições
+
+- S-19 onboarding pipeline live (signup → tenant provisioning → DPA → Stripe → first PAT).
+- D1 schema-of-record tables: `account`, `tenant`, `user_account`, `membership`, `pat`, `consent_ledger`, `customer_billing_profile` (S-10/S-11 contract).
+- Conversion funnel métricas (S-19 R-S19-11) instrumentadas.
+- Stripe Customer + DPA signed records.
 
 ---
 
@@ -81,6 +90,32 @@ tags: ["runbook", "p1", "onboarding", "signup", "atomic-provisioning", "dpa-firs
    WHERE t.created_at > datetime('now','-60 minutes')
      AND (d.tenant_id IS NULL OR s.tenant_id IS NULL OR p.tenant_id IS NULL);
    ```
+
+   **Alternate query** (S-10/S-11 contract table names — use when `customer_billing_profile` and `consent_ledger` are the schema-of-record):
+   ```sql
+   -- Orphan tenants: provisioned mas missing Stripe ou DPA
+   SELECT
+     t.id as tenant_id,
+     t.created_at,
+     CASE WHEN cb.stripe_customer_id IS NULL THEN 'NO_STRIPE' END as stripe_status,
+     CASE WHEN cl.subject_id IS NULL OR cl.purpose != 'dpa-acceptance' THEN 'NO_DPA' END as dpa_status,
+     COUNT(p.id) as pat_count
+   FROM tenant t
+   LEFT JOIN customer_billing_profile cb ON cb.tenant_id = t.id
+   LEFT JOIN consent_ledger cl ON cl.subject_id = t.id AND cl.purpose = 'dpa-acceptance' AND cl.granted = true
+   LEFT JOIN pat p ON p.tenant_id = t.id AND p.deleted_at IS NULL
+   WHERE t.created_at < datetime('now', '-1 hour')  -- exclude in-progress signups
+     AND (cb.stripe_customer_id IS NULL OR cl.subject_id IS NULL)
+   GROUP BY t.id, t.created_at, cb.stripe_customer_id, cl.subject_id
+   ORDER BY t.created_at DESC
+   LIMIT 100;
+   ```
+
+   **Categorize** observed orphans (post-hoc data state, orthogonal to sub-mode trigger):
+   - **NO_STRIPE**: tenant + DPA OK, missing Stripe customer (most common — Stripe outage during signup).
+   - **NO_DPA**: tenant + Stripe OK, missing DPA acceptance (regulatory issue — Privacy Officer mandatory notify).
+   - **BOTH_MISSING**: tenant orphan; nunca completou onboarding (browser/network drop most likely).
+
 2. **Halt new signups** (feature flag `onboarding.signup_enabled = false` via config singleton — S-13 admin plane; requires dual-approval per CTRL-ADMIN-001).
 3. **Per sub-mode**:
    - **Network partition** (1) / **D1 unavailable** (3): rely on D1 native retry; if persisted > 5 min, switch admin-emit banner "signup temporarily unavailable" and wait for CF recovery. Do NOT manually retry partial transactions.
@@ -89,6 +124,7 @@ tags: ["runbook", "p1", "onboarding", "signup", "atomic-provisioning", "dpa-firs
    - **DPA-first race** (5): IMMEDIATE — disable affected `tenant_id` (config singleton flag), audit emit `dpa_first_violation_detected`, notify Privacy + Legal within 2 h.
    - **Audit chain break** (6): IMMEDIATE — pause onboarding emitter; replay last clean checkpoint; cross-reference with WI-S09-004 audit chain processor.
 4. **Customer notification**: per affected tenant, send `signup_retry_required` email (templated) within 1 h of detection.
+5. **Refund se billing inadvertent**: any tenant categorized BOTH_MISSING ou NO_DPA cujo `customer_billing_profile.stripe_customer_id` has been charged DEVE receber refund via Stripe admin API; emit `corelink.onboarding.orphan_refund` audit event.
 
 ---
 
@@ -99,6 +135,16 @@ tags: ["runbook", "p1", "onboarding", "signup", "atomic-provisioning", "dpa-firs
 3. Check Cloudflare D1 health page + Clerk status page + Stripe status page.
 4. Run integrity-check ad-hoc: `corelink-onboarding-funnel integrity-check --since=60m` — exits non-zero with orphan list.
 5. Confirm INV-ONBOARD-DPA-FIRST + INV-ONBOARD-ATOMIC-PROVISIONING property test still green em CI (regression possibility).
+
+**Observed root-cause frequency** (use as triage prior when sub-mode isn't immediately obvious):
+
+| Root cause | Observed % | Notes |
+|---|---|---|
+| Stripe outage during signup (FM-151 upstream) | 30-40 % | Maps to sub-mode 4 |
+| Browser / network drop mid-signup | 20-30 % | Maps to BOTH_MISSING categorization |
+| Bug em DPA acceptance flow (S-16 UI) | 10-15 % | Customer clicked but click didn't propagate |
+| Race condition em D1 transaction | 5-10 % | INV-ONBOARD-ATOMIC-PROVISIONING violation; sub-mode 1/3 |
+| DPA legal-language change mid-flight (race) | rare | DPA version bumped while customer was reading; signature mismatch |
 
 ---
 
@@ -120,6 +166,8 @@ tags: ["runbook", "p1", "onboarding", "signup", "atomic-provisioning", "dpa-firs
 - Add chaos drill scenario "Stripe outage during checkout" to RB-CHAOS-CATALOG.md.
 - Increase property test iterations for INV-ONBOARD-DPA-FIRST cross-WI integration (1k → 10k).
 - Review failure_modes.md FM-X-SIGNUP-FAILED RPN; possibly upgrade to P0 if recurrence.
+- **DPA versioning safe-stop**: se DPA bumped mid-signup, re-prompt customer com version diff (avoids the rare DPA legal-language mid-flight race).
+- **"Resume signup" UI recovery flow**: detect browser-drop (BOTH_MISSING categorization) → UI prompt on next session to resume from last completed step.
 
 ---
 
@@ -148,6 +196,7 @@ tags: ["runbook", "p1", "onboarding", "signup", "atomic-provisioning", "dpa-firs
 ## 8. Post-incident
 
 - Post-mortem mandatory if SEV-1 OR INV violation OR > 5 affected tenants.
+- 5-Why mandatory se > 5 orphans/month OR systemic pattern (cumulative trigger, complementary to per-incident bar above).
 - Customer outreach per affected tenant (signup-retry email + apology + offer extended trial if commercial impact).
 - DPO + Privacy Officer review for any DPA-first violation (GDPR Art. 33 breach notification window: 72 h to supervisory authority if personal data risk).
 - Update FM-X-SIGNUP-FAILED RPN in `failure_modes.md` based on observed Severity × Occurrence × Detection.
@@ -181,8 +230,11 @@ tags: ["runbook", "p1", "onboarding", "signup", "atomic-provisioning", "dpa-firs
 - `specs/02_governance/invariant_registry.md` §3.12 (INV-ONBOARD-DPA-FIRST + INV-ONBOARD-ATOMIC-PROVISIONING).
 - `specs/05_quality/runbooks/RB-FM-160-auth-invalid-storm.md` (pattern template).
 - `specs/_runbooks/RB-GA-CUTOVER.md` §3.6 + §3.11 — GA cutover Clerk JWT issuer flip + signup-open feature flag (this runbook is consumed if signup fails post-cutover).
-- GDPR Art. 33 (breach notification).
+- `specs/03_architecture/error_taxonomy.md` `COR_BILLING_DPA_NOT_SIGNED` (error code surfaced when DPA receipt absent at Stripe activation).
+- `specs/05_quality/runbooks/RB-FM-151-stripe-outage.md` (Stripe outage — common upstream root cause for sub-mode 4).
+- GDPR Art. 33 (breach notification, 72h supervisory window).
+- LGPD Art. 7 + GDPR Art. 7 (consent legitimacy — applicable when DPA acceptance is missing).
 
 ---
 
-**Fim RB-FM-SIGNUP-FAILED stub v0.1.0 — S-19 ship-gate commit.**
+**Fim RB-FM-SIGNUP-FAILED v0.2.0 — S-19 ship-gate stub + Wave C duplicate-merger consolidation (2026-05-27).**

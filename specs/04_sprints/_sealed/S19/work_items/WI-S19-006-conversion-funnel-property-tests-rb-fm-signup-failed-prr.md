@@ -26,7 +26,7 @@ inherits_from:
 tags: ["wi", "s19", "onboarding", "conversion-funnel", "cohort-dashboard", "property-tests-aggregated", "rb-fm-signup-failed", "prr", "ship-gate", "high-risk"]
 ---
 
-# WI-S19-006 — Closing WI Sprint S-19 Ship Gate — Conversion Funnel Instrumentation (7 Steps signup_start → email_verified → dpa_signed → tier_selected → stripe_activated → first_pat_created → first_cas_put × 3 Regions × 5 Tiers = 105 Séries Cardinality Safe Respeitando INV-OBS-CARDINALITY-BUDGET; **NUNCA per-tenant labels**) + Cohort Analysis Dashboard DASH-ONBOARDING (S-09 Alignment Dashboards-as-Code) com Weekly Cohort Signup → Activation Rate (First CAS PUT Within 7d) + Property Tests 10k Aggregated (DPA-First INV-ONBOARD-DPA-FIRST + Atomicity INV-ONBOARD-ATOMIC-PROVISIONING + Cross-WI Integration Stress) + Adversarial Summary 25+ Scenarios Aggregated em `specs/_audits/2026-XX-XX-adversarial-summary-s19.md` + RB-FM-SIGNUP-FAILED Stub em `specs/05_runbooks/RB-FM-SIGNUP-FAILED.md` + PRR HIGH_RISK 11 Sign-Offs Canonical Doc `specs/04_sprints/_sealed/S19/PRR-S19.md` + Two-Phase SEAL D+15 Implementation + D+45 GA Evidence Gate (30d Observation Window: Signup ≤ 3 min Sustained 5-Dev Workshop Weekly + DPA Re-Acceptance v1→v2 Cycle Simulado + 5 Real Signups Closed Beta + Funnel Sustained 30d Staging + Enterprise Handoff Atomicity Sustained Weekly Chaos Drill)
+# WI-S19-006 — Closing WI Sprint S-19 Ship Gate — Conversion Funnel Instrumentation (7 Steps signup_start → email_verified → dpa_signed → tier_selected → stripe_activated → first_pat_created → first_cas_put × 3 Regions × 5 Tiers = 105 Séries Cardinality Safe Respeitando INV-OBS-CARDINALITY-BUDGET; **NUNCA per-tenant labels**) + Cohort Analysis Dashboard DASH-ONBOARDING (S-09 Alignment Dashboards-as-Code) com Weekly Cohort Signup → Activation Rate (First CAS PUT Within 7d) + Property Tests 10k Aggregated (DPA-First INV-ONBOARD-DPA-FIRST + Atomicity INV-ONBOARD-ATOMIC-PROVISIONING + Cross-WI Integration Stress) + Adversarial Summary 25+ Scenarios Aggregated em `specs/_audits/2026-XX-XX-adversarial-summary-s19.md` + RB-FM-SIGNUP-FAILED Stub em `specs/_runbooks/RB-FM-SIGNUP-FAILED.md` + PRR HIGH_RISK 11 Sign-Offs Canonical Doc `specs/04_sprints/_sealed/S19/PRR-S19.md` + Two-Phase SEAL D+15 Implementation + D+45 GA Evidence Gate (30d Observation Window: Signup ≤ 3 min Sustained 5-Dev Workshop Weekly + DPA Re-Acceptance v1→v2 Cycle Simulado + 5 Real Signups Closed Beta + Funnel Sustained 30d Staging + Enterprise Handoff Atomicity Sustained Weekly Chaos Drill)
 
 > **doc_status:** DRAFT · **work_status:** READY · **lane:** HIGH_RISK
 > **Parent:** [S-19](../sprint.md) · **Assignee:** Gustavo Schneiter
@@ -68,7 +68,7 @@ Deliverables 6-fold:
    - **Cross-WI integration property** (NEW): full E2E signup flow under chaos (Stripe outage + DPA race + saga partial); 1k iter (heavier).
    - Output: `specs/_audits/2026-XX-XX-property-test-summary-s19.md` aggregating 7+ properties × 10k iter.
 
-4. **RB-FM-SIGNUP-FAILED stub** em `specs/05_runbooks/RB-FM-SIGNUP-FAILED.md`:
+4. **RB-FM-SIGNUP-FAILED stub** em `specs/_runbooks/RB-FM-SIGNUP-FAILED.md`:
    - Scenario: signup atomicity falha em prod (orphan tenant detected; INV-ONBOARD-ATOMIC-PROVISIONING violation).
    - Decision tree: detect → reconcile (manual rollback partial state) → audit emit → customer notify → root cause analysis.
    - Stub em S-19; full runbook deferred S-20.
@@ -199,7 +199,7 @@ Sprint ship gate; HIGH_RISK; FF-HR-009.
    - **Cross-WI integration property** (NEW): full E2E signup flow under chaos; 1k iter (heavier).
    - Aggregate report: `specs/_audits/2026-XX-XX-property-test-summary-s19.md`.
 
-4. **RB-FM-SIGNUP-FAILED stub** em `specs/05_runbooks/RB-FM-SIGNUP-FAILED.md`:
+4. **RB-FM-SIGNUP-FAILED stub** em `specs/_runbooks/RB-FM-SIGNUP-FAILED.md`:
    - **Scenario**: orphan tenant detected em prod (INV-ONBOARD-ATOMIC-PROVISIONING violation).
    - **Decision tree**: detect via integrity check cron → reconcile (manual rollback) → audit emit → customer notify → root cause analysis.
    - Stub-only em S-19; full runbook + dry-run deferred S-20.
@@ -282,7 +282,7 @@ Feature: S-19 ship gate — funnel + property tests + RB stub + adversarial summ
     Then 0 violations of INV-ONBOARD-DPA-FIRST + INV-ONBOARD-ATOMIC-PROVISIONING
 
   Scenario: RB-FM-SIGNUP-FAILED stub committed
-    Given specs/05_runbooks/RB-FM-SIGNUP-FAILED.md
+    Given specs/_runbooks/RB-FM-SIGNUP-FAILED.md
     Then scenario + decision tree + escalation path documented
     And stub committed (full runbook deferred S-20)
 
@@ -457,7 +457,7 @@ TLA+ alignment: registry §4.2 indica `onboarding_atomicity.tla` PLANNED S-19 co
 | Cohort dashboard JSON | `infra/grafana/dashboards/dash-onboarding.json` | JSON |
 | Property test summary | `specs/_audits/2026-XX-XX-property-test-summary-s19.md` | Markdown |
 | Cross-WI integration property test | `tests/cross_wi_integration_s19.rs` | Rust |
-| RB-FM-SIGNUP-FAILED stub | `specs/05_runbooks/RB-FM-SIGNUP-FAILED.md` | Markdown |
+| RB-FM-SIGNUP-FAILED stub | `specs/_runbooks/RB-FM-SIGNUP-FAILED.md` | Markdown |
 | Adversarial test summary | `specs/_audits/2026-XX-XX-adversarial-summary-s19.md` | Markdown |
 | PRR doc S-19 | `specs/04_sprints/_sealed/S19/PRR-S19.md` | Markdown |
 | OWASP + compliance checklist | `specs/04_sprints/S19/asvs-v4-v5-v6-v7-v14-gdpr-lgpd-checklist.md` | Markdown |

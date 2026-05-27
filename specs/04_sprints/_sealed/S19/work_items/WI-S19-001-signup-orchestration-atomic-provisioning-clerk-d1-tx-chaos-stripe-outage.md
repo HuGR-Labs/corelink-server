@@ -120,7 +120,7 @@ Customer onboarding signup é o **single most expensive customer-acquisition ste
 - Clerk integration audit: webhook signature verify + nonce + timestamp window 5min; replay rejected.
 
 **Persona 3 — Internal SRE on-call**:
-- RB-FM-SIGNUP-FAILED stub em `specs/05_runbooks/RB-FM-SIGNUP-FAILED.md` (created WI-S19-006); dry-run ≤ 5 min recovery.
+- RB-FM-SIGNUP-FAILED stub em `specs/_runbooks/RB-FM-SIGNUP-FAILED.md` (created WI-S19-006); dry-run ≤ 5 min recovery.
 - Correlation ID em logs across Clerk webhook → D1 tx → Stripe customer create → first PAT issuance.
 - Atomicity rollback alert > 5/dia indicates Stripe outage ou D1 instability; SEV-2 escalation.
 
