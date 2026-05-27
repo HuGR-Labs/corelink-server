@@ -61,7 +61,23 @@ appears below with closure target + owner + acceptance criteria.
 `specs/_audits/proptest-followup-tickets.md` per the existing follow-up
 pipeline convention.)
 
-## §3. Follow-up #1 — Stage 2.C HALT (adapter HTTPS-vs-pure-logic split)
+## §3. Follow-up #1 — Stage 2.C HALT (adapter HTTPS-vs-pure-logic split) [CLOSED 2026-05-27]
+
+> **Status: CLOSED 2026-05-27.** Full closure achieved by Wave 36
+> end-to-end campaign: Stage 2.C consumer migration (partial SEAL
+> `specs/_audits/2026-05-26-w36-stage2c-closure.md`) +
+> Trigger A materializer dep-inversion via
+> `corelink-billing-stripe-traits`
+> (SEAL `specs/_audits/2026-05-27-w36-trigger-a-seal.md`) +
+> Trigger B scheduler wasm32 platform-gate
+> (SEAL `specs/_audits/2026-05-27-w36-trigger-b-seal.md`) +
+> **Stage 3 cargo-deny lockdown (SEAL `specs/_audits/2026-05-27-w36-
+> stage-3-seal.md` — final closure step)**. The lockdown enforces
+> closure-path-(c) via `[bans] deny` rules on all 4 absorbed adapter
+> crates with `wrappers = [...]` allowlists that enumerate exactly
+> the 5 legal historical direct importers (4 umbrella façades + 1
+> dangling-legacy + 1 workspace e2e); any new direct importer fails
+> CI gate.
 
 **Source:** `specs/_audits/2026-05-22-w33-stage2-c-adapter-splits.md`
 (HALT — hard-pause trigger #7 activated pre-mutation; zero LOC changed).

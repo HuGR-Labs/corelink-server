@@ -117,6 +117,51 @@ deny = [
     # Anti-pattern crates banned org-wide.
     { crate = "openssl", reason = "use rustls (WASM-friendly + no system OpenSSL link)" },
     { crate = "openssl-sys", reason = "transitive ban; rustls only" },
+    # ---------------------------------------------------------------
+    # Wave-36 Stage 3 — adapter HTTPS crates lockdown.
+    # ---------------------------------------------------------------
+    # Per `specs/_audits/2026-05-26-wave-33-34-closure-followups.md` §3
+    # follow-up #1 closure path (c) and `specs/_audits/2026-05-26-w36-
+    # stage2c-closure.md` §8 step 3 (final Stage 2.C closure step). The
+    # 4 absorbed adapter HTTPS crates (`corelink-stripe-real`,
+    # `corelink-statuspage-real`, `corelink-slack-real`,
+    # `corelink-clerk-cf`) are now CANONICAL implementations re-exported
+    # via the Wave-33 umbrella façades; new direct workspace consumers
+    # must import through the umbrella (`corelink-billing::stripe`,
+    # `corelink-ops::{statuspage,slack}`, `corelink-auth::clerk_cf`,
+    # `corelink-adapters-cloud::{stripe,statuspage,slack,clerk}`) rather
+    # than the absorbed crates directly. The `wrappers` allowlist
+    # enumerates the existing direct importers grandfathered as legal:
+    # (1) the Wave-33 umbrella façades themselves (canonical re-export
+    # shims), (2) historical pre-Wave-33 importers preserved per the
+    # incremental migration strategy, and (3) workspace e2e test crates
+    # which legitimately exercise concrete HTTPS clients.
+    #
+    # Pre-recon source: AUDIT-2026-05-27-W36-STAGE-3-SEAL §2-3.
+    # Charter ADR-S12-045 (cargo-audit / cargo-deny / dependabot policy)
+    # extended; INV-AUDIT preserved (build-time policy only, no runtime
+    # impact).
+    { crate = "corelink-stripe-real", wrappers = [
+        "corelink-adapters-cloud",                   # Wave-33 Stream C re-export façade
+        "corelink-billing",                          # Wave-33 Stream A umbrella (billing/stripe.rs)
+        "corelink-billing-stripe-materializer",      # src migrated to traits crate (Trigger A); dep retained for tests/materializers_e2e.rs concrete fakes (FixedClock, RecordingSliRecorder, WebhookDispatcher)
+        "corelink-server",                           # crate at crates/corelink-container/ (package name = corelink-server); legacy pre-W36 Stage 2.C dep; src migrated to umbrella (doc-comment refs only); dangling Cargo.toml dep retained pending separate cleanup
+        "e2e-signup-flow",                           # workspace e2e — STRIPE_SECRET_KEY_TEST-gated #[ignore] variant drives real HTTPS Stripe Checkout via StripeRealClient::from_env
+    ], reason = "Wave-36 Stage 3 lockdown: use corelink-billing::stripe or corelink-adapters-cloud::stripe umbrella" },
+    { crate = "corelink-statuspage-real", wrappers = [
+        "corelink-adapters-cloud",                   # Wave-33 Stream C re-export façade
+        "corelink-ops",                              # Wave-33 Stream B umbrella (ops/statuspage.rs)
+        "corelink-dsr-statuspage-scheduler",         # cfg(target_arch = "wasm32") fallback path in scheduler.rs (Trigger B: native uses corelink-ops; wasm32 falls back direct because ops pulls tokio/mio which wasm32 cannot build)
+        "corelink-clerk-cf",                         # wasm32-only CF Worker cron entry point (dsr_statuspage_cron.rs uses bridge_to_report + StatuspageWasm32Client + InMemoryStatuspageAuditSink)
+    ], reason = "Wave-36 Stage 3 lockdown: use corelink-ops::statuspage or corelink-adapters-cloud::statuspage umbrella" },
+    { crate = "corelink-slack-real", wrappers = [
+        "corelink-adapters-cloud",                   # Wave-33 Stream C re-export façade
+        "corelink-ops",                              # Wave-33 Stream B umbrella (ops/slack.rs)
+    ], reason = "Wave-36 Stage 3 lockdown: use corelink-ops::slack or corelink-adapters-cloud::slack umbrella" },
+    { crate = "corelink-clerk-cf", wrappers = [
+        "corelink-adapters-cloud",                   # Wave-33 Stream C re-export façade
+        "corelink-auth",                             # Wave-33 Stream B umbrella (auth/clerk_cf.rs)
+    ], reason = "Wave-36 Stage 3 lockdown: use corelink-auth::clerk_cf or corelink-adapters-cloud::clerk umbrella" },
 ]
 # Known transitive dupes from upstream — re-evaluate on every tonic/axum/
 # RustCrypto/sigstore bump. Each entry is the OLDER duplicate; the newer
