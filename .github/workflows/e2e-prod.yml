@@ -1,0 +1,86 @@
+name: e2e-prod
+
+# Production-surface Playwright suite — drives LIVE prod URLs to catch
+# deploy regressions (Pages secrets unset → /sign-up 500, install Worker
+# route dropped, docs build broke /legal/* or /pricing).
+#
+# Scope is intentionally distinct from `.github/workflows/admin-ui-e2e.yml`
+# (which uses a localhost dev server + mocked APIs). The two suites are
+# complementary: localhost catches code regressions in PR review; prod
+# catches deploy regressions in main + daily smoke.
+#
+# Schedule: daily 07:00 UTC — runs ~1h after the smoke-install workflow so
+# CLI release + Worker deploy are settled before we probe.
+#
+# Action SHAs are pinned (no floating tags) — security requirement.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/admin-ui/e2e/**"
+      - "apps/admin-ui/playwright.prod.config.ts"
+      - ".github/workflows/e2e-prod.yml"
+  pull_request:
+    paths:
+      - "apps/admin-ui/e2e/**"
+      - "apps/admin-ui/playwright.prod.config.ts"
+      - ".github/workflows/e2e-prod.yml"
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-prod-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  playwright:
+    name: playwright prod-surface (chromium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/admin-ui
+    env:
+      PROJECTS: chromium
+      # Defaults match playwright.prod.config.ts — override via repo vars/secrets
+      # if a staging/preview environment needs to be probed instead.
+      E2E_BASE_URL: ${{ vars.E2E_BASE_URL || 'https://app.corelink.humangr.com' }}
+      E2E_DOCS_URL: ${{ vars.E2E_DOCS_URL || 'https://docs.corelink.humangr.com' }}
+      E2E_INSTALL_URL: ${{ vars.E2E_INSTALL_URL || 'https://get.corelink.io' }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@a3252b78c470c02df07e9d59298aecedc3ccdd6d # v4.1.0
+        with:
+          version: 10.32.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: .
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run prod-surface Playwright suite
+        run: pnpm exec playwright test --config=playwright.prod.config.ts --reporter=line
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-report-prod
+          path: apps/admin-ui/playwright-report/
+          retention-days: 14

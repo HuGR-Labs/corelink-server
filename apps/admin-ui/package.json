@@ -20,6 +20,8 @@
     "e2e:list": "playwright test --list",
     "e2e:tests": "playwright test --config=playwright.tests.config.ts",
     "e2e:tests:list": "playwright test --config=playwright.tests.config.ts --list",
+    "e2e:prod": "playwright test --config=playwright.prod.config.ts",
+    "e2e:prod:list": "playwright test --config=playwright.prod.config.ts --list",
     "lhci": "lhci autorun --config=./lighthouserc.cjs"
   },
   "dependencies": {
