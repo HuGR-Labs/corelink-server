@@ -428,7 +428,8 @@ For each wave:
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-05-14 | Gustavo (via Claude Opus 4.7) | Initial roadmap post `ga-engineering-gate-complete` tag; 6 phases × 8 waves; 15 agents simultaneous peak (Wave R-2); 90-120 day path to GA Full; $200-400k Human Track spend. |
+| 1.1.0 | 2026-05-27 | Gustavo (via Claude Opus 4.7) | Waves 32-36 SEALED — Wave 32 production deploy (tag `corelink-prod-deploy-v1`; 5/5 customer endpoints live); Waves 33-36 code reorg campaign (tags `wave-35-phase-2-sealed` + `wave-36-stage-2-sealed` + `wave-36-final-sealed`; 63 crates absorbed via 14 autonomous agents; 149→87 packages; cargo-deny lockdown enforced; +14 proptests; materializer dep cycle resolved via traits extraction; wasm32 build restored). Closure-followups audit_status flipped CLOSED. R-5/R-6/R-7/R-8 remaining (human + time-bounded). |
 
 ---
 
-**Status:** ACTIVE. Wave R-1 dispatch authorized 2026-05-14.
+**Status:** ACTIVE. Wave R-1 dispatch authorized 2026-05-14. Waves 32-36 (production deploy + code reorg) SEALED 2026-05-27. Next: R-5 external engagements (human-driven).
