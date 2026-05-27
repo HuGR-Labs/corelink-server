@@ -1,0 +1,25 @@
+{
+  "name": "@corelink/signup-worker",
+  "private": true,
+  "version": "0.1.0",
+  "description": "CoreLink signup-worker — Clerk + Stripe webhook receiver running on Cloudflare Workers (Phase-0 auto-provision-on-signup).",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "scripts": {
+    "dev": "wrangler dev --local",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260526.1",
+    "typescript": "5.7.3",
+    "vitest": "3.0.7",
+    "wrangler": "^4.20.0"
+  }
+}

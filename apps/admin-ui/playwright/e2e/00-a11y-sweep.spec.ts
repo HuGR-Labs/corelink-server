@@ -14,7 +14,7 @@ import { installApiMocks } from "../fixtures/api-mocks";
 const PAGES = [
   { path: "/", auth: "none" as const, name: "landing" },
   { path: "/sign-in", auth: "none" as const, name: "sign-in" },
-  { path: "/en/onboarding/tenant", auth: "newDev" as const, name: "onboarding-tenant" },
+  { path: "/en/welcome", auth: "newDev" as const, name: "welcome" },
   { path: "/en/consent/new", auth: "existingTenant" as const, name: "consent-new" },
   { path: "/en/dsr", auth: "existingTenant" as const, name: "dsr-landing" },
   { path: "/en/admin/audit", auth: "admin" as const, name: "admin-audit" },

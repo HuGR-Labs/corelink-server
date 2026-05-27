@@ -3,10 +3,17 @@ import { redirect } from "next/navigation";
 import type { Locale } from "@/i18n/messages";
 
 /**
- * Onboarding entry point.
+ * Legacy onboarding entry — collapsed per Phase-0 PLG framework §4.
  *
- * If the signed-in user already has a tenant_id in their Clerk membership
- * claim, redirect to /dashboard. Otherwise start the wizard at /tenant.
+ * Before: `/onboarding` → `/onboarding/tenant` → … 5 more wizard gates.
+ * Now:    `/onboarding` → `/welcome` (single post-signup screen).
+ *
+ * Tenant + region + plan + PAT are provisioned server-side on the Clerk
+ * `user.created` webhook (`apps/signup-worker/src/webhooks/clerk.ts`),
+ * so the user lands directly on the activation screen.
+ *
+ * If the signed-in user already has a tenant_id claim, send them straight
+ * to the dashboard.
  */
 export default async function OnboardingEntryPage(props: {
   params: Promise<{ locale: Locale }>;
@@ -24,5 +31,5 @@ export default async function OnboardingEntryPage(props: {
     }
   }
 
-  redirect(`/${locale}/onboarding/tenant`);
+  redirect(`/${locale}/welcome`);
 }
