@@ -1,6 +1,6 @@
 [package]
 name = "corelink-telemetry"
-description = "Wave-33 Stage 0 sub-step 3 — canonical observability aggregator façade for the CoreLink workspace. Re-exports the 7 telemetry/observability crates (`corelink-tracing`, `corelink-logpush`, `corelink-otel-export`, `corelink-canary`, `corelink-synthetic-pager`, `corelink-slo`, `corelink-lighthouse-tracker`) under a single canonical import surface (`corelink_telemetry::tracing`, `corelink_telemetry::logpush`, `corelink_telemetry::otel`, `corelink_telemetry::canary`, `corelink_telemetry::synthetic_pager`, `corelink_telemetry::slo`, `corelink_telemetry::lighthouse`). Stage 0 Option-A aggregator pattern (physical absorption deferred to Stage 1's infra+ops stream which owns telemetry consumers atomically); see `specs/_audits/2026-05-22-w33-stage0-foundation.md` §4."
+description = "CoreLink canonical telemetry crate. W35-P2-TELEMETRY (2026-05-26) absorbed five sub-crates (`corelink-canary`, `corelink-lighthouse-tracker`, `corelink-logpush`, `corelink-otel-export`, `corelink-synthetic-pager`) as inline modules under `corelink_telemetry::{canary,lighthouse,logpush,otel,synthetic_pager}`. The remaining aggregator tenants (`corelink-tracing`, `corelink-slo`) are still re-exported under `corelink_telemetry::{tracing,slo}` pending Stage 1's consumer-migration sweep. Per `specs/_audits/2026-05-26-wave-33-34-closure-followups.md` §4."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -25,14 +25,46 @@ print_stderr = "deny"
 mod_module_files = "deny"
 
 [dependencies]
-# Re-export targets — Stage 0 Option-A aggregator. Each absorbed crate
-# remains the source of truth in `crates/`; this façade gives Stage 1
-# streams a single import path. Physical absorption deferred to
-# Stage 1 infra+ops stream per autonomous execution charter.
+# Re-export targets — Stage 0 Option-A aggregator tenants whose
+# physical absorption is still deferred to Stage 1+.
 corelink-tracing = { workspace = true }
-corelink-logpush = { workspace = true }
-corelink-otel-export = { workspace = true }
-corelink-canary = { workspace = true }
-corelink-synthetic-pager = { workspace = true }
 corelink-slo = { workspace = true }
-corelink-lighthouse-tracker = { workspace = true }
+
+# W35-P2-TELEMETRY absorbed deps — union of the 5 sub-crates physically
+# moved into `src/{canary,lighthouse,logpush,otel,synthetic_pager}/`.
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true, features = ["v7", "v4", "serde"] }
+subtle = { workspace = true }
+tracing = { workspace = true }
+corelink-analytics = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+rand = "0.9"
+rand_chacha = "0.9"
+
+[[test]]
+name = "prop_canary"
+path = "tests/prop_canary.rs"
+
+[[test]]
+name = "prop_logpush"
+path = "tests/prop_logpush.rs"
+
+[[test]]
+name = "pii_redaction_100k_synthetic"
+path = "tests/pii_redaction_100k_synthetic.rs"
+
+[[test]]
+name = "migration_canonical_0016"
+path = "tests/migration_canonical_0016.rs"
+
+[[test]]
+name = "prop_otel_export"
+path = "tests/prop_otel_export.rs"
+
+[[test]]
+name = "prop_synthetic_pager"
+path = "tests/prop_synthetic_pager.rs"
