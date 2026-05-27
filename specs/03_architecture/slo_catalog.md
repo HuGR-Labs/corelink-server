@@ -123,7 +123,7 @@ SLOs individuais (§4.x) podem override interpolation via linha explícita "Targ
 | Alert windows      | 5m/1h/6h/24h (multi-burn-rate)                               |
 | Owner              | SRE                                                           |
 | FMs cobertos       | FM-101, FM-106, FM-152                                        |
-| Runbook            | [`RB-SLO-AVAIL-CP`](../../05_quality/runbooks/RB-SLO-AVAIL-CP.md) |
+| Runbook            | [`RB-SLO-AVAIL-CP`](../05_quality/runbooks/RB-SLO-AVAIL-CP.md) |
 
 ### 4.2 Availability — CAS GET
 

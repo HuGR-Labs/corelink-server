@@ -20,7 +20,7 @@ tags: ["bcp", "dr", "drill-cadence", "r-6", "90-day", "soc2-cc7-5", "soc2-cc9-1"
 
 > **doc_status:** DRAFT · **scope:** 90-day pre-GA Business-Continuity-Plan + Disaster-Recovery exercise calendar covering single-region failover, cross-region failover, BYOK CMK rotation, and full SEV1 stakeholder simulations. **Window:** R-6 staging observation gate (T-90 .. T-0 to GA).
 >
-> **Anchors:** `crates/corelink-dr-drill` (WI-S17-002 scheduler), `crates/corelink-oncall` (WI-S17-005 PD schedule), `specs/_runbooks/RB-ONCALL-POLICY.md`, `specs/_runbooks/RB-SYSTEM-CMK-ROTATION.md`, `specs/_runbooks/RB-BYOK-REVOKE.md`, `specs/05_runbooks/RB-region.md`, `specs/03_architecture/failure_modes.md` (75 FMs), `ROADMAP-TO-GA.md` §6 Wave R-6.
+> **Anchors:** `crates/corelink-ops/src/dr/drill/` (WI-S17-002 scheduler; absorbed Wave 35 P2 from `corelink-dr-drill`), `crates/corelink-ops/src/oncall/` (WI-S17-005 PD schedule; absorbed Wave 35 P2 from `corelink-oncall`), `specs/_runbooks/RB-ONCALL-POLICY.md`, `specs/_runbooks/RB-SYSTEM-CMK-ROTATION.md`, `specs/_runbooks/RB-BYOK-REVOKE.md`, `specs/05_runbooks/RB-region.md`, `specs/03_architecture/failure_modes.md` (75 FMs), `ROADMAP-TO-GA.md` §6 Wave R-6.
 >
 > **Companion:** `specs/_runbooks/ONCALL-ESCALATION-MATRIX.md` (3-tier escalation), `specs/_compliance/templates/DR-DRILL-EVIDENCE.md` (auditor-ready evidence form).
 >
@@ -324,8 +324,8 @@ Cancellation MUST be logged in the evidence doc (`status: cancelled`, reason cit
 
 ## 10. References
 
-- `crates/corelink-dr-drill/src/lib.rs` — drill scheduler invariants + RTO/RPO ceilings
-- `crates/corelink-oncall/src/lib.rs` — PD schedule + fatigue tracking
+- `crates/corelink-ops/src/dr/drill/` — drill scheduler invariants + RTO/RPO ceilings (absorbed Wave 35 P2 from `corelink-dr-drill`)
+- `crates/corelink-ops/src/oncall/` — PD schedule + fatigue tracking (absorbed Wave 35 P2 from `corelink-oncall`)
 - `crates/corelink-failover-router/` — residency graph for cross-region routing
 - `specs/_compliance/ACTIVE-FAILOVER-DRILL-SPEC.md` — DR-16 warm-failover drill spec
 - `specs/_compliance/COLD-RESTORE-DRILL-SPEC.md` — DR-15 cold-restore drill spec
