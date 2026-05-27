@@ -184,7 +184,9 @@ impl SyncRunner {
                         receipt_id: receipt.receipt_id.clone(),
                         sent_at_ms: self.clock.now_ms(),
                     };
-                    self.ledger.record(&entry)?;
+                    // INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER — audit MUST precede mutation.
+                    // If ledger.record fails after audit.emit, the audit log carries
+                    // the canonical intent (best-effort ledger reconciliation downstream).
                     self.audit.emit(&SyncAuditEvent {
                         outcome: SyncAuditOutcome::Sent,
                         stream: record.stream,
@@ -195,6 +197,7 @@ impl SyncRunner {
                         attempts: 1,
                         reason: None,
                     })?;
+                    self.ledger.record(&entry)?;
                     outcome.sent = outcome.sent.saturating_add(1);
                 }
                 Err(e) => {
