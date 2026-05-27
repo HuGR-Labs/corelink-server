@@ -1457,6 +1457,7 @@ dependencies = [
  "corelink-privacy-erasure-worker",
  "corelink-statuspage-real",
  "js-sys",
+ "proptest",
  "serde",
  "serde_json",
  "subtle",
@@ -2174,6 +2175,7 @@ version = "0.1.0"
 dependencies = [
  "corelink-privacy-erasure-worker",
  "js-sys",
+ "proptest",
  "reqwest",
  "serde",
  "serde_json",

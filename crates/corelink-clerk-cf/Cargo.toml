@@ -152,3 +152,9 @@ tenant-region-real = [
 # the async test runtime. The wasm32 build does not use tokio (the
 # canonical async surface there is the worker::* futures).
 tokio = { workspace = true, features = ["macros", "rt"] }
+# Property-based test density for the pure-logic surface
+# (`ClerkHealthLogic` / `ParsedRoute`). WI-PROPTEST-FU-W33-002. Native-
+# only because the proptest runner needs the host scheduler — the
+# proptests run against the same target-agnostic logic that backs the
+# wasm32 `#[durable_object]` shell.
+proptest = { workspace = true }
