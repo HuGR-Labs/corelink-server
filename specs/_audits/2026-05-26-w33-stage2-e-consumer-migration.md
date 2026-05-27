@@ -2,10 +2,10 @@
 id: "AUDIT-2026-05-26-W33-STAGE2-E-CONSUMER-MIGRATION"
 type: "audit"
 doc_status: "ACTIVE"
-audit_status: "ACTIVE"
-version: "1.0.0"
+audit_status: "CLOSED"
+version: "1.1.0"
 created: "2026-05-26"
-updated: "2026-05-26"
+updated: "2026-05-27"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -14,6 +14,8 @@ superseded_by: null
 tags: ["audit", "wave-33", "stage-2", "consumer-migration", "partial-seal", "corelink-worker"]
 references:
 ---
+
+> **CLOSED 2026-05-27** — Wave-33 Stage 2.E sealed via commits `814bd380` (SEAL: consumer migration) and `d6edab86` (amendment §2.E.6); Wave-33 Stage 2 sealed via tag `wave-33-stage2-sealed`. Phase-2 work subsumed into Wave-35 absorption (sealed via `wave-35-phase-2-sealed`). See `specs/_audits/2026-05-27-audit-triage-post-w36.md`.
 
 # Wave 33 Stage 2.E SEAL — Consumer Migration (Partial-SEAL with Documented Phase-2 Deferral)
 

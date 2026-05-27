@@ -2,10 +2,10 @@
 id: "AUDIT-2026-05-26-W33-STAGE2-A-V2-ADDITIVE-AGGREGATOR"
 type: "audit"
 doc_status: "ACTIVE"
-audit_status: "ACTIVE"
-version: "1.0.0"
+audit_status: "CLOSED"
+version: "1.1.0"
 created: "2026-05-26"
-updated: "2026-05-26"
+updated: "2026-05-27"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -14,6 +14,8 @@ superseded_by: null
 tags: ["audit", "wave-33", "stage-2", "additive-aggregator", "corelink-worker"]
 references:
 ---
+
+> **CLOSED 2026-05-27** — Wave-33 Stage 2 sealed via git tag `wave-33-stage2-sealed` (SEAL commit `a1c49678` "wave-33 stage 2.A-v2 SEAL: additive aggregator audit"); 4 umbrellas + 5 canonical paths landed as documented. See `specs/_audits/2026-05-27-audit-triage-post-w36.md`.
 
 # Wave 33 Stage 2.A-v2 SEAL — Additive Aggregator Audit
 
