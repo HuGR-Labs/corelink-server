@@ -110,6 +110,32 @@
 //!   wave-31 dual-mode logic is preserved by reference.
 //! - Trigger 4 (Audit fail-CLOSED softened): NOT ACTIVATED — no
 //!   audit emit site is touched.
+//!
+//! ## Wave 35 Phase 2 absorption
+//!
+//! Per `specs/_audits/2026-05-26-w35-p2-billing-absorption.md` (SEALED
+//! 2026-05-26), 5 of the Wave-33 Option-A re-export tenants were
+//! physically absorbed into this crate as inline submodules (14,873
+//! LOC moved in-tree); workspace.members dropped by 5. Public-API
+//! paths (`corelink_billing::<mod>::*`) are preserved 1:1; INV-BILL-*
+//! + Stripe wallet broker dual-mode + audit fail-CLOSED + soft/hard
+//! quota FSM + token-bucket+circuit-breaker semantics + abuse
+//! reputation invariants all preserved by reference.
+//!
+//! Absorbed crates (5):
+//!
+//! - `corelink-abuse` → [`abuse`] — abuse classifier + reputation.
+//! - `corelink-billing-replay` → [`replay`] — webhook replay +
+//!   dead-letter harness.
+//! - `corelink-quota` → [`quota::core`] — quota traits.
+//! - `corelink-quota-cas` → [`quota::cas`] — CAS write-time quota
+//!   enforcement.
+//! - `corelink-quota-fsm` → [`quota::fsm`] — soft/hard quota state
+//!   machine.
+//!
+//! The remaining Wave-33 Stream-B tenants stay as aggregator re-exports
+//! (Stripe HTTPS path retained external for cycle-break in the
+//! `corelink-billing-stripe-traits` Wave-36 split).
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]

@@ -153,6 +153,57 @@
 //! - Admin 2-of-N dual-approval invariant — preserved by reference.
 //! - `#[non_exhaustive]` on every public enum/struct — inherited via
 //!   re-export.
+//!
+//! ## Wave 35 Phase 2 absorption (LARGEST Wave-35 batch)
+//!
+//! Per `specs/_audits/2026-05-26-w35-p2-ops-absorption.md` (SEALED
+//! 2026-05-26), 15 of the original 28 Wave-33 Option-A re-export
+//! tenants were physically absorbed into this crate as inline
+//! submodules; workspace.members dropped 100 → 85 (-15). Public-API
+//! paths (`corelink_ops::<mod_path>::*`) are preserved 1:1; INV-OPS-*,
+//! admin 2-of-N dual-approval, oncall PagerDuty SecretString,
+//! supply-chain SBOM + attestation verification, drift-tracker webhook
+//! HMAC, D1 migrations replay determinism, audit-emit-BEFORE-mutation
+//! fail-CLOSED envelopes, `#![forbid(unsafe_code)]`, and
+//! `#[non_exhaustive]` discipline all preserved by reference. 405
+//! tests green post-absorption (201 unit + 179 integration + 25 doc).
+//!
+//! Absorbed crates (15):
+//!
+//! - `corelink-admin-api` → [`admin::api`] — Admin REST API surface.
+//! - `corelink-admin-dry-run` → [`admin::dry_run`] — Admin dry-run
+//!   preview (+ 3 bins).
+//! - `corelink-backup-verify` → [`dr::backup_verify`] — Continuous
+//!   daily backup verification.
+//! - `corelink-config-api` → [`config::api`] — Config REST API.
+//! - `corelink-customer-alerts` → [`alerts`] — Customer-facing
+//!   multi-channel alerts.
+//! - `corelink-d1-migrations` → [`migrations`] — D1 migrations replay
+//!   harness.
+//! - `corelink-deploy-verifier` → [`deploy`] — Deploy verifier
+//!   (artifact integrity).
+//! - `corelink-dr-drill` → [`dr::drill`] — DR drill scheduler (CF
+//!   region outage sim).
+//! - `corelink-drata-sync` → [`drata`] — Drata SOC 2 evidence sync.
+//! - `corelink-oncall` → [`oncall`] — PagerDuty oncall scheduler +
+//!   fatigue tracking.
+//! - `corelink-rotation-worker` → [`rotation::worker`] — Key rotation
+//!   worker.
+//! - `corelink-supply-chain-policy` → [`supply_chain::policy`] —
+//!   Supply-chain policy engine.
+//! - `corelink-supply-verify` → [`supply_chain::verify`] —
+//!   Supply-chain verification (SBOM + attestation) (+ 1 bin).
+//! - `corelink-survey` → [`survey`] — NPS / CSAT / free-text survey.
+//! - `corelink-tenant-offboarding` → [`tenant_offboarding`] — Tenant
+//!   offboarding 5-state machine.
+//!
+//! The remaining 13 Wave-33 Option-A tenants stay external:
+//! `statuspage`, `slack`, `handler-admin`, `dual-approval`,
+//! `enterprise-inquiry`, `runbook`, `terraform`, `chaos`,
+//! `rotation::adapters`, `dt::webhook`, `config::durable_object`
+//! (W36 Stage 2.C zones / wasm32 coupling / live external consumer
+//! pins), plus `dt-cli` + `dt-reconcile` (binary-only — cannot be
+//! re-exported into a library surface).
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
