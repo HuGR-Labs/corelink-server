@@ -10,16 +10,24 @@
  *   - script-src  'self' nonce + clerk.corelink.humangr.com
  *                                + https://plausible.io
  *                                + https://js.stripe.com
- *   - style-src   'self' nonce
+ *   - style-src   'self' 'unsafe-inline' nonce  (Tailwind + Clerk widgets)
  *   - connect-src 'self' + api.corelink.humangr.com + clerk.corelink.humangr.com
  *                                + https://plausible.io
  *                                + https://api.stripe.com
  *                                + https://m.stripe.network
+ *                                + https://checkout.stripe.com (Checkout session)
+ *                                + https://billing.stripe.com  (Customer Portal)
  *   - frame-src   https://js.stripe.com + https://hooks.stripe.com
  *                                + https://challenges.cloudflare.com (Clerk bot)
+ *                                + https://clerk.corelink.humangr.com (Clerk modals)
  *   - img-src     'self' data: https:
  *   - frame-ancestors 'none', form-action 'self', base-uri 'self'
  *   - report-uri /api/csp-report
+ *
+ * Vendor CSP sources:
+ *   - Stripe:  https://docs.stripe.com/security/guide#content-security-policy
+ *   - Clerk:   https://clerk.com/docs/security/content-security-policy
+ *   - Plausible: https://plausible.io/docs/proxy/csp
  *
  * Pre-HN-launch (2026-05-27) the third-party allow-list was widened from
  * Clerk-only to also cover Plausible Analytics + Stripe Checkout/portal
@@ -45,11 +53,20 @@ export function buildCspDirectives(nonce: string): string[] {
   return [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' https://clerk.corelink.humangr.com https://plausible.io https://js.stripe.com`,
-    `style-src 'self' 'nonce-${nonce}'`,
+    // 'unsafe-inline' on style-src is acceptable: required by Tailwind CSS JIT (inline
+    // <style> blocks) and by Clerk's modal overlay styles. NEVER on script-src.
+    // Source: https://clerk.com/docs/security/content-security-policy
+    `style-src 'self' 'unsafe-inline' 'nonce-${nonce}'`,
     "img-src 'self' data: https:",
     "font-src 'self' data:",
-    "connect-src 'self' https://api.corelink.humangr.com https://clerk.corelink.humangr.com https://plausible.io https://api.stripe.com https://m.stripe.network",
-    "frame-src https://js.stripe.com https://hooks.stripe.com https://challenges.cloudflare.com",
+    // connect-src additions vs Phase 0 baseline:
+    //   https://checkout.stripe.com — required for Stripe Checkout session fetch
+    //   https://billing.stripe.com  — required for Stripe Customer Portal redirect
+    // Source: https://docs.stripe.com/security/guide#content-security-policy
+    "connect-src 'self' https://api.corelink.humangr.com https://clerk.corelink.humangr.com https://plausible.io https://api.stripe.com https://m.stripe.network https://checkout.stripe.com https://billing.stripe.com",
+    // frame-src addition: https://clerk.corelink.humangr.com for Clerk modal/popup auth steps
+    // Source: https://clerk.com/docs/security/content-security-policy
+    "frame-src https://js.stripe.com https://hooks.stripe.com https://challenges.cloudflare.com https://clerk.corelink.humangr.com",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -108,11 +125,27 @@ export function generateNonce(): string {
   return Buffer.from(bin, "binary").toString("base64").replace(/=+$/g, "");
 }
 
-/** Assert (in tests) that a CSP header contains no dangerous keywords. */
+/**
+ * Assert (in tests) that a CSP header contains dangerous keywords that should
+ * NEVER appear on `script-src`.
+ *
+ * Note: `'unsafe-inline'` is intentionally present on `style-src` (required by
+ * Tailwind + Clerk). This function therefore only checks for `'unsafe-eval'` and
+ * `unsafe-hashes` across the whole header, and checks `'unsafe-inline'` presence
+ * on `script-src` specifically. Use `containsScriptUnsafeInline` for the latter.
+ */
 export function containsUnsafeDirective(headerValue: string): boolean {
   return (
-    headerValue.includes("'unsafe-inline'") ||
     headerValue.includes("'unsafe-eval'") ||
     headerValue.includes("unsafe-hashes")
   );
+}
+
+/** Returns true if the header value has 'unsafe-inline' on the script-src directive. */
+export function containsScriptUnsafeInline(headerValue: string): boolean {
+  const scriptSrc = headerValue
+    .split(";")
+    .map((d) => d.trim())
+    .find((d) => d.startsWith("script-src"));
+  return scriptSrc ? scriptSrc.includes("'unsafe-inline'") : false;
 }

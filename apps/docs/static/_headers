@@ -10,17 +10,27 @@
 #   - script-src: 'self' + Plausible Analytics (plausible.io) for usage stats.
 #     Docusaurus injects its bundle from /assets/* (same-origin), which 'self'
 #     covers. Algolia DocSearch UI is React-rendered (no remote <script>).
+#     https://browser.sentry-cdn.com — Sentry CDN loader for client-side error
+#     tracking (injected via docusaurus.config.ts headTags when SENTRY_DSN_DOCS
+#     is set at build time). Source: https://docs.sentry.io/platforms/javascript/install/cdn/#content-security-policy
 #   - style-src: includes 'unsafe-inline' because Docusaurus injects inline
 #     <style> blocks for the syntax highlighter and theme tokens; this is
 #     the documented Docusaurus baseline and cannot be removed without
 #     forking the framework. Tracked as DEBT-CSP-DOCS-INLINE-STYLE.
-#   - connect-src: Plausible (analytics) + Algolia DocSearch search index.
+#   - connect-src: Plausible (analytics) + Algolia DocSearch search index +
+#     https://*.ingest.sentry.io — Sentry event/error ingest from CDN loader
+#     (docs has no tunnel route, so the loader POSTs directly to Sentry).
+#     Source: https://docs.sentry.io/platforms/javascript/install/cdn/#content-security-policy
+#     https://status.corelink.humangr.com — BetterStack badge.json fetch by
+#     StatusPill component (CNAME to BetterStack; browser sees this hostname).
+#     https://corelink-admin.humangr.com — NewsletterSignup POSTs cross-origin
+#     to admin-ui /api/newsletter/subscribe route.
 #   - img-src: data: + https: kept permissive for embedded screenshots.
 #   - frame-ancestors 'none' (no embedding the docs site in iframes).
 #   - no frame-src needed — docs never embeds Stripe / Clerk.
 
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self' https://plausible.io; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://plausible.io https://*.algolia.net https://*.algolianet.com https://*.algolia.io; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://plausible.io https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://plausible.io https://*.algolia.net https://*.algolianet.com https://*.algolia.io https://*.ingest.sentry.io https://status.corelink.humangr.com https://corelink-admin.humangr.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
   Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
