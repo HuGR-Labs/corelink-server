@@ -60,6 +60,35 @@
 //! - `#[non_exhaustive]` on every public enum/struct — re-exports
 //!   inherit the attribute from the source crate.
 //! - BYOK mutual-exclusion at compile-time — enforced below.
+//!
+//! ## Wave 35 Phase 2 absorption
+//!
+//! Per `specs/_audits/2026-05-26-w35-p2-byok-absorption.md` (SEALED
+//! 2026-05-26), the 6 Wave-33 Stream-B sub-step B.2b BYOK sub-crates
+//! were physically absorbed into this umbrella as inline submodules,
+//! completing the microkernel roll-up; the former external
+//! `corelink-byok-*` crates were dropped from `workspace.members`.
+//! Public-API contract (`corelink_byok::*` glob-reexport from
+//! `byok_core` + `corelink_byok::{revocation,aws,gcp,azure,vault}`)
+//! is preserved 1:1; KmsProvider trait, `Dek` / `WrappedDek` zeroize
+//! discipline, `SecretString` credential bytes,
+//! `subtle::ConstantTimeEq` compare, `#[non_exhaustive]` discipline,
+//! and per-build mutual-exclusion (Hard Pause Trigger 2) all
+//! preserved by reference.
+//!
+//! Absorbed crates (6):
+//!
+//! - `corelink-byok-core` → `corelink_byok::*` (glob via internal
+//!   `byok_core` mod) — KmsProvider trait + Dek/WrappedDek/KmsKeyId
+//!   types + EnvelopeEncryptor + DekCache.
+//! - `corelink-byok-revocation` → [`revocation`] — always-on
+//!   revocation detector.
+//! - `corelink-byok-aws` → [`aws`] — AWS KMS provider (feature-gated).
+//! - `corelink-byok-gcp` → [`gcp`] — GCP KMS provider (feature-gated).
+//! - `corelink-byok-azure` → [`azure`] — Azure Key Vault provider
+//!   (feature-gated).
+//! - `corelink-byok-vault` → [`vault`] — HashiCorp Vault Transit
+//!   provider (feature-gated).
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]

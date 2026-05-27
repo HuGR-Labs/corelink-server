@@ -104,6 +104,31 @@
 //!   auth-context adoption; Stream B's Stage 1 commits do NOT
 //!   migrate any existing emit site to preserve the "behaviour-
 //!   preserving refactor ONLY" charter rule.
+//!
+//! ## Wave 35 Phase 2 absorption
+//!
+//! Per `specs/_audits/2026-05-26-wave-33-34-closure-followups.md` §2
+//! (CLOSED 2026-05-26, sealed by commits `9fb5a4fd` + `44988a11`), 2
+//! of the Wave-33 Option-A re-export tenants were physically absorbed
+//! into this crate as inline `pub mod` submodules; their former
+//! external crates were dropped from `workspace.members`. Public-API
+//! paths (`corelink_auth::webauthn::*` + `corelink_auth::schema::*`)
+//! are preserved 1:1; INV-AUTH-* invariants, WebAuthn challenge
+//! nonce + counter-rollback rejection, D1 RLS WITH CHECK enforcement,
+//! `#![forbid(unsafe_code)]`, and `#[non_exhaustive]` discipline all
+//! preserved by reference.
+//!
+//! Absorbed crates (2):
+//!
+//! - `corelink-webauthn` → [`webauthn`] — FIDO2 WebAuthn registration
+//!   + assertion ceremonies.
+//! - `corelink-auth-schema` → [`schema`] — D1 auth schema + RLS WITH
+//!   CHECK enforcement + `set_local app.current_tenant` GUC.
+//!
+//! The remaining Wave-33 Stream-B tenants (`clerk`, `clerk_cf`, `pat`,
+//! `tenant_path`) stay as aggregator re-exports — `clerk_cf` retains
+//! its wasm32 build path (charter Hard Pause Trigger 5), and the
+//! others have live external consumers per the closure-followups doc.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]

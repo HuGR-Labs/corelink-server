@@ -52,6 +52,30 @@
 //! its original path AND at the new canonical path. No public-API
 //! contract is broken. Stage 1 streams MAY adopt the new canonical
 //! paths incrementally without coordination cost.
+//!
+//! ## Wave 35 Phase 2 absorption
+//!
+//! Per `specs/_audits/2026-05-26-w35-p2-telemetry-absorption.md` (SEALED
+//! 2026-05-26), 5 of the 7 Stage-0 Option-A re-export tenants were
+//! physically absorbed into this crate as inline `pub mod` submodules
+//! (9,011 LOC + 252 tests moved in-tree); workspace.members dropped
+//! 149 → 144 (-5). Public-API contract (`corelink_telemetry::<mod>::*`)
+//! is preserved 1:1; INV-AUDIT + CTRL-CRED-001 + `#![forbid(unsafe_code)]`
+//! + `#[non_exhaustive]` discipline preserved by reference.
+//!
+//! Absorbed crates (5):
+//!
+//! - `corelink-canary` → [`canary`] — canary rollout signals.
+//! - `corelink-lighthouse-tracker` → [`lighthouse`] — lighthouse
+//!   customer tracker.
+//! - `corelink-logpush` → [`logpush`] — Cloudflare Logpush sink.
+//! - `corelink-otel-export` → [`otel`] — OTLP export.
+//! - `corelink-synthetic-pager` → [`synthetic_pager`] — synthetic
+//!   pager drill.
+//!
+//! The 2 remaining tenants (`tracing`, `slo`) retain external live
+//! consumers and stay as aggregator re-exports until a future
+//! Stream-C consumer-migration sweep.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]

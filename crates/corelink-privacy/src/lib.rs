@@ -104,6 +104,41 @@
 //!   absorbed crate — preserved by reference.
 //! - `#[non_exhaustive]` on every public enum/struct — inherited via
 //!   re-export.
+//!
+//! ## Wave 35 Phase 2 absorption
+//!
+//! Per `specs/_audits/2026-05-26-w35-p2-privacy-absorption.md` (SEALED
+//! 2026-05-26), 6 of the Wave-33 Option-A re-export tenants were
+//! physically absorbed into this crate as inline submodules (8,754
+//! LOC + 242 tests moved in-tree); workspace.members dropped by 6.
+//! Public-API paths (`corelink_privacy::<mod>::*`) are preserved 1:1;
+//! GDPR Art. 13/14/33/34 invariants, Ed25519 erasure attestation
+//! signing path (still consumed unchanged from `corelink_crypto`),
+//! consent withdrawal audit trail, residency enforcement,
+//! sub-processor change-notification trail, DPA versioning + 30d
+//! grace + read-only degrade, `#![forbid(unsafe_code)]`, and
+//! `#[non_exhaustive]` discipline all preserved by reference.
+//!
+//! Absorbed crates (6):
+//!
+//! - `corelink-dpa-versioning` → [`dpa::versioning`] — DPA versioning
+//!   + 30d grace + read-only degrade.
+//! - `corelink-privacy-breach-emit` → [`breach`] — GDPR Art. 33 + 34
+//!   breach notification emit.
+//! - `corelink-privacy-consent-ledger` → [`consent`] — consent ledger
+//!   + withdrawal audit trail.
+//! - `corelink-privacy-notice-emit` → [`notice`] — GDPR Art. 13 + 14
+//!   privacy notice emit.
+//! - `corelink-privacy-residency-enforcement` → [`residency`] — data
+//!   residency enforcement.
+//! - `corelink-privacy-sub-processor-emit` → [`sub_processor`] —
+//!   sub-processor change notification.
+//!
+//! The remaining Wave-33 Stream-B tenants (`dsr`, `dsr::statuspage`,
+//! `erasure`, `pseudonymize`, `dpa::acceptance`) stay as aggregator
+//! re-exports — they retain coupling to D1 migration runner / CF
+//! Worker cron path / crypto signing path that requires atomic
+//! consumer migration outside this batch.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]

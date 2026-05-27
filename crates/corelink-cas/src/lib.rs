@@ -55,6 +55,30 @@
 //!   satisfied (zero new structs/enums introduced here).
 //! - L2.10 file-size discipline: this `lib.rs` + 10 re-export files
 //!   are tiny (~5 LOC each); deeply under the 200 LOC sweet spot.
+//!
+//! ## Wave 35 Phase 2 absorption
+//!
+//! Per `specs/_audits/2026-05-26-w35-p2-cas-absorption.md` (SEALED
+//! 2026-05-26), 6 of the Wave-33 Option-A re-export tenants were
+//! physically absorbed into this crate as inline submodules (13,673
+//! LOC + 508 tests moved in-tree); workspace.members dropped by 6.
+//! Public-API contract (`corelink_cas::<mod>::*`) is preserved 1:1;
+//! INV-CAS-* invariants, `#![forbid(unsafe_code)]`, audit fail-CLOSED,
+//! and `#[non_exhaustive]` discipline all preserved by reference.
+//!
+//! Absorbed crates (6):
+//!
+//! - `corelink-chunker` → [`chunker`] — variable-size chunking.
+//! - `corelink-dedup` → [`dedup`] — content dedup index.
+//! - `corelink-edge` → [`edge`] — edge cache adapter.
+//! - `corelink-lru-tracker` → [`lru_tracker`] — LRU stats tracker.
+//! - `corelink-manifest` → [`manifest`] — CAS manifest types.
+//! - `corelink-multipart-schema` → [`multipart_schema`] — multipart
+//!   wire schema.
+//!
+//! The remaining Wave-33 Option-A tenants (eviction, r2_multipart,
+//! meta, handler) stay external for now — they retain live external
+//! consumers and their absorption is a future sweep.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
