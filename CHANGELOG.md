@@ -33,10 +33,32 @@ Each entry cross-references:
   (`marketing/launch/RELEASE-NOTES-EDITORIAL-GUIDE.md`). On every `v*` tag
   push, CI generates `releases/RELEASE-<version>.md`, opens an editorial PR,
   and creates a draft GitHub Release.
+- **Wave-36 Trigger A** — new leaf crate `corelink-billing-stripe-traits`
+  (4 traits + 9 types) extracted to break the
+  `corelink-stripe-real ↔ corelink-billing-materializer` dep-graph cycle
+  surfaced during Wave-33 stage-2.C consumer migration.
+  Tag `wave-36-final-sealed`. SEAL:
+  `specs/_audits/sealed/2026-05-27-w36-trigger-a-seal.md`.
+- **Wave-36 proptest follow-ups** — +14 proptests across three adapter
+  crates: 6 in `corelink-wasm` (`put` / `get` / `stat` JS/TS surface),
+  4 in `corelink-clerk-cf`, 4 in `corelink-statuspage-real`. SEALs:
+  `specs/_audits/sealed/2026-05-26-w36-proptest-wasm-seal.md`,
+  `specs/_audits/sealed/2026-05-26-w36-proptest-fu-002-seal.md`.
 
 ### Changed
 
-- (none)
+- **Wave-35 Phase-2 absorption campaign** — 9 absorption SEALs collapsed
+  the bulk of Wave-33 satellite crates into umbrella canonical paths
+  (CAS, TELEMETRY, ADAPTER-HOST, REPLICATION, BILLING, PRIVACY, OPS, AC,
+  BYOK). Workspace `members` reduced wave-over-wave per each per-umbrella
+  SEAL audit. Tag `wave-35-phase-2-sealed`. SEAL audits live at
+  `specs/_audits/sealed/2026-05-26-w35-p2-{cas,telemetry,adapter-host,
+  replication,billing,privacy,ops,ac,byok}-absorption.md`.
+- **Wave-36 Stage 2.C** — 5 consumer migration sites flipped from
+  absorbed-adapter direct imports to the canonical umbrella paths
+  (`corelink_billing::stripe::real::*` and peers). SEAL:
+  `specs/_audits/sealed/2026-05-26-w36-stage2c-closure.md`. Tag
+  `wave-36-stage-2-sealed`.
 
 ### Deprecated
 
@@ -48,11 +70,33 @@ Each entry cross-references:
 
 ### Fixed
 
-- (none)
+- **Wave-36 Trigger A** — resolved `corelink-stripe-real ↔
+  corelink-billing-materializer` dep-graph cycle by inverting the
+  dependency direction onto the new leaf `corelink-billing-stripe-traits`
+  crate (see Added). Unblocks Wave-33 stage-2.C closure path (c).
+- **Wave-36 Trigger B** — `corelink-ops` platform-gated under
+  `cfg(not(target_arch = "wasm32"))` inside the
+  `dsr-statuspage-scheduler` consumption site; restores green wasm32
+  build for `corelink-wasm` worker target. SEAL:
+  `specs/_audits/sealed/2026-05-26-w36-trigger-b-seal.md`.
 
 ### Security
 
-- (none)
+- **Wave-36 Stage 3 — cargo-deny lockdown.** Added `[bans] deny` rules
+  for the 4 absorbed-but-canonical adapter HTTPS crates
+  (`corelink-stripe-real`, `corelink-statuspage-real`,
+  `corelink-slack-real`, `corelink-clerk-cf`) with surgical
+  `wrappers` allowlists permitting only the Wave-33 umbrella
+  re-export shims to import them directly. New workspace consumers
+  must route through the canonical façades
+  (`corelink-billing::stripe`, `corelink-ops::statuspage` /
+  `corelink-ops::slack`, `corelink-auth::clerk_cf`,
+  `corelink-adapters-cloud::{stripe,statuspage,slack,clerk}`). Closes
+  Wave-33 → Wave-34 follow-up #1 closure path (c). SEAL:
+  `specs/_audits/sealed/2026-05-27-w36-stage-3-seal.md`. Tag
+  `wave-36-final-sealed`.
+- **Wave-33 → Wave-34 closure-followups #1–#5** flipped
+  `audit_status: ACTIVE → CLOSED` (5/5 deferrals delivered).
 
 ---
 
