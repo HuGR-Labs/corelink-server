@@ -1,0 +1,288 @@
+---
+title: "CoreLink vs BuildBuddy: which build cache to pick"
+description: "Detailed technical comparison of CoreLink and BuildBuddy — pricing, REAPI compatibility, BYOK on four KMS providers, audit log, and the cost of operating remote execution you do not want. Honest tradeoffs as of 2026-05-27."
+keywords:
+  - "buildbuddy"
+  - "buildbuddy alternative"
+  - "build cache"
+  - "bazel remote cache"
+  - "remote cache"
+  - "reapi cache"
+  - "byok build cache"
+  - "buildbuddy pricing"
+last_updated: "2026-05-27"
+---
+
+# CoreLink vs BuildBuddy
+
+Both CoreLink and BuildBuddy implement Remote Execution API v2 (REAPI),
+the wire protocol Bazel, Buck2, Pants, Please, BuildStream and `recc`
+all speak. Past that surface, the products diverge sharply: BuildBuddy
+is a VC-backed full-stack Bazel platform (cache + remote execution +
+build-events UI). CoreLink is a polyglot **cache-only** product with a
+heavier compliance posture (BYOK on four KMS providers, RFC 6962 audit
+chain, TLA+-verified tenant isolation).
+
+This page lays out the honest tradeoffs. It is dated **2026-05-27**;
+prices and quotas change — verify before quoting in a buying decision.
+
+## TL;DR
+
+- **Pick BuildBuddy if** you want one vendor for cache + remote
+  execution + a Bazel-native build-events UI, and you are comfortable
+  on usage-based per-GB billing with a separate $45/Mac-core SKU.
+- **Pick CoreLink if** you want REAPI v2 cache that is BYOK by default
+  across AWS KMS / GCP KMS / Azure Key Vault / Vault, has an
+  auditor-re-derivable RFC 6962 audit chain, and reaches beyond Bazel
+  (Cargo, npm, pip, brew, OCI). CoreLink does **not** offer remote
+  execution — by design.
+- **Either is fine if** you only care about Bazel cache-hit ratio and
+  do not need BYOK or a unified bill across Bazel + Cargo + npm.
+
+## At a glance
+
+| Capability | CoreLink | BuildBuddy |
+|---|---|---|
+| Pricing (smallest paid tier) | $25/mo flat (Pro: 500 GB / 20M req included) | "Team" pay-as-you-go: per-GB cache transfer over 100 GB; Mac cores $45/core; price not posted on page |
+| Free tier limits | 10 GB cache, 500k req/mo, 1 workspace, no card | 100 GB cache transfer/mo, 80 Linux cores RBE, 10 users |
+| Wire protocol | REAPI v2 (CAS + ActionCache + Capabilities) | REAPI v2 (CAS + AC + Capabilities + Execution) |
+| Bazel / Buck2 / Pants / Please | Yes (any REAPI client) | Yes (Bazel-first; Buck2 via REAPI; build-events UI is Bazel-native) |
+| Multi-language cache (Cargo / npm / pip / OCI) | Yes — first-class adapters | No — Bazel-shaped surface only |
+| Remote execution (RBE) | No (cache-only by design) | Yes (Linux + macOS; 80 Linux cores free, 800 paid) |
+| BYOK across 4 KMS (AWS / GCP / Azure / Vault) | Yes — customer-held KEK, 5-min DEK cap, Ed25519 erasure attest | Not advertised at the cache tier |
+| Audit chain (RFC 6962 / RFC 3161) | Yes — re-derivable Merkle root | Not advertised |
+| TLA+-verified tenant isolation | Yes — counterexamples block CI merge | Not advertised |
+| Build-events / Bazel UI | No (REAPI Capabilities only; no proprietary UI) | Yes — flagship feature |
+| Self-host option | No (Cloudflare edge data plane) | Yes — open-source core (MIT) + commercial enterprise edition |
+| Hosting | Cloudflare Workers + R2 edge | SaaS (Google Cloud) + self-host |
+| Company shape | Solo founder, bootstrapped | YC alum + Series A ($3.27M, Addition / Scribble / Village Global, Dec 2020) |
+| Source for prices | corelink.humangr.com (this site) | https://www.buildbuddy.io/pricing (fetched 2026-05-27) |
+
+## Where BuildBuddy wins
+
+We have used BuildBuddy. It is good. Specifically:
+
+1. **Remote execution is a real product, not a roadmap item.** If your
+   buying criterion is "stop running our own Bazel RBE cluster on EKS",
+   BuildBuddy ships the executor pool, the autoscaler, the macOS fleet,
+   and the bill. CoreLink does not, and per the public roadmap
+   (`ROADMAP-TO-GA.md`), RBE is post-GA. If you want both cache and
+   execution behind one vendor, this is settled.
+
+2. **The build-events UI is the stickiest hook in Bazel land.** A
+   per-target invocation timeline, flaky-test diff, target dependency
+   graph, and shareable invocation URLs make on-call CI debugging
+   visibly faster. CoreLink ships **none** of that — by design, since
+   the build-events viewer is a fight BuildBuddy already won. If your
+   team's Bazel UX gap is "we cannot read what happened in last
+   night's CI", BuildBuddy is the answer.
+
+3. **MIT-licensed open-source core.** A solo platform engineer can run
+   `buildbuddy` on a single VM the same week they evaluate the SaaS.
+   That escape-valve calms the "what if the vendor disappears"
+   conversation. CoreLink is not open-source today; the only escape
+   valve is the BYOK design (your encrypted cache objects sit in your
+   R2 bucket if you elect that, and audit-chain export is in the
+   roadmap).
+
+4. **YC + Series A pedigree.** Procurement and vendor-risk
+   reviewers find this comforting at a $25k/yr commitment. A solo
+   founder cannot replicate it. If your security team's first ask is
+   "what is your D-U-N-S number and last completed SOC 2 report", that
+   is a real friction for CoreLink today (SOC 2 Type I target is
+   GA + 6 months per `README.md`).
+
+## Where CoreLink wins
+
+Honest differentiation, not shade — these are decisions we made
+deliberately and they cost us features BuildBuddy has.
+
+1. **BYOK on four KMS providers, at the cache tier, in the default
+   shape — not as an enterprise-quoted line item.** AWS KMS, GCP KMS,
+   Azure Key Vault, and HashiCorp Vault are all first-class. The
+   customer holds the KEK; CoreLink decrypts a Data Encryption Key
+   into memory for a maximum of 5 minutes; revocation produces an
+   Ed25519-signed erasure attestation. BuildBuddy's pricing page lists
+   per-GB transfer and per-core Mac compute; it does not advertise a
+   4-KMS BYOK story at the cache tier. If your SOC 2 / HIPAA / PCI
+   path runs through "customer-managed keys", CoreLink reads as the
+   shorter path.
+
+2. **RFC 6962 / RFC 3161 Merkle-chained audit log, re-derivable from
+   raw entries.** Your external auditor downloads the log shard, replays
+   it, and recomputes the published Merkle root. Same trust model that
+   underpins Certificate Transparency. This is engineered for the SOC 2
+   Type II auditor's first interview; we do not know of a §1 competitor
+   leading with it.
+
+3. **Polyglot, not Bazel-only.** Cargo / npm / pip / brew / OCI artifact
+   paths sit on the same content-addressable store. One bill, one
+   audit log, one quota, one BYOK envelope. For a polyglot mid-market
+   (Bazel + a Rust service + a Node frontend + Docker images),
+   BuildBuddy + sccache + S3 + Turborepo + a private registry collapse
+   into CoreLink + your bucket.
+
+4. **No remote execution to operate, no remote execution to bill.** If
+   you do not want RBE — because you are happy with GitHub Actions
+   runners, or you run your own Buildkite agents — CoreLink charges you
+   $0 for the executor you are not using. BuildBuddy's pricing
+   structure assumes you want RBE; Mac-core billing alone is $45/core.
+
+5. **Predictable flat pricing with one number.** Pro is $25/mo or
+   $250/yr (two months free) for 500 GB / 20M requests. No per-seat,
+   no per-credit, no Mac surcharge. A platform engineer can decide
+   inside the unsigned-authority window (per Persona P1 in our ICP
+   audit). BuildBuddy's Team pricing is pay-as-you-go per-GB and the
+   number is not posted on the page — every quote requires a
+   conversation.
+
+6. **TLA+-verified tenant isolation.** The cross-tenant safety
+   invariant is model-checked in CI; counterexamples block merge to
+   `main`. The model is public. This is the kind of artifact that
+   matters to a small, high-signal set of engineering-trust buyers,
+   and a fair amount of regulated mid-market security teams.
+
+## Cost comparison: a concrete scenario
+
+A medium platform team. Take it as illustrative — your bill depends
+on your cache-hit pattern, your fleet shape, and what you negotiate.
+
+**Scenario.** 100 engineers, 50 monorepo builds/day, ~200 GB warm
+cache, ~12M cache requests/month, Linux-only CI, no Mac fleet. SOC 2
+Type II audit in 90 days. The team is on Bazel + sccache (for the
+Rust services) + Turborepo (for the JS frontend).
+
+### CoreLink
+
+- **Pro: $25/mo flat.** 500 GB included (you use 200), 20M requests
+  included (you use 12M). Pro covers Bazel CAS + Cargo cache +
+  Turborepo adapter from the same workspace.
+- Cargo / Rust services: same bucket, no separate sccache S3 to
+  manage. Removes ~$30/mo of self-managed S3 + 1–2 hr/week of SRE
+  time.
+- BYOK + audit-chain are at the Enterprise tier — for the 90-day SOC 2
+  push, you either stay on Pro (and supply your auditor with our
+  default audit-log export) or open an Enterprise conversation.
+- **Estimated total: $25/mo at Pro**, with a path to Enterprise (typical
+  range $500–$5,000/mo per our published pricing band, depending on
+  storage + dedicated infra + BYOK + SSO + SLA) when the auditor
+  requires customer-managed keys.
+
+### BuildBuddy
+
+- **Team tier**, pay-as-you-go per BuildBuddy's pricing page
+  (https://www.buildbuddy.io/pricing, fetched 2026-05-27). Page
+  describes a free 100 GB cache transfer/mo allowance; over that, $/GB
+  applies but the dollar figure is not posted on the public page. We
+  do not invent it.
+- Linux RBE: 80 cores free; over that, billed per core. If you do not
+  use RBE, this is $0 marginal — but you are paying for a platform
+  that includes it.
+- No Mac fleet in this scenario, so the $45/Mac-core SKU is not in
+  play.
+- BYOK + audit-chain parity: Enterprise tier, "Contact sales". Public
+  pricing page does not commit a number.
+- **Estimated total: low-double-digit USD/mo at this scale** (well
+  under the $100 you would pay for an RBE-heavy workload), plus
+  whatever the cache-GB overage above 100 GB lands at. **For the
+  Mac-heavy variant of this same team**, BuildBuddy's $45/core is a
+  hard differentiator that flips the math sharply — CoreLink does not
+  offer Mac compute at all (we do not run executors), so the
+  comparison stops being apples-to-apples.
+
+### What the bill **does not** show
+
+- **Engineer time saved.** A unified cache for Bazel + Cargo + npm
+  saves ~1–2 hr/week of SRE time per engineer who would otherwise
+  maintain sccache S3 + tune Turborepo cache + babysit a self-hosted
+  bazel-remote. At a $100/hr loaded cost and 5 such engineers, that
+  is $20k–$40k/year of opportunity cost. This is the value framing
+  argument, not the cost-recovery argument.
+- **Audit prep.** If your SOC 2 auditor asks "how do you prove your
+  build cache has not been tampered with", CoreLink hands you a
+  Merkle root and a replay script. With BuildBuddy you describe the
+  GCP IAM posture and trust GCP. Both are reasonable; one is shorter
+  to defend in a deposition.
+
+## Migration considerations
+
+You are on BuildBuddy and curious about CoreLink. Concrete steps to
+move:
+
+1. **Provision a CoreLink workspace** (`https://corelink-app.humangr.com/sign-up`).
+   No credit card. You will land on the Free tier (10 GB, 500k req/mo).
+2. **Add a second `--remote_cache` flag.** Bazel supports multiple
+   caches via the `--experimental_remote_downloader` and
+   `--remote_cache` chain. Run both BuildBuddy (primary) and CoreLink
+   (shadow) for a week. Compare cache-hit ratio, p95 latency, and
+   error rate.
+3. **Cut traffic over.** If the shadow week looks good, swap
+   `--remote_cache` to the CoreLink endpoint, drop BuildBuddy
+   `--remote_cache`. Keep BuildBuddy `--bes_backend` (build events) if
+   you still want the UI — it can talk to BuildBuddy while cache traffic
+   flows to CoreLink. This is the staged path; you do not have to give
+   up the BuildBuddy UI to take CoreLink cache.
+4. **(Optional) Move RBE later or never.** If you use BuildBuddy RBE,
+   CoreLink does not replace it. Keep RBE on BuildBuddy and use
+   CoreLink for cache + Cargo + npm. There is no rule that says a
+   build platform must come from one vendor.
+5. **BYOK rotation.** Once on Enterprise, point CoreLink at your KMS
+   (AWS / GCP / Azure / Vault). Rotation is operator-controlled; we
+   sign an Ed25519 erasure attestation on revocation.
+
+Most teams that complete a shadow week find their cache-hit ratio is
+within noise. The cache is a content-addressable store; both vendors
+hash the same content. The differentiation lives in BYOK, audit chain,
+polyglot reach, and what you do with the executor question.
+
+## When NOT to choose CoreLink
+
+We are pre-PMF and we lose three buying conversations cleanly.
+
+1. **You want remote execution behind the same login as cache.** RBE
+   is BuildBuddy or EngFlow territory. CoreLink does not have it and
+   does not aim to ship it in 2026. If you need to retire your in-house
+   Bazel RBE cluster, this is a BuildBuddy / EngFlow decision.
+
+2. **The Bazel build-events viewer is the thing you actually use
+   daily.** BuildBuddy's invocation timeline + flaky-test diff + target
+   graph + shareable URL are flagship features that we have no plan to
+   clone. If your platform engineer's daily driver is the BuildBuddy
+   UI, switching away is a workflow change you will feel.
+
+3. **You are a solo developer or an OSS maintainer on $0 budget.** Run
+   `bazel-remote` against a Cloudflare R2 bucket. Cost: $0 software +
+   ~$15–$50/mo of R2 storage. CoreLink will not undercut "free + your
+   own bucket" and should not try to. Once your team grows past 20
+   engineers and the SOC 2 / GDPR conversation starts, come back.
+
+4. **Your threat model forbids Cloudflare.** Some EU public-sector
+   buyers and some defense buyers will not put data on Cloudflare
+   infrastructure regardless of BYOK. CoreLink is Cloudflare-edge; we
+   do not offer an alternative data plane in 2026. BuildBuddy on a
+   self-hosted on-prem deployment is the right answer here.
+
+5. **You need a $40k+/yr enterprise vendor with a logo wall.** Our
+   reference customer count today is small. BuildBuddy is YC alum and
+   has shipped through several enterprise renewals. If your security
+   team's first question is the vendor-risk score, that conversation
+   is shorter with BuildBuddy.
+
+We will not match BuildBuddy on these. They are real and we will not
+pretend otherwise.
+
+## Resources
+
+- CoreLink docs: [/docs](/docs/)
+- CoreLink pricing: [/pricing](/pricing/)
+- Capability matrix (with NativeLink, EngFlow, bazel-remote also
+  listed): [/docs/pricing/comparison](/docs/pricing/comparison)
+- BuildBuddy pricing page (verify before quoting):
+  [https://www.buildbuddy.io/pricing](https://www.buildbuddy.io/pricing)
+- BuildBuddy open-source: [https://github.com/buildbuddy-io/buildbuddy](https://github.com/buildbuddy-io/buildbuddy)
+- Source for the comparisons on this page: the CoreLink competitive
+  landscape audit (`specs/_audits/2026-05-27-competitive-landscape.md`)
+  and pricing benchmarks (`specs/_audits/2026-05-27-pricing-benchmarks.md`).
+
+If you find a factual error, open an issue on
+`humangr-labs/corelink-server`. Correctness wins over rhetoric.
