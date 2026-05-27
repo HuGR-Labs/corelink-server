@@ -57,11 +57,36 @@ tags:
     description: Reference list of canonical data-category enums (privacy_model §5.6).
   - name: ops
     description: Operational health and browser CSP report intake.
+  - name: signup-pilot
+    description: Pilot-programme signup-token redemption (HMAC-gated, 14d TTL).
+  - name: admin-read-mutate
+    description: Admin read + dual-approval-gated mutate (in-memory wire-up
+      demonstration; production binding pending).
+  - name: admin-pilot
+    description: Pilot tenant admin (list / grant-tier / 24h checkin).
+  - name: audit-export
+    description: Bulk audit-chain export from R2 (per-tenant, signed window).
+  - name: audit-analytics
+    description: Audit-event analytics aggregates (event-count + timeline).
+  - name: reapi-http
+    description: HTTP fakes for the Remote Execution API v2 (CAS / AC). Native
+      build wires in-memory handlers for dev / integration testing; production
+      reads come over gRPC (see `docs/reference/reapi/`).
 security:
   - BearerPAT: []
   - ClerkSessionCookie: []
 paths:
   /v1/signup:
+    x-status: planned
+    x-binding: cf-worker-pending
+    x-implementing-crate: corelink-signup
+    x-reconciliation-note: |
+      Distinct intent from the SERVER-ONLY `/v1/signup/pilot/{token}`
+      (pilot-program HMAC-token redemption, axum-mounted in
+      `crates/corelink-container/src/routes/signup.rs`). The customer-
+      facing self-service signup endpoint is the one documented here;
+      `crates/corelink-signup` ships the orchestrator + atomic-
+      provisioning logic, awaiting the CF Worker entry crate to bind it.
     post:
       tags: [signup]
       summary: Provision a new tenant from a verified Clerk identity.
@@ -119,6 +144,16 @@ paths:
       tags: [dpa]
       summary: Record click-through acceptance of the current DPA version.
       operationId: dpaAccept
+      x-status: planned
+      x-binding: cf-worker-pending
+      x-implementing-crate: corelink-dpa-acceptance
+      x-reconciliation-note: |
+        Business-logic crate `corelink-dpa-acceptance` ships the service +
+        schema (doc-comments mark `POST /v1/dpa/accept` as canonical). Axum
+        binding is deferred to PRR per `trait-abstraction-defer` charter
+        (tools/openapi/src/lib.rs L29-39 — utoipa derives land with the
+        CF Worker entry crate). Reconciled 2026-05-27 per
+        specs/_audits/2026-05-27-openapi-reconciliation-seal.md.
       description: |
         Records 6-field consent proof (`notice_text_hash`, `notice_version`,
         `locale`, `wording_id`, `ui_capture_ts`, `submission_ts` server-set)
@@ -152,6 +187,15 @@ paths:
       tags: [dpa]
       summary: Re-accept a major-bumped DPA notice within the 30-day grace window.
       operationId: dpaReAccept
+      x-status: planned
+      x-binding: cf-worker-pending
+      x-implementing-crate: corelink-privacy (dpa::versioning::middleware)
+      x-reconciliation-note: |
+        `RE_ACCEPT_PATH` const in
+        `crates/corelink-privacy/src/dpa/versioning/middleware.rs:67` is the
+        canonical gate token used by the read-only-degrade middleware. The
+        middleware identifies this path but the actual handler axum mount
+        is deferred to the CF Worker entry crate.
       description: |
         When a new DPA version is published the tenant enters a 30-day grace
         window; `corelink-dpa-versioning` middleware flips writes to read-only
@@ -184,6 +228,14 @@ paths:
       tags: [tier]
       summary: Select a subscription tier and receive a Stripe Checkout session URL.
       operationId: tierSelect
+      x-status: planned
+      x-binding: cf-worker-pending
+      x-implementing-crate: corelink-tier-selection
+      x-reconciliation-note: |
+        `crates/corelink-tier-selection/src/lib.rs` doc-comments mark
+        `POST /v1/onboarding/tier-select` as canonical (Lote 10.16 fix).
+        Sprint S-19 WI-S19-004 (sealed) scopes the handler; the axum
+        mount lives in the deferred CF Worker entry crate.
       description: |
         Enforces `INV-ONBOARD-DPA-FIRST` via a D1 lock — tier selection is
         rejected until a DPA acceptance row exists for the tenant.
@@ -215,6 +267,14 @@ paths:
         "429": { $ref: "#/components/responses/RateLimited" }
         "500": { $ref: "#/components/responses/InternalError" }
   /v1/pats:
+    x-status: planned
+    x-binding: cf-worker-pending
+    x-implementing-crate: corelink-pat
+    x-reconciliation-note: |
+      PAT primitives (`mint`, `verify`, `format`, `argon`, `scopes`) all
+      ship in `crates/corelink-pat`. SDK quickstarts (`quickstart_put.py`,
+      `quickstart_list.py`) target this path; the binding is on the
+      CF Worker entry-crate deferral list.
     post:
       tags: [pat]
       summary: Issue a new Personal Access Token.
@@ -256,6 +316,9 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "500": { $ref: "#/components/responses/InternalError" }
   /v1/pats/{pat_id}:
+    x-status: planned
+    x-binding: cf-worker-pending
+    x-implementing-crate: corelink-pat
     delete:
       tags: [pat]
       summary: Revoke a Personal Access Token by id.
@@ -319,6 +382,14 @@ paths:
               schema:
                 type: string
   /v1/privacy/dsr/{action}:
+    x-status: planned
+    x-binding: cf-worker-pending
+    x-implementing-crate: corelink-dsr
+    x-reconciliation-note: |
+      `crates/corelink-dsr/src/endpoint.rs` marks
+      `POST /v1/privacy/dsr/{access|portability|...}` as canonical;
+      Sprint S-11 WI-S11-001 (sealed) scopes the 7-endpoint surface.
+      Axum mount deferred to CF Worker entry crate.
     post:
       tags: [privacy-dsr]
       summary: Submit a Data Subject Request (GDPR / LGPD / CCPA).
@@ -369,6 +440,9 @@ paths:
         "429": { $ref: "#/components/responses/RateLimited" }
         "500": { $ref: "#/components/responses/InternalError" }
   /v1/privacy/dsr/{request_id}/status:
+    x-status: planned
+    x-binding: cf-worker-pending
+    x-implementing-crate: corelink-dsr
     get:
       tags: [privacy-dsr]
       summary: Poll the status of a previously submitted DSR.
@@ -392,6 +466,13 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "500": { $ref: "#/components/responses/InternalError" }
   /v1/consent/{purpose}:
+    x-status: planned
+    x-binding: cf-worker-pending
+    x-implementing-crate: corelink-privacy (consent::ledger)
+    x-reconciliation-note: |
+      Consent data layer present in `corelink-privacy::consent::ledger`
+      (doc-comments mark `POST /v1/consent/<purpose>` + `DELETE` symmetric
+      revoke as canonical). No axum mount yet; deferred to CF Worker.
     post:
       tags: [privacy-consent]
       summary: Grant consent for one canonical purpose.
@@ -446,6 +527,9 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "500": { $ref: "#/components/responses/InternalError" }
   /v1/consent:
+    x-status: planned
+    x-binding: cf-worker-pending
+    x-implementing-crate: corelink-privacy (consent::ledger)
     get:
       tags: [privacy-consent]
       summary: List all grants + revocations for the calling subject.
@@ -460,6 +544,9 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "500": { $ref: "#/components/responses/InternalError" }
   /v1/consent/verify:
+    x-status: planned
+    x-binding: cf-worker-pending
+    x-implementing-crate: corelink-privacy (consent::hmac_sign)
     get:
       tags: [privacy-consent]
       summary: Public stateless verify of a grant signature.
@@ -492,6 +579,9 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
   /v1/consent/revocation/verify:
+    x-status: planned
+    x-binding: cf-worker-pending
+    x-implementing-crate: corelink-privacy (consent::hmac_sign)
     get:
       tags: [privacy-consent]
       summary: Public stateless verify of a revocation signature.
@@ -514,6 +604,16 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
   /v1/admin/ops:
+    x-status: planned
+    x-binding: cf-worker-pending
+    x-implementing-crate: corelink-ops (admin::api) + corelink-dual-approval
+    x-reconciliation-note: |
+      `crates/corelink-ops/src/admin/api.rs` carries the `corelink-admin-api`
+      pipeline + dual-approval gate. Distinct intent from the SERVER-ONLY
+      `/v1/admin/read/:resource` + `/v1/admin/mutate` placeholder routes,
+      which expose an in-memory admin handler used for the wave-11 wire-up
+      demonstration. The dual-approval-gated `/v1/admin/ops*` family is the
+      production surface; CF Worker entry crate binds it.
     post:
       tags: [admin]
       summary: Submit a dual-approval-gated admin operation.
@@ -553,6 +653,9 @@ paths:
         "422": { $ref: "#/components/responses/Unprocessable" }
         "500": { $ref: "#/components/responses/InternalError" }
   /v1/admin/ops/{op_id}:
+    x-status: planned
+    x-binding: cf-worker-pending
+    x-implementing-crate: corelink-ops (admin::api)
     get:
       tags: [admin]
       summary: Inspect an admin op (status + audit envelope).
@@ -572,6 +675,9 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
   /v1/admin/ops/{op_id}/approve:
+    x-status: planned
+    x-binding: cf-worker-pending
+    x-implementing-crate: corelink-ops (admin::api) + corelink-dual-approval
     post:
       tags: [admin]
       summary: Approve a pending admin op (second-approver step).
@@ -597,6 +703,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
   /v1/admin/ops/{op_id}/reject:
+    x-status: planned
+    x-binding: cf-worker-pending
+    x-implementing-crate: corelink-ops (admin::api) + corelink-dual-approval
     post:
       tags: [admin]
       summary: Reject a pending admin op.
@@ -622,6 +731,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
   /v1/admin/audit/events:
+    x-status: planned
+    x-binding: cf-worker-pending
+    x-implementing-crate: corelink-audit-chain (admin query surface)
+    x-reconciliation-note: |
+      Distinct intent from the SERVER-ONLY `/v1/audit/export` (bulk R2
+      export) and `/v1/audit/analytics/*` (event-count + timeline
+      aggregates). This is the per-tenant admin event-search surface
+      paginated for the admin UI. SDK quickstarts currently target a
+      dashed `/v1/admin/audit-events` typo (`tools/sdks/{go,python}/
+      examples/quickstart_audit.{go,py}`) — SDK fix tracked separately;
+      the dashed variant is NOT canonical. CLI quickstart at
+      `tools/cli/examples/quickstart_audit.rs:31` shares the typo.
     get:
       tags: [admin]
       summary: Search the canonical audit chain (read-only).
@@ -654,6 +775,9 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
   /v1/admin/tenants:
+    x-status: planned
+    x-binding: cf-worker-pending
+    x-implementing-crate: corelink-tenant-registry (admin query surface)
     get:
       tags: [admin]
       summary: Search tenants (admin read).
@@ -685,6 +809,9 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
   /v1/enterprise/inquire:
+    x-status: planned
+    x-binding: cf-worker-pending
+    x-implementing-crate: corelink-enterprise-inquiry
     post:
       tags: [enterprise]
       summary: Submit an enterprise sales / BYOK inquiry.
@@ -710,6 +837,9 @@ paths:
         "429": { $ref: "#/components/responses/RateLimited" }
         "500": { $ref: "#/components/responses/InternalError" }
   /v1/users/me:
+    x-status: planned
+    x-binding: cf-worker-pending
+    x-implementing-crate: pending (Clerk-authenticated profile read)
     get:
       tags: [users]
       summary: Current user profile.
@@ -742,6 +872,9 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "422": { $ref: "#/components/responses/Unprocessable" }
   /v1/data-categories:
+    x-status: planned
+    x-binding: cf-worker-pending
+    x-implementing-crate: corelink-privacy (DataCategory enum)
     get:
       tags: [data-categories]
       summary: List canonical data-category enums (privacy_model §5.6).
@@ -757,6 +890,14 @@ paths:
                 items:
                   $ref: "#/components/schemas/DataCategory"
   /api/health:
+    x-status: planned
+    x-binding: cf-worker-pending
+    x-reconciliation-note: |
+      Adapter-host pip server exposes `/healthz` (rows 28 of route inventory
+      §2) for its own liveness, but that is the pip-adapter port, not the
+      customer API surface. The canonical `/api/health` endpoint lives in
+      the CF Worker entry crate; native server container has no liveness
+      route mounted at this path.
     get:
       tags: [ops]
       summary: Liveness / readiness probe.
@@ -770,6 +911,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/HealthResponse"
   /api/csp-report:
+    x-status: planned
+    x-binding: cf-worker-pending
+    x-reconciliation-note: |
+      S-16 WI-S16-001 (sealed) scopes the CSP-report intake on the
+      Next.js side; the corresponding backend ingestion endpoint here is
+      pending the CF Worker entry crate.
     post:
       tags: [ops]
       summary: Browser Content-Security-Policy violation report intake.
@@ -787,6 +934,494 @@ paths:
       responses:
         "204":
           description: Recorded.
+
+  # ============================================================
+  # SERVER-ONLY paths reconciled 2026-05-27 — these axum routes
+  # serve traffic today (see specs/_audits/2026-05-27-openapi-
+  # route-inventory.md §2) but were undocumented in the contract.
+  # Added with `x-status: implemented` + handler-file pointers.
+  # ============================================================
+
+  /v1/signup/pilot/{token}:
+    x-status: implemented
+    x-implementing-handler: crates/corelink-container/src/routes/signup.rs (handle_pilot_signup)
+    post:
+      tags: [signup-pilot]
+      summary: Redeem an HMAC-signed pilot signup token.
+      operationId: pilotSignup
+      description: |
+        Server-only route (axum-mounted). Token format
+        `pilot_<env>_<unix_ms>_<16-hex-random>.<hmac-hex>` verified in
+        constant time via `subtle::ConstantTimeEq`. TTL 14 days from mint.
+        Rate-limited 5/IP/hour. Audit-emit fail-CLOSED per
+        `INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER`.
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^pilot_(staging|prod)_[0-9]+_[0-9a-f]{16}\\.[0-9a-f]+$"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PilotSignupRequest"
+      responses:
+        "201":
+          description: Pilot tenant reserved; activation URL returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PilotSignupResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401":
+          description: Malformed / expired / forged token.
+          content:
+            text/plain:
+              schema: { type: string }
+        "429":
+          description: Per-IP rate limit exceeded.
+          headers:
+            Retry-After:
+              schema: { type: integer, minimum: 1 }
+        "503":
+          description: Audit pipeline or signup store unavailable (fail-CLOSED).
+          content:
+            text/plain:
+              schema: { type: string }
+
+  /v1/admin/read/{resource}:
+    x-status: implemented
+    x-implementing-handler: crates/corelink-container/src/routes/admin.rs (handle_read)
+    get:
+      tags: [admin-read-mutate]
+      summary: Admin-plane read of a typed resource.
+      operationId: adminReadResource
+      description: |
+        End-to-end wire-up of `corelink_handler_admin::AdminReadHandler`
+        against an `Arc<dyn ...>` trait-object route state. Emits
+        `Sli::AvailControlPlane` per route entry.
+      security:
+        - BearerPAT: [admin]
+      parameters:
+        - name: resource
+          in: path
+          required: true
+          schema:
+            type: string
+            description: Resource discriminator (handler-specific taxonomy).
+      responses:
+        "200":
+          description: Resource payload (handler-specific shape).
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/admin/mutate:
+    x-status: implemented
+    x-implementing-handler: crates/corelink-container/src/routes/admin.rs (handle_mutate)
+    post:
+      tags: [admin-read-mutate]
+      summary: Admin-plane mutate (dual-approval-gated).
+      operationId: adminMutate
+      description: |
+        `AdminMutateHandler` enforces (1) RBAC (initiator must hold admin
+        role), (2) dual-approval token presence, (3) approver ≠ initiator.
+        Each path emits the corresponding `MutateAttempted` /
+        `MutateDenied` / `MutateDualApprovalRejected` audit row BEFORE
+        the response (audit-emit-BEFORE-handler atomicity).
+      security:
+        - BearerPAT: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminMutateBody"
+      responses:
+        "202":
+          description: Mutation accepted.
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: RBAC denied / dual-approval missing / self-approval.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /v1/admin/pilots:
+    x-status: implemented
+    x-implementing-handler: crates/corelink-container/src/routes/admin_pilot.rs (handle_list)
+    get:
+      tags: [admin-pilot]
+      summary: List pilot tenants filtered by lifecycle state.
+      operationId: adminPilotsList
+      description: |
+        Replaces the wave-27 `list-pilot-tenants.sh` shell script.
+        Auth: Clerk JWT with scope `corelink:admin:pilots`; the route
+        re-checks the scope at the boundary (5-Layer Defense).
+      security:
+        - ClerkSessionCookie: []
+      parameters:
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [NEW, ACTIVE, GRADUATED, TERMINATED]
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        "200":
+          description: Paginated pilot list.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListPilotsResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/admin/pilots/{tenant_id}/grant-tier:
+    x-status: implemented
+    x-implementing-handler: crates/corelink-container/src/routes/admin_pilot.rs (handle_grant_tier)
+    post:
+      tags: [admin-pilot]
+      summary: Grant pilot tier and cap.
+      operationId: adminPilotsGrantTier
+      description: |
+        Replaces the wave-27 `grant-pilot-tier.sh` shell script.
+        Transitions `pilot_state` NEW → ACTIVE atomically with
+        `tier_granted_at_ms` set.
+      security:
+        - ClerkSessionCookie: []
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GrantTierBody"
+      responses:
+        "200":
+          description: Tier granted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GrantTierResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/admin/pilots/{tenant_id}/checkin:
+    x-status: implemented
+    x-implementing-handler: crates/corelink-container/src/routes/admin_pilot.rs (handle_checkin)
+    post:
+      tags: [admin-pilot]
+      summary: Run the 24-hour activation check-in.
+      operationId: adminPilotsCheckin
+      description: |
+        Replaces the wave-27 `pilot-24h-checkin.sh` shell script.
+        Emits an alert audit row when the tenant has not uploaded a single
+        blob 24h after `tier_granted_at_ms`.
+      security:
+        - ClerkSessionCookie: []
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Check-in result (alert flag + first-blob status).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tenant_id: { type: string, format: uuid }
+                  first_blob_seen: { type: boolean }
+                  alert_emitted: { type: boolean }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/audit/export:
+    x-status: implemented
+    x-implementing-handler: crates/corelink-container/src/routes/audit_export/handler.rs (handle_export)
+    get:
+      tags: [audit-export]
+      summary: Stream a bulk audit-chain export from R2.
+      operationId: auditExport
+      description: |
+        Streams the per-tenant audit chain over the supplied `[from, to)`
+        window. Window bounds accept either ISO 8601 UTC
+        (`YYYY-MM-DDTHH:MM:SSZ`) or raw Unix epoch milliseconds. Cross-
+        tenant attempts emit a security audit row BEFORE the 403.
+      security:
+        - BearerPAT: [admin]
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string }
+          description: Inclusive lower bound (ISO 8601 UTC or Unix ms).
+        - name: to
+          in: query
+          required: true
+          schema: { type: string }
+          description: Exclusive upper bound (same shapes as `from`).
+        - name: tenant
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+          description: |
+            Optional — when supplied as a different tenant than the
+            authenticated principal, the route emits a cross-tenant
+            attempt audit row and returns 403.
+        - name: X-Tenant-Id
+          in: header
+          required: false
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: NDJSON stream of audit events.
+          content:
+            application/x-ndjson:
+              schema:
+                type: string
+          headers:
+            X-Chain-Head-Anchor:
+              schema: { type: string }
+              description: Hex BLAKE3 hash anchor for client verification.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Cross-tenant attempt or canceled tenant.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "429":
+          description: Per-tenant rate limit exceeded.
+          headers:
+            Retry-After:
+              schema: { type: integer }
+
+  /v1/audit/analytics/event-count:
+    x-status: implemented
+    x-implementing-handler: crates/corelink-container/src/routes/audit_analytics/handler_event_count.rs
+    get:
+      tags: [audit-analytics]
+      summary: Event-type count aggregates over a time window.
+      operationId: auditAnalyticsEventCount
+      security:
+        - BearerPAT: [admin]
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: integer, format: int64, minimum: 0 }
+        - name: to
+          in: query
+          required: true
+          schema: { type: integer, format: int64, minimum: 0 }
+        - name: event_type
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Aggregated counts grouped by event type.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventCountResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429":
+          description: Rate-limit exceeded.
+
+  /v1/audit/analytics/timeline:
+    x-status: implemented
+    x-implementing-handler: crates/corelink-container/src/routes/audit_analytics/handler_timeline.rs
+    get:
+      tags: [audit-analytics]
+      summary: Event-count timeline bucketed at a chosen granularity.
+      operationId: auditAnalyticsTimeline
+      security:
+        - BearerPAT: [admin]
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: integer, format: int64, minimum: 0 }
+        - name: to
+          in: query
+          required: true
+          schema: { type: integer, format: int64, minimum: 0 }
+        - name: granularity
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 86400000
+          description: |
+            Bucket size in milliseconds (capped at 24h). Default chosen by
+            the handler to keep `(to - from) / granularity ≤ 1000`.
+      responses:
+        "200":
+          description: Timeline buckets.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimelineResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/cas/{tenant}/{hash}:
+    x-status: implemented
+    x-implementing-handler: crates/corelink-container/src/routes/cas.rs (handle_read)
+    x-binding-note: |
+      REAPI HTTP fake — production CAS reads land on the gRPC ByteStream
+      surface (docs/reference/reapi/). This HTTP route exists for the
+      native-build dev / integration-test loop and the wave-11 end-to-end
+      wire-up demonstration. Cross-tenant denials enforced at the
+      route boundary in addition to the handler layer.
+    get:
+      tags: [reapi-http]
+      summary: Read a CAS blob by `(tenant, content-hash)`.
+      operationId: casRead
+      security:
+        - BearerPAT: []
+      parameters:
+        - name: tenant
+          in: path
+          required: true
+          schema: { type: string }
+        - name: hash
+          in: path
+          required: true
+          schema:
+            type: string
+            description: Hex BLAKE3 digest.
+      responses:
+        "200":
+          description: Blob bytes (opaque payload).
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Cross-tenant attempt.
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/cas/{digest}:
+    x-status: implemented
+    x-implementing-handler: crates/corelink-reapi/src/http_read.rs (handle_cas_get)
+    x-binding-note: |
+      REAPI read-only binary (`corelink-reapi::http_read`) — distinct
+      listener from the container surface. Exposes the same intent as
+      `/v1/cas/{tenant}/{hash}` but addresses blobs by canonical digest
+      and resolves the tenant via auth context rather than path.
+    get:
+      tags: [reapi-http]
+      summary: Read a CAS blob by canonical digest (REAPI binary).
+      operationId: reapiCasGet
+      security:
+        - BearerPAT: []
+      parameters:
+        - name: digest
+          in: path
+          required: true
+          schema:
+            type: string
+            description: Hex BLAKE3 digest.
+      responses:
+        "200":
+          description: Blob bytes.
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/ac/{tenant}/{action_digest}:
+    x-status: implemented
+    x-implementing-handler: crates/corelink-container/src/routes/ac.rs (handle_lookup, handle_update)
+    x-binding-note: |
+      REAPI HTTP fake for the Action Cache — production AC traffic uses
+      the gRPC ActionCache service. Cross-tenant denials emit
+      `AuditEventKind::LookupDenied` / `UpdateDenied` BEFORE the 403.
+    get:
+      tags: [reapi-http]
+      summary: Look up an Action Cache result.
+      operationId: acLookup
+      security:
+        - BearerPAT: []
+      parameters:
+        - name: tenant
+          in: path
+          required: true
+          schema: { type: string }
+        - name: action_digest
+          in: path
+          required: true
+          schema:
+            type: string
+            description: Hex digest of the action's `ActionResult` key.
+      responses:
+        "200":
+          description: ActionResult payload.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Cross-tenant attempt.
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [reapi-http]
+      summary: Upsert an Action Cache result.
+      operationId: acUpdate
+      security:
+        - BearerPAT: []
+      parameters:
+        - name: tenant
+          in: path
+          required: true
+          schema: { type: string }
+        - name: action_digest
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "204":
+          description: Stored.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Cross-tenant attempt.
+
 components:
   securitySchemes:
     BearerPAT:
@@ -1427,3 +2062,189 @@ components:
       enum: [Enam, Sam, Eu]
       description: 3-region canonical map per `corelink-region` / Lote
         10.16 locale→region binding.
+
+    # ----------------------------------------------------------
+    # Reconciled 2026-05-27 — schemas for the SERVER-ONLY routes
+    # added to the contract per
+    # specs/_audits/2026-05-27-openapi-reconciliation-seal.md.
+    # ----------------------------------------------------------
+
+    PilotSignupRequest:
+      type: object
+      required: [email, company_name, tier_hint, expected_use_case]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 256
+        company_name:
+          type: string
+          maxLength: 256
+        tier_hint:
+          type: string
+          enum: [free, pro, enterprise]
+        expected_use_case:
+          type: string
+          maxLength: 256
+      description: |
+        Request body for `POST /v1/signup/pilot/{token}`. All four fields
+        are required; each is capped at 256 chars
+        (`MAX_FIELD_LEN` in `crates/corelink-container/src/routes/signup.rs`).
+
+    PilotSignupResponse:
+      type: object
+      required: [tenant_id, activation_url, state]
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+          description: UUIDv7 assigned to the reserved pilot tenant.
+        activation_url:
+          type: string
+          format: uri
+          examples: ["https://signup.corelink.humangr.com/pilot/activate/01J..."]
+        state:
+          type: string
+          enum: [RESERVED]
+
+    AdminMutateBody:
+      type: object
+      required: [op_kind, initiator, initiator_is_admin]
+      properties:
+        op_kind:
+          type: string
+          enum: [set_tenant_tier, rotate_admin_token]
+        tenant:
+          type: string
+          description: Tenant id (required for `set_tenant_tier`).
+        tier:
+          type: string
+          description: Target tier (required for `set_tenant_tier`).
+        token_id:
+          type: string
+          description: Token id (required for `rotate_admin_token`).
+        initiator:
+          type: string
+          description: Principal initiating the mutation.
+        initiator_is_admin:
+          type: boolean
+        approval_id:
+          type: string
+          description: |
+            Dual-approval ledger id (omit = rejected — handler emits
+            `MutateDualApprovalRejected` BEFORE the 403).
+        approver:
+          type: string
+          description: Second approver principal (must differ from initiator).
+
+    PilotState:
+      type: string
+      enum: [NEW, ACTIVE, GRADUATED, TERMINATED]
+
+    PilotTenant:
+      type: object
+      required: [tenant_id, slug, tier, cap_bytes, pilot_state, signup_at_ms]
+      properties:
+        tenant_id: { type: string, format: uuid }
+        slug: { type: string }
+        tier: { type: string }
+        cap_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+        pilot_state:
+          $ref: "#/components/schemas/PilotState"
+        signup_at_ms:
+          type: integer
+          format: int64
+          minimum: 0
+        tier_granted_at_ms:
+          type: integer
+          format: int64
+          minimum: 0
+          nullable: true
+        first_blob_at_ms:
+          type: integer
+          format: int64
+          minimum: 0
+          nullable: true
+
+    ListPilotsResponse:
+      type: object
+      required: [state, rows, offset, limit]
+      properties:
+        state:
+          $ref: "#/components/schemas/PilotState"
+        rows:
+          type: array
+          items: { $ref: "#/components/schemas/PilotTenant" }
+        offset:
+          type: integer
+          minimum: 0
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 200
+
+    GrantTierBody:
+      type: object
+      required: [tier, cap_bytes]
+      properties:
+        tier:
+          type: string
+          description: Target tier (mirrors `grant-pilot-tier.sh` taxonomy).
+        cap_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+
+    GrantTierResponse:
+      type: object
+      required: [tenant]
+      properties:
+        tenant:
+          $ref: "#/components/schemas/PilotTenant"
+
+    EventCountEntry:
+      type: object
+      required: [event_type, count]
+      properties:
+        event_type: { type: string }
+        count:
+          type: integer
+          format: int64
+          minimum: 0
+
+    EventCountResponse:
+      type: object
+      required: [buckets]
+      properties:
+        buckets:
+          type: array
+          items: { $ref: "#/components/schemas/EventCountEntry" }
+
+    TimelineEntry:
+      type: object
+      required: [bucket_start_ms, count]
+      properties:
+        bucket_start_ms:
+          type: integer
+          format: int64
+          minimum: 0
+        count:
+          type: integer
+          format: int64
+          minimum: 0
+
+    TimelineResponse:
+      type: object
+      required: [buckets, granularity_ms]
+      properties:
+        buckets:
+          type: array
+          items: { $ref: "#/components/schemas/TimelineEntry" }
+        granularity_ms:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 86400000

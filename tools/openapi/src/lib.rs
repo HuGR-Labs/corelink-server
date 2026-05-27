@@ -104,6 +104,37 @@ pub mod paths {
     /// Browser CSP-report intake.
     pub const CSP_REPORT: &str = "/api/csp-report";
 
+    // -------------------------------------------------------------
+    // SERVER-ONLY paths reconciled 2026-05-27 — see
+    // specs/_audits/2026-05-27-openapi-reconciliation-seal.md for
+    // the per-route classification.
+    // -------------------------------------------------------------
+
+    /// Pilot-programme signup token redemption (axum-mounted today).
+    pub const SIGNUP_PILOT: &str = "/v1/signup/pilot/{token}";
+    /// Admin-plane read (typed resource fetch).
+    pub const ADMIN_READ: &str = "/v1/admin/read/{resource}";
+    /// Admin-plane mutate (dual-approval-gated; wire-up demo path).
+    pub const ADMIN_MUTATE: &str = "/v1/admin/mutate";
+    /// Pilot tenant list (axum-mounted; replaces shell script).
+    pub const ADMIN_PILOTS: &str = "/v1/admin/pilots";
+    /// Grant pilot tier (NEW → ACTIVE state transition).
+    pub const ADMIN_PILOTS_GRANT_TIER: &str = "/v1/admin/pilots/{tenant_id}/grant-tier";
+    /// Run the 24h pilot activation check-in.
+    pub const ADMIN_PILOTS_CHECKIN: &str = "/v1/admin/pilots/{tenant_id}/checkin";
+    /// Bulk audit-chain export from R2 (per-tenant window).
+    pub const AUDIT_EXPORT: &str = "/v1/audit/export";
+    /// Audit-event count aggregates over a window.
+    pub const AUDIT_ANALYTICS_EVENT_COUNT: &str = "/v1/audit/analytics/event-count";
+    /// Audit-event timeline bucketed at a chosen granularity.
+    pub const AUDIT_ANALYTICS_TIMELINE: &str = "/v1/audit/analytics/timeline";
+    /// CAS read (REAPI HTTP fake — container surface).
+    pub const CAS_READ_TENANT: &str = "/v1/cas/{tenant}/{hash}";
+    /// CAS read (REAPI binary — `corelink-reapi`).
+    pub const CAS_READ_DIGEST: &str = "/v1/cas/{digest}";
+    /// Action Cache lookup + update (REAPI HTTP fake).
+    pub const AC_LOOKUP: &str = "/v1/ac/{tenant}/{action_digest}";
+
     /// Every canonical path constant. Used by the spec_roundtrip test
     /// to assert no constant drifts away from the YAML.
     pub const ALL: &[&str] = &[
@@ -131,6 +162,19 @@ pub mod paths {
         DATA_CATEGORIES,
         HEALTH,
         CSP_REPORT,
+        // SERVER-ONLY (reconciled 2026-05-27)
+        SIGNUP_PILOT,
+        ADMIN_READ,
+        ADMIN_MUTATE,
+        ADMIN_PILOTS,
+        ADMIN_PILOTS_GRANT_TIER,
+        ADMIN_PILOTS_CHECKIN,
+        AUDIT_EXPORT,
+        AUDIT_ANALYTICS_EVENT_COUNT,
+        AUDIT_ANALYTICS_TIMELINE,
+        CAS_READ_TENANT,
+        CAS_READ_DIGEST,
+        AC_LOOKUP,
     ];
 }
 
