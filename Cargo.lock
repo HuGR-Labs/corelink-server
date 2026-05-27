@@ -1601,6 +1601,7 @@ name = "corelink-dsr-statuspage-scheduler"
 version = "0.1.0"
 dependencies = [
  "corelink-cf-bindings",
+ "corelink-ops",
  "corelink-privacy-erasure-worker",
  "corelink-statuspage-real",
  "proptest",
