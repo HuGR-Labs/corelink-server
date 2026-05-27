@@ -320,6 +320,161 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    // ---- Property-based invariants (WI-PROPTEST-FU-W33-002) ----
+    //
+    // Density follow-up per `specs/_audits/proptest-followup-tickets.md`.
+    // These exercise the pure-Rust helpers (`*_inner`) which back the
+    // `#[wasm_bindgen]` methods — covering invariants that must hold across
+    // arbitrary inputs at the JS/TS boundary. `PROPTEST_CASES` env var
+    // overrides the default per workspace convention (S-07 P1-2).
+    //
+    // Why colocate (not `tests/prop_*.rs`): integration tests cannot call
+    // the `JsValue`-based public constructor on the host target, and the
+    // pure-Rust `*_inner` helpers are crate-private. Colocation also matches
+    // the existing in-module `wasm_bindgen_test` pattern.
+
+    use proptest::prelude::*;
+
+    fn proptest_cases() -> u32 {
+        std::env::var("PROPTEST_CASES")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(256)
+    }
+
+    /// Strategy: arbitrary byte vector up to 4 KiB.
+    ///
+    /// Bounded so a release-mode `PROPTEST_CASES=256` stress run stays well
+    /// under the workspace per-test budget while still exercising chunk
+    /// boundaries of the underlying BLAKE3 implementation.
+    fn arb_bytes() -> impl Strategy<Value = Vec<u8>> {
+        prop::collection::vec(any::<u8>(), 0..=4096)
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig {
+            cases: proptest_cases(),
+            ..ProptestConfig::default()
+        })]
+
+        /// INV-WASM-PUT-HEX64: `put_inner` ALWAYS returns a 64-character
+        /// lowercase hex digest (BLAKE3 → 32 bytes → 64 hex). Asserts both
+        /// length AND that every char is in `[0-9a-f]` (catches a future
+        /// regression that swaps in uppercase or base64).
+        #[test]
+        fn prop_put_inner_emits_lowercase_hex64(data in arb_bytes()) {
+            let client = make_client(true);
+            let hex = client.put_inner(&data);
+            prop_assert_eq!(hex.len(), 64, "BLAKE3 hex digest must be 64 chars");
+            prop_assert!(
+                hex.chars().all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)),
+                "digest must be lowercase hex: got {hex}"
+            );
+        }
+
+        /// INV-WASM-PUT-DETERMINISTIC: `put_inner` is a pure function of its
+        /// input bytes — two calls with identical input MUST yield identical
+        /// digests. Catches accidental non-determinism (e.g. salted hash,
+        /// time-based seed) in any future swap of the hash backend.
+        #[test]
+        fn prop_put_inner_is_deterministic(data in arb_bytes()) {
+            let client_a = make_client(true);
+            let client_b = make_client(false);
+            let h1 = client_a.put_inner(&data);
+            let h2 = client_a.put_inner(&data);
+            // Determinism holds across BOTH client_verify=on/off because
+            // verify config is independent of the hash function.
+            let h3 = client_b.put_inner(&data);
+            prop_assert_eq!(&h1, &h2, "same bytes, same client → same digest");
+            prop_assert_eq!(&h1, &h3, "client_verify flag must not affect put");
+        }
+
+        /// INV-WASM-PUT-ROUNDTRIP: encode → parse → re-encode is identity.
+        /// `Digest::from_hex(put_inner(x)).to_hex() == put_inner(x)`. Guards
+        /// the hex codec at the WASM↔JS boundary against silent corruption.
+        #[test]
+        fn prop_put_inner_roundtrip_hex(data in arb_bytes()) {
+            let client = make_client(true);
+            let hex1 = client.put_inner(&data);
+            let parsed = Digest::from_hex(&hex1)
+                .map_err(|e| TestCaseError::fail(format!("from_hex failed: {e}")))?;
+            let hex2 = parsed.to_hex();
+            prop_assert_eq!(hex1, hex2, "hex encode/decode must round-trip");
+        }
+
+        /// INV-WASM-GET-VERIFY-MATCH: with `client_verify=true`, `get_inner`
+        /// returns Ok iff the supplied digest matches the BLAKE3 of the
+        /// (currently stubbed) empty body, and otherwise returns the
+        /// `COR_CAS_DIGEST_MISMATCH` error string. Exercises the production
+        /// verify path on the WASM critical path.
+        #[test]
+        fn prop_get_inner_verify_match_or_mismatch(data in arb_bytes()) {
+            let client = make_client(true);
+            let empty_hex = Digest::compute(b"").to_hex();
+            let candidate_hex = Digest::compute(&data).to_hex();
+            let result = client.get_inner(&candidate_hex);
+            if candidate_hex == empty_hex {
+                // arb_bytes can produce the empty Vec — verify must succeed.
+                match result {
+                    Ok(body) => prop_assert!(
+                        body.is_empty(),
+                        "stub body for empty-digest must be empty"
+                    ),
+                    Err(e) => prop_assert!(
+                        false,
+                        "empty-blob digest must verify Ok, got Err: {e}"
+                    ),
+                }
+            } else {
+                match result {
+                    Err(e) => prop_assert!(
+                        e.starts_with("COR_CAS_DIGEST_MISMATCH"),
+                        "mismatch error must use canonical taxonomy code, got: {e}"
+                    ),
+                    Ok(_) => prop_assert!(
+                        false,
+                        "non-empty digest must NOT verify against empty stub"
+                    ),
+                }
+            }
+        }
+
+        /// INV-WASM-GET-PANIC-FREE: `get_inner` must NEVER panic, regardless
+        /// of the shape of the digest string at the JS boundary (arbitrary
+        /// UTF-8, oversized, mixed case, control chars, etc.). Either Ok or
+        /// a typed Err — never a panic. This is the canonical panic-free
+        /// invariant required of any FFI entry point.
+        #[test]
+        fn prop_get_inner_panic_free(digest in ".*") {
+            let client = make_client(true);
+            // Any panic here will be caught by proptest and reported as a
+            // failing case — exactly what we want.
+            let _ = client.get_inner(&digest);
+        }
+
+        /// INV-WASM-STAT-ECHO: `stat_inner` echoes the input digest into
+        /// `StatResult.digest` whenever the digest parses; size=0 and
+        /// exists=false in the stub. Matches AND asserts each named field
+        /// (per S-08 P1-1 lesson — no `matches!` anti-pattern).
+        #[test]
+        fn prop_stat_inner_echoes_valid_digest(data in arb_bytes()) {
+            let client = make_client(true);
+            let hex = client.put_inner(&data);
+            let result = client.stat_inner(&hex);
+            match result {
+                Ok(stat) => {
+                    prop_assert_eq!(&stat.digest, &hex, "stat must echo digest");
+                    prop_assert_eq!(stat.size_bytes, 0, "stub size_bytes must be 0");
+                    prop_assert!(!stat.exists, "stub exists must be false");
+                }
+                Err(e) => prop_assert!(
+                    false,
+                    "valid hex digest must parse for stat, got Err: {e}"
+                ),
+            }
+        }
+    }
+
     // ---- wasm-bindgen-test (runs in Node.js / browser via wasm-pack test) ----
 
     #[wasm_bindgen_test]
