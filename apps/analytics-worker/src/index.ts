@@ -13,26 +13,32 @@
 import type { Env } from "./types";
 import { handleIngest } from "./ingest";
 import { runWeeklyDigest, computeThreeNumbers } from "./cron/weekly-email";
+import { withSecurityHeaders } from "./security-headers";
+
+async function route(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+
+    if (url.pathname === "/v1/event") {
+        return handleIngest(request, env);
+    }
+    if (url.pathname === "/healthz") {
+        return Response.json({
+            ok: true,
+            env: env.ENVIRONMENT,
+            ts: new Date().toISOString(),
+        });
+    }
+    if (url.pathname === "/v1/digest/preview" && env.ENVIRONMENT === "dev") {
+        const numbers = await computeThreeNumbers(env);
+        return Response.json(numbers);
+    }
+    return new Response("Not Found", { status: 404 });
+}
 
 export default {
     async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
-        const url = new URL(request.url);
-
-        if (url.pathname === "/v1/event") {
-            return handleIngest(request, env);
-        }
-        if (url.pathname === "/healthz") {
-            return Response.json({
-                ok: true,
-                env: env.ENVIRONMENT,
-                ts: new Date().toISOString(),
-            });
-        }
-        if (url.pathname === "/v1/digest/preview" && env.ENVIRONMENT === "dev") {
-            const numbers = await computeThreeNumbers(env);
-            return Response.json(numbers);
-        }
-        return new Response("Not Found", { status: 404 });
+        // Always wrap responses in security headers (pre-HN-launch hardening).
+        return withSecurityHeaders(await route(request, env));
     },
 
     async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {

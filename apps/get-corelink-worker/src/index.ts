@@ -36,6 +36,49 @@ export interface Env {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// Security headers (pre-HN-launch hardening)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Defense-in-depth security headers applied to EVERY response (including
+ * 4xx/5xx). The Worker body is a shell script — not HTML — but several
+ * headers (HSTS, nosniff, X-Frame-Options) still matter at the protocol
+ * level. CSP is strict-by-default (`default-src 'none'`) because the body
+ * is never interpreted as a document by a browser.
+ *
+ * Target: securityheaders.com B+ or better post-deploy.
+ */
+export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
+  "Content-Security-Policy":
+    "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+  "Strict-Transport-Security":
+    "max-age=63072000; includeSubDomains; preload",
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+  "Referrer-Policy": "no-referrer",
+  "Permissions-Policy": "interest-cohort=(), camera=(), microphone=(), geolocation=()",
+};
+
+/**
+ * Apply `SECURITY_HEADERS` to a `Response`. Returns a new `Response` so the
+ * original (which may originate from `renderInstallScript` or a 4xx path)
+ * is left untouched.
+ */
+function withSecurityHeaders(res: Response): Response {
+  const merged = new Headers(res.headers);
+  for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
+    // Existing per-route values (e.g. install-script Referrer-Policy: no-referrer)
+    // are preserved; security headers only fill gaps.
+    if (!merged.has(name)) merged.set(name, value);
+  }
+  return new Response(res.body, {
+    status: res.status,
+    statusText: res.statusText,
+    headers: merged,
+  });
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Route table
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -105,16 +148,19 @@ async function route(request: Request, env: Env): Promise<Response> {
 const handler: ExportedHandler<Env> = {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
     try {
-      return await route(request, env);
+      const res = await route(request, env);
+      return withSecurityHeaders(res);
     } catch (err) {
       // Never leak error details to the caller — return a generic 500.
       // Log just the error message (no request body, no env values).
       const msg = err instanceof Error ? err.message : "unknown";
       console.error(`get-corelink-worker error: ${msg}`);
-      return new Response("Internal Server Error\n", {
-        status: 500,
-        headers: { "Content-Type": "text/plain; charset=utf-8" },
-      });
+      return withSecurityHeaders(
+        new Response("Internal Server Error\n", {
+          status: 500,
+          headers: { "Content-Type": "text/plain; charset=utf-8" },
+        }),
+      );
     }
   },
 };

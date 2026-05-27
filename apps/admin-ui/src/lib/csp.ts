@@ -8,11 +8,24 @@
  * Directives baseline:
  *   - default-src 'self'         (deny-by-default for most fetch contexts)
  *   - script-src  'self' nonce + clerk.corelink.humangr.com
+ *                                + https://plausible.io
+ *                                + https://js.stripe.com
  *   - style-src   'self' nonce
  *   - connect-src 'self' + api.corelink.humangr.com + clerk.corelink.humangr.com
+ *                                + https://plausible.io
+ *                                + https://api.stripe.com
+ *                                + https://m.stripe.network
+ *   - frame-src   https://js.stripe.com + https://hooks.stripe.com
+ *                                + https://challenges.cloudflare.com (Clerk bot)
  *   - img-src     'self' data: https:
  *   - frame-ancestors 'none', form-action 'self', base-uri 'self'
  *   - report-uri /api/csp-report
+ *
+ * Pre-HN-launch (2026-05-27) the third-party allow-list was widened from
+ * Clerk-only to also cover Plausible Analytics + Stripe Checkout/portal
+ * frames so the public signup and billing flows succeed under enforce-mode
+ * CSP. The allow-list remains explicit per-host — no wildcards on
+ * connect-src or frame-src.
  *
  * See WI-S16-001 §6.1.3 + §20 STRIDE Tampering.
  */
@@ -31,11 +44,12 @@ export interface CspOptions {
 export function buildCspDirectives(nonce: string): string[] {
   return [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' https://clerk.corelink.humangr.com`,
+    `script-src 'self' 'nonce-${nonce}' https://clerk.corelink.humangr.com https://plausible.io https://js.stripe.com`,
     `style-src 'self' 'nonce-${nonce}'`,
     "img-src 'self' data: https:",
     "font-src 'self' data:",
-    "connect-src 'self' https://api.corelink.humangr.com https://clerk.corelink.humangr.com",
+    "connect-src 'self' https://api.corelink.humangr.com https://clerk.corelink.humangr.com https://plausible.io https://api.stripe.com https://m.stripe.network",
+    "frame-src https://js.stripe.com https://hooks.stripe.com https://challenges.cloudflare.com",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -70,7 +84,11 @@ export const STATIC_SECURITY_HEADERS: ReadonlyArray<{ name: string; value: strin
     value: "max-age=63072000; includeSubDomains; preload",
   },
   { name: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-  { name: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+  {
+    name: "Permissions-Policy",
+    // `interest-cohort=()` opts out of FLoC/Topics tracking (pre-HN-launch hardening).
+    value: "interest-cohort=(), camera=(), microphone=(), geolocation=()",
+  },
 ];
 
 /**
