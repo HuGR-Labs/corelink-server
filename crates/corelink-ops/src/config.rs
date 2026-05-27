@@ -1,19 +1,16 @@
-//! Config — wave-33 canonical ops aggregator.
+//! Config — wave-33 canonical ops aggregator (W35-P2 update).
 //!
 //! Two config-context crates folded under the canonical `config`
-//! submodule as two sub-submodules (Stage 1 Stream C sub-step C.2
-//! Option-A aggregator pattern):
+//! submodule:
 //!
-//! - [`api`] — `corelink-config-api`: config REST API.
-//! - [`durable_object`] — `corelink-config-do`: config Durable Object
-//!   (CF Worker DO-backed storage).
+//! - [`api`] — physically absorbed (W35-P2-OPS): config REST API.
+//!   Was `corelink-config-api`. Lives at
+//!   `crates/corelink-ops/src/config/api.rs` plus its sibling files
+//!   under `crates/corelink-ops/src/config/api/`.
+//! - [`durable_object`] — `corelink-config-do` (still external):
+//!   config Durable Object (CF Worker DO-backed storage).
 
-/// Config REST API.
-///
-/// Re-exports the entire public API of `corelink-config-api`.
-pub mod api {
-    pub use corelink_config_api::*;
-}
+pub mod api;
 
 /// Config Durable Object (CF Worker DO-backed storage).
 ///
