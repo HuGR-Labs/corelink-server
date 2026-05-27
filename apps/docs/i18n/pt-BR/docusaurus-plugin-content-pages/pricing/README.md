@@ -19,13 +19,16 @@ Termos canônicos:
 - **Region** → **Região**
 - **BYOK provider** → **Provedor BYOK** (BYOK = Bring Your Own Key)
 - **Admin seat** → **Assento de administrador**
-- **Annual (save 15%)** → **Anual (economize 15%)**
+- **Annual (2 months free)** → **Anual (2 meses grátis)**
 - **Monthly** → **Mensal**
 - **Contact us** → **Fale conosco**
-- **Apply for pilot** → **Solicitar piloto**
+- **Start free** → **Comece grátis**
+- **Upgrade to Pro** → **Faça upgrade para o Pro**
+- **Contact sales** → **Fale com vendas**
 - **Recommended** → **Recomendado**
+- **Most popular** → **Mais popular**
 
-**Aviso pré-GA honesto:** todos os valores monetários são provisórios e
-podem ser refinados até o GA. Plano piloto gratuito durante a avaliação.
-Ver `specs/_audits/sealed/2026-05-16-pricing-page.md` para o status da tabela
-de preços.
+**Tarifa de lançamento (concreta, não mais provisória):** Free $0 / Pro
+$25/mês ou $250/ano (2 meses grátis) / Enterprise (fale conosco). Ver
+`specs/_audits/2026-05-27-pricing-benchmarks.md` §5 +
+`specs/_audits/2026-05-27-phase-0-execution-plan.md` §2.E.

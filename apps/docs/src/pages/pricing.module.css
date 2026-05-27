@@ -65,6 +65,28 @@
   margin: 0 0 0.5rem;
 }
 
+.tierCardFeatured {
+  border-color: var(--ifm-color-primary);
+  border-width: 2px;
+  position: relative;
+}
+
+.tierTagline {
+  color: var(--ifm-color-emphasis-700);
+  font-size: 0.9rem;
+  margin: 0 0 0.5rem;
+}
+
+.fitsOk {
+  color: var(--ifm-color-success-darker, #1a7f37);
+  font-size: 0.9rem;
+}
+
+.fitsExceeded {
+  color: var(--ifm-color-warning-darker, #b45309);
+  font-size: 0.9rem;
+}
+
 .tierPrice {
   font-size: 1.75rem;
   font-weight: 700;

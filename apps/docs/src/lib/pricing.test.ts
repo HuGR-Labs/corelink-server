@@ -1,9 +1,9 @@
 /**
- * Unit tests for the pricing library. Covers tier boundaries,
- * overage formulas, break-even recommendation, Enterprise contact-sales
- * handling, period discount, defensive clamping, and format honesty.
+ * Unit tests for the pricing library — Phase 0.E 3-tier launch shape.
  *
- * Wave-29 stream-7 / r-prep pricing page deliverable.
+ * Covers tier boundaries, hard-cap behaviour, Enterprise contact-sales
+ * handling, annual ("2 months free") discount, defensive clamping,
+ * format honesty, and the absence of any `provisional` flag.
  */
 
 import { describe, it, expect } from "vitest";
@@ -20,32 +20,61 @@ import {
   formatUsd,
   recommendTier,
 } from "./pricing";
-import type { UsageInputs } from "./pricing";
+import type { TierShape, UsageInputs } from "./pricing";
 
 const zeroUsage: UsageInputs = {
   casGbStored: 0,
-  casGbTransferred: 0,
-  auditEventsPerMonth: 0,
-  regions: 0,
-  byokProviders: 0,
-  adminSeats: 0,
+  requestsPerMonth: 0,
 };
 
-describe("CANONICAL_TIERS", () => {
-  it("matches the wave-13 5-tier shape", () => {
-    expect([...CANONICAL_TIERS]).toEqual([
-      "free",
-      "starter",
-      "team",
-      "pro",
-      "enterprise",
-    ]);
+describe("CANONICAL_TIERS — launch shape", () => {
+  it("is exactly Free / Pro / Enterprise (3 tiers)", () => {
+    expect([...CANONICAL_TIERS]).toEqual(["free", "pro", "enterprise"]);
   });
 
-  it("every tier card is flagged provisional (honest framing)", () => {
+  it("contains no `provisional` field on any tier", () => {
     for (const tier of CANONICAL_TIERS) {
-      expect(TIER_RATE_CARD[tier].provisional).toBe(true);
+      const card: TierShape = TIER_RATE_CARD[tier];
+      expect((card as unknown as Record<string, unknown>).provisional).toBeUndefined();
     }
+  });
+
+  it("Free is $0", () => {
+    expect(TIER_RATE_CARD.free.usdMonthlyBase).toBe(0);
+  });
+
+  it("Pro is $25/mo or $250/yr per pricing-benchmarks §5", () => {
+    expect(TIER_RATE_CARD.pro.usdMonthlyBase).toBe(25);
+    expect(TIER_RATE_CARD.pro.usdAnnualList).toBe(250);
+  });
+
+  it("Enterprise is contact-sales (no anchor)", () => {
+    expect(TIER_RATE_CARD.enterprise.usdMonthlyBase).toBeNull();
+    expect(TIER_RATE_CARD.enterprise.usdAnnualList).toBeNull();
+  });
+
+  it("Enterprise gates BYOK + SSO + SLA + DPA + audit-log export", () => {
+    const ent = TIER_RATE_CARD.enterprise;
+    expect(ent.byok).toBe(true);
+    expect(ent.sso).toBe(true);
+    expect(ent.slaCredits).toBe(true);
+    expect(ent.dpa).toBe(true);
+    expect(ent.auditLogExport).toBe(true);
+  });
+
+  it("Free and Pro are hard-capped (no silent overage billing)", () => {
+    expect(TIER_RATE_CARD.free.hardCap).toBe(true);
+    expect(TIER_RATE_CARD.pro.hardCap).toBe(true);
+  });
+
+  it("Free quotas match CF R2 free tier (10 GB / 500k req)", () => {
+    expect(TIER_RATE_CARD.free.includedCasGb).toBe(10);
+    expect(TIER_RATE_CARD.free.includedRequests).toBe(500_000);
+  });
+
+  it("Pro quotas are 500 GB / 20M req per pricing-benchmarks §5", () => {
+    expect(TIER_RATE_CARD.pro.includedCasGb).toBe(500);
+    expect(TIER_RATE_CARD.pro.includedRequests).toBe(20_000_000);
   });
 });
 
@@ -54,54 +83,40 @@ describe("estimateTier — boundaries", () => {
     const r = estimateTier("free", zeroUsage);
     expect(r.monthlyTotal).toBe(0);
     expect(r.fitsWithoutOverage).toBe(true);
-    expect(r.fits).toBe(true);
   });
 
-  it("Starter at exactly its included quotas has zero overage", () => {
-    const card = TIER_RATE_CARD.starter;
-    const usage: UsageInputs = {
-      casGbStored: card.includedCasGb,
-      casGbTransferred: card.includedTransferGb,
-      auditEventsPerMonth: card.includedAuditEvents,
-      regions: card.includedRegions,
-      byokProviders: card.includedByokProviders,
-      adminSeats: card.includedSeats,
-    };
-    const r = estimateTier("starter", usage);
-    expect(r.breakdown.casOverage).toBe(0);
-    expect(r.breakdown.transferOverage).toBe(0);
-    expect(r.breakdown.auditOverage).toBe(0);
-    expect(r.monthlyTotal).toBe(card.usdMonthlyBase);
-    expect(r.fitsWithoutOverage).toBe(true);
-  });
-
-  it("Team overage: 1 GB above CAS quota costs exactly one unit", () => {
-    const card = TIER_RATE_CARD.team;
-    const usage: UsageInputs = {
-      ...DEFAULT_USAGE,
-      casGbStored: card.includedCasGb + 1,
-      casGbTransferred: 0,
-      auditEventsPerMonth: 0,
-      regions: 0,
-      byokProviders: 0,
-      adminSeats: 0,
-    };
-    const r = estimateTier("team", usage);
-    expect(r.breakdown.casOverage).toBeCloseTo(card.usdPerCasGbOverage, 10);
-    expect(r.monthlyTotal).toBeCloseTo(
-      (card.usdMonthlyBase ?? 0) + card.usdPerCasGbOverage,
-      10,
-    );
-  });
-
-  it("Pro overage: BYOK +1 provider beyond included is billed", () => {
+  it("Pro at exactly its included quotas costs the flat base", () => {
     const card = TIER_RATE_CARD.pro;
     const usage: UsageInputs = {
-      ...zeroUsage,
-      byokProviders: card.includedByokProviders + 1,
+      casGbStored: card.includedCasGb,
+      requestsPerMonth: card.includedRequests,
     };
     const r = estimateTier("pro", usage);
-    expect(r.breakdown.byokOverage).toBeCloseTo(card.usdPerByokProviderOverage, 10);
+    expect(r.fitsWithoutOverage).toBe(true);
+    expect(r.monthlyTotal).toBe(card.usdMonthlyBase);
+  });
+
+  it("Pro storage 1 GB above quota is reported as exceeded (hard cap, no overage charge)", () => {
+    const card = TIER_RATE_CARD.pro;
+    const usage: UsageInputs = {
+      casGbStored: card.includedCasGb + 1,
+      requestsPerMonth: 0,
+    };
+    const r = estimateTier("pro", usage);
+    expect(r.fitsWithoutOverage).toBe(false);
+    // Hard cap ⇒ overage cost is `null` (not $0); the UI renders
+    // "Hard cap — upgrade to continue" rather than a $0 anchor.
+    expect(r.breakdown.casOverage).toBeNull();
+    // Total is still just the flat base — there is no silent billing.
+    expect(r.monthlyTotal).toBe(card.usdMonthlyBase);
+  });
+
+  it("Free 1 GB above the 10 GB quota does not bill but does not fit", () => {
+    const usage: UsageInputs = { casGbStored: 11, requestsPerMonth: 0 };
+    const r = estimateTier("free", usage);
+    expect(r.fitsWithoutOverage).toBe(false);
+    expect(r.monthlyTotal).toBe(0);
+    expect(r.breakdown.casOverage).toBeNull();
   });
 });
 
@@ -113,21 +128,21 @@ describe("estimateTier — Enterprise contact-sales", () => {
     expect(r.breakdown.base).toBeNull();
   });
 
-  it("Enterprise fits any usage profile (contact sales never rejects)", () => {
+  it("Enterprise always reports `fitsWithoutOverage` (contact sales never rejects)", () => {
     const huge: UsageInputs = {
       casGbStored: 10_000_000,
-      casGbTransferred: 10_000_000,
-      auditEventsPerMonth: 10_000_000_000,
-      regions: 50,
-      byokProviders: 50,
-      adminSeats: 50_000,
+      requestsPerMonth: 10_000_000_000,
     };
-    expect(estimateTier("enterprise", huge).fits).toBe(true);
+    expect(estimateTier("enterprise", huge).fitsWithoutOverage).toBe(true);
   });
 });
 
 describe("applyPeriodDiscount + annual billing", () => {
-  it("annual applies ANNUAL_DISCOUNT_RATE to base only", () => {
+  it("annual discount equals '2 months free' = 1 - 10/12 ≈ 16.67%", () => {
+    expect(ANNUAL_DISCOUNT_RATE).toBeCloseTo(1 / 6, 10);
+  });
+
+  it("monthly applies no discount; annual scales by (1 - discount)", () => {
     expect(applyPeriodDiscount(100, "monthly")).toBe(100);
     expect(applyPeriodDiscount(100, "annual")).toBeCloseTo(
       100 * (1 - ANNUAL_DISCOUNT_RATE),
@@ -135,20 +150,10 @@ describe("applyPeriodDiscount + annual billing", () => {
     );
   });
 
-  it("Team annual quote discounts base but not overage", () => {
-    const card = TIER_RATE_CARD.team;
-    const usage: UsageInputs = {
-      ...zeroUsage,
-      casGbStored: card.includedCasGb + 100, // 100 GB overage
-    };
-    const monthly = estimateTier("team", usage, "monthly");
-    const annual = estimateTier("team", usage, "annual");
-    // Overage identical, base discounted.
-    expect(annual.breakdown.casOverage).toBe(monthly.breakdown.casOverage);
-    expect(annual.breakdown.base).toBeCloseTo(
-      (card.usdMonthlyBase ?? 0) * (1 - ANNUAL_DISCOUNT_RATE),
-      10,
-    );
+  it("Pro annual base × 12 equals the published $250/year list (within $1)", () => {
+    const monthlyBase = TIER_RATE_CARD.pro.usdMonthlyBase ?? 0;
+    const annualEffectiveMonthly = applyPeriodDiscount(monthlyBase, "annual");
+    expect(annualEffectiveMonthly * 12).toBeCloseTo(250, 5);
   });
 });
 
@@ -157,19 +162,15 @@ describe("recommendTier", () => {
     expect(recommendTier(zeroUsage)).toBe("free");
   });
 
-  it("usage slightly above Free recommends Starter", () => {
-    const usage: UsageInputs = { ...zeroUsage, casGbStored: 50 };
-    expect(recommendTier(usage)).toBe("starter");
+  it("usage slightly above Free recommends Pro", () => {
+    const usage: UsageInputs = { casGbStored: 50, requestsPerMonth: 600_000 };
+    expect(recommendTier(usage)).toBe("pro");
   });
 
-  it("very heavy usage above Pro returns null (-> contact Enterprise)", () => {
+  it("usage above Pro quota returns null (-> route to Enterprise)", () => {
     const usage: UsageInputs = {
-      casGbStored: 100_000,
-      casGbTransferred: 1_000_000,
-      auditEventsPerMonth: 1_000_000_000,
-      regions: 20,
-      byokProviders: 10,
-      adminSeats: 1_000,
+      casGbStored: 1_000_000,
+      requestsPerMonth: 1_000_000_000,
     };
     expect(recommendTier(usage)).toBeNull();
   });
@@ -177,21 +178,20 @@ describe("recommendTier", () => {
 
 describe("computeBreakEven", () => {
   it("returns headroom under the recommended tier", () => {
-    const usage: UsageInputs = { ...zeroUsage, casGbStored: 50 };
+    const usage: UsageInputs = { casGbStored: 50, requestsPerMonth: 600_000 };
     const be = computeBreakEven(usage);
     expect(be).not.toBeNull();
-    expect(be?.recommended).toBe("starter");
-    expect(be?.headroomCasGb).toBe(TIER_RATE_CARD.starter.includedCasGb - 50);
+    expect(be?.recommended).toBe("pro");
+    expect(be?.headroomCasGb).toBe(TIER_RATE_CARD.pro.includedCasGb - 50);
+    expect(be?.headroomRequests).toBe(
+      TIER_RATE_CARD.pro.includedRequests - 600_000,
+    );
   });
 
-  it("returns null when no tier fits without overage", () => {
+  it("returns null when no quantifiable tier fits", () => {
     const usage: UsageInputs = {
-      casGbStored: 100_000,
-      casGbTransferred: 1_000_000,
-      auditEventsPerMonth: 1_000_000_000,
-      regions: 20,
-      byokProviders: 10,
-      adminSeats: 1_000,
+      casGbStored: 1_000_000,
+      requestsPerMonth: 1_000_000_000,
     };
     expect(computeBreakEven(usage)).toBeNull();
   });
@@ -201,26 +201,17 @@ describe("defensive clamping", () => {
   it("negative inputs are treated as zero", () => {
     const usage: UsageInputs = {
       casGbStored: -10,
-      casGbTransferred: -5,
-      auditEventsPerMonth: -1,
-      regions: -2,
-      byokProviders: -1,
-      adminSeats: -3,
+      requestsPerMonth: -1,
     };
-    const r = estimateTier("starter", usage);
-    expect(r.breakdown.casOverage).toBe(0);
-    expect(r.breakdown.transferOverage).toBe(0);
-    expect(r.breakdown.seatOverage).toBe(0);
+    const r = estimateTier("free", usage);
+    expect(r.fitsWithoutOverage).toBe(true);
+    expect(r.monthlyTotal).toBe(0);
   });
 
   it("NaN / Infinity inputs are clamped to zero", () => {
     const usage: UsageInputs = {
       casGbStored: Number.NaN,
-      casGbTransferred: Number.POSITIVE_INFINITY,
-      auditEventsPerMonth: Number.NEGATIVE_INFINITY,
-      regions: Number.NaN,
-      byokProviders: Number.NaN,
-      adminSeats: Number.NaN,
+      requestsPerMonth: Number.POSITIVE_INFINITY,
     };
     const r = estimateTier("free", usage);
     expect(r.fitsWithoutOverage).toBe(true);
@@ -228,7 +219,7 @@ describe("defensive clamping", () => {
 });
 
 describe("formatUsd — honest framing", () => {
-  it("null becomes 'Contact us' (no misleading $0)", () => {
+  it("null becomes 'Contact us' (no misleading $0 for Enterprise)", () => {
     expect(formatUsd(null)).toBe("Contact us");
   });
 
@@ -240,13 +231,13 @@ describe("formatUsd — honest framing", () => {
     expect(formatUsd(0.5)).toBe("$0.50");
   });
 
-  it("zero formats as $0 (free tier honest disclosure)", () => {
+  it("zero formats as $0 (Free tier honest disclosure)", () => {
     expect(formatUsd(0)).toBe("$0");
   });
 });
 
 describe("estimateAllTiers", () => {
-  it("returns one estimate per canonical tier, in order", () => {
+  it("returns one estimate per canonical tier in order Free / Pro / Enterprise", () => {
     const results = estimateAllTiers(DEFAULT_USAGE);
     expect(results.map((r) => r.tier)).toEqual([...CANONICAL_TIERS]);
   });

@@ -1,193 +1,165 @@
 /**
- * Pricing formulas for the CoreLink calculator + pricing page.
+ * Pricing data model for the public pricing page + calculator.
  *
- * Wave-29 stream-7 / r-prep pricing page deliverable.
+ * Phase 0.E (`PRICING-UNSTUB-CHECKOUT-WIRE`) lift: the prior wave-29
+ * 5-tier scaffold (Free / Starter / Team / Pro / Enterprise) flagged
+ * every magnitude `provisional: true` pending a Finance rate card.
+ * Per `specs/_audits/2026-05-27-pricing-benchmarks.md` §5 +
+ * `specs/_audits/2026-05-27-phase-0-execution-plan.md` §2.E +
+ * `ROADMAP-TO-LAUNCH.md` §3, we collapse to the launch shape:
  *
- * The tier taxonomy here is the canonical 5-tier shape from wave-13
- * (`crates/corelink-tier-selection/src/tier.rs`):
+ *     Free  →  Pro ($25/mo or $250/yr)  →  Enterprise (contact us)
  *
- *     Free, Starter, Team, Pro, Enterprise
+ * Pricing is no longer provisional — it is the launch rate card,
+ * signed off by Gustavo Schneiter (sole-founder authority) 2026-05-27.
  *
- * The numeric rates are honest placeholders flagged with
- * `provisional: true`. Finance / Legal / Product sign-off in
- * `apps/docs/CONTENT-REVIEW.md` will replace them at GA. The shapes
- * (per-tier base, per-GB CAS, per-GB transfer, per-event audit,
- * per-region surcharge, BYOK surcharge) are STABLE; only the magnitudes
- * float — so the calculator UI does not need to be reworked when
- * Finance lands the rate card.
+ * Quota policy at v0.1 is **hard cap** on both Free and Pro (no silent
+ * overage billing — buyer hits 100% → 429 + upgrade CTA). Overage axes
+ * exist as data so the calculator can render "you would exceed this
+ * tier" warnings, but every overage USD rate is `0` (hard cap), which
+ * the page renders as "Hard cap — upgrade to continue" rather than a
+ * misleading "$0/GB overage".
  *
  * NO BACKEND CALLS — all formulas are pure functions so the calculator
  * is fully client-side.
  */
 
 /**
- * Canonical 5 tiers per wave-13 tier-selection contract.
- *
- * The user-facing task spec asked for a 4-tier table
- * (Solo / Team / Business / Enterprise). The charter overrides:
- * "use canonical tier shapes from wave-13". `Solo` ≈ `Starter`,
- * `Business` ≈ `Pro`. The audit doc records the deviation.
+ * Launch tier taxonomy. Three tiers per pricing-benchmarks §5
+ * ("Three tiers is the dominant shape" — Sentry, Resend, Plausible,
+ * Garnix, BuildBuddy, EngFlow). Wave-13's 5-tier internal taxonomy is
+ * preserved in `crates/corelink-tier-selection/src/tier.rs`; the
+ * public surface is the 3-tier launch shape.
  */
-export type TierId = "free" | "starter" | "team" | "pro" | "enterprise";
+export type TierId = "free" | "pro" | "enterprise";
 
 export const CANONICAL_TIERS: readonly TierId[] = [
   "free",
-  "starter",
-  "team",
   "pro",
   "enterprise",
 ] as const;
 
 /**
- * Billing period. Annual yields a flat discount applied to the
- * monthly base; usage-based components (CAS storage, transfer, audit,
- * regions, BYOK) are not discounted, since they reflect underlying
- * cloud cost.
+ * Billing period. Annual is sold as "2 months free" (~17% off) on the
+ * Pro base; Plausible / BetterStack convention.
  */
 export type BillingPeriod = "monthly" | "annual";
 
 /**
- * Annual discount on the per-tier base fee. Honest framing: this is
- * a placeholder, NOT a published commitment.
+ * "2 months free" = pay for 10 months out of 12 → 1 - 10/12 ≈ 16.67%.
+ * Equivalent to the published $250/yr Pro list price vs. $25 × 12.
  */
-export const ANNUAL_DISCOUNT_RATE = 0.15;
+export const ANNUAL_DISCOUNT_RATE = 1 - 10 / 12;
 
 /**
- * Single tier's published shape. All `usd_` fields are placeholders
- * (`provisional: true`) until Finance sign-off per CONTENT-REVIEW.md.
+ * Single tier's published shape. Concrete launch pricing per
+ * `specs/_audits/2026-05-27-pricing-benchmarks.md` §5.
  */
 export interface TierShape {
   readonly id: TierId;
   readonly label: string;
-  /** Included CAS storage (GB-month) — overage billed per `usdPerCasGbOverage`. */
+  /** Short marketing tagline rendered under the tier name. */
+  readonly tagline: string;
+  /** Included CAS storage (GB-month). */
   readonly includedCasGb: number;
-  /** Included egress / transfer (GB / month) — overage at `usdPerTransferGbOverage`. */
-  readonly includedTransferGb: number;
-  /** Included audit events / month — overage at `usdPerAuditEventOverage`. */
-  readonly includedAuditEvents: number;
-  /** Included regions — additional regions charged per `usdPerRegionOverage`. */
-  readonly includedRegions: number;
-  /** Included BYOK providers (0 if BYOK not available on this tier). */
-  readonly includedByokProviders: number;
-  /** Included admin seats — overage at `usdPerSeatOverage`. */
-  readonly includedSeats: number;
-  /** Per-tier base monthly fee (USD). `null` for tiers where pricing
-   * is contact-based (Enterprise) or zero (Free). */
+  /** Included cache requests / month. */
+  readonly includedRequests: number;
+  /** Included workspaces (Free: 1; Pro: unlimited → `null`). */
+  readonly includedWorkspaces: number | null;
+  /** True if BYOK (bring-your-own-R2 + bring-your-own-KMS) is offered. */
+  readonly byok: boolean;
+  /** True if SSO/SAML (Clerk org-mode) is offered. */
+  readonly sso: boolean;
+  /** True if a contractual SLA with credits applies. */
+  readonly slaCredits: boolean;
+  /** True if DPA + custom MSA are offered. */
+  readonly dpa: boolean;
+  /** True if audit log export (beyond 90-day in-app retention). */
+  readonly auditLogExport: boolean;
+  /** Support channel description. */
+  readonly support: string;
+  /** Per-tier base monthly fee (USD). `null` for contact-sales. */
   readonly usdMonthlyBase: number | null;
+  /** Annual list price (USD/year). `null` for Free or contact-sales. */
+  readonly usdAnnualList: number | null;
+  /**
+   * Overage USD rate per GB of CAS storage beyond `includedCasGb`.
+   * `0` = hard cap (writes return 429; no silent overage). The page
+   * renders this honestly as "Hard cap — upgrade to continue".
+   */
   readonly usdPerCasGbOverage: number;
-  readonly usdPerTransferGbOverage: number;
-  readonly usdPerAuditEventOverage: number;
-  readonly usdPerRegionOverage: number;
-  readonly usdPerByokProviderOverage: number;
-  readonly usdPerSeatOverage: number;
-  readonly supportResponseHours: number | "custom";
-  /** Honest disclosure: every numeric rate is provisional until
-   * Finance lands the rate card at GA. */
-  readonly provisional: true;
+  /**
+   * Overage USD rate per cache request beyond `includedRequests`.
+   * `0` = hard cap.
+   */
+  readonly usdPerRequestOverage: number;
+  /** True ⇒ quota is enforced as a hard cap (429 over quota). */
+  readonly hardCap: boolean;
 }
 
 /**
- * Canonical rate card placeholders. Each magnitude is flagged
- * `provisional: true` and listed in the audit doc as
- * `<TBD per GA pricing review>` — they are NOT a commitment.
+ * Launch rate card per pricing-benchmarks §5. Magnitudes are the
+ * **published v0.1 prices**, not placeholders.
  */
 export const TIER_RATE_CARD: Readonly<Record<TierId, TierShape>> = {
   free: {
     id: "free",
     label: "Free",
+    tagline: "For personal projects and evaluation. No credit card.",
     includedCasGb: 10,
-    includedTransferGb: 100,
-    includedAuditEvents: 10_000,
-    includedRegions: 1,
-    includedByokProviders: 0,
-    includedSeats: 1,
+    includedRequests: 500_000,
+    includedWorkspaces: 1,
+    byok: false,
+    sso: false,
+    slaCredits: false,
+    dpa: false,
+    auditLogExport: false,
+    support: "Community (GitHub Discussions)",
     usdMonthlyBase: 0,
-    usdPerCasGbOverage: 0, // overage not allowed on Free; hard cap.
-    usdPerTransferGbOverage: 0,
-    usdPerAuditEventOverage: 0,
-    usdPerRegionOverage: 0,
-    usdPerByokProviderOverage: 0,
-    usdPerSeatOverage: 0,
-    supportResponseHours: 72,
-    provisional: true,
-  },
-  starter: {
-    id: "starter",
-    label: "Starter",
-    includedCasGb: 100,
-    includedTransferGb: 1_000,
-    includedAuditEvents: 250_000,
-    includedRegions: 1,
-    includedByokProviders: 0,
-    includedSeats: 5,
-    usdMonthlyBase: 29,
-    usdPerCasGbOverage: 0.12,
-    usdPerTransferGbOverage: 0.05,
-    usdPerAuditEventOverage: 0.0001,
-    usdPerRegionOverage: 25,
-    usdPerByokProviderOverage: 0,
-    usdPerSeatOverage: 4,
-    supportResponseHours: 48,
-    provisional: true,
-  },
-  team: {
-    id: "team",
-    label: "Team",
-    includedCasGb: 500,
-    includedTransferGb: 5_000,
-    includedAuditEvents: 1_000_000,
-    includedRegions: 2,
-    includedByokProviders: 0,
-    includedSeats: 15,
-    usdMonthlyBase: 149,
-    usdPerCasGbOverage: 0.1,
-    usdPerTransferGbOverage: 0.04,
-    usdPerAuditEventOverage: 0.00008,
-    usdPerRegionOverage: 35,
-    usdPerByokProviderOverage: 0,
-    usdPerSeatOverage: 6,
-    supportResponseHours: 24,
-    provisional: true,
+    usdAnnualList: 0,
+    usdPerCasGbOverage: 0,
+    usdPerRequestOverage: 0,
+    hardCap: true,
   },
   pro: {
     id: "pro",
     label: "Pro",
-    includedCasGb: 2_000,
-    includedTransferGb: 20_000,
-    includedAuditEvents: 5_000_000,
-    includedRegions: 3,
-    includedByokProviders: 1,
-    includedSeats: 50,
-    usdMonthlyBase: 549,
-    usdPerCasGbOverage: 0.08,
-    usdPerTransferGbOverage: 0.035,
-    usdPerAuditEventOverage: 0.00006,
-    usdPerRegionOverage: 50,
-    usdPerByokProviderOverage: 75,
-    usdPerSeatOverage: 8,
-    supportResponseHours: 8,
-    provisional: true,
+    tagline: "For teams shipping production builds.",
+    includedCasGb: 500,
+    includedRequests: 20_000_000,
+    includedWorkspaces: null, // unlimited
+    byok: false,
+    sso: false,
+    slaCredits: false,
+    dpa: false,
+    auditLogExport: false,
+    support: "Email (1 business-day response target)",
+    usdMonthlyBase: 25,
+    usdAnnualList: 250,
+    usdPerCasGbOverage: 0, // hard cap at v0.1; metered overage deferred to v0.2.
+    usdPerRequestOverage: 0,
+    hardCap: true,
   },
   enterprise: {
     id: "enterprise",
     label: "Enterprise",
+    tagline: "BYOK, dedicated tenant, 99.9% SLA, SSO, DPA.",
+    // Indicative anchors (range $500–$5,000/mo per §5); rendered as
+    // "Custom" — no specific dollar number shown until a contract.
     includedCasGb: 10_000,
-    includedTransferGb: 100_000,
-    includedAuditEvents: 50_000_000,
-    includedRegions: 5,
-    includedByokProviders: 4,
-    includedSeats: 250,
-    // `null` ⇒ contact sales; calculator surfaces "Contact us" rather
-    // than a misleading anchor like "starting at $0".
+    includedRequests: 1_000_000_000,
+    includedWorkspaces: null,
+    byok: true,
+    sso: true,
+    slaCredits: true,
+    dpa: true,
+    auditLogExport: true,
+    support: "Dedicated channel + custom SLA",
     usdMonthlyBase: null,
-    usdPerCasGbOverage: 0.06,
-    usdPerTransferGbOverage: 0.025,
-    usdPerAuditEventOverage: 0.00004,
-    usdPerRegionOverage: 0, // negotiated.
-    usdPerByokProviderOverage: 0, // negotiated.
-    usdPerSeatOverage: 0, // negotiated.
-    supportResponseHours: "custom",
-    provisional: true,
+    usdAnnualList: null,
+    usdPerCasGbOverage: 0,
+    usdPerRequestOverage: 0,
+    hardCap: false,
   },
 };
 
@@ -197,55 +169,45 @@ export const TIER_RATE_CARD: Readonly<Record<TierId, TierShape>> = {
  */
 export interface UsageInputs {
   readonly casGbStored: number;
-  readonly casGbTransferred: number;
-  readonly auditEventsPerMonth: number;
-  readonly regions: number;
-  readonly byokProviders: number;
-  readonly adminSeats: number;
+  readonly requestsPerMonth: number;
 }
 
 export const DEFAULT_USAGE: UsageInputs = {
-  casGbStored: 250,
-  casGbTransferred: 2_000,
-  auditEventsPerMonth: 500_000,
-  regions: 2,
-  byokProviders: 0,
-  adminSeats: 10,
+  casGbStored: 50,
+  requestsPerMonth: 2_000_000,
 };
 
 /**
- * Per-tier cost estimate. `monthlyTotal` is `null` for Enterprise
- * (contact sales) to avoid misleading $0 anchoring.
+ * Per-tier estimate for the calculator. `monthlyTotal` is `null` for
+ * Enterprise (contact sales — no $0 anchor).
  */
 export interface TierCostEstimate {
   readonly tier: TierId;
   readonly label: string;
-  readonly fits: boolean;
-  /** USD/month for monthly billing, or null when contact-sales. */
+  /** True if the usage profile fits within included quotas. */
+  readonly fitsWithoutOverage: boolean;
+  /** USD/month at the selected billing period, or null for contact-sales. */
   readonly monthlyTotal: number | null;
-  /** USD/month effective price under annual billing (base discounted). */
+  /** USD/month effective price under annual billing, or null. */
   readonly annualizedMonthlyTotal: number | null;
   readonly breakdown: {
     readonly base: number | null;
-    readonly casOverage: number;
-    readonly transferOverage: number;
-    readonly auditOverage: number;
-    readonly regionOverage: number;
-    readonly byokOverage: number;
-    readonly seatOverage: number;
+    /**
+     * `null` ⇒ exceeding the included quota is a hard-cap event (writes
+     * return 429; no overage charge possible). Otherwise: USD overage
+     * for the GB above the included quota.
+     */
+    readonly casOverage: number | null;
+    readonly requestOverage: number | null;
   };
-  /** True only when every usage input fits within the tier's
-   * included quotas (no overage). Used by the calculator to surface
-   * the smallest fitting tier as the recommendation. */
-  readonly fitsWithoutOverage: boolean;
-  readonly provisional: true;
 }
 
-const clampNonNegative = (n: number): number => (n < 0 || !Number.isFinite(n) ? 0 : n);
+const clampNonNegative = (n: number): number =>
+  n < 0 || !Number.isFinite(n) ? 0 : n;
 
 /**
- * Apply the period discount to the monthly base only. Usage-based
- * overage is pass-through (it reflects cloud cost; honest framing).
+ * Apply the period discount to the monthly base. Annual = "2 months
+ * free" (~16.67% off) per Pro's $250/yr list vs. $25 × 12.
  */
 export function applyPeriodDiscount(
   monthlyBase: number,
@@ -259,8 +221,7 @@ export function applyPeriodDiscount(
 
 /**
  * Pure formula: per-tier monthly cost given a usage profile and
- * billing period. Enterprise returns `monthlyTotal: null` so the UI
- * shows "Contact us" rather than $0.
+ * billing period. Enterprise returns `monthlyTotal: null`.
  */
 export function estimateTier(
   tier: TierId,
@@ -269,90 +230,53 @@ export function estimateTier(
 ): TierCostEstimate {
   const card = TIER_RATE_CARD[tier];
   const gbStored = clampNonNegative(usage.casGbStored);
-  const gbTransfer = clampNonNegative(usage.casGbTransferred);
-  const auditEvents = clampNonNegative(usage.auditEventsPerMonth);
-  const regions = clampNonNegative(usage.regions);
-  const byok = clampNonNegative(usage.byokProviders);
-  const seats = clampNonNegative(usage.adminSeats);
+  const requests = clampNonNegative(usage.requestsPerMonth);
 
-  // Quota exceedance is computed on raw GB / event / count axes,
-  // *independent* of the overage USD rate — a tier with a $0 overage
-  // rate (e.g. Free's hard cap, or Enterprise's negotiated rate) is
-  // still considered to have "overage usage" if the buyer exceeds the
-  // included quota. This keeps `recommendTier` honest.
-  const casUnits = Math.max(0, gbStored - card.includedCasGb);
-  const xferUnits = Math.max(0, gbTransfer - card.includedTransferGb);
-  const auditUnits = Math.max(0, auditEvents - card.includedAuditEvents);
-  const regionUnits = Math.max(0, regions - card.includedRegions);
-  const byokUnits = Math.max(0, byok - card.includedByokProviders);
-  const seatUnits = Math.max(0, seats - card.includedSeats);
+  const casExceeded = Math.max(0, gbStored - card.includedCasGb);
+  const reqExceeded = Math.max(0, requests - card.includedRequests);
+  const fitsWithoutOverage = casExceeded === 0 && reqExceeded === 0;
 
-  const casOver = casUnits * card.usdPerCasGbOverage;
-  const xferOver = xferUnits * card.usdPerTransferGbOverage;
-  const auditOver = auditUnits * card.usdPerAuditEventOverage;
-  const regionOver = regionUnits * card.usdPerRegionOverage;
-  const byokOver = byokUnits * card.usdPerByokProviderOverage;
-  const seatOver = seatUnits * card.usdPerSeatOverage;
-
-  const overageSum = casOver + xferOver + auditOver + regionOver + byokOver + seatOver;
-
-  const fitsWithoutOverage =
-    casUnits === 0 &&
-    xferUnits === 0 &&
-    auditUnits === 0 &&
-    regionUnits === 0 &&
-    byokUnits === 0 &&
-    seatUnits === 0;
-  const fitsAtAll =
-    tier === "enterprise"
-      ? true
-      : tier === "free"
-        ? fitsWithoutOverage
-        : true;
-
-  // Enterprise is contact-sales: do not anchor a number.
+  // Enterprise: contact-sales, never anchor a number.
   if (card.usdMonthlyBase === null) {
     return {
       tier,
       label: card.label,
-      fits: fitsAtAll,
+      fitsWithoutOverage: true, // contact sales never rejects a customer
       monthlyTotal: null,
       annualizedMonthlyTotal: null,
-      breakdown: {
-        base: null,
-        casOverage: casOver,
-        transferOverage: xferOver,
-        auditOverage: auditOver,
-        regionOverage: regionOver,
-        byokOverage: byokOver,
-        seatOverage: seatOver,
-      },
-      fitsWithoutOverage,
-      provisional: true,
+      breakdown: { base: null, casOverage: null, requestOverage: null },
     };
   }
 
-  const monthlyTotal = card.usdMonthlyBase + overageSum;
-  const annualBase = applyPeriodDiscount(card.usdMonthlyBase, "annual");
+  // Hard-cap tiers (Free + Pro at v0.1): overage is structurally
+  // disallowed. Surface `null` so the UI renders "Hard cap" instead
+  // of a misleading "$0 overage".
+  const casOverageCost = card.hardCap
+    ? null
+    : casExceeded * card.usdPerCasGbOverage;
+  const reqOverageCost = card.hardCap
+    ? null
+    : reqExceeded * card.usdPerRequestOverage;
+
+  const overageSum =
+    (casOverageCost ?? 0) + (reqOverageCost ?? 0);
+
+  const monthlyBase = card.usdMonthlyBase;
+  const annualBase = applyPeriodDiscount(monthlyBase, "annual");
+  const monthlyTotal = monthlyBase + overageSum;
   const annualizedMonthlyTotal = annualBase + overageSum;
 
   return {
     tier,
     label: card.label,
-    fits: fitsAtAll,
+    fitsWithoutOverage,
     monthlyTotal: period === "annual" ? annualizedMonthlyTotal : monthlyTotal,
     annualizedMonthlyTotal,
     breakdown: {
-      base: period === "annual" ? annualBase : card.usdMonthlyBase,
-      casOverage: casOver,
-      transferOverage: xferOver,
-      auditOverage: auditOver,
-      regionOverage: regionOver,
-      byokOverage: byokOver,
-      seatOverage: seatOver,
+      base: period === "annual" ? annualBase : monthlyBase,
+      casOverage: casOverageCost,
+      requestOverage: reqOverageCost,
     },
-    fitsWithoutOverage,
-    provisional: true,
   };
 }
 
@@ -369,14 +293,11 @@ export function estimateAllTiers(
 
 /**
  * Pick the smallest tier (by canonical order) whose included quotas
- * fully cover the usage profile. Returns `null` if no quantifiable
- * tier fits (i.e. usage exceeds even Pro's quotas) — caller should
- * route to Enterprise contact-sales in that case.
+ * fully cover the usage profile. Returns `null` if usage exceeds even
+ * Pro — caller should route to Enterprise contact-sales.
  */
 export function recommendTier(usage: UsageInputs): TierId | null {
-  // Free / Starter / Team / Pro are the quantifiable candidates;
-  // Enterprise is the contact-sales fallback handled by the caller.
-  for (const tier of ["free", "starter", "team", "pro"] as const) {
+  for (const tier of ["free", "pro"] as const) {
     const est = estimateTier(tier, usage, "monthly");
     if (est.fitsWithoutOverage) {
       return tier;
@@ -386,18 +307,14 @@ export function recommendTier(usage: UsageInputs): TierId | null {
 }
 
 /**
- * Break-even analysis: for the recommended tier, how much headroom
- * does the buyer have on each axis before they hit a higher tier?
- * Returns `null` when the recommended tier is Free (no overage allowed)
- * or when no tier fits without overage.
+ * Headroom under the recommended tier — how much more storage or
+ * requests can the buyer absorb before hitting the next tier. `null`
+ * when no quantifiable tier fits (route to Enterprise).
  */
 export interface BreakEvenHeadroom {
   readonly recommended: TierId;
   readonly headroomCasGb: number;
-  readonly headroomTransferGb: number;
-  readonly headroomAuditEvents: number;
-  readonly headroomRegions: number;
-  readonly headroomSeats: number;
+  readonly headroomRequests: number;
 }
 
 export function computeBreakEven(usage: UsageInputs): BreakEvenHeadroom | null {
@@ -409,26 +326,22 @@ export function computeBreakEven(usage: UsageInputs): BreakEvenHeadroom | null {
   return {
     recommended: rec,
     headroomCasGb: Math.max(0, card.includedCasGb - usage.casGbStored),
-    headroomTransferGb: Math.max(0, card.includedTransferGb - usage.casGbTransferred),
-    headroomAuditEvents: Math.max(
+    headroomRequests: Math.max(
       0,
-      card.includedAuditEvents - usage.auditEventsPerMonth,
+      card.includedRequests - usage.requestsPerMonth,
     ),
-    headroomRegions: Math.max(0, card.includedRegions - usage.regions),
-    headroomSeats: Math.max(0, card.includedSeats - usage.adminSeats),
   };
 }
 
 /**
- * Format a USD amount honestly. `null` ⇒ "Contact us" (no $0 anchor).
- * Negative inputs are clamped to 0.
+ * Format a USD amount. `null` ⇒ "Contact us" (no $0 anchor for
+ * Enterprise). Negative inputs clamp to 0.
  */
 export function formatUsd(amount: number | null): string {
   if (amount === null) {
     return "Contact us";
   }
   const clamped = clampNonNegative(amount);
-  // Two decimals for sub-$10 micro-amounts; whole dollars otherwise.
   if (clamped > 0 && clamped < 10) {
     return `$${clamped.toFixed(2)}`;
   }
