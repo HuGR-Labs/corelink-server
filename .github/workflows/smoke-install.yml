@@ -1,0 +1,38 @@
+name: smoke-install
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/get-corelink-worker/**"
+      - ".github/workflows/smoke-install.yml"
+  schedule:
+    - cron: "0 6 * * *"  # daily at 06:00 UTC
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build smoke image
+        run: docker build -f apps/get-corelink-worker/test/smoke-install.Dockerfile -t corelink-smoke .
+
+      - name: Run install one-liner (corelink --version)
+        env:
+          CORELINK_TEST_TOKEN: ${{ secrets.CORELINK_TEST_TOKEN_CI }}
+        run: |
+          docker run --rm \
+            -e CORELINK_TEST_TOKEN="$CORELINK_TEST_TOKEN" \
+            corelink-smoke
+
+      - name: Verify corelink ping returns 200
+        env:
+          CORELINK_TEST_TOKEN: ${{ secrets.CORELINK_TEST_TOKEN_CI }}
+        run: |
+          # Additional verification beyond just --version
+          docker run --rm \
+            -e CORELINK_TEST_TOKEN="$CORELINK_TEST_TOKEN" \
+            corelink-smoke \
+            sh -c "curl -fsSL \$CORELINK_GET_URL | sh -s -- --token=\$CORELINK_TEST_TOKEN && corelink ping"
