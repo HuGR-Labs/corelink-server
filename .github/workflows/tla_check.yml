@@ -23,7 +23,7 @@ on:
       - 'specs/03_architecture/adrs/ADR-0042-gc-worker-scheduler.md'  # TLC bootstrap ceremony
       # S-11 trigger surface
       - 'crates/corelink-privacy-erasure-worker/**'
-      - 'crates/corelink-privacy-consent-ledger/**'
+      - 'crates/corelink-privacy/**'
   push:
     branches: [main]
     paths:
@@ -39,7 +39,7 @@ on:
       - 'specs/03_architecture/invariant_registry.md'
       - 'specs/03_architecture/adrs/ADR-0042-gc-worker-scheduler.md'
       - 'crates/corelink-privacy-erasure-worker/**'
-      - 'crates/corelink-privacy-consent-ledger/**'
+      - 'crates/corelink-privacy/**'
 
 permissions:
   contents: read

@@ -36,7 +36,7 @@ on:
       - '.github/workflows/tla_dsr_erasure_check.yml'
       # S-11 WI-S11-008 contract trigger surface:
       - 'crates/corelink-privacy-erasure-worker/**'
-      - 'crates/corelink-privacy-consent-ledger/**'
+      - 'crates/corelink-privacy/**'
       # Schema + architecture docs that the model abstracts:
       - 'specs/03_architecture/invariant_registry.md'
       - 'specs/03_architecture/privacy_model.md'
@@ -55,7 +55,7 @@ on:
       - 'scripts/run_tlc_corelink.sh'
       - '.github/workflows/tla_dsr_erasure_check.yml'
       - 'crates/corelink-privacy-erasure-worker/**'
-      - 'crates/corelink-privacy-consent-ledger/**'
+      - 'crates/corelink-privacy/**'
       - 'specs/03_architecture/invariant_registry.md'
       - 'specs/03_architecture/privacy_model.md'
       - 'specs/04_sprints/S11/_spec_contract.md'

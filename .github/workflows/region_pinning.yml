@@ -17,7 +17,7 @@ name: Region pinning enforcement gate (WI-S14-002)
 on:
   pull_request:
     paths:
-      - 'crates/corelink-privacy-residency-enforcement/**'
+      - 'crates/corelink-privacy/**'
       - 'migrations/d1/0027_tenant_primary_region.sql'
       - 'specs/04_sprints/S14/**'
       - 'specs/05_quality/runbooks/RB-region-leak.md'
@@ -26,7 +26,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'crates/corelink-privacy-residency-enforcement/**'
+      - 'crates/corelink-privacy/**'
       - 'migrations/d1/0027_tenant_primary_region.sql'
       - 'specs/04_sprints/S14/**'
       - 'specs/05_quality/runbooks/RB-region-leak.md'
@@ -74,7 +74,7 @@ jobs:
   # 2. Clippy + all existing tests (lib + integration + property_20k + regression).
   # ────────────────────────────────────────────────────────────────────────────
   clippy-and-existing-tests:
-    name: clippy -D warnings + corelink-privacy-residency-enforcement all tests
+    name: clippy -D warnings + corelink-privacy all tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -89,12 +89,12 @@ jobs:
       - name: clippy -D warnings
         run: >
           cargo clippy
-          -p corelink-privacy-residency-enforcement
+          -p corelink-privacy
           --all-targets
           -- -D warnings
 
-      - name: cargo test -p corelink-privacy-residency-enforcement --all-targets
-        run: cargo test -p corelink-privacy-residency-enforcement --all-targets
+      - name: cargo test -p corelink-privacy --all-targets
+        run: cargo test -p corelink-privacy --all-targets
 
   # ────────────────────────────────────────────────────────────────────────────
   # 3. 30k property test (PR gate) — INV-REGION-NO-CROSS-LEAK.
@@ -118,7 +118,7 @@ jobs:
           PROPTEST_CASES: ${{ inputs.proptest_cases || '30000' }}
         run: >
           cargo test
-          -p corelink-privacy-residency-enforcement
+          -p corelink-privacy
           --test property_region_pinning_30k
           --release
 
@@ -141,7 +141,7 @@ jobs:
       - name: adversarial regression tests — region_adversarial
         run: >
           cargo test
-          -p corelink-privacy-residency-enforcement
+          -p corelink-privacy
           --test region_adversarial
 
   # ────────────────────────────────────────────────────────────────────────────
@@ -218,6 +218,6 @@ jobs:
           PROPTEST_CASES: ${{ inputs.proptest_cases || '100000' }}
         run: >
           cargo test
-          -p corelink-privacy-residency-enforcement
+          -p corelink-privacy
           --test property_region_pinning_30k
           --release

@@ -28,11 +28,10 @@ on:
   pull_request:
     paths:
       - 'crates/corelink-analytics/**'
-      - 'crates/corelink-logpush/**'
+      - 'crates/corelink-telemetry/**'
       - 'crates/corelink-tracing/**'
       - 'crates/corelink-audit-chain/**'
       - 'crates/corelink-slo/**'
-      - 'crates/corelink-canary/**'
       - 'specs/05_quality/runbooks/RB-FM-153-grafana-cloud-outage.md'
       - 'specs/05_quality/runbooks/RB-OBS-CARDINALITY-001.md'
       - 'scripts/rb_fm_153_dry_run.sh'
@@ -45,11 +44,10 @@ on:
     branches: [main]
     paths:
       - 'crates/corelink-analytics/**'
-      - 'crates/corelink-logpush/**'
+      - 'crates/corelink-telemetry/**'
       - 'crates/corelink-tracing/**'
       - 'crates/corelink-audit-chain/**'
       - 'crates/corelink-slo/**'
-      - 'crates/corelink-canary/**'
       - 'specs/05_quality/runbooks/RB-FM-153-grafana-cloud-outage.md'
       - 'specs/05_quality/runbooks/RB-OBS-CARDINALITY-001.md'
       - 'scripts/rb_fm_153_dry_run.sh'
@@ -81,7 +79,7 @@ jobs:
   # 1. Cross-component property tests + lib unit at PR speed.
   # --------------------------------------------------------------------
   prop-and-tests:
-    name: corelink-{analytics,logpush,tracing,audit-chain,slo,canary} tests (lib + prop @ 10k iter)
+    name: corelink-{analytics,telemetry,tracing,audit-chain,slo} tests (lib + prop @ 10k iter)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -100,8 +98,8 @@ jobs:
       - name: cargo test -p corelink-analytics --all-targets
         run: cargo test -p corelink-analytics --all-targets
 
-      - name: cargo test -p corelink-logpush --all-targets
-        run: cargo test -p corelink-logpush --all-targets
+      - name: cargo test -p corelink-telemetry --all-targets
+        run: cargo test -p corelink-telemetry --all-targets
 
       - name: cargo test -p corelink-tracing --all-targets
         run: cargo test -p corelink-tracing --all-targets
@@ -111,9 +109,6 @@ jobs:
 
       - name: cargo test -p corelink-slo --all-targets
         run: cargo test -p corelink-slo --all-targets
-
-      - name: cargo test -p corelink-canary --all-targets
-        run: cargo test -p corelink-canary --all-targets
 
       - name: cargo clippy -- -D warnings
         run: cargo clippy --workspace --all-targets --features corelink-worker/tower-middleware -- -D warnings
