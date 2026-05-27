@@ -40,8 +40,8 @@
 (*                                                                         *)
 (* Cross-refs:                                                             *)
 (*   - `specs/03_architecture/invariant_registry.md §3.4 INV-AC-*`        *)
-(*   - `crates/corelink-ac/src/sig.rs` (HkdfVerifier)                    *)
-(*   - `crates/corelink-ac/src/merkle.rs` (canonical builder)            *)
+(*   - `crates/corelink-ac/src/ac_core/sig.rs` (HkdfVerifier)            *)
+(*   - `crates/corelink-ac/src/ac_core/merkle.rs` (canonical builder)    *)
 (***************************************************************************)
 
 EXTENDS Integers, FiniteSets, Sequences, TLC

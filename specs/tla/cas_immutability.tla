@@ -40,7 +40,8 @@
 (*                                                                         *)
 (* Cross-refs:                                                             *)
 (*   - `specs/03_architecture/invariant_registry.md §3.4 CAS`             *)
-(*   - `crates/corelink-cas/src/store.rs`                                *)
+(*   - `crates/corelink-cas/src/dedup.rs` (post Wave 33 reorg: store.rs  *)
+(*     responsibilities now split across dedup.rs and manifest.rs)        *)
 (*   - `cas_integrity.tla` (chunk-level integrity)                       *)
 (***************************************************************************)
 

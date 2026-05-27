@@ -31,8 +31,9 @@
 (*                                                                         *)
 (* Cross-refs:                                                             *)
 (*   - `specs/03_architecture/invariant_registry.md §3.24 INV-OBS-NO-PII`*)
-(*   - `crates/corelink-otel-export/src/lib.rs`                          *)
-(*   - `crates/corelink-otel-export/src/audit.rs`                        *)
+(*   - `crates/corelink-telemetry/src/otel/exporter.rs` (post Wave 35 P2:*)
+(*     corelink-otel-export absorbed into corelink-telemetry/src/otel/)   *)
+(*   - `crates/corelink-telemetry/src/otel/audit.rs`                     *)
 (***************************************************************************)
 
 EXTENDS Integers, FiniteSets, Sequences, TLC

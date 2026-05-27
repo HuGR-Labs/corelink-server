@@ -35,8 +35,13 @@
 (*                                                                         *)
 (* Cross-refs:                                                             *)
 (*   - `specs/03_architecture/invariant_registry.md §3.4 AUDIT, OBS`      *)
-(*   - `crates/corelink-audit/src/redactor.rs`                            *)
-(*   - `crates/corelink-obs/src/tracing_filter.rs`                        *)
+(*   - `crates/corelink-audit/src/redactor.rs` TODO(tla-drift-2026-05-27):*)
+(*     ambiguous post Wave 35 P2 absorption — candidate                  *)
+(*     `crates/corelink-audit/src/redact.rs` (rename?) vs separate module;*)
+(*     disambiguate before next TLC run.                                  *)
+(*   - `crates/corelink-telemetry/src/logpush/redaction.rs`              *)
+(*     (post Wave 35 P2: corelink-obs absorbed into corelink-telemetry;   *)
+(*      tracing_filter responsibilities now under logpush/redaction.rs)   *)
 (***************************************************************************)
 
 EXTENDS Integers, FiniteSets, Sequences, TLC

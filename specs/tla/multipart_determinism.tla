@@ -36,8 +36,11 @@
 (*                                                                         *)
 (* Cross-refs:                                                             *)
 (*   - `specs/03_architecture/invariant_registry.md §3.5 INV-MULTIPART-*` *)
-(*   - `crates/corelink-chunker/src/fastcdc.rs`                          *)
-(*   - `crates/corelink-multipart/src/adapter.rs::MultipartAdapter`      *)
+(*   - `crates/corelink-cas/src/chunker/fastcdc.rs` (post Wave 35 P2:    *)
+(*     corelink-chunker absorbed into corelink-cas/src/chunker/)          *)
+(*   - `crates/corelink-r2-multipart/src/adapter.rs::MultipartAdapter`   *)
+(*     (post Wave 35 P2: corelink-multipart absorbed into                 *)
+(*     corelink-r2-multipart)                                              *)
 (***************************************************************************)
 
 EXTENDS Integers, FiniteSets, Sequences, TLC
