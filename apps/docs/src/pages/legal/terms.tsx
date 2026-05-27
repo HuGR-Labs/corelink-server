@@ -323,7 +323,59 @@ export default function TermsPage(): ReactElement {
         </section>
 
         <section className={styles.section}>
-          <h2>14. Contact</h2>
+          <h2>14. Service availability and credits</h2>
+          <p>
+            For paid tiers (Pro and Enterprise), CoreLink targets a monthly
+            uptime of 99.9% for the API control plane and the Admin UI.
+            Availability is measured against the synthetic probe set
+            documented at <a href="/explanation/sre/slo">SLO targets</a> and
+            reported publicly on the Statuspage. If the measured monthly
+            uptime falls below 99.9%, Pro-tier customers are entitled to a
+            service credit equal to 10% of the affected month&rsquo;s fees,
+            applied automatically to the next invoice; below 99.0%, the
+            credit scales to 25%. Service credits are the sole and
+            exclusive remedy for missed availability targets and do not
+            apply to scheduled-maintenance windows announced at least 72
+            hours in advance, force-majeure events, or downtime
+            attributable to the customer&rsquo;s misconfiguration of the
+            Service. Enterprise customers may negotiate a bespoke service
+            level under the executed Order Form.
+          </p>
+        </section>
+
+        <section className={styles.section}>
+          <h2>15. Export control and sanctions</h2>
+          <p>
+            The Service may be subject to US Export Administration
+            Regulations (EAR) and Office of Foreign Assets Control (OFAC)
+            sanctions; you may not access the Service from, or use it to
+            transfer data to, any jurisdiction or party subject to a
+            comprehensive US embargo, nor in violation of any applicable
+            export-control regulation of your home jurisdiction.
+            Sanctions screening on signup is performed by Clerk (account
+            holder) and Stripe (payment counterparty); CoreLink reserves
+            the right to suspend or terminate accounts flagged by either
+            screen.
+          </p>
+        </section>
+
+        <section className={styles.section}>
+          <h2>16. Beta features</h2>
+          <p>
+            We may make pre-release features available to you under labels
+            such as &ldquo;preview&rdquo;, &ldquo;beta&rdquo;,
+            &ldquo;experimental&rdquo;, or &ldquo;developer preview&rdquo;.
+            Beta features are provided &ldquo;AS IS&rdquo;, are excluded
+            from the warranty in §7 and the availability commitment in §14,
+            may be modified or withdrawn at any time, and may be subject to
+            additional terms presented at the time of enrolment. You bear
+            sole responsibility for evaluating whether a beta feature is
+            fit for your use case.
+          </p>
+        </section>
+
+        <section className={styles.section}>
+          <h2>17. Contact</h2>
           <p>
             Questions about these Terms? Email{" "}
             <a href="mailto:legal@humangr.com">legal@humangr.com</a>. For

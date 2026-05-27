@@ -181,9 +181,36 @@ export default function PrivacyPage(): ReactElement {
             restriction, objection, and portability granted by GDPR Articles
             15–22, LGPD Articles 18–22, and analogous US-state statutes via
             the Data-Subject Request (DSR) flow in your account, or by
-            emailing <a href="mailto:privacy@humangr.com">privacy@humangr.com</a>.
-            We respond within 30 calendar days (45 under CCPA, with one 45-day
-            extension permitted under Cal. Civ. Code §1798.130).
+            emailing{" "}
+            <a href="mailto:privacy@humangr.com">privacy@humangr.com</a>. We
+            respond within 30 calendar days (45 under CCPA, with one 45-day
+            extension permitted under Cal. Civ. Code §1798.130; 15 working
+            days under LGPD Art. 19(1)(II) for access requests where a
+            simplified form is sufficient).
+          </p>
+          <p>
+            Internally, DSRs are orchestrated by the{" "}
+            <code>corelink_privacy::dsr</code> module: a request lands at
+            the <code>POST /v1/privacy/dsr</code> endpoint of the Admin UI
+            or the public Privacy Console, is authenticated against the
+            Clerk session, escalates to a WebAuthn step-up for the three
+            destructive verbs (erasure, restriction, objection), and is
+            then dispatched to the rights orchestrator. The orchestrator
+            fans out across the 12 backends that hold tenant data — CAS
+            (R2), Access Control (D1), audit-PII (D1), KV bindings,
+            Durable-Object state, consent ledger (D1), pseudonymization
+            index (KV), residency ledger (D1), DPA acceptance ledger (D1),
+            sub-processor notification ledger (D1), breach-notification
+            ledger (D1), and the metered-usage event log (Queue +
+            archive) — and signs an Ed25519 completion attestation
+            (consumed unchanged from{" "}
+            <code>corelink_crypto::ed25519::attestation</code>). The signed
+            report is delivered to you alongside a Markdown-formatted
+            human summary. A 24-hour rolling status feed is published to
+            the public Statuspage at 06:00 UTC via{" "}
+            <code>corelink_privacy::dsr::statuspage</code>, providing
+            aggregate evidence of timely processing without disclosing
+            individual identities.
           </p>
           <p>
             For the full article-by-article SLA table, the WebAuthn step-up
@@ -195,7 +222,136 @@ export default function PrivacyPage(): ReactElement {
         </section>
 
         <section className={styles.section}>
-          <h2>6. International transfers</h2>
+          <h2>6. LGPD-specific provisions (Brazilian data subjects)</h2>
+          <p>
+            HuGR Labs is currently established in São Paulo, Brazil; the
+            founder is a Brazilian national resident in Brazil. Processing
+            of personal data of subjects located in Brazil is therefore
+            governed by the LGPD (Lei 13.709/2018, in force since 18
+            September 2020 and enforceable since 1 August 2021) regardless
+            of the data subject&rsquo;s residency status. In addition to the
+            rights enumerated above, the following LGPD-specific
+            provisions apply:
+          </p>
+          <ul>
+            <li>
+              <strong>Legal basis (Art. 7):</strong> we rely primarily on
+              Art. 7-V (execution of a contract or preliminary procedures
+              relating to a contract to which the data subject is a party)
+              and Art. 7-IX (legitimate interest, balanced against the
+              fundamental rights and freedoms of the data subject and
+              documented in a per-purpose LIA). Sensitive data (Art. 11)
+              is not knowingly processed by CoreLink&rsquo;s telemetry
+              path; if a controller chooses to upload sensitive payloads
+              into the cache, the controller bears the Art. 11(1) legal
+              basis and we act as processor under Art. 39.
+            </li>
+            <li>
+              <strong>International transfers (Art. 33):</strong> transfers
+              from Brazil are executed under the Brazilian standard
+              contractual clauses published by ANPD via Resolução CD/ANPD
+              nº 19/2024 (in force 23 August 2024), executed alongside the
+              EU SCCs as a single integrated annex to the DPA. The Art. 33
+              transparency obligation is met by the Sub-processors page
+              and the per-vendor transfer-mechanism table.
+            </li>
+            <li>
+              <strong>DPIA / Relatório de Impacto (Art. 38):</strong> the
+              Authority may require a Data Protection Impact Assessment;
+              CoreLink maintains an internal DPIA covering the cache
+              ingest, authentication, and DSR-orchestration pipelines and
+              will produce it to ANPD on request. The DPIA is reviewed at
+              least annually and on each material change to processing.
+            </li>
+            <li>
+              <strong>ANPD complaints (Art. 18 §1):</strong> Brazilian data
+              subjects may submit complaints directly to the Autoridade
+              Nacional de Proteção de Dados via{" "}
+              <a
+                href="https://www.gov.br/anpd/pt-br/canais_atendimento/cidadao/peticao-de-titular"
+                rel="noopener noreferrer"
+                target="_blank"
+              >
+                gov.br/anpd
+              </a>
+              . We will cooperate fully with any ANPD enquiry.
+            </li>
+            <li>
+              <strong>DPO (Encarregado, Art. 41):</strong> Gustavo
+              Schneiter holds the interim DPO appointment; the appointment
+              is registered with ANPD and published at{" "}
+              <a href="mailto:dpo@humangr.com">dpo@humangr.com</a>. A
+              fractional senior privacy counsel is being engaged to assume
+              the role before GA.
+            </li>
+            <li>
+              <strong>Sandbox / Children (Art. 14):</strong> CoreLink is
+              not directed at children and we do not knowingly process
+              personal data of subjects under 18; the Service is targeted
+              at developers and engineering organizations.
+            </li>
+          </ul>
+        </section>
+
+        <section className={styles.section}>
+          <h2>7. Data residency, pseudonymization, and security</h2>
+          <p>
+            CoreLink supports per-tenant data-residency pinning across
+            three regions: <code>Enam</code> (Eastern North America),{" "}
+            <code>Sam</code> (South America — São Paulo, primary surface
+            for Brazilian customers), and <code>Eu</code> (European Union
+            — Frankfurt). Residency selections are enforced by the{" "}
+            <code>corelink_privacy::residency</code> module at the request
+            ingress: a request bound to a Sam-pinned tenant cannot cross
+            into Enam or Eu storage even if the originating client is
+            elsewhere. Residency choices are recorded in the immutable
+            ledger and surfaced in the Admin UI privacy console.
+          </p>
+          <p>
+            Analytics and operational metrics are pseudonymized at source
+            by <code>corelink_privacy::pseudonymize</code>: every subject
+            identifier is keyed-HMAC-SHA-256 against a per-tenant secret
+            held only inside the Worker isolate, with a{" "}
+            <code>subtle::ConstantTimeEq</code> tag compare to defend
+            against timing-side-channel correlation attacks. The
+            pseudonymization key never leaves the isolate and is rotated
+            on tenant lifecycle events; recovering the original subject
+            identifier from a stored pseudonym requires possession of the
+            tenant secret, which CoreLink does not have for customer
+            Bring-Your-Own-Key tenants.
+          </p>
+          <p>
+            All personal data is encrypted in transit (TLS 1.3 minimum,
+            HSTS preload on every public surface, certificate transparency
+            monitored by Cloudflare). Data at rest is encrypted by the
+            underlying Cloudflare R2 / D1 / KV / Durable-Object substrates
+            with AES-256-GCM; Enterprise tenants may additionally opt into
+            BYOK envelope encryption on top, where the data key is sealed
+            by a customer-controlled key in Cloudflare&rsquo;s Key
+            Management Service.
+          </p>
+        </section>
+
+        <section className={styles.section}>
+          <h2>8. Consent management</h2>
+          <p>
+            Where consent is the legal basis (cookies, optional analytics,
+            opt-in marketing communications), it is recorded in the
+            tamper-evident consent ledger via{" "}
+            <code>corelink_privacy::consent</code>. Each consent entry
+            records the timestamp, version of the notice presented, the
+            specific purposes consented to, and the cryptographic chain
+            link to the preceding entry. Withdrawal is processed with the
+            same friction as granting and produces a corresponding
+            withdrawal entry; downstream systems (Plausible analytics,
+            marketing-list subscription, error-tracking opt-in) are
+            instructed to stop processing within 24 hours of withdrawal
+            receipt.
+          </p>
+        </section>
+
+        <section className={styles.section}>
+          <h2>9. International transfers</h2>
           <p>
             CoreLink processes data on Cloudflare&rsquo;s anycast edge plus a
             Neon-hosted Postgres control plane (EU or US region, selectable).
@@ -210,7 +366,7 @@ export default function PrivacyPage(): ReactElement {
         </section>
 
         <section className={styles.section}>
-          <h2>7. Sub-processors</h2>
+          <h2>10. Sub-processors</h2>
           <p>
             The current list of sub-processors and their regions is published
             on the <a href="/legal/sub-processors">Sub-processors page</a>.
@@ -220,7 +376,7 @@ export default function PrivacyPage(): ReactElement {
         </section>
 
         <section className={styles.section}>
-          <h2>8. Cookies and analytics</h2>
+          <h2>11. Cookies and analytics</h2>
           <p>
             We use a small set of first-party cookies for session continuity,
             cookie-consent state, and (when you opt in to the
@@ -232,7 +388,7 @@ export default function PrivacyPage(): ReactElement {
         </section>
 
         <section className={styles.section}>
-          <h2>9. Breach notification</h2>
+          <h2>12. Breach notification</h2>
           <p>
             We notify affected controllers without undue delay, and in any
             case within <strong>72 hours</strong> of becoming aware of a
@@ -245,7 +401,7 @@ export default function PrivacyPage(): ReactElement {
         </section>
 
         <section className={styles.section}>
-          <h2>10. Contact and complaints</h2>
+          <h2>13. Contact and complaints</h2>
           <p>
             Data Protection contact —{" "}
             <a href="mailto:privacy@humangr.com">privacy@humangr.com</a>.
