@@ -218,7 +218,7 @@ $ grep -rE '(tokio::|async_std::)' crates/corelink-privacy/src/ | wc -l
 0   # wasm32-unknown-unknown compatibility preserved
 ```
 
-**Commit SHA:** `<filled-in-after-commit>`
+**Commit SHA:** `07d05d004c1202b820a0a5a701ed5e8960c46f9e`
 
 ## §4. DCO sign-off
 
