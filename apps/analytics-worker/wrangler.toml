@@ -1,0 +1,99 @@
+# CoreLink analytics ingest Worker — Phase 0.G of execution plan.
+#
+# Mandate: POST /v1/event → D1 `analytics_events` (append-only). Cron
+# Mondays 08:00 UTC emits the three-numbers digest via Resend.
+#
+# Hard rule: D1 binding name `ANALYTICS_DB` is dedicated to analytics_events
+# and does NOT overlap with the existing `CONFIG_DB` used by the control plane
+# (see root wrangler.toml line 169 — corelink-config-{dev,staging,prod}).
+# Database names use the `corelink-analytics-*` prefix per acceptance §1.
+
+name = "corelink-analytics"
+main = "src/index.ts"
+compatibility_date = "2026-04-01"
+
+# Same security hardening posture as the control-plane worker:
+# never exposed on workers.dev — only via humangr.com custom route.
+workers_dev = false
+
+[limits]
+cpu_ms = 10
+
+[vars]
+ENVIRONMENT = "dev"
+# Comma-separated allow-list of trusted ingest origins. Server-side callers
+# (signup-worker, cas-worker, get-corelink-worker) authenticate via the
+# `X-Corelink-Ingest-Key` header instead and bypass the origin check.
+ALLOWED_ORIGINS = "https://corelink-docs.humangr.com,https://corelink-admin.humangr.com,https://corelink-app.humangr.com,http://localhost:3000,http://localhost:3001"
+# Plausible domain — only used by the cron worker to surface Plausible totals
+# in the weekly email if a Plausible API token is configured (optional).
+PLAUSIBLE_DOMAIN = "corelink-docs.humangr.com"
+# Recipient of the weekly three-numbers email. Hard-coded by §11 DO NOT rule:
+# real production email NEVER goes to anyone other than gustavo@humangr.com.
+DIGEST_RECIPIENT = "gustavo@humangr.com"
+DIGEST_FROM = "noreply@humangr.com"
+
+[[d1_databases]]
+binding = "ANALYTICS_DB"
+database_name = "corelink-analytics-dev"
+database_id = "PLACEHOLDER_ANALYTICS_DB_DEV_ID"
+preview_database_id = "PLACEHOLDER_ANALYTICS_DB_DEV_PREVIEW_ID"
+migrations_dir = "migrations"
+
+# Secrets (set via `wrangler secret put` — never committed):
+#   INGEST_KEY      — shared HMAC for trusted server-side ingest (signup,
+#                     cas, stripe webhooks). Rotated quarterly.
+#   RESEND_API_KEY  — used by the cron weekly-email handler. Re-uses the
+#                     same Resend project as the existing Drata fail-closed
+#                     alert transport (per metrics audit §9 OQ-2).
+#   PLAUSIBLE_API_KEY — OPTIONAL. If absent, weekly digest omits Plausible
+#                     visitor totals (cron does not fail).
+
+# Monday 08:00 UTC weekly digest — wall-clock chosen so Brazil (BRT) Monday
+# morning has the email on Gustavo's phone before the §5.2 weekly review.
+[triggers]
+crons = [
+    "0 8 * * 1"
+]
+
+# ──────────────────────────────────────────────────────────────────────────
+# Production env. Route binding lives on the humangr.com zone so the
+# ingest endpoint is reachable as `https://corelink-analytics.humangr.com/v1/event`
+# without exposing the workers.dev surface (per security hardening posture).
+# ──────────────────────────────────────────────────────────────────────────
+[env.prod]
+name = "corelink-analytics-prod"
+vars = { ENVIRONMENT = "prod", ALLOWED_ORIGINS = "https://corelink-docs.humangr.com,https://corelink-admin.humangr.com,https://corelink-app.humangr.com", PLAUSIBLE_DOMAIN = "corelink-docs.humangr.com", DIGEST_RECIPIENT = "gustavo@humangr.com", DIGEST_FROM = "noreply@humangr.com" }
+
+[[env.prod.routes]]
+pattern = "corelink-analytics.humangr.com/*"
+zone_name = "humangr.com"
+
+[[env.prod.d1_databases]]
+binding = "ANALYTICS_DB"
+database_name = "corelink-analytics-prod"
+database_id = "PLACEHOLDER_ANALYTICS_DB_PROD_ID"
+migrations_dir = "migrations"
+
+[env.prod.triggers]
+crons = [
+    "0 8 * * 1"
+]
+
+# ──────────────────────────────────────────────────────────────────────────
+# Staging env — mirrors prod with a separate D1 database.
+# ──────────────────────────────────────────────────────────────────────────
+[env.staging]
+name = "corelink-analytics-staging"
+vars = { ENVIRONMENT = "staging", ALLOWED_ORIGINS = "https://corelink-docs.humangr.com,https://corelink-admin.humangr.com,https://corelink-app.humangr.com", PLAUSIBLE_DOMAIN = "corelink-docs.humangr.com", DIGEST_RECIPIENT = "gustavo@humangr.com", DIGEST_FROM = "noreply@humangr.com" }
+
+[[env.staging.d1_databases]]
+binding = "ANALYTICS_DB"
+database_name = "corelink-analytics-staging"
+database_id = "PLACEHOLDER_ANALYTICS_DB_STAGING_ID"
+migrations_dir = "migrations"
+
+[env.staging.triggers]
+crons = [
+    "0 8 * * 1"
+]
