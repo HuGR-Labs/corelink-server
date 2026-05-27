@@ -20,7 +20,7 @@
 
 use std::sync::Arc;
 
-use corelink_rollout_controller::{
+use corelink_replication::rollout_controller::{
     auto_rollback::SUSTAINED_THRESHOLD_SECS,
     budget::{BudgetRecord, InMemoryBudgetTracker},
     controller::{
@@ -37,10 +37,10 @@ use uuid::Uuid;
 
 fn sustain_probes(
     ctrl: &impl RolloutController,
-    handle: &corelink_rollout_controller::types::RolloutHandle,
-    metrics: corelink_rollout_controller::types::GateMetrics,
+    handle: &corelink_replication::rollout_controller::types::RolloutHandle,
+    metrics: corelink_replication::rollout_controller::types::GateMetrics,
     n: u32,
-) -> Option<corelink_rollout_controller::types::RolloutDecision> {
+) -> Option<corelink_replication::rollout_controller::types::RolloutDecision> {
     let mut last = None;
     for _ in 0..n {
         if let Ok(d) = ctrl.probe_and_advance(handle, metrics.clone()) {
@@ -122,7 +122,7 @@ fn adv_003_p99_latency_trigger_auto_rollback() {
 /// measured (not estimated) bps; freeze trigger fires at exact threshold > 1.0.
 #[test]
 fn adv_004_budget_exceeded_freeze() {
-    let audit = Arc::new(corelink_rollout_controller::InMemoryRolloutAuditSink::new());
+    let audit = Arc::new(corelink_replication::rollout_controller::InMemoryRolloutAuditSink::new());
     let budget = Arc::new(InMemoryBudgetTracker::new());
     let ctrl = InMemoryRolloutController::new(Arc::clone(&audit), Arc::clone(&budget));
 
@@ -159,7 +159,7 @@ fn adv_004_budget_exceeded_freeze() {
 /// Scenario 5: bypass progressive stages → StageBypassed.
 #[test]
 fn adv_005_stage_bypass_rejected() {
-    let sm = corelink_rollout_controller::state_machine::RolloutStateMachine::new();
+    let sm = corelink_replication::rollout_controller::state_machine::RolloutStateMachine::new();
     // Attempt to advance directly from Stage1Pct → Stage100Pct (skip 10% + 50%)
     let err = sm
         .validate_advance(RolloutStage::Stage1Pct, RolloutStage::Stage100Pct)

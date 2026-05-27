@@ -19,7 +19,7 @@
 //!
 //! Probe interval 60s → detection p99 ≤ 360s (6 probes) ≤ 10 min.
 
-use crate::types::{AutoRollbackTrigger, GateMetrics};
+use super::types::{AutoRollbackTrigger, GateMetrics};
 
 /// Minimum duration (seconds) a trigger must be continuously observed
 /// before auto-rollback fires. Default: 300 s (5 min).

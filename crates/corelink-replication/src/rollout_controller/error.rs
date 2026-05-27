@@ -15,7 +15,7 @@
 use thiserror::Error;
 use uuid::Uuid;
 
-/// Canonical error surface for [`crate::controller::RolloutController`]
+/// Canonical error surface for [`super::controller::RolloutController`]
 /// methods.
 #[derive(Debug, Error)]
 #[non_exhaustive]

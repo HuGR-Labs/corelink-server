@@ -14,8 +14,8 @@
 
 use std::sync::{Arc, Mutex};
 
-use crate::error::RolloutError;
-use crate::types::{AdminActor, AutoRollbackTrigger, RolloutStage, RolloutStatus};
+use super::error::RolloutError;
+use super::types::{AdminActor, AutoRollbackTrigger, RolloutStage, RolloutStatus};
 use uuid::Uuid;
 
 /// Canonical audit event types emitted by the rollout controller.

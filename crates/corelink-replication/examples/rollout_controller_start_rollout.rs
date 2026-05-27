@@ -16,7 +16,7 @@
 
 use std::sync::Arc;
 
-use corelink_rollout_controller::{
+use corelink_replication::rollout_controller::{
     budget::InMemoryBudgetTracker,
     controller::{fresh_actor, passing_metrics, signed_artifact, InMemoryRolloutController},
     types::{NextAction, RolloutStage},

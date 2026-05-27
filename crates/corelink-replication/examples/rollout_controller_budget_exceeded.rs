@@ -16,7 +16,7 @@
 
 use std::sync::Arc;
 
-use corelink_rollout_controller::{
+use corelink_replication::rollout_controller::{
     budget::{BudgetRecord, InMemoryBudgetTracker},
     controller::{fresh_actor, signed_artifact, InMemoryRolloutController},
     error::RolloutError,

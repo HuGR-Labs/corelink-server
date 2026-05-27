@@ -32,10 +32,47 @@ corelink-region = { workspace = true }
 corelink-replica-worker = { workspace = true }
 corelink-replication-coordinator = { workspace = true }
 corelink-failover-router = { workspace = true }
-corelink-rollout-controller = { workspace = true }
 
 # Wave 33 Stage 2.A-v2 additive aggregator (per 2.A HALT audit §9(b)):
 # expose corelink-worker's Region enum + region-resolver state under
 # canonical wave-33 path `corelink_replication::region_resolver::*`.
 # Region is top-level public in corelink-worker (no feature gate).
 corelink-worker = { workspace = true }
+
+# Wave 35 Phase 2 physical absorption (per
+# `specs/_audits/2026-05-26-w35-p2-replication-absorption.md`):
+# `corelink-rollout-controller` is now an in-crate module at
+# `corelink_replication::rollout_controller`. These deps were
+# previously transitively pulled via the absorbed crate.
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# wasm32 needs uuid `js` feature for `Uuid::now_v7()` RNG via JS crypto
+# (target-conditional per S-06 P0-2 pattern — same as corelink-dsr,
+# corelink-deploy-verifier).
+uuid = { workspace = true, features = ["v7", "serde", "js"] }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+# Test/example targets relocated from corelink-rollout-controller per
+# Wave 35 Phase 2 absorption.
+[[test]]
+name = "rollout_controller_prop_rollout"
+path = "tests/rollout_controller_prop_rollout.rs"
+
+[[test]]
+name = "rollout_controller_adversarial"
+path = "tests/rollout_controller_adversarial.rs"
+
+[[example]]
+name = "rollout_controller_start_rollout"
+path = "examples/rollout_controller_start_rollout.rs"
+
+[[example]]
+name = "rollout_controller_manual_abort"
+path = "examples/rollout_controller_manual_abort.rs"
+
+[[example]]
+name = "rollout_controller_budget_exceeded"
+path = "examples/rollout_controller_budget_exceeded.rs"

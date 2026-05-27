@@ -22,7 +22,7 @@
 
 use std::sync::Arc;
 
-use corelink_rollout_controller::{
+use corelink_replication::rollout_controller::{
     budget::{BudgetRecord, InMemoryBudgetTracker},
     BudgetTracker,
     controller::{
@@ -260,7 +260,7 @@ proptest! {
 #[test]
 fn rollout_schema_version_pinned() {
     assert_eq!(
-        corelink_rollout_controller::rollout_controller_schema_version(),
+        corelink_replication::rollout_controller::rollout_controller_schema_version(),
         24,
         "D1 migration slot must be 0024"
     );
@@ -292,13 +292,13 @@ fn stage_next_chain_canonical() {
 
 #[test]
 fn audit_event_count_pinned() {
-    let strings = corelink_rollout_controller::canonical_rollout_audit_event_strings();
+    let strings = corelink_replication::rollout_controller::canonical_rollout_audit_event_strings();
     assert_eq!(strings.len(), 8);
 }
 
 #[test]
 fn metric_count_pinned() {
-    use corelink_rollout_controller::{
+    use corelink_replication::rollout_controller::{
         METRIC_BUDGET_CONSUMED_RATIO, METRIC_DETECTION_DURATION_SECONDS, METRIC_DWELL_SECONDS,
         METRIC_FREEZE_TOTAL, METRIC_ROLLBACK_DURATION_SECONDS, METRIC_ROLLOUT_AUTO_ROLLBACK_TOTAL,
         METRIC_ROLLOUT_STAGE_GAUGE,

@@ -4,8 +4,8 @@
 //! (INV-ROLLOUT-NO-STAGE-SKIP), and produces [`TransitionResult`]
 //! for each decision arm.
 
-use crate::error::RolloutError;
-use crate::types::{AutoRollbackTrigger, GateMetrics, NextAction, RolloutDecision, RolloutStage, RolloutStatus};
+use super::error::RolloutError;
+use super::types::{AutoRollbackTrigger, GateMetrics, NextAction, RolloutDecision, RolloutStage, RolloutStatus};
 
 /// Result of a validated state-machine transition.
 #[derive(Debug, Clone)]
