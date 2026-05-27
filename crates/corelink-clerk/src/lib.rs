@@ -107,7 +107,7 @@
 // that supports wasm32-unknown-unknown, which is not available in
 // standard Rust toolchains (requires emscripten or a custom clang).
 // Gate the adapter behind the `jwt-adapter` feature so the trait
-// surface modules (jwks, jwks_cache, principal, config, error, fakes)
+// surface modules (jwks, jwks_cache, principal, config, error)
 // can compile to wasm32-unknown-unknown for production CF Worker
 // binding crates like `corelink-clerk-cf`.
 #[cfg(feature = "jwt-adapter")]
@@ -116,6 +116,14 @@ pub mod config;
 #[cfg(feature = "jwt-adapter")]
 pub mod env_config;
 pub mod error;
+// `fakes` is a test-only surface (InMemoryKvCache, StaticJwksFetcher,
+// TestRsaKey). Gated behind `test-utils` so production builds (default
+// features) never compile it — closes §L2.1/§L2.7 escalation in
+// `specs/_audits/2026-05-27-charter-strict-audit-post-w36.md`
+// ("test code must not leak to prod"). Consumer crates opt in via
+// `corelink-clerk = { ..., features = ["test-utils"] }` in
+// `[dev-dependencies]`.
+#[cfg(any(test, feature = "test-utils"))]
 pub mod fakes;
 #[cfg(feature = "http-fetcher")]
 pub mod http_fetcher;
